@@ -139,6 +139,13 @@ func manCommandBlocks(t *testing.T) []manBlock {
 		if note, ok := tierNotes[p[0]+" "+sub]; ok {
 			req += " " + roff(upperFirst(strings.TrimPrefix(note, p[0]+" "+sub+": ")))
 		}
+		// The gate sees 'device config'; each of its verbs holds its own tier.
+		if need, ok := deviceConfigNeeds[strings.TrimPrefix(words, "device config ")]; ok && len(p) == 3 && p[0] == "device" && p[1] == "config" {
+			req = `Requires: \fB` + string(need) + `\fR.`
+			if need == tier.Engineer {
+				req += " An engineer gets the devices of their own scopes only."
+			}
+		}
 		l = append(l, req)
 		if spec, ok := specFor(p); ok && len(spec.Flags) > 0 {
 			var cands []string
@@ -209,6 +216,17 @@ var manFlagOverrides = map[string]string{
 	"device remove --all":            "Remove every device (an engineer: those of their own scopes).",
 	"device check --all":             "Check every device.",
 	"device discover --all":          "Also list the addresses that were only refused.",
+	"device config forget --all":     "Every record, and the stored sections of every device (one of a device that is no longer registered too).",
+	"device config pull --server":    "The address the devices are told to authenticate against, for devices behind a translating firewall (not stored).",
+	"device config pull --source":    "The address this server reaches the devices from (not stored).",
+	"device config diff --server":    "The address the devices are told to authenticate against (with --pull; not stored).",
+	"device config diff --source":    "The address this server reaches the devices from (with --pull; not stored).",
+	"device config plan --server":    "The address the devices are told to authenticate against, for devices behind a translating firewall (not stored).",
+	"device config plan --source":    "The address this server reaches the devices from (not stored).",
+	"device config plan --exit-code": "Exit 2 when a device needs a change (and none could not be planned).",
+	"device config plan --pull":      "Read the devices first (takes the pull options); the plan is made from that pull.",
+	"device config plan --section":   "Only these sections: aaa, roles, mgmt-acl, snmp (the report still names the others).",
+	"device config plan --json":      "One object per device: the findings, the region, the cleanup and the back-out; values elided.",
 	"device add --hostname":          "The device's DNS name.",
 	"device add --description":       "A description of the device.",
 	"device ssh -X":                  "Forward X11 to this server's display (untrusted, as ssh -X).",
@@ -343,12 +361,17 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"snmp.timeout":                         {setWith("config snmp timeout"), "Seconds to wait for an answer (one retry)."},
 	"snmp.v3.auth":                         {setWith("config snmp v3-user"), "Authentication protocol of the v3 user."},
 	"snmp.v3.priv":                         {setWith("config snmp v3-user"), "Privacy protocol of the v3 user."},
+	"device.config.max_concurrency":        {setWith("config devices max-concurrency"), "The most devices device config pull reads at once; --concurrency can lower it for a run, never raise it."},
+	"device.config.transport":              {setWith("config devices transport"), "How device config pull reads a device: NETCONF where it answers and the ssh command line otherwise (auto), NETCONF only, or ssh only."},
+	"device.config.timeout":                {setWith("config devices timeout"), "Seconds one device may take in a pull, connect included."},
+	"device.config.confirm_timeout":        {setWith("config devices confirm-timeout"), "Minutes of the commit confirmed that ends the region of a Junos device config plan: the switch undoes the paste by itself after that long unless the one word commit is typed."},
 	"privileges.<group>":                   {setWith("group privilege"), "The Cisco priv-exec commands the group's level may run; unset: the shipped list."},
 	"commands.<group>":                     {setWith("group commands"), "The group's command rules, in order, ending in the catch-all; unset: the shipped rules."},
 	"aaa.order.<scope>":                    {setWith("scope aaa-order"), "Order of the methods in the Cisco aaa lines and the Junos authentication-order the scope's configurations emit."},
 	"exec_timeout.<scope>":                 {setWith("scope exec-timeout"), "Idle-session timeout in minutes the scope's device configurations set; 0: never."},
 	"tacacs_group.<scope>":                 {setWith("scope tacacs-group"), "The label of the Cisco aaa group server tacacs+ the scope's configuration names."},
 	"radius_group.<scope>":                 {setWith("scope radius-group"), "The label of the Cisco aaa group server radius the scope's configuration names."},
+	"cisco.source_interface.<scope>":       {setWith("config cisco source-interface"), "The interface the scope's Cisco devices source their TACACS+ and RADIUS requests from (ip tacacs source-interface, ip radius source-interface); unset: the standard renders and compares no such line, and the walkthrough prints it commented."},
 	"scope_auth_method.<scope>":            {setWith("scope auth-method"), "The protocol the scope's device configurations, new hosts and Linux scripts use when a command names none; unset: not decided (the scope's protocols filter, then the global default)."},
 	"scope_mgmt_acl.names.cisco.<scope>":   {setWith("scope mgmt-acl"), "The scope's own ACL name, in place of mgmt_acl.names.cisco."},
 	"scope_mgmt_acl.names.juniper.<scope>": {setWith("scope mgmt-acl"), "The scope's own filter name, in place of mgmt_acl.names.juniper."},
@@ -359,6 +382,10 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"wti_level.<group>":                    {setWith("group edit", "group add"), "The WTI access level of the group, in place of the one its priv-lvl band gives."},
 	"tier.<group>":                         {setWith("group edit", "group add"), "The tacctl tier of the group, in place of the one its priv-lvl band gives."},
 	"breakglass_scope.<scope>.users":       {setWith("scope breakglass"), "The break-glass local users the scope's device configurations create. Only the names and roles are kept; no credential is stored."},
+	"breakglass_hold.<device>.address":     {setWith("breakglass hold"), "The address the server does not answer while the hold stands; a device name's dots are written ~ in the key. The renderers take it out of every prefix and tagged address."},
+	"breakglass_hold.<device>.since":       {setWith("breakglass hold"), "When the hold was made (RFC 3339)."},
+	"breakglass_hold.<device>.by":          {setWith("breakglass hold"), "The user who held it."},
+	"breakglass_hold.<device>.reason":      {setWith("breakglass hold"), "Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the hold by tacctl breakglass release."},
 	"snmp_scope.<scope>.version":           {setWith("scope snmp"), "The scope's SNMP version; unset: snmp.version."},
 	"snmp_scope.<scope>.port":              {setWith("scope snmp"), "The scope's agent port; unset: snmp.port."},
 	"snmp_scope.<scope>.timeout":           {setWith("scope snmp"), "The scope's timeout in seconds; unset: snmp.timeout."},
@@ -379,7 +406,8 @@ var manKeyDefaults = map[string]string{
 var manPlaceholders = map[string]string{
 	"privileges.": "<group>", "commands.": "<group>", "wti_level.": "<group>", "tier.": "<group>",
 	"aaa.order.": "<scope>", "exec_timeout.": "<scope>", "tacacs_group.": "<scope>", "radius_group.": "<scope>",
-	"scope_auth_method.": "<scope>", "scope_mgmt_acl.names.cisco.": "<scope>",
+	"cisco.source_interface.": "<scope>",
+	"scope_auth_method.":      "<scope>", "scope_mgmt_acl.names.cisco.": "<scope>",
 	"scope_mgmt_acl.names.juniper.": "<scope>", "scope_mgmt_acl.permits.": "<scope>",
 }
 
@@ -400,6 +428,8 @@ func manTypeText(r conf.Rule) string {
 		return "one of " + strings.Join(r.Values, ", ")
 	case conf.TypeACLName:
 		return "name of 1 to 63 characters (a letter, then letters, digits, _ or -)"
+	case conf.TypeInterfaceName:
+		return "interface name in the long form IOS prints (" + strings.Join(conf.InterfaceTypes, ", ") + ", then the number, with / . : separators), such as Loopback0 or GigabitEthernet0/0; not an abbreviation such as lo0"
 	case conf.TypeCIDRList:
 		return "list of CIDRs"
 	case conf.TypeHostPort:
@@ -418,6 +448,12 @@ func manTypeText(r conf.Rule) string {
 		return "non-empty list of absolute command paths"
 	case conf.TypeBreakGlassList:
 		return "list of name:role entries, role one of " + strings.Join(conf.BreakGlassRoles, ", ") + ", at most " + strconv.Itoa(conf.MaxBreakGlassUsers)
+	case conf.TypeHoldAddress:
+		return "one IPv4 or IPv6 address, in its canonical form, without a prefix length"
+	case conf.TypeHoldSince:
+		return "RFC 3339 time"
+	case conf.TypeHoldText:
+		return "text of 1 to " + strconv.Itoa(conf.MaxHoldReason) + " characters (a user name for by)"
 	case conf.TypeSNMPClients:
 		return "list of IPv4 CIDRs"
 	case conf.TypeSNMPText:
@@ -501,6 +537,8 @@ func manConfigKeyRows(t *testing.T) []manKeyRow {
 		}
 		ph := manPlaceholders[f.Prefix]
 		switch {
+		case f.Rule.Tail != "" && f.Prefix == "breakglass_hold.":
+			add(f.Prefix+"<device>."+f.Rule.Tail, f.Rule, def)
 		case f.Rule.Tail != "":
 			add(f.Prefix+"<scope>."+f.Rule.Tail, f.Rule, def)
 		case f.Prefix == "junos.":

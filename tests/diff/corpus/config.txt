@@ -5,18 +5,18 @@
 # Run: tests/diff/run.sh config
 @fixture tacquito.minimal.yaml
 
-@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface
 config
-@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface
 config bogus
 config show
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config validate
-@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
+@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 config dump
-@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
+@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 config defaults
-@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
+@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 config defaults extra
 
 # get / get-list
@@ -53,7 +53,7 @@ config secret-min-length 20 ;; config secret-min-length
 config secret-min-length 15
 config secret-min-length 129
 config secret-min-length bad
-@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
+@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 config bcrypt-cost 10 ;; config dump
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config bcrypt-cost 10 ;; config validate
@@ -91,27 +91,27 @@ config allow list
 config allow bogus
 config allow add
 config allow add notacidr
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 config allow add 10.0.0.0/8,192.168.0.0/16,2001:db8::/32 ;; config allow list
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 config allow add 192.168.0.0/16,10.0.0.0/8 ;; config allow list
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 config allow add 10.0.0.0/8 ;; config allow remove 10.0.0.0/8 ;; config allow list
 config allow remove 10.0.0.0/8
 config allow clear <<< y
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 config allow add 10.0.0.0/8 ;; config allow clear <<< y ;; config allow list
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 config allow add 10.0.0.0/8 ;; config allow clear <<< n ;; config allow list
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 config allow add 10.0.0.0/8 ;; config allow clear
 config deny list
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 config deny add 10.66.0.0/16 ;; config deny list
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 config deny add 10.66.0.9/16 ;; config deny list
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 config deny add 10.66.0.0/16 ;; config allow add 10.0.0.0/8 ;; config validate
 config deny add notacidr
 config deny remove 10.66.0.0/16
@@ -141,15 +141,15 @@ config sudoers
 config sudoers show
 config sudoers bogus
 config sudoers remove
-@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK
+@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax
 config sudoers tiers
-@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK
+@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax
 config sudoers tiers show
 config sudoers tiers bogus
 
 # render
 config render
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 config render --force
 config render --now
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user
@@ -201,9 +201,9 @@ config diff ../../etc/passwd
 config restore nosuchid
 config restore ../../etc/passwd
 config restore a b
-@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface
 config frobnicate
-@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface
 config frobnicate extra
 config loglevel bogus
 config password-age abc
@@ -224,7 +224,7 @@ config get-list a b c
 config sudoers show extra
 config sudoers remove extra
 config sudoers tiers remove extra
-@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK
+@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax
 config sudoers tiers show extra
 config restore {TS} --bogus
 config diff {TS} extra
@@ -275,7 +275,7 @@ config sudoers install 'bad group' <<< y
 config sudoers install wheel extra <<< n
 # Unprivileged, the real 'install -o root' fails; 0.1.16 then exits under errexit and
 # leaves its mktemp copy of the drop-in in TMPDIR, 0.2.0 removes it (3.9 item 18).
-@known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind; 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK
+@known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind; 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax
 config sudoers tiers install
 @known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind
 config sudoers install wheel <<< y
@@ -283,7 +283,7 @@ config sudoers install wheel <<< y
 # the tunables shown and set, and their empty forms
 config bcrypt-cost ''
 config password-age ''
-@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
+@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 config secret-min-length 20 ;; config password-min-length 9 ;; config password-age 30 ;; config dump
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config loglevel debug ;; config loglevel debug ;; config validate ;; config show
@@ -310,7 +310,7 @@ config show
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config validate
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 config render ;; config validate
 @fixture legacy.fresh-install.yaml
 config show

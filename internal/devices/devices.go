@@ -318,6 +318,9 @@ type MgmtACL struct {
 type out struct {
 	w   io.Writer
 	err error
+	// ascii is set for a walkthrough that is pasted from (Cisco): nothing of
+	// its text is outside ASCII, the header's dash included.
+	ascii bool
 }
 
 func (o *out) write(s string) {
@@ -339,7 +342,11 @@ func (o *out) header(title, scope, note, other, instruction string) {
 	o.echo("")
 	o.echoE(ui.Bold + title + ui.NC + "  (scope: " + scope + note + ")")
 	if other != "" {
-		o.heading(ui.Yellow, "(other scopes: "+other+" — use --scope <name> to emit those)")
+		dash := "\u2014"
+		if o.ascii {
+			dash = "-"
+		}
+		o.heading(ui.Yellow, "(other scopes: "+other+" "+dash+" use --scope <name> to emit those)")
 	}
 	o.heading(ui.Yellow, instruction)
 	o.echo("--------------------------------------------")

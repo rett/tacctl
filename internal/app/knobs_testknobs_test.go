@@ -94,3 +94,35 @@ func TestTestRootReroots(t *testing.T) {
 		t.Errorf("paths %+v", a.Paths)
 	}
 }
+
+// The device knobs of the configuration pull: a loopback host:port to dial
+// and the password to log in with.
+func TestDeviceKnobs(t *testing.T) {
+	k, err := load(t, EnvTestDeviceDial+"=127.0.0.1:2222", EnvTestDevicePassword+"=fakedev-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k.DeviceDial() != "127.0.0.1:2222" || k.DevicePassword() != "fakedev-password" {
+		t.Errorf("dial %q, password %q", k.DeviceDial(), k.DevicePassword())
+	}
+	k, err = load(t, EnvTestDeviceDial+"=[::1]:830")
+	if err != nil || k.DeviceDial() != "[::1]:830" {
+		t.Errorf("ipv6 loopback: %q %v", k.DeviceDial(), err)
+	}
+	k, err = load(t, EnvTestDeviceDial+"=localhost:2222")
+	if err != nil || k.DeviceDial() != "localhost:2222" {
+		t.Errorf("localhost: %q %v", k.DeviceDial(), err)
+	}
+	// Anything that is not loopback is refused: a test knob must not be a
+	// way to send a login anywhere.
+	for _, bad := range []string{"192.0.2.10:22", "10.0.0.1:22", "example.net:22", "127.0.0.1", "127.0.0.1:", ":22", "garbage"} {
+		_, err := load(t, EnvTestDeviceDial+"="+bad)
+		if err == nil || !strings.Contains(err.Error(), EnvTestDeviceDial) {
+			t.Errorf("%q: err = %v", bad, err)
+		}
+	}
+	k, err = load(t)
+	if err != nil || k.DeviceDial() != "" || k.DevicePassword() != "" {
+		t.Errorf("unset: %q %q %v", k.DeviceDial(), k.DevicePassword(), err)
+	}
+}

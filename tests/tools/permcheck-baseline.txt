@@ -24,6 +24,27 @@ gotestviewer|exit||permit
 gotestviewer|logout||permit
 gotestviewer|ping|192.0.2.1|permit
 gotestviewer|traceroute|192.0.2.1|permit
+gotestviewer|ping|192.0.2.1 repeat 1000|permit
+gotestviewer|ping|192.0.2.1 size 1500 df-bit repeat 100 timeout 2|permit
+gotestviewer|ping|192.0.2.1 timeout 2 repeat 100 df-bit size 1500|permit
+gotestviewer|ping|192.0.2.1 size 1500 source Loopback0|permit
+gotestviewer|traceroute|192.0.2.1 probe 3 ttl 30 timeout 2|permit
+gotestviewer|ping||deny
+gotestviewer|ping|ip|deny
+gotestviewer|ping|ipv6|deny
+gotestviewer|ping|vrf MGMT ip|deny
+gotestviewer|ping|mpls|deny
+gotestviewer|ping|192.0.2.1 repeat 1001|deny
+gotestviewer|ping|192.0.2.1 repeat 100000|deny
+gotestviewer|ping|192.0.2.1 repeat 2147483647|deny
+gotestviewer|ping|192.0.2.1 timeout 0|deny
+gotestviewer|ping|192.0.2.1 size 10000|deny
+gotestviewer|ping|192.0.2.1 repeat 5 ; show run|deny
+gotestviewer|traceroute||deny
+gotestviewer|traceroute|ip|deny
+gotestviewer|traceroute|192.0.2.1 probe 11|deny
+gotestviewer|traceroute|192.0.2.1 timeout 0|deny
+gotestviewer|traceroute|192.0.2.1 ttl 256|deny
 gotestviewer|show|running-config view full|deny
 gotestviewer|show|tech-support|deny
 gotestviewer|show|startup-config|deny
@@ -60,18 +81,41 @@ gotestoperator|logout||permit
 gotestoperator|terminal|monitor|permit
 gotestoperator|ping|vrf MGMT 192.0.2.1 source Loopback0|permit
 gotestoperator|traceroute|mpls ipv4 10.0.0.1/32|permit
-gotestoperator|monitor|capture CAP interface Gi1 both|permit
-gotestoperator|monitor|capture CAP export tftp://192.0.2.9/c.pcap|permit
-gotestoperator|clear|counters|permit
-gotestoperator|clear|counters GigabitEthernet1|permit
-gotestoperator|clear|line vty 3|permit
-gotestoperator|clear|ip arp 192.0.2.7|permit
-gotestoperator|clear|arp-cache GigabitEthernet1|permit
-gotestoperator|clear|mac address-table dynamic interface Gi1/0/1|permit
+gotestoperator|ping|192.0.2.1|permit
+gotestoperator|traceroute|192.0.2.1|permit
+gotestoperator|ping|192.0.2.1 repeat 1000|permit
+gotestoperator|ping|192.0.2.1 size 1500 df-bit repeat 100 timeout 2|permit
+gotestoperator|ping|192.0.2.1 timeout 2 repeat 100 df-bit size 1500|permit
+gotestoperator|ping|192.0.2.1 size 1500 source Loopback0|permit
+gotestoperator|traceroute|192.0.2.1 probe 3 ttl 30 timeout 2|permit
+gotestoperator|ping||deny
+gotestoperator|ping|ip|deny
+gotestoperator|ping|ipv6|deny
+gotestoperator|ping|vrf MGMT ip|deny
+gotestoperator|ping|mpls|deny
+gotestoperator|ping|192.0.2.1 repeat 1001|deny
+gotestoperator|ping|192.0.2.1 repeat 100000|deny
+gotestoperator|ping|192.0.2.1 repeat 2147483647|deny
+gotestoperator|ping|192.0.2.1 timeout 0|deny
+gotestoperator|ping|192.0.2.1 size 10000|deny
+gotestoperator|ping|192.0.2.1 repeat 5 ; show run|deny
+gotestoperator|traceroute||deny
+gotestoperator|traceroute|ip|deny
+gotestoperator|traceroute|192.0.2.1 probe 11|deny
+gotestoperator|traceroute|192.0.2.1 timeout 0|deny
+gotestoperator|traceroute|192.0.2.1 ttl 256|deny
+gotestoperator|monitor|capture CAP interface Gi1 both|deny
+gotestoperator|monitor|capture CAP export tftp://192.0.2.9/c.pcap|deny
+gotestoperator|clear|counters|deny
+gotestoperator|clear|counters GigabitEthernet1|deny
+gotestoperator|clear|line vty 3|deny
+gotestoperator|clear|ip arp 192.0.2.7|deny
+gotestoperator|clear|arp-cache GigabitEthernet1|deny
 gotestoperator|ssh|-l oper 192.0.2.2|permit
 gotestoperator|telnet|192.0.2.2|permit
 gotestoperator|undebug|all|permit
 gotestoperator|show|running-config view full|deny
+gotestoperator|show|tech-support|deny
 gotestoperator|show|startup-config|deny
 gotestoperator|show|derived-config|deny
 gotestoperator|show|key chain|deny
@@ -82,6 +126,8 @@ gotestoperator|show|archive log config all|deny
 gotestoperator|clear|arp-cache|deny
 gotestoperator|clear|ip arp|deny
 gotestoperator|clear|mac address-table dynamic|deny
+gotestoperator|clear|mac address-table dynamic interface Gi1/0/1|deny
+gotestoperator|clear|mac address-table|deny
 gotestoperator|clear|ip route *|deny
 gotestoperator|clear|ip bgp *|deny
 gotestoperator|clear|ip bgp 192.0.2.1 soft in|deny
@@ -107,7 +153,16 @@ gotestengineer|copy|running-config flash:backup.cfg|permit
 gotestengineer|copy|running-config tftp://192.0.2.9/x|permit
 gotestengineer|copy|flash:cap.pcap tftp://192.0.2.9/cap.pcap|permit
 gotestengineer|clear|ip bgp 192.0.2.1 soft in|permit
+gotestengineer|clear|mac address-table dynamic|permit
+gotestengineer|clear|mac address-table dynamic interface Gi1/0/1|permit
 gotestengineer|clear|counters|permit
+gotestengineer|clear|line vty 3|permit
+gotestengineer|clear|ip arp 192.0.2.7|permit
+gotestengineer|clear|arp-cache GigabitEthernet1|permit
+gotestengineer|monitor|capture CAP interface Gi1 both|permit
+gotestengineer|ping|192.0.2.1 repeat 1000 size 1500|permit
+gotestengineer|traceroute|192.0.2.1 probe 100|permit
+gotestengineer|undebug|all|permit
 gotestengineer|no|shutdown|permit
 gotestengineer|interface|GigabitEthernet1|permit
 gotestengineer|ip|route 0.0.0.0 0.0.0.0 192.0.2.1|permit

@@ -60,3 +60,36 @@ func TestPresetNotice(t *testing.T) {
 		t.Errorf("customised engineer: %q", got)
 	}
 }
+
+// An install whose stored operator settings still carry what 0.2.5 removed
+// gets the red notice naming each setting and its fix; the shipped values
+// and a customised list without a removed command do not.
+func TestOperatorNotice(t *testing.T) {
+	notice := func(text string) string {
+		path := filepath.Join(t.TempDir(), "tacctl.yaml")
+		if text != "" {
+			if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var out bytes.Buffer
+		c := conf.Load(path, conf.DefaultBackends)
+		h := &Host{Env: &Env{Env: &backend.Env{Conf: c, Out: ui.Output{Stdout: &out, Stderr: &out}}}}
+		h.operatorNotice()
+		return out.String()
+	}
+	if got := notice(""); got != "" {
+		t.Errorf("a clean install: %q", got)
+	}
+	got := notice("privileges:\n  operator:\n    - clear line\n    - undebug all\n" +
+		"commands:\n  operator:\n    - { name: clear, action: permit }\n    - { name: \"*\", action: deny }\n")
+	for _, want := range []string{ui.Red, "privileges.operator (clear line)", "commands.operator (clear)",
+		"tacctl group privilege reset operator", "tacctl group commands reset operator", "tacctl device config plan <device>"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("notice lacks %q:\n%s", want, got)
+		}
+	}
+	if got := notice("privileges:\n  operator:\n    - undebug all\n    - show version\n"); got != "" {
+		t.Errorf("a customised list with no removed command: %q", got)
+	}
+}

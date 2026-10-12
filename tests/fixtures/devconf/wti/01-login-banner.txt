@@ -1,0 +1,27 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# command: (login as the account, before <CR>)
+# level: SuperUser
+# source: captured
+# captured: 2026-10-10
+# sanitised: names, addresses, communities, banner, port names
+# ---
+*******************************************************
+*                   --WARNING--                       *
+*                                                     *
+*           Example Telephone Cooperative             *
+*                     "EXAMPLE"                       *
+*                                                     *
+*         This equipment is privately owned.          *
+*         Unauthorized Access is Prohibited!          *
+*       All access to this equipment is logged.       *
+*      Unauthorized users disconnect immediately.     *
+*                                                     *
+*           Violators will be prosecuted!             *
+*                                                     *
+*           Leave this site immediately.              *
+*******************************************************
+
+
+Do you wish to continue? (<CR> to continue, /X to exit)

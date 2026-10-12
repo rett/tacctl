@@ -1,0 +1,18 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 29 > 13
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+13
+
+TIMER TIMEOUT:
+
+Enter Timer Timeout.
+Enter <ESC> to exit.
+
+
+5
+---

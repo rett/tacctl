@@ -31,13 +31,88 @@ type Device struct {
 	Description string
 	// Location is the optional place the device is (SNMP location in the
 	// walkthroughs, 'tacctl device location'); empty is not set.
-	Location  string
+	Location string
+	// LegacySSH opts in to the legacy ssh algorithms (SHA-1 key exchange,
+	// CBC ciphers, ssh-rsa), and nothing else (D113).
 	LegacySSH bool
+	// ConfigSyntax is the Cisco configuration syntax the device is
+	// rendered and compared in (D113, 'tacctl device config-syntax'):
+	// SyntaxIOS12 or SyntaxModern; empty is auto (the last pull's version
+	// line says), and is the only value never written to the file.
+	ConfigSyntax string
 	// Ack are the acknowledged notice kinds.
 	Ack []string
 	// HostKeys are the pinned host keys ('<type> <base64>', hostkey.go),
 	// in type order; known_hosts is generated from them.
 	HostKeys []string
+	// SNMP is the device's own SNMP settings (D72 of docs/plans/0.2.4-
+	// plan.md, 'tacctl device snmp'): the device's value wins over its
+	// scope's and the default's. Its credentials are not here (they are
+	// StateDir/snmp/devices/<name>.yaml, internal/snmpcred). The zero value
+	// is "nothing of its own"; the file has the map only when it is set.
+	SNMP SNMP
+}
+
+// SNMP is a device's own SNMP settings: the non-secret ones. Zero is "not
+// set here" for every field.
+type SNMP struct {
+	// Version is v2c or v3.
+	Version string
+	// Port is the agent's UDP port, Timeout the wait for an answer in
+	// seconds.
+	Port, Timeout int
+	// Clients are the allowed client ranges as stored (IPv4 CIDRs in
+	// canonical form, in the order given); the device's list replaces its
+	// scope's.
+	Clients []string
+}
+
+// The bounds of a device's SNMP settings: the scope's (internal/snmp's
+// MinTimeout and MaxTimeout, cidr.MaxSNMPClients; a test holds them equal).
+const (
+	SNMPMinTimeout = 1
+	SNMPMaxTimeout = 10
+	// SNMPVersionV2c and SNMPVersionV3 are the versions a device may set.
+	SNMPVersionV2c = "v2c"
+	SNMPVersionV3  = "v3"
+)
+
+// Empty reports whether nothing is set.
+func (s SNMP) Empty() bool {
+	return s.Version == "" && s.Port == 0 && s.Timeout == 0 && len(s.Clients) == 0
+}
+
+// Clone is a deep copy.
+func (s SNMP) Clone() SNMP {
+	s.Clients = slices.Clone(s.Clients)
+	return s
+}
+
+// validate is every field rule of the settings.
+func (s SNMP) validate() error {
+	if s.Version != "" && s.Version != SNMPVersionV2c && s.Version != SNMPVersionV3 {
+		return fail("Invalid snmp version '" + s.Version + "': v2c or v3.")
+	}
+	if s.Port != 0 && (s.Port < 1 || s.Port > 65535) {
+		return fail("Invalid snmp port " + strconv.Itoa(s.Port) + ": expected 1-65535.")
+	}
+	if s.Timeout != 0 && (s.Timeout < SNMPMinTimeout || s.Timeout > SNMPMaxTimeout) {
+		return fail("Invalid snmp timeout " + strconv.Itoa(s.Timeout) + ": expected " + strconv.Itoa(SNMPMinTimeout) + "-" + strconv.Itoa(SNMPMaxTimeout) + ".")
+	}
+	if len(s.Clients) > cidr.MaxSNMPClients {
+		return fail("At most " + strconv.Itoa(cidr.MaxSNMPClients) + " snmp client ranges.")
+	}
+	seen := map[string]bool{}
+	for _, c := range s.Clients {
+		if why := cidr.ClientProblem(c); why != "" {
+			return fail("Invalid snmp client '" + c + "': it " + why + ".")
+		}
+		if seen[c] {
+			return fail("The snmp client '" + c + "' is listed twice.")
+		}
+		seen[c] = true
+	}
+	return nil
 }
 
 // The defaults and limits of the fields.
@@ -51,6 +126,29 @@ const (
 	VendorLinux = "linux"
 	VendorOther = "other"
 )
+
+// The values of a device's configuration syntax setting (D113). SyntaxAuto
+// is the word for no setting: it is never stored.
+const (
+	SyntaxAuto   = "auto"
+	SyntaxIOS12  = "ios12"
+	SyntaxModern = "modern"
+)
+
+// SyntaxWords are the words 'device config-syntax' takes.
+var SyntaxWords = []string{SyntaxAuto, SyntaxIOS12, SyntaxModern}
+
+// ValidateConfigSyntax checks the word of a configuration syntax setting
+// (auto, ios12 or modern) and returns the stored form: "" for auto.
+func ValidateConfigSyntax(s string) (string, error) {
+	switch s {
+	case SyntaxAuto, "":
+		return "", nil
+	case SyntaxIOS12, SyntaxModern:
+		return s, nil
+	}
+	return "", fail("Invalid configuration syntax '" + s + "'. Use: " + strings.Join(SyntaxWords, ", ") + ".")
+}
 
 // Vendors are the vendors a registry entry may have.
 var Vendors = []string{"cisco", "juniper", "wti", VendorOther}
@@ -229,6 +327,17 @@ func (d Device) validate() error {
 	if err := ValidateDescription(d.Description); err != nil {
 		return err
 	}
+	if d.ConfigSyntax != "" {
+		if s, err := ValidateConfigSyntax(d.ConfigSyntax); err != nil || s == "" {
+			return fail("Invalid configuration syntax '" + d.ConfigSyntax + "'. Use: ios12 or modern.")
+		}
+		// A Cisco setting only: a device of another vendor has no syntax
+		// to set (the verb and 'device add' refuse it; a file is checked
+		// here, on load, import and save alike).
+		if d.Vendor != "cisco" {
+			return fail("config_syntax '" + d.ConfigSyntax + "' is a Cisco setting; the vendor is '" + d.Vendor + "'.")
+		}
+	}
 	if d.Location != "" {
 		if err := ValidateLocation(d.Location); err != nil {
 			return err
@@ -244,7 +353,7 @@ func (d Device) validate() error {
 			return fail("Unknown notice kind '" + k + "'.")
 		}
 	}
-	return nil
+	return d.SNMP.validate()
 }
 
 func mustAddr(s string) string {
@@ -256,6 +365,7 @@ func mustAddr(s string) string {
 func (d Device) Clone() Device {
 	d.Ack = slices.Clone(d.Ack)
 	d.HostKeys = slices.Clone(d.HostKeys)
+	d.SNMP = d.SNMP.Clone()
 	return d
 }
 

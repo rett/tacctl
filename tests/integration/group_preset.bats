@@ -20,8 +20,8 @@ setup() {
     run "$TACCTL_BIN_SCRIPT" group preset roles --dry-run
     assert_success
     assert_output --partial "readonly (viewer)"
-    assert_output --partial "Junos deny-commands (112/241 bytes)"
-    assert_output --partial "Junos deny-commands (226/241 bytes)"
+    assert_output --partial "Junos deny-commands (136/241 bytes)"
+    assert_output --partial "Junos deny-commands (133/241 bytes)"
     assert_output --partial "Junos deny-commands (219/241 bytes)"
     assert_output --partial "create (priv-lvl 15, class EN-CLASS)"
     assert_output --partial "tacctl tier engineer"

@@ -1,0 +1,20 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# command: /N, 29, 7 (fallback local): a three-choice pick
+# level: SuperUser
+# source: captured
+# captured: 2026-10-10
+# sanitised: names, addresses, communities, banner, port names
+# ---
+7
+
+FALLBACK LOCAL:
+
+1. Off
+2. On (All failures)
+3. On (Transport failure)
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

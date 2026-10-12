@@ -21,10 +21,10 @@ Commands:
       -y, --yes                         Answer yes to the confirmations
   upgrade [--branch <name>]             Pull latest source, rebuild, update scripts and every enabled backend
   uninstall [-y|--yes]                  Remove tacctl, its backends' services and all associated files
-  rollback <version> [options]          Prepare the state for the release before this one (0.2.2): a dry run unless --apply
-      --apply                           Take a snapshot, then convert the files 0.2.2 cannot read and re-render
+  rollback <version> [options]          Prepare the state for the release before this one (0.2.3): a dry run unless --apply
+      --apply                           Take a snapshot, then convert the files 0.2.3 cannot read (tacctl.yaml, console.yaml, devices.yaml, sudoers)
       --yes                             Acknowledge the warnings that --apply refuses to go on without
-      --hosts                           Also take the engineers' sudo off the enrolled Linux hosts
+      --hosts                           Accepted; the hosts need nothing for this target (no host is synced)
   status                                Show service health, stats, and recent errors (per backend)
   passwd                                Change your own password (asks for the current one)
   user <subcommand>                     User management (list, add, remove, passwd, scope, ...)
@@ -32,6 +32,7 @@ Commands:
   scope <subcommand>                    Scope management (named CIDR + shared-secret bundles)
   host <subcommand>                     Linux hosts: enroll, sync, unenroll TACACS+ or RADIUS login over SSH
   device <subcommand>                   Device registry: list, add, scan, discover, check, host keys (ssh-config)
+  breakglass <subcommand>               Break-glass hold: make the server stop answering one device (hold, release, list)
   ssh <name|address> [-p <port>]        Open an ssh session to a registered device or enrolled host, as you
       -p <port>                         Connect to this port instead of the registered one
   shell [--idle <min>] [-c <line>]      An interactive tacctl prompt with history and completion
@@ -39,6 +40,7 @@ Commands:
       -c <line>                         Run one line and exit
       --no-history                      Keep no history file for this session
       --space-completion on|off         A typed space completes a fixed word and never doubles (default on)
+      --password-cache                  Keep your network password in this shell's memory (when your tier's policy allows)
   console <subcommand>                  Login console: tiers, per-user overrides, settings (show, tiers, user, ...)
   backend <subcommand>                  Auth backends: list, status, enable <id>, disable <id>
   store <subcommand>                    The canonical store: show, import, rollback
@@ -167,7 +169,7 @@ Usage:
   tacctl group commands reset <group> [--dry-run] [--yes]         Revert the rules to the shipped defaults (diff, confirms; superuser only)
       --dry-run                                                   (reset) Show the difference; write nothing
       --yes                                                       (reset) Do not ask
-  tacctl group commands seed [<group>] [--force]                  Re-apply legacy seed set (recovery tool)
+  tacctl group commands seed [<group>] [--force]                  Re-apply the shipped rules (recovery tool)
       --force                                                     (seed) Overwrite a group that already has rules
 
 <name> is compared literally to the TACACS+ cmd= word. --match
@@ -302,7 +304,7 @@ Usage:
   tacctl scope auth-method <scope> [tacacs|radius|clear]   Protocol this scope's device configs and host enrollments use when the command names none
   tacctl scope mgmt-acl <scope> list|add|remove|clear      Per-scope permit list (fallback: global mgmt_acl.permits)
   tacctl scope mgmt-acl <scope> cisco-name|juniper-name [name]  Per-scope ACL / filter name (defaults VTY-ACL / MGMT-ACL)
-  tacctl scope breakglass <scope> list|add <name>|remove <name>  Per-scope break-glass local users in the device walkthroughs (names and roles only; no credential is stored)
+  tacctl scope breakglass <scope> list|add <name>|remove <name>  Per-scope break-glass local users in the device walkthroughs (names and roles only; no credential is stored): the accounts 'tacctl breakglass hold' makes usable
       --role <role>                                        (add) admin (default), operator or readonly
   tacctl scope snmp <scope> show|version|community|v3-user|clients|contact|port|timeout|clear|test
                                                            SNMP of a scope: credentials, allowed clients, contact (default beneath: tacctl config snmp)
@@ -389,12 +391,13 @@ Subcommands:
   mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits
   mgmt-acl cisco-name [name]           Show or set the emitted Cisco ACL name (default VTY-ACL)
   mgmt-acl juniper-name [name]         Show or set the emitted Juniper filter name (default MGMT-ACL)
+  cisco source-interface [<scope> [<interface>|none]]  Show or set the interface a scope's Cisco devices source their server requests from (the full name IOS prints: Loopback0, GigabitEthernet0/0)
   cisco   [--scope <name>] [--legacy] [--protocol tacacs|radius]  Show working Cisco device configuration for a scope (--legacy = IOS 12.x syntax; --protocol radius = RADIUS backend, default tacacs)
   juniper [--scope <name>] [--protocol tacacs|radius]             Show working Juniper device configuration for a scope
   wti     [--scope <name>] [--protocol tacacs|radius]             Show step-by-step WTI console-server (v8.x serial menu) setup for a scope (RADIUS: not verified on a unit)
       --scope <name>                   (cisco, juniper, wti) The scope whose server address and secret go in (default: the default scope)
       --protocol tacacs|radius         (cisco, juniper, wti) The backend the device uses (default: the scope's auth-method, else its only protocol, else tacacs)
-      --legacy                         (cisco) IOS 12.x syntax
+      --legacy                         (cisco) The IOS 12.x syntax, whatever the --name device's config-syntax says
       --staging <bench-ip>             (cisco, juniper, wti, with --scope) Provisioned off-site: the bench address joins the scope as a
                                        /32 (its secret and users) until the device is seen in place (tacctl scope staging)
       --name <device>                  (cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step;
@@ -406,6 +409,7 @@ Subcommands:
       --snmp-location <text>           (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location)
   linux   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
   snmp    show|community|v3-user|port|timeout|clear|test  SNMP for the name hint of 'device add' (sysName)
+  devices [show|max-concurrency|transport|timeout|confirm-timeout] [value]  How 'device config pull' reads the devices (default 8 at once, auto, 90 s) and the confirm timeout of 'plan' (5 min)
   branch [name]                        Show or change the tacctl repo branch
 
 Examples:
@@ -417,6 +421,7 @@ Examples:
   tacctl config cisco --scope prod
   tacctl config cisco --scope prod --legacy   # legacy IOS 12.x syntax
   tacctl config cisco --scope prod --protocol radius
+  tacctl config cisco source-interface prod Loopback0
   tacctl config wti --scope prod
   tacctl config wti --scope prod --protocol radius
 

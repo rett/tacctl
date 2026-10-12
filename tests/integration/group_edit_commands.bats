@@ -161,11 +161,19 @@ list_rules() {
     run awk '/^operator: &operator/,/^  accounter:/' "$TACCTL_CONFIG"
     assert_output --partial $'name: "show"\n      action: *action_permit'
     assert_output --partial 'name: "*"'
-    assert_output --partial 'match: ["^(?:^(capture)( .*)?$)$"]'
+    # ping and traceroute: a deny of the interactive forms (a protocol keyword
+    # with no host) in front of the permit that bounds the one-line options
+    assert_output --partial 'match: ["^(?:^((vrf \\S+ )?(ip|ipv6|mpls|clns|tag|appletalk|ipx|srb|decnet|vines|oldvines|xns|apollo)( (source|size|df-bit|repeat|timeout|data|validate)( .*)?)?|vrf \\S+)$)$"]'
+    assert_output --partial 'match: ["^(?:^((vrf \\S+ )?(ip |ipv6 )?\\S+( (source \\S+|size [1-9]\\d?\\d?\\d?|df-bit|repeat ([1-9]\\d?\\d?|1000)|timeout ([1-9]|10)|data (0x)?[0-9a-fA-F]+|validate))*|mpls (ipv4|pseudowire) \\S+( \\d+)?)$)$"]'
+    assert_output --partial 'match: ["^(?:^((vrf \\S+ )?(ip|ipv6|mpls|clns|tag|appletalk|ipx|srb|decnet|vines|oldvines|xns|apollo)( (source|numeric|probe|ttl|timeout)( .*)?)?|vrf \\S+)$)$"]'
+    assert_output --partial 'match: ["^(?:^((vrf \\S+ )?(ip |ipv6 )?\\S+( (source \\S+|numeric|probe ([1-9]|10)|timeout ([1-9]|10)|ttl ([1-9]\\d?|1\\d\\d|2[0-4]\\d|25[0-5])( ([1-9]\\d?|1\\d\\d|2[0-4]\\d|25[0-5]))?))*|mpls (ipv4|pseudowire) \\S+( \\d+)?)$)$"]'
+    # an operator has no rule for clear or monitor: the catch-all denies them
+    refute_output --partial 'name: "clear"'
+    refute_output --partial 'name: "monitor"'
     assert_output --partial 'match: ["^(?:^(running-config view full)( .*)?$)$"]'
     refute_output --partial '"^show'
     run grep -c 'match: \["' <(awk '/^operator: &operator/,/^  accounter:/' "$TACCTL_CONFIG")
-    assert_output "3"
+    assert_output "5"
 }
 
 @test "group commands add: refuses a comma in --match (the rule line form would split it); \\x2c works" {
@@ -251,12 +259,12 @@ list_rules() {
 }
 
 @test "group commands remove: drops a named rule" {
-    run "$TACCTL_BIN_SCRIPT" group commands remove operator ping
+    run "$TACCTL_BIN_SCRIPT" group commands remove operator telnet
     assert_success
-    assert_output --partial "Removed rule #4 'ping' (permit, match=[]) from group 'operator'."
+    assert_output --partial "Removed rule #10 'telnet' (permit, match=[]) from group 'operator'."
 
     run "$TACCTL_BIN_SCRIPT" group commands list operator
-    refute_output --partial 'ping'
+    refute_output --partial 'telnet'
 }
 
 @test "group commands remove: refuses several rules of a name without a selector" {
@@ -319,7 +327,7 @@ list_rules() {
     assert_output --regexp '# +NAME +ACTION +MATCH'
     assert_output --regexp '1 +show +deny +\^\(running-config view full\)'
     assert_output --regexp '2 +show +permit'
-    assert_output --regexp '6 +terminal +permit'
+    assert_output --regexp '8 +terminal +permit'
     assert_output --regexp '14 +\* \(catchall\) +deny'
 }
 

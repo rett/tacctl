@@ -1,0 +1,26 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# command: /N, then 25
+# level: SuperUser
+# source: captured
+# captured: 2026-10-10
+# sanitised: names, addresses, communities, banner, port names
+# ---
+25
+
+SNMP ACCESS: [eth0] IPv4
+
+1. Enable:                 On
+2. Version:                V1/V2 Only
+3. Read Only:              Yes
+4. System Name:            wti.site.exam...
+5. Contact:                Example NOC
+6. SNMP Location:          Example City
+7. Read-Only Community:    ro-community
+8. Read/Write Community:   rw-community
+9. V3 Users
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

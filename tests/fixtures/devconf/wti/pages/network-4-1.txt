@@ -1,0 +1,22 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 4 > 1
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+1
+
+DHCP Client: [eth0] IPv4
+
+1.  Enable:                      Off
+2.  Host Name:                   (undefined)
+3.  Lease Time:                  Off
+4.  Obtain DNS addresses auto:   On
+5.  DNS Server Update:           Off
+6.  Default Gateway:             On
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

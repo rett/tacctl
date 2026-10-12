@@ -97,7 +97,9 @@ func cutField2(text string) string {
 // restart is every listener (the instances are PartOf= and WantedBy= it),
 // and for is-active, since and pid the default listener's process; with
 // one, it is on that listener's instance only. A changed config is always
-// followed by a restart: tacquito has no reload of its own.
+// followed by a restart: tacquito has no reload of its own. A restart
+// reports its outcome and, when it failed, returns a *backend.RestartError
+// naming the command that restarts it.
 func (b *Backend) Service(ctx context.Context, action backend.ServiceAction, listener string) (string, error) {
 	unit := Service
 	if listener != "" && listener != "default" {
@@ -105,16 +107,19 @@ func (b *Backend) Service(ctx context.Context, action backend.ServiceAction, lis
 	}
 	switch action {
 	case backend.ServiceRestart, backend.ServiceReload:
+		var failed error
 		if b.quiet(ctx, "restart", unit) == 0 {
 			b.out().Info("Service restarted.")
 		} else {
-			b.out().Warn("Service restart failed — run: sudo systemctl restart " + unit)
+			cmd := "sudo systemctl restart " + unit
+			b.out().Warn("Service restart failed — run: " + cmd)
+			failed = &backend.RestartError{Command: cmd}
 		}
 		// A render may have added or removed a listener.
 		if unit == Service {
 			b.instancesSync(ctx)
 		}
-		return "", nil
+		return "", failed
 	case backend.ServiceStart, backend.ServiceStop:
 		return "", statusError(b.run(ctx, string(action), unit), "systemctl "+string(action)+" "+unit)
 	case backend.ServiceEnable, backend.ServiceDisable:

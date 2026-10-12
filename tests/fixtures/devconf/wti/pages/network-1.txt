@@ -1,0 +1,18 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 1
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+1
+
+IP ADDRESS OPTIONS: [eth0] IPv4
+
+1. IP Address Addr:    198.51.100.112
+2. Public IP Address:  (undefined)
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

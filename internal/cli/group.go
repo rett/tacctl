@@ -81,7 +81,7 @@ func groupCmd(inv *invocation) *cobra.Command {
 		withRun(verb("add <group> <name> [--match <regex>]... [--action permit|deny]", "Add a rule"), sub(inv.groupCommands, "add")),
 		withRun(verb("remove <group> <name>", "Drop a rule"), sub(inv.groupCommands, "remove")),
 		withRun(verb("reset <group> [--dry-run] [--yes]", "Revert the rules to the shipped defaults (diff, confirms)"), sub(inv.groupCommands, "reset")),
-		withRun(verb("seed [<group>] [--force]", "Re-apply legacy seed set (recovery tool)"), sub(inv.groupCommands, "seed")),
+		withRun(verb("seed [<group>] [--force]", "Re-apply the shipped rules (recovery tool)"), sub(inv.groupCommands, "seed")),
 	)
 	cmds.RunE = n(inv.groupCommands)
 	priv := verb("privilege {list|add|remove|reset|seed} <group> ...", "Per-group Cisco priv-exec mappings",

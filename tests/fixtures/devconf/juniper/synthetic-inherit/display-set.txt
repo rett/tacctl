@@ -1,0 +1,21 @@
+# vendor: juniper
+# os: Junos 25.4 (synthetic)
+# transport: ssh
+# command: show configuration | display inheritance no-comments | display set
+# source: reference
+# captured: 2026-10-09
+# ---
+set version 25.4R1-S2.3
+set groups GLOBAL system tacplus-server 192.0.2.10 secret "$9$EXAMPLEEXAMPLE"
+set groups GLOBAL system tacplus-server 192.0.2.10 single-connection
+set groups GLOBAL system login message "example banner"
+set apply-groups GLOBAL
+set system host-name example-router
+set system authentication-order password
+set system authentication-order tacplus
+set system tacplus-server 192.0.2.10 secret "$9$EXAMPLEEXAMPLE"
+set system tacplus-server 192.0.2.10 single-connection
+set system login message "example banner"
+set system accounting events login
+set system accounting events change-log
+set system accounting destination tacplus

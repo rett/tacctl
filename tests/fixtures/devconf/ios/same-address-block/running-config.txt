@@ -1,0 +1,101 @@
+# vendor: cisco
+# os: IOS 15.6(2)T (the shape a real 15.6 lab router had after an earlier walkthrough: a named server block of another name at the standard's address, the group naming it)
+# transport: ssh
+# command: show running-config
+# source: synthetic (documentation addresses)
+# assumptions: [S] IOS refuses a second server block with the same address and key, silently; [A] the rest of the text is the reference-lab shape
+# captured: 2026-10-11
+# ---
+Building configuration...
+
+Current configuration : 4821 bytes
+!
+! Last configuration change at 10:11:12 UTC Fri Oct 9 2026 by admin
+!
+version 15.2
+service timestamps debug datetime msec
+service password-encryption
+!
+hostname sw1.example.net
+!
+boot-start-marker
+boot-end-marker
+!
+enable secret 9 $9$EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE
+!
+aaa new-model
+!
+aaa group server tacacs+ TACACS-GROUP
+ server name OLD-TACACS
+!
+aaa authentication login default local group TACACS-GROUP
+aaa authorization exec default local group TACACS-GROUP if-authenticated
+aaa authorization commands 1 default local group TACACS-GROUP
+aaa authorization commands 7 default local group TACACS-GROUP
+aaa authorization commands 15 default local group TACACS-GROUP
+aaa authorization config-commands
+aaa accounting exec default start-stop group TACACS-GROUP
+aaa accounting commands 1 default start-stop group TACACS-GROUP
+aaa accounting commands 5 default start-stop group TACACS-GROUP
+aaa accounting commands 7 default start-stop group TACACS-GROUP
+!
+aaa session-id common
+!
+username lab-admin privilege 15 secret 9 $9$EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE
+username lab-ops privilege 7 secret 9 $9$EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE
+!
+ip tacacs source-interface Loopback0
+tacacs server OLD-TACACS
+ address ipv4 192.0.2.10
+ key 7 0703204E031A1C0605171F41547B79777C6663754B5E170102525C5E
+ single-connection
+ timeout 5
+!
+privilege exec level 1 show running-config
+privilege exec level 1 show
+privilege exec all level 7 ping
+privilege exec all level 7 traceroute
+privilege exec all level 7 monitor capture
+privilege exec level 7 clear counters
+privilege exec level 7 clear line
+privilege exec level 7 clear ip arp
+privilege exec level 7 clear ip
+privilege exec level 7 clear arp-cache
+privilege exec level 7 clear mac address-table dynamic
+privilege exec level 7 clear mac address-table
+privilege exec level 7 clear mac
+privilege exec level 7 clear
+privilege exec level 7 undebug all
+!
+ip access-list standard VTY-ACL
+ permit 192.0.2.10
+ permit 198.51.100.0 0.0.0.255
+ permit 192.0.2.0 0.0.0.255
+ deny   any log
+ip access-list standard TACCTL-SNMP
+ permit 192.0.2.10
+ permit 198.51.100.0 0.0.0.255
+ deny   any
+!
+snmp-server community example-community RO TACCTL-SNMP
+snmp-server community other-example RO TACCTL-SNMP
+snmp-server location Rack 4, DC1
+snmp-server contact NOC <noc@example.net>
+snmp-server enable traps config
+snmp-server host 192.0.2.50 version 2c example-trap-community
+!
+banner motd ^C
+% Authorized users only
+username not-a-user privilege 15 secret 0 notarealsecret
+^C
+!
+line con 0
+ exec-timeout 60 0
+line vty 0 4
+ access-class VTY-ACL in
+ transport input ssh
+line vty 5 15
+ access-class VTY-ACL in
+ transport input ssh
+!
+end

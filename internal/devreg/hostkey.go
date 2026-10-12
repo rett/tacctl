@@ -2,10 +2,12 @@ package devreg
 
 // Host-key pinning (docs/plans/operator-console.md 3.7): the keys a device
 // offers are read with ssh-keyscan (through the runner, as root, outbound
-// only, no authentication), pinned in devices.yaml as '<type> <base64>', and
-// shown as the SHA256 fingerprints ssh prints. Fingerprints are computed
-// here with the standard library: base64 (unpadded) of the SHA-256 of the
-// key blob, as 'ssh-keygen -l' does.
+// only, no authentication; for a legacy-ssh device, which ssh-keyscan cannot
+// negotiate with, the built-in client is the fallback), pinned in
+// devices.yaml as '<type> <base64>', and shown as the SHA256 fingerprints
+// ssh prints. Fingerprints are computed here with the standard library:
+// base64 (unpadded) of the SHA-256 of the key blob, as 'ssh-keygen -l'
+// does.
 
 import (
 	"bytes"
@@ -218,11 +220,13 @@ func CrossCheckKeys(session, scan []HostKey) CrossCheck {
 
 // KeyscanCmd is the ssh-keyscan of a device at address and port. Every key
 // type tacctl pins is asked for; a device with legacy-ssh is asked for the
-// ssh-rsa type by its algorithm name too. ssh-keyscan offers ssh-rsa
-// signatures for the rsa type already, but not the SHA-1 key exchanges old
-// IOS needs: whether a legacy unit answers at all is to be confirmed in the
-// 0.2.1 lab acceptance (WP6.11); when it does not, '--no-host-key' and a
-// later 'tacctl device hostkey <name> set SHA256:<fp>' remain.
+// ssh-rsa type by its algorithm name too, which only makes ssh-keyscan offer
+// the SHA-1 signature: it still cannot do the SHA-1 key exchanges and CBC
+// ciphers old IOS needs, so it reads nothing from such a device (ErrNoAnswer
+// after its banner). For a legacy-ssh device Scan therefore falls back to a
+// KeyFallback, the built-in ssh client (internal/devssh), which negotiates
+// them; '--no-host-key' and a later 'tacctl device hostkey <name> set
+// SHA256:<fp>' remain for a device neither can read.
 func KeyscanCmd(address string, port int, legacy bool) execx.Cmd {
 	types := "ed25519,ecdsa,rsa"
 	if legacy {
@@ -240,9 +244,42 @@ func KeyscanCmd(address string, port int, legacy bool) execx.Cmd {
 // port, or offered no key type tacctl pins.
 var ErrNoAnswer = errors.New("no host key could be read")
 
-// Scan reads the host keys address offers on port. A device that does not
-// answer is ErrNoAnswer; ssh-keyscan missing is an error that says so.
+// KeyFallback reads the host keys at address and port another way than
+// ssh-keyscan: the built-in ssh client, which negotiates the algorithms of a
+// legacy-ssh device. It is a parameter (the cli hands in the real one, a
+// test its own) so that this package never dials. Keys it returns are
+// ordinary HostKeys; an error, or none, leaves the ssh-keyscan outcome.
+type KeyFallback func(ctx context.Context, address string, port int) ([]HostKey, error)
+
+// Scan reads the host keys address offers on port with ssh-keyscan. A
+// device that does not answer is ErrNoAnswer; ssh-keyscan missing is an
+// error that says so.
 func Scan(ctx context.Context, r execx.Runner, address string, port int, legacy bool) ([]HostKey, error) {
+	return ScanWith(ctx, r, address, port, legacy, nil)
+}
+
+// ScanWith is Scan with a fallback: for a legacy device, when ssh-keyscan
+// reads no key (it answered nothing, or could not be run) the fallback is
+// tried, and its keys are returned as ssh-keyscan's would be. When both
+// fail the error is ssh-keyscan's, so a caller's ErrNoAnswer handling is
+// unchanged; a cancelled context is returned as it is. A nil fallback is
+// Scan.
+func ScanWith(ctx context.Context, r execx.Runner, address string, port int, legacy bool, fallback KeyFallback) ([]HostKey, error) {
+	keys, err := keyscan(ctx, r, address, port, legacy)
+	if err == nil || !legacy || fallback == nil || ctx.Err() != nil {
+		return keys, err
+	}
+	fk, ferr := fallback(ctx, address, port)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if ferr != nil || len(fk) == 0 {
+		return nil, err
+	}
+	return sortKeys(fk), nil
+}
+
+func keyscan(ctx context.Context, r execx.Runner, address string, port int, legacy bool) ([]HostKey, error) {
 	res, err := r.Run(ctx, KeyscanCmd(address, port, legacy))
 	if err != nil {
 		if ctx.Err() != nil {

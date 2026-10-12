@@ -1,0 +1,19 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 21
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+21
+
+TELNET ACCESS: [Shared]
+
+1. Enable:       Off
+2. Port:         23
+3. Per Source:   4
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

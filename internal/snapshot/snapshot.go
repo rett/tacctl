@@ -344,7 +344,8 @@ func (s *Snapshotter) current(dir string) bool {
 
 // SNMPFiles are the per-scope credential files of dir (the regular
 // <scope>.yaml files; a symbolic link or anything else is not one), sorted
-// by name. A directory that cannot be read has none.
+// by name. A directory that cannot be read has none. The per-device files
+// are SNMPDeviceFiles'.
 func SNMPFiles(dir string) []string {
 	if dir == "" {
 		return nil
@@ -362,26 +363,53 @@ func SNMPFiles(dir string) []string {
 	return out
 }
 
-// sameSNMPDir is whether the live credentials directory and the snapshot's
-// hold the same files with the same bytes (neither having any counts).
-func sameSNMPDir(live, snap string) bool {
-	a, b := SNMPFiles(live), SNMPFiles(snap)
-	if !slices.Equal(a, b) {
-		return false
+// SNMPDevicesDir is the name of the subdirectory of the credentials
+// directory that holds the per-device files (snmpcred.DevicesDir; D72 of
+// docs/plans/0.2.4-plan.md).
+const SNMPDevicesDir = "devices"
+
+// SNMPDeviceFiles are the per-device credential files of dir's 'devices'
+// subdirectory (regular <device>.yaml files, as SNMPFiles has them; a
+// subdirectory that is a symbolic link has none).
+func SNMPDeviceFiles(dir string) []string {
+	if dir == "" {
+		return nil
 	}
-	for _, n := range a {
-		if !sameBytes(filepath.Join(live, n), filepath.Join(snap, n)) {
+	sub := filepath.Join(dir, SNMPDevicesDir)
+	if fi, err := os.Lstat(sub); err != nil || !fi.IsDir() {
+		return nil
+	}
+	return SNMPFiles(sub)
+}
+
+// sameSNMPDir is whether the live credentials directory and the snapshot's
+// hold the same files with the same bytes, the per-device ones too (neither
+// having any counts).
+func sameSNMPDir(live, snap string) bool {
+	for _, sub := range []string{"", SNMPDevicesDir} {
+		l, s := filepath.Join(live, sub), filepath.Join(snap, sub)
+		a, b := SNMPFiles(l), SNMPFiles(s)
+		if sub != "" {
+			a, b = SNMPDeviceFiles(live), SNMPDeviceFiles(snap)
+		}
+		if !slices.Equal(a, b) {
 			return false
+		}
+		for _, n := range a {
+			if !sameBytes(filepath.Join(l, n), filepath.Join(s, n)) {
+				return false
+			}
 		}
 	}
 	return true
 }
 
-// copySNMPDir copies the credential files of src into a new directory dst
-// (0700, the files 0600); nothing when src has none.
+// copySNMPDir copies the credential files of src, the per-device ones
+// included, into a new directory dst (0700, the files 0600); nothing when
+// src has none.
 func copySNMPDir(src, dst string) error {
-	files := SNMPFiles(src)
-	if len(files) == 0 {
+	files, devFiles := SNMPFiles(src), SNMPDeviceFiles(src)
+	if len(files) == 0 && len(devFiles) == 0 {
 		return nil
 	}
 	if err := os.Mkdir(dst, 0o700); err != nil {
@@ -389,6 +417,20 @@ func copySNMPDir(src, dst string) error {
 	}
 	for _, n := range files {
 		if err := copyFile(filepath.Join(src, n), filepath.Join(dst, n)); err != nil {
+			return err
+		}
+	}
+	if len(devFiles) > 0 {
+		sub := filepath.Join(dst, SNMPDevicesDir)
+		if err := os.Mkdir(sub, 0o700); err != nil {
+			return err
+		}
+		for _, n := range devFiles {
+			if err := copyFile(filepath.Join(src, SNMPDevicesDir, n), filepath.Join(sub, n)); err != nil {
+				return err
+			}
+		}
+		if err := os.Chmod(sub, 0o700); err != nil {
 			return err
 		}
 	}

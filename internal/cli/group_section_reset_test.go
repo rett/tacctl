@@ -38,7 +38,7 @@ func TestSectionResetGoldenDiffs(t *testing.T) {
 		}
 		// A modified list: an entry added, a shipped one gone.
 		sb.must("group", "privilege", "add", "operator", "show version,configure: router bgp")
-		sb.must("group", "privilege", "remove", "operator", "clear counters")
+		sb.must("group", "privilege", "remove", "operator", "undebug all")
 		golden(t, "privilege_operator_modified", sb.plainRun("", "group", "privilege", "reset", "operator", "--dry-run"))
 		// A built-in with the stored empty list 0.1.16's clear left.
 		sb.must("group", "privilege", "remove", "readonly", "show running-config")
@@ -305,11 +305,11 @@ func TestPrivilegeResetDeviceLines(t *testing.T) {
 		}
 	}
 	// Nothing removed, nothing to remove from a device.
-	sb.must("group", "privilege", "remove", "operator", "clear counters")
+	sb.must("group", "privilege", "remove", "operator", "undebug all")
 	sb.must("group", "privilege", "reset", "operator", "--yes")
-	sb.must("group", "privilege", "remove", "operator", "clear counters")
+	sb.must("group", "privilege", "remove", "operator", "undebug all")
 	out = sb.plainRun("", "group", "privilege", "reset", "operator", "--dry-run")
-	if strings.Contains(out, "devices keep") || !strings.Contains(out, "    + clear counters\n") {
+	if strings.Contains(out, "devices keep") || !strings.Contains(out, "    + undebug all\n") {
 		t.Errorf("added only:\n%s", out)
 	}
 }

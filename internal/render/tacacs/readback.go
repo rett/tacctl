@@ -141,7 +141,10 @@ func ReadbackProblems(path string, m *model.Model, load LegacyLoader) ([]string,
 
 	wantS, gotS := map[string]scopeFacts{}, map[string]scopeFacts{}
 	for _, s := range m.Scopes {
-		if s.ServedBy(Protocol) {
+		// A scope with nothing left of its prefixes (a /32 equal to a held
+		// address, D123) has no entry in the file, so the file has no such
+		// scope; the store never holds one, only the carve makes one.
+		if s.ServedBy(Protocol) && len(s.Prefixes) > 0 {
 			wantS[s.Name] = scopeFacts{canonList(s.Prefixes), s.Secret}
 		}
 	}
@@ -323,7 +326,7 @@ func RenderToFile(st *store.Store, view *yamlpy.Map, out string, load LegacyLoad
 	if err := f.Close(); err != nil {
 		return nil, err
 	}
-	if err := Readback(tmp, model.FromStore(st), view, load); err != nil {
+	if err := Readback(tmp, Carved(model.FromStore(st), view), view, load); err != nil {
 		return nil, err
 	}
 	if chown != nil {

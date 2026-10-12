@@ -1,0 +1,22 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 29 > 16
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+16
+
+REQUIRE MESSAGE AUTHENTICATION:
+
+This Option will Discard Access-Accept, Access-Challenge, and Access-Reject
+packets which do not contain the Message-Authenticator message
+in the RADIUS communication
+
+1. Off
+2. On
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

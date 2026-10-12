@@ -1,0 +1,19 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 3 > 1
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+1
+
+GATEWAY: [eth0] IPv4
+
+Enter: <SPACE><CR> to clear
+       ddd.ddd.ddd.ddd<CR> to change
+       <ESC> to return to previous menu
+
+
+198.51.100.1
+---------------

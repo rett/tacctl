@@ -1,0 +1,24 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /F > 6
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+6
+
+LOG CONFIGURATION:
+
+1. Audit Log:              On - Without Syslog
+2. Audit Log Facility:     ---
+3. Audit Log Level:        ---
+4. Alarm Log:              On - Without Syslog
+5. Change Log:             On - Without Syslog
+6. Syslog Server Format:   Standard
+7. Syslog Protocol Format: IETF (RFC5424)
+8. Temperature Log:        On
+
+
+Enter: #<CR> to change,
+       <ESC> to exit ... 

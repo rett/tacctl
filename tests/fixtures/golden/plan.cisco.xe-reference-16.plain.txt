@@ -1,0 +1,4 @@
+aaa authentication login CONSOLE local
+aaa session-id common
+line con 0
+ login authentication CONSOLE

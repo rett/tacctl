@@ -1,0 +1,24 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /F > 11
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+11
+
+SSL PROVIDERS:
+
+Providers are containers for algorithm implementations. Whenever a
+cryptographic algorithm is used a provider is selected. It is that
+provider implementation that actually does the required work.
+
+1. FIPS:                 On
+2. Base:                 On
+3. Default:              On
+4. Legacy:               Off
+
+
+Enter: #<CR> to select,
+       <ESC> to return to previous menu ... 

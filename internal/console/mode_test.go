@@ -254,3 +254,18 @@ func TestForced(t *testing.T) {
 		}
 	}
 }
+
+// The password cache's fields of the policy line (D70): off, and no
+// lifetimes, without them; a malformed or out-of-range value is ignored.
+func TestParseRemotePasswordCache(t *testing.T) {
+	r, ok := ParseRemote("shell=console idle=5 password_cache=yes pc_idle=20 pc_max=3 tier=engineer")
+	if !ok || !r.PasswordCache || r.PCIdle != 20*time.Minute || r.PCMax != 3*time.Hour {
+		t.Errorf("fields: %+v %t", r, ok)
+	}
+	for _, line := range []string{"shell=console", "password_cache=maybe pc_idle=0 pc_idle=121 pc_idle=x pc_max=0 pc_max=25 pc_max=y", "password_cache=no"} {
+		r, _ := ParseRemote(line)
+		if r.PasswordCache || r.PCIdle != 0 || r.PCMax != 0 {
+			t.Errorf("%q: %+v", line, r)
+		}
+	}
+}

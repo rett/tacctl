@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,10 +18,10 @@ import (
 var (
 	ciscoTacacsVars = []string{"SERVER_IP", "SECRET", "PRIVILEGE_COMMANDS", "GROUP_SUMMARY", "VTY_ACL_BLOCK",
 		"VTY_ACCESS_CLASS", "AUTHZ_COMMANDS_BLOCK", "ACCT_COMMANDS_BLOCK", "AUTHN_METHODS", "AUTHZ_EXEC_METHODS",
-		"EXEC_TIMEOUT", "TACACS_GROUP", "SNMP_BLOCK", "NETCONF_BLOCK"}
+		"EXEC_TIMEOUT", "TACACS_GROUP", "SNMP_BLOCK", "NETCONF_BLOCK", "SOURCE_INTERFACE_BLOCK", "HARDENING_BLOCK"}
 	ciscoRadiusVars = []string{"SERVER_IP", "SECRET", "AUTH_PORT", "ACCT_PORT", "RADIUS_GROUP", "PRIVILEGE_COMMANDS",
 		"GROUP_SUMMARY", "VTY_ACL_BLOCK", "VTY_ACCESS_CLASS", "AUTHN_METHODS", "AUTHZ_EXEC_METHODS", "EXEC_TIMEOUT",
-		"SNMP_BLOCK", "NETCONF_BLOCK"}
+		"SNMP_BLOCK", "NETCONF_BLOCK", "SOURCE_INTERFACE_BLOCK", "HARDENING_BLOCK"}
 )
 
 // CiscoTemplate is the template a Cisco config renders: cisco,
@@ -59,7 +60,7 @@ func CiscoVars(req Request, d Data) map[string]string {
 		if len(cmds) == 0 {
 			continue
 		}
-		block := "! --- " + g.name + " — Privilege Level " + g.priv + " Commands ---\n"
+		block := "! --- " + g.name + " - Privilege Level " + g.priv + " Commands ---\n"
 		emitted := false
 		for _, entry := range cmds {
 			if entry == "" {
@@ -124,7 +125,7 @@ func CiscoVars(req Request, d Data) map[string]string {
 	var aclBlock, accessClass string
 	if entries.Len() > 0 {
 		aclBlock = "ip access-list standard " + aclName + "\n" +
-			"  remark Managed by tacctl — edit with 'tacctl config mgmt-acl'\n" +
+			"  remark Managed by tacctl - edit with 'tacctl config mgmt-acl'\n" +
 			entries.String() + "  deny   any log"
 		accessClass = "  access-class " + aclName + " in"
 	} else {
@@ -132,7 +133,7 @@ func CiscoVars(req Request, d Data) map[string]string {
 		if req.Protocol == RADIUS {
 			flag = " --protocol radius"
 		}
-		aclBlock = "! " + aclName + " not emitted — mgmt-acl list is empty.\n" +
+		aclBlock = "! " + aclName + " not emitted - mgmt-acl list is empty.\n" +
 			"! Populate it on the tacctl server with\n" +
 			"!   tacctl config mgmt-acl add <cidr>\n" +
 			"! then re-run 'tacctl config cisco" + flag + "' to get the access-list block."
@@ -140,21 +141,23 @@ func CiscoVars(req Request, d Data) map[string]string {
 	}
 
 	vars := map[string]string{
-		"SERVER_IP":            d.authIP(""),
-		"SECRET":               scopeSecret(d, scope),
-		"PRIVILEGE_COMMANDS":   privilege.String(),
-		"GROUP_SUMMARY":        summary.String(),
-		"VTY_ACL_BLOCK":        aclBlock,
-		"VTY_ACCESS_CLASS":     accessClass,
-		"AUTHZ_COMMANDS_BLOCK": authzCommands,
-		"ACCT_COMMANDS_BLOCK":  strings.Join(acct, "\n"),
-		"AUTHN_METHODS":        authn,
-		"AUTHZ_EXEC_METHODS":   authzExec,
-		"EXEC_TIMEOUT":         execTimeout(c, scope),
-		"TACACS_GROUP":         tacacsGroup,
-		"RADIUS_GROUP":         radiusGroup,
-		"SNMP_BLOCK":           CiscoSNMP(d.snmpInput(scope)).Text,
-		"NETCONF_BLOCK":        CiscoNetconf(NetconfInput{Restricted: d.Restricted, Legacy: req.Legacy}),
+		"SERVER_IP":              d.authIP(""),
+		"SECRET":                 scopeSecret(d, scope),
+		"PRIVILEGE_COMMANDS":     privilege.String(),
+		"GROUP_SUMMARY":          summary.String(),
+		"VTY_ACL_BLOCK":          aclBlock,
+		"VTY_ACCESS_CLASS":       accessClass,
+		"AUTHZ_COMMANDS_BLOCK":   authzCommands,
+		"ACCT_COMMANDS_BLOCK":    strings.Join(acct, "\n"),
+		"AUTHN_METHODS":          authn,
+		"AUTHZ_EXEC_METHODS":     authzExec,
+		"EXEC_TIMEOUT":           execTimeout(c, scope),
+		"TACACS_GROUP":           tacacsGroup,
+		"RADIUS_GROUP":           radiusGroup,
+		"SNMP_BLOCK":             CiscoSNMP(d.snmpInput(scope)).Text,
+		"NETCONF_BLOCK":          CiscoNetconf(NetconfInput{Restricted: d.Restricted, Legacy: req.Legacy}),
+		"SOURCE_INTERFACE_BLOCK": ciscoSourceInterfaceBlock(req, d),
+		"HARDENING_BLOCK":        ciscoHardening(req, d),
 	}
 	if r := d.Radius; req.Protocol == RADIUS && r != nil {
 		vars["SECRET"] = r.Secret
@@ -162,6 +165,116 @@ func CiscoVars(req Request, d Data) map[string]string {
 		vars["SERVER_IP"] = d.authIP(r.ServerAddr)
 	}
 	return vars
+}
+
+// The names of the standard block (D117): the plain ones tacctl has always
+// rendered, and the console's login list. Nothing renames them and no
+// setting changes them (the group has tacacs_group.<scope> of its own).
+const (
+	// ciscoTacacsServer and ciscoRadiusServer are the named server blocks.
+	ciscoTacacsServer = "TACACS"
+	ciscoRadiusServer = "RADIUS"
+	// ciscoConsoleList is the console's login list: local only, so a local
+	// user can log in on the console whatever the server says.
+	ciscoConsoleList = "CONSOLE"
+)
+
+// ciscoSourceInterface is the interface the scope's devices source their
+// server requests from (D119); "" when the scope sets none.
+func ciscoSourceInterface(c *conf.Config, scope string) string {
+	return confGet(c, "cisco.source_interface."+scope, "")
+}
+
+// ciscoSourceCommand is the statement that sets it, up to the interface.
+func ciscoSourceCommand(protocol string) string {
+	if protocol == RADIUS {
+		return "ip radius source-interface"
+	}
+	return "ip tacacs source-interface"
+}
+
+// ciscoSourceInterfaceBlock is ${SOURCE_INTERFACE_BLOCK}: the statement when
+// the scope sets an interface, and otherwise commented text that names the
+// command and holds nothing a paste could take (D119: a statement is never
+// rendered with a placeholder where its value goes).
+func ciscoSourceInterfaceBlock(req Request, d Data) string {
+	cmd := ciscoSourceCommand(req.Protocol)
+	if ifc := ciscoSourceInterface(d.Conf, req.Scope); ifc != "" {
+		return cmd + " " + ifc
+	}
+	return "! Source interface not set for scope " + req.Scope + ": the server matches this device by its source\n" +
+		"! address, so a stable management interface is worth setting. Once, for the scope:\n" +
+		"!   tacctl config cisco source-interface " + req.Scope + " <interface>\n" +
+		"! then render this again to get the line:  " + cmd + " <interface>"
+}
+
+// PolicyGaps are the policy values the standard needs that the scope has
+// not set, each as the sentence a plan's report carries (D119): a warning,
+// not an irregularity. The statement they would give is left out of the
+// managed sections. Only a Cisco request has any.
+func PolicyGaps(req Request, d Data) []string {
+	if req.Vendor != "cisco" || d.Conf == nil || ciscoSourceInterface(d.Conf, req.Scope) != "" {
+		return nil
+	}
+	return []string{"policy value not set: source interface (tacctl config cisco source-interface " + req.Scope +
+		" <interface>); the server matches this device by its source address"}
+}
+
+// ciscoHardening is ${HARDENING_BLOCK}, the walkthrough's Step 0 (D116 (B)):
+// the site-policy lines of a device's hardening and its local enable
+// secret, as comments. They are not compared, not planned and never in a
+// region: nothing of the managed sections is rendered from this text.
+func ciscoHardening(req Request, d Data) string {
+	host := d.SNMP.DeviceName
+	if host == "" {
+		host, _, _ = strings.Cut(d.SNMP.SysName, ".")
+	}
+	if host == "" {
+		host = "<HOSTNAME>"
+	}
+	enable := "enable algorithm-type scrypt secret <PASSWORD>"
+	if req.Legacy && req.Protocol != RADIUS {
+		enable = "enable secret <PASSWORD>"
+	}
+	note := func(line, where string) string { return fmt.Sprintf("  %-48s %s", line, where) }
+	var b strings.Builder
+	lines := []string{
+		"--- Step 0: hardening checklist and the local enable secret ---",
+		"Site policy, as comments: tacctl does not compare or plan these lines and keeps no value for them.",
+		"Type what your site uses before the steps below; a line marked (below) is typed there.",
+		"Global:",
+		"  hostname " + host,
+		"  ip domain name <DOMAIN>",
+		"  no ip domain lookup",
+		note("service password-encryption", "(below, with the server block)"),
+		"  service timestamps debug datetime msec localtime",
+		"  service timestamps log datetime msec localtime",
+		"  no service pad",
+		"  no ip source-route",
+		"  no ip http server",
+		"  no ip http secure-server",
+		"  ip ssh version 2",
+		"  ip ssh time-out 60",
+		"  ip ssh authentication-retries 3",
+		"On line con 0 and line vty 0 15:",
+		note("transport input ssh", "(below, the vty lines)"),
+		note("exec-timeout "+execTimeout(d.Conf, req.Scope)+" 0", "(below)"),
+		"  logging synchronous",
+	}
+	if req.Protocol == RADIUS {
+		lines = append(lines,
+			"The local enable secret. Whether a RADIUS server answers 'enable' is not verified (Step 1 leaves the",
+			"enable list commented): until a list is typed, 'enable' uses this secret. Set it before AAA:")
+	} else {
+		lines = append(lines,
+			"The local enable secret. With the server up, 'enable' asks the server first (Step 1), so the secret",
+			"is never typed by a person; it is the way up only when no server answers. Set it before AAA:")
+	}
+	lines = append(lines, "  no enable password", "  "+enable)
+	for _, l := range lines {
+		b.WriteString("! " + l + "\n")
+	}
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 // ciscoLevels are the privilege levels in use: the distinct priv-lvls of
@@ -184,6 +297,22 @@ func ciscoLevels(groups []group) []int {
 // then 'aaa authorization config-commands' and the commented console line.
 func ciscoAuthzBlock(c *conf.Config, groups []group, levels []int, methods string) string {
 	var b strings.Builder
+	// D118 (12): command authorization is its own step, after a check from a
+	// new session: the session that pastes is a local user the server does
+	// not know, and a server that answers FAIL never falls through.
+	b.WriteString("! --- Check: before Step 2, from a NEW session ---\n" +
+		"! Open a new session to this device with your own TACACS+ account (not the one you pasted\n" +
+		"! from: that is a local user the server does not know) and run:  show privilege\n" +
+		"! It must say the level the server gives your group (15 for a superuser). If the login is\n" +
+		"! refused or the level is wrong, stop: put the server path right first (the key, the address,\n" +
+		"! the source interface, the user's group) and leave Step 2 for later.\n" +
+		"!\n" +
+		"! --- Step 2: command authorization ---\n" +
+		"! Typed only after the check. The session that pastes is a local user the server does not\n" +
+		"! know: from the first line below every command of every session is asked of the server,\n" +
+		"! which answers 'fail' for such a name and never falls through to 'local' (a break-glass\n" +
+		"! local user is refused the same way while a server answers). Type these lines as the user\n" +
+		"! of the new session, and keep a second session logged in.\n")
 	b.WriteString("! Per-command authorization (managed by 'tacctl group commands'): one line per\n" +
 		"! privilege level in use; the server decides each command, including configuration\n" +
 		"! commands, which IOS sends as ordinary commands.\n")
@@ -208,7 +337,8 @@ func ciscoAuthzBlock(c *conf.Config, groups []group, levels []int, methods strin
 		}
 	}
 	b.WriteString("aaa authorization config-commands\n")
-	b.WriteString("! aaa authorization console   ! uncomment to have the console line ask the server too")
+	b.WriteString("! Do NOT set 'aaa authorization console': the console would be authorized by the default lists,\n" +
+		"! server first, which defeats the CONSOLE list.")
 	return b.String()
 }
 
@@ -237,14 +367,16 @@ func renderCisco(o *out, req Request, d Data) error {
 	aclName := d.ACL.Name
 	snmp := CiscoSNMP(d.snmpInput(req.Scope))
 
-	o.header("Cisco IOS / IOS-XE Configuration", req.Scope, protocolNote(req.Protocol, req.Source),
+	// a Cisco walkthrough is pasted from: every byte of it is ASCII
+	o.ascii = true
+	o.header("Cisco IOS / IOS-XE Configuration", req.Scope, strings.ReplaceAll(protocolNote(req.Protocol, req.Source), " \u2014 ", " - "),
 		otherScopes(d.Model, req.Scope), "Copy and paste into the device:")
 	o.addressRoles(d, req.Protocol)
 	// Blank lines left by multi-line values are dropped ('awk NF'); the
 	// '!' separators stay.
 	o.write(DropBlank(Expand(t.Text, allowed, vars)))
 	o.rule()
-	o.heading(ui.Yellow, "Group → Privilege Level Mapping:")
+	o.heading(ui.Yellow, "Group -> Privilege Level Mapping:")
 	o.write(vars["GROUP_SUMMARY"])
 	o.echo("")
 	if req.Protocol == RADIUS {
@@ -253,8 +385,14 @@ func renderCisco(o *out, req Request, d Data) error {
 		o.heading(ui.Yellow, "Notes:")
 		o.echo("  - The 'local' fallback ensures access if the RADIUS server is unreachable;")
 		o.echo("    a reject from the server does not fall through to local")
-		o.echo("  - Ensure a local admin account exists as a backup")
-		o.echo("  - Uncomment 'ip radius source-interface ...' to pin the RADIUS client source")
+		o.echo("  - Ensure a local admin account exists as a backup (Step 0)")
+		o.echo("  - The console has its own login list, CONSOLE (local only): a local user can log in there")
+		o.echo("    whatever the server says, and lands at privilege 1 ('aaa authorization console' is not")
+		o.echo("    set, and must not be: it would put the console under the default lists, server first)")
+		o.echo("  - 'enable' uses the local enable secret as this walkthrough stands: the enable list is left")
+		o.echo("    commented (unverified, lab item E2). If you type it, a reachable server that does not answer")
+		o.echo("    enable requests positively makes 'enable' fail, and the local secret is used only when no")
+		o.echo("    server answers")
 		o.echo("  - " + aclName + " permits are managed with 'tacctl config mgmt-acl add <cidr>'")
 		o.echo("  - For Type 6 (AES) key encryption, run on the device first:")
 		o.echo("      conf t ; key config-key password-encrypt <master-key>")
@@ -270,8 +408,15 @@ func renderCisco(o *out, req Request, d Data) error {
 	}
 	o.heading(ui.Yellow, "Notes:")
 	o.echo("  - The 'local' fallback ensures access if TACACS+ is unreachable")
-	o.echo("  - Ensure a local admin account exists as a backup")
-	o.echo("  - Uncomment 'ip tacacs source-interface ...' to pin the TACACS+ client source")
+	o.echo("  - Ensure a local admin account exists as a backup (Step 0)")
+	o.echo("  - The console has its own login list, CONSOLE (local only): a local user can log in there")
+	o.echo("    whatever the server says, and lands at privilege 1 ('aaa authorization console' is not")
+	o.echo("    set, and must not be: it would put the console under the default lists, server first)")
+	o.echo("  - 'enable' asks the server first, which refuses a name it does not know and does not fall")
+	o.echo("    through to the local secret: on the console a local user reaches privilege 15 only while")
+	o.echo("    no server answers")
+	o.echo("  - Nobody needs 'enable': a TACACS+ user lands at the level the server gives (an operator who")
+	o.echo("    types it is refused there, by design)")
 	o.echo("  - " + aclName + " permits are managed with 'tacctl config mgmt-acl add <cidr>'")
 	if req.Legacy {
 		o.echo("  - Type 6 (AES) key encryption is NOT available on IOS 12.x;")
@@ -285,10 +430,14 @@ func renderCisco(o *out, req Request, d Data) error {
 	o.echo("  - Manage 'privilege exec level' mappings with 'tacctl group privilege add ...'")
 	o.echo("    (defaults move only the verified priv-15 commands DOWN; nothing is moved UP)")
 	if anyGroupHasCommands(d.Conf) {
+		o.echo("  - Step 2 (command authorization) is typed after the check, from a new session with your own")
+		o.echo("    account: the session that pastes is a local user the server does not know, and the server's")
+		o.echo("    'fail' is final, so that session (and a break-glass local user) is refused every command")
+		o.echo("    while a server answers")
 		o.echo("  - A group at priv-lvl 15 is kept apart from the superusers only by the server's")
 		o.echo("    rules: with the server unreachable, the 'local' fallback lets it run everything")
 		o.echo("  - Commands typed on the console line are not sent to the server for authorization")
-		o.echo("    unless 'aaa authorization console' is uncommented")
+		o.echo("    ('aaa authorization console' is not set)")
 	}
 	o.echo("  - Using template: " + t.Origin())
 	o.echo("")

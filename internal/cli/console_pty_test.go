@@ -10,6 +10,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 	"time"
 
 	"github.com/rett/tacctl/internal/app"
+	"github.com/rett/tacctl/internal/askpass"
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/paths"
@@ -62,9 +64,18 @@ func (r *consolePtyRunner) Start(ctx context.Context, c execx.Cmd) (execx.Proces
 	if c.Name == "sudo" {
 		i := slices.Index(c.Args, testExe)
 		words := c.Args[i+1:]
-		if words[0] == "slow" {
+		switch words[0] {
+		case "slow":
 			c.Name, c.Args = "sleep", []string{"8"}
-		} else {
+		case "ssh":
+			// The password cache's variable as the sudo process was given it.
+			// ('ssh slow' keeps the line running, as a session does).
+			script := "echo ASKPASS=${TACCTL_ASKPASS}"
+			if len(words) > 1 && words[1] == "slow" {
+				script += "; sleep 8"
+			}
+			c.Name, c.Args = "sh", []string{"-c", script}
+		default:
 			c.Name, c.Args = "echo", append([]string{"RAN"}, c.Argv()...)
 		}
 	}
@@ -276,4 +287,107 @@ func TestConsolePtySystemShell(t *testing.T) {
 		!strings.HasSuffix(log[3], "reason=exit lines=2 status=0") {
 		t.Errorf("log %q", log)
 	}
+}
+
+// The console with the password cache on: the agent starts with the session
+// and is shut between lines; a line that uses the cache gets a token of its
+// own in the sudo process's environment, which works while that line runs
+// (a store is taken and said) and is dead after it; a line that does not use
+// the cache opens nothing; 'console forget' empties it; the socket is gone
+// when the session ends.
+func TestConsolePtyPasswordCache(t *testing.T) {
+	if ag, err := askpass.New(askpass.Options{}); errors.Is(err, askpass.ErrNoLock) {
+		t.Skipf("mlock is not available here: %v", err)
+	} else if err == nil {
+		ag.Close()
+	}
+	host := regexp.QuoteMeta(shortHostname())
+	pol := strings.Replace(ptyPolicyRO, "tier=readonly", "tier=operator,password_cache=yes,pc_idle=1,pc_max=1", 1)
+	p := startConsole(t, pol, "carol,tac-users,tac-operator")
+	p.expect(host + `> `)
+	ctx := context.Background()
+	tokenOf := func(out string, n int) string {
+		m := regexp.MustCompile(`ASKPASS=(\S+:[0-9a-f]{64})`).FindAllStringSubmatch(out, -1)
+		if len(m) < n {
+			t.Fatalf("no value %d in %q", n, out)
+		}
+		return m[n-1][1]
+	}
+	p.send("ssh core\r")
+	p.expect(`ASKPASS=(\S+:[0-9a-f]{64})\r\n`)
+	env1 := tokenOf(p.Output(), 1)
+	if !strings.Contains(env1, "/tacctl/ap-") {
+		t.Errorf("socket %q is not in the tacctl socket directory", env1)
+	}
+	cl1, err := askpass.NewClient(env1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.expect(host + `> `)
+	// The first line is over: its token is dead, whatever is asked.
+	if _, err := cl1.Get(ctx); !errors.Is(err, askpass.ErrDenied) {
+		t.Errorf("get with the ended line's token: %v", err)
+	}
+	// A line that does not use the cache opens nothing, whatever token.
+	p.send("slow\r")
+	time.Sleep(300 * time.Millisecond)
+	if err := cl1.Store(ctx, []byte("typed-pw-0")); !errors.Is(err, askpass.ErrDenied) {
+		t.Errorf("store while a line that does not use the cache runs: %v", err)
+	}
+	p.send("\x03")
+	p.expect(host + `> `)
+	// A line that uses the cache has a token of its own, good while it runs.
+	p.send("ssh slow\r")
+	p.expect(`ASKPASS=(\S+:[0-9a-f]{64})\r\n`)
+	env2 := tokenOf(p.Output(), 2)
+	if env2 == env1 {
+		t.Fatal("two lines, one token")
+	}
+	cl2, _ := askpass.NewClient(env2)
+	if _, err := cl1.Have(ctx); !errors.Is(err, askpass.ErrDenied) {
+		t.Errorf("the previous line's token during the next: %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := cl2.Store(ctx, []byte("typed-pw-1"))
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("store: %v", err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if have, err := cl2.Have(ctx); err != nil || !have {
+		t.Errorf("have while the line runs: %v %v", have, err)
+	}
+	p.send("\x03")
+	p.expect(`password cached for this session \(console password-cache\)`)
+	p.expect(host + `> `)
+	if _, err := cl2.Get(ctx); !errors.Is(err, askpass.ErrDenied) {
+		t.Errorf("get with the token of the line that ended: %v", err)
+	}
+	p.send("console forget\r")
+	p.expect(`password forgotten \(console forget\)`)
+	p.send("console forget\r")
+	p.expect(`no password is cached`)
+	p.send("exit\r")
+	p.ends(0)
+	if _, err := os.Stat(strings.SplitN(env2, ":", 2)[0]); err == nil {
+		t.Error("the socket outlived the session")
+	}
+}
+
+// A console whose policy does not turn the cache on has no agent: no
+// variable reaches the lines, 'console forget' says so.
+func TestConsolePtyNoPasswordCache(t *testing.T) {
+	host := regexp.QuoteMeta(shortHostname())
+	p := startConsole(t, strings.Replace(ptyPolicyRO, "tier=readonly", "tier=operator", 1), "carol,tac-users,tac-operator")
+	p.expect(host + `> `)
+	p.send("ssh core\r")
+	p.expect(`ASKPASS=\r\n`)
+	p.send("console forget\r")
+	p.expect(`no password is cached: the password cache is not on in this session`)
+	p.send("exit\r")
+	p.ends(0)
 }

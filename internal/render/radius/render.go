@@ -112,7 +112,11 @@ func RenderStore(s *store.Store, merged *yamlpy.Map, p Params) (*Output, error) 
 // validated (RenderStore validates a store first); a dangling reference is
 // an *Error rather than a crash.
 func Render(m *model.Model, merged *yamlpy.Map, p Params) (*Output, error) {
-	confText, err := renderConf(m, merged, p)
+	// The addresses of the break-glass holds are taken out of every client
+	// (docs/plans/0.2.5-plan.md D123); the model itself stays whole for the
+	// notes and for the comment that names what was carved.
+	carved := m.WithoutAddresses(conf.HeldAddresses(merged))
+	confText, err := renderConf(carved, m, merged, p)
 	if err != nil {
 		return nil, err
 	}
@@ -347,6 +351,28 @@ type client struct {
 // also a prefix of its scope is one client, the tagged one.
 func clients(scopes []*model.Scope) ([]client, error) {
 	byNet := map[string]client{}
+	// origin is the length of the stored entry a client was carved from
+	// (its own length when nothing was): FreeRADIUS answers a source with
+	// the client of the longest prefix, so of the pieces of a carve that
+	// fall on one network the one carved from the longest stored entry is
+	// the client the address had before a hold (a carved piece takes its
+	// origin's place, as in the TACACS+ file). Equal origins: a tagged
+	// address over a prefix, then the later scope, as before.
+	origin := map[string]int{}
+	tagged := map[string]bool{}
+	put := func(n cidr.Network, c client, from string, isTagged bool) {
+		key := n.String()
+		fl := n.PrefixLen()
+		if f, err := cidr.Parse(from); err == nil {
+			fl = f.PrefixLen()
+		}
+		if old, ok := origin[key]; ok {
+			if old > fl || (old == fl && tagged[key] && !isTagged) {
+				return
+			}
+		}
+		byNet[key], origin[key], tagged[key] = c, fl, isTagged
+	}
 	for _, s := range scopes {
 		var enabled []string
 		for _, v := range names.KnownVendors {
@@ -354,23 +380,27 @@ func clients(scopes []*model.Scope) ([]client, error) {
 				enabled = append(enabled, v)
 			}
 		}
-		for _, c := range s.Prefixes {
+		for i, c := range s.Prefixes {
 			n, err := netOf(c)
 			if err != nil {
 				return nil, err
 			}
-			byNet[n.String()] = client{n, s.Name, "generic", enabled}
+			put(n, client{n, s.Name, "generic", enabled}, s.PrefixOrigin(i), false)
 		}
 	}
 	for _, s := range scopes {
-		devices := slices.Clone(s.Devices)
-		sort.Slice(devices, func(i, j int) bool { return devices[i].CIDR < devices[j].CIDR })
-		for _, d := range devices {
+		idx := make([]int, len(s.Devices))
+		for i := range idx {
+			idx[i] = i
+		}
+		sort.SliceStable(idx, func(a, b int) bool { return s.Devices[idx[a]].CIDR < s.Devices[idx[b]].CIDR })
+		for _, i := range idx {
+			d := s.Devices[i]
 			n, err := netOf(d.CIDR)
 			if err != nil {
 				return nil, err
 			}
-			byNet[n.String()] = client{n, s.Name, d.Vendor, []string{d.Vendor}}
+			put(n, client{n, s.Name, d.Vendor, []string{d.Vendor}}, s.DeviceOrigin(i), true)
 		}
 	}
 	out := make([]client, 0, len(byNet))
@@ -389,7 +419,7 @@ func clients(scopes []*model.Scope) ([]client, error) {
 
 // renderConf is render_conf_text: main settings, module instances, server
 // tacctl.
-func renderConf(m *model.Model, merged *yamlpy.Map, p Params) (string, error) {
+func renderConf(m, whole *model.Model, merged *yamlpy.Map, p Params) (string, error) {
 	scopes := servedScopes(m)
 	filt, err := filterPolicy(m.Filters)
 	if err != nil {
@@ -492,6 +522,7 @@ func renderConf(m *model.Model, merged *yamlpy.Map, p Params) (string, error) {
 		"\t# prefix (the more specific scope, the tagged address), as with TACACS+.\n" +
 		"\t# tacctl_device is 'generic' or the vendor an address is tagged with; tacctl_send_<vendor>\n" +
 		"\t# says whether post-auth adds that vendor's attribute for this client.\n")
+	w.WriteString(holdComment(whole, conf.HoldsOf(merged)))
 	secrets := map[string]string{}
 	for _, s := range scopes {
 		secrets[s.Name] = s.Secret

@@ -132,6 +132,8 @@ func init() {
 			s, ok = configLinuxSpecs[path[2]]
 		case path[1] == "snmp":
 			s, ok = configSNMPSpecs[path[2]]
+		case path[1] == "devices":
+			s, ok = configDevicesSpecs[path[2]]
 		case path[1] == "allow" || path[1] == "deny" || path[1] == "mgmt-acl":
 			s, ok = configPolicySpecs[path[2]]
 		}
@@ -341,7 +343,7 @@ func (inv *invocation) kindWords(kind string, values map[string]string) []string
 			}
 		}
 		return out
-	case KindUsers, KindGroups, KindScopes, KindHosts, KindDevices, KindBackups, KindBackends, KindEnabledBackends:
+	case KindUsers, KindGroups, KindScopes, KindHosts, KindDevices, KindBackups, KindBackends, KindEnabledBackends, KindHeld:
 		return inv.liveNames(inv.ctx, kind)
 	case KindBreakGlass:
 		return inv.liveNames(inv.ctx, kind, values["@scope"])

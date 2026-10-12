@@ -414,6 +414,9 @@ func TestGolden(t *testing.T) {
 		if strings.HasPrefix(k, "snmp.") {
 			continue // 0.2.2's SNMP name hint: not in 0.1.16's golden
 		}
+		if strings.HasPrefix(k, "device.") {
+			continue // 0.2.4's device configuration reads: not in 0.1.16's golden
+		}
 		if _, ok := walk(m, k, false); !ok {
 			t.Errorf("golden lacks %s", k)
 		}
@@ -424,6 +427,12 @@ func TestGolden(t *testing.T) {
 		}
 		if prefix == "breakglass_scope." {
 			continue // 0.2.3's per-scope break-glass users: not in 0.1.16's golden
+		}
+		if prefix == "breakglass_hold." {
+			continue // 0.2.5's break-glass hold record: not in 0.1.16's golden
+		}
+		if prefix == "cisco.source_interface." {
+			continue // 0.2.5's per-scope Cisco source interface: not in 0.1.16's golden
 		}
 		v, ok := walk(m, strings.TrimSuffix(prefix, "."), false)
 		if sub, isMap := v.(*yamlpy.Map); !ok || !isMap || sub.Len() == 0 {

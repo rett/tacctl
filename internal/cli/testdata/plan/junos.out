@@ -1,0 +1,55 @@
+##### lab-j  192.168.1.20  scope lab  juniper (TACACS+) #####
+# Based on the pull of <time> by alice over netconf (less than a minute ago; the login could
+# see secrets) and the standard of <time> (tacctl 0.2.0-test).
+#
+# What is irregular on lab-j (2 items; the paste fixes 1, leaves 1):
+#  1. aaa      ACCESS     missing: the login order tries tacplus (set system authentication-order
+#                         tacplus). Fixed by region line 3.
+#  2. aaa      ACCESS     extra: a TACACS+ server 192.0.2.99 (set system tacplus-server 192.0.2.99
+#                         secret <secret>). Left alone. To remove it later: delete system
+#                         tacplus-server 192.0.2.99
+# Consistent: roles. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
+# The standard has nothing for: snmp, mgmt-acl.
+# Secrets: 1 present on the device, not changed (--secrets pushes them).
+# The switch undoes this by itself in 5 minutes unless you type the one word after the check (see
+# below).
+# Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the
+# echo for 'error:'. Pasting the region twice is harmless.
+#
+# Type this first, on lab-j, and check the name:   show version | match Hostname
+# The prompt must end in > (operational mode) before you paste: a prompt ending in # means a
+# configuration session is open: stop.
+#
+##### PASTE FROM HERE: lab-j #####
+configure private
+# aaa: the authentication order tacctl renders
+set system authentication-order tacplus
+show | compare | no-more
+commit check
+commit confirmed 5 comment "tacctl plan lab-j <time> by alice"
+##### PASTE TO HERE: lab-j #####
+#
+# If the first line printed "Users currently editing the configuration" or "error: shared
+# configuration database modified": nothing happened; ask that person to commit or roll back, then
+# paste again. If any line printed "error:": do not type commit; the switch undoes this by itself
+# in 5 minutes.
+#
+# Check now. In 5 minutes the switch undoes this by itself unless you type one word.
+#   From the tacctl server:   tacctl device config pull lab-j --diff     (aaa: ok)
+#   In a second terminal:     ssh lab-j, then: show cli authorization | no-more
+#                             show configuration system authentication-order | no-more
+# When both checks are fine, type this one word yourself:  commit     (before the 5 minutes end)
+#
+# If your session drops before that, the switch still rolls back when the time runs out (a dropped
+# CLI session does not roll back at once): log in again and paste again.
+# To undo it after the commit: tacctl device config plan lab-j --backout (its own region to paste;
+# tacctl keeps this plan's back-out: after the check pull has replaced the picture, the command
+# still prints this plan's, and says which pull it undoes, until the next plan with changes).
+# Without tacctl: show system commit, then rollback <n> of the entry just before the one commented
+# "tacctl plan lab-j" (the newest entry is that commit itself), then commit.
+# Do not: type commit before the check; paste anything outside the banners; paste this into
+# another device; use configure exclusive; keep this output in a file after the paste when it
+# holds a secret.
+# Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold lab-j --reason "..."
+# then log in as the device's local user (ssh or console),
+# fix or back out, and the superuser runs: tacctl breakglass release lab-j

@@ -1,0 +1,25 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 7 > 3
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+3
+
+
+HOSTS FILE ENTRIES: [eth0] IPv4
+
+1.
+2.
+3.
+4.
+5.
+6.
+7.
+8.
+
+
+Enter: #<CR> to select menu,
+       <ESC> to return to previous menu ... 

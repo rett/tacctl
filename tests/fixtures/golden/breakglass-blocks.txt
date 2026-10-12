@@ -18,19 +18,25 @@
 
 === cisco / one admin
 ! --- Break-glass local users (scope: lab) ---
-! The 'local' method of 'aaa authentication login' above admits these only when no
+! The 'local' method of 'aaa authentication login' in Step 1 admits these only when no
 ! server answers.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <TYPE9-HASH> with the type 9 hash ($9$...) of a password
 ! you keep (the hash, not the password: 'secret 9' takes a hash as it appears in 'show running-config'),
 ! then remove the '! '.
 ! username lab-admin privilege 15 secret 9 <TYPE9-HASH>
+! To use these accounts while the server is up: tacctl breakglass hold <device> --reason "..." (a superuser); release when done
 === cisco legacy / one admin
 ! --- Break-glass local users (scope: lab) ---
-! The 'local' method of 'aaa authentication login' above admits these only when no
+! The 'local' method of 'aaa authentication login' in Step 1 admits these only when no
 ! server answers.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <HASH> with the type 5 hash ($1$...) of a password you keep,
 ! then remove the '! '. (IOS 12.x has no type 9.)
 ! username lab-admin privilege 15 secret 5 <HASH>
+! To use these accounts while the server is up: tacctl breakglass hold <device> --reason "..." (a superuser); release when done
 === juniper / one admin
 # Break-glass local users (scope: lab):
 # the authentication-order above names the server only, so Junos falls back to these local
@@ -48,19 +54,25 @@
 Unfilled break-glass credentials (tacctl stores none; put in your own): lab-admin (admin)
 === cisco / operator only
 ! --- Break-glass local users (scope: lab) ---
-! The 'local' method of 'aaa authentication login' above admits these only when no
+! The 'local' method of 'aaa authentication login' in Step 1 admits these only when no
 ! server answers.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <TYPE9-HASH> with the type 9 hash ($9$...) of a password
 ! you keep (the hash, not the password: 'secret 9' takes a hash as it appears in 'show running-config'),
 ! then remove the '! '.
 ! username lab-ops privilege 7 secret 9 <TYPE9-HASH>
+! To use these accounts while the server is up: tacctl breakglass hold <device> --reason "..." (a superuser); release when done
 === cisco legacy / operator only
 ! --- Break-glass local users (scope: lab) ---
-! The 'local' method of 'aaa authentication login' above admits these only when no
+! The 'local' method of 'aaa authentication login' in Step 1 admits these only when no
 ! server answers.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <HASH> with the type 5 hash ($1$...) of a password you keep,
 ! then remove the '! '. (IOS 12.x has no type 9.)
 ! username lab-ops privilege 7 secret 5 <HASH>
+! To use these accounts while the server is up: tacctl breakglass hold <device> --reason "..." (a superuser); release when done
 === juniper / operator only
 # Break-glass local users (scope: lab):
 # the authentication-order above names the server only, so Junos falls back to these local
@@ -78,19 +90,25 @@ Unfilled break-glass credentials (tacctl stores none; put in your own): lab-admi
 Unfilled break-glass credentials (tacctl stores none; put in your own): lab-ops (operator)
 === cisco / readonly only
 ! --- Break-glass local users (scope: lab) ---
-! The 'local' method of 'aaa authentication login' above admits these only when no
+! The 'local' method of 'aaa authentication login' in Step 1 admits these only when no
 ! server answers.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <TYPE9-HASH> with the type 9 hash ($9$...) of a password
 ! you keep (the hash, not the password: 'secret 9' takes a hash as it appears in 'show running-config'),
 ! then remove the '! '.
 ! username lab-ro privilege 1 secret 9 <TYPE9-HASH>
+! To use these accounts while the server is up: tacctl breakglass hold <device> --reason "..." (a superuser); release when done
 === cisco legacy / readonly only
 ! --- Break-glass local users (scope: lab) ---
-! The 'local' method of 'aaa authentication login' above admits these only when no
+! The 'local' method of 'aaa authentication login' in Step 1 admits these only when no
 ! server answers.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <HASH> with the type 5 hash ($1$...) of a password you keep,
 ! then remove the '! '. (IOS 12.x has no type 9.)
 ! username lab-ro privilege 1 secret 5 <HASH>
+! To use these accounts while the server is up: tacctl breakglass hold <device> --reason "..." (a superuser); release when done
 === juniper / readonly only
 # Break-glass local users (scope: lab):
 # the authentication-order above names the server only, so Junos falls back to these local
@@ -108,23 +126,29 @@ Unfilled break-glass credentials (tacctl stores none; put in your own): lab-ops 
 Unfilled break-glass credentials (tacctl stores none; put in your own): lab-ro (readonly)
 === cisco / several
 ! --- Break-glass local users (scope: lab) ---
-! The 'local' method of 'aaa authentication login' above admits these only when no
+! The 'local' method of 'aaa authentication login' in Step 1 admits these only when no
 ! server answers.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <TYPE9-HASH> with the type 9 hash ($9$...) of a password
 ! you keep (the hash, not the password: 'secret 9' takes a hash as it appears in 'show running-config'),
 ! then remove the '! '.
 ! username lab-admin privilege 15 secret 9 <TYPE9-HASH>
 ! username lab-ops privilege 7 secret 9 <TYPE9-HASH>
 ! username lab-ro privilege 1 secret 9 <TYPE9-HASH>
+! To use these accounts while the server is up: tacctl breakglass hold <device> --reason "..." (a superuser); release when done
 === cisco legacy / several
 ! --- Break-glass local users (scope: lab) ---
-! The 'local' method of 'aaa authentication login' above admits these only when no
+! The 'local' method of 'aaa authentication login' in Step 1 admits these only when no
 ! server answers.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <HASH> with the type 5 hash ($1$...) of a password you keep,
 ! then remove the '! '. (IOS 12.x has no type 9.)
 ! username lab-admin privilege 15 secret 5 <HASH>
 ! username lab-ops privilege 7 secret 5 <HASH>
 ! username lab-ro privilege 1 secret 5 <HASH>
+! To use these accounts while the server is up: tacctl breakglass hold <device> --reason "..." (a superuser); release when done
 === juniper / several
 # Break-glass local users (scope: lab):
 # the authentication-order above names the server only, so Junos falls back to these local
@@ -147,11 +171,14 @@ Unfilled break-glass credentials (tacctl stores none; put in your own): lab-admi
 === cisco / local-first
 ! --- Break-glass local users (scope: lab) ---
 ! The scope's aaa-order is local-first: the 'local' method of 'aaa authentication login'
-! above tries these accounts before the server.
+! in Step 1 tries these accounts before the server.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <TYPE9-HASH> with the type 9 hash ($9$...) of a password
 ! you keep (the hash, not the password: 'secret 9' takes a hash as it appears in 'show running-config'),
 ! then remove the '! '.
 ! username lab-admin privilege 15 secret 9 <TYPE9-HASH>
+! To use these accounts while the server is up: tacctl breakglass hold <device> --reason "..." (a superuser); release when done
 === juniper / local-first
 # Break-glass local users (scope: lab):
 # the scope's aaa-order is local-first, so the authentication-order above tries these accounts

@@ -1,4 +1,15 @@
-! --- TACACS+ Server & AAA ---
+${HARDENING_BLOCK}
+!
+${BREAKGLASS_BLOCK}
+!
+! --- Step 1: TACACS+ server, group and AAA (the standard block) ---
+! The order keeps the session you paste from alive: 'aaa new-model' first (nothing under 'aaa'
+! exists on IOS until it is set), then the server and its group, the login lists, exec
+! authorization and 'enable'. Command authorization is not in this step: it is Step 2, after a
+! check from a new session (below), because a server that answers 'fail' (for a name it does not
+! know, such as the local user you paste from) is final and never falls through to 'local'. From
+! 'aaa new-model' until the login lists are typed a NEW TACACS+ login would fail (a local user
+! still gets in): paste the block in one go and keep the session you paste from.
 ! Encrypt Type 0 plaintext secrets in running-config.
 ! (Type 7 is trivially reversible; for Type 6 AES encryption of the
 !  TACACS+ key, run 'key config-key password-encrypt <master>' first,
@@ -6,11 +17,6 @@
 service password-encryption
 !
 aaa new-model
-!
-! Optional: pin TACACS+ client to a known source interface so prefix-based
-! ACLs on the tacquito side have a stable source IP. Uncomment and replace
-! the interface token with your management interface (e.g. Loopback0).
-! ip tacacs source-interface Loopback0
 !
 tacacs server TACACS
   address ipv4 ${SERVER_IP}
@@ -21,22 +27,29 @@ tacacs server TACACS
 aaa group server tacacs+ ${TACACS_GROUP}
   server name TACACS
 !
+${SOURCE_INTERFACE_BLOCK}
+!
+! 'default' is the vty lines' login list; CONSOLE is the console's, local only: with the
+! server up a local user logs in on the console, and lands at privilege 1 (see Notes below).
 aaa authentication login default ${AUTHN_METHODS}
+aaa authentication login CONSOLE local
 aaa authorization exec default ${AUTHZ_EXEC_METHODS}
+! 'enable' asks the server first (a TACACS+ user lands at the level the server gives, and needs
+! no 'enable'); the local enable secret answers only when no server does.
+aaa authentication enable default group ${TACACS_GROUP} enable
 aaa accounting exec default start-stop group ${TACACS_GROUP}
 ${ACCT_COMMANDS_BLOCK}
-!
-${AUTHZ_COMMANDS_BLOCK}
+aaa session-id common
 !
 ${PRIVILEGE_COMMANDS}
-${VTY_ACL_BLOCK}
-!
 ${SNMP_BLOCK}
+!
+${VTY_ACL_BLOCK}
 !
 ${NETCONF_BLOCK}
 !
 line con 0
-  login authentication default
+  login authentication CONSOLE
   exec-timeout ${EXEC_TIMEOUT} 0
 !
 line vty 0 15
@@ -45,4 +58,4 @@ line vty 0 15
 ${VTY_ACCESS_CLASS}
   exec-timeout ${EXEC_TIMEOUT} 0
 !
-${BREAKGLASS_BLOCK}
+${AUTHZ_COMMANDS_BLOCK}

@@ -38,6 +38,10 @@ type Result struct {
 	// Adopted are the backends whose gate answered GateAdopt and which
 	// were therefore rendered with force (BACKENDS_ADOPT).
 	Adopted []string
+	// RestartFailed are the backends whose restart did not succeed, each
+	// with the command the warning named: their running daemon has the
+	// configuration it had before, the rendered files are the new ones.
+	RestartFailed []RestartFailure
 }
 
 // StoreApply is store_apply, the one mutation path: every command that
@@ -57,7 +61,8 @@ type Result struct {
 //     fails, no artifact has changed, and store.yaml and tacctl.yaml are
 //     put back as they were (and Env.Conf reloaded).
 //  5. restart  only the backends whose rendered config changed, except
-//     DeferRestart.
+//     DeferRestart; one that did not restart is in Result.RestartFailed
+//     (the files stay rendered, the change is not undone).
 //
 // It returns ErrRefused (exit 3: a rendered file was edited by hand;
 // nothing changed), ErrFailed (exit 1: nothing changed, a partial write was
@@ -122,8 +127,8 @@ func (s *Set) StoreApply(ctx context.Context, opts ApplyOptions, writer func() e
 		env.Out.Error("The change was not applied: " + names + " could not be rendered. Store and tacctl.yaml are as they were.")
 		return Result{}, ErrFailed
 	}
-	s.RestartChanged(ctx, changed, opts.DeferRestart)
-	return Result{Changed: changed, Adopted: adopt}, nil
+	failed := s.RestartChanged(ctx, changed, opts.DeferRestart)
+	return Result{Changed: changed, Adopted: adopt, RestartFailed: failed}, nil
 }
 
 // rollback is _store_apply_rollback: store.yaml and tacctl.yaml back from

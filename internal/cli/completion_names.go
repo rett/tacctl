@@ -42,6 +42,8 @@ var completionArgKinds = map[string]func(inv *invocation, args []string) []strin
 	// name 'ssh' and 'device' accept; both filtered to the caller's scopes.
 	KindHosts:   (*invocation).hostNames,
 	KindDevices: (*invocation).deviceNames,
+	// The devices with a break-glass hold ('breakglass release').
+	KindHeld: (*invocation).heldNames,
 }
 
 // completionDescKinds answer '_completion-names <kind> --desc' (the shell's

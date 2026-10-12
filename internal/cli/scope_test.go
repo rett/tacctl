@@ -359,8 +359,8 @@ func TestGroupCommandsPositionAndSelector(t *testing.T) {
 		return got
 	}
 	// operator's shipped rules (defaults.yaml), numbered as 'list' does.
-	shipped := []string{"show:deny", "show:permit", "dir:permit", "ping:permit", "traceroute:permit", "terminal:permit", "ssh:permit",
-		"telnet:permit", "monitor:permit", "clear:permit", "undebug:permit", "exit:permit", "logout:permit"}
+	shipped := []string{"show:deny", "show:permit", "dir:permit", "ping:deny", "ping:permit", "traceroute:deny", "traceroute:permit", "terminal:permit", "ssh:permit",
+		"telnet:permit", "undebug:permit", "exit:permit", "logout:permit"}
 	numbered := func(rules ...string) []string {
 		out := make([]string, len(rules))
 		for i, r := range rules {

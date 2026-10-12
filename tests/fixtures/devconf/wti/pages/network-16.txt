@@ -1,0 +1,34 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 16
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+16
+
+ACCEPT BREAK: [Shared]
+
+1. Off
+2. On (ASCII 28)
+3. On (Dual mode)
+4. On (IETF/RFC4335 compliant)
+
+------------------------------------ HELP -------------------------------------
+'Off' all break codes are ignored and passed through untouched to the
+  serial port,
+'On (ASCII 28)' If an ASCII 28 (Control '\') is detected, it is stripped and
+  a 'break' sequence is initiated on the connected serial port.
+'On (Dual Mode)' If an ASCII 28 or IETF/RFC4335 SSH break sequence is
+  detected, these codes are stripped and a 'break' sequence is initiated on
+  the connected serial port.
+'On (IETF/RFC4335 compliant)' If an IETF/RFC4335 SSH break sequence is
+  detected, this code is stripped and a 'break' sequence is initiated on the
+  connected serial port.
+
+When this mode changes, you need to logout/login to take affect.
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

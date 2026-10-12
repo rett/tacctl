@@ -146,7 +146,7 @@ func JuniperVars(req Request, d Data) map[string]string {
 				users.WriteString("set system login class " + j + " permissions " + p + "\n")
 			}
 		case "operator":
-			for _, p := range []string{"clear", "network", "trace", "view", "view-configuration"} {
+			for _, p := range []string{"network", "trace", "view", "view-configuration"} {
 				users.WriteString("set system login class " + j + " permissions " + p + "\n")
 			}
 		case "engineer":
@@ -230,7 +230,8 @@ func JuniperVars(req Request, d Data) map[string]string {
 				f + "permit-snmp then accept\n" +
 				f + "deny-snmp from protocol udp\n" +
 				f + "deny-snmp from destination-port snmp\n" +
-				f + "deny-snmp then { log; discard; }\n")
+				f + "deny-snmp then log\n" +
+				f + "deny-snmp then discard\n")
 			snmpTerms = sb.String()
 			snmpNote = "# udp port 161 (SNMP, Step 5) is accepted from the SNMP clients only; this is the source restriction\n" +
 				"# under SNMPv3, which the client list of Step 5 does not give.\n"
@@ -247,7 +248,8 @@ func JuniperVars(req Request, d Data) map[string]string {
 			f + "permit-mgmt then accept\n" +
 			f + "deny-mgmt from protocol tcp\n" +
 			f + "deny-mgmt from destination-port [ ssh 830 ]\n" +
-			f + "deny-mgmt then { log; discard; }\n" +
+			f + "deny-mgmt then log\n" +
+			f + "deny-mgmt then discard\n" +
 			snmpTerms +
 			f + "default-accept then accept\n" +
 			"#\n" +
@@ -282,9 +284,9 @@ func JuniperVars(req Request, d Data) map[string]string {
 		case "read-only":
 			desc = "local: network/view + view-configuration"
 		case "operator":
-			desc = "local: clear/network/trace/view + view-configuration"
+			desc = "local: network/trace/view + view-configuration"
 		case "engineer":
-			desc = "local: operator bits + reset, configure/rollback and interface, routing, firewall, system, snmp"
+			desc = "local: operator bits + clear, reset, configure/rollback and interface, routing, firewall, system, snmp"
 		case "super-user":
 			desc = "local: all"
 		}

@@ -136,8 +136,9 @@ setup() {
     run "$TACCTL_BIN_SCRIPT" group privilege list operator
     assert_success
     assert_output --partial "default"
-    assert_output --partial "monitor capture"
-    assert_output --partial "clear counters"
+    assert_output --partial "undebug all"
+    refute_output --partial "clear"
+    refute_output --partial "monitor"
 }
 
 @test "group privilege list: flips to 'explicit' once mappings are written" {
@@ -158,21 +159,13 @@ setup() {
 @test "group privilege add: accepts comma-separated list" {
     # First 'add' on a group with empty explicit mappings seeds from defaults
     # first (so the user's addition doesn't silently drop the conservative
-    # built-ins). Operator's defaults are nine lines (ping, traceroute and
-    # monitor capture for all forms, the single-entry clears, undebug) —
-    # adding two more commands yields 11 total.
+    # built-ins). Operator's default is one line (undebug all; nothing that
+    # can interrupt service is lowered) — adding two more commands yields 3
+    # total.
     run "$TACCTL_BIN_SCRIPT" group privilege add operator "show version,show ip interface brief"
     assert_success
     run conf_get_list privileges.operator
-    [[ "$(printf '%s\n' "$output" | wc -l)" == "11" ]]
-    assert_line "exec all: ping"
-    assert_line "exec all: traceroute"
-    assert_line "exec all: monitor capture"
-    assert_line "clear counters"
-    assert_line "clear line"
-    assert_line "clear ip arp"
-    assert_line "clear arp-cache"
-    assert_line "clear mac address-table dynamic"
+    [[ "$(printf '%s\n' "$output" | wc -l)" == "3" ]]
     assert_line "undebug all"
     assert_line "show version"
     assert_line "show ip interface brief"

@@ -37,6 +37,8 @@ type sandbox struct {
 	tty  *os.File
 	// resolve, when set, is the App's host-name lookup (--server).
 	resolve func(context.Context, string) ([]string, error)
+	// script, when set, adds rules to the fake runner of every run.
+	script func(*fake.Runner)
 }
 
 func newSandbox(t *testing.T, withStore bool) *sandbox {
@@ -88,6 +90,9 @@ func (sb *sandbox) run(stdin string, args []string, extraEnv ...string) string {
 	sb.runner.On([]string{"logger"}, execx.Result{})
 	sb.runner.On([]string{"id"}, execx.Result{Stdout: []byte("users\n")})
 	fakePasswd(sb.runner)
+	if sb.script != nil {
+		sb.script(sb.runner)
+	}
 	stdio := app.Stdio{Stdin: strings.NewReader(stdin), Stdout: &sb.out, Stderr: &sb.err}
 	if sb.tty != nil {
 		stdio.Stdin = sb.tty

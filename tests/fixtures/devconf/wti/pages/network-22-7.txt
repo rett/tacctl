@@ -1,0 +1,21 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 22 > 7
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+7
+
+SSH DISABLE PASSWORD AUTHENTICATION: [eth0] IPv4
+
+If On, this will disable any type of username/password authentication for SSH.
+Only the exchange of public keys are used for authentication..
+
+1. Off
+2. On
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

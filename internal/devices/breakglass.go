@@ -139,11 +139,13 @@ func ciscoBreakGlass(in BreakGlassInput) string {
 	b.WriteString("! --- Break-glass local users (scope: " + in.Scope + ") ---\n")
 	if in.LocalFirst {
 		b.WriteString("! The scope's aaa-order is local-first: the 'local' method of 'aaa authentication login'\n")
-		b.WriteString("! above tries these accounts before the server.\n")
+		b.WriteString("! in Step 1 tries these accounts before the server.\n")
 	} else {
-		b.WriteString("! The 'local' method of 'aaa authentication login' above admits these only when no\n")
+		b.WriteString("! The 'local' method of 'aaa authentication login' in Step 1 admits these only when no\n")
 		b.WriteString("! server answers.\n")
 	}
+	b.WriteString("! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,\n")
+	b.WriteString("! at privilege 1 while a server answers (see the Notes under the configuration).\n")
 	if in.Legacy {
 		b.WriteString("! tacctl stores no credential: replace " + breakGlassHash + " with the type 5 hash ($1$...) of a password you keep,\n")
 		b.WriteString("! then remove the '! '. (IOS 12.x has no type 9.)\n")
@@ -159,6 +161,8 @@ func ciscoBreakGlass(in BreakGlassInput) string {
 		}
 		b.WriteString("! username " + u.Name + " privilege " + strconv.Itoa(in.Privilege[u.Role]) + " " + secret + hash + "\n")
 	}
+	// The way to use them with the server up (D124): the superuser's hold.
+	b.WriteString("! To use these accounts while the server is up: tacctl breakglass hold <device> --reason \"...\" (a superuser); release when done\n")
 	return strings.TrimSuffix(b.String(), "\n")
 }
 

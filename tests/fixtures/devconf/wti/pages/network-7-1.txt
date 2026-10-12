@@ -1,0 +1,22 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 7 > 1
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+1
+
+
+DNS SERVER IP ADDRESSES: [Shared]
+
+1.
+2.
+3.
+4.
+5. Ping Test
+
+
+Enter: #<CR> to select menu,
+       <ESC> to return to previous menu ... 

@@ -1,0 +1,22 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /P > 2
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+2
+
+BITS/PARITY:
+
+1. 7-None
+2. 7-Even
+3. 7-Odd
+4. 8-None
+5. 8-Even
+6. 8-Odd
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

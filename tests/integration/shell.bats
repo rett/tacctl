@@ -247,7 +247,7 @@ exec \"\$@\""
 @test "shell: usage errors" {
     run "$TACCTL_BIN_SCRIPT" shell --idle soon
     assert_failure 1
-    assert_output --partial "Usage: tacctl shell [--no-history] [--idle <min>] [--space-completion on|off] [-c <line>]"
+    assert_output --partial "Usage: tacctl shell [--no-history] [--idle <min>] [--space-completion on|off] [--password-cache] [-c <line>]"
     run "$TACCTL_BIN_SCRIPT" shell extra
     assert_failure 1
     assert_output --partial "Unknown argument: 'extra'"

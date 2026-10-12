@@ -1,0 +1,28 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /AC
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+/AC
+
+ALARM CONFIGURATION:
+
+1.  Over Temperature (Initial):            On - 110 Degrees F
+2.  Over Temperature (Critical):           On - 120 Degrees F
+3.  Lost Communication with Unit:          On
+4.  Ping No Answer:                        On
+5.  Serial Port Invalid Access Lockout:    On
+6.  Power Cycle:                           On
+7.  Buffer Threshold:                      On
+8.  No Dialtone:                           On
+9.  Wakeup on Failure Eth0:                On
+10. Buffer Filtering:                      On
+11. User Login/Logout:                     Off
+12. VPN Status Change:                     Off
+
+
+Enter: #<CR> to select,
+       <ESC> to exit and save configuration ... 

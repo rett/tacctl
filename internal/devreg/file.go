@@ -395,13 +395,22 @@ func parseDevice(name string, v any) (*Device, error) {
 	bad := func(key string) error { return fail("device '" + name + "': invalid '" + key + "'.") }
 	for k, val := range m.All() {
 		switch k {
-		case "address", "vendor", "hostname", "description", "location":
+		case "address", "vendor", "hostname", "description", "location", "config_syntax":
 			s, ok := val.(string)
 			if !ok {
 				return nil, bad(k)
 			}
+			if k == "config_syntax" {
+				// auto is the absence of the key; a file that spells it is
+				// read as that, and anything but ios12 and modern is refused.
+				cs, err := ValidateConfigSyntax(s)
+				if err != nil || s == "" {
+					return nil, bad(k)
+				}
+				s = cs
+			}
 			*map[string]*string{"address": &d.Address, "vendor": &d.Vendor, "hostname": &d.Hostname,
-				"description": &d.Description, "location": &d.Location}[k] = s
+				"description": &d.Description, "location": &d.Location, "config_syntax": &d.ConfigSyntax}[k] = s
 		case "port":
 			n, ok := val.(int)
 			if !ok {
@@ -414,6 +423,12 @@ func parseDevice(name string, v any) (*Device, error) {
 				return nil, bad(k)
 			}
 			d.LegacySSH = b
+		case "snmp":
+			sn, err := parseSNMP(name, val)
+			if err != nil {
+				return nil, err
+			}
+			d.SNMP = sn
 		case "host_keys", "ack":
 			l, ok := strList(val)
 			if !ok {
@@ -434,6 +449,64 @@ func parseDevice(name string, v any) (*Device, error) {
 	return d, nil
 }
 
+// parseSNMP reads a device's 'snmp:' map (D72): version, port, timeout and
+// clients; anything else is refused, as everywhere in the file.
+func parseSNMP(name string, v any) (SNMP, error) {
+	var s SNMP
+	m, ok := v.(*yamlpy.Map)
+	if !ok {
+		return s, fail("device '" + name + "': snmp must be a mapping.")
+	}
+	bad := func(key string) error { return fail("device '" + name + "': snmp: invalid '" + key + "'.") }
+	for k, val := range m.All() {
+		switch k {
+		case "version":
+			t, ok := val.(string)
+			if !ok || t == "" {
+				return s, bad(k)
+			}
+			s.Version = t
+		case "port", "timeout":
+			n, ok := val.(int)
+			if !ok || n == 0 {
+				return s, bad(k)
+			}
+			if k == "port" {
+				s.Port = n
+			} else {
+				s.Timeout = n
+			}
+		case "clients":
+			l, ok := strList(val)
+			if !ok {
+				return s, bad(k)
+			}
+			s.Clients = l
+		default:
+			return s, fail("device '" + name + "': snmp: unknown key '" + k + "'.")
+		}
+	}
+	return s, nil
+}
+
+// snmpDoc is the 'snmp:' map of a device's settings, only what is set.
+func snmpDoc(s SNMP) *yamlpy.Map {
+	m := yamlpy.NewMap()
+	if s.Version != "" {
+		m.Set("version", s.Version)
+	}
+	if s.Port != 0 {
+		m.Set("port", s.Port)
+	}
+	if s.Timeout != 0 {
+		m.Set("timeout", s.Timeout)
+	}
+	if len(s.Clients) > 0 {
+		m.Set("clients", slices.Clone(s.Clients))
+	}
+	return m
+}
+
 // doc is the file as a value for the emitter.
 func (f *File) doc() *yamlpy.Map {
 	devs := yamlpy.NewMap()
@@ -448,11 +521,17 @@ func (f *File) doc() *yamlpy.Map {
 		if d.LegacySSH {
 			m.Set("legacy_ssh", true)
 		}
+		if d.ConfigSyntax != "" {
+			m.Set("config_syntax", d.ConfigSyntax)
+		}
 		if d.Description != "" {
 			m.Set("description", d.Description)
 		}
 		if d.Location != "" {
 			m.Set("location", d.Location)
+		}
+		if !d.SNMP.Empty() {
+			m.Set("snmp", snmpDoc(d.SNMP))
 		}
 		if len(d.HostKeys) > 0 {
 			m.Set("host_keys", slices.Clone(d.HostKeys))

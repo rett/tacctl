@@ -12,15 +12,15 @@ Reset of group 'operator' to the role preset's values
   commands
     - configure    permit
     - *            permit
-    + show         deny   ^(running-config view full|startup-config|derived-config|key chain|snmp (community|user)|crypto (isakmp key|key)|archive log)( .*)?$
+    + show         deny   ^(running-config view full|tech-support|startup-config|derived-config|key chain|snmp (community|user)|crypto (isakmp key|key)|archive log)( .*)?$
     + *            deny
     ~ dir          permit  (moved)
     default action: permit -> deny
   privileges
     - show version
   junos
-    deny-commands: 6/241 bytes -> 226/241 bytes
+    deny-commands: 6/241 bytes -> 133/241 bytes
       - ^foo  (4 bytes)
-      + ^(file|request|restart|start|load|op|test|configure|edit|clear (bgp|ospf|ospf3|isis|ldp|rsvp|mpls|pim|igmp|msdp|bfd|vrrp|lacp|system|security|network-access|log|dhcp)|monitor traffic .*write-file|show system rollback)( .*)?$  (224 bytes)
+      + ^(file|request|restart|start|load|op|test|configure|edit|clear|monitor traffic|ping .*(rapid|interval)|show system rollback)( .*)?$  (131 bytes)
 
 [INFO] Dry run: nothing was written.

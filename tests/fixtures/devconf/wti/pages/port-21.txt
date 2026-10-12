@@ -1,0 +1,23 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /P > 21
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+21
+
+PORT NAME:
+
+Up to 24 characters are allowed for the port name.
+First character must be an "alpha" (A-Z, a-z).
+Non-printables, ", /, \, <SPACE>, *, +, :, <, >, &, | are NOT allowed.
+
+Enter: <SPACE><CR> to clear,
+       <text><CR> to change,
+       <ESC> to return to previous menu ...
+
+
+sw1.example.net
+------------------------

@@ -1,0 +1,23 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 1 > 2
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+2
+
+PUBLIC IP ADDRESS: [eth0] IPv4
+
+Enter: <SPACE><CR> to clear
+       ddd.ddd.ddd.ddd<CR> to change
+       <ESC> to return to previous menu
+
+The Public IP Address is a text field that is for display purposes only.
+It is used for an informational display when the device's actual IP address
+is hidden behind another public address.
+
+
+(undefined)
+---------------

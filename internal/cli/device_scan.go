@@ -11,12 +11,15 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/rett/tacctl/internal/backend"
+	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/shellquote"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -43,7 +46,13 @@ func deviceSeenCols(inv *invocation, res *devreg.Resolver, e devreg.Entry) (last
 		case backend.SightBadSecret:
 			last += " (bad secret)"
 		case backend.SightNoScope:
-			last += " (no scope)"
+			// A device the server was told not to answer is refused on
+			// purpose.
+			if _, held := inv.holdAt(e.Address); held {
+				last += " (break-glass held)"
+			} else {
+				last += " (no scope)"
+			}
 		}
 	}
 	days := res.File.StaleDays
@@ -169,7 +178,7 @@ func (inv *invocation) runScan(rq scanRequest) (*scanResult, error) {
 	out.reports = devreg.ScanSources(inv.ctx, seen, srcs, devreg.ScanOptions{
 		Now: now, StaleDays: f.StaleDays, Full: rq.full || out.rebuilt, Since: rq.since})
 	all := res.All()
-	out.keys = devreg.RescanKeys(inv.ctx, inv.app.Runner, keyTargets(all, false))
+	out.keys = devreg.RescanKeys(inv.ctx, inv.app.Runner, keyTargets(all, false), keyFallback(inv))
 	out.keyErr = seen.RecordKeyResults(out.keys, now)
 	var names []string
 	for _, e := range all {
@@ -446,7 +455,7 @@ func (inv *invocation) deviceCheck(args []string) error {
 		sys = inv.checkSysNames(entries)
 		done <- struct{}{}
 	}()
-	keys := devreg.RescanKeys(inv.ctx, inv.app.Runner, targets)
+	keys := devreg.RescanKeys(inv.ctx, inv.app.Runner, targets, keyFallback(inv))
 	<-done
 	<-done
 	path := inv.app.Paths.SeenCache
@@ -472,11 +481,27 @@ func (inv *invocation) deviceCheck(args []string) error {
 		byName[strings.ToLower(k.Target.Name)] = k
 	}
 	js := []deviceCheckJSON{}
+	configs := inv.configRecords()
 	for i, e := range entries {
 		k, scanned := byName[strings.ToLower(e.Name)]
 		rows := inv.checkRows(res, e, reach[i], k, scanned, sys[i])
+		if r, ok := netconfRow(e, configs); ok {
+			// Before the notices, which close the checklist.
+			at := slices.IndexFunc(rows, func(x checkRow) bool { return x.label == "Notices" })
+			if at < 0 {
+				at = len(rows)
+			}
+			rows = slices.Insert(rows, at, r)
+		}
 		if p.Has("--json") {
-			js = append(js, checkJSONOf(res, e, reach[i], rows, sys[i]))
+			cj := checkJSONOf(res, e, reach[i], rows, sys[i])
+			cj.Breakglass = inv.deviceHoldOf(e)
+			if e.Source == devreg.SourceDevice {
+				if info, err := inv.deviceSNMPInfoOf(e); err == nil {
+					cj.SNMP = info.json()
+				}
+			}
+			js = append(js, cj)
 			continue
 		}
 		inv.printCheck(e, rows)
@@ -511,6 +536,15 @@ type deviceCheckJSON struct {
 	SysLocation      *string `json:"syslocation"`
 	SysLocationMatch *bool   `json:"syslocation_match"`
 	SysLocationError string  `json:"syslocation_error,omitempty"`
+	// Netconf is the NETCONF probe of the device's last pull: hello ok,
+	// port closed, no hello or not probed (none for a host and for a
+	// vendor that is not read).
+	Netconf string `json:"netconf,omitempty"`
+	// SNMP is what the name and the location were read with and where each
+	// value comes from (D72); never a secret.
+	SNMP *deviceSNMPJSON `json:"snmp,omitempty"`
+	// Breakglass is the hold on the device while there is one.
+	Breakglass *deviceHoldJSON `json:"breakglass,omitempty"`
 }
 
 func checkJSONOf(res *devreg.Resolver, e devreg.Entry, reach string, rows []checkRow, sys checkSysName) deviceCheckJSON {
@@ -522,6 +556,8 @@ func checkJSONOf(res *devreg.Resolver, e devreg.Entry, reach string, rows []chec
 			j.Seen = r.value
 		case "Host key":
 			j.HostKey = r.value
+		case "NETCONF":
+			j.Netconf, _, _ = strings.Cut(r.value, " (")
 		}
 	}
 	for _, n := range devreg.Open(res.NoticesFor(e)) {
@@ -581,6 +617,26 @@ func checkHost(e devreg.Entry) string {
 // checkRow is one line of the checklist.
 type checkRow struct{ label, value string }
 
+// netconfRow is the NETCONF row of a device's checklist (D61): what the
+// last pull's probe found, with when. A check logs in to nothing, so the
+// probe is the pull's; a device never pulled says so and how to probe it.
+func netconfRow(e devreg.Entry, recs *devconf.Records) (checkRow, bool) {
+	// Only a Junos device is probed (and read) over NETCONF (D61): a Cisco
+	// device's pull does not try it, so it has no row.
+	if e.Source != devreg.SourceDevice || e.Vendor != "juniper" {
+		return checkRow{}, false
+	}
+	rec, ok := recs.Of(e.Name)
+	if !ok || rec.Netconf == "" || rec.Netconf == netconfNotProbed {
+		return checkRow{"NETCONF", netconfNotProbed + " (a pull probes it: tacctl device config pull " + e.Name + ")"}, true
+	}
+	when := ""
+	if !rec.NetconfAt.IsZero() {
+		when = " (probed " + seenTime(rec.NetconfAt) + " by a pull)"
+	}
+	return checkRow{"NETCONF", rec.Netconf + when}, true
+}
+
 // printCheck is the checklist of one entry.
 func (inv *invocation) printCheck(e devreg.Entry, rows []checkRow) {
 	head := "Check " + e.Name + " (" + dashAddrText(e.Address) + ", " + e.Vendor + ")"
@@ -605,6 +661,10 @@ func (inv *invocation) checkRows(res *devreg.Resolver, e devreg.Entry, reach str
 		row("Scope", e.Scope+"  (via prefix "+e.Prefix+")")
 	default:
 		row("Scope", "none: no scope's prefixes cover "+e.Address+" ('tacctl scope prefixes <scope> add <cidr>')")
+	}
+	if h := inv.deviceHoldOf(e); h != nil {
+		hold, _ := inv.holdOf(e.Name, e.Address)
+		rows[len(rows)-1].value += "; " + ui.Red + "NOT ANSWERED: break-glass " + inv.holdRowText(hold) + ui.NC
 	}
 	if e.Source == devreg.SourceDevice {
 		row("Vendor tag", dash(e.Tag))
@@ -650,6 +710,18 @@ func (inv *invocation) checkRows(res *devreg.Resolver, e devreg.Entry, reach str
 			row("Host key", "matches; also offers "+devreg.Displays(c.Added)+" (not pinned)")
 		default:
 			row("Host key", "matches the pinned keys")
+		}
+	}
+	if e.Source == devreg.SourceDevice {
+		// The settings the name and the location were read with, and where
+		// each comes from (D72); never a secret.
+		if info, err := inv.deviceSNMPInfoOf(e); err != nil {
+			row("SNMP", "cannot be read: "+strings.Join(msgs(err), " "))
+		} else if info.Eff.Version == "" {
+			row("SNMP", "not configured (tacctl device snmp "+shellquote.Q(e.Name)+" community|v3-user <user>)")
+		} else {
+			row("SNMP", info.settings())
+			row("SNMP creds", info.credentials())
 		}
 	}
 	if v := sys.row(e); v != "" {

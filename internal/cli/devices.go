@@ -10,6 +10,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 
@@ -18,7 +19,6 @@ import (
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/devices"
 	"github.com/rett/tacctl/internal/devreg"
-	"github.com/rett/tacctl/internal/ui"
 )
 
 // deviceVendors are the device verbs of 'config', with their Short.
@@ -44,6 +44,9 @@ func deviceSpec(vendor string) Spec {
 	}
 	if vendor == "cisco" {
 		flags = append(flags, Flag{Names: []string{"--legacy"}})
+		// 'config cisco source-interface [<scope> [<interface>|none]]': the
+		// scope is the second word
+		return Spec{Flags: flags, MaxArgs: 3, Args: []string{"", KindScopes, ""}}
 	}
 	return Spec{Flags: flags}
 }
@@ -69,9 +72,30 @@ func deviceUsage(vendor string) string {
 }
 
 // configDevice is cmd_config_cisco, cmd_config_juniper and cmd_config_wti
-// (with config_wti_radius) up to the rendering.
+// (with config_wti_radius) up to the rendering. The one line the walkthrough
+// of a device with no known syntax says (D113) goes to stderr, where the
+// configuration on stdout is not touched.
 func (inv *invocation) configDevice(vendor string, args []string) error {
+	_, err := inv.configDeviceNote(vendor, args, func(note string) {
+		_, _ = fmt.Fprintln(inv.app.Out.Stderr, note)
+	})
+	return err
+}
+
+// configDeviceNote is configDevice; the note is the syntax line of D113 for
+// a walkthrough of a registered Cisco device (--name) that is neither set
+// nor pulled, "" otherwise (or when a sink took it). 'device config show'
+// prints it with the device's data. With --name naming a registered Cisco device of the scope the
+// syntax is the device's (its setting, else the last pull's, else modern);
+// --legacy is the explicit IOS 12.x override, and without --name the
+// walkthrough is the modern syntax as before.
+func (inv *invocation) configDeviceNote(vendor string, args []string, sink func(string)) (note string, _ error) {
 	a := inv.app
+	// 'config cisco source-interface ...' is the setting of D119, not a
+	// walkthrough.
+	if vendor == "cisco" && arg(args, 0) == "source-interface" {
+		return "", inv.configCiscoSourceInterface(args[1:])
+	}
 	usage := deviceUsage(vendor)
 	var scope, protocol, stagingIP, stagingName, server, sourceFlag, snmpLocation string
 	legacy := false
@@ -79,32 +103,32 @@ func (inv *invocation) configDevice(vendor string, args []string) error {
 		switch w := args[i]; {
 		case w == "--scope":
 			if scope = arg(args, i+1); scope == "" {
-				return inv.usageErr(usage)
+				return "", inv.usageErr(usage)
 			}
 			i += 2
 		case w == "--staging":
 			if stagingIP = arg(args, i+1); stagingIP == "" {
-				return inv.usageErr(usage)
+				return "", inv.usageErr(usage)
 			}
 			i += 2
 		case w == "--name":
 			if stagingName = arg(args, i+1); stagingName == "" {
-				return inv.usageErr(usage)
+				return "", inv.usageErr(usage)
 			}
 			i += 2
 		case w == "--server":
 			if server = arg(args, i+1); server == "" {
-				return inv.usageErr(usage)
+				return "", inv.usageErr(usage)
 			}
 			i += 2
 		case w == "--source":
 			if sourceFlag = arg(args, i+1); sourceFlag == "" {
-				return inv.usageErr(usage)
+				return "", inv.usageErr(usage)
 			}
 			i += 2
 		case w == "--snmp-location":
 			if snmpLocation = arg(args, i+1); snmpLocation == "" {
-				return inv.usageErr(usage)
+				return "", inv.usageErr(usage)
 			}
 			i += 2
 		case w == "--legacy" && vendor == "cisco":
@@ -112,66 +136,66 @@ func (inv *invocation) configDevice(vendor string, args []string) error {
 			i++
 		case w == "--protocol":
 			if protocol = arg(args, i+1); protocol == "" {
-				return inv.usageErr(usage)
+				return "", inv.usageErr(usage)
 			}
 			if msg := devices.ProtocolValid(protocol); msg != "" {
-				return inv.usageErr(msg)
+				return "", inv.usageErr(msg)
 			}
 			i += 2
 		default:
-			return inv.usageErr("Unknown argument: '"+w+"'", usage)
+			return "", inv.usageErr("Unknown argument: '"+w+"'", usage)
 		}
 	}
 	if protocol == devices.RADIUS && legacy {
-		return inv.usageErr("--legacy (IOS 12.x syntax) applies to TACACS+ only; the RADIUS configuration uses the structured 'radius server' block (IOS 15.2 / IOS-XE and later).")
+		return "", inv.usageErr("--legacy (IOS 12.x syntax) applies to TACACS+ only; the RADIUS configuration uses the structured 'radius server' block (IOS 15.2 / IOS-XE and later).")
 	}
 	authServer, authName, err := inv.deviceServerFlag(server)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if sourceFlag != "" {
 		norm, err := devreg.NormalizeAddress(sourceFlag)
 		if err != nil || strings.Contains(norm, ":") || strings.Contains(sourceFlag, "/") {
-			return inv.usageErr("--source takes the IPv4 address tacctl reaches the devices from (a single address, no prefix length): '" + sourceFlag + "'")
+			return "", inv.usageErr("--source takes the IPv4 address tacctl reaches the devices from (a single address, no prefix length): '" + sourceFlag + "'")
 		}
 		sourceFlag = norm
 	}
 	if snmpLocation != "" {
 		if err := devreg.ValidateLocation(snmpLocation); err != nil {
-			return inv.usageErr(append(msgs(err), "(--snmp-location)")...)
+			return "", inv.usageErr(append(msgs(err), "(--snmp-location)")...)
 		}
 	}
 	if stagingIP != "" {
 		if scope == "" {
-			return inv.usageErr("--staging provisions a device off-site for the scope it will be installed in; name it: --scope <scope>")
+			return "", inv.usageErr("--staging provisions a device off-site for the scope it will be installed in; name it: --scope <scope>")
 		}
 		norm, err := devreg.NormalizeAddress(stagingIP)
 		if err != nil || strings.Contains(norm, ":") || strings.Contains(stagingIP, "/") {
-			return inv.usageErr("--staging takes the device's bench IPv4 address (a single address, no prefix length): '" + stagingIP + "'")
+			return "", inv.usageErr("--staging takes the device's bench IPv4 address (a single address, no prefix length): '" + stagingIP + "'")
 		}
 		stagingIP = norm
 		if err := inv.requireStore(); err != nil {
-			return err
+			return "", err
 		}
 	}
 	if scope == "" {
 		def, err := inv.defaultScope()
 		if err != nil {
-			return err
+			return "", err
 		}
 		if def == "" {
-			return inv.usageErr("No default scope set and no --scope provided.",
+			return "", inv.usageErr("No default scope set and no --scope provided.",
 				"Run 'tacctl scope default <name>' or pass --scope <name>.")
 		}
 		scope = def
 	} else if err := inv.scopeRequire(scope); err != nil {
-		return err
+		return "", err
 	}
 	// The configuration carries the scope's secret: an engineer gets their
 	// own scopes' only (D18).
 	ownScopes := inv.callerScopes()
 	if err := inv.ownScope(ownScopes, scope); err != nil {
-		return err
+		return "", err
 	}
 	// --staging --name ends the staging of a device of this scope: an
 	// engineer names one of their own scopes' devices, not another's.
@@ -180,11 +204,11 @@ func (inv *invocation) configDevice(vendor string, args []string) error {
 	if stagingName != "" && ownScopes.restricted {
 		_, res, err := inv.deviceLoad()
 		if err != nil {
-			return err
+			return "", err
 		}
 		// A host is not a device either: not found.
 		if e, ok := res.NameTaken(stagingName); ok && (e.Source == devreg.SourceHost || !ownScopes.allows(e.Scope)) {
-			return inv.usageErr("Device '" + stagingName + "' not found.")
+			return "", inv.usageErr("Device '" + stagingName + "' not found.")
 		}
 	}
 	if ownScopes.restricted {
@@ -199,7 +223,7 @@ func (inv *invocation) configDevice(vendor string, args []string) error {
 		if source == devices.SourceProtocols {
 			first = "Scope '" + scope + "' is served over RADIUS only (tacctl scope protocols), and --legacy (IOS 12.x syntax) applies to TACACS+ only."
 		}
-		return inv.usageErr(first,
+		return "", inv.usageErr(first,
 			"For the legacy TACACS+ configuration add --protocol tacacs: tacctl config cisco --scope "+scope+" --legacy --protocol tacacs")
 	}
 	// --name names a registered device whose SNMP location, description and
@@ -209,16 +233,22 @@ func (inv *invocation) configDevice(vendor string, args []string) error {
 	if stagingName != "" {
 		_, res, err := inv.deviceLoad()
 		if err != nil {
-			return err
+			return "", err
 		}
 		e, ok := res.NameTaken(stagingName)
 		switch {
 		case ok && e.Source == devreg.SourceDevice && ownScopes.allows(e.Scope) && (e.Scope == "" || e.Scope == scope):
 			dev = deviceSNMPValues(e)
+			// The device's configuration syntax (D113): the one resolution
+			// the comparison and the planner use. An explicit --legacy
+			// stays what it was, and a RADIUS configuration has one.
+			if vendor == "cisco" && e.Vendor == "cisco" && !legacy && protocol != devices.RADIUS {
+				legacy, note = inv.walkthroughSyntax(e)
+			}
 		case ok && e.Source == devreg.SourceDevice && ownScopes.allows(e.Scope) && stagingIP == "":
-			return inv.usageErr("Device '" + stagingName + "' is in scope '" + e.Scope + "', not in '" + scope + "'. Nothing was printed.")
+			return "", inv.usageErr("Device '" + stagingName + "' is in scope '" + e.Scope + "', not in '" + scope + "'. Nothing was printed.")
 		case stagingIP == "":
-			return inv.usageErr("Device '" + stagingName + "' not found. List them with: tacctl device list")
+			return "", inv.usageErr("Device '" + stagingName + "' not found. List them with: tacctl device list")
 		}
 	}
 	if snmpLocation != "" {
@@ -238,44 +268,25 @@ func (inv *invocation) configDevice(vendor string, args []string) error {
 		// snapshot's and the backends' render) goes to stderr: stdout is
 		// the configuration.
 		if err := inv.stdoutToStderr(func() error { return inv.stagingAdd(scope, stagingIP, "device", stagingName) }); err != nil {
-			return err
+			return "", err
 		}
 	}
-	m, err := inv.model()
+	req, d, err := inv.deviceRenderInput(renderParams{
+		Vendor: vendor, Scope: scope, Legacy: legacy, Protocol: protocol, Source: source,
+		Device: dev, AuthServer: authServer, AuthName: authName, SourceIP: sourceFlag,
+		Restricted: ownScopes.restricted,
+	})
 	if err != nil {
-		return err
+		return "", err
 	}
-	d := devices.Data{
-		Model:       m,
-		Conf:        a.Conf(),
-		TemplateDir: a.Paths.Templates,
-		ServerIP:    devices.ServerIP(inv.ctx, a.Runner),
-		Restricted:  ownScopes.restricted,
-		AuthServer:  authServer, AuthName: authName, SourceIP: sourceFlag,
+	// With a sink the note is said before the configuration is written, so
+	// it leads the output wherever the two streams meet; the caller of
+	// 'device config show' takes it back and prints it after its data block.
+	if sink != nil && note != "" {
+		sink(note)
+		note = ""
 	}
-	if d.SNMP, err = inv.walkthroughSNMP(scope, dev); err != nil {
-		// A credentials file that cannot be read leaves the step out; the
-		// rest of the walkthrough is still good.
-		ui.Output{Stdout: a.Out.Stderr}.Warn("The SNMP step is left out: " + strings.Join(msgs(err), " "))
-		d.SNMP = dev
-		d.SNMP.Scope = scope
-	}
-	if ownScopes.restricted && d.SNMP.Version != "" {
-		inv.secretRead("snmp", scope)
-	}
-	// The permit list is read for every vendor (WTI's IP Tables list, D42,
-	// is built from it too); a WTI unit has no ACL name.
-	d.ACL = devices.MgmtACL{CIDRs: inv.readMgmtACLCIDRs(scope)}
-	if vendor != "wti" {
-		d.ACL.Name = inv.readMgmtACLName(vendor, scope)
-	}
-	if protocol == devices.RADIUS {
-		if d.Radius, err = inv.deviceRadius(vendor, scope); err != nil {
-			return err
-		}
-	}
-	return devices.Render(a.Out.Stdout, devices.Request{Vendor: vendor, Scope: scope, Legacy: legacy,
-		Protocol: protocol, Source: source}, d)
+	return note, devices.Render(a.Out.Stdout, req, d)
 }
 
 // deviceSNMPValues are the SNMP values a registry device carries: its

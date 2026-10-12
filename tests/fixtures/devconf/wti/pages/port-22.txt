@@ -1,0 +1,21 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /P > 22
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+22
+
+PORT MODE:
+
+1. Any-to-Any
+2. ---
+3. ---
+4. Modem
+5. ModemPPP
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

@@ -152,8 +152,8 @@ radius_listeners() {
     run "$TACCTL_BIN_SCRIPT" config cisco --scope lab --protocol radius
     assert_success
     local cfg summary
-    cfg="${output%%Group → Privilege Level Mapping*}"
-    summary="${output#*Group → Privilege Level Mapping}"
+    cfg="${output%%Group -> Privilege Level Mapping*}"
+    summary="${output#*Group -> Privilege Level Mapping}"
     [[ "$summary" == *"What RADIUS does not give you (compared with TACACS+)"* ]]
     [[ "$summary" == *"What an Access-Accept carries for this device:"* ]]
     [[ "$summary" == *"Service-Type: Administrative-User at privilege 15, else NAS-Prompt-User (always sent)"* ]]
@@ -195,7 +195,7 @@ radius_listeners() {
     assert_output --partial "ip access-list standard VTY-ACL"
     assert_output --partial "permit 10.0.0.0 0.255.255.255"
     assert_output --partial "  access-class VTY-ACL in"
-    assert_output --partial "privilege exec all level 7 ping"
+    assert_output --partial "privilege exec level 7 undebug all"
     assert_output --partial "privilege exec level 1 show running-config"
 }
 
@@ -579,7 +579,7 @@ radius_listeners() {
     run "$TACCTL_BIN_SCRIPT" config juniper --scope lab --protocol radius
     assert_success
     assert_output --partial "#   deny-commands       25/241 bytes: (^(request|start)( .*)?$)"
-    assert_output --partial "operator: OP-CLASS (local: clear/network/trace/view + view-configuration), junos: deny-commands 25/241"
+    assert_output --partial "operator: OP-CLASS (local: network/trace/view + view-configuration), junos: deny-commands 25/241"
 }
 
 @test "config wti: without --protocol a scope that resolves to RADIUS gets the RADIUS walkthrough, like cisco and juniper" {

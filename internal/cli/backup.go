@@ -478,6 +478,14 @@ func (inv *invocation) restoreSnapshot(id string) error {
 	inv.echo("")
 	inv.echo("  Restoring snapshot: " + id)
 	inv.diffSnapshot(id)
+	// A restore is a render like any other: the break-glass holds come back
+	// with a tacctl.yaml that has them and go with one that lacks them
+	// (D126), so a change of the set is said before the question.
+	holdNote := inv.restoreHoldNote(dir)
+	if holdNote != "" {
+		inv.echo("")
+		inv.echoE(ui.Red + holdNote + ui.NC)
+	}
 	inv.echo("")
 	if !inv.confirmRestore() {
 		return nil
@@ -524,18 +532,50 @@ func (inv *invocation) restoreSnapshot(id string) error {
 		return err
 	}
 	a.Out.InfoE("Restored snapshot " + id + ".")
+	if holdNote != "" {
+		a.Out.WarnE(holdNote)
+	}
 	inv.echo("")
 	inv.warnServerSync("Users whose tier is lower now keep their old groups")
 	return nil
 }
 
+// restoreHoldNote says how the set of break-glass holds changes when the
+// snapshot in dir is restored ("" when it does not): the devices held now
+// and the ones held after.
+func (inv *invocation) restoreHoldNote(dir string) string {
+	now := inv.holds()
+	after := conf.Load(filepath.Join(dir, "tacctl.yaml"), inv.app.Backends().IDs()).Holds()
+	same := len(now) == len(after)
+	for i := 0; same && i < len(now); i++ {
+		same = now[i].Device == after[i].Device && now[i].Address == after[i].Address
+	}
+	if same {
+		return ""
+	}
+	list := func(hs []conf.Hold) string {
+		if len(hs) == 0 {
+			return "none"
+		}
+		parts := make([]string, len(hs))
+		for i, h := range hs {
+			parts[i] = h.Device + " (" + h.Address + ")"
+		}
+		return strings.Join(parts, ", ")
+	}
+	return "Break-glass holds change: held now: " + list(now) + "; held after the restore: " + list(after) + " (tacctl breakglass list)."
+}
+
 // restoreSNMP puts the SNMP credentials of snapshot directory dir back:
-// snmp.yaml (the default) and the per-scope files of snmp/, in the modes
-// they are kept in (0600, the directory 0700). A snapshot that holds a
+// snmp.yaml (the default), the per-scope files of snmp/ and the per-device
+// files of snmp/devices/, in the modes they are kept in (0600, the
+// directories 0700). A snapshot that holds a
 // credentials directory makes the live one match it (a file the snapshot
 // lacks goes: tacctl.yaml, restored with it, names no such scope); one that
 // holds none (taken before there were any, or when there were none) leaves
-// the live files alone.
+// the live scope files alone. The devices' files follow the registry: a
+// snapshot that holds devices.yaml makes snmp/devices/ match its own, empty
+// when it has none.
 func (inv *invocation) restoreSNMP(dir string) error {
 	p := inv.app.Paths
 	if snap := filepath.Join(dir, "snmp.yaml"); cfgIsFile(snap) {
@@ -544,24 +584,60 @@ func (inv *invocation) restoreSNMP(dir string) error {
 		}
 	}
 	snapDir := filepath.Join(dir, "snmp")
-	files := snapshot.SNMPFiles(snapDir)
-	if len(files) == 0 {
+	files, devFiles := snapshot.SNMPFiles(snapDir), snapshot.SNMPDeviceFiles(snapDir)
+	// A snapshot that holds the registry says which devices have credentials
+	// of their own: none when it has no snmp/devices (absent means none), so
+	// a restore never leaves a device's file that the restored registry has
+	// no map for. One without a registry (a 0.2.0 one) leaves the devices'
+	// files alone, as it leaves the registry.
+	hasRegistry := cfgIsFile(filepath.Join(dir, "devices.yaml"))
+	hasCreds := len(files) > 0 || len(devFiles) > 0
+	if !hasCreds && !hasRegistry {
 		return nil
 	}
-	if err := os.MkdirAll(p.SNMPDir, 0o700); err != nil {
-		return err
-	}
-	if err := os.Chmod(p.SNMPDir, 0o700); err != nil {
-		return err
-	}
-	for _, n := range files {
-		if err := backupPut(filepath.Join(snapDir, n), filepath.Join(p.SNMPDir, n), 0o600); err != nil {
+	// The scopes' files: made to match when the snapshot holds a credentials
+	// directory; a snapshot without one leaves them alone.
+	if hasCreds {
+		if err := os.MkdirAll(p.SNMPDir, 0o700); err != nil {
+			return err
+		}
+		if err := os.Chmod(p.SNMPDir, 0o700); err != nil {
+			return err
+		}
+		if err := restoreCredDir(p.SNMPDir, snapDir, files, snapshot.SNMPFiles(p.SNMPDir)); err != nil {
 			return err
 		}
 	}
-	for _, n := range snapshot.SNMPFiles(p.SNMPDir) {
+	// The devices' files (D72 of docs/plans/0.2.4-plan.md, snmp/devices/).
+	devDir := filepath.Join(p.SNMPDir, snapshot.SNMPDevicesDir)
+	if err := restoreCredDir(devDir, filepath.Join(snapDir, snapshot.SNMPDevicesDir), devFiles, snapshot.SNMPDeviceFiles(p.SNMPDir)); err != nil {
+		return err
+	}
+	_ = os.Remove(devDir)    // only when empty
+	_ = os.Remove(p.SNMPDir) // only when empty
+	return nil
+}
+
+// restoreCredDir puts the credential files of one snapshot directory back
+// into liveDir (0700, the files 0600) and removes the live files the
+// snapshot lacks.
+func restoreCredDir(liveDir, snapDir string, files, live []string) error {
+	if len(files) > 0 {
+		if err := os.MkdirAll(liveDir, 0o700); err != nil {
+			return err
+		}
+		if err := os.Chmod(liveDir, 0o700); err != nil {
+			return err
+		}
+	}
+	for _, n := range files {
+		if err := backupPut(filepath.Join(snapDir, n), filepath.Join(liveDir, n), 0o600); err != nil {
+			return err
+		}
+	}
+	for _, n := range live {
 		if !slices.Contains(files, n) {
-			if err := os.Remove(filepath.Join(p.SNMPDir, n)); err != nil {
+			if err := os.Remove(filepath.Join(liveDir, n)); err != nil {
 				return err
 			}
 		}

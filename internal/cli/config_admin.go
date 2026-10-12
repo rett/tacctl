@@ -111,10 +111,7 @@ func (inv *invocation) configSudoers(args []string) error {
 		a.Out.Info("Aborted.")
 		return nil
 	}
-	body := "# Managed by tacctl. Grants passwordless sudo on " + tier.Binary + "\n" +
-		"# to members of group '" + group + "'. Remove with: tacctl config sudoers remove\n" +
-		tier.EnvKeep +
-		"%" + group + " ALL=(ALL) NOPASSWD: " + tier.Binary + "\n"
+	body := tier.GroupSudoers(group)
 	if err := inv.installSudoers(body, file); err != nil {
 		return err
 	}

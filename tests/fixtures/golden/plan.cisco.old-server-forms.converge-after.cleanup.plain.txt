@@ -1,0 +1,3 @@
+no aaa group server tacacs+ SPARE-GROUP
+no tacacs server OLDSRV
+no tacacs server SPARESRV

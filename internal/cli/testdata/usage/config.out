@@ -32,12 +32,13 @@ Subcommands:
   mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits
   mgmt-acl cisco-name [name]           Show or set the emitted Cisco ACL name (default VTY-ACL)
   mgmt-acl juniper-name [name]         Show or set the emitted Juniper filter name (default MGMT-ACL)
+  cisco source-interface [<scope> [<interface>|none]]  Show or set the interface a scope's Cisco devices source their server requests from (the full name IOS prints: Loopback0, GigabitEthernet0/0)
   cisco   [--scope <name>] [--legacy] [--protocol tacacs|radius]  Show working Cisco device configuration for a scope (--legacy = IOS 12.x syntax; --protocol radius = RADIUS backend, default tacacs)
   juniper [--scope <name>] [--protocol tacacs|radius]             Show working Juniper device configuration for a scope
   wti     [--scope <name>] [--protocol tacacs|radius]             Show step-by-step WTI console-server (v8.x serial menu) setup for a scope (RADIUS: not verified on a unit)
       --scope <name>                   (cisco, juniper, wti) The scope whose server address and secret go in (default: the default scope)
       --protocol tacacs|radius         (cisco, juniper, wti) The backend the device uses (default: the scope's auth-method, else its only protocol, else tacacs)
-      --legacy                         (cisco) IOS 12.x syntax
+      --legacy                         (cisco) The IOS 12.x syntax, whatever the --name device's config-syntax says
       --staging <bench-ip>             (cisco, juniper, wti, with --scope) Provisioned off-site: the bench address joins the scope as a
                                        /32 (its secret and users) until the device is seen in place (tacctl scope staging)
       --name <device>                  (cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step;
@@ -49,6 +50,7 @@ Subcommands:
       --snmp-location <text>           (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location)
   linux   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
   snmp    show|community|v3-user|port|timeout|clear|test  SNMP for the name hint of 'device add' (sysName)
+  devices [show|max-concurrency|transport|timeout|confirm-timeout] [value]  How 'device config pull' reads the devices (default 8 at once, auto, 90 s) and the confirm timeout of 'plan' (5 min)
   branch [name]                        Show or change the tacctl repo branch
 
 Examples:
@@ -60,6 +62,7 @@ Examples:
   tacctl config cisco --scope prod
   tacctl config cisco --scope prod --legacy   # legacy IOS 12.x syntax
   tacctl config cisco --scope prod --protocol radius
+  tacctl config cisco source-interface prod Loopback0
   tacctl config wti --scope prod
   tacctl config wti --scope prod --protocol radius
 

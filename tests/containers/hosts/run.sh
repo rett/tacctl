@@ -17,12 +17,6 @@
 #                       rotate' (--key): create, prove, host sync through the
 #                       new account, --remove-old, adoption, a failed proof;
 #                       then unenroll
-#              rollback enroll with --method tacplus, an engineer-tier user
-#                       and a superuser, sync; 'tacctl rollback 0.2.2 --hosts'
-#                       as a dry run (nothing changes), then --apply --yes:
-#                       the engineer loses the %tac-engineer sudoers line and
-#                       the group memberships, nobody else changes; then 0.2.2's
-#                       own sync (the tag's binary, built here) and unenroll
 #              server   no enroll of the client: the baseline command rules of
 #                       the four roles asked of the real tacquito
 #                       (tests/tools/permcheck.py), then this server enrolled
@@ -42,8 +36,8 @@
 # (bin/tacctl.sh installs Go, verified, and builds /usr/local/bin/tacctl).
 # shellcheck disable=SC2016  # the single-quoted scripts run inside the containers
 set -uo pipefail
-CLIENT="${1:?usage: run.sh <client> <radius|tacplus|switch|probe|rotate|rollback|server> [--server <distro>] [--keep]}"
-CYCLE="${2:?usage: run.sh <client> <radius|tacplus|switch|probe|rotate|rollback|server> [--server <distro>] [--keep]}"
+CLIENT="${1:?usage: run.sh <client> <radius|tacplus|switch|probe|rotate|server> [--server <distro>] [--keep]}"
+CYCLE="${2:?usage: run.sh <client> <radius|tacplus|switch|probe|rotate|server> [--server <distro>] [--keep]}"
 shift 2
 SERVER="ubuntu-noble"; KEEP=""
 while [[ $# -gt 0 ]]; do
@@ -70,7 +64,7 @@ case "$CLIENT" in
 esac
 case "$CYCLE" in
     radius|probe|rotate) WANT=radius ;;
-    tacplus|rollback|server) WANT=tacplus ;;
+    tacplus|server) WANT=tacplus ;;
     switch) WANT=both ;;
     *) echo "unknown cycle: ${CYCLE}" >&2; exit 2 ;;
 esac
@@ -462,7 +456,6 @@ enroll() { # <method> [extra args]
 }
 
 FIRST="$CYCLE"; [[ "$CYCLE" == "switch" ]] && FIRST="tacplus"; [[ "$CYCLE" == "rotate" ]] && FIRST="radius"
-[[ "$CYCLE" == "rollback" ]] && FIRST="tacplus"
 
 section "before: snapshot, then enroll with --method ${FIRST}"
 snapshot > "${WORK}/before"
@@ -557,122 +550,6 @@ if [[ "$CYCLE" == "rotate" ]]; then
     tacctl host unenroll c1 > "${WORK}/unenroll.out"; rc=$?
     check "host unenroll through the provisioning account exits 0" test $rc -eq 0
     c bash -c 'userdel -r deploy3 2> /dev/null; userdel -r other1 2> /dev/null; userdel -r deploy5 2> /dev/null; rm -f /etc/sudoers.d/tacctl-provisioner /etc/sudoers.d/.tacctl-provisioner.lock; rm -rf /home/.tacctl-removed /var/lib/tacctl-provisioner'
-    snapshot > "${WORK}/after"
-    if diff "${WORK}/before" "${WORK}/after" > "${WORK}/diff"; then
-        ok "PAM files, sudoers and module directory are as before the enroll"
-    else
-        bad "the host differs from before the enroll:"; cat "${WORK}/diff"
-    fi
-    echo
-    echo "${CLIENT} ${CYCLE} (server ${SERVER}): ${pass} passed, ${fail} failed"
-    [[ $fail -eq 0 ]]
-    exit $?
-fi
-
-# --- rollback: 'tacctl rollback 0.2.2 --apply --yes --hosts' (D50) ---------------
-# The engineer tier does not exist in 0.2.2, whose sync would make an engineer
-# a superuser: the rollback syncs the hosts with TAC_REVOKE_ENGINEER=1 in the
-# client script's header, which takes the engineers out of tac-engineer and
-# tac-superuser and writes no %tac-engineer sudoers line. Here on a real
-# client: the dry run changes nothing, the apply takes away the engineer's
-# sudo and nobody else's anything.
-if [[ "$CYCLE" == "rollback" ]]; then
-    F_PW='Frank-Net-Pw-1'
-    DROPIN=/etc/sudoers.d/tacctl-host
-    # same <description> <got> <wanted>: PASS when they are equal.
-    same() { if [[ "$2" == "$3" ]]; then ok "$1"; else bad "$1   (got: $(tr '\n' ' ' <<< "$2"); wanted: $(tr '\n' ' ' <<< "$3"))"; fi; }
-    section "rollback: frank (a group at priv-lvl 15 with tier engineer), alice (superuser), bob, dave: synced"
-    fhash=$(s python3 -c 'import bcrypt; print(bcrypt.hashpw(b"Frank-Net-Pw-1", bcrypt.gensalt(rounds=10)).decode())')
-    tacctl group add engineers 15 EN-CLASS --tier engineer > /dev/null
-    tacctl user add frank engineers --hash "$fhash" --scopes linux-c1 > /dev/null
-    for u in alice bob dave; do tacctl user scope "$u" add linux-c1 > /dev/null; done
-    tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
-    check "host sync exits 0 and creates the four accounts" bash -c "[[ $rc == 0 ]] && grep -q 'c1: synced (4 users' '${WORK}/sync.out' && for u in alice bob dave frank; do podman exec '$C' id \$u > /dev/null || exit 1; done"
-    check "frank (tier engineer) is in tac-engineer and not in tac-superuser" c bash -c 'id -nG frank | grep -qw tac-engineer && ! id -nG frank | grep -qw tac-superuser'
-    check "alice (superuser) is in tac-superuser and not in tac-engineer" c bash -c 'id -nG alice | grep -qw tac-superuser && ! id -nG alice | grep -qw tac-engineer'
-    check "the drop-in has the %tac-engineer line (every command) and the %tac-superuser line, and visudo -c is happy" c bash -c "grep -qx '%tac-engineer ALL=(ALL:ALL) ALL' ${DROPIN} && grep -q '^%tac-superuser ' ${DROPIN} && visudo -cf ${DROPIN}"
-    expect "frank: sudo with the network password gives root" '^0$' "$(login frank "$F_PW" "printf '%s\n' '$F_PW' | sudo -S -k -p '' id -u")"
-    expect "alice: sudo with the network password gives root" '^0$' "$(login alice "$A_PW" "printf '%s\n' '$A_PW' | sudo -S -k -p '' id -u")"
-    note "the drop-in before the rollback: $(c grep -v '^#' "$DROPIN" | grep -v '^$' | paste -sd'|')"
-
-    # Everything the rollback must leave alone: each account, tacctl's groups
-    # and PAM files on the client, and (to see a dry run change nothing) the
-    # files of the server.
-    ustate() { c bash -c 'u=$1; getent passwd "$u"; getent shadow "$u" | cut -d: -f1,2,4-9; id -nG "$u" | tr " " "\n" | sort | paste -sd,; stat -c "%U:%G %a" "$(getent passwd "$u" | cut -d: -f6)"' _ "$1"; }
-    gstate() { c bash -c 'getent group | grep "^tac-" | cut -d: -f1,3 | sort; sha256sum /etc/pam.d/tacctl-* 2> /dev/null; ls -l /var/lib/tacctl-client | tail -n +2 | awk "{print \$1, \$3, \$4, \$9}"'; }
-    srvstate() { s bash -c 'cd / && find etc/tacctl var/lib/tacctl -type f -exec sha256sum {} + 2> /dev/null | sort'; }
-    # A 0.2.3-only setting in console.yaml: 0.2.2's parser rejects it, so the
-    # rollback has a file to convert.
-    tacctl console space-completion off > /dev/null
-    check "console.yaml has settings.space_completion (0.2.3 only) before the rollback" s grep -q space_completion /etc/tacctl/console.yaml
-    declare -A U0
-    for u in alice bob dave frank ladm carl; do U0[$u]=$(ustate "$u"); done
-    G0=$(gstate); D0=$(c cat "$DROPIN"); S0=$(srvstate)
-
-    section "rollback: the dry run (--hosts) changes nothing"
-    tacctl rollback 0.2.2 --hosts > "${WORK}/rb-dry.out"; rc=$?
-    sed 's/^/    | /' "${WORK}/rb-dry.out" | grep -E 'Warnings|^ *[0-9]+\. |dry run|--yes|--hosts' | head -20
-    check "the dry run exits 0, says it was a dry run and names the command to apply" bash -c "[[ $rc == 0 ]] && grep -q 'This was a dry run: nothing was changed.' '${WORK}/rb-dry.out' && grep -q 'tacctl rollback 0.2.2 --apply --yes --hosts' '${WORK}/rb-dry.out'"
-    check "the dry run names the engineers' sudo on the hosts" grep -qi 'engineer' "${WORK}/rb-dry.out"
-    same "nothing on the server changed (every file of /etc/tacctl and /var/lib/tacctl as before)" "$(srvstate)" "$S0"
-    same "the client's drop-in is as before" "$(c cat "$DROPIN")" "$D0"
-    same "tacctl's groups and PAM files on the client are as before" "$(gstate)" "$G0"
-    expect "frank still has his sudo after the dry run" '^0$' "$(login frank "$F_PW" "printf '%s\n' '$F_PW' | sudo -S -k -p '' id -u")"
-
-    section "rollback: --apply without --yes is refused while there are warnings"
-    tacctl rollback 0.2.2 --apply --hosts > "${WORK}/rb-noyes.out"; rc=$?
-    check "refused (exit non-zero), with the reason" bash -c "[[ $rc != 0 ]] && grep -q 'need your decision' '${WORK}/rb-noyes.out'"
-    same "nothing on the server changed" "$(srvstate)" "$S0"
-    same "the client's drop-in is as before, frank is in tac-engineer" "$(c cat "$DROPIN"; c id -nG frank | grep -ow tac-engineer)" "$(printf '%s\n%s' "$D0" tac-engineer)"
-
-    section "rollback: --apply --yes --hosts"
-    tacctl rollback 0.2.2 --apply --yes --hosts > "${WORK}/rb.out"; rc=$?
-    sed 's/^/    | /' "${WORK}/rb.out" | grep -E 'INFO|WARN|ERROR|Taking|synced|revoked|did not finish|Next|0\.2\.2' | head -30
-    check "rollback --apply --yes --hosts exits 0" test $rc -eq 0
-    check "it took the engineers' sudo off the host and said so for frank" bash -c "grep -q \"Taking the engineers' sudo off 1 host\" '${WORK}/rb.out' && grep -q \"'frank': engineer sudo revoked (removed from tac-engineer)\" '${WORK}/rb.out' && grep -q 'c1: synced' '${WORK}/rb.out'"
-    check "console.yaml was converted: no space_completion left, the file still there" s bash -c '[[ -f /etc/tacctl/console.yaml ]] && ! grep -q space_completion /etc/tacctl/console.yaml'
-    if [[ "$(srvstate)" != "$S0" ]]; then ok "the server's files differ from before the apply (the conversion and the snapshot)"; else bad "the server's files differ from before the apply"; fi
-    check "the drop-in has no %tac-engineer line any more, is 0440 root:root and visudo -c is happy" c bash -c "! grep -q '^%tac-engineer' ${DROPIN} && visudo -c > /dev/null && [[ \$(stat -c '%a %U:%G' ${DROPIN}) == '440 root:root' ]]"
-    same "the rest of the drop-in is as it was (only the engineer line and its comment are gone)" "$(c cat "$DROPIN")" "$(grep -vE "^%tac-engineer |^# TACACS\+ engineers get" <<< "$D0")"
-    check "frank is in neither tac-engineer nor tac-superuser" c bash -c '! id -nG frank | grep -qwE "tac-engineer|tac-superuser"'
-    expect "frank's account is still there: he logs in with the network password" '^frank$' "$(login frank "$F_PW" 'id -un')"
-    expect "frank has no sudo any more" 'not (allowed|in the sudoers)|rc=1' "$(login frank "$F_PW" "printf '%s\n' '$F_PW' | sudo -S -k -p '' id -u")"
-    expect "sudo -l -U frank says he may run nothing" 'not allowed to run sudo|may not run sudo' "$(c sudo -l -U frank 2>&1)"
-    expect "alice (superuser) still has sudo" '^0$' "$(login alice "$A_PW" "printf '%s\n' '$A_PW' | sudo -S -k -p '' id -u")"
-    check "alice is still in tac-superuser" c bash -c 'id -nG alice | grep -qw tac-superuser'
-    for u in alice bob dave ladm carl; do
-        same "$u: passwd and shadow lines, groups and home are as before" "$(ustate "$u")" "${U0[$u]}"
-    done
-    mapfile -t UF < <(ustate frank); mapfile -t UF0 <<< "${U0[frank]}"
-    same "frank: passwd and shadow lines and home are as before" "${UF[0]}|${UF[1]}|${UF[3]}" "${UF0[0]}|${UF0[1]}|${UF0[3]}"
-    same "frank: his groups lost tac-engineer and nothing else" "${UF[2]}" "$(sed -E 's/(^|,)tac-engineer//; s/^,//' <<< "${UF0[2]}")"
-    same "tacctl's groups (tac-engineer too) and PAM files on the client are as before" "$(gstate)" "$G0"
-    check "tacctl status on the server still works" tacctl status
-    expect "the registry still lists c1" "c1 +root@${CIP} " "$(tacctl host list)"
-    # A second run converts nothing more and syncs the host again, harmlessly.
-    tacctl rollback 0.2.2 --apply --yes --hosts > "${WORK}/rb2.out"; rc=$?
-    check "a second --apply --yes --hosts exits 0 and has nothing left to convert" bash -c "[[ $rc == 0 ]] && grep -q 'Nothing to convert' '${WORK}/rb2.out'"
-    check "and frank is still without sudo, alice with it" c bash -c '! id -nG frank | grep -qwE "tac-engineer|tac-superuser" && id -nG alice | grep -qw tac-superuser'
-
-    section "rollback: what 0.2.2's own sync does afterwards (the warning of the dry run)"
-    # The release binary of the tag, built here from an archive of it.
-    mkdir -p "${WORK}/old-src"
-    if git -C "$REPO" archive 0.2.2 2> /dev/null | tar -x -C "${WORK}/old-src" 2> /dev/null \
-        && (cd "${WORK}/old-src" && GOCACHE="${WORK}/gocache" "$(command -v go || echo /usr/local/go/bin/go)" build -trimpath -buildvcs=false -o "${WORK}/tacctl-0.2.2" ./cmd/tacctl) > "${WORK}/old-build.log" 2>&1; then
-        podman cp "${WORK}/tacctl-0.2.2" "${S}:/usr/local/bin/tacctl-0.2.2" && s chmod 755 /usr/local/bin/tacctl-0.2.2
-        note "the 0.2.2 binary, built from its tag: $(s tacctl-0.2.2 version 2>&1 | head -1)"
-        s tacctl-0.2.2 host sync c1 > "${WORK}/sync022.out" 2>&1; rc=$?
-        sed 's/\x1b\[[0-9;]*m//g' "${WORK}/sync022.out" | sed 's/^/    | /' | tail -5
-        check "0.2.2's host sync (protocol 5) exits 0" test $rc -eq 0
-        check "and puts frank into tac-superuser again: the engineer tier does not exist for it" c bash -c 'id -nG frank | grep -qw tac-superuser'
-        s rm -f /usr/local/bin/tacctl-0.2.2
-    else
-        note "the 0.2.2 tag could not be built here ($(tail -1 "${WORK}/old-build.log" 2> /dev/null)): 0.2.2's own sync is not checked"
-    fi
-
-    section "unenroll"
-    tacctl host unenroll c1 > "${WORK}/unenroll.out"; rc=$?
-    check "host unenroll exits 0" test $rc -eq 0
     snapshot > "${WORK}/after"
     if diff "${WORK}/before" "${WORK}/after" > "${WORK}/diff"; then
         ok "PAM files, sudoers and module directory are as before the enroll"

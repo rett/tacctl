@@ -1,0 +1,27 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 25 > 9
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+9
+
+SNMP ACCESS: [eth0] IPv4
+
+1. Enable:                 On
+2. Version:                V1/V2 Only
+3. Read Only:              Yes
+4. System Name:            wti.site.exam...
+5. Contact:                Example NOC
+6. SNMP Location:          Example City
+7. Read-Only Community:    ro-community
+8. Read/Write Community:   rw-community
+9. V3 Users
+
+
+ERROR: SNMP V3 is not configured.
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

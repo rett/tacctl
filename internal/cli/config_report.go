@@ -114,6 +114,22 @@ func (inv *invocation) configShow([]string) error {
 	inv.echoE("    Cisco ACL:          " + cisco)
 	inv.echoE("    Juniper filter:     " + juniper)
 
+	// The interface a scope's Cisco devices source their server requests
+	// from (D119): listed when a scope sets one; unset renders nothing.
+	var sources []string
+	for _, s := range m.ScopeNames() {
+		if v, _ := cfg.Get(ciscoSourceInterfaceKey(s), ""); v != "" {
+			sources = append(sources, "    "+s+": "+v)
+		}
+	}
+	if len(sources) > 0 {
+		inv.echo("")
+		inv.echoE("  " + B + "Cisco source interface (per scope):" + NC)
+		for _, l := range sources {
+			inv.echoE(l)
+		}
+	}
+
 	inv.echo("")
 	inv.echoE("  " + B + "Connection Filters:" + NC + " " + C + "(deny takes precedence over allow)" + NC)
 	if cs["deny"] != "" {
@@ -363,6 +379,48 @@ func (inv *invocation) configValidate([]string) error {
 			}
 			inv.echoE("  " + Y + "Break-glass:" + NC + "          " + word + " " + quoteJoin(bare) + " without a break-glass local user — a lockout risk with the server unreachable (tacctl scope breakglass <scope> add <name>)")
 		}
+	}
+
+	// Break-glass holds: a warning per hold while it stands; red when it
+	// holds no registered device (an orphan: none of its name is registered,
+	// or the one that is stands at another address; the record still
+	// silences its address, and 'breakglass release' removes it), and red
+	// for an entry the file holds that is not a usable hold (no address, an
+	// address that is not one, a key with a dot in it), so none is invisible.
+	if hs := inv.holdSeenBy(); len(hs) > 0 {
+		orphans := inv.holdOrphans(hs)
+		now := a.Knobs.Now()
+		for _, h := range hs {
+			if why, ok := orphans[h.Device]; ok {
+				inv.echoE("  " + R + "Break-glass hold:" + NC + "    " + h.Device + " is an orphan record: " + why + "; it still silences " + h.Address + " (tacctl breakglass release " + h.Device + ")")
+				continue
+			}
+			inv.echoE("  " + Y + "Break-glass hold:" + NC + "    " + h.Device + " (" + h.Address + ") held since " + holdTime(h) + " by " + h.By +
+				" (" + holdAge(h, now) + "): the server does not answer it (tacctl breakglass release " + h.Device + ")")
+		}
+	}
+	if !inv.callerScopes().restricted {
+		for _, d := range cfg.HoldDefects() {
+			fix := "tacctl breakglass release " + d.Device
+			if !d.Usable {
+				fix += " removes it"
+			} else {
+				fix = "'" + fix + "' releases it, and the hold can then be made again"
+			}
+			inv.echoE("  " + R + "Break-glass hold:" + NC + "    breakglass_hold." + d.Key + " (device " + d.Device + ") " + d.Defect + " (" + fix + ")")
+			// The schema walk above names a wrong address and a key it
+			// does not know; a record without its address it accepts.
+			if d.Address == "" {
+				errs++
+			}
+		}
+	}
+
+	// Stored settings that still give the operator or the viewer what
+	// 0.2.5 removed (a clear, a capture, a flood form of ping): a warning
+	// naming each with the command that takes the shipped value.
+	for _, s := range policy.StaleOperatorPolicy(cfg) {
+		inv.echoE("  " + Y + "Operator policy:" + NC + "      " + s.String() + " still gives the operator or the viewer a command that can interrupt service; '" + s.Fix() + "' puts back " + s.Restores())
 	}
 
 	// Tier, WTI-level and Junos settings of a group the store does not have
