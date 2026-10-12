@@ -676,7 +676,7 @@ func (w *wtiWalker) has(path string) bool {
 // the list's path.
 func (w *wtiWalker) paging(ctx context.Context, path string) error {
 	for i := 1; i < wti.IPTablesSlots/wtiListPage; i++ {
-		s, ok, err := w.step(ctx, []byte(">"), atFooter)
+		s, ok, err := w.step(ctx, []byte(">\r"), atFooter)
 		if err != nil {
 			return wtiTransport(path, err)
 		}

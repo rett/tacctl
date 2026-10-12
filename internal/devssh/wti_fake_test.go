@@ -422,22 +422,22 @@ func TestWTIFakeIPTablesPages(t *testing.T) {
 			t.Errorf("page 1 lacks %q:\n%s", want, p1)
 		}
 	}
-	p2 := u.page(">")
+	p2 := u.page(">\r")
 	if !strings.Contains(p2, "13. iptables -A INPUT -s 10.0.70.0/24") || !strings.Contains(p2, "24. iptables -P OUTPUT DROP") || strings.Contains(p2, "1.  iptables") {
 		t.Errorf("page 2:\n%s", p2)
 	}
-	p3 := u.page(">")
+	p3 := u.page(">\r")
 	if !strings.Contains(p3, "25. iptables -P FORWARD DROP") || !strings.Contains(p3, "26.\n") || !strings.Contains(p3, "36.\n") {
 		t.Errorf("page 3:\n%s", p3)
 	}
-	p4 := u.page(">")
+	p4 := u.page(">\r")
 	if !strings.Contains(p4, "37.\n") || !strings.Contains(p4, "48.") || strings.Contains(p4, "iptables -") {
 		t.Errorf("page 4:\n%s", p4)
 	}
-	if p5 := u.page(">"); !strings.Contains(p5, "37.\n") {
+	if p5 := u.page(">\r"); !strings.Contains(p5, "37.\n") {
 		t.Errorf("past the last page:\n%s", p5)
 	}
-	if back := u.page("<"); !strings.Contains(back, "25. iptables -P FORWARD DROP") {
+	if back := u.page("<\r"); !strings.Contains(back, "25. iptables -P FORWARD DROP") {
 		t.Errorf("'<':\n%s", back)
 	}
 	// ESC returns to /N; entering the list again starts on its first page.
@@ -460,7 +460,7 @@ func TestWTIFakeIPTablesEmpty(t *testing.T) {
 	if !strings.Contains(p, "IPTABLES ENTRIES: IPv4") || !strings.Contains(p, "\n1.\n") || !strings.Contains(p, "\n12.\n") || strings.Contains(p, "iptables -") {
 		t.Errorf("empty list:\n%s", p)
 	}
-	if next := u.page(">"); !strings.Contains(next, "\n13.\n") {
+	if next := u.page(">\r"); !strings.Contains(next, "\n13.\n") {
 		t.Errorf("empty list, next:\n%s", next)
 	}
 }
@@ -542,7 +542,7 @@ func TestWTIFakeUnknownEntries(t *testing.T) {
 	}
 	waitEvent(t, u.srv, "entry /N > 28 > 1")
 	// '>' is no key at an ordinary page.
-	s = u.page(">")
+	s = u.page(">\r")
 	if !strings.Contains(s, "ERROR: Invalid entry.") {
 		t.Errorf("'>' at a pick page:\n%s", s)
 	}

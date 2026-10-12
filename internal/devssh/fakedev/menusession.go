@@ -70,10 +70,9 @@ var (
 type keyKind int
 
 const (
-	keyLine      keyKind = iota // a line, CR or LF ended
-	keyEsc                      // ESC
-	keyImmediate                // '<' or '>' as the first key of a line
-	keyEOF                      // the client ended the channel
+	keyLine keyKind = iota // a line, CR or LF ended
+	keyEsc                 // ESC
+	keyEOF                 // the client ended the channel
 )
 
 type menuSession struct {
@@ -131,9 +130,10 @@ func (m *menuSession) readByte() (byte, bool) {
 }
 
 // readLine reads one line of input, echoing it as the unit does. ESC
-// ends it at once and discards what was typed; with immediate, '<' and
-// '>' as the first key act at once.
-func (m *menuSession) readLine(immediate bool) (keyKind, string) {
+// ends it at once and discards what was typed. Every other entry, '<' and
+// '>' at the IP tables list included, takes its CR (a bare '>' repaints
+// nothing on a real unit).
+func (m *menuSession) readLine() (keyKind, string) {
 	var buf []byte
 	for {
 		b, ok := m.readByte()
@@ -162,12 +162,6 @@ func (m *menuSession) readLine(immediate bool) (keyKind, string) {
 					m.raw("\b \b")
 				}
 			}
-		case immediate && len(buf) == 0 && (b == '<' || b == '>'):
-			if m.echo {
-				m.raw(string(b))
-			}
-			m.s.log(string(b))
-			return keyImmediate, string(b)
 		case b >= 0x20:
 			buf = append(buf, b)
 			if m.echo {
@@ -255,7 +249,7 @@ func (m *menuSession) run() {
 	m.w(strings.TrimRight(banner, "\n"))
 asking:
 	for {
-		switch k, line := m.readLine(false); {
+		switch k, line := m.readLine(); {
 		case k == keyEOF:
 			m.closed()
 			return
@@ -275,7 +269,7 @@ asking:
 	m.w(textBeforePrompt(ports) + m.c.prompt)
 	for {
 		m.loc = "prompt"
-		k, line := m.readLine(false)
+		k, line := m.readLine()
 		switch {
 		case k == keyEOF:
 			m.closed()
@@ -536,7 +530,7 @@ func (m *menuSession) menuPages(top string) bool {
 	m.w(screen)
 	for {
 		m.loc = pageKey(m.path)
-		k, line := m.readLine(true)
+		k, line := m.readLine()
 		cur := pageKey(m.path)
 		switch k {
 		case keyEOF:
@@ -551,19 +545,6 @@ func (m *menuSession) menuPages(top string) bool {
 			m.pop()
 			s, _ := m.pageScreen()
 			m.w("\n" + strings.TrimLeft(s, "\n"))
-		case keyImmediate:
-			if cur != "/N > 5" {
-				m.w("\n")
-				m.invalid(cur, "")
-				continue
-			}
-			if line == ">" {
-				m.ip = min(m.ip+1, ipPages()-1)
-			} else {
-				m.ip = max(m.ip-1, 0)
-			}
-			s, _ := m.pageScreen()
-			m.w("\n" + s)
 		case keyLine:
 			m.entry(cur, strings.TrimSpace(line))
 		}
@@ -585,6 +566,16 @@ func (m *menuSession) entry(cur, line string) {
 			s, _ = m.pageScreen()
 			s = strings.TrimLeft(s, "\n")
 		}
+		m.w(s)
+		return
+	}
+	if cur == "/N > 5" && (line == ">" || line == "<") {
+		if line == ">" {
+			m.ip = min(m.ip+1, ipPages()-1)
+		} else {
+			m.ip = max(m.ip-1, 0)
+		}
+		s, _ := m.pageScreen()
 		m.w(s)
 		return
 	}
