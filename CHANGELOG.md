@@ -3,6 +3,63 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.6 (unreleased)
+
+A hotfix for 0.2.5, started from `master`. The items below are everything that
+differs from 0.2.5. The server, the store and the rendered TACACS+ and RADIUS
+files are untouched; what changes is the standard Cisco block that
+`config cisco` and `device config show` print and the managed `aaa` section
+that `device config pull`, `diff`, `list` and `plan` compare.
+
+### What changed
+
+1. **The standard Cisco block has no `aaa authentication enable` list.**
+   0.2.5 rendered `aaa authentication enable default group <G> enable` for
+   TACACS+ (and carried the RADIUS form commented out) on the reading that
+   the server would refuse an `enable` it did not know. It does not: tacquito
+   answers a TACACS+ enable request as a login with the user's own password,
+   so an operator at privilege 7 who typed `enable` and their own password
+   reached privilege 15 and could `show running-config` (the TACACS+ key, the
+   enable secret's hash and the local users' hashes). This was tested on lab
+   devices running IOS 15.6 and IOS-XE 16.7; command authorization at level 15
+   still denied `configure`, `debug` and `clear`. The line is gone from the
+   three templates (`cisco`, `cisco-legacy`, `cisco-radius`), from the managed
+   `aaa` section, from the walkthrough's Step 1 and from the RADIUS
+   walkthrough, where the commented line and its "not verified (lab item E2)"
+   note are replaced by one comment: there is no enable list, and `enable`
+   uses the local enable secret and nothing else (0.2.3's behaviour). The Step
+   0 note about the enable secret says the same. The cost, stated in the
+   README and the manual page: the local enable secret is again the one
+   shared secret of the way up, on the vty and on the console alike, while
+   the server is up, and who holds it is site policy (Step 0). Command
+   authorization at level 15 still asks the server with the user's group
+   rules, so an operator who knows the secret cannot configure, debug or
+   clear, and can read the running configuration. `pull`, `diff`, `list` and
+   `plan` treat the line as an extra of the standard, for TACACS+ and RADIUS
+   alike: `aaa authentication enable default group <G> enable`,
+   `default group tacacs+ ...`, `default enable group <G>`, `default line`,
+   `default none` or any other `default` list is `+`, severity ACCESS, and
+   `device config plan` removes it with one `no <the statement>` line in the
+   `aaa` region (after the added lines; the back-out types it again).
+   `aaa authentication enable default enable`, which is what IOS does with no
+   list, is tolerated and left; a list of another name is an extra of that
+   name and is kept, as before. A pulled Cisco device that has the list reads `differs` in
+   `device config list` after the upgrade without a new pull, because the
+   rendering changed; `device config plan <device>` prints the one line.
+   Items 30, 31 and 76 of 0.2.5 say what 0.2.5 shipped and stand as written.
+
+2. **The break-glass texts no longer make the console depend on a silent
+   server.** The README, the manual page, the `breakglass hold` report and
+   the Cisco walkthrough said that the console's local login and `enable`
+   work only while no server answers, because `enable` asked the server
+   first. With no enable list the `CONSOLE` login list is local and `enable`
+   uses the local secret, so on a Cisco console a local account logs in and
+   reaches privilege 15 while the server is up. The text now says so: the hold
+   is for a vty local login (a server's FAIL for a local name is final) and
+   for the local accounts of a Junos or WTI device. The Cisco way in in the
+   hold report reads: ssh as a local account; on the console, the local
+   account, then `enable` with the local enable secret.
+
 ## 0.2.5 (2026-10-11)
 
 The items below are everything that differs from 0.2.3. Items 1 to 29 were
