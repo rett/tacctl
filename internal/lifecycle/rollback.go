@@ -404,7 +404,13 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 			group.state, group.body = "rewrite", tier.GroupSudoers023(name)
 		case tier.GroupOlder:
 			group.label = "the drop-in of group " + name
-			group.state = "done"
+			// the text 0.2.4 to 0.2.6 wrote is put back as 0.2.3's; any
+			// other older text is 0.2.3's or older already
+			if string(b) == tier.GroupSudoers026(name) {
+				group.state, group.body = "rewrite", tier.GroupSudoers023(name)
+			} else {
+				group.state = "done"
+			}
 		default:
 			group.state = "left"
 		}

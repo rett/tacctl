@@ -346,6 +346,9 @@ func (p *parser) parseSet(t []tok) {
 }
 
 func (b *SNMPBlock) community(name string) *Community {
+	if b == nil {
+		return nil
+	}
 	for _, c := range b.Communities {
 		if c.String == name {
 			return c
@@ -355,6 +358,9 @@ func (b *SNMPBlock) community(name string) *Community {
 }
 
 func (b *SNMPBlock) trapGroup(name string) *TrapGroup {
+	if b == nil {
+		return nil
+	}
 	for _, g := range b.TrapGroups {
 		if g.Name == name {
 			return g

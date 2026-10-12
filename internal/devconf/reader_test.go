@@ -136,3 +136,44 @@ set snmp contact &quot;NOC &lt;noc@example.net&gt;&quot;
 		t.Errorf("%v", err)
 	}
 }
+
+func TestHierarchyCommandAndRead(t *testing.T) {
+	if got := HierarchyCommand("juniper", "snmp"); got != "show configuration snmp | display set" {
+		t.Errorf("snmp: %q", got)
+	}
+	if got := HierarchyCommand("juniper", "system"); got != "show configuration system | display set" {
+		t.Errorf("system: %q", got)
+	}
+	for _, c := range [][2]string{{"cisco", "snmp"}, {"juniper", "firewall"}, {"juniper", "snmp | display xml"}, {"wti", "snmp"}} {
+		if got := HierarchyCommand(c[0], c[1]); got != "" {
+			t.Errorf("%v: %q", c, got)
+		}
+	}
+	r := &scriptRunner{out: "set snmp name x\r\nset snmp community c authorization read-only\r\n"}
+	got, err := ReadHierarchy(context.Background(), r, "juniper", "snmp")
+	if err != nil || got != "set snmp name x\nset snmp community c authorization read-only\n" || r.cmd != "show configuration snmp | display set" {
+		t.Errorf("%q %v (%q)", got, err, r.cmd)
+	}
+	// nothing under the hierarchy is no error
+	if got, err := ReadHierarchy(context.Background(), &scriptRunner{out: "\n"}, "juniper", "snmp"); err != nil || strings.TrimSpace(got) != "" {
+		t.Errorf("empty: %q %v", got, err)
+	}
+	for _, refusal := range []string{"error: permission denied", "syntax error, expecting <command>.", "unknown command."} {
+		if _, err := ReadHierarchy(context.Background(), &scriptRunner{out: refusal + "\n"}, "juniper", "snmp"); !errors.Is(err, ErrParse) {
+			t.Errorf("%q: %v", refusal, err)
+		}
+	}
+	if _, err := ReadHierarchy(context.Background(), &scriptRunner{}, "cisco", "snmp"); !errors.Is(err, ErrParse) {
+		t.Errorf("cisco: %v", err)
+	}
+}
+
+type scriptRunner struct {
+	out string
+	cmd string
+}
+
+func (r *scriptRunner) Run(_ context.Context, cmd string) (string, error) {
+	r.cmd = cmd
+	return r.out, nil
+}

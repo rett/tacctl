@@ -4,7 +4,8 @@ package cli
 // plan.md B4): list, show, check, set and remove, for a scope's blocks
 // (scope_block.go) and for one device's own (device_block.go). One engine
 // serves both levels: a blockCtx names the level, and the verbs are its
-// methods.
+// methods. edit and adopt (blocks_edit.go, blocks_adopt.go; B5 and B6) end
+// as set does, through review and install.
 //
 // What a block holds is a secret (a community string, a trap group's name, an
 // NTP key) or a banner that names a site, so nothing here prints a word of
@@ -1003,12 +1004,35 @@ func (c *blockCtx) set(block string, p Parsed, usage string) error {
 		a.Out.Info("The " + block + " block of " + c.what() + " is this text already; nothing was changed.")
 		return nil
 	}
-	c.printCheck(block, bc, false)
-	inv.echo("  This puts the " + block + " block of " + c.what() + " in force. It reaches devices through 'tacctl device config plan'; nothing is restarted.")
-	if !p.Has("-y") && !a.Prompter().ConfirmPrefix("  Set this block? [y/N]: ") {
-		a.Out.Info("Aborted.")
+	if !c.review(block, bc, p.Has("-y")) {
 		return nil
 	}
+	return c.install(block, text, bc, cur, "set")
+}
+
+// review shows the check and the diff of a text that passed, says what
+// installing it does and asks (unless yes): false is a no, which is no
+// change. It is the question of set, edit and adopt.
+func (c *blockCtx) review(block string, bc *blockCheck, yes bool) bool {
+	inv := c.inv
+	a := inv.app
+	c.printCheck(block, bc, false)
+	inv.echo("  This puts the " + block + " block of " + c.what() + " in force. It reaches devices through 'tacctl device config plan'; nothing is restarted.")
+	if !yes && !a.Prompter().ConfirmPrefix("  Set this block? [y/N]: ") {
+		a.Out.Info("Aborted.")
+		return false
+	}
+	return true
+}
+
+// install is the write of set, edit and adopt, after the question: the
+// snapshot first, then the file and the entry of tacctl.yaml together (the
+// file is put back when the entry cannot be written), then the audit line
+// 'block-<event>' (name, size and counts, never a value). cur is the file as
+// it was.
+func (c *blockCtx) install(block string, text []byte, bc *blockCheck, cur blockFile, event string) error {
+	inv := c.inv
+	a := inv.app
 	if err := inv.snapshotFirst(); err != nil {
 		return err
 	}
@@ -1026,7 +1050,7 @@ func (c *blockCtx) set(block string, p Parsed, usage string) error {
 		}
 		return inv.usageErr("tacctl.yaml could not be written: "+strings.Join(msgs(err), " "), "The block was not set.")
 	}
-	a.Logger(inv.ctx, "auth.info", "block-set name="+c.logName(block)+" bytes="+strconv.Itoa(len(text))+
+	a.Logger(inv.ctx, "auth.info", "block-"+event+" name="+c.logName(block)+" bytes="+strconv.Itoa(len(text))+
 		" objects="+strconv.Quote(blockCounts(bc.doc))+" by="+inv.sudoUser())
 	a.Out.Info("The " + block + " block of " + c.what() + " is set (" + strconv.Itoa(len(text)) + " bytes) and in force.")
 	inv.echo("  What the devices need: " + c.pullHint())

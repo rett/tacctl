@@ -131,6 +131,48 @@ func ReadPlain(ctx context.Context, r Runner, vendor string) string {
 	return ""
 }
 
+// HierarchyCommand is the command that reads one hierarchy of a Junos
+// device's configuration as 'set' statements ('show configuration snmp |
+// display set'), the plain view without the groups' inheritance: what the
+// device itself states there. Only the top-level hierarchies a configuration
+// block adopts are accepted; the command is "" for anything else and for a
+// vendor that has no such command.
+func HierarchyCommand(vendor, hierarchy string) string {
+	fam, err := Family(vendor)
+	if err != nil || fam != FamilyJunos {
+		return ""
+	}
+	switch hierarchy {
+	case "snmp", "system":
+		return "show configuration " + hierarchy + " | display set"
+	}
+	return ""
+}
+
+// ReadHierarchy reads one hierarchy through a session (HierarchyCommand) and
+// returns its text cleaned of line-end, escape and pager debris. The text is
+// the caller's to use and drop: nothing is stored here. A hierarchy the
+// device has nothing under is "" and no error; a refusal ('error:', 'syntax
+// error', 'unknown command') or an unusable command is ErrParse.
+func ReadHierarchy(ctx context.Context, r Runner, vendor, hierarchy string) (string, error) {
+	cmd := HierarchyCommand(vendor, hierarchy)
+	if cmd == "" {
+		return "", fmt.Errorf("%w: there is no read of the '%s' hierarchy for vendor '%s'", ErrParse, hierarchy, vendor)
+	}
+	out, err := r.Run(ctx, cmd)
+	if err != nil {
+		return "", err
+	}
+	out = cleanText(out)
+	for _, l := range strings.Split(out, "\n") {
+		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, "error:") || strings.HasPrefix(t, "syntax error") || strings.HasPrefix(t, "unknown command") {
+			return "", fmt.Errorf("%w: the device refused the command", ErrParse)
+		}
+	}
+	return out, nil
+}
+
 // UnwrapNetconf returns the text carried by a Junos NETCONF reply: the
 // content of <configuration-output> (a <command> reply) or
 // <configuration-set> (a <get-configuration format="set"/> reply), XML

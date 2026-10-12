@@ -108,8 +108,10 @@ console), and turns key logins off.
 
 'system-shell' starts the user's system shell from the console, as themselves,
 logged. Superusers only by default; 'system-shell tiers' opens or closes it
-per tier. Neither it nor forwarding is ever open to the engineer tier: a shell
-or a forwarded port on this server would reach its secrets.
+per tier, and the same tiers may open an editor from the console ('scope block
+... edit|adopt', 'device block ... edit|adopt': an editor can start a shell).
+Neither it nor forwarding is ever open to the engineer tier: a shell or a
+forwarded port on this server would reach its secrets.
 
 'password-cache' lets a tier's shell and console sessions keep the user's network
 password in memory for the session, so a device pull or an ssh to a device asks

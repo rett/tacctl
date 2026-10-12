@@ -16,7 +16,7 @@ import (
 	"github.com/rett/tacctl/internal/ui"
 )
 
-const deviceBlockUse = "block <name> {list|show|check|set|remove} [<block>] [options]"
+const deviceBlockUse = "block <name> {list|show|check|set|remove|edit|adopt} [<block>] [options]"
 
 // deviceBlockSpecs are the arguments of each verb after the device's name.
 var deviceBlockSpecs = map[string]Spec{
@@ -26,6 +26,8 @@ var deviceBlockSpecs = map[string]Spec{
 		{Names: []string{"--against"}}}},
 	"set":    {MinArgs: 1, MaxArgs: 2, Args: []string{blockWords, ""}, Flags: []Flag{flagFile, flagYes}},
 	"remove": {MinArgs: 1, MaxArgs: 1, Args: []string{blockWords}, Flags: []Flag{flagYes}},
+	"edit":   {MinArgs: 1, MaxArgs: 1, Args: []string{blockWords}, Flags: []Flag{flagYes}},
+	"adopt":  {MinArgs: 1, MaxArgs: 1, Args: []string{blockWords}, Flags: []Flag{flagYes}},
 }
 
 // deviceBlockCompletion is the Spec of the whole verb for completion (the
@@ -34,7 +36,7 @@ var deviceBlockCompletion = Spec{MinArgs: 1, MaxArgs: -1,
 	Args: []string{KindDevices, blockSubs, blockWords, ""},
 	Flags: []Flag{{Names: []string{"--reveal"}, Only: "show"}, {Names: []string{"--effective"}, Only: "show"},
 		{Names: []string{"--file"}, Value: true, Only: "check|set", Kind: KindFile},
-		{Names: []string{"--against"}, Only: "check"}, {Names: []string{"-y", "--yes"}, Only: "set|remove"}}}
+		{Names: []string{"--against"}, Only: "check"}, {Names: []string{"-y", "--yes"}, Only: "set|remove|edit|adopt"}}}
 
 // deviceBlockVerbs are the verbs ({Use, Short}), in usage order.
 var deviceBlockVerbs = [][2]string{
@@ -43,6 +45,8 @@ var deviceBlockVerbs = [][2]string{
 	{"check <block> [--file <path>|-] [--against]", "Lint the file in force, a file or standard input; --against plans this device with the text in force and prints the statements of the block's section"},
 	{"set <block> (--file <path>|-) [-y]", "Check a file or standard input, show the diff, ask, take a snapshot and put the block in force"},
 	{"remove <block> [-y]", "Take the block out of force and delete its file (asks)"},
+	{"edit <block> [-y]", "Open the block in your editor (VISUAL, EDITOR, else editor, else vi, run as you on a private copy), check what comes back and, after the diff and the question, put it in force; a new block starts with the scope's objects as comments to override"},
+	{"adopt <block> [-y]", "Read this device's own statements of the hierarchy with your login (nothing is stored), minus what the scope's block states, open them in your editor as the draft to prune, then check, diff, ask and put the block in force"},
 }
 
 // deviceBlockOptions are the option lines under a verb's row.
@@ -56,7 +60,7 @@ var deviceBlockOptions = map[string][][2]string{
 		{"--against", "Plan the device with this text in force and print the statements of its section (from its last pull; nothing is written and no device is reached)"},
 	},
 	"set": {
-		{"-y, --yes", "(set, remove) Answer yes to the question (a block read from standard input needs it)"},
+		{"-y, --yes", "(set, remove, edit, adopt) Answer yes to the question (a block read from standard input needs it)"},
 	},
 }
 
@@ -87,10 +91,19 @@ blocks. The files are /etc/tacctl/blocks/_devices/<name>/juniper/ (0600), named
 in tacctl.yaml by blocks_device.<name>.juniper (the name's dots written '~');
 'rename' moves them and 'remove' deletes them.
 
+edit and adopt need a terminal and are the superuser's, and work as they do
+for a scope ('tacctl scope block <scope> juniper'): your editor, run as you on
+a private copy that is removed afterwards, the text installed only after the
+check, the diff and your yes. A new block opens with the scope's objects as
+comments, to uncomment where this device differs; adopt reads this device's
+statements with your login and leaves out what the scope's block states.
+
 Examples:
   tacctl device block js1.lab.example.net list
   tacctl device block js1.lab.example.net show snmp --effective
   tacctl device block js1.lab.example.net set snmp --file snmp.txt
+  tacctl device block js1.lab.example.net edit snmp
+  tacctl device block js1.lab.example.net adopt system
 
 `)
 	return b.String()
@@ -142,7 +155,7 @@ func (inv *invocation) deviceBlock(args []string) error {
 		restricted: inv.callerScopes().restricted}
 	// what an engineer may not do is refused before the device's own
 	// properties are discussed
-	if (sub == "set" || sub == "remove") && e.Source == devreg.SourceDevice {
+	if (sub == "set" || sub == "remove" || sub == "edit" || sub == "adopt") && e.Source == devreg.SourceDevice {
 		if err := c.requireSuperuser(sub); err != nil {
 			return err
 		}

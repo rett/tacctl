@@ -2891,9 +2891,20 @@ for
 .BR "device config pull" ,
 .BR "device config diff" ,
 .BR "device config plan" ,
-.B ssh
+.BR ssh ,
+.B "device ssh"
 and
-.BR "device ssh" ).
+.BR "scope block ... adopt" ,
+.BR "device block ... adopt" ),
+and
+.B VISUAL
+and
+.B EDITOR
+for the four command lines that open an editor
+.RB ( "scope block * edit *" ,
+.BR "scope block * adopt *" ,
+.BR "device block * edit *" ,
+.BR "device block * adopt *" ).
 .B "tacctl upgrade"
 rewrites a drop-in this command wrote with an earlier release, for the group
 its header names, when it is exactly the text that release wrote (it prints
@@ -2970,9 +2981,11 @@ neither sets nor drops a device's own settings), and the configuration blocks
 of a scope of theirs and of the devices there
 .RB ( "scope block " \fIscope\fR " juniper list|show|check" ,
 .BR "device block " \fIname\fR " list|show|check" ;
-.B set
+.BR set ,
+.BR remove ,
+.B edit
 and
-.B remove
+.B adopt
 are the superuser's).
 Each read of a secret by an engineer is logged to syslog as
 \fBsecret\-read kind=scope|snmp|snmp\-device|snmp\-default|block name=\fR\fIname\fR\fB by=\fR\fIuser\fR
@@ -3043,10 +3056,19 @@ file. Both sudoers files carry
 .BR "tacctl host" ,
 the login console's session marker, and the X11 display
 .B "tacctl ssh \-X"
-hands on) and, for the command lines that use the password cache
-.RB ( "device config pull" ", " "device config diff" ", " "device config plan" ", " ssh " and " "device ssh" ),
+hands on), for the command lines that use the password cache
+.RB ( "device config pull" ", " "device config diff" ", " "device config plan" ", " ssh ", " "device ssh" " and " "block ... adopt" ),
 .BR TACCTL_ASKPASS ,
-and nothing else of the caller's environment; tacctl also refuses a
+for the four command lines that open an editor
+.RB ( "scope block ... edit|adopt" ", " "device block ... edit|adopt" ),
+.B VISUAL
+and
+.BR EDITOR ,
+each set in a
+.B Cmnd_Alias
+and a
+.B Defaults!
+line of its own, and nothing else of the caller's environment; tacctl also refuses a
 .B SUDO_USER
 that is not the account of
 .BR SUDO_UID .
@@ -5074,7 +5096,7 @@ Nothing is secret. An engineer may list the scopes of their own.
 .\" BEGIN GENERATED: command scope block
 .RS
 .PP
-Requires: \fBengineer\fR. An engineer may read the configuration blocks of a scope of their own (list, show [\-\-reveal], check); set and remove need the superuser tier.
+Requires: \fBengineer\fR. An engineer may read the configuration blocks of a scope of their own (list, show [\-\-reveal], check); set, remove, edit and adopt need the superuser tier.
 .PP
 Options:
 .TP
@@ -5088,7 +5110,7 @@ Print the strings (an engineer: their own scopes; logged).
 Plan the device of this scope with this text in force and print the statements of its section (from its last pull; nothing is written and no device is reached).
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(set, remove) Answer yes to the question (a block read from standard input needs it).
+(set, remove, edit, adopt) Answer yes to the question (a block read from standard input needs it).
 .RE
 .\" END GENERATED: command scope block
 .TP
@@ -5142,6 +5164,120 @@ snapshot. Nothing is deleted from a device: what the block set is no longer
 rendered, and the next compare lists those statements as the device's own,
 kept. Logged as
 .BR block\-remove .
+.TP
+.BI "scope block " scope " juniper edit " block " [ \-y ]"
+Superuser only, and only at a terminal (a refusal without one changes nothing).
+Open the block in the editor of the invoking user, as
+.BR visudo (8)
+and
+.BR sudoedit (8)
+do:
+.BR VISUAL ,
+else
+.BR EDITOR ,
+else
+.BR editor ,
+else
+.BR vi .
+A value may carry arguments
+.RB ( "emacs \-nw" )
+and a name is looked up in
+.BR PATH ;
+a path must be absolute. The editor runs as the invoking user, never as root,
+on a private copy (mode 0600, named for the block) in a directory of its own
+(mode 0700, made under
+.I /var/tmp
+and handed to that user) with the user's
+.BR HOME ,
+.BR TERM ,
+.BR LANG ,
+.B LC_*
+and
+.BR PATH ,
+.B VISUAL
+and
+.B EDITOR
+as given, and nothing of sudo's or tacctl's; the directory is removed afterwards
+on every path, a stop signal included. The seed is the file in force; for a
+block that does not exist, the grammar of the block and an example, all as
+.B #
+lines, and for a device's new block the scope's objects as
+.B "# set ..."
+lines to remove the
+.B "# "
+of where the device differs. What the editor leaves is read back as that user (a
+regular file of at most 256 KiB that is theirs; a link or anything else is
+ignored), checked as
+.B set
+checks it, and installed as
+.B set
+installs it: the owned objects and the difference, the question
+(\fB\-y\fR answers it), the snapshot, one atomic write and the entry in
+.IR tacctl.yaml .
+A text that fails the check is offered back to the editor, up to five times,
+with the errors as
+.B "# tacctl:"
+lines at the top, numbered as the editor's window is; those lines are removed
+before any text is read and never reach the file. An editor that exits
+non\-zero, an empty text, a text that states nothing and an edit that changes
+nothing write nothing. In the login console an editor can start a shell, so
+the rule of the system shell applies: an edit is open to the tiers of
+.B "console system\-shell tiers"
+(never the engineer), and a refusal is logged
+.BR "block edit DENY" .
+The editor has to stay in the foreground until the text is saved (a graphical
+editor needs its wait option, such as
+.B "code \-\-wait"
+or
+.BR "gvim \-f" ;
+one that returns at once leaves tacctl an unchanged text). An editor may write
+swap or backup files beside its working copy: they land in the private
+directory and are removed with it. A block holds community strings, which are
+a poller's credential on this host and in the snapshots. Logged as
+.BR "block\-edit name=" \fIscope\fR/juniper/\fIblock\fR .
+.TP
+.BI "scope block " scope " juniper adopt " device " " block " [ \-y ]"
+Superuser only, at a terminal, with the rules of
+.BR edit .
+Read the registered Junos
+.I device
+of the scope live, with the caller's login, for its statements of the
+hierarchy the block is for
+.RB ( "show configuration snmp | display set" ,
+or
+.BR system ),
+and open them in the editor as the draft to prune. The read is that of
+.BR "device config pull" :
+the password from the shell's cache or the terminal, the transport and timeout
+of
+.BR "config devices" ,
+the pinned host key and the same words for a failure; one device, one login,
+one command. Nothing of the device's text is stored: it is in memory and in the
+editor's private copy, which is removed. The read is logged as a reveal is,
+.BR "secret\-read kind=block\-adopt name=" \fIscope\fR/juniper/\fIblock\fR
+(never a value), and
+.BR "block adopt\-read" .
+The draft holds the statements the grammar of the block takes, minus what
+tacctl renders itself (the scope's own community and its client list, the v3
+settings, a location or contact it renders) and the device's identity
+.RB ( "snmp name" ", " engine\-id ).
+A community string or trap group name the login sees masked
+.RB ( "/* SECRET\-DATA */" ,
+.BR <masked> ,
+asterisks) or only as the device's ciphertext cannot be adopted, and an NTP
+authentication key is always ciphertext: each such statement is named by a
+.B "# left out:"
+line with its shape and no value. The system block's draft converts the
+device's login message to the heredoc. A block of that name that exists is
+opened first, whole, and the adopted statements follow under a
+.B "# adopted from"
+.IR device " at " time
+comment with the counts; an object the file already has with other statements
+is left as it is and counted. A draft with nothing adoptable opens no editor
+and says why; one pruned to nothing writes nothing. The rest is that of
+.BR edit ,
+logged
+.BR "block\-adopt name=" \fIscope\fR/juniper/\fIblock\fR .
 .SS Per-scope Cisco aaa-group-server label \fB(tacctl scope tacacs-group)\fR
 .TP
 .BI "scope tacacs-group " scope " [" name ]
@@ -6114,7 +6250,7 @@ Options:
 .RE
 .\" END GENERATED: command device snmp
 .TP
-.BI "device block " "name " "{ list | show " "block " "[ \-\-effective ] [ \-\-reveal ] | check " "block " "[ \-\-file " "path " "| \- ] [ \-\-against ] | set " "block " "{ \-\-file " "path " "| \- } [ \-y ] | remove " "block " "[ \-y ] }"
+.BI "device block " "name " "{ list | show " "block " "[ \-\-effective ] [ \-\-reveal ] | check " "block " "[ \-\-file " "path " "| \- ] [ \-\-against ] | set " "block " "{ \-\-file " "path " "| \- } [ \-y ] | remove " "block " "[ \-y ] | edit " "block " "[ \-y ] | adopt " "block " "[ \-y ] }"
 One registered Junos device's own configuration blocks, laid over its scope's
 (see
 .BR "Per\-scope configuration blocks" ):
@@ -6139,11 +6275,29 @@ from (\fB\-\-reveal\fR prints the strings). A rename of the device moves its
 blocks and its removal deletes them. An engineer may list, show and check the
 blocks of the devices of their own scopes (a reveal is logged as
 .BR "secret\-read kind=block name=_devices/" \fIname\fR/juniper/\fIblock\fR );
-set and remove are the superuser's.
+set, remove, edit and adopt are the superuser's.
+.B edit
+and
+.B adopt
+work as they do for a scope: the editor of the invoking user, run as that user on
+a private copy that is removed afterwards, the text installed only after the
+check, the difference and the question. A new block opens with the scope's
+objects as comments, to uncomment where this device differs, and
+.B adopt
+reads this device's own statements and leaves out what the scope's block states
+with the same statements (an object that differs is the device's exception,
+whole). They are logged
+.BR "block\-edit name=_devices/" \fIname\fR/juniper/\fIblock\fR
+and
+.BR "block\-adopt name=_devices/" \fIname\fR/juniper/\fIblock\fR ,
+the read of
+.B adopt
+as
+.BR "secret\-read kind=block\-adopt" .
 .\" BEGIN GENERATED: command device block
 .RS
 .PP
-Requires: \fBengineer\fR. An engineer may read the configuration blocks of a device of their own scope (list, show [\-\-effective] [\-\-reveal], check); set and remove need the superuser tier.
+Requires: \fBengineer\fR. An engineer may read the configuration blocks of a device of their own scope (list, show [\-\-effective] [\-\-reveal], check); set, remove, edit and adopt need the superuser tier.
 .PP
 Options:
 .TP
@@ -6160,7 +6314,7 @@ The block as rendered for the device, with the layer of each object.
 Plan the device with this text in force and print the statements of its section (from its last pull; nothing is written and no device is reached).
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(set, remove) Answer yes to the question (a block read from standard input needs it).
+(set, remove, edit, adopt) Answer yes to the question (a block read from standard input needs it).
 .RE
 .\" END GENERATED: command device block
 .TP
@@ -8274,6 +8428,10 @@ Requires: \fBoperator\fR.
 .BI "console system\-shell tiers " "[ " csv "|none ]"
 The tiers that may start their system shell from the console (default
 .BR superuser ).
+The same tiers may open an editor from the console
+.RB ( "scope block ... edit|adopt" ,
+.BR "device block ... edit|adopt" ):
+an editor can start a shell.
 .\" BEGIN GENERATED: command console system-shell
 .RS
 .PP
@@ -8689,7 +8847,7 @@ An engineer lists the holds of the devices of their own scopes only; hold and re
 An engineer may print the walkthrough and read source\-interface for a scope of their own; setting or unsetting source\-interface needs the superuser tier.
 .TP
 .B device block
-An engineer may read the configuration blocks of a device of their own scope (list, show [\-\-effective] [\-\-reveal], check); set and remove need the superuser tier.
+An engineer may read the configuration blocks of a device of their own scope (list, show [\-\-effective] [\-\-reveal], check); set, remove, edit and adopt need the superuser tier.
 .TP
 .B device config
 An operator may run list; show, pull, diff and plan need the engineer tier (a device's walkthrough carries its scope's secret, a plan can type it, and a pull logs in to the device as you), and an engineer gets the devices of their own scopes only; forget needs the superuser tier.
@@ -8710,7 +8868,7 @@ An engineer may read the settings of a device of their own scope (show [\-\-reve
 An engineer reads what tacctl recorded of a host; \-\-check logs in to it and needs the superuser tier.
 .TP
 .B scope block
-An engineer may read the configuration blocks of a scope of their own (list, show [\-\-reveal], check); set and remove need the superuser tier.
+An engineer may read the configuration blocks of a scope of their own (list, show [\-\-reveal], check); set, remove, edit and adopt need the superuser tier.
 .TP
 .B scope secret
 An engineer may run show for a scope of their own; set and generate need the superuser tier.
@@ -9672,6 +9830,22 @@ and
 .B \-Y
 after its shape is checked, and kept by the tiers drop-in for the console.
 .TP
+.B "VISUAL, EDITOR"
+The editor of
+.B "scope block ... edit|adopt"
+and
+.BR "device block ... edit|adopt" :
+.BR VISUAL ,
+else
+.BR EDITOR ,
+else
+.BR editor ,
+else
+.BR vi ,
+run as the invoking user. sudo drops both, so the sudoers drop-ins keep them for
+those four command lines only; tacctl removes them from its own environment at
+start, so no program it runs inherits them.
+.TP
 .B TACCTL_ASKPASS
 .RI "Set by a " "tacctl shell" " or console session whose password cache is on, as " socket : token
 in the environment of the
@@ -9679,7 +9853,8 @@ in the environment of the
 of each line that uses it, with a token made for that line and dead when it
 ends (never on sudo's command line); the tiers drop-ins keep it for those
 lines only. The root side of
-.B "device config pull"
+.BR "device config pull" ,
+.B "block ... adopt"
 and
 .B ssh
 reads it once and removes it from its own environment, and the helper ssh runs as

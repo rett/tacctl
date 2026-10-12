@@ -298,9 +298,9 @@ func TestScopeBlockSetRefusals(t *testing.T) {
 	if all := plain(sb.out.String()); sb.code != 1 || !strings.Contains(all, "line 1: error:") || strings.Contains(all, "short-c") {
 		t.Errorf("check errors: %d\n%s", sb.code, all)
 	}
-	// edit and adopt come later: they are no verbs now
-	sb.blk("", "lab", "juniper", "edit", "snmp")
-	sb.expect(1, "", "Unknown subcommand: 'edit'")
+	// a word that is no verb
+	sb.blk("", "lab", "juniper", "frobnicate", "snmp")
+	sb.expect(1, "", "Unknown subcommand: 'frobnicate'")
 }
 
 // tacctl.yaml that cannot be written refuses every write before it starts.

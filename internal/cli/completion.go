@@ -263,6 +263,16 @@ func (inv *invocation) completeSpec(spec Spec, args []string, toComplete string)
 			kind = k
 		}
 	}
+	if rest, ok := strings.CutPrefix(kind, "?"); ok {
+		parts := strings.SplitN(rest, ":", 3)
+		kind = ""
+		if len(parts) == 3 {
+			kind = parts[2]
+			if slices.Contains(words, parts[0]) {
+				kind = parts[1]
+			}
+		}
+	}
 	if kind == KindBreakGlass && len(words) > 0 {
 		values["@scope"] = words[0]
 	}

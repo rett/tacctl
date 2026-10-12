@@ -23,14 +23,14 @@ func init() {
 	shellHelpBlocks["device block"] = func(*invocation) string { return deviceBlockUsage("<name>") }
 }
 
-const scopeBlockUse = "block <scope> juniper {list|show|check|set|remove} [<block>] [options]"
+const scopeBlockUse = "block <scope> juniper {list|show|check|set|remove|edit|adopt} [<block>] [options]"
 
-const scopeBlockShort = "A scope's Junos snmp and system configuration blocks: list, show, check, set, remove"
+const scopeBlockShort = "A scope's Junos snmp and system configuration blocks: list, show, check, set, remove, edit, adopt"
 
 var (
 	flagFile    = Flag{Names: []string{"--file"}, Value: true, Kind: KindFile}
-	blockSubs   = "list|show|check|set|remove"
-	blockSubSet = map[string]bool{"list": true, "show": true, "check": true, "set": true, "remove": true}
+	blockSubs   = "list|show|check|set|remove|edit|adopt"
+	blockSubSet = map[string]bool{"list": true, "show": true, "check": true, "set": true, "remove": true, "edit": true, "adopt": true}
 )
 
 // scopeBlockSpecs are the arguments of each verb after the vendor.
@@ -40,15 +40,17 @@ var scopeBlockSpecs = map[string]Spec{
 	"check":  {MinArgs: 1, MaxArgs: 2, Args: []string{blockWords, ""}, Flags: []Flag{flagFile, {Names: []string{"--against"}, Value: true, Kind: KindDevices}}},
 	"set":    {MinArgs: 1, MaxArgs: 2, Args: []string{blockWords, ""}, Flags: []Flag{flagFile, flagYes}},
 	"remove": {MinArgs: 1, MaxArgs: 1, Args: []string{blockWords}, Flags: []Flag{flagYes}},
+	"edit":   {MinArgs: 1, MaxArgs: 1, Args: []string{blockWords}, Flags: []Flag{flagYes}},
+	"adopt":  {MinArgs: 2, MaxArgs: 2, Args: []string{KindDevices, blockWords}, Flags: []Flag{flagYes}},
 }
 
 // scopeBlockCompletion is the Spec of the whole verb for completion (the
 // words after 'tacctl scope block').
 var scopeBlockCompletion = Spec{MinArgs: 1, MaxArgs: -1,
-	Args: []string{KindScopes, "juniper", blockSubs, blockWords, ""},
+	Args: []string{KindScopes, "juniper", blockSubs, Cond("adopt", KindDevices, blockWords), Cond("adopt", blockWords, "")},
 	Flags: []Flag{{Names: []string{"--reveal"}, Only: "show"}, {Names: []string{"--file"}, Value: true, Only: "check|set", Kind: KindFile},
 		{Names: []string{"--against"}, Value: true, Only: "check", Kind: KindDevices},
-		{Names: []string{"-y", "--yes"}, Only: "set|remove"}}}
+		{Names: []string{"-y", "--yes"}, Only: "set|remove|edit|adopt"}}}
 
 // scopeBlockVerbs are the verbs ({Use, Short}), in usage order.
 var scopeBlockVerbs = [][2]string{
@@ -57,6 +59,8 @@ var scopeBlockVerbs = [][2]string{
 	{"check <block> [--file <path>|-] [--against <device>]", "Lint the file in force, a file or standard input: every finding with its line, the objects that become owned, the statements that carry a secret and the diff against the file in force"},
 	{"set <block> (--file <path>|-) [-y]", "Check a file or standard input, show the diff, ask, take a snapshot and put the block in force"},
 	{"remove <block> [-y]", "Take the block out of force and delete its file (asks)"},
+	{"edit <block> [-y]", "Open the block in your editor (VISUAL, EDITOR, else editor, else vi, run as you on a private copy), check what comes back and, after the diff and the question, put it in force"},
+	{"adopt <device> <block> [-y]", "Read the device's own statements of the hierarchy with your login (nothing is stored), open them in your editor as the draft to prune, then check, diff, ask and put the block in force"},
 }
 
 // scopeBlockOptions are the option lines under a verb's row.
@@ -69,7 +73,7 @@ var scopeBlockOptions = map[string][][2]string{
 		{"--against <device>", "Plan the device of this scope with this text in force and print the statements of its section (from its last pull; nothing is written and no device is reached)"},
 	},
 	"set": {
-		{"-y, --yes", "(set, remove) Answer yes to the question (a block read from standard input needs it)"},
+		{"-y, --yes", "(set, remove, edit, adopt) Answer yes to the question (a block read from standard input needs it)"},
 	},
 }
 
@@ -103,11 +107,27 @@ EOF). A block holds community strings, so 'show' elides them and only 'show
 (0600) and are in every snapshot. Setting and removing are the superuser's; an
 engineer reads the blocks of their own scopes.
 
+edit and adopt need a terminal and are the superuser's. The editor is yours:
+VISUAL, else EDITOR, else 'editor', else 'vi', started as you (never as root)
+on a private copy in a directory of its own under /var/tmp, which is removed
+afterwards; the text is installed only after the check passes, the diff is
+shown and you say yes, and a text that fails the check is offered back to the
+editor with the findings at the top. An editor may leave swap or backup files
+beside its copy (they are in that directory, and removed with it), and a
+block holds community strings, which are a poller's credential on this host
+and in the snapshots. adopt reads the device's statements of the hierarchy
+with your login (the password as 'device config pull' asks it), drops what
+tacctl renders itself and the device's identity (snmp name, engine-id), and a
+community whose string the device shows masked or as ciphertext is left out
+with a line that says so.
+
 Examples:
   tacctl scope block ` + scope + ` juniper list
   tacctl scope block ` + scope + ` juniper check snmp --file snmp.txt --against js1.lab.example.net
   tacctl scope block ` + scope + ` juniper set snmp --file snmp.txt
   tacctl scope block ` + scope + ` juniper show system
+  tacctl scope block ` + scope + ` juniper edit snmp
+  tacctl scope block ` + scope + ` juniper adopt js1.lab.example.net snmp
 
 `)
 	return b.String()
@@ -188,12 +208,15 @@ func (inv *invocation) scopeBlockUsageErr(scope, verbName string, err error) err
 }
 
 // blockRun runs a verb that is the same at both levels once the level is
-// settled. Where edit and adopt are added, they are one case each.
+// settled.
 func (inv *invocation) blockRun(c *blockCtx, sub string, p Parsed, usage string) error {
 	if sub == "list" {
 		return c.list()
 	}
-	block := p.Args[0]
+	block, device := p.Args[0], ""
+	if sub == "adopt" && !c.isDevice() {
+		device, block = p.Args[0], p.Args[1]
+	}
 	if err := inv.blockName(block); err != nil {
 		return err
 	}
@@ -213,6 +236,10 @@ func (inv *invocation) blockRun(c *blockCtx, sub string, p Parsed, usage string)
 		return c.set(block, p, usage+" "+block)
 	case "remove":
 		return c.remove(block, p)
+	case "edit":
+		return c.edit(block, p)
+	case "adopt":
+		return c.adopt(block, device, p)
 	}
 	return inv.usageErr("Unknown subcommand: '" + sub + "'")
 }

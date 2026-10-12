@@ -126,7 +126,7 @@ func TestDeviceBlockRefusals(t *testing.T) {
 		{"no scope", []string{"stray-j", "set", "snmp", "--file", good, "-y"}, "is in no scope"},
 		{"no scope list", []string{"stray-j", "list"}, "is in no scope"},
 		{"unknown block", []string{"sw-j", "show", "banner"}, "Unknown block 'banner'"},
-		{"unknown verb", []string{"sw-j", "edit", "snmp"}, "Unknown subcommand: 'edit'"},
+		{"unknown verb", []string{"sw-j", "frobnicate", "snmp"}, "Unknown subcommand: 'frobnicate'"},
 		{"no source", []string{"sw-j", "set", "snmp", "-y"}, "Give the block's text with --file <path>, or - for standard input."},
 		{"a bad block", []string{"sw-j", "set", "snmp", "--file", sb.blockFile("bad", "set snmp community aa authorization read-only\n"), "-y"}, "Nothing was written."},
 		{"effective of set", []string{"sw-j", "set", "snmp", "--effective", "--file", good}, "Unknown option: '--effective'"},

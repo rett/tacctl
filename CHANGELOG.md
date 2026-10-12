@@ -228,6 +228,93 @@ current behaviour; this file is where history lives.
    names and a device's orphans (not registered, another vendor) are warnings;
    an installation with no blocks prints nothing new.
 
+10. **`tacctl scope block <scope> juniper edit <block>` and `tacctl device
+    block <name> edit <block>` open a block in your editor.** Superuser only,
+    and refused without a terminal on standard input and output. The editor is
+    yours, as `visudo` and `sudoedit` take it: `VISUAL`, else `EDITOR`, else
+    `editor` (the system's alternative), else `vi`; a value may carry
+    arguments (`emacs -nw`) and a name is looked up in `PATH`, a path must be
+    absolute. It runs as the invoking user, never as root, on a private copy
+    (mode 0600, named for the block: `scope-lab-juniper-snmp.txt`) in a
+    directory of its own (0700, made under `/var/tmp` and handed to that user),
+    with the user's `HOME`, `TERM`, `LANG` and `LC_*`, `PATH`, and `VISUAL` and
+    `EDITOR` as given, and nothing of sudo's or tacctl's; the directory, with
+    whatever swap or backup files the editor wrote there, is removed afterwards
+    on every path, a stop signal included. The seed is the file in force; for a
+    block that does not exist, the block's grammar and an example as `#`
+    lines, and for a device's new block also the scope's objects as `# set ...`
+    lines to uncomment where the device differs (a device's object replaces
+    the scope's of the same key whole). What the editor leaves is read as the
+    user (a regular file of at most 256 KiB that is theirs; a link or anything
+    else is ignored and nothing is written), checked as `set` checks it, and
+    installed as `set` installs it: the owned objects and the elided diff, the
+    question (`-y` answers it), the snapshot, one atomic write, the entry in
+    `tacctl.yaml`, logged `block-edit name=<scope>/juniper/<block>` (or
+    `_devices/<device>/juniper/<block>`) with the size and counts. A text that
+    fails the check is offered back to the editor (up to five rounds) with the
+    errors as `# tacctl:` lines at the top, numbered as the editor's window is;
+    those lines are removed before any text is read and never reach the file.
+    An editor that exits non-zero, a text that is empty or states nothing, and
+    an edit that changes nothing write nothing. In the login console the rule
+    of the system shell applies, since an editor can start a shell: an edit is
+    open to the tiers of `console system-shell tiers` (default `superuser`,
+    never the engineer), and a refusal is logged `block edit DENY`.
+    **The sudoers drop-ins change.** sudo's `env_reset` drops `VISUAL` and
+    `EDITOR`, so both drop-ins (`/etc/sudoers.d/tacctl-tiers` and the group
+    drop-in of `config sudoers install`) gain a `Cmnd_Alias` of the four command
+    lines that open an editor (`scope block * edit *`, `scope block * adopt *`,
+    `device block * edit *`, `device block * adopt *`) and a `Defaults!` line
+    that keeps those two variables for them, the way `TACCTL_ASKPASS` is kept,
+    and for nothing else; no `SETENV` tag is added. tacctl takes both variables
+    out of its own environment at start on the sudo side, so no program it runs
+    (git, a pager) inherits an editor the caller named. `tacctl upgrade`
+    rewrites an installed tiers drop-in and a group drop-in that is exactly the
+    text 0.2.4 to 0.2.6 wrote; `tacctl rollback` puts 0.2.3's text back over
+    either. Without the refreshed drop-in, `VISUAL` and `EDITOR` do not reach
+    tacctl (unless the caller's own sudoers rule allows the assignments tacctl
+    puts on those four lines) and the editor is `editor`, else `vi`. The editor
+    has to stay in the foreground until the text is saved (`code --wait`,
+    `gvim -f`). An editor may write swap or backup files beside its working
+    copy, which is why that directory is private; a block holds community
+    strings, a poller's credential, on this host and in the snapshots.
+
+11. **`tacctl scope block <scope> juniper adopt <device> <block>` and `tacctl
+    device block <name> adopt <block>` read a Junos device's own statements and
+    open them as the draft to prune.** Superuser only, with the same terminal,
+    console and editor rules as `edit`. The device is read live with your login
+    as `device config pull` reads it: the password from the cache or the
+    terminal (the shell keeps the line's `TACCTL_ASKPASS` for `adopt` too), the
+    transport of `device.config.transport` (NETCONF, the command line as the
+    fallback under `auto`), `device.config.timeout`, the pinned host key and the
+    pull's words for a failure (`Cannot read <device>: authentication failed.`,
+    `no host key is pinned for the device` with the command that pins it); one
+    device, one login, one command (`show configuration snmp | display set` or
+    `show configuration system | display set`). Nothing of the device's text is
+    stored: it exists in memory and in the editor's private copy, which is
+    removed. The read is logged as a reveal is, `secret-read
+    kind=block-adopt name=<scope>/juniper/<block>` (or `_devices/<device>/...`;
+    never a value), whoever reads, and `block adopt-read user= device=
+    transport= result=`. The draft holds the statements the block's grammar
+    takes minus what tacctl renders itself (the scope's own community and its
+    client list, the v3 settings, a location or contact it renders) and the
+    device's identity (`snmp name`, `engine-id`); for a device's block also
+    minus what the scope's block states with the same statements (an object that
+    differs is the device's exception, whole). A community string or trap group
+    name the login sees masked (`/* SECRET-DATA */`, `<masked>`, asterisks) or
+    only as the device's ciphertext cannot be adopted: each such statement is
+    named as a `# left out:` line with its shape and no value, and an NTP
+    authentication key, always ciphertext, is left out the same way. The
+    system block's draft converts the device's `\n`-escaped login message to the
+    heredoc form (`blocks.FromDeviceMessage`) and takes `domain-name`,
+    `domain-search`, `time-zone`, `name-server` and `ntp server`, `boot-server`,
+    `source-address` and `trusted-key`. An existing block of that name is not
+    merged: its text is opened first, whole, and the adopted statements follow
+    under a `# adopted from <device> at <time>` comment with the counts; an
+    object the file already has with other statements is left as it is and
+    counted. A draft with nothing adoptable opens no editor and says why; one
+    pruned to nothing writes nothing (`No statement was adopted`); the rest is
+    `edit`'s: check, diff, question, snapshot, write, logged `block-adopt`.
+
 ## 0.2.6 (2026-10-12)
 
 A hotfix for 0.2.5, started from `master`. The items below are everything that

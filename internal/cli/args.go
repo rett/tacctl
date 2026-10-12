@@ -64,6 +64,12 @@ const (
 // word is among the positionals typed before it ('set <ip> <vendor>').
 func After(word, kind string) string { return "@" + word + ":" + kind }
 
+// Cond is the kind of a positional that completion takes from kind a when
+// the word is among the positionals typed before it, and from kind b when it
+// is not ('scope block <scope> juniper adopt <device> <block>' names a device
+// where the other verbs name a block).
+func Cond(word, a, b string) string { return "?" + word + ":" + a + ":" + b }
+
 // offeredAfter reports whether completion offers the flag, given the
 // positional words typed so far.
 func (f Flag) offeredAfter(words []string) bool {

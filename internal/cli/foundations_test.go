@@ -32,6 +32,35 @@ func TestReexecTablesForSSHDeviceAndShell(t *testing.T) {
 			t.Errorf("%s: %q", word, got)
 		}
 	}
+	// The editor's variables ride on the four lines that open an editor, and
+	// on no other line of their families (a rule that does not keep them
+	// refuses the line they are on).
+	ed := func(k string) string {
+		return map[string]string{"VISUAL": "/usr/bin/vim", "EDITOR": "nano"}[k]
+	}
+	for _, c := range []struct {
+		args []string
+		want []string
+	}{
+		{[]string{"scope", "block", "lab", "juniper", "edit", "snmp"}, []string{"sudo", "VISUAL=/usr/bin/vim", "EDITOR=nano", "/x", "scope", "block", "lab", "juniper", "edit", "snmp"}},
+		{[]string{"scope", "block", "lab", "juniper", "adopt", "js1", "snmp", "-y"}, []string{"sudo", "VISUAL=/usr/bin/vim", "EDITOR=nano", "/x", "scope", "block", "lab", "juniper", "adopt", "js1", "snmp", "-y"}},
+		{[]string{"device", "block", "js1", "edit", "system"}, []string{"sudo", "VISUAL=/usr/bin/vim", "EDITOR=nano", "/x", "device", "block", "js1", "edit", "system"}},
+		{[]string{"device", "block", "js1", "adopt", "snmp"}, []string{"sudo", "VISUAL=/usr/bin/vim", "EDITOR=nano", "/x", "device", "block", "js1", "adopt", "snmp"}},
+		{[]string{"scope", "block", "lab", "juniper", "show", "snmp"}, []string{"sudo", "/x", "scope", "block", "lab", "juniper", "show", "snmp"}},
+		{[]string{"scope", "block", "lab", "juniper", "set", "snmp", "--file", "edit"}, []string{"sudo", "/x", "scope", "block", "lab", "juniper", "set", "snmp", "--file", "edit"}},
+		{[]string{"device", "block", "js1", "check", "snmp"}, []string{"sudo", "/x", "device", "block", "js1", "check", "snmp"}},
+		{[]string{"scope", "list"}, []string{"sudo", "/x", "scope", "list"}},
+		{[]string{"device", "list"}, []string{"sudo", "/x", "device", "list"}},
+		{[]string{"scope", "block", "edit"}, []string{"sudo", "/x", "scope", "block", "edit"}},
+	} {
+		if got := sudoArgv("/x", c.args, ed); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%q: %q", c.args, got)
+		}
+	}
+	// unset variables are not passed
+	if got := sudoArgv("/x", []string{"device", "block", "js1", "edit", "snmp"}, func(string) string { return "" }); !reflect.DeepEqual(got, []string{"sudo", "/x", "device", "block", "js1", "edit", "snmp"}) {
+		t.Errorf("unset: %q", got)
+	}
 	if !noSudo["shell"] {
 		t.Error("'shell' must run without sudo")
 	}
