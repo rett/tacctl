@@ -35,9 +35,9 @@ func aaaOf(t *testing.T, req Request, d Data) []string {
 
 // D118 for the section Managed returns: aaa new-model first (nothing under
 // aaa exists on IOS until it is set), the server and its group, the source
-// interface, the login lists, exec authorization, enable, accounting, the
-// session id, the lines' leaves (the console first), command authorization
-// last.
+// interface, the login lists, exec authorization, accounting, the session
+// id, the lines' leaves (the console first), command authorization last.
+// There is no enable list (0.2.6).
 func TestStandardOrder(t *testing.T) {
 	req, d := standardWorld(t, true)
 	lines := aaaOf(t, req, d)
@@ -49,7 +49,6 @@ func TestStandardOrder(t *testing.T) {
 		"aaa authentication login default local group LAB-TACACS",
 		"aaa authentication login CONSOLE local",
 		"aaa authorization exec default local group LAB-TACACS if-authenticated",
-		"aaa authentication enable default group LAB-TACACS enable",
 		"aaa accounting exec default start-stop group LAB-TACACS",
 		"aaa session-id common",
 		"line con 0",
@@ -73,6 +72,11 @@ func TestStandardOrder(t *testing.T) {
 	}
 	if lines[len(lines)-1] != "aaa authorization config-commands" {
 		t.Errorf("command authorization is not last: %q", lines[len(lines)-1])
+	}
+	for _, l := range lines {
+		if strings.HasPrefix(l, "aaa authentication enable") {
+			t.Errorf("the standard has no enable list: %q", l)
+		}
 	}
 	// the walkthrough has it live, in the same order
 	text := renderText(t, req, d)
@@ -117,8 +121,8 @@ func TestStandardSourceInterfaceUnset(t *testing.T) {
 
 // RADIUS has the standard where RADIUS has it: the console list and the
 // session id, its own source-interface command, and no command
-// authorization. Its enable list is not rendered (lab item E2): the
-// walkthrough carries the line commented, with what is known.
+// authorization. Like TACACS+ it has no enable list: no 'aaa authentication
+// enable' line, live or commented, in the section or any walkthrough.
 func TestStandardRadius(t *testing.T) {
 	m, c := fixtureGroups(t, managedGroups, managedOverrides+"cisco:\n  source_interface:\n    lab: Loopback3\n")
 	req, d := managedProfiles()[0].input(m, c, variants[2])
@@ -138,17 +142,39 @@ func TestStandardRadius(t *testing.T) {
 		}
 	}
 	text := renderText(t, req, d)
-	for _, want := range []string{
-		"\n! aaa authentication enable default group LAB-RADIUS enable\n",
-		"NOT VERIFIED (lab item E2)",
-		"'enable' FAILS; the local enable secret is used only when no server\n! answers.",
-	} {
-		if !strings.Contains(text, want) {
-			t.Errorf("the walkthrough lacks %q:\n%s", want, text)
+	for _, bad := range []string{"NOT VERIFIED", "lab item E2", "treat the local enable secret as the way up"} {
+		if strings.Contains(text, bad) {
+			t.Errorf("the RADIUS walkthrough still says %q:\n%s", bad, text)
 		}
 	}
-	if strings.Contains(text, "\naaa authentication enable ") || strings.Contains(text, "treat the local enable secret as the way up") {
-		t.Errorf("the walkthrough types the RADIUS enable list live:\n%s", text)
+}
+
+// 0.2.6: the standard has no enable list, in any vendor syntax or protocol:
+// no 'aaa authentication enable' line, live or commented, in a walkthrough or
+// a managed rendering (with a list that asks the server, anyone the server
+// knows reaches level 15 with their own password). The walkthrough says so.
+func TestStandardHasNoEnableList(t *testing.T) {
+	for _, v := range variants {
+		m, c := managedWorld(t)
+		req, d := managedProfiles()[0].input(m, c, v)
+		if v.vendor != "cisco" {
+			continue
+		}
+		for _, l := range strings.Split(renderText(t, req, d), "\n") {
+			if strings.Contains(strings.TrimPrefix(strings.TrimSpace(l), "!"), "aaa authentication enable") {
+				t.Errorf("%s: the walkthrough has %q", v.name, l)
+			}
+		}
+		for _, s := range mustManaged(t, req, d) {
+			for _, l := range s.Lines {
+				if strings.Contains(l, "aaa authentication enable") {
+					t.Errorf("%s: section %s has %q", v.name, s.Name, l)
+				}
+			}
+		}
+		if !strings.Contains(renderText(t, req, d), "there is no enable list") {
+			t.Errorf("%s: the walkthrough does not say there is no enable list", v.name)
+		}
 	}
 }
 
@@ -199,7 +225,7 @@ func TestStandardNames(t *testing.T) {
 	req, d := managedProfiles()[0].input(m, c, variants[0])
 	lines := aaaOf(t, req, d)
 	for _, want := range []string{"tacacs server TACACS", "aaa group server tacacs+ TACACS-GROUP", "  server name TACACS",
-		"aaa authentication login CONSOLE local", "aaa authentication enable default group TACACS-GROUP enable"} {
+		"aaa authentication login CONSOLE local"} {
 		if !slices.Contains(lines, want) {
 			t.Errorf("lacks %q:\n%s", want, strings.Join(lines, "\n"))
 		}

@@ -275,7 +275,6 @@ func TestIOSAAAUnitGuards(t *testing.T) {
 		"aaa group server tacacs+ LAB-TACACS > server name TACACS",
 		"aaa authentication login default local group LAB-TACACS", "aaa authentication login CONSOLE local",
 		"aaa authorization exec default local group LAB-TACACS if-authenticated",
-		"aaa authentication enable default group LAB-TACACS enable",
 		"aaa accounting exec default start-stop group LAB-TACACS", "aaa session-id common"}
 	last := -1
 	for _, want := range order {

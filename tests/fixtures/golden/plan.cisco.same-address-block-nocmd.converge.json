@@ -57,10 +57,10 @@
     {
       "n": 4,
       "kind": "missing",
-      "severity": "ACCESS",
+      "severity": "COSMETIC",
       "section": "aaa",
-      "what": "the 'enable' list (it asks the server first, so nobody needs a shared enable password)",
-      "statement": "aaa authentication enable default group TACACS-GROUP enable",
+      "what": "accounting of commands 15",
+      "statement": "aaa accounting commands 15 default start-stop group TACACS-GROUP",
       "action": "Fixed by region line 14.",
       "fixed": true,
       "region_lines": [
@@ -69,48 +69,35 @@
     },
     {
       "n": 5,
-      "kind": "missing",
-      "severity": "COSMETIC",
-      "section": "aaa",
-      "what": "accounting of commands 15",
-      "statement": "aaa accounting commands 15 default start-stop group TACACS-GROUP",
-      "action": "Fixed by region line 15.",
-      "fixed": true,
-      "region_lines": [
-        15
-      ]
-    },
-    {
-      "n": 6,
       "kind": "different",
       "severity": "ACCESS",
       "section": "aaa",
       "what": "the login method of line con 0: login authentication CONSOLE (the device has: the login method of line con 0: login authentication default)",
       "statement": "line con 0 \u003e login authentication CONSOLE",
-      "action": "Fixed by region line 18.",
+      "action": "Fixed by region line 17.",
       "fixed": true,
       "region_lines": [
-        18
+        17
       ]
     },
     {
-      "n": 7,
+      "n": 6,
       "kind": "missing",
       "severity": "ACCESS",
       "section": "aaa",
       "what": "command authorization: 4 statements",
       "statement": "e.g. aaa authorization commands 1 default local group TACACS-GROUP",
-      "action": "Fixed by region lines 20-23.",
+      "action": "Fixed by region lines 19-22.",
       "fixed": true,
       "region_lines": [
+        19,
         20,
         21,
-        22,
-        23
+        22
       ]
     },
     {
-      "n": 8,
+      "n": 7,
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
@@ -123,7 +110,7 @@
       ]
     },
     {
-      "n": 9,
+      "n": 8,
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
@@ -136,7 +123,7 @@
       ]
     },
     {
-      "n": 10,
+      "n": 9,
       "kind": "extra",
       "severity": "MONITORING",
       "section": "snmp",
@@ -146,7 +133,7 @@
       "fixed": false
     },
     {
-      "n": 11,
+      "n": 10,
       "kind": "extra",
       "severity": "MONITORING",
       "section": "snmp",
@@ -156,7 +143,7 @@
       "fixed": false
     },
     {
-      "n": 12,
+      "n": 11,
       "kind": "extra",
       "severity": "MONITORING",
       "section": "snmp",
@@ -180,7 +167,6 @@
     "aaa group server tacacs+ TACACS-GROUP",
     " server name TACACS",
     "aaa authentication login CONSOLE local",
-    "aaa authentication enable default group TACACS-GROUP enable",
     "aaa accounting commands 15 default start-stop group TACACS-GROUP",
     "! aaa: the login method of the console and vty lines",
     "line con 0",
@@ -222,7 +208,6 @@
     "line con 0",
     " login authentication default",
     "no aaa accounting commands 15 default start-stop group TACACS-GROUP",
-    "no aaa authentication enable default group TACACS-GROUP enable",
     "no aaa authentication login CONSOLE local",
     "aaa group server tacacs+ TACACS-GROUP",
     " no server name TACACS",

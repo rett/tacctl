@@ -28,7 +28,6 @@ func standardModern(sourceInterface bool) devices.Section {
 		"aaa authentication login default group TACACS-GROUP local",
 		"aaa authentication login CONSOLE local",
 		"aaa authorization exec default group TACACS-GROUP local if-authenticated",
-		"aaa authentication enable default group TACACS-GROUP enable",
 		"aaa accounting exec default start-stop group TACACS-GROUP",
 		"aaa session-id common",
 		"line con 0", "  login authentication CONSOLE",
@@ -40,8 +39,8 @@ func standardModern(sourceInterface bool) devices.Section {
 	return s
 }
 
-// standardRadius is the aaa section of a RADIUS device: no enable list (lab
-// item E2) and no command authorization.
+// standardRadius is the aaa section of a RADIUS device: like TACACS+ it has
+// no enable list, and it has no command authorization.
 func standardRadius() devices.Section {
 	lines := []string{
 		"aaa new-model",
@@ -104,31 +103,61 @@ func TestStandardAclRemarkTextIsNotCompared(t *testing.T) {
 	}
 }
 
-// S4: the enable list of a RADIUS device is not rendered (lab item E2): a
-// device that lacks it is not missing a line, and one that has it, under any
-// group, carries no extra. The TACACS+ rendering keeps it as a statement.
-func TestStandardRadiusEnableListIsTolerated(t *testing.T) {
-	r := standardResult(t, standardRadiusDevice, standardRadius())
-	if r.State != StateOK {
-		t.Fatalf("without the enable list: %s %v", r.State, linesOf(r))
-	}
-	for _, list := range []string{"aaa authentication enable default group RADIUS-GROUP enable",
-		"aaa authentication enable default enable"} {
-		with := replaceOnce(t, standardRadiusDevice, "aaa session-id common\n", "aaa session-id common\n"+list+"\n")
-		r = standardResult(t, with, standardRadius())
-		if r.State != StateOK {
-			t.Errorf("with %q: %s %v", list, r.State, linesOf(r))
-		}
-		for _, l := range linesOf(r) {
-			if strings.Contains(l, "authentication enable") {
-				t.Errorf("with %q: %q is listed", list, l)
+// S4 (0.2.6): the standard has no enable list, for TACACS+ and RADIUS alike,
+// and a device that lacks it is not missing a line. Of what a device may have,
+// only 'aaa authentication enable default enable' (what IOS does with no list:
+// the local secret) is tolerated; any other 'default' list is an extra, the
+// one that asks the server included (anyone the server knows then reaches
+// level 15 with their own password).
+func TestStandardEnableListIsExtra(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		device string
+		exp    devices.Section
+		anchor string
+	}{
+		{"radius", standardRadiusDevice, standardRadius(), "aaa session-id common\n"},
+		{"tacacs", standardDevice, standardModern(true), "aaa session-id common\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := standardResult(t, tc.device, tc.exp)
+			if r.State != StateOK {
+				t.Fatalf("without an enable list: %s %v", r.State, linesOf(r))
 			}
-		}
-	}
-	// TACACS+: the enable list is a statement, missing when the device lacks it
-	r = standardResult(t, replaceOnce(t, standardDevice, "aaa authentication enable default group TACACS-GROUP enable\n", ""), standardModern(true))
-	if !slices.Contains(linesOf(r), "- aaa authentication enable default group TACACS-GROUP enable") {
-		t.Errorf("TACACS+ enable list not compared: %v", linesOf(r))
+			// the one tolerated form
+			with := replaceOnce(t, tc.device, tc.anchor, tc.anchor+"aaa authentication enable default enable\n")
+			r = standardResult(t, with, tc.exp)
+			if r.State != StateOK {
+				t.Errorf("default enable: %s %v", r.State, linesOf(r))
+			}
+			for _, l := range linesOf(r) {
+				if strings.Contains(l, "authentication enable") {
+					t.Errorf("default enable: %q is listed", l)
+				}
+			}
+			// every other default list is an extra
+			for _, list := range []string{
+				"aaa authentication enable default group TACACS-GROUP enable",
+				"aaa authentication enable default group RADIUS-GROUP enable",
+				"aaa authentication enable default group tacacs+ enable",
+				"aaa authentication enable default enable group TACACS-GROUP",
+				"aaa authentication enable default line",
+				"aaa authentication enable default none",
+			} {
+				with := replaceOnce(t, tc.device, tc.anchor, tc.anchor+list+"\n")
+				r := standardResult(t, with, tc.exp)
+				if r.State != StateDiffers || !slices.Contains(linesOf(r), "+ "+list) {
+					t.Errorf("with %q: %s %v", list, r.State, linesOf(r))
+				}
+			}
+			// a list of another name is another list: an extra too, which the
+			// planner keeps (it is not the standard's to remove)
+			other := "aaa authentication enable OTHER enable"
+			r = standardResult(t, replaceOnce(t, tc.device, tc.anchor, tc.anchor+other+"\n"), tc.exp)
+			if !slices.Contains(linesOf(r), "+ "+other) {
+				t.Errorf("a named list: %v", linesOf(r))
+			}
+		})
 	}
 }
 
@@ -140,7 +169,6 @@ aaa group server tacacs+ TACACS-GROUP
 !
 aaa authentication login default group TACACS-GROUP local
 aaa authentication login CONSOLE local
-aaa authentication enable default group TACACS-GROUP enable
 aaa authorization config-commands
 aaa authorization exec default group TACACS-GROUP local if-authenticated
 aaa authorization commands 15 default group TACACS-GROUP local
@@ -180,7 +208,6 @@ func TestStandardBlockReadsOK(t *testing.T) {
 	}
 	for _, want := range []string{
 		"= aaa authentication login CONSOLE local",
-		"= aaa authentication enable default group TACACS-GROUP enable",
 		"= aaa session-id common",
 		"= ip tacacs source-interface Loopback0",
 		"= line con 0 > login authentication CONSOLE",
@@ -196,7 +223,6 @@ func TestStandardBlockReadsOK(t *testing.T) {
 func TestStandardBlockLinesAreCompared(t *testing.T) {
 	for _, tc := range []struct{ drop, keep, want string }{
 		{"aaa authentication login CONSOLE local\n", "", "- aaa authentication login CONSOLE local"},
-		{"aaa authentication enable default group TACACS-GROUP enable\n", "", "- aaa authentication enable default group TACACS-GROUP enable"},
 		{"aaa session-id common\n", "", "- aaa session-id common"},
 		{"ip tacacs source-interface Loopback0\n", "", "- ip tacacs source-interface Loopback0"},
 		{"line con 0\n login authentication CONSOLE\n", "line con 0\n", "- line con 0 > login authentication CONSOLE"},

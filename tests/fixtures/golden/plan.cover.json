@@ -111,7 +111,7 @@
     "vendor": "cisco",
     "address": "192.0.2.21",
     "state": "needs-change",
-    "fixes": 4,
+    "fixes": 3,
     "left": 3,
     "remaining": {
       "access": 0,
@@ -126,7 +126,7 @@
     "vendor": "cisco",
     "address": "192.0.2.21",
     "state": "needs-change",
-    "fixes": 4,
+    "fixes": 3,
     "left": 3,
     "remaining": {
       "access": 0,
@@ -141,8 +141,8 @@
     "scope": "lab",
     "vendor": "cisco",
     "address": "192.0.2.21",
-    "state": "consistent",
-    "fixes": 0,
+    "state": "needs-change",
+    "fixes": 1,
     "left": 0,
     "remaining": {
       "access": 0,
@@ -157,7 +157,7 @@
     "vendor": "cisco",
     "address": "192.0.2.21",
     "state": "needs-change",
-    "fixes": 4,
+    "fixes": 3,
     "left": 0,
     "remaining": {
       "access": 0,
@@ -172,7 +172,7 @@
     "vendor": "cisco",
     "address": "192.0.2.21",
     "state": "needs-change",
-    "fixes": 18,
+    "fixes": 17,
     "left": 2,
     "remaining": {
       "access": 2,
@@ -202,7 +202,7 @@
     "vendor": "cisco",
     "address": "192.0.2.21",
     "state": "needs-change",
-    "fixes": 8,
+    "fixes": 7,
     "left": 3,
     "remaining": {
       "access": 0,
@@ -217,7 +217,7 @@
     "vendor": "cisco",
     "address": "192.0.2.21",
     "state": "needs-change",
-    "fixes": 9,
+    "fixes": 8,
     "left": 3,
     "remaining": {
       "access": 0,

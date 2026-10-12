@@ -261,15 +261,9 @@ func ciscoHardening(req Request, d Data) string {
 		note("exec-timeout "+execTimeout(d.Conf, req.Scope)+" 0", "(below)"),
 		"  logging synchronous",
 	}
-	if req.Protocol == RADIUS {
-		lines = append(lines,
-			"The local enable secret. Whether a RADIUS server answers 'enable' is not verified (Step 1 leaves the",
-			"enable list commented): until a list is typed, 'enable' uses this secret. Set it before AAA:")
-	} else {
-		lines = append(lines,
-			"The local enable secret. With the server up, 'enable' asks the server first (Step 1), so the secret",
-			"is never typed by a person; it is the way up only when no server answers. Set it before AAA:")
-	}
+	lines = append(lines,
+		"The local enable secret. 'enable' uses it and nothing else: the standard has no enable list (with an 'enable'",
+		"list that asks the server, anyone the server knows reaches level 15 with their own password). Set it before AAA:")
 	lines = append(lines, "  no enable password", "  "+enable)
 	for _, l := range lines {
 		b.WriteString("! " + l + "\n")
@@ -389,10 +383,8 @@ func renderCisco(o *out, req Request, d Data) error {
 		o.echo("  - The console has its own login list, CONSOLE (local only): a local user can log in there")
 		o.echo("    whatever the server says, and lands at privilege 1 ('aaa authorization console' is not")
 		o.echo("    set, and must not be: it would put the console under the default lists, server first)")
-		o.echo("  - 'enable' uses the local enable secret as this walkthrough stands: the enable list is left")
-		o.echo("    commented (unverified, lab item E2). If you type it, a reachable server that does not answer")
-		o.echo("    enable requests positively makes 'enable' fail, and the local secret is used only when no")
-		o.echo("    server answers")
+		o.echo("  - 'enable' uses the local enable secret (Step 0) and nothing else: there is no enable list.")
+		o.echo("    A RADIUS user lands at the level the server gives and needs no 'enable'")
 		o.echo("  - " + aclName + " permits are managed with 'tacctl config mgmt-acl add <cidr>'")
 		o.echo("  - For Type 6 (AES) key encryption, run on the device first:")
 		o.echo("      conf t ; key config-key password-encrypt <master-key>")
@@ -412,11 +404,8 @@ func renderCisco(o *out, req Request, d Data) error {
 	o.echo("  - The console has its own login list, CONSOLE (local only): a local user can log in there")
 	o.echo("    whatever the server says, and lands at privilege 1 ('aaa authorization console' is not")
 	o.echo("    set, and must not be: it would put the console under the default lists, server first)")
-	o.echo("  - 'enable' asks the server first, which refuses a name it does not know and does not fall")
-	o.echo("    through to the local secret: on the console a local user reaches privilege 15 only while")
-	o.echo("    no server answers")
-	o.echo("  - Nobody needs 'enable': a TACACS+ user lands at the level the server gives (an operator who")
-	o.echo("    types it is refused there, by design)")
+	o.echo("  - 'enable' uses the local enable secret (Step 0) and nothing else: there is no enable list.")
+	o.echo("    A TACACS+ user lands at the level the server gives and needs no 'enable'")
 	o.echo("  - " + aclName + " permits are managed with 'tacctl config mgmt-acl add <cidr>'")
 	if req.Legacy {
 		o.echo("  - Type 6 (AES) key encryption is NOT available on IOS 12.x;")

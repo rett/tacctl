@@ -28,10 +28,10 @@
     {
       "n": 2,
       "kind": "missing",
-      "severity": "ACCESS",
+      "severity": "COSMETIC",
       "section": "aaa",
-      "what": "the 'enable' list (it asks the server first, so nobody needs a shared enable password)",
-      "statement": "aaa authentication enable default group LAB-TACACS enable",
+      "what": "accounting of commands 15",
+      "statement": "aaa accounting commands 15 default start-stop group LAB-TACACS",
       "action": "Fixed by region line 4.",
       "fixed": true,
       "region_lines": [
@@ -40,32 +40,19 @@
     },
     {
       "n": 3,
-      "kind": "missing",
-      "severity": "COSMETIC",
-      "section": "aaa",
-      "what": "accounting of commands 15",
-      "statement": "aaa accounting commands 15 default start-stop group LAB-TACACS",
-      "action": "Fixed by region line 5.",
-      "fixed": true,
-      "region_lines": [
-        5
-      ]
-    },
-    {
-      "n": 4,
       "kind": "different",
       "severity": "ACCESS",
       "section": "aaa",
       "what": "the login method of line con 0: login authentication CONSOLE (the device has: the login method of line con 0: login authentication default)",
       "statement": "line con 0 \u003e login authentication CONSOLE",
-      "action": "Fixed by region line 8.",
+      "action": "Fixed by region line 7.",
       "fixed": true,
       "region_lines": [
-        8
+        7
       ]
     },
     {
-      "n": 5,
+      "n": 4,
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
@@ -75,7 +62,7 @@
       "fixed": false
     },
     {
-      "n": 6,
+      "n": 5,
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
@@ -85,7 +72,7 @@
       "fixed": false
     },
     {
-      "n": 7,
+      "n": 6,
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
@@ -95,7 +82,7 @@
       "fixed": false
     },
     {
-      "n": 8,
+      "n": 7,
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
@@ -105,7 +92,7 @@
       "fixed": false
     },
     {
-      "n": 9,
+      "n": 8,
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
@@ -115,7 +102,7 @@
       "fixed": false
     },
     {
-      "n": 10,
+      "n": 9,
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
@@ -125,7 +112,7 @@
       "fixed": false
     },
     {
-      "n": 11,
+      "n": 10,
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
@@ -135,7 +122,7 @@
       "fixed": false
     },
     {
-      "n": 12,
+      "n": 11,
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
@@ -145,7 +132,7 @@
       "fixed": false
     },
     {
-      "n": 13,
+      "n": 12,
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
@@ -155,7 +142,7 @@
       "fixed": false
     },
     {
-      "n": 14,
+      "n": 13,
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
@@ -165,7 +152,7 @@
       "fixed": false
     },
     {
-      "n": 15,
+      "n": 14,
       "kind": "extra",
       "severity": "MONITORING",
       "section": "snmp",
@@ -175,7 +162,7 @@
       "fixed": false
     },
     {
-      "n": 16,
+      "n": 15,
       "kind": "extra",
       "severity": "MONITORING",
       "section": "snmp",
@@ -185,7 +172,7 @@
       "fixed": false
     },
     {
-      "n": 17,
+      "n": 16,
       "kind": "extra",
       "severity": "MONITORING",
       "section": "snmp",
@@ -199,7 +186,6 @@
     "configure terminal",
     "! aaa: the method lists tacctl renders, each replaced by the rendered line",
     "aaa authentication login CONSOLE local",
-    "aaa authentication enable default group LAB-TACACS enable",
     "aaa accounting commands 15 default start-stop group LAB-TACACS",
     "! aaa: the login method of the console and vty lines",
     "line con 0",
@@ -232,7 +218,6 @@
     "line con 0",
     " login authentication default",
     "no aaa accounting commands 15 default start-stop group LAB-TACACS",
-    "no aaa authentication enable default group LAB-TACACS enable",
     "no aaa authentication login CONSOLE local",
     "end"
   ],

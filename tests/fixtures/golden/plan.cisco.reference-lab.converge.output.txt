@@ -3,23 +3,20 @@
 ! secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5). Checked on a device: IOS 12.4(15) (a
 ! 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references.
 !
-! What is irregular on dev-cisco-reference-lab (7 items; the paste fixes 4, leaves 3):
+! What is irregular on dev-cisco-reference-lab (6 items; the paste fixes 3, leaves 3):
 !  1. aaa      ACCESS     missing: the console's own login list CONSOLE (local only, so a local user
 !                         always gets in there) (aaa authentication login CONSOLE local). Fixed by
 !                         region line 3.
-!  2. aaa      ACCESS     missing: the 'enable' list (it asks the server first, so nobody needs a
-!                         shared enable password) (aaa authentication enable default group LAB-TACACS
-!                         enable). Fixed by region line 4.
-!  3. aaa      COSMETIC   missing: accounting of commands 15 (aaa accounting commands 15 default
-!                         start-stop group LAB-TACACS). Fixed by region line 5.
-!  4. aaa      ACCESS     different: the login method of line con 0: login authentication CONSOLE (the
+!  2. aaa      COSMETIC   missing: accounting of commands 15 (aaa accounting commands 15 default
+!                         start-stop group LAB-TACACS). Fixed by region line 4.
+!  3. aaa      ACCESS     different: the login method of line con 0: login authentication CONSOLE (the
 !                         device has: the login method of line con 0: login authentication default)
-!                         (line con 0 > login authentication CONSOLE). Fixed by region line 8.
-!  5. snmp     MONITORING extra: an SNMP community (snmp-server community <secret> RO TACCTL-SNMP).
+!                         (line con 0 > login authentication CONSOLE). Fixed by region line 7.
+!  4. snmp     MONITORING extra: an SNMP community (snmp-server community <secret> RO TACCTL-SNMP).
 !                         Left alone (its name is the secret and is not known to tacctl).
-!  6. snmp     MONITORING extra: snmp-server enable traps config. Left alone. To remove it later: no
+!  5. snmp     MONITORING extra: snmp-server enable traps config. Left alone. To remove it later: no
 !                         snmp-server enable traps config
-!  7. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <secret>. Left alone (its name
+!  6. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <secret>. Left alone (its name
 !                         is the secret and is not known to tacctl).
 ! Consistent: roles, mgmt-acl. Not planned: netconf, breakglass.
 ! Secrets: 2 present on the device, not changed (--secrets pushes them).
@@ -39,7 +36,6 @@
 configure terminal
 ! aaa: the method lists tacctl renders, each replaced by the rendered line
 aaa authentication login CONSOLE local
-aaa authentication enable default group LAB-TACACS enable
 aaa accounting commands 15 default start-stop group LAB-TACACS
 ! aaa: the login method of the console and vty lines
 line con 0

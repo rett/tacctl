@@ -212,18 +212,15 @@ func managedCisco(req Request, d Data) []Section {
 		aaa = append(aaa, ciscoSourceCommand(req.Protocol)+" "+ifc)
 	}
 	// (5)-(8): the login lists (the console's own, local only), exec
-	// authorization, 'enable' asking the server first, accounting and the
-	// session id. A RADIUS device's enable list is not rendered (lab item E2:
-	// what a RADIUS server answers to IOS's enable request is open); the
-	// walkthrough carries the line commented.
+	// authorization, accounting and the session id. There is no enable list:
+	// a list that asks the server lets any user the server knows reach
+	// privilege 15 with their own password (the server answers 'enable' with
+	// the user's password), so 'enable' stays with the local enable secret.
 	aaa = append(aaa,
 		"aaa authentication login default "+v["AUTHN_METHODS"],
 		"aaa authentication login "+ciscoConsoleList+" local",
-		"aaa authorization exec default "+v["AUTHZ_EXEC_METHODS"])
-	if !radius {
-		aaa = append(aaa, "aaa authentication enable default group "+group+" enable")
-	}
-	aaa = append(aaa, "aaa accounting exec default start-stop group "+group)
+		"aaa authorization exec default "+v["AUTHZ_EXEC_METHODS"],
+		"aaa accounting exec default start-stop group "+group)
 	if !radius {
 		aaa = append(aaa, ciscoStatements(v["ACCT_COMMANDS_BLOCK"])...)
 	}

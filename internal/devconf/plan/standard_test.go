@@ -514,3 +514,102 @@ func TestCheckRegionRejectsNonASCII(t *testing.T) {
 		t.Errorf("Junos comment: %v", err)
 	}
 }
+
+// 0.2.6: the standard has no enable list. A 'default' list the device has
+// asks something (the server, a line password, nothing) and is removed by its
+// full statement, TACACS+ and RADIUS alike; the back-out types it again; the
+// statement that IOS reads as "no list" and a list of another name are left
+// alone. Applied, the paste leaves no list and a second plan has nothing to do.
+func TestStandardEnableListIsRemoved(t *testing.T) {
+	for _, tc := range []struct{ fixture, group string }{
+		{"cisco.reference-lab", "LAB-TACACS"},
+		{"cisco.xe-reference-16", "LAB-RADIUS"},
+	} {
+		f := fixtureNamed(t, tc.fixture)
+		for _, form := range []string{
+			"aaa authentication enable default group " + tc.group + " enable",
+			"aaa authentication enable default group tacacs+ enable",
+			"aaa authentication enable default group radius enable",
+			"aaa authentication enable default enable group " + tc.group,
+			"aaa authentication enable default line",
+			"aaa authentication enable default none",
+		} {
+			name := tc.fixture + ": " + form
+			d := planI(t, f, func(c *IOSConfig) {
+				c.typeGlobal(form)
+				c.typeGlobal("aaa authentication enable KEEP-ME enable")
+			}, Options{Scope: "lab"})
+			if st := d.Of("aaa"); st.State != StatePlanned {
+				t.Errorf("%s: aaa: %+v", name, st)
+				continue
+			}
+			wantLine(t, d, "aaa", "no "+form)
+			for _, l := range lines(d, "aaa") {
+				if strings.HasPrefix(l, "aaa authentication enable") || strings.Contains(l, "KEEP-ME") {
+					t.Errorf("%s: the paste types %q", name, l)
+				}
+			}
+			wantKept(t, d, "aaa", "aaa authentication enable KEEP-ME enable")
+			// the back-out types the list again, in its own words
+			var undo []string
+			for _, l := range d.Lines {
+				if l.Op == OpNo && l.Text == form {
+					for _, u := range l.Undo {
+						if u.Op != OpLine {
+							t.Errorf("%s: the undo is %v, not a typed line", name, u.Op)
+						}
+						undo = append(undo, u.Text)
+					}
+				}
+			}
+			if !slices.Equal(undo, []string{form}) {
+				t.Errorf("%s: undo %q", name, undo)
+			}
+			// the finding is ACCESS and fixed by the paste
+			var item *Item
+			for i := range d.Items {
+				if d.Items[i].Statement == form {
+					item = &d.Items[i]
+				}
+			}
+			if item == nil || item.Kind != KindExtra || item.Severity != SevAccess || !item.Fixed || len(item.Lines) != 1 {
+				t.Errorf("%s: the finding: %+v", name, item)
+			}
+			if item != nil && strings.HasSuffix(form, "group "+tc.group+" enable") &&
+				!strings.Contains(item.Words, "an 'enable' list that asks the server (anyone the server knows reaches level 15 with their own password; the standard has none)") {
+				t.Errorf("%s: the words: %q", name, item.Words)
+			}
+			// applied: no list is left (the named one stays), and the plan of
+			// the result has no line for it
+			c := ParseIOS(capture(t, f.raw))
+			c.typeGlobal(form)
+			c.typeGlobal("aaa authentication enable KEEP-ME enable")
+			if err := c.Apply(d.Lines); err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			if got := c.Text(); strings.Contains(got, form) || !strings.Contains(got, "aaa authentication enable KEEP-ME enable") {
+				t.Errorf("%s: after the paste the device has:\n%s", name, got)
+			}
+			after := planText(t, f, expectedSections(t, f.expected), c.Text(), Options{Scope: "lab"})
+			for _, l := range lines(after, "aaa") {
+				if strings.Contains(l, "authentication enable") {
+					t.Errorf("%s: a second plan still has %q", name, l)
+				}
+			}
+		}
+		// what IOS does with no list at all is no finding and no line
+		d := planI(t, f, func(c *IOSConfig) {
+			c.typeGlobal("aaa authentication enable default enable")
+		}, Options{Scope: "lab"})
+		for _, l := range lines(d, "") {
+			if strings.Contains(l, "authentication enable") {
+				t.Errorf("%s: 'default enable' has the line %q", tc.fixture, l)
+			}
+		}
+		for _, it := range d.Items {
+			if strings.Contains(it.Statement, "authentication enable") {
+				t.Errorf("%s: 'default enable' is a finding: %+v", tc.fixture, it)
+			}
+		}
+	}
+}

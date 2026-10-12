@@ -47,7 +47,6 @@ func TestSameAddressBlockRegionOrder(t *testing.T) {
 		"tacacs server TACACS", " address ipv4 192.0.2.10", " key lab-secret-0123456789abcdef", " single-connection", " timeout 5",
 		"aaa group server tacacs+ TACACS-GROUP", " server name TACACS",
 		"aaa authentication login CONSOLE local",
-		"aaa authentication enable default group TACACS-GROUP enable",
 		"aaa accounting commands 15 default start-stop group TACACS-GROUP",
 		"line con 0", " login authentication CONSOLE",
 		// (d) command authorization, last
