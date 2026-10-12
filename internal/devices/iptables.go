@@ -220,7 +220,7 @@ func WTIIPTables(in IPTablesInput) IPTablesBlock {
 			b = append(b, strings.TrimRight(pre+x, " "))
 		}
 	}
-	add("Generated for scope '"+in.Scope+"'. Not verified on a unit. It is the unit's whole IP Tables list, in the",
+	add("Generated for scope '"+in.Scope+"'. Verified on a lab unit (8.10, 2026-10-12). It is the unit's whole IP Tables list, in the",
 		"unit's order, from the scope's management permit list (tacctl scope mgmt-acl "+in.Scope+" list; the global",
 		"tacctl config mgmt-acl list when the scope has none), the tacctl server's address and the scope's",
 		"SNMP clients (tacctl scope snmp "+in.Scope+" clients list). Add one line per entry under /N, IP Tables,",

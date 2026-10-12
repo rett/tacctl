@@ -227,7 +227,7 @@ func TestIPTablesNotes(t *testing.T) {
 		"TACACS+,", "RADIUS, DNS and NTP queries",
 		"Telnet and http are not", "'--dport 23' or '--dport 80'",
 		"SNMP client restriction of Step 6",
-		"Not verified on a unit.",
+		"Verified on a lab unit (8.10, 2026-10-12).",
 		"IPv4 only",
 		"tacctl scope mgmt-acl lab list", "tacctl scope snmp lab clients list",
 	} {
