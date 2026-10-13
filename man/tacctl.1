@@ -5294,8 +5294,12 @@ device is pasted line by line and undone with its back\-out of
 .B no
 lines. The lines of an IOS block (a list's entries, trap hosts, trap lines, the
 banner, the domain, time zone, name servers and NTP lines) were written from the
-vendor's references and have not been checked on a device (not lab\-tested): the
-report says so beside the plan of the section. An IOS device's VRF forms are not
+vendor's references, and the report says beside the plan of the section that
+they have not been checked on a device, whichever release the device runs. A lab
+IOS 15.6(2)T router took an IOS snmp block and an IOS system block (the banner,
+the domain name and list, the time zone, a name server and an NTP server) and
+read them back as ok; other releases, IOS\-XE, the NTP key lines and the Junos
+trap source are not checked. An IOS device's VRF forms are not
 in a block and the device's own such lines stay unmanaged
 .RB ( "ok (+N unmanaged)" ).
 The communities and trap groups of the Junos
@@ -7864,7 +7868,10 @@ and the block has an allowlist of its own (exactly
 or one
 .B "copy running\-config"
 and one empty line). The report says that the block and the alternative have
-not been checked on a device.
+not been checked on a device, for every release. The copy form was typed on a
+lab IOS 15.6(2)T router: the single empty line answered the Destination
+filename prompt and the file was listed by dir. Archive config and configure
+replace were not tried.
 .PP
 On a Cisco device the region follows the order of the standard block, and
 .BR "command authorization is held back" :

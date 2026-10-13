@@ -531,7 +531,8 @@ current behaviour; this file is where history lives.
     remove <entry>`) and changes nothing. Remove them, or replace each with
     the plain CIDR you mean it to be, then run the rollback again.
 
-21. **A scope's and a device's IOS `snmp` block (not lab-tested).** `tacctl
+21. **A scope's and a device's IOS `snmp` block (checked on one IOS 15.6(2)T
+    router).** `tacctl
     scope block <scope> cisco list|show|check|set|remove|edit|adopt <block>`
     and `tacctl device block <name> ...` for an IOS or IOS-XE device keep an
     `snmp` block of IOS configuration lines (the verbs, the files under
@@ -580,8 +581,13 @@ current behaviour; this file is where history lives.
     list, are refused by `check` and by every render without printing the
     string. The report says, among its notes, that the block's lines (list
     entries, trap hosts, `enable traps` lines) were written from the vendor's
-    references and have not been checked on a device. The IOS `system` block
-    and `trap-source` are item 22.
+    references and have not been checked on a device; it says so for every
+    release, because it cannot know which one a device runs. A lab IOS
+    15.6(2)T router took a block's communities with their lists, list
+    entries, a trap host and the trap types, read them back as `ok`, and took
+    the `no` line that removes a stray list entry. Other releases and IOS-XE
+    have not been checked. The IOS `system` block and `trap-source` are
+    item 22.
 
     `adopt` reads `show running-config | include ^snmp-server` and, for each
     standard list a community names, `show running-config | section ip
@@ -599,8 +605,9 @@ current behaviour; this file is where history lives.
     not.
 
 22. **The IOS `system` block, and `trap-source` in the IOS and Junos `snmp`
-    blocks (not lab-tested).** `tacctl scope block <scope> cisco
-    list|show|check|set|remove|edit|adopt` and the device level (`tacctl
+    blocks (IOS checked on one 15.6(2)T router).** `tacctl scope block
+    <scope> cisco list|show|check|set|remove|edit|adopt` and the device level
+    (`tacctl
     device block <name> ...`) now take the block name `system` for IOS and
     IOS-XE, as they take it for Junos; the refusal `The IOS system block is
     not built` is gone. The block is IOS configuration lines, `#` and `!`
@@ -671,7 +678,19 @@ current behaviour; this file is where history lives.
     inside it. `--converge` removes none of the device's own lines. The report
     says, among its notes, that the system block's lines (banner, domain, time
     zone, name servers, NTP) were written from the vendor's references and
-    have not been checked on a device.
+    have not been checked on a device; it says so for every release. On a lab
+    IOS 15.6(2)T router a block with a banner (typed with the `^` delimiter),
+    `ip domain name`, `ip domain list`, `clock timezone`, `ip name-server`
+    and `ntp server ... prefer` was pasted and read back as `ok` (the device
+    stores the time zone as `AKST -9 0`, which compares equal to `-9`); a
+    changed banner, an added list entry and name server, and `ntp server`
+    typed again without `prefer` came out as the planned lines and replaced
+    the server line in place; `adopt` drafted the block from the device and
+    left the other banners out; and `snmp-server trap-source` was pasted and
+    read back. Not checked on a device: the NTP key lines
+    (`ntp authentication-key`, `ntp trusted-key`, `ntp authenticate`, the
+    `key` option), a delimiter other than `^`, IOS-XE and IOS 12.4, and the
+    Junos `trap-options source-address`.
 
     `adopt` reads `show running-config | include ^(banner|ip domain|ip
     name-server|clock timezone|ntp )` and the banner's own lines with `show
@@ -698,7 +717,8 @@ current behaviour; this file is where history lives.
     draft.
 
 23. **`device config plan --restore-point[=<fs>]` adds a restore point to an
-    IOS or IOS-XE plan (not lab-tested).** The plan's region can only be
+    IOS or IOS-XE plan (the copy form checked on one 15.6(2)T router).** The
+    plan's region can only be
     undone with the back-out's `no` lines; the flag puts a file of the
     running configuration beside it first. The output gets a block of its
     own before the region, outside the `PASTE FROM HERE` banners, between a
@@ -745,8 +765,12 @@ current behaviour; this file is where history lives.
     first). `--json` gains `restore_point` (`mode`, `file`, `command`,
     `file_system`, `note`) when the plan has a region to paste with the
     flag; the report's notes say the block and the alternative have not been
-    checked on a device. Off by default: without the flag every IOS output,
-    JSON and back-out is as it was. The flag is refused for another vendor
+    checked on a device, for every release. The `copy` form was typed on a lab
+    IOS 15.6(2)T router: the single empty line answered the `Destination
+    filename` prompt and `dir flash:` listed the file. `archive config` and
+    `configure replace` were not tried. Off by default: without the flag
+    every IOS output, JSON and back-out is as it was. The flag is refused for
+    another vendor
     (naming the devices), and with `--plain` (a plain file is the region's
     statements and has no room for a block of its own) and with `--backout`
     (the kept back-out names the file its plan made). The region's own
