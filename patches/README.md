@@ -87,7 +87,9 @@ under `tq.ContextConnRemoteAddr` for every packet of a connection. It reads
 user's address and the terminal or line name, as the client fills them in),
 which the patch stores in the request context under `tq.ContextClientAddr` and
 `tq.ContextClientPort` (`ctx_keys.go`, `cmds/server/handlers/authen.go`). They
-are left out when the client sent none; the common case is a device, which
+are left out when the client sent none, and the log keeps only printable
+ASCII without brackets in them, at most 64 characters (the client chooses the
+bytes); the common case is a device, which
 fills in the address of the person logging in, and `sshd` on a Linux host
 (through `PAM_RHOST`); `sudo` gives none. Nothing else in the behavior changes.
 

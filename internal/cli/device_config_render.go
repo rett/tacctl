@@ -68,7 +68,7 @@ func (inv *invocation) deviceRenderInput(p renderParams) (devices.Request, devic
 		Restricted:  p.Restricted,
 		AuthServer:  p.AuthServer, AuthName: p.AuthName, SourceIP: p.SourceIP,
 	}
-	d.Release = inv.recordedRelease(p.Device.DeviceName)
+	d.Release = inv.recordedRelease(p.Device.DeviceName, p.Vendor)
 	if d.SNMP, err = inv.walkthroughSNMP(p.Scope, p.Device); err != nil {
 		// A credentials file that cannot be read leaves the step out; the
 		// rest of the walkthrough is still good.
@@ -460,9 +460,10 @@ var ansiRE = regexp.MustCompile("\x1b\\[[0-9;]*m")
 func stripColour(s string) string { return ansiRE.ReplaceAllString(s, "") }
 
 // recordedRelease is the OS release the last good pull of a device read, ""
-// for no device, no record or a pull that read none: the version gates then
-// render the current form.
-func (inv *invocation) recordedRelease(name string) string {
+// for no device, no record, a pull that read none or a record of another
+// vendor (the device was registered again): the version gates then render the
+// current form.
+func (inv *invocation) recordedRelease(name, vendor string) string {
 	if name == "" {
 		return ""
 	}
@@ -470,7 +471,7 @@ func (inv *invocation) recordedRelease(name string) string {
 	if err != nil {
 		return ""
 	}
-	if rec, ok := recs.Of(name); ok {
+	if rec, ok := recs.Of(name); ok && (rec.Vendor == "" || rec.Vendor == vendor) {
 		return rec.Release
 	}
 	return ""

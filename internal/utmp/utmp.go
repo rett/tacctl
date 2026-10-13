@@ -49,9 +49,7 @@ func remote(path, line string) string {
 		if cstring(rec[offLine:offLine+lenLine]) != line {
 			continue
 		}
-		if h := cstring(rec[offHost : offHost+lenHost]); h != "" {
-			host = h
-		}
+		host = cstring(rec[offHost : offHost+lenHost])
 	}
 	return host
 }

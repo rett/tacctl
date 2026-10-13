@@ -22,12 +22,14 @@ func TestRemoteFindsTheNewestUserProcessOnTheLine(t *testing.T) {
 	data = append(data, record(userProcess, "pts/3", "198.51.100.7")...)
 	data = append(data, record(userProcess, "pts/3", "203.0.113.9")...)
 	data = append(data, record(userProcess, "tty1", "")...)
+	// a later local login on a reused line has no host: the old one is not its
+	data = append(data, record(userProcess, "pts/1", "")...)
 	p := filepath.Join(t.TempDir(), "utmp")
 	if err := os.WriteFile(p, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for line, want := range map[string]string{
-		"pts/3": "203.0.113.9", "pts/1": "192.0.2.10", "tty1": "", "pts/9": "", "": "",
+		"pts/3": "203.0.113.9", "pts/1": "", "tty1": "", "pts/9": "", "": "",
 	} {
 		if got := remote(p, line); got != want {
 			t.Errorf("remote(%q) = %q, want %q", line, got, want)

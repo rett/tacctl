@@ -871,3 +871,16 @@ func TestManagedImportsNothingImpure(t *testing.T) {
 		}
 	}
 }
+
+func TestWithoutIdleTimeoutDropsTheGlobalAndThePerClassForm(t *testing.T) {
+	in := []string{
+		"set system login idle-timeout 30",
+		"set system login class tac-ro idle-timeout 30",
+		"set system login class tac-ro permissions view",
+		"set system authentication-order [ tacplus password ]",
+	}
+	got := withoutIdleTimeout(in)
+	if len(got) != 2 || got[0] != in[2] || got[1] != in[3] {
+		t.Errorf("got %q", got)
+	}
+}

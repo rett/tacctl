@@ -1,8 +1,8 @@
 diff --git a/cmds/server/config/authenticators/bcrypt/bcrypt.go b/cmds/server/config/authenticators/bcrypt/bcrypt.go
-index 48568bb..6b0e37a 100644
+index 48568bb..f40e1dc 100644
 --- a/cmds/server/config/authenticators/bcrypt/bcrypt.go
 +++ b/cmds/server/config/authenticators/bcrypt/bcrypt.go
-@@ -139,8 +139,25 @@ func (a Authenticator) Handle(response tq.Response, request tq.Request) {
+@@ -139,8 +139,36 @@ func (a Authenticator) Handle(response tq.Response, request tq.Request) {
  		expectedHash = secret
  	}
  
@@ -14,13 +14,24 @@ index 48568bb..6b0e37a 100644
 +
 +	// The end user's address and port as the client sent them (tacctl patch
 +	// 0003): appended after the message so a reader of the NAS address is
-+	// unaffected, and omitted when the client sent neither.
-+	clientInfo := ""
-+	if v, _ := request.Context.Value(tq.ContextClientAddr).(string); v != "" {
-+		clientInfo += fmt.Sprintf("; client [%v]", v)
++	// unaffected, and omitted when the client sent neither. The client
++	// chooses these bytes, so only printable ASCII without brackets is kept
++	// (at most 64 characters): a value cannot end the field or start a line.
++	clean := func(s string) string {
++		out := make([]rune, 0, len(s))
++		for _, r := range s {
++			if r > ' ' && r < 0x7f && r != '[' && r != ']' && len(out) < 64 {
++				out = append(out, r)
++			}
++		}
++		return string(out)
 +	}
-+	if v, _ := request.Context.Value(tq.ContextClientPort).(string); v != "" {
-+		clientInfo += fmt.Sprintf(" port [%v]", v)
++	clientInfo := ""
++	if v, _ := request.Context.Value(tq.ContextClientAddr).(string); clean(v) != "" {
++		clientInfo += fmt.Sprintf("; client [%v]", clean(v))
++	}
++	if v, _ := request.Context.Value(tq.ContextClientPort).(string); clean(v) != "" {
++		clientInfo += fmt.Sprintf(" port [%v]", clean(v))
 +	}
 +
  	if err := bcrypt.CompareHashAndPassword(expectedHash, []byte(password)); err == nil {
@@ -29,7 +40,7 @@ index 48568bb..6b0e37a 100644
  		response.Reply(
  			tq.NewAuthenReply(
  				tq.SetAuthenReplyStatus(tq.AuthenStatusPass),
-@@ -149,7 +166,7 @@ func (a Authenticator) Handle(response tq.Response, request tq.Request) {
+@@ -149,7 +177,7 @@ func (a Authenticator) Handle(response tq.Response, request tq.Request) {
  		return
  	}
  
@@ -39,7 +50,7 @@ index 48568bb..6b0e37a 100644
  		tq.NewAuthenReply(
  			tq.SetAuthenReplyStatus(tq.AuthenStatusFail),
 diff --git a/cmds/server/handlers/authen.go b/cmds/server/handlers/authen.go
-index 5b2fb36..beab77e 100644
+index 5b2fb36..185db59 100644
 --- a/cmds/server/handlers/authen.go
 +++ b/cmds/server/handlers/authen.go
 @@ -8,6 +8,7 @@
@@ -66,7 +77,7 @@ index 5b2fb36..beab77e 100644
  		// 5.4.2.6.  Enable Requests
  		{action: tq.AuthenActionLogin, service: tq.AuthenServiceEnable, minorVersion: tq.MinorVersionOne}: NewAuthenticateASCII(a.loggerProvider, a.configProvider, string(body.User)),
 diff --git a/ctx_keys.go b/ctx_keys.go
-index 0d0a861..08afac9 100644
+index 0d0a861..75e9200 100644
 --- a/ctx_keys.go
 +++ b/ctx_keys.go
 @@ -49,6 +49,14 @@ const ContextPrivLvl ContextKey = "priv-lvl"

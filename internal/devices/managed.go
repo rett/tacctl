@@ -188,10 +188,11 @@ func managedJuniper(req Request, d Data) []Section {
 	if req.Protocol == RADIUS {
 		aaa = v["RADIUS_CONFIG"]
 	}
-	// 'system login idle-timeout' is in the block, but under no section of
+	// 'system login idle-timeout' (and, for a release before 16.1, the same
+	// statement under each class) is in the block, but under no section of
 	// D62: its hierarchy is the classes' and users', which are compared by
 	// the names tacctl renders.
-	s.add(sectionAAA, without(junosStatements(aaa), "set system login idle-timeout "))
+	s.add(sectionAAA, withoutIdleTimeout(junosStatements(aaa)))
 	// Step 1: the classes and their template users.
 	s.add(sectionRoles, junosStatements(v["TEMPLATE_USERS"]))
 	// Step 4: the lo0 filter (SNMP terms included).
@@ -448,6 +449,20 @@ func uncommented(block, leader, prefix string) []string {
 		if strings.HasPrefix(l, prefix) {
 			out = append(out, strings.TrimPrefix(l, leader))
 		}
+	}
+	return out
+}
+
+// withoutIdleTimeout is lines without the idle-timeout statements: the global
+// one and the per-class form a release before 16.1 gets.
+func withoutIdleTimeout(lines []string) []string {
+	var out []string
+	for _, l := range lines {
+		if strings.HasPrefix(l, "set system login idle-timeout ") ||
+			(strings.HasPrefix(l, "set system login class ") && strings.Contains(l, " idle-timeout ")) {
+			continue
+		}
+		out = append(out, l)
 	}
 	return out
 }

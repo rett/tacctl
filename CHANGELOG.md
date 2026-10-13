@@ -62,7 +62,8 @@ current behaviour; this file is where history lives.
    recorded an older release sets the timeout on each login class instead. A
    device with no recorded release gets the global statement, as before. The
    statements a release lacks are kept as rows of one table
-   (`internal/devices/gates.go`), added when a device refuses one.
+   (`internal/devices/gates.go`), added when a device refuses one. The compare
+   and the plan leave the idle timeout out in both forms.
 
 8. **IOS block lines were run on three releases; the compare reads IOS's
    default zone.** The system and snmp block lines (banner, domain name and
