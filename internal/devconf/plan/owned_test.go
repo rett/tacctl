@@ -807,6 +807,63 @@ var iosRowCases = map[string]rowCase{
 		}, Options{})
 		wantLine(t, d, "snmp", "ip access-list standard TACCTL-SNMP > no permit 203.0.113.9")
 	},
+	// 0.2.7: the objects of a scope's IOS snmp block (blocks_cisco_test.go has
+	// the rest of what the planner does with them)
+	"ios.snmp.block-community": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-block")
+		// missing: typed by value, under the block's mark
+		d := planI(t, f, func(c *IOSConfig) { c.noGlobal("snmp-server community poller-ro") }, Options{Scope: "lab"})
+		wantLine(t, d, "snmp", "snmp-server community <secret:2> RO POLLERS")
+		if got := realTexts(d); !slices.Contains(got, "snmp-server community poller-ro RO POLLERS") {
+			t.Errorf("by value: %q", got)
+		}
+		// another access: retyped in place, never removed
+		d = planI(t, f, func(c *IOSConfig) { c.typeGlobal("snmp-server community poller-ro RW POLLERS") }, Options{Scope: "lab"})
+		wantLine(t, d, "snmp", "snmp-server community <secret:2> RO POLLERS")
+		noLine(t, d, "snmp", "no snmp-server community")
+		// a device's own community is kept
+		wantKept(t, d, "snmp", "snmp-server community <other:1> RO TACCTL-SNMP")
+	},
+	"ios.snmp.block-acl": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-block")
+		d := planI(t, f, func(c *IOSConfig) {
+			blk := c.blockFor("ip access-list standard POLLERS")
+			blk.lines = append(blk.lines, " permit 203.0.113.9")
+		}, Options{Scope: "lab"})
+		wantLine(t, d, "snmp", "ip access-list standard POLLERS > no permit 203.0.113.9")
+		// a list the block does not define (another community's) is kept
+		d = planI(t, f, func(c *IOSConfig) {
+			c.typeGlobal("snmp-server community device-own RO DEVICE-LIST")
+			c.typeGlobal("ip access-list standard DEVICE-LIST")
+			c.blockFor("ip access-list standard DEVICE-LIST").lines = append(c.blockFor("ip access-list standard DEVICE-LIST").lines, " permit 203.0.113.9")
+		}, Options{Scope: "lab"})
+		noLine(t, d, "snmp", "DEVICE-LIST")
+	},
+	"ios.snmp.block-host": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-block")
+		d := planI(t, f, func(c *IOSConfig) { c.noGlobal("snmp-server host 192.0.2.61") }, Options{Scope: "lab"})
+		wantLine(t, d, "snmp", "snmp-server host 192.0.2.61 version 2c <secret:3>")
+		// the same host and community with another version: retyped in
+		// place, nothing removed; the device's other host is kept
+		d = planI(t, f, func(c *IOSConfig) { c.typeGlobal("snmp-server host 192.0.2.61 poller-traps udp-port 1162") }, Options{Scope: "lab"})
+		wantLine(t, d, "snmp", "snmp-server host 192.0.2.61 version 2c <secret:3>")
+		noLine(t, d, "snmp", "no snmp-server host")
+		wantKept(t, d, "snmp", "snmp-server host 192.0.2.50 version 2c <other:2>")
+	},
+	"ios.snmp.block-traps": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-block")
+		// the device enables the type in the expanded form: nothing to type
+		d := planI(t, f, nil, Options{Scope: "lab"})
+		noLine(t, d, "snmp", "enable traps")
+		// it lacks the line: typed; the device's other lines are kept
+		d = planI(t, f, func(c *IOSConfig) {
+			c.noGlobal("snmp-server enable traps snmp")
+			c.typeGlobal("snmp-server enable traps tty")
+		}, Options{Scope: "lab"})
+		wantLine(t, d, "snmp", "snmp-server enable traps snmp linkdown linkup")
+		noLine(t, d, "snmp", "no snmp-server enable traps")
+		wantKept(t, d, "snmp", "snmp-server enable traps tty")
+	},
 	"ios.mgmt-acl.acl": func(t *testing.T) {
 		f := fixtureNamed(t, "cisco.reference-lab")
 		// a new entry that has to stand before the deny: the deny is removed

@@ -63,3 +63,25 @@ func hasServiceColon(s string) bool {
 	}
 	return false
 }
+
+// MgmtACLList is the management permit list that applies to scope: the
+// scope's own list when it has any element, else the global one (the same
+// precedence every rendering reads). own says the scope's own list was used.
+// Elements are as stored, blank ones dropped; scope "" is the global list.
+func (c *Config) MgmtACLList(scope string) (list []string, own bool) {
+	nonBlank := func(raw []string) []string {
+		var out []string
+		for _, l := range strings.Split(strings.Join(raw, "\n"), "\n") {
+			if s := strings.TrimSpace(l); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	if scope != "" {
+		if l := nonBlank(c.GetList(ScopeMgmtACLPrefix + scope)); len(l) > 0 {
+			return l, true
+		}
+	}
+	return nonBlank(c.GetList(MgmtACLKey)), false
+}

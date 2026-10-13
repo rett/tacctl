@@ -242,16 +242,29 @@ func (d Data) boundAddr(protocol string) string {
 
 // snmpInput is the SNMP step's input for scope.
 func (d Data) snmpInput(scope string) SNMPInput {
+	return d.snmpInputFor(scope, "juniper")
+}
+
+// snmpInputFor is snmpInput for a vendor: the block lines are the vendor's
+// own (the Junos snmp block's 'set' lines, the IOS snmp block's
+// configuration lines), and a request never renders another vendor's.
+func (d Data) snmpInputFor(scope, vendor string) SNMPInput {
 	in := d.SNMP
 	in.Scope = scope
 	in.Server = d.source()
-	in.Block = d.Blocks.snmpStatements()
+	head := d.Blocks.snmpHead
+	switch vendor {
+	case "cisco":
+		in.Block, head = d.Blocks.ciscoSNMPStatements(), d.Blocks.ciscoSNMPHead
+	default:
+		in.Block = d.Blocks.snmpStatements()
+	}
 	if len(in.Block) > 0 {
 		in.BlockScope = d.Blocks.Scope
 		if in.BlockScope == "" {
 			in.BlockScope = scope
 		}
-		in.BlockHead = d.Blocks.snmpHead(scope)
+		in.BlockHead = head(scope)
 	}
 	return in
 }

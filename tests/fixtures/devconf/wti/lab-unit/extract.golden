@@ -1,5 +1,6 @@
 # secrets visible: true
 [aaa]
+| unit multiple-logins on
 | tacacs enable on
 | tacacs primary 192.0.2.42
 * tacacs secret <secret>

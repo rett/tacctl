@@ -231,7 +231,7 @@ func (inv *invocation) configDeviceNote(vendor string, args []string, sink func(
 	// whose move ends the staging).
 	var dev devices.SNMPInput
 	// blockDevice is the device whose own configuration blocks are laid over
-	// the scope's: a registered Junos device of this scope.
+	// the scope's: a registered Junos or IOS device of this scope.
 	blockDevice := ""
 	if stagingName != "" {
 		_, res, err := inv.deviceLoad()
@@ -242,7 +242,7 @@ func (inv *invocation) configDeviceNote(vendor string, args []string, sink func(
 		switch {
 		case ok && e.Source == devreg.SourceDevice && ownScopes.allows(e.Scope) && (e.Scope == "" || e.Scope == scope):
 			dev = deviceSNMPValues(e)
-			if e.Scope == scope && e.Vendor == "juniper" {
+			if e.Scope == scope && e.Vendor == vendor && (vendor == "juniper" || vendor == "cisco") {
 				blockDevice = e.Name
 			}
 			// The device's configuration syntax (D113): the one resolution

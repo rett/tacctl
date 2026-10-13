@@ -86,6 +86,49 @@ func Template(block string, layer Layer) string {
 	return strings.Join(l, "\n") + "\n"
 }
 
+// TemplateFor is Template for a vendor's block: the IOS snmp block's is its
+// grammar and an example (there is no IOS system block).
+func TemplateFor(vendor, block string, layer Layer) string {
+	if vendor != VendorCisco {
+		return Template(block, layer)
+	}
+	level := "scope"
+	if layer == LayerDevice {
+		level = "device"
+	}
+	l := []string{
+		"# The snmp block of this " + level + " (IOS and IOS-XE). One statement per line; blank lines and",
+		"# lines that start with '#' or '!' are comments. Save to install it (the check runs",
+		"# first); quit without saving to leave things as they are.",
+		"#",
+		"# What a snmp block states (a community or an access list becomes an object tacctl",
+		"# owns: the plan sets its line, and removes the entries of a list that this block",
+		"# does not state; a host and an 'enable traps' statement are only added):",
+		"#",
+		"#   snmp-server community <string> RO|RW [<acl-name>]",
+		"#   snmp-server host <address> [version 1|2c] <community> [udp-port <n>] [<type> ...]",
+		"#   snmp-server enable traps [<type> [<subtype> ...]]",
+		"#   ip access-list standard <NAME>",
+		"#    permit <address> [<wildcard>] | permit host <address> | permit any",
+		"#   no snmp-server community <string>   (not managed on this device; kept, never removed)",
+		"#",
+		"# An access list the block defines is owned whole; one it only names is the",
+		"# device's own and is kept. A read-write community needs a list without 'permit any'.",
+		"# tacctl's own community and names (TACCTL-SNMP, TACCTL-VIEW, TACCTL-GROUP) are the",
+		"# structured settings'; write an 'enable traps' line as the device prints it.",
+		"#",
+		"# Example (remove the '# ' to use it):",
+		"#",
+		"# ip access-list standard POLLERS",
+		"#  permit host 192.0.2.10",
+		"#  permit 198.51.100.0 0.0.0.255",
+		"# snmp-server community change-me-community RO POLLERS",
+		"# snmp-server host 192.0.2.50 version 2c change-me-traps",
+		"# snmp-server enable traps config",
+	}
+	return strings.Join(l, "\n") + "\n"
+}
+
 // CommentOut is text with '# ' in front of every line (a blank line is just
 // '#'): the objects of a layer shown beneath the block that may override
 // them.

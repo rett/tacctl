@@ -209,26 +209,44 @@ func TestBlockCommunityEqualToTheStructuredOne(t *testing.T) {
 	}
 }
 
-// IOS blocks are the release after: a Cisco request ignores the block.
-func TestCiscoIgnoresBlocks(t *testing.T) {
+// A request renders the blocks of its own vendor: a Cisco request ignores the
+// Junos block, and a Junos request the IOS one.
+func TestRequestsIgnoreTheOtherVendorsBlock(t *testing.T) {
 	lab := managedProfiles()[0]
-	for _, v := range variants[:3] {
+	for _, v := range variants[:5] {
 		m, c := managedWorld(t)
 		req, d := lab.input(m, c, v)
 		want := mustManaged(t, req, d)
 		wantText := renderText(t, req, d)
-		d.Blocks = Blocks{Scope: "lab", SNMP: parsedBlock(t, blockText)}
+		d.Blocks = Blocks{Scope: "lab", SNMP: parsedBlock(t, blockText), CiscoSNMP: parsedCiscoBlock(t, ciscoBlockText)}
+		if v.vendor == "cisco" {
+			d.Blocks.SNMP = nil
+		} else {
+			d.Blocks.CiscoSNMP = nil
+		}
 		got := mustManaged(t, req, d)
-		if !slices.EqualFunc(want, got, sectionEqual) {
+		// the vendor's own block is rendered; the other vendor's is not: the
+		// same request with the other vendor's block alone is unchanged
+		_, d2 := lab.input(m, c, v)
+		if v.vendor == "cisco" {
+			d2.Blocks = Blocks{Scope: "lab", SNMP: parsedBlock(t, blockText)}
+		} else {
+			d2.Blocks = Blocks{Scope: "lab", CiscoSNMP: parsedCiscoBlock(t, ciscoBlockText)}
+		}
+		got2 := mustManaged(t, req, d2)
+		if !slices.EqualFunc(want, got2, sectionEqual) {
 			t.Errorf("%s: Managed changed", v.name)
 		}
-		for _, s := range got {
+		for _, s := range got2 {
 			if s.Block != nil {
 				t.Errorf("%s: %s has Block", v.name, s.Name)
 			}
 		}
-		if renderText(t, req, d) != wantText {
+		if renderText(t, req, d2) != wantText {
 			t.Errorf("%s: the walkthrough changed", v.name)
+		}
+		if slices.EqualFunc(want, got, sectionEqual) {
+			t.Errorf("%s: its own block changed nothing", v.name)
 		}
 	}
 }

@@ -109,15 +109,25 @@ type iosState struct {
 	levels map[string]bool
 	// aclHeaders are the rendered ACL headers per section.
 	acls map[string]bool
+	// real maps the label of a rendered community string ('<secret:2>') to
+	// the string, for the lines of the back-out that retype a device's line
+	// by value.
+	real map[string]string
 }
 
 // prepareIOS indexes the rendering's raw lines per section.
 func (p *planner) prepareIOS(results map[string]devconf.SectionResult) {
 	st := &iosState{entries: map[string][]iosEntry{}, byStem: map[string]map[string][]int{},
 		used: map[string]map[int]bool{}, renderedKeys: map[string]bool{},
-		kinds: map[string]map[string]bool{}, levels: map[string]bool{}, acls: map[string]bool{}}
+		kinds: map[string]map[string]bool{}, levels: map[string]bool{}, acls: map[string]bool{},
+		real: map[string]string{}}
 	p.ios = st
 	for _, sec := range p.exp {
+		if sec.Name == devconf.SectionSNMP {
+			if m, err := devconf.CommunityLabels(devconf.FamilyIOS, sec.Lines); err == nil {
+				st.real = m
+			}
+		}
 		es := parseIOSExpected(sec)
 		st.entries[sec.Name] = es
 		st.byStem[sec.Name] = map[string][]int{}
@@ -197,13 +207,31 @@ func parseIOSExpected(sec devices.Section) []iosEntry {
 		}
 		lines = append(lines, strings.Repeat(" ", len(ctx))+it.text)
 		marks = append(marks, it.mark)
-		stems, err := devconf.Elide("cisco", lines, marks)
+		// a community's name is labelled as in the whole section, so the
+		// stem is the one the comparison gives the same statement
+		stems, err := devconf.ElideIn("cisco", lines, marks, sec.Lines)
 		if err != nil || len(stems) == 0 {
 			continue
 		}
 		out = append(out, iosEntry{stem: stems[0], ctx: ctx, leaf: it.text, secret: it.mark})
 	}
 	return out
+}
+
+// unlabel is a compared statement with the labels of the strings the
+// rendering holds ('<secret:2>') put back as those strings: the line as the
+// device holds it. ok is false when a mark is left that the rendering cannot
+// name (another community's '<other:1>', the bare mark of an older record).
+func (st *iosState) unlabel(stem string) (string, bool) {
+	replaced := false
+	text := reMarks.ReplaceAllStringFunc(stem, func(m string) string {
+		if v, ok := st.real[m]; ok {
+			replaced = true
+			return v
+		}
+		return m
+	})
+	return text, replaced && !reMarks.MatchString(text)
 }
 
 // take returns the rendered entry of a stem not yet used.
@@ -252,6 +280,13 @@ func iosKey(path []string) (string, bool) {
 			// one line per community: a typed one replaces it (an older
 			// record's bare mark stands for every community, so it keys none)
 			return strings.Join(leaf[:3], " "), true
+		case leaf[0] == "snmp-server" && len(leaf) >= 4 && leaf[1] == "host":
+			// one line per trap host and community: a typed one replaces it,
+			// whatever its version, port and types (0.2.7, the SNMP block's
+			// hosts)
+			if i := devconf.SNMPHostCommunity(leaf); i > 0 && leaf[i] != secretMark {
+				return "snmp-server host " + leaf[2] + " " + leaf[i], true
+			}
 		}
 		return "", false
 	}
@@ -661,7 +696,13 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 		}
 		path := append(slices.Clone(l.Context), l.Text)
 		undo := Line{Op: OpNo, Context: slices.Clone(l.Context), Text: l.Text}
-		if k, ok := iosKey(path); ok {
+		// a secret line holds the value: its key is the compared
+		// statement's, where the community is a label
+		keyPath := path
+		if l.Secret && len(l.For) > 0 {
+			keyPath = strings.Split(l.For[0], pathSep)
+		}
+		if k, ok := iosKey(keyPath); ok {
 			if sup := superseded[k]; len(sup) > 0 {
 				undone := 0
 				for _, s := range sup {
@@ -673,6 +714,17 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 					}
 					undone++
 					if s.secret {
+						// The string of a rendered community is known: the
+						// device's line is typed again by value (placeholders
+						// with --no-secrets).
+						if t, ok := st.unlabel(s.stem); ok && !strings.Contains(s.stem, pathSep) {
+							u := Line{Op: OpLine, Text: t, Secret: true, HasValue: true, Elided: s.stem}
+							if p.opt.NoSecrets {
+								u.Text, u.HasValue = placeholderOf(s.stem), false
+							}
+							l.Undo = append(l.Undo, u)
+							continue
+						}
 						// MEDIUM 9: the device's own line is not in the
 						// record (its secret is elided): the back-out says
 						// to type it again with its original value
@@ -698,6 +750,17 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 				undo.Elided = "snmp-server community " + secretMark
 				if f := strings.Fields(l.Elided); len(f) >= 3 && isMark(f[2]) {
 					undo.Elided = strings.Join(f[:3], " ")
+				}
+			}
+			if strings.HasPrefix(undo.Text, "snmp-server host ") {
+				// a trap host names the community its notifications are sent
+				// with: the same holds
+				undo.Secret, undo.HasValue = true, l.HasValue
+				undo.Elided = undo.Text
+				if f := strings.Fields(l.Elided); len(f) >= 4 {
+					if i := devconf.SNMPHostCommunity(f); i > 0 {
+						undo.Elided = strings.Join(f[:i+1], " ")
+					}
 				}
 			}
 		case len(l.Context) == 0 && strings.HasPrefix(l.Text, "tacacs-server host "):
@@ -822,14 +885,20 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 		}
 	}
 
-	// the why-line: the rows of the lines in the section
+	// the why-line: the rows of the lines in the section; the block's rows
+	// are led by one sentence that names the block
+	blockWhy := false
 	for _, row := range iosOwned {
 		if row.Section != name {
 			continue
 		}
 		for _, l := range o.lines {
-			if iosRowID(name, l) == row.ID {
-				o.why = append(o.why, row.Why)
+			if p.iosRow(name, l) == row.ID {
+				if row.Block && !blockWhy {
+					blockWhy = true
+					o.why = append(o.why, "the SNMP block of scope "+p.blockScope()+" (its communities, access lists, trap hosts and 'enable traps' lines)")
+				}
+				o.why = append(o.why, strings.ReplaceAll(row.Why, "<scope>", p.blockScope()))
 				break
 			}
 		}
@@ -845,6 +914,31 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 		o.why = []string{"the server, the group and the method lists tacctl renders; 'aaa authorization exec' is in the same paste on purpose: without it every new login lands at privilege 1"}
 	}
 	return o
+}
+
+// iosRow is iosRowID for a line of this plan: a line the rendering took from
+// a scope's SNMP block belongs to the block's row of its kind.
+func (p *planner) iosRow(section string, l Line) string {
+	id := iosRowID(section, l)
+	if p.blk == nil || !p.blk.ios || section != devconf.SectionSNMP {
+		return id
+	}
+	text := l.Text
+	if l.Secret && l.Elided != "" {
+		text = l.Elided
+	}
+	stem := strings.Join(append(slices.Clone(l.Context), text), pathSep)
+	switch kind, _ := p.blk.iosKind(stem); kind {
+	case "community":
+		return "ios.snmp.block-community"
+	case "acl":
+		return "ios.snmp.block-acl"
+	case "host":
+		return "ios.snmp.block-host"
+	case "traps":
+		return "ios.snmp.block-traps"
+	}
+	return id
 }
 
 // iosRowID names the ownership row a line of a section belongs to.
@@ -1013,6 +1107,13 @@ func undoOfSecret(path []string, l Line) string {
 	case strings.HasPrefix(t, "snmp-server community "):
 		f := strings.Fields(t)
 		return strings.Join(f[:3], " ")
+	case strings.HasPrefix(t, "snmp-server host "):
+		// the entry is removed by its address and community (the version
+		// stays as typed: 'no snmp-server host A version 2c C')
+		f := strings.Fields(t)
+		if i := devconf.SNMPHostCommunity(f); i > 0 {
+			return strings.Join(f[:i+1], " ")
+		}
 	}
 	if f := strings.Fields(t); len(f) > 0 {
 		return f[0]

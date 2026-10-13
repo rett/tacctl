@@ -22,7 +22,8 @@ package devices
 // is not read, design W3), a unit's system name, its trap settings and the
 // tail of the IP tables list (the unit's own, the planner keeps them), and
 // every value the scope leaves unset (no server address, no contact or
-// location, no community, no secret, no permit list).
+// location, no community, no secret, no permit list). The one statement no
+// scope can leave out is the unit-wide Multiple Logins setting (On).
 
 import (
 	"regexp"
@@ -45,9 +46,17 @@ func managedWTI(req Request, d Data) []Section {
 	return s.out
 }
 
+// wtiMultipleLogins is the statement of the unit-wide setting every
+// walkthrough names in its Step 3: item 31 of /N, Multiple Logins, On. The
+// checks of a walkthrough and of a plan log in from a second session while
+// the first stays open, and tacctl's pull opens one for the user directory;
+// a unit with the setting Off refuses all of them.
+const wtiMultipleLogins = "unit multiple-logins on"
+
 // wtiAAA are the statements of the protocol's page (Step 3 of its
-// walkthrough, in the order of the steps): the page of the other protocol is
-// the unit's own and says nothing here.
+// walkthrough, in the order of the steps) and the unit-wide setting its last
+// line names: the page of the other protocol is the unit's own and says
+// nothing here.
 func wtiAAA(radius bool, v map[string]string) []string {
 	var out []string
 	add := func(key, value string) {
@@ -69,7 +78,7 @@ func wtiAAA(radius bool, v map[string]string) []string {
 		add("radius onetime-auth", "off")
 		add("radius default-access", "on")
 		add("radius debug", "off")
-		return out
+		return append(out, wtiMultipleLogins)
 	}
 	add("tacacs enable", "on")
 	add("tacacs primary", server)
@@ -85,7 +94,7 @@ func wtiAAA(radius bool, v map[string]string) []string {
 	add("tacacs session-module", "enabled")
 	add("tacacs service-name", wtiQuote(v["SERVICE_NAME"]))
 	add("tacacs debug", "off")
-	return out
+	return append(out, wtiMultipleLogins)
 }
 
 // wtiMgmtACL are the entries of Step 5 (the commands of the list, in order;

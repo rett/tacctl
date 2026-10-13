@@ -391,6 +391,9 @@ func wtiBackout(d Delta, h Header) (string, error) {
 	b.WriteString(boxLine(d, h) + "\n")
 	add("BACK-OUT of the plan for " + h.Device + ": it puts back what the pull of " + fmtTime(h.Pulled) +
 		" showed, for the settings the plan changed. Use it only after the plan was done and the check was not fine.")
+	if w := wtiPlainBackoutWarning(d); w != "" {
+		add("WARNING: " + w + ".")
+	}
 	add("The unit has no rollback: each value is live as soon as its Enter is accepted, and leaving /N with ESC saves it. Keep the serial session open, and a second one for the check.")
 	b.WriteString("#\n")
 	b.WriteString("# Type this first, on " + h.Device + ", and check the version:   /H\n")

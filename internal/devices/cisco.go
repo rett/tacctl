@@ -165,7 +165,7 @@ func CiscoVars(req Request, d Data) map[string]string {
 		"EXEC_TIMEOUT":           execTimeout(c, scope),
 		"TACACS_GROUP":           tacacsGroup,
 		"RADIUS_GROUP":           radiusGroup,
-		"SNMP_BLOCK":             CiscoSNMP(d.snmpInput(scope)).Text,
+		"SNMP_BLOCK":             CiscoSNMP(d.snmpInputFor(scope, "cisco")).Text,
 		"NETCONF_BLOCK":          CiscoNetconf(NetconfInput{Restricted: d.Restricted, Legacy: req.Legacy}),
 		"SOURCE_INTERFACE_BLOCK": ciscoSourceInterfaceBlock(req, d),
 		"HARDENING_BLOCK":        ciscoHardening(req, d),
@@ -361,6 +361,9 @@ func renderCisco(o *out, req Request, d Data) error {
 	if err != nil {
 		return err
 	}
+	if err := d.blockProblem(req); err != nil {
+		return err
+	}
 	vars := CiscoVars(req, d)
 	allowed := ciscoTacacsVars
 	if req.Protocol == RADIUS {
@@ -370,7 +373,7 @@ func renderCisco(o *out, req Request, d Data) error {
 	vars[breakGlassVar] = ciscoBreakGlass(bg)
 	allowed = withBreakGlassVar(allowed)
 	aclName := d.ACL.Name
-	snmp := CiscoSNMP(d.snmpInput(req.Scope))
+	snmp := CiscoSNMP(d.snmpInputFor(req.Scope, "cisco"))
 
 	// a Cisco walkthrough is pasted from: every byte of it is ASCII
 	o.ascii = true

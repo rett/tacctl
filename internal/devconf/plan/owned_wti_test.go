@@ -174,6 +174,22 @@ var wtiRowCases = map[string]rowCase{
 		res = wtiCompare(t, secs, "aaa", appendLines("tacacs enable off", "tacacs fallback-timer 15"))
 		wantOwn(t, res, "aaa", "wti.aaa.inactive-protocol", "radius", "tacacs fallback-timer 15", 2)
 	},
+	"wti.aaa.multiple-logins": func(t *testing.T) {
+		// the unit-wide setting of /N (item 31): rendered On for every
+		// scope, so a unit with it Off is a finding with its step
+		for _, c := range []struct{ file, proto string }{{wtiTacacs, "tacacs"}, {wtiRadius, "radius"}} {
+			secs := wtiRendering(t, c.file)
+			res := wtiCompare(t, secs, "aaa", nil)
+			if res.State != devconf.StateOK {
+				t.Errorf("%s: %s", c.proto, res.StateText())
+			}
+			res = wtiCompare(t, secs, "aaa", replaceLine("unit multiple-logins on", "unit multiple-logins off"))
+			wantDifference(t, res, "aaa", "wti.aaa.multiple-logins", c.proto, "ACCESS", "unit multiple-logins on", "unit multiple-logins off")
+		}
+		if r := OwnedByID(devconf.FamilyWTI, "wti.aaa.multiple-logins"); r.Mode != ModeSingle || r.Kept != "" || r.Why != "multiple logins are on, so a second session can log in" {
+			t.Errorf("the row: %+v", r)
+		}
+	},
 
 	"wti.snmp.access": func(t *testing.T) {
 		secs := wtiRendering(t, wtiTacacs)

@@ -45,19 +45,23 @@ func blockLayer(l policy.BlockLayers) devices.BlockLayer {
 	return devices.LayerScope
 }
 
-// resolveBlocks are the snmp and system blocks a Junos device of scope is
-// rendered with: the scope's files and, for a device named, its own over
-// them (a layer's file is read when the manifest names it). The zero Blocks
-// is none. layers[0] is the snmp block's layers and layers[1] the system
+// resolveBlocks are the blocks a device of scope and vendor is rendered
+// with: the snmp and system blocks of a Junos device, the snmp block of an
+// IOS device; the scope's files and, for a device named, its own over them
+// (a layer's file is read when the manifest names it). The zero Blocks is
+// none. layers[0] is the snmp block's layers and layers[1] the system
 // block's.
-func (inv *invocation) resolveBlocks(scope, device string, ov *blockOverride) (devices.Blocks, [2]policy.BlockLayers, error) {
+func (inv *invocation) resolveBlocks(vendor, scope, device string, ov *blockOverride) (devices.Blocks, [2]policy.BlockLayers, error) {
 	var layers [2]policy.BlockLayers
 	store, cfg := inv.deviceBlockStore(), inv.app.Conf()
 	text := func(l blocks.Level, block string) ([]byte, error) {
 		if ov != nil && ov.block == block && ov.forLevel(l, block, nil) != nil {
 			return ov.text, nil
 		}
-		return policy.LayerText(store, cfg, l, block)
+		return policy.LayerTextFor(store, cfg, vendor, l, block)
+	}
+	if vendor == blocks.VendorCisco {
+		return inv.resolveIOSBlocks(scope, device, text)
 	}
 	var sc, dv [2][]byte
 	for i, block := range []string{blocks.BlockSNMP, blocks.BlockSystem} {
@@ -99,21 +103,62 @@ func (inv *invocation) resolveBlocks(scope, device string, ov *blockOverride) (d
 	return b, layers, nil
 }
 
+// resolveIOSBlocks is resolveBlocks for an IOS device: the snmp block of the
+// scope and, for a device named, its own over it.
+func (inv *invocation) resolveIOSBlocks(scope, device string, text func(blocks.Level, string) ([]byte, error)) (devices.Blocks, [2]policy.BlockLayers, error) {
+	var layers [2]policy.BlockLayers
+	sc, err := text(blocks.ScopeLevel(scope), blocks.BlockSNMP)
+	if err != nil {
+		return devices.Blocks{}, layers, err
+	}
+	var dv []byte
+	if device != "" {
+		if dv, err = text(blocks.DeviceLevel(device), blocks.BlockSNMP); err != nil {
+			return devices.Blocks{}, layers, err
+		}
+	}
+	snmp, snmpLayers, err := policy.ResolveIOSSNMPTexts(scope, device, sc, dv)
+	if err != nil {
+		return devices.Blocks{}, layers, err
+	}
+	layers[0] = snmpLayers
+	if snmp == nil {
+		return devices.Blocks{}, layers, nil
+	}
+	b := devices.Blocks{Scope: scope, CiscoSNMP: snmp, SNMPLayer: blockLayer(snmpLayers)}
+	// the layers as written, for the words of a refusal (the texts parsed
+	// well: a layer with errors was refused above)
+	if sc != nil {
+		b.ScopeCiscoSNMP, _ = blocks.ParseIOSSNMP(string(sc))
+	}
+	if dv != nil {
+		b.DeviceCiscoSNMP, _ = blocks.ParseIOSSNMP(string(dv))
+	}
+	if snmpLayers.Device {
+		b.Device = device
+	}
+	return b, layers, nil
+}
+
 // logBlockReads logs a restricted caller's read of the strings of the
 // blocks a render carries: the block's name, never a value. The scope's
-// blocks are named scope/juniper/<block>, a device's own
-// _devices/<device>/juniper/<block>.
+// blocks are named scope/<vendor>/<block>, a device's own
+// _devices/<device>/<vendor>/<block>.
 func (inv *invocation) logBlockReads(b devices.Blocks, layers [2]policy.BlockLayers, scope, device string) {
-	secret := [2]bool{b.SNMP != nil, b.System != nil && len(b.System.NTPKeys) > 0}
+	vendor := blocks.VendorJuniper
+	if b.CiscoSNMP != nil {
+		vendor = blocks.VendorCisco
+	}
+	secret := [2]bool{b.SNMP != nil || b.CiscoSNMP != nil, b.System != nil && len(b.System.NTPKeys) > 0}
 	for i, block := range []string{blocks.BlockSNMP, blocks.BlockSystem} {
 		if !secret[i] {
 			continue
 		}
 		if layers[i].Scope {
-			inv.secretRead("block", scope+"/juniper/"+block)
+			inv.secretRead("block", scope+"/"+vendor+"/"+block)
 		}
 		if layers[i].Device {
-			inv.secretRead("block", blocks.DevicesDir+"/"+strings.ToLower(device)+"/juniper/"+block)
+			inv.secretRead("block", blocks.DevicesDir+"/"+strings.ToLower(device)+"/"+vendor+"/"+block)
 		}
 	}
 }

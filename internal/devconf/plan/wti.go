@@ -176,6 +176,10 @@ var wtiItems = map[string]wtiItem{
 	"radius onetime-auth":    {form: wfPick, picks: wtiOffOn, numbered: true},
 	"radius debug":           {form: wfPick, picks: wtiOffOn, numbered: true},
 
+	// item 31 of /N (tests/fixtures/devconf/wti/pages/network-31.txt: 1 Off,
+	// 2 On)
+	wtiMultipleLogins: {form: wfPick, picks: wtiOffOn, numbered: true},
+
 	"snmp enable":       {form: wfPick, picks: wtiOffOn, numbered: true},
 	"snmp version":      {form: wfPick, picks: wtiVersion, numbered: true},
 	"snmp read-only":    {form: wfPick, picks: wtiYesNo},
@@ -184,6 +188,14 @@ var wtiItems = map[string]wtiItem{
 	"snmp ro-community": {form: wfCommunity, kind: "SNMP COMMUNITY"},
 	"snmp rw-community": {form: wfCommunity, kind: "SNMP COMMUNITY"},
 }
+
+// wtiMultipleLogins is the unit-wide setting that decides whether a second
+// session may log in while one is open (item 31 of /N). Every check of a
+// plan (the second session of the AAA steps, tacctl's own pull) needs it
+// On, and a pick that is changed cannot lock anybody out, so its step is
+// the first of the checklist: ahead of the SNMP page, which is first of the
+// sections, and of the AAA pages.
+const wtiMultipleLogins = "unit multiple-logins"
 
 // wtiStepOrder is the order of the steps within a section: the lock-out
 // safe order of the design (the secret first, then where it is sent, then
@@ -987,15 +999,8 @@ func (p *wtiPlanner) acl(sp *SectionPlan, r devconf.SectionResult) {
 	}
 	// A plain entry of the permit list (0.2.7) is every protocol and port from
 	// its source, where a list of 0.2.6 and before rendered ssh and ping: the
-	// paste widens what those sources reach, so the report says so.
-	if plain := devices.WTIPlainPermits(cmds); len(plain) > 0 {
-		verb := "allows"
-		if len(plain) > 1 {
-			verb = "allow"
-		}
-		d.Notes = appendNew(d.Notes, fmt.Sprintf("%s of the rendered list %s every protocol and port from the source (%s), the unit's telnet and web pages included: <cidr>:tcp/22 in the management permit list restricts a permit to ssh",
-			plural(len(plain), "plain permit", "plain permits"), verb, strings.Join(plain, ", ")))
-	}
+	// paste widens what those sources reach. The report names them in its
+	// header, as a WARNING line (wtiPlainWarning), from the block set below.
 	b := &WTIBlock{Commands: cmds, Tail: tail, Old: old, Restricts: restricts}
 	for _, c := range old {
 		if !reWTICommand.MatchString(c) {
@@ -1074,6 +1079,9 @@ func (p *wtiPlanner) assemble() {
 	d := p.d
 	secIdx := func(s string) int { return slices.Index(PlanOrder(devconf.FamilyWTI), s) }
 	slices.SortStableFunc(p.specs, func(a, b wtiSpec) int {
+		if x := wtiFirstRank(a) - wtiFirstRank(b); x != 0 {
+			return x
+		}
 		if x := secIdx(a.section) - secIdx(b.section); x != 0 {
 			return x
 		}
@@ -1119,6 +1127,19 @@ func (p *wtiPlanner) assemble() {
 		d.WTI.Block = p.block
 	}
 }
+
+// wtiFirstRank is 0 for the step that goes before every other (Multiple
+// Logins), 1 for the rest.
+func wtiFirstRank(s wtiSpec) int {
+	if s.step.Key == wtiMultipleLogins {
+		return 0
+	}
+	return 1
+}
+
+// wtiMultipleLoginsWhy is what the report says of the step that sets
+// Multiple Logins, which is the first of the checklist.
+const wtiMultipleLoginsWhy = "it goes first: the second session that the checks and tacctl's pull log in from needs it, and the unit refuses one while Multiple Logins is Off"
 
 // stepFlat is a step as one line of Display.
 func stepFlat(st WTIStep, enter string) string {
@@ -1178,6 +1199,8 @@ func (p *wtiPlanner) items() {
 			it.Action = "Fixed by the IP tables paste (it replaces every entry: this one is gone afterwards)."
 		case it.Fixed && e.paste:
 			it.Action = "Fixed by the IP tables paste."
+		case it.Fixed && e.spec >= 0 && d.WTI.Steps[e.spec].Key == wtiMultipleLogins:
+			it.Action = "Fixed by step " + fmt.Sprint(e.spec+1) + " (" + wtiMultipleLoginsWhy + ")."
 		case it.Fixed:
 			it.Action = "Fixed by step " + fmt.Sprint(e.spec+1) + "."
 		case e.why != "":
@@ -1283,6 +1306,8 @@ func wtiWords(stem string) string {
 		return "the Session Management Module is " + v
 	case "tacacs service-name":
 		return "the " + pw + " service name is " + v
+	case wtiMultipleLogins:
+		return "Multiple Logins is " + v
 	case "snmp enable":
 		return "SNMP access is " + v
 	case "snmp version":

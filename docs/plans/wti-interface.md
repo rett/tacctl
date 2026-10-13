@@ -23,7 +23,7 @@ exploration. What is not known is listed in section 10.
 | After login | a legal banner (site text) and `Do you wish to continue? (<CR> to continue, /X to exit)`; then the port list and the prompt `DSM>` (the prompt text is configurable: "Command Prompt" under `/F` > 10). |
 | Command entry | commands start with `/` (`/H` help, `/N` network, `/F` system, `/P` ports, `/X` exit); a bare number at `DSM>` is not a command. |
 | Pager | long screens end with `Enter: SPACE for page, ENTER for line` (help) or `<CR> for more ports, <ESC> to quit` (status lists). |
-| Concurrency | "Multiple Logins" is a setting (On on the lab unit). `/SN` lists the network sessions (`N1`..`N32`) with user names: a driver must check it for another administrator before it changes anything. |
+| Concurrency | "Multiple Logins" is a setting (On on the lab unit). `/SN` lists the network sessions (`N1`..`N32`) with user names: a driver must check it for another administrator before it changes anything. The reader's second session and the checks of a plan need Multiple Logins On (section 6). |
 | End of session | `/X`. Closing the connection ends the session; nothing is rolled back (section 4). |
 
 ## 2. Access levels
@@ -237,6 +237,7 @@ lock out the management path).
 | TACACS+ account / session modules | 28.9, 28.10 | | Disabled / Enabled | safe |
 | TACACS+ service name | 28.11 | | text up to 64 (`wti`) | guarded: a wrong name returns users to default access |
 | RADIUS (same shape) | `/N` 29 | `aaaserver` `service radius` | secrets per server, timer 1-60, retries 1-99, ports, one-time auth, message authenticator | guarded |
+| Multiple logins | `/N` 31 | | pick Off / On (1 Off, 2 On: `pages/network-31.txt`) | safe; with it Off a second session is refused, which the pull's user directory session and every check from a second login need, so a plan sets it On first |
 | SNMP enable, version, read-only | 25.1-25.3 | `snmpaccess` | picks | safe |
 | SNMP system name, contact, location | 25.4-25.6 | `snmpaccess` | text | safe |
 | SNMP communities | 25.7, 25.8 | `rocommunity`, `rwcommunity` | text; shown in clear | safe, secret |

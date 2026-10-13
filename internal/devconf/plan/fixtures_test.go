@@ -162,6 +162,12 @@ func fixtures(t testing.TB) []fixture {
 		{name: "juniper.synthetic-system", vendor: "juniper", raw: "juniper/synthetic-system/display-set.txt", expected: "juniper/synthetic-system/expected.txt"},
 		// the same rendering against a device that holds none of it
 		{name: "juniper.synthetic-system-new", vendor: "juniper", raw: "juniper/synthetic-lab/display-set.txt", expected: "juniper/synthetic-system/expected.txt"},
+		// 0.2.7: the reference lab's rendering with a scope's IOS snmp block:
+		// the device after the block was pasted, the device that holds none
+		// of it, and the device that holds the block's objects in other shapes
+		{name: "cisco.synthetic-block", vendor: "cisco", raw: "ios/synthetic-block/running-config.txt", expected: "ios/synthetic-block/expected.txt"},
+		{name: "cisco.synthetic-block-new", vendor: "cisco", raw: "ios/reference-lab/running-config.txt", expected: "ios/synthetic-block/expected.txt"},
+		{name: "cisco.synthetic-block-stray", vendor: "cisco", raw: "ios/synthetic-block/running-config-stray.txt", expected: "ios/synthetic-block/expected.txt"},
 	}
 }
 

@@ -241,6 +241,8 @@ var keptExamples = map[string]struct {
 	"ios.snmp.location":                        {stmt: "snmp-server location Rack 5", unmanaged: true, unrender: "snmp-server location"},
 	"ios.snmp.contact":                         {stmt: "snmp-server contact Other NOC", unmanaged: true, unrender: "snmp-server contact"},
 	"ios.snmp.acl":                             {stmt: "ip access-list standard OTHER-SNMP > permit 192.0.2.7", unmanaged: true},
+	"ios.snmp.block-host":                      {stmt: "snmp-server host 192.0.2.99 version 2c <other:2>", unmanaged: true},
+	"ios.snmp.block-traps":                     {stmt: "snmp-server enable traps tty", unmanaged: true},
 	"ios.mgmt-acl.acl":                         {stmt: "ip access-list standard OTHER-VTY > permit 192.0.2.7", unmanaged: false},
 	// 0.2.7: a WTI unit. The unit's own are the system name, the trap
 	// settings, the RADIUS items the walkthrough leaves alone, the page of a

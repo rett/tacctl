@@ -1,0 +1,71 @@
+{
+  "name": "lab-unit",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "wti",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "ssh",
+    "age_s": 1080,
+    "secrets_visible": true
+  },
+  "status": "needs-change",
+  "irregularities": [
+    {
+      "n": 1,
+      "kind": "different",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "Multiple Logins is On (the device has: Off)",
+      "statement": "unit multiple-logins on",
+      "action": "Fixed by step 1 (it goes first: the second session that the checks and tacctl's pull log in from needs it, and the unit refuses one while Multiple Logins is Off).",
+      "fixed": true,
+      "region_lines": [
+        5
+      ]
+    }
+  ],
+  "region": [
+    "##### DO THESE STEPS ON: lab-unit #####",
+    "# At the unit's prompt type /N and Enter. For each step type the item numbers of its second column,",
+    "# one at a time with Enter after each, then what the arrow says. A pick: the number of the line",
+    "# that reads as shown. ESC goes back one level. A value is live as soon as its Enter is accepted.",
+    "#  1. /N  31  Multiple Logins  -\u003e 2 (On)   was: 1 (Off)",
+    "#  2. ESC ESC  leave /N: wait for \"Saving configuration to flash\"",
+    "##### END OF STEPS #####"
+  ],
+  "after": [
+    "#",
+    "# Check now. The unit has no rollback: nothing undoes this by itself.",
+    "#   From the tacctl server:   tacctl device config pull lab-unit --diff     (aaa: ok)",
+    "#",
+    "# To undo it: tacctl device config plan lab-unit --backout (the steps with the values the pull",
+    "# showed; tacctl keeps this plan's back-out until the next plan with changes).",
+    "# Do not: paste anything outside the banners; paste a block into another unit; leave /N with ESC",
+    "# before the last step of the list; keep this output in a file after the paste when it holds a",
+    "# secret.",
+    "# Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold lab-unit --reason \"...\"",
+    "# then log in on the unit's serial console as its local Administrator account,",
+    "# fix or back out, and the superuser runs: tacctl breakglass release lab-unit"
+  ],
+  "backout": [
+    "##### UNDO THESE STEPS ON: lab-unit #####",
+    "# At the unit's prompt type /N and Enter. For each step type the item numbers of its second column,",
+    "# one at a time with Enter after each, then what the arrow says. A pick: the number of the line",
+    "# that reads as shown. ESC goes back one level. A value is live as soon as its Enter is accepted.",
+    "#  1. /N  31  Multiple Logins  -\u003e 1 (Off)   was: 2 (On)",
+    "#  2. ESC ESC  leave /N: wait for \"Saving configuration to flash\"",
+    "##### END OF STEPS #####"
+  ],
+  "left": {
+    "access": 0,
+    "monitoring": 0,
+    "cosmetic": 0
+  },
+  "extras": [],
+  "skipped": [],
+  "withheld": [],
+  "warnings": [],
+  "holds_secret": false
+}

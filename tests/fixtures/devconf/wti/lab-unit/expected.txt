@@ -15,6 +15,7 @@
 | tacacs session-module enabled
 | tacacs service-name wti
 | tacacs debug off
+| unit multiple-logins on
 [mgmt-acl]
 | iptables -A INPUT -i lo -j ACCEPT
 | iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT

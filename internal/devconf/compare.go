@@ -439,6 +439,7 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 		var notes []string
 		dev, notes = withoutImplicitIOS(exp, dev)
 		res.Notes = append(res.Notes, notes...)
+		dev = coverTraps(exp, dev)
 		// The source interface is the operator's where the scope sets none
 		// (D119): a device's value is no extra then, whatever record it comes
 		// from.

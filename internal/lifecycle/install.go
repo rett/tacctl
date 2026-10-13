@@ -102,6 +102,10 @@ func Install(ctx context.Context, h *Host, args []string) error {
 		if err := MarkOperatorNotice(p); err != nil {
 			out.Warn("Could not record the operator notice marker " + p.OperatorNoticeMarker + ": " + strings.TrimSpace(err.Error()))
 		}
+		// ... nor a unit whose plan rendered a plain permit entry as ssh.
+		if err := MarkWTIPlainNotice(p); err != nil {
+			out.Warn("Could not record the WTI notice marker " + p.WTIPlainNoticeMarker + ": " + strings.TrimSpace(err.Error()))
+		}
 	}
 	// The device config templates (a customised one already there is
 	// kept).

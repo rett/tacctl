@@ -132,6 +132,24 @@ func (s *sections) addFrom(name string, lines []string, block map[string]bool) {
 	s.out = append(s.out, sec)
 }
 
+// addTail is add for a section whose last n lines come from a block: the
+// marks are by position, because an access list entry of a block can be the
+// same text as one of the structured settings'.
+func (s *sections) addTail(name string, lines []string, n int) {
+	if len(lines) == 0 {
+		return
+	}
+	s.add(name, lines)
+	if n <= 0 || n > len(lines) {
+		return
+	}
+	sec := &s.out[len(s.out)-1]
+	sec.Block = make([]bool, len(lines))
+	for i := len(lines) - n; i < len(lines); i++ {
+		sec.Block[i] = true
+	}
+}
+
 // --- Junos --------------------------------------------------------------------
 
 // managedJuniper is Managed for a Junos device.
@@ -305,7 +323,11 @@ func managedCisco(req Request, d Data) []Section {
 	}
 	s.add(sectionMgmtACL, acl)
 
-	s.add(sectionSNMP, ciscoStatements(v["SNMP_BLOCK"]))
+	// The scope's snmp block follows the structured settings in the same
+	// step: its statements are the last lines of the block, marked as the
+	// block's.
+	snmp := ciscoStatements(v["SNMP_BLOCK"])
+	s.addTail(sectionSNMP, snmp, len(d.Blocks.ciscoSNMPStatements()))
 	s.add(sectionNetconf, ciscoStatements(v["NETCONF_BLOCK"]))
 	s.add(sectionBreakGlass, uncommented(ciscoBreakGlass(BreakGlassFor(req, d)), "! ", "! username "))
 	return s.out
@@ -327,12 +349,14 @@ func ciscoStatements(block string) []string {
 
 // reCiscoSecret is a Cisco statement that carries a secret, which the
 // device stores encrypted or hashed ('key 7', 'key 6', 'secret 9'): the
-// key of a server block (or the legacy global line), an SNMP community or
-// v3 user, a local user's hash.
+// key of a server block (or the legacy global line), an SNMP community, a
+// trap host (it names the community its notifications are sent with) or v3
+// user, a local user's hash.
 var reCiscoSecret = regexp.MustCompile(`^(` +
 	`\s+key \S` +
 	`|tacacs-server host \S+ .*\bkey \S` +
 	`|snmp-server community \S` +
+	`|snmp-server host \S+ ` +
 	`|snmp-server user \S` +
 	`|username \S+ privilege \d+ secret \d+ \S` +
 	`)`)

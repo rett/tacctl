@@ -293,3 +293,67 @@ func TestResolveSystemBlockWithTheDevicesOwn(t *testing.T) {
 		t.Errorf("errors: %v", err)
 	}
 }
+
+// The IOS snmp block: the cisco manifest and files, the device's block over
+// the scope's, and a refusal that names the verb and holds no string.
+func TestResolveIOSSNMPBlock(t *testing.T) {
+	c, _ := newConf(t, "")
+	store := blocks.NewStore(t.TempDir())
+	lab := blocks.ScopeLevel("lab")
+	good := "ip access-list standard POLLERS\n permit host 192.0.2.50\nsnmp-server community nms-ro RO POLLERS\nsnmp-server enable traps config\n"
+	if err := store.Write(lab, blocks.VendorCisco, blocks.BlockSNMP, []byte(good)); err != nil {
+		t.Fatal(err)
+	}
+	if b, _, err := ResolveIOSSNMPBlock(store, c, "lab", ""); b != nil || err != nil {
+		t.Fatalf("not in force: %v %v", b, err)
+	}
+	// a Junos block of the same scope is another vendor's
+	if err := SetBlockInForce(c, "lab", blocks.VendorJuniper, blocks.BlockSNMP, true); err != nil {
+		t.Fatal(err)
+	}
+	if b, _, err := ResolveIOSSNMPBlock(store, c, "lab", ""); b != nil || err != nil {
+		t.Fatalf("the Junos entry: %v %v", b, err)
+	}
+	if err := SetBlockInForce(c, "lab", blocks.VendorCisco, blocks.BlockSNMP, true); err != nil {
+		t.Fatal(err)
+	}
+	b, layers, err := ResolveIOSSNMPBlock(store, c, "lab", "")
+	if err != nil || b == nil || len(b.Communities) != 1 || len(b.ACLs) != 1 || len(b.Traps) != 1 || !layers.Scope || layers.Device {
+		t.Fatalf("in force: %v %+v %v", b, layers, err)
+	}
+	// the device's own over it, by object
+	dev := blocks.DeviceLevel("rt1")
+	if err := store.Write(dev, blocks.VendorCisco, blocks.BlockSNMP, []byte("no snmp-server community nms-ro\nsnmp-server enable traps tty\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetDeviceBlockInForce(c, "rt1", blocks.VendorCisco, blocks.BlockSNMP, true); err != nil {
+		t.Fatal(err)
+	}
+	b, layers, err = ResolveIOSSNMPBlock(store, c, "lab", "rt1")
+	if err != nil || b == nil || len(b.Communities) != 0 || len(b.Traps) != 2 || !layers.Scope || !layers.Device {
+		t.Fatalf("with the device's: %v %+v %v", b, layers, err)
+	}
+	// errors: never half a block, no string
+	if err := store.Write(lab, blocks.VendorCisco, blocks.BlockSNMP, []byte(good+"snmp-server community secretive-rw RW\n")); err != nil {
+		t.Fatal(err)
+	}
+	b, _, err = ResolveIOSSNMPBlock(store, c, "lab", "")
+	if b != nil || err == nil {
+		t.Fatalf("a block with errors: %v %v", b, err)
+	}
+	for _, want := range []string{"scope 'lab'", "tacctl scope block lab cisco check snmp", "the scope's IOS devices", "line 5"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal lacks %q:\n%s", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "secretive-rw") || strings.Contains(err.Error(), "nms-ro") {
+		t.Errorf("the refusal holds a string:\n%s", err)
+	}
+	// texts in hand
+	if b, _, err := ResolveIOSSNMPTexts("lab", "", nil, nil); b != nil || err != nil {
+		t.Errorf("no text: %v %v", b, err)
+	}
+	if b, _, err := ResolveIOSSNMPTexts("lab", "", []byte("# nothing\n"), nil); b != nil || err != nil {
+		t.Errorf("comments only: %v %v", b, err)
+	}
+}

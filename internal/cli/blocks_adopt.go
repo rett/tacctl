@@ -1,11 +1,12 @@
 package cli
 
 // 'adopt' of the configuration blocks (0.2.7, docs/plans/0.2.7-blocks-plan.md
-// B6): a Junos device's own statements of the hierarchy a block is for, read
+// B6): a device's own statements of the hierarchy a block is for, read
 // live with the caller's login and opened in the editor as the draft to
-// prune.
+// prune (a Junos device's snmp or system hierarchy, an IOS device's
+// 'snmp-server' lines and the access lists its communities name).
 //
-//	tacctl scope block <scope> juniper adopt <device> <block>
+//	tacctl scope block <scope> {juniper|cisco} adopt <device> <block>
 //	tacctl device block <device> adopt <block>
 //
 // The read is a device pull's: the same password source and cache, the same
@@ -13,7 +14,8 @@ package cli
 // device, one login. Nothing of the device's text is stored: it exists in
 // memory and in the editor's private copy, which is removed afterwards. What
 // the draft holds and leaves out is internal/blocks' (AdoptSNMP,
-// AdoptSystem); the flow after the editor is edit's (editFlow).
+// AdoptSystem, AdoptIOSSNMP); the flow after the editor is edit's
+// (editFlow).
 
 import (
 	"context"
@@ -106,7 +108,9 @@ func (inv *invocation) readHierarchy(e devreg.Entry, user, hierarchy string) (ad
 // and the device answers, over the command line otherwise (readDeviceConfig's
 // choice: 'auto' falls back, 'netconf' and 'ssh' never do).
 func readHierarchyText(ctx context.Context, c *devssh.Client, vendor, hierarchy, mode string) (text, transport string, err error) {
-	if mode != transportSSH {
+	// NETCONF is a Junos transport: an IOS device is read over its command
+	// line whatever the mode says (a pull does the same).
+	if fam, _ := devconf.Family(vendor); mode != transportSSH && fam == devconf.FamilyJunos {
 		ns, nerr := c.NETCONF()
 		if nerr == nil {
 			text, err := func() (string, error) {
@@ -153,11 +157,15 @@ func (c *blockCtx) adopt(block, device string, p Parsed) error {
 	if cur.err != nil {
 		return cur.err
 	}
+	if c.vendor == blocks.VendorCisco && block != blocks.BlockSNMP {
+		return inv.usageErr("The IOS system block is not built: only the snmp block exists for vendor cisco.")
+	}
 	// What the file in force says is the block this draft goes beneath.
 	var same *blocks.SNMPBlock
 	var sameSys *blocks.SystemBlock
+	var sameIOS *blocks.IOSSNMPBlock
 	if cur.exists {
-		doc, fs, err := blocks.LintBlock(block, string(cur.text), c.layer())
+		doc, fs, err := blocks.LintFor(c.vendor, block, string(cur.text), c.layer())
 		if err != nil {
 			return err
 		}
@@ -167,26 +175,29 @@ func (c *blockCtx) adopt(block, device string, p Parsed) error {
 		}
 		same, _ = doc.(*blocks.SNMPBlock)
 		sameSys, _ = doc.(*blocks.SystemBlock)
+		sameIOS, _ = doc.(*blocks.IOSSNMPBlock)
 	}
 	// The layer beneath: a device's draft is the exceptions to its scope's.
 	var up *blocks.SNMPBlock
 	var upSys *blocks.SystemBlock
+	var upIOS *blocks.IOSSNMPBlock
 	if c.isDevice() {
-		text, err := policy.LayerText(c.store(), a.Conf(), blocks.ScopeLevel(c.scope), block)
+		text, err := policy.LayerTextFor(c.store(), a.Conf(), c.vendor, blocks.ScopeLevel(c.scope), block)
 		if err != nil {
 			return inv.usageErr(msgs(err)...)
 		}
 		if text != nil {
-			doc, fs, err := blocks.LintBlock(block, string(text), blocks.LayerScope)
+			doc, fs, err := blocks.LintFor(c.vendor, block, string(text), blocks.LayerScope)
 			if err != nil {
 				return err
 			}
 			if blocks.HasErrors(fs) {
 				return inv.usageErr("The " + block + " block of scope '" + c.scope + "' has errors, so a device's draft cannot be made beneath it: tacctl scope block " +
-					c.scope + " juniper check " + block)
+					c.scope + " " + c.vendor + " check " + block)
 			}
 			up, _ = doc.(*blocks.SNMPBlock)
 			upSys, _ = doc.(*blocks.SystemBlock)
+			upIOS, _ = doc.(*blocks.IOSSNMPBlock)
 		}
 	}
 
@@ -210,8 +221,8 @@ func (c *blockCtx) adopt(block, device string, p Parsed) error {
 	switch {
 	case e.Source != devreg.SourceDevice:
 		return inv.usageErr("'" + e.Name + "' is an enrolled Linux host, not a device with a configuration.")
-	case e.Vendor != "juniper":
-		return inv.usageErr("'" + e.Name + "' is not a Junos device: configuration blocks are Junos syntax.")
+	case e.Vendor != c.vendor:
+		return inv.usageErr("'" + e.Name + "' is not " + vendorWordOf(c.vendor) + " device: the blocks of vendor " + c.vendor + " are its vendor's syntax.")
 	case !c.isDevice() && e.Scope != c.level.Scope:
 		return inv.usageErr("Device '" + e.Name + "' is in " + scopeWord(e.Scope) + ", not in scope '" + c.level.Scope + "': a block of this scope is not rendered for it.")
 	}
@@ -219,7 +230,29 @@ func (c *blockCtx) adopt(block, device string, p Parsed) error {
 	// What tacctl renders itself for it (the structured settings are not a
 	// block's).
 	own := blocks.AdoptOwn{}
-	if block == blocks.BlockSNMP {
+	if block == blocks.BlockSNMP && c.vendor == blocks.VendorCisco {
+		secs, err := chosen.render.Expected(e)
+		if errors.Is(err, errSyntaxUnknown) {
+			// the community is the same in either syntax
+			secs, err = chosen.render.ExpectedAs(e, false)
+		}
+		if err != nil {
+			return inv.usageErr("Cannot tell what tacctl renders for " + e.Name + " (" + strings.Join(msgs(err), " ") + "), so its SNMP statements cannot be told from the settings'. Nothing was changed.")
+		}
+		for _, s := range secs {
+			if s.Name != "snmp" {
+				continue
+			}
+			for i, l := range s.Lines {
+				if s.Block != nil && s.Block[i] {
+					continue
+				}
+				if f := strings.Fields(l); len(f) >= 3 && f[0] == "snmp-server" && f[1] == "community" && own.Community == "" {
+					own.Community = f[2]
+				}
+			}
+		}
+	} else if block == blocks.BlockSNMP {
 		secs, err := chosen.render.Expected(e)
 		if err != nil {
 			return inv.usageErr("Cannot tell what tacctl renders for " + e.Name + " (" + strings.Join(msgs(err), " ") + "), so its SNMP statements cannot be told from the settings'. Nothing was changed.")
@@ -253,9 +286,12 @@ func (c *blockCtx) adopt(block, device string, p Parsed) error {
 	inv.secretRead("block-adopt", c.logName(block))
 
 	var res blocks.AdoptResult
-	if block == blocks.BlockSNMP {
+	switch {
+	case block == blocks.BlockSNMP && c.vendor == blocks.VendorCisco:
+		res = blocks.AdoptIOSSNMP(read.raw, own, sameIOS, upIOS)
+	case block == blocks.BlockSNMP:
 		res = blocks.AdoptSNMP(read.raw, own, same, up)
-	} else {
+	default:
 		res = blocks.AdoptSystem(read.raw, sameSys, upSys)
 	}
 	read.raw = ""

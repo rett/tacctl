@@ -144,7 +144,10 @@ func TestHierarchyCommandAndRead(t *testing.T) {
 	if got := HierarchyCommand("juniper", "system"); got != "show configuration system | display set" {
 		t.Errorf("system: %q", got)
 	}
-	for _, c := range [][2]string{{"cisco", "snmp"}, {"juniper", "firewall"}, {"juniper", "snmp | display xml"}, {"wti", "snmp"}} {
+	if got := HierarchyCommand("cisco", "snmp"); got != "show running-config | include ^snmp-server" {
+		t.Errorf("cisco snmp: %q", got)
+	}
+	for _, c := range [][2]string{{"cisco", "system"}, {"cisco", "snmp | include x"}, {"juniper", "firewall"}, {"juniper", "snmp | display xml"}, {"wti", "snmp"}} {
 		if got := HierarchyCommand(c[0], c[1]); got != "" {
 			t.Errorf("%v: %q", c, got)
 		}
@@ -163,8 +166,78 @@ func TestHierarchyCommandAndRead(t *testing.T) {
 			t.Errorf("%q: %v", refusal, err)
 		}
 	}
-	if _, err := ReadHierarchy(context.Background(), &scriptRunner{}, "cisco", "snmp"); !errors.Is(err, ErrParse) {
-		t.Errorf("cisco: %v", err)
+	if _, err := ReadHierarchy(context.Background(), &scriptRunner{}, "cisco", "system"); !errors.Is(err, ErrParse) {
+		t.Errorf("cisco system: %v", err)
+	}
+}
+
+// mapRunner answers each command with a text of its own and keeps the order
+// of the commands.
+type mapRunner struct {
+	out map[string]string
+	ran []string
+}
+
+func (r *mapRunner) Run(_ context.Context, cmd string) (string, error) {
+	r.ran = append(r.ran, cmd)
+	return r.out[cmd], nil
+}
+
+// An IOS device is read with its SNMP lines and, for each standard access
+// list a community names, the section of that list, filtered to the list's
+// own header ('| section' matches by pattern).
+func TestReadHierarchyIOS(t *testing.T) {
+	r := &mapRunner{out: map[string]string{
+		"show running-config | include ^snmp-server": "snmp-server community c1 RO POLLERS\r\nsnmp-server community c2 RW 10\r\n" +
+			"snmp-server community c3 RO POLLERS\r\nsnmp-server host 192.0.2.50 version 2c c1\r\nsnmp-server enable traps config\r\n",
+		"show running-config | section ip access-list standard POLLERS": "ip access-list standard POLLERS\r\n permit 192.0.2.10\r\n permit 198.51.100.0 0.0.0.255\r\n" +
+			"ip access-list standard POLLERS-2\r\n permit any\r\n",
+	}}
+	got, err := ReadHierarchy(context.Background(), r, "cisco", "snmp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "snmp-server community c1 RO POLLERS\nsnmp-server community c2 RW 10\nsnmp-server community c3 RO POLLERS\n" +
+		"snmp-server host 192.0.2.50 version 2c c1\nsnmp-server enable traps config\n" +
+		"ip access-list standard POLLERS\n permit 192.0.2.10\n permit 198.51.100.0 0.0.0.255"
+	if got != want {
+		t.Errorf("text:\n%s\nwant\n%s", got, want)
+	}
+	wantRan := []string{"terminal length 0", "show running-config | include ^snmp-server", "show running-config | section ip access-list standard POLLERS"}
+	if !slices.Equal(r.ran, wantRan) {
+		t.Errorf("commands: %q", r.ran)
+	}
+
+	// an image that does not know '| section': the configuration is read in
+	// full once and the list cut out of it
+	r = &mapRunner{out: map[string]string{
+		"show running-config | include ^snmp-server":                    "snmp-server community c1 RO POLLERS\n",
+		"show running-config | section ip access-list standard POLLERS": "% Invalid input detected at '^' marker.\n",
+		"show running-config": "hostname rt1\n!\nip access-list standard OTHER\n permit any\n!\nip access-list standard POLLERS\n permit host 192.0.2.10\n!\nend\n",
+	}}
+	got, err = ReadHierarchy(context.Background(), r, "cisco", "snmp")
+	if err != nil || got != "snmp-server community c1 RO POLLERS\nip access-list standard POLLERS\n permit host 192.0.2.10" {
+		t.Errorf("fallback: %q %v", got, err)
+	}
+	// a device with no SNMP line is no error
+	got, err = ReadHierarchy(context.Background(), &mapRunner{out: map[string]string{}}, "cisco", "snmp")
+	if err != nil || got != "" {
+		t.Errorf("empty: %q %v", got, err)
+	}
+	// a refusal of the first command is
+	r = &mapRunner{out: map[string]string{"show running-config | include ^snmp-server": "% Invalid input detected at '^' marker.\n"}}
+	if _, err := ReadHierarchy(context.Background(), r, "cisco", "snmp"); !errors.Is(err, ErrParse) {
+		t.Errorf("refused: %v", err)
+	}
+	// a list name that is no word of a name is never put in a command
+	r = &mapRunner{out: map[string]string{"show running-config | include ^snmp-server": "snmp-server community c1 RO a;b\n"}}
+	if _, err := ReadHierarchy(context.Background(), r, "cisco", "snmp"); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range r.ran {
+		if strings.Contains(c, ";") {
+			t.Errorf("a command holds the odd name: %q", c)
+		}
 	}
 }
 

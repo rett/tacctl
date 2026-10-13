@@ -153,6 +153,9 @@ var wtiTies = map[string]wtiTie{
 	"tacacs service-name":     {"Service Name", firstWord},
 	"tacacs debug":            {"Debug", func(v string) string { return wtiSlug(firstWord(v)) }},
 
+	// item 31 of /N, named in Step 3 of both walkthroughs
+	"unit multiple-logins": {"Multiple Logins", func(v string) string { return wtiSlug(firstWord(v)) }},
+
 	"radius enable":          {"Enable", func(v string) string { return wtiSlug(firstWord(v)) }},
 	"radius primary":         {"Primary Host/Address (IPv4)", firstWord},
 	"radius primary-secret":  {"Primary Secret Word", firstWord},
@@ -429,11 +432,12 @@ func TestManagedWTIStatements(t *testing.T) {
 		"tacacs fallback-timer 15", "tacacs fallback-local on-all-failures", "tacacs port 49",
 		"tacacs default-access on", "tacacs default-level viewonly", "tacacs default-services telnet-ssh",
 		"tacacs account-module enabled", "tacacs session-module enabled", "tacacs service-name wti", "tacacs debug off",
+		"unit multiple-logins on",
 	}
 	if got := wtiLines(secs, "aaa"); !slices.Equal(got, want) {
 		t.Errorf("tacacs aaa:\n%s", strings.Join(got, "\n"))
 	}
-	if aaa, _ := sectionOf(secs, "aaa"); !slices.Equal(aaa.Secret, []bool{false, false, true, false, false, false, false, false, false, false, false, false, false}) {
+	if aaa, _ := sectionOf(secs, "aaa"); !slices.Equal(aaa.Secret, []bool{false, false, true, false, false, false, false, false, false, false, false, false, false, false}) {
 		t.Errorf("tacacs aaa marks: %v", aaa.Secret)
 	}
 
@@ -444,6 +448,7 @@ func TestManagedWTIStatements(t *testing.T) {
 		"radius enable on", "radius primary 10.0.0.42", "radius primary-secret lab-secret-0123456789abcdef",
 		"radius fallback-timer 3", "radius fallback-local on-all-failures", "radius retries 3", "radius port 1812",
 		"radius accounting-port 1813", "radius onetime-auth off", "radius default-access on", "radius debug off",
+		"unit multiple-logins on",
 	}
 	if got := wtiLines(mustManaged(t, req, d), "aaa"); !slices.Equal(got, want) {
 		t.Errorf("radius aaa:\n%s", strings.Join(got, "\n"))

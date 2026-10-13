@@ -371,6 +371,53 @@ func snmpHostSecret(f []string) int {
 	return -1
 }
 
+// SNMPHostCommunity is the index of the community word of the fields of an
+// 'snmp-server host' statement ('snmp-server host <address> [traps|informs]
+// [vrf <v>] [version 1|2c|3 ...] <community> ...'), or -1: the word a
+// statement's key and its undo are made of.
+func SNMPHostCommunity(f []string) int {
+	if len(f) < 4 || f[0] != "snmp-server" || f[1] != "host" {
+		return -1
+	}
+	return snmpHostSecret(f)
+}
+
+// snmpHostStem is the compared form of an 'snmp-server host' statement:
+// the address, the options before the community, the community's label,
+// then the port and the notification types. IOS stores a host in its own
+// form (the default version 1, the default 'traps' kind and the default port
+// 162 are left out, and the types come in the order IOS keeps), so a host is
+// compared by its address, community and the SET of its options, not by the
+// text typed: 'version 1', 'traps' and 'udp-port 162' are dropped and the
+// types are sorted. [A] IOS knowledge, not a lab paste.
+func snmpHostStem(f []string, i int, label string) []string {
+	out := []string{f[0], f[1], f[2]}
+	for k := 3; k < i; k++ {
+		switch {
+		case f[k] == "traps":
+		case f[k] == "version" && k+1 < i && f[k+1] == "1":
+			k++
+		default:
+			out = append(out, f[k])
+		}
+	}
+	out = append(out, label)
+	rest := f[i+1:]
+	var types []string
+	for k := 0; k < len(rest); k++ {
+		if rest[k] == "udp-port" && k+1 < len(rest) {
+			if rest[k+1] != "162" {
+				out = append(out, rest[k], rest[k+1])
+			}
+			k++
+			continue
+		}
+		types = append(types, rest[k])
+	}
+	slices.Sort(types)
+	return append(out, types...)
+}
+
 // ciscoStem returns a statement's last line without a secret's value, and
 // whether it holds one; lb labels a community's name.
 func ciscoStem(path, f []string, marked bool, lb *labels) ([]string, bool) {
@@ -386,9 +433,7 @@ func ciscoStem(path, f []string, marked bool, lb *labels) ([]string, bool) {
 		// [A] the community follows the version and its options; for v1
 		// and for no version, the first word after the host.
 		if i := snmpHostSecret(f); i > 0 {
-			out := slices.Clone(f)
-			out[i] = lb.of(f[i])
-			return out, true
+			return snmpHostStem(f, i, lb.of(f[i])), true
 		}
 	}
 	if slices.Contains(f, secretMark) {
@@ -1054,6 +1099,68 @@ func withoutImplicitIOS(exp, dev []stmt) (kept []stmt, notes []string) {
 		}
 	}
 	return kept, notes
+}
+
+// coverTraps makes a rendered 'snmp-server enable traps <type> [<subtype>
+// ...]' statement present when the device enables what it says in another
+// shape: IOS prints the subtypes it enabled on one line of the type ('snmp
+// authentication linkdown linkup coldstart warmstart'), so a statement for
+// the type and some of those subtypes is satisfied by that line; and a bare
+// 'snmp-server enable traps' (every type) is satisfied by any 'enable traps'
+// line the device has, because the device prints the types one by one. The
+// device's own line stays an extra (unmanaged), the rendered one is added to
+// the device's statements as present. [A] IOS knowledge, not a lab paste.
+func coverTraps(exp, dev []stmt) []stmt {
+	words := func(x stmt) []string {
+		if len(x.path) != 1 {
+			return nil
+		}
+		f := strings.Fields(x.path[0])
+		if len(f) < 3 || f[0] != "snmp-server" || f[1] != "enable" || f[2] != "traps" {
+			return nil
+		}
+		return f[3:]
+	}
+	onDev := map[string]bool{}
+	var devTraps [][]string
+	for _, x := range dev {
+		onDev[x.stem] = true
+		if w := words(x); w != nil || len(x.path) == 1 && x.path[0] == "snmp-server enable traps" {
+			devTraps = append(devTraps, w)
+		}
+	}
+	for _, x := range exp {
+		if len(x.path) != 1 || onDev[x.stem] {
+			continue
+		}
+		f := strings.Fields(x.path[0])
+		if len(f) < 3 || f[0] != "snmp-server" || f[1] != "enable" || f[2] != "traps" {
+			continue
+		}
+		w := f[3:]
+		covered := false
+		switch {
+		case len(w) == 0:
+			covered = len(devTraps) > 0
+		default:
+			for _, d := range devTraps {
+				if len(d) == 0 || d[0] != w[0] {
+					continue
+				}
+				all := true
+				for _, sub := range w[1:] {
+					if !slices.Contains(d[1:], sub) {
+						all = false
+					}
+				}
+				covered = covered || all
+			}
+		}
+		if covered {
+			dev = append(dev, stmt{text: x.stem, stem: x.stem, path: x.path})
+		}
+	}
+	return dev
 }
 
 // renderedPrivilege is a rendered 'privilege' statement: its words without

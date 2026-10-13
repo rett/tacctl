@@ -510,6 +510,63 @@ func TestReadWTITextPromptsAreOpenedAndLeftWithEsc(t *testing.T) {
 	rwWaitEvent(t, srv, "close /N")
 }
 
+// Item 31 of /N is on the page the walk opens anyway: a unit with Multiple
+// Logins Off is read with the keys of any other (no page of its own, nothing
+// typed at it), and its aaa section says so.
+func TestReadWTIMultipleLogins(t *testing.T) {
+	top := string(mustRead(t, filepath.Join(rwFakeDir, "../pages/network-top.txt")))
+	read := func(t *testing.T, srv *fakedev.Server) (string, []string) {
+		t.Helper()
+		raw, _, err := rwRead(t, srv, WTIReadOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rwNoSave(t, srv)
+		return raw, srv.Commands()
+	}
+	_, onKeys := read(t, rwServe(t, filepath.Join(rwFakeDir, "lab-superuser")))
+	off := edit(t, top, "31. Multiple Logins:   On", "31. Multiple Logins:   Off")
+	dir := rwDir(t, "version 8.10\nlevel administrator\nsessions 1\niptables filled\npage /N = network.txt\n", map[string]string{"network.txt": off})
+	srv := rwServe(t, dir)
+	raw, keys := read(t, srv)
+	if !slices.Equal(keys, onKeys) {
+		t.Errorf("keys %q\nwant %q", keys, onKeys)
+	}
+	d, err := wti.ParseDocument(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, st := range d.Statements() {
+		if st.Key == "unit multiple-logins" {
+			got = append(got, st.Section+": "+st.Raw())
+		}
+	}
+	if !slices.Equal(got, []string{"aaa: unit multiple-logins off"}) {
+		t.Errorf("statements %q", got)
+	}
+	// the comparison against the standard's rendering: a finding
+	exp := wtiExpected(t)
+	ex, err := Extract("wti", raw, exp...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs, err := CompareAll(exp, ex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rs {
+		if r.Name == SectionAAA && (r.State != StateDiffers || !wtiHas(r, "+ unit multiple-logins off") || !wtiHas(r, "- unit multiple-logins on")) {
+			t.Errorf("aaa: %s %q", r.StateText(), wtiLines(r))
+		}
+	}
+	for _, e := range srv.Events() {
+		if strings.HasPrefix(e, "entry") || strings.HasPrefix(e, "no-page") || strings.HasPrefix(e, "refused") {
+			t.Errorf("event %q", e)
+		}
+	}
+}
+
 func TestReadWTITextPromptIsOpenedOnlyForATruncatedValue(t *testing.T) {
 	menu := string(mustRead(t, filepath.Join(rwFakeDir, "../pages/network-25.txt")))
 	for name, c := range map[string]struct {

@@ -255,13 +255,14 @@ func TestStraySecretsNeverReachAnOutput(t *testing.T) {
 
 func TestSnmpHostCommunityPlacement(t *testing.T) {
 	for in, want := range map[string]string{
-		"snmp-server host 192.0.2.5 version 2c COMM":                         "snmp-server host 192.0.2.5 version 2c <secret>",
-		"snmp-server host 192.0.2.5 COMM":                                    "snmp-server host 192.0.2.5 <secret>",
-		"snmp-server host 192.0.2.5 traps COMM udp-port 162":                 "snmp-server host 192.0.2.5 traps <secret> udp-port 162",
-		"snmp-server host 192.0.2.5 informs version 3 priv USER cpu":         "snmp-server host 192.0.2.5 informs version 3 priv <secret> cpu",
-		"snmp-server host 192.0.2.5 vrf MGMT version 2c COMM config":         "snmp-server host 192.0.2.5 vrf MGMT version 2c <secret> config",
-		"snmp-server host 192.0.2.5 version 1 COMM":                          "snmp-server host 192.0.2.5 version 1 <secret>",
-		"aaa server radius dynamic-author > client 192.0.2.7 server-key 7 H": "aaa server radius dynamic-author > client 192.0.2.7 server-key",
+		"snmp-server host 192.0.2.5 version 2c COMM":                             "snmp-server host 192.0.2.5 version 2c <secret>",
+		"snmp-server host 192.0.2.5 COMM":                                        "snmp-server host 192.0.2.5 <secret>",
+		"snmp-server host 192.0.2.5 traps COMM udp-port 162":                     "snmp-server host 192.0.2.5 <secret>",
+		"snmp-server host 192.0.2.5 version 2c COMM udp-port 1162 entity config": "snmp-server host 192.0.2.5 version 2c <secret> udp-port 1162 config entity",
+		"snmp-server host 192.0.2.5 informs version 3 priv USER cpu":             "snmp-server host 192.0.2.5 informs version 3 priv <secret> cpu",
+		"snmp-server host 192.0.2.5 vrf MGMT version 2c COMM config":             "snmp-server host 192.0.2.5 vrf MGMT version 2c <secret> config",
+		"snmp-server host 192.0.2.5 version 1 COMM":                              "snmp-server host 192.0.2.5 <secret>",
+		"aaa server radius dynamic-author > client 192.0.2.7 server-key 7 H":     "aaa server radius dynamic-author > client 192.0.2.7 server-key",
 	} {
 		got := ciscoStems(in)
 		if len(got) != 1 || got[0] != want {

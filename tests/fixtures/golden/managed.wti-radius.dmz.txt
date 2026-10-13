@@ -10,6 +10,7 @@
 | radius onetime-auth off
 | radius default-access on
 | radius debug off
+| unit multiple-logins on
 [roles] not rendered
 [mgmt-acl] not rendered
 [snmp]

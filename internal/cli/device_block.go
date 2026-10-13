@@ -4,7 +4,8 @@ package cli
 // own configuration blocks, laid over its scope's. The verbs are those of
 // 'scope block' (blocks_verbs.go); the device is found in the registry as
 // 'device snmp' finds it, an engineer reaches the devices of their own scopes
-// only, and a device that is not a Junos device of a scope has no blocks.
+// only, and a device that is not a Junos or IOS device of a scope has no
+// blocks.
 
 import (
 	"errors"
@@ -40,7 +41,7 @@ var deviceBlockCompletion = Spec{MinArgs: 1, MaxArgs: -1,
 
 // deviceBlockVerbs are the verbs ({Use, Short}), in usage order.
 var deviceBlockVerbs = [][2]string{
-	{"list", "The device's own blocks: whether each is in force, its size and what it states, and the findings"},
+	{"list", "The device's own blocks (of its vendor): whether each is in force, its size and what it states, and the findings"},
 	{"show <block> [--effective] [--reveal]", "The device's block elided; --effective: the block as rendered (the scope's with the device's over it, a comment per object saying which layer it is from); --reveal prints the strings"},
 	{"check <block> [--file <path>|-] [--against]", "Lint the file in force, a file or standard input; --against plans this device with the text in force and prints the statements of the block's section"},
 	{"set <block> (--file <path>|-) [-y]", "Check a file or standard input, show the diff, ask, take a snapshot and put the block in force"},
@@ -80,16 +81,19 @@ func deviceBlockUsage(name string) string {
 		}
 	}
 	b.WriteString(`
-A device's block is Junos 'set' statements, as a scope's is ('tacctl scope
-block'), laid over its scope's block per object: a community the device's block
-states replaces the scope's community of the same string whole, one it adds is
-added, and the scope's others stay; the same for a trap group (by name), a
-trap-options leaf and, in the system block, a single value or a list entry. A
-'delete' line of the device's block takes the scope's object out for this
-device. A device in no scope, and a device that is not a Junos device, has no
-blocks. The files are /etc/tacctl/blocks/_devices/<name>/juniper/ (0600), named
-in tacctl.yaml by blocks_device.<name>.juniper (the name's dots written '~');
-'rename' moves them and 'remove' deletes them.
+A device's block is in its vendor's syntax, as a scope's is ('tacctl scope
+block'): Junos 'set' statements or IOS configuration lines. It is laid over
+its scope's block per object: a community the device's block states replaces
+the scope's community of the same string whole, one it adds is added, and the
+scope's others stay; the same for a Junos trap group (by name), a trap-options
+leaf and, in the system block, a single value or a list entry, and for an IOS
+access list (by name), trap host (by address and community) and 'enable traps'
+line. A 'delete' (Junos) or 'no' (IOS) line of the device's block takes the
+scope's object out for this device. A device in no scope, and a device that
+is neither a Junos nor an IOS device, has no blocks. The files are
+/etc/tacctl/blocks/_devices/<name>/<vendor>/ (0600), named in tacctl.yaml by
+blocks_device.<name>.<vendor> (the name's dots written '~'); 'rename' moves
+them and 'remove' deletes them.
 
 edit and adopt need a terminal and are the superuser's, and work as they do
 for a scope ('tacctl scope block <scope> juniper'): your editor, run as you on
@@ -151,7 +155,11 @@ func (inv *invocation) deviceBlock(args []string) error {
 		return err
 	}
 	entry := e
-	c := &blockCtx{inv: inv, level: blocks.DeviceLevel(e.Name), vendor: blocks.VendorJuniper, scope: e.Scope, dev: &entry,
+	vendor := e.Vendor
+	if vendor != blocks.VendorJuniper && vendor != blocks.VendorCisco {
+		vendor = blocks.VendorJuniper // refused below, with the device's own words
+	}
+	c := &blockCtx{inv: inv, level: blocks.DeviceLevel(e.Name), vendor: vendor, scope: e.Scope, dev: &entry,
 		restricted: inv.callerScopes().restricted}
 	// what an engineer may not do is refused before the device's own
 	// properties are discussed
@@ -163,10 +171,8 @@ func (inv *invocation) deviceBlock(args []string) error {
 	switch {
 	case e.Source != devreg.SourceDevice:
 		return inv.usageErr("'" + e.Name + "' is an enrolled Linux host; configuration blocks are for registered devices (tacctl device list).")
-	case e.Vendor == blocks.VendorCisco:
-		return inv.usageErr("IOS blocks come in the release after: only Junos devices have blocks in this release.")
-	case e.Vendor != "juniper":
-		return inv.usageErr("Device '" + e.Name + "' is vendor '" + dash(e.Vendor) + "': configuration blocks are for Junos devices.")
+	case e.Vendor != blocks.VendorJuniper && e.Vendor != blocks.VendorCisco:
+		return inv.usageErr("Device '" + e.Name + "' is vendor '" + dash(e.Vendor) + "': configuration blocks are for Junos and IOS devices.")
 	case !e.Configured && sub != "remove":
 		return inv.usageErr("Device '" + e.Name + "' is in no scope: no scope's prefixes cover " + e.Address + ", so nothing is rendered for it and a block of its own would never be used. Put it in a scope first (tacctl scope prefixes <scope> add <cidr>).")
 	}

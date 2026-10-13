@@ -143,10 +143,11 @@ func TestScopeBlockSetShowCheckListRemove(t *testing.T) {
 	if sb.code != 0 || !strings.Contains(out, verbSNMPFile) {
 		t.Errorf("show --reveal:\n%s", out)
 	}
-	// the superuser's reveal is not an engineer's: not logged as one
-	if sb.logged("secret-read") != 0 {
-		t.Errorf("a superuser's reveal was logged: %q", sb.runner.Argvs())
+	// every reveal is logged, the superuser's too: the name, never a value
+	if sb.logged("secret-read kind=block name=lab/juniper/snmp") != 1 {
+		t.Errorf("a superuser's reveal was not logged once: %q", sb.runner.Argvs())
 	}
+	noneOf(t, "the log", strings.Join(sb.runner.Argvs(), "\n"), secret, group)
 
 	// list
 	out = sb.blk("", "lab", "juniper", "list")
@@ -264,8 +265,10 @@ func TestScopeBlockSetRefusals(t *testing.T) {
 		err   string
 	}{
 		{"unknown scope", "", []string{"nowhere", "juniper", "set", "snmp", "--file", good, "-y"}, "Scope 'nowhere' does not exist."},
-		{"cisco", "", []string{"lab", "cisco", "set", "snmp", "--file", good, "-y"}, "IOS blocks come in the release after"},
-		{"another vendor", "", []string{"lab", "wti", "list"}, "Unknown vendor 'wti' for a block: juniper."},
+		{"cisco takes IOS syntax only", "", []string{"lab", "cisco", "set", "snmp", "--file", good, "-y"}, "a block holds 'snmp-server', 'ip access-list standard' and 'no' statements only"},
+		{"cisco has no system block", "", []string{"lab", "cisco", "set", "system", "--file", good, "-y"}, "The IOS system block is not built"},
+		{"wti has no blocks", "", []string{"lab", "wti", "set", "snmp", "--file", good, "-y"}, "A WTI unit has no configuration blocks"},
+		{"another vendor", "", []string{"lab", "arista", "list"}, "Unknown vendor 'arista' for a block: juniper or cisco."},
 		{"vendor missing", "", []string{"lab", "set", "snmp", "--file", good}, "The vendor comes before the verb"},
 		{"unknown block", "", []string{"lab", "juniper", "set", "banner", "--file", good, "-y"}, "Unknown block 'banner'"},
 		{"bad block name", "", []string{"lab", "juniper", "set", "../x", "--file", good, "-y"}, "Invalid block name"},

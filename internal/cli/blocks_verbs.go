@@ -152,11 +152,10 @@ func (f blockFile) state() string {
 
 // --- the engine's helpers ---------------------------------------------------------
 
-// logReveal is the audit line of an engineer's reveal.
+// logReveal is the audit line of a reveal, whoever makes it: the name of the
+// block, never a word of it.
 func (c *blockCtx) logReveal(block string) {
-	if c.restricted {
-		c.inv.secretRead("block", c.logName(block))
-	}
+	c.inv.secretRead("block", c.logName(block))
 }
 
 // requireSuperuser refuses a verb that changes something for an engineer.
@@ -256,6 +255,27 @@ func blockUnits(doc blocks.Doc) []blockUnit {
 	switch b := doc.(type) {
 	case *blocks.SNMPBlock:
 		return pairUnits(ownLines(b.String(false)), ownLines(b.String(true)), snmpKey)
+	case *blocks.IOSSNMPBlock:
+		// an access list is one unit (it is owned whole): its header and its
+		// entries; every other statement is a line of its own
+		full, elided := blocks.IOSSNMPUnits(b), blocks.IOSSNMPUnits(blocks.ElideIOSSNMP(b))
+		var out []blockUnit
+		for i := range elided {
+			f := elided[i]
+			if len(full) == len(elided) {
+				f = full[i]
+			}
+			out = append(out, blockUnit{full: strings.Join(f, "\n"), elided: strings.Join(elided[i], "\n"), key: elided[i][0]})
+		}
+		nf, ne := blocks.IOSNotManagedLines(b, false), blocks.IOSNotManagedLines(b, true)
+		for i := range ne {
+			f := ne[i]
+			if len(nf) == len(ne) {
+				f = nf[i]
+			}
+			out = append(out, blockUnit{full: f, elided: ne[i], key: ne[i]})
+		}
+		return out
 	case *blocks.SystemBlock:
 		var out []blockUnit
 		rest := *b
@@ -347,6 +367,22 @@ func blockCounts(doc blocks.Doc) string {
 			return "nothing"
 		}
 		return strings.Join(parts, ", ")
+	case *blocks.IOSSNMPBlock:
+		var parts []string
+		add := func(n int, one, many string) {
+			if n > 0 {
+				parts = append(parts, fmt.Sprintf("%d %s", n, plural(n, one, many)))
+			}
+		}
+		add(len(b.Communities), "community", "communities")
+		add(len(b.ACLs), "access list", "access lists")
+		add(len(b.Hosts), "trap host", "trap hosts")
+		add(len(b.Traps), "'enable traps' line", "'enable traps' lines")
+		add(len(b.NotManaged), "no line", "no lines")
+		if len(parts) == 0 {
+			return "nothing"
+		}
+		return strings.Join(parts, ", ")
 	case *blocks.SystemBlock:
 		n := len(blocks.SystemStatements(b))
 		parts := []string{fmt.Sprintf("%d %s", n, plural(n, "statement", "statements"))}
@@ -370,6 +406,12 @@ func secretStatements(doc blocks.Doc) int {
 	case *blocks.SNMPBlock:
 		for _, s := range blocks.Statements(b) {
 			if strings.HasPrefix(s, "set snmp community ") || strings.HasPrefix(s, "set snmp trap-group ") {
+				n++
+			}
+		}
+	case *blocks.IOSSNMPBlock:
+		for _, s := range blocks.IOSSNMPStatements(b) {
+			if strings.HasPrefix(s, "snmp-server community ") || strings.HasPrefix(s, "snmp-server host ") {
 				n++
 			}
 		}
@@ -421,8 +463,10 @@ func (c *blockCtx) list() error {
 		size, content := "-", "-"
 		if f.exists {
 			size = humanSize(len(f.text))
-			doc, fs, _ := blocks.LintBlock(b, string(f.text), c.layer())
+			doc, fs, lerr := blocks.LintFor(c.vendor, b, string(f.text), c.layer())
 			switch {
+			case lerr != nil:
+				content = "not built for " + c.vendor + " (" + c.verb() + " remove " + b + ")"
 			case blocks.HasErrors(fs):
 				n := 0
 				for _, x := range fs {
@@ -522,7 +566,7 @@ func (c *blockCtx) show(block string, reveal, effective bool) error {
 		}
 		return nil
 	}
-	doc, fs, err := blocks.LintBlock(block, string(f.text), c.layer())
+	doc, fs, err := blocks.LintFor(c.vendor, block, string(f.text), c.layer())
 	if err != nil {
 		return err
 	}
@@ -552,11 +596,11 @@ func (c *blockCtx) errorLines(fs []blocks.Finding) []string {
 func (c *blockCtx) showEffective(block string, reveal bool) error {
 	inv := c.inv
 	st, cfg := c.store(), inv.app.Conf()
-	scopeText, err := policy.LayerText(st, cfg, blocks.ScopeLevel(c.scope), block)
+	scopeText, err := policy.LayerTextFor(st, cfg, c.vendor, blocks.ScopeLevel(c.scope), block)
 	if err != nil {
 		return err
 	}
-	devText, err := policy.LayerText(st, cfg, c.level, block)
+	devText, err := policy.LayerTextFor(st, cfg, c.vendor, c.level, block)
 	if err != nil {
 		return err
 	}
@@ -569,7 +613,7 @@ func (c *blockCtx) showEffective(block string, reveal bool) error {
 		if t == nil {
 			continue
 		}
-		doc, fs, err := blocks.LintBlock(block, string(t), layers[i])
+		doc, fs, err := blocks.LintFor(c.vendor, block, string(t), layers[i])
 		if err != nil {
 			return err
 		}
@@ -588,8 +632,17 @@ func (c *blockCtx) showEffective(block string, reveal bool) error {
 			devDoc = doc
 		}
 	}
-	switch block {
-	case blocks.BlockSNMP:
+	switch {
+	case block == blocks.BlockSNMP && c.vendor == blocks.VendorCisco:
+		var s, d *blocks.IOSSNMPBlock
+		if scopeDoc != nil {
+			s = scopeDoc.(*blocks.IOSSNMPBlock)
+		}
+		if devDoc != nil {
+			d = devDoc.(*blocks.IOSSNMPBlock)
+		}
+		res = blocks.ResolveIOSSNMP(nil, s, d)
+	case block == blocks.BlockSNMP:
 		var s, d *blocks.SNMPBlock
 		if scopeDoc != nil {
 			s = scopeDoc.(*blocks.SNMPBlock)
@@ -609,13 +662,11 @@ func (c *blockCtx) showEffective(block string, reveal bool) error {
 		res = blocks.ResolveSystem(nil, s, d)
 	}
 	if reveal {
-		if c.restricted {
-			if scopeText != nil {
-				inv.secretRead("block", c.scope+"/"+c.vendor+"/"+block)
-			}
-			if devText != nil {
-				c.logReveal(block)
-			}
+		if scopeText != nil {
+			inv.secretRead("block", c.scope+"/"+c.vendor+"/"+block)
+		}
+		if devText != nil {
+			c.logReveal(block)
 		}
 	}
 	fromDevice := map[string]bool{}
@@ -679,7 +730,7 @@ func (b *blockCheck) errors() int {
 
 // examine lints a text and measures it against the file in force.
 func (c *blockCtx) examine(block string, text []byte, source string) (*blockCheck, error) {
-	doc, fs, err := blocks.LintBlock(block, string(text), c.layer())
+	doc, fs, err := blocks.LintFor(c.vendor, block, string(text), c.layer())
 	if err != nil {
 		return nil, err
 	}
@@ -689,7 +740,7 @@ func (c *blockCtx) examine(block string, text []byte, source string) (*blockChec
 	}
 	if cur := c.file(block); cur.exists {
 		bc.hasCurrent = true
-		if d, cfs, err := blocks.LintBlock(block, string(cur.text), c.layer()); err == nil && !blocks.HasErrors(cfs) {
+		if d, cfs, err := blocks.LintFor(c.vendor, block, string(cur.text), c.layer()); err == nil && !blocks.HasErrors(cfs) {
 			bc.current = d
 		}
 	}
@@ -708,8 +759,18 @@ func (c *blockCtx) examine(block string, text []byte, source string) (*blockChec
 // scope's own SNMP settings render (the device could not hold both): the text
 // is the one the renderers refuse with, and holds no string.
 func (c *blockCtx) collisions(block string, doc blocks.Doc) []string {
-	s, ok := doc.(*blocks.SNMPBlock)
-	if !ok || s == nil || block != blocks.BlockSNMP {
+	if block != blocks.BlockSNMP {
+		return nil
+	}
+	var jb *blocks.SNMPBlock
+	var cb *blocks.IOSSNMPBlock
+	switch s := doc.(type) {
+	case *blocks.SNMPBlock:
+		jb = s
+	case *blocks.IOSSNMPBlock:
+		cb = s
+	}
+	if jb == nil && cb == nil {
 		return nil
 	}
 	in := devices.SNMPInput{}
@@ -720,11 +781,15 @@ func (c *blockCtx) collisions(block string, doc blocks.Doc) []string {
 	if err != nil {
 		return nil
 	}
-	d := devices.Data{SNMP: in, Blocks: devices.Blocks{Scope: c.scope, SNMP: s}}
+	d := devices.Data{SNMP: in, Blocks: devices.Blocks{Scope: c.scope, SNMP: jb, CiscoSNMP: cb}}
+	if cb != nil {
+		// the scope's management access list is a name a block may not define
+		d.ACL.Name = c.inv.readMgmtACLName(c.vendor, c.scope)
+	}
 	if c.isDevice() {
 		d.Blocks.Device, d.Blocks.SNMPLayer = c.dev.Name, devices.LayerDevice
 	}
-	err = d.BlockProblem(devices.Request{Vendor: "juniper", Scope: c.scope})
+	err = d.BlockProblem(devices.Request{Vendor: c.vendor, Scope: c.scope})
 	if err == nil {
 		return nil
 	}
@@ -850,8 +915,8 @@ func (c *blockCtx) against(block string, text []byte, device string) error {
 	switch {
 	case e.Source != devreg.SourceDevice:
 		return inv.usageErr("'" + e.Name + "' is an enrolled Linux host, not a device with a configuration.")
-	case e.Vendor != "juniper":
-		return inv.usageErr("'" + e.Name + "' is not a Junos device: configuration blocks are Junos syntax, and its configuration is not planned from one.")
+	case e.Vendor != c.vendor:
+		return inv.usageErr("'" + e.Name + "' is not " + vendorWordOf(c.vendor) + " device: the blocks of vendor " + c.vendor + " are its vendor's syntax, and its configuration is not planned from one.")
 	case !c.isDevice() && e.Scope != c.level.Scope:
 		return inv.usageErr("Device '" + e.Name + "' is in " + scopeWord(e.Scope) + ", not in scope '" + c.level.Scope + "': a block of this scope is not rendered for it.")
 	case !e.Configured:
@@ -902,6 +967,7 @@ func (c *blockCtx) against(block string, text []byte, device string) error {
 		}
 	}
 	inv.echo("  Section " + section + ": " + state + ", " + strconv.Itoa(n) + " " + plural(n, "statement", "statements"))
+	var ctx []string
 	for _, l := range d.Lines {
 		if l.Section != section {
 			continue
@@ -913,7 +979,17 @@ func (c *blockCtx) against(block string, text []byte, device string) error {
 				shown = blocks.MessageStatement + blocks.ElideSystem(&blocks.SystemBlock{Message: sb}).Message.Body
 			}
 		}
-		inv.echo("    " + shown)
+		// an IOS entry of a list or a submode is shown under its header
+		if !slices.Equal(ctx, l.Context) {
+			for _, h := range l.Context {
+				inv.echo("    " + h)
+			}
+			ctx = slices.Clone(l.Context)
+		}
+		if l.Op == plan.OpNo {
+			shown = "no " + shown
+		}
+		inv.echo("    " + strings.Repeat(" ", len(l.Context)) + shown)
 	}
 	for _, s := range d.Skipped {
 		if s.Section == section {
@@ -1111,4 +1187,12 @@ func (inv *invocation) blockName(block string) error {
 		return inv.usageErr(msgs(err)...)
 	}
 	return nil
+}
+
+// vendorWordOf is "a Junos" or "an IOS" for a block vendor.
+func vendorWordOf(vendor string) string {
+	if vendor == blocks.VendorCisco {
+		return "an IOS or IOS-XE"
+	}
+	return "a Junos"
 }

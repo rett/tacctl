@@ -8,10 +8,11 @@ package devconf
 // presence, an SNMP community by a label against the rendered one, the IP
 // tables list in order.
 //
-// The sections: aaa (the TACACS+ and RADIUS pages), mgmt-acl (the IP tables
-// list), snmp (the SNMP access and trap pages) and breakglass (the local
-// users of the user directory, when it was read); roles, netconf and system
-// have nothing on a unit.
+// The sections: aaa (the TACACS+ and RADIUS pages, and the unit-wide
+// Multiple Logins setting of /N), mgmt-acl (the IP tables list), snmp (the
+// SNMP access and trap pages) and breakglass (the local users of the user
+// directory, when it was read); roles, netconf and system have nothing on a
+// unit.
 
 import (
 	"fmt"
@@ -349,8 +350,8 @@ var wtiShapes = func() []keptShape {
 }()
 
 // WTISeverity classifies a finding of a WTI comparison (design W10): the
-// AAA and the management list ACCESS, except a protocol's session module and
-// debug (COSMETIC); SNMP MONITORING, except the system name, contact and
+// AAA (Multiple Logins included) and the management list ACCESS, except a
+// protocol's session module and debug (COSMETIC); SNMP MONITORING, except the system name, contact and
 // location (COSMETIC); the local users ACCESS. The words are those of the
 // planner's severities.
 func WTISeverity(section, stem string) string {

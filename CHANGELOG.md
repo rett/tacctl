@@ -531,6 +531,119 @@ current behaviour; this file is where history lives.
     remove <entry>`) and changes nothing. Remove them, or replace each with
     the plain CIDR you mean it to be, then run the rollback again.
 
+21. **A scope's and a device's IOS `snmp` block (not lab-tested).** `tacctl
+    scope block <scope> cisco list|show|check|set|remove|edit|adopt <block>`
+    and `tacctl device block <name> ...` for an IOS or IOS-XE device keep an
+    `snmp` block of IOS configuration lines (the verbs, the files under
+    `blocks/<scope>/cisco/`, the lists `blocks.<scope>.cisco` and
+    `blocks_device.<device>.cisco`, the tiers, the snapshot and the elided
+    reads are those of the Junos block). Grammar, one statement per line, `#`
+    and `!` comment lines:
+
+        snmp-server community <string> RO|RW [<acl-name>]
+        snmp-server host <address> [version 1|2c] <community> [udp-port <n>] [<type> ...]
+        snmp-server enable traps [<type> [<subtype> ...]]
+        ip access-list standard <NAME>
+         permit <address> [<wildcard>] | permit host <address> | permit any
+        no snmp-server community <string>      (also: host, enable traps, ip access-list standard)
+
+    `check` refuses, with the line and never a string: tacctl's own names
+    (the scope's community, `TACCTL-SNMP`, `TACCTL-VIEW`, `TACCTL-GROUP` and
+    the scope's management access list), a numbered access list, a read-write
+    community with no access list or whose list permits `any`, an access list
+    with no entry, a `deny` or `remark` entry, an address with bits set under
+    its wildcard, `snmp-server contact|location|trap-source|engineID|user|
+    group|view`, a trap host in a `vrf` or with `informs` or SNMPv3, a
+    placeholder, a tab and any token off the grammar. A `no` line means "not
+    managed on this device" and is kept, never rendered. Resolution is per
+    object (a community by its string, a list by its name, a host by its
+    address and community, an `enable traps` line by its words): a device's
+    object replaces the scope's of the same key whole, and its `no` line takes
+    the scope's out.
+
+    The block's lines follow the structured SNMP step of the walkthrough
+    (also when the scope's SNMP is not configured), under a comment that names
+    the block and never a string, and are the last lines of the managed `snmp`
+    section. The plan owns a community (retyped in place when its access or
+    list differs, never removed) and a list the block defines (whole: an entry
+    it does not state is removed with a `no` line, and a list it only names is
+    the device's own); a trap host (compared by address, community and the
+    set of its options, because IOS leaves out the default version, kind and
+    port and keeps its own order of types) and an `enable traps` line (present
+    when the device enables it in the expanded form it prints, a line with no
+    type present when the device has any) are only ever added. The device's
+    other communities, hosts, lines and lists stay and are listed (`ok (+N
+    unmanaged)`), and `--converge` removes none of them. IOS has no confirmed
+    commit, so the plan is pasted line by line and undone by its `no` lines; a
+    community or host the plan replaced is typed again by value. A block
+    community equal to the scope's own, and a list named as the management
+    list, are refused by `check` and by every render without printing the
+    string. The report says, among its notes, that the block's lines (list
+    entries, trap hosts, `enable traps` lines) were written from the vendor's
+    references and have not been checked on a device. The IOS `system` block
+    is not built (`The IOS system block is not built`).
+
+    `adopt` reads `show running-config | include ^snmp-server` and, for each
+    standard list a community names, `show running-config | section ip
+    access-list standard <NAME>` (the whole configuration once when the image
+    does not know `| section`), as the caller, over the ssh command line; it
+    drops tacctl's own community and list, v3 and the device's identity and
+    names what a block cannot hold (a numbered list, a view or IPv6 list, a
+    deny entry, a string shown as ciphertext) as `# left out:` lines. Limits:
+    VRF forms (`snmp-server host ... vrf <v>`, management VRFs on IOS-XE) are
+    refused in a block, and the device's own such lines stay unmanaged;
+    `trap-source` and the system block wait for a later release.
+
+    **Every `show --reveal` of a block is logged**, the superuser's too, as
+    `secret-read kind=block name=<scope>/<vendor>/<block>` (or
+    `_devices/<device>/<vendor>/<block>`), never a value; an elided read is
+    not.
+
+24. **A WTI unit's Multiple Logins setting must be On, and the standard, the
+    comparison and the plan say so.** A unit's `Multiple Logins` (`/N`, item
+    31; Off or On) decides whether a second session may log in while one is
+    open. `device config pull` opens a second session to read the user
+    directory, and the walkthrough and every plan tell you to keep a session
+    open as the way back and to check from a second login: with the setting
+    Off a unit refuses all of them. The standard now has one statement for
+    it, `unit multiple-logins on`, in the `aaa` section of every WTI
+    rendering (`device config show`, `config wti` Step 3 for both protocols,
+    the managed sections). A pull reads the item from the `/N` page it
+    already opens, with no extra navigation, and a unit that prints it Off
+    differs in `aaa` (`- unit multiple-logins on`, `+ unit multiple-logins
+    off`, severity ACCESS). `device config plan` fixes it with one step,
+    `/N 31 -> 2 (On)   was: 1 (Off)`, which is **the first step of the
+    checklist**, ahead of the SNMP page and the AAA pages: it cannot lock
+    anybody out, the checks of the steps after it and the pull that confirms
+    them need a second session, and the report's item for it says so. Its
+    back-out puts it Off again, last. A unit whose `/N` page does not print
+    item 31 has no statement for it, and the standard's is then reported
+    missing.
+
+25. **Plain management ACL entries on WTI units are named by the upgrade and
+    at the top of the plan.** Item 20 made an entry with no `:service` mean
+    every protocol and port; on a WTI unit that differs from 0.2.6, which
+    rendered such an entry as ssh (tcp/22) and ICMP. The meaning is kept, and
+    two things say where it applies before anything is pasted. The first
+    `tacctl upgrade` onto this release prints, once, for every scope that has
+    a registered WTI unit and a plain IPv4 entry in the list that applies to
+    it (its own permit list, else the global one): `Management ACL: plain
+    entries now permit every protocol and port on WTI units.`, then one line
+    per scope with the entries and up to five unit names, what a WTI plan
+    renders for them (`iptables -A INPUT -s <cidr> -j ACCEPT`, where 0.2.6
+    rendered ssh and ICMP) and how to keep ssh only (`tacctl scope mgmt-acl
+    <scope> remove <cidr>`, then `add <cidr>:tcp/22`). A marker in the state
+    directory (`wti-plain-acl-noted`, beside the other notice markers; a fresh
+    install writes it too) records that it was said: a later upgrade prints
+    nothing of it, `config validate` does not repeat it, and a plain entry
+    added afterwards is not announced by an upgrade. The plan says the same at
+    the top of its report: when a WTI plan pastes a list that holds plain
+    entries, a `# WARNING:` line follows the box and the basis of the pull,
+    ahead of the irregularities, and names the entries. It replaces the note
+    that stood among the notes at the bottom, and `--json` carries it first in
+    `warnings`. `--backout` prints the same line when the list it puts back
+    (the unit's own, as the pull showed it) holds plain entries.
+
 ## 0.2.6 (2026-10-12)
 
 A hotfix for 0.2.5, started from `master`. The items below are everything that

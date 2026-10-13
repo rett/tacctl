@@ -211,8 +211,8 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 	d.InheritanceChecked = d.InheritanceChecked && fam == devconf.FamilyJunos
 	p := &planner{fam: fam, opt: opt, cur: current, plain: plain, checked: d.InheritanceChecked}
 	p.exp = expected
-	if fam == devconf.FamilyJunos {
-		p.blk = blockObjectsOf(expected, opt.Scope)
+	if fam == devconf.FamilyJunos || fam == devconf.FamilyIOS {
+		p.blk = blockObjectsOf(fam, expected, opt.Scope)
 	}
 	if fam == devconf.FamilyIOS {
 		p.prepareIOS(byName)
@@ -270,6 +270,12 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 			d.merge(&sp, o)
 		}
 		d.Sections = append(d.Sections, sp)
+	}
+	// The IOS block's lines (an access list's entries, a trap host, an
+	// 'enable traps' line) were written from the references, never pasted on
+	// a device: the report says so beside the lab note of the standard.
+	if fam == devconf.FamilyIOS && p.blk != nil && p.blk.ios {
+		d.Notes = appendNew(d.Notes, iosBlockNote(opt.Scope))
 	}
 	for _, n := range never {
 		d.Sections = append(d.Sections, SectionPlan{Name: n, State: StateNever})

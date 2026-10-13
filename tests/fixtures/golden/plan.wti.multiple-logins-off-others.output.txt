@@ -1,0 +1,124 @@
+##### lab-unit  192.0.2.21  scope lab  wti (TACACS+) #####
+# Based on the pull of 2026-10-10 14:02 by alice over ssh (18 minutes ago; the login could see
+# secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.7).
+#
+# What is irregular on lab-unit (5 items; the plan fixes 5, leaves 0):
+#  1. aaa      ACCESS     different: the TACACS+ primary host is 192.0.2.42 (the device has:
+#                         192.0.2.99) (tacacs primary 192.0.2.42). Fixed by step 3.
+#  2. aaa      ACCESS     different: Multiple Logins is On (the device has: Off) (unit multiple-logins
+#                         on). Fixed by step 1 (it goes first: the second session that the checks and
+#                         tacctl's pull log in from needs it, and the unit refuses one while Multiple
+#                         Logins is Off).
+#  3. snmp     MONITORING different: the SNMP read-only community (the device has: another string)
+#                         (snmp ro-community <secret:1>). Fixed by step 2.
+#  4. mgmt-acl ACCESS     missing: entries of the standard's IP tables list that the unit does not
+#                         have (e.g. iptables -A INPUT -s 10.0.30.0/24 -p tcp --dport 22 -j ACCEPT).
+#                         Fixed by the IP tables paste.
+#  5. mgmt-acl ACCESS     extra: entries of the unit's list that are not in the standard's (the paste
+#                         replaces the list: they are gone afterwards) (e.g. iptables -A INPUT -s
+#                         10.0.31.0/24 -p tcp --dport 22 -j ACCEPT). Fixed by the IP tables paste (it
+#                         replaces every entry: this one is gone afterwards).
+# Not planned: breakglass (walkthrough Step 10).
+# Secrets: 1 present on the device, not changed (--secrets pushes them).
+# Secrets are not typed by this output: a secret step names the command that shows its value (tacctl
+# scope secret show lab, tacctl scope snmp lab show --reveal), and --secrets puts the value in the
+# step.
+# Note: tacacs default-services: the unit allows more services than the standard asks for (serial,
+# web, restful-api): kept, not compared.
+# Note: the IP tables list ends with the final DROP and the policies of the walkthrough's last step:
+# kept, not compared.
+# Note: aaa: 13 statements of the device's own, kept on purpose.
+# Note: snmp: 4 statements of the device's own, kept on purpose.
+# WARNING: the list ends with the final DROP, so from the paste on only the addresses it permits reach
+# the unit and --from was not given: check that the address you are logged in from is permitted before
+# you paste (--from <address> makes tacctl check).
+# WARNING: the pull saw 1 other session on the unit: the paste is live for them too; type /SN before
+# you paste and make sure no other administrator is working on it.
+# WARNING: Step 3 changes what the unit asks of the TACACS+ server or how it answers when the server
+# fails: a wrong secret word, host, port or service name does not stop a login, it returns every login
+# to the unit's Default User Access level, and Fallback Local decides whether the unit's own accounts
+# work when the server does not answer; keep the serial session open and do the check after the ESC
+# step before anything else.
+# The unit has no commit-confirm and no rollback: every value is live as soon as its Enter is
+# accepted, and the configuration is written to flash when a top-level menu is left with ESC (any
+# session that leaves one saves everything). tacctl types nothing: you do each step yourself.
+# Before you start: keep the serial console, or a second session logged in as an Administrator, open
+# until the check at the end passes; type /SN and make sure no other administrator is on the unit (the
+# pull saw 1 other session).
+# The way back is tacctl device config plan lab-unit --backout: the old values and the old IP tables
+# list as a block (or the slots to clear).
+#
+# Type this first, on lab-unit, and check the version:   /H
+# The title must read "COMMAND MENU: Version 8.10": tacctl's tables are those of that command menu,
+# and another version may number its pages differently: stop. /J shows the unit's Site ID: the pull
+# read wti.site.example.net; another one means this is not the unit.
+#
+##### DO THESE STEPS ON: lab-unit #####
+# At the unit's prompt type /N and Enter. For each step type the item numbers of its second column,
+# one at a time with Enter after each, then what the arrow says. A pick: the number of the line
+# that reads as shown. ESC goes back one level. A value is live as soon as its Enter is accepted.
+#  1. /N  31     Multiple Logins       -> 2 (On)   was: 1 (Off)
+#  2. /N  25  7  Read-Only Community   -> <the scope's SNMP community: tacctl scope snmp lab show --reveal>   was: (another string)
+#  3. /N  28  2  Primary host/address  -> 1 (IPv4), then 192.0.2.42   was: 192.0.2.99
+#  4. ESC ESC  leave /N: wait for "Saving configuration to flash"
+#  5. CHECK from a SECOND session (this one stays open): log in as a member of scope lab and type
+#      /H; the help lists the commands of the level the server assigned (Step 8 of tacctl config
+#      wti). Go on only when it does.
+##### END OF STEPS #####
+##### IP TABLES (replaces every entry; see the notes): lab-unit #####
+# Do this after the steps above and their check, from the serial session or one you can afford to
+# lose: the list is the unit's firewall, and a wrong one cuts off every way in.
+# At the /N menu type 5 and Enter, then paste the block below as it stands (<iptables> to
+# </iptables>, at the left margin) at the page's prompt. The unit answers "Configuring iptables -
+# Please wait...".
+# The paste REPLACES every entry the unit holds (25 entries now) with 25 entries: 20 rendered by
+# tacctl and the 5 of the unit's own tail, kept as the pull showed them (the final DROP and the
+# policies).
+# It is live when the unit takes it; there is no commit-confirm. Leaving /N with ESC (any session
+# that does) writes it to flash: wait for "Saving configuration to flash". Check at once from a
+# second session, and from an address outside the list: it must be refused.
+# The way back is: tacctl device config plan lab-unit --backout (the old list as a block, or the
+# slots to clear).
+<iptables>
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -s 10.1.100.0/23 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.20.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.28.34 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.28.34 -p udp --dport 161:162 -j ACCEPT
+iptables -A INPUT -s 10.0.28.36 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.28.36 -p udp --dport 161:162 -j ACCEPT
+iptables -A INPUT -s 10.0.30.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.40.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.50.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.60.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.70.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.90.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.120.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 192.0.2.14 -p udp --dport 161:162 -j ACCEPT
+iptables -A INPUT -s 10.1.101.0/24 -p udp --dport 161 -j ACCEPT
+iptables -A INPUT -i eth0 -s 10.1.100.0/23 -p icmp -j ACCEPT
+iptables -A INPUT -i eth0 -s 10.0.0.0/16 -p icmp -j ACCEPT
+iptables -A INPUT -i eth0 -s 192.0.2.14 -p icmp -j ACCEPT
+iptables -A INPUT -j DROP
+iptables -A OUTPUT -j ACCEPT
+iptables -P INPUT DROP
+iptables -P OUTPUT DROP
+iptables -P FORWARD DROP
+</iptables>
+##### END OF IP TABLES: lab-unit #####
+#
+# Check now. The unit has no rollback: nothing undoes this by itself.
+#   From the tacctl server:   tacctl device config pull lab-unit --diff     (snmp, aaa and mgmt-acl: ok)
+#   In a second session:      log in as a member of scope lab and type /H (the help lists the commands of the assigned level), then /X
+#   From an address outside the IP tables list: the unit must refuse it
+#
+# To undo it: tacctl device config plan lab-unit --backout (the steps with the values the pull
+# showed, the old IP tables list as a block of its own; tacctl keeps this plan's back-out until
+# the next plan with changes).
+# Do not: paste anything outside the banners; paste a block into another unit; leave /N with ESC
+# before the last step of the list; keep this output in a file after the paste when it holds a
+# secret.
+# Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold lab-unit --reason "..."
+# then log in on the unit's serial console as its local Administrator account,
+# fix or back out, and the superuser runs: tacctl breakglass release lab-unit

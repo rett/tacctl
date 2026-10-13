@@ -84,8 +84,8 @@ const (
 	snmpFields = "snmp enable=on; snmp version=v1-v2-only; snmp read-only=yes; snmp system-name=wti.site.exam...; " +
 		"snmp contact=Example NOC (...; snmp location=Example City,...; snmp ro-community=ro-community; snmp rw-community=rw-community"
 	trapFields   = "snmp trap manager 1=192.0.2.34; snmp trap manager 2=; snmp trap manager 3=; snmp trap manager 4=; snmp trap community=ro-community; snmp trap version=v2; snmp trap engine-id="
-	networkOff   = "iptables=off; snmp=on; snmp-trap=on; tacacs=on; radius=off; multiple-logins=on"
-	networkOn    = "iptables=on; snmp=on; snmp-trap=on; tacacs=on; radius=off; multiple-logins=on"
+	networkOff   = "iptables=off; snmp=on; snmp-trap=on; tacacs=on; radius=off; unit multiple-logins=on"
+	networkOn    = "iptables=on; snmp=on; snmp-trap=on; tacacs=on; radius=off; unit multiple-logins=on"
 	userFields   = "user-name=localadmin; user localadmin level=administrator; user localadmin password=defined; user localadmin keys=; user-port-access=defined; user-services=serial,telnet-ssh,web,outbound; user-callback=; user localadmin api-token="
 	emptyList    = "empty=12"
 	ruleLines    = "1=-A INPUT -i lo -j ACCEPT; 2=-A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT; 3=-A INPUT -s 10.1.100.0/23 -p tcp --dport 22 -j ACCEPT; 4=-A INPUT -s 10.0.20.0/24 -p tcp --dport 22 -j ACCEPT; 5=-A INPUT -s 10.0.28.34 -p tcp --dport 22 -j ACCEPT; 6=-A INPUT -s 10.0.28.34 -p udp --dport 161:162 -j ACCEPT; 7=-A INPUT -s 10.0.28.36 -p tcp --dport 22 -j ACCEPT; 8=-A INPUT -s 10.0.28.36 -p udp --dport 161:162 -j ACCEPT; 9=-A INPUT -s 10.0.30.0/24 -p tcp --dport 22 -j ACCEPT; 10=-A INPUT -s 10.0.40.0/24 -p tcp --dport 22 -j ACCEPT; 11=-A INPUT -s 10.0.50.0/24 -p tcp --dport 22 -j ACCEPT; 12=-A INPUT -s 10.0.60.0/24 -p tcp --dport 22 -j ACCEPT"
@@ -248,6 +248,83 @@ func TestLayoutRefusals(t *testing.T) {
 	// an entry that begins as an address is no slot
 	if _, err := ParseScreen("", strings.Replace(ipt, "\n12. iptables", "\n10.0.0.0/24 iptables", 1)); !errors.Is(err, ErrLayout) {
 		t.Errorf("address at the margin: %v", err)
+	}
+}
+
+// Item 31 of /N, Multiple Logins, is the statement 'unit multiple-logins'
+// of the aaa section: On and Off as a pick, no statement for a page that
+// lacks the item or a document that lacks the page, a refusal for a value
+// that is neither.
+func TestMultipleLoginsStatement(t *testing.T) {
+	_, top := body(t, "pages/network-top.txt")
+	if !strings.Contains(top, "31. Multiple Logins:   On") {
+		t.Fatal("the captured /N page does not show item 31 On")
+	}
+	statements := func(screen string) []Statement {
+		t.Helper()
+		d, err := ParseDocument("# page: /N\n" + screen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d.Statements()
+	}
+	for _, c := range []struct {
+		name, old, new string
+		want           string
+	}{
+		{"on", "", "", "unit multiple-logins on"},
+		{"off", "31. Multiple Logins:   On", "31. Multiple Logins:   Off", "unit multiple-logins off"},
+		{"absent", "31. Multiple Logins:   On", "", ""},
+	} {
+		screen := top
+		if c.old != "" {
+			if strings.Count(screen, c.old) != 1 {
+				t.Fatalf("%s: %d of %q", c.name, strings.Count(screen, c.old), c.old)
+			}
+			screen = strings.Replace(screen, c.old, c.new, 1)
+		}
+		var got []string
+		for _, st := range statements(screen) {
+			if st.Section != SectionAAA {
+				t.Errorf("%s: %q is of section %s", c.name, st.Raw(), st.Section)
+			}
+			got = append(got, st.Raw())
+		}
+		switch {
+		case c.want == "" && len(got) != 0, c.want != "" && !slices.Equal(got, []string{c.want}):
+			t.Errorf("%s: statements %q, want %q", c.name, got, c.want)
+		}
+	}
+	// a value the page cannot print is a layout the table does not know
+	bad := strings.Replace(top, "31. Multiple Logins:   On", "31. Multiple Logins:   Sometimes", 1)
+	if _, err := ParseScreen("/N", bad); !errors.Is(err, ErrLayout) {
+		t.Errorf("a value of no pick: %v", err)
+	}
+	// a document with no /N page has no statement of it, and is complete
+	_, tacacs := body(t, "pages/network-28.txt")
+	d, err := ParseDocument("# page: /N > 28\n" + tacacs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range d.Statements() {
+		if strings.HasPrefix(st.Key, "unit ") {
+			t.Errorf("a statement %q without the /N page", st.Raw())
+		}
+	}
+	if slices.Contains(d.Missing(), "/N") {
+		t.Errorf("the /N page is required: %v", d.Missing())
+	}
+	// the statement is of the vocabulary: a pick, safe, not a secret
+	c := ParseLine("unit multiple-logins off")
+	if c.Form != FormWord || c.Key != "unit multiple-logins" || c.Value != "off" || c.Raw() != "unit multiple-logins off" {
+		t.Errorf("ParseLine: %+v", c)
+	}
+	for _, p := range Pages {
+		for _, it := range p.Items {
+			if it.Key == "unit multiple-logins" && (it.Number != 31 || it.Section != SectionAAA || it.Risk != RiskSafe || it.Secret || !it.Optional || p.Path != "/N") {
+				t.Errorf("the table's row: %+v of %s", it, p.Path)
+			}
+		}
 	}
 }
 

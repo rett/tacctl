@@ -141,7 +141,7 @@ var Pages = []Page{
 			{Number: 26, Label: "SNMP Trap", Fact: "snmp-trap", Parse: pPick, Optional: true},
 			{Number: 28, Label: "TACACS", Fact: "tacacs", Parse: pPick, Optional: true},
 			{Number: 29, Label: "RADIUS", Fact: "radius", Parse: pPick, Optional: true},
-			{Number: 31, Label: "Multiple Logins", Fact: "multiple-logins", Parse: pPick, Optional: true},
+			{Number: 31, Label: "Multiple Logins", Key: "unit multiple-logins", Parse: pOnOff, Form: FormWord, Section: SectionAAA, Risk: RiskSafe, Optional: true},
 		}},
 	{Path: "/N > 25", Name: "snmp", Kind: KindMenu, Required: true,
 		Title: regexp.MustCompile(`^SNMP ACCESS:` + reScope + reIPv + reNoTail),

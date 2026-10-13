@@ -185,7 +185,20 @@ or the Junos deny sets of the preset of 0.2.3, still give an operator or a
 viewer a command that can interrupt service, a red notice names each setting
 and the command that puts the shipped value (or, for what the role preset of
 0.2.3 stored, the preset's) back; the first upgrade onto 0.2.5 also prints the
-lines a device configured earlier keeps. The upgrade itself never changes an
+lines a device configured earlier keeps. The first upgrade onto 0.2.7 names,
+once, each scope that has a registered WTI unit and a plain IPv4 entry in the
+permit list that applies to it (its own, else the global one): a plain entry
+permits every protocol and port on a WTI unit, where 0.2.6 rendered ssh and
+ICMP for it. The notice gives the entries, up to five unit names for each
+scope, the rule a WTI plan renders
+.RB ( "iptables \-A INPUT \-s <cidr> \-j ACCEPT" ),
+and the
+.B <cidr>:tcp/22
+that keeps ssh only; it is recorded in
+.I /var/lib/tacctl/wti\-plain\-acl\-noted
+(a fresh install writes the file at once), so a later upgrade and
+.B "config validate"
+say nothing of it. The upgrade itself never changes an
 override, but for an operator or readonly list that is exactly what 0.2.3
 shipped, which it drops (on a RADIUS-only install too). See
 .BR UPGRADING .
@@ -2988,7 +3001,7 @@ are the superuser's, and an engineer's
 .B "device import"
 neither sets nor drops a device's own settings), and the configuration blocks
 of a scope of theirs and of the devices there
-.RB ( "scope block " \fIscope\fR " juniper list|show|check" ,
+.RB ( "scope block " \fIscope\fR " {juniper|cisco} list|show|check" ,
 .BR "device block " \fIname\fR " list|show|check" ;
 .BR set ,
 .BR remove ,
@@ -3762,6 +3775,12 @@ treats TACACS-only users as invalid and sends a junk password),
 Account/Session Management Modules, Service Name
 .BR wti ,
 the factory default, which per-group WTI levels need),
+the unit-wide
+.B Multiple Logins
+setting
+.B On
+(item 31 of /N: a second session may log in while one is open, which the
+Step 8 check and the pull need),
 an IP Tables step (the unit must accept loopback and ESTABLISHED,RELATED
 traffic or tacquito's replies are dropped; the walkthrough then renders the
 unit's whole list for the scope: loopback, established, ssh for the
@@ -5132,13 +5151,23 @@ settings.
 .PP
 A configuration block is vendor syntax that a scope, or one device, owns beside
 its structured settings, kept as a text file of its own and held to a grammar.
-Junos is the only vendor with blocks in this release; the blocks are
+The vendors with blocks are
+.B juniper
+(the blocks
 .B snmp
-(communities, their client lists and trap groups: the SNMP that the scope's
-settings do not hold) and
+and
+.BR system )
+and
+.B cisco
+(IOS and IOS\-XE: the block
+.BR snmp ;
+there is no IOS system block); a WTI unit has none. The Junos
+.B snmp
+block is the SNMP that the scope's settings do not hold: communities, their
+client lists and trap groups. The Junos
 .B system
-(the login message, domain name and search list, time zone, name servers and
-NTP). A block is Junos
+block is the login message, domain name and search list, time zone, name
+servers and NTP. A Junos block is
 .B set
 statements and nothing else, one per line, with
 .B #
@@ -5151,18 +5180,68 @@ A
 .B delete
 line says that what it names is not managed on this device: it is kept, never
 rendered, and in a device's block takes the scope's object of that name out for
-that device. Junos and IOS are never translated into each other, so a scope
-with both has a file for each, and
-.B cisco
-is refused in this release.
+that device. The IOS
+.B snmp
+block is configuration lines, one per line, with
+.B #
+and
+.B !
+comment lines and blank lines:
+.B "snmp\-server community <string> RO|RW [<acl>]"
+(the access list is a name, never a number),
+.B "snmp\-server host <address> [version 1|2c] <community> [udp\-port <n>] [<type> ...]"
+(a trap host; a
+.B vrf
+form is refused),
+.B "snmp\-server enable traps [<type> [<subtype> ...]]"
+and
+.B "ip access\-list standard <NAME>"
+with
+.B "permit <address> [<wildcard>]"
+(also
+.B "permit host <address>"
+and
+.BR "permit any" )
+under it. A
+.B no
+line (of a community, a host, an
+.B enable traps
+line or a list) says what it names is not managed on this device, as
+.B delete
+does. Junos and IOS are never translated into each other, so a scope with both
+has a file for each.
 .PP
 The blocks of a scope are the files under
-.IR /etc/tacctl/blocks/\fIscope\fR/juniper ,
+.IR /etc/tacctl/blocks/\fIscope\fR/\fIvendor\fR ,
 and a block is in force only while
 .I tacctl.yaml
 names it
-.RB ( blocks.\fIscope\fR.juniper ).
-The communities and trap groups of the
+.RB ( blocks.\fIscope\fR.\fIvendor\fR ).
+The IOS
+.B snmp
+block owns a community (its line is retyped as the block states it, the access
+and the access list; another community of the device is kept and listed as
+unmanaged) and a standard access list it defines (whole: an entry the block does
+not state is removed with its own
+.B no
+line, in one run of entries, since IOS appends and may reorder them); a list it
+only names is the device's own and is kept. A trap host (by its address and
+community, compared by the set of its options, since IOS leaves out the default
+version, kind and port) and an
+.B enable traps
+line (a line the device enables in the expanded form it prints counts as
+present, and a line with no type is present when the device has any
+.B enable traps
+line) are only ever added, and what the device holds besides is its own. IOS has
+no confirmed commit, so the plan of an IOS device is pasted line by line and
+undone with its back\-out of
+.B no
+lines. The lines of an IOS block (a list's entries, trap hosts, trap lines) were
+written from the vendor's references and have not been checked on a device (not
+lab\-tested): the report says so beside the plan of the section. An IOS device's
+VRF forms are not in a block and the device's own such lines stay unmanaged
+.RB ( "ok (+N unmanaged)" ).
+The communities and trap groups of the Junos
 .B snmp
 block become objects tacctl owns: the plan of
 .B "device config plan"
@@ -5172,7 +5251,8 @@ communities are kept and listed as unmanaged. The
 .B system
 block is additive: a statement is set when it is missing, a single value is
 replaced in place, and nothing the device holds is deleted. A block with an
-error is never rendered in part: every Junos device it reaches is refused. A
+error is never rendered in part: every device of its vendor it reaches is
+refused. A
 block holds community strings, so every output but
 .B "show \-\-reveal"
 shows marks instead:
@@ -5194,7 +5274,7 @@ management filter's
 .B permit\-snmp
 term permits the resolved block's unrestricted IPv4 clients.
 .TP
-.BI "scope block " scope " juniper list"
+.BI "scope block " scope " {juniper|cisco} list"
 The blocks of the scope: for each, whether it is in force, has no file, or is a
 file that
 .I tacctl.yaml
@@ -5223,16 +5303,16 @@ Plan the device of this scope with this text in force and print the statements o
 .RE
 .\" END GENERATED: command scope block
 .TP
-.BI "scope block " scope " juniper show " block " [ \-\-reveal ]"
+.BI "scope block " scope " {juniper|cisco} show " block " [ \-\-reveal ]"
 The block as it is in force, elided as described above (a comment is never
 shown, and a block with errors is refused: run
 .BR check ).
 .B \-\-reveal
 prints the file as stored; an engineer may reveal the scopes of their own, and
-the reveal is logged as
-.BR "secret\-read kind=block name=" \fIscope\fR/juniper/\fIblock\fR .
+every reveal is logged, the superuser's too, as
+.BR "secret\-read kind=block name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR .
 .TP
-.BI "scope block " scope " juniper check " block " [ \-\-file " path " | \- ] [ \-\-against " device " ]"
+.BI "scope block " scope " {juniper|cisco} check " block " [ \-\-file " path " | \- ] [ \-\-against " device " ]"
 Lint the file in force, the file
 .I path
 (a regular file of at most 256 KiB, read as the caller) or standard input
@@ -5243,13 +5323,13 @@ a changed string shows as the same mark removed and added), and a block
 community that is the scope's own community, which a device cannot hold twice
 and is refused without printing it. Exit status 1 when there is an error.
 .B \-\-against
-plans the named device of the scope (and of vendor Junos) with the text in
+plans the named device of the scope (of the vendor of the block) with the text in
 force and prints the statements for the block's section, from the device's last
 pull: nothing is written, no back\-out is kept and no device is reached. A
 device that has not been pulled is told to be pulled first, and a system block
 that was not in force at the last pull is told to be set and pulled.
 .TP
-.BI "scope block " scope " juniper set " block " { \-\-file " path " | \- } [ \-y ]"
+.BI "scope block " scope " {juniper|cisco} set " block " { \-\-file " path " | \- } [ \-y ]"
 Superuser only. Check the text as
 .B check
 does (an error refuses it and nothing is written), show the owned objects and
@@ -5264,9 +5344,9 @@ A text that states nothing (comments and blank lines) is refused; the same text
 as the file in force is no change. A change that cannot be made because
 .I tacctl.yaml
 cannot be read or written is refused before anything is. Logged as
-.BR "block\-set name=" \fIscope\fR/juniper/\fIblock\fR .
+.BR "block\-set name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR .
 .TP
-.BI "scope block " scope " juniper remove " block " [ \-y ]"
+.BI "scope block " scope " {juniper|cisco} remove " block " [ \-y ]"
 Superuser only. Take the block out of force and delete its file (a file no list
 names is removable too), after a question (\fB\-y\fR answers it) and a
 snapshot. Nothing is deleted from a device: what the block set is no longer
@@ -5274,7 +5354,7 @@ rendered, and the next compare lists those statements as the device's own,
 kept. Logged as
 .BR block\-remove .
 .TP
-.BI "scope block " scope " juniper edit " block " [ \-y ]"
+.BI "scope block " scope " {juniper|cisco} edit " block " [ \-y ]"
 Superuser only, and only at a terminal (a refusal without one changes nothing).
 Open the block in the editor of the invoking user, as
 .BR visudo (8)
@@ -5343,18 +5423,25 @@ one that returns at once leaves tacctl an unchanged text). An editor may write
 swap or backup files beside its working copy: they land in the private
 directory and are removed with it. A block holds community strings, which are
 a poller's credential on this host and in the snapshots. Logged as
-.BR "block\-edit name=" \fIscope\fR/juniper/\fIblock\fR .
+.BR "block\-edit name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR .
 .TP
-.BI "scope block " scope " juniper adopt " device " " block " [ \-y ]"
+.BI "scope block " scope " {juniper|cisco} adopt " device " " block " [ \-y ]"
 Superuser only, at a terminal, with the rules of
 .BR edit .
-Read the registered Junos
+Read the registered
 .I device
-of the scope live, with the caller's login, for its statements of the
-hierarchy the block is for
+of the scope (of the vendor of the block) live, with the caller's login, for its
+statements of the hierarchy the block is for
 .RB ( "show configuration snmp | display set" ,
 or
-.BR system ),
+.BR system ;
+for an IOS device
+.BR "show running\-config | include ^snmp\-server" ,
+then
+.B "show running\-config | section ip access\-list standard <NAME>"
+for each list a community names, and the whole configuration once when the
+image does not know
+.BR "| section" ),
 and open them in the editor as the draft to prune. The read is that of
 .BR "device config pull" :
 the password from the shell's cache or the terminal, the transport and timeout
@@ -5363,13 +5450,18 @@ of
 the pinned host key and the same words for a failure; one device, one login,
 one command. Nothing of the device's text is stored: it is in memory and in the
 editor's private copy, which is removed. The read is logged as a reveal is,
-.BR "secret\-read kind=block\-adopt name=" \fIscope\fR/juniper/\fIblock\fR
+.BR "secret\-read kind=block\-adopt name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR
 (never a value), and
 .BR "block adopt\-read" .
 The draft holds the statements the grammar of the block takes, minus what
 tacctl renders itself (the scope's own community and its client list, the v3
 settings, a location or contact it renders) and the device's identity
-.RB ( "snmp name" ", " engine\-id ).
+.RB ( "snmp name" ", " engine\-id ;
+on IOS the contact, location and engine id). An IOS community that names a
+numbered list, a view or an IPv6 list, and a list with a deny entry, cannot be
+adopted and is named by a
+.B "# left out:"
+line.
 A community string or trap group name the login sees masked
 .RB ( "/* SECRET\-DATA */" ,
 .BR <masked> ,
@@ -5386,7 +5478,7 @@ is left as it is and counted. A draft with nothing adoptable opens no editor
 and says why; one pruned to nothing writes nothing. The rest is that of
 .BR edit ,
 logged
-.BR "block\-adopt name=" \fIscope\fR/juniper/\fIblock\fR .
+.BR "block\-adopt name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR .
 .SS Per-scope Cisco aaa-group-server label \fB(tacctl scope tacacs-group)\fR
 .TP
 .BI "scope tacacs-group " scope " [" name ]
@@ -6387,30 +6479,30 @@ Options:
 .\" END GENERATED: command device snmp
 .TP
 .BI "device block " "name " "{ list | show " "block " "[ \-\-effective ] [ \-\-reveal ] | check " "block " "[ \-\-file " "path " "| \- ] [ \-\-against ] | set " "block " "{ \-\-file " "path " "| \- } [ \-y ] | remove " "block " "[ \-y ] | edit " "block " "[ \-y ] | adopt " "block " "[ \-y ] }"
-One registered Junos device's own configuration blocks, laid over its scope's
+One registered Junos or IOS device's own configuration blocks, laid over its scope's
 (see
 .BR "Per\-scope configuration blocks" ):
 the files
-.IR /etc/tacctl/blocks/_devices/\fIname\fR/juniper/\fIblock\fR ,
+.IR /etc/tacctl/blocks/_devices/\fIname\fR/\fIvendor\fR/\fIblock\fR ,
 named in
 .I tacctl.yaml
 by
-.BR blocks_device.\fIname\fR.juniper .
+.BR blocks_device.\fIname\fR.\fIvendor\fR .
 The verbs are those of
 .BR "scope block" ,
 and
 .B check \-\-against
 plans this device itself. A device in no scope (no scope's prefixes cover its
-address), an enrolled host and a device that is not a Junos device have no
-blocks; a device that has left every scope can still have its blocks
+address), an enrolled host and a device that is neither a Junos nor an IOS
+device have no blocks; a device that has left every scope can still have its blocks
 removed.
 .B "show \-\-effective"
 prints the block as it is rendered for the device, the scope's with the
 device's laid over it, with a comment for each object saying which layer it is
 from (\fB\-\-reveal\fR prints the strings). A rename of the device moves its
 blocks and its removal deletes them. An engineer may list, show and check the
-blocks of the devices of their own scopes (a reveal is logged as
-.BR "secret\-read kind=block name=_devices/" \fIname\fR/juniper/\fIblock\fR );
+blocks of the devices of their own scopes (every reveal is logged as
+.BR "secret\-read kind=block name=_devices/" \fIname\fR/\fIvendor\fR/\fIblock\fR );
 set, remove, edit and adopt are the superuser's.
 .B edit
 and
@@ -6423,9 +6515,9 @@ objects as comments, to uncomment where this device differs, and
 reads this device's own statements and leaves out what the scope's block states
 with the same statements (an object that differs is the device's exception,
 whole). They are logged
-.BR "block\-edit name=_devices/" \fIname\fR/juniper/\fIblock\fR
+.BR "block\-edit name=_devices/" \fIname\fR/\fIvendor\fR/\fIblock\fR
 and
-.BR "block\-adopt name=_devices/" \fIname\fR/juniper/\fIblock\fR ,
+.BR "block\-adopt name=_devices/" \fIname\fR/\fIvendor\fR/\fIblock\fR ,
 the read of
 .B adopt
 as
@@ -7723,7 +7815,11 @@ protocol first:
 and, after
 .BR "was:" ,
 the value the pull showed. The steps are ordered so that none takes away the
-way in before the one that needs it: the SNMP page first, then the page of the
+way in before the one that needs it: Multiple Logins first
+.RB ( "/N 31" ,
+a pick of Off or On, rendered On: a unit with it Off refuses the second
+session that every check and the pull log in from, and the report says why
+the step goes first), then the SNMP page, then the page of the
 scope's protocol (the secret word, only when the pull shows it undefined, the
 host, the port, the service name, the Default User Access page, the account
 and session modules, the fallback timer, Fallback Local and Debug, and the
@@ -7786,7 +7882,8 @@ without
 .B \-\-from
 a list that ends with the final DROP, and the pull's other sessions, are
 warnings. A plain entry of the permit list renders as a rule for every
-protocol and port, so a list that pastes one carries a report note
+protocol and port, so a list that pastes one carries a WARNING line at the top of the report, under
+the box and the basis of the pull
 .RB ( "N plain permit(s) of the rendered list allow every protocol and port" ),
 and the check that the tacctl server and
 .B \-\-from
@@ -7820,6 +7917,7 @@ and
 (first, because it is the change that can lock out; a list that was empty is
 cleared slot by slot with
 .BR <SPACE><CR> ),
+under the same WARNING line when the list it puts back holds plain entries,
 and the plan's back\-out is never part of the plan's own output.
 .B \-\-converge
 offers only the removal of a read/write community
@@ -10512,6 +10610,15 @@ Marker that
 told once, on the first upgrade onto 0.2.5, which privilege lines a device
 configured earlier keeps (a fresh install writes it at once). Delete it to be
 told again.
+.B uninstall
+removes it.
+.TP
+.I /var/lib/tacctl/wti\-plain\-acl\-noted
+Marker that
+.B "tacctl upgrade"
+named once, on the first upgrade onto 0.2.7, the scopes whose plain management
+ACL entries permit every protocol and port on WTI units (a fresh install
+writes it at once). Delete it to be told again.
 .B uninstall
 removes it.
 .TP

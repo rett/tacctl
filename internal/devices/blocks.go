@@ -7,12 +7,14 @@ package devices
 // Nothing here reads a file: the renderers stay pure, and a batch shares the
 // resolved block between its devices.
 //
-// Only the Junos blocks exist in this release (snmp and system). A Cisco
-// request ignores Data.Blocks (IOS blocks are the release after), whatever it
-// holds.
+// The Junos blocks are snmp and system; the IOS block is snmp (the IOS system
+// block is not built). A request renders the blocks of its own vendor: a
+// Cisco request reads CiscoSNMP and ignores the rest, a Junos request reads
+// SNMP and System and ignores CiscoSNMP, whatever Data.Blocks holds.
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/rett/tacctl/internal/blocks"
 	"github.com/rett/tacctl/internal/names"
@@ -56,6 +58,15 @@ type Blocks struct {
 	// community strings, which are secrets: nothing prints it but the
 	// statements the walkthrough and the plan type.
 	SNMP *blocks.SNMPBlock
+	// CiscoSNMP is the IOS snmp block: communities with their access
+	// lists, trap hosts and 'enable traps' statements. Nil is "no block in
+	// force". It holds community strings, which are secrets: nothing prints
+	// it but the statements the walkthrough and the plan type. SNMPLayer
+	// says which layers it is made of, as for the Junos block.
+	CiscoSNMP *blocks.IOSSNMPBlock
+	// ScopeCiscoSNMP and DeviceCiscoSNMP are the IOS block's layers as they
+	// were written, for the words of a refusal (as ScopeSNMP, DeviceSNMP).
+	ScopeCiscoSNMP, DeviceCiscoSNMP *blocks.IOSSNMPBlock
 	// System is the Junos system block: the login message, domain name and
 	// search list, time zone, name servers and NTP. Nil is "no block in
 	// force": the managed system section is then not rendered at all. It
@@ -65,13 +76,30 @@ type Blocks struct {
 	System *blocks.SystemBlock
 }
 
-// snmpStatements are the 'set' lines of the snmp block, in the order
+// snmpStatements are the 'set' lines of the Junos snmp block, in the order
 // blocks.Statements gives them (none for no block).
 func (b Blocks) snmpStatements() []string {
 	if b.SNMP == nil {
 		return nil
 	}
 	return blocks.Statements(b.SNMP)
+}
+
+// ciscoSNMPStatements are the lines of the IOS snmp block, in the order
+// blocks.IOSSNMPStatements gives them (an access list's header and entries
+// first, the entries indented by two blanks as the walkthrough indents them);
+// none for no block.
+func (b Blocks) ciscoSNMPStatements() []string {
+	if b.CiscoSNMP == nil {
+		return nil
+	}
+	lines := blocks.IOSSNMPStatements(b.CiscoSNMP)
+	for i, l := range lines {
+		if strings.HasPrefix(l, " ") {
+			lines[i] = " " + l
+		}
+	}
+	return lines
 }
 
 // systemStatements are the 'set' lines of the system block, in the order
@@ -101,6 +129,13 @@ func (b Blocks) head(block string, layer BlockLayer, scope string) string {
 
 // snmpHead is the head of the snmp block's comment.
 func (b Blocks) snmpHead(scope string) string { return b.head(blocks.BlockSNMP, b.SNMPLayer, scope) }
+
+// ciscoSNMPHead is the head of the IOS snmp block's comment: the same words
+// with the IOS verb.
+func (b Blocks) ciscoSNMPHead(scope string) string {
+	h := b.head(blocks.BlockSNMP, b.SNMPLayer, scope)
+	return strings.ReplaceAll(h, " juniper show ", " cisco show ")
+}
 
 // systemLines are the lines of the system block in the walkthrough: a comment
 // that names the block (never the message, never a key), then its statements
@@ -195,6 +230,9 @@ func (d Data) BlockProblem(req Request) error { return d.blockProblem(req) }
 // when written. The text names the community by its place in the block,
 // never by its string.
 func (d Data) blockProblem(req Request) error {
+	if req.Vendor == "cisco" {
+		return d.blockProblemCisco(req)
+	}
 	if req.Vendor != "juniper" || d.Blocks.SNMP == nil {
 		return nil
 	}
@@ -240,6 +278,85 @@ func (d Data) blockProblem(req Request) error {
 				"remove it from the block (%s) or give the scope another community (tacctl scope snmp %s community).",
 				n, where, edit, scope),
 		}}
+	}
+	return nil
+}
+
+// blockProblemCisco is blockProblem for an IOS device: a block community
+// that is the community the scope's own SNMP settings render, and a block
+// access list that is the scope's management access list (it would be
+// defined twice, with entries that are not the same). The texts name the
+// object by its place in the block and never print a string.
+func (d Data) blockProblemCisco(req Request) error {
+	b := d.Blocks.CiscoSNMP
+	if b == nil {
+		return nil
+	}
+	scope := d.Blocks.Scope
+	if scope == "" {
+		scope = req.Scope
+	}
+	dev := d.Blocks.Device
+	// where names the layer that holds an object and its place there: the
+	// numbers of 'check' are the file's own
+	where := func(n int, find func(*blocks.IOSSNMPBlock) int) (string, string, int) {
+		at := func(x *blocks.IOSSNMPBlock) int {
+			if x == nil {
+				return -1
+			}
+			return find(x)
+		}
+		w, edit := fmt.Sprintf("the SNMP block of scope '%s'", scope), "tacctl scope block "+scope+" cisco edit snmp"
+		switch {
+		case dev != "" && at(d.Blocks.DeviceCiscoSNMP) > 0:
+			return fmt.Sprintf("the SNMP block of device '%s'", dev), "tacctl device block " + dev + " edit snmp", at(d.Blocks.DeviceCiscoSNMP)
+		case dev != "" && d.Blocks.DeviceCiscoSNMP == nil && d.Blocks.SNMPLayer == LayerDevice:
+			return fmt.Sprintf("the SNMP block of device '%s'", dev), "tacctl device block " + dev + " edit snmp", n
+		case at(d.Blocks.ScopeCiscoSNMP) > 0:
+			return w, edit, at(d.Blocks.ScopeCiscoSNMP)
+		}
+		return w, edit, n
+	}
+	in := d.SNMP
+	if in.Version == snmpV2c && in.Community != "" {
+		for i, c := range b.Communities {
+			if c.String != in.Community {
+				continue
+			}
+			s := c.String
+			w, edit, n := where(i+1, func(x *blocks.IOSSNMPBlock) int {
+				for k, y := range x.Communities {
+					if y.String == s {
+						return k + 1
+					}
+				}
+				return -1
+			})
+			return &names.Error{Msgs: []string{
+				fmt.Sprintf("Community %d of %s is the community the scope's own SNMP settings render, and a device cannot hold both: "+
+					"remove it from the block (%s) or give the scope another community (tacctl scope snmp %s community).", n, w, edit, scope),
+			}}
+		}
+	}
+	if d.ACL.Name != "" {
+		for i, a := range b.ACLs {
+			if a.Name != d.ACL.Name {
+				continue
+			}
+			s := a.Name
+			w, edit, n := where(i+1, func(x *blocks.IOSSNMPBlock) int {
+				for k, y := range x.ACLs {
+					if y.Name == s {
+						return k + 1
+					}
+				}
+				return -1
+			})
+			return &names.Error{Msgs: []string{
+				fmt.Sprintf("Access list %d of %s is the scope's management access list (%s), which tacctl renders itself, and the SNMP block may not define it: "+
+					"rename it in the block (%s).", n, w, a.Name, edit),
+			}}
+		}
 	}
 	return nil
 }

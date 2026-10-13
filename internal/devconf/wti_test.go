@@ -189,6 +189,7 @@ func TestWTIExtractLabUnit(t *testing.T) {
 	// the statements, written out (not only the golden)
 	want := map[string][]string{
 		SectionAAA: {
+			"unit multiple-logins on",
 			"tacacs enable on", "tacacs primary 192.0.2.42", "tacacs secret <secret>", "tacacs fallback-timer 15",
 			"tacacs fallback-local on-transport-failure", "tacacs port 49", "tacacs default-access on",
 			"tacacs account-module enabled", "tacacs session-module enabled", "tacacs service-name wti", "tacacs debug off",
@@ -311,6 +312,37 @@ func TestWTICompareIrregularities(t *testing.T) {
 			SectionSNMP: "ok (+4 unmanaged)", SectionBreakGlass: "ok"} {
 			if got := by[name].StateText(); got != want {
 				t.Errorf("%s: %q, want %q: %q", name, got, want, wtiLines(by[name]))
+			}
+		}
+	})
+
+	t.Run("multiple logins off", func(t *testing.T) {
+		// item 31 of /N, a unit-wide setting of the aaa section: with it Off
+		// the second session of every check is refused, so it is an ACCESS
+		// finding with the rendered value missing and the unit's extra
+		doc := edit(t, noRW, "31. Multiple Logins:   On", "31. Multiple Logins:   Off")
+		ex, by := wtiPull(t, doc, exp)
+		r := by[SectionAAA]
+		if r.State != StateDiffers || !wtiHas(r, "- unit multiple-logins on") || !wtiHas(r, "+ unit multiple-logins off") {
+			t.Fatalf("%s: %q", r.StateText(), wtiLines(r))
+		}
+		for _, l := range r.Lines {
+			if strings.HasPrefix(l.Text, "unit multiple-logins") && l.Op != OpSame && l.Unmanaged {
+				t.Errorf("%q is the device's own, not a finding", l.Text)
+			}
+		}
+		for _, stem := range []string{"unit multiple-logins on", "unit multiple-logins off"} {
+			if got := WTISeverity(SectionAAA, stem); got != "ACCESS" {
+				t.Errorf("severity of %q: %s", stem, got)
+			}
+		}
+		if got := ex.Sections[SectionAAA].Lines[0]; got != "unit multiple-logins off" {
+			t.Errorf("first aaa statement %q", got)
+		}
+		// no other section is touched by it
+		for n, want := range map[string]string{SectionSNMP: "ok (+4 unmanaged)", SectionMgmtACL: "ok (+5 unmanaged)", SectionBreakGlass: "ok"} {
+			if got := by[n].StateText(); got != want {
+				t.Errorf("%s: %q, want %q", n, got, want)
 			}
 		}
 	})
@@ -560,7 +592,7 @@ func TestWTICompareIrregularities(t *testing.T) {
 		rad := withSection(exp, SectionAAA, []string{
 			"radius enable on", "radius primary 192.0.2.42", "radius primary-secret S3", "radius fallback-timer 3",
 			"radius fallback-local off", "radius retries 3", "radius port 1812", "radius accounting-port 1813",
-			"radius onetime-auth off", "radius default-access on", "radius debug off"},
+			"radius onetime-auth off", "radius default-access on", "radius debug off", "unit multiple-logins on"},
 			[]bool{false, false, true})
 		// the unit has TACACS+ on and RADIUS off: every difference and no
 		// unmanaged page

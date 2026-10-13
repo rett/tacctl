@@ -308,8 +308,8 @@ Usage:
       --role <role>                                        (add) admin (default), operator or readonly
   tacctl scope snmp <scope> show|version|community|v3-user|clients|contact|port|timeout|clear|test
                                                            SNMP of a scope: credentials, allowed clients, contact (default beneath: tacctl config snmp)
-  tacctl scope block <scope> juniper list|show|check|set|remove|edit|adopt [<block>]
-                                                           Junos configuration blocks of a scope (snmp, system): community strings and trap groups, login message, domain, time zone, name servers, NTP
+  tacctl scope block <scope> {juniper|cisco} list|show|check|set|remove|edit|adopt [<block>]
+                                                           Configuration blocks of a scope (Junos snmp and system, IOS snmp): community strings, trap groups and hosts, access lists, login message, domain, time zone, name servers, NTP
 
 {{current}}
 

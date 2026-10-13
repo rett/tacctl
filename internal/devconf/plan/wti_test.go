@@ -49,6 +49,8 @@ const (
 	wtiPrimaryOther     = "2.  Primary host/address:       192.0.2.99"
 	wtiROCommunity      = "7. Read-Only Community:    ro-community"
 	wtiROCommunityOther = "7. Read-Only Community:    SENTINELother9f3a"
+	wtiMultiOn          = "31. Multiple Logins:   On"
+	wtiMultiOff         = "31. Multiple Logins:   Off"
 	wtiRadiusOff        = "1.  Enable:                     Off\n2.  Primary Host/Address:       (undefined)"
 	wtiRadiusOn         = "1.  Enable:                     On\n2.  Primary Host/Address:       198.51.100.9"
 )
@@ -102,6 +104,9 @@ func wtiCases() []wtiCase {
 	return []wtiCase{
 		{name: "consistent", edits: consistent},
 		{name: "three-irregularities", edits: irregular},
+		{name: "multiple-logins-off", edits: slices.Concat(consistent, [][2]string{{wtiMultiOn, wtiMultiOff}})},
+		{name: "multiple-logins-off-others", edits: slices.Concat(consistent, [][2]string{{wtiMultiOn, wtiMultiOff}, {wtiPrimary, wtiPrimaryOther},
+			{wtiROCommunity, wtiROCommunityOther}, {wtiEntry9, wtiEntry9Changed}})},
 		{name: "iptables-tail", edits: slices.Concat(irregular, entry)},
 		{name: "iptables-notail", edits: slices.Concat(consistent, entry, emptySlots(wtiTail...))},
 		{name: "iptables-reordered", edits: slices.Concat(consistent, [][2]string{{wtiEntry3, wtiEntry3Swapped}, {wtiEntry4, wtiEntry4Swapped}})},
@@ -196,6 +201,18 @@ func wtiHeader(name string) Header {
 	return Header{Device: "lab-unit", Address: "192.0.2.21", Scope: "lab", Vendor: "wti", Protocol: "TACACS+",
 		Pulled: tPull, PulledBy: "alice", Transport: "ssh", SecretsVisible: true, Now: tNow, Version: "0.2.7", User: "alice", StaleDays: 7,
 		Unit: &UnitInfo{Version: "8.10", SiteID: "wti.site.example.net", OtherSessions: 1}}
+}
+
+// wtiCaseNamed is the case of the goldens of that name.
+func wtiCaseNamed(t testing.TB, name string) wtiCase {
+	t.Helper()
+	for _, c := range wtiCases() {
+		if c.name == name {
+			return c
+		}
+	}
+	t.Fatalf("no WTI case %q", name)
+	return wtiCase{}
 }
 
 func wtiOptions() Options {
@@ -514,7 +531,7 @@ func TestWTIRefusesSectionsTheUnitHasNot(t *testing.T) {
 
 // --section limits a unit's plan to the sections named.
 func TestWTISectionSelects(t *testing.T) {
-	c := wtiCases()[2] // iptables-tail: aaa, snmp (finding) and mgmt-acl
+	c := wtiCaseNamed(t, "iptables-tail") // aaa, snmp (finding) and mgmt-acl
 	exp := wtiLabRendering(t)
 	cur, err := devconf.Extract("wti", wtiDocument(t, c.edits), exp...)
 	if err != nil {
@@ -544,10 +561,8 @@ func TestWTISectionSelects(t *testing.T) {
 // The steps' order: the lock-out safe order of the design, page 25 first,
 // the secret first on the AAA page and its switch last.
 func TestWTIStepOrder(t *testing.T) {
-	c := wtiCases()[11] // secrets: the secret, the primary host and the community
 	p := planWTICase(t, wtiCase{name: "order", edits: [][2]string{{wtiSecretDefined, wtiSecretUndefined}, {wtiPrimary, wtiPrimaryOther},
 		{wtiROCommunity, wtiROCommunityOther}, {wtiFallbackOK, wtiFallbackAll}, {wtiRWSet, wtiRWUnset}}}, "")
-	_ = c
 	var got []string
 	for _, s := range p.d.WTI.Steps {
 		got = append(got, s.Key)
@@ -561,6 +576,64 @@ func TestWTIStepOrder(t *testing.T) {
 		if s.Secret && !strings.HasPrefix(s.Enter, "<the scope's ") {
 			t.Errorf("step %s enters %q", s.Key, s.Enter)
 		}
+	}
+}
+
+// Multiple Logins is the first step of the checklist, ahead of the SNMP page
+// (first of the sections) and of the AAA steps, whatever else the plan has;
+// it is a safe setting, so it is no guarded step and the check of the AAA
+// steps still follows; the report says why it goes first.
+func TestWTIMultipleLoginsStepIsFirst(t *testing.T) {
+	p := planWTICase(t, wtiCaseNamed(t, "multiple-logins-off-others"), "")
+	var keys []string
+	for _, s := range p.d.WTI.Steps {
+		keys = append(keys, s.Key)
+	}
+	if want := []string{"unit multiple-logins", "snmp ro-community", "tacacs primary"}; !slices.Equal(keys, want) {
+		t.Fatalf("steps %v, want %v", keys, want)
+	}
+	st := p.d.WTI.Steps[0]
+	if st.Keys != "/N 31" || st.Label != "Multiple Logins" || st.Enter != "2 (On)" || st.Was != "1 (Off)" || st.Back != "1 (Off)" ||
+		st.Value != "on" || st.Section != devconf.SectionAAA || st.Guarded || st.Secret || st.Clear {
+		t.Errorf("the step: %+v", st)
+	}
+	if got := p.d.Lines[st.Line].Text; got != "/N 31 Multiple Logins -> 2 (On) (was: 1 (Off))" {
+		t.Errorf("the line: %q", got)
+	}
+	if !p.d.WTI.GuardedAAA {
+		t.Errorf("the AAA step lost its guard")
+	}
+	// the step is the report's first row, and its item says why
+	out := Block(p.d, p.h, Wrapper{})
+	if !regexp.MustCompile(`(?m)^#  1\. /N  31 +Multiple Logins +-> 2 \(On\)   was: 1 \(Off\)$`).MatchString(out) {
+		t.Errorf("the step is not the first row of the output:\n%s", out)
+	}
+	var it *Item
+	for i := range p.d.Items {
+		if p.d.Items[i].Statement == "unit multiple-logins on" {
+			it = &p.d.Items[i]
+		}
+	}
+	if it == nil {
+		t.Fatalf("no item of the setting: %+v", p.d.Items)
+	}
+	if !it.Fixed || it.Severity != SevAccess || !strings.HasPrefix(it.Action, "Fixed by step 1 (it goes first: ") ||
+		it.Words != "Multiple Logins is On (the device has: Off)" {
+		t.Errorf("the item: %+v", *it)
+	}
+	// the setting alone: one step, no check of the AAA path asked for
+	p = planWTICase(t, wtiCaseNamed(t, "multiple-logins-off"), "")
+	if len(p.d.WTI.Steps) != 1 || p.d.WTI.GuardedAAA || p.d.WTI.SNMPSteps || p.d.Of(devconf.SectionAAA).State != StatePlanned {
+		t.Errorf("the single step: %+v", p.d.WTI)
+	}
+	// on, it is no finding at all
+	if q := planWTICase(t, wtiCaseNamed(t, "consistent"), ""); len(q.d.WTI.Steps) != 0 {
+		t.Errorf("a unit with it On: %+v", q.d.WTI.Steps)
+	}
+	// and the back-out puts it Off again
+	bo, err := Backout(p.d, p.h, Wrapper{})
+	if err != nil || !regexp.MustCompile(`(?m)^#  1\. /N  31 +Multiple Logins +-> 1 \(Off\)   was: 2 \(On\)$`).MatchString(bo) {
+		t.Errorf("back-out: %v\n%s", err, bo)
 	}
 }
 
@@ -680,6 +753,7 @@ func TestWTIEachSettingIsPlanned(t *testing.T) {
 		{"tacacs service-name", [][2]string{{"11. Service Name:               wti", "11. Service Name:               shell"}}, "tacacs service-name", "wti"},
 		{"tacacs debug", [][2]string{{"12. Debug:                      Off\n13. Ping Test\n\n\nEnter: #<CR> to change,\n       <ESC> to return to previous menu ... \n# page: /N > 28 > 8", "12. Debug:                      On\n13. Ping Test\n\n\nEnter: #<CR> to change,\n       <ESC> to return to previous menu ... \n# page: /N > 28 > 8"}}, "tacacs debug", "1 (Off)"},
 		{"tacacs default-level", [][2]string{{"2.  Access Level:         View Only\n3.  Port Access:          (defined)\n4.  Service Access:       Serial Port, Telnet/SSH, Web, RESTful API\n\n\nEnter: #<CR> to change,\n       <ESC> to return to previous menu ... \n# page: /N > 29\n", "2.  Access Level:         User\n3.  Port Access:          (defined)\n4.  Service Access:       Serial Port, Telnet/SSH, Web, RESTful API\n\n\nEnter: #<CR> to change,\n       <ESC> to return to previous menu ... \n# page: /N > 29\n"}}, "tacacs default-level", "View Only"},
+		{"unit multiple-logins", [][2]string{{wtiMultiOn, wtiMultiOff}}, "unit multiple-logins", "2 (On)"},
 		{"snmp enable", [][2]string{{"1. Enable:                 On", "1. Enable:                 Off"}}, "snmp enable", "2 (On)"},
 		{"snmp version", [][2]string{{"2. Version:                V1/V2 Only", "2. Version:                V3"}}, "snmp version", "1 (V1/V2 Only)"},
 		{"snmp read-only", [][2]string{{"3. Read Only:              Yes", "3. Read Only:              No"}}, "snmp read-only", "Yes"},

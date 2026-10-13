@@ -532,15 +532,15 @@ func (c *blockCtx) editSeed(block string, cur blockFile) string {
 		}
 		return s
 	}
-	s := blocks.Template(block, c.layer())
+	s := blocks.TemplateFor(c.vendor, block, c.layer())
 	if !c.isDevice() {
 		return s
 	}
-	text, err := policy.LayerText(c.store(), c.inv.app.Conf(), blocks.ScopeLevel(c.scope), block)
+	text, err := policy.LayerTextFor(c.store(), c.inv.app.Conf(), c.vendor, blocks.ScopeLevel(c.scope), block)
 	if err != nil || text == nil {
 		return s
 	}
-	doc, fs, err := blocks.LintBlock(block, string(text), blocks.LayerScope)
+	doc, fs, err := blocks.LintFor(c.vendor, block, string(text), blocks.LayerScope)
 	if err != nil || blocks.HasErrors(fs) || doc.Empty() {
 		return s
 	}

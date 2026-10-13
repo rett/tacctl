@@ -121,8 +121,8 @@ func TestDeviceBlockRefusals(t *testing.T) {
 	}{
 		{"unknown device", []string{"nosuch", "list"}, "Device 'nosuch' not found."},
 		{"a host", []string{"web1", "list"}, "is an enrolled Linux host"},
-		{"cisco", []string{"sw-c", "set", "snmp", "--file", good, "-y"}, "IOS blocks come in the release after"},
-		{"wti", []string{"ts-1", "list"}, "configuration blocks are for Junos devices"},
+		{"cisco takes IOS syntax only", []string{"sw-c", "set", "snmp", "--file", good, "-y"}, "a block holds 'snmp-server', 'ip access-list standard' and 'no' statements only"},
+		{"wti", []string{"ts-1", "list"}, "configuration blocks are for Junos and IOS devices"},
 		{"no scope", []string{"stray-j", "set", "snmp", "--file", good, "-y"}, "is in no scope"},
 		{"no scope list", []string{"stray-j", "list"}, "is in no scope"},
 		{"unknown block", []string{"sw-j", "show", "banner"}, "Unknown block 'banner'"},

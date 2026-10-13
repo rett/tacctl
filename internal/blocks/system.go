@@ -1121,8 +1121,8 @@ func (b *SystemBlock) String(elided bool) string {
 
 // --- dispatch by block name -------------------------------------------------
 
-// Doc is what the grammars of the blocks have in common: *SNMPBlock and
-// *SystemBlock.
+// Doc is what the grammars of the blocks have in common: *SNMPBlock,
+// *SystemBlock and *IOSSNMPBlock.
 type Doc interface {
 	Empty() bool
 	String(elided bool) string
@@ -1150,6 +1150,8 @@ func StatementsOf(d Doc) []string {
 		return Statements(b)
 	case *SystemBlock:
 		return SystemStatements(b)
+	case *IOSSNMPBlock:
+		return IOSSNMPStatements(b)
 	}
 	return nil
 }

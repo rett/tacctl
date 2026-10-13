@@ -1,0 +1,10 @@
+aaa authentication login CONSOLE local
+aaa accounting commands 15 default start-stop group LAB-TACACS
+ip access-list standard POLLERS
+ permit host 192.0.2.60
+ permit 198.51.100.0 0.0.0.255
+snmp-server community poller-ro RO POLLERS
+snmp-server host 192.0.2.61 version 2c poller-traps
+snmp-server enable traps snmp linkdown linkup
+line con 0
+ login authentication CONSOLE

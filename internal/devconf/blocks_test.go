@@ -123,3 +123,155 @@ func TestBlockLabelsMapWhateverTheDeviceOrder(t *testing.T) {
 		t.Errorf("<secret:2> is %q", lb["<secret:2>"])
 	}
 }
+
+// --- the IOS snmp block -----------------------------------------------------------
+
+// iosBlockRendering is the snmp section of an IOS scope with a block:
+// tacctl's own list and community, then the block's list, community, host and
+// 'enable traps' lines.
+func iosBlockRendering() devices.Section {
+	return devices.Section{Name: SectionSNMP,
+		Lines: []string{
+			"ip access-list standard TACCTL-SNMP",
+			"  permit host 192.0.2.10",
+			"  deny   any",
+			"snmp-server community lab-ro-community RO TACCTL-SNMP",
+			"ip access-list standard NMS-POLLERS",
+			"  permit host 192.0.2.50",
+			"  permit 198.51.100.0 0.0.0.255",
+			"snmp-server community nms-ro RO NMS-POLLERS",
+			"snmp-server host 198.51.100.7 version 2c nms-traps udp-port 162 config",
+			"snmp-server enable traps config",
+			"snmp-server enable traps snmp linkdown",
+		},
+		Secret: []bool{false, false, false, true, false, false, false, true, true, false, false},
+		Block:  []bool{false, false, false, false, true, true, true, true, true, true, true}}
+}
+
+// The device prints its lines in its own order, with its own communities and
+// hosts between; every string is labelled by the rendering, the block's
+// statements compare equal, a trap line that the device enables in another
+// shape is satisfied, and what the device holds besides is its own.
+func TestIOSBlockComparesAsRendered(t *testing.T) {
+	r := iosBlockRendering()
+	text := strings.Join([]string{
+		"hostname rt1",
+		"snmp-server community device-own RW DEVICE-OWN",
+		"snmp-server community nms-ro RO NMS-POLLERS",
+		"snmp-server community lab-ro-community RO TACCTL-SNMP",
+		"snmp-server enable traps snmp authentication linkdown linkup coldstart warmstart",
+		"snmp-server enable traps config",
+		"snmp-server enable traps tty",
+		// the stored form: the default port is not printed
+		"snmp-server host 198.51.100.7 version 2c nms-traps config",
+		"snmp-server host 198.51.100.9 version 2c device-traps",
+		"ip access-list standard TACCTL-SNMP",
+		" permit 192.0.2.10",
+		" deny any",
+		"ip access-list standard NMS-POLLERS",
+		" permit 198.51.100.0 0.0.0.255",
+		" permit 192.0.2.50",
+		"ip access-list standard DEVICE-OWN",
+		" permit 203.0.113.1",
+		"end",
+	}, "\n") + "\n"
+	ex, err := Extract("cisco", text, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := ex.Sections[SectionSNMP].Lines
+	for _, want := range []string{
+		"snmp-server community <secret:2> RO NMS-POLLERS", "snmp-server community <other:1> RW DEVICE-OWN",
+		"snmp-server host 198.51.100.7 version 2c <secret:3> config", "snmp-server host 198.51.100.9 version 2c <other:2>",
+		"ip access-list standard NMS-POLLERS > permit 192.0.2.50",
+	} {
+		if !slices.Contains(got, want) {
+			t.Errorf("the extraction lacks %q:\n%s", want, strings.Join(got, "\n"))
+		}
+	}
+	for _, l := range got {
+		for _, bad := range []string{"nms-ro", "nms-traps", "device-own", "device-traps", "lab-ro-community"} {
+			if strings.Contains(l, bad) {
+				t.Errorf("the extraction holds a string: %q", l)
+			}
+		}
+	}
+	res, err := Compare("cisco", r, ex.Sections[SectionSNMP], true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range res.Lines {
+		if l.Op == OpMissing {
+			t.Errorf("missing: %q", l.Text)
+		}
+	}
+	// the device's own: another community, its list and its list's entry, a
+	// trap host of another community, 'enable traps tty', and the device's
+	// own spelling of the trap line the rendering states shorter
+	if res.State != StateOK || res.Unmanaged != 5 {
+		t.Errorf("%s, %d unmanaged:\n%v", res.State, res.Unmanaged, res.Lines)
+	}
+
+	// an entry the block does not state in a list it defines is a difference
+	more := ex.Sections[SectionSNMP]
+	more.Lines = append(slices.Clone(more.Lines), "ip access-list standard NMS-POLLERS > permit 203.0.113.9")
+	if res, _ = Compare("cisco", r, more, true); res.State != StateDiffers {
+		t.Errorf("an extra entry of the block's list reads %s", res.State)
+	}
+	// an entry in the device's own list is not
+	more.Lines = append(slices.Clone(ex.Sections[SectionSNMP].Lines), "ip access-list standard DEVICE-OWN > permit 203.0.113.9")
+	if res, _ = Compare("cisco", r, more, true); res.State != StateOK {
+		t.Errorf("an extra entry of the device's list reads %s", res.State)
+	}
+	// the block's host with other options on the device is a difference
+	more.Lines = slices.Clone(ex.Sections[SectionSNMP].Lines)
+	for i, l := range more.Lines {
+		if strings.HasPrefix(l, "snmp-server host 198.51.100.7 ") {
+			more.Lines[i] = "snmp-server host 198.51.100.7 version 2c <secret:3>"
+		}
+	}
+	res, _ = Compare("cisco", r, more, true)
+	if res.State != StateDiffers {
+		t.Errorf("a block host with other options reads %s", res.State)
+	}
+	extra := false
+	for _, l := range res.Lines {
+		if l.Op == OpExtra && l.Text == "snmp-server host 198.51.100.7 version 2c <secret:3> (present, not compared)" && !l.Unmanaged {
+			extra = true
+		}
+	}
+	if !extra {
+		t.Errorf("the device's line of the block's host is not a difference:\n%v", res.Lines)
+	}
+	// the community retyped with another access list is a difference too
+	more.Lines = slices.Clone(ex.Sections[SectionSNMP].Lines)
+	for i, l := range more.Lines {
+		if l == "snmp-server community <secret:2> RO NMS-POLLERS" {
+			more.Lines[i] = "snmp-server community <secret:2> RW NMS-POLLERS"
+		}
+	}
+	if res, _ = Compare("cisco", r, more, true); res.State != StateDiffers {
+		t.Errorf("a block community of another access reads %s", res.State)
+	}
+}
+
+// 'snmp-server enable traps' with no type enables every type, which a device
+// prints one by one: the statement is present once the device has any line of
+// the family, and missing when it has none.
+func TestIOSBlockBareTrapsLine(t *testing.T) {
+	r := devices.Section{Name: SectionSNMP, Lines: []string{"snmp-server enable traps"}, Secret: []bool{false}, Block: []bool{true}}
+	with := "hostname rt1\nsnmp-server enable traps snmp linkdown\nsnmp-server enable traps config\nend\n"
+	ex, err := Extract("cisco", with, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, _ := Compare("cisco", r, ex.Sections[SectionSNMP], true)
+	if res.State != StateOK || res.Unmanaged != 2 {
+		t.Errorf("with lines: %s (%d)\n%v", res.State, res.Unmanaged, res.Lines)
+	}
+	ex, _ = Extract("cisco", "hostname rt1\nend\n", r)
+	res, _ = Compare("cisco", r, ex.Sections[SectionSNMP], true)
+	if res.State != StateMissing {
+		t.Errorf("without lines: %s\n%v", res.State, res.Lines)
+	}
+}

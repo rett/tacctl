@@ -473,6 +473,7 @@ var iosTopStatements = []string{
 	"aaa group server tacacs+ ", "aaa group server radius ", "ip tacacs source-interface ", "ip radius source-interface ",
 	"tacacs server ", "radius server ", "tacacs-server host ", "radius-server host ",
 	"privilege exec ", "snmp-server community ", "snmp-server location ", "snmp-server contact ",
+	"snmp-server host ", "snmp-server enable traps ",
 	"ip access-list standard ", "ip access-list extended ", "ipv6 access-list ", "line vty ", "line con ",
 }
 
@@ -728,7 +729,7 @@ func JSON(d Delta, h Header, w Wrapper) ([]byte, error) {
 		BasedOn: jsonBasedOn{Pulled: h.Pulled, By: h.PulledBy, Transport: h.Transport,
 			AgeS: int64(h.Now.Sub(h.Pulled).Seconds()), SecretsVisible: h.SecretsVisible},
 		Status: statusOf(d), Left: leftOf(d), Irregularities: []jsonItem{}, Region: []string{}, After: []string{}, Backout: []string{},
-		Extras: []jsonExtra{}, Skipped: nonNilSkip(d.Skipped), Withheld: nonNil(d.Withheld), Warnings: nonNil(d.Warnings), ByHand: d.ByHand,
+		Extras: []jsonExtra{}, Skipped: nonNilSkip(d.Skipped), Withheld: nonNil(d.Withheld), Warnings: headlineWarnings(d), ByHand: d.ByHand,
 		HoldsSecret: d.HoldsSecret()}
 	if out.Status == StatusCannotPlan {
 		out.Reason = d.Refusal()

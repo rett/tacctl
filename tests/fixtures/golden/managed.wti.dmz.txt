@@ -12,6 +12,7 @@
 | tacacs session-module enabled
 | tacacs service-name wti
 | tacacs debug off
+| unit multiple-logins on
 [roles] not rendered
 [mgmt-acl] not rendered
 [snmp]

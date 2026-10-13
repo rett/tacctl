@@ -94,11 +94,11 @@ func (inv *invocation) deviceRenderInput(p renderParams) (devices.Request, devic
 		}
 	}
 	// The snmp and system blocks of the scope, and of the device when it has
-	// some of its own (0.2.7; Junos only: IOS blocks are the release after).
-	// One with an error is never rendered in part: the refusal names the
-	// scope or the device and the verb that says what is wrong.
-	if p.Vendor == "juniper" {
-		blk, layers, err := inv.resolveBlocks(p.Scope, p.BlockDevice, p.Override)
+	// some of its own (0.2.7; the IOS snmp block for a Cisco device). One
+	// with an error is never rendered in part: the refusal names the scope
+	// or the device and the verb that says what is wrong.
+	if p.Vendor == "juniper" || p.Vendor == "cisco" {
+		blk, layers, err := inv.resolveBlocks(p.Vendor, p.Scope, p.BlockDevice, p.Override)
 		if err != nil {
 			return req, d, inv.usageErr(msgs(err)...)
 		}
@@ -313,9 +313,9 @@ func (r *managedRender) prepareKey(e devreg.Entry, k managedKey) {
 		}
 		// the scope's blocks carry community strings and NTP keys: a read of
 		// their own, once per scope
-		if r.logReads && (d.Blocks.SNMP != nil || d.Blocks.System != nil) && !r.logged["blocks "+k.scope] {
-			r.logged["blocks "+k.scope] = true
-			inv.logBlockReads(d.Blocks, [2]policy.BlockLayers{{Scope: d.Blocks.SNMP != nil}, {Scope: d.Blocks.System != nil}}, k.scope, "")
+		if r.logReads && (d.Blocks.SNMP != nil || d.Blocks.CiscoSNMP != nil || d.Blocks.System != nil) && !r.logged["blocks "+k.scope+" "+k.vendor] {
+			r.logged["blocks "+k.scope+" "+k.vendor] = true
+			inv.logBlockReads(d.Blocks, [2]policy.BlockLayers{{Scope: d.Blocks.SNMP != nil || d.Blocks.CiscoSNMP != nil}, {Scope: d.Blocks.System != nil}}, k.scope, "")
 		}
 	}
 }
@@ -328,17 +328,17 @@ func (r *managedRender) prepareKey(e devreg.Entry, k managedKey) {
 func (r *managedRender) prepareDeviceBlocks(e devreg.Entry, k managedKey) {
 	inv := r.inv
 	b := r.base[k]
-	if e.Vendor != "juniper" || b == nil || b.problem != "" {
+	if (e.Vendor != blocks.VendorJuniper && e.Vendor != blocks.VendorCisco) || b == nil || b.problem != "" {
 		return
 	}
 	lc := strings.ToLower(e.Name)
 	cfg := inv.app.Conf()
-	has := len(policy.DeviceBlockNames(cfg, e.Name, blocks.VendorJuniper)) > 0 ||
+	has := len(policy.DeviceBlockNames(cfg, e.Name, e.Vendor)) > 0 ||
 		(r.override != nil && r.override.level.IsDevice() && strings.EqualFold(r.override.level.Device, e.Name))
 	if !has {
 		return
 	}
-	blk, layers, err := inv.resolveBlocks(e.Scope, e.Name, r.override)
+	blk, layers, err := inv.resolveBlocks(e.Vendor, e.Scope, e.Name, r.override)
 	if err != nil {
 		r.devBlocks[lc] = &deviceBlocks{problem: strings.Join(msgs(err), " ")}
 		return

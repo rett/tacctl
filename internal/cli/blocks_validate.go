@@ -4,13 +4,14 @@ package cli
 // findings of the store against tacctl.yaml (a name with no file is an
 // error: the block renders nothing; a file no list names is a warning: it
 // is ignored; a device's orphans are warnings) and a block in force that
-// does not parse, which refuses every Junos device it reaches. Nothing
+// does not parse, which refuses every device of its vendor it reaches. Nothing
 // printed holds a word of a block.
 
 import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/rett/tacctl/internal/blocks"
 	"github.com/rett/tacctl/internal/devreg"
@@ -40,9 +41,13 @@ func (inv *invocation) blockValidation() (errs, warns []string) {
 			add(x)
 		}
 	}
-	lint := func(l blocks.Level, listed []string, check string) {
+	lint := func(l blocks.Level, vendor string, listed []string, check string) {
+		who := "Junos"
+		if vendor == blocks.VendorCisco {
+			who = "IOS"
+		}
 		for _, b := range listed {
-			text, err := st.Read(l, blocks.VendorJuniper, b)
+			text, err := st.Read(l, vendor, b)
 			if err != nil {
 				continue // missing is a finding above, unreadable one of Verify's
 			}
@@ -50,7 +55,14 @@ func (inv *invocation) blockValidation() (errs, warns []string) {
 			if l.IsDevice() {
 				layer = blocks.LayerDevice
 			}
-			if _, fs, err := blocks.LintBlock(b, string(text), layer); err == nil && blocks.HasErrors(fs) {
+			_, fs, err := blocks.LintFor(vendor, b, string(text), layer)
+			if err != nil {
+				// a name that has no grammar for the vendor (the IOS system
+				// block): it is never rendered
+				errs = append(errs, "the "+b+" block of "+l.String()+" ("+vendor+") is not built for "+who+" and is not rendered: "+strings.Join(msgs(err), " "))
+				continue
+			}
+			if blocks.HasErrors(fs) {
 				n := 0
 				for _, x := range fs {
 					if x.Severity == blocks.SevError {
@@ -58,7 +70,7 @@ func (inv *invocation) blockValidation() (errs, warns []string) {
 					}
 				}
 				errs = append(errs, "the "+b+" block of "+l.String()+" has "+strconv.Itoa(n)+" "+plural(n, "error", "errors")+
-					" and is not rendered, so every Junos device it reaches is refused: "+check+" "+b)
+					" and is not rendered, so every "+who+" device it reaches is refused: "+check+" "+b)
 			}
 		}
 	}
@@ -69,7 +81,9 @@ func (inv *invocation) blockValidation() (errs, warns []string) {
 	sort.Strings(scopes)
 	for _, sc := range scopes {
 		if f.allows(sc) {
-			lint(blocks.ScopeLevel(sc), manifest[sc][blocks.VendorJuniper], "tacctl scope block "+sc+" juniper check")
+			for _, v := range blocks.Vendors {
+				lint(blocks.ScopeLevel(sc), v, manifest[sc][v], "tacctl scope block "+sc+" "+v+" check")
+			}
 		}
 	}
 	if f.restricted {
@@ -100,8 +114,8 @@ func (inv *invocation) blockValidation() (errs, warns []string) {
 	}
 	slices.Sort(devs)
 	for _, d := range devs {
-		if v, ok := vendorOf(d); ok && v == blocks.VendorJuniper {
-			lint(blocks.DeviceLevel(d), devManifest[d][blocks.VendorJuniper], "tacctl device block "+d+" check")
+		if v, ok := vendorOf(d); ok && slices.Contains(blocks.Vendors, v) {
+			lint(blocks.DeviceLevel(d), v, devManifest[d][v], "tacctl device block "+d+" check")
 		}
 	}
 	return errs, warns

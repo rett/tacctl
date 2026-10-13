@@ -200,6 +200,9 @@ func checkIOSPreserved(t *testing.T, f fixture, exp []devices.Section, before, a
 		case len(path) == 1 && lf[0] == "aaa":
 		case len(path) == 1 && lf[0] == "tacacs-server":
 		case len(path) == 1 && lf[0] == "snmp-server" && len(lf) > 1 && (lf[1] == "location" || lf[1] == "contact"):
+		case len(path) == 1 && lf[0] == "snmp-server" && len(lf) > 1 && (lf[1] == "community" || lf[1] == "host"):
+			// a community or a trap host the plan retypes in place (the
+			// typed line of the same key was found above)
 		default:
 			t.Errorf("%s %s: %q is outside every owned object and the plan removed it\n%s", f.name, label, line, d.Display())
 		}

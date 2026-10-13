@@ -83,6 +83,7 @@ type Paths struct {
 	ConfigDir             string // VarLib/device-config: the managed sections of each device's last successful pull, one file per device
 	TierPinMarker         string // VarLib/tier-pinned: the upgrade recorded the tier of every group at priv-lvl 15, once (outside tacctl.yaml, which is what gets lost)
 	OperatorNoticeMarker  string // VarLib/operator-policy-noted: the upgrade told once about the devices configured before the operator lost the commands that can interrupt service (0.2.5)
+	WTIPlainNoticeMarker  string // VarLib/wti-plain-acl-noted: the upgrade told once which scopes have plain management ACL entries that now permit every protocol and port on WTI units (0.2.7)
 
 	SudoersFile     string // TACCTL_SUDOERS_FILE (SUDOERS_FILE)
 	TierSudoersFile string // TACCTL_TIER_SUDOERS_FILE (TIER_SUDOERS_FILE)
@@ -163,6 +164,7 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.ConfigDir = p.VarLib + "/device-config"
 	p.TierPinMarker = p.VarLib + "/tier-pinned"
 	p.OperatorNoticeMarker = p.VarLib + "/operator-policy-noted"
+	p.WTIPlainNoticeMarker = p.VarLib + "/wti-plain-acl-noted"
 	p.KnownHosts = p.VarLib + "/ssh/known_hosts"
 
 	p.SudoersFile = env.Or("TACCTL_SUDOERS_FILE", "/etc/sudoers.d/tacctl")

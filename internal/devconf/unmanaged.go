@@ -40,6 +40,10 @@ type keptShape struct {
 	// name is the word at '$' and prefix the pattern's words with it filled
 	// in.
 	keep func(name string, prefix []string, exp *renderedSet) bool
+	// keepStmt, when set, decides instead of keep, from the statement's
+	// whole words (a trap host is told by its community, which is not at
+	// the pattern's '$').
+	keepStmt func(words []string, exp *renderedSet) bool
 }
 
 // The tests of the shapes.
@@ -61,6 +65,17 @@ var (
 	notRendered = func(_ string, prefix []string, exp *renderedSet) bool { return !exp.has(prefix) }
 	// a statement the rendering has nothing of
 	always = func(string, []string, *renderedSet) bool { return true }
+	// an IOS trap host of an address and community the rendering (a block)
+	// does not state: a host the rendering states with other options is a
+	// difference, which the plan replaces in place. The bare mark of an older
+	// record cannot be told apart, and is left alone as it always was.
+	otherHost = func(words []string, exp *renderedSet) bool {
+		i := SNMPHostCommunity(words)
+		if i < 0 {
+			return true
+		}
+		return !exp.hosts[words[2]+" "+words[i]]
+	}
 )
 
 // keptShapes are the shapes per family; the first whose pattern a statement
@@ -113,7 +128,12 @@ var keptShapes = map[string][]keptShape{
 		{Pattern: "snmp-server view $", keep: notRendered},
 		{Pattern: "snmp-server group $", keep: notRendered},
 		{Pattern: "snmp-server user $", keep: notRendered},
-		// no row: 'snmp-server host', 'enable traps' and the rest
+		// 0.2.7: the SNMP block's hosts and 'enable traps' lines are only
+		// ever added (a host the block states with other options is replaced
+		// in place); the device's others are its own
+		{Row: "ios.snmp.block-host", Pattern: "snmp-server host $", keepStmt: otherHost},
+		{Row: "ios.snmp.block-traps", Pattern: "snmp-server enable traps", keep: always},
+		// no row: the rest of 'snmp-server'
 		{Pattern: "snmp-server", keep: always},
 	},
 }
@@ -144,6 +164,9 @@ type renderedSet struct {
 	// those under 'snmp trap-group' that a configuration block sets (the
 	// structured settings have no trap group).
 	community, trapGroup map[string]bool
+	// hosts are the trap hosts the rendering sets, by address and the label
+	// of their community (IOS).
+	hosts map[string]bool
 	// wtiInactive are the protocols (tacacs, radius) of a WTI unit that the
 	// rendering does not use and the device has turned off: their whole
 	// page is the device's own (wti.go).
@@ -160,7 +183,7 @@ func (r *renderedSet) has(prefix []string) bool {
 // newRenderedSet is the rendering of a section as the shapes read it. lb is
 // the comparison's labels (nil for a record of an older tacctl).
 func newRenderedSet(fam string, section devices.Section, exp []stmt, lb *labels) *renderedSet {
-	rs := &renderedSet{community: map[string]bool{}, trapGroup: map[string]bool{}}
+	rs := &renderedSet{community: map[string]bool{}, trapGroup: map[string]bool{}, hosts: map[string]bool{}}
 	for _, e := range exp {
 		rs.words = append(rs.words, stmtWords(fam, e))
 	}
@@ -169,8 +192,12 @@ func newRenderedSet(fam string, section devices.Section, exp []stmt, lb *labels)
 	}
 	if fam != FamilyJunos {
 		for _, line := range section.Lines {
-			if f := strings.Fields(line); len(f) >= 3 && f[0] == "snmp-server" && f[1] == "community" {
+			f := strings.Fields(line)
+			switch {
+			case len(f) >= 3 && f[0] == "snmp-server" && f[1] == "community":
 				rs.community[lb.of(f[2])] = true
+			case SNMPHostCommunity(f) > 0:
+				rs.hosts[f[2]+" "+lb.of(f[SNMPHostCommunity(f)])] = true
 			}
 		}
 		return rs
@@ -235,6 +262,9 @@ func unmanaged(fam, section string, x stmt, rs *renderedSet) bool {
 			}
 		}
 		if ok {
+			if s.keepStmt != nil {
+				return s.keepStmt(words, rs)
+			}
 			return s.keep(name, words[:len(pat)], rs)
 		}
 	}

@@ -41,6 +41,9 @@ var wtiOwned = []OwnedRow{
 	{ID: "wti.aaa.inactive-protocol", Section: "aaa", Pattern: "(tacacs|radius)", Mode: ModeRenderedLeaves,
 		Why:  "only the page of the protocol the scope uses is set",
 		Kept: "the whole page of the protocol the scope does not use while the unit has it turned off"},
+	{ID: "wti.aaa.multiple-logins", Section: "aaa", Pattern: "unit multiple-logins", Mode: ModeSingle,
+		Why:  "multiple logins are on, so a second session can log in",
+		Kept: ""},
 
 	{ID: "wti.snmp.access", Section: "snmp", Pattern: "snmp (enable|version|read-only)", Mode: ModeSingle,
 		Why: "the SNMP access switch, version and read-only mark tacctl renders", Kept: ""},
@@ -98,6 +101,10 @@ func WTIRowID(section, stmt, proto string) string {
 	switch section {
 	case devconf.SectionAAA:
 		switch w[0] {
+		case "unit":
+			if w[1] == "multiple-logins" {
+				return "wti.aaa.multiple-logins"
+			}
 		case "tacacs", "radius":
 			switch {
 			case proto != "" && w[0] != proto:

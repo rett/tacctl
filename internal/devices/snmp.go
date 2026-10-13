@@ -72,8 +72,8 @@ type SNMPInput struct {
 	// (0.2.7): rendered after the structured settings as live lines of
 	// their own, whether or not the structured SNMP is configured, and
 	// BlockScope is the scope whose block it is (named in a comment, never a
-	// community string). Data.snmpInput fills them from Data.Blocks; only
-	// the Junos step renders them.
+	// community string). Data.snmpInput fills them from Data.Blocks; the
+	// Junos and the IOS step render them, each its vendor's.
 	Block      []string
 	BlockScope string
 	// BlockHead is what the comment above the block says of it (the layers
@@ -265,7 +265,13 @@ func (in SNMPInput) verifyHint() string {
 func CiscoSNMP(in SNMPInput) SNMPBlock {
 	const c = "!"
 	if in.Version == "" {
-		return SNMPBlock{Text: "! --- SNMP ---\n" + in.notConfigured(c)}
+		// The block is independent of the structured settings: it is
+		// rendered all the same.
+		if len(in.Block) == 0 {
+			return SNMPBlock{Text: "! --- SNMP ---\n" + in.notConfigured(c)}
+		}
+		text := "! --- SNMP ---\n" + commented(c, in.notConfiguredLines("rendered from the structured settings"))
+		return SNMPBlock{Text: text + "\n" + strings.Join(in.ciscoBlockLines(), "\n")}
 	}
 	var b []string
 	add := func(l ...string) { b = append(b, l...) }
@@ -318,8 +324,28 @@ func CiscoSNMP(in SNMPInput) SNMPBlock {
 	} else {
 		add("! snmp-server contact <contact>   ! NOT SET: tacctl scope snmp " + in.Scope + " contact '<text>'")
 	}
+	add(in.ciscoBlockLines()...)
 	add("! " + in.verifyHint())
 	return SNMPBlock{Text: strings.Join(b, "\n"), Unfilled: in.unfilled()}
+}
+
+// ciscoBlockLines are the lines of the scope's IOS snmp block: a comment
+// that names the block (by its scope, never by a string), then its
+// statements as live lines. None when the scope has no block.
+func (in SNMPInput) ciscoBlockLines() []string {
+	if len(in.Block) == 0 {
+		return nil
+	}
+	head := in.BlockHead
+	if head == "" {
+		scope := in.BlockScope
+		if scope == "" {
+			scope = in.Scope
+		}
+		head = "The snmp block of scope '" + scope + "' (tacctl scope block " + scope + " cisco show snmp)"
+	}
+	out := []string{"! " + head + ": its communities, access lists, trap hosts and trap types."}
+	return append(out, in.Block...)
 }
 
 func devName(in SNMPInput) string {

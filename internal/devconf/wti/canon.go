@@ -20,6 +20,8 @@ func IsLabel(w string) bool { return reLabel.MatchString(w) }
 //	          tacacs default-services serial,telnet-ssh,web,restful-api
 //	          radius ... (the same keys of page 29, and primary-secret,
 //	          secondary-secret, retries, accounting-port, onetime-*)
+//	          unit multiple-logins on   (item 31 of /N: a second session may
+//	          log in while one is open)
 //	snmp      snmp enable on            snmp ro-community <secret:1>
 //	          snmp contact "Example NOC"  snmp trap manager 1 192.0.2.34
 //	mgmt-acl  iptables -A INPUT -i lo -j ACCEPT   (one per entry, in order)

@@ -242,6 +242,25 @@ var iosOwned = []OwnedRow{
 		Why:  "the SNMP access list tacctl renders (its entries and their order)",
 		Kept: "other access lists"},
 
+	// The SNMP block (0.2.7): what a scope's (or a device's) block states
+	// beside the structured settings. A community is retyped as the block
+	// states it, a list it defines is owned whole (an entry it does not state
+	// is removed), and a trap host or an 'enable traps' line is only ever
+	// added (a host the block states with other options is retyped in
+	// place; what the device holds beside is its own).
+	{ID: "ios.snmp.block-community", Section: "snmp", Pattern: "snmp-server community $", Mode: ModeSingle, Block: true,
+		Why:  "the communities of the SNMP block of scope <scope>, retyped as the block states them (the access and the access list)",
+		Kept: ""},
+	{ID: "ios.snmp.block-acl", Section: "snmp", Pattern: "ip access-list standard $", Mode: ModeWhole, Block: true,
+		Why:  "the access lists the SNMP block of scope <scope> defines (its entries are set when missing, an entry the block does not state is removed)",
+		Kept: ""},
+	{ID: "ios.snmp.block-host", Section: "snmp", Pattern: "snmp-server host $", Mode: ModeAdditive, Block: true,
+		Why:  "the trap hosts of the SNMP block of scope <scope> (set when missing, retyped where the device holds the same host and community with other options)",
+		Kept: "the device's other trap hosts"},
+	{ID: "ios.snmp.block-traps", Section: "snmp", Pattern: "snmp-server enable traps", Mode: ModeAdditive, Block: true,
+		Why:  "the 'enable traps' lines of the SNMP block of scope <scope> (set when missing, never removed)",
+		Kept: "the 'enable traps' lines the block does not state"},
+
 	{ID: "ios.mgmt-acl.acl", Section: "mgmt-acl", Pattern: "ip access-list standard $", Mode: ModeWhole, Ordered: true,
 		Why:  "the management access list tacctl renders (its entries and their order)",
 		Kept: "other access lists; the access-class binding"},

@@ -13,6 +13,7 @@
 = tacacs session-module enabled
 = tacacs service-name wti
 = tacacs debug off
+= unit multiple-logins on
 + radius enable off
 + radius fallback-timer 3
 + radius fallback-local off
