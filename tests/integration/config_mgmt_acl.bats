@@ -69,6 +69,66 @@ setup() {
     assert_output --partial "Usage:"
 }
 
+# --- entries with services (0.2.7) --------------------------------------------
+
+@test "config mgmt-acl add: an entry with services is stored canonical, listed readably, and a repeat is a no-op" {
+    run "$TACCTL_BIN_SCRIPT" config mgmt-acl add "172.16.100.0/23:UDP/162,tcp/22,udp/161,10.0.0.0/8"
+    assert_success
+    assert_output --partial "Added 2 to mgmt-acl: 172.16.100.0/23:tcp/22,udp/161,udp/162 10.0.0.0/8"
+    run grep -F "172.16.100.0/23:tcp/22,udp/161,udp/162" "${TACCTL_STATE_DIR}/tacctl.yaml"
+    assert_success
+
+    run "$TACCTL_BIN_SCRIPT" config mgmt-acl list
+    assert_output --partial "  - 10.0.0.0/8"
+    assert_output --partial "  - 172.16.100.0/23   tcp/22, udp/161, udp/162"
+
+    run "$TACCTL_BIN_SCRIPT" config mgmt-acl add 172.16.100.0/23:tcp/22,udp/161,udp/162
+    assert_success
+    assert_output --partial "No new CIDRs"
+
+    run "$TACCTL_BIN_SCRIPT" config validate
+    refute_output --partial "mgmt_acl"
+}
+
+@test "config mgmt-acl add: the same CIDR may carry different services; remove <cidr> removes every entry of it" {
+    "$TACCTL_BIN_SCRIPT" config mgmt-acl add 10.0.0.0/8:tcp/22,10.0.0.0/8:udp/161,10.0.0.0/8 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config mgmt-acl list
+    assert_output --partial "10.0.0.0/8   tcp/22"
+    assert_output --partial "10.0.0.0/8   udp/161"
+
+    run "$TACCTL_BIN_SCRIPT" config mgmt-acl remove 10.0.0.0/8:udp/161
+    assert_success
+    assert_output --partial "Removed 1 from mgmt-acl: 10.0.0.0/8:udp/161"
+
+    run "$TACCTL_BIN_SCRIPT" config mgmt-acl remove 10.0.0.0/8
+    assert_success
+    assert_output --partial "Removed 2 from mgmt-acl"
+    assert_output --partial "without services removes every entry of that CIDR: 2 removed"
+    run "$TACCTL_BIN_SCRIPT" config mgmt-acl list
+    assert_output --partial "(empty)"
+}
+
+@test "config mgmt-acl add: refuses a bad service, a service before any CIDR and too many services, and writes nothing" {
+    for bad in "10.0.0.0/8:tcp/0" "10.0.0.0/8:tcp/70000" "10.0.0.0/8:tcp/30-20" "10.0.0.0/8:icmp/8" "10.0.0.0/8:ssh" "tcp/22,10.0.0.0/8" \
+        "10.0.0.0/8:tcp/1,tcp/2,tcp/3,tcp/4,tcp/5,tcp/6,tcp/7,tcp/8,tcp/9"; do
+        run "$TACCTL_BIN_SCRIPT" config mgmt-acl add "$bad"
+        assert_failure
+    done
+    run "$TACCTL_BIN_SCRIPT" config mgmt-acl list
+    assert_output --partial "(empty)"
+}
+
+@test "scope mgmt-acl: the same grammar for a scope's own list" {
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 198.51.100.0/24:tcp/22,tcp/443,203.0.113.0/24
+    assert_success
+    assert_output --partial "Added 2 to scope 'lab' mgmt-acl: 198.51.100.0/24:tcp/22,tcp/443 203.0.113.0/24"
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab list
+    assert_output --partial "198.51.100.0/24   tcp/22, tcp/443"
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab remove 198.51.100.0/24
+    assert_success
+    assert_output --partial "Removed 1 from scope 'lab' mgmt-acl: 198.51.100.0/24:tcp/22,tcp/443"
+}
+
 # --- remove ------------------------------------------------------------------
 
 @test "config mgmt-acl remove: drops a CIDR from the permit list" {

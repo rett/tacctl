@@ -97,7 +97,7 @@ func wtiAAA(radius bool, v map[string]string) []string {
 // builder could not fill (the server's address is not known).
 func wtiMgmtACL(req Request, d Data) []string {
 	in := d.iptablesInput(req.Scope)
-	if permits, _ := iptablesNets(in.Permits, cidr.Host32(in.Server)); len(permits) == 0 {
+	if !iptablesPermitsOf(in.Permits, cidr.Host32(in.Server)).SSH() {
 		return nil
 	}
 	b := WTIIPTables(in)
@@ -230,7 +230,7 @@ func WTIListFacts(req Request, d Data) (server, why string) {
 	in := d.iptablesInput(req.Scope)
 	host := cidr.Host32(in.Server)
 	server = strings.TrimSuffix(host, "/32")
-	if permits, _ := iptablesNets(in.Permits, host); len(permits) == 0 {
+	if !iptablesPermitsOf(in.Permits, host).SSH() {
 		return server, ""
 	}
 	if b := WTIIPTables(in); len(b.Unfilled) > 0 {

@@ -159,9 +159,20 @@ replace and overwrite all current entries." What the test showed
   conntrack `ESTABLISHED,RELATED`, tcp 22 per permitted network and host, udp
   `161:162` per NMS, ICMP (`-i eth0`) per network, `-A INPUT -j DROP`, `-A
   OUTPUT -j ACCEPT`. tacctl's walkthrough renders its own list (lo,
-  conntrack, tcp 22 and 443 per server and permit, udp 161 per server and
-  SNMP client, ICMP on eth0 per network, then the final DROP, OUTPUT ACCEPT
-  and the policies as the last step), as numbered lines and as one block.
+  conntrack, tcp 22 for the server, then each permitted range with the
+  services of its management ACL entry, udp 161 per server and SNMP client,
+  ICMP on eth0 per network, then the final DROP, OUTPUT ACCEPT and the
+  policies as the last step), as numbered lines and as one block.
+- A management ACL entry is `<cidr>[:<service>[,<service>...]]` with a
+  service `tcp/<ports>`, `udp/<ports>` or `icmp` and `<ports>` `N`, `N-M` or
+  `*`. Each service is one entry of the list: `-p tcp -s <cidr> --dport 22`,
+  `--dport 161:162` for a range (the iptables spelling of a range), no
+  `--dport` for `*`, and `-i eth0 -s <cidr> -p icmp` for `icmp`. A plain
+  `<cidr>` is every protocol and port: `-s <cidr> -j ACCEPT`, which widens
+  what earlier lists rendered for it (ssh and ICMP). A network with a plain
+  entry or an `icmp` service gets no separate automatic ICMP line. Not
+  verified on a unit: a rule without `-p` (`-s <cidr> -j ACCEPT`); the
+  range spelling `--dport 161:162` is the one the captured site list uses.
 - `/N` shows `5. IP Tables: On` afterwards (Off while empty). The unit's own
   `Ping Access` item (`/N` 30, Limited by default) is separate from the
   list's ICMP lines.

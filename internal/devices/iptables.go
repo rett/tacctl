@@ -22,13 +22,15 @@ import (
 	"strings"
 
 	"github.com/rett/tacctl/internal/cidr"
+	"github.com/rett/tacctl/internal/mgmtacl"
 	"github.com/rett/tacctl/internal/ui"
 )
 
-// iptablesPorts are the unit's services the list opens to the permitted
-// ranges: its ssh. Telnet (23), http (80) and https (443) are left out on
-// purpose (web access is off, and the REST API is not used); the notes say
-// how to add them by hand.
+// iptablesPorts are the unit's services the list opens to the tacctl server:
+// its ssh. A permitted range gets what its entry lists (0.2.7: a plain entry
+// is every protocol and port, <cidr>:tcp/22,udp/161 lists services). Telnet
+// (23), http (80) and https (443) are opened only by an entry that lists
+// them or is plain; the notes say so.
 var iptablesPorts = []struct {
 	Port int
 	Name string
@@ -129,15 +131,97 @@ func iptablesNets(list []string, skip string) (nets, skipped []string) {
 	return nets, skipped
 }
 
+// iptablesPermits are the entries of the management permit list the IP
+// tables list renders.
+type iptablesPermits struct {
+	// Ranges are the IPv4 entries other than the tacctl server's own /32,
+	// each once, in the order stored.
+	Ranges []mgmtacl.Entry
+	// Server are the entries of the server's own /32: their services are
+	// rendered after the server's own lines, and they are no permitted range
+	// (a list of them alone would admit only the server).
+	Server []mgmtacl.Entry
+	// Skipped are the entries that cannot be rendered, each with its reason.
+	Skipped []string
+}
+
+// iptablesPermitsOf splits the management permit list (entries as stored: a
+// CIDR, or a CIDR with its services) for the server's /32 (server, "" when it
+// is not known).
+func iptablesPermitsOf(list []string, server string) iptablesPermits {
+	var p iptablesPermits
+	seen := map[string]bool{}
+	for _, raw := range list {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		e, err := mgmtacl.ParseEntry(raw)
+		switch {
+		case err != nil:
+			p.Skipped = append(p.Skipped, raw+" (not a CIDR)")
+			continue
+		case e.IPv6():
+			p.Skipped = append(p.Skipped, raw+" (IPv6; the list is IPv4 only)")
+			continue
+		case seen[e.String()]:
+			continue
+		}
+		seen[e.String()] = true
+		if server != "" && e.Net == server {
+			p.Server = append(p.Server, e)
+			continue
+		}
+		p.Ranges = append(p.Ranges, e)
+	}
+	return p
+}
+
+// SSH reports a permitted range that lets ssh through: the list the DROP can
+// follow without locking every administrator but the server out.
+func (p iptablesPermits) SSH() bool {
+	for _, e := range p.Ranges {
+		if e.AllowsSSH() {
+			return true
+		}
+	}
+	return false
+}
+
+// plainRulePrefix and plainRuleSuffix frame the INPUT rule of a plain permit
+// entry (every protocol and port from one source): no -p, no -i, no -m.
+const (
+	plainRulePrefix = "iptables -A INPUT -s "
+	plainRuleSuffix = " -j ACCEPT"
+)
+
+// WTIPlainPermits are the sources of the rules that accept every protocol and
+// port from one network (the rendering of a plain entry of the management
+// permit list), in the order of cmds.
+func WTIPlainPermits(cmds []string) []string {
+	var out []string
+	for _, c := range cmds {
+		if !strings.HasPrefix(c, plainRulePrefix) || !strings.HasSuffix(c, plainRuleSuffix) {
+			continue
+		}
+		src := strings.TrimSuffix(strings.TrimPrefix(c, plainRulePrefix), plainRuleSuffix)
+		if src != "" && !strings.ContainsAny(src, " \t") {
+			out = append(out, src)
+		}
+	}
+	return out
+}
+
 // WTIIPTables builds the IP Tables list of the unit for the scope: the
-// loopback and the replies to the unit's own connections, ssh for
-// the tacctl server and each permitted range, udp 161 for the SNMP clients
-// (the server first, then the scope's ranges in order). The final DROP is
-// not part of it.
+// loopback and the replies to the unit's own connections, ssh for the tacctl
+// server, each permitted range with the services of its entry (every
+// protocol and port for a plain entry), udp 161 for the SNMP clients (the
+// server first, then the scope's ranges in order) and ICMP from the networks
+// that have no line of their own for it. The final DROP is not part of it.
 func WTIIPTables(in IPTablesInput) IPTablesBlock {
 	const pre = "        "
 	server := cidr.Host32(in.Server)
-	permits, skippedPermits := iptablesNets(in.Permits, server)
+	pm := iptablesPermitsOf(in.Permits, server)
 	clients, skippedClients := iptablesNets(in.SNMPRanges, server)
 
 	// The lines in the unit's order; a note has no number.
@@ -147,8 +231,13 @@ func WTIIPTables(in IPTablesInput) IPTablesBlock {
 	}
 	var ls []line
 	var cmds []string
+	seenRule := map[string]bool{}
 	rule := func(s string) {
 		c := "iptables -A INPUT " + s + " -j ACCEPT"
+		if seenRule[c] {
+			return
+		}
+		seenRule[c] = true
 		ls = append(ls, line{false, c})
 		cmds = append(cmds, c)
 	}
@@ -162,30 +251,71 @@ func WTIIPTables(in IPTablesInput) IPTablesBlock {
 			rule("-p tcp -s " + net + " --dport " + strconv.Itoa(p.Port))
 		}
 	}
+	// the rules of one entry: its services, or every protocol and port
+	entry := func(e mgmtacl.Entry) {
+		if e.Plain() {
+			rule("-s " + e.Net)
+			return
+		}
+		for _, s := range e.Services {
+			switch {
+			case s.Proto == mgmtacl.ICMP:
+				rule("-i eth0 -s " + e.Net + " -p icmp")
+			case s.Ports() == "":
+				rule("-p " + s.Proto + " -s " + e.Net)
+			default:
+				rule("-p " + s.Proto + " -s " + e.Net + " --dport " + s.Ports())
+			}
+		}
+	}
+	describe := func(e mgmtacl.Entry) string {
+		if e.Plain() {
+			return "every protocol and port"
+		}
+		return mgmtacl.ServicesText(e.Services, ", ")
+	}
 	if server != "" {
 		note("the tacctl server " + server + ": ssh")
 		tcp(server)
+		for _, e := range pm.Server {
+			note("permitted entry " + e.String() + " (the tacctl server's own address): " + describe(e))
+			entry(e)
+		}
 	} else {
 		note("the tacctl server's address is not known: add its ssh and udp 161 lines by hand (or pass --source <address>)")
 	}
-	if len(permits) == 0 {
+	if !pm.SSH() {
 		who := ""
 		if server != "" {
 			who = ": only the tacctl server is permitted for ssh"
 		}
-		note("no management permit list for scope '" + in.Scope + "'" + who)
+		if len(pm.Ranges) == 0 {
+			note("no management permit list for scope '" + in.Scope + "'" + who)
+		} else {
+			note("no entry of the management permit list for scope '" + in.Scope + "' permits ssh (tcp/22)" + who)
+		}
 	}
-	for _, n := range permits {
-		note("permitted range " + n + ": ssh")
-		tcp(n)
+	for _, e := range pm.Ranges {
+		note("permitted range " + e.Net + ": " + describe(e))
+		entry(e)
 	}
-	for _, s := range skippedPermits {
+	for _, s := range pm.Skipped {
 		note("skipped, not rendered: " + s)
 	}
-	if server != "" || len(clients) > 0 {
-		note("SNMP (udp " + strconv.Itoa(snmpUDPPort) + "): the tacctl server, then the scope's SNMP clients")
-	}
 	snmp := func(net string) { rule("-p udp -s " + net + " --dport " + strconv.Itoa(snmpUDPPort)) }
+	// the note stands over lines of its own: not when an entry above has
+	// rendered every one of them already
+	var snmpNets []string
+	if server != "" {
+		snmpNets = append(snmpNets, server)
+	}
+	snmpNets = append(snmpNets, clients...)
+	for _, n := range snmpNets {
+		if !seenRule["iptables -A INPUT -p udp -s "+n+" --dport "+strconv.Itoa(snmpUDPPort)+" -j ACCEPT"] {
+			note("SNMP (udp " + strconv.Itoa(snmpUDPPort) + "): the tacctl server, then the scope's SNMP clients")
+			break
+		}
+	}
 	if server != "" {
 		snmp(server)
 	}
@@ -197,11 +327,26 @@ func WTIIPTables(in IPTablesInput) IPTablesBlock {
 	}
 	// ICMP (ping), on the unit's own interface, from the networks above: the
 	// server, the permits and the SNMP clients, each once. The unit's own
-	// 'Ping Access' item is separate.
+	// 'Ping Access' item is separate. A network whose entry is plain or lists
+	// icmp has its line already (or needs none): not repeated here.
+	covered := map[string]bool{}
+	var plain []string
+	for _, e := range append(append([]mgmtacl.Entry{}, pm.Server...), pm.Ranges...) {
+		if e.AllowsICMP() {
+			covered[e.Net] = true
+		}
+		if e.Plain() {
+			plain = append(plain, e.Net)
+		}
+	}
 	var pingers []string
 	seenPing := map[string]bool{}
-	for _, n := range append(append([]string{server}, permits...), clients...) {
-		if n != "" && !seenPing[n] {
+	nets := []string{server}
+	for _, e := range pm.Ranges {
+		nets = append(nets, e.Net)
+	}
+	for _, n := range append(nets, clients...) {
+		if n != "" && !seenPing[n] && !covered[n] {
 			seenPing[n] = true
 			pingers = append(pingers, n)
 		}
@@ -257,14 +402,38 @@ func WTIIPTables(in IPTablesInput) IPTablesBlock {
 		"Notes on the list:",
 		"  - Line 2: older builds take '-m state --state ESTABLISHED,RELATED' in place of",
 		"    '-m conntrack --ctstate ESTABLISHED,RELATED'. It covers the replies of the unit's own TACACS+,",
-		"    RADIUS, DNS and NTP queries.",
-		"  - Only ssh (22) is permitted. Telnet, http and https are not: to allow one, add the same line with",
-		"    '--dport 23', '--dport 80' or '--dport 443' for each address above, before the DROP.",
-		"  - The udp "+strconv.Itoa(snmpUDPPort)+" lines are the SNMP client restriction of Step 6, unless the unit has an SNMP",
+		"    RADIUS, DNS and NTP queries.")
+	// bullet wraps one note to the list's width
+	bullet := func(text string) {
+		for i, l := range wrapText(text, 96) {
+			if i == 0 {
+				add("  - " + l)
+			} else {
+				add("    " + l)
+			}
+		}
+	}
+	if len(pm.Ranges) == 0 && len(pm.Server) == 0 {
+		add("  - Only ssh (22) is permitted. Telnet, http and https are not: to allow one, add the same line with",
+			"    '--dport 23', '--dport 80' or '--dport 443' for each address above, before the DROP.")
+	} else {
+		bullet("A permitted range may reach what its entry lists: ssh (tcp/22) and the other services as written, or every protocol and port when the entry is plain." +
+			" Telnet, http and https are not permitted unless an entry lists them (tacctl scope mgmt-acl " + in.Scope + " add <cidr>:tcp/22,tcp/443)" +
+			" or is plain.")
+		if len(plain) > 0 {
+			bullet("Plain entries permit every protocol and port from their source, the unit's telnet and web pages included: " +
+				strings.Join(plain, ", ") + ". Use <cidr>:tcp/22 to restrict one to ssh (<cidr>:tcp/22,udp/161 to add SNMP):" +
+				" replace the plain entry in the list that holds it (mgmt-acl remove <cidr>, then add <cidr>:tcp/22).")
+		}
+	}
+	add("  - The udp "+strconv.Itoa(snmpUDPPort)+" lines are the SNMP client restriction of Step 6, unless the unit has an SNMP",
 		"    access menu of its own (then enter the same clients there).",
 		"  - ICMP (ping): the last lines accept it from the same networks, on eth0 only. The unit's own",
-		"    'Ping Access' item (/N, item 30; Limited by default) is separate and not changed by this list.",
-		"  - IPv4 only: the unit's 'iptables', not 'ip6tables'. An IPv6 entry of the lists is skipped, with a note.",
+		"    'Ping Access' item (/N, item 30; Limited by default) is separate and not changed by this list.")
+	if len(covered) > 0 {
+		bullet("A network whose entry is plain or lists icmp has no ICMP line of its own in the last lines (its entry covers it).")
+	}
+	add("  - IPv4 only: the unit's 'iptables', not 'ip6tables'. An IPv6 entry of the lists is skipped, with a note.",
 		"  - The unit holds "+strconv.Itoa(iptablesLimit)+" entries (12 to a page): this list has "+strconv.Itoa(count)+"; with the DROP, the",
 		"    OUTPUT ACCEPT and the three policies of the last step, "+strconv.Itoa(len(final))+". A command is "+strconv.Itoa(iptablesLen)+" characters at most.")
 
@@ -272,7 +441,7 @@ func WTIIPTables(in IPTablesInput) IPTablesBlock {
 	if server == "" {
 		out.Unfilled = []Unfilled{{"tacctl server address", "pass --source <address>"}}
 	}
-	out.Drop, out.DropRendered = in.drop(len(permits) > 0, server != "", count+1, w, cmds, warning)
+	out.Drop, out.DropRendered = in.drop(pm.SSH(), len(pm.Ranges) > 0, server != "", count+1, w, cmds, warning)
 	if out.DropRendered {
 		out.Final = final
 	}
@@ -332,7 +501,7 @@ func wrapText(s string, width int) []string {
 // list has a permit list and the tacctl server's address, else the DROP as a
 // comment and why (an empty list would lock every other administrator out,
 // and a list without the server would lock tacctl out).
-func (in IPTablesInput) drop(hasPermits, hasServer bool, n, w int, cmds []string, warning string) (string, bool) {
+func (in IPTablesInput) drop(hasPermits, hasRanges, hasServer bool, n, w int, cmds []string, warning string) (string, bool) {
 	const pre = "        "
 	var b []string
 	add := func(l ...string) {
@@ -372,7 +541,12 @@ func (in IPTablesInput) drop(hasPermits, hasServer bool, n, w int, cmds []string
 		return strings.Join(b, "\n"), true
 	}
 	add("# iptables -A INPUT -j DROP")
-	if !hasPermits {
+	switch {
+	case !hasPermits && hasRanges:
+		add("NOT rendered as a paste: no entry of the management permit list of scope '"+in.Scope+"' (tacctl scope mgmt-acl "+in.Scope+" list)",
+			"permits ssh (tcp/22), so the DROP would lock out every administrator but the tacctl server. Add the",
+			"permitted ranges with ssh (tacctl scope mgmt-acl "+in.Scope+" add <cidr> or <cidr>:tcp/22), then run this command again.")
+	case !hasPermits:
 		add("NOT rendered as a paste: scope '"+in.Scope+"' has no management permit list (tacctl scope mgmt-acl "+in.Scope+" list,",
 			"and the global tacctl config mgmt-acl list, give no IPv4 range), so the DROP would lock out every",
 			"administrator but the tacctl server. Add the permitted ranges (tacctl scope mgmt-acl "+in.Scope+" add <cidr>),",

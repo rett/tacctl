@@ -41,6 +41,20 @@ func iptablesCases() []iptablesCase {
 		{"only-v6", with(func(i *IPTablesInput) { i.Permits = []string{"fd00::/64"} })},
 		{"unknown-server", with(func(i *IPTablesInput) { i.Server = UnknownServer; i.Permits = []string{"192.0.2.0/24"} })},
 		{"unknown-server-nolist", with(func(i *IPTablesInput) { i.Server = UnknownServer })},
+		// 0.2.7: entries with services (a plain entry is every protocol and port)
+		{"services", with(func(i *IPTablesInput) {
+			i.Permits = []string{"172.16.100.0/23:tcp/22,udp/161,udp/162", "10.0.0.0/8"}
+		})},
+		{"services-forms", with(func(i *IPTablesInput) {
+			i.Permits = []string{"192.0.2.0/25:tcp/22", "192.0.2.128/25:tcp/*,udp/161-162", "198.51.100.0/24:tcp/22,tcp/443,icmp",
+				"203.0.113.0/24:udp/*", "203.0.113.0/24:tcp/22-23"}
+			i.SNMPRanges = []string{"198.51.100.0/24", "203.0.113.0/24", "192.0.2.64/26"}
+		})},
+		{"services-no-ssh", with(func(i *IPTablesInput) { i.Permits = []string{"192.0.2.0/24:udp/161,icmp"} })},
+		{"services-server", with(func(i *IPTablesInput) {
+			i.Permits = []string{"10.0.0.42/32:tcp/443,udp/161,icmp", "192.0.2.0/24:tcp/22"}
+		})},
+		{"plain-server", with(func(i *IPTablesInput) { i.Permits = []string{"10.0.0.42/32", "192.0.2.0/24:tcp/22"} })},
 	}
 }
 
@@ -74,7 +88,7 @@ func ruleLines(t *testing.T, text string) (nums []int, cmds []string) {
 // the DROP is never one of them.
 func TestIPTablesOrder(t *testing.T) {
 	in := IPTablesInput{Scope: "lab", Server: "10.0.0.42",
-		Permits:    []string{"192.0.2.0/24", "198.51.100.0/25"},
+		Permits:    []string{"192.0.2.0/24:tcp/22", "198.51.100.0/25:tcp/22"},
 		SNMPRanges: []string{"203.0.113.0/24", "10.8.0.0/16"}}
 	b := WTIIPTables(in)
 	nums, cmds := ruleLines(t, b.Rules)
@@ -122,7 +136,7 @@ func TestIPTablesOrder(t *testing.T) {
 func TestIPTablesLongList(t *testing.T) {
 	in := IPTablesInput{Scope: "lab", Server: "10.0.0.42"}
 	for i := 1; i <= 6; i++ {
-		in.Permits = append(in.Permits, "192.0.2."+strconv.Itoa(i*16)+"/28")
+		in.Permits = append(in.Permits, "192.0.2."+strconv.Itoa(i*16)+"/28:tcp/22")
 	}
 	b := WTIIPTables(in)
 	nums, _ := ruleLines(t, b.Rules)
@@ -187,7 +201,7 @@ func TestIPTablesLockoutGuard(t *testing.T) {
 // skipped with a note, never rendered.
 func TestIPTablesAddresses(t *testing.T) {
 	b := WTIIPTables(IPTablesInput{Scope: "lab", Server: "10.0.0.42",
-		Permits: []string{"192.0.2.7/32", "192.0.2.9", "fd00::/64", "bogus"}, SNMPRanges: []string{"fd00:1::/48"}})
+		Permits: []string{"192.0.2.7/32:tcp/22", "192.0.2.9:tcp/22", "fd00::/64", "fd00::/64:tcp/22", "bogus"}, SNMPRanges: []string{"fd00:1::/48"}})
 	_, cmds := ruleLines(t, b.Rules)
 	text := strings.Join(cmds, "\n")
 	for _, want := range []string{"-s 192.0.2.7/32 --dport 22", "-s 192.0.2.9/32 --dport 22"} {
@@ -201,6 +215,7 @@ func TestIPTablesAddresses(t *testing.T) {
 		}
 	}
 	for _, want := range []string{"# skipped, not rendered: fd00::/64 (IPv6; the list is IPv4 only)",
+		"# skipped, not rendered: fd00::/64:tcp/22 (IPv6; the list is IPv4 only)",
 		"# skipped, not rendered: bogus (not a CIDR)", "# skipped, not rendered: SNMP client fd00:1::/48"} {
 		if !strings.Contains(b.Rules, want) {
 			t.Errorf("lacks the note %q:\n%s", want, b.Rules)
@@ -217,12 +232,47 @@ func TestIPTablesAddresses(t *testing.T) {
 
 // The older-build note and the notes on ports, SNMP and IPv4 are in the list.
 func TestIPTablesNotes(t *testing.T) {
-	b := WTIIPTables(IPTablesInput{Scope: "lab", Server: "10.0.0.42", Permits: []string{"192.0.2.0/24"}})
+	b := WTIIPTables(IPTablesInput{Scope: "lab", Server: "10.0.0.42"})
+	for _, want := range []string{
+		"Only ssh (22) is permitted. Telnet, http and https are not", "'--dport 23', '--dport 80' or '--dport 443'",
+	} {
+		if !strings.Contains(b.Rules, want) {
+			t.Errorf("a list with no permits lacks %q:\n%s", want, b.Rules)
+		}
+	}
+	// a permitted range with services: the entry says what it may reach
+	b = WTIIPTables(IPTablesInput{Scope: "lab", Server: "10.0.0.42", Permits: []string{"192.0.2.0/24:tcp/22"}})
+	flat := func(s string) string { return strings.Join(strings.Fields(s), " ") }
+	for _, want := range []string{
+		"A permitted range may reach what its entry lists: ssh (tcp/22) and the other services as written, or every protocol and port when the entry is plain.",
+		"Telnet, http and https are not permitted unless an entry lists them (tacctl scope mgmt-acl lab add <cidr>:tcp/22,tcp/443) or is plain.",
+	} {
+		if !strings.Contains(flat(b.Rules), want) {
+			t.Errorf("a list with services lacks %q:\n%s", want, b.Rules)
+		}
+	}
+	for _, bad := range []string{"Plain entries permit", "Only ssh (22) is permitted", "has no ICMP line of its own"} {
+		if strings.Contains(b.Rules, bad) {
+			t.Errorf("a list with services only says %q:\n%s", bad, b.Rules)
+		}
+	}
+	// a plain entry is named, with how to restrict it
+	b = WTIIPTables(IPTablesInput{Scope: "lab", Server: "10.0.0.42", Permits: []string{"192.0.2.0/24:tcp/22", "10.0.0.0/8", "198.51.100.0/24"}})
+	for _, want := range []string{
+		"Plain entries permit every protocol and port from their source, the unit's telnet and web pages included:",
+		"10.0.0.0/8, 198.51.100.0/24.",
+		"Use <cidr>:tcp/22 to restrict one to ssh (<cidr>:tcp/22,udp/161 to add SNMP):",
+		"has no ICMP line of its own in the last lines",
+	} {
+		if !strings.Contains(strings.Join(strings.Fields(b.Rules), " "), strings.Join(strings.Fields(want), " ")) {
+			t.Errorf("a list with plain entries lacks %q:\n%s", want, b.Rules)
+		}
+	}
+	b = WTIIPTables(IPTablesInput{Scope: "lab", Server: "10.0.0.42", Permits: []string{"192.0.2.0/24:tcp/22"}})
 	for _, want := range []string{
 		"'-m state --state ESTABLISHED,RELATED' in place of",
 		"'-m conntrack --ctstate ESTABLISHED,RELATED'",
 		"TACACS+,", "RADIUS, DNS and NTP queries",
-		"Telnet, http and https are not", "'--dport 23', '--dport 80' or '--dport 443'",
 		"SNMP client restriction of Step 6",
 		"Verified on a lab unit (8.10, 2026-10-12).",
 		"IPv4 only",
@@ -232,7 +282,7 @@ func TestIPTablesNotes(t *testing.T) {
 			t.Errorf("lacks %q:\n%s", want, b.Rules)
 		}
 	}
-	for _, bad := range []string{"--dport 23 -j", "--dport 80 -j"} {
+	for _, bad := range []string{"--dport 23 -j", "--dport 80 -j", "--dport 443 -j"} {
 		if strings.Contains(b.Rules, bad) {
 			t.Errorf("rendered %q", bad)
 		}
@@ -518,7 +568,7 @@ func TestIPTablesBulkBlocksInWalkthroughs(t *testing.T) {
 // server, the permits and the SNMP clients, each once, IPv4 only.
 func TestIPTablesICMP(t *testing.T) {
 	b := WTIIPTables(IPTablesInput{Scope: "lab", Server: "10.0.0.42",
-		Permits:    []string{"192.0.2.0/24", "10.0.0.42/32", "fd00::/64", "192.0.2.0/24"},
+		Permits:    []string{"192.0.2.0/24:tcp/22", "10.0.0.42/32:tcp/22", "fd00::/64", "192.0.2.0/24:tcp/22"},
 		SNMPRanges: []string{"192.0.2.0/24", "203.0.113.0/24", "fd00:1::/48", "203.0.113.5", "203.0.113.5/32"}})
 	var icmp []string
 	last := -1
@@ -561,7 +611,7 @@ func TestIPTablesEntryLimit(t *testing.T) {
 	permits := func(n int) []string {
 		var p []string
 		for i := 1; i <= n; i++ {
-			p = append(p, "192.0.2."+strconv.Itoa(i)+"/32")
+			p = append(p, "192.0.2."+strconv.Itoa(i)+"/32:tcp/22")
 		}
 		return p
 	}
@@ -606,7 +656,7 @@ func TestIPTablesEntryLimit(t *testing.T) {
 func TestIPTablesEntryLimitWalkthrough(t *testing.T) {
 	var many []string
 	for i := 1; i <= 22; i++ {
-		many = append(many, "198.51.100."+strconv.Itoa(i)+"/32")
+		many = append(many, "198.51.100."+strconv.Itoa(i)+"/32:tcp/22")
 	}
 	out := snmpRender(t, "wti", "lab", false, TACACS, func(d *Data) { d.ACL.CIDRs = many })
 	if !strings.Contains(out, "IP Tables list too long (Step 5): this list has 49 entries; the unit holds 48.") {

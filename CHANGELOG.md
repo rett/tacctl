@@ -466,6 +466,71 @@ current behaviour; this file is where history lives.
     allow https, telnet or http, add the same line with `--dport 443`, `23`
     or `80` by hand, as the step's notes say.
 
+20. **A management ACL entry can list the services it permits.** The lists
+    `mgmt_acl.permits` and `scope_mgmt_acl.permits.<scope>` (`tacctl config
+    mgmt-acl` and `tacctl scope mgmt-acl <scope> add|remove|list|clear`) took
+    a CIDR and nothing else. An entry is now `<cidr>[:<service>[,<service>...]]`
+    with `<service>` one of `tcp/<ports>`, `udp/<ports>` and `icmp`, and
+    `<ports>` one of `N`, `N-M` and `*`:
+    `tacctl scope mgmt-acl lab add 172.16.100.0/23:tcp/22,udp/161,udp/162`.
+    A token that starts with `tcp/`, `udp/` or `icmp` belongs to the entry
+    before it in a comma-separated `add` or `remove` (a service before any
+    CIDR is refused), and the CIDR is split from its services at the first `:`
+    that is followed by `tcp/`, `udp/`, `icmp` or `*`, so an IPv6 CIDR is
+    written as it is. An entry is stored in one form: the canonical CIDR, then
+    the services lower-cased, without repeats, in the order tcp, udp, icmp and
+    ports ascending (`tcp/*` takes the other tcp services; `<cidr>:*` and
+    `<cidr>:tcp/*,udp/*,icmp` are the plain CIDR); ports are 1 to 65535, a
+    range has its low port first, `icmp` takes no port, and an entry holds at
+    most 8 services. The same CIDR may be listed twice with different
+    services; an exact duplicate is still a no-op; entries sort by the CIDR as
+    before, then by services. `remove <entry>` removes that exact entry, and
+    `remove <cidr>` with no services removes every entry of that CIDR and says
+    how many; `list` prints the services after the CIDR. `config validate`
+    and the schema check each element and name the services problem.
+
+    **Behaviour change for WTI units: a plain `<cidr>` now permits every
+    protocol and port from that source.** A plain entry of an existing list
+    renders as `iptables -A INPUT -s <cidr> -j ACCEPT` in the unit's IP Tables
+    list, where 0.2.6 and before rendered ssh and ICMP for it, so a list of
+    plain permits is wider on the unit than the same list was: the unit's
+    telnet and web pages are reachable from those sources. A network with a
+    plain entry has no separate ICMP line. To keep what the list permitted,
+    replace each plain entry with `<cidr>:tcp/22` (`tacctl scope mgmt-acl
+    <scope> remove <cidr>`, then `add <cidr>:tcp/22`). The notes of Step 5
+    name the plain entries and say so, and `device config plan` of a unit
+    whose paste carries one reports `N plain permit(s) of the rendered list
+    allow every protocol and port from the source`. An entry that lists
+    services renders one rule for each, in order: `-p tcp -s <cidr> --dport
+    22`, `--dport 161:162` for a range, no `--dport` for `tcp/*` or `udp/*`,
+    and `-i eth0 -s <cidr> -p icmp` for `icmp`; the ICMP line of a network is
+    still added unless its entry lists `icmp`, and the SNMP client lines are
+    unchanged. An entry equal to the tacctl server's own /32 adds its services
+    after the server's lines; it is not a permitted range for the lock-out
+    guard, which now also needs at least one entry that permits ssh (plain, or
+    with `tcp/22`), else the DROP stays a comment. The 48-entry count and the
+    plan's check that the server and `--from` reach the unit's ssh follow the
+    new rules (the check reads tcp 22, a range that holds it, every tcp port
+    and every protocol).
+
+    **Cisco and Junos list a source only when its entry permits ssh.** A
+    standard access list and the `permit-mgmt` term match a source and
+    nothing else, so a plain entry, and an entry whose services include
+    `tcp/22` (alone, in a range, or as `tcp/*`), are listed by their source as
+    before and every other entry is not listed, with a comment above the list
+    that names it (`entry 10.0.0.0/8:udp/161 permits udp/161 only: not in the
+    VTY access list VTY-ACL ...`). The managed `mgmt-acl` sections use the
+    same list, so `device config diff` and `plan` agree with the walkthrough.
+    Output for lists of plain entries is unchanged.
+
+    **`tacctl rollback 0.2.3` is refused while any entry carries services**
+    (the dry run too): 0.2.3 reads these lists as plain CIDRs and refuses the
+    file, and a rewrite to the CIDR would permit every protocol and port. The
+    refusal lists each entry with its key and the command that removes it
+    (`tacctl config mgmt-acl remove <entry>`, `tacctl scope mgmt-acl <scope>
+    remove <entry>`) and changes nothing. Remove them, or replace each with
+    the plain CIDR you mean it to be, then run the rollback again.
+
 ## 0.2.6 (2026-10-12)
 
 A hotfix for 0.2.5, started from `master`. The items below are everything that

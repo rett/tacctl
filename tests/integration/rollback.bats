@@ -127,6 +127,34 @@ _overrides() { cat "${TACCTL_STATE_DIR}/tacctl.yaml" 2>/dev/null; }
     [[ "$(_snapshots)" == "$n" ]]
 }
 
+@test "rollback: a management ACL entry with services stops it, the dry run and --apply alike, and changes nothing" {
+    _state_024
+    "$TACCTL_BIN_SCRIPT" config mgmt-acl add 10.0.0.0/8,172.16.100.0/23:tcp/22,udp/161 > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 192.0.2.0/24:icmp > /dev/null
+    before=$(_sums)
+    n=$(_snapshots)
+    for args in "" "--apply" "--apply --yes"; do
+        # shellcheck disable=SC2086
+        run "$TACCTL_BIN_SCRIPT" rollback 0.2.3 $args
+        assert_failure 1
+        assert_output --partial "The management ACL has 2 entries with services"
+        assert_output --partial "mgmt_acl.permits: 172.16.100.0/23:tcp/22,udp/161   (tacctl config mgmt-acl remove 172.16.100.0/23:tcp/22,udp/161)"
+        assert_output --partial "scope_mgmt_acl.permits.lab: 192.0.2.0/24:icmp   (tacctl scope mgmt-acl lab remove 192.0.2.0/24:icmp)"
+        assert_output --partial "would permit every protocol and port"
+        assert_output --partial "Nothing was changed."
+        refute_output --partial "10.0.0.0/8"
+    done
+    [[ "$(_sums)" == "$before" ]]
+    [[ "$(_snapshots)" == "$n" ]]
+
+    # removed, the same state rolls back
+    "$TACCTL_BIN_SCRIPT" config mgmt-acl remove 172.16.100.0/23 > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab remove 192.0.2.0/24 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.3
+    assert_success
+    assert_output --partial "Roll back to 0.2.3 (dry run)"
+}
+
 @test "rollback: --apply refuses while a setting would be dropped and --yes is missing" {
     _state_024
     before=$(_sums)

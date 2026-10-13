@@ -210,8 +210,18 @@ func JuniperVars(req Request, d Data) map[string]string {
 	for _, e := range d.mgmtPermits() {
 		terms.WriteString("set firewall family inet filter " + acl + " term permit-mgmt from source-address " + e + "\n")
 	}
-	mgmt := "# mgmt-acl empty — configure with 'tacctl config mgmt-acl add <cidr>' on the tacctl server\n" +
+	// An entry with services that do not include ssh is not listed (the
+	// permit-mgmt term matches the source only), with a comment that says so.
+	var skipped strings.Builder
+	for _, n := range d.mgmtSkipped("the Junos filter " + acl + " (its permit-mgmt term matches the source only)") {
+		skipped.WriteString("# " + n + "\n")
+	}
+	mgmt := skipped.String() + "# mgmt-acl empty — configure with 'tacctl config mgmt-acl add <cidr>' on the tacctl server\n" +
 		"# to emit a source-restricted lo0 firewall filter here."
+	if skipped.Len() > 0 {
+		mgmt = skipped.String() + "# no entry of the mgmt-acl list permits ssh (tcp/22) — configure with 'tacctl config mgmt-acl add <cidr>' on the tacctl server\n" +
+			"# to emit a source-restricted lo0 firewall filter here."
+	}
 	if terms.Len() > 0 {
 		f := "set firewall family inet filter " + acl + " term "
 		// udp port 161 from the SNMP clients of Step 5 only, ahead of the
@@ -251,6 +261,7 @@ func JuniperVars(req Request, d Data) map[string]string {
 			"# Activate it by uncommenting the 'set interfaces lo0 …' line below\n" +
 			"# after reviewing — a misapplied lo0 filter can blackhole BGP / OSPF /\n" +
 			"# IS-IS to the RE.\n" +
+			skipped.String() +
 			terms.String() +
 			f + "permit-mgmt from protocol tcp\n" +
 			f + "permit-mgmt from destination-port [ ssh 830 ]\n" +

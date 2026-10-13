@@ -985,6 +985,17 @@ func (p *wtiPlanner) acl(sp *SectionPlan, r devconf.SectionResult) {
 			d.Warnings = appendNew(d.Warnings, fmt.Sprintf("the list of the walkthrough's last step (the rules, then the DROP, the OUTPUT ACCEPT and the three policies) would hold %d entries and the unit holds %d", n, wtiListLimit))
 		}
 	}
+	// A plain entry of the permit list (0.2.7) is every protocol and port from
+	// its source, where a list of 0.2.6 and before rendered ssh and ping: the
+	// paste widens what those sources reach, so the report says so.
+	if plain := devices.WTIPlainPermits(cmds); len(plain) > 0 {
+		verb := "allows"
+		if len(plain) > 1 {
+			verb = "allow"
+		}
+		d.Notes = appendNew(d.Notes, fmt.Sprintf("%s of the rendered list %s every protocol and port from the source (%s), the unit's telnet and web pages included: <cidr>:tcp/22 in the management permit list restricts a permit to ssh",
+			plural(len(plain), "plain permit", "plain permits"), verb, strings.Join(plain, ", ")))
+	}
 	b := &WTIBlock{Commands: cmds, Tail: tail, Old: old, Restricts: restricts}
 	for _, c := range old {
 		if !reWTICommand.MatchString(c) {
@@ -995,8 +1006,28 @@ func (p *wtiPlanner) acl(sp *SectionPlan, r devconf.SectionResult) {
 	sp.State, sp.Statements = StatePlanned, len(cmds)+len(tail)
 }
 
+// wtiPortsHold22 reports whether a rule's protocol and --dport let tcp port 22
+// through: no protocol (every protocol and port), tcp with no port, with 22
+// or with a range 'a:b' that holds it.
+func wtiPortsHold22(proto, dport string) bool {
+	switch {
+	case proto == "" && dport == "", proto == "tcp" && dport == "":
+		return true
+	case proto == "" || dport == "22":
+		return dport == "22"
+	}
+	lo, hi, ok := strings.Cut(dport, ":")
+	if !ok {
+		return false
+	}
+	l, err1 := strconv.Atoi(lo)
+	h, err2 := strconv.Atoi(hi)
+	return err1 == nil && err2 == nil && l <= 22 && 22 <= h
+}
+
 // wtiPermits reports whether the commands let an address reach the unit's
-// ssh: an INPUT rule for tcp port 22 that accepts a source containing it.
+// ssh: an INPUT rule that accepts a source containing it for tcp port 22 (the
+// port alone, a range that holds it, every tcp port, or every protocol).
 func wtiPermits(cmds []string, addr string) bool {
 	addr = strings.TrimSuffix(addr, "/32")
 	a, err := netip.ParseAddr(addr)
@@ -1022,7 +1053,9 @@ func wtiPermits(cmds []string, addr string) bool {
 				target = f[i+1]
 			}
 		}
-		if target != "ACCEPT" || proto != "tcp" || dport != "22" || src == "" {
+		// a rule for every protocol and port (a plain permit entry, no -p), or
+		// for tcp with no port, port 22 or a range that holds it
+		if target != "ACCEPT" || src == "" || (proto != "" && proto != "tcp") || !wtiPortsHold22(proto, dport) {
 			continue
 		}
 		if pf, err := netip.ParsePrefix(src); err == nil && pf.Contains(a) {

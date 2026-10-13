@@ -349,11 +349,17 @@ Usage:
 
 Usage:
   tacctl scope mgmt-acl {{scope}} list                          Show effective permits for this scope
-  tacctl scope mgmt-acl {{scope}} add    <cidr>[,<cidr>...]     Add one or more CIDRs to the per-scope list
-  tacctl scope mgmt-acl {{scope}} remove <cidr>[,<cidr>...]     Remove one or more CIDRs from the per-scope list
+  tacctl scope mgmt-acl {{scope}} add    <entry>[,<entry>...]   Add one or more entries to the per-scope list
+  tacctl scope mgmt-acl {{scope}} remove <entry>[,<entry>...]   Remove entries (a bare <cidr> removes every entry of that CIDR)
   tacctl scope mgmt-acl {{scope}} clear                         Wipe the per-scope list (confirms; render falls back to global)
   tacctl scope mgmt-acl {{scope}} cisco-name   [label]          Per-scope Cisco VTY-ACL name
   tacctl scope mgmt-acl {{scope}} juniper-name [label]          Per-scope Junos filter name
+
+An <entry> is a <cidr>, or a <cidr> with the services it permits:
+  <cidr>[:<service>[,<service>...]]    e.g. 172.16.100.0/23:tcp/22,udp/161,udp/162
+  <service> is tcp/<ports>, udp/<ports> or icmp; <ports> is N, N-M or *.
+  A <cidr> alone permits every protocol and port from it (the WTI IP Tables list renders that; a
+  Cisco VTY-ACL and a Junos filter list a source only when its entry permits tcp/22).
 
 {{current}}
 
@@ -448,11 +454,17 @@ Note: 'deny' takes precedence over 'allow'. Both empty = all connections accepte
 
 Usage:
   tacctl config mgmt-acl list                          Show current permits
-  tacctl config mgmt-acl add    <cidr>[,<cidr>...]     Add one or more CIDRs
-  tacctl config mgmt-acl remove <cidr>[,<cidr>...]     Remove one or more CIDRs
+  tacctl config mgmt-acl add    <entry>[,<entry>...]   Add one or more entries
+  tacctl config mgmt-acl remove <entry>[,<entry>...]   Remove entries (a bare <cidr> removes every entry of that CIDR)
   tacctl config mgmt-acl clear                         Wipe all permits (confirms)
   tacctl config mgmt-acl cisco-name [name]             Show or set the Cisco ACL name (default VTY-ACL)
   tacctl config mgmt-acl juniper-name [name]           Show or set the Juniper filter name (default MGMT-ACL)
+
+An <entry> is a <cidr>, or a <cidr> with the services it permits:
+  <cidr>[:<service>[,<service>...]]    e.g. 172.16.100.0/23:tcp/22,udp/161,udp/162
+  <service> is tcp/<ports>, udp/<ports> or icmp; <ports> is N, N-M or *.
+  A <cidr> alone permits every protocol and port from it (the WTI IP Tables list renders that; a
+  Cisco VTY-ACL and a Junos filter list a source only when its entry permits tcp/22).
 
 Storage: tacctl.yaml (mgmt_acl.permits + mgmt_acl.names).
 {{current}}

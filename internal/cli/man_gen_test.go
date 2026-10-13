@@ -357,7 +357,7 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"linux.engineer_sudo":                  {setWith("config linux engineer-sudo"), "The commands tac-engineer may run through sudo on enrolled hosts other than this server; unset: every command."},
 	"mgmt_acl.names.cisco":                 {setWith("config mgmt-acl cisco-name"), "Name of the ACL config cisco emits."},
 	"mgmt_acl.names.juniper":               {setWith("config mgmt-acl juniper-name"), "Name of the filter config juniper emits."},
-	"mgmt_acl.permits":                     {setWith("config mgmt-acl add", "config mgmt-acl remove"), "The CIDRs the management ACL and filter permit."},
+	"mgmt_acl.permits":                     {setWith("config mgmt-acl add", "config mgmt-acl remove"), "The entries the management ACL and filter permit: a CIDR, or a CIDR with its services (10.0.0.0/8:tcp/22,udp/161,icmp)."},
 	"backends.enabled":                     {setWith("backend enable", "backend disable"), "The backends that serve the model, in render and restart order."},
 	"backends.tacacs.level":                {setWith("config loglevel"), "Log level of tacquito."},
 	"backends.tacacs.metrics_address":      {setWith("config metrics address"), "Where tacquito's Prometheus exporter listens."},
@@ -380,7 +380,7 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"scope_auth_method.<scope>":            {setWith("scope auth-method"), "The protocol the scope's device configurations, new hosts and Linux scripts use when a command names none; unset: not decided (the scope's protocols filter, then the global default)."},
 	"scope_mgmt_acl.names.cisco.<scope>":   {setWith("scope mgmt-acl"), "The scope's own ACL name, in place of mgmt_acl.names.cisco."},
 	"scope_mgmt_acl.names.juniper.<scope>": {setWith("scope mgmt-acl"), "The scope's own filter name, in place of mgmt_acl.names.juniper."},
-	"scope_mgmt_acl.permits.<scope>":       {setWith("scope mgmt-acl"), "The scope's own permitted CIDRs, in place of mgmt_acl.permits."},
+	"scope_mgmt_acl.permits.<scope>":       {setWith("scope mgmt-acl"), "The scope's own permitted entries (a CIDR, or a CIDR with its services), in place of mgmt_acl.permits."},
 	"listeners.<backend>.<name>":           {setWith("config listen"), "Where a backend's daemon listens; the built-in listeners can be changed and reset, not removed."},
 	"junos.<group>.deny_commands":          {setWith("group junos"), "POSIX extended regular expressions of the commands the Junos class of the group may not run."},
 	"junos.<group>.deny_configuration":     {setWith("group junos"), "POSIX extended regular expressions of the configuration statements the Junos class may not touch."},
@@ -438,7 +438,7 @@ func manTypeText(r conf.Rule) string {
 	case conf.TypeInterfaceName:
 		return "interface name in the long form IOS prints (" + strings.Join(conf.InterfaceTypes, ", ") + ", then the number, with / . : separators), such as Loopback0 or GigabitEthernet0/0; not an abbreviation such as lo0"
 	case conf.TypeCIDRList:
-		return "list of CIDRs"
+		return "list of CIDRs, each with optional services after a colon (tcp/22, tcp/161-162, udp/*, icmp, comma separated)"
 	case conf.TypeHostPort:
 		return "host:port"
 	case conf.TypeListener:

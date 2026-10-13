@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/rett/tacctl/internal/cidr"
+	"github.com/rett/tacctl/internal/mgmtacl"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/py"
 	"github.com/rett/tacctl/internal/yamlpy"
@@ -361,6 +361,8 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 		}
 		return ""
 	case TypeCIDRList:
+		// the management ACL lists: each element is a CIDR, or (0.2.7) a
+		// CIDR with the services it permits (internal/mgmtacl)
 		items, isList := py.List(value)
 		if !isList {
 			return "must be a list of CIDRs"
@@ -370,8 +372,13 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 			if !isStr {
 				return fmt.Sprintf("element %d: must be a string", i)
 			}
-			if cidr.Validate(str) != nil {
-				return fmt.Sprintf("element %d: %s is not a valid CIDR", i, py.ReprString(str))
+			// an element is a CIDR, or (0.2.7) a CIDR with the services it
+			// permits: 10.0.0.0/8:tcp/22,udp/161 (internal/mgmtacl)
+			if prob := mgmtacl.Problem(str); prob != "" {
+				if prob == "is not a valid CIDR" {
+					return fmt.Sprintf("element %d: %s is not a valid CIDR", i, py.ReprString(str))
+				}
+				return fmt.Sprintf("element %d: %s: %s", i, py.ReprString(str), prob)
 			}
 		}
 		return ""

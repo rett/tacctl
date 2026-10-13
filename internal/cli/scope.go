@@ -25,6 +25,7 @@ import (
 	"github.com/rett/tacctl/internal/blocks"
 	"github.com/rett/tacctl/internal/cidr"
 	"github.com/rett/tacctl/internal/conf"
+	"github.com/rett/tacctl/internal/mgmtacl"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/shellquote"
@@ -399,8 +400,8 @@ func (inv *invocation) readMgmtACLCIDRs(scope string) []string {
 		if s == "" {
 			continue
 		}
-		if n, err := cidr.Parse(s); err == nil {
-			s = n.String()
+		if c, ok := mgmtacl.Canonical(s); ok {
+			s = c
 		}
 		out = append(out, s)
 	}
@@ -410,23 +411,14 @@ func (inv *invocation) readMgmtACLCIDRs(scope string) []string {
 // writeMgmtACLCIDRs is write_mgmt_acl_cidrs <list> [scope]: the list
 // canonicalised, deduplicated and sorted by specificity (entries that are
 // no CIDR dropped) replaces mgmt_acl.permits or the scope's permits; an
-// empty list removes the key.
+// empty list removes the key. An entry is a CIDR or a CIDR with services
+// (mgmtacl): they sort by the CIDR, then by the services.
 func (inv *invocation) writeMgmtACLCIDRs(list []string, scope string) error {
 	path := "mgmt_acl.permits"
 	if scope != "" {
 		path = "scope_mgmt_acl.permits." + scope
 	}
-	var canon []string
-	for _, l := range list {
-		s := strings.TrimSpace(l)
-		if s == "" {
-			continue
-		}
-		if n, err := cidr.Parse(s); err == nil && !contains(canon, n.String()) {
-			canon = append(canon, n.String())
-		}
-	}
-	return inv.app.Conf().SetList(path, cidr.SortBySpecificity(canon))
+	return inv.app.Conf().SetList(path, mgmtacl.Sort(list))
 }
 
 // scopeConfKeysMove is _scope_conf_keys_move <old> [<new>]: every per-scope
@@ -2311,38 +2303,29 @@ func (inv *invocation) scopeMgmtACL(args []string) error {
 		switch {
 		case captured(scopeEntries) != "":
 			inv.echo("  Source: per-scope override (scope_mgmt_acl.permits." + scope + ")")
-			inv.listLines(scopeEntries)
+			inv.aclLines(scopeEntries)
 		case captured(globalEntries) != "":
 			inv.echo("  Source: global (mgmt_acl.permits) — per-scope list is empty")
-			inv.listLines(globalEntries)
+			inv.aclLines(globalEntries)
 		default:
 			inv.echo("  (empty — both per-scope and global lists are unset)")
 			inv.echo("")
-			inv.echo("  Add to this scope only:  tacctl scope mgmt-acl " + scope + " add <cidr>")
-			inv.echo("  Add to the global list:  tacctl config mgmt-acl add <cidr>")
+			inv.echo("  Add to this scope only:  tacctl scope mgmt-acl " + scope + " add <cidr>[:<services>]")
+			inv.echo("  Add to the global list:  tacctl config mgmt-acl add <cidr>[:<services>]")
 		}
 		inv.echo("")
 	case "add":
 		if value == "" {
-			return inv.usageErr("Usage: tacctl scope mgmt-acl " + scope + " add <cidr>[,<cidr>...]")
+			return inv.usageErr("Usage: tacctl scope mgmt-acl " + scope + " add <cidr>[:<services>][,<cidr>[:<services>]...]")
 		}
-		requested, err := inv.parseCIDRList(value)
+		requested, err := inv.parseACLEntries(value)
 		if err != nil {
 			return err
 		}
 		if len(requested) == 0 {
 			return inv.usageErr("No valid CIDRs provided.")
 		}
-		current := c.GetList(path)
-		var added, skipped []string
-		for _, x := range requested {
-			if contains(current, x) {
-				skipped = append(skipped, x)
-			} else {
-				added = append(added, x)
-				current = append(current, x)
-			}
-		}
+		current, added, skipped, _ := aclChange(aclCanonical(c.GetList(path)), false, requested)
 		if len(added) == 0 {
 			a.Out.Info("No new CIDRs to add to scope '" + scope + "' (already present: " + strings.Join(skipped, " ") + ").")
 			inv.echo("")
@@ -2359,29 +2342,21 @@ func (inv *invocation) scopeMgmtACL(args []string) error {
 		inv.echo("")
 	case "remove":
 		if value == "" {
-			return inv.usageErr("Usage: tacctl scope mgmt-acl " + scope + " remove <cidr>[,<cidr>...]")
+			return inv.usageErr("Usage: tacctl scope mgmt-acl " + scope + " remove <cidr>[:<services>][,<cidr>[:<services>]...]")
 		}
-		requested, err := inv.parseCIDRList(value)
+		requested, err := inv.parseACLEntries(value)
 		if err != nil {
 			return err
 		}
 		if len(requested) == 0 {
 			return inv.usageErr("No valid CIDRs provided.")
 		}
-		current := c.GetList(path)
+		current := aclCanonical(c.GetList(path))
 		if captured(current) == "" {
 			a.Out.Warn("Nothing to remove — scope '" + scope + "' has no per-scope permits (rendering from the global list).")
 			return nil
 		}
-		var removed, missing []string
-		for _, x := range requested {
-			if contains(current, x) {
-				removed = append(removed, x)
-				current = without(current, x)
-			} else {
-				missing = append(missing, x)
-			}
-		}
+		current, removed, missing, notes := aclChange(current, true, requested)
 		if len(removed) == 0 {
 			a.Out.Warn("Nothing to remove (not present in per-scope list: " + strings.Join(missing, " ") + ").")
 			return nil
@@ -2390,6 +2365,9 @@ func (inv *invocation) scopeMgmtACL(args []string) error {
 			return err
 		}
 		a.Out.Info(fmt.Sprintf("Removed %d from scope '%s' mgmt-acl: %s", len(removed), scope, strings.Join(removed, " ")))
+		for _, n := range notes {
+			a.Out.Info("(" + n + ")")
+		}
 		if len(missing) > 0 {
 			a.Out.Info("(Not present, skipped: " + strings.Join(missing, " ") + ")")
 		}
@@ -2453,16 +2431,6 @@ func (inv *invocation) scopeMgmtACL(args []string) error {
 		return inv.usageErr("Unknown subcommand '" + sub + "'. Use: list | add | remove | clear | cisco-name | juniper-name.")
 	}
 	return nil
-}
-
-// listLines is 'echo "$list" | while read -r e; do [[ -z $e ]] && continue;
-// echo "  - $e"; done'.
-func (inv *invocation) listLines(list []string) {
-	for _, e := range strings.Split(strings.Join(list, "\n"), "\n") {
-		if e != "" {
-			inv.echo("  - " + e)
-		}
-	}
 }
 
 // lookupHoldNotes says, for an address a break-glass hold stands on, that

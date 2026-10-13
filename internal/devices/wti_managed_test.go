@@ -450,16 +450,18 @@ func TestManagedWTIStatements(t *testing.T) {
 	}
 
 	// The IP tables list: the unit's own traffic, the server, each permitted
-	// range, the SNMP server, the pingers; no final DROP, no policy.
+	// range (a plain entry is every protocol and port: one rule, and no ICMP
+	// line of its own), the SNMP server, the pingers; no final DROP, no policy.
 	req, d = lab.input(m, c, vs[0])
 	acl := wtiLines(mustManaged(t, req, d), "mgmt-acl")
 	for _, w := range []string{
 		"iptables -A INPUT -i lo -j ACCEPT",
 		"iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
 		"iptables -A INPUT -p tcp -s 10.0.0.42/32 --dport 22 -j ACCEPT",
-		"iptables -A INPUT -p tcp -s 198.51.100.0/24 --dport 22 -j ACCEPT",
+		"iptables -A INPUT -s 198.51.100.0/24 -j ACCEPT",
+		"iptables -A INPUT -s 192.0.2.0/24 -j ACCEPT",
 		"iptables -A INPUT -p udp -s 198.51.100.0/24 --dport 161 -j ACCEPT",
-		"iptables -A INPUT -i eth0 -s 192.0.2.0/24 -p icmp -j ACCEPT",
+		"iptables -A INPUT -i eth0 -s 10.0.0.42/32 -p icmp -j ACCEPT",
 	} {
 		if !slices.Contains(acl, w) {
 			t.Errorf("mgmt-acl lacks %q:\n%s", w, strings.Join(acl, "\n"))
@@ -499,7 +501,7 @@ func TestManagedWTIStatements(t *testing.T) {
 	// prod's permit list is a /8 and an IPv6 range (skipped): the list is the
 	// IPv4 one
 	acl = wtiLines(mustManaged(t, req, d), "mgmt-acl")
-	if !slices.Contains(acl, "iptables -A INPUT -p tcp -s 10.0.0.0/8 --dport 22 -j ACCEPT") {
+	if !slices.Contains(acl, "iptables -A INPUT -s 10.0.0.0/8 -j ACCEPT") {
 		t.Errorf("prod mgmt-acl:\n%s", strings.Join(acl, "\n"))
 	}
 	for _, l := range acl {
@@ -777,5 +779,74 @@ func TestWTIListFacts(t *testing.T) {
 	d.ServerIP = UnknownServer
 	if server, why := WTIListFacts(req, d); server != "" || why != "" {
 		t.Errorf("no permits: %q %q", server, why)
+	}
+}
+
+// A management ACL with services (0.2.7): the WTI list renders each entry's
+// services, a plain entry as every protocol and port, and the Cisco and Junos
+// sections list only the sources whose entries permit ssh, so a compare and a
+// plan read what the walkthrough says.
+func TestManagedMgmtACLServices(t *testing.T) {
+	m, c := managedWorld(t)
+	p := managedProfile{scope: "lab", snmp: v2cAll, cidrs: []string{
+		"172.16.100.0/23:tcp/22,udp/161,udp/162", "10.0.0.0/8", "192.0.2.0/24:udp/161,icmp", "198.51.100.0/24:tcp/20-30"}}
+	vs := managedVariants()
+
+	// WTI (the variant list has no WTI: the walkthrough variants do)
+	for _, v := range []variant{variants[5], variants[6]} {
+		req, d := p.input(m, c, v)
+		secs := mustManaged(t, req, d)
+		acl := wtiLines(secs, "mgmt-acl")
+		for _, w := range []string{
+			"iptables -A INPUT -p tcp -s 192.0.2.0/24 --dport 22 -j ACCEPT",
+		} {
+			if slices.Contains(acl, w) {
+				t.Errorf("%s: the udp-only entry opens ssh: %q", v.name, w)
+			}
+		}
+		for _, w := range []string{
+			"iptables -A INPUT -p tcp -s 172.16.100.0/23 --dport 22 -j ACCEPT",
+			"iptables -A INPUT -p udp -s 172.16.100.0/23 --dport 161 -j ACCEPT",
+			"iptables -A INPUT -p udp -s 172.16.100.0/23 --dport 162 -j ACCEPT",
+			"iptables -A INPUT -s 10.0.0.0/8 -j ACCEPT",
+			"iptables -A INPUT -p udp -s 192.0.2.0/24 --dport 161 -j ACCEPT",
+			"iptables -A INPUT -i eth0 -s 192.0.2.0/24 -p icmp -j ACCEPT",
+			"iptables -A INPUT -p tcp -s 198.51.100.0/24 --dport 20:30 -j ACCEPT",
+			// the automatic ICMP line of a network whose entry lists no icmp
+			"iptables -A INPUT -i eth0 -s 172.16.100.0/23 -p icmp -j ACCEPT",
+		} {
+			if !slices.Contains(acl, w) {
+				t.Errorf("%s: mgmt-acl lacks %q:\n%s", v.name, w, strings.Join(acl, "\n"))
+			}
+		}
+		// no ICMP line for the plain /8, and none twice for the entry that lists icmp
+		n := 0
+		for _, l := range acl {
+			if strings.Contains(l, "-i eth0 -s 10.0.0.0/8 ") {
+				t.Errorf("%s: an ICMP line for a plain entry: %q", v.name, l)
+			}
+			if strings.Contains(l, "-i eth0 -s 192.0.2.0/24 ") {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("%s: %d ICMP lines for the entry with icmp", v.name, n)
+		}
+	}
+
+	// Cisco and Junos: the plain entry and the ones with tcp/22 (in a range)
+	// are listed by their source, the udp/161-and-icmp entry is not
+	for _, v := range vs {
+		req, d := p.input(m, c, v)
+		secs := mustManaged(t, req, d)
+		acl := strings.Join(wtiLines(secs, "mgmt-acl"), "\n")
+		for _, in := range []string{"172.16.100.0", "10.0.0.0", "198.51.100.0"} {
+			if !strings.Contains(acl, in) {
+				t.Errorf("%s %s: mgmt-acl lacks %s:\n%s", v.vendor, v.name, in, acl)
+			}
+		}
+		if strings.Contains(acl, "192.0.2.0") {
+			t.Errorf("%s %s: the entry without ssh is listed:\n%s", v.vendor, v.name, acl)
+		}
 	}
 }

@@ -122,9 +122,16 @@ func CiscoVars(req Request, d Data) map[string]string {
 			entries.WriteString("  permit " + wc + "\n")
 		}
 	}
+	// An entry with services that do not include ssh is not listed (a
+	// standard access list matches the source only), with a comment that
+	// says so above the list.
+	var skipped strings.Builder
+	for _, n := range d.mgmtSkipped("the VTY access list " + aclName + " (a standard access list matches the source only)") {
+		skipped.WriteString("! " + n + "\n")
+	}
 	var aclBlock, accessClass string
 	if entries.Len() > 0 {
-		aclBlock = "ip access-list standard " + aclName + "\n" +
+		aclBlock = skipped.String() + "ip access-list standard " + aclName + "\n" +
 			"  remark Managed by tacctl - edit with 'tacctl config mgmt-acl'\n" +
 			entries.String() + "  deny   any log"
 		accessClass = "  access-class " + aclName + " in"
@@ -133,7 +140,11 @@ func CiscoVars(req Request, d Data) map[string]string {
 		if req.Protocol == RADIUS {
 			flag = " --protocol radius"
 		}
-		aclBlock = "! " + aclName + " not emitted - mgmt-acl list is empty.\n" +
+		why := "mgmt-acl list is empty."
+		if skipped.Len() > 0 {
+			why = "no entry of the mgmt-acl list permits ssh (tcp/22)."
+		}
+		aclBlock = skipped.String() + "! " + aclName + " not emitted - " + why + "\n" +
 			"! Populate it on the tacctl server with\n" +
 			"!   tacctl config mgmt-acl add <cidr>\n" +
 			"! then re-run 'tacctl config cisco" + flag + "' to get the access-list block."
