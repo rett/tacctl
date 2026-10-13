@@ -57,7 +57,7 @@
       "severity": "MONITORING",
       "section": "snmp",
       "what": "an SNMP community",
-      "statement": "snmp-server community \u003csecret\u003e RO TACCTL-SNMP",
+      "statement": "snmp-server community \u003cother:1\u003e RO TACCTL-SNMP",
       "action": "Left alone (its name is the secret and is not known to tacctl).",
       "fixed": false
     },
@@ -76,8 +76,8 @@
       "kind": "extra",
       "severity": "MONITORING",
       "section": "snmp",
-      "what": "snmp-server host 192.0.2.50 version 2c \u003csecret\u003e",
-      "statement": "snmp-server host 192.0.2.50 version 2c \u003csecret\u003e",
+      "what": "snmp-server host 192.0.2.50 version 2c \u003cother:2\u003e",
+      "statement": "snmp-server host 192.0.2.50 version 2c \u003cother:2\u003e",
       "action": "Left alone (its name is the secret and is not known to tacctl).",
       "fixed": false
     }
@@ -129,7 +129,7 @@
   "extras": [
     {
       "section": "snmp",
-      "text": "snmp-server community \u003csecret\u003e RO TACCTL-SNMP",
+      "text": "snmp-server community \u003cother:1\u003e RO TACCTL-SNMP",
       "guard": "its name is the secret and is not known to tacctl"
     },
     {
@@ -141,7 +141,7 @@
     },
     {
       "section": "snmp",
-      "text": "snmp-server host 192.0.2.50 version 2c \u003csecret\u003e",
+      "text": "snmp-server host 192.0.2.50 version 2c \u003cother:2\u003e",
       "guard": "its name is the secret and is not known to tacctl"
     }
   ],

@@ -89,8 +89,8 @@ set firewall family inet filter PROTECT-RE term allow-ntp then accept
 set snmp client-list TACCTL-SNMP 192.0.2.10/32
 set snmp client-list TACCTL-SNMP 198.51.100.0/24
 set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict
-set snmp community example-community authorization read-only
-set snmp community example-community client-list-name TACCTL-SNMP
+set snmp community lab-ro-community authorization read-only
+set snmp community lab-ro-community client-list-name TACCTL-SNMP
 set snmp location "Rack 4, DC1"
 set snmp contact "NOC <noc@example.net>"
 set snmp community other-example authorization read-only

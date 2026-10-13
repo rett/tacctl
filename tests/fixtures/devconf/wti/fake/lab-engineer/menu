@@ -1,0 +1,7 @@
+# A SuperUser login (the engineer group, priv-lvl 10) on an 8.10 unit with
+# an empty IP tables list (network-5.txt) and no other session.
+screens ../..
+version 8.10
+level superuser
+sessions 0
+iptables empty

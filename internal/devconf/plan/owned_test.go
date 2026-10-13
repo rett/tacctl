@@ -266,11 +266,17 @@ var junosRowCases = map[string]rowCase{
 	},
 	"junos.snmp.community": func(t *testing.T) {
 		f := fixtureNamed(t, "juniper.synthetic-lab")
-		d := planJ(t, f, add("set snmp community example-community clients 203.0.113.0/24"), Options{})
-		// the community's name is elided in the comparison: the delete acts
-		// on the rendered community, and says so
-		wantLine(t, d, "snmp", "delete snmp community <secret> clients 203.0.113.0/24")
-		if len(d.Unattributed) != 1 {
+		d := planJ(t, f, func(c *JunosConfig) {
+			add("set snmp community lab-ro-community clients 203.0.113.0/24")(c)
+			add("set snmp community other-example clients 192.0.2.10/32")(c)
+		}, Options{})
+		// the community's name is shown as its label: a stray leaf of the
+		// rendered community is deleted under its own name, another
+		// community's is kept
+		wantLine(t, d, "snmp", "delete snmp community <secret:1> clients 203.0.113.0/24")
+		noLine(t, d, "snmp", "delete snmp community <other:")
+		wantKept(t, d, "snmp", "snmp community <other:1> clients 192.0.2.10/32")
+		if len(d.Unattributed) != 0 {
 			t.Errorf("unattributed: %v", d.Unattributed)
 		}
 		var holds bool
@@ -284,6 +290,38 @@ var junosRowCases = map[string]rowCase{
 		}
 		// the other communities of the device stay
 		wantKept(t, d, "snmp", "snmp trap-group")
+	},
+	"junos.snmp.block-community": func(t *testing.T) {
+		// a community of the scope's snmp block is owned whole: a stray leaf
+		// goes, under the block community's own name; tacctl's own community
+		// and the device's other one are not touched
+		d := planJ(t, blockFixture(t), addMany("set snmp community nms-ro clients 203.0.113.0/24",
+			"set snmp community other-example clients 203.0.113.9/32"), blockOpt)
+		wantLine(t, d, "snmp", "delete snmp community <secret:2> clients 203.0.113.0/24")
+		noLine(t, d, "snmp", "<secret:1>")
+		noLine(t, d, "snmp", "<other:")
+		wantKept(t, d, "snmp", "snmp community <other:1> clients 203.0.113.9/32")
+	},
+	"junos.snmp.trap-group": func(t *testing.T) {
+		// a trap group the block names is owned whole, another is the
+		// device's own
+		d := planJ(t, blockFixture(t), addMany("set snmp trap-group nms-traps targets 203.0.113.9",
+			"set snmp trap-group other-example targets 203.0.113.9"), blockOpt)
+		wantLine(t, d, "snmp", "delete snmp trap-group <secret:3> targets 203.0.113.9")
+		noLine(t, d, "snmp", "<other:")
+		wantKept(t, d, "snmp", "snmp trap-group <other:1> targets 203.0.113.9")
+	},
+	"junos.snmp.trap-options": func(t *testing.T) {
+		// the leaf the block sets is replaced as rendered, the device's own
+		// other leaf stays
+		f := blockFixture(t)
+		d := planJ(t, f, func(c *JunosConfig) {
+			c.Remove("set snmp trap-options agent-address outgoing-interface")
+		}, blockOpt)
+		wantLine(t, d, "snmp", "set snmp trap-options agent-address outgoing-interface")
+		noLine(t, d, "snmp", "source-address")
+		noLine(t, d, "snmp", "delete")
+		wantKept(t, d, "snmp", "snmp trap-options source-address 192.0.2.250")
 	},
 	"junos.snmp.v3-user": func(t *testing.T) {
 		_, d := v3Device(t, `set snmp v3 usm local-engine user tacctl-ro privacy-aes256 privacy-key "$9$EXTRAEXTRA1"`)
@@ -321,6 +359,136 @@ var junosRowCases = map[string]rowCase{
 		d := planJ(t, f, add(`set snmp description "Old"`), Options{})
 		wantLine(t, d, "snmp", `set snmp description "Core switch"`)
 		noLine(t, d, "snmp", "delete snmp description")
+	},
+	// 0.2.7: the system block. Each single-valued statement is replaced in
+	// place, each list statement adds, and nothing is ever deleted.
+	"junos.system.login-message": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system login message")(c)
+			c.Add(`set system login message "Another banner"`)
+		}, nil, systemOpt)
+		wantLine(t, d, "system", `set system login message `+fixtureMessage)
+		noLine(t, d, "system", "delete")
+		noLine(t, d, "system", "Another")
+		for _, k := range d.Kept {
+			if k.Section == "system" {
+				t.Errorf("kept: %+v", k)
+			}
+		}
+	},
+	"junos.system.domain-name": func(t *testing.T) {
+		d, _ := planSystem(t, add("set system domain-name other.example.net"), nil, systemOpt)
+		wantLine(t, d, "system", "set system domain-name lab.example.net")
+		noLine(t, d, "system", "delete")
+	},
+	"junos.system.time-zone": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system time-zone")(c)
+			c.Add("set system time-zone America/New_York")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system time-zone UTC")
+		noLine(t, d, "system", "delete")
+	},
+	"junos.system.ntp-boot-server": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system ntp boot-server")(c)
+			c.Add("set system ntp boot-server 192.0.2.99")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system ntp boot-server 192.0.2.123")
+		noLine(t, d, "system", "delete")
+	},
+	"junos.system.ntp-source-address": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system ntp source-address")(c)
+			c.Add("set system ntp source-address 192.0.2.99")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system ntp source-address 192.0.2.250")
+		noLine(t, d, "system", "delete")
+	},
+	"junos.system.ntp-server-version": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system ntp server 192.0.2.123 version")(c)
+			c.Add("set system ntp server 192.0.2.123 version 3")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system ntp server 192.0.2.123 version 4")
+		noLine(t, d, "system", "delete")
+	},
+	"junos.system.ntp-server-key": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system ntp server 192.0.2.123 key")(c)
+			c.Add("set system ntp server 192.0.2.123 key 2")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system ntp server 192.0.2.123 key 1")
+		noLine(t, d, "system", "delete")
+	},
+	"junos.system.ntp-server-routing-instance": func(t *testing.T) {
+		f := systemFixture(t)
+		sec := systemSectionOf(t, "set system ntp server 192.0.2.123 routing-instance mgmt\n")
+		d, _ := planSystem(t, add("set system ntp server 192.0.2.123 routing-instance other"),
+			withSystem(expectedSections(t, f.expected), sec), systemOpt)
+		wantLine(t, d, "system", "set system ntp server 192.0.2.123 routing-instance mgmt")
+		noLine(t, d, "system", "delete")
+	},
+	"junos.system.domain-search": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system domain-search")(c)
+			c.Add("set system domain-search example.net")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system domain-search lab.example.net")
+		noLine(t, d, "system", "delete")
+		wantKept(t, d, "system", "system domain-search example.net")
+	},
+	"junos.system.name-server": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system name-server")(c)
+			c.Add("set system name-server 198.51.100.53")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system name-server 192.0.2.53")
+		noLine(t, d, "system", "delete")
+		wantKept(t, d, "system", "system name-server 198.51.100.53")
+	},
+	"junos.system.ntp-server": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system ntp server")(c)
+			c.Add("set system ntp server ntp.example.net")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system ntp server 192.0.2.123 prefer")
+		noLine(t, d, "system", "delete")
+		wantKept(t, d, "system", "system ntp server ntp.example.net")
+	},
+	"junos.system.ntp-key": func(t *testing.T) {
+		// typed (by value) only where the device has no key of the number
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system ntp authentication-key")(c)
+			c.Add(`set system ntp authentication-key 9 value "$9$OTHEROTHEROTHER"`)
+		}, nil, systemOpt)
+		var key Line
+		for _, l := range d.Lines {
+			if strings.Contains(l.Text, "ntp authentication-key") {
+				key = l
+			}
+		}
+		if key.Text != "set system ntp authentication-key 1 type md5 value ntp-key-0123456789" || !key.HasValue || key.Shown() != "set system ntp authentication-key 1 value <secret>" {
+			t.Errorf("the key line: %+v", key)
+		}
+		noLine(t, d, "system", "delete")
+		wantKept(t, d, "system", "system ntp authentication-key 9 value")
+		// the device's key of the number, of another type, is left as it is
+		d, _ = planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system ntp authentication-key")(c)
+			c.Add("set system ntp authentication-key 1 type sha1")
+			c.Add(`set system ntp authentication-key 1 value "$9$OTHEROTHEROTHER"`)
+		}, nil, systemOpt)
+		noLine(t, d, "system", "authentication-key")
+	},
+	"junos.system.ntp-trusted-key": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system ntp trusted-key")(c)
+			c.Add("set system ntp trusted-key 9")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system ntp trusted-key 1")
+		noLine(t, d, "system", "delete")
+		wantKept(t, d, "system", "system ntp trusted-key 9")
 	},
 	"junos.mgmt-acl.filter": func(t *testing.T) {
 		f := fixtureNamed(t, "juniper.synthetic-lab")
@@ -595,7 +763,7 @@ var iosRowCases = map[string]rowCase{
 		d := planI(t, f, nil, Options{})
 		var note bool
 		for _, k := range d.Kept {
-			if strings.Contains(k.Text, "snmp-server community <secret>") && strings.Contains(k.Note, "not compared") {
+			if strings.Contains(k.Text, "snmp-server community <other:1>") {
 				note = true
 			}
 		}
@@ -605,10 +773,10 @@ var iosRowCases = map[string]rowCase{
 		noLine(t, d, "snmp", "no snmp-server community")
 		// the rendered community missing is pasted by value
 		d = planI(t, f, func(c *IOSConfig) {
-			c.noGlobal("snmp-server community example-community")
+			c.noGlobal("snmp-server community lab-ro-community")
 			c.noGlobal("snmp-server community other-example")
 		}, Options{})
-		wantLine(t, d, "snmp", "snmp-server community <secret> RO TACCTL-SNMP")
+		wantLine(t, d, "snmp", "snmp-server community <secret:1> RO TACCTL-SNMP")
 		found := false
 		for _, l := range d.Lines {
 			if l.Text == "snmp-server community lab-ro-community RO TACCTL-SNMP" && l.HasValue {
@@ -638,6 +806,170 @@ var iosRowCases = map[string]rowCase{
 			blk.lines = slices.Insert(blk.lines, 1, " permit 203.0.113.9")
 		}, Options{})
 		wantLine(t, d, "snmp", "ip access-list standard TACCTL-SNMP > no permit 203.0.113.9")
+	},
+	// 0.2.7: the objects of a scope's IOS snmp block (blocks_cisco_test.go has
+	// the rest of what the planner does with them)
+	"ios.snmp.block-community": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-block")
+		// missing: typed by value, under the block's mark
+		d := planI(t, f, func(c *IOSConfig) { c.noGlobal("snmp-server community poller-ro") }, Options{Scope: "lab"})
+		wantLine(t, d, "snmp", "snmp-server community <secret:2> RO POLLERS")
+		if got := realTexts(d); !slices.Contains(got, "snmp-server community poller-ro RO POLLERS") {
+			t.Errorf("by value: %q", got)
+		}
+		// another access: retyped in place, never removed
+		d = planI(t, f, func(c *IOSConfig) { c.typeGlobal("snmp-server community poller-ro RW POLLERS") }, Options{Scope: "lab"})
+		wantLine(t, d, "snmp", "snmp-server community <secret:2> RO POLLERS")
+		noLine(t, d, "snmp", "no snmp-server community")
+		// a device's own community is kept
+		wantKept(t, d, "snmp", "snmp-server community <other:1> RO TACCTL-SNMP")
+	},
+	"ios.snmp.block-acl": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-block")
+		d := planI(t, f, func(c *IOSConfig) {
+			blk := c.blockFor("ip access-list standard POLLERS")
+			blk.lines = append(blk.lines, " permit 203.0.113.9")
+		}, Options{Scope: "lab"})
+		wantLine(t, d, "snmp", "ip access-list standard POLLERS > no permit 203.0.113.9")
+		// a list the block does not define (another community's) is kept
+		d = planI(t, f, func(c *IOSConfig) {
+			c.typeGlobal("snmp-server community device-own RO DEVICE-LIST")
+			c.typeGlobal("ip access-list standard DEVICE-LIST")
+			c.blockFor("ip access-list standard DEVICE-LIST").lines = append(c.blockFor("ip access-list standard DEVICE-LIST").lines, " permit 203.0.113.9")
+		}, Options{Scope: "lab"})
+		noLine(t, d, "snmp", "DEVICE-LIST")
+	},
+	"ios.snmp.block-host": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-block")
+		d := planI(t, f, func(c *IOSConfig) { c.noGlobal("snmp-server host 192.0.2.61") }, Options{Scope: "lab"})
+		wantLine(t, d, "snmp", "snmp-server host 192.0.2.61 version 2c <secret:3>")
+		// the same host and community with another version: retyped in
+		// place, nothing removed; the device's other host is kept
+		d = planI(t, f, func(c *IOSConfig) { c.typeGlobal("snmp-server host 192.0.2.61 poller-traps udp-port 1162") }, Options{Scope: "lab"})
+		wantLine(t, d, "snmp", "snmp-server host 192.0.2.61 version 2c <secret:3>")
+		noLine(t, d, "snmp", "no snmp-server host")
+		wantKept(t, d, "snmp", "snmp-server host 192.0.2.50 version 2c <other:2>")
+	},
+	"ios.snmp.block-traps": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-block")
+		// the device enables the type in the expanded form: nothing to type
+		d := planI(t, f, nil, Options{Scope: "lab"})
+		noLine(t, d, "snmp", "enable traps")
+		// it lacks the line: typed; the device's other lines are kept
+		d = planI(t, f, func(c *IOSConfig) {
+			c.noGlobal("snmp-server enable traps snmp")
+			c.typeGlobal("snmp-server enable traps tty")
+		}, Options{Scope: "lab"})
+		wantLine(t, d, "snmp", "snmp-server enable traps snmp linkdown linkup")
+		noLine(t, d, "snmp", "no snmp-server enable traps")
+		wantKept(t, d, "snmp", "snmp-server enable traps tty")
+	},
+	// 0.2.7: the trap source and the system block of a scope (system_ios_test.go
+	// has the rest of what the planner does with them)
+	"ios.snmp.block-trap-source": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		// another interface: retyped in place, nothing removed
+		d := planI(t, f, func(c *IOSConfig) { c.typeGlobal("snmp-server trap-source Loopback1") }, Options{Scope: "lab"})
+		wantLine(t, d, "snmp", "snmp-server trap-source Loopback0")
+		noLine(t, d, "snmp", "no snmp-server trap-source")
+		// the device's own, with the block stating none, is kept
+		f = fixtureNamed(t, "cisco.reference-lab")
+		d = planI(t, f, func(c *IOSConfig) { c.typeGlobal("snmp-server trap-source Loopback1") }, Options{Scope: "lab"})
+		noLine(t, d, "snmp", "trap-source")
+		wantKept(t, d, "snmp", "snmp-server trap-source loopback1")
+	},
+	"ios.system.banner": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		d := planI(t, f, func(c *IOSConfig) { c.typeBanner("banner login ^C\nAnother banner\n^C") }, Options{Scope: "lab"})
+		wantLine(t, d, "system", "banner login ^\nAuthorized use only.\n! Activity is logged.\n^")
+		noLine(t, d, "system", "no banner login")
+		noLine(t, d, "system", "Another")
+		for _, k := range d.Kept {
+			if k.Section == "system" && strings.Contains(k.Text, "banner") {
+				t.Errorf("kept: %+v", k)
+			}
+		}
+		// the banner of the device is no text anywhere in the plan's reports
+		if strings.Contains(d.Display(), "Another") {
+			t.Errorf("the device's banner is shown:\n%s", d.Display())
+		}
+	},
+	"ios.system.domain-name": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		d := planI(t, f, func(c *IOSConfig) { c.typeGlobal("ip domain name other.example.net") }, Options{Scope: "lab"})
+		wantLine(t, d, "system", "ip domain name lab.example.net")
+		noLine(t, d, "system", "no ip domain name")
+	},
+	"ios.system.timezone": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		d := planI(t, f, func(c *IOSConfig) { c.typeGlobal("clock timezone PST -8 0") }, Options{Scope: "lab"})
+		wantLine(t, d, "system", "clock timezone CET 1")
+		noLine(t, d, "system", "no clock timezone")
+	},
+	"ios.system.ntp-authenticate": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		d := planI(t, f, func(c *IOSConfig) { c.noGlobal("ntp authenticate") }, Options{Scope: "lab"})
+		wantLine(t, d, "system", "ntp authenticate")
+		noLine(t, d, "system", "no ntp authenticate")
+		// the device has it and the block says nothing: nothing is typed
+		d = planI(t, f, nil, Options{Scope: "lab"})
+		noLine(t, d, "system", "ntp authenticate")
+	},
+	"ios.system.domain-list": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		d := planI(t, f, func(c *IOSConfig) { c.noGlobal("ip domain list lab.example.net") }, Options{Scope: "lab"})
+		wantLine(t, d, "system", "ip domain list lab.example.net")
+		noLine(t, d, "system", "no ip domain list")
+		wantKept(t, d, "system", "ip domain list other.example.net")
+	},
+	"ios.system.name-server": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		d := planI(t, f, func(c *IOSConfig) { c.noGlobal("ip name-server 192.0.2.53 192.0.2.54") }, Options{Scope: "lab"})
+		wantLine(t, d, "system", "ip name-server 192.0.2.53")
+		wantLine(t, d, "system", "ip name-server 192.0.2.54")
+		noLine(t, d, "system", "no ip name-server")
+		wantKept(t, d, "system", "ip name-server 198.51.100.53")
+	},
+	"ios.system.ntp-server": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		// the same host with other options: retyped in place, nothing removed
+		d := planI(t, f, func(c *IOSConfig) { c.typeGlobal("ntp server 192.0.2.123 version 3") }, Options{Scope: "lab"})
+		wantLine(t, d, "system", "ntp server 192.0.2.123 version 4 key 5 prefer")
+		noLine(t, d, "system", "no ntp server")
+		// the device's other server is kept
+		wantKept(t, d, "system", "ntp server 198.51.100.123")
+	},
+	"ios.system.ntp-key": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		// typed (by value) only where the device has no key of the number
+		d := planI(t, f, func(c *IOSConfig) {
+			c.noGlobal("ntp authentication-key 5 md5 0822455D0A16 7")
+			c.typeGlobal("ntp authentication-key 9 md5 OTHEROTHER 7")
+		}, Options{Scope: "lab"})
+		var key Line
+		for _, l := range d.Lines {
+			if strings.Contains(l.Text, "ntp authentication-key") {
+				key = l
+			}
+		}
+		if key.Text != "ntp authentication-key 5 md5 lab-ntp-key-0123" || !key.HasValue || key.Shown() != "ntp authentication-key 5 <secret>" {
+			t.Errorf("the key line: %+v", key)
+		}
+		noLine(t, d, "system", "no ntp authentication-key")
+		wantKept(t, d, "system", "ntp authentication-key 9")
+		// the device's key of the number, of another algorithm, is left as it is
+		d = planI(t, f, func(c *IOSConfig) { c.typeGlobal("ntp authentication-key 5 md5 OTHEROTHER 7") }, Options{Scope: "lab"})
+		noLine(t, d, "system", "authentication-key")
+	},
+	"ios.system.ntp-trusted-key": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		d := planI(t, f, func(c *IOSConfig) {
+			c.noGlobal("ntp trusted-key 5")
+			c.typeGlobal("ntp trusted-key 9")
+		}, Options{Scope: "lab"})
+		wantLine(t, d, "system", "ntp trusted-key 5")
+		noLine(t, d, "system", "no ntp trusted-key")
+		wantKept(t, d, "system", "ntp trusted-key 9")
 	},
 	"ios.mgmt-acl.acl": func(t *testing.T) {
 		f := fixtureNamed(t, "cisco.reference-lab")

@@ -1,0 +1,50 @@
+##### lab-unit  192.0.2.21  scope lab  wti (TACACS+) #####
+# Based on the pull of 2026-10-10 14:02 by alice over ssh (18 minutes ago; the login could see
+# secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.7).
+#
+# What is irregular on lab-unit (1 item; the plan fixes 1, leaves 0):
+#  1. snmp     MONITORING extra: an SNMP read/write community (snmp rw-community <other:1>). Removed
+#                         by the cleanup region, step 1.
+# No fix to paste: the cleanup region below is the only paste (what else remains is left alone).
+# Consistent: aaa, mgmt-acl. Not planned: breakglass (walkthrough Step 10).
+# Secrets: 2 present on the device, not changed (--secrets pushes them).
+# Cleanup (--converge): the steps below are the whole output: they switch off or clear 1 setting the
+# standard does not have. Do them only after you have checked that the pull of lab-unit is current
+# (tacctl device config pull lab-unit --diff reads ok for aaa) and keep a second session logged in as
+# yourself.
+# Note: tacacs default-services: the unit allows more services than the standard asks for (serial,
+# web, restful-api): kept, not compared.
+# Note: the IP tables list ends with the final DROP and the policies of the walkthrough's last step:
+# kept, not compared.
+# Note: aaa: 13 statements of the device's own, kept on purpose.
+# Note: snmp: 4 statements of the device's own, kept on purpose.
+# The unit has no commit-confirm and no rollback: every value is live as soon as its Enter is
+# accepted, and the configuration is written to flash when a top-level menu is left with ESC (any
+# session that leaves one saves everything). tacctl types nothing: you do each step yourself.
+# Before you start: keep the serial console, or a second session logged in as an Administrator, open
+# until the check at the end passes; type /SN and make sure no other administrator is on the unit (the
+# pull saw 1 other session).
+# The way back is tacctl device config plan lab-unit --backout: the old values.
+#
+# Type this first, on lab-unit, and check the version:   /H
+# The title must read "COMMAND MENU: Version 8.10": tacctl's tables are those of that command menu,
+# and another version may number its pages differently: stop. /J shows the unit's Site ID: the pull
+# read wti.site.example.net; another one means this is not the unit.
+#
+##### DO THESE CLEANUP STEPS ON: lab-unit #####
+# At the unit's prompt type /N and Enter. For each step type the item numbers of its second column,
+# one at a time with Enter after each, then what the arrow says. A pick: the number of the line
+# that reads as shown. ESC goes back one level. A value is live as soon as its Enter is accepted.
+#  1. /N  25  8  Read/Write Community  -> <SPACE><CR>   was: (another string)
+#  2. ESC ESC  leave /N: wait for "Saving configuration to flash"
+##### END OF CLEANUP STEPS #####
+#
+# There is no other step for lab-unit: its first checklist is empty. Check that the pull is
+# current (tacctl device config pull lab-unit --diff reads ok for aaa) and keep a second session
+# logged in as yourself open.
+# Nothing rolls the cleanup back by itself. To put a value back: the read/write community is a
+# string tacctl does not hold (re-enter the one you keep), and the other protocol's switch is
+# Enable at its page 1 (/N 28 or /N 29).
+# Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold lab-unit --reason "..."
+# then log in on the unit's serial console as its local Administrator account,
+# fix or back out, and the superuser runs: tacctl breakglass release lab-unit

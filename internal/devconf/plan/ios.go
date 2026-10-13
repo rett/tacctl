@@ -4,10 +4,12 @@ package plan
 
 import (
 	"net/netip"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/rett/tacctl/internal/blocks"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devices"
 )
@@ -109,15 +111,25 @@ type iosState struct {
 	levels map[string]bool
 	// aclHeaders are the rendered ACL headers per section.
 	acls map[string]bool
+	// real maps the label of a rendered community string ('<secret:2>') to
+	// the string, for the lines of the back-out that retype a device's line
+	// by value.
+	real map[string]string
 }
 
 // prepareIOS indexes the rendering's raw lines per section.
 func (p *planner) prepareIOS(results map[string]devconf.SectionResult) {
 	st := &iosState{entries: map[string][]iosEntry{}, byStem: map[string]map[string][]int{},
 		used: map[string]map[int]bool{}, renderedKeys: map[string]bool{},
-		kinds: map[string]map[string]bool{}, levels: map[string]bool{}, acls: map[string]bool{}}
+		kinds: map[string]map[string]bool{}, levels: map[string]bool{}, acls: map[string]bool{},
+		real: map[string]string{}}
 	p.ios = st
 	for _, sec := range p.exp {
+		if sec.Name == devconf.SectionSNMP {
+			if m, err := devconf.CommunityLabels(devconf.FamilyIOS, sec.Lines); err == nil {
+				st.real = m
+			}
+		}
 		es := parseIOSExpected(sec)
 		st.entries[sec.Name] = es
 		st.byStem[sec.Name] = map[string][]int{}
@@ -163,15 +175,32 @@ func parseIOSExpected(sec devices.Section) []iosEntry {
 		indent int
 		text   string
 		mark   bool
+		// banner is a login banner: text holds its lines (the opening line,
+		// the text, the closing delimiter, joined by "\n") and stem its
+		// compared form.
+		banner bool
+		stem   string
 	}
 	var items []item
-	for i, raw := range sec.Lines {
+	for i := 0; i < len(sec.Lines); i++ {
+		raw := sec.Lines[i]
 		trimmed := strings.TrimRight(raw, " \t\r")
 		t := strings.TrimLeft(trimmed, " \t")
+		if f := strings.Fields(t); len(trimmed) == len(t) && len(f) >= 2 && f[0] == "banner" && f[1] == "login" {
+			// the banner's lines are text up to the closing delimiter: a blank
+			// line or a line that begins with '!' is part of it
+			body, took, ok := blocks.DeviceBanner(sec.Lines[i:])
+			if ok {
+				items = append(items, item{text: strings.Join(sec.Lines[i:i+took], "\n"), banner: true,
+					stem: "banner login " + devconf.MessageMark(body)})
+			}
+			i += took - 1
+			continue
+		}
 		if t == "" || strings.HasPrefix(t, "!") {
 			continue
 		}
-		items = append(items, item{len(trimmed) - len(t), strings.Join(strings.Fields(t), " "), i < len(sec.Secret) && sec.Secret[i]})
+		items = append(items, item{indent: len(trimmed) - len(t), text: strings.Join(strings.Fields(t), " "), mark: i < len(sec.Secret) && sec.Secret[i]})
 	}
 	type frame struct {
 		indent int
@@ -183,7 +212,11 @@ func parseIOSExpected(sec devices.Section) []iosEntry {
 		for len(stack) > 0 && stack[len(stack)-1].indent >= it.indent {
 			stack = stack[:len(stack)-1]
 		}
-		if k+1 < len(items) && items[k+1].indent > it.indent {
+		if it.banner {
+			out = append(out, iosEntry{stem: it.stem, leaf: it.text})
+			continue
+		}
+		if k+1 < len(items) && items[k+1].indent > it.indent && !items[k+1].banner {
 			stack = append(stack, frame{it.indent, it.text})
 			continue
 		}
@@ -197,13 +230,31 @@ func parseIOSExpected(sec devices.Section) []iosEntry {
 		}
 		lines = append(lines, strings.Repeat(" ", len(ctx))+it.text)
 		marks = append(marks, it.mark)
-		stems, err := devconf.Elide("cisco", lines, marks)
+		// a community's name is labelled as in the whole section, so the
+		// stem is the one the comparison gives the same statement
+		stems, err := devconf.ElideIn("cisco", lines, marks, sec.Lines)
 		if err != nil || len(stems) == 0 {
 			continue
 		}
 		out = append(out, iosEntry{stem: stems[0], ctx: ctx, leaf: it.text, secret: it.mark})
 	}
 	return out
+}
+
+// unlabel is a compared statement with the labels of the strings the
+// rendering holds ('<secret:2>') put back as those strings: the line as the
+// device holds it. ok is false when a mark is left that the rendering cannot
+// name (another community's '<other:1>', the bare mark of an older record).
+func (st *iosState) unlabel(stem string) (string, bool) {
+	replaced := false
+	text := reMarks.ReplaceAllStringFunc(stem, func(m string) string {
+		if v, ok := st.real[m]; ok {
+			replaced = true
+			return v
+		}
+		return m
+	})
+	return text, replaced && !reMarks.MatchString(text)
 }
 
 // take returns the rendered entry of a stem not yet used.
@@ -248,6 +299,34 @@ func iosKey(path []string) (string, bool) {
 			return hostEntry(leaf), true
 		case leaf[0] == "snmp-server" && len(leaf) >= 2 && (leaf[1] == "location" || leaf[1] == "contact"):
 			return leaf[0] + " " + leaf[1], true
+		case leaf[0] == "snmp-server" && len(leaf) >= 3 && leaf[1] == "trap-source":
+			// one trap source: a typed one replaces it
+			return "snmp-server trap-source", true
+		case leaf[0] == "banner" && len(leaf) >= 2 && leaf[1] == "login":
+			// one login banner: a typed one replaces it (0.2.7, the system
+			// block)
+			return "banner login", true
+		case leaf[0] == "ip" && len(leaf) >= 4 && leaf[1] == "domain" && leaf[2] == "name" && leaf[3] != "vrf",
+			leaf[0] == "ip" && len(leaf) == 3 && leaf[1] == "domain-name":
+			// the legacy spelling is the same command
+			return "ip domain name", true
+		case leaf[0] == "clock" && len(leaf) >= 3 && leaf[1] == "timezone":
+			return "clock timezone", true
+		case leaf[0] == "ntp" && len(leaf) >= 3 && leaf[1] == "server" && leaf[2] != "vrf" && leaf[2] != "ip" && leaf[2] != "ipv6":
+			// one line per NTP server: a typed one replaces the device's of
+			// the same host, whatever its options
+			return "ntp server " + leaf[2], true
+		case leaf[0] == "snmp-server" && len(leaf) >= 3 && leaf[1] == "community" && leaf[2] != secretMark:
+			// one line per community: a typed one replaces it (an older
+			// record's bare mark stands for every community, so it keys none)
+			return strings.Join(leaf[:3], " "), true
+		case leaf[0] == "snmp-server" && len(leaf) >= 4 && leaf[1] == "host":
+			// one line per trap host and community: a typed one replaces it,
+			// whatever its version, port and types (0.2.7, the SNMP block's
+			// hosts)
+			if i := devconf.SNMPHostCommunity(leaf); i > 0 && leaf[i] != secretMark {
+				return "snmp-server host " + leaf[2] + " " + leaf[i], true
+			}
 		}
 		return "", false
 	}
@@ -586,8 +665,9 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 				continue
 			}
 			keep(x.stem, "")
-		case len(path) == 1 && leaf[0] == "snmp-server" && len(leaf) >= 2 && leaf[1] == "community":
-			keep(x.stem, "the community's name is not compared")
+		case len(path) == 1 && leaf[0] == "snmp-server" && len(leaf) >= 3 && leaf[1] == "community" && leaf[2] == secretMark:
+			// a record of an older tacctl: whose community it is cannot be told
+			keep(x.stem, communityNotVisible)
 		default:
 			keep(x.stem, "")
 		}
@@ -656,7 +736,13 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 		}
 		path := append(slices.Clone(l.Context), l.Text)
 		undo := Line{Op: OpNo, Context: slices.Clone(l.Context), Text: l.Text}
-		if k, ok := iosKey(path); ok {
+		// a secret line holds the value: its key is the compared
+		// statement's, where the community is a label
+		keyPath := path
+		if l.Secret && len(l.For) > 0 {
+			keyPath = strings.Split(l.For[0], pathSep)
+		}
+		if k, ok := iosKey(keyPath); ok {
 			if sup := superseded[k]; len(sup) > 0 {
 				undone := 0
 				for _, s := range sup {
@@ -668,10 +754,29 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 					}
 					undone++
 					if s.secret {
+						// The string of a rendered community is known: the
+						// device's line is typed again by value (placeholders
+						// with --no-secrets).
+						if t, ok := st.unlabel(s.stem); ok && !strings.Contains(s.stem, pathSep) {
+							u := Line{Op: OpLine, Text: t, Secret: true, HasValue: true, Elided: s.stem}
+							if p.opt.NoSecrets {
+								u.Text, u.HasValue = placeholderOf(s.stem), false
+							}
+							l.Undo = append(l.Undo, u)
+							continue
+						}
 						// MEDIUM 9: the device's own line is not in the
 						// record (its secret is elided): the back-out says
 						// to type it again with its original value
 						l.Undo = append(l.Undo, Line{Op: OpComment, Text: "type again with its original secret: " + shownSecret(s.stem)})
+						continue
+					}
+					if reIOSBannerStem.MatchString(s.stem) {
+						// only the size and a digest of the device's banner are
+						// kept: it cannot be typed again
+						l.Undo = append(l.Undo, Line{Op: OpComment, Text: "the device had a login banner that tacctl keeps no text of (" +
+							strings.TrimPrefix(s.stem, "banner login ") + "): put it back from the saved configuration " +
+							"('configure replace' with the archived or the startup configuration), or type it again from what you have"})
 						continue
 					}
 					sp := strings.Split(s.stem, pathSep)
@@ -684,6 +789,9 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 			}
 		}
 		switch {
+		case len(l.Context) == 0 && systemUndo(&undo, l.Text):
+			// the system block's statements and the trap source are undone as
+			// the device takes them (a key by its number, never its value)
 		case l.Secret:
 			undo.Text = undoOfSecret(path, l)
 			if strings.HasPrefix(undo.Text, "snmp-server community ") {
@@ -691,6 +799,20 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 				// (or the placeholder), and anything that shows it elides it
 				undo.Secret, undo.HasValue = true, l.HasValue
 				undo.Elided = "snmp-server community " + secretMark
+				if f := strings.Fields(l.Elided); len(f) >= 3 && isMark(f[2]) {
+					undo.Elided = strings.Join(f[:3], " ")
+				}
+			}
+			if strings.HasPrefix(undo.Text, "snmp-server host ") {
+				// a trap host names the community its notifications are sent
+				// with: the same holds
+				undo.Secret, undo.HasValue = true, l.HasValue
+				undo.Elided = undo.Text
+				if f := strings.Fields(l.Elided); len(f) >= 4 {
+					if i := devconf.SNMPHostCommunity(f); i > 0 {
+						undo.Elided = strings.Join(f[:i+1], " ")
+					}
+				}
 			}
 		case len(l.Context) == 0 && strings.HasPrefix(l.Text, "tacacs-server host "):
 			undo.Text = hostEntry(strings.Fields(l.Text))
@@ -705,6 +827,19 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 	}
 
 	finalAdds = append(finalAdds, loginLines...)
+
+	// The system block's NTP lines go in the order IOS needs: the keys, the
+	// trusted keys, the servers that name them, and 'ntp authenticate' last
+	// (the statements before them keep their order).
+	if name == devconf.SectionSystem {
+		slices.SortStableFunc(finalAdds, func(a, b Line) int { return systemRank(a) - systemRank(b) })
+		for _, l := range finalAdds {
+			if n := longestBannerLine(l.Text); n > iosMaxTypedLine {
+				o.warnings = appendNew(o.warnings, "a line of the login banner is "+strconv.Itoa(n)+" characters, and IOS takes at most "+
+					strconv.Itoa(iosMaxTypedLine)+" on a typed line: shorten it in the system block")
+			}
+		}
+	}
 
 	// Order inside the section. DECISION: roles removes before it adds (a
 	// 'no privilege exec level 7 ping' after 'privilege exec all level 7
@@ -814,14 +949,26 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 		}
 	}
 
-	// the why-line: the rows of the lines in the section
+	// the why-line: the rows of the lines in the section; the block's rows
+	// are led by one sentence that names the block
+	blockWhy := false
 	for _, row := range iosOwned {
 		if row.Section != name {
 			continue
 		}
 		for _, l := range o.lines {
-			if iosRowID(name, l) == row.ID {
-				o.why = append(o.why, row.Why)
+			if p.iosRow(name, l) == row.ID {
+				if row.Block && !blockWhy && name == devconf.SectionSNMP {
+					blockWhy = true
+					what := "(its communities, access lists, trap hosts and 'enable traps' lines)"
+					if p.blk != nil && p.blk.trapSource {
+						what = "(its communities, access lists, trap hosts, trap source and 'enable traps' lines)"
+					}
+					o.why = append(o.why, "the SNMP block of scope "+p.blockScope()+" "+what)
+				}
+				if w := strings.ReplaceAll(row.Why, "<scope>", p.blockScope()); !slices.Contains(o.why, w) {
+					o.why = append(o.why, w)
+				}
 				break
 			}
 		}
@@ -837,6 +984,33 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 		o.why = []string{"the server, the group and the method lists tacctl renders; 'aaa authorization exec' is in the same paste on purpose: without it every new login lands at privilege 1"}
 	}
 	return o
+}
+
+// iosRow is iosRowID for a line of this plan: a line the rendering took from
+// a scope's SNMP block belongs to the block's row of its kind.
+func (p *planner) iosRow(section string, l Line) string {
+	id := iosRowID(section, l)
+	if p.blk == nil || !p.blk.ios || section != devconf.SectionSNMP {
+		return id
+	}
+	text := l.Text
+	if l.Secret && l.Elided != "" {
+		text = l.Elided
+	}
+	stem := strings.Join(append(slices.Clone(l.Context), text), pathSep)
+	switch kind, _ := p.blk.iosKind(stem); kind {
+	case "community":
+		return "ios.snmp.block-community"
+	case "acl":
+		return "ios.snmp.block-acl"
+	case "host":
+		return "ios.snmp.block-host"
+	case "traps":
+		return "ios.snmp.block-traps"
+	case "trap-source":
+		return "ios.snmp.block-trap-source"
+	}
+	return id
 }
 
 // iosRowID names the ownership row a line of a section belongs to.
@@ -884,8 +1058,106 @@ func iosRowID(section string, l Line) string {
 		return "ios.snmp.location"
 	case strings.HasPrefix(t, "snmp-server contact"):
 		return "ios.snmp.contact"
+	case strings.HasPrefix(t, "snmp-server trap-source "):
+		return "ios.snmp.block-trap-source"
+	case strings.HasPrefix(t, "banner login "):
+		return "ios.system.banner"
+	case strings.HasPrefix(t, "ip domain name "):
+		return "ios.system.domain-name"
+	case strings.HasPrefix(t, "ip domain list "):
+		return "ios.system.domain-list"
+	case strings.HasPrefix(t, "clock timezone "):
+		return "ios.system.timezone"
+	case strings.HasPrefix(t, "ip name-server "):
+		return "ios.system.name-server"
+	case strings.HasPrefix(t, "ntp server "):
+		return "ios.system.ntp-server"
+	case strings.HasPrefix(t, "ntp authentication-key "):
+		return "ios.system.ntp-key"
+	case strings.HasPrefix(t, "ntp trusted-key "):
+		return "ios.system.ntp-trusted-key"
+	case t == "ntp authenticate":
+		return "ios.system.ntp-authenticate"
 	}
 	return ""
+}
+
+// iosMaxTypedLine is the longest line IOS takes when it is typed or pasted.
+const iosMaxTypedLine = 255
+
+// longestBannerLine is the length of the longest line of a login banner's
+// text (0 for a line that is no banner).
+func longestBannerLine(text string) int {
+	if !strings.HasPrefix(text, blocks.IOSBannerHead) || !strings.Contains(text, "\n") {
+		return 0
+	}
+	n := 0
+	for _, l := range strings.Split(text, "\n") {
+		n = max(n, len(l))
+	}
+	return n
+}
+
+// systemRank orders the lines of the system section as IOS needs them (M4).
+func systemRank(l Line) int {
+	t := l.Text
+	switch {
+	case strings.HasPrefix(t, "ntp authentication-key "):
+		return 1
+	case strings.HasPrefix(t, "ntp trusted-key "):
+		return 2
+	case strings.HasPrefix(t, "ntp server "):
+		return 3
+	case t == "ntp authenticate":
+		return 4
+	}
+	return 0
+}
+
+// reIOSBannerStem is the compared form of a login banner.
+var reIOSBannerStem = regexp.MustCompile(`^banner login <message: [0-9]+ lines, [0-9]+ characters, id [0-9a-f]{8}>$`)
+
+// systemUndo sets the text of an undo line to the system statement's own
+// take-away (iosSystemUndo): false when the text is none of them.
+func systemUndo(undo *Line, text string) bool {
+	t, ok := iosSystemUndo(text)
+	if ok {
+		undo.Text = t
+	}
+	return ok
+}
+
+// iosSystemUndo is the line that takes a typed system statement of the block
+// away again, as the device takes it: the statement without its value for a
+// single (a 'no ip domain name', 'no clock timezone', 'no banner login'), with
+// the entry for a list ('no ip name-server A'), the server by its host and a
+// key by its number. ok is false for a line that is none of them.
+func iosSystemUndo(text string) (string, bool) {
+	f := strings.Fields(text)
+	if len(f) < 2 {
+		return "", false
+	}
+	switch {
+	case f[0] == "banner" && f[1] == "login":
+		return "banner login", true
+	case f[0] == "ip" && len(f) >= 4 && f[1] == "domain" && f[2] == "name":
+		return "ip domain name", true
+	case f[0] == "ip" && len(f) >= 4 && f[1] == "domain" && f[2] == "list":
+		return strings.Join(f[:4], " "), true
+	case f[0] == "clock" && f[1] == "timezone":
+		return "clock timezone", true
+	case f[0] == "ip" && f[1] == "name-server" && len(f) >= 3:
+		return strings.Join(f[:3], " "), true
+	case f[0] == "ntp" && len(f) >= 3 && f[1] == "server":
+		return strings.Join(f[:3], " "), true
+	case f[0] == "ntp" && len(f) >= 3 && (f[1] == "authentication-key" || f[1] == "trusted-key"):
+		return strings.Join(f[:3], " "), true
+	case f[0] == "ntp" && f[1] == "authenticate":
+		return "ntp authenticate", true
+	case f[0] == "snmp-server" && f[1] == "trap-source":
+		return "snmp-server trap-source", true
+	}
+	return "", false
 }
 
 // IOSStoredForm is a row of the stored-forms table (D106, the spike's "What
@@ -1005,6 +1277,13 @@ func undoOfSecret(path []string, l Line) string {
 	case strings.HasPrefix(t, "snmp-server community "):
 		f := strings.Fields(t)
 		return strings.Join(f[:3], " ")
+	case strings.HasPrefix(t, "snmp-server host "):
+		// the entry is removed by its address and community (the version
+		// stays as typed: 'no snmp-server host A version 2c C')
+		f := strings.Fields(t)
+		if i := devconf.SNMPHostCommunity(f); i > 0 {
+			return strings.Join(f[:i+1], " ")
+		}
 	}
 	if f := strings.Fields(t); len(f) > 0 {
 		return f[0]

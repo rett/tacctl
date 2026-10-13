@@ -1,0 +1,8 @@
+# A unit of an older command menu: /H prints Version 7.4, which a reader
+# whose tables are verified for 8.10 must not go on with. The prompt text
+# is configurable on the unit (the 'prompt' file).
+screens ../..
+version 7.4
+level administrator
+sessions 0
+iptables empty

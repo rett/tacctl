@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/rett/tacctl/internal/devices"
@@ -16,8 +17,9 @@ import (
 type Extracted struct {
 	// Vendor is the family the text was read as (junos or ios).
 	Vendor string
-	// Sections has all six managed sections by name; one with no statement
-	// on the device has no Lines. Lines are in the compared form (see
+	// Sections has the managed sections by name (the system section only
+	// when the rendering has one, and on Junos); one with no statement on
+	// the device has no Lines. Lines are in the compared form (see
 	// Normalise): a secret's value is not in them, whatever the device
 	// printed (encrypted, hashed or masked), and Secret marks the lines
 	// that carried one.
@@ -30,6 +32,12 @@ type Extracted struct {
 	// knows better when it knows the login's class: ExtractWith takes the
 	// value and the field may be set after.
 	SecretsVisible bool
+	// ArchiveFS is, for IOS, the file system of the device's 'archive' /
+	// 'path' statement ('flash:', 'bootflash:', 'disk0:'; only the part up to
+	// and including the colon, so no host or credential of a remote path is
+	// ever kept); empty when the text has none. The plan's restore point
+	// (0.2.7) is the one reader. It is no section and never compared.
+	ArchiveFS string
 }
 
 // Options are the optional inputs of ExtractWith.
@@ -41,14 +49,18 @@ type Options struct {
 	SecretsVisible *bool
 }
 
-// Extract returns the six managed sections of a device's configuration
+// Extract returns the managed sections of a device's configuration
 // text: Junos 'show configuration | display inheritance no-comments |
-// display set' or IOS/IOS-XE 'show running-config'. A section is the
+// display set', IOS/IOS-XE 'show running-config', or a WTI unit's document
+// of captured menu pages (one screen per '# page: /N > 28' header; see
+// wti.go). A section is the
 // statements under its hierarchy (plan D62): the system's AAA keys, the
 // login classes and users, the management filter, 'snmp', 'system services
-// netconf' on Junos; 'aaa', the server blocks, 'username', 'privilege', the
-// management ACL and the VTY 'access-class', 'snmp-server' and
-// 'netconf-yang' on IOS.
+// netconf' on Junos, and the login message, domain, time zone, name servers
+// and NTP where the rendering has a system section (a login message is kept
+// as a mark of its size and a digest, never as text); 'aaa', the server
+// blocks, 'username', 'privilege', the management ACL and the VTY
+// 'access-class', 'snmp-server' and 'netconf-yang' on IOS.
 //
 // The optional expected sections (devices.Managed's result for the device)
 // say which named objects are tacctl's, so a login class, a filter or an
@@ -74,8 +86,11 @@ func ExtractWith(vendor, raw string, opt Options) (Extracted, error) {
 	if err != nil {
 		return Extracted{}, err
 	}
-	if fam == FamilyJunos {
+	switch fam {
+	case FamilyJunos:
 		return junosExtract(raw, opt.Expected, opt.SecretsVisible)
+	case FamilyWTI:
+		return wtiExtract(raw, opt.Expected, opt.SecretsVisible)
 	}
 	return ciscoExtract(raw, opt.Expected, opt.SecretsVisible)
 }
@@ -91,14 +106,24 @@ func Normalise(vendor string, s devices.Section) (devices.Section, error) {
 	if err != nil {
 		return devices.Section{}, err
 	}
-	return toSection(s.Name, uniq(canonFor(fam)(s.Lines, s.Secret))), nil
+	return toSection(s.Name, uniq(canonFor(fam)(s.Lines, s.Secret, newLabels(fam, s.Lines)))), nil
 }
 
 // Elide returns the statements of lines as Normalise shows them: the
 // secret's value left out. A line can expand to several statements.
 func Elide(vendor string, lines []string, secret []bool) ([]string, error) {
-	n, err := Normalise(vendor, devices.Section{Lines: lines, Secret: secret})
-	return n.Lines, err
+	return ElideIn(vendor, lines, secret, lines)
+}
+
+// ElideIn is Elide for lines of a rendering: a community's name is labelled
+// as in the whole rendered section (devices.Managed's lines), so one line
+// elided alone has the label the comparison gives it.
+func ElideIn(vendor string, lines []string, secret []bool, rendered []string) ([]string, error) {
+	fam, err := Family(vendor)
+	if err != nil {
+		return nil, err
+	}
+	return toSection("", uniq(canonFor(fam)(lines, secret, newLabels(fam, rendered)))).Lines, nil
 }
 
 // Fingerprint is the SHA-256 of a section's statements in the compared form
@@ -120,7 +145,8 @@ type State string
 
 const (
 	// StateOK: every expected statement is on the device and nothing else is
-	// in the section's hierarchy.
+	// in the section's hierarchy but the device's own statements the planner
+	// keeps by rule (SectionResult.Unmanaged counts them).
 	StateOK State = "ok"
 	// StateDiffers: a statement is missing, extra or out of order.
 	StateDiffers State = "differs"
@@ -159,6 +185,9 @@ type DiffLine struct {
 	Op     byte
 	Text   string
 	Secret bool
+	// Unmanaged marks an extra ('+') statement that is the device's own,
+	// kept by rule: not a difference.
+	Unmanaged bool
 }
 
 // SectionResult is the comparison of one section.
@@ -177,7 +206,34 @@ type SectionResult struct {
 	// but is not applied on lo0 (the operator's step), IOS lines that
 	// 'show running-config' does not print.
 	Notes []string
+	// Unmanaged counts the '+' lines that are the device's own statements,
+	// kept by rule (another community, a trap group, the SNMP name): with
+	// nothing else different the section is ok all the same.
+	Unmanaged int
 }
+
+// StateText is the state as the text output shows it: 'ok (+N unmanaged)'
+// for a section that is ok beside statements of the device's own.
+func (r SectionResult) StateText() string {
+	if r.State == StateOK && r.Unmanaged > 0 {
+		return "ok (+" + strconv.Itoa(r.Unmanaged) + " unmanaged)"
+	}
+	return string(r.State)
+}
+
+// UnmanagedNote is the note of a section with statements of the device's
+// own.
+func (r SectionResult) UnmanagedNote() string {
+	if r.Unmanaged == 1 {
+		return "1 statement of the device's own, kept on purpose"
+	}
+	return strconv.Itoa(r.Unmanaged) + " statements of the device's own, kept on purpose"
+}
+
+// noteLegacyCommunities is the note of a record whose community names are
+// not labelled.
+const noteLegacyCommunities = "the SNMP communities of this record (made by an older tacctl) are not told apart: " +
+	"compared by presence, and a statement under a community is left alone, until the next pull"
 
 // Notes after a secret statement's stem; the value is never printed.
 const (
@@ -206,6 +262,13 @@ func omitted(x stmt) bool {
 // and for the terms of a firewall filter, and for the entries of an ACL.
 func orderGroup(fam string, x stmt) (group, element string, ok bool) {
 	p := x.path
+	if fam == FamilyWTI {
+		// The entries of the unit's IP tables list, in order.
+		if len(p) == 2 && p[0] == "iptables" {
+			return "iptables", p[1], true
+		}
+		return "", "", false
+	}
 	if fam == FamilyJunos {
 		switch {
 		case len(p) >= 3 && p[0] == "system" && p[1] == "authentication-order":
@@ -324,16 +387,34 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 		return SectionResult{}, err
 	}
 	canon := canonFor(fam)
-	exp := uniq(canon(expected.Lines, expected.Secret))
-	dev := uniq(canon(got.Lines, got.Secret))
+	lb := newLabels(fam, expected.Lines)
+	dev := uniq(canon(got.Lines, got.Secret, lb))
 	res := SectionResult{Name: expected.Name}
 	if res.Name == "" {
 		res.Name = got.Name
 	}
+	if slices.ContainsFunc(dev, func(x stmt) bool { return legacyCommunity(fam, x) }) {
+		// A record of an older tacctl: its community names are all one mark,
+		// so the rendering's are compared that way too (by presence).
+		lb = nil
+		res.Notes = append(res.Notes, noteLegacyCommunities)
+	}
+	exp := uniq(canon(expected.Lines, expected.Secret, lb))
 	if res.Name == SectionBreakGlass {
 		var notes []string
 		dev, notes = foldLoginNames(exp, dev)
 		res.Notes = append(res.Notes, notes...)
+	}
+	if fam == FamilyWTI {
+		var notes []string
+		dev, notes = wtiAlign(exp, dev)
+		res.Notes = append(res.Notes, notes...)
+		if res.Name == SectionSNMP && slices.ContainsFunc(exp, wtiIsV3) {
+			// A v3 scope's users are not read from the unit: nothing of the
+			// section is compared, the device's statements are listed.
+			res.Notes = append(res.Notes, NoteWTIv3)
+			exp = nil
+		}
 	}
 	expStems := map[string]bool{}
 	for _, x := range exp {
@@ -364,6 +445,7 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 		var notes []string
 		dev, notes = withoutImplicitIOS(exp, dev)
 		res.Notes = append(res.Notes, notes...)
+		dev = coverTraps(exp, dev)
 		// The source interface is the operator's where the scope sets none
 		// (D119): a device's value is no extra then, whatever record it comes
 		// from.
@@ -483,6 +565,10 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 		res.Lines = append(res.Lines, l)
 	}
 	extra := 0
+	rs := newRenderedSet(fam, expected, exp, lb)
+	if fam == FamilyWTI {
+		rs.wtiProto, rs.wtiInactive = wtiProtocols(exp, dev)
+	}
 	left := map[string]int{}
 	for s, n := range budget {
 		left[s] = n
@@ -492,11 +578,15 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 			left[x.stem]--
 			continue
 		}
-		l := DiffLine{Op: OpExtra, Text: x.stem, Secret: x.secret}
+		l := DiffLine{Op: OpExtra, Text: x.stem, Secret: x.secret, Unmanaged: unmanaged(fam, res.Name, x, rs)}
 		if x.secret {
 			l.Text += notePresent
 		}
 		res.Lines = append(res.Lines, l)
+		if l.Unmanaged {
+			res.Unmanaged++
+			continue
+		}
 		extra++
 	}
 	order := orderFindings(fam, exp, dev)
@@ -510,6 +600,9 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 
 	if fam == FamilyJunos && res.Name == SectionMgmtACL {
 		res.Notes = append(res.Notes, unappliedFilters(exp, dev, lo0)...)
+	}
+	if fam == FamilyWTI && res.Name == SectionMgmtACL {
+		res.Notes = append(res.Notes, wtiTailNotes(dev)...)
 	}
 
 	// present counts the statements that are the section's own: a router
@@ -581,11 +674,36 @@ func unappliedFilters(exp, dev, lo0 []stmt) []string {
 
 // CompareAll compares every managed section of a device: expected is
 // devices.Managed's result (a section it leaves out is n/a), got is the
-// extraction. The results are in SectionNames order.
+// extraction. The results are in SectionNames order (a WTI unit's, in
+// SectionsOf order: aaa, mgmt-acl, snmp, breakglass).
 func CompareAll(expected []devices.Section, got Extracted) ([]SectionResult, error) {
 	out := make([]SectionResult, 0, len(SectionNames))
 	for _, n := range SectionNames {
+		if got.Vendor == FamilyWTI && !slices.Contains(unitSections, n) {
+			// a unit has no such section: not listed, not n/a
+			continue
+		}
 		e := sectionOf(expected, n)
+		if optionalSection(n) {
+			if !renders(expected, n) {
+				// the scope has no such block: no section at all
+				continue
+			}
+			if _, ok := got.Sections[n]; !ok {
+				// A record made before the block was set (or by an older
+				// tacctl) did not read the section: nothing is compared
+				// until the next pull.
+				out = append(out, SectionResult{Name: n, State: StateNA, Notes: []string{noteNoSystem}})
+				continue
+			}
+		}
+		if got.Vendor == FamilyWTI && n == SectionBreakGlass && renders(expected, n) {
+			if _, ok := got.Sections[n]; !ok {
+				// the user directory was not read in this pull
+				out = append(out, SectionResult{Name: n, State: StateNA, Notes: []string{NoteWTIUsersNotRead}})
+				continue
+			}
+		}
 		g := got.Sections[n]
 		g.Name = n
 		r, err := Compare(got.Vendor, e, g, got.SecretsVisible)
@@ -597,3 +715,8 @@ func CompareAll(expected []devices.Section, got Extracted) ([]SectionResult, err
 	}
 	return out, nil
 }
+
+// noteNoSystem is the note of a record that has no system section although
+// the rendering has one.
+const noteNoSystem = "the system block of this scope is newer than the pull of this record: " +
+	"the system settings are not compared until the next pull"

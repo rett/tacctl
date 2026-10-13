@@ -360,7 +360,27 @@ func iosPool(exp []devices.Section) []string {
 		"snmp-server contact Someone Else",
 		"snmp-server community stray-comm RO",
 		"snmp-server enable traps snmp",
+		// 0.2.7: the objects of an IOS snmp block (a rendering without one
+		// holds them as the device's own)
+		"snmp-server community poller-ro RW POLLERS",
+		"snmp-server host 192.0.2.61 version 2c poller-traps udp-port 1162",
+		"snmp-server host 192.0.2.77 version 2c unrelated-traps",
+		"snmp-server enable traps config",
+		"ip access-list standard POLLERS\n permit 203.0.113.9",
 		"ip access-list standard OTHER-ACL\n permit 203.0.113.0 0.0.0.255",
+		// 0.2.7: the objects of an IOS system block and the trap source
+		"snmp-server trap-source Loopback7",
+		"ip domain name other.example.net",
+		"ip domain-name other.example.net",
+		"ip domain list other.example.net",
+		"clock timezone PST -8 0",
+		"ip name-server 198.51.100.77",
+		"ntp server 192.0.2.123 version 3",
+		"ntp server 198.51.100.99 prefer",
+		"ntp authentication-key 9 md5 0822455D0A16 7",
+		"ntp trusted-key 9",
+		"ntp authenticate",
+		"ntp master 3",
 		// WP13.1b and the lab IOSv: the lines' login method, and what a
 		// 15.x back-out leaves behind
 		"line vty 0 4\n login local",
@@ -423,7 +443,9 @@ func mutateIOS(raw string, exp []devices.Section, r *rand.Rand) (string, string)
 				managedBlock := strings.HasPrefix(h, "tacacs server ") || strings.HasPrefix(h, "radius server ") ||
 					strings.HasPrefix(h, "aaa group server ") || strings.HasPrefix(h, "ip access-list standard ")
 				if len(b.lines) == 1 && (strings.HasPrefix(h, "aaa ") || strings.HasPrefix(h, "privilege ") ||
-					strings.HasPrefix(h, "snmp-server ") || strings.HasPrefix(h, "tacacs-server host")) && h != "aaa new-model" {
+					strings.HasPrefix(h, "snmp-server ") || strings.HasPrefix(h, "tacacs-server host") ||
+					strings.HasPrefix(h, "ip domain ") || strings.HasPrefix(h, "ip name-server ") ||
+					strings.HasPrefix(h, "clock timezone ") || strings.HasPrefix(h, "ntp ")) && h != "aaa new-model" {
 					cand = append(cand, ref{bi, 0})
 				}
 				if managedBlock {
@@ -455,6 +477,14 @@ func mutateIOS(raw string, exp []devices.Section, r *rand.Rand) (string, string)
 			for _, l := range strings.Split(p, "\n") {
 				if strings.HasPrefix(l, " ") {
 					if hdr != nil {
+						// a line has one login method: a typed one replaces
+						// the device's (IOS cannot hold two)
+						if strings.HasPrefix(strings.TrimSpace(l), "login") {
+							hdr.lines = slices.DeleteFunc(hdr.lines, func(x string) bool {
+								t := strings.TrimSpace(x)
+								return x != hdr.lines[0] && (strings.HasPrefix(t, "login") || strings.HasPrefix(t, "no login"))
+							})
+						}
 						hdr.lines = append(hdr.lines, l)
 					}
 					continue

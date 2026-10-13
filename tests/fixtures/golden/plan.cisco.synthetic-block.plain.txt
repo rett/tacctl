@@ -1,0 +1,4 @@
+aaa authentication login CONSOLE local
+aaa accounting commands 15 default start-stop group LAB-TACACS
+line con 0
+ login authentication CONSOLE

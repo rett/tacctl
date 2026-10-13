@@ -57,8 +57,8 @@ func configDenyCmd(inv *invocation) *cobra.Command {
 func configMgmtACLCmd(inv *invocation) *cobra.Command {
 	return configPolicyFamily(inv, "mgmt-acl", "Manage Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits", inv.configMgmtACL, [][2]string{
 		{"list", "Show current permits"},
-		{"add <cidr>[,<cidr>...]", "Add one or more CIDRs"},
-		{"remove <cidr>[,<cidr>...]", "Remove one or more CIDRs"},
+		{"add <entry>[,<entry>...]", "Add one or more entries: a CIDR, or a CIDR with services (10.0.0.0/8:tcp/22,udp/161,icmp)"},
+		{"remove <entry>[,<entry>...]", "Remove entries (a bare CIDR removes every entry of that CIDR)"},
 		{"clear", "Wipe all permits (confirms)"},
 		{"cisco-name [name]", "Show or set the Cisco ACL name"},
 		{"juniper-name [name]", "Show or set the Juniper filter name"},
@@ -242,19 +242,17 @@ func (inv *invocation) configMgmtACL(args []string) error {
 		if entries := inv.readMgmtACLCIDRs(""); len(entries) == 0 {
 			inv.echo("  (empty)")
 			inv.echo("")
-			inv.echo("  Add with: tacctl config mgmt-acl add <cidr>")
+			inv.echo("  Add with: tacctl config mgmt-acl add <cidr>[:<services>]")
 			inv.echo("  Cisco/Juniper output uses a scaffold/comment until populated.")
 		} else {
-			for _, e := range entries {
-				inv.echo("  - " + e)
-			}
+			inv.aclLines(entries)
 		}
 		inv.echo("")
 	case "add", "remove":
 		if value == "" {
-			return inv.usageErr("Usage: tacctl config mgmt-acl " + sub + " <cidr>[,<cidr>...]")
+			return inv.usageErr("Usage: tacctl config mgmt-acl " + sub + " <cidr>[:<services>][,<cidr>[:<services>]...]")
 		}
-		requested, err := inv.parseCIDRList(value)
+		requested, err := inv.parseACLEntries(value)
 		if err != nil {
 			return err
 		}
@@ -266,20 +264,7 @@ func (inv *invocation) configMgmtACL(args []string) error {
 			a.Out.Warn("Nothing to remove — mgmt-acl permit list is empty.")
 			return nil
 		}
-		var changed, skipped []string
-		for _, c := range requested {
-			has := contains(current, c)
-			switch {
-			case sub == "add" && !has:
-				changed = append(changed, c)
-				current = append(current, c)
-			case sub == "remove" && has:
-				changed = append(changed, c)
-				current = without(current, c)
-			default:
-				skipped = append(skipped, c)
-			}
-		}
+		current, changed, skipped, notes := aclChange(current, sub == "remove", requested)
 		if len(changed) == 0 {
 			if sub == "add" {
 				a.Out.Info("No new CIDRs to add (already present: " + strings.Join(skipped, " ") + ").")
@@ -300,6 +285,9 @@ func (inv *invocation) configMgmtACL(args []string) error {
 			a.Out.Info("Re-run 'tacctl config cisco' / 'tacctl config juniper' to see the new output.")
 		} else {
 			a.Out.Info(fmt.Sprintf("Removed %d from mgmt-acl: %s", len(changed), strings.Join(changed, " ")))
+			for _, n := range notes {
+				a.Out.Info("(" + n + ")")
+			}
 			if len(skipped) > 0 {
 				a.Out.Info("(Not present, skipped: " + strings.Join(skipped, " ") + ")")
 			}

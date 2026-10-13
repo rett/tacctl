@@ -4,11 +4,17 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/rett/tacctl/internal/devconf/wti"
 )
 
 // loginUser returns the local user a statement of the break-glass section is
 // about: the token after 'system login user' on Junos, after 'username' on IOS.
 func loginUser(x stmt) (string, bool) {
+	if len(x.path) == 4 && x.path[0] == "user" {
+		// a WTI unit's local user: 'user <name> <key> <value>'
+		return x.path[1], true
+	}
 	if len(x.path) >= 4 && x.path[0] == "system" && x.path[1] == "login" && x.path[2] == "user" {
 		return x.path[3], true
 	}
@@ -63,7 +69,11 @@ func foldLoginNames(exp, dev []stmt) ([]stmt, []string) {
 		}
 		y := x
 		y.path = slices.Clone(x.path)
-		if len(y.path) >= 4 && y.path[0] == "system" {
+		if len(y.path) == 4 && y.path[0] == "user" {
+			y.path[1] = m
+			y.stem = "user " + wti.Quote(m) + " " + y.path[2] + " " + y.path[3]
+			y.text = y.stem
+		} else if len(y.path) >= 4 && y.path[0] == "system" {
 			y.path[3] = m
 			y.text = strings.Replace(y.text, " user "+n+" ", " user "+m+" ", 1)
 			y.stem = strings.Replace(y.stem, " user "+n+" ", " user "+m+" ", 1)

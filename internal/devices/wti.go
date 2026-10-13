@@ -301,7 +301,9 @@ func renderWTI(o *out, req Request, d Data) error {
 	}
 	o.echo("")
 	o.unfilledBreakGlass(bg)
-	o.unfilled(mergeUnfilled(t.snmpGaps(WTISNMP(d.snmpInput(scope))), t.iptablesGaps(WTIIPTables(d.iptablesInput(scope)))))
+	ipt := WTIIPTables(d.iptablesInput(scope))
+	o.unfilled(mergeUnfilled(t.snmpGaps(WTISNMP(d.snmpInput(scope))), t.iptablesGaps(ipt)))
+	o.iptablesWarning(t, ipt)
 	return nil
 }
 
@@ -425,6 +427,8 @@ func renderWTIRadius(o *out, req Request, d Data) error {
 	}
 	o.echo("")
 	o.unfilledBreakGlass(bg)
-	o.unfilled(mergeUnfilled(t.snmpGaps(WTISNMP(d.snmpInput(scope))), t.iptablesGaps(WTIIPTables(d.iptablesInput(scope)))))
+	ipt := WTIIPTables(d.iptablesInput(scope))
+	o.unfilled(mergeUnfilled(t.snmpGaps(WTISNMP(d.snmpInput(scope))), t.iptablesGaps(ipt)))
+	o.iptablesWarning(t, ipt)
 	return nil
 }

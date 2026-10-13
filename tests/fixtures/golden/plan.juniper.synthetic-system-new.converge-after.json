@@ -1,0 +1,101 @@
+{
+  "name": "dev-juniper-synthetic-system-new",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "juniper",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "netconf",
+    "age_s": 1080,
+    "secrets_visible": true
+  },
+  "status": "needs-change",
+  "irregularities": [
+    {
+      "n": 1,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "a TACACS+ server 192.0.2.99",
+      "statement": "set system tacplus-server 192.0.2.99 secret \u003csecret\u003e",
+      "action": "Removed by the cleanup region, line 3.",
+      "fixed": false
+    },
+    {
+      "n": 2,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "an SNMP community: authorization read-only",
+      "statement": "set snmp community \u003cother:1\u003e authorization read-only",
+      "action": "Left alone (its name is the secret and is not known to tacctl).",
+      "fixed": false
+    },
+    {
+      "n": 3,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "SNMP: trap-group \u003cother:2\u003e targets 192.0.2.50",
+      "statement": "set snmp trap-group \u003cother:2\u003e targets 192.0.2.50",
+      "action": "Left alone (its name is the secret and is not known to tacctl).",
+      "fixed": false
+    }
+  ],
+  "region": [],
+  "after": [],
+  "backout": [],
+  "left": {
+    "access": 0,
+    "monitoring": 2,
+    "cosmetic": 0
+  },
+  "extras": [
+    {
+      "section": "aaa",
+      "text": "set system tacplus-server 192.0.2.99 secret",
+      "remove": [
+        "delete system tacplus-server 192.0.2.99"
+      ]
+    },
+    {
+      "section": "snmp",
+      "text": "set snmp community \u003cother:1\u003e authorization read-only",
+      "guard": "its name is the secret and is not known to tacctl"
+    },
+    {
+      "section": "snmp",
+      "text": "set snmp trap-group \u003cother:2\u003e targets 192.0.2.50",
+      "guard": "its name is the secret and is not known to tacctl"
+    }
+  ],
+  "skipped": [],
+  "withheld": [],
+  "warnings": [],
+  "holds_secret": false,
+  "converge": true,
+  "cleanup": [
+    "configure private",
+    "# aaa: removes the servers the standard does not have",
+    "delete system tacplus-server 192.0.2.99",
+    "show | compare | no-more",
+    "commit check",
+    "commit confirmed 5 comment \"tacctl cleanup dev-juniper-synthetic-system-new 2026-10-10T14:20Z by alice\""
+  ],
+  "cleanup_after": [
+    "#",
+    "# There is no other paste for dev-juniper-synthetic-system-new: its first region is empty. Check",
+    "# that the pull is current (tacctl device config pull dev-juniper-synthetic-system-new --diff",
+    "# reads ok for aaa), that 'show system commit' shows no pending 'commit confirmed' (type the",
+    "# plan's 'commit' first), and keep a NEW ssh session as yourself open.",
+    "# Same check, same one word, typed yourself:  commit     (before the 5 minutes end)",
+    "# If any line printed \"error:\", do not type commit: the switch undoes the cleanup by itself in 5",
+    "# minutes. To undo it after the commit: show system commit, then rollback \u003cn\u003e of the entry just",
+    "# before the one commented \"tacctl cleanup dev-juniper-synthetic-system-new\", then commit. A",
+    "# removed server's secret is not held by tacctl: type it again.",
+    "# Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold dev-juniper-synthetic-system-new --reason \"...\"",
+    "# then log in as the device's local user (ssh or console),",
+    "# fix or back out, and the superuser runs: tacctl breakglass release dev-juniper-synthetic-system-new"
+  ]
+}

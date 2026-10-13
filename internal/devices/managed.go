@@ -24,7 +24,7 @@ import (
 )
 
 // ErrUnsupported is returned by Managed for a vendor with no managed
-// sections (wti today).
+// sections (any but cisco, juniper and wti).
 var ErrUnsupported = errors.New("no managed sections for this vendor")
 
 // Section is one managed section of a device (D62): its name, and the
@@ -39,6 +39,13 @@ type Section struct {
 	// hashed; it is compared by presence only (D64). Secret[i] belongs to
 	// Lines[i].
 	Secret []bool
+	// Block marks, per line, a statement that comes from a configuration
+	// block of the scope (0.2.7) and not from the structured settings: the
+	// planner owns a block's community or trap group as a whole object, the
+	// structured community by the leaves it renders. Nil when no line is a
+	// block's; else Block[i] belongs to Lines[i]. Every line of the system
+	// section is a block's.
+	Block []bool
 }
 
 // The sections, in the order Managed returns them.
@@ -47,16 +54,18 @@ const (
 	sectionRoles      = "roles"
 	sectionMgmtACL    = "mgmt-acl"
 	sectionSNMP       = "snmp"
+	sectionSystem     = "system"
 	sectionNetconf    = "netconf"
 	sectionBreakGlass = "breakglass"
 )
 
 // Managed returns the managed sections expected for one device, built from
 // the same inputs as its walkthrough, in the order aaa, roles, mgmt-acl,
-// snmp, netconf, breakglass. A section tacctl renders no statement for
-// (SNMP not configured, no management ACL, the NETCONF step commented out,
-// no break-glass user) is left out, so a device is never told it lacks
-// what tacctl does not render.
+// snmp, system, netconf, breakglass. A section tacctl renders no statement
+// for (SNMP not configured, no management ACL, the NETCONF step commented
+// out, no break-glass user, and the system section of a scope with no system
+// block) is left out, so a device is never told it lacks what tacctl does not
+// render.
 //
 // Lines are the statements exactly as the walkthrough prints them, a
 // secret's value included (Secret marks them): a caller that shows a
@@ -65,10 +74,12 @@ const (
 // opens it ('line vty 0 15', then its 'access-class').
 //
 // The walkthrough's protocol decides the AAA statements (a RADIUS request
-// needs Data.Radius, as Render does); wti and any other vendor return
-// ErrUnsupported.
+// needs Data.Radius, as Render does); any other vendor returns
+// ErrUnsupported. A WTI unit's statements are the canonical 'key value' lines
+// of its menu pages (wti_managed.go), in the sections aaa, mgmt-acl, snmp and
+// breakglass.
 func Managed(req Request, d Data) ([]Section, error) {
-	if req.Vendor != "cisco" && req.Vendor != "juniper" {
+	if req.Vendor != "cisco" && req.Vendor != "juniper" && req.Vendor != "wti" {
 		return nil, ErrUnsupported
 	}
 	if d.Model == nil || d.Conf == nil {
@@ -77,8 +88,14 @@ func Managed(req Request, d Data) ([]Section, error) {
 	if req.Protocol == RADIUS && d.Radius == nil {
 		return nil, errors.New("devices: a RADIUS device needs Data.Radius, as its walkthrough does")
 	}
-	if req.Vendor == "cisco" {
+	if err := d.blockProblem(req); err != nil {
+		return nil, err
+	}
+	switch req.Vendor {
+	case "cisco":
 		return managedCisco(req, d), nil
+	case "wti":
+		return managedWTI(req, d), nil
 	}
 	return managedJuniper(req, d), nil
 }
@@ -91,12 +108,69 @@ type sections struct {
 }
 
 func (s *sections) add(name string, lines []string) {
+	s.addFrom(name, lines, nil)
+}
+
+// addFrom is add for a section some of whose lines come from a block:
+// block holds those statements.
+func (s *sections) addFrom(name string, lines []string, block map[string]bool) {
 	if len(lines) == 0 {
 		return
 	}
 	sec := Section{Name: name, Lines: lines, Secret: make([]bool, len(lines))}
+	var from []bool
 	for i, l := range lines {
 		sec.Secret[i] = s.secret(l)
+		if block[l] {
+			if from == nil {
+				from = make([]bool, len(lines))
+			}
+			from[i] = true
+		}
+	}
+	sec.Block = from
+	s.out = append(s.out, sec)
+}
+
+// addTail is add for a section whose last n lines come from a block: the
+// marks are by position, because an access list entry of a block can be the
+// same text as one of the structured settings'.
+func (s *sections) addTail(name string, lines []string, n int) {
+	if len(lines) == 0 {
+		return
+	}
+	s.add(name, lines)
+	if n <= 0 || n > len(lines) {
+		return
+	}
+	sec := &s.out[len(s.out)-1]
+	sec.Block = make([]bool, len(lines))
+	for i := len(lines) - n; i < len(lines); i++ {
+		sec.Block[i] = true
+	}
+}
+
+// addSystem is add for the system section of an IOS device: every line is
+// the block's, and a line inside the banner is text, never a statement and
+// never a secret.
+func (s *sections) addSystem(name string, lines []string) {
+	if len(lines) == 0 {
+		return
+	}
+	sec := Section{Name: name, Lines: lines, Secret: make([]bool, len(lines)), Block: make([]bool, len(lines))}
+	delim := ""
+	for i, l := range lines {
+		sec.Block[i] = true
+		if delim != "" {
+			if l == delim {
+				delim = ""
+			}
+			continue
+		}
+		sec.Secret[i] = s.secret(l)
+		if f := strings.Fields(l); len(f) == 3 && f[0] == "banner" && f[1] == "login" {
+			delim = f[2]
+		}
 	}
 	s.out = append(s.out, sec)
 }
@@ -122,13 +196,32 @@ func managedJuniper(req Request, d Data) []Section {
 	s.add(sectionRoles, junosStatements(v["TEMPLATE_USERS"]))
 	// Step 4: the lo0 filter (SNMP terms included).
 	s.add(sectionMgmtACL, junosStatements(v["MGMT_ACL_BLOCK"]))
-	// Step 5 and 6.
-	s.add(sectionSNMP, junosStatements(v["SNMP_BLOCK"]))
+	// Step 5 and 6. The scope's snmp block follows the structured settings
+	// in the same step: its statements are the live lines of the same
+	// block, marked as the block's.
+	s.addFrom(sectionSNMP, junosStatements(v["SNMP_STEP"]), d.blockSNMPSet())
+	// The scope's system block follows in the same step: a section of its
+	// own, present only when a block is in force (so the device's own login
+	// message, domain and NTP are no business of a scope without one).
+	sys := junosStatements(v["SYSTEM_BLOCK"])
+	s.addFrom(sectionSystem, sys, setOf(sys))
 	s.add(sectionNetconf, junosStatements(v["NETCONF_BLOCK"]))
 	// Step 7: the account lines are rendered commented, to be completed
 	// with a hash; the statement is the line as it is once pasted.
 	s.add(sectionBreakGlass, uncommented(juniperBreakGlass(BreakGlassFor(req, d)), "# ", "# set system login user "))
 	return s.out
+}
+
+// setOf is the set of the lines.
+func setOf(lines []string) map[string]bool {
+	if len(lines) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(lines))
+	for _, l := range lines {
+		out[l] = true
+	}
+	return out
 }
 
 // junosStatements are the 'set' lines of a block: comments, blanks and
@@ -149,13 +242,16 @@ func junosStatements(block string) []string {
 
 // reJuniperSecret is a Junos statement that carries a secret, the device
 // stores it encrypted (the '$9$' form) or hashed, so it is compared by
-// presence: a server's secret, an SNMP community (its name is the secret),
-// an SNMPv3 user's authentication and privacy passwords, a local user's
-// hash.
+// presence: a server's secret, an SNMP community (its name is the secret) and
+// a trap group (its name is the community its traps are sent with, 0.2.7:
+// only a block has one), an SNMPv3 user's authentication and privacy
+// passwords, an NTP authentication key's value (the system block, 0.2.7), a
+// local user's hash.
 var reJuniperSecret = regexp.MustCompile(`^set (` +
 	`system (tacplus|radius)-server \S+ secret ` +
-	`|snmp community ` +
+	`|snmp (community|trap-group) ` +
 	`|snmp v3 usm local-engine user \S+ (authentication-\S+ authentication|privacy-\S+ privacy)-password ` +
+	`|system ntp authentication-key \S+ (type \S+ )?value ` +
 	`|system login user \S+ class \S+ authentication encrypted-password )`)
 
 func juniperSecret(line string) bool { return reJuniperSecret.MatchString(line) }
@@ -252,7 +348,17 @@ func managedCisco(req Request, d Data) []Section {
 	}
 	s.add(sectionMgmtACL, acl)
 
-	s.add(sectionSNMP, ciscoStatements(v["SNMP_BLOCK"]))
+	// The scope's snmp block follows the structured settings in the same
+	// step: its statements are the last lines of the block, marked as the
+	// block's.
+	snmp := ciscoStatements(v["SNMP_STEP"])
+	s.addTail(sectionSNMP, snmp, len(d.Blocks.ciscoSNMPStatements()))
+	// The scope's system block follows in the same step: a section of its
+	// own, present only when a block is in force (so the device's own banner,
+	// domain and NTP are no business of a scope without one). Every line is
+	// the block's; a banner's lines are the lines typed, its text no
+	// statement and never a secret.
+	s.addSystem(sectionSystem, ciscoSystemStatements(v["SYSTEM_BLOCK"]))
 	s.add(sectionNetconf, ciscoStatements(v["NETCONF_BLOCK"]))
 	s.add(sectionBreakGlass, uncommented(ciscoBreakGlass(BreakGlassFor(req, d)), "! ", "! username "))
 	return s.out
@@ -272,15 +378,45 @@ func ciscoStatements(block string) []string {
 	return out
 }
 
+// ciscoSystemStatements are the lines of the system block of a walkthrough:
+// comment lines ('!') and blank lines outside the banner dropped, every line
+// of the banner kept as it is (a body line may be blank or begin with '!').
+func ciscoSystemStatements(block string) []string {
+	var out []string
+	delim := ""
+	for _, l := range strings.Split(block, "\n") {
+		if delim != "" {
+			out = append(out, l)
+			if l == delim {
+				delim = ""
+			}
+			continue
+		}
+		t := strings.TrimSpace(l)
+		if t == "" || strings.HasPrefix(t, "!") {
+			continue
+		}
+		out = append(out, l)
+		if f := strings.Fields(t); len(f) == 3 && f[0] == "banner" && f[1] == "login" {
+			delim = f[2]
+		}
+	}
+	return out
+}
+
 // reCiscoSecret is a Cisco statement that carries a secret, which the
 // device stores encrypted or hashed ('key 7', 'key 6', 'secret 9'): the
-// key of a server block (or the legacy global line), an SNMP community or
-// v3 user, a local user's hash.
+// key of a server block (or the legacy global line), an SNMP community, a
+// trap host (it names the community its notifications are sent with) or v3
+// user, an NTP authentication key's string (the system block), a local
+// user's hash.
 var reCiscoSecret = regexp.MustCompile(`^(` +
 	`\s+key \S` +
 	`|tacacs-server host \S+ .*\bkey \S` +
 	`|snmp-server community \S` +
+	`|snmp-server host \S+ ` +
 	`|snmp-server user \S` +
+	`|ntp authentication-key \S+ \S+ \S` +
 	`|username \S+ privilege \d+ secret \d+ \S` +
 	`)`)
 

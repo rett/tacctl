@@ -104,8 +104,8 @@ func TestNeverEmitted(t *testing.T) {
 	if _, err := Plan("juniper", nil, devconf.Extracted{}, devconf.Extracted{}, Options{Sections: []string{"bogus"}}); !errors.Is(err, ErrUsage) {
 		t.Errorf("an unknown section: %v", err)
 	}
-	if _, err := Plan("wti", nil, devconf.Extracted{}, devconf.Extracted{}, Options{}); !errors.Is(err, ErrUnsupported) {
-		t.Errorf("wti: %v", err)
+	if _, err := Plan("nokia", nil, devconf.Extracted{}, devconf.Extracted{}, Options{}); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("an unknown vendor: %v", err)
 	}
 	// the list: every row matches what it names, and a forward 'no aaa new-model'
 	for _, r := range neverEmitted {

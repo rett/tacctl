@@ -6,10 +6,10 @@
 #  1. aaa      ACCESS     extra: a TACACS+ server 192.0.2.99 (set system tacplus-server 192.0.2.99
 #                         secret <secret>). Removed by the cleanup region, line 3.
 #  2. snmp     MONITORING extra: an SNMP community: authorization read-only (set snmp community
-#                         <secret> authorization read-only). Left alone (its name is the secret and is
-#                         not known to tacctl).
-#  3. snmp     MONITORING extra: SNMP: trap-group <secret> targets 192.0.2.50 (set snmp trap-group
-#                         <secret> targets 192.0.2.50). Left alone (its name is the secret and is not
+#                         <other:1> authorization read-only). Left alone (its name is the secret and
+#                         is not known to tacctl).
+#  3. snmp     MONITORING extra: SNMP: trap-group <other:2> targets 192.0.2.50 (set snmp trap-group
+#                         <other:2> targets 192.0.2.50). Left alone (its name is the secret and is not
 #                         known to tacctl).
 # No fix to paste: the cleanup region below is the only paste (what else remains is left alone).
 # Consistent: roles, mgmt-acl. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).

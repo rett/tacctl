@@ -22,7 +22,7 @@
 #                         EN-CLASS class EN-CLASS). Fixed by region line 31.
 #  9. snmp     MONITORING missing: SNMP client list TACCTL-SNMP: 3 statements (e.g. set snmp
 #                         client-list TACCTL-SNMP 192.0.2.10/32). Fixed by region lines 33-35.
-# 10. snmp     MONITORING missing: an SNMP community: 2 statements (e.g. set snmp community <secret>
+# 10. snmp     MONITORING missing: an SNMP community: 2 statements (e.g. set snmp community <secret:1>
 #                         authorization read-only). Fixed by region lines 36-37.
 # 11. snmp     COSMETIC   missing: the SNMP location is Rack 4, DC1 (set snmp location "Rack 4, DC1").
 #                         Fixed by region line 38.

@@ -43,6 +43,19 @@ func emitIOSLine(out *[]RegionLine, c *iosCursor, l Line, idx int) {
 		*out = append(*out, RegionLine{Text: "! " + secretLinePrefix + strings.TrimSpace(text), Comment: true, Line: idx})
 		return
 	}
+	// a login banner is one statement of several lines (the opening line, the
+	// text, the closing delimiter): they are consecutive lines of the region,
+	// the first of them the line of the plan
+	if lines := strings.Split(text, "\n"); len(lines) > 1 {
+		for i, bl := range lines {
+			at := idx
+			if i > 0 {
+				at = -1
+			}
+			*out = append(*out, RegionLine{Text: bl, Line: at})
+		}
+		return
+	}
 	*out = append(*out, RegionLine{Text: text, Line: idx})
 }
 
@@ -245,6 +258,16 @@ func iosAfter(d Delta, h Header, w Wrapper) string {
 	if HasBackout(d) {
 		c("To undo: " + undo + "     (tacctl keeps this plan's back-out: after the check pull has replaced the picture, the command still prints this plan's, and says which pull it undoes, until the next plan with changes)")
 	}
+	if d.restoreShown() {
+		// the restore block is above the region; here is where to go back with it
+		if HasBackout(d) {
+			c("Restore point: " + d.Restore.Name(h) + " (the block above the region). The back-out names it as an alternative to its 'no' lines: 'configure replace' with the file.")
+		} else {
+			b.WriteString("!\n")
+			c("Restore point: " + d.Restore.Name(h) + " (the block above the region). There are no lines of tacctl's to undo this plan, so the way back is the file.")
+			restoreAlternative(d, h, "", c, func(s string) { b.WriteString("!   " + s + "\n") })
+		}
+	}
 	c("Do not: 'write memory' before the check; paste outside the banners; paste into another device; paste on a console more than twenty lines at a time; keep this output in a file after the paste when it holds a secret.")
 	b.WriteString(lockoutHelp(d, h))
 	return b.String()
@@ -268,6 +291,11 @@ func iosBackoutAfter(d Delta, h Header, w Wrapper) string {
 	c("If the plan was saved with write memory, this undo is saved only when you type it again.")
 	b.WriteString("!\n")
 	c("A value that tacctl does not hold (an original secret) is a line marked with ! inside the region: put it back by hand.")
+	if d.restoreShown() {
+		b.WriteString("!\n")
+		restoreAlternative(d, h, "Or, ", c, func(s string) { b.WriteString("!   " + s + "\n") })
+		b.WriteString("!\n")
+	}
 	c("Do not: 'write memory' before the check; paste outside the banners; paste into another device; paste on a console more than twenty lines at a time; keep this output in a file after the paste when it holds a secret.")
 	b.WriteString(lockoutHelp(d, h))
 	return b.String()
@@ -300,7 +328,7 @@ func pastedLines(lines []Line) int {
 			n += len(l.Context)
 			c.ctx = append([]string(nil), l.Context...)
 		}
-		n++
+		n += strings.Count(l.Text, "\n") + 1
 	}
 	return n
 }

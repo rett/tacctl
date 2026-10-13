@@ -60,8 +60,12 @@ func checkJunosPreserved(t *testing.T, f fixture, exp []devices.Section, before,
 			case l.Op == OpDelete && len(tk) > 1 && len(s.path) >= len(tk)-1 && slices.Equal(s.path[:len(tk)-1], tk[1:]):
 				named = true
 			case l.Op == OpSet && len(tk) > 2:
-				if n := singleKeyLen(s.path); n > 0 && len(tk)-1 > n && slices.Equal(tk[1:n+1], s.path[:n]) {
-					named = true // replaced in place
+				// a line of several leaves (an NTP key's type and value) is
+				// one statement per leaf on the device
+				for _, lp := range splitLeaves(tk[1:]) {
+					if n := singleKeyLen(s.path); n > 0 && len(lp) > n && slices.Equal(lp[:n], s.path[:n]) {
+						named = true // replaced in place
+					}
 				}
 			}
 		}
@@ -83,6 +87,11 @@ func iosFlat(c *IOSConfig) map[string]bool {
 	for _, b := range c.blocks {
 		h := norm(b.lines[0])
 		if h == "" || strings.HasPrefix(h, "!") {
+			continue
+		}
+		if strings.HasPrefix(h, "banner ") {
+			// a banner's text is text, not statements: the system block's
+			// banner is compared by its digest (system_test.go)
 			continue
 		}
 		if len(b.lines) == 1 {
@@ -196,6 +205,12 @@ func checkIOSPreserved(t *testing.T, f fixture, exp []devices.Section, before, a
 		case len(path) == 1 && lf[0] == "aaa":
 		case len(path) == 1 && lf[0] == "tacacs-server":
 		case len(path) == 1 && lf[0] == "snmp-server" && len(lf) > 1 && (lf[1] == "location" || lf[1] == "contact"):
+		case len(path) == 1 && lf[0] == "snmp-server" && len(lf) > 1 && (lf[1] == "community" || lf[1] == "host" || lf[1] == "trap-source"):
+			// a community, a trap host or the trap source the plan retypes in
+			// place (the typed line of the same key was found above)
+		case len(path) == 1 && (lf[0] == "clock" || lf[0] == "ntp" && len(lf) > 1 && lf[1] == "server" ||
+			lf[0] == "ip" && len(lf) > 1 && strings.HasPrefix(lf[1], "domain")):
+			// a system statement the plan retypes in place (0.2.7)
 		default:
 			t.Errorf("%s %s: %q is outside every owned object and the plan removed it\n%s", f.name, label, line, d.Display())
 		}

@@ -26,6 +26,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -61,13 +62,19 @@ const (
 	ResultUnsupported     = "unsupported"
 	ResultParseFailed     = "parse-failed"
 	ResultInterrupted     = "interrupted"
+	// ResultDenied (0.2.7): a WTI unit's login level cannot configure the
+	// unit, so its pages are not shown to it; the level is the login's, not
+	// the credentials' (auth-failed).
+	ResultDenied = "denied"
 )
 
 // SectionRecord is what a pull kept of one section: the SHA-256 of the
-// device's text (Fingerprint) and the state of the last comparison.
+// device's text (Fingerprint), the state of the last comparison and the
+// number of the device's own statements it found (SectionResult.Unmanaged).
 type SectionRecord struct {
-	SHA256 string `json:"sha256,omitempty"`
-	State  string `json:"state,omitempty"`
+	SHA256    string `json:"sha256,omitempty"`
+	State     string `json:"state,omitempty"`
+	Unmanaged int    `json:"unmanaged,omitempty"`
 }
 
 // Applied is reserved for 0.2.5's apply: nothing writes it in 0.2.4.
@@ -101,10 +108,29 @@ type Record struct {
 	// syntax derived from it (SyntaxIOS12 or SyntaxModern); both are empty
 	// for a Junos device and for a record made before 0.2.5 or by a pull
 	// that read no version line.
-	OS       string                   `json:"os,omitempty"`
-	Syntax   string                   `json:"syntax,omitempty"`
-	Sections map[string]SectionRecord `json:"sections,omitempty"`
-	Applied  *Applied                 `json:"applied,omitempty"`
+	// For a WTI unit OS is the command menu's version ('8.10').
+	OS     string `json:"os,omitempty"`
+	Syntax string `json:"syntax,omitempty"`
+	// ArchiveFS is the file system of the IOS device's 'archive' / 'path'
+	// statement as the last good pull read it ('flash:'); empty for another
+	// vendor, a device with no archive path and a record made before 0.2.7.
+	// The plan's restore point (--restore-point) is the reader.
+	ArchiveFS string                   `json:"archive_fs,omitempty"`
+	Sections  map[string]SectionRecord `json:"sections,omitempty"`
+	// Unit is what the last good pull of a WTI unit saw beside its sections;
+	// nil for every other vendor and for a record made before 0.2.7.
+	Unit    *UnitFacts `json:"unit,omitempty"`
+	Applied *Applied   `json:"applied,omitempty"`
+}
+
+// UnitFacts are the facts of a WTI unit's pull that are no section: the
+// unit's own Site ID, the number of other sessions on the unit when it was
+// read (no name is kept) and whether its user directory was read (the
+// breakglass section is n/a when not). None of it is a secret.
+type UnitFacts struct {
+	SiteID        string `json:"site_id,omitempty"`
+	OtherSessions int    `json:"other_sessions"`
+	UsersRead     bool   `json:"users_read"`
 }
 
 // Records is devices-config.json.
@@ -135,6 +161,10 @@ func (r *Records) Put(name string, rec Record) {
 	if rec.Applied != nil {
 		a := *rec.Applied
 		c.Applied = &a
+	}
+	if rec.Unit != nil {
+		u := *rec.Unit
+		c.Unit = &u
 	}
 	if rec.Sections != nil {
 		c.Sections = make(map[string]SectionRecord, len(rec.Sections))
@@ -453,7 +483,7 @@ func (s Store) readSections(p, vendor string) (map[string]devices.Section, strin
 			}
 		}
 		if famErr == nil {
-			sec = toSection(k, uniq(canonFor(fam)(sec.Lines, nil)))
+			sec = toSection(k, uniq(canonFor(fam)(sec.Lines, nil, nil)))
 		}
 		out[k] = sec
 	}
@@ -477,6 +507,10 @@ type StoredBackout struct {
 	// Sections are the planned sections the back-out undoes, in plan order.
 	Sections []string
 	Text     string
+	// RestorePoint is the restore point the plan was made with
+	// (--restore-point): the file of a named copy, or "archive config"; ""
+	// for a plan with none. The stored text names it too; this is the stamp.
+	RestorePoint string
 }
 
 // backoutPath is the stored back-out's file of a device.
@@ -492,6 +526,10 @@ func (s Store) backoutPath(name string) (string, error) {
 const BackoutHeader = "# tacctl: the back-out of the last plan made for this device that had changes, as\n" +
 	"# that plan printed it (a secret's value elided). Derived; 'tacctl device config\n" +
 	"# plan <name> --backout' prints it. Root only.\n"
+
+// restoreStamp is what the 'restore' line of a stored back-out may hold: a
+// file name of the restore point, or 'archive config'.
+var restoreStamp = regexp.MustCompile(`^[A-Za-z0-9:._ -]{1,120}$`)
 
 // backoutRule ends the header of a stored back-out.
 const backoutRule = "---\n"
@@ -521,6 +559,9 @@ func (s Store) SaveBackout(name string, b StoredBackout) error {
 	w.WriteString("vendor: " + b.Vendor + "\n")
 	w.WriteString("address: " + b.Address + "\n")
 	w.WriteString("sections: " + strings.Join(b.Sections, ",") + "\n")
+	if b.RestorePoint != "" && restoreStamp.MatchString(b.RestorePoint) {
+		w.WriteString("restore: " + b.RestorePoint + "\n")
+	}
 	w.WriteString(backoutRule)
 	w.WriteString(b.Text)
 	return atomicWrite(p, []byte(w.String()), 0o600)
@@ -565,6 +606,10 @@ func (s Store) Backout(name string) (*StoredBackout, error) {
 			b.Vendor = v
 		case "address":
 			b.Address = v
+		case "restore":
+			if restoreStamp.MatchString(v) {
+				b.RestorePoint = v
+			}
 		case "sections":
 			for _, sec := range strings.Split(v, ",") {
 				if sec = strings.TrimSpace(sec); sec != "" {

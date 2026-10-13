@@ -15,11 +15,13 @@ package devices
 import (
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/rett/tacctl/internal/cidr"
 	"github.com/rett/tacctl/internal/conf"
+	"github.com/rett/tacctl/internal/mgmtacl"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -112,6 +114,10 @@ type Data struct {
 	// resolved them (D41, D46); Scope and Server are filled in here. The
 	// zero value is "SNMP is not configured".
 	SNMP SNMPInput
+	// Blocks are the scope's configuration blocks in force, resolved for
+	// the device (0.2.7, blocks.go): rendered into the Junos SNMP step and
+	// the managed snmp section. The zero value is "no block".
+	Blocks Blocks
 	// Restricted is an engineer's walkthrough: the Cisco NETCONF step is a
 	// superuser's (D53).
 	Restricted bool
@@ -139,14 +145,20 @@ func (d Data) source() string {
 // rest), headed by the server's /32 (the address tacctl itself reaches the
 // device from: --source, else the detected one), so that the access class
 // or the filter cannot cut off tacctl's own ssh. An entry equal to that /32
-// is not repeated. Nothing when the ACL has no IPv4 entry: no block is
-// rendered then, and the server's address alone would be one that locks
-// everybody else out.
+// is not repeated. Nothing when the ACL has no IPv4 entry that permits ssh:
+// no block is rendered then, and the server's address alone would be one
+// that locks everybody else out.
+//
+// A standard access list and the filter's permit-mgmt term have no
+// per-source services (0.2.7), so an entry is listed by its source: a plain
+// entry as it always was, and an entry with services when they include
+// tcp/22 (alone, in a range or as tcp/*). Any other entry is not listed
+// (mgmtSkipped says which, and why).
 func (d Data) mgmtPermits() []string {
 	var rest []string
-	for _, e := range d.ACL.CIDRs {
-		if e != "" && cidr.CiscoWildcard(e) != "" {
-			rest = append(rest, e)
+	for _, e := range d.mgmtEntries() {
+		if e.permit && !slices.Contains(rest, e.net) {
+			rest = append(rest, e.net)
 		}
 	}
 	if len(rest) == 0 {
@@ -158,10 +170,51 @@ func (d Data) mgmtPermits() []string {
 	}
 	out := []string{srv}
 	for _, e := range rest {
-		if n, err := cidr.Parse(e); err == nil && n.String() == srv {
+		if e == srv {
 			continue
 		}
 		out = append(out, e)
+	}
+	return out
+}
+
+// mgmtEntry is one IPv4 entry of the management ACL as the VTY access list
+// and the Junos filter read it.
+type mgmtEntry struct {
+	net    string // the canonical CIDR
+	text   string // the entry as stored
+	permit bool   // listed: plain, or its services include ssh
+	why    string // the services, for an entry that is not listed
+}
+
+// mgmtEntries are the IPv4 entries of the ACL, in the order stored (an
+// IPv6 or unparsable entry is skipped, as it always was).
+func (d Data) mgmtEntries() []mgmtEntry {
+	var out []mgmtEntry
+	for _, raw := range d.ACL.CIDRs {
+		e, err := mgmtacl.ParseEntry(raw)
+		if err != nil || e.IPv6() {
+			continue
+		}
+		m := mgmtEntry{net: e.Net, text: e.String(), permit: e.AllowsSSH()}
+		if !m.permit {
+			m.why = mgmtacl.ServicesText(e.Services, ", ")
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+// mgmtSkipped are the notes on the entries the VTY access list and the Junos
+// filter do not list (what is the entry, what it permits, where it is
+// not): empty for a list of plain entries. where names the list or filter
+// and says why it cannot hold services.
+func (d Data) mgmtSkipped(where string) []string {
+	var out []string
+	for _, e := range d.mgmtEntries() {
+		if !e.permit {
+			out = append(out, "entry "+e.text+" permits "+e.why+" only: not in "+where+"; a source is listed there when its entry permits tcp/22 or has no services")
+		}
 	}
 	return out
 }
@@ -189,9 +242,30 @@ func (d Data) boundAddr(protocol string) string {
 
 // snmpInput is the SNMP step's input for scope.
 func (d Data) snmpInput(scope string) SNMPInput {
+	return d.snmpInputFor(scope, "juniper")
+}
+
+// snmpInputFor is snmpInput for a vendor: the block lines are the vendor's
+// own (the Junos snmp block's 'set' lines, the IOS snmp block's
+// configuration lines), and a request never renders another vendor's.
+func (d Data) snmpInputFor(scope, vendor string) SNMPInput {
 	in := d.SNMP
 	in.Scope = scope
 	in.Server = d.source()
+	head := d.Blocks.snmpHead
+	switch vendor {
+	case "cisco":
+		in.Block, head = d.Blocks.ciscoSNMPStatements(), d.Blocks.ciscoSNMPHead
+	default:
+		in.Block = d.Blocks.snmpStatements()
+	}
+	if len(in.Block) > 0 {
+		in.BlockScope = d.Blocks.Scope
+		if in.BlockScope == "" {
+			in.BlockScope = scope
+		}
+		in.BlockHead = head(scope)
+	}
 	return in
 }
 
@@ -308,8 +382,11 @@ func chars(s string) int { return utf8.RuneCountInString(s) }
 // which the CLI's helpers of 'config|scope mgmt-acl' answer (so the
 // resolution rules live in one place).
 type MgmtACL struct {
-	CIDRs []string // the scope's permits, else the global ones; canonical
-	Name  string   // the vendor's ACL (filter) name for the scope
+	// CIDRs are the scope's permits, else the global ones, in their
+	// canonical form: a CIDR, or (0.2.7) a CIDR with its services
+	// ('172.16.100.0/23:tcp/22,udp/161', internal/mgmtacl).
+	CIDRs []string
+	Name  string // the vendor's ACL (filter) name for the scope
 }
 
 // --- output -----------------------------------------------------------------------

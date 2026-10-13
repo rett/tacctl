@@ -2,6 +2,7 @@ package plan
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -66,6 +67,13 @@ type Options struct {
 	// stands, and the cover page marks the device. A pure input: the planner
 	// never reads the record itself.
 	BreakglassHeld *BreakglassHold
+	// WTI are the facts of a WTI unit's plan that neither the rendering nor
+	// the comparison say (ignored for any other vendor).
+	WTI WTIFacts
+	// RestorePoint asks for the restore point block of an IOS plan
+	// (--restore-point, 0.2.7): see restore.go. nil: none. Any other vendor
+	// refuses it (ErrUsage).
+	RestorePoint *RestorePoint
 }
 
 // BreakglassHold is what a plan says of a hold: when it was made, as the
@@ -92,13 +100,33 @@ func syntaxUnknownWhy(device string) string {
 		"` or `tacctl device config-syntax " + name + " ios12|modern`"
 }
 
+// systemUnreadWhy is the reason a plan with a system block has no system
+// section from a pull that predates the block.
+func systemUnreadWhy(device string) string {
+	name := device
+	if name == "" {
+		name = "<name>"
+	}
+	return "the system block of this scope is newer than the pull of this device, so its system settings were not read: run `tacctl device config pull " +
+		name + "` to plan them"
+}
+
 // PlanOrder is the order the sections go in a block (D95 for Junos, §4b for
 // IOS).
+//
+// The system section (0.2.7, a scope with a system block) follows snmp and
+// comes before mgmt-acl, which stays last; Plan leaves it out of a plan whose
+// rendering has none.
 func PlanOrder(family string) []string {
 	if family == devconf.FamilyIOS {
-		return []string{"aaa", "roles", "snmp", "mgmt-acl"}
+		return []string{"aaa", "roles", "snmp", devconf.SectionSystem, "mgmt-acl"}
 	}
-	return []string{"roles", "aaa", "snmp", "mgmt-acl"}
+	if family == devconf.FamilyWTI {
+		// the unit's checklist goes page 25 first (it cannot lock anybody
+		// out), then the AAA pages, and the IP tables paste last
+		return []string{devconf.SectionSNMP, devconf.SectionAAA, devconf.SectionMgmtACL}
+	}
+	return []string{"roles", "aaa", "snmp", devconf.SectionSystem, "mgmt-acl"}
 }
 
 // never are the two sections that are never planned.
@@ -165,7 +193,20 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 			return Delta{}, fmt.Errorf("%w: unknown section %q", ErrUsage, s)
 		}
 	}
+	if opt.RestorePoint != nil {
+		switch {
+		case fam != devconf.FamilyIOS:
+			return Delta{}, fmt.Errorf("%w: the restore point is for IOS and IOS-XE devices only", ErrUsage)
+		case opt.RestorePoint.Validate() != "":
+			return Delta{}, fmt.Errorf("%w: %s", ErrUsage, opt.RestorePoint.Validate())
+		}
+	}
 	current.Vendor = fam
+	if fam == devconf.FamilyWTI {
+		// A unit has no statements to paste: its plan is a checklist of menu
+		// steps and one IP tables block (wti.go).
+		return planWTI(expected, current, opt)
+	}
 	results, err := devconf.CompareAll(expected, current)
 	if err != nil {
 		return Delta{}, err
@@ -178,20 +219,33 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 	d := Delta{Vendor: fam, Scope: opt.Scope, InheritanceChecked: len(plain.Sections) > 0, BreakglassHeld: opt.BreakglassHeld}
 	if fam == devconf.FamilyIOS {
 		d.Syntax = opt.Syntax
+		if opt.RestorePoint != nil {
+			rp := *opt.RestorePoint
+			d.Restore = &rp
+		}
 	}
 	// Only Junos has groups: an IOS plan has no inheritance to check.
 	d.InheritanceChecked = d.InheritanceChecked && fam == devconf.FamilyJunos
 	p := &planner{fam: fam, opt: opt, cur: current, plain: plain, checked: d.InheritanceChecked}
 	p.exp = expected
+	if fam == devconf.FamilyJunos || fam == devconf.FamilyIOS {
+		p.blk = blockObjectsOf(fam, expected, opt.Scope)
+	}
 	if fam == devconf.FamilyIOS {
 		p.prepareIOS(byName)
 	}
 
 	for _, name := range PlanOrder(fam) {
+		// the system section exists only where the rendering has one
+		if name == devconf.SectionSystem && len(p.expected(name).Lines) == 0 {
+			continue
+		}
 		r := byName[name]
 		sp := SectionPlan{Name: name}
+		// a system section the record has not read has its own words, below
+		unread := name == devconf.SectionSystem && r.State == devconf.StateNA
 		for _, n := range r.Notes {
-			if !slices.Contains(d.Notes, n) {
+			if !slices.Contains(d.Notes, n) && !unread {
 				d.Notes = append(d.Notes, n)
 			}
 		}
@@ -208,6 +262,12 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 		case opt.Writable != nil && !opt.Writable[name]:
 			sp.State, sp.Why, sp.Kind = StateSkipped, "not writable by the caller", KindNotWritable
 			d.Skipped = append(d.Skipped, Skip{name, KindNotWritable, sp.Why})
+		case unread:
+			// the block is newer than the pull: nothing of the section was
+			// read, and nothing is guessed
+			sp.State, sp.Why, sp.Kind = StateSkipped, systemUnreadWhy(opt.Device), KindNotPlannable
+			d.Skipped = append(d.Skipped, Skip{name, KindNotPlannable, sp.Why})
+			d.Warnings = appendNew(d.Warnings, sp.Why)
 		case r.State == devconf.StateNA:
 			sp.State = StateNA
 		// DECISION: a section whose every compared statement is a secret the
@@ -227,6 +287,16 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 			d.merge(&sp, o)
 		}
 		d.Sections = append(d.Sections, sp)
+	}
+	// The IOS block's lines (an access list's entries, a trap host, an
+	// 'enable traps' line) were written from the references, never pasted on
+	// a device: the report says so beside the lab note of the standard.
+	if fam == devconf.FamilyIOS && p.blk != nil && p.blk.ios {
+		d.Notes = appendNew(d.Notes, iosBlockNote(opt.Scope))
+	}
+	// the same for the system block's lines, which are not the standard's
+	if fam == devconf.FamilyIOS && len(p.expected(devconf.SectionSystem).Lines) > 0 {
+		d.Notes = appendNew(d.Notes, iosSystemNote(opt.Scope))
 	}
 	for _, n := range never {
 		d.Sections = append(d.Sections, SectionPlan{Name: n, State: StateNever})
@@ -294,6 +364,12 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 	// --converge: the cleanup region (D111), from the extras above.
 	if opt.Converge {
 		p.buildCleanup(&d)
+	}
+
+	// the restore block and the back-out's alternative were written from the
+	// references: the report says so, once, when the output has the block
+	if d.restoreShown() {
+		d.Notes = appendNew(d.Notes, restoreNote)
 	}
 
 	// Defensive: nothing on the never list may be in the block.
@@ -369,6 +445,9 @@ type planner struct {
 	noLocal bool
 	// ios holds the IOS-only state.
 	ios *iosState
+	// blk are the objects of the rendering that a configuration block put
+	// there (nil: none), for the report's words.
+	blk *blockObjects
 }
 
 func (p *planner) expected(name string) devices.Section {
@@ -458,6 +537,8 @@ func secretKind(family string, l Line) string {
 		return "SNMP COMMUNITY"
 	case strings.Contains(t, "snmp v3"), strings.Contains(t, "snmp-server user"):
 		return "SNMPv3 USER PASSWORDS"
+	case strings.Contains(t, "ntp authentication-key"):
+		return "NTP KEY"
 	}
 	return "SECRET"
 }
@@ -497,9 +578,16 @@ func stemOf(l devconf.DiffLine) string {
 // secretMark is the elided value in a stem.
 const secretMark = "<secret>"
 
+// isMark reports a word that stands for a secret in a stem: the mark, or a
+// community's label ('<secret:1>', '<other:2>').
+func isMark(w string) bool { return w == secretMark || devconf.IsLabel(w) }
+
+// reMarks finds the marks of a stem's text.
+var reMarks = regexp.MustCompile(`<secret>|<(?:secret|other):[1-9][0-9]*>`)
+
 // shownSecret is a secret statement's stem with the value's place marked.
 func shownSecret(stem string) string {
-	if strings.Contains(stem, secretMark) {
+	if reMarks.MatchString(stem) {
 		return stem
 	}
 	return stem + " " + secretMark
@@ -507,18 +595,28 @@ func shownSecret(stem string) string {
 
 // placeholderOf is shownSecret with the --no-secrets placeholder.
 func placeholderOf(stem string) string {
-	return strings.ReplaceAll(shownSecret(stem), secretMark, "<SECRET>")
+	return reMarks.ReplaceAllString(shownSecret(stem), "<SECRET>")
 }
 
 // splitTokens splits a statement into words; double and single quotes group
-// and are dropped.
+// and are dropped. A word is as the device prints it: inside double quotes a
+// backslash and the character after it stay together (so '\"' does not end
+// the quote and a login message's '\n' stays a '\n'), and quoteTok writes
+// the word back the same way.
 func splitTokens(s string) []string {
 	var out []string
 	var b strings.Builder
 	in := rune(0)
 	has := false
+	esc := false
 	for _, r := range s {
 		switch {
+		case esc:
+			b.WriteRune(r)
+			esc = false
+		case in == '"' && r == '\\':
+			b.WriteRune(r)
+			esc = true
 		case in != 0:
 			if r == in {
 				in = 0
@@ -543,10 +641,30 @@ func splitTokens(s string) []string {
 	return out
 }
 
-// quoteTok writes a path token back the way a Junos statement has it.
+// quoteTok writes a path token back the way a Junos statement has it: bare
+// unless it holds a blank, a quote or a character Junos reads as structure.
+// A token is in the form splitTokens gives (escapes as printed), so an escape
+// in it stays, and a quote that is not escaped is.
 func quoteTok(t string) string {
 	if t == "" || strings.ContainsAny(t, " \t\"'\\;[]{}") {
-		return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(t) + `"`
+		var b strings.Builder
+		b.WriteByte('"')
+		for i := 0; i < len(t); i++ {
+			switch c := t[i]; {
+			case c == '\\' && i+1 < len(t):
+				b.WriteByte(c)
+				i++
+				b.WriteByte(t[i])
+			case c == '\\':
+				b.WriteString(`\\`)
+			case c == '"':
+				b.WriteString(`\"`)
+			default:
+				b.WriteByte(c)
+			}
+		}
+		b.WriteByte('"')
+		return b.String()
 	}
 	return t
 }

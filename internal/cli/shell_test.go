@@ -227,6 +227,9 @@ func TestShellCompletion(t *testing.T) {
 		{[]string{"user", "add", "x", "ops"}, "--", []string{"--hash", "--scopes"}, nil},
 		{[]string{"shell"}, "-", []string{"--no-history", "--idle", "-c"}, nil},
 		{[]string{"bogus"}, "", nil, []string{"user"}},
+		// the shell replaces the whole word, so a value after '=' keeps its flag
+		{[]string{"device", "config", "plan"}, "--restore-point=d", []string{"--restore-point=disk0:"}, []string{"disk0:"}},
+		{[]string{"device", "config", "plan"}, "--restore", []string{"--restore-point"}, nil},
 	}
 	for _, c := range cases {
 		got := words(complete(c.words, c.partial))

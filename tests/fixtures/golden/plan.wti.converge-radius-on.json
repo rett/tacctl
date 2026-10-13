@@ -1,0 +1,67 @@
+{
+  "name": "lab-unit",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "wti",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "ssh",
+    "age_s": 1080,
+    "secrets_visible": true
+  },
+  "status": "needs-change",
+  "irregularities": [
+    {
+      "n": 1,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the unit's RADIUS page is in use while the scope uses TACACS+: 14 statements",
+      "statement": "e.g. radius enable on",
+      "action": "Removed by the cleanup region, step 1.",
+      "fixed": false
+    }
+  ],
+  "region": [],
+  "after": [],
+  "backout": [],
+  "left": {
+    "access": 0,
+    "monitoring": 0,
+    "cosmetic": 0
+  },
+  "extras": [
+    {
+      "section": "aaa",
+      "text": "radius enable on",
+      "remove": [
+        "/N 29 1 (Enable) -\u003e 1 (Off)"
+      ]
+    }
+  ],
+  "skipped": [],
+  "withheld": [],
+  "warnings": [],
+  "holds_secret": false,
+  "converge": true,
+  "cleanup": [
+    "# At the unit's prompt type /N and Enter. For each step type the item numbers of its second column,",
+    "# one at a time with Enter after each, then what the arrow says. A pick: the number of the line",
+    "# that reads as shown. ESC goes back one level. A value is live as soon as its Enter is accepted.",
+    "#  1. /N  29  1  Enable  -\u003e 1 (Off)   was: 2 (On)",
+    "#  2. ESC ESC  leave /N: wait for \"Saving configuration to flash\""
+  ],
+  "cleanup_after": [
+    "#",
+    "# There is no other step for lab-unit: its first checklist is empty. Check that the pull is",
+    "# current (tacctl device config pull lab-unit --diff reads ok for aaa) and keep a second session",
+    "# logged in as yourself open.",
+    "# Nothing rolls the cleanup back by itself. To put a value back: the read/write community is a",
+    "# string tacctl does not hold (re-enter the one you keep), and the other protocol's switch is",
+    "# Enable at its page 1 (/N 28 or /N 29).",
+    "# Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold lab-unit --reason \"...\"",
+    "# then log in on the unit's serial console as its local Administrator account,",
+    "# fix or back out, and the superuser runs: tacctl breakglass release lab-unit"
+  ]
+}

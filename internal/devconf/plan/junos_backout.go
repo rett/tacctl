@@ -61,7 +61,7 @@ func (p *planner) junosBackout(d Delta) []Line {
 			switch {
 			case st.head == "deactivate":
 				note("it was deactivated, type yourself: deactivate " + joinTokens(st.path))
-			case slices.Contains(st.path, secretMark) || secret[st.text()]:
+			case slices.ContainsFunc(st.path, isMark) || secret[st.text()]:
 				note(againNote(st.path))
 			default:
 				push(Line{Op: OpSet, Text: text})
@@ -86,6 +86,21 @@ func (p *planner) junosBackout(d Delta) []Line {
 			continue
 		}
 		path := t[1:]
+		// lab is the same path with a community's or trap group's name as
+		// the device's record shows it, its label: what the statements of the
+		// pull are matched with (the text holds the name, which two of the
+		// rendering's communities do not share).
+		lab := path
+		if l.Secret && l.Elided != "" {
+			if et := splitTokens(l.Elided); len(et) == len(t) {
+				lab = et[1:]
+			}
+		}
+		if len(path) >= 5 && path[0] == "system" && path[1] == "ntp" && path[2] == "authentication-key" {
+			// a key is known to the pull by its number alone (its type is not
+			// compared and its value is not stored)
+			lab = []string{path[0], path[1], path[2], path[3], "value"}
+		}
 		if strings.HasPrefix(strings.Join(path, " "), orderPrefix) {
 			if orderDone {
 				continue
@@ -101,9 +116,9 @@ func (p *planner) junosBackout(d Delta) []Line {
 		}
 		switch t[0] {
 		case "set":
-			p.backoutSet(l, path, before, secret, exists, push, note)
+			p.backoutSet(l, path, lab, before, secret, exists, push, note)
 		case "delete":
-			if !restore(path) && l.Secret {
+			if !restore(lab) && l.Secret {
 				// a leaf under a community whose name tacctl does not
 				// hold: the device's own name is needed
 				note("type again, with the community's own name: set " + strings.TrimPrefix(l.Elided, "delete "))
@@ -137,14 +152,21 @@ func (p *planner) junosBackout(d Delta) []Line {
 }
 
 // backoutSet undoes one 'set' line of the plan.
-func (p *planner) backoutSet(l Line, path []string, before *JunosConfig, secret map[string]bool,
+func (p *planner) backoutSet(l Line, path, lab []string, before *JunosConfig, secret map[string]bool,
 	exists func([]string) bool, push func(Line), note func(string)) {
 	// a single-valued leaf: the device's value goes back
-	if n := singleKeyLen(path); n > 0 {
+	if n := singleKeyLen(lab); n > 0 {
 		for _, st := range before.stmts {
-			if st.head == "set" && (len(st.path) == n+1 || len(st.path) == n && secret[st.text()]) && pathHasPrefix(st.path, path[:n]) {
-				if secret[st.text()] || slices.Contains(st.path, secretMark) {
+			if st.head == "set" && (len(st.path) == n+1 || len(st.path) == n && secret[st.text()]) && pathHasPrefix(st.path, lab[:n]) {
+				if secret[st.text()] || slices.ContainsFunc(st.path, isMark) {
 					note(againNote(st.path))
+					return
+				}
+				if isMessagePath(st.path) {
+					// the pull holds a digest of the login message, never
+					// its text: it cannot be typed back from here
+					note("the device had a login message that tacctl keeps no text of (" + st.path[3] +
+						"): put it back with the rollback of the commit before this plan's, or type it yourself")
 					return
 				}
 				push(Line{Op: OpSet, Text: "set " + joinTokens(st.path)})
@@ -152,54 +174,49 @@ func (p *planner) backoutSet(l Line, path []string, before *JunosConfig, secret 
 			}
 		}
 		// new: the object goes with it, or the leaf
-		p.backoutDelete(l, path[:n], exists, push)
+		p.backoutDelete(l, path[:n], lab[:n], exists, push)
 		return
 	}
-	if exists(path) {
+	if exists(lab) {
 		if l.Secret {
 			// the plan wrote over a value it does not hold; shown elided
-			ep := path
-			if l.Elided != "" {
-				ep = splitTokens(strings.TrimPrefix(l.Elided, "set "))
-			}
-			note(againNote(ep))
+			note(againNote(lab))
 		}
 		return
 	}
-	p.backoutDelete(l, path, exists, push)
+	p.backoutDelete(l, path, lab, exists, push)
 }
 
 // backoutDelete removes what the plan added: the shallowest object the device
 // did not have at all, else the statement's own path.
-func (p *planner) backoutDelete(l Line, path []string, exists func([]string) bool, push func(Line)) {
-	del := path
-	for _, depth := range junosObjectDepths(path) {
-		if depth < len(path) && !exists(path[:depth]) {
-			del = path[:depth]
+func (p *planner) backoutDelete(l Line, path, lab []string, exists func([]string) bool, push func(Line)) {
+	n := len(path)
+	for _, depth := range junosObjectDepths(lab) {
+		if depth < len(lab) && !exists(lab[:depth]) {
+			n = depth
 			break
 		}
 	}
 	// a list entry's flag ('restrict', 'except') is a node of its own:
 	// deleting only the flag leaves the entry as a permit, which is right
 	// when the device had the entry, and the whole entry goes otherwise
-	if base := del; len(base) > 1 && junosFlags[base[len(base)-1]] {
-		for len(base) > 1 && junosFlags[base[len(base)-1]] {
-			base = base[:len(base)-1]
+	if base := n; base > 1 && junosFlags[path[base-1]] {
+		for base > 1 && junosFlags[path[base-1]] {
+			base--
 		}
-		if !exists(base) {
-			del = base
+		if !exists(lab[:base]) {
+			n = base
 		}
 	}
-	text := "delete " + joinTokens(del)
+	text := "delete " + joinTokens(path[:n])
 	u := Line{Op: OpDelete, Text: text}
 	if l.Secret && l.Elided != "" {
 		// the community's name is the secret: so it is in this line too
-		if et := splitTokens(strings.TrimPrefix(l.Elided, "set ")); len(et) >= len(del) &&
-			slices.Contains(et[:len(del)], secretMark) {
+		if slices.ContainsFunc(lab[:n], isMark) {
 			u.Secret, u.HasValue = true, l.HasValue
-			u.Elided = "delete " + joinTokens(et[:len(del)])
+			u.Elided = "delete " + joinTokens(lab[:n])
 			if !l.HasValue {
-				u.Text = strings.ReplaceAll(u.Elided, secretMark, "<SECRET>")
+				u.Text = placeholderOf(u.Elided)
 			}
 		}
 	}
@@ -210,23 +227,32 @@ func (p *planner) backoutDelete(l Line, path []string, exists func([]string) boo
 // secret's original value, or a community's own name. The path is elided.
 func againNote(path []string) string {
 	text := "set " + joinTokens(path)
-	if slices.Contains(path, secretMark) {
+	if slices.ContainsFunc(path, isMark) {
 		return "type again, with the community's own name: " + text
 	}
 	return "type again with its original secret: " + text + " <secret>"
 }
 
-// pathHasPrefix reports whether a statement's path starts with the prefix; a
-// community's name on the device is elided to the secret mark, which stands
-// for any name.
+// pathHasPrefix reports whether a statement's path starts with the prefix. A
+// community's name on the device is elided to its label and the prefix of a
+// plan line holds the same label ('<secret:N>' for the rendering's N-th
+// string, so two of the rendering's communities are never taken for each
+// other, and a block's community is not the structured one), or the bare
+// mark of an older record, which stands for any name of a community or trap
+// group.
 func pathHasPrefix(path, prefix []string) bool {
 	if len(path) < len(prefix) {
 		return false
 	}
 	for i, w := range prefix {
-		if path[i] != w && path[i] != secretMark {
-			return false
+		if path[i] == w {
+			continue
 		}
+		named := i == 2 && len(path) > 2 && path[0] == "snmp" && (path[1] == "community" || path[1] == "trap-group")
+		if named && (path[i] == secretMark || w == secretMark) {
+			continue
+		}
+		return false
 	}
 	return true
 }

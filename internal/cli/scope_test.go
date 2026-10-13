@@ -441,7 +441,8 @@ func TestScopeGroupConfigSpecs(t *testing.T) {
 					}
 					_, native := completionKinds[k]
 					_, argKind := completionArgKinds[k]
-					if k != "" && !native && !argKind && !strings.Contains(k, "|") && k != KindFile {
+					// a one-word list of fixed words is a list too
+					if k != "" && !native && !argKind && !strings.Contains(k, "|") && k != KindFile && k != "juniper" {
 						t.Errorf("%s %s: kind %q is no completion kind", family, c.Name(), k)
 					}
 				}
@@ -539,4 +540,96 @@ func TestScopeGroupConfigUsageFunctions(t *testing.T) {
 			t.Errorf("%s:\n%s\nwant\n%s", file, got, want)
 		}
 	}
+}
+
+// The management ACL lists take entries with services (0.2.7): add, list,
+// remove and clear at the global and the scope level, one canonical form in
+// tacctl.yaml, a bare CIDR removing every entry of that CIDR, and the old
+// plain-CIDR behaviour unchanged.
+func TestMgmtACLEntriesWithServices(t *testing.T) {
+	sb := newSandbox(t, true)
+	cfg := func(args ...string) string {
+		return sb.runFamily("", configMgmtACLCmd, append([]string{"config", "mgmt-acl"}, args...)...)
+	}
+	cfg("add", "172.16.100.0/23:UDP/162,tcp/22,udp/161,10.0.0.0/8,192.0.2.5:icmp")
+	sb.expect(0, "Added 3 to mgmt-acl: 172.16.100.0/23:tcp/22,udp/161,udp/162 10.0.0.0/8 192.0.2.5/32:icmp", "")
+	want := "mgmt_acl:\n  permits:\n  - 10.0.0.0/8\n  - 172.16.100.0/23:tcp/22,udp/161,udp/162\n  - 192.0.2.5/32:icmp\n"
+	if !strings.Contains(sb.overrides(), want) {
+		t.Errorf("tacctl.yaml:\n%s", sb.overrides())
+	}
+	out := cfg("list")
+	for _, line := range []string{"  - 192.0.2.5/32      icmp\n", "  - 10.0.0.0/8\n", "  - 172.16.100.0/23   tcp/22, udp/161, udp/162\n"} {
+		if !strings.Contains(out, line) {
+			t.Errorf("list lacks %q:\n%s", line, out)
+		}
+	}
+	// the same CIDR twice, with other services; an exact repeat is a no-op
+	cfg("add", "10.0.0.0/8:tcp/22,172.16.100.0/23:udp/162,172.16.100.0/23:tcp/22,udp/161,udp/162")
+	sb.expect(0, "Added 2 to mgmt-acl: 10.0.0.0/8:tcp/22 172.16.100.0/23:udp/162", "")
+	sb.expect(0, "(Already present, unchanged: 172.16.100.0/23:tcp/22,udp/161,udp/162)", "")
+	cfg("add", "10.0.0.0/8:tcp/22")
+	sb.expect(0, "No new CIDRs to add (already present: 10.0.0.0/8:tcp/22).", "")
+	// an exact entry removes itself only
+	cfg("remove", "172.16.100.0/23:udp/162")
+	sb.expect(0, "Removed 1 from mgmt-acl: 172.16.100.0/23:udp/162", "")
+	cfg("remove", "172.16.100.0/23:udp/162")
+	sb.expect(0, "Nothing to remove (not present: 172.16.100.0/23:udp/162).", "")
+	// a bare CIDR removes every entry of it, and says how many
+	cfg("remove", "10.0.0.0/8")
+	sb.expect(0, "Removed 2 from mgmt-acl: 10.0.0.0/8 10.0.0.0/8:tcp/22", "")
+	sb.expect(0, "(10.0.0.0/8 without services removes every entry of that CIDR: 2 removed)", "")
+	if strings.Contains(sb.overrides(), "10.0.0.0/8") {
+		t.Errorf("tacctl.yaml:\n%s", sb.overrides())
+	}
+	// a bare CIDR does not remove an entry of another CIDR
+	cfg("remove", "172.16.100.0/24")
+	sb.expect(0, "Nothing to remove (not present: 172.16.100.0/24).", "")
+
+	// refusals name the entry and write nothing
+	before := sb.overrides()
+	for _, c := range []struct{ arg, want string }{
+		{"10.0.0.0/8:tcp/0", "is not a port"},
+		{"10.0.0.0/8:tcp/22-21", "must be lower"},
+		{"10.0.0.0/8:icmp/8", "icmp takes no port"},
+		{"10.0.0.0/8:ssh", "'ssh' is not a service"},
+		{"tcp/22,10.0.0.0/8", "a service comes after a CIDR"},
+		{"10.0.0.0/8,tcp/22", "write the services after a ':'"},
+		{"10.0.0.0/33:tcp/22", "Invalid CIDR: '10.0.0.0/33'"},
+		{"10.9.0.0/16,10.0.0.0/8:tcp/1,tcp/2,tcp/3,tcp/4,tcp/5,tcp/6,tcp/7,tcp/8,tcp/9", "9 services"},
+	} {
+		cfg("add", c.arg)
+		sb.expect(1, "", c.want)
+	}
+	if sb.overrides() != before {
+		t.Errorf("a refused add wrote tacctl.yaml:\n%s", sb.overrides())
+	}
+
+	// the scope level: its own list, the same grammar, a bare CIDR removes all
+	sc := func(args ...string) string { return sb.run("", append([]string{"scope", "mgmt-acl", "lab"}, args...)) }
+	sc("add", "198.51.100.0/24:tcp/22,tcp/443,198.51.100.0/24:udp/161,203.0.113.0/24")
+	sb.expect(0, "Added 3 to scope 'lab' mgmt-acl: 198.51.100.0/24:tcp/22,tcp/443 198.51.100.0/24:udp/161 203.0.113.0/24", "")
+	if !strings.Contains(sb.overrides(), "scope_mgmt_acl:\n  permits:\n    lab:\n    - 198.51.100.0/24:tcp/22,tcp/443\n    - 198.51.100.0/24:udp/161\n    - 203.0.113.0/24\n") {
+		t.Errorf("tacctl.yaml:\n%s", sb.overrides())
+	}
+	out = sc("list")
+	for _, line := range []string{"Source: per-scope override", "  - 198.51.100.0/24   tcp/22, tcp/443\n", "  - 198.51.100.0/24   udp/161\n", "  - 203.0.113.0/24\n"} {
+		if !strings.Contains(out, line) {
+			t.Errorf("scope list lacks %q:\n%s", line, out)
+		}
+	}
+	sc("remove", "198.51.100.0/24:udp/161")
+	sb.expect(0, "Removed 1 from scope 'lab' mgmt-acl: 198.51.100.0/24:udp/161", "")
+	sc("remove", "198.51.100.0/24,203.0.113.0/24:tcp/22")
+	sb.expect(0, "Removed 1 from scope 'lab' mgmt-acl: 198.51.100.0/24:tcp/22,tcp/443", "")
+	sb.expect(0, "(Not present, skipped: 203.0.113.0/24:tcp/22)", "")
+	sc("add", "tcp/22")
+	sb.expect(1, "", "a service comes after a CIDR")
+	sc("clear")
+	sb.expect(0, "Aborted.", "")
+	sb.run("y\n", []string{"scope", "mgmt-acl", "lab", "clear"})
+	sb.expect(0, "Per-scope mgmt-acl cleared for 'lab'.", "")
+	sb.runFamily("y\n", configMgmtACLCmd, "config", "mgmt-acl", "clear")
+	sb.expect(0, "mgmt-acl cleared.", "")
+	cfg("clear")
+	sb.expect(0, "Already empty.", "")
 }

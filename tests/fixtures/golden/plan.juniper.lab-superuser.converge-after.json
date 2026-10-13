@@ -1,0 +1,123 @@
+{
+  "name": "dev-juniper-lab-superuser",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "juniper",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "netconf",
+    "age_s": 1080,
+    "secrets_visible": true
+  },
+  "status": "needs-change",
+  "irregularities": [
+    {
+      "n": 1,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the TACACS+ server 198.18.0.24: 2 statements",
+      "statement": "e.g. set system tacplus-server 198.18.0.24 secret \u003csecret\u003e",
+      "action": "Removed by the cleanup region, line 3.",
+      "fixed": false
+    },
+    {
+      "n": 2,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "SNMP: name example-switch.example.net",
+      "statement": "set snmp name example-switch.example.net",
+      "action": "Left alone (the device's own identity: never removed).",
+      "fixed": false
+    },
+    {
+      "n": 3,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "an SNMP community: 4 statements",
+      "statement": "e.g. set snmp community \u003cother:1\u003e authorization read-only",
+      "action": "Left alone (its name is the secret and is not known to tacctl).",
+      "fixed": false
+    }
+  ],
+  "region": [],
+  "after": [],
+  "backout": [],
+  "left": {
+    "access": 0,
+    "monitoring": 2,
+    "cosmetic": 0
+  },
+  "extras": [
+    {
+      "section": "aaa",
+      "text": "set system tacplus-server 198.18.0.24 secret",
+      "remove": [
+        "delete system tacplus-server 198.18.0.24"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "set system tacplus-server 198.18.0.24 single-connection",
+      "remove": [
+        "delete system tacplus-server 198.18.0.24"
+      ]
+    },
+    {
+      "section": "snmp",
+      "text": "set snmp name example-switch.example.net",
+      "guard": "the device's own identity: never removed"
+    },
+    {
+      "section": "snmp",
+      "text": "set snmp community \u003cother:1\u003e authorization read-only",
+      "guard": "its name is the secret and is not known to tacctl"
+    },
+    {
+      "section": "snmp",
+      "text": "set snmp community \u003cother:1\u003e clients 198.18.0.0/20",
+      "guard": "its name is the secret and is not known to tacctl"
+    },
+    {
+      "section": "snmp",
+      "text": "set snmp community \u003cother:1\u003e clients 198.19.0.0/16",
+      "guard": "its name is the secret and is not known to tacctl"
+    },
+    {
+      "section": "snmp",
+      "text": "set snmp community \u003cother:1\u003e clients 0.0.0.0/0 restrict",
+      "guard": "its name is the secret and is not known to tacctl"
+    }
+  ],
+  "skipped": [],
+  "withheld": [],
+  "warnings": [],
+  "holds_secret": false,
+  "converge": true,
+  "cleanup": [
+    "configure private",
+    "# aaa: removes the servers the standard does not have",
+    "delete system tacplus-server 198.18.0.24",
+    "show | compare | no-more",
+    "commit check",
+    "commit confirmed 5 comment \"tacctl cleanup dev-juniper-lab-superuser 2026-10-10T14:20Z by alice\""
+  ],
+  "cleanup_after": [
+    "#",
+    "# There is no other paste for dev-juniper-lab-superuser: its first region is empty. Check that the",
+    "# pull is current (tacctl device config pull dev-juniper-lab-superuser --diff reads ok for aaa),",
+    "# that 'show system commit' shows no pending 'commit confirmed' (type the plan's 'commit' first),",
+    "# and keep a NEW ssh session as yourself open.",
+    "# Same check, same one word, typed yourself:  commit     (before the 5 minutes end)",
+    "# If any line printed \"error:\", do not type commit: the switch undoes the cleanup by itself in 5",
+    "# minutes. To undo it after the commit: show system commit, then rollback \u003cn\u003e of the entry just",
+    "# before the one commented \"tacctl cleanup dev-juniper-lab-superuser\", then commit. A removed",
+    "# server's secret is not held by tacctl: type it again.",
+    "# Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold dev-juniper-lab-superuser --reason \"...\"",
+    "# then log in as the device's local user (ssh or console),",
+    "# fix or back out, and the superuser runs: tacctl breakglass release dev-juniper-lab-superuser"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "name": "lab-unit",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "wti",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "ssh",
+    "age_s": 1080,
+    "secrets_visible": true
+  },
+  "status": "consistent",
+  "irregularities": [],
+  "region": [],
+  "after": [],
+  "backout": [],
+  "left": {
+    "access": 0,
+    "monitoring": 0,
+    "cosmetic": 0
+  },
+  "extras": [],
+  "skipped": [],
+  "withheld": [],
+  "warnings": [],
+  "holds_secret": false
+}

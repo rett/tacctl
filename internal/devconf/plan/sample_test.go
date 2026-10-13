@@ -55,13 +55,13 @@ func TestJunosOutputIsThePlansSample(t *testing.T) {
 			"set snmp client-list TACCTL-SNMP 192.0.2.10/32",
 			"set snmp client-list TACCTL-SNMP 198.51.100.0/24",
 			"set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict",
-			"set snmp community example-community client-list-name TACCTL-SNMP",
+			"set snmp community lab-ro-community client-list-name TACCTL-SNMP",
 			`set snmp description "Core switch"`,
 		} {
 			c.Remove(s)
 		}
 		c.Add("set system accounting events interactive-commands")
-		c.Add("set snmp community example-community clients 192.0.2.0/24")
+		c.Add("set snmp community lab-ro-community clients 192.0.2.0/24")
 		c.Add(`set system tacplus-server 203.0.113.5 secret "$9$EXAMPLEEXAMPLE"`)
 	}, Options{Scope: "lab"})
 	h := f.header()

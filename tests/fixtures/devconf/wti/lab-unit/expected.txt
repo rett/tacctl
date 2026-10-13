@@ -1,0 +1,49 @@
+# vendor: wti
+# source: hand-written (what devices.Managed renders for the lab unit's scope over TACACS+)
+# ---
+[aaa]
+| tacacs enable on
+| tacacs primary 192.0.2.42
+* tacacs secret lab-secret-0123456789abcdef
+| tacacs fallback-timer 15
+| tacacs fallback-local on-transport-failure
+| tacacs port 49
+| tacacs default-access on
+| tacacs default-level viewonly
+| tacacs default-services telnet-ssh
+| tacacs account-module enabled
+| tacacs session-module enabled
+| tacacs service-name wti
+| tacacs debug off
+| unit multiple-logins on
+[mgmt-acl]
+| iptables -A INPUT -i lo -j ACCEPT
+| iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+| iptables -A INPUT -s 10.1.100.0/23 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.20.0/24 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.28.34 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.28.34 -p udp --dport 161:162 -j ACCEPT
+| iptables -A INPUT -s 10.0.28.36 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.28.36 -p udp --dport 161:162 -j ACCEPT
+| iptables -A INPUT -s 10.0.30.0/24 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.40.0/24 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.50.0/24 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.60.0/24 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.70.0/24 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.90.0/24 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.120.0/24 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 192.0.2.14 -p udp --dport 161:162 -j ACCEPT
+| iptables -A INPUT -s 10.1.101.0/24 -p udp --dport 161 -j ACCEPT
+| iptables -A INPUT -i eth0 -s 10.1.100.0/23 -p icmp -j ACCEPT
+| iptables -A INPUT -i eth0 -s 10.0.0.0/16 -p icmp -j ACCEPT
+| iptables -A INPUT -i eth0 -s 192.0.2.14 -p icmp -j ACCEPT
+[snmp]
+| snmp enable on
+| snmp version v1-v2-only
+| snmp read-only yes
+| snmp contact Example NOC (555) 0100
+| snmp location Example City, Example State
+* snmp ro-community ro-community
+[breakglass]
+| user localadmin level administrator
+* user localadmin password <PASSWORD>

@@ -162,7 +162,7 @@ func sectionOf(secs []Section, name string) (Section, bool) {
 // A vendor with no managed sections: nothing and ErrUnsupported (D71).
 func TestManagedUnsupported(t *testing.T) {
 	m, c := managedWorld(t)
-	for _, vendor := range []string{"wti", "other", ""} {
+	for _, vendor := range []string{"other", ""} {
 		secs, err := Managed(Request{Vendor: vendor, Scope: "lab", Protocol: TACACS}, Data{Model: m, Conf: c})
 		if !errors.Is(err, ErrUnsupported) {
 			t.Errorf("Managed(%q): err = %v, want ErrUnsupported", vendor, err)

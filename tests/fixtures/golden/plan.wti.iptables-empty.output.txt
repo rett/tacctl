@@ -1,0 +1,84 @@
+##### lab-unit  192.0.2.21  scope lab  wti (TACACS+) #####
+# Based on the pull of 2026-10-10 14:02 by alice over ssh (18 minutes ago; the login could see
+# secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.7).
+#
+# What is irregular on lab-unit (1 item; the plan fixes 1, leaves 0):
+#  1. mgmt-acl ACCESS     missing: entries of the standard's IP tables list that the unit does not
+#                         have: 20 entries (e.g. iptables -A INPUT -i lo -j ACCEPT). Fixed by the IP
+#                         tables paste.
+# Consistent: snmp, aaa. Not planned: breakglass (walkthrough Step 10).
+# Secrets: 2 present on the device, not changed (--secrets pushes them).
+# Note: tacacs default-services: the unit allows more services than the standard asks for (serial,
+# web, restful-api): kept, not compared.
+# Note: aaa: 13 statements of the device's own, kept on purpose.
+# Note: snmp: 4 statements of the device's own, kept on purpose.
+# WARNING: the pull saw 1 other session on the unit: the paste is live for them too; type /SN before
+# you paste and make sure no other administrator is working on it.
+# WARNING: the IP tables list has no final DROP and no INPUT policy DROP: it restricts nothing until
+# the last step of the walkthrough is applied.
+# The unit has no commit-confirm and no rollback: every value is live as soon as its Enter is
+# accepted, and the configuration is written to flash when a top-level menu is left with ESC (any
+# session that leaves one saves everything). tacctl types nothing: you do each step yourself.
+# Before you start: keep the serial console, or a second session logged in as an Administrator, open
+# until the check at the end passes; type /SN and make sure no other administrator is on the unit (the
+# pull saw 1 other session).
+# The way back is tacctl device config plan lab-unit --backout: the old values and the old IP tables
+# list as a block (or the slots to clear).
+#
+# Type this first, on lab-unit, and check the version:   /H
+# The title must read "COMMAND MENU: Version 8.10": tacctl's tables are those of that command menu,
+# and another version may number its pages differently: stop. /J shows the unit's Site ID: the pull
+# read wti.site.example.net; another one means this is not the unit.
+#
+##### IP TABLES (replaces every entry; see the notes): lab-unit #####
+# Do this from the serial session or one you can afford to lose: the list is the unit's firewall,
+# and a wrong one cuts off every way in.
+# At the /N menu type 5 and Enter, then paste the block below as it stands (<iptables> to
+# </iptables>, at the left margin) at the page's prompt. The unit answers "Configuring iptables -
+# Please wait...".
+# The paste REPLACES every entry the unit holds (no entry now) with 20 entries, all rendered by
+# tacctl. The unit's list has no tail (no final DROP, no INPUT policy), so this list restricts
+# nothing until the walkthrough's last step is pasted by you (Step 11: tacctl device config show
+# lab-unit).
+# It is live when the unit takes it; there is no commit-confirm. Leaving /N with ESC (any session
+# that does) writes it to flash: wait for "Saving configuration to flash". Check at once from a
+# second session, and from an address outside the list: it must be refused.
+# The way back is: tacctl device config plan lab-unit --backout (the old list as a block, or the
+# slots to clear).
+<iptables>
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -s 10.1.100.0/23 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.20.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.28.34 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.28.34 -p udp --dport 161:162 -j ACCEPT
+iptables -A INPUT -s 10.0.28.36 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.28.36 -p udp --dport 161:162 -j ACCEPT
+iptables -A INPUT -s 10.0.30.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.40.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.50.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.60.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.70.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.90.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.120.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 192.0.2.14 -p udp --dport 161:162 -j ACCEPT
+iptables -A INPUT -s 10.1.101.0/24 -p udp --dport 161 -j ACCEPT
+iptables -A INPUT -i eth0 -s 10.1.100.0/23 -p icmp -j ACCEPT
+iptables -A INPUT -i eth0 -s 10.0.0.0/16 -p icmp -j ACCEPT
+iptables -A INPUT -i eth0 -s 192.0.2.14 -p icmp -j ACCEPT
+</iptables>
+##### END OF IP TABLES: lab-unit #####
+#
+# Check now. The unit has no rollback: nothing undoes this by itself.
+#   From the tacctl server:   tacctl device config pull lab-unit --diff     (mgmt-acl: ok)
+#   From an address outside the IP tables list: the unit must refuse it
+#
+# To undo it: tacctl device config plan lab-unit --backout (the steps with the values the pull
+# showed, the old IP tables list as a block of its own; tacctl keeps this plan's back-out until
+# the next plan with changes).
+# Do not: paste anything outside the banners; paste a block into another unit; leave /N with ESC
+# before the last step of the list; keep this output in a file after the paste when it holds a
+# secret.
+# Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold lab-unit --reason "..."
+# then log in on the unit's serial console as its local Administrator account,
+# fix or back out, and the superuser runs: tacctl breakglass release lab-unit

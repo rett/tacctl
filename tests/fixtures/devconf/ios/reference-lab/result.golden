@@ -31,16 +31,16 @@
 = ip access-list standard VTY-ACL > permit 192.0.2.0 0.0.0.255
 = ip access-list standard VTY-ACL > deny any log
 = line vty 0 15 > access-class VTY-ACL in
-[snmp] differs
+[snmp] ok (+3 unmanaged)
 = ip access-list standard TACCTL-SNMP > permit 192.0.2.10
 = ip access-list standard TACCTL-SNMP > permit 198.51.100.0 0.0.0.255
 = ip access-list standard TACCTL-SNMP > deny any
-= snmp-server community <secret> RO TACCTL-SNMP (present, not compared)
+= snmp-server community <secret:1> RO TACCTL-SNMP (present, not compared)
 = snmp-server location Rack 4, DC1
 = snmp-server contact NOC <noc@example.net>
-+ snmp-server community <secret> RO TACCTL-SNMP (present, not compared)
++ snmp-server community <other:1> RO TACCTL-SNMP (present, not compared)
 + snmp-server enable traps config
-+ snmp-server host 192.0.2.50 version 2c <secret> (present, not compared)
++ snmp-server host 192.0.2.50 version 2c <other:2> (present, not compared)
 [netconf] n/a
 [breakglass] differs
 = username lab-admin privilege 15 secret (present, not compared)

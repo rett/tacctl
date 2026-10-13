@@ -218,6 +218,13 @@ func askpassWords(words []string) bool {
 		return true
 	case words[0] == "device" && len(words) > 2 && words[1] == "config" && words[2] == "pull":
 		return true
+	// 'block adopt' reads one device with the caller's login (0.2.7):
+	// 'scope block <scope> juniper adopt <device> <block>' and 'device block
+	// <name> adopt <block>'.
+	case words[0] == "scope" && len(words) > 4 && words[1] == "block" && words[4] == "adopt":
+		return true
+	case words[0] == "device" && len(words) > 3 && words[1] == "block" && words[3] == "adopt":
+		return true
 	case words[0] == "device" && len(words) > 2 && words[1] == "config" && (words[2] == "diff" || words[2] == "plan"):
 		for _, w := range words[3:] {
 			switch w {

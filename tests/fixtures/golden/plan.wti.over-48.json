@@ -1,0 +1,46 @@
+{
+  "name": "lab-unit",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "wti",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "ssh",
+    "age_s": 1080,
+    "secrets_visible": true
+  },
+  "status": "cannot-plan",
+  "reason": "refused: mgmt-acl: the list would hold 55 entries (50 rendered and 5 of the unit's own tail) and the unit holds 48: reduce the scope's management permit list (tacctl scope mgmt-acl lab list) or its SNMP clients (tacctl scope snmp lab clients list), or use wider networks",
+  "irregularities": [
+    {
+      "n": 1,
+      "kind": "missing",
+      "severity": "ACCESS",
+      "section": "mgmt-acl",
+      "what": "entries of the standard's IP tables list that the unit does not have: 30 entries",
+      "statement": "e.g. iptables -A INPUT -s 10.2.0.0/24 -p tcp --dport 22 -j ACCEPT",
+      "action": "Not fixed: the list would hold 55 entries (50 rendered and 5 of the unit's own tail) and the unit holds 48: reduce the scope's management permit list (tacctl scope mgmt-acl lab list) or its SNMP clients (tacctl scope snmp lab clients list), or use wider networks.",
+      "fixed": false
+    }
+  ],
+  "region": [],
+  "after": [],
+  "backout": [],
+  "left": {
+    "access": 1,
+    "monitoring": 0,
+    "cosmetic": 0
+  },
+  "extras": [],
+  "skipped": [
+    {
+      "section": "mgmt-acl",
+      "kind": "refused",
+      "why": "the list would hold 55 entries (50 rendered and 5 of the unit's own tail) and the unit holds 48: reduce the scope's management permit list (tacctl scope mgmt-acl lab list) or its SNMP clients (tacctl scope snmp lab clients list), or use wider networks"
+    }
+  ],
+  "withheld": [],
+  "warnings": [],
+  "holds_secret": false
+}

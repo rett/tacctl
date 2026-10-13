@@ -1,0 +1,390 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# source: composed from the screens of this directory's parent (and iptables-page-4.txt) in the order a reader captures them
+# ---
+# page: /H
+/H
+
+COMMAND MENU:                           Version 8.10
+                                        10/10/2026 01:59:38 UTC  (GMT+0000)
+DISPLAY COMMANDS
+/S            Plug Status
+/SD           Port Diagnostics
+/SN           Network Status
+/SA           Alias Status
+/AS           Alarm Status
+/W            Who Display
+/H            Command Menu (Help)
+/L            Log
+/J [*]        Site ID
+
+CONTROL COMMANDS
+/X            Exit Command Mode
+/C <n> [n]    Connect - Local [Remote]
+/D <n|Nn|*>   Disconnect Port(s)
+/V            View Port
+/R            Read Buffer
+/E            Erase Buffer
+/TEST         Test Network Options
+/TELNET <ip> [port] [raw] Telnet Out
+
+Enter: SPACE for page, ENTER for line
+                                                                          CONFIGURATION COMMANDS
+/F            System Parameters
+/P            Port Parameters
+/N [*]        Network Configuration
+/PNA          Ping No Answer
+/AC           Alarm Configuration
+/I            Reboot System
+
+LEGEND:
++---------------------------------+
+| n   Port #/name                 |
+| Nn  Network port #              |
+| z   n,n-n,... | *               |
+| *   "all"                       |
+| |   "or"                        |
+| <>  Required entry              |
+| []  Optional entry              |
+| ,   Link multiple plug commands |
++---------------------------------+
+
+
+DSM>
+DSM> 
+# page: /SN
+/SN
+
+NETWORK STATUS:                      MAC Address: [eth0] 00-00-5e-00-53-01
+
+PORT|TCP PORT|STATUS| USERNAME       |PORT|TCP PORT|STATUS| USERNAME       |
+----+--------+------+----------------+----+--------+------+----------------+
+N1  |      22|Active|user1           |N17 |        | Free |                |
+N2  |      22|Active|testuser        |N18 |        | Free |                |
+N3  |        | Free |                |N19 |        | Free |                |
+N4  |        | Free |                |N20 |        | Free |                |
+N5  |        | Free |                |N21 |        | Free |                |
+N6  |        | Free |                |N22 |        | Free |                |
+N7  |        | Free |                |N23 |        | Free |                |
+N8  |        | Free |                |N24 |        | Free |                |
+N9  |        | Free |                |N25 |        | Free |                |
+N10 |        | Free |                |N26 |        | Free |                |
+N11 |        | Free |                |N27 |        | Free |                |
+N12 |        | Free |                |N28 |        | Free |                |
+N13 |        | Free |                |N29 |        | Free |                |
+N14 |        | Free |                |N30 |        | Free |                |
+N15 |        | Free |                |N31 |        | Free |                |
+N16 |        | Free |                |N32 |        | Free |                |
+----+--------+------+----------------+----+--------+------+----------------+
+
+
+Enter: <CR> for more ports, <ESC> to quit ... 
+# page: /N
+NETWORK PARAMETERS: [eth0] IPv4         10/12/2026 02:03:45 UTC  (GMT+0000)
+
+COMMUNICATION SETTINGS                  SERVERS AND CLIENTS
+1.  IP Address:        198.51.100.112   21. Telnet Access:     Off
+2.  Subnet Mask:       255.255.255.0    22. SSH Access:        On
+3.  Gateway Addr:      198.51.100.1 *   23. Web Access:        Off
+4.  DHCP:              Off              24. SYSLOG
+5.  IP Tables:         On               25. SNMP Access:       On
+6.  Static Route:      Off              26. SNMP Trap:         On
+7.  DNS Services:      (undefined)      27. LDAP:              Off
+8.  Negotiation:       Auto             28. TACACS:            On
+                                        29. RADIUS:            Off
+                                        30. PING Access:       Limited
+GENERAL PARAMETERS                      31. Multiple Logins:   On
+11. Admin Mode:        Permit           32. Email Messaging:   Off
+12. Logoff Char:       ^X               33. Outbound Access:   Off
+13. Sequence Disc:     One Char         34. Raw Socket Access: Off
+14. Inact Timeout:     Off
+15. Command Echo:      On
+16. Accept Break:      On (ASCII 28)
+
+
+Enter: #<CR> to change,
+       <ESC> to exit and save configuration ...
+# page: /N > 25
+25
+
+SNMP ACCESS: [eth0] IPv4
+
+1. Enable:                 On
+2. Version:                V1/V2 Only
+3. Read Only:              Yes
+4. System Name:            wti.site.exam...
+5. Contact:                Example NOC (...
+6. SNMP Location:          Example City,...
+7. Read-Only Community:    ro-community
+8. Read/Write Community:   rw-community
+9. V3 Users
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 
+# page: /N > 25 > 4
+4
+SYSTEM NAME:
+Up to 32 characters are allowed.
+Enter: <SPACE><CR> to clear,
+       <text><CR> to change,
+       <ESC> to return to previous menu ... 
+wti.site.example.net
+--------------------------------
+# page: /N > 25 > 5
+5
+CONTACT:
+Up to 32 characters are allowed.
+Enter: <SPACE><CR> to clear,
+       <text><CR> to change,
+       <ESC> to return to previous menu ... 
+Example NOC (555) 0100
+--------------------------------
+# page: /N > 25 > 6
+6
+SNMP LOCATION:
+Set the snmp location name.
+Up to 64 characters are allowed.
+Enter: <SPACE><CR> to clear,
+       <text><CR> to change,
+       <ESC> to return to previous menu ... 
+Example City, Example State
+----------------------------------------------------------------
+# page: /N > 26
+26
+
+SNMP TRAP: IPv4
+
+Note: The SNMP trap feature is enabled by defining at least one manager.
+
+1. Manager 1:          192.0.2.34
+2. Manager 2:          (undefined)
+3. Manager 3:          (undefined)
+4. Manager 4:          (undefined)
+5. Community:          ro-community
+6. Trap Version:       V2
+7. V3 Trap Engine ID:  (undefined)
+8. Ping Test
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 
+# page: /N > 28
+28
+
+TACACS: [Shared]
+
+1.  Enable:                     On
+2.  Primary host/address:       192.0.2.42
+3.  Secondary host/address:
+4.  Secret Word:                (defined)
+5.  Fallback Timer:             15 Sec
+6.  Fallback Local:             On (Transport failure)
+7.  Authentication Port:        49
+8.  Default User Access:        On
+9.  Account Management Module:  Enabled
+10  Session Management Module:  Enabled
+11. Service Name:               wti
+12. Debug:                      Off
+13. Ping Test
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 
+# page: /N > 28 > 8
+8
+
+
+TACACS Default User Access: [Shared]:
+
+1.  Default User Access:  On
+2.  Access Level:         View Only
+3.  Port Access:          (defined)
+4.  Service Access:       Serial Port, Telnet/SSH, Web, RESTful API
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 
+# page: /N > 29
+29
+
+RADIUS: [Shared]
+
+1.  Enable:                     Off
+2.  Primary Host/Address:       (undefined)
+3.  Primary Secret Word:        (undefined)
+4.  Secondary Host/Address:     (undefined)
+5.  Secondary Secret Word:      (undefined)
+6.  Fallback Timer:             3 Sec
+7.  Fallback Local:             Off
+8.  Retries:                    3
+9.  Authentication Port:        1812
+10. Accounting Port:            1813
+11. Default User Access:        On
+12. OneTime Auth:               Off
+13. OneTime Auth Timer:         5
+14. OneTime Auth Type:          DBM
+15. Session Module Type:        Enable
+16. Require Message Authentic:  Off
+17. Debug:                      Off
+18. Ping Test
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 
+# page: /N > 5
+IPTABLES ENTRIES: IPv4
+
+1.  iptables -A INPUT -i lo -j ACCEPT
+2.  iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+3.  iptables -A INPUT -s 10.1.100.0/23 -p tcp --dport 22 -j ACCEPT
+4.  iptables -A INPUT -s 10.0.20.0/24 -p tcp --dport 22 -j ACCEPT
+5.  iptables -A INPUT -s 10.0.28.34 -p tcp --dport 22 -j ACCEPT
+6.  iptables -A INPUT -s 10.0.28.34 -p udp --dport 161:162 -j ACCEPT
+7.  iptables -A INPUT -s 10.0.28.36 -p tcp --dport 22 -j ACCEPT
+8.  iptables -A INPUT -s 10.0.28.36 -p udp --dport 161:162 -j ACCEPT
+9.  iptables -A INPUT -s 10.0.30.0/24 -p tcp --dport 22 -j ACCEPT
+10. iptables -A INPUT -s 10.0.40.0/24 -p tcp --dport 22 -j ACCEPT
+11. iptables -A INPUT -s 10.0.50.0/24 -p tcp --dport 22 -j ACCEPT
+12. iptables -A INPUT -s 10.0.60.0/24 -p tcp --dport 22 -j ACCEPT
+
+
+   Multiple iptables commands can be uploaded here in the format:
+   <iptables>
+   COMMANDS (1 per line, 256 char max per command)
+   </iptables>
+   WARNING: Upload will replace and overwrite all current entries.
+
+Enter #<CR> to change, '<' for previous entries, '>' for next entries,
+       <ESC> to return to previous menu ... 
+# page: /N > 5
+>
+
+IPTABLES ENTRIES: IPv4
+
+13. iptables -A INPUT -s 10.0.70.0/24 -p tcp --dport 22 -j ACCEPT
+14. iptables -A INPUT -s 10.0.90.0/24 -p tcp --dport 22 -j ACCEPT
+15. iptables -A INPUT -s 10.0.120.0/24 -p tcp --dport 22 -j ACCEPT
+16. iptables -A INPUT -s 192.0.2.14 -p udp --dport 161:162 -j ACCEPT
+17. iptables -A INPUT -s 10.1.101.0/24 -p udp --dport 161 -j ACCEPT
+18. iptables -A INPUT -i eth0 -s 10.1.100.0/23 -p icmp -j ACCEPT
+19. iptables -A INPUT -i eth0 -s 10.0.0.0/16 -p icmp -j ACCEPT
+20. iptables -A INPUT -i eth0 -s 192.0.2.14 -p icmp -j ACCEPT
+21. iptables -A INPUT -j DROP
+22. iptables -A OUTPUT -j ACCEPT
+23. iptables -P INPUT DROP
+24. iptables -P OUTPUT DROP
+
+
+   Multiple iptables commands can be uploaded here in the format:
+   <iptables>
+   COMMANDS (1 per line, 256 char max per command)
+   </iptables>
+   WARNING: Upload will replace and overwrite all current entries.
+
+Enter #<CR> to change, '<' for previous entries, '>' for next entries,
+       <ESC> to return to previous menu ... 
+# page: /N > 5
+>
+
+IPTABLES ENTRIES: IPv4
+
+25. iptables -P FORWARD DROP
+26.
+27.
+28.
+29.
+30.
+31.
+32.
+33.
+34.
+35.
+36.
+
+
+   Multiple iptables commands can be uploaded here in the format:
+   <iptables>
+   COMMANDS (1 per line, 256 char max per command)
+   </iptables>
+   WARNING: Upload will replace and overwrite all current entries.
+
+Enter #<CR> to change, '<' for previous entries, '>' for next entries,
+       <ESC> to return to previous menu ... 
+# page: /N > 5
+>
+
+IPTABLES ENTRIES: IPv4
+
+37.
+38.
+39.
+40.
+41.
+42.
+43.
+44.
+45.
+46.
+47.
+48.
+
+
+   Multiple iptables commands can be uploaded here in the format:
+   <iptables>
+   COMMANDS (1 per line, 256 char max per command)
+   </iptables>
+   WARNING: Upload will replace and overwrite all current entries.
+
+Enter #<CR> to change, '<' for previous entries, '>' for next entries,
+       <ESC> to return to previous menu ... 
+# page: /F
+/F
+
+SYSTEM PARAMETERS:
+
+1.  User Directory
+2.  Unit Identification:       (defined)
+3.  Real Time Clock:           10/10/2026 03:21:51
+4.  Invalid Access Lockout:    Off
+5.  Temperature Settings:
+6.  Log Configuration
+7.  Callback Security:         On - Callback (Without Password Prompt)
+8.  Front Panel Buttons:       On
+9.  Analog Modem Phone #:      (undefined)
+10. Scripting Options
+11. SSL Providers:             fips base default
+
+
+Enter: #<CR> to change,
+       <ESC> to exit and save configuration ... 
+# page: /F > 1 > 1
+1
+
+VIEW USER DIRECTORY:
+
+localadmin
+
+
+Enter: username<CR> to show user details,
+       <ESC> to return to previous menu ... 
+# page: /F > 1 > 1 > localadmin
+localadmin
+
+VIEW USER DIRECTORY DETAILS:
+
+1.  Username:              localadmin
+2.  Password:              (defined)
+3.  Authorization Keys:    (undefined)
+4.  Access Level:          Administrator
+5.  Port Access:           (defined)
+6.  Service Access         Serial Port, Telnet/SSH, Web, Outbound
+7.  Callback Phone #:      (undefined)
+8.  User API Token:        undefined
+
+
+Enter: <CR> or <ESC> to return to previous menu ... 
+# page: /J
+/J
+Site ID: wti.site.example.net
+DSM> 

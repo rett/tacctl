@@ -114,7 +114,7 @@ func TestDeviceScanDiscoverListAndStatus(t *testing.T) {
 	for _, re := range []string{
 		`(?m)^  core-sw1 +203\.0\.113\.1 +cisco +dmz +configured +\S+ \S+ +alice +tacacs +never +-$`,
 		`(?m)^  edge-fw +203\.0\.113\.20 +other +dmz +configured +rejected \S+ \S+ \(bad secret\) +- +tacacs +- +-$`,
-		`(?m)^  oob-con1 +203\.0\.113\.9 +wti +dmz +configured stale +\S+ \S+ +asmith +radius +- +name-mismatch$`,
+		`(?m)^  oob-con1 +203\.0\.113\.9 +wti +dmz +configured stale +\S+ \S+ +asmith +radius +never +name-mismatch$`,
 		`(?m)^  lab-rtr2 +198\.51\.100\.7 +juniper +- +unconfigured +never +- +- +- +-$`,
 		`(?m)^  seen data as of \S+ \S+ \(tacctl device scan to refresh\); stale after 7 days$`,
 	} {

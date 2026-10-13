@@ -18,6 +18,813 @@ current behaviour; this file is where history lives.
    and only the break-glass section is affected (IOS `username` lines and Junos
    `system login user` statements).
 
+2. **SNMP community and trap-group names are told apart in the compared form,
+   not all elided to `<secret>`.** Every community name read from a device was
+   one mark, so another community's `authorization` looked like tacctl's own,
+   and a leaf under a community could not be attributed to one. A name is now
+   elided to a label that says whose it is and never holds the string:
+   `<secret:N>` for the N-th community of the scope's rendering (in the order
+   of the rendering) and `<other:N>` for the N-th other string on the device
+   (by first appearance). One string has one label throughout a pull, a Junos
+   `trap-group` name (the community its traps are sent with) and the community
+   word of an IOS `snmp-server host` included. `device config diff`,
+   `pull --diff`, the plan's report and its `--json`, and the stored sections
+   show the labels (`+ set snmp community <other:1> authorization read-only
+   (present, not compared)`, `- snmp-server community <secret:1> RO
+   TACCTL-SNMP`). The labels are relative to the rendering the pull was
+   compared with: after a scope's community is changed, pull the device again.
+   A record made by an older tacctl (the bare `<secret>` for every name) still
+   loads and compares: its communities are compared by presence, a note under
+   the section says so, and `device config plan` leaves every statement under
+   a community of that record alone (`the community's name is not visible`),
+   with a line that says to pull the device again to plan them.
+
+3. **The Junos plan no longer types a delete for another community's
+   statements, and another community's `authorization` no longer satisfies
+   tacctl's.** A `clients` leaf of a community that was not tacctl's was
+   answered with `delete snmp community <tacctl's community> clients <addr>`,
+   which the device refuses (`statement not found`) and which the report
+   excused in a note; an `authorization` of another community made tacctl's
+   own read as present. Both are gone: a statement under another community is
+   kept (`Left alone`), the note is gone, and a rendered community the device
+   lacks is set whole (`set snmp community <name> authorization read-only` and
+   its `client-list-name`), with a back-out that deletes the community. A stray
+   leaf of tacctl's own community (a `clients` entry) is still deleted, under
+   the community's real name, and a rendered leaf that the device holds with
+   another value is replaced in place by its set. The report and the back-out
+   show the label, `<secret:N>` (`<SECRET>` with `--no-secrets`); the line to
+   paste holds the name.
+
+4. **A section that holds only the device's own statements beside what tacctl
+   renders reads `ok (+N unmanaged)`.** The `snmp` section is a hierarchy
+   the device shares with its monitoring, and every extra made it `differs`,
+   so a device that was brought to the standard and kept its other community,
+   its trap groups or its `snmp name` could never read `ok`: it stayed in
+   `--stale` and `--differs` and made `device config diff --exit-code` exit 2.
+   A section whose rendered statements are all present and unchanged, and
+   whose every extra is one the plan keeps by rule, is now `ok`, with the
+   number of those extras: another community and its client lists and leaves,
+   a client list, view or SNMPv3 object tacctl does not render, a location,
+   contact or description when tacctl renders none, and the statements that
+   have no row at all (`snmp name`, `engine-id`, trap groups and options, on
+   IOS `snmp-server host`, `enable traps` and the rest of `snmp-server`).
+   Text shows `ok (+N unmanaged)` in `device config diff`, `pull --diff` and
+   the Configuration row of `device show`; `diff` and `pull --diff` list the
+   statements as `+` lines with the note `N statements of the device's own,
+   kept on purpose`; `device config list` keeps the state `ok` and its DETAIL
+   reads `snmp +N unmanaged`. These devices are not in `--differs` or `--stale`
+   and do not make `--exit-code` of `diff` or `plan` exit 2 (the plan still
+   lists the extras, as left alone). In `--json` the `state` strings are
+   unchanged (`ok` stays `ok`) and a section has the integer `unmanaged`
+   (omitted when 0) in `pull` and `diff`, `device config list` has the map
+   `unmanaged` (section to count, for the sections that are ok), and
+   `devices-config.json` has `sections.<name>.unmanaged`. Only `snmp` can
+   read this way: the extras of `aaa`, `roles` and `mgmt-acl` (another
+   server, a login class, a filter, a user nobody recorded) are findings about
+   who can log in and stay `differs`, as does any deactivated statement.
+   In a record made by an older tacctl, whose communities are not told apart
+   (item 2), an extra statement under a community is a difference until the
+   device is pulled again.
+
+5. **Configuration blocks have a home: `/etc/tacctl/blocks` and the lists in
+   `tacctl.yaml` that put them in force.** A block is vendor syntax that a
+   scope or a device owns beside the structured settings, written in the
+   device's own language and never translated (the Junos `snmp` and `system`
+   blocks are the first). A scope's blocks are the files
+   `/etc/tacctl/blocks/<scope>/<vendor>/<block>` and a device's
+   `/etc/tacctl/blocks/_devices/<device>/<vendor>/<block>` (the device's name in
+   lower case; `_devices` cannot be a scope's name), 0600 in 0700 directories,
+   written atomically; `<vendor>` is `juniper` or `cisco`, `<block>` is `snmp`
+   or `system`. A block is in force only while `tacctl.yaml` names it:
+   `blocks.<scope>.<vendor>` and `blocks_device.<device>.<vendor>` are lists of
+   block names (the device's dots written `~`, as `breakglass_hold` does); a
+   file that no list names is not used. Snapshots hold the directory and
+   `backup restore` puts it back; `scope rename` and `scope remove` carry a
+   scope's blocks, `device rename` and `device remove` a device's (`device
+   remove` and `device import --replace` say so before they ask, because a block
+   holds community strings); a scope or device name that has blocks left on
+   disk or in `tacctl.yaml` is refused for a new scope, device or rename, with
+   the path. `rollback 0.2.3` removes the lists and leaves the files. A scope
+   called `devices` is an ordinary scope name.
+
+6. **A scope's Junos `snmp` block is rendered, compared and planned.** The
+   block's communities (`authorization`, `clients`, `client-list-name`), trap
+   groups (`version`, `categories`, `targets`) and trap options are appended
+   to the SNMP step of `device config show` and `config juniper`, and to the
+   managed `snmp` section, as live lines under a comment that names the
+   scope's block (never a string); they are rendered even when the scope's own
+   SNMP settings are not configured. Each community and trap group of the
+   block is an object tacctl owns whole: the plan sets what the device lacks
+   and deletes a `clients` entry, a leaf or a trap-group target the block does
+   not state, under the object's real name, and the back-out deletes what the
+   plan created. The device's other communities stay `<other:N>`: kept, listed
+   and counted as unmanaged. The management filter's `permit-snmp` term also
+   permits the block's unrestricted IPv4 clients (a `restrict` entry is no
+   permit; a community that uses a `client-list-name` gets a comment, because
+   the list's addresses are on the device), so the filter's `deny-snmp` term
+   does not refuse a community the block grants. A block with an error is never
+   rendered in part: every Junos device of the scope is refused, with the line
+   numbers and the verb that checks the block, and a block community that is
+   the scope's own community is refused without printing it. A scope with no
+   block renders exactly what it did.
+
+7. **A scope's Junos `system` block is a seventh managed section.** The login
+   message, domain name, domain search list, time zone, name servers and NTP
+   servers (with `prefer`, `version`, `key`, `routing-instance`), boot server,
+   source address, authentication keys and trusted keys that the block states
+   are rendered as the last lines of the SNMP step, compared and planned
+   additively: a statement the device lacks is set, a single value that
+   differs (the login message, domain name, time zone, boot server, source
+   address) is replaced in place, a list entry is added, and nothing the
+   device holds is ever deleted (the extras are listed as unmanaged; `ok (+N
+   unmanaged)` applies). An NTP key is typed only where its number is missing
+   (the device keeps ciphertext, so presence is all that is compared), and a
+   login message is kept in the record, the diff and the report as its size and
+   a digest, never as text; the plan's pasted statement is the whole message,
+   with a warning when the one-line statement is over 1,000 characters (a line
+   over 1,023 pasted into an interactive terminal is truncated: use `device
+   config plan <name> --plain`). The section exists only for a scope that has
+   the block, so no other device gains `~` lines for its own NTP; `--section
+   system` selects it in `device config diff` and `plan`. An older record has
+   no such section and is not compared until the next pull; the plan says to
+   pull again. The back-out types a replaced value back and deletes what the
+   plan added; for a replaced message it names the rollback, because only a
+   digest is kept.
+
+8. **`tacctl scope block <scope> juniper` and `tacctl device block <name>`
+   keep the configuration blocks: `list`, `show`, `check`, `set`, `remove`.**
+   `list` names each block of the scope (or device) with its state (in force,
+   named in `tacctl.yaml` with no file, or a file `tacctl.yaml` does not name,
+   which is ignored), its size, what it states (communities and trap groups,
+   or statements and the login message's lines, or the number of errors) and
+   the findings of the store against `tacctl.yaml`; for a device it also names
+   the scope's blocks beneath, and the device's orphans (a vendor directory
+   that is not the device's vendor). `show <block>` prints the block elided:
+   `<secret:N>` for a community string, `<group:N>` for a trap group's name,
+   `<secret>` for an NTP key, `<message: N lines, M characters>` for the
+   login message, and never a comment line (a comment may hold anything);
+   `--reveal` prints the file as stored. `device block <name> show <block>
+   --effective` prints the block as it is rendered for the device, the scope's
+   with the device's laid over it, with a comment before each object saying
+   which layer it comes from. `check <block> [--file <path>|-]` lints the file
+   in force, a file (read as the caller, at most 256 KiB) or standard input:
+   every finding with its line, the objects that become owned, the number of
+   statements that carry a secret, the diff against the file in force (elided;
+   a changed string shows as the same mark removed and added), and a block
+   community that is the scope's own community (refused, by its place and
+   without printing it); the exit status is 1 on an error. `check --against
+   <device>` (at the device level `--against`) plans that Junos device with the
+   text in force and prints the statements of the block's section from its last
+   pull, every secret as a mark: nothing is written, no back-out is kept and no
+   device is reached; a device that was not pulled is told to be pulled first.
+   `set <block> (--file <path>|-) [-y]` runs the check (an error refuses it and
+   writes nothing; a text that states nothing is refused, use `remove`),
+   shows the owned objects and the diff, asks, takes the configuration
+   snapshot, writes the file (0600, atomically) and names it in `tacctl.yaml`
+   (blocks.<scope>.juniper or blocks_device.<device>.juniper); a block read
+   from standard input needs `-y` unless standard input is a terminal, and the
+   same text as the file in force is no change. `remove <block> [-y]` takes
+   the entry and the file away after a snapshot (a file no list names is
+   removable too) and says that nothing is deleted from a device: what the
+   block set is no longer rendered, and the next compare lists those
+   statements as the device's own, kept. Nothing is restarted by either.
+   `set` and `remove` are the superuser's and are logged `block-set` and
+   `block-remove` (name `<scope>/juniper/<block>`, or `_devices/<device>/
+   juniper/<block>`, with the size and counts, never a value); an engineer
+   reads (`list`, `show`, `check`) the blocks of their own scopes and of the
+   devices there, another scope or device is not found, and an engineer's
+   `show --reveal` is logged as `secret-read kind=block name=<that name>`. A
+   write is refused, before anything is changed, when `tacctl.yaml` cannot be
+   read or written. `cisco` is refused (`IOS blocks come in the release
+   after`), and so is a device that is not a Junos device, an enrolled host and
+   a device in no scope (its blocks can still be removed). The two verbs are in
+   the engineer's rows of the tier table and the sudoers drop-in
+   (`scope block *`, `device block *`), in the shell's and the console's lists
+   and in tab completion (scope and device names, `juniper`, the block names,
+   `--file` paths).
+
+9. **A device's own blocks are rendered, compared and planned over its scope's,
+   and `config validate` reports the blocks.** The walkthrough of a registered
+   Junos device (`device config show <name>`, `config juniper --name <name>`)
+   and the managed `snmp` and `system` sections of `device config
+   pull|diff|plan` are made from the scope's block with the device's laid over
+   it per object: a community (by its string), a trap group (by its name) or a
+   trap-options leaf the device states replaces the scope's of the same key
+   whole, one it adds is added, and the scope's others stay; in the system
+   block a single value is the device's and a list entry is added, or replaced
+   when it has the same value; the device's `delete` line takes the scope's
+   object out for that device. The management filter's `permit-snmp` term
+   permits the resolved block's clients. The comment above the block's
+   statements says which layers it is made of and the verb that shows it
+   (`tacctl device block <name> show snmp --effective`), and a refusal names
+   the layer: a device block with an error refuses that device alone, with
+   `tacctl device block <name> check <block>`; a block community that is the
+   scope's own community is refused naming the device's block when it holds it.
+   A batch resolves the device level once per device that has blocks of its
+   own, before its workers start; an engineer's pull logs the read of a
+   device's block under its own name. `config validate` gains a `Config
+   blocks:` line when there are blocks: a name in `tacctl.yaml` with no file and
+   a block in force that does not parse are errors (exit 1), a file no list
+   names and a device's orphans (not registered, another vendor) are warnings;
+   an installation with no blocks prints nothing new.
+
+10. **`tacctl scope block <scope> juniper edit <block>` and `tacctl device
+    block <name> edit <block>` open a block in your editor.** Superuser only,
+    and refused without a terminal on standard input and output. The editor is
+    yours, as `visudo` and `sudoedit` take it: `VISUAL`, else `EDITOR`, else
+    `editor` (the system's alternative), else `vi`; a value may carry
+    arguments (`emacs -nw`) and a name is looked up in `PATH`, a path must be
+    absolute. It runs as the invoking user, never as root, on a private copy
+    (mode 0600, named for the block: `scope-lab-juniper-snmp.txt`) in a
+    directory of its own (0700, made under `/var/tmp` and handed to that user),
+    with the user's `HOME`, `TERM`, `LANG` and `LC_*`, `PATH`, and `VISUAL` and
+    `EDITOR` as given, and nothing of sudo's or tacctl's; the directory, with
+    whatever swap or backup files the editor wrote there, is removed afterwards
+    on every path, a stop signal included. The seed is the file in force; for a
+    block that does not exist, the block's grammar and an example as `#`
+    lines, and for a device's new block also the scope's objects as `# set ...`
+    lines to uncomment where the device differs (a device's object replaces
+    the scope's of the same key whole). What the editor leaves is read as the
+    user (a regular file of at most 256 KiB that is theirs; a link or anything
+    else is ignored and nothing is written), checked as `set` checks it, and
+    installed as `set` installs it: the owned objects and the elided diff, the
+    question (`-y` answers it), the snapshot, one atomic write, the entry in
+    `tacctl.yaml`, logged `block-edit name=<scope>/juniper/<block>` (or
+    `_devices/<device>/juniper/<block>`) with the size and counts. A text that
+    fails the check is offered back to the editor (up to five rounds) with the
+    errors as `# tacctl:` lines at the top, numbered as the editor's window is;
+    those lines are removed before any text is read and never reach the file.
+    An editor that exits non-zero, a text that is empty or states nothing, and
+    an edit that changes nothing write nothing. In the login console the rule
+    of the system shell applies, since an editor can start a shell: an edit is
+    open to the tiers of `console system-shell tiers` (default `superuser`,
+    never the engineer), and a refusal is logged `block edit DENY`.
+    **The sudoers drop-ins change.** sudo's `env_reset` drops `VISUAL` and
+    `EDITOR`, so both drop-ins (`/etc/sudoers.d/tacctl-tiers` and the group
+    drop-in of `config sudoers install`) gain a `Cmnd_Alias` of the four command
+    lines that open an editor (`scope block * edit *`, `scope block * adopt *`,
+    `device block * edit *`, `device block * adopt *`) and a `Defaults!` line
+    that keeps those two variables for them, the way `TACCTL_ASKPASS` is kept,
+    and for nothing else; no `SETENV` tag is added. tacctl takes both variables
+    out of its own environment at start on the sudo side, so no program it runs
+    (git, a pager) inherits an editor the caller named. `tacctl upgrade`
+    rewrites an installed tiers drop-in and a group drop-in that is exactly the
+    text 0.2.4 to 0.2.6 wrote; `tacctl rollback` puts 0.2.3's text back over
+    either. Without the refreshed drop-in, `VISUAL` and `EDITOR` do not reach
+    tacctl (unless the caller's own sudoers rule allows the assignments tacctl
+    puts on those four lines) and the editor is `editor`, else `vi`. The editor
+    has to stay in the foreground until the text is saved (`code --wait`,
+    `gvim -f`). An editor may write swap or backup files beside its working
+    copy, which is why that directory is private; a block holds community
+    strings, a poller's credential, on this host and in the snapshots.
+
+11. **`tacctl scope block <scope> juniper adopt <device> <block>` and `tacctl
+    device block <name> adopt <block>` read a Junos device's own statements and
+    open them as the draft to prune.** Superuser only, with the same terminal,
+    console and editor rules as `edit`. The device is read live with your login
+    as `device config pull` reads it: the password from the cache or the
+    terminal (the shell keeps the line's `TACCTL_ASKPASS` for `adopt` too), the
+    transport of `device.config.transport` (NETCONF, the command line as the
+    fallback under `auto`), `device.config.timeout`, the pinned host key and the
+    pull's words for a failure (`Cannot read <device>: authentication failed.`,
+    `no host key is pinned for the device` with the command that pins it); one
+    device, one login, one command (`show configuration snmp | display set` or
+    `show configuration system | display set`). Nothing of the device's text is
+    stored: it exists in memory and in the editor's private copy, which is
+    removed. The read is logged as a reveal is, `secret-read
+    kind=block-adopt name=<scope>/juniper/<block>` (or `_devices/<device>/...`;
+    never a value), whoever reads, and `block adopt-read user= device=
+    transport= result=`. The draft holds the statements the block's grammar
+    takes minus what tacctl renders itself (the scope's own community and its
+    client list, the v3 settings, a location or contact it renders) and the
+    device's identity (`snmp name`, `engine-id`); for a device's block also
+    minus what the scope's block states with the same statements (an object that
+    differs is the device's exception, whole). A community string or trap group
+    name the login sees masked (`/* SECRET-DATA */`, `<masked>`, asterisks) or
+    only as the device's ciphertext cannot be adopted: each such statement is
+    named as a `# left out:` line with its shape and no value, and an NTP
+    authentication key, always ciphertext, is left out the same way. The
+    system block's draft converts the device's `\n`-escaped login message to the
+    heredoc form (`blocks.FromDeviceMessage`) and takes `domain-name`,
+    `domain-search`, `time-zone`, `name-server` and `ntp server`, `boot-server`,
+    `source-address` and `trusted-key`. An existing block of that name is not
+    merged: its text is opened first, whole, and the adopted statements follow
+    under a `# adopted from <device> at <time>` comment with the counts; an
+    object the file already has with other statements is left as it is and
+    counted. A draft with nothing adoptable opens no editor and says why; one
+    pruned to nothing writes nothing (`No statement was adopted`); the rest is
+    `edit`'s: check, diff, question, snapshot, write, logged `block-adopt`.
+
+12. **`config wti`'s IP Tables step gives the list as one paste, adds ICMP
+    and warns at 48 entries.** Step 5 follows the numbered list with the same
+    rules as one `<iptables>` ... `</iptables>` block for the unit's IP Tables
+    prompt (the unit takes the whole list in one paste, replacing every entry,
+    and applies it at once), and the list gains one `-i eth0 -s <net> -p icmp
+    -j ACCEPT` line per network of the server, the management permits and the
+    SNMP clients (the unit's own Ping Access item is separate). Step 11 gives
+    the whole list, the DROP, `iptables -A OUTPUT -j ACCEPT` and the three
+    `-P INPUT|OUTPUT|FORWARD DROP` policies (last, the order a lab unit took
+    without cutting the pasting session off) as one block, with the revert
+    (clear the slots, or paste Step 5's block again). A list that would exceed
+    the unit's 48 entries says so in Step 5, in Step 11 and at the end of the
+    output, and is not cut. From a lab test on a WTI 8.10 unit; the walkthrough
+    no longer says that when the unit applies a changed list is unknown (it
+    applies a paste at once, and any session leaving a top-level menu saves
+    it).
+
+13. **`config snmp test <address|device>` follows a registered device.** The
+    test used the default's settings only, so a device with an SNMP community
+    of its own (or in a scope with its own) answered "no answer" to it. It now
+    reads a registered device with the settings the device is read with
+    everywhere else (its own, else its scope's, else the default's) and says
+    which it tried (`(tried with the settings of device 'sw1' (tacctl device
+    snmp sw1 show))`, also in the "no answer" report); an address that is no
+    device is read with the default's as before, and `scope snmp <scope> test`
+    is still the scope's.
+
+14. **`device list` is sorted by name and can be narrowed.** The rows were in
+    registry order, devices before hosts. They are now sorted by name (case
+    ignored, then address), in the table and in `--json`. `--name <text>` keeps
+    the names that contain the text, `--ip <addr|cidr|text>` the addresses
+    equal to an address, inside a CIDR (`10.20.0.0/16`, `2001:db8::/32`) or
+    containing a text (`10.20.1.`), `--vendor <vendor>` and `--scope <scope>`
+    those exact values; each takes one value or a comma list (any of them
+    matches) and different options must all match. A bare word
+    (`device list sw1`, `device list lab`) keeps the entries whose name or
+    address contains it or whose vendor or scope it is. The heading then reads
+    `Registered devices (N) and enrolled hosts (M), of T`, an empty selection
+    says `None match.`, and `--stale`, `--unconfigured`, `--scan`, `--probe`
+    and `--json` combine with all of it.
+
+15. **`config wti`'s SNMP step uses the item names of a WTI 8.10 unit.** The
+    step said its menu names were from WTI's documents and sent you to "the
+    entry labelled SNMP". It now names the page (`/N`, item 25, SNMP Access)
+    and its items as the unit prints them: Enable, Version (`V1/V2 Only` for
+    v2c), Read Only, Read-Only Community, Contact and SNMP Location, with the
+    note that other firmware may number them differently. The statements a
+    pull compares for a unit (`snmp enable on`, `snmp version v1-v2-only`,
+    `snmp read-only yes`, ...) are the ones this step tells it.
+
+16. **`device config pull`, `diff` and `list` read WTI units.** A WTI console
+    server has no command that prints its configuration, so a pull walks the
+    unit's menus over ssh as you (the pages of command menu version 8.10 the
+    tables name: the login's help, the network status, the Site ID, and under
+    `/N` the SNMP, TACACS+, RADIUS and IP tables pages), typing only the keys a
+    page lists and never the final ESC that makes a unit save its
+    configuration. The user directory is read in a second connection with the
+    same password. The pages are never kept: the extraction is, compared with
+    what tacctl renders as for any device, with a community the unit prints in
+    clear kept as a label (`<secret:N>`, `<other:N>`). A unit has four
+    sections, `aaa`, `mgmt-acl`, `snmp` and `breakglass`; `roles`, `netconf`
+    and `system` are not listed for it. Units are selected by `--all`,
+    `--scope`, `--vendor wti` and `--stale` like any device, the record has the
+    command menu version (`os`), the unit's Site ID and the number of other
+    sessions it had, and the line of a pull says `1 other session on the unit`
+    (a count; no name is read into any output).
+    The results are new for a unit: **`denied`** (the login's WTI level cannot
+    configure it: `the login's WTI level is User; SuperUser or Administrator
+    is needed`, with `tacctl group edit <group> wti-level superuser`), a failed
+    pull that exits 1 and does not stop a batch; **`unsupported`** (`command
+    menu version 7.4; tables are verified for 8.10`, before any page); and
+    **`parse-failed`** (a page the tables do not know: its path and title line
+    only). A user directory that cannot be read is a warning on the line, the
+    pull is `ok`, and `breakglass` reads `n/a` with a note. `device config
+    list --failed` includes `denied` and `unsupported`, `device list` shows the
+    state in its CONFIG column instead of `-`, and `device show` replaces `not
+    read (WTI units are not read in this release)` with the last pull.
+    `--transport netconf` is refused for a unit as for a Cisco device. In
+    `--json`, a pull has `unit` (`version`, `level`, `site_id`,
+    `other_sessions`, `users_read`) and `warning`, `device config list --json`
+    has `unit` for a unit (`version`, `site_id`, `other_sessions`,
+    `users_read`), and a record made before 0.2.7 is unchanged.
+
+17. **`device config plan` plans a WTI unit.** A unit has nothing to paste:
+    its settings are the items of numbered menu pages, a value is live as soon
+    as its Enter is accepted, and it has no commit-confirm and no rollback. Its
+    plan is the report, the version check (`/H` must show `Version 8.10`, `/J`
+    the Site ID the pull read), what to have ready (a serial console or a
+    second session that stays open, `/SN` for other administrators, the
+    other sessions the pull saw), **a numbered checklist of menu steps**
+    between `DO THESE STEPS ON: <unit>` and `END OF STEPS` (the keys typed from
+    the prompt, the item as the unit prints it, what to enter, and `was:` the
+    pulled value), the `ESC ESC` that saves and a `CHECK` step, and **one
+    `<iptables>` block** between `IP TABLES (replaces every entry; see the
+    notes)` and `END OF IP TABLES`. The steps are ordered so that none takes
+    away the way in before the one that needs it (the SNMP page, then the
+    protocol's page with its secret word first and its Enable last); a step on
+    the AAA page carries the warning that a wrong secret word, host, port or
+    service name returns every login to the Default User Access level. The
+    block is the whole rendered list followed by the unit's own tail exactly as
+    the pull showed it, is presented and never applied, and its lines are the
+    only lines of the output that are not comments. The IP tables section is
+    refused, the rest still planned and the report saying why, when the list
+    would hold more than 48 entries or an entry the page does not take, does
+    not permit the tacctl server's address to reach the unit's ssh, or does not
+    permit the `--from` address; without `--from`, a list that ends in the
+    final DROP and other sessions on the unit are warnings. A secret step names
+    the command that shows the value (`tacctl scope secret show <scope>`,
+    `tacctl scope snmp <scope> show --reveal`) and a unit's plan types none
+    unless `--secrets` is given. A second host, a read/write community, the
+    other protocol's page switched on and a local account the scope does not
+    record are findings with the step that removes them; `breakglass` is
+    reported and never planned (walkthrough Step 10). `--backout` prints the
+    steps with the pulled values (a secret as "re-enter the one you keep") and
+    the old list as a block, or the slots to clear; `--converge` offers only
+    the read/write community and the other protocol's Enable. `--plain` and
+    `--section roles|system` are refused for a unit (exit 2), `--out-dir`
+    writes `<name>.txt` and `<name>.backout.txt`, never a `.set`, and `plan
+    --pull` and `--all`, `--scope` and `--vendor wti` select units.
+
+18. **A WTI pull reads the whole SNMP system name, contact and location.** The
+    SNMP access page prints these three texts cut at about 16 characters and
+    ending in `...`, so a pull kept `wti.site.exam...` and compared it by its
+    beginning, with a note that it was taken as equal. A pull now opens the
+    item's text prompt for each of the three that the page shows cut that way:
+    the item's number and a CR print the whole value, and ESC leaves the
+    prompt with the value as it was. Nothing is typed at a prompt (no text, no
+    CR and no `<SPACE><CR>`, which would clear the field), a value the page
+    shows whole is not opened, and the prompts of the communities and secret
+    words are never visited. The whole values are extracted, shown by `device
+    config diff` and compared exactly: a contact that merely begins as the
+    rendered one is now a difference, and the note `the unit shows a truncated
+    value` is gone for a value read that way. The prompt pages are three more
+    screens of the pull, and the document is not kept. A record made by an
+    earlier pull holds the cut value and is still compared by its beginning,
+    with the note, until the unit is pulled again. The prompt pages print
+    values and nothing else; the SNMP access page itself prints the read-only
+    and read/write communities in clear on this firmware, and they are turned
+    into labels in memory and never stored or logged, as before.
+
+19. **`config wti`'s IP Tables list no longer opens tcp 443.** The list gave
+    the server and each permitted range ssh (22) and https (443). Web access
+    is off on the units and the REST API is not used, so the list now permits
+    ssh only: the numbered list, the `<iptables>` blocks of Step 5 and Step 11
+    and the managed `mgmt-acl` statements lose their `--dport 443` lines, and
+    the 48-entry count falls with them (a scope with ten permits is 25
+    entries, 30 with the last step's tail). A unit whose list still has the
+    443 lines reads `differs` in `mgmt-acl` until its list is replaced. To
+    allow https, telnet or http, add the same line with `--dport 443`, `23`
+    or `80` by hand, as the step's notes say.
+
+20. **A management ACL entry can list the services it permits.** The lists
+    `mgmt_acl.permits` and `scope_mgmt_acl.permits.<scope>` (`tacctl config
+    mgmt-acl` and `tacctl scope mgmt-acl <scope> add|remove|list|clear`) took
+    a CIDR and nothing else. An entry is now `<cidr>[:<service>[,<service>...]]`
+    with `<service>` one of `tcp/<ports>`, `udp/<ports>` and `icmp`, and
+    `<ports>` one of `N`, `N-M` and `*`:
+    `tacctl scope mgmt-acl lab add 172.16.100.0/23:tcp/22,udp/161,udp/162`.
+    A token that starts with `tcp/`, `udp/` or `icmp` belongs to the entry
+    before it in a comma-separated `add` or `remove` (a service before any
+    CIDR is refused), and the CIDR is split from its services at the first `:`
+    that is followed by `tcp/`, `udp/`, `icmp` or `*`, so an IPv6 CIDR is
+    written as it is. An entry is stored in one form: the canonical CIDR, then
+    the services lower-cased, without repeats, in the order tcp, udp, icmp and
+    ports ascending (`tcp/*` takes the other tcp services; `<cidr>:*` and
+    `<cidr>:tcp/*,udp/*,icmp` are the plain CIDR); ports are 1 to 65535, a
+    range has its low port first, `icmp` takes no port, and an entry holds at
+    most 8 services. The same CIDR may be listed twice with different
+    services; an exact duplicate is still a no-op; entries sort by the CIDR as
+    before, then by services. `remove <entry>` removes that exact entry, and
+    `remove <cidr>` with no services removes every entry of that CIDR and says
+    how many; `list` prints the services after the CIDR. `config validate`
+    and the schema check each element and name the services problem.
+
+    **Behaviour change for WTI units: a plain `<cidr>` now permits every
+    protocol and port from that source.** A plain entry of an existing list
+    renders as `iptables -A INPUT -s <cidr> -j ACCEPT` in the unit's IP Tables
+    list, where 0.2.6 and before rendered ssh and ICMP for it, so a list of
+    plain permits is wider on the unit than the same list was: the unit's
+    telnet and web pages are reachable from those sources. A network with a
+    plain entry has no separate ICMP line. To keep what the list permitted,
+    replace each plain entry with `<cidr>:tcp/22` (`tacctl scope mgmt-acl
+    <scope> remove <cidr>`, then `add <cidr>:tcp/22`). The notes of Step 5
+    name the plain entries and say so, and `device config plan` of a unit
+    whose paste carries one reports `N plain permit(s) of the rendered list
+    allow every protocol and port from the source`. An entry that lists
+    services renders one rule for each, in order: `-p tcp -s <cidr> --dport
+    22`, `--dport 161:162` for a range, no `--dport` for `tcp/*` or `udp/*`,
+    and `-i eth0 -s <cidr> -p icmp` for `icmp`; the ICMP line of a network is
+    still added unless its entry lists `icmp`, and the SNMP client lines are
+    unchanged. An entry equal to the tacctl server's own /32 adds its services
+    after the server's lines; it is not a permitted range for the lock-out
+    guard, which now also needs at least one entry that permits ssh (plain, or
+    with `tcp/22`), else the DROP stays a comment. The 48-entry count and the
+    plan's check that the server and `--from` reach the unit's ssh follow the
+    new rules (the check reads tcp 22, a range that holds it, every tcp port
+    and every protocol).
+
+    **Cisco and Junos list a source only when its entry permits ssh.** A
+    standard access list and the `permit-mgmt` term match a source and
+    nothing else, so a plain entry, and an entry whose services include
+    `tcp/22` (alone, in a range, or as `tcp/*`), are listed by their source as
+    before and every other entry is not listed, with a comment above the list
+    that names it (`entry 10.0.0.0/8:udp/161 permits udp/161 only: not in the
+    VTY access list VTY-ACL ...`). The managed `mgmt-acl` sections use the
+    same list, so `device config diff` and `plan` agree with the walkthrough.
+    Output for lists of plain entries is unchanged.
+
+    **`tacctl rollback 0.2.3` is refused while any entry carries services**
+    (the dry run too): 0.2.3 reads these lists as plain CIDRs and refuses the
+    file, and a rewrite to the CIDR would permit every protocol and port. The
+    refusal lists each entry with its key and the command that removes it
+    (`tacctl config mgmt-acl remove <entry>`, `tacctl scope mgmt-acl <scope>
+    remove <entry>`) and changes nothing. Remove them, or replace each with
+    the plain CIDR you mean it to be, then run the rollback again.
+
+21. **A scope's and a device's IOS `snmp` block (checked on one IOS 15.6(2)T
+    router).** `tacctl
+    scope block <scope> cisco list|show|check|set|remove|edit|adopt <block>`
+    and `tacctl device block <name> ...` for an IOS or IOS-XE device keep an
+    `snmp` block of IOS configuration lines (the verbs, the files under
+    `blocks/<scope>/cisco/`, the lists `blocks.<scope>.cisco` and
+    `blocks_device.<device>.cisco`, the tiers, the snapshot and the elided
+    reads are those of the Junos block). Grammar, one statement per line, `#`
+    and `!` comment lines:
+
+        snmp-server community <string> RO|RW [<acl-name>]
+        snmp-server host <address> [version 1|2c] <community> [udp-port <n>] [<type> ...]
+        snmp-server enable traps [<type> [<subtype> ...]]
+        ip access-list standard <NAME>
+         permit <address> [<wildcard>] | permit host <address> | permit any
+        no snmp-server community <string>      (also: host, enable traps, ip access-list standard)
+
+    `check` refuses, with the line and never a string: tacctl's own names
+    (the scope's community, `TACCTL-SNMP`, `TACCTL-VIEW`, `TACCTL-GROUP` and
+    the scope's management access list), a numbered access list, a read-write
+    community with no access list or whose list permits `any`, an access list
+    with no entry, a `deny` or `remark` entry, an address with bits set under
+    its wildcard, `snmp-server contact|location|trap-source|engineID|user|
+    group|view`, a trap host in a `vrf` or with `informs` or SNMPv3, a
+    placeholder, a tab and any token off the grammar. A `no` line means "not
+    managed on this device" and is kept, never rendered. Resolution is per
+    object (a community by its string, a list by its name, a host by its
+    address and community, an `enable traps` line by its words): a device's
+    object replaces the scope's of the same key whole, and its `no` line takes
+    the scope's out.
+
+    The block's lines follow the structured SNMP step of the walkthrough
+    (also when the scope's SNMP is not configured), under a comment that names
+    the block and never a string, and are the last lines of the managed `snmp`
+    section. The plan owns a community (retyped in place when its access or
+    list differs, never removed) and a list the block defines (whole: an entry
+    it does not state is removed with a `no` line, and a list it only names is
+    the device's own); a trap host (compared by address, community and the
+    set of its options, because IOS leaves out the default version, kind and
+    port and keeps its own order of types) and an `enable traps` line (present
+    when the device enables it in the expanded form it prints, a line with no
+    type present when the device has any) are only ever added. The device's
+    other communities, hosts, lines and lists stay and are listed (`ok (+N
+    unmanaged)`), and `--converge` removes none of them. IOS has no confirmed
+    commit, so the plan is pasted line by line and undone by its `no` lines; a
+    community or host the plan replaced is typed again by value. A block
+    community equal to the scope's own, and a list named as the management
+    list, are refused by `check` and by every render without printing the
+    string. The report says, among its notes, that the block's lines (list
+    entries, trap hosts, `enable traps` lines) were written from the vendor's
+    references and have not been checked on a device; it says so for every
+    release, because it cannot know which one a device runs. A lab IOS
+    15.6(2)T router took a block's communities with their lists, list
+    entries, a trap host and the trap types, read them back as `ok`, and took
+    the `no` line that removes a stray list entry. Other releases and IOS-XE
+    have not been checked. The IOS `system` block and `trap-source` are
+    item 22.
+
+    `adopt` reads `show running-config | include ^snmp-server` and, for each
+    standard list a community names, `show running-config | section ip
+    access-list standard <NAME>` (the whole configuration once when the image
+    does not know `| section`), as the caller, over the ssh command line; it
+    drops tacctl's own community and list, v3 and the device's identity and
+    names what a block cannot hold (a numbered list, a view or IPv6 list, a
+    deny entry, a string shown as ciphertext) as `# left out:` lines. Limits:
+    VRF forms (`snmp-server host ... vrf <v>`, management VRFs on IOS-XE) are
+    refused in a block, and the device's own such lines stay unmanaged.
+
+    **Every `show --reveal` of a block is logged**, the superuser's too, as
+    `secret-read kind=block name=<scope>/<vendor>/<block>` (or
+    `_devices/<device>/<vendor>/<block>`), never a value; an elided read is
+    not.
+
+22. **The IOS `system` block, and `trap-source` in the IOS and Junos `snmp`
+    blocks (IOS checked on one 15.6(2)T router).** `tacctl scope block
+    <scope> cisco list|show|check|set|remove|edit|adopt` and the device level
+    (`tacctl
+    device block <name> ...`) now take the block name `system` for IOS and
+    IOS-XE, as they take it for Junos; the refusal `The IOS system block is
+    not built` is gone. The block is IOS configuration lines, `#` and `!`
+    comments, and the login banner as a heredoc so that its text is easy to
+    read and edit:
+
+        banner login <<'EOF'
+        <text lines>
+        EOF
+        ip domain name <name>
+        ip domain list <name>
+        clock timezone <zone> <hours> [<minutes>]
+        ip name-server <address> [<address> ...]
+        ntp server <address-or-name> [prefer] [version <1-4>] [key <n>] [source <interface>]
+        ntp authentication-key <n> md5 <string>
+        ntp trusted-key <n>
+        ntp authenticate
+        no <statement>
+
+    The block is additive, as the Junos system block is: a statement is set
+    when the device lacks it, a single value that differs (banner, domain
+    name, time zone, an NTP server's options) is replaced in place, a list
+    entry is only added, and what the device holds beside is its own, listed
+    and kept (`ok (+N unmanaged)`); a `no` line says "not managed here" and is
+    never rendered. A device's block is laid over its scope's per object (a
+    server by its host, a key by its number, a single value whole), and its
+    `no` line takes the scope's object out for that device. The banner is
+    rendered as IOS's multi-line banner, `banner login <d>`, the text, `<d>`
+    alone on a line, where `<d>` is the first of `^ ~ % # @ $ &` that the text
+    does not contain; a text of at most 20 lines of 80 characters of ASCII
+    with no tab or control character is accepted, and one that holds every
+    candidate is refused. An `ntp authentication-key` string is typed only
+    where the device has no key of that number (a pulled device shows
+    ciphertext, so a key is compared by its number alone), and `ntp
+    authenticate` is one boolean; the plan pastes the NTP lines in the order
+    IOS needs (keys, trusted keys, servers, `ntp authenticate` last) and says
+    so. Refused by `check`, without the line's words: a placeholder
+    (`<secret>`, `<message: ...>`), a key with no key number or of another
+    algorithm, an abbreviated interface (`Lo0` for `Loopback0`), an IPv6 NTP
+    server, and every VRF form (`ntp server vrf`, `ip name-server vrf`, `ip
+    domain name vrf`): a device's own lines of those forms stay unmanaged. `ip
+    domain-name` and `ip domain-list`, the legacy spellings, are accepted and
+    read as the current ones.
+
+    The comparison puts both sides in one form: the banner is `banner login
+    <message: N lines, M characters, id xxxxxxxx>` (its size and a short
+    digest; no text of it is stored, shown in a report or kept in a record,
+    and `show`, `check` and the plan's report print the mark), `clock timezone
+    CET 1` (12.4) and `CET 1 0` (15.x) are one statement, `ip name-server A B`
+    is a statement per address, an NTP server's keywords are compared as a set
+    whatever order the device stored them in, a host name and an interface are
+    compared without case, and the banner a device prints with `^C` or any
+    single delimiter is read as its text between the delimiters. The
+    walkthrough puts the block's lines after the SNMP step under a comment
+    that names the block (and the delimiter chosen), and the Step 0 comment
+    `ip domain name <DOMAIN>` names the block's value for a scope that has
+    one; with no block every walkthrough, section and golden is as it was. The
+    plan has a section `system` (after `snmp`, before `mgmt-acl`), `--section
+    system`, the rows `ios.system.*` of the ownership table, a back-out that
+    types a replaced single value again, takes an added statement away as the
+    device takes it (`no banner login`, `no ntp authentication-key 5`, `no ntp
+    server <host>`) and, for a replaced banner (only its digest is kept),
+    names the way back (`configure replace` with the archived or the startup
+    configuration), and a warning when a banner line is longer than the 255
+    characters IOS takes on a typed line. The whole-paste check understands a
+    banner: its text is any text up to the closing delimiter (a line that
+    starts with `!` is no comment there), and no label or comment may stand
+    inside it. `--converge` removes none of the device's own lines. The report
+    says, among its notes, that the system block's lines (banner, domain, time
+    zone, name servers, NTP) were written from the vendor's references and
+    have not been checked on a device; it says so for every release. On a lab
+    IOS 15.6(2)T router a block with a banner (typed with the `^` delimiter),
+    `ip domain name`, `ip domain list`, `clock timezone`, `ip name-server`
+    and `ntp server ... prefer` was pasted and read back as `ok` (the device
+    stores the time zone as `AKST -9 0`, which compares equal to `-9`); a
+    changed banner, an added list entry and name server, and `ntp server`
+    typed again without `prefer` came out as the planned lines and replaced
+    the server line in place; `adopt` drafted the block from the device and
+    left the other banners out; and `snmp-server trap-source` was pasted and
+    read back. Not checked on a device: the NTP key lines
+    (`ntp authentication-key`, `ntp trusted-key`, `ntp authenticate`, the
+    `key` option), a delimiter other than `^`, IOS-XE and IOS 12.4, and the
+    Junos `trap-options source-address`.
+
+    `adopt` reads `show running-config | include ^(banner|ip domain|ip
+    name-server|clock timezone|ntp )` and the banner's own lines with `show
+    running-config | section ^banner login` (the whole configuration once when
+    the image does not know `| section`), as the caller, over the ssh command
+    line; the draft holds the device's banner as the heredoc and its
+    statements minus what the block or the scope's block states already, and
+    leaves each `ntp authentication-key` out with a `# left out:` line (the
+    string is never adopted).
+
+    `snmp-server trap-source <interface>` (IOS) and `set snmp trap-options
+    source-address <address>|lo0` (Junos) are accepted in the `snmp` blocks,
+    which refused them until this release. One is in force at most, the
+    interface is written in full (`Loopback0`, which is how the device stores
+    it) and compared without case, and the address is canonical IPv4 or IPv6
+    or the keyword `lo0`. A scope's block that states one gets a note that the
+    same source interface or address is stated for every device of the scope
+    (a device's own block can state another; the default layer refuses it).
+    The plan sets it when the device's differs, in place (a `set` over the old
+    value, never a delete), and the device's own is kept while the block
+    states none; on IOS `no snmp-server trap-source` and on Junos `delete snmp
+    trap-options source-address` say "not managed", and the report names the
+    leaf as the block's. `adopt` takes the device's own trap source into the
+    draft.
+
+23. **`device config plan --restore-point[=<fs>]` adds a restore point to an
+    IOS or IOS-XE plan (the copy form checked on one 15.6(2)T router).** The
+    plan's region can only be
+    undone with the back-out's `no` lines; the flag puts a file of the
+    running configuration beside it first. The output gets a block of its
+    own before the region, outside the `PASTE FROM HERE` banners, between a
+    banner pair of its own:
+
+        !!!!! RESTORE POINT FROM HERE: <device> !!!!!
+        copy running-config <fs>tacctl-<device>-<yyyymmdd-hhmm>.cfg
+
+        !!!!! RESTORE POINT TO HERE: <device> !!!!!
+
+    The comments above it say to paste the block first and on its own at the
+    privileged prompt, to check that `dir <fs>` lists the file, that the file
+    holds the device's secrets in their own forms (protect it, delete it when
+    done), that it needs free space on the file system, and that it is a
+    file, not a rollback timer: IOS has no commit-confirm for a pasted plan.
+    The one empty line answers the `Destination filename` prompt; a paste
+    tool that drops blank lines turns the closing banner into the file name,
+    and `file prompt quiet` turns the prompt off. `<device>` in the file name
+    is the device's name up to its first dot (IOS limits a file name to about
+    63 characters), the time is the plan's, in UTC.
+
+    The file system comes from the flag or from the pull. `--restore-point=
+    <fs>` names it (`flash:`, `bootflash:`, `disk0:`: lower case letters and
+    digits, then a colon; a network file system such as `tftp:` is refused,
+    since its copy asks for more than the one empty line answers) and makes
+    the named copy above. The bare flag uses the device's own archive path:
+    the pull now keeps the file system of the `archive` / `path` statement
+    in its record (the word up to the colon only, never the host or user of a
+    remote path), and the block is then the one line `archive config`,
+    which asks for no name. A bare flag for a device whose last pull read no
+    archive path is a usage error (exit 2) that says to name a file system
+    or to pull again.
+
+    The back-out gains an alternative after its `no` lines (the plan's
+    after-steps say so too): `configure replace <file> force` for the named
+    copy, or for the newest entry of `show archive` after `archive config`,
+    as comments, with the caveats: it was tried only on devices with
+    `archive` and a `path` configured, `copy <file> running-config` only
+    merges, the removal of `aaa new-model` was skipped in one pass on IOS
+    12.4 (use the `no` lines for AAA), and the file and the copies the
+    replace leaves are to be deleted. The file name in the back-out is the
+    block's, and the kept back-out records it (a `restore:` line of its
+    stamp, and `its restore point is <file>` in the line `--backout` prints
+    first). `--json` gains `restore_point` (`mode`, `file`, `command`,
+    `file_system`, `note`) when the plan has a region to paste with the
+    flag; the report's notes say the block and the alternative have not been
+    checked on a device, for every release. The `copy` form was typed on a lab
+    IOS 15.6(2)T router: the single empty line answered the `Destination
+    filename` prompt and `dir flash:` listed the file. `archive config` and
+    `configure replace` were not tried. Off by default: without the flag
+    every IOS output, JSON and back-out is as it was. The flag is refused for
+    another vendor
+    (naming the devices), and with `--plain` (a plain file is the region's
+    statements and has no room for a block of its own) and with `--backout`
+    (the kept back-out names the file its plan made). The region's own
+    whole-paste check is unchanged and still refuses a `copy`; the restore
+    block has an allowlist of its own (exactly `archive config`, or one
+    `copy running-config <fs>tacctl-<name>-<time>.cfg` and one empty line).
+    Completion offers `--restore-point` and, after the `=`, the file
+    systems.
+
+24. **A WTI unit's Multiple Logins setting must be On, and the standard, the
+    comparison and the plan say so.** A unit's `Multiple Logins` (`/N`, item
+    31; Off or On) decides whether a second session may log in while one is
+    open. `device config pull` opens a second session to read the user
+    directory, and the walkthrough and every plan tell you to keep a session
+    open as the way back and to check from a second login: with the setting
+    Off a unit refuses all of them. The standard now has one statement for
+    it, `unit multiple-logins on`, in the `aaa` section of every WTI
+    rendering (`device config show`, `config wti` Step 3 for both protocols,
+    the managed sections). A pull reads the item from the `/N` page it
+    already opens, with no extra navigation, and a unit that prints it Off
+    differs in `aaa` (`- unit multiple-logins on`, `+ unit multiple-logins
+    off`, severity ACCESS). `device config plan` fixes it with one step,
+    `/N 31 -> 2 (On)   was: 1 (Off)`, which is **the first step of the
+    checklist**, ahead of the SNMP page and the AAA pages: it cannot lock
+    anybody out, the checks of the steps after it and the pull that confirms
+    them need a second session, and the report's item for it says so. Its
+    back-out puts it Off again, last. A unit whose `/N` page does not print
+    item 31 has no statement for it, and the standard's is then reported
+    missing.
+
+25. **Plain management ACL entries on WTI units are named by the upgrade and
+    at the top of the plan.** Item 20 made an entry with no `:service` mean
+    every protocol and port; on a WTI unit that differs from 0.2.6, which
+    rendered such an entry as ssh (tcp/22) and ICMP. The meaning is kept, and
+    two things say where it applies before anything is pasted. The first
+    `tacctl upgrade` onto this release prints, once, for every scope that has
+    a registered WTI unit and a plain IPv4 entry in the list that applies to
+    it (its own permit list, else the global one): `Management ACL: plain
+    entries now permit every protocol and port on WTI units.`, then one line
+    per scope with the entries and up to five unit names, what a WTI plan
+    renders for them (`iptables -A INPUT -s <cidr> -j ACCEPT`, where 0.2.6
+    rendered ssh and ICMP) and how to keep ssh only (`tacctl scope mgmt-acl
+    <scope> remove <cidr>`, then `add <cidr>:tcp/22`). A marker in the state
+    directory (`wti-plain-acl-noted`, beside the other notice markers; a fresh
+    install writes it too) records that it was said: a later upgrade prints
+    nothing of it, `config validate` does not repeat it, and a plain entry
+    added afterwards is not announced by an upgrade. The plan says the same at
+    the top of its report: when a WTI plan pastes a list that holds plain
+    entries, a `# WARNING:` line follows the box and the basis of the pull,
+    ahead of the irregularities, and names the entries. It replaces the note
+    that stood among the notes at the bottom, and `--json` carries it first in
+    `warnings`. `--backout` prints the same line when the list it puts back
+    (the unit's own, as the pull showed it) holds plain entries.
+
 ## 0.2.6 (2026-10-12)
 
 A hotfix for 0.2.5, started from `master`. The items below are everything that

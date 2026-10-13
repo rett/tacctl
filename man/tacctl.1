@@ -185,7 +185,20 @@ or the Junos deny sets of the preset of 0.2.3, still give an operator or a
 viewer a command that can interrupt service, a red notice names each setting
 and the command that puts the shipped value (or, for what the role preset of
 0.2.3 stored, the preset's) back; the first upgrade onto 0.2.5 also prints the
-lines a device configured earlier keeps. The upgrade itself never changes an
+lines a device configured earlier keeps. The first upgrade onto 0.2.7 names,
+once, each scope that has a registered WTI unit and a plain IPv4 entry in the
+permit list that applies to it (its own, else the global one): a plain entry
+permits every protocol and port on a WTI unit, where 0.2.6 rendered ssh and
+ICMP for it. The notice gives the entries, up to five unit names for each
+scope, the rule a WTI plan renders
+.RB ( "iptables \-A INPUT \-s <cidr> \-j ACCEPT" ),
+and the
+.B <cidr>:tcp/22
+that keeps ssh only; it is recorded in
+.I /var/lib/tacctl/wti\-plain\-acl\-noted
+(a fresh install writes the file at once), so a later upgrade and
+.B "config validate"
+say nothing of it. The upgrade itself never changes an
 override, but for an operator or readonly list that is exactly what 0.2.3
 shipped, which it drops (on a RADIUS-only install too). See
 .BR UPGRADING .
@@ -277,7 +290,14 @@ which only 0.2.5 restores). A break-glass hold that stands stops the
 rollback, the dry run too, and names each held device with the way to release
 it
 .RB ( "breakglass release" ):
-0.2.3 has no such record.
+0.2.3 has no such record. A management ACL entry with services
+.RB ( mgmt_acl.permits
+or
+.BR scope_mgmt_acl.permits.<scope> ,
+.BR 10.0.0.0/8:tcp/22 )
+stops it the same way, and each entry is listed with the command that removes
+it: 0.2.3 reads those lists as plain CIDRs, and rewriting an entry to its CIDR
+would permit every protocol and port from that source.
 .B \-\-hosts
 is accepted and does nothing: 0.2.5 changed nothing on the enrolled Linux
 hosts. The command ends with the next step,
@@ -2775,7 +2795,9 @@ privacy passphrase, look the same: the agent drops the request), or the v3
 report the agent sent
 .RB ( unknownUserName ,
 .BR wrongDigest ,
-\&...). Exit status 1 without a name.
+\&...). A registered device is read with its own settings, else its scope's,
+else the default's, and the answer says which; any other address is read with
+the default's. Exit status 1 without a name.
 .\" BEGIN GENERATED: command config snmp test
 .RS
 .PP
@@ -2891,9 +2913,20 @@ for
 .BR "device config pull" ,
 .BR "device config diff" ,
 .BR "device config plan" ,
-.B ssh
+.BR ssh ,
+.B "device ssh"
 and
-.BR "device ssh" ).
+.BR "scope block ... adopt" ,
+.BR "device block ... adopt" ),
+and
+.B VISUAL
+and
+.B EDITOR
+for the four command lines that open an editor
+.RB ( "scope block * edit *" ,
+.BR "scope block * adopt *" ,
+.BR "device block * edit *" ,
+.BR "device block * adopt *" ).
 .B "tacctl upgrade"
 rewrites a drop-in this command wrote with an earlier release, for the group
 its header names, when it is exactly the text that release wrote (it prints
@@ -2966,9 +2999,18 @@ the same reads; its setters and
 .B clear
 are the superuser's, and an engineer's
 .B "device import"
-neither sets nor drops a device's own settings).
+neither sets nor drops a device's own settings), and the configuration blocks
+of a scope of theirs and of the devices there
+.RB ( "scope block " \fIscope\fR " {juniper|cisco} list|show|check" ,
+.BR "device block " \fIname\fR " list|show|check" ;
+.BR set ,
+.BR remove ,
+.B edit
+and
+.B adopt
+are the superuser's).
 Each read of a secret by an engineer is logged to syslog as
-\fBsecret\-read kind=scope|snmp|snmp\-device|snmp\-default name=\fR\fIname\fR\fB by=\fR\fIuser\fR
+\fBsecret\-read kind=scope|snmp|snmp\-device|snmp\-default|block name=\fR\fIname\fR\fB by=\fR\fIuser\fR
 (never the value). Engineers change no global setting: users, groups,
 scopes, a secret's change, backends, backups, upgrades, the default host
 method and the console's settings stay the superuser's, and so does the
@@ -3036,10 +3078,19 @@ file. Both sudoers files carry
 .BR "tacctl host" ,
 the login console's session marker, and the X11 display
 .B "tacctl ssh \-X"
-hands on) and, for the command lines that use the password cache
-.RB ( "device config pull" ", " "device config diff" ", " "device config plan" ", " ssh " and " "device ssh" ),
+hands on), for the command lines that use the password cache
+.RB ( "device config pull" ", " "device config diff" ", " "device config plan" ", " ssh ", " "device ssh" " and " "block ... adopt" ),
 .BR TACCTL_ASKPASS ,
-and nothing else of the caller's environment; tacctl also refuses a
+for the four command lines that open an editor
+.RB ( "scope block ... edit|adopt" ", " "device block ... edit|adopt" ),
+.B VISUAL
+and
+.BR EDITOR ,
+each set in a
+.B Cmnd_Alias
+and a
+.B Defaults!
+line of its own, and nothing else of the caller's environment; tacctl also refuses a
 .B SUDO_USER
 that is not the account of
 .BR SUDO_UID .
@@ -3200,12 +3251,97 @@ manage the permit list;
 .B add
 and
 .B remove
-accept a single CIDR or a comma-separated list.
+accept one entry or a comma-separated list of entries.
 .B cisco-name
 and
 .B juniper-name
 configure the emitted ACL/filter names (see below). With no arguments,
 prints usage, the current entry count, and both ACL names.
+.RS
+.PP
+An entry is a CIDR, or a CIDR with the services it permits:
+.IR cidr [: service [, service ...]]
+(for example
+.BR 172.16.100.0/23:tcp/22,udp/161,udp/162 ).
+A service is
+.BI tcp/ ports ,
+.BI udp/ ports
+or
+.BR icmp ;
+.I ports
+is
+.IR N ,
+.I N\-M
+or
+.B *
+(every port of the protocol). A plain CIDR, with no services, permits every
+protocol and port from that source; on a WTI unit that is one rule for every
+protocol and port, where earlier releases rendered ssh and ping only, so write
+.BI cidr :tcp/22
+to permit ssh alone.
+.IB cidr :*
+and
+.IB cidr :tcp/*,udp/*,icmp
+are spellings of the plain entry. A token that starts with
+.BR tcp/ ,
+.B udp/
+or
+.B icmp
+belongs to the entry before it, so
+.B a,b:tcp/22,udp/161,c
+is three entries; a service before any CIDR is refused. The CIDR is split from
+its services at the first colon that is followed by
+.BR tcp/ ,
+.BR udp/ ,
+.B icmp
+or
+.BR * ,
+so an IPv6 CIDR is written as it is. Services are stored lower\-case, without
+repeats, in the order tcp, udp, icmp and ports ascending; a protocol's
+.B *
+takes its other services; an entry holds at most 8 services; ports are 1 to
+65535, a range has its low port first, and
+.B icmp
+takes no port. The same CIDR may be listed twice with different services; an
+exact duplicate is a no\-op. Entries are kept sorted by the CIDR's broadcast
+address, and by services for the same CIDR.
+.B list
+prints the services after the CIDR.
+.B remove
+with a CIDR and services removes that exact entry; with a CIDR alone it
+removes every entry of that CIDR and says how many.
+.PP
+The WTI IP Tables list renders each service of an entry as its own rule
+.RB ( "-p tcp -s " cidr " --dport 22" ,
+.B "--dport 161:162"
+for a range, no
+.B --dport
+for
+.BR * ,
+.B "-i eth0 -s cidr -p icmp"
+for
+.BR icmp ),
+and a plain entry as
+.BR "-s cidr" ;
+ICMP from a network is still added unless its entry is plain or lists
+.BR icmp .
+A Cisco VTY access list and the Junos
+.B permit-mgmt
+term match a source only: a plain entry, and an entry whose services include
+.B tcp/22
+(alone, in a range or as
+.BR tcp/* ),
+are listed by their source; any other entry is not listed there, and the
+walkthrough names it in a comment. The managed
+.B mgmt-acl
+sections, and so
+.B "device config diff"
+and
+.BR "device config plan" ,
+read the same filtered list.
+.B "rollback 0.2.3"
+is refused while any entry carries services.
+.RE
 .\" BEGIN GENERATED: command config mgmt-acl add
 .RS
 .PP
@@ -3476,9 +3612,9 @@ view, and
 which is not verified on a device; the management filter of Step 4, when it is
 rendered, has permit-snmp and deny-snmp terms for udp port 161 from the same
 clients, which restrict v3 once the filter is applied to lo0); on WTI the unit's SNMP menu in the
-walkthrough's style, whose menu names and client restriction (the udp port 161
-lines of the unit's IP Tables list, Step 5) are from WTI's documents and not
-verified on a unit. The
+walkthrough's style, whose item names and numbers are those of a WTI 8.10 unit (SNMP Access under /N: Enable, Version,
+Read Only, Contact, SNMP Location, Read\-Only Community), and whose client restriction (the udp port 161
+lines of the unit's IP Tables list, Step 5) was checked on that unit. The
 community or the v3 passphrases are printed for superusers and for engineers
 (of their own scopes). A value that is not set (the scope's contact, a
 device's location) is a commented placeholder, never text a paste would
@@ -3639,16 +3775,30 @@ treats TACACS-only users as invalid and sends a junk password),
 Account/Session Management Modules, Service Name
 .BR wti ,
 the factory default, which per-group WTI levels need),
+the unit-wide
+.B Multiple Logins
+setting
+.B On
+(item 31 of /N: a second session may log in while one is open, which the
+Step 8 check and the pull need),
 an IP Tables step (the unit must accept loopback and ESTABLISHED,RELATED
 traffic or tacquito's replies are dropped; the walkthrough then renders the
-unit's whole list for the scope: loopback, established, ssh and https for the
+unit's whole list for the scope: loopback, established, ssh for the
 tacctl server and each permitted range of
-.BR "scope mgmt-acl" ,
-and udp port 161 for the SNMP clients, numbered in the unit's order, with a
-note for an IPv6 entry skipped; the final
+.B "scope mgmt-acl"
+with what its entry lists (every protocol and port for a plain entry, which
+the step's notes name, and one rule for each service otherwise),
+and udp port 161 for the SNMP clients, then ICMP on eth0 for the same networks
+(not for a network whose entry is plain or lists icmp), numbered in the unit's
+order, with a note for an IPv6 entry skipped; the same rules again as one
+.B <iptables>
+block to paste at the IP Tables prompt (it replaces every entry and is applied
+at once; the unit holds 48 entries, and a longer list is warned about, not
+cut); the final
 .B iptables -A INPUT -j DROP
-is the last step, never applied by the walkthrough, and is only a comment for a
-scope with no management permit list),
+is the last step, never applied by the walkthrough (it gives the whole list again
+as one block with the DROP, the OUTPUT ACCEPT and the three policies last), and is only a comment for a
+scope with no management permit list, or none that permits ssh),
 followed by the group-to-access-level mapping, a troubleshooting step
 that turns on the unit's TACACS Debug echo, and the matching tacquito
 log lines to look for. WTI reads the standard
@@ -4847,16 +4997,23 @@ Requires: \fBsuperuser\fR.
 Per-scope management ACL. Subcommand shape mirrors the global
 .B "tacctl config mgmt-acl"
 so operators who know one form know the other. The effective permit list of a
-scope drives the Cisco VTY-ACL, the Junos filter and the ssh and https lines of
+scope drives the Cisco VTY-ACL, the Junos filter and the permit lines of
 the WTI IP Tables list (Step 5 of
 .BR "config wti" ).
 .RS
 .IP \(bu 2
 .BR list ,
-.BR "add " <cidr>[,...] ,
-.BR "remove " <cidr>[,...] ,
+.BR "add " <entry>[,...] ,
+.BR "remove " <entry>[,...] ,
 .B clear
-— manage the per-scope permit list. Render fallback is per-scope
+— manage the per-scope permit list; an entry is a CIDR, or a CIDR with its
+services
+.RB ( 10.0.0.0/8:tcp/22,udp/161,icmp ;
+see
+.BR "config mgmt-acl" ),
+and
+.B remove
+of a CIDR alone removes every entry of that CIDR. Render fallback is per-scope
 -> global
 .RB ( mgmt_acl.permits )
 -> empty. Empty per-scope lists prune the override so the scope
@@ -4990,6 +5147,410 @@ applies again.
 .BI "scope snmp " scope " test " address|device
 Read the sysName of one address (or registered device) with the scope's
 settings.
+.SS Per-scope configuration blocks \fB(tacctl scope block)\fR
+.PP
+A configuration block is vendor syntax that a scope, or one device, owns beside
+its structured settings, kept as a text file of its own and held to a grammar.
+The vendors with blocks are
+.B juniper
+(the blocks
+.B snmp
+and
+.BR system )
+and
+.B cisco
+(IOS and IOS\-XE: the blocks
+.B snmp
+and
+.BR system ) ;
+a WTI unit has none. The Junos
+.B snmp
+block is the SNMP that the scope's settings do not hold: communities, their
+client lists and trap groups. The Junos
+.B system
+block is the login message, domain name and search list, time zone, name
+servers and NTP. A Junos block is
+.B set
+statements and nothing else, one per line, with
+.B #
+comment lines and blank lines; the login message is the one statement that is
+a heredoc,
+.BR "set system login message <<'EOF'" ,
+its lines, and
+.BR EOF .
+A
+.B delete
+line says that what it names is not managed on this device: it is kept, never
+rendered, and in a device's block takes the scope's object of that name out for
+that device. The IOS
+.B snmp
+block is configuration lines, one per line, with
+.B #
+and
+.B !
+comment lines and blank lines:
+.B "snmp\-server community <string> RO|RW [<acl>]"
+(the access list is a name, never a number),
+.B "snmp\-server host <address> [version 1|2c] <community> [udp\-port <n>] [<type> ...]"
+(a trap host; a
+.B vrf
+form is refused),
+.B "snmp\-server enable traps [<type> [<subtype> ...]]"
+.B "snmp\-server trap\-source <interface>"
+(one, the interface written in full, as the device stores it:
+.BR Loopback0 )
+and
+.B "ip access\-list standard <NAME>"
+with
+.B "permit <address> [<wildcard>]"
+(also
+.B "permit host <address>"
+and
+.BR "permit any" )
+under it. A
+.B no
+line (of a community, a host, an
+.B enable traps
+line, the trap source or a list) says what it names is not managed on this
+device, as
+.B delete
+does. The IOS
+.B system
+block is configuration lines too, with the login banner as a heredoc:
+.BR "banner login <<'EOF'" ,
+its lines, and
+.BR EOF ;
+.B "ip domain name <name>"
+and
+.B "ip domain list <name>"
+(the older spellings
+.B ip domain\-name
+and
+.B ip domain\-list
+are read as these);
+.B "clock timezone <zone> <hours> [<minutes>]";
+.B "ip name\-server <address> [<address> ...]";
+.B "ntp server <address\-or\-name> [prefer] [version <1\-4>] [key <n>] [source <interface>]";
+.B "ntp authentication\-key <n> md5 <string>";
+.B "ntp trusted\-key <n>"
+and
+.BR "ntp authenticate" .
+The banner is typed as IOS's multi\-line banner
+.RB ( "banner login <d>" ,
+the text,
+.B <d>
+alone on a line), where
+.B <d>
+is the first of
+.B "^ ~ % # @ $ &"
+that its text does not contain; a banner is at most 20 lines of 80 characters,
+ASCII, with no tab or control character. A
+.B vrf
+form of a name server, an NTP server or the domain name is not in a block, and
+neither is an IPv6 NTP server. Junos and IOS are never translated into each
+other, so a scope with both has a file for each.
+.PP
+The blocks of a scope are the files under
+.IR /etc/tacctl/blocks/\fIscope\fR/\fIvendor\fR ,
+and a block is in force only while
+.I tacctl.yaml
+names it
+.RB ( blocks.\fIscope\fR.\fIvendor\fR ).
+The IOS
+.B snmp
+block owns a community (its line is retyped as the block states it, the access
+and the access list; another community of the device is kept and listed as
+unmanaged) and a standard access list it defines (whole: an entry the block does
+not state is removed with its own
+.B no
+line, in one run of entries, since IOS appends and may reorder them); a list it
+only names is the device's own and is kept. A trap host (by its address and
+community, compared by the set of its options, since IOS leaves out the default
+version, kind and port) and an
+.B enable traps
+line (a line the device enables in the expanded form it prints counts as
+present, and a line with no type is present when the device has any
+.B enable traps
+line) are only ever added, and what the device holds besides is its own; the
+trap source is one value, retyped in place when the device's differs (the
+interface is compared without case) and kept while the block states none. The
+IOS
+.B system
+block is additive like the Junos one: a statement is set when it is missing, a
+single value (the banner, the domain name, the time zone, an NTP server's
+options, a trap source) is replaced in place, a list entry is only added, and
+nothing the device holds is removed; an
+.B ntp authentication\-key
+string is typed only where the device has no key of that number (the device's
+key is compared by its number alone), and the plan types the NTP lines in the
+order IOS needs: the keys, the trusted keys, the servers and
+.B ntp authenticate
+last. The banner is compared by its size and a digest, never by its text, and a
+banner replaced by the plan cannot be typed back by the back\-out (only its
+digest is kept): the back\-out names
+.B configure replace
+and the saved configuration. IOS has no confirmed commit, so the plan of an IOS
+device is pasted line by line and undone with its back\-out of
+.B no
+lines. The lines of an IOS block (a list's entries, trap hosts, trap lines, the
+banner, the domain, time zone, name servers and NTP lines) were written from the
+vendor's references, and the report says beside the plan of the section that
+they have not been checked on a device, whichever release the device runs. A lab
+IOS 15.6(2)T router took an IOS snmp block and an IOS system block (the banner,
+the domain name and list, the time zone, a name server and an NTP server) and
+read them back as ok; other releases, IOS\-XE, the NTP key lines and the Junos
+trap source are not checked. An IOS device's VRF forms are not
+in a block and the device's own such lines stay unmanaged
+.RB ( "ok (+N unmanaged)" ).
+The communities and trap groups of the Junos
+.B snmp
+block become objects tacctl owns: the plan of
+.B "device config plan"
+sets what a device lacks and deletes a client or target of those objects that
+the block does not state, under the object's real name, and the device's other
+communities are kept and listed as unmanaged. A Junos block may also state
+.B "set snmp trap\-options source\-address <address>|lo0"
+(one; an IPv4 or IPv6 address or the keyword
+.BR lo0 ):
+a value of the device's kind, set over the device's own value and never
+deleted, which the check notes as the same address for every device of the
+scope. The
+.B system
+block is additive: a statement is set when it is missing, a single value is
+replaced in place, and nothing the device holds is deleted. A block with an
+error is never rendered in part: every device of its vendor it reaches is
+refused. A
+block holds community strings, so every output but
+.B "show \-\-reveal"
+shows marks instead:
+.B <secret:N>
+for a community string,
+.B <group:N>
+for a trap group's name,
+.B <secret>
+for an NTP key,
+.B "<message: N lines, M characters>"
+for the login message or banner, and a comment line is never shown.
+.PP
+A device's own block is laid over its scope's per object: a community (by its
+string), a trap group (by its name) or a trap\-options leaf of the device
+replaces the scope's of the same key whole, one it adds is added and the
+scope's others stay; in the system block a single value is the device's and a
+list entry is added or, when it has the same value, replaced. The
+management filter's
+.B permit\-snmp
+term permits the resolved block's unrestricted IPv4 clients.
+.TP
+.BI "scope block " scope " {juniper|cisco} list"
+The blocks of the scope: for each, whether it is in force, has no file, or is a
+file that
+.I tacctl.yaml
+does not name (and is ignored), its size, and what it states (communities and
+trap groups, or statements and the login message's lines, or the number of
+errors), then the findings: a file no list names and a name with no file.
+Nothing is secret. An engineer may list the scopes of their own.
+.\" BEGIN GENERATED: command scope block
+.RS
+.PP
+Requires: \fBengineer\fR. An engineer may read the configuration blocks of a scope of their own (list, show [\-\-reveal], check); set, remove, edit and adopt need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-reveal\fR
+Print the strings (an engineer: their own scopes; logged).
+.TP
+\fB\-\-file\fR \fI<path>\fR
+(check, set) The text to look at: a regular file of at most 256 KiB, read as you.
+.TP
+\fB\-\-against\fR \fI<device>\fR
+Plan the device of this scope with this text in force and print the statements of its section (from its last pull; nothing is written and no device is reached).
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+(set, remove, edit, adopt) Answer yes to the question (a block read from standard input needs it).
+.RE
+.\" END GENERATED: command scope block
+.TP
+.BI "scope block " scope " {juniper|cisco} show " block " [ \-\-reveal ]"
+The block as it is in force, elided as described above (a comment is never
+shown, and a block with errors is refused: run
+.BR check ).
+.B \-\-reveal
+prints the file as stored; an engineer may reveal the scopes of their own, and
+every reveal is logged, the superuser's too, as
+.BR "secret\-read kind=block name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR .
+.TP
+.BI "scope block " scope " {juniper|cisco} check " block " [ \-\-file " path " | \- ] [ \-\-against " device " ]"
+Lint the file in force, the file
+.I path
+(a regular file of at most 256 KiB, read as the caller) or standard input
+.RB ( \- ):
+every finding with its line, the objects that become owned, the number of
+statements that carry a secret, the difference from the file in force (elided;
+a changed string shows as the same mark removed and added), and a block
+community that is the scope's own community, which a device cannot hold twice
+and is refused without printing it. Exit status 1 when there is an error.
+.B \-\-against
+plans the named device of the scope (of the vendor of the block) with the text in
+force and prints the statements for the block's section, from the device's last
+pull: nothing is written, no back\-out is kept and no device is reached. A
+device that has not been pulled is told to be pulled first, and a system block
+that was not in force at the last pull is told to be set and pulled.
+.TP
+.BI "scope block " scope " {juniper|cisco} set " block " { \-\-file " path " | \- } [ \-y ]"
+Superuser only. Check the text as
+.B check
+does (an error refuses it and nothing is written), show the owned objects and
+the difference, ask (\fB\-y\fR, \fB\-\-yes\fR, answers yes; a text read from
+standard input needs it unless standard input is a terminal), take the
+configuration snapshot, write the file (0600, atomically) and put the block in
+force in
+.IR tacctl.yaml .
+Nothing is restarted: a block reaches a device through
+.BR "device config plan" .
+A text that states nothing (comments and blank lines) is refused; the same text
+as the file in force is no change. A change that cannot be made because
+.I tacctl.yaml
+cannot be read or written is refused before anything is. Logged as
+.BR "block\-set name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR .
+.TP
+.BI "scope block " scope " {juniper|cisco} remove " block " [ \-y ]"
+Superuser only. Take the block out of force and delete its file (a file no list
+names is removable too), after a question (\fB\-y\fR answers it) and a
+snapshot. Nothing is deleted from a device: what the block set is no longer
+rendered, and the next compare lists those statements as the device's own,
+kept. Logged as
+.BR block\-remove .
+.TP
+.BI "scope block " scope " {juniper|cisco} edit " block " [ \-y ]"
+Superuser only, and only at a terminal (a refusal without one changes nothing).
+Open the block in the editor of the invoking user, as
+.BR visudo (8)
+and
+.BR sudoedit (8)
+do:
+.BR VISUAL ,
+else
+.BR EDITOR ,
+else
+.BR editor ,
+else
+.BR vi .
+A value may carry arguments
+.RB ( "emacs \-nw" )
+and a name is looked up in
+.BR PATH ;
+a path must be absolute. The editor runs as the invoking user, never as root,
+on a private copy (mode 0600, named for the block) in a directory of its own
+(mode 0700, made under
+.I /var/tmp
+and handed to that user) with the user's
+.BR HOME ,
+.BR TERM ,
+.BR LANG ,
+.B LC_*
+and
+.BR PATH ,
+.B VISUAL
+and
+.B EDITOR
+as given, and nothing of sudo's or tacctl's; the directory is removed afterwards
+on every path, a stop signal included. The seed is the file in force; for a
+block that does not exist, the grammar of the block and an example, all as
+.B #
+lines, and for a device's new block the scope's objects as
+.B "# set ..."
+lines to remove the
+.B "# "
+of where the device differs. What the editor leaves is read back as that user (a
+regular file of at most 256 KiB that is theirs; a link or anything else is
+ignored), checked as
+.B set
+checks it, and installed as
+.B set
+installs it: the owned objects and the difference, the question
+(\fB\-y\fR answers it), the snapshot, one atomic write and the entry in
+.IR tacctl.yaml .
+A text that fails the check is offered back to the editor, up to five times,
+with the errors as
+.B "# tacctl:"
+lines at the top, numbered as the editor's window is; those lines are removed
+before any text is read and never reach the file. An editor that exits
+non\-zero, an empty text, a text that states nothing and an edit that changes
+nothing write nothing. In the login console an editor can start a shell, so
+the rule of the system shell applies: an edit is open to the tiers of
+.B "console system\-shell tiers"
+(never the engineer), and a refusal is logged
+.BR "block edit DENY" .
+The editor has to stay in the foreground until the text is saved (a graphical
+editor needs its wait option, such as
+.B "code \-\-wait"
+or
+.BR "gvim \-f" ;
+one that returns at once leaves tacctl an unchanged text). An editor may write
+swap or backup files beside its working copy: they land in the private
+directory and are removed with it. A block holds community strings, which are
+a poller's credential on this host and in the snapshots. Logged as
+.BR "block\-edit name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR .
+.TP
+.BI "scope block " scope " {juniper|cisco} adopt " device " " block " [ \-y ]"
+Superuser only, at a terminal, with the rules of
+.BR edit .
+Read the registered
+.I device
+of the scope (of the vendor of the block) live, with the caller's login, for its
+statements of the hierarchy the block is for
+.RB ( "show configuration snmp | display set" ,
+or
+.BR system ;
+for an IOS device
+.BR "show running\-config | include ^snmp\-server" ,
+then
+.B "show running\-config | section ip access\-list standard <NAME>"
+for each list a community names, and the whole configuration once when the
+image does not know
+.BR "| section" ;
+for an IOS system block
+.BR "show running\-config | include ^(banner|ip domain|ip name\-server|clock timezone|ntp )"
+and the banner's lines with
+.BR "show running\-config | section ^banner login" ),
+and open them in the editor as the draft to prune. The read is that of
+.BR "device config pull" :
+the password from the shell's cache or the terminal, the transport and timeout
+of
+.BR "config devices" ,
+the pinned host key and the same words for a failure; one device, one login,
+one command. Nothing of the device's text is stored: it is in memory and in the
+editor's private copy, which is removed. The read is logged as a reveal is,
+.BR "secret\-read kind=block\-adopt name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR
+(never a value), and
+.BR "block adopt\-read" .
+The draft holds the statements the grammar of the block takes, minus what
+tacctl renders itself (the scope's own community and its client list, the v3
+settings, a location or contact it renders) and the device's identity
+.RB ( "snmp name" ", " engine\-id ;
+on IOS the contact, location and engine id). An IOS community that names a
+numbered list, a view or an IPv6 list, and a list with a deny entry, cannot be
+adopted and is named by a
+.B "# left out:"
+line.
+A community string or trap group name the login sees masked
+.RB ( "/* SECRET\-DATA */" ,
+.BR <masked> ,
+asterisks) or only as the device's ciphertext cannot be adopted, and an NTP
+authentication key is always ciphertext: each such statement is named by a
+.B "# left out:"
+line with its shape and no value. The system block's draft converts the
+device's login message (an IOS device's login banner) to the heredoc; the
+device's own trap source is taken into an snmp block's draft. A block of that name that exists is
+opened first, whole, and the adopted statements follow under a
+.B "# adopted from"
+.IR device " at " time
+comment with the counts; an object the file already has with other statements
+is left as it is and counted. A draft with nothing adoptable opens no editor
+and says why; one pruned to nothing writes nothing. The rest is that of
+.BR edit ,
+logged
+.BR "block\-adopt name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR .
 .SS Per-scope Cisco aaa-group-server label \fB(tacctl scope tacacs-group)\fR
 .TP
 .BI "scope tacacs-group " scope " [" name ]
@@ -5395,9 +5956,23 @@ With no subcommand (or with
 .BR help ),
 prints a usage summary and exits 0.
 .TP
-.BI "device list " "[ \-\-stale ] [ \-\-unconfigured ] [ \-\-scan ] [ \-\-probe ] [ \-\-json ]"
-One row per registered device, then per enrolled host: name, address, vendor,
-scope, state, last seen, by, via, config, and the open notices. The config
+.BI "device list " "[ word ] [ \-\-name " text " ] [ \-\-ip " address|cidr|text " ] [ \-\-vendor " vendor " ] [ \-\-scope " scope " ] [ \-\-stale ] [ \-\-unconfigured ] [ \-\-scan ] [ \-\-probe ] [ \-\-json ]"
+One row per registered device, then per enrolled host, sorted by name
+(upper and lower case alike): name, address, vendor,
+scope, state, last seen, by, via, config, and the open notices.
+.B \-\-name
+keeps the names that contain the text,
+.B \-\-ip
+the addresses equal to an address, inside a CIDR, or containing a text
+.RB ( 10.20. ),
+.B \-\-vendor
+the vendors named, and
+.B \-\-scope
+the devices that scope answers; each takes one value or a comma list (any of
+them matches), and different options must all match. A
+.I word
+alone keeps the entries whose name or address contains it or whose vendor or
+scope it is. The heading says how many of the visible entries are shown. The config
 column (the operator tier's: a read-only user's list has none, in the table
 or in the JSON) is the state of the device's last configuration pull
 .RB ( "device config pull" ):
@@ -5409,8 +5984,8 @@ or
 from the pull's record without rendering; it is
 .B \-
 for a host, a vendor
-.BR other ,
-a WTI unit and a device no scope covers. The state is
+.B other
+and a device no scope covers. The state is
 .B configured
 when a scope's prefixes cover the address (a host: when its scope exists) and
 .B unconfigured
@@ -5460,6 +6035,18 @@ Only the devices not seen for stale\-days.
 \fB\-\-unconfigured\fR
 Only the devices no scope's prefixes cover.
 .TP
+\fB\-\-name\fR \fI<text>\fR
+Only names that contain the text (a comma list: any of them).
+.TP
+\fB\-\-ip\fR \fI<addr|cidr|text>\fR
+Only addresses equal to, inside, or containing it (an address, a CIDR or a text; a comma list).
+.TP
+\fB\-\-vendor\fR \fIcisco|juniper|wti|other\fR
+Only that vendor: cisco, juniper, wti, other or linux (a comma list).
+.TP
+\fB\-\-scope\fR \fI<scope>\fR
+Only the devices that scope answers (a comma list).
+.TP
 \fB\-\-scan\fR
 Scan the logs first (as 'device scan').
 .TP
@@ -5481,7 +6068,11 @@ description, the scope that answers the address and the prefix that routes it
 the last and first sighting with the sighting count and the NAS-Identifier the
 device sends, the configuration of the last pull (when, by whom, over which
 transport and what the NETCONF probe found, its result and the state of each
-managed section; the operator tier's, a read-only user is not shown it), and
+managed section, with
+.B "ok (+N unmanaged)"
+for one that holds only statements of the device's own; for a WTI unit also its
+command menu's version, its Site ID and how many other sessions it had at that
+pull; the operator tier's, a read-only user is not shown it), and
 the open notices with a count of the acknowledged ones
 .RB ( \-\-all
 lists them too, marked). It warns when the
@@ -5940,9 +6531,9 @@ and the SNMP and management\-ACL sections of
 and
 .BR "device config plan" .
 .B "scope snmp test"
-and
+tries the scope's settings, and
 .B "config snmp test"
-try the scope's and the default's settings, not a device's. An engineer's
+a registered device's own, else its scope's, else the default's. An engineer's
 import never sets or drops a device's own settings.
 .\" BEGIN GENERATED: command device snmp
 .RS
@@ -5958,6 +6549,74 @@ Options:
 (snmp community, v3\-user) Read the secrets from stdin, one per line.
 .RE
 .\" END GENERATED: command device snmp
+.TP
+.BI "device block " "name " "{ list | show " "block " "[ \-\-effective ] [ \-\-reveal ] | check " "block " "[ \-\-file " "path " "| \- ] [ \-\-against ] | set " "block " "{ \-\-file " "path " "| \- } [ \-y ] | remove " "block " "[ \-y ] | edit " "block " "[ \-y ] | adopt " "block " "[ \-y ] }"
+One registered Junos or IOS device's own configuration blocks, laid over its scope's
+(see
+.BR "Per\-scope configuration blocks" ):
+the files
+.IR /etc/tacctl/blocks/_devices/\fIname\fR/\fIvendor\fR/\fIblock\fR ,
+named in
+.I tacctl.yaml
+by
+.BR blocks_device.\fIname\fR.\fIvendor\fR .
+The verbs are those of
+.BR "scope block" ,
+and
+.B check \-\-against
+plans this device itself. A device in no scope (no scope's prefixes cover its
+address), an enrolled host and a device that is neither a Junos nor an IOS
+device have no blocks; a device that has left every scope can still have its blocks
+removed.
+.B "show \-\-effective"
+prints the block as it is rendered for the device, the scope's with the
+device's laid over it, with a comment for each object saying which layer it is
+from (\fB\-\-reveal\fR prints the strings). A rename of the device moves its
+blocks and its removal deletes them. An engineer may list, show and check the
+blocks of the devices of their own scopes (every reveal is logged as
+.BR "secret\-read kind=block name=_devices/" \fIname\fR/\fIvendor\fR/\fIblock\fR );
+set, remove, edit and adopt are the superuser's.
+.B edit
+and
+.B adopt
+work as they do for a scope: the editor of the invoking user, run as that user on
+a private copy that is removed afterwards, the text installed only after the
+check, the difference and the question. A new block opens with the scope's
+objects as comments, to uncomment where this device differs, and
+.B adopt
+reads this device's own statements and leaves out what the scope's block states
+with the same statements (an object that differs is the device's exception,
+whole). They are logged
+.BR "block\-edit name=_devices/" \fIname\fR/\fIvendor\fR/\fIblock\fR
+and
+.BR "block\-adopt name=_devices/" \fIname\fR/\fIvendor\fR/\fIblock\fR ,
+the read of
+.B adopt
+as
+.BR "secret\-read kind=block\-adopt" .
+.\" BEGIN GENERATED: command device block
+.RS
+.PP
+Requires: \fBengineer\fR. An engineer may read the configuration blocks of a device of their own scope (list, show [\-\-effective] [\-\-reveal], check); set, remove, edit and adopt need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-reveal\fR
+Print the strings (an engineer: their own scopes' devices; logged).
+.TP
+\fB\-\-effective\fR
+The block as rendered for the device, with the layer of each object.
+.TP
+\fB\-\-file\fR \fI<path>\fR
+(check, set) The text to look at: a regular file of at most 256 KiB, read as you.
+.TP
+\fB\-\-against\fR
+Plan the device with this text in force and print the statements of its section (from its last pull; nothing is written and no device is reached).
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+(set, remove, edit, adopt) Answer yes to the question (a block read from standard input needs it).
+.RE
+.\" END GENERATED: command device block
 .TP
 .BI "device stale\-days " [ n ]
 Show or set the number of days (1 to 3650, default 30) after which a device
@@ -6411,10 +7070,65 @@ and
 (never read, last read in failure, or differing from what tacctl renders now);
 a vendor
 .BR other ,
-a device in no scope and, for a selector, a WTI unit are left out and said so
-(a WTI unit named is recorded
-.BR unsupported ).
-An engineer reads the devices of their own scopes only.
+and a device in no scope are left out and said so. A WTI unit is selected like
+any device. An engineer reads the devices of their own scopes only.
+.PP
+A WTI console server has no command that prints its configuration. It is read
+as its menus show it, over ssh as you
+.RB ( "\-\-transport auto" " and " ssh ;
+.B "\-\-transport netconf"
+is refused for a unit as for a Cisco device): the pages the tables of command
+menu version 8.10 name are opened one after the other (the login's help, the
+network status, the Site ID, and under
+.B /N
+the SNMP access and trap pages, the TACACS+ and RADIUS pages and the IP tables
+list), with only the keys a page lists, never a prompt that takes a value and
+never the final ESC, which makes the unit save its configuration. The one
+prompt it opens reads and does not change: the SNMP access page prints the
+system name, the contact and the SNMP location cut at about 16 characters with
+.BR ... ,
+so for each one the page shows cut that way, the item's text prompt is opened
+with its number and a CR
+.RB ( /N ,
+25, then 4, 5 or 6), which prints the whole value, and left with ESC, which
+keeps it. Nothing is typed at a prompt (no text, no CR, no
+.BR <SPACE><CR> ,
+which would clear the field), a value the page shows whole is not opened, and
+the prompts of the communities and secret words are never visited. The three
+whole values are what the pull extracts and compares, exactly; a record kept by
+an earlier pull, which holds the cut value, is still compared by its beginning,
+with a note, until the unit is pulled again. The user
+directory
+.RB ( /F )
+is read in a second connection with the same password, because a top\-level
+menu is left only by a save. Both connections end on a page, which writes
+nothing, and the pages are never kept: only the extraction is, with a community
+the unit prints in clear compared against what tacctl renders and kept as a
+label. The line of a unit that was read says how many other sessions it had
+.RB ( "1 other session on the unit" ;
+a count, no name) and carries a warning when its user directory could not be
+read (the second connection was refused, or the list is longer than a pull
+reads): the pull is
+.B ok
+all the same, and
+.B breakglass
+reads
+.B n/a
+with a note. Three results belong to a unit.
+.B denied
+is a login whose WTI level cannot configure it
+.RB ( "the login's WTI level is User; SuperUser or Administrator is needed" ,
+with
+.B "tacctl group edit <group> wti\-level superuser"
+for the login's group): none of the tables' pages is opened, the pull is a
+failed one (exit 1) and the batch goes on, since the password was accepted.
+.B unsupported
+is a command menu that is not version 8.10
+.RB ( "command menu version 7.4; tables are verified for 8.10" ),
+checked before any page.
+.B parse\-failed
+is a page the tables do not know or that is laid out otherwise: the reason names
+the page's path and its title line, never its text.
 .PP
 Junos is read over NETCONF (the ssh subsystem, a
 .B <command>
@@ -6437,8 +7151,15 @@ read over NETCONF:
 .B "\-\-transport netconf"
 refuses a Cisco device before any login, as a failed line that leaves its
 record alone, or as wrong arguments when every selected device is Cisco). The
-text is the same either way. From it six sections are
-extracted, as in the table of
+text is the same either way. From it six sections (and a seventh,
+.BR system ,
+for a scope that has a Junos system block; the four of a WTI unit, which are
+.BR aaa ,
+.BR mgmt\-acl ,
+.B snmp
+and
+.BR breakglass )
+are extracted, as in the table of
 .BR "device config diff" ,
 compared with what tacctl renders for that device and recorded
 .RI ( /var/lib/tacctl/devices\-config.json ,
@@ -6600,7 +7321,9 @@ One line per device (rewritten in place on a terminal, appended otherwise):
 .BR "ok, differs in aaa,snmp" ,
 .B "failed: <reason>"
 (authentication failed, timed out, unreachable, a host key that is not the
-pinned one, output that is not a configuration), then a summary
+pinned one, output that is not a configuration, for a WTI unit a login level
+that cannot configure it or a command menu version that is not 8.10), then a
+summary
 .RB ( "12 ok, 2 differ, 1 failed" ).
 At most
 .B device.config.max_concurrency
@@ -6620,10 +7343,16 @@ starting devices and lets the running ones finish (the rest are reported
 .BR "not started" ),
 a second cuts the running ones off; the status is 130 either way.
 .B \-\-diff
-prints the differences after the summary;
+prints the differences after the summary
+.RB ( "ok (+N unmanaged)"
+for a section that holds only statements of the device's own, as for
+.BR "device config diff" );
 .B \-\-json
 prints one JSON object per device as it ends and a last object
-.BR "{\(dqsummary\(dq: ...}" .
+.BR "{\(dqsummary\(dq: ...}" ,
+the sections of a device with their
+.B unmanaged
+count when it is not 0.
 .BR \-\-server " and " \-\-source
 are those of
 .BR "config cisco|juniper|wti" :
@@ -6645,7 +7374,7 @@ Requires: \fBengineer\fR. An engineer gets the devices of their own scopes only.
 Options:
 .TP
 \fB\-\-all\fR
-(pull, diff, plan, forget) Every device of yours (not WTI units, or devices in no scope).
+(pull, diff, plan, forget) Every device of yours that a scope covers.
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
 (pull, diff, plan, list) Only the devices of that scope.
@@ -6701,10 +7430,30 @@ and
 is the same account and the section reads
 .B ok
 with a note that says so, because the names are case\-sensitive on the device and
-a login by the scope's spelling is refused there). A section is what tacctl renders plus
-whatever the device holds in the same hierarchy, so a stray server or
-community is a difference. Each section is
+a login by the scope's spelling is refused there). A WTI unit has four of them,
+.BR aaa ,
+.BR mgmt\-acl ,
+.B snmp
+and
+.BR breakglass :
+a unit has no login classes, no NETCONF and no system block, so
+.BR roles ,
+.B netconf
+and
+.B system
+are not listed for it, as
+.B n/a
+or otherwise; the other protocol's page of a unit is the unit's own and its
+statements are listed as
+.B +
+and kept. A section is what tacctl renders plus
+whatever the device holds in the same hierarchy, so a stray server is a
+difference. Each section is
 .BR ok ,
+.B "ok (+N unmanaged)"
+(the
+.B snmp
+section only; below),
 .BR differs ,
 .B missing
 (nothing of it on the device; on Cisco a router that has only
@@ -6749,6 +7498,89 @@ makes a difference exit 2 as
 .BR git (1)
 does (a device that could not be compared exits 1). A device never pulled is
 said so, with the command that reads it.
+.PP
+The name of an SNMP community is its secret and is never shown: in the compared
+form it is a label that says whose it is,
+.B <secret:N>
+for the N\-th community tacctl renders for the scope (in the order of the
+rendering) and
+.B <other:N>
+for the N\-th other string on the device (by first appearance). One string has
+one label throughout a pull, a Junos
+.B trap\-group
+name (the community its traps are sent with) and the community word of an IOS
+.B "snmp\-server host"
+included, so the diff, the plan's report,
+.B \-\-json
+and the stored sections tell tacctl's community from another one without
+holding either string. The labels are relative to the rendering the pull was
+compared with: after a scope's community is changed, pull the device again. A
+record made by an older tacctl (the bare
+.B <secret>
+for every name) is compared by presence, a note says so, and
+.B "device config plan"
+leaves every statement under a community of it alone
+.RB ( "the community's name is not visible" )
+and says to pull the device again.
+.PP
+The
+.B snmp
+section reads
+.B "ok (+N unmanaged)"
+when nothing tacctl renders is missing or different and every extra statement
+is one the plan keeps by rule: another community and its client lists and
+leaves, a client list, view or SNMPv3 object tacctl does not render, a
+location, contact or description when tacctl renders none, and the statements
+no ownership row covers
+.RB ( "snmp name" ,
+.BR engine\-id ,
+trap groups and options, and on IOS
+.BR "snmp\-server host" ,
+.B "enable traps"
+and the rest of
+.BR snmp\-server ).
+The statements are still listed, as
+.B +
+lines, with the note
+.BR "N statements of the device's own, kept on purpose" ;
+the state is
+.B ok
+for
+.BR "device config list" ,
+.B \-\-differs
+and
+.BR \-\-stale ,
+and a device that is
+.B ok
+only so does not make
+.B \-\-exit\-code
+of
+.B diff
+or
+.B plan
+exit 2 (the plan still lists the extras, as left alone). Only
+.B snmp
+reads this way: an extra server, login class, filter or user in
+.BR aaa ,
+.B roles
+or
+.B mgmt\-acl
+is a finding about who can log in and the section
+.BR differs ,
+as does a deactivated statement, a statement under a community of an older
+record, and a statement of the rendered community itself (a stray
+.B clients
+entry, which the plan deletes under the community's real name).
+.B \-\-json
+keeps the
+.B state
+strings
+.RB ( ok
+stays
+.BR ok )
+and gives each section the integer
+.B unmanaged
+(left out when 0).
 .\" BEGIN GENERATED: command device config diff
 .RS
 .PP
@@ -6757,7 +7589,7 @@ Requires: \fBengineer\fR. An engineer gets the devices of their own scopes only.
 Options:
 .TP
 \fB\-\-all\fR
-(pull, diff, plan, forget) Every device of yours (not WTI units, or devices in no scope).
+(pull, diff, plan, forget) Every device of yours that a scope covers.
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
 (pull, diff, plan, list) Only the devices of that scope.
@@ -6790,7 +7622,7 @@ The address this server reaches the devices from (with \-\-pull; not stored).
 Read the devices first (takes the pull options).
 .TP
 \fB\-\-section\fR \fI<list>\fR
-Only these sections: aaa, roles, mgmt\-acl, snmp, netconf, breakglass.
+Only these sections: aaa, roles, mgmt\-acl, snmp, system, netconf, breakglass (a WTI unit has aaa, mgmt\-acl, snmp and breakglass).
 .TP
 \fB\-\-json\fR
 (pull, diff, plan, list) Print JSON (a pull: one line per device, then the summary).
@@ -6800,7 +7632,7 @@ Exit 2 when a device differs (and none failed).
 .RE
 .\" END GENERATED: command device config diff
 .TP
-.BI "device config plan " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-pull ] [ \-\-section " list " ] [ \-\-converge ] [ \-\-secrets | \-\-no\-secrets ] [ \-\-plain | \-\-json | \-\-backout ] [ \-\-out " file " | \-\-out\-dir " dir " ] [ \-\-force ] [ \-\-from " address " ] [ \-\-exit\-code ]"
+.BI "device config plan " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-pull ] [ \-\-section " list " ] [ \-\-converge ] [ \-\-secrets | \-\-no\-secrets ] [ \-\-plain | \-\-json | \-\-backout ] [ \-\-out " file " | \-\-out\-dir " dir " ] [ \-\-force ] [ \-\-from " address " ] [ \-\-restore\-point[=" fs "] ] [ \-\-exit\-code ]"
 Print, for each device, what to paste to make it match what tacctl renders,
 from its last pull. It reads no device unless
 .B \-\-pull
@@ -6883,25 +7715,22 @@ and
 never beside a first region, because whoever copies a whole output runs every
 region in it. A device with a first region gets that region and one line,
 .BR "cleanup comes after this region is pasted and verified: pull the device, then plan \-\-converge again" .
-It removes other servers of the scope's own protocol and their groups, and
-other SNMP communities (IOS: a legacy
+It removes other servers of the scope's own protocol and their groups (IOS: a legacy
 .B tacacs\-server host
 line, a
 .B tacacs server
 block, an old
 .BR "aaa group server" ,
-its entries first, then the group, then the server it names, another
-.BR "snmp\-server community" ;
-Junos: another
+its entries first, then the group, then the server it names; Junos: another
 .B "system tacplus\-server"
 (on a RADIUS scope another
 .BR "system radius\-server" :
 never the other protocol's, which may serve accounting or another login
 method, nor a server that a staying
 .B "system accounting destination <protocol> server <address>"
-names), another
-.BR "snmp community" ,
-a login class no user uses, the entries of another client list). On Junos the
+names), a login class no user uses, the entries of another client list). An
+SNMP community is never removed: another community's name is not known to
+tacctl, so it and what is under it are left alone. On Junos the
 check pull of the first region is taken before its
 .BR commit ,
 so the report and the follow-up of the cleanup also ask that
@@ -6968,6 +7797,81 @@ undo it says
 is refused (exit 2).
 .B \-\-out\-dir
 also writes it beside the plan.
+.PP
+.BR \-\-restore\-point [ =\fIfs\fR ]
+(IOS and IOS\-XE only; not lab\-tested) adds a restore point: a block of its
+own before the region, outside the
+.B "PASTE FROM HERE"
+banners, between
+.B "RESTORE POINT FROM HERE: <device>"
+and
+.BR "RESTORE POINT TO HERE: <device>" .
+It is one
+.B "copy running\-config <fs>tacctl\-<device>\-<yyyymmdd\-hhmm>.cfg"
+and one empty line (it answers the
+.B "Destination filename"
+prompt; a paste tool that drops blank lines turns the closing banner into the
+file name, and
+.B "file prompt quiet"
+turns the prompt off), where
+.I <device>
+is the device's name up to its first dot (IOS limits a file name to about 63
+characters) and the time is the plan's, in UTC. The comments above the block
+say to paste it first and on its own at the privileged prompt, to check that
+.B "dir <fs>"
+lists the file, that the file holds the device's secrets in their own forms
+(protect it, delete it when done) and needs free space, and that it is a file,
+not a rollback timer: IOS has no commit\-confirm for a pasted plan. The file
+system is the one named
+.RB ( \-\-restore\-point=disk0: :
+lower case letters and digits, then a colon; a network file system such as
+.B tftp:
+is refused, since its copy asks for more than one empty line answers) or, for
+the bare flag, the device's own archive path, which the pull keeps in the
+device's record (the file system word only, never the host or user of a remote
+path); the block is then the one line
+.BR "archive config" ,
+which asks for no name. A bare flag for a device whose last pull read no
+archive path is refused (exit 2) and says to name a file system or to pull
+again. The back\-out gains an alternative after its
+.B no
+lines, as comments:
+.BR "configure replace <file> force"
+(after
+.BR "archive config" ,
+the newest entry of
+.BR "show archive" ),
+with the caveats that it was tried only on devices with
+.B archive
+and a
+.B path
+configured, that
+.B "copy <file> running\-config"
+only merges, that the removal of
+.B "aaa new\-model"
+was skipped in one pass on IOS 12.4 (use the
+.B no
+lines for AAA), and that the file and any copy the replace leaves are to be
+deleted afterwards. The kept back\-out records the file (its first comment
+line says
+.BR "its restore point is <file>" ),
+so the name in the back\-out is the one the block made. Without the flag every
+IOS output is as it was. The flag is refused for a device of another vendor
+(naming it), with
+.B \-\-plain
+and with
+.BR \-\-backout ;
+the region's whole\-paste check still refuses a
+.BR copy ,
+and the block has an allowlist of its own (exactly
+.BR "archive config" ,
+or one
+.B "copy running\-config"
+and one empty line). The report says that the block and the alternative have
+not been checked on a device, for every release. The copy form was typed on a
+lab IOS 15.6(2)T router: the single empty line answered the Destination
+filename prompt and the file was listed by dir. Archive config and configure
+replace were not tried.
 .PP
 On a Cisco device the region follows the order of the standard block, and
 .BR "command authorization is held back" :
@@ -7039,6 +7943,151 @@ not planned. A Junos statement that a group applies (the inheritance view
 against the plain view the pull also reads) is never changed: its section is
 refused.
 .PP
+A WTI console server has nothing to paste: its settings are the items of
+numbered menu pages, a value is live as soon as its Enter is accepted, the
+configuration is written to flash when a top\-level menu is left with ESC, and
+the unit has no commit\-confirm and no rollback. Its plan is
+.BR "a checklist of menu steps for you to type" ,
+between
+.B "DO THESE STEPS ON: <unit>"
+and
+.BR "END OF STEPS" ,
+one comment line for each setting that differs: the keys typed from the
+prompt
+.RB ( "/N 28 4" ),
+the item's label as the unit prints it, what to enter after the arrow (a
+pick's number and text, a number, or the text; an address item asks the
+protocol first:
+.BR "1 (IPv4), then 192.0.2.10" )
+and, after
+.BR "was:" ,
+the value the pull showed. The steps are ordered so that none takes away the
+way in before the one that needs it: Multiple Logins first
+.RB ( "/N 31" ,
+a pick of Off or On, rendered On: a unit with it Off refuses the second
+session that every check and the pull log in from, and the report says why
+the step goes first), then the SNMP page, then the page of the
+scope's protocol (the secret word, only when the pull shows it undefined, the
+host, the port, the service name, the Default User Access page, the account
+and session modules, the fallback timer, Fallback Local and Debug, and the
+protocol's Enable last), then
+.B "ESC ESC"
+(the save) and a
+.B CHECK
+step: a login as a member of the scope from a second session and
+.BR /H .
+Above the steps the report says what to have ready: the version check
+.RB ( /H
+must show
+.BR "Version 8.10" ;
+.B /J
+shows the Site ID the pull read), a serial console or a second session that
+stays open, and
+.B /SN
+to see that no other administrator is on the unit (the pull's count of other
+sessions is in the report). A secret step names the command that shows the
+value
+.RB ( "<the scope's TACACS+ secret: tacctl scope secret show lab>" ,
+.BR "tacctl scope snmp lab show \-\-reveal" ):
+a unit's plan types no secret unless
+.B \-\-secrets
+is given (and then the output says so, first line of the report and on
+standard error);
+.B \-\-no\-secrets
+is the default made explicit. A secret the unit has is compared by presence
+only and typed again only with
+.BR \-\-secrets ;
+a community, which the unit prints in clear, is compared with the rendered one
+and its value is never in a record, a diff or
+.BR \-\-json .
+.PP
+The IP tables list is the unit's firewall and can lock out the way in, so it
+is presented and never applied: between
+.B "IP TABLES (replaces every entry; see the notes)"
+and
+.B "END OF IP TABLES"
+the output has one
+.B <iptables>
+block, the whole rendered list followed by the unit's own tail exactly as the
+pull showed it (the final DROP, the OUTPUT ACCEPT and the three policies; none
+when the pull showed none, which the plan warns restricts nothing until the
+walkthrough's last step, Step 11), for the page's prompt at
+.B "/N, 5"
+to replace every entry. The lines of that block are the only lines of a unit's
+output that are not comments. A list that differs in an entry, an extra entry
+of the unit's or the order is one finding, fixed by the paste. The section is
+refused, with the reason in the report and the rest of the plan still made,
+when the list would hold more than 48 entries (the tail counted), holds an
+entry the paste does not take (not printable ASCII, not
+.B "iptables \-A"
+or
+.BR "\-P" ,
+longer than 256 characters), does not permit the tacctl server's address to
+reach the unit's ssh, or does not permit the address given with
+.BR \-\-from ;
+without
+.B \-\-from
+a list that ends with the final DROP, and the pull's other sessions, are
+warnings. A plain entry of the permit list renders as a rule for every
+protocol and port, so a list that pastes one carries a WARNING line at the top of the report, under
+the box and the basis of the pull
+.RB ( "N plain permit(s) of the rendered list allow every protocol and port" ),
+and the check that the tacctl server and
+.B \-\-from
+reach the unit's ssh reads a rule for tcp 22, a port range that holds 22,
+every tcp port and every protocol. A scope with no management permit list (or
+none that permits ssh) has no IP tables section
+(the standard has nothing for it), and one whose server address is not known
+is refused for it. What the standard does not render and the unit has is its
+own and is left alone (the SNMP system name and trap settings, the tail, the
+other protocol's page while it is switched off, the RADIUS items the
+walkthrough leaves alone); a second host, a read/write community, the other
+protocol's page switched on and a local account the scope does not record are
+findings, listed with the step that removes them
+.RB ( "/N 25 8" ", then " "<SPACE><CR>" ).
+.B breakglass
+is compared and reported, never planned (walkthrough Step 10). A step on the
+AAA page is warned about: a wrong secret word, host, port or service name does
+not stop a login but returns every login to the unit's Default User Access
+level.
+.PP
+For a unit
+.B \-\-backout
+prints the steps again with the values the pull showed as their targets, last
+step first, a secret or community as a line that says to re\-enter the one you
+keep, and the old IP tables list as a
+.B <iptables>
+block between
+.B "BACK\-OUT, IP TABLES"
+and
+.B "END OF IP TABLES"
+(first, because it is the change that can lock out; a list that was empty is
+cleared slot by slot with
+.BR <SPACE><CR> ),
+under the same WARNING line when the list it puts back holds plain entries,
+and the plan's back\-out is never part of the plan's own output.
+.B \-\-converge
+offers only the removal of a read/write community
+.RB ( "/N 25 8" )
+and the Enable of the protocol the scope does not use set to Off, for a unit
+with nothing else to type.
+.B \-\-plain
+and a
+.B \-\-section
+of
+.B roles
+or
+.B system
+are refused for a unit (exit 2); the files of
+.B \-\-out\-dir
+are
+.IR <name>.txt ,
+.IR <name>.backout.txt
+and
+.IR COVER.txt ,
+never a
+.IR .set .
+.PP
 A secret the device lacks is typed in its line, and the output then says so
 (first line of the report, and on standard error). One the device has, or the
 pull's login could not see, is neither printed nor changed unless
@@ -7074,6 +8123,9 @@ is an array with one object per device
 .BR backout ,
 .BR extras ,
 .BR warnings ,
+with
+.B \-\-restore\-point
+.BR restore_point ,
 and with
 .B \-\-converge
 .BR cleanup ,
@@ -7137,8 +8189,9 @@ of several devices needs
 A device cannot be planned, with the reason on standard error and exit 1, when
 it was never pulled, was pulled more than
 .B stale\-days
-ago, whose last pull failed, a Cisco device whose syntax is unknown, a WTI
-unit, or one whose plan has nothing to paste because a section was refused.
+ago, whose last pull failed, a Cisco device whose syntax is unknown, or one
+whose plan has nothing to paste because a section was refused (a WTI unit
+whose IP tables list is refused and that has no step is one of these).
 Exit status 0 when the outputs were made, 1 when a device cannot be planned, 2
 for wrong arguments (and, with
 .BR \-\-exit\-code ,
@@ -7161,7 +8214,7 @@ Requires: \fBengineer\fR. An engineer gets the devices of their own scopes only.
 Options:
 .TP
 \fB\-\-all\fR
-(pull, diff, plan, forget) Every device of yours (not WTI units, or devices in no scope).
+(pull, diff, plan, forget) Every device of yours that a scope covers.
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
 (pull, diff, plan, list) Only the devices of that scope.
@@ -7194,19 +8247,19 @@ The address this server reaches the devices from (not stored).
 Read the devices first (takes the pull options); the plan is made from that pull.
 .TP
 \fB\-\-section\fR \fI<list>\fR
-Only these sections: aaa, roles, mgmt\-acl, snmp (the report still names the others).
+Only these sections: aaa, roles, mgmt\-acl, snmp, system (the report still names the others).
 .TP
 \fB\-\-converge\fR
-Add the cleanup of a device with nothing else to paste: the region that removes the old servers and the like (a device with a first region gets that and a line to plan again after the paste).
+Add the cleanup of a device with nothing else to paste: the region that removes the old servers and the like (a device with a first region gets that and a line to plan again after the paste; a WTI unit: the read/write community and the other protocol's switch).
 .TP
 \fB\-\-secrets\fR
-Type every secret of the planned sections, also the ones the device has.
+Type every secret of the planned sections, also the ones the device has (a WTI step names the command that shows the value unless given).
 .TP
 \fB\-\-no\-secrets\fR
-Leave each secret as a marked line to fill in (no plain form).
+Leave each secret as a marked line to fill in (no plain form; a WTI step already does).
 .TP
 \fB\-\-plain\fR
-The statements of one device alone, for 'load set' (\-\-converge: two files, with \-\-out or \-\-out\-dir).
+The statements of one device alone, for 'load set' (\-\-converge: two files, with \-\-out or \-\-out\-dir); a WTI unit has none.
 .TP
 \fB\-\-backout\fR
 Only the back\-out region (what puts the pulled lines back; the one kept from the plan once a later pull replaced them; not with \-\-pull).
@@ -7224,10 +8277,13 @@ One file per device (<name>.txt, .set with \-\-plain, .json with \-\-json; each 
 Replace files \-\-out or \-\-out\-dir would write.
 .TP
 \fB\-\-from\fR \fI<address>\fR
-The address you are logged in from: the cleanup keeps it; the management filter check uses it.
+The address you are logged in from: the cleanup keeps it; the management filter check and a WTI unit's IP tables check use it.
 .TP
 \fB\-\-exit\-code\fR
 Exit 2 when a device needs a change (and none could not be planned).
+.TP
+\fB\-\-restore\-point\fR[=\fI<fs>\fR]
+(IOS and IOS\-XE only) A restore point block before the plan: a copy of the running configuration on <fs> (flash:, bootflash:, disk0:), or, bare, 'archive config' where the pull read an archive path; the back\-out names 'configure replace' with it; a file, not a timer (not lab\-tested).
 .RE
 .\" END GENERATED: command device config plan
 .TP
@@ -7247,7 +8303,29 @@ a pull of a device whose version line is not read or not mapped is refused and
 not recorded, so this state does not change by it),
 when it was pulled, by whom, over which transport, what the NETCONF probe
 found and, for a device that differs, the sections, or, for one that failed,
-the result.
+the result. A device that is
+.B ok
+and holds statements of its own that the plan keeps by rule has
+.B "snmp +N unmanaged"
+there (see
+.BR "device config diff" ),
+and
+.B \-\-json
+has the map
+.B unmanaged
+of section to count for the sections that are ok. For a WTI unit the detail
+also says how many other sessions it had at the last good pull
+.RB ( "1 other session on the unit" ),
+and
+.B \-\-json
+has its
+.B unit
+(command menu
+.BR version ,
+.BR site_id ,
+.B other_sessions
+and
+.BR users_read ).
 The state is computed against today's rendering from the stored sections, so a
 change of the store or of
 .I tacctl.yaml
@@ -7268,7 +8346,13 @@ together; the state filters add up, and
 .B \-\-scope
 and
 .B \-\-vendor
-narrow them. A WTI unit has no configuration to compare and is never stale.
+narrow them. A WTI unit is a device like the others: a pull that was
+.B denied
+(its login's WTI level cannot configure it) or
+.B unsupported
+(a command menu that is not version 8.10) is
+.BR failed ,
+with that word as its detail.
 .\" BEGIN GENERATED: command device config list
 .RS
 .PP
@@ -7967,6 +9051,10 @@ Requires: \fBoperator\fR.
 .BI "console system\-shell tiers " "[ " csv "|none ]"
 The tiers that may start their system shell from the console (default
 .BR superuser ).
+The same tiers may open an editor from the console
+.RB ( "scope block ... edit|adopt" ,
+.BR "device block ... edit|adopt" ):
+an editor can start a shell.
 .\" BEGIN GENERATED: command console system-shell
 .RS
 .PP
@@ -8366,8 +9454,8 @@ device hostname, device vendor, device port, device description,
 device location, device legacy\-ssh, device config\-syntax,
 device hostkey, device import, scope devices, device config,
 config cisco, config juniper, config wti, host list, host show,
-scope staging, scope secret, scope snmp, device snmp, scope show,
-breakglass list
+scope staging, scope secret, scope snmp, device snmp, scope block,
+device block, scope show, breakglass list
 .TP
 .B superuser
 Every verb not listed above, and every verb of the tiers below.
@@ -8380,6 +9468,9 @@ An engineer lists the holds of the devices of their own scopes only; hold and re
 .TP
 .B config cisco
 An engineer may print the walkthrough and read source\-interface for a scope of their own; setting or unsetting source\-interface needs the superuser tier.
+.TP
+.B device block
+An engineer may read the configuration blocks of a device of their own scope (list, show [\-\-effective] [\-\-reveal], check); set, remove, edit and adopt need the superuser tier.
 .TP
 .B device config
 An operator may run list; show, pull, diff and plan need the engineer tier (a device's walkthrough carries its scope's secret, a plan can type it, and a pull logs in to the device as you), and an engineer gets the devices of their own scopes only; forget needs the superuser tier.
@@ -8398,6 +9489,9 @@ An engineer may read the settings of a device of their own scope (show [\-\-reve
 .TP
 .B host show
 An engineer reads what tacctl recorded of a host; \-\-check logs in to it and needs the superuser tier.
+.TP
+.B scope block
+An engineer may read the configuration blocks of a scope of their own (list, show [\-\-reveal], check); set, remove, edit and adopt need the superuser tier.
 .TP
 .B scope secret
 An engineer may run show for a scope of their own; set and generate need the superuser tier.
@@ -8436,6 +9530,7 @@ and every nested dispatcher such as
 .BR "scope devices" ,
 .BR "scope mgmt-acl" ,
 .BR "scope breakglass" ,
+.BR "scope block" ,
 .BR "user scope" ,
 or
 .BR "group privilege" )
@@ -8997,8 +10092,8 @@ name of 1 to 63 characters (a letter, then letters, digits, _ or \-). Default: M
 Name of the filter config juniper emits. Set with \fBtacctl config mgmt\-acl juniper\-name\fR.
 .TP
 .B mgmt_acl.permits
-list of CIDRs. Default: [].
-The CIDRs the management ACL and filter permit. Set with \fBtacctl config mgmt\-acl add\fR or \fBtacctl config mgmt\-acl remove\fR.
+list of CIDRs, each with optional services after a colon (tcp/22, tcp/161\-162, udp/*, icmp, comma separated). Default: [].
+The entries the management ACL and filter permit: a CIDR, or a CIDR with its services (10.0.0.0/8:tcp/22,udp/161,icmp). Set with \fBtacctl config mgmt\-acl add\fR or \fBtacctl config mgmt\-acl remove\fR.
 .TP
 .B password.max_age_days
 integer, 1 or more. Default: 90.
@@ -9077,8 +10172,8 @@ name of 1 to 63 characters (a letter, then letters, digits, _ or \-). Default: M
 The scope's own filter name, in place of mgmt_acl.names.juniper. Set with \fBtacctl scope mgmt\-acl\fR.
 .TP
 .B scope_mgmt_acl.permits.<scope>
-list of CIDRs. Default: [].
-The scope's own permitted CIDRs, in place of mgmt_acl.permits. Set with \fBtacctl scope mgmt\-acl\fR.
+list of CIDRs, each with optional services after a colon (tcp/22, tcp/161\-162, udp/*, icmp, comma separated). Default: [].
+The scope's own permitted entries (a CIDR, or a CIDR with its services), in place of mgmt_acl.permits. Set with \fBtacctl scope mgmt\-acl\fR.
 .TP
 .B listeners.<backend>.<name>
 mapping with network, address, role, metrics_address, tls (tls is reserved). Default: tacacs.default is tcp :49; radius.auth is udp :1812; radius.acct is udp :1813.
@@ -9103,6 +10198,14 @@ The tacctl tier of the group, in place of the one its priv-lvl band gives. Set w
 .B breakglass_scope.<scope>.users
 list of name:role entries, role one of admin, operator, readonly, at most 16. Default: none (unset).
 The break-glass local users the scope's device configurations create. Only the names and roles are kept; no credential is stored. Set with \fBtacctl scope breakglass\fR.
+.TP
+.B blocks.<scope>.<vendor>
+non\-empty list of block names (snmp, system). Default: none (unset).
+The configuration blocks in force for the scope and vendor (juniper or cisco), a list of snmp and system; a file under the blocks directory that this list does not name is ignored. Set with \fBtacctl scope block\fR.
+.TP
+.B blocks_device.<device>.<vendor>
+non\-empty list of block names (snmp, system). Default: none (unset).
+The configuration blocks in force for one device and vendor (juniper or cisco), a list of snmp and system; the device's lower case name is written with every '.' as '~' (js1~lab~example~net), and a file under the blocks directory that this list does not name is ignored. Set with \fBtacctl device block\fR.
 .TP
 .B snmp_scope.<scope>.version
 one of v2c, v3. Default: none (unset).
@@ -9350,6 +10453,22 @@ and
 .B \-Y
 after its shape is checked, and kept by the tiers drop-in for the console.
 .TP
+.B "VISUAL, EDITOR"
+The editor of
+.B "scope block ... edit|adopt"
+and
+.BR "device block ... edit|adopt" :
+.BR VISUAL ,
+else
+.BR EDITOR ,
+else
+.BR editor ,
+else
+.BR vi ,
+run as the invoking user. sudo drops both, so the sudoers drop-ins keep them for
+those four command lines only; tacctl removes them from its own environment at
+start, so no program it runs inherits them.
+.TP
 .B TACCTL_ASKPASS
 .RI "Set by a " "tacctl shell" " or console session whose password cache is on, as " socket : token
 in the environment of the
@@ -9357,7 +10476,8 @@ in the environment of the
 of each line that uses it, with a token made for that line and dead when it
 ends (never on sudo's command line); the tiers drop-ins keep it for those
 lines only. The root side of
-.B "device config pull"
+.BR "device config pull" ,
+.B "block ... adopt"
 and
 .B ssh
 reads it once and removes it from its own environment, and the helper ssh runs as
@@ -9487,6 +10607,55 @@ map of its entry in
 .B "rollback 0.2.3"
 removes that map and leaves the file (0.2.3 never opens the subdirectory).
 .TP
+.I /etc/tacctl/blocks
+The directory of configuration blocks, 0700 root. A scope's blocks are under
+its own name and a device's under
+.IR _devices ;
+a scope cannot be called
+.BR _devices .
+Snapshots include it and
+.B backup restore
+brings it back. A rollback to 0.2.3 removes the lists in
+.B tacctl.yaml
+that put blocks in force and leaves the files.
+.TP
+.I /etc/tacctl/blocks/\fIscope\fR/\fIvendor\fR/\fIblock\fR
+One configuration block of a scope: vendor syntax that tacctl owns beside the
+structured settings.
+.I vendor
+is
+.B juniper
+or
+.BR cisco ;
+.I block
+is
+.B snmp
+or
+.BR system .
+Mode 0600 in 0700 directories, root only, written atomically; a block holds
+community strings, so it is never printed but by
+.BR "scope block ... show \-\-reveal" .
+A block is in force only while
+.BR tacctl.yaml
+names it
+.RB ( blocks.\fIscope\fR.\fIvendor\fR ).
+A scope's rename moves its blocks and its removal deletes them. Snapshots
+include the directory and a restore brings it back.
+.TP
+.I /etc/tacctl/blocks/_devices/\fIdevice\fR/\fIvendor\fR/\fIblock\fR
+One configuration block of a registered device, in place of its scope's block
+of the same object. The directory is named for the device in lower case; it is
+named in
+.B tacctl.yaml
+by
+.BR blocks_device.\fIdevice\fR.\fIvendor\fR ,
+the device's dots written as
+.BR ~ ,
+and written by
+.BR "device block" .
+A device's rename moves it and its removal deletes it; a new device, or a
+rename onto a name whose blocks are already on disk, is refused.
+.TP
 .I /etc/tacctl/console.yaml
 The login console's switches per tier, per-user overrides and settings
 .RB ( idle_timeout ,
@@ -9597,6 +10766,15 @@ told again.
 .B uninstall
 removes it.
 .TP
+.I /var/lib/tacctl/wti\-plain\-acl\-noted
+Marker that
+.B "tacctl upgrade"
+named once, on the first upgrade onto 0.2.7, the scopes whose plain management
+ACL entries permit every protocol and port on WTI units (a fresh install
+writes it at once). Delete it to be told again.
+.B uninstall
+removes it.
+.TP
 .I /var/lib/tacctl/ssh/known_hosts
 Generated from
 .I devices.yaml
@@ -9700,8 +10878,9 @@ removes it.
 The record of each device's last configuration pull
 .RB ( "device config pull" ):
 when, by whom, over which transport, what the NETCONF probe found, the result
-and the state of each managed section, keyed by the device's lower\-case name.
-Mode 0600, root only; derived from the devices, not snapshotted, rebuilt by a
+and the state of each managed section (for an IOS device also the file system
+of its archive path, for the plan's restore point), keyed by the device's
+lower\-case name. Mode 0600, root only; derived from the devices, not snapshotted, rebuilt by a
 pull. A rename carries a record along, a removal and
 .B "device config forget"
 delete it. 0.2.3 never opens it and

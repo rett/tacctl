@@ -138,8 +138,14 @@ type Snapshotter struct {
 	// are part of a snapshot when they exist, in the modes they have
 	// (0600, the directory 0700), so a restore brings the credentials of a
 	// scope back that its removal (or a rollback) deleted.
-	SNMPFile  string
-	SNMPDir   string
+	SNMPFile string
+	SNMPDir  string
+	// BlocksDir is the directory of the configuration blocks (blocks/
+	// <scope>/<vendor>/<block> and blocks/_devices/<device>/<vendor>/<block>,
+	// 0.2.7): part of a snapshot when it holds a file, in the modes it is
+	// kept in (0600, the directories 0700). The list of blocks in force is
+	// in tacctl.yaml, which a snapshot holds already.
+	BlocksDir string
 	Rendered  string // RENDERED_FILE, copied into the manifest
 	BackupDir string // BACKUP_DIR
 	// Version is the tacctl version the manifest records ("unknown" when
@@ -173,6 +179,7 @@ func New(p paths.Paths, version string, now func() time.Time, out ui.Output) *Sn
 		ConsoleFile: p.ConsoleFile,
 		SNMPFile:    p.SNMPFile,
 		SNMPDir:     p.SNMPDir,
+		BlocksDir:   p.BlocksDir,
 		Rendered:    p.Rendered,
 		BackupDir:   p.BackupDir,
 		Version:     version,
@@ -336,6 +343,9 @@ func (s *Snapshotter) current(dir string) bool {
 	if !sameSNMPDir(s.SNMPDir, filepath.Join(dir, "snmp")) {
 		return false
 	}
+	if !sameBlocksDir(s.BlocksDir, filepath.Join(dir, BlocksName)) {
+		return false
+	}
 	if isRegular(s.Overrides) {
 		return sameBytes(s.Overrides, filepath.Join(dir, "tacctl.yaml"))
 	}
@@ -437,6 +447,92 @@ func copySNMPDir(src, dst string) error {
 	return os.Chmod(dst, 0o700)
 }
 
+// BlocksName is the name of the configuration blocks' directory inside a
+// snapshot.
+const BlocksName = "blocks"
+
+// BlockFiles are the regular files of the blocks directory dir, as paths
+// relative to it with '/' separators, sorted: a block is
+// <scope>/<vendor>/<block> or _devices/<device>/<vendor>/<block>. Anything
+// that is not a regular file or a directory (a symbolic link) is not
+// followed or listed; a directory that cannot be read has none.
+func BlockFiles(dir string) []string {
+	if dir == "" {
+		return nil
+	}
+	var out []string
+	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			if path == dir {
+				return filepath.SkipAll
+			}
+			return nil
+		}
+		if d.Type().IsRegular() {
+			if rel, err := filepath.Rel(dir, path); err == nil {
+				out = append(out, filepath.ToSlash(rel))
+			}
+		}
+		return nil
+	})
+	slices.Sort(out)
+	return out
+}
+
+// sameBlocksDir is whether the live blocks directory and the snapshot's
+// hold the same files with the same bytes (neither having any counts).
+func sameBlocksDir(live, snap string) bool {
+	a, b := BlockFiles(live), BlockFiles(snap)
+	if !slices.Equal(a, b) {
+		return false
+	}
+	for _, n := range a {
+		if !sameBytes(filepath.Join(live, filepath.FromSlash(n)), filepath.Join(snap, filepath.FromSlash(n))) {
+			return false
+		}
+	}
+	return true
+}
+
+// copyBlocksDir copies the files of src into a new directory dst (the
+// directories 0700, the files 0600); nothing when src has none.
+func copyBlocksDir(src, dst string) error {
+	files := BlockFiles(src)
+	if len(files) == 0 {
+		return nil
+	}
+	made := map[string]bool{}
+	mkdir := func(d string) error {
+		if made[d] {
+			return nil
+		}
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			return err
+		}
+		// Every directory from dst down, whatever the umask.
+		for cur := d; ; cur = filepath.Dir(cur) {
+			if err := os.Chmod(cur, 0o700); err != nil {
+				return err
+			}
+			if cur == dst {
+				break
+			}
+		}
+		made[d] = true
+		return nil
+	}
+	for _, n := range files {
+		to := filepath.Join(dst, filepath.FromSlash(n))
+		if err := mkdir(filepath.Dir(to)); err != nil {
+			return err
+		}
+		if err := copyFile(filepath.Join(src, filepath.FromSlash(n)), to); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // fill is _backup_snapshot_fill: the files of a snapshot in dir, 0600, the
 // directory 0700.
 func (s *Snapshotter) fill(dir string, now time.Time) error {
@@ -469,6 +565,9 @@ func (s *Snapshotter) fill(dir string, now time.Time) error {
 		}
 	}
 	if err := copySNMPDir(s.SNMPDir, filepath.Join(dir, "snmp")); err != nil {
+		return err
+	}
+	if err := copyBlocksDir(s.BlocksDir, filepath.Join(dir, BlocksName)); err != nil {
 		return err
 	}
 	version := s.Version

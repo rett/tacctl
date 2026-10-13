@@ -1,0 +1,26 @@
+##### lab-unit  192.0.2.21  scope lab  wti (TACACS+) #####
+# BACK-OUT of the plan for lab-unit: it puts back what the pull of 2026-10-10 14:02 showed, for the
+# settings the plan changed. Use it only after the plan was done and the check was not fine.
+# The unit has no rollback: each value is live as soon as its Enter is accepted, and leaving /N with
+# ESC saves it. Keep the serial session open, and a second one for the check.
+#
+# Type this first, on lab-unit, and check the version:   /H
+# The title must read "COMMAND MENU: Version 8.10": tacctl's tables are those of that command menu,
+# and another version may number its pages differently: stop.
+#
+##### UNDO THESE STEPS ON: lab-unit #####
+# At the unit's prompt type /N and Enter. For each step type the item numbers of its second column,
+# one at a time with Enter after each, then what the arrow says. A pick: the number of the line
+# that reads as shown. ESC goes back one level. A value is live as soon as its Enter is accepted.
+#  1. /N  31  Multiple Logins  -> 1 (Off)   was: 2 (On)
+#  2. ESC ESC  leave /N: wait for "Saving configuration to flash"
+##### END OF STEPS #####
+#
+# A value that tacctl does not hold (a secret, a community) is a line that says to re-enter the one
+# you keep.
+# Check now: tacctl device config pull lab-unit --diff (the differences of the plan are back).
+# Do not: paste anything outside the banners; paste a block into another unit; leave /N with ESC
+# before the last step of the list.
+# Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold lab-unit --reason "..."
+# then log in on the unit's serial console as its local Administrator account,
+# fix or back out, and the superuser runs: tacctl breakglass release lab-unit

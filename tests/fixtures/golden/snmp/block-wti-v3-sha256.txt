@@ -1,16 +1,18 @@
-        Not verified on a unit: the menu item names below are from WTI's documents.
+        The item names and numbers below are those of a WTI 8.10 unit (SNMP Access under /N); other firmware may differ.
         Credentials: this scope's own (tacctl scope snmp lab show --reveal).
         /N [Enter]              Network Parameters
-        <n> [Enter]             SNMP Parameters -- the item number varies by model/firmware;
-                                pick the entry labelled "SNMP"
+        25 [Enter]              SNMP Access -- the item number varies by model/firmware;
+                                pick the entry labelled "SNMP Access"
         Set each item (type the item number, [Enter], then the value):
-          Version                   : v3 (authPriv)
+          Enable                    : On
+          Version                   : V3 (authPriv)
+          Read Only                 : Yes
           SNMPv3 User               : tacctl-ro
           Authentication Protocol   : SHA-256
           Authentication Passphrase : auth-pass-0123
           Privacy Protocol          : AES-128
           Privacy Passphrase        : priv-pass-4567
-          Location                  : Rack 4, DC1
+          SNMP Location             : Rack 4, DC1
           Contact                   : NOC <noc@example.net>
 
         Client restriction (not verified on a unit): the udp port 161 lines of the IP Tables list (Step 5) are

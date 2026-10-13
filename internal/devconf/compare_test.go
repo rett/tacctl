@@ -80,8 +80,14 @@ func TestCompareStates(t *testing.T) {
 			sec(aaa, "username a privilege 15 secret 9 $9$abcdef"), true, StateOK, "="},
 		{"junos user split", "junos", secrets(aaa, []string{"set system login user u class RW authentication encrypted-password '<HASH>'"}, true),
 			sec(aaa, "set system login user u class RW", `set system login user u authentication encrypted-password "$6$x"`), true, StateOK, "=="},
-		{"community by presence", "junos", secrets(aaa, []string{"set snmp community lab-ro authorization read-only"}, true),
-			sec(aaa, "set snmp community other-name authorization read-only"), true, StateOK, "="},
+		{"community by its label", "junos", secrets(aaa, []string{"set snmp community lab-ro authorization read-only"}, true),
+			sec(aaa, "set snmp community lab-ro authorization read-only"), true, StateOK, "="},
+		{"another community is not the rendered one", "junos", secrets(aaa, []string{"set snmp community lab-ro authorization read-only"}, true),
+			sec(aaa, "set snmp community other-name authorization read-only"), true, StateDiffers, "-+"},
+		{"an older record's community by presence", "junos", secrets(aaa, []string{"set snmp community lab-ro authorization read-only"}, true),
+			sec(aaa, "set snmp community <secret> authorization read-only"), true, StateOK, "="},
+		{"cisco community by its label", "ios", secrets(aaa, []string{"snmp-server community lab-ro RO A"}, true),
+			sec(aaa, "snmp-server community lab-ro RO A", "snmp-server community other-name RO A"), true, StateDiffers, "=+"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			res, err := Compare(tc.vendor, tc.expected, tc.got, tc.visible)
@@ -117,10 +123,10 @@ func TestCompareLineTexts(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []DiffLine{
-		{OpSame, "set a b", false},
-		{OpSame, "set system tacplus-server 192.0.2.1 secret (present, not compared)", true},
-		{OpMissing, "set system tacplus-server 192.0.2.2 secret (not present)", true},
-		{OpExtra, "set system tacplus-server 192.0.2.3 secret (present, not compared)", true},
+		{Op: OpSame, Text: "set a b"},
+		{Op: OpSame, Text: "set system tacplus-server 192.0.2.1 secret (present, not compared)", Secret: true},
+		{Op: OpMissing, Text: "set system tacplus-server 192.0.2.2 secret (not present)", Secret: true},
+		{Op: OpExtra, Text: "set system tacplus-server 192.0.2.3 secret (present, not compared)", Secret: true},
 	}
 	if !slices.Equal(res.Lines, want) {
 		t.Errorf("got %+v\nwant %+v", res.Lines, want)
@@ -134,13 +140,13 @@ func TestCompareLineTexts(t *testing.T) {
 }
 
 func TestCompareUnknownVendor(t *testing.T) {
-	if _, err := Compare("wti", sec("aaa", "x"), sec("aaa", "x"), true); !errors.Is(err, ErrUnsupportedVendor) {
+	if _, err := Compare("acme", sec("aaa", "x"), sec("aaa", "x"), true); !errors.Is(err, ErrUnsupportedVendor) {
 		t.Errorf("%v", err)
 	}
-	if _, err := Normalise("wti", sec("aaa")); !errors.Is(err, ErrUnsupportedVendor) {
+	if _, err := Normalise("acme", sec("aaa")); !errors.Is(err, ErrUnsupportedVendor) {
 		t.Errorf("%v", err)
 	}
-	if _, err := Fingerprint("wti", sec("aaa")); !errors.Is(err, ErrUnsupportedVendor) {
+	if _, err := Fingerprint("acme", sec("aaa")); !errors.Is(err, ErrUnsupportedVendor) {
 		t.Errorf("%v", err)
 	}
 }
@@ -339,6 +345,11 @@ func TestManagedGoldensRoundTrip(t *testing.T) {
 	}
 	for _, f := range files {
 		base := filepath.Base(f)
+		if strings.HasPrefix(base, "managed.wti") {
+			// a unit has no configuration text to read back: its goldens are
+			// compared in TestWTIManagedGoldensAreTheirOwnUnit
+			continue
+		}
 		vendor := "ios"
 		if strings.HasPrefix(base, "managed.juniper") {
 			vendor = "junos"

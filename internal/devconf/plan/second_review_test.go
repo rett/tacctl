@@ -173,6 +173,10 @@ func checkJunosBackout(t *testing.T, f fixture, raw string, d Delta, label strin
 			if len(s.path) >= 4 && s.path[len(s.path)-2] == "secret" {
 				s.path = s.path[:len(s.path)-1]
 			}
+			if len(s.path) >= 6 && s.path[2] == "authentication-key" && s.path[len(s.path)-2] == "value" {
+				// an NTP key's value, a secret too
+				s.path = s.path[:len(s.path)-1]
+			}
 			out = append(out, s.text())
 		}
 		slices.Sort(out)
@@ -625,7 +629,11 @@ func TestPlainIsTheStatementsOnly(t *testing.T) {
 		if gc.plainErr != nil || gc.d.Empty() {
 			continue
 		}
-		for _, l := range strings.Split(strings.TrimSuffix(gc.plain, "\n"), "\n") {
+		plainLines := strings.Split(strings.TrimSuffix(gc.plain, "\n"), "\n")
+		for i, l := range plainLines {
+			if bannerBody(plainLines)[i] {
+				continue // the text of a login banner is any text
+			}
 			switch l {
 			case "configure private", "configure terminal", "end", "commit check", "show | compare | no-more":
 				t.Errorf("%s: plain holds the wrapper line %q", gc.name, l)

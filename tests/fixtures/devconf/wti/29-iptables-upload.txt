@@ -1,0 +1,37 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# command: /N, 5, then the whole list pasted at the prompt: one <iptables> block, 22 -A rules and the three -P policies (last)
+# level: SuperUser (engineer group, priv-lvl 10)
+# source: captured
+# captured: 2026-10-12
+# sanitised: addresses
+# ---
+<iptables>
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -s 10.1.100.0/23 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.20.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.28.34 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.28.34 -p udp --dport 161:162 -j ACCEPT
+iptables -A INPUT -s 10.0.28.36 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.28.36 -p udp --dport 161:162 -j ACCEPT
+iptables -A INPUT -s 10.0.30.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.40.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.50.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.60.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.70.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.90.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 10.0.120.0/24 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -s 192.0.2.14 -p udp --dport 161:162 -j ACCEPT
+iptables -A INPUT -s 10.1.101.0/24 -p udp --dport 161 -j ACCEPT
+iptables -A INPUT -i eth0 -s 10.1.100.0/23 -p icmp -j ACCEPT
+iptables -A INPUT -i eth0 -s 10.0.0.0/16 -p icmp -j ACCEPT
+iptables -A INPUT -i eth0 -s 192.0.2.14 -p icmp -j ACCEPT
+iptables -A INPUT -j DROP
+iptables -A OUTPUT -j ACCEPT
+iptables -P INPUT DROP
+iptables -P OUTPUT DROP
+iptables -P FORWARD DROP
+
+Configuring iptables - Please wait... 

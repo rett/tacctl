@@ -178,8 +178,8 @@ func TestPlanJunosFromTheLastPull(t *testing.T) {
 }
 
 // No plan without a pull, none from a pull the device failed since, none
-// from one older than stale-days, none for a WTI unit; each is exit 1 and a
-// reason that names what to do.
+// from one older than stale-days; each is exit 1 and a reason that names what
+// to do (a WTI unit is read and planned like any device).
 func TestPlanCannotPlanWhatIsNotCurrent(t *testing.T) {
 	b := newPullBox(t)
 	b.devices([3]string{"new-j", "192.168.1.21", "juniper"}, [3]string{"old-j", "192.168.1.22", "juniper"},
@@ -196,7 +196,7 @@ func TestPlanCannotPlanWhatIsNotCurrent(t *testing.T) {
 		{"new-j", "not pulled: tacctl device config pull new-j (or --pull)"},
 		{"old-j", "stale pull (45 days old, stale-days is 30): tacctl device config pull old-j (or --pull)"},
 		{"bad-j", "the last pull failed (unreachable)"},
-		{"rack-w", "WTI units are not planned in this release"},
+		{"rack-w", "not pulled: tacctl device config pull rack-w (or --pull)"},
 	} {
 		out := b.run("device", "config", "plan", c.dev)
 		if b.sb.code != 1 {
@@ -225,13 +225,14 @@ func TestPlanCannotPlanWhatIsNotCurrent(t *testing.T) {
 		t.Errorf("names with --all: %d", b.sb.code)
 	}
 	out := b.run("device", "config", "plan", "--all")
-	if b.sb.code != 1 || !strings.Contains(out, "# tacctl device config plan: 3 devices") ||
-		!strings.Contains(out, "new-j  cannot be planned: not pulled") || !strings.Contains(out, "old-j  cannot be planned: stale pull") ||
-		!strings.Contains(out, "bad-j  cannot be planned: the last pull failed") {
+	if b.sb.code != 1 || !strings.Contains(out, "# tacctl device config plan: 4 devices") ||
+		!strings.Contains(out, "new-j   cannot be planned: not pulled") || !strings.Contains(out, "old-j   cannot be planned: stale pull") ||
+		!strings.Contains(out, "bad-j   cannot be planned: the last pull failed") ||
+		!strings.Contains(out, "rack-w  cannot be planned: not pulled") {
 		t.Errorf("cover: %d\n%s", b.sb.code, out)
 	}
-	if strings.Contains(out, "rack-w") || !strings.Contains(b.sb.stderr(), "skipped 1 (rack-w): WTI units are not planned in this release") {
-		t.Errorf("a selection took the WTI unit, or did not say it left it out:\n%s\n%s", out, b.sb.stderr())
+	if strings.Contains(b.sb.stderr(), "skipped") {
+		t.Errorf("a selection left a device out:\n%s", b.sb.stderr())
 	}
 }
 
@@ -254,7 +255,7 @@ func TestPlanFormatsAndFiles(t *testing.T) {
 	bad("--force replaces files", "--force")
 	bad("never planned", "--section", "netconf")
 	bad("never planned", "--section", "breakglass")
-	bad("--section takes sections of aaa, roles, mgmt-acl, snmp: 'nope'", "--section", "nope")
+	bad("--section takes sections of aaa, roles, mgmt-acl, snmp, system: 'nope'", "--section", "nope")
 	bad("--transport is for --pull", "--transport", "ssh")
 	bad("--from takes the address you are logged in", "--from", "10.0.0.0/8")
 	bad("--plain --converge makes two files", "--plain", "--converge")

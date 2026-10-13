@@ -40,7 +40,8 @@ func capture(t testing.TB, rel string) string {
 }
 
 // expectedSections reads an expected.txt ('[section]', '| statement', '*
-// secret statement').
+// secret statement'; '&' and '+' for a statement of a configuration block, with
+// and without a secret).
 func expectedSections(t testing.TB, rel string) []devices.Section {
 	t.Helper()
 	var out []devices.Section
@@ -55,9 +56,18 @@ func expectedSections(t testing.TB, rel string) []devices.Section {
 			}
 			out = append(out, devices.Section{Name: name})
 			cur = &out[len(out)-1]
-		case (strings.HasPrefix(l, "| ") || strings.HasPrefix(l, "* ")) && cur != nil:
+		case (strings.HasPrefix(l, "| ") || strings.HasPrefix(l, "* ") || strings.HasPrefix(l, "& ") || strings.HasPrefix(l, "+ ")) && cur != nil:
 			cur.Lines = append(cur.Lines, l[2:])
-			cur.Secret = append(cur.Secret, l[0] == '*')
+			cur.Secret = append(cur.Secret, l[0] == '*' || l[0] == '&')
+			// '&' and '+' are statements of a configuration block (the
+			// first one that carries a secret)
+			fromBlock := l[0] == '&' || l[0] == '+'
+			if fromBlock && cur.Block == nil {
+				cur.Block = make([]bool, len(cur.Lines)-1)
+			}
+			if cur.Block != nil {
+				cur.Block = append(cur.Block, fromBlock)
+			}
 		}
 	}
 	return out
@@ -145,6 +155,26 @@ func fixtures(t testing.TB) []fixture {
 		// order of the fixtures)
 		{name: "cisco.same-address-block", vendor: "cisco", raw: "ios/same-address-block/running-config.txt", expected: "ios/same-address-block/expected.txt"},
 		{name: "cisco.same-address-block-nocmd", vendor: "cisco", raw: "ios/same-address-block-nocmd/running-config.txt", expected: "ios/same-address-block-nocmd/expected.txt"},
+		// 0.2.7: tacctl's community beside one of the device's own with its
+		// own clients, a trap group, trap options and a name
+		{name: "juniper.synthetic-communities", vendor: "juniper", raw: "juniper/synthetic-communities/display-set.txt", expected: synthExpected},
+		// 0.2.7: the synthetic lab after the scope's system block was pasted
+		{name: "juniper.synthetic-system", vendor: "juniper", raw: "juniper/synthetic-system/display-set.txt", expected: "juniper/synthetic-system/expected.txt"},
+		// the same rendering against a device that holds none of it
+		{name: "juniper.synthetic-system-new", vendor: "juniper", raw: "juniper/synthetic-lab/display-set.txt", expected: "juniper/synthetic-system/expected.txt"},
+		// 0.2.7: the reference lab's rendering with a scope's IOS snmp block:
+		// the device after the block was pasted, the device that holds none
+		// of it, and the device that holds the block's objects in other shapes
+		{name: "cisco.synthetic-block", vendor: "cisco", raw: "ios/synthetic-block/running-config.txt", expected: "ios/synthetic-block/expected.txt"},
+		{name: "cisco.synthetic-block-new", vendor: "cisco", raw: "ios/reference-lab/running-config.txt", expected: "ios/synthetic-block/expected.txt"},
+		{name: "cisco.synthetic-block-stray", vendor: "cisco", raw: "ios/synthetic-block/running-config-stray.txt", expected: "ios/synthetic-block/expected.txt"},
+		// 0.2.7: the reference lab's rendering with a scope's IOS system block
+		// and trap source: the device after they were pasted, the device that
+		// holds none of it, and the device that holds the objects in other
+		// shapes
+		{name: "cisco.synthetic-system", vendor: "cisco", raw: "ios/synthetic-system/running-config.txt", expected: "ios/synthetic-system/expected.txt"},
+		{name: "cisco.synthetic-system-new", vendor: "cisco", raw: "ios/reference-lab/running-config.txt", expected: "ios/synthetic-system/expected.txt"},
+		{name: "cisco.synthetic-system-stray", vendor: "cisco", raw: "ios/synthetic-system/running-config-stray.txt", expected: "ios/synthetic-system/expected.txt"},
 	}
 }
 

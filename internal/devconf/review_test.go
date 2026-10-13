@@ -106,12 +106,12 @@ func TestOrderCiscoACL(t *testing.T) {
 
 func TestSecretStemsAreAMultiset(t *testing.T) {
 	exp := secrets(SectionSNMP, []string{"set snmp community managed authorization read-only"}, true)
-	one := resultOf(t, "junos", exp, sec(SectionSNMP, "set snmp community other authorization read-only"), true)
+	one := resultOf(t, "junos", exp, sec(SectionSNMP, "set snmp community managed authorization read-only"), true)
 	if one.State != StateOK {
 		t.Fatalf("one community: %s", one.State)
 	}
 	two := resultOf(t, "junos", exp, sec(SectionSNMP,
-		"set snmp community other authorization read-only", "set snmp community stray authorization read-only"), true)
+		"set snmp community managed authorization read-only", "set snmp community stray authorization read-only"), true)
 	if two.State != StateDiffers || ops(two) != "=+" {
 		t.Errorf("a stray community with the managed one's options: %s %q", two.State, ops(two))
 	}
@@ -120,7 +120,7 @@ func TestSecretStemsAreAMultiset(t *testing.T) {
 	}
 	// the same on IOS
 	cexp := secrets(SectionSNMP, []string{"snmp-server community managed RO ACL"}, true)
-	c2 := resultOf(t, "ios", cexp, sec(SectionSNMP, "snmp-server community a RO ACL", "snmp-server community b RO ACL"), true)
+	c2 := resultOf(t, "ios", cexp, sec(SectionSNMP, "snmp-server community managed RO ACL", "snmp-server community b RO ACL"), true)
 	if c2.State != StateDiffers || ops(c2) != "=+" {
 		t.Errorf("ios: %s %q", c2.State, ops(c2))
 	}
@@ -255,13 +255,14 @@ func TestStraySecretsNeverReachAnOutput(t *testing.T) {
 
 func TestSnmpHostCommunityPlacement(t *testing.T) {
 	for in, want := range map[string]string{
-		"snmp-server host 192.0.2.5 version 2c COMM":                         "snmp-server host 192.0.2.5 version 2c <secret>",
-		"snmp-server host 192.0.2.5 COMM":                                    "snmp-server host 192.0.2.5 <secret>",
-		"snmp-server host 192.0.2.5 traps COMM udp-port 162":                 "snmp-server host 192.0.2.5 traps <secret> udp-port 162",
-		"snmp-server host 192.0.2.5 informs version 3 priv USER cpu":         "snmp-server host 192.0.2.5 informs version 3 priv <secret> cpu",
-		"snmp-server host 192.0.2.5 vrf MGMT version 2c COMM config":         "snmp-server host 192.0.2.5 vrf MGMT version 2c <secret> config",
-		"snmp-server host 192.0.2.5 version 1 COMM":                          "snmp-server host 192.0.2.5 version 1 <secret>",
-		"aaa server radius dynamic-author > client 192.0.2.7 server-key 7 H": "aaa server radius dynamic-author > client 192.0.2.7 server-key",
+		"snmp-server host 192.0.2.5 version 2c COMM":                             "snmp-server host 192.0.2.5 version 2c <secret>",
+		"snmp-server host 192.0.2.5 COMM":                                        "snmp-server host 192.0.2.5 <secret>",
+		"snmp-server host 192.0.2.5 traps COMM udp-port 162":                     "snmp-server host 192.0.2.5 <secret>",
+		"snmp-server host 192.0.2.5 version 2c COMM udp-port 1162 entity config": "snmp-server host 192.0.2.5 version 2c <secret> udp-port 1162 config entity",
+		"snmp-server host 192.0.2.5 informs version 3 priv USER cpu":             "snmp-server host 192.0.2.5 informs version 3 priv <secret> cpu",
+		"snmp-server host 192.0.2.5 vrf MGMT version 2c COMM config":             "snmp-server host 192.0.2.5 vrf MGMT version 2c <secret> config",
+		"snmp-server host 192.0.2.5 version 1 COMM":                              "snmp-server host 192.0.2.5 <secret>",
+		"aaa server radius dynamic-author > client 192.0.2.7 server-key 7 H":     "aaa server radius dynamic-author > client 192.0.2.7 server-key",
 	} {
 		got := ciscoStems(in)
 		if len(got) != 1 || got[0] != want {
@@ -382,11 +383,11 @@ func TestNotVisibleIsOnlyWhatTheDeviceOmits(t *testing.T) {
 func TestStoredSectionsHoldNoSecretValue(t *testing.T) {
 	secretsOf := map[string][]string{
 		"juniper/lab-superuser/display-set.txt":  {"EXAMPLEHASH", "$9$EXAMPLEEXAMPLE", "AAAAC3NzaC1lZDI1NTE5AAAAIEXAMPLEKEY", "example-community"},
-		"juniper/synthetic-lab/display-set.txt":  {"EXAMPLEHASH", "$9$EXAMPLEEXAMPLE", "STRAYSTRAY", "example-community", "other-example"},
-		"ios/reference-lab/running-config.txt":   {"0822455D0A16", "EXAMPLEEXAMPLE", "example-community", "other-example", "example-trap-community"},
+		"juniper/synthetic-lab/display-set.txt":  {"EXAMPLEHASH", "$9$EXAMPLEEXAMPLE", "STRAYSTRAY", "lab-ro-community", "other-example"},
+		"ios/reference-lab/running-config.txt":   {"0822455D0A16", "EXAMPLEEXAMPLE", "lab-ro-community", "other-example", "example-trap-community"},
 		"ios-xe/reference-16/running-config.txt": {"0822455D0A16", "EXAMPLEKEY", "EXAMPLEEXAMPLE"},
-		"ios/reference-12x/running-config.txt":   {"0822455D0A16", "EXAMPLEHASH", "example-community"},
-		"ios/real-12.4-7200/running-config.txt":  {"EXAMPLEKEY", "$1$EXAMPLE$HASHHASHHASHHASHHASHH.", "zz-lab-ro-community"},
+		"ios/reference-12x/running-config.txt":   {"0822455D0A16", "EXAMPLEHASH", "lab-ro-community"},
+		"ios/real-12.4-7200/running-config.txt":  {"EXAMPLEKEY", "$1$EXAMPLE$HASHHASHHASHHASHHASHH.", "lab-ro-community"},
 	}
 	for rel, values := range secretsOf {
 		vendor := "ios"
@@ -576,7 +577,7 @@ func TestInformationalLinesForNotRenderedSections(t *testing.T) {
 	}
 	// a secret there is shown by its stem only
 	s := resultOf(t, "junos", sec(SectionSNMP), sec(SectionSNMP, "set snmp community private authorization read-only"), true)
-	if s.State != StateNA || !hasLine(s, OpInfo, "set snmp community <secret> authorization read-only (present, not compared)") {
+	if s.State != StateNA || !hasLine(s, OpInfo, "set snmp community <other:1> authorization read-only (present, not compared)") {
 		t.Errorf("%s %v", s.State, s.Lines)
 	}
 	// and it is not drift for staleness
@@ -715,7 +716,7 @@ func TestSecretRecognitionIsNarrow(t *testing.T) {
 	if !slices.Equal(got, []string{"set system login class C permissions secret", "set system login class C permissions secret-control"}) {
 		t.Errorf("%q", got)
 	}
-	for _, x := range junosCanon([]string{"set system login class C permissions secret"}, nil) {
+	for _, x := range junosCanon([]string{"set system login class C permissions secret"}, nil, nil) {
 		if x.secret {
 			t.Error("a permission is taken as a secret")
 		}
@@ -723,10 +724,10 @@ func TestSecretRecognitionIsNarrow(t *testing.T) {
 	// text that looks like a hash is text; a hash in an unknown statement
 	// is elided and the statement stays
 	for in, want := range map[string]string{
-		`set system login message "$5$ per unit of $9$ stuff"`: `set system login message "$5$ per unit of $9$ stuff"`,
-		`set system foo bar $9$abcdefgh baz`:                   `set system foo bar <secret> baz`,
-		`set system foo "$6$salt$hashhash" baz`:                `set system foo <secret> baz`,
-		`set system foo "a /* SECRET-DATA */ b"`:               `set system foo "a /* SECRET-DATA */ b"`,
+		`set system location building "$5$ per unit of $9$ stuff"`: `set system location building "$5$ per unit of $9$ stuff"`,
+		`set system foo bar $9$abcdefgh baz`:                       `set system foo bar <secret> baz`,
+		`set system foo "$6$salt$hashhash" baz`:                    `set system foo <secret> baz`,
+		`set system foo "a /* SECRET-DATA */ b"`:                   `set system foo "a /* SECRET-DATA */ b"`,
 	} {
 		if got := junosStems(in); len(got) != 1 || got[0] != want {
 			t.Errorf("%q: %q, want %q", in, got, want)
@@ -804,6 +805,11 @@ func TestManagedGoldensAsADevicePrintsThem(t *testing.T) {
 	}
 	for _, f := range files {
 		base := filepath.Base(f)
+		if strings.HasPrefix(base, "managed.wti") {
+			// a unit prints menu pages, not configuration lines: see
+			// TestWTIManagedRenderingAgainstItsUnit
+			continue
+		}
 		data, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
@@ -894,10 +900,6 @@ func junosAsPrinted(line string, secret bool) []string {
 		if i := slices.Index(f, "secret"); i >= 0 {
 			return []string{strings.Join(f[:i+1], " ") + ` "$9$EXAMPLEEXAMPLE"`}
 		}
-		if len(f) > 3 && f[1] == "snmp" && f[2] == "community" {
-			f[3] = "device-chose-this-name"
-			return []string{strings.Join(f, " ")}
-		}
 	}
 	return []string{line}
 }
@@ -915,10 +917,6 @@ func iosAsPrinted(line string, secret bool) []string {
 		t = "key 7 0822455D0A16"
 	case secret && strings.HasPrefix(t, "tacacs-server host "):
 		t = t[:strings.Index(t, " key ")] + " key 7 0822455D0A16"
-	case secret && strings.HasPrefix(t, "snmp-server community "):
-		f := strings.Fields(t)
-		f[2] = "device-chose-this-name"
-		t = strings.Join(f, " ")
 	case secret && strings.HasPrefix(t, "username "):
 		f := strings.Fields(t)
 		t = strings.Join(f[:5], " ") + " " + f[5] + " $9$EXAMPLEEXAMPLE"

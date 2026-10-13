@@ -436,6 +436,90 @@ PY
     refute_output --partial "tacacs server TACACS"
 }
 
+@test "plan: --restore-point puts a restore block before a Cisco region; the bare flag follows the archive path" {
+    local cdir
+    fakedev_stop
+    cdir=$(fakedev_dir ios)
+    fakedev_start "$cdir"
+    fakedev_register lab-c 192.168.1.30 cisco
+    fakedev_serve "$cdir" cisco lab lab-c
+    # the device loses its server block and has an archive path
+    python3 - "${cdir}/show running-config.out" <<'PY'
+import sys
+p = sys.argv[1]
+out, skip = [], False
+for l in open(p).read().split("\n"):
+    if l.startswith("tacacs server "):
+        skip = True
+        continue
+    if skip and l.startswith(" "):
+        continue
+    skip = False
+    out.append(l)
+text = "\n".join(out).rstrip("\n") + "\narchive\n log config\n path flash:tacctl-\n!\n"
+open(p, "w").write(text)
+PY
+    alice device config pull lab-c
+    assert_success
+    alice device config plan lab-c --restore-point=disk0:
+    assert_success
+    assert_line "!!!!! RESTORE POINT FROM HERE: lab-c !!!!!"
+    assert_line --regexp '^copy running-config disk0:tacctl-lab-c-[0-9]{8}-[0-9]{4}\.cfg$'
+    assert_line "!!!!! RESTORE POINT TO HERE: lab-c !!!!!"
+    assert_line "!!!!! PASTE FROM HERE: lab-c !!!!!"
+    assert_output --partial "not lab-tested"
+    # the restore block comes first, and it is the only command outside the region
+    run python3 -c '
+import sys
+text = sys.stdin.read()
+before = text.split("!!!!! PASTE FROM HERE: lab-c !!!!!\n", 1)[0]
+typed = [l for l in before.splitlines() if l and not l.startswith(("!", "lab-c:"))]
+assert len(typed) == 1 and typed[0].startswith("copy running-config disk0:tacctl-lab-c-"), typed
+assert "RESTORE POINT FROM HERE" in before
+print("fine")' <<< "$output"
+    assert_output "fine"
+    alice device config plan lab-c --backout
+    assert_success
+    assert_output --partial "its restore point is disk0:tacctl-lab-c-"
+    assert_line --regexp '^!   configure replace disk0:tacctl-lab-c-[0-9]{8}-[0-9]{4}\.cfg force$'
+    # the bare flag: the archive path the pull read
+    alice device config plan lab-c --restore-point
+    assert_success
+    assert_line "archive config"
+    refute_output --partial "copy running-config"
+    # refused: with --plain and with --backout
+    alice device config plan lab-c --restore-point --plain
+    assert_failure 2
+    assert_output --partial "--restore-point with --plain"
+    alice device config plan lab-c --restore-point --backout
+    assert_failure 2
+    # a device with no archive path: the bare flag is a usage error
+    python3 - "${cdir}/show running-config.out" <<'PY'
+import sys
+p = sys.argv[1]
+t = open(p).read().replace(" path flash:tacctl-\n", "")
+open(p, "w").write(t)
+PY
+    alice device config pull lab-c
+    assert_success
+    alice device config plan lab-c --restore-point
+    assert_failure 2
+    assert_output --partial "--restore-point with no file system"
+    alice device config plan lab-c --restore-point=flash:
+    assert_success
+    assert_line --regexp '^copy running-config flash:tacctl-lab-c-'
+}
+
+@test "plan: --restore-point is for IOS and IOS-XE devices only" {
+    alice device config pull lab-j
+    assert_success
+    alice device config plan lab-j --restore-point
+    assert_failure 2
+    assert_output --partial "--restore-point is for IOS and IOS-XE devices"
+    assert_output --partial "lab-j (juniper)"
+    refute_output --partial "RESTORE POINT"
+}
+
 @test "plan: the confirm timeout is the N of the confirmed commit" {
     drift
     run "$TACCTL_BIN_SCRIPT" config devices confirm-timeout 12

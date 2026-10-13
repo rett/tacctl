@@ -1,4 +1,4 @@
-        Generated for scope 'lab'. Not verified on a unit. It is the unit's whole IP Tables list, in the
+        Generated for scope 'lab'. Verified on a lab unit (8.10, 2026-10-12). It is the unit's whole IP Tables list, in the
         unit's order, from the scope's management permit list (tacctl scope mgmt-acl lab list; the global
         tacctl config mgmt-acl list when the scope has none), the tacctl server's address and the scope's
         SNMP clients (tacctl scope snmp lab clients list). Add one line per entry under /N, IP Tables,
@@ -8,33 +8,83 @@
              # the unit's own traffic: loopback, and the replies to its own connections
           1. iptables -A INPUT -i lo -j ACCEPT
           2. iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-             # the tacctl server 10.0.0.42/32: ssh and https
+             # the tacctl server 10.0.0.42/32: ssh
           3. iptables -A INPUT -p tcp -s 10.0.0.42/32 --dport 22 -j ACCEPT
-          4. iptables -A INPUT -p tcp -s 10.0.0.42/32 --dport 443 -j ACCEPT
-             # permitted range 192.0.2.0/24: ssh and https
-          5. iptables -A INPUT -p tcp -s 192.0.2.0/24 --dport 22 -j ACCEPT
-          6. iptables -A INPUT -p tcp -s 192.0.2.0/24 --dport 443 -j ACCEPT
+             # permitted range 192.0.2.0/24: every protocol and port
+          4. iptables -A INPUT -s 192.0.2.0/24 -j ACCEPT
              # SNMP (udp 161): the tacctl server, then the scope's SNMP clients
-          7. iptables -A INPUT -p udp -s 10.0.0.42/32 --dport 161 -j ACCEPT
+          5. iptables -A INPUT -p udp -s 10.0.0.42/32 --dport 161 -j ACCEPT
+             # ICMP (ping) from the same networks, on eth0
+          6. iptables -A INPUT -i eth0 -s 10.0.0.42/32 -p icmp -j ACCEPT
+
+        The same rules in one paste, for the IP Tables prompt (/N, item 5): no comments, no DROP. The paste
+        replaces every entry the unit holds, so read its list first ('>' and '<' page through it): what this
+        list lacks is gone afterwards. The unit takes the block in one go ("Configuring iptables - Please
+        wait..."), applies the rules at once and shows 'IP Tables: On' on the /N menu; any session that
+        leaves a top-level menu saves the configuration, this paste included. The block is at the left
+        margin on purpose: paste it as it is.
+
+<iptables>
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -p tcp -s 10.0.0.42/32 --dport 22 -j ACCEPT
+iptables -A INPUT -s 192.0.2.0/24 -j ACCEPT
+iptables -A INPUT -p udp -s 10.0.0.42/32 --dport 161 -j ACCEPT
+iptables -A INPUT -i eth0 -s 10.0.0.42/32 -p icmp -j ACCEPT
+</iptables>
 
         Notes on the list:
           - Line 2: older builds take '-m state --state ESTABLISHED,RELATED' in place of
             '-m conntrack --ctstate ESTABLISHED,RELATED'. It covers the replies of the unit's own TACACS+,
             RADIUS, DNS and NTP queries.
-          - Only ssh (22) and https (443) are permitted. Telnet and http are not: to allow them, add the same
-            line with '--dport 23' or '--dport 80' for each address above, before the DROP.
+          - A permitted range may reach what its entry lists: ssh (tcp/22) and the other services as
+            written, or every protocol and port when the entry is plain. Telnet, http and https are not
+            permitted unless an entry lists them (tacctl scope mgmt-acl lab add <cidr>:tcp/22,tcp/443) or is
+            plain.
+          - Plain entries permit every protocol and port from their source, the unit's telnet and web pages
+            included: 192.0.2.0/24. Use <cidr>:tcp/22 to restrict one to ssh (<cidr>:tcp/22,udp/161 to add
+            SNMP): replace the plain entry in the list that holds it (mgmt-acl remove <cidr>, then add
+            <cidr>:tcp/22).
           - The udp 161 lines are the SNMP client restriction of Step 6, unless the unit has an SNMP
             access menu of its own (then enter the same clients there).
+          - ICMP (ping): the last lines accept it from the same networks, on eth0 only. The unit's own
+            'Ping Access' item (/N, item 30; Limited by default) is separate and not changed by this list.
+          - A network whose entry is plain or lists icmp has no ICMP line of its own in the last lines (its
+            entry covers it).
           - IPv4 only: the unit's 'iptables', not 'ip6tables'. An IPv6 entry of the lists is skipped, with a note.
+          - The unit holds 48 entries (12 to a page): this list has 6; with the DROP, the
+            OUTPUT ACCEPT and the three policies of the last step, 11. A command is 256 characters at most.
 
         This line turns the list into a restriction, and it is the one that can lock you out. The
         walkthrough does not apply it: you paste it, last, yourself, once the steps above work.
           a) Keep the serial session of Step 1 open (and a second session ready). It is the way back.
-          b) Add the DROP as the LAST line of the IP Tables list (after line 7):
-               8. iptables -A INPUT -j DROP
+          b) Add the DROP as the LAST line of the IP Tables list (after line 6):
+               7. iptables -A INPUT -j DROP
+             or paste the whole list again, with the DROP in it, in one go. The block below is the rules of
+             Step 5, then the DROP, the OUTPUT ACCEPT and the three policies, LAST (the order a lab unit
+             took without cutting the pasting session off). The paste replaces every entry, and the unit
+             applies it at once, so the test of c) runs with the DROP already in force.
+
+<iptables>
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -p tcp -s 10.0.0.42/32 --dport 22 -j ACCEPT
+iptables -A INPUT -s 192.0.2.0/24 -j ACCEPT
+iptables -A INPUT -p udp -s 10.0.0.42/32 --dport 161 -j ACCEPT
+iptables -A INPUT -i eth0 -s 10.0.0.42/32 -p icmp -j ACCEPT
+iptables -A INPUT -j DROP
+iptables -A OUTPUT -j ACCEPT
+iptables -P INPUT DROP
+iptables -P OUTPUT DROP
+iptables -P FORWARD DROP
+</iptables>
+
           c) Before saving, test a login from a permitted address (repeat Step 8, and from the tacctl
              server: tacctl scope snmp lab test <unit-address>). A login from an address
              outside the list must now be refused.
-          d) Save only when the test works. If it fails, delete line 8 on the serial session first.
-        Not verified on a unit: whether the unit applies a changed list on entry or on save. If on entry,
-        the test above runs with the DROP already in force; the serial session is the way back.
+          d) Save only when the test works (any session that leaves a top-level menu saves the whole
+             configuration). If it fails, delete line 7 on the serial session first; after the paste of
+             the block, clear the three policies as well (below).
+        The unit has no commit-confirm and no rollback: the way back is clearing the slots (<SPACE><CR> at a
+        slot's prompt; after the paste of the block the DROP is entry 7 and the three policies are
+        entries 9 to 11), or pasting the block of Step 5 again, from the serial session.

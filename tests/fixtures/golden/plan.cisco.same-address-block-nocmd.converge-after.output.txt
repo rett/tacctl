@@ -4,12 +4,12 @@
 ! 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references.
 !
 ! What is irregular on dev-cisco-same-address-block-nocmd (3 items; the paste fixes 0, leaves 3):
-!  1. snmp     MONITORING extra: an SNMP community (snmp-server community <secret> RO TACCTL-SNMP).
+!  1. snmp     MONITORING extra: an SNMP community (snmp-server community <other:1> RO TACCTL-SNMP).
 !                         Left alone (its name is the secret and is not known to tacctl).
 !  2. snmp     MONITORING extra: snmp-server enable traps config. Left alone. To remove it later: no
 !                         snmp-server enable traps config
-!  3. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <secret>. Left alone (its name
-!                         is the secret and is not known to tacctl).
+!  3. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <other:2>. Left alone (its
+!                         name is the secret and is not known to tacctl).
 ! Nothing to paste: everything above is left alone or cannot be fixed by this login.
 ! Consistent: aaa, roles, mgmt-acl. Not planned: netconf, breakglass.
 ! Secrets: 2 present on the device, not changed (--secrets pushes them).

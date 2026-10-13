@@ -550,10 +550,10 @@ snmp_setup() {
     assert_output --partial "Step 11: The final DROP of the IP Tables list"
 }
 
-# iptables_setup: scope lab with two management ranges and the SNMP setup.
+# iptables_setup: scope lab with two management ranges (ssh only) and the SNMP setup.
 iptables_setup() {
     snmp_setup
-    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 192.0.2.0/24,198.51.100.0/25 > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 192.0.2.0/24:tcp/22,198.51.100.0/25:tcp/22 > /dev/null
 }
 
 @test "config wti: Step 5 keeps its caution as the introduction and renders the scope's IP Tables list, the DROP last (golden)" {
@@ -567,11 +567,11 @@ iptables_setup() {
     # The caution is the introduction; the generated list follows it.
     assert_output --partial "        login waits out the Fallback Timer and tacquito logs nothing.
 
-        Generated for scope 'lab'. Not verified on a unit."
+        Generated for scope 'lab'. Verified on a lab unit (8.10, 2026-10-12)."
     assert_output --partial "  1. iptables -A INPUT -i lo -j ACCEPT"
     assert_output --partial "  2. iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
     assert_output --partial "-s 10.0.0.42/32 --dport 22 -j ACCEPT"
-    assert_output --partial "-s 192.0.2.0/24 --dport 443 -j ACCEPT"
+    assert_output --partial "-s 192.0.2.0/24 --dport 22 -j ACCEPT"
     assert_output --partial "-s 198.51.100.0/25 --dport 22 -j ACCEPT"
     assert_output --partial "-p udp -s 10.0.0.42/32 --dport 161 -j ACCEPT"
     assert_output --partial "-p udp -s 198.51.100.0/24 --dport 161 -j ACCEPT"
@@ -581,7 +581,14 @@ iptables_setup() {
     # The only DROP to paste is in Step 11, after every other rule.
     [[ "$(grep -c '^ *[0-9]*\. iptables -A INPUT -j DROP$' <<< "$output")" == 1 ]]
     [[ "$(grep -n '^ *[0-9]*\. iptables -A INPUT -j DROP$' <<< "$output" | cut -d: -f1)" -gt "$(grep -n '^Step 11:' <<< "$output" | cut -d: -f1)" ]]
-    [[ "$(grep -n -- '-j ACCEPT$' <<< "$output" | tail -1 | cut -d: -f1)" -lt "$(grep -n '^Step 6:' <<< "$output" | cut -d: -f1)" ]]
+    # No rule of Step 5 or Step 6 follows the list (the last step's block has its own ACCEPTs).
+    [[ "$(sed '/^Step 11:/,$d' <<< "$output" | grep -n -- '-j ACCEPT$' | tail -1 | cut -d: -f1)" -lt "$(grep -n '^Step 6:' <<< "$output" | cut -d: -f1)" ]]
+    # The bulk blocks: Step 5's has no DROP, Step 11's ends with the policies.
+    assert_line "<iptables>"
+    assert_line "iptables -A INPUT -i eth0 -s 10.0.0.42/32 -p icmp -j ACCEPT"
+    [[ "$(grep -c '^<iptables>$' <<< "$output")" == 2 ]]
+    [[ "$(grep -c '^</iptables>$' <<< "$output")" == 2 ]]
+    [[ "$(grep -B1 '^</iptables>$' <<< "$output" | grep -c '^iptables -P FORWARD DROP$')" == 1 ]]
 }
 
 @test "config wti: a scope with no management permit list gets the guard, a commented DROP" {
@@ -590,7 +597,7 @@ iptables_setup() {
     output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
     assert_output --partial "  1. iptables -A INPUT -i lo -j ACCEPT"
     assert_output --partial "-p tcp -s 10.0.0.42/32 --dport 22 -j ACCEPT"
-    assert_output --partial "# no management permit list for scope 'lab': only the tacctl server is permitted for ssh and https"
+    assert_output --partial "# no management permit list for scope 'lab': only the tacctl server is permitted for ssh"
     assert_line "        # iptables -A INPUT -j DROP"
     assert_output --partial "NOT rendered as a paste: scope 'lab' has no management permit list"
     assert_output --partial "lock out every"
@@ -598,12 +605,12 @@ iptables_setup() {
 }
 
 @test "config wti: the list comes from the scope's permits, else the global ones" {
-    "$TACCTL_BIN_SCRIPT" config mgmt-acl add 203.0.113.0/24 > /dev/null
+    "$TACCTL_BIN_SCRIPT" config mgmt-acl add 203.0.113.0/24:tcp/22 > /dev/null
     run "$TACCTL_BIN_SCRIPT" config wti --scope lab
     assert_success
     assert_output --partial "-p tcp -s 203.0.113.0/24 --dport 22 -j ACCEPT"
     refute_output --partial "NOT rendered as a paste"
-    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 192.0.2.0/24 > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 192.0.2.0/24:tcp/22 > /dev/null
     run "$TACCTL_BIN_SCRIPT" config wti --scope lab
     assert_output --partial "-p tcp -s 192.0.2.0/24 --dport 22 -j ACCEPT"
     refute_output --partial "203.0.113.0/24"
@@ -618,15 +625,77 @@ iptables_setup() {
 }
 
 @test "config wti: an IPv6 permit is skipped with a note, and --source names the server in the rules" {
-    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 192.0.2.0/24,fd00::/64 > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 192.0.2.0/24:tcp/22,fd00::/64 > /dev/null
     run "$TACCTL_BIN_SCRIPT" config wti --scope lab --server 203.0.113.9 --source 198.51.100.77
     assert_success
     assert_output --partial "# skipped, not rendered: fd00::/64 (IPv6; the list is IPv4 only)"
     refute_output --partial "-s fd00"
-    assert_output --partial "-p tcp -s 198.51.100.77/32 --dport 443 -j ACCEPT"
+    assert_output --partial "-p tcp -s 198.51.100.77/32 --dport 22 -j ACCEPT"
     assert_output --partial "-p udp -s 198.51.100.77/32 --dport 161 -j ACCEPT"
     refute_output --partial "-s 203.0.113.9"
     assert_output --partial "Primary Host/Address       : 203.0.113.9"
+}
+
+# A management ACL entry with services (0.2.7): the WTI list renders each
+# service, a plain entry is every protocol and port, and Cisco and Junos list a
+# source only when its entry permits ssh.
+@test "config wti: an entry with services renders one rule per service, a plain entry every protocol and port" {
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 172.16.100.0/23:tcp/22,udp/161,udp/162,10.0.0.0/8 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
+    assert_output --partial "# permitted range 172.16.100.0/23: tcp/22, udp/161, udp/162"
+    assert_line "iptables -A INPUT -p tcp -s 172.16.100.0/23 --dport 22 -j ACCEPT"
+    assert_line "iptables -A INPUT -p udp -s 172.16.100.0/23 --dport 161 -j ACCEPT"
+    assert_line "iptables -A INPUT -p udp -s 172.16.100.0/23 --dport 162 -j ACCEPT"
+    assert_output --partial "# permitted range 10.0.0.0/8: every protocol and port"
+    assert_line "iptables -A INPUT -s 10.0.0.0/8 -j ACCEPT"
+    # a plain entry has no ICMP line of its own; the entry without icmp keeps its automatic one
+    refute_line "iptables -A INPUT -i eth0 -s 10.0.0.0/8 -p icmp -j ACCEPT"
+    assert_line "iptables -A INPUT -i eth0 -s 172.16.100.0/23 -p icmp -j ACCEPT"
+    assert_output --partial "Plain entries permit every protocol and port from their source"
+    assert_output --partial "Use <cidr>:tcp/22 to restrict one to ssh"
+    # Cisco and Junos list both sources: the first has tcp/22, the second no services
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_line "  permit 172.16.100.0 0.0.1.255"
+    assert_line "  permit 10.0.0.0 0.255.255.255"
+}
+
+@test "config wti: a range, tcp/*, icmp and an entry without ssh (lock-out guard) render as written" {
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add "192.0.2.0/24:udp/161-162,tcp/*,icmp" > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_line "iptables -A INPUT -p tcp -s 192.0.2.0/24 -j ACCEPT"
+    assert_line "iptables -A INPUT -p udp -s 192.0.2.0/24 --dport 161:162 -j ACCEPT"
+    assert_line "iptables -A INPUT -i eth0 -s 192.0.2.0/24 -p icmp -j ACCEPT"
+    # once in each place the list stands (Step 5's numbered line and block, Step 11's block), never twice in one
+    [[ "$(grep -c -- '-s 192.0.2.0/24 -p icmp' <<< "$output")" == 3 ]]
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab clear <<< y > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 192.0.2.0/24:udp/161,icmp > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
+    assert_output --partial "no entry of the management permit list for scope 'lab' permits ssh (tcp/22): only the tacctl server is permitted for ssh"
+    assert_output --partial "NOT rendered as a paste: no entry of the management permit list of scope 'lab'"
+    [[ "$(grep -c '^ *[0-9]*\. iptables -A INPUT -j DROP$' <<< "$output")" == 0 ]]
+}
+
+@test "config cisco|juniper: an entry whose services do not include ssh is not listed, with a comment that names it" {
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 10.0.0.0/8:tcp/22,192.0.2.0/24:udp/161,198.51.100.0/24:tcp/20-30,203.0.113.0/24 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_success
+    assert_line "  permit 10.0.0.0 0.255.255.255"
+    assert_line "  permit 198.51.100.0 0.0.0.255"
+    assert_line "  permit 203.0.113.0 0.0.0.255"
+    refute_line "  permit 192.0.2.0 0.0.0.255"
+    assert_output --partial "! entry 192.0.2.0/24:udp/161 permits udp/161 only: not in the VTY access list VTY-ACL"
+    run "$TACCTL_BIN_SCRIPT" config juniper --scope lab
+    assert_success
+    assert_line "set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 10.0.0.0/8"
+    assert_line "set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 198.51.100.0/24"
+    assert_line "set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 203.0.113.0/24"
+    refute_line "set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.0/24"
+    assert_output --partial "# entry 192.0.2.0/24:udp/161 permits udp/161 only: not in the Junos filter MGMT-ACL"
 }
 
 @test "config cisco|juniper|wti: SNMP goldens (v2c, ranges, contact; location unset)" {

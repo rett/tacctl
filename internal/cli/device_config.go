@@ -65,7 +65,8 @@ var deviceConfigSpecs = func() map[string]Spec {
 				{Names: []string{"--converge"}}, {Names: []string{"--secrets"}}, {Names: []string{"--no-secrets"}},
 				{Names: []string{"--plain"}}, {Names: []string{"--backout"}}, flagJSON,
 				{Names: []string{"--out"}, Value: true, Kind: KindFile}, {Names: []string{"--out-dir"}, Value: true, Kind: KindFile},
-				{Names: []string{"--force"}}, {Names: []string{"--from"}, Value: true}, {Names: []string{"--exit-code"}}})},
+				{Names: []string{"--force"}}, {Names: []string{"--from"}, Value: true}, {Names: []string{"--exit-code"}},
+				{Names: []string{"--restore-point"}, Value: true, Optional: true, Kind: "flash:|bootflash:|disk0:|usbflash0:|harddisk:"}})},
 		"list": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--never"}}, {Names: []string{"--failed"}},
 			{Names: []string{"--differs"}}, {Names: []string{"--transport"}, Value: true, Kind: "netconf|ssh|none"},
 			{Names: []string{"--scope"}, Value: true, Kind: KindScopes}, {Names: []string{"--vendor"}, Value: true, Kind: "cisco|juniper|wti"},
@@ -175,10 +176,12 @@ that says so; --legacy is the IOS 12.x syntax whatever that is.
 
 'pull' logs in to the devices as you (your username and your tacctl password,
 asked for once, never stored or logged), reads each one's configuration over
-NETCONF where it answers (Junos) or the ssh command line, and keeps the six
-managed sections (aaa, roles, mgmt-acl, snmp, netconf, breakglass) with the
-state of their comparison with what tacctl renders for that device. A secret
-is compared by presence only and no secret value is kept or printed. A device
+NETCONF where it answers (Junos) or the ssh command line, and keeps the managed
+sections (aaa, roles, mgmt-acl, snmp, netconf, breakglass, and system for a
+scope that has a system block) with the state of their comparison with what
+tacctl renders for that device. A secret is compared by presence only and no
+secret value is kept or printed (a login message is kept as its size and a
+digest, never as text). A device
 needs a pinned host key ('tacctl device hostkey <name> accept'); its scope
 must be one of yours. At most device.config.max_concurrency devices are read
 at once (--concurrency lowers it, never raises it). Ctrl-C stops starting new
@@ -191,6 +194,11 @@ image, such as 11.x, 15.0, 15.1, an ASA or IOS XR, is unknown and is not guessed
 the pull is refused and nothing is recorded), and the device is compared in that
 syntax unless 'device config-syntax' says otherwise; a setting that the image
 contradicts wins and is shown.
+A WTI console server is read as its menus show it, over ssh: its command menu
+must be version 8.10 and its pages (never a prompt, never a save) give aaa,
+mgmt-acl, snmp and breakglass. A login whose WTI level cannot configure the
+unit is 'denied' and a menu of another version 'unsupported'; both are failed
+pulls, and the line of a unit says how many other sessions it has.
 
 'diff' compares the last pull with what tacctl renders now, section by
 section: '-' is a statement tacctl renders that the device lacks, '+' one the
@@ -229,9 +237,29 @@ the user who ran sudo, into a directory that user may write without a
 supplementary group (--out-dir adds COVER.txt and each plan's back-out). A secret the device lacks is typed in its line, and a
 secret it has is neither printed nor changed unless --secrets; --no-secrets
 leaves each as a marked line to fill in. --from <address> is where you are
-logged in from: the cleanup never removes it. Exit status: 0 the outputs were
+logged in from: the cleanup never removes it. --restore-point (a Cisco IOS or
+IOS-XE device only; not with --plain or --backout) puts a block of its own
+before the region, between 'RESTORE POINT FROM HERE' and 'RESTORE POINT TO
+HERE': one 'copy running-config <fs>tacctl-<device>-<time>.cfg' on the file
+system named (--restore-point=disk0:) or, bare, 'archive config' where the last
+pull read an 'archive' with a 'path' (a bare flag with none is refused). It is
+a file, not a timer: the back-out names 'configure replace <file> force' as
+its alternative to the 'no' lines. Not lab-tested. Exit status: 0 the outputs were
 made, 1 a device cannot be planned, 2 wrong arguments (or, with --exit-code,
 a device needs a change), 130 interrupted.
+A WTI console server has nothing to paste: its plan is a numbered checklist of
+menu steps for you to type (the keys to the item, its label, what to enter and
+the value the pull showed), in an order that cannot take away the way in before
+the step that needs it, and one <iptables> block for the IP tables list, which
+is the only line of the output that is not a comment, replaces every entry and
+is presented, never applied. The unit has no commit-confirm: the plan names the
+sessions to keep open, the check to make after the save (ESC out of /N) and, in
+--backout, the steps with the old values and the old list. A secret step names
+the command that shows the value (--secrets types it); a list that would not
+fit, that does not permit the tacctl server or that --from is not in is left
+out and the rest is planned. --plain, and --section roles or system, are
+refused for a unit; --converge offers the read/write community and the other
+protocol's switch only.
 
 'list' shows each device's state: ok (every managed section agrees), differs,
 never (not pulled), failed (the last pull failed) or pull (a Cisco device whose

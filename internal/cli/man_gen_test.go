@@ -22,6 +22,7 @@ package cli
 import (
 	"flag"
 	"fmt"
+	"github.com/rett/tacctl/internal/blocks"
 	"maps"
 	"os"
 	"path/filepath"
@@ -170,7 +171,11 @@ func manCommandBlocks(t *testing.T) []manBlock {
 					names = append(names, `\fB`+roff(n)+`\fR`)
 				}
 				tag := strings.Join(names, ", ")
-				if f.Value && value != "" {
+				switch {
+				case f.Value && value != "" && f.Optional:
+					// '--name[=<value>]': the value may be left out
+					tag += `[=\fI` + roff(value) + `\fR]`
+				case f.Value && value != "":
 					tag += ` \fI` + roff(value) + `\fR`
 				}
 				desc = capitalizeDesc(desc)
@@ -225,8 +230,12 @@ var manFlagOverrides = map[string]string{
 	"device config plan --source":    "The address this server reaches the devices from (not stored).",
 	"device config plan --exit-code": "Exit 2 when a device needs a change (and none could not be planned).",
 	"device config plan --pull":      "Read the devices first (takes the pull options); the plan is made from that pull.",
-	"device config plan --section":   "Only these sections: aaa, roles, mgmt-acl, snmp (the report still names the others).",
+	"device config plan --section":   "Only these sections: aaa, roles, mgmt-acl, snmp, system (the report still names the others).",
 	"device config plan --json":      "One object per device: the findings, the region, the cleanup and the back-out; values elided.",
+	"device list --name":             "Only names that contain the text (a comma list: any of them).",
+	"device list --ip":               "Only addresses equal to, inside, or containing it (an address, a CIDR or a text; a comma list).",
+	"device list --vendor":           "Only that vendor: cisco, juniper, wti, other or linux (a comma list).",
+	"device list --scope":            "Only the devices that scope answers (a comma list).",
 	"device add --hostname":          "The device's DNS name.",
 	"device add --description":       "A description of the device.",
 	"device ssh -X":                  "Forward X11 to this server's display (untrusted, as ssh -X).",
@@ -352,7 +361,7 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"linux.engineer_sudo":                  {setWith("config linux engineer-sudo"), "The commands tac-engineer may run through sudo on enrolled hosts other than this server; unset: every command."},
 	"mgmt_acl.names.cisco":                 {setWith("config mgmt-acl cisco-name"), "Name of the ACL config cisco emits."},
 	"mgmt_acl.names.juniper":               {setWith("config mgmt-acl juniper-name"), "Name of the filter config juniper emits."},
-	"mgmt_acl.permits":                     {setWith("config mgmt-acl add", "config mgmt-acl remove"), "The CIDRs the management ACL and filter permit."},
+	"mgmt_acl.permits":                     {setWith("config mgmt-acl add", "config mgmt-acl remove"), "The entries the management ACL and filter permit: a CIDR, or a CIDR with its services (10.0.0.0/8:tcp/22,udp/161,icmp)."},
 	"backends.enabled":                     {setWith("backend enable", "backend disable"), "The backends that serve the model, in render and restart order."},
 	"backends.tacacs.level":                {setWith("config loglevel"), "Log level of tacquito."},
 	"backends.tacacs.metrics_address":      {setWith("config metrics address"), "Where tacquito's Prometheus exporter listens."},
@@ -375,7 +384,7 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"scope_auth_method.<scope>":            {setWith("scope auth-method"), "The protocol the scope's device configurations, new hosts and Linux scripts use when a command names none; unset: not decided (the scope's protocols filter, then the global default)."},
 	"scope_mgmt_acl.names.cisco.<scope>":   {setWith("scope mgmt-acl"), "The scope's own ACL name, in place of mgmt_acl.names.cisco."},
 	"scope_mgmt_acl.names.juniper.<scope>": {setWith("scope mgmt-acl"), "The scope's own filter name, in place of mgmt_acl.names.juniper."},
-	"scope_mgmt_acl.permits.<scope>":       {setWith("scope mgmt-acl"), "The scope's own permitted CIDRs, in place of mgmt_acl.permits."},
+	"scope_mgmt_acl.permits.<scope>":       {setWith("scope mgmt-acl"), "The scope's own permitted entries (a CIDR, or a CIDR with its services), in place of mgmt_acl.permits."},
 	"listeners.<backend>.<name>":           {setWith("config listen"), "Where a backend's daemon listens; the built-in listeners can be changed and reset, not removed."},
 	"junos.<group>.deny_commands":          {setWith("group junos"), "POSIX extended regular expressions of the commands the Junos class of the group may not run."},
 	"junos.<group>.deny_configuration":     {setWith("group junos"), "POSIX extended regular expressions of the configuration statements the Junos class may not touch."},
@@ -386,6 +395,8 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"breakglass_hold.<device>.since":       {setWith("breakglass hold"), "When the hold was made (RFC 3339)."},
 	"breakglass_hold.<device>.by":          {setWith("breakglass hold"), "The user who held it."},
 	"breakglass_hold.<device>.reason":      {setWith("breakglass hold"), "Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the hold by tacctl breakglass release."},
+	"blocks.<scope>.<vendor>":              {setWith("scope block"), "The configuration blocks in force for the scope and vendor (juniper or cisco), a list of snmp and system; a file under the blocks directory that this list does not name is ignored."},
+	"blocks_device.<device>.<vendor>":      {setWith("device block"), "The configuration blocks in force for one device and vendor (juniper or cisco), a list of snmp and system; the device's lower case name is written with every '.' as '~' (js1~lab~example~net), and a file under the blocks directory that this list does not name is ignored."},
 	"snmp_scope.<scope>.version":           {setWith("scope snmp"), "The scope's SNMP version; unset: snmp.version."},
 	"snmp_scope.<scope>.port":              {setWith("scope snmp"), "The scope's agent port; unset: snmp.port."},
 	"snmp_scope.<scope>.timeout":           {setWith("scope snmp"), "The scope's timeout in seconds; unset: snmp.timeout."},
@@ -431,7 +442,7 @@ func manTypeText(r conf.Rule) string {
 	case conf.TypeInterfaceName:
 		return "interface name in the long form IOS prints (" + strings.Join(conf.InterfaceTypes, ", ") + ", then the number, with / . : separators), such as Loopback0 or GigabitEthernet0/0; not an abbreviation such as lo0"
 	case conf.TypeCIDRList:
-		return "list of CIDRs"
+		return "list of CIDRs, each with optional services after a colon (tcp/22, tcp/161-162, udp/*, icmp, comma separated)"
 	case conf.TypeHostPort:
 		return "host:port"
 	case conf.TypeListener:
@@ -458,6 +469,8 @@ func manTypeText(r conf.Rule) string {
 		return "list of IPv4 CIDRs"
 	case conf.TypeSNMPText:
 		return "text of 1 to " + strconv.Itoa(conf.MaxSNMPText) + " characters"
+	case conf.TypeBlockList:
+		return "non-empty list of block names (" + strings.Join(blocks.KnownBlocks, ", ") + ")"
 	}
 	return "unknown type " + r.Type
 }
@@ -547,6 +560,10 @@ func manConfigKeyRows(t *testing.T) []manKeyRow {
 			}
 		case f.Prefix == "breakglass_scope.":
 			add(f.Prefix+"<scope>."+conf.BreakGlassUsersKey, f.Rule, def)
+		case f.Prefix == conf.BlocksPrefix:
+			add(f.Prefix+"<scope>.<vendor>", f.Rule, def)
+		case f.Prefix == conf.BlocksDevicePrefix:
+			add(f.Prefix+"<device>.<vendor>", f.Rule, def)
 		case f.Prefix == "listeners.":
 			var parts []string
 			for _, b := range conf.ListenerBackends {

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/rett/tacctl/internal/app"
@@ -52,13 +53,37 @@ var keepEnv = map[string][]string{
 	"host": {"SSH_AUTH_SOCK"},
 }
 
+// editorVarNames are the variables the lines that open an editor carry
+// across sudo (editorLine): the caller's VISUAL and EDITOR.
+var editorVarNames = []string{"VISUAL", "EDITOR"}
+
+// editorLine reports whether args is one of the four command lines that open
+// the caller's editor: 'scope block <scope> juniper edit|adopt ...' and
+// 'device block <name> edit|adopt ...' (the lines tier.EditorKeep keeps the
+// editor's variables for). Only those lines carry them: a sudoers rule that
+// does not keep a variable for a line refuses it on the command line.
+func editorLine(args []string) bool {
+	switch {
+	case len(args) >= 5 && args[0] == "scope" && args[1] == "block":
+		return args[4] == "edit" || args[4] == "adopt"
+	case len(args) >= 4 && args[0] == "device" && args[1] == "block":
+		return args[3] == "edit" || args[3] == "adopt"
+	}
+	return false
+}
+
 // sudoArgv is the argv of the re-exec: 'sudo <exe> <args>', with
 // 'NAME=<value>' before <exe> for each keepEnv variable of the first word
-// that is set and not empty in env.
+// that is set and not empty in env, and the editor's variables on the lines
+// that open one.
 func sudoArgv(exe string, args []string, env func(string) string) []string {
 	argv := []string{"sudo"}
 	if len(args) > 0 {
-		for _, name := range keepEnv[args[0]] {
+		names := keepEnv[args[0]]
+		if editorLine(args) {
+			names = append(slices.Clone(names), editorVarNames...)
+		}
+		for _, name := range names {
 			if v := env(name); v != "" {
 				argv = append(argv, name+"="+v)
 			}

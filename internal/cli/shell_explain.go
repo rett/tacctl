@@ -116,6 +116,12 @@ func flagHelp(block string, rows []usageRow, f Flag) (value, desc string) {
 						return m
 					}
 				}
+				// '--name[=<value>]': a value that may be left out
+				if before && end+1 < len(text) && text[end] == '[' && text[end+1] == '=' {
+					if m := reFlagValue.FindString(text[end+2:]); m != "" {
+						return m
+					}
+				}
 				j := strings.Index(text[end:], n)
 				if j < 0 {
 					break
@@ -137,7 +143,7 @@ func flagHelp(block string, rows []usageRow, f Flag) (value, desc string) {
 		left = strings.TrimSpace(left)
 		names := false
 		for _, part := range strings.Split(left, ", ") {
-			if first, _, _ := strings.Cut(part, " "); slices.Contains(f.Names, first) {
+			if first, _, _ := strings.Cut(part, " "); slices.Contains(f.Names, flagWord(first)) {
 				names = true
 			}
 		}
@@ -167,6 +173,15 @@ func flagHelp(block string, rows []usageRow, f Flag) (value, desc string) {
 		}
 	}
 	return value, desc
+}
+
+// flagWord is the flag itself of a usage word: '--name[=<value>]' is
+// '--name'.
+func flagWord(s string) string {
+	if i := strings.IndexAny(s, "[="); i > 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // flagLabel is a flag as the lists show it: its spellings and its value.
@@ -211,7 +226,7 @@ func positionals(spec Spec, rest []string) int {
 		case strings.HasPrefix(w, "-") && len(w) > 1:
 			name, _, hasValue := strings.Cut(w, "=")
 			for _, f := range spec.Flags {
-				if f.Value && !hasValue && slices.Contains(f.Names, name) {
+				if f.Value && !f.Optional && !hasValue && slices.Contains(f.Names, name) {
 					i++
 				}
 			}
@@ -274,7 +289,7 @@ func (inv *invocation) shellExplain(root *cobra.Command) func([]string) (string,
 				name, _, _ := strings.Cut(w, "=")
 				return slices.Contains(f.Names, name)
 			})
-			if typed || (f.Only != "" && !slices.Contains(rest, f.Only)) {
+			if typed || !f.offeredAfter(rest) {
 				continue
 			}
 			value, desc := flagHelp(block, rows, f)
@@ -397,6 +412,7 @@ func specKind(spec Spec, rest []string) string {
 		case flag == nil:
 			words = append(words, a)
 			pos++
+		case flag.Optional && !hasVal:
 		case flag.Value && !hasVal && i+1 < len(rest):
 			i++
 		case flag.Value && !hasVal:

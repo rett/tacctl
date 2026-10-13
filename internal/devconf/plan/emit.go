@@ -46,6 +46,9 @@ type Header struct {
 	// StaleDays is the 'stale-days' setting: a pull older than that is a
 	// warning (0: no check).
 	StaleDays int
+	// Unit is what the pull of a WTI unit saw beside its sections (nil: the
+	// record does not say, and for any other vendor).
+	Unit *UnitInfo
 }
 
 // Wrapper is the procedure around the statements.
@@ -98,6 +101,9 @@ func RegionLines(d Delta, h Header, w Wrapper) []RegionLine {
 	if d.Vendor == devconf.FamilyIOS {
 		return iosRegion(d)
 	}
+	if d.Vendor == devconf.FamilyWTI {
+		return wtiRegionLines(d, h)
+	}
 	return junosRegion(d, h, w)
 }
 
@@ -107,6 +113,13 @@ func Region(d Delta, h Header, w Wrapper) string {
 		return ""
 	}
 	var b strings.Builder
+	if d.Vendor == devconf.FamilyWTI {
+		// a unit's banners are its own: the steps and the IP tables block
+		for _, l := range RegionLines(d, h, w) {
+			b.WriteString(l.Text + "\n")
+		}
+		return b.String()
+	}
 	bc := bannerChar(d.Vendor)
 	b.WriteString(bc + " PASTE FROM HERE: " + h.Device + " " + bc + "\n")
 	for _, l := range RegionLines(d, h, w) {
@@ -122,6 +135,9 @@ func Region(d Delta, h Header, w Wrapper) string {
 // 'configure terminal' on IOS (an indented submode header stays: it is part
 // of the statements under it). A --no-secrets plan has no plain form.
 func Plain(d Delta, h Header, w Wrapper) (string, error) {
+	if d.Vendor == devconf.FamilyWTI {
+		return "", ErrWTIPlain
+	}
 	if d.Counts.Placeholders > 0 {
 		return "", ErrNoSecretsPlain
 	}
@@ -139,6 +155,9 @@ func Plain(d Delta, h Header, w Wrapper) (string, error) {
 func Block(d Delta, h Header, w Wrapper) string {
 	var b strings.Builder
 	b.WriteString(Report(d, h, w))
+	// the restore point (--restore-point, IOS): its own banner pair, before
+	// the region and outside it
+	b.WriteString(RestoreRegion(d, h))
 	if !d.Empty() {
 		b.WriteString(Region(d, h, w))
 		b.WriteString(After(d, h, w))
@@ -201,7 +220,10 @@ func ByHand(d Delta, h Header) string {
 func lockoutHelp(d Delta, h Header) string {
 	c := commentLeader(d.Vendor)
 	way := "then log in as the device's local account (console: local login, then 'enable' with the local secret),"
-	if d.Vendor != devconf.FamilyIOS {
+	switch d.Vendor {
+	case devconf.FamilyWTI:
+		way = "then log in on the unit's serial console as its local Administrator account,"
+	case devconf.FamilyJunos:
 		way = "then log in as the device's local user (ssh or console),"
 	}
 	return c + " Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold " + h.Device + " --reason \"...\"\n" +
@@ -215,8 +237,11 @@ func After(d Delta, h Header, w Wrapper) string {
 	if d.Empty() {
 		return ""
 	}
-	if d.Vendor == devconf.FamilyIOS {
+	switch d.Vendor {
+	case devconf.FamilyIOS:
 		return iosAfter(d, h, w)
+	case devconf.FamilyWTI:
+		return wtiAfter(d, h)
 	}
 	return junosAfter(d, h, w)
 }
@@ -239,6 +264,9 @@ func backoutLines(d Delta) []Line {
 // HasBackout reports whether the plan has a back-out region: at least one
 // line tacctl can type (a value it does not hold is a comment, not a line).
 func HasBackout(d Delta) bool {
+	if d.Vendor == devconf.FamilyWTI {
+		return !d.Empty() && wtiHasBackout(d)
+	}
 	return slices.ContainsFunc(backoutLines(d), func(l Line) bool { return l.Op != OpComment })
 }
 
@@ -248,6 +276,9 @@ func HasBackout(d Delta) bool {
 // the wrapper. The whole-paste invariant holds for them as for the
 // region's.
 func BackoutLines(d Delta, h Header, w Wrapper) []RegionLine {
+	if d.Vendor == devconf.FamilyWTI {
+		return wtiBackoutLines(d, h)
+	}
 	if d.Vendor == devconf.FamilyIOS {
 		return iosBackoutRegion(d)
 	}
@@ -305,6 +336,9 @@ func (d Delta) kept() Delta {
 func Backout(d Delta, h Header, w Wrapper) (string, error) {
 	if d.Empty() || !HasBackout(d) {
 		return "", ErrNoBackout
+	}
+	if d.Vendor == devconf.FamilyWTI {
+		return wtiBackout(d, h)
 	}
 	var b strings.Builder
 	c := commentLeader(d.Vendor)
@@ -365,8 +399,11 @@ func CheckRegion(vendor string, lines []string) error {
 			}
 		}
 	}
-	if vendor == devconf.FamilyIOS {
+	switch vendor {
+	case devconf.FamilyIOS:
 		return checkIOSRegion(lines)
+	case devconf.FamilyWTI:
+		return checkWTIRegion(lines)
 	}
 	return checkJunosRegion(lines)
 }
@@ -439,6 +476,9 @@ var iosTopStatements = []string{
 	"aaa group server tacacs+ ", "aaa group server radius ", "ip tacacs source-interface ", "ip radius source-interface ",
 	"tacacs server ", "radius server ", "tacacs-server host ", "radius-server host ",
 	"privilege exec ", "snmp-server community ", "snmp-server location ", "snmp-server contact ",
+	"snmp-server host ", "snmp-server enable traps ", "snmp-server trap-source ",
+	"banner login ", "ip domain name ", "ip domain list ", "clock timezone ", "ip name-server ", "ntp server ",
+	"ntp authentication-key ", "ntp trusted-key ", "ntp authenticate",
 	"ip access-list standard ", "ip access-list extended ", "ipv6 access-list ", "line vty ", "line con ",
 }
 
@@ -467,8 +507,22 @@ func checkIOSRegion(lines []string) error {
 		return fmt.Errorf("the region starts %q and ends %q", lines[0], lines[n-1])
 	}
 	inBlock := false
+	// banner is the closing delimiter of the login banner being read, "" when
+	// none: every line up to it is the banner's text (any printable text, a
+	// leading '!' no comment, a blank line allowed), and no section label or
+	// comment may stand between the two.
+	banner := ""
 	for i := 1; i < n-1; i++ {
 		l := lines[i]
+		if banner != "" {
+			if strings.ContainsAny(l, "\r\t") {
+				return fmt.Errorf("line %d, inside the login banner, holds a control character", i+1)
+			}
+			if l == banner {
+				banner = ""
+			}
+			continue
+		}
 		t := strings.TrimSpace(l)
 		switch {
 		case t == "":
@@ -486,11 +540,21 @@ func checkIOSRegion(lines []string) error {
 				return fmt.Errorf("line %d, %q, is not a statement of an owned shape", i+1, t)
 			}
 			inBlock = !no && hasAnyPrefix(body, iosHeaderStatements)
+			if f := strings.Fields(body); !no && len(f) >= 2 && f[0] == "banner" && f[1] == "login" {
+				// 'banner login <d>': one delimiter character, nothing after it
+				if len(f) != 3 || len(f[2]) != 1 || l != "banner login "+f[2] {
+					return fmt.Errorf("line %d, %q, is not 'banner login' and one delimiter character", i+1, t)
+				}
+				banner = f[2]
+			}
 			continue
 		}
 		if f := strings.Fields(body); !inBlock || len(f) == 0 || !slices.Contains(iosLeafWords, f[0]) {
 			return fmt.Errorf("line %d, %q, is not a leaf of an owned shape", i+1, t)
 		}
+	}
+	if banner != "" {
+		return fmt.Errorf("the login banner is not closed by its delimiter %q before 'end'", banner)
 	}
 	return nil
 }
@@ -640,6 +704,17 @@ type jsonExtra struct {
 	Guard  string   `json:"guard,omitempty"`
 }
 
+// jsonRestorePoint is the restore block: the form it takes ('copy' or
+// 'archive'), the file ('copy' only: the 'archive' form's file is named by the
+// device), the one command, the file system and the not-lab-tested note.
+type jsonRestorePoint struct {
+	Mode       string `json:"mode"`
+	File       string `json:"file,omitempty"`
+	Command    string `json:"command"`
+	FileSystem string `json:"file_system"`
+	Note       string `json:"note"`
+}
+
 type jsonDelta struct {
 	Name            string      `json:"name"`
 	Address         string      `json:"address,omitempty"`
@@ -661,6 +736,9 @@ type jsonDelta struct {
 	ConfirmTimeout  int         `json:"confirm_timeout,omitempty"`
 	HoldsSecret     bool        `json:"holds_secret"`
 	CommandAuthLast bool        `json:"command_authorization_last,omitempty"`
+	// RestorePoint is the restore block of an IOS plan made with
+	// --restore-point (nil otherwise, and when the plan has nothing to paste).
+	RestorePoint *jsonRestorePoint `json:"restore_point,omitempty"`
 	// Converge, Cleanup and the two after it are present with --converge
 	// only (D99): the cleanup region's lines, why it is refused as a whole,
 	// and the extras it leaves.
@@ -694,16 +772,22 @@ func JSON(d Delta, h Header, w Wrapper) ([]byte, error) {
 		BasedOn: jsonBasedOn{Pulled: h.Pulled, By: h.PulledBy, Transport: h.Transport,
 			AgeS: int64(h.Now.Sub(h.Pulled).Seconds()), SecretsVisible: h.SecretsVisible},
 		Status: statusOf(d), Left: leftOf(d), Irregularities: []jsonItem{}, Region: []string{}, After: []string{}, Backout: []string{},
-		Extras: []jsonExtra{}, Skipped: nonNilSkip(d.Skipped), Withheld: nonNil(d.Withheld), Warnings: nonNil(d.Warnings), ByHand: d.ByHand,
+		Extras: []jsonExtra{}, Skipped: nonNilSkip(d.Skipped), Withheld: nonNil(d.Withheld), Warnings: headlineWarnings(d), ByHand: d.ByHand,
 		HoldsSecret: d.HoldsSecret()}
 	if out.Status == StatusCannotPlan {
 		out.Reason = d.Refusal()
 	}
 	lineNo := map[int]int{}
 	if !d.Empty() {
-		for n, rl := range RegionLines(d, h, w) {
+		rd := d
+		if d.Vendor == devconf.FamilyWTI {
+			// a value never reaches the JSON: the steps are made from the
+			// elided copy
+			rd = d.shown()
+		}
+		for n, rl := range RegionLines(rd, h, w) {
 			text := rl.Text
-			if rl.Line >= 0 && d.Lines[rl.Line].Secret {
+			if rl.Line >= 0 && d.Vendor != devconf.FamilyWTI && d.Lines[rl.Line].Secret {
 				// a value never reaches the JSON, whatever the region holds
 				text = regionLineShown(d, rl)
 				lineNo[rl.Line] = n + 1
@@ -721,6 +805,10 @@ func JSON(d Delta, h Header, w Wrapper) ([]byte, error) {
 				out.Backout = append(out.Backout, rl.Text)
 			}
 		}
+	}
+	if d.restoreShown() {
+		out.RestorePoint = &jsonRestorePoint{Mode: d.Restore.Mode(), File: d.Restore.File(h), Command: d.Restore.Command(h),
+			FileSystem: d.Restore.FileSystem(), Note: restoreNote}
 	}
 	for _, it := range d.Items {
 		ji := jsonItem{N: it.N, Kind: it.Kind, Severity: it.Severity, Section: it.Section, Words: it.Words,
@@ -779,6 +867,15 @@ func (d Delta) shown() Delta {
 			l.Text, l.HasValue = l.Elided, false
 		}
 		c.Backout[i] = l
+	}
+	if d.WTI != nil {
+		w := *d.WTI
+		w.Steps = make([]WTIStep, len(d.WTI.Steps))
+		for i, st := range d.WTI.Steps {
+			st.Enter = st.EnterShown
+			w.Steps[i] = st
+		}
+		c.WTI = &w
 	}
 	return c
 }

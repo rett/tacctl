@@ -26,8 +26,8 @@ func TestFlagDeletesTakeTheEntry(t *testing.T) {
 	wantLine(t, d, "mgmt-acl", "delete firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.66/32")
 	noLine(t, d, "mgmt-acl", "except")
 
-	d = planJ(t, f, add("set snmp community example-community clients 10.0.0.0/8 restrict"), Options{})
-	wantLine(t, d, "snmp", "delete snmp community <secret> clients 10.0.0.0/8")
+	d = planJ(t, f, add("set snmp community lab-ro-community clients 10.0.0.0/8 restrict"), Options{})
+	wantLine(t, d, "snmp", "delete snmp community <secret:1> clients 10.0.0.0/8")
 	var real string
 	for _, l := range d.Lines {
 		if l.HasValue && strings.HasPrefix(l.Text, "delete snmp community ") {

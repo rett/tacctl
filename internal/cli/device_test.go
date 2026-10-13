@@ -127,6 +127,35 @@ func TestDeviceAddListShow(t *testing.T) {
 	if strings.Contains(out, "core-sw1") || !strings.Contains(out, "lab-rtr2") || !strings.Contains(out, "(1) and") {
 		t.Errorf("--unconfigured:\n%s", out)
 	}
+	// Sorted by name, and narrowed by vendor, scope, address, name or a word.
+	if out = sb.dev("", "list"); strings.Index(out, "core-sw1") > strings.Index(out, "lab-rtr2") {
+		t.Errorf("not sorted by name:\n%s", out)
+	}
+	for _, c := range []struct {
+		args     []string
+		has, not string
+	}{
+		{[]string{"--vendor", "juniper"}, "lab-rtr2", "core-sw1"},
+		{[]string{"--vendor", "cisco,wti"}, "core-sw1", "lab-rtr2"},
+		{[]string{"--scope", "prod"}, "core-sw1", "lab-rtr2"},
+		{[]string{"--ip", "10.99.0.0/24"}, "core-sw1", "lab-rtr2"},
+		{[]string{"--ip", "100.64."}, "lab-rtr2", "core-sw1"},
+		{[]string{"--ip", "10.99.0.1"}, "core-sw1", "lab-rtr2"},
+		{[]string{"--name", "SW1"}, "core-sw1", "lab-rtr2"},
+		{[]string{"rtr2"}, "lab-rtr2", "core-sw1"},
+		{[]string{"cisco", "--scope", "prod"}, "core-sw1", "lab-rtr2"},
+	} {
+		out = sb.dev("", append([]string{"list"}, c.args...)...)
+		if sb.code != 0 || !strings.Contains(out, c.has) || strings.Contains(out, c.not) || !strings.Contains(out, ", of 2") {
+			t.Errorf("list %v: %d\n%s", c.args, sb.code, out)
+		}
+	}
+	if out = sb.dev("", "list", "--vendor", "juniper", "--scope", "prod"); !strings.Contains(out, "None match.") {
+		t.Errorf("no match:\n%s", out)
+	}
+	if out = sb.dev("", "list", "--json", "--vendor", "juniper"); !strings.Contains(out, "lab-rtr2") || strings.Contains(out, "core-sw1") {
+		t.Errorf("--json narrowed:\n%s", out)
+	}
 	if out = sb.dev("", "list", "--stale"); strings.Contains(out, "core-sw1") || !strings.Contains(out, "None.") {
 		t.Errorf("--stale (no seen data):\n%s", out)
 	}

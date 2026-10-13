@@ -1,0 +1,75 @@
+# vendor: cisco
+# what: the statements devices.Managed renders for the device
+# golden: none (the reference lab's rendering with a scope's IOS system block and a trap source)
+# source: synthetic
+# captured: 2026-10-12
+# block: snmp-server trap-source Loopback0; banner login (two lines, one starting with a bang), ip domain name, ip domain list, clock timezone CET 1, two name servers, key 5 with its trusted-key, two ntp servers, ntp authenticate
+# ---
+[aaa]
+| aaa new-model
+| tacacs server TACACS
+|   address ipv4 192.0.2.10
+*   key lab-secret-0123456789abcdef
+|   single-connection
+|   timeout 5
+| aaa group server tacacs+ LAB-TACACS
+|   server name TACACS
+| aaa authentication login default local group LAB-TACACS
+| aaa authentication login CONSOLE local
+| aaa authorization exec default local group LAB-TACACS if-authenticated
+| aaa accounting exec default start-stop group LAB-TACACS
+| aaa accounting commands 1 default start-stop group LAB-TACACS
+| aaa accounting commands 5 default start-stop group LAB-TACACS
+| aaa accounting commands 7 default start-stop group LAB-TACACS
+| aaa accounting commands 15 default start-stop group LAB-TACACS
+| aaa session-id common
+| line con 0
+|   login authentication CONSOLE
+| line vty 0 15
+|   login authentication default
+| aaa authorization commands 1 default local group LAB-TACACS
+| aaa authorization commands 7 default local group LAB-TACACS
+| aaa authorization commands 15 default local group LAB-TACACS
+| aaa authorization config-commands
+[roles]
+| privilege exec level 1 show running-config
+| privilege exec level 7 undebug all
+[mgmt-acl]
+| ip access-list standard VTY-ACL
+|   remark Managed by tacctl - edit with 'tacctl config mgmt-acl'
+|   permit 192.0.2.10 0.0.0.0
+|   permit 198.51.100.0 0.0.0.255
+|   permit 192.0.2.0 0.0.0.255
+|   deny   any log
+| line vty 0 15
+|   access-class VTY-ACL in
+[snmp]
+| ip access-list standard TACCTL-SNMP
+|   permit host 192.0.2.10
+|   permit 198.51.100.0 0.0.0.255
+|   remark everything else (0.0.0.0/0) is refused
+|   deny   any
+* snmp-server community lab-ro-community RO TACCTL-SNMP
+| snmp-server location Rack 4, DC1
+| snmp-server contact NOC <noc@example.net>
++ snmp-server trap-source Loopback0
+[system]
++ banner login ^
++ Authorized use only.
++ ! Activity is logged.
++ ^
++ ip domain name lab.example.net
++ ip domain list lab.example.net
++ clock timezone CET 1
++ ip name-server 192.0.2.53
++ ip name-server 192.0.2.54
+& ntp authentication-key 5 md5 lab-ntp-key-0123
++ ntp trusted-key 5
++ ntp server 192.0.2.123 version 4 key 5 prefer
++ ntp server ntp2.example.net
++ ntp authenticate
+[netconf] not rendered
+[breakglass]
+* username lab-admin privilege 15 secret 9 <TYPE9-HASH>
+* username lab-ops privilege 7 secret 9 <TYPE9-HASH>
+* username lab-ro privilege 1 secret 9 <TYPE9-HASH>

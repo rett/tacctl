@@ -7,14 +7,15 @@ import (
 
 // GroupSudoers is the drop-in 'config sudoers install <group>' writes:
 // passwordless tacctl for the members of group, with the environment the
-// tiers drop-in keeps (EnvKeep, and the password cache's variable for the
-// four command lines that use it). Upgrade writes it again from the
+// tiers drop-in keeps (EnvKeep, the password cache's variable for the
+// command lines that use it and the editor's variables for the two that open
+// one). Upgrade writes it again from the
 // group's name (GroupOfSudoers), so a release that changes it reaches a
 // host that installed it.
 func GroupSudoers(group string) string {
 	return "# Managed by tacctl. Grants passwordless sudo on " + Binary + "\n" +
 		"# to members of group '" + group + "'. Remove with: tacctl config sudoers remove\n" +
-		AskpassKeep(AskpassGroupAlias) + EnvKeep +
+		AskpassKeep(AskpassGroupAlias) + EditorKeep(EditorGroupAlias) + EnvKeep +
 		"%" + group + " ALL=(ALL) NOPASSWD: " + Binary + "\n"
 }
 
@@ -36,9 +37,10 @@ func GroupOfSudoers(text string) (string, bool) {
 }
 
 // groupSudoersEarlier are the texts earlier releases wrote for group: the
-// 0.1.x and 0.2.0 drop-in (the rule alone) and the 0.2.1 to 0.2.3 one (with
+// 0.1.x and 0.2.0 drop-in (the rule alone), the 0.2.1 to 0.2.3 one (with
 // the env_keep line for the agent socket, the console's marker and the
-// display). Only a file that is exactly one of these (or the current text)
+// display) and the 0.2.4 to 0.2.6 one (with the password cache's alias
+// too). Only a file that is exactly one of these (or the current text)
 // is a file tacctl wrote and nobody has touched.
 func groupSudoersEarlier(group string) []string {
 	head := "# Managed by tacctl. Grants passwordless sudo on " + Binary + "\n" +
@@ -47,8 +49,28 @@ func groupSudoersEarlier(group string) []string {
 	return []string{
 		head + rule,
 		head + EnvKeep + rule,
+		GroupSudoers026(group),
 	}
 }
+
+// GroupSudoers026 is the drop-in 'config sudoers install <group>' wrote in
+// 0.2.4 to 0.2.6: 0.2.3's, with the password cache's alias (before 'block
+// adopt' joined its lines). 'tacctl rollback' puts 0.2.3's text back over it.
+func GroupSudoers026(group string) string {
+	return "# Managed by tacctl. Grants passwordless sudo on " + Binary + "\n" +
+		"# to members of group '" + group + "'. Remove with: tacctl config sudoers remove\n" +
+		groupAskpass026 + EnvKeep +
+		"%" + group + " ALL=(ALL) NOPASSWD: " + Binary + "\n"
+}
+
+// groupAskpass026 is the password cache's alias and its 'Defaults!' line as
+// the drop-ins of 0.2.4 to 0.2.6 carry them (the four 'device config' and
+// 'ssh' lines, before 'block adopt' joined them in 0.2.7). Frozen: it is the
+// text those releases wrote, not AskpassKeep, which moves on.
+const groupAskpass026 = "Cmnd_Alias " + AskpassGroupAlias + " = " +
+	Binary + " device config pull *, " + Binary + " device config diff *, " + Binary + " device config plan *, \\\n" +
+	"    " + Binary + " ssh *, " + Binary + " device ssh *\n" +
+	"Defaults!" + AskpassGroupAlias + " env_keep += \"" + AskpassVar + "\"\n"
 
 // GroupFile says what a sudoers file is to the upgrade's refresh.
 type GroupFile int

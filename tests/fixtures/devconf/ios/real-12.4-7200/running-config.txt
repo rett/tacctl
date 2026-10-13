@@ -93,7 +93,7 @@ ip access-list standard VTY-ACL
  deny   any log
 logging history size 500
 logging alarm informational
-snmp-server community zz-lab-ro-community RO TACCTL-SNMP
+snmp-server community lab-ro-community RO TACCTL-SNMP
 snmp-server queue-length 100
 snmp-server location Rack 4, DC1
 snmp-server contact NOC <noc@example.net>

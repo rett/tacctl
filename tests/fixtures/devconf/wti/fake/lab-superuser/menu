@@ -1,0 +1,8 @@
+# A unit at command menu version 8.10 and an Administrator login (the
+# superuser group, priv-lvl 15): the IP tables list is filled (the capture
+# 30-iptables-uploaded-page*.txt) and one other session is open.
+screens ../..
+version 8.10
+level administrator
+sessions 1
+iptables filled

@@ -1,4 +1,4 @@
-        Generated for scope 'lab'. Not verified on a unit. It is the unit's whole IP Tables list, in the
+        Generated for scope 'lab'. Verified on a lab unit (8.10, 2026-10-12). It is the unit's whole IP Tables list, in the
         unit's order, from the scope's management permit list (tacctl scope mgmt-acl lab list; the global
         tacctl config mgmt-acl list when the scope has none), the tacctl server's address and the scope's
         SNMP clients (tacctl scope snmp lab clients list). Add one line per entry under /N, IP Tables,
@@ -8,18 +8,34 @@
              # the unit's own traffic: loopback, and the replies to its own connections
           1. iptables -A INPUT -i lo -j ACCEPT
           2. iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-             # the tacctl server's address is not known: add its ssh, https and udp 161 lines by hand (or pass --source <address>)
+             # the tacctl server's address is not known: add its ssh and udp 161 lines by hand (or pass --source <address>)
              # no management permit list for scope 'lab'
+
+        The same rules in one paste, for the IP Tables prompt (/N, item 5): no comments, no DROP. The paste
+        replaces every entry the unit holds, so read its list first ('>' and '<' page through it): what this
+        list lacks is gone afterwards. The unit takes the block in one go ("Configuring iptables - Please
+        wait..."), applies the rules at once and shows 'IP Tables: On' on the /N menu; any session that
+        leaves a top-level menu saves the configuration, this paste included. The block is at the left
+        margin on purpose: paste it as it is.
+
+<iptables>
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+</iptables>
 
         Notes on the list:
           - Line 2: older builds take '-m state --state ESTABLISHED,RELATED' in place of
             '-m conntrack --ctstate ESTABLISHED,RELATED'. It covers the replies of the unit's own TACACS+,
             RADIUS, DNS and NTP queries.
-          - Only ssh (22) and https (443) are permitted. Telnet and http are not: to allow them, add the same
-            line with '--dport 23' or '--dport 80' for each address above, before the DROP.
+          - Only ssh (22) is permitted. Telnet, http and https are not: to allow one, add the same line with
+            '--dport 23', '--dport 80' or '--dport 443' for each address above, before the DROP.
           - The udp 161 lines are the SNMP client restriction of Step 6, unless the unit has an SNMP
             access menu of its own (then enter the same clients there).
+          - ICMP (ping): the last lines accept it from the same networks, on eth0 only. The unit's own
+            'Ping Access' item (/N, item 30; Limited by default) is separate and not changed by this list.
           - IPv4 only: the unit's 'iptables', not 'ip6tables'. An IPv6 entry of the lists is skipped, with a note.
+          - The unit holds 48 entries (12 to a page): this list has 2; with the DROP, the
+            OUTPUT ACCEPT and the three policies of the last step, 7. A command is 256 characters at most.
 
         # iptables -A INPUT -j DROP
         NOT rendered as a paste: scope 'lab' has no management permit list (tacctl scope mgmt-acl lab list,
