@@ -3,7 +3,7 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.7 (unreleased)
+## 0.2.7 (2026-10-12)
 
 1. **The break-glass section compares login names without regard to case, and says so.**
    A scope's break-glass user `NetEngineer` and a device whose account is
