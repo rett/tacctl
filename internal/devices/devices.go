@@ -105,6 +105,10 @@ type Data struct {
 	// ServerIP is ServerIP's answer (a RADIUS listener bound to one
 	// address replaces it).
 	ServerIP string
+	// Release is the device's recorded OS release ('25.4R1-S2.3'), "" when
+	// unknown: the version gates (gates.go) render the older form of a
+	// statement for a release that lacks it.
+	Release string
 	// ACL is the management ACL (Cisco and Juniper).
 	ACL MgmtACL
 	// Radius is Prepare's result; required when Protocol is radius.

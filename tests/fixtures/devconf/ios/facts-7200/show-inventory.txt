@@ -1,0 +1,17 @@
+NAME: "Chassis", DESCR: "Cisco 7206VXR, 6-slot chassis"
+PID: CISCO7206VXR      , VID:    , SN: FXYZ0000004 
+
+NAME: "NPE400 0", DESCR: "Cisco 7200VXR Network Processing Engine NPE-400"
+PID: NPE-400           , VID:    , SN: FXYZ0000005   
+
+NAME: "module 0", DESCR: "I/O FastEthernet (TX-ISL)"
+PID: C7200-IO-FE-MII/RJ, VID:    , SN: FXYZ0000006 
+
+NAME: "disk0", DESCR: "Cisco 7200 I/O PCMCIA Flash Disk"
+PID: Unknown Flash Card, VID:    , SN:            
+
+NAME: "Power Supply 1", DESCR: "Cisco 7200 AC Power Supply"
+PID: PWR-7200-AC       , VID:    , SN:            
+
+NAME: "Power Supply 2", DESCR: "Cisco 7200 AC Power Supply"
+PID: PWR-7200-AC       , VID:    , SN:            

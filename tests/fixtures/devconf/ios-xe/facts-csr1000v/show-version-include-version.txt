@@ -1,0 +1,5 @@
+Cisco IOS XE Software, Version 16.07.01
+Cisco IOS Software [Fuji], Virtual XE Software (X86_64_LINUX_IOSD-UNIVERSALK9-M), Version 16.7.1, RELEASE SOFTWARE (fc6)
+licensed under the GNU General Public License ("GPL") Version 2.0.  The
+software code licensed under GPL Version 2.0 is free software that comes
+GPL code under the terms of GPL Version 2.0.  For more details, see the

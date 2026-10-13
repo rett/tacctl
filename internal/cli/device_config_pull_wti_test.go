@@ -130,6 +130,11 @@ func TestPullWTIUnitThenListShowDiff(t *testing.T) {
 	if u := rec.Unit; u == nil || u.OtherSessions != 1 || !u.UsersRead || u.SiteID == "" {
 		t.Errorf("unit facts %+v", rec.Unit)
 	}
+	// A WTI unit's fact is its release, the command menu's version; the menu
+	// prints no model and no serial number.
+	if rec.Release != "8.10" || rec.Model != "" || rec.Serial != "" {
+		t.Errorf("facts %q %q %q", rec.Release, rec.Model, rec.Serial)
+	}
 	// The sections of a unit: the four it has, no n/a noise for the others.
 	var names []string
 	for n := range rec.Sections {
@@ -542,7 +547,7 @@ func TestPullWTIFailedKeepsTheLastGoodPull(t *testing.T) {
 		t.Fatalf("exit %d\n%s", b.sb.code, out)
 	}
 	rec, _ := b.records().Of("pdu1")
-	if rec == nil || rec.Result != "denied" || !rec.Pulled.Equal(good.Pulled) || len(rec.Sections) != len(good.Sections) || rec.OS != "8.10" {
+	if rec == nil || rec.Result != "denied" || !rec.Pulled.Equal(good.Pulled) || len(rec.Sections) != len(good.Sections) || rec.OS != "8.10" || rec.Release != "8.10" {
 		t.Errorf("record after the denied pull %+v (good %+v)", rec, good)
 	}
 	diff := b.run("device", "config", "diff", "pdu1")

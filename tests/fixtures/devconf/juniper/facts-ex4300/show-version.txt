@@ -1,0 +1,20 @@
+localre:
+--------------------------------------------------------------------------
+Hostname: switch1
+Model: ex4300-48mp
+Family: junos
+Junos: 25.4R1-S2.3
+JUNOS OS Kernel 64-bit  [20260303.8fd1d6b_builder_bsd15_254]
+JUNOS OS vmguest [20260303.8fd1d6b_builder_bsd15_254]
+JUNOS OS libs compat32 [20260303.8fd1d6b_builder_bsd15_254]
+JUNOS OS libs [20260303.8fd1d6b_builder_bsd15_254]
+JUNOS modules [20260416.135510_builder_junos_254_r1_s2]
+JUNOS qfx modules [20260416.135510_builder_junos_254_r1_s2]
+Junos scheduler tracing [20260416.135510_builder_junos_254_r1_s2]
+Junos host: 25.4R1-S2.3
+JUNOS Host kernel-release [3.14.52-rt50-WR7.0.0.9_ovp]
+JUNOS Host kernel-version [#1 SMP Thu Nov 6 03:36:52 PST 2025]
+JUNOS Host ex-4300mp platform package [25.4R1-S2.3]
+JUNOS Host ex-4300mp control-plane package [25.4R1-S2.3]
+JUNOS Host ex-4300mp data-plane package [25.4R1-S2.3]
+JUNOS Host ex-4300mp base package [25.4R1-S2.3]

@@ -694,6 +694,12 @@ type deviceJSON struct {
 	// Config is the state of the configuration pull: ok, differs, never or
 	// failed (none for a host and for a vendor that is not read).
 	Config string `json:"config,omitempty"`
+	// Release, Model and Serial are what the last good pull read from the
+	// device about itself (read-only facts of the pull, shown to whoever is
+	// shown Config; each is absent when the pull did not read it).
+	Release string `json:"release,omitempty"`
+	Model   string `json:"model,omitempty"`
+	Serial  string `json:"serial,omitempty"`
 	// SNMP is what the device is read with and where each value comes from
 	// (D72); 'show' only, never a secret.
 	SNMP *deviceSNMPJSON `json:"snmp,omitempty"`
@@ -774,6 +780,9 @@ func deviceJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry, recs *d
 		}
 		if st := inv.configStateOf(e, rec); st != "-" {
 			j.Config = st
+		}
+		if rec != nil && e.Source == devreg.SourceDevice {
+			j.Release, j.Model, j.Serial = cleanLine(rec.Release), cleanLine(rec.Model), cleanLine(rec.Serial)
 		}
 	}
 	return j
@@ -1044,6 +1053,15 @@ func (inv *invocation) deviceShow(args []string) error {
 	if e.Source == devreg.SourceDevice && slices.Contains(sortedVendors(), e.Vendor) && inv.configVisible() {
 		rec, _ := inv.configRecords().Of(e.Name)
 		row("Configuration", configBlock(e, rec))
+		// What the device reported of itself at that pull (facts.go); a row
+		// the pull did not read is not shown.
+		if rec != nil {
+			for _, f := range [][2]string{{"Release", rec.Release}, {"Model", rec.Model}, {"Serial", rec.Serial}} {
+				if v := cleanLine(f[1]); v != "" {
+					row(f[0], v)
+				}
+			}
+		}
 	}
 	ns := res.NoticesFor(e)
 	acked := len(ns) - len(devreg.Open(ns))

@@ -122,6 +122,9 @@ type pullOutcome struct {
 	// read), in words.
 	Unit    *devconf.WTIReadInfo
 	Warning string
+	// Facts are the release, model and serial number the pull read (the
+	// record keeps them; any may be empty).
+	Facts devconf.Facts
 	// Reason is the failure in words; Hint what to do about it.
 	Reason, Hint string
 	// Offered is the host key a device presented that is not pinned
@@ -423,6 +426,10 @@ type deviceRead struct {
 	// Unit is what the walk of a WTI unit learned beside the document (nil
 	// for the other vendors); Version is then its command menu's.
 	Unit *devconf.WTIReadInfo
+	// Facts are what the device reported about itself in the same session
+	// (release, model, serial number; any may be empty). A fact the device
+	// did not give is no failure of the read.
+	Facts devconf.Facts
 }
 
 // errNetconfNotRead is --transport netconf for a vendor that has no NETCONF
@@ -452,6 +459,9 @@ func netconfRefusal(vendor string) error {
 type netconfRunner struct{ s devssh.NetconfSession }
 
 func (r netconfRunner) Run(ctx context.Context, cmd string) (string, error) {
+	// NETCONF never pages: the pipe that keeps the command line from it is
+	// not part of the command a device is asked.
+	cmd = strings.TrimSuffix(cmd, " | no-more")
 	reply, err := r.s.RPC(ctx, devssh.CommandRPC(cmd))
 	if err != nil {
 		return "", err
@@ -460,6 +470,18 @@ func (r netconfRunner) Run(ctx context.Context, cmd string) (string, error) {
 	// reply starts with (encoding="us-ascii"), which devconf.UnwrapNetconf
 	// (a decoder without a charset reader) does not.
 	return devssh.ReplyText(reply)
+}
+
+// factsTimeout bounds the fact commands of a pull (all of them together): a
+// device that stalls on one costs the pull this much more, never the rest of
+// its timeout, and the pull is recorded with the facts it has.
+var factsTimeout = 15 * time.Second
+
+// readFacts is devconf.ReadFacts within factsTimeout.
+func readFacts(ctx context.Context, r devconf.Runner, vendor string, f devconf.Facts) devconf.Facts {
+	fctx, cancel := context.WithTimeout(ctx, factsTimeout)
+	defer cancel()
+	return devconf.ReadFacts(fctx, r, vendor, f)
 }
 
 // readDeviceConfig reads a device's configuration through the logged-in
@@ -475,7 +497,7 @@ func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string
 	if fam, _ := devconf.Family(vendor); fam == devconf.FamilyWTI {
 		return readWTI(ctx, c, mode, second)
 	}
-	read, err := devconf.ReaderWithVersion(vendor)
+	read, err := devconf.ReaderWithFacts(vendor)
 	if err != nil {
 		return out, err
 	}
@@ -488,16 +510,18 @@ func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string
 		ns, nerr := c.NETCONF()
 		if nerr == nil {
 			out.Netconf = netconfHelloOK
-			raw, plain, rerr := func() (string, string, error) {
+			raw, plain, facts, rerr := func() (string, string, devconf.Facts, error) {
 				defer func() { _ = ns.Close() }()
-				text, _, err := read(ctx, netconfRunner{ns})
+				text, _, facts, err := read(ctx, netconfRunner{ns})
 				if err != nil {
-					return "", "", err
+					return "", "", facts, err
 				}
-				return text, devconf.ReadPlain(ctx, netconfRunner{ns}, vendor), nil
+				plain := devconf.ReadPlain(ctx, netconfRunner{ns}, vendor)
+				// last: what the pull needs is read first
+				return text, plain, readFacts(ctx, netconfRunner{ns}, vendor, facts), nil
 			}()
 			if rerr == nil {
-				out.Raw, out.Plain, out.Transport = raw, plain, transportNetconf
+				out.Raw, out.Plain, out.Facts, out.Transport = raw, plain, facts, transportNetconf
 				return out, nil
 			}
 			if mode == transportNetconf || ctx.Err() != nil {
@@ -525,12 +549,13 @@ func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string
 		return out, err
 	}
 	defer func() { _ = s.Close() }()
-	raw, version, err := read(ctx, s)
+	raw, version, facts, err := read(ctx, s)
 	if err != nil {
 		return out, err
 	}
 	out.Raw, out.Version, out.Transport = raw, version, transportSSH
 	out.Plain = devconf.ReadPlain(ctx, s, vendor)
+	out.Facts = readFacts(ctx, s, vendor, facts)
 	return out, nil
 }
 
@@ -586,6 +611,9 @@ func readWTI(ctx context.Context, c *devssh.Client, mode string, second func(con
 		return out, err
 	}
 	out.Raw, out.Version, out.Transport, out.Unit = raw, info.Version, transportSSH, &info
+	// The command menu's version is the unit's release; the menu prints no
+	// model and no serial number, so there is nothing more to read.
+	out.Facts = devconf.CleanFacts(devconf.Facts{Release: info.Version})
 	return out, nil
 }
 
@@ -756,7 +784,7 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 	if err != nil {
 		return r.failed(ctx, e, o, err)
 	}
-	o.Transport = rd.Transport
+	o.Transport, o.Facts = rd.Transport, rd.Facts
 	if rd.Unit != nil {
 		o.OS, o.Unit = rd.Version, rd.Unit
 		if !rd.Unit.UsersRead {
@@ -926,6 +954,9 @@ func (r *pullRun) recordSuccess(o *pullOutcome, e devreg.Entry, ext devconf.Extr
 	if e.Vendor == "cisco" {
 		rec.ArchiveFS = ext.ArchiveFS
 	}
+	// What the device reported about itself: replaced on every good pull, so
+	// a fact this pull did not read is not the last one's.
+	rec.Release, rec.Model, rec.Serial = o.Facts.Release, o.Facts.Model, o.Facts.Serial
 	rec.SecretsVisible = ext.SecretsVisible
 	if err := rec.SetSections(ext, results); err != nil {
 		return err
