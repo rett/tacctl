@@ -41,7 +41,7 @@ setup() {
     mkdir -p "${T}/bin" "${T}/cmd/tacctl" "$(dirname "$B")"
     cp "$SHIM" "${T}/bin/tacctl.sh"
     chmod 755 "${T}/bin/tacctl.sh"
-    printf 'module github.com/rett/tacctl\n\ngo 1.26.0\n' > "${T}/go.mod"
+    printf 'module github.com/rett/tacctl\n\ngo 1.27.0\n' > "${T}/go.mod"
     # git: the tree is at HEAD_COMMIT, reached by a switch from 'develop'.
     stub_cmd git '
 case "$*" in
@@ -125,7 +125,7 @@ refute_called() {
 
 @test "shim: a binary built from another commit is rebuilt, installed and run" {
     binary "$OLD_COMMIT" OLD
-    go_toolchain "$GOROOT_DIR" 1.26.2
+    go_toolchain "$GOROOT_DIR" 1.27.2
     run_shim status
     assert_success
     assert_line "NEW status"
@@ -140,7 +140,7 @@ refute_called() {
 }
 
 @test "shim: the 0.1.16 symlink (or no command at all) is replaced by the binary" {
-    go_toolchain "$GOROOT_DIR" 1.26.2
+    go_toolchain "$GOROOT_DIR" 1.27.2
     ln -s "${T}/bin/tacctl.sh" "$B"
     run_shim upgrade
     assert_success
@@ -151,70 +151,70 @@ refute_called() {
     assert_line "NEW version"
 }
 
-@test "shim: without Go, Go 1.26.2 is downloaded, checked and installed, then the binary built" {
+@test "shim: without Go, Go 1.27.2 is downloaded, checked and installed, then the binary built" {
     binary "$OLD_COMMIT" OLD
-    go_tarball 1.26.2
+    go_tarball 1.27.2
     run_shim user list
     assert_success
-    assert_output --partial "Installing Go 1.26.2..."
+    assert_output --partial "Installing Go 1.27.2..."
     assert_output --partial "Go tarball checksum verified."
-    assert_output --partial "Go 1.26.2 installed."
+    assert_output --partial "Go 1.27.2 installed."
     assert_line "NEW user list"
-    stub_called '^wget -q --no-hsts -O .*/go1\.26\.2\.linux-amd64\.tar\.gz https://dl\.google\.com/go/go1\.26\.2\.linux-amd64\.tar\.gz$'
-    stub_called '^wget -q --no-hsts -O- https://dl\.google\.com/go/go1\.26\.2\.linux-amd64\.tar\.gz\.sha256$'
+    stub_called '^wget -q --no-hsts -O .*/go1\.27\.2\.linux-amd64\.tar\.gz https://dl\.google\.com/go/go1\.27\.2\.linux-amd64\.tar\.gz$'
+    stub_called '^wget -q --no-hsts -O- https://dl\.google\.com/go/go1\.27\.2\.linux-amd64\.tar\.gz\.sha256$'
     [[ -x "${GOROOT_DIR}/bin/go" ]]
     # The download went to a private directory that is gone.
     [[ -z "$(ls -A "$TMPDIR")" ]]
 }
 
 @test "shim: an older Go is upgraded; a newer one is used as it is, never replaced" {
-    go_toolchain "$GOROOT_DIR" 1.25.4
-    go_tarball 1.26.2
+    go_toolchain "$GOROOT_DIR" 1.26.2
+    go_tarball 1.27.2
     run_shim status
     assert_success
-    assert_output --partial "Go 1.25.4 found, upgrading to 1.26.2..."
+    assert_output --partial "Go 1.26.2 found, upgrading to 1.27.2..."
     assert_line "NEW status"
     run "${GOROOT_DIR}/bin/go" version
-    assert_output "go version go1.26.2 linux/amd64"
+    assert_output "go version go1.27.2 linux/amd64"
 
     rm -rf "$GOROOT_DIR" "$B"
     : > "$CALLS_LOG"
-    go_toolchain "$GOROOT_DIR" 1.27.1
+    go_toolchain "$GOROOT_DIR" 1.28.0
     run_shim status
     assert_success
     assert_line "NEW status"
     refute_called '^wget '
     run "${GOROOT_DIR}/bin/go" version
-    assert_output "go version go1.27.1 linux/amd64"
+    assert_output "go version go1.28.0 linux/amd64"
 }
 
 @test "shim: a Go tarball whose checksum does not match is not installed; Decision 20's way back" {
     binary "$OLD_COMMIT" OLD
-    go_toolchain "$GOROOT_DIR" 1.25.4
-    go_tarball 1.26.2 0000000000000000000000000000000000000000000000000000000000000000
+    go_toolchain "$GOROOT_DIR" 1.26.2
+    go_tarball 1.27.2 0000000000000000000000000000000000000000000000000000000000000000
     run_shim status
     assert_failure 1
     assert_output --partial "Go tarball checksum mismatch!"
     assert_output --partial "tacctl could not be built (see above). The installed command is unchanged."
     # The older Go is still there, the installed command untouched.
     run "${GOROOT_DIR}/bin/go" version
-    assert_output "go version go1.25.4 linux/amd64"
+    assert_output "go version go1.26.2 linux/amd64"
     run "$B" status
     assert_output "OLD status"
     [[ -z "$(ls -A "$TMPDIR")" ]]
 }
 
 # refused_unverified: Go was not installed for want of a checksum; the Go
-# in place (1.25.4) and the installed command are as they were, the
+# in place (1.26.2) and the installed command are as they were, the
 # download is gone, and Decision 20's way back follows.
 refused_unverified() {
     assert_failure 1
-    [[ "$stderr" == *$'\e[0;31m[ERROR]\e[0m Go 1.26.2 was not installed: it could not be verified (no checksum at https://dl.google.com/go/go1.26.2.linux-amd64.tar.gz.sha256).'* ]] \
+    [[ "$stderr" == *$'\e[0;31m[ERROR]\e[0m Go 1.27.2 was not installed: it could not be verified (no checksum at https://dl.google.com/go/go1.27.2.linux-amd64.tar.gz.sha256).'* ]] \
         || { echo "$stderr"; return 1; }
     [[ "$stderr" == *"tacctl could not be built (see above). The installed command is unchanged."* ]]
-    [[ "$stderr" != *"checksum verified"* && "$stderr" != *"Go 1.26.2 installed."* ]]
+    [[ "$stderr" != *"checksum verified"* && "$stderr" != *"Go 1.27.2 installed."* ]]
     run "${GOROOT_DIR}/bin/go" version
-    assert_output "go version go1.25.4 linux/amd64"
+    assert_output "go version go1.26.2 linux/amd64"
     run "$B" status
     assert_output "OLD status"
     [[ -z "$(ls -A "$TMPDIR")" ]]
@@ -222,19 +222,19 @@ refused_unverified() {
 
 @test "shim: no checksum to be had: Go is not installed (refused unverified), exit 1" {
     binary "$OLD_COMMIT" OLD
-    go_toolchain "$GOROOT_DIR" 1.25.4
-    go_tarball 1.26.2 none
+    go_toolchain "$GOROOT_DIR" 1.26.2
+    go_tarball 1.27.2 none
     run --separate-stderr "${T}/bin/tacctl.sh" status
     refused_unverified
 }
 
 @test "shim: a web page (or anything but 64 lowercase hex digits) where the checksum should be is no checksum: refused" {
     binary "$OLD_COMMIT" OLD
-    go_toolchain "$GOROOT_DIR" 1.25.4
-    go_tarball 1.26.2
+    go_toolchain "$GOROOT_DIR" 1.26.2
+    go_tarball 1.27.2
     local real answer
     real=$(sha256sum "${BATS_TEST_TMPDIR}/go.tgz" | cut -d' ' -f1)
-    for answer in '<!DOCTYPE html>' "${real^^}" "${real}  go1.26.2.linux-amd64.tar.gz" "${real:1}" ''; do
+    for answer in '<!DOCTYPE html>' "${real^^}" "${real}  go1.27.2.linux-amd64.tar.gz" "${real:1}" ''; do
         printf '%s\n' "$answer" > "${BATS_TEST_TMPDIR}/sha-answer"
         stub_cmd wget '
 case "$*" in
@@ -248,7 +248,7 @@ esac'
 
 @test "shim: a checksum with blanks or a CRLF around it is trimmed and verified" {
     binary "$OLD_COMMIT" OLD
-    go_tarball 1.26.2
+    go_tarball 1.27.2
     local real
     real=$(sha256sum "${BATS_TEST_TMPDIR}/go.tgz" | cut -d' ' -f1)
     printf '  %s \r\n\n' "$real" > "${BATS_TEST_TMPDIR}/sha-answer"
@@ -265,13 +265,13 @@ esac'
 
 @test "shim: offline with no Go: it fails loudly on every run and leaves the installed command as it was" {
     ln -s "${T}/bin/tacctl.sh" "$B"
-    go_tarball 1.26.2 offline
+    go_tarball 1.27.2 offline
     local i
     for i in 1 2; do
         run --separate-stderr "${T}/bin/tacctl.sh" status
         assert_failure 1
         assert_output ""
-        [[ "$stderr" == *"Could not download https://dl.google.com/go/go1.26.2.linux-amd64.tar.gz."* ]]
+        [[ "$stderr" == *"Could not download https://dl.google.com/go/go1.27.2.linux-amd64.tar.gz."* ]]
         [[ "$stderr" == *"[ERROR]"*" sudo git -C ${T} checkout 0.1.18 && sudo tacctl config branch develop"* ]]
         [[ -L "$B" && "$(readlink "$B")" == "${T}/bin/tacctl.sh" ]]
     done
@@ -280,7 +280,7 @@ esac'
 
 @test "shim: a build that fails prints Decision 20's text exactly and exits 1; the installed command is unchanged" {
     binary "$OLD_COMMIT" OLD
-    go_toolchain "$GOROOT_DIR" 1.26.2 "updates to go.mod needed"
+    go_toolchain "$GOROOT_DIR" 1.27.2 "updates to go.mod needed"
     run --separate-stderr "${T}/bin/tacctl.sh" status
     assert_failure 1
     local want
@@ -296,7 +296,7 @@ esac'
 }
 
 @test "shim: with no previous branch the way back names master" {
-    go_toolchain "$GOROOT_DIR" 1.26.2 "boom"
+    go_toolchain "$GOROOT_DIR" 1.27.2 "boom"
     stub_cmd git '
 case "$*" in
   *"rev-parse --abbrev-ref @{-1}"*) echo "fatal: no previous branch" >&2; exit 128 ;;
@@ -326,7 +326,7 @@ esac'
 }
 
 @test "shim: --build builds only (no root, nothing installed), with the recipe's usage" {
-    go_toolchain "$GOROOT_DIR" 1.26.2
+    go_toolchain "$GOROOT_DIR" 1.27.2
     run_shim --build
     assert_failure 1
     assert_output "Usage: tacctl.sh --build <out> [--tags <tags>] [--goarch <arch>]"
@@ -445,7 +445,7 @@ not_used() {
     commit=$(TACCTL_SKIP_SUDO=1 "$DIST" version --long | sed -n 's/^commit:[[:space:]]*//p')
     [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
     release_tree "$REL_TAG" "$commit"
-    go_toolchain "$GOROOT_DIR" 1.26.2
+    go_toolchain "$GOROOT_DIR" 1.27.2
     binary "$OLD_COMMIT" OLD
     release_assets amd64 "$DIST"
     release_wget
@@ -471,7 +471,7 @@ not_used() {
 
 @test "shim: a release whose SHA256SUMS is signed by another key is not used; built from source" {
     release_tree
-    go_toolchain "$GOROOT_DIR" 1.26.2
+    go_toolchain "$GOROOT_DIR" 1.27.2
     fake_release_binary "${BATS_TEST_TMPDIR}/rel" "$HEAD_COMMIT"
     ssh-keygen -q -t ed25519 -N '' -C other -f "${BATS_TEST_TMPDIR}/other-key"
     release_assets amd64 "${BATS_TEST_TMPDIR}/rel" "${BATS_TEST_TMPDIR}/other-key"
@@ -482,7 +482,7 @@ not_used() {
 
 @test "shim: a release binary that does not match SHA256SUMS is not used; built from source" {
     release_tree
-    go_toolchain "$GOROOT_DIR" 1.26.2
+    go_toolchain "$GOROOT_DIR" 1.27.2
     fake_release_binary "${BATS_TEST_TMPDIR}/rel" "$HEAD_COMMIT"
     release_assets amd64 "${BATS_TEST_TMPDIR}/rel"
     # Replaced after signing: the signature still verifies, the sum does not.
@@ -495,7 +495,7 @@ not_used() {
 
 @test "shim: a signed release binary built from another commit is not used; built from source" {
     release_tree
-    go_toolchain "$GOROOT_DIR" 1.26.2
+    go_toolchain "$GOROOT_DIR" 1.27.2
     fake_release_binary "${BATS_TEST_TMPDIR}/rel" "$OLD_COMMIT"
     release_assets amd64 "${BATS_TEST_TMPDIR}/rel"
     release_wget
@@ -505,7 +505,7 @@ not_used() {
 
 @test "shim: without ssh-keygen the release binary is not used (nothing downloaded); built from source" {
     release_tree
-    go_toolchain "$GOROOT_DIR" 1.26.2
+    go_toolchain "$GOROOT_DIR" 1.27.2
     fake_release_binary "${BATS_TEST_TMPDIR}/rel" "$HEAD_COMMIT"
     release_assets amd64 "${BATS_TEST_TMPDIR}/rel"
     release_wget
@@ -524,7 +524,7 @@ not_used() {
     # An allowed_signers file with comments only, as a tree with no key has.
     printf '# The public half of the tacctl release key\n#   tacctl-release namespaces="tacctl-release" ssh-ed25519 AAAA...\n' \
         > "${T}/release/allowed_signers"
-    go_toolchain "$GOROOT_DIR" 1.26.2
+    go_toolchain "$GOROOT_DIR" 1.27.2
     fake_release_binary "${BATS_TEST_TMPDIR}/rel" "$HEAD_COMMIT"
     release_assets amd64 "${BATS_TEST_TMPDIR}/rel"
     release_wget
@@ -541,7 +541,7 @@ not_used() {
     # The setup's git: 'describe --exact-match' finds no tag.
     mkdir -p "${T}/release"
     cp "$TEST_SIGNERS" "${T}/release/allowed_signers"
-    go_toolchain "$GOROOT_DIR" 1.26.2
+    go_toolchain "$GOROOT_DIR" 1.27.2
     fake_release_binary "${BATS_TEST_TMPDIR}/rel" "$HEAD_COMMIT"
     release_assets amd64 "${BATS_TEST_TMPDIR}/rel"
     release_wget
@@ -560,14 +560,14 @@ not_used() {
     release_tree "$REL_TAG" "$commit"
     stub_cmd uname '[[ "$1" == -m ]] && echo aarch64'
     # No Go: the stand-in tarball is downloaded under its arm64 name.
-    go_tarball 1.26.2
+    go_tarball 1.27.2
     release_assets arm64 "$DIST"
     release_wget
     run_shim version
     assert_success
-    assert_output --partial "Go 1.26.2 installed."
+    assert_output --partial "Go 1.27.2 installed."
     assert_output --partial "Installing the ${REL_TAG} release binary (linux/arm64, verified)"
-    stub_called '^wget -q --no-hsts -O .*/go1\.26\.2\.linux-arm64\.tar\.gz https://dl\.google\.com/go/go1\.26\.2\.linux-arm64\.tar\.gz$'
+    stub_called '^wget -q --no-hsts -O .*/go1\.27\.2\.linux-arm64\.tar\.gz https://dl\.google\.com/go/go1\.27\.2\.linux-arm64\.tar\.gz$'
     stub_called "/${REL_TAG}/tacctl-${REL_TAG}-linux-arm64\$"
     refute_called 'amd64'
     cmp "$B" "$DIST"
@@ -578,7 +578,7 @@ not_used() {
     run_shim status
     assert_failure 1
     assert_output --partial "no Go download for riscv64 (amd64 and arm64 only)"
-    go_toolchain "$GOROOT_DIR" 1.26.2
+    go_toolchain "$GOROOT_DIR" 1.27.2
     run_shim status
     assert_success
     assert_output --partial "Release binary for ${REL_TAG} not used (no release binary for linux/riscv64); building from source."
@@ -593,7 +593,7 @@ not_used() {
     assert_output "Usage: tacctl.sh --install-binary <out>"
     # The release binary, its INFO line on stdout.
     release_tree
-    go_toolchain "$GOROOT_DIR" 1.26.2
+    go_toolchain "$GOROOT_DIR" 1.27.2
     fake_release_binary "${BATS_TEST_TMPDIR}/rel" "$HEAD_COMMIT"
     release_assets amd64 "${BATS_TEST_TMPDIR}/rel"
     release_wget
@@ -615,7 +615,7 @@ not_used() {
     assert_output "NEW x"
     # A failed build: exit 1, <out> as it was, no Decision 20 text (the Go
     # side prints its own).
-    go_toolchain "$GOROOT_DIR" 1.26.2 "boom"
+    go_toolchain "$GOROOT_DIR" 1.27.2 "boom"
     run "${T}/bin/tacctl.sh" --install-binary "$out"
     assert_failure 1
     refute_output --partial "way back"

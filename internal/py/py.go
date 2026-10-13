@@ -47,9 +47,26 @@ func CollapseSpace(s string) string {
 }
 
 // isPrintable is str.isprintable() for one character: not in the
-// categories Cc, Cf, Cs, Co, Cn, Zl, Zp or Zs, except the ASCII space.
+// categories Cc, Cf, Cs, Co, Cn, Zl, Zp or Zs, except the ASCII space, as
+// CPython 3.12's Unicode 15.0 database has them (printable_table.go), not as
+// the Go toolchain's tables do.
 func isPrintable(r rune) bool {
-	return r == ' ' || unicode.IsPrint(r)
+	if r == ' ' {
+		return true
+	}
+	lo, hi := 0, len(nonPrintable)
+	for lo < hi {
+		mid := (lo + hi) / 2
+		switch {
+		case r < nonPrintable[mid][0]:
+			hi = mid
+		case r > nonPrintable[mid][1]:
+			lo = mid + 1
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // ReprString is repr(s): single quotes unless s holds a single quote and

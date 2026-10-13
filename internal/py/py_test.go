@@ -211,3 +211,23 @@ func TestStringHelpers(t *testing.T) {
 		t.Error("FloatRepr")
 	}
 }
+
+// repr() follows CPython 3.12's Unicode 15.0, not the toolchain's tables:
+// a character assigned after 15.0 is escaped whatever Go release builds this.
+func TestReprUsesTheFrozenUnicodeTables(t *testing.T) {
+	for r, want := range map[rune]string{
+		'A':      "'A'",
+		'é':      "'é'",
+		0x00A0:   `'\xa0'`,       // no-break space (Zs)
+		0x3000:   `'\u3000'`,     // ideographic space (Zs)
+		0x200B:   `'\u200b'`,     // zero width space (Cf)
+		0x13808:  `'\U00013808'`, // unassigned in 15.0, assigned later
+		0x1F600:  "'😀'",
+		0x10FFFF: `'\U0010ffff'`,
+		' ':      "' '",
+	} {
+		if got := ReprString(string(r)); got != want {
+			t.Errorf("repr(%U) = %s, want %s", r, got, want)
+		}
+	}
+}

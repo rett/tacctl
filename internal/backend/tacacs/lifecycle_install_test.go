@@ -46,7 +46,7 @@ func TestInstallBuildClonesPatchesAndBuilds(t *testing.T) {
 	}
 	out := e.out()
 	for _, s := range []string{
-		"Go 1.26.2 already installed, skipping.",
+		"Go 1.27.2 already installed, skipping.",
 		"Cloning tacquito...",
 		"Building tacquito server...",
 		"Building password hash generator...",

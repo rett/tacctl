@@ -1,6 +1,6 @@
 module github.com/rett/tacctl
 
-go 1.26.0
+go 1.27.0
 
 // tests/fixtures/tacquito-src holds upstream tacquito files the patch tests
 // apply patches/ to; they are not part of this module.

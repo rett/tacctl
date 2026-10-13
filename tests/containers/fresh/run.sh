@@ -166,10 +166,10 @@ check "tacquito is active" 'systemctl is-active --quiet tacquito'
 section "tacctl version --long"
 out=$(q 'tacctl version --long'); echo "$out"
 short=$(git -C "$REPO" rev-parse "$COMMIT")
-if grep -q "commit: *${short}" <<< "$out" && grep -q 'test knobs: off' <<< "$out" && grep -q 'go: *go1.26.2' <<< "$out"; then
-    ok "version --long: this commit, go1.26.2, test knobs off"
+if grep -q "commit: *${short}" <<< "$out" && grep -q 'test knobs: off' <<< "$out" && grep -q 'go: *go1.27.2' <<< "$out"; then
+    ok "version --long: this commit, go1.27.2, test knobs off"
 else
-    bad "version --long: this commit, go1.26.2, test knobs off"
+    bad "version --long: this commit, go1.27.2, test knobs off"
 fi
 
 # --- user passwd engineer through a pty -----------------------------------------
