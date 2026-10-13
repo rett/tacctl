@@ -36,6 +36,11 @@ current behaviour; this file is where history lives.
    with `archive`" caveat are gone for that form; the bare form keeps its
    note, and `copy <file> running-config` is still described as a merge.
 
+5. **`install` and `upgrade` no longer put a copy of the README into
+   `/etc/tacquito`.** That directory is the daemon's; tacctl's documentation is
+   in the project clone (`/opt/tacctl/docs/`). The first upgrade removes the
+   copy an earlier release left there (`Removed: README.md`).
+
 ## 0.2.7 (2026-10-12)
 
 1. **The break-glass section compares login names without regard to case, and says so.**

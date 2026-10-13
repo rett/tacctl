@@ -32,7 +32,7 @@ var installPrereqs = []string{"git", "wget"}
 // shown once, on a fresh install).
 //
 // The files shipped with the tree (completion, man page; the backends'
-// units, logrotate and README.md) come from paths.Tree, the checkout this
+// units and logrotate) come from paths.Tree, the checkout this
 // binary belongs to, as 0.1.16 takes them from its own PROJECT_DIR.
 func Install(ctx context.Context, h *Host, args []string) error {
 	yes, branch := false, ""

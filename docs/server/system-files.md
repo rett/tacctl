@@ -55,7 +55,7 @@
 | `/usr/local/bin/tacquito`, `/usr/local/bin/tacquito-hashgen` | Server binary, password hash generator |
 | `/opt/tacquito-src/` | Tacquito server source code |
 
-`/etc/tacquito/` also holds a copy of the README, and the old locations of `tacctl.yaml`, `linux-hosts`, `linux-uids`, `backups/` and `templates/` lead into `/etc/tacctl/`.
+In `/etc/tacquito/`, the old locations of `tacctl.yaml`, `linux-hosts`, `linux-uids`, `backups/` and `templates/` lead into `/etc/tacctl/`.
 
 **RADIUS (FreeRADIUS)**, where enabled. `<raddb>` is `/etc/freeradius/3.0` on Debian/Ubuntu and `/etc/raddb` on the RHEL family; the unit is `freeradius.service` or `radiusd.service`, the logs are in `/var/log/freeradius` or `/var/log/radius`.
 
