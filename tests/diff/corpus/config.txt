@@ -117,16 +117,20 @@ config deny add notacidr
 config deny remove 10.66.0.0/16
 @known 0.2.3 item 74: the config mgmt-acl usage names the WTI IP Tables
 config mgmt-acl
+@known 0.2.7 item 20: the mgmt-acl usage and its "Add with" hint name the optional :<services>
 config mgmt-acl list
 config mgmt-acl bogus
+@known 0.2.7 item 20: the mgmt-acl usage and its "Add with" hint name the optional :<services>
 config mgmt-acl add
 config mgmt-acl add not-a-cidr
 config mgmt-acl add 10.0.0.0/8 ;; config mgmt-acl list
 config mgmt-acl add 10.0.0.0/8,192.168.0.0/16 ;; config mgmt-acl list
 config mgmt-acl add 192.168.5.5/24,10.0.0.0/8 ;; config mgmt-acl list
+@known 0.2.7 item 20: the mgmt-acl usage and its "Add with" hint name the optional :<services>
 config mgmt-acl add 10.0.0.0/8 ;; config mgmt-acl remove 10.0.0.0/8 ;; config mgmt-acl list
 config mgmt-acl remove 203.0.113.0/24
 config mgmt-acl clear <<< y
+@known 0.2.7 item 20: the mgmt-acl usage and its "Add with" hint name the optional :<services>
 config mgmt-acl add 10.0.0.0/8 ;; config mgmt-acl clear <<< y ;; config mgmt-acl list
 config mgmt-acl add 10.0.0.0/8 ;; config mgmt-acl clear <<< n ;; config mgmt-acl list
 config mgmt-acl cisco-name
@@ -189,8 +193,10 @@ config allow remove 10.9.9.0/24
 config deny add ''
 config deny remove 10.9.9.0/24
 config deny clear
+@known 0.2.7 item 20: the mgmt-acl usage and its "Add with" hint name the optional :<services>
 config mgmt-acl add ''
 config mgmt-acl add 10.0.0.0/8,notacidr
+@known 0.2.7 item 20: the mgmt-acl usage and its "Add with" hint name the optional :<services>
 config mgmt-acl remove ''
 config mgmt-acl cisco-name 'has space'
 config mgmt-acl juniper-name '1bad'
