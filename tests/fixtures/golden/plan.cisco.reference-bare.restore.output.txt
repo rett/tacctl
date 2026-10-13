@@ -51,9 +51,6 @@
 !                         access-class VTY-ACL in). Left to you: the walkthrough's access-class line
 !                         is never part of this output.
 ! Not planned: netconf, breakglass.
-! Note: restore point: the restore block and the 'configure replace' alternative of the back-out were
-! written from the references and have not been checked on a device (not lab-tested): read them before
-! you use them.
 ! The change is live when the paste ends. NOTHING rolls it back by itself. Keep a second terminal
 ! logged in at privilege 15 until the end.
 ! Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the

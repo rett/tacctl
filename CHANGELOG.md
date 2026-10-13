@@ -3,6 +3,39 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.8 (unreleased)
+
+1. **The documentation is a tree of topic pages.** `README.md` holds the
+   quick start and an index; the reference is under `docs/` by topic
+   (`install`, `server`, `security`, `hosts`, `devices`, `cli`,
+   `development`), each folder with its own README. The pages are in the
+   project clone (`/opt/tacctl/docs/`).
+
+2. **tacquito's authentication lines carry the client's address and port.**
+   Patch `0003` (now `0003-authen-log-addresses.patch`) appends what the
+   authentication start packet holds to the `accepting user` and `failed to
+   validate the user` lines: `... from [<device or host>] using a bcrypt
+   password; client [<address>] port [<port>]`. A device fills in the address
+   of the person logging in, and `sshd` on a host does through PAM; a `sudo`
+   prompt on the server itself gives none, and the fields are left out. The
+   `from [...]` part and its readers (`device scan`, `log`) are unchanged.
+
+3. **`ssh` audit lines say where the caller logged in from.** The `auth.info`
+   and `auth.warning` lines of `tacctl ssh` and `device ssh`, and the block
+   editor's refusals, gain `from=<address>`: the first field of
+   `SSH_CONNECTION` when the environment has it, else the host of the login
+   record of the terminal (sudo removes `SSH_CONNECTION`; sshd records the
+   client there). The field is omitted when it cannot be told.
+
+4. **The restore point is marked as unchecked only in its `archive config`
+   form.** The copy form (`--restore-point=<fs>`) and the back-out's
+   `configure replace <file> force` ran on IOS 12.4(15)SW, IOS 15.6(2)T and
+   IOS-XE 16.7 without `archive` configured: the file was written, the pasted
+   region converged, and the replace returned the access list to its first
+   state. The report's "not lab-tested" note and the "tried only on devices
+   with `archive`" caveat are gone for that form; the bare form keeps its
+   note, and `copy <file> running-config` is still described as a merge.
+
 ## 0.2.7 (2026-10-12)
 
 1. **The break-glass section compares login names without regard to case, and says so.**

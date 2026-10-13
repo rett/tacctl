@@ -75,7 +75,7 @@ func TestPlanRestorePointNamedCopyAndItsBackout(t *testing.T) {
 			t.Errorf("a line to type before the region: %q", l)
 		}
 	}
-	for _, want := range []string{"not lab-tested", "dir disk0:", "protect the file and delete it when you are done", "not a rollback timer"} {
+	for _, want := range []string{"dir disk0:", "protect the file and delete it when you are done", "not a rollback timer"} {
 		if !strings.Contains(unwrapPlan(out), want) {
 			t.Errorf("no %q in\n%s", want, out)
 		}
@@ -120,7 +120,7 @@ func TestPlanRestorePointNamedCopyAndItsBackout(t *testing.T) {
 	}
 	r := objs[0].Restore
 	if r.Mode != "copy" || r.File == "" || r.Command != "copy running-config "+r.File || r.FileSystem != "disk0:" ||
-		!strings.Contains(r.Note, "not lab-tested") {
+		r.Note != "" {
 		t.Errorf("restore_point: %+v", r)
 	}
 	for _, l := range objs[0].Region {

@@ -20,9 +20,8 @@
 !                         name is the secret and is not known to tacctl).
 ! Consistent: roles, mgmt-acl. Not planned: netconf, breakglass.
 ! Secrets: 2 present on the device, not changed (--secrets pushes them).
-! Note: restore point: the restore block and the 'configure replace' alternative of the back-out were
-! written from the references and have not been checked on a device (not lab-tested): read them before
-! you use them.
+! Note: restore point: the 'archive config' form has not been checked on a device (not lab-tested):
+! read it before you use it.
 ! The change is live when the paste ends. NOTHING rolls it back by itself. Keep a second terminal
 ! logged in at privilege 15 until the end.
 ! Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the

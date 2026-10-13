@@ -366,10 +366,12 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 		p.buildCleanup(&d)
 	}
 
-	// the restore block and the back-out's alternative were written from the
-	// references: the report says so, once, when the output has the block
+	// the 'archive config' form of the restore point has not been run on a
+	// device: the report says so, once, when the output has the block
 	if d.restoreShown() {
-		d.Notes = appendNew(d.Notes, restoreNote)
+		if n := restoreNoteFor(d.Restore); n != "" {
+			d.Notes = appendNew(d.Notes, n)
+		}
 	}
 
 	// Defensive: nothing on the never list may be in the block.
