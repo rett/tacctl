@@ -378,6 +378,47 @@ func TestDeviceBanner(t *testing.T) {
 	}
 }
 
+// An IOS 12.x device never prints 'version 3': the dialect leaves it out, and
+// only it. Every other version and option stays, and Text is as stated.
+func TestIOSNTPServerTextInDialect(t *testing.T) {
+	cases := []struct {
+		name string
+		s    IOSNTPServer
+		d    IOSDialect
+		want string
+	}{
+		{"3 under IOS12", IOSNTPServer{Host: "192.0.2.123", Version: 3}, IOS12, "ntp server 192.0.2.123"},
+		{"2 under IOS12", IOSNTPServer{Host: "192.0.2.123", Version: 2}, IOS12, "ntp server 192.0.2.123 version 2"},
+		{"4 under IOS12", IOSNTPServer{Host: "192.0.2.123", Version: 4}, IOS12, "ntp server 192.0.2.123 version 4"},
+		{"3 under modern", IOSNTPServer{Host: "192.0.2.123", Version: 3}, IOSModern, "ntp server 192.0.2.123 version 3"},
+		{"unstated under IOS12", IOSNTPServer{Host: "192.0.2.123"}, IOS12, "ntp server 192.0.2.123"},
+		{"every option under IOS12", IOSNTPServer{VRF: "MGMT", Host: "192.0.2.123", Version: 3, Key: 5, Source: "Loopback0", Prefer: true}, IOS12,
+			"ntp server vrf MGMT 192.0.2.123 key 5 source Loopback0 prefer"},
+	}
+	for _, c := range cases {
+		if got := c.s.textIn(c.d); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
+	}
+	if got := (IOSNTPServer{Host: "h", Version: 3}).Text(); got != "ntp server h version 3" {
+		t.Errorf("Text: %q", got)
+	}
+	b, fs := LintIOSSystem("ntp server 192.0.2.123 version 3 prefer\nntp server vrf MGMT 192.0.2.124 version 2\n", LayerScope)
+	if HasErrors(fs) {
+		t.Fatal(fs)
+	}
+	if got := strings.Join(IOSSystemStatementsIn(b, IOS12), "|"); got != "ntp server 192.0.2.123 prefer|ntp server vrf MGMT 192.0.2.124 version 2" {
+		t.Errorf("IOS12: %q", got)
+	}
+	if got := strings.Join(IOSSystemStatements(b), "|"); got != "ntp server 192.0.2.123 version 3 prefer|ntp server vrf MGMT 192.0.2.124 version 2" {
+		t.Errorf("modern: %q", got)
+	}
+	// the block's own text is as typed in either dialect
+	if got := b.String(false); !strings.Contains(got, "ntp server 192.0.2.123 version 3 prefer\n") {
+		t.Errorf("String: %q", got)
+	}
+}
+
 func TestIOSSystemStatementsAndText(t *testing.T) {
 	b, fs := LintIOSSystem(goodIOSSystem, LayerScope)
 	if HasErrors(fs) {

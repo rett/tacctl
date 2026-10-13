@@ -11,7 +11,9 @@ import (
 // version matrix, because the device's own check refuses the rest.
 //
 // A device whose release is not known (no pull, or a release string no row
-// can read) gets the current form.
+// can read) gets the current form. The IOS dialect facts do not ride on the
+// release: they ride on Request.Legacy, the IOS 12.x syntax every Cisco
+// compare resolves (devconf.SyntaxRows).
 type gate struct {
 	vendor    string
 	statement string

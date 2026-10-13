@@ -120,13 +120,22 @@ func (b Blocks) systemStatements() []string {
 }
 
 // ciscoSystemStatements are the lines of the IOS system block, in the order
-// blocks.IOSSystemStatements gives them (the banner's lines are the lines
-// typed, its delimiter chosen); none for no block.
-func (b Blocks) ciscoSystemStatements() []string {
+// blocks.IOSSystemStatementsIn gives them (the banner's lines are the lines
+// typed, its delimiter chosen), as a device in dialect d stores them; none for
+// no block.
+func (b Blocks) ciscoSystemStatements(d blocks.IOSDialect) []string {
 	if b.CiscoSystem == nil {
 		return nil
 	}
-	return blocks.IOSSystemStatements(b.CiscoSystem)
+	return blocks.IOSSystemStatementsIn(b.CiscoSystem, d)
+}
+
+// dialectOf is the IOS dialect of a request: the 12.x syntax when legacy.
+func dialectOf(legacy bool) blocks.IOSDialect {
+	if legacy {
+		return blocks.IOS12
+	}
+	return blocks.IOSModern
 }
 
 // head is what a comment says of a block: the layers it is made of and the
@@ -164,15 +173,16 @@ func (b Blocks) ciscoSystemHead(scope string) string {
 
 // ciscoSystemLines are the lines of the IOS system block in the walkthrough:
 // comments that name the block (never the banner, never a key), then its
-// statements as live lines. None when there is no system block.
-func (b Blocks) ciscoSystemLines(scope string) []string {
-	st := b.ciscoSystemStatements()
+// statements as live lines, as a device in dialect d stores them. None when
+// there is no system block.
+func (b Blocks) ciscoSystemLines(scope string, d blocks.IOSDialect) []string {
+	st := b.ciscoSystemStatements(d)
 	if len(st) == 0 {
 		return nil
 	}
 	out := []string{"! " + b.ciscoSystemHead(scope) + ": the login banner, domain, time zone, name servers and NTP."}
-	if d, ok := blocks.BannerDelimiter(b.CiscoSystem.BannerBody()); ok && b.CiscoSystem.Banner != nil {
-		out = append(out, "! The banner is typed with the delimiter "+d+", the first of "+strings.Join(blocks.BannerDelimiters, " ")+
+	if delim, ok := blocks.BannerDelimiter(b.CiscoSystem.BannerBody()); ok && b.CiscoSystem.Banner != nil {
+		out = append(out, "! The banner is typed with the delimiter "+delim+", the first of "+strings.Join(blocks.BannerDelimiters, " ")+
 			" that its text does not contain; the NTP lines are in the order IOS needs (keys, trusted keys, servers, 'ntp authenticate').")
 	}
 	return append(out, st...)

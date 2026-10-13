@@ -249,6 +249,56 @@ func TestBlockCiscoSystemCheckAgainstADevice(t *testing.T) {
 	}
 }
 
+// A device in the IOS 12.x syntax stores 'ntp server H version 3' without the
+// option: a block that states it renders the bare line in the walkthrough and
+// the plan, and the device that holds the bare line compares ok. A device in
+// the modern syntax gets the line as typed.
+func TestCiscoSystemNTPVersion3InTheIOS12Syntax(t *testing.T) {
+	const typed, bare = "ntp server 192.0.2.123 version 3 key 5 prefer", "ntp server 192.0.2.123 key 5 prefer"
+	b := newPullBox(t)
+	b.cisco("lab-c", false)
+	f := b.sb.blockFile("c.txt", strings.Replace(ciscoSystemFile, "ntp server 192.0.2.123 key 5 prefer", typed, 1))
+	b.run("scope", "block", "lab", "cisco", "set", "system", "--file", f, "-y")
+	if b.sb.code != 0 {
+		t.Fatalf("set: %d %s", b.sb.code, b.sb.stderr())
+	}
+	// the block's own text and show are as typed
+	if got := b.run("scope", "block", "lab", "cisco", "show", "system"); !strings.Contains(got, "ntp server 192.0.2.123 version 3 key 5 prefer\n") {
+		t.Errorf("show:\n%s", got)
+	}
+
+	b.run("device", "config-syntax", "lab-c", "ios12")
+	have := b.expectedSyntax("lab-c", true)
+	if !strings.Contains(have, bare+"\n") || strings.Contains(have, "version 3") {
+		t.Fatalf("the expected text of a 12.x device:\n%s", have)
+	}
+	b.serve("cisco", have)
+	b.version(ciscoVersion12)
+	out := b.run("device", "config", "pull", "lab-c")
+	if b.sb.code != 0 || !strings.Contains(out, "lab-c  ok via ssh") {
+		t.Fatalf("pull: %d\n%s", b.sb.code, out)
+	}
+	if rec, _ := b.records().Of("lab-c"); rec == nil || rec.Sections["system"].State != "ok" {
+		t.Errorf("the system section of the record: %+v", rec)
+	}
+	wt := b.run("device", "config", "show", "lab-c")
+	if !strings.Contains(wt, bare+"\n") || strings.Contains(wt, "version 3") {
+		t.Errorf("the walkthrough of a 12.x device:\n%s", wt)
+	}
+	// the plan of a device that lacks the line adds it bare
+	b.serve("cisco", strings.Replace(have, bare+"\n", "", 1))
+	out = b.run("device", "config", "plan", "lab-c", "--pull", "--no-secrets")
+	if b.sb.code != 0 || !strings.Contains(out, bare+"\n") || strings.Contains(out, "version 3") {
+		t.Errorf("the plan of a 12.x device (exit %d):\n%s", b.sb.code, out)
+	}
+
+	// the modern syntax is as typed
+	b.run("device", "config-syntax", "lab-c", "modern")
+	if wt = b.run("device", "config", "show", "lab-c"); !strings.Contains(wt, typed+"\n") {
+		t.Errorf("the walkthrough of a modern device:\n%s", wt)
+	}
+}
+
 // adoptCiscoSystem is what the IOS device says to the system reads.
 const (
 	adoptCiscoSystem = "banner exec ^C\nbanner login ^C\nip domain name lab.example.net\nip domain list example.net\nip domain lookup source-interface Loopback0\n" +

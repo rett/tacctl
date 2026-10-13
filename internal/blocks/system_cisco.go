@@ -135,6 +135,31 @@ func (s IOSNTPServer) Text() string {
 	return l
 }
 
+// IOSDialect is what a train of IOS prints differently from the block's
+// text. DefaultNTPVersion is the NTP version the device never prints in an
+// 'ntp server' line (0 for none): IOS 12.x stores 'ntp server H version 3'
+// as 'ntp server H'.
+type IOSDialect struct {
+	DefaultNTPVersion int
+}
+
+// IOSModern is the syntax of every release after IOS 12.x: the statements
+// are stored as typed.
+var IOSModern = IOSDialect{}
+
+// IOS12 is the IOS 12.x syntax, in which 'version 3' is the default and is
+// not stored.
+var IOS12 = IOSDialect{DefaultNTPVersion: 3}
+
+// textIn is Text as the device in dialect d stores it: the version left out
+// when it is the dialect's default. Every other option stays as stated.
+func (s IOSNTPServer) textIn(d IOSDialect) string {
+	if d.DefaultNTPVersion != 0 && s.Version == d.DefaultNTPVersion {
+		s.Version = 0
+	}
+	return s.Text()
+}
+
 // IOSVRFValue is a value of a statement stated in a vrf ('ip domain name vrf
 // <name> <name>', 'ip domain list vrf <name> <name>', 'ip name-server vrf
 // <name> <address>'). Text is the value (a host name in lower case).
@@ -1182,8 +1207,15 @@ func (b *IOSSystemBlock) apply(d SystemNotManaged) {
 // the NTP statements in the order IOS needs them: the keys, the trusted
 // keys, the servers, and 'ntp authenticate' last. This is what the managed
 // system section is made of; a banner whose text holds every delimiter has no
-// unit (Check refuses it).
+// unit (Check refuses it). The 'ntp server' lines are as stated: see
+// IOSSystemUnitsIn.
 func IOSSystemUnits(b *IOSSystemBlock) [][]string {
+	return IOSSystemUnitsIn(b, IOSModern)
+}
+
+// IOSSystemUnitsIn is IOSSystemUnits for a device in dialect d: an 'ntp
+// server' line is without the version the dialect never prints.
+func IOSSystemUnitsIn(b *IOSSystemBlock, d IOSDialect) [][]string {
 	if b == nil {
 		return nil
 	}
@@ -1222,7 +1254,7 @@ func IOSSystemUnits(b *IOSSystemBlock) [][]string {
 		one(fmt.Sprintf("ntp trusted-key %d", k.Number))
 	}
 	for _, s := range b.NTPServers {
-		one(s.Text())
+		one(s.textIn(d))
 	}
 	if b.NTPAuthenticate != nil {
 		one("ntp authenticate")
@@ -1233,8 +1265,13 @@ func IOSSystemUnits(b *IOSSystemBlock) [][]string {
 // IOSSystemStatements are the lines of the block in the order of
 // IOSSystemUnits, flattened (the banner's lines are the lines typed).
 func IOSSystemStatements(b *IOSSystemBlock) []string {
+	return IOSSystemStatementsIn(b, IOSModern)
+}
+
+// IOSSystemStatementsIn is IOSSystemStatements for a device in dialect d.
+func IOSSystemStatementsIn(b *IOSSystemBlock, d IOSDialect) []string {
 	var out []string
-	for _, u := range IOSSystemUnits(b) {
+	for _, u := range IOSSystemUnitsIn(b, d) {
 		out = append(out, u...)
 	}
 	return out

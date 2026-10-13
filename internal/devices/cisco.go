@@ -157,7 +157,7 @@ func CiscoVars(req Request, d Data) map[string]string {
 	// pull's compare cannot drift. SNMP_STEP is the step alone, SYSTEM_BLOCK
 	// the system lines, and neither is a template variable.
 	snmpStep := CiscoSNMP(d.snmpInputFor(scope, "cisco")).Text
-	system := d.Blocks.ciscoSystemLines(scope)
+	system := d.Blocks.ciscoSystemLines(scope, dialectOf(req.Legacy))
 	snmpBlock := snmpStep
 	if len(system) > 0 {
 		snmpBlock += "\n" + strings.Join(system, "\n")

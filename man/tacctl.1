@@ -5135,7 +5135,12 @@ source) is replaced in place, a list entry is only added, and nothing the device
 holds is removed. An
 .B ntp authentication\-key
 string is typed only where the device has no key of that number (keys compare
-by number alone). The plan types the NTP lines in the order IOS needs: the
+by number alone). A device in the IOS 12.x syntax stores
+.B "ntp server <host> version 3"
+without the option, so its walkthrough, managed section and plan type and
+compare the line without
+.BR "version 3" ;
+every other option and version stays. The plan types the NTP lines in the order IOS needs: the
 keys, the trusted keys, the servers and
 .B ntp authenticate
 last. The banner is compared by its size and a digest, never by its text, and a

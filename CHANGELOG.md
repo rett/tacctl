@@ -72,9 +72,13 @@ current behaviour; this file is where history lives.
    it: the rendered line now reads as present on a device with no `clock
    timezone` statement (it read `differs` for good). The report's "not
    checked on a device" note for the blocks is now only for a system block
-   with NTP key lines. On IOS 12.4 an `ntp server <host> version 3` is stored
-   without the option and so reads `differs`; the restore point's caveat says
-   that a 12.4 `configure replace` can stop at an `ntp server` with options.
+   with NTP key lines. IOS 12.4 stores an `ntp server <host> version 3`
+   without the option: for a device in the IOS 12.x syntax the walkthrough,
+   the managed `system` section and the plan type and compare the line
+   without `version 3`, and every other option and version stays; the block's
+   text, `show`, `check` and `adopt` are unchanged, and other devices get the
+   line as typed. The restore point's caveat says that a 12.4 `configure
+   replace` can stop at an `ntp server` with options.
 
 9. **The IOS `system` and `snmp` blocks take the VRF forms and the `informs`
    host kind.** `ntp server vrf <name> <host> ...`, `ip name-server vrf <name>
