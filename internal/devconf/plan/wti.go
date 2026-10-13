@@ -204,6 +204,9 @@ var wtiStepOrder = []string{
 // form, else the page tables'.
 func wtiLocation(key string, it wtiItem) (keys, label string, guarded bool, ok bool) {
 	for _, p := range wti.Pages {
+		if p.Kind == wti.KindPrompt {
+			continue // a read-only page of the same item, never typed at
+		}
 		for _, pi := range p.Items {
 			if pi.Key != key {
 				continue

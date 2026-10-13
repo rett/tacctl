@@ -178,7 +178,7 @@ func rwWaitEvent(t *testing.T, srv *fakedev.Server, want string) {
 }
 
 var rwFullWalk = []string{
-	"/H", "/SN", "/J", "/N", "/N > 25", "/N > 26", "/N > 28", "/N > 28 > 8", "/N > 29", "/N > 29 > 11",
+	"/H", "/SN", "/J", "/N", "/N > 25", "/N > 25 > 4", "/N > 25 > 5", "/N > 25 > 6", "/N > 26", "/N > 28", "/N > 28 > 8", "/N > 29", "/N > 29 > 11",
 	"/N > 5", "/N > 5", "/N > 5", "/N > 5", "/F", "/F > 1 > 1", "/F > 1 > 1 > localadmin",
 }
 
@@ -243,7 +243,7 @@ func TestReadWTILabSuperuser(t *testing.T) {
 	cmds := srv.Commands()
 	s := strings.Join(cmds, " ")
 	for _, want := range []string{
-		"<CR> /H <SPACE>", "/SN <ESC> /J /N 25 <ESC> 26 <ESC> 28 8 <ESC> <ESC> 29 11 <ESC> <ESC> 5 > > > <ESC> <CR> /F 1 1 localadmin <ESC> <ESC> <ESC>",
+		"<CR> /H <SPACE>", "/SN <ESC> /J /N 25 4 <ESC> 5 <ESC> 6 <ESC> <ESC> 26 <ESC> 28 8 <ESC> <ESC> 29 11 <ESC> <ESC> 5 > > > <ESC> <CR> /F 1 1 localadmin <ESC> <ESC> <ESC>",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("keys %q lack %q", s, want)
@@ -441,6 +441,179 @@ func TestReadWTIErrorScreenBelowTheTopClimbsToIt(t *testing.T) {
 	}
 	rwWaitEvent(t, srv, "close /N")
 	rwNoSave(t, srv)
+}
+
+// rwSNMPKeys are the keys typed between the opening of /N > 25 and of
+// /N > 26, a read's from the log of the unit.
+func rwSNMPKeys(t *testing.T, srv *fakedev.Server) []string {
+	t.Helper()
+	cmds := srv.Commands()
+	from := slices.Index(cmds, "25")
+	if from < 0 {
+		t.Fatalf("no '25' in the keys %q", cmds)
+	}
+	to := slices.Index(cmds[from:], "26")
+	if to < 0 {
+		t.Fatalf("no '26' after '25' in the keys %q", cmds)
+	}
+	return cmds[from : from+to+1]
+}
+
+func TestReadWTITextPromptsAreOpenedAndLeftWithEsc(t *testing.T) {
+	// The three SNMP texts are truncated on the lab unit's menu: each is
+	// opened with its number and a CR, read, and left with ESC; nothing is
+	// typed at a prompt and the secret prompts (7 and 8) are not visited.
+	srv := rwServe(t, filepath.Join(rwFakeDir, "lab-superuser"))
+	raw, info, err := rwRead(t, srv, WTIReadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"25", "4", "<ESC>", "5", "<ESC>", "6", "<ESC>", "<ESC>", "26"}
+	if got := rwSNMPKeys(t, srv); !slices.Equal(got, want) {
+		t.Errorf("keys %q, want %q", got, want)
+	}
+	if info.Pages != len(rwFullWalk) {
+		t.Errorf("pages %d, want %d", info.Pages, len(rwFullWalk))
+	}
+	// the prompt pages follow the SNMP menu in the document, in item order,
+	// each as the unit printed it
+	hs := rwHeaders(raw)
+	i := slices.Index(hs, "/N > 25")
+	if i < 0 || !slices.Equal(hs[i:i+5], []string{"/N > 25", "/N > 25 > 4", "/N > 25 > 5", "/N > 25 > 6", "/N > 26"}) {
+		t.Fatalf("headers %q", hs)
+	}
+	for _, v := range []string{"wti.site.example.net", "Example NOC (555) 0100", "Example City, Example State"} {
+		if strings.Count(raw, "\n"+v+"\n") != 1 {
+			t.Errorf("the document holds %d lines of %q, want 1", strings.Count(raw, "\n"+v+"\n"), v)
+		}
+	}
+	ex, err := Extract("wti", raw, wtiExpected(t)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(ex.Sections[SectionSNMP].Lines, "\n")
+	for _, w := range []string{"snmp system-name wti.site.example.net", `snmp contact "Example NOC (555) 0100"`, `snmp location "Example City, Example State"`} {
+		if !strings.Contains(got, w) {
+			t.Errorf("no %q in the snmp section:\n%s", w, got)
+		}
+	}
+	if strings.Contains(got, "...") {
+		t.Errorf("a truncated value in the snmp section:\n%s", got)
+	}
+	// no value, no CR, no SPACE at a prompt: the log holds no entry
+	for _, e := range srv.Events() {
+		if strings.HasPrefix(e, "entry") || strings.HasPrefix(e, "no-page") || strings.HasPrefix(e, "save") {
+			t.Errorf("event %q", e)
+		}
+	}
+	rwNoSave(t, srv)
+	rwWaitEvent(t, srv, "close /N")
+}
+
+func TestReadWTITextPromptIsOpenedOnlyForATruncatedValue(t *testing.T) {
+	menu := string(mustRead(t, filepath.Join(rwFakeDir, "../pages/network-25.txt")))
+	for name, c := range map[string]struct {
+		edits [][2]string
+		keys  []string
+		pages []string
+	}{
+		"only the location": {
+			[][2]string{{"wti.site.exam...", "wti.site.example.net"}, {"Example NOC (...", "Example NOC (555) 0100"}},
+			[]string{"25", "6", "<ESC>", "<ESC>", "26"}, []string{"/N > 25", "/N > 25 > 6", "/N > 26"}},
+		"none": {
+			[][2]string{{"wti.site.exam...", "wti.site.example.net"}, {"Example NOC (...", "Example NOC"}, {"Example City,...", "Example City"}},
+			[]string{"25", "<ESC>", "26"}, []string{"/N > 25", "/N > 26"}},
+		"an empty value": {
+			[][2]string{{"wti.site.exam...", "(undefined)"}, {"Example NOC (...", "Example NOC"}, {"Example City,...", "Example City"}},
+			[]string{"25", "<ESC>", "26"}, []string{"/N > 25", "/N > 26"}},
+		"an ellipsis alone": {
+			[][2]string{{"wti.site.exam...", "..."}, {"Example NOC (...", "Example NOC"}, {"Example City,...", "Example City"}},
+			[]string{"25", "4", "<ESC>", "<ESC>", "26"}, []string{"/N > 25", "/N > 25 > 4", "/N > 26"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			text := menu
+			for _, e := range c.edits {
+				text = edit(t, text, e[0], e[1])
+			}
+			dir := rwDir(t, "page /N > 25 = snmp.txt\n", map[string]string{"snmp.txt": text})
+			srv := rwServe(t, dir)
+			raw, _, err := rwRead(t, srv, WTIReadOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := rwSNMPKeys(t, srv); !slices.Equal(got, c.keys) {
+				t.Errorf("keys %q, want %q", got, c.keys)
+			}
+			var got []string
+			for _, h := range rwHeaders(raw) {
+				if strings.HasPrefix(h, "/N > 25") || h == "/N > 26" {
+					got = append(got, h)
+				}
+			}
+			if !slices.Equal(got, c.pages) {
+				t.Errorf("pages %q, want %q", got, c.pages)
+			}
+			rwNoSave(t, srv)
+		})
+	}
+}
+
+func TestReadWTITextPromptRefusedOrMalformedAbortsWithEsc(t *testing.T) {
+	const sentinel = "SENTINEL-CONTACT-VALUE"
+	t.Run("the unit refuses the number", func(t *testing.T) {
+		// '5' is answered with an error line above the SNMP menu: that menu
+		// is two deep, so one ESC returns to /N and the session closes
+		srv := rwServe(t, filepath.Join(rwFakeDir, "lab-superuser"))
+		raw, _, err := rwReadWith(t, srv, WTIReadOptions{}, rwRefuse("5\r"))
+		var pe *WTIPageError
+		if !errors.As(err, &pe) || pe.Path != "/N > 25 > 5" || !errors.Is(err, ErrUnexpectedScreen) || raw != "" {
+			t.Fatalf("err = %v raw %q", err, raw)
+		}
+		cmds := srv.Commands()
+		if tail := cmds[len(cmds)-2:]; !slices.Equal(tail, []string{"99", "<ESC>"}) {
+			t.Errorf("keys end %q", tail)
+		}
+		rwWaitEvent(t, srv, "close /N")
+		rwNoSave(t, srv)
+	})
+	t.Run("a prompt with no value line", func(t *testing.T) {
+		page := "# kind: prompt\n# ---\n5\nCONTACT:\nUp to 32 characters are allowed.\nEnter: <SPACE><CR> to clear,\n" +
+			"       <text><CR> to change,\n       <ESC> to return to previous menu ... \n--------------------------------\n"
+		dir := rwDir(t, "page /N > 25 > 5 = contact.txt\n", map[string]string{"contact.txt": page})
+		srv := rwServe(t, dir)
+		raw, _, err := rwRead(t, srv, WTIReadOptions{PageTimeout: 3 * time.Second})
+		var pe *WTIPageError
+		if !errors.As(err, &pe) || pe.Path != "/N > 25 > 5" || pe.Title != "CONTACT:" || !errors.Is(err, ErrUnexpectedScreen) || raw != "" {
+			t.Fatalf("err = %v raw %q", err, raw)
+		}
+		// the prompt is left with ESC, then the SNMP menu: never a value or a CR
+		cmds := srv.Commands()
+		if tail := cmds[len(cmds)-3:]; !slices.Equal(tail, []string{"5", "<ESC>", "<ESC>"}) {
+			t.Errorf("keys end %q", tail)
+		}
+		rwWaitEvent(t, srv, "close /N")
+		rwNoSave(t, srv)
+		for _, e := range srv.Events() {
+			if strings.HasPrefix(e, "entry") {
+				t.Errorf("event %q", e)
+			}
+		}
+	})
+	t.Run("a title that is not the item's", func(t *testing.T) {
+		page := "# kind: prompt\n# ---\n5\nLOCATION NAME:\nEnter: <SPACE><CR> to clear,\n" +
+			"       <ESC> to return to previous menu ... \n" + sentinel + "\n--------------------------------\n"
+		dir := rwDir(t, "page /N > 25 > 5 = other.txt\n", map[string]string{"other.txt": page})
+		srv := rwServe(t, dir)
+		_, _, err := rwRead(t, srv, WTIReadOptions{PageTimeout: 3 * time.Second})
+		var pe *WTIPageError
+		if !errors.As(err, &pe) || pe.Path != "/N > 25 > 5" {
+			t.Fatalf("err = %v", err)
+		}
+		if strings.Contains(err.Error(), sentinel) {
+			t.Errorf("a value in the error: %v", err)
+		}
+		rwNoSave(t, srv)
+	})
 }
 
 func TestReadWTIOptionalPageRefusedIsSkipped(t *testing.T) {

@@ -571,7 +571,7 @@ iptables_setup() {
     assert_output --partial "  1. iptables -A INPUT -i lo -j ACCEPT"
     assert_output --partial "  2. iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
     assert_output --partial "-s 10.0.0.42/32 --dport 22 -j ACCEPT"
-    assert_output --partial "-s 192.0.2.0/24 --dport 443 -j ACCEPT"
+    assert_output --partial "-s 192.0.2.0/24 --dport 22 -j ACCEPT"
     assert_output --partial "-s 198.51.100.0/25 --dport 22 -j ACCEPT"
     assert_output --partial "-p udp -s 10.0.0.42/32 --dport 161 -j ACCEPT"
     assert_output --partial "-p udp -s 198.51.100.0/24 --dport 161 -j ACCEPT"
@@ -597,7 +597,7 @@ iptables_setup() {
     output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
     assert_output --partial "  1. iptables -A INPUT -i lo -j ACCEPT"
     assert_output --partial "-p tcp -s 10.0.0.42/32 --dport 22 -j ACCEPT"
-    assert_output --partial "# no management permit list for scope 'lab': only the tacctl server is permitted for ssh and https"
+    assert_output --partial "# no management permit list for scope 'lab': only the tacctl server is permitted for ssh"
     assert_line "        # iptables -A INPUT -j DROP"
     assert_output --partial "NOT rendered as a paste: scope 'lab' has no management permit list"
     assert_output --partial "lock out every"
@@ -630,7 +630,7 @@ iptables_setup() {
     assert_success
     assert_output --partial "# skipped, not rendered: fd00::/64 (IPv6; the list is IPv4 only)"
     refute_output --partial "-s fd00"
-    assert_output --partial "-p tcp -s 198.51.100.77/32 --dport 443 -j ACCEPT"
+    assert_output --partial "-p tcp -s 198.51.100.77/32 --dport 22 -j ACCEPT"
     assert_output --partial "-p udp -s 198.51.100.77/32 --dport 161 -j ACCEPT"
     refute_output --partial "-s 203.0.113.9"
     assert_output --partial "Primary Host/Address       : 203.0.113.9"

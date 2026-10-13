@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -21,6 +22,9 @@ var labUnitScreens = []struct{ path, file string }{
 	{"/SN", "wti/04-network-status.txt"},
 	{"/N", "wti/31-network-iptables-on.txt"},
 	{"/N > 25", "wti/08-snmp-access.txt"},
+	{"/N > 25 > 4", "wti/pages/network-25-4.txt"},
+	{"/N > 25 > 5", "wti/pages/network-25-5.txt"},
+	{"/N > 25 > 6", "wti/pages/network-25-6.txt"},
 	{"/N > 26", "wti/09-snmp-trap.txt"},
 	{"/N > 28", "wti/07-tacacs.txt"},
 	{"/N > 28 > 8", "wti/pages/network-28-8.txt"},
@@ -71,6 +75,31 @@ func withSection(exp []devices.Section, name string, lines []string, marks []boo
 		}
 	}
 	return append(out, devices.Section{Name: name, Lines: lines, Secret: marks})
+}
+
+// withoutPrompt drops the text prompt page of one item of the SNMP menu from
+// a document.
+func withoutPrompt(t *testing.T, doc string, item int) string {
+	t.Helper()
+	head := "# page: /N > 25 > " + strconv.Itoa(item) + "\n"
+	i := strings.Index(doc, head)
+	if i < 0 {
+		t.Fatalf("the document has no prompt page %d", item)
+	}
+	j := strings.Index(doc[i+len(head):], "# page: ")
+	if j < 0 {
+		t.Fatalf("the prompt page %d ends the document", item)
+	}
+	return doc[:i] + doc[i+len(head)+j:]
+}
+
+// withoutPrompts is the document with none of the text prompt pages.
+func withoutPrompts(t *testing.T, doc string) string {
+	t.Helper()
+	for _, n := range []int{4, 5, 6} {
+		doc = withoutPrompt(t, doc, n)
+	}
+	return doc
 }
 
 // edit replaces one occurrence of old in doc and fails when it is not there.
@@ -169,8 +198,8 @@ func TestWTIExtractLabUnit(t *testing.T) {
 			"radius onetime-type dbm", "radius session-module enabled", "radius message-authenticator off", "radius debug off",
 		},
 		SectionSNMP: {
-			"snmp enable on", "snmp version v1-v2-only", "snmp read-only yes", `snmp contact "Example NOC"`,
-			`snmp location "Example City"`, "snmp system-name wti.site.exam...", "snmp ro-community <secret:1>",
+			"snmp enable on", "snmp version v1-v2-only", "snmp read-only yes", `snmp contact "Example NOC (555) 0100"`,
+			`snmp location "Example City, Example State"`, "snmp system-name wti.site.example.net", "snmp ro-community <secret:1>",
 			"snmp rw-community <other:1>", "snmp trap manager 1 192.0.2.34", "snmp trap community <secret:1>", "snmp trap version v2",
 		},
 		SectionBreakGlass: {"user localadmin level administrator", "user localadmin password <secret>"},
@@ -368,8 +397,12 @@ func TestWTICompareIrregularities(t *testing.T) {
 		}
 	})
 
-	t.Run("a truncated contact", func(t *testing.T) {
-		doc := edit(t, noRW, "5. Contact:                Example NOC", "5. Contact:                Example Network Op...")
+	// A document without the text prompt pages (an older capture) has the
+	// menu's truncated values: they are matched by their beginning.
+	t.Run("a truncated contact with no prompt page", func(t *testing.T) {
+		doc := withoutPrompts(t, noRW)
+		doc = edit(t, doc, "5. Contact:                Example NOC (...", "5. Contact:                Example Network Op...")
+		doc = edit(t, doc, "6. SNMP Location:          Example City,...", "6. SNMP Location:          Example City")
 		long := withSection(exp, SectionSNMP, []string{"snmp enable on", "snmp version v1-v2-only", "snmp read-only yes",
 			"snmp contact Example Network Operations", "snmp location Example City", "snmp ro-community ro-community"},
 			[]bool{false, false, false, false, false, true})
@@ -385,6 +418,49 @@ func TestWTICompareIrregularities(t *testing.T) {
 		_, by = wtiPull(t, doc, other)
 		if by[SectionSNMP].State != StateDiffers {
 			t.Errorf("not the same contact: %q", wtiLines(by[SectionSNMP]))
+		}
+	})
+
+	// With the prompt pages the unit's whole values are compared exactly: the
+	// menu's truncated value is ignored and no note says it was taken as equal.
+	t.Run("the prompt pages' whole values", func(t *testing.T) {
+		_, by := wtiPull(t, noRW, exp)
+		r := by[SectionSNMP]
+		if r.State != StateOK {
+			t.Fatalf("%s: %q", r.StateText(), wtiLines(r))
+		}
+		for _, want := range []string{`= snmp contact "Example NOC (555) 0100"`, `= snmp location "Example City, Example State"`, "+ snmp system-name wti.site.example.net"} {
+			if !wtiHas(r, want) {
+				t.Errorf("no %q in %q", want, wtiLines(r))
+			}
+		}
+		for _, n := range r.Notes {
+			if strings.Contains(n, "truncated") {
+				t.Errorf("a note about a truncated value: %q", n)
+			}
+		}
+		// the whole value that merely begins as the rendered one is a
+		// difference, as a menu's truncated one never was
+		doc := edit(t, noRW, "\nExample NOC (555) 0100\n", "\nExample NOC (555) 0100 and the night desk\n")
+		_, by = wtiPull(t, doc, exp)
+		r = by[SectionSNMP]
+		if r.State != StateDiffers || !wtiHas(r, `- snmp contact "Example NOC (555) 0100"`) ||
+			!wtiHas(r, `+ snmp contact "Example NOC (555) 0100 and the night desk"`) {
+			t.Errorf("%s: %q", r.StateText(), wtiLines(r))
+		}
+		// the menu's truncated value is not used where a prompt page is: the
+		// prompt of the contact alone decides it, and the location, whose
+		// prompt page is not there, keeps the menu's
+		doc = withoutPrompt(t, noRW, 6)
+		ex, err := Extract("wti", doc, exp...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := strings.Join(ex.Sections[SectionSNMP].Lines, "\n")
+		for _, want := range []string{`snmp contact "Example NOC (555) 0100"`, `snmp location "Example City,..."`, "snmp system-name wti.site.example.net"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("no %q in %q", want, got)
+			}
 		}
 	})
 
@@ -800,7 +876,7 @@ func TestWTISectionsRoundTrip(t *testing.T) {
 	}
 	// the quoting of a text survives
 	for _, l := range back[SectionSNMP].Lines {
-		if strings.HasPrefix(l, "snmp contact") && l != `snmp contact "Example NOC"` {
+		if strings.HasPrefix(l, "snmp contact") && l != `snmp contact "Example NOC (555) 0100"` {
 			t.Errorf("contact: %q", l)
 		}
 	}

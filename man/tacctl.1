@@ -3672,7 +3672,7 @@ Account/Session Management Modules, Service Name
 the factory default, which per-group WTI levels need),
 an IP Tables step (the unit must accept loopback and ESTABLISHED,RELATED
 traffic or tacquito's replies are dropped; the walkthrough then renders the
-unit's whole list for the scope: loopback, established, ssh and https for the
+unit's whole list for the scope: loopback, established, ssh for the
 tacctl server and each permitted range of
 .BR "scope mgmt-acl" ,
 and udp port 161 for the SNMP clients, then ICMP on eth0 for the same networks, numbered in the unit's order, with a
@@ -4883,7 +4883,7 @@ Requires: \fBsuperuser\fR.
 Per-scope management ACL. Subcommand shape mirrors the global
 .B "tacctl config mgmt-acl"
 so operators who know one form know the other. The effective permit list of a
-scope drives the Cisco VTY-ACL, the Junos filter and the ssh and https lines of
+scope drives the Cisco VTY-ACL, the Junos filter and the ssh lines of
 the WTI IP Tables list (Step 5 of
 .BR "config wti" ).
 .RS
@@ -6817,7 +6817,21 @@ network status, the Site ID, and under
 .B /N
 the SNMP access and trap pages, the TACACS+ and RADIUS pages and the IP tables
 list), with only the keys a page lists, never a prompt that takes a value and
-never the final ESC, which makes the unit save its configuration. The user
+never the final ESC, which makes the unit save its configuration. The one
+prompt it opens reads and does not change: the SNMP access page prints the
+system name, the contact and the SNMP location cut at about 16 characters with
+.BR ... ,
+so for each one the page shows cut that way, the item's text prompt is opened
+with its number and a CR
+.RB ( /N ,
+25, then 4, 5 or 6), which prints the whole value, and left with ESC, which
+keeps it. Nothing is typed at a prompt (no text, no CR, no
+.BR <SPACE><CR> ,
+which would clear the field), a value the page shows whole is not opened, and
+the prompts of the communities and secret words are never visited. The three
+whole values are what the pull extracts and compares, exactly; a record kept by
+an earlier pull, which holds the cut value, is still compared by its beginning,
+with a note, until the unit is pulled again. The user
 directory
 .RB ( /F )
 is read in a second connection with the same password, because a top\-level

@@ -58,10 +58,10 @@ note: the IP tables list ends with the final DROP and the policies of the walkth
 = snmp enable on
 = snmp version v1-v2-only
 = snmp read-only yes
-= snmp contact "Example NOC"
-= snmp location "Example City"
+= snmp contact "Example NOC (555) 0100"
+= snmp location "Example City, Example State"
 = snmp ro-community <secret:1> (present, not compared)
-+ snmp system-name wti.site.exam...
++ snmp system-name wti.site.example.net
 + snmp rw-community <other:1> (present, not compared)
 + snmp trap manager 1 192.0.2.34
 + snmp trap community <secret:1> (present, not compared)

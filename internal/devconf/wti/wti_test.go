@@ -82,7 +82,7 @@ const (
 		"radius default-access=on; radius onetime-auth=off; radius onetime-timer=5; radius onetime-type=dbm; " +
 		"radius session-module=enabled; radius message-authenticator=off; radius debug=off"
 	snmpFields = "snmp enable=on; snmp version=v1-v2-only; snmp read-only=yes; snmp system-name=wti.site.exam...; " +
-		"snmp contact=Example NOC; snmp location=Example City; snmp ro-community=ro-community; snmp rw-community=rw-community"
+		"snmp contact=Example NOC (...; snmp location=Example City,...; snmp ro-community=ro-community; snmp rw-community=rw-community"
 	trapFields   = "snmp trap manager 1=192.0.2.34; snmp trap manager 2=; snmp trap manager 3=; snmp trap manager 4=; snmp trap community=ro-community; snmp trap version=v2; snmp trap engine-id="
 	networkOff   = "iptables=off; snmp=on; snmp-trap=on; tacacs=on; radius=off; multiple-logins=on"
 	networkOn    = "iptables=on; snmp=on; snmp-trap=on; tacacs=on; radius=off; multiple-logins=on"
@@ -125,6 +125,9 @@ func TestFixtureScreens(t *testing.T) {
 		"pages/alarm-top.txt":     {},
 		"pages/network-top.txt":   {"/N", networkOff},
 		"pages/network-25.txt":    {"/N > 25", snmpFields},
+		"pages/network-25-4.txt":  {"/N > 25 > 4", "snmp system-name=wti.site.example.net"},
+		"pages/network-25-5.txt":  {"/N > 25 > 5", "snmp contact=Example NOC (555) 0100"},
+		"pages/network-25-6.txt":  {"/N > 25 > 6", "snmp location=Example City, Example State"},
 		"pages/network-26.txt":    {"/N > 26", trapFields},
 		"pages/network-28.txt":    {"/N > 28", tacacsFields},
 		"pages/network-28-8.txt":  {"/N > 28 > 8", defaultTacac},
@@ -350,12 +353,145 @@ func TestPagesTable(t *testing.T) {
 			}
 		}
 	}
-	for _, want := range []string{"/H", "/SN", "/N", "/N > 25", "/N > 26", "/N > 28", "/N > 28 > 8", "/N > 29", "/N > 5", "/F", "/J", "/F > 1 > 1", "/F > 1 > 1 > <name>"} {
+	for _, want := range []string{"/H", "/SN", "/N", "/N > 25", "/N > 25 > 4", "/N > 25 > 5", "/N > 25 > 6", "/N > 26", "/N > 28", "/N > 28 > 8", "/N > 29", "/N > 5", "/F", "/J", "/F > 1 > 1", "/F > 1 > 1 > <name>"} {
 		if !paths[want] {
 			t.Errorf("no row for %s", want)
 		}
 	}
 	if !slices.Contains(TailCommands(), "-P FORWARD DROP") || len(TailCommands()) != 5 {
 		t.Errorf("tail: %v", TailCommands())
+	}
+}
+
+// The prompt rows are the text pages of the SNMP menu's items 4, 5 and 6
+// and no other: each is a one-item row of the same number, label and key as
+// its menu item, in no secret, and entered with that number.
+func TestPromptRowsAreTheTextItemsOfTheSNMPMenu(t *testing.T) {
+	var menu *Page
+	for i := range Pages {
+		if Pages[i].Path == "/N > 25" {
+			menu = &Pages[i]
+		}
+	}
+	want := map[string]bool{"/N > 25 > 4": true, "/N > 25 > 5": true, "/N > 25 > 6": true}
+	for i := range Pages {
+		p := &Pages[i]
+		if p.Kind != KindPrompt {
+			continue
+		}
+		if !want[p.Path] {
+			t.Errorf("an unexpected prompt row %s", p.Path)
+		}
+		delete(want, p.Path)
+		if p.Required || len(p.Items) != 1 || p.Items[0].Secret {
+			t.Errorf("%s: required %v, %d items, secret %v", p.Path, p.Required, len(p.Items), p.Items[0].Secret)
+			continue
+		}
+		it := p.Items[0]
+		if !strings.HasSuffix(p.Path, " > "+strconv.Itoa(it.Number)) {
+			t.Errorf("%s: item %d is not the key that opens it", p.Path, it.Number)
+		}
+		found := false
+		for _, m := range menu.Items {
+			if m.Number == it.Number {
+				found = true
+				if m.Key != it.Key || m.Label != it.Label || m.Secret || m.Form != it.Form || m.Section != it.Section {
+					t.Errorf("%s: %+v is not its menu item %+v", p.Path, it, m)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s: no menu item %d", p.Path, it.Number)
+		}
+	}
+	if len(want) != 0 {
+		t.Errorf("no prompt row for %v", want)
+	}
+}
+
+// promptScreen is a prompt page as the unit prints it after the key and a
+// CR: the echo, the title, the limit, the footer, the value, the rule.
+func promptScreen(title, value string) string {
+	return "4\n" + title + "\nUp to 32 characters are allowed.\nEnter: <SPACE><CR> to clear,\n" +
+		"       <text><CR> to change,\n       <ESC> to return to previous menu ... \n" + value +
+		"\n--------------------------------\n"
+}
+
+func TestParsePrompt(t *testing.T) {
+	for name, c := range map[string]struct {
+		path, screen, value string
+	}{
+		"as printed":                           {"/N > 25 > 4", promptScreen("SYSTEM NAME:", "wti.site.example.net"), "wti.site.example.net"},
+		"blank lines":                          {"/N > 25 > 4", strings.Replace(promptScreen("SYSTEM NAME:", "x.example.net"), "4\nSYSTEM", "4\n\nSYSTEM", 1), "x.example.net"},
+		"no path":                              {"", promptScreen("CONTACT:", "Example NOC (555) 0100"), "Example NOC (555) 0100"},
+		"undefined":                            {"/N > 25 > 6", promptScreen("SNMP LOCATION:", "(undefined)"), ""},
+		"a value that begins as an error line": {"/N > 25 > 5", promptScreen("CONTACT:", "ERROR: call the desk"), "ERROR: call the desk"},
+		"trailing line":                        {"/N > 25 > 4", promptScreen("SYSTEM NAME:", "a.example.net") + "\n", "a.example.net"},
+	} {
+		p, err := ParseScreen(c.path, c.screen)
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if p.Page.Kind != KindPrompt || len(p.Fields) != 1 || p.Fields[0].Value != c.value {
+			t.Errorf("%s: %+v", name, p.Fields)
+		}
+	}
+}
+
+func TestParsePromptRefusals(t *testing.T) {
+	full := promptScreen("SYSTEM NAME:", "wti.site.example.net")
+	for name, c := range map[string]struct {
+		screen string
+		want   error
+	}{
+		"no value line":    {strings.Replace(full, "wti.site.example.net\n", "", 1), ErrLayout},
+		"blank value":      {strings.Replace(full, "wti.site.example.net\n", "\n", 1), ErrLayout},
+		"no rule line":     {strings.Replace(full, "--------------------------------\n", "", 1), ErrLayout},
+		"rule not painted": {strings.Replace(full, "--------------------------------", "----", 1), ErrLayout},
+		"no footer":        {strings.Replace(full, "<ESC> to return to previous menu ... ", "", 1), ErrLayout},
+		"error line above": {strings.Replace(full, "Up to 32", "ERROR: Invalid entry.\nUp to 32", 1), ErrLayout},
+		"too long":         {promptScreen("SYSTEM NAME:", strings.Repeat("x", 600)), ErrLayout},
+		"another page":     {strings.Replace(full, "SYSTEM NAME:", "NOT A PAGE:", 1), ErrUnknownPage},
+	} {
+		_, err := ParseScreen("/N > 25 > 4", c.screen)
+		if !errors.Is(err, c.want) {
+			t.Errorf("%s: %v, want %v", name, err, c.want)
+		}
+		if err != nil && strings.Contains(err.Error(), "wti.site.example.net") {
+			t.Errorf("%s: the error holds the value: %v", name, err)
+		}
+	}
+	// the value of one prompt is not another's page
+	if _, err := ParseScreen("/N > 25 > 5", full); !errors.Is(err, ErrPath) {
+		t.Errorf("a system name page at the contact's path: %v", err)
+	}
+}
+
+// A prompt's whole value replaces the menu's truncated one, at the menu
+// item's place; a document with no prompt keeps the menu's.
+func TestStatementsTakeThePromptValue(t *testing.T) {
+	_, menu := body(t, "08-snmp-access.txt")
+	_, trap := body(t, "09-snmp-trap.txt")
+	doc := "# page: /N > 25\n" + menu + "\n# page: /N > 26\n" + trap
+	text := func(d string) string {
+		parsed, err := ParseDocument(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, s := range parsed.Statements() {
+			if strings.HasPrefix(s.Key, "snmp system-name") || s.Key == "snmp contact" || s.Key == "snmp location" {
+				out = append(out, s.Raw())
+			}
+		}
+		return strings.Join(out, " | ")
+	}
+	if got, want := text(doc), `snmp system-name wti.site.exam... | snmp contact "Example NOC (..." | snmp location "Example City,..."`; got != want {
+		t.Errorf("without prompts:\n got %s\nwant %s", got, want)
+	}
+	with := doc + "\n# page: /N > 25 > 5\n" + promptScreen("CONTACT:", "Example NOC (555) 0100")
+	if got, want := text(with), `snmp system-name wti.site.exam... | snmp contact "Example NOC (555) 0100" | snmp location "Example City,..."`; got != want {
+		t.Errorf("one prompt:\n got %s\nwant %s", got, want)
 	}
 }

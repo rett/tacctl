@@ -4,7 +4,9 @@ Directories for `fakedev.New(dir)` (`internal/devssh/fakedev`, menu mode,
 `menu.go` has the manifest format) and for `tacctl _fake-device <dir>` in a
 test build: a menu-driven WTI unit that serves the captured screens of the
 parent directory (and `../pages/`) as a stateful menu. Read-only: nothing
-typed at a prompt page is taken; `fakedev.Server.Commands()` lists the keys
+typed at a prompt page is taken (the three SNMP text prompt pages, `# kind:
+prompt` in their captures, log an `entry` for a CR alone as well, and ESC at
+one repaints the SNMP access menu); `fakedev.Server.Commands()` lists the keys
 and lines typed and `Events()` what happened (`save /N` when a top-level menu
 was left with ESC, `close /N > 28` when the client went away on a page).
 

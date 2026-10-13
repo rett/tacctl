@@ -57,9 +57,9 @@
 | snmp enable on
 | snmp version v1-v2-only
 | snmp read-only yes
-| snmp system-name wti.site.exam...
-| snmp contact "Example NOC"
-| snmp location "Example City"
+| snmp system-name wti.site.example.net
+| snmp contact "Example NOC (555) 0100"
+| snmp location "Example City, Example State"
 * snmp ro-community <secret:1>
 * snmp rw-community <other:1>
 | snmp trap manager 1 192.0.2.34

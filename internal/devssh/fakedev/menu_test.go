@@ -81,6 +81,30 @@ func TestMenuManifestDefaultsAndPageOverride(t *testing.T) {
 	}
 }
 
+// The text prompt pages of the SNMP texts are marked by their captures'
+// '# kind: prompt' header, and a page of the manifest may be one.
+func TestMenuTextPromptPages(t *testing.T) {
+	tr := menuDir(t, "screens "+wtiFixtures+"\npage /N > 28 > 11 = prompt.txt\npage /N > 28 > 6 = menu.txt\n",
+		map[string]string{
+			"prompt.txt": "# kind: prompt\n# ---\n11\nSERVICE NAME:\n",
+			"menu.txt":   "# path: whatever\n# ---\n6\n\nFALLBACK LOCAL:\n",
+		})
+	c, err := loadMenu(tr, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"/N > 25 > 4", "/N > 25 > 5", "/N > 25 > 6", "/N > 28 > 11"} {
+		if !c.prompts[k] {
+			t.Errorf("%s is not a prompt page", k)
+		}
+	}
+	for _, k := range []string{"/N > 25", "/N > 28", "/N > 28 > 6", "/N > 28 > 8"} {
+		if c.prompts[k] {
+			t.Errorf("%s is a prompt page", k)
+		}
+	}
+}
+
 func TestMenuLevelsListTheirCommands(t *testing.T) {
 	want := map[string][]string{
 		"viewonly":      {"/S", "/SN", "/H", "/J", "/X", "/TELNET"},
@@ -158,6 +182,7 @@ func TestSplitEcho(t *testing.T) {
 		{"/H\n\nCOMMAND MENU:\n", "/H", "\nCOMMAND MENU:\n"},
 		{"/J\nSite ID: x\n", "/J", "Site ID: x\n"},
 		{"28\n\nTACACS: [Shared]\n", "28", "\nTACACS: [Shared]\n"},
+		{"4\nSYSTEM NAME:\nUp to 32 characters are allowed.\n", "4", "SYSTEM NAME:\nUp to 32 characters are allowed.\n"},
 		{"localadmin\n\nVIEW\n", "localadmin", "\nVIEW\n"},
 		{"IPTABLES ENTRIES: IPv4\n\n1.\n", "", "IPTABLES ENTRIES: IPv4\n\n1.\n"},
 		{"NETWORK PARAMETERS: [eth0] IPv4\n\n", "", "NETWORK PARAMETERS: [eth0] IPv4\n\n"},

@@ -35,9 +35,11 @@ const (
 // Kind is the kind of a page.
 type Kind string
 
-// The kinds of page the tables hold. Only these are ever opened: a page
-// that asks for input (a text, number, pick or secret prompt) is not in
-// the table, so the reader never enters one.
+// The kinds of page the tables hold. Only these are ever opened. A page
+// that asks for input (a number, a pick or a secret prompt) is not in the
+// table, so the reader never enters one; the exception is KindPrompt, the
+// text prompts of the three SNMP texts, which are entered to read a value
+// and left with ESC.
 const (
 	// KindMenu: numbered items with their current values.
 	KindMenu Kind = "menu"
@@ -51,6 +53,12 @@ const (
 	KindLine Kind = "line"
 	// KindUsers: the user directory's list of names.
 	KindUsers Kind = "users"
+	// KindPrompt: the text prompt page of an item whose menu value is
+	// printed truncated ('...'). The page prints the item's whole value
+	// under its footer, and leaves it unchanged on ESC. The reader opens it
+	// with the item's number and a CR, and leaves it with ESC: nothing is
+	// ever typed at it. The table holds no prompt row of a secret.
+	KindPrompt Kind = "prompt"
 )
 
 // Risk is the risk class of changing a setting (wti-interface.md section 6).
@@ -147,6 +155,24 @@ var Pages = []Page{
 			{Number: 7, Label: "Read-Only Community", Key: "snmp ro-community", Parse: pCommunity, Form: FormCommunity, Section: SectionSNMP, Risk: RiskSafe, Secret: true},
 			{Number: 8, Label: "Read/Write Community", Key: "snmp rw-community", Parse: pCommunity, Form: FormCommunity, Section: SectionSNMP, Risk: RiskSafe, Secret: true},
 			{Number: 9, Label: "V3 Users", Parse: pAny, Optional: true},
+		}},
+	// The text prompts of the three texts the menu prints truncated: the
+	// whole value follows the footer. Each row's item is the menu item of the
+	// same number and key; the prompt's value replaces the menu's.
+	{Path: "/N > 25 > 4", Name: "snmp-system-name", Kind: KindPrompt,
+		Title: regexp.MustCompile(`^SYSTEM NAME:` + reNoTail),
+		Items: []Item{
+			{Number: 4, Label: "System Name", Key: "snmp system-name", Parse: pText, Form: FormText, Section: SectionSNMP, Risk: RiskSafe},
+		}},
+	{Path: "/N > 25 > 5", Name: "snmp-contact", Kind: KindPrompt,
+		Title: regexp.MustCompile(`^CONTACT:` + reNoTail),
+		Items: []Item{
+			{Number: 5, Label: "Contact", Key: "snmp contact", Parse: pText, Form: FormText, Section: SectionSNMP, Risk: RiskSafe},
+		}},
+	{Path: "/N > 25 > 6", Name: "snmp-location", Kind: KindPrompt,
+		Title: regexp.MustCompile(`^SNMP LOCATION:` + reNoTail),
+		Items: []Item{
+			{Number: 6, Label: "SNMP Location", Key: "snmp location", Parse: pText, Form: FormText, Section: SectionSNMP, Risk: RiskSafe},
 		}},
 	{Path: "/N > 26", Name: "trap", Kind: KindMenu, Required: true,
 		Title: regexp.MustCompile(`^SNMP TRAP:` + reScope + reIPv + reNoTail),

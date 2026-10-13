@@ -683,8 +683,12 @@ func TestWTIEachSettingIsPlanned(t *testing.T) {
 		{"snmp enable", [][2]string{{"1. Enable:                 On", "1. Enable:                 Off"}}, "snmp enable", "2 (On)"},
 		{"snmp version", [][2]string{{"2. Version:                V1/V2 Only", "2. Version:                V3"}}, "snmp version", "1 (V1/V2 Only)"},
 		{"snmp read-only", [][2]string{{"3. Read Only:              Yes", "3. Read Only:              No"}}, "snmp read-only", "Yes"},
-		{"snmp contact", [][2]string{{"5. Contact:                Example NOC", "5. Contact:                Other NOC"}}, "snmp contact", "Example NOC"},
-		{"snmp location", [][2]string{{"6. SNMP Location:          Example City", "6. SNMP Location:          Elsewhere"}}, "snmp location", "Example City"},
+		// the menu prints the value truncated; the unit's whole value is on the
+		// text prompt page, which the walk opened after the menu
+		{"snmp contact", [][2]string{{"5. Contact:                Example NOC (...", "5. Contact:                Other NOC (55..."},
+			{"Example NOC (555) 0100\n", "Other NOC (555) 0100\n"}}, "snmp contact", "Example NOC (555) 0100"},
+		{"snmp location", [][2]string{{"6. SNMP Location:          Example City,...", "6. SNMP Location:          Elsewhere"},
+			{"Example City, Example State\n", "Elsewhere\n"}}, "snmp location", "Example City, Example State"},
 		{"snmp ro-community", [][2]string{{wtiROCommunity, wtiROCommunityOther}}, "snmp ro-community", "<the scope's SNMP community: tacctl scope snmp lab show --reveal>"},
 		{"tacacs secret", [][2]string{{wtiSecretDefined, wtiSecretUndefined}}, "tacacs secret", "<the scope's TACACS+ secret: tacctl scope secret show lab>"},
 	} {

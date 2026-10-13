@@ -293,10 +293,47 @@ lock out the management path).
 - Entering a number at `DSM>` (not a command) printed nothing.
 - Text prompts truncate display of long values on the menu (system name,
   contact and location show `...`); the full value is visible at the item's
-  prompt only, so a revert record must be taken from the prompt.
+  prompt only, so a revert record must be taken from the prompt. The SNMP
+  Access page (`/N` 25) cuts items 4 (System Name), 5 (Contact) and 6 (SNMP
+  Location) at about 16 characters, the `...` included (`wti.site.exam...`).
+  The item's number and a CR open its text prompt page, which prints the
+  whole value and leaves it unchanged on ESC (the SNMP Access menu repaints):
+
+  ```
+  4
+  SYSTEM NAME:
+  Up to 32 characters are allowed.
+  Enter: <SPACE><CR> to clear,
+         <text><CR> to change,
+         <ESC> to return to previous menu ...
+  <the whole value, on a line of its own>
+  --------------------------------
+  ```
+
+  The titles are `SYSTEM NAME:`, `CONTACT:` and `SNMP LOCATION:`. System
+  name and contact allow 32 characters; the location prompt also says `Set
+  the snmp location name.` and allows 64. The rule line under the value is
+  as long as the limit. The reader (`ReadWTI`) opens these three prompts, and
+  no other text prompt, only for an item whose menu value ends in `...`; it
+  sends the number and a CR, waits for the footer, the value and the rule
+  line, and leaves with ESC. It never types a value, a CR or `<SPACE><CR>`
+  at a prompt, and the prompts of the communities (items 7 and 8) and of the
+  secret words are never visited. The extraction takes the prompt's value for
+  `snmp system-name`, `snmp contact` and `snmp location`, so the comparison
+  is exact; a document with no prompt page keeps the menu's cut value and the
+  prefix match.
+- On this firmware the SNMP Access menu prints the read-only and read/write
+  communities in clear (`7. Read-Only Community: <string>`). They are turned
+  into labels in memory; no screen body is logged or stored.
 
 ## 10. Not known
 
+- The exact cut of a menu value (whether a value of 14 to 16 characters is
+  cut, and whether a trailing blank before the `...` is kept), from one
+  capture of a unit with long values.
+- What a text prompt prints for a value that is not set (a blank line or
+  `(undefined)`), and what a CR alone does at it; the reader opens a prompt
+  only for a cut value and never sends a CR there, so neither is needed.
 - Whether the engineer tier's SuperUser login is limited in any page (it can
   change settings: section 2; which pages it cannot reach, if any, was not
   mapped).

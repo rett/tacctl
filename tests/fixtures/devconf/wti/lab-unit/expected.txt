@@ -40,8 +40,8 @@
 | snmp enable on
 | snmp version v1-v2-only
 | snmp read-only yes
-| snmp contact Example NOC
-| snmp location Example City
+| snmp contact Example NOC (555) 0100
+| snmp location Example City, Example State
 * snmp ro-community ro-community
 [breakglass]
 | user localadmin level administrator

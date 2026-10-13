@@ -82,11 +82,8 @@ func TestIPTablesOrder(t *testing.T) {
 		"iptables -A INPUT -i lo -j ACCEPT",
 		"iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
 		"iptables -A INPUT -p tcp -s 10.0.0.42/32 --dport 22 -j ACCEPT",
-		"iptables -A INPUT -p tcp -s 10.0.0.42/32 --dport 443 -j ACCEPT",
 		"iptables -A INPUT -p tcp -s 192.0.2.0/24 --dport 22 -j ACCEPT",
-		"iptables -A INPUT -p tcp -s 192.0.2.0/24 --dport 443 -j ACCEPT",
 		"iptables -A INPUT -p tcp -s 198.51.100.0/25 --dport 22 -j ACCEPT",
-		"iptables -A INPUT -p tcp -s 198.51.100.0/25 --dport 443 -j ACCEPT",
 		"iptables -A INPUT -p udp -s 10.0.0.42/32 --dport 161 -j ACCEPT",
 		"iptables -A INPUT -p udp -s 203.0.113.0/24 --dport 161 -j ACCEPT",
 		"iptables -A INPUT -p udp -s 10.8.0.0/16 --dport 161 -j ACCEPT",
@@ -129,10 +126,10 @@ func TestIPTablesLongList(t *testing.T) {
 	}
 	b := WTIIPTables(in)
 	nums, _ := ruleLines(t, b.Rules)
-	if len(nums) != 24 || nums[23] != 24 {
+	if len(nums) != 17 || nums[16] != 17 {
 		t.Fatalf("nums = %v", nums)
 	}
-	if dn, _ := ruleLines(t, b.Drop); len(dn) != 1 || dn[0] != 25 {
+	if dn, _ := ruleLines(t, b.Drop); len(dn) != 1 || dn[0] != 18 {
 		t.Errorf("drop number %v", dn)
 	}
 	col := func(prefix string) int {
@@ -157,8 +154,8 @@ func TestIPTablesLockoutGuard(t *testing.T) {
 	} {
 		b := WTIIPTables(in)
 		_, cmds := ruleLines(t, b.Rules)
-		if len(cmds) != 6 || !strings.Contains(cmds[2], "-s 10.0.0.42/32 --dport 22") || !strings.Contains(cmds[4], "-p udp -s 10.0.0.42/32 --dport 161") ||
-			cmds[5] != "iptables -A INPUT -i eth0 -s 10.0.0.42/32 -p icmp -j ACCEPT" {
+		if len(cmds) != 5 || !strings.Contains(cmds[2], "-s 10.0.0.42/32 --dport 22") || !strings.Contains(cmds[3], "-p udp -s 10.0.0.42/32 --dport 161") ||
+			cmds[4] != "iptables -A INPUT -i eth0 -s 10.0.0.42/32 -p icmp -j ACCEPT" {
 			t.Errorf("rules without a list: %v", cmds)
 		}
 		if b.DropRendered {
@@ -193,7 +190,7 @@ func TestIPTablesAddresses(t *testing.T) {
 		Permits: []string{"192.0.2.7/32", "192.0.2.9", "fd00::/64", "bogus"}, SNMPRanges: []string{"fd00:1::/48"}})
 	_, cmds := ruleLines(t, b.Rules)
 	text := strings.Join(cmds, "\n")
-	for _, want := range []string{"-s 192.0.2.7/32 --dport 22", "-s 192.0.2.9/32 --dport 443"} {
+	for _, want := range []string{"-s 192.0.2.7/32 --dport 22", "-s 192.0.2.9/32 --dport 22"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("lacks %q:\n%s", want, text)
 		}
@@ -225,7 +222,7 @@ func TestIPTablesNotes(t *testing.T) {
 		"'-m state --state ESTABLISHED,RELATED' in place of",
 		"'-m conntrack --ctstate ESTABLISHED,RELATED'",
 		"TACACS+,", "RADIUS, DNS and NTP queries",
-		"Telnet and http are not", "'--dport 23' or '--dport 80'",
+		"Telnet, http and https are not", "'--dport 23', '--dport 80' or '--dport 443'",
 		"SNMP client restriction of Step 6",
 		"Verified on a lab unit (8.10, 2026-10-12).",
 		"IPv4 only",
@@ -568,21 +565,22 @@ func TestIPTablesEntryLimit(t *testing.T) {
 		}
 		return p
 	}
-	// Rules: 2 (lo, conntrack) + 2 + 2/permit + 1 (SNMP) + (permits + 1) ICMP = 3*P + 6.
+	// Rules: 2 (lo, conntrack) + 1 (server ssh) + 1/permit ssh + 1 (SNMP) + (permits + 1) ICMP = 2*P + 5;
+	// the last step's list adds the DROP, the OUTPUT ACCEPT and three policies.
 	for _, c := range []struct {
 		permits       int
 		lines, final  int
 		warn, inFinal string
 	}{
-		{10, 36, 41, "", ""},
-		{14, 48, 53, "this list has 48 entries and fits, but the list of the last step", "the block has 53 entries"},
-		{15, 51, 56, "this list has 51 entries; the unit holds 48.", "the block has 56 entries"},
+		{10, 25, 30, "", ""},
+		{20, 45, 50, "this list has 45 entries and fits, but the list of the last step", "the block has 50 entries"},
+		{22, 49, 54, "this list has 49 entries; the unit holds 48.", "the block has 54 entries"},
 	} {
 		b := WTIIPTables(IPTablesInput{Scope: "lab", Server: "10.0.0.42", Permits: permits(c.permits)})
 		if b.Lines != c.lines || len(b.Commands) != c.lines {
 			t.Fatalf("%d permits: %d lines", c.permits, b.Lines)
 		}
-		if c.permits == 10 {
+		if c.warn == "" {
 			if b.Warning != "" || strings.Contains(b.Rules, "WARNING") || strings.Contains(b.Drop, "WARNING") {
 				t.Errorf("a warning for %d entries:\n%s", c.lines, b.Warning)
 			}
@@ -607,11 +605,11 @@ func TestIPTablesEntryLimit(t *testing.T) {
 // The walkthrough ends with the warning when the list does not fit.
 func TestIPTablesEntryLimitWalkthrough(t *testing.T) {
 	var many []string
-	for i := 1; i <= 20; i++ {
+	for i := 1; i <= 22; i++ {
 		many = append(many, "198.51.100."+strconv.Itoa(i)+"/32")
 	}
 	out := snmpRender(t, "wti", "lab", false, TACACS, func(d *Data) { d.ACL.CIDRs = many })
-	if !strings.Contains(out, "IP Tables list too long (Step 5): this list has 66 entries; the unit holds 48.") {
+	if !strings.Contains(out, "IP Tables list too long (Step 5): this list has 49 entries; the unit holds 48.") {
 		t.Errorf("no closing warning:\n%s", out[len(out)-900:])
 	}
 	ok := snmpRender(t, "wti", "lab", false, TACACS, func(d *Data) { d.ACL.CIDRs = []string{"192.0.2.0/24"} })

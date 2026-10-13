@@ -54,20 +54,25 @@ import (
 //	                   the screen of one page (path as the unit's headers
 //	                   write it: '/N > 28 > 6'), for what the captures do
 //	                   not hold or a unit that differs; the file is a
-//	                   capture (its '# ---' header is dropped), relative to
+//	                   capture (its '# ---' header is dropped; '# kind:
+//	                   prompt' in it makes a text prompt page), relative to
 //	                   the manifest's directory, else to the screens
 //	                   directory. A page that has no file is an unknown
 //	                   entry ('ERROR: Invalid entry.').
 //
 // A page's own screen is found by the '# path:' line in the header of the
 // captures under <screens>/pages; the pages of the user directory (/F > 1
-// > 1, and one per name it lists) are the captures 32 and 33.
+// > 1, and one per name it lists) are the captures 32 and 33. A capture
+// whose header says '# kind: prompt' is a text prompt page (the SNMP system
+// name, contact and location, which print the whole value under the
+// footer): the unit takes nothing at it and ESC repaints the menu.
 //
 // The unit is read-only on purpose. A value typed at a prompt page is
 // never taken: the fake answers 'ERROR: Invalid entry.' and repaints, and
 // logs an 'entry' event, so that a test can assert that a reader typed
-// nothing. Keys, lines and what happened are logged as Commands and
-// Events (menusession.go).
+// nothing (a CR alone at a text prompt page is logged as an entry too, and
+// repaints the page). Keys, lines and what happened are logged as Commands
+// and Events (menusession.go).
 
 // The access levels, in the order of the unit's.
 var menuLevels = []string{"viewonly", "user", "superuser", "administrator"}
@@ -104,6 +109,7 @@ type menuConfig struct {
 	iptables []string          // the list's entries; nil is empty
 	filled   bool              // the list is the captured one (read with the screens)
 	pages    map[string]string // page key ('/N > 28') to the capture's file
+	prompts  map[string]bool   // page keys that are text prompt pages
 	screens  string            // the captures' directory
 	prompt   string
 	allowed  map[string]bool // the commands the level's help lists
@@ -168,7 +174,8 @@ func splitEcho(body string) (echo, rest string) {
 	}
 	next, _, _ := strings.Cut(after, "\n")
 	echoed := strings.HasPrefix(first, "/") ||
-		(next == "" && first != "" && len(first) <= 24 && !strings.ContainsAny(first, " \t:"))
+		(next == "" && first != "" && len(first) <= 24 && !strings.ContainsAny(first, " \t:")) ||
+		isNumber(first) // an item's number, whatever follows it
 	if !echoed {
 		return "", body
 	}
@@ -184,7 +191,7 @@ func loadMenu(t transcript, override string) (*menuConfig, error) {
 		return nil, fmt.Errorf("no menu manifest in %s", t.dir)
 	}
 	c := &menuConfig{
-		version: "8.10", level: "administrator", pages: map[string]string{},
+		version: "8.10", level: "administrator", pages: map[string]string{}, prompts: map[string]bool{},
 		screens: filepath.Join(t.dir, "..", ".."), prompt: t.promptOr("DSM> "),
 	}
 	overrides := map[string]string{} // page key to manifest-relative file
@@ -316,6 +323,9 @@ func (c *menuConfig) index(dir string, overrides map[string]string) error {
 		hdr, _ := captureParts(string(b))
 		if p := hdr["path"]; p != "" {
 			c.pages[pathKey(p)] = f
+			if hdr["kind"] == "prompt" {
+				c.prompts[pathKey(p)] = true
+			}
 		}
 	}
 	// The user directory: the view and a details page per user it lists.
@@ -327,10 +337,16 @@ func (c *menuConfig) index(dir string, overrides map[string]string) error {
 		if _, err := os.Stat(p); err != nil {
 			p = relTo(c.screens, f)
 		}
-		if _, err := os.Stat(p); err != nil {
+		b, err := os.ReadFile(p)
+		if err != nil {
 			return fmt.Errorf("menu: page %s: %v", k, err)
 		}
 		c.pages[k] = p
+		if hdr, _ := captureParts(string(b)); hdr["kind"] == "prompt" {
+			c.prompts[k] = true
+		} else {
+			delete(c.prompts, k)
+		}
 	}
 	if view, ok := c.pages["/F > 1 > 1"]; ok {
 		body, err := readCapture(view)
@@ -468,3 +484,16 @@ func (c *menuConfig) ipTablesScreen(n int) (string, bool) {
 
 // ipPages is how many screens the list has: 48 entries, 12 to a screen.
 func ipPages() int { return maxIPTablesEntries / ipPageSize }
+
+// isNumber reports one to three digits.
+func isNumber(s string) bool {
+	if s == "" || len(s) > 3 {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}

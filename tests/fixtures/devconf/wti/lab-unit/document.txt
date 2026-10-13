@@ -113,8 +113,8 @@ SNMP ACCESS: [eth0] IPv4
 2. Version:                V1/V2 Only
 3. Read Only:              Yes
 4. System Name:            wti.site.exam...
-5. Contact:                Example NOC
-6. SNMP Location:          Example City
+5. Contact:                Example NOC (...
+6. SNMP Location:          Example City,...
 7. Read-Only Community:    ro-community
 8. Read/Write Community:   rw-community
 9. V3 Users
@@ -122,6 +122,34 @@ SNMP ACCESS: [eth0] IPv4
 
 Enter: #<CR> to change,
        <ESC> to return to previous menu ... 
+# page: /N > 25 > 4
+4
+SYSTEM NAME:
+Up to 32 characters are allowed.
+Enter: <SPACE><CR> to clear,
+       <text><CR> to change,
+       <ESC> to return to previous menu ... 
+wti.site.example.net
+--------------------------------
+# page: /N > 25 > 5
+5
+CONTACT:
+Up to 32 characters are allowed.
+Enter: <SPACE><CR> to clear,
+       <text><CR> to change,
+       <ESC> to return to previous menu ... 
+Example NOC (555) 0100
+--------------------------------
+# page: /N > 25 > 6
+6
+SNMP LOCATION:
+Set the snmp location name.
+Up to 64 characters are allowed.
+Enter: <SPACE><CR> to clear,
+       <text><CR> to change,
+       <ESC> to return to previous menu ... 
+Example City, Example State
+----------------------------------------------------------------
 # page: /N > 26
 26
 

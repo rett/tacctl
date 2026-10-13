@@ -435,6 +435,37 @@ current behaviour; this file is where history lives.
     writes `<name>.txt` and `<name>.backout.txt`, never a `.set`, and `plan
     --pull` and `--all`, `--scope` and `--vendor wti` select units.
 
+18. **A WTI pull reads the whole SNMP system name, contact and location.** The
+    SNMP access page prints these three texts cut at about 16 characters and
+    ending in `...`, so a pull kept `wti.site.exam...` and compared it by its
+    beginning, with a note that it was taken as equal. A pull now opens the
+    item's text prompt for each of the three that the page shows cut that way:
+    the item's number and a CR print the whole value, and ESC leaves the
+    prompt with the value as it was. Nothing is typed at a prompt (no text, no
+    CR and no `<SPACE><CR>`, which would clear the field), a value the page
+    shows whole is not opened, and the prompts of the communities and secret
+    words are never visited. The whole values are extracted, shown by `device
+    config diff` and compared exactly: a contact that merely begins as the
+    rendered one is now a difference, and the note `the unit shows a truncated
+    value` is gone for a value read that way. The prompt pages are three more
+    screens of the pull, and the document is not kept. A record made by an
+    earlier pull holds the cut value and is still compared by its beginning,
+    with the note, until the unit is pulled again. The prompt pages print
+    values and nothing else; the SNMP access page itself prints the read-only
+    and read/write communities in clear on this firmware, and they are turned
+    into labels in memory and never stored or logged, as before.
+
+19. **`config wti`'s IP Tables list no longer opens tcp 443.** The list gave
+    the server and each permitted range ssh (22) and https (443). Web access
+    is off on the units and the REST API is not used, so the list now permits
+    ssh only: the numbered list, the `<iptables>` blocks of Step 5 and Step 11
+    and the managed `mgmt-acl` statements lose their `--dport 443` lines, and
+    the 48-entry count falls with them (a scope with ten permits is 25
+    entries, 30 with the last step's tail). A unit whose list still has the
+    443 lines reads `differs` in `mgmt-acl` until its list is replaced. To
+    allow https, telnet or http, add the same line with `--dport 443`, `23`
+    or `80` by hand, as the step's notes say.
+
 ## 0.2.6 (2026-10-12)
 
 A hotfix for 0.2.5, started from `master`. The items below are everything that

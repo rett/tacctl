@@ -26,12 +26,13 @@ import (
 )
 
 // iptablesPorts are the unit's services the list opens to the permitted
-// ranges: its ssh and its https. Telnet (23) and http (80) are left out on
-// purpose; the notes say how to add them by hand.
+// ranges: its ssh. Telnet (23), http (80) and https (443) are left out on
+// purpose (web access is off, and the REST API is not used); the notes say
+// how to add them by hand.
 var iptablesPorts = []struct {
 	Port int
 	Name string
-}{{22, "ssh"}, {443, "https"}}
+}{{22, "ssh"}}
 
 // snmpUDPPort is the port of the unit's SNMP agent.
 const snmpUDPPort = 161
@@ -129,7 +130,7 @@ func iptablesNets(list []string, skip string) (nets, skipped []string) {
 }
 
 // WTIIPTables builds the IP Tables list of the unit for the scope: the
-// loopback and the replies to the unit's own connections, ssh and https for
+// loopback and the replies to the unit's own connections, ssh for
 // the tacctl server and each permitted range, udp 161 for the SNMP clients
 // (the server first, then the scope's ranges in order). The final DROP is
 // not part of it.
@@ -162,20 +163,20 @@ func WTIIPTables(in IPTablesInput) IPTablesBlock {
 		}
 	}
 	if server != "" {
-		note("the tacctl server " + server + ": ssh and https")
+		note("the tacctl server " + server + ": ssh")
 		tcp(server)
 	} else {
-		note("the tacctl server's address is not known: add its ssh, https and udp 161 lines by hand (or pass --source <address>)")
+		note("the tacctl server's address is not known: add its ssh and udp 161 lines by hand (or pass --source <address>)")
 	}
 	if len(permits) == 0 {
 		who := ""
 		if server != "" {
-			who = ": only the tacctl server is permitted for ssh and https"
+			who = ": only the tacctl server is permitted for ssh"
 		}
 		note("no management permit list for scope '" + in.Scope + "'" + who)
 	}
 	for _, n := range permits {
-		note("permitted range " + n + ": ssh and https")
+		note("permitted range " + n + ": ssh")
 		tcp(n)
 	}
 	for _, s := range skippedPermits {
@@ -257,8 +258,8 @@ func WTIIPTables(in IPTablesInput) IPTablesBlock {
 		"  - Line 2: older builds take '-m state --state ESTABLISHED,RELATED' in place of",
 		"    '-m conntrack --ctstate ESTABLISHED,RELATED'. It covers the replies of the unit's own TACACS+,",
 		"    RADIUS, DNS and NTP queries.",
-		"  - Only ssh (22) and https (443) are permitted. Telnet and http are not: to allow them, add the same",
-		"    line with '--dport 23' or '--dport 80' for each address above, before the DROP.",
+		"  - Only ssh (22) is permitted. Telnet, http and https are not: to allow one, add the same line with",
+		"    '--dport 23', '--dport 80' or '--dport 443' for each address above, before the DROP.",
 		"  - The udp "+strconv.Itoa(snmpUDPPort)+" lines are the SNMP client restriction of Step 6, unless the unit has an SNMP",
 		"    access menu of its own (then enter the same clients there).",
 		"  - ICMP (ping): the last lines accept it from the same networks, on eth0 only. The unit's own",

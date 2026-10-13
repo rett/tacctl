@@ -556,6 +556,72 @@ func TestWTIFakeUnknownEntries(t *testing.T) {
 	waitEvent(t, u.srv, "no-page /N > 28 > 4")
 }
 
+// The SNMP texts' prompt pages print the whole value under the footer and
+// take nothing: a value or a CR is an 'entry' event and the page again, ESC
+// repaints the SNMP access menu, and no save is logged.
+func TestWTIFakeTextPromptPages(t *testing.T) {
+	u := openWTI(t, "lab-superuser")
+	u.login("DSM> ")
+	u.page("/N\r")
+	menu := u.page("25\r")
+	for _, want := range []string{"4. System Name:            wti.site.exam...", "5. Contact:                Example NOC (...", "6. SNMP Location:          Example City,..."} {
+		if !strings.Contains(menu, want) {
+			t.Errorf("the menu lacks %q:\n%s", want, menu)
+		}
+	}
+	atRule := func(s string) bool { return strings.HasSuffix(strings.TrimRight(s, " \n"), "--------") }
+	for _, c := range []struct{ key, title, limit, value string }{
+		{"4", "SYSTEM NAME:", "Up to 32 characters are allowed.", "wti.site.example.net"},
+		{"5", "CONTACT:", "Up to 32 characters are allowed.", "Example NOC (555) 0100"},
+		{"6", "SNMP LOCATION:", "Up to 64 characters are allowed.", "Example City, Example State"},
+	} {
+		u.send(c.key + "\r")
+		s := u.expect(atRule)
+		for _, want := range []string{c.title, c.limit, "<ESC> to return to previous menu", "\n" + c.value + "\n---"} {
+			if !strings.Contains(s, want) {
+				t.Errorf("page %s lacks %q:\n%q", c.key, want, s)
+			}
+		}
+		u.send("\x1b")
+		if back := u.expect(atFooter); !strings.Contains(back, "SNMP ACCESS:") {
+			t.Errorf("ESC at page %s:\n%s", c.key, back)
+		}
+	}
+	// a value is not taken, and neither is a CR alone
+	u.send("4\r")
+	u.expect(atRule)
+	u.send("changed.example.net\r")
+	s := u.expect(atRule)
+	if !strings.Contains(s, "ERROR: Invalid entry.") || !strings.Contains(s, "wti.site.example.net") || strings.Contains(s, "changed.example.net\n---") {
+		t.Errorf("a value at the prompt:\n%q", s)
+	}
+	u.send("\r")
+	if s := u.expect(atRule); !strings.Contains(s, "wti.site.example.net") || strings.Contains(s, "ERROR:") {
+		t.Errorf("a CR at the prompt:\n%q", s)
+	}
+	waitEvent(t, u.srv, "entry /N > 25 > 4")
+	entries := 0
+	for _, e := range u.srv.Events() {
+		if e == "entry /N > 25 > 4" {
+			entries++
+		}
+		if strings.HasPrefix(e, "save") {
+			t.Errorf("event %q", e)
+		}
+	}
+	if entries != 2 {
+		t.Errorf("%d entry events, want 2: %q", entries, u.srv.Events())
+	}
+	u.send("\x1b")
+	u.expect(atFooter)
+	// the communities' prompts have no page
+	s = u.page("7\r")
+	if !strings.Contains(s, "ERROR: Invalid entry.") || !strings.Contains(s, "SNMP ACCESS:") {
+		t.Errorf("/N 25 7:\n%s", s)
+	}
+	waitEvent(t, u.srv, "no-page /N > 25 > 7")
+}
+
 func TestWTIFakeCloseMidPager(t *testing.T) {
 	u := openWTI(t, "lab-superuser")
 	u.login("DSM> ")

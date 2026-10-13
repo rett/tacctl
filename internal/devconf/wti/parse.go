@@ -233,7 +233,15 @@ func ParseScreen(path, screen string) (*Parsed, error) {
 		p.User = name
 	}
 	body := lines[at+1:]
-	for _, l := range body {
+	scan := body
+	if row.Kind == KindPrompt {
+		// the value a prompt page prints is the unit's own text: only the
+		// lines above its footer can be an error line
+		if head, _, ok := promptSplit(body); ok {
+			scan = head
+		}
+	}
+	for _, l := range scan {
 		if strings.HasPrefix(strings.TrimSpace(l), "ERROR:") {
 			return nil, fmt.Errorf("%w: %q: the unit printed an error", ErrLayout, t)
 		}
@@ -246,6 +254,8 @@ func ParseScreen(path, screen string) (*Parsed, error) {
 		err = parseList(p, body)
 	case KindUsers:
 		err = parseUsers(p, body)
+	case KindPrompt:
+		err = parsePrompt(p, body)
 	case KindStatus:
 		err = parseStatus(p, append([]string{title}, body...))
 	case KindHelp:
@@ -371,6 +381,65 @@ func parseList(p *Parsed, body []string) error {
 	return nil
 }
 
+// promptFooter is the line of a prompt page's footer that says ESC leaves
+// the value as it is (the unit adds ' ...' after it).
+const promptFooter = "<ESC> to return to previous menu"
+
+// reRule is the line of dashes under a prompt page's value, as long as the
+// field's limit.
+var reRule = regexp.MustCompile(`^-{8,}$`)
+
+// promptSplit cuts a prompt page's body after its footer line: head ends
+// with the footer, tail is what the unit printed under it. ok is false for
+// a body with no footer.
+func promptSplit(body []string) (head, tail []string, ok bool) {
+	for i, l := range body {
+		if strings.Contains(l, promptFooter) {
+			return body[:i+1], body[i+1:], true
+		}
+	}
+	return body, nil, false
+}
+
+// parsePrompt reads a text prompt page: under its footer the field's whole
+// value on a line of its own, then the rule line. A page with no value line
+// (the rule comes first), no rule line or no footer is not the layout. The
+// value is the page's only item, in the table's order; the prompt is never
+// typed at, so nothing else of the page is read.
+func parsePrompt(p *Parsed, body []string) error {
+	_, tail, ok := promptSplit(body)
+	if !ok {
+		return fmt.Errorf("%w: the screen is incomplete", ErrLayout)
+	}
+	var lines []string
+	for _, l := range tail {
+		if t := strings.TrimSpace(l); t != "" {
+			lines = append(lines, t)
+		}
+	}
+	switch {
+	case len(lines) == 0:
+		return fmt.Errorf("%w: the screen is incomplete", ErrLayout)
+	case reRule.MatchString(lines[0]) && (len(lines) == 1 || !reRule.MatchString(lines[1])):
+		return fmt.Errorf("%w: the page prints no value line", ErrLayout)
+	case len(lines) < 2:
+		// the value is there and its rule line is not painted yet
+		return fmt.Errorf("%w: the screen is incomplete", ErrLayout)
+	case !reRule.MatchString(lines[1]):
+		return fmt.Errorf("%w: the value is not followed by the rule line", ErrLayout)
+	}
+	if len(p.Page.Items) != 1 {
+		return fmt.Errorf("%w: a prompt row holds one item", ErrLayout)
+	}
+	it := &p.Page.Items[0]
+	v, ok := it.Parse(lines[0])
+	if !ok {
+		return fmt.Errorf("%w: a value is not of a form the page prints", ErrLayout)
+	}
+	p.Fields = append(p.Fields, Field{Item: it, Value: v})
+	return nil
+}
+
 func parseUsers(p *Parsed, body []string) error {
 	complete := false
 	for _, l := range body {
@@ -458,6 +527,9 @@ type Document struct {
 	order   []string
 	details map[string]*Parsed
 	usersOK bool
+	// full maps a statement key to the whole value its prompt page printed
+	// (KindPrompt): the menu's own, truncated, value is not used.
+	full map[string]string
 }
 
 // PageHeader is the line that heads a screen in a document.
@@ -494,7 +566,7 @@ func ParseDocument(raw string) (*Document, error) {
 	if len(blocks) > maxPages {
 		return nil, fmt.Errorf("%w: more than %d screens", ErrDocument, maxPages)
 	}
-	d := &Document{byRow: map[string]*Parsed{}, slots: map[int]string{}, details: map[string]*Parsed{}}
+	d := &Document{byRow: map[string]*Parsed{}, slots: map[int]string{}, details: map[string]*Parsed{}, full: map[string]string{}}
 	for _, b := range blocks {
 		p, err := ParseScreen(b.path, strings.Join(b.lines, "\n"))
 		if err != nil {
@@ -522,6 +594,11 @@ func ParseDocument(raw string) (*Document, error) {
 				d.details[p.User] = p
 			} else {
 				d.byRow[p.Page.Path] = p
+			}
+			if p.Page.Kind == KindPrompt {
+				for _, f := range p.Fields {
+					d.full[f.Item.Key] = f.Value
+				}
 			}
 		}
 	}
@@ -667,7 +744,8 @@ func (d *Document) Statements() []Statement {
 					add(SectionMgmtACL, Canonical{Form: FormCommand, Key: "iptables", Value: cmd})
 				}
 			}
-		case row.Kind == KindUsers:
+		case row.Kind == KindUsers, row.Kind == KindPrompt:
+			// a prompt's value is taken at its menu item's place
 		case row.Path == "/F > 1 > 1 > <name>":
 			for _, n := range d.order {
 				p := d.details[n]
@@ -692,6 +770,9 @@ func (d *Document) Statements() []Statement {
 					continue
 				}
 				v := f.Value
+				if full, ok := d.full[f.Item.Key]; ok {
+					v = full // the prompt page's whole value, not the menu's truncated one
+				}
 				if f.Item.Form == FormSecret && v != "" {
 					v = SecretMark
 				}

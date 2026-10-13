@@ -47,7 +47,8 @@ import (
 //	exit                  '/X'
 //	refused <command>     a command the login's help does not list
 //	unmodelled <command>  a listed command the fake does not model
-//	entry <page>          a value was typed at a prompt page (refused)
+//	entry <page>          a value was typed at a prompt page (refused); at a
+//	                      text prompt page (the SNMP texts) a CR alone is one
 //	no-page <page>[ > n]  a number was typed at a menu that has no page
 //	                      for it (the text, when it is no number, is not
 //	                      logged)
@@ -559,6 +560,13 @@ func (m *menuSession) pop() {
 
 // entry handles a line typed at the page cur.
 func (m *menuSession) entry(cur, line string) {
+	if line == "" && m.c.prompts[cur] {
+		// a text prompt page takes nothing, not even an empty entry
+		m.event("entry %s", cur)
+		s, _ := m.pageScreen()
+		m.w(s)
+		return
+	}
 	if line == "" {
 		s, _ := m.pageScreen()
 		if strings.HasPrefix(cur, "/F > 1 > 1 > ") {

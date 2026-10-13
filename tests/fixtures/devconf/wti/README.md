@@ -50,6 +50,17 @@ its SSH port).
   `port-*` (`/P` for port 1), `alarm-top` (`/AC`). They are the screens
   `docs/plans/wti-interface.md` describes.
 
+- `pages/network-25-4.txt`, `-5` and `-6`: the text prompt pages of the SNMP
+  access items System Name, Contact and SNMP Location (`# kind: prompt` in the
+  header), captured 2026-10-12 with read-only navigation: the item's number
+  and a CR, then ESC (nothing entered). Each prints the whole value under its
+  footer, then a rule line as long as the field's limit; the SNMP access menu
+  (`08-snmp-access.txt`, `pages/network-25.txt`) prints the same three values
+  cut at about 16 characters and ending in `...`. The values are replaced by
+  examples (`wti.site.example.net`, `Example NOC (555) 0100`,
+  `Example City, Example State`), and the menu's cut values are copies of
+  them.
+
 The headers follow the run sheet's (`# vendor`, `# os`, `# transport`, `#
 command`, `# source`, `# captured`); `# level` names the access level of the
 account. These are inputs for the WTI work after 0.2.4, which does not read

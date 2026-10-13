@@ -1,0 +1,18 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 25 > 4
+# kind: prompt
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation; opened with the item's number, left with ESC, nothing entered)
+# captured: 2026-10-12
+# sanitised: names, contacts, locations
+# ---
+4
+SYSTEM NAME:
+Up to 32 characters are allowed.
+Enter: <SPACE><CR> to clear,
+       <text><CR> to change,
+       <ESC> to return to previous menu ... 
+wti.site.example.net
+--------------------------------

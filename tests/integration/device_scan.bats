@@ -107,7 +107,7 @@ two_scans() {
     plain
     assert_output --regexp "core-sw1 +203\.0\.113\.1 +cisco +dmz +configured +2026-10-02 14:03 +alice +tacacs +never +-"
     assert_output --regexp "edge-fw +203\.0\.113\.20 +other +dmz +configured +rejected 2026-10-03 14:05 \(bad secret\) +- +tacacs +- +-"
-    assert_output --regexp "oob-con1 +203\.0\.113\.9 +wti +dmz +configured stale +2026-08-20 09:12 +asmith +radius +- +name-mismatch"
+    assert_output --regexp "oob-con1 +203\.0\.113\.9 +wti +dmz +configured stale +2026-08-20 09:12 +asmith +radius +never +name-mismatch"
     assert_output --regexp "lab-rtr2 +198\.51\.100\.7 +juniper +- +unconfigured +never +- +- +- +-"
     assert_output --partial "seen data as of 2026-10-04 12:00 (tacctl device scan to refresh); stale after 30 days"
     assert_output --partial "2 open notice(s): tacctl device notices"

@@ -57,7 +57,7 @@ func wtiManagedWorld(t *testing.T, protocol string, snmp devices.SNMPInput) (dev
 // wtiLabSNMP is the lab unit's SNMP page as the scope renders it.
 func wtiLabSNMP() devices.SNMPInput {
 	return devices.SNMPInput{Scope: "lab", Version: "v2c", Community: "ro-community", CredFrom: "scope",
-		Contact: "Example NOC", Location: "Example City", Ranges: []string{"10.1.101.0/24"}}
+		Contact: "Example NOC (555) 0100", Location: "Example City, Example State", Ranges: []string{"10.1.101.0/24"}}
 }
 
 func wtiManaged(t *testing.T, protocol string, snmp devices.SNMPInput) []devices.Section {
@@ -277,7 +277,7 @@ func TestWTIManagedRenderingAgainstItsUnit(t *testing.T) {
 
 	t.Run("a scope with SNMPv3", func(t *testing.T) {
 		v3 := devices.SNMPInput{Scope: "lab", Version: "v3", V3User: "tacctl-ro", V3Auth: "sha", V3Priv: "aes128",
-			V3AuthPass: "auth-pass-0123", V3PrivPass: "priv-pass-4567", CredFrom: "scope", Contact: "Example NOC", Location: "Example City"}
+			V3AuthPass: "auth-pass-0123", V3PrivPass: "priv-pass-4567", CredFrom: "scope", Contact: "Example NOC (555) 0100", Location: "Example City, Example State"}
 		exp3 := wtiManaged(t, devices.TACACS, v3)
 		_, by := wtiPull(t, doc, exp3)
 		r := by[SectionSNMP]

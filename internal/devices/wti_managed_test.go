@@ -457,7 +457,7 @@ func TestManagedWTIStatements(t *testing.T) {
 		"iptables -A INPUT -i lo -j ACCEPT",
 		"iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
 		"iptables -A INPUT -p tcp -s 10.0.0.42/32 --dport 22 -j ACCEPT",
-		"iptables -A INPUT -p tcp -s 198.51.100.0/24 --dport 443 -j ACCEPT",
+		"iptables -A INPUT -p tcp -s 198.51.100.0/24 --dport 22 -j ACCEPT",
 		"iptables -A INPUT -p udp -s 198.51.100.0/24 --dport 161 -j ACCEPT",
 		"iptables -A INPUT -i eth0 -s 192.0.2.0/24 -p icmp -j ACCEPT",
 	} {

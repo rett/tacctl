@@ -14,7 +14,14 @@ package devconf
 //     ('<CR>' at the banner), '/H', '/SN', '/J', '/N', an item number, '>'
 //     on the IP tables list, a listed user's name, SPACE at a pager and ESC.
 //     It never types into a page that asks for text, a number or a secret
-//     (a screen that is not a table row is never opened on purpose).
+//     (a screen that is not a table row is never opened on purpose). The
+//     only pages of that kind it opens are the table's text prompts (kind
+//     prompt: the SNMP system name, contact and location), and only for an
+//     item the menu printed truncated ('...'): the item's number and a CR
+//     open the prompt, which prints the whole value, and ESC leaves it with
+//     the value as it was. Nothing is ever typed at a prompt, not a CR, not
+//     text, not SPACE then CR (which clears the field). The prompts of the
+//     secrets (communities, secret words) have no row and are never visited.
 //   - It never takes the final ESC. Leaving a top-level menu with ESC makes
 //     the unit write its whole configuration to flash, another person's
 //     unsaved live edit included, so a read ends on a page of '/N' (or
@@ -221,7 +228,9 @@ var (
 // below '/N' in the table's order ('/N 25', '/N 26', '/N 28', '/N 28 8',
 // '/N 29', '/N 29 11' where the unit has it, '/N 5' and '>' three times for
 // its four screens), each followed by ESC back to the page it was opened
-// from, waiting for that page's footer. A session in Users then reads '/F',
+// from, waiting for that page's footer. After '/N 25' come the text prompts
+// of its items 4, 5 and 6 (each only when the menu prints the value
+// truncated), each read and left with ESC. A session in Users then reads '/F',
 // '/F 1 1' and '/F 1 1 <name>' for each name the list holds.
 //
 // The session is closed on every return, never with an ESC from a
@@ -342,6 +351,9 @@ type wtiWalker struct {
 	// showing: depth is len(paths), 0 at the prompt. An ESC is sent only
 	// at depth two or more.
 	paths []string
+	// shown is the last screen opened for a page, by path: the menu a text
+	// prompt's item is read from.
+	shown map[string]string
 	// dead is set when the transport failed or ended: nothing is sent.
 	dead bool
 }
@@ -360,7 +372,7 @@ func newWTIWalker(term WTITerminal, opts WTIReadOptions) (*wtiWalker, error) {
 			return nil, fmt.Errorf("devconf: the WTI prompt pattern is not a regular expression: %w", err)
 		}
 	}
-	return &wtiWalker{term: term, opts: opts, re: re}, nil
+	return &wtiWalker{term: term, opts: opts, re: re, shown: map[string]string{}}, nil
 }
 
 // lastLine is the text after the last newline: the line being written.
@@ -630,7 +642,7 @@ func (w *wtiWalker) walk(ctx context.Context, root string) error {
 		if !strings.HasPrefix(row.Path, root+" > ") || strings.Contains(row.Path, "<") {
 			continue
 		}
-		if row.Kind != wti.KindMenu && row.Kind != wti.KindList {
+		if row.Kind != wti.KindMenu && row.Kind != wti.KindList && row.Kind != wti.KindPrompt {
 			continue
 		}
 		parent := parentOf(row.Path)
@@ -641,6 +653,12 @@ func (w *wtiWalker) walk(ctx context.Context, root string) error {
 			if err := w.back(ctx); err != nil {
 				return err
 			}
+		}
+		if row.Kind == wti.KindPrompt {
+			if err := w.readPrompt(ctx, row); err != nil {
+				return err
+			}
+			continue
 		}
 		skipped, err := w.open(ctx, keyOf(row.Path)+"\r", row.Path, !row.Required)
 		if err != nil {
@@ -713,8 +731,57 @@ func (w *wtiWalker) open(ctx context.Context, key, path string, optional bool) (
 		return false, w.abortWith(ctx, path, s, assume, pageError(path, s, err))
 	}
 	w.paths = append(w.paths, path)
+	w.shown[path] = s
 	w.add(path, s)
 	return false, nil
+}
+
+// readPrompt reads the text prompt page of a row (kind prompt) below the
+// page showing, when that page printed the row's item truncated. The page
+// is opened with the item's number and a CR, taken to be the row's page once
+// it shows the footer, the whole value and its rule line, and left with ESC,
+// which keeps the value as it was. Nothing is typed at the prompt. A page
+// that is not the row's is left as open does: ESC where it is known to be
+// two or more levels deep, then the error.
+func (w *wtiWalker) readPrompt(ctx context.Context, row *wti.Page) error {
+	parent := parentOf(row.Path)
+	if len(row.Items) != 1 || !w.menuTruncated(parent, &row.Items[0]) {
+		return nil
+	}
+	path := row.Path
+	assume := len(w.paths) + 1 // the key opens a page one level below
+	s, ok, err := w.step(ctx, []byte(keyOf(path)+"\r"), func(s string) bool {
+		_, err := wti.ParseScreen(path, s)
+		return err == nil
+	})
+	if err != nil {
+		return wtiTransport(path, err)
+	}
+	if !ok {
+		return w.abort(ctx, path, s, assume, "the text prompt did not come to its footer, value and rule line")
+	}
+	w.paths = append(w.paths, path)
+	w.add(path, s)
+	return w.back(ctx)
+}
+
+// menuTruncated reports that the menu page at path, as it was opened,
+// printed the item with a value ending in '...'.
+func (w *wtiWalker) menuTruncated(path string, it *wti.Item) bool {
+	s, ok := w.shown[path]
+	if !ok {
+		return false
+	}
+	p, err := wti.ParseScreen(path, s)
+	if err != nil {
+		return false
+	}
+	for _, f := range p.Fields {
+		if f.Item.Number == it.Number && f.Item.Key == it.Key {
+			return strings.HasSuffix(f.Value, "...")
+		}
+	}
+	return false
 }
 
 // back types ESC at the page showing, which is at least two deep, and
