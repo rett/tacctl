@@ -363,6 +363,10 @@ shim_obtain() {
     if [[ $rc -eq 1 ]]; then
         shim_info "Release binary for ${SHIM_RELEASE_TAG} not used (${SHIM_RELEASE_WHY}); building from source."
     fi
+    # '--install-binary' comes here without the toolchain step of a command
+    # run: an upgrade from a release whose Go is older than this tree needs
+    # installs it before the build, not after.
+    shim_toolchain || return 1
     shim_info "Building ${dst} from ${SHIM_TREE}..."
     tacctl_go_build "$dst"
 }

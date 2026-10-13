@@ -153,6 +153,10 @@ current behaviour; this file is where history lives.
    Python 3.12 `repr` that the configuration reader reproduces now uses
    CPython's own printable-character table (Unicode 15.0) instead of the Go
    toolchain's, so what tacctl prints no longer moves with a Go release.
+   An upgrade that has to build tacctl from source on a host whose Go is
+   older than the tree needs (a branch, or a release binary that cannot be
+   verified) installs the toolchain first; before, the build stopped at
+   `go.mod requires go >= 1.27.0`.
 
 ## 0.2.7 (2026-10-12)
 

@@ -585,7 +585,7 @@ not_used() {
     assert_line "NEW status"
 }
 
-@test "shim: --install-binary obtains into <out> only (no sudo, no toolchain step, nothing run); a failure is exit 1" {
+@test "shim: --install-binary obtains into <out> only (no sudo, nothing run); a failure is exit 1" {
     unset TACCTL_SKIP_SUDO
     stub_cmd sudo
     run_shim --install-binary
@@ -623,6 +623,19 @@ not_used() {
     run "$out" x
     assert_output "NEW x"
     [[ ! -e "$B" && ! -e "${out}.new" ]]
+}
+
+@test "shim: --install-binary of a tree that needs a newer Go installs it before the build, and only then" {
+    go_toolchain "$GOROOT_DIR" 1.26.2
+    go_tarball 1.27.2
+    local out="${BATS_TEST_TMPDIR}/out/tacctl"
+    run "${T}/bin/tacctl.sh" --install-binary "$out"
+    assert_success
+    assert_output --partial "Go 1.26.2 found, upgrading to 1.27.2..."
+    run "$out" x
+    assert_output "NEW x"
+    run "${GOROOT_DIR}/bin/go" version
+    assert_output "go version go1.27.2 linux/amd64"
 }
 
 @test "shim: --verify-release passes on signed assets and fails on a flipped byte, another key, or no key" {
