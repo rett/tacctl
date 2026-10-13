@@ -527,6 +527,12 @@ func (inv *invocation) restoreSnapshot(id string) error {
 		inv.stderrLine(err.Error())
 		return err
 	}
+	// And the configuration blocks, which the blocks.* keys of tacctl.yaml
+	// (restored with it) name.
+	if err := inv.restoreBlocks(dir); err != nil {
+		inv.stderrLine(err.Error())
+		return err
+	}
 	inv.reconcileBackends(before)
 	if err := set.RestartAll(inv.ctx); err != nil {
 		return err
@@ -616,6 +622,75 @@ func (inv *invocation) restoreSNMP(dir string) error {
 	_ = os.Remove(devDir)    // only when empty
 	_ = os.Remove(p.SNMPDir) // only when empty
 	return nil
+}
+
+// restoreBlocks puts the configuration blocks of snapshot directory dir
+// back (blocks/<scope>/<vendor>/<block> and blocks/_devices/<device>/
+// <vendor>/<block>, the directories 0700 and the files 0600). A snapshot
+// that holds a blocks directory makes the live one match it: a file it lacks
+// goes (tacctl.yaml, restored with it, does not list that block), and the
+// directories that leaves empty. One that holds none (taken before there
+// were blocks, or when there were none) leaves the live files alone: they
+// are no block in force, the restored tacctl.yaml does not name them, and
+// 'tacctl scope block ... check' lists them as files that are ignored.
+func (inv *invocation) restoreBlocks(dir string) error {
+	root := inv.app.Paths.BlocksDir
+	snapDir := filepath.Join(dir, snapshot.BlocksName)
+	files := snapshot.BlockFiles(snapDir)
+	if len(files) == 0 {
+		return nil
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(root, 0o700); err != nil {
+		return err
+	}
+	for _, n := range files {
+		rel := filepath.FromSlash(n)
+		to := filepath.Join(root, rel)
+		// Every directory from the root down, whatever the umask.
+		cur := root
+		for _, part := range strings.Split(filepath.Dir(rel), string(filepath.Separator)) {
+			if part == "." {
+				continue
+			}
+			cur = filepath.Join(cur, part)
+			if err := os.MkdirAll(cur, 0o700); err != nil {
+				return err
+			}
+			if err := os.Chmod(cur, 0o700); err != nil {
+				return err
+			}
+		}
+		if err := backupPut(filepath.Join(snapDir, rel), to, 0o600); err != nil {
+			return err
+		}
+	}
+	for _, n := range snapshot.BlockFiles(root) {
+		if !slices.Contains(files, n) {
+			if err := os.Remove(filepath.Join(root, filepath.FromSlash(n))); err != nil {
+				return err
+			}
+		}
+	}
+	pruneEmptyDirs(root)
+	return nil
+}
+
+// pruneEmptyDirs removes the directories under root that hold nothing (the
+// deepest first), and root itself when it is left empty.
+func pruneEmptyDirs(root string) {
+	var dirs []string
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && d.IsDir() {
+			dirs = append(dirs, path)
+		}
+		return nil
+	})
+	for i := len(dirs) - 1; i >= 0; i-- {
+		_ = os.Remove(dirs[i]) // only when empty
+	}
 }
 
 // restoreCredDir puts the credential files of one snapshot directory back

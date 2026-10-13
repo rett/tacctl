@@ -63,6 +63,9 @@ func Main(argv, environ []string, stdio app.Stdio, build BuildInfo) int {
 	// anything runs, so no program tacctl starts (id, logger, sudo, ssh ...)
 	// inherits it; the one verb that uses it asks for it (takeAskpass).
 	environ = captureAskpass(environ)
+	// The editor's variables, as the root side of a sudo line has them, the
+	// same way: the verbs that open an editor ask for them (editorVars).
+	environ = captureEditor(environ, os.Geteuid())
 	exe, err := os.Executable()
 	if err != nil {
 		exe = ""

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -56,6 +57,23 @@ func goldenVariants(f fixture) []struct {
 		o.BreakglassHeld = &BreakglassHold{Since: "2026-10-10 14:02", By: "alice"}
 		vs = append(vs, variant{"held.", o})
 	}
+	// The restore point of an IOS plan (0.2.7): a named copy on flash:, the
+	// 'archive config' form where the pull read an archive path, and a named
+	// copy on the 12.4 router's disk0:. None of them changes another golden.
+	switch f.name {
+	case "cisco.reference-bare":
+		o := f.options()
+		o.RestorePoint = &RestorePoint{FS: "flash:"}
+		vs = append(vs, variant{"restore.", o})
+	case "cisco.reference-lab":
+		o := f.options()
+		o.RestorePoint = &RestorePoint{ArchiveFS: "bootflash:"}
+		vs = append(vs, variant{"restore-archive.", o})
+	case "cisco.real-12.4-7200":
+		o := f.options()
+		o.RestorePoint = &RestorePoint{FS: "disk0:"}
+		vs = append(vs, variant{"restore-disk0.", o})
+	}
 	return vs
 }
 
@@ -91,7 +109,7 @@ func allGoldenCases(t *testing.T) []goldenCase {
 			gc := goldenCase{name: f.name + "." + v.name, opt: v.opt, d: d, h: h, w: w}
 			gc.files = append(gc.files, goldenFile{gc.name + "output.txt", Block(d, h, w)})
 			gc.plain, gc.plainErr = Plain(d, h, w)
-			if gc.plainErr == nil {
+			if gc.plainErr == nil && v.opt.RestorePoint == nil {
 				gc.files = append(gc.files, goldenFile{gc.name + "plain.txt", gc.plain})
 			}
 			js, err := JSON(d, h, w)
@@ -166,7 +184,7 @@ func coverFiles(t *testing.T) []goldenFile {
 	t.Helper()
 	var sts []DeviceStatus
 	for _, gc := range goldenCases(t) {
-		if gc.opt.Secrets || gc.opt.NoSecrets || gc.converge {
+		if gc.opt.Secrets || gc.opt.NoSecrets || gc.opt.RestorePoint != nil || gc.converge {
 			continue
 		}
 		sts = append(sts, StatusFor(gc.d, gc.h))
@@ -209,6 +227,9 @@ func TestGoldenFilesAreProduced(t *testing.T) {
 		}
 	}
 	for _, f := range coverFiles(t) {
+		want["plan."+f.name] = true
+	}
+	for _, f := range wtiGoldenFiles(t) {
 		want["plan."+f.name] = true
 	}
 	ents, err := os.ReadDir(goldenDir)
@@ -273,7 +294,10 @@ func checkWholePaste(t *testing.T, name string, d Delta, h Header, w Wrapper) {
 	// the comment lines are the labels and the placeholders, one label per
 	// run of a section
 	leader := commentLeader(d.Vendor)
-	for _, l := range lines {
+	for i, l := range lines {
+		if bannerBody(lines)[i] {
+			continue // the text of a login banner is no comment, whatever it starts with
+		}
 		if strings.HasPrefix(l, leader) && !strings.HasPrefix(l, leader+" "+secretLinePrefix) {
 			if !strings.Contains(l, ": ") {
 				t.Errorf("%s: a comment that is no label inside the region: %q", name, l)
@@ -306,8 +330,10 @@ func checkWholePaste(t *testing.T, name string, d Delta, h Header, w Wrapper) {
 	if !strings.Contains(after, "yourself:  "+want) {
 		t.Errorf("%s: the follow-up %q is not said after the region", name, want)
 	}
-	// nothing before the region is a plain line either
-	before := full[:strings.Index(full, from)]
+	// nothing before the region is a plain line either, but the restore
+	// block's command (0.2.7): its own banner pair, once, holding exactly
+	// the lines CheckRestorePoint allows
+	before := withoutRestoreBlock(t, name, d, h, full, full[:strings.Index(full, from)], from)
 	if typed := onlyComments(before, leader); len(typed) != 0 {
 		t.Errorf("%s: plain lines before the region: %q", name, typed)
 	}
@@ -325,8 +351,11 @@ func checkWholePaste(t *testing.T, name string, d Delta, h Header, w Wrapper) {
 // a wrapper line or a comment.
 func checkPlain(t *testing.T, name, vendor, p string) {
 	t.Helper()
-	for _, l := range strings.Split(strings.TrimSuffix(p, "\n"), "\n") {
+	plain := strings.Split(strings.TrimSuffix(p, "\n"), "\n")
+	for i, l := range plain {
 		switch {
+		case vendor == devconf.FamilyIOS && bannerBody(plain)[i]:
+			// the text of a login banner: any line, a blank one included
 		case l == "" || strings.HasPrefix(l, "#") || strings.HasPrefix(l, "!"):
 			t.Errorf("%s: plain holds %q", name, l)
 		case vendor == devconf.FamilyJunos:
@@ -498,4 +527,54 @@ func TestWholePasteInvariantOverEveryFixture(t *testing.T) {
 		}
 	}
 	t.Logf("whole-paste invariant: %d outputs", n)
+}
+
+// bannerBody marks the lines of an IOS region that are the text of a login
+// banner: after 'banner login <d>' up to the line that is <d> alone.
+func bannerBody(lines []string) []bool {
+	out := make([]bool, len(lines))
+	delim := ""
+	for i, l := range lines {
+		if delim != "" {
+			out[i] = true
+			if l == delim {
+				delim = ""
+			}
+			continue
+		}
+		if f := strings.Fields(l); len(f) == 3 && f[0] == "banner" && f[1] == "login" && len(f[2]) == 1 && l == "banner login "+f[2] {
+			delim = f[2]
+		}
+	}
+	return out
+}
+
+// withoutRestoreBlock is the text before a region with the restore block
+// (0.2.7) taken out: the block is checked here, once, with its own banner
+// pair before the region and exactly the lines CheckRestorePoint allows. An
+// output with no restore point holds none.
+func withoutRestoreBlock(t *testing.T, name string, d Delta, h Header, full, before, regionFrom string) string {
+	t.Helper()
+	bc := bannerChar(d.Vendor)
+	rfrom := bc + " RESTORE POINT FROM HERE: " + h.Device + " " + bc
+	rto := bc + " RESTORE POINT TO HERE: " + h.Device + " " + bc
+	if !d.restoreShown() {
+		if strings.Contains(full, "RESTORE POINT") {
+			t.Errorf("%s: a restore block nobody asked for, or for a plan with nothing to paste", name)
+		}
+		return before
+	}
+	if strings.Count(full, rfrom) != 1 || strings.Count(full, rto) != 1 || strings.Index(full, rfrom) > strings.Index(full, rto) ||
+		strings.Index(full, rto) > strings.Index(full, regionFrom) {
+		t.Fatalf("%s: the restore banners are not one pair before the region", name)
+	}
+	rlines := strings.Split(full[strings.Index(full, rfrom)+len(rfrom)+1:strings.Index(full, rto)], "\n")
+	rlines = rlines[:len(rlines)-1]
+	if !slices.Equal(rlines, RestoreLines(d, h)) {
+		t.Errorf("%s: the text between the restore banners is %q, not the restore lines %q", name, rlines, RestoreLines(d, h))
+	}
+	if err := CheckRestorePoint(rlines); err != nil {
+		t.Errorf("%s: the restore block is not safe: %v", name, err)
+	}
+	return before[:strings.Index(before, rfrom)] + before[strings.Index(before, rto)+len(rto)+1:]
 }

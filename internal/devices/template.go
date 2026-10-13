@@ -4,9 +4,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/rett/tacctl/internal/assets"
+	"github.com/rett/tacctl/internal/blocks"
 )
 
 // Template is a device template as resolve_template finds it: the
@@ -109,16 +111,32 @@ func Expand(text string, allowed []string, vars map[string]string) string {
 
 // DropBlank is "awk 'NF'" (mawk): the lines with a field kept, those that
 // are empty or hold only blanks and tabs dropped, every line ended by a
-// newline (the last one too).
+// newline (the last one too). The one exception is the text of a login
+// banner ('banner login <d>' with one of the delimiters tacctl renders, up
+// to the line that is <d> alone): its lines are kept as they are, a blank
+// line of the banner included, because a banner is the text between its
+// delimiters.
 func DropBlank(text string) string {
 	var b strings.Builder
 	lines := strings.Split(text, "\n")
 	if strings.HasSuffix(text, "\n") {
 		lines = lines[:len(lines)-1]
 	}
+	delim := ""
 	for _, l := range lines {
+		if delim != "" {
+			b.WriteString(l)
+			b.WriteByte('\n')
+			if strings.TrimRight(l, " \t") == delim {
+				delim = ""
+			}
+			continue
+		}
 		if strings.Trim(l, " \t") == "" {
 			continue
+		}
+		if f := strings.Fields(l); len(f) == 3 && f[0] == "banner" && f[1] == "login" && slices.Contains(blocks.BannerDelimiters, f[2]) {
+			delim = f[2]
 		}
 		b.WriteString(l)
 		b.WriteByte('\n')

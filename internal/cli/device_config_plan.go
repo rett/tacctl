@@ -30,8 +30,9 @@ import (
 )
 
 // planSections are the sections a plan may name (--section): the other two
-// are never planned (netconf and breakglass are the walkthrough's steps).
-var planSections = []string{"aaa", "roles", "mgmt-acl", "snmp"}
+// are never planned (netconf and breakglass are the walkthrough's steps). The
+// system section exists only for a scope with a system block (0.2.7).
+var planSections = []string{"aaa", "roles", "mgmt-acl", "snmp", "system"}
 
 // planOptions is what the command line asked of a plan.
 type planOptions struct {
@@ -39,6 +40,11 @@ type planOptions struct {
 	converge, secrets, noSecrets                bool
 	plain, asJSON, backout, pull, force, exitOn bool
 	out, outDir, from                           string
+	// restore is --restore-point (IOS and IOS-XE): the restore block before
+	// the region; restoreFS the file system --restore-point=<fs> named ("" for
+	// the bare flag: the device's archive path, from the pull).
+	restore   bool
+	restoreFS string
 }
 
 // planDevice is one device's result: the planner's delta and header, or the
@@ -86,6 +92,7 @@ func (inv *invocation) parsePlanOptions(p Parsed) (planOptions, error) {
 		plain: p.Has("--plain"), asJSON: p.Has("--json"), backout: p.Has("--backout"), pull: p.Has("--pull"),
 		force: p.Has("--force"), exitOn: p.Has("--exit-code"),
 		out: p.Value("--out"), outDir: p.Value("--out-dir"), from: p.Value("--from"),
+		restore: p.Has("--restore-point"), restoreFS: strings.ToLower(p.Value("--restore-point")),
 	}
 	bad := func(msg string) (planOptions, error) { return o, inv.argErr(msg, usage) }
 	switch {
@@ -103,6 +110,12 @@ func (inv *invocation) parsePlanOptions(p Parsed) (planOptions, error) {
 		return bad("--backout is the undo of the plan; the cleanup (--converge) has none of its own.")
 	case o.backout && o.pull:
 		return bad("--backout with --pull: a pull replaces the picture a back-out is computed from, so it would undo nothing. Leave --pull out: --backout prints the back-out tacctl kept from the plan.")
+	case o.restore && o.plain:
+		return bad("--restore-point with --plain: a plain file is the region's statements alone and has no room for the restore block, a paste of its own before the region. Drop one of them.")
+	case o.restore && o.backout:
+		return bad("--restore-point with --backout: the back-out kept from the plan names the restore point that plan made; --restore-point is for making a plan.")
+	case o.restoreFS != "" && plan.ValidRestoreFS(o.restoreFS) != "":
+		return bad("--restore-point=" + o.restoreFS + ": " + plan.ValidRestoreFS(o.restoreFS) + ".")
 	case p.Has("--out") && o.out == "", p.Has("--out-dir") && o.outDir == "":
 		return bad("--out and --out-dir take a path.")
 	case o.out != "" && o.outDir != "":
@@ -154,6 +167,9 @@ type planRun struct {
 	// failed are the devices a --pull could not read, with the reason.
 	failed map[string]string
 	wrap   plan.Wrapper
+	// dry: the plan is made and nothing is kept (no back-out is saved or
+	// removed): 'block check --against' looks at what a text would plan.
+	dry bool
 }
 
 // header is the box and the "based on" facts of a device.
@@ -172,6 +188,9 @@ func (r *planRun) header(e devreg.Entry, rec *devconf.Record) plan.Header {
 	}
 	if rec != nil {
 		h.Pulled, h.PulledBy, h.Transport, h.SecretsVisible = rec.Pulled, rec.By, rec.Transport, rec.SecretsVisible
+		if e.Vendor == "wti" && rec.Unit != nil {
+			h.Unit = &plan.UnitInfo{Version: rec.OS, SiteID: rec.Unit.SiteID, OtherSessions: rec.Unit.OtherSessions}
+		}
 	}
 	return h
 }
@@ -200,8 +219,6 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 		return out
 	}
 	switch {
-	case e.Vendor == "wti":
-		return cannot("WTI units are not planned in this release (their settings are menu items, not lines)")
 	case r.failed[strings.ToLower(name)] != "":
 		return cannot("the pull failed (" + r.failed[strings.ToLower(name)] + ")")
 	case rec == nil || rec.Pulled.IsZero():
@@ -232,6 +249,15 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 
 	opt := plan.Options{Sections: r.opt.sections, Secrets: r.opt.secrets, NoSecrets: r.opt.noSecrets, From: r.opt.from,
 		Scope: e.Scope, Device: name, Converge: r.opt.converge}
+	if e.Vendor == "wti" {
+		// the facts of the IP tables builder and of the pull that the plan's
+		// guards read (the server's address, the other sessions)
+		opt.WTI.Server, opt.WTI.ListWhy = r.render.wtiFacts(e)
+		if rec.Unit != nil {
+			n := rec.Unit.OtherSessions
+			opt.WTI.OtherSessions = &n
+		}
+	}
 	if e.Vendor == "cisco" {
 		// The one resolution of the comparison and the walkthrough (D113);
 		// a scope served over RADIUS has the one syntax. legacy-ssh is the
@@ -245,6 +271,9 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 			return cannot("needs pull (the image's configuration syntax is not known): " + pullHint)
 		}
 		opt.PolicyGaps = r.render.policyGaps(e)
+		if r.opt.restore {
+			opt.RestorePoint = &plan.RestorePoint{FS: r.opt.restoreFS, ArchiveFS: rec.ArchiveFS}
+		}
 	} else {
 		opt.Class = r.inv.callerClass(expected)
 	}
@@ -273,6 +302,9 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 	if out.status.State == plan.StatusCannotPlan {
 		out.cannot = out.status.Reason
 	}
+	if r.dry {
+		return out
+	}
 	// The back-out (D111, point 3). A plan with changes keeps its back-out
 	// beside the record, stamped with the pull it was computed from: the
 	// check pull the after-steps ask for replaces the picture a back-out is
@@ -296,11 +328,14 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 			// what was pasted, this plan's sections included
 			out.backoutNote = "the back-out kept from this pull covers " + strings.Join(kept.Sections, ", ") +
 				" and is kept: this plan covers " + strings.Join(sections, ", ") + " only"
+			if rn := plan.RestoreName(d, out.h); rn != "" && rn != kept.RestorePoint {
+				out.backoutNote += "; it does not name this plan's restore point (" + rn + "): type 'configure replace' with that file yourself if you need it"
+			}
 		default:
 			text, berr := plan.StoredBackout(d, out.h, r.wrap)
 			if berr == nil {
 				berr = r.store.SaveBackout(name, devconf.StoredBackout{Pulled: rec.Pulled, Vendor: e.Vendor, Address: e.Address,
-					Sections: sections, Text: text})
+					Sections: sections, Text: text, RestorePoint: plan.RestoreName(d, out.h)})
 			}
 			if berr != nil {
 				out.backoutNote = "the back-out of this plan could not be kept for later: " + strings.Join(msgs(berr), " ") +
@@ -381,7 +416,7 @@ func (r *planRun) snapshot(e devreg.Entry) planSnapshot {
 	}
 	c := *rec
 	s.rec = &c
-	if e.Vendor == "wti" || c.Pulled.IsZero() {
+	if c.Pulled.IsZero() {
 		return s
 	}
 	s.sections, s.sectionsErr = r.store.Sections(e.Name, e.Vendor)
@@ -438,6 +473,16 @@ func (r *managedRender) policyGaps(e devreg.Entry) []string {
 		return nil
 	}
 	return devices.PolicyGaps(b.req, b.d)
+}
+
+// wtiFacts are the facts of a unit's IP tables builder for its scope: the
+// address its list must permit and why it could not be built.
+func (r *managedRender) wtiFacts(e devreg.Entry) (server, why string) {
+	b := r.base[managedKey{vendor: e.Vendor, scope: e.Scope}]
+	if b == nil || b.problem != "" {
+		return "", ""
+	}
+	return devices.WTIListFacts(b.req, b.d)
 }
 
 // callerClass is the Junos login class the person who asked pastes under:
@@ -551,6 +596,13 @@ func storedBackoutText(r planDevice) string {
 		what = "the plan of " + strings.Join(r.backout.Sections, ", ")
 	}
 	line := c + " This back-out undoes " + what + " made from the pull of " + r.backout.Pulled.UTC().Format("2006-01-02 15:04") + " (UTC)"
+	switch rp := r.backout.RestorePoint; rp {
+	case "":
+	case "archive config":
+		line += "; its restore point was taken with 'archive config'"
+	default:
+		line += "; its restore point is " + rp
+	}
 	if r.h.Pulled.After(r.backout.Pulled) {
 		line += "; a later pull replaced that picture, so it is the one tacctl kept from that plan"
 	} else {
@@ -870,6 +922,38 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 		chosen.printSkippedFor(inv, "plan")
 		return nil
 	}
+	// A WTI unit has no statements and no such sections: refused before
+	// anything is read, naming the units.
+	var units []string
+	for _, e := range chosen.entries {
+		if e.Vendor == "wti" {
+			units = append(units, e.Name)
+		}
+	}
+	if len(units) > 0 {
+		names := strings.Join(units, ", ")
+		switch {
+		case opt.plain:
+			return inv.argErr("--plain is a file of statements to load, and a WTI unit ("+names+") has none: its plan is menu steps to type and one IP tables block to paste. "+
+				"Drop --plain, or name the other devices.", usage)
+		case slices.ContainsFunc(opt.sections, func(s string) bool { return s == "roles" || s == "system" }):
+			return inv.argErr("--section: a WTI unit ("+names+") has no roles or system section; it has aaa, snmp and mgmt-acl. Name the other devices, or leave those sections out.", usage)
+		}
+	}
+	// The restore point is an IOS and IOS-XE block: refused, naming the
+	// devices, before anything is read.
+	if opt.restore {
+		var others []string
+		for _, e := range chosen.entries {
+			if e.Vendor != "cisco" {
+				others = append(others, e.Name+" ("+e.Vendor+")")
+			}
+		}
+		if len(others) > 0 {
+			return inv.argErr("--restore-point is for IOS and IOS-XE devices (the block is a 'copy running-config' or an 'archive config'), and "+strings.Join(others, ", ")+
+				" is not one: name the Cisco devices, or leave it out.", usage)
+		}
+	}
 	// what depends on how many devices there are
 	switch {
 	case opt.out != "" && len(chosen.entries) != 1:
@@ -884,21 +968,22 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 	// to standard error so that what is redirected is the plan alone.
 	failed := map[string]string{}
 	interrupted := false
-	if opt.pull {
-		if err := inv.refuseNetconfForCisco(chosen.entries, pa.transport); err != nil {
+	toPull := chosen.entries
+	if opt.pull && len(toPull) > 0 {
+		if err := inv.refuseNetconfForCisco(toPull, pa.transport); err != nil {
 			return err
 		}
 		saved := inv.app.Out.Stdout
 		inv.app.Out.Stdout = inv.app.Out.Stderr
-		view := inv.newPullView(chosen.entries, false, user, opt.asJSON)
-		sum, outs, rerr := inv.runPull(pullBatch{entries: chosen.entries, render: chosen.render, args: pa, user: user, view: view})
+		view := inv.newPullView(toPull, false, user, opt.asJSON)
+		sum, outs, rerr := inv.runPull(pullBatch{entries: toPull, render: chosen.render, args: pa, user: user, view: view})
 		inv.app.Out.Stdout = saved
 		if rerr != nil {
 			return rerr
 		}
 		interrupted = sum.Interrupted
 		for i, o := range outs {
-			e := chosen.entries[i]
+			e := toPull[i]
 			st := sum.Entries[i].Result
 			switch {
 			case o != nil && st.Status == batch.StatusOK:
@@ -916,6 +1001,22 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 	}
 
 	store := inv.configStore()
+	// A bare --restore-point takes the file system from the pull's record (the
+	// device's archive path): where it has none, the flag must name one.
+	if opt.restore && opt.restoreFS == "" {
+		recs, _ := store.Load()
+		var lacking []string
+		for _, e := range chosen.entries {
+			if rec, ok := recs.Of(e.Name); ok && !rec.Pulled.IsZero() && rec.ArchiveFS == "" {
+				lacking = append(lacking, e.Name)
+			}
+		}
+		if len(lacking) > 0 {
+			return inv.argErr("--restore-point with no file system: the last pull of "+strings.Join(lacking, ", ")+
+				" read no 'archive' with a 'path' (a pull made before tacctl kept it did not either: pull again), so tacctl does not know where the file goes. "+
+				"Name one: --restore-point=flash: (bootflash:, disk0:), or configure 'archive' with a 'path' on the device and pull again.", usage)
+		}
+	}
 	staleDays := devreg.DefaultStaleDays
 	if f, _, err := inv.deviceLoad(); err == nil && f.StaleDays > 0 {
 		staleDays = f.StaleDays

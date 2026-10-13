@@ -561,9 +561,10 @@ func TestStaleness(t *testing.T) {
 		{"zero record", &Record{}, nil, StaleNever},
 		{"failed", &Record{Vendor: "cisco", Result: ResultAuthFailed}, ex.Sections, StaleFailed},
 		{"interrupted", &Record{Vendor: "cisco", Result: ResultInterrupted}, ex.Sections, StaleFailed},
-		{"unsupported", &Record{Vendor: "wti", Result: ResultUnsupported}, nil, StaleOK},
-		// Only a WTI unit's pull is unsupported; another vendor's record of
-		// that result is a refusal that read nothing.
+		// a WTI unit read as a level that cannot configure it, or at another
+		// menu version, is a failed pull like any other
+		{"unsupported", &Record{Vendor: "wti", Result: ResultUnsupported}, nil, StaleFailed},
+		{"denied", &Record{Vendor: "wti", Result: ResultDenied}, nil, StaleFailed},
 		{"unsupported of another vendor", &Record{Vendor: "cisco", Result: ResultUnsupported}, nil, StaleFailed},
 		{"ok without sections", rec, nil, StaleNever},
 		{"differs", rec, ex.Sections, StaleDiffers},
@@ -639,10 +640,12 @@ func TestRecordedAndSetSections(t *testing.T) {
 	if got := Recorded(&rec); got != StaleDiffers {
 		t.Errorf("%q", got)
 	}
-	if Recorded(&Record{Vendor: "wti", Result: ResultUnsupported}) != StaleOK ||
-		Recorded(&Record{Vendor: "cisco", Result: ResultUnsupported}) != StaleFailed ||
-		Recorded(&Record{Result: ResultUnsupported}) != StaleFailed {
-		t.Error("unsupported is ok for a WTI unit only")
+	for _, v := range []string{"wti", "cisco", ""} {
+		for _, res := range []string{ResultUnsupported, ResultDenied} {
+			if Recorded(&Record{Vendor: v, Result: res}) != StaleFailed {
+				t.Errorf("%s of %q is not failed", res, v)
+			}
+		}
 	}
 	if Recorded(nil) != StaleNever || Recorded(&Record{Result: ResultTimeout}) != StaleFailed {
 		t.Error("Recorded")

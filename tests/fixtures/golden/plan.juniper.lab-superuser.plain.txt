@@ -5,13 +5,11 @@ delete system accounting events interactive-commands
 set snmp client-list TACCTL-SNMP 192.0.2.10/32
 set snmp client-list TACCTL-SNMP 198.51.100.0/24
 set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict
+set snmp community lab-ro-community authorization read-only
 set snmp community lab-ro-community client-list-name TACCTL-SNMP
 set snmp location "Rack 4, DC1"
 set snmp contact "NOC <noc@example.net>"
 set snmp description "Core switch"
-delete snmp community lab-ro-community clients 198.18.0.0/20
-delete snmp community lab-ro-community clients 198.19.0.0/16
-delete snmp community lab-ro-community clients 0.0.0.0/0
 set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.10/32
 set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 198.51.100.0/24
 set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.0/24

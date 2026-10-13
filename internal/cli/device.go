@@ -63,7 +63,9 @@ var (
 // deviceSpecs are the arguments of each verb, for the parser and for
 // completion (args.go).
 var deviceSpecs = map[string]Spec{
-	"list": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--unconfigured"}},
+	"list": {MaxArgs: 1, Args: []string{""}, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--unconfigured"}},
+		{Names: []string{"--name"}, Value: true}, {Names: []string{"--ip"}, Value: true},
+		{Names: []string{"--vendor"}, Value: true, Kind: KindVendors}, {Names: []string{"--scope"}, Value: true, Kind: KindScopes},
 		{Names: []string{"--scan"}}, {Names: []string{"--probe"}}, flagJSON}},
 	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagJSON, flagAllNotices}},
 	"add": {MinArgs: 1, MaxArgs: 2, Args: []string{"", ""}, Flags: []Flag{
@@ -99,6 +101,8 @@ var deviceSpecs = map[string]Spec{
 	// 'device snmp' (D72) parses each verb with deviceSNMPSpecs; this is
 	// the whole of it for completion.
 	"snmp": deviceSNMPCompletion,
+	// 'device block' parses each verb with deviceBlockSpecs.
+	"block": deviceBlockCompletion,
 	// 'device ssh' is 'tacctl ssh' (ssh.go); ssh-config is device_sshconfig.go.
 	"ssh":        sshSpec,
 	"ssh-config": {MaxArgs: 0},
@@ -116,7 +120,7 @@ var deviceSpecs = map[string]Spec{
 
 // deviceVerbs are the verbs ({Use, Short}), in usage order.
 var deviceVerbs = [][2]string{
-	{"list [--stale] [--unconfigured] [--scan] [--probe] [--json]", "Registered devices and enrolled hosts: scope, state, last seen, notices"},
+	{"list [word] [--name <text>] [--ip <addr|cidr|text>] [--vendor <vendor>] [--scope <scope>] [--stale] [--unconfigured] [--scan] [--probe] [--json]", "Registered devices and enrolled hosts, by name: scope, state, last seen, notices; the options narrow the list"},
 	{"show <name|address> [--all] [--json]", "One device or host in full (--all: the acknowledged notices too)"},
 	{"add [<name>] <address> [options]", "Register a device (no name: offer the one it gives itself by SNMP)"},
 	{"remove <name>[,<name>...] | --all [-y]", "Remove devices from the registry (confirms)"},
@@ -136,6 +140,7 @@ var deviceVerbs = [][2]string{
 	{"export [--csv|--json]", "Print the registry (YAML by default)"},
 	{"hostkey <name> [show|accept [-y]|set SHA256:<fp>]", "Show the pinned ssh host keys, or re-pin them after a verified change"},
 	{deviceSNMPUse, "A device's own SNMP settings over its scope's: version, port, timeout, allowed clients and credentials, and where each comes from"},
+	{deviceBlockUse, "A device's own configuration blocks (Junos snmp and system, IOS snmp) over its scope's: list, show, check, set, remove, edit, adopt"},
 	{"ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
 	{"ssh-config", "Print an ssh_config Include for your devices (Host blocks, pinned keys)"},
 	{"scan [--full] [--since <dur>] [--backend <id>]", "Read the logs for the devices seen; re-scan pinned host keys"},
@@ -144,7 +149,7 @@ var deviceVerbs = [][2]string{
 	{"config show <name> [--protocol tacacs|radius] [--legacy] [--server <address|name>] [--source <address>]", "The device's data, then its vendor walkthrough for its scope"},
 	{"config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [options]", "Read the devices' configuration as you and compare the managed sections with what tacctl renders"},
 	{"config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [--pull] [--section <list>] [--exit-code] [--json]", "The last pull against what tacctl renders now, section by section"},
-	{"config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [--pull] [--section <list>] [--converge] [--secrets|--no-secrets] [--plain|--json|--backout] [--out <file>|--out-dir <dir>] [--force] [--from <address>] [--exit-code]", "What to paste to make each device match what tacctl renders: the report, one region, the check and the back-out"},
+	{"config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [--pull] [--section <list>] [--converge] [--secrets|--no-secrets] [--plain|--json|--backout] [--out <file>|--out-dir <dir>] [--force] [--from <address>] [--restore-point[=<fs>]] [--exit-code]", "What to paste (a WTI unit: what to type) to make each device match what tacctl renders: the report, the region or the steps, the check and the back-out"},
 	{"config list [--stale] [--never] [--failed] [--differs] [--transport netconf|ssh|none] [--scope <scope>] [--vendor <vendor>] [--json]", "Each device's configuration state, when it was read, by whom and over what"},
 	{"config forget <name>[,<name>...] | --all", "Delete the pull records (a pull makes them again)"},
 }
@@ -155,6 +160,11 @@ var deviceOptions = map[string][][2]string{
 	"list": {
 		{"--stale", "Only the devices not seen for stale-days"},
 		{"--unconfigured", "Only the devices no scope's prefixes cover"},
+		{"--name <text>", "Only names containing the text (a comma list: any of them)"},
+		{"--ip <addr|cidr|text>", "Only an address equal to, inside, or containing it (a comma list)"},
+		// --vendor and --scope are described in the usage row: the shell's
+		// help finds a flag's text by its name across the family, and 'add'
+		// has its own --vendor line.
 		{"--scan", "Scan the logs first (as 'device scan')"},
 		{"--probe", "Add REACH: a TCP connect to each ssh port (3 s)"},
 		{"--json", "(list, show, export, check) Print JSON"},
@@ -187,6 +197,13 @@ var deviceOptions = map[string][][2]string{
 		{"--csv", "Print CSV instead of YAML"},
 	},
 	"snmp": deviceSNMPOptions,
+	"block": {
+		{"--effective", "(block show) The block as rendered for the device, with the layer each object is from"},
+		{"--reveal", "(block show) Print the strings (an engineer: their own scopes' devices; logged)"},
+		{"--file <path>", "(block check, set) The text to look at, read as you"},
+		{"-y, --yes", "(block set, remove, edit, adopt) Answer yes to the question"},
+		{"--against", "(block check) Plan the device with the text in force and print its section's statements"},
+	},
 	"ssh": {
 		{"-p <port>", "Connect to this port instead of the registered one"},
 		{"-X, -Y", "Forward X11 (untrusted, trusted) to this server's display"},
@@ -210,7 +227,7 @@ var deviceOptions = map[string][][2]string{
 		{"--source <address>", "The address this server reaches the device from"},
 	},
 	"config pull": {
-		{"--all", "(pull, diff, plan, forget) Every device of yours (not WTI units, or devices in no scope)"},
+		{"--all", "(pull, diff, plan, forget) Every device of yours that a scope covers"},
 		{"--scope <scope>", "(pull, diff, plan, list) Only the devices of that scope"},
 		{"--vendor cisco|juniper|wti", "(pull, diff, plan, list) Only that vendor's devices"},
 		{"--stale", "(pull, diff, plan, list) Only the devices never read, last read in failure, or differing"},
@@ -225,22 +242,23 @@ var deviceOptions = map[string][][2]string{
 	},
 	"config diff": {
 		{"--pull", "Read the devices first (takes the pull options)"},
-		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, netconf, breakglass"},
+		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, system, netconf, breakglass (a WTI unit has aaa, mgmt-acl, snmp and breakglass)"},
 		{"--exit-code", "Exit 2 when a device differs (and none failed)"},
 	},
 	"config plan": {
 		{"--pull", "Read the devices first (takes the pull options); the plan is made from that pull"},
-		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp (the report still names the others)"},
-		{"--converge", "Add the cleanup of a device with nothing else to paste: the region that removes the old servers and the like (a device with a first region gets that and a line to plan again after the paste)"},
-		{"--secrets", "Type every secret of the planned sections, also the ones the device has"},
-		{"--no-secrets", "Leave each secret as a marked line to fill in (no plain form)"},
-		{"--plain", "The statements of one device alone, for 'load set' (--converge: two files, with --out or --out-dir)"},
+		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, system (the report still names the others; a WTI unit has aaa, snmp and mgmt-acl)"},
+		{"--converge", "Add the cleanup of a device with nothing else to paste: the region that removes the old servers and the like (a device with a first region gets that and a line to plan again after the paste; a WTI unit: the read/write community and the other protocol's switch)"},
+		{"--secrets", "Type every secret of the planned sections, also the ones the device has (a WTI step names the command that shows the value unless given)"},
+		{"--no-secrets", "Leave each secret as a marked line to fill in (no plain form; a WTI step already does)"},
+		{"--plain", "The statements of one device alone, for 'load set' (--converge: two files, with --out or --out-dir); a WTI unit has none"},
 		{"--json", "One object per device: the findings, the region, the cleanup and the back-out; values elided"},
 		{"--backout", "Only the back-out region (what puts the pulled lines back; the one kept from the plan once a later pull replaced them; not with --pull)"},
 		{"--out <file>", "Write one device's output to a file (0600)"},
 		{"--out-dir <dir>", "One file per device (<name>.txt, .set with --plain, .json with --json; each plan's .backout.txt) and COVER.txt, 0600 in a 0700 directory"},
 		{"--force", "Replace files --out or --out-dir would write"},
-		{"--from <address>", "The address you are logged in from: the cleanup keeps it; the management filter check uses it"},
+		{"--from <address>", "The address you are logged in from: the cleanup keeps it; the management filter check and a WTI unit's IP tables check use it"},
+		{"--restore-point[=<fs>]", "(IOS and IOS-XE only) A restore point block before the plan: a copy of the running configuration on <fs> (flash:, bootflash:, disk0:), or, bare, 'archive config' where the pull read an archive path; the back-out names 'configure replace' with it; a file, not a timer (not lab-tested)"},
 		{"--exit-code", "Exit 2 when a device needs a change (and none could not be planned)"},
 	},
 	"config list": {
@@ -393,7 +411,7 @@ func (inv *invocation) device(args []string) error {
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
 		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "config-syntax": inv.deviceConfigSyntax, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "notices": inv.deviceNotices, "import": inv.deviceImport, "export": inv.deviceExport,
-		"hostkey": inv.deviceHostkey, "snmp": inv.deviceSNMP, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig, "config": inv.deviceConfig,
+		"hostkey": inv.deviceHostkey, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig, "config": inv.deviceConfig,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
 		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
 		"port": inv.deviceSetter("port"), "description": inv.deviceSetter("description"), "location": inv.deviceSetter("location"),
@@ -487,6 +505,9 @@ func (inv *invocation) deviceWrite(fn func(*devreg.File, *devreg.Resolver) error
 		return nil, err
 	}
 	if err := inv.snmpNewNamesFree(f, trial); err != nil {
+		return nil, err
+	}
+	if err := inv.blocksNewNamesFree(f, trial); err != nil {
 		return nil, err
 	}
 	if _, err := trial.Text(); err != nil {
@@ -802,13 +823,20 @@ func (inv *invocation) deviceList(args []string) error {
 		return err
 	}
 	var shown []devreg.Entry
+	narrow := newDeviceListFilter(p)
+	total := 0
 	for _, e := range res.Visible(inv.deviceFilter()) {
 		_, _, _, stale := deviceSeenCols(inv, res, e)
 		if (p.Has("--unconfigured") && e.Configured) || (p.Has("--stale") && !stale) {
 			continue
 		}
+		total++
+		if !narrow.match(e) {
+			continue
+		}
 		shown = append(shown, e)
 	}
+	sortEntriesByName(shown)
 	// The configuration state is the operator tier's (D69): a read-only user
 	// is not shown it, in the table or in the JSON.
 	var configs *devconf.Records
@@ -831,11 +859,18 @@ func (inv *invocation) deviceList(args []string) error {
 		}
 	}
 	head := fmt.Sprintf("Registered devices (%d) and enrolled hosts (%d)", nd, nh)
+	if !narrow.empty() {
+		head += fmt.Sprintf(", of %d", total)
+	}
 	inv.echo("")
 	if len(shown) == 0 {
 		inv.echoE(ui.Bold + head + ui.NC)
 		inv.echo(ui.Rule(head))
-		inv.echo("  None. Register one with: tacctl device add <name> <address>")
+		if narrow.empty() {
+			inv.echo("  None. Register one with: tacctl device add <name> <address>")
+		} else {
+			inv.echo("  None match.")
+		}
 		inv.echo("")
 		return nil
 	}
@@ -1257,6 +1292,9 @@ func (inv *invocation) deviceRemove(args []string) error {
 	a := inv.app
 	a.Out.Warn(fmt.Sprintf("About to remove %d device(s) from the registry: %s.", len(targets), strings.Join(targets, ", ")))
 	a.Out.Warn("Enrolled hosts, scopes and vendor tags are not touched.")
+	if note := inv.deviceBlocksRemovalNote(targets); note != "" {
+		a.Out.Warn(note)
+	}
 	if !p.Has("-y") && !a.Prompter().ConfirmPrefix("  Confirm removal? [y/N]: ") {
 		a.Out.Info("Aborted.")
 		return nil
@@ -1272,6 +1310,7 @@ func (inv *invocation) deviceRemove(args []string) error {
 	for _, n := range targets {
 		inv.configCarry(n, "")
 		inv.snmpDeviceCarry(n, "")
+		inv.blocksDeviceCarry(n, "")
 	}
 	a.Out.Info(fmt.Sprintf("Removed %d device(s).", len(targets)))
 	inv.echo("")
@@ -1316,6 +1355,7 @@ func (inv *invocation) deviceRename(args []string) error {
 	}
 	inv.configCarry(oldName, newName)
 	inv.snmpDeviceCarry(oldName, newName)
+	inv.blocksDeviceCarry(oldName, newName)
 	inv.holdCarry(oldName, newName, old.Address)
 	inv.app.Out.Info("Device '" + oldName + "' renamed to '" + newName + "'.")
 	inv.echo("")
@@ -1718,6 +1758,9 @@ func (inv *invocation) deviceImport(args []string) error {
 	}
 	if len(plan.Removed) > 0 {
 		a.Out.Warn(fmt.Sprintf("--replace removes %d device(s) the file does not name: %s.", len(plan.Removed), strings.Join(plan.Removed, ", ")))
+		if note := inv.deviceBlocksRemovalNote(plan.Removed); note != "" {
+			a.Out.Warn(note)
+		}
 		if !p.Has("-y") && !a.Prompter().ConfirmPrefix("  Confirm import? [y/N]: ") {
 			a.Out.Info("Aborted.")
 			return nil
@@ -1740,6 +1783,7 @@ func (inv *invocation) deviceImport(args []string) error {
 	for _, n := range plan.Removed {
 		inv.configCarry(n, "")
 		inv.snmpDeviceCarry(n, "")
+		inv.blocksDeviceCarry(n, "")
 	}
 	a.Out.Info("Imported: " + summary)
 	for _, n := range plan.Added {

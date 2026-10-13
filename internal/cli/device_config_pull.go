@@ -20,6 +20,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,6 +32,7 @@ import (
 	"github.com/rett/tacctl/internal/askpass"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devconf/batch"
+	"github.com/rett/tacctl/internal/devconf/wti"
 	"github.com/rett/tacctl/internal/devices"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/devssh"
@@ -51,9 +53,6 @@ const (
 	netconfNoHello    = "no hello"
 	netconfNotProbed  = "not probed"
 )
-
-// wtiUnsupported is what a WTI unit's pull says (D71).
-const wtiUnsupported = "WTI units are not read in this release"
 
 // pullArgs are the options of a pull, as 'device config pull' and 'device
 // config diff --pull' take them.
@@ -117,6 +116,12 @@ type pullOutcome struct {
 	// setting wins), and the view says the line contradicts it.
 	OS, Syntax  string
 	ImageSyntax string
+	// Unit is what a WTI unit's read learned beside its pages (its command
+	// menu version is OS); nil for every other vendor. Warning is a pull that
+	// is ok all the same but did less than asked (the user directory was not
+	// read), in words.
+	Unit    *devconf.WTIReadInfo
+	Warning string
 	// Reason is the failure in words; Hint what to do about it.
 	Reason, Hint string
 	// Offered is the host key a device presented that is not pinned
@@ -415,11 +420,32 @@ type deviceRead struct {
 	// answer: the planner then cannot tell a group's statements from the
 	// device's own, and says so.
 	Plain string
+	// Unit is what the walk of a WTI unit learned beside the document (nil
+	// for the other vendors); Version is then its command menu's.
+	Unit *devconf.WTIReadInfo
 }
 
 // errNetconfNotRead is --transport netconf for a vendor that has no NETCONF
-// read (D61: IOS-XE reads go over the command line).
-var errNetconfNotRead = errors.New("NETCONF is not read for Cisco devices; use --transport ssh (or auto)")
+// read (D61: IOS-XE reads go over the command line), errNetconfNotReadWTI the
+// same for a WTI unit, which has no NETCONF at all, and errNetconfNotReadMixed
+// for a selection of both.
+var (
+	errNetconfNotRead      = errors.New("NETCONF is not read for Cisco devices; use --transport ssh (or auto)")
+	errNetconfNotReadWTI   = errors.New("NETCONF is not read for WTI units (they have none); use --transport ssh (or auto)")
+	errNetconfNotReadMixed = errors.New("NETCONF is not read for Cisco devices or WTI units; use --transport ssh (or auto)")
+)
+
+// netconfRefusal is the refusal of --transport netconf for a vendor, nil for
+// one that is read over NETCONF.
+func netconfRefusal(vendor string) error {
+	switch vendor {
+	case "cisco":
+		return errNetconfNotRead
+	case "wti":
+		return errNetconfNotReadWTI
+	}
+	return nil
+}
 
 // netconfRunner runs a CLI command as a NETCONF <command> RPC and returns
 // the text of the reply: the same text the command line gives (D61).
@@ -440,8 +466,15 @@ func (r netconfRunner) Run(ctx context.Context, cmd string) (string, error) {
 // client: over NETCONF where the mode and the vendor allow it and the
 // device answers, over the command line otherwise ('auto' falls back with
 // the reason; 'netconf' and 'ssh' never do).
-func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string) (deviceRead, error) {
+//
+// A WTI unit has no command that prints its configuration: its pages are
+// walked in a terminal session (readWTI), and second dials the unit again
+// for the user directory's session (nil: the directory is not read).
+func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string, second func(context.Context) (*devssh.Client, error)) (deviceRead, error) {
 	var out deviceRead
+	if fam, _ := devconf.Family(vendor); fam == devconf.FamilyWTI {
+		return readWTI(ctx, c, mode, second)
+	}
 	read, err := devconf.ReaderWithVersion(vendor)
 	if err != nil {
 		return out, err
@@ -501,6 +534,61 @@ func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string
 	return out, nil
 }
 
+// clientTerm is a terminal session that ends its connection with it: a WTI
+// unit frees the session of a connection that went away on a page (the
+// tested-safe exit of a read), and nothing is left open between the first
+// session and the second.
+type clientTerm struct {
+	devssh.TermSession
+	c *devssh.Client
+}
+
+func (t clientTerm) Close() error {
+	err := t.TermSession.Close()
+	if cerr := t.c.Close(); err == nil {
+		err = cerr
+	}
+	return err
+}
+
+// readWTI reads a WTI unit over its text interface on the logged-in client
+// (devconf.ReadWTI): the version, the access level and the pages of the
+// tables, and, in a second connection with the same password, the user
+// directory (a top-level menu is left only by a save, so '/N' and '/F' do
+// not share a session). The raw text it returns is the captured screens;
+// nothing of it is kept or logged by the caller but its extraction.
+func readWTI(ctx context.Context, c *devssh.Client, mode string, second func(context.Context) (*devssh.Client, error)) (deviceRead, error) {
+	var out deviceRead
+	if mode == transportNetconf {
+		return out, errNetconfNotReadWTI
+	}
+	term, err := c.Terminal(ctx)
+	if err != nil {
+		return out, err
+	}
+	var opts devconf.WTIReadOptions
+	if second != nil {
+		opts.Users = func(ctx context.Context) (devconf.WTITerminal, error) {
+			c2, err := second(ctx)
+			if err != nil {
+				return nil, err
+			}
+			t2, err := c2.Terminal(ctx)
+			if err != nil {
+				_ = c2.Close()
+				return nil, err
+			}
+			return clientTerm{t2, c2}, nil
+		}
+	}
+	raw, info, err := devconf.ReadWTI(ctx, clientTerm{term, c}, opts)
+	if err != nil {
+		return out, err
+	}
+	out.Raw, out.Version, out.Transport, out.Unit = raw, info.Version, transportSSH, &info
+	return out, nil
+}
+
 // shortReason is an error's first line, cut short.
 func shortReason(err error) string {
 	s, _, _ := strings.Cut(err.Error(), "\n")
@@ -515,7 +603,16 @@ func shortReason(err error) string {
 func resultOf(ctx context.Context, name string, err error) (result, reason, hint string) {
 	var hk devssh.ErrHostKey
 	var rpc devssh.RPCError
+	var denied *devconf.WTIDeniedError
+	var version *devconf.WTIVersionError
+	var page *devconf.WTIPageError
 	switch {
+	case errors.As(err, &denied):
+		return devconf.ResultDenied, deniedReason(denied.Level), ""
+	case errors.As(err, &version):
+		return devconf.ResultUnsupported, "command menu version " + version.Version + "; tables are verified for " + wti.Version, ""
+	case errors.As(err, &page):
+		return devconf.ResultParseFailed, pageReason(page), ""
 	case errors.As(err, &hk):
 		if hk.Unpinned() {
 			return devconf.ResultHostKeyMismatch, "no host key is pinned for the device",
@@ -534,7 +631,7 @@ func resultOf(ctx context.Context, name string, err error) (result, reason, hint
 		return devconf.ResultUnreachable, shortReason(err), "tacctl device legacy-ssh " + name + " enable (a device that offers only the SHA-1 key exchange, CBC ciphers or ssh-rsa needs them)"
 	case errors.Is(err, devssh.ErrNoSubsystem):
 		return devconf.ResultUnreachable, "NETCONF is not enabled on the device", ""
-	case errors.Is(err, errNetconfNotRead):
+	case errors.Is(err, errNetconfNotRead), errors.Is(err, errNetconfNotReadWTI), errors.Is(err, errNetconfNotReadMixed):
 		return devconf.ResultUnsupported, err.Error(), ""
 	case errors.Is(err, devconf.ErrParse), errors.Is(err, devssh.ErrProtocol), errors.Is(err, devssh.ErrOutputTooLarge),
 		errors.As(err, &rpc):
@@ -543,6 +640,43 @@ func resultOf(ctx context.Context, name string, err error) (result, reason, hint
 		return devconf.ResultUnreachable, shortReason(err), ""
 	}
 	return devconf.ResultUnreachable, shortReason(err), ""
+}
+
+// deniedReason is the words of a WTI login whose level cannot configure the
+// unit: the level the unit's help showed, and what is needed.
+func deniedReason(level string) string {
+	label := map[string]string{wti.LevelViewOnly: "ViewOnly", wti.LevelUser: "User",
+		wti.LevelSuperUser: "SuperUser", wti.LevelAdministrator: "Administrator"}[level]
+	if label == "" {
+		return "the login's WTI level cannot configure the unit; SuperUser or Administrator is needed"
+	}
+	return "the login's WTI level is " + label + "; SuperUser or Administrator is needed"
+}
+
+// pageReason is the words of a page of a WTI unit the walk could not take:
+// the page's path and its title line, which is all of a screen an error
+// holds, and the fixed phrase of the reader.
+func pageReason(e *devconf.WTIPageError) string {
+	var b strings.Builder
+	b.WriteString("WTI unit")
+	if e.Path != "" {
+		b.WriteString(", page " + e.Path)
+	}
+	if e.Title != "" {
+		fmt.Fprintf(&b, " (title %q)", e.Title)
+	}
+	b.WriteString(": " + e.Detail)
+	return b.String()
+}
+
+// usersWarning is the line of a pull that read the unit's pages but not its
+// user directory: the breakglass section is not compared.
+func usersWarning(info *devconf.WTIReadInfo) string {
+	why := "the list is longer than a pull reads or holds a name it does not type"
+	if info.UsersErr != nil {
+		why = strings.TrimPrefix(shortReason(info.UsersErr), "devconf: ")
+	}
+	return "the user directory was not read, so the breakglass section is not compared (" + why + ")"
 }
 
 // --- the batch -------------------------------------------------------------------
@@ -557,6 +691,9 @@ type pullRun struct {
 	store    devconf.Store
 	passwd   devicePasswords
 	password string // the login password as ssh takes it (a Go string)
+	// group is the invoking user's group, which a WTI level is set on (the
+	// hint of a login whose level cannot configure a unit).
+	group string
 
 	acceptOnce, rejectOnce sync.Once
 }
@@ -580,15 +717,11 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 		o.Reason, o.Hint = reason, hint
 		return batch.Result{Status: status, Reason: reason}
 	}
-	if e.Vendor == "wti" {
-		o.Result = devconf.ResultUnsupported
-		r.record(o, e)
-		return fail(batch.StatusFailed, wtiUnsupported, "")
-	}
-	// --transport netconf does not read a Cisco device (D61): refused before
-	// any login, and the record is left as it was (nothing was attempted).
-	if r.mode == transportNetconf && e.Vendor == "cisco" {
-		return fail(batch.StatusFailed, errNetconfNotRead.Error(), "")
+	// --transport netconf does not read a Cisco device (D61) nor a WTI unit:
+	// refused before any login, and the record is left as it was (nothing was
+	// attempted).
+	if err := netconfRefusal(e.Vendor); r.mode == transportNetconf && err != nil {
+		return fail(batch.StatusFailed, err.Error(), "")
 	}
 	// A device whose syntax is unknown (D113) is rendered after the read, in
 	// the syntax its version line says; the refusals that need no device
@@ -604,14 +737,18 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 	if err != nil {
 		return fail(batch.StatusFailed, "cannot build the expected configuration: "+err.Error(), "")
 	}
-	client, err := devssh.Dial(ctx, inv.deviceTarget(e, r.user, func() (string, error) { return r.password, nil }))
+	target := inv.deviceTarget(e, r.user, func() (string, error) { return r.password, nil })
+	client, err := devssh.Dial(ctx, target)
 	if err != nil {
 		return r.failed(ctx, e, o, err)
 	}
 	defer func() { _ = client.Close() }()
 	r.acceptOnce.Do(r.passwd.Accepted)
 
-	rd, err := readDeviceConfig(ctx, client, e.Vendor, r.mode)
+	// The second connection of a WTI read (the user directory) is the same
+	// login: same target, host keys and password, in memory.
+	second := func(ctx context.Context) (*devssh.Client, error) { return devssh.Dial(ctx, target) }
+	rd, err := readDeviceConfig(ctx, client, e.Vendor, r.mode, second)
 	if rd.Netconf != "" {
 		o.Netconf = rd.Netconf
 	}
@@ -620,6 +757,12 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 		return r.failed(ctx, e, o, err)
 	}
 	o.Transport = rd.Transport
+	if rd.Unit != nil {
+		o.OS, o.Unit = rd.Version, rd.Unit
+		if !rd.Unit.UsersRead {
+			o.Warning = usersWarning(rd.Unit)
+		}
+	}
 	// The comparison is made in the syntax the device is in now: the
 	// setting, else what its version line says, else the record's. A device
 	// that says nothing and has no record of it cannot be compared.
@@ -683,6 +826,13 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 // the record of the attempt.
 func (r *pullRun) failed(ctx context.Context, e devreg.Entry, o *pullOutcome, err error) batch.Result {
 	result, reason, hint := resultOf(ctx, e.Name, err)
+	if result == devconf.ResultDenied {
+		g := r.group
+		if g == "" {
+			g = "<group>"
+		}
+		hint = "raise the WTI level of the login's group: tacctl group edit " + g + " wti-level superuser"
+	}
 	o.Result, o.Reason, o.Hint = result, reason, hint
 	var hk devssh.ErrHostKey
 	if errors.As(err, &hk) {
@@ -759,6 +909,22 @@ func (r *pullRun) recordSuccess(o *pullOutcome, e devreg.Entry, ext devconf.Extr
 		case e.ConfigSyntax != "":
 			rec.OS, rec.Syntax = "", ""
 		}
+	}
+	// A WTI unit: the command menu's version, and what the read saw beside
+	// the pages (the unit's own Site ID, how many others were logged in, no
+	// name).
+	rec.Unit = nil
+	if e.Vendor == "wti" {
+		rec.OS = o.OS
+		if o.Unit != nil {
+			rec.Unit = &devconf.UnitFacts{SiteID: o.Unit.SiteID, OtherSessions: o.Unit.OtherSessions, UsersRead: o.Unit.UsersRead}
+		}
+	}
+	// the file system of an IOS device's archive path, for the plan's restore
+	// point; every other vendor, and a pull that read none, keeps nothing
+	rec.ArchiveFS = ""
+	if e.Vendor == "cisco" {
+		rec.ArchiveFS = ext.ArchiveFS
 	}
 	rec.SecretsVisible = ext.SecretsVisible
 	if err := rec.SetSections(ext, results); err != nil {
@@ -841,15 +1007,20 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 	settings := inv.deviceConfigSettings()
 	run := &pullRun{inv: inv, user: b.user, mode: b.args.transport, render: b.render, store: inv.configStore(),
 		passwd: newDevicePasswords(inv)}
-	// The password, once, before any connection and only when a device will
-	// be dialled: a WTI-only selection never asks.
-	if needsLogin(b.entries) {
-		pw, err := run.passwd.Password(inv.ctx, b.user)
-		if err != nil {
-			return batch.Summary{}, nil, err
+	// The password, once, before any connection.
+	pw, err := run.passwd.Password(inv.ctx, b.user)
+	if err != nil {
+		return batch.Summary{}, nil, err
+	}
+	run.password = string(pw)
+	askpass.Zero(pw)
+	// The group a WTI level is set on, read before the workers start.
+	if slices.ContainsFunc(b.entries, func(e devreg.Entry) bool { return e.Vendor == "wti" }) {
+		if m, err := inv.model(); err == nil {
+			if u := m.User(b.user); u != nil {
+				run.group = u.Group
+			}
 		}
-		run.password = string(pw)
-		askpass.Zero(pw)
 	}
 	jobs := make([]batch.Job, len(b.entries))
 	for i, e := range b.entries {
@@ -908,16 +1079,6 @@ func (inv *invocation) noteHostKeys(entries []devreg.Entry, outs []*pullOutcome)
 		seen.RecordKeyScan(of.e.Name, of.e.Address, of.e.SSHPort(), of.keys, now)
 	}
 	_ = seen.Save(path)
-}
-
-// needsLogin reports whether any entry is dialled (WTI units are not).
-func needsLogin(entries []devreg.Entry) bool {
-	for _, e := range entries {
-		if e.Vendor != "wti" {
-			return true
-		}
-	}
-	return false
 }
 
 // pullAuditLine is the audit line of one device's pull (D69): the user, the

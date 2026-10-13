@@ -599,6 +599,11 @@ func TestAskpassWords(t *testing.T) {
 		"device config diff --exit-code --section aaa x": false, "device config diff x -- --pull": false,
 		"device config diff --pulled x": false,
 		"device config show x":          false, "device config list": false, "device list": false, "user list": false, "host sync x": false,
+		// 'block adopt' reads a device with the caller's login; the other
+		// block verbs reach no device
+		"scope block lab juniper adopt js1 snmp": true, "device block js1 adopt snmp": true,
+		"scope block lab juniper edit snmp": false, "device block js1 edit snmp": false, "scope block lab juniper list": false,
+		"scope block lab juniper": false, "device block js1": false,
 		"ssh": true, "device": false, "device config": false, "ssh core-sw1 -- show version": true, "device ssh core-sw1 -- -v": true,
 	} {
 		if got := askpassWords(strings.Fields(words)); got != want {

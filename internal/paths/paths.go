@@ -61,6 +61,7 @@ type Paths struct {
 	HostRecords string // StateDir/hosts: what the last enroll or sync saw of each host (hosts.Records)
 	SNMPFile    string // StateDir/snmp.yaml: the SNMP community and v3 passphrases (0600)
 	SNMPDir     string // StateDir/snmp: one <scope>.yaml of SNMP credentials per scope (0600, the directory 0700)
+	BlocksDir   string // StateDir/blocks: <scope>/<vendor>/<block> and _devices/<device>/<vendor>/<block> configuration blocks (0600, the directories 0700; 0.2.7)
 	SSHDDropIn  string // TACCTL_SSHD_DROPIN: sshd's drop-in for the console group
 	// SSHDEngineerDropIn is sshd's drop-in for the engineer tier
 	// (TACCTL_SSHD_ENGINEER_DROPIN; next to SSHDDropIn): its own file, so the
@@ -82,6 +83,7 @@ type Paths struct {
 	ConfigDir             string // VarLib/device-config: the managed sections of each device's last successful pull, one file per device
 	TierPinMarker         string // VarLib/tier-pinned: the upgrade recorded the tier of every group at priv-lvl 15, once (outside tacctl.yaml, which is what gets lost)
 	OperatorNoticeMarker  string // VarLib/operator-policy-noted: the upgrade told once about the devices configured before the operator lost the commands that can interrupt service (0.2.5)
+	WTIPlainNoticeMarker  string // VarLib/wti-plain-acl-noted: the upgrade told once which scopes have plain management ACL entries that now permit every protocol and port on WTI units (0.2.7)
 
 	SudoersFile     string // TACCTL_SUDOERS_FILE (SUDOERS_FILE)
 	TierSudoersFile string // TACCTL_TIER_SUDOERS_FILE (TIER_SUDOERS_FILE)
@@ -150,6 +152,7 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.HostRecords = p.StateDir + "/hosts"
 	p.SNMPFile = p.StateDir + "/snmp.yaml"
 	p.SNMPDir = p.StateDir + "/snmp"
+	p.BlocksDir = p.StateDir + "/blocks"
 	p.SSHDDropIn = env.Or("TACCTL_SSHD_DROPIN", "/etc/ssh/sshd_config.d/tacctl-console.conf")
 	p.SSHDEngineerDropIn = env.Or("TACCTL_SSHD_ENGINEER_DROPIN", filepath.Join(filepath.Dir(p.SSHDDropIn), SSHDEngineerDropInName))
 	p.SSHDEngineerDropInOld = filepath.Join(filepath.Dir(p.SSHDDropIn), "tacctl-engineer.conf")
@@ -161,6 +164,7 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.ConfigDir = p.VarLib + "/device-config"
 	p.TierPinMarker = p.VarLib + "/tier-pinned"
 	p.OperatorNoticeMarker = p.VarLib + "/operator-policy-noted"
+	p.WTIPlainNoticeMarker = p.VarLib + "/wti-plain-acl-noted"
 	p.KnownHosts = p.VarLib + "/ssh/known_hosts"
 
 	p.SudoersFile = env.Or("TACCTL_SUDOERS_FILE", "/etc/sudoers.d/tacctl")

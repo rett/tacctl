@@ -196,6 +196,29 @@ var engineerRowCases = map[string]engineerRow{
 		refusedCase("Device 'prod-sw' not found", "device snmp prod-sw community --stdin"),
 		refusedCase("Device 'prod-sw' not found", "device snmp prod-sw clear"),
 		refusedCase("is an enrolled Linux host", "device snmp web1 show"))},
+	// The configuration blocks (0.2.7): the engineer reads the blocks of the
+	// scopes of their own and of the devices there (a block's strings are
+	// elided, a reveal is logged) and changes nothing: set and remove are
+	// refused, another scope does not exist and another scope's device is
+	// not found. The sandbox's devices are Cisco ones, so a device read is
+	// refused for the vendor and still leaves everything as it was.
+	"scope block": {cases: append(cases("scope block lab juniper list", "scope block lab juniper show snmp", "scope block lab juniper show snmp --reveal",
+		"scope block lab juniper check system"),
+		refusedCase("The engineer tier reads the configuration blocks of scope 'lab'", "scope block lab juniper set snmp --file /dev/null -y"),
+		refusedCase("The engineer tier reads the configuration blocks of scope 'lab'", "scope block lab juniper set system -y"),
+		refusedCase("The engineer tier reads the configuration blocks of scope 'lab'", "scope block lab juniper remove snmp -y"),
+		refusedCase("does not exist", "scope block prod juniper list"),
+		refusedCase("does not exist", "scope block prod juniper show snmp --reveal"),
+		refusedCase("does not exist", "scope block prod juniper set snmp --file /dev/null -y"),
+		refusedCase("does not exist", "scope block prod juniper remove snmp -y"))},
+	"device block": {cases: append(cases("device block lab-sw list", "device block lab-sw show snmp", "device block lab-sw check snmp"),
+		refusedCase("The engineer tier reads the configuration blocks of device 'lab-sw'", "device block lab-sw set snmp --file /dev/null -y"),
+		refusedCase("The engineer tier reads the configuration blocks of device 'lab-sw'", "device block lab-sw remove snmp -y"),
+		refusedCase("Device 'prod-sw' not found", "device block prod-sw list"),
+		refusedCase("Device 'prod-sw' not found", "device block prod-sw show snmp --reveal"),
+		refusedCase("Device 'prod-sw' not found", "device block prod-sw set snmp --file /dev/null -y"),
+		refusedCase("Device 'prod-sw' not found", "device block prod-sw remove snmp -y"),
+		refusedCase("is an enrolled Linux host", "device block web1 list"))},
 }
 
 // watchedFiles are the files of the state directory an engineer never

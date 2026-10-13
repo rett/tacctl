@@ -1,0 +1,38 @@
+[aaa]
+| tacacs enable on
+| tacacs primary 10.0.0.42
+* tacacs secret prod-secret-0123456789abcdef
+| tacacs fallback-timer 15
+| tacacs fallback-local on-transport-failure
+| tacacs port 49
+| tacacs default-access on
+| tacacs default-level viewonly
+| tacacs default-services telnet-ssh
+| tacacs account-module enabled
+| tacacs session-module enabled
+| tacacs service-name wti
+| tacacs debug off
+| unit multiple-logins on
+[roles] not rendered
+[mgmt-acl]
+| iptables -A INPUT -i lo -j ACCEPT
+| iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+| iptables -A INPUT -p tcp -s 10.0.0.42/32 --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.0.0/8 -j ACCEPT
+| iptables -A INPUT -p udp -s 10.0.0.42/32 --dport 161 -j ACCEPT
+| iptables -A INPUT -p udp -s 198.51.100.0/24 --dport 161 -j ACCEPT
+| iptables -A INPUT -i eth0 -s 10.0.0.42/32 -p icmp -j ACCEPT
+| iptables -A INPUT -i eth0 -s 198.51.100.0/24 -p icmp -j ACCEPT
+[snmp]
+| snmp enable on
+| snmp version v3
+| snmp read-only yes
+| snmp contact "NOC <noc@example.net>"
+| snmp location "Rack 4, DC1"
+| snmp v3 user tacctl-ro
+| snmp v3 auth-protocol sha
+* snmp v3 auth-passphrase auth-pass-0123
+| snmp v3 privacy-protocol aes-128
+* snmp v3 privacy-passphrase priv-pass-4567
+[netconf] not rendered
+[breakglass] not rendered

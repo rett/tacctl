@@ -74,6 +74,22 @@ func ciscoEntries(lines []string, marks []bool) []ciscoEntry {
 		if t == "" || strings.HasPrefix(t, "!") {
 			continue
 		}
+		if isIOSBannerMark(t) && len(raw) == len(t) {
+			// a login banner already in its compared form (a stored section)
+			out = append(out, ciscoEntry{text: t, mark: markAt(marks, n), path: []string{t}})
+			continue
+		}
+		if f := strings.Fields(t); len(f) >= 2 && f[0] == "banner" && f[1] == "login" && len(raw) == len(t) {
+			// the login banner is a statement of the system section, kept
+			// as its mark: the text is never in a compared statement
+			body, took, ok := deviceBannerBody(lines[n:])
+			if ok {
+				st := iosBannerStmt(body)
+				out = append(out, ciscoEntry{text: st, mark: markAt(marks, n), path: []string{st}})
+			}
+			n += took - 1
+			continue
+		}
 		if strings.HasPrefix(t, "banner ") {
 			// banner <type> <delimiter>text<delimiter>, lines until the
 			// delimiter again.
@@ -94,6 +110,13 @@ func ciscoEntries(lines []string, marks []bool) []ciscoEntry {
 		}
 		fields := strings.Fields(t)
 		if fields[0] == "remark" || len(fields) == 1 && slices.Contains([]string{"exit", "end", "quit", "exit-address-family"}, fields[0]) {
+			continue
+		}
+		if multi := expandNameServers(fields); multi != nil && len(raw) == len(t) {
+			// 'ip name-server A B C' is a statement per address
+			for _, one := range multi {
+				out = append(out, ciscoEntry{text: strings.Join(one, " "), mark: markAt(marks, n)})
+			}
 			continue
 		}
 		e := ciscoEntry{indent: len(raw) - len(t), text: strings.Join(fields, " "), mark: markAt(marks, n)}
@@ -125,8 +148,9 @@ func vtyRange(header string) (lo, hi int, ok bool) {
 	return lo, hi, true
 }
 
-// ciscoCanon canonicalises running-config text or rendered lines.
-func ciscoCanon(lines []string, marks []bool) []stmt {
+// ciscoCanon canonicalises running-config text or rendered lines; lb labels
+// a community's name (nil: the bare mark).
+func ciscoCanon(lines []string, marks []bool, lb *labels) []stmt {
 	entries := ciscoEntries(lines, marks)
 
 	type item struct {
@@ -195,8 +219,13 @@ func ciscoCanon(lines []string, marks []bool) []stmt {
 		if path == nil {
 			return
 		}
+		if len(path) == 1 {
+			// the system statements and the trap source in their compared
+			// form (ios_system.go)
+			path = []string{strings.Join(ciscoSystemLine(strings.Fields(path[0])), " ")}
+		}
 		leaf := strings.Fields(path[len(path)-1])
-		stem, secret := ciscoStem(path, leaf, mark)
+		stem, secret := ciscoStem(path, leaf, mark, lb)
 		x := stmt{text: strings.Join(path, pathSep), secret: secret, path: path}
 		x.stem = x.text
 		if secret {
@@ -310,6 +339,9 @@ func ciscoFreeText(f []string) bool {
 		return true
 	case "snmp-server":
 		return len(f) >= 2 && slices.Contains([]string{"location", "contact", "chassis-id", "context", "engineID"}, f[1])
+	case "ntp":
+		// 'ntp server <host> key <n> ...': the key keyword names a number
+		return len(f) >= 2 && f[1] == "server"
 	}
 	return false
 }
@@ -370,11 +402,76 @@ func snmpHostSecret(f []string) int {
 	return -1
 }
 
+// SNMPHostCommunity is the index of the community word of the fields of an
+// 'snmp-server host' statement ('snmp-server host <address> [traps|informs]
+// [vrf <v>] [version 1|2c|3 ...] <community> ...'), or -1: the word a
+// statement's key and its undo are made of.
+func SNMPHostCommunity(f []string) int {
+	if len(f) < 4 || f[0] != "snmp-server" || f[1] != "host" {
+		return -1
+	}
+	return snmpHostSecret(f)
+}
+
+// snmpHostStem is the compared form of an 'snmp-server host' statement:
+// the address, the options before the community, the community's label,
+// then the port and the notification types. IOS stores a host in its own
+// form (the default version 1, the default 'traps' kind and the default port
+// 162 are left out, and the types come in the order IOS keeps), so a host is
+// compared by its address, community and the SET of its options, not by the
+// text typed: 'version 1', 'traps' and 'udp-port 162' are dropped and the
+// types are sorted. [A] IOS knowledge, not a lab paste.
+func snmpHostStem(f []string, i int, label string) []string {
+	out := []string{f[0], f[1], f[2]}
+	for k := 3; k < i; k++ {
+		switch {
+		case f[k] == "traps":
+		case f[k] == "version" && k+1 < i && f[k+1] == "1":
+			k++
+		default:
+			out = append(out, f[k])
+		}
+	}
+	out = append(out, label)
+	rest := f[i+1:]
+	var types []string
+	for k := 0; k < len(rest); k++ {
+		if rest[k] == "udp-port" && k+1 < len(rest) {
+			if rest[k+1] != "162" {
+				out = append(out, rest[k], rest[k+1])
+			}
+			k++
+			continue
+		}
+		types = append(types, rest[k])
+	}
+	slices.Sort(types)
+	return append(out, types...)
+}
+
 // ciscoStem returns a statement's last line without a secret's value, and
-// whether it holds one.
-func ciscoStem(path, f []string, marked bool) ([]string, bool) {
+// whether it holds one; lb labels a community's name.
+func ciscoStem(path, f []string, marked bool, lb *labels) ([]string, bool) {
 	if len(f) == 0 {
 		return f, false
+	}
+	if f[0] == "ntp" && len(f) >= 3 && f[1] == "authentication-key" {
+		// compared by the key's number: the algorithm and the string (the
+		// device holds ciphertext, or the key as it was typed) are not, and
+		// the string is never kept
+		return slices.Clone(f[:3]), true
+	}
+	if f[0] == "snmp-server" && len(f) >= 3 && f[1] == "community" {
+		out := slices.Clone(f)
+		out[2] = lb.of(f[2])
+		return out, true
+	}
+	if f[0] == "snmp-server" && len(f) >= 4 && f[1] == "host" {
+		// [A] the community follows the version and its options; for v1
+		// and for no version, the first word after the host.
+		if i := snmpHostSecret(f); i > 0 {
+			return snmpHostStem(f, i, lb.of(f[i])), true
+		}
 	}
 	if slices.Contains(f, secretMark) {
 		// Already elided: a stem read again.
@@ -385,18 +482,6 @@ func ciscoStem(path, f []string, marked bool) ([]string, bool) {
 		return f, false
 	}
 	switch {
-	case f[0] == "snmp-server" && len(f) >= 3 && f[1] == "community":
-		out := slices.Clone(f)
-		out[2] = secretMark
-		return out, true
-	case f[0] == "snmp-server" && len(f) >= 4 && f[1] == "host":
-		// [A] the community follows the version and its options; for v1
-		// and for no version, the first word after the host.
-		if i := snmpHostSecret(f); i > 0 {
-			out := slices.Clone(f)
-			out[i] = secretMark
-			return out, true
-		}
 	case f[0] == "snmp-server" && len(f) >= 3 && f[1] == "user":
 		// snmp-server user U G v3 auth <alg> <pw> priv <alg> [bits] <pw>
 		out := slices.Clone(f)
@@ -702,6 +787,10 @@ type ciscoCtx struct {
 	// operator's choice and the scope may set none (D119): a device's value
 	// is then nobody's business.
 	sourceInterface map[string]bool
+	// system is set when the rendering has a system section (a scope with a
+	// system block): the device's banner, domain, time zone, name servers and
+	// NTP are then the section's, and are nobody's business otherwise.
+	system bool
 }
 
 // The two source-interface commands (D119).
@@ -765,6 +854,8 @@ func (c *ciscoCtx) section(x stmt) string {
 		return SectionRoles
 	case has("snmp-server "):
 		return SectionSNMP
+	case c.system && len(p) == 1 && isSystemStatement(t):
+		return SectionSystem
 	case has("netconf-yang ", "netconf "):
 		return SectionNetconf
 	case isLoginLeaf(p):
@@ -1053,6 +1144,68 @@ func withoutImplicitIOS(exp, dev []stmt) (kept []stmt, notes []string) {
 	return kept, notes
 }
 
+// coverTraps makes a rendered 'snmp-server enable traps <type> [<subtype>
+// ...]' statement present when the device enables what it says in another
+// shape: IOS prints the subtypes it enabled on one line of the type ('snmp
+// authentication linkdown linkup coldstart warmstart'), so a statement for
+// the type and some of those subtypes is satisfied by that line; and a bare
+// 'snmp-server enable traps' (every type) is satisfied by any 'enable traps'
+// line the device has, because the device prints the types one by one. The
+// device's own line stays an extra (unmanaged), the rendered one is added to
+// the device's statements as present. [A] IOS knowledge, not a lab paste.
+func coverTraps(exp, dev []stmt) []stmt {
+	words := func(x stmt) []string {
+		if len(x.path) != 1 {
+			return nil
+		}
+		f := strings.Fields(x.path[0])
+		if len(f) < 3 || f[0] != "snmp-server" || f[1] != "enable" || f[2] != "traps" {
+			return nil
+		}
+		return f[3:]
+	}
+	onDev := map[string]bool{}
+	var devTraps [][]string
+	for _, x := range dev {
+		onDev[x.stem] = true
+		if w := words(x); w != nil || len(x.path) == 1 && x.path[0] == "snmp-server enable traps" {
+			devTraps = append(devTraps, w)
+		}
+	}
+	for _, x := range exp {
+		if len(x.path) != 1 || onDev[x.stem] {
+			continue
+		}
+		f := strings.Fields(x.path[0])
+		if len(f) < 3 || f[0] != "snmp-server" || f[1] != "enable" || f[2] != "traps" {
+			continue
+		}
+		w := f[3:]
+		covered := false
+		switch {
+		case len(w) == 0:
+			covered = len(devTraps) > 0
+		default:
+			for _, d := range devTraps {
+				if len(d) == 0 || d[0] != w[0] {
+					continue
+				}
+				all := true
+				for _, sub := range w[1:] {
+					if !slices.Contains(d[1:], sub) {
+						all = false
+					}
+				}
+				covered = covered || all
+			}
+		}
+		if covered {
+			dev = append(dev, stmt{text: x.stem, stem: x.stem, path: x.path})
+		}
+	}
+	return dev
+}
+
 // renderedPrivilege is a rendered 'privilege' statement: its words without
 // the 'all' after the mode, and its compared form.
 type renderedPrivilege struct {
@@ -1127,9 +1280,15 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 	}
 
 	c := &ciscoCtx{claim: map[string]string{}, acls: map[string]string{},
-		vtyRefs: map[string]bool{}, snmpRefs: map[string]bool{}, sourceInterface: map[string]bool{}}
+		vtyRefs: map[string]bool{}, snmpRefs: map[string]bool{}, sourceInterface: map[string]bool{},
+		system: renders(expected, SectionSystem)}
+	var rendered []string
 	for _, sec := range expected {
-		for _, x := range ciscoCanon(sec.Lines, sec.Secret) {
+		rendered = append(rendered, sec.Lines...)
+	}
+	lb := newLabels(FamilyIOS, rendered)
+	for _, sec := range expected {
+		for _, x := range ciscoCanon(sec.Lines, sec.Secret, lb) {
 			c.claim[x.stem] = sec.Name
 			if isSourceInterface(x) {
 				c.sourceInterface[strings.Join(strings.Fields(x.path[0])[:3], " ")] = true
@@ -1139,7 +1298,8 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 			}
 		}
 	}
-	got := withImplicitLogin(privilegeParents(ciscoCanon(lines, nil), c.claim))
+	lb.fresh = true
+	got := withImplicitLogin(privilegeParents(ciscoCanon(lines, nil, lb), c.claim))
 	for _, x := range got {
 		leaf := strings.Fields(x.path[len(x.path)-1])
 		switch {
@@ -1182,11 +1342,49 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 	by[SectionAAA] = append(by[SectionAAA], marker)
 	out := make(map[string]devices.Section, len(SectionNames))
 	for _, n := range SectionNames {
+		if optionalSection(n) && !c.system {
+			continue
+		}
 		out[n] = toSection(n, uniq(by[n]))
 	}
 	vis := true
 	if visible != nil {
 		vis = *visible
 	}
-	return Extracted{Vendor: FamilyIOS, Sections: out, SecretsVisible: vis}, nil
+	return Extracted{Vendor: FamilyIOS, Sections: out, SecretsVisible: vis, ArchiveFS: archiveFS(lines)}, nil
+}
+
+// archiveFS is the file system of the device's archive path: the 'path'
+// statement under a top-level 'archive' ('archive' / ' path flash:cfg-').
+// Only the file system word is returned ('flash:'): a remote path may hold a
+// host and a credential (ftp://user:pass@host/dir), and none of it is kept.
+// "" when there is no archive path, or one that is not '<word>:...'.
+func archiveFS(lines []string) string {
+	in := false
+	for _, l := range lines {
+		l = strings.TrimRight(l, " \t")
+		switch {
+		case l == "":
+		case l[0] != ' ' && l[0] != '\t':
+			in = l == "archive"
+		case in:
+			// one space of indent: a 'path' deeper down belongs to a
+			// sub-statement ('log config'), not to the archive
+			f := strings.Fields(l)
+			if l[0] != ' ' || l[1] == ' ' || len(f) != 2 || f[0] != "path" {
+				continue
+			}
+			fs, _, ok := strings.Cut(strings.ToLower(f[1]), ":")
+			if !ok || fs == "" {
+				return ""
+			}
+			for _, r := range fs {
+				if (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+					return ""
+				}
+			}
+			return fs + ":"
+		}
+	}
+	return ""
 }

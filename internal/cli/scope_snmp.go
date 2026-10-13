@@ -25,6 +25,7 @@ import (
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/policy"
+	"github.com/rett/tacctl/internal/shellquote"
 	"github.com/rett/tacctl/internal/snmp"
 	"github.com/rett/tacctl/internal/snmpcred"
 	"github.com/rett/tacctl/internal/ui"
@@ -637,21 +638,53 @@ func (inv *invocation) snmpTestWith(scope, key, usage string) error {
 		}
 		addr = e.Address
 	}
-	g, problem := inv.snmpGetterFor(scope)
+	// The default's test follows a registered device: the settings that
+	// device is read with (its own over its scope's over the default's), and
+	// the answer says which they were. A scope's test is of the scope's
+	// settings, as it says.
+	var g snmp.Getter
+	var problem, used string
+	testScope := scope
+	if scope == "" {
+		if d := inv.deviceAt(addr); d != nil {
+			own, oerr := inv.deviceSNMPOwnOf(*d)
+			if oerr != nil {
+				return inv.usageErr("Cannot test: " + strings.Join(msgs(oerr), " ") + ".")
+			}
+			dscope := inv.scopeOfAddress(addr)
+			g, problem = inv.snmpGetterOwn(dscope, own)
+			testScope = dscope
+			switch {
+			case own.chosen():
+				used = "the settings of device '" + d.Name + "' (tacctl device snmp " + shellquote.Q(d.Name) + " show)"
+			case dscope != "":
+				used = "the settings of scope '" + dscope + "' or the default's (tacctl scope snmp " + dscope + " show)"
+			default:
+				used = "the default settings"
+			}
+		}
+	}
+	if g == nil && problem == "" {
+		g, problem = inv.snmpGetterFor(scope)
+	}
 	if g == nil {
 		return inv.usageErr("Cannot test: " + problem + ".")
 	}
 	name, err := g.SysName(inv.ctx, addr)
 	var te *snmp.TimeoutError
 	var re *snmp.ReportError
+	with := ""
+	if used != "" {
+		with = " (tried with " + used + ")"
+	}
 	switch {
 	case errors.As(err, &te):
 		alike := "a wrong community"
-		if e, eerr := inv.snmpEffective(scope); eerr == nil && e.Version == snmp.V3 {
+		if e, eerr := inv.snmpEffective(testScope); eerr == nil && e.Version == snmp.V3 {
 			alike = "a wrong privacy passphrase"
 		}
 		return inv.usageErr("No answer from " + addr + ": " + te.Error() + ". No agent there, a filter on the way, or " +
-			alike + " (an agent drops such a request without a word).")
+			alike + " (an agent drops such a request without a word)" + with + ".")
 	case errors.As(err, &re):
 		return inv.usageErr(addr + " refused the request: " + re.Error() + ".")
 	case err != nil:
@@ -661,6 +694,6 @@ func (inv *invocation) snmpTestWith(scope, key, usage string) error {
 		inv.app.Out.Info(addr + " answered with an empty sysName.")
 		return nil
 	}
-	inv.app.Out.Info(addr + " calls itself '" + name + "' (SNMP sysName).")
+	inv.app.Out.Info(addr + " calls itself '" + name + "' (SNMP sysName)" + with + ".")
 	return nil
 }

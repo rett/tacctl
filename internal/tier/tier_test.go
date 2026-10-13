@@ -95,7 +95,8 @@ func TestPermitsMatchesBash(t *testing.T) {
 // set SUDO_USER), 0.2.2's 'group show', and 0.2.3's engineer alias and
 // tac-engineer line (no '(ALL:ALL) ALL' for it), 0.2.4's console forget row
 // and the alias that keeps TACCTL_ASKPASS for the lines that use the
-// password cache.
+// password cache, 0.2.7's alias that keeps VISUAL and EDITOR for the lines
+// that open an editor, and 'block adopt' among the cache's lines.
 func TestSudoersMatchesBash(t *testing.T) {
 	want, err := os.ReadFile("testdata/sudoers.tiers")
 	if err != nil {
@@ -486,7 +487,8 @@ func TestAskpassKeepIsScoped(t *testing.T) {
 	for _, alias := range []string{AskpassAlias, AskpassGroupAlias} {
 		k := AskpassKeep(alias)
 		items := aliasItems(t, k, alias)
-		want := []string{"device config pull *", "device config diff *", "device config plan *", "ssh *", "device ssh *"}
+		want := []string{"device config pull *", "device config diff *", "device config plan *", "ssh *", "device ssh *",
+			"scope block * adopt *", "device block * adopt *"}
 		if !slices.Equal(items, want) {
 			t.Errorf("%s commands %q, want %q", alias, items, want)
 		}
@@ -507,6 +509,40 @@ func TestAskpassKeepIsScoped(t *testing.T) {
 	}
 	if strings.Count(text, `"`+AskpassVar+`"`) != 1 {
 		t.Errorf("%s named more than once:\n%s", AskpassVar, text)
+	}
+}
+
+// VISUAL and EDITOR (0.2.7) are kept for the four command lines that open an
+// editor and nowhere else: not on the general env_keep line, not in the
+// password cache's alias, and the two drop-ins name their aliases
+// differently.
+func TestEditorKeepIsScoped(t *testing.T) {
+	for _, v := range strings.Fields(EditorVars) {
+		if strings.Contains(EnvKeep, v) || strings.Contains(AskpassKeep(AskpassAlias), v) {
+			t.Errorf("%s is kept for more than the editor's lines", v)
+		}
+	}
+	for _, alias := range []string{EditorAlias, EditorGroupAlias} {
+		k := EditorKeep(alias)
+		items := aliasItems(t, k, alias)
+		want := []string{"scope block * edit *", "scope block * adopt *", "device block * edit *", "device block * adopt *"}
+		if !slices.Equal(items, want) {
+			t.Errorf("%s commands %q, want %q", alias, items, want)
+		}
+		if !strings.Contains(k, "\nDefaults!"+alias+" env_keep += \""+EditorVars+"\"\n") || strings.Contains(k, "SETENV") {
+			t.Errorf("%s: env_keep line:\n%s", alias, k)
+		}
+	}
+	if EditorAlias == EditorGroupAlias {
+		t.Error("the two drop-ins share an alias name")
+	}
+	text := Sudoers()
+	if strings.Index(text, "Cmnd_Alias "+EditorAlias) > strings.Index(text, "Defaults!"+EditorAlias) ||
+		strings.Count(text, `"`+EditorVars+`"`) != 1 {
+		t.Errorf("editor alias order or count:\n%s", text)
+	}
+	if g := GroupSudoers("wheel"); !strings.Contains(g, EditorKeep(EditorGroupAlias)) || strings.Contains(g, EditorAlias+" ") {
+		t.Errorf("group drop-in:\n%s", g)
 	}
 }
 
@@ -663,6 +699,11 @@ func TestClassifyGroupSudoers(t *testing.T) {
 		"# to members of group 'adm'. Remove with: tacctl config sudoers remove\n"
 	envKeep := "Defaults!/usr/local/bin/tacctl env_keep += \"SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY\"\n"
 	rule := "%adm ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl\n"
+	// what 0.2.4 to 0.2.6 wrote: the password cache's alias without
+	// 'block adopt'
+	askpass026 := "Cmnd_Alias TACCTL_ASKPASS_GROUP_CMDS = /usr/local/bin/tacctl device config pull *, /usr/local/bin/tacctl device config diff *, /usr/local/bin/tacctl device config plan *, \\\n" +
+		"    /usr/local/bin/tacctl ssh *, /usr/local/bin/tacctl device ssh *\n" +
+		"Defaults!TACCTL_ASKPASS_GROUP_CMDS env_keep += \"TACCTL_ASKPASS\"\n"
 	for name, c := range map[string]struct {
 		text  string
 		group string
@@ -670,6 +711,7 @@ func TestClassifyGroupSudoers(t *testing.T) {
 	}{
 		"current":       {GroupSudoers("adm"), "adm", GroupCurrent},
 		"0.2.3":         {head + envKeep + rule, "adm", GroupOlder},
+		"0.2.6":         {head + askpass026 + envKeep + rule, "adm", GroupOlder},
 		"0.2.0":         {head + rule, "adm", GroupOlder},
 		"edited rule":   {head + envKeep + "%adm ALL=(ALL) PASSWD: /usr/local/bin/tacctl\n", "adm", GroupCustomised},
 		"forged":        {head + "%adm ALL=(ALL) NOPASSWD: ALL\n", "adm", GroupCustomised},

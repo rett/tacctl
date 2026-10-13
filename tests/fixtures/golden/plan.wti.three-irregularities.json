@@ -1,0 +1,112 @@
+{
+  "name": "lab-unit",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "wti",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "ssh",
+    "age_s": 1080,
+    "secrets_visible": true
+  },
+  "status": "needs-change",
+  "irregularities": [
+    {
+      "n": 1,
+      "kind": "different",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "Fallback Local (TACACS+) is On (Transport failure) (the device has: On (All failures))",
+      "statement": "tacacs fallback-local on-transport-failure",
+      "action": "Fixed by step 1.",
+      "fixed": true,
+      "region_lines": [
+        5
+      ]
+    },
+    {
+      "n": 2,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the TACACS+ secondary host is 192.0.2.50",
+      "statement": "tacacs secondary 192.0.2.50",
+      "action": "Left alone. To remove it later: /N 28 3 (Secondary host/address), then 1 (IPv4), then \u003cSPACE\u003e\u003cCR\u003e",
+      "fixed": false
+    },
+    {
+      "n": 3,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "an SNMP read/write community",
+      "statement": "snmp rw-community \u003cother:1\u003e",
+      "action": "Left alone. To remove it later: /N 25 8 (Read/Write Community), then \u003cSPACE\u003e\u003cCR\u003e",
+      "fixed": false
+    }
+  ],
+  "region": [
+    "##### DO THESE STEPS ON: lab-unit #####",
+    "# At the unit's prompt type /N and Enter. For each step type the item numbers of its second column,",
+    "# one at a time with Enter after each, then what the arrow says. A pick: the number of the line",
+    "# that reads as shown. ESC goes back one level. A value is live as soon as its Enter is accepted.",
+    "#  1. /N  28  6  Fallback Local  -\u003e 3 (On (Transport failure))   was: 2 (On (All failures))",
+    "#  2. ESC ESC  leave /N: wait for \"Saving configuration to flash\"",
+    "#  3. CHECK from a SECOND session (this one stays open): log in as a member of scope lab and type",
+    "#      /H; the help lists the commands of the level the server assigned (Step 8 of tacctl config",
+    "#      wti). Go on only when it does.",
+    "##### END OF STEPS #####"
+  ],
+  "after": [
+    "#",
+    "# Check now. The unit has no rollback: nothing undoes this by itself.",
+    "#   From the tacctl server:   tacctl device config pull lab-unit --diff     (aaa: ok)",
+    "#   In a second session:      log in as a member of scope lab and type /H (the help lists the commands of the assigned level), then /X",
+    "#",
+    "# To undo it: tacctl device config plan lab-unit --backout (the steps with the values the pull",
+    "# showed; tacctl keeps this plan's back-out until the next plan with changes).",
+    "# Do not: paste anything outside the banners; paste a block into another unit; leave /N with ESC",
+    "# before the last step of the list; keep this output in a file after the paste when it holds a",
+    "# secret.",
+    "# Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold lab-unit --reason \"...\"",
+    "# then log in on the unit's serial console as its local Administrator account,",
+    "# fix or back out, and the superuser runs: tacctl breakglass release lab-unit"
+  ],
+  "backout": [
+    "##### UNDO THESE STEPS ON: lab-unit #####",
+    "# At the unit's prompt type /N and Enter. For each step type the item numbers of its second column,",
+    "# one at a time with Enter after each, then what the arrow says. A pick: the number of the line",
+    "# that reads as shown. ESC goes back one level. A value is live as soon as its Enter is accepted.",
+    "#  1. /N  28  6  Fallback Local  -\u003e 2 (On (All failures))   was: 3 (On (Transport failure))",
+    "#  2. ESC ESC  leave /N: wait for \"Saving configuration to flash\"",
+    "##### END OF STEPS #####"
+  ],
+  "left": {
+    "access": 1,
+    "monitoring": 1,
+    "cosmetic": 0
+  },
+  "extras": [
+    {
+      "section": "aaa",
+      "text": "tacacs secondary 192.0.2.50",
+      "remove": [
+        "/N 28 3 (Secondary host/address), then 1 (IPv4), then \u003cSPACE\u003e\u003cCR\u003e"
+      ]
+    },
+    {
+      "section": "snmp",
+      "text": "snmp rw-community \u003cother:1\u003e",
+      "remove": [
+        "/N 25 8 (Read/Write Community), then \u003cSPACE\u003e\u003cCR\u003e"
+      ]
+    }
+  ],
+  "skipped": [],
+  "withheld": [],
+  "warnings": [
+    "Step 1 changes what the unit asks of the TACACS+ server or how it answers when the server fails: a wrong secret word, host, port or service name does not stop a login, it returns every login to the unit's Default User Access level, and Fallback Local decides whether the unit's own accounts work when the server does not answer; keep the serial session open and do the check after the ESC step before anything else"
+  ],
+  "holds_secret": false
+}

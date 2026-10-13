@@ -122,9 +122,16 @@ func CiscoVars(req Request, d Data) map[string]string {
 			entries.WriteString("  permit " + wc + "\n")
 		}
 	}
+	// An entry with services that do not include ssh is not listed (a
+	// standard access list matches the source only), with a comment that
+	// says so above the list.
+	var skipped strings.Builder
+	for _, n := range d.mgmtSkipped("the VTY access list " + aclName + " (a standard access list matches the source only)") {
+		skipped.WriteString("! " + n + "\n")
+	}
 	var aclBlock, accessClass string
 	if entries.Len() > 0 {
-		aclBlock = "ip access-list standard " + aclName + "\n" +
+		aclBlock = skipped.String() + "ip access-list standard " + aclName + "\n" +
 			"  remark Managed by tacctl - edit with 'tacctl config mgmt-acl'\n" +
 			entries.String() + "  deny   any log"
 		accessClass = "  access-class " + aclName + " in"
@@ -133,11 +140,27 @@ func CiscoVars(req Request, d Data) map[string]string {
 		if req.Protocol == RADIUS {
 			flag = " --protocol radius"
 		}
-		aclBlock = "! " + aclName + " not emitted - mgmt-acl list is empty.\n" +
+		why := "mgmt-acl list is empty."
+		if skipped.Len() > 0 {
+			why = "no entry of the mgmt-acl list permits ssh (tcp/22)."
+		}
+		aclBlock = skipped.String() + "! " + aclName + " not emitted - " + why + "\n" +
 			"! Populate it on the tacctl server with\n" +
 			"!   tacctl config mgmt-acl add <cidr>\n" +
 			"! then re-run 'tacctl config cisco" + flag + "' to get the access-list block."
 		accessClass = "! access-class " + aclName + " in   ! uncomment after populating mgmt-acl"
+	}
+
+	// The scope's system block follows the SNMP step as the trailing lines of
+	// its block (the template's own steps keep their numbers): the same
+	// statements are the managed system section, so the walkthrough and a
+	// pull's compare cannot drift. SNMP_STEP is the step alone, SYSTEM_BLOCK
+	// the system lines, and neither is a template variable.
+	snmpStep := CiscoSNMP(d.snmpInputFor(scope, "cisco")).Text
+	system := d.Blocks.ciscoSystemLines(scope)
+	snmpBlock := snmpStep
+	if len(system) > 0 {
+		snmpBlock += "\n" + strings.Join(system, "\n")
 	}
 
 	vars := map[string]string{
@@ -154,7 +177,9 @@ func CiscoVars(req Request, d Data) map[string]string {
 		"EXEC_TIMEOUT":           execTimeout(c, scope),
 		"TACACS_GROUP":           tacacsGroup,
 		"RADIUS_GROUP":           radiusGroup,
-		"SNMP_BLOCK":             CiscoSNMP(d.snmpInput(scope)).Text,
+		"SNMP_BLOCK":             snmpBlock,
+		"SNMP_STEP":              snmpStep,
+		"SYSTEM_BLOCK":           strings.Join(system, "\n"),
 		"NETCONF_BLOCK":          CiscoNetconf(NetconfInput{Restricted: d.Restricted, Legacy: req.Legacy}),
 		"SOURCE_INTERFACE_BLOCK": ciscoSourceInterfaceBlock(req, d),
 		"HARDENING_BLOCK":        ciscoHardening(req, d),
@@ -237,6 +262,12 @@ func ciscoHardening(req Request, d Data) string {
 		enable = "enable secret <PASSWORD>"
 	}
 	note := func(line, where string) string { return fmt.Sprintf("  %-48s %s", line, where) }
+	// A scope whose system block states the domain name types it in its own
+	// step: the line says so in place of the placeholder.
+	domain := "  ip domain name <DOMAIN>"
+	if b := d.Blocks.CiscoSystem; b != nil && b.DomainName != nil {
+		domain = note("ip domain name "+b.DomainName.Text, "(below, the system block of the scope)")
+	}
 	var b strings.Builder
 	lines := []string{
 		"--- Step 0: hardening checklist and the local enable secret ---",
@@ -244,7 +275,7 @@ func ciscoHardening(req Request, d Data) string {
 		"Type what your site uses before the steps below; a line marked (below) is typed there.",
 		"Global:",
 		"  hostname " + host,
-		"  ip domain name <DOMAIN>",
+		domain,
 		"  no ip domain lookup",
 		note("service password-encryption", "(below, with the server block)"),
 		"  service timestamps debug datetime msec localtime",
@@ -350,6 +381,9 @@ func renderCisco(o *out, req Request, d Data) error {
 	if err != nil {
 		return err
 	}
+	if err := d.blockProblem(req); err != nil {
+		return err
+	}
 	vars := CiscoVars(req, d)
 	allowed := ciscoTacacsVars
 	if req.Protocol == RADIUS {
@@ -359,7 +393,7 @@ func renderCisco(o *out, req Request, d Data) error {
 	vars[breakGlassVar] = ciscoBreakGlass(bg)
 	allowed = withBreakGlassVar(allowed)
 	aclName := d.ACL.Name
-	snmp := CiscoSNMP(d.snmpInput(req.Scope))
+	snmp := CiscoSNMP(d.snmpInputFor(req.Scope, "cisco"))
 
 	// a Cisco walkthrough is pasted from: every byte of it is ASCII
 	o.ascii = true

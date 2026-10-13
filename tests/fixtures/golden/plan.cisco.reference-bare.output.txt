@@ -39,8 +39,8 @@
 ! 14. snmp     MONITORING missing: ip access-list standard TACCTL-SNMP: 3 statements (e.g. ip
 !                         access-list standard TACCTL-SNMP > permit 192.0.2.10). Fixed by region lines
 !                         25-27.
-! 15. snmp     MONITORING missing: an SNMP community (snmp-server community <secret> RO TACCTL-SNMP).
-!                         Fixed by region line 28.
+! 15. snmp     MONITORING missing: an SNMP community (snmp-server community <secret:1> RO
+!                         TACCTL-SNMP). Fixed by region line 28.
 ! 16. snmp     COSMETIC   missing: the SNMP location is Rack 4, DC1 (snmp-server location Rack 4,
 !                         DC1). Fixed by region line 29.
 ! 17. snmp     COSMETIC   missing: the SNMP contact is NOC <noc@example.net> (snmp-server contact NOC

@@ -41,6 +41,11 @@ const (
 	OpInsert Op = "insert"
 	OpLine   Op = "line"
 	OpNo     Op = "no"
+	// OpStep is a step of a WTI unit's checklist: a menu item and what to
+	// enter at it (WTIPlan.Steps holds its parts); OpPaste is the one IP
+	// tables block, pasted at that page's prompt.
+	OpStep  Op = "step"
+	OpPaste Op = "paste"
 	// OpComment is a back-out step that cannot be a line ("re-enter the
 	// original key"); only Undo lines have it.
 	OpComment Op = "comment"
@@ -289,6 +294,13 @@ type Delta struct {
 	// remove or the cleanup is refused: Cleanup.Whole says why).
 	Converge bool
 	Cleanup  Cleanup
+	// WTI is what a WTI unit's plan holds beside Lines: the checklist's steps
+	// and the IP tables block (nil for any other vendor).
+	WTI *WTIPlan
+	// Restore is the restore point the plan was asked for (--restore-point,
+	// IOS only; nil: none). The output has its block only while the plan has
+	// a region to paste.
+	Restore *RestorePoint
 }
 
 // Severity of an irregularity (D110).
@@ -414,7 +426,7 @@ func (d Delta) Planned() []string {
 
 // Errors of Plan.
 var (
-	// ErrUnsupported: the vendor has no planner (wti, in this release).
+	// ErrUnsupported: the vendor has no planner.
 	ErrUnsupported = errors.New("plan: no planner for this vendor")
 	// ErrNeverEmitted: --section named a section that is never emitted.
 	ErrNeverEmitted = errors.New("plan: the section is never emitted")

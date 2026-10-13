@@ -1,0 +1,293 @@
+{
+  "name": "dev-juniper-synthetic-system-new",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "juniper",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "netconf",
+    "age_s": 1080,
+    "secrets_visible": true
+  },
+  "status": "needs-change",
+  "irregularities": [
+    {
+      "n": 1,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "a TACACS+ server 192.0.2.99",
+      "statement": "set system tacplus-server 192.0.2.99 secret \u003csecret\u003e",
+      "action": "Left alone. To remove it later: delete system tacplus-server 192.0.2.99",
+      "fixed": false
+    },
+    {
+      "n": 2,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "snmp",
+      "what": "the SNMP description is Core switch",
+      "statement": "set snmp description \"Core switch\"",
+      "action": "Fixed by region line 3.",
+      "fixed": true,
+      "region_lines": [
+        3
+      ]
+    },
+    {
+      "n": 3,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "an SNMP community: authorization read-only",
+      "statement": "set snmp community \u003cother:1\u003e authorization read-only",
+      "action": "Left alone (its name is the secret and is not known to tacctl).",
+      "fixed": false
+    },
+    {
+      "n": 4,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "SNMP: trap-group \u003cother:2\u003e targets 192.0.2.50",
+      "statement": "set snmp trap-group \u003cother:2\u003e targets 192.0.2.50",
+      "action": "Left alone (its name is the secret and is not known to tacctl).",
+      "fixed": false
+    },
+    {
+      "n": 5,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the login message of 4 lines, 120 characters",
+      "statement": "set system login message \"\u003cmessage: 4 lines, 120 characters, id 7e734f51\u003e\"",
+      "action": "Fixed by region line 5.",
+      "fixed": true,
+      "region_lines": [
+        5
+      ]
+    },
+    {
+      "n": 6,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the domain name is lab.example.net",
+      "statement": "set system domain-name lab.example.net",
+      "action": "Fixed by region line 6.",
+      "fixed": true,
+      "region_lines": [
+        6
+      ]
+    },
+    {
+      "n": 7,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the search domain lab.example.net",
+      "statement": "set system domain-search lab.example.net",
+      "action": "Fixed by region line 7.",
+      "fixed": true,
+      "region_lines": [
+        7
+      ]
+    },
+    {
+      "n": 8,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the time zone is UTC",
+      "statement": "set system time-zone UTC",
+      "action": "Fixed by region line 8.",
+      "fixed": true,
+      "region_lines": [
+        8
+      ]
+    },
+    {
+      "n": 9,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the name server 192.0.2.53",
+      "statement": "set system name-server 192.0.2.53",
+      "action": "Fixed by region line 9.",
+      "fixed": true,
+      "region_lines": [
+        9
+      ]
+    },
+    {
+      "n": 10,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the NTP server 192.0.2.123: 4 statements",
+      "statement": "e.g. set system ntp server 192.0.2.123",
+      "action": "Fixed by region lines 10-12.",
+      "fixed": true,
+      "region_lines": [
+        10,
+        11,
+        12
+      ]
+    },
+    {
+      "n": 11,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the NTP boot server is 192.0.2.123",
+      "statement": "set system ntp boot-server 192.0.2.123",
+      "action": "Fixed by region line 13.",
+      "fixed": true,
+      "region_lines": [
+        13
+      ]
+    },
+    {
+      "n": 12,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the NTP source address is 192.0.2.250",
+      "statement": "set system ntp source-address 192.0.2.250",
+      "action": "Fixed by region line 14.",
+      "fixed": true,
+      "region_lines": [
+        14
+      ]
+    },
+    {
+      "n": 13,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "NTP key 1 is set",
+      "statement": "set system ntp authentication-key 1 value \u003csecret\u003e",
+      "action": "Fixed by region line 15.",
+      "fixed": true,
+      "region_lines": [
+        15
+      ]
+    },
+    {
+      "n": 14,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "NTP key 1 is trusted",
+      "statement": "set system ntp trusted-key 1",
+      "action": "Fixed by region line 16.",
+      "fixed": true,
+      "region_lines": [
+        16
+      ]
+    }
+  ],
+  "region": [
+    "configure private",
+    "# snmp: the description tacctl renders",
+    "set snmp description \"Core switch\"",
+    "# system: the statements of the system block of scope 'lab'",
+    "set system login message \"Authorized use only.\\n  *** js1.lab.example.net ***\\nDisconnect now if you are not authorized.\\n  \\\"quoted\\\" and a back\\\\slash\"",
+    "set system domain-name lab.example.net",
+    "set system domain-search lab.example.net",
+    "set system time-zone UTC",
+    "set system name-server 192.0.2.53",
+    "set system ntp server 192.0.2.123 prefer",
+    "set system ntp server 192.0.2.123 version 4",
+    "set system ntp server 192.0.2.123 key 1",
+    "set system ntp boot-server 192.0.2.123",
+    "set system ntp source-address 192.0.2.250",
+    "set system ntp authentication-key 1 value \u003csecret\u003e",
+    "set system ntp trusted-key 1",
+    "show | compare | no-more",
+    "commit check",
+    "commit confirmed 5 comment \"tacctl plan dev-juniper-synthetic-system-new 2026-10-10T14:20Z by alice\""
+  ],
+  "after": [
+    "#",
+    "# If the first line printed \"Users currently editing the configuration\" or \"error: shared",
+    "# configuration database modified\": nothing happened; ask that person to commit or roll back, then",
+    "# paste again. If any line printed \"error:\": do not type commit; the switch undoes this by itself",
+    "# in 5 minutes.",
+    "#",
+    "# Check now. In 5 minutes the switch undoes this by itself unless you type one word.",
+    "#   From the tacctl server:   tacctl device config pull dev-juniper-synthetic-system-new --diff     (snmp and system: ok)",
+    "#   In a second terminal:     ssh dev-juniper-synthetic-system-new, then: show cli authorization | no-more",
+    "#                             show configuration snmp | no-more",
+    "#                             show configuration system login message | no-more",
+    "#                             show configuration system domain-name | no-more",
+    "#                             show configuration system domain-search | no-more",
+    "#                             show configuration system time-zone | no-more",
+    "#                             show configuration system name-server | no-more",
+    "#                             show configuration system ntp | no-more",
+    "# When both checks are fine, type this one word yourself:  commit     (before the 5 minutes end)",
+    "#",
+    "# If your session drops before that, the switch still rolls back when the time runs out (a dropped",
+    "# CLI session does not roll back at once): log in again and paste again.",
+    "# To undo it after the commit: tacctl device config plan dev-juniper-synthetic-system-new",
+    "# --backout (its own region to paste; tacctl keeps this plan's back-out: after the check pull has",
+    "# replaced the picture, the command still prints this plan's, and says which pull it undoes, until",
+    "# the next plan with changes). Without tacctl: show system commit, then rollback \u003cn\u003e of the entry",
+    "# just before the one commented \"tacctl plan dev-juniper-synthetic-system-new\" (the newest entry",
+    "# is that commit itself), then commit.",
+    "# Do not: type commit before the check; paste anything outside the banners; paste this into",
+    "# another device; use configure exclusive; keep this output in a file after the paste when it",
+    "# holds a secret.",
+    "# Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold dev-juniper-synthetic-system-new --reason \"...\"",
+    "# then log in as the device's local user (ssh or console),",
+    "# fix or back out, and the superuser runs: tacctl breakglass release dev-juniper-synthetic-system-new"
+  ],
+  "backout": [
+    "configure private",
+    "# back-out: the statements as the pull showed them",
+    "delete system ntp trusted-key 1",
+    "delete system ntp authentication-key 1",
+    "delete system ntp source-address",
+    "delete system ntp boot-server",
+    "delete system ntp server 192.0.2.123",
+    "delete system name-server 192.0.2.53",
+    "delete system time-zone",
+    "delete system domain-search lab.example.net",
+    "delete system domain-name",
+    "delete system login message",
+    "delete snmp description",
+    "show | compare | no-more",
+    "commit check",
+    "commit confirmed 5 comment \"tacctl backout dev-juniper-synthetic-system-new 2026-10-10T14:20Z by alice\""
+  ],
+  "left": {
+    "access": 1,
+    "monitoring": 2,
+    "cosmetic": 0
+  },
+  "extras": [
+    {
+      "section": "aaa",
+      "text": "set system tacplus-server 192.0.2.99 secret",
+      "remove": [
+        "delete system tacplus-server 192.0.2.99"
+      ]
+    },
+    {
+      "section": "snmp",
+      "text": "set snmp community \u003cother:1\u003e authorization read-only",
+      "guard": "its name is the secret and is not known to tacctl"
+    },
+    {
+      "section": "snmp",
+      "text": "set snmp trap-group \u003cother:2\u003e targets 192.0.2.50",
+      "guard": "its name is the secret and is not known to tacctl"
+    }
+  ],
+  "skipped": [],
+  "withheld": [],
+  "warnings": [],
+  "confirm_timeout": 5,
+  "holds_secret": true
+}

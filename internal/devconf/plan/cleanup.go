@@ -386,7 +386,7 @@ func cleanupLeftWhy(left []CleanupLeft, e Extra) string {
 // folded.
 func (p *planner) extrasOfItem(d *Delta, it Item) []int {
 	stem := strings.TrimPrefix(it.Statement, "e.g. ")
-	obj, _ := objectOf(d.Vendor, stem)
+	obj, _ := objectOf(d.Vendor, stem, p.blk)
 	var out []int
 	for i, e := range d.Extras {
 		if e.Section != it.Section {
@@ -398,7 +398,7 @@ func (p *planner) extrasOfItem(d *Delta, it Item) []int {
 			continue
 		}
 		if strings.HasPrefix(it.Statement, "e.g. ") && obj != "" {
-			if eo, _ := objectOf(d.Vendor, e.Text); eo == obj {
+			if eo, _ := objectOf(d.Vendor, e.Text, p.blk); eo == obj {
 				out = append(out, i)
 			}
 		}
@@ -737,6 +737,9 @@ func CleanupLines(d Delta, h Header, w Wrapper) []RegionLine {
 	if d.Cleanup.Empty() {
 		return nil
 	}
+	if d.Vendor == devconf.FamilyWTI {
+		return wtiCleanupLines(d, h)
+	}
 	cd := cleanupDelta(d)
 	if d.Vendor == devconf.FamilyIOS {
 		return iosRegion(cd)
@@ -749,11 +752,17 @@ func CleanupLines(d Delta, h Header, w Wrapper) []RegionLine {
 // that held both could not be told one from the other, and a banner search
 // for 'PASTE TO HERE' never ends the cleanup.
 func cleanupFromBanner(d Delta, h Header) string {
+	if d.Vendor == devconf.FamilyWTI {
+		return wtiBanner("DO THESE CLEANUP STEPS ON: " + h.Device)
+	}
 	bc := bannerChar(d.Vendor)
 	return bc + " CLEANUP FROM HERE: " + h.Device + " " + bc
 }
 
 func cleanupToBanner(d Delta, h Header) string {
+	if d.Vendor == devconf.FamilyWTI {
+		return wtiBanner("END OF CLEANUP STEPS")
+	}
 	bc := bannerChar(d.Vendor)
 	return bc + " CLEANUP TO HERE: " + h.Device + " " + bc
 }
@@ -776,6 +785,9 @@ func CleanupRegion(d Delta, h Header, w Wrapper) string {
 // CleanupPlain is the cleanup's statements only (the file for 'load set' on
 // Junos), as Plain is for the first region.
 func CleanupPlain(d Delta, h Header, w Wrapper) string {
+	if d.Vendor == devconf.FamilyWTI {
+		return ""
+	}
 	var b strings.Builder
 	for _, l := range CleanupLines(d, h, w) {
 		if !l.Comment && !l.Wrapper {
@@ -790,6 +802,9 @@ func CleanupPlain(d Delta, h Header, w Wrapper) string {
 func CleanupAfter(d Delta, h Header, w Wrapper) string {
 	if d.Cleanup.Empty() {
 		return ""
+	}
+	if d.Vendor == devconf.FamilyWTI {
+		return wtiCleanupAfter(d, h)
 	}
 	var b strings.Builder
 	c := commentLeader(d.Vendor)
@@ -815,6 +830,11 @@ func CleanupAfter(d Delta, h Header, w Wrapper) string {
 		// not save before the check (as the first region's)
 		b.WriteString("! Same check, then type this one command yourself:  write memory\n")
 		add("Nothing rolls the cleanup back by itself; until write memory is typed a reload brings back the saved configuration. A removed server entry takes its key with it: tacctl holds no key it removes, so to put one back you type it again.")
+		if d.restoreShown() {
+			b.WriteString("!\n")
+			add("Restore point: " + d.Restore.Name(h) + " (the block above the region).")
+			restoreAlternative(d, h, "", add, func(s string) { b.WriteString("!   " + s + "\n") })
+		}
 		b.WriteString(lockoutHelp(d, h))
 		return b.String()
 	}

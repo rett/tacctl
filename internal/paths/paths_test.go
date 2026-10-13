@@ -272,7 +272,7 @@ func TestDeviceAndConsolePaths(t *testing.T) {
 		p.VarLib: "/var/lib/tacctl", p.SeenCache: "/var/lib/tacctl/devices-seen.json", p.TierPinMarker: "/var/lib/tacctl/tier-pinned",
 		p.ConfigRecords: "/var/lib/tacctl/devices-config.json", p.ConfigDir: "/var/lib/tacctl/device-config",
 		p.HostRecords: "/etc/tacctl/hosts",
-		p.SNMPFile:    "/etc/tacctl/snmp.yaml", p.SNMPDir: "/etc/tacctl/snmp",
+		p.SNMPFile:    "/etc/tacctl/snmp.yaml", p.SNMPDir: "/etc/tacctl/snmp", p.BlocksDir: "/etc/tacctl/blocks",
 		p.SSHDir: "/etc/ssh", p.SSHDEngineerDropIn: "/etc/ssh/sshd_config.d/00-tacctl-engineer.conf",
 		p.SSHDEngineerDropInOld: "/etc/ssh/sshd_config.d/tacctl-engineer.conf",
 	}
@@ -293,7 +293,7 @@ func TestDeviceAndConsolePaths(t *testing.T) {
 	for got, w := range map[string]string{
 		p.DevicesFile: "/s/devices.yaml", p.KnownHosts: "/v/ssh/known_hosts", p.ConsoleFile: "/s/console.yaml",
 		p.HostRecords: "/s/hosts", p.VarLib: "/v", p.SeenCache: "/v/devices-seen.json", p.TierPinMarker: "/v/tier-pinned",
-		p.ConfigRecords: "/v/devices-config.json", p.ConfigDir: "/v/device-config", p.SNMPFile: "/s/snmp.yaml", p.SNMPDir: "/s/snmp",
+		p.ConfigRecords: "/v/devices-config.json", p.ConfigDir: "/v/device-config", p.SNMPFile: "/s/snmp.yaml", p.SNMPDir: "/s/snmp", p.BlocksDir: "/s/blocks",
 	} {
 		if got != w {
 			t.Errorf("overridden %q, want %q", got, w)

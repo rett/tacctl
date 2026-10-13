@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -20,11 +21,16 @@ type Flag struct {
 	// Value: the flag takes a value, given as "--name value" or
 	// "--name=value". Otherwise it is a switch, and "--name=x" is an error.
 	Value bool
+	// Optional: the value may be left out. It is then given as "--name=value"
+	// only (the next word is never taken as the value, as a device name may
+	// follow); a bare "--name" has the value "". Only with Value.
+	Optional bool
 	// Repeat: the flag may be given more than once (each value is kept).
 	Repeat bool
 	// Only: completion offers the flag only after this positional word
-	// ('remove --all'). Alone: no positional is offered once the flag is on
-	// the line. Neither changes how the verb parses its arguments.
+	// ('remove --all'), or after one of several joined with '|' ('set|check
+	// --file'). Alone: no positional is offered once the flag is on the
+	// line. Neither changes how the verb parses its arguments.
 	Only  string
 	Alone bool
 	// Kind is what the value is, for completion: a _completion-names kind
@@ -61,6 +67,26 @@ const (
 // After is the kind of a positional that completion offers only when the
 // word is among the positionals typed before it ('set <ip> <vendor>').
 func After(word, kind string) string { return "@" + word + ":" + kind }
+
+// Cond is the kind of a positional that completion takes from kind a when
+// the word is among the positionals typed before it, and from kind b when it
+// is not ('scope block <scope> juniper adopt <device> <block>' names a device
+// where the other verbs name a block).
+func Cond(word, a, b string) string { return "?" + word + ":" + a + ":" + b }
+
+// offeredAfter reports whether completion offers the flag, given the
+// positional words typed so far.
+func (f Flag) offeredAfter(words []string) bool {
+	if f.Only == "" {
+		return true
+	}
+	for _, w := range strings.Split(f.Only, "|") {
+		if slices.Contains(words, w) {
+			return true
+		}
+	}
+	return false
+}
 
 // Spec describes a verb's arguments.
 type Spec struct {
@@ -164,6 +190,8 @@ func Parse(spec Spec, argv []string) (Parsed, error) {
 		case !f.Value && hasVal:
 			return p, &UnexpectedValueError{Flag: name}
 		case !f.Value:
+			val = ""
+		case !hasVal && f.Optional:
 			val = ""
 		case !hasVal:
 			if i+1 >= len(argv) {

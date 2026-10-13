@@ -28,6 +28,10 @@ import (
 //	                       open until the server stops)
 //	<command>.err          the command is denied with this message (an
 //	                       rpc-error over NETCONF, the text over the CLI)
+//	menu                   the manifest of a menu device (a WTI console
+//	                       server): its shell sessions serve captured
+//	                       screens as a menu, with 'prompt' and 'login'
+//	                       as above (menu.go)
 //	netconf.off            the netconf subsystem is refused
 //	netconf.hello          the device's hello document, whole (the default
 //	                       one advertises base:1.0 and, when the server

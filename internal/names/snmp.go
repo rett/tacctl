@@ -11,6 +11,23 @@ const (
 	SNMPUserMax       = 32
 )
 
+// The names the SNMP step of a walkthrough defines on a device: the client
+// list (the IOS access list, the Junos client-list) the communities are bound
+// to, and the view and group of the v3 user. They are tacctl's own: a
+// configuration block may not define or use them (internal/blocks), so the
+// device's object of that name is always the one tacctl renders.
+const (
+	SNMPClientList = "TACCTL-SNMP"
+	SNMPView       = "TACCTL-VIEW"
+	SNMPGroup      = "TACCTL-GROUP"
+)
+
+// IsTacctlSNMPName reports whether s is a name the SNMP step defines on a
+// device itself (SNMPClientList, SNMPView, SNMPGroup).
+func IsTacctlSNMPName(s string) bool {
+	return s == SNMPClientList || s == SNMPView || s == SNMPGroup
+}
+
 // SNMPTokenProblem is why s cannot be written into a device CLI line as an
 // SNMP community, v3 user or passphrase ("" when it can): it is printable
 // ASCII without blanks (a blank ends the word on Cisco and Junos), without

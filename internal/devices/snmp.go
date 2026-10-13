@@ -21,9 +21,9 @@ import (
 
 // The names the SNMP step defines on the device.
 const (
-	snmpACLName   = "TACCTL-SNMP"
-	snmpViewName  = "TACCTL-VIEW"
-	snmpGroupName = "TACCTL-GROUP"
+	snmpACLName   = names.SNMPClientList
+	snmpViewName  = names.SNMPView
+	snmpGroupName = names.SNMPGroup
 )
 
 // The SNMP versions (internal/snmp's constants, repeated so this package's
@@ -68,6 +68,18 @@ type SNMPInput struct {
 	// DeviceName is the registry name of the device the values are of (the
 	// hint of the Unfilled line); empty is the placeholder <name>.
 	DeviceName string
+	// Block are the 'set' lines of the scope's snmp configuration block
+	// (0.2.7): rendered after the structured settings as live lines of
+	// their own, whether or not the structured SNMP is configured, and
+	// BlockScope is the scope whose block it is (named in a comment, never a
+	// community string). Data.snmpInput fills them from Data.Blocks; the
+	// Junos and the IOS step render them, each its vendor's.
+	Block      []string
+	BlockScope string
+	// BlockHead is what the comment above the block says of it (the layers
+	// it is made of and the verb that shows it); empty is the scope's block
+	// alone, named by BlockScope.
+	BlockHead string
 }
 
 // Unfilled is a value the step could not fill, and the command that sets it.
@@ -253,7 +265,13 @@ func (in SNMPInput) verifyHint() string {
 func CiscoSNMP(in SNMPInput) SNMPBlock {
 	const c = "!"
 	if in.Version == "" {
-		return SNMPBlock{Text: "! --- SNMP ---\n" + in.notConfigured(c)}
+		// The block is independent of the structured settings: it is
+		// rendered all the same.
+		if len(in.Block) == 0 {
+			return SNMPBlock{Text: "! --- SNMP ---\n" + in.notConfigured(c)}
+		}
+		text := "! --- SNMP ---\n" + commented(c, in.notConfiguredLines("rendered from the structured settings"))
+		return SNMPBlock{Text: text + "\n" + strings.Join(in.ciscoBlockLines(), "\n")}
 	}
 	var b []string
 	add := func(l ...string) { b = append(b, l...) }
@@ -306,8 +324,28 @@ func CiscoSNMP(in SNMPInput) SNMPBlock {
 	} else {
 		add("! snmp-server contact <contact>   ! NOT SET: tacctl scope snmp " + in.Scope + " contact '<text>'")
 	}
+	add(in.ciscoBlockLines()...)
 	add("! " + in.verifyHint())
 	return SNMPBlock{Text: strings.Join(b, "\n"), Unfilled: in.unfilled()}
+}
+
+// ciscoBlockLines are the lines of the scope's IOS snmp block: a comment
+// that names the block (by its scope, never by a string), then its
+// statements as live lines. None when the scope has no block.
+func (in SNMPInput) ciscoBlockLines() []string {
+	if len(in.Block) == 0 {
+		return nil
+	}
+	head := in.BlockHead
+	if head == "" {
+		scope := in.BlockScope
+		if scope == "" {
+			scope = in.Scope
+		}
+		head = "The snmp block of scope '" + scope + "' (tacctl scope block " + scope + " cisco show snmp)"
+	}
+	out := []string{"! " + head + ": its communities, access lists, trap hosts and trap types."}
+	return append(out, in.Block...)
 }
 
 func devName(in SNMPInput) string {
@@ -334,7 +372,12 @@ func junosQuote(s string) string {
 func JuniperSNMP(in SNMPInput) SNMPBlock {
 	const c = "#"
 	if in.Version == "" {
-		return SNMPBlock{Text: in.notConfigured(c)}
+		// The block is independent of the structured settings: it is
+		// rendered all the same.
+		if len(in.Block) == 0 {
+			return SNMPBlock{Text: in.notConfigured(c)}
+		}
+		return SNMPBlock{Text: strings.Join(append([]string{commented(c, in.notConfiguredLines("rendered from the structured settings"))}, in.junosBlockLines()...), "\n")}
 	}
 	var b []string
 	add := func(l ...string) { b = append(b, l...) }
@@ -400,8 +443,28 @@ func JuniperSNMP(in SNMPInput) SNMPBlock {
 	} else if in.Description != "" {
 		add("set snmp description " + junosQuote(in.Description))
 	}
+	add(in.junosBlockLines()...)
 	add("# " + in.verifyHint())
 	return SNMPBlock{Text: strings.Join(b, "\n"), Unfilled: in.unfilled()}
+}
+
+// junosBlockLines are the lines of the scope's snmp block: a comment that
+// names the block (by its scope, never by a string), then its statements as
+// live lines. None when the scope has no block.
+func (in SNMPInput) junosBlockLines() []string {
+	if len(in.Block) == 0 {
+		return nil
+	}
+	head := in.BlockHead
+	if head == "" {
+		scope := in.BlockScope
+		if scope == "" {
+			scope = in.Scope
+		}
+		head = "The snmp block of scope '" + scope + "' (tacctl scope block " + scope + " juniper show snmp)"
+	}
+	out := []string{"# " + head + ": its communities, trap groups and trap options."}
+	return append(out, in.Block...)
 }
 
 // --- WTI ---------------------------------------------------------------------
@@ -425,13 +488,13 @@ func WTISNMP(in SNMPInput) SNMPBlock {
 			b = append(b, pre+x)
 		}
 	}
-	add("Not verified on a unit: the menu item names below are from WTI's documents.")
+	add("The item names and numbers below are those of a WTI 8.10 unit (SNMP Access under /N); other firmware may differ.")
 	if n := in.credNote(); n != "" {
 		add(n)
 	}
 	add("/N [Enter]              Network Parameters",
-		"<n> [Enter]             SNMP Parameters -- the item number varies by model/firmware;",
-		"                        pick the entry labelled \"SNMP\"",
+		"25 [Enter]              SNMP Access -- the item number varies by model/firmware;",
+		"                        pick the entry labelled \"SNMP Access\"",
 		"Set each item (type the item number, [Enter], then the value):")
 	value := func(label, v string) { add("  " + padLabel(label) + ": " + v) }
 	if missing := in.missingCreds(); missing != "" {
@@ -441,14 +504,18 @@ func WTISNMP(in SNMPInput) SNMPBlock {
 			value("SNMPv3 User", "(NOT SET: tacctl scope snmp "+in.Scope+" v3-user <user>)")
 		}
 	} else if in.Version == snmpV2c {
-		value("Version", "v2c")
+		value("Enable", "On")
+		value("Version", "V1/V2 Only")
+		value("Read Only", "Yes")
 		value("Read-only Community", in.Community)
 	} else {
 		auth := "SHA"
 		if in.V3Auth == "sha256" {
 			auth = "SHA-256"
 		}
-		value("Version", "v3 (authPriv)")
+		value("Enable", "On")
+		value("Version", "V3 (authPriv)")
+		value("Read Only", "Yes")
 		value("SNMPv3 User", in.V3User)
 		value("Authentication Protocol", auth)
 		value("Authentication Passphrase", in.V3AuthPass)
@@ -456,9 +523,9 @@ func WTISNMP(in SNMPInput) SNMPBlock {
 		value("Privacy Passphrase", in.V3PrivPass)
 	}
 	if in.Location != "" {
-		value("Location", in.Location)
+		value("SNMP Location", in.Location)
 	} else {
-		value("Location", "(NOT SET: tacctl device location "+devName(in)+" '<text>')")
+		value("SNMP Location", "(NOT SET: tacctl device location "+devName(in)+" '<text>')")
 	}
 	if in.Contact != "" {
 		value("Contact", in.Contact)

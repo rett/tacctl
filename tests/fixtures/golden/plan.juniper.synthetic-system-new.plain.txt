@@ -1,0 +1,13 @@
+set snmp description "Core switch"
+set system login message "Authorized use only.\n  *** js1.lab.example.net ***\nDisconnect now if you are not authorized.\n  \"quoted\" and a back\\slash"
+set system domain-name lab.example.net
+set system domain-search lab.example.net
+set system time-zone UTC
+set system name-server 192.0.2.53
+set system ntp server 192.0.2.123 prefer
+set system ntp server 192.0.2.123 version 4
+set system ntp server 192.0.2.123 key 1
+set system ntp boot-server 192.0.2.123
+set system ntp source-address 192.0.2.250
+set system ntp authentication-key 1 type md5 value ntp-key-0123456789
+set system ntp trusted-key 1

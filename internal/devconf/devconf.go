@@ -6,9 +6,10 @@
 // are passed in), no global state. It does five things:
 //
 //   - Reader says which commands read a vendor's configuration (D61);
-//   - Extract turns that text into the six managed sections (D62): Junos
-//     'show configuration | display set' and IOS/IOS-XE 'show
-//     running-config';
+//   - Extract turns that text into the managed sections (D62): Junos
+//     'show configuration | display set', IOS/IOS-XE 'show
+//     running-config', and for a WTI console server the document of its
+//     captured menu pages (wti.go, package wti);
 //   - Normalise and Compare put an extracted section and a rendered one
 //     (devices.Section, from devices.Managed) into one form and compare
 //     them line by line, a secret by presence only (D64): a Compare result
@@ -28,24 +29,55 @@ package devconf
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/rett/tacctl/internal/devices"
 )
 
-// The six managed sections, in the order devices.Managed returns them.
+// The managed sections, in the order devices.Managed returns them. The system
+// section (0.2.7, Junos only) is present only for a scope that has a system
+// block in force: where the rendering has none, the section is not extracted,
+// not compared and not shown, so a device's own login message, domain and NTP
+// are no business of a scope without one.
 const (
 	SectionAAA        = "aaa"
 	SectionRoles      = "roles"
 	SectionMgmtACL    = "mgmt-acl"
 	SectionSNMP       = "snmp"
+	SectionSystem     = "system"
 	SectionNetconf    = "netconf"
 	SectionBreakGlass = "breakglass"
 )
 
 // SectionNames are the managed sections, in order.
-var SectionNames = []string{SectionAAA, SectionRoles, SectionMgmtACL, SectionSNMP, SectionNetconf, SectionBreakGlass}
+var SectionNames = []string{SectionAAA, SectionRoles, SectionMgmtACL, SectionSNMP, SectionSystem, SectionNetconf, SectionBreakGlass}
+
+// unitSections are the sections a WTI unit has: its pages hold the
+// authentication servers, the IP tables list, the SNMP access pages and the
+// local users. A unit has no login classes, no NETCONF and no system block,
+// so a comparison does not list them (as n/a or any other state).
+var unitSections = []string{SectionAAA, SectionMgmtACL, SectionSNMP, SectionBreakGlass}
+
+// SectionsOf are the managed sections a vendor's device can have, in order:
+// every section of SectionNames for Junos and IOS (system only where the
+// rendering has it), the four of a WTI unit for WTI.
+func SectionsOf(vendor string) []string {
+	if fam, err := Family(vendor); err == nil && fam == FamilyWTI {
+		return slices.Clone(unitSections)
+	}
+	return slices.Clone(SectionNames)
+}
+
+// optionalSection reports a section that exists only where the rendering
+// has it (the system section).
+func optionalSection(name string) bool { return name == SectionSystem }
+
+// renders reports whether the rendering has the section (some statement).
+func renders(expected []devices.Section, name string) bool {
+	return len(sectionOf(expected, name).Lines) > 0
+}
 
 // The vendor families the package reads. The registry's vendor words
 // (juniper, cisco) and the transport-level names (junos, ios, ios-xe) are
@@ -53,11 +85,14 @@ var SectionNames = []string{SectionAAA, SectionRoles, SectionMgmtACL, SectionSNM
 const (
 	FamilyJunos = "junos"
 	FamilyIOS   = "ios"
+	// FamilyWTI is a WTI console server, read from the pages of its command
+	// menu (wti.go, package wti), not from a configuration text.
+	FamilyWTI = "wti"
 )
 
 var (
 	// ErrUnsupportedVendor is returned for a vendor with no reader or
-	// extractor (wti today).
+	// extractor.
 	ErrUnsupportedVendor = errors.New("devconf: no configuration reader for this vendor")
 	// ErrParse is returned by Extract when the text is not a configuration
 	// of the vendor: the device refused the command, or the output is
@@ -72,6 +107,8 @@ func Family(vendor string) (string, error) {
 		return FamilyJunos, nil
 	case "ios", "ios-xe", "iosxe", "cisco":
 		return FamilyIOS, nil
+	case "wti":
+		return FamilyWTI, nil
 	}
 	return "", fmt.Errorf("%w: %q", ErrUnsupportedVendor, vendor)
 }
@@ -91,17 +128,24 @@ type stmt struct {
 	stem   string
 	secret bool
 	// path is the statement's parts: Junos tokens after set, IOS the
-	// submode context then the line.
+	// submode context then the line, WTI the key and the value (a user's
+	// 'user', the name, the key and the value).
 	path []string
+	// tail marks a WTI IP tables statement of the list's tail (the final
+	// DROP, the unit's OUTPUT ACCEPT and the policies, see wti.go).
+	tail bool
 }
 
 // canonFunc turns lines (and the expected side's secret marks, nil for the
-// device's) into canonical statements.
-type canonFunc func(lines []string, marks []bool) []stmt
+// device's) into canonical statements, a community's name labelled by lb.
+type canonFunc func(lines []string, marks []bool, lb *labels) []stmt
 
 func canonFor(family string) canonFunc {
-	if family == FamilyJunos {
+	switch family {
+	case FamilyJunos:
 		return junosCanon
+	case FamilyWTI:
+		return wtiCanon
 	}
 	return ciscoCanon
 }

@@ -29,7 +29,7 @@ note: no enable secret on the device: with AAA on and the server unreachable, a 
 = ip access-list standard TACCTL-SNMP > permit 192.0.2.10
 = ip access-list standard TACCTL-SNMP > permit 198.51.100.0 0.0.0.255
 = ip access-list standard TACCTL-SNMP > deny any
-= snmp-server community <secret> RO TACCTL-SNMP (present, not compared)
+= snmp-server community <secret:1> RO TACCTL-SNMP (present, not compared)
 = snmp-server location Rack 4, DC1
 = snmp-server contact NOC <noc@example.net>
 [netconf] n/a

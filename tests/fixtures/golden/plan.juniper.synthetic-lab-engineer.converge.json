@@ -48,7 +48,7 @@
       "severity": "MONITORING",
       "section": "snmp",
       "what": "an SNMP community: authorization read-only",
-      "statement": "set snmp community \u003csecret\u003e authorization read-only",
+      "statement": "set snmp community \u003cother:1\u003e authorization read-only",
       "action": "Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).",
       "fixed": false
     },
@@ -57,8 +57,8 @@
       "kind": "extra",
       "severity": "MONITORING",
       "section": "snmp",
-      "what": "SNMP: trap-group \u003csecret\u003e targets 192.0.2.50",
-      "statement": "set snmp trap-group \u003csecret\u003e targets 192.0.2.50",
+      "what": "SNMP: trap-group \u003cother:2\u003e targets 192.0.2.50",
+      "statement": "set snmp trap-group \u003cother:2\u003e targets 192.0.2.50",
       "action": "Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).",
       "fixed": false
     }
@@ -87,8 +87,8 @@
   "withheld": [
     "set system tacplus-server 192.0.2.99 secret \u003csecret\u003e",
     "set snmp description \"Core switch\"",
-    "set snmp community \u003csecret\u003e authorization read-only",
-    "set snmp trap-group \u003csecret\u003e targets 192.0.2.50"
+    "set snmp community \u003cother:1\u003e authorization read-only",
+    "set snmp trap-group \u003cother:2\u003e targets 192.0.2.50"
   ],
   "warnings": [],
   "holds_secret": false,

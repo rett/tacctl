@@ -252,6 +252,7 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	h.echo("")
 	h.presetNotice()
 	h.operatorNotice()
+	h.wtiPlainNotice()
 	h.rootMembersNotice(ctx)
 	return nil
 }

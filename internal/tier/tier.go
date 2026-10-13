@@ -146,12 +146,15 @@ type Rule struct {
 // superuser's), the Linux hosts of their scopes to read ('host list',
 // 'host show'), and the secret, settings and SNMP settings of a scope of
 // their own to read ('scope secret', 'scope show', 'scope snmp'), and the
-// SNMP settings of a device of theirs ('device snmp'). The gate
+// SNMP settings of a device of theirs ('device snmp'), and the configuration
+// blocks of their own scopes and of the devices there to read ('scope block',
+// 'device block'). The gate
 // lets an engineer run those verbs; the verbs themselves keep the engineer
 // to the devices, hosts and secrets of their own scopes (callerScopes) and
 // refuse what would change anything global: 'scope secret' other than
 // 'show', 'scope staging' other than 'list', every setter, clear and test of
-// 'scope snmp' and of 'device snmp' (0.2.4), and 'device import' of a file.
+// 'scope snmp' and of 'device snmp' (0.2.4), 'set' and 'remove' of 'scope
+// block' and 'device block' (0.2.7), and 'device import' of a file.
 // Users, groups, scopes, the
 // secrets' changes, backends, backups, upgrades, rollbacks and the
 // deployment on Linux hosts (enroll, sync, move, target, provisioner,
@@ -256,6 +259,13 @@ var Rules = []Rule{
 	// plain reads, each reveal logged); the verbs that set or clear are the
 	// superuser's (the verb sees to that, as 'scope snmp' does).
 	{Tier: Engineer, Cmd: "device", Sub: "snmp", Sudoers: []string{"device snmp *"}},
+	// 'scope block' and 'device block' (0.2.7): the engineer reads the
+	// configuration blocks of their own scopes and of the devices there
+	// ('list', 'show' elided or --reveal, logged, 'check'); 'set' and
+	// 'remove' are the superuser's (the verbs see to that, as 'scope snmp'
+	// does).
+	{Tier: Engineer, Cmd: "scope", Sub: "block", Sudoers: []string{"scope block *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "block", Sudoers: []string{"device block *"}},
 	{Tier: Engineer, Cmd: "scope", Sub: "show", Sudoers: []string{"scope show *"}},
 	// The break-glass holds (0.2.5, D125): an engineer reads the holds on
 	// the devices of their own scopes (the verb sees to that). 'hold' and
@@ -333,12 +343,41 @@ const (
 
 // AskpassKeep is the alias of the command lines that use the password
 // cache, and the 'Defaults!' line that keeps AskpassVar for exactly them:
-// it goes before EnvKeep in a drop-in.
+// it goes before EnvKeep in a drop-in. 'block adopt' (0.2.7) reads one device
+// with the caller's login as a pull does, so it is among them.
 func AskpassKeep(alias string) string {
 	return "Cmnd_Alias " + alias + " = " +
 		Binary + " device config pull *, " + Binary + " device config diff *, " + Binary + " device config plan *, \\\n" +
-		"    " + Binary + " ssh *, " + Binary + " device ssh *\n" +
+		"    " + Binary + " ssh *, " + Binary + " device ssh *, \\\n" +
+		"    " + Binary + " scope block * adopt *, " + Binary + " device block * adopt *\n" +
 		"Defaults!" + alias + " env_keep += \"" + AskpassVar + "\"\n"
+}
+
+// The editor's variables (0.2.7): 'scope block <scope> juniper edit|adopt'
+// and 'device block <name> edit|adopt' open the invoking user's editor, which
+// is VISUAL, else EDITOR. sudo's env_reset drops both, so, as the password
+// cache's variable, they are kept for exactly those command lines and for
+// nothing else (a verb that opens no editor never sees them, and tacctl
+// removes them from the environment of every program it starts, as it does
+// TACCTL_ASKPASS). The editor itself runs as the invoking user, never as
+// root: what the variables name is a program the caller could run anyway.
+const (
+	// EditorVars is what the two aliases keep, in env_keep's form.
+	EditorVars = "VISUAL EDITOR"
+	// EditorAlias is the alias of the per-tier drop-in and EditorGroupAlias
+	// that of the group drop-in (sudoers refuses an alias defined twice).
+	EditorAlias      = "TACCTL_EDITOR_CMDS"
+	EditorGroupAlias = "TACCTL_EDITOR_GROUP_CMDS"
+)
+
+// EditorKeep is the alias of the command lines that open an editor and the
+// 'Defaults!' line that keeps EditorVars for exactly them: it goes after
+// AskpassKeep and before EnvKeep in a drop-in.
+func EditorKeep(alias string) string {
+	return "Cmnd_Alias " + alias + " = " +
+		Binary + " scope block * edit *, " + Binary + " scope block * adopt *, \\\n" +
+		"    " + Binary + " device block * edit *, " + Binary + " device block * adopt *\n" +
+		"Defaults!" + alias + " env_keep += \"" + EditorVars + "\"\n"
 }
 
 // Sudoers is emit_tier_sudoers: the per-tier drop-in, byte for byte.
@@ -381,6 +420,7 @@ func Sudoers() string {
 	}
 	b.WriteString("\n")
 	b.WriteString(AskpassKeep(AskpassAlias))
+	b.WriteString(EditorKeep(EditorAlias))
 	b.WriteString(EnvKeep)
 	b.WriteString("%" + SuperuserGroup + " ALL=(ALL:ALL) ALL\n")
 	b.WriteString("%" + SuperuserGroup + " ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP, TACCTL_EN\n")

@@ -21,9 +21,9 @@
 #  6. snmp     MONITORING missing: SNMP client list TACCTL-SNMP: 3 statements (e.g. set snmp
 #                         client-list TACCTL-SNMP 192.0.2.10/32). Not fixable by this login: EN-CLASS
 #                         cannot change 'snmp' (ask a superuser).
-#  7. snmp     MONITORING missing: an SNMP community: client-list-name TACCTL-SNMP (set snmp community
-#                         <secret> client-list-name TACCTL-SNMP). Not fixable by this login: EN-CLASS
-#                         cannot change 'snmp' (ask a superuser).
+#  7. snmp     MONITORING missing: an SNMP community: 2 statements (e.g. set snmp community <secret:1>
+#                         authorization read-only). Not fixable by this login: EN-CLASS cannot change
+#                         'snmp' (ask a superuser).
 #  8. snmp     COSMETIC   missing: the SNMP location is Rack 4, DC1 (set snmp location "Rack 4, DC1").
 #                         Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).
 #  9. snmp     COSMETIC   missing: the SNMP contact is NOC <noc@example.net> (set snmp contact "NOC
@@ -41,8 +41,8 @@
 # 13. snmp     COSMETIC   extra: the SNMP contact is example contact (set snmp contact "example
 #                         contact"). Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a
 #                         superuser).
-# 14. snmp     MONITORING extra: an SNMP community: 3 statements (e.g. set snmp community <secret>
-#                         clients 198.18.0.0/20). Not fixable by this login: EN-CLASS cannot change
+# 14. snmp     MONITORING extra: an SNMP community: 4 statements (e.g. set snmp community <other:1>
+#                         authorization read-only). Not fixable by this login: EN-CLASS cannot change
 #                         'snmp' (ask a superuser).
 # Nothing to paste: everything above is left alone or cannot be fixed by this login.
 # Consistent: mgmt-acl. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).

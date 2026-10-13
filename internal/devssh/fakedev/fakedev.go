@@ -2,7 +2,9 @@
 // answers CLI commands from a transcript directory and serves a NETCONF
 // subsystem (docs/plans/0.2.4-plan.md D74). Go tests dial it in-process;
 // the test-build verb 'tacctl _fake-device <dir>' runs it for bats and the
-// diff corpus. The layout of the directory is in transcript.go.
+// diff corpus. The layout of the directory is in transcript.go; a
+// directory with a 'menu' manifest is a menu-driven unit (a WTI console
+// server) instead of a CLI, described in menu.go.
 //
 // The server is test support, not a model of a device: it authenticates one
 // fixed user and password (by 'password' and by 'keyboard-interactive'),
@@ -201,6 +203,12 @@ func WithNoExitStatus() Option { return func(s *Server) { s.noStatus = true } }
 // WithWrongMessageID makes NETCONF replies carry a message id nobody sent.
 func WithWrongMessageID() Option { return func(s *Server) { s.wrongID = true } }
 
+// WithMenuScreens sets the directory of the captured screens a menu device
+// (a transcript with a 'menu' manifest, menu.go) serves, over the
+// manifest's own 'screens' line: for a test that copies the manifest's
+// directory elsewhere.
+func WithMenuScreens(dir string) Option { return func(s *Server) { s.menuScreens = dir } }
+
 // WithEcho sets whether a shell session echoes what it is sent (true when
 // not given, as a device with a terminal does).
 func WithEcho(on bool) Option { return func(s *Server) { s.echo = on } }
@@ -224,6 +232,8 @@ type Server struct {
 	framing   Framing
 	echo      bool
 
+	menuScreens string
+
 	netconfOff bool
 	noStatus   bool
 	noRead     bool
@@ -239,6 +249,7 @@ type Server struct {
 	attempts int
 	logins   int
 	commands []string
+	events   []string
 	stopped  bool
 }
 
@@ -293,7 +304,8 @@ func (s *Server) Logins() int {
 }
 
 // Commands are the CLI commands and NETCONF RPC elements served so far, in
-// order of arrival ('netconf:<element>' for an RPC).
+// order of arrival ('netconf:<element>' for an RPC). For a menu device
+// (menu.go) they are the keys and lines typed at its menus.
 func (s *Server) Commands() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -303,6 +315,35 @@ func (s *Server) Commands() []string {
 func (s *Server) log(cmd string) {
 	s.mu.Lock()
 	s.commands = append(s.commands, cmd)
+	s.mu.Unlock()
+}
+
+// Events are what a menu device did and met, in order (menusession.go lists
+// them): 'save /N' when the unit wrote its configuration, 'close /N > 28'
+// when the client went away at a page, 'entry <page>' when a value was
+// typed at a prompt, and so on. It is empty for the other devices.
+func (s *Server) Events() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.events...)
+}
+
+// Saved is the top-level menus whose configuration save was triggered (an
+// ESC at the top of '/N', '/F', '/P' or '/AC'), in order: empty for a
+// session that only read.
+func (s *Server) Saved() []string {
+	var out []string
+	for _, e := range s.Events() {
+		if p, ok := strings.CutPrefix(e, "save "); ok {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func (s *Server) logEvent(e string) {
+	s.mu.Lock()
+	s.events = append(s.events, e)
 	s.mu.Unlock()
 }
 
@@ -534,6 +575,10 @@ func (s *Server) exec(ch ssh.Channel, cmd string) {
 // shell is an interactive session: banner, prompt, then one command per
 // line, with the paging the transcript asks for.
 func (s *Server) shell(ch ssh.Channel) {
+	if s.t.exists("menu") {
+		s.menu(ch)
+		return
+	}
 	in := bufio.NewReader(ch)
 	prompt := s.t.prompt()
 	if b, ok := s.t.read("banner"); ok {

@@ -124,7 +124,7 @@ print("fine")' <<< "$output"
     assert_output --partial "--transport is for --pull: the diff alone reads no device."
     alice device config diff lab-j --section bogus
     assert_failure 2
-    assert_output --partial "--section takes sections of aaa, roles, mgmt-acl, snmp, netconf, breakglass: 'bogus'"
+    assert_output --partial "--section takes sections of aaa, roles, mgmt-acl, snmp, system, netconf, breakglass: 'bogus'"
     alice device config diff nope
     assert_failure 1
     assert_output --partial "Device 'nope' not found."

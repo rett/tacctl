@@ -84,20 +84,18 @@ func (inv *invocation) configLogin(what string) (string, error) {
 
 // skippedDevices counts what a selection left out, by reason.
 type skippedDevices struct {
-	noScope, other, wti, notYours []string
+	noScope, other, notYours []string
 	// held are the devices a break-glass hold stands on: the server does
 	// not answer them, so no login of the caller is accepted there (D126).
 	held []string
 }
 
 func (s skippedDevices) any() bool {
-	return len(s.noScope)+len(s.other)+len(s.wti)+len(s.notYours)+len(s.held) > 0
+	return len(s.noScope)+len(s.other)+len(s.notYours)+len(s.held) > 0
 }
 
-// linesFor are the notes about what was left out, with the names, for a
-// verb: 'plan' says WTI units are not planned where the others say they are
-// not read.
-func (s skippedDevices) linesFor(verb string) []string {
+// linesFor are the notes about what was left out, with the names.
+func (s skippedDevices) linesFor(string) []string {
 	var out []string
 	add := func(names []string, why string) {
 		if len(names) == 0 {
@@ -112,11 +110,6 @@ func (s skippedDevices) linesFor(verb string) []string {
 	}
 	add(s.noScope, "no scope's prefixes cover the address")
 	add(s.other, "the vendor is 'other'; set it with: tacctl device vendor <name> cisco|juniper|wti")
-	if verb == "plan" {
-		add(s.wti, "WTI units are not planned in this release (name one to see why)")
-	} else {
-		add(s.wti, "WTI units are not read in this release (name one to see it recorded as unsupported)")
-	}
 	add(s.notYours, "in a scope you are not a member of: the device login is your own account")
 	for _, n := range s.held {
 		out = append(out, "skipped "+n+": "+holdRefusal(n))
@@ -174,7 +167,7 @@ func holdRefusal(name string) string {
 
 func (s skippedDevices) jsonMap() map[string][]string {
 	m := map[string][]string{}
-	for k, v := range map[string][]string{"no_scope": s.noScope, "vendor_other": s.other, "wti": s.wti, "not_your_scope": s.notYours, "break_glass_held": s.held} {
+	for k, v := range map[string][]string{"no_scope": s.noScope, "vendor_other": s.other, "not_your_scope": s.notYours, "break_glass_held": s.held} {
 		if len(v) > 0 {
 			m[k] = v
 		}
@@ -271,8 +264,6 @@ func (inv *invocation) chooseDevices(sel selection, user string, login bool, ver
 			out.skipped.other = append(out.skipped.other, e.Name)
 		case !e.Configured:
 			out.skipped.noScope = append(out.skipped.noScope, e.Name)
-		case e.Vendor == "wti" && sel.vendor != "wti":
-			out.skipped.wti = append(out.skipped.wti, e.Name)
 		case login && loginProblem(m, user, e.Scope) != "":
 			out.skipped.notYours = append(out.skipped.notYours, e.Name)
 		case login && inv.isHeld(e.Name, e.Address):
@@ -287,9 +278,6 @@ func (inv *invocation) chooseDevices(sel selection, user string, login bool, ver
 		recs, _ := store.Load()
 		var keep []devreg.Entry
 		for _, e := range out.entries {
-			if e.Vendor == "wti" {
-				continue
-			}
 			st, err := inv.staleness(store, recs, out.render, e)
 			if err != nil || st.IsStale() {
 				keep = append(keep, e)
@@ -307,8 +295,6 @@ func (inv *invocation) staleness(store devconf.Store, recs *devconf.Records, ren
 	switch {
 	case rec == nil || rec.Result == "":
 		return devconf.StaleNever, nil
-	case rec.Result == devconf.ResultUnsupported && rec.Vendor == "wti":
-		return devconf.StaleOK, nil
 	case rec.Result != devconf.ResultOK:
 		return devconf.StaleFailed, nil
 	}
@@ -332,28 +318,35 @@ func (inv *invocation) staleness(store devconf.Store, recs *devconf.Records, ren
 }
 
 // refuseNetconfForCisco is the argument-time refusal of --transport netconf
-// when every device that would be dialled is a Cisco device: none is read
-// over NETCONF (D61), so nothing would be tried and no password asked for.
-// A mixed selection fails the Cisco devices one by one, before any login of
-// theirs, and reads the rest.
+// when every device that would be dialled is one that is not read over NETCONF
+// (a Cisco device, D61, or a WTI unit, which has none): nothing would be
+// tried and no password asked for. A mixed selection fails those devices one
+// by one, before any login of theirs, and reads the rest.
 func (inv *invocation) refuseNetconfForCisco(entries []devreg.Entry, transport string) error {
-	if transport != transportNetconf {
+	if transport != transportNetconf || len(entries) == 0 {
 		return nil
 	}
-	dialled, cisco := 0, 0
+	cisco, unit := 0, 0
 	for _, e := range entries {
-		if e.Vendor == "wti" {
-			continue
-		}
-		dialled++
-		if e.Vendor == "cisco" {
+		switch e.Vendor {
+		case "cisco":
 			cisco++
+		case "wti":
+			unit++
 		}
 	}
-	if dialled > 0 && cisco == dialled {
-		return inv.argErr(errNetconfNotRead.Error()+". Nothing was tried.", "Usage: tacctl device config "+deviceConfigUse("pull"))
+	var why error
+	switch {
+	case cisco+unit != len(entries):
+		return nil
+	case unit == 0:
+		why = errNetconfNotRead
+	case cisco == 0:
+		why = errNetconfNotReadWTI
+	default:
+		why = errNetconfNotReadMixed
 	}
-	return nil
+	return inv.argErr(why.Error()+". Nothing was tried.", "Usage: tacctl device config "+deviceConfigUse("pull"))
 }
 
 // stored are the managed sections of a device's last good pull. A file that

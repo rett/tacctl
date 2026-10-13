@@ -35,7 +35,7 @@ func TestTokenizeRender(t *testing.T) {
 // junosStems are the canonical statements of lines.
 func junosStems(lines ...string) []string {
 	var out []string
-	for _, x := range uniq(junosCanon(lines, nil)) {
+	for _, x := range uniq(junosCanon(lines, nil, nil)) {
 		out = append(out, x.stem)
 	}
 	return out
@@ -90,7 +90,7 @@ func TestJunosSecretValuesNeverInStem(t *testing.T) {
 	for _, v := range []string{`"$9$abcdef"`, `$6$salt$hash`, `plain-secret`, `/* SECRET-DATA */`, `"has space"`, `"$1$x$y"`} {
 		for _, kw := range []string{"secret", "encrypted-password", "authentication-key", "privacy-key"} {
 			line := "set system foo bar " + kw + " " + v
-			for _, x := range junosCanon([]string{line}, nil) {
+			for _, x := range junosCanon([]string{line}, nil, nil) {
 				if !x.secret {
 					t.Errorf("%q: not taken as secret", line)
 				}
@@ -134,7 +134,8 @@ func TestJunosExtractCaptures(t *testing.T) {
 		t.Error("the engineer view is taken as visible")
 	}
 	for _, name := range SectionNames {
-		if _, ok := super.Sections[name]; !ok {
+		// the system section is there where the rendering has one
+		if _, ok := super.Sections[name]; !ok && !optionalSection(name) {
 			t.Errorf("no %s section", name)
 		}
 	}
@@ -329,8 +330,8 @@ func TestJunosExtractErrors(t *testing.T) {
 			t.Errorf("%s: %v", tc.name, err)
 		}
 	}
-	if _, err := Extract("wti", "set a b"); !errors.Is(err, ErrUnsupportedVendor) {
-		t.Errorf("wti: %v", err)
+	if _, err := Extract("acme", "set a b"); !errors.Is(err, ErrUnsupportedVendor) {
+		t.Errorf("acme: %v", err)
 	}
 }
 

@@ -51,6 +51,30 @@ func TestParse(t *testing.T) {
 	}
 }
 
+// A flag with an optional value takes it after '=' only: a bare flag is on
+// the line with the value "", and the next word stays a positional.
+func TestParseOptionalValue(t *testing.T) {
+	spec := Spec{
+		Flags:   []Flag{{Names: []string{"--restore-point"}, Value: true, Optional: true}, {Names: []string{"--json"}}},
+		MaxArgs: -1,
+	}
+	p, err := Parse(spec, []string{"--restore-point", "sw1", "--json"})
+	if err != nil || !p.Has("--restore-point") || p.Value("--restore-point") != "" || !reflect.DeepEqual(p.Args, []string{"sw1"}) || !p.Has("--json") {
+		t.Errorf("bare: %v %v %+v", p.Args, err, p)
+	}
+	p, err = Parse(spec, []string{"sw1", "--restore-point=disk0:"})
+	if err != nil || p.Value("--restore-point") != "disk0:" || !reflect.DeepEqual(p.Args, []string{"sw1"}) {
+		t.Errorf("valued: %v %v", p.Args, err)
+	}
+	p, err = Parse(spec, []string{"sw1", "--restore-point"})
+	if err != nil || !p.Has("--restore-point") {
+		t.Errorf("last word: %v %v", p.Args, err)
+	}
+	if _, err = Parse(spec, []string{"--restore-point=a", "--restore-point"}); err == nil {
+		t.Error("a repeated flag was accepted")
+	}
+}
+
 func TestParseErrors(t *testing.T) {
 	cases := []struct {
 		argv    []string

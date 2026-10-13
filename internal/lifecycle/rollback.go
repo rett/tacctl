@@ -25,6 +25,15 @@ package lifecycle
 //	                       alike, because the older release would leave the
 //	                       device unanswered until its first render and then
 //	                       answer it without anyone releasing the hold.
+//	                       A management ACL entry with services (0.2.7,
+//	                       <cidr>:tcp/22,udp/161 in mgmt_acl.permits or
+//	                       scope_mgmt_acl.permits.<scope>) is not removed or
+//	                       rewritten either: 0.2.3 reads the lists as plain
+//	                       CIDRs, so a rewrite would permit every protocol
+//	                       and port from the source. The rollback is refused
+//	                       while one stands (ACLServicesRefusal), in the dry
+//	                       run and --apply alike, with each entry and the
+//	                       command that removes it.
 //	console.yaml           0.2.3's parser rejects settings.password_cache;
 //	                       removed (console.Rollback). 'tiers.engineer' and
 //	                       'settings.space_completion' are 0.2.3's own.
@@ -103,6 +112,36 @@ func HeldRefusal(holds []conf.Hold) *RollbackRefusal {
 		RollbackTarget+" has no such record: the device would stay unanswered until "+RollbackTarget+"'s first render and then be answered without anyone releasing it.",
 		"Release it first: "+strings.Join(release, "; ")+". Nothing was changed.")
 	return &RollbackRefusal{Lines: lines}
+}
+
+// ACLServicesRefusal is the refusal of a rollback while any management ACL
+// entry carries services (0.2.7: 10.0.0.0/8:tcp/22,udp/161): the older
+// release reads the lists as plain CIDRs, so it would refuse the file, and
+// a rewrite to the plain CIDR would permit every protocol and port from the
+// source. Each entry is listed with its key and the command that removes it.
+func ACLServicesRefusal(entries []conf.ACLServiceEntry) *RollbackRefusal {
+	var lines []string
+	n := len(entries)
+	lines = append(lines, "The management ACL has "+strconv.Itoa(n)+" "+pluralWord(n, "entry", "entries")+
+		" with services (<cidr>:tcp/22,udp/161), which "+RollbackTarget+
+		" does not know: it reads the lists as plain CIDRs, and rewriting an entry to its CIDR would permit every protocol and port from that source.")
+	for _, e := range entries {
+		cmd := "tacctl config mgmt-acl remove " + e.Entry
+		if scope, ok := strings.CutPrefix(e.Key, conf.ScopeMgmtACLPrefix); ok {
+			cmd = "tacctl scope mgmt-acl " + scope + " remove " + e.Entry
+		}
+		lines = append(lines, "  "+e.Key+": "+e.Entry+"   ("+cmd+")")
+	}
+	lines = append(lines, "Remove them first (or replace each with the plain CIDR you mean it to be, "+
+		"knowing a plain entry permits every protocol and port), then run the rollback again. Nothing was changed.")
+	return &RollbackRefusal{Lines: lines}
+}
+
+func pluralWord(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 var reVersion = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)$`)
@@ -257,6 +296,11 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	if holds := in.Conf.Holds(); len(holds) > 0 {
 		return nil, HeldRefusal(holds)
 	}
+	// A management ACL entry with services (0.2.7) is refused the same way:
+	// the older release has no such grammar.
+	if entries := in.Conf.MgmtACLServiceEntries(); len(entries) > 0 {
+		return nil, ACLServicesRefusal(entries)
+	}
 	p.keys = in.Conf.RollbackKeys023()
 	p.Steps = append(p.Steps, p.confStep())
 
@@ -325,7 +369,7 @@ func (p *RollbackPlan) confStep() RollbackStep {
 	}
 	var added, other []string
 	for _, k := range p.keys {
-		if conf.Added024Key(k) || conf.Added025Key(k) {
+		if conf.Added024Key(k) || conf.Added025Key(k) || conf.Added027Key(k) {
 			added = append(added, k)
 		} else {
 			other = append(other, k)
@@ -337,7 +381,7 @@ func (p *RollbackPlan) confStep() RollbackStep {
 	for _, k := range other {
 		s.Lines = append(s.Lines, "remove "+k+"  (no release knows this key; 0.2.3 refuses a file that has it)")
 	}
-	s.Lines = append(s.Lines, "(the settings of 'device config pull' and 'plan', the Cisco source interface and the break-glass records are these; every other key is one 0.2.3 has and stays)")
+	s.Lines = append(s.Lines, "(the settings of 'device config pull' and 'plan', the Cisco source interface, the break-glass records and the list of configuration blocks in force are these; every other key is one 0.2.3 has and stays)")
 	return s
 }
 
@@ -404,7 +448,13 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 			group.state, group.body = "rewrite", tier.GroupSudoers023(name)
 		case tier.GroupOlder:
 			group.label = "the drop-in of group " + name
-			group.state = "done"
+			// the text 0.2.4 to 0.2.6 wrote is put back as 0.2.3's; any
+			// other older text is 0.2.3's or older already
+			if string(b) == tier.GroupSudoers026(name) {
+				group.state, group.body = "rewrite", tier.GroupSudoers023(name)
+			} else {
+				group.state = "done"
+			}
 		default:
 			group.state = "left"
 		}
@@ -544,6 +594,15 @@ func (p *RollbackPlan) warnings() []RollbackWarning {
 	}
 	if len(si) > 0 {
 		lines = append(lines, "The source interface of the Cisco devices of a scope ("+strings.Join(si, ", ")+") is removed from tacctl.yaml; the walkthroughs of 0.2.3 do not render it.")
+	}
+	var bl []string
+	for _, k := range p.keys {
+		if conf.Added027Key(k) {
+			bl = append(bl, k)
+		}
+	}
+	if len(bl) > 0 {
+		lines = append(lines, "The list of configuration blocks in force ("+strings.Join(bl, ", ")+") is removed from tacctl.yaml; the block files stay in "+in.Paths.BlocksDir+", unused by 0.2.3, and nothing renders them.")
 	}
 	if len(p.syntaxDev) > 0 {
 		lines = append(lines, "The configuration syntax setting of a Cisco device (device config-syntax) is removed: a release without it compares a legacy-ssh device as IOS 12.x again, and renders its walkthrough in the syntax of --legacy only:")

@@ -416,6 +416,25 @@ func (inv *invocation) configValidate([]string) error {
 		}
 	}
 
+	// Configuration blocks (0.2.7): a name with no file is an error (it
+	// renders nothing), a file no list names a warning (it is ignored), and so
+	// is a device's orphan; a block in force that has errors is an error (it
+	// refuses every Junos device it reaches). Nothing is printed for an
+	// installation that has none.
+	if inv.blocksExist() {
+		bErrs, bWarns := inv.blockValidation()
+		for _, l := range bErrs {
+			inv.echoE("  " + R + "Config blocks:" + NC + "        " + l)
+			errs++
+		}
+		for _, l := range bWarns {
+			inv.echoE("  " + Y + "Config blocks:" + NC + "        " + l)
+		}
+		if len(bErrs)+len(bWarns) == 0 {
+			inv.echoE("  " + G + "Config blocks:" + NC + "        valid")
+		}
+	}
+
 	// Stored settings that still give the operator or the viewer what
 	// 0.2.5 removed (a clear, a capture, a flood form of ping): a warning
 	// naming each with the command that takes the shipped value.

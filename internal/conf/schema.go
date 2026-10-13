@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/rett/tacctl/internal/cidr"
+	"github.com/rett/tacctl/internal/mgmtacl"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/py"
 	"github.com/rett/tacctl/internal/yamlpy"
@@ -40,10 +40,13 @@ const (
 	// .contact (snmp.go).
 	TypeSNMPClients = "snmp_clients"
 	TypeSNMPText    = "snmp_text"
+	// TypeBlockList is blocks.<scope>.<vendor> and
+	// blocks_device.<device>.<vendor> (blocks.go).
+	TypeBlockList = "block_list"
 )
 
 // listTypes take list input (conf_set_list / a JSON list).
-var listTypes = []string{TypeCIDRList, TypeCiscoCmdList, TypeCommandRules, TypeBackendList, TypeJunosRegexList, TypeSudoCommandList, TypeBreakGlassList, TypeSNMPClients}
+var listTypes = []string{TypeCIDRList, TypeCiscoCmdList, TypeCommandRules, TypeBackendList, TypeJunosRegexList, TypeSudoCommandList, TypeBreakGlassList, TypeSNMPClients, TypeBlockList}
 
 // Rule is one schema entry.
 type Rule struct {
@@ -160,6 +163,11 @@ func NewSchema(backends []string) *Schema {
 			// The per-scope break-glass local users of 0.2.3 (breakglass.go);
 			// no default: absent is "none recorded".
 			{"breakglass_scope.", Rule{Type: TypeBreakGlassList, Depth: 2}},
+			// The configuration blocks in force per scope and vendor
+			// (0.2.7); no default: absent is "none in force".
+			{BlocksPrefix, Rule{Type: TypeBlockList, Depth: 2}},
+			// And one device's own, under its name written with '~' for '.'.
+			{BlocksDevicePrefix, Rule{Type: TypeBlockList, Depth: 2}},
 		}, append(snmpScopeWildcards(), holdWildcards()...)...),
 	}
 }
@@ -353,6 +361,8 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 		}
 		return ""
 	case TypeCIDRList:
+		// the management ACL lists: each element is a CIDR, or (0.2.7) a
+		// CIDR with the services it permits (internal/mgmtacl)
 		items, isList := py.List(value)
 		if !isList {
 			return "must be a list of CIDRs"
@@ -362,8 +372,13 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 			if !isStr {
 				return fmt.Sprintf("element %d: must be a string", i)
 			}
-			if cidr.Validate(str) != nil {
-				return fmt.Sprintf("element %d: %s is not a valid CIDR", i, py.ReprString(str))
+			// an element is a CIDR, or (0.2.7) a CIDR with the services it
+			// permits: 10.0.0.0/8:tcp/22,udp/161 (internal/mgmtacl)
+			if prob := mgmtacl.Problem(str); prob != "" {
+				if prob == "is not a valid CIDR" {
+					return fmt.Sprintf("element %d: %s is not a valid CIDR", i, py.ReprString(str))
+				}
+				return fmt.Sprintf("element %d: %s: %s", i, py.ReprString(str), prob)
 			}
 		}
 		return ""
@@ -419,6 +434,8 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 		return junosListProblem(path, value)
 	case TypeBreakGlassList:
 		return breakGlassListProblem(path, value)
+	case TypeBlockList:
+		return blockListProblem(path, value)
 	case TypeHoldAddress, TypeHoldSince, TypeHoldText:
 		return holdProblem(t, path, value)
 	case TypeSNMPClients:

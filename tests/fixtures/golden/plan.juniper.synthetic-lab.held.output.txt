@@ -12,10 +12,10 @@
 #  2. snmp     COSMETIC   missing: the SNMP description is Core switch (set snmp description "Core
 #                         switch"). Fixed by region line 3.
 #  3. snmp     MONITORING extra: an SNMP community: authorization read-only (set snmp community
-#                         <secret> authorization read-only). Left alone (its name is the secret and is
-#                         not known to tacctl).
-#  4. snmp     MONITORING extra: SNMP: trap-group <secret> targets 192.0.2.50 (set snmp trap-group
-#                         <secret> targets 192.0.2.50). Left alone (its name is the secret and is not
+#                         <other:1> authorization read-only). Left alone (its name is the secret and
+#                         is not known to tacctl).
+#  4. snmp     MONITORING extra: SNMP: trap-group <other:2> targets 192.0.2.50 (set snmp trap-group
+#                         <other:2> targets 192.0.2.50). Left alone (its name is the secret and is not
 #                         known to tacctl).
 # Consistent: roles, mgmt-acl. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
 # Secrets: 3 present on the device, not changed (--secrets pushes them).

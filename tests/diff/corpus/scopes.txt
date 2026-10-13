@@ -209,7 +209,9 @@ scope mgmt-acl
 @known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables
 scope mgmt-acl lab
 scope mgmt-acl nosuch list
+@known 0.2.7 item 20: the mgmt-acl usage and its "Add with" hint name the optional :<services>
 scope mgmt-acl lab list
+@known 0.2.7 item 20: the mgmt-acl usage and its "Add with" hint name the optional :<services>
 scope mgmt-acl lab add
 scope mgmt-acl lab add notacidr
 scope mgmt-acl lab add 10.1.0.0/16,10.2.0.0/16 ;; scope mgmt-acl lab list
@@ -217,6 +219,7 @@ scope mgmt-acl lab add 10.1.0.0/16,10.2.0.0/16 ;; scope mgmt-acl lab remove 10.1
 scope mgmt-acl lab remove 10.1.0.0/16
 scope mgmt-acl lab clear <<< y
 scope mgmt-acl lab clear <<< n
+@known 0.2.7 item 20: the mgmt-acl usage and its "Add with" hint name the optional :<services>
 scope mgmt-acl lab add 10.1.0.0/16 ;; scope mgmt-acl lab clear <<< y ;; scope mgmt-acl lab list
 scope mgmt-acl lab cisco-name
 scope mgmt-acl lab cisco-name MY-VTY ;; scope mgmt-acl lab cisco-name
@@ -423,6 +426,7 @@ scope prefixes '' list
 scope secret lab set ''
 scope protocols lab set ''
 scope devices lab set '' cisco
+@known 0.2.7 item 20: the mgmt-acl usage and its "Add with" hint name the optional :<services>
 scope mgmt-acl lab add ''
 scope exec-timeout lab 1.5
 

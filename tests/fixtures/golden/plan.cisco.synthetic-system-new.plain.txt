@@ -1,0 +1,19 @@
+aaa authentication login CONSOLE local
+aaa accounting commands 15 default start-stop group LAB-TACACS
+snmp-server trap-source Loopback0
+banner login ^
+Authorized use only.
+! Activity is logged.
+^
+ip domain name lab.example.net
+ip domain list lab.example.net
+clock timezone CET 1
+ip name-server 192.0.2.53
+ip name-server 192.0.2.54
+ntp authentication-key 5 md5 lab-ntp-key-0123
+ntp trusted-key 5
+ntp server 192.0.2.123 version 4 key 5 prefer
+ntp server ntp2.example.net
+ntp authenticate
+line con 0
+ login authentication CONSOLE

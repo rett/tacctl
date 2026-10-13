@@ -68,7 +68,13 @@ type pullBox struct {
 // the store.
 func newPullBox(t *testing.T, opts ...fakedev.Option) *pullBox {
 	t.Helper()
-	dir := t.TempDir()
+	return newPullBoxIn(t, t.TempDir(), opts...)
+}
+
+// newPullBoxIn is newPullBox with the fake device's transcript directory
+// given: a menu unit (a WTI fixture) or a directory of one's own.
+func newPullBoxIn(t *testing.T, dir string, opts ...fakedev.Option) *pullBox {
+	t.Helper()
 	opts = append([]fakedev.Option{fakedev.WithCredentials("alice", testPassword)}, opts...)
 	srv := fakedev.New(dir, opts...)
 	t.Cleanup(srv.Stop)
@@ -229,6 +235,10 @@ func TestPullJunosOverNetconfThenListShowDiff(t *testing.T) {
 		t.Fatalf("record %+v", rec)
 	}
 	for _, n := range devconf.SectionNames {
+		if n == "system" {
+			// only a scope that has a system block has the section
+			continue
+		}
 		if s, ok := rec.Sections[n]; !ok || s.State == "differs" || s.State == "missing" {
 			t.Errorf("section %s: %+v", n, s)
 		}
@@ -580,41 +590,6 @@ func TestPullHostKeyMismatchRaisesTheNotice(t *testing.T) {
 	}
 	if b.pw.rejected != 0 {
 		t.Error("a host key mismatch is not a rejected password")
-	}
-}
-
-func TestPullWTIAndSelectorsSkipWhatIsNotRead(t *testing.T) {
-	b := newPullBox(t)
-	b.devices([3]string{"lab-j", "192.168.1.20", "juniper"}, [3]string{"pdu1", "192.168.1.40", "wti"})
-	b.serve("juniper", b.expected("lab-j"))
-	out := b.run("device", "config", "pull", "--all")
-	if b.sb.code != 0 || !strings.Contains(out, "lab-j") || strings.Contains(out, "pdu1  ") || !strings.Contains(out, "skipped 1 (pdu1)") {
-		t.Errorf("--all: %d\n%s", b.sb.code, out)
-	}
-	// Named, the unit is recorded as unsupported and the run is not ok.
-	out = b.run("device", "config", "pull", "pdu1")
-	if b.sb.code != 1 || !strings.Contains(out, "WTI units are not read in this release") {
-		t.Errorf("named wti: %d\n%s", b.sb.code, out)
-	}
-	rec, _ := b.records().Of("pdu1")
-	if rec == nil || rec.Result != "unsupported" {
-		t.Errorf("record %+v", rec)
-	}
-	// 'device list' shows '-' for it; show says why.
-	for _, l := range strings.Split(b.run("device", "list"), "\n") {
-		f := strings.Fields(l)
-		if len(f) > 3 && f[0] == "pdu1" && !slicesContain(f, "-") {
-			t.Errorf("row %q", l)
-		}
-	}
-	if show := b.run("device", "show", "pdu1"); !strings.Contains(show, "Configuration: not read (WTI units are not read") {
-		t.Errorf("show:\n%s", show)
-	}
-	// The WTI-only selection asked for no password.
-	b.pw.asked = 0
-	b.run("device", "config", "pull", "pdu1")
-	if b.pw.asked != 0 {
-		t.Errorf("asked for a password for a WTI unit")
 	}
 }
 
@@ -1152,12 +1127,12 @@ func TestConfigStatesRendered(t *testing.T) {
   "sections":{"aaa":{"state":"ok"},"roles":{"state":"ok"}}},
 "d-failed":{"vendor":"juniper","result":"timeout"},
 "d-unsup":{"vendor":"cisco","result":"unsupported"},
-"d-wti":{"vendor":"wti","result":"unsupported"}}}`, 0o600)
+"d-wti":{"vendor":"wti","result":"denied"}}}`, 0o600)
 	out := plain(sb.run("", []string{"device", "list"}))
 	// d-old is a record of 0.2.4: no version line, so no syntax, and the
 	// setting is auto: neither guessed (D113), one pull makes it known. d-set
 	// has the same record and a setting: compared.
-	want := map[string]string{"d-ok": "ok", "d-old": "pull", "d-set": "ok", "d-diff": "differs", "d-never": "never", "d-failed": "failed", "d-wti": "-", "d-other": "-", "d-unsup": "failed", "d-nosc": "-"}
+	want := map[string]string{"d-ok": "ok", "d-old": "pull", "d-set": "ok", "d-diff": "differs", "d-never": "never", "d-failed": "failed", "d-wti": "failed", "d-other": "-", "d-unsup": "failed", "d-nosc": "-"}
 	// (d-nosc is in no scope: a pull refuses it, so it is not 'never'.)
 	// The CONFIG column: the word under its heading, whatever the columns
 	// before it hold.
@@ -1202,7 +1177,7 @@ func TestConfigStatesRendered(t *testing.T) {
 		got[d.Name] = d.Config
 	}
 	if got["d-ok"] != "ok" || got["d-old"] != "pull" || got["d-diff"] != "differs" || got["d-never"] != "never" || got["d-failed"] != "failed" ||
-		got["d-wti"] != "" || got["d-other"] != "" {
+		got["d-wti"] != "failed" || got["d-other"] != "" {
 		t.Errorf("json configs %v", got)
 	}
 	// The state is the operator tier's: a read-only user's list has no column,

@@ -7,11 +7,13 @@ package plan
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/rett/tacctl/internal/devconf"
+	"github.com/rett/tacctl/internal/devconf/wti"
 )
 
 // buildItems turns the comparison into the report's items, linked to the
@@ -83,7 +85,7 @@ func (p *planner) buildItems(d *Delta, byName map[string]devconf.SectionResult) 
 			}
 			it.Lines = slices.Clone(answers[name+"|"+stem])
 			it.Fixed = len(it.Lines) > 0
-			it.Words = plainWords(d.Vendor, stem)
+			it.Words = p.words(d.Vendor, stem)
 			if kind == KindMissing {
 				// a line that fixes it by replacing another one: different
 				var device []string
@@ -98,7 +100,7 @@ func (p *planner) buildItems(d *Delta, byName map[string]devconf.SectionResult) 
 					it.Kind = KindDifferent
 					var ws []string
 					for _, s := range device {
-						ws = append(ws, plainWords(d.Vendor, s))
+						ws = append(ws, p.words(d.Vendor, s))
 					}
 					it.Words += " (the device has: " + strings.Join(ws, "; ") + ")"
 				}
@@ -115,7 +117,7 @@ func (p *planner) buildItems(d *Delta, byName map[string]devconf.SectionResult) 
 			d.Items = append(d.Items, it)
 		}
 	}
-	d.Items = groupItems(d.Vendor, d.Items)
+	d.Items = groupItems(d.Vendor, d.Items, p.blk)
 	if p.noLocal {
 		d.Items = append(d.Items, Item{Kind: KindNoLocal, Section: "aaa", Severity: SevAccess,
 			Words:     "the device has no local user at privilege 15",
@@ -130,8 +132,18 @@ func (p *planner) buildItems(d *Delta, byName map[string]devconf.SectionResult) 
 // objectOf names the object a statement is part of, for grouping: a filter,
 // a client list, a server block, an access list, a privilege level. Empty
 // when the statement is its own.
-func objectOf(vendor, stem string) (key, label string) {
+func objectOf(vendor, stem string, blk *blockObjects) (key, label string) {
+	if vendor == devconf.FamilyIOS && blk != nil && blk.ios {
+		if k, l := blk.object(stem); k != "" {
+			return k, l
+		}
+	}
 	if vendor == devconf.FamilyJunos {
+		if blk != nil {
+			if k, l := blk.object(stem); k != "" {
+				return k, l
+			}
+		}
 		t := splitTokens(strings.TrimPrefix(strings.TrimPrefix(stem, "set "), "deactivate "))
 		switch {
 		case len(t) >= 6 && t[0] == "firewall" && t[3] == "filter":
@@ -144,6 +156,8 @@ func objectOf(vendor, stem string) (key, label string) {
 			return "class " + t[3], "login class " + t[3]
 		case len(t) >= 4 && t[0] == "system" && (t[1] == "tacplus-server" || t[1] == "radius-server"):
 			return t[1] + " " + t[2], "the " + map[string]string{"tacplus-server": "TACACS+", "radius-server": "RADIUS"}[t[1]] + " server " + t[2]
+		case len(t) >= 4 && t[0] == "system" && t[1] == "ntp" && t[2] == "server":
+			return "ntp-server " + t[3], "the NTP server " + t[3]
 		}
 		return "", ""
 	}
@@ -168,7 +182,7 @@ func objectOf(vendor, stem string) (key, label string) {
 // groupItems folds two or more findings of one object, of one kind and
 // one outcome, into one item: a tech reads "the management filter is
 // missing (22 statements)", not twenty-two lines.
-func groupItems(vendor string, items []Item) []Item {
+func groupItems(vendor string, items []Item, blk *blockObjects) []Item {
 	type gkey struct{ section, kind, obj, outcome string }
 	outcome := func(it Item) string {
 		if it.Fixed {
@@ -178,7 +192,7 @@ func groupItems(vendor string, items []Item) []Item {
 	}
 	counts := map[gkey]int{}
 	keyOf := func(it Item) (gkey, string) {
-		obj, label := objectOf(vendor, it.Statement)
+		obj, label := objectOf(vendor, it.Statement, blk)
 		if obj == "" {
 			return gkey{}, ""
 		}
@@ -256,12 +270,18 @@ func (p *planner) actionFor(d *Delta, it *Item, extraOf map[string]Extra, stem s
 	case KindSecret:
 		return "Not visible to this login; left alone (--secrets pushes the value)."
 	case KindExtra:
+		// the system block only adds: what the device holds beside it is its
+		// own, and the report says why it stays
+		left := "Left alone"
+		if it.Section == devconf.SectionSystem {
+			left = "Left alone (the system block only adds, it never removes)"
+		}
 		if e, ok := extraOf[it.Section+"|"+stem]; ok && len(e.Remove) > 0 && e.Guard == "" {
-			return "Left alone. To remove it later" + removeText(e.Remove)
+			return left + ". To remove it later" + removeText(e.Remove)
 		} else if ok && e.Guard != "" {
 			return "Left alone (" + e.Guard + ")."
 		}
-		return "Left alone."
+		return left + "."
 	case KindMissing:
 		if strings.Contains(stem, "login") && strings.HasPrefix(stem, "line ") {
 			return "Follows from 'aaa new-model': lines with no login method use the default list."
@@ -295,6 +315,9 @@ func classHierarchy(stem, why string) string {
 
 // severityOf classifies a finding (D110).
 func severityOf(vendor, section, stem, kind string) string {
+	if vendor == devconf.FamilyWTI {
+		return devconf.WTISeverity(section, stem)
+	}
 	t := strings.Fields(strings.NewReplacer(pathSep, " ").Replace(strings.TrimPrefix(strings.TrimPrefix(stem, "set "), "deactivate ")))
 	has := func(i int, w string) bool { return len(t) > i && t[i] == w }
 	switch section {
@@ -319,6 +342,24 @@ func severityOf(vendor, section, stem, kind string) string {
 	}
 	return SevCosmetic
 }
+
+// words is plainWords with the statements of a scope's configuration block
+// named by their block.
+func (p *planner) words(vendor, stem string) string {
+	if p.blk != nil && (vendor == devconf.FamilyJunos || vendor == devconf.FamilyIOS) {
+		if w := p.blk.words(stem); w != "" {
+			return w
+		}
+	}
+	return plainWords(vendor, stem)
+}
+
+// reIOSBannerSize reads the size out of the compared form of an IOS login
+// banner ('banner login <message: 7 lines, 120 characters, id 3fa9c2d1>').
+var reIOSBannerSize = regexp.MustCompile(`<message: ([0-9]+) lines, ([0-9]+) characters, id [0-9a-f]{8}>`)
+
+// reMessageSize reads the size out of the mark of a login message.
+var reMessageSize = regexp.MustCompile(`^<message: ([0-9]+) lines, ([0-9]+) characters, id [0-9a-f]{8}>$`)
 
 // plainWords is a statement in the words of a technician.
 func plainWords(vendor, stem string) string {
@@ -379,6 +420,32 @@ func plainJunos(stem string) string {
 		w = "management filter " + t[4] + ", term " + t[6] + ": " + rest(7)
 	case len(t) >= 2 && t[0] == "snmp":
 		w = "SNMP: " + rest(1)
+	case len(t) == 4 && t[0] == "system" && t[1] == "login" && t[2] == "message":
+		// the compared form holds the message's size, never a word of it
+		w = "the login message"
+		if m := reMessageSize.FindStringSubmatch(t[3]); m != nil {
+			w += " of " + m[1] + " lines, " + m[2] + " characters"
+		}
+	case len(t) >= 3 && t[0] == "system" && t[1] == "domain-name":
+		w = "the domain name is " + rest(2)
+	case len(t) >= 3 && t[0] == "system" && t[1] == "domain-search":
+		w = "the search domain " + rest(2)
+	case len(t) >= 3 && t[0] == "system" && t[1] == "time-zone":
+		w = "the time zone is " + rest(2)
+	case len(t) >= 3 && t[0] == "system" && t[1] == "name-server":
+		w = "the name server " + rest(2)
+	case len(t) == 4 && t[0] == "system" && t[1] == "ntp" && t[2] == "server":
+		w = "the NTP server " + t[3]
+	case len(t) >= 5 && t[0] == "system" && t[1] == "ntp" && t[2] == "server":
+		w = "the NTP server " + t[3] + ": " + rest(4)
+	case len(t) >= 4 && t[0] == "system" && t[1] == "ntp" && t[2] == "boot-server":
+		w = "the NTP boot server is " + t[3]
+	case len(t) >= 4 && t[0] == "system" && t[1] == "ntp" && t[2] == "source-address":
+		w = "the NTP source address is " + t[3]
+	case len(t) >= 5 && t[0] == "system" && t[1] == "ntp" && t[2] == "authentication-key" && t[4] == "value":
+		w = "NTP key " + t[3] + " is set"
+	case len(t) >= 4 && t[0] == "system" && t[1] == "ntp" && t[2] == "trusted-key":
+		w = "NTP key " + t[3] + " is trusted"
 	default:
 		w = strings.Join(t, " ")
 	}
@@ -432,6 +499,32 @@ func plainIOS(stem string) string {
 		w = "an SNMP community"
 	case len(f) >= 2 && f[0] == "snmp-server" && (f[1] == "location" || f[1] == "contact"):
 		w = "the SNMP " + f[1] + " is " + strings.Join(f[2:], " ")
+	case len(f) >= 3 && f[0] == "snmp-server" && f[1] == "trap-source":
+		w = "SNMP traps are sourced from the interface " + f[2]
+	case len(f) >= 2 && f[0] == "banner" && f[1] == "login":
+		// the compared form holds the banner's size, never a word of it
+		w = "the login banner"
+		if m := reIOSBannerSize.FindStringSubmatch(leaf); m != nil {
+			w += " of " + m[1] + " lines, " + m[2] + " characters"
+		}
+	case len(f) >= 4 && f[0] == "ip" && f[1] == "domain" && f[2] == "name":
+		w = "the domain name is " + strings.Join(f[3:], " ")
+	case len(f) >= 4 && f[0] == "ip" && f[1] == "domain" && f[2] == "list":
+		w = "the search domain " + strings.Join(f[3:], " ")
+	case len(f) >= 3 && f[0] == "clock" && f[1] == "timezone":
+		w = "the time zone is " + strings.Join(f[2:], " ")
+	case len(f) >= 3 && f[0] == "ip" && f[1] == "name-server":
+		w = "the name server " + strings.Join(f[2:], " ")
+	case len(f) == 3 && f[0] == "ntp" && f[1] == "server":
+		w = "the NTP server " + f[2]
+	case len(f) >= 4 && f[0] == "ntp" && f[1] == "server":
+		w = "the NTP server " + f[2] + ": " + strings.Join(f[3:], " ")
+	case len(f) >= 3 && f[0] == "ntp" && f[1] == "authentication-key":
+		w = "NTP key " + f[2] + " is set"
+	case len(f) >= 3 && f[0] == "ntp" && f[1] == "trusted-key":
+		w = "NTP key " + f[2] + " is trusted"
+	case len(f) == 2 && f[0] == "ntp" && f[1] == "authenticate":
+		w = "NTP authentication is on"
 	case len(path) == 2 && strings.HasPrefix(path[0], "ip access-list "):
 		w = "access list " + strings.Fields(path[0])[len(strings.Fields(path[0]))-1] + ": " + leaf
 	case len(path) == 2 && strings.HasPrefix(path[0], "line ") && strings.HasPrefix(leaf, "access-class "):
@@ -460,7 +553,9 @@ func (p *planner) buildExtras(d *Delta) {
 		case d.Vendor == devconf.FamilyJunos:
 			t := splitTokens(strings.TrimPrefix(k.Text, "set "))
 			switch {
-			case strings.Contains(k.Text, secretMark):
+			case k.Note == communityNotVisible:
+				e.Guard = communityNotVisible
+			case slices.ContainsFunc(t, isMark):
 				e.Guard = "its name is the secret and is not known to tacctl"
 			case len(t) >= 2 && t[0] == "snmp" && slices.Contains([]string{"name", "engine-id", "trap-options", "location", "contact", "description"}, t[1]),
 				len(t) >= 2 && t[0] == "snmp" && strings.HasPrefix(t[1], "trap"):
@@ -476,7 +571,9 @@ func (p *planner) buildExtras(d *Delta) {
 			path := strings.Split(k.Text, pathSep)
 			leaf := path[len(path)-1]
 			switch {
-			case strings.Contains(k.Text, secretMark):
+			case k.Note == communityNotVisible:
+				e.Guard = communityNotVisible
+			case slices.ContainsFunc(strings.Fields(k.Text), isMark):
 				e.Guard = "its name is the secret and is not known to tacctl"
 			case strings.HasPrefix(leaf, "username "), strings.HasPrefix(leaf, "enable "), strings.HasPrefix(path[0], "line "):
 				e.Guard = "a login or a line: never removed"
@@ -492,17 +589,20 @@ func (p *planner) buildExtras(d *Delta) {
 
 // junosObjectDepths are the depths at which a statement's path names an
 // object of its own, shallowest first: a server, a client list, a
-// community, a login class, a filter and a term of one.
+// community or trap group, a login class, a filter and a term of one.
 func junosObjectDepths(t []string) []int {
 	switch {
 	case len(t) >= 3 && t[0] == "system" && (t[1] == "tacplus-server" || t[1] == "radius-server"):
 		return []int{3}
-	case len(t) >= 3 && t[0] == "snmp" && (t[1] == "client-list" || t[1] == "community"):
+	case len(t) >= 3 && t[0] == "snmp" && (t[1] == "client-list" || t[1] == "community" || t[1] == "trap-group"):
 		return []int{3}
 	case len(t) >= 4 && t[0] == "system" && t[1] == "login" && (t[2] == "class" || t[2] == "user"):
 		return []int{4}
 	case len(t) >= 7 && t[0] == "firewall" && t[1] == "family" && t[3] == "filter" && t[5] == "term":
 		return []int{5, 7}
+	case len(t) >= 5 && t[0] == "system" && t[1] == "ntp" && (t[2] == "server" || t[2] == "authentication-key"):
+		// an NTP server with its options, a key with its type and value
+		return []int{4}
 	}
 	return nil
 }
@@ -547,6 +647,9 @@ func (p *planner) iosRemoval(section string, path []string) []Line {
 	if len(ctx) == 0 {
 		if len(f) >= 3 && (f[0] == "tacacs-server" || f[0] == "radius-server") && f[1] == "host" {
 			return no(nil, hostEntry(f))
+		}
+		if t, ok := iosSystemUndo(leaf); ok {
+			return no(nil, t)
 		}
 		return no(nil, leaf)
 	}
@@ -646,6 +749,32 @@ func boxLine(d Delta, h Header) string {
 // iosLabNote is the sentence every Cisco output's report carries (D100).
 const iosLabNote = "Checked on a device: IOS 12.4(15) (a 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references."
 
+// iosBlockNote is the sentence a Cisco output carries when the rendering has
+// a scope's SNMP block: what the standard was checked on does not cover the
+// block's own lines.
+func iosBlockNote(scope string) string {
+	where := "this scope"
+	if scope != "" {
+		where = "scope '" + scope + "'"
+	}
+	return "snmp: the lines of the SNMP block of " + where + " (access list entries, trap hosts, 'enable traps' lines) were written from the references " +
+		"and have not been checked on a device (not lab-tested): read them before you paste"
+}
+
+// iosSystemNote is the sentence a Cisco output carries when the rendering has
+// a scope's system block: the banner, the domain and name servers, the time
+// zone and the NTP lines were written from the references and have not been
+// pasted on a device.
+func iosSystemNote(scope string) string {
+	where := "this scope"
+	if scope != "" {
+		where = "scope '" + scope + "'"
+	}
+	return "system: the lines of the system block of " + where + " (login banner, domain name and list, time zone, name servers, NTP) were written from the references " +
+		"and have not been checked on a device (not lab-tested): read them before you paste; the NTP lines are in the order IOS needs " +
+		"(keys, trusted keys, servers, 'ntp authenticate' last)"
+}
+
 // Report is the box, the irregularity report and the one check line, all
 // outside the region (D108, D110, D112).
 func Report(d Delta, h Header, w Wrapper) string {
@@ -675,6 +804,9 @@ func Report(d Delta, h Header, w Wrapper) string {
 	if hold := d.BreakglassHeld; hold != nil {
 		add("BREAK-GLASS HELD on this device since " + hold.Since + " by " + hold.By + ": the server does not answer it, so the check below (\"a NEW ssh session as yourself\") cannot pass until it is released: tacctl breakglass release " + h.Device)
 	}
+	if w := wtiPlainWarning(d); w != "" {
+		add("WARNING: " + w + ".")
+	}
 	blank()
 
 	fixed := 0
@@ -689,8 +821,12 @@ func Report(d Delta, h Header, w Wrapper) string {
 	case len(d.Items) == 0:
 		add("CONSISTENT: nothing to paste.")
 	default:
-		add(fmt.Sprintf("What is irregular on %s (%s; the paste fixes %d, leaves %d):", h.Device,
-			plural(len(d.Items), "item", "items"), fixed, len(d.Items)-fixed))
+		fixer := "the paste"
+		if d.Vendor == devconf.FamilyWTI {
+			fixer = "the plan"
+		}
+		add(fmt.Sprintf("What is irregular on %s (%s; %s fixes %d, leaves %d):", h.Device,
+			plural(len(d.Items), "item", "items"), fixer, fixed, len(d.Items)-fixed))
 		for _, it := range d.Items {
 			head := fmt.Sprintf("%2d. %-8s %-10s ", it.N, it.Section, it.Severity)
 			text := it.Kind + ": " + it.Words
@@ -720,6 +856,8 @@ func Report(d Delta, h Header, w Wrapper) string {
 				}
 			} else if r := d.Refusal(); r != "" {
 				add("CANNOT BE PLANNED: " + r + ". Nothing is pasted for this device.")
+			} else if d.Vendor == devconf.FamilyWTI {
+				add("Nothing to type or paste: everything above is left alone or cannot be fixed by this plan.")
 			} else {
 				add("Nothing to paste: everything above is left alone or cannot be fixed by this login.")
 			}
@@ -749,9 +887,12 @@ func Report(d Delta, h Header, w Wrapper) string {
 	if len(consistent) > 0 {
 		line = "Consistent: " + strings.Join(consistent, ", ") + ". "
 	}
-	if d.Vendor == devconf.FamilyIOS {
+	switch d.Vendor {
+	case devconf.FamilyWTI:
+		line += "Not planned: breakglass (walkthrough Step 10)."
+	case devconf.FamilyIOS:
 		line += "Not planned: netconf, breakglass."
-	} else {
+	default:
 		line += "Not planned: netconf, breakglass (walkthrough Steps 6 and 7)."
 	}
 	add(line)
@@ -774,12 +915,16 @@ func Report(d Delta, h Header, w Wrapper) string {
 	if len(secret) > 0 {
 		add("Secrets: " + strings.Join(secret, "; ") + " (--secrets pushes them).")
 	}
-	if d.Counts.Placeholders > 0 {
+	if d.Counts.Placeholders > 0 && d.Vendor == devconf.FamilyWTI {
+		add("Secrets are not typed by this output: a secret step names the command that shows its value (tacctl scope secret show " + h.Scope +
+			", tacctl scope snmp " + h.Scope + " show --reveal), and --secrets puts the value in the step.")
+	} else if d.Counts.Placeholders > 0 {
 		add("Secrets are shown as <SECRET> on lines marked '" + commentLeader(d.Vendor) + " " + secretLinePrefix + "': read the value with 'tacctl scope secret show " + h.Scope +
 			"' (the server secret) or 'tacctl scope snmp " + h.Scope + " show --reveal' (the SNMP community), put it in, remove the mark.")
 	}
 	if len(d.Unattributed) > 0 {
-		add("Note: a delete under an SNMP community acts on the community tacctl renders only (the device's community names are not compared); 'statement not found' is then expected for a leaf of another community.")
+		add("Note: the pull was made by an older tacctl and does not tell the SNMP communities apart; left alone: " +
+			plural(len(d.Unattributed), "statement", "statements") + " under a community (the community's name is not visible). Pull the device again to plan them.")
 	}
 	if !d.InheritanceChecked && d.Vendor == devconf.FamilyJunos {
 		add("The pull has no plain view of the configuration: statements that come from a group could not be told apart and were not checked (pull the device again to read it).")
@@ -791,6 +936,12 @@ func Report(d Delta, h Header, w Wrapper) string {
 			add("Cleanup (--converge): " + c.Deferred + ".")
 		case c.Whole != "":
 			add("Cleanup (--converge) is not offered: " + c.Whole + ".")
+		case !c.Empty() && d.Vendor == devconf.FamilyWTI:
+			add(fmt.Sprintf("Cleanup (--converge): the steps below are the whole output: they switch off or clear %s the standard does not have. Do them only after you have checked that the pull of %s is current (tacctl device config pull %s --diff reads ok for aaa) and keep a second session logged in as yourself.",
+				plural(len(c.Lines), "setting", "settings"), h.Device, h.Device))
+			if len(c.Left) > 0 {
+				add(extrasStay(len(c.Left)))
+			}
 		case !c.Empty():
 			pending := ""
 			if d.Vendor == devconf.FamilyJunos {
@@ -823,7 +974,9 @@ func Report(d Delta, h Header, w Wrapper) string {
 	}
 	// the cleanup is the whole output of a device with no first region: the
 	// same warnings and the same check line stand in front of it
-	if !d.Empty() || !d.Cleanup.Empty() {
+	if (!d.Empty() || !d.Cleanup.Empty()) && d.Vendor == devconf.FamilyWTI {
+		wtiPreamble(d, h, add, blank, &b)
+	} else if !d.Empty() || !d.Cleanup.Empty() {
 		if d.Vendor == devconf.FamilyIOS {
 			add("The change is live when the paste ends. NOTHING rolls it back by itself. Keep a second terminal logged in at privilege 15 until the end.")
 		} else {
@@ -849,6 +1002,9 @@ func errorWord(vendor string) string {
 
 // promptCheck is what the prompt must look like before the paste.
 func promptCheck(vendor string) string {
+	if vendor == devconf.FamilyWTI {
+		return "The title must read \"COMMAND MENU: Version " + wti.Version + "\": tacctl's tables are those of that command menu, and another version may number its pages differently: stop."
+	}
 	if vendor == devconf.FamilyIOS {
 		return "The prompt must end in # (privileged mode), not in (config)#, before you paste: a prompt ending in > means type enable first, a prompt with (config) in it means a configuration session is open: type end first."
 	}
@@ -856,6 +1012,9 @@ func promptCheck(vendor string) string {
 }
 
 func checkLine(vendor string) string {
+	if vendor == devconf.FamilyWTI {
+		return "/H"
+	}
 	if vendor == devconf.FamilyIOS {
 		return "show version | include uptime"
 	}

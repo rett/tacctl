@@ -43,6 +43,8 @@ var liveNames = map[string]string{
 	"backups":          "20260101-000000\n",
 	// The break-glass users recorded for the scope 'lab'.
 	"breakglass-users lab": "lab-admin\nlab-ops\n",
+	// the device registry's and the hosts' names (kind devices)
+	"devices": "js1\nsw1\n",
 }
 
 // The scenarios of the hand-written completion's tests, now answered by the
@@ -101,6 +103,35 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"scope", "breakglass", "lab", "remove", "lab-admin", ""}, nil},
 		{[]string{"scope", "breakglass", "lab", "remove", ""}, []string{"lab-admin", "lab-ops"}},
 		{[]string{"scope", "breakglass", "lab", "remove", "lab-a"}, []string{"lab-admin"}},
+		{[]string{"scope", "block", ""}, []string{"lab", "prod"}},
+		{[]string{"scope", "block", "lab", ""}, []string{"juniper", "cisco"}},
+		{[]string{"scope", "block", "lab", "juniper", ""}, []string{"list", "show", "check", "set", "remove", "edit", "adopt"}},
+		{[]string{"scope", "block", "lab", "juniper", "s"}, []string{"show", "set"}},
+		{[]string{"scope", "block", "lab", "juniper", "e"}, []string{"edit"}},
+		// edit takes a block; adopt takes a device, then a block
+		{[]string{"scope", "block", "lab", "juniper", "edit", ""}, []string{"snmp", "system", "-y", "--yes"}},
+		{[]string{"scope", "block", "lab", "juniper", "adopt", ""}, []string{"js1", "sw1", "-y", "--yes"}},
+		{[]string{"scope", "block", "lab", "juniper", "adopt", "js1", ""}, []string{"snmp", "system", "-y", "--yes"}},
+		{[]string{"scope", "block", "lab", "juniper", "adopt", "js1", "snmp", ""}, []string{"-y", "--yes"}},
+		{[]string{"scope", "block", "lab", "juniper", "show", ""}, []string{"snmp", "system", "--reveal"}},
+		{[]string{"scope", "block", "lab", "juniper", "set", "snmp", ""}, []string{"--file", "-y", "--yes"}},
+		{[]string{"scope", "block", "lab", "juniper", "check", "snmp", "--against", ""}, []string{"js1", "sw1"}},
+		{[]string{"scope", "block", "lab", "juniper", "check", "snmp", ""}, []string{"--file", "--against"}},
+		// --restore-point takes its value after '=' only: the bare flag is a
+		// word of its own, the value (alone: the scripts strip the flag) is
+		// the file systems, and a device name after the bare flag is still a
+		// device
+		{[]string{"device", "config", "plan", "--restore"}, []string{"--restore-point"}},
+		{[]string{"device", "config", "plan", "--restore-point=b"}, []string{"bootflash:"}},
+		{[]string{"device", "config", "plan", "--restore-point=d"}, []string{"disk0:"}},
+		{[]string{"device", "config", "plan", "--restore-point", "js"}, []string{"js1"}},
+		{[]string{"device", "config", "plan", "--restore-point=disk0:", "--restore"}, nil},
+		{[]string{"device", "block", ""}, []string{"js1", "sw1"}},
+		{[]string{"device", "block", "js1", ""}, []string{"list", "show", "check", "set", "remove", "edit", "adopt"}},
+		{[]string{"device", "block", "js1", "adopt", ""}, []string{"snmp", "system", "-y", "--yes"}},
+		{[]string{"device", "block", "js1", "edit", "snmp", ""}, []string{"-y", "--yes"}},
+		{[]string{"device", "block", "js1", "show", ""}, []string{"snmp", "system", "--reveal", "--effective"}},
+		{[]string{"device", "block", "js1", "check", "system", ""}, []string{"--file", "--against"}},
 		{[]string{"scope", "prefixes", "lab", ""}, []string{"list", "add", "remove", "move"}},
 		{[]string{"scope", "prefixes", "lab", "remove", ""}, []string{"--all", "--force"}},
 		{[]string{"scope", "prefixes", "lab", "remove", "--all", ""}, []string{"--force"}},
@@ -157,7 +188,8 @@ func TestCompleteDescribesFlags(t *testing.T) {
 			"--password-cache\tKeep your network password in this shell's memory (when your tier's policy allows)",
 			"-c\t<line>: Run one line and exit",
 		},
-		"backend enable ": {"tacacs", "radius"},
+		"backend enable ":              {"tacacs", "radius"},
+		"device config plan --restore": {"--restore-point\t<fs>: (IOS and IOS-XE only) A restore point block before the plan: a copy of the running configuration on <fs> (flash:, bootflash:, disk0:), or, bare, 'archive config' where the pull read an archive path; the back-out names 'configure replace' with it; a file, not a timer (not lab-tested)"},
 		"group commands remove operator show -": {
 			"--match\t<regex>: (add, remove) A regex the command's arguments must match (repeatable; remove: the rule's, in order)",
 			"--action\tpermit|deny: (add, remove) What the rule does (add: default permit)",

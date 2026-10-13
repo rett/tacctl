@@ -1,0 +1,33 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# command: /N, 5, the page the upload leaves (entries 1-12)
+# level: SuperUser (engineer group, priv-lvl 10)
+# source: captured
+# captured: 2026-10-12
+# sanitised: addresses
+# ---
+IPTABLES ENTRIES: IPv4
+
+1.  iptables -A INPUT -i lo -j ACCEPT
+2.  iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+3.  iptables -A INPUT -s 10.1.100.0/23 -p tcp --dport 22 -j ACCEPT
+4.  iptables -A INPUT -s 10.0.20.0/24 -p tcp --dport 22 -j ACCEPT
+5.  iptables -A INPUT -s 10.0.28.34 -p tcp --dport 22 -j ACCEPT
+6.  iptables -A INPUT -s 10.0.28.34 -p udp --dport 161:162 -j ACCEPT
+7.  iptables -A INPUT -s 10.0.28.36 -p tcp --dport 22 -j ACCEPT
+8.  iptables -A INPUT -s 10.0.28.36 -p udp --dport 161:162 -j ACCEPT
+9.  iptables -A INPUT -s 10.0.30.0/24 -p tcp --dport 22 -j ACCEPT
+10. iptables -A INPUT -s 10.0.40.0/24 -p tcp --dport 22 -j ACCEPT
+11. iptables -A INPUT -s 10.0.50.0/24 -p tcp --dport 22 -j ACCEPT
+12. iptables -A INPUT -s 10.0.60.0/24 -p tcp --dport 22 -j ACCEPT
+
+
+   Multiple iptables commands can be uploaded here in the format:
+   <iptables>
+   COMMANDS (1 per line, 256 char max per command)
+   </iptables>
+   WARNING: Upload will replace and overwrite all current entries.
+
+Enter #<CR> to change, '<' for previous entries, '>' for next entries,
+       <ESC> to return to previous menu ... 

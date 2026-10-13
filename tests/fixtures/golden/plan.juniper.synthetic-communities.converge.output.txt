@@ -1,0 +1,67 @@
+##### dev-juniper-synthetic-communities  192.0.2.21  scope lab  juniper (TACACS+) #####
+# Based on the pull of 2026-10-10 14:02 by alice over netconf (18 minutes ago; the login could see
+# secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5).
+#
+# What is irregular on dev-juniper-synthetic-communities (9 items; the paste fixes 1, leaves 8):
+#  1. aaa      ACCESS     extra: a TACACS+ server 192.0.2.99 (set system tacplus-server 192.0.2.99
+#                         secret <secret>). Removed by the cleanup region, line 3.
+#  2. snmp     MONITORING extra: SNMP: name js1.lab.example.net (set snmp name js1.lab.example.net).
+#                         Left alone (the device's own identity: never removed).
+#  3. snmp     MONITORING extra: an SNMP community: 4 statements (e.g. set snmp community <other:1>
+#                         authorization read-only). Left alone (its name is the secret and is not
+#                         known to tacctl).
+#  4. snmp     MONITORING extra: SNMP: trap-options source-address 192.0.2.250 (set snmp trap-options
+#                         source-address 192.0.2.250). Left alone (the device's own identity: never
+#                         removed).
+#  5. snmp     MONITORING extra: SNMP: trap-group <other:1> version v2 (set snmp trap-group <other:1>
+#                         version v2). Left alone (its name is the secret and is not known to tacctl).
+#  6. snmp     MONITORING extra: SNMP: trap-group <other:1> categories authentication (set snmp
+#                         trap-group <other:1> categories authentication). Left alone (its name is the
+#                         secret and is not known to tacctl).
+#  7. snmp     MONITORING extra: SNMP: trap-group <other:1> categories chassis (set snmp trap-group
+#                         <other:1> categories chassis). Left alone (its name is the secret and is not
+#                         known to tacctl).
+#  8. snmp     MONITORING extra: SNMP: trap-group <other:1> categories link (set snmp trap-group
+#                         <other:1> categories link). Left alone (its name is the secret and is not
+#                         known to tacctl).
+#  9. snmp     MONITORING extra: SNMP: trap-group <other:1> targets 198.51.100.7 (set snmp trap-group
+#                         <other:1> targets 198.51.100.7). Left alone (its name is the secret and is
+#                         not known to tacctl).
+# No fix to paste: the cleanup region below is the only paste (what else remains is left alone).
+# Consistent: roles, mgmt-acl. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
+# Secrets: 3 present on the device, not changed (--secrets pushes them).
+# Cleanup (--converge): the region below is the whole output: it removes 1 line: TACACS+ servers the
+# standard does not have. Paste it only after you have checked that the pull of
+# dev-juniper-synthetic-communities is current (tacctl device config pull
+# dev-juniper-synthetic-communities --diff reads ok for aaa, and a NEW ssh session as yourself works),
+# and that 'show system commit' shows no pending 'commit confirmed' (type the plan's 'commit' first).
+# The switch undoes this by itself in 5 minutes unless you type the one word after the check (see
+# below).
+# Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the
+# echo for 'error:'. Pasting the region twice is harmless.
+#
+# Type this first, on dev-juniper-synthetic-communities, and check the name:   show version | match Hostname
+# The prompt must end in > (operational mode) before you paste: a prompt ending in # means a
+# configuration session is open: stop.
+#
+##### CLEANUP FROM HERE: dev-juniper-synthetic-communities #####
+configure private
+# aaa: removes the servers the standard does not have
+delete system tacplus-server 192.0.2.99
+show | compare | no-more
+commit check
+commit confirmed 5 comment "tacctl cleanup dev-juniper-synthetic-communities 2026-10-10T14:20Z by alice"
+##### CLEANUP TO HERE: dev-juniper-synthetic-communities #####
+#
+# There is no other paste for dev-juniper-synthetic-communities: its first region is empty. Check
+# that the pull is current (tacctl device config pull dev-juniper-synthetic-communities --diff
+# reads ok for aaa), that 'show system commit' shows no pending 'commit confirmed' (type the
+# plan's 'commit' first), and keep a NEW ssh session as yourself open.
+# Same check, same one word, typed yourself:  commit     (before the 5 minutes end)
+# If any line printed "error:", do not type commit: the switch undoes the cleanup by itself in 5
+# minutes. To undo it after the commit: show system commit, then rollback <n> of the entry just
+# before the one commented "tacctl cleanup dev-juniper-synthetic-communities", then commit. A
+# removed server's secret is not held by tacctl: type it again.
+# Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold dev-juniper-synthetic-communities --reason "..."
+# then log in as the device's local user (ssh or console),
+# fix or back out, and the superuser runs: tacctl breakglass release dev-juniper-synthetic-communities

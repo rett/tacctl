@@ -209,7 +209,7 @@ func (h *Host) removeAccess() error {
 		return err
 	}
 	// The marker of the one-time tier migration (a reinstall starts again).
-	if err := h.rmF(p.TierPinMarker, p.OperatorNoticeMarker); err != nil {
+	if err := h.rmF(p.TierPinMarker, p.OperatorNoticeMarker, p.WTIPlainNoticeMarker); err != nil {
 		return err
 	}
 	if err := h.rmRF(filepath.Dir(p.KnownHosts)); err != nil {

@@ -517,6 +517,18 @@ func TestRollbackSudoersCases(t *testing.T) {
 		t.Errorf("0.2.3's own text:\n%s", stepText(p))
 	}
 
+	// The group drop-in 0.2.4 to 0.2.6 wrote is an older text of this release
+	// and is put back as 0.2.3's.
+	s = newRBSandbox(t)
+	s.write(s.p.SudoersFile, tier.GroupSudoers026("ops"), 0o640)
+	p, _ = PlanRollback(s.in)
+	if _, err := ApplyRollback(p); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.snapshotOf()[s.p.SudoersFile]; got != tier.GroupSudoers023("ops") {
+		t.Errorf("the 0.2.6 group drop-in was not put back as 0.2.3's:\n%s", got)
+	}
+
 	// No drop-in at all: said, nothing to do.
 	s = newRBSandbox(t)
 	_ = os.Remove(s.p.TierSudoersFile)
