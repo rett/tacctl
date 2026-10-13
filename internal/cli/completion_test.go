@@ -117,6 +117,15 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"scope", "block", "lab", "juniper", "set", "snmp", ""}, []string{"--file", "-y", "--yes"}},
 		{[]string{"scope", "block", "lab", "juniper", "check", "snmp", "--against", ""}, []string{"js1", "sw1"}},
 		{[]string{"scope", "block", "lab", "juniper", "check", "snmp", ""}, []string{"--file", "--against"}},
+		// --restore-point takes its value after '=' only: the bare flag is a
+		// word of its own, the value (alone: the scripts strip the flag) is
+		// the file systems, and a device name after the bare flag is still a
+		// device
+		{[]string{"device", "config", "plan", "--restore"}, []string{"--restore-point"}},
+		{[]string{"device", "config", "plan", "--restore-point=b"}, []string{"bootflash:"}},
+		{[]string{"device", "config", "plan", "--restore-point=d"}, []string{"disk0:"}},
+		{[]string{"device", "config", "plan", "--restore-point", "js"}, []string{"js1"}},
+		{[]string{"device", "config", "plan", "--restore-point=disk0:", "--restore"}, nil},
 		{[]string{"device", "block", ""}, []string{"js1", "sw1"}},
 		{[]string{"device", "block", "js1", ""}, []string{"list", "show", "check", "set", "remove", "edit", "adopt"}},
 		{[]string{"device", "block", "js1", "adopt", ""}, []string{"snmp", "system", "-y", "--yes"}},
@@ -179,7 +188,8 @@ func TestCompleteDescribesFlags(t *testing.T) {
 			"--password-cache\tKeep your network password in this shell's memory (when your tier's policy allows)",
 			"-c\t<line>: Run one line and exit",
 		},
-		"backend enable ": {"tacacs", "radius"},
+		"backend enable ":              {"tacacs", "radius"},
+		"device config plan --restore": {"--restore-point\t<fs>: (IOS and IOS-XE only) A restore point block before the plan: a copy of the running configuration on <fs> (flash:, bootflash:, disk0:), or, bare, 'archive config' where the pull read an archive path; the back-out names 'configure replace' with it; a file, not a timer (not lab-tested)"},
 		"group commands remove operator show -": {
 			"--match\t<regex>: (add, remove) A regex the command's arguments must match (repeatable; remove: the rule's, in order)",
 			"--action\tpermit|deny: (add, remove) What the rule does (add: default permit)",

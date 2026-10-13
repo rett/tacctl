@@ -830,6 +830,11 @@ func CleanupAfter(d Delta, h Header, w Wrapper) string {
 		// not save before the check (as the first region's)
 		b.WriteString("! Same check, then type this one command yourself:  write memory\n")
 		add("Nothing rolls the cleanup back by itself; until write memory is typed a reload brings back the saved configuration. A removed server entry takes its key with it: tacctl holds no key it removes, so to put one back you type it again.")
+		if d.restoreShown() {
+			b.WriteString("!\n")
+			add("Restore point: " + d.Restore.Name(h) + " (the block above the region).")
+			restoreAlternative(d, h, "", add, func(s string) { b.WriteString("!   " + s + "\n") })
+		}
 		b.WriteString(lockoutHelp(d, h))
 		return b.String()
 	}

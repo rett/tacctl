@@ -220,6 +220,10 @@ complete_words() {
     assert_output "$(printf 'aaa\nroles\nmgmt-acl\nsnmp\nsystem')"
     complete_words tacctl device config plan --out-dir
     assert_success
+    complete_words tacctl device config plan --restore
+    assert_output "--restore-point"
+    complete_words tacctl device config plan --restore-point=b
+    assert_output "bootflash:"
     complete_words tacctl device config show ""
     assert_line "db1"
     assert_line "sw1"

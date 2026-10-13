@@ -242,6 +242,8 @@ func (inv *invocation) completeSpec(spec Spec, args []string, toComplete string)
 		case !f.Value:
 		case hasVal:
 			values[f.Names[0]] = val
+		case f.Optional:
+			// a bare flag: the next word is not its value
 		case i+1 < len(args):
 			i++
 			values[f.Names[0]] = args[i]
@@ -251,6 +253,25 @@ func (inv *invocation) completeSpec(spec Spec, args []string, toComplete string)
 	}
 	if pending != nil {
 		return inv.completeKind(pending.Kind, toComplete, values)
+	}
+	// '--name=<partial>' of a flag whose value is optional (a bare '--name' is
+	// offered below): the values of its kind. The generated scripts strip the
+	// flag and the '=' themselves and expect the value alone; the shell
+	// replaces the whole word, so it gets the flag in front.
+	if name, cur, ok := strings.Cut(toComplete, "="); ok && strings.HasPrefix(name, "-") {
+		if f := byName[name]; f != nil && f.Optional {
+			var out []cobra.Completion
+			for _, w := range inv.kindWords(f.Kind, values) {
+				if !strings.HasPrefix(w, cur) {
+					continue
+				}
+				if inv.shellMode {
+					w = name + "=" + w
+				}
+				out = append(out, w)
+			}
+			return out, cobra.ShellCompDirectiveNoFileComp
+		}
 	}
 	kind := ""
 	if pos < len(spec.Args) {

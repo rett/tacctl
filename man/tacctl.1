@@ -7628,7 +7628,7 @@ Exit 2 when a device differs (and none failed).
 .RE
 .\" END GENERATED: command device config diff
 .TP
-.BI "device config plan " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-pull ] [ \-\-section " list " ] [ \-\-converge ] [ \-\-secrets | \-\-no\-secrets ] [ \-\-plain | \-\-json | \-\-backout ] [ \-\-out " file " | \-\-out\-dir " dir " ] [ \-\-force ] [ \-\-from " address " ] [ \-\-exit\-code ]"
+.BI "device config plan " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-pull ] [ \-\-section " list " ] [ \-\-converge ] [ \-\-secrets | \-\-no\-secrets ] [ \-\-plain | \-\-json | \-\-backout ] [ \-\-out " file " | \-\-out\-dir " dir " ] [ \-\-force ] [ \-\-from " address " ] [ \-\-restore\-point[=" fs "] ] [ \-\-exit\-code ]"
 Print, for each device, what to paste to make it match what tacctl renders,
 from its last pull. It reads no device unless
 .B \-\-pull
@@ -7793,6 +7793,78 @@ undo it says
 is refused (exit 2).
 .B \-\-out\-dir
 also writes it beside the plan.
+.PP
+.BR \-\-restore\-point [ =\fIfs\fR ]
+(IOS and IOS\-XE only; not lab\-tested) adds a restore point: a block of its
+own before the region, outside the
+.B "PASTE FROM HERE"
+banners, between
+.B "RESTORE POINT FROM HERE: <device>"
+and
+.BR "RESTORE POINT TO HERE: <device>" .
+It is one
+.B "copy running\-config <fs>tacctl\-<device>\-<yyyymmdd\-hhmm>.cfg"
+and one empty line (it answers the
+.B "Destination filename"
+prompt; a paste tool that drops blank lines turns the closing banner into the
+file name, and
+.B "file prompt quiet"
+turns the prompt off), where
+.I <device>
+is the device's name up to its first dot (IOS limits a file name to about 63
+characters) and the time is the plan's, in UTC. The comments above the block
+say to paste it first and on its own at the privileged prompt, to check that
+.B "dir <fs>"
+lists the file, that the file holds the device's secrets in their own forms
+(protect it, delete it when done) and needs free space, and that it is a file,
+not a rollback timer: IOS has no commit\-confirm for a pasted plan. The file
+system is the one named
+.RB ( \-\-restore\-point=disk0: :
+lower case letters and digits, then a colon; a network file system such as
+.B tftp:
+is refused, since its copy asks for more than one empty line answers) or, for
+the bare flag, the device's own archive path, which the pull keeps in the
+device's record (the file system word only, never the host or user of a remote
+path); the block is then the one line
+.BR "archive config" ,
+which asks for no name. A bare flag for a device whose last pull read no
+archive path is refused (exit 2) and says to name a file system or to pull
+again. The back\-out gains an alternative after its
+.B no
+lines, as comments:
+.BR "configure replace <file> force"
+(after
+.BR "archive config" ,
+the newest entry of
+.BR "show archive" ),
+with the caveats that it was tried only on devices with
+.B archive
+and a
+.B path
+configured, that
+.B "copy <file> running\-config"
+only merges, that the removal of
+.B "aaa new\-model"
+was skipped in one pass on IOS 12.4 (use the
+.B no
+lines for AAA), and that the file and any copy the replace leaves are to be
+deleted afterwards. The kept back\-out records the file (its first comment
+line says
+.BR "its restore point is <file>" ),
+so the name in the back\-out is the one the block made. Without the flag every
+IOS output is as it was. The flag is refused for a device of another vendor
+(naming it), with
+.B \-\-plain
+and with
+.BR \-\-backout ;
+the region's whole\-paste check still refuses a
+.BR copy ,
+and the block has an allowlist of its own (exactly
+.BR "archive config" ,
+or one
+.B "copy running\-config"
+and one empty line). The report says that the block and the alternative have
+not been checked on a device.
 .PP
 On a Cisco device the region follows the order of the standard block, and
 .BR "command authorization is held back" :
@@ -8044,6 +8116,9 @@ is an array with one object per device
 .BR backout ,
 .BR extras ,
 .BR warnings ,
+with
+.B \-\-restore\-point
+.BR restore_point ,
 and with
 .B \-\-converge
 .BR cleanup ,
@@ -8199,6 +8274,9 @@ The address you are logged in from: the cleanup keeps it; the management filter 
 .TP
 \fB\-\-exit\-code\fR
 Exit 2 when a device needs a change (and none could not be planned).
+.TP
+\fB\-\-restore\-point\fR[=\fI<fs>\fR]
+(IOS and IOS\-XE only) A restore point block before the plan: a copy of the running configuration on <fs> (flash:, bootflash:, disk0:), or, bare, 'archive config' where the pull read an archive path; the back\-out names 'configure replace' with it; a file, not a timer (not lab\-tested).
 .RE
 .\" END GENERATED: command device config plan
 .TP
@@ -10793,8 +10871,9 @@ removes it.
 The record of each device's last configuration pull
 .RB ( "device config pull" ):
 when, by whom, over which transport, what the NETCONF probe found, the result
-and the state of each managed section, keyed by the device's lower\-case name.
-Mode 0600, root only; derived from the devices, not snapshotted, rebuilt by a
+and the state of each managed section (for an IOS device also the file system
+of its archive path, for the plan's restore point), keyed by the device's
+lower\-case name. Mode 0600, root only; derived from the devices, not snapshotted, rebuilt by a
 pull. A rename carries a record along, a removal and
 .B "device config forget"
 delete it. 0.2.3 never opens it and

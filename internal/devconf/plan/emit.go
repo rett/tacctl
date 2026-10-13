@@ -155,6 +155,9 @@ func Plain(d Delta, h Header, w Wrapper) (string, error) {
 func Block(d Delta, h Header, w Wrapper) string {
 	var b strings.Builder
 	b.WriteString(Report(d, h, w))
+	// the restore point (--restore-point, IOS): its own banner pair, before
+	// the region and outside it
+	b.WriteString(RestoreRegion(d, h))
 	if !d.Empty() {
 		b.WriteString(Region(d, h, w))
 		b.WriteString(After(d, h, w))
@@ -701,6 +704,17 @@ type jsonExtra struct {
 	Guard  string   `json:"guard,omitempty"`
 }
 
+// jsonRestorePoint is the restore block: the form it takes ('copy' or
+// 'archive'), the file ('copy' only: the 'archive' form's file is named by the
+// device), the one command, the file system and the not-lab-tested note.
+type jsonRestorePoint struct {
+	Mode       string `json:"mode"`
+	File       string `json:"file,omitempty"`
+	Command    string `json:"command"`
+	FileSystem string `json:"file_system"`
+	Note       string `json:"note"`
+}
+
 type jsonDelta struct {
 	Name            string      `json:"name"`
 	Address         string      `json:"address,omitempty"`
@@ -722,6 +736,9 @@ type jsonDelta struct {
 	ConfirmTimeout  int         `json:"confirm_timeout,omitempty"`
 	HoldsSecret     bool        `json:"holds_secret"`
 	CommandAuthLast bool        `json:"command_authorization_last,omitempty"`
+	// RestorePoint is the restore block of an IOS plan made with
+	// --restore-point (nil otherwise, and when the plan has nothing to paste).
+	RestorePoint *jsonRestorePoint `json:"restore_point,omitempty"`
 	// Converge, Cleanup and the two after it are present with --converge
 	// only (D99): the cleanup region's lines, why it is refused as a whole,
 	// and the extras it leaves.
@@ -788,6 +805,10 @@ func JSON(d Delta, h Header, w Wrapper) ([]byte, error) {
 				out.Backout = append(out.Backout, rl.Text)
 			}
 		}
+	}
+	if d.restoreShown() {
+		out.RestorePoint = &jsonRestorePoint{Mode: d.Restore.Mode(), File: d.Restore.File(h), Command: d.Restore.Command(h),
+			FileSystem: d.Restore.FileSystem(), Note: restoreNote}
 	}
 	for _, it := range d.Items {
 		ji := jsonItem{N: it.N, Kind: it.Kind, Severity: it.Severity, Section: it.Section, Words: it.Words,

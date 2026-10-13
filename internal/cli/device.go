@@ -149,7 +149,7 @@ var deviceVerbs = [][2]string{
 	{"config show <name> [--protocol tacacs|radius] [--legacy] [--server <address|name>] [--source <address>]", "The device's data, then its vendor walkthrough for its scope"},
 	{"config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [options]", "Read the devices' configuration as you and compare the managed sections with what tacctl renders"},
 	{"config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [--pull] [--section <list>] [--exit-code] [--json]", "The last pull against what tacctl renders now, section by section"},
-	{"config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [--pull] [--section <list>] [--converge] [--secrets|--no-secrets] [--plain|--json|--backout] [--out <file>|--out-dir <dir>] [--force] [--from <address>] [--exit-code]", "What to paste (a WTI unit: what to type) to make each device match what tacctl renders: the report, the region or the steps, the check and the back-out"},
+	{"config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [--pull] [--section <list>] [--converge] [--secrets|--no-secrets] [--plain|--json|--backout] [--out <file>|--out-dir <dir>] [--force] [--from <address>] [--restore-point[=<fs>]] [--exit-code]", "What to paste (a WTI unit: what to type) to make each device match what tacctl renders: the report, the region or the steps, the check and the back-out"},
 	{"config list [--stale] [--never] [--failed] [--differs] [--transport netconf|ssh|none] [--scope <scope>] [--vendor <vendor>] [--json]", "Each device's configuration state, when it was read, by whom and over what"},
 	{"config forget <name>[,<name>...] | --all", "Delete the pull records (a pull makes them again)"},
 }
@@ -258,6 +258,7 @@ var deviceOptions = map[string][][2]string{
 		{"--out-dir <dir>", "One file per device (<name>.txt, .set with --plain, .json with --json; each plan's .backout.txt) and COVER.txt, 0600 in a 0700 directory"},
 		{"--force", "Replace files --out or --out-dir would write"},
 		{"--from <address>", "The address you are logged in from: the cleanup keeps it; the management filter check and a WTI unit's IP tables check use it"},
+		{"--restore-point[=<fs>]", "(IOS and IOS-XE only) A restore point block before the plan: a copy of the running configuration on <fs> (flash:, bootflash:, disk0:), or, bare, 'archive config' where the pull read an archive path; the back-out names 'configure replace' with it; a file, not a timer (not lab-tested)"},
 		{"--exit-code", "Exit 2 when a device needs a change (and none could not be planned)"},
 	},
 	"config list": {

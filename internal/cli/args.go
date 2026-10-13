@@ -21,6 +21,10 @@ type Flag struct {
 	// Value: the flag takes a value, given as "--name value" or
 	// "--name=value". Otherwise it is a switch, and "--name=x" is an error.
 	Value bool
+	// Optional: the value may be left out. It is then given as "--name=value"
+	// only (the next word is never taken as the value, as a device name may
+	// follow); a bare "--name" has the value "". Only with Value.
+	Optional bool
 	// Repeat: the flag may be given more than once (each value is kept).
 	Repeat bool
 	// Only: completion offers the flag only after this positional word
@@ -186,6 +190,8 @@ func Parse(spec Spec, argv []string) (Parsed, error) {
 		case !f.Value && hasVal:
 			return p, &UnexpectedValueError{Flag: name}
 		case !f.Value:
+			val = ""
+		case !hasVal && f.Optional:
 			val = ""
 		case !hasVal:
 			if i+1 >= len(argv) {

@@ -70,6 +70,10 @@ type Options struct {
 	// WTI are the facts of a WTI unit's plan that neither the rendering nor
 	// the comparison say (ignored for any other vendor).
 	WTI WTIFacts
+	// RestorePoint asks for the restore point block of an IOS plan
+	// (--restore-point, 0.2.7): see restore.go. nil: none. Any other vendor
+	// refuses it (ErrUsage).
+	RestorePoint *RestorePoint
 }
 
 // BreakglassHold is what a plan says of a hold: when it was made, as the
@@ -189,6 +193,14 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 			return Delta{}, fmt.Errorf("%w: unknown section %q", ErrUsage, s)
 		}
 	}
+	if opt.RestorePoint != nil {
+		switch {
+		case fam != devconf.FamilyIOS:
+			return Delta{}, fmt.Errorf("%w: the restore point is for IOS and IOS-XE devices only", ErrUsage)
+		case opt.RestorePoint.Validate() != "":
+			return Delta{}, fmt.Errorf("%w: %s", ErrUsage, opt.RestorePoint.Validate())
+		}
+	}
 	current.Vendor = fam
 	if fam == devconf.FamilyWTI {
 		// A unit has no statements to paste: its plan is a checklist of menu
@@ -207,6 +219,10 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 	d := Delta{Vendor: fam, Scope: opt.Scope, InheritanceChecked: len(plain.Sections) > 0, BreakglassHeld: opt.BreakglassHeld}
 	if fam == devconf.FamilyIOS {
 		d.Syntax = opt.Syntax
+		if opt.RestorePoint != nil {
+			rp := *opt.RestorePoint
+			d.Restore = &rp
+		}
 	}
 	// Only Junos has groups: an IOS plan has no inheritance to check.
 	d.InheritanceChecked = d.InheritanceChecked && fam == devconf.FamilyJunos
@@ -348,6 +364,12 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 	// --converge: the cleanup region (D111), from the extras above.
 	if opt.Converge {
 		p.buildCleanup(&d)
+	}
+
+	// the restore block and the back-out's alternative were written from the
+	// references: the report says so, once, when the output has the block
+	if d.restoreShown() {
+		d.Notes = appendNew(d.Notes, restoreNote)
 	}
 
 	// Defensive: nothing on the never list may be in the block.

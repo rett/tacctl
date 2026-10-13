@@ -297,6 +297,10 @@ type Delta struct {
 	// WTI is what a WTI unit's plan holds beside Lines: the checklist's steps
 	// and the IP tables block (nil for any other vendor).
 	WTI *WTIPlan
+	// Restore is the restore point the plan was asked for (--restore-point,
+	// IOS only; nil: none). The output has its block only while the plan has
+	// a region to paste.
+	Restore *RestorePoint
 }
 
 // Severity of an irregularity (D110).

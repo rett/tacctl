@@ -1351,5 +1351,40 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 	if visible != nil {
 		vis = *visible
 	}
-	return Extracted{Vendor: FamilyIOS, Sections: out, SecretsVisible: vis}, nil
+	return Extracted{Vendor: FamilyIOS, Sections: out, SecretsVisible: vis, ArchiveFS: archiveFS(lines)}, nil
+}
+
+// archiveFS is the file system of the device's archive path: the 'path'
+// statement under a top-level 'archive' ('archive' / ' path flash:cfg-').
+// Only the file system word is returned ('flash:'): a remote path may hold a
+// host and a credential (ftp://user:pass@host/dir), and none of it is kept.
+// "" when there is no archive path, or one that is not '<word>:...'.
+func archiveFS(lines []string) string {
+	in := false
+	for _, l := range lines {
+		l = strings.TrimRight(l, " \t")
+		switch {
+		case l == "":
+		case l[0] != ' ' && l[0] != '\t':
+			in = l == "archive"
+		case in:
+			// one space of indent: a 'path' deeper down belongs to a
+			// sub-statement ('log config'), not to the archive
+			f := strings.Fields(l)
+			if l[0] != ' ' || l[1] == ' ' || len(f) != 2 || f[0] != "path" {
+				continue
+			}
+			fs, _, ok := strings.Cut(strings.ToLower(f[1]), ":")
+			if !ok || fs == "" {
+				return ""
+			}
+			for _, r := range fs {
+				if (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+					return ""
+				}
+			}
+			return fs + ":"
+		}
+	}
+	return ""
 }

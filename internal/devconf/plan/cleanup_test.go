@@ -77,7 +77,7 @@ func checkCleanupWhole(t *testing.T, name string, d Delta, h Header, w Wrapper) 
 		t.Errorf("%s: the text between the cleanup banners is not the cleanup region", name)
 	}
 	// nothing before the region and nothing after it is a plain line
-	if typed := onlyComments(full[:i], leader); len(typed) != 0 {
+	if typed := onlyComments(withoutRestoreBlock(t, name, d, h, full, full[:i], from), leader); len(typed) != 0 {
 		t.Errorf("%s: plain lines before the cleanup region: %q", name, typed)
 	}
 	if typed := onlyComments(rest[j+len(to)+1:], leader); len(typed) != 0 {

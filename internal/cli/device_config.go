@@ -65,7 +65,8 @@ var deviceConfigSpecs = func() map[string]Spec {
 				{Names: []string{"--converge"}}, {Names: []string{"--secrets"}}, {Names: []string{"--no-secrets"}},
 				{Names: []string{"--plain"}}, {Names: []string{"--backout"}}, flagJSON,
 				{Names: []string{"--out"}, Value: true, Kind: KindFile}, {Names: []string{"--out-dir"}, Value: true, Kind: KindFile},
-				{Names: []string{"--force"}}, {Names: []string{"--from"}, Value: true}, {Names: []string{"--exit-code"}}})},
+				{Names: []string{"--force"}}, {Names: []string{"--from"}, Value: true}, {Names: []string{"--exit-code"}},
+				{Names: []string{"--restore-point"}, Value: true, Optional: true, Kind: "flash:|bootflash:|disk0:|usbflash0:|harddisk:"}})},
 		"list": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--never"}}, {Names: []string{"--failed"}},
 			{Names: []string{"--differs"}}, {Names: []string{"--transport"}, Value: true, Kind: "netconf|ssh|none"},
 			{Names: []string{"--scope"}, Value: true, Kind: KindScopes}, {Names: []string{"--vendor"}, Value: true, Kind: "cisco|juniper|wti"},
@@ -236,7 +237,14 @@ the user who ran sudo, into a directory that user may write without a
 supplementary group (--out-dir adds COVER.txt and each plan's back-out). A secret the device lacks is typed in its line, and a
 secret it has is neither printed nor changed unless --secrets; --no-secrets
 leaves each as a marked line to fill in. --from <address> is where you are
-logged in from: the cleanup never removes it. Exit status: 0 the outputs were
+logged in from: the cleanup never removes it. --restore-point (a Cisco IOS or
+IOS-XE device only; not with --plain or --backout) puts a block of its own
+before the region, between 'RESTORE POINT FROM HERE' and 'RESTORE POINT TO
+HERE': one 'copy running-config <fs>tacctl-<device>-<time>.cfg' on the file
+system named (--restore-point=disk0:) or, bare, 'archive config' where the last
+pull read an 'archive' with a 'path' (a bare flag with none is refused). It is
+a file, not a timer: the back-out names 'configure replace <file> force' as
+its alternative to the 'no' lines. Not lab-tested. Exit status: 0 the outputs were
 made, 1 a device cannot be planned, 2 wrong arguments (or, with --exit-code,
 a device needs a change), 130 interrupted.
 A WTI console server has nothing to paste: its plan is a numbered checklist of

@@ -171,7 +171,11 @@ func manCommandBlocks(t *testing.T) []manBlock {
 					names = append(names, `\fB`+roff(n)+`\fR`)
 				}
 				tag := strings.Join(names, ", ")
-				if f.Value && value != "" {
+				switch {
+				case f.Value && value != "" && f.Optional:
+					// '--name[=<value>]': the value may be left out
+					tag += `[=\fI` + roff(value) + `\fR]`
+				case f.Value && value != "":
 					tag += ` \fI` + roff(value) + `\fR`
 				}
 				desc = capitalizeDesc(desc)

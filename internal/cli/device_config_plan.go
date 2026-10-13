@@ -40,6 +40,11 @@ type planOptions struct {
 	converge, secrets, noSecrets                bool
 	plain, asJSON, backout, pull, force, exitOn bool
 	out, outDir, from                           string
+	// restore is --restore-point (IOS and IOS-XE): the restore block before
+	// the region; restoreFS the file system --restore-point=<fs> named ("" for
+	// the bare flag: the device's archive path, from the pull).
+	restore   bool
+	restoreFS string
 }
 
 // planDevice is one device's result: the planner's delta and header, or the
@@ -87,6 +92,7 @@ func (inv *invocation) parsePlanOptions(p Parsed) (planOptions, error) {
 		plain: p.Has("--plain"), asJSON: p.Has("--json"), backout: p.Has("--backout"), pull: p.Has("--pull"),
 		force: p.Has("--force"), exitOn: p.Has("--exit-code"),
 		out: p.Value("--out"), outDir: p.Value("--out-dir"), from: p.Value("--from"),
+		restore: p.Has("--restore-point"), restoreFS: strings.ToLower(p.Value("--restore-point")),
 	}
 	bad := func(msg string) (planOptions, error) { return o, inv.argErr(msg, usage) }
 	switch {
@@ -104,6 +110,12 @@ func (inv *invocation) parsePlanOptions(p Parsed) (planOptions, error) {
 		return bad("--backout is the undo of the plan; the cleanup (--converge) has none of its own.")
 	case o.backout && o.pull:
 		return bad("--backout with --pull: a pull replaces the picture a back-out is computed from, so it would undo nothing. Leave --pull out: --backout prints the back-out tacctl kept from the plan.")
+	case o.restore && o.plain:
+		return bad("--restore-point with --plain: a plain file is the region's statements alone and has no room for the restore block, a paste of its own before the region. Drop one of them.")
+	case o.restore && o.backout:
+		return bad("--restore-point with --backout: the back-out kept from the plan names the restore point that plan made; --restore-point is for making a plan.")
+	case o.restoreFS != "" && plan.ValidRestoreFS(o.restoreFS) != "":
+		return bad("--restore-point=" + o.restoreFS + ": " + plan.ValidRestoreFS(o.restoreFS) + ".")
 	case p.Has("--out") && o.out == "", p.Has("--out-dir") && o.outDir == "":
 		return bad("--out and --out-dir take a path.")
 	case o.out != "" && o.outDir != "":
@@ -259,6 +271,9 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 			return cannot("needs pull (the image's configuration syntax is not known): " + pullHint)
 		}
 		opt.PolicyGaps = r.render.policyGaps(e)
+		if r.opt.restore {
+			opt.RestorePoint = &plan.RestorePoint{FS: r.opt.restoreFS, ArchiveFS: rec.ArchiveFS}
+		}
 	} else {
 		opt.Class = r.inv.callerClass(expected)
 	}
@@ -313,11 +328,14 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 			// what was pasted, this plan's sections included
 			out.backoutNote = "the back-out kept from this pull covers " + strings.Join(kept.Sections, ", ") +
 				" and is kept: this plan covers " + strings.Join(sections, ", ") + " only"
+			if rn := plan.RestoreName(d, out.h); rn != "" && rn != kept.RestorePoint {
+				out.backoutNote += "; it does not name this plan's restore point (" + rn + "): type 'configure replace' with that file yourself if you need it"
+			}
 		default:
 			text, berr := plan.StoredBackout(d, out.h, r.wrap)
 			if berr == nil {
 				berr = r.store.SaveBackout(name, devconf.StoredBackout{Pulled: rec.Pulled, Vendor: e.Vendor, Address: e.Address,
-					Sections: sections, Text: text})
+					Sections: sections, Text: text, RestorePoint: plan.RestoreName(d, out.h)})
 			}
 			if berr != nil {
 				out.backoutNote = "the back-out of this plan could not be kept for later: " + strings.Join(msgs(berr), " ") +
@@ -578,6 +596,13 @@ func storedBackoutText(r planDevice) string {
 		what = "the plan of " + strings.Join(r.backout.Sections, ", ")
 	}
 	line := c + " This back-out undoes " + what + " made from the pull of " + r.backout.Pulled.UTC().Format("2006-01-02 15:04") + " (UTC)"
+	switch rp := r.backout.RestorePoint; rp {
+	case "":
+	case "archive config":
+		line += "; its restore point was taken with 'archive config'"
+	default:
+		line += "; its restore point is " + rp
+	}
 	if r.h.Pulled.After(r.backout.Pulled) {
 		line += "; a later pull replaced that picture, so it is the one tacctl kept from that plan"
 	} else {
@@ -915,6 +940,20 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 			return inv.argErr("--section: a WTI unit ("+names+") has no roles or system section; it has aaa, snmp and mgmt-acl. Name the other devices, or leave those sections out.", usage)
 		}
 	}
+	// The restore point is an IOS and IOS-XE block: refused, naming the
+	// devices, before anything is read.
+	if opt.restore {
+		var others []string
+		for _, e := range chosen.entries {
+			if e.Vendor != "cisco" {
+				others = append(others, e.Name+" ("+e.Vendor+")")
+			}
+		}
+		if len(others) > 0 {
+			return inv.argErr("--restore-point is for IOS and IOS-XE devices (the block is a 'copy running-config' or an 'archive config'), and "+strings.Join(others, ", ")+
+				" is not one: name the Cisco devices, or leave it out.", usage)
+		}
+	}
 	// what depends on how many devices there are
 	switch {
 	case opt.out != "" && len(chosen.entries) != 1:
@@ -962,6 +1001,22 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 	}
 
 	store := inv.configStore()
+	// A bare --restore-point takes the file system from the pull's record (the
+	// device's archive path): where it has none, the flag must name one.
+	if opt.restore && opt.restoreFS == "" {
+		recs, _ := store.Load()
+		var lacking []string
+		for _, e := range chosen.entries {
+			if rec, ok := recs.Of(e.Name); ok && !rec.Pulled.IsZero() && rec.ArchiveFS == "" {
+				lacking = append(lacking, e.Name)
+			}
+		}
+		if len(lacking) > 0 {
+			return inv.argErr("--restore-point with no file system: the last pull of "+strings.Join(lacking, ", ")+
+				" read no 'archive' with a 'path' (a pull made before tacctl kept it did not either: pull again), so tacctl does not know where the file goes. "+
+				"Name one: --restore-point=flash: (bootflash:, disk0:), or configure 'archive' with a 'path' on the device and pull again.", usage)
+		}
+	}
 	staleDays := devreg.DefaultStaleDays
 	if f, _, err := inv.deviceLoad(); err == nil && f.StaleDays > 0 {
 		staleDays = f.StaleDays

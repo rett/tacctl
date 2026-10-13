@@ -697,6 +697,65 @@ current behaviour; this file is where history lives.
     leaf as the block's. `adopt` takes the device's own trap source into the
     draft.
 
+23. **`device config plan --restore-point[=<fs>]` adds a restore point to an
+    IOS or IOS-XE plan (not lab-tested).** The plan's region can only be
+    undone with the back-out's `no` lines; the flag puts a file of the
+    running configuration beside it first. The output gets a block of its
+    own before the region, outside the `PASTE FROM HERE` banners, between a
+    banner pair of its own:
+
+        !!!!! RESTORE POINT FROM HERE: <device> !!!!!
+        copy running-config <fs>tacctl-<device>-<yyyymmdd-hhmm>.cfg
+
+        !!!!! RESTORE POINT TO HERE: <device> !!!!!
+
+    The comments above it say to paste the block first and on its own at the
+    privileged prompt, to check that `dir <fs>` lists the file, that the file
+    holds the device's secrets in their own forms (protect it, delete it when
+    done), that it needs free space on the file system, and that it is a
+    file, not a rollback timer: IOS has no commit-confirm for a pasted plan.
+    The one empty line answers the `Destination filename` prompt; a paste
+    tool that drops blank lines turns the closing banner into the file name,
+    and `file prompt quiet` turns the prompt off. `<device>` in the file name
+    is the device's name up to its first dot (IOS limits a file name to about
+    63 characters), the time is the plan's, in UTC.
+
+    The file system comes from the flag or from the pull. `--restore-point=
+    <fs>` names it (`flash:`, `bootflash:`, `disk0:`: lower case letters and
+    digits, then a colon; a network file system such as `tftp:` is refused,
+    since its copy asks for more than the one empty line answers) and makes
+    the named copy above. The bare flag uses the device's own archive path:
+    the pull now keeps the file system of the `archive` / `path` statement
+    in its record (the word up to the colon only, never the host or user of a
+    remote path), and the block is then the one line `archive config`,
+    which asks for no name. A bare flag for a device whose last pull read no
+    archive path is a usage error (exit 2) that says to name a file system
+    or to pull again.
+
+    The back-out gains an alternative after its `no` lines (the plan's
+    after-steps say so too): `configure replace <file> force` for the named
+    copy, or for the newest entry of `show archive` after `archive config`,
+    as comments, with the caveats: it was tried only on devices with
+    `archive` and a `path` configured, `copy <file> running-config` only
+    merges, the removal of `aaa new-model` was skipped in one pass on IOS
+    12.4 (use the `no` lines for AAA), and the file and the copies the
+    replace leaves are to be deleted. The file name in the back-out is the
+    block's, and the kept back-out records it (a `restore:` line of its
+    stamp, and `its restore point is <file>` in the line `--backout` prints
+    first). `--json` gains `restore_point` (`mode`, `file`, `command`,
+    `file_system`, `note`) when the plan has a region to paste with the
+    flag; the report's notes say the block and the alternative have not been
+    checked on a device. Off by default: without the flag every IOS output,
+    JSON and back-out is as it was. The flag is refused for another vendor
+    (naming the devices), and with `--plain` (a plain file is the region's
+    statements and has no room for a block of its own) and with `--backout`
+    (the kept back-out names the file its plan made). The region's own
+    whole-paste check is unchanged and still refuses a `copy`; the restore
+    block has an allowlist of its own (exactly `archive config`, or one
+    `copy running-config <fs>tacctl-<name>-<time>.cfg` and one empty line).
+    Completion offers `--restore-point` and, after the `=`, the file
+    systems.
+
 24. **A WTI unit's Multiple Logins setting must be On, and the standard, the
     comparison and the plan say so.** A unit's `Multiple Logins` (`/N`, item
     31; Off or On) decides whether a second session may log in while one is

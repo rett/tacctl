@@ -32,6 +32,12 @@ type Extracted struct {
 	// knows better when it knows the login's class: ExtractWith takes the
 	// value and the field may be set after.
 	SecretsVisible bool
+	// ArchiveFS is, for IOS, the file system of the device's 'archive' /
+	// 'path' statement ('flash:', 'bootflash:', 'disk0:'; only the part up to
+	// and including the colon, so no host or credential of a remote path is
+	// ever kept); empty when the text has none. The plan's restore point
+	// (0.2.7) is the one reader. It is no section and never compared.
+	ArchiveFS string
 }
 
 // Options are the optional inputs of ExtractWith.

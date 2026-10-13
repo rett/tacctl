@@ -920,6 +920,12 @@ func (r *pullRun) recordSuccess(o *pullOutcome, e devreg.Entry, ext devconf.Extr
 			rec.Unit = &devconf.UnitFacts{SiteID: o.Unit.SiteID, OtherSessions: o.Unit.OtherSessions, UsersRead: o.Unit.UsersRead}
 		}
 	}
+	// the file system of an IOS device's archive path, for the plan's restore
+	// point; every other vendor, and a pull that read none, keeps nothing
+	rec.ArchiveFS = ""
+	if e.Vendor == "cisco" {
+		rec.ArchiveFS = ext.ArchiveFS
+	}
 	rec.SecretsVisible = ext.SecretsVisible
 	if err := rec.SetSections(ext, results); err != nil {
 		return err

@@ -26,6 +26,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -108,9 +109,14 @@ type Record struct {
 	// for a Junos device and for a record made before 0.2.5 or by a pull
 	// that read no version line.
 	// For a WTI unit OS is the command menu's version ('8.10').
-	OS       string                   `json:"os,omitempty"`
-	Syntax   string                   `json:"syntax,omitempty"`
-	Sections map[string]SectionRecord `json:"sections,omitempty"`
+	OS     string `json:"os,omitempty"`
+	Syntax string `json:"syntax,omitempty"`
+	// ArchiveFS is the file system of the IOS device's 'archive' / 'path'
+	// statement as the last good pull read it ('flash:'); empty for another
+	// vendor, a device with no archive path and a record made before 0.2.7.
+	// The plan's restore point (--restore-point) is the reader.
+	ArchiveFS string                   `json:"archive_fs,omitempty"`
+	Sections  map[string]SectionRecord `json:"sections,omitempty"`
 	// Unit is what the last good pull of a WTI unit saw beside its sections;
 	// nil for every other vendor and for a record made before 0.2.7.
 	Unit    *UnitFacts `json:"unit,omitempty"`
@@ -501,6 +507,10 @@ type StoredBackout struct {
 	// Sections are the planned sections the back-out undoes, in plan order.
 	Sections []string
 	Text     string
+	// RestorePoint is the restore point the plan was made with
+	// (--restore-point): the file of a named copy, or "archive config"; ""
+	// for a plan with none. The stored text names it too; this is the stamp.
+	RestorePoint string
 }
 
 // backoutPath is the stored back-out's file of a device.
@@ -516,6 +526,10 @@ func (s Store) backoutPath(name string) (string, error) {
 const BackoutHeader = "# tacctl: the back-out of the last plan made for this device that had changes, as\n" +
 	"# that plan printed it (a secret's value elided). Derived; 'tacctl device config\n" +
 	"# plan <name> --backout' prints it. Root only.\n"
+
+// restoreStamp is what the 'restore' line of a stored back-out may hold: a
+// file name of the restore point, or 'archive config'.
+var restoreStamp = regexp.MustCompile(`^[A-Za-z0-9:._ -]{1,120}$`)
 
 // backoutRule ends the header of a stored back-out.
 const backoutRule = "---\n"
@@ -545,6 +559,9 @@ func (s Store) SaveBackout(name string, b StoredBackout) error {
 	w.WriteString("vendor: " + b.Vendor + "\n")
 	w.WriteString("address: " + b.Address + "\n")
 	w.WriteString("sections: " + strings.Join(b.Sections, ",") + "\n")
+	if b.RestorePoint != "" && restoreStamp.MatchString(b.RestorePoint) {
+		w.WriteString("restore: " + b.RestorePoint + "\n")
+	}
 	w.WriteString(backoutRule)
 	w.WriteString(b.Text)
 	return atomicWrite(p, []byte(w.String()), 0o600)
@@ -589,6 +606,10 @@ func (s Store) Backout(name string) (*StoredBackout, error) {
 			b.Vendor = v
 		case "address":
 			b.Address = v
+		case "restore":
+			if restoreStamp.MatchString(v) {
+				b.RestorePoint = v
+			}
 		case "sections":
 			for _, sec := range strings.Split(v, ",") {
 				if sec = strings.TrimSpace(sec); sec != "" {
