@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"github.com/rett/tacctl/internal/doctext"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -279,12 +280,12 @@ func TestRotateDocsSayWhatIsTrue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	readme, err := doctext.Read(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
 	man = []byte(strings.ReplaceAll(string(man), `\-`, "-"))
-	for name, text := range map[string]string{"man": string(man), "README": string(readme)} {
+	for name, text := range map[string]string{"man": string(man), "README": readme} {
 		for _, bad := range []string{"another machine fails the proof", "cannot succeed against another machine", "every administrator's 'tacctl host sync' reads it", "is how a re-run adopts the account"} {
 			if strings.Contains(text, bad) {
 				t.Errorf("%s still says %q", name, bad)
@@ -297,7 +298,7 @@ func TestRotateDocsSayWhatIsTrue(t *testing.T) {
 		}
 	}
 	for _, want := range []string{"/var/lib/tacctl-provisioner", "pinned"} {
-		if !strings.Contains(string(readme), want) {
+		if !strings.Contains(readme, want) {
 			t.Errorf("the README does not say %q", want)
 		}
 	}

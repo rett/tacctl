@@ -1,0 +1,9 @@
+# Passwordless sudo for operators
+
+[Documentation](../README.md) › [Security](README.md)
+
+By default, `tacctl` requires `sudo` authentication. To let a group run it without a password prompt, install a sudoers drop-in:
+```
+tacctl config sudoers install adm     # or: wheel, ops, etc.
+```
+This writes `/etc/sudoers.d/tacctl` (validated with `visudo -cf`) granting `%adm ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl`, with `Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY"` so `tacctl host` keeps your agent socket through sudo (the second name is the login console's session marker); a second `Defaults!` entry for the command lines `device config pull|diff|plan`, `ssh`, `device ssh` and `scope|device block ... adopt` keeps `TACCTL_ASKPASS`, the password cache's variable (see [Password cache](../cli/shell.md#password-cache)), and a third, for the four command lines that open an editor (`scope block * edit *`, `scope block * adopt *`, `device block * edit *`, `device block * adopt *`), keeps `VISUAL` and `EDITOR`, which `scope block ... edit|adopt` run as you. `tacctl upgrade` rewrites a file that `config sudoers install <group>` wrote with an older release, for the group its header names, when the file is exactly the text that release wrote (`Updated: sudoers for group <name>`). It leaves an edited file as it is, with a warning that names `config sudoers install <group>` (which writes the current text), and leaves a file that is not tacctl's, a current one and an absent one alone. Because `tacctl` can modify system config and restart services, this is effectively passwordless root for members of that group — the command prompts for confirmation before installing. Remove with `tacctl config sudoers remove`.

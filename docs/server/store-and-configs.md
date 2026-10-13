@@ -1,0 +1,20 @@
+# The store and generated configs
+
+[Documentation](../README.md) › [Server](README.md)
+
+| File | Role |
+|---|---|
+| `/etc/tacctl/store.yaml` | **Canonical**: users (group, scopes, bcrypt hash, disabled, password date), groups (priv-lvl, Juniper class), scopes (prefixes, secret, `protocols`, `vendor_attrs`, `devices`), connection filters. 0600 root. `tacctl store show` prints it (superuser-only: it holds secrets and hashes). |
+| `/etc/tacctl/tacctl.yaml` | **Canonical** tunables and settings: per-group command rules and priv-exec mappings, per-scope device-config settings, listeners, `backends.enabled`. Only keys you changed (see [Configuration tunables](../cli/tunables.md#configuration-tunables--tacctlyaml)). |
+| `/etc/tacquito/tacquito.yaml`, the unit drop-ins | **Generated** for TACACS+. |
+| `<raddb>/tacctl-radius.conf`, `tacctl-radius.users`, `tacctl-radius-dictionary/dictionary` | **Generated** for RADIUS. |
+| `/etc/tacctl/rendered.json` | The checksum of every generated file. |
+
+Every change goes one way: check that no generated file was edited by hand → snapshot → write the store (and `tacctl.yaml`) → render every enabled backend into a staging area and prove it (read back, the daemon's own config check) → replace the files → restart the backends whose files changed. If any step fails, the store, `tacctl.yaml` and every generated file are put back.
+
+- **Drift.** A generated file whose checksum no longer matches was edited by hand. `tacctl status` and `tacctl config validate` show a red `DRIFT` line, and every change is refused (exit 3) rather than overwrite it. To keep a hand edit of `tacquito.yaml`: `tacctl store import --replace`, then `tacctl config render --force`. To discard it: `tacctl config render --force` (the edited file is kept under `/etc/tacctl/backups/legacy/` first). RADIUS files cannot be adopted, only re-rendered.
+- **`tacctl config render [--force]`** regenerates every enabled backend's files from the store and restarts the ones that changed; needed after restoring files by hand or when `config validate` says a file is missing or out of date. **`tacctl config render --dry-run --out <dir>`** renders the same artifacts into a new, empty directory at their live paths (`<dir>/etc/tacquito/tacquito.yaml`, ...) and touches nothing else: no render record, no restart. The directory is private to root, since the artifacts hold secrets.
+- **`tacctl store import [--check|--force] [--replace] [<file>]`** reads an old-style `tacquito.yaml` (default: the live one) into the store. `--check` writes nothing: it imports, renders, compares what tacquito would load from both files (users, groups and their services and command rules, the prefix-to-secret routing in order, filters) and load-tests the rendered file with the tacquito binary on a loopback port; it prints `EQUIVALENT` or the differences. Content the store cannot represent (other services, other authenticators or accounters, unknown keys, …) fails the import and is listed; `--force` drops it. `--replace` overwrites an existing store.
+- **Legacy read-only mode.** Without a store (an upgrade whose gate stopped, or after `store rollback`) tacctl reads `tacquito.yaml` directly: every read command works, every command that would change users, groups, scopes or filters is refused with `store not initialised — review 'tacctl store import --check' and run 'tacctl store import [--force]'`. Only TACACS+ exists in this mode; `backend enable` needs a store.
+- **`tacctl store rollback`** undoes the move into the store: it restores the pre-store `tacquito.yaml` (`/etc/tacctl/backups/legacy/tacquito.yaml.pre-store.<timestamp>`), removes the store and `rendered.json`, and restarts tacquito: legacy read-only mode. Refused while another backend is enabled (disable it first).
+- **Snapshots**: see [Backup Commands](../cli/maintenance.md#backup-commands--tacctl-backup).
