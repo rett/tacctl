@@ -61,6 +61,8 @@ setup() {
     stub_cmd id 'case "$*" in *carol*) echo "carol tac-users tac-readonly" ;; *) echo "alice sudo" ;; esac'
     # The caller has an agent: tacctl ssh never hands it to ssh.
     export SSH_AUTH_SOCK=/tmp/agent.sock
+    # The audit lines say where the caller came from (SSH_CONNECTION's host).
+    export SSH_CONNECTION="198.51.100.7 51234 192.0.2.254 22"
 }
 
 # called <line>: the calls log has exactly this line (no regular expression:
@@ -136,8 +138,8 @@ on_tty() {
 @test "ssh: the session is logged, and ssh's exit status is tacctl's" {
     SUDO_USER=alice on_tty ssh lab-rtr2
     assert_success
-    called "logger -t tacctl -p auth.info ssh user=alice device=lab-rtr2 addr=192.0.2.7"
-    run stub_called "^logger -t tacctl -p auth\.info ssh end user=alice device=lab-rtr2 status=0 duration=[0-9]+$"
+    called "logger -t tacctl -p auth.info ssh user=alice device=lab-rtr2 addr=192.0.2.7 from=198.51.100.7"
+    run stub_called "^logger -t tacctl -p auth\.info ssh end user=alice device=lab-rtr2 status=0 duration=[0-9]+ from=198\.51\.100\.7$"
     assert_success
     SSH_EXIT=3 SUDO_USER=alice on_tty ssh lab-rtr2
     assert_failure 3
@@ -153,7 +155,7 @@ on_tty() {
     SUDO_USER=carol on_tty ssh core-sw1
     assert_failure 1
     assert_output --partial "'carol' has no access to scope 'prod' (device core-sw1)"
-    called "logger -t tacctl -p auth.warning ssh DENY user=carol device=core-sw1 scope=prod reason=scope"
+    called "logger -t tacctl -p auth.warning ssh DENY user=carol device=core-sw1 scope=prod reason=scope from=198.51.100.7"
     run stub_called "^ssh "
     assert_failure
     SUDO_USER=carol on_tty ssh 10.99.0.9
@@ -170,12 +172,12 @@ on_tty() {
     SUDO_USER=alice on_tty ssh stray
     assert_failure 1
     assert_output --partial "'stray' is in no configured scope, so no one may open a session to it."
-    called "logger -t tacctl -p auth.warning ssh DENY user=alice device=stray scope=- reason=unconfigured"
+    called "logger -t tacctl -p auth.warning ssh DENY user=alice device=stray scope=- reason=unconfigured from=198.51.100.7"
     # A local account that is not a tacctl user.
     SUDO_USER=dave on_tty ssh lab-rtr2
     assert_failure 1
     assert_output --partial "'dave' is not a tacctl user"
-    called "logger -t tacctl -p auth.warning ssh DENY user=dave device=lab-rtr2 scope=lab reason=not-a-tacctl-user"
+    called "logger -t tacctl -p auth.warning ssh DENY user=dave device=lab-rtr2 scope=lab reason=not-a-tacctl-user from=198.51.100.7"
     # A disabled tacctl user.
     "$TACCTL_BIN_SCRIPT" user disable alice <<< y > /dev/null
     SUDO_USER=alice on_tty ssh lab-rtr2
@@ -226,7 +228,7 @@ on_tty() {
     assert_output --partial "Compare on the device console: Junos: 'file show /etc/ssh/ssh_host_ed25519_key.pub'"
     assert_output --partial "tacctl device hostkey lab-rtr2 accept"
     assert_output --partial "tacctl device hostkey lab-rtr2 set SHA256:<fingerprint>"
-    called "logger -t tacctl -p auth.warning ssh hostkey-mismatch user=alice device=lab-rtr2 addr=192.0.2.7"
+    called "logger -t tacctl -p auth.warning ssh hostkey-mismatch user=alice device=lab-rtr2 addr=192.0.2.7 from=198.51.100.7"
     # The same key still offered: ssh failed for another reason, nothing added.
     offer ed25519
     SSH_EXIT=255 SUDO_USER=alice on_tty ssh lab-rtr2
@@ -301,8 +303,8 @@ Host web1"
     TACCTL_CONSOLE=0123456789ab SUDO_USER=alice on_tty ssh lab-rtr2 -- show version
     assert_success
     called "ssh -F /dev/null -o PermitLocalCommand=no -o ControlMaster=no -o ClearAllForwardings=yes -o ForwardAgent=no -o EscapeChar=none ${CT} ${PIN_RTR} -l alice -- 192.0.2.7 show version"
-    called "logger -t tacctl -p auth.info ssh user=alice device=lab-rtr2 addr=192.0.2.7 console=0123456789ab"
-    run stub_called "^logger -t tacctl -p auth\.info ssh end user=alice device=lab-rtr2 status=0 duration=[0-9]+ console=0123456789ab$"
+    called "logger -t tacctl -p auth.info ssh user=alice device=lab-rtr2 addr=192.0.2.7 from=198.51.100.7 console=0123456789ab"
+    run stub_called "^logger -t tacctl -p auth\.info ssh end user=alice device=lab-rtr2 status=0 duration=[0-9]+ from=198\.51\.100\.7 console=0123456789ab$"
     assert_success
     # console ssh-escape enable keeps the escape character.
     "$TACCTL_BIN_SCRIPT" console ssh-escape enable > /dev/null
@@ -317,7 +319,7 @@ Host web1"
     assert_output --partial "'oob-con1' has no pinned host key, so the console does not connect to it; an administrator pins it: tacctl device hostkey oob-con1 accept"
     run stub_called "^ssh "
     assert_failure
-    called "logger -t tacctl -p auth.warning ssh DENY user=alice device=oob-con1 scope=prod reason=unpinned console=0123456789ab"
+    called "logger -t tacctl -p auth.warning ssh DENY user=alice device=oob-con1 scope=prod reason=unpinned from=198.51.100.7 console=0123456789ab"
     # ssh options after -- are refused in the console.
     TACCTL_CONSOLE=0123456789ab SUDO_USER=alice on_tty ssh lab-rtr2 -- -o ProxyCommand=sh
     assert_failure 1
