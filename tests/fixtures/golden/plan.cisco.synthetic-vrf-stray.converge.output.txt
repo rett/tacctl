@@ -1,0 +1,146 @@
+!!!!! dev-cisco-synthetic-vrf-stray  192.0.2.21  scope lab  cisco (IOS-XE and IOS 15 syntax, TACACS+) !!!!!
+! Based on the pull of 2026-10-10 14:02 by alice over ssh (18 minutes ago; the login could see
+! secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5). Checked on a device: IOS 12.4(15) (a
+! 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references.
+! THIS OUTPUT HOLDS THE SNMP COMMUNITY OF SCOPE lab: do not keep it in a file or a scrollback.
+!
+! What is irregular on dev-cisco-synthetic-vrf-stray (31 items; the paste fixes 12, leaves 19):
+!  1. aaa      ACCESS     missing: the console's own login list CONSOLE (local only, so a local user
+!                         always gets in there) (aaa authentication login CONSOLE local). Fixed by
+!                         region line 3.
+!  2. aaa      COSMETIC   missing: accounting of commands 15 (aaa accounting commands 15 default
+!                         start-stop group LAB-TACACS). Fixed by region line 4.
+!  3. aaa      ACCESS     different: the login method of line con 0: login authentication CONSOLE (the
+!                         device has: the login method of line con 0: login authentication default)
+!                         (line con 0 > login authentication CONSOLE). Fixed by region line 18.
+!  4. snmp     MONITORING missing: a trap host of the SNMP block of scope 'lab': 192.0.2.61 vrf MGMT
+!                         version 2c <secret:2> (snmp-server host 192.0.2.61 vrf MGMT version 2c
+!                         <secret:2>). Fixed by region line 6.
+!  5. snmp     MONITORING different: a trap host of the SNMP block of scope 'lab': 192.0.2.62 informs
+!                         version 2c <secret:2> (the device has: a trap host of the SNMP block of
+!                         scope 'lab': 192.0.2.62 informs version 2c <secret:2> config) (snmp-server
+!                         host 192.0.2.62 informs version 2c <secret:2>). Fixed by region line 7.
+!  6. snmp     MONITORING different: a trap host of the SNMP block of scope 'lab': 192.0.2.63 version
+!                         2c <secret:2> udp-port 1162 config (the device has: a trap host of the SNMP
+!                         block of scope 'lab': 192.0.2.63 version 2c <secret:2> udp-port 1162)
+!                         (snmp-server host 192.0.2.63 version 2c <secret:2> udp-port 1162 config).
+!                         Fixed by region line 8.
+!  7. snmp     MONITORING extra: an SNMP community (snmp-server community <other:1> RO TACCTL-SNMP).
+!                         Left alone (its name is the secret and is not known to tacctl).
+!  8. snmp     MONITORING extra: SNMP traps are sourced from the interface loopback0 (snmp-server
+!                         trap-source loopback0). Left alone. To remove it later: no snmp-server
+!                         trap-source
+!  9. snmp     MONITORING extra: snmp-server enable traps config. Left alone. To remove it later: no
+!                         snmp-server enable traps config
+! 10. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <other:2>. Left alone (its
+!                         name is the secret and is not known to tacctl).
+! 11. snmp     MONITORING extra: snmp-server host 192.0.2.61 version 2c <secret:2>. Left alone (the
+!                         device's own entry, not the block's: the block's host is of another vrf,
+!                         kind or udp-port).
+! 12. snmp     MONITORING extra: snmp-server host 192.0.2.62 version 2c <secret:2>. Left alone (the
+!                         device's own entry, not the block's: the block's host is of another vrf,
+!                         kind or udp-port).
+! 13. snmp     MONITORING extra: snmp-server host 192.0.2.63 version 2c <secret:2>. Left alone (the
+!                         device's own entry, not the block's: the block's host is of another vrf,
+!                         kind or udp-port).
+! 14. snmp     MONITORING extra: snmp-server host 192.0.2.64 vrf OTHER version 2c <other:2>. Left
+!                         alone (its name is the secret and is not known to tacctl).
+! 15. system   COSMETIC   different: the domain name in vrf MGMT is mgmt.example.net (the device has:
+!                         the domain name in vrf MGMT is old.example.net) (ip domain name vrf MGMT
+!                         mgmt.example.net). Fixed by region line 10.
+! 16. system   COSMETIC   missing: the search domain mgmt.example.net in vrf MGMT (ip domain list vrf
+!                         MGMT mgmt.example.net). Fixed by region line 11.
+! 17. system   COSMETIC   missing: the name server 192.0.2.53 in vrf MGMT (ip name-server vrf MGMT
+!                         192.0.2.53). Fixed by region line 12.
+! 18. system   COSMETIC   different: the NTP server 192.0.2.123: prefer (the device has: the NTP
+!                         server 192.0.2.123) (ntp server 192.0.2.123 prefer). Fixed by region line
+!                         13.
+! 19. system   COSMETIC   different: the NTP server 192.0.2.123 in vrf MGMT: prefer version 3 (the
+!                         device has: the NTP server 192.0.2.123 in vrf MGMT) (ntp server vrf MGMT
+!                         192.0.2.123 prefer version 3). Fixed by region line 14.
+! 20. system   COSMETIC   missing: the NTP server ntp2.example.net in vrf OOB (ntp server vrf OOB
+!                         ntp2.example.net). Fixed by region line 15.
+! 21. system   COSMETIC   extra: the time zone is CET 1 0 (clock timezone CET 1 0). Left alone (the
+!                         system block only adds, it never removes). To remove it later: no clock
+!                         timezone
+! 22. system   COSMETIC   extra: the domain name in vrf OTHER is other.example.net (ip domain name vrf
+!                         OTHER other.example.net). Left alone (the system block only adds, it never
+!                         removes). To remove it later: no ip domain name vrf OTHER
+! 23. system   COSMETIC   extra: the search domain mgmt.example.net (ip domain list mgmt.example.net).
+!                         Left alone (the system block only adds, it never removes). To remove it
+!                         later: no ip domain list mgmt.example.net
+! 24. system   COSMETIC   extra: the search domain other.example.net in vrf OTHER (ip domain list vrf
+!                         OTHER other.example.net). Left alone (the system block only adds, it never
+!                         removes). To remove it later: no ip domain list vrf OTHER other.example.net
+! 25. system   COSMETIC   extra: the name server 192.0.2.54 (ip name-server 192.0.2.54). Left alone
+!                         (the system block only adds, it never removes). To remove it later: no ip
+!                         name-server 192.0.2.54
+! 26. system   COSMETIC   extra: the name server 198.51.100.53 in vrf OTHER (ip name-server vrf OTHER
+!                         198.51.100.53). Left alone (the system block only adds, it never removes).
+!                         To remove it later: no ip name-server vrf OTHER 198.51.100.53
+! 27. system   COSMETIC   extra: the login banner of 1 lines, 16 characters (banner login <message: 1
+!                         lines, 16 characters, id 9716067a>). Left alone (the system block only adds,
+!                         it never removes). To remove it later: no banner login
+! 28. system   COSMETIC   extra: ntp source Loopback0. Left alone (the system block only adds, it
+!                         never removes). To remove it later: no ntp source Loopback0
+! 29. system   COSMETIC   extra: ntp master 3. Left alone (the system block only adds, it never
+!                         removes). To remove it later: no ntp master 3
+! 30. system   COSMETIC   extra: the NTP server 198.51.100.123 (ntp server 198.51.100.123). Left alone
+!                         (the system block only adds, it never removes). To remove it later: no ntp
+!                         server 198.51.100.123
+! 31. system   COSMETIC   extra: the NTP server 198.51.100.123 in vrf OTHER (ntp server vrf OTHER
+!                         198.51.100.123). Left alone (the system block only adds, it never removes).
+!                         To remove it later: no ntp server vrf OTHER 198.51.100.123
+! Consistent: roles, mgmt-acl. Not planned: netconf, breakglass.
+! Secrets: 2 present on the device, not changed (--secrets pushes them).
+! Cleanup (--converge): cleanup comes after this region is pasted and verified: pull the device, then
+! plan --converge again.
+! The change is live when the paste ends. NOTHING rolls it back by itself. Keep a second terminal
+! logged in at privilege 15 until the end.
+! Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the
+! echo for '% Invalid'. Pasting the region twice is harmless.
+!
+! Type this first, on dev-cisco-synthetic-vrf-stray, and check the name:   show version | include uptime
+! The prompt must end in # (privileged mode), not in (config)#, before you paste: a prompt ending in >
+! means type enable first, a prompt with (config) in it means a configuration session is open: type
+! end first.
+!
+!!!!! PASTE FROM HERE: dev-cisco-synthetic-vrf-stray !!!!!
+configure terminal
+! aaa: the method lists tacctl renders, each replaced by the rendered line
+aaa authentication login CONSOLE local
+aaa accounting commands 15 default start-stop group LAB-TACACS
+! snmp: the SNMP block of scope 'lab' (its communities, access lists, trap hosts and 'enable traps' lines)
+snmp-server host 192.0.2.61 vrf MGMT version 2c poller-traps
+snmp-server host 192.0.2.62 informs version 2c poller-traps
+snmp-server host 192.0.2.63 version 2c poller-traps udp-port 1162 config
+! system: the statements of the system block of scope 'lab'
+ip domain name vrf MGMT mgmt.example.net
+ip domain list vrf MGMT mgmt.example.net
+ip name-server vrf MGMT 192.0.2.53
+ntp server 192.0.2.123 prefer
+ntp server vrf MGMT 192.0.2.123 version 3 prefer
+ntp server vrf OOB ntp2.example.net
+! aaa: the login method of the console and vty lines
+line con 0
+ login authentication CONSOLE
+end
+!!!!! PASTE TO HERE: dev-cisco-synthetic-vrf-stray !!!!!
+!
+! If any line printed "% Invalid" or "% Error", stop and undo it: tacctl device config plan
+! dev-cisco-synthetic-vrf-stray --backout (its own region, to paste in the second terminal).
+!
+! Check now (nothing rolls this back by itself):
+!   From the tacctl server:   tacctl device config pull dev-cisco-synthetic-vrf-stray --diff     (aaa, snmp and system: ok)
+!   In the second terminal:   open a NEW ssh session to dev-cisco-synthetic-vrf-stray as yourself, then: terminal length 0, show privilege (must say 15)
+! When both checks are fine, type this one command yourself:  write memory
+!
+! To undo: tacctl device config plan dev-cisco-synthetic-vrf-stray --backout (tacctl keeps this
+! plan's back-out: after the check pull has replaced the picture, the command still prints this
+! plan's, and says which pull it undoes, until the next plan with changes)
+! Do not: 'write memory' before the check; paste outside the banners; paste into another device;
+! paste on a console more than twenty lines at a time; keep this output in a file after the paste
+! when it holds a secret.
+! Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold dev-cisco-synthetic-vrf-stray --reason "..."
+! then log in as the device's local account (console: local login, then 'enable' with the local secret),
+! fix or back out, and the superuser runs: tacctl breakglass release dev-cisco-synthetic-vrf-stray

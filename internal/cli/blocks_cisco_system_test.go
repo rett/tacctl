@@ -114,7 +114,11 @@ func TestScopeBlockCiscoSystemRefusals(t *testing.T) {
 		{"every delimiter", "banner login <<'EOF'\nHello-Bn3 ^ ~ % # @ $ &\nEOF\n", "holds every delimiter character"},
 		{"a key placeholder", "ntp authentication-key 5 md5 <secret>\n", "is a placeholder"},
 		{"a key of another algorithm", "ntp authentication-key 5 sha1 key-Bn3\n", "takes md5 <string>"},
-		{"a vrf server", "ntp server vrf MGMT 192.0.2.5\n", "'vrf' is not in the grammar"},
+		{"a vrf as the last word", "ntp server vrf\n", "line 1: error: ntp server: 'vrf' takes the name of the vrf after it"},
+		{"a vrf name with a space", "ip name-server vrf \"MG MT\" 192.0.2.5\n", "a quote is not accepted"},
+		{"a vrf name off the alphabet", "ip domain name vrf MG/MT lab.example.net\n", "the vrf name of ip domain name holds a character other than"},
+		{"a vrf and no value", "ip domain list vrf MGMT\n", "ip domain list vrf takes one value and nothing else"},
+		{"a vrf domain name twice", "ip domain name vrf MGMT a.example.net\nip domain name vrf MGMT b.example.net\n", "line 2: error: ip domain name is stated twice for one vrf"},
 		{"an abbreviated source", "ntp server 192.0.2.5 source Lo0\n", "has its type abbreviated"},
 		{"a banner of another type", "banner motd <<'EOF'\nHello-Bn3\nEOF\n", "only 'banner login'"},
 		{"a Junos statement", "set system domain-name lab.example.net\n", "statements only"},
@@ -249,6 +253,7 @@ func TestBlockCiscoSystemCheckAgainstADevice(t *testing.T) {
 const (
 	adoptCiscoSystem = "banner exec ^C\nbanner login ^C\nip domain name lab.example.net\nip domain list example.net\nip domain lookup source-interface Loopback0\n" +
 		"ip name-server 192.0.2.53 192.0.2.54\nip name-server vrf MGMT 192.0.2.99\nclock timezone CET 1 0\n" +
+		"ip domain name vrf MGMT mgmt.example.net\n" +
 		"ntp authentication-key 5 md5 0822455D0A16 7\nntp authentication-key 6 md5 SomeOtherKey9\nntp authenticate\nntp trusted-key 5\n" +
 		"ntp master 3\nntp server 192.0.2.123 key 5 prefer\nntp server vrf MGMT 192.0.2.77\n"
 	adoptCiscoBanner = "banner login ^C\nAuthorized, device Wd2.\n! Activity.\n^C\n"
@@ -279,6 +284,7 @@ func TestAdoptCiscoSystemDraftFlow(t *testing.T) {
 		"banner login <<'EOF'\nAuthorized, device Wd2.\n! Activity.\nEOF\n",
 		"ip domain name lab.example.net\n", "ip domain list example.net\n", "clock timezone CET 1 0\n",
 		"ip name-server 192.0.2.53\nip name-server 192.0.2.54\n",
+		"ip name-server vrf MGMT 192.0.2.99\n", "ip domain name vrf MGMT mgmt.example.net\n", "ntp server vrf MGMT 192.0.2.77\n",
 		"ntp trusted-key 5\n", "ntp server 192.0.2.123 version", "ntp authenticate\n", "ntp master",
 		"# left out: ntp authentication-key 5 holds the device's own key string",
 		"# left out: ntp authentication-key 6 holds the device's own key string",
@@ -299,12 +305,12 @@ func TestAdoptCiscoSystemDraftFlow(t *testing.T) {
 			statements = append(statements, l)
 		}
 	}
-	for _, bad := range []string{"0822455D0A16", "SomeOtherKey9", "MGMT", "ntp master", "lookup"} {
+	for _, bad := range []string{"0822455D0A16", "SomeOtherKey9", "ntp master", "lookup"} {
 		if strings.Contains(strings.Join(statements, "\n"), bad) {
 			t.Errorf("the draft holds %q:\n%s", bad, seed)
 		}
 	}
-	for _, bad := range []string{"0822455D0A16", "SomeOtherKey9", "MGMT"} {
+	for _, bad := range []string{"0822455D0A16", "SomeOtherKey9"} {
 		if strings.Contains(seed, bad) {
 			t.Errorf("the draft's comments hold %q:\n%s", bad, seed)
 		}
@@ -356,5 +362,65 @@ func TestTrapSourceThroughTheVerbs(t *testing.T) {
 	out = sb.blk("", "lab", "cisco", "list")
 	if !strings.Contains(out, "snmp     in force") || !strings.Contains(out, "nothing") && !strings.Contains(out, "statement") {
 		t.Logf("list:\n%s", out)
+	}
+}
+
+// The vrf forms of the system block and the vrf and informs forms of a trap
+// host are statements of the block: checked, stored, shown and rendered in
+// the walkthrough; a vrf form with no name is refused by line.
+func TestScopeBlockCiscoVRFForms(t *testing.T) {
+	sb := newSandbox(t, true)
+	const system = "ip domain name vrf MGMT mgmt.example.net\nip domain list vrf MGMT mgmt.example.net\n" +
+		"ip name-server vrf MGMT 192.0.2.53 192.0.2.54\nntp server vrf MGMT 192.0.2.123 prefer version 3\nntp server 192.0.2.123\n" +
+		"no ntp server vrf OOB\n"
+	f := sb.blockFile("system.txt", system)
+	out := sb.blk("", "lab", "cisco", "check", "system", "--file", f)
+	for _, want := range []string{"Owned by tacctl once in force: 6 statements", "vrf MGMT must exist on the device: tacctl does not create a vrf", "ok."} {
+		if sb.code != 0 || !strings.Contains(out, want) {
+			t.Errorf("check lacks %q (exit %d):\n%s", want, sb.code, out)
+		}
+	}
+	sb.blk("", "lab", "cisco", "set", "system", "--file", f, "-y")
+	sb.expect(0, "is set", "")
+	out = sb.blk("", "lab", "cisco", "show", "system")
+	for _, want := range []string{"ip domain name vrf MGMT mgmt.example.net\n", "ip domain list vrf MGMT mgmt.example.net\n",
+		"ip name-server vrf MGMT 192.0.2.53\nip name-server vrf MGMT 192.0.2.54\n", "ntp server vrf MGMT 192.0.2.123 version 3 prefer\n",
+		"no ntp server vrf OOB\n"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("show lacks %q:\n%s", want, out)
+		}
+	}
+
+	const snmp = "snmp-server host 192.0.2.61 vrf MGMT version 2c host-secret-Kq7\n" +
+		"snmp-server host 192.0.2.62 informs version 2c host-secret-Kq7\n" +
+		"snmp-server host 192.0.2.63 version 2c host-secret-Kq7 udp-port 1162 config\n"
+	f = sb.blockFile("snmp.txt", snmp)
+	out = sb.blk("", "lab", "cisco", "check", "snmp", "--file", f)
+	if sb.code != 0 || !strings.Contains(out, "3 trap hosts") || !strings.Contains(out, "vrf MGMT must exist on the device") {
+		t.Errorf("check snmp (exit %d):\n%s", sb.code, out)
+	}
+	noneOf(t, "check snmp", out+sb.stderr(), "host-secret-Kq7")
+	sb.blk("", "lab", "cisco", "set", "snmp", "--file", f, "-y")
+	sb.expect(0, "is set", "")
+	out = sb.blk("", "lab", "cisco", "show", "snmp")
+	for _, want := range []string{"snmp-server host 192.0.2.61 vrf MGMT version 2c <secret:1>\n", "snmp-server host 192.0.2.62 informs version 2c <secret:1>\n",
+		"snmp-server host 192.0.2.63 version 2c <secret:1> udp-port 1162 config\n"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("show snmp lacks %q:\n%s", want, out)
+		}
+	}
+	noneOf(t, "show snmp", out, "host-secret-Kq7")
+
+	// the walkthrough carries the lines as typed
+	sb.scopeSNMP("", "lab", "version", "v2c")
+	sb.scopeSNMP("lab-own-community\n", "lab", "community", "--stdin")
+	sb.dev("", "add", "rt1", "192.168.1.5", "--vendor", "cisco", "--no-host-key", "--no-lookup")
+	w := plain(sb.cfgRun("", []string{"config", "cisco", "--scope", "lab", "--name", "rt1"}, route))
+	for _, want := range []string{"ip domain name vrf MGMT mgmt.example.net\n", "ip name-server vrf MGMT 192.0.2.54\n",
+		"ntp server vrf MGMT 192.0.2.123 version 3 prefer\n", "snmp-server host 192.0.2.62 informs version 2c host-secret-Kq7\n",
+		"snmp-server host 192.0.2.61 vrf MGMT version 2c host-secret-Kq7\n"} {
+		if !strings.Contains(w, want) {
+			t.Errorf("the walkthrough lacks %q:\n%s", want, w)
+		}
 	}
 }

@@ -310,12 +310,19 @@ func iosKey(path []string) (string, bool) {
 			leaf[0] == "ip" && len(leaf) == 3 && leaf[1] == "domain-name":
 			// the legacy spelling is the same command
 			return "ip domain name", true
+		case leaf[0] == "ip" && len(leaf) >= 5 && leaf[1] == "domain" && leaf[2] == "name" && leaf[3] == "vrf":
+			// one domain name per vrf: a typed one replaces the vrf's
+			return "ip domain name vrf " + leaf[4], true
 		case leaf[0] == "clock" && len(leaf) >= 3 && leaf[1] == "timezone":
 			return "clock timezone", true
 		case leaf[0] == "ntp" && len(leaf) >= 3 && leaf[1] == "server" && leaf[2] != "vrf" && leaf[2] != "ip" && leaf[2] != "ipv6":
 			// one line per NTP server: a typed one replaces the device's of
 			// the same host, whatever its options
 			return "ntp server " + leaf[2], true
+		case leaf[0] == "ntp" && len(leaf) >= 5 && leaf[1] == "server" && leaf[2] == "vrf" && leaf[4] != "ip" && leaf[4] != "ipv6":
+			// the same, for a server reached in a vrf (another object than
+			// the host without one)
+			return "ntp server vrf " + leaf[3] + " " + leaf[4], true
 		case leaf[0] == "snmp-server" && len(leaf) >= 3 && leaf[1] == "community" && leaf[2] != secretMark:
 			// one line per community: a typed one replaces it (an older
 			// record's bare mark stands for every community, so it keys none)
@@ -325,7 +332,7 @@ func iosKey(path []string) (string, bool) {
 			// whatever its version, port and types (0.2.7, the SNMP block's
 			// hosts)
 			if i := devconf.SNMPHostCommunity(leaf); i > 0 && leaf[i] != secretMark {
-				return "snmp-server host " + leaf[2] + " " + leaf[i], true
+				return "snmp-server host " + devconf.SNMPHostID(leaf, i, leaf[i]), true
 			}
 		}
 		return "", false
@@ -804,15 +811,7 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 				}
 			}
 			if strings.HasPrefix(undo.Text, "snmp-server host ") {
-				// a trap host names the community its notifications are sent
-				// with: the same holds
-				undo.Secret, undo.HasValue = true, l.HasValue
-				undo.Elided = undo.Text
-				if f := strings.Fields(l.Elided); len(f) >= 4 {
-					if i := devconf.SNMPHostCommunity(f); i > 0 {
-						undo.Elided = strings.Join(f[:i+1], " ")
-					}
-				}
+				undo = iosHostUndo(l)
 			}
 		case len(l.Context) == 0 && strings.HasPrefix(l.Text, "tacacs-server host "):
 			undo.Text = hostEntry(strings.Fields(l.Text))
@@ -1140,10 +1139,18 @@ func iosSystemUndo(text string) (string, bool) {
 	switch {
 	case f[0] == "banner" && f[1] == "login":
 		return "banner login", true
+	case f[0] == "ip" && len(f) >= 5 && f[1] == "domain" && f[2] == "name" && f[3] == "vrf":
+		return strings.Join(f[:5], " "), true
+	case f[0] == "ip" && len(f) >= 6 && f[1] == "domain" && f[2] == "list" && f[3] == "vrf":
+		return strings.Join(f[:6], " "), true
 	case f[0] == "ip" && len(f) >= 4 && f[1] == "domain" && f[2] == "name":
 		return "ip domain name", true
 	case f[0] == "ip" && len(f) >= 4 && f[1] == "domain" && f[2] == "list":
 		return strings.Join(f[:4], " "), true
+	case f[0] == "ip" && len(f) >= 5 && f[1] == "name-server" && f[2] == "vrf":
+		return strings.Join(f[:5], " "), true
+	case f[0] == "ntp" && len(f) >= 5 && f[1] == "server" && f[2] == "vrf":
+		return strings.Join(f[:5], " "), true
 	case f[0] == "clock" && f[1] == "timezone":
 		return "clock timezone", true
 	case f[0] == "ip" && f[1] == "name-server" && len(f) >= 3:
@@ -1278,17 +1285,44 @@ func undoOfSecret(path []string, l Line) string {
 		f := strings.Fields(t)
 		return strings.Join(f[:3], " ")
 	case strings.HasPrefix(t, "snmp-server host "):
-		// the entry is removed by its address and community (the version
-		// stays as typed: 'no snmp-server host A version 2c C')
-		f := strings.Fields(t)
-		if i := devconf.SNMPHostCommunity(f); i > 0 {
-			return strings.Join(f[:i+1], " ")
-		}
+		// the entry as IOS keys it, without its notification types
+		return strings.Join(hostNoWords(strings.Fields(t)), " ")
 	}
 	if f := strings.Fields(t); len(f) > 0 {
 		return f[0]
 	}
 	return t
+}
+
+// hostNoWords are the words of the 'no' line that takes an 'snmp-server host'
+// line's entry away: the line up to and including its 'udp-port N', with the
+// version and the kind as typed and without the notification types. IOS keeps
+// a host of another kind or port as an entry of its own, so the kind and the
+// port are part of the line, and a 'no' that names the types removes only
+// them.
+func hostNoWords(f []string) []string {
+	i := devconf.SNMPHostCommunity(f)
+	if i < 0 {
+		return f
+	}
+	n := i + 1
+	if n+1 < len(f) && f[n] == "udp-port" {
+		n += 2
+	}
+	return f[:n]
+}
+
+// iosHostUndo is the back-out line of a typed 'snmp-server host' line: 'no'
+// and the line as hostNoWords cuts it. A host names the community its
+// notifications are sent with, so the line is a secret like the line it
+// undoes, with the community as its label where it is shown.
+func iosHostUndo(l Line) Line {
+	text := strings.Join(hostNoWords(strings.Fields(l.Text)), " ")
+	undo := Line{Op: OpNo, Text: text, Secret: true, HasValue: l.HasValue, Elided: text}
+	if f := strings.Fields(l.Elided); devconf.SNMPHostCommunity(f) > 0 {
+		undo.Elided = strings.Join(hostNoWords(f), " ")
+	}
+	return undo
 }
 
 // hostEntry is the text a 'no' line takes to remove a server entry, as the

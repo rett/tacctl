@@ -5026,10 +5026,12 @@ and
 comment lines and blank lines:
 .B "snmp\-server community <string> RO|RW [<acl>]"
 (the access list is a name, never a number),
-.B "snmp\-server host <address> [version 1|2c] <community> [udp\-port <n>] [<type> ...]"
-(a trap host; a
-.B vrf
-form is refused),
+.B "snmp\-server host <address> [vrf <name>] [informs|traps] [version 1|2c] <community> [udp\-port <n>] [<type> ...]"
+(a trap host, one object per address, vrf, kind, udp\-port and community;
+.B informs
+need
+.BR "version 2c" ;
+SNMPv3 is refused),
 .B "snmp\-server enable traps [<type> [<subtype> ...]]"
 .B "snmp\-server trap\-source <interface>"
 (one, the interface written in full, as the device stores it:
@@ -5055,17 +5057,17 @@ block is configuration lines too, with the login banner as a heredoc:
 .BR "banner login <<'EOF'" ,
 its lines, and
 .BR EOF ;
-.B "ip domain name <name>"
+.B "ip domain name [vrf <name>] <name>"
 and
-.B "ip domain list <name>"
+.B "ip domain list [vrf <name>] <name>"
 (the older spellings
 .B ip domain\-name
 and
 .B ip domain\-list
 are read as these);
 .B "clock timezone <zone> <hours> [<minutes>]";
-.B "ip name\-server <address> [<address> ...]";
-.B "ntp server <address\-or\-name> [prefer] [version <1\-4>] [key <n>] [source <interface>]";
+.B "ip name\-server [vrf <name>] <address> [<address> ...]";
+.B "ntp server [vrf <name>] <address\-or\-name> [prefer] [version <1\-4>] [key <n>] [source <interface>]";
 .B "ntp authentication\-key <n> md5 <string>";
 .B "ntp trusted\-key <n>"
 and
@@ -5079,10 +5081,14 @@ alone on a line), where
 is the first of
 .B "^ ~ % # @ $ &"
 that its text does not contain; a banner is at most 20 lines of 80 characters,
-ASCII, with no tab or control character. A
-.B vrf
-form of a name server, an NTP server or the domain name is not in a block, and
-neither is an IPv6 NTP server.
+ASCII, with no tab or control character. A statement that names a vrf is
+another object than the same statement without it (the domain name is one per
+vrf), a vrf's name is letters, digits,
+.BR . ,
+.B _
+and
+.BR \- ,
+and an IPv6 NTP server is not in a block.
 .PP
 The blocks of a scope are the files under
 .IR /etc/tacctl/blocks/\fIscope\fR/\fIvendor\fR ,
@@ -5111,9 +5117,11 @@ access list; another community of the device is kept and listed as unmanaged)
 and a standard access list it defines (whole: an entry the block does not state
 is removed with its own
 .B no
-line); a list it only names is the device's own and is kept. Trap hosts (by
-address and community, compared with their options; IOS leaves out the
-default version, kind and port) and
+line); a list it only names is the device's own and is kept. Trap hosts (an
+entry of an address, vrf, kind, udp\-port and community, as IOS keeps it, so
+one address as traps and as informs is two hosts; the version and the types are
+replaced in place when they differ, and IOS leaves out the default version,
+kind and port) and
 .B enable traps
 lines (one counts as present when the device enables it, in the expanded form
 it prints; a line with no type is present when the device has any) are only
@@ -5137,10 +5145,17 @@ names
 and the saved configuration. IOS has no confirmed commit, so the plan of an IOS
 device is pasted line by line and undone with a back\-out of
 .B no
-lines. The report marks the section of an IOS block in the plan as not checked
-on a device. An IOS device's VRF forms are not in a block, and the device's own
-such lines stay unmanaged
+lines (a trap host's is
+.B no
+and its line up to its
+.BR udp\-port ,
+without the types). The report marks the section of an IOS block in the plan as
+not checked on a device. A statement that names a vrf is another object than
+the same statement without it, and a host of another vrf, kind or port is
+another entry; the device's own stay
 .RB ( "ok (+N unmanaged)" ).
+tacctl does not create a vrf: the device refuses a block that names one it
+lacks when the plan is pasted.
 .PP
 A block holds community strings, so every output but
 .B "show \-\-reveal"

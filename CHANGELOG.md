@@ -76,6 +76,36 @@ current behaviour; this file is where history lives.
    without the option and so reads `differs`; the restore point's caveat says
    that a 12.4 `configure replace` can stop at an `ntp server` with options.
 
+9. **The IOS `system` and `snmp` blocks take the VRF forms and the `informs`
+   host kind.** `ntp server vrf <name> <host> ...`, `ip name-server vrf <name>
+   <address> ...`, `ip domain name vrf <name> <name>` and `ip domain list vrf
+   <name> <name>` in a system block, and `snmp-server host <address> [vrf
+   <name>] [informs|traps] [version 1|2c] <community> ...` in an snmp block,
+   are statements of the block (SNMPv3 stays refused, and `informs` needs
+   `version 2c`, which `check` enforces). The vrf is part of the object: a
+   line with it is satisfied by no line without it and the other way round,
+   `ip domain name` is one per vrf, and a `no` line names the vrf it takes
+   out. A trap host is the entry IOS keeps: one object per address, vrf,
+   kind, `udp-port` (162 is the default) and community. One address as traps
+   and as informs, or on two ports, is several hosts, which a block states one
+   line each, `adopt` takes as they are and a device's own beside the block's
+   stay kept and listed; the version and the notification types are
+   attributes, replaced in place when they differ (this also holds for a
+   0.2.7 block: a host the block states on another port than the device's is
+   typed beside it, no longer in its place). The compare reads the stored
+   forms of IOS 15.6 (a vrf's name servers one line each) and IOS-XE 16.7
+   (one line), and the two blanks IOS prints before `config` in `udp-port
+   1162  config`. The plan's undo of a trap host is `no` and its line up to
+   its `udp-port`, without the types (`no snmp-server host <address> C` does
+   not take away an informs host or one with a `udp-port`); a vrf statement
+   is undone as `no ntp server vrf <name> <host>`, `no ip name-server vrf
+   <name> <address>`, `no ip domain name vrf <name>` or `no ip domain list vrf
+   <name> <name>`. A device's own `ip domain name` is kept when the block
+   states only a vrf's. `check` notes each vrf a block names: tacctl does not
+   create one, and the device refuses a line that names one it lacks. The
+   report words name the vrf (`the NTP server <host> in vrf <name>`), and a
+   device's host of another vrf, kind or port is reported as its own entry.
+
 ## 0.2.7 (2026-10-12)
 
 1. **The break-glass section compares login names without regard to case, and says so.**

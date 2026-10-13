@@ -65,28 +65,37 @@ var (
 	notRendered = func(_ string, prefix []string, exp *renderedSet) bool { return !exp.has(prefix) }
 	// a statement the rendering has nothing of
 	always = func(string, []string, *renderedSet) bool { return true }
-	// an IOS trap host of an address and community the rendering (a block)
-	// does not state: a host the rendering states with other options is a
-	// difference, which the plan replaces in place. The bare mark of an older
-	// record cannot be told apart, and is left alone as it always was.
+	// an IOS trap host (an entry of an address, vrf, kind, udp-port and
+	// community) the rendering (a block) does not state: a host the rendering
+	// states with another version or other types is a difference, which the
+	// plan replaces in place. The bare mark of an older record cannot be told
+	// apart, and is left alone as it always was.
 	otherHost = func(words []string, exp *renderedSet) bool {
 		i := SNMPHostCommunity(words)
 		if i < 0 {
 			return true
 		}
-		return !exp.hosts[words[2]+" "+words[i]]
+		return !exp.hosts[SNMPHostID(words, i, words[i])]
 	}
 	// an IOS NTP server the rendering (a system block) does not state: one
 	// it states with other options is a difference, which the plan replaces
-	// in place. A vrf form is the device's own: its third word is no host of
-	// the rendering.
+	// in place. A host in a vrf is another object than the same host without
+	// one.
 	otherNTPServer = func(words []string, exp *renderedSet) bool {
-		return len(words) < 3 || !exp.ntp[words[2]]
+		id := ntpServerID(words)
+		return id == "" || !exp.ntp[id]
 	}
-	// the IOS domain name: the device's own where the rendering states none,
-	// and its vrf form (another object) always
+	// the IOS domain name: the device's own where the rendering states none
+	// for the same vrf (the one without a vrf and each vrf's are objects of
+	// their own: a rendering that states only a vrf's leaves the global one
+	// to the device)
 	otherDomainName = func(words []string, exp *renderedSet) bool {
-		return len(words) >= 4 && words[3] == "vrf" || !exp.has(words[:3])
+		if len(words) >= 5 && words[3] == "vrf" {
+			return !exp.has(words[:5])
+		}
+		return !slices.ContainsFunc(exp.words, func(w []string) bool {
+			return len(w) >= 4 && w[0] == "ip" && w[1] == "domain" && w[2] == "name" && w[3] != "vrf"
+		})
 	}
 )
 
@@ -157,8 +166,12 @@ var keptShapes = map[string][]keptShape{
 		// statement only where the rendering says nothing of the same object.
 		{Row: "ios.system.banner", Pattern: "banner login", keep: notRendered},
 		{Row: "ios.system.domain-name", Pattern: "ip domain name", keepStmt: otherDomainName},
+		// a vrf form is an object of its own (the shape with the vrf comes
+		// first, the pattern of the list without one would take its words)
+		{Row: "ios.system.domain-list", Pattern: "ip domain list vrf $ $", keep: notRendered},
 		{Row: "ios.system.domain-list", Pattern: "ip domain list $", keep: notRendered},
 		{Row: "ios.system.timezone", Pattern: "clock timezone", keep: notRendered},
+		{Row: "ios.system.name-server", Pattern: "ip name-server vrf $ $", keep: notRendered},
 		{Row: "ios.system.name-server", Pattern: "ip name-server $", keep: notRendered},
 		{Row: "ios.system.ntp-server", Pattern: "ntp server $", keepStmt: otherNTPServer},
 		{Row: "ios.system.ntp-key", Pattern: "ntp authentication-key $", keep: notRendered},
@@ -195,8 +208,8 @@ type renderedSet struct {
 	// those under 'snmp trap-group' that a configuration block sets (the
 	// structured settings have no trap group).
 	community, trapGroup map[string]bool
-	// hosts are the trap hosts the rendering sets, by address and the label
-	// of their community (IOS).
+	// hosts are the trap hosts the rendering sets, by SNMPHostID (address, vrf,
+	// kind, udp-port and the label of their community; IOS).
 	hosts map[string]bool
 	// ntp are the NTP servers the rendering sets, by host in lower case
 	// (IOS).
@@ -231,9 +244,10 @@ func newRenderedSet(fam string, section devices.Section, exp []stmt, lb *labels)
 			case len(f) >= 3 && f[0] == "snmp-server" && f[1] == "community":
 				rs.community[lb.of(f[2])] = true
 			case SNMPHostCommunity(f) > 0:
-				rs.hosts[f[2]+" "+lb.of(f[SNMPHostCommunity(f)])] = true
+				i := SNMPHostCommunity(f)
+				rs.hosts[SNMPHostID(f, i, lb.of(f[i]))] = true
 			case len(f) >= 3 && f[0] == "ntp" && f[1] == "server":
-				rs.ntp[strings.ToLower(f[2])] = true
+				rs.ntp[ntpServerID(f)] = true
 			}
 		}
 		return rs

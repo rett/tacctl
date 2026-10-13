@@ -177,9 +177,10 @@ func TestCiscoBlockWordsAndNote(t *testing.T) {
 }
 
 // (c) The block's objects in other shapes: the stray entry goes under its own
-// list, a community of another access and a host with other options are
-// retyped in place and never removed; the back-out types the device's lines
-// again by value.
+// list, a community of another access is retyped in place and never removed,
+// and a host of another udp-port is another entry (typed beside the device's,
+// which is kept); the back-out types the device's lines again by value and
+// takes the added host away by its entry.
 func TestCiscoBlockStrayShapes(t *testing.T) {
 	f := fixtureNamed(t, "cisco.synthetic-block-stray")
 	d := planI(t, f, nil, Options{Scope: "lab"})
@@ -198,10 +199,15 @@ func TestCiscoBlockStrayShapes(t *testing.T) {
 	for _, l := range iosBackout(d) {
 		back = append(back, l.Text)
 	}
-	for _, w := range []string{"snmp-server community poller-ro RW POLLERS", "snmp-server host 192.0.2.61 version 2c poller-traps udp-port 1162"} {
+	for _, w := range []string{"snmp-server community poller-ro RW POLLERS", "snmp-server host 192.0.2.61 version 2c poller-traps"} {
 		if !slices.Contains(back, w) {
 			t.Errorf("the back-out lacks %q:\n%s", w, strings.Join(back, "\n"))
 		}
+	}
+	// the device's host of port 1162 is another entry: kept, never typed again
+	wantKept(t, d, "snmp", "snmp-server host 192.0.2.61 version 2c <secret:3> udp-port 1162")
+	if slices.Contains(back, "snmp-server host 192.0.2.61 version 2c poller-traps udp-port 1162") {
+		t.Errorf("the back-out types the device's own host again:\n%s", strings.Join(back, "\n"))
 	}
 	exp := expectedSections(t, f.expected)
 	ciscoConverges(t, f, exp, capture(t, f.raw), d)

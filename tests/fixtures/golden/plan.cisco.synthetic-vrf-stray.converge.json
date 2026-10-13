@@ -1,0 +1,555 @@
+{
+  "name": "dev-cisco-synthetic-vrf-stray",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "cisco",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "ssh",
+    "age_s": 1080,
+    "secrets_visible": true
+  },
+  "status": "needs-change",
+  "irregularities": [
+    {
+      "n": 1,
+      "kind": "missing",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the console's own login list CONSOLE (local only, so a local user always gets in there)",
+      "statement": "aaa authentication login CONSOLE local",
+      "action": "Fixed by region line 3.",
+      "fixed": true,
+      "region_lines": [
+        3
+      ]
+    },
+    {
+      "n": 2,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "aaa",
+      "what": "accounting of commands 15",
+      "statement": "aaa accounting commands 15 default start-stop group LAB-TACACS",
+      "action": "Fixed by region line 4.",
+      "fixed": true,
+      "region_lines": [
+        4
+      ]
+    },
+    {
+      "n": 3,
+      "kind": "different",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the login method of line con 0: login authentication CONSOLE (the device has: the login method of line con 0: login authentication default)",
+      "statement": "line con 0 \u003e login authentication CONSOLE",
+      "action": "Fixed by region line 18.",
+      "fixed": true,
+      "region_lines": [
+        18
+      ]
+    },
+    {
+      "n": 4,
+      "kind": "missing",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "a trap host of the SNMP block of scope 'lab': 192.0.2.61 vrf MGMT version 2c \u003csecret:2\u003e",
+      "statement": "snmp-server host 192.0.2.61 vrf MGMT version 2c \u003csecret:2\u003e",
+      "action": "Fixed by region line 6.",
+      "fixed": true,
+      "region_lines": [
+        6
+      ]
+    },
+    {
+      "n": 5,
+      "kind": "different",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "a trap host of the SNMP block of scope 'lab': 192.0.2.62 informs version 2c \u003csecret:2\u003e (the device has: a trap host of the SNMP block of scope 'lab': 192.0.2.62 informs version 2c \u003csecret:2\u003e config)",
+      "statement": "snmp-server host 192.0.2.62 informs version 2c \u003csecret:2\u003e",
+      "action": "Fixed by region line 7.",
+      "fixed": true,
+      "region_lines": [
+        7
+      ]
+    },
+    {
+      "n": 6,
+      "kind": "different",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "a trap host of the SNMP block of scope 'lab': 192.0.2.63 version 2c \u003csecret:2\u003e udp-port 1162 config (the device has: a trap host of the SNMP block of scope 'lab': 192.0.2.63 version 2c \u003csecret:2\u003e udp-port 1162)",
+      "statement": "snmp-server host 192.0.2.63 version 2c \u003csecret:2\u003e udp-port 1162 config",
+      "action": "Fixed by region line 8.",
+      "fixed": true,
+      "region_lines": [
+        8
+      ]
+    },
+    {
+      "n": 7,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "an SNMP community",
+      "statement": "snmp-server community \u003cother:1\u003e RO TACCTL-SNMP",
+      "action": "Left alone (its name is the secret and is not known to tacctl).",
+      "fixed": false
+    },
+    {
+      "n": 8,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "SNMP traps are sourced from the interface loopback0",
+      "statement": "snmp-server trap-source loopback0",
+      "action": "Left alone. To remove it later: no snmp-server trap-source",
+      "fixed": false
+    },
+    {
+      "n": 9,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "snmp-server enable traps config",
+      "statement": "snmp-server enable traps config",
+      "action": "Left alone. To remove it later: no snmp-server enable traps config",
+      "fixed": false
+    },
+    {
+      "n": 10,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "snmp-server host 192.0.2.50 version 2c \u003cother:2\u003e",
+      "statement": "snmp-server host 192.0.2.50 version 2c \u003cother:2\u003e",
+      "action": "Left alone (its name is the secret and is not known to tacctl).",
+      "fixed": false
+    },
+    {
+      "n": 11,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "snmp-server host 192.0.2.61 version 2c \u003csecret:2\u003e",
+      "statement": "snmp-server host 192.0.2.61 version 2c \u003csecret:2\u003e",
+      "action": "Left alone (the device's own entry, not the block's: the block's host is of another vrf, kind or udp-port).",
+      "fixed": false
+    },
+    {
+      "n": 12,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "snmp-server host 192.0.2.62 version 2c \u003csecret:2\u003e",
+      "statement": "snmp-server host 192.0.2.62 version 2c \u003csecret:2\u003e",
+      "action": "Left alone (the device's own entry, not the block's: the block's host is of another vrf, kind or udp-port).",
+      "fixed": false
+    },
+    {
+      "n": 13,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "snmp-server host 192.0.2.63 version 2c \u003csecret:2\u003e",
+      "statement": "snmp-server host 192.0.2.63 version 2c \u003csecret:2\u003e",
+      "action": "Left alone (the device's own entry, not the block's: the block's host is of another vrf, kind or udp-port).",
+      "fixed": false
+    },
+    {
+      "n": 14,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "snmp-server host 192.0.2.64 vrf OTHER version 2c \u003cother:2\u003e",
+      "statement": "snmp-server host 192.0.2.64 vrf OTHER version 2c \u003cother:2\u003e",
+      "action": "Left alone (its name is the secret and is not known to tacctl).",
+      "fixed": false
+    },
+    {
+      "n": 15,
+      "kind": "different",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the domain name in vrf MGMT is mgmt.example.net (the device has: the domain name in vrf MGMT is old.example.net)",
+      "statement": "ip domain name vrf MGMT mgmt.example.net",
+      "action": "Fixed by region line 10.",
+      "fixed": true,
+      "region_lines": [
+        10
+      ]
+    },
+    {
+      "n": 16,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the search domain mgmt.example.net in vrf MGMT",
+      "statement": "ip domain list vrf MGMT mgmt.example.net",
+      "action": "Fixed by region line 11.",
+      "fixed": true,
+      "region_lines": [
+        11
+      ]
+    },
+    {
+      "n": 17,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the name server 192.0.2.53 in vrf MGMT",
+      "statement": "ip name-server vrf MGMT 192.0.2.53",
+      "action": "Fixed by region line 12.",
+      "fixed": true,
+      "region_lines": [
+        12
+      ]
+    },
+    {
+      "n": 18,
+      "kind": "different",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the NTP server 192.0.2.123: prefer (the device has: the NTP server 192.0.2.123)",
+      "statement": "ntp server 192.0.2.123 prefer",
+      "action": "Fixed by region line 13.",
+      "fixed": true,
+      "region_lines": [
+        13
+      ]
+    },
+    {
+      "n": 19,
+      "kind": "different",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the NTP server 192.0.2.123 in vrf MGMT: prefer version 3 (the device has: the NTP server 192.0.2.123 in vrf MGMT)",
+      "statement": "ntp server vrf MGMT 192.0.2.123 prefer version 3",
+      "action": "Fixed by region line 14.",
+      "fixed": true,
+      "region_lines": [
+        14
+      ]
+    },
+    {
+      "n": 20,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the NTP server ntp2.example.net in vrf OOB",
+      "statement": "ntp server vrf OOB ntp2.example.net",
+      "action": "Fixed by region line 15.",
+      "fixed": true,
+      "region_lines": [
+        15
+      ]
+    },
+    {
+      "n": 21,
+      "kind": "extra",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the time zone is CET 1 0",
+      "statement": "clock timezone CET 1 0",
+      "action": "Left alone (the system block only adds, it never removes). To remove it later: no clock timezone",
+      "fixed": false
+    },
+    {
+      "n": 22,
+      "kind": "extra",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the domain name in vrf OTHER is other.example.net",
+      "statement": "ip domain name vrf OTHER other.example.net",
+      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ip domain name vrf OTHER",
+      "fixed": false
+    },
+    {
+      "n": 23,
+      "kind": "extra",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the search domain mgmt.example.net",
+      "statement": "ip domain list mgmt.example.net",
+      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ip domain list mgmt.example.net",
+      "fixed": false
+    },
+    {
+      "n": 24,
+      "kind": "extra",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the search domain other.example.net in vrf OTHER",
+      "statement": "ip domain list vrf OTHER other.example.net",
+      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ip domain list vrf OTHER other.example.net",
+      "fixed": false
+    },
+    {
+      "n": 25,
+      "kind": "extra",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the name server 192.0.2.54",
+      "statement": "ip name-server 192.0.2.54",
+      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ip name-server 192.0.2.54",
+      "fixed": false
+    },
+    {
+      "n": 26,
+      "kind": "extra",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the name server 198.51.100.53 in vrf OTHER",
+      "statement": "ip name-server vrf OTHER 198.51.100.53",
+      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ip name-server vrf OTHER 198.51.100.53",
+      "fixed": false
+    },
+    {
+      "n": 27,
+      "kind": "extra",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the login banner of 1 lines, 16 characters",
+      "statement": "banner login \u003cmessage: 1 lines, 16 characters, id 9716067a\u003e",
+      "action": "Left alone (the system block only adds, it never removes). To remove it later: no banner login",
+      "fixed": false
+    },
+    {
+      "n": 28,
+      "kind": "extra",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "ntp source Loopback0",
+      "statement": "ntp source Loopback0",
+      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ntp source Loopback0",
+      "fixed": false
+    },
+    {
+      "n": 29,
+      "kind": "extra",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "ntp master 3",
+      "statement": "ntp master 3",
+      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ntp master 3",
+      "fixed": false
+    },
+    {
+      "n": 30,
+      "kind": "extra",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the NTP server 198.51.100.123",
+      "statement": "ntp server 198.51.100.123",
+      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ntp server 198.51.100.123",
+      "fixed": false
+    },
+    {
+      "n": 31,
+      "kind": "extra",
+      "severity": "COSMETIC",
+      "section": "system",
+      "what": "the NTP server 198.51.100.123 in vrf OTHER",
+      "statement": "ntp server vrf OTHER 198.51.100.123",
+      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ntp server vrf OTHER 198.51.100.123",
+      "fixed": false
+    }
+  ],
+  "region": [
+    "configure terminal",
+    "! aaa: the method lists tacctl renders, each replaced by the rendered line",
+    "aaa authentication login CONSOLE local",
+    "aaa accounting commands 15 default start-stop group LAB-TACACS",
+    "! snmp: the SNMP block of scope 'lab' (its communities, access lists, trap hosts and 'enable traps' lines)",
+    "snmp-server host 192.0.2.61 vrf MGMT version 2c \u003csecret:2\u003e",
+    "snmp-server host 192.0.2.62 informs version 2c \u003csecret:2\u003e",
+    "snmp-server host 192.0.2.63 version 2c \u003csecret:2\u003e udp-port 1162 config",
+    "! system: the statements of the system block of scope 'lab'",
+    "ip domain name vrf MGMT mgmt.example.net",
+    "ip domain list vrf MGMT mgmt.example.net",
+    "ip name-server vrf MGMT 192.0.2.53",
+    "ntp server 192.0.2.123 prefer",
+    "ntp server vrf MGMT 192.0.2.123 version 3 prefer",
+    "ntp server vrf OOB ntp2.example.net",
+    "! aaa: the login method of the console and vty lines",
+    "line con 0",
+    " login authentication CONSOLE",
+    "end"
+  ],
+  "after": [
+    "!",
+    "! If any line printed \"% Invalid\" or \"% Error\", stop and undo it: tacctl device config plan",
+    "! dev-cisco-synthetic-vrf-stray --backout (its own region, to paste in the second terminal).",
+    "!",
+    "! Check now (nothing rolls this back by itself):",
+    "!   From the tacctl server:   tacctl device config pull dev-cisco-synthetic-vrf-stray --diff     (aaa, snmp and system: ok)",
+    "!   In the second terminal:   open a NEW ssh session to dev-cisco-synthetic-vrf-stray as yourself, then: terminal length 0, show privilege (must say 15)",
+    "! When both checks are fine, type this one command yourself:  write memory",
+    "!",
+    "! To undo: tacctl device config plan dev-cisco-synthetic-vrf-stray --backout (tacctl keeps this",
+    "! plan's back-out: after the check pull has replaced the picture, the command still prints this",
+    "! plan's, and says which pull it undoes, until the next plan with changes)",
+    "! Do not: 'write memory' before the check; paste outside the banners; paste into another device;",
+    "! paste on a console more than twenty lines at a time; keep this output in a file after the paste",
+    "! when it holds a secret.",
+    "! Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold dev-cisco-synthetic-vrf-stray --reason \"...\"",
+    "! then log in as the device's local account (console: local login, then 'enable' with the local secret),",
+    "! fix or back out, and the superuser runs: tacctl breakglass release dev-cisco-synthetic-vrf-stray"
+  ],
+  "backout": [
+    "configure terminal",
+    "! back-out: the lines as the pull showed them",
+    "line con 0",
+    " login authentication default",
+    "no ntp server vrf OOB ntp2.example.net",
+    "ntp server vrf MGMT 192.0.2.123",
+    "ntp server 192.0.2.123",
+    "no ip name-server vrf MGMT 192.0.2.53",
+    "no ip domain list vrf MGMT mgmt.example.net",
+    "ip domain name vrf MGMT old.example.net",
+    "snmp-server host 192.0.2.63 version 2c \u003csecret:2\u003e udp-port 1162",
+    "snmp-server host 192.0.2.62 informs version 2c \u003csecret:2\u003e config",
+    "no snmp-server host 192.0.2.61 vrf MGMT version 2c \u003csecret:2\u003e",
+    "no aaa accounting commands 15 default start-stop group LAB-TACACS",
+    "no aaa authentication login CONSOLE local",
+    "end"
+  ],
+  "left": {
+    "access": 0,
+    "monitoring": 8,
+    "cosmetic": 11
+  },
+  "extras": [
+    {
+      "section": "snmp",
+      "text": "snmp-server community \u003cother:1\u003e RO TACCTL-SNMP",
+      "guard": "its name is the secret and is not known to tacctl"
+    },
+    {
+      "section": "snmp",
+      "text": "snmp-server trap-source loopback0",
+      "remove": [
+        "no snmp-server trap-source"
+      ]
+    },
+    {
+      "section": "snmp",
+      "text": "snmp-server enable traps config",
+      "remove": [
+        "no snmp-server enable traps config"
+      ]
+    },
+    {
+      "section": "snmp",
+      "text": "snmp-server host 192.0.2.50 version 2c \u003cother:2\u003e",
+      "guard": "its name is the secret and is not known to tacctl"
+    },
+    {
+      "section": "snmp",
+      "text": "snmp-server host 192.0.2.61 version 2c \u003csecret:2\u003e",
+      "guard": "the device's own entry, not the block's: the block's host is of another vrf, kind or udp-port"
+    },
+    {
+      "section": "snmp",
+      "text": "snmp-server host 192.0.2.62 version 2c \u003csecret:2\u003e",
+      "guard": "the device's own entry, not the block's: the block's host is of another vrf, kind or udp-port"
+    },
+    {
+      "section": "snmp",
+      "text": "snmp-server host 192.0.2.63 version 2c \u003csecret:2\u003e",
+      "guard": "the device's own entry, not the block's: the block's host is of another vrf, kind or udp-port"
+    },
+    {
+      "section": "snmp",
+      "text": "snmp-server host 192.0.2.64 vrf OTHER version 2c \u003cother:2\u003e",
+      "guard": "its name is the secret and is not known to tacctl"
+    },
+    {
+      "section": "system",
+      "text": "clock timezone CET 1 0",
+      "remove": [
+        "no clock timezone"
+      ]
+    },
+    {
+      "section": "system",
+      "text": "ip domain name vrf OTHER other.example.net",
+      "remove": [
+        "no ip domain name vrf OTHER"
+      ]
+    },
+    {
+      "section": "system",
+      "text": "ip domain list mgmt.example.net",
+      "remove": [
+        "no ip domain list mgmt.example.net"
+      ]
+    },
+    {
+      "section": "system",
+      "text": "ip domain list vrf OTHER other.example.net",
+      "remove": [
+        "no ip domain list vrf OTHER other.example.net"
+      ]
+    },
+    {
+      "section": "system",
+      "text": "ip name-server 192.0.2.54",
+      "remove": [
+        "no ip name-server 192.0.2.54"
+      ]
+    },
+    {
+      "section": "system",
+      "text": "ip name-server vrf OTHER 198.51.100.53",
+      "remove": [
+        "no ip name-server vrf OTHER 198.51.100.53"
+      ]
+    },
+    {
+      "section": "system",
+      "text": "banner login \u003cmessage: 1 lines, 16 characters, id 9716067a\u003e",
+      "remove": [
+        "no banner login"
+      ]
+    },
+    {
+      "section": "system",
+      "text": "ntp source Loopback0",
+      "remove": [
+        "no ntp source Loopback0"
+      ]
+    },
+    {
+      "section": "system",
+      "text": "ntp master 3",
+      "remove": [
+        "no ntp master 3"
+      ]
+    },
+    {
+      "section": "system",
+      "text": "ntp server 198.51.100.123",
+      "remove": [
+        "no ntp server 198.51.100.123"
+      ]
+    },
+    {
+      "section": "system",
+      "text": "ntp server vrf OTHER 198.51.100.123",
+      "remove": [
+        "no ntp server vrf OTHER 198.51.100.123"
+      ]
+    }
+  ],
+  "skipped": [],
+  "withheld": [],
+  "warnings": [],
+  "holds_secret": true,
+  "converge": true,
+  "cleanup_deferred": "cleanup comes after this region is pasted and verified: pull the device, then plan --converge again"
+}
