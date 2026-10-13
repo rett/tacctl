@@ -168,6 +168,13 @@ func fixtures(t testing.TB) []fixture {
 		{name: "cisco.synthetic-block", vendor: "cisco", raw: "ios/synthetic-block/running-config.txt", expected: "ios/synthetic-block/expected.txt"},
 		{name: "cisco.synthetic-block-new", vendor: "cisco", raw: "ios/reference-lab/running-config.txt", expected: "ios/synthetic-block/expected.txt"},
 		{name: "cisco.synthetic-block-stray", vendor: "cisco", raw: "ios/synthetic-block/running-config-stray.txt", expected: "ios/synthetic-block/expected.txt"},
+		// 0.2.7: the reference lab's rendering with a scope's IOS system block
+		// and trap source: the device after they were pasted, the device that
+		// holds none of it, and the device that holds the objects in other
+		// shapes
+		{name: "cisco.synthetic-system", vendor: "cisco", raw: "ios/synthetic-system/running-config.txt", expected: "ios/synthetic-system/expected.txt"},
+		{name: "cisco.synthetic-system-new", vendor: "cisco", raw: "ios/reference-lab/running-config.txt", expected: "ios/synthetic-system/expected.txt"},
+		{name: "cisco.synthetic-system-stray", vendor: "cisco", raw: "ios/synthetic-system/running-config-stray.txt", expected: "ios/synthetic-system/expected.txt"},
 	}
 }
 

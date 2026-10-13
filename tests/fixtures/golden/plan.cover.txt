@@ -1,4 +1,4 @@
-# tacctl device config plan: 22 devices
+# tacctl device config plan: 25 devices
 #   dev-juniper-synthetic-lab           needs change: 1 irregularity fixed by the paste, 3 left (1 ACCESS, 2 MONITORING), 3 extras
 #   dev-juniper-synthetic-lab           needs change: 1 irregularity fixed by the paste, 3 left (1 ACCESS, 2 MONITORING), 3 extras [break-glass held]
 #   dev-juniper-synthetic-lab-engineer  NOT consistent, nothing to paste: 5 irregularities left (2 ACCESS, 2 MONITORING, 1 COSMETIC)
@@ -20,5 +20,8 @@
 #   dev-cisco-synthetic-block           needs change: 3 irregularities fixed by the paste, 3 left (3 MONITORING), 3 extras
 #   dev-cisco-synthetic-block-new       needs change: 7 irregularities fixed by the paste, 2 left (2 MONITORING), 2 extras
 #   dev-cisco-synthetic-block-stray     needs change: 7 irregularities fixed by the paste, 2 left (2 MONITORING), 2 extras
+#   dev-cisco-synthetic-system          needs change: 3 irregularities fixed by the paste, 8 left (3 MONITORING, 5 COSMETIC), 8 extras
+#   dev-cisco-synthetic-system-new      needs change: 15 irregularities fixed by the paste, 3 left (3 MONITORING), 3 extras
+#   dev-cisco-synthetic-system-stray    needs change: 10 irregularities fixed by the paste, 9 left (3 MONITORING, 6 COSMETIC), 9 extras
 #   dev-not-pulled                      cannot be planned: not pulled
-# 0 consistent, 19 need a change, 2 not consistent with nothing to paste, 1 cannot be planned
+# 0 consistent, 22 need a change, 2 not consistent with nothing to paste, 1 cannot be planned

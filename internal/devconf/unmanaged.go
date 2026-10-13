@@ -76,6 +76,18 @@ var (
 		}
 		return !exp.hosts[words[2]+" "+words[i]]
 	}
+	// an IOS NTP server the rendering (a system block) does not state: one
+	// it states with other options is a difference, which the plan replaces
+	// in place. A vrf form is the device's own: its third word is no host of
+	// the rendering.
+	otherNTPServer = func(words []string, exp *renderedSet) bool {
+		return len(words) < 3 || !exp.ntp[words[2]]
+	}
+	// the IOS domain name: the device's own where the rendering states none,
+	// and its vrf form (another object) always
+	otherDomainName = func(words []string, exp *renderedSet) bool {
+		return len(words) >= 4 && words[3] == "vrf" || !exp.has(words[:3])
+	}
 )
 
 // keptShapes are the shapes per family; the first whose pattern a statement
@@ -133,8 +145,27 @@ var keptShapes = map[string][]keptShape{
 		// in place); the device's others are its own
 		{Row: "ios.snmp.block-host", Pattern: "snmp-server host $", keepStmt: otherHost},
 		{Row: "ios.snmp.block-traps", Pattern: "snmp-server enable traps", keep: always},
+		// the trap source: the device's own is kept while the rendering
+		// states none, and replaced in place where it states one
+		{Row: "ios.snmp.block-trap-source", Pattern: "snmp-server trap-source", keep: notRendered},
 		// no row: the rest of 'snmp-server'
 		{Pattern: "snmp-server", keep: always},
+		// The system section (0.2.7) is additive, as on Junos: what the
+		// device holds beside the block's statements is its own, and a single
+		// value the block states and the device holds otherwise is a
+		// difference (the plan replaces it in place), so each shape keeps a
+		// statement only where the rendering says nothing of the same object.
+		{Row: "ios.system.banner", Pattern: "banner login", keep: notRendered},
+		{Row: "ios.system.domain-name", Pattern: "ip domain name", keepStmt: otherDomainName},
+		{Row: "ios.system.domain-list", Pattern: "ip domain list $", keep: notRendered},
+		{Row: "ios.system.timezone", Pattern: "clock timezone", keep: notRendered},
+		{Row: "ios.system.name-server", Pattern: "ip name-server $", keep: notRendered},
+		{Row: "ios.system.ntp-server", Pattern: "ntp server $", keepStmt: otherNTPServer},
+		{Row: "ios.system.ntp-key", Pattern: "ntp authentication-key $", keep: notRendered},
+		{Row: "ios.system.ntp-trusted-key", Pattern: "ntp trusted-key $", keep: notRendered},
+		{Row: "ios.system.ntp-authenticate", Pattern: "ntp authenticate", keep: notRendered},
+		// no row: the rest of 'ntp' (master, source, peer, access-group, ...)
+		{Pattern: "ntp", keep: always},
 	},
 }
 
@@ -167,6 +198,9 @@ type renderedSet struct {
 	// hosts are the trap hosts the rendering sets, by address and the label
 	// of their community (IOS).
 	hosts map[string]bool
+	// ntp are the NTP servers the rendering sets, by host in lower case
+	// (IOS).
+	ntp map[string]bool
 	// wtiInactive are the protocols (tacacs, radius) of a WTI unit that the
 	// rendering does not use and the device has turned off: their whole
 	// page is the device's own (wti.go).
@@ -183,7 +217,7 @@ func (r *renderedSet) has(prefix []string) bool {
 // newRenderedSet is the rendering of a section as the shapes read it. lb is
 // the comparison's labels (nil for a record of an older tacctl).
 func newRenderedSet(fam string, section devices.Section, exp []stmt, lb *labels) *renderedSet {
-	rs := &renderedSet{community: map[string]bool{}, trapGroup: map[string]bool{}, hosts: map[string]bool{}}
+	rs := &renderedSet{community: map[string]bool{}, trapGroup: map[string]bool{}, hosts: map[string]bool{}, ntp: map[string]bool{}}
 	for _, e := range exp {
 		rs.words = append(rs.words, stmtWords(fam, e))
 	}
@@ -198,6 +232,8 @@ func newRenderedSet(fam string, section devices.Section, exp []stmt, lb *labels)
 				rs.community[lb.of(f[2])] = true
 			case SNMPHostCommunity(f) > 0:
 				rs.hosts[f[2]+" "+lb.of(f[SNMPHostCommunity(f)])] = true
+			case len(f) >= 3 && f[0] == "ntp" && f[1] == "server":
+				rs.ntp[strings.ToLower(f[2])] = true
 			}
 		}
 		return rs

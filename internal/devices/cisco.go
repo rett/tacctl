@@ -151,6 +151,18 @@ func CiscoVars(req Request, d Data) map[string]string {
 		accessClass = "! access-class " + aclName + " in   ! uncomment after populating mgmt-acl"
 	}
 
+	// The scope's system block follows the SNMP step as the trailing lines of
+	// its block (the template's own steps keep their numbers): the same
+	// statements are the managed system section, so the walkthrough and a
+	// pull's compare cannot drift. SNMP_STEP is the step alone, SYSTEM_BLOCK
+	// the system lines, and neither is a template variable.
+	snmpStep := CiscoSNMP(d.snmpInputFor(scope, "cisco")).Text
+	system := d.Blocks.ciscoSystemLines(scope)
+	snmpBlock := snmpStep
+	if len(system) > 0 {
+		snmpBlock += "\n" + strings.Join(system, "\n")
+	}
+
 	vars := map[string]string{
 		"SERVER_IP":              d.authIP(""),
 		"SECRET":                 scopeSecret(d, scope),
@@ -165,7 +177,9 @@ func CiscoVars(req Request, d Data) map[string]string {
 		"EXEC_TIMEOUT":           execTimeout(c, scope),
 		"TACACS_GROUP":           tacacsGroup,
 		"RADIUS_GROUP":           radiusGroup,
-		"SNMP_BLOCK":             CiscoSNMP(d.snmpInputFor(scope, "cisco")).Text,
+		"SNMP_BLOCK":             snmpBlock,
+		"SNMP_STEP":              snmpStep,
+		"SYSTEM_BLOCK":           strings.Join(system, "\n"),
 		"NETCONF_BLOCK":          CiscoNetconf(NetconfInput{Restricted: d.Restricted, Legacy: req.Legacy}),
 		"SOURCE_INTERFACE_BLOCK": ciscoSourceInterfaceBlock(req, d),
 		"HARDENING_BLOCK":        ciscoHardening(req, d),
@@ -248,6 +262,12 @@ func ciscoHardening(req Request, d Data) string {
 		enable = "enable secret <PASSWORD>"
 	}
 	note := func(line, where string) string { return fmt.Sprintf("  %-48s %s", line, where) }
+	// A scope whose system block states the domain name types it in its own
+	// step: the line says so in place of the placeholder.
+	domain := "  ip domain name <DOMAIN>"
+	if b := d.Blocks.CiscoSystem; b != nil && b.DomainName != nil {
+		domain = note("ip domain name "+b.DomainName.Text, "(below, the system block of the scope)")
+	}
 	var b strings.Builder
 	lines := []string{
 		"--- Step 0: hardening checklist and the local enable secret ---",
@@ -255,7 +275,7 @@ func ciscoHardening(req Request, d Data) string {
 		"Type what your site uses before the steps below; a line marked (below) is typed there.",
 		"Global:",
 		"  hostname " + host,
-		"  ip domain name <DOMAIN>",
+		domain,
 		"  no ip domain lookup",
 		note("service password-encryption", "(below, with the server block)"),
 		"  service timestamps debug datetime msec localtime",

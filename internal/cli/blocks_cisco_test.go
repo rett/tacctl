@@ -91,9 +91,9 @@ func TestScopeBlockCiscoVerbs(t *testing.T) {
 	if sb.code != 1 {
 		t.Errorf("a Junos text checked as IOS: %d", sb.code)
 	}
-	// no IOS system block, and a WTI unit has none of either
+	// the IOS snmp text is no system block's, and a WTI unit has none of either
 	sb.blk("", "lab", "cisco", "check", "system", "--file", f)
-	sb.expect(1, "", "The IOS system block is not built")
+	sb.expect(1, "word 2 is not one of domain, name-server", "")
 	sb.blk("", "lab", "wti", "list")
 	if sb.code != 1 || !strings.Contains(sb.stderr(), "A WTI unit has no configuration blocks") {
 		t.Errorf("wti: %d %q", sb.code, sb.stderr())
@@ -114,7 +114,7 @@ func TestScopeBlockCiscoRefusals(t *testing.T) {
 		{"a numbered list", "snmp-server community ro-secret-1 RO 10\n", "a number: a numbered access list is not accepted"},
 		{"tacctl's own list", "ip access-list standard TACCTL-SNMP\n permit 192.0.2.5\n", "a name tacctl renders itself"},
 		{"contact", "snmp-server contact someone\n", "never part of a block"},
-		{"trap-source", "snmp-server trap-source Loopback0\n", "not accepted in a block yet"},
+		{"an abbreviated trap-source", "snmp-server trap-source Lo0\n", "has its type abbreviated"},
 		{"a user", "snmp-server user v3user G v3 auth sha xxxxxxxxxx\n", "SNMPv3"},
 		{"a vrf host", "snmp-server host 192.0.2.5 vrf mgmt string-secret-1\n", "'vrf' is not in the grammar of a block"},
 		{"a placeholder", "snmp-server community <secret:1> RO NMS\n", "a placeholder"},

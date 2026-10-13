@@ -8,6 +8,7 @@ package blocks
 //	snmp-server community <string> RO|RW [<acl-name>]
 //	snmp-server host <address> [version 1|2c] <community> [udp-port <n>] [<type> ...]
 //	snmp-server enable traps [<type> [<subtype> ...]]
+//	snmp-server trap-source <interface>
 //	ip access-list standard <NAME>
 //	 permit <address> [<wildcard>] | permit host <address> | permit any
 //
@@ -135,6 +136,8 @@ const (
 	IOSNoACL       = "acl"
 	IOSNoHost      = "host"
 	IOSNoTraps     = "traps"
+	// IOSNoTrapSource is 'no snmp-server trap-source': not managed.
+	IOSNoTrapSource = "trap-source"
 )
 
 // IOSNotManaged is one 'no ...' line: not managed on this device. Name is
@@ -157,12 +160,17 @@ type IOSSNMPBlock struct {
 	ACLs        []*IOSACL
 	Hosts       []*IOSHost
 	Traps       []*IOSTraps
-	NotManaged  []IOSNotManaged
+	// TrapSource is the interface the device's traps are sourced from
+	// ('snmp-server trap-source <interface>'): one, or nil. It is a statement
+	// of a device by nature, allowed at the scope level for an interface name
+	// the devices of the scope share (Loopback0).
+	TrapSource *Value
+	NotManaged []IOSNotManaged
 }
 
 // Empty reports a block with no object and no 'no' line.
 func (b *IOSSNMPBlock) Empty() bool {
-	return b == nil || len(b.Communities)+len(b.ACLs)+len(b.Hosts)+len(b.Traps)+len(b.NotManaged) == 0
+	return b == nil || (len(b.Communities)+len(b.ACLs)+len(b.Hosts)+len(b.Traps)+len(b.NotManaged) == 0 && b.TrapSource == nil)
 }
 
 func (b *IOSSNMPBlock) community(name string) *IOSCommunity {
@@ -398,8 +406,10 @@ func (p *iosParser) snmpServer(t []string) {
 		p.b.Traps = append(p.b.Traps, tr)
 	case "contact", "location", "chassis-id":
 		p.errf("snmp-server %s is a setting of the structured SNMP settings or the device's own: it is never part of a block", t[0])
-	case "trap-source", "source-interface":
-		p.errf("snmp-server %s is not accepted in a block yet: the source address of a device's traps is not a setting tacctl has", t[0])
+	case "trap-source":
+		p.trapSource(t[1:])
+	case "source-interface":
+		p.errf("snmp-server source-interface is not accepted in a block: write 'snmp-server trap-source <interface>'")
 	case "engineID":
 		p.errf("snmp-server engineID is the device's identity: it is never part of a block")
 	case "user", "group", "view":
@@ -407,6 +417,24 @@ func (p *iosParser) snmpServer(t []string) {
 	default:
 		p.errf("word 2 is not one of community, host, enable")
 	}
+}
+
+// trapSource reads the words after 'snmp-server trap-source': one interface
+// name, written in full.
+func (p *iosParser) trapSource(t []string) {
+	if len(t) != 1 {
+		p.errf("'snmp-server trap-source' takes one interface name (word 3)")
+		return
+	}
+	if why := InterfaceProblem(t[0]); why != "" {
+		p.errf("the interface name (word 3) %s", why)
+		return
+	}
+	if p.b.TrapSource != nil {
+		p.errf("snmp-server trap-source is stated twice (one source interface)")
+		return
+	}
+	p.b.TrapSource = &Value{Text: t[0], Line: p.line}
 }
 
 func (p *iosParser) community(t []string) {
@@ -723,6 +751,19 @@ func (p *iosParser) no(t []string) {
 			return
 		}
 		nm.Words = w
+	case t[0] == "snmp-server" && len(t) >= 2 && t[1] == "trap-source":
+		nm.Kind = IOSNoTrapSource
+		if len(t) > 3 {
+			p.errf("'no snmp-server trap-source' takes an interface name, or nothing")
+			return
+		}
+		if len(t) == 3 {
+			if why := InterfaceProblem(t[2]); why != "" {
+				p.errf("the interface name (word 4) %s", why)
+				return
+			}
+			nm.Name = t[2]
+		}
 	case t[0] == "ip" && len(t) >= 2 && t[1] == "access-list":
 		nm.Kind = IOSNoACL
 		if len(t) != 4 || t[2] != "standard" {
@@ -739,7 +780,7 @@ func (p *iosParser) no(t []string) {
 		}
 		nm.Name = t[3]
 	default:
-		p.errf("a 'no' line takes 'snmp-server community', 'snmp-server host', 'snmp-server enable traps' or 'ip access-list standard' (words 2 and 3)")
+		p.errf("a 'no' line takes 'snmp-server community', 'snmp-server host', 'snmp-server enable traps', 'snmp-server trap-source' or 'ip access-list standard' (words 2 and 3)")
 		return
 	}
 	p.b.NotManaged = append(p.b.NotManaged, nm)
@@ -825,6 +866,15 @@ func CheckIOSSNMP(b *IOSSNMPBlock, layer Layer) []Finding {
 		}
 		add(first(t.Lines), SevNote, "%s", note)
 	}
+	if ts := b.TrapSource; ts != nil {
+		switch layer {
+		case LayerDefault:
+			add(ts.Line, SevError, "the default block names no trap source (a scope or a device does)")
+		case LayerScope:
+			add(ts.Line, SevNote, "snmp-server trap-source is the same source interface for every device of the scope: a device that has no such interface cannot take it (a device's own block can state another)")
+		}
+		add(ts.Line, SevNote, "the trap source is set when the device's differs (replaced in place, nothing removed); the device's own is kept while the block states none")
+	}
 	for _, d := range b.NotManaged {
 		add(d.Line, SevNote, "a 'no' line: what it names is not managed on this device; it is kept and never rendered")
 	}
@@ -874,6 +924,12 @@ func ResolveIOSSNMP(def, scope, dev *IOSSNMPBlock) *IOSSNMPBlock {
 			case IOSNoTraps:
 				k := strings.Join(d.Words, " ")
 				out.Traps = slices.DeleteFunc(out.Traps, func(t *IOSTraps) bool { return t.key() == k })
+			case IOSNoTrapSource:
+				// a no line without an interface takes the source out; one
+				// that names an interface takes out that one only
+				if d.Name == "" || strings.EqualFold(d.Name, textOf(out.TrapSource)) {
+					out.TrapSource = nil
+				}
 			}
 		}
 		for _, c := range l.Communities {
@@ -912,6 +968,10 @@ func ResolveIOSSNMP(def, scope, dev *IOSSNMPBlock) *IOSSNMPBlock {
 			if i := slices.IndexFunc(out.Traps, func(o *IOSTraps) bool { return o.key() == t.key() }); i < 0 {
 				out.Traps = append(out.Traps, &cp)
 			}
+		}
+		if l.TrapSource != nil {
+			v := *l.TrapSource
+			out.TrapSource = &v
 		}
 		for _, d := range l.NotManaged {
 			d.Words = slices.Clone(d.Words)
@@ -952,10 +1012,21 @@ func IOSSNMPUnits(b *IOSSNMPBlock) [][]string {
 	for _, h := range b.Hosts {
 		out = append(out, []string{h.text()})
 	}
+	if b.TrapSource != nil {
+		out = append(out, []string{"snmp-server trap-source " + b.TrapSource.Text})
+	}
 	for _, t := range b.Traps {
 		out = append(out, []string{"snmp-server enable traps" + joinWords(t.Words)})
 	}
 	return out
+}
+
+// textOf is the text of a Value, "" for none.
+func textOf(v *Value) string {
+	if v == nil {
+		return ""
+	}
+	return v.Text
 }
 
 func joinWords(w []string) string {
@@ -999,6 +1070,12 @@ func (d IOSNotManaged) text() string {
 			s += " version " + d.Version
 		}
 		return s + " " + d.Name
+	case IOSNoTrapSource:
+		s := "no snmp-server trap-source"
+		if d.Name != "" {
+			s += " " + d.Name
+		}
+		return s
 	}
 	return "no snmp-server enable traps" + joinWords(d.Words)
 }
@@ -1022,6 +1099,10 @@ func ElideIOSSNMP(b *IOSSNMPBlock) *IOSSNMPBlock {
 		return v
 	}
 	out := &IOSSNMPBlock{}
+	if b.TrapSource != nil {
+		v := *b.TrapSource
+		out.TrapSource = &v
+	}
 	for _, c := range b.Communities {
 		cp := *c
 		cp.String = mark(c.String)
@@ -1080,6 +1161,36 @@ func (b *IOSSNMPBlock) String(elided bool) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
+// ifaceAbbreviations are the short forms of interface types that a device
+// prints in full: a block names the interface as the device stores it.
+var ifaceAbbreviations = []string{"lo", "loop", "gi", "gig", "te", "ten", "fa", "fast", "et", "eth", "vl", "po", "tu", "se", "fo", "tw", "hu"}
+
+var reInterface = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9/.-]{0,63}$`)
+
+// InterfaceProblem is why s cannot be the name of an interface in a block
+// ("" when it can): letters, digits, '/', '.' and '-', at least one digit,
+// and the type spelled in full (a device stores 'Loopback0' for 'Lo0', so the
+// short form would be compared and typed again for ever). The reason holds no
+// input.
+func InterfaceProblem(s string) string {
+	switch {
+	case s == "":
+		return "is empty"
+	case !reInterface.MatchString(s):
+		return "is not an interface name (letters, digits, '/', '.' and '-', starting with a letter, at most 64 characters)"
+	case !strings.ContainsAny(s, "0123456789"):
+		return "has no number: write the interface as the device stores it (Loopback0)"
+	}
+	typ := strings.TrimRight(s, "0123456789/.-")
+	if i := strings.IndexAny(typ, "0123456789"); i >= 0 {
+		typ = typ[:i]
+	}
+	if slices.Contains(ifaceAbbreviations, strings.ToLower(typ)) {
+		return "has its type abbreviated: write it in full as the device stores it (Loopback0, not Lo0), so that what the device holds is the same name"
+	}
+	return ""
+}
+
 // IOSNotManagedLines are the 'no' lines of the block as written.
 func IOSNotManagedLines(b *IOSSNMPBlock, elided bool) []string {
 	if b == nil {
@@ -1096,16 +1207,17 @@ func IOSNotManagedLines(b *IOSSNMPBlock, elided bool) []string {
 }
 
 // LintFor is LintBlock for the vendor's grammar of a block: the Doc is
-// *SNMPBlock (juniper snmp), *SystemBlock (juniper system) or *IOSSNMPBlock
-// (cisco snmp). A vendor and block with no grammar is an error: the IOS
-// system block is not built.
+// *SNMPBlock (juniper snmp), *SystemBlock (juniper system), *IOSSNMPBlock
+// (cisco snmp) or *IOSSystemBlock (cisco system). A vendor or block with no
+// grammar is an error.
 func LintFor(vendor, block, text string, layer Layer) (Doc, []Finding, error) {
 	switch {
 	case vendor == VendorCisco && block == BlockSNMP:
 		b, fs := LintIOSSNMP(text, layer)
 		return b, fs, nil
 	case vendor == VendorCisco && block == BlockSystem:
-		return nil, nil, fail("The IOS system block is not built: only the snmp block exists for vendor cisco.")
+		b, fs := LintIOSSystem(text, layer)
+		return b, fs, nil
 	case vendor == VendorJuniper:
 		return LintBlock(block, text, layer)
 	}

@@ -180,7 +180,7 @@ func (c *JunosConfig) Add(text string) {
 // replaces the value in place. '*' matches any token. This is the editor's
 // own knowledge of the device, not the planner's table.
 var junosSingleKeys = []string{
-	"snmp location", "snmp contact", "snmp description", "snmp name",
+	"snmp location", "snmp contact", "snmp description", "snmp name", "snmp trap-options source-address",
 	"system tacplus-server * secret", "system tacplus-server * port", "system tacplus-server * timeout",
 	"system tacplus-server * retry", "system tacplus-server * source-address",
 	"system radius-server * secret", "system radius-server * port", "system radius-server * timeout",
@@ -467,6 +467,10 @@ func (c *IOSConfig) Apply(lines []Line) error {
 			return fmt.Errorf("plan: %q under %q is typed before 'aaa new-model': IOS has no such line command until it is set", l.Shown(), l.Context[0])
 		}
 		switch {
+		case l.Op == OpLine && len(l.Context) == 0 && strings.HasPrefix(l.Text, "banner login ") && strings.Contains(l.Text, "\n"):
+			// a login banner: its lines replace the device's banner, or are
+			// added before 'end'
+			c.typeBanner(l.Text)
 		case l.Op == OpLine && len(l.Context) == 0:
 			if e, ok := hostLineEntry(text); ok && c.duplicateOf("", e) {
 				continue // refused, silently
@@ -733,6 +737,19 @@ func (c *IOSConfig) replaceLogin(header string) {
 		}
 		b.lines = kept
 	}
+}
+
+// typeBanner types a login banner (its lines: 'banner login <d>', the text,
+// '<d>'): it replaces the device's login banner in place, else it is added.
+func (c *IOSConfig) typeBanner(text string) {
+	blk := iosBlk{lines: strings.Split(text, "\n")}
+	for i := range c.blocks {
+		if strings.HasPrefix(norm(c.blocks[i].lines[0]), "banner login ") {
+			c.blocks[i] = blk
+			return
+		}
+	}
+	c.insertBlock(blk)
 }
 
 func (c *IOSConfig) typeGlobal(text string) {

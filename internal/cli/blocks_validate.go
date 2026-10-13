@@ -57,8 +57,8 @@ func (inv *invocation) blockValidation() (errs, warns []string) {
 			}
 			_, fs, err := blocks.LintFor(vendor, b, string(text), layer)
 			if err != nil {
-				// a name that has no grammar for the vendor (the IOS system
-				// block): it is never rendered
+				// a name that has no grammar for the vendor: it is never
+				// rendered
 				errs = append(errs, "the "+b+" block of "+l.String()+" ("+vendor+") is not built for "+who+" and is not rendered: "+strings.Join(msgs(err), " "))
 				continue
 			}

@@ -11,6 +11,7 @@ package blocks
 //	set snmp trap-group <name> categories <category>
 //	set snmp trap-group <name> targets <address>
 //	set snmp trap-options agent-address outgoing-interface
+//	set snmp trap-options source-address <address>|lo0
 //
 // A 'delete snmp ...' line says "not managed on this device": it is kept
 // (NotManaged), never rendered, and in a more specific layer it takes the
@@ -101,11 +102,29 @@ var TrapCategories = []string{
 }
 
 // trapOptionLeaves are the trap-options leaves a block may state, with the
-// words each takes (a table, easy to extend). source-address is refused on
-// purpose (decision 4 of the blocks design: until the per-device source
-// address exists).
+// words each takes (a table, easy to extend). source-address takes one
+// address (or the keyword lo0) and is read by trapSourceAddress: it is a
+// statement of a device by nature, allowed at the scope level for an address
+// the devices of the scope share, with a note.
 var trapOptionLeaves = map[string][]string{
-	"agent-address": {"outgoing-interface"},
+	"agent-address":  {"outgoing-interface"},
+	"source-address": nil,
+}
+
+// trapSourceLeaf is the trap-options leaf that takes an address.
+const trapSourceLeaf = "source-address"
+
+// trapSourceAddress is the one word 'set snmp trap-options source-address'
+// takes in a block: an IPv4 or IPv6 address in canonical text, or the keyword
+// lo0 (the address of the loopback). The reason holds no input.
+func trapSourceAddress(s string) string {
+	if s == "lo0" {
+		return ""
+	}
+	if _, why := parseAddr(s); why != "" {
+		return "is not an address (an IPv4 or IPv6 address in canonical text, or the keyword lo0): " + why
+	}
+	return ""
 }
 
 // Client is one 'clients' statement of a community.
@@ -558,10 +577,6 @@ func (p *parser) setTrapOptions(t []tok) {
 		p.errf("'set snmp trap-options' needs a leaf (word 4)")
 		return
 	}
-	if t[0].word("source-address") {
-		p.errf("trap-options source-address is not accepted in a block yet: the source address of a device's traps is not a setting tacctl has")
-		return
-	}
 	var want []string
 	var known bool
 	if !t[0].quoted {
@@ -576,7 +591,17 @@ func (p *parser) setTrapOptions(t []tok) {
 	for _, a := range t[1:] {
 		args = append(args, a.s)
 	}
-	if !slices.Equal(args, want) || slices.ContainsFunc(t[1:], func(a tok) bool { return a.quoted }) {
+	switch {
+	case leaf == trapSourceLeaf:
+		if len(t) != 2 || t[1].quoted {
+			p.errf("trap-options source-address takes one address, or lo0")
+			return
+		}
+		if why := trapSourceAddress(args[0]); why != "" {
+			p.errf("the address of trap-options source-address (word 5) %s", why)
+			return
+		}
+	case !slices.Equal(args, want) || slices.ContainsFunc(t[1:], func(a tok) bool { return a.quoted }):
 		p.errf("trap-options %s takes %s", leaf, strings.Join(want, " "))
 		return
 	}
@@ -636,7 +661,7 @@ func (p *parser) parseDelete(t []tok) {
 		nm.Kind = "trap-options"
 		rest := t[2:]
 		if len(rest) > 0 {
-			if rest[0].quoted || trapOptionLeaves[rest[0].s] == nil {
+			if _, ok := trapOptionLeaves[rest[0].s]; rest[0].quoted || !ok {
 				p.errf("word 4 is not a trap-options leaf a block takes (one of: %s)", strings.Join(leafNames(), ", "))
 				return
 			}
@@ -787,6 +812,12 @@ func Check(b *SNMPBlock, layer Layer) []Finding {
 		add(first(g.Lines), SevNote, "trap-group %d carries a name that is the community string traps are sent with, a secret, on %s", n, lineList(g.Lines))
 	}
 	for _, o := range b.TrapOptions {
+		switch {
+		case o.Leaf == trapSourceLeaf && layer == LayerDefault:
+			add(first(o.Lines), SevError, "trap-options source-address: the default block names no address (a scope or a device does)")
+		case o.Leaf == trapSourceLeaf && layer == LayerScope:
+			add(first(o.Lines), SevNote, "trap-options source-address is the same source address for every device of the scope: a device that does not hold it cannot take it (a device's own block can state another)")
+		}
 		add(first(o.Lines), SevNote, "trap-options %s becomes owned by tacctl: the plan sets that leaf", o.Leaf)
 	}
 	for _, d := range b.NotManaged {

@@ -107,7 +107,14 @@ func TestIOSParseRefusals(t *testing.T) {
 		{"traps twice", "snmp-server enable traps config\nsnmp-server enable traps config\n", "is stated twice"},
 		{"contact", "snmp-server contact NOC\n", "never part of a block"},
 		{"location", "snmp-server location Rack\n", "never part of a block"},
-		{"trap-source", "snmp-server trap-source Loopback0\n", "not accepted in a block yet"},
+		{"trap-source none", "snmp-server trap-source\n", "takes one interface name"},
+		{"trap-source two", "snmp-server trap-source Loopback0 Loopback1\n", "takes one interface name"},
+		{"trap-source abbreviated", "snmp-server trap-source Lo0\n", "has its type abbreviated"},
+		{"trap-source no number", "snmp-server trap-source Loopback\n", "has no number"},
+		{"trap-source a character", "snmp-server trap-source Loopback0;\n", "is not an interface name"},
+		{"trap-source twice", "snmp-server trap-source Loopback0\nsnmp-server trap-source Loopback1\n", "is stated twice"},
+		{"source-interface", "snmp-server source-interface traps Loopback0\n", "is not accepted in a block"},
+		{"a no of trap-source with words", "no snmp-server trap-source Loopback0 x\n", "takes an interface name, or nothing"},
 		{"engineID", "snmp-server engineID local 0123\n", "the device's identity"},
 		{"a user", "snmp-server user u g v3\n", "SNMPv3"},
 		{"a group", "snmp-server group g v3 priv\n", "SNMPv3"},
@@ -227,8 +234,12 @@ func TestIOSElide(t *testing.T) {
 }
 
 func TestIOSLintFor(t *testing.T) {
-	if _, _, err := LintFor(VendorCisco, BlockSystem, "x\n", LayerScope); err == nil || !strings.Contains(err.Error(), "not built") {
-		t.Errorf("the IOS system block: %v", err)
+	d0, fs0, err := LintFor(VendorCisco, BlockSystem, "ip domain name lab.example.net\n", LayerScope)
+	if err != nil || HasErrors(fs0) || d0.Empty() || len(StatementsOf(d0)) != 1 {
+		t.Errorf("the IOS system block: %v %v", err, fs0)
+	}
+	if _, ok := d0.(*IOSSystemBlock); !ok {
+		t.Errorf("the IOS system block is a %T", d0)
 	}
 	d, fs, err := LintFor(VendorCisco, BlockSNMP, "snmp-server enable traps config\n", LayerScope)
 	if err != nil || HasErrors(fs) || d.Empty() || len(StatementsOf(d)) != 1 {

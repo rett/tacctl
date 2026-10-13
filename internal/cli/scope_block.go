@@ -96,18 +96,21 @@ func scopeBlockUsage(scope string) string {
 A block is the vendor's own syntax and nothing else, kept as a text file of
 its own: Junos 'set' statements (a 'delete' line says "not managed on this
 device") for juniper, IOS configuration lines (a 'no' line says it) for
-cisco; <block> is snmp or system, and the IOS system block is not built. The
-Junos snmp block's communities, client lists and trap groups, and the IOS snmp
-block's communities and the standard access lists it defines, are objects
-tacctl owns once the block is in force: 'device config plan' sets what a
-device lacks and removes the statements of those objects that the block does
-not state, and the device's other communities are kept. An IOS block's trap
-hosts and 'enable traps' lines are added when missing and never removed. The
-Junos system block is additive: its statements are set when missing and
-nothing the device holds is removed. The login message is a heredoc (set
-system login message <<'EOF' ... EOF). A block holds community strings, so
-'show' elides them and only 'show --reveal' prints them. A block is in force
-only while tacctl.yaml names it (blocks.<scope>.<vendor>); the files are
+cisco; <block> is snmp or system. The Junos snmp block's communities, client
+lists and trap groups, and the IOS snmp block's communities and the standard
+access lists it defines, are objects tacctl owns once the block is in force:
+'device config plan' sets what a device lacks and removes the statements of
+those objects that the block does not state, and the device's other
+communities are kept. An IOS block's trap hosts and 'enable traps' lines are
+added when missing and never removed; the trap source (Junos trap-options
+source-address, IOS snmp-server trap-source) is one value, replaced in place.
+The system blocks are additive: their statements are set when missing and
+nothing the device holds is removed. The Junos login message is a heredoc (set
+system login message <<'EOF' ... EOF) and so is the IOS login banner (banner
+login <<'EOF' ... EOF, typed with a delimiter its text does not contain). A
+block holds community strings and NTP keys, so 'show' elides them and only
+'show --reveal' prints them. A block is in force only while tacctl.yaml names
+it (blocks.<scope>.<vendor>); the files are
 /etc/tacctl/blocks/<scope>/<vendor>/ (0600) and are in every snapshot.
 Setting and removing are the superuser's; an engineer reads the blocks of
 their own scopes.
@@ -226,9 +229,6 @@ func (inv *invocation) blockRun(c *blockCtx, sub string, p Parsed, usage string)
 	}
 	if err := inv.blockName(block); err != nil {
 		return err
-	}
-	if c.vendor == blocks.VendorCisco && block == blocks.BlockSystem && sub != "remove" {
-		return inv.usageErr("The IOS system block is not built: only the snmp block exists for vendor cisco.")
 	}
 	switch sub {
 	case "show":

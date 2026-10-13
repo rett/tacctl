@@ -581,7 +581,7 @@ current behaviour; this file is where history lives.
     string. The report says, among its notes, that the block's lines (list
     entries, trap hosts, `enable traps` lines) were written from the vendor's
     references and have not been checked on a device. The IOS `system` block
-    is not built (`The IOS system block is not built`).
+    and `trap-source` are item 22.
 
     `adopt` reads `show running-config | include ^snmp-server` and, for each
     standard list a community names, `show running-config | section ip
@@ -591,13 +591,111 @@ current behaviour; this file is where history lives.
     names what a block cannot hold (a numbered list, a view or IPv6 list, a
     deny entry, a string shown as ciphertext) as `# left out:` lines. Limits:
     VRF forms (`snmp-server host ... vrf <v>`, management VRFs on IOS-XE) are
-    refused in a block, and the device's own such lines stay unmanaged;
-    `trap-source` and the system block wait for a later release.
+    refused in a block, and the device's own such lines stay unmanaged.
 
     **Every `show --reveal` of a block is logged**, the superuser's too, as
     `secret-read kind=block name=<scope>/<vendor>/<block>` (or
     `_devices/<device>/<vendor>/<block>`), never a value; an elided read is
     not.
+
+22. **The IOS `system` block, and `trap-source` in the IOS and Junos `snmp`
+    blocks (not lab-tested).** `tacctl scope block <scope> cisco
+    list|show|check|set|remove|edit|adopt` and the device level (`tacctl
+    device block <name> ...`) now take the block name `system` for IOS and
+    IOS-XE, as they take it for Junos; the refusal `The IOS system block is
+    not built` is gone. The block is IOS configuration lines, `#` and `!`
+    comments, and the login banner as a heredoc so that its text is easy to
+    read and edit:
+
+        banner login <<'EOF'
+        <text lines>
+        EOF
+        ip domain name <name>
+        ip domain list <name>
+        clock timezone <zone> <hours> [<minutes>]
+        ip name-server <address> [<address> ...]
+        ntp server <address-or-name> [prefer] [version <1-4>] [key <n>] [source <interface>]
+        ntp authentication-key <n> md5 <string>
+        ntp trusted-key <n>
+        ntp authenticate
+        no <statement>
+
+    The block is additive, as the Junos system block is: a statement is set
+    when the device lacks it, a single value that differs (banner, domain
+    name, time zone, an NTP server's options) is replaced in place, a list
+    entry is only added, and what the device holds beside is its own, listed
+    and kept (`ok (+N unmanaged)`); a `no` line says "not managed here" and is
+    never rendered. A device's block is laid over its scope's per object (a
+    server by its host, a key by its number, a single value whole), and its
+    `no` line takes the scope's object out for that device. The banner is
+    rendered as IOS's multi-line banner, `banner login <d>`, the text, `<d>`
+    alone on a line, where `<d>` is the first of `^ ~ % # @ $ &` that the text
+    does not contain; a text of at most 20 lines of 80 characters of ASCII
+    with no tab or control character is accepted, and one that holds every
+    candidate is refused. An `ntp authentication-key` string is typed only
+    where the device has no key of that number (a pulled device shows
+    ciphertext, so a key is compared by its number alone), and `ntp
+    authenticate` is one boolean; the plan pastes the NTP lines in the order
+    IOS needs (keys, trusted keys, servers, `ntp authenticate` last) and says
+    so. Refused by `check`, without the line's words: a placeholder
+    (`<secret>`, `<message: ...>`), a key with no key number or of another
+    algorithm, an abbreviated interface (`Lo0` for `Loopback0`), an IPv6 NTP
+    server, and every VRF form (`ntp server vrf`, `ip name-server vrf`, `ip
+    domain name vrf`): a device's own lines of those forms stay unmanaged. `ip
+    domain-name` and `ip domain-list`, the legacy spellings, are accepted and
+    read as the current ones.
+
+    The comparison puts both sides in one form: the banner is `banner login
+    <message: N lines, M characters, id xxxxxxxx>` (its size and a short
+    digest; no text of it is stored, shown in a report or kept in a record,
+    and `show`, `check` and the plan's report print the mark), `clock timezone
+    CET 1` (12.4) and `CET 1 0` (15.x) are one statement, `ip name-server A B`
+    is a statement per address, an NTP server's keywords are compared as a set
+    whatever order the device stored them in, a host name and an interface are
+    compared without case, and the banner a device prints with `^C` or any
+    single delimiter is read as its text between the delimiters. The
+    walkthrough puts the block's lines after the SNMP step under a comment
+    that names the block (and the delimiter chosen), and the Step 0 comment
+    `ip domain name <DOMAIN>` names the block's value for a scope that has
+    one; with no block every walkthrough, section and golden is as it was. The
+    plan has a section `system` (after `snmp`, before `mgmt-acl`), `--section
+    system`, the rows `ios.system.*` of the ownership table, a back-out that
+    types a replaced single value again, takes an added statement away as the
+    device takes it (`no banner login`, `no ntp authentication-key 5`, `no ntp
+    server <host>`) and, for a replaced banner (only its digest is kept),
+    names the way back (`configure replace` with the archived or the startup
+    configuration), and a warning when a banner line is longer than the 255
+    characters IOS takes on a typed line. The whole-paste check understands a
+    banner: its text is any text up to the closing delimiter (a line that
+    starts with `!` is no comment there), and no label or comment may stand
+    inside it. `--converge` removes none of the device's own lines. The report
+    says, among its notes, that the system block's lines (banner, domain, time
+    zone, name servers, NTP) were written from the vendor's references and
+    have not been checked on a device.
+
+    `adopt` reads `show running-config | include ^(banner|ip domain|ip
+    name-server|clock timezone|ntp )` and the banner's own lines with `show
+    running-config | section ^banner login` (the whole configuration once when
+    the image does not know `| section`), as the caller, over the ssh command
+    line; the draft holds the device's banner as the heredoc and its
+    statements minus what the block or the scope's block states already, and
+    leaves each `ntp authentication-key` out with a `# left out:` line (the
+    string is never adopted).
+
+    `snmp-server trap-source <interface>` (IOS) and `set snmp trap-options
+    source-address <address>|lo0` (Junos) are accepted in the `snmp` blocks,
+    which refused them until this release. One is in force at most, the
+    interface is written in full (`Loopback0`, which is how the device stores
+    it) and compared without case, and the address is canonical IPv4 or IPv6
+    or the keyword `lo0`. A scope's block that states one gets a note that the
+    same source interface or address is stated for every device of the scope
+    (a device's own block can state another; the default layer refuses it).
+    The plan sets it when the device's differs, in place (a `set` over the old
+    value, never a delete), and the device's own is kept while the block
+    states none; on IOS `no snmp-server trap-source` and on Junos `delete snmp
+    trap-options source-address` say "not managed", and the report names the
+    leaf as the block's. `adopt` takes the device's own trap source into the
+    draft.
 
 24. **A WTI unit's Multiple Logins setting must be On, and the standard, the
     comparison and the plan say so.** A unit's `Multiple Logins` (`/N`, item

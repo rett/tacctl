@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/rett/tacctl/internal/blocks"
 	"github.com/rett/tacctl/internal/names"
 )
 
@@ -158,6 +159,8 @@ func HierarchyCommand(vendor, hierarchy string) string {
 		return "show configuration " + hierarchy + " | display set"
 	case fam == FamilyIOS && hierarchy == "snmp":
 		return iosSNMPCommand
+	case fam == FamilyIOS && hierarchy == "system":
+		return iosSystemCommand
 	}
 	return ""
 }
@@ -168,8 +171,12 @@ func HierarchyCommand(vendor, hierarchy string) string {
 // list's own header).
 const (
 	iosSNMPCommand = "show running-config | include ^snmp-server"
-	iosACLCommand  = "show running-config | section ip access-list standard "
-	iosFullCommand = "show running-config"
+	// iosSystemCommand reads the lines of the system block; the banner's own
+	// lines come from iosBannerCommand ('include' shows its first line only).
+	iosSystemCommand = "show running-config | include ^(banner|ip domain|ip name-server|clock timezone|ntp )"
+	iosBannerCommand = "show running-config | section ^banner login"
+	iosACLCommand    = "show running-config | section ip access-list standard "
+	iosFullCommand   = "show running-config"
 )
 
 // reIOSACLName is what a named list a read command is made for looks like: a
@@ -295,6 +302,74 @@ func readIOSSNMP(ctx context.Context, r Runner) (string, error) {
 	return text, nil
 }
 
+// readIOSSystem reads an IOS device's system lines and its login banner, the
+// text a block's adoption is drafted from: the lines of the first command
+// (the banners' first lines left out) and the banner's own lines, read with
+// '| section' or, when the device does not know it, cut out of the whole
+// running configuration.
+func readIOSSystem(ctx context.Context, r Runner) (string, error) {
+	if _, err := r.Run(ctx, "terminal length 0"); err != nil {
+		return "", err
+	}
+	out, err := r.Run(ctx, iosSystemCommand)
+	if err != nil {
+		return "", err
+	}
+	out = cleanText(out)
+	if iosRefused(out) {
+		return "", fmt.Errorf("%w: the device refused the command", ErrParse)
+	}
+	var kept []string
+	var first []string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		if strings.HasPrefix(strings.TrimSpace(l), "banner ") {
+			first = append(first, l)
+			continue
+		}
+		kept = append(kept, strings.TrimSpace(l))
+	}
+	// the banner: the section read, the whole configuration when that is
+	// refused, the first line of the first command when it is all there is
+	banner := bannerLines(ctx, r, first)
+	return strings.Join(append(kept, banner...), "\n"), nil
+}
+
+// bannerLines are the lines of the login banner (its opening line, its text
+// and its closing delimiter), none when the device has none.
+func bannerLines(ctx context.Context, r Runner, first []string) []string {
+	cut := func(text string) []string {
+		lines := strings.Split(text, "\n")
+		for i, l := range lines {
+			if f := strings.Fields(l); len(f) >= 2 && f[0] == "banner" && f[1] == "login" && l == strings.TrimLeft(l, " \t") {
+				if _, took, ok := blocks.DeviceBanner(lines[i:]); ok {
+					return lines[i : i+took]
+				}
+				return nil
+			}
+		}
+		return nil
+	}
+	if o, err := r.Run(ctx, iosBannerCommand); err == nil {
+		o = cleanText(o)
+		if !iosRefused(o) {
+			if b := cut(o); b != nil {
+				return b
+			}
+		} else if all, err := r.Run(ctx, iosFullCommand); err == nil {
+			all = cleanText(all)
+			if !iosRefused(all) {
+				if b := cut(all); b != nil {
+					return b
+				}
+			}
+		}
+	}
+	return cut(strings.Join(first, "\n"))
+}
+
 var reAllDigitsWord = regexp.MustCompile(`^[0-9]+$`)
 
 // ReadHierarchy reads one hierarchy through a session (HierarchyCommand) and
@@ -309,6 +384,9 @@ func ReadHierarchy(ctx context.Context, r Runner, vendor, hierarchy string) (str
 	}
 	if cmd == iosSNMPCommand {
 		return readIOSSNMP(ctx, r)
+	}
+	if cmd == iosSystemCommand {
+		return readIOSSystem(ctx, r)
 	}
 	out, err := r.Run(ctx, cmd)
 	if err != nil {

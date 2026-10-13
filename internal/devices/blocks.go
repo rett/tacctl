@@ -7,10 +7,11 @@ package devices
 // Nothing here reads a file: the renderers stay pure, and a batch shares the
 // resolved block between its devices.
 //
-// The Junos blocks are snmp and system; the IOS block is snmp (the IOS system
-// block is not built). A request renders the blocks of its own vendor: a
-// Cisco request reads CiscoSNMP and ignores the rest, a Junos request reads
-// SNMP and System and ignores CiscoSNMP, whatever Data.Blocks holds.
+// The Junos blocks are snmp and system (SNMP, System); the IOS blocks are
+// snmp and system (CiscoSNMP, CiscoSystem). A request renders the blocks of
+// its own vendor: a Cisco request reads CiscoSNMP and CiscoSystem and ignores
+// the rest, a Junos request reads SNMP and System and ignores the IOS ones,
+// whatever Data.Blocks holds.
 
 import (
 	"fmt"
@@ -74,6 +75,13 @@ type Blocks struct {
 	// banner that names a site: nothing prints it but the statements the
 	// walkthrough and the plan type.
 	System *blocks.SystemBlock
+	// CiscoSystem is the IOS system block: the login banner, domain name and
+	// list, time zone, name servers and NTP. Nil is "no block in force": the
+	// managed system section is then not rendered at all. SystemLayer says
+	// which layers it is made of, as for the Junos block. It holds an NTP
+	// key's string, which is a secret, and a banner that names a site: nothing
+	// prints it but the statements the walkthrough and the plan type.
+	CiscoSystem *blocks.IOSSystemBlock
 }
 
 // snmpStatements are the 'set' lines of the Junos snmp block, in the order
@@ -111,6 +119,16 @@ func (b Blocks) systemStatements() []string {
 	return blocks.SystemStatements(b.System)
 }
 
+// ciscoSystemStatements are the lines of the IOS system block, in the order
+// blocks.IOSSystemStatements gives them (the banner's lines are the lines
+// typed, its delimiter chosen); none for no block.
+func (b Blocks) ciscoSystemStatements() []string {
+	if b.CiscoSystem == nil {
+		return nil
+	}
+	return blocks.IOSSystemStatements(b.CiscoSystem)
+}
+
 // head is what a comment says of a block: the layers it is made of and the
 // verb that shows it, never a string.
 func (b Blocks) head(block string, layer BlockLayer, scope string) string {
@@ -135,6 +153,29 @@ func (b Blocks) snmpHead(scope string) string { return b.head(blocks.BlockSNMP, 
 func (b Blocks) ciscoSNMPHead(scope string) string {
 	h := b.head(blocks.BlockSNMP, b.SNMPLayer, scope)
 	return strings.ReplaceAll(h, " juniper show ", " cisco show ")
+}
+
+// ciscoSystemHead is the head of the IOS system block's comment: the same
+// words with the IOS verb.
+func (b Blocks) ciscoSystemHead(scope string) string {
+	h := b.head(blocks.BlockSystem, b.SystemLayer, scope)
+	return strings.ReplaceAll(h, " juniper show ", " cisco show ")
+}
+
+// ciscoSystemLines are the lines of the IOS system block in the walkthrough:
+// comments that name the block (never the banner, never a key), then its
+// statements as live lines. None when there is no system block.
+func (b Blocks) ciscoSystemLines(scope string) []string {
+	st := b.ciscoSystemStatements()
+	if len(st) == 0 {
+		return nil
+	}
+	out := []string{"! " + b.ciscoSystemHead(scope) + ": the login banner, domain, time zone, name servers and NTP."}
+	if d, ok := blocks.BannerDelimiter(b.CiscoSystem.BannerBody()); ok && b.CiscoSystem.Banner != nil {
+		out = append(out, "! The banner is typed with the delimiter "+d+", the first of "+strings.Join(blocks.BannerDelimiters, " ")+
+			" that its text does not contain; the NTP lines are in the order IOS needs (keys, trusted keys, servers, 'ntp authenticate').")
+	}
+	return append(out, st...)
 }
 
 // systemLines are the lines of the system block in the walkthrough: a comment

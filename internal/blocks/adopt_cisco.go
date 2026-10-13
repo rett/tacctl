@@ -18,6 +18,8 @@ package blocks
 //     that the layer beneath states with the same statements, is not
 //     repeated; one that is in the same file with other statements is left as
 //     it is (the person edits it in place);
+//   - the trap source is adopted as the block's statement unless the block (or
+//     the layer beneath) states the same interface;
 //   - what a block cannot hold is left out with a line that says so, never a
 //     value: a community with a view or an IPv6 list, one that names a numbered
 //     list, a string the device shows as ciphertext, an access list with a
@@ -178,6 +180,13 @@ func AdoptIOSSNMP(raw string, own AdoptOwn, same, up *IOSSNMPBlock) AdoptResult 
 			} else {
 				outside++
 			}
+		case len(f) >= 2 && f[0] == "snmp-server" && f[1] == "trap-source":
+			s := strings.Join(f, " ")
+			if _, fs := ParseIOSSNMP(s + "\n"); HasErrors(fs) {
+				left = append(left, "the trap source is an interface name a block cannot hold (the type spelled in full, one word): not adopted")
+				continue
+			}
+			stmts = append(stmts, s)
 		case len(f) >= 1 && f[0] == "snmp-server":
 			outside++
 		}
@@ -248,6 +257,20 @@ func AdoptIOSSNMP(raw string, own AdoptOwn, same, up *IOSSNMPBlock) AdoptResult 
 			continue
 		}
 		incl.Traps = append(incl.Traps, t)
+	}
+	if ts := dev.TrapSource; ts != nil {
+		switch {
+		case same != nil && same.TrapSource != nil:
+			if strings.EqualFold(same.TrapSource.Text, ts.Text) {
+				already++
+			} else {
+				conflict++
+			}
+		case up != nil && up.TrapSource != nil && strings.EqualFold(up.TrapSource.Text, ts.Text):
+			already++
+		default:
+			incl.TrapSource = ts
+		}
 	}
 	res.Text = incl.String(false)
 	res.Statements = len(IOSSNMPUnits(incl))

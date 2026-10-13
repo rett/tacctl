@@ -43,6 +43,19 @@ func emitIOSLine(out *[]RegionLine, c *iosCursor, l Line, idx int) {
 		*out = append(*out, RegionLine{Text: "! " + secretLinePrefix + strings.TrimSpace(text), Comment: true, Line: idx})
 		return
 	}
+	// a login banner is one statement of several lines (the opening line, the
+	// text, the closing delimiter): they are consecutive lines of the region,
+	// the first of them the line of the plan
+	if lines := strings.Split(text, "\n"); len(lines) > 1 {
+		for i, bl := range lines {
+			at := idx
+			if i > 0 {
+				at = -1
+			}
+			*out = append(*out, RegionLine{Text: bl, Line: at})
+		}
+		return
+	}
 	*out = append(*out, RegionLine{Text: text, Line: idx})
 }
 
@@ -300,7 +313,7 @@ func pastedLines(lines []Line) int {
 			n += len(l.Context)
 			c.ctx = append([]string(nil), l.Context...)
 		}
-		n++
+		n += strings.Count(l.Text, "\n") + 1
 	}
 	return n
 }

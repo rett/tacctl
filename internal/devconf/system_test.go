@@ -257,12 +257,20 @@ func TestSystemSectionOnlyWhereRendered(t *testing.T) {
 	if s, ok := ex.Sections[SectionSystem]; !ok || len(s.Lines) != 0 {
 		t.Errorf("the section: %v %v", s, ok)
 	}
-	// IOS has none, whatever it is given
-	ios, err := Extract("ios", "hostname r1\n!\nntp server 192.0.2.123\n", sec)
+	// an IOS device has the section where an IOS rendering has it, and none
+	// otherwise (a Junos rendering is no IOS system section's)
+	ios, err := Extract("ios", "hostname r1\n!\nntp server 192.0.2.123\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := ios.Sections[SectionSystem]; ok {
-		t.Error("an IOS extraction has a system section")
+	if s, ok := ios.Sections[SectionSystem]; ok {
+		t.Errorf("an IOS extraction with no rendering has a system section: %v", s)
+	}
+	ios, err = Extract("ios", "hostname r1\n!\nntp server 192.0.2.123\n", devices.Section{Name: SectionSystem, Lines: []string{"ip domain name lab.example.net"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s, ok := ios.Sections[SectionSystem]; !ok || len(s.Lines) != 1 || s.Lines[0] != "ntp server 192.0.2.123" {
+		t.Errorf("an IOS extraction with a rendering: %v %v", s, ok)
 	}
 }

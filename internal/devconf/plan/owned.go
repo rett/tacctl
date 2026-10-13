@@ -261,6 +261,46 @@ var iosOwned = []OwnedRow{
 		Why:  "the 'enable traps' lines of the SNMP block of scope <scope> (set when missing, never removed)",
 		Kept: "the 'enable traps' lines the block does not state"},
 
+	// The trap source (0.2.7): one per device, retyped in place as the block
+	// states it; the device's own is kept while the block states none.
+	{ID: "ios.snmp.block-trap-source", Section: "snmp", Pattern: "snmp-server trap-source", Mode: ModeSingle, Block: true,
+		Why:  "the trap source of the SNMP block of scope <scope> (the interface the device's traps are sourced from, retyped when it differs)",
+		Kept: "the device's own trap source when the block states none"},
+
+	// The system block (0.2.7): every statement is an object, set when
+	// missing; a value of a single-valued statement is replaced in place, and
+	// what the device holds beside the block's statements is kept and listed.
+	// A key is typed only where the device has none of the number, and the
+	// block's list entries are only ever added. One Why serves the whole
+	// section (the comment above its statements names the block).
+	{ID: "ios.system.banner", Section: "system", Pattern: "banner login", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the login banner when the block states none"},
+	{ID: "ios.system.domain-name", Section: "system", Pattern: "ip domain name", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the domain name when the block states none"},
+	{ID: "ios.system.timezone", Section: "system", Pattern: "clock timezone", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the time zone when the block states none"},
+	{ID: "ios.system.ntp-authenticate", Section: "system", Pattern: "ntp authenticate", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "'ntp authenticate' when the block states none"},
+	{ID: "ios.system.domain-list", Section: "system", Pattern: "ip domain list $", Mode: ModeAdditive, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the device's other search domains"},
+	{ID: "ios.system.name-server", Section: "system", Pattern: "ip name-server $", Mode: ModeAdditive, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the device's other name servers"},
+	{ID: "ios.system.ntp-server", Section: "system", Pattern: "ntp server $", Mode: ModeAdditive, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the device's other NTP servers (a server the block states with other options is retyped in place)"},
+	{ID: "ios.system.ntp-key", Section: "system", Pattern: "ntp authentication-key $", Mode: ModeAdditive, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the device's other NTP keys (and the algorithm and string of a key the device has)"},
+	{ID: "ios.system.ntp-trusted-key", Section: "system", Pattern: "ntp trusted-key $", Mode: ModeAdditive, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the device's other trusted NTP keys"},
+
 	{ID: "ios.mgmt-acl.acl", Section: "mgmt-acl", Pattern: "ip access-list standard $", Mode: ModeWhole, Ordered: true,
 		Why:  "the management access list tacctl renders (its entries and their order)",
 		Kept: "other access lists; the access-class binding"},

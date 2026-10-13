@@ -35,6 +35,7 @@ func Template(block string, layer Layer) string {
 			"#   set snmp trap-group <name> categories <category>",
 			"#   set snmp trap-group <name> targets <address>",
 			"#   set snmp trap-options agent-address outgoing-interface",
+			"#   set snmp trap-options source-address <address>|lo0   (one; the same for every device of a scope)",
 			"#   delete snmp community <string>   (not managed on this device; kept, never removed)",
 			"#",
 			"# A community needs clients or a client-list-name. tacctl's own community and",
@@ -86,8 +87,8 @@ func Template(block string, layer Layer) string {
 	return strings.Join(l, "\n") + "\n"
 }
 
-// TemplateFor is Template for a vendor's block: the IOS snmp block's is its
-// grammar and an example (there is no IOS system block).
+// TemplateFor is Template for a vendor's block: the IOS blocks' are their
+// grammars and an example.
 func TemplateFor(vendor, block string, layer Layer) string {
 	if vendor != VendorCisco {
 		return Template(block, layer)
@@ -95,6 +96,9 @@ func TemplateFor(vendor, block string, layer Layer) string {
 	level := "scope"
 	if layer == LayerDevice {
 		level = "device"
+	}
+	if block == BlockSystem {
+		return iosSystemTemplate(level)
 	}
 	l := []string{
 		"# The snmp block of this " + level + " (IOS and IOS-XE). One statement per line; blank lines and",
@@ -108,6 +112,7 @@ func TemplateFor(vendor, block string, layer Layer) string {
 		"#   snmp-server community <string> RO|RW [<acl-name>]",
 		"#   snmp-server host <address> [version 1|2c] <community> [udp-port <n>] [<type> ...]",
 		"#   snmp-server enable traps [<type> [<subtype> ...]]",
+		"#   snmp-server trap-source <interface>   (one, written in full: Loopback0; the same for every device of a scope)",
 		"#   ip access-list standard <NAME>",
 		"#    permit <address> [<wildcard>] | permit host <address> | permit any",
 		"#   no snmp-server community <string>   (not managed on this device; kept, never removed)",
@@ -125,6 +130,49 @@ func TemplateFor(vendor, block string, layer Layer) string {
 		"# snmp-server community change-me-community RO POLLERS",
 		"# snmp-server host 192.0.2.50 version 2c change-me-traps",
 		"# snmp-server enable traps config",
+	}
+	return strings.Join(l, "\n") + "\n"
+}
+
+// iosSystemTemplate is the text 'edit' opens for a new IOS system block.
+func iosSystemTemplate(level string) string {
+	l := []string{
+		"# The system block of this " + level + " (IOS and IOS-XE). One statement per line; blank lines and",
+		"# lines that start with '#' or '!' are comments (inside the banner heredoc every line is text).",
+		"# Save to install it (the check runs first); quit without saving to leave things as",
+		"# they are.",
+		"#",
+		"# What a system block states (additive: a statement is set when the device lacks it,",
+		"# and what the device holds besides is kept and listed):",
+		"#",
+		"#   banner login <<'EOF'",
+		"#   <the text, one line per line; ASCII, no tabs, at most 20 lines of 80 characters>",
+		"#   EOF",
+		"#   ip domain name <name>",
+		"#   ip domain list <name>                        (one line per entry)",
+		"#   clock timezone <zone> <hours> [<minutes>]",
+		"#   ip name-server <address> [<address> ...]",
+		"#   ntp server <address|name> [prefer] [version <1-4>] [key <n>] [source <interface>]",
+		"#   ntp authentication-key <n> md5 <string>      (typed only where the device lacks a key of that number)",
+		"#   ntp trusted-key <n>",
+		"#   ntp authenticate",
+		"#   no <statement>                               (not managed on this device; kept, never removed)",
+		"#",
+		"# The banner is typed with a delimiter character tacctl picks from ^ ~ % # @ $ &",
+		"# that the text does not contain. The vrf forms (ntp server vrf, ip name-server vrf)",
+		"# are not in a block: the device's own stay as they are. A key works only with",
+		"# 'ntp authenticate' and 'ntp trusted-key' on the device.",
+		"#",
+		"# Example (remove the '# ' to use it; the heredoc's lines are the banner):",
+		"#",
+		"# banner login <<'EOF'",
+		"# Authorized use only.",
+		"# Activity is logged.",
+		"# EOF",
+		"# ip domain name lab.example.net",
+		"# clock timezone UTC 0",
+		"# ip name-server 192.0.2.53",
+		"# ntp server 192.0.2.123 prefer",
 	}
 	return strings.Join(l, "\n") + "\n"
 }

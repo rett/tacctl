@@ -86,6 +86,48 @@ func ResolveIOSSNMPTexts(scope, device string, scopeText, deviceText []byte) (*b
 	return r, layers, nil
 }
 
+// ResolveIOSSystemBlock is the IOS system block of a scope, and of one device
+// of it when device is not empty, as the renderers take it, with the same
+// rules as ResolveSystemBlock: nil when no layer has one in force, an error
+// (naming the scope or device and the verb that checks it, holding no part of
+// the banner and no key) when a layer cannot be rendered whole. A block of no
+// lines only renders nothing.
+func ResolveIOSSystemBlock(store *blocks.Store, c *conf.Config, scope, device string) (*blocks.IOSSystemBlock, BlockLayers, error) {
+	scopeText, deviceText, err := layerTexts(store, c, blocks.VendorCisco, scope, device, blocks.BlockSystem)
+	if err != nil {
+		return nil, BlockLayers{}, err
+	}
+	return ResolveIOSSystemTexts(scope, device, scopeText, deviceText)
+}
+
+// ResolveIOSSystemTexts is ResolveIOSSystemBlock for texts already in hand.
+func ResolveIOSSystemTexts(scope, device string, scopeText, deviceText []byte) (*blocks.IOSSystemBlock, BlockLayers, error) {
+	var sc, dv *blocks.IOSSystemBlock
+	var layers BlockLayers
+	if scopeText != nil {
+		b, findings := blocks.LintIOSSystem(string(scopeText), blocks.LayerScope)
+		if err := blockFindingsError(blocks.VendorCisco, blocks.ScopeLevel(scope), blocks.BlockSystem, findings); err != nil {
+			return nil, BlockLayers{}, err
+		}
+		sc, layers.Scope = b, true
+	}
+	if deviceText != nil {
+		b, findings := blocks.LintIOSSystem(string(deviceText), blocks.LayerDevice)
+		if err := blockFindingsError(blocks.VendorCisco, blocks.DeviceLevel(device), blocks.BlockSystem, findings); err != nil {
+			return nil, BlockLayers{}, err
+		}
+		dv, layers.Device = b, true
+	}
+	if sc == nil && dv == nil {
+		return nil, BlockLayers{}, nil
+	}
+	r := blocks.ResolveIOSSystem(nil, sc, dv)
+	if len(blocks.IOSSystemStatements(r)) == 0 {
+		return nil, BlockLayers{}, nil
+	}
+	return r, layers, nil
+}
+
 // ResolveSNMPTexts is ResolveSNMPBlock for texts already in hand: a nil text
 // is a layer that has no block. 'check --against' plans a device with a text
 // that is not yet in force through it.

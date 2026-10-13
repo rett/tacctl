@@ -83,7 +83,8 @@ func TestAdoptSNMPDraft(t *testing.T) {
 		"set snmp trap-group traps-string version v2\n" +
 		"set snmp trap-group traps-string categories link\n" +
 		"set snmp trap-group traps-string targets 198.51.100.20\n" +
-		"set snmp trap-options agent-address outgoing-interface\n"
+		"set snmp trap-options agent-address outgoing-interface\n" +
+		"set snmp trap-options source-address 192.0.2.1\n"
 	if res.Text != want {
 		t.Errorf("draft:\n%s\nwant:\n%s", res.Text, want)
 	}
@@ -91,7 +92,7 @@ func TestAdoptSNMPDraft(t *testing.T) {
 	if _, fs := Lint(res.Text, LayerScope); HasErrors(fs) {
 		t.Errorf("the draft does not lint: %v", fs)
 	}
-	if res.Statements != 9 || res.Objects != 4 {
+	if res.Statements != 10 || res.Objects != 5 {
 		t.Errorf("counts: %d statements, %d objects", res.Statements, res.Objects)
 	}
 	all := strings.Join(append(append([]string{res.Text}, res.Notes...), res.Left...), "\n")
@@ -100,13 +101,13 @@ func TestAdoptSNMPDraft(t *testing.T) {
 			t.Errorf("the report holds %q:\n%s", secret, all)
 		}
 	}
-	for _, secret := range []string{"scope-own-string", "abcdefghij", "TACCTL-SNMP", "name js1", "engine-id", "source-address"} {
+	for _, secret := range []string{"scope-own-string", "abcdefghij", "TACCTL-SNMP", "name js1", "engine-id"} {
 		if strings.Contains(res.Text, secret) {
 			t.Errorf("the draft holds %q:\n%s", secret, res.Text)
 		}
 	}
 	notes := strings.Join(res.Notes, "\n")
-	for _, w := range []string{"location, contact): 6 statements, not adopted", "never part of a block: 2 statements, not adopted", "and the like): 3 statements, not adopted"} {
+	for _, w := range []string{"location, contact): 6 statements, not adopted", "never part of a block: 2 statements, not adopted", "and the like): 2 statements, not adopted"} {
 		if !strings.Contains(notes, w) {
 			t.Errorf("notes lack %q:\n%s", w, notes)
 		}

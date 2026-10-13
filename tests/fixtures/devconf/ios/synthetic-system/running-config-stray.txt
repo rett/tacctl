@@ -1,0 +1,110 @@
+# vendor: cisco
+# os: IOS 15.2 (reference text: shapes from the vendor's documentation; the 'privilege' parents, 'aaa session-id common' and the missing 'snmp-server user' are [A], IOS knowledge, not a lab)
+# transport: ssh
+# command: show running-config
+# source: synthetic
+# assumptions: [A] IOS knowledge, not a lab: the parent privilege lines, aaa session-id common, snmp-server user not printed, the community of snmp-server host
+# what: the reference lab with the system block's objects in other shapes: another time zone, domain name (in the old spelling), banner, server options and trap source, and no 'ntp authenticate'
+# captured: 2026-10-12
+# ---
+Building configuration...
+
+Current configuration : 4821 bytes
+!
+! Last configuration change at 10:11:12 UTC Fri Oct 9 2026 by admin
+!
+version 15.2
+service timestamps debug datetime msec
+service password-encryption
+!
+hostname sw1.example.net
+!
+boot-start-marker
+boot-end-marker
+!
+clock timezone PST -8 0
+!
+enable secret 9 $9$EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE
+!
+aaa new-model
+!
+aaa group server tacacs+ LAB-TACACS
+ server name TACACS
+!
+aaa authentication login default local group LAB-TACACS
+aaa authorization exec default local group LAB-TACACS if-authenticated
+aaa authorization commands 1 default local group LAB-TACACS
+aaa authorization commands 7 default local group LAB-TACACS
+aaa authorization commands 15 default local group LAB-TACACS
+aaa authorization config-commands
+aaa accounting exec default start-stop group LAB-TACACS
+aaa accounting commands 1 default start-stop group LAB-TACACS
+aaa accounting commands 5 default start-stop group LAB-TACACS
+aaa accounting commands 7 default start-stop group LAB-TACACS
+!
+aaa session-id common
+!
+ip domain-name other.example.net
+ip domain list lab.example.net
+ip domain list other.example.net
+ip name-server 192.0.2.53 192.0.2.54
+ip name-server 198.51.100.53
+!
+username lab-admin privilege 15 secret 9 $9$EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE
+username lab-ops privilege 7 secret 9 $9$EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE
+!
+ip tacacs source-interface Loopback0
+tacacs server TACACS
+ address ipv4 192.0.2.10
+ key 7 0822455D0A16
+ single-connection
+ timeout 5
+!
+privilege exec level 1 show running-config
+privilege exec level 1 show
+privilege exec level 7 undebug all
+!
+ip access-list standard VTY-ACL
+ permit 192.0.2.10
+ permit 198.51.100.0 0.0.0.255
+ permit 192.0.2.0 0.0.0.255
+ deny   any log
+ip access-list standard TACCTL-SNMP
+ permit 192.0.2.10
+ permit 198.51.100.0 0.0.0.255
+ deny   any
+!
+snmp-server community lab-ro-community RO TACCTL-SNMP
+snmp-server community other-example RO TACCTL-SNMP
+snmp-server location Rack 4, DC1
+snmp-server contact NOC <noc@example.net>
+snmp-server trap-source Loopback1
+snmp-server enable traps config
+snmp-server host 192.0.2.50 version 2c example-trap-community
+!
+banner login ^C
+An older banner.
+^C
+banner motd ^C
+% Authorized users only
+username not-a-user privilege 15 secret 0 notarealsecret
+^C
+!
+line con 0
+ exec-timeout 60 0
+line vty 0 4
+ access-class VTY-ACL in
+ transport input ssh
+line vty 5 15
+ access-class VTY-ACL in
+ transport input ssh
+!
+ntp authentication-key 5 md5 0822455D0A16 7
+ntp trusted-key 6
+ntp source Loopback0
+ntp master 3
+ntp server 192.0.2.123 version 3
+ntp server ntp2.example.net
+ntp server 198.51.100.123
+!
+end

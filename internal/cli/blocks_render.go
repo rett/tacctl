@@ -46,8 +46,7 @@ func blockLayer(l policy.BlockLayers) devices.BlockLayer {
 }
 
 // resolveBlocks are the blocks a device of scope and vendor is rendered
-// with: the snmp and system blocks of a Junos device, the snmp block of an
-// IOS device; the scope's files and, for a device named, its own over them
+// with: the snmp and system blocks of a Junos or an IOS device; the scope's files and, for a device named, its own over them
 // (a layer's file is read when the manifest names it). The zero Blocks is
 // none. layers[0] is the snmp block's layers and layers[1] the system
 // block's.
@@ -103,38 +102,45 @@ func (inv *invocation) resolveBlocks(vendor, scope, device string, ov *blockOver
 	return b, layers, nil
 }
 
-// resolveIOSBlocks is resolveBlocks for an IOS device: the snmp block of the
-// scope and, for a device named, its own over it.
+// resolveIOSBlocks is resolveBlocks for an IOS device: the snmp and system
+// blocks of the scope and, for a device named, its own over them.
 func (inv *invocation) resolveIOSBlocks(scope, device string, text func(blocks.Level, string) ([]byte, error)) (devices.Blocks, [2]policy.BlockLayers, error) {
 	var layers [2]policy.BlockLayers
-	sc, err := text(blocks.ScopeLevel(scope), blocks.BlockSNMP)
-	if err != nil {
-		return devices.Blocks{}, layers, err
-	}
-	var dv []byte
-	if device != "" {
-		if dv, err = text(blocks.DeviceLevel(device), blocks.BlockSNMP); err != nil {
+	var sc, dv [2][]byte
+	for i, block := range []string{blocks.BlockSNMP, blocks.BlockSystem} {
+		var err error
+		if sc[i], err = text(blocks.ScopeLevel(scope), block); err != nil {
 			return devices.Blocks{}, layers, err
 		}
+		if device != "" {
+			if dv[i], err = text(blocks.DeviceLevel(device), block); err != nil {
+				return devices.Blocks{}, layers, err
+			}
+		}
 	}
-	snmp, snmpLayers, err := policy.ResolveIOSSNMPTexts(scope, device, sc, dv)
+	snmp, snmpLayers, err := policy.ResolveIOSSNMPTexts(scope, device, sc[0], dv[0])
 	if err != nil {
 		return devices.Blocks{}, layers, err
 	}
-	layers[0] = snmpLayers
-	if snmp == nil {
+	system, systemLayers, err := policy.ResolveIOSSystemTexts(scope, device, sc[1], dv[1])
+	if err != nil {
+		return devices.Blocks{}, layers, err
+	}
+	layers = [2]policy.BlockLayers{snmpLayers, systemLayers}
+	if snmp == nil && system == nil {
 		return devices.Blocks{}, layers, nil
 	}
-	b := devices.Blocks{Scope: scope, CiscoSNMP: snmp, SNMPLayer: blockLayer(snmpLayers)}
+	b := devices.Blocks{Scope: scope, CiscoSNMP: snmp, CiscoSystem: system,
+		SNMPLayer: blockLayer(snmpLayers), SystemLayer: blockLayer(systemLayers)}
 	// the layers as written, for the words of a refusal (the texts parsed
 	// well: a layer with errors was refused above)
-	if sc != nil {
-		b.ScopeCiscoSNMP, _ = blocks.ParseIOSSNMP(string(sc))
+	if sc[0] != nil {
+		b.ScopeCiscoSNMP, _ = blocks.ParseIOSSNMP(string(sc[0]))
 	}
-	if dv != nil {
-		b.DeviceCiscoSNMP, _ = blocks.ParseIOSSNMP(string(dv))
+	if dv[0] != nil {
+		b.DeviceCiscoSNMP, _ = blocks.ParseIOSSNMP(string(dv[0]))
 	}
-	if snmpLayers.Device {
+	if (snmp != nil && snmpLayers.Device) || (system != nil && systemLayers.Device) {
 		b.Device = device
 	}
 	return b, layers, nil
@@ -146,10 +152,11 @@ func (inv *invocation) resolveIOSBlocks(scope, device string, text func(blocks.L
 // _devices/<device>/<vendor>/<block>.
 func (inv *invocation) logBlockReads(b devices.Blocks, layers [2]policy.BlockLayers, scope, device string) {
 	vendor := blocks.VendorJuniper
-	if b.CiscoSNMP != nil {
+	if b.CiscoSNMP != nil || b.CiscoSystem != nil {
 		vendor = blocks.VendorCisco
 	}
-	secret := [2]bool{b.SNMP != nil || b.CiscoSNMP != nil, b.System != nil && len(b.System.NTPKeys) > 0}
+	secret := [2]bool{b.SNMP != nil || b.CiscoSNMP != nil,
+		b.System != nil && len(b.System.NTPKeys) > 0 || b.CiscoSystem != nil && len(b.CiscoSystem.NTPKeys) > 0}
 	for i, block := range []string{blocks.BlockSNMP, blocks.BlockSystem} {
 		if !secret[i] {
 			continue

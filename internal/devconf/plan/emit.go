@@ -473,7 +473,9 @@ var iosTopStatements = []string{
 	"aaa group server tacacs+ ", "aaa group server radius ", "ip tacacs source-interface ", "ip radius source-interface ",
 	"tacacs server ", "radius server ", "tacacs-server host ", "radius-server host ",
 	"privilege exec ", "snmp-server community ", "snmp-server location ", "snmp-server contact ",
-	"snmp-server host ", "snmp-server enable traps ",
+	"snmp-server host ", "snmp-server enable traps ", "snmp-server trap-source ",
+	"banner login ", "ip domain name ", "ip domain list ", "clock timezone ", "ip name-server ", "ntp server ",
+	"ntp authentication-key ", "ntp trusted-key ", "ntp authenticate",
 	"ip access-list standard ", "ip access-list extended ", "ipv6 access-list ", "line vty ", "line con ",
 }
 
@@ -502,8 +504,22 @@ func checkIOSRegion(lines []string) error {
 		return fmt.Errorf("the region starts %q and ends %q", lines[0], lines[n-1])
 	}
 	inBlock := false
+	// banner is the closing delimiter of the login banner being read, "" when
+	// none: every line up to it is the banner's text (any printable text, a
+	// leading '!' no comment, a blank line allowed), and no section label or
+	// comment may stand between the two.
+	banner := ""
 	for i := 1; i < n-1; i++ {
 		l := lines[i]
+		if banner != "" {
+			if strings.ContainsAny(l, "\r\t") {
+				return fmt.Errorf("line %d, inside the login banner, holds a control character", i+1)
+			}
+			if l == banner {
+				banner = ""
+			}
+			continue
+		}
 		t := strings.TrimSpace(l)
 		switch {
 		case t == "":
@@ -521,11 +537,21 @@ func checkIOSRegion(lines []string) error {
 				return fmt.Errorf("line %d, %q, is not a statement of an owned shape", i+1, t)
 			}
 			inBlock = !no && hasAnyPrefix(body, iosHeaderStatements)
+			if f := strings.Fields(body); !no && len(f) >= 2 && f[0] == "banner" && f[1] == "login" {
+				// 'banner login <d>': one delimiter character, nothing after it
+				if len(f) != 3 || len(f[2]) != 1 || l != "banner login "+f[2] {
+					return fmt.Errorf("line %d, %q, is not 'banner login' and one delimiter character", i+1, t)
+				}
+				banner = f[2]
+			}
 			continue
 		}
 		if f := strings.Fields(body); !inBlock || len(f) == 0 || !slices.Contains(iosLeafWords, f[0]) {
 			return fmt.Errorf("line %d, %q, is not a leaf of an owned shape", i+1, t)
 		}
+	}
+	if banner != "" {
+		return fmt.Errorf("the login banner is not closed by its delimiter %q before 'end'", banner)
 	}
 	return nil
 }

@@ -266,7 +266,7 @@ func TestScopeBlockSetRefusals(t *testing.T) {
 	}{
 		{"unknown scope", "", []string{"nowhere", "juniper", "set", "snmp", "--file", good, "-y"}, "Scope 'nowhere' does not exist."},
 		{"cisco takes IOS syntax only", "", []string{"lab", "cisco", "set", "snmp", "--file", good, "-y"}, "a block holds 'snmp-server', 'ip access-list standard' and 'no' statements only"},
-		{"cisco has no system block", "", []string{"lab", "cisco", "set", "system", "--file", good, "-y"}, "The IOS system block is not built"},
+		{"cisco takes IOS system syntax only", "", []string{"lab", "cisco", "set", "system", "--file", good, "-y"}, "Nothing was written."},
 		{"wti has no blocks", "", []string{"lab", "wti", "set", "snmp", "--file", good, "-y"}, "A WTI unit has no configuration blocks"},
 		{"another vendor", "", []string{"lab", "arista", "list"}, "Unknown vendor 'arista' for a block: juniper or cisco."},
 		{"vendor missing", "", []string{"lab", "set", "snmp", "--file", good}, "The vendor comes before the verb"},

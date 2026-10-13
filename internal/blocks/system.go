@@ -1122,15 +1122,15 @@ func (b *SystemBlock) String(elided bool) string {
 // --- dispatch by block name -------------------------------------------------
 
 // Doc is what the grammars of the blocks have in common: *SNMPBlock,
-// *SystemBlock and *IOSSNMPBlock.
+// *SystemBlock, *IOSSNMPBlock and *IOSSystemBlock.
 type Doc interface {
 	Empty() bool
 	String(elided bool) string
 }
 
 // LintBlock is Lint or LintSystem by the name of the block (BlockSNMP,
-// BlockSystem); a name that has no grammar is an error. The Doc is
-// *SNMPBlock or *SystemBlock.
+// BlockSystem), the Junos grammars; a name that has no grammar is an error.
+// The Doc is *SNMPBlock or *SystemBlock.
 func LintBlock(block, text string, layer Layer) (Doc, []Finding, error) {
 	switch block {
 	case BlockSNMP:
@@ -1152,6 +1152,8 @@ func StatementsOf(d Doc) []string {
 		return SystemStatements(b)
 	case *IOSSNMPBlock:
 		return IOSSNMPStatements(b)
+	case *IOSSystemBlock:
+		return IOSSystemStatements(b)
 	}
 	return nil
 }

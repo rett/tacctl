@@ -27,6 +27,8 @@ type blockObjects struct {
 	acl   map[string]bool
 	host  map[string]bool
 	traps map[string]bool
+	// trapSource is set when the block states the trap source.
+	trapSource bool
 }
 
 // blockObjectsOf reads the block statements of the rendering's snmp
@@ -112,6 +114,8 @@ func blockObjectsOfIOS(expected []devices.Section, scope string) *blockObjects {
 			b.host[f[2]+" "+labelOf[f[devconf.SNMPHostCommunity(f)]]] = true
 		case len(f) >= 3 && f[0] == "snmp-server" && f[1] == "enable" && f[2] == "traps":
 			b.traps[strings.Join(f, " ")] = true
+		case len(f) >= 3 && f[0] == "snmp-server" && f[1] == "trap-source":
+			b.trapSource = true
 		}
 	}
 	return b
@@ -139,6 +143,8 @@ func (b *blockObjects) iosKind(stem string) (kind, name string) {
 		return "host", ""
 	case len(f) >= 3 && f[0] == "snmp-server" && f[1] == "enable" && f[2] == "traps" && b.traps[strings.Join(f, " ")]:
 		return "traps", ""
+	case len(f) >= 3 && f[0] == "snmp-server" && f[1] == "trap-source" && b.trapSource:
+		return "trap-source", ""
 	}
 	return "", ""
 }
@@ -220,6 +226,8 @@ func (b *blockObjects) iosWords(stem string) string {
 		w = "a trap host of " + b.where() + ": " + rest(2)
 	case "traps":
 		w = "an 'enable traps' line of " + b.where() + ": " + rest(3)
+	case "trap-source":
+		w = "the trap source of " + b.where() + ": " + rest(2)
 	default:
 		return ""
 	}

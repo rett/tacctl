@@ -276,7 +276,10 @@ func checkWholePaste(t *testing.T, name string, d Delta, h Header, w Wrapper) {
 	// the comment lines are the labels and the placeholders, one label per
 	// run of a section
 	leader := commentLeader(d.Vendor)
-	for _, l := range lines {
+	for i, l := range lines {
+		if bannerBody(lines)[i] {
+			continue // the text of a login banner is no comment, whatever it starts with
+		}
 		if strings.HasPrefix(l, leader) && !strings.HasPrefix(l, leader+" "+secretLinePrefix) {
 			if !strings.Contains(l, ": ") {
 				t.Errorf("%s: a comment that is no label inside the region: %q", name, l)
@@ -328,8 +331,11 @@ func checkWholePaste(t *testing.T, name string, d Delta, h Header, w Wrapper) {
 // a wrapper line or a comment.
 func checkPlain(t *testing.T, name, vendor, p string) {
 	t.Helper()
-	for _, l := range strings.Split(strings.TrimSuffix(p, "\n"), "\n") {
+	plain := strings.Split(strings.TrimSuffix(p, "\n"), "\n")
+	for i, l := range plain {
 		switch {
+		case vendor == devconf.FamilyIOS && bannerBody(plain)[i]:
+			// the text of a login banner: any line, a blank one included
 		case l == "" || strings.HasPrefix(l, "#") || strings.HasPrefix(l, "!"):
 			t.Errorf("%s: plain holds %q", name, l)
 		case vendor == devconf.FamilyJunos:
@@ -501,4 +507,24 @@ func TestWholePasteInvariantOverEveryFixture(t *testing.T) {
 		}
 	}
 	t.Logf("whole-paste invariant: %d outputs", n)
+}
+
+// bannerBody marks the lines of an IOS region that are the text of a login
+// banner: after 'banner login <d>' up to the line that is <d> alone.
+func bannerBody(lines []string) []bool {
+	out := make([]bool, len(lines))
+	delim := ""
+	for i, l := range lines {
+		if delim != "" {
+			out[i] = true
+			if l == delim {
+				delim = ""
+			}
+			continue
+		}
+		if f := strings.Fields(l); len(f) == 3 && f[0] == "banner" && f[1] == "login" && len(f[2]) == 1 && l == "banner login "+f[2] {
+			delim = f[2]
+		}
+	}
+	return out
 }

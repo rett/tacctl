@@ -354,6 +354,10 @@ func (p *planner) words(vendor, stem string) string {
 	return plainWords(vendor, stem)
 }
 
+// reIOSBannerSize reads the size out of the compared form of an IOS login
+// banner ('banner login <message: 7 lines, 120 characters, id 3fa9c2d1>').
+var reIOSBannerSize = regexp.MustCompile(`<message: ([0-9]+) lines, ([0-9]+) characters, id [0-9a-f]{8}>`)
+
 // reMessageSize reads the size out of the mark of a login message.
 var reMessageSize = regexp.MustCompile(`^<message: ([0-9]+) lines, ([0-9]+) characters, id [0-9a-f]{8}>$`)
 
@@ -495,6 +499,32 @@ func plainIOS(stem string) string {
 		w = "an SNMP community"
 	case len(f) >= 2 && f[0] == "snmp-server" && (f[1] == "location" || f[1] == "contact"):
 		w = "the SNMP " + f[1] + " is " + strings.Join(f[2:], " ")
+	case len(f) >= 3 && f[0] == "snmp-server" && f[1] == "trap-source":
+		w = "SNMP traps are sourced from the interface " + f[2]
+	case len(f) >= 2 && f[0] == "banner" && f[1] == "login":
+		// the compared form holds the banner's size, never a word of it
+		w = "the login banner"
+		if m := reIOSBannerSize.FindStringSubmatch(leaf); m != nil {
+			w += " of " + m[1] + " lines, " + m[2] + " characters"
+		}
+	case len(f) >= 4 && f[0] == "ip" && f[1] == "domain" && f[2] == "name":
+		w = "the domain name is " + strings.Join(f[3:], " ")
+	case len(f) >= 4 && f[0] == "ip" && f[1] == "domain" && f[2] == "list":
+		w = "the search domain " + strings.Join(f[3:], " ")
+	case len(f) >= 3 && f[0] == "clock" && f[1] == "timezone":
+		w = "the time zone is " + strings.Join(f[2:], " ")
+	case len(f) >= 3 && f[0] == "ip" && f[1] == "name-server":
+		w = "the name server " + strings.Join(f[2:], " ")
+	case len(f) == 3 && f[0] == "ntp" && f[1] == "server":
+		w = "the NTP server " + f[2]
+	case len(f) >= 4 && f[0] == "ntp" && f[1] == "server":
+		w = "the NTP server " + f[2] + ": " + strings.Join(f[3:], " ")
+	case len(f) >= 3 && f[0] == "ntp" && f[1] == "authentication-key":
+		w = "NTP key " + f[2] + " is set"
+	case len(f) >= 3 && f[0] == "ntp" && f[1] == "trusted-key":
+		w = "NTP key " + f[2] + " is trusted"
+	case len(f) == 2 && f[0] == "ntp" && f[1] == "authenticate":
+		w = "NTP authentication is on"
 	case len(path) == 2 && strings.HasPrefix(path[0], "ip access-list "):
 		w = "access list " + strings.Fields(path[0])[len(strings.Fields(path[0]))-1] + ": " + leaf
 	case len(path) == 2 && strings.HasPrefix(path[0], "line ") && strings.HasPrefix(leaf, "access-class "):
@@ -618,6 +648,9 @@ func (p *planner) iosRemoval(section string, path []string) []Line {
 		if len(f) >= 3 && (f[0] == "tacacs-server" || f[0] == "radius-server") && f[1] == "host" {
 			return no(nil, hostEntry(f))
 		}
+		if t, ok := iosSystemUndo(leaf); ok {
+			return no(nil, t)
+		}
 		return no(nil, leaf)
 	}
 	header := ctx[0]
@@ -726,6 +759,20 @@ func iosBlockNote(scope string) string {
 	}
 	return "snmp: the lines of the SNMP block of " + where + " (access list entries, trap hosts, 'enable traps' lines) were written from the references " +
 		"and have not been checked on a device (not lab-tested): read them before you paste"
+}
+
+// iosSystemNote is the sentence a Cisco output carries when the rendering has
+// a scope's system block: the banner, the domain and name servers, the time
+// zone and the NTP lines were written from the references and have not been
+// pasted on a device.
+func iosSystemNote(scope string) string {
+	where := "this scope"
+	if scope != "" {
+		where = "scope '" + scope + "'"
+	}
+	return "system: the lines of the system block of " + where + " (login banner, domain name and list, time zone, name servers, NTP) were written from the references " +
+		"and have not been checked on a device (not lab-tested): read them before you paste; the NTP lines are in the order IOS needs " +
+		"(keys, trusted keys, servers, 'ntp authenticate' last)"
 }
 
 // Report is the box, the irregularity report and the one check line, all

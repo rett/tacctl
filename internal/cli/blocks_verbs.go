@@ -276,6 +276,21 @@ func blockUnits(doc blocks.Doc) []blockUnit {
 			out = append(out, blockUnit{full: f, elided: ne[i], key: ne[i]})
 		}
 		return out
+	case *blocks.IOSSystemBlock:
+		// the banner is one unit (its lines), every other statement a line
+		// of its own; its text and a key's string are shown elided
+		var out []blockUnit
+		rest := *b
+		if b.Banner != nil {
+			m := &blocks.IOSSystemBlock{Banner: b.Banner}
+			out = append(out, blockUnit{
+				full:   strings.Join(ownLines(m.String(false)), "\n"),
+				elided: strings.Join(ownLines(m.String(true)), "\n"),
+				key:    "login banner",
+			})
+			rest.Banner = nil
+		}
+		return append(out, pairUnits(ownLines(rest.String(false)), ownLines(rest.String(true)), func(s string) string { return s })...)
 	case *blocks.SystemBlock:
 		var out []blockUnit
 		rest := *b
@@ -377,10 +392,23 @@ func blockCounts(doc blocks.Doc) string {
 		add(len(b.Communities), "community", "communities")
 		add(len(b.ACLs), "access list", "access lists")
 		add(len(b.Hosts), "trap host", "trap hosts")
+		if b.TrapSource != nil {
+			add(1, "trap source", "trap sources")
+		}
 		add(len(b.Traps), "'enable traps' line", "'enable traps' lines")
 		add(len(b.NotManaged), "no line", "no lines")
 		if len(parts) == 0 {
 			return "nothing"
+		}
+		return strings.Join(parts, ", ")
+	case *blocks.IOSSystemBlock:
+		n := len(blocks.IOSSystemUnits(b))
+		parts := []string{fmt.Sprintf("%d %s", n, plural(n, "statement", "statements"))}
+		if b.Banner != nil {
+			parts = append(parts, fmt.Sprintf("a login banner of %d %s", b.Banner.Lines(), plural(b.Banner.Lines(), "line", "lines")))
+		}
+		if d := len(b.NotManaged); d > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", d, plural(d, "no line", "no lines")))
 		}
 		return strings.Join(parts, ", ")
 	case *blocks.SystemBlock:
@@ -412,6 +440,12 @@ func secretStatements(doc blocks.Doc) int {
 	case *blocks.IOSSNMPBlock:
 		for _, s := range blocks.IOSSNMPStatements(b) {
 			if strings.HasPrefix(s, "snmp-server community ") || strings.HasPrefix(s, "snmp-server host ") {
+				n++
+			}
+		}
+	case *blocks.IOSSystemBlock:
+		for _, s := range blocks.IOSSystemStatements(b) {
+			if blocks.IsIOSSecretStatement(s) {
 				n++
 			}
 		}
@@ -651,6 +685,15 @@ func (c *blockCtx) showEffective(block string, reveal bool) error {
 			d = devDoc.(*blocks.SNMPBlock)
 		}
 		res = blocks.Resolve(nil, s, d)
+	case c.vendor == blocks.VendorCisco:
+		var s, d *blocks.IOSSystemBlock
+		if scopeDoc != nil {
+			s = scopeDoc.(*blocks.IOSSystemBlock)
+		}
+		if devDoc != nil {
+			d = devDoc.(*blocks.IOSSystemBlock)
+		}
+		res = blocks.ResolveIOSSystem(nil, s, d)
 	default:
 		var s, d *blocks.SystemBlock
 		if scopeDoc != nil {
@@ -979,6 +1022,13 @@ func (c *blockCtx) against(block string, text []byte, device string) error {
 				shown = blocks.MessageStatement + blocks.ElideSystem(&blocks.SystemBlock{Message: sb}).Message.Body
 			}
 		}
+		// an IOS banner is several lines: its text is never printed, its size
+		// is
+		if strings.HasPrefix(shown, blocks.IOSBannerHead) && strings.Contains(shown, "\n") {
+			if bb, ok := bannerOf(text); ok {
+				shown = blocks.IOSBannerHead + blocks.ElideIOSSystem(&blocks.IOSSystemBlock{Banner: bb}).Banner.Body
+			}
+		}
 		// an IOS entry of a list or a submode is shown under its header
 		if !slices.Equal(ctx, l.Context) {
 			for _, h := range l.Context {
@@ -1007,6 +1057,15 @@ func messageOf(text []byte) (*blocks.LoginMessage, bool) {
 		return nil, false
 	}
 	return b.Message, true
+}
+
+// bannerOf is the login banner of an IOS system block text.
+func bannerOf(text []byte) (*blocks.LoginMessage, bool) {
+	b, fs := blocks.ParseIOSSystem(string(text))
+	if blocks.HasErrors(fs) || b.Banner == nil {
+		return nil, false
+	}
+	return b.Banner, true
 }
 
 func scopeWord(scope string) string {

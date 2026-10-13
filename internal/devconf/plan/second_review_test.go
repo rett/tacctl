@@ -629,7 +629,11 @@ func TestPlainIsTheStatementsOnly(t *testing.T) {
 		if gc.plainErr != nil || gc.d.Empty() {
 			continue
 		}
-		for _, l := range strings.Split(strings.TrimSuffix(gc.plain, "\n"), "\n") {
+		plainLines := strings.Split(strings.TrimSuffix(gc.plain, "\n"), "\n")
+		for i, l := range plainLines {
+			if bannerBody(plainLines)[i] {
+				continue // the text of a login banner is any text
+			}
 			switch l {
 			case "configure private", "configure terminal", "end", "commit check", "show | compare | no-more":
 				t.Errorf("%s: plain holds the wrapper line %q", gc.name, l)

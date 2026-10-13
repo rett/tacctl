@@ -110,11 +110,12 @@ func systemUnreadWhy(device string) string {
 // PlanOrder is the order the sections go in a block (D95 for Junos, §4b for
 // IOS).
 //
-// The system section (Junos, 0.2.7) follows snmp and comes before mgmt-acl,
-// which stays last; Plan leaves it out of a plan whose rendering has none.
+// The system section (0.2.7, a scope with a system block) follows snmp and
+// comes before mgmt-acl, which stays last; Plan leaves it out of a plan whose
+// rendering has none.
 func PlanOrder(family string) []string {
 	if family == devconf.FamilyIOS {
-		return []string{"aaa", "roles", "snmp", "mgmt-acl"}
+		return []string{"aaa", "roles", "snmp", devconf.SectionSystem, "mgmt-acl"}
 	}
 	if family == devconf.FamilyWTI {
 		// the unit's checklist goes page 25 first (it cannot lock anybody
@@ -276,6 +277,10 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 	// a device: the report says so beside the lab note of the standard.
 	if fam == devconf.FamilyIOS && p.blk != nil && p.blk.ios {
 		d.Notes = appendNew(d.Notes, iosBlockNote(opt.Scope))
+	}
+	// the same for the system block's lines, which are not the standard's
+	if fam == devconf.FamilyIOS && len(p.expected(devconf.SectionSystem).Lines) > 0 {
+		d.Notes = appendNew(d.Notes, iosSystemNote(opt.Scope))
 	}
 	for _, n := range never {
 		d.Sections = append(d.Sections, SectionPlan{Name: n, State: StateNever})

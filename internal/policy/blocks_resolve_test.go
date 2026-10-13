@@ -357,3 +357,73 @@ func TestResolveIOSSNMPBlock(t *testing.T) {
 		t.Errorf("comments only: %v %v", b, err)
 	}
 }
+
+// The IOS system block: the cisco manifest and files, the device's block over
+// the scope's, and a refusal that names the verb and holds neither the
+// banner nor a key.
+func TestResolveIOSSystemBlock(t *testing.T) {
+	c, _ := newConf(t, "")
+	store := blocks.NewStore(t.TempDir())
+	lab := blocks.ScopeLevel("lab")
+	good := "banner login <<'EOF'\nSecret banner Qx7\nEOF\nip domain name lab.example.net\nip name-server 192.0.2.53\nntp authentication-key 5 md5 sekret-ntp-key\nntp trusted-key 5\n"
+	if err := store.Write(lab, blocks.VendorCisco, blocks.BlockSystem, []byte(good)); err != nil {
+		t.Fatal(err)
+	}
+	if b, _, err := ResolveIOSSystemBlock(store, c, "lab", ""); b != nil || err != nil {
+		t.Fatalf("not in force: %v %v", b, err)
+	}
+	// the Junos entry is another vendor's
+	if err := SetBlockInForce(c, "lab", blocks.VendorJuniper, blocks.BlockSystem, true); err != nil {
+		t.Fatal(err)
+	}
+	if b, _, err := ResolveIOSSystemBlock(store, c, "lab", ""); b != nil || err != nil {
+		t.Fatalf("the Junos entry: %v %v", b, err)
+	}
+	if err := SetBlockInForce(c, "lab", blocks.VendorCisco, blocks.BlockSystem, true); err != nil {
+		t.Fatal(err)
+	}
+	b, layers, err := ResolveIOSSystemBlock(store, c, "lab", "")
+	if err != nil || b == nil || b.Banner == nil || b.DomainName == nil || len(b.NameServers) != 1 || len(b.NTPKeys) != 1 || !layers.Scope || layers.Device {
+		t.Fatalf("in force: %v %+v %v", b, layers, err)
+	}
+	// the device's own over it, by object
+	dev := blocks.DeviceLevel("rt1")
+	if err := store.Write(dev, blocks.VendorCisco, blocks.BlockSystem, []byte("no banner login\nno ip name-server\nip name-server 192.0.2.99\nntp server 192.0.2.1\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetDeviceBlockInForce(c, "rt1", blocks.VendorCisco, blocks.BlockSystem, true); err != nil {
+		t.Fatal(err)
+	}
+	b, layers, err = ResolveIOSSystemBlock(store, c, "lab", "rt1")
+	if err != nil || b == nil || b.Banner != nil || len(b.NameServers) != 1 || b.NameServers[0].Text != "192.0.2.99" || len(b.NTPServers) != 1 || !layers.Scope || !layers.Device {
+		t.Fatalf("with the device's: %+v %+v %v", b, layers, err)
+	}
+	// errors: never half a block, no banner and no key in the refusal
+	if err := store.Write(lab, blocks.VendorCisco, blocks.BlockSystem, []byte(good+"ntp authentication-key 6 sha1 sekret-ntp-key2\n")); err != nil {
+		t.Fatal(err)
+	}
+	b, _, err = ResolveIOSSystemBlock(store, c, "lab", "")
+	if b != nil || err == nil {
+		t.Fatalf("a block with errors: %v %v", b, err)
+	}
+	for _, want := range []string{"scope 'lab'", "tacctl scope block lab cisco check system", "the scope's IOS devices", "line 8"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal lacks %q:\n%s", want, err)
+		}
+	}
+	for _, bad := range []string{"Secret banner", "sekret-ntp-key"} {
+		if strings.Contains(err.Error(), bad) {
+			t.Errorf("the refusal holds %q:\n%s", bad, err)
+		}
+	}
+	// a block of no statement renders nothing; texts in hand
+	if b, _, err := ResolveIOSSystemTexts("lab", "", []byte("no ntp\n"), nil); b != nil || err != nil {
+		t.Errorf("no lines only: %v %v", b, err)
+	}
+	if b, _, err := ResolveIOSSystemTexts("lab", "", nil, nil); b != nil || err != nil {
+		t.Errorf("no text: %v %v", b, err)
+	}
+	if b, _, err := ResolveIOSSystemTexts("lab", "", []byte("! nothing\n"), nil); b != nil || err != nil {
+		t.Errorf("comments only: %v %v", b, err)
+	}
+}

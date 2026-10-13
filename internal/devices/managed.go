@@ -150,6 +150,31 @@ func (s *sections) addTail(name string, lines []string, n int) {
 	}
 }
 
+// addSystem is add for the system section of an IOS device: every line is
+// the block's, and a line inside the banner is text, never a statement and
+// never a secret.
+func (s *sections) addSystem(name string, lines []string) {
+	if len(lines) == 0 {
+		return
+	}
+	sec := Section{Name: name, Lines: lines, Secret: make([]bool, len(lines)), Block: make([]bool, len(lines))}
+	delim := ""
+	for i, l := range lines {
+		sec.Block[i] = true
+		if delim != "" {
+			if l == delim {
+				delim = ""
+			}
+			continue
+		}
+		sec.Secret[i] = s.secret(l)
+		if f := strings.Fields(l); len(f) == 3 && f[0] == "banner" && f[1] == "login" {
+			delim = f[2]
+		}
+	}
+	s.out = append(s.out, sec)
+}
+
 // --- Junos --------------------------------------------------------------------
 
 // managedJuniper is Managed for a Junos device.
@@ -326,8 +351,14 @@ func managedCisco(req Request, d Data) []Section {
 	// The scope's snmp block follows the structured settings in the same
 	// step: its statements are the last lines of the block, marked as the
 	// block's.
-	snmp := ciscoStatements(v["SNMP_BLOCK"])
+	snmp := ciscoStatements(v["SNMP_STEP"])
 	s.addTail(sectionSNMP, snmp, len(d.Blocks.ciscoSNMPStatements()))
+	// The scope's system block follows in the same step: a section of its
+	// own, present only when a block is in force (so the device's own banner,
+	// domain and NTP are no business of a scope without one). Every line is
+	// the block's; a banner's lines are the lines typed, its text no
+	// statement and never a secret.
+	s.addSystem(sectionSystem, ciscoSystemStatements(v["SYSTEM_BLOCK"]))
 	s.add(sectionNetconf, ciscoStatements(v["NETCONF_BLOCK"]))
 	s.add(sectionBreakGlass, uncommented(ciscoBreakGlass(BreakGlassFor(req, d)), "! ", "! username "))
 	return s.out
@@ -347,17 +378,45 @@ func ciscoStatements(block string) []string {
 	return out
 }
 
+// ciscoSystemStatements are the lines of the system block of a walkthrough:
+// comment lines ('!') and blank lines outside the banner dropped, every line
+// of the banner kept as it is (a body line may be blank or begin with '!').
+func ciscoSystemStatements(block string) []string {
+	var out []string
+	delim := ""
+	for _, l := range strings.Split(block, "\n") {
+		if delim != "" {
+			out = append(out, l)
+			if l == delim {
+				delim = ""
+			}
+			continue
+		}
+		t := strings.TrimSpace(l)
+		if t == "" || strings.HasPrefix(t, "!") {
+			continue
+		}
+		out = append(out, l)
+		if f := strings.Fields(t); len(f) == 3 && f[0] == "banner" && f[1] == "login" {
+			delim = f[2]
+		}
+	}
+	return out
+}
+
 // reCiscoSecret is a Cisco statement that carries a secret, which the
 // device stores encrypted or hashed ('key 7', 'key 6', 'secret 9'): the
 // key of a server block (or the legacy global line), an SNMP community, a
 // trap host (it names the community its notifications are sent with) or v3
-// user, a local user's hash.
+// user, an NTP authentication key's string (the system block), a local
+// user's hash.
 var reCiscoSecret = regexp.MustCompile(`^(` +
 	`\s+key \S` +
 	`|tacacs-server host \S+ .*\bkey \S` +
 	`|snmp-server community \S` +
 	`|snmp-server host \S+ ` +
 	`|snmp-server user \S` +
+	`|ntp authentication-key \S+ \S+ \S` +
 	`|username \S+ privilege \d+ secret \d+ \S` +
 	`)`)
 

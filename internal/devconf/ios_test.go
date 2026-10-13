@@ -47,7 +47,14 @@ func TestCiscoCanon(t *testing.T) {
 			[]string{"access-list 10 permit 192.0.2.1", "access-list 120 permit ip any any"}},
 		{"banner skipped", []string{"banner motd ^C", "aaa new-model fake", "^C", "aaa new-model"},
 			[]string{"aaa new-model"}},
-		{"one line banner", []string{"banner login ^CHello^C", "aaa new-model"}, []string{"aaa new-model"}},
+		// the login banner is a statement of its own, kept as its mark (the
+		// system section); every other banner is skipped
+		{"one line banner", []string{"banner login ^CHello^C", "aaa new-model"},
+			[]string{"banner login " + MessageMark("Hello"), "aaa new-model"}},
+		{"login banner lines", []string{"banner login ^C", "! not a comment", "", " two", "^C", "aaa new-model"},
+			[]string{"banner login " + MessageMark("! not a comment\n\n two"), "aaa new-model"}},
+		{"banner mark read again", []string{"banner login " + MessageMark("x"), "aaa new-model"},
+			[]string{"banner login " + MessageMark("x"), "aaa new-model"}},
 		{"key type", []string{"tacacs server T", " key 7 0822455D0A16", "tacacs server U", " key 6 ABCDEF", "tacacs server V", " key plain"},
 			[]string{"tacacs server T > key", "tacacs server U > key", "tacacs server V > key"}},
 		{"legacy host key", []string{"tacacs-server host 192.0.2.10 single-connection timeout 5 key 7 0822455D0A16"},

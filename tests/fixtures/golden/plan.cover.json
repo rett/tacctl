@@ -317,6 +317,51 @@
     "extras": 2
   },
   {
+    "device": "dev-cisco-synthetic-system",
+    "scope": "lab",
+    "vendor": "cisco",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 3,
+    "left": 8,
+    "remaining": {
+      "access": 0,
+      "monitoring": 3,
+      "cosmetic": 5
+    },
+    "extras": 8
+  },
+  {
+    "device": "dev-cisco-synthetic-system-new",
+    "scope": "lab",
+    "vendor": "cisco",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 15,
+    "left": 3,
+    "remaining": {
+      "access": 0,
+      "monitoring": 3,
+      "cosmetic": 0
+    },
+    "extras": 3
+  },
+  {
+    "device": "dev-cisco-synthetic-system-stray",
+    "scope": "lab",
+    "vendor": "cisco",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 10,
+    "left": 9,
+    "remaining": {
+      "access": 0,
+      "monitoring": 3,
+      "cosmetic": 6
+    },
+    "extras": 9
+  },
+  {
     "device": "dev-not-pulled",
     "scope": "lab",
     "vendor": "juniper",

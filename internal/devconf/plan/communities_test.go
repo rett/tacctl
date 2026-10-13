@@ -243,7 +243,19 @@ var keptExamples = map[string]struct {
 	"ios.snmp.acl":                             {stmt: "ip access-list standard OTHER-SNMP > permit 192.0.2.7", unmanaged: true},
 	"ios.snmp.block-host":                      {stmt: "snmp-server host 192.0.2.99 version 2c <other:2>", unmanaged: true},
 	"ios.snmp.block-traps":                     {stmt: "snmp-server enable traps tty", unmanaged: true},
-	"ios.mgmt-acl.acl":                         {stmt: "ip access-list standard OTHER-VTY > permit 192.0.2.7", unmanaged: false},
+	"ios.snmp.block-trap-source":               {stmt: "snmp-server trap-source loopback9", unmanaged: true},
+	// 0.2.7: the IOS system section is additive too (the stems of the
+	// compared form: the banner is its mark)
+	"ios.system.banner":           {stmt: "banner login " + devconf.MessageMark("Another banner"), unmanaged: true, unrender: "banner login"},
+	"ios.system.domain-name":      {stmt: "ip domain name other.example.net", unmanaged: true, unrender: "ip domain name"},
+	"ios.system.timezone":         {stmt: "clock timezone PST -8 0", unmanaged: true, unrender: "clock timezone"},
+	"ios.system.ntp-authenticate": {stmt: "ntp authenticate", unmanaged: true, unrender: "ntp authenticate"},
+	"ios.system.domain-list":      {stmt: "ip domain list example.net", unmanaged: true},
+	"ios.system.name-server":      {stmt: "ip name-server 198.51.100.77", unmanaged: true},
+	"ios.system.ntp-server":       {stmt: "ntp server 198.51.100.99", unmanaged: true},
+	"ios.system.ntp-key":          {stmt: "ntp authentication-key 9", unmanaged: true},
+	"ios.system.ntp-trusted-key":  {stmt: "ntp trusted-key 9", unmanaged: true},
+	"ios.mgmt-acl.acl":            {stmt: "ip access-list standard OTHER-VTY > permit 192.0.2.7", unmanaged: false},
 	// 0.2.7: a WTI unit. The unit's own are the system name, the trap
 	// settings, the RADIUS items the walkthrough leaves alone, the page of a
 	// protocol that is off, and the tail of the IP tables list; a second
@@ -339,14 +351,31 @@ func TestKeptShapesFollowTheOwnedRows(t *testing.T) {
 				e, cur, _ := f.load(t)
 				exp, dev = e, cur.Sections[r.Section]
 			default:
-				f := fixtureNamed(t, "cisco.reference-lab")
+				fixture := "cisco.reference-lab"
+				if r.Section == devconf.SectionSystem {
+					fixture = "cisco.synthetic-system"
+				}
+				f := fixtureNamed(t, fixture)
 				e, cur, _ := f.load(t)
 				exp, dev = e, cur.Sections[r.Section]
 			}
 			want := sectionNamed(exp, r.Section)
 			if ex.unrender != "" {
 				var keep devices.Section
+				// a login banner is several lines: up to its closing
+				// delimiter
+				delim := ""
 				for i, l := range want.Lines {
+					if delim != "" {
+						if l == delim {
+							delim = ""
+						}
+						continue
+					}
+					if ex.unrender == "banner login" && strings.HasPrefix(l, "banner login ") {
+						delim = strings.Fields(l)[2]
+						continue
+					}
 					if !strings.HasPrefix(l, ex.unrender) {
 						keep.Lines, keep.Secret = append(keep.Lines, l), append(keep.Secret, want.Secret[i])
 					}
@@ -354,7 +383,7 @@ func TestKeptShapesFollowTheOwnedRows(t *testing.T) {
 				keep.Name, want = want.Name, keep
 				var dkeep []string
 				for _, l := range dev.Lines {
-					if !strings.HasPrefix(l, ex.unrender) {
+					if !strings.HasPrefix(l, ex.unrender) && !strings.HasPrefix(l, ex.unrender+" ") {
 						dkeep = append(dkeep, l)
 					}
 				}

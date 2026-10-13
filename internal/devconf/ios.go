@@ -74,6 +74,22 @@ func ciscoEntries(lines []string, marks []bool) []ciscoEntry {
 		if t == "" || strings.HasPrefix(t, "!") {
 			continue
 		}
+		if isIOSBannerMark(t) && len(raw) == len(t) {
+			// a login banner already in its compared form (a stored section)
+			out = append(out, ciscoEntry{text: t, mark: markAt(marks, n), path: []string{t}})
+			continue
+		}
+		if f := strings.Fields(t); len(f) >= 2 && f[0] == "banner" && f[1] == "login" && len(raw) == len(t) {
+			// the login banner is a statement of the system section, kept
+			// as its mark: the text is never in a compared statement
+			body, took, ok := deviceBannerBody(lines[n:])
+			if ok {
+				st := iosBannerStmt(body)
+				out = append(out, ciscoEntry{text: st, mark: markAt(marks, n), path: []string{st}})
+			}
+			n += took - 1
+			continue
+		}
 		if strings.HasPrefix(t, "banner ") {
 			// banner <type> <delimiter>text<delimiter>, lines until the
 			// delimiter again.
@@ -94,6 +110,13 @@ func ciscoEntries(lines []string, marks []bool) []ciscoEntry {
 		}
 		fields := strings.Fields(t)
 		if fields[0] == "remark" || len(fields) == 1 && slices.Contains([]string{"exit", "end", "quit", "exit-address-family"}, fields[0]) {
+			continue
+		}
+		if multi := expandNameServers(fields); multi != nil && len(raw) == len(t) {
+			// 'ip name-server A B C' is a statement per address
+			for _, one := range multi {
+				out = append(out, ciscoEntry{text: strings.Join(one, " "), mark: markAt(marks, n)})
+			}
 			continue
 		}
 		e := ciscoEntry{indent: len(raw) - len(t), text: strings.Join(fields, " "), mark: markAt(marks, n)}
@@ -195,6 +218,11 @@ func ciscoCanon(lines []string, marks []bool, lb *labels) []stmt {
 		path = ciscoACLEntry(path)
 		if path == nil {
 			return
+		}
+		if len(path) == 1 {
+			// the system statements and the trap source in their compared
+			// form (ios_system.go)
+			path = []string{strings.Join(ciscoSystemLine(strings.Fields(path[0])), " ")}
 		}
 		leaf := strings.Fields(path[len(path)-1])
 		stem, secret := ciscoStem(path, leaf, mark, lb)
@@ -311,6 +339,9 @@ func ciscoFreeText(f []string) bool {
 		return true
 	case "snmp-server":
 		return len(f) >= 2 && slices.Contains([]string{"location", "contact", "chassis-id", "context", "engineID"}, f[1])
+	case "ntp":
+		// 'ntp server <host> key <n> ...': the key keyword names a number
+		return len(f) >= 2 && f[1] == "server"
 	}
 	return false
 }
@@ -423,6 +454,12 @@ func snmpHostStem(f []string, i int, label string) []string {
 func ciscoStem(path, f []string, marked bool, lb *labels) ([]string, bool) {
 	if len(f) == 0 {
 		return f, false
+	}
+	if f[0] == "ntp" && len(f) >= 3 && f[1] == "authentication-key" {
+		// compared by the key's number: the algorithm and the string (the
+		// device holds ciphertext, or the key as it was typed) are not, and
+		// the string is never kept
+		return slices.Clone(f[:3]), true
 	}
 	if f[0] == "snmp-server" && len(f) >= 3 && f[1] == "community" {
 		out := slices.Clone(f)
@@ -750,6 +787,10 @@ type ciscoCtx struct {
 	// operator's choice and the scope may set none (D119): a device's value
 	// is then nobody's business.
 	sourceInterface map[string]bool
+	// system is set when the rendering has a system section (a scope with a
+	// system block): the device's banner, domain, time zone, name servers and
+	// NTP are then the section's, and are nobody's business otherwise.
+	system bool
 }
 
 // The two source-interface commands (D119).
@@ -813,6 +854,8 @@ func (c *ciscoCtx) section(x stmt) string {
 		return SectionRoles
 	case has("snmp-server "):
 		return SectionSNMP
+	case c.system && len(p) == 1 && isSystemStatement(t):
+		return SectionSystem
 	case has("netconf-yang ", "netconf "):
 		return SectionNetconf
 	case isLoginLeaf(p):
@@ -1237,7 +1280,8 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 	}
 
 	c := &ciscoCtx{claim: map[string]string{}, acls: map[string]string{},
-		vtyRefs: map[string]bool{}, snmpRefs: map[string]bool{}, sourceInterface: map[string]bool{}}
+		vtyRefs: map[string]bool{}, snmpRefs: map[string]bool{}, sourceInterface: map[string]bool{},
+		system: renders(expected, SectionSystem)}
 	var rendered []string
 	for _, sec := range expected {
 		rendered = append(rendered, sec.Lines...)
@@ -1298,7 +1342,7 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 	by[SectionAAA] = append(by[SectionAAA], marker)
 	out := make(map[string]devices.Section, len(SectionNames))
 	for _, n := range SectionNames {
-		if optionalSection(n) {
+		if optionalSection(n) && !c.system {
 			continue
 		}
 		out[n] = toSection(n, uniq(by[n]))

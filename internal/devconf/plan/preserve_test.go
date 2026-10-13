@@ -89,6 +89,11 @@ func iosFlat(c *IOSConfig) map[string]bool {
 		if h == "" || strings.HasPrefix(h, "!") {
 			continue
 		}
+		if strings.HasPrefix(h, "banner ") {
+			// a banner's text is text, not statements: the system block's
+			// banner is compared by its digest (system_test.go)
+			continue
+		}
 		if len(b.lines) == 1 {
 			out[h] = true
 		}
@@ -200,9 +205,12 @@ func checkIOSPreserved(t *testing.T, f fixture, exp []devices.Section, before, a
 		case len(path) == 1 && lf[0] == "aaa":
 		case len(path) == 1 && lf[0] == "tacacs-server":
 		case len(path) == 1 && lf[0] == "snmp-server" && len(lf) > 1 && (lf[1] == "location" || lf[1] == "contact"):
-		case len(path) == 1 && lf[0] == "snmp-server" && len(lf) > 1 && (lf[1] == "community" || lf[1] == "host"):
-			// a community or a trap host the plan retypes in place (the
-			// typed line of the same key was found above)
+		case len(path) == 1 && lf[0] == "snmp-server" && len(lf) > 1 && (lf[1] == "community" || lf[1] == "host" || lf[1] == "trap-source"):
+			// a community, a trap host or the trap source the plan retypes in
+			// place (the typed line of the same key was found above)
+		case len(path) == 1 && (lf[0] == "clock" || lf[0] == "ntp" && len(lf) > 1 && lf[1] == "server" ||
+			lf[0] == "ip" && len(lf) > 1 && strings.HasPrefix(lf[1], "domain")):
+			// a system statement the plan retypes in place (0.2.7)
 		default:
 			t.Errorf("%s %s: %q is outside every owned object and the plan removed it\n%s", f.name, label, line, d.Display())
 		}

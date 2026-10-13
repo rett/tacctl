@@ -5159,9 +5159,11 @@ and
 .BR system )
 and
 .B cisco
-(IOS and IOS\-XE: the block
-.BR snmp ;
-there is no IOS system block); a WTI unit has none. The Junos
+(IOS and IOS\-XE: the blocks
+.B snmp
+and
+.BR system ) ;
+a WTI unit has none. The Junos
 .B snmp
 block is the SNMP that the scope's settings do not hold: communities, their
 client lists and trap groups. The Junos
@@ -5194,6 +5196,9 @@ comment lines and blank lines:
 .B vrf
 form is refused),
 .B "snmp\-server enable traps [<type> [<subtype> ...]]"
+.B "snmp\-server trap\-source <interface>"
+(one, the interface written in full, as the device stores it:
+.BR Loopback0 )
 and
 .B "ip access\-list standard <NAME>"
 with
@@ -5206,10 +5211,44 @@ under it. A
 .B no
 line (of a community, a host, an
 .B enable traps
-line or a list) says what it names is not managed on this device, as
+line, the trap source or a list) says what it names is not managed on this
+device, as
 .B delete
-does. Junos and IOS are never translated into each other, so a scope with both
-has a file for each.
+does. The IOS
+.B system
+block is configuration lines too, with the login banner as a heredoc:
+.BR "banner login <<'EOF'" ,
+its lines, and
+.BR EOF ;
+.B "ip domain name <name>"
+and
+.B "ip domain list <name>"
+(the older spellings
+.B ip domain\-name
+and
+.B ip domain\-list
+are read as these);
+.B "clock timezone <zone> <hours> [<minutes>]";
+.B "ip name\-server <address> [<address> ...]";
+.B "ntp server <address\-or\-name> [prefer] [version <1\-4>] [key <n>] [source <interface>]";
+.B "ntp authentication\-key <n> md5 <string>";
+.B "ntp trusted\-key <n>"
+and
+.BR "ntp authenticate" .
+The banner is typed as IOS's multi\-line banner
+.RB ( "banner login <d>" ,
+the text,
+.B <d>
+alone on a line), where
+.B <d>
+is the first of
+.B "^ ~ % # @ $ &"
+that its text does not contain; a banner is at most 20 lines of 80 characters,
+ASCII, with no tab or control character. A
+.B vrf
+form of a name server, an NTP server or the domain name is not in a block, and
+neither is an IPv6 NTP server. Junos and IOS are never translated into each
+other, so a scope with both has a file for each.
 .PP
 The blocks of a scope are the files under
 .IR /etc/tacctl/blocks/\fIscope\fR/\fIvendor\fR ,
@@ -5232,14 +5271,32 @@ version, kind and port) and an
 line (a line the device enables in the expanded form it prints counts as
 present, and a line with no type is present when the device has any
 .B enable traps
-line) are only ever added, and what the device holds besides is its own. IOS has
-no confirmed commit, so the plan of an IOS device is pasted line by line and
-undone with its back\-out of
+line) are only ever added, and what the device holds besides is its own; the
+trap source is one value, retyped in place when the device's differs (the
+interface is compared without case) and kept while the block states none. The
+IOS
+.B system
+block is additive like the Junos one: a statement is set when it is missing, a
+single value (the banner, the domain name, the time zone, an NTP server's
+options, a trap source) is replaced in place, a list entry is only added, and
+nothing the device holds is removed; an
+.B ntp authentication\-key
+string is typed only where the device has no key of that number (the device's
+key is compared by its number alone), and the plan types the NTP lines in the
+order IOS needs: the keys, the trusted keys, the servers and
+.B ntp authenticate
+last. The banner is compared by its size and a digest, never by its text, and a
+banner replaced by the plan cannot be typed back by the back\-out (only its
+digest is kept): the back\-out names
+.B configure replace
+and the saved configuration. IOS has no confirmed commit, so the plan of an IOS
+device is pasted line by line and undone with its back\-out of
 .B no
-lines. The lines of an IOS block (a list's entries, trap hosts, trap lines) were
-written from the vendor's references and have not been checked on a device (not
-lab\-tested): the report says so beside the plan of the section. An IOS device's
-VRF forms are not in a block and the device's own such lines stay unmanaged
+lines. The lines of an IOS block (a list's entries, trap hosts, trap lines, the
+banner, the domain, time zone, name servers and NTP lines) were written from the
+vendor's references and have not been checked on a device (not lab\-tested): the
+report says so beside the plan of the section. An IOS device's VRF forms are not
+in a block and the device's own such lines stay unmanaged
 .RB ( "ok (+N unmanaged)" ).
 The communities and trap groups of the Junos
 .B snmp
@@ -5247,7 +5304,13 @@ block become objects tacctl owns: the plan of
 .B "device config plan"
 sets what a device lacks and deletes a client or target of those objects that
 the block does not state, under the object's real name, and the device's other
-communities are kept and listed as unmanaged. The
+communities are kept and listed as unmanaged. A Junos block may also state
+.B "set snmp trap\-options source\-address <address>|lo0"
+(one; an IPv4 or IPv6 address or the keyword
+.BR lo0 ):
+a value of the device's kind, set over the device's own value and never
+deleted, which the check notes as the same address for every device of the
+scope. The
 .B system
 block is additive: a statement is set when it is missing, a single value is
 replaced in place, and nothing the device holds is deleted. A block with an
@@ -5263,7 +5326,7 @@ for a trap group's name,
 .B <secret>
 for an NTP key,
 .B "<message: N lines, M characters>"
-for the login message, and a comment line is never shown.
+for the login message or banner, and a comment line is never shown.
 .PP
 A device's own block is laid over its scope's per object: a community (by its
 string), a trap group (by its name) or a trap\-options leaf of the device
@@ -5441,7 +5504,11 @@ then
 .B "show running\-config | section ip access\-list standard <NAME>"
 for each list a community names, and the whole configuration once when the
 image does not know
-.BR "| section" ),
+.BR "| section" ;
+for an IOS system block
+.BR "show running\-config | include ^(banner|ip domain|ip name\-server|clock timezone|ntp )"
+and the banner's lines with
+.BR "show running\-config | section ^banner login" ),
 and open them in the editor as the draft to prune. The read is that of
 .BR "device config pull" :
 the password from the shell's cache or the terminal, the transport and timeout
@@ -5469,7 +5536,8 @@ asterisks) or only as the device's ciphertext cannot be adopted, and an NTP
 authentication key is always ciphertext: each such statement is named by a
 .B "# left out:"
 line with its shape and no value. The system block's draft converts the
-device's login message to the heredoc. A block of that name that exists is
+device's login message (an IOS device's login banner) to the heredoc; the
+device's own trap source is taken into an snmp block's draft. A block of that name that exists is
 opened first, whole, and the adopted statements follow under a
 .B "# adopted from"
 .IR device " at " time

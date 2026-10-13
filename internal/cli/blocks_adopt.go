@@ -157,13 +157,11 @@ func (c *blockCtx) adopt(block, device string, p Parsed) error {
 	if cur.err != nil {
 		return cur.err
 	}
-	if c.vendor == blocks.VendorCisco && block != blocks.BlockSNMP {
-		return inv.usageErr("The IOS system block is not built: only the snmp block exists for vendor cisco.")
-	}
 	// What the file in force says is the block this draft goes beneath.
 	var same *blocks.SNMPBlock
 	var sameSys *blocks.SystemBlock
 	var sameIOS *blocks.IOSSNMPBlock
+	var sameIOSSys *blocks.IOSSystemBlock
 	if cur.exists {
 		doc, fs, err := blocks.LintFor(c.vendor, block, string(cur.text), c.layer())
 		if err != nil {
@@ -176,11 +174,13 @@ func (c *blockCtx) adopt(block, device string, p Parsed) error {
 		same, _ = doc.(*blocks.SNMPBlock)
 		sameSys, _ = doc.(*blocks.SystemBlock)
 		sameIOS, _ = doc.(*blocks.IOSSNMPBlock)
+		sameIOSSys, _ = doc.(*blocks.IOSSystemBlock)
 	}
 	// The layer beneath: a device's draft is the exceptions to its scope's.
 	var up *blocks.SNMPBlock
 	var upSys *blocks.SystemBlock
 	var upIOS *blocks.IOSSNMPBlock
+	var upIOSSys *blocks.IOSSystemBlock
 	if c.isDevice() {
 		text, err := policy.LayerTextFor(c.store(), a.Conf(), c.vendor, blocks.ScopeLevel(c.scope), block)
 		if err != nil {
@@ -198,6 +198,7 @@ func (c *blockCtx) adopt(block, device string, p Parsed) error {
 			up, _ = doc.(*blocks.SNMPBlock)
 			upSys, _ = doc.(*blocks.SystemBlock)
 			upIOS, _ = doc.(*blocks.IOSSNMPBlock)
+			upIOSSys, _ = doc.(*blocks.IOSSystemBlock)
 		}
 	}
 
@@ -291,6 +292,8 @@ func (c *blockCtx) adopt(block, device string, p Parsed) error {
 		res = blocks.AdoptIOSSNMP(read.raw, own, sameIOS, upIOS)
 	case block == blocks.BlockSNMP:
 		res = blocks.AdoptSNMP(read.raw, own, same, up)
+	case c.vendor == blocks.VendorCisco:
+		res = blocks.AdoptIOSSystem(read.raw, sameIOSSys, upIOSSys)
 	default:
 		res = blocks.AdoptSystem(read.raw, sameSys, upSys)
 	}

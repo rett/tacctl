@@ -94,7 +94,7 @@ func (inv *invocation) deviceRenderInput(p renderParams) (devices.Request, devic
 		}
 	}
 	// The snmp and system blocks of the scope, and of the device when it has
-	// some of its own (0.2.7; the IOS snmp block for a Cisco device). One
+	// some of its own (0.2.7; an IOS device has them too). One
 	// with an error is never rendered in part: the refusal names the scope
 	// or the device and the verb that says what is wrong.
 	if p.Vendor == "juniper" || p.Vendor == "cisco" {
@@ -313,9 +313,9 @@ func (r *managedRender) prepareKey(e devreg.Entry, k managedKey) {
 		}
 		// the scope's blocks carry community strings and NTP keys: a read of
 		// their own, once per scope
-		if r.logReads && (d.Blocks.SNMP != nil || d.Blocks.CiscoSNMP != nil || d.Blocks.System != nil) && !r.logged["blocks "+k.scope+" "+k.vendor] {
+		if r.logReads && (d.Blocks.SNMP != nil || d.Blocks.CiscoSNMP != nil || d.Blocks.System != nil || d.Blocks.CiscoSystem != nil) && !r.logged["blocks "+k.scope+" "+k.vendor] {
 			r.logged["blocks "+k.scope+" "+k.vendor] = true
-			inv.logBlockReads(d.Blocks, [2]policy.BlockLayers{{Scope: d.Blocks.SNMP != nil || d.Blocks.CiscoSNMP != nil}, {Scope: d.Blocks.System != nil}}, k.scope, "")
+			inv.logBlockReads(d.Blocks, [2]policy.BlockLayers{{Scope: d.Blocks.SNMP != nil || d.Blocks.CiscoSNMP != nil}, {Scope: d.Blocks.System != nil || d.Blocks.CiscoSystem != nil}}, k.scope, "")
 		}
 	}
 }

@@ -864,6 +864,113 @@ var iosRowCases = map[string]rowCase{
 		noLine(t, d, "snmp", "no snmp-server enable traps")
 		wantKept(t, d, "snmp", "snmp-server enable traps tty")
 	},
+	// 0.2.7: the trap source and the system block of a scope (system_ios_test.go
+	// has the rest of what the planner does with them)
+	"ios.snmp.block-trap-source": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		// another interface: retyped in place, nothing removed
+		d := planI(t, f, func(c *IOSConfig) { c.typeGlobal("snmp-server trap-source Loopback1") }, Options{Scope: "lab"})
+		wantLine(t, d, "snmp", "snmp-server trap-source Loopback0")
+		noLine(t, d, "snmp", "no snmp-server trap-source")
+		// the device's own, with the block stating none, is kept
+		f = fixtureNamed(t, "cisco.reference-lab")
+		d = planI(t, f, func(c *IOSConfig) { c.typeGlobal("snmp-server trap-source Loopback1") }, Options{Scope: "lab"})
+		noLine(t, d, "snmp", "trap-source")
+		wantKept(t, d, "snmp", "snmp-server trap-source loopback1")
+	},
+	"ios.system.banner": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		d := planI(t, f, func(c *IOSConfig) { c.typeBanner("banner login ^C\nAnother banner\n^C") }, Options{Scope: "lab"})
+		wantLine(t, d, "system", "banner login ^\nAuthorized use only.\n! Activity is logged.\n^")
+		noLine(t, d, "system", "no banner login")
+		noLine(t, d, "system", "Another")
+		for _, k := range d.Kept {
+			if k.Section == "system" && strings.Contains(k.Text, "banner") {
+				t.Errorf("kept: %+v", k)
+			}
+		}
+		// the banner of the device is no text anywhere in the plan's reports
+		if strings.Contains(d.Display(), "Another") {
+			t.Errorf("the device's banner is shown:\n%s", d.Display())
+		}
+	},
+	"ios.system.domain-name": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		d := planI(t, f, func(c *IOSConfig) { c.typeGlobal("ip domain name other.example.net") }, Options{Scope: "lab"})
+		wantLine(t, d, "system", "ip domain name lab.example.net")
+		noLine(t, d, "system", "no ip domain name")
+	},
+	"ios.system.timezone": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		d := planI(t, f, func(c *IOSConfig) { c.typeGlobal("clock timezone PST -8 0") }, Options{Scope: "lab"})
+		wantLine(t, d, "system", "clock timezone CET 1")
+		noLine(t, d, "system", "no clock timezone")
+	},
+	"ios.system.ntp-authenticate": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		d := planI(t, f, func(c *IOSConfig) { c.noGlobal("ntp authenticate") }, Options{Scope: "lab"})
+		wantLine(t, d, "system", "ntp authenticate")
+		noLine(t, d, "system", "no ntp authenticate")
+		// the device has it and the block says nothing: nothing is typed
+		d = planI(t, f, nil, Options{Scope: "lab"})
+		noLine(t, d, "system", "ntp authenticate")
+	},
+	"ios.system.domain-list": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		d := planI(t, f, func(c *IOSConfig) { c.noGlobal("ip domain list lab.example.net") }, Options{Scope: "lab"})
+		wantLine(t, d, "system", "ip domain list lab.example.net")
+		noLine(t, d, "system", "no ip domain list")
+		wantKept(t, d, "system", "ip domain list other.example.net")
+	},
+	"ios.system.name-server": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		d := planI(t, f, func(c *IOSConfig) { c.noGlobal("ip name-server 192.0.2.53 192.0.2.54") }, Options{Scope: "lab"})
+		wantLine(t, d, "system", "ip name-server 192.0.2.53")
+		wantLine(t, d, "system", "ip name-server 192.0.2.54")
+		noLine(t, d, "system", "no ip name-server")
+		wantKept(t, d, "system", "ip name-server 198.51.100.53")
+	},
+	"ios.system.ntp-server": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		// the same host with other options: retyped in place, nothing removed
+		d := planI(t, f, func(c *IOSConfig) { c.typeGlobal("ntp server 192.0.2.123 version 3") }, Options{Scope: "lab"})
+		wantLine(t, d, "system", "ntp server 192.0.2.123 version 4 key 5 prefer")
+		noLine(t, d, "system", "no ntp server")
+		// the device's other server is kept
+		wantKept(t, d, "system", "ntp server 198.51.100.123")
+	},
+	"ios.system.ntp-key": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		// typed (by value) only where the device has no key of the number
+		d := planI(t, f, func(c *IOSConfig) {
+			c.noGlobal("ntp authentication-key 5 md5 0822455D0A16 7")
+			c.typeGlobal("ntp authentication-key 9 md5 OTHEROTHER 7")
+		}, Options{Scope: "lab"})
+		var key Line
+		for _, l := range d.Lines {
+			if strings.Contains(l.Text, "ntp authentication-key") {
+				key = l
+			}
+		}
+		if key.Text != "ntp authentication-key 5 md5 lab-ntp-key-0123" || !key.HasValue || key.Shown() != "ntp authentication-key 5 <secret>" {
+			t.Errorf("the key line: %+v", key)
+		}
+		noLine(t, d, "system", "no ntp authentication-key")
+		wantKept(t, d, "system", "ntp authentication-key 9")
+		// the device's key of the number, of another algorithm, is left as it is
+		d = planI(t, f, func(c *IOSConfig) { c.typeGlobal("ntp authentication-key 5 md5 OTHEROTHER 7") }, Options{Scope: "lab"})
+		noLine(t, d, "system", "authentication-key")
+	},
+	"ios.system.ntp-trusted-key": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		d := planI(t, f, func(c *IOSConfig) {
+			c.noGlobal("ntp trusted-key 5")
+			c.typeGlobal("ntp trusted-key 9")
+		}, Options{Scope: "lab"})
+		wantLine(t, d, "system", "ntp trusted-key 5")
+		noLine(t, d, "system", "no ntp trusted-key")
+		wantKept(t, d, "system", "ntp trusted-key 9")
+	},
 	"ios.mgmt-acl.acl": func(t *testing.T) {
 		f := fixtureNamed(t, "cisco.reference-lab")
 		// a new entry that has to stand before the deny: the deny is removed
