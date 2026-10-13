@@ -228,7 +228,7 @@ func TestBlockCiscoSystemCheckAgainstADevice(t *testing.T) {
 	// paste, no word of it in the report
 	out = b.run("device", "config", "plan", "lab-c", "--pull", "--no-secrets")
 	for _, w := range []string{"! system: the statements of the system block of scope 'lab'", "banner login ^\nAuthorized use only, Zq41.\n\n! Activity is logged.\n^\n",
-		"the login banner of 3 lines, 49 characters", "written from the references and have not been checked on a device"} {
+		"the login banner of 3 lines, 49 characters", "system: the NTP key lines of the system block of scope 'lab' have not been checked on a device"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("the plan lacks %q:\n%s", w, out)
 		}

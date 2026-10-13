@@ -266,8 +266,7 @@ func TestBlockCiscoCheckAgainstADevice(t *testing.T) {
 	// once in force, the device's plan carries the block
 	b.run("scope", "block", "lab", "cisco", "set", "snmp", "--file", f, "-y")
 	out = b.run("device", "config", "plan", "lab-c", "--pull", "--no-secrets")
-	for _, w := range []string{"access list NMS-POLLERS of the SNMP block of scope 'lab'", "ip access-list standard NMS-POLLERS",
-		"written from the references and have not been checked on a device"} {
+	for _, w := range []string{"access list NMS-POLLERS of the SNMP block of scope 'lab'", "ip access-list standard NMS-POLLERS"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("the plan lacks %q:\n%s", w, out)
 		}

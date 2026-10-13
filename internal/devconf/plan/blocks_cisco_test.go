@@ -160,10 +160,11 @@ func TestCiscoBlockWordsAndNote(t *testing.T) {
 			t.Errorf("the items lack %q:\n%s", want, strings.Join(words, "\n"))
 		}
 	}
-	if !slices.ContainsFunc(d.Notes, func(n string) bool {
-		return strings.Contains(n, "SNMP block of scope 'lab'") && strings.Contains(n, "have not been checked on a device")
-	}) {
-		t.Errorf("no note says the block is not checked on a device: %q", d.Notes)
+	// the block's lines were pasted and read back: no note says otherwise
+	for _, n := range d.Notes {
+		if strings.Contains(n, "SNMP block of scope 'lab'") && strings.Contains(n, "not been checked") {
+			t.Errorf("a note says the SNMP block is not checked on a device: %q", n)
+		}
 	}
 	// without a block the report does not say so
 	g := fixtureNamed(t, "cisco.reference-lab")

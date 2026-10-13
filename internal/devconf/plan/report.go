@@ -749,30 +749,27 @@ func boxLine(d Delta, h Header) string {
 // iosLabNote is the sentence every Cisco output's report carries (D100).
 const iosLabNote = "Checked on a device: IOS 12.4(15) (a 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references."
 
-// iosBlockNote is the sentence a Cisco output carries when the rendering has
-// a scope's SNMP block: what the standard was checked on does not cover the
-// block's own lines.
-func iosBlockNote(scope string) string {
-	where := "this scope"
-	if scope != "" {
-		where = "scope '" + scope + "'"
+// iosHasNTPKeyLines reports whether the system block's lines hold an NTP
+// key, a trusted key or 'ntp authenticate'.
+func iosHasNTPKeyLines(lines []string) bool {
+	for _, l := range lines {
+		if strings.HasPrefix(l, "ntp authentication-key ") || strings.HasPrefix(l, "ntp trusted-key ") || l == "ntp authenticate" {
+			return true
+		}
 	}
-	return "snmp: the lines of the SNMP block of " + where + " (access list entries, trap hosts, 'enable traps' lines) were written from the references " +
-		"and have not been checked on a device (not lab-tested): read them before you paste"
+	return false
 }
 
-// iosSystemNote is the sentence a Cisco output carries when the rendering has
-// a scope's system block: the banner, the domain and name servers, the time
-// zone and the NTP lines were written from the references and have not been
+// iosSystemNote is the sentence a Cisco output carries when the system block
+// has NTP key lines: they were written from the references and have not been
 // pasted on a device.
 func iosSystemNote(scope string) string {
 	where := "this scope"
 	if scope != "" {
 		where = "scope '" + scope + "'"
 	}
-	return "system: the lines of the system block of " + where + " (login banner, domain name and list, time zone, name servers, NTP) were written from the references " +
-		"and have not been checked on a device (not lab-tested): read them before you paste; the NTP lines are in the order IOS needs " +
-		"(keys, trusted keys, servers, 'ntp authenticate' last)"
+	return "system: the NTP key lines of the system block of " + where + " have not been checked on a device (not lab-tested): read them before you paste; " +
+		"they are in the order IOS needs (keys, trusted keys, servers, 'ntp authenticate' last)"
 }
 
 // Report is the box, the irregularity report and the one check line, all

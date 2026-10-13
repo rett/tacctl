@@ -41,6 +41,41 @@ current behaviour; this file is where history lives.
    in the project clone (`/opt/tacctl/docs/`). The first upgrade removes the
    copy an earlier release left there (`Removed: README.md`).
 
+6. **A pull records the release, model and serial number of the device.** What
+   a device reports about itself is kept with the last-pull record (replaced by
+   every good pull, never in `devices.yaml`): the release (a Junos device's
+   `show version` `Junos:` line, else the configuration's `set version`; the
+   `Cisco IOS Software ... Version X,` line of the version output a Cisco pull
+   already reads; a WTI unit's command menu version), and the model and serial
+   number from more commands in the same session (`show chassis hardware` and
+   `show version` on Junos, `show inventory` on IOS and IOS-XE). A device that
+   refuses one is pulled all the same with the field empty, and a command that
+   stalls takes the pull at most 15 seconds more; no extra login. `device show`
+   has `Release:`, `Model:` and `Serial:` rows after the Configuration row,
+   `device config list` a `RELEASE` column, and `--json` of both (and `device
+   list`) the fields `release`, `model` and `serial` (`release` in `device
+   config list`); the operator tier and up see them, as the Configuration row.
+
+7. **A Junos walkthrough follows the device's recorded release for the idle
+   timeout.** `set system login idle-timeout` exists from Junos 16.1; the
+   walkthrough of a registered device (`device config show`) whose last pull
+   recorded an older release sets the timeout on each login class instead. A
+   device with no recorded release gets the global statement, as before. The
+   statements a release lacks are kept as rows of one table
+   (`internal/devices/gates.go`), added when a device refuses one.
+
+8. **IOS block lines were run on three releases; the compare reads IOS's
+   default zone.** The system and snmp block lines (banner, domain name and
+   list, name servers, NTP servers, community, trap host, `enable traps`, trap
+   source) were pasted and read back on IOS 12.4(15)SW, 15.6(2)T and IOS-XE
+   16.7.1. `clock timezone UTC 0` is the default zone and no release prints
+   it: the rendered line now reads as present on a device with no `clock
+   timezone` statement (it read `differs` for good). The report's "not
+   checked on a device" note for the blocks is now only for a system block
+   with NTP key lines. On IOS 12.4 an `ntp server <host> version 3` is stored
+   without the option and so reads `differs`; the restore point's caveat says
+   that a 12.4 `configure replace` can stop at an `ntp server` with options.
+
 ## 0.2.7 (2026-10-12)
 
 1. **The break-glass section compares login names without regard to case, and says so.**

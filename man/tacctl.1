@@ -4804,7 +4804,9 @@ on
 and
 .BR "line vty 0 15" ;
 Junos emits
-.BR "set system login idle-timeout \fIn\fR" .
+.BR "set system login idle-timeout \fIn\fR"
+(for a registered device whose recorded release is before 16.1, which has no
+such statement, the timeout is set on each login class instead).
 Range 0..60. A value of
 .B 0
 disables idle expiry on both vendors. Default 60.
@@ -5840,7 +5842,7 @@ management ports.
 .\" BEGIN GENERATED: command device list
 .RS
 .PP
-Requires: \fBreadonly\fR. The CONFIG column (and config of \-\-json) is the operator tier's; a read\-only user's list has none.
+Requires: \fBreadonly\fR. The CONFIG column (and config, release, model and serial of \-\-json) is the operator tier's; a read\-only user's list has none.
 .PP
 Options:
 .TP
@@ -5886,7 +5888,13 @@ probe result, overall result and the state of each managed section, with
 .B "ok (+N unmanaged)"
 for one that holds only statements of the device's own; for a WTI unit also its
 command menu version, Site ID and the number of other sessions at the
-pull), and
+pull), then what the device reported of itself at that pull as
+.BR Release: ,
+.B Model:
+and
+.B Serial:
+rows (the OS release, the platform and the chassis serial number; a row is left
+out when the pull did not read it; a WTI unit has a release only), and
 the open notices with a count of the acknowledged ones
 .RB ( \-\-all
 lists them too, marked). It warns when the
@@ -5894,7 +5902,7 @@ vendor tag and the registered vendor disagree.
 .\" BEGIN GENERATED: command device show
 .RS
 .PP
-Requires: \fBreadonly\fR. The Configuration row (and config of \-\-json) is the operator tier's; a read\-only user's output has none.
+Requires: \fBreadonly\fR. The Configuration, Release, Model and Serial rows (and config, release, model and serial of \-\-json) are the operator tier's; a read\-only user's output has none.
 .PP
 Options:
 .TP
@@ -6948,6 +6956,35 @@ a secret is compared by presence and its value is neither kept nor printed. A
 failed pull changes the record's result and leaves the sections of the last
 good one.
 .PP
+A good pull also records three read-only facts of the device, replaced by every
+good pull and never written to
+.IR devices.yaml :
+the release, the model and the serial number
+.RB ( "device show"
+and
+.BR "device config list" ).
+The release is the
+.B Junos:
+line of
+.B "show version"
+on Junos (else the
+.B "set version"
+statement of the configuration the pull read),
+the version of the
+.B "Cisco IOS Software ... Version"
+line of the Cisco version output (else of its first image line), and a WTI
+unit's command menu version. The model and the serial number are read with
+more commands in the same session, after the configuration:
+.B "show chassis hardware"
+on Junos (the Chassis row's description and serial number; the Model line of
+.B "show version"
+when the row gave none) and
+.B "show inventory"
+on IOS and IOS\-XE (the first entry's PID and SN). A device that refuses a
+command, or answers text that holds none, leaves the field empty: the pull does
+not fail and its result is unchanged, and a command that stalls takes it at
+most 15 seconds more. A WTI unit has a release only.
+.PP
 A Cisco device stores some typed lines in another form, which the comparison
 takes as the typed ones: a standard ACL entry "permit host A" or
 "permit A 0.0.0.0" is stored as "permit A"; trailing blanks and the order of
@@ -7567,6 +7604,9 @@ only merges, that on IOS 12.4
 .B "configure replace"
 may skip the removal of
 .B "aaa new\-model"
+or stop at a line it cannot remove (an
+.B "ntp server"
+with options)
 (do not rely on it for AAA; use the
 .B no
 lines), and that the file and any copy the replace leaves are to be
@@ -7990,6 +8030,15 @@ has its
 .B other_sessions
 and
 .BR users_read ).
+The
+.B RELEASE
+column is the OS release the last good pull read from the device (a WTI unit's
+command menu version;
+.B \-
+when none was read), and
+.B \-\-json
+has it as
+.BR release .
 The state is computed against today's rendering from the stored sections, so a
 change of the store or of
 .I tacctl.yaml
@@ -9130,10 +9179,10 @@ An operator may run list; show, pull, diff and plan need the engineer tier (a de
 An engineer imports from standard input only (device import \-).
 .TP
 .B device list
-The CONFIG column (and config of \-\-json) is the operator tier's; a read\-only user's list has none.
+The CONFIG column (and config, release, model and serial of \-\-json) is the operator tier's; a read\-only user's list has none.
 .TP
 .B device show
-The Configuration row (and config of \-\-json) is the operator tier's; a read\-only user's output has none.
+The Configuration, Release, Model and Serial rows (and config, release, model and serial of \-\-json) are the operator tier's; a read\-only user's output has none.
 .TP
 .B device snmp
 An engineer may read the settings of a device of their own scope (show [\-\-reveal], version, port, timeout, clients list); every setter and clear needs the superuser tier.

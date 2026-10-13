@@ -674,6 +674,27 @@ func withImplicitLogin(got []stmt) []stmt {
 	return got
 }
 
+// iosDefaultTimezone is the one zone statement IOS does not print: the
+// default, UTC with no offset (IOS 12.4, 15.6 and IOS-XE 16.7 print no
+// 'clock timezone' line for it).
+const iosDefaultTimezone = "clock timezone UTC 0 0"
+
+// withImplicitTimezone adds the statement 'clock timezone UTC 0 0' to a
+// device that has no 'clock timezone' statement when the rendering has it:
+// the device runs it by default and prints nothing, and a device with
+// another zone keeps it, so the rendered one is missing there.
+func withImplicitTimezone(got []stmt, claim map[string]string) []stmt {
+	if _, ok := claim[iosDefaultTimezone]; !ok {
+		return got
+	}
+	for _, x := range got {
+		if len(x.path) == 1 && strings.HasPrefix(x.path[0], "clock timezone ") {
+			return got
+		}
+	}
+	return append(got, stmt{text: iosDefaultTimezone, stem: iosDefaultTimezone, path: []string{iosDefaultTimezone}})
+}
+
 // alignLogin makes the device's login statements comparable with the
 // rendered ones by the lines they cover: a rendered 'line vty 0 15 > L' is
 // there when the device's statements with the leaf L cover every line of
@@ -1299,7 +1320,7 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 		}
 	}
 	lb.fresh = true
-	got := withImplicitLogin(privilegeParents(ciscoCanon(lines, nil, lb), c.claim))
+	got := withImplicitTimezone(withImplicitLogin(privilegeParents(ciscoCanon(lines, nil, lb), c.claim)), c.claim)
 	for _, x := range got {
 		leaf := strings.Fields(x.path[len(x.path)-1])
 		switch {

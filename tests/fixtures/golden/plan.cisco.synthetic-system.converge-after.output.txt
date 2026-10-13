@@ -28,10 +28,6 @@
 ! Secrets: 3 present on the device, not changed (--secrets pushes them).
 ! Cleanup (--converge): nothing to remove.
 ! 6 extras stay: each item above says why.
-! Note: snmp: the lines of the SNMP block of scope 'lab' (access list entries, trap hosts, 'enable
-! traps' lines) were written from the references and have not been checked on a device (not
-! lab-tested): read them before you paste.
-! Note: system: the lines of the system block of scope 'lab' (login banner, domain name and list, time
-! zone, name servers, NTP) were written from the references and have not been checked on a device (not
-! lab-tested): read them before you paste; the NTP lines are in the order IOS needs (keys, trusted
-! keys, servers, 'ntp authenticate' last).
+! Note: system: the NTP key lines of the system block of scope 'lab' have not been checked on a device
+! (not lab-tested): read them before you paste; they are in the order IOS needs (keys, trusted keys,
+! servers, 'ntp authenticate' last).

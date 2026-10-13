@@ -314,3 +314,19 @@ func TestIOSTrapSourceStoredForm(t *testing.T) {
 		t.Errorf("the device's own trap source: %s (+%d): %v", r.State, r.Unmanaged, r.Lines)
 	}
 }
+
+// IOS prints no 'clock timezone' line for the default zone: a rendered
+// 'clock timezone UTC 0' is there on a device that has none, and missing
+// on a device with another zone.
+func TestIOSDefaultTimezoneIsImplicit(t *testing.T) {
+	rendering := iosSystemRendering(t, "clock timezone UTC 0\n")
+	if r := iosSystemState(t, "ip domain name lab.example.net\n", rendering); r.State != StateOK {
+		t.Errorf("a device with no zone line: %+v", r)
+	}
+	if r := iosSystemState(t, "clock timezone PST -8 0\n", rendering); r.State == StateOK {
+		t.Errorf("a device with another zone reads ok: %+v", r)
+	}
+	if r := iosSystemState(t, "clock timezone UTC 0 0\n", rendering); r.State != StateOK {
+		t.Errorf("a device that prints the line: %+v", r)
+	}
+}
