@@ -123,16 +123,29 @@ func (Real) Start(ctx context.Context, c Cmd) (Process, error) {
 	p := &realProcess{ctx: ctx, cmd: cmd}
 	cmd.Stdout = &p.stdout
 	if c.Stdout != nil {
-		cmd.Stdout = c.Stdout
+		cmd.Stdout = rawFile(c.Stdout)
 	}
 	cmd.Stderr = &p.stderr
 	if c.Stderr != nil {
-		cmd.Stderr = c.Stderr
+		cmd.Stderr = rawFile(c.Stderr)
 	}
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
 	return p, nil
+}
+
+// rawFile is the file behind w when w is a stream that wraps one (ui.Plain,
+// which takes the colour out of tacctl's own output): a program started with
+// it writes to the file itself and keeps the terminal it is attached to, as
+// it would with the *os.File. Any other writer is returned as it is.
+func rawFile(w io.Writer) io.Writer {
+	if x, ok := w.(interface{ File() *os.File }); ok {
+		if f := x.File(); f != nil {
+			return f
+		}
+	}
+	return w
 }
 
 // Exec replaces the process image (syscall.Exec).

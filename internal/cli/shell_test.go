@@ -517,6 +517,7 @@ func TestShellHelp(t *testing.T) {
 		{[]string{"shell"}, []string{"Usage: tacctl shell [--no-history] [--idle <min>] [--space-completion on|off] [--password-cache] [-c <line>]"}},
 	} {
 		got, ok := help(c.words)
+		got = stripSGR(got) // the text as a terminal without colour shows it
 		for _, w := range c.has {
 			if !ok || !strings.Contains(got, w) {
 				t.Errorf("help %q = %q, lacks %q", c.words, got, w)
@@ -574,6 +575,7 @@ func TestShellTopHelp(t *testing.T) {
 		t.Errorf("shell help names the program in a command:\n%s", got)
 	}
 	// The Shell section's descriptions start in the usage's column.
+	got = stripSGR(got)
 	col := strings.Index(got, "Install tacctl") - strings.Index(got, "  install")
 	if i := strings.Index(got, "Leave the shell"); i-strings.LastIndex(got[:i], "\n")-1 != col {
 		t.Errorf("Shell section column: %d, usage column %d", i-strings.LastIndex(got[:i], "\n")-1, col)
@@ -588,7 +590,7 @@ func TestTopShortsAreTheUsage(t *testing.T) {
 	if len(rows) < 20 {
 		t.Fatalf("top usage has %d command rows", len(rows))
 	}
-	top := Usage("top", UsageVars{"version": "x"})
+	top := stripSGR(Usage("top", UsageVars{"version": "x"}))
 	for _, r := range rows {
 		c := child(root, r.Name)
 		if c == nil {

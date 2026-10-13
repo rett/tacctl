@@ -1,5 +1,6 @@
 
-[1mtacctl[0m (unknown) — TACACS+ (tacquito) and RADIUS (FreeRADIUS) from one store
+[1mtacctl[0m (unknown) — Network-device AAA from one store: TACACS+ (tacquito) and RADIUS (FreeRADIUS)
+Copyright (c) 2026 Everett C. Haimes III · MIT License · https://github.com/rett/tacctl
 
 Usage: tacctl <command> [arguments]
 
@@ -52,4 +53,6 @@ Examples:
   tacctl user scope jsmith add prod
   tacctl scope add prod --prefixes 10.10.0.0/16 --secret generate
   tacctl config cisco --scope prod
+
+Documentation: man tacctl, /opt/tacctl/docs/ · Project: https://github.com/rett/tacctl
 

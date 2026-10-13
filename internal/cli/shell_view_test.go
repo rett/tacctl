@@ -251,10 +251,10 @@ func TestViewTopHelp(t *testing.T) {
 		if !ok {
 			t.Fatal("no help")
 		}
-		return got
+		return stripSGR(got) // the text a terminal without colour shows
 	}
 	for _, v := range []tier.Tier{tier.Superuser, tier.Unrestricted} {
-		if got := topFor(v); got != shellTop("0.2.1-test", false) {
+		if got := topFor(v); got != stripSGR(shellTop("0.2.1-test", false)) {
 			t.Errorf("%s: the top-level help is filtered:\n%s", v, got)
 		}
 	}

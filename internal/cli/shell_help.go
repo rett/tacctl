@@ -27,7 +27,7 @@ var reProg = regexp.MustCompile(`^tacctl [a-z-]+ `)
 // splitRow splits a usage line at its widest run of blanks (the last one
 // of equal width): the argument column from the description.
 func splitRow(line string) (left, desc string, ok bool) {
-	body := strings.TrimPrefix(line, "  ")
+	body := strings.TrimPrefix(plainBlock(line), "  ")
 	bestAt, bestLen := -1, 1
 	for i := 0; i < len(body); {
 		if body[i] != ' ' {
@@ -52,7 +52,7 @@ func splitRow(line string) (left, desc string, ok bool) {
 // usageRows are the rows of a block's list: the lines after the heading
 // line (the line that ends in ':') up to the next blank line.
 func usageRows(block, heading string) []usageRow {
-	_, after, ok := strings.Cut(block, "\n"+heading+"\n")
+	_, after, ok := strings.Cut(plainBlock(block), "\n"+heading+"\n")
 	if !ok {
 		return nil
 	}

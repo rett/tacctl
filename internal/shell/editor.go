@@ -10,6 +10,8 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/term"
+
+	"github.com/rett/tacctl/internal/ui"
 )
 
 // Candidate is one completion: the word, a description shown in the list
@@ -119,6 +121,8 @@ type editor struct {
 	listMax int
 	// spaces: a typed blank is handled as on Junos (Options.SpaceCompletion).
 	spaces bool
+	// styled: the '?' list shows the labels in bold (Options.Styled).
+	styled bool
 
 	// lastTab: the previous key was a Tab that completed nothing more (a
 	// second Tab lists). input clears it on any other key.
@@ -277,7 +281,7 @@ func (e *editor) question(line string, pos int) (string, int, bool) {
 	}
 	e.lastTab = false
 	if cands := e.candidates(words, partial); len(cands) > 0 {
-		e.present(line, pos, partial, cands, "Possible completions:\n"+listing(cands), true)
+		e.present(line, pos, partial, cands, "Possible completions:\n"+listingStyled(cands, e.styled), true)
 		return line, pos, true
 	}
 	text := "No valid completions\n"
@@ -387,7 +391,7 @@ func (e *editor) space(line string, pos int) (string, int, bool) {
 		return line[:start] + ins, start + len(ins), true
 	}
 	if n := len(listed(cands)); e.listMax < 0 || n <= e.listMax {
-		e.show(line, "Possible completions:\n"+listing(cands))
+		e.show(line, "Possible completions:\n"+listingStyled(cands, e.styled))
 	}
 	return line, pos, true
 }
@@ -483,7 +487,11 @@ func columns(cands []Candidate, width int) string {
 
 // listing is the '?' list: the candidates one per line, the label (or the
 // word) and the description aligned.
-func listing(cands []Candidate) string {
+func listing(cands []Candidate) string { return listingStyled(cands, false) }
+
+// listingStyled is listing with the label in bold when styled. The padding
+// is counted on the plain label, so the columns are the same either way.
+func listingStyled(cands []Candidate, styled bool) string {
 	label := func(c Candidate) string {
 		if c.Label != "" {
 			return c.Label
@@ -497,12 +505,16 @@ func listing(cands []Candidate) string {
 	var b strings.Builder
 	for _, c := range listed(cands) {
 		l := label(c)
+		shown := l
+		if styled {
+			shown = ui.Bold + l + ui.NC
+		}
 		if c.Desc == "" {
-			b.WriteString("  " + l + "\n")
+			b.WriteString("  " + shown + "\n")
 			continue
 		}
 		pad := width - utf8.RuneCountInString(l)
-		b.WriteString("  " + l + strings.Repeat(" ", pad) + "  " + c.Desc + "\n")
+		b.WriteString("  " + shown + strings.Repeat(" ", pad) + "  " + c.Desc + "\n")
 	}
 	return b.String()
 }
@@ -667,20 +679,73 @@ func (e *editor) write(s string) { _, _ = io.WriteString(e.out, s) }
 
 // wrapRows are the terminal rows text takes at width w: each line cut
 // every w runes (an empty line is one row); the last newline ends the
-// last line.
+// last line. A colour sequence (SGR) takes no column and is never cut; a
+// style still open where a line is cut is closed at the end of its row and
+// opened again at the start of the next, so each row stands alone.
 func wrapRows(text string, w int) []string {
 	var rows []string
 	for _, l := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
-		r := []rune(l)
-		if len(r) == 0 {
-			rows = append(rows, "")
+		if !strings.Contains(l, "\x1b[") {
+			r := []rune(l)
+			if len(r) == 0 {
+				rows = append(rows, "")
+				continue
+			}
+			for len(r) > 0 {
+				k := min(w, len(r))
+				rows = append(rows, string(r[:k]))
+				r = r[k:]
+			}
 			continue
 		}
-		for len(r) > 0 {
-			k := min(w, len(r))
-			rows = append(rows, string(r[:k]))
-			r = r[k:]
+		rows = append(rows, wrapStyled(l, w)...)
+	}
+	return rows
+}
+
+// wrapStyled is wrapRows for one line that holds SGR sequences.
+func wrapStyled(l string, w int) []string {
+	var rows []string
+	var row strings.Builder
+	open := "" // the sequences in effect since the last reset
+	cols := 0  // visible runes in row
+	flush := func() {
+		if open != "" {
+			row.WriteString(ui.NC)
 		}
+		rows = append(rows, row.String())
+		row.Reset()
+		row.WriteString(open)
+		cols = 0
+	}
+	for i := 0; i < len(l); {
+		if l[i] == 0x1b && i+1 < len(l) && l[i+1] == '[' {
+			j := i + 2
+			for j < len(l) && (l[j] == ';' || (l[j] >= '0' && l[j] <= '9')) {
+				j++
+			}
+			if j < len(l) && l[j] == 'm' {
+				seq := l[i : j+1]
+				if seq == ui.NC || seq == "\x1b[m" {
+					open = ""
+				} else {
+					open += seq
+				}
+				row.WriteString(seq)
+				i = j + 1
+				continue
+			}
+		}
+		if cols == w {
+			flush()
+		}
+		r, n := utf8.DecodeRuneInString(l[i:])
+		row.WriteRune(r)
+		cols++
+		i += n
+	}
+	if row.Len() > 0 || len(rows) == 0 {
+		rows = append(rows, row.String())
 	}
 	return rows
 }

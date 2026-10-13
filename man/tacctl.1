@@ -366,7 +366,8 @@ when the binary was built.
 .B --long
 adds the commit, the build date, the Go version and whether the test knobs
 are compiled in
-.RB ( "test knobs: off" ).
+.RB ( "test knobs: off" ),
+and ends with the copyright and licence line and the project address.
 .\" BEGIN GENERATED: command version
 .RS
 .PP
@@ -2966,12 +2967,12 @@ that differs from the release's rules (after
 .B visudo \-cf
 accepts them); it never creates the
 file. Both sudoers files carry
-.B Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY"
+.B Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY NO_COLOR TACCTL_COLOR"
 (the agent socket for
 .BR "tacctl host" ,
-the login console's session marker, and the X11 display
+the login console's session marker, the X11 display
 .B "tacctl ssh \-X"
-hands on), for the command lines that use the password cache
+hands on, and the caller's choice of colour), for the command lines that use the password cache
 .RB ( "device config pull" ", " "device config diff" ", " "device config plan" ", " ssh ", " "device ssh" " and " "block ... adopt" ),
 .BR TACCTL_ASKPASS ,
 for the four command lines that open an editor
@@ -10184,6 +10185,35 @@ reads it once and removes it from its own environment, and the helper ssh runs a
 and the prompt as its only argument) answers a password prompt with it and
 nothing else. See
 .BR "console password\-cache" .
+.TP
+.B "TACCTL_COLOR, NO_COLOR, TERM"
+Whether output is styled (bold titles, colour in the
+.BR [INFO] ,
+.B [WARN]
+and
+.B [ERROR]
+lines and in help and listings). Styling appears only on a terminal, decided
+for standard output and standard error separately: a stream is styled when it is
+a terminal and
+.B TERM
+is neither empty nor
+.BR dumb .
+.B TACCTL_COLOR=always
+styles both streams even into a pipe and
+.B TACCTL_COLOR=never
+neither; it wins over the rest, and any other value is ignored. Otherwise a
+non-empty
+.B NO_COLOR
+means never. The tags carry their word, so nothing depends on colour. The
+sudoers drop-ins keep
+.B NO_COLOR
+and
+.B TACCTL_COLOR
+so that the person's choice reaches the root process; without a drop-in the
+variables do not cross
+.BR sudo (8),
+and the terminal alone decides. The login console decides by its terminal only:
+its sessions carry neither variable.
 .TP
 .B TACCTL_CONSOLE
 Set by the login console, as

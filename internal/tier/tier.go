@@ -163,7 +163,7 @@ var Rules = []Rule{
 	{Tier: Readonly, Cmd: "", AnySub: true, Sudoers: []string{`""`}},
 	{Tier: Readonly, Cmd: "passwd", AnySub: true, Sudoers: []string{"passwd"}},
 	{Tier: Readonly, Cmd: "status", AnySub: true, Sudoers: []string{"status"}},
-	{Tier: Readonly, Cmd: "version", AnySub: true, Sudoers: []string{"version"}, Wrap: true},
+	{Tier: Readonly, Cmd: "version", AnySub: true, Sudoers: []string{"version", "version --long"}, Wrap: true},
 	{Tier: Readonly, Cmd: "help", Sudoers: []string{"help"}},
 	{Tier: Readonly, Cmd: "-h", Sudoers: []string{"-h"}},
 	{Tier: Readonly, Cmd: "--help", Sudoers: []string{"--help"}, Wrap: true},
@@ -310,8 +310,8 @@ const Binary = "/usr/local/bin/tacctl"
 // EnvKeep is the sudoers line both drop-ins carry: 'tacctl host' runs ssh
 // as the invoking user (a superuser enrols and syncs hosts; 'tacctl ssh' of
 // every tier opens a session with the caller's own keys) and needs their
-// agent socket, which sudo's env_reset would drop. env_keep lets that one
-// variable through (from the caller's environment, or as
+// agent socket, which sudo's env_reset would drop. env_keep lets these
+// variables through (from the caller's environment, or as
 // 'SSH_AUTH_SOCK=...' on the sudo command line) and nothing else; the rules
 // carry no SETENV tag, which would let a caller set any variable, SUDO_USER
 // among them, and so pose as someone else to the tier gate. The second
@@ -319,8 +319,22 @@ const Binary = "/usr/local/bin/tacctl"
 // line assignment on each of its lines); it is only ever read by tacctl, to
 // tighten what it does, never to widen it. The third is the X11 display
 // sshd's forwarding sets ('tacctl ssh -X' hands it to the ssh it runs as
-// the caller; tacctl checks its shape first).
-const EnvKeep = "Defaults!" + Binary + " env_keep += \"SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY\"\n"
+// the caller; tacctl checks its shape first). The last two are the caller's
+// choice of colour (NO_COLOR, TACCTL_COLOR; ui.Colour): the root process
+// that prints decides with them, and they only ever take the colour out or
+// put it back, never widen what a command does.
+const EnvKeep = "Defaults!" + Binary + " env_keep += \"" + envKeepNames + "\"\n"
+
+// envKeepNames is EnvKeep's list; envKeepNames027 is the list the drop-ins
+// of 0.2.1 to 0.2.7 carry (before the two colour variables joined it).
+const (
+	envKeepNames    = envKeepNames027 + " NO_COLOR TACCTL_COLOR"
+	envKeepNames027 = "SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY"
+)
+
+// envKeep027 is the env_keep line of the drop-ins of 0.2.1 to 0.2.7, frozen:
+// the line those releases wrote, not EnvKeep, which moves on.
+const envKeep027 = "Defaults!" + Binary + " env_keep += \"" + envKeepNames027 + "\"\n"
 
 // The password cache's variable (docs/plans/0.2.4-plan.md D70,
 // TACCTL_ASKPASS: '<socket path>:<token>') is kept only for the command

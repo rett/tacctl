@@ -252,7 +252,7 @@ func filterTop(root *cobra.Command, eff tier.Tier, text string) string {
 			section = ""
 		case section == "commands":
 			if strings.HasPrefix(l, "  ") && !strings.HasPrefix(l, "   ") {
-				name, _, _ := strings.Cut(strings.TrimSpace(l), " ")
+				name, _, _ := strings.Cut(strings.TrimSpace(plainBlock(l)), " ")
 				keep = name == "shell" || viewShows(root, eff, false, []string{name})
 			}
 			if !keep {

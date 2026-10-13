@@ -529,6 +529,31 @@ func TestRollbackSudoersCases(t *testing.T) {
 		t.Errorf("the 0.2.6 group drop-in was not put back as 0.2.3's:\n%s", got)
 	}
 
+	// The drop-ins 0.2.7 wrote (the env_keep line without the colour
+	// variables) are older texts of this release and are put back as
+	// 0.2.3's, the per-tier one and the group one.
+	s = newRBSandbox(t)
+	s.write(s.p.TierSudoersFile, tier.Sudoers027(), 0o640)
+	s.write(s.p.SudoersFile, tier.GroupSudoers027("ops"), 0o640)
+	p, _ = PlanRollback(s.in)
+	if _, err := ApplyRollback(p); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.snapshotOf(); got[s.p.TierSudoersFile] != tier.Sudoers023() || got[s.p.SudoersFile] != tier.GroupSudoers023("ops") {
+		t.Errorf("the 0.2.7 drop-ins were not put back as 0.2.3's:\n%s\n%s", got[s.p.TierSudoersFile], got[s.p.SudoersFile])
+	}
+
+	// The current text (the new env_keep line) is put back as 0.2.3's too.
+	s = newRBSandbox(t)
+	p, _ = PlanRollback(s.in)
+	if _, err := ApplyRollback(p); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.snapshotOf(); got[s.p.TierSudoersFile] != tier.Sudoers023() || got[s.p.SudoersFile] != tier.GroupSudoers023("ops") ||
+		strings.Contains(got[s.p.TierSudoersFile]+got[s.p.SudoersFile], "NO_COLOR") {
+		t.Errorf("the current drop-ins were not put back as 0.2.3's:\n%s\n%s", got[s.p.TierSudoersFile], got[s.p.SudoersFile])
+	}
+
 	// No drop-in at all: said, nothing to do.
 	s = newRBSandbox(t)
 	_ = os.Remove(s.p.TierSudoersFile)

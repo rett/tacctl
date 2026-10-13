@@ -110,6 +110,49 @@ current behaviour; this file is where history lives.
    report words name the vrf (`the NTP server <host> in vrf <name>`), and a
    device's host of another vrf, kind or port is reported as its own entry.
 
+10. **Colour appears only on a terminal, and `NO_COLOR` and `TACCTL_COLOR`
+    decide it.** Output was coloured whatever it went to; a pipe or a file
+    held escape sequences. Now each of standard output and standard error is
+    styled only when it is a terminal and `TERM` is neither empty nor `dumb`.
+    `TACCTL_COLOR=always` styles both even into a pipe, `TACCTL_COLOR=never`
+    neither, and either wins; otherwise a non-empty `NO_COLOR` means never.
+    The `[INFO]`, `[WARN]` and `[ERROR]` lines (they carry their word) and the
+    bold titles of the listings follow the rule; the decision is made once
+    per process, and a program tacctl starts keeps the terminal it is
+    attached to. The sudoers drop-ins (per-tier and group) keep the two
+    variables through sudo: their `env_keep` line is now `SSH_AUTH_SOCK
+    TACCTL_CONSOLE DISPLAY NO_COLOR TACCTL_COLOR`, and `tacctl upgrade`
+    rewrites a group drop-in that is exactly the text 0.2.7 or an earlier
+    release wrote (an edited one is left, with the warning that names
+    `config sudoers install <group>`) and the per-tier drop-in as before.
+    Without a drop-in, a user's `NO_COLOR` is not seen under sudo and the
+    terminal decides; the login console decides by its terminal only.
+    `rollback` to 0.2.3 puts 0.2.3's text back over both forms.
+
+11. **`tacctl help` says what tacctl is and where it lives.** The title line
+   reads "Network-device AAA from one store: TACACS+ (tacquito) and RADIUS
+   (FreeRADIUS)", a second line names the copyright holder, the licence and
+   the project address, and the last line points to the manual page and
+   `/opt/tacctl/docs/`. `version --long` ends with the copyright, licence and
+   address line; `version` is unchanged.
+
+12. **`version --long` no longer asks for a password.** The per-tier sudoers
+   drop-in listed `tacctl version` and not `tacctl version --long`, so a
+   caller through `sudo` (the shell, the console) was asked for a password for
+   the longer form. The drop-in lists both; the first upgrade rewrites an
+   unedited drop-in.
+
+13. **Help text and the shell's `?` listing are highlighted on a colour
+   terminal.** Verbs and listing labels are bold, option names and
+   placeholders cyan; the plain text is the same bytes. The same colour rule
+   as the `[INFO]` and `[WARN]` lines applies.
+
+14. **Go 1.27.2.** The toolchain `install` and `upgrade` fetch and verify, and
+   the one tacctl is built with, is Go 1.27.2 (`go.mod` says `go 1.27.0`). The
+   Python 3.12 `repr` that the configuration reader reproduces now uses
+   CPython's own printable-character table (Unicode 15.0) instead of the Go
+   toolchain's, so what tacctl prints no longer moves with a Go release.
+
 ## 0.2.7 (2026-10-12)
 
 1. **The break-glass section compares login names without regard to case, and says so.**

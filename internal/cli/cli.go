@@ -80,7 +80,10 @@ func Main(argv, environ []string, stdio app.Stdio, build BuildInfo) int {
 	// ssh runs SSH_ASKPASS with the prompt as its only argument (askpass_cmd.go).
 	args = askpassHelperArgs(environ, args)
 	a := app.New(args, paths.NewEnv(environ), exe, os.Geteuid(), stdio, execx.Real{})
-	return exitCode(Run(ctx, a, build.resolved(debug.ReadBuildInfo)), a.Out)
+	code := exitCode(Run(ctx, a, build.resolved(debug.ReadBuildInfo)), a.Out)
+	// What the colour sink still holds (a sequence cut short) goes out.
+	_ = a.Close()
+	return code
 }
 
 // Run dispatches a.Args: the sudo re-exec of bin/tacctl.sh first, then the

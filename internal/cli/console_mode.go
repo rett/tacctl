@@ -40,6 +40,7 @@ import (
 func consoleMain(ctx context.Context, argv, environ []string, stdio app.Stdio, build BuildInfo, exe string, euid int, runner execx.Runner) int {
 	env := paths.NewEnv(environ)
 	a := app.New(nil, env, exe, euid, stdio, runner)
+	defer func() { _ = a.Close() }()
 	argv = console.Forced(argv, environ, a.Paths.ConsoleCommand)
 	clean := console.Scrub(environ, a.Paths.ConsoleCommand, app.ConsoleTestEnv(env))
 	if !slices.Equal(clean, environ) {

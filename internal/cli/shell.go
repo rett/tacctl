@@ -36,6 +36,7 @@ import (
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/shell"
 	"github.com/rett/tacctl/internal/tier"
+	"github.com/rett/tacctl/internal/ui"
 )
 
 func init() {
@@ -209,8 +210,16 @@ func (inv *invocation) runShell(r shellRun) (int, *shell.Shell) {
 	defer cache.close()
 	inv.setView(r, managed)
 	root := newRoot(inv)
+	// The labels of the '?' list are bold on a terminal that shows colour.
+	// This is the process's colour decision (ui.Colour on the same
+	// variables and terminals) taken here until the app carries it. The
+	// shell runs as the user; the console is this code in-process, and its
+	// environment (console.Scrub) holds neither NO_COLOR nor TACCTL_COLOR,
+	// so it decides by its terminal alone.
+	styled, _ := ui.Colour(a.Env.Get, isTerminalWriter(a.Out.Stdout), isTerminalWriter(a.Out.Stderr))
 	o := shell.Options{
 		Prompt:          r.prompt,
+		Styled:          styled,
 		Out:             a.Out,
 		Idle:            r.idle,
 		ListMax:         r.listMax,

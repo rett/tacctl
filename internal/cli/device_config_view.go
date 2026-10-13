@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 
@@ -19,17 +18,19 @@ import (
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devconf/batch"
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/ui"
 )
 
-// isTerminalWriter reports whether w is a terminal (tests replace it).
+// isTerminalWriter reports whether w is a terminal (tests replace it); a
+// stream with its colour taken out (app.New) is the terminal it wraps.
 var isTerminalWriter = func(w io.Writer) bool {
-	f, ok := w.(*os.File)
+	f, ok := ui.File(w)
 	return ok && term.IsTerminal(int(f.Fd()))
 }
 
 // terminalHeight is the rows of the terminal w is (0 when unknown).
 var terminalHeight = func(w io.Writer) int {
-	f, ok := w.(*os.File)
+	f, ok := ui.File(w)
 	if !ok {
 		return 0
 	}

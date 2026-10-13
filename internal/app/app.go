@@ -7,6 +7,8 @@ import (
 	"context"
 	"io"
 
+	"golang.org/x/term"
+
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/snmp"
@@ -53,14 +55,26 @@ type App struct {
 	HostsTTY func() bool
 
 	svc services
+	// sinks are the streams New wrapped to take the colour out of them.
+	sinks []io.Closer
 }
 
 // New builds an App; paths are resolved from env and exe, the knobs read
 // from env (TACCTL_TEST_ROOT, in a -tags testknobs build, moves tacctl's
 // fixed host locations: paths.Paths.Reroot).
+//
+// It also makes the colour decision of the process, once (ui.Colour, from
+// env and whether each stream is a terminal): a stream that is not coloured
+// is wrapped in ui.Plain, which removes the SGR sequences from everything
+// written to it, so every emitter (ui.Output, the help text, the backends)
+// may write them without asking. The wrapper is flushed by Close. A stream
+// that is not a file (a test's buffer, an embedding caller's writer) has no
+// terminal to ask: it is passed through, and only an explicit TACCTL_COLOR
+// =never or NO_COLOR strips it. ui.File gives the file behind a stream, for
+// the checks and the child processes that need the terminal itself.
 func New(args []string, env paths.Env, exe string, euid int, stdio Stdio, runner execx.Runner) *App {
 	k, kerr := LoadKnobs(env)
-	return &App{
+	a := &App{
 		Args:     append([]string(nil), args...),
 		Env:      env,
 		Paths:    paths.Resolve(env, exe, nil).Reroot(k.Root()),
@@ -72,4 +86,53 @@ func New(args []string, env paths.Env, exe string, euid int, stdio Stdio, runner
 		Knobs:    k,
 		KnobsErr: kerr,
 	}
+	// A stream that is not a file is taken as able to show colour (a
+	// terminal, TERM capable), so that only the user's explicit choice
+	// strips it.
+	capable := func(name string) string {
+		switch name {
+		case "TERM":
+			return "xterm"
+		case "NO_COLOR":
+			return env.Get("NO_COLOR")
+		case "TACCTL_COLOR":
+			return env.Get("TACCTL_COLOR")
+		}
+		return ""
+	}
+	outFile, outIsFile := ui.File(stdio.Stdout)
+	errFile, errIsFile := ui.File(stdio.Stderr)
+	ttyOut := outIsFile && term.IsTerminal(int(outFile.Fd()))
+	ttyErr := errIsFile && term.IsTerminal(int(errFile.Fd()))
+	colOut, colErr := ui.Colour(env.Get, ttyOut, ttyErr)
+	if !outIsFile {
+		colOut, _ = ui.Colour(capable, true, true)
+	}
+	if !errIsFile {
+		_, colErr = ui.Colour(capable, true, true)
+	}
+	if !colOut && stdio.Stdout != nil {
+		w := ui.Plain(stdio.Stdout)
+		a.Out.Stdout = w
+		a.sinks = append(a.sinks, w)
+	}
+	if !colErr && stdio.Stderr != nil {
+		w := ui.Plain(stdio.Stderr)
+		a.Out.Stderr = w
+		a.sinks = append(a.sinks, w)
+	}
+	return a
+}
+
+// Close writes what the wrapped streams still hold (a colour sequence cut
+// short is passed on as it is, not lost). The streams stay open, and Close
+// may be called again; the process calls it before it exits.
+func (a *App) Close() error {
+	var first error
+	for _, s := range a.sinks {
+		if err := s.Close(); err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
 }

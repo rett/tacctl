@@ -536,7 +536,7 @@ func TestScopeGroupConfigUsageFunctions(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got != string(want) {
+		if stripSGR(got) != stripSGR(string(want)) {
 			t.Errorf("%s:\n%s\nwant\n%s", file, got, want)
 		}
 	}
