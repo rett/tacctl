@@ -1,0 +1,86 @@
+diff --git a/cmds/server/config/authenticators/bcrypt/bcrypt.go b/cmds/server/config/authenticators/bcrypt/bcrypt.go
+index 48568bb..6b0e37a 100644
+--- a/cmds/server/config/authenticators/bcrypt/bcrypt.go
++++ b/cmds/server/config/authenticators/bcrypt/bcrypt.go
+@@ -139,8 +139,25 @@ func (a Authenticator) Handle(response tq.Response, request tq.Request) {
+ 		expectedHash = secret
+ 	}
+ 
++	// The NAS address, as the server saw the connection (tacctl patch 0003).
++	nasAddr := "unknown"
++	if v := request.Context.Value(tq.ContextConnRemoteAddr); v != nil {
++		nasAddr = fmt.Sprint(v)
++	}
++
++	// The end user's address and port as the client sent them (tacctl patch
++	// 0003): appended after the message so a reader of the NAS address is
++	// unaffected, and omitted when the client sent neither.
++	clientInfo := ""
++	if v, _ := request.Context.Value(tq.ContextClientAddr).(string); v != "" {
++		clientInfo += fmt.Sprintf("; client [%v]", v)
++	}
++	if v, _ := request.Context.Value(tq.ContextClientPort).(string); v != "" {
++		clientInfo += fmt.Sprintf(" port [%v]", v)
++	}
++
+ 	if err := bcrypt.CompareHashAndPassword(expectedHash, []byte(password)); err == nil {
+-		a.Infof(request.Context, "accepting user [%v] using a bcrypt password", a.username)
++		a.Infof(request.Context, "accepting user [%v] from [%v] using a bcrypt password%v", a.username, nasAddr, clientInfo)
+ 		response.Reply(
+ 			tq.NewAuthenReply(
+ 				tq.SetAuthenReplyStatus(tq.AuthenStatusPass),
+@@ -149,7 +166,7 @@ func (a Authenticator) Handle(response tq.Response, request tq.Request) {
+ 		return
+ 	}
+ 
+-	a.Errorf(request.Context, "failed to validate the user [%v] using a bcrypt password", a.username)
++	a.Errorf(request.Context, "failed to validate the user [%v] from [%v] using a bcrypt password%v", a.username, nasAddr, clientInfo)
+ 	response.Reply(
+ 		tq.NewAuthenReply(
+ 			tq.SetAuthenReplyStatus(tq.AuthenStatusFail),
+diff --git a/cmds/server/handlers/authen.go b/cmds/server/handlers/authen.go
+index 5b2fb36..beab77e 100644
+--- a/cmds/server/handlers/authen.go
++++ b/cmds/server/handlers/authen.go
+@@ -8,6 +8,7 @@
+ package handlers
+ 
+ import (
++	"context"
+ 	"fmt"
+ 
+ 	tq "github.com/facebookincubator/tacquito"
+@@ -52,6 +53,14 @@ func (a *AuthenticateStart) Handle(response tq.Response, request tq.Request) {
+ 		return
+ 	}
+ 
++	// The end user's address and port as the client reports them, for the
++	// authenticator's log line (tacctl patch 0003).
++	if request.Context == nil {
++		request.Context = context.Background()
++	}
++	request.Context = context.WithValue(request.Context, tq.ContextClientAddr, string(body.RemAddr))
++	request.Context = context.WithValue(request.Context, tq.ContextClientPort, string(body.Port))
++
+ 	authenRouter := map[authenActionStart]tq.Handler{
+ 		// 5.4.2.6.  Enable Requests
+ 		{action: tq.AuthenActionLogin, service: tq.AuthenServiceEnable, minorVersion: tq.MinorVersionOne}: NewAuthenticateASCII(a.loggerProvider, a.configProvider, string(body.User)),
+diff --git a/ctx_keys.go b/ctx_keys.go
+index 0d0a861..08afac9 100644
+--- a/ctx_keys.go
++++ b/ctx_keys.go
+@@ -49,6 +49,14 @@ const ContextPrivLvl ContextKey = "priv-lvl"
+ // ContextPort ...
+ const ContextPort ContextKey = "port"
+ 
++// ContextClientAddr and ContextClientPort hold the end user's address and port
++// as the client put them in the authentication start packet (tacctl patch
++// 0003). They are empty from a client that gives none.
++const ContextClientAddr ContextKey = "client-addr"
++
++// ContextClientPort is the port (the client's terminal or line name) of the start packet.
++const ContextClientPort ContextKey = "client-port"
++
+ /* durations
+ these ctx keys are being stored for request specific tracking of
+ expensive operations. We already have prometheus Summary metrics tracking
