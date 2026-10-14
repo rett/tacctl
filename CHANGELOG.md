@@ -307,6 +307,27 @@ current behaviour; this file is where history lives.
     The shell's cache answers a `device collect` line (the alias of item 2)
     and leaves it shut for one with `--login`, which never has it.
 
+17. **`tacctl rollback 0.2.8`.** The rollback takes the release before this
+    one as a target as well as `0.2.3` (which works as before). A dry run
+    unless `--apply [--yes]`: it removes `device.apply.confirm_timeout` and
+    `device.apply.pause` from `tacctl.yaml` (a 0.2.8 binary refuses them; the
+    dry run warns with the values and `--apply` needs `--yes` while one is
+    set), rewrites the per-tier and group sudoers drop-ins that are exactly
+    this release's text with 0.2.8's, after `visudo -cf` (an edited one is
+    left and named), and lists, without deleting, what 0.2.9 left that
+    0.2.8 ignores: the `applied` parts and the `login`, `user_pulled` and
+    `hostname` fields of `devices-config.json`, and the apply state
+    directory (`device-apply/`: the shape store and the device locks). Both
+    targets are refused, the dry run too, while a record says a confirmed
+    commit is `pending` or `unknown`: the refusal names each device and
+    time and the command that settles it (`device config apply <name>
+    --check`, or `device config forget <name>`). `0.2.4` to `0.2.7` are
+    refused with the one-release-at-a-time rule. The output ends with
+    `tacctl upgrade --branch 0.2.8`, and the audit line is `rollback
+    target=0.2.8 keys=<n> by=<user>`. `rollback 0.2.3` also lists the apply
+    state it leaves. The manual page and `docs/install/upgrading.md` describe
+    it.
+
 ## 0.2.8 (2026-10-13)
 
 1. **The documentation is a tree of topic pages.** `README.md` holds the

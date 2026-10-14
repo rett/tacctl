@@ -211,13 +211,75 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 .BI "rollback " version " [\-\-apply] [\-\-yes] [\-\-hosts]"
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
-every step and every warning and changes nothing. The only version it takes is
+every step and every warning and changes nothing. The versions it takes are
+.B 0.2.8
+(the release before this one) and
 .BR 0.2.3 ;
+.BR 0.2.4 " to " 0.2.7
+and
 .B 0.2.2
-and older are refused, with the way there (this rollback,
-.BR "tacctl upgrade \-\-branch 0.2.3" ,
-then the rollback of 0.2.3), and so is any other word.
+and older are refused, with the way there (one release at a time: this
+rollback,
+.BR "tacctl upgrade \-\-branch 0.2.8" ,
+then the rollback of that release), and so is any other word. Either target is
+refused while a device's record says a confirmed commit of
+.B "device config apply"
+is
+.B pending
+or
+.B unknown
+(the refusal names each device and the time, and
+.B "device config apply <name> \-\-check"
+or
+.B "device config forget <name>"
+settles it).
 .IP
+.B "rollback 0.2.8"
+.B \-\-apply
+takes a snapshot, then removes from
+.I tacctl.yaml
+the two keys a 0.2.8 binary refuses
+.RB ( device.apply.confirm_timeout
+and
+.BR device.apply.pause ;
+the dry run warns, and
+.B \-\-apply
+refuses without
+.B \-\-yes
+while one is set) and rewrites the per\-tier and group sudoers drop\-ins that
+are exactly this release's text with 0.2.8's, after
+.B "visudo \-cf"
+(the password cache's alias loses the lines of
+.BR "device config apply" ,
+.B "device onboard"
+and
+.BR "device collect" ).
+A drop\-in that was edited, or that
+.B visudo
+refuses, is left and named. It leaves and lists, and never deletes, what 0.2.8
+ignores:
+.I /var/lib/tacctl/devices\-config.json
+(the
+.B applied
+parts, and the
+.BR login ,
+.B user_pulled
+and
+.B hostname
+fields; 0.2.8 reads the file without fields it does not know) and
+.IR /var/lib/tacctl/device\-apply/
+(the shape store and the device locks). Nothing else is converted:
+.IR console.yaml ,
+.IR devices.yaml ,
+.I store.yaml
+and the hosts are in formats 0.2.8 reads.
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.8" ,
+and the audit line
+.BR "rollback target=0.2.8" .
+.IP
+.B "rollback 0.2.3"
 .B \-\-apply
 takes a snapshot, then, in this order: removes from
 .I tacctl.yaml
@@ -306,7 +368,7 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-Take a snapshot, then convert the files 0.2.3 cannot read (tacctl.yaml, console.yaml, devices.yaml, sudoers).
+Take a snapshot, then convert the files the target cannot read (tacctl.yaml, sudoers; for 0.2.3 also console.yaml, devices.yaml).
 .TP
 \fB\-\-yes\fR
 Answer yes to the confirmations.
@@ -10493,6 +10555,27 @@ on that device asks the server, and any user the server knows reaches
 privilege 15 with their own password. A device with no enable secret has no
 .B enable
 once the list is gone: set one first (Step 0).
+.PP
+Going back to 0.2.8 is
+.B "tacctl rollback 0.2.8"
+(a dry run), then
+.B "tacctl rollback 0.2.8 \-\-apply"
+and
+.BR "tacctl upgrade \-\-branch 0.2.8" ;
+it removes the two
+.B device.apply
+keys and puts back 0.2.8's sudoers drop\-ins, and lists what 0.2.9 left that
+0.2.8 ignores (the
+.B applied
+parts of the pull records and the apply state directory). Until 0.2.8 is
+installed, do not run
+.BR "device config apply" ,
+.BR "device onboard" ,
+.B "device collect"
+or
+.BR "config devices apply\-confirm\-timeout|apply\-pause" ;
+run the rollback again if one ran. The snapshot it takes holds the 0.2.9 form
+and is restored with 0.2.9.
 .PP
 Going back to 0.2.3 is
 .B "tacctl rollback 0.2.3"

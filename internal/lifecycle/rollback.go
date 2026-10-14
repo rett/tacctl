@@ -6,9 +6,14 @@ package lifecycle
 // one. The command (internal/cli/rollback.go) adds what needs the
 // invocation: the snapshot and the sudoers installer.
 //
-// The target is 0.2.3 only. A release's tool converts what that release
-// changed and prepares the state for the one before it, so 0.2.2 is reached
-// in two steps: this tool, the install of 0.2.3, then 0.2.3's own tool. The
+// The targets are 0.2.8 (the release before this one: RollbackTarget028,
+// docs/plans/0.2.9-rollout-plan.md D143) and 0.2.3 (RollbackTarget). A
+// release's tool converts what that release changed and prepares the state
+// for the one before it, so 0.2.7 is not a target: the way is this tool for
+// 0.2.8, the install of 0.2.8, then that release's own tool.
+//
+// What the rollback to 0.2.8 does (PlanRollback with Target 0.2.8) is the
+// last section of this comment. The rest of it is the rollback to 0.2.3: the
 // formats 0.2.4 changed, and what a 0.2.3 binary does with each (verified
 // against the sources of the 0.2.3 tag):
 //
@@ -68,6 +73,34 @@ package lifecycle
 // What is not a rollback step: the rendered backend files (nothing 0.2.4
 // changed reaches them), the sshd drop-ins, the tier-pin marker and the host
 // records (all as 0.2.3 has them).
+//
+// Both targets are refused while a record of devices-config.json says an
+// apply of 'device config apply' is pending or unknown (PendingRefusal): the
+// confirmed commit on the device is a state of the device that no file
+// conversion settles, and a rollback must not hide a window that is open.
+//
+// The rollback to 0.2.8 (0.2.9 changed no format 0.2.8 reads strictly except
+// the two settings and two sudoers texts):
+//
+//	tacctl.yaml            0.2.8's schema lacks device.apply.confirm_timeout
+//	                       and device.apply.pause (conf.Added029): they are
+//	                       removed. Every other key is one 0.2.8 has.
+//	sudoers drop-ins       the per-tier drop-in and the group drop-in that
+//	                       are exactly this release's text are rewritten
+//	                       with 0.2.8's (tier.Sudoers028, GroupSudoers028:
+//	                       without the cache's lines of 'device config
+//	                       apply', 'device onboard' and 'device collect'),
+//	                       through 'visudo -cf'; any other file is left.
+//	devices-config.json    the 'applied' fields of the last-pull records
+//	                       (id, kind, reason, until, shape, ...) and the
+//	                       'login', 'user_pulled' and 'hostname' fields:
+//	                       0.2.8 decodes the file without them (unknown JSON
+//	                       fields are ignored); left, listed.
+//	device-apply/          the shape store and the device locks: 0.2.8 never
+//	                       opens the directory; left, listed.
+//
+// console.yaml, devices.yaml and the hosts need no conversion (0.2.9 changed
+// none of them).
 
 import (
 	"fmt"
@@ -78,16 +111,22 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/console"
+	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/tier"
 )
 
-// RollbackTarget is the one release 'tacctl rollback' prepares for.
-const RollbackTarget = "0.2.3"
+// RollbackTarget is the oldest release 'tacctl rollback' prepares for;
+// RollbackTarget028 is the release before this one.
+const (
+	RollbackTarget    = "0.2.3"
+	RollbackTarget028 = "0.2.8"
+)
 
 // RollbackRefusal is a version the command does not take: Lines say why.
 type RollbackRefusal struct{ Lines []string }
@@ -148,12 +187,13 @@ func pluralWord(n int, one, many string) string {
 
 var reVersion = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 
-const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget + " [--apply] [--yes] [--hosts]"
+const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget028 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
 
-// CheckRollbackVersion is the version a rollback is asked for ("0.2.3" or
-// "v0.2.3"), or a *RollbackRefusal: an older release (this tool converts what
-// 0.2.4 changed, so 0.2.2 is two steps away), this release or a newer one,
-// or something that is not a release.
+// CheckRollbackVersion is the version a rollback is asked for ("0.2.8",
+// "0.2.3" or either with a "v"), or a *RollbackRefusal: 0.2.4 to 0.2.7 and
+// older than 0.2.3 (a release's tool prepares the state for the one release
+// it knows, so the way back is one release at a time), this release or a
+// newer one, or something that is not a release.
 func CheckRollbackVersion(arg string) (string, error) {
 	m := reVersion.FindStringSubmatch(arg)
 	if m == nil {
@@ -162,20 +202,97 @@ func CheckRollbackVersion(arg string) (string, error) {
 			rollbackUsage}}
 	}
 	v := strings.TrimPrefix(arg, "v")
-	if v == RollbackTarget {
+	if v == RollbackTarget || v == RollbackTarget028 {
 		return v, nil
 	}
 	n := func(i int) int { x, _ := strconv.Atoi(m[i]); return x }
-	older := n(1) == 0 && (n(2) < 2 || (n(2) == 2 && n(3) < 3))
-	if older {
+	both := "'tacctl rollback' prepares the state for " + RollbackTarget028 + " (the release before this one) and " + RollbackTarget + " only"
+	fallback := "The fallback that needs no tool is 'tacctl backup restore' of a snapshot of the time (see 'tacctl backup list')."
+	switch {
+	case n(1) == 0 && n(2) == 2 && n(3) > 3 && n(3) < 8:
 		return "", &RollbackRefusal{Lines: []string{
-			"Rolling back to " + v + " is not supported from this release: 'tacctl rollback' converts what 0.2.5 changed and prepares the state for " + RollbackTarget + " only (" + v + " is older).",
+			"Rolling back to " + v + " is not supported from this release: " + both + " (" + v + " is further back).",
+			"Go back one release at a time: run 'tacctl rollback " + RollbackTarget028 + " --apply', install it with 'tacctl upgrade --branch " + RollbackTarget028 + "', and run the rollback of that release",
+			"(" + RollbackTarget028 + "'s prepares the state for " + RollbackTarget + "). " + fallback}}
+	case n(1) == 0 && (n(2) < 2 || (n(2) == 2 && n(3) < 3)):
+		return "", &RollbackRefusal{Lines: []string{
+			"Rolling back to " + v + " is not supported from this release: " + both + " (" + v + " is older).",
 			"Go back one release at a time: run 'tacctl rollback " + RollbackTarget + " --apply', install it with 'tacctl upgrade --branch " + RollbackTarget + "', and run the rollback of that release",
-			"(" + RollbackTarget + "'s prepares the state for 0.2.2). The fallback that needs no tool is 'tacctl backup restore' of a snapshot of the time (see 'tacctl backup list')."}}
+			"(" + RollbackTarget + "'s prepares the state for 0.2.2). " + fallback}}
 	}
 	return "", &RollbackRefusal{Lines: []string{
-		"'" + v + "' is not a release to roll back to: 'tacctl rollback' prepares the state for " + RollbackTarget + " only.",
+		"'" + v + "' is not a release to roll back to: " + both + ".",
 		rollbackUsage}}
+}
+
+// PendingApply is a device whose record says an apply is not settled.
+type PendingApply struct {
+	Device string
+	// Result is the record's result word: "pending" or "unknown".
+	Result string
+	ID, By string
+	// Until ends a pending window; At is when the record was written.
+	Until, At time.Time
+}
+
+// PendingRefusal is the refusal of a rollback while any device's record
+// says a confirmed commit is pending or unknown: the device itself is in a
+// state no file conversion settles, and the older release has no such
+// record, so the window would be forgotten. Each device is listed with its
+// time and what settles it.
+func PendingRefusal(pend []PendingApply) *RollbackRefusal {
+	n := len(pend)
+	lines := []string{"An apply of 'tacctl device config apply' is not settled on " + strconv.Itoa(n) + " " + pluralWord(n, "device", "devices") +
+		" (a confirmed commit is pending or its outcome is unknown):"}
+	var first string
+	for _, p := range pend {
+		line := "  " + p.Device + ": " + p.Result
+		if !p.Until.IsZero() {
+			line += " until " + p.Until.Local().Format("2006-01-02 15:04")
+		} else if !p.At.IsZero() {
+			line += " since " + p.At.Local().Format("2006-01-02 15:04")
+		}
+		var w []string
+		if p.ID != "" {
+			w = append(w, p.ID)
+		}
+		if p.By != "" {
+			w = append(w, "by "+p.By)
+		}
+		if len(w) > 0 {
+			line += " (" + strings.Join(w, ", ") + ")"
+		}
+		lines = append(lines, line)
+		if first == "" {
+			first = p.Device
+		}
+	}
+	lines = append(lines,
+		"The state of the apply must be settled first: 'tacctl device config apply "+first+" --check' reads the device and reconciles the record (once the window has ended or the commit was confirmed),",
+		"or 'tacctl device config forget "+first+"' drops the record when the device has been dealt with by hand. Then run the rollback again. Nothing was changed.")
+	return &RollbackRefusal{Lines: lines}
+}
+
+// pendingApplies reads devices-config.json for records that are not
+// settled. An absent file is none; a file that cannot be read is an error
+// (a window that cannot be seen must not be hidden).
+func pendingApplies(pa paths.Paths) ([]PendingApply, error) {
+	st := devconf.Store{Records: pa.ConfigRecords, Dir: pa.ConfigDir}
+	recs, err := st.Load()
+	if err != nil {
+		return nil, fmt.Errorf("%s cannot be read, so a pending apply cannot be ruled out (%s); move the file aside if no apply is pending (it is derived: a pull rebuilds it), then run the rollback again",
+			pa.ConfigRecords, strings.TrimSuffix(strings.Join(strings.Fields(err.Error()), " "), "."))
+	}
+	var out []PendingApply
+	for _, name := range recs.Names() {
+		rec, _ := recs.Of(name)
+		if rec == nil || !rec.Applied.Pending() {
+			continue
+		}
+		a := rec.Applied
+		out = append(out, PendingApply{Device: name, Result: a.Result, ID: a.ID, By: a.By, Until: a.Until, At: a.At})
+	}
+	return out, nil
 }
 
 // RollbackInput is what a plan reads.
@@ -186,6 +303,9 @@ type RollbackInput struct {
 	HasStore bool
 	// WithHosts: the command was given --hosts.
 	WithHosts bool
+	// Target is the release rolled back to: RollbackTarget028 or
+	// RollbackTarget (the zero value is 0.2.3, as before 0.2.9).
+	Target string
 	// InstallSudoers writes a sudoers drop-in the way the commands do
 	// ('visudo -cf', then install); nil: the drop-ins are listed and left.
 	InstallSudoers func(body, dst string) error
@@ -213,6 +333,9 @@ type RollbackPlan struct {
 	Warnings []RollbackWarning
 	// Notes are things to know that do not need an answer.
 	Notes []string
+
+	// Target is the release the plan prepares for.
+	Target string
 
 	in      RollbackInput
 	keys    []string
@@ -268,6 +391,14 @@ func (p *RollbackPlan) todoSudoers() []sudoersPlan {
 	return out
 }
 
+// target is the release the plan prepares for (0.2.3 when none was named).
+func (p *RollbackPlan) target() string {
+	if p.Target == "" {
+		return RollbackTarget
+	}
+	return p.Target
+}
+
 // NeedsYes: there are warnings that --yes must acknowledge.
 func (p *RollbackPlan) NeedsYes() bool { return len(p.Warnings) > 0 }
 
@@ -282,12 +413,27 @@ func (p *RollbackPlan) NotWritten() []string { return slices.Clone(p.notWritten)
 // a human. It writes nothing. A file this tacctl cannot read is an error
 // naming it: the rollback is refused before it changes anything.
 func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
-	p := &RollbackPlan{in: in}
+	if in.Target == "" {
+		in.Target = RollbackTarget
+	}
+	p := &RollbackPlan{in: in, Target: in.Target}
 	pa := in.Paths
 
 	// 1. tacctl.yaml
 	if prob := in.Conf.Problem(); prob != "" {
 		return nil, fmt.Errorf("%s cannot be read (%s); fix it first (tacctl config validate)", pa.Overrides, prob)
+	}
+	// An apply that is not settled is refused for both targets, in the dry
+	// run and --apply alike (PendingRefusal).
+	pend, err := pendingApplies(pa)
+	if err != nil {
+		return nil, err
+	}
+	if len(pend) > 0 {
+		return nil, PendingRefusal(pend)
+	}
+	if in.Target == RollbackTarget028 {
+		return planRollback028(p)
 	}
 	// A break-glass hold is refused, in the dry run and --apply alike: the
 	// release being left has the record (docs/plans/0.2.5-plan.md D122), and
@@ -531,6 +677,9 @@ func (p *RollbackPlan) recordsStep() RollbackStep {
 			found = append(found, fmt.Sprintf("%s (%d %s)", pt.ConfigDir, n, plural(n, "file", "files")))
 		}
 	}
+	if fi, err := os.Stat(pt.ApplyDir); err == nil && fi.IsDir() {
+		found = append(found, pt.ApplyDir+" (the shape store and the device locks of 'device config apply')")
+	}
 	if len(found) == 0 {
 		s.Lines = []string{"no record of a configuration pull"}
 		return s
@@ -702,7 +851,7 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 			p.notWritten = append(p.notWritten, d.file+": "+strings.Join(strings.Fields(err.Error()), " "))
 			continue
 		}
-		done = append(done, d.file+": rewritten with the text 0.2.3 writes")
+		done = append(done, d.file+": rewritten with the text "+p.target()+" writes")
 	}
 	return done, nil
 }

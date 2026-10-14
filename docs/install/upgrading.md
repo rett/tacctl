@@ -39,7 +39,32 @@ After an upgrade: `tacctl status`, `tacctl config validate` (store, rendered con
 
 ## Rolling back
 
-This release writes keys and fields that a 0.2.3 binary refuses (it reads `console.yaml` and `devices.yaml` strictly, and its `config validate` and `backup restore` report or refuse a `tacctl.yaml` with a key it does not know). Going back is therefore not a plain checkout of the old tag: run `tacctl rollback 0.2.3` on this release first. Without `--apply` it is a dry run, which lists every step and every warning and changes nothing. The target is `0.2.3` only: each release's tool converts what that release changed, so `0.2.2` and older are refused (go back one release at a time: this rollback, `tacctl upgrade --branch 0.2.3`, then the rollback of that release; or restore a snapshot of the time with `tacctl backup restore`), and anything else is refused as unknown.
+`tacctl rollback` takes two targets: `0.2.8`, the release before this one, and `0.2.3`. Both are the dry run described below until `--apply` is given, both refuse while an apply is not settled, and each release's tool prepares the state for the one release it knows: `0.2.4` to `0.2.7` and `0.2.2` and older are refused with the way there (one release at a time, or `tacctl backup restore` of a snapshot of the time).
+
+### To 0.2.8
+
+This release adds two settings that a 0.2.8 binary refuses (`device.apply.confirm_timeout` and `device.apply.pause`: its `config validate` reports them and its `backup restore` refuses a snapshot that has them) and rewrites the sudoers drop-ins; everything else it writes, a 0.2.8 binary reads or ignores. Run the rollback on this release first, then install the tag:
+
+```bash
+tacctl rollback 0.2.8                  # the dry run: steps, warnings, nothing written
+tacctl rollback 0.2.8 --apply --yes    # convert (after a snapshot)
+tacctl upgrade --branch 0.2.8          # install 0.2.8: switches the clone to the tag, builds it, re-executes it
+```
+
+`--apply` takes a snapshot first (`tacctl backup list`), then, in this order:
+
+1. **`tacctl.yaml`**: removes `device.apply.confirm_timeout` and `device.apply.pause` when set (the dry run warns with their values, and `--apply` refuses without `--yes` while one is set; the snapshot keeps them, and `tacctl backup restore` of it, **with this release**, brings them back). Every other key stays.
+2. **The sudoers drop-ins**: a per-tier drop-in (`/etc/sudoers.d/tacctl-tiers`) or a group drop-in (`config sudoers install <group>`) that is exactly the text this release writes is rewritten with the text 0.2.8 writes, after `visudo -cf`: the password cache's alias loses the lines of `device config apply`, `device onboard` and `device collect`. A file an administrator edited, or one of another release, is left as it is and named; a drop-in that `visudo` refuses is left and named, and the rollback goes on (0.2.8's upgrade rewrites the per-tier file with its own text).
+3. **Leaves, and lists**, what this release wrote that 0.2.8 ignores; nothing is deleted. In `/var/lib/tacctl/devices-config.json` (version 1, as 0.2.8 reads it) these are the `applied` part of the records that `device config apply` wrote (identifier, kind, result, reason, shape, planned sections, counts) and the `login`, `user_pulled` and `hostname` fields of `--login` pulls, `device onboard` and `device collect` (the host name `device sync` reads): 0.2.8 reads the file without the fields it does not know and does not write them back, and `tacctl device config forget --all` deletes the records. In `/var/lib/tacctl/device-apply/` are the shape store (`shapes.json`) and the per-device locks of `device config apply`, which 0.2.8 never opens; the shapes are found again when this release is installed again.
+4. **Everything else** is in a format 0.2.8 reads: `console.yaml`, `devices.yaml`, `store.yaml`, the SNMP credentials, the blocks and the rendered backend files are not touched, nothing is re-rendered or restarted and no device is contacted. `--hosts` is accepted and does nothing.
+
+**An apply that is not settled stops the rollback** (the dry run too): a device whose record says `pending` (a confirmed commit whose window has not ended) or `unknown` (its outcome could not be read) is named with its time and the apply's identifier, because a rollback that cannot read the device must not hide an open window and 0.2.8 has no such record. `tacctl device config apply <name> --check` reads the device and settles the record, or `tacctl device config forget <name>` drops it once the device has been dealt with by hand; then run the rollback again. A records file that cannot be read stops it for the same reason (move it aside when no apply is pending: a pull rebuilds it).
+
+Until 0.2.8 is installed, do not run `device config apply`, `device onboard`, `device collect` or `config devices apply-confirm-timeout|apply-pause`: they write the apply state and the two settings again. If one did, run `tacctl rollback 0.2.8 --apply` again. Installing the tag is the documented next step (`tacctl upgrade --branch 0.2.8`, and the output says so).
+
+### To 0.2.3
+
+This release writes keys and fields that a 0.2.3 binary refuses (it reads `console.yaml` and `devices.yaml` strictly, and its `config validate` and `backup restore` report or refuse a `tacctl.yaml` with a key it does not know). Going back is therefore not a plain checkout of the old tag: run `tacctl rollback 0.2.3` on this release first. Without `--apply` it is a dry run, which lists every step and every warning and changes nothing. Each release's tool converts what that release changed, so `0.2.2` and older are refused (go back one release at a time: this rollback, `tacctl upgrade --branch 0.2.3`, then the rollback of that release; or restore a snapshot of the time with `tacctl backup restore`), and anything else is refused as unknown. The apply state of `device config apply` (`/var/lib/tacctl/device-apply/` and the `applied` part of the pull records) is left and listed, as for 0.2.8; an apply that is not settled stops this rollback too.
 
 ```bash
 tacctl rollback 0.2.3                  # the dry run: steps, warnings, nothing written
