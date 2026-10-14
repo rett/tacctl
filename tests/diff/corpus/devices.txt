@@ -249,9 +249,9 @@ config wti --protocol radius
 # The runner has no device to log in to and no SUDO_USER: the verbs that log in
 # are refused first with the account rule, the rest by their own arguments.
 @fixture tacquito.multiscope.yaml
-@known 0.2.4 item 1: device config lists pull, diff, list and forget; 0.2.5 item 37: and plan
+@known 0.2.4 item 1: device config lists pull, diff, list and forget; 0.2.5 item 37: and plan; 0.2.9 item 4: and apply, shapes
 device config
-@known 0.2.4 item 1: device config lists pull, diff, list and forget; 0.2.5 item 37: and plan
+@known 0.2.4 item 1: device config lists pull, diff, list and forget; 0.2.5 item 37: and plan; 0.2.9 item 4: and apply, shapes
 device config help
 @known 0.2.4 item 1: device config pull is new
 device config pull
@@ -287,8 +287,18 @@ device config forget
 device config forget nosuch
 @known 0.2.4 item 3: device config forget is new
 device config forget --all
-@known 0.2.4 item 3: device config forget is new
+@known 0.2.4 item 3: device config forget is new; 0.2.9 item 4: the usage lists apply and shapes
 device config frob
+@known 0.2.9 item 4: device config apply is new
+device config apply
+@known 0.2.9 item 4: device config apply is new
+device config apply nosuch --check
+@known 0.2.9 item 4: device config apply is new
+device config apply --check --max 0 --all
+@known 0.2.9 item 5: device config shapes is new
+device config shapes
+@known 0.2.9 item 5: device config shapes is new
+device config shapes seed nosuch -y
 @known 0.2.5 item 37: device config plan is new
 device config plan
 @known 0.2.5 item 37: device config plan is new

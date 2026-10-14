@@ -220,7 +220,7 @@ func (j *JunosCLI) guardStatement(l plan.Line) error {
 // runExec runs a read on an exec channel; cmd must be an apply word or the
 // pull's read command.
 func (j *JunosCLI) runExec(ctx context.Context, cmd string) (string, error) {
-	if cmd != j.read {
+	if cmd != j.read && cmd != devconf.PlainCommand(devssh.VendorJuniper) {
 		if err := guardWord(cmd); err != nil {
 			return "", err
 		}
@@ -371,6 +371,24 @@ func (j *JunosCLI) Read(ctx context.Context) (string, error) {
 		}
 	}
 	return out, nil
+}
+
+// plainRunner is the transport's exec channel as devconf's Runner, for the
+// plain view's one command.
+type plainRunner struct{ j *JunosCLI }
+
+func (p plainRunner) Run(ctx context.Context, cmd string) (string, error) {
+	return p.j.runExec(ctx, cmd)
+}
+
+// ReadPlain reads the plain view, the configuration without the groups'
+// inheritance applied (devconf.PlainCommand), which the planner tells a
+// group's statements from the device's own by (D97). It is best effort, as
+// the pull's: "" when the device gives none, and the planner then says the
+// inheritance was not checked. The text is the caller's planner's input and
+// is not kept.
+func (j *JunosCLI) ReadPlain(ctx context.Context) string {
+	return devconf.ReadPlain(ctx, plainRunner{j}, devssh.VendorJuniper)
 }
 
 // LandedCompare runs 'show configuration | compare rollback 1 | no-more'

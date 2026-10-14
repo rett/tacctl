@@ -213,7 +213,13 @@ complete_words() {
 
 @test "completion: device config offers its verbs, then the device names, then the walkthrough's options" {
     complete_words tacctl device config ""
-    assert_output "$(printf 'diff\nforget\nlist\nplan\npull\nshow')"
+    assert_output "$(printf 'apply\ndiff\nforget\nlist\nplan\npull\nshapes\nshow')"
+    complete_words tacctl device config apply --che
+    assert_output "--check"
+    complete_words tacctl device config apply --section ""
+    assert_output "$(printf 'aaa\nroles\nmgmt-acl\nsnmp\nsystem')"
+    complete_words tacctl device config shapes ""
+    assert_output "$(printf 'list\nseed')"
     complete_words tacctl device config plan --conv
     assert_output "--converge"
     complete_words tacctl device config plan --section ""

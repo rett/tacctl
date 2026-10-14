@@ -43,7 +43,78 @@ current behaviour; this file is where history lives.
    registered and the command exits with the pull's status. The manual
    page, `docs/cli/device.md` and `docs/devices/connecting.md` describe it.
 
-4. **Fix: the Junos plan's region types `configure exclusive`.** A private
+4. **`device config apply`: the plan, typed into Junos devices by tacctl.**
+   `tacctl device config apply <name>[,<name>...] | --all | --scope <scope> |
+   --vendor juniper` is the superuser's step after `plan`: it writes the same
+   statements itself instead of a paste. It logs in as you (the password is
+   asked once and never stored), reads each device, loads the plan in an
+   exclusive configure session, runs the device's own `commit check` and
+   discards the candidate; `--check` ends there and commits nothing. The
+   devices that need a change are then shown grouped by shape (the same
+   change under one heading, every secret elided, what the plan keeps and
+   what it leaves out) and ONE question is asked, answered by typing the
+   device's name (one device) or the number of devices back; there is no
+   answer without a terminal except `--confirmed --yes`. Each device is
+   committed under `commit confirmed` (`config devices
+   apply-confirm-timeout`), proven by a fresh login as you, by what landed
+   being the change the check showed and by a read of the planned sections,
+   and then confirmed; a failed proof rolls the change back, and a device
+   whose state could not be read is reported `PENDING until <time>`: nothing
+   may be typed on it before then, and the next `apply` of it reads its
+   commit history before anything else. Never written: `breakglass`,
+   `netconf`, the root account and yours, `system services`, `interfaces`,
+   groups; the statements are held against the planner's own ownership
+   tables before the first one is typed. `--section`, `--hold`
+   (keep the change only when you type `OK'
+   after logging in with one account of each class), `--server`,
+   `--source`, `--concurrency`, `--timeout`, `--max-failures` and `--json`
+   (one object per device and phase, then the summary) are the options. Exit
+   status: 0 every device applied, was checked or had no change, 1 a device
+   failed, was rolled back or is pending, 2 wrong arguments (with `--check
+   --exit-code`, a device that needs a change), 130 interrupted (the first
+   Ctrl-C starts no more devices, the second cancels the running ones: a
+   candidate is discarded, a pending commit is cancelled where the window
+   allows). A Cisco device or a WTI unit named is refused with the reason
+   and a selector leaves them out. Audit lines carry the user, device,
+   change identifier, shape and result, never a value. The manual page,
+   `docs/devices/planning.md` and `docs/cli/device.md` describe it.
+
+5. **Shapes, `--confirmed`, `--max` and `device config shapes`.** Two
+   devices that need the same change have the same shape (a hash of the
+   statements with each secret elided and each per-device value, such as a
+   location, masked). The first device of every shape is applied alone and
+   the rest of its shape follow only when it applied (`--no-canary` starts
+   them together; `--pause` or `config devices apply-pause` waits between
+   devices). `--confirmed` applies only shapes an earlier apply confirmed and
+   skips the others (`unknown shape <hash>: review and apply it by hand
+   first`), and is the one form `--yes` answers the review of, so a script
+   runs a batch without a terminal; `--max <n>` (default 5) caps the devices
+   of a run. `tacctl device config shapes [list [--show <hash>] [--json]]`
+   lists the shapes seen, which are confirmed, on which devices, and for a
+   new one the nearest confirmed shape; `shapes seed <name>[,<name>...]
+   [-y]` files the shape of a device's last check or apply as confirmed on
+   your word (one question), for a device applied and verified by hand.
+   They are the superuser's and contact no device; the store is
+   `/var/lib/tacctl/device-apply/shapes.json` (0600: statements with values
+   elided).
+
+6. **What an apply leaves in the record.** The `applied` part of a device's
+   record in `devices-config.json` (version 1, fields added) holds the last
+   check or apply: when, by whom, the change identifier, the result
+   (`checked`, `applied`, `rolled-back`, `pending`, `failed`, `unknown`), the
+   reason, the end of a pending window, the shape, the planned sections, the
+   statement counts, the confirming commit and the fingerprint of each
+   planned section before the change; never raw device output and never a
+   secret. Every read an apply makes refreshes the pull part of the record
+   (the read after a confirmed apply is the picture `device config diff`
+   then shows). `device config list` gains an `APPLIED` column once a listed
+   device was checked or applied (`checked`, `applied <time>`, `PENDING
+   <time>`, `rolled-back`, `failed`), its `--json` and `device show --json`
+   gain `applied`, and the Configuration row of `device show` ends with
+   `apply: ...`, in red and with what must not be typed for a pending
+   commit. `device config forget` removes it with the pull record.
+
+7. **Fix: the Junos plan's region types `configure exclusive`.** A private
    session cannot `commit confirmed` on Junos 25.4 (`error: commit confirmed
    not supported for private configuration`, found on the lab switch), so a
    pasted plan never reached its confirmed commit and nothing was committed.

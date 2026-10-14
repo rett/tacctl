@@ -108,6 +108,20 @@ func (s *Shapes) Confirm(hash string, lines []string, c Confirmation) error {
 	})
 }
 
+// Observe files a shape a check saw, with its lines and no confirmation, so
+// that 'seed' and the listing have the lines of a shape nobody has confirmed
+// yet. A shape already in the store is left as it is.
+func (s *Shapes) Observe(hash string, lines []string) error {
+	if hash == "" || plan.ShapeHash(lines) != hash {
+		return fmt.Errorf("devapply: the shape's lines do not hash to %q", hash)
+	}
+	return s.update(func(m map[string]ShapeEntry) {
+		if _, ok := m[hash]; !ok {
+			m[hash] = ShapeEntry{Algo: plan.ShapeAlgo, Lines: slices.Clone(lines), Confirmed: []Confirmation{}}
+		}
+	})
+}
+
 // update applies fn to the store under its lock and writes it back.
 func (s *Shapes) update(fn func(map[string]ShapeEntry)) error {
 	if err := os.MkdirAll(s.dir, 0o700); err != nil {

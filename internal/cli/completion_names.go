@@ -44,6 +44,8 @@ var completionArgKinds = map[string]func(inv *invocation, args []string) []strin
 	KindDevices: (*invocation).deviceNames,
 	// The devices with a break-glass hold ('breakglass release').
 	KindHeld: (*invocation).heldNames,
+	// The shapes of 'device config apply' ('device config shapes --show').
+	KindShapes: (*invocation).shapeNames,
 }
 
 // completionDescKinds answer '_completion-names <kind> --desc' (the shell's

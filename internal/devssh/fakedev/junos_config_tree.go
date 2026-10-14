@@ -221,7 +221,7 @@ var jSingleKeys = []string{
 	"system radius-server * secret", "system radius-server * port", "system radius-server * timeout",
 	"system login user * class", "system login user * uid", "system login user * full-name",
 	"system login user * authentication encrypted-password",
-	"system login class * idle-timeout", "system login class * permissions",
+	"system login class * idle-timeout",
 	"snmp community * authorization", "snmp community * client-list-name",
 	"snmp trap-group * version",
 	"system host-name", "system accounting destination tacplus server * secret",

@@ -151,6 +151,8 @@ var deviceVerbs = [][2]string{
 	{"config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [options]", "Read the devices' configuration as you and compare the managed sections with what tacctl renders"},
 	{"config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [--pull] [--section <list>] [--exit-code] [--json]", "The last pull against what tacctl renders now, section by section"},
 	{"config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [--pull] [--section <list>] [--converge] [--secrets|--no-secrets] [--plain|--json|--backout] [--out <file>|--out-dir <dir>] [--force] [--from <address>] [--restore-point[=<fs>]] [--exit-code]", "What to paste (a WTI unit: what to type) to make each device match what tacctl renders: the report, the region or the steps, the check and the back-out"},
+	{"config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [--check] [--confirmed] [--max <n>] [--pause <seconds>] [--hold] [--no-canary] [--section <list>] [--json] [-y]", "Superusers, Junos devices: check each device's plan on the device (--check stops there), then, after one review answered by typing the device's name or the number of devices back, commit it under a confirmed commit, prove it with a fresh login and the landed change, and confirm it"},
+	{"config shapes [list [--show <hash>] [--json] | seed <name>[,<name>...] [-y]]", "Superusers: the shapes of the changes 'apply' has seen and which a verified apply confirmed; 'seed' files a device's shape as confirmed on your word"},
 	{"config list [--stale] [--never] [--failed] [--differs] [--transport netconf|ssh|none] [--scope <scope>] [--vendor <vendor>] [--json]", "Each device's configuration state, when it was read, by whom and over what"},
 	{"config forget <name>[,<name>...] | --all", "Delete the pull records (a pull makes them again)"},
 }
@@ -263,6 +265,23 @@ var deviceOptions = map[string][][2]string{
 		{"--restore-point[=<fs>]", "(IOS and IOS-XE only) A restore point block before the plan: a copy of the running configuration on <fs> (flash:, bootflash:, disk0:), or, bare, 'archive config' where the pull read an archive path; the back-out names 'configure replace' with it; a file, not a timer (the bare form has not been checked on a device)"},
 		{"--exit-code", "Exit 2 when a device needs a change (and none could not be planned)"},
 	},
+	"config apply": {
+		{"--all", "(pull, diff, plan, apply, forget) Every device of yours that a scope covers"},
+		{"--check", "Stop after the device's own commit check: nothing is committed, the device's shape is recorded"},
+		{"--confirmed", "Apply only the shapes an earlier apply confirmed (the others are skipped), the one form --yes answers the review of"},
+		{"--max <n>", "Apply at most n devices in one run (default 5; the rest are skipped, run it again)"},
+		{"--pause <seconds>", "Wait between the devices after each shape's first, 0-3600 (default device.apply.pause)"},
+		{"--hold", "After the fresh login keep the change only when you log in with one account of each class and type OK (needs a terminal)"},
+		{"--no-canary", "Start every device of a shape at once, not the first alone"},
+		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, system"},
+		{"--json", "(apply) One object per device and phase, then the summary; the review goes to standard error"},
+		{"--exit-code", "(apply) With --check: exit 2 when a device needs a change (and none failed)"},
+		{"-y, --yes", "(apply) With --confirmed: answer the review (no terminal needed)"},
+	},
+	"config shapes": {
+		{"--show <hash>", "(list) The statements of one shape, who confirmed it and the devices at it now"},
+		{"-y, --yes", "(seed) Answer the question: mark the shape confirmed on your word"},
+	},
 	"config list": {
 		{"--never", "Only the devices not pulled yet"},
 		{"--failed", "Only the devices whose last pull failed"},
@@ -282,7 +301,7 @@ func deviceCmd(inv *invocation) *cobra.Command {
 		word := f[0]
 		if word == "config" && len(f) > 1 {
 			if cfg == nil {
-				cfg = verb("config <subcommand>", "A device's walkthrough, reading its configuration (pull, diff, list, forget) and what to paste (plan)")
+				cfg = verb("config <subcommand>", "A device's walkthrough, reading its configuration (pull, diff, list, forget), what to paste (plan) and writing it (apply, shapes)")
 				cfg.RunE = inv.native(withPreflight, func(args []string) error {
 					return inv.device(append([]string{"config"}, args...))
 				})
@@ -685,7 +704,10 @@ type deviceJSON struct {
 	// SyntaxConflict is set when the explicit setting is not the syntax the
 	// last pull's version line (OS) derives to: the setting wins, and
 	// ImageSyntax is what the line says.
-	ConfigSyntax   string             `json:"config_syntax,omitempty"`
+	ConfigSyntax string `json:"config_syntax,omitempty"`
+	// Applied is what 'device config apply' last did to the device (a
+	// check or an apply), for the tiers that see the configuration state.
+	Applied        *appliedJSON       `json:"applied,omitempty"`
 	Syntax         string             `json:"syntax,omitempty"`
 	SyntaxSource   string             `json:"syntax_source,omitempty"`
 	SyntaxConflict bool               `json:"syntax_conflict,omitempty"`
@@ -792,6 +814,7 @@ func deviceJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry, recs *d
 		}
 		if rec != nil && e.Source == devreg.SourceDevice {
 			j.Release, j.Model, j.Serial = cleanLine(rec.Release), cleanLine(rec.Model), cleanLine(rec.Serial)
+			j.Applied = appliedJSONOf(rec.Applied)
 		}
 	}
 	return j

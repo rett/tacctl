@@ -636,6 +636,21 @@ func TestJunosInsertAndOrder(t *testing.T) {
 	}
 }
 
+// A login class's permissions are a list: a second set adds to the first
+// (the model once took it for a single-valued leaf and kept the last).
+func TestJunosClassPermissionsAccumulate(t *testing.T) {
+	srv, _, _ := newJunos(t, map[string]string{})
+	c, _ := shell(t, srv, DefaultUser, DefaultPassword)
+	c.send("configure exclusive")
+	c.send("set system login class ZZ-CLASS permissions network")
+	c.send("set system login class ZZ-CLASS permissions view")
+	c.send("set system login class ZZ-CLASS permissions view-configuration")
+	got := c.send("show | display set | no-more")
+	for _, p := range []string{"network", "view", "view-configuration"} {
+		mustContain(t, "display set", got, "set system login class ZZ-CLASS permissions "+p+"\n")
+	}
+}
+
 func TestJunosLoginsAndClasses(t *testing.T) {
 	srv, _, _ := newJunos(t, map[string]string{
 		"local": "ops-local secret-1 read-only\n",
