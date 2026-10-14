@@ -352,6 +352,17 @@ current behaviour; this file is where history lives.
     network-device AAA management; the backends are interchangeable and are
     no longer named in the title.
 
+22. **`device config apply` reads a change of one element of a Junos list.**
+    Junos prints a change of one element of a bracket list (`system
+    accounting events [ ... ]`, `system domain-search [ ... ]`) as the whole
+    list removed and added, so the elements on both sides were taken as
+    changes outside the delta and every check of such a change failed. An
+    element shown both removed and added at the same path is now no change;
+    only the net elements are held against the delta, in the check and in the
+    landed compare. An element added or removed by someone else, a list whose
+    kept elements change order, a hidden secret and an annotation are still
+    changes.
+
 ## 0.2.8 (2026-10-13)
 
 1. **The documentation is a tree of topic pages.** `README.md` holds the

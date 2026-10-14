@@ -110,3 +110,13 @@ root@lab-sw1> quit
     tacctl apply tacctl-20261014T200205Z-72cd by zz-tacctl-user
 8   2026-10-13 20:13:51 AKDT by admin via cli
 rescue  2024-01-04 11:42:38 AKST by root via cli
+
+## show | compare: one element of a bracketed list removed (delete system accounting events interactive-commands)
+[edit system accounting]
+-   events [ login change-log interactive-commands ];
++   events [ login change-log ];
+
+## show | compare: one element added to a one-element leaf (set system domain-search example.org)
+[edit system]
+-  domain-search example.net;
++  domain-search [ example.net example.org ];

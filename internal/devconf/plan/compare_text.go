@@ -15,6 +15,9 @@ package plan
 //     with its whole path, a bracket list is one statement per item, and the
 //     statements are sorted, so the order a release prints hierarchies in is
 //     not identity;
+//   - a statement shown both removed and added nets out (netOut): Junos
+//     prints a change of one element of a bracket list as the whole list
+//     removed and added, and only the elements on one side are changes;
 //   - a secret's value: '<secret>' stands in its place; and the name of an
 //     SNMP community or trap group (which is the secret): '<secret:N>'
 //     stands in its place, N numbering the distinct names by their first
@@ -298,6 +301,9 @@ type rawStmt struct {
 	// ann is the text of an annotation (words is the path it stands in).
 	ann    string
 	isNote bool
+	// list numbers the bracket list ('[ a b ]') the statement is one element
+	// of (0: none), so netting keeps the order of a list's elements
+	list int
 }
 
 // ParseCompareFor is ParseCompare with the names numbered by their first
@@ -309,12 +315,18 @@ func ParseCompareFor(text string, d Delta) (CompareText, error) {
 	var raws []rawStmt
 	var base []string
 	var stack []frame
+	lists := 0
 	emit := func(op byte, words []string) {
+		list := 0
+		if slices.Contains(words, "[") {
+			lists++
+			list = lists
+		}
 		for _, w := range expandBrackets(words) {
 			if uidLeaf(w) {
 				continue
 			}
-			raws = append(raws, rawStmt{op: op, words: w})
+			raws = append(raws, rawStmt{op: op, words: w, list: list})
 		}
 	}
 	// the op a line stands under: its own, else the block's
@@ -446,6 +458,7 @@ func ParseCompareFor(text string, d Delta) (CompareText, error) {
 	if len(stack) > 0 {
 		return CompareText{}, fmt.Errorf("compare: %d block(s) not closed", len(stack))
 	}
+	raws = netOut(raws)
 	// the names: the delta's first, in its order; then the compare's own, in
 	// the order of the names
 	labels := newSecretLabels(d)
@@ -493,6 +506,77 @@ func ParseCompareFor(text string, d Delta) (CompareText, error) {
 		c.ids = append(c.ids, it.ident)
 	}
 	return c, nil
+}
+
+// netOut drops the statements a compare shows both removed and added: Junos
+// prints a change of one element of a bracket list ('events [ login
+// change-log ]', 'domain-search [ a b ]') as the whole list removed and the
+// whole list added (live acceptance 2026-10-14), so the elements on both
+// sides are not changed. One '-' cancels one '+' of the identical statement
+// (the same path and words, quoting folded by splitTokens); a '-' with no
+// '+' stays a removal. Never cancelled, fail closed:
+//
+//   - an annotation, and a '!' statement;
+//   - a statement whose secret the device hid ('/* SECRET-DATA */'): two of
+//     them may hold two values (a secret shown is compared as printed, and a
+//     community's name is the word itself, so two names never cancel);
+//   - the elements of a list the other side holds in another order (a
+//     reorder of 'domain-search' is a change): the pairs of a removed and an
+//     added list cancel only when their elements keep their order.
+func netOut(raws []rawStmt) []rawStmt {
+	key := func(r rawStmt) string { return strings.Join(r.words, "\x00") }
+	cancellable := func(r rawStmt) bool {
+		return (r.op == '+' || r.op == '-') && !r.isNote && !slices.Contains(r.words, "SECRET-DATA")
+	}
+	minus := map[string][]int{}
+	for i, r := range raws {
+		if cancellable(r) && r.op == '-' {
+			minus[key(r)] = append(minus[key(r)], i)
+		}
+	}
+	type pair struct{ m, p int }
+	var pairs []pair
+	for i, r := range raws {
+		if !cancellable(r) || r.op != '+' {
+			continue
+		}
+		k := key(r)
+		if q := minus[k]; len(q) > 0 {
+			pairs = append(pairs, pair{q[0], i})
+			minus[k] = q[1:]
+		}
+	}
+	// the order of a list's kept elements: by the pair of lists, the added
+	// side's positions must rise with the removed side's
+	type lists struct{ m, p int }
+	bad := map[lists]bool{}
+	last := map[lists]int{}
+	byMinus := slices.Clone(pairs)
+	sort.Slice(byMinus, func(a, b int) bool { return byMinus[a].m < byMinus[b].m })
+	for _, pr := range byMinus {
+		l := lists{raws[pr.m].list, raws[pr.p].list}
+		if l.m == 0 || l.p == 0 {
+			continue
+		}
+		if prev, ok := last[l]; ok && pr.p < prev {
+			bad[l] = true
+		}
+		last[l] = pr.p
+	}
+	drop := make([]bool, len(raws))
+	for _, pr := range pairs {
+		if bad[lists{raws[pr.m].list, raws[pr.p].list}] {
+			continue
+		}
+		drop[pr.m], drop[pr.p] = true, true
+	}
+	out := raws[:0:0]
+	for i, r := range raws {
+		if !drop[i] {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // NormaliseCompare is ParseCompare's text: the statements one per line, with

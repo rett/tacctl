@@ -538,6 +538,10 @@ func items(n *jnode, path []string) []jitem {
 		case isLeafNode(c):
 			out = append(out, jitem{key: jquote(c.tok), head: jquote(c.tok)})
 		case allLeaves(c) && !jBlockLists[c.tok]:
+			// a leaf list is one item keyed by its keyword: a change of one
+			// element prints the whole leaf removed, then added ('-   events
+			// [ a b c ];' '+   events [ a b ];'), as the device does (live
+			// acceptance 2026-10-14)
 			var vs []string
 			for _, k := range c.kids {
 				vs = append(vs, jquote(k.tok))
