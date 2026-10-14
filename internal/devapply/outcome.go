@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 )
@@ -133,6 +134,15 @@ type Outcome struct {
 	VerifyLog []string
 	// StoreErr is a failure to file the shape (the result stands).
 	StoreErr error
+}
+
+// snapshot is a copy of the outcome so far for Input.Committed: the slices
+// cloned, the logs and the step times left out.
+func (o *Outcome) snapshot() Outcome {
+	c := *o
+	c.ShapeLines, c.Sections = slices.Clone(o.ShapeLines), slices.Clone(o.Sections)
+	c.Durations, c.Log, c.VerifyLog = nil, nil, nil
+	return c
 }
 
 // Line is the outcome as the per-device line of plan §3.2.

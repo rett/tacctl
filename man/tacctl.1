@@ -8177,9 +8177,16 @@ checked with its own
 .B "commit check"
 and discarded; the devices that need a change are then shown grouped by
 .BR shape
-(the same change under one heading, every secret elided, with what the plan
-keeps and what it leaves out) and ONE question is asked, answered by typing
-the device's name back (one device) or the number of devices (several). It
+and by what the review shows of each (the same change under one heading,
+every secret elided, a statement whose per\-device value differs printed for
+each device after its name, with what the plan keeps and what it leaves out;
+two devices of one shape whose warnings, sections left out, kept statements
+or not\-found deletes differ are two headings) and ONE question is asked,
+answered by typing the device's name back (one device) or the number of
+devices (several). A device whose plan refuses a section (what makes
+.B "device config plan"
+exit 1) is not applied: its row is
+.BR "failed: the plan refuses <section> (<why>)" . It
 needs a terminal; with none the only way through is
 .B "\-\-confirmed \-\-yes".
 The
@@ -8205,7 +8212,12 @@ or
 .B "commit check"
 typed on it confirms the change, so nothing may be typed on it before then.
 The next apply or check of it reads its commit history first and records what
-happened; while the window stands nothing is sent.
+happened; while the window stands nothing is sent. The record says
+.B pending
+from the moment the confirmed commit is typed, so a tacctl killed during the
+verification leaves a record the next run settles; a record that cannot be
+written then is said at once, in red, on standard error, and the transaction
+goes on.
 .PP
 .B \-\-check
 stops after the device's own check: nothing is committed, the shape and the
@@ -8221,7 +8233,7 @@ answers the review for;
 .B \-y
 without it is refused (exit 2).
 .B \-\-max
-(default 5) caps the devices of a run. The first device of every shape is
+(default 5) caps the devices of every apply run. The first device of every shape is
 applied alone and the rest of its shape follow only when it applied
 .RB ( \-\-no\-canary :
 together);
@@ -8233,12 +8245,19 @@ waits between devices and
 applies several at a time (default one; the checks run in the pool of
 .BR pull ).
 .B \-\-max\-failures
-defaults to 1.
+defaults to 1. At the start of each device's apply the break\-glass hold, the
+registry entry (name, address, vendor, hostname, port, host keys) and the
+scope that covers it are read again: a device held, changed or no longer
+yours since the review fails with the reason and nothing is sent to it.
 .B \-\-hold
 keeps the change only when, after the fresh login, you log in with one
 account of each class and type
 .BR OK ;
-anything else rolls it back.
+anything else, or no answer while a minute of the window is left, rolls it
+back, and a line typed before a device's question is not its answer. It needs
+a terminal and is refused with
+.B \-\-json
+(exit 2).
 .B \-\-section
 limits the sections
 .RB ( aaa ,
@@ -8273,8 +8292,14 @@ The first Ctrl\-C starts no more devices and lets the running one finish, the
 second cancels: before the commit the candidate is discarded, after it the
 commit is cancelled where the window allows and otherwise left PENDING. Exit
 status: 0 every device applied, was checked or had no change; 1 a device
-failed, was rolled back or is pending, or the review was not answered; 2 wrong
-arguments; 130 interrupted. The last check or apply of a device is kept in its
+failed, was rolled back or is pending, the review was not answered, or devices
+were selected and none was applied or found already applied
+.RB ( "\-\-confirmed \-\-yes"
+that skipped them all:
+.BR "Nothing was applied: every device was skipped." ,
+JSON
+.BR "\(dqstop\(dq:\(dqnothing\-applied\(dq" );
+2 wrong arguments; 130 interrupted. The last check or apply of a device is kept in its
 record (when, by whom, the change identifier, result, shape, sections,
 counts and the confirming commit: no raw output and no secret) and shown in the
 .B APPLIED
@@ -8287,7 +8312,11 @@ and their JSON as
 Every device is logged
 .RB ( "auth.info device config apply user= device= id= shape= result= duration=" ,
 .B "auth.notice device config apply user= approved= shapes= canary="
-for the answer and
+for the answer, the canary being the first device of each shape or
+.B none
+with
+.BR \-\-no\-canary ,
+and
 .B "auth.notice device config apply user= device= id= shape= sections= result= commit= until="
 for each apply, never a value).
 .\" BEGIN GENERATED: command device config apply

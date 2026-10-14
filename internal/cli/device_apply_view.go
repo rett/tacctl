@@ -15,6 +15,7 @@ import (
 
 	"github.com/rett/tacctl/internal/devapply"
 	"github.com/rett/tacctl/internal/devconf/batch"
+	"github.com/rett/tacctl/internal/devconf/plan"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -122,6 +123,8 @@ func (o *applyOutcome) line() string {
 	switch {
 	case o.Status == "not-started":
 		s = "not started"
+	case o.Refused != "":
+		s = "failed: " + o.Refused
 	case o.Skipped != "":
 		s = "skipped: " + o.Skipped
 	case o.Out == nil:
@@ -139,6 +142,9 @@ func (o *applyOutcome) line() string {
 		if o.Out.Exit == devapply.ExitPending || o.Out.Exit == devapply.ExitWindowShort || o.Out.Exit == devapply.ExitUnknown {
 			s = ui.Red + s + ui.NC
 		}
+	}
+	if o.PendingErr != "" {
+		s += " (the pending record at the commit was not kept: " + o.PendingErr + ")"
 	}
 	if o.RecordErr != "" {
 		s += " (the record was not kept: " + o.RecordErr + ")"
@@ -218,6 +224,8 @@ func (o *applyOutcome) json(j applyJSON) applyJSON {
 	j.Status = o.word()
 	j.Confirmed, j.DurationMS = o.ConfirmedOn, o.Duration.Milliseconds()
 	switch {
+	case o.Refused != "":
+		j.Reason = cleanLine(o.Refused)
 	case o.Skipped != "":
 		j.Reason = cleanLine(o.Skipped)
 	case o.Out == nil:
@@ -250,7 +258,8 @@ func (o *applyOutcome) json(j applyJSON) applyJSON {
 
 // --- the review ------------------------------------------------------------------
 
-// shapeGroup is the devices that need the same change.
+// shapeGroup is the devices that need the same change and whose review
+// shows the same things.
 type shapeGroup struct {
 	hash    string
 	devices []*applyOutcome
@@ -258,8 +267,12 @@ type shapeGroup struct {
 	confirmedOn string
 }
 
-// groupByShape groups the checked devices by shape, in the order of their
-// first device (D134).
+// groupByShape groups the checked devices by shape and by what the review
+// shows of each beside the statements (reviewNotes: the sections' notes, the
+// warnings, what is not planned, the kept statements, the deletes that found
+// nothing), in the order of their first device (D134). Two devices of one
+// shape whose notes differ are two headings: a device is never applied on
+// the strength of another device's review.
 func (c *applyCtl) groupByShape(junos []devreg.Entry, byName map[string]*applyOutcome) []*shapeGroup {
 	var groups []*shapeGroup
 	idx := map[string]*shapeGroup{}
@@ -268,17 +281,64 @@ func (c *applyCtl) groupByShape(junos []devreg.Entry, byName map[string]*applyOu
 		if o == nil || o.Out == nil || o.Out.Exit != devapply.ExitChecked || !o.HasDelta {
 			continue
 		}
-		g := idx[o.Out.Shape]
+		key := o.Out.Shape + "\x00" + strings.Join(reviewNotes(o), "\n")
+		g := idx[key]
 		if g == nil || o.Out.Shape == "" {
 			g = &shapeGroup{hash: o.Out.Shape}
 			groups = append(groups, g)
 			if o.Out.Shape != "" {
-				idx[o.Out.Shape] = g
+				idx[key] = g
 			}
 		}
 		g.devices = append(g.devices, o)
 	}
 	return groups
+}
+
+// reviewNotes are the lines the review prints of a device beside its
+// statements, in the order printed; the section notes are keyed by section
+// ("@<section> <note>") and printed with the section's statements.
+func reviewNotes(o *applyOutcome) []string {
+	d := o.Delta
+	var out []string
+	seen := map[string]bool{}
+	for _, l := range d.Lines {
+		if !seen[l.Section] {
+			seen[l.Section] = true
+			out = append(out, "@"+l.Section+" "+cleanLine(d.Of(l.Section).Why))
+		}
+	}
+	for _, w := range d.Warnings {
+		out = append(out, "  warning: "+cleanLine(w))
+	}
+	for _, sk := range d.Skipped {
+		out = append(out, "  not planned: "+sk.Section+": "+cleanLine(sk.Why))
+	}
+	if n := len(d.Kept); n > 0 {
+		out = append(out, "  kept: "+howMany(n, "statement")+" of the managed sections that the plan leaves alone")
+		for _, k := range d.Kept {
+			out = append(out, "    "+cleanLine(k.Text))
+		}
+	}
+	if o.Out != nil && o.Out.Counts.NotFound > 0 {
+		out = append(out, "  "+howMany(o.Out.Counts.NotFound, "delete")+" answered 'statement not found' (nothing to delete: not a failure)")
+	}
+	return out
+}
+
+// refusal is why the plan of a device refuses it: a section the planner
+// refuses (plan.KindRefused, which makes 'device config plan' exit 1).
+func refusal(o *applyOutcome) string {
+	var parts []string
+	for _, sk := range o.Delta.Skipped {
+		if sk.Kind == plan.KindRefused {
+			parts = append(parts, sk.Section+" ("+cleanLine(sk.Why)+")")
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "the plan refuses " + strings.Join(parts, "; ") + ": nothing is applied to this device, as 'device config plan' would not paste it"
 }
 
 // selectApply decides which of the checked devices go on to Phase B: with
@@ -294,6 +354,10 @@ func (c *applyCtl) selectApply(groups []*shapeGroup, byName map[string]*applyOut
 		}
 		for _, o := range g.devices {
 			o.ConfirmedOn = g.confirmedOn
+			if why := refusal(o); why != "" {
+				o.Refused = why
+				continue
+			}
 			if c.aa.confirmed && g.confirmedOn == "" {
 				if g.hash == "" {
 					o.Skipped = "no shape: the change cannot be matched to a confirmed one; review and apply it by hand first"
@@ -341,6 +405,10 @@ func (c *applyCtl) review(groups []*shapeGroup, apply []*applyOutcome, asJSON bo
 		inApply[o] = true
 	}
 	pf("\n")
+	seenHash := map[string]int{}
+	for _, g := range groups {
+		seenHash[g.hash]++
+	}
 	for _, g := range groups {
 		first := g.devices[0]
 		names := make([]string, len(g.devices))
@@ -355,39 +423,15 @@ func (c *applyCtl) review(groups []*shapeGroup, apply []*applyOutcome, asJSON bo
 		if g.hash == "" {
 			head = "No shape"
 		}
+		if g.hash != "" && seenHash[g.hash] > 1 {
+			state += "; the same change as another heading, with other notes"
+		}
 		pf("%s, %s (%s), %s:\n", head, howMany(len(g.devices), "device"), strings.Join(names, ", "), state)
-		d := first.Delta
-		cur := ""
-		for _, l := range d.Lines {
-			if l.Section != cur {
-				cur = l.Section
-				why := d.Of(cur).Why
-				if why != "" {
-					pf("  %-8s %s\n", cur, cleanLine(why))
-				} else {
-					pf("  %s\n", cur)
-				}
+		c.reviewStatements(pf, g)
+		for _, l := range reviewNotes(first) {
+			if !strings.HasPrefix(l, "@") {
+				pf("%s\n", l)
 			}
-			pf("    %s\n", cleanLine(l.Shown()))
-		}
-		for _, w2 := range d.Warnings {
-			pf("  warning: %s\n", cleanLine(w2))
-		}
-		for _, s := range d.Skipped {
-			pf("  not planned: %s: %s\n", s.Section, cleanLine(s.Why))
-		}
-		if n := len(d.Kept); n > 0 {
-			pf("  kept: %s of the managed sections that the plan leaves alone\n", howMany(n, "statement"))
-			for i, k := range d.Kept {
-				if i >= 5 {
-					pf("    ... and %d more\n", n-5)
-					break
-				}
-				pf("    %s\n", cleanLine(k.Text))
-			}
-		}
-		if first.Out != nil && first.Out.Counts.NotFound > 0 {
-			pf("  %s answered 'statement not found' (nothing to delete: not a failure)\n", howMany(first.Out.Counts.NotFound, "delete"))
 		}
 		pf("\n")
 	}
@@ -408,7 +452,7 @@ func (c *applyCtl) review(groups []*shapeGroup, apply []*applyOutcome, asJSON bo
 				j.Phase = "apply"
 				_ = json.NewEncoder(inv.app.Out.Stdout).Encode(j)
 			} else {
-				pf("  %-*s  skipped: %s\n", width, o.Name, cleanLine(o.Skipped))
+				pf("  %-*s  %s\n", width, o.Name, cleanLine(o.line()))
 			}
 		}
 	}
@@ -440,7 +484,7 @@ func (c *applyCtl) review(groups []*shapeGroup, apply []*applyOutcome, asJSON bo
 		target, how, c.run.minutes, c.user, hold)
 	if c.aa.yes {
 		pf("%s\n  --yes: every shape is one another device confirmed; going on.\n", q)
-		c.audit(apply, names)
+		c.audit(apply)
 		return true
 	}
 	want := strconv.Itoa(len(apply))
@@ -454,24 +498,77 @@ func (c *applyCtl) review(groups []*shapeGroup, apply []*applyOutcome, asJSON bo
 		inv.app.Out.ErrorE("The answer typed is not '" + want + "'. Nothing was changed.")
 		return false
 	}
-	c.audit(apply, names)
+	c.audit(apply)
 	return true
 }
 
-// audit logs the approval: how many, which shapes, which canary.
-func (c *applyCtl) audit(apply []*applyOutcome, names []string) {
-	var shapes []string
+// reviewStatements prints a group's statements under their sections, each
+// section with its note. A statement every device of the group has is
+// printed once; one that differs between them (a per-device value the shape
+// masks: a location, a name) is printed for each device, after its name.
+func (c *applyCtl) reviewStatements(pf func(string, ...any), g *shapeGroup) {
+	first := g.devices[0]
+	d := first.Delta
+	count := map[string]int{}
+	for _, o := range g.devices {
+		mine := map[string]bool{}
+		for _, l := range o.Delta.Lines {
+			if s := l.Section + "\x00" + l.Shown(); !mine[s] {
+				mine[s] = true
+				count[s]++
+			}
+		}
+	}
+	common := func(l plan.Line) bool { return count[l.Section+"\x00"+l.Shown()] == len(g.devices) }
+	var sections []string
+	for _, o := range g.devices {
+		for _, l := range o.Delta.Lines {
+			if !contains(sections, l.Section) {
+				sections = append(sections, l.Section)
+			}
+		}
+	}
+	for _, sec := range sections {
+		if why := d.Of(sec).Why; why != "" {
+			pf("  %-8s %s\n", sec, cleanLine(why))
+		} else {
+			pf("  %s\n", sec)
+		}
+		for _, l := range d.Lines {
+			if l.Section == sec && common(l) {
+				pf("    %s\n", cleanLine(l.Shown()))
+			}
+		}
+		for _, o := range g.devices {
+			for _, l := range o.Delta.Lines {
+				if l.Section == sec && !common(l) {
+					pf("    %s: %s\n", o.Name, cleanLine(l.Shown()))
+				}
+			}
+		}
+	}
+}
+
+// audit logs the approval: how many, which shapes, and the canary of each
+// shape (the first device of the shape in the order of the apply, which
+// the runner starts alone), or none with --no-canary.
+func (c *applyCtl) audit(apply []*applyOutcome) {
+	var shapes, canaries []string
 	for _, o := range apply {
 		if o.Out != nil && o.Out.Shape != "" && !contains(shapes, o.Out.Shape) {
 			shapes = append(shapes, o.Out.Shape)
+			canaries = append(canaries, o.Name)
 		}
 	}
-	list := "-"
+	list, canary := "-", "none"
 	if len(shapes) > 0 {
 		list = strings.Join(shapes, ",")
 	}
+	if len(canaries) > 0 && !c.aa.noCanary {
+		canary = strings.Join(canaries, ",")
+	}
 	c.inv.app.Logger(c.inv.auditContext(), "auth.notice", fmt.Sprintf("device config apply user=%s approved=%d shapes=%s canary=%s",
-		c.user, len(apply), list, names[0]))
+		c.user, len(apply), list, canary))
 }
 
 // --- the summary -----------------------------------------------------------------
@@ -506,17 +603,22 @@ func summaryLine(m map[string]int) string {
 
 // finish prints the summary and the notes and returns the exit status
 // (D130): 0 every device applied, checked or had no change, 1 a device
-// failed, rolled back or is pending (or the review was not answered), 2 with
-// --exit-code a check that found a change, 130 interrupted.
+// failed, rolled back or is pending (or the review was not answered, or an
+// apply that had devices applied none and found none already applied: every
+// one skipped), 2 with --exit-code a check that found a change, 130
+// interrupted.
 func (c *applyCtl) finish(sum batch.Summary, declined bool) error {
 	inv, aa := c.inv, c.aa
 	m := c.tally()
 	bad := m["failed"] + m["unsupported"] + m["rolled-back"] + m["pending"] + m["unknown"] + m["applied-by-other"] + m["interrupted"]
 	code := batch.ExitOK
+	// an apply that had devices and applied none of them did not do what it
+	// was asked, even when each was only skipped
+	nothing := !aa.check && len(c.rows) > 0 && m["applied"]+m["no-change"] == 0
 	switch {
 	case sum.Interrupted:
 		code = batch.ExitInterrupted
-	case bad > 0, declined:
+	case bad > 0, declined, nothing:
 		code = batch.ExitFailed
 	case aa.exitCode && m["checked"] > 0:
 		code = batch.ExitDiffers
@@ -533,8 +635,11 @@ func (c *applyCtl) finish(sum batch.Summary, declined bool) error {
 		case sum.Stop == batch.StopAuthFailure:
 			s["stop"] = "auth-failed"
 		}
-		if declined {
+		switch {
+		case declined:
 			s["stop"] = "not-approved"
+		case nothing && s["stop"] == nil:
+			s["stop"] = "nothing-applied"
 		}
 		if c.chosen != nil && c.chosen.skipped.any() {
 			s["left_out"] = c.chosen.skipped.jsonMap()
@@ -556,6 +661,9 @@ func (c *applyCtl) finish(sum batch.Summary, declined bool) error {
 		c.chosen.printSkipped(inv)
 		if aa.check && m["checked"] > 0 {
 			inv.echo("  Nothing was committed: --check ends after the device's own commit check.")
+		}
+		if nothing && !declined && !sum.Interrupted && bad == 0 {
+			inv.echo("  Nothing was applied: every device was skipped.")
 		}
 	}
 	// a device that may be running the change under its timer is said on

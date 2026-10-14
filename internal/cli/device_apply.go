@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"slices"
 	"strconv"
@@ -33,6 +34,8 @@ import (
 	"time"
 
 	"github.com/rett/tacctl/internal/askpass"
+	"github.com/rett/tacctl/internal/backend"
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devapply"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devconf/batch"
@@ -40,6 +43,7 @@ import (
 	"github.com/rett/tacctl/internal/devices"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/devssh"
+	"github.com/rett/tacctl/internal/ui"
 )
 
 // applyMaxDefault is the most devices one run applies (D139: a batch is
@@ -114,6 +118,8 @@ func (inv *invocation) applyArgsOf(p Parsed) (applyArgs, error) {
 		return a, inv.argErr("--yes answers the review only with --confirmed (the shapes another device confirmed): a batch of unreviewed shapes is not run blind.", usage)
 	case a.hold && a.pull.concurrency > 1:
 		return a, inv.argErr("--hold asks about one device at a time: it takes no --concurrency above 1.", usage)
+	case a.hold && a.pull.json:
+		return a, inv.argErr("--hold asks on the terminal and --json keeps standard output to the objects: they do not go together.", usage)
 	}
 	return a, nil
 }
@@ -139,11 +145,16 @@ type applyOutcome struct {
 	Status string
 	// Skipped is why the device was left out of the apply (set by the verb).
 	Skipped string
+	// Refused is why the plan of the device refuses it (a section the plan
+	// refuses, as 'device config plan' exits 1): it is not applied and is a
+	// failure.
+	Refused string
 	// ConfirmedOn is the device that confirmed the shape ("" a new one).
 	ConfirmedOn string
-	// RecordErr is a record that could not be written.
-	RecordErr string
-	Duration  time.Duration
+	// RecordErr is a record that could not be written; PendingErr the
+	// pending record of the moment of the confirmed commit (D138).
+	RecordErr, PendingErr string
+	Duration              time.Duration
 }
 
 // word is the device's state as the summary and the JSON name it.
@@ -153,6 +164,8 @@ func (o *applyOutcome) word() string {
 		return "not-started"
 	case o.Status != "":
 		return o.Status
+	case o.Refused != "":
+		return "failed"
 	case o.Skipped != "":
 		return "skipped"
 	case o.Out == nil:
@@ -202,6 +215,8 @@ func (o *applyOutcome) batchResult() batch.Result {
 // reason is the words after "failed: " in the line.
 func (o *applyOutcome) reason() string {
 	switch {
+	case o.Refused != "":
+		return o.Refused
 	case o.Reason != "":
 		return o.Reason
 	case o.Out != nil && o.Out.Reason != "":
@@ -228,6 +243,12 @@ type applyRun struct {
 	driver   devapply.Driver
 	// holdOn asks the person for the proof of every login class.
 	holdOn bool
+	// holdLines are the lines the person types while --hold waits, read by
+	// one goroutine the run owns (holdLine) and stopped by holdDone, so no
+	// second reader of standard input outlives one device's question.
+	holdOnce  sync.Once
+	holdLines chan string
+	holdDone  chan struct{}
 
 	acceptOnce, rejectOnce sync.Once
 }
@@ -247,10 +268,18 @@ func (r *applyRun) jobOf(e devreg.Entry, reviewed *plan.Delta, shape string) bat
 	return batch.Job{Name: e.Name, Shape: shape, Do: func(ctx context.Context) batch.Result {
 		start := r.inv.app.Knobs.Now()
 		o := &applyOutcome{Name: e.Name, Scope: e.Scope, Vendor: e.Vendor, Phase: "check"}
+		var res batch.Result
 		if reviewed != nil {
 			o.Phase = "apply"
+			// what the review was given may have changed while it was read
+			if why := r.recheck(e); why != "" {
+				o.Reason = why
+				res = o.batchResult()
+			}
 		}
-		res := r.transact(ctx, e, o, reviewed)
+		if o.Reason == "" {
+			res = r.transact(ctx, e, o, reviewed)
+		}
 		o.Duration = r.inv.app.Knobs.Now().Sub(start)
 		res.Value = o
 		return res
@@ -379,9 +408,18 @@ func (r *applyRun) planner(e devreg.Entry, expected []devices.Section, t *devapp
 	}
 }
 
+// applyRecordFault, when a test sets it, is asked before each apply record
+// is written and a non-nil answer is the write's failure.
+var applyRecordFault func(device string, a devconf.Applied) error
+
 // writeApplied keeps the record of what this run did to the device. The pull
 // part of the record is left as the last read made it.
 func (r *applyRun) writeApplied(e devreg.Entry, a devconf.Applied) error {
+	if applyRecordFault != nil {
+		if err := applyRecordFault(e.Name, a); err != nil {
+			return err
+		}
+	}
 	unlock, err := r.store.Lock()
 	if err != nil {
 		return err
@@ -479,6 +517,7 @@ func (r *applyRun) transact(ctx context.Context, e devreg.Entry, o *applyOutcome
 			}
 			return v, nil
 		}
+		in.Committed = func(c devapply.Outcome) { r.pending(e, o, c, st) }
 		if r.holdOn {
 			in.Hold = r.holdFunc(e.Name)
 		}
@@ -533,6 +572,69 @@ func (r *applyRun) keep(e devreg.Entry, o *applyOutcome, st *applyState, apply b
 	}
 }
 
+// pending writes the record of a confirmed commit the moment it was typed
+// (D138): result pending, the change's id and the window's end, so that a
+// tacctl that dies before the end leaves what the next run reconciles. A
+// write that fails is said at once, in red, on standard error: the device
+// may be pending and nothing records it. The transaction goes on.
+func (r *applyRun) pending(e devreg.Entry, o *applyOutcome, c devapply.Outcome, st *applyState) {
+	a := r.appliedOf(c, devconf.AppliedKindApply, st.pre)
+	a.Result, a.Reason, a.Until = devconf.AppliedPending, "committed, verifying", c.Until
+	if err := r.writeApplied(e, a); err != nil {
+		o.PendingErr = strings.Join(msgs(err), " ")
+		r.inv.stderrLine(ui.Red + "RECORD " + e.Name + ui.NC + ": the confirmed commit " + c.ID + " was typed and its record could not be written (" +
+			cleanLine(o.PendingErr) + "): the device may be PENDING until " + c.Until.Format("15:04:05") +
+			"; do not type commit or commit check on it before then.")
+	}
+}
+
+// recheck is what Phase B asks again at the start of each device's job,
+// from the files as they are now (the review was of the devices as they
+// were): a break-glass hold placed since, the registry entry (name, address,
+// vendor, hostname, port, host keys), the scope that covers it and the
+// user's access to that scope. It returns why the device is not applied (""
+// when it is); then nothing is sent.
+func (r *applyRun) recheck(e devreg.Entry) string {
+	inv := r.inv
+	const tail = " since the review; nothing was sent"
+	for _, h := range conf.Load(inv.app.Paths.Overrides, backend.Default().IDs()).Holds() {
+		if strings.EqualFold(h.Device, e.Name) && sameAddress(h.Address, e.Address) {
+			return "break-glass was placed on hold for " + e.Name + tail
+		}
+	}
+	f, err := devreg.Load(inv.app.Paths.DevicesFile)
+	if err != nil {
+		return "the device registry could not be read again (" + shortReason(err) + "); nothing was sent"
+	}
+	reg, err := inv.registry()
+	if err != nil {
+		return "the host registry could not be read again (" + shortReason(err) + "); nothing was sent"
+	}
+	m, err := inv.app.LoadModel()
+	if err != nil {
+		return "the store could not be read again (" + shortReason(err) + "); nothing was sent"
+	}
+	now, ok := devreg.NewResolver(f, reg, m).Lookup(e.Name, devreg.ScopeFilter{})
+	switch {
+	case !ok || now.Name != e.Name || now.Source != e.Source:
+		return "the device is no longer registered as " + e.Name + tail
+	case now.Address != e.Address:
+		return "its registered address changed (" + e.Address + " to " + now.Address + ")" + tail
+	case now.Vendor != e.Vendor:
+		return "its registered vendor changed (" + e.Vendor + " to " + now.Vendor + ")" + tail
+	case now.Hostname != e.Hostname || now.Port != e.Port || !slices.Equal(now.HostKeys, e.HostKeys):
+		return "its registry entry changed (hostname, port or host keys)" + tail
+	case !now.Configured:
+		return "no scope covers its address any more" + tail
+	case now.Scope != e.Scope:
+		return "the scope that covers it changed (" + e.Scope + " to " + now.Scope + ")" + tail
+	}
+	if msg := loginProblem(m, r.user, now.Scope); msg != "" {
+		return msg + tail
+	}
+	return ""
+}
+
 // settle settles a record that says a confirmed commit may be pending (D132)
 // before anything is typed: the device's history says which. It returns why
 // the device cannot be touched ("" when it can).
@@ -578,26 +680,72 @@ func (r *applyRun) settle(ctx context.Context, e devreg.Entry, expected []device
 	return ""
 }
 
+// applyHoldWait is how long --hold waits for the word: until a minute of the
+// window is left (DefaultMinWindow), and at least a second. A test shortens it.
+var applyHoldWait = func(until, now time.Time) time.Duration {
+	return max(until.Sub(now)-devapply.DefaultMinWindow, time.Second)
+}
+
+// holdLine is the run's one reader of the person's lines for --hold: a
+// goroutine started at the first question that reads standard input line by
+// line and hands each line over, until the input ends (the channel closes)
+// or the run ends (holdDone).
+func (r *applyRun) holdLine() <-chan string {
+	r.holdOnce.Do(func() {
+		lines := make(chan string)
+		r.holdLines = lines
+		pr, done := r.inv.app.Prompter(), r.holdDone
+		go func() {
+			defer close(lines)
+			for {
+				line, ok := pr.ReadLine()
+				if !ok {
+					return
+				}
+				select {
+				case lines <- line:
+				case <-done:
+					return
+				}
+			}
+		}()
+	})
+	return r.holdLines
+}
+
 // holdFunc is --hold (D134, Q2): after the verification the change is kept
-// only on the typed word, with the window as the limit.
+// only on the typed word, with the window as the limit. A line typed before
+// the question (an answer that came too late for the device before) is
+// dropped, not taken as this device's answer.
 func (r *applyRun) holdFunc(name string) func(context.Context, time.Time) (bool, error) {
 	return func(ctx context.Context, until time.Time) (bool, error) {
 		inv := r.inv
-		pr := inv.app.Prompter()
+		lines := r.holdLine()
+	drain:
+		for {
+			select {
+			case _, ok := <-lines:
+				if !ok {
+					break drain
+				}
+			default:
+				break drain
+			}
+		}
 		inv.echo("  " + name + "  verified; the change is held until you answer. Log in with one account of each class in another terminal.")
 		inv.echo("  " + name + "  it rolls back by itself at " + until.Format("15:04:05") + " unless you answer before then.")
-		ans := make(chan string, 1)
-		go func() { ans <- pr.Ask("  Type OK to keep the change, anything else rolls it back: ") }()
-		wait := until.Sub(r.inv.app.Knobs.Now()) - devapply.DefaultMinWindow
-		if wait < time.Second {
-			wait = time.Second
-		}
+		_, _ = io.WriteString(inv.app.Out.Stderr, "  Type OK to keep the change, anything else rolls it back: ")
+		t := time.NewTimer(applyHoldWait(until, inv.app.Knobs.Now()))
+		defer t.Stop()
 		select {
-		case a := <-ans:
+		case a, ok := <-lines:
+			if !ok {
+				return false, errors.New("no answer: the input ended")
+			}
 			return a == "OK", nil
 		case <-ctx.Done():
 			return false, errors.New("interrupted")
-		case <-time.After(wait):
+		case <-t.C:
 			return false, errors.New("the window ran short")
 		}
 	}
@@ -671,7 +819,8 @@ func (inv *invocation) deviceConfigApply(args []string) error {
 	confirm, _ := inv.applySettings()
 	run := &applyRun{inv: inv, user: user, render: chosen.render, store: inv.configStore(),
 		shapes: devapply.OpenShapes(inv.app.Paths.ApplyDir), stateDir: inv.app.Paths.ApplyDir,
-		passwd: newDevicePasswords(inv), sections: aa.sections, minutes: confirm, holdOn: aa.hold}
+		passwd: newDevicePasswords(inv), sections: aa.sections, minutes: confirm, holdOn: aa.hold, holdDone: make(chan struct{})}
+	defer close(run.holdDone)
 	ctl := &applyCtl{inv: inv, user: user, aa: aa, run: run, settings: st, chosen: chosen, usage: usage}
 	for _, o := range refused {
 		ctl.rows = append(ctl.rows, o)

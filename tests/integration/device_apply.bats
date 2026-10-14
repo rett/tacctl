@@ -218,6 +218,8 @@ print("fine")' <<< "$output"
     refute_output --partial "- set"
     # the audit lines carry no value
     stub_called "logger -t tacctl -p auth.notice device config apply user=alice approved=1 shapes="
+    run grep -E "approved=1 shapes=[0-9a-f]{12} canary=example-sw1$" "$CALLS_LOG"
+    assert_success
     stub_called "logger -t tacctl -p auth.notice device config apply user=alice device=example-sw1 id=${id} shape="
     run grep -F "result=applied" "$CALLS_LOG"
     assert_success
@@ -272,10 +274,12 @@ print("fine")' <<< "$output"
 @test "apply --confirmed: an unknown shape is skipped, a seeded one goes on with no terminal" {
     start
     before=$(committed)
+    # every device skipped: nothing was applied, which is exit 1
     apply example-sw1 --confirmed --yes
-    assert_success
+    assert_failure 1
     assert_line --regexp '^  example-sw1  skipped: unknown shape [0-9a-f]{12}: review and apply it by hand first$'
     assert_line "  1 skipped"
+    assert_line "  Nothing was applied: every device was skipped."
     [[ "$(committed)" == "$before" ]]
     # the person's word that the device has the shape, one question
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes seed example-sw1 -y
@@ -413,6 +417,9 @@ print(all(not e["confirmed"] for e in m.values()))' "${TACCTL_VAR_LIB}/device-ap
     apply example-sw1 --hold --confirmed --yes
     assert_failure 2
     assert_output --partial "--hold asks a person"
+    apply example-sw1 --hold --json
+    assert_failure 2
+    assert_output --partial "--hold asks on the terminal and --json keeps standard output to the objects"
     # a second name for the same fake: every device of the run is the same one
     cat >> "${TACCTL_STATE_DIR}/devices.yaml" <<EOF
   example-sw2:
@@ -427,8 +434,11 @@ EOF
     # the fixture's snmp matches nothing tacctl renders for lab: no change
     assert_line "  example-sw1  no change"
     assert_line "  example-sw2  no change"
+    # an unknown shape: both skipped, nothing applied, exit 1
     apply example-sw1,example-sw2 --concurrency 1 --max 1 --section aaa --yes --confirmed
-    assert_success
+    assert_failure 1
+    assert_line "  2 skipped"
+    assert_line "  Nothing was applied: every device was skipped."
 }
 
 @test "apply: --max 1 applies the first device and skips the rest, with the reason" {

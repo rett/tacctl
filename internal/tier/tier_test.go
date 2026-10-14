@@ -477,8 +477,8 @@ func TestSudoersNoSetenv(t *testing.T) {
 // TACCTL_ASKPASS (D70) is kept for the command lines that use the password
 // cache ('device config pull', 'diff' and, from 0.2.5, 'plan', all three
 // when they read the devices, 'ssh', 'block adopt' and, from 0.2.9, the
-// 'device config apply', 'device config shapes seed', 'device onboard' and
-// 'device collect') and
+// 'device config apply', 'device onboard' and 'device collect'; not 'device
+// config shapes seed', which logs in to nothing) and
 // nowhere else: not on the general env_keep line, and
 // the two drop-ins name their aliases differently (sudoers refuses an alias
 // defined twice, and a host may carry both).
@@ -490,7 +490,7 @@ func TestAskpassKeepIsScoped(t *testing.T) {
 		k := AskpassKeep(alias)
 		items := aliasItems(t, k, alias)
 		want := []string{"device config pull *", "device config diff *", "device config plan *", "ssh *", "device ssh *",
-			"scope block * adopt *", "device block * adopt *", "device config apply *", "device config shapes seed *", "device onboard *", "device collect *"}
+			"scope block * adopt *", "device block * adopt *", "device config apply *", "device onboard *", "device collect *"}
 		if !slices.Equal(items, want) {
 			t.Errorf("%s commands %q, want %q", alias, items, want)
 		}
@@ -719,8 +719,7 @@ func TestClassifyGroupSudoers(t *testing.T) {
 	askpass029 := "Cmnd_Alias TACCTL_ASKPASS_GROUP_CMDS = /usr/local/bin/tacctl device config pull *, /usr/local/bin/tacctl device config diff *, /usr/local/bin/tacctl device config plan *, \\\n" +
 		"    /usr/local/bin/tacctl ssh *, /usr/local/bin/tacctl device ssh *, \\\n" +
 		"    /usr/local/bin/tacctl scope block * adopt *, /usr/local/bin/tacctl device block * adopt *, \\\n" +
-		"    /usr/local/bin/tacctl device config apply *, /usr/local/bin/tacctl device config shapes seed *, \\\n" +
-		"    /usr/local/bin/tacctl device onboard *, /usr/local/bin/tacctl device collect *\n" +
+		"    /usr/local/bin/tacctl device config apply *, /usr/local/bin/tacctl device onboard *, /usr/local/bin/tacctl device collect *\n" +
 		"Defaults!TACCTL_ASKPASS_GROUP_CMDS env_keep += \"TACCTL_ASKPASS\"\n"
 	for name, c := range map[string]struct {
 		text  string

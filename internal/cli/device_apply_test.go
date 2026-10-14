@@ -1,16 +1,24 @@
 package cli
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/rett/tacctl/internal/app"
 	"github.com/rett/tacctl/internal/devapply"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devconf/plan"
+	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/execx/fake"
+	"github.com/rett/tacctl/internal/paths"
 )
 
 // applyCmd runs 'device config apply' as alice (a superuser) in the sandbox.
@@ -32,6 +40,7 @@ func TestApplyArgumentsAreCheckedFirst(t *testing.T) {
 		{[]string{"sw-j"}, "No terminal to confirm on"},
 		{[]string{"sw-j", "--confirmed"}, "No terminal to confirm on"},
 		{[]string{"sw-j", "--confirmed", "--yes", "--hold"}, "--hold asks a person"},
+		{[]string{"sw-j", "--hold", "--json"}, "--hold asks on the terminal and --json keeps standard output to the objects"},
 		{[]string{"sw-j", "--check", "--hold"}, "--hold, --pause and --no-canary are for an apply"},
 		{[]string{"sw-j", "--check", "--pause", "5"}, "--hold, --pause and --no-canary are for an apply"},
 		{[]string{"sw-j", "--exit-code"}, "--exit-code is for --check"},
@@ -161,6 +170,92 @@ func TestApplySelectionGatesOnConfirmedShapes(t *testing.T) {
 	}
 	if b.word() != "skipped" || summaryLine(map[string]int{"applied": 1, "skipped": 2}) != "1 applied, 2 skipped" {
 		t.Errorf("words: %q", summaryLine(map[string]int{"applied": 1, "skipped": 2}))
+	}
+}
+
+// The review groups by shape and by what it shows of each device: a device
+// whose warnings or whose sections left out differ is its own heading, the
+// statements whose per-device values differ are printed per device, a
+// device whose plan refuses a section is not applied and is a failure, and
+// the approval's audit line names the canary of each shape (none with
+// --no-canary).
+func TestApplyReviewGroupsByWhatItShows(t *testing.T) {
+	sb := newSandbox(t, true)
+	r := &fake.Runner{}
+	r.On([]string{"logger"}, execx.Result{})
+	var out bytes.Buffer
+	a := app.New(nil, paths.NewEnv(append(append([]string(nil), sb.env...), "SUDO_USER=alice")), "/opt/x/dist/tacctl", 1000,
+		app.Stdio{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &out}, r)
+	inv := &invocation{ctx: context.Background(), app: a}
+	delta := func(loc string) plan.Delta {
+		return plan.Delta{Vendor: devconf.FamilyJunos, Lines: []plan.Line{
+			{Section: "aaa", Op: plan.OpSet, Text: "set system accounting events login"},
+			{Section: "snmp", Op: plan.OpSet, Text: "set snmp location \"" + loc + "\""}}}
+	}
+	var entries []devreg.Entry
+	byName := map[string]*applyOutcome{}
+	var rows []*applyOutcome
+	mk := func(name string, d plan.Delta) *applyOutcome {
+		h, _ := plan.Shape(d)
+		o := &applyOutcome{Name: name, Out: &devapply.Outcome{Exit: devapply.ExitChecked, Shape: h}, Delta: d, HasDelta: true}
+		entries = append(entries, devreg.Entry{Device: devreg.Device{Name: name}})
+		byName[name] = o
+		rows = append(rows, o)
+		return o
+	}
+	da, db, dc, dd := delta("rack A"), delta("rack B"), delta("rack C"), delta("rack D")
+	dc.Warnings = []string{"the pull is 9 days old"}
+	dd.Skipped = []plan.Skip{{Section: "mgmt-acl", Kind: plan.KindRefused, Why: "the filter would refuse tacctl's own address"}}
+	other := plan.Delta{Vendor: devconf.FamilyJunos, Lines: []plan.Line{{Section: "aaa", Op: plan.OpSet, Text: "set system accounting events change-log"}}}
+	oa, ob, oc, od, oe := mk("sw-a", da), mk("sw-b", db), mk("sw-c", dc), mk("sw-d", dd), mk("sw-e", other)
+	if oa.Out.Shape != ob.Out.Shape || oa.Out.Shape != oc.Out.Shape || oa.Out.Shape != od.Out.Shape || oa.Out.Shape == oe.Out.Shape {
+		t.Fatalf("shapes %s %s %s %s %s", oa.Out.Shape, ob.Out.Shape, oc.Out.Shape, od.Out.Shape, oe.Out.Shape)
+	}
+	h := oa.Out.Shape
+	for _, noCanary := range []bool{false, true} {
+		out.Reset()
+		for _, o := range rows {
+			o.Skipped, o.Refused = "", ""
+		}
+		ctl := &applyCtl{inv: inv, user: "alice", aa: applyArgs{yes: true, max: 10, noCanary: noCanary},
+			run: &applyRun{shapes: devapply.OpenShapes(t.TempDir()), minutes: 10}, rows: rows}
+		groups := ctl.groupByShape(entries, byName)
+		if len(groups) != 4 || len(groups[0].devices) != 2 || groups[0].devices[1] != ob || groups[1].devices[0] != oc || groups[2].devices[0] != od {
+			t.Fatalf("groups %d: %+v", len(groups), groups)
+		}
+		apply := ctl.selectApply(groups, byName)
+		if len(apply) != 4 || slices.Contains(apply, od) {
+			t.Fatalf("applied %d, the refused device among them: %v", len(apply), slices.Contains(apply, od))
+		}
+		if !ctl.review(groups, apply, false) {
+			t.Fatal("not approved")
+		}
+		got := plain(out.String())
+		for _, want := range []string{
+			"Shape " + h + ", 2 devices (sw-a, sw-b), not confirmed yet; the same change as another heading, with other notes:\n  aaa\n    set system accounting events login\n  snmp\n    sw-a: set snmp location \"rack A\"\n    sw-b: set snmp location \"rack B\"\n",
+			"Shape " + h + ", 1 device (sw-c), not confirmed yet; the same change as another heading, with other notes:\n",
+			"  warning: the pull is 9 days old\n",
+			"Shape " + h + ", 1 device (sw-d), not confirmed yet; the same change as another heading, with other notes:\n",
+			"  not planned: mgmt-acl: the filter would refuse tacctl's own address\n",
+			"  sw-d  failed: the plan refuses mgmt-acl (the filter would refuse tacctl's own address): nothing is applied to this device",
+		} {
+			if !strings.Contains(got, want) {
+				t.Errorf("no %q in:\n%s", want, got)
+			}
+		}
+		if strings.Count(got, "warning: the pull is 9 days old") != 1 {
+			t.Errorf("the warning is shown under another heading too:\n%s", got)
+		}
+		if od.word() != "failed" || !strings.HasPrefix(od.reason(), "the plan refuses mgmt-acl") {
+			t.Errorf("refused device: %s %q", od.word(), od.reason())
+		}
+		canary := "sw-a,sw-e"
+		if noCanary {
+			canary = "none"
+		}
+		if line := "device config apply user=alice approved=4 shapes=" + h + "," + oe.Out.Shape + " canary=" + canary; !r.Called("logger", "-t", "tacctl", "-p", "auth.notice", line) {
+			t.Errorf("no audit line %q: %q", line, r.Argvs())
+		}
 	}
 }
 

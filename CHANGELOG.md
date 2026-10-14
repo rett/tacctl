@@ -18,10 +18,11 @@ current behaviour; this file is where history lives.
    with the other keys the older release lacks and says so.
 
 2. **The sudoers drop-ins keep `TACCTL_ASKPASS` for `device config apply`,
-   `device config shapes seed`, `device onboard` and `device collect`.** The
-   password cache's alias in the per-tier drop-in and in the group drop-in
-   gains the four command lines, so the shell's cache answers the logins they
-   make. The drop-ins' bytes change: `upgrade` rewrites a tiers file that
+   `device onboard` and `device collect`.** The password cache's alias in
+   the per-tier drop-in and in the group drop-in gains the three command
+   lines, so the shell's cache answers the logins they make (`device config
+   shapes` logs in to nothing and is not among them). The drop-ins' bytes
+   change: `upgrade` rewrites a tiers file that
    differs from this release's rules and a group drop-in that is exactly
    0.2.8's text, as for every earlier change, and `rollback` knows 0.2.8's
    texts as older ones. The rows are unchanged: `device config apply` and
@@ -50,33 +51,50 @@ current behaviour; this file is where history lives.
    asked once and never stored), reads each device, loads the plan in an
    exclusive configure session, runs the device's own `commit check` and
    discards the candidate; `--check` ends there and commits nothing. The
-   devices that need a change are then shown grouped by shape (the same
-   change under one heading, every secret elided, what the plan keeps and
-   what it leaves out) and ONE question is asked, answered by typing the
-   device's name (one device) or the number of devices back; there is no
-   answer without a terminal except `--confirmed --yes`. Each device is
+   devices that need a change are then shown grouped by shape and by what
+   the review shows of each (the same change under one heading, every secret
+   elided, a per-device value printed for each device, what the plan keeps
+   and what it leaves out; two devices whose warnings, sections left out,
+   kept statements or not-found deletes differ are two headings) and ONE
+   question is asked, answered by typing the device's name (one device) or
+   the number of devices back; there is no answer without a terminal except
+   `--confirmed --yes`. A device whose plan refuses a section (what makes
+   `device config plan` exit 1) is not applied and is a failure, with the
+   reason. At the start of each device's apply the break-glass hold, the
+   registry entry and the scope that covers it are read again: a device
+   held, changed or no longer yours since the review fails and nothing is
+   sent. Each device is
    committed under `commit confirmed` (`config devices
    apply-confirm-timeout`), proven by a fresh login as you, by what landed
    being the change the check showed and by a read of the planned sections,
    and then confirmed; a failed proof rolls the change back, and a device
    whose state could not be read is reported `PENDING until <time>`: nothing
    may be typed on it before then, and the next `apply` of it reads its
-   commit history before anything else. Never written: `breakglass`,
+   commit history before anything else. The record says `pending` from the
+   moment the confirmed commit is typed, so a tacctl killed during the
+   verification leaves a record the next run settles; a record that cannot
+   be written then is said at once in red on standard error. Never written:
+   `breakglass`,
    `netconf`, the root account and yours, `system services`, `interfaces`,
    groups; the statements are held against the planner's own ownership
    tables before the first one is typed. `--section`, `--hold`
    (keep the change only when you type `OK'
-   after logging in with one account of each class), `--server`,
+   after logging in with one account of each class; it needs a terminal and
+   is refused with `--json`, exit 2), `--server`,
    `--source`, `--concurrency`, `--timeout`, `--max-failures` and `--json`
    (one object per device and phase, then the summary) are the options. Exit
    status: 0 every device applied, was checked or had no change, 1 a device
-   failed, was rolled back or is pending, 2 wrong arguments (with `--check
+   failed, was rolled back or is pending (or the run applied none of its
+   devices and found none already applied: `--confirmed --yes` that skipped
+   them all), 2 wrong arguments (with `--check
    --exit-code`, a device that needs a change), 130 interrupted (the first
    Ctrl-C starts no more devices, the second cancels the running ones: a
    candidate is discarded, a pending commit is cancelled where the window
    allows). A Cisco device or a WTI unit named is refused with the reason
    and a selector leaves them out. Audit lines carry the user, device,
-   change identifier, shape and result, never a value. The manual page,
+   change identifier, shape and result, never a value; the approval's line
+   names the canary of each shape (`none` with `--no-canary`). The manual
+   page,
    `docs/devices/planning.md` and `docs/cli/device.md` describe it.
 
 5. **Shapes, `--confirmed`, `--max` and `device config shapes`.** Two
@@ -89,7 +107,8 @@ current behaviour; this file is where history lives.
    skips the others (`unknown shape <hash>: review and apply it by hand
    first`), and is the one form `--yes` answers the review of, so a script
    runs a batch without a terminal; `--max <n>` (default 5) caps the devices
-   of a run. `tacctl device config shapes [list [--show <hash>] [--json]]`
+   of every apply run. `tacctl device config shapes [list [--show <hash>]
+   [--json]]`
    lists the shapes seen, which are confirmed, on which devices, and for a
    new one the nearest confirmed shape; `shapes seed <name>[,<name>...]
    [-y]` files the shape of a device's last check or apply as confirmed on

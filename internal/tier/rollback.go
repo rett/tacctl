@@ -19,8 +19,8 @@ func Sudoers023() string { return sudoers023 }
 
 // Sudoers028 is the per-tier drop-in 0.2.8 wrote: this release's rules with
 // the password cache's alias as 0.2.8 had it (without the 0.2.9 families
-// 'device config apply', 'device config shapes seed', 'device onboard' and
-// 'device collect', D141/D143) and the
+// 'device config apply', 'device onboard' and 'device collect', D141/D143)
+// and the
 // env_keep line as 0.2.8 had it. 'tacctl rollback 0.2.8' puts it back, and
 // the upgrade's refresh knows it as an older text. The rows of the table are
 // the same in the two releases, so it is derived from them (a rule that
@@ -49,8 +49,7 @@ const envKeep028 = "Defaults!" + Binary + " env_keep += \"" + envKeepNames027 + 
 // askpassKeep028 is the password cache's alias and its 'Defaults!' line as
 // the per-tier drop-in of 0.2.7 and 0.2.8 carries them (the lines of 'device
 // config', 'ssh' and 'block adopt'), before 0.2.9 added the 'device config
-// apply', 'device config shapes seed', 'device onboard' and 'device collect'
-// lines. Frozen: not AskpassKeep.
+// apply', 'device onboard' and 'device collect' lines. Frozen: not AskpassKeep.
 func askpassKeep028(alias string) string {
 	return "Cmnd_Alias " + alias + " = " +
 		Binary + " device config pull *, " + Binary + " device config diff *, " + Binary + " device config plan *, \\\n" +

@@ -342,7 +342,8 @@ const envKeep027 = "Defaults!" + Binary + " env_keep += \"" + envKeepNames027 + 
 // config plan' (all three read the devices with --pull), 'ssh' ('device
 // ssh'), 'block adopt' (0.2.7) and the verbs that log in to a device and
 // change it or register it (0.2.9, D141: 'device config apply', 'device
-// config shapes seed', 'device onboard' and 'device collect'; the rows are
+// onboard' and 'device collect'; 'device config shapes seed' logs in to
+// nothing and is not among them; the rows are
 // the superuser's, who runs them through the blanket rule, so this alias is
 // the only line the verbs add to a drop-in). A 'Defaults!' entry takes no arguments, so the lines are a
 // Cmnd_Alias, which each drop-in names itself (sudoers refuses an alias
@@ -363,16 +364,14 @@ const (
 // cache, and the 'Defaults!' line that keeps AskpassVar for exactly them:
 // it goes before EnvKeep in a drop-in. 'block adopt' (0.2.7) reads one device
 // with the caller's login as a pull does, so it is among them, and so are
-// 'device config apply', 'device config shapes seed', 'device onboard' and
-// 'device collect' (0.2.9, D141): they log in to the devices as the caller,
-// as a pull does. 0.2.8's text is askpassKeep028 (rollback.go).
+// 'device config apply', 'device onboard' and 'device collect' (0.2.9,
+// D141): they log in to the devices as the caller, as a pull does. 0.2.8's text is askpassKeep028 (rollback.go).
 func AskpassKeep(alias string) string {
 	return "Cmnd_Alias " + alias + " = " +
 		Binary + " device config pull *, " + Binary + " device config diff *, " + Binary + " device config plan *, \\\n" +
 		"    " + Binary + " ssh *, " + Binary + " device ssh *, \\\n" +
 		"    " + Binary + " scope block * adopt *, " + Binary + " device block * adopt *, \\\n" +
-		"    " + Binary + " device config apply *, " + Binary + " device config shapes seed *, \\\n" +
-		"    " + Binary + " device onboard *, " + Binary + " device collect *\n" +
+		"    " + Binary + " device config apply *, " + Binary + " device onboard *, " + Binary + " device collect *\n" +
 		"Defaults!" + alias + " env_keep += \"" + AskpassVar + "\"\n"
 }
 

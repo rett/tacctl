@@ -624,3 +624,33 @@ func TestTransportGuards(t *testing.T) {
 	}
 	_ = fakedev.DefaultUser
 }
+
+// Committed is called once, right after 'commit confirmed' was typed and
+// before the verification, with the change's id, the window's end and the
+// shape: what the caller writes as a pending record. A check never calls it.
+func TestApplyCommittedHook(t *testing.T) {
+	d := newDevice(t, nil)
+	p := &planner{desired: desiredLines()}
+	var got []Outcome
+	var pendingAtHook bool
+	o := apply(t, d, p, func(in *Input) {
+		in.Committed = func(c Outcome) {
+			_, pendingAtHook = d.srv.PendingUntil()
+			got = append(got, c)
+		}
+	})
+	wantExit(t, o, ExitApplied, ResultApplied)
+	if len(got) != 1 {
+		t.Fatalf("Committed called %d times", len(got))
+	}
+	c := got[0]
+	if c.ID != o.ID || c.Until.IsZero() || c.Shape != o.Shape || c.Shape == "" || c.Exit != "" || !pendingAtHook {
+		t.Errorf("at the commit: %+v (pending on the device: %v)", c, pendingAtHook)
+	}
+	got = nil
+	d2 := newDevice(t, nil)
+	check(t, d2, &planner{desired: desiredLines()}, func(in *Input) { in.Committed = func(c Outcome) { got = append(got, c) } })
+	if len(got) != 0 {
+		t.Errorf("a check called Committed: %+v", got)
+	}
+}

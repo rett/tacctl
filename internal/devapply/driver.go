@@ -68,6 +68,13 @@ type Input struct {
 	// Hold is the optional --hold (D134 Q2): after the verification, true
 	// keeps the change. Nil: none.
 	Hold func(ctx context.Context, until time.Time) (bool, error)
+	// Committed is optional: it is called once, on the driver's goroutine,
+	// as soon as 'commit confirmed' was typed (answered or not), with the
+	// outcome so far (ID, Until, Shape, Sections, Counts), so the caller can
+	// write a pending record before anything else is typed (D138: a dead
+	// tacctl leaves a record the next run reconciles). It must not block for
+	// long and its failure is the caller's to report: the transaction goes on.
+	Committed func(o Outcome)
 	// Clock and Rand are the time and the random source of the change id.
 	Clock func() time.Time
 	Rand  io.Reader
@@ -573,6 +580,9 @@ func (r *run) transaction(reviewed *plan.Delta) {
 	// it) and no later than answered+N (what the record says)
 	r.windowEnd = sent.Add(window)
 	r.o.Until = answered.Add(window)
+	if in.Committed != nil {
+		in.Committed(r.o.snapshot())
+	}
 	if err != nil {
 		r.readState("the confirmed commit's answer: "+r.errText(err), true)
 		return

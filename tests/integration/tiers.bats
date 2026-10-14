@@ -762,7 +762,7 @@ _upgrade() {
     assert_output --partial "Cisco priv-lvl:  10 -> 7"
 }
 
-@test "tier: device config apply and shapes are the superuser's alone: no lower tier, the engineer included, no sudoers row; the cache's alias names them" {
+@test "tier: device config apply and shapes are the superuser's alone: no lower tier, the engineer included, no sudoers row; the cache's alias names apply, not shapes" {
     # op is an engineer through its group's tier setting; ro stays readonly.
     printf 'tier:\n  operator: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
     "$TACCTL_BIN_SCRIPT" group edit operator priv-lvl 10 > /dev/null
@@ -791,9 +791,11 @@ _upgrade() {
         if grep -q -- "$r" <<<"$rows"; then echo "a tier alias has $r"; return 1; fi
     done
     cache=$(grep '^Cmnd_Alias TACCTL_ASKPASS_CMDS ' <<<"$text")
-    for r in 'tacctl device config apply \*' 'tacctl device config shapes seed \*' 'tacctl device onboard \*' 'tacctl device collect \*'; do
+    for r in 'tacctl device config apply \*' 'tacctl device onboard \*' 'tacctl device collect \*'; do
         grep -q -- "$r" <<<"$cache" || { echo "the cache's alias lacks $r"; return 1; }
     done
+    # 'shapes seed' logs in to nothing: the cache does not answer it
+    if grep -q -- 'device config shapes' <<<"$cache"; then echo "the cache's alias has device config shapes"; return 1; fi
     grep -q 'Defaults!TACCTL_ASKPASS_CMDS env_keep += "TACCTL_ASKPASS"' <<<"$text" || { echo "no env_keep line"; return 1; }
     # The superuser is not stopped by the tier check.
     as_user su yes -- device config apply lab-sw

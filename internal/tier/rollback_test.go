@@ -94,8 +94,8 @@ func TestSudoers027(t *testing.T) {
 }
 
 // The texts 0.2.8 wrote are the current ones without the cache's lines of
-// 'device config apply', 'device config shapes seed', 'device onboard' and
-// 'device collect' (0.2.9, D141); the
+// 'device config apply', 'device onboard' and 'device collect' (0.2.9,
+// D141); the
 // upgrade knows them as older ones, 'rollback 0.2.8' puts them back, and
 // where the 0.2.8 tag is in the repository the per-tier text is that tag's
 // golden file.
@@ -104,7 +104,7 @@ func TestSudoers028(t *testing.T) {
 	if old == cur {
 		t.Fatal("Sudoers028 is the current text")
 	}
-	for _, v := range []string{"device config apply *", "device config shapes seed *", "device onboard *", "device collect *"} {
+	for _, v := range []string{"device config apply *", "device onboard *", "device collect *"} {
 		if strings.Contains(old, v) || !strings.Contains(cur, v) {
 			t.Errorf("%q: in the 0.2.8 text %v, in the current one %v", v, strings.Contains(old, v), strings.Contains(cur, v))
 		}
