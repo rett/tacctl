@@ -1,0 +1,57 @@
+# Junos 25.4R1 (EX4300 virtual chassis), lab capture 2026-10-13, device name
+# replaced; CR bytes dropped. Each block: the command, then the output.
+
+## configure exclusive
+warning: uncommitted changes will be discarded on exit
+Entering configuration mode
+
+{master:0}[edit]
+
+## configure exclusive (held by another session)
+error: configuration database locked by:
+  admin terminal pts/0 (pid 84557) on since 2026-10-13 20:02:28 AKDT
+      exclusive {master:0}[edit]
+
+{master:0}
+
+## commit check
+configuration check succeeds
+
+{master:0}[edit]
+
+## commit confirmed 2 comment "zz-tacctl spike L2"
+configuration check succeeds
+commit confirmed will be automatically rolled back in 2 minutes unless confirmed
+commit complete
+
+# commit confirmed will be rolled back in 2 minutes
+{master:0}[edit]
+
+## commit confirmed (private session)
+error: commit confirmed not supported for private configuration
+
+{master:0}[edit]
+
+## rollback 1
+load complete
+
+# commit confirmed will be rolled back in 2 minutes
+{master:0}[edit]
+
+## commit comment "zz-tacctl spike L2 cancel"
+configuration check succeeds
+commit complete
+
+{master:0}[edit]
+
+## show system commit (a pending commit; its label stays after a check confirms it)
+0   2026-10-13 20:03:16 AKDT by admin via cli commit confirmed, rollback in 1mins
+    zz-tacctl spike L2b
+1   2026-10-13 20:02:42 AKDT by admin via cli
+    zz-tacctl spike clean
+
+## show configuration | compare rollback 1
+[edit system login]
++    class zz-tacctl-spike2 {
++        permissions view;
++    }
