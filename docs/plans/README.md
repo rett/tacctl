@@ -10,8 +10,7 @@ cite them by number and file name.
 | File | What it is |
 |---|---|
 | `backlog.md` | The roadmap (section 0) and the open items |
-| `0.2.8-handoff.md` | State of 0.2.8 and what remains before its release |
-| `0.2.8-lab.md` | Lab results of 0.2.8: IOS blocks, restore point, facts |
+| `0.2.9-handoff.md` | State, scope and working rules for 0.2.9 |
 | `0.2.9-rollout-plan.md` | Rollout and onboard over the Junos CLI (D128-D144) |
 | `0.2.9-conversion.md` | Map from the helper script to the 0.2.9 verbs |
 | `0.2.9-execution.md` | Work packages of 0.2.9 |
