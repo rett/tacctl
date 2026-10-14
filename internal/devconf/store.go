@@ -81,6 +81,8 @@ type SectionRecord struct {
 const (
 	AppliedKindCheck = "check"
 	AppliedKindApply = "apply"
+	// AppliedKindOnboard is the commit of 'device onboard' (D136).
+	AppliedKindOnboard = "onboard"
 
 	AppliedChecked    = "checked"
 	AppliedNoChange   = "no-change"
@@ -168,6 +170,15 @@ type Record struct {
 	NetconfAt time.Time `json:"netconf_at,omitzero"`
 	Pulled    time.Time `json:"pulled,omitzero"`
 	By        string    `json:"by,omitempty"`
+	// Login is how the last good pull logged in: "" the invoking user's own
+	// login (TACACS+ or RADIUS), "local:<account>" a local account of the
+	// device ('--login', 'device onboard', 0.2.9 D136). A device whose
+	// record never pulled as the invoking user may be pulled as root and
+	// onboarded again.
+	Login string `json:"login,omitempty"`
+	// UserPulled is set once a good pull was made as the invoking user's own
+	// login, and kept when a local account pulls later.
+	UserPulled bool `json:"user_pulled,omitempty"`
 	// Result is one of the Result constants.
 	Result     string `json:"result,omitempty"`
 	DurationMS int64  `json:"duration_ms,omitempty"`
@@ -201,6 +212,21 @@ type Record struct {
 	// nil for every other vendor and for a record made before 0.2.7.
 	Unit    *UnitFacts `json:"unit,omitempty"`
 	Applied *Applied   `json:"applied,omitempty"`
+}
+
+// LocalLoginPrefix starts the Login of a pull made as a local account.
+const LocalLoginPrefix = "local:"
+
+// LocalLogin reports whether the last good pull logged in as a local
+// account of the device.
+func (r Record) LocalLogin() bool { return strings.HasPrefix(r.Login, LocalLoginPrefix) }
+
+// PulledAsUser reports whether the record holds a good pull made as the
+// invoking user's own login (not a local account).
+// A record of an earlier release (no Login, no UserPulled) with a good pull
+// is one.
+func (r Record) PulledAsUser() bool {
+	return r.UserPulled || (!r.Pulled.IsZero() && !r.LocalLogin())
 }
 
 // UnitFacts are the facts of a WTI unit's pull that are no section: the

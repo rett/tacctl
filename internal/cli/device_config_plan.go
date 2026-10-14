@@ -891,6 +891,9 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 	if err := inv.deviceConfigAllowed("plan"); err != nil {
 		return err
 	}
+	if err := inv.localLoginGate(p, "plan"); err != nil {
+		return err
+	}
 	usage := "Usage: tacctl device config " + deviceConfigUse("plan")
 	opt, err := inv.parsePlanOptions(p)
 	if err != nil {
@@ -904,15 +907,24 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 	if err != nil {
 		return err
 	}
+	local, err := inv.localLoginOf(p, "plan", sel, opt.pull)
+	if err != nil {
+		return err
+	}
 	user := inv.sudoUser()
 	if opt.pull {
 		if user, err = inv.configLogin("device config plan --pull"); err != nil {
 			return err
 		}
 	}
-	chosen, err := inv.chooseDevices(sel, user, opt.pull, "plan", pa.render)
+	chosen, err := inv.chooseDevices(sel, user, opt.pull && local == nil, "plan", pa.render)
 	if err != nil {
 		return err
+	}
+	if local != nil {
+		if err := inv.localLoginDevice(local, chosen); err != nil {
+			return err
+		}
 	}
 	if len(chosen.entries) == 0 {
 		if opt.asJSON {
@@ -976,7 +988,7 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 		saved := inv.app.Out.Stdout
 		inv.app.Out.Stdout = inv.app.Out.Stderr
 		view := inv.newPullView(toPull, false, user, opt.asJSON)
-		sum, outs, rerr := inv.runPull(pullBatch{entries: toPull, render: chosen.render, args: pa, user: user, view: view})
+		sum, outs, rerr := inv.runPull(pullBatch{entries: toPull, render: chosen.render, args: pa, user: user, view: view, local: local})
 		inv.app.Out.Stdout = saved
 		if rerr != nil {
 			return rerr

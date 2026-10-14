@@ -82,6 +82,15 @@ var deviceSpecs = map[string]Spec{
 		{Names: []string{"--no-lookup"}},
 		{Names: []string{"--pull"}},
 		flagAllowGeneric}},
+	// 'onboard' (0.2.9, D136): a blank Junos device, as its local account.
+	"onboard": {MinArgs: 1, MaxArgs: 1, Args: []string{""}, Flags: []Flag{
+		{Names: []string{"--login"}, Value: true},
+		{Names: []string{"--name"}, Value: true},
+		{Names: []string{"--host-key"}, Value: true},
+		{Names: []string{"--legacy-ssh"}},
+		{Names: []string{"--check"}},
+		{Names: []string{"--section"}, Value: true, Kind: strings.Join(planSections, "|") + KindList},
+		flagJSON}},
 	"remove":      {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagYes}},
 	"rename":      {MinArgs: 2, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagAllowGeneric}},
 	"address":     {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagApply}},
@@ -125,6 +134,7 @@ var deviceVerbs = [][2]string{
 	{"list [word] [--name <text>] [--ip <addr|cidr|text>] [--vendor <vendor>] [--scope <scope>] [--stale] [--unconfigured] [--scan] [--probe] [--json]", "Registered devices and enrolled hosts, by name: scope, state, last seen, notices; the options narrow the list"},
 	{"show <name|address> [--all] [--json]", "One device or host in full (--all: the acknowledged notices too)"},
 	{"add [<name>] <address> [options]", "Register a device (no name: offer the one it gives itself by SNMP)"},
+	{"onboard <address> --login <local-user> [--name <name>] [--host-key SHA256:<fp>] [--legacy-ssh] [--check] [--section <list>] [--json]", "Superusers, Junos devices: register a blank device reached with one of its local accounts and commit its first configuration as that account, kept only after your own TACACS+ login proves it"},
 	{"remove <name>[,<name>...] | --all [-y]", "Remove devices from the registry (confirms)"},
 	{"rename <old> <new> [--allow-generic]", "Rename a device"},
 	{"address <name> [<address>]", "Show or set the address (--apply: then run 'device config apply' for the device)"},
@@ -187,6 +197,11 @@ var deviceOptions = map[string][][2]string{
 		{"--pull", "After registering, read its configuration as 'device config pull' does (as you; needs a vendor and a scope)"},
 		{"--allow-generic", "(add, rename, import) Allow a generic name such as 'switch'"},
 	},
+	"onboard": {
+		{"--login <local-user>", "(onboard; config pull, diff --pull, plan --pull) The device's local account to log in as (any, a break-glass one included; root through its csh wrapper): its password is asked once on the terminal and never kept"},
+		{"--name <name>", "The registry name (default: the name the device reports; a generic one is asked for)"},
+		{"--check", "(onboard) Register, read and check the first-time plan on the device; commit nothing"},
+	},
 	"remove": {
 		{"--all", "(remove, check) Every device; (show, notices) the acknowledged notices too"},
 		{"-y, --yes", "(remove, import, hostkey, location) Answer yes to the confirmation"},
@@ -244,6 +259,7 @@ var deviceOptions = map[string][][2]string{
 		{"--diff", "Print the differences after the summary"},
 		{"--server <address|name>", "The address the devices are told to authenticate against (not stored)"},
 		{"--source <address>", "The address this server reaches the devices from (not stored)"},
+		{"--login <local-user>", "(pull, diff --pull, plan --pull) Superusers, one registered Junos device with a pinned key: log in as that local account of the device instead of you (any local account, a break-glass one included; only root is handled apart: a device never read as you, through its csh wrapper); its password is asked once on the terminal and never kept or cached"},
 		{"--json", "(pull, diff, plan, list) Print JSON (a pull: one line per device, then the summary)"},
 	},
 	"config diff": {
@@ -441,7 +457,7 @@ func (inv *invocation) device(args []string) error {
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
 		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "config-syntax": inv.deviceConfigSyntax, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "notices": inv.deviceNotices, "import": inv.deviceImport, "export": inv.deviceExport,
-		"hostkey": inv.deviceHostkey, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig, "config": inv.deviceConfig,
+		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig, "config": inv.deviceConfig,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
 		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
 		"port": inv.deviceSetter("port"), "description": inv.deviceSetter("description"), "location": inv.deviceSetter("location"),
@@ -1154,7 +1170,13 @@ func sortedVendors() []string { return []string{"cisco", "juniper", "wti"} }
 
 // --- add -------------------------------------------------------------------------
 
-func (inv *invocation) deviceAdd(args []string) error {
+func (inv *invocation) deviceAdd(args []string) error { return inv.deviceAddWith(args, nil) }
+
+// deviceAddWith is 'device add'. trusted, when not nil, are host keys the
+// caller already scanned and the person trusted ('device onboard', D136):
+// they are pinned instead of a new scan, so that what is pinned is exactly
+// what was shown. Every registration goes through here.
+func (inv *invocation) deviceAddWith(args []string, trusted []devreg.HostKey) error {
 	p, err := inv.deviceParse("add", args)
 	if err != nil {
 		return err
@@ -1243,7 +1265,7 @@ func (inv *invocation) deviceAdd(args []string) error {
 		go func() { locCh <- inv.readLocation(d.Address) }()
 	}
 	retry := retyped("tacctl device add", args, "--host-key", "--no-host-key")
-	pin, offered, err := inv.deviceAddKeys(d, p, retry)
+	pin, offered, err := inv.deviceAddKeys(d, p, retry, trusted)
 	if err != nil {
 		return err
 	}

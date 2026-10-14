@@ -3015,7 +3015,7 @@ file. Both sudoers files carry
 the login console's session marker, the X11 display
 .B "tacctl ssh \-X"
 hands on, and the caller's choice of colour), for the command lines that use the password cache
-.RB ( "device config pull" ", " "device config diff" ", " "device config plan" ", " ssh ", " "device ssh" " and " "block ... adopt" ),
+.RB ( "device config pull" ", " "device config diff" ", " "device config plan" ", " ssh ", " "device ssh" ", " "block ... adopt" " and " "device onboard" ),
 .BR TACCTL_ASKPASS ,
 for the four command lines that open an editor
 .RB ( "scope block ... edit|adopt" ", " "device block ... edit|adopt" ),
@@ -6136,6 +6136,129 @@ After registering, read its configuration as 'device config pull' does (as you; 
 .RE
 .\" END GENERATED: command device add
 .TP
+.BI "device onboard " "address " "\-\-login " "local-user " "[ \-\-name " name " ] [ \-\-host\-key SHA256:" fingerprint " ] [ \-\-legacy\-ssh ] [ \-\-check ] [ \-\-section " list " ] [ \-\-json ]"
+Superusers, Junos devices: bring a blank device, reached with one of its local
+accounts, under tacctl in one run. Any local account may be named, a
+break-glass account included; only
+.B root
+is handled apart (its csh wrapper). In order:
+.RS
+.IP 1. 4
+Identity: the host keys the address offers are read and shown with their
+fingerprints, and one question is asked before any login,
+.RI "Trust these keys and send the local password of '" user "' to " address "? [y/N]" ;
+.BI "\-\-host\-key SHA256:" fingerprint
+answers it with the key read on the device's console. Without a terminal and
+without
+.B \-\-host\-key
+the run is refused (exit 2), and without a terminal only
+.B \-\-check
+runs.
+.IP 2. 4
+Pre-flight as the local account (its password asked once on the terminal,
+never kept or cached):
+.BR "show version" ,
+no pending confirmed commit, a login class that may commit, and no TACACS+ or
+RADIUS server:
+.I "refused: the device already has a TACACS+ or RADIUS server; it is reached by the normal flow (device add, device config pull)" .
+.IP 3. 4
+The name
+.RB ( \-\-name ,
+else the host name the device reports, else asked at the terminal when that
+one is generic or taken) and the registration, through
+.B "device add"
+with the keys of step 1 pinned; the device's own
+.BR "snmp location" ,
+.B "system host\-name"
+(with its
+.BR domain\-name )
+and
+.B "snmp description"
+fill the registry's empty location, hostname and description (a set field is
+never replaced). A device an earlier onboard registered, and that was never
+read as your own login, is taken again under its name and pinned keys; any
+other registered address is refused with the normal flow named.
+.IP 4. 4
+The pull as the local account: the record says
+.BR login=local: \fIaccount\fR.
+.IP 5. 4
+The first-time plan of the ordinary planner and the device's own
+.B "commit check"
+as the local account, as
+.B "device config apply \-\-check"
+does it;
+.B \-\-check
+stops here (registered, nothing committed). The plan never holds the
+break-glass accounts, root, the local account itself, system services or
+interfaces.
+.IP 6. 4
+The review: the change with every secret elided, answered by typing the
+device's name back; then your own password (your login, TACACS+; the password
+cache may answer it).
+.IP 7. 4
+The commit as the local account under
+.B "commit confirmed"
+.RB ( "config devices apply\-confirm\-timeout" );
+every session after it is your own login: a fresh login, the landed change,
+the read of the planned sections; then the confirm in the held local session.
+A fresh login that is refused rolls the change back and leaves the local
+account as it was.
+.IP 8. 4
+The local account is tried once more, for information only
+.RI ( "still logs in" ,
+or
+.I "is refused while the server answers: expected"
+with
+.BR "authentication\-order tacplus" ).
+.RE
+.IP
+.B root
+logs in through the remote command of
+.BR "\-\-login root" .
+A handshake that fails on the algorithms is tried again with the legacy set
+and the device is registered
+.BR \-\-legacy\-ssh .
+Refused before anything is sent: an address no scope answers, a break-glass
+hold on it (release it first), and, unless
+.BR \-\-check ,
+a caller who is not an active member of that scope.
+.B \-\-json
+prints one object at the end (the progress goes to standard error). Logged:
+.B "auth.notice device onboard user= device= approved=1 shape= login="
+at the answer and
+.B "auth.info device onboard user= device= addr= login=local:<account> result="
+at the end, never a password. Exit status: 0 applied, checked or no change; 1
+refused, failed, rolled back or pending; 2 wrong arguments; 130 interrupted.
+.\" BEGIN GENERATED: command device onboard
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-login\fR \fI<local\-user>\fR
+The device's local account to log in as (any, a break\-glass one included; root through its CLI wrapper): its password is asked once on the terminal and never kept or cached.
+.TP
+\fB\-\-name\fR \fI<text>\fR
+The registry name (default: the name the device reports; a generic or taken one is asked for).
+.TP
+\fB\-\-host\-key\fR \fISHA256:<fp>\fR
+Trust only this key, read on the device's console (no question; needed without a terminal); pin it alone.
+.TP
+\fB\-\-legacy\-ssh\fR
+SHA\-1 key exchange, CBC ciphers and ssh\-rsa (also chosen by itself when the handshake needs them); registered so.
+.TP
+\fB\-\-check\fR
+(onboard) Register, read and check the first\-time plan on the device; commit nothing.
+.TP
+\fB\-\-section\fR \fI<list>\fR
+Only these sections of the first\-time plan: aaa, roles, mgmt\-acl, snmp, system.
+.TP
+\fB\-\-json\fR
+One object at the end (the progress goes to standard error).
+.RE
+.\" END GENERATED: command device onboard
+.TP
 .BI "device remove " "name[,name...] | \-\-all " [ \-y ]
 Remove devices from the registry, after confirmation (\c
 .B \-y
@@ -6682,7 +6805,7 @@ Requires: \fBengineer\fR. An engineer imports from standard input only (device i
 Options:
 .TP
 \fB\-\-check\fR
-Write nothing; say what the import would do.
+(onboard) Register, read and check the first\-time plan on the device; commit nothing.
 .TP
 \fB\-\-replace\fR
 Replace the registry instead of merging into it.
@@ -6999,7 +7122,7 @@ The address this server reaches the device from.
 .RE
 .\" END GENERATED: command device config show
 .TP
-.BI "device config pull " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-transport auto|netconf|ssh ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-diff ] [ \-\-json ] [ \-\-server " "address|name" " ] [ \-\-source " address " ]"
+.BI "device config pull " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-transport auto|netconf|ssh ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-diff ] [ \-\-json ] [ \-\-server " "address|name" " ] [ \-\-source " address " ] [ \-\-login " local-user " ]"
 Log in to the devices as the user who invoked tacctl and read what each runs
 (nothing is written to a device). The login is that user's: with
 .B sudo
@@ -7310,6 +7433,40 @@ and an engineer's pull logs the
 lines the walkthrough logs. Exit status: 0 when every device was read
 (differences are not failures), 1 when one failed or was refused, 2 for wrong
 arguments, 130 when interrupted.
+.IP
+.BI "\-\-login " local-user
+(superusers;
+.BR pull ,
+.B diff \-\-pull
+and
+.BR "plan \-\-pull" )
+logs in to one device as one of its local accounts instead of you: the
+device is named (no list,
+.BR \-\-all ,
+.BR \-\-scope ,
+.B \-\-vendor
+or
+.BR \-\-stale :
+exit 2), registered as a Junos device with a pinned host key, and a scope
+answers its address; anything else is refused before a password is asked, and so is a device on
+which break-glass is held (release it first). Any local account of the
+device may be named, a break-glass account included; only
+.B root
+is handled apart. The
+account's password is asked once on the terminal, sent to that one connection
+and never kept: the password cache is neither asked, nor stored into, nor told
+to forget. The record says
+.BI login=local: account
+and the pull is logged as
+.BI "auth.info device config pull user=" "you " "device=" "name " "login=local:" account
+(never the password).
+.B root
+is accepted only for a device that was never read as your own login; its csh
+is left at once by the remote command
+.BR "sh \-c 'PATH=$PATH:/usr/sbin:/usr/bin:/sbin:/bin; exec cli'" ,
+and it reads over the ssh command line, never NETCONF. An engineer with
+.B \-\-login
+is refused by the tier gate (logged as every denial).
 .\" BEGIN GENERATED: command device config pull
 .RS
 .PP
@@ -7347,6 +7504,9 @@ The address the devices are told to authenticate against, for devices behind a t
 \fB\-\-source\fR \fI<address>\fR
 The address this server reaches the devices from (not stored).
 .TP
+\fB\-\-login\fR \fI<local\-user>\fR
+(pull, diff \-\-pull, plan \-\-pull) Superusers, one registered Junos device with a pinned key: log in as that local account of the device instead of you (any local account, a break\-glass one included; only root is handled apart: a device never read as you, through its csh wrapper); its password is asked once on the terminal and never kept or cached.
+.TP
 \fB\-\-diff\fR
 Print the differences after the summary.
 .TP
@@ -7355,7 +7515,7 @@ Print the differences after the summary.
 .RE
 .\" END GENERATED: command device config pull
 .TP
-.BI "device config diff " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-pull ] [ \-\-section " list " ] [ \-\-exit\-code ] [ \-\-json ]"
+.BI "device config diff " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-pull [ \-\-login " local-user " ] ] [ \-\-section " list " ] [ \-\-exit\-code ] [ \-\-json ]"
 Compare the managed sections of the last pull of each device with the
 statements tacctl renders for it now. The sections are
 .BR aaa ,
@@ -7543,6 +7703,9 @@ The address the devices are told to authenticate against (with \-\-pull; not sto
 \fB\-\-source\fR \fI<address>\fR
 The address this server reaches the devices from (with \-\-pull; not stored).
 .TP
+\fB\-\-login\fR \fI<local\-user>\fR
+(pull, diff \-\-pull, plan \-\-pull) Superusers, one registered Junos device with a pinned key: log in as that local account of the device instead of you (any local account, a break\-glass one included; only root is handled apart: a device never read as you, through its csh wrapper); its password is asked once on the terminal and never kept or cached.
+.TP
 \fB\-\-pull\fR
 Read the devices first (takes the pull options).
 .TP
@@ -7557,7 +7720,7 @@ Exit 2 when a device differs (and none failed).
 .RE
 .\" END GENERATED: command device config diff
 .TP
-.BI "device config plan " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-pull ] [ \-\-section " list " ] [ \-\-converge ] [ \-\-secrets | \-\-no\-secrets ] [ \-\-plain | \-\-json | \-\-backout ] [ \-\-out " file " | \-\-out\-dir " dir " ] [ \-\-force ] [ \-\-from " address " ] [ \-\-restore\-point[=" fs "] ] [ \-\-exit\-code ]"
+.BI "device config plan " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-pull [ \-\-login " local-user " ] ] [ \-\-section " list " ] [ \-\-converge ] [ \-\-secrets | \-\-no\-secrets ] [ \-\-plain | \-\-json | \-\-backout ] [ \-\-out " file " | \-\-out\-dir " dir " ] [ \-\-force ] [ \-\-from " address " ] [ \-\-restore\-point[=" fs "] ] [ \-\-exit\-code ]"
 Print, for each device, what to paste to make it match what tacctl renders,
 from its last pull. It reads no device unless
 .B \-\-pull
@@ -8116,6 +8279,9 @@ The address the devices are told to authenticate against, for devices behind a t
 .TP
 \fB\-\-source\fR \fI<address>\fR
 The address this server reaches the devices from (not stored).
+.TP
+\fB\-\-login\fR \fI<local\-user>\fR
+(pull, diff \-\-pull, plan \-\-pull) Superusers, one registered Junos device with a pinned key: log in as that local account of the device instead of you (any local account, a break\-glass one included; only root is handled apart: a device never read as you, through its csh wrapper); its password is asked once on the terminal and never kept or cached.
 .TP
 \fB\-\-pull\fR
 Read the devices first (takes the pull options); the plan is made from that pull.
@@ -10610,7 +10776,11 @@ in the environment of the
 .B sudo
 of each line that uses it, with a token made for that line and dead when it
 ends (never on sudo's command line); the tiers drop-ins keep it for those
-lines only. The root side of
+lines only
+.RB ( "device onboard"
+asks it for your own password after its review; a line with
+.B \-\-login
+logs in as a device's local account and never has it). The root side of
 .BR "device config pull" ,
 .B "block ... adopt"
 and

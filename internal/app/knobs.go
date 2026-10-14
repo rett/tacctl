@@ -36,6 +36,10 @@ import (
 //	TACCTL_TEST_DEVICE_PASSWORD=<text>
 //	                             the password a pull logs in with, in place
 //	                             of the terminal prompt (a test has none)
+//	TACCTL_TEST_LOCAL_PASSWORD=<text>
+//	                             the password of the local account that
+//	                             '--login' and 'device onboard' log in
+//	                             with, in place of the terminal prompt
 //
 // They are read from the environment only by a binary built with
 // -tags testknobs ('make build', which the bats harness and the differential
@@ -71,6 +75,9 @@ type Knobs struct {
 	// production binary does not even contain the names).
 	dial    string // "": every device at its own address
 	devPass string // "": the password comes from the terminal or the cache
+	// localPass is the local account's password ('--login', 'device
+	// onboard'): "" asks on the terminal.
+	localPass string
 }
 
 // DeviceDial is the host:port a test build dials for every device ("" in a
@@ -80,6 +87,10 @@ func (k Knobs) DeviceDial() string { return k.dial }
 // DevicePassword is the password a test build logs in to devices with ("":
 // ask).
 func (k Knobs) DevicePassword() string { return k.devPass }
+
+// LocalPassword is the password of the local account a test build logs in
+// with for '--login' and 'device onboard' ("": ask on the terminal).
+func (k Knobs) LocalPassword() string { return k.localPass }
 
 // ProcSelf is the directory TACCTL_TEST_PROC names ("" when unset: the
 // real /proc/self).

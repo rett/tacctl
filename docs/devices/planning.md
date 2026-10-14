@@ -94,3 +94,43 @@ Apply to 2 devices (sw-lab-1, sw-lab-2), one shape's first device at a time, eac
 - **Refusals before any login.** A caller below the superuser; root (the login is the invoking user's); a device held for break-glass (the server does not answer it); a device no scope covers or whose scope is not yours; a Cisco device or a WTI unit (a selector leaves them out and counts them; a named one is a failed row). A device that reports another name than the registry's name or hostname is `failed: calls itself '<x>'`, one with another editor's staged or open configuration is `failed: other editors or staged changes`, and an exclusive session someone else holds names the holder.
 - **Interrupts, exit and audit.** The first Ctrl-C starts no more devices and lets the running one finish (a transaction is never cut by it); the second cancels: before the commit the candidate is discarded, after it the commit is cancelled where the window allows and otherwise left `PENDING`. Exit status: 0 every device applied, was checked or had no change; 1 a device failed, was rolled back or is pending, the review was not answered, or devices were selected and none was applied or found already applied (`--confirmed --yes` that skipped them all: `Nothing was applied: every device was skipped.`, JSON `"stop":"nothing-applied"`); 2 wrong arguments (`--check --exit-code`: a device needs a change); 130 interrupted. `--json` prints one object per device and phase, then the summary; the review goes to standard error. The audit lines are `device config apply user= device= id= shape= result= duration=` (each check), `user= approved=<n> shapes= canary=` (the review's answer; `canary=` names the first device of each shape, or `none` with `--no-canary`), `user= device= id= shape= sections= result= commit= until=` (each apply) and `device config shapes seed user= device= shape=`; none holds a value.
 - **The records.** `/var/lib/tacctl/device-apply/shapes.json` (0600) holds each shape's elided lines and who confirmed it, `locks/` a lock per device (`another apply is running on <name>`); the `applied` part of the device's record is described under *Records* in [Device configuration](configuration.md). No raw device output and no password is kept anywhere.
+
+## Onboarding a blank device
+
+`tacctl device onboard <address> --login <local-user>` brings a Junos device that has no TACACS+ or RADIUS server yet, reached with one of its local accounts, under tacctl in one run. It is the superuser's. Any local account may be named, a break-glass account included; only `root` is handled apart (its csh wrapper, below).
+
+```
+$ tacctl device onboard 192.0.2.31 --login admin --name sw-lab-5
+  192.0.2.31 offers:
+    ED25519  SHA256:...
+  A blank device has no other proof: compare one with its console (...).
+Trust these keys and send the local password of 'admin' to 192.0.2.31? [y/N] y
+Password of admin on 192.0.2.31 (a local account; asked once, never kept):
+  192.0.2.31  Junos 25.4R1  ex4300-48mp  hostname sw-lab-5; no TACACS+ or RADIUS server
+[INFO] Device 'sw-lab-5' registered: 192.0.2.31, juniper.
+  ...
+  From the device: location "Lab rack 2"; hostname "sw-lab-5.lab.example.net"
+  sw-lab-5  read as local:admin: aaa, roles differ from what tacctl renders
+  sw-lab-5  checked: shape ee791d20ded1 (new) (roles, aaa: 17 set, 0 delete); check ok
+
+Shape ee791d20ded1, 1 device (sw-lab-5), first-time plan:
+  ...
+Apply to sw-lab-5 under commit confirmed 10, as 'admin', kept only after a TACACS+ login as alice works and what landed is what the check showed?
+  Type the device name to go on: sw-lab-5
+Password for alice (device login):
+  sw-lab-5  committing as admin, verifying as alice ...
+  sw-lab-5  applied (roles,aaa: 17 set, 0 delete) [tacctl-20261013T141201Z-71be]
+  The local account 'admin' is refused while the server answers: expected
+  with 'authentication-order tacplus'; it works when the server does not.
+```
+
+- **Identity first.** The host keys the address offers are shown, and one question is asked before any login. `--host-key SHA256:<fp>` (the fingerprint read on the device's console) answers it instead and pins that key alone. Without a terminal and without `--host-key` the run is refused, and without a terminal only `--check` runs.
+- **Pre-flight as the local account.** Its password is asked once on the terminal and never kept or cached. `show version`, no pending confirmed commit, a login class that may commit, and no TACACS+ or RADIUS server: a device that has one is reached by the normal flow (`device add`, `device config pull`).
+- **Registration.** The name is `--name`, else the host name the device reports, else asked for at the terminal (a generic or taken one). The device is registered through `device add` with the keys of the first step; its own `snmp location`, `system host-name` (with `domain-name`) and `snmp description` fill the registry's empty location, hostname and description. A device an earlier onboard registered, and that was never read as your own login, is taken again under its name and pinned keys.
+- **Read, plan, check.** The read is recorded as a pull made as the local account (`login=local:<account>`); the plan is the ordinary planner's first-time plan, checked on the device with its own `commit check` as `device config apply --check` does. `--check` stops here: the device is registered and nothing is committed. The plan never holds the break-glass accounts, root, the local account, system services or interfaces.
+- **Commit as the local account, proven by your login.** After the review (the device's name typed back) your own password is asked (the password cache may answer it). The change is committed as the local account under `commit confirmed`; every session after the commit is your own login: the fresh login, the landed change and the read of the planned sections. The confirm is typed in the held local session. A fresh login that is refused rolls the change back and leaves the local account as it was. The local account is then tried once more, for information only.
+- **Audit.** `device onboard user= device= approved=1 shape= login=` at the answer and `device onboard user= device= addr= login=local:<account> result=` at the end; never a password.
+
+### One read as a local account
+
+`device config pull <name> --login <local-user>` (and `diff --pull`, `plan --pull`) logs in to one registered Junos device with a pinned host key as one of its local accounts instead of you, for a device the server does not answer yet. It is the superuser's (an engineer is refused by the tier gate), takes one device by name (a list, `--all`, `--scope`, `--vendor` or `--stale` is a usage error) and needs a scope that answers the address; a device on which break-glass is held is refused (release it first), as for every pull. Any local account may be named, a break-glass account included; only `root` is handled apart. The password travels as above: asked on the terminal, sent to the one connection, never stored in or asked of the password cache. `root` is accepted only for a device never read as your own login; its csh is left at once by the remote command `sh -c 'PATH=$PATH:/usr/sbin:/usr/bin:/sbin:/bin; exec cli'`, and it reads over the ssh command line only. The audit line is `device config pull user= device= login=local:<account>`.

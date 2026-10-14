@@ -39,6 +39,8 @@ var deviceConfigSpecs = func() map[string]Spec {
 		{Names: []string{"--max-failures"}, Value: true},
 		{Names: []string{"--server"}, Value: true},
 		{Names: []string{"--source"}, Value: true},
+		// the one-shot local login (0.2.9, D136): superusers, one device
+		{Names: []string{"--login"}, Value: true},
 	}
 	join := func(groups ...[]Flag) []Flag {
 		var out []Flag

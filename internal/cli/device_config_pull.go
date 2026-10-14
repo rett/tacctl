@@ -130,6 +130,9 @@ type pullOutcome struct {
 	// Offered is the host key a device presented that is not pinned
 	// ('<type> <base64>'): the pull raises the hostkey notice from it.
 	Offered string
+	// Login is "local:<account>" for a pull made as a local account of the
+	// device ('--login', D136), "" for the invoking user's own login.
+	Login string
 }
 
 // differs are the sections that differ from what tacctl renders (differs or
@@ -244,12 +247,31 @@ var passwordPrompt = askpass.Prompt
 // errNoPassword is a pull with no terminal and no cached password.
 var errNoPassword = errors.New("a password is needed and no terminal or cached password is available")
 
+// newLocalPasswords is the source of a local account's password ('--login',
+// 'device onboard', D136): the terminal only, with no password cache
+// client, so nothing is ever asked of the cache, stored in it or forgotten
+// by it. account is the device's local account and where the device it is
+// asked for. Tests replace it.
+var newLocalPasswords = func(inv *invocation, account, where string) *terminalPasswords {
+	_ = setNotDumpable()
+	return &terminalPasswords{inv: inv, local: account, where: where}
+}
+
 // terminalPasswords is the default source: the session's password cache
 // first, then the terminal.
+//
+// With local set it is a local account's source instead (D136): the
+// terminal (or a test build's local knob) only, never the cache, whatever
+// client holds; Accepted and Rejected do nothing (the cache holds the
+// invoking user's password, which a local account's refusal says nothing
+// about), and Done zeroes the bytes Password returned.
 type terminalPasswords struct {
 	inv *invocation
 	// client asks the shell's password cache (nil: this line has none).
 	client *askpass.Client
+	// local is the device's local account ("" the invoking user's login)
+	// and where the device, both for the prompt.
+	local, where string
 
 	mu sync.Mutex
 	// secret is a private copy of a password typed for this run (nil: none,
@@ -283,6 +305,9 @@ func (t *terminalPasswords) typed(pw []byte) {
 }
 
 func (t *terminalPasswords) Password(ctx context.Context, user string) ([]byte, error) {
+	if t.local != "" {
+		return t.localPassword()
+	}
 	if pw := t.cachedDevicePassword(ctx, user); len(pw) > 0 {
 		return pw, nil
 	}
@@ -314,6 +339,42 @@ func (t *terminalPasswords) Password(ctx context.Context, user string) ([]byte, 
 	return pw, nil
 }
 
+// localPassword is a local account's password: a test build's knob, else the
+// terminal. The source keeps the very slice it returns (no copy) and zeroes
+// it at Done; the caller must not keep it past Done.
+func (t *terminalPasswords) localPassword() ([]byte, error) {
+	var pw []byte
+	if k := t.inv.app.Knobs.LocalPassword(); k != "" {
+		pw = []byte(k)
+	} else {
+		tty, closeTTY := t.inv.passwordTerminal()
+		if tty == nil {
+			return nil, errNoLocalPassword
+		}
+		defer closeTTY()
+		var err error
+		pw, err = passwordPrompt(tty, "Password of "+t.local+" on "+t.where+" (a local account; asked once, never kept): ")
+		switch {
+		case errors.Is(err, askpass.ErrCancelled):
+			return nil, ui.ErrInterrupted
+		case errors.Is(err, askpass.ErrNoTerminal):
+			return nil, errNoLocalPassword
+		case errors.Is(err, askpass.ErrBadSecret):
+			return nil, errors.New("the password is empty or has a line break or is too long; nothing was tried")
+		case err != nil:
+			return nil, err
+		}
+	}
+	t.mu.Lock()
+	askpass.Zero(t.secret)
+	t.secret = pw
+	t.mu.Unlock()
+	return pw, nil
+}
+
+// errNoLocalPassword is a local login with no terminal to ask on.
+var errNoLocalPassword = errors.New("the password of a local account is asked on a terminal, and there is none; nothing was sent")
+
 // Accepted stores the password in the session's cache when the person
 // typed it for this run: a password that came from the cache is not stored
 // again, so its maximum lifetime cannot be stretched by use. A cache that
@@ -321,6 +382,10 @@ func (t *terminalPasswords) Password(ctx context.Context, user string) ([]byte, 
 // store and Rejected holds it across the forget, so a store never lands
 // after a forget in the same run, whichever worker gets there first.
 func (t *terminalPasswords) Accepted() {
+	if t.local != "" {
+		// a local account's password is never stored (D136)
+		return
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	s := t.secret
@@ -339,6 +404,11 @@ func (t *terminalPasswords) Accepted() {
 // (one wrong password must not be tried again, here or on the next line),
 // and keeps a later Accepted from storing it.
 func (t *terminalPasswords) Rejected() {
+	if t.local != "" {
+		// the cache holds the invoking user's password, not this one: it is
+		// not told anything
+		return
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.rejected = true
@@ -492,7 +562,10 @@ func readFacts(ctx context.Context, r devconf.Runner, vendor string, f devconf.F
 // A WTI unit has no command that prints its configuration: its pages are
 // walked in a terminal session (readWTI), and second dials the unit again
 // for the user directory's session (nil: the directory is not read).
-func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string, second func(context.Context) (*devssh.Client, error)) (deviceRead, error) {
+//
+// opts open the command-line session (a root login's wrapper, D136); with
+// them the session is a shell.
+func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string, second func(context.Context) (*devssh.Client, error), opts ...devssh.CLIOption) (deviceRead, error) {
 	var out deviceRead
 	if fam, _ := devconf.Family(vendor); fam == devconf.FamilyWTI {
 		return readWTI(ctx, c, mode, second)
@@ -544,7 +617,7 @@ func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string
 			out.Fallback = "netconf: " + out.Netconf
 		}
 	}
-	s, err := c.CLI(vendor)
+	s, err := c.CLI(vendor, opts...)
 	if err != nil {
 		return out, err
 	}
@@ -722,8 +795,30 @@ type pullRun struct {
 	// group is the invoking user's group, which a WTI level is set on (the
 	// hint of a login whose level cannot configure a unit).
 	group string
+	// local is the one-shot local login of '--login' (nil: the invoking
+	// user's own login).
+	local *localLogin
 
 	acceptOnce, rejectOnce sync.Once
+}
+
+// account is the device account a pull logs in as: the local account of
+// --login, else the invoking user.
+func (r *pullRun) account() string {
+	if r.local != nil {
+		return r.local.account
+	}
+	return r.user
+}
+
+// source is the pull's password source for ssh: the run's password, or a
+// local account's, handed over once in the whole run (one device, one
+// connection; a second request is refused).
+func (r *pullRun) source() devssh.PasswordSource {
+	if r.local == nil {
+		return func() (string, error) { return r.password, nil }
+	}
+	return r.local.sendOnce()
 }
 
 // pullJob is the batch job of one registered device.
@@ -765,7 +860,10 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 	if err != nil {
 		return fail(batch.StatusFailed, "cannot build the expected configuration: "+err.Error(), "")
 	}
-	target := inv.deviceTarget(e, r.user, func() (string, error) { return r.password, nil })
+	if r.local != nil {
+		o.Login = devconf.LocalLoginPrefix + r.local.account
+	}
+	target := inv.deviceTarget(e, r.account(), r.source())
 	client, err := devssh.Dial(ctx, target)
 	if err != nil {
 		return r.failed(ctx, e, o, err)
@@ -774,9 +872,20 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 	r.acceptOnce.Do(r.passwd.Accepted)
 
 	// The second connection of a WTI read (the user directory) is the same
-	// login: same target, host keys and password, in memory.
+	// login: same target, host keys and password, in memory. A local login
+	// is one connection: it has none (--login is Junos only).
 	second := func(ctx context.Context) (*devssh.Client, error) { return devssh.Dial(ctx, target) }
-	rd, err := readDeviceConfig(ctx, client, e.Vendor, r.mode, second)
+	var opts []devssh.CLIOption
+	mode := r.mode
+	if r.local != nil {
+		second = nil
+		opts = r.local.cliOptions()
+		if len(opts) > 0 {
+			// root's CLI is a wrapper on a shell channel: no NETCONF
+			mode = transportSSH
+		}
+	}
+	rd, err := readDeviceConfig(ctx, client, e.Vendor, mode, second, opts...)
 	if rd.Netconf != "" {
 		o.Netconf = rd.Netconf
 	}
@@ -868,13 +977,16 @@ func (r *pullRun) failed(ctx context.Context, e devreg.Entry, o *pullOutcome, er
 	}
 	if errors.Is(err, devssh.ErrAuth) {
 		r.rejectOnce.Do(r.passwd.Rejected)
+		if r.local != nil {
+			o.Reason = "the device refused the password of its local account '" + r.local.account + "'"
+		}
 	}
 	r.record(o, e)
 	st := batch.StatusFailed
 	if result == devconf.ResultAuthFailed {
 		st = batch.StatusAuthFailed
 	}
-	return batch.Result{Status: st, Reason: reason, Err: err}
+	return batch.Result{Status: st, Reason: o.Reason, Err: err}
 }
 
 // now is the clock of the records.
@@ -918,11 +1030,21 @@ func (r *pullRun) recordSuccess(o *pullOutcome, e devreg.Entry, ext devconf.Extr
 		rec = *old
 	}
 	now := r.now()
+	// read before the pull's own fields replace the old ones
+	asUser := rec.PulledAsUser()
 	rec.Address, rec.Vendor, rec.Transport = e.Address, e.Vendor, o.Transport
 	if o.Netconf != "" && o.Netconf != netconfNotProbed {
 		rec.Netconf, rec.NetconfAt = o.Netconf, now
 	}
 	rec.Pulled, rec.By, rec.Result = now, r.user, devconf.ResultOK
+	// how it logged in (D136): a local account's pull keeps whether the
+	// device was ever pulled as the invoking user's own login
+	if o.Login != "" {
+		rec.UserPulled = asUser
+		rec.Login = o.Login
+	} else {
+		rec.Login, rec.UserPulled = "", true
+	}
 	rec.DurationMS = o.Duration.Milliseconds()
 	// The image of a Cisco device (D113): the version line and the syntax
 	// derived from it (not the registry's setting, which overrides it
@@ -1029,6 +1151,9 @@ type pullBatch struct {
 	args    pullArgs
 	user    string
 	view    batch.View
+	// local is the one-shot local login of '--login' (D136): one device,
+	// its password from the terminal only and never from or into the cache.
+	local *localLogin
 }
 
 // runPull resolves the password, runs the pool over the entries and
@@ -1036,15 +1161,34 @@ type pullBatch struct {
 // entries (nil for a device that was not started).
 func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, error) {
 	settings := inv.deviceConfigSettings()
-	run := &pullRun{inv: inv, user: b.user, mode: b.args.transport, render: b.render, store: inv.configStore(),
-		passwd: newDevicePasswords(inv)}
-	// The password, once, before any connection.
-	pw, err := run.passwd.Password(inv.ctx, b.user)
-	if err != nil {
-		return batch.Summary{}, nil, err
+	run := &pullRun{inv: inv, user: b.user, mode: b.args.transport, render: b.render, store: inv.configStore(), local: b.local}
+	if b.local != nil {
+		// A local account (D136): the terminal only, never the cache; the
+		// bytes stay the source's and are zeroed at Done, the string is made
+		// at the single send.
+		if len(b.entries) != 1 {
+			return batch.Summary{}, nil, errors.New("a local login reads one device")
+		}
+		src := newLocalPasswords(inv, b.local.account, b.entries[0].Name+" ("+b.entries[0].Address+")")
+		run.passwd = src
+		pw, err := src.Password(inv.ctx, b.local.account)
+		if err != nil {
+			src.Done()
+			return batch.Summary{}, nil, err
+		}
+		b.local.secret = pw
+		inv.app.Logger(inv.auditContext(), "auth.info", fmt.Sprintf("device config pull user=%s device=%s login=%s%s",
+			b.user, b.entries[0].Name, devconf.LocalLoginPrefix, b.local.account))
+	} else {
+		run.passwd = newDevicePasswords(inv)
+		// The password, once, before any connection.
+		pw, err := run.passwd.Password(inv.ctx, b.user)
+		if err != nil {
+			return batch.Summary{}, nil, err
+		}
+		run.password = string(pw)
+		askpass.Zero(pw)
 	}
-	run.password = string(pw)
-	askpass.Zero(pw)
 	// The group a WTI level is set on, read before the workers start.
 	if slices.ContainsFunc(b.entries, func(e devreg.Entry) bool { return e.Vendor == "wti" }) {
 		if m, err := inv.model(); err == nil {
@@ -1066,6 +1210,9 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 	run.password = ""
 	if d, ok := run.passwd.(interface{ Done() }); ok {
 		d.Done()
+	}
+	if b.local != nil {
+		b.local.secret = nil
 	}
 	outs := make([]*pullOutcome, len(sum.Entries))
 	for i, en := range sum.Entries {
@@ -1123,8 +1270,12 @@ func pullAuditLine(user string, o *pullOutcome, r batch.Result) string {
 	if transport == "" {
 		transport = "-"
 	}
-	return fmt.Sprintf("device config pull user=%s device=%s transport=%s result=%s duration=%s",
-		user, o.Name, transport, result, seconds(o.Duration))
+	login := ""
+	if o.Login != "" {
+		login = " login=" + o.Login
+	}
+	return fmt.Sprintf("device config pull user=%s device=%s transport=%s result=%s duration=%s%s",
+		user, o.Name, transport, result, seconds(o.Duration), login)
 }
 
 // seconds is a duration as 0.0 seconds, for log lines.
@@ -1141,6 +1292,9 @@ func (inv *invocation) deviceConfigPull(args []string) error {
 	if err := inv.deviceConfigAllowed("pull"); err != nil {
 		return err
 	}
+	if err := inv.localLoginGate(p, "pull"); err != nil {
+		return err
+	}
 	user, err := inv.configLogin("device config pull")
 	if err != nil {
 		return err
@@ -1153,9 +1307,18 @@ func (inv *invocation) deviceConfigPull(args []string) error {
 	if err != nil {
 		return err
 	}
-	chosen, err := inv.chooseDevices(sel, user, true, "pull", pa.render)
+	local, err := inv.localLoginOf(p, "pull", sel, true)
 	if err != nil {
 		return err
+	}
+	chosen, err := inv.chooseDevices(sel, user, local == nil, "pull", pa.render)
+	if err != nil {
+		return err
+	}
+	if local != nil {
+		if err := inv.localLoginDevice(local, chosen); err != nil {
+			return err
+		}
 	}
 	if len(chosen.entries) == 0 {
 		return inv.nothingSelected(chosen, pa.json, false)
@@ -1164,7 +1327,7 @@ func (inv *invocation) deviceConfigPull(args []string) error {
 		return err
 	}
 	view := inv.newPullView(chosen.entries, pa.json, user, false)
-	sum, outs, err := inv.runPull(pullBatch{entries: chosen.entries, render: chosen.render, args: pa, user: user, view: view})
+	sum, outs, err := inv.runPull(pullBatch{entries: chosen.entries, render: chosen.render, args: pa, user: user, view: view, local: local})
 	if err != nil {
 		return err
 	}

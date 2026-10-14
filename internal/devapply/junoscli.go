@@ -50,6 +50,9 @@ type JunosCLI struct {
 	committedDelta plan.Delta
 	// release ends the connection's own context (DialJunos).
 	release context.CancelFunc
+	// closeExec: the exec reads go through a session of their own that
+	// Close closes (NewJunosCLIWith).
+	closeExec bool
 }
 
 // DefaultConnLifetime bounds the connection of a transport DialJunos made
@@ -76,6 +79,34 @@ func NewJunosCLI(c *devssh.Client) *JunosCLI {
 		},
 		m: &masker{},
 	}
+}
+
+// NewJunosCLIWith is NewJunosCLI with every session of the transport opened
+// with opts: with devssh.WithCommand (the root login of D136, whose csh
+// starts the CLI through a wrapper command) the reads that are otherwise an
+// exec channel per command go through one shell session as well, since an
+// exec request of a root login is a csh command line.
+func NewJunosCLIWith(c *devssh.Client, opts ...devssh.CLIOption) *JunosCLI {
+	j := NewJunosCLI(c)
+	if len(opts) == 0 {
+		return j
+	}
+	shell := append([]devssh.CLIOption{devssh.WithMode(devssh.ModeShell)}, opts...)
+	j.newShell = func() (devssh.CLISession, error) { return c.CLI(devssh.VendorJuniper, shell...) }
+	j.newExec = j.newShell
+	j.closeExec = true
+	return j
+}
+
+// DialJunosWith is DialJunos with the sessions of NewJunosCLIWith.
+func DialJunosWith(ctx context.Context, t devssh.Target, opts ...devssh.CLIOption) (*JunosCLI, error) {
+	j, err := DialJunos(ctx, t)
+	if err != nil || len(opts) == 0 {
+		return j, err
+	}
+	w := NewJunosCLIWith(j.client, opts...)
+	w.release = j.release
+	return w, nil
 }
 
 // DialJunos dials the device and returns its transport (the password comes
@@ -150,7 +181,14 @@ func (j *JunosCLI) Close() error {
 	held, op := j.held, j.op
 	j.held, j.inConfig, j.op = nil, false, nil
 	j.area, j.areaOK = nil, false
+	var ex devssh.CLISession
+	if j.closeExec {
+		ex, j.exec = j.exec, nil
+	}
 	j.mu.Unlock()
+	if ex != nil {
+		_ = ex.Close()
+	}
 	if held != nil {
 		_ = held.Close()
 	}

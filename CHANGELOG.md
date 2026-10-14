@@ -174,6 +174,59 @@ current behaviour; this file is where history lives.
    exit status is the apply's. `--apply` with no value, or with
    `location --from-device`, is refused.
 
+10. **`device onboard`: a blank Junos device brought in with one of its
+    local accounts.** `tacctl device onboard <address> --login
+    <local-user>` is the superuser's. Any local account may be named, a
+    break-glass account included; only `root` is handled apart (its csh
+    wrapper). The host keys the address offers are
+    shown and one question is asked before any login (`--host-key
+    SHA256:<fp>` answers it; without a terminal and without it the run is
+    refused, and without a terminal only `--check` runs). As the local
+    account (its password asked once on the terminal, never kept or cached)
+    the pre-flight reads the release, a pending commit, the login's class and
+    whether a TACACS+ or RADIUS server is there already (then refused: such a
+    device is reached by the normal flow). The device is registered through
+    `device add` with the keys shown (`--name`, else the name it reports,
+    else asked), its own location, host name and description fill the empty
+    fields, its read is recorded as a pull made as the local account, and
+    the ordinary planner's first-time plan is checked on the device;
+    `--check` stops there. After the review (the device's name typed back)
+    your own password is asked and the change is committed as the local
+    account under `commit confirmed`; every session after the commit is your
+    own login, which proves the change before it is confirmed in the held
+    session. A refused fresh login rolls it back and leaves the local
+    account as it was; the local account is then tried once more, for
+    information. The plan never holds the break-glass accounts, root or the
+    local account. `--legacy-ssh` (also taken by itself when the handshake
+    needs the legacy algorithms), `--section` and `--json` (one object at
+    the end).
+    Logged: `device onboard user= device= addr= login=local:<account>
+    result=`, never a password.
+
+11. **`--login <local-user>` on `device config pull`, `diff --pull` and
+    `plan --pull`.** A superuser reads one registered Junos device with a
+    pinned host key, whose address a scope answers, as one of its local
+    accounts instead of their own login: for a device the server does not
+    answer yet. Any local account may be named, a break-glass account
+    included; only `root` is handled apart. One device by name only (a list,
+    `--all`, `--scope`, `--vendor` or `--stale` is a usage error); an
+    engineer with the flag is refused by the tier gate, and a device on
+    which break-glass is held is refused (release it first), as for every
+    pull and for `device onboard`. The password is asked once on the terminal,
+    sent to the one connection and never stored in, asked of or forgotten by
+    the password cache. `root` is accepted only for a device never read as
+    the invoking user, through the remote command `sh -c
+    'PATH=$PATH:/usr/sbin:/usr/bin:/sbin:/bin; exec cli'` (root's shell is a
+    csh), over the ssh command line only. The record says
+    `login=local:<account>` (the pull records' file gains `login` and
+    `user_pulled`, which 0.2.8 ignores), and the pull is logged as `device
+    config pull user= device= login=local:<account>`.
+
+12. **Test builds: `TACCTL_TEST_LOCAL_PASSWORD`.** The password of the local
+    account `--login` and `device onboard` log in with, in place of the
+    terminal prompt, for the bats tests against the fake device (whose
+    `local` and `root` files give the local accounts and root's csh login).
+
 ## 0.2.8 (2026-10-13)
 
 1. **The documentation is a tree of topic pages.** `README.md` holds the

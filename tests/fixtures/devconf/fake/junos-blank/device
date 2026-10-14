@@ -1,0 +1,5 @@
+# what 'show version' says when the directory has no 'show version.out'
+# (the committed 'system host-name' is the name; this one is its fallback)
+hostname example-sw5
+model ex4300-48mp
+junos 25.4R1-S2.3

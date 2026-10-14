@@ -1,0 +1,13 @@
+Hardware inventory:
+Item             Version  Part number  Serial number     Description
+Chassis                                FXYZ00000001      EX4300-48MP
+Pseudo CB 0     
+Routing Engine 0          BUILTIN      BUILTIN           RE-EX4300MP
+FPC 0            REV 09   650-078100   FXYZ00000001      EX4300-48MP
+  CPU                     BUILTIN      BUILTIN           FPC CPU
+  PIC 0          REV 09   BUILTIN      BUILTIN           24x10M/100M/1G Base-T & 24x 100M/1G/2.5G/5G/10G Base-T
+  PIC 1          REV 09   650-078100   FXYZ00000001      4x40G QSFP+
+  PIC 2          REV 06   650-080740   FXYZ00000002      4x10G SFP+
+Power Supply 0   REV 03   740-074873   FXYZ0000003       JPSU-1400W-AC-AFO
+Fan Tray 0                                               Fan Module, Airflow Out (AFO)
+Fan Tray 1                                               Fan Module, Airflow Out (AFO)

@@ -607,7 +607,12 @@ func TestAskpassWords(t *testing.T) {
 		// 'device config apply' logs in, --check included; 'shapes' does not
 		"device config apply x": true, "device config apply --all --check": true, "device config shapes": false,
 		"device config shapes seed x": false, "device config shapes list": false,
-		"ssh": true, "device": false, "device config": false, "ssh core-sw1 -- show version": true, "device ssh core-sw1 -- -v": true,
+		// a local login never asks the cache (D136); 'onboard' asks the
+		// user's own password after the review
+		"device config pull x --login admin": false, "device config plan x --pull --login=root": false,
+		"device config diff x --pull --login admin": false, "device config pull x -- --login admin": true,
+		"device onboard 192.0.2.1 --login admin": true,
+		"ssh":                                    true, "device": false, "device config": false, "ssh core-sw1 -- show version": true, "device ssh core-sw1 -- -v": true,
 	} {
 		if got := askpassWords(strings.Fields(words)); got != want {
 			t.Errorf("%q: %v", words, got)

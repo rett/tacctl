@@ -216,7 +216,16 @@ func askpassWords(words []string) bool {
 		return true
 	case words[0] == "device" && len(words) > 1 && words[1] == "ssh":
 		return true
+	// a read as a device's local account (--login, 0.2.9 D136) never asks
+	// the cache: its line leaves it shut
+	case words[0] == "device" && len(words) > 2 && words[1] == "config" && localLoginLine(words[3:]):
+		return false
 	case words[0] == "device" && len(words) > 2 && words[1] == "config" && words[2] == "pull":
+		return true
+	// 'device onboard' asks the invoking user's own password after the
+	// review (D136), which the cache may answer; the local account's never
+	// comes from it
+	case words[0] == "device" && len(words) > 1 && words[1] == "onboard":
 		return true
 	// 'device config apply' (with or without --check) logs in to the
 	// devices as the caller (0.2.9, D141); 'shapes' reads and writes the
@@ -239,6 +248,20 @@ func askpassWords(words []string) bool {
 			case "--pull":
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// localLoginLine reports whether the words of a 'device config' verb give
+// --login before any '--'.
+func localLoginLine(words []string) bool {
+	for _, w := range words {
+		switch {
+		case w == "--":
+			return false
+		case w == "--login" || strings.HasPrefix(w, "--login="):
+			return true
 		}
 	}
 	return false
