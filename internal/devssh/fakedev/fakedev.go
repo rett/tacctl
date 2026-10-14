@@ -4,7 +4,9 @@
 // the test-build verb 'tacctl _fake-device <dir>' runs it for bats and the
 // diff corpus. The layout of the directory is in transcript.go; a
 // directory with a 'menu' manifest is a menu-driven unit (a WTI console
-// server) instead of a CLI, described in menu.go.
+// server) instead of a CLI, described in menu.go; one with a 'config.set'
+// is a Junos device with a configure model (sessions, a candidate, commit
+// confirmed with a timer, logins), described in junos_config.go.
 //
 // The server is test support, not a model of a device: it authenticates one
 // fixed user and password (by 'password' and by 'keyboard-interactive'),
@@ -234,6 +236,12 @@ type Server struct {
 
 	menuScreens string
 
+	// The configure model of a Junos transcript (junos_config.go).
+	clock    Clock
+	stateDir string
+	junosMu  sync.Mutex
+	jdev     *junosDevice
+
 	netconfOff bool
 	noStatus   bool
 	noRead     bool
@@ -267,7 +275,7 @@ func New(dir string, opts ...Option) *Server {
 	s := &Server{
 		t: transcript{dir: dir}, user: DefaultUser, password: DefaultPassword,
 		methods: []AuthMethod{AuthPassword, AuthKeyboardInteractive},
-		hostKey: defaultSigner(), echo: true,
+		hostKey: defaultSigner(), echo: true, clock: realClock{},
 		quit: make(chan struct{}), conns: map[net.Conn]struct{}{},
 	}
 	for _, o := range opts {
@@ -414,7 +422,10 @@ func (s *Server) config() *ssh.ServerConfig {
 		s.mu.Lock()
 		s.attempts++
 		s.mu.Unlock()
-		return user == u && pw == p
+		if s.junosLoginMode() == "deny" {
+			return false
+		}
+		return user == u && pw == p || s.junosAccept(user, pw)
 	}
 	for _, m := range s.methods {
 		switch m {
@@ -462,6 +473,13 @@ func (s *Server) serve(c net.Conn) {
 	s.mu.Lock()
 	s.logins++
 	s.mu.Unlock()
+	switch s.junosLoginMode() {
+	case "close":
+		return
+	case "hang":
+		<-s.quit
+		return
+	}
 	go ssh.DiscardRequests(reqs)
 	var sessions sync.WaitGroup
 	defer sessions.Wait()
@@ -481,13 +499,13 @@ func (s *Server) serve(c net.Conn) {
 		sessions.Add(1)
 		go func() {
 			defer sessions.Done()
-			s.session(ch, creqs)
+			s.session(sc, ch, creqs)
 		}()
 	}
 }
 
 // session answers the requests of one session channel.
-func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
+func (s *Server) session(sc *ssh.ServerConn, ch ssh.Channel, reqs <-chan *ssh.Request) {
 	defer func() { _ = ch.Close() }()
 	var work sync.WaitGroup
 	defer work.Wait()
@@ -508,13 +526,25 @@ func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 			var run func()
 			switch r.Type {
 			case "shell":
-				run = func() { s.shell(ch) }
+				run = func() {
+					if d := s.junos(); d != nil && !s.t.exists("menu") {
+						s.junosShell(d, ch, junosConn{user: sc.User(), drop: func() { _ = sc.Close() }})
+						return
+					}
+					s.shell(ch)
+				}
 			case "exec":
 				var p struct{ Command string }
 				if ssh.Unmarshal(r.Payload, &p) != nil {
 					break
 				}
-				run = func() { s.exec(ch, p.Command) }
+				run = func() {
+					if d := s.junos(); d != nil && !s.t.exists("menu") {
+						s.junosExec(d, ch, junosConn{user: sc.User(), drop: func() { _ = sc.Close() }}, p.Command)
+						return
+					}
+					s.exec(ch, p.Command)
+				}
 			default:
 				var p struct{ Name string }
 				if ssh.Unmarshal(r.Payload, &p) != nil || p.Name != "netconf" {
