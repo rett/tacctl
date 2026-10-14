@@ -4,6 +4,7 @@ package plan
 // normalised, held for equality and against the delta that meant to make it.
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -515,5 +516,59 @@ func TestRolloutWords(t *testing.T) {
 	// and stay as they are
 	if err := CheckRegion("junos", []string{"configure private", "set snmp contact x", RolloutCompare, RolloutCommitCheck, "commit confirmed 5"}); err != nil {
 		t.Errorf("the region's own words: %v", err)
+	}
+}
+
+// The compare of a 'rollback 1' over a commit is the inverse of the commit's
+// compare: every '+' a '-' and every '-' a '+', the names' identities kept.
+func TestCompareInverse(t *testing.T) {
+	d := compareDelta()
+	c, err := ParseCompareFor(checkCompare, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	flip := func(text string) string {
+		var out []string
+		for _, l := range strings.Split(text, "\n") {
+			switch {
+			case strings.HasPrefix(l, "+"):
+				l = "-" + l[1:]
+			case strings.HasPrefix(l, "-"):
+				l = "+" + l[1:]
+			}
+			out = append(out, l)
+		}
+		return strings.Join(out, "\n")
+	}
+	back, err := ParseCompareFor(flip(checkCompare), d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Inverse().Equal(back) || !back.Inverse().Equal(c) || !c.Inverse().Inverse().Equal(c) {
+		t.Errorf("the inverse:\n%s\n---\n%s", c.Inverse(), back)
+	}
+	if c.Inverse().Equal(c) {
+		t.Error("a compare is its own inverse")
+	}
+	// another community's name is not the inverse, whatever its number
+	other, err := ParseCompareFor(strings.Replace(flip(checkCompare), "lab-ro-community", "lab-ro-other", 1), d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Inverse().Equal(other) {
+		t.Error("another name taken for the inverse")
+	}
+}
+
+// A line the parser does not know is a CompareLineError: its number can be
+// given without the line.
+func TestCompareLineError(t *testing.T) {
+	_, err := ParseCompare("[edit snmp]\n+   location x;\n?? zz-private words\n")
+	var le *CompareLineError
+	if !errors.As(err, &le) || le.Line != 3 || le.Why != "not a compare line" || le.Text != "?? zz-private words" {
+		t.Fatalf("%#v", err)
+	}
+	if err.Error() != `compare line 3: not a compare line: "?? zz-private words"` {
+		t.Errorf("%q", err.Error())
 	}
 }

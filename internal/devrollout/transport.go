@@ -22,7 +22,24 @@
 //     taken for success because it was not recognised as a failure.
 //   - Nothing the package returns, logs or stores holds a secret value: the
 //     statements are logged by plan.Line.Shown and every device text passes
-//     the masker.
+//     the masker. A line of a stranger's staged compare is never quoted.
+//   - No pending confirmed commit but tacctl's own is ever confirmed: the
+//     history is read again right before 'commit check' (which confirms any
+//     pending commit, D132), and a pending one fails the transaction after the
+//     discard. The cancel commits only a candidate whose compare is exactly
+//     the inverse of the committed change.
+//   - A history entry after tacctl's commit that is not its confirm, its
+//     cancel or the device's own rollback is never taken for a confirm: the
+//     state is settled from the configuration (the planner's delta of a
+//     read), or it is unknown.
+//   - A panic in a transaction is a named exit: before the confirmed commit
+//     the candidate is discarded (ExitFailed), after it the exit is
+//     ExitUnknown with the window's end.
+//
+// ExitWindowShort is recorded 'pending' with the window's end, not
+// 'rolled-back' as plan §3.1 draws it: nothing has shown the device's
+// rollback yet, and a record that says pending is settled by the next read
+// (Reconcile), which is the safer claim.
 //
 // It has no terminal, no logging and no package state; the clock, the
 // random source and the logins (with their password sources) are inputs.
@@ -200,7 +217,9 @@ type Transport interface {
 	// Confirm is the confirming commit, in the held session.
 	Confirm(ctx context.Context, id, user string) error
 	// Cancel loads the configuration before the confirmed commit and commits
-	// it, which ends the window at once (D131 Cancel).
+	// it, which ends the window at once (D131 Cancel), only when what it
+	// loaded is exactly the inverse of the committed change (the held
+	// session's last Compare); otherwise it discards and commits nothing.
 	Cancel(ctx context.Context, id string) error
 	// Discard drops the candidate and leaves configuration mode ('rollback
 	// 0', 'exit'); after a failure it closes the held session instead, which

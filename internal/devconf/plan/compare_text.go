@@ -268,6 +268,19 @@ func ParseCompare(text string) (CompareText, error) {
 	return ParseCompareFor(text, Delta{})
 }
 
+// CompareLineError is a line of a compare the parser does not know: its
+// number (from 1), why, and the line itself. A caller that must not show the
+// line (a stranger's staged change) gives Line and Why only.
+type CompareLineError struct {
+	Line int
+	Why  string
+	Text string
+}
+
+func (e *CompareLineError) Error() string {
+	return fmt.Sprintf("compare line %d: %s: %q", e.Line, e.Why, e.Text)
+}
+
 // rawStmt is a statement as parsed, before its names are numbered.
 type rawStmt struct {
 	op    byte
@@ -342,7 +355,7 @@ func ParseCompareFor(text string, d Delta) (CompareText, error) {
 			op, body = line[0], line[1:]
 		case ' ', '\t':
 		default:
-			return CompareText{}, fmt.Errorf("compare line %d: not a compare line: %q", n+1, trimmed)
+			return CompareText{}, &CompareLineError{Line: n + 1, Why: "not a compare line", Text: trimmed}
 		}
 		body = strings.TrimSpace(body)
 		switch {
@@ -383,7 +396,7 @@ func ParseCompareFor(text string, d Delta) (CompareText, error) {
 		default:
 			s, ok := stripStatement(body)
 			if !ok || s == "" {
-				return CompareText{}, fmt.Errorf("compare line %d: not a statement: %q", n+1, trimmed)
+				return CompareText{}, &CompareLineError{Line: n + 1, Why: "not a statement", Text: trimmed}
 			}
 			// a leaf with no op of its own inside an added or removed block
 			// is the block's
@@ -483,6 +496,43 @@ func (c CompareText) Equal(o CompareText) bool {
 		}
 	}
 	return true
+}
+
+// Inverse is the compare that undoes c: each '+' a '-' and each '-' a '+'
+// ('!' stays), sorted as ParseCompare sorts. The compare of a 'rollback 1'
+// typed over a commit is the inverse of the commit's own compare.
+func (c CompareText) Inverse() CompareText {
+	type item struct {
+		stmt  CompareStmt
+		ident []string
+	}
+	items := make([]item, len(c.Stmts))
+	for i, s := range c.Stmts {
+		op := s.Op
+		switch op {
+		case '+':
+			op = '-'
+		case '-':
+			op = '+'
+		}
+		items[i] = item{CompareStmt{Op: op, Path: slices.Clone(s.Path)}, slices.Clone(c.ident(i))}
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		a, b := strings.Join(items[i].stmt.Path, " "), strings.Join(items[j].stmt.Path, " ")
+		if a != b {
+			return a < b
+		}
+		if items[i].stmt.Op != items[j].stmt.Op {
+			return items[i].stmt.Op < items[j].stmt.Op
+		}
+		return slices.Compare(items[i].ident, items[j].ident) < 0
+	})
+	out := CompareText{}
+	for _, it := range items {
+		out.Stmts = append(out.Stmts, it.stmt)
+		out.ids = append(out.ids, it.ident)
+	}
+	return out
 }
 
 // related reports whether one path is the other or a prefix of it.

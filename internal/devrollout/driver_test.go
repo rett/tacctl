@@ -307,7 +307,7 @@ func TestRolledBackFreshLoginRefused(t *testing.T) {
 	if strings.Contains(o.Reason, devssh.ErrAuth.Error()) {
 		t.Errorf("the reason reads as a rejected password: %q", o.Reason)
 	}
-	if !endsWith(o.Log, plan.RolloutRollback1, plan.RolloutCancel(o.ID), plan.RolloutShowCommit) {
+	if !endsWith(o.Log, plan.RolloutRollback1, plan.RolloutCompare, plan.RolloutCancel(o.ID), plan.RolloutShowCommit) {
 		t.Errorf("log %q", o.Log)
 	}
 	if d.srv.Committed() != before {
@@ -399,12 +399,12 @@ func TestPendingSessionDropped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rc := Reconcile(context.Background(), r, "example-sw1", o.ID, o.Until)
+	rc := Reconcile(context.Background(), r, "example-sw1", o.ID, o.Until, nil)
 	_ = r.Close()
 	wantExit(t, rc, ExitPending, ResultPending)
 	d.clk.Advance(11 * time.Minute)
 	r, _ = d.verify(context.Background())
-	rc = Reconcile(context.Background(), r, "example-sw1", o.ID, o.Until)
+	rc = Reconcile(context.Background(), r, "example-sw1", o.ID, o.Until, nil)
 	_ = r.Close()
 	wantExit(t, rc, ExitRolledBack, ResultRolledBack)
 	if !strings.Contains(rc.Reason, "the device rolled it back at 2026-10-13 14:10:00 UTC") || !rc.Until.IsZero() {
@@ -452,12 +452,16 @@ func TestAppliedBySomeoneElse(t *testing.T) {
 	d.unknob("commit.drop")
 	runShell(t, d, "configure", "commit check")
 	r, _ := d.verify(context.Background())
-	rc := Reconcile(context.Background(), r, "example-sw1", o.ID, o.Until)
-	_ = r.Close()
+	p := &planner{desired: desiredLines()}
+	rc := Reconcile(context.Background(), r, "example-sw1", o.ID, o.Until, factsOf(p))
 	wantExit(t, rc, ExitAppliedByOther, ResultApplied)
-	if !strings.Contains(rc.Reason, "confirmed by a commit of gotest") {
+	if !strings.Contains(rc.Reason, "the commit after tacctl's (by gotest via cli at 2026-10-13 14:00:00 UTC) is not one tacctl recognises; the configuration has the change") {
 		t.Errorf("%q", rc.Reason)
 	}
+	// without the facts, the history alone does not say
+	rc = Reconcile(context.Background(), r, "example-sw1", o.ID, o.Until, nil)
+	_ = r.Close()
+	wantExit(t, rc, ExitUnknown, ResultUnknown)
 }
 
 // --- interrupts ----------------------------------------------------------------------------------

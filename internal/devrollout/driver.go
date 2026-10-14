@@ -73,7 +73,7 @@ type Input struct {
 	// Clock and Rand are the time and the random source of the change id.
 	Clock func() time.Time
 	Rand  io.Reader
-	// StateDir, when set, holds the device's lock ('<dir>/<device>.lock')
+	// StateDir, when set, holds the device's lock ('<dir>/locks/<device>.lock')
 	// for the transaction and the shape store, which an applied rollout
 	// files its shape in.
 	StateDir string
@@ -117,6 +117,9 @@ type run struct {
 	delta     plan.Delta
 	windowEnd time.Time
 	vr        Reader
+	// committing is set right before the confirmed commit is typed: from
+	// then on the device may run the change under its timer.
+	committing bool
 }
 
 func (d Driver) margins() Driver {
@@ -167,8 +170,44 @@ func (d Driver) run(ctx context.Context, in Input, reviewed *plan.Delta) (out Ou
 			r.m.add(l)
 		}
 	}
-	r.transaction(reviewed)
+	r.guarded(reviewed)
 	return out
+}
+
+// guarded is the transaction with a panic turned into a named exit, while
+// the transport is still open: before the confirmed commit was typed the
+// candidate is discarded and the exit is ExitFailed; from then on nothing
+// more is typed and the exit is ExitUnknown with the window's end (the
+// record says unknown until a read settles it).
+func (r *run) guarded(reviewed *plan.Delta) {
+	defer func() {
+		v := recover()
+		if v == nil {
+			return
+		}
+		why := "internal error: " + cut(r.m.text(fmt.Sprint(v)))
+		if r.committing {
+			if r.o.Until.IsZero() {
+				r.o.Until = r.now().Add(time.Duration(r.minutes) * time.Minute)
+			}
+			r.end(ExitUnknown, why+"; the confirmed commit may be pending: nothing more was typed")
+			return
+		}
+		r.o.Discarded = false
+		func() {
+			defer func() { _ = recover() }()
+			if r.t.Held() {
+				ctx, cancel := r.grace()
+				defer cancel()
+				r.o.Discarded = r.t.Discard(ctx) == nil
+			}
+		}()
+		if !r.o.Discarded {
+			why += "; the held session is closed with the transport, which drops its candidate"
+		}
+		r.end(ExitFailed, why)
+	}()
+	r.transaction(reviewed)
 }
 
 // validate refuses an input the driver cannot run safely.
@@ -461,8 +500,25 @@ func (r *run) transaction(reviewed *plan.Delta) {
 	}
 	r.compare = c
 
-	// CHECK
+	// CHECK: the history is read once more first, because a 'commit check'
+	// confirms any pending confirmed commit (D132): a stranger's 'commit
+	// confirmed' typed after the pre-flight and before the open would be
+	// confirmed by ours. Under the exclusive lock nothing can be committed
+	// between this read and the check; in a private session the read narrows
+	// the race to that interval.
 	r.step("check")
+	if h, err := t.History(ctx); err != nil {
+		if r.done() {
+			r.interruptBeforeCommit()
+			return
+		}
+		r.discard(ExitFailedCheck, "the history before the check: "+r.errText(err))
+		return
+	} else if p, ok := h.Pending(); ok {
+		r.discard(ExitFailedCheck, fmt.Sprintf("a confirmed commit of %s became pending until %s before the check; nothing was checked or committed, and it was not confirmed",
+			cut(p.User), p.Until()))
+		return
+	}
 	if err := t.Check(ctx); err != nil {
 		if r.done() {
 			r.interruptBeforeCommit()
@@ -504,6 +560,7 @@ func (r *run) transaction(reviewed *plan.Delta) {
 	}
 	r.pre = h[0]
 	sent := r.now()
+	r.committing = true
 	err = t.CommitConfirmed(ctx, r.minutes, r.id, in.User)
 	answered := r.now()
 	window := time.Duration(r.minutes) * time.Minute
@@ -653,29 +710,76 @@ func cancelComment(id string) string  { return "tacctl rollout cancel " + id }
 func ours(e CommitEntry, id string) bool { return strings.HasPrefix(e.Comment, commitComment(id)) }
 
 // settle names the state of rollout id from the history (D132). pre is
-// entry 0 before the commit (zero: unknown).
-func settle(h History, id string, pre CommitEntry) (Exit, string, *CommitEntry) {
+// entry 0 before the commit (zero: unknown). An entry after tacctl's commit
+// that is neither tacctl's confirm, its cancel nor the device's own rollback
+// is never taken for someone else's confirm (a release whose expiry entry
+// reads otherwise would be recorded applied): settle returns ExitUnknown
+// with odd set, and the caller settles it from the configuration (byFacts)
+// when it can read one.
+func settle(h History, id string, pre CommitEntry) (e Exit, how string, entry *CommitEntry, odd bool) {
 	k := slices.IndexFunc(h, func(e CommitEntry) bool { return ours(e, id) })
 	switch {
 	case k < 0 && pre.TimeText != "" && len(h) > 0 && h[0].Same(pre):
-		return ExitNothingCommitted, "nothing was committed", nil
+		return ExitNothingCommitted, "nothing was committed", nil, false
 	case k < 0:
-		return ExitUnknown, "the history does not show tacctl's commit " + id, nil
+		return ExitUnknown, "the history does not show tacctl's commit " + id, nil, false
 	case k == 0 && h[0].RollbackIn > 0:
-		return ExitPending, "the confirmed commit is pending", nil
+		return ExitPending, "the confirmed commit is pending", nil, false
 	case k == 0:
-		return ExitUnknown, "tacctl's commit is entry 0 without a window", nil
+		return ExitUnknown, "tacctl's commit is entry 0 without a window", nil, false
 	}
 	next := h[k-1]
 	switch {
 	case strings.HasPrefix(next.Comment, confirmComment(id)) && next.RollbackIn == 0:
-		return ExitApplied, "", &next
+		return ExitApplied, "", &next, false
 	case strings.HasPrefix(next.Comment, cancelComment(id)):
-		return ExitRolledBack, "cancelled at " + next.TimeText, nil
+		return ExitRolledBack, "cancelled at " + next.TimeText, nil, false
 	case next.User == textExpiryUser && next.Via == textExpiryVia && next.Comment == "":
-		return ExitRolledBack, "the device rolled it back at " + next.TimeText, nil
+		return ExitRolledBack, "the device rolled it back at " + next.TimeText, nil, false
 	}
-	return ExitAppliedByOther, fmt.Sprintf("confirmed by a commit of %s at %s", cut(next.User), next.TimeText), nil
+	return ExitUnknown, fmt.Sprintf("the commit after tacctl's (by %s via %s at %s) is not one tacctl recognises", cut(next.User), cut(next.Via), next.TimeText), nil, true
+}
+
+// byFacts settles an unrecognised entry after tacctl's commit from the
+// configuration: d is the planner's delta of a read made after it. No delta
+// is the change in place (someone's commit confirmed it); a delta is the
+// change not in place (rolled back).
+func byFacts(how string, d plan.Delta, err error) (Exit, string) {
+	switch {
+	case err != nil:
+		return ExitUnknown, how + "; the configuration could not be read: " + err.Error()
+	case d.Empty():
+		return ExitAppliedByOther, how + "; the configuration has the change"
+	}
+	return ExitRolledBack, how + "; the configuration lacks the change"
+}
+
+// settle is settle with an unrecognised entry settled from the
+// configuration, read on the fresh login if one is open, else on the held
+// login's connection.
+func (r *run) settle(ctx context.Context, h History) (Exit, string, *CommitEntry) {
+	e, how, entry, odd := settle(h, r.id, r.pre)
+	if !odd {
+		return e, how, entry
+	}
+	var rd Reader = r.t
+	if r.vr != nil {
+		rd = r.vr
+	}
+	raw, err := rd.Read(ctx)
+	if err != nil {
+		e, how = byFacts(how, plan.Delta{}, errors.New(r.errText(err)))
+		return e, how, nil
+	}
+	d, err := r.in.Plan(ctx, raw, r.t.LocalAddr())
+	for _, l := range d.Lines {
+		r.m.add(l)
+	}
+	if err != nil {
+		err = errors.New(r.errText(err))
+	}
+	e, how = byFacts(how, d, err)
+	return e, how, nil
 }
 
 // history reads the commit history after a failure: on the fresh login if
@@ -716,7 +820,7 @@ func (r *run) readState(why string, cancelPending bool) {
 		r.end(ExitUnknown, why+"; the state could not be read: "+r.errText(err))
 		return
 	}
-	e, how, entry := settle(h, r.id, r.pre)
+	e, how, entry := r.settle(ctx, h)
 	if e == ExitPending && cancelPending {
 		r.cancel(why)
 		return
@@ -778,7 +882,7 @@ func (r *run) cancel(why string) {
 			return
 		}
 		if p, ok := h.Pending(); !ok || !ours(p, r.id) {
-			e, how, entry := settle(h, r.id, r.pre)
+			e, how, entry := r.settle(ctx, h)
 			r.named(e, why, how, entry)
 			return
 		}
@@ -791,7 +895,7 @@ func (r *run) cancel(why string) {
 		r.end(ExitUnknown, why+"; the state could not be read: "+r.errText(err))
 		return
 	}
-	e, how, entry := settle(h, r.id, r.pre)
+	e, how, entry := r.settle(ctx, h)
 	r.named(e, why, how, entry)
 }
 
@@ -804,7 +908,7 @@ func (r *run) record() {
 		r.end(ExitUnknown, "confirmed (commit complete) but the history could not be read: "+r.errText(err))
 		return
 	}
-	e, how, entry := settle(h, r.id, r.pre)
+	e, how, entry := r.settle(ctx, h)
 	if e == ExitPending {
 		// the confirm answered 'commit complete' and the commit is still
 		// pending: the answer is not what it said; nothing more is typed

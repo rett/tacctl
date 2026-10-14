@@ -13,23 +13,31 @@ import (
 // ErrBusy is a device whose lock another rollout holds.
 var ErrBusy = errors.New("another rollout is running on the device")
 
+// LocksDir is the directory of the device locks under the state directory:
+// apart from the shape store's own lock ('<dir>/shapes.lock'), which a
+// device named 'shapes' would otherwise share.
+const LocksDir = "locks"
+
 // Lock is the per-device lock of a transaction (D138): 'flock' on
-// '<dir>/<name>.lock'. Two rollouts of different devices run side by side;
-// the same device is refused.
+// '<dir>/locks/<name>.lock'. Two rollouts of different devices run side by
+// side; the same device is refused.
 type Lock struct {
 	f *os.File
 }
 
 // LockDevice takes the device's lock without waiting: ErrBusy when another
-// process (or another job of this one) holds it. dir is created 0700.
+// process (or another job of this one) holds it. dir and its locks
+// directory are created 0700. A name that is not one path element (a
+// separator, a NUL, a leading dot) is refused.
 func LockDevice(dir, name string) (*Lock, error) {
-	if name == "" || strings.ContainsAny(name, "/\x00") || name == "." || name == ".." || strings.HasPrefix(name, ".") {
+	if name == "" || strings.ContainsAny(name, "/\\\x00") || strings.HasPrefix(name, ".") {
 		return nil, fmt.Errorf("devrollout: a device name %q cannot name a lock file", name)
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	ld := filepath.Join(dir, LocksDir)
+	if err := os.MkdirAll(ld, 0o700); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Join(dir, name+".lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	f, err := os.OpenFile(filepath.Join(ld, name+".lock"), os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, err
 	}

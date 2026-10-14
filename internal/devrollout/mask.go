@@ -83,7 +83,13 @@ func nonEmpty(s, def string) string {
 	return s
 }
 
-// text is s with every secret value elided.
+// minSubstring is the shortest value word masked wherever it stands; a
+// shorter one (a community 'ro') is masked only as a whole field, or it would
+// erase every word that holds its letters.
+const minSubstring = 4
+
+// text is s with every secret value elided: the whole statements, then each
+// value word (as a substring, or as a whole field when it is short).
 func (m *masker) text(s string) string {
 	if m == nil {
 		return s
@@ -92,9 +98,53 @@ func (m *masker) text(s string) string {
 		s = strings.ReplaceAll(s, m.whole[i], m.whole[i+1])
 	}
 	for _, t := range m.tokens {
-		s = strings.ReplaceAll(s, t, secretMark)
+		if len(t) >= minSubstring {
+			s = strings.ReplaceAll(s, t, secretMark)
+		} else {
+			s = replaceField(s, t)
+		}
 	}
 	return s
+}
+
+// replaceField replaces each occurrence of t in s that stands as a field of
+// its own: at the start or the end, or next to a byte that cannot be part of
+// a value word (a space, a quote, punctuation).
+func replaceField(s, t string) string {
+	if t == "" {
+		return s
+	}
+	var b strings.Builder
+	from := 0 // s[:from] is written
+	for at := 0; at < len(s); {
+		k := strings.Index(s[at:], t)
+		if k < 0 {
+			break
+		}
+		i, end := at+k, at+k+len(t)
+		if (i == 0 || fieldEdge(s[i-1])) && (end == len(s) || fieldEdge(s[end])) {
+			b.WriteString(s[from:i])
+			b.WriteString(secretMark)
+			from, at = end, end
+			continue
+		}
+		at = i + 1
+	}
+	b.WriteString(s[from:])
+	return b.String()
+}
+
+// fieldEdge reports whether a byte ends a value word.
+func fieldEdge(c byte) bool {
+	switch {
+	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c >= 0x80:
+		return false
+	}
+	switch c {
+	case '-', '_', '.', '/', '$', '@', '+', '=', '%', '#', '!', '*', '&', '^', '~':
+		return false
+	}
+	return true
 }
 
 // lines masks each line.

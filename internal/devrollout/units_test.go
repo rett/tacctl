@@ -123,14 +123,20 @@ func TestSettle(t *testing.T) {
 		{History{conf, ourC, pre}, pre, ExitApplied},
 		{History{canc, ourC, pre}, pre, ExitRolledBack},
 		{History{exp, ourC, pre}, pre, ExitRolledBack},
-		{History{other, ourC, pre}, pre, ExitAppliedByOther},
+		// a commit after ours that is not one tacctl recognises: never taken
+		// for a confirm from the history alone (the caller reads the facts)
+		{History{other, ourC, pre}, pre, ExitUnknown},
 		// a confirm after the device's own rollback: the rollback stands
 		{History{conf, exp, ourC, pre}, pre, ExitRolledBack},
 		{History{pre}, CommitEntry{}, ExitUnknown},
 	}
 	for i, c := range cases {
-		if e, _, _ := settle(c.h, id, c.pre); e != c.want {
+		e, _, _, odd := settle(c.h, id, c.pre)
+		if e != c.want {
 			t.Errorf("%d: %s, want %s", i, e, c.want)
+		}
+		if odd != (i == 6) {
+			t.Errorf("%d: odd %v", i, odd)
 		}
 	}
 }

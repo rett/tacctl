@@ -13,6 +13,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devconf/plan"
@@ -36,13 +37,25 @@ type JunosCLI struct {
 	login    *Login
 	log      []string
 	m        *masker
+	// committed is the held session's last compare (and its delta): the
+	// change a confirmed commit after it commits, which Cancel undoes.
+	committed      *plan.CompareText
+	committedDelta plan.Delta
+	// release ends the connection's own context (DialJunos).
+	release context.CancelFunc
 }
+
+// DefaultConnLifetime bounds the connection of a transport DialJunos made
+// when the job's context has no deadline: the longest window and the
+// verification's margin.
+const DefaultConnLifetime = (MaxConfirmMinutes + 10) * time.Minute
 
 // NewJunosCLI is the transport over an authenticated client. The client
 // must have been dialled with a context that outlives the job's
 // cancellation (context.WithoutCancel of it, with the transaction's own
 // deadline), so that the driver can still type the discard or the cancel
-// after the second interrupt; closing the transport closes the client.
+// after the second interrupt; DialJunos does that. Closing the transport
+// closes the client.
 func NewJunosCLI(c *devssh.Client) *JunosCLI {
 	_, read, _ := devconf.Commands(devssh.VendorJuniper)
 	return &JunosCLI{
@@ -59,13 +72,32 @@ func NewJunosCLI(c *devssh.Client) *JunosCLI {
 }
 
 // DialJunos dials the device and returns its transport (the password comes
-// from t.Password, the injected source).
+// from t.Password, the injected source). ctx is the job's context: it ends
+// the dial, but not the connection. The connection lives in
+// context.WithoutCancel(ctx) with its own deadline, the job's deadline and
+// DefaultGrace (or DefaultConnLifetime when the job has none), so the driver
+// can still type the discard or the cancel after the second interrupt
+// whatever context the caller holds; Close ends it.
 func DialJunos(ctx context.Context, t devssh.Target) (*JunosCLI, error) {
-	c, err := devssh.Dial(ctx, t)
+	deadline := time.Now().Add(DefaultConnLifetime)
+	if d, ok := ctx.Deadline(); ok && d.Add(DefaultGrace).Before(deadline) {
+		deadline = d.Add(DefaultGrace)
+	}
+	life, release := context.WithDeadline(context.WithoutCancel(ctx), deadline)
+	// the dial itself ends with the job's context
+	stop := context.AfterFunc(ctx, release)
+	c, err := devssh.Dial(life, t)
+	if !stop() && err == nil {
+		_ = c.Close()
+		err = ctx.Err()
+	}
 	if err != nil {
+		release()
 		return nil, err
 	}
-	return NewJunosCLI(c), nil
+	j := NewJunosCLI(c)
+	j.release = release
+	return j, nil
 }
 
 // Vendor is the registry's word.
@@ -113,6 +145,9 @@ func (j *JunosCLI) Close() error {
 	j.mu.Unlock()
 	if held != nil {
 		_ = held.Close()
+	}
+	if j.release != nil {
+		defer j.release()
 	}
 	if j.client != nil {
 		return j.client.Close()
@@ -355,12 +390,23 @@ func (j *JunosCLI) SharedDirty(ctx context.Context) (Dirty, error) {
 	if err != nil {
 		return Dirty{}, err
 	}
+	// the shared candidate's compare is a stranger's staged work: an error
+	// about it never quotes it, it gives a line number or a count
 	body, ok = configAnswer(out)
 	if !ok {
-		return Dirty{}, answerError(plan.RolloutCompare, body, j.m)
+		base := ErrUnrecognised
+		if classify(body) != "" {
+			base = ErrRefused
+		}
+		return Dirty{}, &AnswerError{Cmd: plan.RolloutCompare, base: base,
+			Lines: []string{fmt.Sprintf("%d line(s) without the location line (the shared candidate's, not quoted)", len(nonBlank(body)))}}
 	}
 	c, err := plan.ParseCompare(strings.Join(body, "\n"))
 	if err != nil {
+		var le *plan.CompareLineError
+		if errors.As(err, &le) {
+			return Dirty{}, fmt.Errorf("%s: %w: compare line %d: %s (the shared candidate's, not quoted)", plan.RolloutCompare, ErrUnrecognised, le.Line, le.Why)
+		}
 		return Dirty{}, fmt.Errorf("%s: %w: %v", plan.RolloutCompare, ErrUnrecognised, err)
 	}
 	if !c.Empty() {
@@ -467,6 +513,9 @@ func (j *JunosCLI) Compare(ctx context.Context, d plan.Delta) (plan.CompareText,
 	if err != nil {
 		return plan.CompareText{}, fmt.Errorf("%s: %w: %v", plan.RolloutCompare, ErrUnrecognised, j.m.text(err.Error()))
 	}
+	j.mu.Lock()
+	j.committed, j.committedDelta = &c, d
+	j.mu.Unlock()
 	return c, nil
 }
 
@@ -510,10 +559,22 @@ func (j *JunosCLI) Confirm(ctx context.Context, id, user string) error {
 	return nil
 }
 
-// Cancel types 'rollback 1' and, only when it answered 'load complete', the
-// cancel's commit. A 'rollback 1' that did not load is discarded with
-// 'rollback 0' and the session closed: nothing is committed.
+// Cancel types 'rollback 1', 'show | compare | no-more' and, only when the
+// compare is exactly the inverse of the held session's last compare (the
+// change the confirmed commit committed), the cancel's commit. Anything else
+// commits nothing: 'rollback 1' typed after the device's own rollback loads
+// the change itself, and committing it would keep it. A 'rollback 1' that
+// did not load closes the session; a compare that is not the inverse (or
+// does not parse) is discarded ('rollback 0', 'exit'), and the device's
+// expiry is the cancel. The check does not depend on any text but the
+// compare's.
 func (j *JunosCLI) Cancel(ctx context.Context, id string) error {
+	j.mu.Lock()
+	committed, d := j.committed, j.committedDelta
+	j.mu.Unlock()
+	if committed == nil {
+		return fmt.Errorf("%w: no compare of the commit to undo", ErrNotSent)
+	}
 	body, err := j.word(ctx, plan.RolloutRollback1)
 	if err != nil {
 		return err
@@ -521,6 +582,24 @@ func (j *JunosCLI) Cancel(ctx context.Context, id string) error {
 	if !exactly(body, textLoadComplete) {
 		j.dropHeld()
 		return answerError(plan.RolloutRollback1, body, j.m)
+	}
+	body, err = j.word(ctx, plan.RolloutCompare)
+	if err != nil {
+		j.dropHeld()
+		return err
+	}
+	c, err := plan.ParseCompareFor(strings.Join(body, "\n"), d)
+	if err != nil || !c.Equal(committed.Inverse()) {
+		why := "the candidate 'rollback 1' loaded is not the inverse of the commit (the window may have ended)"
+		if err != nil {
+			why = fmt.Sprintf("the candidate 'rollback 1' loaded: %v", j.m.text(err.Error()))
+		}
+		if derr := j.Discard(ctx); derr != nil {
+			why += "; the discard did not answer as it must, the held session was closed"
+		} else {
+			why += "; it was discarded"
+		}
+		return fmt.Errorf("%w: %s: nothing was committed", ErrUnrecognised, why)
 	}
 	line := plan.RolloutCancel(id)
 	body, err = j.word(ctx, line)
