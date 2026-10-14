@@ -36,7 +36,7 @@ func newFakeShell(hist *History) *fakeShell {
 		Exec: func(_ context.Context, words []string, stdin io.Reader) int {
 			f.ran = append(f.ran, words)
 			f.stdin = append(f.stdin, stdin)
-			if words[0] == "status" && len(words) > 1 {
+			if len(words) > 1 && words[0] == "status" {
 				n := 0
 				for _, c := range words[1] {
 					n = n*10 + int(c-'0')
@@ -216,5 +216,72 @@ func TestRows(t *testing.T) {
 	}
 	if len(BuiltinRows) != 3 {
 		t.Error("Rows(true) changed BuiltinRows")
+	}
+}
+
+// A pasted command line starts with the command the shell implies: it is
+// run, and answered, as the line without it.
+func TestLeadingBinaryIsNoWord(t *testing.T) {
+	cases := []struct {
+		script string
+		status int
+		ran    [][]string
+	}{
+		{"tacctl user list\n", 0, [][]string{{"user", "list"}}},
+		{"sudo tacctl user list\n", 0, [][]string{{"user", "list"}}},
+		{"/usr/local/bin/tacctl user show 'a b'\n", 0, [][]string{{"user", "show", "a b"}}},
+		{"tacctl status 3\nuser list\n", 3, [][]string{{"status", "3"}}},
+		{"tacctl\nsudo tacctl\nuser list\n", 0, [][]string{nil, nil, {"user", "list"}}},
+		{"tacctl tacctl user list\n", 0, [][]string{{"tacctl", "user", "list"}}},
+		{"user add tacctl\n", 0, [][]string{{"user", "add", "tacctl"}}},
+		{"sudo ls\n", 0, [][]string{{"sudo", "ls"}}},
+		{"tacctl exit\nuser list\n", 0, nil},
+		{"tacctl quit\nuser list\n", 0, nil},
+		{"sudo tacctl quit now\n", 2, nil},
+		{"tacctl help\nuser list\n", 0, [][]string{{"user", "list"}}},
+		{"tacctl help user\n", 0, nil},
+		{"tacctl help nothing\n", 1, nil},
+		{"tacctl history\nuser list\n", 0, [][]string{{"user", "list"}}},
+		{"tacctl 'user\n", 2, nil},
+	}
+	for _, c := range cases {
+		f := newFakeShell(nil)
+		got := f.sh.Batch(context.Background(), strings.NewReader(c.script))
+		if got != c.status || !slices.EqualFunc(f.ran, c.ran, slices.Equal[[]string]) {
+			t.Errorf("%q: status %d, ran %q; want %d, %q (stderr %q)", c.script, got, f.ran, c.status, c.ran, f.err.String())
+		}
+	}
+	// 'tacctl' alone is the command with no arguments: Exec gets no words
+	// (and its status stops a batch like any other).
+	f := newFakeShell(nil)
+	f.sh.o.Exec = func(_ context.Context, words []string, _ io.Reader) int {
+		f.ran = append(f.ran, words)
+		return 1
+	}
+	if got := f.sh.Batch(context.Background(), strings.NewReader("sudo tacctl\nuser list\n")); got != 1 || len(f.ran) != 1 || len(f.ran[0]) != 0 {
+		t.Errorf("status %d, ran %q", got, f.ran)
+	}
+	if _, n := f.sh.End(); n != 1 {
+		t.Errorf("%d lines counted, want 1", n)
+	}
+	f = newFakeShell(nil)
+	f.sh.Batch(context.Background(), strings.NewReader("tacctl help user\n"))
+	if f.out.String() != "usage of user\n" {
+		t.Errorf("help output %q", f.out.String())
+	}
+}
+
+// The history stores what was typed, the leading command included, and
+// keeps redacting what follows it.
+func TestCommandKeepsTheTypedLineInTheHistory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history")
+	f := newFakeShell(NewHistory(path, nil))
+	f.sh.Command(context.Background(), "tacctl scope secret lab set x", nil)
+	if len(f.ran) != 1 || !slices.Equal(f.ran[0], []string{"scope", "secret", "lab", "set", "x"}) {
+		t.Errorf("ran %q", f.ran)
+	}
+	b, _ := os.ReadFile(path)
+	if string(b) != "tacctl scope secret lab set …(redacted)\n" {
+		t.Errorf("history %q", b)
 	}
 }

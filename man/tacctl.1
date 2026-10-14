@@ -4300,6 +4300,22 @@ backticks,
 .BR > ,
 .B !
 are ordinary characters of a word). A line is at most 4096 bytes.
+A line pasted from the help or the documentation may start with
+.BR tacctl ,
+.B sudo tacctl
+or
+.BR /usr/local/bin/tacctl :
+that first word (and the
+.B sudo
+before it) is dropped, once, and the rest runs, completes and is explained as
+it would without it; only the first word counts, never one inside the line or
+an argument.
+A line that is only
+.B tacctl
+prints what
+.B tacctl
+with no arguments prints, the top-level usage, and ends with status 1. The
+history keeps the line as it was typed.
 The shell's own words are
 .B help
 (the top-level usage),

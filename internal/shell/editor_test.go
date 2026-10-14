@@ -119,6 +119,15 @@ func TestTabCompletion(t *testing.T) {
 		{"bogus x", "bogus x", -1},
 		{"s", "s", -1},
 		{"st", "store ", -1},
+		// a leading command is no word
+		{"tacctl us", "tacctl user ", -1},
+		{"tacctl user l", "tacctl user list ", -1},
+		{"sudo tacctl user show b", "sudo tacctl user show bob ", -1},
+		{"/usr/local/bin/tacctl he", "/usr/local/bin/tacctl help ", -1},
+		{"tacctl help us", "tacctl help user ", -1},
+		{"tacctl exit x", "tacctl exit x", -1},
+		{"tacctl bogus x", "tacctl bogus x", -1},
+		{"tacctl tacctl us", "tacctl tacctl us", -1},
 	}
 	for _, c := range cases {
 		e, _ := newTestEditor()
@@ -199,6 +208,30 @@ func TestQuestionKey(t *testing.T) {
 		if _, _, ok := e.key(line, len(line), '?'); ok {
 			t.Errorf("%q: '?' was taken", line)
 		}
+	}
+}
+
+func TestQuestionKeyAfterTheBinary(t *testing.T) {
+	for _, line := range []string{"tacctl ", "sudo tacctl ", "/usr/local/bin/tacctl "} {
+		e, sc := newTestEditor()
+		if got, pos, ok := e.key(line, len(line), '?'); !ok || got != line || pos != len(line) {
+			t.Errorf("%q: got %q,%d,%v", line, got, pos, ok)
+		}
+		if out := sc.String(); !strings.Contains(out, "Possible completions:\r\n") || !strings.Contains(out, "  user    User management\r\n") {
+			t.Errorf("%q: top level not listed: %q", line, out)
+		}
+	}
+	var asked []string
+	e, _ := newTestEditor()
+	e.explain = func(words []string) (string, bool) { asked = words; return "usage\n", true }
+	e.key("tacctl user add ", 16, '?')
+	if !slices.Equal(asked, []string{"user", "add"}) {
+		t.Errorf("explain asked %q", asked)
+	}
+	e, sc := newTestEditor()
+	e.key("tacctl user ", 12, '?')
+	if out := sc.String(); !strings.Contains(out, "  list  List all users\r\n") {
+		t.Errorf("user not listed: %q", out)
 	}
 }
 

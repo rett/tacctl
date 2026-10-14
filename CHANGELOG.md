@@ -305,6 +305,18 @@ current behaviour; this file is where history lives.
     `rollback 0.2.3` also lists the apply state it leaves. The manual page and
     `docs/install/upgrading.md` describe it.
 
+16. **A leading `tacctl` is dropped in the shell and the console.** A line
+    pasted from the help or the documentation, `tacctl device list`,
+    `sudo tacctl device list` or `/usr/local/bin/tacctl device list`, runs
+    as `device list`; Tab, `?`, a typed space, `help` and the `-c` guard of
+    the console see the same words, so they cannot disagree. Only the first
+    word (and `sudo` before it) is dropped, once: `tacctl` later in the line
+    is an argument. A line that is only `tacctl` prints the top-level usage
+    exactly as `tacctl` with no arguments does, and ends with status 1. The
+    history keeps the line as typed and redacts what follows it as before.
+    The manual page, `docs/cli/shell.md` and `docs/security/login-console.md`
+    describe it.
+
 ## 0.2.8 (2026-10-13)
 
 1. **The documentation is a tree of topic pages.** `README.md` holds the

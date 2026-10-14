@@ -105,6 +105,55 @@ func TestShellStatusAndBatch(t *testing.T) {
 	}
 }
 
+// A pasted line that starts with the command the shell implies runs as the
+// line without it: the same sudo line, the same help, the same refusals.
+func TestShellLeadingBinaryIsNoWord(t *testing.T) {
+	h := shellHarness(t, "tacctl user list\nsudo tacctl user list\n/usr/local/bin/tacctl user list\nuser list\n", nil)
+	if code := exitCode(h.run(), h.app.Out); code != 0 {
+		t.Fatalf("status %d", code)
+	}
+	want := slices.Repeat([]string{"sudo " + testExe + " user list"}, 4)
+	if got := lines(h.runner); !slices.Equal(got, want) {
+		t.Errorf("ran %q, want %q", got, want)
+	}
+
+	plain := shellHarness(t, "help user\nhelp\n", nil)
+	pasted := shellHarness(t, "tacctl help user\nsudo tacctl help\n", nil)
+	for _, h := range []*harness{plain, pasted} {
+		if code := exitCode(h.run(), h.app.Out); code != 0 {
+			t.Fatalf("help status %d", code)
+		}
+	}
+	if a, b := plain.out.String(), pasted.out.String(); a == "" || a != b {
+		t.Errorf("help differs with a leading tacctl:\n%q\n%q", a, b)
+	}
+
+	// A line that is only the command is 'tacctl' with no arguments: the
+	// usage the command prints, byte for byte, and its status 1.
+	bare := newHarness(t, nil)
+	if code := exitCode(bare.run(), bare.app.Out); code != 1 || bare.out.Len() == 0 {
+		t.Fatalf("bare tacctl: status %d, output %q", code, bare.out.String())
+	}
+	for _, line := range []string{"tacctl", "sudo tacctl", "/usr/local/bin/tacctl"} {
+		h = shellHarness(t, line+"\n", nil)
+		if code := exitCode(h.run(), h.app.Out); code != 1 {
+			t.Errorf("%q: status %d, want 1", line, code)
+		}
+		if h.out.String() != bare.out.String() || len(lines(h.runner)) != 0 {
+			t.Errorf("%q printed %q (ran %q), want %q", line, h.out.String(), lines(h.runner), bare.out.String())
+		}
+	}
+
+	// The shell word and the messages are those of the stripped line.
+	h = shellHarness(t, "tacctl shell\n", nil)
+	if code := exitCode(h.run(), h.app.Out); code == 0 {
+		t.Error("'tacctl shell' started a shell inside the shell")
+	}
+	if got := lines(h.runner); len(got) != 0 {
+		t.Errorf("ran %q", got)
+	}
+}
+
 func TestShellTierDenial(t *testing.T) {
 	cases := []struct {
 		groups, line string
