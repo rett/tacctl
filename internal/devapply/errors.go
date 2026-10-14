@@ -75,6 +75,11 @@ var (
 // '0   2026-10-13 14:12:01 UTC by alice via cli commit confirmed, rollback in 10mins'.
 var reHistoryEntry = regexp.MustCompile(`^(\d+)\s+(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?: [A-Za-z][A-Za-z0-9+-]*)?) by (\S+) via (\S+)(?:\s+(.*))?$`)
 
+// reHistoryRescue is the line 'show system commit' ends with when a rescue
+// configuration is saved [C: 'rescue 2024-01-04 11:42:38 AKST by root via
+// cli']. It is a marker, no entry of the history.
+var reHistoryRescue = regexp.MustCompile(`^rescue\s+\d{4}-\d\d-\d\d \d\d:\d\d:\d\d \S+ by \S+ via \S+(\s.*)?$`)
+
 // reRollbackIn is the tail of a confirmed commit's entry.
 var reRollbackIn = regexp.MustCompile(`^commit confirmed, rollback in (\d+) ?mins?$`)
 

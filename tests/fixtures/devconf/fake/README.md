@@ -81,6 +81,7 @@ fixture directory ships none, a test writes the ones it needs.
 | `commit.drop` | the connection of the session that typed `commit confirmed` closes once the commit is applied and the timer runs: unanswered by default, `after-output` prints the answer first |
 | `drop` | `<command prefix>` per line: that command closes the connection unanswered, before it is applied |
 | `slow` | `<command prefix> => <seconds>` per line (`*` is every command): the answer waits that long on the server's clock |
+| `rescue` | a saved rescue configuration: `show system commit` ends with the line `rescue  <time> <zone> by root via cli`, which is no entry |
 | `timer.minute` | seconds one minute of `commit confirmed` lasts (default 60): a bats test sets `1` to see the expiry |
 
 Behaviour a test relies on:

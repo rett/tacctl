@@ -682,3 +682,27 @@ func TestApplyCommittedHook(t *testing.T) {
 		t.Errorf("a check called Committed: %+v", got)
 	}
 }
+
+// A device with a saved rescue configuration ends 'show system commit' with
+// a rescue line, which is no entry: the apply and the check go through, and
+// a pending commit still shows through the banner.
+func TestRescueLineOnTheDevice(t *testing.T) {
+	d := newDevice(t, map[string]string{"rescue": ""})
+	o := check(t, d, &planner{desired: desiredLines()}, nil)
+	wantExit(t, o, ExitChecked, ResultChecked)
+	o = apply(t, d, &planner{desired: desiredLines()}, nil)
+	wantExit(t, o, ExitApplied, ResultApplied)
+	if o.Commit == nil || !strings.HasPrefix(o.Commit.Comment, "tacctl apply confirm ") {
+		t.Errorf("commit entry %+v", o.Commit)
+	}
+
+	d2 := newDevice(t, map[string]string{"rescue": "", "commit.drop": ""})
+	o = apply(t, d2, &planner{desired: desiredLines()}, nil)
+	wantExit(t, o, ExitPending, ResultPending)
+	d2.unknob("commit.drop")
+	o2 := check(t, d2, &planner{desired: desiredLines()}, nil)
+	wantExit(t, o2, ExitFailed, ResultFailed)
+	if !strings.Contains(o2.Reason, "a confirmed commit is pending until") {
+		t.Errorf("reason %q", o2.Reason)
+	}
+}

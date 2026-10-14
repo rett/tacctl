@@ -151,7 +151,9 @@ func parseVersion(out string) (Identity, error) {
 
 // parseHistory reads 'show system commit'. Every non-blank line is an entry
 // or the indented comment of the entry before it; anything else is an
-// error. Entry 0 must be complete (a tail the parser does not know there
+// error. The rescue line a saved rescue configuration adds is a marker, no
+// entry: it is accepted only after the numbered entries, once, and the
+// comment below it is its own. Entry 0 must be complete (a tail the parser does not know there
 // makes the pending state unknowable, so it is an error); a later entry's
 // unknown tail is kept as it is.
 func parseHistory(out string) (History, error) {
@@ -160,9 +162,20 @@ func parseHistory(out string) (History, error) {
 		return nil, answerError("show system commit", ls, nil)
 	}
 	var h History
+	rescue := false
 	for _, l := range ls {
 		if strings.TrimSpace(l) == "" {
 			continue
+		}
+		if reHistoryRescue.MatchString(l) {
+			if len(h) == 0 || rescue {
+				return nil, fmt.Errorf("show system commit: a line %q: %w", cut(strings.TrimSpace(l)), ErrUnrecognised)
+			}
+			rescue = true
+			continue
+		}
+		if rescue && reHistoryEntry.MatchString(l) {
+			return nil, fmt.Errorf("show system commit: entry after the rescue line: %w", ErrUnrecognised)
 		}
 		if m := reHistoryEntry.FindStringSubmatch(l); m != nil {
 			seq, _ := strconv.Atoi(m[1])
@@ -190,6 +203,9 @@ func parseHistory(out string) (History, error) {
 			continue
 		}
 		if (strings.HasPrefix(l, " ") || strings.HasPrefix(l, "\t")) && len(h) > 0 {
+			if rescue {
+				continue
+			}
 			c := strings.TrimSpace(l)
 			if h[len(h)-1].Comment != "" {
 				h[len(h)-1].Comment += " " + c

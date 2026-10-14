@@ -584,6 +584,11 @@ func (d *junosDevice) historyText() string {
 			b.WriteString("    " + h.Comment + "\n")
 		}
 	}
+	// a saved rescue configuration (the 'rescue' knob): the marker line
+	// ends the answer
+	if _, ok := d.s.t.read("rescue"); ok {
+		fmt.Fprintf(&b, jtRescueFmt+"\n", formatTime(d.born), jtExpiryUser, jtCommitVia)
+	}
 	return b.String()
 }
 

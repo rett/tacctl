@@ -77,6 +77,10 @@ const (
 	// stays for good, also after a 'commit check' confirmed the commit: it
 	// is a label, not a pending marker (the banner is).
 	jtRollbackInFmt = "commit confirmed, rollback in %dmins"
+	// jtRescueFmt is the line 'show system commit' ends with when a rescue
+	// configuration is saved: the time, the user and the way [C]. It is no
+	// entry and has no number.
+	jtRescueFmt = "rescue  %s by %s via %s"
 )
 
 // The classes of a login and what they may do: a class name maps to the

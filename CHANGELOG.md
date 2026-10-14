@@ -325,6 +325,12 @@ current behaviour; this file is where history lives.
     device that stays silent is given ten quiet periods before the login
     fails.
 
+18. **A Junos device with a saved rescue configuration can be checked and
+    applied.** The `rescue <time> by <user> via <how>` line that `show system
+    commit` ends with in that case was refused as an unknown line; it is now
+    read as a marker that is no history entry, and any other unknown line is
+    still refused.
+
 ## 0.2.8 (2026-10-13)
 
 1. **The documentation is a tree of topic pages.** `README.md` holds the

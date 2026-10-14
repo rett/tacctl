@@ -505,6 +505,19 @@ func TestJunosExclusiveLockAndDirtyShared(t *testing.T) {
 	}
 }
 
+// The 'rescue' knob ends 'show system commit' with the rescue line.
+func TestJunosRescueKnob(t *testing.T) {
+	srv, _, _ := newJunos(t, map[string]string{"rescue": ""})
+	h, err := execOut(t, srv, DefaultUser, DefaultPassword, "show system commit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ls := strings.Split(strings.TrimRight(h, "\r\n"), "\n")
+	if last := ls[len(ls)-1]; !strings.HasPrefix(last, "rescue  ") || !strings.HasSuffix(last, " by root via cli") {
+		t.Errorf("history:\n%s", h)
+	}
+}
+
 func TestJunosKnobHeldByAndDirtyShared(t *testing.T) {
 	srv, _, _ := newJunos(t, map[string]string{
 		"exclusive.held-by": "carol\n",

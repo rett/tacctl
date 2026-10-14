@@ -791,7 +791,7 @@ starts the CLI, and `committed.set`, the committed configuration written to
 configuration. Failures are injected by files in `<dir>`, each on when it
 exists: `load.errors`, `check.errors`, `version-gate`, `exclusive.held-by`,
 `dirty.shared`, `private.no-confirmed`, `verify.fail`, `commit.drop`, `drop`,
-`slow`, `banner`, `switch`, `echo.plain`; `timer.minute` (seconds per minute
+`slow`, `banner`, `switch`, `echo.plain`, `rescue`; `timer.minute` (seconds per minute
 of `commit confirmed`, `1` for a bats test that waits for the expiry). A Go
 test injects the clock (`fakedev.WithClock(fakedev.NewFakeClock(t))`, then
 `Advance`) and does not sleep. The files and the behaviour are listed in
