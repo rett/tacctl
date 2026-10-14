@@ -218,6 +218,24 @@ func TestJunosSwitchOffAndPlainEcho(t *testing.T) {
 	}
 }
 
+// an empty line echoes as nothing, not as a lone space: the prompt is
+// simply reprinted, as on a device
+func TestJunosEmptyLineEchoesNothing(t *testing.T) {
+	srv, _, _ := newJunos(t, map[string]string{})
+	c, _ := shell(t, srv, DefaultUser, DefaultPassword)
+	if _, err := io.WriteString(c.in, "configure\n"); err != nil {
+		t.Fatal(err)
+	}
+	c.read()
+	if _, err := io.WriteString(c.in, "\n"); err != nil {
+		t.Fatal(err)
+	}
+	raw := c.read()
+	if raw != "\n{master:0}[edit]\ngotest@sw-lab-1# " {
+		t.Errorf("empty line: %q", raw)
+	}
+}
+
 func TestJunosConfirmedCommitExpiresOnTheClock(t *testing.T) {
 	srv, dir, clk := newJunos(t, map[string]string{})
 	c, _ := shell(t, srv, DefaultUser, DefaultPassword)

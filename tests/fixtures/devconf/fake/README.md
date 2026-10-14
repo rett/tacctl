@@ -64,7 +64,7 @@ fixture directory ships none, a test writes the ones it needs.
 | `root` | the password of `root`, whose shell is a csh (`root@<host>% `): `cli` starts the CLI, and an exec of `sh -c '...; exec cli'` starts it at once; any other csh word is `<word>: Command not found.` |
 | `switch` | the `{master:0}` line before every prompt of a virtual chassis: absent or empty is `{master:0}`, `off` none, `<role>:<n>` that |
 | `banner` | text before the first prompt (it may look like a prompt) |
-| `echo.plain` | the CLI echoes a command as typed, without the trailing space the device adds |
+| `echo.plain` | the CLI echoes a command as typed, without the trailing space the device adds; an empty line echoes nothing either way |
 | `load.errors` | `<prefix> => <message>` (or a tab): a statement that begins with the prefix (verb and absolute path, `set system login idle-timeout`) prints the message and is not applied |
 | `version-gate` | `<prefix>`: the statement answers a syntax error; `<prefix> => check`: it is accepted and `commit check` refuses it |
 | `check.errors` | `<message>`: `commit check` and `commit` fail with it always; `<prefix> => <message>`: when the candidate adds a statement with the prefix |

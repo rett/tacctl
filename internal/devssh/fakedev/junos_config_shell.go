@@ -106,7 +106,8 @@ func (s *Server) readCommand(d *junosDevice, ch ssh.Channel, in *bufio.Reader) (
 		return "", false
 	}
 	cmd := strings.TrimSpace(line)
-	if s.echo {
+	// an empty line echoes as nothing: the prompt is simply reprinted
+	if s.echo && cmd != "" {
 		_, _ = io.WriteString(ch, d.echoed(cmd)+"\r\n")
 	}
 	return cmd, true
