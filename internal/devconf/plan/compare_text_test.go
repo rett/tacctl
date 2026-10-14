@@ -548,7 +548,7 @@ func TestApplyWords(t *testing.T) {
 	}
 	// the wrapper's check and the region's last line are the paste's words
 	// and stay as they are
-	if err := CheckRegion("junos", []string{"configure private", "set snmp contact x", ApplyCompare, ApplyCommitCheck, "commit confirmed 5"}); err != nil {
+	if err := CheckRegion("junos", []string{"configure exclusive", "set snmp contact x", ApplyCompare, ApplyCommitCheck, "commit confirmed 5"}); err != nil {
 		t.Errorf("the region's own words: %v", err)
 	}
 }

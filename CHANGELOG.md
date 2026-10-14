@@ -43,6 +43,20 @@ current behaviour; this file is where history lives.
    registered and the command exits with the pull's status. The manual
    page, `docs/cli/device.md` and `docs/devices/connecting.md` describe it.
 
+4. **Fix: the Junos plan's region types `configure exclusive`.** A private
+   session cannot `commit confirmed` on Junos 25.4 (`error: commit confirmed
+   not supported for private configuration`, found on the lab switch), so a
+   pasted plan never reached its confirmed commit and nothing was committed.
+   The plan, cleanup (`--converge`) and `--backout` regions now open with
+   `configure exclusive`, which takes `commit confirmed` and is refused with
+   `error: configuration database modified` when another session has
+   uncommitted changes, or `error: configuration database locked by: <name>`
+   when another session holds the lock. The region's report and follow-up say
+   that the session holds the configuration lock until `exit` (typed after
+   `commit`), and what to do when it is refused; the whole-paste check
+   refuses a region that starts with `configure private`. The manual page
+   and `docs/devices/planning.md` describe it.
+
 ## 0.2.8 (2026-10-13)
 
 1. **The documentation is a tree of topic pages.** `README.md` holds the

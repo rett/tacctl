@@ -1005,6 +1005,9 @@ func Report(d Delta, h Header, w Wrapper) string {
 		blank()
 		b.WriteString(c + " Type this first, on " + h.Device + ", and check the name:   " + checkLine(d.Vendor) + "\n")
 		add(promptCheck(d.Vendor))
+		if d.Vendor == devconf.FamilyJunos {
+			add(junosSessionNote)
+		}
 		blank()
 	}
 	return b.String()

@@ -342,7 +342,7 @@ func TestCheckRegionRejects(t *testing.T) {
 		return append(append([]string{"configure terminal"}, mid...), "end")
 	}
 	junos := func(mid ...string) []string {
-		return append(append([]string{"configure private"}, mid...),
+		return append(append([]string{"configure exclusive"}, mid...),
 			"show | compare | no-more", "commit check", `commit confirmed 5 comment "tacctl plan sw 2026-10-10T14:20Z by alice"`)
 	}
 	cases := []struct {
@@ -381,9 +381,11 @@ func TestCheckRegionRejects(t *testing.T) {
 		{"junos semicolon", "juniper", junos("set snmp location X ; commit")},
 		{"junos activate", "juniper", junos("activate snmp")},
 		{"junos insert without term", "juniper", junos("insert firewall family inet filter F term A")},
-		{"junos second configure", "juniper", junos("configure private")},
-		{"junos no commit check", "juniper", []string{"configure private", "set snmp location X", "show | compare | no-more", `commit confirmed 5`}},
-		{"junos plain commit last", "juniper", []string{"configure private", "set snmp location X", "show | compare | no-more", "commit check", "commit"}},
+		{"junos second configure", "juniper", junos("configure exclusive")},
+		{"junos private session", "juniper", append([]string{"configure private"}, junos("set snmp location X")[1:]...)},
+		{"junos shared session", "juniper", append([]string{"configure"}, junos("set snmp location X")[1:]...)},
+		{"junos no commit check", "juniper", []string{"configure exclusive", "set snmp location X", "show | compare | no-more", `commit confirmed 5`}},
+		{"junos plain commit last", "juniper", []string{"configure exclusive", "set snmp location X", "show | compare | no-more", "commit check", "commit"}},
 		{"junos indented", "juniper", junos(" set snmp location X")},
 		{"junos empty line", "juniper", junos("set snmp location X", "")},
 		{"junos wrong first line", "juniper", append([]string{"set snmp location X"}, junos("set snmp contact Y")...)},
@@ -635,7 +637,7 @@ func TestPlainIsTheStatementsOnly(t *testing.T) {
 				continue // the text of a login banner is any text
 			}
 			switch l {
-			case "configure private", "configure terminal", "end", "commit check", "show | compare | no-more":
+			case "configure exclusive", "configure terminal", "end", "commit check", "show | compare | no-more":
 				t.Errorf("%s: plain holds the wrapper line %q", gc.name, l)
 			}
 			if strings.HasPrefix(l, "commit ") || strings.HasPrefix(l, "#") || strings.HasPrefix(l, "!") {

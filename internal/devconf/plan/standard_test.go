@@ -504,7 +504,7 @@ func TestCheckRegionRejectsNonASCII(t *testing.T) {
 			t.Errorf("IOS %q: %v", bad, err)
 		}
 	}
-	junos := []string{"configure private", "set system host-name r1", "show | compare | no-more", "commit check", "commit confirmed 5"}
+	junos := []string{"configure exclusive", "set system host-name r1", "show | compare | no-more", "commit check", "commit confirmed 5"}
 	if err := CheckRegion("junos", junos); err != nil {
 		t.Fatalf("a clean Junos region: %v", err)
 	}

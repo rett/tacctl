@@ -149,12 +149,13 @@ func junosVerifyHierarchy(text string) string {
 	return t[0]
 }
 
-// junosRegion is `configure private`, one label per section and its
+// junosRegion is `configure exclusive`, one label per section and its
 // statements, `show | compare | no-more` (the one line that prints; the
 // pager would swallow what follows), `commit check`, and the confirmed
 // commit as the last line. [S: lab check L2: '#' lines are accepted in
-// configuration mode; L5: a refused `configure private` leaves every later
-// line an unknown operational command.]
+// configuration mode; 0.2.9 lab L5: a private session refuses `commit
+// confirmed`, an exclusive one takes it; a refused `configure exclusive`
+// leaves every later line an unknown operational command.]
 func junosRegion(d Delta, h Header, w Wrapper) []RegionLine {
 	return junosRegionWord(d, h, w, "plan")
 }
@@ -162,7 +163,7 @@ func junosRegion(d Delta, h Header, w Wrapper) []RegionLine {
 // junosRegionWord is junosRegion for the region word of the commit comment:
 // 'plan' for the plan's region, 'cleanup' for the --converge region.
 func junosRegionWord(d Delta, h Header, w Wrapper, word string) []RegionLine {
-	out := []RegionLine{{Text: "configure private", Wrapper: true, Line: -1}}
+	out := []RegionLine{{Text: ApplyConfigureExclusive, Wrapper: true, Line: -1}}
 	cur := ""
 	for i, l := range d.Lines {
 		if l.Section != cur {
@@ -191,7 +192,7 @@ func junosRegionWord(d Delta, h Header, w Wrapper, word string) []RegionLine {
 // commit last. A line that holds the placeholder of --no-secrets, or that
 // is a note, is a comment.
 func junosBackoutRegion(d Delta, h Header, w Wrapper) []RegionLine {
-	out := []RegionLine{{Text: "configure private", Wrapper: true, Line: -1},
+	out := []RegionLine{{Text: ApplyConfigureExclusive, Wrapper: true, Line: -1},
 		{Text: "# back-out: the statements as the pull showed them", Comment: true, Line: -1}}
 	for _, l := range d.Backout {
 		switch {
@@ -220,15 +221,16 @@ func junosBackoutAfter(d Delta, h Header, w Wrapper) string {
 		}
 	}
 	b.WriteString("#\n")
-	c("If the first line printed \"Users currently editing the configuration\" or \"error: shared configuration database modified\": nothing happened; ask that person to commit or roll back, then paste again. If any line printed \"error:\": do not type commit; the switch undoes this by itself in " + strconv.Itoa(n) + " minutes.")
+	c("If the first line printed \"error: configuration database modified\" or \"error: configuration database locked by\": nothing happened (see the note above the region); paste again once it is cleared. If any line printed \"error:\": do not type commit; the switch undoes this by itself in " + strconv.Itoa(n) + " minutes.")
 	b.WriteString("#\n")
 	c("Check now. In " + strconv.Itoa(n) + " minutes the switch undoes this by itself unless you type one word.")
 	b.WriteString("#   From the tacctl server:   tacctl device config pull " + h.Device + " --diff     (the differences of the plan are back)\n")
 	b.WriteString("#   In a second terminal:     ssh " + h.Device + ", then: show cli authorization | no-more\n")
 	b.WriteString("# When both checks are fine, type this one word yourself:  commit     (before the " + strconv.Itoa(n) + " minutes end)\n")
+	c("Then type exit: the session holds the configuration lock until you do.")
 	b.WriteString("#\n")
 	c("A value that tacctl does not hold (an original secret) is a line marked with # inside the region: put it back by hand.")
-	c("Do not: type commit before the check; paste anything outside the banners; paste this into another device; use configure exclusive; keep this output in a file after the paste when it holds a secret.")
+	c("Do not: type commit before the check; paste anything outside the banners; paste this into another device; keep this output in a file after the paste when it holds a secret.")
 	b.WriteString(lockoutHelp(d, h))
 	return b.String()
 }
@@ -245,7 +247,7 @@ func junosAfter(d Delta, h Header, w Wrapper) string {
 		}
 	}
 	b.WriteString("#\n")
-	c("If the first line printed \"Users currently editing the configuration\" or \"error: shared configuration database modified\": nothing happened; ask that person to commit or roll back, then paste again. If any line printed \"error:\": do not type commit; the switch undoes this by itself in " + strconv.Itoa(n) + " minutes.")
+	c("If the first line printed \"error: configuration database modified\" or \"error: configuration database locked by\": nothing happened (see the note above the region); paste again once it is cleared. If any line printed \"error:\": do not type commit; the switch undoes this by itself in " + strconv.Itoa(n) + " minutes.")
 	b.WriteString("#\n")
 	c("Check now. In " + strconv.Itoa(n) + " minutes the switch undoes this by itself unless you type one word.")
 	b.WriteString("#   From the tacctl server:   tacctl device config pull " + h.Device + " --diff     (" + joinAnd(d.Planned()) + ": ok)\n")
@@ -262,6 +264,7 @@ func junosAfter(d Delta, h Header, w Wrapper) string {
 	// a comment line, never a plain one: a copy of the whole output must not
 	// confirm the commit before the check (review H1)
 	b.WriteString("# When both checks are fine, type this one word yourself:  commit     (before the " + strconv.Itoa(n) + " minutes end)\n")
+	c("Then type exit: the session holds the configuration lock until you do.")
 	b.WriteString("#\n")
 	c("If your session drops before that, the switch still rolls back when the time runs out (a dropped CLI session does not roll back at once): log in again and paste again.")
 	if HasBackout(d) {
@@ -269,7 +272,7 @@ func junosAfter(d Delta, h Header, w Wrapper) string {
 	} else {
 		c("To undo it after the commit: show system commit, then rollback <n> of the entry just before the one commented \"tacctl plan " + commentSafe(h.Device) + "\" (the newest entry is that commit itself), then commit. tacctl has no lines of its own to undo this plan.")
 	}
-	c("Do not: type commit before the check; paste anything outside the banners; paste this into another device; use configure exclusive; keep this output in a file after the paste when it holds a secret.")
+	c("Do not: type commit before the check; paste anything outside the banners; paste this into another device; keep this output in a file after the paste when it holds a secret.")
 	b.WriteString(lockoutHelp(d, h))
 	return b.String()
 }
@@ -282,3 +285,15 @@ func containsStr(ss []string, s string) bool {
 	}
 	return false
 }
+
+// junosSessionNote is the comment block above a Junos region: the region
+// opens `configure exclusive`, the session holds the configuration lock until
+// `exit`, and what a refusal means (0.2.9 lab L1: `error: configuration
+// database modified` for another session's uncommitted shared changes,
+// `error: configuration database locked by: <holder>` for another exclusive
+// session).
+const junosSessionNote = "The region opens configure exclusive: the session holds the configuration lock until you type exit " +
+	"(after commit, to confirm). If it printed \"error: configuration database modified\", another session has " +
+	"uncommitted changes: have that person commit or discard them, then paste again. If it printed " +
+	"\"error: configuration database locked by\", another session holds the exclusive lock: wait for it to exit, then paste again. " +
+	"Either way nothing happened (every later line is an unknown command)."

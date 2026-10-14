@@ -7517,7 +7517,7 @@ and
 which holds only statements the device takes as they stand, the wrapper lines
 and one label comment per section. The region is safe pasted whole. On Junos
 it is
-.BR "configure private" ,
+.BR "configure exclusive" ,
 the statements,
 .BR "show | compare | no\-more" ,
 .B "commit check"
@@ -7528,7 +7528,18 @@ unless the one word
 is typed by hand after the check, the switch undoes the paste by itself in N
 minutes (N is
 .BR "config devices confirm\-timeout" ,
-default 5). On IOS it is
+default 5). The session holds the configuration lock until
+.B exit
+is typed (after
+.BR commit ,
+to confirm). If
+.B "configure exclusive"
+prints
+.BR "error: configuration database modified" ,
+nothing happened: another session has uncommitted changes, which that person
+commits or discards before the paste is made again;
+.B "error: configuration database locked by"
+means another session holds the exclusive lock. On IOS it is
 .BR "configure terminal" ,
 the lines and
 .BR end :
