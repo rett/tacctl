@@ -6,9 +6,12 @@ import "time"
 type Row struct {
 	Name string
 	// Text is the state in the words of D67: "queued", "running", "ok",
-	// "ok, differs in aaa,snmp", "failed: <reason>", "interrupted" or
-	// "not started".
+	// "ok, differs in aaa,snmp", "failed: <reason>", "interrupted",
+	// "not started" or "skipped: <reason>".
 	Text string
+	// Step is the last progress step a running job reported; Text is then
+	// "running: <step>". Empty otherwise.
+	Step string
 	// Settled is true once the job is done or skipped; Result is then its
 	// result.
 	Settled  bool
@@ -56,6 +59,12 @@ func (b *Board) Update(e Event) {
 	case PhaseRunning:
 		r.Text = "running"
 		r.Started = e.At
+	case PhaseProgress:
+		r.Step = e.Step
+		r.Text = "running"
+		if e.Step != "" {
+			r.Text = "running: " + e.Step
+		}
 	case PhaseDone:
 		r.Text = e.Result.Text()
 		r.Settled = true
