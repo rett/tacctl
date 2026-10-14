@@ -211,15 +211,15 @@ func (p *planner) plan(_ context.Context, raw string, from net.IP) (plan.Delta, 
 func (d *device) input(p *planner) Input {
 	return Input{
 		Device: "example-sw1", Names: []string{"example-sw1", "example-sw1.lab.example.net"},
-		User:      "alice",
-		Transport: d.dial(),
-		Verify:    d.verify,
-		Plan:      p.plan,
-		Allow:     plan.Allow{Login: fakedev.DefaultUser, Expected: expected()},
-		Mode:      OpenExclusive, ConfirmMinutes: 10,
-		Clock:    d.clk.Now,
-		Rand:     bytes.NewReader(bytes.Repeat([]byte{0x3f, 0x2a}, 64)),
-		StateDir: d.state,
+		User:           "alice",
+		Transport:      d.dial(),
+		Verify:         d.verify,
+		Plan:           p.plan,
+		Allow:          plan.Allow{Login: fakedev.DefaultUser, Expected: expected()},
+		ConfirmMinutes: 10,
+		Clock:          d.clk.Now,
+		Rand:           bytes.NewReader(bytes.Repeat([]byte{0x3f, 0x2a}, 64)),
+		StateDir:       d.state,
 	}
 }
 

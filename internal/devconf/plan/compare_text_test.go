@@ -41,7 +41,7 @@ const checkCompare = `{master:0}
 +       }
 `
 
-// landedCompare is the same change as `show system rollback compare 1 0`
+// landedCompare is the same change as `show configuration | compare rollback 1`
 // prints it after the commit: another order of the hierarchies, the uid
 // Junos gave the new user, no prompt prefix.
 const landedCompare = `[edit snmp]
@@ -465,6 +465,30 @@ func TestApplyConfirmedMinutesRange(t *testing.T) {
 	}
 }
 
+// A class without the secret permission reads a compare with its secrets
+// as '/* SECRET-DATA */' (lab 2026-10-13); a superuser reads the values.
+// The two are the same compare.
+func TestCompareMaskedSecretData(t *testing.T) {
+	super := "[edit system login]\n+    user zz {\n+        authentication {\n+            encrypted-password \"$6$salt$hash\"; ## SECRET-DATA\n+        }\n+    }\n[edit system tacplus-server 192.0.2.10]\n-    secret \"$9$abc\"; ## SECRET-DATA\n+    secret \"$9$def\"; ## SECRET-DATA\n"
+	masked := strings.NewReplacer(`"$6$salt$hash"`, "/* SECRET-DATA */", `"$9$abc"`, "/* SECRET-DATA */", `"$9$def"`, "/* SECRET-DATA */").Replace(super)
+	a, err := ParseCompare(super)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := ParseCompare(masked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !a.Equal(b) || len(a.Stmts) == 0 {
+		t.Errorf("\n%+v\n%+v", a, b)
+	}
+	for _, s := range b.Stmts {
+		if strings.Contains(s.Text(), "SECRET-DATA") || strings.Contains(s.Text(), "/*") {
+			t.Errorf("%q", s.Text())
+		}
+	}
+}
+
 func TestApplyWords(t *testing.T) {
 	for _, w := range ApplyWords() {
 		if !IsApplyWord(w) {
@@ -498,8 +522,18 @@ func TestApplyWords(t *testing.T) {
 	if got := ApplyCancel("id1"); got != `commit comment "tacctl apply cancel id1"` {
 		t.Errorf("%q", got)
 	}
-	if got := ApplyConfirmedNote(7); got != "commit confirmed will be rolled back in 7 minutes" {
+	if got := ApplyConfirmedNote(7); got != "commit confirmed will be automatically rolled back in 7 minutes unless confirmed" {
 		t.Errorf("%q", got)
+	}
+	// the lab spike (L3, L5): a private session refuses 'commit confirmed',
+	// and 'show system rollback compare' is not a Junos command
+	for _, w := range []string{"configure private", "show system rollback compare 1 0", "show system rollback compare 1 0 | no-more"} {
+		if IsApplyWord(w) {
+			t.Errorf("%q is an apply word", w)
+		}
+	}
+	if !IsApplyWord("show configuration | compare rollback 1 | no-more") || ApplyLandedCompare != "show configuration | compare rollback 1 | no-more" {
+		t.Errorf("the landed compare %q", ApplyLandedCompare)
 	}
 	// the region's own confirmed commit is an apply-word shape too, with
 	// another comment: the plan's region is not the apply's

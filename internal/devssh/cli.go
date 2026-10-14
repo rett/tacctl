@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -357,6 +358,29 @@ type shell struct {
 	alt    string     // the prompt of the mode a command can lead to; "" none
 	broken atomic.Bool
 	log    cmdLog
+	// area is what the device printed before its prompt in the answer to
+	// the last empty line typed ahead (PromptArea); areaOK is set once a
+	// command completed.
+	area   []string
+	areaOK bool
+}
+
+// PromptArea is a shell session that tells what the device prints before
+// its prompt: a Junos switch's '{master:0}' line, and the line '# commit
+// confirmed will be rolled back in N minutes' while a confirmed commit is
+// pending (0.2.9 lab L2). Run drops these lines from the end of a command's
+// output; PromptArea returns them as the device printed them in its answer
+// to the last empty line Run typed ahead (the location line not among
+// them, blank lines dropped). ok is false before a command has completed.
+type PromptArea interface {
+	PromptArea() (lines []string, ok bool)
+}
+
+// PromptArea is the prompt area of the last command (see the interface).
+func (s *shell) PromptArea() ([]string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.area), s.areaOK
 }
 
 // openShell starts the shell channel and learns the prompt.
@@ -430,6 +454,7 @@ func (s *shell) Run(ctx context.Context, cmd string) (string, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.area, s.areaOK = nil, false
 	if s.broken.Load() {
 		return "", fmt.Errorf("%w: %s", ErrClosed, s.c.addr)
 	}
@@ -871,6 +896,7 @@ func (s *shell) body(o *outBuf, k int) string {
 			}
 		}
 	}
+	s.area, s.areaOK = slices.Clone(extras), len(hits) > 0
 	// The location line stands last, right before the prompt: it is set
 	// aside while the lines before it are trimmed, and put back.
 	keep := ""

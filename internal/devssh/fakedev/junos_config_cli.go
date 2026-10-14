@@ -103,19 +103,20 @@ func (d *junosDevice) runOp(sess *jsession, cmd string, oneShot bool) jresult {
 		res.out = d.setCLI(sess, w[2:])
 	case slices.Equal(w, []string{"show", "system", "commit"}) && len(segs) == 1:
 		res.out = d.historyText()
-	case len(w) == 6 && slices.Equal(w[:4], []string{"show", "system", "rollback", "compare"}):
-		a, errA := strconv.Atoi(w[4])
-		b, errB := strconv.Atoi(w[5])
-		switch {
-		case errA != nil || errB != nil:
-			res.out = jtBadRollback + "\n"
-		case a >= len(d.versions) || b >= len(d.versions) || a < 0 || b < 0:
-			res.out = jtNoRollback + "\n"
-		default:
-			res.out = compareText(d.versions[a], d.versions[b])
-		}
 	case slices.Equal(w, []string{"show", "cli", "authorization"}) && len(segs) == 1:
 		res.out = d.authorizationText(sess.user)
+	case slices.Equal(w, []string{"show", "configuration"}) && len(segs) == 2 && len(segs[1]) == 3 && segs[1][0] == "compare" && segs[1][1] == "rollback":
+		// 'show configuration | compare rollback N': the committed
+		// configuration against rollback N (lab L3)
+		n, err := strconv.Atoi(segs[1][2])
+		switch {
+		case err != nil || n < 0:
+			res.out = jtBadRollback + "\n"
+		case n >= len(d.versions):
+			res.out = jtNoRollback + "\n"
+		default:
+			res.out = compareText(d.versions[n], d.committed)
+		}
 	case len(w) >= 2 && w[0] == "show" && w[1] == "configuration":
 		set := false
 		for _, s := range segs[1:] {
@@ -162,7 +163,7 @@ func (d *junosDevice) lockedText(user string) string {
 	if d.excl != nil {
 		since, pid = d.excl.since, 30000+d.excl.id
 	}
-	return jtLocked + "\n" + fmt.Sprintf(jtEditingLine, user, 0, pid, formatTime(since)) + "\n" + jtEditingExcl + "\n"
+	return jtLocked + "\n" + fmt.Sprintf(jtEditingLine, user, 0, pid, formatTime(since)) + "\n" + fmt.Sprintf(jtEditingExcl, d.switchLine()) + "\n"
 }
 
 // editors is the users block of 'configure' when others are editing.
@@ -179,15 +180,19 @@ func (d *junosDevice) editors(self *jsession) string {
 		b.WriteString(fmt.Sprintf(jtEditingLine, s.user, s.id, 30000+s.id, formatTime(s.since)) + "\n")
 		switch {
 		case s.exclusive:
-			b.WriteString(jtEditingExcl + "\n")
+			b.WriteString(fmt.Sprintf(jtEditingExcl, d.switchLine()) + "\n")
 		case s.private:
-			b.WriteString(jtEditingPriv + "\n")
+			b.WriteString(fmt.Sprintf(jtEditingPriv, d.switchLine()) + "\n")
 		default:
-			b.WriteString(jtEditingShared + "\n")
+			b.WriteString(fmt.Sprintf(jtEditingShared, d.switchLine()) + "\n")
 		}
 	}
+	if h := d.holder(); h != "" && d.excl == nil {
+		// the 'exclusive.held-by' knob's holder: a session of no connection
+		b.WriteString(fmt.Sprintf(jtEditingLine, h, 2, 20419, formatTime(d.born)) + "\n" + fmt.Sprintf(jtEditingExcl, d.switchLine()) + "\n")
+	}
 	if d.stranger != "" && d.modified() && !(self.exclusive) {
-		b.WriteString(fmt.Sprintf(jtEditingLine, d.stranger, 1, 20418, formatTime(d.born)) + "\n" + jtEditingShared + "\n")
+		b.WriteString(fmt.Sprintf(jtEditingLine, d.stranger, 1, 20418, formatTime(d.born)) + "\n" + fmt.Sprintf(jtEditingShared, d.switchLine()) + "\n")
 	}
 	if b.Len() == 0 {
 		return ""
@@ -208,25 +213,36 @@ func (d *junosDevice) enter(sess *jsession, args []string) string {
 	if !mayConfigure(sess.class) {
 		return unknownText()
 	}
-	if h := d.holder(); h != "" && d.excl != sess {
-		return d.lockedText(h)
-	}
+	// Under another session's exclusive lock only 'configure exclusive' is
+	// refused: a shared session enters and lists the holder among the
+	// editors, a private one enters with a warning (lab L1); neither can
+	// change or commit (blocked).
+	h := d.holder()
+	held := h != "" && d.excl != sess
+	out := ""
 	switch mode {
 	case "exclusive":
+		if held {
+			return d.lockedText(h)
+		}
 		if d.modified() {
 			return jtModified + "\n"
 		}
 		d.shared = nil
 		d.excl = sess
 		sess.exclusive = true
+		out = jtExclusiveWarning + "\n"
 	case "private":
+		if held {
+			out = jtPrivateUnderExcl + "\n"
+		}
 		sess.private = true
 		sess.base = d.committed.clone()
 		sess.cand = d.committed.clone()
 	}
 	sess.configure = true
 	sess.edit = nil
-	out := jtEnterConfig + "\n"
+	out += jtEnterConfig + "\n"
 	if e := d.editors(sess); e != "" {
 		out += e
 	}
@@ -521,7 +537,8 @@ func (d *junosDevice) cfgCommit(sess *jsession, args []string) jresult {
 	if confirmed && check {
 		return jresult{out: syntaxText()}
 	}
-	if confirmed && sess.private && d.s.t.exists("private.no-confirmed") {
+	if confirmed && sess.private {
+		// a private session refuses a confirmed commit (lab L5)
 		return jresult{out: jtNoConfirmedPrivate + "\n"}
 	}
 	cand := d.candidate(sess)
@@ -530,12 +547,11 @@ func (d *junosDevice) cfgCommit(sess *jsession, args []string) jresult {
 	}
 	if check {
 		// A commit check from any session confirms a pending confirmed
-		// commit (the helper's rule, plan D132): the entry it leaves is
-		// the confirm.
+		// commit and leaves no history entry (lab L2): entry 0 keeps its
+		// 'rollback in' label, and the banner goes.
 		if d.pending != nil {
 			d.pending.timer.Stop()
 			d.pending = nil
-			d.record(sess.user, jtCommitVia, "", 0)
 		}
 		return jresult{out: jtCheckOK + "\n"}
 	}
@@ -570,14 +586,14 @@ func (d *junosDevice) cfgCommit(sess *jsession, args []string) jresult {
 		d.shared = nil
 	}
 	rollbackIn := 0
-	out := jtCommitComplete + "\n"
+	out := jtCheckOK + "\n" + jtCommitComplete + "\n"
 	if confirmed {
 		rollbackIn = minutes
 		p := &junosPending{before: before.clone()}
 		p.until = d.s.clock.Now().Add(time.Duration(minutes) * d.minute())
 		p.timer = d.s.clock.AfterFunc(time.Duration(minutes)*d.minute(), func() { d.expire(p) })
 		d.pending = p
-		out = fmt.Sprintf(jtConfirmedFmt, minutes) + "\n" + out
+		out = jtCheckOK + "\n" + fmt.Sprintf(jtConfirmedFmt, minutes) + "\n" + jtCommitComplete + "\n"
 	}
 	d.record(sess.user, jtCommitVia, comment, rollbackIn)
 	res := jresult{out: out}

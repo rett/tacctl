@@ -72,12 +72,15 @@ func (e *extraT) Load(ctx context.Context, l plan.Line) (Loaded, error) {
 	return r, err
 }
 
-// landedT reports a landed compare with one statement more.
+// landedT reports a landed compare with one statement less (one more is
+// 'outside the plan' since the landed compare's own check, lab 2026-10-13).
 type landedT struct{ Reader }
 
 func (l landedT) LandedCompare(ctx context.Context, d plan.Delta) (plan.CompareText, error) {
 	c, err := l.Reader.LandedCompare(ctx, d)
-	c.Stmts = append(c.Stmts, plan.CompareStmt{Op: '+', Path: []string{"snmp", "contact", "x"}})
+	if len(c.Stmts) > 0 {
+		c.Stmts = c.Stmts[:len(c.Stmts)-1]
+	}
 	return c, err
 }
 

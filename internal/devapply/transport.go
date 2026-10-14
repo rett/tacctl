@@ -23,11 +23,21 @@
 //   - Nothing the package returns, logs or stores holds a secret value: the
 //     statements are logged by plan.Line.Shown and every device text passes
 //     the masker. A line of a stranger's staged compare is never quoted.
+//   - A pending confirmed commit is told by the device's banner '# commit
+//     confirmed will be rolled back in N minutes', which it prints before
+//     the prompt of every session while one is pending (lab L2), and never
+//     by the history: a 'commit check' confirms a pending commit without a
+//     history entry, so entry 0 keeps its 'commit confirmed, rollback in
+//     Nmins' label for good. The state is read as a CommitState: 'show
+//     system commit' typed in a shell session, and the banner of the prompt
+//     after it.
 //   - No pending confirmed commit but tacctl's own is ever confirmed: the
-//     history is read again right before 'commit check' (which confirms any
-//     pending commit, D132), and a pending one fails the transaction after the
-//     discard. The cancel commits only a candidate whose compare is exactly
-//     the inverse of the committed change.
+//     state is read again right before 'commit check' (which confirms any
+//     pending commit, D132), and the held session's own prompt must not
+//     show the banner when the check is typed; a pending one fails the
+//     transaction after the discard. The cancel commits only a candidate
+//     whose compare is exactly the inverse of the committed change, loaded
+//     while the banner still stood.
 //   - A history entry after tacctl's commit that is not its confirm, its
 //     cancel or the device's own rollback is never taken for a confirm: the
 //     state is settled from the configuration (the planner's delta of a
@@ -47,6 +57,7 @@ package devapply
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"time"
 
@@ -62,6 +73,11 @@ type Identity struct {
 
 // Login is what 'show cli authorization' reports of this login.
 type Login struct {
+	// User is the 'Current user' (the local template account of a TACACS+
+	// login), Name the 'login' (the person); both "" when the first line
+	// does not name them.
+	User        string
+	Name        string
 	Class       string
 	Permissions []string
 }
@@ -91,7 +107,9 @@ type CommitEntry struct {
 	User     string
 	Via      string
 	// RollbackIn is the window of a confirmed commit in minutes (0: not a
-	// confirmed commit). Entry 0 with it is a pending commit.
+	// confirmed commit). It is a label the entry keeps for good, also after
+	// a 'commit check' confirmed the commit: never a pending marker
+	// (CommitState.Pending is).
 	RollbackIn int
 	Comment    string
 }
@@ -104,16 +122,41 @@ func (e CommitEntry) Same(o CommitEntry) bool {
 // History is 'show system commit', newest first.
 type History []CommitEntry
 
-// Pending reports whether entry 0 is a confirmed commit waiting for its
-// confirm, and when its window ends by the device's clock.
-func (h History) Pending() (CommitEntry, bool) {
-	if len(h) == 0 || h[0].RollbackIn == 0 {
-		return CommitEntry{}, false
-	}
-	return h[0], true
+// CommitState is the commit history with the pending marker, both from one
+// answer: 'show system commit' typed in a shell session, and the prompt
+// area the device printed after it (D132, lab L2).
+type CommitState struct {
+	History History
+	// Pending is set when the prompt area held the banner '# commit
+	// confirmed will be rolled back in N minute(s)': a confirmed commit is
+	// pending, and it is entry 0 (any later commit would have confirmed
+	// it). Minutes is N, the minutes left as the device tells them.
+	Pending bool
+	Minutes int
 }
 
-// Until is a pending entry's end in the device's own wall clock text.
+// Until is the end of a pending commit's window as a phrase: 'until <time>'
+// by the device's clock when entry 0 carries its window, else 'for about N
+// more minute(s)'; "" when nothing is pending.
+func (s CommitState) Until() string {
+	if !s.Pending {
+		return ""
+	}
+	if len(s.History) > 0 {
+		if u := s.History[0].Until(); u != "" {
+			return "until " + u
+		}
+	}
+	unit := "minutes"
+	if s.Minutes == 1 {
+		unit = "minute"
+	}
+	return fmt.Sprintf("for about %d more %s", s.Minutes, unit)
+}
+
+// Until is the end of a confirmed commit's window in the device's own wall
+// clock text: the entry's time and its window ("" for an entry without
+// one). It is an end only while the commit is pending (CommitState).
 func (e CommitEntry) Until() string {
 	if e.RollbackIn == 0 || e.Time.IsZero() {
 		return ""
@@ -138,15 +181,6 @@ type Dirty struct {
 // Any reports whether the gate fails.
 func (d Dirty) Any() bool { return d.Editors || d.Staged }
 
-// OpenMode is how the held session enters configuration mode.
-type OpenMode int
-
-// The modes: exclusive (the default, D131) and private (--private).
-const (
-	OpenExclusive OpenMode = iota
-	OpenPrivate
-)
-
 // Loaded is the answer to one statement.
 type Loaded struct {
 	// NotFound is the tolerated 'statement not found' to a delete.
@@ -159,17 +193,22 @@ type Reader interface {
 	Vendor() string
 	// Identity runs 'show version'.
 	Identity(ctx context.Context) (Identity, error)
-	// History runs 'show system commit'.
+	// History runs 'show system commit'. It tells nothing of a pending
+	// commit (State does).
 	History(ctx context.Context) (History, error)
+	// State runs 'show system commit' in a shell session and reads the
+	// pending marker from the prompt the device printed after it. A prompt
+	// area it does not know is an error, never 'not pending'.
+	State(ctx context.Context) (CommitState, error)
 	// Login runs 'show cli authorization'.
 	Login(ctx context.Context) (Login, error)
 	// Read runs the pull's read command and returns its text (for the
 	// caller's planner; never stored by this package).
 	Read(ctx context.Context) (string, error)
-	// LandedCompare runs 'show system rollback compare 1 0', normalised
-	// for the delta (plan.ParseCompareFor). A text that did not end as the
-	// command ends (an exec channel closed with its exit status) is an
-	// error, never a smaller compare.
+	// LandedCompare runs 'show configuration | compare rollback 1',
+	// normalised for the delta (plan.ParseCompareFor). A text that did not
+	// end as the command ends (an exec channel closed with its exit status)
+	// is an error, never a smaller compare.
 	LandedCompare(ctx context.Context, d plan.Delta) (plan.CompareText, error)
 	// Log is what was typed, a secret's value elided (a copy).
 	Log() []string
@@ -194,11 +233,14 @@ type Transport interface {
 	LocalAddr() net.IP
 	// SharedDirty is the gate (D131 step 3): other editors or a staged
 	// change in the shared candidate, read in a throwaway session that types
-	// nothing but 'configure' and the compare.
+	// nothing but 'configure' and the compare. Another session's exclusive
+	// lock among the editors is a *LockedError.
 	SharedDirty(ctx context.Context) (Dirty, error)
-	// Open enters configuration mode in the held session; allow is the
-	// allow-list every statement Load is given must pass.
-	Open(ctx context.Context, mode OpenMode, allow func(line string) error) error
+	// Open enters configuration mode in the held session with 'configure
+	// exclusive' (there is no private mode: a private session refuses
+	// 'commit confirmed', lab L5); allow is the allow-list every statement
+	// Load is given must pass. A held lock is a *LockedError.
+	Open(ctx context.Context, allow func(line string) error) error
 	// Held reports whether the held session is open and in configuration
 	// mode.
 	Held() bool
@@ -209,17 +251,19 @@ type Transport interface {
 	// configure prompt with the location line before it; a read that ended
 	// any other way is an error, never a smaller compare.
 	Compare(ctx context.Context, d plan.Delta) (plan.CompareText, error)
-	// Check runs 'commit check'.
+	// Check runs 'commit check', and only when the held session's last
+	// prompt showed no pending confirmed commit (ErrPending otherwise).
 	Check(ctx context.Context) error
 	// CommitConfirmed commits under a window of minutes with tacctl's
-	// comment.
+	// comment; the held session's prompt must then show the banner.
 	CommitConfirmed(ctx context.Context, minutes int, id, user string) error
 	// Confirm is the confirming commit, in the held session.
 	Confirm(ctx context.Context, id, user string) error
 	// Cancel loads the configuration before the confirmed commit and commits
-	// it, which ends the window at once (D131 Cancel), only when what it
-	// loaded is exactly the inverse of the committed change (the held
-	// session's last Compare); otherwise it discards and commits nothing.
+	// it, which ends the window at once (D131 Cancel, lab L2), only when the
+	// banner still stood after the load and what it loaded is exactly the
+	// inverse of the committed change (the held session's last Compare);
+	// otherwise it discards and commits nothing.
 	Cancel(ctx context.Context, id string) error
 	// Discard drops the candidate and leaves configuration mode ('rollback
 	// 0', 'exit'); after a failure it closes the held session instead, which

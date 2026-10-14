@@ -40,7 +40,7 @@ A directory with a `config.set` is a Junos device with a configure model
 configuration, a shared candidate, `configure`, `configure exclusive` and
 `configure private`, `set`, `delete` and `insert`, `show | compare`, `commit
 check`, `commit [confirmed N] [comment "..."]` with a timer, `rollback N`,
-`show system commit`, `show system rollback compare A B`, `show cli
+`show system commit`, `show configuration | compare rollback N`, `show cli
 authorization`, `show version`. The model answers the read commands (`show
 configuration [| display inheritance no-comments] | display set`) from the
 committed configuration, over any `.out` file of the directory; every other
@@ -68,9 +68,8 @@ fixture directory ships none, a test writes the ones it needs.
 | `load.errors` | `<prefix> => <message>` (or a tab): a statement that begins with the prefix (verb and absolute path, `set system login idle-timeout`) prints the message and is not applied |
 | `version-gate` | `<prefix>`: the statement answers a syntax error; `<prefix> => check`: it is accepted and `commit check` refuses it |
 | `check.errors` | `<message>`: `commit check` and `commit` fail with it always; `<prefix> => <message>`: when the candidate adds a statement with the prefix |
-| `exclusive.held-by` | a user that holds the exclusive lock (read at each command): `configure` and `configure exclusive` answer `error: configuration database locked by:` |
+| `exclusive.held-by` | a user that holds the exclusive lock (read at each command): `configure exclusive` answers `error: configuration database locked by:` and the holder's lines; `configure` enters and lists him as an exclusive editor |
 | `dirty.shared` | `set` lines staged in the shared candidate by a stranger (an optional first line `user <name>`): `configure` lists him, `configure exclusive` answers `error: configuration database modified` |
-| `private.no-confirmed` | `commit confirmed` in a private session is refused (`commit confirmed not supported for private`) |
 | `verify.fail` | while a confirmed commit is pending a new login is refused: `deny` (the default; authentication fails), `close` (accepted, then closed) or `hang` |
 | `commit.drop` | the connection of the session that typed `commit confirmed` closes once the commit is applied and the timer runs: unanswered by default, `after-output` prints the answer first |
 | `drop` | `<command prefix>` per line: that command closes the connection unanswered, before it is applied |
@@ -81,18 +80,33 @@ Behaviour a test relies on:
 
 - The device keeps one shared candidate. A shared session's staged change
   stays when it exits; an exclusive session's goes with its lock (`exit` or a
-  closed connection). A private session commits only its own difference.
+  closed connection). A private session commits only its own difference and
+  refuses `commit confirmed` (`error: commit confirmed not supported for
+  private configuration`). Under another session's exclusive lock `configure
+  exclusive` is refused, `configure` and `configure private` enter (the
+  latter with a warning), and neither can change or commit.
+- `configure exclusive` answers `warning: uncommitted changes will be
+  discarded on exit` before `Entering configuration mode`; every commit
+  prints `configuration check succeeds` first, and `commit confirmed N` then
+  `commit confirmed will be automatically rolled back in N minutes unless
+  confirmed` (`1 minutes` for 1) and `commit complete`.
 - `commit confirmed N` starts a timer that restores the configuration it
-  replaced when it expires, whether or not any session is open. Any `commit`
-  confirms (`commit complete`), and so does a `commit check` from a session
-  that can run it (the exclusive lock keeps every other session out). A
-  `rollback 1` and `commit` cancel at once. Expiry is a commit of the device's
-  own (`by root via other`).
+  replaced when it expires, whether or not any session is open. While it is
+  pending, every session's prompt has the line `# commit confirmed will be
+  rolled back in N minutes` (`1 minute`; the minutes left, rounded up)
+  before its `{master:0}` / `[edit]` line: that line is the pending marker.
+  Any `commit` confirms; a `commit check` from a session that can run it
+  confirms too and leaves no history entry (the exclusive lock keeps every
+  other session out). A `rollback 1` (`load complete`) and `commit` cancel
+  at once with a normal entry. Expiry is a commit of the device's own (`by
+  root via other`).
 - A confirmed commit's history entry says `commit confirmed, rollback in
-  Nmins` for good; entry 0 with that text is a pending commit.
+  Nmins` for good, also after a check confirmed it: it is not a pending
+  marker.
 - A commit gives every login user without a `uid` the next one from 2000, so
-  `show system rollback compare 1 0` has a `uid` line that the candidate's
-  `show | compare` had not.
+  `show configuration | compare rollback 1` has a `uid` line that the
+  candidate's `show | compare` had not. `show system rollback compare` is
+  not a command.
 - A `secret` is stored as a deterministic `$9$` string and `show` marks it
   `## SECRET-DATA`; the same text set twice is no change.
 - `committed.set` is written to the directory (or `WithStateDir`) when the
@@ -104,5 +118,5 @@ Behaviour a test relies on:
   time, with `timer.minute` to shorten a minute.
 - Every text the model prints is a constant in `junos_config_texts.go`, marked
   `[S]` (plan), `[A]` (the helper's observed phrase), `[L]` (not yet seen on a
-  device) or `[C]` (captured), so that the lab spike can correct them in one
-  place.
+  device) or `[C]` (captured, `tests/fixtures/devconf/juniper/apply/
+  texts.txt`), so that a capture corrects them in one place.

@@ -24,26 +24,24 @@ type strangerT struct {
 	before func()
 }
 
-func (s strangerT) Open(ctx context.Context, mode OpenMode, allow func(string) error) error {
+func (s strangerT) Open(ctx context.Context, allow func(string) error) error {
 	s.before()
-	return s.JunosCLI.Open(ctx, mode, allow)
+	return s.JunosCLI.Open(ctx, allow)
 }
 
 // A stranger's 'commit confirmed' that became pending after the pre-flight is
-// never confirmed by tacctl's 'commit check': the history is read before the
-// check, the candidate discarded and the transaction failed.
+// never confirmed by tacctl's 'commit check': the state (the banner) is read
+// before the check, the candidate discarded and the transaction failed.
 func TestStrangerPendingBeforeCheck(t *testing.T) {
 	for _, c := range []struct {
 		name  string
 		apply bool
-		mode  OpenMode
-	}{{"check", false, OpenExclusive}, {"apply", true, OpenExclusive}, {"private", true, OpenPrivate}} {
+	}{{"check", false}, {"apply", true}} {
 		t.Run(c.name, func(t *testing.T) {
 			d := newDevice(t, nil)
 			before := d.srv.Committed()
 			p := &planner{desired: desiredLines()}
 			mod := func(in *Input) {
-				in.Mode = c.mode
 				in.Transport = strangerT{in.Transport.(*JunosCLI), func() { runShell(t, d, "configure", "commit confirmed 5") }}
 			}
 			var o Outcome
@@ -99,11 +97,52 @@ func TestCancelAfterExpiryCommitsNothing(t *testing.T) {
 			t.Errorf("a cancel was committed: %+v", h)
 		}
 	}
-	if indexOf(o.Log, plan.ApplyCancel(o.ID)) >= 0 || !endsWith(o.Log, plan.ApplyRollback1, plan.ApplyCompare, plan.ApplyRollback0, plan.ApplyExit) {
+	// the prompt after 'rollback 1' no longer shows the banner: discarded
+	// before the compare (lab L2; before the spike the compare's inverse
+	// check was the first guard to see it, and stays the second)
+	if indexOf(o.Log, plan.ApplyCancel(o.ID)) >= 0 || !endsWith(o.Log, plan.ApplyRollback1, plan.ApplyRollback0, plan.ApplyExit) {
 		t.Errorf("log %q", o.Log)
 	}
 	wantExit(t, o, ExitRolledBack, ResultRolledBack)
-	if !strings.Contains(o.Reason, "the device rolled it back at 2026-10-13 14:10:00 UTC") || !strings.Contains(o.Reason, "not the inverse") {
+	if !strings.Contains(o.Reason, "the device rolled it back at 2026-10-13 14:10:00 UTC") || !strings.Contains(o.Reason, "shows no pending commit") {
+		t.Errorf("reason %q", o.Reason)
+	}
+}
+
+// bannerT keeps the banner in the held session's prompt after 'rollback 1'
+// though the device's window ended: the compare's inverse check still
+// refuses the cancel's commit.
+type bannerT struct {
+	*JunosCLI
+	clk *fakedev.FakeClock
+}
+
+func (b bannerT) Cancel(ctx context.Context, id string) error {
+	b.clk.Advance(10*time.Minute + time.Second)
+	b.mu.Lock()
+	held := b.held
+	b.held = bannerSession{held}
+	b.mu.Unlock()
+	return b.JunosCLI.Cancel(ctx, id)
+}
+
+type bannerSession struct{ devssh.CLISession }
+
+func (bannerSession) PromptArea() ([]string, bool) {
+	return []string{"# commit confirmed will be rolled back in 1 minute"}, true
+}
+
+func TestCancelNotInverseCommitsNothing(t *testing.T) {
+	d := newDevice(t, nil)
+	before := d.srv.Committed()
+	o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
+		in.Transport = bannerT{in.Transport.(*JunosCLI), d.clk}
+		in.Hold = func(context.Context, time.Time) (bool, error) { return false, nil }
+	})
+	if d.srv.Committed() != before || indexOf(o.Log, plan.ApplyCancel(o.ID)) >= 0 {
+		t.Fatalf("the cancel was committed: %q", o.Log)
+	}
+	if !strings.Contains(o.Reason, "not the inverse") {
 		t.Errorf("reason %q", o.Reason)
 	}
 }
@@ -114,12 +153,22 @@ type expiryTextT struct{ Reader }
 
 func (e expiryTextT) History(ctx context.Context) (History, error) {
 	h, err := e.Reader.History(ctx)
+	return otherVia(h), err
+}
+
+func (e expiryTextT) State(ctx context.Context) (CommitState, error) {
+	st, err := e.Reader.State(ctx)
+	st.History = otherVia(st.History)
+	return st, err
+}
+
+func otherVia(h History) History {
 	for i := range h {
 		if h[i].User == textExpiryUser && h[i].Via == textExpiryVia {
 			h[i].Via = "timer"
 		}
 	}
-	return h, err
+	return h
 }
 
 // An entry after tacctl's commit that tacctl does not recognise is never
@@ -247,6 +296,10 @@ func (s strangeCompare) Run(ctx context.Context, cmd string) (string, error) {
 	return out, err
 }
 
+func (s strangeCompare) PromptArea() ([]string, bool) {
+	return s.CLISession.(devssh.PromptArea).PromptArea()
+}
+
 // The gate never quotes a line of a stranger's staged compare: its number
 // only.
 func TestGateCompareNotQuoted(t *testing.T) {
@@ -355,9 +408,12 @@ func TestShortSecretMasking(t *testing.T) {
 	m := newMasker([]plan.Line{line})
 	for in, out := range map[string]string{
 		"error: invalid community ro": "error: invalid community <secret>",
-		`community "ro" is bad`:       `community "<secret>" is bad`,
-		"ro":                          "<secret>",
-		"error: protocol error (ro)":  "error: protocol error (<secret>)",
+		// the value after "community" is elided with its quotes since the
+		// device-secret masking (lab 2026-10-13)
+		`community "ro" is bad`:      `community <secret> is bad`,
+		`a "ro" word`:                `a "<secret>" word`,
+		"ro":                         "<secret>",
+		"error: protocol error (ro)": "error: protocol error (<secret>)",
 		"set snmp community ro authorization read-only": "set snmp community <secret> authorization read-only",
 	} {
 		if got := m.text(in); got != out {

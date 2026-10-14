@@ -63,8 +63,6 @@ type Input struct {
 	// class; LoginClass empty is the pre-flight's class). The driver sets
 	// Vendor and Sections from the delta.
 	Allow plan.Allow
-	// Mode is exclusive (the default) or private.
-	Mode OpenMode
 	// ConfirmMinutes is the window (device.apply.confirm_timeout).
 	ConfirmMinutes int
 	// Hold is the optional --hold (D134 Q2): after the verification, true
@@ -320,16 +318,18 @@ func (r *run) transaction(reviewed *plan.Delta) {
 		r.end(ExitFailed, fmt.Sprintf("calls itself '%s'", cut(id.Hostname)))
 		return
 	}
-	h, err := t.History(ctx)
+	// the pending marker is the banner of the prompt, never the history's
+	// label (lab L2)
+	st, err := t.State(ctx)
 	if err != nil {
 		r.end(ExitFailed, "pre-flight: "+r.errText(err))
 		return
 	}
-	if p, ok := h.Pending(); ok {
-		r.end(ExitFailed, fmt.Sprintf("a confirmed commit is pending until %s; nothing was sent", p.Until()))
+	if st.Pending {
+		r.end(ExitFailed, fmt.Sprintf("a confirmed commit is pending %s; nothing was sent", st.Until()))
 		return
 	}
-	r.pre = h[0]
+	r.pre = st.History[0]
 	lg, err := t.Login(ctx)
 	if err != nil {
 		r.end(ExitFailed, "pre-flight: "+r.errText(err))
@@ -438,7 +438,7 @@ func (r *run) transaction(reviewed *plan.Delta) {
 
 	// OPEN
 	r.step("open")
-	if err := t.Open(ctx, in.Mode, check); err != nil {
+	if err := t.Open(ctx, check); err != nil {
 		var le *LockedError
 		switch {
 		case errors.As(err, &le):
@@ -500,23 +500,23 @@ func (r *run) transaction(reviewed *plan.Delta) {
 	}
 	r.compare = c
 
-	// CHECK: the history is read once more first, because a 'commit check'
-	// confirms any pending confirmed commit (D132): a stranger's 'commit
-	// confirmed' typed after the pre-flight and before the open would be
-	// confirmed by ours. Under the exclusive lock nothing can be committed
-	// between this read and the check; in a private session the read narrows
-	// the race to that interval.
+	// CHECK: the state is read once more first, because a 'commit check'
+	// confirms any pending confirmed commit (D132, lab L2): a stranger's
+	// 'commit confirmed' typed after the pre-flight and before the open
+	// would be confirmed by ours. Under the exclusive lock nothing can be
+	// committed between this read and the check, and the transport refuses
+	// the check when the held session's own prompt shows the banner.
 	r.step("check")
-	if h, err := t.History(ctx); err != nil {
+	if st, err := t.State(ctx); err != nil {
 		if r.done() {
 			r.interruptBeforeCommit()
 			return
 		}
-		r.discard(ExitFailedCheck, "the history before the check: "+r.errText(err))
+		r.discard(ExitFailedCheck, "the state before the check: "+r.errText(err))
 		return
-	} else if p, ok := h.Pending(); ok {
-		r.discard(ExitFailedCheck, fmt.Sprintf("a confirmed commit of %s became pending until %s before the check; nothing was checked or committed, and it was not confirmed",
-			cut(p.User), p.Until()))
+	} else if st.Pending {
+		r.discard(ExitFailedCheck, fmt.Sprintf("a confirmed commit of %s became pending %s before the check; nothing was checked or committed, and it was not confirmed",
+			cut(st.History[0].User), st.Until()))
 		return
 	}
 	if err := t.Check(ctx); err != nil {
@@ -545,20 +545,20 @@ func (r *run) transaction(reviewed *plan.Delta) {
 	// COMMIT-C: entry 0 is read again right before, so that 'nothing was
 	// committed' is judged against the history the commit would follow
 	r.step("commit")
-	h, err = t.History(ctx)
+	st, err = t.State(ctx)
 	if err != nil {
 		if r.done() {
 			r.interruptBeforeCommit()
 			return
 		}
-		r.discard(ExitFailedCheck, "the history before the commit: "+r.errText(err))
+		r.discard(ExitFailedCheck, "the state before the commit: "+r.errText(err))
 		return
 	}
-	if p, ok := h.Pending(); ok {
-		r.discard(ExitFailedCheck, fmt.Sprintf("a confirmed commit is pending until %s", p.Until()))
+	if st.Pending {
+		r.discard(ExitFailedCheck, fmt.Sprintf("a confirmed commit is pending %s", st.Until()))
 		return
 	}
-	r.pre = h[0]
+	r.pre = st.History[0]
 	sent := r.now()
 	r.committing = true
 	err = t.CommitConfirmed(ctx, r.minutes, r.id, in.User)
@@ -570,12 +570,7 @@ func (r *run) transaction(reviewed *plan.Delta) {
 	r.windowEnd = sent.Add(window)
 	r.o.Until = answered.Add(window)
 	if err != nil {
-		why := "the confirmed commit's answer: " + r.errText(err)
-		var ae *AnswerError
-		if errors.As(err, &ae) && containsLine(ae.Lines, textNoConfirmedPrivate) {
-			why = "this release refuses commit confirmed in a private session; run without --private"
-		}
-		r.readState(why, true)
+		r.readState("the confirmed commit's answer: "+r.errText(err), true)
 		return
 	}
 	batch.Progress(ctx, "committed, verifying")
@@ -652,11 +647,14 @@ func (r *run) verify() string {
 		return "the fresh login failed: " + r.errText(err)
 	}
 	r.vr = vr
-	h, err := vr.History(ctx)
+	st, err := vr.State(ctx)
 	if err != nil {
 		return "show system commit: " + r.errText(err)
 	}
-	if p, ok := h.Pending(); !ok || !ours(p, r.id) {
+	switch {
+	case !st.Pending:
+		return "the fresh login's prompt shows no pending confirmed commit"
+	case !ours(st.History[0], r.id):
 		return "entry 0 of the history is not tacctl's pending commit"
 	}
 	if _, err := vr.Login(ctx); err != nil {
@@ -665,6 +663,13 @@ func (r *run) verify() string {
 	landed, err := vr.LandedCompare(ctx, r.delta)
 	if err != nil {
 		return "the landed compare: " + r.errText(err)
+	}
+	// rollback 1 against the committed configuration holds every
+	// difference since the commit before tacctl's; one the delta does not
+	// explain is not tacctl's and is never quoted (a superuser's compare
+	// prints password hashes, lab 2026-10-13): the count only
+	if un := landed.Unexplained(r.delta); len(un) > 0 {
+		return fmt.Sprintf("the landed compare holds %d statement(s) outside the plan", len(un))
 	}
 	if !landed.Equal(r.compare) {
 		return "what landed is not the change the check showed"
@@ -709,24 +714,43 @@ func cancelComment(id string) string  { return "tacctl apply cancel " + id }
 // ours reports whether the entry is the confirmed commit of the apply id.
 func ours(e CommitEntry, id string) bool { return strings.HasPrefix(e.Comment, commitComment(id)) }
 
-// settle names the state of apply id from the history (D132). pre is
-// entry 0 before the commit (zero: unknown). An entry after tacctl's commit
-// that is neither tacctl's confirm, its cancel nor the device's own rollback
-// is never taken for someone else's confirm (a release whose expiry entry
-// reads otherwise would be recorded applied): settle returns ExitUnknown
-// with odd set, and the caller settles it from the configuration (byFacts)
-// when it can read one.
-func settle(h History, id string, pre CommitEntry) (e Exit, how string, entry *CommitEntry, odd bool) {
+// settle names the state of apply id from the commit state (D132, lab L2).
+// pre is entry 0 before the commit (zero: unknown). The pending marker is
+// the banner, never the history's 'rollback in' label (a 'commit check'
+// confirms without an entry, and the label stays):
+//
+//   - the banner and tacctl's commit at entry 0: pending;
+//   - the banner over another entry 0: unknown (someone's later confirmed
+//     commit is pending; settle again after its window);
+//   - no banner, tacctl's commit at entry 0: confirmed without a commit of
+//     its own (a 'commit check'): applied by someone else;
+//   - the entry directly above tacctl's: its confirm is applied, its cancel
+//     or the device's own rollback ('by root via other') rolled back.
+//
+// An entry after tacctl's commit that is neither tacctl's confirm, its
+// cancel nor the device's own rollback is never taken for someone else's
+// confirm (a release whose expiry entry reads otherwise would be recorded
+// applied): settle returns ExitUnknown with odd set, and the caller settles
+// it from the configuration (byFacts) when it can read one.
+func settle(st CommitState, id string, pre CommitEntry) (e Exit, how string, entry *CommitEntry, odd bool) {
+	h := st.History
 	k := slices.IndexFunc(h, func(e CommitEntry) bool { return ours(e, id) })
+	if st.Pending {
+		switch {
+		case k == 0:
+			return ExitPending, "the confirmed commit is pending", nil, false
+		case k < 0:
+			return ExitUnknown, "a confirmed commit is pending and the history does not show tacctl's commit " + id, nil, false
+		}
+		return ExitUnknown, fmt.Sprintf("a later confirmed commit (by %s via %s at %s) is pending over tacctl's", cut(h[0].User), cut(h[0].Via), h[0].TimeText), nil, false
+	}
 	switch {
 	case k < 0 && pre.TimeText != "" && len(h) > 0 && h[0].Same(pre):
 		return ExitNothingCommitted, "nothing was committed", nil, false
 	case k < 0:
 		return ExitUnknown, "the history does not show tacctl's commit " + id, nil, false
-	case k == 0 && h[0].RollbackIn > 0:
-		return ExitPending, "the confirmed commit is pending", nil, false
 	case k == 0:
-		return ExitUnknown, "tacctl's commit is entry 0 without a window", nil, false
+		return ExitAppliedByOther, "no confirmed commit is pending and tacctl's commit is still entry 0: a 'commit check' confirmed it", nil, false
 	}
 	next := h[k-1]
 	switch {
@@ -757,8 +781,8 @@ func byFacts(how string, d plan.Delta, err error) (Exit, string) {
 // settle is settle with an unrecognised entry settled from the
 // configuration, read on the fresh login if one is open, else on the held
 // login's connection.
-func (r *run) settle(ctx context.Context, h History) (Exit, string, *CommitEntry) {
-	e, how, entry, odd := settle(h, r.id, r.pre)
+func (r *run) settle(ctx context.Context, st CommitState) (Exit, string, *CommitEntry) {
+	e, how, entry, odd := settle(st, r.id, r.pre)
 	if !odd {
 		return e, how, entry
 	}
@@ -782,45 +806,45 @@ func (r *run) settle(ctx context.Context, h History) (Exit, string, *CommitEntry
 	return e, how, nil
 }
 
-// history reads the commit history after a failure: on the fresh login if
-// one is open, on the held login's connection, and on a new fresh login.
-func (r *run) history(ctx context.Context) (History, error) {
+// state reads the commit state after a failure: on the fresh login if one
+// is open, on the held login's connection, and on a new fresh login.
+func (r *run) state(ctx context.Context) (CommitState, error) {
 	if r.vr != nil {
-		if h, err := r.vr.History(ctx); err == nil {
-			return h, nil
+		if st, err := r.vr.State(ctx); err == nil {
+			return st, nil
 		}
 	}
-	h, last := r.t.History(ctx)
+	st, last := r.t.State(ctx)
 	if last == nil {
-		return h, nil
+		return st, nil
 	}
 	if r.in.Verify != nil {
 		vr, err := r.in.Verify(ctx)
 		if err != nil {
-			return nil, err
+			return CommitState{}, err
 		}
 		if r.vr != nil {
 			_ = r.vr.Close()
 		}
 		r.vr = vr
-		return vr.History(ctx)
+		return vr.State(ctx)
 	}
-	return nil, last
+	return CommitState{}, last
 }
 
 // readState is READ-STATE (D132): after a failure past the confirmed commit
-// the history is read before the state is named. With cancelPending a
-// pending commit of this apply is cancelled first (an answer the
-// transport did not know is never taken for a commit to keep).
+// the state is read before it is named. With cancelPending a pending
+// commit of this apply is cancelled first (an answer the transport did not
+// know is never taken for a commit to keep).
 func (r *run) readState(why string, cancelPending bool) {
 	ctx, cancelCtx := r.grace()
 	defer cancelCtx()
-	h, err := r.history(ctx)
+	st, err := r.state(ctx)
 	if err != nil {
 		r.end(ExitUnknown, why+"; the state could not be read: "+r.errText(err))
 		return
 	}
-	e, how, entry := r.settle(ctx, h)
+	e, how, entry := r.settle(ctx, st)
 	if e == ExitPending && cancelPending {
 		r.cancel(why)
 		return
@@ -858,8 +882,9 @@ func (r *run) named(e Exit, why, how string, entry *CommitEntry) {
 
 // cancel is D131's Cancel after a failure past the confirmed commit: in the
 // held session only, only while the window leaves the cancel margin, and
-// only when the history shows this apply's commit pending at entry 0.
-// The state is read afterwards and named.
+// only when the state read after the failure shows a pending commit (the
+// banner) and this apply's commit at entry 0. The state is read afterwards
+// and named.
 func (r *run) cancel(why string) {
 	if r.done() {
 		r.o.Interrupted = r.o.Interrupted || errors.Is(r.ctx.Err(), context.Canceled)
@@ -873,16 +898,16 @@ func (r *run) cancel(why string) {
 	case r.now().After(r.windowEnd.Add(-r.d.CancelMargin)):
 		why += "; too little of the window was left to cancel"
 	default:
-		h, err := r.t.History(ctx)
+		st, err := r.t.State(ctx)
 		if err != nil {
-			h, err = r.history(ctx)
+			st, err = r.state(ctx)
 		}
 		if err != nil {
 			r.end(ExitUnknown, why+"; the state could not be read: "+r.errText(err))
 			return
 		}
-		if p, ok := h.Pending(); !ok || !ours(p, r.id) {
-			e, how, entry := r.settle(ctx, h)
+		if !st.Pending || !ours(st.History[0], r.id) {
+			e, how, entry := r.settle(ctx, st)
 			r.named(e, why, how, entry)
 			return
 		}
@@ -890,12 +915,12 @@ func (r *run) cancel(why string) {
 			why += "; the cancel: " + r.errText(err)
 		}
 	}
-	h, err := r.history(ctx)
+	st, err := r.state(ctx)
 	if err != nil {
 		r.end(ExitUnknown, why+"; the state could not be read: "+r.errText(err))
 		return
 	}
-	e, how, entry := r.settle(ctx, h)
+	e, how, entry := r.settle(ctx, st)
 	r.named(e, why, how, entry)
 }
 
@@ -903,12 +928,12 @@ func (r *run) cancel(why string) {
 func (r *run) record() {
 	ctx, cancel := r.grace()
 	defer cancel()
-	h, err := r.history(ctx)
+	st, err := r.state(ctx)
 	if err != nil {
-		r.end(ExitUnknown, "confirmed (commit complete) but the history could not be read: "+r.errText(err))
+		r.end(ExitUnknown, "confirmed (commit complete) but the state could not be read: "+r.errText(err))
 		return
 	}
-	e, how, entry := r.settle(ctx, h)
+	e, how, entry := r.settle(ctx, st)
 	if e == ExitPending {
 		// the confirm answered 'commit complete' and the commit is still
 		// pending: the answer is not what it said; nothing more is typed

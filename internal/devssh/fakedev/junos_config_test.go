@@ -112,10 +112,11 @@ func (c *jclient) strip(cmd, raw string) string {
 	if len(lines) > 0 && strings.TrimSpace(lines[0]) == cmd {
 		lines = lines[1:]
 	}
-	// the prompt, the [edit] / {master} lines and the blank before them
+	// the prompt, the [edit] / {master} lines, a pending commit's banner and
+	// the blank before them
 	for len(lines) > 0 {
 		l := lines[len(lines)-1]
-		if l == "" || promptRE.MatchString(l) || strings.HasPrefix(l, "{") || strings.HasPrefix(l, "[edit") {
+		if l == "" || promptRE.MatchString(l) || strings.HasPrefix(l, "{") || strings.HasPrefix(l, "[edit") || strings.HasPrefix(l, "# commit confirmed will be rolled back in ") {
 			lines = lines[:len(lines)-1]
 			continue
 		}
@@ -260,8 +261,12 @@ func TestJunosConfirmedCommitExpiresOnTheClock(t *testing.T) {
 	if strings.Contains(srv.Committed(), "idle-timeout") {
 		t.Error("a commit check committed")
 	}
-	if got := c.send(`commit confirmed 2 comment "tacctl apply x"`); got != "commit confirmed will be rolled back in 2 minutes\ncommit complete" {
-		t.Errorf("commit confirmed: %q", got)
+	// the captured answer (lab L1), then the banner before the location line
+	if _, err := io.WriteString(c.in, `commit confirmed 2 comment "tacctl apply x"`+"\n"); err != nil {
+		t.Fatal(err)
+	}
+	if raw := c.read(); !strings.HasSuffix(raw, "\nconfiguration check succeeds\ncommit confirmed will be automatically rolled back in 2 minutes unless confirmed\ncommit complete\n\n# commit confirmed will be rolled back in 2 minutes\n{master:0}[edit]\ngotest@sw-lab-1# ") {
+		t.Errorf("commit confirmed: %q", raw)
 	}
 	if !strings.Contains(srv.Committed(), "set system login idle-timeout 30\n") {
 		t.Error("not committed")
@@ -278,10 +283,23 @@ func TestJunosConfirmedCommitExpiresOnTheClock(t *testing.T) {
 	if !strings.HasPrefix(h, "0   2026-10-12 02:00:00 UTC by gotest via cli commit confirmed, rollback in 2mins\n    tacctl apply x\n1   ") {
 		t.Errorf("history:\n%s", h)
 	}
+	// the banner stands before every prompt of every session, the minutes
+	// left rounded up, 'minute' for one
+	other, first := shell(t, srv, DefaultUser, DefaultPassword)
+	if first != "\n# commit confirmed will be rolled back in 2 minutes\n{master:0}\ngotest@sw-lab-1> " {
+		t.Errorf("another session's prompt: %q", first)
+	}
+	clk.Advance(61 * time.Second)
+	if _, err := io.WriteString(other.in, "\n"); err != nil {
+		t.Fatal(err)
+	}
+	if raw := other.read(); raw != "\n# commit confirmed will be rolled back in 1 minute\n{master:0}\ngotest@sw-lab-1> " {
+		t.Errorf("one minute left: %q", raw)
+	}
 	// the session is closed: the timer is not
 	c.send("exit")
 	_ = c.conn.Close()
-	clk.Advance(119 * time.Second)
+	clk.Advance(58 * time.Second)
 	if _, ok := srv.PendingUntil(); !ok {
 		t.Fatal("rolled back early")
 	}
@@ -296,12 +314,20 @@ func TestJunosConfirmedCommitExpiresOnTheClock(t *testing.T) {
 	if len(hist) != 3 || hist[0].User != "root" || hist[0].Via != "other" || hist[1].RollbackIn != 2 {
 		t.Errorf("history %+v", hist)
 	}
+	// the expiry ended the banner
+	if _, err := io.WriteString(other.in, "\n"); err != nil {
+		t.Fatal(err)
+	}
+	if raw := other.read(); raw != "\n{master:0}\ngotest@sw-lab-1> " {
+		t.Errorf("after the expiry: %q", raw)
+	}
 	b, err := os.ReadFile(filepath.Join(dir, "committed.set"))
 	if err != nil || string(b) != srv.Committed() {
 		t.Errorf("committed.set %q %v", b, err)
 	}
-	// the rollback compare after the expiry: 1 -> 0 undoes the change
-	out, err := execOut(t, srv, DefaultUser, DefaultPassword, "show system rollback compare 1 0 | no-more")
+	// the landed compare after the expiry: rollback 1 against the committed
+	// configuration undoes the change
+	out, err := execOut(t, srv, DefaultUser, DefaultPassword, "show configuration | compare rollback 1 | no-more")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,8 +340,11 @@ func TestJunosCommitConfirms(t *testing.T) {
 	c.send("configure exclusive")
 	c.send("set system login idle-timeout 30")
 	c.send("commit confirmed 5")
-	if got := c.send(`commit comment "confirm"`); got != "commit complete" {
+	if got := c.send(`commit comment "confirm"`); got != "configuration check succeeds\ncommit complete" {
 		t.Errorf("commit: %q", got)
+	}
+	if strings.Contains(c.all[strings.LastIndex(c.all, "commit complete"):], "# commit confirmed") {
+		t.Errorf("the banner outlived the confirm: %q", c.all)
 	}
 	if _, ok := srv.PendingUntil(); ok {
 		t.Error("still pending")
@@ -338,14 +367,28 @@ func TestJunosCommitCheckConfirmsAPendingCommit(t *testing.T) {
 	c.send("commit confirmed 5")
 	other, _ := shell(t, srv, DefaultUser, DefaultPassword)
 	other.send("configure")
-	if got := other.send("commit check"); got != "configuration check succeeds" {
-		t.Errorf("commit check: %q", got)
+	n := len(srv.History())
+	if _, err := io.WriteString(other.in, "commit check\n"); err != nil {
+		t.Fatal(err)
+	}
+	// the answer and no banner after it: the check confirmed
+	if raw := other.read(); raw != "commit check \nconfiguration check succeeds\n\n{master:0}[edit]\ngotest@sw-lab-1# " {
+		t.Errorf("commit check: %q", raw)
 	}
 	if _, ok := srv.PendingUntil(); ok {
-		t.Error("a stranger's commit check did not confirm (the plan's rule)")
+		t.Error("a stranger's commit check did not confirm (lab L2)")
 	}
-	if h := srv.History(); h[0].RollbackIn != 0 || h[1].RollbackIn != 5 {
+	// The check leaves no history entry (lab L2; this test expected one
+	// before the spike): entry 0 is still the confirmed commit with its
+	// label, which is therefore no pending marker.
+	if h := srv.History(); len(h) != n || h[0].RollbackIn != 5 {
 		t.Errorf("history %+v", h)
+	}
+	if got := c.send("show | compare"); got != "" {
+		t.Errorf("compare: %q", got)
+	}
+	if strings.Contains(c.all[strings.LastIndex(c.all, "show | compare"):], "# commit confirmed") {
+		t.Errorf("the banner outlived the check: %q", c.all)
 	}
 }
 
@@ -356,8 +399,13 @@ func TestJunosExclusiveKeepsAStrangersCommitCheckOut(t *testing.T) {
 	c.send("set system login idle-timeout 30")
 	c.send("commit confirmed 5")
 	other, _ := shell(t, srv, DefaultUser, DefaultPassword)
-	if got := other.send("configure"); !strings.HasPrefix(got, "error: configuration database locked by:") {
-		t.Errorf("configure under the lock: %q", got)
+	// a shared configure enters under the lock and lists the holder (lab
+	// L1; before the spike the fake refused it), and its commit check is
+	// refused
+	got := other.send("configure")
+	mustContain(t, "configure under the lock", got, "Entering configuration mode\nUsers currently editing the configuration:\n  gotest terminal pts/", "      exclusive {master:0}[edit]")
+	if got := other.send("commit check"); !strings.HasPrefix(got, "error: configuration database locked by:") {
+		t.Errorf("commit check under the lock: %q", got)
 	}
 	if _, ok := srv.PendingUntil(); !ok {
 		t.Error("the pending commit was confirmed by a session the lock keeps out")
@@ -370,13 +418,25 @@ func TestJunosRollbackCancelsAPendingCommit(t *testing.T) {
 	c.send("configure exclusive")
 	c.send("set system login idle-timeout 30")
 	c.send("commit confirmed 5")
-	if got := c.send("rollback 1"); got != "load complete" {
-		t.Errorf("rollback 1: %q", got)
+	if _, err := io.WriteString(c.in, "rollback 1\n"); err != nil {
+		t.Fatal(err)
+	}
+	// the captured answer: the banner stays until the commit (lab L1)
+	if raw := c.read(); raw != "rollback 1 \nload complete\n\n# commit confirmed will be rolled back in 5 minutes\n{master:0}[edit]\ngotest@sw-lab-1# " {
+		t.Errorf("rollback 1: %q", raw)
 	}
 	if cmp := c.send("show | compare"); cmp != "[edit system login]\n-   idle-timeout 30;" {
 		t.Errorf("compare after rollback 1:\n%s", cmp)
 	}
-	c.send(`commit comment "cancel"`)
+	if _, err := io.WriteString(c.in, `commit comment "cancel"`+"\n"); err != nil {
+		t.Fatal(err)
+	}
+	if raw := c.read(); raw != "commit comment \"cancel\" \nconfiguration check succeeds\ncommit complete\n\n{master:0}[edit]\ngotest@sw-lab-1# " {
+		t.Errorf("cancel: %q", raw)
+	}
+	if h := srv.History(); h[0].Comment != "cancel" || h[0].RollbackIn != 0 {
+		t.Errorf("the cancel is not a normal entry: %+v", h[0])
+	}
 	if _, ok := srv.PendingUntil(); ok {
 		t.Error("still pending after rollback 1 and commit")
 	}
@@ -393,18 +453,30 @@ func TestJunosRollbackCancelsAPendingCommit(t *testing.T) {
 func TestJunosExclusiveLockAndDirtyShared(t *testing.T) {
 	srv, _, _ := newJunos(t, map[string]string{})
 	a, _ := shell(t, srv, DefaultUser, DefaultPassword)
-	if got := a.send("configure exclusive"); got != "Entering configuration mode" {
+	if got := a.send("configure exclusive"); got != "warning: uncommitted changes will be discarded on exit\nEntering configuration mode" {
 		t.Errorf("configure exclusive: %q", got)
 	}
 	if srv.ExclusiveHolder() != DefaultUser {
 		t.Errorf("holder %q", srv.ExclusiveHolder())
 	}
 	b, _ := shell(t, srv, DefaultUser, DefaultPassword)
-	got := b.send("configure exclusive")
-	mustContain(t, "second exclusive", got, "error: configuration database locked by:", DefaultUser, "exclusive [edit]")
-	if got := b.send("configure"); !strings.HasPrefix(got, "error: configuration database locked by:") {
-		t.Errorf("shared configure under the lock: %q", got)
+	if _, err := io.WriteString(b.in, "configure exclusive\n"); err != nil {
+		t.Fatal(err)
 	}
+	// the captured refusal (lab L1): the holder's line and its mode line,
+	// and the session stays in operational mode
+	raw := b.read()
+	if !regexp.MustCompile(`^configure exclusive \nerror: configuration database locked by:\n  gotest terminal pts/\d+ \(pid \d+\) on since 2026-10-12 02:00:00 UTC\n      exclusive \{master:0\}\[edit\]\n\n\{master:0\}\ngotest@sw-lab-1> $`).MatchString(raw) {
+		t.Errorf("second exclusive: %q", raw)
+	}
+	// a private session enters with a warning, and cannot commit
+	if got := b.send("configure private"); !strings.HasPrefix(got, "warning: changes cannot be committed while 'configure exclusive' is active\nEntering configuration mode\n") {
+		t.Errorf("private under the lock: %q", got)
+	}
+	if got := b.send("commit"); !strings.HasPrefix(got, "error: configuration database locked by:") {
+		t.Errorf("a private commit under the lock: %q", got)
+	}
+	b.send("exit")
 	a.send("set system login idle-timeout 30")
 	a.send("exit")
 	if srv.ExclusiveHolder() != "" {
@@ -420,7 +492,7 @@ func TestJunosExclusiveLockAndDirtyShared(t *testing.T) {
 	if got := a2.send("configure exclusive"); got != "error: configuration database modified" {
 		t.Errorf("exclusive over staged: %q", got)
 	}
-	got = a2.send("configure")
+	got := a2.send("configure")
 	mustContain(t, "users", got, "Users currently editing the configuration:", "[edit]")
 	a2.send("show | compare")
 	if got := a2.send("show | compare"); !strings.Contains(got, "idle-timeout 30") {
@@ -502,20 +574,24 @@ func TestJunosStatementAnswers(t *testing.T) {
 	}
 }
 
+// A private session refuses 'commit confirmed' always (lab L5; before the
+// spike the fake did so only with a knob).
 func TestJunosPrivateAndNoConfirmed(t *testing.T) {
-	srv, _, _ := newJunos(t, map[string]string{"private.no-confirmed": ""})
+	srv, _, _ := newJunos(t, map[string]string{})
 	c, _ := shell(t, srv, DefaultUser, DefaultPassword)
 	c.send("configure private")
 	c.send("set system login idle-timeout 30")
-	got := c.send("commit confirmed 2")
-	if !strings.Contains(got, "commit confirmed not supported for private") {
+	if got := c.send("commit confirmed 2"); got != "error: commit confirmed not supported for private configuration" {
 		t.Errorf("private confirmed: %q", got)
+	}
+	if _, ok := srv.PendingUntil(); ok || strings.Contains(srv.Committed(), "idle-timeout") {
+		t.Error("a refused confirmed commit committed")
 	}
 	// private changes are isolated from the shared candidate
 	if strings.Contains(srv.Candidate(), "idle-timeout") {
 		t.Error("a private change reached the shared candidate")
 	}
-	if got := c.send("commit"); got != "commit complete" {
+	if got := c.send("commit"); got != "configuration check succeeds\ncommit complete" {
 		t.Errorf("private commit: %q", got)
 	}
 	if !strings.Contains(srv.Committed(), "idle-timeout 30") {
@@ -533,8 +609,12 @@ func TestJunosUIDAssignedAtCommit(t *testing.T) {
 		t.Errorf("the candidate has a uid:\n%s", cmp)
 	}
 	c.send("commit")
-	out, _ := execOut(t, srv, DefaultUser, DefaultPassword, "show system rollback compare 1 0")
+	out, _ := execOut(t, srv, DefaultUser, DefaultPassword, "show configuration | compare rollback 1")
 	mustContain(t, "landed compare", out, "uid 2000;")
+	// 'show system rollback compare' is not a Junos command (lab L3)
+	if out, err := execOut(t, srv, DefaultUser, DefaultPassword, "show system rollback compare 1 0"); err == nil || !strings.Contains(out, "unknown command.") {
+		t.Errorf("show system rollback compare: %q %v", out, err)
+	}
 }
 
 func TestJunosInsertAndOrder(t *testing.T) {
@@ -625,7 +705,7 @@ func TestJunosVerifyFailRefusesLoginsWhilePending(t *testing.T) {
 		t.Fatal("a login was accepted under verify.fail")
 	}
 	// the session that holds the lock still works, and confirming ends it
-	if got := c.send("commit"); got != "commit complete" {
+	if got := c.send("commit"); got != "configuration check succeeds\ncommit complete" {
 		t.Errorf("confirm: %q", got)
 	}
 	conn, err := dialJunos(t, srv, DefaultUser, DefaultPassword)

@@ -1,6 +1,7 @@
 package devapply
 
 import (
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -88,12 +89,42 @@ func nonEmpty(s, def string) string {
 // erase every word that holds its letters.
 const minSubstring = 4
 
+// reDeviceSecret is a secret the device prints itself, in any statement and
+// not only the delta's: a superuser's compare holds 'encrypted-password
+// "$6$..."', '$9$' strings, communities and keys (lab, 2026-10-13; a
+// narrower class sees '/* SECRET-DATA */'). The value after the keyword is
+// elided.
+var reDeviceSecret = regexp.MustCompile(`\b(encrypted-password|secret|authentication-key|simple-password|pre-shared-key|authentication-password|privacy-password|community)(\s+)("[^"]*"|[^\s;{}"]+)`)
+
+// reCrypt is a hashed or '$9$'-encoded value wherever it stands.
+var reCrypt = regexp.MustCompile(`\$(?:1|2[aby]?|5|6|9|y)\$[^\s";]*`)
+
+// deviceSecrets elides the secrets the device prints (reDeviceSecret,
+// reCrypt) from s.
+func deviceSecrets(s string) string {
+	s = reCrypt.ReplaceAllString(s, secretMark)
+	return reDeviceSecret.ReplaceAllStringFunc(s, func(x string) string {
+		m := reDeviceSecret.FindStringSubmatch(x)
+		if m[3] == secretMark || strings.HasPrefix(m[3], "<") {
+			return x
+		}
+		return m[1] + m[2] + secretMark
+	})
+}
+
 // text is s with every secret value elided: the whole statements, then each
-// value word (as a substring, or as a whole field when it is short).
+// value word (as a substring, or as a whole field when it is short), then
+// the secrets the device prints itself (deviceSecrets).
 func (m *masker) text(s string) string {
 	if m == nil {
-		return s
+		return deviceSecrets(s)
 	}
+	s = m.delta(s)
+	return deviceSecrets(s)
+}
+
+// delta elides the delta's secret values.
+func (m *masker) delta(s string) string {
 	for i := 0; i+1 < len(m.whole); i += 2 {
 		s = strings.ReplaceAll(s, m.whole[i], m.whole[i+1])
 	}
@@ -157,4 +188,4 @@ func (m *masker) lines(ls []string) []string {
 }
 
 // holds reports whether s holds a secret value.
-func (m *masker) holds(s string) bool { return m.text(s) != s }
+func (m *masker) holds(s string) bool { return m.delta(s) != s }

@@ -1,7 +1,7 @@
 package plan
 
-// The text of a Junos `show | compare` (and of `show system rollback compare
-// 1 0`), parsed into statements and normalised so two of them can be
+// The text of a Junos `show | compare` (and of `show configuration | compare
+// rollback 1`), parsed into statements and normalised so two of them can be
 // compared for equality and each can be held against the delta that was
 // meant to produce it (0.2.9 plan D135, the landed check).
 //
@@ -394,7 +394,11 @@ func ParseCompareFor(text string, d Delta) (CompareText, error) {
 			}
 			stack = append(stack, frame{words: words, op: inherit(op)})
 		default:
-			s, ok := stripStatement(body)
+			// a class without the secret permission sees a secret's value
+			// as '/* SECRET-DATA */' (lab 2026-10-13): one word, masked as
+			// any value after a secret word, so the compare is equal by
+			// structure to a superuser's
+			s, ok := stripStatement(strings.ReplaceAll(body, "/* SECRET-DATA */", "SECRET-DATA"))
 			if !ok || s == "" {
 				return CompareText{}, &CompareLineError{Line: n + 1, Why: "not a statement", Text: trimmed}
 			}

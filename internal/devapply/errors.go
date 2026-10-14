@@ -1,16 +1,14 @@
 package devapply
 
 // The device texts of the Junos command line and the error table (0.2.9 plan
-// §5, D131 steps 3-11), in one place so that the lab spike (WP14.0, L1, L2,
-// L5) corrects them here and nowhere else.
+// §5, D131 steps 3-11), in one place.
 //
-// [L] Every text below that is not marked [S] is the helper script's
-// observed phrase or the Junos reference's, NOT confirmed on a device by
-// tacctl: the prompts' location line, the refusals of 'configure
-// exclusive', the answers to 'rollback N', the layout of 'show system
-// commit' (the time, 'by <user> via <how>', the indented comment), the
-// expiry's history entry ('by root via other'), the layout of 'show cli
-// authorization' and of 'show version'. Each parser fails closed, so a
+// [C] marks a text the lab spike captured on Junos 25.4
+// (docs/plans/0.2.9-lab.md, tests/fixtures/devconf/juniper/apply/
+// texts.txt). The others are the helper script's observed phrases or the
+// Junos reference's, not confirmed on a device by tacctl: the gate's editor
+// texts, 'database modified', 'statement not found', the layout of 'show
+// cli authorization' and of 'show version'. Each parser fails closed, so a
 // text that differs on a device is a failure that names the text, never a
 // success.
 
@@ -25,12 +23,15 @@ import (
 
 // The answers the transport requires or recognises.
 const (
-	// textEnterConfig is the answer to 'configure', 'configure exclusive'
-	// and 'configure private'.
+	// textEnterConfig is the answer to 'configure' and, after
+	// textExclusiveWarning, to 'configure exclusive' [C].
 	textEnterConfig = "Entering configuration mode"
-	// textExitConfig is the answer to 'exit' in configuration mode.
+	// textExclusiveWarning is the first line of the answer to 'configure
+	// exclusive' [C].
+	textExclusiveWarning = "warning: uncommitted changes will be discarded on exit"
+	// textExitConfig is the answer to 'exit' in configuration mode [C].
 	textExitConfig = "Exiting configuration mode"
-	// textLoadComplete is the answer to 'rollback 0' and 'rollback 1'.
+	// textLoadComplete is the answer to 'rollback 0' and 'rollback 1' [C].
 	textLoadComplete = "load complete"
 	// textNotFound is the one tolerated answer, to a 'delete' of an absent
 	// node (D131 step 5).
@@ -40,20 +41,29 @@ const (
 	textUsersEditing = "Users currently editing the configuration"
 	// textNotCommitted is a shared candidate's staged change.
 	textNotCommitted = "The configuration has been changed but not committed"
-	// textLocked is the refusal of 'configure' under another session's
-	// exclusive lock; the next line names the holder.
+	// textLocked is the refusal of 'configure exclusive' under another
+	// session's exclusive lock [C]; the next line names the holder ('  admin
+	// terminal pts/0 (pid 84557) on since ...'), the one after it its mode
+	// ('      exclusive {master:0}[edit]'). A shared 'configure' enters
+	// instead and lists the holder among the editors [C].
 	textLocked = "error: configuration database locked by"
 	// textModified is the refusal of 'configure exclusive' over a staged
 	// change.
 	textModified = "error: configuration database modified"
-	// textNoConfirmedPrivate is the private session's refusal of 'commit
-	// confirmed' on some releases (the helper's phrase is the prefix).
-	textNoConfirmedPrivate = "error: commit confirmed not supported for private"
 	// textExpiryUser and textExpiryVia are the history entry of the
-	// device's own rollback at the end of a confirmed commit's window.
+	// device's own rollback at the end of a confirmed commit's window [C].
 	textExpiryUser = "root"
 	textExpiryVia  = "other"
 )
+
+// reBanner is the line a Junos device prints before the prompt of every
+// session while a confirmed commit is pending, the minutes left in it [C:
+// '# commit confirmed will be rolled back in 2 minutes'; '1 minute' for one].
+var reBanner = regexp.MustCompile(`^# commit confirmed will be rolled back in ([1-9][0-9]{0,4}) minutes?$`)
+
+// reSwitchLine is the '{master:0}' line a switch prints before its
+// operational prompt [C].
+var reSwitchLine = regexp.MustCompile(`^\{[a-z-]+(?::[a-z0-9]+)?\}$`)
 
 // The success phrases are the plan package's [S].
 var (
@@ -73,8 +83,13 @@ var reRollbackIn = regexp.MustCompile(`^commit confirmed, rollback in (\d+) ?min
 var historyTimeLayouts = []string{"2006-01-02 15:04:05 MST", "2006-01-02 15:04:05"}
 
 // reAuthClass finds the class on the first line of 'show cli authorization'
-// ('Current user: alice login: alice class: super-user', quotes optional).
-var reAuthClass = regexp.MustCompile(`\bclass:?\s+'?([A-Za-z0-9_.@-]+)'?`)
+// ('Current user: alice login: alice class: super-user'; a TACACS+ login
+// [C]: "Current user: 'EN-CLASS' login: 'gotesteng' class 'EN-CLASS'", the
+// template account, the person, the class).
+var reAuthClass = regexp.MustCompile(`(?:^|\s)class:?\s+'?([A-Za-z0-9_.@-]+)'?\s*$`)
+
+// reAuthUser finds the current user and the login on that line.
+var reAuthUser = regexp.MustCompile(`^\s*Current user:\s+'?([A-Za-z0-9_.@-]+)'?\s+login:\s+'?([A-Za-z0-9_.@-]+)'?\s`)
 
 // reVersionField is a 'Hostname: x', 'Model: y' or 'Junos: z' line of 'show
 // version'.
@@ -133,6 +148,10 @@ var (
 	// ErrNotSent: the transport refused to send a line (not an apply word,
 	// not an allowed statement, or not in the right state).
 	ErrNotSent = errors.New("not sent")
+	// ErrPending: the device's prompt shows a pending confirmed commit
+	// where the transport must not act on one (a 'commit check' would
+	// confirm it).
+	ErrPending = errors.New("a confirmed commit is pending")
 )
 
 // AnswerError is a command whose answer was a refusal or not recognised.
@@ -166,10 +185,11 @@ func (e *AnswerError) Message() string {
 }
 
 // LockedError is a configuration database another session holds or has
-// changed: 'configure' or 'configure exclusive' was refused.
+// changed: 'configure exclusive' was refused, or the gate's shared
+// 'configure' listed an exclusive editor.
 type LockedError struct {
-	// By is the holder of the exclusive lock ("" when the device did not
-	// name one).
+	// By is the user that holds the exclusive lock, the first word of the
+	// holder's line ("" when the device did not name one).
 	By string
 	// Modified is set for a staged change in the shared candidate.
 	Modified bool

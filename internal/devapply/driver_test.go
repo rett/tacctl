@@ -84,7 +84,7 @@ func TestApplyApplied(t *testing.T) {
 	if ic < 0 || iconf < ic || indexOf(o.VerifyLog, plan.ApplyConfirm(o.ID, "alice")) >= 0 {
 		t.Errorf("commit %d confirm %d; verify log %q", ic, iconf, o.VerifyLog)
 	}
-	for _, w := range []string{plan.ApplyShowCommit, plan.ApplyShowAuthorization, plan.ApplyLandedCompare} {
+	for _, w := range []string{showCommitShell, plan.ApplyShowAuthorization, plan.ApplyLandedCompare} {
 		if indexOf(o.VerifyLog, w) < 0 {
 			t.Errorf("the verification did not run %q: %q", w, o.VerifyLog)
 		}
@@ -278,19 +278,44 @@ func TestFailedOutsideTheDelta(t *testing.T) {
 
 // --- READ-STATE: nothing committed ---------------------------------------------------------------
 
-func TestNothingCommittedPrivate(t *testing.T) {
-	d := newDevice(t, map[string]string{"private.no-confirmed": ""})
+// showCommitShell is the state read: 'show system commit' in a shell, whose
+// prompt carries the banner of a pending commit.
+const showCommitShell = plan.ApplyShowCommit + " | no-more"
+
+// The confirmed commit's line closes the connection unanswered, before it is
+// applied: the state is read on a fresh login before it is named. (Before
+// the spike this exit was reached through the private session's refusal; a
+// private session is no longer opened, lab L5.)
+func TestNothingCommittedSessionDropped(t *testing.T) {
+	d := newDevice(t, map[string]string{"drop": "commit confirmed\n"})
 	before := d.srv.Committed()
-	o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) { in.Mode = OpenPrivate })
+	o := apply(t, d, &planner{desired: desiredLines()}, nil)
 	wantExit(t, o, ExitNothingCommitted, ResultFailed)
-	if !strings.Contains(o.Reason, "nothing was committed (this release refuses commit confirmed in a private session; run without --private)") {
+	if !strings.Contains(o.Reason, "nothing was committed (the confirmed commit's answer: ") {
 		t.Errorf("reason %q", o.Reason)
 	}
-	if indexOf(o.Log, plan.ApplyConfigurePrivate) < 0 || !o.Discarded || !endsWith(o.Log, plan.ApplyShowCommit, plan.ApplyRollback0, plan.ApplyExit) {
-		t.Errorf("log %q (the state is read before it is named, then the discard)", o.Log)
+	if indexOf(o.VerifyLog, showCommitShell) < 0 {
+		t.Errorf("the state was not read on a fresh login: %q", o.VerifyLog)
 	}
-	if d.srv.Committed() != before || !o.Until.IsZero() {
-		t.Error("changed or pending")
+	if d.srv.Committed() != before || !o.Until.IsZero() || d.srv.ExclusiveHolder() != "" {
+		t.Error("changed, pending or locked")
+	}
+}
+
+// The landed compare and the state read are the lab's commands: 'show
+// configuration | compare rollback 1' (L3) and 'configure exclusive' only
+// (L5).
+func TestNoPrivateSessionAndLandedCompare(t *testing.T) {
+	d := newDevice(t, nil)
+	o := apply(t, d, &planner{desired: desiredLines()}, nil)
+	wantExit(t, o, ExitApplied, ResultApplied)
+	for _, l := range append(append([]string{}, o.Log...), o.VerifyLog...) {
+		if strings.Contains(l, "private") || strings.Contains(l, "system rollback") {
+			t.Errorf("typed %q", l)
+		}
+	}
+	if indexOf(o.VerifyLog, "show configuration | compare rollback 1 | no-more") < 0 {
+		t.Errorf("verify log %q", o.VerifyLog)
 	}
 }
 
@@ -307,7 +332,7 @@ func TestRolledBackFreshLoginRefused(t *testing.T) {
 	if strings.Contains(o.Reason, devssh.ErrAuth.Error()) {
 		t.Errorf("the reason reads as a rejected password: %q", o.Reason)
 	}
-	if !endsWith(o.Log, plan.ApplyRollback1, plan.ApplyCompare, plan.ApplyCancel(o.ID), plan.ApplyShowCommit) {
+	if !endsWith(o.Log, plan.ApplyRollback1, plan.ApplyCompare, plan.ApplyCancel(o.ID), showCommitShell) {
 		t.Errorf("log %q", o.Log)
 	}
 	if d.srv.Committed() != before {
@@ -451,17 +476,40 @@ func TestAppliedBySomeoneElse(t *testing.T) {
 	wantExit(t, o, ExitPending, ResultPending)
 	d.unknob("commit.drop")
 	runShell(t, d, "configure", "commit check")
+	// The check leaves no entry: tacctl's commit is still entry 0 with its
+	// 'rollback in' label, and no banner stands (lab L2). Before the spike
+	// the fake wrote an entry for the check and this needed the facts; the
+	// state alone now says it, with or without them.
+	if h := d.srv.History(); !ours(CommitEntry{Comment: h[0].Comment}, o.ID) || h[0].RollbackIn != 10 {
+		t.Fatalf("history %+v", h[0])
+	}
 	r, _ := d.verify(context.Background())
 	p := &planner{desired: desiredLines()}
-	rc := Reconcile(context.Background(), r, "example-sw1", o.ID, o.Until, factsOf(p))
-	wantExit(t, rc, ExitAppliedByOther, ResultApplied)
-	if !strings.Contains(rc.Reason, "the commit after tacctl's (by gotest via cli at 2026-10-13 14:00:00 UTC) is not one tacctl recognises; the configuration has the change") {
-		t.Errorf("%q", rc.Reason)
+	for _, facts := range []func(context.Context, string) (plan.Delta, error){factsOf(p), nil} {
+		rc := Reconcile(context.Background(), r, "example-sw1", o.ID, o.Until, facts)
+		wantExit(t, rc, ExitAppliedByOther, ResultApplied)
+		if !strings.Contains(rc.Reason, "a 'commit check' confirmed it") {
+			t.Errorf("%q", rc.Reason)
+		}
 	}
-	// without the facts, the history alone does not say
-	rc = Reconcile(context.Background(), r, "example-sw1", o.ID, o.Until, nil)
 	_ = r.Close()
-	wantExit(t, rc, ExitUnknown, ResultUnknown)
+}
+
+// A pending commit's history label is no pending marker: after a 'commit
+// check' confirmed a stranger's confirmed commit, entry 0 still reads
+// 'commit confirmed, rollback in Nmins', and an apply proceeds (before the
+// spike the pre-flight refused it).
+func TestPreflightLabelIsNoPendingMarker(t *testing.T) {
+	d := newDevice(t, nil)
+	runShell(t, d, "configure", "set snmp contact noc", "commit confirmed 5", "commit check")
+	if _, p := d.srv.PendingUntil(); p {
+		t.Fatal("still pending")
+	}
+	if h := d.srv.History(); h[0].RollbackIn != 5 {
+		t.Fatalf("the label: %+v", h[0])
+	}
+	o := check(t, d, &planner{desired: desiredLines()}, nil)
+	wantExit(t, o, ExitChecked, ResultChecked)
 }
 
 // --- interrupts ----------------------------------------------------------------------------------
@@ -523,11 +571,11 @@ func TestTransportGuards(t *testing.T) {
 	if _, err := j.Load(ctx, line); !errors.Is(err, ErrNotSent) {
 		t.Errorf("a load before Open: %v", err)
 	}
-	if err := j.Open(ctx, OpenExclusive, nil); !errors.Is(err, ErrNotSent) {
+	if err := j.Open(ctx, nil); !errors.Is(err, ErrNotSent) {
 		t.Errorf("Open without an allow-list: %v", err)
 	}
 	refuse := func(string) error { return errors.New("no") }
-	if err := j.Open(ctx, OpenExclusive, refuse); err != nil {
+	if err := j.Open(ctx, refuse); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := j.Load(ctx, line); !errors.Is(err, ErrNotSent) {

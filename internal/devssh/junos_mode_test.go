@@ -455,3 +455,69 @@ func equalStrings(a, b []string) bool {
 	}
 	return true
 }
+
+// A shell session tells its prompt area (PromptArea): the lines the device
+// prints before every prompt, which Run drops from the output. While a
+// confirmed commit is pending a Junos device prints its banner there in
+// every session (0.2.9 lab L2), and the banner is not in Run's output.
+func TestPromptAreaHoldsThePendingBanner(t *testing.T) {
+	dir := transcript(t, map[string]string{"config.set": "set system host-name sw1\nset snmp contact a\n"})
+	clk := fakedev.NewFakeClock(time.Date(2026, 10, 13, 14, 0, 0, 0, time.UTC))
+	srv := serve(t, dir, fakedev.WithClock(clk))
+	c := dial(t, target(t, srv, nil))
+	held, err := c.CLI(devssh.VendorJuniper, devssh.WithMode(devssh.ModeShell))
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := c.CLI(devssh.VendorJuniper, devssh.WithMode(devssh.ModeShell))
+	if err != nil {
+		t.Fatal(err)
+	}
+	area := func(s devssh.CLISession) []string {
+		t.Helper()
+		pa, ok := s.(devssh.PromptArea)
+		if !ok {
+			t.Fatal("a shell session is no PromptArea")
+		}
+		l, ok := pa.PromptArea()
+		if !ok {
+			t.Fatal("no prompt area after a command")
+		}
+		return l
+	}
+	if _, ok := held.(devssh.PromptArea).PromptArea(); ok {
+		t.Error("a prompt area before any command")
+	}
+	if _, err := other.Run(bg(), "show system commit"); err != nil {
+		t.Fatal(err)
+	}
+	if got := area(other); !equalStrings(got, []string{"{master:0}"}) {
+		t.Errorf("no commit pending: %q", got)
+	}
+	for _, cmd := range []string{"configure exclusive", "set snmp contact b"} {
+		if _, err := held.Run(bg(), cmd); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := held.Run(bg(), "commit confirmed 5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	banner := "# commit confirmed will be rolled back in 5 minutes"
+	if strings.Contains(out, banner) || !strings.HasSuffix(out, "commit complete\n\n{master:0}[edit]\n") {
+		t.Errorf("the output holds the banner or lost its end: %q", out)
+	}
+	if got := area(held); !equalStrings(got, []string{banner}) {
+		t.Errorf("the held session's prompt area: %q", got)
+	}
+	out, err = other.Run(bg(), "show system commit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, banner) {
+		t.Errorf("the output holds the banner: %q", out)
+	}
+	if got := area(other); !equalStrings(got, []string{banner, "{master:0}"}) {
+		t.Errorf("another session's prompt area: %q", got)
+	}
+}

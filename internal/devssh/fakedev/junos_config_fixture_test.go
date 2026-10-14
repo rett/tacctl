@@ -50,7 +50,7 @@ func TestJunosApplyFixture(t *testing.T) {
 	got = c.send("show | compare")
 	mustContain(t, "compare", got, "[edit system login]\n+   idle-timeout 30;\n",
 		"[edit snmp community example-ro clients]\n+   198.51.100.0/24 restrict;")
-	if got := c.send("commit"); got != "commit complete" {
+	if got := c.send("commit"); got != "configuration check succeeds\ncommit complete" {
 		t.Errorf("commit: %q", got)
 	}
 	b, err := os.ReadFile(filepath.Join(dir, "committed.set"))

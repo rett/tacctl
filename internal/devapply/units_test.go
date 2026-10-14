@@ -112,26 +112,35 @@ func TestSettle(t *testing.T) {
 	canc.Comment = "tacctl apply cancel " + id
 	exp := CommitEntry{TimeText: "2026-10-13 14:10:00 UTC", User: "root", Via: "other"}
 	other := CommitEntry{TimeText: "2026-10-13 14:02:00 UTC", User: "bob", Via: "cli"}
+	// the pending marker is the banner (pending), never the label (lab L2)
 	cases := []struct {
-		h    History
-		pre  CommitEntry
-		want Exit
+		h       History
+		pending bool
+		pre     CommitEntry
+		want    Exit
 	}{
-		{History{pre}, pre, ExitNothingCommitted},
-		{History{other, pre}, pre, ExitUnknown},
-		{History{ourC, pre}, pre, ExitPending},
-		{History{conf, ourC, pre}, pre, ExitApplied},
-		{History{canc, ourC, pre}, pre, ExitRolledBack},
-		{History{exp, ourC, pre}, pre, ExitRolledBack},
+		{History{pre}, false, pre, ExitNothingCommitted},
+		{History{other, pre}, false, pre, ExitUnknown},
+		{History{ourC, pre}, true, pre, ExitPending},
+		{History{conf, ourC, pre}, false, pre, ExitApplied},
+		{History{canc, ourC, pre}, false, pre, ExitRolledBack},
+		{History{exp, ourC, pre}, false, pre, ExitRolledBack},
 		// a commit after ours that is not one tacctl recognises: never taken
 		// for a confirm from the history alone (the caller reads the facts)
-		{History{other, ourC, pre}, pre, ExitUnknown},
+		{History{other, ourC, pre}, false, pre, ExitUnknown},
 		// a confirm after the device's own rollback: the rollback stands
-		{History{conf, exp, ourC, pre}, pre, ExitRolledBack},
-		{History{pre}, CommitEntry{}, ExitUnknown},
+		{History{conf, exp, ourC, pre}, false, pre, ExitRolledBack},
+		{History{pre}, false, CommitEntry{}, ExitUnknown},
+		// ours at entry 0 with its label and no banner: a 'commit check'
+		// confirmed it without an entry (before the spike this read pending)
+		{History{ourC, pre}, false, pre, ExitAppliedByOther},
+		// the banner over another entry: someone's later pending commit
+		{History{other, ourC, pre}, true, pre, ExitUnknown},
+		// the banner and no commit of ours
+		{History{other, pre}, true, pre, ExitUnknown},
 	}
 	for i, c := range cases {
-		e, _, _, odd := settle(c.h, id, c.pre)
+		e, _, _, odd := settle(CommitState{History: c.h, Pending: c.pending, Minutes: 3}, id, c.pre)
 		if e != c.want {
 			t.Errorf("%d: %s, want %s", i, e, c.want)
 		}

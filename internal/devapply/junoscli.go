@@ -29,14 +29,21 @@ type JunosCLI struct {
 	newShell func() (devssh.CLISession, error)
 	newExec  func() (devssh.CLISession, error)
 
-	mu       sync.Mutex
-	exec     devssh.CLISession
+	mu   sync.Mutex
+	exec devssh.CLISession
+	// op is the operational-mode shell session State reads in (the banner
+	// of a pending commit stands only in a shell's prompt).
+	op       devssh.CLISession
 	held     devssh.CLISession
 	inConfig bool
-	allow    func(string) error
-	login    *Login
-	log      []string
-	m        *masker
+	// area is the held session's prompt area after its last command, and
+	// areaOK whether it was read (devssh.PromptArea).
+	area   []string
+	areaOK bool
+	allow  func(string) error
+	login  *Login
+	log    []string
+	m      *masker
 	// committed is the held session's last compare (and its delta): the
 	// change a confirmed commit after it commits, which Cancel undoes.
 	committed      *plan.CompareText
@@ -136,15 +143,19 @@ func (j *JunosCLI) Held() bool {
 	return j.held != nil && j.inConfig
 }
 
-// Close closes the sessions and the connection. An exclusive or private
-// candidate that was not committed goes with its session.
+// Close closes the sessions and the connection. An exclusive candidate
+// that was not committed goes with its session.
 func (j *JunosCLI) Close() error {
 	j.mu.Lock()
-	held := j.held
-	j.held, j.inConfig = nil, false
+	held, op := j.held, j.op
+	j.held, j.inConfig, j.op = nil, false, nil
+	j.area, j.areaOK = nil, false
 	j.mu.Unlock()
 	if held != nil {
 		_ = held.Close()
+	}
+	if op != nil {
+		_ = op.Close()
 	}
 	if j.release != nil {
 		defer j.release()
@@ -161,6 +172,7 @@ func (j *JunosCLI) dropHeld() {
 	j.mu.Lock()
 	held := j.held
 	j.held, j.inConfig = nil, false
+	j.area, j.areaOK = nil, false
 	j.mu.Unlock()
 	if held != nil {
 		_ = held.Close()
@@ -251,6 +263,84 @@ func (j *JunosCLI) History(ctx context.Context) (History, error) {
 	return parseHistory(out)
 }
 
+// State runs 'show system commit | no-more' in the operational-mode shell
+// session (opened at the first call, kept) and reads the pending marker
+// from the prompt area the device printed after the answer (lab L2: the
+// banner stands before the prompt of every session while a confirmed
+// commit is pending; an exec channel has no prompt). The history and the
+// banner come from one answer. A session that cannot tell its prompt area,
+// or a prompt area with a line tacctl does not know, is an error; a failed
+// read closes the session.
+func (j *JunosCLI) State(ctx context.Context) (CommitState, error) {
+	cmd := plan.ApplyShowCommit + " | no-more"
+	if err := guardWord(cmd); err != nil {
+		return CommitState{}, err
+	}
+	j.mu.Lock()
+	if j.op == nil {
+		s, err := j.newShell()
+		if err != nil {
+			j.mu.Unlock()
+			return CommitState{}, err
+		}
+		j.op = s
+	}
+	op := j.op
+	j.log = append(j.log, cmd)
+	j.mu.Unlock()
+	drop := func() {
+		j.mu.Lock()
+		if j.op == op {
+			j.op = nil
+		}
+		j.mu.Unlock()
+		_ = op.Close()
+	}
+	out, err := op.Run(ctx, cmd)
+	if err != nil {
+		drop()
+		return CommitState{}, fmt.Errorf("%s: %w", cmd, err)
+	}
+	area, ok := promptArea(op)
+	if !ok {
+		drop()
+		return CommitState{}, fmt.Errorf("%s: %w: the session did not tell its prompt", cmd, ErrUnrecognised)
+	}
+	pending, minutes, err := parseBanner(area)
+	if err != nil {
+		drop()
+		return CommitState{}, err
+	}
+	h, err := parseHistory(strings.Join(trimPromptArea(lines(out)), "\n"))
+	if err != nil {
+		return CommitState{}, err
+	}
+	return CommitState{History: h, Pending: pending, Minutes: minutes}, nil
+}
+
+// promptArea is a session's prompt area after its last command.
+func promptArea(s devssh.CLISession) ([]string, bool) {
+	pa, ok := s.(devssh.PromptArea)
+	if !ok {
+		return nil, false
+	}
+	return pa.PromptArea()
+}
+
+// heldPending reads the held session's prompt area after its last command:
+// whether it showed the banner of a pending commit. A prompt area that was
+// not read or not known is an error.
+func (j *JunosCLI) heldPending() (bool, error) {
+	j.mu.Lock()
+	area, ok := j.area, j.areaOK
+	j.mu.Unlock()
+	if !ok {
+		return false, fmt.Errorf("%w: the held session did not tell its prompt", ErrUnrecognised)
+	}
+	pending, _, err := parseBanner(area)
+	return pending, err
+}
+
 // Login runs 'show cli authorization'.
 func (j *JunosCLI) Login(ctx context.Context) (Login, error) {
 	out, err := j.runExec(ctx, plan.ApplyShowAuthorization)
@@ -283,7 +373,9 @@ func (j *JunosCLI) Read(ctx context.Context) (string, error) {
 	return out, nil
 }
 
-// LandedCompare runs 'show system rollback compare 1 0'.
+// LandedCompare runs 'show configuration | compare rollback 1 | no-more'
+// (lab L3: the committed configuration against the one before, the text
+// of the candidate's 'show | compare').
 // An exec channel's output is whole only when the channel ended with its exit
 // status (devssh: anything else is an error), so a cut text never parses.
 func (j *JunosCLI) LandedCompare(ctx context.Context, d plan.Delta) (plan.CompareText, error) {
@@ -310,12 +402,19 @@ func (j *JunosCLI) runHeld(ctx context.Context, line, shown string) (string, err
 		return "", fmt.Errorf("%w: %s", ErrSessionLost, shown)
 	}
 	j.log = append(j.log, shown)
+	j.area, j.areaOK = nil, false
 	j.mu.Unlock()
 	out, err := held.Run(ctx, line)
 	if err != nil {
 		j.dropHeld()
 		return "", fmt.Errorf("%w: %s: %v", ErrSessionLost, shown, j.m.text(err.Error()))
 	}
+	area, ok := promptArea(held)
+	j.mu.Lock()
+	if j.held == held {
+		j.area, j.areaOK = area, ok
+	}
+	j.mu.Unlock()
 	return out, nil
 }
 
@@ -375,6 +474,11 @@ func (j *JunosCLI) SharedDirty(ctx context.Context) (Dirty, error) {
 	if len(nonBlank(body)) == 0 || strings.TrimSpace(nonBlank(body)[0]) != textEnterConfig {
 		return Dirty{}, answerError(plan.ApplyConfigure, body, j.m)
 	}
+	// a shared session enters under another's exclusive lock and lists
+	// the holder (lab L1): the lock is named, not just 'other editors'
+	if by, ok := exclusiveEditor(body); ok {
+		return Dirty{}, &LockedError{By: by}
+	}
 	for _, l := range nonBlank(body)[1:] {
 		switch {
 		case strings.Contains(l, textUsersEditing):
@@ -424,10 +528,13 @@ func containsLine(body []string, s string) bool {
 	return false
 }
 
-// Open opens the held session and enters configuration mode. Any answer but
-// 'Entering configuration mode' and the location line fails, and the
-// session is closed without another word.
-func (j *JunosCLI) Open(ctx context.Context, mode OpenMode, allow func(string) error) error {
+// Open opens the held session and enters configuration mode with
+// 'configure exclusive' (the only mode: a private session refuses 'commit
+// confirmed', lab L5). Any answer but the captured one (the warning that
+// uncommitted changes are discarded on exit, 'Entering configuration mode'
+// and the location line) fails, and the session is closed without another
+// word; another session's lock is a *LockedError with its holder.
+func (j *JunosCLI) Open(ctx context.Context, allow func(string) error) error {
 	if allow == nil {
 		return fmt.Errorf("%w: Open needs the allow-list", ErrNotSent)
 	}
@@ -438,9 +545,6 @@ func (j *JunosCLI) Open(ctx context.Context, mode OpenMode, allow func(string) e
 	}
 	j.mu.Unlock()
 	cmd := plan.ApplyConfigureExclusive
-	if mode == OpenPrivate {
-		cmd = plan.ApplyConfigurePrivate
-	}
 	s, err := j.newShell()
 	if err != nil {
 		return err
@@ -453,7 +557,7 @@ func (j *JunosCLI) Open(ctx context.Context, mode OpenMode, allow func(string) e
 		return err
 	}
 	body, ok := configAnswer(out)
-	if !ok || !exactly(body, textEnterConfig) {
+	if !ok || !exactly(body, textExclusiveWarning, textEnterConfig) {
 		j.dropHeld()
 		switch {
 		case containsLine(body, textModified):
@@ -520,7 +624,23 @@ func (j *JunosCLI) Compare(ctx context.Context, d plan.Delta) (plan.CompareText,
 }
 
 // Check runs 'commit check'; the answer must be the success phrase alone.
+// It is not typed when the held session's last prompt showed a pending
+// confirmed commit, which the check would confirm (ErrPending), or did not
+// tell its prompt.
 func (j *JunosCLI) Check(ctx context.Context) error {
+	if err := guardWord(plan.ApplyCommitCheck); err != nil {
+		return err
+	}
+	if !j.Held() {
+		return fmt.Errorf("%w: %s: not in configuration mode", ErrSessionLost, plan.ApplyCommitCheck)
+	}
+	pending, err := j.heldPending()
+	switch {
+	case err != nil:
+		return fmt.Errorf("%w: %s: %v", ErrNotSent, plan.ApplyCommitCheck, err)
+	case pending:
+		return fmt.Errorf("%w: %s: %w: the held session's prompt shows it", ErrNotSent, plan.ApplyCommitCheck, ErrPending)
+	}
 	body, err := j.word(ctx, plan.ApplyCommitCheck)
 	if err != nil {
 		return err
@@ -531,43 +651,59 @@ func (j *JunosCLI) Check(ctx context.Context) error {
 	return nil
 }
 
+// committedAnswer reports whether a commit's answer is want, after the
+// check's 'configuration check succeeds' that a commit prints first [C] (or
+// without it).
+func committedAnswer(body []string, want ...string) bool {
+	return exactly(body, append([]string{textCheckOK}, want...)...) || exactly(body, want...)
+}
+
 // CommitConfirmed types the confirmed commit; the answer must be the
-// window's line and 'commit complete', nothing else.
+// window's line and 'commit complete' [C], nothing else, and the prompt
+// after it must show the banner of the pending commit.
 func (j *JunosCLI) CommitConfirmed(ctx context.Context, minutes int, id, user string) error {
 	line := plan.ApplyCommitConfirmed(minutes, id, user)
 	body, err := j.word(ctx, line)
 	if err != nil {
 		return err
 	}
-	if !exactly(body, plan.ApplyConfirmedNote(minutes), textCommitComplete) {
+	if !committedAnswer(body, plan.ApplyConfirmedNote(minutes), textCommitComplete) {
 		return answerError(line, body, j.m)
+	}
+	pending, err := j.heldPending()
+	switch {
+	case err != nil:
+		return fmt.Errorf("%s: %w", line, err)
+	case !pending:
+		return fmt.Errorf("%s: %w: the prompt after it shows no pending commit", line, ErrUnrecognised)
 	}
 	return nil
 }
 
 // Confirm types the confirming commit; the answer must be 'commit
-// complete'.
+// complete' [C].
 func (j *JunosCLI) Confirm(ctx context.Context, id, user string) error {
 	line := plan.ApplyConfirm(id, user)
 	body, err := j.word(ctx, line)
 	if err != nil {
 		return err
 	}
-	if !exactly(body, textCommitComplete) {
+	if !committedAnswer(body, textCommitComplete) {
 		return answerError(line, body, j.m)
 	}
 	return nil
 }
 
 // Cancel types 'rollback 1', 'show | compare | no-more' and, only when the
-// compare is exactly the inverse of the held session's last compare (the
-// change the confirmed commit committed), the cancel's commit. Anything else
-// commits nothing: 'rollback 1' typed after the device's own rollback loads
-// the change itself, and committing it would keep it. A 'rollback 1' that
-// did not load closes the session; a compare that is not the inverse (or
-// does not parse) is discarded ('rollback 0', 'exit'), and the device's
-// expiry is the cancel. The check does not depend on any text but the
-// compare's.
+// prompt after 'rollback 1' still showed the banner of the pending commit
+// and the compare is exactly the inverse of the held session's last compare
+// (the change the confirmed commit committed), the cancel's commit (lab L2:
+// it ends the window at once and is a normal entry). Anything else commits
+// nothing: 'rollback 1' typed after the device's own rollback loads the
+// change itself, and committing it would keep it. A 'rollback 1' that did
+// not load closes the session; a missing banner or a compare that is not
+// the inverse (or does not parse) is discarded ('rollback 0', 'exit'), and
+// the device's expiry is the cancel.
 func (j *JunosCLI) Cancel(ctx context.Context, id string) error {
 	j.mu.Lock()
 	committed, d := j.committed, j.committedDelta
@@ -582,6 +718,18 @@ func (j *JunosCLI) Cancel(ctx context.Context, id string) error {
 	if !exactly(body, textLoadComplete) {
 		j.dropHeld()
 		return answerError(plan.ApplyRollback1, body, j.m)
+	}
+	if pending, err := j.heldPending(); err != nil || !pending {
+		why := "the prompt after 'rollback 1' shows no pending commit (the window may have ended)"
+		if err != nil {
+			why = "the prompt after 'rollback 1': " + j.m.text(err.Error())
+		}
+		if derr := j.Discard(ctx); derr != nil {
+			why += "; the discard did not answer as it must, the held session was closed"
+		} else {
+			why += "; it was discarded"
+		}
+		return fmt.Errorf("%w: %s: nothing was committed", ErrUnrecognised, why)
 	}
 	body, err = j.word(ctx, plan.ApplyCompare)
 	if err != nil {
@@ -606,7 +754,7 @@ func (j *JunosCLI) Cancel(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	if !exactly(body, textCommitComplete) {
+	if !committedAnswer(body, textCommitComplete) {
 		return answerError(line, body, j.m)
 	}
 	return nil
@@ -615,7 +763,7 @@ func (j *JunosCLI) Cancel(ctx context.Context, id string) error {
 // Discard types 'rollback 0' and, only when it answered 'load complete',
 // 'exit' (an exit over a candidate with changes asks a question no read
 // ends). Any other answer closes the held session, which drops an exclusive
-// or private candidate all the same; the error says so.
+// candidate all the same; the error says so.
 func (j *JunosCLI) Discard(ctx context.Context) error {
 	defer j.dropHeld()
 	body, err := j.word(ctx, plan.ApplyRollback0)
@@ -632,8 +780,8 @@ func (j *JunosCLI) Discard(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if !exactly(lines(out), textExitConfig) {
-		return answerError(plan.ApplyExit, lines(out), j.m)
+	if ls := trimPromptArea(lines(out)); !exactly(ls, textExitConfig) {
+		return answerError(plan.ApplyExit, ls, j.m)
 	}
 	return nil
 }

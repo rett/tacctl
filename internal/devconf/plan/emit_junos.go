@@ -20,9 +20,9 @@ const (
 	// ApplyConfigure is the throwaway shared session of the gate (step 3).
 	ApplyConfigure = "configure"
 	// ApplyConfigureExclusive is the held session of the transaction
-	// (step 4); ApplyConfigurePrivate is --private's.
+	// (step 4); there is no private one: a private session refuses `commit
+	// confirmed` (lab L5).
 	ApplyConfigureExclusive = "configure exclusive"
-	ApplyConfigurePrivate   = "configure private"
 	// ApplyCompare is the candidate against the committed configuration
 	// (steps 3 and 6; the pager would swallow what follows without no-more).
 	ApplyCompare = "show | compare | no-more"
@@ -39,9 +39,10 @@ const (
 	ApplyShowVersion       = "show version"
 	ApplyShowCommit        = "show system commit"
 	ApplyShowAuthorization = "show cli authorization"
-	// ApplyLandedCompare is the landed compare of step 9: entry 0 against
-	// entry 1.
-	ApplyLandedCompare = "show system rollback compare 1 0 | no-more"
+	// ApplyLandedCompare is the landed compare of step 9: the committed
+	// configuration against rollback 1, in operational mode (lab L3; `show |
+	// compare rollback 1` in configure mode).
+	ApplyLandedCompare = "show configuration | compare rollback 1 | no-more"
 )
 
 // The phrases an apply requires of the device's output ([S: the helper];
@@ -53,9 +54,11 @@ const (
 	ApplyCommitComplete = "commit complete"
 )
 
-// ApplyConfirmedNote is the line `commit confirmed N` prints (step 8).
+// ApplyConfirmedNote is the line `commit confirmed N` prints (step 8),
+// between `configuration check succeeds` and `commit complete` [lab L1;
+// `1 minutes` for N=1].
 func ApplyConfirmedNote(minutes int) string {
-	return "commit confirmed will be rolled back in " + strconv.Itoa(confirmMinutes(Wrapper{ConfirmMinutes: minutes})) + " minutes"
+	return "commit confirmed will be automatically rolled back in " + strconv.Itoa(confirmMinutes(Wrapper{ConfirmMinutes: minutes})) + " minutes unless confirmed"
 }
 
 // ApplyCommitConfirmed is step 8: the confirmed commit with its comment.
@@ -81,13 +84,13 @@ func ApplyCancel(id string) string {
 // applyFixed are the words that are typed as they are, with the variants
 // the pager asks for.
 var applyFixed = []string{
-	ApplyConfigure, ApplyConfigureExclusive, ApplyConfigurePrivate,
+	ApplyConfigure, ApplyConfigureExclusive,
 	ApplyCompare, ApplyCommitCheck, ApplyRollback0, ApplyRollback1,
 	ApplyExit, ApplyQuit,
 	ApplyShowVersion, ApplyShowVersion + " | no-more",
 	ApplyShowCommit, ApplyShowCommit + " | no-more",
 	ApplyShowAuthorization, ApplyShowAuthorization + " | no-more",
-	ApplyLandedCompare, "show system rollback compare 1 0",
+	ApplyLandedCompare, "show configuration | compare rollback 1",
 }
 
 // ApplyWords returns the fixed words of an apply, sorted. The commit

@@ -27,20 +27,41 @@ type junosConn struct {
 var execCLI = regexp.MustCompile(`\bexec\s+cli\b`)
 
 // promptText is the prompt of the session, with the lines before it: a
-// blank line, the '{master:0}' line and, in configuration mode, the
-// '[edit]' line.
+// blank line, while a confirmed commit is pending its banner ('# commit
+// confirmed will be rolled back in N minutes', in every session), the
+// '{master:0}' line and, in configuration mode, the '[edit]' line.
 func (d *junosDevice) promptText(sess *jsession) string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	sw := d.switchLine()
 	up := sess.user + "@" + d.hostname()
+	pre := "\n" + d.pendingBanner()
 	switch {
 	case sess.configure:
-		return "\n" + sw + "[edit" + joinEditPath(sess.edit) + "]\n" + up + "# "
+		return pre + sw + "[edit" + joinEditPath(sess.edit) + "]\n" + up + "# "
 	case sw != "":
-		return "\n" + sw + "\n" + up + "> "
+		return pre + sw + "\n" + up + "> "
 	}
-	return "\n" + up + "> "
+	return pre + up + "> "
+}
+
+// pendingBanner is the banner line of a pending confirmed commit with its
+// line end, "" when none is pending: the minutes left, rounded up.
+func (d *junosDevice) pendingBanner() string {
+	if d.pending == nil {
+		return ""
+	}
+	left := d.pending.until.Sub(d.s.clock.Now())
+	m := d.minute()
+	n := int((left + m - 1) / m)
+	if n < 1 {
+		n = 1
+	}
+	unit := "minutes"
+	if n == 1 {
+		unit = "minute"
+	}
+	return fmt.Sprintf(jtPendingBannerFmt, n, unit) + "\n"
 }
 
 // echoed is what the device echoes of a typed command: with a trailing

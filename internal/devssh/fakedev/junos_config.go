@@ -3,8 +3,9 @@ package fakedev
 // The configure model of the fake Junos device (docs/plans/0.2.9-apply-
 // plan.md D142): a committed configuration read from the transcript
 // directory's 'config.set', a shared candidate, sessions in shared,
-// exclusive and private mode, 'commit confirmed' with a timer, the commit
-// history and the rollback. It is on when the directory has a 'config.set';
+// exclusive and private mode, 'commit confirmed' with a timer and the
+// banner of a pending commit before every prompt, the commit history and
+// the rollback. It is on when the directory has a 'config.set';
 // a directory without one behaves as it always did.
 //
 // The files, all optional and read when they are needed (config.set once, at
@@ -38,8 +39,7 @@ package fakedev
 //	exclusive.held-by   a user holding the exclusive lock (read at each use)
 //	dirty.shared        'set' lines staged in the shared candidate by a
 //	                    stranger (a first line 'user <name>' names him)
-//	private.no-confirmed  'commit confirmed' is refused in a private session
-//	verify.fail         while a confirmed commit is pending a new login is
+//	verify.fail        while a confirmed commit is pending a new login is
 //	                    refused: 'deny' (the default: authentication fails),
 //	                    'close' (accepted, then closed) or 'hang'
 //	commit.drop         the connection of the session that typed 'commit
@@ -189,7 +189,8 @@ type JunosCommit struct {
 	Comment string
 	// RollbackIn is the minutes of a confirmed commit's window (0 for a
 	// commit that is not confirmed); the entry says it for good, as the
-	// device's history does.
+	// device's history does, also after a 'commit check' confirmed it: it
+	// is not a pending marker (PendingUntil and the prompt's banner are).
 	RollbackIn int
 }
 

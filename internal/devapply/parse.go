@@ -43,6 +43,11 @@ func nonBlank(ls []string) []string {
 // it. No location line at the end means the session is not in configuration
 // mode (or the device printed something the parser does not know): ok is
 // false.
+//
+// A pending commit's banner right before the location line is the prompt's
+// and not the answer's (devssh drops it as the device prints it before
+// every prompt; one whose minutes changed between two prompts stays): it is
+// dropped too.
 func configAnswer(out string) (body []string, ok bool) {
 	ls := lines(out)
 	for len(ls) > 0 && strings.TrimSpace(ls[len(ls)-1]) == "" {
@@ -51,7 +56,43 @@ func configAnswer(out string) (body []string, ok bool) {
 	if len(ls) == 0 || !devssh.LocationLine(strings.TrimSpace(ls[len(ls)-1])) {
 		return nonBlank(ls), false
 	}
-	return ls[:len(ls)-1], true
+	return trimPromptArea(ls[:len(ls)-1]), true
+}
+
+// trimPromptArea drops what the device prints before a prompt from the end
+// of an answer: blank lines, the banner of a pending commit and a switch's
+// '{master:0}' line.
+func trimPromptArea(ls []string) []string {
+	for len(ls) > 0 {
+		t := strings.TrimSpace(ls[len(ls)-1])
+		if t != "" && !reBanner.MatchString(t) && !reSwitchLine.MatchString(t) {
+			break
+		}
+		ls = ls[:len(ls)-1]
+	}
+	return ls
+}
+
+// parseBanner reads the prompt area of a shell session (devssh.PromptArea):
+// blank lines, a switch's '{master:0}' line and the banner of a pending
+// confirmed commit. Any other line is an error (fail closed: a prompt area
+// tacctl does not know is never read as 'nothing pending').
+func parseBanner(area []string) (pending bool, minutes int, err error) {
+	for _, l := range area {
+		t := strings.TrimSpace(l)
+		switch m := reBanner.FindStringSubmatch(t); {
+		case t == "" || reSwitchLine.MatchString(t):
+		case m != nil:
+			n, _ := strconv.Atoi(m[1])
+			if pending && n != minutes {
+				return false, 0, fmt.Errorf("the prompt: two banners %q: %w", cut(t), ErrUnrecognised)
+			}
+			pending, minutes = true, n
+		default:
+			return false, 0, fmt.Errorf("the prompt: a line %q: %w", cut(t), ErrUnrecognised)
+		}
+	}
+	return pending, minutes, nil
 }
 
 // exactly reports whether the non-blank lines are want, in order.
@@ -181,6 +222,9 @@ func parseAuthorization(out string) (Login, error) {
 		return Login{}, fmt.Errorf("show cli authorization: no class on %q: %w", cut(ls[0]), ErrUnrecognised)
 	}
 	lg := Login{Class: m[1]}
+	if u := reAuthUser.FindStringSubmatch(ls[0]); u != nil {
+		lg.User, lg.Name = u[1], u[2]
+	}
 	in := false
 	seen := false
 	for _, l := range ls[1:] {
@@ -204,9 +248,11 @@ func parseAuthorization(out string) (Login, error) {
 	return lg, nil
 }
 
-// lockedBy reads the holder from the answer of a refused 'configure': the
-// first word of the line after the refusal.
+// lockedBy reads the holder from the answer of a refused 'configure
+// exclusive': the first word of the line after the refusal [C: '  admin
+// terminal pts/0 (pid 84557) on since 2026-10-13 20:02:28 AKDT'].
 func lockedBy(body []string) string {
+	body = nonBlank(body)
 	for i, l := range body {
 		if strings.Contains(l, textLocked) && i+1 < len(body) {
 			if f := strings.Fields(body[i+1]); len(f) > 0 {
@@ -215,4 +261,25 @@ func lockedBy(body []string) string {
 		}
 	}
 	return ""
+}
+
+// exclusiveEditor reads the editors a shared 'configure' listed: the user
+// of an editor whose mode line begins 'exclusive' [C: '      exclusive
+// {master:0}[edit]'], ok false when none holds the lock.
+func exclusiveEditor(body []string) (user string, ok bool) {
+	body = nonBlank(body)
+	in := false
+	for i, l := range body {
+		f := strings.Fields(l)
+		switch {
+		case strings.Contains(l, textUsersEditing):
+			in = true
+		case in && i > 0 && len(f) > 0 && f[0] == "exclusive":
+			if p := strings.Fields(body[i-1]); len(p) > 0 {
+				return cut(p[0]), true
+			}
+			return "", true
+		}
+	}
+	return "", false
 }
