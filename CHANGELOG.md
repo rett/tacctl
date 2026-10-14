@@ -331,6 +331,11 @@ current behaviour; this file is where history lives.
     read as a marker that is no history entry, and any other unknown line is
     still refused.
 
+19. **The help title no longer names the backends.** The first line of
+    `tacctl --help` and the manual's NAME line describe tacctl as pluggable
+    network-device AAA management; the backends are interchangeable and are
+    no longer named in the title.
+
 ## 0.2.8 (2026-10-13)
 
 1. **The documentation is a tree of topic pages.** `README.md` holds the

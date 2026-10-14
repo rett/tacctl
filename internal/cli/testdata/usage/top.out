@@ -1,5 +1,5 @@
 
-[1mtacctl[0m (unknown) — Network-device AAA from one store: TACACS+ (tacquito) and RADIUS (FreeRADIUS)
+[1mtacctl[0m (unknown) — Pluggable network-device AAA management
 Copyright (c) 2026 Everett C. Haimes III · MIT License · https://github.com/rett/tacctl
 
 Usage: tacctl <command> [arguments]

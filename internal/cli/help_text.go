@@ -13,7 +13,7 @@ package cli
 var usageBlocks = map[string]string{
 	// lib/dispatch.sh usage
 	"top": `
-<b>tacctl</b> ({{version}}) — Network-device AAA from one store: TACACS+ (tacquito) and RADIUS (FreeRADIUS)
+<b>tacctl</b> ({{version}}) — Pluggable network-device AAA management
 Copyright (c) 2026 Everett C. Haimes III · MIT License · https://github.com/rett/tacctl
 
 Usage: tacctl <command> [arguments]

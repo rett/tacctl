@@ -46,7 +46,7 @@ func hidden(name string) *cobra.Command {
 
 // newRoot builds the tree for one invocation.
 func newRoot(inv *invocation) *cobra.Command {
-	root := &cobra.Command{Use: "tacctl", Short: "Network-device AAA from one store: TACACS+ (tacquito) and RADIUS (FreeRADIUS)"}
+	root := &cobra.Command{Use: "tacctl", Short: "Pluggable network-device AAA management"}
 	root.AddCommand(lifecycleCmds(inv)...)
 	root.AddCommand(passwdCmd(inv), statusCmd(inv))
 	root.AddCommand(
