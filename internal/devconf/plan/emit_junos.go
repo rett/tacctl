@@ -102,7 +102,7 @@ func RolloutWords() []string {
 const safeWord = `[A-Za-z0-9._@:/_-]+`
 
 var (
-	reRolloutConfirmed = regexp.MustCompile(`^commit confirmed [0-9]{1,2} comment "tacctl rollout ` + safeWord + ` by ` + safeWord + `"$`)
+	reRolloutConfirmed = regexp.MustCompile(`^commit confirmed ([1-9]|[1-5][0-9]|60) comment "tacctl rollout ` + safeWord + ` by ` + safeWord + `"$`)
 	reRolloutConfirm   = regexp.MustCompile(`^commit comment "tacctl rollout confirm ` + safeWord + ` by ` + safeWord + `"$`)
 	reRolloutCancel    = regexp.MustCompile(`^commit comment "tacctl rollout cancel ` + safeWord + `"$`)
 )

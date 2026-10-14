@@ -294,6 +294,132 @@ func TestAllowedNeverList(t *testing.T) {
 	}
 }
 
+// Junos completes a unique abbreviation: nothing after the class name of a
+// template user, and no abbreviation of a word the plan never writes.
+func TestAllowedAbbreviationsAfterAnOwnedPrefix(t *testing.T) {
+	for _, s := range []string{
+		`set system login user tmpl class super-user authentication encrypted-password X`,
+		`set system login user tmpl class super-user auth encrypted-password X`,
+		`set system login user tmpl class super-user authen encrypted-password X`,
+		`set system login user tmpl class super-user uid 0`,
+		`set system login user tmpl class super-user ui 0`,
+		`set system login user tmpl class super-user full-name x`,
+		`set system login user tmpl auth encrypted-password X`,
+		`set system login user tmpl uid 0`,
+		`set system login user tmpl u 0`,
+	} {
+		if err := Allowed("juniper", s); err == nil {
+			t.Errorf("%s allowed", s)
+		}
+	}
+	// the user-class row has no more words than the class's name
+	for _, r := range junosOwned {
+		if r.ID == "junos.roles.user-class" && r.Depth != 6 {
+			t.Errorf("the user-class row has depth %d, want 6", r.Depth)
+		}
+	}
+	// a template user's class (a class named like the beginning of a
+	// never word included) and the class's leaves are as before
+	for _, s := range []string{
+		`set system login user tmpl class super-user`,
+		`set system login user tmpl class a`,
+		`set system login class NET-OPS permissions all`,
+		`set system login class NET-OPS allow-commands "show .*"`,
+	} {
+		if err := Allowed("juniper", s); err != nil {
+			t.Errorf("%s refused: %v", s, err)
+		}
+	}
+}
+
+// The invoking login's class: a lock-out the planner's own guards cover for
+// what the rendering sets, and nothing else.
+func TestAllowLoginClass(t *testing.T) {
+	exp := []devices.Section{{Name: "roles", Lines: []string{
+		"set system login class NET-OPS permissions [ view configure ]",
+		"set system login class NET-OPS idle-timeout 30",
+		"set system login class OTHER permissions all",
+		"set system login user alice class NET-OPS",
+	}}}
+	a := Allow{Vendor: "juniper", Expected: exp, LoginClass: "NET-OPS"}
+	for _, s := range []string{
+		"set system login class NET-OPS permissions [ view configure ]",
+		"set system login class NET-OPS idle-timeout 30",
+		"set system login class OTHER permissions all",
+		"set system login user alice class NET-OPS",
+	} {
+		if err := a.Check(s); err != nil {
+			t.Errorf("%s refused: %v", s, err)
+		}
+	}
+	for _, s := range []string{
+		"set system login class NET-OPS idle-timeout 1",
+		"set system login class NET-OPS deny-commands .*",
+		"set system login class NET-OPS permissions all",
+		`delete system login class NET-OPS allow-commands "show .*"`,
+		"delete system login class NET-OPS permissions",
+		"delete system login class NET-OPS idle-timeout 30",
+	} {
+		err := a.Check(s)
+		var ae *AllowError
+		if !errors.As(err, &ae) {
+			t.Errorf("%s: allowed or not an AllowError: %v", s, err)
+			continue
+		}
+		if !ae.Never || !strings.Contains(ae.Why, "lock") {
+			t.Errorf("%s: not a never refusal naming the lock-out: %+v", s, ae)
+		}
+	}
+	// without it the same statements pass
+	b := Allow{Vendor: "juniper", Expected: exp}
+	if err := b.Check("set system login class NET-OPS idle-timeout 1"); err != nil {
+		t.Errorf("no login class: %v", err)
+	}
+}
+
+// A single quote is not a Junos quote.
+func TestAllowedSingleQuote(t *testing.T) {
+	for _, s := range []string{
+		`set snmp location 'Rack 4'`,
+		`set snmp location it's`,
+		`set system login message "a" 'b; delete system'`,
+	} {
+		err := Allowed("juniper", s)
+		var ae *AllowError
+		if !errors.As(err, &ae) {
+			t.Errorf("%s: allowed or not an AllowError: %v", s, err)
+		}
+	}
+	// inside double quotes it is text
+	if err := Allowed("juniper", `set snmp location "it's Rack 4"`); err != nil {
+		t.Errorf("an apostrophe in double quotes: %v", err)
+	}
+}
+
+// The tables alone admit any name: a caller that types must hold the
+// rendering, and Ready says whether it does.
+func TestAllowReady(t *testing.T) {
+	if err := (Allow{Vendor: "juniper"}).Ready(); !errors.Is(err, ErrNoExpected) {
+		t.Errorf("no rendering: %v", err)
+	}
+	if err := (Allow{Vendor: "juniper", Sections: []string{"snmp"}, Expected: []devices.Section{}}).Ready(); !errors.Is(err, ErrNoExpected) {
+		t.Errorf("an empty rendering: %v", err)
+	}
+	if err := (Allow{Vendor: "juniper", Sections: []string{}}).Ready(); err != nil {
+		t.Errorf("no section planned: %v", err)
+	}
+	exp := []devices.Section{{Name: "snmp", Lines: []string{"set snmp contact x"}}}
+	if err := (Allow{Vendor: "juniper", Expected: exp}).Ready(); err != nil {
+		t.Errorf("a rendering: %v", err)
+	}
+	// CheckDelta fails closed with no rendering
+	d := Delta{Vendor: "juniper", Sections: []SectionPlan{{Name: "roles", State: StatePlanned}},
+		Lines: []Line{{Section: "roles", Op: OpSet, Text: "set system login user stranger class NET-OPS"}}}
+	if err := (Allow{}).CheckDelta(d); !errors.Is(err, ErrNoExpected) {
+		t.Errorf("a delta with no rendering: %v", err)
+	}
+}
+
 // Syntax the allow-list does not take, and statements that are not a change.
 func TestAllowedSyntax(t *testing.T) {
 	for _, s := range []string{

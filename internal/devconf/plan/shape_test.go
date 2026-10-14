@@ -296,6 +296,46 @@ func TestShapeNone(t *testing.T) {
 	}
 }
 
+// Secret lines that did not say where the value is are not merged: a change
+// of one secret and a change of two have different shapes.
+func TestShapeCountsSecretStatements(t *testing.T) {
+	secret := func(text string) Line {
+		return Line{Section: "aaa", Op: OpSet, Text: text, Secret: true, HasValue: true}
+	}
+	one := Delta{Vendor: devconf.FamilyJunos, Lines: []Line{secret("set system tacplus-server 192.0.2.8 secret AAAA")}}
+	two := Delta{Vendor: devconf.FamilyJunos, Lines: []Line{
+		secret("set system tacplus-server 192.0.2.8 secret AAAA"),
+		secret("set system radius-server 192.0.2.8 secret BBBB"),
+	}}
+	three := Delta{Vendor: devconf.FamilyJunos, Lines: []Line{
+		secret("set system tacplus-server 192.0.2.8 secret AAAA"),
+		secret("set system radius-server 192.0.2.8 secret BBBB"),
+		secret("set system tacplus-server 192.0.2.9 secret CCCC"),
+	}}
+	h1, l1 := Shape(one)
+	h2, l2 := Shape(two)
+	h3, l3 := Shape(three)
+	if h1 == h2 || h2 == h3 || h1 == h3 {
+		t.Errorf("one, two and three secret statements share a shape: %s %s %s", h1, h2, h3)
+	}
+	if len(l1) != 2 || len(l2) != 3 || len(l3) != 4 {
+		t.Errorf("lines: %q %q %q", l1, l2, l3)
+	}
+	for _, l := range append(append(l1, l2...), l3...) {
+		if strings.Contains(l, "AAAA") || strings.Contains(l, "BBBB") || strings.Contains(l, "CCCC") {
+			t.Errorf("a secret in %q", l)
+		}
+	}
+	// a plain line is still dropped when repeated
+	dup := Delta{Vendor: devconf.FamilyJunos, Lines: []Line{
+		{Section: "aaa", Op: OpSet, Text: "set system tacplus-server 192.0.2.8 single-connection"},
+		{Section: "aaa", Op: OpSet, Text: "set system tacplus-server 192.0.2.8 single-connection"},
+	}}
+	if _, l := Shape(dup); len(l) != 2 {
+		t.Errorf("a repeated line is kept: %q", l)
+	}
+}
+
 func TestShapeMasksTable(t *testing.T) {
 	for _, r := range ShapeMasks() {
 		if r.Family == "" || r.Prefix == "" || r.Why == "" {

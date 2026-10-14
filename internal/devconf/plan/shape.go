@@ -21,6 +21,10 @@ import (
 // two hashers.
 const ShapeAlgo = 1
 
+// shapeSecretStatement stands for a secret line that did not say where its
+// value is; such lines are never merged in a shape.
+const shapeSecretStatement = "<secret statement>"
+
 // shapeHashChars is the length of the hash a person sees.
 const shapeHashChars = 12
 
@@ -150,7 +154,12 @@ func Shape(d Delta) (hash string, lines []string) {
 		ls := by[s]
 		if d.Vendor != devconf.FamilyIOS {
 			sort.Strings(ls)
-			ls = slices.Compact(ls)
+			// a secret statement that has no elided form is one mark for
+			// every value: they are counted, not merged, so one change of a
+			// secret and two have different shapes
+			ls = slices.CompactFunc(ls, func(a, b string) bool {
+				return a == b && !strings.HasSuffix(a, shapeSecretStatement)
+			})
 		}
 		lines = append(lines, "["+s+"]")
 		lines = append(lines, ls...)
@@ -165,7 +174,7 @@ func shapeLine(family string, l Line) string {
 	if l.Secret && l.Elided == "" && l.HasValue {
 		// a secret line that did not say where its value is: nothing of it
 		// may reach a shape
-		text = "<secret statement>"
+		text = shapeSecretStatement
 	} else {
 		text = maskShapeLine(family, text)
 	}

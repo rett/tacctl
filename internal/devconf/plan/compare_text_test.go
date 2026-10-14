@@ -108,7 +108,7 @@ func TestParseCompare(t *testing.T) {
 		"+ system tacplus-server 192.0.2.8 single-connection\n",
 		"- snmp location Rack 3\n",
 		"+ snmp location Rack 4\n",
-		"+ snmp community <secret> authorization read-only\n",
+		"+ snmp community <secret:1> authorization read-only\n",
 		"+ firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.0/24\n",
 	} {
 		if !strings.Contains(got, want) {
@@ -217,15 +217,15 @@ func TestCompareUnexplained(t *testing.T) {
 		t.Errorf("the landed compare is not explained: %v", got)
 	}
 	// a stranger's staged work rides along: named, a secret masked
-	stranger, err := ParseCompare(checkCompare +
-		"[edit system]\n+   time-zone UTC;\n[edit snmp community other-community]\n+   authorization read-write;\n" +
-		"[edit system login]\n-   class OLD-CLASS {\n-       permissions all;\n-   }\n")
+	stranger, err := ParseCompareFor(checkCompare+
+		"[edit system]\n+   time-zone UTC;\n[edit snmp community other-community]\n+   authorization read-write;\n"+
+		"[edit system login]\n-   class OLD-CLASS {\n-       permissions all;\n-   }\n", d)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := stranger.Unexplained(d)
 	want := []string{
-		"+ snmp community <secret> authorization read-write",
+		"+ snmp community <secret:2> authorization read-write",
 		"+ system time-zone UTC",
 		"- system login class OLD-CLASS permissions all",
 	}
@@ -299,6 +299,168 @@ func TestCompareSecretRulesCoverTheRendering(t *testing.T) {
 	}
 	if n < 5 {
 		t.Errorf("only %d secret statements were checked", n)
+	}
+}
+
+// A set of a leaf explains the removal of the same leaf with another value
+// only when the leaf is single-valued; the removal of an element of a list
+// (an NTP server, a source-address of a term) needs a delete of it.
+func TestCompareListElementIsNotReplaced(t *testing.T) {
+	for _, tc := range []struct{ name, line, compare string }{
+		{"ntp server", "set system ntp server 10.1.1.1", "[edit system ntp]\n-   server 10.9.9.9;\n"},
+		{"term source-address", "set firewall family inet filter F term A from source-address 192.0.2.1/32",
+			"[edit firewall family inet filter F term A from]\n-   source-address 10.0.0.0/8;\n"},
+		{"client", "set snmp community pubstr clients 192.0.2.0/24", "[edit snmp community pubstr clients]\n-   10.0.0.0/8;\n"},
+	} {
+		d := Delta{Vendor: "junos", Lines: []Line{{Section: "x", Op: OpSet, Text: tc.line}}}
+		c, err := ParseCompare(tc.compare)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := c.Unexplained(d); len(got) != 1 {
+			t.Errorf("%s: a set explains the removal of another element: %v", tc.name, got)
+		}
+	}
+	// a delete of the element explains it
+	d := Delta{Vendor: "junos", Lines: []Line{{Section: "x", Op: OpDelete, Text: "delete system ntp server 10.9.9.9"}}}
+	c, _ := ParseCompare("[edit system ntp]\n-   server 10.9.9.9;\n")
+	if got := c.Unexplained(d); len(got) != 0 {
+		t.Errorf("a delete of the element: %v", got)
+	}
+	// single-valued leaves are replaced in place
+	for _, tc := range []struct{ line, compare string }{
+		{`set snmp location "Rack 4"`, "[edit snmp]\n-   location \"Rack 3\";\n"},
+		{"set system login user t1 class NEW", "[edit system login user t1]\n-   class OLD;\n"},
+		{"set system tacplus-server 192.0.2.8 secret NEWSECRET", "[edit system tacplus-server 192.0.2.8]\n-   secret \"$9$old\"; ## SECRET-DATA\n"},
+		{"set system login class RW idle-timeout 30", "[edit system login class RW]\n-   idle-timeout 10;\n"},
+		{"set system ntp server 192.0.2.1 version 4", "[edit system ntp server 192.0.2.1]\n-   version 3;\n"},
+	} {
+		d := Delta{Vendor: "junos", Lines: []Line{{Section: "x", Op: OpSet, Text: tc.line}}}
+		c, err := ParseCompare(tc.compare)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := c.Unexplained(d); len(got) != 0 {
+			t.Errorf("%s: a replaced leaf is unexplained: %v", tc.line, got)
+		}
+	}
+}
+
+// Two names are two marks: a stranger's community is not the delta's.
+func TestCompareNamesAreDistinct(t *testing.T) {
+	d := Delta{Vendor: "junos", Lines: []Line{
+		{Section: "snmp", Op: OpSet, Text: "set snmp community abc authorization read-only", Secret: true, HasValue: true,
+			Elided: "set snmp community <secret:1> authorization read-only"},
+		{Section: "snmp", Op: OpSet, Text: "set snmp trap-group tg1 version v2", Secret: true, HasValue: true,
+			Elided: "set snmp trap-group <secret:2> version v2"},
+	}}
+	staged := "[edit snmp]\n+   community public {\n+       authorization read-only;\n+   }\n"
+	for name, parse := range map[string]func() (CompareText, error){
+		"plain": func() (CompareText, error) { return ParseCompare(staged) },
+		"for":   func() (CompareText, error) { return ParseCompareFor(staged, d) },
+	} {
+		c, err := parse()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := c.Unexplained(d)
+		if len(got) != 1 || strings.Contains(got[0], "public") {
+			t.Errorf("%s: another community is explained by the delta's: %v", name, got)
+		}
+	}
+	own, _ := ParseCompareFor("[edit snmp]\n+   community abc {\n+       authorization read-only;\n+   }\n"+
+		"+   trap-group tg1 {\n+       version v2;\n+   }\n", d)
+	if got := own.Unexplained(d); len(got) != 0 {
+		t.Errorf("the delta's own names: %v", got)
+	}
+	if s := own.String(); !strings.Contains(s, "snmp community <secret:1> authorization") || !strings.Contains(s, "snmp trap-group <secret:2> version") ||
+		strings.Contains(s, "abc") || strings.Contains(s, "tg1") {
+		t.Errorf("numbered by the delta's order, no name:\n%s", s)
+	}
+	// Equal tells two names apart though both are number 1
+	a, _ := ParseCompare("[edit snmp]\n+   community abc {\n+       authorization read-only;\n+   }\n")
+	b, _ := ParseCompare("[edit snmp]\n+   community xyz {\n+       authorization read-only;\n+   }\n")
+	if a.String() != b.String() {
+		t.Fatalf("setup: %q vs %q", a.String(), b.String())
+	}
+	if a.Equal(b) {
+		t.Error("two communities of one display are Equal")
+	}
+	if !a.Equal(a) {
+		t.Error("a compare is not Equal to itself")
+	}
+}
+
+// An annotation added or removed is a statement, never skipped; a line with
+// no op in an added block is the block's.
+func TestCompareAnnotationsAndBlocks(t *testing.T) {
+	c, err := ParseCompare("[edit system]\n+   /* touched by someone */\n+   host-name r1;\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := Delta{Vendor: "junos", Lines: []Line{{Section: "x", Op: OpSet, Text: "set system host-name r1"}}}
+	got := c.Unexplained(d)
+	if len(got) != 1 || !strings.Contains(got[0], CompareAnnotationMark) || strings.Contains(got[0], "someone") {
+		t.Errorf("an added annotation: %v", got)
+	}
+	// two annotations are two statements for Equal
+	x, _ := ParseCompare("[edit system]\n+   /* one */\n+   host-name r1;\n")
+	y, _ := ParseCompare("[edit system]\n+   /* two */\n+   host-name r1;\n")
+	if x.Equal(y) {
+		t.Error("two annotations are Equal")
+	}
+	// a removed annotation too, and one of several lines
+	r, err := ParseCompare("[edit system]\n-   /* first\n-      second */\n    host-name r1;\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Unexplained(d); len(got) != 1 || !strings.HasPrefix(got[0], "- ") {
+		t.Errorf("a removed annotation: %v", got)
+	}
+	// an unchanged annotation is not a change
+	u, err := ParseCompare("[edit system]\n     /* kept */\n+   host-name r1;\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := u.Unexplained(d); len(got) != 0 {
+		t.Errorf("an unchanged annotation: %v", got)
+	}
+	// a leaf with no op inside an added block is the block's, not dropped
+	b, err := ParseCompare("[edit system login]\n+   class X {\n        permissions all;\n+       idle-timeout 5;\n+   }\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := b.String()
+	if !strings.Contains(s, "+ system login class X permissions all\n") || !strings.Contains(s, "+ system login class X idle-timeout 5\n") {
+		t.Errorf("a leaf without an op was dropped:\n%s", s)
+	}
+	if got := b.Unexplained(Delta{Vendor: "junos"}); len(got) != 2 {
+		t.Errorf("both leaves are the delta's to explain: %v", got)
+	}
+	// and one inside a removed block
+	rb, err := ParseCompare("[edit system login]\n-   class X {\n        permissions all;\n-   }\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rb.String(); got != "- system login class X permissions all\n" {
+		t.Errorf("%q", got)
+	}
+}
+
+// The minutes of a confirmed commit are 1 to 60.
+func TestRolloutConfirmedMinutesRange(t *testing.T) {
+	line := func(n string) string {
+		return `commit confirmed ` + n + ` comment "tacctl rollout id1 by alice"`
+	}
+	for _, n := range []string{"1", "5", "9", "10", "59", "60"} {
+		if !IsRolloutWord(line(n)) {
+			t.Errorf("%s minutes is not a rollout word", n)
+		}
+	}
+	for _, n := range []string{"0", "00", "05", "61", "70", "99", "100"} {
+		if IsRolloutWord(line(n)) {
+			t.Errorf("%s minutes is a rollout word", n)
+		}
 	}
 }
 

@@ -63,6 +63,7 @@ var allowNever = []NeverRow{
 	{ID: "junos.apply-groups", Pattern: "apply-groups", Why: "configuration groups"},
 	{ID: "junos.user-authentication", Pattern: "system login user ?", Anywhere: "authentication", Why: "a local user's credentials"},
 	{ID: "junos.user-root", Pattern: "system login user root", Why: "the root user"},
+	{ID: "junos.user-uid", Pattern: "system login user ?", Anywhere: "uid", Why: "a local user's uid (the device assigns it)"},
 }
 
 // AllowNever returns the never list.
@@ -83,12 +84,40 @@ type Allow struct {
 	Expected []devices.Section
 	// Login is the invoking login: its user is never written.
 	Login string
+	// LoginClass is the invoking login's login class: nothing under
+	// 'system login class <LoginClass>' is written, but the statements of
+	// Expected the plan's own lock-out guards have already held. Empty:
+	// unknown, which a rollout must not leave when it knows it.
+	LoginClass string
 }
 
 // Allowed holds a line against the tables of every section, with no rendering
-// and no login: the part of the allow-list that needs no input. A rollout
-// uses Allow with them.
+// and no login: the part of the allow-list that needs no input.
+//
+// IT IS NOT THE ROLLOUT'S CHECK. With no rendering a '$' of a row is any name
+// (a class, a user, a server that is not tacctl's), so the statement of
+// another object passes. A rollout, and every caller that types on a device,
+// uses Allow with Expected (and Login, LoginClass) set, and Ready to be sure
+// it is.
 func Allowed(vendor, line string) error { return Allow{Vendor: vendor}.Check(line) }
+
+// ErrNoExpected is the error of Ready: the allow-list has no rendering to
+// hold the names against.
+var ErrNoExpected = errors.New("plan: no expected statements")
+
+// Ready reports whether the allow-list is fit to guard a rollout: it must
+// hold the rendering (Expected) whenever it plans any section, or the tables
+// alone would admit every name (fail closed). A nil result says only that the
+// input is there; Check and CheckDelta say whether a statement passes.
+func (a Allow) Ready() error {
+	if len(a.Expected) > 0 {
+		return nil
+	}
+	if a.Sections != nil && len(a.Sections) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: the allow-list would accept any name of a class, user or server", ErrNoExpected)
+}
 
 // refuse builds an AllowError with the statement masked.
 func refuse(line string, never bool, format string, a ...any) error {
@@ -118,6 +147,11 @@ func (a Allow) Check(line string) error {
 	}
 	if err := junosStatementOK(line); err != nil {
 		return refuse(line, false, "%v", err)
+	}
+	// Junos knows double quotes only: a single quote is no quoting there,
+	// whatever splitTokens would make of it
+	if quoteOutside(line) {
+		return refuse(line, false, "a single quote outside double quotes (Junos does not quote with it)")
 	}
 	if reMarks.MatchString(line) || strings.Contains(line, "<SECRET>") {
 		return refuse(line, false, "the line holds the mark of an elided secret, not a value")
@@ -149,6 +183,15 @@ func (a Allow) Check(line string) error {
 		return refuse(line, true, "the invoking login's own user is never written")
 	}
 
+	if r, ok := abbreviated(path); ok {
+		return refuse(line, true, "an abbreviation of %q, on the never list (%s): %s", r.Anywhere, r.ID, r.Why)
+	}
+	// the invoking login's class: a leaf of it may lock the login out
+	if a.LoginClass != "" && len(path) >= 4 && slices.Equal(path[:3], []string{"system", "login", "class"}) && path[3] == a.LoginClass &&
+		!a.rendered(line) {
+		return refuse(line, true, "the invoking login's own class is never changed beyond what the rendering sets: a change may lock the login out")
+	}
+
 	// a list ('events [ login change-log ]') and the one-line forms of an NTP
 	// server or key are as many statements as the device prints
 	for _, p := range expandBrackets(path) {
@@ -157,6 +200,75 @@ func (a Allow) Check(line string) error {
 		}
 	}
 	return nil
+}
+
+// quoteOutside reports whether a single quote stands outside double quotes.
+func quoteOutside(line string) bool {
+	in, esc := false, false
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case esc:
+			esc = false
+		case in && c == '\\':
+			esc = true
+		case c == '"':
+			in = !in
+		case c == '\'' && !in:
+			return true
+		}
+	}
+	return false
+}
+
+// rendered reports whether every statement of the line, a list expanded, is
+// one of the rendering's own 'set' lines.
+func (a Allow) rendered(line string) bool {
+	toks := splitTokens(line)
+	if len(toks) < 2 || toks[0] != "set" {
+		return false
+	}
+	have := map[string]bool{}
+	for _, s := range a.Expected {
+		for _, raw := range s.Lines {
+			t := splitTokens(raw)
+			if len(t) < 2 || t[0] != "set" {
+				continue
+			}
+			for _, p := range expandBrackets(t[1:]) {
+				have[strings.Join(p, "\x00")] = true
+			}
+		}
+	}
+	for _, p := range expandBrackets(toks[1:]) {
+		if !have[strings.Join(p, "\x00")] {
+			return false
+		}
+	}
+	return true
+}
+
+// abbreviated reports a word of the path that is the beginning of a word a
+// never row holds (Junos completes a unique abbreviation: 'auth' is
+// 'authentication'), past the row's prefix. The word after 'class' is a
+// class's name and is not held against it.
+func abbreviated(path []string) (NeverRow, bool) {
+	for _, r := range allowNever {
+		pre := strings.Fields(r.Pattern)
+		if r.Anywhere == "" || len(path) <= len(pre) || !patternPrefix(pre, path) {
+			continue
+		}
+		for i := len(pre); i < len(path); i++ {
+			w := path[i]
+			if i > len(pre) && path[i-1] == "class" {
+				continue
+			}
+			if w != "" && len(w) < len(r.Anywhere) && strings.HasPrefix(r.Anywhere, w) {
+				return r, true
+			}
+		}
+	}
+	return NeverRow{}, false
 }
 
 // patternPrefix reports whether path starts with the words of pre ('?' any).
@@ -271,6 +383,11 @@ func (a Allow) CheckDelta(d Delta) error {
 	a.Sections = d.Planned()
 	if a.Sections == nil {
 		a.Sections = []string{}
+	}
+	if len(d.Lines) > 0 {
+		if err := a.Ready(); err != nil {
+			return err
+		}
 	}
 	for i, l := range d.Lines {
 		if !slices.Contains(a.Sections, l.Section) {
