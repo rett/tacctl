@@ -118,6 +118,10 @@ type run struct {
 	// committing is set right before the confirmed commit is typed: from
 	// then on the device may run the change under its timer.
 	committing bool
+	// noBanner is set when the verification's fresh login saw no banner
+	// over tacctl's commit at entry 0: something confirmed it before
+	// tacctl's confirm.
+	noBanner bool
 }
 
 func (d Driver) margins() Driver {
@@ -586,6 +590,10 @@ func (r *run) transaction(reviewed *plan.Delta) {
 		r.cancel(why)
 		return
 	}
+	if r.noBanner {
+		r.confirmedByOther()
+		return
+	}
 
 	// WINDOW
 	r.step("window")
@@ -652,6 +660,11 @@ func (r *run) verify() string {
 		return "show system commit: " + r.errText(err)
 	}
 	switch {
+	case !st.Pending && ours(st.History[0], r.id):
+		// something confirmed tacctl's commit before its confirm (a
+		// stranger's 'commit check'): the verification runs all the same,
+		// and only its proof makes the change applied by someone else
+		r.noBanner = true
 	case !st.Pending:
 		return "the fresh login's prompt shows no pending confirmed commit"
 	case !ours(st.History[0], r.id):
@@ -714,60 +727,134 @@ func cancelComment(id string) string  { return "tacctl apply cancel " + id }
 // ours reports whether the entry is the confirmed commit of the apply id.
 func ours(e CommitEntry, id string) bool { return strings.HasPrefix(e.Comment, commitComment(id)) }
 
+// settleSlack is how long after the record's end of the window a commit
+// of tacctl's still at entry 0 without the banner is taken for confirmed:
+// the device's own rollback is a commit that takes a moment to stand in
+// the history, and the clocks may differ.
+const settleSlack = time.Minute
+
+// factsNeed is whether settle's answer is to be settled from the
+// configuration (byFacts).
+type factsNeed int
+
+const (
+	// factsNo: the history says it.
+	factsNo factsNeed = iota
+	// factsRequired: the history does not say it; without a planner the
+	// state is ExitUnknown.
+	factsRequired
+	// factsPreferred: the history says it, and the configuration says it
+	// better when a planner is at hand.
+	factsPreferred
+)
+
+// settled is what settle found.
+type settled struct {
+	e     Exit
+	how   string
+	entry *CommitEntry
+	facts factsNeed
+	// over is set when a stranger's confirmed commit is pending over the
+	// entry that named tacctl's fate; until is then the end of the
+	// stranger's window by this machine's clock (now and the banner's
+	// minutes, the latest it can be).
+	over  bool
+	until time.Time
+}
+
 // settle names the state of apply id from the commit state (D132, lab L2).
-// pre is entry 0 before the commit (zero: unknown). The pending marker is
-// the banner, never the history's 'rollback in' label (a 'commit check'
-// confirms without an entry, and the label stays):
+// pre is entry 0 before the commit (zero: unknown); now is this machine's
+// time and until the record's end of tacctl's window (zero: unknown). The
+// pending marker is the banner, never the history's 'rollback in' label (a
+// 'commit check' confirms without an entry, and the label stays):
 //
 //   - the banner and tacctl's commit at entry 0: pending;
 //   - the banner over another entry 0: unknown (someone's later confirmed
-//     commit is pending; settle again after its window);
-//   - no banner, tacctl's commit at entry 0: confirmed without a commit of
-//     its own (a 'commit check'): applied by someone else;
+//     commit is pending; settle again after its window), unless an entry
+//     between the two already named tacctl's fate, which is reported with
+//     the stranger's pending commit;
+//   - no banner, tacctl's commit at entry 0, before the window's end (and
+//     settleSlack): pending. A 'commit check' may have confirmed it, but a
+//     release or a session that prints no banner rolls it back at the end
+//     all the same, and only a read after the end tells;
+//   - no banner, tacctl's commit at entry 0, after the window's end:
+//     applied by someone else (a 'commit check' confirmed it), settled
+//     from the configuration when a planner is at hand (factsPreferred);
 //   - the entry directly above tacctl's: its confirm is applied, its cancel
-//     or the device's own rollback ('by root via other') rolled back.
+//     rolled back; one 'by root via other' with no comment is the device's
+//     own rollback or a commit of the system that confirmed it, settled
+//     from the configuration (factsRequired).
 //
-// An entry after tacctl's commit that is neither tacctl's confirm, its
-// cancel nor the device's own rollback is never taken for someone else's
-// confirm (a release whose expiry entry reads otherwise would be recorded
-// applied): settle returns ExitUnknown with odd set, and the caller settles
-// it from the configuration (byFacts) when it can read one.
-func settle(st CommitState, id string, pre CommitEntry) (e Exit, how string, entry *CommitEntry, odd bool) {
+// An entry after tacctl's commit that is neither tacctl's confirm nor its
+// cancel is never taken for a confirm or a rollback from the history
+// alone (a release whose expiry entry reads otherwise would be recorded
+// applied): settle returns ExitUnknown with factsRequired, and the caller
+// settles it from the configuration (byFacts) when it can read one.
+func settle(st CommitState, id string, pre CommitEntry, now, until time.Time) settled {
 	h := st.History
 	k := slices.IndexFunc(h, func(e CommitEntry) bool { return ours(e, id) })
 	if st.Pending {
 		switch {
 		case k == 0:
-			return ExitPending, "the confirmed commit is pending", nil, false
+			return settled{e: ExitPending, how: "the confirmed commit is pending"}
 		case k < 0:
-			return ExitUnknown, "a confirmed commit is pending and the history does not show tacctl's commit " + id, nil, false
+			return settled{e: ExitUnknown, how: "a confirmed commit is pending and the history does not show tacctl's commit " + id}
 		}
-		return ExitUnknown, fmt.Sprintf("a later confirmed commit (by %s via %s at %s) is pending over tacctl's", cut(h[0].User), cut(h[0].Via), h[0].TimeText), nil, false
+		stranger := fmt.Sprintf("a later confirmed commit (by %s via %s at %s) is pending %s over tacctl's", cut(h[0].User), cut(h[0].Via), h[0].TimeText, st.Until())
+		if k == 1 {
+			// the pending commit is itself the one after tacctl's
+			return settled{e: ExitUnknown, how: stranger}
+		}
+		s := fate(h, k, id)
+		if s.e == ExitUnknown && !expiry(h[k-1]) {
+			return settled{e: ExitUnknown, how: stranger}
+		}
+		// the entry above tacctl's named its fate: it is reported, and so
+		// is the stranger's pending commit, whose window the record keeps
+		s.how += "; " + stranger
+		s.over = true
+		s.until = now.Add(time.Duration(st.Minutes+1) * time.Minute)
+		return s
 	}
 	switch {
 	case k < 0 && pre.TimeText != "" && len(h) > 0 && h[0].Same(pre):
-		return ExitNothingCommitted, "nothing was committed", nil, false
+		return settled{e: ExitNothingCommitted, how: "nothing was committed"}
 	case k < 0:
-		return ExitUnknown, "the history does not show tacctl's commit " + id, nil, false
+		return settled{e: ExitUnknown, how: "the history does not show tacctl's commit " + id}
+	case k == 0 && until.IsZero():
+		return settled{e: ExitUnknown, how: "no confirmed commit's banner stands and tacctl's commit is still entry 0, and the window's end is not known"}
+	case k == 0 && now.Before(until.Add(settleSlack)):
+		return settled{e: ExitPending, how: "no confirmed commit's banner stands but tacctl's commit is still entry 0: a 'commit check' may have confirmed it, or the device printed no banner; it is settled after the window's end"}
 	case k == 0:
-		return ExitAppliedByOther, "no confirmed commit is pending and tacctl's commit is still entry 0: a 'commit check' confirmed it", nil, false
+		return settled{e: ExitAppliedByOther, how: "no confirmed commit is pending after the window's end and tacctl's commit is still entry 0: a 'commit check' confirmed it", facts: factsPreferred}
 	}
+	return fate(h, k, id)
+}
+
+// expiry reports whether the entry reads as the device's own rollback ('by
+// root via other', no comment), which a commit of the system shares.
+func expiry(e CommitEntry) bool {
+	return e.User == textExpiryUser && e.Via == textExpiryVia && e.Comment == ""
+}
+
+// fate is what the entry directly above tacctl's commit (k > 0) says of it.
+func fate(h History, k int, id string) settled {
 	next := h[k-1]
 	switch {
 	case strings.HasPrefix(next.Comment, confirmComment(id)) && next.RollbackIn == 0:
-		return ExitApplied, "", &next, false
+		return settled{e: ExitApplied, entry: &next}
 	case strings.HasPrefix(next.Comment, cancelComment(id)):
-		return ExitRolledBack, "cancelled at " + next.TimeText, nil, false
-	case next.User == textExpiryUser && next.Via == textExpiryVia && next.Comment == "":
-		return ExitRolledBack, "the device rolled it back at " + next.TimeText, nil, false
+		return settled{e: ExitRolledBack, how: "cancelled at " + next.TimeText}
+	case expiry(next):
+		return settled{e: ExitUnknown, how: fmt.Sprintf("the commit after tacctl's is by %s via %s at %s (the device's own rollback, or a commit of the system that confirmed it)", textExpiryUser, textExpiryVia, next.TimeText), facts: factsRequired}
 	}
-	return ExitUnknown, fmt.Sprintf("the commit after tacctl's (by %s via %s at %s) is not one tacctl recognises", cut(next.User), cut(next.Via), next.TimeText), nil, true
+	return settled{e: ExitUnknown, how: fmt.Sprintf("the commit after tacctl's (by %s via %s at %s) is not one tacctl recognises", cut(next.User), cut(next.Via), next.TimeText), facts: factsRequired}
 }
 
-// byFacts settles an unrecognised entry after tacctl's commit from the
-// configuration: d is the planner's delta of a read made after it. No delta
-// is the change in place (someone's commit confirmed it); a delta is the
-// change not in place (rolled back).
+// byFacts settles an entry after tacctl's commit from the configuration:
+// d is the planner's delta of a read made after it. No delta is the change
+// in place (someone's commit confirmed it); a delta is the change not in
+// place (rolled back).
 func byFacts(how string, d plan.Delta, err error) (Exit, string) {
 	switch {
 	case err != nil:
@@ -778,22 +865,23 @@ func byFacts(how string, d plan.Delta, err error) (Exit, string) {
 	return ExitRolledBack, how + "; the configuration lacks the change"
 }
 
-// settle is settle with an unrecognised entry settled from the
-// configuration, read on the fresh login if one is open, else on the held
+// settle is settle with the state settled from the configuration where it
+// asks for that, read on the fresh login if one is open, else on the held
 // login's connection.
-func (r *run) settle(ctx context.Context, st CommitState) (Exit, string, *CommitEntry) {
-	e, how, entry, odd := settle(st, r.id, r.pre)
-	if !odd {
-		return e, how, entry
+func (r *run) settle(ctx context.Context, st CommitState) settled {
+	s := settle(st, r.id, r.pre, r.now(), r.o.Until)
+	if s.facts == factsNo {
+		return s
 	}
+	s.entry = nil
 	var rd Reader = r.t
 	if r.vr != nil {
 		rd = r.vr
 	}
 	raw, err := rd.Read(ctx)
 	if err != nil {
-		e, how = byFacts(how, plan.Delta{}, errors.New(r.errText(err)))
-		return e, how, nil
+		s.e, s.how = byFacts(s.how, plan.Delta{}, errors.New(r.errText(err)))
+		return s
 	}
 	d, err := r.in.Plan(ctx, raw, r.t.LocalAddr())
 	for _, l := range d.Lines {
@@ -802,8 +890,8 @@ func (r *run) settle(ctx context.Context, st CommitState) (Exit, string, *Commit
 	if err != nil {
 		err = errors.New(r.errText(err))
 	}
-	e, how = byFacts(how, d, err)
-	return e, how, nil
+	s.e, s.how = byFacts(s.how, d, err)
+	return s
 }
 
 // state reads the commit state after a failure: on the fresh login if one
@@ -835,7 +923,8 @@ func (r *run) state(ctx context.Context) (CommitState, error) {
 // readState is READ-STATE (D132): after a failure past the confirmed commit
 // the state is read before it is named. With cancelPending a pending
 // commit of this apply is cancelled first (an answer the transport did not
-// know is never taken for a commit to keep).
+// know is never taken for a commit to keep): also one whose banner is gone
+// while tacctl's commit is still entry 0, which nothing proved.
 func (r *run) readState(why string, cancelPending bool) {
 	ctx, cancelCtx := r.grace()
 	defer cancelCtx()
@@ -844,16 +933,17 @@ func (r *run) readState(why string, cancelPending bool) {
 		r.end(ExitUnknown, why+"; the state could not be read: "+r.errText(err))
 		return
 	}
-	e, how, entry := r.settle(ctx, st)
-	if e == ExitPending && cancelPending {
+	s := r.settle(ctx, st)
+	if s.e == ExitPending && cancelPending {
 		r.cancel(why)
 		return
 	}
-	r.named(e, why, how, entry)
+	r.named(s, why)
 }
 
 // named sets the exit settle found.
-func (r *run) named(e Exit, why, how string, entry *CommitEntry) {
+func (r *run) named(s settled, why string) {
+	e, how := s.e, s.how
 	switch e {
 	case ExitNothingCommitted:
 		// the candidate is still loaded: it is discarded as before a commit
@@ -865,8 +955,11 @@ func (r *run) named(e Exit, why, how string, entry *CommitEntry) {
 		}
 		r.end(e, fmt.Sprintf("nothing was committed (%s)", why))
 	case ExitApplied:
-		r.o.Commit = entry
+		r.o.Commit = s.entry
 		r.end(e, "")
+		if s.over {
+			r.o.Reason = how
+		}
 		r.o.Until = time.Time{}
 		r.fileShape()
 	case ExitAppliedByOther:
@@ -876,15 +969,22 @@ func (r *run) named(e Exit, why, how string, entry *CommitEntry) {
 		r.o.Until = time.Time{}
 		r.end(e, why+"; "+how)
 	default:
-		r.end(e, why)
+		r.end(e, why+"; "+how)
+	}
+	if s.over {
+		// a stranger's confirmed commit is pending: the record keeps its
+		// window
+		r.o.Until = s.until
 	}
 }
 
 // cancel is D131's Cancel after a failure past the confirmed commit: in the
 // held session only, only while the window leaves the cancel margin, and
-// only when the state read after the failure shows a pending commit (the
-// banner) and this apply's commit at entry 0. The state is read afterwards
-// and named.
+// only when the state read after the failure shows this apply's commit at
+// entry 0: under the banner (pending) the cancel, without it (something
+// confirmed the commit before tacctl's confirm, and nothing proved the
+// change) the revert, each committing only the exact inverse of the
+// change. The state is read afterwards and named.
 func (r *run) cancel(why string) {
 	if r.done() {
 		r.o.Interrupted = r.o.Interrupted || errors.Is(r.ctx.Err(), context.Canceled)
@@ -906,13 +1006,19 @@ func (r *run) cancel(why string) {
 			r.end(ExitUnknown, why+"; the state could not be read: "+r.errText(err))
 			return
 		}
-		if !st.Pending || !ours(st.History[0], r.id) {
-			e, how, entry := r.settle(ctx, st)
-			r.named(e, why, how, entry)
+		switch {
+		case !ours(st.History[0], r.id):
+			r.named(r.settle(ctx, st), why)
 			return
-		}
-		if err := r.t.Cancel(ctx, r.id); err != nil {
-			why += "; the cancel: " + r.errText(err)
+		case st.Pending:
+			if err := r.t.Cancel(ctx, r.id); err != nil {
+				why += "; the cancel: " + r.errText(err)
+			}
+		default:
+			why += "; no confirmed commit was pending (something confirmed tacctl's before its confirm)"
+			if err := r.t.Revert(ctx, r.id); err != nil {
+				why += "; the revert: " + r.errText(err)
+			}
 		}
 	}
 	st, err := r.state(ctx)
@@ -920,8 +1026,38 @@ func (r *run) cancel(why string) {
 		r.end(ExitUnknown, why+"; the state could not be read: "+r.errText(err))
 		return
 	}
-	e, how, entry := r.settle(ctx, st)
-	r.named(e, why, how, entry)
+	r.named(r.settle(ctx, st), why)
+}
+
+// confirmedByOther ends a transaction whose verification passed while no
+// banner stood and tacctl's commit was still entry 0 (a stranger's 'commit
+// check' confirmed it before tacctl's confirm): the held login's state is
+// read again, and only when it agrees is the change applied by someone
+// else, with the verification as its proof; any other state is named from
+// the history, a pending commit of tacctl's cancelled.
+func (r *run) confirmedByOther() {
+	ctx, cancelCtx := r.grace()
+	defer cancelCtx()
+	st, err := r.t.State(ctx)
+	if err != nil {
+		r.cancel("the state after the verification: " + r.errText(err))
+		return
+	}
+	switch {
+	case st.Pending && ours(st.History[0], r.id):
+		// the fresh login's prompt showed no banner and the held login's
+		// does: the fresh login's state is not to be trusted
+		r.cancel("verification failed (the fresh login's prompt shows no pending confirmed commit)")
+		return
+	case st.Pending || !ours(st.History[0], r.id):
+		r.named(r.settle(ctx, st), "after the verification")
+		return
+	}
+	r.o.Until = time.Time{}
+	r.end(ExitAppliedByOther, "no confirmed commit was pending before tacctl's confirm and its commit is still entry 0 (a 'commit check' confirmed it); "+
+		"the fresh login's landed compare is the change the check showed and its read has the change")
+	// leave configuration mode; the candidate is the committed one
+	_ = r.t.Discard(ctx)
 }
 
 // record is RECORD: the confirm read back on the fresh login.
@@ -933,15 +1069,15 @@ func (r *run) record() {
 		r.end(ExitUnknown, "confirmed (commit complete) but the state could not be read: "+r.errText(err))
 		return
 	}
-	e, how, entry := r.settle(ctx, st)
-	if e == ExitPending {
+	s := r.settle(ctx, st)
+	if s.e == ExitPending {
 		// the confirm answered 'commit complete' and the commit is still
 		// pending: the answer is not what it said; nothing more is typed
 		r.end(ExitPending, "the confirm did not end the window")
 		return
 	}
-	r.named(e, "after the confirm", how, entry)
-	if e == ExitApplied {
+	r.named(s, "after the confirm")
+	if s.e == ExitApplied {
 		// leave configuration mode; the candidate is the committed one
 		_ = r.t.Discard(ctx)
 	}

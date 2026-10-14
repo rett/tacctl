@@ -37,7 +37,13 @@
 //     show the banner when the check is typed; a pending one fails the
 //     transaction after the discard. The cancel commits only a candidate
 //     whose compare is exactly the inverse of the committed change, loaded
-//     while the banner still stood.
+//     while the banner still stood; the revert of a commit something else
+//     confirmed before tacctl's confirm commits the same inverse only
+//     when no banner stood.
+//   - A commit of tacctl's that something confirmed before its confirm is
+//     applied by someone else only with the verification's proof (the
+//     fresh login's landed compare and read); without it, it is reverted,
+//     or pending until a read after the window's end settles it.
 //   - A history entry after tacctl's commit that is not its confirm, its
 //     cancel or the device's own rollback is never taken for a confirm: the
 //     state is settled from the configuration (the planner's delta of a
@@ -265,6 +271,14 @@ type Transport interface {
 	// inverse of the committed change (the held session's last Compare);
 	// otherwise it discards and commits nothing.
 	Cancel(ctx context.Context, id string) error
+	// Revert undoes a confirmed commit that something else confirmed
+	// before tacctl's confirm (no banner stood over tacctl's commit at
+	// entry 0, and nothing proved the change): it loads the configuration
+	// before the commit and commits it with the cancel's comment, only
+	// when the banner did not stand after the load and what it loaded is
+	// exactly the inverse of the committed change (the held session's last
+	// Compare); otherwise it discards and commits nothing.
+	Revert(ctx context.Context, id string) error
 	// Discard drops the candidate and leaves configuration mode ('rollback
 	// 0', 'exit'); after a failure it closes the held session instead, which
 	// drops an exclusive candidate all the same.

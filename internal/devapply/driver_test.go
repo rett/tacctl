@@ -429,10 +429,15 @@ func TestPendingSessionDropped(t *testing.T) {
 	wantExit(t, rc, ExitPending, ResultPending)
 	d.clk.Advance(11 * time.Minute)
 	r, _ = d.verify(context.Background())
-	rc = Reconcile(context.Background(), r, "example-sw1", o.ID, o.Until, nil)
-	_ = r.Close()
+	defer func() { _ = r.Close() }()
+	// 'by root via other' is the device's own rollback or a commit of the
+	// system: settled from the configuration, unknown without a planner
+	rc = ReconcileAt(context.Background(), r, "example-sw1", o.ID, o.Until, d.clk.Now(), nil)
+	wantExit(t, rc, ExitUnknown, ResultUnknown)
+	rc = ReconcileAt(context.Background(), r, "example-sw1", o.ID, o.Until, d.clk.Now(), factsOf(&planner{desired: desiredLines()}))
 	wantExit(t, rc, ExitRolledBack, ResultRolledBack)
-	if !strings.Contains(rc.Reason, "the device rolled it back at 2026-10-13 14:10:00 UTC") || !rc.Until.IsZero() {
+	if !strings.Contains(rc.Reason, "the commit after tacctl's is by root via other at 2026-10-13 14:10:00 UTC") ||
+		!strings.Contains(rc.Reason, "the configuration lacks the change") || !rc.Until.IsZero() {
 		t.Errorf("reconcile %q", rc.Reason)
 	}
 }
@@ -484,15 +489,31 @@ func TestAppliedBySomeoneElse(t *testing.T) {
 		t.Fatalf("history %+v", h[0])
 	}
 	r, _ := d.verify(context.Background())
+	defer func() { _ = r.Close() }()
 	p := &planner{desired: desiredLines()}
+	// Before the window's end the banner's absence is all there is: a
+	// release or a session that prints no banner would roll the change back
+	// at the end all the same. The record stays pending.
 	for _, facts := range []func(context.Context, string) (plan.Delta, error){factsOf(p), nil} {
-		rc := Reconcile(context.Background(), r, "example-sw1", o.ID, o.Until, facts)
+		rc := ReconcileAt(context.Background(), r, "example-sw1", o.ID, o.Until, d.clk.Now(), facts)
+		wantExit(t, rc, ExitPending, ResultPending)
+		if !strings.Contains(rc.Reason, "no confirmed commit's banner stands but tacctl's commit is still entry 0") || !rc.Until.Equal(o.Until) {
+			t.Errorf("%q %v", rc.Reason, rc.Until)
+		}
+	}
+	// After it: confirmed, from the configuration when a planner is at hand.
+	d.clk.Advance(11 * time.Minute)
+	for _, facts := range []func(context.Context, string) (plan.Delta, error){factsOf(p), nil} {
+		rc := ReconcileAt(context.Background(), r, "example-sw1", o.ID, o.Until, d.clk.Now(), facts)
 		wantExit(t, rc, ExitAppliedByOther, ResultApplied)
-		if !strings.Contains(rc.Reason, "a 'commit check' confirmed it") {
+		if !strings.Contains(rc.Reason, "a 'commit check' confirmed it") || (facts != nil) != strings.Contains(rc.Reason, "the configuration has the change") {
 			t.Errorf("%q", rc.Reason)
 		}
 	}
-	_ = r.Close()
+	// a configuration that lacks the change says rolled back
+	lacks := func(context.Context, string) (plan.Delta, error) { return deltaOf(desiredLines()[1]), nil }
+	rc := ReconcileAt(context.Background(), r, "example-sw1", o.ID, o.Until, d.clk.Now(), lacks)
+	wantExit(t, rc, ExitRolledBack, ResultRolledBack)
 }
 
 // A pending commit's history label is no pending marker: after a 'commit

@@ -104,7 +104,8 @@ func TestCancelAfterExpiryCommitsNothing(t *testing.T) {
 		t.Errorf("log %q", o.Log)
 	}
 	wantExit(t, o, ExitRolledBack, ResultRolledBack)
-	if !strings.Contains(o.Reason, "the device rolled it back at 2026-10-13 14:10:00 UTC") || !strings.Contains(o.Reason, "shows no pending commit") {
+	if !strings.Contains(o.Reason, "the commit after tacctl's is by root via other at 2026-10-13 14:10:00 UTC") ||
+		!strings.Contains(o.Reason, "the configuration lacks the change") || !strings.Contains(o.Reason, "shows no pending commit") {
 		t.Errorf("reason %q", o.Reason)
 	}
 }

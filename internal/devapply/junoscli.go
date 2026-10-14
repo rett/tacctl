@@ -304,7 +304,7 @@ func (j *JunosCLI) State(ctx context.Context) (CommitState, error) {
 	area, ok := promptArea(op)
 	if !ok {
 		drop()
-		return CommitState{}, fmt.Errorf("%s: %w: the session did not tell its prompt", cmd, ErrUnrecognised)
+		return CommitState{}, fmt.Errorf("%s: %w: %s", cmd, ErrUnrecognised, noPromptArea(op))
 	}
 	pending, minutes, err := parseBanner(area)
 	if err != nil {
@@ -316,6 +316,22 @@ func (j *JunosCLI) State(ctx context.Context) (CommitState, error) {
 		return CommitState{}, err
 	}
 	return CommitState{History: h, Pending: pending, Minutes: minutes}, nil
+}
+
+// textNoPromptArea is why a shell session that completed a command did not
+// tell its prompt area (devssh.PromptArea): the device answered the empty
+// line typed ahead without echoing it, so both prompts stood on one line.
+// The banner is the only pending marker, so the state cannot be read
+// (fail closed).
+const textNoPromptArea = "the device did not echo the empty line typed ahead (both prompts on one line), " +
+	"so the banner of a pending confirmed commit cannot be read: apply cannot run on this device"
+
+// noPromptArea is why the session told no prompt area.
+func noPromptArea(s devssh.CLISession) string {
+	if _, ok := s.(devssh.PromptArea); !ok {
+		return "the session tells no prompt area"
+	}
+	return textNoPromptArea
 }
 
 // promptArea is a session's prompt area after its last command.
@@ -335,7 +351,7 @@ func (j *JunosCLI) heldPending() (bool, error) {
 	area, ok := j.area, j.areaOK
 	j.mu.Unlock()
 	if !ok {
-		return false, fmt.Errorf("%w: the held session did not tell its prompt", ErrUnrecognised)
+		return false, fmt.Errorf("%w: the held session: %s", ErrUnrecognised, textNoPromptArea)
 	}
 	pending, _, err := parseBanner(area)
 	return pending, err
@@ -723,6 +739,20 @@ func (j *JunosCLI) Confirm(ctx context.Context, id, user string) error {
 // the inverse (or does not parse) is discarded ('rollback 0', 'exit'), and
 // the device's expiry is the cancel.
 func (j *JunosCLI) Cancel(ctx context.Context, id string) error {
+	return j.undo(ctx, id, true)
+}
+
+// Revert is Cancel for a commit that something confirmed before tacctl's
+// confirm: the same words and the same inverse compare, and the prompt
+// after 'rollback 1' must show no banner (one that stands is a pending
+// commit the driver did not see, and is not committed over).
+func (j *JunosCLI) Revert(ctx context.Context, id string) error {
+	return j.undo(ctx, id, false)
+}
+
+// undo is Cancel (banner true: the banner must stand after 'rollback 1')
+// and Revert (false: it must not).
+func (j *JunosCLI) undo(ctx context.Context, id string, banner bool) error {
 	j.mu.Lock()
 	committed, d := j.committed, j.committedDelta
 	j.mu.Unlock()
@@ -737,8 +767,11 @@ func (j *JunosCLI) Cancel(ctx context.Context, id string) error {
 		j.dropHeld()
 		return answerError(plan.ApplyRollback1, body, j.m)
 	}
-	if pending, err := j.heldPending(); err != nil || !pending {
+	if pending, err := j.heldPending(); err != nil || pending != banner {
 		why := "the prompt after 'rollback 1' shows no pending commit (the window may have ended)"
+		if !banner {
+			why = "the prompt after 'rollback 1' shows a pending commit"
+		}
 		if err != nil {
 			why = "the prompt after 'rollback 1': " + j.m.text(err.Error())
 		}

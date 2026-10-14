@@ -92,17 +92,23 @@ const minSubstring = 4
 // reDeviceSecret is a secret the device prints itself, in any statement and
 // not only the delta's: a superuser's compare holds 'encrypted-password
 // "$6$..."', '$9$' strings, communities and keys (lab, 2026-10-13; a
-// narrower class sees '/* SECRET-DATA */'). The value after the keyword is
-// elided.
-var reDeviceSecret = regexp.MustCompile(`\b(encrypted-password|secret|authentication-key|simple-password|pre-shared-key|authentication-password|privacy-password|community)(\s+)("[^"]*"|[^\s;{}"]+)`)
+// narrower class sees '/* SECRET-DATA */'), an SNMP trap group's name
+// ('trap-group <name> {', as a community's) and a login's public keys
+// ('ssh-rsa "ssh-rsa AAAA..."'). The value after the keyword is elided.
+var reDeviceSecret = regexp.MustCompile(`\b(encrypted-password|secret|authentication-key|simple-password|pre-shared-key|authentication-password|privacy-password|community|trap-group|ssh-rsa|ssh-dss|ssh-ecdsa|ssh-ed25519)(\s+)("[^"]*"|[^\s;{}"\[\]]+)`)
+
+// reKeyString is a public key string wherever it stands: its type, then
+// the key and the comment after it are elided.
+var reKeyString = regexp.MustCompile(`\b(ssh-rsa|ssh-dss|ssh-ed25519|ecdsa-sha2-[A-Za-z0-9-]+|sk-[A-Za-z0-9@.-]+)(\s+)AAAA[A-Za-z0-9+/=]+[^"\n;]*`)
 
 // reCrypt is a hashed or '$9$'-encoded value wherever it stands.
 var reCrypt = regexp.MustCompile(`\$(?:1|2[aby]?|5|6|9|y)\$[^\s";]*`)
 
-// deviceSecrets elides the secrets the device prints (reDeviceSecret,
-// reCrypt) from s.
+// deviceSecrets elides the secrets the device prints (reCrypt, reKeyString,
+// reDeviceSecret) from s.
 func deviceSecrets(s string) string {
 	s = reCrypt.ReplaceAllString(s, secretMark)
+	s = reKeyString.ReplaceAllString(s, "${1}${2}"+secretMark)
 	return reDeviceSecret.ReplaceAllStringFunc(s, func(x string) string {
 		m := reDeviceSecret.FindStringSubmatch(x)
 		if m[3] == secretMark || strings.HasPrefix(m[3], "<") {

@@ -112,40 +112,64 @@ func TestSettle(t *testing.T) {
 	canc.Comment = "tacctl apply cancel " + id
 	exp := CommitEntry{TimeText: "2026-10-13 14:10:00 UTC", User: "root", Via: "other"}
 	other := CommitEntry{TimeText: "2026-10-13 14:02:00 UTC", User: "bob", Via: "cli"}
+	until := testStart.Add(10 * time.Minute)
+	during, after := testStart.Add(time.Minute), until.Add(settleSlack)
 	// the pending marker is the banner (pending), never the label (lab L2)
 	cases := []struct {
 		h       History
 		pending bool
 		pre     CommitEntry
+		now     time.Time
 		want    Exit
+		facts   factsNeed
+		over    bool
 	}{
-		{History{pre}, false, pre, ExitNothingCommitted},
-		{History{other, pre}, false, pre, ExitUnknown},
-		{History{ourC, pre}, true, pre, ExitPending},
-		{History{conf, ourC, pre}, false, pre, ExitApplied},
-		{History{canc, ourC, pre}, false, pre, ExitRolledBack},
-		{History{exp, ourC, pre}, false, pre, ExitRolledBack},
+		{History{pre}, false, pre, during, ExitNothingCommitted, factsNo, false},
+		{History{other, pre}, false, pre, during, ExitUnknown, factsNo, false},
+		{History{ourC, pre}, true, pre, during, ExitPending, factsNo, false},
+		{History{conf, ourC, pre}, false, pre, during, ExitApplied, factsNo, false},
+		{History{canc, ourC, pre}, false, pre, during, ExitRolledBack, factsNo, false},
+		// 'by root via other' is the device's own rollback or a commit of the
+		// system that confirmed it: settled from the configuration
+		{History{exp, ourC, pre}, false, pre, after, ExitUnknown, factsRequired, false},
 		// a commit after ours that is not one tacctl recognises: never taken
 		// for a confirm from the history alone (the caller reads the facts)
-		{History{other, ourC, pre}, false, pre, ExitUnknown},
-		// a confirm after the device's own rollback: the rollback stands
-		{History{conf, exp, ourC, pre}, false, pre, ExitRolledBack},
-		{History{pre}, false, CommitEntry{}, ExitUnknown},
-		// ours at entry 0 with its label and no banner: a 'commit check'
-		// confirmed it without an entry (before the spike this read pending)
-		{History{ourC, pre}, false, pre, ExitAppliedByOther},
+		{History{other, ourC, pre}, false, pre, during, ExitUnknown, factsRequired, false},
+		// a confirm after the device's own rollback: the entry above ours
+		// tells
+		{History{conf, exp, ourC, pre}, false, pre, after, ExitUnknown, factsRequired, false},
+		{History{pre}, false, CommitEntry{}, during, ExitUnknown, factsNo, false},
+		// ours at entry 0 with its label and no banner, before the window's
+		// end: a 'commit check' may have confirmed it, or the device printed
+		// no banner and rolls it back at the end: pending
+		{History{ourC, pre}, false, pre, during, ExitPending, factsNo, false},
+		{History{ourC, pre}, false, pre, until, ExitPending, factsNo, false},
+		// after the window's end: confirmed without an entry, settled from
+		// the configuration when it can be
+		{History{ourC, pre}, false, pre, after, ExitAppliedByOther, factsPreferred, false},
+		// the window's end not known: unknown
+		{History{ourC, pre}, false, pre, time.Time{}, ExitUnknown, factsNo, false},
 		// the banner over another entry: someone's later pending commit
-		{History{other, ourC, pre}, true, pre, ExitUnknown},
+		{History{other, ourC, pre}, true, pre, during, ExitUnknown, factsNo, false},
 		// the banner and no commit of ours
-		{History{other, pre}, true, pre, ExitUnknown},
+		{History{other, pre}, true, pre, during, ExitUnknown, factsNo, false},
+		// the banner over a stranger's entry, the entry above ours names its
+		// fate: reported, with the stranger's pending commit
+		{History{other, canc, ourC, pre}, true, pre, during, ExitRolledBack, factsNo, true},
+		{History{other, conf, ourC, pre}, true, pre, during, ExitApplied, factsNo, true},
+		{History{other, exp, ourC, pre}, true, pre, after, ExitUnknown, factsRequired, true},
 	}
 	for i, c := range cases {
-		e, _, _, odd := settle(CommitState{History: c.h, Pending: c.pending, Minutes: 3}, id, c.pre)
-		if e != c.want {
-			t.Errorf("%d: %s, want %s", i, e, c.want)
+		u := until
+		if c.now.IsZero() {
+			c.now, u = during, time.Time{}
 		}
-		if odd != (i == 6) {
-			t.Errorf("%d: odd %v", i, odd)
+		s := settle(CommitState{History: c.h, Pending: c.pending, Minutes: 3}, id, c.pre, c.now, u)
+		if s.e != c.want || s.facts != c.facts || s.over != c.over {
+			t.Errorf("%d: %s facts %d over %v, want %s %d %v (%s)", i, s.e, s.facts, s.over, c.want, c.facts, c.over, s.how)
+		}
+		if s.over && (!strings.Contains(s.how, "a later confirmed commit (by bob via cli at 2026-10-13 14:02:00 UTC) is pending") || !s.until.Equal(c.now.Add(4*time.Minute))) {
+			t.Errorf("%d: %q %v", i, s.how, s.until)
 		}
 	}
 }

@@ -371,7 +371,10 @@ type shell struct {
 // pending (0.2.9 lab L2). Run drops these lines from the end of a command's
 // output; PromptArea returns them as the device printed them in its answer
 // to the last empty line Run typed ahead (the location line not among
-// them, blank lines dropped). ok is false before a command has completed.
+// them, blank lines dropped). ok is false before a command has completed,
+// and after one whose answer to the empty line did not stand on a line of
+// its own: a device that does not echo the empty line prints both prompts
+// on one line, and what stands before its prompt cannot be told.
 type PromptArea interface {
 	PromptArea() (lines []string, ok bool)
 }
