@@ -4462,6 +4462,18 @@ the least-privilege default. Add further scopes (for example
 .BR edge ,
 .BR dmz )
 as needed and place users in them explicitly.
+.PP
+A change that writes what the scope's devices are rendered from
+.RB ( "scope prefixes" ", " secret ", " mgmt\-acl ", " snmp ", " block ,
+and the protocol, AAA order, timeout and group settings) says, in one line,
+when at least one device of the scope has a stored pull that
+.B "device config plan"
+would now change:
+.B "The configuration of devices in scope <name> would change: tacctl device config apply \-\-scope <name> \-\-check"
+(a caller who is not a superuser is pointed to
+.BR "device config plan \-\-scope" ).
+It reads the stored pulls only: no login, no network, and nothing for a scope
+with no pulled device.
 .SS Top-level \fB(tacctl scope)\fR
 .TP
 .B scope list
@@ -6145,7 +6157,8 @@ Remove every device (an engineer: those of their own scopes).
 .\" END GENERATED: command device remove
 .TP
 .BI "device rename " "old new " [ \-\-allow\-generic ]
-Rename a device; acknowledgements stay with it.
+Rename a device; acknowledgements stay with it. The device's own host name is
+unchanged and not planned by tacctl: the verb says so.
 .\" BEGIN GENERATED: command device rename
 .RS
 .PP
@@ -6158,14 +6171,40 @@ Options:
 .RE
 .\" END GENERATED: command device rename
 .TP
-.BI "device address " "name " [ address ]
+.BI "device address " "name " [ address " [" \-\-apply ] ]
 Show or set the address, the AAA identity of the device, stored canonically. It
 cannot be cleared or be one another device holds. Pinned host keys belong
-to the old address and are dropped.
+to the old address and are dropped. The address decides which scope covers the
+device.
+A setter that changes what is rendered for the device (this one, the
+.BR description ", " location ", " address ", " vendor
+and
+.B config\-syntax
+verbs) says, in one line, when the device has a stored pull that
+.B "device config plan"
+would now change:
+.B "The configuration of <name> would change: tacctl device config apply <name> \-\-check"
+(a device that is not Junos, or a caller who is not a superuser, is pointed to
+.B "device config plan"
+instead). It reads the stored pull only: no login, no network, and nothing
+when the device was never pulled or the pull is stale.
+.B \-\-apply
+runs
+.B "device config apply"
+for that one device after the value is stored, in the same process: the same
+review (answered by typing the device's name back; it is never skipped) and
+confirmed commit, for a superuser and a Junos device at a terminal; anything
+else is refused before the registry is changed. A value that is already set
+changes nothing and applies nothing. The exit status is the apply's.
 .\" BEGIN GENERATED: command device address
 .RS
 .PP
 Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-\-apply\fR
+(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices.
 .RE
 .\" END GENERATED: command device address
 .TP
@@ -6199,19 +6238,32 @@ Requires: \fBengineer\fR.
 .RE
 .\" END GENERATED: command device port
 .TP
-.BI "device description " "name " [ text | clear ]
+.BI "device description " "name " [ text | clear " [" \-\-apply ] ]
 Show, set or clear the description (up to 120 characters).
 With no value these verbs print the current one (\c
 .B \-
 when unset).
+A setter that changes what is rendered says, when the stored pull would now
+change, how to look at it (see
+.BR "device address" ),
+and
+.B \-\-apply
+runs
+.B "device config apply"
+for the device after the change (superusers, Junos devices, at a terminal).
 .\" BEGIN GENERATED: command device description
 .RS
 .PP
 Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-\-apply\fR
+(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices.
 .RE
 .\" END GENERATED: command device description
 .TP
-.BI "device location " "name " [ text | clear | "\-\-from\-device " [ \-y ] ]
+.BI "device location " "name " [ text | clear " [" \-\-apply "] | " "\-\-from\-device " [ \-y ] ]
 Show, set or clear the place of the device (up to 120 characters, no control
 characters, no
 .BR ? ),
@@ -6237,6 +6289,14 @@ shown and the device's replaces it after a
 at a terminal, or with
 .BR \-y ", " \-\-yes ;
 without either it is refused. The name is the only argument.
+A setter that changes what is rendered says, when the stored pull would now
+change, how to look at it (see
+.BR "device address" ),
+and
+.B \-\-apply
+runs
+.B "device config apply"
+for the device after the change (superusers, Junos devices, at a terminal).
 .\" BEGIN GENERATED: command device location
 .RS
 .PP
@@ -6249,6 +6309,9 @@ Read the location from the device (SNMP sysLocation) and store it.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
 (remove, import, hostkey, location) Answer yes to the confirmation.
+.TP
+\fB\-\-apply\fR
+(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices.
 .RE
 .\" END GENERATED: command device location
 .TP
@@ -6265,7 +6328,7 @@ Requires: \fBengineer\fR.
 .RE
 .\" END GENERATED: command device legacy-ssh
 .TP
-.BI "device config\-syntax " "name " "[ auto | ios12 | modern ]"
+.BI "device config\-syntax " "name " "[ auto | ios12 | modern [ \-\-apply ] ]"
 Show or set the configuration syntax of a Cisco device: the syntax its
 walkthrough
 .RB ( "device config show" ", " "config cisco \-\-name" )
@@ -6334,10 +6397,24 @@ With no word the setting is shown. The setting is for Cisco devices (a registry 
 or an import that gives one to another vendor is refused, and
 .B "device vendor"
 takes it away from a device that stops being Cisco, saying so).
+A change of the setting says, in one line, when the stored pull would now be
+planned differently
+.RB ( "device config plan" ),
+and
+.B \-\-apply
+runs
+.B "device config apply"
+for the device afterwards; the apply writes to Junos devices only in this
+release, so on a Cisco device the flag is refused before the setting changes.
 .\" BEGIN GENERATED: command device config-syntax
 .RS
 .PP
 Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-\-apply\fR
+(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices.
 .RE
 .\" END GENERATED: command device config-syntax
 .TP

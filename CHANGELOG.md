@@ -128,6 +128,33 @@ current behaviour; this file is where history lives.
    refuses a region that starts with `configure private`. The manual page
    and `docs/devices/planning.md` describe it.
 
+8. **A setting that changes the rendered configuration says so.** After
+   `device location`, `description`, `address`, `config-syntax` or `vendor`
+   stores a value that is rendered, and the device has a stored pull that
+   `device config plan` would now change, the verb prints one line: `The
+   configuration of <name> would change: tacctl device config apply <name>
+   --check` (`device config plan <name>` for a device that is not Junos, or
+   for a caller who is not a superuser). The line is made from the stored
+   pull alone: no login, no network, and nothing for a device that was never
+   pulled, whose pull is stale, or that cannot be planned. `device rename`
+   says the device's own host name is unchanged and not planned by tacctl;
+   `port`, `legacy-ssh` and `hostname` say nothing about the configuration.
+   A change that writes what a scope's devices are rendered from (`scope
+   prefixes`, `secret`, `mgmt-acl`, `snmp`, `block`, and the protocol, AAA
+   order, timeout and group settings) prints the same line for the scope
+   (`tacctl device config apply --scope <name> --check`) when at least one of
+   its devices has a stored pull that would change.
+
+9. **`--apply` on `device address`, `description`, `location` and
+   `config-syntax`.** After the value is stored, `--apply` runs `device
+   config apply` for that one device in the same command: the same review,
+   answered by typing the device's name back and never skipped, and the
+   confirmed commit. It is the superuser's, for a Junos device and at a
+   terminal; otherwise it is a usage error before anything is changed. A
+   value that is already set changes nothing and applies nothing, and the
+   exit status is the apply's. `--apply` with no value, or with
+   `location --from-device`, is refused.
+
 ## 0.2.8 (2026-10-13)
 
 1. **The documentation is a tree of topic pages.** `README.md` holds the

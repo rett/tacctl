@@ -119,6 +119,9 @@ func (inv *invocation) deviceConfigSyntax(args []string) error {
 		return err
 	}
 	if len(p.Args) == 1 {
+		if p.Has("--apply") {
+			return inv.usageErr("--apply goes with a value to set: tacctl device config-syntax <name> auto|ios12|modern --apply")
+		}
 		e, err := inv.deviceFind(res, p.Args[0])
 		if err != nil {
 			return err
@@ -141,6 +144,16 @@ func (inv *invocation) deviceConfigSyntax(args []string) error {
 		return inv.usageErr("Device '" + d.Name + "' has vendor '" + d.Vendor + "'; the configuration syntax is a Cisco setting.")
 	}
 	name := d.Name
+	applyReq, changed := p.Has("--apply"), d.ConfigSyntax != set
+	if applyReq && changed {
+		e, err := inv.deviceFind(res, name)
+		if err != nil {
+			return err
+		}
+		if err := inv.applyPreflight(e); err != nil {
+			return err
+		}
+	}
 	if _, err := inv.deviceWrite(func(f *devreg.File, _ *devreg.Resolver) error {
 		f.Find(name).ConfigSyntax = set
 		return nil
@@ -165,5 +178,5 @@ func (inv *invocation) deviceConfigSyntax(args []string) error {
 	if set == "" && strings.EqualFold(d.Vendor, "cisco") {
 		inv.echo("  The syntax now comes from the last pull's version line: tacctl device config pull " + name)
 	}
-	return nil
+	return inv.afterSetter(name, "config-syntax", changed, applyReq)
 }

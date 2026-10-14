@@ -524,3 +524,96 @@ import json, sys
 print(json.loads(sys.stdin.read())[0]["state"])' <<< "$output"
     assert_output "new"
 }
+
+# tdevice <typed> <args...>: a 'tacctl device' verb on a terminal, as alice;
+# the output is stdout and stderr without the terminal's carriage returns
+# and colours.
+tdevice() {
+    local typed="$1" cmd rc=0
+    shift
+    printf -v cmd '%q device' "$TACCTL_BIN_SCRIPT"
+    local a
+    for a in "$@"; do printf -v cmd '%s %q' "$cmd" "$a"; done
+    # shellcheck disable=SC2059
+    printf "$typed" | SUDO_USER=alice script -qec "$cmd" /dev/null > "${BATS_TEST_TMPDIR}/device.out" 2>&1 || rc=$?
+    status=$rc
+    output=$(sed -E 's/\r$//; s/\x1b\[[0-9;]*m//g' "${BATS_TEST_TMPDIR}/device.out")
+    mapfile -t lines <<< "$output"
+}
+
+@test "setters: a rendered setting says the configuration would change, from the stored pull alone" {
+    start
+    # no pull on record: nothing is said
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device location example-sw1 "Row 3"
+    assert_success
+    refute_output --partial "would change"
+    SUDO_USER=alice "$TACCTL_BIN_SCRIPT" device config pull example-sw1 > /dev/null 2>&1
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device description example-sw1 "Core switch"
+    plain
+    assert_success
+    assert_output --partial "The configuration of example-sw1 would change: tacctl device config apply example-sw1 --check"
+    # what is not rendered says nothing about the configuration
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device port example-sw1 22
+    refute_output --partial "would change"
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device hostname example-sw1 example-sw1.example.net
+    refute_output --partial "would change"
+    # a scope's change names the scope
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 203.0.113.0/24
+    plain
+    assert_success
+    assert_output --partial "The configuration of devices in scope lab would change: tacctl device config apply --scope lab --check"
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab list
+    refute_output --partial "would change"
+    # a rename says the device's own host name is not planned
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device rename example-sw1 example-sw9
+    plain
+    assert_success
+    assert_output --partial "The device's own host name is unchanged: tacctl does not plan it."
+    refute_output --partial "would change"
+}
+
+@test "setters --apply: refused before anything changes without a terminal and for a lower tier" {
+    start
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device location example-sw1 "Row 3" --apply
+    assert_failure
+    plain
+    assert_output --partial "no terminal to confirm on"
+    assert_output --partial "Nothing was changed."
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device location example-sw1
+    plain
+    assert_line "-"
+    stub_cmd id 'echo "users tac-users tac-engineer"'
+    printf 'tier:\n  operator: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" device location example-sw1 "Row 3" --apply
+    assert_failure
+    plain
+    assert_output --partial "which is for the superuser tier; yours is engineer. Nothing was changed."
+    # nothing was dialled
+    [[ ! -e "${TACCTL_VAR_LIB}/devices-config.json" ]]
+}
+
+@test "setters --apply: the value is stored, then the apply's review, commit and confirm" {
+    start
+    before=$(committed)
+    # a wrong answer to the review: the value is stored, nothing is committed
+    tdevice 'no\n' location example-sw1 "Row 3" --apply
+    [[ "$status" -eq 1 ]]
+    assert_output --partial "Device 'example-sw1' location set to Row 3."
+    assert_output --partial "Type the device name to go on:"
+    assert_output --partial "Nothing was changed."
+    [[ "$(committed)" == "$before" ]]
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device location example-sw1
+    assert_output "Row 3"
+    # the typed name: committed, proven and confirmed; the exit status is the apply's
+    tdevice 'example-sw1\n' description example-sw1 "Core switch" --apply
+    [[ "$status" -eq 0 ]]
+    assert_output --partial "Device 'example-sw1' description set to Core switch."
+    assert_output --regexp "example-sw1  applied \(.*\) \[tacctl-"
+    run committed
+    assert_output --partial "set system authentication-order tacplus"
+    # the value is already set: nothing to store and nothing applied
+    tdevice '' description example-sw1 "Core switch" --apply
+    [[ "$status" -eq 0 ]]
+    assert_output --partial "Nothing changed, so nothing was applied."
+    refute_output --partial "Type "
+}

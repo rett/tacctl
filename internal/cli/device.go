@@ -55,6 +55,7 @@ func init() {
 var (
 	flagYes          = Flag{Names: []string{"-y", "--yes"}}
 	flagJSON         = Flag{Names: []string{"--json"}}
+	flagApply        = Flag{Names: []string{"--apply"}}
 	flagAllowGeneric = Flag{Names: []string{"--allow-generic"}}
 	flagAllNotices   = Flag{Names: []string{"--all"}}
 	noticeWords      = strings.Join(devreg.AckableKinds, "|")
@@ -83,15 +84,15 @@ var deviceSpecs = map[string]Spec{
 		flagAllowGeneric}},
 	"remove":      {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagYes}},
 	"rename":      {MinArgs: 2, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagAllowGeneric}},
-	"address":     {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, ""}},
+	"address":     {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagApply}},
 	"hostname":    {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
 	"vendor":      {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, KindVendors + "|clear"}},
 	"port":        {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
-	"description": {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}},
-	"location":    {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}, Flags: []Flag{{Names: []string{"--from-device"}}, flagYes}},
+	"description": {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}, Flags: []Flag{flagApply}},
+	"location":    {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}, Flags: []Flag{{Names: []string{"--from-device"}}, flagYes, flagApply}},
 	"legacy-ssh":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "enable|disable"}},
 	// The Cisco configuration syntax (D113).
-	"config-syntax": {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "auto|ios12|modern"}},
+	"config-syntax": {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "auto|ios12|modern"}, Flags: []Flag{flagApply}},
 	"stale-days":    {MaxArgs: 1, Args: []string{""}},
 	"notice":        {MinArgs: 3, MaxArgs: 3, Args: []string{KindDevices, "ack|unack", noticeWords}},
 	"notices":       {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagAllNotices}},
@@ -126,14 +127,14 @@ var deviceVerbs = [][2]string{
 	{"add [<name>] <address> [options]", "Register a device (no name: offer the one it gives itself by SNMP)"},
 	{"remove <name>[,<name>...] | --all [-y]", "Remove devices from the registry (confirms)"},
 	{"rename <old> <new> [--allow-generic]", "Rename a device"},
-	{"address <name> [<address>]", "Show or set the address"},
+	{"address <name> [<address>]", "Show or set the address (--apply: then run 'device config apply' for the device)"},
 	{"hostname <name> [<dns>|clear]", "Show, set or clear the DNS name"},
 	{"vendor <name> [cisco|juniper|wti|other]", "Show or set the vendor"},
 	{"port <name> [<n>|clear]", "Show, set or clear the ssh port"},
-	{"description <name> [<text>|clear]", "Show, set or clear the description"},
-	{"location <name> [<text>|clear|--from-device [-y]]", "Show, set or clear the place, for the SNMP location in the walkthroughs (--from-device: read it from the device)"},
+	{"description <name> [<text>|clear]", "Show, set or clear the description (--apply: then run 'device config apply' for the device)"},
+	{"location <name> [<text>|clear|--from-device [-y]]", "Show, set or clear the place, for the SNMP location in the walkthroughs (--from-device: read it from the device; --apply: then run 'device config apply' for the device)"},
 	{"legacy-ssh <name> [enable|disable]", "Opt in to the legacy ssh algorithms (SHA-1 key exchange, CBC ciphers, ssh-rsa)"},
-	{"config-syntax <name> [auto|ios12|modern]", "Show or set the Cisco configuration syntax (IOS 12.x or modern) of the walkthrough and the comparison"},
+	{"config-syntax <name> [auto|ios12|modern]", "Show or set the Cisco configuration syntax (IOS 12.x or modern) of the walkthrough and the comparison (--apply: then run 'device config apply' for the device)"},
 	{"stale-days [<n>]", "Show or set the days after which a device counts as stale"},
 	{"notice <name> ack|unack <kind>", "Acknowledge or reopen a notice"},
 	{"notices [<name>] [--all]", "The open notices, with what to do about each (--all: the acknowledged ones too)"},
@@ -192,6 +193,7 @@ var deviceOptions = map[string][][2]string{
 	},
 	"location": {
 		{"--from-device", "Read the location from the device (SNMP sysLocation) and store it"},
+		{"--apply", "(address, description, location, config-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices"},
 	},
 	"import": {
 		{"--check", "Write nothing; say what the import would do"},
@@ -1440,6 +1442,7 @@ func (inv *invocation) deviceRename(args []string) error {
 	inv.blocksDeviceCarry(oldName, newName)
 	inv.holdCarry(oldName, newName, old.Address)
 	inv.app.Out.Info("Device '" + oldName + "' renamed to '" + newName + "'.")
+	inv.app.Out.Info("The device's own host name is unchanged: tacctl does not plan it.")
 	inv.echo("")
 	return nil
 }
@@ -1457,6 +1460,13 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		f, res, err := inv.deviceLoad()
 		if err != nil {
 			return err
+		}
+		applyReq := p.Has("--apply")
+		switch {
+		case applyReq && field == "location" && p.Has("--from-device"):
+			return inv.usageErr("--apply goes with a value to set: --from-device stores what the device reports, so there is nothing to apply.")
+		case applyReq && len(p.Args) == 1:
+			return inv.usageErr("--apply goes with a value to set: tacctl device " + field + " <name> <value> --apply")
 		}
 		if field == "location" && (p.Has("--from-device") || p.Has("-y")) {
 			return inv.deviceLocationFromDevice(p, f, res)
@@ -1498,6 +1508,16 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		// A configuration syntax setting is a Cisco setting: it goes with
 		// the vendor, and the message says which one went.
 		droppedSyntax := d.ConfigSyntax != "" && probe.ConfigSyntax == ""
+		changed := fieldValue(d, field) != fieldValue(&probe, field)
+		if applyReq && changed {
+			e, err := inv.deviceFind(res, name)
+			if err != nil {
+				return err
+			}
+			if err := inv.applyPreflight(e); err != nil {
+				return err
+			}
+		}
 		warnKeys := false
 		if _, err := inv.deviceWrite(func(f *devreg.File, r *devreg.Resolver) error {
 			live := f.Find(name)
@@ -1534,8 +1554,47 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		if droppedSyntax {
 			inv.app.Out.Warn("The configuration syntax setting (" + d.ConfigSyntax + ") was removed: it is a Cisco setting.")
 		}
-		return nil
+		return inv.afterSetter(name, field, changed, applyReq)
 	}
+}
+
+// fieldValue is the value a setter's field holds, to tell whether a set
+// changed it.
+func fieldValue(d *devreg.Device, field string) string {
+	switch field {
+	case "address":
+		return d.Address
+	case "hostname":
+		return d.Hostname
+	case "vendor":
+		return d.Vendor
+	case "port":
+		return strconv.Itoa(d.Port)
+	case "description":
+		return d.Description
+	case "location":
+		return d.Location
+	case "config-syntax":
+		return d.ConfigSyntax
+	}
+	return ""
+}
+
+// afterSetter is what follows a setter that stored its value: --apply runs
+// 'device config apply' for the device (the exit status is the apply's),
+// otherwise a field that is rendered says, when the stored pull would now
+// change, how to look at it. A set that changed nothing does neither.
+func (inv *invocation) afterSetter(name, field string, changed, applyReq bool) error {
+	switch {
+	case !changed && applyReq:
+		inv.app.Out.Info("Nothing changed, so nothing was applied.")
+	case changed && applyReq:
+		inv.app.Out.Info("Applying it to the device: tacctl device config apply " + name)
+		return inv.deviceConfigApply([]string{name})
+	case changed && rendersField(field):
+		inv.configNudge(name)
+	}
+	return nil
 }
 
 func setField(d *devreg.Device, field, value string, clearing bool) error {
