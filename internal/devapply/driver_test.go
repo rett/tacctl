@@ -1,4 +1,4 @@
-package devrollout
+package devapply
 
 import (
 	"context"
@@ -53,7 +53,7 @@ func TestApplyApplied(t *testing.T) {
 	p := &planner{desired: desiredLines()}
 	o := apply(t, d, p, nil)
 	wantExit(t, o, ExitApplied, ResultApplied)
-	if o.Commit == nil || !strings.HasPrefix(o.Commit.Comment, "tacctl rollout confirm "+o.ID+" by alice") {
+	if o.Commit == nil || !strings.HasPrefix(o.Commit.Comment, "tacctl apply confirm "+o.ID+" by alice") {
 		t.Errorf("commit entry %+v", o.Commit)
 	}
 	if !o.Until.IsZero() || o.Discarded || o.Interrupted || o.LoginRefused {
@@ -70,7 +70,7 @@ func TestApplyApplied(t *testing.T) {
 		t.Errorf("committed:\n%s", after)
 	}
 	h := d.srv.History()
-	if len(h) < 3 || !strings.HasPrefix(h[0].Comment, "tacctl rollout confirm ") || !strings.HasPrefix(h[1].Comment, "tacctl rollout "+o.ID+" by alice") || h[1].RollbackIn != 10 {
+	if len(h) < 3 || !strings.HasPrefix(h[0].Comment, "tacctl apply confirm ") || !strings.HasPrefix(h[1].Comment, "tacctl apply "+o.ID+" by alice") || h[1].RollbackIn != 10 {
 		t.Errorf("history %+v", h[:2])
 	}
 	if _, pending := d.srv.PendingUntil(); pending {
@@ -80,11 +80,11 @@ func TestApplyApplied(t *testing.T) {
 		t.Error("the exclusive lock is still held")
 	}
 	// the confirm is typed in the held session, after the commit
-	ic, iconf := indexOf(o.Log, plan.RolloutCommitConfirmed(10, o.ID, "alice")), indexOf(o.Log, plan.RolloutConfirm(o.ID, "alice"))
-	if ic < 0 || iconf < ic || indexOf(o.VerifyLog, plan.RolloutConfirm(o.ID, "alice")) >= 0 {
+	ic, iconf := indexOf(o.Log, plan.ApplyCommitConfirmed(10, o.ID, "alice")), indexOf(o.Log, plan.ApplyConfirm(o.ID, "alice"))
+	if ic < 0 || iconf < ic || indexOf(o.VerifyLog, plan.ApplyConfirm(o.ID, "alice")) >= 0 {
 		t.Errorf("commit %d confirm %d; verify log %q", ic, iconf, o.VerifyLog)
 	}
-	for _, w := range []string{plan.RolloutShowCommit, plan.RolloutShowAuthorization, plan.RolloutLandedCompare} {
+	for _, w := range []string{plan.ApplyShowCommit, plan.ApplyShowAuthorization, plan.ApplyLandedCompare} {
 		if indexOf(o.VerifyLog, w) < 0 {
 			t.Errorf("the verification did not run %q: %q", w, o.VerifyLog)
 		}
@@ -104,7 +104,7 @@ func TestApplyApplied(t *testing.T) {
 	// a second apply has nothing to do
 	o2 := apply(t, d, p, nil)
 	wantExit(t, o2, ExitNoChange, ResultNoChange)
-	if indexOf(o2.Log, plan.RolloutConfigureExclusive) >= 0 {
+	if indexOf(o2.Log, plan.ApplyConfigureExclusive) >= 0 {
 		t.Errorf("a no-change run opened a session: %q", o2.Log)
 	}
 }
@@ -116,7 +116,7 @@ func TestCheckChecked(t *testing.T) {
 	before := d.srv.Committed()
 	o := check(t, d, &planner{desired: desiredLines()}, nil)
 	wantExit(t, o, ExitChecked, ResultChecked)
-	if !o.Discarded || !endsWith(o.Log, plan.RolloutCommitCheck, plan.RolloutRollback0, plan.RolloutExit) {
+	if !o.Discarded || !endsWith(o.Log, plan.ApplyCommitCheck, plan.ApplyRollback0, plan.ApplyExit) {
 		t.Errorf("not discarded: %q", o.Log)
 	}
 	if o.Shape == "" || len(o.ShapeLines) == 0 || !strings.HasPrefix(o.Line(), "checked: shape "+o.Shape+" (3 set, 1 delete)") {
@@ -174,7 +174,7 @@ func TestFailedBeforeOpen(t *testing.T) {
 				return deltaOf(plan.Line{Section: "roles", Op: plan.OpSet, Text: "set system login user gotest class super-user"}), nil
 			}
 		}, "statement outside the planner's domain"},
-		{"vendor", nil, func(in *Input) { in.Transport = vendorT{in.Transport} }, "rollout is not available for cisco devices"},
+		{"vendor", nil, func(in *Input) { in.Transport = vendorT{in.Transport} }, "apply is not available for cisco devices"},
 		{"input", nil, func(in *Input) { in.Clock = nil }, "no clock"},
 	}
 	for _, c := range cases {
@@ -186,7 +186,7 @@ func TestFailedBeforeOpen(t *testing.T) {
 			if !strings.Contains(o.Reason, c.want) {
 				t.Errorf("reason %q, want %q", o.Reason, c.want)
 			}
-			if indexOf(o.Log, plan.RolloutConfigureExclusive) >= 0 && c.name != "locked" {
+			if indexOf(o.Log, plan.ApplyConfigureExclusive) >= 0 && c.name != "locked" {
 				t.Errorf("opened: %q", o.Log)
 			}
 			for _, l := range o.Log {
@@ -211,7 +211,7 @@ func TestFailedPendingAtPreflight(t *testing.T) {
 	if !strings.Contains(o2.Reason, "a confirmed commit is pending until 2026-10-13 14:10:00 UTC; nothing was sent") {
 		t.Errorf("reason %q", o2.Reason)
 	}
-	if indexOf(o2.Log, plan.RolloutConfigure) >= 0 || indexOf(o2.Log, plan.RolloutCommitCheck) >= 0 {
+	if indexOf(o2.Log, plan.ApplyConfigure) >= 0 || indexOf(o2.Log, plan.ApplyCommitCheck) >= 0 {
 		t.Errorf("a pending device was touched: %q", o2.Log)
 	}
 }
@@ -223,7 +223,7 @@ func TestFailedChangedSinceReview(t *testing.T) {
 	runShell(t, d, "configure", "set system accounting events login", "commit")
 	o := Driver{}.Apply(context.Background(), d.input(p), rev)
 	wantExit(t, o, ExitFailed, ResultFailed)
-	if o.Reason != "the device changed since the review" || indexOf(o.Log, plan.RolloutConfigure) >= 0 {
+	if o.Reason != "the device changed since the review" || indexOf(o.Log, plan.ApplyConfigure) >= 0 {
 		t.Errorf("%q %q", o.Reason, o.Log)
 	}
 }
@@ -238,7 +238,7 @@ func TestFailedLoad(t *testing.T) {
 	if !strings.HasPrefix(o.Reason, "load: set system tacplus-server 192.0.2.11 secret <secret>: error: could not set <secret>") {
 		t.Errorf("reason %q", o.Reason)
 	}
-	if !o.Discarded || !endsWith(o.Log, "set system tacplus-server 192.0.2.11 secret <secret>", plan.RolloutRollback0, plan.RolloutExit) {
+	if !o.Discarded || !endsWith(o.Log, "set system tacplus-server 192.0.2.11 secret <secret>", plan.ApplyRollback0, plan.ApplyExit) {
 		t.Errorf("not discarded right after the statement: %q", o.Log)
 	}
 	if d.srv.Committed() != before || d.srv.Candidate() != before || d.srv.ExclusiveHolder() != "" {
@@ -254,7 +254,7 @@ func TestFailedCheck(t *testing.T) {
 	if !strings.Contains(o.Reason, "check: error: accounting needs a destination") {
 		t.Errorf("reason %q", o.Reason)
 	}
-	if !o.Discarded || !endsWith(o.Log, plan.RolloutCommitCheck, plan.RolloutRollback0, plan.RolloutExit) {
+	if !o.Discarded || !endsWith(o.Log, plan.ApplyCommitCheck, plan.ApplyRollback0, plan.ApplyExit) {
 		t.Errorf("log %q", o.Log)
 	}
 	if d.srv.Committed() != before || d.srv.Candidate() != before {
@@ -286,7 +286,7 @@ func TestNothingCommittedPrivate(t *testing.T) {
 	if !strings.Contains(o.Reason, "nothing was committed (this release refuses commit confirmed in a private session; run without --private)") {
 		t.Errorf("reason %q", o.Reason)
 	}
-	if indexOf(o.Log, plan.RolloutConfigurePrivate) < 0 || !o.Discarded || !endsWith(o.Log, plan.RolloutShowCommit, plan.RolloutRollback0, plan.RolloutExit) {
+	if indexOf(o.Log, plan.ApplyConfigurePrivate) < 0 || !o.Discarded || !endsWith(o.Log, plan.ApplyShowCommit, plan.ApplyRollback0, plan.ApplyExit) {
 		t.Errorf("log %q (the state is read before it is named, then the discard)", o.Log)
 	}
 	if d.srv.Committed() != before || !o.Until.IsZero() {
@@ -307,14 +307,14 @@ func TestRolledBackFreshLoginRefused(t *testing.T) {
 	if strings.Contains(o.Reason, devssh.ErrAuth.Error()) {
 		t.Errorf("the reason reads as a rejected password: %q", o.Reason)
 	}
-	if !endsWith(o.Log, plan.RolloutRollback1, plan.RolloutCompare, plan.RolloutCancel(o.ID), plan.RolloutShowCommit) {
+	if !endsWith(o.Log, plan.ApplyRollback1, plan.ApplyCompare, plan.ApplyCancel(o.ID), plan.ApplyShowCommit) {
 		t.Errorf("log %q", o.Log)
 	}
 	if d.srv.Committed() != before {
 		t.Errorf("not rolled back:\n%s", d.srv.Committed())
 	}
 	h := d.srv.History()
-	if h[0].Comment != "tacctl rollout cancel "+o.ID || !strings.HasPrefix(h[1].Comment, "tacctl rollout "+o.ID) {
+	if h[0].Comment != "tacctl apply cancel "+o.ID || !strings.HasPrefix(h[1].Comment, "tacctl apply "+o.ID) {
 		t.Errorf("history %+v", h[:2])
 	}
 	if _, p := d.srv.PendingUntil(); p {
@@ -385,7 +385,7 @@ func TestPendingSessionDropped(t *testing.T) {
 	if !o.Until.Equal(testStart.Add(10*time.Minute)) || !strings.Contains(o.Reason, "the held session is lost") {
 		t.Errorf("until %v reason %q", o.Until, o.Reason)
 	}
-	if indexOf(o.Log, plan.RolloutConfirm(o.ID, "alice")) >= 0 || indexOf(o.VerifyLog, plan.RolloutConfirm(o.ID, "alice")) >= 0 {
+	if indexOf(o.Log, plan.ApplyConfirm(o.ID, "alice")) >= 0 || indexOf(o.VerifyLog, plan.ApplyConfirm(o.ID, "alice")) >= 0 {
 		t.Error("confirmed from another session")
 	}
 	if !strings.HasPrefix(o.Line(), "PENDING until 14:10:00: do not type commit or commit check on the device") {
@@ -433,7 +433,7 @@ func TestWindowShort(t *testing.T) {
 		}
 	})
 	wantExit(t, o, ExitWindowShort, ResultPending)
-	if indexOf(o.Log, plan.RolloutConfirm(o.ID, "alice")) >= 0 || indexOf(o.Log, plan.RolloutRollback1) >= 0 {
+	if indexOf(o.Log, plan.ApplyConfirm(o.ID, "alice")) >= 0 || indexOf(o.Log, plan.ApplyRollback1) >= 0 {
 		t.Errorf("typed with the window short: %q", o.Log)
 	}
 	if o.Until.IsZero() || !strings.Contains(o.Reason, "the window ran short") {
@@ -477,7 +477,7 @@ func TestInterruptBeforeCommit(t *testing.T) {
 	assertLog(t, o, desiredLines())
 	assertNoSecret(t, o, d.state)
 	wantExit(t, o, ExitInterrupted, ResultFailed)
-	if !o.Interrupted || !o.Discarded || !endsWith(o.Log, plan.RolloutRollback0, plan.RolloutExit) {
+	if !o.Interrupted || !o.Discarded || !endsWith(o.Log, plan.ApplyRollback0, plan.ApplyExit) {
 		t.Errorf("%+v", o)
 	}
 	if d.srv.Committed() != before || d.srv.Candidate() != before {

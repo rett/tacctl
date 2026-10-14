@@ -1,4 +1,4 @@
-package devrollout
+package devapply
 
 import (
 	"slices"

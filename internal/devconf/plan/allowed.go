@@ -1,8 +1,8 @@
 package plan
 
-// The allow-list tripwire of a rollout (0.2.9 plan D133). CheckRegion
+// The allow-list tripwire of an apply (0.2.9 plan D133). CheckRegion
 // refuses anything but set, delete and insert statements, but it accepts a
-// set of any hierarchy; before a rollout types a line, Allowed asks the
+// set of any hierarchy; before an apply types a line, Allowed asks the
 // planner's own tables whether the line lies where the plan may write. The
 // list is derived: a statement is allowed when its path lies under an owned
 // row (owned.go) of a planned section, or is one the rendering of such a
@@ -41,7 +41,7 @@ func (e *AllowError) Error() string {
 // Unwrap is ErrNotAllowed.
 func (e *AllowError) Unwrap() error { return ErrNotAllowed }
 
-// NeverRow is a hierarchy a rollout never writes, whatever the tables name.
+// NeverRow is a hierarchy an apply never writes, whatever the tables name.
 type NeverRow struct {
 	ID string
 	// Pattern is the path prefix, space separated; '?' is any one word.
@@ -87,16 +87,16 @@ type Allow struct {
 	// LoginClass is the invoking login's login class: nothing under
 	// 'system login class <LoginClass>' is written, but the statements of
 	// Expected the plan's own lock-out guards have already held. Empty:
-	// unknown, which a rollout must not leave when it knows it.
+	// unknown, which an apply must not leave when it knows it.
 	LoginClass string
 }
 
 // Allowed holds a line against the tables of every section, with no rendering
 // and no login: the part of the allow-list that needs no input.
 //
-// IT IS NOT THE ROLLOUT'S CHECK. With no rendering a '$' of a row is any name
+// IT IS NOT THE APPLY'S CHECK. With no rendering a '$' of a row is any name
 // (a class, a user, a server that is not tacctl's), so the statement of
-// another object passes. A rollout, and every caller that types on a device,
+// another object passes. A apply, and every caller that types on a device,
 // uses Allow with Expected (and Login, LoginClass) set, and Ready to be sure
 // it is.
 func Allowed(vendor, line string) error { return Allow{Vendor: vendor}.Check(line) }
@@ -105,7 +105,7 @@ func Allowed(vendor, line string) error { return Allow{Vendor: vendor}.Check(lin
 // hold the names against.
 var ErrNoExpected = errors.New("plan: no expected statements")
 
-// Ready reports whether the allow-list is fit to guard a rollout: it must
+// Ready reports whether the allow-list is fit to guard an apply: it must
 // hold the rendering (Expected) whenever it plans any section, or the tables
 // alone would admit every name (fail closed). A nil result says only that the
 // input is there; Check and CheckDelta say whether a statement passes.

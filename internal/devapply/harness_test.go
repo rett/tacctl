@@ -1,4 +1,4 @@
-package devrollout
+package devapply
 
 import (
 	"bytes"
@@ -33,7 +33,7 @@ var allSecrets = []string{secretKey, secretComm}
 var testStart = time.Date(2026, 10, 13, 14, 0, 0, 0, time.UTC)
 
 // fixtureDir is the fake's Junos configure model fixture.
-const fixtureDir = "../../tests/fixtures/devconf/fake/junos-rollout"
+const fixtureDir = "../../tests/fixtures/devconf/fake/junos-apply"
 
 // device is one fake device with its clock.
 type device struct {
@@ -241,7 +241,7 @@ func (d *device) reviewed(p *planner) plan.Delta {
 }
 
 // assertLog holds the command logs to the rule of the brief: nothing but
-// the delta's statements (as shown) and the rollout's words.
+// the delta's statements (as shown) and the apply's words.
 func assertLog(t *testing.T, o Outcome, delta []plan.Line) {
 	t.Helper()
 	_, read, _ := devconf.Commands("juniper")
@@ -251,10 +251,10 @@ func assertLog(t *testing.T, o Outcome, delta []plan.Line) {
 	}
 	for _, logs := range [][]string{o.Log, o.VerifyLog} {
 		for _, l := range logs {
-			if plan.IsRolloutWord(l) || l == read || shown[l] {
+			if plan.IsApplyWord(l) || l == read || shown[l] {
 				continue
 			}
-			t.Errorf("the log holds %q, which is neither a delta statement nor a rollout word", l)
+			t.Errorf("the log holds %q, which is neither a delta statement nor an apply word", l)
 		}
 	}
 }

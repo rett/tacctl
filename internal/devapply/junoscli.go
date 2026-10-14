@@ -1,9 +1,9 @@
-package devrollout
+package devapply
 
 // The Junos command-line transport (D131): reads over exec channels, as the
 // pull makes them, and one shell session held from 'configure exclusive' to
 // the confirming 'commit'. Every line it sends passes send's guard: a
-// rollout word (plan.IsRolloutWord), the pull's read command on an exec
+// apply word (plan.IsApplyWord), the pull's read command on an exec
 // channel, or a statement the allow-list given to Open passes.
 
 import (
@@ -175,17 +175,17 @@ func isStatement(line string) bool {
 	return verb == "set" || verb == "delete" || verb == "insert"
 }
 
-// guardWord refuses a line that is not one of the rollout's own words.
+// guardWord refuses a line that is not one of the apply's own words.
 func guardWord(line string) error {
-	if !plan.IsRolloutWord(line) {
-		return fmt.Errorf("%w: %q is not a rollout word", ErrNotSent, cut(line))
+	if !plan.IsApplyWord(line) {
+		return fmt.Errorf("%w: %q is not an apply word", ErrNotSent, cut(line))
 	}
 	return nil
 }
 
 // guardStatement refuses a statement the allow-list does not pass.
 func (j *JunosCLI) guardStatement(l plan.Line) error {
-	if !isStatement(l.Text) || plan.IsRolloutWord(l.Text) {
+	if !isStatement(l.Text) || plan.IsApplyWord(l.Text) {
 		return fmt.Errorf("%w: not a statement: %s", ErrNotSent, cut(l.Shown()))
 	}
 	if strings.ContainsAny(l.Text, "?\n\r") {
@@ -205,7 +205,7 @@ func (j *JunosCLI) guardStatement(l plan.Line) error {
 
 // --- the reads ------------------------------------------------------------------------------
 
-// runExec runs a read on an exec channel; cmd must be a rollout word or the
+// runExec runs a read on an exec channel; cmd must be an apply word or the
 // pull's read command.
 func (j *JunosCLI) runExec(ctx context.Context, cmd string) (string, error) {
 	if cmd != j.read {
@@ -235,7 +235,7 @@ func (j *JunosCLI) runExec(ctx context.Context, cmd string) (string, error) {
 
 // Identity runs 'show version'.
 func (j *JunosCLI) Identity(ctx context.Context) (Identity, error) {
-	out, err := j.runExec(ctx, plan.RolloutShowVersion)
+	out, err := j.runExec(ctx, plan.ApplyShowVersion)
 	if err != nil {
 		return Identity{}, err
 	}
@@ -244,7 +244,7 @@ func (j *JunosCLI) Identity(ctx context.Context) (Identity, error) {
 
 // History runs 'show system commit'.
 func (j *JunosCLI) History(ctx context.Context) (History, error) {
-	out, err := j.runExec(ctx, plan.RolloutShowCommit)
+	out, err := j.runExec(ctx, plan.ApplyShowCommit)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +253,7 @@ func (j *JunosCLI) History(ctx context.Context) (History, error) {
 
 // Login runs 'show cli authorization'.
 func (j *JunosCLI) Login(ctx context.Context) (Login, error) {
-	out, err := j.runExec(ctx, plan.RolloutShowAuthorization)
+	out, err := j.runExec(ctx, plan.ApplyShowAuthorization)
 	if err != nil {
 		return Login{}, err
 	}
@@ -287,13 +287,13 @@ func (j *JunosCLI) Read(ctx context.Context) (string, error) {
 // An exec channel's output is whole only when the channel ended with its exit
 // status (devssh: anything else is an error), so a cut text never parses.
 func (j *JunosCLI) LandedCompare(ctx context.Context, d plan.Delta) (plan.CompareText, error) {
-	out, err := j.runExec(ctx, plan.RolloutLandedCompare)
+	out, err := j.runExec(ctx, plan.ApplyLandedCompare)
 	if err != nil {
 		return plan.CompareText{}, err
 	}
 	c, err := plan.ParseCompareFor(out, d)
 	if err != nil {
-		return plan.CompareText{}, fmt.Errorf("%s: %w: %v", plan.RolloutLandedCompare, ErrUnrecognised, j.m.text(err.Error()))
+		return plan.CompareText{}, fmt.Errorf("%s: %w: %v", plan.ApplyLandedCompare, ErrUnrecognised, j.m.text(err.Error()))
 	}
 	return c, nil
 }
@@ -319,7 +319,7 @@ func (j *JunosCLI) runHeld(ctx context.Context, line, shown string) (string, err
 	return out, nil
 }
 
-// word types a rollout word in configuration mode and returns the answer's
+// word types an apply word in configuration mode and returns the answer's
 // lines before the location line; a missing location line is an
 // unrecognised answer (the session is not where the transport thinks).
 func (j *JunosCLI) word(ctx context.Context, line string) ([]string, error) {
@@ -360,7 +360,7 @@ func (j *JunosCLI) SharedDirty(ctx context.Context) (Dirty, error) {
 		j.mu.Unlock()
 		return s.Run(ctx, cmd)
 	}
-	out, err := run(plan.RolloutConfigure)
+	out, err := run(plan.ApplyConfigure)
 	if err != nil {
 		return Dirty{}, err
 	}
@@ -369,11 +369,11 @@ func (j *JunosCLI) SharedDirty(ctx context.Context) (Dirty, error) {
 		if l := lockedBy(body); l != "" || containsLine(body, textLocked) {
 			return Dirty{}, &LockedError{By: l}
 		}
-		return Dirty{}, answerError(plan.RolloutConfigure, body, j.m)
+		return Dirty{}, answerError(plan.ApplyConfigure, body, j.m)
 	}
 	var d Dirty
 	if len(nonBlank(body)) == 0 || strings.TrimSpace(nonBlank(body)[0]) != textEnterConfig {
-		return Dirty{}, answerError(plan.RolloutConfigure, body, j.m)
+		return Dirty{}, answerError(plan.ApplyConfigure, body, j.m)
 	}
 	for _, l := range nonBlank(body)[1:] {
 		switch {
@@ -384,9 +384,9 @@ func (j *JunosCLI) SharedDirty(ctx context.Context) (Dirty, error) {
 		}
 	}
 	if extra := nonBlank(body)[1:]; len(extra) > 0 && !d.Editors && !d.Staged {
-		return Dirty{}, answerError(plan.RolloutConfigure, body, j.m)
+		return Dirty{}, answerError(plan.ApplyConfigure, body, j.m)
 	}
-	out, err = run(plan.RolloutCompare)
+	out, err = run(plan.ApplyCompare)
 	if err != nil {
 		return Dirty{}, err
 	}
@@ -398,16 +398,16 @@ func (j *JunosCLI) SharedDirty(ctx context.Context) (Dirty, error) {
 		if classify(body) != "" {
 			base = ErrRefused
 		}
-		return Dirty{}, &AnswerError{Cmd: plan.RolloutCompare, base: base,
+		return Dirty{}, &AnswerError{Cmd: plan.ApplyCompare, base: base,
 			Lines: []string{fmt.Sprintf("%d line(s) without the location line (the shared candidate's, not quoted)", len(nonBlank(body)))}}
 	}
 	c, err := plan.ParseCompare(strings.Join(body, "\n"))
 	if err != nil {
 		var le *plan.CompareLineError
 		if errors.As(err, &le) {
-			return Dirty{}, fmt.Errorf("%s: %w: compare line %d: %s (the shared candidate's, not quoted)", plan.RolloutCompare, ErrUnrecognised, le.Line, le.Why)
+			return Dirty{}, fmt.Errorf("%s: %w: compare line %d: %s (the shared candidate's, not quoted)", plan.ApplyCompare, ErrUnrecognised, le.Line, le.Why)
 		}
-		return Dirty{}, fmt.Errorf("%s: %w: %v", plan.RolloutCompare, ErrUnrecognised, err)
+		return Dirty{}, fmt.Errorf("%s: %w: %v", plan.ApplyCompare, ErrUnrecognised, err)
 	}
 	if !c.Empty() {
 		d.Staged = true
@@ -437,9 +437,9 @@ func (j *JunosCLI) Open(ctx context.Context, mode OpenMode, allow func(string) e
 		return fmt.Errorf("%w: the held session is open already", ErrNotSent)
 	}
 	j.mu.Unlock()
-	cmd := plan.RolloutConfigureExclusive
+	cmd := plan.ApplyConfigureExclusive
 	if mode == OpenPrivate {
-		cmd = plan.RolloutConfigurePrivate
+		cmd = plan.ApplyConfigurePrivate
 	}
 	s, err := j.newShell()
 	if err != nil {
@@ -503,7 +503,7 @@ func (j *JunosCLI) Load(ctx context.Context, l plan.Line) (Loaded, error) {
 // prompt (word: configAnswer); only then is it parsed, so an answer cut at a
 // block boundary never reads as a smaller compare.
 func (j *JunosCLI) Compare(ctx context.Context, d plan.Delta) (plan.CompareText, error) {
-	body, err := j.word(ctx, plan.RolloutCompare)
+	body, err := j.word(ctx, plan.ApplyCompare)
 	if err != nil {
 		return plan.CompareText{}, err
 	}
@@ -511,7 +511,7 @@ func (j *JunosCLI) Compare(ctx context.Context, d plan.Delta) (plan.CompareText,
 	// words; the parser refuses every line that is not a compare's
 	c, err := plan.ParseCompareFor(strings.Join(body, "\n"), d)
 	if err != nil {
-		return plan.CompareText{}, fmt.Errorf("%s: %w: %v", plan.RolloutCompare, ErrUnrecognised, j.m.text(err.Error()))
+		return plan.CompareText{}, fmt.Errorf("%s: %w: %v", plan.ApplyCompare, ErrUnrecognised, j.m.text(err.Error()))
 	}
 	j.mu.Lock()
 	j.committed, j.committedDelta = &c, d
@@ -521,12 +521,12 @@ func (j *JunosCLI) Compare(ctx context.Context, d plan.Delta) (plan.CompareText,
 
 // Check runs 'commit check'; the answer must be the success phrase alone.
 func (j *JunosCLI) Check(ctx context.Context) error {
-	body, err := j.word(ctx, plan.RolloutCommitCheck)
+	body, err := j.word(ctx, plan.ApplyCommitCheck)
 	if err != nil {
 		return err
 	}
 	if !exactly(body, textCheckOK) {
-		return answerError(plan.RolloutCommitCheck, body, j.m)
+		return answerError(plan.ApplyCommitCheck, body, j.m)
 	}
 	return nil
 }
@@ -534,12 +534,12 @@ func (j *JunosCLI) Check(ctx context.Context) error {
 // CommitConfirmed types the confirmed commit; the answer must be the
 // window's line and 'commit complete', nothing else.
 func (j *JunosCLI) CommitConfirmed(ctx context.Context, minutes int, id, user string) error {
-	line := plan.RolloutCommitConfirmed(minutes, id, user)
+	line := plan.ApplyCommitConfirmed(minutes, id, user)
 	body, err := j.word(ctx, line)
 	if err != nil {
 		return err
 	}
-	if !exactly(body, plan.RolloutConfirmedNote(minutes), textCommitComplete) {
+	if !exactly(body, plan.ApplyConfirmedNote(minutes), textCommitComplete) {
 		return answerError(line, body, j.m)
 	}
 	return nil
@@ -548,7 +548,7 @@ func (j *JunosCLI) CommitConfirmed(ctx context.Context, minutes int, id, user st
 // Confirm types the confirming commit; the answer must be 'commit
 // complete'.
 func (j *JunosCLI) Confirm(ctx context.Context, id, user string) error {
-	line := plan.RolloutConfirm(id, user)
+	line := plan.ApplyConfirm(id, user)
 	body, err := j.word(ctx, line)
 	if err != nil {
 		return err
@@ -575,15 +575,15 @@ func (j *JunosCLI) Cancel(ctx context.Context, id string) error {
 	if committed == nil {
 		return fmt.Errorf("%w: no compare of the commit to undo", ErrNotSent)
 	}
-	body, err := j.word(ctx, plan.RolloutRollback1)
+	body, err := j.word(ctx, plan.ApplyRollback1)
 	if err != nil {
 		return err
 	}
 	if !exactly(body, textLoadComplete) {
 		j.dropHeld()
-		return answerError(plan.RolloutRollback1, body, j.m)
+		return answerError(plan.ApplyRollback1, body, j.m)
 	}
-	body, err = j.word(ctx, plan.RolloutCompare)
+	body, err = j.word(ctx, plan.ApplyCompare)
 	if err != nil {
 		j.dropHeld()
 		return err
@@ -601,7 +601,7 @@ func (j *JunosCLI) Cancel(ctx context.Context, id string) error {
 		}
 		return fmt.Errorf("%w: %s: nothing was committed", ErrUnrecognised, why)
 	}
-	line := plan.RolloutCancel(id)
+	line := plan.ApplyCancel(id)
 	body, err = j.word(ctx, line)
 	if err != nil {
 		return err
@@ -618,22 +618,22 @@ func (j *JunosCLI) Cancel(ctx context.Context, id string) error {
 // or private candidate all the same; the error says so.
 func (j *JunosCLI) Discard(ctx context.Context) error {
 	defer j.dropHeld()
-	body, err := j.word(ctx, plan.RolloutRollback0)
+	body, err := j.word(ctx, plan.ApplyRollback0)
 	if err != nil {
 		return err
 	}
 	if !exactly(body, textLoadComplete) {
-		return answerError(plan.RolloutRollback0, body, j.m)
+		return answerError(plan.ApplyRollback0, body, j.m)
 	}
-	if err := guardWord(plan.RolloutExit); err != nil {
+	if err := guardWord(plan.ApplyExit); err != nil {
 		return err
 	}
-	out, err := j.runHeld(ctx, plan.RolloutExit, plan.RolloutExit)
+	out, err := j.runHeld(ctx, plan.ApplyExit, plan.ApplyExit)
 	if err != nil {
 		return err
 	}
 	if !exactly(lines(out), textExitConfig) {
-		return answerError(plan.RolloutExit, lines(out), j.m)
+		return answerError(plan.ApplyExit, lines(out), j.m)
 	}
 	return nil
 }

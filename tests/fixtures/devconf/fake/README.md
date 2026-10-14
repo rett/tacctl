@@ -33,7 +33,7 @@ The login is the user who runs the verb (`SUDO_USER`) with the password of
 `TACCTL_TEST_DEVICE_PASSWORD`: `_fake-device <dir> --user <name> --password
 <text>` sets what it accepts.
 
-## The Junos configure model (`junos-rollout/`)
+## The Junos configure model (`junos-apply/`)
 
 A directory with a `config.set` is a Junos device with a configure model
 (`internal/devssh/fakedev/junos_config*.go`, plan D142): the committed
@@ -46,9 +46,9 @@ configuration [| display inheritance no-comments] | display set`) from the
 committed configuration, over any `.out` file of the directory; every other
 command is still answered from the directory's `<command>.out` files, so a
 fixture adds `show chassis hardware.out` as above. `junos/` has no
-`config.set` and is the 0.2.4 pull's device; `junos-rollout/` is the copy to
-start a rollout test from (`tests/helpers/fakedev.bash` `fakedev_dir
-junos-rollout`).
+`config.set` and is the 0.2.4 pull's device; `junos-apply/` is the copy to
+start an apply test from (`tests/helpers/fakedev.bash` `fakedev_dir
+junos-apply`).
 
 The files, all optional but `config.set`, and read when they are needed
 (`config.set` and `dirty.shared` once, at the first session). A line that

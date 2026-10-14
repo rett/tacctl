@@ -15,7 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/rett/tacctl/internal/devrollout"
+	"github.com/rett/tacctl/internal/devapply"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -40,7 +40,7 @@ var configDevicesSpecs = map[string]Spec{
 }
 
 // The defaults and the pause's range of the two device.apply.* settings
-// (D140). The confirm window's range is devrollout's (a window under three
+// (D140). The confirm window's range is devapply's (a window under three
 // minutes cannot hold the verification); the pause is the seconds between the
 // devices of a batch after the canary.
 const (
@@ -184,7 +184,7 @@ func (inv *invocation) configDevicesShow(rest []string) error {
 func (inv *invocation) applySettings() (confirmMinutes int, pause time.Duration) {
 	confirmMinutes, pause = applyConfirmDefault, applyPauseDefault*time.Second
 	if n, err := atoiIn(inv.confGet("device.apply.confirm_timeout", strconv.Itoa(applyConfirmDefault)),
-		devrollout.MinConfirmMinutes, devrollout.MaxConfirmMinutes); err == nil {
+		devapply.MinConfirmMinutes, devapply.MaxConfirmMinutes); err == nil {
 		confirmMinutes = n
 	}
 	if n, err := atoiIn(inv.confGet("device.apply.pause", strconv.Itoa(applyPauseDefault)), 0, applyPauseMax); err == nil {

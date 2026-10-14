@@ -1,4 +1,4 @@
-package devrollout
+package devapply
 
 // The fail-closed parsers of the Junos answers. Each takes the text of one
 // command and returns what it means or an error; a text it does not know is

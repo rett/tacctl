@@ -1,4 +1,4 @@
-package devrollout
+package devapply
 
 // The driver: one device through the state machine of plan §3.1, against
 // the Transport interface and never against a command line. Each return is
@@ -35,7 +35,7 @@ const (
 	// discard, the cancel and the state read).
 	DefaultGrace = 15 * time.Second
 	// MinConfirmMinutes and MaxConfirmMinutes are the range of
-	// device.rollout.confirm_timeout (D140).
+	// device.apply.confirm_timeout (D140).
 	MinConfirmMinutes = 3
 	MaxConfirmMinutes = 60
 )
@@ -65,7 +65,7 @@ type Input struct {
 	Allow plan.Allow
 	// Mode is exclusive (the default) or private.
 	Mode OpenMode
-	// ConfirmMinutes is the window (device.rollout.confirm_timeout).
+	// ConfirmMinutes is the window (device.apply.confirm_timeout).
 	ConfirmMinutes int
 	// Hold is the optional --hold (D134 Q2): after the verification, true
 	// keeps the change. Nil: none.
@@ -74,7 +74,7 @@ type Input struct {
 	Clock func() time.Time
 	Rand  io.Reader
 	// StateDir, when set, holds the device's lock ('<dir>/locks/<device>.lock')
-	// for the transaction and the shape store, which an applied rollout
+	// for the transaction and the shape store, which an applied apply
 	// files its shape in.
 	StateDir string
 }
@@ -86,7 +86,7 @@ type Driver struct {
 	Grace        time.Duration
 }
 
-// Check is the check phase alone ('device rollout check'): the device loads
+// Check is the check phase alone ('device apply check'): the device loads
 // the plan, 'commit check' runs, the candidate is discarded.
 func (d Driver) Check(ctx context.Context, in Input) Outcome {
 	return d.run(ctx, in, nil)
@@ -232,7 +232,7 @@ func (r *run) validate(apply bool) error {
 		return errors.New("no verification login")
 	case apply && (in.ConfirmMinutes < MinConfirmMinutes || in.ConfirmMinutes > MaxConfirmMinutes):
 		return fmt.Errorf("the confirm window %d is not %d-%d minutes", in.ConfirmMinutes, MinConfirmMinutes, MaxConfirmMinutes)
-	case apply && !plan.IsRolloutWord(plan.RolloutCommitConfirmed(in.ConfirmMinutes, "tacctl-x", in.User)):
+	case apply && !plan.IsApplyWord(plan.ApplyCommitConfirmed(in.ConfirmMinutes, "tacctl-x", in.User)):
 		return fmt.Errorf("the user %q cannot be written in a commit comment", in.User)
 	}
 	return nil
@@ -307,7 +307,7 @@ func (r *run) transaction(reviewed *plan.Delta) {
 	// PREFLIGHT
 	r.step("preflight")
 	if t.Vendor() != devssh.VendorJuniper {
-		r.end(ExitFailed, fmt.Sprintf("rollout is not available for %s devices in this release", t.Vendor()))
+		r.end(ExitFailed, fmt.Sprintf("apply is not available for %s devices in this release", t.Vendor()))
 		return
 	}
 	id, err := t.Identity(ctx)
@@ -702,14 +702,14 @@ func (r *run) verify() string {
 }
 
 // The comments of tacctl's commits, as 'show system commit' shows them.
-func commitComment(id string) string  { return "tacctl rollout " + id + " by " }
-func confirmComment(id string) string { return "tacctl rollout confirm " + id + " by " }
-func cancelComment(id string) string  { return "tacctl rollout cancel " + id }
+func commitComment(id string) string  { return "tacctl apply " + id + " by " }
+func confirmComment(id string) string { return "tacctl apply confirm " + id + " by " }
+func cancelComment(id string) string  { return "tacctl apply cancel " + id }
 
-// ours reports whether the entry is the confirmed commit of the rollout id.
+// ours reports whether the entry is the confirmed commit of the apply id.
 func ours(e CommitEntry, id string) bool { return strings.HasPrefix(e.Comment, commitComment(id)) }
 
-// settle names the state of rollout id from the history (D132). pre is
+// settle names the state of apply id from the history (D132). pre is
 // entry 0 before the commit (zero: unknown). An entry after tacctl's commit
 // that is neither tacctl's confirm, its cancel nor the device's own rollback
 // is never taken for someone else's confirm (a release whose expiry entry
@@ -810,7 +810,7 @@ func (r *run) history(ctx context.Context) (History, error) {
 
 // readState is READ-STATE (D132): after a failure past the confirmed commit
 // the history is read before the state is named. With cancelPending a
-// pending commit of this rollout is cancelled first (an answer the
+// pending commit of this apply is cancelled first (an answer the
 // transport did not know is never taken for a commit to keep).
 func (r *run) readState(why string, cancelPending bool) {
 	ctx, cancelCtx := r.grace()
@@ -858,7 +858,7 @@ func (r *run) named(e Exit, why, how string, entry *CommitEntry) {
 
 // cancel is D131's Cancel after a failure past the confirmed commit: in the
 // held session only, only while the window leaves the cancel margin, and
-// only when the history shows this rollout's commit pending at entry 0.
+// only when the history shows this apply's commit pending at entry 0.
 // The state is read afterwards and named.
 func (r *run) cancel(why string) {
 	if r.done() {
@@ -922,7 +922,7 @@ func (r *run) record() {
 	}
 }
 
-// fileShape files the shape of an applied rollout in the store.
+// fileShape files the shape of an applied apply in the store.
 func (r *run) fileShape() {
 	if r.in.StateDir == "" || r.o.Shape == "" {
 		return

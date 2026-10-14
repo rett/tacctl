@@ -201,7 +201,7 @@ sandboxes the paths it touches (`go test ./internal/...` runs them all; the
 |---|---|
 | `internal/devssh/devssh_test.go`, `hostile_test.go`, `internal_test.go`, `review_test.go` | The SSH client against the fake device in process: password and keyboard-interactive, one attempt per wrong password, host-key pinning, the shell and exec CLI sessions, prompt detection and the paging guard (including hostile prompts and banners), NETCONF hello, framing and RPC, output limits, deadlines and typed errors |
 | `internal/devssh/fakedev/fakedev_test.go` | The fake device's transcript reader (capture headers, command file names) and serve and stop |
-| `internal/devssh/fakedev/junos_config_test.go`, `junos_config_fixture_test.go` | The Junos configure model over a real ssh client and an injected clock: prompts and modes, the exclusive lock and a stranger's staged change, `commit confirmed` expiring on the clock, confirm by `commit` and by `commit check`, cancel by `rollback 1`, the knobs (`load.errors`, `check.errors`, `version-gate`, `verify.fail`, `commit.drop`, `drop`, `slow`), local and root logins, the brace and compare forms, and the `junos-rollout` fixture |
+| `internal/devssh/fakedev/junos_config_test.go`, `junos_config_fixture_test.go` | The Junos configure model over a real ssh client and an injected clock: prompts and modes, the exclusive lock and a stranger's staged change, `commit confirmed` expiring on the clock, confirm by `commit` and by `commit check`, cancel by `rollback 1`, the knobs (`load.errors`, `check.errors`, `version-gate`, `verify.fail`, `commit.drop`, `drop`, `slow`), local and root logins, the brace and compare forms, and the `junos-apply` fixture |
 | `internal/devconf/compare_test.go`, `review_test.go` | Comparison states (`ok`, `differs`, `missing`, `n/a`, `not visible`), line texts, normalisation of every fixture, the superuser and engineer captures, ordering (`!`), secrets by presence and never in an output |
 | `internal/devconf/junos_test.go`, `ios_test.go` | Extraction per vendor against the captures, the synthetic Junos cases and the IOS reference texts (also that every reference text is marked as such) |
 | `internal/devconf/reader_test.go`, `store_test.go` | The read commands per vendor and the NETCONF unwrap; the record store (round trip, a corrupt file rebuilt, rename, forget, the lock) and staleness |
@@ -223,7 +223,7 @@ sandboxes the paths it touches (`go test ./internal/...` runs them all; the
 | `juniper/synthetic-lab`, `juniper/synthetic-inherit` | Hand-made texts for the cases the captures lack (the engineer view, no `lo0` filter, group inheritance) with their expected sections and result goldens |
 | `ios/reference-*`, `ios-xe/reference-16` | IOS and IOS-XE `show running-config` texts written from the vendor references (marked `# source: reference`; not captures), with expected sections and result goldens |
 | `fake/junos`, `fake/ios` | The prompt of a fake device; the bats files add the read command's output (`tests/fixtures/devconf/fake/README.md`) |
-| `fake/junos-rollout` | A Junos device with a configure model: `config.set` (the committed configuration), `class`, `local`, `device`, `switch`; the knob files a test adds are in `tests/fixtures/devconf/fake/README.md` |
+| `fake/junos-apply` | A Junos device with a configure model: `config.set` (the committed configuration), `class`, `local`, `device`, `switch`; the knob files a test adds are in `tests/fixtures/devconf/fake/README.md` |
 
 ## The bats harness
 
@@ -763,9 +763,9 @@ pinned to its key, and makes the device answer with what the walkthrough renders
 A production build contains neither the verb, nor the fake device, nor the two
 variables' names.
 
-A `<dir>` with a `config.set` (`tests/fixtures/devconf/fake/junos-rollout`) is
+A `<dir>` with a `config.set` (`tests/fixtures/devconf/fake/junos-apply`) is
 a Junos device with a **configure model** (`internal/devssh/fakedev/junos_config*.go`,
-plan D142), for the rollout tests: the committed configuration, `configure`
+plan D142), for the apply tests: the committed configuration, `configure`
 in shared, exclusive and private mode, `set`, `delete` and `insert`,
 `show | compare`, `commit check`, `commit [confirmed N] [comment "..."]` with
 a timer, `rollback`, `show system commit`, `show system rollback compare`,

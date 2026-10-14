@@ -136,7 +136,7 @@ func NewSchema(backends []string) *Schema {
 			"device.config.confirm_timeout": {Type: TypeInt, Min: intp(1), Max: intp(60), Default: 5, HasDefault: true},
 			// How 'device config apply' runs (0.2.9, D140). The minutes of
 			// its 'commit confirmed' (3-60, the range of
-			// devrollout.MinConfirmMinutes and MaxConfirmMinutes: a window
+			// devapply.MinConfirmMinutes and MaxConfirmMinutes: a window
 			// shorter than three minutes cannot hold the verification) and
 			// the seconds it waits between the devices of a batch, after
 			// the canary (0 is no pause). Both are written only when set.

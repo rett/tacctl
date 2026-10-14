@@ -449,72 +449,72 @@ func TestCompareAnnotationsAndBlocks(t *testing.T) {
 }
 
 // The minutes of a confirmed commit are 1 to 60.
-func TestRolloutConfirmedMinutesRange(t *testing.T) {
+func TestApplyConfirmedMinutesRange(t *testing.T) {
 	line := func(n string) string {
-		return `commit confirmed ` + n + ` comment "tacctl rollout id1 by alice"`
+		return `commit confirmed ` + n + ` comment "tacctl apply id1 by alice"`
 	}
 	for _, n := range []string{"1", "5", "9", "10", "59", "60"} {
-		if !IsRolloutWord(line(n)) {
-			t.Errorf("%s minutes is not a rollout word", n)
+		if !IsApplyWord(line(n)) {
+			t.Errorf("%s minutes is not an apply word", n)
 		}
 	}
 	for _, n := range []string{"0", "00", "05", "61", "70", "99", "100"} {
-		if IsRolloutWord(line(n)) {
-			t.Errorf("%s minutes is a rollout word", n)
+		if IsApplyWord(line(n)) {
+			t.Errorf("%s minutes is an apply word", n)
 		}
 	}
 }
 
-func TestRolloutWords(t *testing.T) {
-	for _, w := range RolloutWords() {
-		if !IsRolloutWord(w) {
-			t.Errorf("%q is not a rollout word", w)
+func TestApplyWords(t *testing.T) {
+	for _, w := range ApplyWords() {
+		if !IsApplyWord(w) {
+			t.Errorf("%q is not an apply word", w)
 		}
 		if err := Allowed("juniper", w); err == nil {
 			t.Errorf("the word %q passes the statement allow-list", w)
 		}
 	}
 	for _, w := range []string{
-		RolloutCommitConfirmed(10, "20261013-ab12", "alice"),
-		RolloutConfirm("20261013-ab12", "alice"),
-		RolloutCancel("20261013-ab12"),
+		ApplyCommitConfirmed(10, "20261013-ab12", "alice"),
+		ApplyConfirm("20261013-ab12", "alice"),
+		ApplyCancel("20261013-ab12"),
 	} {
-		if !IsRolloutWord(w) {
-			t.Errorf("%q is not a rollout word", w)
+		if !IsApplyWord(w) {
+			t.Errorf("%q is not an apply word", w)
 		}
 	}
-	if got := RolloutCommitConfirmed(7, "id1", "alice"); got != `commit confirmed 7 comment "tacctl rollout id1 by alice"` {
+	if got := ApplyCommitConfirmed(7, "id1", "alice"); got != `commit confirmed 7 comment "tacctl apply id1 by alice"` {
 		t.Errorf("%q", got)
 	}
-	if got := RolloutCommitConfirmed(0, "id 1", `a"b`); got != `commit confirmed 5 comment "tacctl rollout id_1 by a_b"` {
+	if got := ApplyCommitConfirmed(0, "id 1", `a"b`); got != `commit confirmed 5 comment "tacctl apply id_1 by a_b"` {
 		t.Errorf("%q", got)
 	}
-	if got := RolloutCommitConfirmed(500, "i", "u"); !strings.HasPrefix(got, "commit confirmed 60 ") {
+	if got := ApplyCommitConfirmed(500, "i", "u"); !strings.HasPrefix(got, "commit confirmed 60 ") {
 		t.Errorf("%q", got)
 	}
-	if got := RolloutConfirm("id1", "alice"); got != `commit comment "tacctl rollout confirm id1 by alice"` {
+	if got := ApplyConfirm("id1", "alice"); got != `commit comment "tacctl apply confirm id1 by alice"` {
 		t.Errorf("%q", got)
 	}
-	if got := RolloutCancel("id1"); got != `commit comment "tacctl rollout cancel id1"` {
+	if got := ApplyCancel("id1"); got != `commit comment "tacctl apply cancel id1"` {
 		t.Errorf("%q", got)
 	}
-	if got := RolloutConfirmedNote(7); got != "commit confirmed will be rolled back in 7 minutes" {
+	if got := ApplyConfirmedNote(7); got != "commit confirmed will be rolled back in 7 minutes" {
 		t.Errorf("%q", got)
 	}
-	// the region's own confirmed commit is a rollout-word shape too, with
-	// another comment: the plan's region is not the rollout's
+	// the region's own confirmed commit is an apply-word shape too, with
+	// another comment: the plan's region is not the apply's
 	for _, w := range []string{
 		"commit", "commit and-quit", "commit confirmed 5", `commit confirmed 5 comment "x"`,
-		`commit comment "tacctl rollout confirm a b by c"`, `commit confirmed 5 comment "tacctl rollout a by b"; delete`,
+		`commit comment "tacctl apply confirm a b by c"`, `commit confirmed 5 comment "tacctl apply a by b"; delete`,
 		"rollback 2", "configure exclusive now", "request system reboot", "",
 	} {
-		if IsRolloutWord(w) {
-			t.Errorf("%q is a rollout word", w)
+		if IsApplyWord(w) {
+			t.Errorf("%q is an apply word", w)
 		}
 	}
 	// the wrapper's check and the region's last line are the paste's words
 	// and stay as they are
-	if err := CheckRegion("junos", []string{"configure private", "set snmp contact x", RolloutCompare, RolloutCommitCheck, "commit confirmed 5"}); err != nil {
+	if err := CheckRegion("junos", []string{"configure private", "set snmp contact x", ApplyCompare, ApplyCommitCheck, "commit confirmed 5"}); err != nil {
 		t.Errorf("the region's own words: %v", err)
 	}
 }

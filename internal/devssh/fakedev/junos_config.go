@@ -1,6 +1,6 @@
 package fakedev
 
-// The configure model of the fake Junos device (docs/plans/0.2.9-rollout-
+// The configure model of the fake Junos device (docs/plans/0.2.9-apply-
 // plan.md D142): a committed configuration read from the transcript
 // directory's 'config.set', a shared candidate, sessions in shared,
 // exclusive and private mode, 'commit confirmed' with a timer, the commit

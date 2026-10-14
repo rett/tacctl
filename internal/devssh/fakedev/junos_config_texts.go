@@ -1,7 +1,7 @@
 package fakedev
 
 // Every text the fake Junos configure model prints, in one place so that
-// the lab spike (docs/plans/0.2.9-rollout-plan.md section 9, WP14.0) can
+// the lab spike (docs/plans/0.2.9-apply-plan.md section 9, WP14.0) can
 // correct them. The marks are the plan's:
 //
 //	[S]  a text the plan took from the Junos reference or the helper

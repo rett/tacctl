@@ -293,7 +293,7 @@ type rawStmt struct {
 // ParseCompareFor is ParseCompare with the names numbered by their first
 // appearance in the delta's text: a compare's '<secret:N>' is then the
 // number the plan's elided lines have for the same name. Use it for the
-// compare of a delta's own rollout; the identity of the names does not
+// compare of a delta's own apply; the identity of the names does not
 // depend on the numbers.
 func ParseCompareFor(text string, d Delta) (CompareText, error) {
 	var raws []rawStmt

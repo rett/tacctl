@@ -1,4 +1,4 @@
-package devrollout
+package devapply
 
 // The device texts of the Junos command line and the error table (0.2.9 plan
 // §5, D131 steps 3-11), in one place so that the lab spike (WP14.0, L1, L2,
@@ -57,8 +57,8 @@ const (
 
 // The success phrases are the plan package's [S].
 var (
-	textCheckOK        = plan.RolloutCheckOK
-	textCommitComplete = plan.RolloutCommitComplete
+	textCheckOK        = plan.ApplyCheckOK
+	textCommitComplete = plan.ApplyCommitComplete
 )
 
 // reHistoryEntry is one entry of 'show system commit':
@@ -130,7 +130,7 @@ var (
 	// ErrSessionLost: the held session (or the connection) ended; nothing
 	// more can be typed in it.
 	ErrSessionLost = errors.New("the held session is lost")
-	// ErrNotSent: the transport refused to send a line (not a rollout word,
+	// ErrNotSent: the transport refused to send a line (not an apply word,
 	// not an allowed statement, or not in the right state).
 	ErrNotSent = errors.New("not sent")
 )

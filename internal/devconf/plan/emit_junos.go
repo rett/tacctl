@@ -10,91 +10,91 @@ import (
 	"strings"
 )
 
-// The words of a rollout (0.2.9 plan D131 and §3.1): every line the driver
+// The words of an apply (0.2.9 plan D131 and §3.1): every line the driver
 // types beside the delta's own statements. They are data and not execution:
 // the driver sends them, and its command log is asserted to hold nothing but
-// the statements Allow passes and these (IsRolloutWord). [A: the texts of
+// the statements Allow passes and these (IsApplyWord). [A: the texts of
 // the device's answers are WP14.0's L1/L2/L5 captures; the words typed are
 // the helper's and the Junos reference's.]
 const (
-	// RolloutConfigure is the throwaway shared session of the gate (step 3).
-	RolloutConfigure = "configure"
-	// RolloutConfigureExclusive is the held session of the transaction
-	// (step 4); RolloutConfigurePrivate is --private's.
-	RolloutConfigureExclusive = "configure exclusive"
-	RolloutConfigurePrivate   = "configure private"
-	// RolloutCompare is the candidate against the committed configuration
+	// ApplyConfigure is the throwaway shared session of the gate (step 3).
+	ApplyConfigure = "configure"
+	// ApplyConfigureExclusive is the held session of the transaction
+	// (step 4); ApplyConfigurePrivate is --private's.
+	ApplyConfigureExclusive = "configure exclusive"
+	ApplyConfigurePrivate   = "configure private"
+	// ApplyCompare is the candidate against the committed configuration
 	// (steps 3 and 6; the pager would swallow what follows without no-more).
-	RolloutCompare = "show | compare | no-more"
-	// RolloutCommitCheck is step 7; it ends a check.
-	RolloutCommitCheck = "commit check"
-	// RolloutRollback0 discards the candidate; RolloutRollback1 loads the
+	ApplyCompare = "show | compare | no-more"
+	// ApplyCommitCheck is step 7; it ends a check.
+	ApplyCommitCheck = "commit check"
+	// ApplyRollback0 discards the candidate; ApplyRollback1 loads the
 	// previous configuration, which Cancel commits (D131).
-	RolloutRollback0 = "rollback 0"
-	RolloutRollback1 = "rollback 1"
-	// RolloutExit leaves configuration mode, RolloutQuit the session.
-	RolloutExit = "exit"
-	RolloutQuit = "quit"
+	ApplyRollback0 = "rollback 0"
+	ApplyRollback1 = "rollback 1"
+	// ApplyExit leaves configuration mode, ApplyQuit the session.
+	ApplyExit = "exit"
+	ApplyQuit = "quit"
 	// The reads of the pre-flight (step 1) and the verification (step 9).
-	RolloutShowVersion       = "show version"
-	RolloutShowCommit        = "show system commit"
-	RolloutShowAuthorization = "show cli authorization"
-	// RolloutLandedCompare is the landed compare of step 9: entry 0 against
+	ApplyShowVersion       = "show version"
+	ApplyShowCommit        = "show system commit"
+	ApplyShowAuthorization = "show cli authorization"
+	// ApplyLandedCompare is the landed compare of step 9: entry 0 against
 	// entry 1.
-	RolloutLandedCompare = "show system rollback compare 1 0 | no-more"
+	ApplyLandedCompare = "show system rollback compare 1 0 | no-more"
 )
 
-// The phrases a rollout requires of the device's output ([S: the helper];
+// The phrases an apply requires of the device's output ([S: the helper];
 // a text the driver does not know is a failure).
 const (
-	// RolloutCheckOK is what `commit check` prints (step 7).
-	RolloutCheckOK = "configuration check succeeds"
-	// RolloutCommitComplete is what the confirming `commit` prints (step 11).
-	RolloutCommitComplete = "commit complete"
+	// ApplyCheckOK is what `commit check` prints (step 7).
+	ApplyCheckOK = "configuration check succeeds"
+	// ApplyCommitComplete is what the confirming `commit` prints (step 11).
+	ApplyCommitComplete = "commit complete"
 )
 
-// RolloutConfirmedNote is the line `commit confirmed N` prints (step 8).
-func RolloutConfirmedNote(minutes int) string {
+// ApplyConfirmedNote is the line `commit confirmed N` prints (step 8).
+func ApplyConfirmedNote(minutes int) string {
 	return "commit confirmed will be rolled back in " + strconv.Itoa(confirmMinutes(Wrapper{ConfirmMinutes: minutes})) + " minutes"
 }
 
-// RolloutCommitConfirmed is step 8: the confirmed commit with its comment.
+// ApplyCommitConfirmed is step 8: the confirmed commit with its comment.
 // minutes is clamped to 1-60 (5 when 0); id and user are made safe for the
 // comment's quotes.
-func RolloutCommitConfirmed(minutes int, id, user string) string {
+func ApplyCommitConfirmed(minutes int, id, user string) string {
 	return "commit confirmed " + strconv.Itoa(confirmMinutes(Wrapper{ConfirmMinutes: minutes})) +
-		" comment \"tacctl rollout " + commentSafe(id) + " by " + commentSafe(user) + "\""
+		" comment \"tacctl apply " + commentSafe(id) + " by " + commentSafe(user) + "\""
 }
 
-// RolloutConfirm is step 11: the commit that confirms, in the session that
+// ApplyConfirm is step 11: the commit that confirms, in the session that
 // committed.
-func RolloutConfirm(id, user string) string {
-	return "commit comment \"tacctl rollout confirm " + commentSafe(id) + " by " + commentSafe(user) + "\""
+func ApplyConfirm(id, user string) string {
+	return "commit comment \"tacctl apply confirm " + commentSafe(id) + " by " + commentSafe(user) + "\""
 }
 
-// RolloutCancel is the commit that follows `rollback 1` after a failure
+// ApplyCancel is the commit that follows `rollback 1` after a failure
 // past step 8 (D131 Cancel).
-func RolloutCancel(id string) string {
-	return "commit comment \"tacctl rollout cancel " + commentSafe(id) + "\""
+func ApplyCancel(id string) string {
+	return "commit comment \"tacctl apply cancel " + commentSafe(id) + "\""
 }
 
-// rolloutFixed are the words that are typed as they are, with the variants
+// applyFixed are the words that are typed as they are, with the variants
 // the pager asks for.
-var rolloutFixed = []string{
-	RolloutConfigure, RolloutConfigureExclusive, RolloutConfigurePrivate,
-	RolloutCompare, RolloutCommitCheck, RolloutRollback0, RolloutRollback1,
-	RolloutExit, RolloutQuit,
-	RolloutShowVersion, RolloutShowVersion + " | no-more",
-	RolloutShowCommit, RolloutShowCommit + " | no-more",
-	RolloutShowAuthorization, RolloutShowAuthorization + " | no-more",
-	RolloutLandedCompare, "show system rollback compare 1 0",
+var applyFixed = []string{
+	ApplyConfigure, ApplyConfigureExclusive, ApplyConfigurePrivate,
+	ApplyCompare, ApplyCommitCheck, ApplyRollback0, ApplyRollback1,
+	ApplyExit, ApplyQuit,
+	ApplyShowVersion, ApplyShowVersion + " | no-more",
+	ApplyShowCommit, ApplyShowCommit + " | no-more",
+	ApplyShowAuthorization, ApplyShowAuthorization + " | no-more",
+	ApplyLandedCompare, "show system rollback compare 1 0",
 }
 
-// RolloutWords returns the fixed words of a rollout, sorted. The commit
-// lines carry an id and a user and are RolloutCommitConfirmed,
-// RolloutConfirm and RolloutCancel.
-func RolloutWords() []string {
-	out := slices.Clone(rolloutFixed)
+// ApplyWords returns the fixed words of an apply, sorted. The commit
+// lines carry an id and a user and are ApplyCommitConfirmed,
+// ApplyConfirm and ApplyCancel.
+func ApplyWords() []string {
+	out := slices.Clone(applyFixed)
 	sort.Strings(out)
 	return out
 }
@@ -102,16 +102,16 @@ func RolloutWords() []string {
 const safeWord = `[A-Za-z0-9._@:/_-]+`
 
 var (
-	reRolloutConfirmed = regexp.MustCompile(`^commit confirmed ([1-9]|[1-5][0-9]|60) comment "tacctl rollout ` + safeWord + ` by ` + safeWord + `"$`)
-	reRolloutConfirm   = regexp.MustCompile(`^commit comment "tacctl rollout confirm ` + safeWord + ` by ` + safeWord + `"$`)
-	reRolloutCancel    = regexp.MustCompile(`^commit comment "tacctl rollout cancel ` + safeWord + `"$`)
+	reApplyConfirmed = regexp.MustCompile(`^commit confirmed ([1-9]|[1-5][0-9]|60) comment "tacctl apply ` + safeWord + ` by ` + safeWord + `"$`)
+	reApplyConfirm   = regexp.MustCompile(`^commit comment "tacctl apply confirm ` + safeWord + ` by ` + safeWord + `"$`)
+	reApplyCancel    = regexp.MustCompile(`^commit comment "tacctl apply cancel ` + safeWord + `"$`)
 )
 
-// IsRolloutWord reports whether a line is one of the rollout's own words (a
+// IsApplyWord reports whether a line is one of the apply's own words (a
 // fixed word or one of the three commit lines) and not a statement.
-func IsRolloutWord(line string) bool {
-	return slices.Contains(rolloutFixed, line) ||
-		reRolloutConfirmed.MatchString(line) || reRolloutConfirm.MatchString(line) || reRolloutCancel.MatchString(line)
+func IsApplyWord(line string) bool {
+	return slices.Contains(applyFixed, line) ||
+		reApplyConfirmed.MatchString(line) || reApplyConfirm.MatchString(line) || reApplyCancel.MatchString(line)
 }
 
 // junosCommitWord is the last line of a region and the only commit it holds;

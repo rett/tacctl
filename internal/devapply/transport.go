@@ -1,5 +1,5 @@
-// Package devrollout is the transaction that writes a planner-generated
-// change to a network device (docs/plans/0.2.9-rollout-plan.md D129, D131,
+// Package devapply is the transaction that writes a planner-generated
+// change to a network device (docs/plans/0.2.9-apply-plan.md D129, D131,
 // D132, D138): the transport interface with its first implementation, the
 // Junos command line over one held 'configure exclusive' session; the driver
 // that takes one device through the state machine of plan §3.1 and ends at
@@ -8,8 +8,8 @@
 //
 // What it guarantees, and what the callers rely on:
 //
-//   - Nothing but the delta's statements and the rollout's own words is ever
-//     typed: every line passes plan.Allow (a statement) or plan.IsRolloutWord
+//   - Nothing but the delta's statements and the apply's own words is ever
+//     typed: every line passes plan.Allow (a statement) or plan.IsApplyWord
 //     (a wrapper word) in the driver and again in the transport, and a line
 //     either refuses is never sent.
 //   - Every commit is a confirmed one with tacctl's comment, and the
@@ -43,7 +43,7 @@
 //
 // It has no terminal, no logging and no package state; the clock, the
 // random source and the logins (with their password sources) are inputs.
-package devrollout
+package devapply
 
 import (
 	"context"
@@ -176,12 +176,12 @@ type Reader interface {
 	Close() error
 }
 
-// Transport is the device a rollout writes to (D129). The driver uses it in
+// Transport is the device an apply writes to (D129). The driver uses it in
 // the order of plan §3.1 and never against the command line directly, so a
 // NETCONF transport can be added without a change to the driver.
 type Transport interface {
 	Reader
-	// Confirms reports whether a rollout can commit and confirm through this
+	// Confirms reports whether an apply can commit and confirm through this
 	// transport: the device is one the transport can write to and the login's
 	// class may commit. False until Login has been read.
 	Confirms() bool

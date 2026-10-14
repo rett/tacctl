@@ -1,4 +1,4 @@
-package devrollout
+package devapply
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 
 // Reconcile settles a record that says pending, or that a dead tacctl left
 // at 'committed, verifying' (D132, D138): it reads the commit history
-// through r and names the state of rollout id. until is the record's end of
+// through r and names the state of apply id. until is the record's end of
 // the window. The exits are ExitPending (still pending: the device must not
 // be touched), ExitRolledBack (cancelled, or the device's own rollback),
 // ExitApplied (tacctl's confirm), ExitAppliedByOther (the change is in place

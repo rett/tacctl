@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const rolloutFixture = "../../../tests/fixtures/devconf/fake/junos-rollout"
+const applyFixture = "../../../tests/fixtures/devconf/fake/junos-apply"
 
 // copyDir copies the files of a fixture directory.
 func copyDir(t *testing.T, from string) string {
@@ -30,8 +30,8 @@ func copyDir(t *testing.T, from string) string {
 	return to
 }
 
-func TestJunosRolloutFixture(t *testing.T) {
-	dir := copyDir(t, rolloutFixture)
+func TestJunosApplyFixture(t *testing.T) {
+	dir := copyDir(t, applyFixture)
 	clk := NewFakeClock(time.Date(2026, 10, 12, 2, 0, 0, 0, time.UTC))
 	srv := New(dir, WithClock(clk))
 	defer srv.Stop()
@@ -58,7 +58,7 @@ func TestJunosRolloutFixture(t *testing.T) {
 		!strings.Contains(string(b), "set snmp community example-ro clients 198.51.100.0/24 restrict\n") {
 		t.Errorf("committed.set: %v\n%s", err, b)
 	}
-	if _, err := os.Stat(filepath.Join(rolloutFixture, "committed.set")); err == nil {
+	if _, err := os.Stat(filepath.Join(applyFixture, "committed.set")); err == nil {
 		t.Error("the fixture directory was written to")
 	}
 }

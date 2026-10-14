@@ -260,7 +260,7 @@ func TestJunosConfirmedCommitExpiresOnTheClock(t *testing.T) {
 	if strings.Contains(srv.Committed(), "idle-timeout") {
 		t.Error("a commit check committed")
 	}
-	if got := c.send(`commit confirmed 2 comment "tacctl rollout x"`); got != "commit confirmed will be rolled back in 2 minutes\ncommit complete" {
+	if got := c.send(`commit confirmed 2 comment "tacctl apply x"`); got != "commit confirmed will be rolled back in 2 minutes\ncommit complete" {
 		t.Errorf("commit confirmed: %q", got)
 	}
 	if !strings.Contains(srv.Committed(), "set system login idle-timeout 30\n") {
@@ -275,7 +275,7 @@ func TestJunosConfirmedCommitExpiresOnTheClock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(h, "0   2026-10-12 02:00:00 UTC by gotest via cli commit confirmed, rollback in 2mins\n    tacctl rollout x\n1   ") {
+	if !strings.HasPrefix(h, "0   2026-10-12 02:00:00 UTC by gotest via cli commit confirmed, rollback in 2mins\n    tacctl apply x\n1   ") {
 		t.Errorf("history:\n%s", h)
 	}
 	// the session is closed: the timer is not

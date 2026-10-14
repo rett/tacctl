@@ -2,7 +2,7 @@ package plan
 
 // The shape of a delta (0.2.9 plan D135): a typed function of the delta's
 // lines that says "this is the same change" for two devices. A batch trusts
-// a confirmed rollout for a shape, so the function is pure, holds no secret
+// a confirmed apply for a shape, so the function is pure, holds no secret
 // and does not depend on the order the planner or the device printed things.
 
 import (

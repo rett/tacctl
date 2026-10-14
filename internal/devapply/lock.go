@@ -1,4 +1,4 @@
-package devrollout
+package devapply
 
 import (
 	"errors"
@@ -10,8 +10,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// ErrBusy is a device whose lock another rollout holds.
-var ErrBusy = errors.New("another rollout is running on the device")
+// ErrBusy is a device whose lock another apply holds.
+var ErrBusy = errors.New("another apply is running on the device")
 
 // LocksDir is the directory of the device locks under the state directory:
 // apart from the shape store's own lock ('<dir>/shapes.lock'), which a
@@ -19,7 +19,7 @@ var ErrBusy = errors.New("another rollout is running on the device")
 const LocksDir = "locks"
 
 // Lock is the per-device lock of a transaction (D138): 'flock' on
-// '<dir>/locks/<name>.lock'. Two rollouts of different devices run side by
+// '<dir>/locks/<name>.lock'. Two applies of different devices run side by
 // side; the same device is refused.
 type Lock struct {
 	f *os.File
@@ -31,7 +31,7 @@ type Lock struct {
 // separator, a NUL, a leading dot) is refused.
 func LockDevice(dir, name string) (*Lock, error) {
 	if name == "" || strings.ContainsAny(name, "/\\\x00") || strings.HasPrefix(name, ".") {
-		return nil, fmt.Errorf("devrollout: a device name %q cannot name a lock file", name)
+		return nil, fmt.Errorf("devapply: a device name %q cannot name a lock file", name)
 	}
 	ld := filepath.Join(dir, LocksDir)
 	if err := os.MkdirAll(ld, 0o700); err != nil {

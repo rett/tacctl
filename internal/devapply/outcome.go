@@ -1,4 +1,4 @@
-package devrollout
+package devapply
 
 import (
 	"encoding/hex"
@@ -166,11 +166,11 @@ func (o Outcome) Line() string {
 // NewID is a change identifier: 'tacctl-<yyyymmddThhmmssZ>-<4 hex>' (D138).
 func NewID(now time.Time, r io.Reader) (string, error) {
 	if r == nil {
-		return "", fmt.Errorf("devrollout: no random source")
+		return "", fmt.Errorf("devapply: no random source")
 	}
 	var b [2]byte
 	if _, err := io.ReadFull(r, b[:]); err != nil {
-		return "", fmt.Errorf("devrollout: the random source: %w", err)
+		return "", fmt.Errorf("devapply: the random source: %w", err)
 	}
 	return "tacctl-" + now.UTC().Format("20060102T150405Z") + "-" + hex.EncodeToString(b[:]), nil
 }

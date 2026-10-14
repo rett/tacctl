@@ -1,4 +1,4 @@
-package devrollout
+package devapply
 
 // The shape store (D135, D138): '<dir>/shapes.json', 0600, a map from a
 // shape's hash to its masked lines, the algorithm that made them and the
@@ -23,7 +23,7 @@ import (
 // ShapesFile is the store's file name in its directory.
 const ShapesFile = "shapes.json"
 
-// Confirmation is one device's proof of a shape: an applied rollout, or a
+// Confirmation is one device's proof of a shape: an applied apply, or a
 // person's word (Seeded).
 type Confirmation struct {
 	Device string    `json:"device"`
@@ -61,7 +61,7 @@ func (s *Shapes) Load() (map[string]ShapeEntry, error) {
 	}
 	var m map[string]ShapeEntry
 	if err := json.Unmarshal(b, &m); err != nil {
-		return nil, fmt.Errorf("devrollout: %s: %w", ShapesFile, err)
+		return nil, fmt.Errorf("devapply: %s: %w", ShapesFile, err)
 	}
 	if m == nil {
 		m = map[string]ShapeEntry{}
@@ -94,10 +94,10 @@ func (s *Shapes) Confirmed(hash string) (bool, error) {
 // the lines' (a store never files lines under another shape's name).
 func (s *Shapes) Confirm(hash string, lines []string, c Confirmation) error {
 	if hash == "" || plan.ShapeHash(lines) != hash {
-		return fmt.Errorf("devrollout: the shape's lines do not hash to %q", hash)
+		return fmt.Errorf("devapply: the shape's lines do not hash to %q", hash)
 	}
 	if c.Device == "" {
-		return errors.New("devrollout: a confirmation names a device")
+		return errors.New("devapply: a confirmation names a device")
 	}
 	return s.update(func(m map[string]ShapeEntry) {
 		e := m[hash]

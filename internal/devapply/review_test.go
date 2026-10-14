@@ -1,4 +1,4 @@
-package devrollout
+package devapply
 
 // The safety review's findings, each against the fake device.
 
@@ -56,7 +56,7 @@ func TestStrangerPendingBeforeCheck(t *testing.T) {
 			if !strings.Contains(o.Reason, "a confirmed commit of gotest became pending until 2026-10-13 14:05:00 UTC before the check") || !o.Discarded {
 				t.Errorf("reason %q discarded %v", o.Reason, o.Discarded)
 			}
-			if indexOf(o.Log, plan.RolloutCommitCheck) >= 0 || strings.Contains(strings.Join(o.Log, "\n"), "commit confirmed") {
+			if indexOf(o.Log, plan.ApplyCommitCheck) >= 0 || strings.Contains(strings.Join(o.Log, "\n"), "commit confirmed") {
 				t.Errorf("checked or committed over a stranger's pending commit: %q", o.Log)
 			}
 			if u, pending := d.srv.PendingUntil(); !pending || !u.Equal(testStart.Add(5*time.Minute)) {
@@ -95,11 +95,11 @@ func TestCancelAfterExpiryCommitsNothing(t *testing.T) {
 		t.Fatalf("the cancel made the change permanent (%s: %q):\n%s", o.Exit, o.Reason, d.srv.Committed())
 	}
 	for _, h := range d.srv.History() {
-		if strings.HasPrefix(h.Comment, "tacctl rollout cancel") {
+		if strings.HasPrefix(h.Comment, "tacctl apply cancel") {
 			t.Errorf("a cancel was committed: %+v", h)
 		}
 	}
-	if indexOf(o.Log, plan.RolloutCancel(o.ID)) >= 0 || !endsWith(o.Log, plan.RolloutRollback1, plan.RolloutCompare, plan.RolloutRollback0, plan.RolloutExit) {
+	if indexOf(o.Log, plan.ApplyCancel(o.ID)) >= 0 || !endsWith(o.Log, plan.ApplyRollback1, plan.ApplyCompare, plan.ApplyRollback0, plan.ApplyExit) {
 		t.Errorf("log %q", o.Log)
 	}
 	wantExit(t, o, ExitRolledBack, ResultRolledBack)
@@ -172,7 +172,7 @@ func factsOf(p *planner) func(context.Context, string) (plan.Delta, error) {
 }
 
 // A device named 'shapes' has its lock apart from the shape store's: the
-// applied rollout files its shape and returns.
+// applied apply files its shape and returns.
 func TestLockDeviceNamedShapes(t *testing.T) {
 	d := newDevice(t, nil)
 	done := make(chan Outcome, 1)
@@ -223,7 +223,7 @@ func TestInterruptDialledWithJobContext(t *testing.T) {
 	o := Driver{}.Check(ctx, in)
 	assertNoSecret(t, o, d.state)
 	wantExit(t, o, ExitInterrupted, ResultFailed)
-	if !o.Discarded || !endsWith(o.Log, plan.RolloutRollback0, plan.RolloutExit) {
+	if !o.Discarded || !endsWith(o.Log, plan.ApplyRollback0, plan.ApplyExit) {
 		t.Errorf("the discard was not typed: %q %q", o.Reason, o.Log)
 	}
 	if d.srv.Committed() != before || d.srv.Candidate() != before || d.srv.ExclusiveHolder() != "" {
@@ -241,7 +241,7 @@ type strangeCompare struct{ devssh.CLISession }
 
 func (s strangeCompare) Run(ctx context.Context, cmd string) (string, error) {
 	out, err := s.CLISession.Run(ctx, cmd)
-	if cmd == plan.RolloutCompare && err == nil {
+	if cmd == plan.ApplyCompare && err == nil {
 		out = "[edit snmp]\n+   location x;\n?? zz-stranger-private words\n" + out
 	}
 	return out, err

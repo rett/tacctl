@@ -3,7 +3,7 @@
 // workers over a list of jobs, one job per device, with a per-job timeout,
 // a failure budget, a stop on the first authentication failure and a
 // two-stage interrupt. 'device config pull' and 'diff' use it in 0.2.4 and
-// the rollout (canary by shape first, a pause between devices) does, so it
+// the apply (canary by shape first, a pause between devices) does, so it
 // knows nothing about devices: a Job is a name, a shape and a function.
 //
 // The package has no terminal, no signal handling, no global state and no
@@ -117,7 +117,7 @@ type Result struct {
 	// Summary untouched.
 	Value any
 	// RolledBack is set by a job that changed the device and then put it
-	// back (a rollout whose verification failed). It does not change the
+	// back (an apply whose verification failed). It does not change the
 	// status, which is the job's to choose (StatusFailed); the Summary
 	// counts it.
 	RolledBack bool
@@ -269,7 +269,7 @@ const (
 // Event is one change a View is told about. Every job is queued from
 // Begin on; it then gets PhaseRunning, any number of PhaseProgress and
 // PhaseDone, or PhaseSkipped. Phase is the job's lifecycle; the step a
-// rollout job is in (check, apply, verify) is Step of a PhaseProgress.
+// apply job is in (check, apply, verify) is Step of a PhaseProgress.
 type Event struct {
 	Index  int // position in the job list (the registry's order)
 	Name   string

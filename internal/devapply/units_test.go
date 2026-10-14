@@ -1,4 +1,4 @@
-package devrollout
+package devapply
 
 import (
 	"context"
@@ -16,7 +16,7 @@ func TestFailedAllowNotReady(t *testing.T) {
 	d := newDevice(t, nil)
 	o := check(t, d, &planner{desired: desiredLines()}, func(in *Input) { in.Allow.Expected = nil })
 	wantExit(t, o, ExitFailed, ResultFailed)
-	if !strings.Contains(o.Reason, "the allow-list is not ready (nothing was sent)") || indexOf(o.Log, plan.RolloutConfigure) >= 0 {
+	if !strings.Contains(o.Reason, "the allow-list is not ready (nothing was sent)") || indexOf(o.Log, plan.ApplyConfigure) >= 0 {
 		t.Errorf("%q %q", o.Reason, o.Log)
 	}
 	o = check(t, d, &planner{desired: desiredLines()}, func(in *Input) { in.Allow.Login = "" })
@@ -46,7 +46,7 @@ func TestLockBusy(t *testing.T) {
 	}
 	o := check(t, d, &planner{desired: desiredLines()}, nil)
 	wantExit(t, o, ExitFailed, ResultFailed)
-	if !strings.Contains(o.Reason, "another rollout is running on the device: example-sw1") || len(o.Log) != 0 {
+	if !strings.Contains(o.Reason, "another apply is running on the device: example-sw1") || len(o.Log) != 0 {
 		t.Errorf("%q %q", o.Reason, o.Log)
 	}
 	lk.Unlock()
@@ -69,7 +69,7 @@ func TestCancelMarginNothingTyped(t *testing.T) {
 		}
 	})
 	wantExit(t, o, ExitPending, ResultPending)
-	if indexOf(o.Log, plan.RolloutRollback1) >= 0 || !strings.Contains(o.Reason, "too little of the window was left to cancel") {
+	if indexOf(o.Log, plan.ApplyRollback1) >= 0 || !strings.Contains(o.Reason, "too little of the window was left to cancel") {
 		t.Errorf("%q %q", o.Reason, o.Log)
 	}
 }
@@ -105,11 +105,11 @@ func TestSettle(t *testing.T) {
 	}
 	pre := at("13:00:00")
 	ourC := at("14:00:00")
-	ourC.Comment, ourC.RollbackIn = "tacctl rollout "+id+" by alice", 10
+	ourC.Comment, ourC.RollbackIn = "tacctl apply "+id+" by alice", 10
 	conf := at("14:01:00")
-	conf.Comment = "tacctl rollout confirm " + id + " by alice"
+	conf.Comment = "tacctl apply confirm " + id + " by alice"
 	canc := at("14:01:00")
-	canc.Comment = "tacctl rollout cancel " + id
+	canc.Comment = "tacctl apply cancel " + id
 	exp := CommitEntry{TimeText: "2026-10-13 14:10:00 UTC", User: "root", Via: "other"}
 	other := CommitEntry{TimeText: "2026-10-13 14:02:00 UTC", User: "bob", Via: "cli"}
 	cases := []struct {
@@ -154,8 +154,8 @@ func TestParsersFailClosed(t *testing.T) {
 	if _, err := parseHistory("error: permission denied\n"); !errors.Is(err, ErrRefused) {
 		t.Errorf("a refusal: %v", err)
 	}
-	h, err := parseHistory("0   2026-10-13 14:00:00 UTC by alice via cli commit confirmed, rollback in 10mins\n    tacctl rollout x by alice\n1   2026-10-12 01:00:00 UTC by root via other\n")
-	if err != nil || len(h) != 2 || h[0].RollbackIn != 10 || h[0].Comment != "tacctl rollout x by alice" || h[0].Until() != "2026-10-13 14:10:00 UTC" {
+	h, err := parseHistory("0   2026-10-13 14:00:00 UTC by alice via cli commit confirmed, rollback in 10mins\n    tacctl apply x by alice\n1   2026-10-12 01:00:00 UTC by root via other\n")
+	if err != nil || len(h) != 2 || h[0].RollbackIn != 10 || h[0].Comment != "tacctl apply x by alice" || h[0].Until() != "2026-10-13 14:10:00 UTC" {
 		t.Errorf("%+v %v", h, err)
 	}
 	if _, err := parseVersion("Model: ex\nJunos: 25.4R1\n"); !errors.Is(err, ErrUnrecognised) {
@@ -188,7 +188,7 @@ func TestParsersFailClosed(t *testing.T) {
 }
 
 func TestShapesStore(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "device-rollout")
+	dir := filepath.Join(t.TempDir(), "device-apply")
 	s := OpenShapes(dir)
 	lines := []string{"[aaa]", "set system accounting events login"}
 	h := plan.ShapeHash(lines)
@@ -250,8 +250,8 @@ func TestNameMatchesAndID(t *testing.T) {
 	if err != nil || id != "tacctl-20261013T140000Z-abcd" {
 		t.Errorf("%q %v", id, err)
 	}
-	if !plan.IsRolloutWord(plan.RolloutCommitConfirmed(10, id, "alice")) {
-		t.Error("the id is not a rollout word")
+	if !plan.IsApplyWord(plan.ApplyCommitConfirmed(10, id, "alice")) {
+		t.Error("the id is not an apply word")
 	}
 }
 
