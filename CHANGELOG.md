@@ -7,42 +7,41 @@ current behaviour; this file is where history lives.
 
 1. **`config devices apply-confirm-timeout` and `apply-pause`.** The two
    settings of `device config apply`: `device.apply.confirm_timeout`, the
-   minutes of its `commit confirmed` (3 to 60, default 10: a window under
-   three minutes cannot hold the verification), and `device.apply.pause`,
-   the seconds it waits between the devices of a batch after the canary (0 to
-   3600, default 60; 0 is none). Both are the superuser's, are written to
-   `tacctl.yaml` only when set, are checked by the schema (`config validate`
-   reports a hand-edited value out of range) and appear in `config devices`
-   with the others. A
-   0.2.8 binary does not know the keys; `tacctl rollback 0.2.3` removes them
-   with the other keys the older release lacks and says so.
+   minutes of its `commit confirmed` (3 to 60, default 10: a window under three
+   minutes cannot hold the verification), and `device.apply.pause`, the seconds
+   it waits between the devices of a batch after the canary (0 to 3600, default
+   60; 0 is none). Both are the superuser's, are written to `tacctl.yaml` only
+   when set, are checked by the schema (`config validate` reports a hand-edited
+   value out of range) and appear in `config devices` with the others. A 0.2.8
+   binary does not know the keys; `tacctl rollback 0.2.3` removes them with the
+   other keys the older release lacks and says so.
 
 2. **The sudoers drop-ins keep `TACCTL_ASKPASS` for `device config apply`,
-   `device onboard` and `device collect`.** The password cache's alias in
-   the per-tier drop-in and in the group drop-in gains the three command
-   lines, so the shell's cache answers the logins they make (`device config
-   shapes` logs in to nothing and is not among them). The drop-ins' bytes
-   change: `upgrade` rewrites a tiers file that
+   `device onboard` and `device collect`.** The password cache's alias in the
+   per-tier drop-in and in the group drop-in gains the three command lines, so
+   the shell's cache answers the logins they make (`device config shapes` logs
+   in to nothing and is not among them). The cache answers a `device collect`
+   line for your own login and is left shut for one with `--login`, which never
+   has it. The drop-ins' bytes change: `upgrade` rewrites a tiers file that
    differs from this release's rules and a group drop-in that is exactly
    0.2.8's text, as for every earlier change, and `rollback` knows 0.2.8's
    texts as older ones. The rows are unchanged: `device config apply` and
    `device config shapes` are the superuser's (the engineer's `device config`
-   rows name `show`, `pull`, `diff` and `plan` only, and the verb holds
-   every lower tier back as well), so no sudoers line is added for a lower
-   tier.
+   rows name `show`, `pull`, `diff` and `plan` only, and the verb holds every
+   lower tier back as well), so no sudoers line is added for a lower tier.
 
-3. **`device add --pull` reads the device's configuration as it registers
-   it.** `tacctl device add <name> <address> --vendor cisco|juniper|wti
-   --pull` registers the device as before and then runs `device config pull`
-   for it, as the invoking user, in the same command; the pull's output
-   follows the add's report. The flag is off by default and asks nothing.
-   It is refused before anything is registered when the caller's tier may
-   not run `device config pull`, when run as root, or when the vendor is not
-   one the pull reads. A device no scope's prefixes cover is registered and
-   not pulled, with one line that names `tacctl scope prefixes <scope> add
-   <cidr>` and the pull command. A pull that fails leaves the device
-   registered and the command exits with the pull's status. The manual
-   page, `docs/cli/device.md` and `docs/devices/connecting.md` describe it.
+3. **`device add --pull` reads the device's configuration as it registers it.**
+   `tacctl device add <name> <address> --vendor cisco|juniper|wti --pull`
+   registers the device as before and then runs `device config pull` for it, as
+   the invoking user, in the same command; the pull's output follows the add's
+   report. The flag is off by default and asks nothing. It is refused before
+   anything is registered when the caller's tier may not run `device config
+   pull`, when run as root, or when the vendor is not one the pull reads. A
+   device no scope's prefixes cover is registered and not pulled, with one line
+   that names `tacctl scope prefixes <scope> add <cidr>` and the pull command.
+   A pull that fails leaves the device registered and the command exits with
+   the pull's status. The manual page, `docs/cli/device.md` and
+   `docs/devices/connecting.md` describe it.
 
 4. **`device config apply`: the plan, typed into Junos devices by tacctl.**
    `tacctl device config apply <name>[,<name>...] | --all | --scope <scope> |
@@ -51,282 +50,260 @@ current behaviour; this file is where history lives.
    asked once and never stored), reads each device, loads the plan in an
    exclusive configure session, runs the device's own `commit check` and
    discards the candidate; `--check` ends there and commits nothing. The
-   devices that need a change are then shown grouped by shape and by what
-   the review shows of each (the same change under one heading, every secret
-   elided, a per-device value printed for each device, what the plan keeps
-   and what it leaves out; two devices whose warnings, sections left out,
-   kept statements or not-found deletes differ are two headings) and ONE
-   question is asked, answered by typing the device's name (one device) or
-   the number of devices back; there is no answer without a terminal except
-   `--confirmed --yes`. A device whose plan refuses a section (what makes
-   `device config plan` exit 1) is not applied and is a failure, with the
-   reason. At the start of each device's apply the break-glass hold, the
-   registry entry and the scope that covers it are read again: a device
-   held, changed or no longer yours since the review fails and nothing is
-   sent. Each device is
-   committed under `commit confirmed` (`config devices
-   apply-confirm-timeout`), proven by a fresh login as you, by what landed
-   being the change the check showed and by a read of the planned sections,
-   and then confirmed; a failed proof rolls the change back, and a device
-   whose state could not be read is reported `PENDING until <time>`: nothing
-   may be typed on it before then, and the next `apply` of it reads its
-   commit history before anything else. The record says `pending` from the
-   moment the confirmed commit is typed, so a tacctl killed during the
-   verification leaves a record the next run settles; a record that cannot
-   be written then is said at once in red on standard error. Never written:
-   `breakglass`,
-   `netconf`, the root account and yours, `system services`, `interfaces`,
-   groups; the statements are held against the planner's own ownership
-   tables before the first one is typed. `--section`, `--hold`
-   (keep the change only when you type `OK'
-   after logging in with one account of each class; it needs a terminal and
-   is refused with `--json`, exit 2), `--server`,
-   `--source`, `--concurrency`, `--timeout`, `--max-failures` and `--json`
-   (one object per device and phase, then the summary) are the options. Exit
-   status: 0 every device applied, was checked or had no change, 1 a device
-   failed, was rolled back or is pending (or the run applied none of its
-   devices and found none already applied: `--confirmed --yes` that skipped
-   them all), 2 wrong arguments (with `--check
+   devices that need a change are then shown grouped by shape and by what the
+   review shows of each (the same change under one heading, every secret
+   elided, a per-device value printed for each device, what the plan keeps and
+   what it leaves out; two devices whose warnings, sections left out, kept
+   statements or not-found deletes differ are two headings) and ONE question is
+   asked, answered by typing the device's name (one device) or the number of
+   devices back; there is no answer without a terminal except `--confirmed
+   --yes`. A device whose plan refuses a section (what makes `device config
+   plan` exit 1) is not applied and is a failure, with the reason. At the start
+   of each device's apply the break-glass hold, the registry entry and the
+   scope that covers it are read again: a device held, changed or no longer
+   yours since the review fails and nothing is sent. Each device is committed
+   under `commit confirmed` (`config devices apply-confirm-timeout`), proven by
+   a fresh login as you, by what landed being the change the check showed and
+   by a read of the planned sections, and then confirmed; a failed proof rolls
+   the change back, and a device whose state could not be read is reported
+   `PENDING until <time>`: nothing may be typed on it before then, and the next
+   `apply` of it reads its commit history before anything else. The record says
+   `pending` from the moment the confirmed commit is typed, so a tacctl killed
+   during the verification leaves a record the next run settles; a record that
+   cannot be written then is said at once in red on standard error. Never
+   written: `breakglass`, `netconf`, the root account and yours, `system
+   services`, `interfaces`, groups; the statements are held against the
+   planner's own ownership tables before the first one is typed. `--section`,
+   `--hold` (keep the change only when you type `OK` after logging in with one
+   account of each class; it needs a terminal and is refused with `--json`,
+   exit 2), `--server`, `--source`, `--concurrency`, `--timeout`,
+   `--max-failures` and `--json` (one object per device and phase, then the
+   summary) are the options. Exit status: 0 every device applied, was checked
+   or had no change, 1 a device failed, was rolled back or is pending (or the
+   run applied none of its devices and found none already applied: `--confirmed
+   --yes` that skipped them all), 2 wrong arguments (with `--check
    --exit-code`, a device that needs a change), 130 interrupted (the first
    Ctrl-C starts no more devices, the second cancels the running ones: a
    candidate is discarded, a pending commit is cancelled where the window
-   allows). A Cisco device or a WTI unit named is refused with the reason
-   and a selector leaves them out. Audit lines carry the user, device,
-   change identifier, shape and result, never a value; the approval's line
-   names the canary of each shape (`none` with `--no-canary`). The manual
-   page,
+   allows). A Cisco device or a WTI unit named is refused with the reason and a
+   selector leaves them out. Audit lines carry the user, device, change
+   identifier, shape and result, never a value; the approval's line names the
+   canary of each shape (`none` with `--no-canary`). The manual page,
    `docs/devices/planning.md` and `docs/cli/device.md` describe it.
 
-5. **Shapes, `--confirmed`, `--max` and `device config shapes`.** Two
-   devices that need the same change have the same shape (a hash of the
-   statements with each secret elided and each per-device value, such as a
-   location, masked). The first device of every shape is applied alone and
-   the rest of its shape follow only when it applied (`--no-canary` starts
-   them together; `--pause` or `config devices apply-pause` waits between
-   devices). `--confirmed` applies only shapes an earlier apply confirmed and
-   skips the others (`unknown shape <hash>: review and apply it by hand
-   first`), and is the one form `--yes` answers the review of, so a script
-   runs a batch without a terminal; `--max <n>` (default 5) caps the devices
-   of every apply run. `tacctl device config shapes [list [--show <hash>]
-   [--json]]`
-   lists the shapes seen, which are confirmed, on which devices, and for a
-   new one the nearest confirmed shape; `shapes seed <name>[,<name>...]
-   [-y]` files the shape of a device's last check or apply as confirmed on
-   your word (one question), for a device applied and verified by hand.
-   They are the superuser's and contact no device; the store is
+5. **Shapes, `--confirmed`, `--max` and `device config shapes`.** Two devices
+   that need the same change have the same shape (a hash of the statements with
+   each secret elided and each per-device value, such as a location, masked).
+   The first device of every shape is applied alone and the rest of its shape
+   follow only when it applied (`--no-canary` starts them together; `--pause`
+   or `config devices apply-pause` waits between devices). `--confirmed`
+   applies only shapes an earlier apply confirmed and skips the others
+   (`unknown shape <hash>: review and apply it by hand first`), and is the one
+   form `--yes` answers the review of, so a script runs a batch without a
+   terminal; `--max <n>` (default 5) caps the devices of every apply run.
+   `tacctl device config shapes [list [--show <hash>] [--json]]` lists the
+   shapes seen, which are confirmed, on which devices, and for a new one the
+   nearest confirmed shape; `shapes seed <name>[,<name>...] [-y]` files the
+   shape of a device's last check or apply as confirmed on your word (one
+   question), for a device applied and verified by hand. They are the
+   superuser's and contact no device; the store is
    `/var/lib/tacctl/device-apply/shapes.json` (0600: statements with values
    elided).
 
 6. **What an apply leaves in the record.** The `applied` part of a device's
    record in `devices-config.json` (version 1, fields added) holds the last
-   check or apply: when, by whom, the change identifier, the result
-   (`checked`, `applied`, `rolled-back`, `pending`, `failed`, `unknown`), the
-   reason, the end of a pending window, the shape, the planned sections, the
-   statement counts, the confirming commit and the fingerprint of each
-   planned section before the change; never raw device output and never a
-   secret. Every read an apply makes refreshes the pull part of the record
-   (the read after a confirmed apply is the picture `device config diff`
-   then shows). `device config list` gains an `APPLIED` column once a listed
-   device was checked or applied (`checked`, `applied <time>`, `PENDING
-   <time>`, `rolled-back`, `failed`), its `--json` and `device show --json`
-   gain `applied`, and the Configuration row of `device show` ends with
-   `apply: ...`, in red and with what must not be typed for a pending
-   commit. `device config forget` removes it with the pull record.
+   check or apply: when, by whom, the change identifier, the result (`checked`,
+   `applied`, `rolled-back`, `pending`, `failed`, `unknown`), the reason, the
+   end of a pending window, the shape, the planned sections, the statement
+   counts, the confirming commit and the fingerprint of each planned section
+   before the change; never raw device output and never a secret. Every read an
+   apply makes refreshes the pull part of the record (the read after a
+   confirmed apply is the picture `device config diff` then shows). `device
+   config list` gains an `APPLIED` column once a listed device was checked or
+   applied (`checked`, `applied <time>`, `PENDING <time>`, `rolled-back`,
+   `failed`), its `--json` and `device show --json` gain `applied`, and the
+   Configuration row of `device show` ends with `apply: ...`, in red and with
+   what must not be typed for a pending commit. `device config forget` removes
+   it with the pull record.
 
-7. **Fix: the Junos plan's region types `configure exclusive`.** A private
-   session cannot `commit confirmed` on Junos 25.4 (`error: commit confirmed
-   not supported for private configuration`, found on the lab switch), so a
-   pasted plan never reached its confirmed commit and nothing was committed.
-   The plan, cleanup (`--converge`) and `--backout` regions now open with
-   `configure exclusive`, which takes `commit confirmed` and is refused with
-   `error: configuration database modified` when another session has
-   uncommitted changes, or `error: configuration database locked by: <name>`
-   when another session holds the lock. The region's report and follow-up say
-   that the session holds the configuration lock until `exit` (typed after
-   `commit`), and what to do when it is refused; the whole-paste check
-   refuses a region that starts with `configure private`. The manual page
-   and `docs/devices/planning.md` describe it.
+7. **The Junos plan's region types `configure exclusive`.** A private session
+   cannot `commit confirmed` on Junos 25.4 (`error: commit confirmed not
+   supported for private configuration`), so a pasted plan never reached its
+   confirmed commit and nothing was committed. The plan, cleanup (`--converge`)
+   and `--backout` regions now open with `configure exclusive`, which takes
+   `commit confirmed` and is refused with `error: configuration database
+   modified` when another session has uncommitted changes, or `error:
+   configuration database locked by: <name>` when another session holds the
+   lock. The region's report and follow-up say that the session holds the
+   configuration lock until `exit` (typed after `commit`), and what to do when
+   it is refused; the whole-paste check refuses a region that starts with
+   `configure private`. The manual page and `docs/devices/planning.md` describe
+   it.
 
-8. **A setting that changes the rendered configuration says so.** After
-   `device location`, `description`, `address`, `config-syntax` or `vendor`
-   stores a value that is rendered, and the device has a stored pull that
-   `device config plan` would now change, the verb prints one line: `The
-   configuration of <name> would change: tacctl device config apply <name>
-   --check` (`device config plan <name>` for a device that is not Junos, or
-   for a caller who is not a superuser). The line is made from the stored
-   pull alone: no login, no network, and nothing for a device that was never
-   pulled, whose pull is stale, or that cannot be planned. `device rename`
-   says the device's own host name is unchanged and not planned by tacctl;
-   `port`, `legacy-ssh` and `hostname` say nothing about the configuration.
-   A change that writes what a scope's devices are rendered from (`scope
-   prefixes`, `secret`, `mgmt-acl`, `snmp`, `block`, and the protocol, AAA
-   order, timeout and group settings) prints the same line for the scope
-   (`tacctl device config apply --scope <name> --check`) when at least one of
-   its devices has a stored pull that would change.
+8. **A setting that changes the rendered configuration says so.** After `device
+   location`, `description`, `address`, `config-syntax` or `vendor` stores a
+   value that is rendered, and the device has a stored pull that `device config
+   plan` would now change, the verb prints one line: `The configuration of
+   <name> would change: tacctl device config apply <name> --check` (`device
+   config plan <name>` for a device that is not Junos, or for a caller who is
+   not a superuser). The line is made from the stored pull alone: no login, no
+   network, and nothing for a device that was never pulled, whose pull is
+   stale, or that cannot be planned. `device rename` says the device's own host
+   name is unchanged and not planned by tacctl; `port`, `legacy-ssh` and
+   `hostname` say nothing about the configuration. A change that writes what a
+   scope's devices are rendered from (`scope prefixes`, `secret`, `mgmt-acl`,
+   `snmp`, `block`, and the protocol, AAA order, timeout and group settings)
+   prints the same line for the scope (`tacctl device config apply --scope
+   <name> --check`) when at least one of its devices has a stored pull that
+   would change.
 
 9. **`--apply` on `device address`, `description`, `location` and
-   `config-syntax`.** After the value is stored, `--apply` runs `device
-   config apply` for that one device in the same command: the same review,
-   answered by typing the device's name back and never skipped, and the
-   confirmed commit. It is the superuser's, for a Junos device and at a
-   terminal; otherwise it is a usage error before anything is changed. A
-   value that is already set changes nothing and applies nothing, and the
-   exit status is the apply's. `--apply` with no value, or with
-   `location --from-device`, is refused.
+   `config-syntax`.** After the value is stored, `--apply` runs `device config
+   apply` for that one device in the same command: the same review, answered by
+   typing the device's name back and never skipped, and the confirmed commit.
+   It is the superuser's, for a Junos device and at a terminal; otherwise it is
+   a usage error before anything is changed. A value that is already set
+   changes nothing and applies nothing, and the exit status is the apply's.
+   `--apply` with no value, or with `location --from-device`, is refused.
 
-10. **`device onboard`: a blank Junos device brought in with one of its
-    local accounts.** `tacctl device onboard <address> --login
-    <local-user>` is the superuser's. Any local account may be named, a
-    break-glass account included; only `root` is handled apart (its csh
-    wrapper). The host keys the address offers are
-    shown and one question is asked before any login (`--host-key
-    SHA256:<fp>` answers it; without a terminal and without it the run is
-    refused, and without a terminal only `--check` runs). `--login` may not
-    name your own login, and `--section` must include `aaa`. As the local
-    account (its password asked once on the terminal, never kept or cached)
-    the pre-flight reads the release, a pending commit, the login's class,
-    whether a TACACS+ or RADIUS server is there already (`system
-    tacplus-server`, `radius-server` or `accounting destination tacplus|radius
-    server`, also in a group: then refused, such a device is reached by the
-    normal flow) and whether a local account of your own name is there (then
-    refused: a login as you could be that account's). The device is
-    registered through `device add` with the keys shown (`--name`, else the
-    name it reports, else asked), its own location and description fill the
-    empty fields (its host name never fills the registry's `hostname`, which
-    ssh would dial instead of the address), its read is recorded as a pull
-    made as the local account, and the ordinary planner's first-time plan is
-    checked on the device; `--check` stops there. After the review (the
-    device's name typed back) your own password is asked and the change is
-    committed as the local account under `commit confirmed`; every session
-    after the commit, every read included, is your own TACACS+ login, which
-    proves the change before it is confirmed in the held session: its
-    `show cli authorization` must name the template user your group's class
-    renders, with that class, never a local account. A refused or wrong
-    fresh login rolls it back and leaves the local account as it was.
-    Afterwards `root` is tried once more, for information; any other local
-    account is not (a login would send its password to the TACACS+ server).
-    What the device reports is shown with its control characters replaced.
-    The plan never holds the break-glass accounts, root or the local
-    account. `--legacy-ssh` (also taken by itself when the handshake needs
-    the legacy algorithms), `--section` and `--json` (one object at the
-    end).
-    Logged: `device onboard user= device= addr= login=local:<account>
-    result=`, never a password.
+10. **`device onboard`: a blank Junos device brought in with one of its local
+    accounts.** `tacctl device onboard <address> --login <local-user>` is the
+    superuser's. Any local account may be named, a break-glass account
+    included; only `root` is handled apart (its csh wrapper). The host keys the
+    address offers are shown and one question is asked before any login
+    (`--host-key SHA256:<fp>` answers it; without a terminal and without it the
+    run is refused, and without a terminal only `--check` runs). `--login` may
+    not name your own login, and `--section` must include `aaa`. As the local
+    account (its password asked once on the terminal, never kept or cached) the
+    pre-flight reads the release, a pending commit, the login's class, whether
+    a TACACS+ or RADIUS server is there already (`system tacplus-server`,
+    `radius-server` or `accounting destination tacplus|radius server`, also in
+    a group: then refused, such a device is reached by the normal flow) and
+    whether a local account of your own name is there (then refused: a login as
+    you could be that account's). The device is registered through `device add`
+    with the keys shown (`--name`, else the name it reports, else asked), its
+    own location and description fill the empty fields (its host name never
+    fills the registry's `hostname`, which ssh would dial instead of the
+    address), its read is recorded as a pull made as the local account, and the
+    ordinary planner's first-time plan is checked on the device; `--check`
+    stops there. After the review (the device's name typed back) your own
+    password is asked and the change is committed as the local account under
+    `commit confirmed`; every session after the commit, every read included, is
+    your own TACACS+ login, which proves the change before it is confirmed in
+    the held session: its `show cli authorization` must name the template user
+    your group's class renders, with that class, never a local account. A
+    refused or wrong fresh login rolls it back and leaves the local account as
+    it was. Afterwards `root` is tried once more, for information; any other
+    local account is not (a login would send its password to the TACACS+
+    server). What the device reports is shown with its control characters
+    replaced. The plan never holds the break-glass accounts, root or the local
+    account. `--legacy-ssh` (also taken by itself when the handshake needs the
+    legacy algorithms), `--section` and `--json` (one object at the end).
+    Logged: `device onboard user= device= addr= login=local:<account> result=`,
+    never a password.
 
-11. **`--login <local-user>` on `device config pull`, `diff --pull` and
-    `plan --pull`.** A superuser reads one registered Junos device with a
-    pinned host key, whose address a scope answers, as one of its local
-    accounts instead of their own login: for a device the server does not
-    answer yet. Any local account may be named, a break-glass account
-    included; only `root` is handled apart. One device by name only (a list,
-    `--all`, `--scope`, `--vendor` or `--stale` is a usage error); an
-    engineer with the flag is refused by the tier gate, and a device on
-    which break-glass is held is refused (release it first), as for every
-    pull and for `device onboard`. The password is asked once on the terminal,
-    sent to the one connection and never stored in, asked of or forgotten by
-    the password cache. `root` is accepted only for a device never read as
-    the invoking user (a pull record file that cannot be read refuses it),
-    through the remote command `sh -c
+11. **`--login <local-user>` on `device config pull`, `diff --pull` and `plan
+    --pull`.** A superuser reads one registered Junos device with a pinned host
+    key, whose address a scope answers, as one of its local accounts instead of
+    their own login: for a device the server does not answer yet. Any local
+    account may be named, a break-glass account included; only `root` is
+    handled apart. One device by name only (a list, `--all`, `--scope`,
+    `--vendor` or `--stale` is a usage error); an engineer with the flag is
+    refused by the tier gate, and a device on which break-glass is held is
+    refused (release it first), as for every pull and for `device onboard`. The
+    password is asked once on the terminal, sent to the one connection and
+    never stored in, asked of or forgotten by the password cache. `root` is
+    accepted only for a device never read as the invoking user (a pull record
+    file that cannot be read refuses it), through the remote command `sh -c
     'PATH=$PATH:/usr/sbin:/usr/bin:/sbin:/bin; exec cli'` (root's shell is a
     csh), over the ssh command line only. The record says
     `login=local:<account>` (the pull records' file gains `login` and
     `user_pulled`, which 0.2.8 ignores), and the pull is logged as `device
     config pull user= device= login=local:<account>`.
 
-12. **Test builds: `TACCTL_TEST_LOCAL_PASSWORD`.** The password of the local
-    account `--login` and `device onboard` log in with, in place of the
-    terminal prompt, for the bats tests against the fake device (whose
-    `local` and `root` files give the local accounts and root's csh login).
-
-13. **`device collect`: what an address nobody registered is, with one
-    login.** `tacctl device collect <address>... | --discovered` (a
-    superuser, Junos devices) is the login before the registration, which
-    the registry forbids today (no pinned key, no entry). For each address no
-    registry entry holds it reads the host keys (nothing is authenticated),
-    shows them with their fingerprints and asks ONE question before any
-    login (`--host-key SHA256:<fp>` names the key of one address instead;
-    without a terminal one of the two is needed); then, in one session per
-    address, `show version` and the pull's read command, and nothing else.
-    The login is yours (the password cache may answer it) or, with `--login
-    <local-user>`, one local account for the run (the one-shot password of
-    item 11: asked once, never kept or cached, sent to each address once;
-    `root` through its csh wrapper). The first refusal of the password ends
-    the run, and an address whose `show version` is not a Junos answer is
-    listed `not-junos`, its session closed and never registered. The result
-    is one table (address, host name, model, release, authentication order,
-    servers, `EN-CLASS`, NETCONF, `lo0` filter, legacy ssh, result) and the
-    `device add` line each device would run; `--json` prints one object.
-    `--register` asks one question and then registers each device through
-    `device add` (the same code as every registration) with the keys shown
-    pinned and `--legacy-ssh` where the handshake needed it, and keeps the
-    read as the device's first pull record, as a pull makes it
-    (`login=local:<account>` for a local login), so `device sync` and
-    `device config plan` have a record at once (`-y` answers the question;
-    without a terminal it is needed). Refused before anything is sent: an
-    address a registry entry holds, one no scope answers, one with break-glass
-    held, and (for your own login) a caller who is not an active member of
-    the scope. `--discovered` takes the addresses `device discover` lists
-    from the seen cache. Logged: `device collect user= addr= login=
+12. **`device collect`: what an address nobody registered is, with one login.**
+    `tacctl device collect <address>... | --discovered` (a superuser, Junos
+    devices) is the login before the registration, which the registry forbids
+    today (no pinned key, no entry). For each address no registry entry holds
+    it reads the host keys (nothing is authenticated), shows them with their
+    fingerprints and asks ONE question before any login (`--host-key
+    SHA256:<fp>` names the key of one address instead; without a terminal one
+    of the two is needed); then, in one session per address, `show version` and
+    the pull's read command, and nothing else. The login is yours (the password
+    cache may answer it) or, with `--login <local-user>`, one local account for
+    the run (the one-shot password of item 11: asked once, never kept or
+    cached, sent to each address once; `root` through its csh wrapper). The
+    first refusal of the password ends the run, and an address whose `show
+    version` is not a Junos answer is listed `not-junos`, its session closed
+    and never registered. The result is one table (address, host name, model,
+    release, authentication order, servers, `EN-CLASS`, NETCONF, `lo0` filter,
+    legacy ssh, result) and the `device add` line each device would run;
+    `--json` prints one object. `--register` asks one question and then
+    registers each device through `device add` (the same code as every
+    registration) with the keys shown pinned and `--legacy-ssh` where the
+    handshake needed it, and keeps the read as the device's first pull record,
+    as a pull makes it (`login=local:<account>` for a local login), so `device
+    sync` and `device config plan` have a record at once (`-y` answers the
+    question; without a terminal it is needed). Refused before anything is
+    sent: an address a registry entry holds, one no scope answers, one with
+    break-glass held, and (for your own login) a caller who is not an active
+    member of the scope. `--discovered` takes the addresses `device discover`
+    lists from the seen cache. Logged: `device collect user= addr= login=
     result=` per address, never a password or a device's text.
 
-14. **`device sync`: the registry's empty fields from the pull records.**
-    `tacctl device sync <name>[,<name>...] | --all | --scope <scope> |
-    --vendor <vendor> [--apply] [--overwrite]` (a superuser; no login) fills
-    a Junos device's empty `hostname`, `location` and `description` from what
-    its last pull record says the device holds (`system host-name` with its
+13. **`device sync`: the registry's empty fields from the pull records.**
+    `tacctl device sync <name>[,<name>...] | --all | --scope <scope> | --vendor
+    <vendor> [--apply] [--overwrite]` (a superuser; no login) fills a Junos
+    device's empty `hostname`, `location` and `description` from what its last
+    pull record says the device holds (`system host-name` with its
     `domain-name`, `snmp location`, `snmp description`). The preview is one
     table of the fields (what the registry has, what the device says, the
     action: `fill`, `same`, `keep`, `replace`, `none`, `refused`) and one of
     the record's facts (login, model, release, serial number, which are the
     record's and not written). `--apply` writes after one question (`-y`;
-    without a terminal it is needed) in ONE registry write under the
-    registry's lock, each field checked again against the live file so a
-    value set since the preview is kept, and never as an import of a
-    re-serialised file. `--overwrite` replaces a field that is set and shows
-    the old value; the name, address, vendor and scope are never touched. A
-    value with control characters (a newline, a terminal escape), one the
-    registry would not accept from a person, and a host name that is not a
-    DNS name (no `domain-name`: a bare label is not an address tacctl can
-    connect to) are listed `refused` and never written; text a device
-    reports is shown with control characters as `?`, cut at 64 characters.
-    A host name is filled only when the system resolver answers it with the
-    device's registered address and no other (the registry's `hostname` is
-    where tacctl connects, so a name the device merely reports must not
-    redirect later logins): a failed lookup, a different address or extra
-    addresses are listed `refused: does not resolve: not filled`, and
-    `--overwrite` never replaces a hostname with such a name.
-    Logged: `device sync user= devices= fields=` when fields were written.
+    without a terminal it is needed) in ONE registry write under the registry's
+    lock, each field checked again against the live file so a value set since
+    the preview is kept, and never as an import of a re-serialised file.
+    `--overwrite` replaces a field that is set and shows the old value; the
+    name, address, vendor and scope are never touched. A value with control
+    characters (a newline, a terminal escape), one the registry would not
+    accept from a person, and a host name that is not a DNS name (no
+    `domain-name`: a bare label is not an address tacctl can connect to) are
+    listed `refused` and never written; text a device reports is shown with
+    control characters as `?`, cut at 64 characters. A host name is filled only
+    when the system resolver answers it with the device's registered address
+    and no other (the registry's `hostname` is where tacctl connects, so a name
+    the device merely reports must not redirect later logins): a failed lookup,
+    a different address or extra addresses are listed `refused: does not
+    resolve: not filled`, and `--overwrite` never replaces a hostname with such
+    a name. Logged: `device sync user= devices= fields=` when fields were
+    written.
 
-15. **A pull record keeps the device's host name.** The record of a Junos
+14. **A pull record keeps the device's host name.** The record of a Junos
     device gains `hostname` (`system host-name`, with `domain-name` appended
     when the name has no dot), read from the configuration the pull already
-    has, for `device sync`; 0.2.8 ignores the field, and a record made
-    before this release has none until the next pull.
+    has, for `device sync`; 0.2.8 ignores the field, and a record made before
+    this release has none until the next pull.
 
-16. **The password cache is asked by `device collect` for your own login.**
-    The shell's cache answers a `device collect` line (the alias of item 2)
-    and leaves it shut for one with `--login`, which never has it.
-
-17. **`tacctl rollback 0.2.8`.** The rollback takes the release before this
-    one as a target as well as `0.2.3` (which works as before). A dry run
-    unless `--apply [--yes]`: it removes `device.apply.confirm_timeout` and
+15. **`tacctl rollback 0.2.8`.** The rollback takes the release before this one
+    as a target as well as `0.2.3` (which works as before). A dry run unless
+    `--apply [--yes]`: it removes `device.apply.confirm_timeout` and
     `device.apply.pause` from `tacctl.yaml` (a 0.2.8 binary refuses them; the
     dry run warns with the values and `--apply` needs `--yes` while one is
     set), rewrites the per-tier and group sudoers drop-ins that are exactly
-    this release's text with 0.2.8's, after `visudo -cf` (an edited one is
-    left and named), and lists, without deleting, what 0.2.9 left that
-    0.2.8 ignores: the `applied` parts and the `login`, `user_pulled` and
-    `hostname` fields of `devices-config.json`, and the apply state
-    directory (`device-apply/`: the shape store and the device locks). Both
-    targets are refused, the dry run too, while a record says a confirmed
-    commit is `pending` or `unknown`: the refusal names each device and
-    time and the command that settles it (`device config apply <name>
-    --check`, or `device config forget <name>`). `0.2.4` to `0.2.7` are
-    refused with the one-release-at-a-time rule. The output ends with
-    `tacctl upgrade --branch 0.2.8`, and the audit line is `rollback
-    target=0.2.8 keys=<n> by=<user>`. `rollback 0.2.3` also lists the apply
-    state it leaves. The manual page and `docs/install/upgrading.md` describe
-    it.
+    this release's text with 0.2.8's, after `visudo -cf` (an edited one is left
+    and named), and lists, without deleting, what 0.2.9 left that 0.2.8
+    ignores: the `applied` parts and the `login`, `user_pulled` and `hostname`
+    fields of `devices-config.json`, and the apply state directory
+    (`device-apply/`: the shape store and the device locks). Both targets are
+    refused, the dry run too, while a record says a confirmed commit is
+    `pending` or `unknown`: the refusal names each device and time and the
+    command that settles it (`device config apply <name> --check`, or `device
+    config forget <name>`). `0.2.4` to `0.2.7` are refused with the
+    one-release-at-a-time rule. The output ends with `tacctl upgrade --branch
+    0.2.8`, and the audit line is `rollback target=0.2.8 keys=<n> by=<user>`.
+    `rollback 0.2.3` also lists the apply state it leaves. The manual page and
+    `docs/install/upgrading.md` describe it.
 
 ## 0.2.8 (2026-10-13)
 
