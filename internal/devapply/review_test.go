@@ -105,7 +105,7 @@ func TestCancelAfterExpiryCommitsNothing(t *testing.T) {
 	}
 	wantExit(t, o, ExitRolledBack, ResultRolledBack)
 	if !strings.Contains(o.Reason, "the commit after tacctl's is by root via other at 2026-10-13 14:10:00 UTC") ||
-		!strings.Contains(o.Reason, "the configuration lacks the change") || !strings.Contains(o.Reason, "shows no pending commit") {
+		!strings.Contains(o.Reason, "the configuration is the one before tacctl's commit (rollback 2)") || !strings.Contains(o.Reason, "shows no pending commit") {
 		t.Errorf("reason %q", o.Reason)
 	}
 }
@@ -196,22 +196,26 @@ func TestUnrecognisedEntryAfterCommit(t *testing.T) {
 		t.Fatal("the device did not roll back")
 	}
 	wantExit(t, o, ExitRolledBack, ResultRolledBack)
-	if !strings.Contains(o.Reason, "the configuration lacks the change") {
+	if !strings.Contains(o.Reason, "the configuration is the one before tacctl's commit (rollback 2)") {
 		t.Errorf("reason %q", o.Reason)
 	}
 
-	// the reconciliation: settled from the configuration with a planner,
-	// unknown without one
+	// the reconciliation: settled from the device's rollbacks, with or
+	// without a planner; the entry above is not the device's own expiry as
+	// tacctl knows it, so the fate names it
 	r, err := d.verify(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = r.Close() }()
 	rd := expiryTextT{r}
-	rc := Reconcile(context.Background(), rd, "example-sw1", o.ID, o.Until, nil)
-	wantExit(t, rc, ExitUnknown, ResultUnknown)
-	rc = Reconcile(context.Background(), rd, "example-sw1", o.ID, o.Until, factsOf(p))
-	wantExit(t, rc, ExitRolledBack, ResultRolledBack)
+	for _, facts := range []func(context.Context, string) (plan.Delta, error){nil, factsOf(p)} {
+		rc := Reconcile(context.Background(), rd, "example-sw1", o.ID, o.Until, facts)
+		wantExit(t, rc, ExitRolledBack, ResultRolledBack)
+		if !strings.HasPrefix(rc.Fate, "rolled back (the configuration is the one before it; the commit after it is by root via timer at ") {
+			t.Errorf("fate %q", rc.Fate)
+		}
+	}
 }
 
 // factsOf is the reconciliation's planner over the test planner.

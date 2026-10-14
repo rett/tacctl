@@ -8662,7 +8662,29 @@ or
 .B "commit check"
 typed on it confirms the change, so nothing may be typed on it before then.
 The next apply or check of it reads its commit history first and records what
-happened; while the window stands nothing is sent. The record says
+happened; while the window stands nothing is sent. Where the history alone
+does not say (a commit after tacctl's by
+.B "root via other"
+is the device's own rollback or a commit of the system, or the commit after
+it is someone else's), the device's own rollbacks do: with tacctl's commit at
+history entry N,
+.B "show configuration | compare rollback N"
+empty is
+.B applied
+and
+.B "compare rollback N+1"
+empty is
+.BR rolled\-back ,
+both read in one operational session; anything else is
+.B unknown
+and never applied, whatever the rendering is now. The settled result is
+printed above the device's line
+.RB ( "the earlier apply <id> by <user> was rolled back by the device at <time>" ;
+JSON
+.BR settled )
+and logged
+.RB ( "auth.notice device config apply settle user= device= id= result=" ).
+The record says
 .B pending
 from the moment the confirmed commit is typed, so a tacctl killed during the
 verification leaves a record the next run settles; a record that cannot be
@@ -8768,7 +8790,9 @@ with
 .BR \-\-no\-canary ,
 and
 .B "auth.notice device config apply user= device= id= shape= sections= result= commit= until="
-for each apply, never a value).
+for each apply and
+.B "auth.notice device config apply settle user= device= id= result="
+for an earlier apply's pending record settled, never a value).
 .\" BEGIN GENERATED: command device config apply
 .RS
 .PP

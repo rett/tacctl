@@ -331,7 +331,23 @@ current behaviour; this file is where history lives.
     read as a marker that is no history entry, and any other unknown line is
     still refused.
 
-19. **The help title no longer names the backends.** The first line of
+19. **`device config apply` reads a compare that adds an entry beside existing
+    ones.** A Junos compare prints the unchanged neighbours of an added name
+    server, NTP server, community, trap target or filter term as context
+    (`<entry> { ... }`), which failed every check of such a change and named
+    the wrong reason at the staged-changes gate; context lines are now skipped
+    inside a hunk and are never a change, and any other unknown line is still
+    refused.
+
+20. **A pending apply is settled from the device's own rollbacks.** When the
+    commit after tacctl's is the device's rollback (`by root via other`) or
+    someone else's, `show configuration | compare rollback N` against
+    tacctl's commit and the one before it decides `applied` or `rolled-back`,
+    and anything else is `unknown`; a rendering changed since the commit no
+    longer turns a rollback into `applied`. The settled result is printed
+    above the device's line and logged (`device config apply settle`).
+
+21. **The help title no longer names the backends.** The first line of
     `tacctl --help` and the manual's NAME line describe tacctl as pluggable
     network-device AAA management; the backends are interchangeable and are
     no longer named in the title.

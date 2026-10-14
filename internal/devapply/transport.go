@@ -44,10 +44,12 @@
 //     applied by someone else only with the verification's proof (the
 //     fresh login's landed compare and read); without it, it is reverted,
 //     or pending until a read after the window's end settles it.
-//   - A history entry after tacctl's commit that is not its confirm, its
-//     cancel or the device's own rollback is never taken for a confirm: the
-//     state is settled from the configuration (the planner's delta of a
-//     read), or it is unknown.
+//   - A history entry after tacctl's commit that is not its confirm or its
+//     cancel (the device's own rollback among them) is never taken for a
+//     confirm or a rollback from the history alone: the state is settled
+//     from the device's rollbacks (the configuration compared with the one
+//     tacctl's commit produced and the one before it, no planner and no
+//     rendering), or it is unknown; never applied without that proof.
 //   - A panic in a transaction is a named exit: before the confirmed commit
 //     the candidate is discarded (ExitFailed), after it the exit is
 //     ExitUnknown with the window's end.
@@ -216,6 +218,11 @@ type Reader interface {
 	// end as the command ends (an exec channel closed with its exit status)
 	// is an error, never a smaller compare.
 	LandedCompare(ctx context.Context, d plan.Delta) (plan.CompareText, error)
+	// RollbackCompare runs 'show configuration | compare rollback n' in the
+	// session State reads in (operational mode): empty exactly when the
+	// configuration is the one history entry n produced. A text it does not
+	// know is an error that never quotes it.
+	RollbackCompare(ctx context.Context, n int) (plan.CompareText, error)
 	// Log is what was typed, a secret's value elided (a copy).
 	Log() []string
 	Close() error

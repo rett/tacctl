@@ -115,7 +115,7 @@ func (d *junosDevice) runOp(sess *jsession, cmd string, oneShot bool) jresult {
 		case n >= len(d.versions):
 			res.out = jtNoRollback + "\n"
 		default:
-			res.out = compareText(d.versions[n], d.committed)
+			res.out = d.compare(d.versions[n], d.committed)
 		}
 	case len(w) >= 2 && w[0] == "show" && w[1] == "configuration":
 		set := false
@@ -395,6 +395,12 @@ func (d *junosDevice) cfgEdit(sess *jsession, cmd string) string {
 	return ""
 }
 
+// compare is what a compare prints: compareText, with the context lines of
+// a device when the 'compare.context' knob is on.
+func (d *junosDevice) compare(old, cur *jcfg) string {
+	return compareText(old, cur, d.s.t.exists("compare.context"))
+}
+
 // cfgShow is 'show [path] [| compare [rollback N]] [| display set]'.
 func (d *junosDevice) cfgShow(sess *jsession, cmd string) (out string, noMore bool) {
 	segs := pipes(cmd)
@@ -437,7 +443,7 @@ func (d *junosDevice) cfgShow(sess *jsession, cmd string) (out string, noMore bo
 				old = sess.base
 			}
 		}
-		return compareText(old, cand), noMore
+		return d.compare(old, cand), noMore
 	case set:
 		return cand.under(path).setText(), noMore
 	}

@@ -311,42 +311,13 @@ func (j *JunosCLI) History(ctx context.Context) (History, error) {
 // read closes the session.
 func (j *JunosCLI) State(ctx context.Context) (CommitState, error) {
 	cmd := plan.ApplyShowCommit + " | no-more"
-	if err := guardWord(cmd); err != nil {
-		return CommitState{}, err
-	}
-	j.mu.Lock()
-	if j.op == nil {
-		s, err := j.newShell()
-		if err != nil {
-			j.mu.Unlock()
-			return CommitState{}, err
-		}
-		j.op = s
-	}
-	op := j.op
-	j.log = append(j.log, cmd)
-	j.mu.Unlock()
-	drop := func() {
-		j.mu.Lock()
-		if j.op == op {
-			j.op = nil
-		}
-		j.mu.Unlock()
-		_ = op.Close()
-	}
-	out, err := op.Run(ctx, cmd)
+	out, area, err := j.runOp(ctx, cmd)
 	if err != nil {
-		drop()
-		return CommitState{}, fmt.Errorf("%s: %w", cmd, err)
-	}
-	area, ok := promptArea(op)
-	if !ok {
-		drop()
-		return CommitState{}, fmt.Errorf("%s: %w: %s", cmd, ErrUnrecognised, noPromptArea(op))
+		return CommitState{}, err
 	}
 	pending, minutes, err := parseBanner(area)
 	if err != nil {
-		drop()
+		j.dropOp()
 		return CommitState{}, err
 	}
 	h, err := parseHistory(strings.Join(trimPromptArea(lines(out)), "\n"))
@@ -354,6 +325,81 @@ func (j *JunosCLI) State(ctx context.Context) (CommitState, error) {
 		return CommitState{}, err
 	}
 	return CommitState{History: h, Pending: pending, Minutes: minutes}, nil
+}
+
+// runOp types an apply word in the operational-mode shell session (opened
+// at the first call, kept) and returns the answer and the prompt area after
+// it. A session that cannot tell its prompt area is an error; a failed read
+// closes the session.
+func (j *JunosCLI) runOp(ctx context.Context, cmd string) (string, []string, error) {
+	if err := guardWord(cmd); err != nil {
+		return "", nil, err
+	}
+	j.mu.Lock()
+	if j.op == nil {
+		s, err := j.newShell()
+		if err != nil {
+			j.mu.Unlock()
+			return "", nil, err
+		}
+		j.op = s
+	}
+	op := j.op
+	j.log = append(j.log, cmd)
+	j.mu.Unlock()
+	out, err := op.Run(ctx, cmd)
+	if err != nil {
+		j.dropOp()
+		return "", nil, fmt.Errorf("%s: %w", cmd, err)
+	}
+	area, ok := promptArea(op)
+	if !ok {
+		j.dropOp()
+		return "", nil, fmt.Errorf("%s: %w: %s", cmd, ErrUnrecognised, noPromptArea(op))
+	}
+	return out, area, nil
+}
+
+// dropOp closes the operational-mode shell session.
+func (j *JunosCLI) dropOp() {
+	j.mu.Lock()
+	op := j.op
+	j.op = nil
+	j.mu.Unlock()
+	if op != nil {
+		_ = op.Close()
+	}
+}
+
+// RollbackCompare runs 'show configuration | compare rollback n | no-more'
+// in the operational-mode shell session State reads in (the settle's
+// compares, D132): empty exactly when the configuration is the one commit n
+// of the history produced. The answer must end at a prompt whose area
+// tacctl knows (a pending commit's banner there is the prompt's); its text
+// is parsed fail closed and never quoted: an error gives the line number
+// and why only.
+func (j *JunosCLI) RollbackCompare(ctx context.Context, n int) (plan.CompareText, error) {
+	if n < 0 || n > plan.MaxRollback {
+		return plan.CompareText{}, fmt.Errorf("%w: rollback %d is not one a device keeps", ErrNotSent, n)
+	}
+	cmd := plan.ApplyRollbackCompare(n)
+	out, area, err := j.runOp(ctx, cmd)
+	if err != nil {
+		return plan.CompareText{}, err
+	}
+	if _, _, err := parseBanner(area); err != nil {
+		j.dropOp()
+		return plan.CompareText{}, err
+	}
+	c, err := plan.ParseCompare(strings.Join(trimPromptArea(lines(out)), "\n"))
+	if err != nil {
+		var le *plan.CompareLineError
+		if errors.As(err, &le) {
+			return plan.CompareText{}, fmt.Errorf("%s: %w: compare line %d: %s (not quoted)", cmd, ErrUnrecognised, le.Line, le.Why)
+		}
+		return plan.CompareText{}, fmt.Errorf("%s: %w: the answer is not a compare (not quoted)", cmd, ErrUnrecognised)
+	}
+	return c, nil
 }
 
 // textNoPromptArea is why a shell session that completed a command did not
@@ -578,6 +624,11 @@ func (j *JunosCLI) SharedDirty(ctx context.Context) (Dirty, error) {
 			Lines: []string{fmt.Sprintf("%d line(s) without the location line (the shared candidate's, not quoted)", len(nonBlank(body)))}}
 	}
 	c, err := plan.ParseCompare(strings.Join(body, "\n"))
+	if err != nil && d.Staged {
+		// 'configure' said a change is staged: that is the gate's reason,
+		// whatever the compare holds (the gate fails either way)
+		return d, nil
+	}
 	if err != nil {
 		var le *plan.CompareLineError
 		if errors.As(err, &le) {

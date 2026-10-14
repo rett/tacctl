@@ -459,14 +459,16 @@ func TestPendingSessionDropped(t *testing.T) {
 	r, _ = d.verify(context.Background())
 	defer func() { _ = r.Close() }()
 	// 'by root via other' is the device's own rollback or a commit of the
-	// system: settled from the configuration, unknown without a planner
-	rc = ReconcileAt(context.Background(), r, "example-sw1", o.ID, o.Until, d.clk.Now(), nil)
-	wantExit(t, rc, ExitUnknown, ResultUnknown)
-	rc = ReconcileAt(context.Background(), r, "example-sw1", o.ID, o.Until, d.clk.Now(), factsOf(&planner{desired: desiredLines()}))
-	wantExit(t, rc, ExitRolledBack, ResultRolledBack)
-	if !strings.Contains(rc.Reason, "the commit after tacctl's is by root via other at 2026-10-13 14:10:00 UTC") ||
-		!strings.Contains(rc.Reason, "the configuration lacks the change") || !rc.Until.IsZero() {
-		t.Errorf("reconcile %q", rc.Reason)
+	// system: settled from the device's rollbacks, with or without a planner
+	for _, facts := range []func(context.Context, string) (plan.Delta, error){nil, factsOf(&planner{desired: desiredLines()})} {
+		rc = ReconcileAt(context.Background(), r, "example-sw1", o.ID, o.Until, d.clk.Now(), facts)
+		wantExit(t, rc, ExitRolledBack, ResultRolledBack)
+		if !strings.Contains(rc.Reason, "the commit after tacctl's is by root via other at 2026-10-13 14:10:00 UTC") ||
+			!strings.Contains(rc.Reason, "the configuration is the one before tacctl's commit (rollback 2)") || !rc.Until.IsZero() ||
+			rc.Fate != "rolled back by the device at 2026-10-13 14:10:00 UTC" {
+			t.Errorf("reconcile %q %q", rc.Reason, rc.Fate)
+		}
+		assertLog(t, rc, nil)
 	}
 }
 
@@ -529,19 +531,25 @@ func TestAppliedBySomeoneElse(t *testing.T) {
 			t.Errorf("%q %v", rc.Reason, rc.Until)
 		}
 	}
-	// After it: confirmed, from the configuration when a planner is at hand.
+	// After it: confirmed, proven by the device's rollbacks. A rendering
+	// that changed since (the planner's delta not empty) does not matter.
 	d.clk.Advance(11 * time.Minute)
-	for _, facts := range []func(context.Context, string) (plan.Delta, error){factsOf(p), nil} {
+	lacks := func(context.Context, string) (plan.Delta, error) { return deltaOf(desiredLines()[1]), nil }
+	for _, facts := range []func(context.Context, string) (plan.Delta, error){factsOf(p), nil, lacks} {
 		rc := ReconcileAt(context.Background(), r, "example-sw1", o.ID, o.Until, d.clk.Now(), facts)
 		wantExit(t, rc, ExitAppliedByOther, ResultApplied)
-		if !strings.Contains(rc.Reason, "a 'commit check' confirmed it") || (facts != nil) != strings.Contains(rc.Reason, "the configuration has the change") {
-			t.Errorf("%q", rc.Reason)
+		if !strings.Contains(rc.Reason, "a 'commit check' confirmed it") || !strings.Contains(rc.Reason, "the configuration is the one tacctl's commit produced (rollback 0)") ||
+			rc.Fate != "applied (confirmed by a 'commit check', which leaves no history entry)" {
+			t.Errorf("%q %q", rc.Reason, rc.Fate)
 		}
 	}
-	// a configuration that lacks the change says rolled back
-	lacks := func(context.Context, string) (plan.Delta, error) { return deltaOf(desiredLines()[1]), nil }
-	rc := ReconcileAt(context.Background(), r, "example-sw1", o.ID, o.Until, d.clk.Now(), lacks)
-	wantExit(t, rc, ExitRolledBack, ResultRolledBack)
+	// a configuration changed since is neither: unknown, never applied
+	runShell(t, d, "configure", "set snmp contact noc", "commit")
+	rc := ReconcileAt(context.Background(), r, "example-sw1", o.ID, o.Until, d.clk.Now(), factsOf(p))
+	wantExit(t, rc, ExitUnknown, ResultUnknown)
+	if !strings.Contains(rc.Reason, "is not one tacctl recognises") || !strings.Contains(rc.Reason, "it changed since") || rc.Fate != "" {
+		t.Errorf("%q", rc.Reason)
+	}
 }
 
 // A pending commit's history label is no pending marker: after a 'commit

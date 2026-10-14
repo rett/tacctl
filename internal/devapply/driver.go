@@ -754,18 +754,17 @@ func ours(e CommitEntry, id string) bool { return strings.HasPrefix(e.Comment, c
 // the history, and the clocks may differ.
 const settleSlack = time.Minute
 
-// factsNeed is whether settle's answer is to be settled from the
-// configuration (byFacts).
+// factsNeed is whether settle's answer is to be settled from the device's
+// rollbacks (byRollbacks).
 type factsNeed int
 
 const (
 	// factsNo: the history says it.
 	factsNo factsNeed = iota
-	// factsRequired: the history does not say it; without a planner the
+	// factsRequired: the history does not say it; the rollbacks do, or the
 	// state is ExitUnknown.
 	factsRequired
-	// factsPreferred: the history says it, and the configuration says it
-	// better when a planner is at hand.
+	// factsPreferred: the history says it, and the rollbacks prove it.
 	factsPreferred
 )
 
@@ -781,6 +780,9 @@ type settled struct {
 	// minutes, the latest it can be).
 	over  bool
 	until time.Time
+	// fate is what became of the apply as a phrase after 'was' (Outcome.Fate),
+	// "" when it is not settled.
+	fate string
 }
 
 // settle names the state of apply id from the commit state (D132, lab L2).
@@ -799,18 +801,18 @@ type settled struct {
 //     release or a session that prints no banner rolls it back at the end
 //     all the same, and only a read after the end tells;
 //   - no banner, tacctl's commit at entry 0, after the window's end:
-//     applied by someone else (a 'commit check' confirmed it), settled
-//     from the configuration when a planner is at hand (factsPreferred);
+//     applied by someone else (a 'commit check' confirmed it), proven by
+//     the rollbacks (factsPreferred);
 //   - the entry directly above tacctl's: its confirm is applied, its cancel
 //     rolled back; one 'by root via other' with no comment is the device's
 //     own rollback or a commit of the system that confirmed it, settled
-//     from the configuration (factsRequired).
+//     from the rollbacks (factsRequired).
 //
 // An entry after tacctl's commit that is neither tacctl's confirm nor its
 // cancel is never taken for a confirm or a rollback from the history
 // alone (a release whose expiry entry reads otherwise would be recorded
 // applied): settle returns ExitUnknown with factsRequired, and the caller
-// settles it from the configuration (byFacts) when it can read one.
+// settles it from the device's rollbacks (byRollbacks).
 func settle(st CommitState, id string, pre CommitEntry, now, until time.Time) settled {
 	h := st.History
 	k := slices.IndexFunc(h, func(e CommitEntry) bool { return ours(e, id) })
@@ -863,41 +865,118 @@ func fate(h History, k int, id string) settled {
 	next := h[k-1]
 	switch {
 	case strings.HasPrefix(next.Comment, confirmComment(id)) && next.RollbackIn == 0:
-		return settled{e: ExitApplied, entry: &next}
+		return settled{e: ExitApplied, entry: &next, fate: "applied (confirmed at " + next.TimeText + ")"}
 	case strings.HasPrefix(next.Comment, cancelComment(id)):
-		return settled{e: ExitRolledBack, how: "cancelled at " + next.TimeText}
+		return settled{e: ExitRolledBack, how: "cancelled at " + next.TimeText, fate: "rolled back (cancelled at " + next.TimeText + ")"}
 	case expiry(next):
 		return settled{e: ExitUnknown, how: fmt.Sprintf("the commit after tacctl's is by %s via %s at %s (the device's own rollback, or a commit of the system that confirmed it)", textExpiryUser, textExpiryVia, next.TimeText), facts: factsRequired}
 	}
 	return settled{e: ExitUnknown, how: fmt.Sprintf("the commit after tacctl's (by %s via %s at %s) is not one tacctl recognises", cut(next.User), cut(next.Via), next.TimeText), facts: factsRequired}
 }
 
-// byFacts settles an entry after tacctl's commit from the configuration:
-// d is the planner's delta of a read made after it. No delta is the change
-// in place (someone's commit confirmed it); a delta is the change not in
-// place (rolled back).
+// byRollbacks settles from the device's own rollbacks what the history alone
+// does not say (D132): tacctl's commit is history entry k, so 'show
+// configuration | compare rollback k' is empty exactly when the
+// configuration is the one tacctl's commit produced (applied, by whom the
+// entry above it says), and 'compare rollback k+1' exactly when it is the
+// one before it (rolled back). Both non-empty is unknown: the configuration
+// changed since, and nothing proves either. No planner and no rendering
+// take part, so a rendering that changed since the commit cannot make a
+// rolled-back commit applied. The compares are read on rd (one operational
+// session; nothing is typed in configuration mode), parsed fail closed and
+// never quoted; the state is read again after them, and a history that
+// moved in between is unknown. compared is false when the compares could
+// not be made (the reason says why; s is then unknown).
+func byRollbacks(ctx context.Context, rd Reader, st CommitState, id string, s settled, errText func(error) string) (out settled, compared bool) {
+	s.entry = nil
+	h := st.History
+	k := slices.IndexFunc(h, func(e CommitEntry) bool { return ours(e, id) })
+	unknown := func(why string) settled {
+		s.e, s.how, s.fate = ExitUnknown, s.how+"; "+why, ""
+		return s
+	}
+	switch {
+	case k < 0:
+		return unknown("the history does not show tacctl's commit " + id), false
+	case k+1 > plan.MaxRollback || k+1 >= len(h):
+		return unknown(fmt.Sprintf("the configuration before tacctl's commit (rollback %d) is not one the device keeps", k+1)), false
+	}
+	after, err := rd.RollbackCompare(ctx, k)
+	if err != nil {
+		return unknown(fmt.Sprintf("the configuration could not be compared with rollback %d: %s", k, errText(err))), false
+	}
+	before, err := rd.RollbackCompare(ctx, k+1)
+	if err != nil {
+		return unknown(fmt.Sprintf("the configuration could not be compared with rollback %d: %s", k+1, errText(err))), false
+	}
+	again, err := rd.State(ctx)
+	switch {
+	case err != nil:
+		return unknown("the history could not be read again after the compares: " + errText(err)), true
+	case again.Pending != st.Pending || len(again.History) == 0 || !again.History[0].Same(h[0]):
+		return unknown("the history changed while the configuration was compared with it"), true
+	case after.Empty() && before.Empty():
+		return unknown(fmt.Sprintf("rollbacks %d and %d hold the same configuration", k, k+1)), true
+	case !after.Empty() && !before.Empty():
+		return unknown(fmt.Sprintf("the configuration is neither the one tacctl's commit produced (rollback %d) nor the one before it (rollback %d): it changed since", k, k+1)), true
+	}
+	var above *CommitEntry
+	if k > 0 {
+		above = &h[k-1]
+	}
+	if after.Empty() {
+		s.e = ExitAppliedByOther
+		s.how += fmt.Sprintf("; the configuration is the one tacctl's commit produced (rollback %d)", k)
+		s.fate = "applied (confirmed by a 'commit check', which leaves no history entry)"
+		if above != nil {
+			s.fate = fmt.Sprintf("applied (the commit by %s via %s at %s kept it)", cut(above.User), cut(above.Via), above.TimeText)
+		}
+		return s, true
+	}
+	s.e = ExitRolledBack
+	s.how += fmt.Sprintf("; the configuration is the one before tacctl's commit (rollback %d)", k+1)
+	switch {
+	case above != nil && expiry(*above) && k == 1:
+		s.fate = "rolled back by the device at " + above.TimeText
+	case above != nil:
+		s.fate = fmt.Sprintf("rolled back (the configuration is the one before it; the commit after it is by %s via %s at %s)", cut(above.User), cut(above.Via), above.TimeText)
+	default:
+		s.fate = "rolled back"
+	}
+	return s, true
+}
+
+// byFacts is the last fallback of a settle whose rollbacks could not be
+// compared: d is the planner's delta of a read with today's rendering,
+// which may not be the rendering of the commit. It never names the state:
+// the exit is ExitUnknown, and the reason says what the configuration
+// shows against today's rendering.
 func byFacts(how string, d plan.Delta, err error) (Exit, string) {
 	switch {
 	case err != nil:
 		return ExitUnknown, how + "; the configuration could not be read: " + err.Error()
 	case d.Empty():
-		return ExitAppliedByOther, how + "; the configuration has the change"
+		return ExitUnknown, how + "; the configuration has today's rendering (no proof that tacctl's commit stuck)"
 	}
-	return ExitRolledBack, how + "; the configuration lacks the change"
+	return ExitUnknown, how + "; the configuration lacks today's rendering (no proof that tacctl's commit was rolled back)"
 }
 
-// settle is settle with the state settled from the configuration where it
-// asks for that, read on the fresh login if one is open, else on the held
-// login's connection.
+// settle is settle with the state settled from the device's rollbacks
+// where the history does not say it (byRollbacks), on the fresh login if
+// one is open, else on the held login's connection; byFacts only when the
+// rollbacks could not be compared, and then the state is unknown.
 func (r *run) settle(ctx context.Context, st CommitState) settled {
 	s := settle(st, r.id, r.pre, r.now(), r.o.Until)
 	if s.facts == factsNo {
 		return s
 	}
-	s.entry = nil
 	var rd Reader = r.t
 	if r.vr != nil {
 		rd = r.vr
+	}
+	s, compared := byRollbacks(ctx, rd, st, r.id, s, func(err error) string { return r.errText(err) })
+	if compared {
+		return s
 	}
 	raw, err := rd.Read(ctx)
 	if err != nil {

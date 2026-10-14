@@ -23,7 +23,12 @@ package plan
 //     A statement also carries, unseen, an identity of its names, so Equal
 //     and Unexplained tell them apart however they are numbered;
 //   - an added or removed '/* ... */' annotation is a statement of its own
-//     (CompareAnnotationMark), never skipped: no delta line explains it.
+//     (CompareAnnotationMark), never skipped: no delta line explains it;
+//   - the context lines a hunk prints for the unchanged neighbours of a
+//     change (no op: a leaf, a block opener and its closing brace, a block
+//     collapsed as '<words> { ... }', live acceptance 2026-10-14) are not
+//     changes and are skipped; only inside a hunk, and a collapsed block
+//     with an op or inside an added or removed block is an error.
 //
 // [A: the exact shape of a landed compare is WP14.0's L3 capture; every rule
 // above is the Junos reference's and the helper's, and an unrecognised line
@@ -259,6 +264,11 @@ type frame struct {
 	emitted bool
 }
 
+// collapsedBlock ends the context line of an unchanged block that a compare
+// prints beside a change in the same hierarchy (an existing NTP server, name
+// server, community or term next to an added one).
+const collapsedBlock = "{ ... }"
+
 // ParseCompare reads the text of a `show | compare` or `show system rollback
 // compare` and returns it normalised, the names of communities and trap
 // groups numbered in the order of the names. A line it does not know is an
@@ -315,6 +325,9 @@ func ParseCompareFor(text string, d Delta) (CompareText, error) {
 		return op
 	}
 	inNote := false
+	// inHunk is set by the first '[edit ...]' header: a context line (no op)
+	// stands only inside a hunk
+	inHunk := false
 	path := func(extra ...string) []string {
 		p := slices.Clone(base)
 		for _, f := range stack {
@@ -346,6 +359,7 @@ func ParseCompareFor(text string, d Delta) (CompareText, error) {
 				return CompareText{}, fmt.Errorf("compare line %d: a header inside an open block", n+1)
 			}
 			base = splitTokens(strings.TrimSuffix(strings.TrimPrefix(line, "[edit"), "]"))
+			inHunk = true
 			continue
 		}
 		var op byte
@@ -358,8 +372,25 @@ func ParseCompareFor(text string, d Delta) (CompareText, error) {
 			return CompareText{}, &CompareLineError{Line: n + 1, Why: "not a compare line", Text: trimmed}
 		}
 		body = strings.TrimSpace(body)
+		if op == 0 && len(stack) == 0 && !inHunk && body != "" && body != "..." && !strings.HasPrefix(body, "##") {
+			// a context line before any '[edit ...]' header is not a
+			// compare's
+			return CompareText{}, &CompareLineError{Line: n + 1, Why: "a context line outside a hunk", Text: trimmed}
+		}
 		switch {
 		case body == "" || body == "..." || strings.HasPrefix(body, "##"):
+			continue
+		case strings.HasSuffix(body, collapsedBlock):
+			// an unchanged block printed collapsed beside a change, as
+			// context ('    10.0.0.1 { ... }', lab 2026-10-14): never a
+			// change, and only with no op of its own or of a block it
+			// stands in
+			if inherit(op) != 0 {
+				return CompareText{}, &CompareLineError{Line: n + 1, Why: "a collapsed block with an op", Text: trimmed}
+			}
+			if len(splitTokens(strings.TrimSpace(strings.TrimSuffix(body, collapsedBlock)))) == 0 {
+				return CompareText{}, &CompareLineError{Line: n + 1, Why: "a collapsed block with no name", Text: trimmed}
+			}
 			continue
 		case strings.HasPrefix(body, "/*"):
 			// an annotation: a change of it is a change of the

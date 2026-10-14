@@ -45,6 +45,18 @@ const (
 	ApplyLandedCompare = "show configuration | compare rollback 1 | no-more"
 )
 
+// ApplyRollbackCompare is the settle's read (D132): the configuration
+// against rollback n, in operational mode. It is empty exactly when the
+// configuration is the one commit n of the history produced.
+func ApplyRollbackCompare(n int) string {
+	return "show configuration | compare rollback " + strconv.Itoa(n) + " | no-more"
+}
+
+// MaxRollback is the highest rollback a Junos device keeps.
+const MaxRollback = 49
+
+var reApplyRollbackCompare = regexp.MustCompile(`^show configuration \| compare rollback ([0-9]|[1-4][0-9]) \| no-more$`)
+
 // The phrases an apply requires of the device's output ([S: the helper];
 // a text the driver does not know is a failure).
 const (
@@ -113,7 +125,7 @@ var (
 // IsApplyWord reports whether a line is one of the apply's own words (a
 // fixed word or one of the three commit lines) and not a statement.
 func IsApplyWord(line string) bool {
-	return slices.Contains(applyFixed, line) ||
+	return slices.Contains(applyFixed, line) || reApplyRollbackCompare.MatchString(line) ||
 		reApplyConfirmed.MatchString(line) || reApplyConfirm.MatchString(line) || reApplyCancel.MatchString(line)
 }
 

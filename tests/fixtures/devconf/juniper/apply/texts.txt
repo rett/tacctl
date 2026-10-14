@@ -75,3 +75,38 @@ Exiting configuration mode
 root@lab-sw1> quit
 
 # root's own login shell prompt: root@lab-sw1:RE:0%  (csh)
+
+## show | compare (2026-10-14: a staged trap group beside an existing one)
+[edit snmp]
+    trap-group zz-tacctl-tg { ... }
++   trap-group zz-tacctl-staged {
++       version v2;
++   }
+
+{master:0}[edit]
+
+## show | compare (2026-10-14: a staged view, nothing beside it)
+[edit snmp]
++   view zz-tacctl-staged {
++       oid 1.3.6.1 include;
++   }
+
+{master:0}[edit]
+
+## show system commit (2026-10-14: two applies rolled back by the device at their window's end)
+0   2026-10-14 12:12:17 AKDT by root via other
+1   2026-10-14 12:09:15 AKDT by zz-tacctl-user via cli commit confirmed, rollback in 3mins
+    tacctl apply tacctl-20261014T200908Z-664b by zz-tacctl-user
+2   2026-10-14 12:08:14 AKDT by root via other
+3   2026-10-14 12:05:12 AKDT by zz-tacctl-user via cli commit confirmed, rollback in 3mins
+    tacctl apply tacctl-20261014T200505Z-66e6 by zz-tacctl-user
+4   2026-10-14 12:04:37 AKDT by zz-tacctl-user via cli
+    tacctl apply cancel tacctl-20261014T200426Z-00a9
+5   2026-10-14 12:04:34 AKDT by zz-tacctl-user via cli commit confirmed, rollback in 3mins
+    tacctl apply tacctl-20261014T200426Z-00a9 by zz-tacctl-user
+6   2026-10-14 12:02:16 AKDT by zz-tacctl-user via cli
+    tacctl apply confirm tacctl-20261014T200205Z-72cd by zz-tacctl-user
+7   2026-10-14 12:02:13 AKDT by zz-tacctl-user via cli commit confirmed, rollback in 3mins
+    tacctl apply tacctl-20261014T200205Z-72cd by zz-tacctl-user
+8   2026-10-13 20:13:51 AKDT by admin via cli
+rescue  2024-01-04 11:42:38 AKST by root via cli

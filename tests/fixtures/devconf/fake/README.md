@@ -82,6 +82,7 @@ fixture directory ships none, a test writes the ones it needs.
 | `drop` | `<command prefix>` per line: that command closes the connection unanswered, before it is applied |
 | `slow` | `<command prefix> => <seconds>` per line (`*` is every command): the answer waits that long on the server's clock |
 | `rescue` | a saved rescue configuration: `show system commit` ends with the line `rescue  <time> <zone> by root via cli`, which is no entry |
+| `compare.context` | every hunk of `show \| compare` and `show configuration \| compare rollback N` also prints the unchanged lines and blocks beside its changes, without a mark and a block collapsed as `<head> { ... }`, as a device does |
 | `timer.minute` | seconds one minute of `commit confirmed` lasts (default 60): a bats test sets `1` to see the expiry |
 
 Behaviour a test relies on:
@@ -108,6 +109,10 @@ Behaviour a test relies on:
   other session out). A `rollback 1` (`load complete`) and `commit` cancel
   at once with a normal entry. Expiry is a commit of the device's own (`by
   root via other`).
+- Every commit, the expiry's too, keeps the configuration it produced:
+  rollback N is the configuration of history entry N, so `show
+  configuration | compare rollback N` is empty exactly when the committed
+  configuration is that entry's (up to 50 entries).
 - A confirmed commit's history entry says `commit confirmed, rollback in
   Nmins` for good, also after a check confirmed it: it is not a pending
   marker.

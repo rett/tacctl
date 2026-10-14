@@ -67,11 +67,16 @@ func (v *applyView) Update(e batch.Event) {
 	}
 	o, _ := e.Result.Value.(*applyOutcome)
 	if o != nil && e.Phase == batch.PhaseDone {
+		v.auditSettled(o)
 		v.audit(o)
 	}
 	if v.json {
 		_ = v.enc.Encode(v.deviceJSON(e.Index, o, e.Result))
 		return
+	}
+	if o != nil && o.Settled != nil && o.Settled.Line != "" {
+		// what became of the earlier apply, before what this run did
+		_, _ = fmt.Fprintf(v.out, "  %-*s  %s\n", v.width, v.names[e.Index], cleanLine(o.Settled.Line))
 	}
 	text := e.Result.Text()
 	if o != nil {
@@ -82,6 +87,16 @@ func (v *applyView) Update(e batch.Event) {
 
 // End leaves the lines as they are; the verb prints the summary.
 func (v *applyView) End(s batch.Summary) { v.Board.End(s) }
+
+// auditSettled logs the settle of an earlier apply's pending record (D132):
+// its id and the result it settled at, never a reason's text.
+func (v *applyView) auditSettled(o *applyOutcome) {
+	if o.Settled == nil {
+		return
+	}
+	v.inv.app.Logger(v.inv.auditContext(), "auth.notice", fmt.Sprintf("device config apply settle user=%s device=%s id=%s result=%s",
+		v.user, o.Name, o.Settled.ID, o.Settled.Result))
+}
 
 // audit logs a finished device (D141): never a value, never a reason's text.
 func (v *applyView) audit(o *applyOutcome) {
@@ -206,6 +221,15 @@ type applyJSON struct {
 	// Lines are the statements of the change, a secret's value elided.
 	Lines      []string `json:"lines,omitempty"`
 	DurationMS int64    `json:"duration_ms"`
+	// Settled is the settle of an earlier apply's pending record.
+	Settled *applySettledJSON `json:"settled,omitempty"`
+}
+
+// applySettledJSON is what the settle of an earlier apply found.
+type applySettledJSON struct {
+	ID     string `json:"id"`
+	Result string `json:"result"`
+	Text   string `json:"text,omitempty"`
 }
 
 // deviceJSON is the object of one device's event.
@@ -223,6 +247,9 @@ func (o *applyOutcome) json(j applyJSON) applyJSON {
 	j.Name, j.Scope, j.Vendor, j.Phase = o.Name, o.Scope, o.Vendor, o.Phase
 	j.Status = o.word()
 	j.Confirmed, j.DurationMS = o.ConfirmedOn, o.Duration.Milliseconds()
+	if s := o.Settled; s != nil {
+		j.Settled = &applySettledJSON{ID: s.ID, Result: s.Result, Text: cleanLine(s.Line)}
+	}
 	switch {
 	case o.Refused != "":
 		j.Reason = cleanLine(o.Refused)

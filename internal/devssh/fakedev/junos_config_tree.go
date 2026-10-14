@@ -636,11 +636,26 @@ func (c *jcfg) under(path []string) *jcfg {
 // changed line, '[edit <path>]' and the changed lines marked '+' and '-'
 // (four columns of indentation per level, the mark in the first), the
 // blocks that were added or removed whole as a block. An empty difference is
-// the empty text.
-func compareText(old, cur *jcfg) string {
+// the empty text. With context every hunk also prints the unchanged lines
+// and blocks beside its changes without a mark, a block collapsed as
+// '<head> { ... }', as a device does (live acceptance 2026-10-14: an
+// existing trap group collapsed over an added one).
+func compareText(old, cur *jcfg, context bool) string {
 	var b strings.Builder
-	diffNode(&b, old.tree(), cur.tree(), nil)
+	diffNode(&b, old.tree(), cur.tree(), nil, context)
 	return b.String()
+}
+
+// renderContext is an unchanged item of a hunk as context.
+func renderContext(b *strings.Builder, it jitem) {
+	switch {
+	case it.block != nil:
+		b.WriteString("    " + it.head + " { ... }\n")
+	case it.secret:
+		b.WriteString("    " + it.head + "; ## SECRET-DATA\n")
+	default:
+		b.WriteString("    " + it.head + ";\n")
+	}
 }
 
 func renderMarked(b *strings.Builder, mark string, it jitem) {
@@ -664,7 +679,7 @@ func renderMarked(b *strings.Builder, mark string, it jitem) {
 	}
 }
 
-func diffNode(b *strings.Builder, o, n *jnode, path []string) {
+func diffNode(b *strings.Builder, o, n *jnode, path []string, context bool) {
 	oi, ni := items(o, path), items(n, path)
 	find := func(list []jitem, it jitem) int {
 		for i, x := range list {
@@ -674,7 +689,7 @@ func diffNode(b *strings.Builder, o, n *jnode, path []string) {
 		}
 		return -1
 	}
-	var lines strings.Builder
+	var lines, ctx strings.Builder
 	var nested []jitem
 	var nestedOld []*jnode
 	done := make([]bool, len(oi))
@@ -701,17 +716,24 @@ func diffNode(b *strings.Builder, o, n *jnode, path []string) {
 		case it.block != nil:
 			nested = append(nested, it)
 			nestedOld = append(nestedOld, oi[j].block)
+			renderContext(&ctx, it)
 		case it.head != oi[j].head:
 			renderMarked(&lines, "-", oi[j])
 			renderMarked(&lines, "+", it)
+		default:
+			renderContext(&ctx, it)
 		}
 	}
 	flushRemoved(len(oi))
 	if lines.Len() > 0 {
-		b.WriteString("[edit" + joinEditPath(path) + "]\n" + lines.String())
+		b.WriteString("[edit" + joinEditPath(path) + "]\n")
+		if context {
+			b.WriteString(ctx.String())
+		}
+		b.WriteString(lines.String())
 	}
 	for i, it := range nested {
-		diffNode(b, nestedOld[i], it.block, it.path)
+		diffNode(b, nestedOld[i], it.block, it.path, context)
 	}
 }
 

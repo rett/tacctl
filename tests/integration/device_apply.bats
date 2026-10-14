@@ -354,7 +354,9 @@ print(all(not e["confirmed"] for e in m.values()))' "${TACCTL_VAR_LIB}/device-ap
     sleep 14
     apply example-sw1 --check
     assert_success
+    assert_line --regexp '^  example-sw1  the earlier apply tacctl-[0-9TZ]+-[0-9a-f]+ by alice was rolled back by the device at '
     assert_line --regexp '^  example-sw1  checked: shape '
+    stub_called "logger -t tacctl -p auth.notice device config apply settle user=alice device=example-sw1 id=tacctl-"
     [[ "$(applied result)" == checked ]]
 }
 

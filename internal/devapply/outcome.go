@@ -115,6 +115,10 @@ type Outcome struct {
 	Until time.Time
 	// Commit is the confirming commit's history entry (applied).
 	Commit *CommitEntry
+	// Fate is, for a reconciled apply (Reconcile) that settled, what became
+	// of it as a phrase after 'was' ('rolled back by the device at <time>');
+	// "" otherwise.
+	Fate string
 	// Identity and Class are the pre-flight's.
 	Identity Identity
 	Class    string

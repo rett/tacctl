@@ -155,6 +155,9 @@ type applyOutcome struct {
 	// pending record of the moment of the confirmed commit (D138).
 	RecordErr, PendingErr string
 	Duration              time.Duration
+	// Settled is the settle of an earlier apply's pending record, nil when
+	// the record was not pending.
+	Settled *applySettled
 }
 
 // word is the device's state as the summary and the JSON name it.
@@ -480,7 +483,7 @@ func (r *applyRun) transact(ctx context.Context, e devreg.Entry, o *applyOutcome
 		return fail("cannot build the expected configuration: "+strings.Join(msgs(err), " "), "")
 	}
 	target := r.target(e)
-	if why := r.settle(ctx, e, expected, target); why != "" {
+	if why := r.settle(ctx, e, expected, target, o); why != "" {
 		return fail(why, "")
 	}
 	t, err := devapply.DialJunos(ctx, target)
@@ -638,7 +641,7 @@ func (r *applyRun) recheck(e devreg.Entry) string {
 // settle settles a record that says a confirmed commit may be pending (D132)
 // before anything is typed: the device's history says which. It returns why
 // the device cannot be touched ("" when it can).
-func (r *applyRun) settle(ctx context.Context, e devreg.Entry, expected []devices.Section, target devssh.Target) string {
+func (r *applyRun) settle(ctx context.Context, e devreg.Entry, expected []devices.Section, target devssh.Target, o *applyOutcome) string {
 	recs, _ := r.store.Load()
 	rec, ok := recs.Of(e.Name)
 	if !ok || !rec.Applied.Pending() {
@@ -665,6 +668,7 @@ func (r *applyRun) settle(ctx context.Context, e devreg.Entry, expected []device
 		return rp.delta, nil
 	}
 	out := devapply.Reconcile(ctx, j, e.Name, a.ID, a.Until, facts)
+	o.Settled = &applySettled{ID: a.ID, Result: string(out.Result)}
 	switch out.Exit {
 	case devapply.ExitPending:
 		return "a confirmed commit (" + a.ID + ") is pending until " + when + " by this server's clock: do not type commit or commit check on the device before then; nothing was sent"
@@ -676,8 +680,25 @@ func (r *applyRun) settle(ctx context.Context, e devreg.Entry, expected []device
 	if out.Commit != nil {
 		a.Commit = &devconf.AppliedCommit{Seq: out.Commit.Seq, Time: out.Commit.TimeText}
 	}
-	_ = r.writeApplied(e, a)
+	fate := out.Fate
+	if fate == "" {
+		fate = a.Result
+	}
+	// the line is made now, from what the settle found: the record it
+	// writes is replaced by this run's own when its transaction ends
+	o.Settled.Line = "the earlier apply " + a.ID + " by " + a.By + " was " + fate
+	if err := r.writeApplied(e, a); err != nil {
+		o.Settled.Line += " (the record was not kept: " + strings.Join(msgs(err), " ") + ")"
+	}
 	return ""
+}
+
+// applySettled is what the settle of an earlier apply's pending record
+// found: printed above the device's line and audited (apply settle).
+type applySettled struct {
+	ID, Result string
+	// Line is the settled state as a line ("" when it did not settle).
+	Line string
 }
 
 // applyHoldWait is how long --hold waits for the word: until a minute of the
