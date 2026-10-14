@@ -55,3 +55,23 @@ commit complete
 +    class zz-tacctl-spike2 {
 +        permissions view;
 +    }
+
+## root login: the wrapper as the remote command (with or without a pty)
+# ssh root@host "sh -c 'PATH=$PATH:/usr/sbin:/usr/bin:/sbin:/bin; exec cli'"
+
+{master:0}
+root@lab-sw1> show version | match "^Junos:"
+Junos: 25.4R1-S2.3
+
+{master:0}
+root@lab-sw1> configure
+Entering configuration mode
+
+{master:0}[edit]
+root@lab-sw1# exit
+Exiting configuration mode
+
+{master:0}
+root@lab-sw1> quit
+
+# root's own login shell prompt: root@lab-sw1:RE:0%  (csh)
