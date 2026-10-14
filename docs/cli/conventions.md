@@ -22,7 +22,7 @@ These patterns apply across every subcommand family:
 tacctl install [--branch name] [-y|--yes]  # Install tacctl and the TACACS+ backend from scratch (-y: no confirmation)
 tacctl upgrade [--branch name]  # Pull latest source, rebuild, update system files and every enabled backend
 tacctl uninstall [-y|--yes]     # Remove tacctl, its backends' services and all associated files (-y: no confirmation, keeps no archive)
-tacctl rollback <version> [--apply] [--yes] [--hosts]  # Prepare the state for the release before this one (0.2.3 only): a dry run unless --apply; see install/upgrading.md, "Rolling back"
+tacctl rollback <version> [--apply] [--yes] [--hosts]  # Prepare the state for the release before this one (0.2.8) or for 0.2.3: a dry run unless --apply; see install/upgrading.md, "Rolling back"
 tacctl status                   # Service health, stats, errors, password age warnings (per backend)
 tacctl passwd                   # Change your own password (asks for the current one; all tiers)
 tacctl user <subcommand>        # User management (incl. per-user scope membership)

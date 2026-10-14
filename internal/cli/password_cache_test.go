@@ -604,6 +604,19 @@ func TestAskpassWords(t *testing.T) {
 		"scope block lab juniper adopt js1 snmp": true, "device block js1 adopt snmp": true,
 		"scope block lab juniper edit snmp": false, "device block js1 edit snmp": false, "scope block lab juniper list": false,
 		"scope block lab juniper": false, "device block js1": false,
+		// 'device config apply' logs in, --check included; 'shapes' does not
+		"device config apply x": true, "device config apply --all --check": true, "device config shapes": false,
+		"device config shapes seed x": false, "device config shapes list": false,
+		// a local login never asks the cache (D136); 'onboard' asks the
+		// user's own password after the review
+		"device config pull x --login admin": false, "device config plan x --pull --login=root": false,
+		"device config diff x --pull --login admin": false, "device config pull x -- --login admin": true,
+		"device onboard 192.0.2.1 --login admin": true,
+		// 'collect' asks the user's own password; with --login a local
+		// account's, which never touches the cache; 'sync' logs in to nothing
+		"device collect 192.0.2.1": true, "device collect --discovered --register": true,
+		"device collect 192.0.2.1 --login admin": false, "device collect --discovered --login=root": false,
+		"device sync x": false, "device sync --all --apply": false,
 		"ssh": true, "device": false, "device config": false, "ssh core-sw1 -- show version": true, "device ssh core-sw1 -- -v": true,
 	} {
 		if got := askpassWords(strings.Fields(words)); got != want {

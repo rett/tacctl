@@ -76,6 +76,12 @@ func scopeCmd(inv *invocation) *cobra.Command {
 	n := func(run func([]string) error) func(*cobra.Command, []string) error {
 		return inv.native(withPreflight, run)
 	}
+	// nn is n for a verb that may write what the devices are rendered from:
+	// after a write that succeeded it says whether their configuration would
+	// change (device_config_nudge.go).
+	nn := func(verb string, run func([]string) error) func(*cobra.Command, []string) error {
+		return n(inv.withScopeNudge(verb, run))
+	}
 	c := verb("scope <subcommand>", "Scope management (named CIDR + shared-secret bundles)",
 		withRun(verb("list", "One row per scope (aggregated prefix list)"), n(inv.scopeListView)),
 		withRun(verb("routing", "One row per (scope, prefix) — first-match order"), n(inv.scopeRouting)),
@@ -86,29 +92,29 @@ func scopeCmd(inv *invocation) *cobra.Command {
 		withRun(verb("rename <old> <new>", "Rename (updates user references)"), n(inv.scopeRename)),
 		withRun(verb("default [<name>]", "Show or set the default scope"), n(inv.scopeDefault)),
 		withRun(verb("lookup <ip|cidr>", "Show which scope owns an address"), n(inv.scopeLookup)),
-		withRun(verb("prefixes <scope> {list|add|remove} [<cidr>[,<cidr>...]] | remove --all [--force] | move <cidrs> <scope>", "Manage a scope's CIDR list"), n(inv.scopePrefixes)),
+		withRun(verb("prefixes <scope> {list|add|remove} [<cidr>[,<cidr>...]] | remove --all [--force] | move <cidrs> <scope>", "Manage a scope's CIDR list"), nn("prefixes", inv.scopePrefixes)),
 		withRun(verb("staging [list | remove <address>]", "Bench addresses of devices provisioned off-site for a scope"), n(inv.scopeStaging)),
-		withRun(verb("secret <scope> {show|set <value>|generate}", "Manage a scope's shared secret"), n(inv.scopeSecret)),
+		withRun(verb("secret <scope> {show|set <value>|generate}", "Manage a scope's shared secret"), nn("secret", inv.scopeSecret)),
 		withRun(verb("protocols <scope> [list|set <protocol>[,<protocol>...]|clear]",
-			"Limit a scope to some protocols (tacacs, radius); default: all"), n(inv.scopeProtocols)),
+			"Limit a scope to some protocols (tacacs, radius); default: all"), nn("protocols", inv.scopeProtocols)),
 		withRun(verb("vendor-attrs <scope> [enable|disable <vendor>[,<vendor>...]]",
 			"RADIUS: vendor privilege attributes sent to the scope's devices"), n(inv.scopeVendorAttrs)),
 		withRun(verb("devices <scope> [set <ip|cidr> <vendor>|unset <ip|cidr>]",
 			"RADIUS: tag an address of the scope with its vendor"), n(inv.scopeDevices)),
 		withRun(verb("aaa-order <scope> [tacacs-first|local-first]",
-			"AAA method-list order in this scope's rendered device configs"), n(inv.scopeAAAOrder)),
+			"AAA method-list order in this scope's rendered device configs"), nn("aaa-order", inv.scopeAAAOrder)),
 		withRun(verb("exec-timeout <scope> [minutes]",
-			"Per-scope idle-session timeout in rendered device configs"), n(inv.scopeExecTimeout)),
-		withRun(verb("tacacs-group <scope> [name]", "Per-scope Cisco aaa-group-server label"), n(inv.scopeTacacsGroup)),
-		withRun(verb("radius-group <scope> [name]", "Per-scope Cisco aaa-group-server label for RADIUS"), n(inv.scopeRadiusGroup)),
+			"Per-scope idle-session timeout in rendered device configs"), nn("exec-timeout", inv.scopeExecTimeout)),
+		withRun(verb("tacacs-group <scope> [name]", "Per-scope Cisco aaa-group-server label"), nn("tacacs-group", inv.scopeTacacsGroup)),
+		withRun(verb("radius-group <scope> [name]", "Per-scope Cisco aaa-group-server label for RADIUS"), nn("radius-group", inv.scopeRadiusGroup)),
 		withRun(verb("auth-method <scope> [tacacs|radius|clear]",
-			"Protocol this scope's device configs and host enrollments use"), n(inv.scopeAuthMethodCmd)),
+			"Protocol this scope's device configs and host enrollments use"), nn("auth-method", inv.scopeAuthMethodCmd)),
 		withRun(verb("mgmt-acl <scope> {list|add|remove|clear|cisco-name|juniper-name} [args]",
-			"Per-scope permit list and ACL / filter names"), n(inv.scopeMgmtACL)),
+			"Per-scope permit list and ACL / filter names"), nn("mgmt-acl", inv.scopeMgmtACL)),
 		withRun(verb("breakglass <scope> {list|add <name> [--role admin|operator|readonly]|remove <name>}",
 			"Per-scope break-glass local users (names and roles; no credential is stored): the accounts a breakglass hold makes usable"), n(inv.scopeBreakGlass)),
-		withRun(verb(scopeSNMPUse, scopeSNMPShort), n(inv.scopeSNMP)),
-		withRun(verb(scopeBlockUse, scopeBlockShort), n(inv.scopeBlock)),
+		withRun(verb(scopeSNMPUse, scopeSNMPShort), nn("snmp", inv.scopeSNMP)),
+		withRun(verb(scopeBlockUse, scopeBlockShort), nn("block", inv.scopeBlock)),
 	)
 	// No sub-command, help, -h, --help: the usage, exit 0; anything else:
 	// an error, the usage, exit 1.

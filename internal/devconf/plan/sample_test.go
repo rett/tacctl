@@ -85,7 +85,7 @@ func TestJunosOutputIsThePlansSample(t *testing.T) {
 	// the region: statements and the wrapper, exactly
 	region := between(t, out, "#####", "sw-lab-1")
 	wantStmts := []string{
-		"configure private",
+		"configure exclusive",
 		"delete system accounting events interactive-commands",
 		"set snmp client-list TACCTL-SNMP 192.0.2.10/32",
 		"set snmp client-list TACCTL-SNMP 198.51.100.0/24",

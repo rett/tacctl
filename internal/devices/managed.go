@@ -425,21 +425,6 @@ func ciscoSecret(line string) bool { return reCiscoSecret.MatchString(line) }
 
 // --- shared -------------------------------------------------------------------
 
-// without are the lines that do not begin with any of the prefixes.
-func without(lines []string, prefixes ...string) []string {
-	var out []string
-next:
-	for _, l := range lines {
-		for _, p := range prefixes {
-			if strings.HasPrefix(l, p) {
-				continue next
-			}
-		}
-		out = append(out, l)
-	}
-	return out
-}
-
 // uncommented are the lines of block that begin with prefix, without the
 // comment leader: the statements a builder renders commented out, to be
 // completed and uncommented by hand (the break-glass accounts).

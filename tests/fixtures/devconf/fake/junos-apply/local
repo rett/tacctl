@@ -1,0 +1,3 @@
+# '<user> <password> [<class>]': local accounts that log in beside the
+# server's own login
+local-admin local-fakedev-pw super-user

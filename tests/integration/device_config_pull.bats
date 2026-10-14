@@ -45,7 +45,7 @@ pull() {
     fakedev_serve "$JDIR" juniper lab lab-j
     pull lab-j
     assert_success
-    assert_line --regexp '^  lab-j  ok via netconf$'
+    assert_line --regexp '^ +lab-j  ok via netconf$'
     assert_output --partial "1 ok"
     # The record, root's 0600 file, and the sections file beside it.
     [[ "$(stat -c %a "${TACCTL_VAR_LIB}/devices-config.json")" == 600 ]]
@@ -404,4 +404,62 @@ print(r.get("syntax", "-"), "|", r.get("os", "-"))' "${TACCTL_VAR_LIB}/devices-c
     refute_output --partial "stray-community-shhh"
     run grep -r "STRAY-KEY-VALUE-xyz\|stray-community-shhh" "${TACCTL_VAR_LIB}"
     assert_failure
+}
+
+# add_pull <name> <address> <args...>: 'device add ... --pull' as alice, with
+# ssh-keyscan offering the fake device's key.
+add_pull() {
+    local name="$1" addr="$2"; shift 2
+    stub_cmd ssh-keyscan "echo '${addr} ${FAKEDEV_KEY}'"
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device add "$name" "$addr" --no-lookup "$@" --pull
+    plain
+}
+
+@test "device add --pull: registers, then pulls the one device as the caller" {
+    fakedev_start "$JDIR"
+    fakedev_serve "$JDIR" juniper lab
+    add_pull lab-j 192.168.1.20 --vendor juniper
+    assert_success
+    assert_output --partial "Device 'lab-j' registered: 192.168.1.20, juniper."
+    assert_line --regexp '^ +lab-j  ok via netconf$'
+    # the add's report first, the pull's after it
+    local reg pulled
+    reg=$(grep -n "Device 'lab-j' registered" <<< "$output" | cut -d: -f1)
+    pulled=$(grep -n '^ *lab-j  ok via netconf$' <<< "$output" | cut -d: -f1)
+    [[ "$reg" -lt "$pulled" ]]
+    grep -q "lab-j" "${TACCTL_STATE_DIR}/devices.yaml"
+    stub_called 'logger -t tacctl -p auth.info device config pull user=alice device=lab-j transport=netconf result=ok duration='
+    # without --pull, nothing is read
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device add lab-k 192.168.1.21 --vendor juniper --no-host-key --no-lookup
+    assert_success
+    refute_output --partial "via netconf"
+}
+
+@test "device add --pull: a device no scope covers is registered, not pulled, exit 0" {
+    fakedev_start "$JDIR"
+    add_pull stray-j 100.64.0.9 --vendor juniper --no-host-key
+    assert_success
+    assert_output --partial "Not pulled: no scope's prefixes cover 100.64.0.9."
+    assert_output --partial "tacctl scope prefixes <scope> add <cidr>"
+    assert_output --partial "tacctl device config pull stray-j"
+    grep -q "stray-j" "${TACCTL_STATE_DIR}/devices.yaml"
+    [[ ! -e "${TACCTL_VAR_LIB}/devices-config.json" ]]
+}
+
+@test "device add --pull: a failed pull leaves the device registered and is the exit status" {
+    fakedev_start "$JDIR"
+    fakedev_serve "$JDIR" juniper lab
+    TACCTL_TEST_DEVICE_PASSWORD="not-the-password-77" add_pull lab-j 192.168.1.20 --vendor juniper
+    assert_failure 1
+    assert_output --partial "Device 'lab-j' registered"
+    assert_output --partial "failed: authentication failed"
+    refute_output --partial "not-the-password-77"
+    grep -q "lab-j" "${TACCTL_STATE_DIR}/devices.yaml"
+}
+
+@test "device add --pull: refused before anything is registered without a vendor the pull reads" {
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device add lab-o 192.168.1.9 --no-host-key --no-lookup --pull
+    assert_failure
+    assert_output --partial "--pull reads the configuration, which needs --vendor cisco, juniper or wti."
+    [[ ! -e "${TACCTL_STATE_DIR}/devices.yaml" ]] || ! grep -q "lab-o" "${TACCTL_STATE_DIR}/devices.yaml"
 }

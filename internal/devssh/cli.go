@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -37,6 +38,10 @@ const (
 // maxLoginOutput is the most the login banner of a shell may be.
 const maxLoginOutput = 64 << 10
 
+// learnPatience is how many quiet periods learning waits, after it typed
+// the empty line a second time, for a device to answer one (see learn).
+const learnPatience = 10
+
 // maxPromptLine is the longest last line examined as a prompt or a more-
 // prompt; a longer one is output.
 const maxPromptLine = 512
@@ -45,10 +50,16 @@ const maxPromptLine = 512
 // concurrent use but commands run one after the other; Close does not wait
 // for a command in flight.
 //
-// A session is for show-only use: a shell session finds the end of a
-// command's output by the prompt, so a command that changes the prompt
-// (configure, a mode change) is never seen to end and Run waits for its
-// context.
+// A shell session finds the end of a command's output by the prompt. On
+// Junos it knows the two prompts of the mode a command can lead to
+// (operational '> ', configure '# ', the same user@host): a command that
+// changes the mode ends when the other mode's prompt stands at the end of
+// the output, and the session is then in that mode. A command that changes
+// the prompt in any other way (a host name, a Cisco mode) is never seen to
+// end and Run waits for its context. So does a question the device asks
+// ('Exit with uncommitted changes? [yes,no]', a password prompt): a caller
+// that writes uses 'configure private' or 'configure exclusive' and never
+// sends a bare 'exit' while it has changes.
 type CLISession interface {
 	// Run runs cmd and returns its output without the echoed command and
 	// the prompt, lines ended with '\n'. A command is one line without
@@ -67,6 +78,13 @@ type CLISession interface {
 	// closed: a Client is one device's job and its context the job's
 	// deadline.
 	Run(ctx context.Context, cmd string) (string, error)
+	// Commands is the command lines Run has sent, in order, as the caller
+	// gave them (a copy). Nothing else goes through a session: the keys
+	// typed ahead to find the end of an output and the answers to a pager
+	// are not commands, and no password is ever typed by it. A line is
+	// kept as it was sent, a secret in it included: the caller masks the
+	// secrets when it reads or records Commands, never in the command.
+	Commands() []string
 	Close() error
 }
 
@@ -76,6 +94,7 @@ type CLIOption func(*cliConfig)
 type cliConfig struct {
 	mode Mode
 	pty  bool
+	cmd  string
 }
 
 // WithMode selects the channel type instead of the vendor's.
@@ -85,17 +104,63 @@ func WithMode(m Mode) CLIOption { return func(c *cliConfig) { c.mode = m } }
 // columns), for a device that gives no command line without one.
 func WithPTY() CLIOption { return func(c *cliConfig) { c.pty = true } }
 
+// WithCommand has a shell session run cmd on the channel instead of the
+// login shell (an 'exec' request on the channel, with input from the
+// session: root's csh needs 'cli' to reach the Junos command line). A
+// session so opened is a shell session whatever the vendor's default
+// (combined with WithMode(ModeExec) it is refused). cmd is one line without
+// control characters and is not part of Commands.
+func WithCommand(cmd string) CLIOption { return func(c *cliConfig) { c.cmd = cmd } }
+
 // profile is a vendor's command line.
 type profile struct {
 	// prompt matches a line that may be the device waiting for a command
 	// (the last line of the output, without a trailing newline).
 	prompt *regexp.Regexp
 	mode   Mode
+	// other is the prompt of the mode a command can lead to, given the
+	// prompt of the mode the session is in; "" when the profile has none.
+	other func(prompt string) string
 }
 
 var profiles = map[string]profile{
-	VendorJuniper: {prompt: regexp.MustCompile(`^\S+@\S+> $`), mode: ModeExec},
+	VendorJuniper: {prompt: regexp.MustCompile(`^\S+@\S+> $`), mode: ModeExec, other: junosOtherPrompt},
 	VendorCisco:   {prompt: regexp.MustCompile(`^\S+[>#]$`), mode: ModeShell},
+}
+
+// The endings of the Junos prompts, in one place: the operational prompt is
+// 'user@host> ' and the configure-mode prompt is 'user@host# ', after a
+// location line ('[edit]', '[edit system login]', with a '{master:0}'
+// prefix on a virtual chassis) that is output of the command before it.
+// [L] Observed on one 25.4 virtual chassis only; correct here after the
+// lab spike (L1).
+const (
+	junosOperSuffix   = "> "
+	junosConfigSuffix = "# "
+)
+
+// reJunosLocation matches the location line a Junos device prints before a
+// configure-mode prompt ('[edit]', '[edit protocols bgp]', optionally
+// prefixed '{master:0}' on a virtual chassis). It is output, never a
+// prompt. [L] as above.
+var reJunosLocation = regexp.MustCompile(`^(?:\{[a-z-]+(?::[a-z0-9]+)?\})?\[edit(?: [^\]]*)?\]$`)
+
+// LocationLine reports whether line is the location line a Junos device
+// prints before a configure-mode prompt: '[edit]' or '[edit <path>]',
+// optionally prefixed '{master:0}'. The line is output of the command
+// whose prompt follows it and stays in Run's result; a caller that does not
+// want it removes it with this.
+func LocationLine(line string) bool { return reJunosLocation.MatchString(line) }
+
+// junosOtherPrompt is the prompt of the other mode: 'u@h> ' and 'u@h# '.
+func junosOtherPrompt(prompt string) string {
+	switch {
+	case strings.HasSuffix(prompt, junosOperSuffix):
+		return strings.TrimSuffix(prompt, junosOperSuffix) + junosConfigSuffix
+	case strings.HasSuffix(prompt, junosConfigSuffix):
+		return strings.TrimSuffix(prompt, junosConfigSuffix) + junosOperSuffix
+	}
+	return ""
 }
 
 // rePager matches a line that is a more-prompt of IOS (' --More-- ') or
@@ -119,6 +184,17 @@ func (c *Client) CLI(vendor string, opts ...CLIOption) (CLISession, error) {
 	for _, o := range opts {
 		o(&cfg)
 	}
+	if cfg.cmd != "" {
+		if err := checkCommand(cfg.cmd); err != nil {
+			return nil, err
+		}
+		switch cfg.mode {
+		case ModeExec:
+			return nil, errors.New("devssh: WithCommand is for a shell session")
+		case ModeDefault:
+			cfg.mode = ModeShell
+		}
+	}
 	if cfg.mode == ModeDefault {
 		cfg.mode = prof.mode
 	}
@@ -127,7 +203,7 @@ func (c *Client) CLI(vendor string, opts ...CLIOption) (CLISession, error) {
 	}
 	ctx, cancel := context.WithTimeout(c.ctx, c.timeout)
 	defer cancel()
-	return c.openShell(ctx, prof, cfg.pty)
+	return c.openShell(ctx, prof, cfg)
 }
 
 // checkCommand refuses a command that is more than one line or holds a
@@ -158,11 +234,32 @@ func closedError(err error) error {
 
 // execSession is one exec channel per command.
 type execSession struct {
-	c  *Client
-	mu sync.Mutex
+	c   *Client
+	mu  sync.Mutex
+	log cmdLog
 }
 
 func (e *execSession) Close() error { return nil }
+
+func (e *execSession) Commands() []string { return e.log.list() }
+
+// cmdLog is the ordered command lines a session has sent.
+type cmdLog struct {
+	mu   sync.Mutex
+	cmds []string
+}
+
+func (l *cmdLog) add(cmd string) {
+	l.mu.Lock()
+	l.cmds = append(l.cmds, cmd)
+	l.mu.Unlock()
+}
+
+func (l *cmdLog) list() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.cmds...)
+}
 
 func (e *execSession) Run(ctx context.Context, cmd string) (string, error) {
 	if err := checkCommand(cmd); err != nil {
@@ -184,6 +281,7 @@ func (e *execSession) Run(ctx context.Context, cmd string) (string, error) {
 			return closedError(err)
 		}
 		s.Stdout, s.Stderr = out, out
+		e.log.add(cmd)
 		if err := s.Start(cmd); err != nil {
 			_ = s.Close()
 			return closedError(err)
@@ -259,13 +357,41 @@ type shell struct {
 	prof  profile
 	quiet time.Duration
 
-	mu     sync.Mutex // serialises Run; guards prompt
-	prompt string     // the device's prompt line, learned at login
+	mu     sync.Mutex // serialises Run; guards prompt and alt
+	prompt string     // the prompt of the mode the session is in
+	alt    string     // the prompt of the mode a command can lead to; "" none
 	broken atomic.Bool
+	log    cmdLog
+	// area is what the device printed before its prompt in the answer to
+	// the last empty line typed ahead (PromptArea); areaOK is set once a
+	// command completed.
+	area   []string
+	areaOK bool
+}
+
+// PromptArea is a shell session that tells what the device prints before
+// its prompt: a Junos switch's '{master:0}' line, and the line '# commit
+// confirmed will be rolled back in N minutes' while a confirmed commit is
+// pending (0.2.9 lab L2). Run drops these lines from the end of a command's
+// output; PromptArea returns them as the device printed them in its answer
+// to the last empty line Run typed ahead (the location line not among
+// them, blank lines dropped). ok is false before a command has completed,
+// and after one whose answer to the empty line did not stand on a line of
+// its own: a device that does not echo the empty line prints both prompts
+// on one line, and what stands before its prompt cannot be told.
+type PromptArea interface {
+	PromptArea() (lines []string, ok bool)
+}
+
+// PromptArea is the prompt area of the last command (see the interface).
+func (s *shell) PromptArea() ([]string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.area), s.areaOK
 }
 
 // openShell starts the shell channel and learns the prompt.
-func (c *Client) openShell(ctx context.Context, prof profile, pty bool) (*shell, error) {
+func (c *Client) openShell(ctx context.Context, prof profile, cfg cliConfig) (*shell, error) {
 	out := newSink()
 	var sess *ssh.Session
 	var in io.Writer
@@ -280,13 +406,18 @@ func (c *Client) openShell(ctx context.Context, prof profile, pty bool) (*shell,
 			_ = s.Close()
 			return closedError(err)
 		}
-		if pty {
+		if cfg.pty {
 			if err := s.RequestPty("vt100", 0, 200, ssh.TerminalModes{}); err != nil {
 				_ = s.Close()
 				return fmt.Errorf("%w: the device refused a terminal", ErrClosed)
 			}
 		}
-		if err := s.Shell(); err != nil {
+		if cfg.cmd != "" {
+			if err := s.Start(cfg.cmd); err != nil {
+				_ = s.Close()
+				return fmt.Errorf("%w: the device refused the command", ErrClosed)
+			}
+		} else if err := s.Shell(); err != nil {
 			_ = s.Close()
 			return fmt.Errorf("%w: the device refused a shell", ErrClosed)
 		}
@@ -306,6 +437,9 @@ func (c *Client) openShell(ctx context.Context, prof profile, pty bool) (*shell,
 		return nil, err
 	}
 	sh.prompt = prompt
+	if prof.other != nil {
+		sh.alt = prof.other(prompt)
+	}
 	return sh, nil
 }
 
@@ -319,12 +453,15 @@ func (s *shell) Close() error {
 	return err
 }
 
+func (s *shell) Commands() []string { return s.log.list() }
+
 func (s *shell) Run(ctx context.Context, cmd string) (string, error) {
 	if err := checkShellCommand(cmd); err != nil {
 		return "", err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.area, s.areaOK = nil, false
 	if s.broken.Load() {
 		return "", fmt.Errorf("%w: %s", ErrClosed, s.c.addr)
 	}
@@ -348,10 +485,11 @@ func (s *shell) Run(ctx context.Context, cmd string) (string, error) {
 	if c := s.out.take(); len(c.data) > 0 || c.overflow {
 		return fail(fmt.Errorf("%w: %s: output between commands", ErrProtocol, s.c.addr))
 	}
+	s.log.add(cmd)
 	if err := s.c.write(ctx, s.in, []byte(cmd+"\n")); err != nil {
 		return fail(err)
 	}
-	body, err := s.read(ctx)
+	body, err := s.read(ctx, cmd)
 	if err != nil {
 		return fail(err)
 	}
@@ -370,6 +508,21 @@ type outBuf struct {
 	line, prev int // offsets of the last line and of the line before it; prev -1: none
 	prompt     string
 	hits       []hit
+	// alt is the prompt of the mode a command can lead to ("" none) and
+	// altHits the lines that are it, kept apart from the prompt's.
+	alt     string
+	altHits []hit
+	// echo is the command sent. The first line of the output, when it is
+	// the command echoed, is not a prompt whatever it holds (a command
+	// that is the text of a prompt); the prompt is only taken at the
+	// start of a line after the echo.
+	echo string
+}
+
+// isEcho reports whether line, the first line of the output, is the echo
+// of the command sent.
+func (o *outBuf) isEcho(line string) bool {
+	return o.prev == -1 && o.echo != "" && strings.TrimSpace(line) == o.echo
 }
 
 func (o *outBuf) add(p []byte) {
@@ -381,12 +534,53 @@ func (o *outBuf) add(p []byte) {
 			return
 		}
 		end := base + off + i
-		if n := repeats(strings.TrimRight(string(o.b[o.line:end]), "\r"), o.prompt); n > 0 {
-			o.hits = append(o.hits, hit{o.line, n})
+		line := strings.TrimRight(string(o.b[o.line:end]), "\r")
+		if !o.isEcho(line) {
+			if n := repeats(line, o.prompt); n > 0 {
+				o.hits = append(o.hits, hit{o.line, n})
+			}
+			if n := repeats(line, o.alt); n > 0 {
+				o.altHits = append(o.altHits, hit{o.line, n})
+			}
 		}
 		off += i + 1
 		o.prev, o.line = o.line, base+off
 	}
+}
+
+// reset forgets the prompts counted so far.
+func (o *outBuf) reset() { o.hits, o.altHits = nil, nil }
+
+// at is which prompt the tail line is: 0 the session's, 1 the other
+// mode's, -1 none. The echo of the command is none.
+func (o *outBuf) at(tail string) int {
+	if o.isEcho(tail) {
+		return -1
+	}
+	if repeats(tail, o.prompt) > 0 {
+		return 0
+	}
+	if repeats(tail, o.alt) > 0 {
+		return 1
+	}
+	return -1
+}
+
+// count is how many times prompt k (0 the session's, 1 the other mode's)
+// has been seen: the complete lines that are it, and the tail when that is.
+func (o *outBuf) count(k int) int {
+	p, hits := o.prompt, o.hits
+	if k == 1 {
+		p, hits = o.alt, o.altHits
+	}
+	n := 0
+	for _, h := range hits {
+		n += h.n
+	}
+	if t, ok := o.tail(); ok && !o.isEcho(t) {
+		n += repeats(t, p)
+	}
+	return n
 }
 
 // repeats is how many times line is prompt (and nothing else), 0 if it is
@@ -413,16 +607,7 @@ func (o *outBuf) tail() (string, bool) {
 
 // prompts is how many times the prompt has been seen: the complete lines
 // that are it, and the tail when that is.
-func (o *outBuf) prompts() int {
-	n := 0
-	for _, h := range o.hits {
-		n += h.n
-	}
-	if t, ok := o.tail(); ok {
-		n += repeats(t, o.prompt)
-	}
-	return n
-}
+func (o *outBuf) prompts() int { return o.count(0) }
 
 // skipErase drops the erase sequence a device writes over a more-prompt
 // after the key was pressed (backspaces, blanks, backspaces), right where
@@ -480,12 +665,22 @@ func (s *shell) waitQuiet(ctx context.Context, q time.Duration) (quiet bool, err
 // device has been silent for the quiet period counts: the prompt is the
 // last line of the quiet output, and it is confirmed by typing an empty
 // line, to which the device answers with the prompt again. The prompt has
-// been seen once more for each empty line it answered; fewer (the device
-// flushed what was typed ahead at login) is retried once, more is
-// ambiguous, and either is ErrHandshake.
+// been seen once more for each empty line it answered; more than the empty
+// lines sent is ambiguous (ErrHandshake).
+//
+// No answer within the quiet period is the one step that rests on timing
+// alone: the device flushed what was typed ahead at login, or it is slow
+// (a loaded device answers later than the quiet period). Both are met by
+// typing the empty line once more, and then either answer count is right:
+// one (the first line was lost) or two (both answered, the first late).
+// After the retry a device that stays silent is waited for patiently
+// (learnPatience quiet periods since the retry) before it counts as one
+// that does not answer an empty line (ErrHandshake): judging it after one
+// more quiet period would fail a merely slow device.
 func (s *shell) learn(ctx context.Context) (string, error) {
 	var buf []byte
-	want, retried, quiet := 0, false, false
+	var retriedAt time.Time
+	base, sent, quiet := 0, 0, false
 	for {
 		ch := s.out.take()
 		if ch.overflow || len(buf)+len(ch.data) > maxLoginOutput {
@@ -504,24 +699,24 @@ func (s *shell) learn(ctx context.Context) (string, error) {
 			tail = promptUnit(strings.TrimRight(tail, "\r"), s.prof.prompt)
 			if tail != "" {
 				k := countPrompts(buf, tail)
+				got := k - base
 				switch {
-				case want == 0:
+				case sent == 0:
 					if err := s.c.write(ctx, s.in, []byte("\n")); err != nil {
 						return "", err
 					}
-					want = k + 1
-				case k == want:
-					return tail, nil
-				case k > want:
+					base, sent = k, 1
+				case got > sent:
 					return "", fmt.Errorf("%w: %s: the prompt cannot be told from the banner", ErrHandshake, s.c.addr)
-				case retried:
-					return "", fmt.Errorf("%w: %s: the device does not answer an empty line with its prompt", ErrHandshake, s.c.addr)
-				default:
-					retried = true
+				case got >= 1:
+					return tail, nil
+				case sent == 1:
 					if err := s.c.write(ctx, s.in, []byte("\n")); err != nil {
 						return "", err
 					}
-					want = k + 1
+					sent, retriedAt = 2, time.Now()
+				case time.Since(retriedAt) >= learnPatience*s.quiet:
+					return "", fmt.Errorf("%w: %s: the device does not answer an empty line with its prompt", ErrHandshake, s.c.addr)
 				}
 			}
 		}
@@ -579,11 +774,22 @@ func countPrompts(buf []byte, prompt string) int {
 // prompt ('{master:0}' on Junos switches); they are dropped from the end
 // of the output too.
 //
+// A profile with two prompts (Junos: operational and configure) counts
+// each one apart, and the prompt that stands at the end is the one that
+// counts: the output is over when that one has been seen 1 + (empty lines
+// sent) times. A line of the other prompt in the middle of the output (a
+// banner or a message that looks like it) is output, and one at the end
+// that the device does not repeat when the empty line is typed ahead is
+// not a prompt: the device's own prompt then stands at the end, or the
+// counts disagree (ErrProtocol). When the prompt that ended the output is
+// the other mode's, the session is in that mode from then on. A prompt
+// line is never the echo of the command.
+//
 // A more-prompt at the end that stays for a quiet period is answered with
 // a space, and the count starts again (the more-prompt takes the line that
 // was typed ahead).
-func (s *shell) read(ctx context.Context) (string, error) {
-	o := outBuf{prev: -1, prompt: s.prompt}
+func (s *shell) read(ctx context.Context, cmd string) (string, error) {
+	o := outBuf{prev: -1, prompt: s.prompt, alt: s.alt, echo: strings.TrimSpace(cmd)}
 	sent := 0
 	erase := 0
 	seenErased := 0 // end of the last typed-ahead-key artifact seen
@@ -607,19 +813,27 @@ func (s *shell) read(ctx context.Context) (string, error) {
 			from := max(len(o.b)-len(data)-128, 0)
 			if m := rePagerErased.FindIndex(o.b[from:]); m != nil && from+m[1] > seenErased {
 				seenErased = from + m[1]
-				o.hits = nil
+				o.reset()
 				sent = 0
 			}
 		}
 
 		tail, short := o.tail()
 		pager := short && rePager.MatchString(tail)
-		total := o.prompts()
-		atPrompt := short && repeats(tail, s.prompt) > 0
+		// k is the prompt at the end (the session's or the other mode's).
+		k := -1
+		if short {
+			k = o.at(tail)
+		}
+		atPrompt := k >= 0
+		total := 0
+		if atPrompt {
+			total = o.count(k)
+		}
 		switch {
 		case pager && quiet:
 			o.b = o.b[:o.line]
-			o.hits = nil
+			o.reset()
 			sent = 0
 			erase = 1
 			seenErased = min(seenErased, len(o.b))
@@ -635,7 +849,11 @@ func (s *shell) read(ctx context.Context) (string, error) {
 		case atPrompt && total > 1+sent:
 			return "", s.errInconsistent("the prompt was seen more often than commands were sent")
 		case atPrompt && total == 1+sent && quiet:
-			return s.body(&o), nil
+			if k == 1 {
+				// The command changed the mode: the session is in it.
+				s.prompt, s.alt = s.alt, s.prompt
+			}
+			return s.body(&o, k), nil
 		}
 		quiet = false
 		if ch.closed {
@@ -663,30 +881,47 @@ func (s *shell) pageOrSettle(pager bool) time.Duration {
 	return s.quiet
 }
 
-// body is the output up to the first prompt, less the lines the device
-// prints before a prompt.
-func (s *shell) body(o *outBuf) string {
+// body is the output up to the first prompt (k: 0 the session's, 1 the
+// other mode's), less the lines the device prints before a prompt. The
+// location line of a configure mode ('{master:0}[edit]') is output and is
+// kept even when the device prints it before every prompt.
+func (s *shell) body(o *outBuf, k int) string {
+	hits := o.hits
+	if k == 1 {
+		hits = o.altHits
+	}
 	start := o.line
-	if len(o.hits) > 0 {
-		start = o.hits[0].start
+	if len(hits) > 0 {
+		start = hits[0].start
 	}
 	text := rePagerErased.ReplaceAllString(normalise(string(o.b[:start])), "")
 	// What the device printed between its first prompt and its second
 	// (the answer to the empty line, less the echo) it prints before every
 	// prompt.
 	var extras []string
-	if len(o.hits) > 0 {
+	if len(hits) > 0 {
 		end := o.line
-		if len(o.hits) > 1 {
-			end = o.hits[1].start
+		if len(hits) > 1 {
+			end = hits[1].start
 		}
-		first := o.hits[0].start
+		first := hits[0].start
 		mid := normalise(string(o.b[first:end]))
 		_, mid, _ = strings.Cut(mid, "\n") // the prompt line itself
 		for _, l := range strings.Split(mid, "\n") {
-			if t := strings.TrimSpace(l); t != "" {
+			if t := strings.TrimSpace(l); t != "" && !LocationLine(t) {
 				extras = append(extras, l)
 			}
+		}
+	}
+	s.area, s.areaOK = slices.Clone(extras), len(hits) > 0
+	// The location line stands last, right before the prompt: it is set
+	// aside while the lines before it are trimmed, and put back.
+	keep := ""
+	if t := strings.TrimSuffix(text, "\n"); t != "" {
+		j := strings.LastIndexByte(t, '\n')
+		if LocationLine(strings.TrimSpace(t[j+1:])) {
+			keep = text[j+1:]
+			text = text[:j+1]
 		}
 	}
 	for i := len(extras) - 1; i >= 0; i-- {
@@ -701,7 +936,7 @@ func (s *shell) body(o *outBuf) string {
 			text = trimmed[:j+1]
 		}
 	}
-	return text
+	return text + keep
 }
 
 // stripEcho drops the first line when it is the command the device echoed.

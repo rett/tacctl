@@ -4,7 +4,9 @@
 // the test-build verb 'tacctl _fake-device <dir>' runs it for bats and the
 // diff corpus. The layout of the directory is in transcript.go; a
 // directory with a 'menu' manifest is a menu-driven unit (a WTI console
-// server) instead of a CLI, described in menu.go.
+// server) instead of a CLI, described in menu.go; one with a 'config.set'
+// is a Junos device with a configure model (sessions, a candidate, commit
+// confirmed with a timer, logins), described in junos_config.go.
 //
 // The server is test support, not a model of a device: it authenticates one
 // fixed user and password (by 'password' and by 'keyboard-interactive'),
@@ -234,6 +236,12 @@ type Server struct {
 
 	menuScreens string
 
+	// The configure model of a Junos transcript (junos_config.go).
+	clock    Clock
+	stateDir string
+	junosMu  sync.Mutex
+	jdev     *junosDevice
+
 	netconfOff bool
 	noStatus   bool
 	noRead     bool
@@ -247,10 +255,13 @@ type Server struct {
 	mu       sync.Mutex
 	conns    map[net.Conn]struct{}
 	attempts int
-	logins   int
-	commands []string
-	events   []string
-	stopped  bool
+	// attemptUsers is the user of each presented password, in order.
+	attemptUsers []string
+	logins       int
+	commands     []string
+	events       []string
+	execs        []string
+	stopped      bool
 }
 
 // Serve starts a server on a loopback port with the default credentials
@@ -267,7 +278,7 @@ func New(dir string, opts ...Option) *Server {
 	s := &Server{
 		t: transcript{dir: dir}, user: DefaultUser, password: DefaultPassword,
 		methods: []AuthMethod{AuthPassword, AuthKeyboardInteractive},
-		hostKey: defaultSigner(), echo: true,
+		hostKey: defaultSigner(), echo: true, clock: realClock{},
 		quit: make(chan struct{}), conns: map[net.Conn]struct{}{},
 	}
 	for _, o := range opts {
@@ -296,6 +307,14 @@ func (s *Server) Attempts() int {
 	return s.attempts
 }
 
+// AttemptUsers are the user names the passwords were presented for, in
+// order of arrival.
+func (s *Server) AttemptUsers() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.attemptUsers...)
+}
+
 // Logins is how many connections authenticated.
 func (s *Server) Logins() int {
 	s.mu.Lock()
@@ -310,6 +329,27 @@ func (s *Server) Commands() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.commands...)
+}
+
+// ExecsBy is the commands a Junos configure model ran on an exec channel
+// of the login user, in order of arrival.
+func (s *Server) ExecsBy(user string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	for _, e := range s.execs {
+		if u, cmd, ok := strings.Cut(e, "\x00"); ok && u == user {
+			out = append(out, cmd)
+		}
+	}
+	return out
+}
+
+// logExec records an exec channel's command with its login.
+func (s *Server) logExec(user, cmd string) {
+	s.mu.Lock()
+	s.execs = append(s.execs, user+"\x00"+cmd)
+	s.mu.Unlock()
 }
 
 func (s *Server) log(cmd string) {
@@ -409,12 +449,24 @@ func (s *Server) config() *ssh.ServerConfig {
 	if s.ciphers != nil {
 		cfg.Ciphers = s.ciphers
 	}
+	// A login is counted when the password is accepted, before the server
+	// tells the client: a client that has logged in finds it counted.
 	check := func(user, pw string) bool {
 		u, p := s.credentials()
 		s.mu.Lock()
 		s.attempts++
+		s.attemptUsers = append(s.attemptUsers, user)
 		s.mu.Unlock()
-		return user == u && pw == p
+		if s.junosLoginMode() == "deny" {
+			return false
+		}
+		ok := user == u && pw == p || s.junosAccept(user, pw)
+		if ok {
+			s.mu.Lock()
+			s.logins++
+			s.mu.Unlock()
+		}
+		return ok
 	}
 	for _, m := range s.methods {
 		switch m {
@@ -459,9 +511,13 @@ func (s *Server) serve(c net.Conn) {
 		return
 	}
 	defer func() { _ = sc.Close() }()
-	s.mu.Lock()
-	s.logins++
-	s.mu.Unlock()
+	switch s.junosLoginMode() {
+	case "close":
+		return
+	case "hang":
+		<-s.quit
+		return
+	}
 	go ssh.DiscardRequests(reqs)
 	var sessions sync.WaitGroup
 	defer sessions.Wait()
@@ -481,13 +537,13 @@ func (s *Server) serve(c net.Conn) {
 		sessions.Add(1)
 		go func() {
 			defer sessions.Done()
-			s.session(ch, creqs)
+			s.session(sc, ch, creqs)
 		}()
 	}
 }
 
 // session answers the requests of one session channel.
-func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
+func (s *Server) session(sc *ssh.ServerConn, ch ssh.Channel, reqs <-chan *ssh.Request) {
 	defer func() { _ = ch.Close() }()
 	var work sync.WaitGroup
 	defer work.Wait()
@@ -498,6 +554,7 @@ func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 			continue
 		}
 		ok := false
+		var start func() // the session's work, started once replied
 		switch r.Type {
 		case "pty-req", "env", "window-change":
 			ok = true
@@ -508,13 +565,25 @@ func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 			var run func()
 			switch r.Type {
 			case "shell":
-				run = func() { s.shell(ch) }
+				run = func() {
+					if d := s.junos(); d != nil && !s.t.exists("menu") {
+						s.junosShell(d, ch, junosConn{user: sc.User(), drop: func() { _ = sc.Close() }})
+						return
+					}
+					s.shell(ch)
+				}
 			case "exec":
 				var p struct{ Command string }
 				if ssh.Unmarshal(r.Payload, &p) != nil {
 					break
 				}
-				run = func() { s.exec(ch, p.Command) }
+				run = func() {
+					if d := s.junos(); d != nil && !s.t.exists("menu") {
+						s.junosExec(d, ch, junosConn{user: sc.User(), drop: func() { _ = sc.Close() }}, p.Command)
+						return
+					}
+					s.exec(ch, p.Command)
+				}
 			default:
 				var p struct{ Name string }
 				if ssh.Unmarshal(r.Payload, &p) != nil || p.Name != "netconf" {
@@ -528,7 +597,16 @@ func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 			if run == nil {
 				break
 			}
-			ok, started = true, true
+			ok, started, start = true, true, run
+		}
+		// The reply goes out before the session starts, as a server must:
+		// a command that ends at once closes the channel, and a reply sent
+		// after the close is lost, which fails the client's request with
+		// EOF.
+		if r.WantReply {
+			_ = r.Reply(ok, nil)
+		}
+		if start != nil {
 			work.Add(1)
 			go func() {
 				defer work.Done()
@@ -537,11 +615,8 @@ func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 					<-s.quit
 					return
 				}
-				run()
+				start()
 			}()
-		}
-		if r.WantReply {
-			_ = r.Reply(ok, nil)
 		}
 	}
 }

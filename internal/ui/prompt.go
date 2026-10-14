@@ -59,6 +59,16 @@ func (p *Prompter) Ask(prompt string) string {
 	return strings.Trim(line, " \t")
 }
 
+// ReadLine reads one line as Ask does, with no prompt; ok is false at the end
+// of input when nothing was read, so a caller that reads in a loop stops.
+func (p *Prompter) ReadLine() (line string, ok bool) {
+	line, err := p.in.ReadString('\n')
+	if err != nil && line == "" {
+		return "", false
+	}
+	return strings.Trim(strings.TrimSuffix(line, "\n"), " \t"), true
+}
+
 // Confirm asks and is true only for exactly "y" or "Y": the
 // '[[ "$c" != "y" && "$c" != "Y" ]]' sites (install, uninstall, group
 // remove, user remove, backend and RADIUS prompts, restore, rollback).

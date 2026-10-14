@@ -1,0 +1,11 @@
++ firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.0/24
++ snmp community <secret:1> authorization read-only
++ snmp community <secret:1> client-list-name MGMT
+- snmp location Rack 3
++ snmp location Rack 4
++ system authentication-order password
++ system authentication-order tacplus
++ system login class RW-CLASS permissions all
++ system login user RW-CLASS class RW-CLASS
++ system tacplus-server 192.0.2.8 secret <secret>
++ system tacplus-server 192.0.2.8 single-connection

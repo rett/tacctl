@@ -290,3 +290,26 @@ func TestRecordFactsRoundTrip(t *testing.T) {
 		t.Errorf("legacy record: %+v", r)
 	}
 }
+
+// JunosHostName is the device's own name: host-name, with domain-name
+// appended when the name has no dot; text a device controls is made safe.
+func TestJunosHostName(t *testing.T) {
+	for _, c := range []struct{ name, in, want string }{
+		{"both", "set system host-name sw1\nset system domain-name lab.example.net\n", "sw1.lab.example.net"},
+		{"bare", "set system host-name sw1\n", "sw1"},
+		{"a fqdn is kept", "set system host-name sw1.a.example.net\nset system domain-name b.example.net\n", "sw1.a.example.net"},
+		{"quoted", `set system host-name "sw1"` + "\n" + `set system domain-name "lab.example.net"` + "\n", "sw1.lab.example.net"},
+		{"none", "set system domain-name lab.example.net\nset snmp location x\n", ""},
+		{"the first wins", "set system host-name a\nset system host-name b\n", "a"},
+		{"not a group's", "set groups g system host-name evil\n", ""},
+		{"control characters", "set system host-name \"a\x1b[2Jb\"\n", "a?[2Jb"},
+	} {
+		if got := JunosHostName(c.in); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
+	}
+	ext, err := ExtractWith("juniper", "set system host-name sw1\nset system domain-name lab.example.net\nset snmp location x\n", Options{})
+	if err != nil || ext.Hostname != "sw1.lab.example.net" {
+		t.Errorf("ExtractWith: %q %v", ext.Hostname, err)
+	}
+}

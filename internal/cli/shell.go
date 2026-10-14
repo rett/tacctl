@@ -337,6 +337,12 @@ func shellArgv(exe string, words []string, noPrompt bool, extraEnv []string, env
 func (inv *invocation) shellExec(exe string, managed bool, t tier.Tier, extraEnv []string) func(context.Context, []string, io.Reader) int {
 	a := inv.app
 	return func(ctx context.Context, words []string, stdin io.Reader) int {
+		if len(words) == 0 {
+			// A pasted line that is only 'tacctl': what the command prints
+			// with no arguments (root.go's topUsage: the usage, exit 1).
+			inv.writeTopUsage()
+			return 1
+		}
 		if words[0] == "shell" {
 			a.Out.Error("already in the tacctl shell")
 			return 1

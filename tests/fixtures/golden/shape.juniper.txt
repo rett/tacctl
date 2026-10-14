@@ -1,0 +1,171 @@
+# juniper.synthetic-lab
+shape fc5bfbbbc5bb algo 1
+[snmp]
+set snmp description <v>
+
+# juniper.synthetic-lab-engineer
+no shape
+
+# juniper.synthetic-lab-nolo0
+shape fc5bfbbbc5bb algo 1
+[snmp]
+set snmp description <v>
+
+# juniper.synthetic-inherit
+shape aefd8ce77bf2 algo 1
+[roles]
+set system login class EN-CLASS permissions clear
+set system login class EN-CLASS permissions configure
+set system login class EN-CLASS permissions firewall
+set system login class EN-CLASS permissions firewall-control
+set system login class EN-CLASS permissions interface
+set system login class EN-CLASS permissions interface-control
+set system login class EN-CLASS permissions network
+set system login class EN-CLASS permissions reset
+set system login class EN-CLASS permissions rollback
+set system login class EN-CLASS permissions routing
+set system login class EN-CLASS permissions routing-control
+set system login class EN-CLASS permissions snmp
+set system login class EN-CLASS permissions system
+set system login class EN-CLASS permissions system-control
+set system login class EN-CLASS permissions trace
+set system login class EN-CLASS permissions view
+set system login class EN-CLASS permissions view-configuration
+set system login class OP-CLASS permissions network
+set system login class OP-CLASS permissions trace
+set system login class OP-CLASS permissions view
+set system login class OP-CLASS permissions view-configuration
+set system login class RO-CLASS permissions network
+set system login class RO-CLASS permissions view
+set system login class RO-CLASS permissions view-configuration
+set system login class RW-CLASS permissions all
+set system login user EN-CLASS class EN-CLASS
+set system login user OP-CLASS class OP-CLASS
+set system login user RO-CLASS class RO-CLASS
+set system login user RW-CLASS class RW-CLASS
+[snmp]
+set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict
+set snmp client-list TACCTL-SNMP 192.0.2.10/32
+set snmp client-list TACCTL-SNMP 198.51.100.0/24
+set snmp community <secret:1> authorization read-only
+set snmp community <secret:1> client-list-name TACCTL-SNMP
+set snmp contact <v>
+set snmp description <v>
+set snmp location <v>
+[mgmt-acl]
+set firewall family inet filter MGMT-ACL term default-accept then accept
+set firewall family inet filter MGMT-ACL term deny-mgmt from destination-port 830
+set firewall family inet filter MGMT-ACL term deny-mgmt from destination-port ssh
+set firewall family inet filter MGMT-ACL term deny-mgmt from protocol tcp
+set firewall family inet filter MGMT-ACL term deny-mgmt then discard
+set firewall family inet filter MGMT-ACL term deny-mgmt then log
+set firewall family inet filter MGMT-ACL term deny-snmp from destination-port snmp
+set firewall family inet filter MGMT-ACL term deny-snmp from protocol udp
+set firewall family inet filter MGMT-ACL term deny-snmp then discard
+set firewall family inet filter MGMT-ACL term deny-snmp then log
+set firewall family inet filter MGMT-ACL term permit-mgmt from destination-port 830
+set firewall family inet filter MGMT-ACL term permit-mgmt from destination-port ssh
+set firewall family inet filter MGMT-ACL term permit-mgmt from protocol tcp
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.0/24
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.10/32
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 198.51.100.0/24
+set firewall family inet filter MGMT-ACL term permit-mgmt then accept
+set firewall family inet filter MGMT-ACL term permit-snmp from destination-port snmp
+set firewall family inet filter MGMT-ACL term permit-snmp from protocol udp
+set firewall family inet filter MGMT-ACL term permit-snmp from source-address 192.0.2.10/32
+set firewall family inet filter MGMT-ACL term permit-snmp from source-address 198.51.100.0/24
+set firewall family inet filter MGMT-ACL term permit-snmp then accept
+
+# juniper.lab-superuser
+shape ebb2fc327ac3 algo 1
+[roles]
+delete system login class OP-CLASS permissions clear
+[aaa]
+delete system accounting events interactive-commands
+set system tacplus-server 192.0.2.10 secret <secret>
+set system tacplus-server 192.0.2.10 single-connection
+[snmp]
+set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict
+set snmp client-list TACCTL-SNMP 192.0.2.10/32
+set snmp client-list TACCTL-SNMP 198.51.100.0/24
+set snmp community <secret:1> authorization read-only
+set snmp community <secret:1> client-list-name TACCTL-SNMP
+set snmp contact <v>
+set snmp description <v>
+set snmp location <v>
+[mgmt-acl]
+set firewall family inet filter MGMT-ACL term default-accept then accept
+set firewall family inet filter MGMT-ACL term deny-mgmt from destination-port 830
+set firewall family inet filter MGMT-ACL term deny-mgmt from destination-port ssh
+set firewall family inet filter MGMT-ACL term deny-mgmt from protocol tcp
+set firewall family inet filter MGMT-ACL term deny-mgmt then discard
+set firewall family inet filter MGMT-ACL term deny-mgmt then log
+set firewall family inet filter MGMT-ACL term deny-snmp from destination-port snmp
+set firewall family inet filter MGMT-ACL term deny-snmp from protocol udp
+set firewall family inet filter MGMT-ACL term deny-snmp then discard
+set firewall family inet filter MGMT-ACL term deny-snmp then log
+set firewall family inet filter MGMT-ACL term permit-mgmt from destination-port 830
+set firewall family inet filter MGMT-ACL term permit-mgmt from destination-port ssh
+set firewall family inet filter MGMT-ACL term permit-mgmt from protocol tcp
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.0/24
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.10/32
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 198.51.100.0/24
+set firewall family inet filter MGMT-ACL term permit-mgmt then accept
+set firewall family inet filter MGMT-ACL term permit-snmp from destination-port snmp
+set firewall family inet filter MGMT-ACL term permit-snmp from protocol udp
+set firewall family inet filter MGMT-ACL term permit-snmp from source-address 192.0.2.10/32
+set firewall family inet filter MGMT-ACL term permit-snmp from source-address 198.51.100.0/24
+set firewall family inet filter MGMT-ACL term permit-snmp then accept
+
+# juniper.lab-engineer
+shape bc3daa0f6a9f algo 1
+[mgmt-acl]
+set firewall family inet filter MGMT-ACL term default-accept then accept
+set firewall family inet filter MGMT-ACL term deny-mgmt from destination-port 830
+set firewall family inet filter MGMT-ACL term deny-mgmt from destination-port ssh
+set firewall family inet filter MGMT-ACL term deny-mgmt from protocol tcp
+set firewall family inet filter MGMT-ACL term deny-mgmt then discard
+set firewall family inet filter MGMT-ACL term deny-mgmt then log
+set firewall family inet filter MGMT-ACL term deny-snmp from destination-port snmp
+set firewall family inet filter MGMT-ACL term deny-snmp from protocol udp
+set firewall family inet filter MGMT-ACL term deny-snmp then discard
+set firewall family inet filter MGMT-ACL term deny-snmp then log
+set firewall family inet filter MGMT-ACL term permit-mgmt from destination-port 830
+set firewall family inet filter MGMT-ACL term permit-mgmt from destination-port ssh
+set firewall family inet filter MGMT-ACL term permit-mgmt from protocol tcp
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.0/24
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.10/32
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 198.51.100.0/24
+set firewall family inet filter MGMT-ACL term permit-mgmt then accept
+set firewall family inet filter MGMT-ACL term permit-snmp from destination-port snmp
+set firewall family inet filter MGMT-ACL term permit-snmp from protocol udp
+set firewall family inet filter MGMT-ACL term permit-snmp from source-address 192.0.2.10/32
+set firewall family inet filter MGMT-ACL term permit-snmp from source-address 198.51.100.0/24
+set firewall family inet filter MGMT-ACL term permit-snmp then accept
+
+# juniper.synthetic-communities
+no shape
+
+# juniper.synthetic-system
+shape fc5bfbbbc5bb algo 1
+[snmp]
+set snmp description <v>
+
+# juniper.synthetic-system-new
+shape 3f3ed0424f12 algo 1
+[snmp]
+set snmp description <v>
+[system]
+set system domain-name lab.example.net
+set system domain-search lab.example.net
+set system login message <v>
+set system name-server 192.0.2.53
+set system ntp authentication-key 1 value <secret>
+set system ntp boot-server 192.0.2.123
+set system ntp server 192.0.2.123 key 1
+set system ntp server 192.0.2.123 prefer
+set system ntp server 192.0.2.123 version 4
+set system ntp source-address 192.0.2.250
+set system ntp trusted-key 1
+set system time-zone UTC
+

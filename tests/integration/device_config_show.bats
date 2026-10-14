@@ -134,7 +134,8 @@ plain() {
     assert_output --partial "diff <name>[,<name>...] | --all"
     assert_output --partial "list [--stale] [--never] [--failed] [--differs]"
     assert_output --partial "forget <name>[,<name>...] | --all"
-    refute_output --partial "apply"
+    assert_output --partial "apply <name>[,<name>...] | --all"
+    assert_output --partial "shapes [list [--show <hash>]"
     run "$TACCTL_BIN_SCRIPT" device config frob
     assert_failure 1
     assert_output --partial "Unknown subcommand: 'frob'"

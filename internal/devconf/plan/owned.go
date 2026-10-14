@@ -75,7 +75,7 @@ var junosOwned = []OwnedRow{
 	{ID: "junos.roles.class", Section: "roles", Pattern: "system login class $", Mode: ModeWhole,
 		Why:  "the login classes tacctl renders (every leaf of a rendered class, allow-*/deny-* included)",
 		Kept: "every other class; a template user's uid and authentication leaves"},
-	{ID: "junos.roles.user-class", Section: "roles", Pattern: "system login user $ class", Mode: ModeSingle,
+	{ID: "junos.roles.user-class", Section: "roles", Pattern: "system login user $ class", Mode: ModeSingle, Depth: 6,
 		Why:  "the class of the template users",
 		Kept: "every other user"},
 

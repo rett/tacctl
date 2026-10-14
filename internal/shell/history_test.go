@@ -32,6 +32,14 @@ func TestRedact(t *testing.T) {
 		// A line that does not tokenize is judged by its fields.
 		{"scope secret lab set 'abc", "scope secret lab set …(redacted)"},
 		{"  ", "  "},
+		// a leading command is kept as typed and is no part of the verb
+		{"tacctl user list", "tacctl user list"},
+		{"tacctl passwd secret", "tacctl passwd …(redacted)"},
+		{"sudo tacctl passwd secret", "sudo tacctl passwd …(redacted)"},
+		{"/usr/local/bin/tacctl user add bob ops --hash x", "/usr/local/bin/tacctl user add bob ops --hash …(redacted)"},
+		{"tacctl scope secret lab set x", "tacctl scope secret lab set …(redacted)"},
+		{"tacctl", "tacctl"},
+		{"sudo tacctl", "sudo tacctl"},
 	}
 	for _, c := range cases {
 		if got := Redact(c.line); got != c.want {

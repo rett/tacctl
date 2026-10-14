@@ -1,0 +1,23 @@
+# The committed configuration of the fake Junos device with a configure
+# model (internal/devssh/fakedev/junos_config.go): 'set' lines, example.*
+# names and documentation addresses only. The $9$ values are made up.
+set system host-name example-sw1
+set system domain-name lab.example.net
+set system time-zone UTC
+set system authentication-order tacplus
+set system authentication-order password
+set system tacplus-server 192.0.2.10 secret "$9$fakeSecretValue1"
+set system tacplus-server 192.0.2.10 source-address 192.0.2.77
+set system login class eng permissions view
+set system login class eng permissions view-configuration
+set system login user alice class super-user
+set system login user alice uid 2001
+set system login user alice authentication encrypted-password "$6$fakeSalt$fakeHashValue"
+set system ntp server 192.0.2.123
+set snmp location "Example rack 2"
+set snmp community example-ro authorization read-only
+set snmp community example-ro clients 192.0.2.0/24
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.0/24
+set firewall family inet filter MGMT-ACL term permit-mgmt then accept
+set firewall family inet filter MGMT-ACL term deny-rest then discard
+set interfaces lo0 unit 0 family inet filter input MGMT-ACL

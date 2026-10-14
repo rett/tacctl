@@ -85,13 +85,16 @@ func (inv *invocation) configLogin(what string) (string, error) {
 // skippedDevices counts what a selection left out, by reason.
 type skippedDevices struct {
 	noScope, other, notYours []string
+	// notJunos are the devices of a selector that 'device config apply'
+	// leaves out: it writes to Junos devices only (0.2.9).
+	notJunos []string
 	// held are the devices a break-glass hold stands on: the server does
 	// not answer them, so no login of the caller is accepted there (D126).
 	held []string
 }
 
 func (s skippedDevices) any() bool {
-	return len(s.noScope)+len(s.other)+len(s.notYours)+len(s.held) > 0
+	return len(s.noScope)+len(s.other)+len(s.notYours)+len(s.held)+len(s.notJunos) > 0
 }
 
 // linesFor are the notes about what was left out, with the names.
@@ -111,6 +114,7 @@ func (s skippedDevices) linesFor(string) []string {
 	add(s.noScope, "no scope's prefixes cover the address")
 	add(s.other, "the vendor is 'other'; set it with: tacctl device vendor <name> cisco|juniper|wti")
 	add(s.notYours, "in a scope you are not a member of: the device login is your own account")
+	add(s.notJunos, "apply writes to Junos devices only in this release")
 	for _, n := range s.held {
 		out = append(out, "skipped "+n+": "+holdRefusal(n))
 	}
@@ -167,7 +171,7 @@ func holdRefusal(name string) string {
 
 func (s skippedDevices) jsonMap() map[string][]string {
 	m := map[string][]string{}
-	for k, v := range map[string][]string{"no_scope": s.noScope, "vendor_other": s.other, "not_your_scope": s.notYours, "break_glass_held": s.held} {
+	for k, v := range map[string][]string{"no_scope": s.noScope, "vendor_other": s.other, "not_your_scope": s.notYours, "break_glass_held": s.held, "not_junos": s.notJunos} {
 		if len(v) > 0 {
 			m[k] = v
 		}

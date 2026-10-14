@@ -39,7 +39,9 @@ func IsConsole(argv0 string) bool {
 
 // Guard decides a -c string (design decision 25): it must be one line
 // that tokenizes (shell.Tokenize) to words whose first is a tacctl command
-// (isCommand) or help. The shell's own words (history, exit, quit,
+// (isCommand) or help, after a leading 'tacctl' or 'sudo tacctl' is
+// dropped as the shell does (a line that is only that is the usage, first
+// 'tacctl'). The shell's own words (history, exit, quit,
 // system-shell), an empty string and anything else are refused. first is
 // the first word (for the log; "" when there is none).
 func Guard(line string, isCommand func(string) bool) (first string, ok bool) {
@@ -47,7 +49,18 @@ func Guard(line string, isCommand func(string) bool) (first string, ok bool) {
 		return firstWord(line), false
 	}
 	words, err := shell.Tokenize(line)
-	if err != nil || len(words) == 0 {
+	if err != nil {
+		return firstWord(line), false
+	}
+	// The shell runs the line without a leading 'tacctl' (or 'sudo
+	// tacctl'), so the guard decides on the same words. A line that is
+	// only that is 'tacctl' with no arguments: the top-level usage.
+	lead := shell.BinaryWords(words)
+	words = shell.StripBinary(words)
+	if len(words) == 0 {
+		if lead > 0 {
+			return "tacctl", true
+		}
 		return firstWord(line), false
 	}
 	first = words[0]

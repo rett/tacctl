@@ -58,6 +58,23 @@ _state_024() {
     "$TACCTL_BIN_SCRIPT" config sudoers tiers install > /dev/null <<< "y"
 }
 
+# A 0.2.9 state: the 0.2.4 one, the two settings of 'device config apply',
+# a record with an applied part and the fields of a --login pull, and the
+# apply state directory.
+_state_029() {
+    _state_024
+    "$TACCTL_BIN_SCRIPT" config devices apply-confirm-timeout 15 > /dev/null
+    "$TACCTL_BIN_SCRIPT" config devices apply-pause 30 > /dev/null
+    cat > "$TACCTL_VAR_LIB/devices-config.json" <<'JSON'
+{"version": 1, "devices": {
+ "sw2": {"address": "192.0.2.8", "vendor": "juniper", "hostname": "sw2.example.net", "login": "local:admin", "user_pulled": true,
+   "applied": {"at": "2026-10-13T10:00:00Z", "by": "alice", "result": "applied", "id": "tacctl-20261013T100000Z-ab12", "kind": "apply", "shape": "0123abcd"}}}}
+JSON
+    mkdir -p "$TACCTL_VAR_LIB/device-apply/locks"
+    echo '{}' > "$TACCTL_VAR_LIB/device-apply/shapes.json"
+    : > "$TACCTL_VAR_LIB/device-apply/locks/sw2.lock"
+}
+
 # Every regular file of the state, with its checksum.
 _sums() { (cd "$BATS_TEST_TMPDIR" && find state var-lib sudoers.d -type f ! -name '.*.lock' -print0 2> /dev/null | sort -z | xargs -0 sha256sum); }
 _snapshots() { find "$TACCTL_STATE_DIR/backups" -mindepth 1 -maxdepth 1 -type d -name '2*' | wc -l; }
@@ -68,7 +85,7 @@ _overrides() { cat "${TACCTL_STATE_DIR}/tacctl.yaml" 2>/dev/null; }
     before=$(_sums)
     run "$TACCTL_BIN_SCRIPT" rollback 0.2.2
     assert_failure 1
-    assert_output --partial "prepares the state for 0.2.3 only (0.2.2 is older)"
+    assert_output --partial "and 0.2.3 only (0.2.2 is older)"
     assert_output --partial "Go back one release at a time"
     assert_output --partial "tacctl rollback 0.2.3 --apply"
     assert_output --partial "tacctl upgrade --branch 0.2.3"
@@ -80,7 +97,12 @@ _overrides() { cat "${TACCTL_STATE_DIR}/tacctl.yaml" 2>/dev/null; }
     assert_output --partial "Rolling back to 0.2.1 is not supported from this release"
     run "$TACCTL_BIN_SCRIPT" rollback 0.2.4
     assert_failure 1
-    assert_output --partial "prepares the state for 0.2.3 only"
+    assert_output --partial "and 0.2.3 only (0.2.4 is further back)"
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.7 --apply --yes
+    assert_failure 1
+    assert_output --partial "and 0.2.3 only (0.2.7 is further back)"
+    assert_output --partial "tacctl rollback 0.2.8 --apply"
+    assert_output --partial "tacctl upgrade --branch 0.2.8"
     run "$TACCTL_BIN_SCRIPT" rollback develop
     assert_failure 1
     assert_output --partial "'develop' is not a release this tacctl knows"
@@ -288,4 +310,122 @@ _overrides() { cat "${TACCTL_STATE_DIR}/tacctl.yaml" 2>/dev/null; }
     ! stub_called "^ssh "
     run _overrides
     refute_output --partial "max_concurrency"
+}
+
+@test "rollback 0.2.8: the dry run lists every step and warning and writes nothing" {
+    _state_029
+    before=$(_sums)
+    n=$(_snapshots)
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.8 --hosts
+    assert_success
+    assert_output --partial "Roll back to 0.2.8 (dry run)"
+    assert_output --partial "tacctl.yaml: remove the keys 0.2.8 does not know   [does]"
+    assert_output --partial "remove device.apply.confirm_timeout"
+    assert_output --partial "remove device.apply.pause"
+    assert_output --partial "put back the sudoers drop-ins 0.2.8 writes   [does]"
+    assert_output --partial "rewrite ${TACCTL_TIER_SUDOERS_FILE}"
+    assert_output --partial "leaves ${TACCTL_VAR_LIB}/devices-config.json"
+    assert_output --partial "1 record has an 'applied' part"
+    assert_output --partial "'login', 'user_pulled' or 'hostname'"
+    assert_output --partial "0.2.8 ignores the fields it does not know"
+    assert_output --partial "leaves ${TACCTL_VAR_LIB}/device-apply (the state of 'device config apply': shapes.json; 1 device lock in locks/)"
+    assert_output --partial "no host is synced"
+    assert_output --partial "Settings 0.2.8 cannot use are dropped"
+    assert_output --partial "device.apply.confirm_timeout=15, device.apply.pause=30"
+    assert_output --partial "This was a dry run: nothing was changed."
+    assert_output --partial "tacctl rollback 0.2.8 --apply --yes"
+    refute_output --partial "console.yaml: write it"
+    [[ "$(_sums)" == "$before" ]]
+    [[ "$(_snapshots)" == "$n" ]]
+}
+
+@test "rollback 0.2.8 --apply --yes: the keys removed, the drop-ins 0.2.8's, what it ignores left, a second run changes nothing" {
+    _state_029
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.8 --apply
+    assert_failure 1
+    assert_output --partial "The warnings above need your decision"
+    n=$(_snapshots)
+    grep -q "device config apply \*" "$TACCTL_TIER_SUDOERS_FILE"
+    kept=("$TACCTL_VAR_LIB/devices-config.json" "$TACCTL_VAR_LIB/device-apply/shapes.json" "${TACCTL_STATE_DIR}/console.yaml" "${TACCTL_STATE_DIR}/devices.yaml" "${TACCTL_STATE_DIR}/store.yaml")
+    records=$(sha256sum "${kept[@]}")
+    : > "$CALLS_LOG"
+
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.8 --apply --yes
+    assert_success
+    assert_output --partial "Config snapshot saved to"
+    assert_output --partial "removed 2 keys"
+    assert_output --partial "${TACCTL_TIER_SUDOERS_FILE}: rewritten with the text 0.2.8 writes"
+    assert_output --partial "tacctl upgrade --branch 0.2.8"
+    stub_called "^logger .*rollback target=0.2.8 keys=2"
+    [[ "$(_snapshots)" == "$((n + 1))" ]]
+    snap=$(find "$TACCTL_STATE_DIR/backups" -mindepth 1 -maxdepth 1 -type d -name '2*' | sort | tail -1)
+    grep -q "confirm_timeout: 15" "$snap/tacctl.yaml"
+
+    run _overrides
+    refute_output --partial "confirm_timeout: 15"
+    refute_output --partial "pause: 30"
+    assert_output --partial "max_concurrency: 16"
+    assert_output --partial "engineer: engineer"
+    run grep -c "device config apply\|device onboard\|device collect" "$TACCTL_TIER_SUDOERS_FILE"
+    assert_output "0"
+    grep -q "TACCTL_ASKPASS" "$TACCTL_TIER_SUDOERS_FILE"
+    # What 0.2.8 ignores or reads as it is stays, byte for byte.
+    [[ "$(sha256sum "${kept[@]}")" == "$records" ]]
+    [[ -e "$TACCTL_VAR_LIB/device-apply/locks/sw2.lock" ]]
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_success
+
+    after=$(_sums)
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.8 --apply --yes
+    assert_success
+    assert_output --partial "Nothing to convert: every file is one 0.2.8 can read."
+    [[ "$(_sums)" == "$after" ]]
+    [[ "$(_snapshots)" == "$((n + 1))" ]]
+}
+
+@test "rollback 0.2.8: an edited drop-in is left and named" {
+    _state_029
+    echo "# local addition" >> "$TACCTL_TIER_SUDOERS_FILE"
+    before=$(sha256sum "$TACCTL_TIER_SUDOERS_FILE")
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.8 --apply --yes
+    assert_success
+    assert_output --partial "leaves ${TACCTL_TIER_SUDOERS_FILE}: it is not the text this release writes"
+    [[ "$(sha256sum "$TACCTL_TIER_SUDOERS_FILE")" == "$before" ]]
+    run _overrides
+    refute_output --partial "confirm_timeout"
+}
+
+@test "rollback: a pending or unknown apply stops it for both targets, the dry run too, and changes nothing" {
+    _state_029
+    cat > "$TACCTL_VAR_LIB/devices-config.json" <<'JSON'
+{"version": 1, "devices": {
+ "sw2": {"address": "192.0.2.8", "vendor": "juniper",
+   "applied": {"at": "2026-10-13T10:00:00Z", "until": "2026-10-13T12:10:00Z", "by": "alice", "result": "pending", "id": "tacctl-20261013T100000Z-ab12", "kind": "apply"}}}}
+JSON
+    before=$(_sums)
+    n=$(_snapshots)
+    for target in 0.2.8 0.2.3; do
+        for args in "" "--apply --yes"; do
+            # shellcheck disable=SC2086
+            run "$TACCTL_BIN_SCRIPT" rollback "$target" $args
+            assert_failure 1
+            assert_output --partial "is not settled on 1 device"
+            assert_output --partial "sw2: pending until 2026-10-13"
+            assert_output --partial "tacctl device config apply sw2 --check"
+            assert_output --partial "tacctl device config forget sw2"
+            assert_output --partial "Nothing was changed."
+        done
+    done
+    [[ "$(_sums)" == "$before" ]]
+    [[ "$(_snapshots)" == "$n" ]]
+}
+
+@test "rollback 0.2.8 is the superuser's alone" {
+    _state_029
+    before=$(_sums)
+    stub_cmd id 'echo "users tac-users tac-engineer"'
+    SUDO_USER=erin run "$TACCTL_BIN_SCRIPT" rollback 0.2.8 --apply --yes
+    assert_failure 1
+    assert_output --partial "is not permitted for the engineer tier"
+    [[ "$(_sums)" == "$before" ]]
 }

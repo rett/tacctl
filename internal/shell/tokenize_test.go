@@ -132,3 +132,49 @@ func FuzzTokenize(f *testing.F) {
 		}
 	})
 }
+
+func TestStripBinary(t *testing.T) {
+	cases := []struct {
+		line string
+		want []string
+		n    int
+	}{
+		{"tacctl device list", []string{"device", "list"}, 1},
+		{"sudo tacctl device list", []string{"device", "list"}, 2},
+		{"/usr/local/bin/tacctl device list", []string{"device", "list"}, 1},
+		{"sudo /usr/local/bin/tacctl help", []string{"help"}, 2},
+		{"tacctl", []string{}, 1},
+		{"sudo tacctl", []string{}, 2},
+		// only once
+		{"tacctl tacctl", []string{"tacctl"}, 1},
+		{"sudo tacctl tacctl", []string{"tacctl"}, 2},
+		{"tacctl sudo tacctl", []string{"sudo", "tacctl"}, 1},
+		// never elsewhere, never as a value
+		{"device add tacctl", []string{"device", "add", "tacctl"}, 0},
+		{"user show tacctl", []string{"user", "show", "tacctl"}, 0},
+		{"sudo ls", []string{"sudo", "ls"}, 0},
+		{"sudo", []string{"sudo"}, 0},
+		{"sudo -n tacctl user list", []string{"sudo", "-n", "tacctl", "user", "list"}, 0},
+		{"tacctlx user list", []string{"tacctlx", "user", "list"}, 0},
+		{"./tacctl user list", []string{"./tacctl", "user", "list"}, 0},
+		{"/opt/tacctl/dist/tacctl user list", []string{"/opt/tacctl/dist/tacctl", "user", "list"}, 0},
+		// a quoted word is the same word to the tokenizer
+		{`"tacctl" user list`, []string{"user", "list"}, 1},
+		{"", []string{}, 0},
+	}
+	for _, c := range cases {
+		words, err := Tokenize(c.line)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n := BinaryWords(words); n != c.n {
+			t.Errorf("BinaryWords(%q) = %d, want %d", c.line, n, c.n)
+		}
+		if got := StripBinary(words); !slices.Equal(got, c.want) {
+			t.Errorf("StripBinary(%q) = %q, want %q", c.line, got, c.want)
+		}
+	}
+	if got := StripBinary(nil); len(got) != 0 {
+		t.Errorf("StripBinary(nil) = %q", got)
+	}
+}

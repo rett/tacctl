@@ -139,7 +139,7 @@ usage_case() {
     local ver
     ver=$("$TACCTL_BIN_SCRIPT" version | sed 's/^tacctl //')
     [[ -n "$ver" ]]
-    [[ "$(plain <<< "${lines[1]}")" == "tacctl (${ver}) — Network-device AAA from one store: TACACS+ (tacquito) and RADIUS (FreeRADIUS)" ]]
+    [[ "$(plain <<< "${lines[1]}")" == "tacctl (${ver}) — Pluggable network-device AAA management" ]]
 }
 
 # bats test_tags=cutover:wp0-1

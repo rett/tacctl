@@ -359,7 +359,7 @@ func checkPlain(t *testing.T, name, vendor, p string) {
 		case l == "" || strings.HasPrefix(l, "#") || strings.HasPrefix(l, "!"):
 			t.Errorf("%s: plain holds %q", name, l)
 		case vendor == devconf.FamilyJunos:
-			if l == "configure private" || l == "commit check" || strings.HasPrefix(l, "commit ") || strings.HasPrefix(l, "show ") {
+			if l == "configure exclusive" || l == "commit check" || strings.HasPrefix(l, "commit ") || strings.HasPrefix(l, "show ") {
 				t.Errorf("%s: plain holds the wrapper line %q", name, l)
 			}
 			if err := junosStatementOK(l); err != nil {
@@ -373,7 +373,7 @@ func checkPlain(t *testing.T, name, vendor, p string) {
 	}
 	// the statements are the region's own: wrapped again they are safe
 	if vendor == devconf.FamilyJunos && p != "" {
-		lines := []string{"configure private"}
+		lines := []string{"configure exclusive"}
 		lines = append(lines, strings.Split(strings.TrimSuffix(p, "\n"), "\n")...)
 		lines = append(lines, "show | compare | no-more", "commit check", "commit confirmed 5")
 		if err := CheckRegion(vendor, lines); err != nil {

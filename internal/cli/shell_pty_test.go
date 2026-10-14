@@ -274,6 +274,48 @@ func TestPtyShellQuestionMark(t *testing.T) {
 	}
 }
 
+// A pasted line that starts with 'tacctl' completes, lists and explains as
+// the line without it, and 'tacctl' alone prints the usage.
+func TestPtyShellLeadingBinary(t *testing.T) {
+	s := startCLIShell(t, 120, shellPtyFakeNames)
+	if err := s.Send("tacctl dev\t"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Expect(regexp.QuoteMeta("tacctl device "), 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Send("\x15sudo tacctl ssh ?"); err != nil {
+		t.Fatal(err)
+	}
+	const list = "tacctl> sudo tacctl ssh \r\nPossible completions:\r\n" +
+		"  ar1   cisco   10.0.0.1   prod\r\n" +
+		"  dev   juniper 10.20.0.22 lab\r\n" +
+		"  web1  linux   h.example  lab\r\n" +
+		"tacctl> sudo tacctl ssh "
+	if err := s.Expect(regexp.QuoteMeta(list), 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Send("\x15tacctl ?"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Expect(`tacctl> tacctl \r\nPossible completions:\r\n  backend .*\r\n(?s:.*)  version \[--long\] +Print tacctl version.*\r\ntacctl> tacctl `, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	// 'tacctl' alone is the command with no arguments: its usage, exit 1.
+	if err := s.Send("\x15tacctl\r"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Expect(`Usage: tacctl <command> \[arguments\]\r\n(?s:.*)\[exit 1\]\r\n`, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Send("tacctl quit\r"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Expect(`tacctl quit\r\n`, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // A line longer than the terminal is wide stays whole above the list, and
 // the prompt and line come back after it; the columns follow the width,
 // also after the terminal changed its size.

@@ -349,7 +349,7 @@ func TestCleanupRemovesTheOtherServerAndHonoursFrom(t *testing.T) {
 		t.Fatalf("cleanup lines %q, want %q", got, want)
 	}
 	reg := CleanupRegion(d, f.header(), Wrapper{ConfirmMinutes: 5})
-	for _, want := range []string{"##### CLEANUP FROM HERE: ", "##### CLEANUP TO HERE: ", "configure private", "# aaa: removes the servers", `commit confirmed 5 comment "tacctl cleanup `, "show | compare | no-more"} {
+	for _, want := range []string{"##### CLEANUP FROM HERE: ", "##### CLEANUP TO HERE: ", "configure exclusive", "# aaa: removes the servers", `commit confirmed 5 comment "tacctl cleanup `, "show | compare | no-more"} {
 		if !strings.Contains(reg, want) {
 			t.Errorf("no %q in\n%s", want, reg)
 		}

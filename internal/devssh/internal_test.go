@@ -130,6 +130,30 @@ func TestOutBufCountsPromptLines(t *testing.T) {
 	}
 }
 
+// A device that does not echo the empty line typed ahead prints both
+// prompts on one line: the answer is whole, and the prompt area is not
+// told (a caller that needs it fails closed).
+func TestPromptAreaBothPromptsOnOneLine(t *testing.T) {
+	s := &shell{}
+	o := outBuf{prev: -1, prompt: "gotest@sw1> ", echo: "show x"}
+	o.add([]byte("show x\r\nanswer\r\n\r\ngotest@sw1> gotest@sw1> "))
+	if n := o.prompts(); n != 2 {
+		t.Fatalf("prompts %d", n)
+	}
+	if got := s.body(&o, 0); got != "show x\nanswer\n\n" {
+		t.Errorf("body %q", got)
+	}
+	if _, ok := s.PromptArea(); ok {
+		t.Error("a prompt area was told")
+	}
+	o = outBuf{prev: -1, prompt: "gotest@sw1> ", echo: "show x"}
+	o.add([]byte("show x\r\nanswer\r\ngotest@sw1> \r\n{master:0}\r\ngotest@sw1> "))
+	s.body(&o, 0)
+	if a, ok := s.PromptArea(); !ok || len(a) != 1 || a[0] != "{master:0}" {
+		t.Errorf("area %q %v", a, ok)
+	}
+}
+
 func TestPromptUnitAndRepeats(t *testing.T) {
 	det := profiles[VendorCisco].prompt
 	for line, want := range map[string]string{

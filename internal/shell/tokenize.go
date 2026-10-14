@@ -3,6 +3,8 @@ package shell
 import (
 	"errors"
 	"strings"
+
+	"github.com/rett/tacctl/internal/paths"
 )
 
 // The tokenizer of a shell line. It knows three things and nothing else:
@@ -116,4 +118,33 @@ func Quote(w string) string {
 		return w
 	}
 	return "'" + strings.ReplaceAll(w, "'", `'\''`) + "'"
+}
+
+// binaryName is the command the shell implies.
+const binaryName = "tacctl"
+
+// BinaryWords is how many leading words of words name the command the
+// shell already implies: 1 for 'tacctl ...' and for '/usr/local/bin/tacctl
+// ...', 2 for 'sudo tacctl ...' (and 'sudo /usr/local/bin/tacctl ...'),
+// else 0. People paste whole command lines from the help and the
+// documentation, which start that way. Only the first word (and 'sudo'
+// immediately before it) counts and only once: 'tacctl tacctl' is 'tacctl'
+// to the command, and a 'tacctl' anywhere else is an argument. It is the
+// one rule behind running, completing, explaining and helping a line.
+func BinaryWords(words []string) int {
+	isBin := func(w string) bool { return w == binaryName || w == paths.Command }
+	switch {
+	case len(words) >= 1 && isBin(words[0]):
+		return 1
+	case len(words) >= 2 && words[0] == "sudo" && isBin(words[1]):
+		return 2
+	}
+	return 0
+}
+
+// StripBinary is words without the leading command (BinaryWords); words
+// itself when there is none. A line that is only the command has no words
+// left (BinaryWords tells it from an empty line).
+func StripBinary(words []string) []string {
+	return words[BinaryWords(words):]
 }

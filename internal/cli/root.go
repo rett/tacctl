@@ -46,7 +46,7 @@ func hidden(name string) *cobra.Command {
 
 // newRoot builds the tree for one invocation.
 func newRoot(inv *invocation) *cobra.Command {
-	root := &cobra.Command{Use: "tacctl", Short: "Network-device AAA from one store: TACACS+ (tacquito) and RADIUS (FreeRADIUS)"}
+	root := &cobra.Command{Use: "tacctl", Short: "Pluggable network-device AAA management"}
 	root.AddCommand(lifecycleCmds(inv)...)
 	root.AddCommand(passwdCmd(inv), statusCmd(inv))
 	root.AddCommand(
@@ -74,7 +74,7 @@ func newRoot(inv *invocation) *cobra.Command {
 	// top-level usage on stdout, exit 1 (bin/tacctl.sh's '*) usage; exit 1',
 	// after the tier gate as every command).
 	topUsage := inv.native(noPreflight, func([]string) error {
-		inv.write(Usage("top", UsageVars{"version": inv.build.Version}))
+		inv.writeTopUsage()
 		return exit(1)
 	})
 	root.RunE, help.RunE = topUsage, topUsage
@@ -150,4 +150,10 @@ func complete(ctx context.Context, a *app.App, root *cobra.Command) error {
 		err = werr
 	}
 	return err
+}
+
+// writeTopUsage prints the top-level usage, as 'tacctl' with no arguments
+// does (and a pasted line that is only 'tacctl' in the shell).
+func (inv *invocation) writeTopUsage() {
+	inv.write(Usage("top", UsageVars{"version": inv.build.Version}))
 }

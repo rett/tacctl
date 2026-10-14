@@ -3,11 +3,12 @@
 // workers over a list of jobs, one job per device, with a per-job timeout,
 // a failure budget, a stop on the first authentication failure and a
 // two-stage interrupt. 'device config pull' and 'diff' use it in 0.2.4 and
-// the 0.2.5 apply (canary first) will, so it knows nothing about devices:
-// a Job is a name and a function.
+// the apply (canary by shape first, a pause between devices) does, so it
+// knows nothing about devices: a Job is a name, a shape and a function.
 //
 // The package has no terminal, no signal handling, no global state and no
-// wall-clock read. The caller hands it the interrupt channel and the clock;
+// wall-clock read (the pause waits through Options.Sleep, which a test
+// replaces). The caller hands it the interrupt channel and the clock;
 // progress goes to a View, which is only ever called from the goroutine
 // that called Run, so a view needs no locking and workers never write
 // anywhere.
@@ -60,6 +61,11 @@ const (
 	// StatusNotStarted: the pool stopped before the job began. Only the
 	// runner sets it; Reason says which stop it was.
 	StatusNotStarted
+	// StatusSkipped: the job was not attempted because the canary of its
+	// shape did not succeed (Options.Canary). Only the runner sets it;
+	// Reason names the canary. Not a failure of its own. A job left
+	// unstarted by a stop of the whole run is StatusNotStarted instead.
+	StatusSkipped
 )
 
 // String is the status word of the record and of --json.
@@ -77,6 +83,8 @@ func (s Status) String() string {
 		return "interrupted"
 	case StatusNotStarted:
 		return "not-started"
+	case StatusSkipped:
+		return "skipped"
 	}
 	return fmt.Sprintf("status(%d)", int(s))
 }
@@ -108,11 +116,22 @@ type Result struct {
 	// Value is the job's own payload, handed through to the view and the
 	// Summary untouched.
 	Value any
+	// RolledBack is set by a job that changed the device and then put it
+	// back (an apply whose verification failed). It does not change the
+	// status, which is the job's to choose (StatusFailed); the Summary
+	// counts it.
+	RolledBack bool
+	// Pending is set by a job that left a change waiting on the device (a
+	// confirmed commit that was neither confirmed nor rolled back and will
+	// revert on its own timer, or that needs a person). Counted by the
+	// Summary; the status is the job's to choose.
+	Pending bool
 }
 
 // Text is the line the view shows for the result (D67): "ok",
 // "ok, differs in aaa,snmp", "failed: <reason>", "interrupted",
-// "not started".
+// "not started", "skipped: <reason>". A failure that left the device
+// rolled back or pending says so after the reason.
 func (r Result) Text() string {
 	switch r.Status {
 	case StatusOK:
@@ -124,8 +143,17 @@ func (r Result) Text() string {
 		return "interrupted"
 	case StatusNotStarted:
 		return "not started"
+	case StatusSkipped:
+		return "skipped: " + r.Reason
 	}
-	return "failed: " + r.Reason
+	text := "failed: " + r.Reason
+	switch {
+	case r.Pending:
+		text += " (PENDING)"
+	case r.RolledBack:
+		text += " (rolled back)"
+	}
+	return text
 }
 
 // Job is one unit of work, one device. Do must honour ctx: its deadline is
@@ -135,6 +163,24 @@ func (r Result) Text() string {
 type Job struct {
 	Name string
 	Do   func(ctx context.Context) Result
+	// Shape groups the jobs that need the same change (Options.Canary). A
+	// job with no shape is its own group: it is never gated by, and never
+	// skipped for, another job.
+	Shape string
+}
+
+// progressKey carries a job's progress reporter in its context.
+type progressKey struct{}
+
+// Progress reports what a running job is doing ("checked", "committed,
+// verifying"); a progress-aware view shows it beside "running". It is a
+// no-op outside a job's context and safe to call from the job's own
+// goroutines while Do runs. The text reaches the view as an Event with
+// PhaseProgress, from Run's goroutine.
+func Progress(ctx context.Context, step string) {
+	if f, ok := ctx.Value(progressKey{}).(func(string)); ok {
+		f(step)
+	}
 }
 
 // Options are the settings of a run.
@@ -165,6 +211,25 @@ type Options struct {
 	// Clock stamps the events; it is called only from the goroutine that
 	// called Run. Nil leaves every time zero.
 	Clock func() time.Time
+	// Canary runs the first job of every distinct non-empty Job.Shape
+	// before any other job: the others of a shape start only after its
+	// canary ended with StatusOK, and are skipped (StatusSkipped) when it
+	// did not. The other shapes go on; a run-wide stop (MaxFailures,
+	// StopOnAuthFailure, an interrupt) still leaves everything not yet
+	// started as StatusNotStarted. Off, Job.Shape is ignored and the pool
+	// takes the jobs in list order.
+	Canary bool
+	// Pause is the wait between devices: after a job ends, a full Pause
+	// passes before the next job starts, and the dispatcher keeps serving
+	// events and interrupts meanwhile. With canaries it also separates the
+	// waves. The first job (and the first fill of a wider pool) is not
+	// delayed; a stop or interrupt ends a pause at once. Zero or negative
+	// means none.
+	Pause time.Duration
+	// Sleep waits for d or until ctx is done; nil is a real timer. A test
+	// replaces it so no run sleeps. It is called from its own goroutine,
+	// one pause at a time.
+	Sleep func(ctx context.Context, d time.Duration)
 }
 
 // PoolSize is the number of workers for n jobs: the smaller of the
@@ -192,19 +257,27 @@ const (
 	PhaseRunning Phase = iota
 	// PhaseDone: the job ended; Event.Result is its result.
 	PhaseDone
-	// PhaseSkipped: the pool stopped before the job; Event.Result carries
-	// StatusNotStarted and the reason.
+	// PhaseSkipped: the job was not attempted; Event.Result carries
+	// StatusNotStarted (the pool stopped) or StatusSkipped (its canary did
+	// not succeed) and the reason.
 	PhaseSkipped
+	// PhaseProgress: a running job reported a step through Progress;
+	// Event.Step is its text. Sent only for a job that reports.
+	PhaseProgress
 )
 
 // Event is one change a View is told about. Every job is queued from
-// Begin on; it then gets PhaseRunning and PhaseDone, or PhaseSkipped.
+// Begin on; it then gets PhaseRunning, any number of PhaseProgress and
+// PhaseDone, or PhaseSkipped. Phase is the job's lifecycle; the step a
+// apply job is in (check, apply, verify) is Step of a PhaseProgress.
 type Event struct {
 	Index  int // position in the job list (the registry's order)
 	Name   string
 	Phase  Phase
 	Result Result
 	At     time.Time
+	// Step is the text of a PhaseProgress event; empty otherwise.
+	Step string
 }
 
 // View is the progress display. Run calls it from its own goroutine only,
@@ -261,6 +334,12 @@ type Summary struct {
 	Failed     int
 	AuthFailed int
 	NotStarted int
+	// Skipped counts the jobs not attempted because their canary did not
+	// succeed. RolledBack and Pending count the jobs whose result says so,
+	// whatever their status (they are inside Failed when the job failed).
+	Skipped    int
+	RolledBack int
+	Pending    int
 	// Pool is the number of workers the run used.
 	Pool int
 	// Stop is why starting ended early, the first reason that applied.
@@ -321,16 +400,27 @@ func (s Summary) ExitCode(exitOnDiffer bool) int {
 	return ExitOK
 }
 
-// done is a worker's report to the dispatcher.
-type done struct {
-	i int
-	r Result
+// msg is a worker's report to the dispatcher: a progress step or the end of
+// job i. One channel carries both, so a job's steps arrive before its end.
+type msg struct {
+	i    int
+	r    Result
+	step string
+	end  bool
 }
 
+// job states in Run.
+const (
+	stUnstarted = iota
+	stRunning
+	stSettled
+)
+
 // Run executes the jobs and returns how it went. A pool of PoolSize
-// workers takes the jobs in list order; every job gets its own context
-// with the per-job timeout. view may be nil. Cancelling ctx is the same as
-// the second interrupt. Run returns when every started job has returned.
+// workers takes the jobs in list order (canaries first with
+// Options.Canary); every job gets its own context with the per-job
+// timeout. view may be nil. Cancelling ctx is the same as the second
+// interrupt. Run returns when every started job has returned.
 func Run(ctx context.Context, opt Options, jobs []Job, view View) Summary {
 	if view == nil {
 		view = nopView{}
@@ -338,6 +428,10 @@ func Run(ctx context.Context, opt Options, jobs []Job, view View) Summary {
 	now := opt.Clock
 	if now == nil {
 		now = func() time.Time { return time.Time{} }
+	}
+	sleep := opt.Sleep
+	if sleep == nil {
+		sleep = realSleep
 	}
 	n := len(jobs)
 	pool := PoolSize(opt.Concurrency, opt.Cap, n)
@@ -349,15 +443,65 @@ func Run(ctx context.Context, opt Options, jobs []Job, view View) Summary {
 	}
 	view.Begin(names)
 
+	// The canary of a shape is its first job; shapeOK is true once that
+	// canary ended with StatusOK.
+	canary := make([]bool, n)
+	shapeOK := map[string]bool{}
+	if opt.Canary {
+		seen := map[string]bool{}
+		for i, j := range jobs {
+			if j.Shape != "" && !seen[j.Shape] {
+				seen[j.Shape] = true
+				canary[i] = true
+			}
+		}
+	}
+	// pick is the next job to start: an unstarted canary first, else the
+	// first unstarted job that is not waiting on a canary.
+	state := make([]int, n)
+	pick := func() int {
+		for i := 0; i < n; i++ {
+			if state[i] == stUnstarted && canary[i] {
+				return i
+			}
+		}
+		for i := 0; i < n; i++ {
+			if state[i] != stUnstarted {
+				continue
+			}
+			if s := jobs[i].Shape; !opt.Canary || s == "" || shapeOK[s] {
+				return i
+			}
+		}
+		return -1
+	}
+
 	runCtx, cancelRun := context.WithCancelCause(ctx)
 	defer cancelRun(nil)
 
-	results := make(chan done, n) // never blocks a worker
+	results := make(chan msg, n) // a job's end never blocks a worker
 	interrupts := opt.Interrupts
 	parent := ctx.Done()
-	next, running, failures := 0, 0, 0
+	running, failures := 0, 0
 	stopped, interrupted := false, false
+	var (
+		pausing     chan struct{}
+		cancelPause context.CancelFunc
+		owed        bool
+	)
 
+	endPause := func() {
+		if cancelPause != nil {
+			cancelPause()
+			cancelPause = nil
+		}
+		pausing = nil
+	}
+	settle := func(i int, r Result) {
+		state[i] = stSettled
+		sum.Entries[i].Result = r
+		view.Update(Event{Index: i, Name: names[i], Phase: PhaseSkipped, Result: r, At: now()})
+	}
 	// stop ends the starting of jobs, for the first reason that applies:
 	// every job not yet started is reported as skipped, in list order.
 	stop := func(why Stop, reason string) {
@@ -366,11 +510,12 @@ func Run(ctx context.Context, opt Options, jobs []Job, view View) Summary {
 		}
 		stopped = true
 		sum.Stop = why
-		for ; next < n; next++ {
-			r := Result{Status: StatusNotStarted, Reason: reason}
-			sum.Entries[next].Result = r
-			sum.NotStarted++
-			view.Update(Event{Index: next, Name: names[next], Phase: PhaseSkipped, Result: r, At: now()})
+		endPause()
+		for i := 0; i < n; i++ {
+			if state[i] == stUnstarted {
+				settle(i, Result{Status: StatusNotStarted, Reason: reason})
+				sum.NotStarted++
+			}
 		}
 	}
 	interrupt := func(hard bool) {
@@ -380,29 +525,83 @@ func Run(ctx context.Context, opt Options, jobs []Job, view View) Summary {
 			cancelRun(ErrInterrupted)
 		}
 	}
+	// skipShape settles the followers of a canary that did not succeed.
+	skipShape := func(c int) {
+		reason := "canary " + names[c] + " failed"
+		for i := 0; i < n; i++ {
+			if state[i] == stUnstarted && !canary[i] && jobs[i].Shape == jobs[c].Shape {
+				settle(i, Result{Status: StatusSkipped, Reason: reason})
+				sum.Skipped++
+			}
+		}
+	}
 
 	for {
-		for !stopped && next < n && running < pool {
-			i := next
-			next++
+		for !stopped && pausing == nil && running < pool {
+			i := pick()
+			if i < 0 {
+				break
+			}
+			if owed && opt.Pause > 0 {
+				owed = false
+				pctx, cancel := context.WithCancel(runCtx)
+				cancelPause = cancel
+				ch := make(chan struct{}, 1)
+				pausing = ch
+				go func() {
+					sleep(pctx, opt.Pause)
+					ch <- struct{}{}
+				}()
+				break
+			}
+			owed = false
+			state[i] = stRunning
 			running++
 			at := now()
 			sum.Entries[i].Started = at
 			view.Update(Event{Index: i, Name: names[i], Phase: PhaseRunning, At: at})
 			go func() {
-				results <- done{i, runJob(runCtx, opt.Timeout, jobs[i])}
+				jctx := context.WithValue(runCtx, progressKey{}, func(step string) {
+					select {
+					case results <- msg{i: i, step: step}:
+					case <-runCtx.Done():
+					}
+				})
+				results <- msg{i: i, r: runJob(jctx, opt.Timeout, jobs[i]), end: true}
 			}()
 		}
-		if running == 0 {
+		if running == 0 && pausing == nil {
 			break
 		}
 		select {
 		case d := <-results:
+			// A cancellation that came before this result is noticed
+			// first, so a job that failed because of it stops the run
+			// instead of failing its canary's shape.
+			select {
+			case <-parent:
+				parent = nil
+				interrupt(true)
+				interrupted = true
+			default:
+			}
+			if !d.end {
+				view.Update(Event{Index: d.i, Name: names[d.i], Phase: PhaseProgress, Step: d.step, At: now()})
+				break
+			}
 			running--
+			owed = true
+			state[d.i] = stSettled
 			at := now()
 			r := d.r
 			sum.Entries[d.i].Result = r
 			sum.Entries[d.i].Finished = at
+			if r.RolledBack {
+				sum.RolledBack++
+			}
+			if r.Pending {
+				sum.Pending++
+			}
 			if r.Status == StatusOK {
 				sum.OK++
 				if len(r.Differs) > 0 {
@@ -416,12 +615,21 @@ func Run(ctx context.Context, opt Options, jobs []Job, view View) Summary {
 				}
 			}
 			view.Update(Event{Index: d.i, Name: names[d.i], Phase: PhaseDone, Result: r, At: at})
+			if canary[d.i] {
+				if r.Status == StatusOK {
+					shapeOK[jobs[d.i].Shape] = true
+				} else {
+					skipShape(d.i)
+				}
+			}
 			switch {
 			case r.Status == StatusAuthFailed && opt.StopOnAuthFailure:
 				stop(StopAuthFailure, "authentication failed on another device")
 			case opt.MaxFailures > 0 && failures >= opt.MaxFailures && r.Status.Failure():
 				stop(StopMaxFailures, "failure limit reached")
 			}
+		case <-pausing:
+			endPause()
 		case _, ok := <-interrupts:
 			if !ok {
 				interrupts = nil
@@ -438,6 +646,16 @@ func Run(ctx context.Context, opt Options, jobs []Job, view View) Summary {
 
 	view.End(sum)
 	return sum
+}
+
+// realSleep waits for d or for ctx.
+func realSleep(ctx context.Context, d time.Duration) {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+	case <-ctx.Done():
+	}
 }
 
 // runJob runs one job under its own deadline and settles its result: an

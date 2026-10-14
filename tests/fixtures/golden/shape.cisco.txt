@@ -1,0 +1,235 @@
+# cisco.reference-lab
+shape 13bed98d80c4 algo 1
+[aaa]
+aaa authentication login CONSOLE local
+aaa accounting commands 15 default start-stop group LAB-TACACS
+line con 0 > login authentication CONSOLE
+
+# cisco.reference-12x
+shape 341c6c0daa1f algo 1
+[aaa]
+no aaa authentication enable default group LAB-TACACS enable
+
+# cisco.real-12.4-7200
+shape 3113254fcce8 algo 1
+[aaa]
+aaa authentication login CONSOLE local
+line con 0 > login authentication CONSOLE
+[roles]
+no privilege exec level 7 monitor
+no privilege exec all level 7 traceroute
+no privilege exec all level 7 ping
+no privilege exec level 7 clear ip arp
+no privilege exec level 7 clear ip
+no privilege exec level 7 clear arp-cache
+no privilege exec level 7 clear line
+no privilege exec level 7 clear counters
+no privilege exec level 7 clear
+
+# cisco.reference-bare
+shape 3acf22f15cd3 algo 1
+[aaa]
+aaa new-model
+tacacs server TACACS > address ipv4 192.0.2.10
+tacacs server TACACS > key <secret>
+tacacs server TACACS > single-connection
+tacacs server TACACS > timeout 5
+aaa group server tacacs+ LAB-TACACS > server name TACACS
+aaa authentication login default local group LAB-TACACS
+aaa authentication login CONSOLE local
+aaa authorization exec default local group LAB-TACACS if-authenticated
+aaa accounting exec default start-stop group LAB-TACACS
+aaa accounting commands 1 default start-stop group LAB-TACACS
+aaa accounting commands 5 default start-stop group LAB-TACACS
+aaa accounting commands 7 default start-stop group LAB-TACACS
+aaa accounting commands 15 default start-stop group LAB-TACACS
+aaa session-id common
+line con 0 > login authentication CONSOLE
+line vty 0 4 > login authentication default
+[roles]
+privilege exec level 1 show running-config
+privilege exec level 7 undebug all
+[snmp]
+ip access-list standard TACCTL-SNMP > permit host 192.0.2.10
+ip access-list standard TACCTL-SNMP > permit 198.51.100.0 0.0.0.255
+ip access-list standard TACCTL-SNMP > deny any
+snmp-server community <secret:1> RO TACCTL-SNMP
+snmp-server location <v>
+snmp-server contact <v>
+[mgmt-acl]
+ip access-list standard VTY-ACL > permit 192.0.2.10 0.0.0.0
+ip access-list standard VTY-ACL > permit 198.51.100.0 0.0.0.255
+ip access-list standard VTY-ACL > permit 192.0.2.0 0.0.0.255
+ip access-list standard VTY-ACL > deny any log
+
+# cisco.xe-reference-16
+shape 48d59c123605 algo 1
+[aaa]
+aaa authentication login CONSOLE local
+aaa session-id common
+line con 0 > login authentication CONSOLE
+
+# cisco.same-address-block
+shape c557fcd2f824 algo 1
+[aaa]
+no aaa authorization config-commands
+no aaa authorization commands 1 default local group TACACS-GROUP
+no aaa authorization commands 7 default local group TACACS-GROUP
+no aaa authorization commands 15 default local group TACACS-GROUP
+aaa group server tacacs+ TACACS-GROUP > no server name OLD-TACACS
+no tacacs server OLD-TACACS
+tacacs server TACACS > address ipv4 192.0.2.10
+tacacs server TACACS > key <secret>
+tacacs server TACACS > single-connection
+tacacs server TACACS > timeout 5
+aaa group server tacacs+ TACACS-GROUP > server name TACACS
+aaa authentication login CONSOLE local
+aaa accounting commands 15 default start-stop group TACACS-GROUP
+line con 0 > login authentication CONSOLE
+aaa authorization commands 1 default local group TACACS-GROUP
+aaa authorization commands 7 default local group TACACS-GROUP
+aaa authorization commands 15 default local group TACACS-GROUP
+aaa authorization config-commands
+
+# cisco.same-address-block-nocmd
+shape 4a786e97c607 algo 1
+[aaa]
+aaa group server tacacs+ TACACS-GROUP > no server name OLD-TACACS
+no tacacs server OLD-TACACS
+tacacs server TACACS > address ipv4 192.0.2.10
+tacacs server TACACS > key <secret>
+tacacs server TACACS > single-connection
+tacacs server TACACS > timeout 5
+aaa group server tacacs+ TACACS-GROUP > server name TACACS
+aaa authentication login CONSOLE local
+aaa accounting commands 15 default start-stop group TACACS-GROUP
+line con 0 > login authentication CONSOLE
+aaa authorization commands 1 default local group TACACS-GROUP
+aaa authorization commands 7 default local group TACACS-GROUP
+aaa authorization commands 15 default local group TACACS-GROUP
+aaa authorization config-commands
+
+# cisco.synthetic-block
+shape 13bed98d80c4 algo 1
+[aaa]
+aaa authentication login CONSOLE local
+aaa accounting commands 15 default start-stop group LAB-TACACS
+line con 0 > login authentication CONSOLE
+
+# cisco.synthetic-block-new
+shape bb436534126a algo 1
+[aaa]
+aaa authentication login CONSOLE local
+aaa accounting commands 15 default start-stop group LAB-TACACS
+line con 0 > login authentication CONSOLE
+[snmp]
+ip access-list standard POLLERS > permit host 192.0.2.60
+ip access-list standard POLLERS > permit 198.51.100.0 0.0.0.255
+snmp-server community <secret:2> RO POLLERS
+snmp-server host 192.0.2.61 version 2c <secret:3>
+snmp-server enable traps snmp linkdown linkup
+
+# cisco.synthetic-block-stray
+shape 0c563a8cae84 algo 1
+[aaa]
+aaa authentication login CONSOLE local
+aaa accounting commands 15 default start-stop group LAB-TACACS
+line con 0 > login authentication CONSOLE
+[snmp]
+ip access-list standard POLLERS > permit 198.51.100.0 0.0.0.255
+snmp-server community <secret:2> RO POLLERS
+snmp-server host 192.0.2.61 version 2c <secret:3>
+snmp-server enable traps snmp linkdown linkup
+ip access-list standard POLLERS > no permit 203.0.113.9
+
+# cisco.synthetic-system
+shape 13bed98d80c4 algo 1
+[aaa]
+aaa authentication login CONSOLE local
+aaa accounting commands 15 default start-stop group LAB-TACACS
+line con 0 > login authentication CONSOLE
+
+# cisco.synthetic-system-new
+shape 24e95070aaf9 algo 1
+[aaa]
+aaa authentication login CONSOLE local
+aaa accounting commands 15 default start-stop group LAB-TACACS
+line con 0 > login authentication CONSOLE
+[snmp]
+snmp-server trap-source Loopback0
+[system]
+banner login <v>
+ip domain name lab.example.net
+ip domain list lab.example.net
+clock timezone CET 1
+ip name-server 192.0.2.53
+ip name-server 192.0.2.54
+ntp authentication-key 5 <secret>
+ntp trusted-key 5
+ntp server 192.0.2.123 version 4 key 5 prefer
+ntp server ntp2.example.net
+ntp authenticate
+
+# cisco.synthetic-system-stray
+shape edb26724fd6a algo 1
+[aaa]
+aaa authentication login CONSOLE local
+aaa accounting commands 15 default start-stop group LAB-TACACS
+line con 0 > login authentication CONSOLE
+[snmp]
+snmp-server trap-source Loopback0
+[system]
+banner login <v>
+ip domain name lab.example.net
+clock timezone CET 1
+ntp trusted-key 5
+ntp server 192.0.2.123 version 4 key 5 prefer
+ntp authenticate
+
+# cisco.synthetic-vrf
+shape 13bed98d80c4 algo 1
+[aaa]
+aaa authentication login CONSOLE local
+aaa accounting commands 15 default start-stop group LAB-TACACS
+line con 0 > login authentication CONSOLE
+
+# cisco.synthetic-vrf-new
+shape 6fa515325330 algo 1
+[aaa]
+aaa authentication login CONSOLE local
+aaa accounting commands 15 default start-stop group LAB-TACACS
+line con 0 > login authentication CONSOLE
+[snmp]
+snmp-server host 192.0.2.61 vrf MGMT version 2c <secret:2>
+snmp-server host 192.0.2.62 informs version 2c <secret:2>
+snmp-server host 192.0.2.63 version 2c <secret:2> udp-port 1162 config
+[system]
+ip domain name lab.example.net
+ip domain name vrf MGMT mgmt.example.net
+ip domain list lab.example.net
+ip domain list vrf MGMT mgmt.example.net
+ip name-server 192.0.2.53
+ip name-server vrf MGMT 192.0.2.53
+ip name-server vrf MGMT 192.0.2.54
+ntp server 192.0.2.123 prefer
+ntp server vrf MGMT 192.0.2.123 version 3 prefer
+ntp server vrf OOB ntp2.example.net
+
+# cisco.synthetic-vrf-stray
+shape 17ee8cb819d4 algo 1
+[aaa]
+aaa authentication login CONSOLE local
+aaa accounting commands 15 default start-stop group LAB-TACACS
+line con 0 > login authentication CONSOLE
+[snmp]
+snmp-server host 192.0.2.61 vrf MGMT version 2c <secret:2>
+snmp-server host 192.0.2.62 informs version 2c <secret:2>
+snmp-server host 192.0.2.63 version 2c <secret:2> udp-port 1162 config
+[system]
+ip domain name vrf MGMT mgmt.example.net
+ip domain list vrf MGMT mgmt.example.net
+ip name-server vrf MGMT 192.0.2.53
+ntp server 192.0.2.123 prefer
+ntp server vrf MGMT 192.0.2.123 version 3 prefer
+ntp server vrf OOB ntp2.example.net
+

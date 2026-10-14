@@ -66,6 +66,48 @@ func (e ErrHostKey) Error() string {
 	return "the device offered a host key (" + typ + " " + e.Fingerprint + ") that is not pinned"
 }
 
+// AlgorithmError is an ssh handshake that failed because the device and the
+// client share no algorithm of some kind (key exchange, cipher, MAC, host
+// key): the device needs Target.Legacy, or is too old or too hardened for
+// this client. It is also an ErrHandshake (errors.Is); callers that act on
+// the difference (device collect) use errors.As.
+type AlgorithmError struct {
+	// Addr is host:port.
+	Addr string
+	// Detail is the failure as the library words it up to its lists, e.g.
+	// 'no common algorithm for key exchange' (cleaned of control
+	// characters and cut short).
+	Detail string
+}
+
+func (e AlgorithmError) Error() string {
+	return ErrHandshake.Error() + ": " + e.Addr + ": " + e.Detail
+}
+
+// Is makes an AlgorithmError an ErrHandshake.
+func (e AlgorithmError) Is(target error) bool { return target == ErrHandshake }
+
+// algorithmFailure is the AlgorithmError of a handshake error, or false if
+// err is not an algorithm negotiation failure. x/crypto/ssh words it 'ssh:
+// no common algorithm for <kind>; client offered: [...], server offered:
+// [...]'; 'unable to negotiate' is how other stacks word it.
+func algorithmFailure(addr string, err error) (AlgorithmError, bool) {
+	msg := err.Error()
+	i := strings.Index(msg, "no common algorithm")
+	if i < 0 {
+		i = strings.Index(msg, "unable to negotiate")
+	}
+	if i < 0 {
+		return AlgorithmError{}, false
+	}
+	detail := msg[i:]
+	// Without the algorithm lists: they are long and say nothing more.
+	if j := strings.IndexByte(detail, ';'); j >= 0 {
+		detail = detail[:j]
+	}
+	return AlgorithmError{Addr: addr, Detail: sanitize(strings.TrimSpace(detail))}, true
+}
+
 // CommandError is a CLI command that ended with a non-zero exit status (an
 // exec channel only; a shell session has no status). Run returns the output
 // with it.

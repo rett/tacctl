@@ -19,7 +19,7 @@ tacctl config sudoers tiers install   # write /etc/sudoers.d/tacctl-tiers
 Lower-tier rules are plain `NOPASSWD` lines. The only things the file lets through from the caller's environment are:
 
 - the agent socket, the console's marker, the X11 display and the colour choice (`Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY NO_COLOR TACCTL_COLOR"`): the agent socket for `tacctl host`, the login console's session marker, the display `tacctl ssh -X` hands on, and `NO_COLOR` and `TACCTL_COLOR`, which only take styling out of the output or put it back;
-- `TACCTL_ASKPASS`, for the command lines that use the password cache (`device config pull|diff|plan`, `ssh`, `device ssh`, `scope|device block ... adopt`), through a `Cmnd_Alias` and its own `Defaults!` line;
+- `TACCTL_ASKPASS`, for the command lines that use the password cache (`device config pull|diff|plan`, `ssh`, `device ssh`, `scope|device block ... adopt`, `device config apply`, `device onboard` and `device collect`), through a `Cmnd_Alias` and its own `Defaults!` line;
 - `VISUAL` and `EDITOR`, for the four command lines that open an editor (`scope block <scope> juniper edit|adopt`, `device block <name> edit|adopt`), the same way: a `Cmnd_Alias` and a `Defaults!` line of their own. tacctl removes both from its own environment at start, so no program it runs inherits them.
 
 A caller therefore cannot hand tacctl another `SUDO_USER`; tacctl also refuses a `SUDO_USER` that is not the account of `SUDO_UID`.

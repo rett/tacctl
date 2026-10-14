@@ -253,7 +253,7 @@ func (e *editor) setPrompt(p string) {
 // --- Tab ----------------------------------------------------------------------
 
 // word is the completion context of the cursor: the words before the one
-// being typed, that word so far and where it starts, and the tokenizer's
+// being typed (without a leading 'tacctl' or 'sudo tacctl', StripBinary), that word so far and where it starts, and the tokenizer's
 // state there.
 func word(line string, pos int) (words []string, partial string, start int, st scanState) {
 	words, st = scan(line[:pos])
@@ -264,6 +264,9 @@ func word(line string, pos int) (words []string, partial string, start int, st s
 		}
 		partial, start = st.partial, st.wordStart
 	}
+	// The command the shell implies, typed or pasted first, is no word of
+	// the line: completion, '?' and 'help' see what run sees.
+	words = StripBinary(words)
 	return words, partial, start, st
 }
 

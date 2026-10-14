@@ -77,12 +77,85 @@ type SectionRecord struct {
 	Unmanaged int    `json:"unmanaged,omitempty"`
 }
 
-// Applied is reserved for 0.2.5's apply: nothing writes it in 0.2.4.
+// The kinds and results of an Applied record (0.2.9, D138).
+const (
+	AppliedKindCheck = "check"
+	AppliedKindApply = "apply"
+	// AppliedKindOnboard is the commit of 'device onboard' (D136).
+	AppliedKindOnboard = "onboard"
+
+	AppliedChecked    = "checked"
+	AppliedNoChange   = "no-change"
+	AppliedPending    = "pending"
+	AppliedApplied    = "applied"
+	AppliedRolledBack = "rolled-back"
+	AppliedFailed     = "failed"
+	AppliedUnknown    = "unknown"
+)
+
+// AppliedCommit is the confirming commit of an apply as the device's
+// 'show system commit' printed it: its sequence number and its time.
+type AppliedCommit struct {
+	Seq  int    `json:"seq"`
+	Time string `json:"time,omitempty"`
+}
+
+// Applied is what 'device config apply' did to the device last (D85, D138):
+// the last check, the last apply or its outcome. It holds no raw device
+// output and no secret: a shape is its masked lines' hash, the counts are
+// numbers, a reason is the transaction's own words. Fields are added to
+// version 1 of the file; a reader that does not know them ignores them.
 type Applied struct {
 	At          time.Time `json:"at,omitzero"`
 	By          string    `json:"by,omitempty"`
 	Fingerprint string    `json:"fingerprint,omitempty"`
-	Result      string    `json:"result,omitempty"`
+	// Result is one of the Applied* result words.
+	Result string `json:"result,omitempty"`
+	// ID is the change identifier of the commit comments
+	// ('tacctl-<yyyymmddThhmmssZ>-<4 hex>'); Kind is AppliedKindCheck or
+	// AppliedKindApply.
+	ID   string `json:"id,omitempty"`
+	Kind string `json:"kind,omitempty"`
+	// Reason says why a run failed, was rolled back or is unknown.
+	Reason string `json:"reason,omitempty"`
+	// Until is the end of a pending window by this server's clock: a record
+	// that says pending is settled by the next verb that reads the device.
+	Until time.Time `json:"until,omitzero"`
+	// Shape is the 12-hex hash of the plan's masked lines (plan.Shape).
+	Shape    string   `json:"shape,omitempty"`
+	Sections []string `json:"sections,omitempty"`
+	// Set, Delete and Insert count the statements.
+	Set    int `json:"set,omitempty"`
+	Delete int `json:"delete,omitempty"`
+	Insert int `json:"insert,omitempty"`
+	// Commit is the confirming commit of an applied apply.
+	Commit *AppliedCommit `json:"commit,omitempty"`
+	// Pre is, per planned section, the fingerprint of the section before
+	// the change.
+	Pre map[string]string `json:"pre,omitempty"`
+}
+
+// Clone is a deep copy.
+func (a Applied) Clone() Applied {
+	c := a
+	c.Sections = slices.Clone(a.Sections)
+	if a.Commit != nil {
+		k := *a.Commit
+		c.Commit = &k
+	}
+	if a.Pre != nil {
+		c.Pre = make(map[string]string, len(a.Pre))
+		for k, v := range a.Pre {
+			c.Pre[k] = v
+		}
+	}
+	return c
+}
+
+// Pending reports whether the record leaves a confirmed commit that nothing
+// has settled: the device may be running the change under its timer.
+func (a *Applied) Pending() bool {
+	return a != nil && (a.Result == AppliedPending || a.Result == AppliedUnknown)
 }
 
 // Record is one device's record.
@@ -97,6 +170,15 @@ type Record struct {
 	NetconfAt time.Time `json:"netconf_at,omitzero"`
 	Pulled    time.Time `json:"pulled,omitzero"`
 	By        string    `json:"by,omitempty"`
+	// Login is how the last good pull logged in: "" the invoking user's own
+	// login (TACACS+ or RADIUS), "local:<account>" a local account of the
+	// device ('--login', 'device onboard', 0.2.9 D136). A device whose
+	// record never pulled as the invoking user may be pulled as root and
+	// onboarded again.
+	Login string `json:"login,omitempty"`
+	// UserPulled is set once a good pull was made as the invoking user's own
+	// login, and kept when a local account pulls later.
+	UserPulled bool `json:"user_pulled,omitempty"`
 	// Result is one of the Result constants.
 	Result     string `json:"result,omitempty"`
 	DurationMS int64  `json:"duration_ms,omitempty"`
@@ -124,12 +206,33 @@ type Record struct {
 	// statement as the last good pull read it ('flash:'); empty for another
 	// vendor, a device with no archive path and a record made before 0.2.7.
 	// The plan's restore point (--restore-point) is the reader.
-	ArchiveFS string                   `json:"archive_fs,omitempty"`
-	Sections  map[string]SectionRecord `json:"sections,omitempty"`
+	ArchiveFS string `json:"archive_fs,omitempty"`
+	// Hostname is the device's own name as the last good pull of a Junos
+	// device read it ('system host-name', with 'system domain-name' appended
+	// when the name has no dot): the registry's hostname field is filled
+	// from it by 'device sync' (0.2.9). Empty for another vendor, a device
+	// that states none and a record made before 0.2.9.
+	Hostname string                   `json:"hostname,omitempty"`
+	Sections map[string]SectionRecord `json:"sections,omitempty"`
 	// Unit is what the last good pull of a WTI unit saw beside its sections;
 	// nil for every other vendor and for a record made before 0.2.7.
 	Unit    *UnitFacts `json:"unit,omitempty"`
 	Applied *Applied   `json:"applied,omitempty"`
+}
+
+// LocalLoginPrefix starts the Login of a pull made as a local account.
+const LocalLoginPrefix = "local:"
+
+// LocalLogin reports whether the last good pull logged in as a local
+// account of the device.
+func (r Record) LocalLogin() bool { return strings.HasPrefix(r.Login, LocalLoginPrefix) }
+
+// PulledAsUser reports whether the record holds a good pull made as the
+// invoking user's own login (not a local account).
+// A record of an earlier release (no Login, no UserPulled) with a good pull
+// is one.
+func (r Record) PulledAsUser() bool {
+	return r.UserPulled || (!r.Pulled.IsZero() && !r.LocalLogin())
 }
 
 // UnitFacts are the facts of a WTI unit's pull that are no section: the
@@ -168,7 +271,7 @@ func (r *Records) Of(name string) (*Record, bool) {
 func (r *Records) Put(name string, rec Record) {
 	c := rec
 	if rec.Applied != nil {
-		a := *rec.Applied
+		a := rec.Applied.Clone()
 		c.Applied = &a
 	}
 	if rec.Unit != nil {
@@ -835,4 +938,31 @@ func atomicWrite(path string, data []byte, mode os.FileMode) error {
 		_ = df.Close()
 	}
 	return nil
+}
+
+// StoredForm is what a map of sections reads back as after SaveSections and
+// Sections: each section in the compared form (Normalise: a secret's value
+// elided), written and read again as the sections file does. A caller that
+// plans from a read it has not stored (the apply's verification) plans from
+// the same input as one that stored it.
+func StoredForm(vendor string, secs map[string]devices.Section) (map[string]devices.Section, error) {
+	fam, err := Family(vendor)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]devices.Section, len(secs))
+	for k, v := range secs {
+		n, err := Normalise(vendor, v)
+		if err != nil {
+			return nil, err
+		}
+		var lines []string
+		for _, l := range n.Lines {
+			if l = strings.TrimSpace(scrub(strings.TrimLeft(l, " "))); l != "" {
+				lines = append(lines, l)
+			}
+		}
+		out[k] = toSection(k, uniq(canonFor(fam)(lines, nil, nil)))
+	}
+	return out, nil
 }
