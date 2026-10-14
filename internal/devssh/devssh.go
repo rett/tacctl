@@ -249,6 +249,24 @@ func (c *Client) Close() error {
 // ('SSH-2.0-...').
 func (c *Client) ServerVersion() string { return sanitize(string(c.conn.ServerVersion())) }
 
+// LocalAddr is the address this machine reached the device from (the
+// local end of the connection), nil when the connection has none that is an
+// IP address. It is what a device's own record of a login ('from') shows.
+func (c *Client) LocalAddr() net.IP {
+	switch a := c.conn.LocalAddr().(type) {
+	case *net.TCPAddr:
+		return a.IP
+	case nil:
+		return nil
+	default:
+		host, _, err := net.SplitHostPort(a.String())
+		if err != nil {
+			return nil
+		}
+		return net.ParseIP(host)
+	}
+}
+
 // ctxErr is why the client's context ended, as a typed error; nil while it
 // is live.
 func (c *Client) ctxErr() error { return contextError(c.ctx, c.addr) }
@@ -335,6 +353,9 @@ func (s *dialState) classify(ctx, hs context.Context, addr string, err error) er
 		return fmt.Errorf("%w: connecting to %s", ErrTimeout, addr)
 	case s.password.sent() > 0 || strings.Contains(err.Error(), "unable to authenticate"):
 		return fmt.Errorf("%w: %s", ErrAuth, addr)
+	}
+	if ae, ok := algorithmFailure(addr, err); ok {
+		return ae
 	}
 	return fmt.Errorf("%w: %s: %s", ErrHandshake, addr, sanitize(err.Error()))
 }
