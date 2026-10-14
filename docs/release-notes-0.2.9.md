@@ -142,7 +142,7 @@ The upgrade writes nothing to a device.
 - **Two routing engines.** Devices with two routing engines are not
   supported by apply in this release: a commit answer with a block per
   engine (`re0:`, `re1:`) is not recognised, so apply cancels the commit
-  and reports it rolled back. `--check` is unaffected.
+  and reports it rolled back.
 - **The first release of apply.** Start with `--check`, which commits
   nothing. Apply one device of each shape by hand, look at it
   (`device config pull <name> --diff`), and only then apply the rest: one
