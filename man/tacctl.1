@@ -5935,7 +5935,7 @@ The acknowledged notices too.
 .RE
 .\" END GENERATED: command device show
 .TP
-.BI "device add " "[ name ] address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-snmp\-location " text " ] [ \-\-legacy\-ssh ] [ \-\-config\-syntax auto|ios12|modern ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-no\-lookup ] [ \-\-allow\-generic ]"
+.BI "device add " "[ name ] address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-snmp\-location " text " ] [ \-\-legacy\-ssh ] [ \-\-config\-syntax auto|ios12|modern ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-no\-lookup ] [ \-\-pull ] [ \-\-allow\-generic ]"
 Register a device. A name is letters, digits,
 .RB ` . ` ,
 .RB ` _ `
@@ -6022,6 +6022,21 @@ device that reports none gets one line
 .RI ( "Location not set: tacctl device location " name " '<text>'" ),
 and at a terminal the add offers to enter one (blank skips). The location never
 makes the add fail.
+.IP
+.B \-\-pull
+then reads the device's configuration as
+.B device config pull
+does, for this one device, as you (the same password prompt, the same report
+after the add's own output). Nothing is pulled unless
+.B \-\-pull
+is given. It is refused before anything is registered when the tier may not run
+.BR "device config pull" ,
+when the add is run as root, or when the vendor is not cisco, juniper or wti. A
+device no scope's prefixes cover is registered and not pulled: one line gives
+.B scope prefixes
+.IR scope " add " cidr
+and the pull command. A pull that fails leaves the device registered and the
+command exits with the pull's status.
 .\" BEGIN GENERATED: command device add
 .RS
 .PP
@@ -6058,6 +6073,9 @@ Register without a pinned key (a hostkey\-unpinned notice).
 .TP
 \fB\-\-no\-lookup\fR
 Do not read the device's own name and location by SNMP.
+.TP
+\fB\-\-pull\fR
+After registering, read its configuration as 'device config pull' does (as you; needs a vendor and a scope).
 .TP
 \fB\-\-allow\-generic\fR
 (add, rename, import) Allow a generic name such as 'switch'.

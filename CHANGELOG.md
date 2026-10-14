@@ -3,6 +3,21 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.9 (unreleased)
+
+1. **`device add --pull` reads the device's configuration as it registers
+   it.** `tacctl device add <name> <address> --vendor cisco|juniper|wti
+   --pull` registers the device as before and then runs `device config pull`
+   for it, as the invoking user, in the same command; the pull's output
+   follows the add's report. The flag is off by default and asks nothing.
+   It is refused before anything is registered when the caller's tier may
+   not run `device config pull`, when run as root, or when the vendor is not
+   one the pull reads. A device no scope's prefixes cover is registered and
+   not pulled, with one line that names `tacctl scope prefixes <scope> add
+   <cidr>` and the pull command. A pull that fails leaves the device
+   registered and the command exits with the pull's status. The manual
+   page, `docs/cli/device.md` and `docs/devices/connecting.md` describe it.
+
 ## 0.2.8 (2026-10-13)
 
 1. **The documentation is a tree of topic pages.** `README.md` holds the

@@ -79,6 +79,7 @@ var deviceSpecs = map[string]Spec{
 		{Names: []string{"--host-key"}, Value: true},
 		{Names: []string{"--no-host-key"}},
 		{Names: []string{"--no-lookup"}},
+		{Names: []string{"--pull"}},
 		flagAllowGeneric}},
 	"remove":      {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagYes}},
 	"rename":      {MinArgs: 2, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagAllowGeneric}},
@@ -180,6 +181,7 @@ var deviceOptions = map[string][][2]string{
 		{"--host-key SHA256:<fp>", "Register only if the device offers this key; pin it alone"},
 		{"--no-host-key", "Register without a pinned key (a hostkey-unpinned notice)"},
 		{"--no-lookup", "Do not read the device's own name and location by SNMP"},
+		{"--pull", "After registering, read its configuration as 'device config pull' does (as you; needs a vendor and a scope)"},
 		{"--allow-generic", "(add, rename, import) Allow a generic name such as 'switch'"},
 	},
 	"remove": {
@@ -351,6 +353,13 @@ and not stored. 'check' compares the device's location with the registry's in
 a Location row and writes nothing. 'location <name> --from-device' reads it
 now and stores it: an empty answer is refused, and a different registered
 location is shown beside the new one and asked about (-y answers yes).
+
+Pulling: 'add --pull' registers the device and then runs 'config pull' for it,
+as you (the pull's own output follows the add's). It needs --vendor cisco,
+juniper or wti and the tier of 'config pull', and is refused before anything
+is registered when they are missing. A device no scope covers is registered
+and not pulled (the line says which commands to run); a failed pull leaves it
+registered and the command returns the pull's status.
 
 Configuration: 'config show <name>' prints the device's data (name, address,
 hostname, vendor, the scope that covers it, description, location), then the
@@ -1127,6 +1136,9 @@ func (inv *invocation) deviceAdd(args []string) error {
 	}
 	// The device's own name, read next to the host-key scan; with no name
 	// given it is read first, and offered.
+	if err := inv.deviceAddPullCheck(p); err != nil {
+		return err
+	}
 	hint := make(chan nameHint, 1)
 	if len(p.Args) == 1 {
 		name, h, err := inv.deviceAddOffered(p, "Usage: tacctl device add [<name>] <address> [options]")
@@ -1249,6 +1261,35 @@ func (inv *invocation) deviceAdd(args []string) error {
 		a.Out.Warn(n.Kind + ": " + n.Text)
 	}
 	inv.echo("")
+	if !p.Has("--pull") {
+		return nil
+	}
+	// --pull: the pull verb for this one device, as the caller; a device no
+	// scope covers is not read (the pull would refuse it).
+	if !e.Configured {
+		inv.echo("Not pulled: no scope's prefixes cover " + d.Address + ". Add them with 'tacctl scope prefixes <scope> add <cidr>', then run 'tacctl device config pull " + d.Name + "'.")
+		inv.echo("")
+		return nil
+	}
+	return inv.deviceConfigPull([]string{d.Name})
+}
+
+// deviceAddPullCheck is the refusal of --pull that needs no device, made
+// before anything is registered: the caller's tier, the account the pull
+// logs in as, and a vendor the pull reads.
+func (inv *invocation) deviceAddPullCheck(p Parsed) error {
+	if !p.Has("--pull") {
+		return nil
+	}
+	if t, ok := inv.deviceConfigPermits("pull"); !ok {
+		return inv.usageErr("--pull runs 'tacctl device config pull', which is not permitted for the " + string(t) + " tier.")
+	}
+	if _, err := inv.configLogin("device add --pull"); err != nil {
+		return err
+	}
+	if !slices.Contains(sortedVendors(), strings.ToLower(p.Value("--vendor"))) {
+		return inv.usageErr("--pull reads the configuration, which needs --vendor cisco, juniper or wti.")
+	}
 	return nil
 }
 

@@ -124,15 +124,21 @@ var deviceConfigNeeds = map[string]tier.Tier{
 	"forget": tier.Superuser,
 }
 
+// deviceConfigPermits is the caller's tier and whether it may run the verb.
+func (inv *invocation) deviceConfigPermits(sub string) (tier.Tier, bool) {
+	need := deviceConfigNeeds[sub]
+	t := inv.tierGate().Caller(inv.ctx)
+	return t, t == tier.Unrestricted || t == tier.Superuser || (tier.Rank(t) >= 0 && tier.Rank(t) >= tier.Rank(need))
+}
+
 // deviceConfigAllowed is nil when the caller's tier may run the verb; the
 // refusal is the gate's, printed and logged.
 func (inv *invocation) deviceConfigAllowed(sub string) error {
-	need := deviceConfigNeeds[sub]
-	g := inv.tierGate()
-	t := g.Caller(inv.ctx)
-	if t == tier.Unrestricted || t == tier.Superuser || (tier.Rank(t) >= 0 && tier.Rank(t) >= tier.Rank(need)) {
+	t, ok := inv.deviceConfigPermits(sub)
+	if ok {
 		return nil
 	}
+	g := inv.tierGate()
 	user := inv.sudoUser()
 	inv.app.Logger(inv.ctx, "auth.warning", "tier DENY user="+user+" tier="+string(t)+" cmd=device config "+sub)
 	if t == tier.None {

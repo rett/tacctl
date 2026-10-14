@@ -16,6 +16,7 @@ device add [<name>] <address>                     Register a device (writes devi
       --host-key SHA256:<fp>                      Register only if the device offers a key with this fingerprint; pin that key alone
       --no-host-key                               Register without scanning: unpinned, with a hostkey-unpinned notice
       --no-lookup                                 Do not read the device's own name and location by SNMP (sysName, sysLocation)
+      --pull                                      After registering, read its configuration as `device config pull` does, for this device, as you; needs `--vendor cisco|juniper|wti` and a scope that covers the address (else it is registered and not pulled, with the commands that fix it); a failed pull leaves it registered
       --allow-generic                             Register a generic name (switch, router, cisco, ubuntu, ...) anyway
 device remove <name>[,<name>...] | --all [-y]     Remove from the registry (confirms; hosts, scopes and vendor tags are not touched)
 device rename <old> <new> [--allow-generic]
