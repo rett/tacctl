@@ -146,6 +146,16 @@ gh repo edit --add-topic tacacs-plus --add-topic tacacs --add-topic radius --add
     --add-topic freeradius --add-topic network-automation --add-topic cisco --add-topic junos --add-topic golang
 ```
 
+A release's title is always `tacctl <tag>` (`tacctl 0.2.1`), never the bare
+tag; the title of a release made another way is fixed with
+`gh release edit 0.2.1 --title "tacctl 0.2.1"`. To list the titles that do
+not follow the rule:
+
+```sh
+gh release list --limit 100 --json tagName,name \
+    --jq '.[] | select(.name != "tacctl " + .tagName) | .tagName'
+```
+
 (For a release that already exists: `gh release upload 0.2.1` with the same
 four files.) A host that upgrades between the push and the upload simply
 builds from source (`could not download SHA256SUMS`).
