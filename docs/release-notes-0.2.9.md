@@ -104,6 +104,12 @@ Other changes in what a person types or sees:
 - **Settings** (item 1). `config devices apply-confirm-timeout` (minutes of
   the confirmed commit, 3 to 60, default 10) and `config devices apply-pause`
   (seconds between devices after the canary, 0 to 3600, default 60).
+- **Shell and console** (item 16). A leading `tacctl` (also `sudo tacctl`
+  and `/usr/local/bin/tacctl`) is ignored, so a pasted command line runs;
+  a bare `tacctl` prints the top-level help.
+- **Slow devices** (item 17). A device that answers the login's typed-ahead
+  line late is no longer refused as "the prompt cannot be told from the
+  banner".
 
 ## Upgrading from 0.2.8
 

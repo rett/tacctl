@@ -38,6 +38,10 @@ const (
 // maxLoginOutput is the most the login banner of a shell may be.
 const maxLoginOutput = 64 << 10
 
+// learnPatience is how many quiet periods learning waits, after it typed
+// the empty line a second time, for a device to answer one (see learn).
+const learnPatience = 10
+
 // maxPromptLine is the longest last line examined as a prompt or a more-
 // prompt; a longer one is output.
 const maxPromptLine = 512
@@ -661,12 +665,22 @@ func (s *shell) waitQuiet(ctx context.Context, q time.Duration) (quiet bool, err
 // device has been silent for the quiet period counts: the prompt is the
 // last line of the quiet output, and it is confirmed by typing an empty
 // line, to which the device answers with the prompt again. The prompt has
-// been seen once more for each empty line it answered; fewer (the device
-// flushed what was typed ahead at login) is retried once, more is
-// ambiguous, and either is ErrHandshake.
+// been seen once more for each empty line it answered; more than the empty
+// lines sent is ambiguous (ErrHandshake).
+//
+// No answer within the quiet period is the one step that rests on timing
+// alone: the device flushed what was typed ahead at login, or it is slow
+// (a loaded device answers later than the quiet period). Both are met by
+// typing the empty line once more, and then either answer count is right:
+// one (the first line was lost) or two (both answered, the first late).
+// After the retry a device that stays silent is waited for patiently
+// (learnPatience quiet periods since the retry) before it counts as one
+// that does not answer an empty line (ErrHandshake): judging it after one
+// more quiet period would fail a merely slow device.
 func (s *shell) learn(ctx context.Context) (string, error) {
 	var buf []byte
-	want, retried, quiet := 0, false, false
+	var retriedAt time.Time
+	base, sent, quiet := 0, 0, false
 	for {
 		ch := s.out.take()
 		if ch.overflow || len(buf)+len(ch.data) > maxLoginOutput {
@@ -685,24 +699,24 @@ func (s *shell) learn(ctx context.Context) (string, error) {
 			tail = promptUnit(strings.TrimRight(tail, "\r"), s.prof.prompt)
 			if tail != "" {
 				k := countPrompts(buf, tail)
+				got := k - base
 				switch {
-				case want == 0:
+				case sent == 0:
 					if err := s.c.write(ctx, s.in, []byte("\n")); err != nil {
 						return "", err
 					}
-					want = k + 1
-				case k == want:
-					return tail, nil
-				case k > want:
+					base, sent = k, 1
+				case got > sent:
 					return "", fmt.Errorf("%w: %s: the prompt cannot be told from the banner", ErrHandshake, s.c.addr)
-				case retried:
-					return "", fmt.Errorf("%w: %s: the device does not answer an empty line with its prompt", ErrHandshake, s.c.addr)
-				default:
-					retried = true
+				case got >= 1:
+					return tail, nil
+				case sent == 1:
 					if err := s.c.write(ctx, s.in, []byte("\n")); err != nil {
 						return "", err
 					}
-					want = k + 1
+					sent, retriedAt = 2, time.Now()
+				case time.Since(retriedAt) >= learnPatience*s.quiet:
+					return "", fmt.Errorf("%w: %s: the device does not answer an empty line with its prompt", ErrHandshake, s.c.addr)
 				}
 			}
 		}

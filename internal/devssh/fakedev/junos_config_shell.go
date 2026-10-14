@@ -175,6 +175,10 @@ func (s *Server) junosCsh(d *junosDevice, ch ssh.Channel, in *bufio.Reader, jc j
 func (s *Server) junosCLI(d *junosDevice, ch ssh.Channel, in *bufio.Reader, jc junosConn) (gone bool) {
 	sess := d.newSession(jc.user)
 	defer d.endSession(sess)
+	// A drop ends the session (its exclusive lock) before it closes the
+	// connection: what the client sees close has already let go.
+	drop := jc.drop
+	jc.drop = func() { d.endSession(sess); drop() }
 	for {
 		if _, err := io.WriteString(ch, crlf(d.promptText(sess))); err != nil {
 			return true

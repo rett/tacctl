@@ -317,6 +317,14 @@ current behaviour; this file is where history lives.
     The manual page, `docs/cli/shell.md` and `docs/security/login-console.md`
     describe it.
 
+17. **A device that answers a login slowly no longer fails the pull.** The
+    ssh client types an empty line to learn the device's prompt and, when
+    nothing comes back in a quiet period, types it once more. A device that
+    answered both lines late was refused with "the prompt cannot be told from
+    the banner"; the answers are now counted against the lines sent, and a
+    device that stays silent is given ten quiet periods before the login
+    fails.
+
 ## 0.2.8 (2026-10-13)
 
 1. **The documentation is a tree of topic pages.** `README.md` holds the

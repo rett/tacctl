@@ -439,6 +439,8 @@ func (s *Server) config() *ssh.ServerConfig {
 	if s.ciphers != nil {
 		cfg.Ciphers = s.ciphers
 	}
+	// A login is counted when the password is accepted, before the server
+	// tells the client: a client that has logged in finds it counted.
 	check := func(user, pw string) bool {
 		u, p := s.credentials()
 		s.mu.Lock()
@@ -447,7 +449,13 @@ func (s *Server) config() *ssh.ServerConfig {
 		if s.junosLoginMode() == "deny" {
 			return false
 		}
-		return user == u && pw == p || s.junosAccept(user, pw)
+		ok := user == u && pw == p || s.junosAccept(user, pw)
+		if ok {
+			s.mu.Lock()
+			s.logins++
+			s.mu.Unlock()
+		}
+		return ok
 	}
 	for _, m := range s.methods {
 		switch m {
@@ -492,9 +500,6 @@ func (s *Server) serve(c net.Conn) {
 		return
 	}
 	defer func() { _ = sc.Close() }()
-	s.mu.Lock()
-	s.logins++
-	s.mu.Unlock()
 	switch s.junosLoginMode() {
 	case "close":
 		return
@@ -538,6 +543,7 @@ func (s *Server) session(sc *ssh.ServerConn, ch ssh.Channel, reqs <-chan *ssh.Re
 			continue
 		}
 		ok := false
+		var start func() // the session's work, started once replied
 		switch r.Type {
 		case "pty-req", "env", "window-change":
 			ok = true
@@ -580,7 +586,16 @@ func (s *Server) session(sc *ssh.ServerConn, ch ssh.Channel, reqs <-chan *ssh.Re
 			if run == nil {
 				break
 			}
-			ok, started = true, true
+			ok, started, start = true, true, run
+		}
+		// The reply goes out before the session starts, as a server must:
+		// a command that ends at once closes the channel, and a reply sent
+		// after the close is lost, which fails the client's request with
+		// EOF.
+		if r.WantReply {
+			_ = r.Reply(ok, nil)
+		}
+		if start != nil {
 			work.Add(1)
 			go func() {
 				defer work.Done()
@@ -589,11 +604,8 @@ func (s *Server) session(sc *ssh.ServerConn, ch ssh.Channel, reqs <-chan *ssh.Re
 					<-s.quit
 					return
 				}
-				run()
+				start()
 			}()
-		}
-		if r.WantReply {
-			_ = r.Reply(ok, nil)
 		}
 	}
 }

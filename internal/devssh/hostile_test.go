@@ -430,6 +430,38 @@ func TestShellLearningRetriesOnce(t *testing.T) {
 	}
 }
 
+// A device that answers the first empty line slower than the quiet period
+// (a loaded device) has it sent once more and answers both: the prompt is
+// learned, and nothing is left in flight for the first command.
+func TestShellLearningSlowAnswerToTheEmptyLine(t *testing.T) {
+	var blanks atomic.Int32
+	d := &scripted{
+		login: []step{{data: "banner\r\nrtr1#"}},
+		perCmd: func(cmd string) []step {
+			if cmd == "" {
+				if blanks.Add(1) == 1 {
+					return []step{{pause: 200 * time.Millisecond}, {data: "\r\nrtr1#"}}
+				}
+				return []step{{data: "\r\nrtr1#"}}
+			}
+			return []step{{data: cmd + "\r\nout\r\nrtr1#"}}
+		},
+	}
+	tg, stop := d.start(t)
+	defer stop()
+	tg.Quiet = 40 * time.Millisecond
+	s, err := dial(t, tg).CLI(devssh.VendorCisco)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := blanks.Load(); n != 2 {
+		t.Fatalf("%d empty lines, want 2", n)
+	}
+	if got, err := s.Run(bg(), "show version"); err != nil || got != "out\n" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+}
+
 // Junos switches print a line before every prompt.
 func TestShellLinePrintedBeforeEachPrompt(t *testing.T) {
 	d := &scripted{
