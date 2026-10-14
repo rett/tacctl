@@ -6399,7 +6399,15 @@ in a location or description), and a host name that is not a DNS name (the
 device states no domain\-name: a bare name is no address tacctl can connect
 to) are listed
 .I refused
-and never written. Only Junos records are read; a device with no pull record
+and never written. A host name is filled only when the system resolver
+answers it with the device's registered address and no other (the registry's
+hostname is where tacctl connects, so a name the device merely reports must
+not redirect later logins): a lookup that fails, an answer without the
+address and an answer with any other address are listed
+.I refused
+(\(lqdoes not resolve: not filled\(rq), and
+.B \-\-overwrite
+never replaces a hostname with such a name. Only Junos records are read; a device with no pull record
 is named with the command that makes one. Logged:
 .B "auth.info device sync user= devices= fields="
 when fields were written. Exit status: 0, 1 refused, 2 wrong arguments.

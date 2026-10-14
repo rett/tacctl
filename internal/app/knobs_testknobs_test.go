@@ -4,6 +4,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"reflect"
 	"strings"
@@ -124,5 +125,33 @@ func TestDeviceKnobs(t *testing.T) {
 	k, err = load(t)
 	if err != nil || k.DeviceDial() != "" || k.DevicePassword() != "" {
 		t.Errorf("unset: %q %q %v", k.DeviceDial(), k.DevicePassword(), err)
+	}
+}
+
+// The resolve knob is a fixed name table: a name it lacks does not resolve.
+func TestResolveKnob(t *testing.T) {
+	k, err := load(t, EnvTestResolve+"=a.example.net=192.0.2.1,192.0.2.2; B.example.net=192.0.2.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := k.Resolver()
+	if r == nil {
+		t.Fatal("no resolver")
+	}
+	got, err := r(context.Background(), "A.example.net.")
+	if err != nil || len(got) != 2 || got[0] != "192.0.2.1" || got[1] != "192.0.2.2" {
+		t.Errorf("a: %v %v", got, err)
+	}
+	if got, err = r(context.Background(), "b.example.net"); err != nil || len(got) != 1 || got[0] != "192.0.2.3" {
+		t.Errorf("b: %v %v", got, err)
+	}
+	if _, err = r(context.Background(), "c.example.net"); err == nil {
+		t.Error("an unlisted name resolved")
+	}
+	if _, err = load(t, EnvTestResolve+"=garbage"); err == nil || !strings.Contains(err.Error(), EnvTestResolve) {
+		t.Errorf("malformed: %v", err)
+	}
+	if k, err = load(t); err != nil || k.Resolver() != nil {
+		t.Errorf("unset: %v", err)
 	}
 }

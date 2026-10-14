@@ -271,7 +271,7 @@ var manEnvExempt = func() map[string]string {
 	add("turns off the sudo re-exec in the test sandbox (tests only; paths.Paths.SkipSudo)", "TACCTL_SKIP_SUDO")
 	add("a test knob, read only by a binary built with -tags testknobs (tests/README.md)",
 		"TACCTL_TEST_NOW", "TACCTL_TEST_RANDOM", "TACCTL_FAULT", "TACCTL_TEST_ROOT", "TACCTL_TEST_CONSOLE_ENV", "TACCTL_TEST_PROC",
-		"TACCTL_TEST_DEVICE_DIAL", "TACCTL_TEST_DEVICE_PASSWORD", "TACCTL_TEST_LOCAL_PASSWORD")
+		"TACCTL_TEST_DEVICE_DIAL", "TACCTL_TEST_DEVICE_PASSWORD", "TACCTL_TEST_LOCAL_PASSWORD", "TACCTL_TEST_RESOLVE")
 	return m
 }()
 

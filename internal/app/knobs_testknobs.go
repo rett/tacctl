@@ -30,6 +30,9 @@ const (
 	// EnvTestLocalPassword is the password of the local account of
 	// '--login' and 'device onboard'.
 	EnvTestLocalPassword = "TACCTL_TEST_LOCAL_PASSWORD"
+	// EnvTestResolve is the fixed host name table the lookups of 'device
+	// sync' and --server answer from: name=address[,address][;name=...].
+	EnvTestResolve = "TACCTL_TEST_RESOLVE"
 )
 
 // loadKnobs is the only place the knob variables are read.
@@ -76,6 +79,22 @@ func loadKnobs(env paths.Env) (Knobs, error) {
 			return Knobs{}, fmt.Errorf("%s=%q: not a loopback host:port (127.0.0.1:2222)", EnvTestDeviceDial, v)
 		}
 		k.dial = v
+	}
+	if v := env.Get(EnvTestResolve); v != "" {
+		k.resolve = map[string][]string{}
+		for _, ent := range strings.Split(v, ";") {
+			name, addrs, ok := strings.Cut(strings.TrimSpace(ent), "=")
+			if !ok || name == "" {
+				return Knobs{}, fmt.Errorf("%s=%q: not name=address[,address][;name=...]", EnvTestResolve, v)
+			}
+			var l []string
+			for _, a := range strings.Split(addrs, ",") {
+				if a = strings.TrimSpace(a); a != "" {
+					l = append(l, a)
+				}
+			}
+			k.resolve[strings.ToLower(name)] = l
+		}
 	}
 	k.devPass = env.Get(EnvTestDevicePassword)
 	k.localPass = env.Get(EnvTestLocalPassword)

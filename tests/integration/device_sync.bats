@@ -6,7 +6,9 @@
 # the fake Junos device (tests/fixtures/devconf/fake/junos-blank: host name
 # example-sw5, domain lab.example.net, snmp location "Lab rack 5", no
 # description). sync logs in to nothing, so the fake device is stopped after
-# the seed. The pieces are pinned by the Go tests (internal/cli/
+# the seed. A reported host name is filled only when it resolves to the
+# registered address and no other; TACCTL_TEST_RESOLVE is the fake resolver.
+# The pieces are pinned by the Go tests (internal/cli/
 # device_sync_test.go); these pin the wiring.
 
 load ../helpers/setup
@@ -26,6 +28,7 @@ setup() {
     stub_cmd ip 'if [[ "$*" == *"route get 1.0.0.0"* ]]; then echo "1.0.0.0 via 10.0.0.1 dev eth0 src 10.0.0.42 uid 0"; fi'
     load_fixture tacquito.multiscope.yaml
     unset FAKEDEV_USER FAKEDEV_PASSWORD FAKEDEV_PID
+    export TACCTL_TEST_RESOLVE="example-sw5.lab.example.net=${ADDR}"
     JDIR=$(fakedev_dir junos-blank)
     : > "${JDIR}/echo.plain"
     fakedev_start "$JDIR"
@@ -142,6 +145,27 @@ EOF
     sync example-sw5 --overwrite --apply -y
     assert_success
     [[ "$(field example-sw5 location)" == "Lab rack 5" ]]
+}
+
+@test "sync: a host name that does not resolve to the address and only it is not filled" {
+    local bad
+    for bad in "other.example.net=192.168.1.99" "example-sw5.lab.example.net=${ADDR},192.168.1.99" \
+        "example-sw5.lab.example.net=192.168.1.99"; do
+        TACCTL_TEST_RESOLVE="$bad" sync example-sw5 --apply -y
+        assert_success
+        assert_output --regexp "example-sw5 +hostname +- +example-sw5\.lab\.example\.net +refused: does not resolve: not filled"
+        [[ -z "$(field example-sw5 hostname)" ]]
+    done
+    # a resolving name, then a set hostname that --overwrite does not replace with an unresolved one
+    sync example-sw5
+    assert_output --regexp "example-sw5 +hostname +- +example-sw5\.lab\.example\.net +fill: resolves to the address"
+    "$TACCTL_BIN_SCRIPT" device hostname example-sw5 old.example.net > /dev/null
+    TACCTL_TEST_RESOLVE="old.example.net=${ADDR}" sync example-sw5 --overwrite --apply -y
+    assert_success
+    assert_output --partial "does not resolve: not filled"
+    [[ "$(field example-sw5 hostname)" == old.example.net ]]
+    sync example-sw5 --overwrite --apply -y
+    [[ "$(field example-sw5 hostname)" == example-sw5.lab.example.net ]]
 }
 
 @test "sync: what a device reports is checked: a value the registry would not accept is refused" {

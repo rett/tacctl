@@ -39,9 +39,9 @@ func TestKnobsIgnoredWithoutTag(t *testing.T) {
 	}
 	// The device knobs are not even spelled in this build: the variables the
 	// tagged file names are read by nothing here.
-	for _, kv := range []string{"TACCTL_TEST_DEVICE_DIAL=127.0.0.1:2222", "TACCTL_TEST_DEVICE_PASSWORD=x", "TACCTL_TEST_LOCAL_PASSWORD=x"} {
+	for _, kv := range []string{"TACCTL_TEST_DEVICE_DIAL=127.0.0.1:2222", "TACCTL_TEST_DEVICE_PASSWORD=x", "TACCTL_TEST_LOCAL_PASSWORD=x", "TACCTL_TEST_RESOLVE=h.example.net=192.0.2.1"} {
 		dk, err := LoadKnobs(paths.NewEnv([]string{kv}))
-		if err != nil || dk.DeviceDial() != "" || dk.DevicePassword() != "" || dk.LocalPassword() != "" {
+		if err != nil || dk.DeviceDial() != "" || dk.DevicePassword() != "" || dk.LocalPassword() != "" || dk.Resolver() != nil {
 			t.Errorf("%s took effect: %q %q %v", kv, dk.DeviceDial(), dk.DevicePassword(), err)
 		}
 	}

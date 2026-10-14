@@ -14,16 +14,24 @@ package cli
 // accept from a person, is listed as refused and never written.
 //
 // A hostname is filled only when the device's name is a DNS name (it has a
-// dot): the registry's hostname is where tacctl connects, and a bare label
-// that no resolver is known to answer would turn every later login of that
-// device into a refusal.
+// dot) AND the system resolver answers it with the device's registered
+// address and no other: the registry's hostname is where tacctl connects
+// (devreg.SSHTarget dials it instead of the address, and the login's
+// password goes with it), so a name the device merely reports would send
+// later logins wherever DNS points. A lookup that fails, an answer without
+// the address and an answer with any other address are "not filled". The
+// same rule holds for --overwrite, which never replaces a hostname with an
+// unresolved one.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/rett/tacctl/internal/devreg"
@@ -33,6 +41,9 @@ import (
 
 // syncUse is the usage line of the verb.
 const syncUse = "Usage: tacctl device sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite] [--json] [-y]"
+
+// syncResolveTimeout bounds one lookup of a reported host name.
+const syncResolveTimeout = 5 * time.Second
 
 // The actions of one field.
 const (
@@ -201,9 +212,9 @@ func (s *deviceSyncRun) collect(sel selection) error {
 			description = sectionValue(sec.Lines, "snmp description")
 		}
 		d.Fields = []syncField{
-			s.field("hostname", e.Hostname, rec.Hostname),
-			s.field("location", e.Location, location),
-			s.field("description", e.Description, description),
+			s.field("hostname", e.Hostname, rec.Hostname, e.Address),
+			s.field("location", e.Location, location, ""),
+			s.field("description", e.Description, description, ""),
 		}
 	}
 	return nil
@@ -260,8 +271,37 @@ func unsafeText(s string) string {
 	return ""
 }
 
-// field works out one field: now is the registry's value, says the device's.
-func (s *deviceSyncRun) field(name, now, says string) syncField {
+// resolvesToOnly reports whether the system resolver (resolve; nil is the
+// system's own) answers host with the address addr and no other: the one
+// condition under which a device-reported name becomes the registry's
+// hostname. A lookup failure, an answer without addr, an answer with any
+// other address and one that is not an address at all are all false.
+func resolvesToOnly(ctx context.Context, resolve func(context.Context, string) ([]string, error), host, addr string) bool {
+	want := net.ParseIP(strings.TrimSpace(addr))
+	if want == nil {
+		return false
+	}
+	if resolve == nil {
+		resolve = net.DefaultResolver.LookupHost
+	}
+	ctx, cancel := context.WithTimeout(ctx, syncResolveTimeout)
+	defer cancel()
+	got, err := resolve(ctx, host)
+	if err != nil || len(got) == 0 {
+		return false
+	}
+	for _, g := range got {
+		ip := net.ParseIP(g)
+		if ip == nil || !ip.Equal(want) {
+			return false
+		}
+	}
+	return true
+}
+
+// field works out one field: now is the registry's value, says the device's;
+// addr is the device's registered address, which a hostname must resolve to.
+func (s *deviceSyncRun) field(name, now, says, addr string) syncField {
 	f := syncField{Field: name, Now: devText(now), Device: devText(says), old: now}
 	if says == "" {
 		f.Action = syncNone
@@ -284,12 +324,18 @@ func (s *deviceSyncRun) field(name, now, says string) syncField {
 		f.Action, f.Why = syncRefused, capText(cleanLine(why), 110)
 	case now == says:
 		f.Action = syncSame
+	case now != "" && !s.overwrite:
+		f.Action, f.Why = syncKeep, "set; --overwrite replaces it"
+	case name == "hostname" && !resolvesToOnly(s.inv.ctx, s.inv.app.Resolve, says, addr):
+		// never a name the resolver does not tie to this device's address
+		f.Action, f.Why = syncRefused, "does not resolve: not filled"
 	case now == "":
 		f.Action, f.value = syncFill, says
-	case s.overwrite:
-		f.Action, f.value = syncReplace, says
 	default:
-		f.Action, f.Why = syncKeep, "set; --overwrite replaces it"
+		f.Action, f.value = syncReplace, says
+	}
+	if name == "hostname" && f.writes() {
+		f.Why = "resolves to the address"
 	}
 	return f
 }

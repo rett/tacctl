@@ -86,6 +86,9 @@ func New(args []string, env paths.Env, exe string, euid int, stdio Stdio, runner
 		Knobs:    k,
 		KnobsErr: kerr,
 	}
+	if r := k.Resolver(); r != nil {
+		a.Resolve = r
+	}
 	// A stream that is not a file is taken as able to show colour (a
 	// terminal, TERM capable), so that only the user's explicit choice
 	// strips it.

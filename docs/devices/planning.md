@@ -171,12 +171,12 @@ Register 1 device(s), pinning the host keys shown: sw-lab-5 (192.0.2.31)? [y/N] 
 
 ## Filling the registry from the records
 
-`tacctl device sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor>` fills a device's empty `hostname`, `location` and `description` in the registry from what the device said of itself in its last pull record: its `system host-name` (with `domain-name`), `snmp location` and `snmp description`. It is the superuser's, reads only Junos records and logs in to nothing; a device with no pull record is named with the command that makes one (`device config pull`, or `device collect --register`).
+`tacctl device sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor>` fills a device's empty `hostname`, `location` and `description` in the registry from what the device said of itself in its last pull record: its `system host-name` (with `domain-name`), `snmp location` and `snmp description`. The `hostname` is filled only when the name resolves, with the system resolver, to the device's registered address and to no other. It is the superuser's, reads only Junos records and logs in to nothing (it does look the name up); a device with no pull record is named with the command that makes one (`device config pull`, or `device collect --register`).
 
 ```
 $ tacctl device sync sw-lab-5
   DEVICE    FIELD        REGISTRY  DEVICE SAYS           ACTION
-  sw-lab-5  hostname     -         sw-lab-5.lab.example.net  fill
+  sw-lab-5  hostname     -         sw-lab-5.lab.example.net  fill: resolves to the address
   sw-lab-5  location     -         Lab rack 2            fill
   sw-lab-5  description  -         Lab switch five       fill
   ...
@@ -186,5 +186,6 @@ $ tacctl device sync sw-lab-5 --apply
 
 - **Preview first.** The table shows, per field, what the registry has, what the device says and the action: `fill` (empty in the registry), `same`, `keep` (set, and different: `--overwrite` replaces it), `replace` (`--overwrite`, with the old value shown), `none` (the device states none) or `refused`. A second table gives the record's facts (login, model, release, serial number), which are the record's and never written to the registry.
 - **`--apply`.** After one question (`-y` answers it; without a terminal it is needed), one registry write under the registry's own lock, with a snapshot first; each field is checked again against the live file, so a value set since the preview is left as it is and said. The file is never re-imported. The name, address, vendor and scope are never touched.
-- **What a device reports is checked.** A value with control characters (a newline, a terminal escape), invalid UTF-8, one the registry would not accept from a person (more than 120 characters, a `?` in a location or description) and a host name that is not a DNS name (the device states no `domain-name`, so a bare label that no resolver is known to answer, which would redirect every later login of the device) are listed `refused` and never written. Text a device reports is shown with control characters as `?` and cut at 64 characters.
+- **What a device reports is checked.** A value with control characters (a newline, a terminal escape), invalid UTF-8, one the registry would not accept from a person (more than 120 characters, a `?` in a location or description) and a host name that is not a DNS name (the device states no `domain-name`: a bare label) are listed `refused` and never written. Text a device reports is shown with control characters as `?` and cut at 64 characters.
+- **A host name must resolve to the address.** The registry's `hostname` is where tacctl connects (it is dialled instead of the address, with your password), so a name the device reports is filled only when the system resolver answers it with the registered address and no other. A lookup that fails, an answer without the address and an answer with any other address are listed `refused: does not resolve: not filled`; the hostname stays empty and logins keep using the address. `--overwrite` follows the same rule: it never replaces a hostname with a name that does not resolve to the address (a filled row reads `fill: resolves to the address`). `location` and `description` are not looked up.
 - **Audit and exit.** `device sync user= devices= fields=` when fields were written. Exit status: 0, 1 refused, 2 wrong arguments.

@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +29,16 @@ func (b *pullBox) syncSeed(name, addr, hostname string, snmp ...string) {
 	}
 	b.putRecord(name, devconf.Record{Address: addr, Vendor: "juniper", Pulled: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC), By: "alice",
 		Result: devconf.ResultOK, Release: "25.4R1-S2.3", Model: "EX4300-48MP", Serial: "FXYZ00000001", Hostname: hostname, UserPulled: true})
+}
+
+// resolves is the DNS of the test: a name the table lacks does not resolve.
+func (b *pullBox) resolves(table map[string][]string) {
+	b.sb.resolve = func(_ context.Context, name string) ([]string, error) {
+		if a, ok := table[name]; ok {
+			return a, nil
+		}
+		return nil, errors.New("no such host")
+	}
 }
 
 // sync runs 'device sync' as alice on a terminal with the lines of typed
@@ -60,6 +72,7 @@ func TestSyncPreviewApplyOverwrite(t *testing.T) {
 	b := newCollectBox(t)
 	b.syncSeed("sw-a", "192.168.1.31", "sw-a.lab.example.net",
 		`set snmp location "Lab rack 2"`, `set snmp description "Lab switch five"`)
+	b.resolves(map[string][]string{"sw-a.lab.example.net": {"192.168.1.31"}})
 
 	// the preview changes nothing and logs in to nothing
 	out := b.sync("-", "sw-a")
@@ -179,6 +192,7 @@ func TestSyncRefusesHostileText(t *testing.T) {
 func TestSyncSelectionAndJSON(t *testing.T) {
 	b := newCollectBox(t)
 	b.syncSeed("sw-a", "192.168.1.31", "sw-a.lab.example.net", `set snmp location "Lab rack 2"`)
+	b.resolves(map[string][]string{"sw-a.lab.example.net": {"192.168.1.31"}})
 	b.devices([3]string{"sw-a", "192.168.1.31", "juniper"}, [3]string{"sw-b", "192.168.1.32", "juniper"}, [3]string{"fw-c", "192.168.1.33", "cisco"})
 	out := b.sync("-", "--all", "--json")
 	if b.sb.code != 0 {
@@ -226,7 +240,9 @@ func TestSyncSelectionAndJSON(t *testing.T) {
 func TestSyncWriteSkipsWhatChanged(t *testing.T) {
 	b := newCollectBox(t)
 	b.syncSeed("sw-a", "192.168.1.31", "sw-a.lab.example.net", `set snmp location "Lab rack 2"`)
+	b.resolves(map[string][]string{"sw-a.lab.example.net": {"192.168.1.31"}})
 	inv := b.invoke()
+	inv.app.Resolve = b.sb.resolve
 	s := &deviceSyncRun{inv: inv, user: "alice", apply: true}
 	if err := s.collect(selection{names: []string{"sw-a"}}); err != nil {
 		t.Fatal(err)
@@ -244,6 +260,112 @@ func TestSyncWriteSkipsWhatChanged(t *testing.T) {
 	e := b.entry("sw-a")
 	if e.Location != "Set by hand" || e.Hostname != "sw-a.lab.example.net" || s.applied != 1 || s.concurrent != 1 {
 		t.Errorf("entry %+v applied %d concurrent %d", e, s.applied, s.concurrent)
+	}
+}
+
+// A reported host name becomes the registry's hostname (the ssh target)
+// only when the resolver answers it with the device's address and no other.
+func TestSyncHostnameMustResolveToAddress(t *testing.T) {
+	const addr = "192.168.1.31"
+	for _, c := range []struct {
+		name  string
+		table map[string][]string
+		fill  bool
+	}{
+		{"exact", map[string][]string{"sw-a.lab.example.net": {addr}}, true},
+		{"the address twice", map[string][]string{"sw-a.lab.example.net": {addr, addr}}, true},
+		{"another address", map[string][]string{"sw-a.lab.example.net": {"192.168.1.99"}}, false},
+		{"the address and another", map[string][]string{"sw-a.lab.example.net": {addr, "192.168.1.99"}}, false},
+		{"the address and an ipv6 one", map[string][]string{"sw-a.lab.example.net": {addr, "2001:db8::1"}}, false},
+		{"an empty answer", map[string][]string{"sw-a.lab.example.net": {}}, false},
+		{"a lookup failure", map[string][]string{}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			b := newCollectBox(t)
+			b.syncSeed("sw-a", addr, "sw-a.lab.example.net", `set snmp location "Lab rack 2"`)
+			b.resolves(c.table)
+			out := b.sync("-", "sw-a", "--apply", "-y")
+			if b.sb.code != 0 {
+				t.Fatalf("exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+			}
+			e := b.entry("sw-a")
+			switch {
+			case c.fill && (e.Hostname != "sw-a.lab.example.net" || !strings.Contains(out, "resolves to the address")):
+				t.Errorf("not filled: %+v\n%s", e, out)
+			case !c.fill && (e.Hostname != "" || !strings.Contains(out, "does not resolve: not filled")):
+				t.Errorf("filled or unexplained: %+v\n%s", e, out)
+			}
+			// the location does not depend on the lookup
+			if e.Location != "Lab rack 2" {
+				t.Errorf("location %q", e.Location)
+			}
+		})
+	}
+}
+
+// --overwrite follows the same rule: a set hostname is never replaced with
+// one that does not resolve to the address, and the preview says so.
+func TestSyncOverwriteHostnameMustResolve(t *testing.T) {
+	b := newCollectBox(t)
+	b.syncSeed("sw-a", "192.168.1.31", "sw-a.lab.example.net")
+	if _, err := b.invoke().deviceWrite(func(f *devreg.File, _ *devreg.Resolver) error {
+		f.Find("sw-a").Hostname = "old.lab.example.net"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b.resolves(map[string][]string{"sw-a.lab.example.net": {"192.168.1.31", "10.9.9.9"}})
+	out := b.sync("-", "sw-a", "--overwrite", "--apply", "-y")
+	if !strings.Contains(out, "does not resolve: not filled") || b.entry("sw-a").Hostname != "old.lab.example.net" {
+		t.Errorf("unresolved name replaced a hostname:\n%s\n%+v", out, b.entry("sw-a"))
+	}
+	b.resolves(map[string][]string{"sw-a.lab.example.net": {"192.168.1.31"}})
+	out = b.sync("-", "sw-a", "--overwrite")
+	if !strings.Contains(out, "replace: resolves to the address") || !strings.Contains(out, "old.lab.example.net") {
+		t.Errorf("preview:\n%s", out)
+	}
+	b.sync("-", "sw-a", "--overwrite", "--apply", "-y")
+	if b.entry("sw-a").Hostname != "sw-a.lab.example.net" {
+		t.Errorf("resolved name not written: %+v", b.entry("sw-a"))
+	}
+	// without --overwrite a set hostname is kept and nothing is looked up
+	b.sb.resolve = func(context.Context, string) ([]string, error) {
+		t.Error("a lookup for a field that is not written")
+		return nil, errors.New("no")
+	}
+	if _, err := b.invoke().deviceWrite(func(f *devreg.File, _ *devreg.Resolver) error {
+		f.Find("sw-a").Hostname = "other.lab.example.net"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if out = b.sync("-", "sw-a"); !strings.Contains(out, "keep") {
+		t.Errorf("keep:\n%s", out)
+	}
+}
+
+func TestResolvesToOnly(t *testing.T) {
+	res := func(a ...string) func(context.Context, string) ([]string, error) {
+		return func(context.Context, string) ([]string, error) { return a, nil }
+	}
+	for _, c := range []struct {
+		resolve func(context.Context, string) ([]string, error)
+		addr    string
+		want    bool
+	}{
+		{res("10.0.0.1"), "10.0.0.1", true},
+		{res("10.0.0.1", "10.0.0.1"), "10.0.0.1", true},
+		{res("2001:db8::1"), "2001:DB8:0::1", true},
+		{res("10.0.0.2"), "10.0.0.1", false},
+		{res("10.0.0.1", "10.0.0.2"), "10.0.0.1", false},
+		{res("garbage"), "10.0.0.1", false},
+		{res(), "10.0.0.1", false},
+		{res("10.0.0.1"), "not-an-address", false},
+		{func(context.Context, string) ([]string, error) { return []string{"10.0.0.1"}, errors.New("x") }, "10.0.0.1", false},
+	} {
+		if got := resolvesToOnly(context.Background(), c.resolve, "h.example.net", c.addr); got != c.want {
+			t.Errorf("addr %q: %v", c.addr, got)
+		}
 	}
 }
 

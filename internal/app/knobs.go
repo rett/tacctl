@@ -1,10 +1,13 @@
 package app
 
 import (
+	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/rett/tacctl/internal/paths"
@@ -78,6 +81,25 @@ type Knobs struct {
 	// localPass is the local account's password ('--login', 'device
 	// onboard'): "" asks on the terminal.
 	localPass string
+	// resolve is the fixed name table of TACCTL_TEST_RESOLVE: nil asks
+	// the system resolver.
+	resolve map[string][]string
+}
+
+// Resolver is the host name lookup a test build answers from its
+// TACCTL_TEST_RESOLVE table (a name the table lacks does not resolve), and
+// nil when the knob is unset and in a production build: the system
+// resolver.
+func (k Knobs) Resolver() func(context.Context, string) ([]string, error) {
+	if k.resolve == nil {
+		return nil
+	}
+	return func(_ context.Context, name string) ([]string, error) {
+		if a, ok := k.resolve[strings.ToLower(strings.TrimSuffix(name, "."))]; ok {
+			return append([]string(nil), a...), nil
+		}
+		return nil, errors.New("no such host")
+	}
 }
 
 // DeviceDial is the host:port a test build dials for every device ("" in a

@@ -278,6 +278,12 @@ current behaviour; this file is where history lives.
     DNS name (no `domain-name`: a bare label is not an address tacctl can
     connect to) are listed `refused` and never written; text a device
     reports is shown with control characters as `?`, cut at 64 characters.
+    A host name is filled only when the system resolver answers it with the
+    device's registered address and no other (the registry's `hostname` is
+    where tacctl connects, so a name the device merely reports must not
+    redirect later logins): a failed lookup, a different address or extra
+    addresses are listed `refused: does not resolve: not filled`, and
+    `--overwrite` never replaces a hostname with such a name.
     Logged: `device sync user= devices= fields=` when fields were written.
 
 15. **A pull record keeps the device's host name.** The record of a Junos
