@@ -167,6 +167,8 @@ nothing_secret() {
     assert_output --partial "example-sw5  committing as admin, verifying as alice ..."
     assert_output --regexp "example-sw5  applied \(roles,aaa: [0-9]+ set, 0 delete\) \[tacctl-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4}\]"
     assert_output --partial "The local account 'admin' was not probed: a login would send its password to the TACACS+ server."
+    refute_output --partial "still logs in"
+    refute_output --partial "is refused while the server answers"
     run committed
     assert_output --partial "set system tacplus-server 10.0.0.42 single-connection"
     assert_output --partial "set system authentication-order tacplus"
@@ -236,6 +238,16 @@ nothing_secret() {
     assert_output --regexp "sw-root  checked: shape [0-9a-f]{12}"
     [[ "$(record sw-root login)" == local:root ]]
     unchanged
+}
+
+@test "onboard --login root: committed, and root is not probed afterwards" {
+    LOCAL_PW=root-fakedev-pw tonboard 'y\nsw-root\n' "$ADDR" --login root --name sw-root
+    [[ "$status" -eq 0 ]]
+    assert_output --regexp "sw-root  applied \("
+    assert_output --partial "The local account 'root' was not probed: a login would send its password to the TACACS+ server."
+    refute_output --partial "still logs in"
+    refute_output --partial "is refused while the server answers"
+    nothing_secret
 }
 
 @test "onboard: any local account, a break-glass one included; a held address is refused" {

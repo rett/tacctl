@@ -6293,16 +6293,16 @@ user, with that class; a local account (your own name, logged in through the
 local password) is not a proof. A fresh login that is refused or is not that
 template user rolls the change back and leaves the local account as it was.
 .IP 8. 4
-.B root
-is tried once more, for information only
-.RI ( "still logs in" ,
-or
-.IR "is refused while the server answers" );
-any other local account is not
+The local account is never tried again, root included
 .RI ( "was not probed" :
 with
 .B "authentication\-order tacplus"
-a login would send its password to the TACACS+ server).
+a login would send its password to the TACACS+ server);
+.B \-\-json
+has
+.B probe
+with the value
+.IR not\-probed .
 .RE
 .IP
 .B root

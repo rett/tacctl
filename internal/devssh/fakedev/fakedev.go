@@ -255,11 +255,13 @@ type Server struct {
 	mu       sync.Mutex
 	conns    map[net.Conn]struct{}
 	attempts int
-	logins   int
-	commands []string
-	events   []string
-	execs    []string
-	stopped  bool
+	// attemptUsers is the user of each presented password, in order.
+	attemptUsers []string
+	logins       int
+	commands     []string
+	events       []string
+	execs        []string
+	stopped      bool
 }
 
 // Serve starts a server on a loopback port with the default credentials
@@ -303,6 +305,14 @@ func (s *Server) Attempts() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.attempts
+}
+
+// AttemptUsers are the user names the passwords were presented for, in
+// order of arrival.
+func (s *Server) AttemptUsers() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.attemptUsers...)
 }
 
 // Logins is how many connections authenticated.
@@ -445,6 +455,7 @@ func (s *Server) config() *ssh.ServerConfig {
 		u, p := s.credentials()
 		s.mu.Lock()
 		s.attempts++
+		s.attemptUsers = append(s.attemptUsers, user)
 		s.mu.Unlock()
 		if s.junosLoginMode() == "deny" {
 			return false

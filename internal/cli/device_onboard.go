@@ -24,8 +24,8 @@ package cli
 //     group, with that class) and confirmed in the held local session (a
 //     refused or wrong fresh login rolls the change back and leaves the local
 //     account as it was);
-//  9. root is probed once more, informationally; any other local account is
-//     not (its password would go to the TACACS+ server).
+//  9. the local account is never probed afterwards, root included: a login
+//     would send its password to the TACACS+ server.
 //
 // The local password: device_config_login.go.
 
@@ -84,7 +84,8 @@ type onboard struct {
 	keys []devreg.HostKey
 
 	entry devreg.Entry
-	// out is the final row; probe is the line of the probe after the commit.
+	// out is the final row; probe is the machine word of the local account's
+	// probe after the commit (probeNotProbed).
 	out   *applyOutcome
 	probe string
 }
@@ -315,9 +316,9 @@ func (ob *onboard) run() (int, error) {
 	ctxB, stopB := ob.interruptible(true, time.Duration(confirm+2)*time.Minute)
 	code := ob.commit(ctxB, ar, e, expected, st.first.delta, confirm, tp, func() string { return tacacs })
 	stopB()
-	// 9. The probe of root, after anything was committed.
+	// 9. Nothing logs in as the local account again, root included.
 	if ob.out.Out != nil && committedSomething(ob.out.Out.Exit) {
-		ob.probeLocal()
+		ob.noteNotProbed()
 	}
 	return code, nil
 }
@@ -975,7 +976,7 @@ func (ob *onboard) commit(ctx context.Context, ar *applyRun, e devreg.Entry, exp
 }
 
 // committedSomething reports whether a transaction got as far as a commit,
-// after which the local account is probed.
+// after which the run says the local account was not probed.
 func committedSomething(e devapply.Exit) bool {
 	switch e {
 	case devapply.ExitApplied, devapply.ExitAppliedByOther, devapply.ExitRolledBack, devapply.ExitPending, devapply.ExitWindowShort, devapply.ExitUnknown:
@@ -984,36 +985,16 @@ func committedSomething(e devapply.Exit) bool {
 	return false
 }
 
-// probeLocal is step 9: for root, one more login, only to say whether it
-// still logs in (Junos authenticates root locally, never through the
-// server). Any other local account is not probed: with 'authentication-order
-// tacplus' its password would be sent to the TACACS+ server. Nothing is
-// typed.
-func (ob *onboard) probeLocal() {
-	inv := ob.inv
-	if !ob.local.root() {
-		ob.probe = "the local account '" + ob.local.account + "' was not probed (a login would send its password to the TACACS+ server)"
-		inv.echo("  The local account '" + ob.local.account + "' was not probed: a login would send its password to the TACACS+ server.")
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(inv.ctx), devssh.DefaultConnectTimeout+5*time.Second)
-	defer cancel()
-	c, err := devssh.Dial(ctx, ob.target(ob.entry.HostKeys))
-	switch {
-	case err == nil:
-		_ = c.Close()
-		ob.probe = "the local account '" + ob.local.account + "' still logs in"
-		inv.echo("  The local account '" + ob.local.account + "' still logs in.")
-	case errors.Is(err, devssh.ErrAuth):
-		ob.probe = "the local account '" + ob.local.account + "' is refused while the server answers"
-		inv.echo("  The local account '" + ob.local.account + "' is refused while the server answers: expected")
-		inv.echo("  with 'authentication-order tacplus'; it works when the server does not.")
-	default:
-		_, reason, _ := resultOf(ctx, ob.name, err)
-		reason = cleanLine(reason)
-		ob.probe = "the local account could not be probed: " + reason
-		inv.echo("  The local account '" + ob.local.account + "' could not be probed: " + reason + ".")
-	}
+// probeNotProbed is the value of the 'probe' field of --json after a commit:
+// a stable word, since the local account is never tried again.
+const probeNotProbed = "not-probed"
+
+// noteNotProbed is step 9: the local account is not probed, for any account
+// (root too): with 'authentication-order tacplus' a login sends its password
+// to the TACACS+ server. Nothing connects.
+func (ob *onboard) noteNotProbed() {
+	ob.probe = probeNotProbed
+	ob.inv.echo("  The local account '" + ob.local.account + "' was not probed: a login would send its password to the TACACS+ server.")
 }
 
 // word is the run's result for the audit line.

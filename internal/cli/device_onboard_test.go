@@ -634,13 +634,42 @@ func TestOnboardRefusesAProofThatCouldBeLocal(t *testing.T) {
 	}
 }
 
-// root is probed after the commit (Junos never sends its password to the
-// server).
-func TestOnboardProbesRootOnly(t *testing.T) {
-	b := newOnboardBox(t)
-	out := b.onboard("y\nsw-lab-5\n", onboardAddr, "--login", "root")
-	if b.sb.code != 0 || !strings.Contains(out, "sw-lab-5  applied (") || !strings.Contains(out, "The local account 'root' still logs in.") {
-		t.Fatalf("exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+// Nothing logs in as the local account after the commit, root included (a
+// login would send its password to the TACACS+ server): the run says it was
+// not probed, and the fake sees no attempt for the account after alice's
+// fresh login.
+func TestOnboardNeverProbes(t *testing.T) {
+	for _, acct := range []string{"root", localAccount} {
+		b := newOnboardBox(t)
+		out := b.onboard("y\nsw-lab-5\n", onboardAddr, "--login", acct, "--json")
+		if b.sb.code != 0 || !strings.Contains(out, `"status":"applied"`) {
+			t.Fatalf("%s: exit %d\n%s\n%s", acct, b.sb.code, out, b.sb.stderr())
+		}
+		if !strings.Contains(out, `"probe":"not-probed"`) || strings.Contains(out, "still logs in") || strings.Contains(out, "is refused while") {
+			t.Errorf("%s: probe field:\n%s", acct, out)
+		}
+		users := b.srv.AttemptUsers()
+		last := -1
+		for i, u := range users {
+			if u == "alice" {
+				last = i
+			}
+		}
+		if last < 0 {
+			t.Fatalf("%s: no fresh TACACS+ login in %q", acct, users)
+		}
+		for _, u := range users[last+1:] {
+			if u == acct {
+				t.Errorf("%s: a login as the local account after the commit: %q", acct, users)
+			}
+		}
+		// the text run says the same
+		b2 := newOnboardBox(t)
+		out = b2.onboard("y\nsw-lab-5\n", onboardAddr, "--login", acct)
+		want := "The local account '" + acct + "' was not probed: a login would send its password to the TACACS+ server."
+		if !strings.Contains(out, want) {
+			t.Errorf("%s: missing %q in\n%s", acct, want, out)
+		}
 	}
 }
 

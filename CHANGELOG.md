@@ -193,9 +193,9 @@ current behaviour; this file is where history lives.
     the held session: its `show cli authorization` must name the template user
     your group's class renders, with that class, never a local account. A
     refused or wrong fresh login rolls it back and leaves the local account as
-    it was. Afterwards `root` is tried once more, for information; any other
-    local account is not (a login would send its password to the TACACS+
-    server). What the device reports is shown with its control characters
+    it was. Afterwards the local account is never tried again, `root`
+    included (a login would send its password to the TACACS+ server): the
+    run says it was not probed, and `--json` has `probe` with `not-probed`. What the device reports is shown with its control characters
     replaced. The plan never holds the break-glass accounts, root or the local
     account. `--legacy-ssh` (also taken by itself when the handshake needs the
     legacy algorithms), `--section` and `--json` (one object at the end).
