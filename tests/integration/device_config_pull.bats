@@ -68,6 +68,11 @@ print(r["result"], r["transport"], r["netconf"], r["by"], r["address"])' "${TACC
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device show lab-j
     plain
     assert_line --regexp '^  Configuration: pulled .* by alice over netconf \(hello ok\), ok; sections: aaa '
+    # the device's facts: the release from show version, the model and the
+    # serial number from the chassis row
+    assert_line --regexp '^  Release: +25\.4R1-S2\.3$'
+    assert_line --regexp '^  Model: +EX4300-48MP$'
+    assert_line --regexp '^  Serial: +FXYZ00000001$'
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device check lab-j --json
     assert_success
     run python3 -c 'import json,sys; print(json.loads(sys.stdin.read())[0]["netconf"])' <<< "$output"
@@ -238,6 +243,9 @@ print(r.get("syntax", "-"), "|", r.get("os", "-"))' "${TACCTL_VAR_LIB}/devices-c
     plain
     assert_line --regexp '^  Legacy ssh: +enabled$'
     assert_line --regexp '^  Config syntax: auto \(modern, from the pull of [0-9-]+\)$'
+    assert_line --regexp '^  Release: +15\.6\(2\)T$'
+    assert_line --regexp '^  Model: +IOSv$'
+    assert_line --regexp '^  Serial: +FXYZ0000001$'
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device show lab-c --json
     run python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); print(d["config_syntax"], d["syntax"], d["syntax_source"], d["legacy_ssh"])' <<< "$output"
     assert_output "auto modern pull True"

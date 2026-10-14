@@ -279,7 +279,8 @@ var reEnvName = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 
 // envReads are the environment variables the non-test code of internal/ and
 // cmd/ reads: a string literal (or a string constant) given to
-// Env.Get/Lookup/Or of a paths.Env, or to os.Getenv/LookupEnv. The reads
+// Env.Get/Lookup/Or of a paths.Env, or to os.Getenv/LookupEnv, or to a
+// one-argument function value named get (ui.Colour's). The reads
 // whose name is not a literal or a constant are returned in dynamic.
 func envReads(t *testing.T) (names map[string][]string, dynamic []string) {
 	t.Helper()
@@ -347,14 +348,25 @@ func envReads(t *testing.T) (names map[string][]string, dynamic []string) {
 			if !ok || len(call.Args) == 0 {
 				return true
 			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			recv := lastName(sel.X)
-			switch {
-			case slices.Contains([]string{"Get", "Lookup", "Or"}, sel.Sel.Name) && (recv == "env" || recv == "Env"):
-			case slices.Contains([]string{"Getenv", "LookupEnv"}, sel.Sel.Name) && recv == "os":
+			funcValue := false
+			switch fun := call.Fun.(type) {
+			case *ast.Ident:
+				// A getter handed over as a function value (ui.Colour's
+				// get, which is paths.Env.Get or os.Getenv): only a
+				// literal name counts, other calls of a 'get' are not
+				// the environment's.
+				if fun.Name != "get" || len(call.Args) != 1 {
+					return true
+				}
+				funcValue = true
+			case *ast.SelectorExpr:
+				recv := lastName(fun.X)
+				switch {
+				case slices.Contains([]string{"Get", "Lookup", "Or"}, fun.Sel.Name) && (recv == "env" || recv == "Env"):
+				case slices.Contains([]string{"Getenv", "LookupEnv"}, fun.Sel.Name) && recv == "os":
+				default:
+					return true
+				}
 			default:
 				return true
 			}
@@ -366,6 +378,9 @@ func envReads(t *testing.T) (names map[string][]string, dynamic []string) {
 				name = consts[lastName(a)]
 			}
 			if !reEnvName.MatchString(name) {
+				if funcValue {
+					return true
+				}
 				dynamic = append(dynamic, rels[i]+":"+strconv.Itoa(fset.Position(call.Pos()).Line))
 				return true
 			}
@@ -485,7 +500,7 @@ var manPathExempt = map[string]string{
 	"/etc/systemd/system/tacquito.service.d":      "the directory of tacctl.conf, which FILES lists",
 	"/etc/logrotate.d":                            "logrotate's own directory; FILES names the files tacctl writes in it",
 	"/etc/ssh":                                    "sshd's own directory; FILES lists the drop-ins in sshd_config.d and the host keys by their glob",
-	"/etc/ssh/sshd_config.d/tacctl-engineer.conf": "the earlier name of the engineer drop-in, which FILES names (tacctl-engineer.conf) as renamed",
+	"/etc/ssh/sshd_config.d/tacctl-engineer.conf": "the earlier name of the engineer drop-in, which the console entries name as a file they remove",
 	"/etc/tacctl/snmp":                            "the directory of the per-scope credential files, which FILES lists as snmp/<scope>.yaml",
 	"/etc/tacctl/backups/password-dates":          "a directory inside backups/, which FILES lists",
 	"/opt/tacctl/patches":                         "the tacquito patches inside the checkout, which FILES lists as /opt/tacctl/",

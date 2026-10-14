@@ -1,0 +1,13 @@
+aaa authentication login CONSOLE local
+aaa accounting commands 15 default start-stop group LAB-TACACS
+snmp-server host 192.0.2.61 vrf MGMT version 2c poller-traps
+snmp-server host 192.0.2.62 informs version 2c poller-traps
+snmp-server host 192.0.2.63 version 2c poller-traps udp-port 1162 config
+ip domain name vrf MGMT mgmt.example.net
+ip domain list vrf MGMT mgmt.example.net
+ip name-server vrf MGMT 192.0.2.53
+ntp server 192.0.2.123 prefer
+ntp server vrf MGMT 192.0.2.123 version 3 prefer
+ntp server vrf OOB ntp2.example.net
+line con 0
+ login authentication CONSOLE

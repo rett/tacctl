@@ -62,10 +62,12 @@ tree=()
 report "a home directory or a personal address" \
     "$(git grep -nIiE "$home_re|$mail_re" "${tree[@]}" "${pathspec[@]}" | grep -viE "$allow_re" || true)"
 
-# LICENSE carries the copyright holder's name on purpose.
+# LICENSE carries the copyright holder's name on purpose, and so do the lines
+# of the program's help and version output that print the same notice.
+holder='Copyright (c) 2026 Everett C. Haimes III'
 for re in "${private[@]}"; do
     report "matches a private pattern from $patterns_file" \
-        "$(git grep -nIiE "$re" "${tree[@]}" "${pathspec[@]}" ':!LICENSE' || true)"
+        "$(git grep -nIiE "$re" "${tree[@]}" "${pathspec[@]}" ':!LICENSE' | grep -vF "$holder" || true)"
 done
 
 if ((${#msg_args[@]})); then

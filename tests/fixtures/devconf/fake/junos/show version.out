@@ -1,0 +1,5 @@
+Hostname: fake
+Model: ex4300-48mp
+Family: junos
+Junos: 25.4R1-S2.3
+JUNOS Host ex-4300mp base package [25.4R1-S2.3]

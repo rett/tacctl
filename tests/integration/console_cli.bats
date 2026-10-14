@@ -266,6 +266,7 @@ LIST
 @test "console show: sshd still forwarding warns in red, a missing drop-in too; a closed server is quiet" {
     enrol_local
     stub_cmd sshd 'printf "port 22\nallowtcpforwarding yes\nallowagentforwarding no\nforcecommand ${TACCTL_TEST_ROOT:-}/usr/local/bin/tacctl-console\npubkeyauthentication no\n"'
+    export TACCTL_COLOR=always # the warning is red on a terminal only
     run "$TACCTL_BIN_SCRIPT" console show
     assert_success
     stub_called '^sshd -T -C user=alice,host=localhost,addr=127.0.0.1$'

@@ -4,7 +4,7 @@
 ! 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references.
 ! THIS OUTPUT HOLDS THE SNMP COMMUNITY OF SCOPE lab: do not keep it in a file or a scrollback.
 !
-! What is irregular on dev-cisco-synthetic-block-stray (9 items; the paste fixes 7, leaves 2):
+! What is irregular on dev-cisco-synthetic-block-stray (10 items; the paste fixes 7, leaves 3):
 !  1. aaa      ACCESS     missing: the console's own login list CONSOLE (local only, so a local user
 !                         always gets in there) (aaa authentication login CONSOLE local). Fixed by
 !                         region line 3.
@@ -20,10 +20,9 @@
 !  5. snmp     MONITORING different: a community of the SNMP block of scope 'lab': RO POLLERS (the
 !                         device has: a community of the SNMP block of scope 'lab': RW POLLERS)
 !                         (snmp-server community <secret:2> RO POLLERS). Fixed by region line 8.
-!  6. snmp     MONITORING different: a trap host of the SNMP block of scope 'lab': 192.0.2.61 version
-!                         2c <secret:3> (the device has: a trap host of the SNMP block of scope 'lab':
-!                         192.0.2.61 version 2c <secret:3> udp-port 1162) (snmp-server host 192.0.2.61
-!                         version 2c <secret:3>). Fixed by region line 9.
+!  6. snmp     MONITORING missing: a trap host of the SNMP block of scope 'lab': 192.0.2.61 version 2c
+!                         <secret:3> (snmp-server host 192.0.2.61 version 2c <secret:3>). Fixed by
+!                         region line 9.
 !  7. snmp     MONITORING missing: an 'enable traps' line of the SNMP block of scope 'lab': snmp
 !                         linkdown linkup (snmp-server enable traps snmp linkdown linkup). Fixed by
 !                         region line 10.
@@ -31,11 +30,11 @@
 !                         Left alone (its name is the secret and is not known to tacctl).
 !  9. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <other:2>. Left alone (its
 !                         name is the secret and is not known to tacctl).
+! 10. snmp     MONITORING extra: snmp-server host 192.0.2.61 version 2c <secret:3> udp-port 1162. Left
+!                         alone (the device's own entry, not the block's: the block's host is of
+!                         another vrf, kind or udp-port).
 ! Consistent: roles, mgmt-acl. Not planned: netconf, breakglass.
 ! Secrets: 2 present on the device, not changed (--secrets pushes them).
-! Note: snmp: the lines of the SNMP block of scope 'lab' (access list entries, trap hosts, 'enable
-! traps' lines) were written from the references and have not been checked on a device (not
-! lab-tested): read them before you paste.
 ! The change is live when the paste ends. NOTHING rolls it back by itself. Keep a second terminal
 ! logged in at privilege 15 until the end.
 ! Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the

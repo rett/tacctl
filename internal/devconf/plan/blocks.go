@@ -21,8 +21,8 @@ type blockObjects struct {
 	community, group map[string]bool
 	options          map[string]bool
 	// ios is set for an IOS rendering: acl holds the names of the access
-	// lists the block defines, host its trap hosts (address and community
-	// label) and traps its 'enable traps' lines (the compared text).
+	// lists the block defines, host its trap hosts (SNMPHostID: address, vrf,
+	// kind, udp-port and community label) and traps its 'enable traps' lines (the compared text).
 	ios   bool
 	acl   map[string]bool
 	host  map[string]bool
@@ -111,7 +111,8 @@ func blockObjectsOfIOS(expected []devices.Section, scope string) *blockObjects {
 		case len(f) >= 3 && f[0] == "snmp-server" && f[1] == "community":
 			b.community[labelOf[f[2]]] = true
 		case devconf.SNMPHostCommunity(f) > 0:
-			b.host[f[2]+" "+labelOf[f[devconf.SNMPHostCommunity(f)]]] = true
+			i := devconf.SNMPHostCommunity(f)
+			b.host[devconf.SNMPHostID(f, i, labelOf[f[i]])] = true
 		case len(f) >= 3 && f[0] == "snmp-server" && f[1] == "enable" && f[2] == "traps":
 			b.traps[strings.Join(f, " ")] = true
 		case len(f) >= 3 && f[0] == "snmp-server" && f[1] == "trap-source":
@@ -139,7 +140,7 @@ func (b *blockObjects) iosKind(stem string) (kind, name string) {
 	switch {
 	case len(f) >= 3 && f[0] == "snmp-server" && f[1] == "community" && b.community[f[2]]:
 		return "community", ""
-	case devconf.SNMPHostCommunity(f) > 0 && b.host[f[2]+" "+f[devconf.SNMPHostCommunity(f)]]:
+	case devconf.SNMPHostCommunity(f) > 0 && b.host[devconf.SNMPHostID(f, devconf.SNMPHostCommunity(f), f[devconf.SNMPHostCommunity(f)])]:
 		return "host", ""
 	case len(f) >= 3 && f[0] == "snmp-server" && f[1] == "enable" && f[2] == "traps" && b.traps[strings.Join(f, " ")]:
 		return "traps", ""

@@ -175,6 +175,13 @@ func fixtures(t testing.TB) []fixture {
 		{name: "cisco.synthetic-system", vendor: "cisco", raw: "ios/synthetic-system/running-config.txt", expected: "ios/synthetic-system/expected.txt"},
 		{name: "cisco.synthetic-system-new", vendor: "cisco", raw: "ios/reference-lab/running-config.txt", expected: "ios/synthetic-system/expected.txt"},
 		{name: "cisco.synthetic-system-stray", vendor: "cisco", raw: "ios/synthetic-system/running-config-stray.txt", expected: "ios/synthetic-system/expected.txt"},
+		// 0.2.8: a scope's IOS system and snmp blocks whose statements name a
+		// vrf (and trap hosts of the informs kind and with a port): the device
+		// after they were pasted, the device that holds none of it, and the
+		// device that holds the same values without the vrf
+		{name: "cisco.synthetic-vrf", vendor: "cisco", raw: "ios/synthetic-vrf/running-config.txt", expected: "ios/synthetic-vrf/expected.txt"},
+		{name: "cisco.synthetic-vrf-new", vendor: "cisco", raw: "ios/reference-lab/running-config.txt", expected: "ios/synthetic-vrf/expected.txt"},
+		{name: "cisco.synthetic-vrf-stray", vendor: "cisco", raw: "ios/synthetic-vrf/running-config-stray.txt", expected: "ios/synthetic-vrf/expected.txt"},
 	}
 }
 

@@ -16,6 +16,3 @@
 ! Secrets: 4 present on the device, not changed (--secrets pushes them).
 ! Cleanup (--converge): nothing to remove.
 ! 1 extra stays: its item above says why.
-! Note: snmp: the lines of the SNMP block of scope 'lab' (access list entries, trap hosts, 'enable
-! traps' lines) were written from the references and have not been checked on a device (not
-! lab-tested): read them before you paste.

@@ -23,9 +23,6 @@
 ! Secrets: 4 present on the device, not changed (--secrets pushes them).
 ! Cleanup (--converge): cleanup comes after this region is pasted and verified: pull the device, then
 ! plan --converge again.
-! Note: snmp: the lines of the SNMP block of scope 'lab' (access list entries, trap hosts, 'enable
-! traps' lines) were written from the references and have not been checked on a device (not
-! lab-tested): read them before you paste.
 ! The change is live when the paste ends. NOTHING rolls it back by itself. Keep a second terminal
 ! logged in at privilege 15 until the end.
 ! Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the

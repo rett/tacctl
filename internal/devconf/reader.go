@@ -78,30 +78,56 @@ func Reader(vendor string) (ReadFunc, error) {
 // configuration is read all the same (what that means for the syntax is the
 // caller's: the registry's setting, the record's or 'needs pull').
 func ReaderWithVersion(vendor string) (ReadVersionFunc, error) {
-	setup, read, err := Commands(vendor)
+	rf, err := ReaderWithFacts(vendor)
 	if err != nil {
 		return nil, err
 	}
 	return func(ctx context.Context, r Runner) (string, string, error) {
-		version := ""
+		text, version, _, err := rf(ctx, r)
+		return text, version, err
+	}, nil
+}
+
+// ReadFactsFunc is ReadVersionFunc that also returns the release the text it
+// read states (facts.go): a Junos configuration's 'set version', the number
+// of the Cisco version output; the model and the serial number are
+// ReadFacts', with the one more command, after the rest of the pull has read
+// what it needs.
+type ReadFactsFunc func(ctx context.Context, r Runner) (text, version string, facts Facts, err error)
+
+// ReaderWithFacts is ReaderWithVersion that also returns the release the
+// read carried (Facts.Release, "" when it carried none: no 'set version'
+// statement, no version output that names an image).
+func ReaderWithFacts(vendor string) (ReadFactsFunc, error) {
+	setup, read, err := Commands(vendor)
+	if err != nil {
+		return nil, err
+	}
+	fam, _ := Family(vendor)
+	return func(ctx context.Context, r Runner) (string, string, Facts, error) {
+		version, release := "", ""
 		for _, c := range setup {
 			out, err := r.Run(ctx, c)
 			if err != nil {
-				return "", "", err
+				return "", "", Facts{}, err
 			}
 			if c == VersionCommand {
-				version = VersionLine(cleanText(out))
+				out = cleanText(out)
+				version, release = VersionLine(out), IOSRelease(out)
 			}
 		}
 		out, err := r.Run(ctx, read)
 		if err != nil {
-			return "", "", err
+			return "", "", Facts{}, err
 		}
 		out = cleanText(out)
 		if strings.TrimSpace(out) == "" {
-			return "", "", fmt.Errorf("%w: the device returned no text", ErrParse)
+			return "", "", Facts{}, fmt.Errorf("%w: the device returned no text", ErrParse)
 		}
-		return out, version, nil
+		if fam == FamilyJunos {
+			release = JunosRelease(out)
+		}
+		return out, version, Facts{Release: release}, nil
 	}, nil
 }
 

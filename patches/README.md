@@ -70,23 +70,34 @@ The patch only removes the message; the reply status is still
 `unexpected accounting flag`, ...) keep their messages. Clients that ignore the
 message (Cisco, Juniper, ...) see no difference.
 
-### `0003-authen-log-conn-remote-addr.patch`
-Names the device on the bcrypt authenticator's log lines
+### `0003-authen-log-addresses.patch`
+Names the device and the client on the bcrypt authenticator's log lines
 (`cmds/server/config/authenticators/bcrypt/bcrypt.go`): `accepting user [u]
 using a bcrypt password` becomes `accepting user [u] from [addr] using a bcrypt
 password`, and `failed to validate the user [u] using a bcrypt password`
 becomes `failed to validate the user [u] from [addr] using a bcrypt password`.
+When the client sent an address or a port, they follow the message:
+`...using a bcrypt password; client [10.0.0.5] port [pts/0]`.
 
 `addr` is the address of the TACACS+ client (the network device) as the server
 saw the connection: the value tacquito's server stores in the request context
 under `tq.ContextConnRemoteAddr` for every packet of a connection. It reads
-`unknown` when the context carries none. Nothing else in the behavior changes.
+`unknown` when the context carries none. `client` and `port` are the
+`rem_addr` and `port` fields of the authentication start packet (the end
+user's address and the terminal or line name, as the client fills them in),
+which the patch stores in the request context under `tq.ContextClientAddr` and
+`tq.ContextClientPort` (`ctx_keys.go`, `cmds/server/handlers/authen.go`). They
+are left out when the client sent none, and the log keeps only printable
+ASCII without brackets in them, at most 64 characters (the client chooses the
+bytes); the common case is a device, which
+fills in the address of the person logging in, and `sshd` on a Linux host
+(through `PAM_RHOST`); `sudo` gives none. Nothing else in the behavior changes.
 
 Why: the accounting log's `RemAddr` is the user's address, not the device's,
 and the journal names the device only at debug level or on errors. With the
-address on the authentication lines, `tacctl log search` shows which device a
-login came from, and `tacctl device scan` reads these lines to learn which
-devices use the server.
+addresses on the authentication lines, `tacctl log search` shows which device a
+login came from and from where the person logged in, and `tacctl device scan`
+reads these lines to learn which devices use the server.
 
 ### `0004-authen-fail-no-server-msg.patch`
 Drops the server message from the bcrypt authenticator's failure replies

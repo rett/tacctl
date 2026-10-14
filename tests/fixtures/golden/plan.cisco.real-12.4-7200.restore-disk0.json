@@ -135,7 +135,6 @@
     "mode": "copy",
     "file": "disk0:tacctl-dev-cisco-real-12-4-7200-20261010-1420.cfg",
     "command": "copy running-config disk0:tacctl-dev-cisco-real-12-4-7200-20261010-1420.cfg",
-    "file_system": "disk0:",
-    "note": "restore point: the restore block and the 'configure replace' alternative of the back-out were written from the references and have not been checked on a device (not lab-tested): read them before you use them"
+    "file_system": "disk0:"
   }
 }

@@ -13,11 +13,11 @@ package blocks
 //     list TACCTL-SNMP, the v3 objects) and the device's identity (contact,
 //     location, engine id) are never part of a block;
 //   - an object (a community by its string, an access list by its name, a host
-//     by its address and community, an 'enable traps' statement) that the
-//     block in force at the same level states with the same statements, or
-//     that the layer beneath states with the same statements, is not
-//     repeated; one that is in the same file with other statements is left as
-//     it is (the person edits it in place);
+//     by its address, vrf, kind, udp-port and community, an 'enable traps'
+//     statement) that the block in force at the same level states with the
+//     same statements, or that the layer beneath states with the same
+//     statements, is not repeated; one that is in the same file with other
+//     statements is left as it is (the person edits it in place);
 //   - the trap source is adopted as the block's statement unless the block (or
 //     the layer beneath) states the same interface;
 //   - what a block cannot hold is left out with a line that says so, never a
@@ -41,6 +41,42 @@ import (
 // access list).
 func isDigits(s string) bool { return s != "" && reAllDigits.MatchString(s) }
 
+// hostAdoptWords are the words of a device's 'snmp-server host' line without
+// the kind 'traps', the default, which a device does not print and a draft
+// leaves out. It is dropped at the kind's position only: the word after 'vrf'
+// is the vrf's name and the words from the version or the community on are
+// the entry's.
+func hostAdoptWords(f []string) []string {
+	w := slices.Clone(f[:3])
+	for k := 3; k < len(f); k++ {
+		switch f[k] {
+		case "traps":
+		case "vrf":
+			w = append(w, f[k])
+			if k+1 < len(f) {
+				k++
+				w = append(w, f[k])
+			}
+		case "version":
+			// what follows the version is the community and its options
+			w = append(w, f[k])
+			if k+1 < len(f) {
+				k++
+				w = append(w, f[k])
+			}
+			if k+1 < len(f) {
+				w = append(w, f[k+1:]...)
+			}
+			return w
+		case "informs":
+			w = append(w, f[k])
+		default:
+			return append(w, f[k:]...)
+		}
+	}
+	return w
+}
+
 // AdoptIOSSNMP is the draft of an IOS snmp block from raw, the text of the
 // two reads. own is what tacctl renders for the device (its structured
 // community string); same is the block in force at the level the draft is
@@ -51,6 +87,7 @@ func AdoptIOSSNMP(raw string, own AdoptOwn, same, up *IOSSNMPBlock) AdoptResult 
 	var stmts []string // accepted statements, as block text
 	var ours, identity, outside int
 	var left []string
+	hostSeen := map[string]bool{}
 
 	type aclRead struct {
 		name    string
@@ -148,16 +185,28 @@ func AdoptIOSSNMP(raw string, own AdoptOwn, same, up *IOSSNMPBlock) AdoptResult 
 			}
 			stmts = append(stmts, s)
 		case len(f) >= 4 && f[0] == "snmp-server" && f[1] == "host":
-			w := slices.DeleteFunc(slices.Clone(f), func(x string) bool { return x == "traps" })
-			if slices.Contains(w, "informs") || slices.Contains(w, "vrf") {
-				outside++
-				continue
-			}
+			// the words as the device prints them. 'traps' is the default
+			// kind, which a device does not print and a draft leaves out; it
+			// is dropped at the kind's position only (a vrf may be named
+			// 'traps', and a community may be). The vrf and 'informs' are
+			// read by the grammar of a block.
+			w := hostAdoptWords(f)
 			s := strings.Join(w, " ")
-			if _, fs := ParseIOSSNMP(s + "\n"); HasErrors(fs) {
+			one, fs := ParseIOSSNMP(s + "\n")
+			if HasErrors(fs) {
 				outside++
 				continue
 			}
+			if len(one.Hosts) != 1 {
+				outside++
+				continue
+			}
+			k := one.Hosts[0].key()
+			if hostSeen[k] {
+				left = append(left, "a host is stated twice for one address, vrf, kind, udp-port and community: the first line is kept, the other is not adopted")
+				continue
+			}
+			hostSeen[k] = true
 			stmts = append(stmts, s)
 		case len(f) >= 3 && f[0] == "snmp-server" && f[1] == "enable" && f[2] == "traps":
 			s := strings.Join(f, " ")

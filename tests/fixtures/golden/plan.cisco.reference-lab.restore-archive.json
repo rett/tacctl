@@ -155,6 +155,6 @@
     "mode": "archive",
     "command": "archive config",
     "file_system": "bootflash:",
-    "note": "restore point: the restore block and the 'configure replace' alternative of the back-out were written from the references and have not been checked on a device (not lab-tested): read them before you use them"
+    "note": "restore point: the 'archive config' form has not been checked on a device (not lab-tested): read it before you use it"
   }
 }

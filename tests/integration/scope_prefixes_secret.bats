@@ -264,6 +264,8 @@ setup() {
 # 24 random bytes: a fresh 32-character base64 value, printed once and
 # stored.
 @test "scopes secret generate: prints a fresh 32-character base64 secret and persists it" {
+    # The value is in bold on a terminal only; ask for the styling.
+    export TACCTL_COLOR=always
     run "$TACCTL_BIN_SCRIPT" scope secret prod generate
     assert_success
     local secret

@@ -48,11 +48,11 @@ end
 ! Or, if the restore point was taken (flash:tacctl-dev-cisco-reference-bare-20261010-1420.cfg is
 ! on flash:), put that file back; in privileged mode, not in configuration mode:
 !   configure replace flash:tacctl-dev-cisco-reference-bare-20261010-1420.cfg force
-! 'configure replace' applies the difference between the file and the running configuration. It
-! was tried only on devices with 'archive' and a 'path' configured; where it is not available,
-! 'copy <file> running-config' only MERGES the file into the running configuration and removes
-! nothing. On IOS 12.4 the removal of 'aaa new-model' was skipped in one pass: do not rely on it
-! for AAA, use the 'no' lines of the back-out.
+! 'configure replace' applies the difference between the file and the running configuration; where
+! a release does not have it, 'copy <file> running-config' only MERGES the file into the running
+! configuration and removes nothing. On IOS 12.4 a replace can skip the removal of 'aaa new-model'
+! or stop at a line it cannot remove (an 'ntp server' with options): do not rely on it for AAA,
+! use the 'no' lines of the back-out.
 ! Check as after the plan (a pull with --diff, a NEW ssh session), then delete the file, and any
 ! copy the replace left on the file system, when you are done.
 !

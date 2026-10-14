@@ -111,6 +111,15 @@ type Record struct {
 	// For a WTI unit OS is the command menu's version ('8.10').
 	OS     string `json:"os,omitempty"`
 	Syntax string `json:"syntax,omitempty"`
+	// Release, Model and Serial are what the last good pull read of the
+	// device about itself (Facts): the OS release, the platform and the
+	// chassis serial number. Read-only, replaced on every good pull (a field
+	// the pull could not read is empty, never the old value) and empty for a
+	// record made before 0.2.8. A WTI unit has a Release (the command menu's
+	// version) only.
+	Release string `json:"release,omitempty"`
+	Model   string `json:"model,omitempty"`
+	Serial  string `json:"serial,omitempty"`
 	// ArchiveFS is the file system of the IOS device's 'archive' / 'path'
 	// statement as the last good pull read it ('flash:'); empty for another
 	// vendor, a device with no archive path and a record made before 0.2.7.

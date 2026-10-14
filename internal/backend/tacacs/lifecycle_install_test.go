@@ -46,7 +46,7 @@ func TestInstallBuildClonesPatchesAndBuilds(t *testing.T) {
 	}
 	out := e.out()
 	for _, s := range []string{
-		"Go 1.26.2 already installed, skipping.",
+		"Go 1.27.2 already installed, skipping.",
 		"Cloning tacquito...",
 		"Building tacquito server...",
 		"Building password hash generator...",
@@ -174,13 +174,13 @@ func TestInstallAccountCreatesTheUserAndDirectories(t *testing.T) {
 	if !e.called(`^useradd --system --no-create-home --shell /usr/sbin/nologin tacquito$`) {
 		t.Fatal(e.run.Argvs())
 	}
-	for d, mode := range map[string]os.FileMode{e.p.Etc: 0o755, e.p.Log: 0o750, filepath.Join(e.p.Etc, "README.md"): 0o644} {
+	for d, mode := range map[string]os.FileMode{e.p.Etc: 0o755, e.p.Log: 0o750} {
 		if st, err := os.Stat(d); err != nil || st.Mode().Perm() != mode {
 			t.Fatal(d, err)
 		}
 	}
-	if !sameBytes(filepath.Join(e.p.Etc, "README.md"), filepath.Join(tree, "README.md")) {
-		t.Fatal("README.md")
+	if exists(filepath.Join(e.p.Etc, "README.md")) {
+		t.Fatal("README.md installed into the daemon's directory")
 	}
 
 	// The user exists already; useradd failing is the phase's failure.
@@ -197,17 +197,6 @@ func TestInstallAccountCreatesTheUserAndDirectories(t *testing.T) {
 	e2.run.On([]string{"id"}, execx.Result{Code: 1})
 	e2.run.On([]string{"useradd"}, execx.Result{Code: 9})
 	wantCode(t, e2.b.Install(context.Background(), backend.PhaseAccount, tree), 9)
-}
-
-func TestInstallAccountReadmeThatCannotBeWrittenWarns(t *testing.T) {
-	e := newLifeTenv(t)
-	if err := os.MkdirAll(filepath.Join(e.p.Etc, "README.md"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := e.b.Install(context.Background(), backend.PhaseAccount, repoRoot(t)); err != nil {
-		t.Fatal(err)
-	}
-	mustContain(t, e.out(), "Could not install "+filepath.Join(e.p.Etc, "README.md")+".")
 }
 
 func TestInstallStart(t *testing.T) {

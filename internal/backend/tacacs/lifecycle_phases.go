@@ -33,8 +33,8 @@ func (b *Backend) installFiles(tree string) error {
 	return nil
 }
 
-// installAccount is _tacacs_install_account <tree>: the service user, the
-// config and log directories, README.md.
+// installAccount is _tacacs_install_account <tree>: the service user and the
+// config and log directories.
 func (b *Backend) installAccount(ctx context.Context, tree string) error {
 	out, p := b.out(), b.env.Paths
 	if b.shSilent(ctx, "", "id", User) != 0 {
@@ -53,34 +53,15 @@ func (b *Backend) installAccount(ctx context.Context, tree string) error {
 	if err := b.chownTacquito(p.Etc, p.Log); err != nil {
 		return b.fileError("chown", err)
 	}
-	// The config directory is world-traversable so everyone can read
-	// README.md; what is sensitive inside is 0640 by its own mode. The log
-	// directory stays 0750.
+	// The config directory is world-traversable; what is sensitive inside is
+	// 0640 by its own mode. The log directory stays 0750.
 	if err := os.Chmod(p.Etc, 0o755); err != nil {
 		return b.fileError("chmod", err)
 	}
 	if err := os.Chmod(p.Log, 0o750); err != nil {
 		return b.fileError("chmod", err)
 	}
-	if err := b.installReadme(tree); err != nil {
-		b.stderrLine("cp: " + err.Error())
-		out.WarnE("Could not install " + filepath.Join(p.Etc, "README.md") + ".")
-	}
 	return nil
-}
-
-// installReadme is install_readme <tree>/README.md: README.md in the
-// config directory, readable by everyone. Nothing without the source.
-func (b *Backend) installReadme(tree string) error {
-	src := tree + "/README.md"
-	if !isRegular(src) {
-		return nil
-	}
-	dst := filepath.Join(b.env.Paths.Etc, "README.md")
-	if err := cpFile(src, dst); err != nil {
-		return err
-	}
-	return os.Chmod(dst, 0o644)
 }
 
 // installStart is _tacacs_install_start <tree>, after the first render:
@@ -123,25 +104,28 @@ func (b *Backend) installStart(ctx context.Context, tree string) error {
 
 // --- upgrade files ---------------------------------------------------------------
 
-// upgradeFiles is _tacacs_upgrade_files <tree>: the units, README.md in
-// the config directory, logrotate; what it replaced is counted in
-// UpgradeReport.FilesUpdated.
+// upgradeFiles is _tacacs_upgrade_files <tree>: the units, logrotate, and the
+// README.md that earlier releases copied into the config directory (the
+// documentation is in the project clone); what it replaced or removed is
+// counted in UpgradeReport.FilesUpdated.
 func (b *Backend) upgradeFiles(ctx context.Context, tree string) error {
 	l, p := &b.life, b.env.Paths
 	l.report.FilesUpdated, l.report.FilesNotes = 0, nil
 	b.upgradeUnits(ctx, tree)
 
-	readme := filepath.Join(p.Etc, "README.md")
-	if err := b.updateIfChanged(tree+"/README.md", readme, "README.md"); err != nil {
-		return err
+	// The daemon's directory holds the daemon's files: the copy of the README
+	// that earlier releases put here goes.
+	if readme := filepath.Join(p.Etc, "README.md"); isRegular(readme) {
+		if err := os.Remove(readme); err != nil {
+			return b.fileError("rm", err)
+		}
+		b.out().InfoE("  Removed: README.md (the documentation is in the project clone)")
+		l.report.FilesUpdated++
 	}
-	// Installs from before the README fix have it 0600 root, or not at all.
-	_ = os.Chmod(readme, 0o644)
 	if err := b.updateIfChanged(share(tree)+"/tacquito.logrotate", b.logrotateFile(), "logrotate config"); err != nil {
 		return err
 	}
-	// Older installs left the config directory at 0750, which keeps
-	// non-root users from README.md.
+	// Older installs left the config directory at 0750.
 	_ = os.Chmod(p.Etc, 0o755)
 	return nil
 }

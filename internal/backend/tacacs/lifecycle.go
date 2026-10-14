@@ -9,15 +9,14 @@ package tacacs
 //	                    installs it), the tacquito checkout with the patch
 //	                    overlay, the two binaries
 //	           files    logrotate
-//	           account  the service user, the config and log directories,
-//	                    README.md
+//	           account  the service user, the config and log directories
 //	           start    (after the first render) the units, enable, start,
 //	                    check
 //	upgrade    preflight  source checkout and Go present
 //	           build    pull, and rebuild when upstream or the overlay moved
 //	                    (the previous binary kept as tacquito.bak)
 //	           config   config_sync_existing
-//	           files    the units and drop-ins, README.md, logrotate
+//	           files    the units and drop-ins, logrotate
 //	           finish   the store gate, then one restart for everything
 //	                    the daemon reads that changed, rolled back when the
 //	                    daemon does not come up

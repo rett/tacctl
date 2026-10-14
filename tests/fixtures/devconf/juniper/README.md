@@ -15,3 +15,12 @@ Values are sanitised (host name, domain, addresses mapped into
 the captured ids), users, hashes, keys, communities, serial number,
 free-text descriptions); the statement shapes and
 order are as captured.
+
+`facts-ex4300/` holds what a pull reads of the device's facts, from an
+EX4300 on Junos 25.x: `show-version.txt` (`show version | no-more`, the
+package list cut to its first lines) and `show-chassis-hardware.txt` (`show
+chassis hardware | no-more`). The release is the `Junos:` line of
+`show-version.txt`, as the `set version` line of the display-set captures
+above. The serial numbers are replaced by `FXYZ...`
+fakes of the same width (the columns are cut where the header puts them),
+the host name by `switch1`.

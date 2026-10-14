@@ -2,6 +2,7 @@ package blocks
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -118,17 +119,34 @@ func TestIOSSystemParseRefusals(t *testing.T) {
 		{"domain no value", "ip domain name\n", 1, "takes one value"},
 		{"domain two values", "ip domain name a.example.net b.example.net\n", 1, "takes one value"},
 		{"domain twice", "ip domain name a.example.net\nip domain-name b.example.net\n", 2, "is stated twice"},
-		{"domain vrf", "ip domain name vrf MGMT a.example.net\n", 1, "a vrf form is not accepted"},
+		{"domain vrf no name", "ip domain name vrf\n", 1, "'vrf' takes the name of the vrf"},
+		{"domain vrf no value", "ip domain name vrf MGMT\n", 1, "takes one value"},
+		{"domain vrf two values", "ip domain name vrf MGMT a.example.net b.example.net\n", 1, "takes one value"},
+		{"domain vrf twice", "ip domain name vrf MGMT a.example.net\nip domain-name vrf MGMT b.example.net\n", 2, "is stated twice for one vrf"},
+		{"domain vrf label", "ip domain name vrf MGMT a_b.example.net\n", 1, "not a host name"},
+		{"domain vrf with a space", "ip domain name vrf \"MG MT\" a.example.net\n", 1, "a quote is not accepted"},
+		{"domain vrf split by a blank", "ip domain name vrf MG MT a.example.net\n", 1, "takes one value"},
+		{"domain vrf name off the alphabet", "ip domain name vrf MG;MT a.example.net\n", 1, "the vrf name of ip domain name holds a character other than"},
+		{"domain vrf placeholder", "ip domain name vrf <vrf> a.example.net\n", 1, "the vrf name of ip domain name holds a character other than"},
+		{"domain vrf long", "ip domain name vrf " + strings.Repeat("v", 65) + " a.example.net\n", 1, "is longer than 64"},
 		{"domain label", "ip domain name a_b.example.net\n", 1, "not a host name"},
 		{"domain placeholder", "ip domain name <secret>\n", 1, "is a placeholder"},
 		{"list twice", "ip domain list a.example.net\nip domain-list A.EXAMPLE.NET\n", 2, "is listed twice"},
-		{"list vrf", "ip domain list vrf MGMT a.example.net\n", 1, "a vrf form is not accepted"},
+		{"list vrf no name", "ip domain list vrf\n", 1, "'vrf' takes the name of the vrf"},
+		{"list vrf no value", "ip domain list vrf MGMT\n", 1, "takes one value"},
+		{"list vrf twice", "ip domain list vrf MGMT a.example.net\nip domain-list vrf MGMT A.EXAMPLE.NET\n", 2, "is listed twice for one vrf"},
+		{"list vrf two values", "ip domain list vrf MGMT a.example.net b.example.net\n", 1, "takes one value"},
 		{"name-server none", "ip name-server\n", 1, "needs at least one address"},
 		{"name-server name", "ip name-server dns.example.net\n", 1, "not an IPv4 or IPv6 address"},
 		{"name-server second bad", "ip name-server 192.0.2.53 dns.example.net\n", 1, "address 2 of ip name-server (word 4)"},
 		{"name-server twice", "ip name-server 192.0.2.53\nip name-server 192.0.2.54 192.0.2.53\n", 2, "is listed twice"},
 		{"name-server twice on a line", "ip name-server 192.0.2.53 192.0.2.53\n", 1, "is listed twice"},
-		{"name-server vrf", "ip name-server vrf MGMT 192.0.2.53\n", 1, "a vrf form is not accepted"},
+		{"name-server vrf no name", "ip name-server vrf\n", 1, "'vrf' takes the name of the vrf"},
+		{"name-server vrf no address", "ip name-server vrf MGMT\n", 1, "needs at least one address (word 5)"},
+		{"name-server vrf bad address", "ip name-server vrf MGMT 192.0.2.53 dns.example.net\n", 1, "address 2 of ip name-server (word 6)"},
+		{"name-server vrf twice", "ip name-server vrf MGMT 192.0.2.53\nip name-server vrf MGMT 192.0.2.54 192.0.2.53\n", 2, "is listed twice"},
+		{"name-server vrf twice on a line", "ip name-server vrf MGMT 192.0.2.53 192.0.2.53\n", 1, "is listed twice"},
+		{"name-server vrf name with a space", "ip name-server vrf \"M G\" 192.0.2.53\n", 1, "a quote is not accepted"},
 		{"clock summer-time", "clock summer-time EDT recurring\n", 1, "only 'clock timezone'"},
 		{"clock alone", "clock\n", 1, "only 'clock timezone'"},
 		{"timezone short", "clock timezone CET\n", 1, "takes <zone> <hours> [<minutes>]"},
@@ -142,7 +160,22 @@ func TestIOSSystemParseRefusals(t *testing.T) {
 		{"ntp alone", "ntp\n", 1, "needs server, authentication-key"},
 		{"ntp master", "ntp master 3\n", 1, "word 2 is not one of server"},
 		{"ntp server none", "ntp server\n", 1, "needs an address or a name"},
-		{"ntp server vrf", "ntp server vrf MGMT 192.0.2.123\n", 1, "'vrf' is not in the grammar"},
+		{"ntp server vrf no name", "ntp server vrf\n", 1, "'vrf' takes the name of the vrf"},
+		{"ntp server vrf no host", "ntp server vrf MGMT\n", 1, "needs an address or a name (word 5)"},
+		{"ntp server vrf bad host", "ntp server vrf MGMT not_a_host\n", 1, "the address of ntp server (word 5)"},
+		{"ntp server vrf option", "ntp server vrf MGMT 192.0.2.123 burst\n", 1, "word 6 is not one of prefer, version, key, source"},
+		{"ntp server vrf v6", "ntp server vrf MGMT 2001:db8::1\n", 1, "an IPv6 address is not in the grammar"},
+		{"ntp server vrf ip word", "ntp server vrf MGMT ip 192.0.2.123\n", 1, "'ip' is not in the grammar"},
+		{"ntp server vrf twice", "ntp server vrf MGMT 192.0.2.123\nntp server vrf MGMT 192.0.2.123 prefer\n", 2, "is listed twice"},
+		{"ntp server vrf after the host", "ntp server 192.0.2.123 vrf MGMT\n", 1, "not one of prefer, version, key, source"},
+		{"ntp server vrf name off the alphabet", "ntp server vrf M/M 192.0.2.123\n", 1, "the vrf name of ntp server holds a character other than"},
+		{"ntp server vrf name with a space", "ntp server vrf \"M M\" 192.0.2.123\n", 1, "a quote is not accepted"},
+		{"no ntp server vrf bad host", "no ntp server vrf MGMT not_a_host\n", 1, "not a host name"},
+		{"no ntp server vrf two hosts", "no ntp server vrf MGMT 192.0.2.1 192.0.2.2\n", 1, "takes one value, or none"},
+		{"no ntp server vrf last word", "no ntp server vrf\n", 1, "'vrf' takes the name of the vrf"},
+		{"no domain name vrf value", "no ip domain name vrf MGMT a.example.net\n", 1, "takes nothing after it"},
+		{"no domain list vrf last word", "no ip domain list vrf\n", 1, "'vrf' takes the name of the vrf"},
+		{"no name-server vrf bad", "no ip name-server vrf MGMT dns.example.net\n", 1, "not an IPv4 or IPv6 address"},
 		{"ntp server ip", "ntp server ip 192.0.2.123\n", 1, "'ip' is not in the grammar"},
 		{"ntp server ipv6 word", "ntp server ipv6 2001:db8::1\n", 1, "'ipv6' is not in the grammar"},
 		{"ntp server v6", "ntp server 2001:db8::1\n", 1, "an IPv6 address is not in the grammar"},
@@ -342,6 +375,47 @@ func TestDeviceBanner(t *testing.T) {
 	}
 	if _, _, ok := DeviceBanner(nil); ok {
 		t.Error("no lines")
+	}
+}
+
+// An IOS 12.x device never prints 'version 3': the dialect leaves it out, and
+// only it. Every other version and option stays, and Text is as stated.
+func TestIOSNTPServerTextInDialect(t *testing.T) {
+	cases := []struct {
+		name string
+		s    IOSNTPServer
+		d    IOSDialect
+		want string
+	}{
+		{"3 under IOS12", IOSNTPServer{Host: "192.0.2.123", Version: 3}, IOS12, "ntp server 192.0.2.123"},
+		{"2 under IOS12", IOSNTPServer{Host: "192.0.2.123", Version: 2}, IOS12, "ntp server 192.0.2.123 version 2"},
+		{"4 under IOS12", IOSNTPServer{Host: "192.0.2.123", Version: 4}, IOS12, "ntp server 192.0.2.123 version 4"},
+		{"3 under modern", IOSNTPServer{Host: "192.0.2.123", Version: 3}, IOSModern, "ntp server 192.0.2.123 version 3"},
+		{"unstated under IOS12", IOSNTPServer{Host: "192.0.2.123"}, IOS12, "ntp server 192.0.2.123"},
+		{"every option under IOS12", IOSNTPServer{VRF: "MGMT", Host: "192.0.2.123", Version: 3, Key: 5, Source: "Loopback0", Prefer: true}, IOS12,
+			"ntp server vrf MGMT 192.0.2.123 key 5 source Loopback0 prefer"},
+	}
+	for _, c := range cases {
+		if got := c.s.textIn(c.d); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
+	}
+	if got := (IOSNTPServer{Host: "h", Version: 3}).Text(); got != "ntp server h version 3" {
+		t.Errorf("Text: %q", got)
+	}
+	b, fs := LintIOSSystem("ntp server 192.0.2.123 version 3 prefer\nntp server vrf MGMT 192.0.2.124 version 2\n", LayerScope)
+	if HasErrors(fs) {
+		t.Fatal(fs)
+	}
+	if got := strings.Join(IOSSystemStatementsIn(b, IOS12), "|"); got != "ntp server 192.0.2.123 prefer|ntp server vrf MGMT 192.0.2.124 version 2" {
+		t.Errorf("IOS12: %q", got)
+	}
+	if got := strings.Join(IOSSystemStatements(b), "|"); got != "ntp server 192.0.2.123 version 3 prefer|ntp server vrf MGMT 192.0.2.124 version 2" {
+		t.Errorf("modern: %q", got)
+	}
+	// the block's own text is as typed in either dialect
+	if got := b.String(false); !strings.Contains(got, "ntp server 192.0.2.123 version 3 prefer\n") {
+		t.Errorf("String: %q", got)
 	}
 }
 
@@ -575,6 +649,9 @@ func TestAdoptIOSSystem(t *testing.T) {
 		"ip domain lookup",
 		"ip name-server 192.0.2.53 192.0.2.54",
 		"ip name-server vrf MGMT 192.0.2.99",
+		"ip domain name vrf MGMT MGMT.example.net",
+		"ip domain-list vrf MGMT mgmt.example.net",
+		"ip domain name vrf",
 		"clock timezone CET 1 0",
 		"ntp authentication-key 5 md5 0822455D0A16 7",
 		"ntp authentication-key 6 md5 plain-key-text",
@@ -607,7 +684,13 @@ func TestAdoptIOSSystem(t *testing.T) {
 			t.Errorf("the draft lacks %q:\n%s", want, res.Text)
 		}
 	}
-	for _, not := range []string{"0822455D0A16", "plain-key-text", "MGMT", "motd", "lookup", "ntp master", "authentication-key"} {
+	// the lines of a vrf are the block's, each an object of its vrf
+	for _, want := range []string{"ip name-server vrf MGMT 192.0.2.99\n", "ntp server vrf MGMT 192.0.2.77\n", "ip domain name vrf MGMT mgmt.example.net\n", "ip domain list vrf MGMT mgmt.example.net\n"} {
+		if !strings.Contains(res.Text, want) {
+			t.Errorf("the draft lacks %q:\n%s", want, res.Text)
+		}
+	}
+	for _, not := range []string{"0822455D0A16", "plain-key-text", "motd", "lookup", "ntp master", "authentication-key"} {
 		if strings.Contains(res.Text, not) {
 			t.Errorf("the draft holds %q:\n%s", not, res.Text)
 		}
@@ -629,22 +712,32 @@ func TestAdoptIOSSystem(t *testing.T) {
 	if !strings.Contains(notes, "outside what an IOS system block takes") {
 		t.Errorf("notes:\n%s", notes)
 	}
-	if res.Statements != 9 {
+	if res.Statements != 13 {
 		t.Errorf("counts: %d", res.Statements)
 	}
 
 	// what this block (or the scope's) states is not repeated; another value
 	// is a conflict left alone
-	same, _ := ParseIOSSystem("ip domain name lab.example.net\nclock timezone UTC 0\nip name-server 192.0.2.53\n")
-	up, _ := ParseIOSSystem("ip domain list example.net\nntp server 192.0.2.123 version 4 key 5 prefer\nntp trusted-key 5\n")
+	same, _ := ParseIOSSystem("ip domain name lab.example.net\nclock timezone UTC 0\nip name-server 192.0.2.53\n" +
+		"ip name-server vrf MGMT 192.0.2.99\nip domain name vrf OTHER other.example.net\n")
+	up, _ := ParseIOSSystem("ip domain list example.net\nntp server 192.0.2.123 version 4 key 5 prefer\nntp trusted-key 5\n" +
+		"ntp server 192.0.2.77\nip domain list vrf MGMT mgmt.example.net\n")
 	res = AdoptIOSSystem(raw, same, up)
-	for _, not := range []string{"ip domain name", "clock timezone", "ip name-server 192.0.2.53", "ip domain list", "ntp server", "ntp trusted-key"} {
+	for _, not := range []string{"ip domain name lab", "clock timezone", "ip name-server 192.0.2.53", "ip domain list example.net", "ntp server 192.0.2.123", "ntp trusted-key",
+		"ip name-server vrf MGMT 192.0.2.99", "ip domain list vrf MGMT"} {
 		if strings.Contains(res.Text, not) {
 			t.Errorf("repeated %q:\n%s", not, res.Text)
 		}
 	}
 	if !strings.Contains(res.Text, "ip name-server 192.0.2.54") {
 		t.Errorf("the other name server is adopted:\n%s", res.Text)
+	}
+	// the vrf is part of the identity: the server without one stated above
+	// is not the vrf's, and the vrf's other domain name is not this one
+	for _, want := range []string{"ntp server vrf MGMT 192.0.2.77", "ip domain name vrf MGMT mgmt.example.net"} {
+		if !strings.Contains(res.Text, want) {
+			t.Errorf("the draft lacks %q:\n%s", want, res.Text)
+		}
 	}
 	if n := strings.Join(res.Notes, "\n"); !strings.Contains(n, "stated already") || !strings.Contains(n, "differing from what this block states") {
 		t.Errorf("notes:\n%s", n)
@@ -774,5 +867,149 @@ func TestTrapSourceJunos(t *testing.T) {
 	// the template and the grammar say so
 	if !strings.Contains(Template(BlockSNMP, LayerScope), "trap-options source-address <address>|lo0") {
 		t.Error("template")
+	}
+}
+
+// The vrf forms: each is an object of its own vrf, rendered as typed, and the
+// same value without the vrf is another statement.
+func TestIOSSystemVRFForms(t *testing.T) {
+	text := "ip domain name lab.example.net\n" +
+		"ip domain name vrf MGMT Mgmt.Example.Net\n" +
+		"ip domain name vrf OOB.v-1_x oob.example.net\n" +
+		"ip domain list example.net\n" +
+		"ip domain list vrf MGMT example.net\n" +
+		"ip domain-list vrf MGMT b.example.net\n" +
+		"ip name-server 192.0.2.53\n" +
+		"ip name-server vrf MGMT 192.0.2.53 192.0.2.54\n" +
+		"ip name-server vrf OOB.v-1_x 192.0.2.53\n" +
+		"ntp server 192.0.2.123 prefer\n" +
+		"ntp server vrf MGMT 192.0.2.123 prefer version 3 key 5 source Loopback0\n" +
+		"ntp server vrf OOB.v-1_x 192.0.2.123\n" +
+		"ntp authentication-key 5 md5 " + iosKey + "\n" +
+		"ntp trusted-key 5\n"
+	b, fs := LintIOSSystem(text, LayerScope)
+	if HasErrors(fs) {
+		t.Fatal(dump(fs))
+	}
+	if len(b.VRFDomainNames) != 2 || b.VRFDomainNames[0].VRF != "MGMT" || b.VRFDomainNames[0].Text != "mgmt.example.net" ||
+		b.DomainName == nil || b.DomainName.Text != "lab.example.net" {
+		t.Errorf("domain names: %+v %+v", b.DomainName, b.VRFDomainNames)
+	}
+	if len(b.DomainList) != 1 || len(b.VRFDomainList) != 2 || len(b.NameServers) != 1 || len(b.VRFNameServers) != 3 || len(b.NTPServers) != 3 {
+		t.Errorf("lists: %+v", b)
+	}
+	if s := b.NTPServers[1]; s.VRF != "MGMT" || s.Host != "192.0.2.123" ||
+		s.Text() != "ntp server vrf MGMT 192.0.2.123 version 3 key 5 source Loopback0 prefer" {
+		t.Errorf("vrf server: %+v %q", s, s.Text())
+	}
+	want := []string{
+		"ip domain name lab.example.net",
+		"ip domain name vrf MGMT mgmt.example.net",
+		"ip domain name vrf OOB.v-1_x oob.example.net",
+		"ip domain list example.net",
+		"ip domain list vrf MGMT example.net",
+		"ip domain list vrf MGMT b.example.net",
+		"ip name-server 192.0.2.53",
+		"ip name-server vrf MGMT 192.0.2.53",
+		"ip name-server vrf MGMT 192.0.2.54",
+		"ip name-server vrf OOB.v-1_x 192.0.2.53",
+		"ntp authentication-key 5 md5 " + iosKey,
+		"ntp trusted-key 5",
+		"ntp server 192.0.2.123 prefer",
+		"ntp server vrf MGMT 192.0.2.123 version 3 key 5 source Loopback0 prefer",
+		"ntp server vrf OOB.v-1_x 192.0.2.123",
+	}
+	if got := IOSSystemStatements(b); !slices.Equal(got, want) {
+		t.Errorf("statements:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	// the canonical text reads back as the same block
+	again, fs := ParseIOSSystem(b.String(false))
+	if HasErrors(fs) || again.String(false) != b.String(false) {
+		t.Errorf("round trip: %v\n%s", fs, b.String(false))
+	}
+	// one note per vrf, at its first statement
+	notes := 0
+	_, all := LintIOSSystem(text, LayerScope)
+	for _, f := range all {
+		if f.Severity == SevNote && strings.Contains(f.Text, "must exist on the device") {
+			notes++
+		}
+	}
+	if notes != 2 {
+		t.Errorf("vrf notes: %d\n%s", notes, dump(all))
+	}
+	// a vrf alone is a statement: the block is not empty
+	if only, _ := ParseIOSSystem("ip name-server vrf MGMT 192.0.2.53\n"); only.Empty() {
+		t.Error("a vrf name server is no statement")
+	}
+	if only, _ := ParseIOSSystem("no ntp server vrf MGMT\n"); only.Empty() {
+		t.Error("a no line is no statement")
+	}
+
+	// elided: the key string only
+	if el := b.String(true); strings.Contains(el, iosKey) || !strings.Contains(el, "ntp server vrf MGMT 192.0.2.123") {
+		t.Errorf("elided:\n%s", el)
+	}
+}
+
+// A more specific layer's statement replaces the less specific one of the
+// same vrf only, and a no line names the vrf it takes out.
+func TestIOSSystemVRFResolve(t *testing.T) {
+	scope, fs := ParseIOSSystem("ip domain name vrf MGMT a.example.net\nip domain name vrf OOB o.example.net\nip domain name s.example.net\n" +
+		"ip domain list vrf MGMT x.example.net\nip domain list vrf MGMT y.example.net\nip domain list x.example.net\n" +
+		"ip name-server 192.0.2.1\nip name-server vrf MGMT 192.0.2.1 192.0.2.2\n" +
+		"ntp server 192.0.2.9\nntp server vrf MGMT 192.0.2.9 prefer\nntp server vrf OOB 192.0.2.9\n")
+	if HasErrors(fs) {
+		t.Fatal(dump(fs))
+	}
+	dev, fs := ParseIOSSystem("ip domain name vrf MGMT b.example.net\nntp server vrf MGMT 192.0.2.9 version 4\n" +
+		"no ip domain name vrf OOB\nno ip domain list vrf MGMT y.example.net\nno ip name-server vrf MGMT 192.0.2.2\nno ntp server vrf OOB 192.0.2.9\n")
+	if HasErrors(fs) {
+		t.Fatal(dump(fs))
+	}
+	r := ResolveIOSSystem(nil, scope, dev)
+	got := strings.Join(IOSSystemStatements(r), "\n")
+	want := strings.Join([]string{
+		"ip domain name s.example.net",
+		"ip domain name vrf MGMT b.example.net",
+		"ip domain list x.example.net",
+		"ip domain list vrf MGMT x.example.net",
+		"ip name-server 192.0.2.1",
+		"ip name-server vrf MGMT 192.0.2.1",
+		"ntp server 192.0.2.9",
+		"ntp server vrf MGMT 192.0.2.9 version 4",
+	}, "\n")
+	if got != want {
+		t.Errorf("resolved:\n%s\nwant:\n%s", got, want)
+	}
+	if lines := IOSSystemNotManagedLines(r); len(lines) != 4 || lines[0] != "no ip domain name vrf OOB" || lines[3] != "no ntp server vrf OOB 192.0.2.9" {
+		t.Errorf("no lines: %q", lines)
+	}
+	// a no line without the vrf takes the objects without one out, never the
+	// vrf's
+	plain, _ := ParseIOSSystem("no ip domain name\nno ip domain list\nno ip name-server\nno ntp server 192.0.2.9\n")
+	r = ResolveIOSSystem(nil, scope, plain)
+	got = strings.Join(IOSSystemStatements(r), "\n")
+	for _, w := range []string{"ip domain name vrf MGMT a.example.net", "ip domain list vrf MGMT x.example.net", "ip name-server vrf MGMT 192.0.2.2", "ntp server vrf MGMT 192.0.2.9 prefer"} {
+		if !strings.Contains(got, w) {
+			t.Errorf("the no line without a vrf took out %q:\n%s", w, got)
+		}
+	}
+	for _, w := range []string{"ip domain name s.example.net", "ip name-server 192.0.2.1\n", "ntp server 192.0.2.9\n"} {
+		if strings.Contains(got+"\n", w) {
+			t.Errorf("the no line kept %q:\n%s", w, got)
+		}
+	}
+	// the whole list of one vrf, and 'no ntp' everything
+	wholeVRF, _ := ParseIOSSystem("no ip domain list vrf MGMT\nno ip name-server vrf MGMT\nno ntp server vrf MGMT\n")
+	r = ResolveIOSSystem(nil, scope, wholeVRF)
+	got = strings.Join(IOSSystemStatements(r), "\n")
+	if strings.Contains(got, "vrf MGMT x.example.net") || strings.Contains(got, "name-server vrf") || strings.Contains(got, "ntp server vrf MGMT") ||
+		!strings.Contains(got, "ip domain list x.example.net") || !strings.Contains(got, "ip name-server 192.0.2.1") || !strings.Contains(got, "ntp server vrf OOB 192.0.2.9") {
+		t.Errorf("no lines of a vrf:\n%s", got)
+	}
+	noNTP, _ := ParseIOSSystem("no ntp\n")
+	if r = ResolveIOSSystem(nil, scope, noNTP); strings.Contains(strings.Join(IOSSystemStatements(r), "\n"), "ntp server") {
+		t.Error("no ntp left a server")
 	}
 }

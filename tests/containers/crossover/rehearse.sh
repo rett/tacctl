@@ -51,8 +51,8 @@ install)
     # install stops at "Go tarball checksum mismatch!". Go is put in place
     # first, as on the dev server (verified against dl.google.com's checksum).
     # shellcheck disable=SC2016 # expanded inside the container
-    step 0-go tacctl-rehearsal-install "Go 1.26.2 put in place (0.1.17's own download is broken)" \
-        'cd /tmp && wget -q https://dl.google.com/go/go1.26.2.linux-amd64.tar.gz && [[ "$(sha256sum go1.26.2.linux-amd64.tar.gz | cut -d" " -f1)" == "$(wget -qO- https://dl.google.com/go/go1.26.2.linux-amd64.tar.gz.sha256)" ]] && tar -C /usr/local -xzf go1.26.2.linux-amd64.tar.gz && rm go1.26.2.linux-amd64.tar.gz && /usr/local/go/bin/go version' || exit 1
+    step 0-go tacctl-rehearsal-install "Go 1.27.2 put in place (0.1.17's own download is broken)" \
+        'cd /tmp && wget -q https://dl.google.com/go/go1.27.2.linux-amd64.tar.gz && [[ "$(sha256sum go1.27.2.linux-amd64.tar.gz | cut -d" " -f1)" == "$(wget -qO- https://dl.google.com/go/go1.27.2.linux-amd64.tar.gz.sha256)" ]] && tar -C /usr/local -xzf go1.27.2.linux-amd64.tar.gz && rm go1.27.2.linux-amd64.tar.gz && /usr/local/go/bin/go version' || exit 1
     step 1-install tacctl-rehearsal-install "install 0.1.17 (README one-liner)" \
         "echo y | sudo bash -c 'git clone https://github.com/rett/tacctl.git /opt/tacctl && ln -sf /opt/tacctl/bin/tacctl.sh /usr/local/bin/tacctl && tacctl install'" || exit 1
     q tacctl-rehearsal-install 'tacctl version; git -C /opt/tacctl describe --tags; ls -l /usr/local/bin/tacctl; systemctl is-active tacquito; /usr/local/go/bin/go version'

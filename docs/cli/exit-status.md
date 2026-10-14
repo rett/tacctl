@@ -1,0 +1,18 @@
+# Exit Status and Environment
+
+[Documentation](../README.md) › [CLI reference](README.md)
+
+Exit status (`man tacctl`, EXIT STATUS, has the detail):
+
+| Status | Meaning |
+|---|---|
+| 0 | The command did what it was asked, or showed what there was to show. A confirmation answered no cancels it with nothing changed and exits 0 for the removals and `store rollback` |
+| 1 | The command refused or failed and said why on standard error: a value that does not fit, a name that does not exist, a caller whose tier does not allow it, a check that found a problem (`config validate`, `console check`, `device check`), a device that could not be read, compared or planned (`device config pull|diff|plan`), an unknown subcommand (after its usage). Nothing was changed unless the message says what was |
+| 2 | Wrong arguments for a verb that checks them itself (`store show`, `store import`, `store rollback`), an unknown backend id, or an action the backend does not provide; wrong arguments of `device config pull|diff|plan|list|forget`; `device config diff --exit-code` when a device differs, `device config plan --exit-code` when a device needs a change |
+| 3 | A backend command was refused because a rendered file holds a hand edit that it would discard, or `store import --check` could not prove the import safe; nothing was written |
+| 126, 127 | sudo could not be run to re-run tacctl as root; sudo is not installed |
+| 130 | Interrupted at a prompt (Ctrl-C at a password prompt), or a `device config pull` or `diff --pull` stopped by Ctrl-C (the first stops starting devices, a second cuts the running ones off); nothing was changed on a device (a pull writes none) |
+
+`tacctl ssh` and `tacctl device ssh` end with the status of the ssh they run, `tacctl shell -c` with the status of its line.
+
+Environment: tacctl reads `SUDO_USER`, `SUDO_UID` and `SUDO_GID` (the person behind sudo: the tier gate, the target of `passwd`, the scopes an engineer reaches; the pair is checked against the passwd database and a mismatch denies every command), `HOME` (the shell's history), `USER` and `LOGNAME` (the console's session log), `SSH_CLIENT`, `SSH_TTY` and `SSH_CONNECTION` (set by sshd), `SSH_AUTH_SOCK` and `DISPLAY` (handed to the ssh that `host`, `ssh` and `device ssh` run), `VISUAL` and `EDITOR` (the editor `scope block ... edit|adopt` and `device block ... edit|adopt` run as you; sudo's environment reset drops them, so the sudoers drop-ins keep them for those four command lines only), `TACCTL_CONSOLE` (the console's session marker, only ever used to tighten), `TACCTL_COLOR`, `NO_COLOR` and `TERM` (whether output is styled: only on a terminal that is not `dumb`; `TACCTL_COLOR=always` or `never` wins, else a non-empty `NO_COLOR` means never; the sudoers drop-ins keep the two variables so the choice reaches the root process, and without a drop-in the terminal alone decides; the console decides by its terminal only), `TACCTL_ASKPASS` (set by a shell or console session whose password cache is on, for the lines that use it: `<socket>:<token>`, dead when the line ends; see [Password cache](shell.md#password-cache)) and `TACQUITO_SRC` (the tacquito source clone, default `/opt/tacquito-src`). The variables that move tacctl's paths and clock for the test suite (`TACCTL_ETC`, `TACCTL_STATE_DIR`, ...) are not an interface; `tests/README.md` describes them.

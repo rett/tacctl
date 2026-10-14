@@ -159,9 +159,9 @@ func TestIOSSystemNewDevice(t *testing.T) {
 	if strings.Join(ntp, " ") != "authentication-key trusted-key server server authenticate" {
 		t.Errorf("the NTP order: %q", ntp)
 	}
-	// the note says the lines are not lab-tested and the order
+	// the note names the NTP key lines as not run on a device, and the order
 	if !slices.ContainsFunc(d.Notes, func(n string) bool {
-		return strings.HasPrefix(n, "system: ") && strings.Contains(n, "not lab-tested") && strings.Contains(n, "'ntp authenticate' last")
+		return strings.HasPrefix(n, "system: the NTP key lines") && strings.Contains(n, "not lab-tested") && strings.Contains(n, "'ntp authenticate' last")
 	}) {
 		t.Errorf("notes: %q", d.Notes)
 	}

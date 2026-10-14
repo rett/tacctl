@@ -87,8 +87,9 @@ its scope's block per object: a community the device's block states replaces
 the scope's community of the same string whole, one it adds is added, and the
 scope's others stay; the same for a Junos trap group (by name), a trap-options
 leaf and, in the system block, a single value or a list entry, and for an IOS
-access list (by name), trap host (by address and community) and 'enable traps'
-line. A 'delete' (Junos) or 'no' (IOS) line of the device's block takes the
+access list (by name), trap host (by address, vrf, kind, udp-port and
+community) and 'enable traps' line. A 'delete' (Junos) or 'no' (IOS) line of
+the device's block takes the
 scope's object out for this device. A device in no scope, and a device that
 is neither a Junos nor an IOS device, has no blocks. The files are
 /etc/tacctl/blocks/_devices/<name>/<vendor>/ (0600), named in tacctl.yaml by

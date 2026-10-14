@@ -41,7 +41,7 @@ func (inv *invocation) helpBlock(cmd *cobra.Command, path []string) (string, int
 
 // blockBody is the block's lines up to its Examples.
 func blockBody(block string) []string {
-	lines := strings.Split(block, "\n")
+	lines := strings.Split(plainBlock(block), "\n")
 	for i, l := range lines {
 		if l == "Examples:" {
 			return lines[:i]

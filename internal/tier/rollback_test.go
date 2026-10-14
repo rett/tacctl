@@ -54,3 +54,41 @@ func TestGroupSudoers023(t *testing.T) {
 		t.Errorf("the 0.2.3 group text is the current one:\n%s", text)
 	}
 }
+
+// The texts 0.2.7 wrote (the env_keep line without the colour variables) are
+// the current text with that line, are older ones to the upgrade, and are not
+// the current text; where the 0.2.7 tag is in the repository, the per-tier
+// text is that tag's golden file.
+func TestSudoers027(t *testing.T) {
+	old, cur := Sudoers027(), Sudoers()
+	// the current text with the old env_keep line and without 0.2.8's
+	// 'version --long' item
+	want := strings.Replace(strings.Replace(cur, EnvKeep, envKeep027, 1), ", "+Binary+" version --long", "", 1)
+	if old == cur || want != old {
+		t.Fatalf("Sudoers027 is not the current text with the old env_keep line:\n%s", old)
+	}
+	if strings.Contains(old, "NO_COLOR") || !strings.Contains(cur, "NO_COLOR TACCTL_COLOR") {
+		t.Error("the colour variables are not what tells the two apart")
+	}
+	text := GroupSudoers027("tac-admins")
+	if g, kind := ClassifyGroupSudoers(text); g != "tac-admins" || kind != GroupOlder {
+		t.Errorf("classified %q %v", g, kind)
+	}
+	if strings.Contains(text, "NO_COLOR") || strings.Replace(GroupSudoers("tac-admins"), EnvKeep, envKeep027, 1) != text {
+		t.Errorf("the 0.2.7 group text is not the current one with the old env_keep line:\n%s", text)
+	}
+	r := execx.Real{}
+	if _, err := r.LookPath("git"); err != nil {
+		t.Skip("git is not installed, so the 0.2.7 tag cannot be read")
+	}
+	if res, err := r.Run(context.Background(), execx.Cmd{Name: "git", Args: []string{"rev-parse", "-q", "--verify", "0.2.7^{commit}"}}); err != nil || res.Code != 0 {
+		t.Skip("the 0.2.7 tag is not in this repository (CI must fetch tags: git fetch --tags)")
+	}
+	res, err := r.Run(context.Background(), execx.Cmd{Name: "git", Args: []string{"show", "0.2.7:internal/tier/testdata/sudoers.tiers"}})
+	if err != nil || res.Code != 0 {
+		t.Fatalf("cannot read the 0.2.7 tag's golden file: %v %s", err, res.Stderr)
+	}
+	if string(res.Stdout) != old {
+		t.Error("Sudoers027 differs from the golden file of the 0.2.7 tag")
+	}
+}

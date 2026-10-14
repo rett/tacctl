@@ -467,7 +467,7 @@ PY
     assert_line --regexp '^copy running-config disk0:tacctl-lab-c-[0-9]{8}-[0-9]{4}\.cfg$'
     assert_line "!!!!! RESTORE POINT TO HERE: lab-c !!!!!"
     assert_line "!!!!! PASTE FROM HERE: lab-c !!!!!"
-    assert_output --partial "not lab-tested"
+    refute_output --partial "not lab-tested"
     # the restore block comes first, and it is the only command outside the region
     run python3 -c '
 import sys
@@ -487,6 +487,7 @@ print("fine")' <<< "$output"
     assert_success
     assert_line "archive config"
     refute_output --partial "copy running-config"
+    assert_output --partial "not lab-tested"
     # refused: with --plain and with --backout
     alice device config plan lab-c --restore-point --plain
     assert_failure 2

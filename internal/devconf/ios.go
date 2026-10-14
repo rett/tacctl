@@ -414,24 +414,34 @@ func SNMPHostCommunity(f []string) int {
 }
 
 // snmpHostStem is the compared form of an 'snmp-server host' statement:
-// the address, the options before the community, the community's label,
-// then the port and the notification types. IOS stores a host in its own
-// form (the default version 1, the default 'traps' kind and the default port
-// 162 are left out, and the types come in the order IOS keeps), so a host is
-// compared by its address, community and the SET of its options, not by the
-// text typed: 'version 1', 'traps' and 'udp-port 162' are dropped and the
-// types are sorted. [A] IOS knowledge, not a lab paste.
+// the address, the vrf and the kind ('informs'), the other options before the
+// community, the community's label, then the port and the notification types.
+// IOS stores a host in its own form (the default version 1, the default
+// 'traps' kind and the default port 162 are left out, and the types come in
+// the order IOS keeps), so a host is compared by its address, vrf, community
+// and the SET of its options, not by the text typed: 'version 1', 'traps' and
+// 'udp-port 162' are dropped, the vrf and the kind are put first in that
+// order, and the types are sorted. The whitespace of the line is not part of
+// it (IOS stores 'udp-port 1162  config' with two blanks).
 func snmpHostStem(f []string, i int, label string) []string {
 	out := []string{f[0], f[1], f[2]}
+	var kind, other []string
 	for k := 3; k < i; k++ {
 		switch {
 		case f[k] == "traps":
+		case f[k] == "informs":
+			kind = []string{"informs"}
+		case f[k] == "vrf" && k+1 < i:
+			out = append(out, f[k], f[k+1])
+			k++
 		case f[k] == "version" && k+1 < i && f[k+1] == "1":
 			k++
 		default:
-			out = append(out, f[k])
+			other = append(other, f[k])
 		}
 	}
+	out = append(out, kind...)
+	out = append(out, other...)
 	out = append(out, label)
 	rest := f[i+1:]
 	var types []string
@@ -447,6 +457,39 @@ func snmpHostStem(f []string, i int, label string) []string {
 	}
 	slices.Sort(types)
 	return append(out, types...)
+}
+
+// SNMPHostID is the identity of an 'snmp-server host' statement as IOS keeps
+// an entry: its address, its vrf when it names one, 'informs' when it is the
+// informs kind, its udp-port when it is not 162, and the community word (comm,
+// the string or its label) that the fields hold at index i, the one
+// SNMPHostCommunity gave. The same host in two vrfs, as traps and as informs,
+// on two ports, or with another community, is two entries; the version and
+// the notification types are not part of it (a typed line replaces them).
+func SNMPHostID(f []string, i int, comm string) string {
+	id := f[2]
+	informs := false
+	for k := 3; k < i; k++ {
+		switch {
+		case f[k] == "vrf" && k+1 < i:
+			id += " vrf " + f[k+1]
+			k++
+		case f[k] == "informs":
+			informs = true
+		}
+	}
+	if informs {
+		id += " informs"
+	}
+	for k := i + 1; k+1 < len(f); k++ {
+		if f[k] == "udp-port" {
+			if f[k+1] != "162" {
+				id += " udp-port " + f[k+1]
+			}
+			break
+		}
+	}
+	return id + " " + comm
 }
 
 // ciscoStem returns a statement's last line without a secret's value, and
@@ -672,6 +715,27 @@ func withImplicitLogin(got []stmt) []stmt {
 		add("line con " + strconv.Itoa(l))
 	}
 	return got
+}
+
+// iosDefaultTimezone is the one zone statement IOS does not print: the
+// default, UTC with no offset (IOS 12.4, 15.6 and IOS-XE 16.7 print no
+// 'clock timezone' line for it).
+const iosDefaultTimezone = "clock timezone UTC 0 0"
+
+// withImplicitTimezone adds the statement 'clock timezone UTC 0 0' to a
+// device that has no 'clock timezone' statement when the rendering has it:
+// the device runs it by default and prints nothing, and a device with
+// another zone keeps it, so the rendered one is missing there.
+func withImplicitTimezone(got []stmt, claim map[string]string) []stmt {
+	if _, ok := claim[iosDefaultTimezone]; !ok {
+		return got
+	}
+	for _, x := range got {
+		if len(x.path) == 1 && strings.HasPrefix(x.path[0], "clock timezone ") {
+			return got
+		}
+	}
+	return append(got, stmt{text: iosDefaultTimezone, stem: iosDefaultTimezone, path: []string{iosDefaultTimezone}})
 }
 
 // alignLogin makes the device's login statements comparable with the
@@ -1299,7 +1363,7 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 		}
 	}
 	lb.fresh = true
-	got := withImplicitLogin(privilegeParents(ciscoCanon(lines, nil, lb), c.claim))
+	got := withImplicitTimezone(withImplicitLogin(privilegeParents(ciscoCanon(lines, nil, lb), c.claim)), c.claim)
 	for _, x := range got {
 		leaf := strings.Fields(x.path[len(x.path)-1])
 		switch {

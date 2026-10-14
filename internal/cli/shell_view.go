@@ -162,8 +162,8 @@ var tierNotes = map[string]string{
 	"scope block":     "scope block: an engineer may read the configuration blocks of a scope of their own (list, show [--reveal], check); set, remove, edit and adopt need the superuser tier.",
 	"device block":    "device block: an engineer may read the configuration blocks of a device of their own scope (list, show [--effective] [--reveal], check); set, remove, edit and adopt need the superuser tier.",
 	"host show":       "host show: an engineer reads what tacctl recorded of a host; --check logs in to it and needs the superuser tier.",
-	"device list":     "device list: the CONFIG column (and config of --json) is the operator tier's; a read-only user's list has none.",
-	"device show":     "device show: the Configuration row (and config of --json) is the operator tier's; a read-only user's output has none.",
+	"device list":     "device list: the CONFIG column (and config, release, model and serial of --json) is the operator tier's; a read-only user's list has none.",
+	"device show":     "device show: the Configuration, Release, Model and Serial rows (and config, release, model and serial of --json) are the operator tier's; a read-only user's output has none.",
 	"device import":   "device import: an engineer imports from standard input only (device import -).",
 	"config cisco":    "config cisco: an engineer may print the walkthrough and read source-interface for a scope of their own; setting or unsetting source-interface needs the superuser tier.",
 	"breakglass list": "breakglass list: an engineer lists the holds of the devices of their own scopes only; hold and release need the superuser tier.",
@@ -252,7 +252,7 @@ func filterTop(root *cobra.Command, eff tier.Tier, text string) string {
 			section = ""
 		case section == "commands":
 			if strings.HasPrefix(l, "  ") && !strings.HasPrefix(l, "   ") {
-				name, _, _ := strings.Cut(strings.TrimSpace(l), " ")
+				name, _, _ := strings.Cut(strings.TrimSpace(plainBlock(l)), " ")
 				keep = name == "shell" || viewShows(root, eff, false, []string{name})
 			}
 			if !keep {

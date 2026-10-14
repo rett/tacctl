@@ -786,8 +786,22 @@ func (c *IOSConfig) typeGlobal(text string) {
 }
 
 func (c *IOSConfig) noGlobal(text string) {
+	// a trap host is an entry of its address, vrf, kind, udp-port and
+	// community: 'no' takes that entry away whatever its version and types,
+	// and never an entry of another kind or port (lab, IOS 15.6 and 16.7)
+	hostKey, isHost := "", false
+	if strings.HasPrefix(text, "snmp-server host ") {
+		hostKey, isHost = iosKey([]string{text})
+	}
 	for i := 0; i < len(c.blocks); i++ {
 		h := norm(c.blocks[i].lines[0])
+		if isHost && len(c.blocks[i].lines) == 1 && strings.HasPrefix(h, "snmp-server host ") {
+			if k, ok := iosKey([]string{h}); ok && k == hostKey {
+				c.blocks = slices.Delete(c.blocks, i, i+1)
+				i--
+			}
+			continue
+		}
 		// 'no aaa new-model' takes every aaa line and group with it (the lines
 		// that name the list on the vty lines stay: the lab, lock-out 2)
 		if text == "aaa new-model" && strings.HasPrefix(h, "aaa ") {

@@ -507,6 +507,16 @@ func plainIOS(stem string) string {
 		if m := reIOSBannerSize.FindStringSubmatch(leaf); m != nil {
 			w += " of " + m[1] + " lines, " + m[2] + " characters"
 		}
+	case len(f) >= 6 && f[0] == "ip" && f[1] == "domain" && f[2] == "name" && f[3] == "vrf":
+		w = "the domain name in vrf " + f[4] + " is " + strings.Join(f[5:], " ")
+	case len(f) >= 6 && f[0] == "ip" && f[1] == "domain" && f[2] == "list" && f[3] == "vrf":
+		w = "the search domain " + strings.Join(f[5:], " ") + " in vrf " + f[4]
+	case len(f) >= 5 && f[0] == "ip" && f[1] == "name-server" && f[2] == "vrf":
+		w = "the name server " + strings.Join(f[4:], " ") + " in vrf " + f[3]
+	case len(f) == 5 && f[0] == "ntp" && f[1] == "server" && f[2] == "vrf":
+		w = "the NTP server " + f[4] + " in vrf " + f[3]
+	case len(f) >= 6 && f[0] == "ntp" && f[1] == "server" && f[2] == "vrf":
+		w = "the NTP server " + f[4] + " in vrf " + f[3] + ": " + strings.Join(f[5:], " ")
 	case len(f) >= 4 && f[0] == "ip" && f[1] == "domain" && f[2] == "name":
 		w = "the domain name is " + strings.Join(f[3:], " ")
 	case len(f) >= 4 && f[0] == "ip" && f[1] == "domain" && f[2] == "list":
@@ -573,6 +583,10 @@ func (p *planner) buildExtras(d *Delta) {
 			switch {
 			case k.Note == communityNotVisible:
 				e.Guard = communityNotVisible
+			case iosHostOfKnownCommunity(leaf):
+				// the community is the rendering's own: the entry differs in
+				// its vrf, kind or udp-port, which makes it the device's
+				e.Guard = "the device's own entry, not the block's: the block's host is of another vrf, kind or udp-port"
 			case slices.ContainsFunc(strings.Fields(k.Text), isMark):
 				e.Guard = "its name is the secret and is not known to tacctl"
 			case strings.HasPrefix(leaf, "username "), strings.HasPrefix(leaf, "enable "), strings.HasPrefix(path[0], "line "):
@@ -585,6 +599,14 @@ func (p *planner) buildExtras(d *Delta) {
 		}
 		d.Extras = append(d.Extras, e)
 	}
+}
+
+// iosHostOfKnownCommunity reports an 'snmp-server host' statement (compared
+// form) whose community is one the rendering sets.
+func iosHostOfKnownCommunity(stem string) bool {
+	f := strings.Fields(stem)
+	i := devconf.SNMPHostCommunity(f)
+	return i > 0 && devconf.IsLabel(f[i]) && !devconf.IsOtherLabel(f[i])
 }
 
 // junosObjectDepths are the depths at which a statement's path names an
@@ -749,30 +771,27 @@ func boxLine(d Delta, h Header) string {
 // iosLabNote is the sentence every Cisco output's report carries (D100).
 const iosLabNote = "Checked on a device: IOS 12.4(15) (a 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references."
 
-// iosBlockNote is the sentence a Cisco output carries when the rendering has
-// a scope's SNMP block: what the standard was checked on does not cover the
-// block's own lines.
-func iosBlockNote(scope string) string {
-	where := "this scope"
-	if scope != "" {
-		where = "scope '" + scope + "'"
+// iosHasNTPKeyLines reports whether the system block's lines hold an NTP
+// key, a trusted key or 'ntp authenticate'.
+func iosHasNTPKeyLines(lines []string) bool {
+	for _, l := range lines {
+		if strings.HasPrefix(l, "ntp authentication-key ") || strings.HasPrefix(l, "ntp trusted-key ") || l == "ntp authenticate" {
+			return true
+		}
 	}
-	return "snmp: the lines of the SNMP block of " + where + " (access list entries, trap hosts, 'enable traps' lines) were written from the references " +
-		"and have not been checked on a device (not lab-tested): read them before you paste"
+	return false
 }
 
-// iosSystemNote is the sentence a Cisco output carries when the rendering has
-// a scope's system block: the banner, the domain and name servers, the time
-// zone and the NTP lines were written from the references and have not been
+// iosSystemNote is the sentence a Cisco output carries when the system block
+// has NTP key lines: they were written from the references and have not been
 // pasted on a device.
 func iosSystemNote(scope string) string {
 	where := "this scope"
 	if scope != "" {
 		where = "scope '" + scope + "'"
 	}
-	return "system: the lines of the system block of " + where + " (login banner, domain name and list, time zone, name servers, NTP) were written from the references " +
-		"and have not been checked on a device (not lab-tested): read them before you paste; the NTP lines are in the order IOS needs " +
-		"(keys, trusted keys, servers, 'ntp authenticate' last)"
+	return "system: the NTP key lines of the system block of " + where + " have not been checked on a device (not lab-tested): read them before you paste; " +
+		"they are in the order IOS needs (keys, trusted keys, servers, 'ntp authenticate' last)"
 }
 
 // Report is the box, the irregularity report and the one check line, all

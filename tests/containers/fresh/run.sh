@@ -166,10 +166,10 @@ check "tacquito is active" 'systemctl is-active --quiet tacquito'
 section "tacctl version --long"
 out=$(q 'tacctl version --long'); echo "$out"
 short=$(git -C "$REPO" rev-parse "$COMMIT")
-if grep -q "commit: *${short}" <<< "$out" && grep -q 'test knobs: off' <<< "$out" && grep -q 'go: *go1.26.2' <<< "$out"; then
-    ok "version --long: this commit, go1.26.2, test knobs off"
+if grep -q "commit: *${short}" <<< "$out" && grep -q 'test knobs: off' <<< "$out" && grep -q 'go: *go1.27.2' <<< "$out"; then
+    ok "version --long: this commit, go1.27.2, test knobs off"
 else
-    bad "version --long: this commit, go1.26.2, test knobs off"
+    bad "version --long: this commit, go1.27.2, test knobs off"
 fi
 
 # --- user passwd engineer through a pty -----------------------------------------
@@ -253,10 +253,12 @@ podman exec -e LC_ALL=C "${C}-control" bash -c "export DEBIAN_FRONTEND=nonintera
 podman rm -f -t 0 "${C}-control" > /dev/null
 q 'cat /var/tmp/files.before' > "${WORK}/files.before"
 q 'cat /var/tmp/files.after' > "${WORK}/files.after"
-# Not counted besides: logs and the package and service managers' state,
-# this check's own git configuration (/root/.gitconfig) and lists.
+# Not counted besides: logs and the package and service managers' state
+# (/var/backups holds the dpkg and alternatives copies the distribution's
+# daily timer makes in a container that has run long enough), this check's own
+# git configuration (/root/.gitconfig) and lists.
 left=$(sort -u "${WORK}/files.before" "${WORK}/files.control" | comm -13 - "${WORK}/files.after" \
-    | grep -vE '^/(var/lib/(dpkg|apt|systemd)|var/cache|var/log)(/|$)|^/(root/\.gitconfig|var/tmp/[^/]*)$')
+    | grep -vE '^/(var/lib/(dpkg|apt|systemd)|var/cache|var/log|var/backups)(/|$)|^/(root/\.gitconfig|var/tmp/[^/]*)$')
 # Collapse the expected roots to one line each.
 summ=$(awk '
     /^\/usr\/local\/go(\/|$)/              { k["/usr/local/go"]++; next }

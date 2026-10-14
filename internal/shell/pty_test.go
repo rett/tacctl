@@ -8,6 +8,7 @@ package shell
 // group is killed.
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -101,6 +102,7 @@ func ptyHelper(args []string) {
 	listMax := fs.Int("listmax", 0, "")
 	sysShell := fs.String("syssh", "", "")
 	spaces := fs.Bool("spaces", false, "")
+	styled := fs.Bool("styled", false, "")
 	if err := fs.Parse(args); err != nil {
 		return
 	}
@@ -115,6 +117,7 @@ func ptyHelper(args []string) {
 		Complete:        testCompleter,
 		ListMax:         *listMax,
 		SpaceCompletion: *spaces,
+		Styled:          *styled,
 		Exec: func(ctx context.Context, words []string, stdin io.Reader) int {
 			code, _, err := execx.Attached(ctx, execx.Real{}, execx.Cmd{Name: words[0], Args: words[1:]}, stdin, os.Stdout, os.Stderr)
 			if err != nil && code == 0 {
@@ -373,6 +376,45 @@ func TestPtyQuestionMark(t *testing.T) {
 	if err != nil || string(b) != "echo \"^show ?\" '?' a\\?\nexit\n" {
 		t.Errorf("history %q, %v", b, err)
 	}
+}
+
+// With Styled the label of each row of the '?' list is bold; the padding,
+// the descriptions and everything around the list are the plain bytes, and
+// Tab's columns stay plain.
+func TestPtyQuestionMarkStyled(t *testing.T) {
+	p := startShell(t, "-styled")
+	p.send("user ?")
+	p.expect(`tacctl> user \r\nPossible completions:\r\n  \x1b\[1mlist\x1b\[0m  List all users\r\n  \x1b\[1mshow\x1b\[0m  Show a user\r\n`)
+	p.expect(`tacctl> user `)
+	p.send("\x15user \t\t")
+	p.expect(`\r\nlist  show\r\n`)
+	if out := p.Output(); strings.Contains(out, "\x1b[1mlist\x1b[0m  show") {
+		t.Errorf("the Tab columns are styled: %q", out)
+	}
+	p.send("\x15exit\r")
+	p.exits(0)
+	var plain bytes.Buffer
+	w := ui.StripSGR(&plain)
+	_, _ = w.Write([]byte(p.Output()))
+	_ = w.Close()
+	if !strings.Contains(plain.String(), "Possible completions:\r\n  list  List all users\r\n  show  Show a user\r\n") {
+		t.Errorf("the plain text of the list changed: %q", plain.String())
+	}
+}
+
+// A styled list that pages: the rows carry the bold labels and the more
+// prompt row is plain.
+func TestPtyPagerStyled(t *testing.T) {
+	p := startShell(t, "-listmax", "-1", "-styled")
+	p.send("many ?")
+	p.expect(`Possible completions:\r\n  \x1b\[1mn01\x1b\[0m  device\r\n(?s:.*)  \x1b\[1mn22\x1b\[0m  device\r\n` + regexp.QuoteMeta(morePrompt))
+	if out := p.Output(); strings.Contains(out, "\x1b[1m"+morePrompt) || strings.Contains(out, "\x1b[0m"+morePrompt) {
+		t.Errorf("the more prompt is styled: %q", out)
+	}
+	p.send("q")
+	p.expect(`\r\x1b\[Ktacctl> many `)
+	p.send("\x15exit\r")
+	p.exits(0)
 }
 
 // A '?' list taller than the terminal (24 rows) pages: a screenful, the

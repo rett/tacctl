@@ -121,12 +121,14 @@ func TestPtyShellHelp(t *testing.T) {
 	if err := s.Expect(`Ctrl-D +Leave the shell\r\n\r\n`, 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	out := strings.ReplaceAll(s.Output(), "\r\n", "\n")
-	if want := shellTop("0.2.1-pty", false); !strings.Contains(out, want) {
+	// The terminal has no TERM here, so the shell prints no colour: the text
+	// is compared with the escapes of the expected help taken out.
+	out := stripSGR(strings.ReplaceAll(s.Output(), "\r\n", "\n"))
+	if want := stripSGR(shellTop("0.2.1-pty", false)); !strings.Contains(out, want) {
 		t.Errorf("help is not the usage block:\n%q\nwant\n%q", out, want)
 	}
 	// The command list is the one of 'tacctl' itself.
-	top := Usage("top", UsageVars{"version": "0.2.1-pty"})
+	top := stripSGR(Usage("top", UsageVars{"version": "0.2.1-pty"}))
 	list := top[strings.Index(top, "Commands:\n"):strings.Index(top, "\nRun any command")]
 	if !strings.Contains(out, list) {
 		t.Errorf("help lacks the command list of the usage:\n%q", out)

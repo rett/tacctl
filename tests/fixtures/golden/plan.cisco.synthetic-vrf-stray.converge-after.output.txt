@@ -1,0 +1,62 @@
+!!!!! dev-cisco-synthetic-vrf-stray  192.0.2.21  scope lab  cisco (IOS-XE and IOS 15 syntax, TACACS+) !!!!!
+! Based on the pull of 2026-10-10 14:02 by alice over ssh (18 minutes ago; the login could see
+! secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5). Checked on a device: IOS 12.4(15) (a
+! 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references.
+!
+! What is irregular on dev-cisco-synthetic-vrf-stray (19 items; the paste fixes 0, leaves 19):
+!  1. snmp     MONITORING extra: an SNMP community (snmp-server community <other:1> RO TACCTL-SNMP).
+!                         Left alone (its name is the secret and is not known to tacctl).
+!  2. snmp     MONITORING extra: SNMP traps are sourced from the interface loopback0 (snmp-server
+!                         trap-source loopback0). Left alone. To remove it later: no snmp-server
+!                         trap-source
+!  3. snmp     MONITORING extra: snmp-server enable traps config. Left alone. To remove it later: no
+!                         snmp-server enable traps config
+!  4. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <other:2>. Left alone (its
+!                         name is the secret and is not known to tacctl).
+!  5. snmp     MONITORING extra: snmp-server host 192.0.2.61 version 2c <secret:2>. Left alone (the
+!                         device's own entry, not the block's: the block's host is of another vrf,
+!                         kind or udp-port).
+!  6. snmp     MONITORING extra: snmp-server host 192.0.2.62 version 2c <secret:2>. Left alone (the
+!                         device's own entry, not the block's: the block's host is of another vrf,
+!                         kind or udp-port).
+!  7. snmp     MONITORING extra: snmp-server host 192.0.2.63 version 2c <secret:2>. Left alone (the
+!                         device's own entry, not the block's: the block's host is of another vrf,
+!                         kind or udp-port).
+!  8. snmp     MONITORING extra: snmp-server host 192.0.2.64 vrf OTHER version 2c <other:2>. Left
+!                         alone (its name is the secret and is not known to tacctl).
+!  9. system   COSMETIC   extra: the time zone is CET 1 0 (clock timezone CET 1 0). Left alone (the
+!                         system block only adds, it never removes). To remove it later: no clock
+!                         timezone
+! 10. system   COSMETIC   extra: the domain name in vrf OTHER is other.example.net (ip domain name vrf
+!                         OTHER other.example.net). Left alone (the system block only adds, it never
+!                         removes). To remove it later: no ip domain name vrf OTHER
+! 11. system   COSMETIC   extra: the search domain mgmt.example.net (ip domain list mgmt.example.net).
+!                         Left alone (the system block only adds, it never removes). To remove it
+!                         later: no ip domain list mgmt.example.net
+! 12. system   COSMETIC   extra: the search domain other.example.net in vrf OTHER (ip domain list vrf
+!                         OTHER other.example.net). Left alone (the system block only adds, it never
+!                         removes). To remove it later: no ip domain list vrf OTHER other.example.net
+! 13. system   COSMETIC   extra: the name server 192.0.2.54 (ip name-server 192.0.2.54). Left alone
+!                         (the system block only adds, it never removes). To remove it later: no ip
+!                         name-server 192.0.2.54
+! 14. system   COSMETIC   extra: the name server 198.51.100.53 in vrf OTHER (ip name-server vrf OTHER
+!                         198.51.100.53). Left alone (the system block only adds, it never removes).
+!                         To remove it later: no ip name-server vrf OTHER 198.51.100.53
+! 15. system   COSMETIC   extra: the login banner of 1 lines, 16 characters (banner login <message: 1
+!                         lines, 16 characters, id 9716067a>). Left alone (the system block only adds,
+!                         it never removes). To remove it later: no banner login
+! 16. system   COSMETIC   extra: ntp source Loopback0. Left alone (the system block only adds, it
+!                         never removes). To remove it later: no ntp source Loopback0
+! 17. system   COSMETIC   extra: ntp master 3. Left alone (the system block only adds, it never
+!                         removes). To remove it later: no ntp master 3
+! 18. system   COSMETIC   extra: the NTP server 198.51.100.123 (ntp server 198.51.100.123). Left alone
+!                         (the system block only adds, it never removes). To remove it later: no ntp
+!                         server 198.51.100.123
+! 19. system   COSMETIC   extra: the NTP server 198.51.100.123 in vrf OTHER (ntp server vrf OTHER
+!                         198.51.100.123). Left alone (the system block only adds, it never removes).
+!                         To remove it later: no ntp server vrf OTHER 198.51.100.123
+! Nothing to paste: everything above is left alone or cannot be fixed by this login.
+! Consistent: aaa, roles, mgmt-acl. Not planned: netconf, breakglass.
+! Secrets: 5 present on the device, not changed (--secrets pushes them).
+! Cleanup (--converge): nothing to remove.
+! 13 extras stay: each item above says why.

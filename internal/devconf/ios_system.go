@@ -16,9 +16,14 @@ package devconf
 //   - 'ip domain-name' and 'ip domain-list' are the legacy spellings of 'ip
 //     domain name' and 'ip domain list' and are compared as the latter; a
 //     host name is lower case.
+//   - A vrf form ('ntp server vrf V ...', 'ip name-server vrf V A',
+//     'ip domain name|list vrf V name') is a statement of its own: the vrf is
+//     part of the object, so it is satisfied by no line without it and the
+//     other way round. A vrf's name is compared as written.
 //   - 'clock timezone CET 1' (12.4) and 'clock timezone CET 1 0' (15.x) are
 //     one statement, with its minutes.
-//   - 'ip name-server A B C' is one statement per address.
+//   - 'ip name-server [vrf V] A B C' is one statement per address (IOS 15.6
+//     stores a vrf's list that way, IOS-XE 16.7 on one line).
 //   - 'ntp server' keeps its address and the set of its options, in one order:
 //     the keywords are reordered by the device when stored.
 //   - An 'ntp authentication-key <n> md5 <string> [7]' is compared by its
@@ -27,8 +32,9 @@ package devconf
 //   - 'snmp-server trap-source Lo0' is stored by the device as 'Loopback0': the
 //     interface is compared without case (the block requires the full name).
 //
-// Nothing here has been seen on a router: the shapes are the vendor
-// references' (the plan's report says so).
+// The vrf forms and 'ip name-server A B' are stored as listed above; the NTP
+// key lines and the case of an interface name are the vendor references' (the
+// plan's report says so).
 
 import (
 	"regexp"
@@ -99,8 +105,14 @@ func ciscoSystemLine(f []string) []string {
 		return []string{"ip", "domain", strings.TrimPrefix(f[1], "domain-"), strings.ToLower(f[2])}
 	case f[0] == "ip" && f[1] == "domain" && len(f) == 4 && (f[2] == "name" || f[2] == "list") && f[3] != "vrf":
 		return []string{"ip", "domain", f[2], strings.ToLower(f[3])}
+	case f[0] == "ip" && f[1] == "domain" && len(f) == 6 && f[3] == "vrf" && (f[2] == "name" || f[2] == "list"):
+		return []string{"ip", "domain", f[2], "vrf", f[4], strings.ToLower(f[5])}
+	case f[0] == "ip" && (f[1] == "domain-name" || f[1] == "domain-list") && len(f) == 5 && f[2] == "vrf":
+		return []string{"ip", "domain", strings.TrimPrefix(f[1], "domain-"), "vrf", f[3], strings.ToLower(f[4])}
 	case f[0] == "ip" && f[1] == "name-server" && len(f) == 3:
 		return []string{"ip", "name-server", strings.ToLower(f[2])}
+	case f[0] == "ip" && f[1] == "name-server" && len(f) == 5 && f[2] == "vrf":
+		return []string{"ip", "name-server", "vrf", f[3], strings.ToLower(f[4])}
 	case f[0] == "clock" && f[1] == "timezone" && (len(f) == 4 || len(f) == 5):
 		h := strings.TrimPrefix(f[3], "+")
 		m := "0"
@@ -118,16 +130,23 @@ func ciscoSystemLine(f []string) []string {
 
 // ciscoNTPServer is 'ntp server <host> [key N] [prefer] [source IF] [version
 // V]': the options in one order, the host and the interface without case. A
-// statement with a word this does not know (a vrf, an option of another
-// release) is returned as it is, which compares it as written.
+// vrf ('ntp server vrf V <host> ...') stays in front of the host. A statement
+// with a word this does not know (an option of another release) is returned
+// as it is, which compares it as written.
 func ciscoNTPServer(f []string) []string {
-	host := f[2]
+	vrf, host, from := "", f[2], 3
+	if host == "vrf" {
+		if len(f) < 5 {
+			return f
+		}
+		vrf, host, from = f[3], f[4], 5
+	}
 	if host == "vrf" || host == "ip" || host == "ipv6" {
 		return f
 	}
 	var key, ver, src string
 	prefer := false
-	for i := 3; i < len(f); i++ {
+	for i := from; i < len(f); i++ {
 		switch f[i] {
 		case "prefer":
 			if prefer {
@@ -154,7 +173,11 @@ func ciscoNTPServer(f []string) []string {
 			return f
 		}
 	}
-	out := []string{"ntp", "server", strings.ToLower(host)}
+	out := []string{"ntp", "server"}
+	if vrf != "" {
+		out = append(out, "vrf", vrf)
+	}
+	out = append(out, strings.ToLower(host))
 	if key != "" {
 		out = append(out, "key", key)
 	}
@@ -168,6 +191,22 @@ func ciscoNTPServer(f []string) []string {
 		out = append(out, "version", ver)
 	}
 	return out
+}
+
+// ntpServerID is the identity of an NTP server statement's fields ('ntp
+// server [vrf V] <host> ...'): the host without case, with the vrf when the
+// statement names one. A statement with no host is "".
+func ntpServerID(f []string) string {
+	if len(f) < 3 || f[0] != "ntp" || f[1] != "server" {
+		return ""
+	}
+	if f[2] == "vrf" {
+		if len(f) < 5 {
+			return ""
+		}
+		return "vrf " + f[3] + " " + strings.ToLower(f[4])
+	}
+	return strings.ToLower(f[2])
 }
 
 // DeviceBannerBody is blocks.DeviceBanner for the lines of a device's text.

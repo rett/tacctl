@@ -7,50 +7,53 @@ package cli
 
 // usageBlocks are the usage texts of the bash implementation (0.1.16), as
 // printed to stdout, verbatim. <b> and </b> stand for the bold and reset
-// escapes; {{name}} is a value the command fills in (Usage).
+// escapes, <o> and </o> for cyan and reset (an option name or a
+// placeholder; the markers only wrap text that is there, so the plain bytes
+// are the 0.1.16 ones); {{name}} is a value the command fills in (Usage).
 var usageBlocks = map[string]string{
 	// lib/dispatch.sh usage
 	"top": `
-<b>tacctl</b> ({{version}}) — TACACS+ (tacquito) and RADIUS (FreeRADIUS) from one store
+<b>tacctl</b> ({{version}}) — Network-device AAA from one store: TACACS+ (tacquito) and RADIUS (FreeRADIUS)
+Copyright (c) 2026 Everett C. Haimes III · MIT License · https://github.com/rett/tacctl
 
 Usage: tacctl <command> [arguments]
 
 Commands:
-  install [--branch <name>] [-y|--yes]  Install tacctl and the TACACS+ backend (tacquito) from scratch
-      --branch <name>                   The tacctl repo branch to install or upgrade from (default: the current one)
-      -y, --yes                         Answer yes to the confirmations
-  upgrade [--branch <name>]             Pull latest source, rebuild, update scripts and every enabled backend
-  uninstall [-y|--yes]                  Remove tacctl, its backends' services and all associated files
-  rollback <version> [options]          Prepare the state for the release before this one (0.2.3): a dry run unless --apply
-      --apply                           Take a snapshot, then convert the files 0.2.3 cannot read (tacctl.yaml, console.yaml, devices.yaml, sudoers)
-      --yes                             Acknowledge the warnings that --apply refuses to go on without
-      --hosts                           Accepted; the hosts need nothing for this target (no host is synced)
-  status                                Show service health, stats, and recent errors (per backend)
-  passwd                                Change your own password (asks for the current one)
-  user <subcommand>                     User management (list, add, remove, passwd, scope, ...)
-  group <subcommand>                    Group management (list, add, edit, remove)
-  scope <subcommand>                    Scope management (named CIDR + shared-secret bundles)
-  host <subcommand>                     Linux hosts: enroll, sync, unenroll TACACS+ or RADIUS login over SSH
-  device <subcommand>                   Device registry: list, add, scan, discover, check, host keys (ssh-config)
-  breakglass <subcommand>               Break-glass hold: make the server stop answering one device (hold, release, list)
-  ssh <name|address> [-p <port>]        Open an ssh session to a registered device or enrolled host, as you
-      -p <port>                         Connect to this port instead of the registered one
-  shell [--idle <min>] [-c <line>]      An interactive tacctl prompt with history and completion
-      --idle <min>                      End the session after this many idle minutes at the prompt
-      -c <line>                         Run one line and exit
-      --no-history                      Keep no history file for this session
-      --space-completion on|off         A typed space completes a fixed word and never doubles (default on)
-      --password-cache                  Keep your network password in this shell's memory (when your tier's policy allows)
-  console <subcommand>                  Login console: tiers, per-user overrides, settings (show, tiers, user, ...)
-  backend <subcommand>                  Auth backends: list, status, enable <id>, disable <id>
-  store <subcommand>                    The canonical store: show, import, rollback
-  config <subcommand>                   Configuration (show, render, cisco, juniper, wti, validate, ...)
-  log <subcommand>                      Log viewer (tail, search, failures, accounting; --backend <id>)
-  backup <subcommand>                   Backup management (list, diff, restore)
-  hash <subcommand>                     Bcrypt helper (generate, commands — runs as invoking user, no sudo)
-  completion bash|zsh|fish              Print the shell completion script
-  version [--long]                      Print tacctl version (--long: commit, build date, Go version)
-      --long                            Also the commit, build date, Go version and whether test knobs are on
+  <b>install</b> [<o>--branch <name></o>] [<o>-y</o>|<o>--yes</o>]  Install tacctl and the TACACS+ backend (tacquito) from scratch
+      <o>--branch <name></o>                   The tacctl repo branch to install or upgrade from (default: the current one)
+      <o>-y</o>, <o>--yes</o>                         Answer yes to the confirmations
+  <b>upgrade</b> [<o>--branch <name></o>]             Pull latest source, rebuild, update scripts and every enabled backend
+  <b>uninstall</b> [<o>-y</o>|<o>--yes</o>]                  Remove tacctl, its backends' services and all associated files
+  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.3): a dry run unless <o>--apply</o>
+      <o>--apply</o>                           Take a snapshot, then convert the files 0.2.3 cannot read (tacctl.yaml, console.yaml, devices.yaml, sudoers)
+      <o>--yes</o>                             Acknowledge the warnings that <o>--apply</o> refuses to go on without
+      <o>--hosts</o>                           Accepted; the hosts need nothing for this target (no host is synced)
+  <b>status</b>                                Show service health, stats, and recent errors (per backend)
+  <b>passwd</b>                                Change your own password (asks for the current one)
+  <b>user</b> <o><subcommand></o>                     User management (list, add, remove, passwd, scope, ...)
+  <b>group</b> <o><subcommand></o>                    Group management (list, add, edit, remove)
+  <b>scope</b> <o><subcommand></o>                    Scope management (named CIDR + shared-secret bundles)
+  <b>host</b> <o><subcommand></o>                     Linux hosts: enroll, sync, unenroll TACACS+ or RADIUS login over SSH
+  <b>device</b> <o><subcommand></o>                   Device registry: list, add, scan, discover, check, host keys (ssh-config)
+  <b>breakglass</b> <o><subcommand></o>               Break-glass hold: make the server stop answering one device (hold, release, list)
+  <b>ssh</b> <o><name|address></o> [<o>-p <port></o>]        Open an ssh session to a registered device or enrolled host, as you
+      <o>-p <port></o>                         Connect to this port instead of the registered one
+  <b>shell</b> [<o>--idle <min></o>] [<o>-c <line></o>]      An interactive tacctl prompt with history and completion
+      <o>--idle <min></o>                      End the session after this many idle minutes at the prompt
+      <o>-c <line></o>                         Run one line and exit
+      <o>--no-history</o>                      Keep no history file for this session
+      <o>--space-completion</o> on|off         A typed space completes a fixed word and never doubles (default on)
+      <o>--password-cache</o>                  Keep your network password in this shell's memory (when your tier's policy allows)
+  <b>console</b> <o><subcommand></o>                  Login console: tiers, per-user overrides, settings (show, tiers, user, ...)
+  <b>backend</b> <o><subcommand></o>                  Auth backends: list, status, enable <o><id></o>, disable <o><id></o>
+  <b>store</b> <o><subcommand></o>                    The canonical store: show, import, rollback
+  <b>config</b> <o><subcommand></o>                   Configuration (show, render, cisco, juniper, wti, validate, ...)
+  <b>log</b> <o><subcommand></o>                      Log viewer (tail, search, failures, accounting; <o>--backend <id></o>)
+  <b>backup</b> <o><subcommand></o>                   Backup management (list, diff, restore)
+  <b>hash</b> <o><subcommand></o>                     Bcrypt helper (generate, commands — runs as invoking user, no sudo)
+  <b>completion</b> bash|zsh|fish              Print the shell completion script
+  <b>version</b> [<o>--long</o>]                      Print tacctl version (<o>--long</o>: commit, build date, Go version)
+      <o>--long</o>                            Also the commit, build date, Go version and whether test knobs are on
 
 Run any command without arguments for detailed help, e.g.:
   tacctl user
@@ -65,6 +68,8 @@ Examples:
   tacctl scope add prod --prefixes 10.10.0.0/16 --secret generate
   tacctl config cisco --scope prod
 
+Documentation: man tacctl, /opt/tacctl/docs/ · Project: https://github.com/rett/tacctl
+
 `,
 	// lib/users.sh cmd_user
 	"user": `
@@ -73,21 +78,21 @@ Examples:
 Usage: tacctl user <subcommand> [arguments]
 
 Subcommands:
-  list                                        List all users (name, group, status, pw age, scopes)
-  show <username>                             Show user details incl. scope membership
-  add <username> <group>                      Add a new user; lands in default scope
-  add <username> <group> --scopes <s>[,s...]  Grant specific scopes at creation
-  add <username> <group> --hash <hash>        Add with pre-generated bcrypt hash
-  remove <username>                           Remove a user
-  passwd <username>                           Change a user's password
-  passwd <username> --hash <hash>             Change with pre-generated bcrypt hash
-  disable <username>                          Disable a user (preserves hash)
-  enable <username>                           Re-enable a disabled user
-  rename <old> <new>                          Rename a user
-  move <user> <group>                         Move user to a different group
-  verify <username>                           Verify password and show user details
-  scope <user> list|add|remove|replace        Manage which scopes the user can auth from
-  scope <user> remove --all                   Remove every scope from the user
+  <b>list</b>                                        List all users (name, group, status, pw age, scopes)
+  <b>show</b> <o><username></o>                             Show user details incl. scope membership
+  <b>add</b> <o><username></o> <o><group></o>                      Add a new user; lands in default scope
+  <b>add</b> <o><username></o> <o><group></o> <o>--scopes <s></o>[,s...]  Grant specific scopes at creation
+  <b>add</b> <o><username></o> <o><group></o> <o>--hash <hash></o>        Add with pre-generated bcrypt hash
+  <b>remove</b> <o><username></o>                           Remove a user
+  <b>passwd</b> <o><username></o>                           Change a user's password
+  <b>passwd</b> <o><username></o> <o>--hash <hash></o>             Change with pre-generated bcrypt hash
+  <b>disable</b> <o><username></o>                          Disable a user (preserves hash)
+  <b>enable</b> <o><username></o>                           Re-enable a disabled user
+  <b>rename</b> <o><old></o> <o><new></o>                          Rename a user
+  <b>move</b> <o><user></o> <o><group></o>                         Move user to a different group
+  <b>verify</b> <o><username></o>                           Verify password and show user details
+  <b>scope</b> <o><user></o> list|add|remove|replace        Manage which scopes the user can auth from
+  <b>scope</b> <o><user></o> remove <o>--all</o>                   Remove every scope from the user
 
 Examples:
   tacctl user list
@@ -104,26 +109,26 @@ Examples:
 Usage: tacctl group <subcommand> [arguments]
 
 Subcommands:
-  list                                                List all groups
-  show <name>                                         Every setting and where it comes from, Junos patterns too
-  add <name> <priv-lvl> <juniper-class>               Add a new group
-      --tier <tier>                                   (add) Its tacctl tier instead of the priv-lvl's (at 15: superuser if omitted)
-      --wti-level <level>                             (add) Its WTI level instead of the priv-lvl's
-  edit <name> priv-lvl <0-15>                         Change Cisco privilege level
-  edit <name> juniper-class <CLASS>                   Change Juniper class name
-  edit <name> wti-level auto|<level>                  WTI access level (viewonly, user, superuser, administrator)
-  edit <name> tier auto|<tier>                        tacctl tier (readonly, operator, engineer, superuser)
-  remove <name>                                       Remove a custom group
-  commands list|default|add|remove|reset|seed <group> ...  Per-group authorized commands
-  privilege list|add|remove|reset|seed <group> ...         Per-group Cisco priv-exec mappings
-  junos <group> list|clear|deny-commands|deny-configuration ...  Per-group Junos deny rules
-  preset roles                                        Starting values for viewer, operator, engineer, superuser (confirms)
-      --dry-run                                       (preset, reset) Show what would change; write nothing
-      --force                                         (preset) Replace values that differ from the preset's
-  reset <name>                                        Put readonly, operator, superuser or engineer back to its canonical state (diff, confirms; superuser only)
-      --preset                                        (reset) The role preset's values instead of the shipped ones
-      --only <sections>                               (reset) Only settings, commands, privileges or junos (comma list)
-      --yes                                           (reset) Do not ask
+  <b>list</b>                                                List all groups
+  <b>show</b> <o><name></o>                                         Every setting and where it comes from, Junos patterns too
+  <b>add</b> <o><name></o> <o><priv-lvl></o> <o><juniper-class></o>               Add a new group
+      <o>--tier <tier></o>                                   (add) Its tacctl tier instead of the priv-lvl's (at 15: superuser if omitted)
+      <o>--wti-level <level></o>                             (add) Its WTI level instead of the priv-lvl's
+  <b>edit</b> <o><name></o> priv-lvl <o><0-15></o>                         Change Cisco privilege level
+  <b>edit</b> <o><name></o> juniper-class <o><CLASS></o>                   Change Juniper class name
+  <b>edit</b> <o><name></o> wti-level auto|<o><level></o>                  WTI access level (viewonly, user, superuser, administrator)
+  <b>edit</b> <o><name></o> tier auto|<o><tier></o>                        tacctl tier (readonly, operator, engineer, superuser)
+  <b>remove</b> <o><name></o>                                       Remove a custom group
+  <b>commands</b> list|default|add|remove|reset|seed <o><group></o> ...  Per-group authorized commands
+  <b>privilege</b> list|add|remove|reset|seed <o><group></o> ...         Per-group Cisco priv-exec mappings
+  <b>junos</b> <o><group></o> list|clear|deny-commands|deny-configuration ...  Per-group Junos deny rules
+  <b>preset</b> roles                                        Starting values for viewer, operator, engineer, superuser (confirms)
+      <o>--dry-run</o>                                       (preset, reset) Show what would change; write nothing
+      <o>--force</o>                                         (preset) Replace values that differ from the preset's
+  <b>reset</b> <o><name></o>                                        Put readonly, operator, superuser or engineer back to its canonical state (diff, confirms; superuser only)
+      <o>--preset</o>                                        (reset) The role preset's values instead of the shipped ones
+      <o>--only <sections></o>                               (reset) Only settings, commands, privileges or junos (comma list)
+      <o>--yes</o>                                           (reset) Do not ask
 
 'auto' (the default) takes the WTI level and the tier from the priv-lvl:
 below 7 readonly, 7-14 operator, 15 superuser. A group at priv-lvl 15 other
@@ -154,23 +159,23 @@ Examples:
 <b>tacctl group commands</b> — per-group authorized commands
 
 Usage:
-  tacctl group commands list <group>                              Show rules + default action
-  tacctl group commands default <group> <permit|deny>             Set default action (catchall)
-  tacctl group commands add <group> <name> [--match <regex>]...   Add a rule
-                                            [--action permit|deny]
-                                            [--before <name>|--first]
-      --match <regex>                                             (add, remove) A regex the command's arguments must match (repeatable; remove: the rule's, in order)
-      --action permit|deny                                        (add, remove) What the rule does (add: default permit)
-      --before <name>                                             (add) Put the rule before the first rule named <name> (default: before the catchall)
-      --first                                                     (add) Put the rule first
-  tacctl group commands remove <group> <name> [--all]             Drop a rule
-                                            [--match <regex>]... [--action permit|deny]
-      --all                                                       (remove) Drop every rule named <name>
-  tacctl group commands reset <group> [--dry-run] [--yes]         Revert the rules to the shipped defaults (diff, confirms; superuser only)
-      --dry-run                                                   (reset) Show the difference; write nothing
-      --yes                                                       (reset) Do not ask
-  tacctl group commands seed [<group>] [--force]                  Re-apply the shipped rules (recovery tool)
-      --force                                                     (seed) Overwrite a group that already has rules
+  <b>tacctl group commands list</b> <o><group></o>                              Show rules + default action
+  <b>tacctl group commands default</b> <o><group></o> <o><permit|deny></o>             Set default action (catchall)
+  <b>tacctl group commands add</b> <o><group></o> <o><name></o> [<o>--match <regex></o>]...   Add a rule
+                                            [<o>--action</o> permit|deny]
+                                            [<o>--before <name></o>|<o>--first</o>]
+      <o>--match <regex></o>                                             (add, remove) A regex the command's arguments must match (repeatable; remove: the rule's, in order)
+      <o>--action</o> permit|deny                                        (add, remove) What the rule does (add: default permit)
+      <o>--before <name></o>                                             (add) Put the rule before the first rule named <o><name></o> (default: before the catchall)
+      <o>--first</o>                                                     (add) Put the rule first
+  <b>tacctl group commands remove</b> <o><group></o> <o><name></o> [<o>--all</o>]             Drop a rule
+                                            [<o>--match <regex></o>]... [<o>--action</o> permit|deny]
+      <o>--all</o>                                                       (remove) Drop every rule named <o><name></o>
+  <b>tacctl group commands reset</b> <o><group></o> [<o>--dry-run</o>] [<o>--yes</o>]         Revert the rules to the shipped defaults (diff, confirms; superuser only)
+      <o>--dry-run</o>                                                   (reset) Show the difference; write nothing
+      <o>--yes</o>                                                       (reset) Do not ask
+  <b>tacctl group commands seed</b> [<o><group></o>] [<o>--force</o>]                  Re-apply the shipped rules (recovery tool)
+      <o>--force</o>                                                     (seed) Overwrite a group that already has rules
 
 <name> is compared literally to the TACACS+ cmd= word. --match
 regexes are tested against the command's ARGUMENTS only (the
@@ -217,14 +222,14 @@ group's own deny sets ('tacctl group junos').
 <b>tacctl group privilege</b> — per-group Cisco priv-exec command mappings
 
 Usage:
-  tacctl group privilege list <group>                              Show mappings (explicit or default)
-  tacctl group privilege add <group>    '<cmd>'[,'<cmd>'...]       Move one or more commands to the priv-lvl
-  tacctl group privilege remove <group> '<cmd>'[,'<cmd>'...]       Remove mapping(s)
-  tacctl group privilege reset <group> [--dry-run] [--yes]         Reset the mappings to the shipped default (diff, confirms; superuser only)
-      --dry-run                                                    (reset) Show the difference; write nothing
-      --yes                                                        (reset) Do not ask
-  tacctl group privilege seed [<group>] [--force]                  Populate built-ins with safe defaults
-      --force                                                      (seed) Overwrite a group that already has mappings
+  <b>tacctl group privilege list</b> <o><group></o>                              Show mappings (explicit or default)
+  <b>tacctl group privilege add</b> <o><group></o>    '<o><cmd></o>'[,'<o><cmd></o>'...]       Move one or more commands to the priv-lvl
+  <b>tacctl group privilege remove</b> <o><group></o> '<o><cmd></o>'[,'<o><cmd></o>'...]       Remove mapping(s)
+  <b>tacctl group privilege reset</b> <o><group></o> [<o>--dry-run</o>] [<o>--yes</o>]         Reset the mappings to the shipped default (diff, confirms; superuser only)
+      <o>--dry-run</o>                                                    (reset) Show the difference; write nothing
+      <o>--yes</o>                                                        (reset) Do not ask
+  <b>tacctl group privilege seed</b> [<o><group></o>] [<o>--force</o>]                  Populate built-ins with safe defaults
+      <o>--force</o>                                                      (seed) Overwrite a group that already has mappings
 
 Each '<cmd>' may start with a mode: 'exec:' (the default when
 there is none), 'exec all:', 'configure:' or 'configure all:',
@@ -246,13 +251,13 @@ default set is used (only commands moved DOWN from priv 15).
 <b>tacctl group junos</b> — per-group Junos rules the server sends at login
 
 Usage:
-  tacctl group junos <group> list                                    Show both sets and their sizes
-  tacctl group junos <group> deny-commands list                      Show the set
-  tacctl group junos <group> deny-commands add '<regex>'             Add a pattern
-  tacctl group junos <group> deny-commands remove '<regex>'          Remove a pattern (exact text)
-  tacctl group junos <group> deny-commands clear                     Drop the set (confirms)
-  tacctl group junos <group> deny-configuration list|add|remove|clear
-  tacctl group junos <group> clear                                   Drop both sets (confirms)
+  <b>tacctl group junos</b> <o><group></o> list                                    Show both sets and their sizes
+  <b>tacctl group junos</b> <o><group></o> deny-commands list                      Show the set
+  <b>tacctl group junos</b> <o><group></o> deny-commands add '<o><regex></o>'             Add a pattern
+  <b>tacctl group junos</b> <o><group></o> deny-commands remove '<o><regex></o>'          Remove a pattern (exact text)
+  <b>tacctl group junos</b> <o><group></o> deny-commands clear                     Drop the set (confirms)
+  <b>tacctl group junos</b> <o><group></o> deny-configuration list|add|remove|clear
+  <b>tacctl group junos</b> <o><group></o> clear                                   Drop both sets (confirms)
 
 Each pattern is a POSIX extended regular expression Junos tests against
 the whole command line (deny-commands) or the configuration path
@@ -272,43 +277,43 @@ junos-exec service and the RADIUS policy are regenerated from them.
 <b>tacctl scope</b> — named (CIDR-prefixes, shared-secret) bundles
 
 Usage:
-  tacctl scope list                                        One row per scope (aggregated prefix list)
-  tacctl scope routing                                     One row per (scope, prefix) — first-match order
-  tacctl scope show <name>                                 Detailed view
-  tacctl scope add <name> --prefixes <cidrs>               Create a new scope
-                       [--secret <value>|--secret generate]
-                       [--protocols <protocol>[,<protocol>...]]
-                       [--vendor-attrs <vendor>[,<vendor>...]]
-                       [--default]
-      --prefixes <cidrs>                                   (add) The scope's CIDRs, comma-separated
-      --secret <value>|generate                            (add) The shared secret, or a generated one
-      --protocols <csv>                                    (add) Limit it to tacacs, radius (default: all)
-      --vendor-attrs <csv>                                 (add) RADIUS vendor attributes to send (cisco, juniper, wti)
-      --default                                            (add) Make it the default scope
-  tacctl scope remove <name> [--force]                     Delete a scope (confirms)
-      --force                                              (remove) Also take it out of the users that have it
-  tacctl scope rename <old> <new>                          Rename (updates user references)
-  tacctl scope default [<name>]                            Show or set the default scope
-  tacctl scope lookup <ip|cidr>                            Show which scope owns an address
+  <b>tacctl scope list</b>                                        One row per scope (aggregated prefix list)
+  <b>tacctl scope routing</b>                                     One row per (scope, prefix) — first-match order
+  <b>tacctl scope show</b> <o><name></o>                                 Detailed view
+  <b>tacctl scope add</b> <o><name></o> <o>--prefixes <cidrs></o>               Create a new scope
+                       [<o>--secret <value></o>|<o>--secret</o> generate]
+                       [<o>--protocols <protocol></o>[,<o><protocol></o>...]]
+                       [<o>--vendor-attrs <vendor></o>[,<o><vendor></o>...]]
+                       [<o>--default</o>]
+      <o>--prefixes <cidrs></o>                                   (add) The scope's CIDRs, comma-separated
+      <o>--secret <value></o>|generate                            (add) The shared secret, or a generated one
+      <o>--protocols <csv></o>                                    (add) Limit it to tacacs, radius (default: all)
+      <o>--vendor-attrs <csv></o>                                 (add) RADIUS vendor attributes to send (cisco, juniper, wti)
+      <o>--default</o>                                            (add) Make it the default scope
+  <b>tacctl scope remove</b> <o><name></o> [<o>--force</o>]                     Delete a scope (confirms)
+      <o>--force</o>                                              (remove) Also take it out of the users that have it
+  <b>tacctl scope rename</b> <o><old></o> <o><new></o>                          Rename (updates user references)
+  <b>tacctl scope default</b> [<o><name></o>]                            Show or set the default scope
+  <b>tacctl scope lookup</b> <o><ip|cidr></o>                            Show which scope owns an address
 
-  tacctl scope prefixes <scope> list|add|remove|move       Manage a scope's CIDR list
-  tacctl scope staging [list | remove <address>]           Bench addresses of devices provisioned off-site (--staging), until seen in place
-  tacctl scope secret   <scope> show|set|generate          Manage a scope's shared secret
-  tacctl scope protocols <scope> list|set <csv>|clear      Limit a scope to some protocols (tacacs, radius); default: all
-  tacctl scope vendor-attrs <scope> [enable|disable <csv>] RADIUS: vendor privilege attributes sent to the scope's devices (cisco, juniper, wti); default: not sent
-  tacctl scope devices <scope> [set <ip|cidr> <vendor>|unset <ip|cidr>]  RADIUS: tag an address of the scope with its vendor (it gets that vendor's attribute only)
-  tacctl scope aaa-order <scope> [tacacs-first|local-first] AAA method-list order in this scope's rendered device configs (default tacacs-first)
-  tacctl scope exec-timeout <scope> [minutes]              Per-scope idle-session timeout in rendered device configs (0..60 min; default 60; 0 = never expire)
-  tacctl scope tacacs-group <scope> [name]                 Per-scope Cisco aaa-group-server label (default TACACS-GROUP)
-  tacctl scope radius-group <scope> [name]                 Per-scope Cisco aaa-group-server label for RADIUS (default RADIUS-GROUP)
-  tacctl scope auth-method <scope> [tacacs|radius|clear]   Protocol this scope's device configs and host enrollments use when the command names none
-  tacctl scope mgmt-acl <scope> list|add|remove|clear      Per-scope permit list (fallback: global mgmt_acl.permits)
-  tacctl scope mgmt-acl <scope> cisco-name|juniper-name [name]  Per-scope ACL / filter name (defaults VTY-ACL / MGMT-ACL)
-  tacctl scope breakglass <scope> list|add <name>|remove <name>  Per-scope break-glass local users in the device walkthroughs (names and roles only; no credential is stored): the accounts 'tacctl breakglass hold' makes usable
-      --role <role>                                        (add) admin (default), operator or readonly
-  tacctl scope snmp <scope> show|version|community|v3-user|clients|contact|port|timeout|clear|test
+  <b>tacctl scope prefixes</b> <o><scope></o> list|add|remove|move       Manage a scope's CIDR list
+  <b>tacctl scope staging</b> [list | remove <o><address></o>]           Bench addresses of devices provisioned off-site (<o>--staging</o>), until seen in place
+  <b>tacctl scope secret</b>   <o><scope></o> show|set|generate          Manage a scope's shared secret
+  <b>tacctl scope protocols</b> <o><scope></o> list|set <o><csv></o>|clear      Limit a scope to some protocols (tacacs, radius); default: all
+  <b>tacctl scope vendor-attrs</b> <o><scope></o> [enable|disable <o><csv></o>] RADIUS: vendor privilege attributes sent to the scope's devices (cisco, juniper, wti); default: not sent
+  <b>tacctl scope devices</b> <o><scope></o> [set <o><ip|cidr></o> <o><vendor></o>|unset <o><ip|cidr></o>]  RADIUS: tag an address of the scope with its vendor (it gets that vendor's attribute only)
+  <b>tacctl scope aaa-order</b> <o><scope></o> [tacacs-first|local-first] AAA method-list order in this scope's rendered device configs (default tacacs-first)
+  <b>tacctl scope exec-timeout</b> <o><scope></o> [minutes]              Per-scope idle-session timeout in rendered device configs (0..60 min; default 60; 0 = never expire)
+  <b>tacctl scope tacacs-group</b> <o><scope></o> [name]                 Per-scope Cisco aaa-group-server label (default TACACS-GROUP)
+  <b>tacctl scope radius-group</b> <o><scope></o> [name]                 Per-scope Cisco aaa-group-server label for RADIUS (default RADIUS-GROUP)
+  <b>tacctl scope auth-method</b> <o><scope></o> [tacacs|radius|clear]   Protocol this scope's device configs and host enrollments use when the command names none
+  <b>tacctl scope mgmt-acl</b> <o><scope></o> list|add|remove|clear      Per-scope permit list (fallback: global mgmt_acl.permits)
+  <b>tacctl scope mgmt-acl</b> <o><scope></o> cisco-name|juniper-name [name]  Per-scope ACL / filter name (defaults VTY-ACL / MGMT-ACL)
+  <b>tacctl scope breakglass</b> <o><scope></o> list|add <o><name></o>|remove <o><name></o>  Per-scope break-glass local users in the device walkthroughs (names and roles only; no credential is stored): the accounts 'tacctl breakglass hold' makes usable
+      <o>--role <role></o>                                        (add) admin (default), operator or readonly
+  <b>tacctl scope snmp</b> <o><scope></o> show|version|community|v3-user|clients|contact|port|timeout|clear|test
                                                            SNMP of a scope: credentials, allowed clients, contact (default beneath: tacctl config snmp)
-  tacctl scope block <scope> {juniper|cisco} list|show|check|set|remove|edit|adopt [<block>]
+  <b>tacctl scope block</b> <o><scope></o> {juniper|cisco} list|show|check|set|remove|edit|adopt [<o><block></o>]
                                                            Configuration blocks of a scope (Junos snmp and system, IOS snmp): community strings, trap groups and hosts, access lists, login message, domain, time zone, name servers, NTP
 
 {{current}}
@@ -319,14 +324,14 @@ Usage:
 <b>tacctl scope prefixes {{scope}}</b> — CIDR prefix list for scope '{{scope}}'
 
 Usage:
-  tacctl scope prefixes {{scope}} list                         Show entries
-  tacctl scope prefixes {{scope}} add    <cidr>[,<cidr>...]    Add one or more
-  tacctl scope prefixes {{scope}} remove <cidr>[,<cidr>...]    Remove one or more
-  tacctl scope prefixes {{scope}} remove --all [--force]       Remove all, which removes the scope (confirms; --force also strips it from users)
-  tacctl scope prefixes {{scope}} move <cidr>[,<cidr>...] <scope>
+  <b>tacctl scope prefixes</b> {{scope}} list                         Show entries
+  <b>tacctl scope prefixes</b> {{scope}} add    <o><cidr></o>[,<o><cidr></o>...]    Add one or more
+  <b>tacctl scope prefixes</b> {{scope}} remove <o><cidr></o>[,<o><cidr></o>...]    Remove one or more
+  <b>tacctl scope prefixes</b> {{scope}} remove <o>--all</o> [<o>--force</o>]       Remove all, which removes the scope (confirms; <o>--force</o> also strips it from users)
+  <b>tacctl scope prefixes</b> {{scope}} move <o><cidr></o>[,<o><cidr></o>...] <o><scope></o>
                                                             Move them to another scope in one change; names the hosts that then belong elsewhere
-      --all                                                 (remove) Every prefix
-      --force                                               (remove --all) Also take the scope out of the users that have it
+      <o>--all</o>                                                 (remove) Every prefix
+      <o>--force</o>                                               (remove <o>--all</o>) Also take the scope out of the users that have it
 
 {{current}}
 
@@ -336,9 +341,9 @@ Usage:
 <b>tacctl scope secret {{scope}}</b> — shared secret for scope '{{scope}}'
 
 Usage:
-  tacctl scope secret {{scope}} show                Print raw value + length/posture
-  tacctl scope secret {{scope}} set <value>         Set to <value> (validated)
-  tacctl scope secret {{scope}} generate            Auto-generate + apply
+  <b>tacctl scope secret</b> {{scope}} show                Print raw value + length/posture
+  <b>tacctl scope secret</b> {{scope}} set <o><value></o>         Set to <o><value></o> (validated)
+  <b>tacctl scope secret</b> {{scope}} generate            Auto-generate + apply
 
 {{current}}
 
@@ -348,12 +353,12 @@ Usage:
 <b>tacctl scope mgmt-acl {{scope}}</b> — per-scope Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables
 
 Usage:
-  tacctl scope mgmt-acl {{scope}} list                          Show effective permits for this scope
-  tacctl scope mgmt-acl {{scope}} add    <entry>[,<entry>...]   Add one or more entries to the per-scope list
-  tacctl scope mgmt-acl {{scope}} remove <entry>[,<entry>...]   Remove entries (a bare <cidr> removes every entry of that CIDR)
-  tacctl scope mgmt-acl {{scope}} clear                         Wipe the per-scope list (confirms; render falls back to global)
-  tacctl scope mgmt-acl {{scope}} cisco-name   [label]          Per-scope Cisco VTY-ACL name
-  tacctl scope mgmt-acl {{scope}} juniper-name [label]          Per-scope Junos filter name
+  <b>tacctl scope mgmt-acl</b> {{scope}} list                          Show effective permits for this scope
+  <b>tacctl scope mgmt-acl</b> {{scope}} add    <o><entry></o>[,<o><entry></o>...]   Add one or more entries to the per-scope list
+  <b>tacctl scope mgmt-acl</b> {{scope}} remove <o><entry></o>[,<o><entry></o>...]   Remove entries (a bare <o><cidr></o> removes every entry of that CIDR)
+  <b>tacctl scope mgmt-acl</b> {{scope}} clear                         Wipe the per-scope list (confirms; render falls back to global)
+  <b>tacctl scope mgmt-acl</b> {{scope}} cisco-name   [label]          Per-scope Cisco VTY-ACL name
+  <b>tacctl scope mgmt-acl</b> {{scope}} juniper-name [label]          Per-scope Junos filter name
 
 An <entry> is a <cidr>, or a <cidr> with the services it permits:
   <cidr>[:<service>[,<service>...]]    e.g. 172.16.100.0/23:tcp/22,udp/161,udp/162
@@ -371,54 +376,54 @@ An <entry> is a <cidr>, or a <cidr> with the services it permits:
 Usage: tacctl config <subcommand> [value]
 
 Subcommands:
-  show                                 Show current configuration
-  dump                                 Show tacctl defaults + overrides + merged view
-  defaults                             Print canonical tacctl defaults (shipped)
-  get <path> [fallback]                Read a dotted-path value from the merged config
-  get-list <path>                      Read a list value (one item per line)
-  validate                             Validate config syntax and structure
-  render [--force]                     Regenerate every enabled backend's config from the store (--force overwrites hand edits)
-      --force                          Overwrite a generated file that was edited by hand
-  render --dry-run --out <dir>         Render into a new, empty directory at the live paths; nothing live is written
-  diff [timestamp]                     Diff store.yaml and tacctl.yaml vs the last snapshot (or named one)
-  restore <timestamp> [--legacy]       Restore a snapshot (prompts for confirmation); --legacy for an old-style backup
-      --legacy                         The timestamp names an old-style backup (backups/legacy)
-  loglevel [debug|info|error]          Show or change log level
-  listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset a listen address (default: tacacs, listener 'default')
-      --listener <name>                ...of another listener (its own tacquito@<name> unit; reset removes it)
-      --backend <id>                   ...of another backend (see 'tacctl backend list'); radius: --listener auth|acct <udp|udp6> <addr>
-  metrics <show|enable|disable|address <host:port>|reset>  Prometheus exporter control
-  sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl
-  sudoers tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for tacctl users with local accounts
-  password-age [days]                  Show or set password age warning threshold
-  bcrypt-cost [10-14]                  Show or set bcrypt cost factor (default 12)
-  password-min-length [8-64]           Show or set minimum interactive password length (default 12)
-  secret-min-length [16-128]           Show or set minimum shared-secret length (default 16)
-  allow list|add|remove|clear          Manage connection allow list (IP ACL; add/remove accept comma-lists)
-  deny list|add|remove|clear           Manage connection deny list (IP ACL; add/remove accept comma-lists)
-  mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits
-  mgmt-acl cisco-name [name]           Show or set the emitted Cisco ACL name (default VTY-ACL)
-  mgmt-acl juniper-name [name]         Show or set the emitted Juniper filter name (default MGMT-ACL)
-  cisco source-interface [<scope> [<interface>|none]]  Show or set the interface a scope's Cisco devices source their server requests from (the full name IOS prints: Loopback0, GigabitEthernet0/0)
-  cisco   [--scope <name>] [--legacy] [--protocol tacacs|radius]  Show working Cisco device configuration for a scope (--legacy = IOS 12.x syntax; --protocol radius = RADIUS backend, default tacacs)
-  juniper [--scope <name>] [--protocol tacacs|radius]             Show working Juniper device configuration for a scope
-  wti     [--scope <name>] [--protocol tacacs|radius]             Show step-by-step WTI console-server (v8.x serial menu) setup for a scope (RADIUS: not verified on a unit)
-      --scope <name>                   (cisco, juniper, wti) The scope whose server address and secret go in (default: the default scope)
-      --protocol tacacs|radius         (cisco, juniper, wti) The backend the device uses (default: the scope's auth-method, else its only protocol, else tacacs)
-      --legacy                         (cisco) The IOS 12.x syntax, whatever the --name device's config-syntax says
-      --staging <bench-ip>             (cisco, juniper, wti, with --scope) Provisioned off-site: the bench address joins the scope as a
+  <b>show</b>                                 Show current configuration
+  <b>dump</b>                                 Show tacctl defaults + overrides + merged view
+  <b>defaults</b>                             Print canonical tacctl defaults (shipped)
+  <b>get</b> <o><path></o> [fallback]                Read a dotted-path value from the merged config
+  <b>get-list</b> <o><path></o>                      Read a list value (one item per line)
+  <b>validate</b>                             Validate config syntax and structure
+  <b>render</b> [<o>--force</o>]                     Regenerate every enabled backend's config from the store (<o>--force</o> overwrites hand edits)
+      <o>--force</o>                          Overwrite a generated file that was edited by hand
+  <b>render</b> <o>--dry-run</o> <o>--out <dir></o>         Render into a new, empty directory at the live paths; nothing live is written
+  <b>diff</b> [timestamp]                     Diff store.yaml and tacctl.yaml vs the last snapshot (or named one)
+  <b>restore</b> <o><timestamp></o> [<o>--legacy</o>]       Restore a snapshot (prompts for confirmation); <o>--legacy</o> for an old-style backup
+      <o>--legacy</o>                         The timestamp names an old-style backup (backups/legacy)
+  <b>loglevel</b> [debug|info|error]          Show or change log level
+  <b>listen</b> [show|tcp|tcp6|reset] [addr]  Show, change, or reset a listen address (default: tacacs, listener 'default')
+      <o>--listener <name></o>                ...of another listener (its own tacquito@<name> unit; reset removes it)
+      <o>--backend <id></o>                   ...of another backend (see 'tacctl backend list'); radius: <o>--listener</o> auth|acct <o><udp|udp6></o> <o><addr></o>
+  <b>metrics</b> <show|enable|disable|address <o><host:port></o>|reset>  Prometheus exporter control
+  <b>sudoers</b> [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl
+  <b>sudoers</b> tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for tacctl users with local accounts
+  <b>password-age</b> [days]                  Show or set password age warning threshold
+  <b>bcrypt-cost</b> [10-14]                  Show or set bcrypt cost factor (default 12)
+  <b>password-min-length</b> [8-64]           Show or set minimum interactive password length (default 12)
+  <b>secret-min-length</b> [16-128]           Show or set minimum shared-secret length (default 16)
+  <b>allow</b> list|add|remove|clear          Manage connection allow list (IP ACL; add/remove accept comma-lists)
+  <b>deny</b> list|add|remove|clear           Manage connection deny list (IP ACL; add/remove accept comma-lists)
+  <b>mgmt-acl</b> list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits
+  <b>mgmt-acl</b> cisco-name [name]           Show or set the emitted Cisco ACL name (default VTY-ACL)
+  <b>mgmt-acl</b> juniper-name [name]         Show or set the emitted Juniper filter name (default MGMT-ACL)
+  <b>cisco</b> source-interface [<o><scope></o> [<o><interface></o>|none]]  Show or set the interface a scope's Cisco devices source their server requests from (the full name IOS prints: Loopback0, GigabitEthernet0/0)
+  <b>cisco</b>   [<o>--scope <name></o>] [<o>--legacy</o>] [<o>--protocol</o> tacacs|radius]  Show working Cisco device configuration for a scope (<o>--legacy</o> = IOS 12.x syntax; <o>--protocol</o> radius = RADIUS backend, default tacacs)
+  <b>juniper</b> [<o>--scope <name></o>] [<o>--protocol</o> tacacs|radius]             Show working Juniper device configuration for a scope
+  <b>wti</b>     [<o>--scope <name></o>] [<o>--protocol</o> tacacs|radius]             Show step-by-step WTI console-server (v8.x serial menu) setup for a scope (RADIUS: not verified on a unit)
+      <o>--scope <name></o>                   (cisco, juniper, wti) The scope whose server address and secret go in (default: the default scope)
+      <o>--protocol</o> tacacs|radius         (cisco, juniper, wti) The backend the device uses (default: the scope's auth-method, else its only protocol, else tacacs)
+      <o>--legacy</o>                         (cisco) The IOS 12.x syntax, whatever the <o>--name</o> device's config-syntax says
+      <o>--staging <bench-ip></o>             (cisco, juniper, wti, with <o>--scope</o>) Provisioned off-site: the bench address joins the scope as a
                                        /32 (its secret and users) until the device is seen in place (tacctl scope staging)
-      --name <device>                  (cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step;
+      <o>--name <device></o>                  (cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step;
                                        with --staging it is also the device whose move ends the staging (default: the one at the bench address)
-      --server <address|name>          (cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a
+      <o>--server <address|name></o>          (cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a
                                        translating firewall (a name must resolve to an IPv4 address); not stored
-      --source <address>               (cisco, juniper, wti) The address tacctl itself reaches the devices from: the first SNMP client (default: the
+      <o>--source <address></o>               (cisco, juniper, wti) The address tacctl itself reaches the devices from: the first SNMP client (default: the
                                        address of the route to the Internet); not stored
-      --snmp-location <text>           (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location)
-  linux   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
-  snmp    show|community|v3-user|port|timeout|clear|test  SNMP for the name hint of 'device add' (sysName)
-  devices [show|max-concurrency|transport|timeout|confirm-timeout] [value]  How 'device config pull' reads the devices (default 8 at once, auto, 90 s) and the confirm timeout of 'plan' (5 min)
-  branch [name]                        Show or change the tacctl repo branch
+      <o>--snmp-location <text></o>           (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location)
+  <b>linux</b>   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
+  <b>snmp</b>    show|community|v3-user|port|timeout|clear|test  SNMP for the name hint of 'device add' (sysName)
+  <b>devices</b> [show|max-concurrency|transport|timeout|confirm-timeout] [value]  How 'device config pull' reads the devices (default 8 at once, auto, 90 s) and the confirm timeout of 'plan' (5 min)
+  <b>branch</b> [name]                        Show or change the tacctl repo branch
 
 Examples:
   tacctl config show
@@ -439,10 +444,10 @@ Examples:
 <b>tacctl config {{label}}</b> — connection IP ACL ({{label}} list)
 
 Usage:
-  tacctl config {{label}} list                          Show current {{label}} list
-  tacctl config {{label}} add    <cidr>[,<cidr>...]     Add one or more CIDRs
-  tacctl config {{label}} remove <cidr>[,<cidr>...]     Remove one or more CIDRs
-  tacctl config {{label}} clear                         Wipe all (confirms)
+  <b>tacctl config</b> {{label}} list                          Show current {{label}} list
+  <b>tacctl config</b> {{label}} add    <o><cidr></o>[,<o><cidr></o>...]     Add one or more CIDRs
+  <b>tacctl config</b> {{label}} remove <o><cidr></o>[,<o><cidr></o>...]     Remove one or more CIDRs
+  <b>tacctl config</b> {{label}} clear                         Wipe all (confirms)
 
 {{current}}
 Note: 'deny' takes precedence over 'allow'. Both empty = all connections accepted.
@@ -453,12 +458,12 @@ Note: 'deny' takes precedence over 'allow'. Both empty = all connections accepte
 <b>tacctl config mgmt-acl</b> — shared Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits
 
 Usage:
-  tacctl config mgmt-acl list                          Show current permits
-  tacctl config mgmt-acl add    <entry>[,<entry>...]   Add one or more entries
-  tacctl config mgmt-acl remove <entry>[,<entry>...]   Remove entries (a bare <cidr> removes every entry of that CIDR)
-  tacctl config mgmt-acl clear                         Wipe all permits (confirms)
-  tacctl config mgmt-acl cisco-name [name]             Show or set the Cisco ACL name (default VTY-ACL)
-  tacctl config mgmt-acl juniper-name [name]           Show or set the Juniper filter name (default MGMT-ACL)
+  <b>tacctl config mgmt-acl list</b>                          Show current permits
+  <b>tacctl config mgmt-acl add</b>    <o><entry></o>[,<o><entry></o>...]   Add one or more entries
+  <b>tacctl config mgmt-acl remove</b> <o><entry></o>[,<o><entry></o>...]   Remove entries (a bare <o><cidr></o> removes every entry of that CIDR)
+  <b>tacctl config mgmt-acl clear</b>                         Wipe all permits (confirms)
+  <b>tacctl config mgmt-acl cisco-name</b> [name]             Show or set the Cisco ACL name (default VTY-ACL)
+  <b>tacctl config mgmt-acl juniper-name</b> [name]           Show or set the Juniper filter name (default MGMT-ACL)
 
 An <entry> is a <cidr>, or a <cidr> with the services it permits:
   <cidr>[:<service>[,<service>...]]    e.g. 172.16.100.0/23:tcp/22,udp/161,udp/162
@@ -556,12 +561,12 @@ ssh runs as the user who invoked sudo; the remote login must be root or able to 
 Usage: tacctl backend <subcommand> [arguments]
 
 Subcommands:
-  list                    Every backend: protocol, implementation, installed, enabled, service
-  status [<id>]           Service and listener state of every backend (or one)
-  enable <id> [-y]        Install the backend if needed, enable it, render its config, start it
-  disable <id> [-y]       Stop and disable it, take it out of backends.enabled (confirms);
+  <b>list</b>                    Every backend: protocol, implementation, installed, enabled, service
+  <b>status</b> [<o><id></o>]           Service and listener state of every backend (or one)
+  <b>enable</b> <o><id></o> [<o>-y</o>]        Install the backend if needed, enable it, render its config, start it
+  <b>disable</b> <o><id></o> [<o>-y</o>]       Stop and disable it, take it out of backends.enabled (confirms);
                           its package and rendered files stay
-      -y, --yes           Answer yes to the confirmation
+      <o>-y</o>, <o>--yes</o>           Answer yes to the confirmation
 
 Backends: {{backends}}
 
@@ -589,14 +594,14 @@ Backends: {{backends}}
 Usage: tacctl log <subcommand> [--backend <id>] [arguments]
 
 Subcommands:
-  tail [-f] [n]         Show the last N log entries (default 20; TACACS+: journal, RADIUS: auth and daemon log)
-      -f, --follow      (tail) Then print new entries as they arrive, until Ctrl-C
-  search <term>         Search the logs for a username or keyword
-  failures              Show auth failures from the last 24 hours
-  accounting [n]        Show last N accounting log entries
-  clear [--force|-y]    Purge each backend's logs: journal or auth log, accounting log (confirms)
-      --backend <id>    Only that backend's log (every subcommand)
-      --force, -y       (clear) Purge without asking
+  <b>tail</b> [<o>-f</o>] [n]         Show the last N log entries (default 20; TACACS+: journal, RADIUS: auth and daemon log)
+      <o>-f</o>, <o>--follow</o>      (tail) Then print new entries as they arrive, until Ctrl-C
+  <b>search</b> <o><term></o>         Search the logs for a username or keyword
+  <b>failures</b>              Show auth failures from the last 24 hours
+  <b>accounting</b> [n]        Show last N accounting log entries
+  <b>clear</b> [<o>--force</o>|<o>-y</o>]    Purge each backend's logs: journal or auth log, accounting log (confirms)
+      <o>--backend <id></o>    Only that backend's log (every subcommand)
+      <o>--force</o>, <o>-y</o>       (clear) Purge without asking
 
 With more than one backend enabled each subcommand shows every backend's log in a
 section of its own; --backend <id> shows only that backend's.
@@ -609,10 +614,10 @@ section of its own; --backend <id> shows only that backend's.
 Usage: tacctl backup <subcommand> [arguments]
 
 Subcommands:
-  list                           Show snapshots, then old-style backups
-  diff [timestamp]               Diff store.yaml and tacctl.yaml against a snapshot (default: most recent)
-  restore <timestamp> [--legacy] Restore a snapshot (with confirmation); --legacy for an old-style backup
-      --legacy                   The timestamp names an old-style backup (backups/legacy)
+  <b>list</b>                           Show snapshots, then old-style backups
+  <b>diff</b> [timestamp]               Diff store.yaml and tacctl.yaml against a snapshot (default: most recent)
+  <b>restore</b> <o><timestamp></o> [<o>--legacy</o>] Restore a snapshot (with confirmation); <o>--legacy</o> for an old-style backup
+      <o>--legacy</o>                   The timestamp names an old-style backup (backups/legacy)
 
 `,
 	// lib/users.sh cmd_hash_usage
@@ -620,8 +625,8 @@ Subcommands:
 <b>tacctl hash</b> — bcrypt hash helper (non-root)
 
 Usage:
-  tacctl hash generate                Prompt for a password and print its bcrypt hash
-  tacctl hash commands                Show OS-specific one-liners for offline generation
+  <b>tacctl hash generate</b>                Prompt for a password and print its bcrypt hash
+  <b>tacctl hash commands</b>                Show OS-specific one-liners for offline generation
 
 Use 'generate' when you can shell in to this server.
 Use 'commands' to hand an operator a command they can run on their own machine,

@@ -215,6 +215,43 @@ func TestIOSSystemUnmanagedAndMissing(t *testing.T) {
 	}
 }
 
+// A device in the IOS 12.x syntax stores 'ntp server H version 3' without the
+// option: the section rendered for it has the bare line, which a 12.4 device
+// holds as it is; a stored version 2 is a difference, replaced in place.
+func TestIOSSystemNTPVersionInTheIOS12Dialect(t *testing.T) {
+	b, fs := blocks.LintIOSSystem("ntp server 192.0.2.123 version 3 key 5 prefer\nntp server 192.0.2.124 version 3\nntp server 192.0.2.125 version 4\n", blocks.LayerScope)
+	if blocks.HasErrors(fs) {
+		t.Fatal(fs)
+	}
+	st := blocks.IOSSystemStatementsIn(b, blocks.IOS12)
+	if want := "ntp server 192.0.2.123 key 5 prefer|ntp server 192.0.2.124|ntp server 192.0.2.125 version 4"; strings.Join(st, "|") != want {
+		t.Fatalf("the rendering:\n%s\nwant %s", strings.Join(st, "\n"), want)
+	}
+	sec := devices.Section{Name: SectionSystem, Lines: st, Secret: make([]bool, len(st)), Block: make([]bool, len(st))}
+	for i := range st {
+		sec.Block[i] = true
+	}
+	dev := "ntp server 192.0.2.123 key 5 prefer\nntp server 192.0.2.124\nntp server 192.0.2.125 version 4\n"
+	if r := iosSystemState(t, dev, sec); r.State != StateOK {
+		t.Errorf("the 12.4 storage: %s: %v", r.State, r.Lines)
+	}
+	r := iosSystemState(t, strings.Replace(dev, "ntp server 192.0.2.124\n", "ntp server 192.0.2.124 version 2\n", 1), sec)
+	if r.State != StateDiffers {
+		t.Fatalf("a stored version 2: %s: %v", r.State, r.Lines)
+	}
+	var missing, extra bool
+	for _, l := range r.Lines {
+		missing = missing || l.Op == OpMissing && l.Text == "ntp server 192.0.2.124"
+		extra = extra || l.Op == OpExtra && l.Text == "ntp server 192.0.2.124 version 2"
+		if l.Op == OpExtra && l.Unmanaged {
+			t.Errorf("the stored line is the device's own: %q", l.Text)
+		}
+	}
+	if !missing || !extra {
+		t.Errorf("missing %v, extra %v: %v", missing, extra, r.Lines)
+	}
+}
+
 // The section exists only where the rendering has it.
 func TestIOSSystemSectionOnlyWhereRendered(t *testing.T) {
 	device := "version 15.2\nhostname r1\nip domain name example.net\nntp server 192.0.2.123\nbanner login ^Chello^C\nclock timezone UTC 0\n"
@@ -312,5 +349,21 @@ func TestIOSTrapSourceStoredForm(t *testing.T) {
 	}
 	if r.State != StateOK || r.Unmanaged != 1 {
 		t.Errorf("the device's own trap source: %s (+%d): %v", r.State, r.Unmanaged, r.Lines)
+	}
+}
+
+// IOS prints no 'clock timezone' line for the default zone: a rendered
+// 'clock timezone UTC 0' is there on a device that has none, and missing
+// on a device with another zone.
+func TestIOSDefaultTimezoneIsImplicit(t *testing.T) {
+	rendering := iosSystemRendering(t, "clock timezone UTC 0\n")
+	if r := iosSystemState(t, "ip domain name lab.example.net\n", rendering); r.State != StateOK {
+		t.Errorf("a device with no zone line: %+v", r)
+	}
+	if r := iosSystemState(t, "clock timezone PST -8 0\n", rendering); r.State == StateOK {
+		t.Errorf("a device with another zone reads ok: %+v", r)
+	}
+	if r := iosSystemState(t, "clock timezone UTC 0 0\n", rendering); r.State != StateOK {
+		t.Errorf("a device that prints the line: %+v", r)
 	}
 }

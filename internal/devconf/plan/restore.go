@@ -169,10 +169,18 @@ func (d Delta) restoreShown() bool {
 	return d.Vendor == devconf.FamilyIOS && d.Restore.Mode() != "" && (!d.Empty() || !d.Cleanup.Empty())
 }
 
-// restoreNote is the sentence the report carries: the block and the
-// alternative of the back-out were written from the references.
-const restoreNote = "restore point: the restore block and the 'configure replace' alternative of the back-out were written from the references " +
-	"and have not been checked on a device (not lab-tested): read them before you use them"
+// restoreNote is the sentence the report carries for the 'archive config'
+// form, the one form of the restore point not run on a device: the copy form
+// and its 'configure replace' alternative are not marked.
+const restoreNote = "restore point: the 'archive config' form has not been checked on a device (not lab-tested): read it before you use it"
+
+// restoreNoteFor is restoreNote for the form that carries it, else "".
+func restoreNoteFor(r *RestorePoint) string {
+	if r != nil && r.Mode() == RestoreArchive {
+		return restoreNote
+	}
+	return ""
+}
 
 // RestoreLines are the lines between the restore banners: the one command
 // and, for a copy, the one empty line that answers its 'Destination
@@ -264,9 +272,9 @@ func restoreAlternative(d Delta, h Header, lead string, add func(string), lit fu
 			r.ArchiveFS + "), put that file back; in privileged mode, not in configuration mode:")
 		lit("configure replace <that file> force")
 	}
-	add("'configure replace' applies the difference between the file and the running configuration. It was tried only on devices with 'archive' and a 'path' configured; " +
-		"where it is not available, 'copy <file> running-config' only MERGES the file into the running configuration and removes nothing. " +
-		"On IOS 12.4 the removal of 'aaa new-model' was skipped in one pass: do not rely on it for AAA, use the 'no' lines of the back-out.")
+	add("'configure replace' applies the difference between the file and the running configuration; " +
+		"where a release does not have it, 'copy <file> running-config' only MERGES the file into the running configuration and removes nothing. " +
+		"On IOS 12.4 a replace can skip the removal of 'aaa new-model' or stop at a line it cannot remove (an 'ntp server' with options): do not rely on it for AAA, use the 'no' lines of the back-out.")
 	add("Check as after the plan (a pull with --diff, a NEW ssh session), then delete the file, and any copy the replace left on the file system, when you are done.")
 }
 

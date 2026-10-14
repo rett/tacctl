@@ -1,5 +1,7 @@
 package tier
 
+import "strings"
+
 // The text of the sudoers drop-ins as tacctl 0.2.3 wrote them, kept so that
 // 'tacctl rollback 0.2.3' (docs/plans/0.2.4-plan.md D73) can put them back:
 // 0.2.4's per-tier drop-in has the rows of 'device config pull|diff|list',
@@ -14,6 +16,16 @@ package tier
 
 // Sudoers023 is the per-tier drop-in 0.2.3 wrote.
 func Sudoers023() string { return sudoers023 }
+
+// Sudoers027 is the per-tier drop-in 0.2.4 to 0.2.7 wrote: this release's
+// rules without the 'version --long' item and with the env_keep line that has not the colour variables. It is the
+// text 'tacctl rollback' and the upgrade's refresh know as an older one; it
+// is derived (a rule that moves on again makes its own frozen copy).
+func Sudoers027() string {
+	t := strings.Replace(Sudoers(), EnvKeep, envKeep027, 1)
+	// 0.2.8 lists 'version --long' beside 'version'; 0.2.7 did not.
+	return strings.Replace(t, ", "+Binary+" version --long", "", 1)
+}
 
 const sudoers023 = `# Managed by tacctl. Per-tier access for tacctl users with local accounts.
 # Remove with: tacctl config sudoers tiers remove

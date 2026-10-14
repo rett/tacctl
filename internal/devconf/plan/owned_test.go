@@ -845,10 +845,18 @@ var iosRowCases = map[string]rowCase{
 		wantLine(t, d, "snmp", "snmp-server host 192.0.2.61 version 2c <secret:3>")
 		// the same host and community with another version: retyped in
 		// place, nothing removed; the device's other host is kept
-		d = planI(t, f, func(c *IOSConfig) { c.typeGlobal("snmp-server host 192.0.2.61 poller-traps udp-port 1162") }, Options{Scope: "lab"})
+		d = planI(t, f, func(c *IOSConfig) { c.typeGlobal("snmp-server host 192.0.2.61 poller-traps") }, Options{Scope: "lab"})
 		wantLine(t, d, "snmp", "snmp-server host 192.0.2.61 version 2c <secret:3>")
 		noLine(t, d, "snmp", "no snmp-server host")
 		wantKept(t, d, "snmp", "snmp-server host 192.0.2.50 version 2c <other:2>")
+		// another udp-port, or the informs kind, is an entry of its own: the
+		// block's host is typed beside it and the device's is kept
+		for _, dev := range []string{"snmp-server host 192.0.2.61 poller-traps udp-port 1162", "snmp-server host 192.0.2.61 informs version 2c poller-traps"} {
+			d = planI(t, f, func(c *IOSConfig) { c.noGlobal("snmp-server host 192.0.2.61"); c.typeGlobal(dev) }, Options{Scope: "lab"})
+			wantLine(t, d, "snmp", "snmp-server host 192.0.2.61 version 2c <secret:3>")
+			noLine(t, d, "snmp", "no snmp-server host")
+			wantKept(t, d, "snmp", "snmp-server host 192.0.2.61")
+		}
 	},
 	"ios.snmp.block-traps": func(t *testing.T) {
 		f := fixtureNamed(t, "cisco.synthetic-block")

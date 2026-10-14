@@ -49,6 +49,10 @@ func needsSudo(a *app.App) bool {
 // assignment, rather than env_keep alone, is what carries the socket for
 // the latter, where tacctl's Defaults line may not be installed. A later
 // word that needs the same is one entry; it must be in tier.EnvKeep too.
+// The caller's NO_COLOR and TACCTL_COLOR are not here: env_keep carries a
+// variable of the caller's environment through sudo by itself, with no
+// assignment on the command line (the colour decision of the root process,
+// app.New, reads them).
 var keepEnv = map[string][]string{
 	"host": {"SSH_AUTH_SOCK"},
 }
@@ -105,6 +109,7 @@ func reexec(a *app.App) error {
 		return &ExitError{Code: 1, Err: fmt.Errorf("cannot locate the tacctl executable to re-run it under sudo")}
 	}
 	argv := sudoArgv(exe, a.Args, a.Env.Get)
+	_ = a.Close() // what the colour sink holds goes out before the image is replaced
 	if err := a.Runner.Exec(sudo, argv, a.Env.Environ()); err != nil {
 		return &ExitError{Code: 126, Err: fmt.Errorf("cannot run %s: %v", sudo, err)}
 	}

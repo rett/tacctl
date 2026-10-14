@@ -146,6 +146,9 @@ type SystemNotManaged struct {
 	Line  int
 	Kind  string
 	Value string
+	// VRF is the vrf an IOS line names ('no ntp server vrf <name> <host>'):
+	// the object of that vrf, not the one without it. Empty on Junos.
+	VRF string
 }
 
 // SystemBlock is a parsed system block. The lists are in the order of their
