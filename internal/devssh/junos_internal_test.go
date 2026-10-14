@@ -81,3 +81,16 @@ func TestOutBufCountsPromptsApart(t *testing.T) {
 		t.Errorf("counts = %d, %d; want 1, 1", o.count(0), o.count(1))
 	}
 }
+
+func TestLocationLineForms(t *testing.T) {
+	for _, l := range []string{"[edit]", "[edit system login]", "{master:0}[edit]", "{master}[edit]", "{primary:node0}[edit protocols]", "{secondary:node1}[edit]"} {
+		if !LocationLine(l) {
+			t.Errorf("LocationLine(%q) = false", l)
+		}
+	}
+	for _, l := range []string{"edit", "[editor]", "{master:0}", "x [edit]", "[edit]x"} {
+		if LocationLine(l) {
+			t.Errorf("LocationLine(%q) = true", l)
+		}
+	}
+}

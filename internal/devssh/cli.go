@@ -51,7 +51,10 @@ const maxPromptLine = 512
 // changes the mode ends when the other mode's prompt stands at the end of
 // the output, and the session is then in that mode. A command that changes
 // the prompt in any other way (a host name, a Cisco mode) is never seen to
-// end and Run waits for its context.
+// end and Run waits for its context. So does a question the device asks
+// ('Exit with uncommitted changes? [yes,no]', a password prompt): a caller
+// that writes uses 'configure private' or 'configure exclusive' and never
+// sends a bare 'exit' while it has changes.
 type CLISession interface {
 	// Run runs cmd and returns its output without the echoed command and
 	// the prompt, lines ended with '\n'. A command is one line without
@@ -73,9 +76,9 @@ type CLISession interface {
 	// Commands is the command lines Run has sent, in order, as the caller
 	// gave them (a copy). Nothing else goes through a session: the keys
 	// typed ahead to find the end of an output and the answers to a pager
-	// are not commands, and no password is ever typed by it. The caller
-	// elides a secret from a line before Run, since the line is logged as
-	// it is sent.
+	// are not commands, and no password is ever typed by it. A line is
+	// kept as it was sent, a secret in it included: the caller masks the
+	// secrets when it reads or records Commands, never in the command.
 	Commands() []string
 	Close() error
 }
@@ -135,7 +138,7 @@ const (
 // configure-mode prompt ('[edit]', '[edit protocols bgp]', optionally
 // prefixed '{master:0}' on a virtual chassis). It is output, never a
 // prompt. [L] as above.
-var reJunosLocation = regexp.MustCompile(`^(?:\{[a-z-]+:\d+\})?\[edit(?: [^\]]*)?\]$`)
+var reJunosLocation = regexp.MustCompile(`^(?:\{[a-z-]+(?::[a-z0-9]+)?\})?\[edit(?: [^\]]*)?\]$`)
 
 // LocationLine reports whether line is the location line a Junos device
 // prints before a configure-mode prompt: '[edit]' or '[edit <path>]',
