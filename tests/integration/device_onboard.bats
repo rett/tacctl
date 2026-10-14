@@ -134,9 +134,12 @@ nothing_secret() {
     assert_output --partial "$FP matches --host-key."
     refute_output --partial "Trust these keys"
     assert_output --partial "${ADDR}  Junos 25.4R1-S2.3"
-    assert_output --partial "no TACACS+ or RADIUS server"
+    assert_output --partial "device reports host name example-sw5; no TACACS+ or RADIUS server"
     assert_output --partial "Device 'example-sw5' registered: ${ADDR}, juniper."
-    assert_output --partial 'From the device: location "Lab rack 5"; hostname "example-sw5.lab.example.net"'
+    assert_output --partial 'From the device: location "Lab rack 5"'
+    # the registry's hostname is never the device's (ssh would dial it)
+    refute_output --partial 'hostname "'
+    if grep -qF "hostname:" "${TACCTL_STATE_DIR}/devices.yaml"; then false; fi
     assert_output --partial "example-sw5  read as local:admin:"
     assert_output --regexp "example-sw5  checked: shape [0-9a-f]{12} \(new\)"
     assert_output --partial "nothing was committed: --check ends after the device's own commit check."
@@ -163,7 +166,7 @@ nothing_secret() {
     assert_output --partial "Type the device name to go on:"
     assert_output --partial "example-sw5  committing as admin, verifying as alice ..."
     assert_output --regexp "example-sw5  applied \(roles,aaa: [0-9]+ set, 0 delete\) \[tacctl-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4}\]"
-    assert_output --partial "The local account 'admin' still logs in."
+    assert_output --partial "The local account 'admin' was not probed: a login would send its password to the TACACS+ server."
     run committed
     assert_output --partial "set system tacplus-server 10.0.0.42 single-connection"
     assert_output --partial "set system authentication-order tacplus"
@@ -190,7 +193,8 @@ nothing_secret() {
     [[ "$status" -eq 1 ]]
     assert_output --regexp "example-sw5  rolled back: verification failed \(the fresh login was refused\)"
     assert_output --partial "the change was rolled back and the local account 'admin' is as it was"
-    assert_output --partial "The local account 'admin' still logs in."
+    assert_output --partial "The local account 'admin' was not probed"
+    refute_output --partial "still logs in"
     unchanged
     [[ "$(record example-sw5 applied.result)" == rolled-back ]]
     [[ "$(record example-sw5 login)" == local:admin ]]
@@ -207,6 +211,21 @@ nothing_secret() {
     assert_failure 1
     assert_output --partial "refused: the device already has a TACACS+ or RADIUS server; it is reached by the normal flow (device add, device config pull)"
     [[ ! -e "${TACCTL_STATE_DIR}/devices.yaml" ]] || ! grep -q "$ADDR" "${TACCTL_STATE_DIR}/devices.yaml"
+}
+
+@test "onboard: a fresh login that is not the template user rolls back; a proof that could be local is refused" {
+    # alice's login lands on no template user (a local account of her name)
+    rm -f "${JDIR}/template"
+    tonboard 'y\nexample-sw5\n' "$ADDR" --login admin
+    [[ "$status" -eq 1 ]]
+    assert_output --regexp "example-sw5  rolled back: verification failed \(the fresh login: the current user is 'alice', a local account"
+    unchanged
+    onboard "$ADDR" --login alice --host-key "$FP" --check
+    assert_failure 2
+    assert_output --partial "'alice' is your own login"
+    onboard "$ADDR" --login admin --host-key "$FP" --check --section roles
+    assert_failure 2
+    assert_output --partial "--section must include aaa"
 }
 
 @test "onboard --login root: the CLI through the csh wrapper" {

@@ -106,10 +106,10 @@ $ tacctl device onboard 192.0.2.31 --login admin --name sw-lab-5
   A blank device has no other proof: compare one with its console (...).
 Trust these keys and send the local password of 'admin' to 192.0.2.31? [y/N] y
 Password of admin on 192.0.2.31 (a local account; asked once, never kept):
-  192.0.2.31  Junos 25.4R1  ex4300-48mp  hostname sw-lab-5; no TACACS+ or RADIUS server
+  192.0.2.31  Junos 25.4R1  ex4300-48mp  device reports host name sw-lab-5; no TACACS+ or RADIUS server
 [INFO] Device 'sw-lab-5' registered: 192.0.2.31, juniper.
   ...
-  From the device: location "Lab rack 2"; hostname "sw-lab-5.lab.example.net"
+  From the device: location "Lab rack 2"
   sw-lab-5  read as local:admin: aaa, roles differ from what tacctl renders
   sw-lab-5  checked: shape ee791d20ded1 (new) (roles, aaa: 17 set, 0 delete); check ok
 
@@ -120,15 +120,14 @@ Apply to sw-lab-5 under commit confirmed 10, as 'admin', kept only after a TACAC
 Password for alice (device login):
   sw-lab-5  committing as admin, verifying as alice ...
   sw-lab-5  applied (roles,aaa: 17 set, 0 delete) [tacctl-20261013T141201Z-71be]
-  The local account 'admin' is refused while the server answers: expected
-  with 'authentication-order tacplus'; it works when the server does not.
+  The local account 'admin' was not probed: a login would send its password to the TACACS+ server.
 ```
 
 - **Identity first.** The host keys the address offers are shown, and one question is asked before any login. `--host-key SHA256:<fp>` (the fingerprint read on the device's console) answers it instead and pins that key alone. Without a terminal and without `--host-key` the run is refused, and without a terminal only `--check` runs.
-- **Pre-flight as the local account.** Its password is asked once on the terminal and never kept or cached. `show version`, no pending confirmed commit, a login class that may commit, and no TACACS+ or RADIUS server: a device that has one is reached by the normal flow (`device add`, `device config pull`).
-- **Registration.** The name is `--name`, else the host name the device reports, else asked for at the terminal (a generic or taken one). The device is registered through `device add` with the keys of the first step; its own `snmp location`, `system host-name` (with `domain-name`) and `snmp description` fill the registry's empty location, hostname and description. A device an earlier onboard registered, and that was never read as your own login, is taken again under its name and pinned keys.
+- **Pre-flight as the local account.** Its password is asked once on the terminal and never kept or cached. `show version`, no pending confirmed commit, a login class that may commit, no TACACS+ or RADIUS server (`system tacplus-server`, `radius-server` or `accounting destination tacplus|radius server`, also in a group: a device that has one is reached by the normal flow, `device add`, `device config pull`), and no local account of your own name (a login as you could be that account's, not TACACS+). `--login` may not name your own login, and `--section` must include `aaa`. What the device reports is shown with its control characters replaced.
+- **Registration.** The name is `--name`, else the host name the device reports, else asked for at the terminal (a generic or taken one). The device is registered through `device add` with the keys of the first step; its own `snmp location` and `snmp description` fill the registry's empty location and description. Its host name is only shown (`device reports host name`): it never fills the registry's hostname, which ssh would dial instead of the address. A device an earlier onboard registered, and that was never read as your own login, is taken again under its name and pinned keys.
 - **Read, plan, check.** The read is recorded as a pull made as the local account (`login=local:<account>`); the plan is the ordinary planner's first-time plan, checked on the device with its own `commit check` as `device config apply --check` does. `--check` stops here: the device is registered and nothing is committed. The plan never holds the break-glass accounts, root, the local account, system services or interfaces.
-- **Commit as the local account, proven by your login.** After the review (the device's name typed back) your own password is asked (the password cache may answer it). The change is committed as the local account under `commit confirmed`; every session after the commit is your own login: the fresh login, the landed change and the read of the planned sections. The confirm is typed in the held local session. A fresh login that is refused rolls the change back and leaves the local account as it was. The local account is then tried once more, for information only.
+- **Commit as the local account, proven by your login.** After the review (the device's name typed back) your own password is asked (the password cache may answer it). The change is committed as the local account under `commit confirmed`; every session after the commit is your own TACACS+ login: the fresh login, the landed change and the reads of the planned sections. Its `show cli authorization` must name, as the current user, the template user your group's Juniper class renders, with that class; a local account is not a proof. The confirm is typed in the held local session. A fresh login that is refused or is not that template user rolls the change back and leaves the local account as it was. `root` is then tried once more, for information only; any other local account is not (with `authentication-order tacplus` a login would send its password to the TACACS+ server).
 - **Audit.** `device onboard user= device= approved=1 shape= login=` at the answer and `device onboard user= device= addr= login=local:<account> result=` at the end; never a password.
 
 ### One read as a local account

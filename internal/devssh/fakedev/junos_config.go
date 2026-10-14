@@ -20,6 +20,9 @@ package fakedev
 //	                    '<user> <class>' lines (default super-user)
 //	local               '<user> <password> [<class>]': local accounts that log
 //	                    in beside the transcript's own login
+//	template            '<user> <template> <class>': the login is a TACACS+
+//	                    one mapped to a local template user ('show cli
+//	                    authorization' prints Junos's quoted form)
 //	root                the password of the root login, whose shell is a csh
 //	                    ('cli' starts the CLI; an exec of 'sh -c "...; exec
 //	                    cli"' starts it at once)
@@ -588,7 +591,13 @@ func (d *junosDevice) historyText() string {
 func (d *junosDevice) authorizationText(user string) string {
 	class := d.classOf(user)
 	var b strings.Builder
-	fmt.Fprintf(&b, "Current user: %-12s login: %-12s class: %s\n", user, user, class)
+	header := fmt.Sprintf("Current user: %-12s login: %-12s class: %s\n", user, user, class)
+	for _, l := range d.rules("template") {
+		if f := strings.Fields(l); len(f) == 3 && f[0] == user {
+			header = fmt.Sprintf("Current user: '%s' login: '%s' class '%s'\n", f[1], user, f[2])
+		}
+	}
+	b.WriteString(header)
 	b.WriteString("Permissions:\n")
 	for _, p := range jtClasses[class].perms {
 		fmt.Fprintf(&b, "    %s\n", p)

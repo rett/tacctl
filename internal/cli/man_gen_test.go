@@ -220,7 +220,7 @@ var manFlagOverrides = map[string]string{
 	"device onboard --name":              "The registry name (default: the name the device reports; a generic or taken one is asked for).",
 	"device onboard --host-key":          "Trust only this key, read on the device's console (no question; needed without a terminal); pin it alone.",
 	"device onboard --legacy-ssh":        "SHA-1 key exchange, CBC ciphers and ssh-rsa (also chosen by itself when the handshake needs them); registered so.",
-	"device onboard --section":           "Only these sections of the first-time plan: aaa, roles, mgmt-acl, snmp, system.",
+	"device onboard --section":           "Only these sections of the first-time plan: aaa, roles, mgmt-acl, snmp, system; aaa among them (the proof is a TACACS+ login).",
 	"device onboard --json":              "One object at the end (the progress goes to standard error).",
 	"device collect --discovered":        "The addresses 'device discover' lists (the seen cache: unregistered, authenticated); no address is named with it.",
 	"device collect --login":             "The device's local account to log in as (any, a break-glass one included; root through its CLI wrapper) instead of you: its password is asked once on the terminal, never kept or cached, and goes to each address once; one account for the run.",

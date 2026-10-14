@@ -181,25 +181,35 @@ current behaviour; this file is where history lives.
     wrapper). The host keys the address offers are
     shown and one question is asked before any login (`--host-key
     SHA256:<fp>` answers it; without a terminal and without it the run is
-    refused, and without a terminal only `--check` runs). As the local
+    refused, and without a terminal only `--check` runs). `--login` may not
+    name your own login, and `--section` must include `aaa`. As the local
     account (its password asked once on the terminal, never kept or cached)
-    the pre-flight reads the release, a pending commit, the login's class and
-    whether a TACACS+ or RADIUS server is there already (then refused: such a
-    device is reached by the normal flow). The device is registered through
-    `device add` with the keys shown (`--name`, else the name it reports,
-    else asked), its own location, host name and description fill the empty
-    fields, its read is recorded as a pull made as the local account, and
-    the ordinary planner's first-time plan is checked on the device;
-    `--check` stops there. After the review (the device's name typed back)
-    your own password is asked and the change is committed as the local
-    account under `commit confirmed`; every session after the commit is your
-    own login, which proves the change before it is confirmed in the held
-    session. A refused fresh login rolls it back and leaves the local
-    account as it was; the local account is then tried once more, for
-    information. The plan never holds the break-glass accounts, root or the
-    local account. `--legacy-ssh` (also taken by itself when the handshake
-    needs the legacy algorithms), `--section` and `--json` (one object at
-    the end).
+    the pre-flight reads the release, a pending commit, the login's class,
+    whether a TACACS+ or RADIUS server is there already (`system
+    tacplus-server`, `radius-server` or `accounting destination tacplus|radius
+    server`, also in a group: then refused, such a device is reached by the
+    normal flow) and whether a local account of your own name is there (then
+    refused: a login as you could be that account's). The device is
+    registered through `device add` with the keys shown (`--name`, else the
+    name it reports, else asked), its own location and description fill the
+    empty fields (its host name never fills the registry's `hostname`, which
+    ssh would dial instead of the address), its read is recorded as a pull
+    made as the local account, and the ordinary planner's first-time plan is
+    checked on the device; `--check` stops there. After the review (the
+    device's name typed back) your own password is asked and the change is
+    committed as the local account under `commit confirmed`; every session
+    after the commit, every read included, is your own TACACS+ login, which
+    proves the change before it is confirmed in the held session: its
+    `show cli authorization` must name the template user your group's class
+    renders, with that class, never a local account. A refused or wrong
+    fresh login rolls it back and leaves the local account as it was.
+    Afterwards `root` is tried once more, for information; any other local
+    account is not (a login would send its password to the TACACS+ server).
+    What the device reports is shown with its control characters replaced.
+    The plan never holds the break-glass accounts, root or the local
+    account. `--legacy-ssh` (also taken by itself when the handshake needs
+    the legacy algorithms), `--section` and `--json` (one object at the
+    end).
     Logged: `device onboard user= device= addr= login=local:<account>
     result=`, never a password.
 
@@ -215,7 +225,8 @@ current behaviour; this file is where history lives.
     pull and for `device onboard`. The password is asked once on the terminal,
     sent to the one connection and never stored in, asked of or forgotten by
     the password cache. `root` is accepted only for a device never read as
-    the invoking user, through the remote command `sh -c
+    the invoking user (a pull record file that cannot be read refuses it),
+    through the remote command `sh -c
     'PATH=$PATH:/usr/sbin:/usr/bin:/sbin:/bin; exec cli'` (root's shell is a
     csh), over the ssh command line only. The record says
     `login=local:<account>` (the pull records' file gains `login` and

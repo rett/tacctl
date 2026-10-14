@@ -28,6 +28,9 @@ const (
 	localPassword = "local-pw-5e1f"
 	rootPassword  = "root-pw-77ab"
 	onboardAddr   = "192.168.1.31"
+	// aliceTemplate is the template user (and class) the rendering gives
+	// alice's group
+	aliceTemplate = "RW-CLASS"
 )
 
 // blankDevice is a configure model with no TACACS+ server: the device a
@@ -63,6 +66,8 @@ func newOnboardBox(t *testing.T, opts ...fakedev.Option) *pullBox {
 	b.knob("local", localAccount+" "+localPassword+" super-user\nbgadmin "+localPassword+" super-user\n")
 	b.knob("root", rootPassword+"\n")
 	b.knob("echo.plain", "")
+	// alice's TACACS+ login maps to her group's template user (D136's proof)
+	b.knob("template", "alice "+aliceTemplate+" "+aliceTemplate+"\n")
 	prev := passwordPrompt
 	passwordPrompt = func(_ *os.File, prompt string) ([]byte, error) {
 		switch {
@@ -128,10 +133,10 @@ func TestOnboardEndToEnd(t *testing.T) {
 		t.Fatalf("exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
 	}
 	for _, want := range []string{
-		onboardAddr + " offers:", "192.168.1.31  Junos 25.4R1-S2.3", "no TACACS+ or RADIUS server",
-		"Device 'sw-lab-5' registered: 192.168.1.31, juniper.", "From the device: location \"Lab rack 2\"; hostname \"sw-lab-5.lab.example.net\"",
+		onboardAddr + " offers:", "192.168.1.31  Junos 25.4R1-S2.3", "device reports host name sw-lab-5; no TACACS+ or RADIUS server",
+		"Device 'sw-lab-5' registered: 192.168.1.31, juniper.", "From the device: location \"Lab rack 2\"\n",
 		"sw-lab-5  read as local:admin:", "checked: shape", "first-time plan", "committing as admin, verifying as alice",
-		"sw-lab-5  applied (", "The local account 'admin' still logs in.",
+		"sw-lab-5  applied (", "The local account 'admin' was not probed: a login would send its password to the TACACS+ server.",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in\n%s", want, out)
@@ -165,8 +170,14 @@ func TestOnboardEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	e, ok := res.Lookup("sw-lab-5", devreg.ScopeFilter{})
-	if !ok || len(e.HostKeys) != 1 || e.HostKeys[0] != b.srv.HostKey() || e.Location != "Lab rack 2" || e.Hostname != "sw-lab-5.lab.example.net" || e.Vendor != "juniper" {
+	// the hostname field is never the device's: ssh would dial it
+	if !ok || len(e.HostKeys) != 1 || e.HostKeys[0] != b.srv.HostKey() || e.Location != "Lab rack 2" || e.Hostname != "" || e.Vendor != "juniper" {
 		t.Errorf("entry %+v", e)
+	}
+	// every read after the commit is alice's TACACS+ login, the plain view
+	// included; the local account read only before it
+	if n := strings.Count(strings.Join(b.srv.ExecsBy("alice"), "\n"), "show configuration | display set"); n == 0 {
+		t.Errorf("no plain view on alice's login: %q", b.srv.ExecsBy("alice"))
 	}
 	// the record: the convergence read was alice's own login
 	rec, ok := b.records().Of("sw-lab-5")
@@ -284,8 +295,8 @@ func TestOnboardRefusedFreshLoginRollsBack(t *testing.T) {
 	if b.sb.code != 1 || !strings.Contains(out, "sw-lab-5  rolled back") || !strings.Contains(out, "the change was rolled back and the local account 'admin' is as it was") {
 		t.Fatalf("exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
 	}
-	if !strings.Contains(out, "The local account 'admin' still logs in.") {
-		t.Errorf("no probe:\n%s", out)
+	if !strings.Contains(out, "The local account 'admin' was not probed") || strings.Contains(out, "still logs in") {
+		t.Errorf("the local account was probed:\n%s", out)
 	}
 	if got := b.committed(); strings.Contains(got, "tacplus-server") || !strings.Contains(got, "login user admin authentication") {
 		t.Errorf("committed:\n%s", got)
@@ -572,5 +583,140 @@ func TestLocalLoginRefusedWhileHeld(t *testing.T) {
 	}
 	if b.srv.Attempts() != 0 {
 		t.Error("a password was sent")
+	}
+}
+
+// The TACACS+ proof is the rendered template user, never a local account
+// of the person's name: a fresh login whose 'Current user' is the person
+// (a local account 'alice' with her password, logged in through the local
+// password) or whose class is not the template's rolls the change back.
+func TestOnboardProofNeedsTheTemplateUser(t *testing.T) {
+	for _, c := range []struct{ name, template string }{
+		{"a local account", ""},
+		{"another class", "alice " + aliceTemplate + " RO-CLASS\n"},
+		{"another template", "alice RO-CLASS RO-CLASS\n"},
+	} {
+		b := newOnboardBox(t)
+		b.knob("template", c.template)
+		out := b.onboard("y\nsw-lab-5\n", onboardAddr, "--login", localAccount)
+		if b.sb.code != 1 || !strings.Contains(out, "sw-lab-5  rolled back: verification failed (the fresh login: ") {
+			t.Errorf("%s: exit %d\n%s\n%s", c.name, b.sb.code, out, b.sb.stderr())
+		}
+		if got := b.committed(); strings.Contains(got, "tacplus-server") {
+			t.Errorf("%s: committed:\n%s", c.name, got)
+		}
+	}
+}
+
+// A device with a local account of the invoking user's name, '--login'
+// naming the user's own name, and a --section without aaa are refused
+// before the change is sent.
+func TestOnboardRefusesAProofThatCouldBeLocal(t *testing.T) {
+	b := newOnboardBox(t)
+	b.onboard("-", onboardAddr, "--login", "alice", "--check", "--host-key", b.key().Fingerprint())
+	if b.sb.code != 2 || !strings.Contains(b.sb.stderr(), "'alice' is your own login") {
+		t.Errorf("--login alice: %d %q", b.sb.code, b.sb.stderr())
+	}
+	b.onboard("-", onboardAddr, "--login", localAccount, "--check", "--section", "roles,snmp")
+	if b.sb.code != 2 || !strings.Contains(b.sb.stderr(), "--section must include aaa") {
+		t.Errorf("--section: %d %q", b.sb.code, b.sb.stderr())
+	}
+	if b.srv.Attempts() != 0 {
+		t.Errorf("a refusal sent a password (%d)", b.srv.Attempts())
+	}
+	b.knob("config.set", blankDevice+"set system login user alice class super-user\n")
+	b.onboard("y\nsw-lab-5\n", onboardAddr, "--login", localAccount)
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "the device has a local account named 'alice', your own login") {
+		t.Errorf("local alice: %d %q", b.sb.code, b.sb.stderr())
+	}
+	if strings.Contains(b.sb.devices(), "sw-lab-5") || b.pw.asked != 0 {
+		t.Errorf("registered or asked (%d):\n%s", b.pw.asked, b.sb.devices())
+	}
+}
+
+// root is probed after the commit (Junos never sends its password to the
+// server).
+func TestOnboardProbesRootOnly(t *testing.T) {
+	b := newOnboardBox(t)
+	out := b.onboard("y\nsw-lab-5\n", onboardAddr, "--login", "root")
+	if b.sb.code != 0 || !strings.Contains(out, "sw-lab-5  applied (") || !strings.Contains(out, "The local account 'root' still logs in.") {
+		t.Fatalf("exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+	}
+}
+
+// A record file that cannot be read is not 'never read as you': --login
+// root and the taking over of an earlier onboard are refused.
+func TestLocalLoginRefusesAnUnreadableRecordFile(t *testing.T) {
+	b := newOnboardBox(t)
+	b.onboard("", onboardAddr, "--login", localAccount, "--host-key", b.key().Fingerprint(), "--check")
+	if b.sb.code != 0 {
+		t.Fatalf("check: %d %q", b.sb.code, b.sb.stderr())
+	}
+	recs := filepath.Join(b.sb.dir, "var-lib", "devices-config.json")
+	if err := os.WriteFile(recs, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	attempts := b.srv.Attempts()
+	b.onboard("", onboardAddr, "--login", localAccount, "--host-key", b.key().Fingerprint(), "--check")
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "is not known, so it is not taken over") {
+		t.Errorf("onboard: %d %q", b.sb.code, b.sb.stderr())
+	}
+	b.trun("device", "config", "pull", "sw-lab-5", "--login", "root")
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "--login root is only for a device that never was") {
+		t.Errorf("root: %d %q", b.sb.code, b.sb.stderr())
+	}
+	if b.srv.Attempts() != attempts {
+		t.Errorf("a refusal sent a password")
+	}
+}
+
+// What the device reports reaches the terminal without its control
+// characters: 'show version', the name it calls itself, its snmp values.
+func TestOnboardEscapesDeviceText(t *testing.T) {
+	b := newOnboardBox(t)
+	esc := "\x1b]0;owned\x07"
+	b.knob("device", "hostname sw\x1b[31mlab\nmodel ex4300"+esc+"\njunos 25.4R1\x1b[2J\n")
+	b.knob("config.set", strings.Replace(blankDevice, "set system host-name sw-lab-5", "set system host-name sw\x1b[31mlab", 1)+
+		"set snmp description \"rack\x1b[2Jtop\"\n")
+	// the name it calls itself is no name: asked for, and nothing typed
+	out := b.onboard("\n", onboardAddr, "--login", localAccount, "--host-key", b.key().Fingerprint(), "--check")
+	all := out + b.sb.stderr()
+	if b.sb.code == 0 || !strings.Contains(all, "The device calls itself 'sw?[31mlab'") {
+		t.Errorf("no name: %d %q", b.sb.code, all)
+	}
+	out = b.onboard("", onboardAddr, "--login", localAccount, "--host-key", b.key().Fingerprint(), "--check", "--name", "sw-x", "--json")
+	all += out + b.sb.stderr()
+	if !strings.Contains(all, "ex4300?]0;owned?") || !strings.Contains(all, "device reports host name sw?[31mlab") {
+		t.Errorf("not shown escaped:\n%q", all)
+	}
+	if strings.ContainsAny(all, "\x1b\x07") {
+		t.Errorf("a control character reached the terminal:\n%q", all)
+	}
+}
+
+func TestHasAAAServerForms(t *testing.T) {
+	for _, c := range []struct {
+		line string
+		want bool
+	}{
+		{"set system tacplus-server 192.0.2.1 secret x", true},
+		{"set system radius-server 192.0.2.1 secret x", true},
+		{"set groups base system tacplus-server 192.0.2.1 secret x", true},
+		{"set groups base system radius-server 192.0.2.1 port 1812", true},
+		{"set system accounting destination tacplus server 192.0.2.1 secret x", true},
+		{"set system accounting destination radius server 192.0.2.1 secret x", true},
+		{"set groups g system accounting destination tacplus server 192.0.2.1", true},
+		{"deactivate system tacplus-server 192.0.2.1", true},
+		{"set system accounting destination tacplus", false},
+		{"set system login user tacplus-server class super-user", false},
+		{"set access radius-server 192.0.2.1 secret x", false},
+		{"set snmp description tacplus-server", false},
+	} {
+		if got := hasAAAServer(c.line + "\n"); got != c.want {
+			t.Errorf("%q: %v", c.line, got)
+		}
+	}
+	if !hasLocalUser("set groups g system login user Alice class x\n", "alice") || hasLocalUser("set system login user alicex class x\n", "alice") {
+		t.Error("hasLocalUser")
 	}
 }

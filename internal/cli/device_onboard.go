@@ -13,15 +13,19 @@ package cli
 //  2. pre-flight as the local account: show version, no pending commit, no
 //     TACACS+ or RADIUS server already, a class that may commit;
 //  3. the name and the registration ('device add', the keys of step 1), the
-//     device's own location, host name and description in the empty fields;
+//     device's own location and description in the empty fields (never its
+//     host name: the registry's hostname is what ssh dials);
 //  4. the pull as the local account (the record says login=local:<account>);
 //  5. the plan and 6. the check (the transaction driver, as the local
 //     account); --check stops there;
 //  7. the review, then the user's own TACACS+ password;
-//  8. the commit as the local account, proven by a fresh TACACS+ login and
-//     confirmed in the held local session (a refused fresh login rolls the
-//     change back and leaves the local account as it was);
-//  9. the local account is probed once more, informationally.
+//  8. the commit as the local account, proven by a fresh TACACS+ login (its
+//     'Current user' the rendered template user of the invoking user's
+//     group, with that class) and confirmed in the held local session (a
+//     refused or wrong fresh login rolls the change back and leaves the local
+//     account as it was);
+//  9. root is probed once more, informationally; any other local account is
+//     not (its password would go to the TACACS+ server).
 //
 // The local password: device_config_login.go.
 
@@ -64,6 +68,13 @@ type onboard struct {
 	src                 *terminalPasswords
 
 	scope string
+	// template and class are the rendered template user of the invoking
+	// user's group and its class: what the fresh login after the commit
+	// must report (never a local account of the person's own name).
+	template, class string
+	// reported is the host name the device reported in the pre-flight, a
+	// name the transaction's identity check accepts beside the registry's.
+	reported string
 	// reuse is the registered device an earlier onboard left (never read as
 	// the user's own login), nil for a new one.
 	reuse *devreg.Entry
@@ -143,6 +154,9 @@ func (ob *onboard) args(p Parsed) error {
 	if err != nil {
 		return err
 	}
+	if strings.EqualFold(acct, ob.user) {
+		return inv.argErr("--login names a local account, and '"+acct+"' is your own login: the TACACS+ login that proves the change could be that account's. Nothing was sent.", onboardUse)
+	}
 	ob.local = &localLogin{account: acct}
 	if p.Has("--host-key") && !devreg.ValidFingerprint(ob.hostKey) {
 		return inv.argErr("Invalid --host-key '"+ob.hostKey+"': expected SHA256:<fingerprint> as ssh prints it.", onboardUse)
@@ -161,6 +175,9 @@ func (ob *onboard) args(p Parsed) error {
 			if !contains(ob.sections, s) {
 				ob.sections = append(ob.sections, s)
 			}
+		}
+		if !contains(ob.sections, "aaa") {
+			return inv.argErr("--section must include aaa: onboard proves the change by a TACACS+ login, which only the aaa section sets up. Nothing was sent.", onboardUse)
 		}
 	}
 	// The identity question and the review are a person's: without a
@@ -224,6 +241,11 @@ func (ob *onboard) run() (int, error) {
 	if err != nil {
 		return 0, inv.usageErr("Registered "+e.Name+", but its configuration cannot be rendered: "+strings.Join(msgs(err), " "), "Nothing was sent to the device.")
 	}
+	if !ob.check {
+		if err := ob.templateOf(expected); err != nil {
+			return 0, err
+		}
+	}
 	confirm, _ := inv.applySettings()
 	ar := &applyRun{inv: inv, user: ob.user, render: render, store: inv.configStore(),
 		shapes: devapply.OpenShapes(inv.app.Paths.ApplyDir), stateDir: inv.app.Paths.ApplyDir, sections: ob.sections, minutes: confirm}
@@ -241,7 +263,7 @@ func (ob *onboard) run() (int, error) {
 
 	// 5-6. The plan and the check, as the local account, on the same login.
 	st := &applyState{}
-	in := ob.input(ar, e, expected, j, st, confirm)
+	in := ob.input(ar, e, expected, j, st, confirm, nil)
 	closeJ = false
 	var drv devapply.Driver
 	out := drv.Check(ctx, in)
@@ -293,7 +315,7 @@ func (ob *onboard) run() (int, error) {
 	ctxB, stopB := ob.interruptible(true, time.Duration(confirm+2)*time.Minute)
 	code := ob.commit(ctxB, ar, e, expected, st.first.delta, confirm, tp, func() string { return tacacs })
 	stopB()
-	// 9. The probe of the local account, after anything was committed.
+	// 9. The probe of root, after anything was committed.
 	if ob.out.Out != nil && committedSomething(ob.out.Out.Exit) {
 		ob.probeLocal()
 	}
@@ -357,6 +379,13 @@ func (ob *onboard) admissible() error {
 			return inv.usageErr(msg+": every session after the commit is your own login, so the change could not be proven. Nothing was sent.",
 				"--check registers and checks without it.")
 		}
+		u := m.User(ob.user)
+		g := m.Group(u.Group)
+		if g == nil || g.JuniperClass == "" {
+			return inv.usageErr("Your group '"+u.Group+"' has no Juniper class: the TACACS+ login after the commit would map to no template user, so the change could not be proven. Nothing was sent.",
+				"--check registers and checks without it.")
+		}
+		ob.template = g.JuniperClass
 	}
 	// a break-glass hold refuses the local login as it refuses every pull
 	if h, held := inv.holdAt(ob.addr); held {
@@ -371,7 +400,10 @@ func (ob *onboard) admissible() error {
 		if e.Source == devreg.SourceHost {
 			return inv.usageErr("'" + e.Name + "' at " + ob.addr + " is an enrolled Linux host, not a network device. Nothing was sent.")
 		}
-		recs, _ := inv.configStore().Load()
+		recs, err := inv.configStore().Load()
+		if err != nil {
+			return inv.usageErr(strings.Join(msgs(err), " ") + ": whether '" + e.Name + "' was read as your own login is not known, so it is not taken over. Nothing was sent.")
+		}
 		if rec, ok := recs.Of(e.Name); ok && rec.PulledAsUser() {
 			return inv.usageErr(ob.addr+" is registered as '"+e.Name+"' and was read as your own login: it is reached by the normal flow. Nothing was sent.",
 				"tacctl device config pull "+e.Name+", then tacctl device config apply "+e.Name)
@@ -509,6 +541,10 @@ func (ob *onboard) preflight(ctx context.Context) (*devapply.JunosCLI, devapply.
 	if hasAAAServer(raw) {
 		return fail("refused: the device already has a TACACS+ or RADIUS server; it is reached by the normal flow (device add, device config pull)")
 	}
+	if hasLocalUser(raw, ob.user) {
+		return fail("refused: the device has a local account named '"+ob.user+"', your own login: a login as you could be that account's, not TACACS+, so the change could not be proven. Nothing was changed.",
+			"Remove or rename that account on the device first.")
+	}
 	lg, err := j.Login(ctx)
 	if err != nil {
 		return fail("Pre-flight: 'show cli authorization': " + shortReason(err) + ". Nothing was changed.")
@@ -516,21 +552,102 @@ func (ob *onboard) preflight(ctx context.Context) (*devapply.JunosCLI, devapply.
 	if !j.Confirms() {
 		return fail("The local account '" + ob.local.account + "' (class " + cleanLine(lg.Class) + ") cannot commit: onboard needs a class that may configure and commit. Nothing was changed.")
 	}
-	what := strings.TrimSpace(strings.Join([]string{"Junos " + id.Release, id.Model}, "  "))
-	inv.echo(fmt.Sprintf("  %s  %s  hostname %s; no TACACS+ or RADIUS server", ob.addr, what, dashAddrText(id.Hostname)))
+	ob.reported = id.Hostname
+	what := cleanLine(strings.TrimSpace(strings.Join([]string{"Junos " + id.Release, id.Model}, "  ")))
+	inv.echo(fmt.Sprintf("  %s  %s  device reports host name %s; no TACACS+ or RADIUS server", ob.addr, what, reportedName(id.Hostname)))
 	return j, id, raw, nil
 }
 
-// hasAAAServer reports whether a configuration read ('display set') has a
-// TACACS+ or RADIUS server under system (the one blocker of the backlog).
+// reportedName is a name the device reported, for a terminal line: its
+// control characters replaced, "-" for none.
+func reportedName(n string) string {
+	if n == "" {
+		return "-"
+	}
+	return cleanLine(n)
+}
+
+// systemStatement is a read's line without its 'set' (or 'deactivate') and
+// a 'groups <name>' prefix: the words of a statement under system, nil for
+// any other line.
+func systemStatement(l string) []string {
+	f := strings.Fields(l)
+	if len(f) == 0 || (f[0] != "set" && f[0] != "deactivate") {
+		return nil
+	}
+	f = f[1:]
+	if len(f) >= 2 && f[0] == "groups" {
+		f = f[2:]
+	}
+	if len(f) < 2 || f[0] != "system" {
+		return nil
+	}
+	return f[1:]
+}
+
+// hasAAAServer reports whether a configuration read ('display set', with
+// or without 'display inheritance') has a TACACS+ or RADIUS server under
+// system, directly or in a group: 'system tacplus-server', 'system
+// radius-server', or 'system accounting destination tacplus|radius server'
+// (the one blocker of the backlog).
 func hasAAAServer(raw string) bool {
 	for _, l := range strings.Split(raw, "\n") {
-		l = strings.TrimSpace(l)
-		if strings.HasPrefix(l, "set system ") && (strings.Contains(l, "tacplus-server") || strings.Contains(l, "radius-server")) {
+		f := systemStatement(l)
+		switch {
+		case len(f) == 0:
+		case f[0] == "tacplus-server", f[0] == "radius-server":
+			return true
+		case len(f) >= 4 && f[0] == "accounting" && f[1] == "destination" && (f[2] == "tacplus" || f[2] == "radius") && f[3] == "server":
 			return true
 		}
 	}
 	return false
+}
+
+// hasLocalUser reports whether a configuration read has 'system login user
+// <name>' (directly or in a group), the name compared without case.
+func hasLocalUser(raw, name string) bool {
+	for _, l := range strings.Split(raw, "\n") {
+		f := systemStatement(l)
+		if len(f) >= 3 && f[0] == "login" && f[1] == "user" && strings.EqualFold(strings.Trim(f[2], `"`), name) {
+			return true
+		}
+	}
+	return false
+}
+
+// templateOf finds, in the rendering, the template user of the invoking
+// user's group (the group's Juniper class) and the class it is bound to:
+// the fresh login after the commit must report both. A rendering without
+// one is refused before anything is committed.
+func (ob *onboard) templateOf(expected []devices.Section) error {
+	prefix := "set system login user " + ob.template + " class "
+	for _, s := range expected {
+		for _, l := range s.Lines {
+			if c, ok := strings.CutPrefix(strings.TrimSpace(l), prefix); ok && c != "" && !strings.Contains(c, " ") {
+				ob.class = c
+				return nil
+			}
+		}
+	}
+	return ob.inv.usageErr("Registered " + ob.name + ", but its rendering has no template user '" + ob.template + "' for your group's class: the TACACS+ login after the commit could not be proven. Nothing was sent to the device.")
+}
+
+// verifyLogin is the fresh login's proof (D136): its 'Current user' is the
+// rendered template user of the invoking user's group, with that class, and
+// never a local account of the person's own name.
+func (ob *onboard) verifyLogin(lg devapply.Login) error {
+	switch {
+	case lg.User == "" || lg.Class == "":
+		return errors.New("'show cli authorization' names no current user and class")
+	case strings.EqualFold(lg.User, ob.user) || strings.EqualFold(lg.User, ob.local.account):
+		return fmt.Errorf("the current user is '%s', a local account, not the template user '%s': not a TACACS+ login", lg.User, ob.template)
+	case lg.User != ob.template:
+		return fmt.Errorf("the current user is '%s', not the template user '%s' of your group", lg.User, ob.template)
+	case lg.Class != ob.class:
+		return fmt.Errorf("the class is '%s', not '%s' of the template user '%s'", lg.Class, ob.class, ob.template)
+	}
+	return nil
 }
 
 // readSummary is the pull's words for the sections that differ.
@@ -543,8 +660,8 @@ func readSummary(missing []string) string {
 
 // register is step 3: the name (--name, the reported host name, else asked),
 // 'device add' (the keys of step 1 pinned: the same code as every
-// registration), and the device's own location, host name and description in
-// the registry's empty fields.
+// registration), and the device's own location and description in the
+// registry's empty fields.
 func (ob *onboard) register(id devapply.Identity, raw string) error {
 	inv := ob.inv
 	if ob.reuse == nil {
@@ -595,10 +712,10 @@ func (ob *onboard) chooseName(id devapply.Identity) (string, error) {
 		return name, nil
 	}
 	if !ob.pr.Interactive() {
-		return "", inv.usageErr("The device calls itself '"+dashAddrText(id.Hostname)+"', which is not a name to register (generic, taken or not a name). Nothing was changed.",
+		return "", inv.usageErr("The device calls itself '"+reportedName(id.Hostname)+"', which is not a name to register (generic, taken or not a name). Nothing was changed.",
 			"Give one: --name <name>")
 	}
-	inv.echo("  The device calls itself '" + dashAddrText(id.Hostname) + "', which is generic, taken or not a name.")
+	inv.echo("  The device calls itself '" + reportedName(id.Hostname) + "', which is generic, taken or not a name.")
 	name = ob.pr.Ask("  Name to register it as: ")
 	if err := devreg.ValidateName(name); err != nil {
 		return "", err
@@ -625,25 +742,21 @@ func deviceValue(raw, path string) string {
 	return ""
 }
 
-// fillFields fills the registry's empty location, hostname and description
-// from the device's own 'snmp location', 'system host-name' (with its
-// 'domain-name') and 'snmp description' (the helper's bootstrap): a field
-// that is set is never replaced, and a value the registry does not accept is
-// left out with a line.
+// fillFields fills the registry's empty location and description from the
+// device's own 'snmp location' and 'snmp description' (the helper's
+// bootstrap): a field that is set is never replaced, and a value the
+// registry does not accept is left out with a line. The hostname field is
+// never filled from the device: ssh dials it instead of the address, so the
+// device would name its own target.
 func (ob *onboard) fillFields(raw string) {
 	inv := ob.inv
-	host := deviceValue(raw, "system host-name")
-	if dom := deviceValue(raw, "system domain-name"); host != "" && dom != "" {
-		host += "." + dom
-	}
 	vals := []struct{ field, value string }{
 		{"location", deviceValue(raw, "snmp location")},
-		{"hostname", host},
 		{"description", deviceValue(raw, "snmp description")},
 	}
-	var filled []string
+	var filled, refused []string
 	_, err := inv.deviceWrite(func(f *devreg.File, _ *devreg.Resolver) error {
-		filled = nil
+		filled, refused = nil, nil
 		d := f.Find(ob.name)
 		if d == nil {
 			return errors.New("not registered")
@@ -654,7 +767,7 @@ func (ob *onboard) fillFields(raw string) {
 			}
 			c := d.Clone()
 			if err := setField(&c, v.field, v.value, false); err != nil {
-				inv.echo("  The device's " + v.field + " '" + cleanLine(v.value) + "' is not stored: " + strings.Join(msgs(err), " "))
+				refused = append(refused, "  The device's "+v.field+" '"+cleanLine(v.value)+"' is not stored: "+cleanLine(strings.Join(msgs(err), " ")))
 				continue
 			}
 			_ = setField(d, v.field, v.value, false)
@@ -665,12 +778,15 @@ func (ob *onboard) fillFields(raw string) {
 		}
 		return nil
 	})
+	for _, l := range refused {
+		inv.echo(l)
+	}
 	switch {
 	case errors.Is(err, errNothingToFill):
 	case err != nil:
 		inv.app.Out.Warn("the device's own values were not stored: " + strings.Join(msgs(err), " "))
 	default:
-		inv.echo("  From the device: " + strings.Join(filled, "; "))
+		inv.echo("  From the device: " + cleanLine(strings.Join(filled, "; ")))
 	}
 }
 
@@ -692,12 +808,18 @@ func (ob *onboard) recordLocal(e devreg.Entry, rp *readPlan, id devapply.Identit
 
 // input is the driver's input of one transaction as the local account: the
 // allow-list protects the local account as the invoking login (D133), the
-// device may report the name it reported in the pre-flight.
-func (ob *onboard) input(ar *applyRun, e devreg.Entry, expected []devices.Section, t *devapply.JunosCLI, st *applyState, minutes int) devapply.Input {
+// device may report the name it reported in the pre-flight. fresh is the
+// TACACS+ login the driver reads on after the commit (nil: none).
+func (ob *onboard) input(ar *applyRun, e devreg.Entry, expected []devices.Section, t *devapply.JunosCLI, st *applyState, minutes int,
+	fresh func() *devapply.JunosCLI) devapply.Input {
 	inv := ob.inv
+	names := applyNames(e)
+	if ob.reported != "" {
+		names = append(names, ob.reported)
+	}
 	return devapply.Input{
-		Device: e.Name, Names: applyNames(e), User: ob.user, Transport: t,
-		Plan:           ob.planner(ar, e, expected, t, st),
+		Device: e.Name, Names: names, User: ob.user, Transport: t,
+		Plan:           ob.planner(ar, e, expected, t, st, fresh),
 		Allow:          plan.Allow{Login: ob.local.account, Expected: expected},
 		ConfirmMinutes: minutes,
 		Clock:          inv.app.Knobs.Now, Rand: inv.app.Knobs.Rand(),
@@ -707,11 +829,20 @@ func (ob *onboard) input(ar *applyRun, e devreg.Entry, expected []devices.Sectio
 
 // planner is the driver's Plan: the first read is the local account's (the
 // record keeps it with login=local), the second the convergence read on the
-// fresh TACACS+ login, kept in memory until the change stuck.
-func (ob *onboard) planner(ar *applyRun, e devreg.Entry, expected []devices.Section, t *devapply.JunosCLI, st *applyState) func(context.Context, string, net.IP) (plan.Delta, error) {
+// fresh TACACS+ login, kept in memory until the change stuck. The plain view
+// is read on the login the driver read raw on: the fresh TACACS+ login once
+// there is one, else the held local one.
+func (ob *onboard) planner(ar *applyRun, e devreg.Entry, expected []devices.Section, t *devapply.JunosCLI, st *applyState,
+	fresh func() *devapply.JunosCLI) func(context.Context, string, net.IP) (plan.Delta, error) {
 	return func(ctx context.Context, raw string, from net.IP) (plan.Delta, error) {
 		st.calls++
-		rp, err := ar.planRead(e, expected, raw, t.ReadPlain(ctx), from)
+		r := t
+		if fresh != nil {
+			if v := fresh(); v != nil {
+				r = v
+			}
+		}
+		rp, err := ar.planRead(e, expected, raw, r.ReadPlain(ctx), from)
 		if err != nil {
 			return plan.Delta{}, err
 		}
@@ -793,7 +924,10 @@ func (ob *onboard) commit(ctx context.Context, ar *applyRun, e devreg.Entry, exp
 		return batch.ExitFailed
 	}
 	st := &applyState{}
-	in := ob.input(ar, e, expected, j, st, minutes)
+	// the fresh TACACS+ login the driver reads on after the commit (set and
+	// read on the driver's goroutine)
+	var fresh *devapply.JunosCLI
+	in := ob.input(ar, e, expected, j, st, minutes, func() *devapply.JunosCLI { return fresh })
 	var accept sync.Once
 	verify := devssh.Target{Host: e.Address, Port: e.SSHPort(), User: ob.user, HostKeys: e.HostKeys, Legacy: e.LegacySSH,
 		Password: func() (string, error) { return tacacs(), nil }, ConnectTimeout: devssh.DefaultConnectTimeout, Dialer: inv.deviceDialer()}
@@ -805,8 +939,10 @@ func (ob *onboard) commit(ctx context.Context, ar *applyRun, e devreg.Entry, exp
 			return nil, err
 		}
 		accept.Do(tp.Accepted)
+		fresh = v
 		return v, nil
 	}
+	in.VerifyLogin = ob.verifyLogin
 	var drv devapply.Driver
 	start := inv.app.Knobs.Now()
 	out := drv.Apply(ctx, in, reviewed)
@@ -848,11 +984,18 @@ func committedSomething(e devapply.Exit) bool {
 	return false
 }
 
-// probeLocal is step 9: one more login as the local account, only to say
-// whether it still logs in (with 'authentication-order tacplus' a device
-// refuses it while the server answers). Nothing is typed.
+// probeLocal is step 9: for root, one more login, only to say whether it
+// still logs in (Junos authenticates root locally, never through the
+// server). Any other local account is not probed: with 'authentication-order
+// tacplus' its password would be sent to the TACACS+ server. Nothing is
+// typed.
 func (ob *onboard) probeLocal() {
 	inv := ob.inv
+	if !ob.local.root() {
+		ob.probe = "the local account '" + ob.local.account + "' was not probed (a login would send its password to the TACACS+ server)"
+		inv.echo("  The local account '" + ob.local.account + "' was not probed: a login would send its password to the TACACS+ server.")
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(inv.ctx), devssh.DefaultConnectTimeout+5*time.Second)
 	defer cancel()
 	c, err := devssh.Dial(ctx, ob.target(ob.entry.HostKeys))
@@ -867,6 +1010,7 @@ func (ob *onboard) probeLocal() {
 		inv.echo("  with 'authentication-order tacplus'; it works when the server does not.")
 	default:
 		_, reason, _ := resultOf(ctx, ob.name, err)
+		reason = cleanLine(reason)
 		ob.probe = "the local account could not be probed: " + reason
 		inv.echo("  The local account '" + ob.local.account + "' could not be probed: " + reason + ".")
 	}

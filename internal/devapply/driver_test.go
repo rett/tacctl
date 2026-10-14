@@ -350,6 +350,34 @@ func TestRolledBackFreshLoginRefused(t *testing.T) {
 	}
 }
 
+// A fresh login VerifyLogin does not accept (onboard: a local account of
+// the person's name, not the rendered template user) fails the
+// verification: the change is rolled back.
+func TestRolledBackVerifyLoginRefused(t *testing.T) {
+	d := newDevice(t, nil)
+	before := d.srv.Committed()
+	var seen Login
+	o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
+		in.VerifyLogin = func(lg Login) error {
+			seen = lg
+			return errors.New("'Current user' " + lg.User + " is not the template user EN-CLASS")
+		}
+	})
+	wantExit(t, o, ExitRolledBack, ResultRolledBack)
+	if seen.User == "" || !strings.Contains(o.Reason, "verification failed (the fresh login: 'Current user' "+seen.User+" is not the template user EN-CLASS)") {
+		t.Errorf("%+v %q", seen, o.Reason)
+	}
+	if d.srv.Committed() != before {
+		t.Errorf("not rolled back:\n%s", d.srv.Committed())
+	}
+	// a login it accepts is applied
+	d2 := newDevice(t, nil)
+	o = apply(t, d2, &planner{desired: desiredLines()}, func(in *Input) {
+		in.VerifyLogin = func(Login) error { return nil }
+	})
+	wantExit(t, o, ExitApplied, ResultApplied)
+}
+
 func TestRolledBackStillLacks(t *testing.T) {
 	d := newDevice(t, nil)
 	before := d.srv.Committed()

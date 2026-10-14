@@ -258,6 +258,7 @@ type Server struct {
 	logins   int
 	commands []string
 	events   []string
+	execs    []string
 	stopped  bool
 }
 
@@ -318,6 +319,27 @@ func (s *Server) Commands() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.commands...)
+}
+
+// ExecsBy is the commands a Junos configure model ran on an exec channel
+// of the login user, in order of arrival.
+func (s *Server) ExecsBy(user string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	for _, e := range s.execs {
+		if u, cmd, ok := strings.Cut(e, "\x00"); ok && u == user {
+			out = append(out, cmd)
+		}
+	}
+	return out
+}
+
+// logExec records an exec channel's command with its login.
+func (s *Server) logExec(user, cmd string) {
+	s.mu.Lock()
+	s.execs = append(s.execs, user+"\x00"+cmd)
+	s.mu.Unlock()
 }
 
 func (s *Server) log(cmd string) {

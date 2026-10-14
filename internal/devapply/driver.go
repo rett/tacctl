@@ -54,6 +54,11 @@ type Input struct {
 	// Verify dials the verification's fresh login (D131 step 9: the
 	// invoking user; onboard: the user's TACACS+ login). Nil for Check.
 	Verify func(ctx context.Context) (Reader, error)
+	// VerifyLogin is optional: it judges what the fresh login's 'show cli
+	// authorization' reports (onboard: the rendered template user and its
+	// class, never a local account of the person's name); an error fails
+	// the verification, which rolls the change back. Nil: any login.
+	VerifyLogin func(Login) error
 	// Plan is the caller's planner: the delta for the read text of the
 	// device, with the address tacctl connects from (D133's --from). It
 	// may refresh the pull record from the text; it must not keep the text.
@@ -680,8 +685,14 @@ func (r *run) verify() string {
 	case !ours(st.History[0], r.id):
 		return "entry 0 of the history is not tacctl's pending commit"
 	}
-	if _, err := vr.Login(ctx); err != nil {
+	lg, err := vr.Login(ctx)
+	if err != nil {
 		return "the fresh login's class: " + r.errText(err)
+	}
+	if r.in.VerifyLogin != nil {
+		if err := r.in.VerifyLogin(lg); err != nil {
+			return "the fresh login: " + r.errText(err)
+		}
 	}
 	landed, err := vr.LandedCompare(ctx, r.delta)
 	if err != nil {

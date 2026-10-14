@@ -17,6 +17,7 @@ package cli
 import (
 	"errors"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/rett/tacctl/internal/devconf"
@@ -159,7 +160,11 @@ func (inv *invocation) localLoginDevice(l *localLogin, chosen *chosenDevices) er
 		return inv.usageErr("'" + e.Name + "' (" + dashAddrText(e.Address) + ") is answered by no scope: no scope's prefixes cover its address. Nothing was sent.")
 	}
 	if l.root() {
-		recs, _ := inv.configStore().Load()
+		// a record file that cannot be read is not 'never read as you'
+		recs, err := inv.configStore().Load()
+		if err != nil {
+			return inv.usageErr(strings.Join(msgs(err), " ") + ": whether '" + e.Name + "' was read as your own login is not known, and --login root is only for a device that never was. Nothing was sent.")
+		}
 		if rec, ok := recs.Of(e.Name); ok && rec.PulledAsUser() {
 			return inv.usageErr("--login root is for a device that was never read as your own login, and '"+e.Name+"' was. Nothing was sent.",
 				"Read it as you (tacctl device config pull "+e.Name+"), or with --login as another local account.")

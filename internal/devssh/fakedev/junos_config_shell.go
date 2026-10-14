@@ -247,6 +247,7 @@ func (s *Server) junosExec(d *junosDevice, ch ssh.Channel, jc junosConn, cmd str
 		return
 	}
 	s.log(cmd)
+	s.logExec(jc.user, cmd)
 	if s.t.hangs(cmd) {
 		<-s.quit
 		return

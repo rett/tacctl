@@ -49,9 +49,9 @@ fixture adds `show chassis hardware.out` as above. `junos/` has no
 `config.set` and is the 0.2.4 pull's device; `junos-apply/` is the copy to
 start an apply test from (`tests/helpers/fakedev.bash` `fakedev_dir
 junos-apply`). `junos-blank/` is a device with no TACACS+ or RADIUS server,
-a local account (`local`: `admin`) and a root login (`root`), for `device
-onboard`, `device collect` and `--login`
-(`tests/integration/device_onboard.bats`, `device_collect.bats`,
+a local account (`local`: `admin`), a root login (`root`) and alice's
+TACACS+ template user (`template`), for `device onboard`, `device collect`
+and `--login` (`tests/integration/device_onboard.bats`, `device_collect.bats`,
 `device_sync.bats`, `device_config_login.bats`);
 `TACCTL_TEST_LOCAL_PASSWORD` is the password tacctl logs in with as the
 local account.
@@ -67,6 +67,7 @@ fixture directory ships none, a test writes the ones it needs.
 | `device` | `hostname <h>`, `model <m>`, `junos <release>`: `show version` when there is no `show version.out`; the committed `system host-name` names the prompt |
 | `class` | `<class>` for every login, or `<user> <class>`; default `super-user`. `read-only`, `operator` and `unauthorized` cannot `configure` (`unknown command.`) |
 | `local` | `<user> <password> [<class>]` per line: local accounts beside the server's login |
+| `template` | `<user> <template> <class>` per line: that login is a TACACS+ one mapped to a local template user; `show cli authorization` prints `Current user: '<template>' login: '<user>' class '<class>'` |
 | `root` | the password of `root`, whose shell is a csh (`root@<host>% `): `cli` starts the CLI, and an exec of `sh -c '...; exec cli'` starts it at once; any other csh word is `<word>: Command not found.` |
 | `switch` | the `{master:0}` line before every prompt of a virtual chassis: absent or empty is `{master:0}`, `off` none, `<role>:<n>` that |
 | `banner` | text before the first prompt (it may look like a prompt) |
