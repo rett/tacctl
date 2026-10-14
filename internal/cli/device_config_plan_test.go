@@ -152,7 +152,7 @@ func TestPlanJunosFromTheLastPull(t *testing.T) {
 	if !strings.HasPrefix(lines[0], "##### lab-j  192.168.1.20  scope lab  juniper (TACACS+) #####") {
 		t.Errorf("first line %q", lines[0])
 	}
-	for _, want := range []string{"##### PASTE FROM HERE: lab-j #####\nconfigure private\n", "\nshow | compare | no-more\ncommit check\ncommit confirmed 5 comment \"tacctl plan lab-j ",
+	for _, want := range []string{"##### PASTE FROM HERE: lab-j #####\nconfigure exclusive\n", "\nshow | compare | no-more\ncommit check\ncommit confirmed 5 comment \"tacctl plan lab-j ",
 		"##### PASTE TO HERE: lab-j #####\n", "set system authentication-order tacplus\n", "Left alone. To remove it later: delete system"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("no %q in\n%s", want, out)
@@ -205,7 +205,7 @@ func TestPlanCannotPlanWhatIsNotCurrent(t *testing.T) {
 		if !strings.Contains(b.sb.stderr(), c.dev+" cannot be planned: "+c.want) || !strings.Contains(out, "CANNOT BE PLANNED: "+c.want) {
 			t.Errorf("%s: stdout %q stderr %q", c.dev, out, b.sb.stderr())
 		}
-		if strings.Contains(out, "configure private") || strings.Contains(out, "PASTE FROM HERE") {
+		if strings.Contains(out, "configure exclusive") || strings.Contains(out, "PASTE FROM HERE") {
 			t.Errorf("%s: a region for a device that cannot be planned:\n%s", c.dev, out)
 		}
 		if al := b.auditLines("device config plan"); len(al) != 1 || !strings.Contains(al[0], "device="+c.dev+" status=cannot-plan sections=-") {
@@ -242,7 +242,7 @@ func TestPlanFormatsAndFiles(t *testing.T) {
 	bad := func(want string, args ...string) {
 		t.Helper()
 		out := b.run(append([]string{"device", "config", "plan", "lab-j"}, args...)...)
-		if b.sb.code != 2 || !strings.Contains(b.sb.stderr(), want) || strings.Contains(out, "configure private") {
+		if b.sb.code != 2 || !strings.Contains(b.sb.stderr(), want) || strings.Contains(out, "configure exclusive") {
 			t.Errorf("%v: exit %d stdout %q stderr %q", args, b.sb.code, out, b.sb.stderr())
 		}
 	}
@@ -267,11 +267,11 @@ func TestPlanFormatsAndFiles(t *testing.T) {
 	}
 	// --section: the others are not planned
 	out = b.run("device", "config", "plan", "lab-j", "--section", "roles")
-	if b.sb.code != 0 || strings.Contains(out, "configure private") || !strings.Contains(out, "Not selected (--section): aaa") {
+	if b.sb.code != 0 || strings.Contains(out, "configure exclusive") || !strings.Contains(out, "Not selected (--section): aaa") {
 		t.Errorf("section: %d\n%s", b.sb.code, out)
 	}
 	out = b.run("device", "config", "plan", "lab-j", "--section", "aaa,roles")
-	if b.sb.code != 0 || !strings.Contains(out, "configure private") || !strings.Contains(out, "Not selected (--section): snmp, mgmt-acl") {
+	if b.sb.code != 0 || !strings.Contains(out, "configure exclusive") || !strings.Contains(out, "Not selected (--section): snmp, mgmt-acl") {
 		t.Errorf("sections: %d\n%s", b.sb.code, out)
 	}
 	// --json: values elided, the region and the back-out in lists
@@ -288,7 +288,7 @@ func TestPlanFormatsAndFiles(t *testing.T) {
 		} `json:"extras"`
 	}
 	if err := json.Unmarshal([]byte(js), &docs); err != nil || len(docs) != 1 || docs[0].Name != "lab-j" || docs[0].Status != "needs-change" ||
-		docs[0].Region[0] != "configure private" || len(docs[0].Backout) == 0 || len(docs[0].Extras) == 0 {
+		docs[0].Region[0] != "configure exclusive" || len(docs[0].Backout) == 0 || len(docs[0].Extras) == 0 {
 		t.Errorf("json: %v\n%s", err, js)
 	}
 	// --backout: its own region, with its own banners, and no plan region
@@ -465,7 +465,7 @@ func TestPlanConvergeCleanupAndFrom(t *testing.T) {
 	}
 	// as pulled: the first region, the sentence, no cleanup
 	if strings.Contains(out, "CLEANUP FROM HERE") || strings.Contains(out, "CLEANUP TO HERE") || strings.Contains(out, "tacctl cleanup lab-j") ||
-		!strings.Contains(out, "##### PASTE FROM HERE: lab-j #####\nconfigure private\n") {
+		!strings.Contains(out, "##### PASTE FROM HERE: lab-j #####\nconfigure exclusive\n") {
 		t.Errorf("the cleanup beside the first region:\n%s", out)
 	}
 	if !strings.Contains(unwrapPlan(out), "Cleanup (--converge): cleanup comes after this region is pasted and verified: pull the device, then plan --converge again.") {
@@ -513,7 +513,7 @@ func TestPlanConvergeCleanupAndFrom(t *testing.T) {
 	if b.sb.code != 0 {
 		t.Fatalf("exit %d %s", b.sb.code, b.sb.stderr())
 	}
-	for _, want := range []string{"##### CLEANUP FROM HERE: lab-j #####\nconfigure private\n",
+	for _, want := range []string{"##### CLEANUP FROM HERE: lab-j #####\nconfigure exclusive\n",
 		"delete system tacplus-server 192.0.2.99\nshow | compare | no-more\ncommit check\ncommit confirmed 5 comment \"tacctl cleanup lab-j ",
 		"##### CLEANUP TO HERE: lab-j #####\n"} {
 		if !strings.Contains(out, want) {
@@ -567,7 +567,7 @@ func TestPlanRefusesWhatAGroupOwns(t *testing.T) {
 	b.servePlain(strings.Join(plainView, "\n") + "\n")
 	b.run("device", "config", "pull", "lab-j")
 	out := b.run("device", "config", "plan", "lab-j")
-	if b.sb.code != 1 || strings.Contains(out, "configure private") ||
+	if b.sb.code != 1 || strings.Contains(out, "configure exclusive") ||
 		!strings.Contains(unwrapPlan(out), "CANNOT BE PLANNED") && !strings.Contains(unwrapPlan(out), "refused") {
 		t.Errorf("a statement of a group: %d\n%s", b.sb.code, out)
 	}
@@ -591,7 +591,7 @@ func TestPlanRefusesWhatAGroupOwns(t *testing.T) {
 	}
 	b.run("device", "config", "pull", "lab-j")
 	out = b.run("device", "config", "plan", "lab-j")
-	if b.sb.code != 0 || !strings.Contains(out, "configure private") || !strings.Contains(unwrapPlan(out), "not checked (pull the device again to read it)") {
+	if b.sb.code != 0 || !strings.Contains(out, "configure exclusive") || !strings.Contains(unwrapPlan(out), "not checked (pull the device again to read it)") {
 		t.Errorf("without a plain view: %d\n%s", b.sb.code, out)
 	}
 }

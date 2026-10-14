@@ -176,10 +176,16 @@ func Redact(line string) string {
 	if len(toks) == 0 {
 		return line
 	}
-	keep := redactAt(toks)
+	// A leading 'tacctl' is kept as typed and is no part of the command.
+	lead := BinaryWords(toks)
+	if lead == len(toks) {
+		return line
+	}
+	keep := redactAt(toks[lead:])
 	if keep < 0 {
 		return line
 	}
+	keep += lead
 	kept := make([]string, 0, keep+2)
 	for _, t := range toks[:keep] {
 		kept = append(kept, Quote(t))

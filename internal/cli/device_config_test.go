@@ -99,12 +99,12 @@ func TestDeviceConfigUsage(t *testing.T) {
 			!strings.Contains(out, "show <name> [--protocol tacacs|radius] [--legacy] [--server <address|name>] [--source <address>]") {
 			t.Errorf("%v: %d %q", args, sb.code, out)
 		}
-		for _, w := range []string{"pull <name>", "diff <name>", "list [--stale]", "forget <name>"} {
+		for _, w := range []string{"pull <name>", "diff <name>", "apply <name>", "shapes [list", "list [--stale]", "forget <name>"} {
 			if !strings.Contains(out, w) {
 				t.Errorf("%v: the usage lacks %q:\n%s", args, w, out)
 			}
 		}
-		for _, banned := range []string{"apply", "0.2.4", "0.2.5", "renamed", "removed"} {
+		for _, banned := range []string{"0.2.4", "0.2.5", "renamed", "removed"} {
 			if strings.Contains(out, banned) {
 				t.Errorf("%v: the usage mentions %q", args, banned)
 			}

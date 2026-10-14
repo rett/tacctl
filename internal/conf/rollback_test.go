@@ -32,24 +32,24 @@ func TestRollbackTablesMatchTheSchema(t *testing.T) {
 		}
 	}
 	for _, f := range schema {
-		in022, in023, in024, in025, in027 := slices.Contains(Known022, f), slices.Contains(Added023, f), slices.Contains(Added024, f), slices.Contains(Added025, f), slices.Contains(Added027, f)
+		in022, in023, in024, in025, in027, in029 := slices.Contains(Known022, f), slices.Contains(Added023, f), slices.Contains(Added024, f), slices.Contains(Added025, f), slices.Contains(Added027, f), slices.Contains(Added029, f)
 		n := 0
-		for _, in := range []bool{in022, in023, in024, in025, in027} {
+		for _, in := range []bool{in022, in023, in024, in025, in027, in029} {
 			if in {
 				n++
 			}
 		}
 		switch {
 		case n > 1:
-			t.Errorf("%+v is in more than one of Known022, Added023, Added024, Added025 and Added027", f)
+			t.Errorf("%+v is in more than one of Known022, Added023, Added024, Added025, Added027 and Added029", f)
 		case n == 0:
-			t.Errorf("schema.go has the key family %+v, which rollback.go lists in none of Known022 (0.2.2 has it), Added023 (0.2.3 added it), Added024 (0.2.4 added it), Added025 (0.2.5 added it) and Added027 (0.2.7 added it): decide, so a rollback knows what to remove", f)
+			t.Errorf("schema.go has the key family %+v, which rollback.go lists in none of Known022 (0.2.2 has it), Added023 (0.2.3 added it), Added024 (0.2.4 added it), Added025 (0.2.5 added it), Added027 (0.2.7 added it) and Added029 (0.2.9 added it): decide, so a rollback knows what to remove", f)
 		}
 	}
 	for _, tbl := range []struct {
 		name string
 		list []Family
-	}{{"Known022", Known022}, {"Added023", Added023}, {"Added024", Added024}, {"Added025", Added025}, {"Added027", Added027}} {
+	}{{"Known022", Known022}, {"Added023", Added023}, {"Added024", Added024}, {"Added025", Added025}, {"Added027", Added027}, {"Added029", Added029}} {
 		for _, f := range tbl.list {
 			if !slices.Contains(schema, f) {
 				t.Errorf("%s lists %+v, which schema.go no longer has", tbl.name, f)
@@ -138,6 +138,22 @@ func TestKnown023IsTheSchemaOfTheTag(t *testing.T) {
 		if slices.Contains(want, f.Path) {
 			t.Errorf("Added024 lists %q, which the schema of 0.2.3 has", f.Path)
 		}
+	}
+}
+
+// Where the 0.2.8 tag is here, Added029 holds nothing its schema has: the
+// rollback to 0.2.8 removes exactly the keys 0.2.9 added, and the settings
+// of 'device config apply' are among them.
+func TestAdded029IsNotInTheSchemaOfTheTag(t *testing.T) {
+	want := tagSchemaKeys(t, "0.2.8")
+	for _, f := range Added029 {
+		if slices.Contains(want, f.Path) {
+			t.Errorf("Added029 lists %q, which the schema of 0.2.8 has", f.Path)
+		}
+	}
+	if !Added029Key("device.apply.pause") || !Added029Key("device.apply.confirm_timeout") ||
+		Added029Key("device.config.confirm_timeout") || Added029Key("device.apply.pause.x") {
+		t.Error("Added029Key is not the two device.apply keys")
 	}
 }
 

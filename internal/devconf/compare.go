@@ -38,6 +38,12 @@ type Extracted struct {
 	// ever kept); empty when the text has none. The plan's restore point
 	// (0.2.7) is the one reader. It is no section and never compared.
 	ArchiveFS string
+	// Hostname is, for Junos, the device's own name as its configuration
+	// states it ('system host-name', with 'system domain-name' appended
+	// when the name has no dot): "" for a text that has none and for every
+	// other vendor. It is no section and never compared; 'device sync'
+	// (0.2.9) is the reader.
+	Hostname string
 }
 
 // Options are the optional inputs of ExtractWith.
@@ -88,7 +94,11 @@ func ExtractWith(vendor, raw string, opt Options) (Extracted, error) {
 	}
 	switch fam {
 	case FamilyJunos:
-		return junosExtract(raw, opt.Expected, opt.SecretsVisible)
+		ext, err := junosExtract(raw, opt.Expected, opt.SecretsVisible)
+		if err == nil {
+			ext.Hostname = JunosHostName(raw)
+		}
+		return ext, err
 	case FamilyWTI:
 		return wtiExtract(raw, opt.Expected, opt.SecretsVisible)
 	}

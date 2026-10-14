@@ -115,7 +115,8 @@ type Options struct {
 	// Help is the text of 'help <words>'; false when there is none.
 	Help func(words []string) (string, bool)
 	// Exec runs a tacctl command with the terminal's stdout and stderr and
-	// the given stdin, and returns its exit status.
+	// the given stdin, and returns its exit status. It gets no words for a
+	// line that is only 'tacctl': the command with no arguments.
 	Exec func(ctx context.Context, words []string, stdin io.Reader) int
 	// SystemShell, when set, is the word system-shell (the console's): it
 	// is listed and completed with the shell's own words and runs this
@@ -179,10 +180,21 @@ func (s *Shell) run(ctx context.Context, line string, stdin io.Reader) (status i
 		s.errorf("%v", err)
 		return 2, false
 	}
-	if len(words) == 0 {
+	// A pasted 'tacctl device list' (or 'sudo tacctl ...') is 'device
+	// list': from here on the line is the stripped one, for the shell's
+	// own words, the cache, the command that runs and the messages. A line
+	// that is only the command is the command with no arguments: Exec gets
+	// no words and prints what 'tacctl' alone prints.
+	lead := BinaryWords(words)
+	bare := lead > 0 && lead == len(words)
+	words = StripBinary(words)
+	if len(words) == 0 && !bare {
 		return 0, false
 	}
 	s.lines++
+	if bare {
+		return s.o.Exec(ctx, words, stdin), false
+	}
 	if words[0] == SystemShellWord && s.o.SystemShell != nil {
 		if len(words) > 1 {
 			s.errorf("%s takes no arguments", SystemShellWord)

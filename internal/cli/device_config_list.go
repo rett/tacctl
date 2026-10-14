@@ -60,10 +60,129 @@ func (inv *invocation) configRecords() *devconf.Records {
 	return recs
 }
 
+// appliedCell is the APPLIED column of 'device config list' (D138): what
+// 'device config apply' last did to the device, "-" for nothing.
+func appliedCell(a *devconf.Applied) string {
+	switch {
+	case a == nil || a.Result == "":
+		return "-"
+	case a.Result == devconf.AppliedPending && !a.Until.IsZero():
+		return "PENDING " + a.Until.Format("15:04")
+	case a.Result == devconf.AppliedPending:
+		return "PENDING"
+	case a.Result == devconf.AppliedApplied:
+		return "applied " + seenTime(a.At)
+	}
+	return a.Result
+}
+
+// applyBlock is the apply half of the Configuration row: when, by whom, the
+// change identifier and the shape of the last check or apply, and for a
+// pending commit what must not be typed.
+func applyBlock(a *devconf.Applied) string {
+	if a == nil || a.Result == "" {
+		return ""
+	}
+	who := ""
+	if a.By != "" {
+		who = " by " + a.By
+	}
+	detail := func(parts ...string) string {
+		var kept []string
+		for _, p := range parts {
+			if p != "" {
+				kept = append(kept, p)
+			}
+		}
+		if len(kept) == 0 {
+			return ""
+		}
+		return " (" + strings.Join(kept, ", ") + ")"
+	}
+	shape := ""
+	if a.Shape != "" {
+		shape = "shape " + a.Shape
+	}
+	when := ""
+	if !a.At.IsZero() {
+		when = " " + seenTime(a.At)
+	}
+	switch a.Result {
+	case devconf.AppliedApplied:
+		return "applied" + when + who + detail(a.ID, shape)
+	case devconf.AppliedChecked:
+		return "checked" + when + who + detail(shape)
+	case devconf.AppliedPending, devconf.AppliedUnknown:
+		until := ""
+		if !a.Until.IsZero() {
+			until = " until " + a.Until.Format("15:04:05")
+		}
+		word := "PENDING"
+		if a.Result == devconf.AppliedUnknown {
+			word = "unknown, may be pending"
+		}
+		return ui.Red + word + until + ui.NC + detail(a.ID) + ": do not type commit or commit check on the device"
+	}
+	// rolled-back, failed
+	s := strings.ReplaceAll(a.Result, "-", " ") + when + who + detail(a.ID)
+	if a.Reason != "" {
+		s += ": " + cleanLine(a.Reason)
+	}
+	return s
+}
+
+// appliedJSON is the apply record in --json: no raw output, no secret.
+type appliedJSON struct {
+	Result   string   `json:"result"`
+	Kind     string   `json:"kind,omitempty"`
+	At       string   `json:"at,omitempty"`
+	By       string   `json:"by,omitempty"`
+	ID       string   `json:"id,omitempty"`
+	Shape    string   `json:"shape,omitempty"`
+	Sections []string `json:"sections,omitempty"`
+	Set      int      `json:"set,omitempty"`
+	Delete   int      `json:"delete,omitempty"`
+	Insert   int      `json:"insert,omitempty"`
+	Until    string   `json:"until,omitempty"`
+	Reason   string   `json:"reason,omitempty"`
+	Commit   int      `json:"commit,omitempty"`
+}
+
+// appliedJSONOf is the record's apply part for --json; nil when there is
+// none.
+func appliedJSONOf(a *devconf.Applied) *appliedJSON {
+	if a == nil || a.Result == "" {
+		return nil
+	}
+	j := &appliedJSON{Result: a.Result, Kind: a.Kind, By: a.By, ID: a.ID, Shape: a.Shape, Sections: a.Sections,
+		Set: a.Set, Delete: a.Delete, Insert: a.Insert, Reason: cleanLine(a.Reason)}
+	if !a.At.IsZero() {
+		j.At = a.At.UTC().Format(time.RFC3339)
+	}
+	if !a.Until.IsZero() {
+		j.Until = a.Until.UTC().Format(time.RFC3339)
+	}
+	if a.Commit != nil {
+		j.Commit = a.Commit.Seq
+	}
+	return j
+}
+
 // configBlock is the 'Configuration' row of 'device show': when, by whom
 // and over what the last pull read the device, its result and the state of
-// each section.
+// each section, then what 'device config apply' last did to it.
 func configBlock(e devreg.Entry, rec *devconf.Record) string {
+	s := pullBlock(e, rec)
+	if rec != nil {
+		if a := applyBlock(rec.Applied); a != "" {
+			s += "; apply: " + a
+		}
+	}
+	return s
+}
+
+// pullBlock is the pull half of the Configuration row.
+func pullBlock(e devreg.Entry, rec *devconf.Record) string {
 	switch {
 	case !e.Configured:
 		return "not read (no scope's prefixes cover its address)"
@@ -134,9 +253,11 @@ type listJSON struct {
 	Netconf   string `json:"netconf,omitempty"`
 	// Release is the OS release the last good pull read from the device
 	// (a WTI unit's command menu version); absent when none was read.
-	Release   string            `json:"release,omitempty"`
-	Sections  map[string]string `json:"sections,omitempty"`
-	DiffersIn []string          `json:"differs_in,omitempty"`
+	Release  string            `json:"release,omitempty"`
+	Sections map[string]string `json:"sections,omitempty"`
+	// Applied is what 'device config apply' last did (absent: nothing).
+	Applied   *appliedJSON `json:"applied,omitempty"`
+	DiffersIn []string     `json:"differs_in,omitempty"`
 	// Unmanaged counts, per section that is ok, the device's own
 	// statements it holds beside what tacctl renders.
 	Unmanaged map[string]int `json:"unmanaged,omitempty"`
@@ -272,6 +393,7 @@ func (inv *invocation) deviceConfigList(args []string) error {
 			if r.rec != nil {
 				j.Result, j.By, j.Transport = r.rec.Result, r.rec.By, r.rec.Transport
 				j.Release = cleanLine(r.rec.Release)
+				j.Applied = appliedJSONOf(r.rec.Applied)
 				if !r.rec.Pulled.IsZero() {
 					j.Pulled = r.rec.Pulled.UTC().Format(time.RFC3339)
 				}
@@ -302,8 +424,16 @@ func (inv *invocation) deviceConfigList(args []string) error {
 		inv.echo("")
 		return nil
 	}
-	tb := ui.NewTable(head, ui.Left("NAME"), ui.Left("SCOPE"), ui.Left("VENDOR"), ui.Left("RELEASE"), ui.Left("CONFIG"), ui.Left("PULLED"),
-		ui.Left("BY"), ui.Left("VIA"), ui.Left("NETCONF"), ui.Left("DETAIL"))
+	// The APPLIED column appears once a listed device has been checked or
+	// applied (0.2.9): a list of devices that never were has the columns it
+	// always had.
+	withApplied := slices.ContainsFunc(rows, func(r row) bool { return r.rec != nil && appliedCell(r.rec.Applied) != "-" })
+	cols := []ui.Col{ui.Left("NAME"), ui.Left("SCOPE"), ui.Left("VENDOR"), ui.Left("RELEASE"), ui.Left("CONFIG")}
+	if withApplied {
+		cols = append(cols, ui.Left("APPLIED"))
+	}
+	cols = append(cols, ui.Left("PULLED"), ui.Left("BY"), ui.Left("VIA"), ui.Left("NETCONF"), ui.Left("DETAIL"))
+	tb := ui.NewTable(head, cols...)
 	for _, r := range rows {
 		pulled, by, via, nc, detail, release := "-", "-", "-", "-", "-", "-"
 		if r.rec != nil {
@@ -354,7 +484,15 @@ func (inv *invocation) deviceConfigList(args []string) error {
 		if !r.e.Configured {
 			detail = "no scope"
 		}
-		tb.Add(r.e.Name, dash(r.e.Scope), r.e.Vendor, release, r.state, pulled, by, via, nc, detail)
+		cells := []any{r.e.Name, dash(r.e.Scope), r.e.Vendor, release, r.state}
+		if withApplied {
+			ap := "-"
+			if r.rec != nil {
+				ap = appliedCell(r.rec.Applied)
+			}
+			cells = append(cells, ap)
+		}
+		tb.Add(append(cells, pulled, by, via, nc, detail)...)
 	}
 	inv.write(tb.String())
 	inv.echo("")

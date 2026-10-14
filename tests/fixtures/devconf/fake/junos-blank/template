@@ -1,0 +1,3 @@
+# '<user> <template> <class>': alice's TACACS+ login maps to her group's
+# template user (the superuser group's RW-CLASS)
+alice RW-CLASS RW-CLASS

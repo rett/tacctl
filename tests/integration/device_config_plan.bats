@@ -61,7 +61,7 @@ drift() {
     assert_line --regexp '^##### lab-j  192\.168\.1\.20  scope lab  juniper \(TACACS\+\) #####$'
     assert_output --partial "CONSISTENT: nothing to paste."
     refute_output --partial "PASTE FROM HERE"
-    refute_output --partial "configure private"
+    refute_output --partial "configure exclusive"
     stub_called 'logger -t tacctl -p auth.info device config plan user=alice device=lab-j status=consistent sections=- converge=no secrets=none out=-'
 }
 
@@ -74,7 +74,7 @@ drift() {
     assert_output --partial "extra: a TACACS+ server 192.0.2.99"
     assert_output --partial "Left alone. To remove it later: delete system"
     assert_line "##### PASTE FROM HERE: lab-j #####"
-    assert_line "configure private"
+    assert_line "configure exclusive"
     assert_line "set system authentication-order tacplus"
     assert_line "show | compare | no-more"
     assert_line "commit check"
@@ -133,7 +133,7 @@ assert len(d) == 1, d
 d = d[0]
 assert d["name"] == "lab-j" and d["scope"] == "lab" and d["vendor"] == "juniper", d
 assert d["status"] == "needs-change", d
-assert d["region"][0] == "configure private" and d["region"][-1].startswith("commit confirmed 5 "), d["region"]
+assert d["region"][0] == "configure exclusive" and d["region"][-1].startswith("commit confirmed 5 "), d["region"]
 assert d["backout"], d
 assert [e["text"] for e in d["extras"]] == ["set system tacplus-server 192.0.2.99 secret"], d["extras"]
 assert d["extras"][0]["remove"] == ["delete system tacplus-server 192.0.2.99"], d["extras"]
@@ -299,7 +299,7 @@ print("fine")' <<< "$output"
     assert_failure 1
     assert_output --partial "lab-j cannot be planned: not pulled: tacctl device config pull lab-j (or --pull)"
     assert_output --partial "CANNOT BE PLANNED: not pulled"
-    refute_output --partial "configure private"
+    refute_output --partial "configure exclusive"
     alice device config pull lab-j
     assert_success
     # a pull of 45 days ago
@@ -351,7 +351,7 @@ print("fine")' <<< "$output"
     assert_failure 1
     assert_output --partial "lab-j cannot be planned: refused: aaa:"
     assert_output --partial "inherited from a group"
-    refute_output --partial "configure private"
+    refute_output --partial "configure exclusive"
     # a device that answers no plain view: planned, and the report says the
     # check was not made
     rm -f "$JPLAIN"

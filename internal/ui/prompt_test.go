@@ -23,6 +23,23 @@ func newPrompter(in string) (*Prompter, *bytes.Buffer, *bytes.Buffer) {
 
 // --- Ask / Confirm: read -rp semantics ---
 
+// ReadLine reads as Ask does, shows nothing, and tells the end of input from
+// a blank line.
+func TestReadLineEndsAtEOF(t *testing.T) {
+	p, _, errb := newPrompter(" OK \n\nlast")
+	for _, want := range []string{"OK", "", "last"} {
+		if got, ok := p.ReadLine(); !ok || got != want {
+			t.Errorf("ReadLine = %q %v, want %q", got, ok, want)
+		}
+	}
+	if got, ok := p.ReadLine(); ok || got != "" {
+		t.Errorf("at EOF: %q %v", got, ok)
+	}
+	if errb.Len() != 0 {
+		t.Errorf("shown: %q", errb.String())
+	}
+}
+
 func TestAskReadsALineAndTrimsBlanks(t *testing.T) {
 	for in, want := range map[string]string{
 		"y\n": "y", "  y \n": "y", "\ty\t\n": "y", "y": "y", "yes please\n": "yes please",

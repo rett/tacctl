@@ -146,11 +146,12 @@ func TestRollbackRefusesOtherVersions(t *testing.T) {
 	hs := rollbackState(t)
 	before := tree(t, hs.dir)
 	for _, c := range []struct{ arg, want string }{
-		{"0.2.2", "prepares the state for 0.2.3 only (0.2.2 is older)"},
+		{"0.2.2", "and 0.2.3 only (0.2.2 is older)"},
 		{"0.2.1", "Rolling back to 0.2.1 is not supported from this release"},
 		{"0.1.16", "is older"},
-		{"0.2.4", "prepares the state for 0.2.3 only"},
-		{"0.3.0", "prepares the state for 0.2.3 only"},
+		{"0.2.4", "and 0.2.3 only (0.2.4 is further back)"},
+		{"0.2.7", "and 0.2.3 only (0.2.7 is further back)"},
+		{"0.3.0", "and 0.2.3 only"},
 		{"main", "is not a release this tacctl knows"},
 	} {
 		for _, extra := range [][]string{nil, {"--apply", "--yes"}} {
@@ -682,13 +683,13 @@ func oldBinary(t *testing.T) string {
 	return bin
 }
 
-// The completion: the one version it takes, then the flags not yet typed.
+// The completion: the two versions it takes, then the flags not yet typed.
 func TestRollbackCompletion(t *testing.T) {
 	for _, c := range []struct {
 		words []string
 		want  []string
 	}{
-		{[]string{"rollback", ""}, []string{"0.2.3"}},
+		{[]string{"rollback", ""}, []string{"0.2.8", "0.2.3"}},
 		{[]string{"rollback", "0.2.3", ""}, []string{"--apply", "--yes", "--hosts"}},
 		{[]string{"rollback", "0.2.3", "--apply", ""}, []string{"--yes", "--hosts"}},
 		{[]string{"rollback", "0.2.3", "--apply", "--yes", "--hosts", ""}, nil},

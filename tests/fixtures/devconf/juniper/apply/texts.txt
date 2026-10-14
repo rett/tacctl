@@ -1,0 +1,122 @@
+# Junos 25.4R1 (EX4300 virtual chassis), lab capture 2026-10-13, device name
+# replaced; CR bytes dropped. Each block: the command, then the output.
+
+## configure exclusive
+warning: uncommitted changes will be discarded on exit
+Entering configuration mode
+
+{master:0}[edit]
+
+## configure exclusive (held by another session)
+error: configuration database locked by:
+  admin terminal pts/0 (pid 84557) on since 2026-10-13 20:02:28 AKDT
+      exclusive {master:0}[edit]
+
+{master:0}
+
+## commit check
+configuration check succeeds
+
+{master:0}[edit]
+
+## commit confirmed 2 comment "zz-tacctl spike L2"
+configuration check succeeds
+commit confirmed will be automatically rolled back in 2 minutes unless confirmed
+commit complete
+
+# commit confirmed will be rolled back in 2 minutes
+{master:0}[edit]
+
+## commit confirmed (private session)
+error: commit confirmed not supported for private configuration
+
+{master:0}[edit]
+
+## rollback 1
+load complete
+
+# commit confirmed will be rolled back in 2 minutes
+{master:0}[edit]
+
+## commit comment "zz-tacctl spike L2 cancel"
+configuration check succeeds
+commit complete
+
+{master:0}[edit]
+
+## show system commit (a pending commit; its label stays after a check confirms it)
+0   2026-10-13 20:03:16 AKDT by admin via cli commit confirmed, rollback in 1mins
+    zz-tacctl spike L2b
+1   2026-10-13 20:02:42 AKDT by admin via cli
+    zz-tacctl spike clean
+
+## show configuration | compare rollback 1
+[edit system login]
++    class zz-tacctl-spike2 {
++        permissions view;
++    }
+
+## root login: the wrapper as the remote command (with or without a pty)
+# ssh root@host "sh -c 'PATH=$PATH:/usr/sbin:/usr/bin:/sbin:/bin; exec cli'"
+
+{master:0}
+root@lab-sw1> show version | match "^Junos:"
+Junos: 25.4R1-S2.3
+
+{master:0}
+root@lab-sw1> configure
+Entering configuration mode
+
+{master:0}[edit]
+root@lab-sw1# exit
+Exiting configuration mode
+
+{master:0}
+root@lab-sw1> quit
+
+# root's own login shell prompt: root@lab-sw1:RE:0%  (csh)
+
+## show | compare (2026-10-14: a staged trap group beside an existing one)
+[edit snmp]
+    trap-group zz-tacctl-tg { ... }
++   trap-group zz-tacctl-staged {
++       version v2;
++   }
+
+{master:0}[edit]
+
+## show | compare (2026-10-14: a staged view, nothing beside it)
+[edit snmp]
++   view zz-tacctl-staged {
++       oid 1.3.6.1 include;
++   }
+
+{master:0}[edit]
+
+## show system commit (2026-10-14: two applies rolled back by the device at their window's end)
+0   2026-10-14 12:12:17 AKDT by root via other
+1   2026-10-14 12:09:15 AKDT by zz-tacctl-user via cli commit confirmed, rollback in 3mins
+    tacctl apply tacctl-20261014T200908Z-664b by zz-tacctl-user
+2   2026-10-14 12:08:14 AKDT by root via other
+3   2026-10-14 12:05:12 AKDT by zz-tacctl-user via cli commit confirmed, rollback in 3mins
+    tacctl apply tacctl-20261014T200505Z-66e6 by zz-tacctl-user
+4   2026-10-14 12:04:37 AKDT by zz-tacctl-user via cli
+    tacctl apply cancel tacctl-20261014T200426Z-00a9
+5   2026-10-14 12:04:34 AKDT by zz-tacctl-user via cli commit confirmed, rollback in 3mins
+    tacctl apply tacctl-20261014T200426Z-00a9 by zz-tacctl-user
+6   2026-10-14 12:02:16 AKDT by zz-tacctl-user via cli
+    tacctl apply confirm tacctl-20261014T200205Z-72cd by zz-tacctl-user
+7   2026-10-14 12:02:13 AKDT by zz-tacctl-user via cli commit confirmed, rollback in 3mins
+    tacctl apply tacctl-20261014T200205Z-72cd by zz-tacctl-user
+8   2026-10-13 20:13:51 AKDT by admin via cli
+rescue  2024-01-04 11:42:38 AKST by root via cli
+
+## show | compare: one element of a bracketed list removed (delete system accounting events interactive-commands)
+[edit system accounting]
+-   events [ login change-log interactive-commands ];
++   events [ login change-log ];
+
+## show | compare: one element added to a one-element leaf (set system domain-search example.org)
+[edit system]
+-  domain-search example.net;
++  domain-search [ example.net example.org ];

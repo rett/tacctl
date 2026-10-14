@@ -40,8 +40,10 @@ func GroupOfSudoers(text string) (string, bool) {
 // 0.1.x and 0.2.0 drop-in (the rule alone), the 0.2.1 to 0.2.3 one (with
 // the env_keep line for the agent socket, the console's marker and the
 // display), the 0.2.4 to 0.2.6 one (with the password cache's alias too)
-// and the 0.2.7 one (with the editor's alias, before the colour variables
-// joined the env_keep line). Only a file that is exactly one of these (or
+// the 0.2.7 one (with the editor's alias, before the colour variables
+// joined the env_keep line) and the 0.2.8 one (with them, before the cache's
+// alias took the lines of 'device config apply', 'device config shapes
+// seed', 'device onboard' and 'device collect'). Only a file that is exactly one of these (or
 // the current text) is a file tacctl wrote and nobody has touched.
 func groupSudoersEarlier(group string) []string {
 	head := "# Managed by tacctl. Grants passwordless sudo on " + Binary + "\n" +
@@ -52,6 +54,7 @@ func groupSudoersEarlier(group string) []string {
 		head + envKeep027 + rule,
 		GroupSudoers026(group),
 		GroupSudoers027(group),
+		GroupSudoers028(group),
 	}
 }
 

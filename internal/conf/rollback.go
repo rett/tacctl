@@ -118,6 +118,19 @@ var Added027 = []Family{
 	{"blocks_device.", true},
 }
 
+// Added029 are the key families 0.2.9 added: the confirm window and the
+// pause of 'device config apply' (device.apply.*). A 0.2.8 or older
+// binary does not know them (its schema refuses the keys, so its 'config
+// validate' reports them and its 'backup restore' refuses a snapshot that
+// holds them), so a rollback removes them.
+var Added029 = []Family{
+	{"device.apply.confirm_timeout", false},
+	{"device.apply.pause", false},
+}
+
+// Added029Key reports whether path is a key 0.2.9 added.
+func Added029Key(path string) bool { return inFamilies(Added029, path) }
+
 // Added024Key reports whether path is a key 0.2.4 added.
 func Added024Key(path string) bool { return inFamilies(Added024, path) }
 
@@ -192,6 +205,21 @@ func (c *Config) unknown023(path string) bool {
 	}
 	_, ok := c.Schema.RuleFor(path)
 	return !ok
+}
+
+// RollbackKeys028 are the leaf keys of the overrides that a 0.2.8 binary
+// does not know, in file order: the dotted path of each. 0.2.9 added the two
+// device.apply keys (Added029) and nothing else, so these are the leaves of
+// that family; a key neither release knows is not listed (0.2.8 refuses it as
+// 0.2.9 does, and 'config validate' says so).
+func (c *Config) RollbackKeys028() []string {
+	var out []string
+	walkLeaves(c.Overrides(), "", func(p string, _ any) {
+		if Added029Key(p) {
+			out = append(out, p)
+		}
+	})
+	return out
 }
 
 // RollbackKeys022 are the leaf keys of the overrides that a 0.2.2 binary

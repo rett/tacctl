@@ -8,9 +8,14 @@
 # Type this first, on dev-juniper-synthetic-lab-nolo0, and check the name:   show version | match Hostname
 # The prompt must end in > (operational mode) before you paste: a prompt ending in # means a
 # configuration session is open: stop.
+# The region opens configure exclusive: the session holds the configuration lock until you type exit
+# (after commit, to confirm). If it printed "error: configuration database modified", another session
+# has uncommitted changes: have that person commit or discard them, then paste again. If it printed
+# "error: configuration database locked by", another session holds the exclusive lock: wait for it to
+# exit, then paste again. Either way nothing happened (every later line is an unknown command).
 #
 ##### BACK-OUT FROM HERE: dev-juniper-synthetic-lab-nolo0 #####
-configure private
+configure exclusive
 # back-out: the statements as the pull showed them
 delete snmp description
 show | compare | no-more
@@ -18,21 +23,21 @@ commit check
 commit confirmed 5 comment "tacctl backout dev-juniper-synthetic-lab-nolo0 2026-10-10T14:20Z by alice"
 ##### BACK-OUT TO HERE: dev-juniper-synthetic-lab-nolo0 #####
 #
-# If the first line printed "Users currently editing the configuration" or "error: shared
-# configuration database modified": nothing happened; ask that person to commit or roll back, then
-# paste again. If any line printed "error:": do not type commit; the switch undoes this by itself
-# in 5 minutes.
+# If the first line printed "error: configuration database modified" or "error: configuration
+# database locked by": nothing happened (see the note above the region); paste again once it is
+# cleared. If any line printed "error:": do not type commit; the switch undoes this by itself in 5
+# minutes.
 #
 # Check now. In 5 minutes the switch undoes this by itself unless you type one word.
 #   From the tacctl server:   tacctl device config pull dev-juniper-synthetic-lab-nolo0 --diff     (the differences of the plan are back)
 #   In a second terminal:     ssh dev-juniper-synthetic-lab-nolo0, then: show cli authorization | no-more
 # When both checks are fine, type this one word yourself:  commit     (before the 5 minutes end)
+# Then type exit: the session holds the configuration lock until you do.
 #
 # A value that tacctl does not hold (an original secret) is a line marked with # inside the
 # region: put it back by hand.
 # Do not: type commit before the check; paste anything outside the banners; paste this into
-# another device; use configure exclusive; keep this output in a file after the paste when it
-# holds a secret.
+# another device; keep this output in a file after the paste when it holds a secret.
 # Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold dev-juniper-synthetic-lab-nolo0 --reason "..."
 # then log in as the device's local user (ssh or console),
 # fix or back out, and the superuser runs: tacctl breakglass release dev-juniper-synthetic-lab-nolo0

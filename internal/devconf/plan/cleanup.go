@@ -840,6 +840,7 @@ func CleanupAfter(d Delta, h Header, w Wrapper) string {
 	}
 	n := strconv.Itoa(confirmMinutes(w))
 	b.WriteString("# Same check, same one word, typed yourself:  commit     (before the " + n + " minutes end)\n")
+	add("Then type exit: the session holds the configuration lock until you do.")
 	add("If any line printed \"error:\", do not type commit: the switch undoes the cleanup by itself in " + n + " minutes. To undo it after the commit: show system commit, then rollback <n> of the entry just before the one commented \"tacctl cleanup " + commentSafe(h.Device) + "\", then commit. A removed server's secret is not held by tacctl: type it again.")
 	b.WriteString(lockoutHelp(d, h))
 	return b.String()

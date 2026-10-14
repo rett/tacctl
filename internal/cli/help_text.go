@@ -13,7 +13,7 @@ package cli
 var usageBlocks = map[string]string{
 	// lib/dispatch.sh usage
 	"top": `
-<b>tacctl</b> ({{version}}) — Network-device AAA from one store: TACACS+ (tacquito) and RADIUS (FreeRADIUS)
+<b>tacctl</b> ({{version}}) — Pluggable network-device AAA management
 Copyright (c) 2026 Everett C. Haimes III · MIT License · https://github.com/rett/tacctl
 
 Usage: tacctl <command> [arguments]
@@ -24,8 +24,8 @@ Commands:
       <o>-y</o>, <o>--yes</o>                         Answer yes to the confirmations
   <b>upgrade</b> [<o>--branch <name></o>]             Pull latest source, rebuild, update scripts and every enabled backend
   <b>uninstall</b> [<o>-y</o>|<o>--yes</o>]                  Remove tacctl, its backends' services and all associated files
-  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.3): a dry run unless <o>--apply</o>
-      <o>--apply</o>                           Take a snapshot, then convert the files 0.2.3 cannot read (tacctl.yaml, console.yaml, devices.yaml, sudoers)
+  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.8) or for 0.2.3: a dry run unless <o>--apply</o>
+      <o>--apply</o>                           Take a snapshot, then convert the files the target cannot read (tacctl.yaml, sudoers; for 0.2.3 also console.yaml, devices.yaml)
       <o>--yes</o>                             Acknowledge the warnings that <o>--apply</o> refuses to go on without
       <o>--hosts</o>                           Accepted; the hosts need nothing for this target (no host is synced)
   <b>status</b>                                Show service health, stats, and recent errors (per backend)
@@ -422,7 +422,7 @@ Subcommands:
       <o>--snmp-location <text></o>           (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location)
   <b>linux</b>   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
   <b>snmp</b>    show|community|v3-user|port|timeout|clear|test  SNMP for the name hint of 'device add' (sysName)
-  <b>devices</b> [show|max-concurrency|transport|timeout|confirm-timeout] [value]  How 'device config pull' reads the devices (default 8 at once, auto, 90 s) and the confirm timeout of 'plan' (5 min)
+  <b>devices</b> [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause] [value]  How 'device config pull' reads the devices (default 8 at once, auto, 90 s), the confirm timeout of 'plan' (5 min) and how 'device config apply' runs (confirm 10 min, pause 60 s)
   <b>branch</b> [name]                        Show or change the tacctl repo branch
 
 Examples:

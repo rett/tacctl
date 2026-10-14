@@ -76,7 +76,7 @@
   "holds_secret": false,
   "converge": true,
   "cleanup": [
-    "configure private",
+    "configure exclusive",
     "# aaa: removes the servers the standard does not have",
     "delete system tacplus-server 192.0.2.99",
     "show | compare | no-more",
@@ -90,6 +90,7 @@
     "# that 'show system commit' shows no pending 'commit confirmed' (type the plan's 'commit' first),",
     "# and keep a NEW ssh session as yourself open.",
     "# Same check, same one word, typed yourself:  commit     (before the 5 minutes end)",
+    "# Then type exit: the session holds the configuration lock until you do.",
     "# If any line printed \"error:\", do not type commit: the switch undoes the cleanup by itself in 5",
     "# minutes. To undo it after the commit: show system commit, then rollback \u003cn\u003e of the entry just",
     "# before the one commented \"tacctl cleanup dev-juniper-synthetic-lab\", then commit. A removed",

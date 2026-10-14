@@ -110,6 +110,9 @@ func (inv *invocation) deviceConfigDiff(args []string) error {
 	if err := inv.deviceConfigAllowed("diff"); err != nil {
 		return err
 	}
+	if err := inv.localLoginGate(p, "diff"); err != nil {
+		return err
+	}
 	var only []string
 	if p.Has("--section") {
 		for _, s := range strings.Split(p.Value("--section"), ",") {
@@ -139,15 +142,24 @@ func (inv *invocation) deviceConfigDiff(args []string) error {
 	if err != nil {
 		return err
 	}
+	local, err := inv.localLoginOf(p, "diff", sel, pull)
+	if err != nil {
+		return err
+	}
 	user := inv.sudoUser()
 	if pull {
 		if user, err = inv.configLogin("device config diff --pull"); err != nil {
 			return err
 		}
 	}
-	chosen, err := inv.chooseDevices(sel, user, pull, "diff", pa.render)
+	chosen, err := inv.chooseDevices(sel, user, pull && local == nil, "diff", pa.render)
 	if err != nil {
 		return err
+	}
+	if local != nil {
+		if err := inv.localLoginDevice(local, chosen); err != nil {
+			return err
+		}
 	}
 	if len(chosen.entries) == 0 {
 		return inv.nothingSelected(chosen, p.Has("--json"), true)
@@ -165,7 +177,7 @@ func (inv *invocation) deviceConfigDiff(args []string) error {
 	interrupted := false
 	if pull {
 		view := inv.newPullView(chosen.entries, false, user, asJSON)
-		sum, outs, err := inv.runPull(pullBatch{entries: chosen.entries, render: chosen.render, args: pa, user: user, view: view})
+		sum, outs, err := inv.runPull(pullBatch{entries: chosen.entries, render: chosen.render, args: pa, user: user, view: view, local: local})
 		if err != nil {
 			return err
 		}

@@ -59,7 +59,7 @@ tacctl shell
 | [Server](docs/server/README.md) | Backends, the store and generated configs, system files, RADIUS, metrics |
 | [Security](docs/security/README.md) | Scopes, command authorization, management ACLs, tiers, the login console, host-key pinning |
 | [Linux hosts](docs/hosts/README.md) | Enrolling hosts, the PAM module, UIDs and groups, account lifecycle |
-| [Network devices](docs/devices/README.md) | Connecting by name, Cisco, Junos, WTI, break-glass, pulling and planning configuration |
+| [Network devices](docs/devices/README.md) | Connecting by name, Cisco, Junos, WTI, break-glass, pulling, planning and applying configuration, onboarding blank devices |
 | [CLI reference](docs/cli/README.md) | Conventions and one page per command family, every `tacctl.yaml` setting |
 | [Development](docs/development/README.md) | Repository layout, tests, releases |
 

@@ -71,7 +71,7 @@ func TestPlanWTIFromTheLastPull(t *testing.T) {
 			t.Errorf("no %q in\n%s", want, out)
 		}
 	}
-	for _, bad := range []string{"PASTE FROM HERE", "configure private", "commit confirmed", "write memory"} {
+	for _, bad := range []string{"PASTE FROM HERE", "configure exclusive", "commit confirmed", "write memory"} {
 		if strings.Contains(out, bad) {
 			t.Errorf("%q in a unit's plan", bad)
 		}

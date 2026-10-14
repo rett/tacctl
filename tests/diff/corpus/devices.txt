@@ -249,9 +249,9 @@ config wti --protocol radius
 # The runner has no device to log in to and no SUDO_USER: the verbs that log in
 # are refused first with the account rule, the rest by their own arguments.
 @fixture tacquito.multiscope.yaml
-@known 0.2.4 item 1: device config lists pull, diff, list and forget; 0.2.5 item 37: and plan
+@known 0.2.4 item 1: device config lists pull, diff, list and forget; 0.2.5 item 37: and plan; 0.2.9 item 4: and apply, shapes
 device config
-@known 0.2.4 item 1: device config lists pull, diff, list and forget; 0.2.5 item 37: and plan
+@known 0.2.4 item 1: device config lists pull, diff, list and forget; 0.2.5 item 37: and plan; 0.2.9 item 4: and apply, shapes
 device config help
 @known 0.2.4 item 1: device config pull is new
 device config pull
@@ -287,8 +287,26 @@ device config forget
 device config forget nosuch
 @known 0.2.4 item 3: device config forget is new
 device config forget --all
-@known 0.2.4 item 3: device config forget is new
+@known 0.2.4 item 3: device config forget is new; 0.2.9 item 4: the usage lists apply and shapes
 device config frob
+@known 0.2.9 item 4: device config apply is new
+device config apply
+@known 0.2.9 item 4: device config apply is new
+device config apply nosuch --check
+@known 0.2.9 item 4: device config apply is new
+device config apply --check --max 0 --all
+@known 0.2.9 item 5: device config shapes is new
+device config shapes
+@known 0.2.9 item 5: device config shapes is new
+device config shapes seed nosuch -y
+@known 0.2.9 item 12: device collect is new
+device collect
+@known 0.2.9 item 12: device collect is new
+device collect 192.0.2.1
+@known 0.2.9 item 13: device sync is new
+device sync
+@known 0.2.9 item 13: device sync is new
+device sync nosuch
 @known 0.2.5 item 37: device config plan is new
 device config plan
 @known 0.2.5 item 37: device config plan is new
@@ -311,23 +329,31 @@ device config plan nosuch --out a --out-dir b
 device config plan nosuch --force
 @known 0.2.5 item 37: device config plan is new
 device config plan nosuch --bogus
-@known 0.2.5 item 38: config devices confirm-timeout is new
+@known 0.2.5 item 38: config devices confirm-timeout is new; 0.2.9 item 1: config devices lists apply-confirm-timeout and apply-pause
 config devices confirm-timeout 12 ;; config devices
 @known 0.2.5 item 38: config devices confirm-timeout is new
 config devices confirm-timeout 0
 @known 0.2.5 item 38: config devices confirm-timeout is new
 config devices confirm-timeout 61
+@known 0.2.9 item 1: config devices apply-confirm-timeout is new
+config devices apply-confirm-timeout 15 ;; config devices
+@known 0.2.9 item 1: config devices apply-confirm-timeout is new
+config devices apply-confirm-timeout 2
+@known 0.2.9 item 1: config devices apply-pause is new
+config devices apply-pause 0 ;; config devices
+@known 0.2.9 item 1: config devices apply-pause is new
+config devices apply-pause 3601
 @known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device list
 @known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.4 item 14: device show has the SNMP rows; 0.2.5 item 25: a Cisco device's show has a Config syntax row
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device show core-sw1
 @known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.5 item 25: a Cisco device has config_syntax in the JSON
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device list --json
-@known 0.2.4 item 6: config devices is new
+@known 0.2.4 item 6: config devices is new; 0.2.9 item 1: config devices lists apply-confirm-timeout and apply-pause
 config devices
-@known 0.2.4 item 6: config devices is new
+@known 0.2.4 item 6: config devices is new; 0.2.9 item 1: config devices lists apply-confirm-timeout and apply-pause
 config devices show
-@known 0.2.4 item 6: config devices is new
+@known 0.2.4 item 6: config devices is new; 0.2.9 item 1: config devices lists apply-confirm-timeout and apply-pause
 config devices max-concurrency 16 ;; config devices
 @known 0.2.4 item 6: config devices is new
 config devices max-concurrency 0
@@ -337,7 +363,7 @@ config devices max-concurrency 65
 config devices transport pigeon
 @known 0.2.4 item 6: config devices is new
 config devices timeout 9
-@known 0.2.4 item 6: config devices is new
+@known 0.2.4 item 6: config devices is new; 0.2.9 item 1: config devices lists apply-confirm-timeout and apply-pause
 config devices frob
 @known 0.2.4 item 6: the config usage lists devices
 config

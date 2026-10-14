@@ -93,15 +93,20 @@ func (inv *invocation) echoKeys(indent string, keys []devreg.HostKey) {
 // deviceAddKeys scans the device add registers and picks the keys to pin:
 // every key it offers, or with --host-key only the key of that
 // fingerprint (the others were not verified). nil keys with a nil error is
-// --no-host-key.
-func (inv *invocation) deviceAddKeys(d devreg.Device, p Parsed, retry string) (pin, offered []devreg.HostKey, err error) {
+// --no-host-key. trusted are keys the caller scanned and the person trusted
+// already ('device onboard'): they stand for the scan.
+func (inv *invocation) deviceAddKeys(d devreg.Device, p Parsed, retry string, trusted []devreg.HostKey) (pin, offered []devreg.HostKey, err error) {
 	if p.Has("--no-host-key") {
 		return nil, nil, nil
 	}
-	offered, err = inv.scanKeys(d.Address, d.SSHPort(), d.LegacySSH,
-		"Check the address and the port, or register it without a pinned key: "+retry)
-	if err != nil {
-		return nil, nil, err
+	if trusted != nil {
+		offered = trusted
+	} else {
+		offered, err = inv.scanKeys(d.Address, d.SSHPort(), d.LegacySSH,
+			"Check the address and the port, or register it without a pinned key: "+retry)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 	if !p.Has("--host-key") {
 		return offered, offered, nil

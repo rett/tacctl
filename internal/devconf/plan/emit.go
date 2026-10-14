@@ -362,6 +362,9 @@ func Backout(d Delta, h Header, w Wrapper) (string, error) {
 	b.WriteString(c + "\n")
 	b.WriteString(c + " Type this first, on " + h.Device + ", and check the name:   " + checkLine(d.Vendor) + "\n")
 	add(promptCheck(d.Vendor))
+	if d.Vendor != devconf.FamilyIOS {
+		add(junosSessionNote)
+	}
 	b.WriteString(c + "\n")
 	b.WriteString(bc + " BACK-OUT FROM HERE: " + h.Device + " " + bc + "\n")
 	for _, l := range BackoutLines(d, h, w) {
@@ -379,7 +382,7 @@ func Backout(d Delta, h Header, w Wrapper) (string, error) {
 // CheckRegion verifies the whole-paste invariant on the lines between the
 // banners (plan D109) as an allowlist: only the wrapper lines of the vendor
 // in their places, statements of the shapes the planner emits, and comment
-// lines. It returns the first fault. Junos: 'configure private', then only
+// lines. It returns the first fault. Junos: 'configure exclusive', then only
 // 'set <path>', 'delete <path>', 'insert <path> before|after term <term>' and
 // comments, then 'show | compare | no-more', 'commit check' and the one
 // 'commit confirmed N [comment "..."]' as the last line. IOS: 'configure
@@ -415,8 +418,8 @@ func checkJunosRegion(lines []string) error {
 	if n < 4 {
 		return fmt.Errorf("a region of %d lines", n)
 	}
-	if lines[0] != "configure private" {
-		return fmt.Errorf("the region starts %q, not 'configure private'", lines[0])
+	if lines[0] != ApplyConfigureExclusive {
+		return fmt.Errorf("the region starts %q, not 'configure exclusive'", lines[0])
 	}
 	if lines[n-3] != "show | compare | no-more" || lines[n-2] != "commit check" || !reJunosConfirmed.MatchString(lines[n-1]) {
 		return fmt.Errorf("the region ends %q, %q, %q, not 'show | compare | no-more', 'commit check', 'commit confirmed N'",

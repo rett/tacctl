@@ -1,0 +1,13 @@
+# A blank Junos device for 'device onboard' and '--login' (plan D136): a
+# local account and root, no TACACS+ or RADIUS server. 'set' lines,
+# example.* names only; the hashes are made up.
+set system host-name example-sw5
+set system domain-name lab.example.net
+set system time-zone UTC
+set system root-authentication encrypted-password "$6$fakeRoot$fakeRootHash"
+set system login user admin class super-user
+set system login user admin authentication encrypted-password "$6$fakeSalt$fakeAdminHash"
+set system login user bgadmin class super-user
+set system login user bgadmin authentication encrypted-password "$6$fakeSalt$fakeBgadminHash"
+set system services ssh
+set snmp location "Lab rack 5"

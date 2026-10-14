@@ -17,19 +17,22 @@ import (
 )
 
 func TestCheckRollbackVersion(t *testing.T) {
-	for _, ok := range []string{"0.2.3", "v0.2.3"} {
-		if v, err := CheckRollbackVersion(ok); err != nil || v != "0.2.3" {
-			t.Errorf("%q: %q %v", ok, v, err)
+	for in, want := range map[string]string{"0.2.3": "0.2.3", "v0.2.3": "0.2.3", "0.2.8": "0.2.8", "v0.2.8": "0.2.8"} {
+		if v, err := CheckRollbackVersion(in); err != nil || v != want {
+			t.Errorf("%q: %q %v", in, v, err)
 		}
 	}
 	for _, c := range []struct{ in, want string }{
-		{"0.2.2", "'tacctl rollback' converts what 0.2.5 changed and prepares the state for 0.2.3 only (0.2.2 is older)"},
+		{"0.2.2", "'tacctl rollback' prepares the state for 0.2.8 (the release before this one) and 0.2.3 only (0.2.2 is older)"},
 		{"v0.2.2", "is older"},
 		{"0.2.1", "is older"},
 		{"0.1.16", "is older"},
-		{"0.2.4", "prepares the state for 0.2.3 only"},
-		{"0.3.0", "prepares the state for 0.2.3 only"},
-		{"1.0.0", "prepares the state for 0.2.3 only"},
+		{"0.2.4", "and 0.2.3 only (0.2.4 is further back)"},
+		{"0.2.7", "and 0.2.3 only (0.2.7 is further back)"},
+		{"v0.2.7", "and 0.2.3 only (0.2.7 is further back)"},
+		{"0.2.9", "'0.2.9' is not a release to roll back to"},
+		{"0.3.0", "and 0.2.3 only"},
+		{"1.0.0", "and 0.2.3 only"},
 		{"0.2", "is not a release this tacctl knows"},
 		{"main", "is not a release this tacctl knows"},
 		{"", "is not a release this tacctl knows"},
@@ -39,6 +42,14 @@ func TestCheckRollbackVersion(t *testing.T) {
 		var ref *RollbackRefusal
 		if !errors.As(err, &ref) || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%q: %v (want %q)", c.in, err, c.want)
+		}
+	}
+	// The refusal of 0.2.7 is the one-release-at-a-time rule through 0.2.8.
+	_, err27 := CheckRollbackVersion("0.2.7")
+	for _, want := range []string{"one release at a time", "tacctl rollback 0.2.8 --apply", "tacctl upgrade --branch 0.2.8",
+		"0.2.8's prepares the state for 0.2.3", "tacctl backup restore"} {
+		if !strings.Contains(err27.Error(), want) {
+			t.Errorf("0.2.7 refusal lacks %q: %v", want, err27)
 		}
 	}
 	// The refusal of 0.2.2 names the two steps and the fallback.
@@ -85,6 +96,9 @@ device:
     max_concurrency: 16
     transport: ssh
     timeout: 120
+  apply:
+    confirm_timeout: 15
+    pause: 30
 `
 
 // rbConsole is a console.yaml as 0.2.4 writes it: the engineer tier's
@@ -290,7 +304,8 @@ func TestPlanRollbackFull(t *testing.T) {
 	if !p.Pending() || !p.PendingFiles() || !p.NeedsYes() {
 		t.Errorf("pending %v files %v needs-yes %v", p.Pending(), p.PendingFiles(), p.NeedsYes())
 	}
-	wantKeys := []string{"device.config.max_concurrency", "device.config.transport", "device.config.timeout"}
+	wantKeys := []string{"device.config.max_concurrency", "device.config.transport", "device.config.timeout",
+		"device.apply.confirm_timeout", "device.apply.pause"}
 	if !reflect.DeepEqual(p.Keys(), wantKeys) {
 		t.Errorf("keys %q, want %q", p.Keys(), wantKeys)
 	}
@@ -298,6 +313,7 @@ func TestPlanRollbackFull(t *testing.T) {
 	for _, want := range []string{
 		s.p.Overrides + ": remove the keys 0.2.3 does not know",
 		"remove device.config.max_concurrency", "remove device.config.transport", "remove device.config.timeout",
+		"remove device.apply.confirm_timeout", "remove device.apply.pause",
 		s.p.ConsoleFile + ": write it the way 0.2.3 reads it",
 		"remove settings.password_cache: tiers engineer,superuser, idle 30 min, max 4 h",
 		s.p.DevicesFile + ": remove the per-device SNMP settings and configuration syntax",
@@ -343,6 +359,7 @@ func TestPlanRollbackFull(t *testing.T) {
 		"  core-sw1: modern",
 		"The devices' own credentials (1 file in " + filepath.Join(s.p.SNMPDir, "devices") + ") stay, unused by 0.2.3.",
 		"device.config.max_concurrency=16, device.config.transport=ssh, device.config.timeout=120",
+		"The settings of 'device config apply' (device.apply.confirm_timeout=15, device.apply.pause=30) are removed from tacctl.yaml",
 		"The password cache's settings of console.yaml are removed (tiers engineer,superuser, idle 30 min, max 4 h)",
 		"stays in the snapshot --apply takes first",
 	} {
@@ -390,7 +407,7 @@ func TestApplyRollbackConvertsAndIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantDone := []string{
-		s.p.Overrides + ": removed 3 keys",
+		s.p.Overrides + ": removed 5 keys",
 		s.p.ConsoleFile + ": removed settings.password_cache",
 		s.p.DevicesFile + ": removed the SNMP settings of 2 devices",
 		s.p.DevicesFile + ": removed the configuration syntax of 1 device",
@@ -541,6 +558,19 @@ func TestRollbackSudoersCases(t *testing.T) {
 	}
 	if got := s.snapshotOf(); got[s.p.TierSudoersFile] != tier.Sudoers023() || got[s.p.SudoersFile] != tier.GroupSudoers023("ops") {
 		t.Errorf("the 0.2.7 drop-ins were not put back as 0.2.3's:\n%s\n%s", got[s.p.TierSudoersFile], got[s.p.SudoersFile])
+	}
+
+	// The texts 0.2.8 wrote (the cache's alias without the apply lines)
+	// are put back as 0.2.3's as well.
+	s = newRBSandbox(t)
+	s.write(s.p.TierSudoersFile, tier.Sudoers028(), 0o640)
+	s.write(s.p.SudoersFile, tier.GroupSudoers028("ops"), 0o640)
+	p, _ = PlanRollback(s.in)
+	if _, err := ApplyRollback(p); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.snapshotOf(); got[s.p.TierSudoersFile] != tier.Sudoers023() || got[s.p.SudoersFile] != tier.GroupSudoers023("ops") {
+		t.Errorf("the 0.2.8 drop-ins were not put back as 0.2.3's:\n%s\n%s", got[s.p.TierSudoersFile], got[s.p.SudoersFile])
 	}
 
 	// The current text (the new env_keep line) is put back as 0.2.3's too.

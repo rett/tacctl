@@ -432,7 +432,7 @@ func TestStoredBackoutFollowsTheDevice(t *testing.T) {
 	if got, err := s.Backout("a"); got != nil || err != nil {
 		t.Fatalf("a back-out before any plan: %v %v", got, err)
 	}
-	text := "##### box #####\n# BACK-OUT\n##### BACK-OUT FROM HERE: a #####\nconfigure private\nset a b\n"
+	text := "##### box #####\n# BACK-OUT\n##### BACK-OUT FROM HERE: a #####\nconfigure exclusive\nset a b\n"
 	if err := s.SaveBackout("a", StoredBackout{Pulled: pulled, Vendor: "juniper", Address: "192.0.2.1", Sections: []string{"aaa", "snmp"}, Text: text}); err != nil {
 		t.Fatal(err)
 	}

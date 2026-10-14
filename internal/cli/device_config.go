@@ -39,6 +39,8 @@ var deviceConfigSpecs = func() map[string]Spec {
 		{Names: []string{"--max-failures"}, Value: true},
 		{Names: []string{"--server"}, Value: true},
 		{Names: []string{"--source"}, Value: true},
+		// the one-shot local login (0.2.9, D136): superusers, one device
+		{Names: []string{"--login"}, Value: true},
 	}
 	join := func(groups ...[]Flag) []Flag {
 		var out []Flag
@@ -72,12 +74,28 @@ var deviceConfigSpecs = func() map[string]Spec {
 			{Names: []string{"--scope"}, Value: true, Kind: KindScopes}, {Names: []string{"--vendor"}, Value: true, Kind: "cisco|juniper|wti"},
 			flagJSON}},
 		"forget": {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}}},
+		// 'apply' (0.2.9, D130): the selection and the read options of a
+		// pull, minus the transport (the apply is the Junos command line).
+		"apply": {MaxArgs: -1, Args: []string{KindDevices + KindList},
+			Flags: join(selectors, []Flag{
+				{Names: []string{"--concurrency"}, Value: true}, {Names: []string{"--timeout"}, Value: true},
+				{Names: []string{"--max-failures"}, Value: true}, {Names: []string{"--server"}, Value: true},
+				{Names: []string{"--source"}, Value: true},
+				{Names: []string{"--check"}}, {Names: []string{"--confirmed"}},
+				{Names: []string{"--max"}, Value: true}, {Names: []string{"--pause"}, Value: true},
+				{Names: []string{"--hold"}}, {Names: []string{"--no-canary"}},
+				{Names: []string{"--section"}, Value: true, Kind: strings.Join(planSections, "|") + KindList},
+				flagJSON, {Names: []string{"--exit-code"}}, flagYes})},
+		// 'shapes' (0.2.9, D135): 'list' (the default) and 'seed'.
+		"shapes": {MaxArgs: -1, Args: []string{"list|seed", KindDevices + KindList}, Flags: []Flag{
+			{Names: []string{"--show"}, Value: true, Only: "list", Kind: KindShapes},
+			{Names: []string{"--json"}, Only: "list"}, {Names: []string{"-y", "--yes"}, Only: "seed"}}},
 	}
 }()
 
 // deviceConfigVerbs are the 'device config' verbs in the order of device.go's
 // rows.
-var deviceConfigWords = []string{"show", "pull", "diff", "plan", "list", "forget"}
+var deviceConfigWords = []string{"show", "pull", "diff", "plan", "apply", "shapes", "list", "forget"}
 
 // deviceConfigUse is the usage of a 'device config' verb after
 // 'tacctl device config ' (” for none).
@@ -122,23 +140,45 @@ func (inv *invocation) argErr(msgs ...string) error {
 var deviceConfigNeeds = map[string]tier.Tier{
 	"list": tier.Operator, "show": tier.Engineer, "pull": tier.Engineer, "diff": tier.Engineer, "plan": tier.Engineer,
 	"forget": tier.Superuser,
+	// 'apply' (0.2.9, D130, D141) changes a device and 'shapes' (with its
+	// 'list' and 'seed') files what was confirmed: the superuser's. No
+	// sudoers row names them, so sudo refuses a lower tier before the verb
+	// runs, and the verb asks again.
+	"apply": tier.Superuser, "shapes": tier.Superuser,
+}
+
+// tierPermits is whether tier t may run a verb that needs tier need.
+func tierPermits(t, need tier.Tier) bool {
+	return t == tier.Unrestricted || t == tier.Superuser || (tier.Rank(t) >= 0 && tier.Rank(t) >= tier.Rank(need))
+}
+
+// deviceConfigPermits is the caller's tier and whether it may run the verb.
+func (inv *invocation) deviceConfigPermits(sub string) (tier.Tier, bool) {
+	t := inv.tierGate().Caller(inv.ctx)
+	return t, tierPermits(t, deviceConfigNeeds[sub])
 }
 
 // deviceConfigAllowed is nil when the caller's tier may run the verb; the
 // refusal is the gate's, printed and logged.
 func (inv *invocation) deviceConfigAllowed(sub string) error {
-	need := deviceConfigNeeds[sub]
+	return inv.deviceVerbAllowed("device config", sub, deviceConfigNeeds[sub])
+}
+
+// deviceVerbAllowed holds a verb of a 'device' family whose gate row is
+// wider than the verb to its own tier: nil when the caller's tier is at least
+// need.
+func (inv *invocation) deviceVerbAllowed(family, sub string, need tier.Tier) error {
 	g := inv.tierGate()
 	t := g.Caller(inv.ctx)
-	if t == tier.Unrestricted || t == tier.Superuser || (tier.Rank(t) >= 0 && tier.Rank(t) >= tier.Rank(need)) {
+	if tierPermits(t, need) {
 		return nil
 	}
 	user := inv.sudoUser()
-	inv.app.Logger(inv.ctx, "auth.warning", "tier DENY user="+user+" tier="+string(t)+" cmd=device config "+sub)
+	inv.app.Logger(inv.ctx, "auth.warning", "tier DENY user="+user+" tier="+string(t)+" cmd="+family+" "+sub)
 	if t == tier.None {
 		inv.app.Out.ErrorE("'" + g.SudoUser + "' has no active tacctl user, so tacctl access is denied.")
 	} else {
-		inv.app.Out.ErrorE("'tacctl device config " + sub + "' is not permitted for the " + string(t) + " tier.")
+		inv.app.Out.ErrorE("'tacctl " + family + " " + sub + "' is not permitted for the " + string(t) + " tier.")
 	}
 	return tier.ErrDenied
 }
@@ -261,13 +301,45 @@ out and the rest is planned. --plain, and --section roles or system, are
 refused for a unit; --converge offers the read/write community and the other
 protocol's switch only.
 
+'apply' (superusers; Junos devices) types what 'plan' would paste into the
+devices itself, as you (the password is asked for once). Each device is
+checked first: tacctl reads it, loads the plan in an exclusive configure
+session, runs the device's own 'commit check' and discards the candidate;
+--check stops there and commits nothing. The devices that need a change are
+then shown grouped by shape (the same change under one heading, every secret
+elided) and ONE question is asked: the device's name (one device) or the
+number of devices, typed back. Each is committed under 'commit confirmed N'
+(config devices apply-confirm-timeout), proven by a fresh login as you, by what
+landed being the change the check showed and by a read of the planned sections,
+and then confirmed; the first device of every shape goes alone, and the rest of
+its shape only when it applied. A device that fails a proof is rolled back; one
+whose state could not be read is PENDING until the time shown, and nothing
+may be typed on it before then (a 'commit check' confirms a pending commit).
+--confirmed applies only shapes an earlier apply confirmed (the rest are
+skipped) and is the only form --yes answers the question for, so a script runs
+it without a terminal; --max (default 5) caps the devices of a run, --pause the
+seconds between them (config devices apply-pause), --hold asks you to log in
+with one account of each class and type OK before the change is kept,
+--section limits the sections. Never written: the break-glass and
+NETCONF sections, the root and your own account, system services, interfaces,
+groups. Exit status: 0 every device applied, was checked or had no change, 1 a
+device failed, was rolled back or is pending, 2 wrong arguments (or, with
+--check --exit-code, a device that needs a change), 130 interrupted (the first
+Ctrl-C starts no more devices, the second cancels the running ones).
+'shapes' lists the shapes seen and which were confirmed by an apply, with
+--show <hash> one shape's statements; 'shapes seed <name>' files the shape of
+the device's last check or apply as confirmed on your word (one question,
+-y answers it), for a device that was applied and verified by hand.
+
 'list' shows each device's state: ok (every managed section agrees), differs,
 never (not pulled), failed (the last pull failed) or pull (a Cisco device whose
 syntax is unknown: its record has no version line and its config-syntax is
 auto: every record made by an earlier tacctl), computed against today's rendering,
 so a change in tacctl makes a device differ without a new pull. --stale is
-never, failed, differs and pull together. 'forget' deletes the records (they
-are derived: a pull makes them again).
+never, failed, differs and pull together. Once a device was checked or applied
+the table has an APPLIED column (checked, applied <time>, PENDING <time>,
+rolled-back, failed). 'forget' deletes the records (they are derived: a pull
+makes them again).
 
 Examples:
   tacctl device config show core-sw1
@@ -277,6 +349,10 @@ Examples:
   tacctl device config diff core-sw1 --section aaa,snmp
   tacctl device config plan core-sw1
   tacctl device config plan --scope lab --out-dir ~/plans
+  tacctl device config apply core-sw1 --check
+  tacctl device config apply --scope lab
+  tacctl device config apply --scope lab --confirmed --yes
+  tacctl device config shapes
   tacctl device config list --stale
 
 `)
@@ -302,11 +378,28 @@ func (inv *invocation) deviceConfig(args []string) error {
 		return inv.deviceConfigDiff(args[1:])
 	case "plan":
 		return inv.deviceConfigPlan(args[1:])
+	case "apply":
+		if err := inv.deviceConfigAllowed("apply"); err != nil {
+			return err
+		}
+		return inv.deviceConfigApply(args[1:])
+	case "shapes":
+		if err := inv.deviceConfigAllowed("shapes"); err != nil {
+			return err
+		}
+		return inv.deviceConfigShapes(args[1:])
 	case "list":
 		return inv.deviceConfigList(args[1:])
 	case "forget":
 		return inv.deviceConfigForget(args[1:])
 	default:
+		// A verb the table holds is refused to a lower tier as the verb itself
+		// will refuse it.
+		if _, held := deviceConfigNeeds[sub]; held {
+			if err := inv.deviceConfigAllowed(sub); err != nil {
+				return err
+			}
+		}
 		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
 		inv.write(deviceConfigUsage())
 		return exit(1)

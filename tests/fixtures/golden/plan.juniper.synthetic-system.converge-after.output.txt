@@ -27,9 +27,14 @@
 # Type this first, on dev-juniper-synthetic-system, and check the name:   show version | match Hostname
 # The prompt must end in > (operational mode) before you paste: a prompt ending in # means a
 # configuration session is open: stop.
+# The region opens configure exclusive: the session holds the configuration lock until you type exit
+# (after commit, to confirm). If it printed "error: configuration database modified", another session
+# has uncommitted changes: have that person commit or discard them, then paste again. If it printed
+# "error: configuration database locked by", another session holds the exclusive lock: wait for it to
+# exit, then paste again. Either way nothing happened (every later line is an unknown command).
 #
 ##### CLEANUP FROM HERE: dev-juniper-synthetic-system #####
-configure private
+configure exclusive
 # aaa: removes the servers the standard does not have
 delete system tacplus-server 192.0.2.99
 show | compare | no-more
@@ -42,6 +47,7 @@ commit confirmed 5 comment "tacctl cleanup dev-juniper-synthetic-system 2026-10-
 # aaa), that 'show system commit' shows no pending 'commit confirmed' (type the plan's 'commit'
 # first), and keep a NEW ssh session as yourself open.
 # Same check, same one word, typed yourself:  commit     (before the 5 minutes end)
+# Then type exit: the session holds the configuration lock until you do.
 # If any line printed "error:", do not type commit: the switch undoes the cleanup by itself in 5
 # minutes. To undo it after the commit: show system commit, then rollback <n> of the entry just
 # before the one commented "tacctl cleanup dev-juniper-synthetic-system", then commit. A removed
