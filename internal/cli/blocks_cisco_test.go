@@ -116,7 +116,11 @@ func TestScopeBlockCiscoRefusals(t *testing.T) {
 		{"contact", "snmp-server contact someone\n", "never part of a block"},
 		{"an abbreviated trap-source", "snmp-server trap-source Lo0\n", "has its type abbreviated"},
 		{"a user", "snmp-server user v3user G v3 auth sha xxxxxxxxxx\n", "SNMPv3"},
-		{"a vrf host", "snmp-server host 192.0.2.5 vrf mgmt string-secret-1\n", "'vrf' is not in the grammar of a block"},
+		{"a vrf host with v3", "snmp-server host 192.0.2.5 vrf mgmt version 3 priv string-secret-1\n", "SNMPv3"},
+		{"a vrf as the last word", "snmp-server host 192.0.2.5 vrf\n", "line 1: error: host: 'vrf' takes the name of the vrf after it"},
+		{"a vrf name with a space", "snmp-server host 192.0.2.5 vrf \"mg mt\" string-secret-1\n", "a quote"},
+		{"informs on version 1", "snmp-server host 192.0.2.5 informs version 1 string-secret-1\n", "informs need 'version 2c'"},
+		{"informs with no version", "snmp-server host 192.0.2.5 informs string-secret-1\n", "informs need 'version 2c'"},
 		{"a placeholder", "snmp-server community <secret:1> RO NMS\n", "a placeholder"},
 		{"a tab", "snmp-server community tab-secret\tRO\n", "a tab at column"},
 		{"a deny entry", "ip access-list standard L\n deny 192.0.2.5\n", "permit entries only"},
@@ -266,8 +270,7 @@ func TestBlockCiscoCheckAgainstADevice(t *testing.T) {
 	// once in force, the device's plan carries the block
 	b.run("scope", "block", "lab", "cisco", "set", "snmp", "--file", f, "-y")
 	out = b.run("device", "config", "plan", "lab-c", "--pull", "--no-secrets")
-	for _, w := range []string{"access list NMS-POLLERS of the SNMP block of scope 'lab'", "ip access-list standard NMS-POLLERS",
-		"written from the references and have not been checked on a device"} {
+	for _, w := range []string{"access list NMS-POLLERS of the SNMP block of scope 'lab'", "ip access-list standard NMS-POLLERS"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("the plan lacks %q:\n%s", w, out)
 		}

@@ -308,13 +308,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 7,
-    "left": 2,
+    "left": 3,
     "remaining": {
       "access": 0,
-      "monitoring": 2,
+      "monitoring": 3,
       "cosmetic": 0
     },
-    "extras": 2
+    "extras": 3
   },
   {
     "device": "dev-cisco-synthetic-system",
@@ -360,6 +360,51 @@
       "cosmetic": 6
     },
     "extras": 9
+  },
+  {
+    "device": "dev-cisco-synthetic-vrf",
+    "scope": "lab",
+    "vendor": "cisco",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 3,
+    "left": 16,
+    "remaining": {
+      "access": 0,
+      "monitoring": 5,
+      "cosmetic": 11
+    },
+    "extras": 16
+  },
+  {
+    "device": "dev-cisco-synthetic-vrf-new",
+    "scope": "lab",
+    "vendor": "cisco",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 16,
+    "left": 3,
+    "remaining": {
+      "access": 0,
+      "monitoring": 3,
+      "cosmetic": 0
+    },
+    "extras": 3
+  },
+  {
+    "device": "dev-cisco-synthetic-vrf-stray",
+    "scope": "lab",
+    "vendor": "cisco",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 12,
+    "left": 19,
+    "remaining": {
+      "access": 0,
+      "monitoring": 8,
+      "cosmetic": 11
+    },
+    "extras": 19
   },
   {
     "device": "dev-not-pulled",

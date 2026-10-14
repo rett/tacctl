@@ -712,7 +712,7 @@ type jsonRestorePoint struct {
 	File       string `json:"file,omitempty"`
 	Command    string `json:"command"`
 	FileSystem string `json:"file_system"`
-	Note       string `json:"note"`
+	Note       string `json:"note,omitempty"`
 }
 
 type jsonDelta struct {
@@ -808,7 +808,7 @@ func JSON(d Delta, h Header, w Wrapper) ([]byte, error) {
 	}
 	if d.restoreShown() {
 		out.RestorePoint = &jsonRestorePoint{Mode: d.Restore.Mode(), File: d.Restore.File(h), Command: d.Restore.Command(h),
-			FileSystem: d.Restore.FileSystem(), Note: restoreNote}
+			FileSystem: d.Restore.FileSystem(), Note: restoreNoteFor(d.Restore)}
 	}
 	for _, it := range d.Items {
 		ji := jsonItem{N: it.N, Kind: it.Kind, Severity: it.Severity, Section: it.Section, Words: it.Words,

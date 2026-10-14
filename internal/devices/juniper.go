@@ -138,6 +138,7 @@ func JuniperVars(req Request, d Data) map[string]string {
 	// Each template user is bound to a LOCAL class of its own name (Junos
 	// refuses permissions on its predefined classes).
 	var users strings.Builder
+	var idleClasses []string // the classes tacctl defines, for a release without the global idle-timeout
 	for _, g := range groups {
 		j := g.class
 		switch g.junos {
@@ -157,6 +158,7 @@ func JuniperVars(req Request, d Data) map[string]string {
 			users.WriteString("set system login user " + j + " class " + g.junos + "\n")
 			continue
 		}
+		idleClasses = append(idleClasses, j)
 		users.WriteString("set system login user " + j + " class " + j + "\n")
 	}
 	templateUsers := strings.TrimSuffix(users.String(), "\n")
@@ -167,10 +169,19 @@ func JuniperVars(req Request, d Data) map[string]string {
 	}
 	order := juniperAuthnOrder(d, scope, method)
 	idle := execTimeout(c, scope)
+	// 'set system login idle-timeout' is global from Junos 16.1; before it the
+	// timeout is set on each login class (the version gate, gates.go).
+	idleLines := "set system login idle-timeout " + idle + "\n"
+	if d.lacks("juniper", "system login idle-timeout") && len(idleClasses) > 0 {
+		idleLines = "# This release has no 'system login idle-timeout': the timeout is set on each class.\n"
+		for _, j := range idleClasses {
+			idleLines += "set system login class " + j + " idle-timeout " + idle + "\n"
+		}
+	}
 
 	tacplus := "delete system authentication-order\n" +
 		"set system authentication-order " + order + "\n" +
-		"set system login idle-timeout " + idle + "\n" +
+		idleLines +
 		"set system tacplus-server " + serverIP + " secret " + secret + "\n" +
 		"set system tacplus-server " + serverIP + " single-connection\n" +
 		"# Optional: pin client source IP for prefix-ACL matching on tacquito.\n" +
@@ -188,7 +199,7 @@ func JuniperVars(req Request, d Data) map[string]string {
 	if req.Protocol == RADIUS && d.Radius != nil {
 		radius = "delete system authentication-order\n" +
 			"set system authentication-order " + order + "\n" +
-			"set system login idle-timeout " + idle + "\n" +
+			idleLines +
 			"set system radius-server " + serverIP + " port " + d.Radius.AuthPort + "\n" +
 			"set system radius-server " + serverIP + " accounting-port " + d.Radius.AcctPort + "\n" +
 			"set system radius-server " + serverIP + " secret " + secret + "\n" +

@@ -3,7 +3,7 @@
 Go CLI that manages a TACACS+ (tacquito) and FreeRADIUS server, its users,
 groups and scopes, network devices and enrolled Linux hosts.
 
-Start with `docs/plans/0.2.4-handoff.md` (state, scope, working rules), then
+Start with `docs/plans/0.2.8-handoff.md` (state, scope, working rules), then
 `docs/plans/backlog.md` §0 (roadmap) and the current release plan.
 
 ## Commands
@@ -22,4 +22,4 @@ Start with `docs/plans/0.2.4-handoff.md` (state, scope, working rules), then
 - No Claude attribution in commit messages. Push only to the current feature branch unless told otherwise.
 - Never act against the production host.
 - Every user-visible change gets a numbered CHANGELOG item.
-- Every user-visible change also updates `man/tacctl.1` and `README.md` in the same change; the man page shows everything and is never tier-filtered (`make lint` runs the man tests, `LANG=C.UTF-8 go test ./internal/cli -run Man`, which check it against the code, and `groff -k -ww`; `make man` rewrites its generated blocks).
+- Every user-visible change also updates `man/tacctl.1` and the matching page under `docs/` (`README.md` only holds the quick start and the index) in the same change; the man page shows everything and is never tier-filtered (`make lint` runs the man tests, `LANG=C.UTF-8 go test ./internal/cli -run Man`, which check it against the code, and `groff -k -ww`; `make man` rewrites its generated blocks).

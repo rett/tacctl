@@ -21,6 +21,10 @@ load ../helpers/fixtures
 bats_require_minimum_version 1.5.0
 
 ESC=$'\e'
+# Output is styled only on a terminal; the assertions below pin the styled
+# bytes, so the colour is asked for (tests/integration/colour.bats pins the
+# rule itself).
+export TACCTL_COLOR=always
 USAGE_DIR="${TACCTL_SRC}/internal/cli/testdata/usage"
 
 setup() {
@@ -105,7 +109,9 @@ usage_case() {
     # The generator wrote the production state path and no version.
     got=$(printf '%s\n' "$output" \
         | sed -E "s#${TACCTL_STATE_DIR}/#/etc/tacctl/#g; 1,3s/(tacctl${ESC}\[0m) \([^)]*\)/\1 (unknown)/")
-    assert_equal "$got" "$(cat "${USAGE_DIR}/${name}.out")"
+    # The words are what is pinned here; their styling (bold, cyan) is the
+    # Go tests' (internal/cli help_test.go), so both sides are stripped.
+    assert_equal "$(plain <<< "$got")" "$(plain < "${USAGE_DIR}/${name}.out")"
 }
 
 # --- top-level and per-family usage ------------------------------------------
@@ -133,7 +139,7 @@ usage_case() {
     local ver
     ver=$("$TACCTL_BIN_SCRIPT" version | sed 's/^tacctl //')
     [[ -n "$ver" ]]
-    [[ "$(plain <<< "${lines[1]}")" == "tacctl (${ver}) — TACACS+ (tacquito) and RADIUS (FreeRADIUS) from one store" ]]
+    [[ "$(plain <<< "${lines[1]}")" == "tacctl (${ver}) — Network-device AAA from one store: TACACS+ (tacquito) and RADIUS (FreeRADIUS)" ]]
 }
 
 # bats test_tags=cutover:wp0-1

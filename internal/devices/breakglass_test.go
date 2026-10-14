@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rett/tacctl/internal/doctext"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/policy"
 )
@@ -303,11 +304,21 @@ func TestJunosSystemAccounts(t *testing.T) {
 // 'algorithm-type scrypt secret <hash>' that would hash it again.
 func TestBreakGlassDocsNameTheHashForm(t *testing.T) {
 	for _, f := range []string{"../../README.md", "../../man/tacctl.1", "../../CHANGELOG.md"} {
-		b, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatal(err)
+		var text string
+		if f == "../../README.md" {
+			// the documentation tree: README.md and the pages of docs/
+			all, err := doctext.Read("../..")
+			if err != nil {
+				t.Fatal(err)
+			}
+			text = all
+		} else {
+			b, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			text = string(b)
 		}
-		text := string(b)
 		// the local enable secret of Step 0 takes a plaintext password
 		// (<PASSWORD>) that IOS hashes itself: not an account line
 		if regexp.MustCompile("algorithm-type scrypt secret <(?i:(type9-)?hash)>").MatchString(text) {

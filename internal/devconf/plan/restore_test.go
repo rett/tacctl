@@ -297,23 +297,34 @@ func TestRestorePointBeforeACleanupAlone(t *testing.T) {
 	}
 }
 
-// The report says it was not lab-tested, once, in the text and the JSON.
-func TestRestorePointIsNotLabTested(t *testing.T) {
+// Only the 'archive config' form is marked as not run on a device: once, in
+// the text and the JSON. The copy form carries no such note.
+func TestRestorePointNoteIsOnlyForTheArchiveForm(t *testing.T) {
 	f := fixtureNamed(t, "cisco.reference-bare")
 	exp, cur, plain := f.load(t)
-	opt := f.options()
-	opt.RestorePoint = &RestorePoint{FS: "flash:"}
-	d, err := Plan(f.vendor, exp, cur, plain, opt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := unwrapComments(Block(d, f.header(), Wrapper{}))
-	if n := strings.Count(out, "not lab-tested): read them before you use them"); n != 1 {
-		t.Errorf("the note is said %d times:\n%s", n, out)
-	}
-	js, _ := JSON(d, f.header(), Wrapper{})
-	if !strings.Contains(string(js), "not lab-tested") {
-		t.Errorf("the JSON does not say it:\n%s", js)
+	for _, c := range []struct {
+		rp   RestorePoint
+		note bool
+	}{{RestorePoint{FS: "flash:"}, false}, {RestorePoint{ArchiveFS: "flash:/archive"}, true}} {
+		opt := f.options()
+		rp := c.rp
+		opt.RestorePoint = &rp
+		d, err := Plan(f.vendor, exp, cur, plain, opt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := unwrapComments(Block(d, f.header(), Wrapper{}))
+		want := 0
+		if c.note {
+			want = 1
+		}
+		if n := strings.Count(out, "'archive config' form has not been checked on a device"); n != want {
+			t.Errorf("%+v: the note is said %d times, want %d:\n%s", c.rp, n, want, out)
+		}
+		js, _ := JSON(d, f.header(), Wrapper{})
+		if got := strings.Contains(string(js), "has not been checked on a device"); got != c.note {
+			t.Errorf("%+v: JSON note = %v, want %v:\n%s", c.rp, got, c.note, js)
+		}
 	}
 }
 

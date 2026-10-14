@@ -57,7 +57,9 @@ package lifecycle
 //	                       'console forget'. Sudo accepts both, but 0.2.3's
 //	                       upgrade compares the tiers file with its own text
 //	                       and its group drop-in is never refreshed: a file
-//	                       that is exactly this release's text is rewritten
+//	                       that is exactly this release's text, or the one
+//	                       0.2.4 to 0.2.7 wrote (tier.Sudoers027,
+//	                       GroupSudoers026, GroupSudoers027), is rewritten
 //	                       with 0.2.3's (tier.Sudoers023, GroupSudoers023,
 //	                       through 'visudo -cf'); any other file is left.
 //	hosts                  0.2.4 changed nothing on the enrolled Linux hosts;
@@ -429,7 +431,7 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 	tiers := sudoersPlan{label: "the per-tier drop-in", file: pt.TierSudoersFile, state: "absent"}
 	if b, err := os.ReadFile(pt.TierSudoersFile); err == nil {
 		switch got := string(b); {
-		case got == tier.Sudoers():
+		case got == tier.Sudoers(), got == tier.Sudoers027():
 			tiers.state, tiers.body = "rewrite", tier.Sudoers023()
 		case got == tier.Sudoers023():
 			tiers.state = "done"
@@ -448,9 +450,9 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 			group.state, group.body = "rewrite", tier.GroupSudoers023(name)
 		case tier.GroupOlder:
 			group.label = "the drop-in of group " + name
-			// the text 0.2.4 to 0.2.6 wrote is put back as 0.2.3's; any
+			// the texts 0.2.4 to 0.2.7 wrote are put back as 0.2.3's; any
 			// other older text is 0.2.3's or older already
-			if string(b) == tier.GroupSudoers026(name) {
+			if got := string(b); got == tier.GroupSudoers026(name) || got == tier.GroupSudoers027(name) {
 				group.state, group.body = "rewrite", tier.GroupSudoers023(name)
 			} else {
 				group.state = "done"

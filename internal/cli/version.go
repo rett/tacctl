@@ -73,6 +73,7 @@ func writeVersion(w io.Writer, b BuildInfo, long bool) {
 		fmt.Fprintf(&sb, "built:      %s (commit date)\n", b.Date)
 		fmt.Fprintf(&sb, "go:         %s\n", runtime.Version())
 		fmt.Fprintf(&sb, "test knobs: %s\n", knobs)
+		sb.WriteString("Copyright (c) 2026 Everett C. Haimes III · MIT License · https://github.com/rett/tacctl\n")
 	}
 	_, _ = io.WriteString(w, sb.String())
 }

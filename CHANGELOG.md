@@ -3,6 +3,161 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.8 (unreleased)
+
+1. **The documentation is a tree of topic pages.** `README.md` holds the
+   quick start and an index; the reference is under `docs/` by topic
+   (`install`, `server`, `security`, `hosts`, `devices`, `cli`,
+   `development`), each folder with its own README. The pages are in the
+   project clone (`/opt/tacctl/docs/`).
+
+2. **tacquito's authentication lines carry the client's address and port.**
+   Patch `0003` (now `0003-authen-log-addresses.patch`) appends what the
+   authentication start packet holds to the `accepting user` and `failed to
+   validate the user` lines: `... from [<device or host>] using a bcrypt
+   password; client [<address>] port [<port>]`. A device fills in the address
+   of the person logging in, and `sshd` on a host does through PAM; a `sudo`
+   prompt on the server itself gives none, and the fields are left out. The
+   `from [...]` part and its readers (`device scan`, `log`) are unchanged.
+
+3. **`ssh` audit lines say where the caller logged in from.** The `auth.info`
+   and `auth.warning` lines of `tacctl ssh` and `device ssh`, and the block
+   editor's refusals, gain `from=<address>`: the first field of
+   `SSH_CONNECTION` when the environment has it, else the host of the login
+   record of the terminal (sudo removes `SSH_CONNECTION`; sshd records the
+   client there). The field is omitted when it cannot be told.
+
+4. **The restore point is marked as unchecked only in its `archive config`
+   form.** The copy form (`--restore-point=<fs>`) and the back-out's
+   `configure replace <file> force` ran on IOS 12.4(15)SW, IOS 15.6(2)T and
+   IOS-XE 16.7 without `archive` configured: the file was written, the pasted
+   region converged, and the replace returned the access list to its first
+   state. The report's "not lab-tested" note and the "tried only on devices
+   with `archive`" caveat are gone for that form; the bare form keeps its
+   note, and `copy <file> running-config` is still described as a merge.
+
+5. **`install` and `upgrade` no longer put a copy of the README into
+   `/etc/tacquito`.** That directory is the daemon's; tacctl's documentation is
+   in the project clone (`/opt/tacctl/docs/`). The first upgrade removes the
+   copy an earlier release left there (`Removed: README.md`).
+
+6. **A pull records the release, model and serial number of the device.** What
+   a device reports about itself is kept with the last-pull record (replaced by
+   every good pull, never in `devices.yaml`): the release (a Junos device's
+   `show version` `Junos:` line, else the configuration's `set version`; the
+   `Cisco IOS Software ... Version X,` line of the version output a Cisco pull
+   already reads; a WTI unit's command menu version), and the model and serial
+   number from more commands in the same session (`show chassis hardware` and
+   `show version` on Junos, `show inventory` on IOS and IOS-XE). A device that
+   refuses one is pulled all the same with the field empty, and a command that
+   stalls takes the pull at most 15 seconds more; no extra login. `device show`
+   has `Release:`, `Model:` and `Serial:` rows after the Configuration row,
+   `device config list` a `RELEASE` column, and `--json` of both (and `device
+   list`) the fields `release`, `model` and `serial` (`release` in `device
+   config list`); the operator tier and up see them, as the Configuration row.
+
+7. **A Junos walkthrough follows the device's recorded release for the idle
+   timeout.** `set system login idle-timeout` exists from Junos 16.1; the
+   walkthrough of a registered device (`device config show`) whose last pull
+   recorded an older release sets the timeout on each login class instead. A
+   device with no recorded release gets the global statement, as before. The
+   statements a release lacks are kept as rows of one table
+   (`internal/devices/gates.go`), added when a device refuses one. The compare
+   and the plan leave the idle timeout out in both forms.
+
+8. **IOS block lines were run on three releases; the compare reads IOS's
+   default zone.** The system and snmp block lines (banner, domain name and
+   list, name servers, NTP servers, community, trap host, `enable traps`, trap
+   source) were pasted and read back on IOS 12.4(15)SW, 15.6(2)T and IOS-XE
+   16.7.1. `clock timezone UTC 0` is the default zone and no release prints
+   it: the rendered line now reads as present on a device with no `clock
+   timezone` statement (it read `differs` for good). The report's "not
+   checked on a device" note for the blocks is now only for a system block
+   with NTP key lines. IOS 12.4 stores an `ntp server <host> version 3`
+   without the option: for a device in the IOS 12.x syntax the walkthrough,
+   the managed `system` section and the plan type and compare the line
+   without `version 3`, and every other option and version stays; the block's
+   text, `show`, `check` and `adopt` are unchanged, and other devices get the
+   line as typed. The restore point's caveat says that a 12.4 `configure
+   replace` can stop at an `ntp server` with options.
+
+9. **The IOS `system` and `snmp` blocks take the VRF forms and the `informs`
+   host kind.** `ntp server vrf <name> <host> ...`, `ip name-server vrf <name>
+   <address> ...`, `ip domain name vrf <name> <name>` and `ip domain list vrf
+   <name> <name>` in a system block, and `snmp-server host <address> [vrf
+   <name>] [informs|traps] [version 1|2c] <community> ...` in an snmp block,
+   are statements of the block (SNMPv3 stays refused, and `informs` needs
+   `version 2c`, which `check` enforces). The vrf is part of the object: a
+   line with it is satisfied by no line without it and the other way round,
+   `ip domain name` is one per vrf, and a `no` line names the vrf it takes
+   out. A trap host is the entry IOS keeps: one object per address, vrf,
+   kind, `udp-port` (162 is the default) and community. One address as traps
+   and as informs, or on two ports, is several hosts, which a block states one
+   line each, `adopt` takes as they are and a device's own beside the block's
+   stay kept and listed; the version and the notification types are
+   attributes, replaced in place when they differ (this also holds for a
+   0.2.7 block: a host the block states on another port than the device's is
+   typed beside it, no longer in its place). The compare reads the stored
+   forms of IOS 15.6 (a vrf's name servers one line each) and IOS-XE 16.7
+   (one line), and the two blanks IOS prints before `config` in `udp-port
+   1162  config`. The plan's undo of a trap host is `no` and its line up to
+   its `udp-port`, without the types (`no snmp-server host <address> C` does
+   not take away an informs host or one with a `udp-port`); a vrf statement
+   is undone as `no ntp server vrf <name> <host>`, `no ip name-server vrf
+   <name> <address>`, `no ip domain name vrf <name>` or `no ip domain list vrf
+   <name> <name>`. A device's own `ip domain name` is kept when the block
+   states only a vrf's. `check` notes each vrf a block names: tacctl does not
+   create one, and the device refuses a line that names one it lacks. The
+   report words name the vrf (`the NTP server <host> in vrf <name>`), and a
+   device's host of another vrf, kind or port is reported as its own entry.
+
+10. **Colour appears only on a terminal, and `NO_COLOR` and `TACCTL_COLOR`
+    decide it.** Output was coloured whatever it went to; a pipe or a file
+    held escape sequences. Now each of standard output and standard error is
+    styled only when it is a terminal and `TERM` is neither empty nor `dumb`.
+    `TACCTL_COLOR=always` styles both even into a pipe, `TACCTL_COLOR=never`
+    neither, and either wins; otherwise a non-empty `NO_COLOR` means never.
+    The `[INFO]`, `[WARN]` and `[ERROR]` lines (they carry their word) and the
+    bold titles of the listings follow the rule; the decision is made once
+    per process, and a program tacctl starts keeps the terminal it is
+    attached to. The sudoers drop-ins (per-tier and group) keep the two
+    variables through sudo: their `env_keep` line is now `SSH_AUTH_SOCK
+    TACCTL_CONSOLE DISPLAY NO_COLOR TACCTL_COLOR`, and `tacctl upgrade`
+    rewrites a group drop-in that is exactly the text 0.2.7 or an earlier
+    release wrote (an edited one is left, with the warning that names
+    `config sudoers install <group>`) and the per-tier drop-in as before.
+    Without a drop-in, a user's `NO_COLOR` is not seen under sudo and the
+    terminal decides; the login console decides by its terminal only.
+    `rollback` to 0.2.3 puts 0.2.3's text back over both forms.
+
+11. **`tacctl help` says what tacctl is and where it lives.** The title line
+   reads "Network-device AAA from one store: TACACS+ (tacquito) and RADIUS
+   (FreeRADIUS)", a second line names the copyright holder, the licence and
+   the project address, and the last line points to the manual page and
+   `/opt/tacctl/docs/`. `version --long` ends with the copyright, licence and
+   address line; `version` is unchanged.
+
+12. **`version --long` no longer asks for a password.** The per-tier sudoers
+   drop-in listed `tacctl version` and not `tacctl version --long`, so a
+   caller through `sudo` (the shell, the console) was asked for a password for
+   the longer form. The drop-in lists both; the first upgrade rewrites an
+   unedited drop-in.
+
+13. **Help text and the shell's `?` listing are highlighted on a colour
+   terminal.** Verbs and listing labels are bold, option names and
+   placeholders cyan; the plain text is the same bytes. The same colour rule
+   as the `[INFO]` and `[WARN]` lines applies.
+
+14. **Go 1.27.2.** The toolchain `install` and `upgrade` fetch and verify, and
+   the one tacctl is built with, is Go 1.27.2 (`go.mod` says `go 1.27.0`). The
+   Python 3.12 `repr` that the configuration reader reproduces now uses
+   CPython's own printable-character table (Unicode 15.0) instead of the Go
+   toolchain's, so what tacctl prints no longer moves with a Go release.
+   An upgrade that has to build tacctl from source on a host whose Go is
+   older than the tree needs (a branch, or a release binary that cannot be
+   verified) installs the toolchain first; before, the build stopped at
+   `go.mod requires go >= 1.27.0`.
+
 ## 0.2.7 (2026-10-12)
 
 1. **The break-glass section compares login names without regard to case, and says so.**

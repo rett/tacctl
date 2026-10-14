@@ -13,7 +13,7 @@ const (
 	GoBin = "/usr/local/go/bin/go"
 	// GoVersion is GO_VERSION, the toolchain tacctl installs (the bootstrap
 	// shim's GO_VERSION; go.mod's go line).
-	GoVersion = "1.26.2"
+	GoVersion = "1.27.2"
 	// Command is the installed tacctl command: the binary from 0.2.0 on,
 	// a symlink to the bash entrypoint before.
 	Command = "/usr/local/bin/tacctl"

@@ -27,6 +27,7 @@ type patchEnv struct {
 	session, local, syslog string
 	bcrypt                 string
 	acct                   string
+	ctxKeys, authen        string
 }
 
 func newPatchEnv(t *testing.T) *patchEnv {
@@ -52,6 +53,8 @@ func newPatchEnv(t *testing.T) *patchEnv {
 		syslog:  filepath.Join(src, acctDir, "syslog", "syslog.go"),
 		bcrypt:  filepath.Join(src, authenDir, "bcrypt", "bcrypt.go"),
 		acct:    filepath.Join(src, "cmds", "server", "handlers", "acct.go"),
+		ctxKeys: filepath.Join(src, "ctx_keys.go"),
+		authen:  filepath.Join(src, "cmds", "server", "handlers", "authen.go"),
 	}
 	pe.git("init", "-q")
 	pe.git("add", "-A")
@@ -113,10 +116,16 @@ func TestPatchesApplyTheAuthenticationNASAddressPatch(t *testing.T) {
 	}
 	mustContain(t, p.out(), "Applied tacquito patch: 0003")
 	src := readFile(t, p.bcrypt)
-	mustContain(t, src, `"accepting user [%v] from [%v] using a bcrypt password"`)
-	mustContain(t, src, `"failed to validate the user [%v] from [%v] using a bcrypt password"`)
+	mustContain(t, src, `"accepting user [%v] from [%v] using a bcrypt password%v"`)
+	mustContain(t, src, `"failed to validate the user [%v] from [%v] using a bcrypt password%v"`)
 	mustContain(t, src, "tq.ContextConnRemoteAddr")
 	mustContain(t, src, `nasAddr := "unknown"`)
+	// The end user's address and port, as the start packet carries them,
+	// follow the message when the client sent any.
+	mustContain(t, src, `"; client [%v]"`)
+	mustContain(t, src, `" port [%v]"`)
+	mustContain(t, readFile(t, p.ctxKeys), `ContextClientAddr ContextKey = "client-addr"`)
+	mustContain(t, readFile(t, p.authen), "tq.ContextClientAddr, string(body.RemAddr)")
 	// Idempotent: the reverse check sees it applied and nothing is re-applied.
 	p.reset()
 	if ok, err := p.apply(); err != nil || ok {

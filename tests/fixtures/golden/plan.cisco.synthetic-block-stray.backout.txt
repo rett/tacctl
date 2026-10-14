@@ -19,7 +19,7 @@ line con 0
 ip access-list standard POLLERS
  permit 203.0.113.9
 no snmp-server enable traps snmp linkdown linkup
-snmp-server host 192.0.2.61 version 2c poller-traps udp-port 1162
+no snmp-server host 192.0.2.61 version 2c poller-traps
 snmp-server community poller-ro RW POLLERS
 ip access-list standard POLLERS
  no permit 198.51.100.0 0.0.0.255

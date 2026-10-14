@@ -500,7 +500,7 @@ func TestInstallCancelPrereqsAndBranchUsage(t *testing.T) {
 			t.Fatalf("exit %d", code)
 		}
 		inOrder(t, o.text(), "  tacctl Installer", "Install tacctl ("+o.p.Deploy+", "+o.p.Command+") and its state directory ("+o.p.StateDir+")",
-			"Go 1.26.2 (if not present)", "RADIUS (FreeRADIUS) is not installed; add it later with: tacctl backend enable radius", "[INFO] Cancelled.")
+			"Go 1.27.2 (if not present)", "RADIUS (FreeRADIUS) is not installed; add it later with: tacctl backend enable radius", "[INFO] Cancelled.")
 		if len(o.phases) != 0 || len(o.run.Calls()) != 0 {
 			t.Errorf("ran %v %v", o.phases, o.run.Argvs())
 		}
@@ -828,6 +828,26 @@ func TestUpgradeRefreshesTheTiersSudoersOnlyWhenInstalledAndDifferent(t *testing
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
 	inOrder(t, o.text(), "[WARN]   Not updated: tiers sudoers (visudo validation failed; "+file+" is unchanged)", "Managed scripts:")
+
+	// What 0.2.7 wrote (the env_keep line without the colour variables) is
+	// stale like any older text: rewritten to this release's.
+	o2 := newOhost(t)
+	o2.cloned()
+	o2.run.Func(func(c execx.Cmd) bool { return c.Name == "install" }, func(c execx.Cmd) (execx.Result, error) {
+		data, err := os.ReadFile(c.Args[len(c.Args)-2])
+		if err != nil {
+			return execx.Result{Code: 1}, nil
+		}
+		return execx.Result{}, os.WriteFile(c.Args[len(c.Args)-1], data, 0o440)
+	})
+	o2.write(o2.p.TierSudoersFile, tier.Sudoers027())
+	if code := upgrade(o2); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o2.stdout, o2.stderr)
+	}
+	if got := readFile(t, o2.p.TierSudoersFile); got != tier.Sudoers() || !strings.Contains(got, "NO_COLOR TACCTL_COLOR") ||
+		!strings.Contains(o2.text(), "[INFO]   Updated: tiers sudoers") {
+		t.Errorf("0.2.7 text not rewritten: %q\n%s", got, o2.text())
+	}
 	if readFile(t, file) != "# an older release's rules\n" || installs() != 0 {
 		t.Errorf("replaced although visudo refused: %q", readFile(t, file))
 	}
@@ -1273,6 +1293,9 @@ func TestUpgradeRefreshesTheGroupSudoersItWrote(t *testing.T) {
 	left("another group", head+envKeep+"%staff ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl\n", true)
 	left("extra line", v023+"%ops ALL=(ALL) NOPASSWD: ALL\n", true)
 	left("forged header", head+"%wheel ALL=(ALL) NOPASSWD: ALL\n", true)
+	// 0.2.7's text with an edit: customised, as the older texts are.
+	left("0.2.7 edited", tier.GroupSudoers027("wheel")+"# mine\n", true)
+	left("0.2.7 rule edited", strings.Replace(tier.GroupSudoers027("wheel"), "NOPASSWD", "PASSWD", 1), true)
 	// A header that says tacctl wrote it but names no group it knows (the
 	// install accepts [a-zA-Z_][a-zA-Z0-9_-]* only): left alone, said once.
 	for name, g := range map[string]string{"group with a space": "a b", "dotted group": "ops.team"} {
@@ -1287,7 +1310,10 @@ func TestUpgradeRefreshesTheGroupSudoersItWrote(t *testing.T) {
 	}
 
 	// Exactly an earlier release's text: rewritten for the group it names.
-	for name, text := range map[string]string{"0.2.1-0.2.3": v023, "0.2.0": v020} {
+	for name, text := range map[string]string{
+		"0.2.1-0.2.3": v023, "0.2.0": v020,
+		"0.2.4-0.2.6": tier.GroupSudoers026("wheel"), "0.2.7": tier.GroupSudoers027("wheel"),
+	} {
 		o.write(file, text)
 		if code := upgrade(o); code != 0 {
 			t.Fatalf("%s: exit %d\n%s\n%s", name, code, o.stdout, o.stderr)

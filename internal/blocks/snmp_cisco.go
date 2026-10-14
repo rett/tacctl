@@ -6,7 +6,7 @@ package blocks
 // comment lines and blank lines, nothing else:
 //
 //	snmp-server community <string> RO|RW [<acl-name>]
-//	snmp-server host <address> [version 1|2c] <community> [udp-port <n>] [<type> ...]
+//	snmp-server host <address> [vrf <name>] [informs|traps] [version 1|2c] <community> [udp-port <n>] [<type> ...]
 //	snmp-server enable traps [<type> [<subtype> ...]]
 //	snmp-server trap-source <interface>
 //	ip access-list standard <NAME>
@@ -108,10 +108,15 @@ func (a *IOSACL) HasAny() bool {
 	return slices.ContainsFunc(a.Entries, func(e ACLEntry) bool { return e.Any })
 }
 
-// IOSHost is one 'snmp-server host' object, keyed by its address and
-// community. Community is a secret.
+// IOSHost is one 'snmp-server host' object, keyed as an IOS entry is: by its
+// address, its vrf, its kind (traps or informs), its udp-port and its
+// community. The same address in another vrf, of the other kind or on another
+// port is another object; the version and the notification types are
+// attributes of the entry, which a typed line replaces. Community is a secret.
 type IOSHost struct {
 	Addr      netip.Addr
+	VRF       string // "": the global table
+	Kind      string // "", "traps" or "informs", as written
 	Version   string // "", "1" or "2c"
 	Community string
 	UDPPort   int // 0: the device's default
@@ -119,7 +124,28 @@ type IOSHost struct {
 	Lines     []int
 }
 
-func (h *IOSHost) key() string { return h.Addr.String() + " " + h.Community }
+// hostKey is the identity of a host as IOS keeps it: its address, the vrf when
+// it has one, 'informs' when it is the informs kind (traps is the default),
+// the udp-port when it is not 162 and its community. The same address and
+// community as traps and as informs, or on two ports, are two entries.
+func hostKey(addr netip.Addr, vrf, kind string, port int, community string) string {
+	s := addr.String()
+	if vrf != "" {
+		s += " vrf " + vrf
+	}
+	if kind == "informs" {
+		s += " informs"
+	}
+	if port != 0 && port != defaultTrapPort {
+		s += " udp-port " + strconv.Itoa(port)
+	}
+	return s + " " + community
+}
+
+// defaultTrapPort is the udp-port of a host that names none.
+const defaultTrapPort = 162
+
+func (h *IOSHost) key() string { return hostKey(h.Addr, h.VRF, h.Kind, h.UDPPort, h.Community) }
 
 // IOSTraps is one 'snmp-server enable traps' statement: no word (every
 // type), a type, or a type and its subtypes.
@@ -142,15 +168,18 @@ const (
 
 // IOSNotManaged is one 'no ...' line: not managed on this device. Name is
 // the community string (IOSNoCommunity), the list's name (IOSNoACL) or the
-// community of a host (IOSNoHost); Addr and Version are the host's, and
-// Words the traps' type and subtypes.
+// community of a host (IOSNoHost); Addr, VRF, HostKind, UDPPort and Version
+// are the host's, and Words the traps' type and subtypes.
 type IOSNotManaged struct {
-	Line    int
-	Kind    string
-	Name    string
-	Addr    netip.Addr
-	Version string
-	Words   []string
+	Line     int
+	Kind     string
+	Name     string
+	Addr     netip.Addr
+	VRF      string
+	HostKind string
+	UDPPort  int
+	Version  string
+	Words    []string
 }
 
 // IOSSNMPBlock is a parsed IOS snmp block. Objects are in the order of
@@ -388,7 +417,7 @@ func (p *iosParser) snmpServer(t []string) {
 			return
 		}
 		if prev := p.b.host(h.key()); prev != nil {
-			p.errf("host %d is stated twice (one address and community, one line)", p.b.hostOrd(h.key()))
+			p.errf("host %d is stated twice (one line for an address, vrf, kind, udp-port and community)", p.b.hostOrd(h.key()))
 			return
 		}
 		h.Lines = []int{p.line}
@@ -604,9 +633,11 @@ func parseIPv4(s string) (netip.Addr, string) {
 	return a, ""
 }
 
-// hostLine reads the words after 'snmp-server host': <address> [version
-// 1|2c] <community> [udp-port <n>] [<type> ...]. With forNo the port and the
-// types are not accepted (a 'no' line names the entry only).
+// hostLine reads the words after 'snmp-server host': <address> [vrf <name>]
+// [informs|traps] [version 1|2c] <community> [udp-port <n>] [<type> ...]. The
+// vrf and the kind may be written in either order. Informs need version 2c.
+// With forNo the types are not accepted (a 'no' line names the entry: its
+// address, vrf, kind, community and port).
 func (p *iosParser) hostLine(t []string, forNo bool) *IOSHost {
 	if len(t) == 0 {
 		p.errf("'snmp-server host' needs an address (word 3)")
@@ -619,6 +650,33 @@ func (p *iosParser) hostLine(t []string, forNo bool) *IOSHost {
 	}
 	h := &IOSHost{Addr: a}
 	rest := t[1:]
+options:
+	for len(rest) > 0 {
+		switch rest[0] {
+		case "vrf":
+			if h.VRF != "" {
+				p.errf("host: vrf is stated twice on the line")
+				return nil
+			}
+			if len(rest) < 2 {
+				p.errf("host: 'vrf' takes the name of the vrf after it")
+				return nil
+			}
+			if why := vrfProblem(rest[1]); why != "" {
+				p.errf("the vrf name of the host %s", why)
+				return nil
+			}
+			h.VRF, rest = rest[1], rest[2:]
+		case "traps", "informs":
+			if h.Kind != "" {
+				p.errf("host: traps or informs is stated twice on the line")
+				return nil
+			}
+			h.Kind, rest = rest[0], rest[1:]
+		default:
+			break options
+		}
+	}
 	if len(rest) > 0 && rest[0] == "version" {
 		if len(rest) < 2 || (rest[1] != "1" && rest[1] != "2c") {
 			p.errf("version takes 1 or 2c (SNMPv3 needs a user, which a block does not hold)")
@@ -628,10 +686,13 @@ func (p *iosParser) hostLine(t []string, forNo bool) *IOSHost {
 	}
 	switch {
 	case len(rest) > 0 && (rest[0] == "traps" || rest[0] == "informs" || rest[0] == "vrf"):
-		p.errf("host: '%s' is not in the grammar of a block", rest[0])
+		p.errf("host: '%s' comes before the version: <address> [vrf <name>] [informs|traps] [version 1|2c] <community>", rest[0])
 		return nil
 	case len(rest) == 0:
 		p.errf("host needs the community the notifications are sent with")
+		return nil
+	case h.Kind == "informs" && h.Version != "2c":
+		p.errf("host: informs need 'version 2c' (the device refuses informs in SNMPv1, its default)")
 		return nil
 	}
 	if why := iosCommunityProblem(rest[0]); why != "" {
@@ -644,14 +705,7 @@ func (p *iosParser) hostLine(t []string, forNo bool) *IOSHost {
 	}
 	h.Community = rest[0]
 	rest = rest[1:]
-	what := fmt.Sprintf("host %d", p.b.hostOrd(h.key()))
-	if forNo {
-		if len(rest) > 0 {
-			p.errf("a 'no snmp-server host' line names the address, the version and the community only")
-			return nil
-		}
-		return h
-	}
+	what := fmt.Sprintf("host %d", len(p.b.Hosts)+1)
 	if len(rest) >= 1 && rest[0] == "udp-port" {
 		if len(rest) < 2 {
 			p.errf("%s: udp-port takes a port number", what)
@@ -663,6 +717,13 @@ func (p *iosParser) hostLine(t []string, forNo bool) *IOSHost {
 			return nil
 		}
 		h.UDPPort, rest = n, rest[2:]
+	}
+	if forNo {
+		if len(rest) > 0 {
+			p.errf("a 'no snmp-server host' line names the address, the vrf, the kind, the version, the community and the udp-port only")
+			return nil
+		}
+		return h
 	}
 	for _, w := range rest {
 		if !slices.Contains(IOSTrapTypes, w) {
@@ -743,7 +804,7 @@ func (p *iosParser) no(t []string) {
 		if h == nil {
 			return
 		}
-		nm.Addr, nm.Version, nm.Name = h.Addr, h.Version, h.Community
+		nm.Addr, nm.VRF, nm.HostKind, nm.UDPPort, nm.Version, nm.Name = h.Addr, h.VRF, h.Kind, h.UDPPort, h.Version, h.Community
 	case t[0] == "snmp-server" && len(t) >= 2 && t[1] == "enable":
 		nm.Kind = IOSNoTraps
 		w := p.trapWords(t[2:], "no snmp-server enable")
@@ -847,13 +908,18 @@ func CheckIOSSNMP(b *IOSSNMPBlock, layer Layer) []Finding {
 			add(first(a.Lines), SevNote, "access list %d (%s) is named by no community of this block (a community of the device may use it)", n, a.Name)
 		}
 	}
+	seenVRF := map[string]bool{}
 	for i, h := range b.Hosts {
 		n := i + 1
 		if layer == LayerDefault {
 			add(first(h.Lines), SevError, "host %d: the default block names no host (a scope or a device does)", n)
 		}
-		add(first(h.Lines), SevNote, "host %d is set when the device lacks it, and its line is replaced when it differs; the device's other hosts are kept", n)
+		add(first(h.Lines), SevNote, "host %d is set when the device lacks it (an entry is its address, vrf, kind, udp-port and community), and its version and notification types are replaced when they differ; the device's other hosts are kept", n)
 		add(first(h.Lines), SevNote, "host %d carries a community string, a secret, on %s", n, lineList(h.Lines))
+		if h.VRF != "" && !seenVRF[h.VRF] {
+			seenVRF[h.VRF] = true
+			add(first(h.Lines), SevNote, "vrf %s must exist on the device: tacctl does not create a vrf, and the device refuses a host that names one it lacks", h.VRF)
+		}
 	}
 	for _, t := range b.Traps {
 		w := "every notification type"
@@ -919,7 +985,7 @@ func ResolveIOSSNMP(def, scope, dev *IOSSNMPBlock) *IOSSNMPBlock {
 			case IOSNoACL:
 				out.ACLs = slices.DeleteFunc(out.ACLs, func(a *IOSACL) bool { return a.Name == d.Name })
 			case IOSNoHost:
-				k := d.Addr.String() + " " + d.Name
+				k := hostKey(d.Addr, d.VRF, d.HostKind, d.UDPPort, d.Name)
 				out.Hosts = slices.DeleteFunc(out.Hosts, func(h *IOSHost) bool { return h.key() == k })
 			case IOSNoTraps:
 				k := strings.Join(d.Words, " ")
@@ -1038,6 +1104,12 @@ func joinWords(w []string) string {
 
 func (h *IOSHost) text() string {
 	s := "snmp-server host " + h.Addr.String()
+	if h.VRF != "" {
+		s += " vrf " + h.VRF
+	}
+	if h.Kind != "" {
+		s += " " + h.Kind
+	}
 	if h.Version != "" {
 		s += " version " + h.Version
 	}
@@ -1066,10 +1138,20 @@ func (d IOSNotManaged) text() string {
 		return "no ip access-list standard " + d.Name
 	case IOSNoHost:
 		s := "no snmp-server host " + d.Addr.String()
+		if d.VRF != "" {
+			s += " vrf " + d.VRF
+		}
+		if d.HostKind != "" {
+			s += " " + d.HostKind
+		}
 		if d.Version != "" {
 			s += " version " + d.Version
 		}
-		return s + " " + d.Name
+		s += " " + d.Name
+		if d.UDPPort != 0 {
+			s += " udp-port " + strconv.Itoa(d.UDPPort)
+		}
+		return s
 	case IOSNoTrapSource:
 		s := "no snmp-server trap-source"
 		if d.Name != "" {

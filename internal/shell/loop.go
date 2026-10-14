@@ -108,6 +108,10 @@ type Options struct {
 	// lists the choices). A paste is not affected. Off: a blank is a blank.
 	// Interactive only.
 	SpaceCompletion bool
+	// Styled shows the labels of the '?' list in bold. The caller decides
+	// it from the terminal and the user's choice (ui.Colour); false: plain.
+	// Interactive only.
+	Styled bool
 	// Help is the text of 'help <words>'; false when there is none.
 	Help func(words []string) (string, bool)
 	// Exec runs a tacctl command with the terminal's stdout and stderr and
@@ -361,7 +365,7 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 		hist = NewHistory("", nil)
 	}
 	ed := &editor{prompt: s.o.Prompt, hist: hist, complete: s.o.Complete, completeFixed: s.o.CompleteFixed, explain: s.o.Explain, listMax: s.o.ListMax,
-		systemShell: s.o.SystemShell != nil, spaces: s.o.SpaceCompletion}
+		systemShell: s.o.SystemShell != nil, spaces: s.o.SpaceCompletion, styled: s.o.Styled}
 	if ed.listMax == 0 {
 		ed.listMax = DefaultListMax
 	}

@@ -96,8 +96,27 @@ func TestIOSParseRefusals(t *testing.T) {
 		{"a quote", "snmp-server community \"a b\" RO\n", "a quote"},
 		{"a host with no community", "snmp-server host 192.0.2.5\n", "needs the community"},
 		{"a host with v3", "snmp-server host 192.0.2.5 version 3 priv " + secA + "\n", "SNMPv3"},
-		{"a host in a vrf", "snmp-server host 192.0.2.5 vrf M " + secA + "\n", "'vrf' is not in the grammar"},
-		{"informs", "snmp-server host 192.0.2.5 informs " + secA + "\n", "'informs' is not in the grammar"},
+		{"a vrf with no name", "snmp-server host 192.0.2.5 vrf\n", "takes the name of the vrf"},
+		{"vrf as the last word", "snmp-server host 192.0.2.5 informs vrf\n", "takes the name of the vrf"},
+		{"a vrf and no community", "snmp-server host 192.0.2.5 vrf M\n", "needs the community"},
+		{"a vrf name with a space", "snmp-server host 192.0.2.5 vrf \"M N\" " + secA + "\n", "a quote"},
+		{"a vrf name split by a blank", "snmp-server host 192.0.2.5 vrf M N " + secA + " config\n", "a notification type is one of"},
+		{"a vrf name off the alphabet", "snmp-server host 192.0.2.5 vrf M;N " + secA + "\n", "the vrf name of the host holds a character other than"},
+		{"a long vrf name", "snmp-server host 192.0.2.5 vrf " + strings.Repeat("v", 65) + " " + secA + "\n", "the vrf name of the host is longer than 64"},
+		{"a vrf placeholder", "snmp-server host 192.0.2.5 vrf <vrf> " + secA + "\n", "the vrf name of the host holds a character other than"},
+		{"v3 in a vrf", "snmp-server host 192.0.2.5 vrf M version 3 priv " + secA + "\n", "SNMPv3"},
+		{"v3 informs", "snmp-server host 192.0.2.5 informs version 3 priv " + secA + "\n", "SNMPv3"},
+		{"a vrf twice", "snmp-server host 192.0.2.5 vrf M vrf N " + secA + "\n", "vrf is stated twice"},
+		{"a kind twice", "snmp-server host 192.0.2.5 informs traps " + secA + "\n", "traps or informs is stated twice"},
+		{"informs v1", "snmp-server host 192.0.2.5 informs version 1 " + secA + "\n", "informs need 'version 2c'"},
+		{"informs with no version", "snmp-server host 192.0.2.5 informs " + secA + "\n", "informs need 'version 2c'"},
+		{"informs in a vrf with no version", "snmp-server host 192.0.2.5 vrf M informs " + secA + "\n", "informs need 'version 2c'"},
+		{"a no of informs with no version", "no snmp-server host 192.0.2.5 informs " + secA + "\n", "informs need 'version 2c'"},
+		{"the kind after the version", "snmp-server host 192.0.2.5 version 2c informs " + secA + "\n", "comes before the version"},
+		{"a vrf after the version", "snmp-server host 192.0.2.5 version 2c vrf M " + secA + "\n", "comes before the version"},
+		{"a host in a vrf twice", "snmp-server host 192.0.2.5 vrf M " + secA + "\nsnmp-server host 192.0.2.5 vrf M version 2c " + secA + " config\n", "is stated twice"},
+		{"a no with a vrf and types", "no snmp-server host 192.0.2.5 vrf M " + secA + " udp-port 162 config\n", "names the address, the vrf, the kind, the version, the community and the udp-port only"},
+		{"a no with a bad port", "no snmp-server host 192.0.2.5 " + secA + " udp-port 0\n", "a number from 1 to 65535"},
 		{"a host port", "snmp-server host 192.0.2.5 " + secA + " udp-port 70000\n", "a number from 1 to 65535"},
 		{"a host type", "snmp-server host 192.0.2.5 " + secA + " bogus\n", "a notification type is one of"},
 		{"a host twice", "snmp-server host 192.0.2.5 " + secA + "\nsnmp-server host 192.0.2.5 " + secA + " config\n", "is stated twice"},
@@ -126,7 +145,8 @@ func TestIOSParseRefusals(t *testing.T) {
 		{"a long line", "snmp-server enable traps " + strings.Repeat("a ", 600) + "\n", "longer than"},
 		{"a bare no", "no\n", "'no' needs a statement"},
 		{"a no of something else", "no ip route 0.0.0.0\n", "a 'no' line takes"},
-		{"a no with a port", "no snmp-server host 192.0.2.5 " + secA + " udp-port 162\n", "names the address, the version and the community only"},
+		{"a no with types", "no snmp-server host 192.0.2.5 " + secA + " config\n", "names the address, the vrf, the kind, the version, the community and the udp-port only"},
+		{"the same host with the default kind and port", "snmp-server host 192.0.2.5 " + secA + "\nsnmp-server host 192.0.2.5 traps version 2c " + secA + " udp-port 162 config\n", "is stated twice"},
 		{"a no of tacctl's list", "no ip access-list standard TACCTL-SNMP\n", "a name tacctl renders itself"},
 	} {
 		_, fs := ParseIOSSNMP(c.text)
@@ -195,8 +215,11 @@ snmp-server enable traps snmp linkdown
 `, LayerDevice)
 	r := ResolveIOSSNMP(nil, scope, dev)
 	got := IOSSNMPStatements(r)
+	// the port is part of the entry: the device's host on 1162 is another one
+	// than the scope's on 162, which stays
 	want := []string{"ip access-list standard P", " permit host 203.0.113.9", "snmp-server community a-community-1 RW P",
-		"snmp-server host 192.0.2.50 version 2c traps-one udp-port 1162", "snmp-server enable traps config", "snmp-server enable traps snmp linkdown"}
+		"snmp-server host 192.0.2.50 traps-one", "snmp-server host 192.0.2.50 version 2c traps-one udp-port 1162",
+		"snmp-server enable traps config", "snmp-server enable traps snmp linkdown"}
 	if !slices.Equal(got, want) {
 		t.Errorf("resolved:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
@@ -291,6 +314,7 @@ snmp-server contact noc@example.net
 snmp-server host 192.0.2.61 traps version 2c poller-traps
 snmp-server host 192.0.2.62 informs version 2c poller-traps
 snmp-server host 192.0.2.63 vrf M poller-traps
+snmp-server host 192.0.2.64 vrf M informs version 2c poller-traps udp-port 1162  config
 snmp-server enable traps config
 snmp-server enable traps snmp authentication linkdown linkup
 snmp-server user v3user TACCTL-GROUP v3 auth sha secretvalue
@@ -315,13 +339,16 @@ func TestAdoptIOSSNMP(t *testing.T) {
 		"ip access-list standard POLLERS\n permit host 192.0.2.60\n permit 198.51.100.0 0.0.0.255\n",
 		"snmp-server community poller-string RO POLLERS\nsnmp-server community writer-string RW POLLERS\n",
 		"snmp-server host 192.0.2.61 version 2c poller-traps\n",
+		"snmp-server host 192.0.2.62 informs version 2c poller-traps\n",
+		"snmp-server host 192.0.2.63 vrf M poller-traps\n",
+		"snmp-server host 192.0.2.64 vrf M informs version 2c poller-traps udp-port 1162 config\n",
 		"snmp-server enable traps snmp authentication linkdown linkup\n",
 	} {
 		if !strings.Contains(res.Text, want) {
 			t.Errorf("the draft lacks %q:\n%s", want, res.Text)
 		}
 	}
-	for _, bad := range []string{"scope-own-string", "numbered-string", "view-string", "0822455D0A16", "already-string", "TACCTL", "informs", "vrf",
+	for _, bad := range []string{"scope-own-string", "numbered-string", "view-string", "0822455D0A16", "already-string", "TACCTL",
 		"v3user", "DENYING", "snmp-server enable traps config", "Rack", "noc@"} {
 		if strings.Contains(res.Text, bad) {
 			t.Errorf("the draft holds %q:\n%s", bad, res.Text)
@@ -360,5 +387,188 @@ func TestAdoptIOSSNMP(t *testing.T) {
 	// nothing to adopt
 	if res := AdoptIOSSNMP("", own, nil, nil); res.Text != "" || res.Statements != 0 {
 		t.Errorf("empty: %+v", res)
+	}
+}
+
+// A traps host and an informs host of one address, a port of its own, and a
+// vrf that is named like a kind are separate entries a draft keeps; a line
+// that is the same entry as an earlier one is reported, never dropped
+// silently.
+func TestAdoptIOSSNMPHostIdentity(t *testing.T) {
+	raw := "snmp-server host 192.0.2.5 version 2c poller-traps\n" +
+		"snmp-server host 192.0.2.5 informs version 2c poller-traps\n" +
+		"snmp-server host 192.0.2.5 version 2c poller-traps udp-port 1162\n" +
+		"snmp-server host 192.0.2.6 vrf traps traps version 2c poller-traps\n" +
+		"snmp-server host 192.0.2.6 vrf informs informs version 2c poller-traps\n" +
+		"snmp-server host 192.0.2.5 version 1 poller-traps\n"
+	res := AdoptIOSSNMP(raw, AdoptOwn{}, nil, nil)
+	b, fs := ParseIOSSNMP(res.Text)
+	if HasErrors(fs) || len(b.Hosts) != 5 {
+		t.Fatalf("the draft:\n%s\n%s", res.Text, dump(fs))
+	}
+	for _, want := range []string{
+		"snmp-server host 192.0.2.5 version 2c poller-traps\n",
+		"snmp-server host 192.0.2.5 informs version 2c poller-traps\n",
+		"snmp-server host 192.0.2.5 version 2c poller-traps udp-port 1162\n",
+		"snmp-server host 192.0.2.6 vrf traps version 2c poller-traps\n",
+		"snmp-server host 192.0.2.6 vrf informs informs version 2c poller-traps\n",
+	} {
+		if !strings.Contains(res.Text, want) {
+			t.Errorf("the draft lacks %q:\n%s", want, res.Text)
+		}
+	}
+	if len(res.Left) != 1 || !strings.Contains(res.Left[0], "stated twice") || strings.Contains(res.Left[0], "poller-traps") {
+		t.Errorf("left: %q", res.Left)
+	}
+}
+
+// The vrf and the kind of a trap host: accepted in either order, one object
+// per address, vrf, kind, udp-port and community, rendered as typed.
+func TestIOSHostVRFAndInforms(t *testing.T) {
+	text := "snmp-server host 192.0.2.5 vrf MGMT version 2c " + secA + "\n" +
+		"snmp-server host 192.0.2.5 informs version 2c " + secA + "\n" +
+		"snmp-server host 192.0.2.6 informs vrf MGMT version 2c " + secA + " udp-port 1162 config\n" +
+		"snmp-server host 192.0.2.7 traps " + secA + "\n" +
+		"snmp-server host 192.0.2.5 vrf OTHER.v-1_x " + secA + "\n"
+	b, fs := LintIOSSNMP(text, LayerScope)
+	if HasErrors(fs) {
+		t.Fatal(dump(fs))
+	}
+	if len(b.Hosts) != 5 {
+		t.Fatalf("hosts: %+v", b.Hosts)
+	}
+	h := b.Hosts[0]
+	if h.VRF != "MGMT" || h.Kind != "" || h.Version != "2c" || h.key() != "192.0.2.5 vrf MGMT "+secA {
+		t.Errorf("host 1: %+v", h)
+	}
+	if h := b.Hosts[1]; h.VRF != "" || h.Kind != "informs" || h.key() != "192.0.2.5 informs "+secA {
+		t.Errorf("host 2: %+v", h)
+	}
+	if h := b.Hosts[2]; h.VRF != "MGMT" || h.Kind != "informs" || h.UDPPort != 1162 || !slices.Equal(h.Types, []string{"config"}) {
+		t.Errorf("host 3: %+v", h)
+	}
+	// rendered as typed, the vrf first (the order of the IOS reference)
+	st := strings.Join(IOSSNMPStatements(b), "\n")
+	for _, want := range []string{
+		"snmp-server host 192.0.2.5 vrf MGMT version 2c " + secA,
+		"snmp-server host 192.0.2.5 informs version 2c " + secA,
+		"snmp-server host 192.0.2.6 vrf MGMT informs version 2c " + secA + " udp-port 1162 config",
+		"snmp-server host 192.0.2.7 traps " + secA,
+	} {
+		if !strings.Contains(st, want+"\n") && !strings.HasSuffix(st, want) {
+			t.Errorf("statements lack %q:\n%s", want, st)
+		}
+	}
+	// the block reads back as itself
+	b2, fs := ParseIOSSNMP(b.String(false))
+	if HasErrors(fs) || b2.String(false) != b.String(false) {
+		t.Errorf("round trip: %v\n%s", fs, b.String(false))
+	}
+	// one note per vrf, the strings elided
+	n := 0
+	_, cfs := LintIOSSNMP(text, LayerScope)
+	for _, f := range cfs {
+		if strings.Contains(f.Text, "must exist on the device") {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Errorf("vrf notes: %d\n%s", n, dump(cfs))
+	}
+	if strings.Contains(b.String(true), secA) || !strings.Contains(b.String(true), "vrf MGMT version 2c <secret:1>") {
+		t.Errorf("elided:\n%s", b.String(true))
+	}
+
+	// resolution: the vrf and the kind are part of the key, so a device's
+	// host in the vrf replaces the scope's of the vrf only (its version is an
+	// attribute, replaced in place), and a no line names the vrf and the kind
+	scope, _ := ParseIOSSNMP("snmp-server host 192.0.2.5 vrf MGMT " + secA + "\nsnmp-server host 192.0.2.5 " + secA + "\n" +
+		"snmp-server host 192.0.2.5 vrf MGMT informs version 2c " + secA + "\n")
+	dev, _ := ParseIOSSNMP("snmp-server host 192.0.2.5 vrf MGMT version 2c " + secA + " config\n")
+	r := ResolveIOSSNMP(nil, scope, dev)
+	if len(r.Hosts) != 3 || r.Hosts[0].Version != "2c" || !slices.Equal(r.Hosts[0].Types, []string{"config"}) || r.Hosts[1].VRF != "" || r.Hosts[2].Kind != "informs" {
+		t.Errorf("resolved: %+v %+v %+v", r.Hosts[0], r.Hosts[1], r.Hosts[2])
+	}
+	no, fs := ParseIOSSNMP("no snmp-server host 192.0.2.5 vrf MGMT informs version 2c " + secA + "\n")
+	if HasErrors(fs) || len(no.NotManaged) != 1 || no.NotManaged[0].VRF != "MGMT" || no.NotManaged[0].HostKind != "informs" {
+		t.Fatalf("%+v %v", no.NotManaged, fs)
+	}
+	r = ResolveIOSSNMP(nil, scope, no)
+	if len(r.Hosts) != 2 || r.Hosts[0].Kind != "" || r.Hosts[0].VRF != "MGMT" || r.Hosts[1].VRF != "" {
+		t.Errorf("the no line of the informs host took out %+v", r.Hosts)
+	}
+	if got := no.String(false); got != "no snmp-server host 192.0.2.5 vrf MGMT informs version 2c "+secA+"\n" {
+		t.Errorf("no line text: %q", got)
+	}
+	// a no line without the vrf leaves the vrf's host alone
+	noGlobal, _ := ParseIOSSNMP("no snmp-server host 192.0.2.5 " + secA + "\n")
+	r = ResolveIOSSNMP(nil, scope, noGlobal)
+	if len(r.Hosts) != 2 || r.Hosts[0].VRF != "MGMT" || r.Hosts[1].Kind != "informs" {
+		t.Errorf("the no line without a vrf took out %+v", r.Hosts)
+	}
+}
+
+// The identity of a host is the entry IOS keeps: address, vrf, kind (traps is
+// the default), udp-port (162 is the default) and community. The version and
+// the notification types are attributes a typed line replaces.
+func TestIOSHostIdentity(t *testing.T) {
+	text := "snmp-server host 192.0.2.5 version 2c " + secA + "\n" +
+		"snmp-server host 192.0.2.5 informs version 2c " + secA + "\n" +
+		"snmp-server host 192.0.2.5 version 2c " + secA + " udp-port 1162\n" +
+		"snmp-server host 192.0.2.5 informs version 2c " + secA + " udp-port 1162 config\n"
+	b, fs := LintIOSSNMP(text, LayerScope)
+	if HasErrors(fs) {
+		t.Fatal(dump(fs))
+	}
+	if len(b.Hosts) != 4 {
+		t.Fatalf("a traps and an informs host of one address, on two ports, are four entries: %+v", b.Hosts)
+	}
+	keys := map[string]bool{}
+	for _, h := range b.Hosts {
+		keys[h.key()] = true
+	}
+	if len(keys) != 4 {
+		t.Errorf("keys: %v", keys)
+	}
+	// the kind's and the port's defaults, written out, are the same entry
+	d := &IOSHost{Addr: b.Hosts[0].Addr, Kind: "traps", UDPPort: 162, Community: secA}
+	if d.key() != b.Hosts[0].key() {
+		t.Errorf("%q is not %q", d.key(), b.Hosts[0].key())
+	}
+	// another version or types: the same entry, so a second line is refused
+	_, fs = ParseIOSSNMP("snmp-server host 192.0.2.5 version 1 " + secA + "\nsnmp-server host 192.0.2.5 version 2c " + secA + " config\n")
+	if !hasFinding(fs, SevError, -1, "is stated twice") {
+		t.Errorf("a version and types are no identity:\n%s", dump(fs))
+	}
+
+	// resolution: a device's line of the same entry replaces the version and
+	// the types in place; the other three stay
+	dev, _ := ParseIOSSNMP("snmp-server host 192.0.2.5 informs version 2c " + secA + " udp-port 1162 ospf\n")
+	r := ResolveIOSSNMP(nil, b, dev)
+	if len(r.Hosts) != 4 || !slices.Equal(r.Hosts[3].Types, []string{"ospf"}) || len(r.Hosts[0].Types) != 0 {
+		t.Errorf("resolved: %+v", r.Hosts)
+	}
+	// a no line names the entry with its port; without one it names the entry
+	// on the default port
+	no, fs := ParseIOSSNMP("no snmp-server host 192.0.2.5 version 2c " + secA + " udp-port 1162\n")
+	if HasErrors(fs) || len(no.NotManaged) != 1 || no.NotManaged[0].UDPPort != 1162 {
+		t.Fatalf("%+v %v", no.NotManaged, fs)
+	}
+	if got := no.String(false); got != "no snmp-server host 192.0.2.5 version 2c "+secA+" udp-port 1162\n" {
+		t.Errorf("no line text: %q", got)
+	}
+	r = ResolveIOSSNMP(nil, b, no)
+	if len(r.Hosts) != 3 {
+		t.Fatalf("after the no line of the port: %+v", r.Hosts)
+	}
+	for _, h := range r.Hosts {
+		if h.Kind == "" && h.UDPPort == 1162 {
+			t.Errorf("the no line left its entry: %+v", h)
+		}
+	}
+	noDefault, _ := ParseIOSSNMP("no snmp-server host 192.0.2.5 " + secA + "\n")
+	r = ResolveIOSSNMP(nil, b, noDefault)
+	if len(r.Hosts) != 3 || r.Hosts[0].Kind != "informs" {
+		t.Errorf("after the no line of the default entry: %+v", r.Hosts)
 	}
 }

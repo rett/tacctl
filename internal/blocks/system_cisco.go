@@ -9,11 +9,11 @@ package blocks
 //	<line>
 //	...
 //	EOF
-//	ip domain name <name>
-//	ip domain list <name>
+//	ip domain name [vrf <name>] <name>
+//	ip domain list [vrf <name>] <name>
 //	clock timezone <zone> <hours> [<minutes>]
-//	ip name-server <address> [<address> ...]
-//	ntp server <address-or-name> [prefer] [version <1-4>] [key <n>] [source <interface>]
+//	ip name-server [vrf <name>] <address> [<address> ...]
+//	ntp server [vrf <name>] <address-or-name> [prefer] [version <1-4>] [key <n>] [source <interface>]
 //	ntp authentication-key <n> md5 <string>
 //	ntp trusted-key <n>
 //	ntp authenticate
@@ -37,9 +37,11 @@ package blocks
 // Everything here is a pure function of text. What a block holds that must
 // not be echoed is the banner (it names a site) and an NTP key's value (a
 // secret): no finding and no message of this package ever holds a word of
-// either; they are named by line, column and count. The VRF forms ('ntp
-// server vrf', 'ip name-server vrf', 'ip domain name vrf') are not in the
-// grammar: a device's own lines of those forms stay unmanaged.
+// either; they are named by line, column and count. A VRF form ('ntp server
+// vrf V', 'ip name-server vrf V', 'ip domain name|list vrf V') is another
+// statement than the one without the vrf: the vrf is part of the identity of
+// the object. tacctl does not create a VRF; the device refuses a block that
+// names one it lacks.
 
 import (
 	"fmt"
@@ -98,11 +100,14 @@ func (z *IOSTimezone) Text() string {
 	return s
 }
 
-// IOSNTPServer is one 'ntp server <address-or-name>' object with the options
-// of its statement. Host is an IPv4 address in canonical text or a host name
-// (as written; compared without case). Zero Version and Key and an empty
-// Source are unstated.
+// IOSNTPServer is one 'ntp server [vrf <name>] <address-or-name>' object with
+// the options of its statement. Host is an IPv4 address in canonical text or a
+// host name (as written; compared without case). VRF is the vrf the server is
+// reached in ("" for none; it is part of the object's identity, so one host in
+// two vrfs is two objects). Zero Version and Key and an empty Source are
+// unstated.
 type IOSNTPServer struct {
+	VRF     string
 	Host    string
 	Prefer  bool
 	Version int
@@ -114,7 +119,7 @@ type IOSNTPServer struct {
 // Text is the statement as the block writes it: the options in the order of
 // the IOS reference (version, key, source, prefer).
 func (s IOSNTPServer) Text() string {
-	l := "ntp server " + s.Host
+	l := "ntp server " + vrfWords(s.VRF) + s.Host
 	if s.Version != 0 {
 		l += " version " + strconv.Itoa(s.Version)
 	}
@@ -130,16 +135,70 @@ func (s IOSNTPServer) Text() string {
 	return l
 }
 
+// IOSDialect is what a train of IOS prints differently from the block's
+// text. DefaultNTPVersion is the NTP version the device never prints in an
+// 'ntp server' line (0 for none): IOS 12.x stores 'ntp server H version 3'
+// as 'ntp server H'.
+type IOSDialect struct {
+	DefaultNTPVersion int
+}
+
+// IOSModern is the syntax of every release after IOS 12.x: the statements
+// are stored as typed.
+var IOSModern = IOSDialect{}
+
+// IOS12 is the IOS 12.x syntax, in which 'version 3' is the default and is
+// not stored.
+var IOS12 = IOSDialect{DefaultNTPVersion: 3}
+
+// textIn is Text as the device in dialect d stores it: the version left out
+// when it is the dialect's default. Every other option stays as stated.
+func (s IOSNTPServer) textIn(d IOSDialect) string {
+	if d.DefaultNTPVersion != 0 && s.Version == d.DefaultNTPVersion {
+		s.Version = 0
+	}
+	return s.Text()
+}
+
+// IOSVRFValue is a value of a statement stated in a vrf ('ip domain name vrf
+// <name> <name>', 'ip domain list vrf <name> <name>', 'ip name-server vrf
+// <name> <address>'). Text is the value (a host name in lower case).
+type IOSVRFValue struct {
+	VRF  string
+	Text string
+	Line int
+}
+
+// vrfWords is 'vrf <name> ' for a vrf, "" for none.
+func vrfWords(vrf string) string {
+	if vrf == "" {
+		return ""
+	}
+	return "vrf " + vrf + " "
+}
+
+// sameServer reports the same object: the same host (without case) in the
+// same vrf.
+func (s IOSNTPServer) sameServer(o IOSNTPServer) bool {
+	return s.VRF == o.VRF && strings.EqualFold(s.Host, o.Host)
+}
+
 // IOSSystemBlock is a parsed IOS system block. The lists are in the order of
-// their first statement.
+// their first statement. The statements that name a vrf are in lists of their
+// own (a vrf's domain name is one per vrf; the domain name without a vrf is
+// DomainName); the NTP servers of every vrf are in NTPServers, told apart by
+// IOSNTPServer.VRF.
 type IOSSystemBlock struct {
-	Banner      *LoginMessage
-	DomainName  *Value
-	DomainList  []Value
-	Timezone    *IOSTimezone
-	NameServers []Value
-	NTPServers  []IOSNTPServer
-	NTPKeys     []NTPKey
+	Banner         *LoginMessage
+	DomainName     *Value
+	VRFDomainNames []IOSVRFValue
+	DomainList     []Value
+	VRFDomainList  []IOSVRFValue
+	Timezone       *IOSTimezone
+	NameServers    []Value
+	VRFNameServers []IOSVRFValue
+	NTPServers     []IOSNTPServer
+	NTPKeys        []NTPKey
 	// NTPTrustedKeys are the 'ntp trusted-key' statements.
 	NTPTrustedKeys []KeyRef
 	// NTPAuthenticate is the 'ntp authenticate' statement (Text is empty: a
@@ -159,6 +218,7 @@ func (b *IOSSystemBlock) BannerBody() string {
 // Empty reports a block with no statement and no 'no' line.
 func (b *IOSSystemBlock) Empty() bool {
 	return b == nil || (b.Banner == nil && b.DomainName == nil && len(b.DomainList) == 0 && b.Timezone == nil &&
+		len(b.VRFDomainNames) == 0 && len(b.VRFDomainList) == 0 && len(b.VRFNameServers) == 0 &&
 		len(b.NameServers) == 0 && len(b.NTPServers) == 0 && len(b.NTPKeys) == 0 && len(b.NTPTrustedKeys) == 0 &&
 		b.NTPAuthenticate == nil && len(b.NotManaged) == 0)
 }
@@ -368,12 +428,78 @@ func (p *iosSysParser) banner(rest []string, lines []string, i int) int {
 	return end - i + 1
 }
 
-// single reads a single-valued statement of one word.
-func (p *iosSysParser) single(dst **Value, what string, args []string, problem func(string) string) {
-	if len(args) >= 1 && args[0] == "vrf" {
-		p.errf("%s: a vrf form is not accepted in a block (the device's own stays unmanaged)", what)
+// reVRFName is a vrf's name: letters, digits, '.', '_' and '-'.
+var reVRFName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+// vrfProblem is why s cannot be the name of a vrf in a block ("" when it
+// can). The reason never holds s.
+func vrfProblem(s string) string {
+	switch {
+	case s == "":
+		return "is empty"
+	case len(s) > MaxIOSName:
+		return fmt.Sprintf("is longer than %d characters", MaxIOSName)
+	case !reVRFName.MatchString(s):
+		return "holds a character other than letters, digits, '.', '_' and '-'"
+	}
+	return ""
+}
+
+// vrfHead reads the optional 'vrf <name>' that heads args: the vrf ("" for
+// none) and the words after it. ok is false when the words are off the
+// grammar (reported).
+func (p *iosSysParser) vrfHead(what string, args []string) (vrf string, rest []string, ok bool) {
+	if len(args) == 0 || args[0] != "vrf" {
+		return "", args, true
+	}
+	if len(args) < 2 {
+		p.errf("%s: 'vrf' takes the name of the vrf after it", what)
+		return "", nil, false
+	}
+	if why := vrfProblem(args[1]); why != "" {
+		p.errf("the vrf name of %s %s", what, why)
+		return "", nil, false
+	}
+	return args[1], args[2:], true
+}
+
+// vrfSingle reads the one value of a single-valued statement of a vrf.
+func (p *iosSysParser) vrfSingle(dst *[]IOSVRFValue, what, vrf string, args []string, problem func(string) string) {
+	if len(args) != 1 {
+		p.errf("%s vrf takes one value and nothing else", what)
 		return
 	}
+	if why := problem(args[0]); why != "" {
+		p.errf("the value of %s vrf %s", what, why)
+		return
+	}
+	if slices.ContainsFunc(*dst, func(o IOSVRFValue) bool { return o.VRF == vrf }) {
+		p.errf("%s is stated twice for one vrf", what)
+		return
+	}
+	*dst = append(*dst, IOSVRFValue{VRF: vrf, Text: strings.ToLower(args[0]), Line: p.line})
+}
+
+// vrfListOf reads one entry of a list statement of a vrf.
+func (p *iosSysParser) vrfListOf(dst *[]IOSVRFValue, what, vrf string, args []string, problem func(string) string) {
+	if len(args) != 1 {
+		p.errf("%s vrf takes one value and nothing else", what)
+		return
+	}
+	if why := problem(args[0]); why != "" {
+		p.errf("the value of %s vrf %s", what, why)
+		return
+	}
+	v := strings.ToLower(args[0])
+	if slices.ContainsFunc(*dst, func(o IOSVRFValue) bool { return o.VRF == vrf && o.Text == v }) {
+		p.errf("%s is listed twice for one vrf", what)
+		return
+	}
+	*dst = append(*dst, IOSVRFValue{VRF: vrf, Text: v, Line: p.line})
+}
+
+// single reads a single-valued statement of one word.
+func (p *iosSysParser) single(dst **Value, what string, args []string, problem func(string) string) {
 	if len(args) != 1 {
 		p.errf("%s takes one value and nothing else", what)
 		return
@@ -402,16 +528,16 @@ func (p *iosSysParser) ip(t []string) {
 		}
 		switch t[1] {
 		case "name":
-			p.single(&p.b.DomainName, "ip domain name", t[2:], hostProblem)
+			p.domainName(t[2:])
 		case "list":
-			p.listOf(&p.b.DomainList, "ip domain list", t[2:], hostProblem)
+			p.domainList(t[2:])
 		default:
 			p.errf("word 3 is not name or list (ip domain lookup and the rest are the device's own)")
 		}
 	case "domain-name":
-		p.single(&p.b.DomainName, "ip domain name", t[1:], hostProblem)
+		p.domainName(t[1:])
 	case "domain-list":
-		p.listOf(&p.b.DomainList, "ip domain list", t[1:], hostProblem)
+		p.domainList(t[1:])
 	case "name-server":
 		p.nameServers(t[1:])
 	default:
@@ -419,13 +545,33 @@ func (p *iosSysParser) ip(t []string) {
 	}
 }
 
+// domainName reads the words after 'ip domain name': [vrf <name>] <name>.
+func (p *iosSysParser) domainName(args []string) {
+	vrf, rest, ok := p.vrfHead("ip domain name", args)
+	switch {
+	case !ok:
+	case vrf == "":
+		p.single(&p.b.DomainName, "ip domain name", rest, hostProblem)
+	default:
+		p.vrfSingle(&p.b.VRFDomainNames, "ip domain name", vrf, rest, hostProblem)
+	}
+}
+
+// domainList reads the words after 'ip domain list': [vrf <name>] <name>.
+func (p *iosSysParser) domainList(args []string) {
+	vrf, rest, ok := p.vrfHead("ip domain list", args)
+	switch {
+	case !ok:
+	case vrf == "":
+		p.listOf(&p.b.DomainList, "ip domain list", rest, hostProblem)
+	default:
+		p.vrfListOf(&p.b.VRFDomainList, "ip domain list", vrf, rest, hostProblem)
+	}
+}
+
 // listOf reads one entry of a list statement; the text is kept in lower case
 // (a host name is no case).
 func (p *iosSysParser) listOf(dst *[]Value, what string, args []string, problem func(string) string) {
-	if len(args) >= 1 && args[0] == "vrf" {
-		p.errf("%s: a vrf form is not accepted in a block (the device's own stays unmanaged)", what)
-		return
-	}
 	if len(args) != 1 {
 		p.errf("%s takes one value and nothing else", what)
 		return
@@ -442,30 +588,46 @@ func (p *iosSysParser) listOf(dst *[]Value, what string, args []string, problem 
 	*dst = append(*dst, Value{v, p.line})
 }
 
-// nameServers reads 'ip name-server <address> [<address> ...]': one object
-// per address.
+// nameServers reads 'ip name-server [vrf <name>] <address> [<address> ...]':
+// one object per address (and vrf).
 func (p *iosSysParser) nameServers(args []string) {
-	if len(args) >= 1 && args[0] == "vrf" {
-		p.errf("ip name-server: a vrf form is not accepted in a block (the device's own stays unmanaged)")
+	vrf, args, ok := p.vrfHead("ip name-server", args)
+	if !ok {
 		return
 	}
+	base := 3
+	if vrf != "" {
+		base = 5
+	}
 	if len(args) == 0 {
-		p.errf("'ip name-server' needs at least one address (word 3)")
+		p.errf("'ip name-server' needs at least one address (word %d)", base)
 		return
 	}
 	var add []Value
 	for i, a := range args {
 		if why := addrProblem(a); why != "" {
-			p.errf("the address %d of ip name-server (word %d) %s", i+1, i+3, why)
+			p.errf("the address %d of ip name-server (word %d) %s", i+1, i+base, why)
 			return
 		}
-		if j := slices.IndexFunc(p.b.NameServers, func(v Value) bool { return v.Text == a }); j >= 0 || slices.ContainsFunc(add, func(v Value) bool { return v.Text == a }) {
+		dup := false
+		if vrf == "" {
+			dup = slices.ContainsFunc(p.b.NameServers, func(v Value) bool { return v.Text == a })
+		} else {
+			dup = slices.ContainsFunc(p.b.VRFNameServers, func(v IOSVRFValue) bool { return v.VRF == vrf && v.Text == a })
+		}
+		if dup || slices.ContainsFunc(add, func(v Value) bool { return v.Text == a }) {
 			p.errf("ip name-server %d is listed twice", i+1)
 			return
 		}
 		add = append(add, Value{a, p.line})
 	}
-	p.b.NameServers = append(p.b.NameServers, add...)
+	if vrf == "" {
+		p.b.NameServers = append(p.b.NameServers, add...)
+		return
+	}
+	for _, v := range add {
+		p.b.VRFNameServers = append(p.b.VRFNameServers, IOSVRFValue{VRF: vrf, Text: v.Text, Line: v.Line})
+	}
 }
 
 func (p *iosSysParser) clock(t []string) {
@@ -550,8 +712,21 @@ func (p *iosSysParser) ntpServer(args []string) {
 		p.errf("'ntp server' needs an address or a name (word 3)")
 		return
 	}
-	if args[0] == "vrf" || args[0] == "ip" || args[0] == "ipv6" {
-		p.errf("ntp server: '%s' is not in the grammar of a block (write the address or the name; the device's own vrf lines stay unmanaged)", args[0])
+	vrf, args, ok := p.vrfHead("ntp server", args)
+	if !ok {
+		return
+	}
+	// the words before the host: 'ntp server' and, with a vrf, 'vrf <name>'
+	base := 3
+	if vrf != "" {
+		base = 5
+	}
+	if len(args) == 0 {
+		p.errf("'ntp server' needs an address or a name (word %d)", base)
+		return
+	}
+	if args[0] == "ip" || args[0] == "ipv6" {
+		p.errf("ntp server: '%s' is not in the grammar of a block (write the address or the name)", args[0])
 		return
 	}
 	host := args[0]
@@ -560,10 +735,10 @@ func (p *iosSysParser) ntpServer(args []string) {
 		return
 	}
 	if why := hostOrAddrProblem(host); why != "" {
-		p.errf("the address of ntp server (word 3) %s", why)
+		p.errf("the address of ntp server (word %d) %s", base, why)
 		return
 	}
-	s := IOSNTPServer{Host: host, Line: p.line}
+	s := IOSNTPServer{VRF: vrf, Host: host, Line: p.line}
 	for i := 1; i < len(args); i++ {
 		w := args[i]
 		value := func() (string, bool) {
@@ -626,12 +801,12 @@ func (p *iosSysParser) ntpServer(args []string) {
 			}
 			s.Source = v
 		default:
-			p.errf("ntp server: word %d is not one of prefer, version, key, source", i+3)
+			p.errf("ntp server: word %d is not one of prefer, version, key, source", i+base)
 			return
 		}
 	}
-	if i := slices.IndexFunc(p.b.NTPServers, func(o IOSNTPServer) bool { return strings.EqualFold(o.Host, host) }); i >= 0 {
-		p.errf("ntp server %d is listed twice (one line per server)", i+1)
+	if i := slices.IndexFunc(p.b.NTPServers, func(o IOSNTPServer) bool { return o.sameServer(s) }); i >= 0 {
+		p.errf("ntp server %d is listed twice (one line per server and vrf)", i+1)
 		return
 	}
 	p.b.NTPServers = append(p.b.NTPServers, s)
@@ -742,17 +917,33 @@ func (p *iosSysParser) no(t []string) {
 			p.errf("'no ip' needs domain or name-server (word 3)")
 			return
 		}
+		// a vrf names the object of that vrf: another one than the same
+		// statement without it
+		inVRF := func(what string, args []string) ([]string, bool) {
+			vrf, rest, vok := p.vrfHead("no "+what, args)
+			nm.VRF = vrf
+			return rest, vok
+		}
 		switch {
-		case t[1] == "domain" && len(t) >= 3 && t[2] == "name":
-			ok = bare(SysDomainName, t[3:], "ip domain name")
-		case t[1] == "domain-name":
-			ok = bare(SysDomainName, t[2:], "ip domain name")
-		case t[1] == "domain" && len(t) >= 3 && t[2] == "list":
-			ok = entry(SysDomainSearch, t[3:], "ip domain list", hostProblem)
-		case t[1] == "domain-list":
-			ok = entry(SysDomainSearch, t[2:], "ip domain list", hostProblem)
+		case t[1] == "domain" && len(t) >= 3 && t[2] == "name",
+			t[1] == "domain-name":
+			args := t[2:]
+			if t[1] == "domain" {
+				args = t[3:]
+			}
+			rest, vok := inVRF("ip domain name", args)
+			ok = vok && bare(SysDomainName, rest, "ip domain name")
+		case t[1] == "domain" && len(t) >= 3 && t[2] == "list",
+			t[1] == "domain-list":
+			args := t[2:]
+			if t[1] == "domain" {
+				args = t[3:]
+			}
+			rest, vok := inVRF("ip domain list", args)
+			ok = vok && entry(SysDomainSearch, rest, "ip domain list", hostProblem)
 		case t[1] == "name-server":
-			ok = entry(SysNameServer, t[2:], "ip name-server", addrProblem)
+			rest, vok := inVRF("ip name-server", t[2:])
+			ok = vok && entry(SysNameServer, rest, "ip name-server", addrProblem)
 		default:
 			p.errf("a 'no ip' line takes 'domain name', 'domain list' or 'name-server'")
 			return
@@ -765,7 +956,9 @@ func (p *iosSysParser) no(t []string) {
 		args := t[2:]
 		switch t[1] {
 		case "server":
-			ok = entry(SysNTPServer, args, "ntp server", hostOrAddrProblem)
+			vrf, rest, vok := p.vrfHead("no ntp server", args)
+			nm.VRF = vrf
+			ok = vok && entry(SysNTPServer, rest, "ntp server", hostOrAddrProblem)
 		case "authentication-key":
 			ok = entry(SysAuthKey, args, "ntp authentication-key", keyProblem)
 		case "trusted-key":
@@ -856,6 +1049,27 @@ func CheckIOSSystem(b *IOSSystemBlock, _ Layer) []Finding {
 	if b.NTPAuthenticate != nil && len(b.NTPKeys) == 0 && len(b.NTPTrustedKeys) == 0 {
 		add(b.NTPAuthenticate.Line, SevNote, "'ntp authenticate' needs keys and trusted keys on the device: this block states none, so the device must already hold them")
 	}
+	// tacctl creates no vrf: the device refuses a statement that names one
+	// it lacks (once per vrf, at its first statement)
+	seenVRF := map[string]bool{}
+	vrfNote := func(vrf string, line int) {
+		if vrf != "" && !seenVRF[vrf] {
+			seenVRF[vrf] = true
+			add(line, SevNote, "vrf %s must exist on the device: tacctl does not create a vrf, and the device refuses a statement that names one it lacks", vrf)
+		}
+	}
+	for _, v := range b.VRFDomainNames {
+		vrfNote(v.VRF, v.Line)
+	}
+	for _, v := range b.VRFDomainList {
+		vrfNote(v.VRF, v.Line)
+	}
+	for _, v := range b.VRFNameServers {
+		vrfNote(v.VRF, v.Line)
+	}
+	for _, s := range b.NTPServers {
+		vrfNote(s.VRF, s.Line)
+	}
 	for _, d := range b.NotManaged {
 		add(d.Line, SevNote, "a 'no' line: what it names is not managed on this device; it is kept and never rendered")
 	}
@@ -913,14 +1127,23 @@ func ResolveIOSSystem(def, scope, dev *IOSSystemBlock) *IOSSystemBlock {
 			v := *l.NTPAuthenticate
 			out.NTPAuthenticate = &v
 		}
+		for _, v := range l.VRFDomainNames {
+			out.VRFDomainNames = upsert(out.VRFDomainNames, v, func(o IOSVRFValue) bool { return o.VRF == v.VRF })
+		}
 		for _, v := range l.DomainList {
 			out.DomainList = upsert(out.DomainList, v, func(o Value) bool { return o.Text == v.Text })
+		}
+		for _, v := range l.VRFDomainList {
+			out.VRFDomainList = upsert(out.VRFDomainList, v, func(o IOSVRFValue) bool { return o.VRF == v.VRF && o.Text == v.Text })
 		}
 		for _, v := range l.NameServers {
 			out.NameServers = upsert(out.NameServers, v, func(o Value) bool { return o.Text == v.Text })
 		}
+		for _, v := range l.VRFNameServers {
+			out.VRFNameServers = upsert(out.VRFNameServers, v, func(o IOSVRFValue) bool { return o.VRF == v.VRF && o.Text == v.Text })
+		}
 		for _, s := range l.NTPServers {
-			out.NTPServers = upsert(out.NTPServers, s, func(o IOSNTPServer) bool { return strings.EqualFold(o.Host, s.Host) })
+			out.NTPServers = upsert(out.NTPServers, s, func(o IOSNTPServer) bool { return o.sameServer(s) })
 		}
 		for _, k := range l.NTPKeys {
 			out.NTPKeys = upsert(out.NTPKeys, k, func(o NTPKey) bool { return o.Number == k.Number })
@@ -937,21 +1160,36 @@ func ResolveIOSSystem(def, scope, dev *IOSSystemBlock) *IOSSystemBlock {
 func (b *IOSSystemBlock) apply(d SystemNotManaged) {
 	match := func(s string) bool { return d.Value == "" || strings.EqualFold(s, d.Value) }
 	num := func(n int) bool { return d.Value == "" || strconv.Itoa(n) == d.Value }
+	// a line of a vrf takes that vrf's objects out, and a line without one
+	// only the objects that have none
+	inVRF := func(v IOSVRFValue) bool { return v.VRF == d.VRF && match(v.Text) }
 	switch d.Kind {
 	case SysMessage:
 		b.Banner = nil
 	case SysDomainName:
-		b.DomainName = nil
+		if d.VRF == "" {
+			b.DomainName = nil
+		} else {
+			b.VRFDomainNames = slices.DeleteFunc(b.VRFDomainNames, func(v IOSVRFValue) bool { return v.VRF == d.VRF })
+		}
 	case SysTimeZone:
 		b.Timezone = nil
 	case SysAuthenticate:
 		b.NTPAuthenticate = nil
 	case SysDomainSearch:
-		b.DomainList = slices.DeleteFunc(b.DomainList, func(v Value) bool { return match(v.Text) })
+		if d.VRF == "" {
+			b.DomainList = slices.DeleteFunc(b.DomainList, func(v Value) bool { return match(v.Text) })
+		} else {
+			b.VRFDomainList = slices.DeleteFunc(b.VRFDomainList, inVRF)
+		}
 	case SysNameServer:
-		b.NameServers = slices.DeleteFunc(b.NameServers, func(v Value) bool { return match(v.Text) })
+		if d.VRF == "" {
+			b.NameServers = slices.DeleteFunc(b.NameServers, func(v Value) bool { return match(v.Text) })
+		} else {
+			b.VRFNameServers = slices.DeleteFunc(b.VRFNameServers, inVRF)
+		}
 	case SysNTPServer:
-		b.NTPServers = slices.DeleteFunc(b.NTPServers, func(s IOSNTPServer) bool { return match(s.Host) })
+		b.NTPServers = slices.DeleteFunc(b.NTPServers, func(s IOSNTPServer) bool { return s.VRF == d.VRF && match(s.Host) })
 	case SysAuthKey:
 		b.NTPKeys = slices.DeleteFunc(b.NTPKeys, func(k NTPKey) bool { return num(k.Number) })
 	case SysTrustedKey:
@@ -969,8 +1207,15 @@ func (b *IOSSystemBlock) apply(d SystemNotManaged) {
 // the NTP statements in the order IOS needs them: the keys, the trusted
 // keys, the servers, and 'ntp authenticate' last. This is what the managed
 // system section is made of; a banner whose text holds every delimiter has no
-// unit (Check refuses it).
+// unit (Check refuses it). The 'ntp server' lines are as stated: see
+// IOSSystemUnitsIn.
 func IOSSystemUnits(b *IOSSystemBlock) [][]string {
+	return IOSSystemUnitsIn(b, IOSModern)
+}
+
+// IOSSystemUnitsIn is IOSSystemUnits for a device in dialect d: an 'ntp
+// server' line is without the version the dialect never prints.
+func IOSSystemUnitsIn(b *IOSSystemBlock, d IOSDialect) [][]string {
 	if b == nil {
 		return nil
 	}
@@ -984,14 +1229,23 @@ func IOSSystemUnits(b *IOSSystemBlock) [][]string {
 	if b.DomainName != nil {
 		one("ip domain name " + b.DomainName.Text)
 	}
+	for _, v := range b.VRFDomainNames {
+		one("ip domain name " + vrfWords(v.VRF) + v.Text)
+	}
 	for _, v := range b.DomainList {
 		one("ip domain list " + v.Text)
+	}
+	for _, v := range b.VRFDomainList {
+		one("ip domain list " + vrfWords(v.VRF) + v.Text)
 	}
 	if b.Timezone != nil {
 		one(b.Timezone.Text())
 	}
 	for _, v := range b.NameServers {
 		one("ip name-server " + v.Text)
+	}
+	for _, v := range b.VRFNameServers {
+		one("ip name-server " + vrfWords(v.VRF) + v.Text)
 	}
 	for _, k := range b.NTPKeys {
 		one(fmt.Sprintf("ntp authentication-key %d md5 %s", k.Number, k.Value))
@@ -1000,7 +1254,7 @@ func IOSSystemUnits(b *IOSSystemBlock) [][]string {
 		one(fmt.Sprintf("ntp trusted-key %d", k.Number))
 	}
 	for _, s := range b.NTPServers {
-		one(s.Text())
+		one(s.textIn(d))
 	}
 	if b.NTPAuthenticate != nil {
 		one("ntp authenticate")
@@ -1011,8 +1265,13 @@ func IOSSystemUnits(b *IOSSystemBlock) [][]string {
 // IOSSystemStatements are the lines of the block in the order of
 // IOSSystemUnits, flattened (the banner's lines are the lines typed).
 func IOSSystemStatements(b *IOSSystemBlock) []string {
+	return IOSSystemStatementsIn(b, IOSModern)
+}
+
+// IOSSystemStatementsIn is IOSSystemStatements for a device in dialect d.
+func IOSSystemStatementsIn(b *IOSSystemBlock, d IOSDialect) []string {
 	var out []string
-	for _, u := range IOSSystemUnits(b) {
+	for _, u := range IOSSystemUnitsIn(b, d) {
 		out = append(out, u...)
 	}
 	return out
@@ -1048,6 +1307,9 @@ func (d SystemNotManaged) iosText() string {
 	default:
 		s = "no ntp " + d.Kind
 	}
+	if d.VRF != "" {
+		s += " vrf " + d.VRF
+	}
 	if d.Value != "" {
 		s += " " + d.Value
 	}
@@ -1073,6 +1335,9 @@ func ElideIOSSystem(b *IOSSystemBlock) *IOSSystemBlock {
 		out.NTPKeys[i].Value = secretMark
 	}
 	out.DomainList = slices.Clone(b.DomainList)
+	out.VRFDomainNames = slices.Clone(b.VRFDomainNames)
+	out.VRFDomainList = slices.Clone(b.VRFDomainList)
+	out.VRFNameServers = slices.Clone(b.VRFNameServers)
 	out.NameServers = slices.Clone(b.NameServers)
 	out.NTPServers = slices.Clone(b.NTPServers)
 	out.NTPTrustedKeys = slices.Clone(b.NTPTrustedKeys)

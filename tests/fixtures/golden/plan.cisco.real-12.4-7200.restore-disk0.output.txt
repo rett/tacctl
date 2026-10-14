@@ -14,9 +14,6 @@
 !                         level 7 monitor). Fixed by region lines 5-13.
 ! Consistent: snmp, mgmt-acl. Not planned: netconf, breakglass.
 ! Secrets: 2 present on the device, not changed (--secrets pushes them).
-! Note: restore point: the restore block and the 'configure replace' alternative of the back-out were
-! written from the references and have not been checked on a device (not lab-tested): read them before
-! you use them.
 ! WARNING: the device has no enable secret: with the server unreachable, level 15 is reached only
 ! through the local user and 'aaa authorization exec'; set an enable secret first if you want a second
 ! way.

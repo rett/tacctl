@@ -230,7 +230,7 @@ func (inv *invocation) ssh(args []string) error {
 			a.Out.Warn("break-glass is held on " + e.Name + ": it takes local accounts only")
 		}
 	}
-	a.Logger(inv.ctx, "auth.info", "ssh user="+caller+" device="+e.Name+" addr="+addr+forward+cacheNote+inv.sshConsoleField())
+	a.Logger(inv.ctx, "auth.info", "ssh user="+caller+" device="+e.Name+" addr="+addr+forward+cacheNote+inv.originFields())
 	start := a.Knobs.Now()
 	code, _, startErr := hosts.Attached(inv.ctx, a.Runner, cmd, a.Stdin, a.Out)
 	if cached && code == 255 {
@@ -242,7 +242,7 @@ func (inv *invocation) ssh(args []string) error {
 		code = 127
 	}
 	a.Logger(inv.ctx, "auth.info", "ssh end user="+caller+" device="+e.Name+" status="+strconv.Itoa(code)+
-		" duration="+console.Seconds(a.Knobs.Now().Sub(start))+inv.sshConsoleField())
+		" duration="+console.Seconds(a.Knobs.Now().Sub(start))+inv.originFields())
 	if startErr != nil {
 		a.Out.Error("ssh could not be run (" + startErr.Error() + "); it comes with the openssh-client package.")
 		return exit(code)
@@ -285,7 +285,7 @@ func (inv *invocation) sshResolve(p Parsed, caller string, extra, fwd []string) 
 	}
 	inConsole := inv.sshConsole()
 	if inConsole && !devreg.Pinned(e) {
-		a.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" device="+e.Name+" scope="+dash(e.Scope)+" reason=unpinned"+inv.sshConsoleField())
+		a.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" device="+e.Name+" scope="+dash(e.Scope)+" reason=unpinned"+inv.originFields())
 		return sshPlan{}, inv.usageErr("'" + e.Name + "' has no pinned host key, so the console does not connect to it; an administrator pins it: tacctl device hostkey " + e.Name + " accept")
 	}
 	plan := sshPlan{entry: e, target: target, port: e.SSHPort()}
@@ -513,7 +513,7 @@ func (inv *invocation) sshForwarding(p Parsed, caller string) (args, kinds []str
 		pol, perr := inv.consolePolicy()
 		t := inv.tierGate().Caller(inv.ctx)
 		if perr != nil || !pol.Forwarding(t) {
-			inv.app.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" reason=forward tier="+string(t)+inv.sshConsoleField())
+			inv.app.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" reason=forward tier="+string(t)+inv.originFields())
 			return nil, nil, inv.usageErr("Forwarding (-X, -Y, -L, -R, -D) is not available to the " + string(t) + " tier in the console; an administrator allows it with: tacctl console forwarding tiers <tiers>")
 		}
 		if !pol.GatewayPorts() {
@@ -529,7 +529,7 @@ func (inv *invocation) sshForwarding(p Parsed, caller string) (args, kinds []str
 				}
 			}
 			if len(open) > 0 {
-				inv.app.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" reason=gateway tier="+string(t)+inv.sshConsoleField())
+				inv.app.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" reason=gateway tier="+string(t)+inv.originFields())
 				return nil, nil, inv.usageErr("In the console, forwarded ports listen on loopback only ("+strings.Join(open, ", ")+" would listen on other addresses of this server).",
 					"An administrator allows it with: tacctl console forwarding gateway-ports enable")
 			}
@@ -610,7 +610,7 @@ func (inv *invocation) sshEscape() bool {
 func (inv *invocation) sshAdmit(caller string, e devreg.Entry) error {
 	a := inv.app
 	deny := func(reason, msg string) error {
-		a.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" device="+e.Name+" scope="+dash(e.Scope)+" reason="+reason+inv.sshConsoleField())
+		a.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" device="+e.Name+" scope="+dash(e.Scope)+" reason="+reason+inv.originFields())
 		return inv.usageErr(msg)
 	}
 	m, err := inv.model()
@@ -671,7 +671,7 @@ func (inv *invocation) sshKeyMismatch(plan sshPlan, caller string) {
 	if !devreg.Compare(e.HostKeys, offered).Changed {
 		return
 	}
-	a.Logger(inv.ctx, "auth.warning", "ssh hostkey-mismatch user="+caller+" device="+e.Name+" addr="+addr)
+	a.Logger(inv.ctx, "auth.warning", "ssh hostkey-mismatch user="+caller+" device="+e.Name+" addr="+addr+inv.originFields())
 	a.Out.ErrorE("The ssh host key of '" + e.Name + "' (" + addr + " port " + strconv.Itoa(port) +
 		") is not the one pinned for it; ssh refused the connection.")
 	inv.stderrLine("  Pinned:  " + devreg.Displays(devreg.ParseHostKeys(e.HostKeys)))

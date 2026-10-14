@@ -39,17 +39,19 @@ func GroupOfSudoers(text string) (string, bool) {
 // groupSudoersEarlier are the texts earlier releases wrote for group: the
 // 0.1.x and 0.2.0 drop-in (the rule alone), the 0.2.1 to 0.2.3 one (with
 // the env_keep line for the agent socket, the console's marker and the
-// display) and the 0.2.4 to 0.2.6 one (with the password cache's alias
-// too). Only a file that is exactly one of these (or the current text)
-// is a file tacctl wrote and nobody has touched.
+// display), the 0.2.4 to 0.2.6 one (with the password cache's alias too)
+// and the 0.2.7 one (with the editor's alias, before the colour variables
+// joined the env_keep line). Only a file that is exactly one of these (or
+// the current text) is a file tacctl wrote and nobody has touched.
 func groupSudoersEarlier(group string) []string {
 	head := "# Managed by tacctl. Grants passwordless sudo on " + Binary + "\n" +
 		"# to members of group '" + group + "'. Remove with: tacctl config sudoers remove\n"
 	rule := "%" + group + " ALL=(ALL) NOPASSWD: " + Binary + "\n"
 	return []string{
 		head + rule,
-		head + EnvKeep + rule,
+		head + envKeep027 + rule,
 		GroupSudoers026(group),
+		GroupSudoers027(group),
 	}
 }
 
@@ -59,9 +61,36 @@ func groupSudoersEarlier(group string) []string {
 func GroupSudoers026(group string) string {
 	return "# Managed by tacctl. Grants passwordless sudo on " + Binary + "\n" +
 		"# to members of group '" + group + "'. Remove with: tacctl config sudoers remove\n" +
-		groupAskpass026 + EnvKeep +
+		groupAskpass026 + envKeep027 +
 		"%" + group + " ALL=(ALL) NOPASSWD: " + Binary + "\n"
 }
+
+// GroupSudoers027 is the drop-in 'config sudoers install <group>' wrote in
+// 0.2.7: 0.2.4's, with 'block adopt' among the cache's lines and the
+// editor's alias, and the env_keep line without the colour variables.
+// 'tacctl rollback' puts 0.2.3's text back over it. Frozen, as the alias
+// texts below are: not what AskpassKeep and EditorKeep return now.
+func GroupSudoers027(group string) string {
+	return "# Managed by tacctl. Grants passwordless sudo on " + Binary + "\n" +
+		"# to members of group '" + group + "'. Remove with: tacctl config sudoers remove\n" +
+		groupAskpass027 + groupEditor027 + envKeep027 +
+		"%" + group + " ALL=(ALL) NOPASSWD: " + Binary + "\n"
+}
+
+// groupAskpass027 and groupEditor027 are the password cache's and the
+// editor's aliases and 'Defaults!' lines as the group drop-in of 0.2.7
+// carries them. Frozen.
+const (
+	groupAskpass027 = "Cmnd_Alias " + AskpassGroupAlias + " = " +
+		Binary + " device config pull *, " + Binary + " device config diff *, " + Binary + " device config plan *, \\\n" +
+		"    " + Binary + " ssh *, " + Binary + " device ssh *, \\\n" +
+		"    " + Binary + " scope block * adopt *, " + Binary + " device block * adopt *\n" +
+		"Defaults!" + AskpassGroupAlias + " env_keep += \"" + AskpassVar + "\"\n"
+	groupEditor027 = "Cmnd_Alias " + EditorGroupAlias + " = " +
+		Binary + " scope block * edit *, " + Binary + " scope block * adopt *, \\\n" +
+		"    " + Binary + " device block * edit *, " + Binary + " device block * adopt *\n" +
+		"Defaults!" + EditorGroupAlias + " env_keep += \"" + EditorVars + "\"\n"
+)
 
 // groupAskpass026 is the password cache's alias and its 'Defaults!' line as
 // the drop-ins of 0.2.4 to 0.2.6 carry them (the four 'device config' and

@@ -68,12 +68,17 @@ func AdoptIOSSystem(raw string, same, up *IOSSystemBlock) AdoptResult {
 				}
 			}
 		case f[0] == "ip" && len(f) >= 3 && (f[1] == "name-server"):
-			if f[2] == "vrf" {
+			// one object per address, in the vrf the line names
+			head, addrs := "ip name-server ", f[2:]
+			if f[2] == "vrf" && len(f) >= 4 {
+				head, addrs = "ip name-server vrf "+f[3]+" ", f[4:]
+			}
+			if f[2] == "vrf" && len(f) < 4 {
 				outside++
 				continue
 			}
-			for _, a := range f[2:] {
-				s := "ip name-server " + a
+			for _, a := range addrs {
+				s := head + a
 				if _, fs := ParseIOSSystem(s + "\n"); HasErrors(fs) {
 					outside++
 					continue
@@ -166,6 +171,54 @@ func AdoptIOSSystem(raw string, same, up *IOSSystemBlock) AdoptResult {
 		}
 		return f(b)
 	}
+	// the statements of a vrf are objects of that vrf: the same value in
+	// another vrf is another statement
+	for _, v := range dev.VRFDomainNames {
+		find := func(b *IOSSystemBlock) *IOSVRFValue {
+			if b != nil {
+				for i := range b.VRFDomainNames {
+					if b.VRFDomainNames[i].VRF == v.VRF {
+						return &b.VRFDomainNames[i]
+					}
+				}
+			}
+			return nil
+		}
+		switch o := find(same); {
+		case o != nil && o.Text == v.Text:
+			already++
+		case o != nil:
+			conflict++
+		default:
+			if u := find(up); u != nil && u.Text == v.Text {
+				already++
+			} else {
+				incl.VRFDomainNames = append(incl.VRFDomainNames, v)
+			}
+		}
+	}
+	vrfList := func(dst *[]IOSVRFValue, dv []IOSVRFValue, sv, uv []IOSVRFValue) {
+		for _, v := range dv {
+			has := func(l []IOSVRFValue) bool {
+				return slices.ContainsFunc(l, func(o IOSVRFValue) bool { return o.VRF == v.VRF && o.Text == v.Text })
+			}
+			if has(sv) || has(uv) {
+				already++
+				continue
+			}
+			*dst = append(*dst, v)
+		}
+	}
+	vrfListOf := func(b *IOSSystemBlock, f func(*IOSSystemBlock) []IOSVRFValue) []IOSVRFValue {
+		if b == nil {
+			return nil
+		}
+		return f(b)
+	}
+	vrfList(&incl.VRFDomainList, dev.VRFDomainList, vrfListOf(same, func(b *IOSSystemBlock) []IOSVRFValue { return b.VRFDomainList }),
+		vrfListOf(up, func(b *IOSSystemBlock) []IOSVRFValue { return b.VRFDomainList }))
+	vrfList(&incl.VRFNameServers, dev.VRFNameServers, vrfListOf(same, func(b *IOSSystemBlock) []IOSVRFValue { return b.VRFNameServers }),
+		vrfListOf(up, func(b *IOSSystemBlock) []IOSVRFValue { return b.VRFNameServers }))
 	list(&incl.DomainList, dev.DomainList, listOf(same, func(b *IOSSystemBlock) []Value { return b.DomainList }),
 		listOf(up, func(b *IOSSystemBlock) []Value { return b.DomainList }))
 	list(&incl.NameServers, dev.NameServers, listOf(same, func(b *IOSSystemBlock) []Value { return b.NameServers }),
@@ -176,7 +229,7 @@ func AdoptIOSSystem(raw string, same, up *IOSSystemBlock) AdoptResult {
 				return nil
 			}
 			for i := range b.NTPServers {
-				if strings.EqualFold(b.NTPServers[i].Host, s.Host) {
+				if b.NTPServers[i].sameServer(s) {
 					return &b.NTPServers[i]
 				}
 			}
@@ -217,7 +270,7 @@ func AdoptIOSSystem(raw string, same, up *IOSSystemBlock) AdoptResult {
 			res.Notes = append(res.Notes, fmt.Sprintf("%s: %d %s, %s", label, n, count(n, "statement", "statements"), tail))
 		}
 	}
-	note(outside, "outside what an IOS system block takes (the vrf forms, 'ip domain lookup', 'ntp master', 'ntp source', other banners, and the like)", "not adopted")
+	note(outside, "outside what an IOS system block takes ('ip domain lookup', 'ntp master', 'ntp source', other banners, and the like)", "not adopted")
 	note(already, "stated already, with the same value, by this block or the scope's", "not repeated")
 	note(conflict, "differing from what this block states (a single value, or a server with other options)", "left as they are (edit them in place)")
 	return res

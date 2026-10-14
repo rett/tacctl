@@ -141,6 +141,37 @@ func TestCiscoSystemInTheWalkthroughAndManaged(t *testing.T) {
 	}
 }
 
+// A device in the IOS 12.x syntax stores 'ntp server H version 3' bare: the
+// walkthrough and the managed section render the bare line for a legacy
+// request and the line as typed for a modern one, one renderer for both.
+func TestCiscoSystemNTPVersion3InTheDialects(t *testing.T) {
+	lab := managedProfiles()[0]
+	const block = "ntp server 192.0.2.123 version 3 key 5 prefer\nntp server 192.0.2.124 version 3\nntp server 192.0.2.125 version 2\n"
+	typed := []string{"ntp server 192.0.2.123 version 3 key 5 prefer", "ntp server 192.0.2.124 version 3", "ntp server 192.0.2.125 version 2"}
+	bare := []string{"ntp server 192.0.2.123 key 5 prefer", "ntp server 192.0.2.124", "ntp server 192.0.2.125 version 2"}
+	for _, c := range []struct {
+		v    variant
+		want []string
+	}{{variants[0], typed}, {variants[1], bare}, {variants[2], typed}} {
+		req, d := ciscoSystemInput(t, lab, c.v, block)
+		sys, ok := sectionOf(mustManaged(t, req, d), "system")
+		if !ok {
+			t.Fatalf("%s: no system section", c.v.name)
+		}
+		if !slices.Equal(sys.Lines, c.want) {
+			t.Errorf("%s: the system section:\n%s\nwant\n%s", c.v.name, strings.Join(sys.Lines, "\n"), strings.Join(c.want, "\n"))
+		}
+		if text := renderText(t, req, d); !strings.Contains(text, strings.Join(c.want, "\n")+"\n") {
+			t.Errorf("%s: the walkthrough lacks the lines:\n%s", c.v.name, text)
+		}
+	}
+	// the legacy walkthrough does not hold the line the device would not keep
+	req, d := ciscoSystemInput(t, lab, variants[1], block)
+	if text := renderText(t, req, d); strings.Contains(text, "192.0.2.124 version 3") || strings.Contains(text, "192.0.2.123 version 3") {
+		t.Errorf("the legacy walkthrough types version 3:\n%s", text)
+	}
+}
+
 // With no block the walkthrough keeps the placeholder, and a block of another
 // vendor is no business of this one.
 func TestCiscoSystemOtherVendorAndNoBlock(t *testing.T) {

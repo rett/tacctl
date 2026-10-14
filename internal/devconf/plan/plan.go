@@ -288,14 +288,10 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 		}
 		d.Sections = append(d.Sections, sp)
 	}
-	// The IOS block's lines (an access list's entries, a trap host, an
-	// 'enable traps' line) were written from the references, never pasted on
-	// a device: the report says so beside the lab note of the standard.
-	if fam == devconf.FamilyIOS && p.blk != nil && p.blk.ios {
-		d.Notes = appendNew(d.Notes, iosBlockNote(opt.Scope))
-	}
-	// the same for the system block's lines, which are not the standard's
-	if fam == devconf.FamilyIOS && len(p.expected(devconf.SectionSystem).Lines) > 0 {
+	// The system block's NTP key lines have not been run on a device (its
+	// other lines and the SNMP block's were pasted and read back on IOS 12.4,
+	// 15.6 and IOS-XE 16.7): the report says so where the block has them.
+	if fam == devconf.FamilyIOS && iosHasNTPKeyLines(p.expected(devconf.SectionSystem).Lines) {
 		d.Notes = appendNew(d.Notes, iosSystemNote(opt.Scope))
 	}
 	for _, n := range never {
@@ -366,10 +362,12 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 		p.buildCleanup(&d)
 	}
 
-	// the restore block and the back-out's alternative were written from the
-	// references: the report says so, once, when the output has the block
+	// the 'archive config' form of the restore point has not been run on a
+	// device: the report says so, once, when the output has the block
 	if d.restoreShown() {
-		d.Notes = appendNew(d.Notes, restoreNote)
+		if n := restoreNoteFor(d.Restore); n != "" {
+			d.Notes = appendNew(d.Notes, n)
+		}
 	}
 
 	// Defensive: nothing on the never list may be in the block.

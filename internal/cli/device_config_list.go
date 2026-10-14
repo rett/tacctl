@@ -123,15 +123,18 @@ func configBlock(e devreg.Entry, rec *devconf.Record) string {
 
 // listJSON is one device of 'device config list --json'.
 type listJSON struct {
-	Name      string            `json:"name"`
-	Scope     string            `json:"scope"`
-	Vendor    string            `json:"vendor"`
-	State     string            `json:"state"`
-	Result    string            `json:"result,omitempty"`
-	Pulled    string            `json:"pulled,omitempty"`
-	By        string            `json:"by,omitempty"`
-	Transport string            `json:"transport,omitempty"`
-	Netconf   string            `json:"netconf,omitempty"`
+	Name      string `json:"name"`
+	Scope     string `json:"scope"`
+	Vendor    string `json:"vendor"`
+	State     string `json:"state"`
+	Result    string `json:"result,omitempty"`
+	Pulled    string `json:"pulled,omitempty"`
+	By        string `json:"by,omitempty"`
+	Transport string `json:"transport,omitempty"`
+	Netconf   string `json:"netconf,omitempty"`
+	// Release is the OS release the last good pull read from the device
+	// (a WTI unit's command menu version); absent when none was read.
+	Release   string            `json:"release,omitempty"`
 	Sections  map[string]string `json:"sections,omitempty"`
 	DiffersIn []string          `json:"differs_in,omitempty"`
 	// Unmanaged counts, per section that is ok, the device's own
@@ -268,6 +271,7 @@ func (inv *invocation) deviceConfigList(args []string) error {
 			}
 			if r.rec != nil {
 				j.Result, j.By, j.Transport = r.rec.Result, r.rec.By, r.rec.Transport
+				j.Release = cleanLine(r.rec.Release)
 				if !r.rec.Pulled.IsZero() {
 					j.Pulled = r.rec.Pulled.UTC().Format(time.RFC3339)
 				}
@@ -298,11 +302,12 @@ func (inv *invocation) deviceConfigList(args []string) error {
 		inv.echo("")
 		return nil
 	}
-	tb := ui.NewTable(head, ui.Left("NAME"), ui.Left("SCOPE"), ui.Left("VENDOR"), ui.Left("CONFIG"), ui.Left("PULLED"),
+	tb := ui.NewTable(head, ui.Left("NAME"), ui.Left("SCOPE"), ui.Left("VENDOR"), ui.Left("RELEASE"), ui.Left("CONFIG"), ui.Left("PULLED"),
 		ui.Left("BY"), ui.Left("VIA"), ui.Left("NETCONF"), ui.Left("DETAIL"))
 	for _, r := range rows {
-		pulled, by, via, nc, detail := "-", "-", "-", "-", "-"
+		pulled, by, via, nc, detail, release := "-", "-", "-", "-", "-", "-"
 		if r.rec != nil {
+			release = dash(cleanLine(r.rec.Release))
 			if !r.rec.Pulled.IsZero() {
 				pulled = seenTime(r.rec.Pulled)
 			}
@@ -349,7 +354,7 @@ func (inv *invocation) deviceConfigList(args []string) error {
 		if !r.e.Configured {
 			detail = "no scope"
 		}
-		tb.Add(r.e.Name, dash(r.e.Scope), r.e.Vendor, r.state, pulled, by, via, nc, detail)
+		tb.Add(r.e.Name, dash(r.e.Scope), r.e.Vendor, release, r.state, pulled, by, via, nc, detail)
 	}
 	inv.write(tb.String())
 	inv.echo("")

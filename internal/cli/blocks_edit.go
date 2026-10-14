@@ -229,7 +229,7 @@ func (inv *invocation) editorAllowed(what string) error {
 	g := inv.tierGate()
 	t := g.Caller(inv.ctx)
 	if err != nil || g.EngineerBound(inv.ctx) || !pol.SystemShell(t) {
-		inv.app.Logger(inv.ctx, "auth.warning", "block "+what+" DENY user="+inv.sudoUser()+" tier="+string(t)+inv.sshConsoleField())
+		inv.app.Logger(inv.ctx, "auth.warning", "block "+what+" DENY user="+inv.sudoUser()+" tier="+string(t)+inv.originFields())
 		return inv.usageErr("In the login console an editor can start a shell, so " + what + " is open only to the tiers that may start the system shell (tacctl console system-shell tiers); the " +
 			string(t) + " tier is not one of them. Nothing was changed.")
 	}

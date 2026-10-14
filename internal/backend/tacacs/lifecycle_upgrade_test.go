@@ -112,7 +112,6 @@ func TestUpgradeNothingNewSaysSo(t *testing.T) {
 	}
 	mustContain(t, u.out(), "Tacquito source already up to date (1111111); patches applied.")
 	mustContain(t, u.out(), "  Unchanged: tacquito.service")
-	mustContain(t, u.out(), "  Unchanged: README.md")
 	mustContain(t, u.out(), "  Unchanged: logrotate config")
 }
 
@@ -355,22 +354,25 @@ func TestUpgradeEveryTriggerAtOnceIsOneRestart(t *testing.T) {
 
 // --- what no daemon reads ------------------------------------------------------
 
-func TestUpgradeNewReadmeOrLogrotateRestartsNothing(t *testing.T) {
+func TestUpgradeOldReadmeCopyOrNewLogrotateRestartsNothing(t *testing.T) {
 	u := newUpgradeEnv(t)
-	appendFile(t, filepath.Join(u.deploy, "README.md"), "\nnew line\n")
+	// the copy of the README that an earlier release put in the daemon's directory
+	if err := os.WriteFile(filepath.Join(u.p.Etc, "README.md"), []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	appendFile(t, filepath.Join(u.deploy, Share, "tacquito.logrotate"), "# new\n")
 	if err := u.again(); err != nil {
 		t.Fatal(err)
 	}
-	mustContain(t, u.out(), "  Updated: README.md")
+	mustContain(t, u.out(), "  Removed: README.md")
 	mustContain(t, u.out(), "  Updated: logrotate config")
 	if u.b.UpgradeReport().FilesUpdated != 2 {
 		t.Fatal(u.b.UpgradeReport())
 	}
 	mustNotContain(t, u.out(), "Restarting")
 	u.wantServiceCalls()
-	if st, _ := os.Stat(filepath.Join(u.p.Etc, "README.md")); st.Mode().Perm() != 0o644 {
-		t.Fatal(st.Mode())
+	if exists(filepath.Join(u.p.Etc, "README.md")) {
+		t.Fatal("the README copy is still there")
 	}
 }
 

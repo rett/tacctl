@@ -1,0 +1,3 @@
+Cisco IOS Software, 7200 Software (C7200-ITPK9-M), Version 12.4(15)SW, RELEASE SOFTWARE (fc2)
+BOOTLDR: 7200 Software (C7200-ITPK9-M), Version 12.4(15)SW, RELEASE SOFTWARE (fc2)
+6 slot VXR midplane, Version 2.1

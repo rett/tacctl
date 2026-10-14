@@ -469,7 +469,7 @@ func TestSudoersNoSetenv(t *testing.T) {
 	if strings.Contains(text, "SETENV") || !strings.Contains(text, "\n"+EnvKeep) {
 		t.Errorf("SETENV or no env_keep line:\n%s", text)
 	}
-	if EnvKeep != "Defaults!/usr/local/bin/tacctl env_keep += \"SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY\"\n" {
+	if EnvKeep != "Defaults!/usr/local/bin/tacctl env_keep += \"SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY NO_COLOR TACCTL_COLOR\"\n" {
 		t.Errorf("EnvKeep %q", EnvKeep)
 	}
 }
@@ -653,7 +653,7 @@ func TestConsoleRows(t *testing.T) {
 	for _, want := range []string{
 		"Cmnd_Alias TACCTL_RO = ", "/usr/local/bin/tacctl _console-policy",
 		"/usr/local/bin/tacctl console show, /usr/local/bin/tacctl console check",
-		`env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY"`,
+		`env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY NO_COLOR TACCTL_COLOR"`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("sudoers lacks %q", want)
@@ -704,22 +704,34 @@ func TestClassifyGroupSudoers(t *testing.T) {
 	askpass026 := "Cmnd_Alias TACCTL_ASKPASS_GROUP_CMDS = /usr/local/bin/tacctl device config pull *, /usr/local/bin/tacctl device config diff *, /usr/local/bin/tacctl device config plan *, \\\n" +
 		"    /usr/local/bin/tacctl ssh *, /usr/local/bin/tacctl device ssh *\n" +
 		"Defaults!TACCTL_ASKPASS_GROUP_CMDS env_keep += \"TACCTL_ASKPASS\"\n"
+	// what 0.2.7 wrote: 'block adopt' among the cache's lines and the
+	// editor's alias
+	askpass027 := "Cmnd_Alias TACCTL_ASKPASS_GROUP_CMDS = /usr/local/bin/tacctl device config pull *, /usr/local/bin/tacctl device config diff *, /usr/local/bin/tacctl device config plan *, \\\n" +
+		"    /usr/local/bin/tacctl ssh *, /usr/local/bin/tacctl device ssh *, \\\n" +
+		"    /usr/local/bin/tacctl scope block * adopt *, /usr/local/bin/tacctl device block * adopt *\n" +
+		"Defaults!TACCTL_ASKPASS_GROUP_CMDS env_keep += \"TACCTL_ASKPASS\"\n"
+	editor027 := "Cmnd_Alias TACCTL_EDITOR_GROUP_CMDS = /usr/local/bin/tacctl scope block * edit *, /usr/local/bin/tacctl scope block * adopt *, \\\n" +
+		"    /usr/local/bin/tacctl device block * edit *, /usr/local/bin/tacctl device block * adopt *\n" +
+		"Defaults!TACCTL_EDITOR_GROUP_CMDS env_keep += \"VISUAL EDITOR\"\n"
 	for name, c := range map[string]struct {
 		text  string
 		group string
 		kind  GroupFile
 	}{
-		"current":       {GroupSudoers("adm"), "adm", GroupCurrent},
-		"0.2.3":         {head + envKeep + rule, "adm", GroupOlder},
-		"0.2.6":         {head + askpass026 + envKeep + rule, "adm", GroupOlder},
-		"0.2.0":         {head + rule, "adm", GroupOlder},
-		"edited rule":   {head + envKeep + "%adm ALL=(ALL) PASSWD: /usr/local/bin/tacctl\n", "adm", GroupCustomised},
-		"forged":        {head + "%adm ALL=(ALL) NOPASSWD: ALL\n", "adm", GroupCustomised},
-		"extra":         {head + envKeep + rule + "# note\n", "adm", GroupCustomised},
-		"foreign":       {"# mine\n" + rule, "", GroupForeign},
-		"unknown group": {strings.Replace(head, "group 'adm'", "group 'ops.team'", 1) + rule, "", GroupUnrecognised},
-		"marker only":   {"# Managed by tacctl. something else\n" + rule, "", GroupUnrecognised},
-		"empty":         {"", "", GroupForeign},
+		"current":             {GroupSudoers("adm"), "adm", GroupCurrent},
+		"0.2.3":               {head + envKeep + rule, "adm", GroupOlder},
+		"0.2.6":               {head + askpass026 + envKeep + rule, "adm", GroupOlder},
+		"0.2.7":               {head + askpass027 + editor027 + envKeep + rule, "adm", GroupOlder},
+		"current spelled out": {head + askpass027 + editor027 + EnvKeep + rule, "adm", GroupCurrent},
+		"0.2.7 edited":        {head + askpass027 + editor027 + envKeep + rule + "# note\n", "adm", GroupCustomised},
+		"0.2.0":               {head + rule, "adm", GroupOlder},
+		"edited rule":         {head + envKeep + "%adm ALL=(ALL) PASSWD: /usr/local/bin/tacctl\n", "adm", GroupCustomised},
+		"forged":              {head + "%adm ALL=(ALL) NOPASSWD: ALL\n", "adm", GroupCustomised},
+		"extra":               {head + envKeep + rule + "# note\n", "adm", GroupCustomised},
+		"foreign":             {"# mine\n" + rule, "", GroupForeign},
+		"unknown group":       {strings.Replace(head, "group 'adm'", "group 'ops.team'", 1) + rule, "", GroupUnrecognised},
+		"marker only":         {"# Managed by tacctl. something else\n" + rule, "", GroupUnrecognised},
+		"empty":               {"", "", GroupForeign},
 	} {
 		g, k := ClassifyGroupSudoers(c.text)
 		if g != c.group || k != c.kind {
