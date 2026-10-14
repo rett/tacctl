@@ -14,6 +14,6 @@
 - [Break-glass](break-glass.md): local accounts for when the server is unreachable, and holding a device back.
 - [Custom templates](templates.md): editing the templates the output is rendered from.
 - [Device configuration](configuration.md): reading, comparing and recording what devices run.
-- [Planning a device's change](planning.md): the paste-ready plan for a device, and `device config apply`, which types it under a confirmed commit and proves it; `device onboard`, which brings a blank device in with one of its local accounts.
+- [Planning a device's change](planning.md): the paste-ready plan for a device, and `device config apply`, which types it under a confirmed commit and proves it; `device onboard`, which brings a blank device in with one of its local accounts; `device collect`, which reads what an unregistered address is, and `device sync`, which fills the registry's empty fields from the records.
 - [SNMP and NETCONF in the walkthroughs](walkthroughs.md): the SNMP and NETCONF steps, host keys and `tacctl ssh`.
 - [The SNMP name hint](snmp-name-hint.md): the device's own name and location, and SNMP settings.

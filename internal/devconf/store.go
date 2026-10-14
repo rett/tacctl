@@ -206,8 +206,14 @@ type Record struct {
 	// statement as the last good pull read it ('flash:'); empty for another
 	// vendor, a device with no archive path and a record made before 0.2.7.
 	// The plan's restore point (--restore-point) is the reader.
-	ArchiveFS string                   `json:"archive_fs,omitempty"`
-	Sections  map[string]SectionRecord `json:"sections,omitempty"`
+	ArchiveFS string `json:"archive_fs,omitempty"`
+	// Hostname is the device's own name as the last good pull of a Junos
+	// device read it ('system host-name', with 'system domain-name' appended
+	// when the name has no dot): the registry's hostname field is filled
+	// from it by 'device sync' (0.2.9). Empty for another vendor, a device
+	// that states none and a record made before 0.2.9.
+	Hostname string                   `json:"hostname,omitempty"`
+	Sections map[string]SectionRecord `json:"sections,omitempty"`
 	// Unit is what the last good pull of a WTI unit saw beside its sections;
 	// nil for every other vendor and for a record made before 0.2.7.
 	Unit    *UnitFacts `json:"unit,omitempty"`

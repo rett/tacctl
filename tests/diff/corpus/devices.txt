@@ -299,6 +299,14 @@ device config apply --check --max 0 --all
 device config shapes
 @known 0.2.9 item 5: device config shapes is new
 device config shapes seed nosuch -y
+@known 0.2.9 item 13: device collect is new
+device collect
+@known 0.2.9 item 13: device collect is new
+device collect 192.0.2.1
+@known 0.2.9 item 14: device sync is new
+device sync
+@known 0.2.9 item 14: device sync is new
+device sync nosuch
 @known 0.2.5 item 37: device config plan is new
 device config plan
 @known 0.2.5 item 37: device config plan is new

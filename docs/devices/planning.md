@@ -134,3 +134,57 @@ Password for alice (device login):
 ### One read as a local account
 
 `device config pull <name> --login <local-user>` (and `diff --pull`, `plan --pull`) logs in to one registered Junos device with a pinned host key as one of its local accounts instead of you, for a device the server does not answer yet. It is the superuser's (an engineer is refused by the tier gate), takes one device by name (a list, `--all`, `--scope`, `--vendor` or `--stale` is a usage error) and needs a scope that answers the address; a device on which break-glass is held is refused (release it first), as for every pull. Any local account may be named, a break-glass account included; only `root` is handled apart. The password travels as above: asked on the terminal, sent to the one connection, never stored in or asked of the password cache. `root` is accepted only for a device never read as your own login; its csh is left at once by the remote command `sh -c 'PATH=$PATH:/usr/sbin:/usr/bin:/sbin:/bin; exec cli'`, and it reads over the ssh command line only. The audit line is `device config pull user= device= login=local:<account>`.
+
+## Collecting from addresses nobody registered
+
+`tacctl device collect <address>... | --discovered` reads what an address is before it is registered, with one login. It is the superuser's and is for Junos devices; the registry forbids a login without a pinned key, so this is the verb that makes one first. `--discovered` takes the addresses `device discover` lists (the seen cache: unregistered and authenticated; run `device discover` first to refresh it).
+
+```
+$ tacctl device collect 192.0.2.31 192.0.2.32 --register
+  192.0.2.31 offers:
+    ED25519  SHA256:...
+  192.0.2.32 offers:
+    ED25519  SHA256:...
+  Nobody registered these 2 addresses, one attempt at each: compare the keys with each device's console (...).
+Trust these keys and send the password of 'alice' (your tacctl password) to these 2 addresses, one attempt at each? [y/N] y
+Password for alice (device login):
+
+Collected from 2 address(es)
+------------------------------
+  ADDRESS      HOSTNAME  MODEL        RELEASE      AUTH-ORDER        SERVERS    EN-CLASS  NETCONF  LO0-FILTER  LEGACY  RESULT
+  192.0.2.31   sw-lab-5  ex4300-48mp  25.4R1-S2.3  tacplus,password  tacplus:2  yes       yes      MGMT-ACL    -       collected
+  192.0.2.32   -         -            -            -                 -          -         -        -           -       not-junos
+
+  192.0.2.32: not a Junos device (...); the session was closed
+  tacctl device add sw-lab-5 192.0.2.31 --vendor juniper
+
+Register 1 device(s), pinning the host keys shown: sw-lab-5 (192.0.2.31)? [y/N] y
+```
+
+- **Admitted first.** Before anything is scanned or sent, an address a registry entry holds (it is reached by the normal flow, `device config pull`), an address no scope answers, one on which break-glass is held and, for your own login, a caller who is not an active member of the scope are refused, and the run stops: nothing was sent.
+- **Identity.** The host keys are read (nothing is authenticated) and shown with fingerprints, and one question is asked before any login. `--host-key SHA256:<fp>` (read on the device's console) answers it for one address and pins that key alone; without a terminal and without `--host-key` the run is refused. A device that offers only the legacy algorithms is found by the scan and registered `--legacy-ssh`.
+- **One login, once per address.** Your own login (your tacctl password; the password cache may answer it) or, with `--login <local-user>`, one local account of the devices for the whole run: its password is asked once on the terminal, never kept or cached, and goes to each address once; `root` is reached through its csh wrapper. The first refusal of the password ends the run (`auth-failed`; the addresses after it are `not-tried`), so a wrong password reaches one address only. A device whose authentication order is `tacplus` only refuses local accounts while the server answers.
+- **Nothing else.** In that session `show version` and the pull's read command are typed, and nothing more. An address whose `show version` is not a Junos answer is listed `not-junos`, its session closed and never registered.
+- **The table.** One table with the device's own host name, model and release, its `authentication-order`, the number of TACACS+ and RADIUS servers, whether tacctl's engineer class `EN-CLASS` is configured, NETCONF over ssh and the filter applied on `lo0`; `--json` prints one object (the progress goes to standard error). Each collected device is followed by the `device add` line it would run; one that reports no name the registry accepts (generic, taken, or the same as another address of the run) says so.
+- **`--register`.** After the table, one question; then each device is registered through `device add`, the same code as every registration, with `--vendor juniper`, every key shown pinned (the login was made against exactly those keys) and `--legacy-ssh` when the handshake needed it. The read is kept as the device's first pull record, as a pull makes it (`login=local:<account>` for a local login), so `device sync` and `device config plan` have one at once; no plain view was read, so a plan says the groups' inheritance was not checked until a pull reads it. `-y` answers the question (without a terminal it is needed). Without `--register` nothing is kept.
+- **Audit and exit.** `device collect user= addr= login=own|local:<account> result=` per address, never a password or a device's text. Exit status: 0 every address collected, 1 one was refused, failed or not Junos, 2 wrong arguments, 130 interrupted.
+
+## Filling the registry from the records
+
+`tacctl device sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor>` fills a device's empty `hostname`, `location` and `description` in the registry from what the device said of itself in its last pull record: its `system host-name` (with `domain-name`), `snmp location` and `snmp description`. It is the superuser's, reads only Junos records and logs in to nothing; a device with no pull record is named with the command that makes one (`device config pull`, or `device collect --register`).
+
+```
+$ tacctl device sync sw-lab-5
+  DEVICE    FIELD        REGISTRY  DEVICE SAYS           ACTION
+  sw-lab-5  hostname     -         sw-lab-5.lab.example.net  fill
+  sw-lab-5  location     -         Lab rack 2            fill
+  sw-lab-5  description  -         Lab switch five       fill
+  ...
+  3 field(s) on 1 device(s) would be written. Write them with --apply.
+$ tacctl device sync sw-lab-5 --apply
+```
+
+- **Preview first.** The table shows, per field, what the registry has, what the device says and the action: `fill` (empty in the registry), `same`, `keep` (set, and different: `--overwrite` replaces it), `replace` (`--overwrite`, with the old value shown), `none` (the device states none) or `refused`. A second table gives the record's facts (login, model, release, serial number), which are the record's and never written to the registry.
+- **`--apply`.** After one question (`-y` answers it; without a terminal it is needed), one registry write under the registry's own lock, with a snapshot first; each field is checked again against the live file, so a value set since the preview is left as it is and said. The file is never re-imported. The name, address, vendor and scope are never touched.
+- **What a device reports is checked.** A value with control characters (a newline, a terminal escape), invalid UTF-8, one the registry would not accept from a person (more than 120 characters, a `?` in a location or description) and a host name that is not a DNS name (the device states no `domain-name`, so a bare label that no resolver is known to answer, which would redirect every later login of the device) are listed `refused` and never written. Text a device reports is shown with control characters as `?` and cut at 64 characters.
+- **Audit and exit.** `device sync user= devices= fields=` when fields were written. Exit status: 0, 1 refused, 2 wrong arguments.

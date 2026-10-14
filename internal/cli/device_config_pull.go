@@ -1079,6 +1079,9 @@ func (r *pullRun) recordSuccess(o *pullOutcome, e devreg.Entry, ext devconf.Extr
 	// What the device reported about itself: replaced on every good pull, so
 	// a fact this pull did not read is not the last one's.
 	rec.Release, rec.Model, rec.Serial = o.Facts.Release, o.Facts.Model, o.Facts.Serial
+	// the device's own name (Junos), which 'device sync' fills the registry
+	// from
+	rec.Hostname = ext.Hostname
 	rec.SecretsVisible = ext.SecretsVisible
 	if err := rec.SetSections(ext, results); err != nil {
 		return err

@@ -612,7 +612,12 @@ func TestAskpassWords(t *testing.T) {
 		"device config pull x --login admin": false, "device config plan x --pull --login=root": false,
 		"device config diff x --pull --login admin": false, "device config pull x -- --login admin": true,
 		"device onboard 192.0.2.1 --login admin": true,
-		"ssh":                                    true, "device": false, "device config": false, "ssh core-sw1 -- show version": true, "device ssh core-sw1 -- -v": true,
+		// 'collect' asks the user's own password; with --login a local
+		// account's, which never touches the cache; 'sync' logs in to nothing
+		"device collect 192.0.2.1": true, "device collect --discovered --register": true,
+		"device collect 192.0.2.1 --login admin": false, "device collect --discovered --login=root": false,
+		"device sync x": false, "device sync --all --apply": false,
+		"ssh": true, "device": false, "device config": false, "ssh core-sw1 -- show version": true, "device ssh core-sw1 -- -v": true,
 	} {
 		if got := askpassWords(strings.Fields(words)); got != want {
 			t.Errorf("%q: %v", words, got)

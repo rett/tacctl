@@ -91,6 +91,19 @@ var deviceSpecs = map[string]Spec{
 		{Names: []string{"--check"}},
 		{Names: []string{"--section"}, Value: true, Kind: strings.Join(planSections, "|") + KindList},
 		flagJSON}},
+	// 'collect' and 'sync' (0.2.9, D137): the login before the
+	// registration, and the registry's empty fields from the records.
+	"collect": {MaxArgs: -1, Args: []string{""}, Flags: []Flag{
+		{Names: []string{"--discovered"}, Alone: true},
+		{Names: []string{"--login"}, Value: true},
+		{Names: []string{"--host-key"}, Value: true},
+		{Names: []string{"--register"}},
+		flagYes, flagJSON}},
+	"sync": {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{
+		{Names: []string{"--all"}, Alone: true},
+		{Names: []string{"--scope"}, Value: true, Kind: KindScopes},
+		{Names: []string{"--vendor"}, Value: true, Kind: "cisco|juniper|wti"},
+		flagApply, {Names: []string{"--overwrite"}}, flagYes, flagJSON}},
 	"remove":      {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagYes}},
 	"rename":      {MinArgs: 2, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagAllowGeneric}},
 	"address":     {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagApply}},
@@ -135,6 +148,8 @@ var deviceVerbs = [][2]string{
 	{"show <name|address> [--all] [--json]", "One device or host in full (--all: the acknowledged notices too)"},
 	{"add [<name>] <address> [options]", "Register a device (no name: offer the one it gives itself by SNMP)"},
 	{"onboard <address> --login <local-user> [--name <name>] [--host-key SHA256:<fp>] [--legacy-ssh] [--check] [--section <list>] [--json]", "Superusers, Junos devices: register a blank device reached with one of its local accounts and commit its first configuration as that account, kept only after your own TACACS+ login proves it"},
+	{"collect <address>... | --discovered [--login <local-user>] [--host-key SHA256:<fp>] [--register [-y]] [--json]", "Superusers, Junos devices: log in once to each address nobody registered and read what it is (host keys shown and trusted by one question first; show version and the configuration, nothing else), as one table; --register registers them through 'device add' and keeps the read as their first record"},
+	{"sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite] [--json] [-y]", "Superusers: fill the registry's empty hostname, location and description from what each device's last pull record says of itself (no login; the preview first, --apply writes after one question)"},
 	{"remove <name>[,<name>...] | --all [-y]", "Remove devices from the registry (confirms)"},
 	{"rename <old> <new> [--allow-generic]", "Rename a device"},
 	{"address <name> [<address>]", "Show or set the address (--apply: then run 'device config apply' for the device)"},
@@ -198,9 +213,17 @@ var deviceOptions = map[string][][2]string{
 		{"--allow-generic", "(add, rename, import) Allow a generic name such as 'switch'"},
 	},
 	"onboard": {
-		{"--login <local-user>", "(onboard; config pull, diff --pull, plan --pull) The device's local account to log in as (any, a break-glass one included; root through its csh wrapper): its password is asked once on the terminal and never kept"},
+		{"--login <local-user>", "(onboard, collect; config pull, diff --pull, plan --pull) The device's local account to log in as (any, a break-glass one included; root through its csh wrapper): its password is asked once on the terminal and never kept"},
 		{"--name <name>", "The registry name (default: the name the device reports; a generic one is asked for)"},
 		{"--check", "(onboard) Register, read and check the first-time plan on the device; commit nothing"},
+	},
+	"collect": {
+		{"--discovered", "The addresses of 'device discover' (the seen cache: unregistered, authenticated) that no registry entry holds"},
+		{"--host-key SHA256:<fp>", "Trust only this key, read on the device's console (no question; needed without a terminal, with one address)"},
+		{"--register", "(collect) Register each device collected through 'device add', its shown keys pinned, and keep the read as its first pull record (one question)"},
+	},
+	"sync": {
+		{"--overwrite", "Also replace a field that is set, showing the old value"},
 	},
 	"remove": {
 		{"--all", "(remove, check) Every device; (show, notices) the acknowledged notices too"},
@@ -208,7 +231,7 @@ var deviceOptions = map[string][][2]string{
 	},
 	"location": {
 		{"--from-device", "Read the location from the device (SNMP sysLocation) and store it"},
-		{"--apply", "(address, description, location, config-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices"},
+		{"--apply", "(address, description, location, config-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question"},
 	},
 	"import": {
 		{"--check", "Write nothing; say what the import would do"},
@@ -457,7 +480,7 @@ func (inv *invocation) device(args []string) error {
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
 		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "config-syntax": inv.deviceConfigSyntax, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "notices": inv.deviceNotices, "import": inv.deviceImport, "export": inv.deviceExport,
-		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig, "config": inv.deviceConfig,
+		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "collect": inv.deviceCollect, "sync": inv.deviceSync, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig, "config": inv.deviceConfig,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
 		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
 		"port": inv.deviceSetter("port"), "description": inv.deviceSetter("description"), "location": inv.deviceSetter("location"),

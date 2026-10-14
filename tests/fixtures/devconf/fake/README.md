@@ -50,9 +50,11 @@ fixture adds `show chassis hardware.out` as above. `junos/` has no
 start an apply test from (`tests/helpers/fakedev.bash` `fakedev_dir
 junos-apply`). `junos-blank/` is a device with no TACACS+ or RADIUS server,
 a local account (`local`: `admin`) and a root login (`root`), for `device
-onboard` and `--login` (`tests/integration/device_onboard.bats`,
-`device_config_login.bats`); `TACCTL_TEST_LOCAL_PASSWORD` is the password
-tacctl logs in with as the local account.
+onboard`, `device collect` and `--login`
+(`tests/integration/device_onboard.bats`, `device_collect.bats`,
+`device_sync.bats`, `device_config_login.bats`);
+`TACCTL_TEST_LOCAL_PASSWORD` is the password tacctl logs in with as the
+local account.
 
 The files, all optional but `config.set`, and read when they are needed
 (`config.set` and `dirty.shared` once, at the first session). A line that

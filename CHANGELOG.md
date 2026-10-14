@@ -227,6 +227,69 @@ current behaviour; this file is where history lives.
     terminal prompt, for the bats tests against the fake device (whose
     `local` and `root` files give the local accounts and root's csh login).
 
+13. **`device collect`: what an address nobody registered is, with one
+    login.** `tacctl device collect <address>... | --discovered` (a
+    superuser, Junos devices) is the login before the registration, which
+    the registry forbids today (no pinned key, no entry). For each address no
+    registry entry holds it reads the host keys (nothing is authenticated),
+    shows them with their fingerprints and asks ONE question before any
+    login (`--host-key SHA256:<fp>` names the key of one address instead;
+    without a terminal one of the two is needed); then, in one session per
+    address, `show version` and the pull's read command, and nothing else.
+    The login is yours (the password cache may answer it) or, with `--login
+    <local-user>`, one local account for the run (the one-shot password of
+    item 11: asked once, never kept or cached, sent to each address once;
+    `root` through its csh wrapper). The first refusal of the password ends
+    the run, and an address whose `show version` is not a Junos answer is
+    listed `not-junos`, its session closed and never registered. The result
+    is one table (address, host name, model, release, authentication order,
+    servers, `EN-CLASS`, NETCONF, `lo0` filter, legacy ssh, result) and the
+    `device add` line each device would run; `--json` prints one object.
+    `--register` asks one question and then registers each device through
+    `device add` (the same code as every registration) with the keys shown
+    pinned and `--legacy-ssh` where the handshake needed it, and keeps the
+    read as the device's first pull record, as a pull makes it
+    (`login=local:<account>` for a local login), so `device sync` and
+    `device config plan` have a record at once (`-y` answers the question;
+    without a terminal it is needed). Refused before anything is sent: an
+    address a registry entry holds, one no scope answers, one with break-glass
+    held, and (for your own login) a caller who is not an active member of
+    the scope. `--discovered` takes the addresses `device discover` lists
+    from the seen cache. Logged: `device collect user= addr= login=
+    result=` per address, never a password or a device's text.
+
+14. **`device sync`: the registry's empty fields from the pull records.**
+    `tacctl device sync <name>[,<name>...] | --all | --scope <scope> |
+    --vendor <vendor> [--apply] [--overwrite]` (a superuser; no login) fills
+    a Junos device's empty `hostname`, `location` and `description` from what
+    its last pull record says the device holds (`system host-name` with its
+    `domain-name`, `snmp location`, `snmp description`). The preview is one
+    table of the fields (what the registry has, what the device says, the
+    action: `fill`, `same`, `keep`, `replace`, `none`, `refused`) and one of
+    the record's facts (login, model, release, serial number, which are the
+    record's and not written). `--apply` writes after one question (`-y`;
+    without a terminal it is needed) in ONE registry write under the
+    registry's lock, each field checked again against the live file so a
+    value set since the preview is kept, and never as an import of a
+    re-serialised file. `--overwrite` replaces a field that is set and shows
+    the old value; the name, address, vendor and scope are never touched. A
+    value with control characters (a newline, a terminal escape), one the
+    registry would not accept from a person, and a host name that is not a
+    DNS name (no `domain-name`: a bare label is not an address tacctl can
+    connect to) are listed `refused` and never written; text a device
+    reports is shown with control characters as `?`, cut at 64 characters.
+    Logged: `device sync user= devices= fields=` when fields were written.
+
+15. **A pull record keeps the device's host name.** The record of a Junos
+    device gains `hostname` (`system host-name`, with `domain-name` appended
+    when the name has no dot), read from the configuration the pull already
+    has, for `device sync`; 0.2.8 ignores the field, and a record made
+    before this release has none until the next pull.
+
+16. **The password cache is asked by `device collect` for your own login.**
+    The shell's cache answers a `device collect` line (the alias of item 2)
+    and leaves it shut for one with `--login`, which never has it.
+
 ## 0.2.8 (2026-10-13)
 
 1. **The documentation is a tree of topic pages.** `README.md` holds the

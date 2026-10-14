@@ -3015,7 +3015,7 @@ file. Both sudoers files carry
 the login console's session marker, the X11 display
 .B "tacctl ssh \-X"
 hands on, and the caller's choice of colour), for the command lines that use the password cache
-.RB ( "device config pull" ", " "device config diff" ", " "device config plan" ", " ssh ", " "device ssh" ", " "block ... adopt" " and " "device onboard" ),
+.RB ( "device config pull" ", " "device config diff" ", " "device config plan" ", " ssh ", " "device ssh" ", " "block ... adopt" ", " "device config apply" ", " "device onboard" " and " "device collect" ),
 .BR TACCTL_ASKPASS ,
 for the four command lines that open an editor
 .RB ( "scope block ... edit|adopt" ", " "device block ... edit|adopt" ),
@@ -6259,6 +6259,180 @@ One object at the end (the progress goes to standard error).
 .RE
 .\" END GENERATED: command device onboard
 .TP
+.BI "device collect " "address... | \-\-discovered " "[ \-\-login " "local-user " "] [ \-\-host\-key SHA256:" fingerprint " ] [ \-\-register [ \-y ] ] [ \-\-json ]"
+Superusers, Junos devices: read what an address nobody registered is, with one
+login. For each address that no registry entry holds (a registered one is
+refused before anything is sent, with the normal flow named; so is an address
+no scope answers, one with break-glass held, and a caller who is not an active
+member of the scope):
+.RS
+.IP 1. 4
+The host keys it offers are read (nothing is authenticated) and shown with
+their fingerprints, and one question is asked before any login,
+.RI "Trust these keys and send " "the password of 'user'" " to " address "? [y/N]" ;
+.BI "\-\-host\-key SHA256:" fingerprint
+answers it for one address with the key read on the device's console. Without
+a terminal and without
+.B \-\-host\-key
+the run is refused (exit 2).
+.IP 2. 4
+One login per address: yours (your tacctl password, which the password cache
+may answer), or with
+.B \-\-login
+the device's local account, whose password is asked once on the terminal, never
+kept or cached, and goes to each address once. The first refusal of the
+password ends the run: the addresses after it are
+.IR not-tried .
+.IP 3. 4
+In that one session:
+.B "show version"
+and the pull's read command, nothing else. An address whose
+.B "show version"
+is not a Junos answer is listed
+.I not-junos
+and its session closed; it is never registered.
+.RE
+.IP
+The result is one table
+.RB ( ADDRESS ", " HOSTNAME ", " MODEL ", " RELEASE ", " AUTH\-ORDER ", " SERVERS ,
+.BR EN\-CLASS ", " NETCONF ", " LO0\-FILTER ", " LEGACY " and " RESULT ),
+then the
+.B "device add"
+line each collected device would run (a device that reports no name the
+registry accepts says so). Nothing is kept without
+.BR \-\-register :
+the read is discarded.
+.B \-\-register
+asks one question after the table and then registers each device through
+.BR "device add" ,
+the registry's own code, with every key shown pinned (the login was made
+against exactly those keys),
+.B \-\-vendor juniper
+and, when the handshake needed the legacy algorithms,
+.BR \-\-legacy\-ssh ;
+the read is kept as the device's first pull record (as the pull makes it;
+.BR login=local: \fIaccount\fR
+for a local login), so
+.B "device sync"
+and
+.B "device config plan"
+have one at once; no plain view was read, so a plan says the groups'
+inheritance was not checked until a pull reads it.
+.B \-y
+answers the question of
+.BR \-\-register ,
+which without a terminal it needs.
+.B \-\-discovered
+takes the addresses
+.B "device discover"
+lists (the seen cache; run it first to refresh it). Logged:
+.B "auth.info device collect user= addr= login=own|local:<account> result="
+per address, never a password or a device's text. Exit status: 0 every address
+collected, 1 one was refused, failed or not Junos, 2 wrong arguments, 130
+interrupted.
+.\" BEGIN GENERATED: command device collect
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-discovered\fR
+The addresses 'device discover' lists (the seen cache: unregistered, authenticated); no address is named with it.
+.TP
+\fB\-\-login\fR \fI<local\-user>\fR
+The device's local account to log in as (any, a break\-glass one included; root through its CLI wrapper) instead of you: its password is asked once on the terminal, never kept or cached, and goes to each address once; one account for the run.
+.TP
+\fB\-\-host\-key\fR \fISHA256:<fp>\fR
+Trust only this key, read on the device's console (no question; needed without a terminal; one address); pin it alone.
+.TP
+\fB\-\-register\fR
+After the table, register each collected device through 'device add' with the keys shown pinned (one question) and keep the read as its first pull record.
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+(remove, import, hostkey, location) Answer yes to the confirmation.
+.TP
+\fB\-\-json\fR
+One object at the end (the progress goes to standard error).
+.RE
+.\" END GENERATED: command device collect
+.TP
+.BI "device sync " "name[,name...] | \-\-all | \-\-scope " "scope " "| \-\-vendor " "vendor " "[ \-\-apply ] [ \-\-overwrite ] [ \-\-json ] [ \-y ]"
+Superusers: fill the registry's empty
+.BR hostname ,
+.B location
+and
+.B description
+from what each device said of itself in its last pull record (its
+.BR "system host\-name"
+with its
+.BR domain\-name ,
+its
+.B "snmp location"
+and its
+.BR "snmp description" ),
+as
+.B "device collect \-\-register"
+and
+.B "device config pull"
+keep them. It logs in to nothing. The preview comes first: one table of the
+fields (what the registry has, what the device says, and
+.IR fill ", " same ", " keep " (set: " \-\-overwrite
+replaces it),
+.IR replace ", " none " or " refused )
+and one of the facts of the records (model, release and serial number: the
+record's, never written to the registry).
+.B \-\-apply
+writes, after one question
+.RB ( \-y
+answers it; without a terminal it is needed), in ONE registry write under the
+registry's lock, each field checked again against the live file: a value set
+since the preview is left as it is.
+.B \-\-overwrite
+replaces a field that is set and shows the old value; the name, address,
+vendor and scope are never touched. What a device reports is checked before
+it is shown or stored: a value with control characters (a newline, a terminal
+escape), one the registry would not accept from a person (longer than 120
+characters, a
+.RB ' ? '
+in a location or description), and a host name that is not a DNS name (the
+device states no domain\-name: a bare name is no address tacctl can connect
+to) are listed
+.I refused
+and never written. Only Junos records are read; a device with no pull record
+is named with the command that makes one. Logged:
+.B "auth.info device sync user= devices= fields="
+when fields were written. Exit status: 0, 1 refused, 2 wrong arguments.
+.\" BEGIN GENERATED: command device sync
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+Every device of the registry.
+.TP
+\fB\-\-scope\fR \fI<scope>\fR
+Only the devices of that scope.
+.TP
+\fB\-\-vendor\fR \fIcisco|juniper|wti|other\fR
+Only that vendor's devices (only Junos records are read).
+.TP
+\fB\-\-apply\fR
+Write the fields, in one registry write, after one question.
+.TP
+\fB\-\-overwrite\fR
+Also replace a field that is set, showing the old value.
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+(remove, import, hostkey, location) Answer yes to the confirmation.
+.TP
+\fB\-\-json\fR
+One object: each device's fields, actions and facts.
+.RE
+.\" END GENERATED: command device sync
+.TP
 .BI "device remove " "name[,name...] | \-\-all " [ \-y ]
 Remove devices from the registry, after confirmation (\c
 .B \-y
@@ -6327,7 +6501,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices.
+(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device address
 .TP
@@ -6382,7 +6556,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices.
+(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device description
 .TP
@@ -6434,7 +6608,7 @@ Read the location from the device (SNMP sysLocation) and store it.
 (remove, import, hostkey, location) Answer yes to the confirmation.
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices.
+(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device location
 .TP
@@ -6537,7 +6711,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices.
+(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device config-syntax
 .TP
@@ -10778,7 +10952,9 @@ of each line that uses it, with a token made for that line and dead when it
 ends (never on sudo's command line); the tiers drop-ins keep it for those
 lines only
 .RB ( "device onboard"
-asks it for your own password after its review; a line with
+asks it for your own password after its review, and
+.B "device collect"
+for your own login; a line with
 .B \-\-login
 logs in as a device's local account and never has it). The root side of
 .BR "device config pull" ,

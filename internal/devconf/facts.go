@@ -83,6 +83,44 @@ func JunosRelease(config string) string {
 	return ""
 }
 
+// JunosHostName is the name a Junos configuration gives the device: its
+// 'set system host-name' value, with 'set system domain-name' appended when
+// the name has no dot (the helper's bootstrap rule); "" when it states no
+// host name. The text is as the record keeps a fact: control characters
+// shown as '?', at most maxFact bytes.
+func JunosHostName(config string) string {
+	var host, domain string
+	for _, l := range strings.Split(config, "\n") {
+		l = strings.TrimSpace(l)
+		if v, ok := strings.CutPrefix(l, "set system host-name "); ok && host == "" {
+			host = firstWord(v)
+		} else if v, ok := strings.CutPrefix(l, "set system domain-name "); ok && domain == "" {
+			domain = firstWord(v)
+		}
+	}
+	if host != "" && domain != "" && !strings.Contains(host, ".") {
+		host += "." + domain
+	}
+	return cleanFact(host)
+}
+
+// firstWord is the first word of a statement's value: a quoted string
+// whole, else up to the first blank.
+func firstWord(v string) string {
+	v = strings.TrimSpace(v)
+	if rest, ok := strings.CutPrefix(v, `"`); ok {
+		if i := strings.Index(rest, `"`); i >= 0 {
+			return rest[:i]
+		}
+		return rest
+	}
+	f := strings.Fields(v)
+	if len(f) == 0 {
+		return ""
+	}
+	return f[0]
+}
+
 // JunosVersion is the release and the model of the output of 'show version'
 // (its 'Junos:' and 'Model:' lines); the first of each wins (a device with
 // two routing engines prints a block for each). "" for a field the output
