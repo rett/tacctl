@@ -980,7 +980,7 @@ func TestConfigDevicesSettings(t *testing.T) {
 	sb := newSandbox(t, true)
 	out := plain(sb.cfgRun("", []string{"config", "devices"}, nil))
 	for _, w := range []string{"max-concurrency: 8   (default;", "transport:       auto   (default;", "timeout:         90 s   (default;",
-		"confirm-timeout: 5 min   (default;"} {
+		"confirm-timeout: 5 min   (default;", "apply-confirm-timeout: 10 min   (default;", "apply-pause:           60 s   (default;"} {
 		if sb.code != 0 || !strings.Contains(out, w) {
 			t.Errorf("show lacks %q: %d\n%s", w, sb.code, out)
 		}
@@ -993,6 +993,8 @@ func TestConfigDevicesSettings(t *testing.T) {
 		{[]string{"transport", "ssh"}, "The default transport set to ssh."},
 		{[]string{"timeout", "120"}, "The time one device may take set to 120 s."},
 		{[]string{"confirm-timeout", "10"}, "The confirm timeout of a Junos plan set to 10 minutes."},
+		{[]string{"apply-confirm-timeout", "15"}, "The confirm timeout of an apply set to 15 minutes."},
+		{[]string{"apply-pause", "0"}, "The pause between the devices of an apply set to 0 s."},
 	} {
 		out := plain(sb.cfgRun("", append([]string{"config", "devices"}, c.args...), nil))
 		if sb.code != 0 || !strings.Contains(out, c.want) {
@@ -1001,13 +1003,14 @@ func TestConfigDevicesSettings(t *testing.T) {
 	}
 	out = plain(sb.cfgRun("", []string{"config", "devices", "show"}, nil))
 	for _, w := range []string{"max-concurrency: 16   (set;", "transport:       ssh   (set;", "timeout:         120 s   (set;",
-		"confirm-timeout: 10 min   (set;"} {
+		"confirm-timeout: 10 min   (set;", "apply-confirm-timeout: 15 min   (set;", "apply-pause:           0 s   (set;"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("show lacks %q:\n%s", w, out)
 		}
 	}
 	if y := sb.read("state/tacctl.yaml"); !strings.Contains(y, "max_concurrency: 16") || !strings.Contains(y, "transport: ssh") ||
-		!strings.Contains(y, "timeout: 120") || !strings.Contains(y, "confirm_timeout: 10") {
+		!strings.Contains(y, "timeout: 120") || !strings.Contains(y, "confirm_timeout: 10") ||
+		!strings.Contains(y, "apply:\n") || !strings.Contains(y, "confirm_timeout: 15") || !strings.Contains(y, "pause: 0") {
 		t.Errorf("tacctl.yaml:\n%s", y)
 	}
 	for _, c := range []struct {
@@ -1023,6 +1026,13 @@ func TestConfigDevicesSettings(t *testing.T) {
 		{[]string{"confirm-timeout", "0"}, "device.config.confirm_timeout"},
 		{[]string{"confirm-timeout", "61"}, "device.config.confirm_timeout"},
 		{[]string{"confirm-timeout", "soon"}, "device.config.confirm_timeout"},
+		{[]string{"apply-confirm-timeout", "2"}, "device.apply.confirm_timeout"},
+		{[]string{"apply-confirm-timeout", "61"}, "device.apply.confirm_timeout"},
+		{[]string{"apply-confirm-timeout", "soon"}, "device.apply.confirm_timeout"},
+		{[]string{"apply-pause", "-1"}, "device.apply.pause"},
+		{[]string{"apply-pause", "3601"}, "device.apply.pause"},
+		{[]string{"apply-pause", "a minute"}, "device.apply.pause"},
+		{[]string{"apply-pause", "1", "2"}, "Unknown argument"},
 	} {
 		sb.cfgRun("", append([]string{"config", "devices"}, c.args...), nil)
 		if sb.code != 1 || !strings.Contains(sb.stderr(), c.want) {

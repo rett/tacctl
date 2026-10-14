@@ -5,7 +5,32 @@ current behaviour; this file is where history lives.
 
 ## 0.2.9 (unreleased)
 
-1. **`device add --pull` reads the device's configuration as it registers
+1. **`config devices apply-confirm-timeout` and `apply-pause`.** The two
+   settings of `device config apply`: `device.apply.confirm_timeout`, the
+   minutes of its `commit confirmed` (3 to 60, default 10: a window under
+   three minutes cannot hold the verification), and `device.apply.pause`,
+   the seconds it waits between the devices of a batch after the canary (0 to
+   3600, default 60; 0 is none). Both are the superuser's, are written to
+   `tacctl.yaml` only when set, are checked by the schema (`config validate`
+   reports a hand-edited value out of range) and appear in `config devices`
+   with the others. A
+   0.2.8 binary does not know the keys; `tacctl rollback 0.2.3` removes them
+   with the other keys the older release lacks and says so.
+
+2. **The sudoers drop-ins keep `TACCTL_ASKPASS` for `device config apply`,
+   `device config shapes seed`, `device onboard` and `device collect`.** The
+   password cache's alias in the per-tier drop-in and in the group drop-in
+   gains the four command lines, so the shell's cache answers the logins they
+   make. The drop-ins' bytes change: `upgrade` rewrites a tiers file that
+   differs from this release's rules and a group drop-in that is exactly
+   0.2.8's text, as for every earlier change, and `rollback` knows 0.2.8's
+   texts as older ones. The rows are unchanged: `device config apply` and
+   `device config shapes` are the superuser's (the engineer's `device config`
+   rows name `show`, `pull`, `diff` and `plan` only, and the verb holds
+   every lower tier back as well), so no sudoers line is added for a lower
+   tier.
+
+3. **`device add --pull` reads the device's configuration as it registers
    it.** `tacctl device add <name> <address> --vendor cisco|juniper|wti
    --pull` registers the device as before and then runs `device config pull`
    for it, as the invoking user, in the same command; the pull's output

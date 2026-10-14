@@ -339,8 +339,12 @@ const envKeep027 = "Defaults!" + Binary + " env_keep += \"" + envKeepNames027 + 
 // The password cache's variable (docs/plans/0.2.4-plan.md D70,
 // TACCTL_ASKPASS: '<socket path>:<token>') is kept only for the command
 // lines that use it: 'device config pull', 'device config diff', 'device
-// config plan' (all three read the devices with --pull) and 'ssh'
-// ('device ssh'). A 'Defaults!' entry takes no arguments, so the lines are a
+// config plan' (all three read the devices with --pull), 'ssh' ('device
+// ssh'), 'block adopt' (0.2.7) and the verbs that log in to a device and
+// change it or register it (0.2.9, D141: 'device config apply', 'device
+// config shapes seed', 'device onboard' and 'device collect'; the rows are
+// the superuser's, who runs them through the blanket rule, so this alias is
+// the only line the verbs add to a drop-in). A 'Defaults!' entry takes no arguments, so the lines are a
 // Cmnd_Alias, which each drop-in names itself (sudoers refuses an alias
 // defined twice, and a host may carry both drop-ins). The shell puts the
 // variable in the environment of the sudo process, never on sudo's command
@@ -358,12 +362,17 @@ const (
 // AskpassKeep is the alias of the command lines that use the password
 // cache, and the 'Defaults!' line that keeps AskpassVar for exactly them:
 // it goes before EnvKeep in a drop-in. 'block adopt' (0.2.7) reads one device
-// with the caller's login as a pull does, so it is among them.
+// with the caller's login as a pull does, so it is among them, and so are
+// 'device config apply', 'device config shapes seed', 'device onboard' and
+// 'device collect' (0.2.9, D141): they log in to the devices as the caller,
+// as a pull does. 0.2.8's text is askpassKeep028 (rollback.go).
 func AskpassKeep(alias string) string {
 	return "Cmnd_Alias " + alias + " = " +
 		Binary + " device config pull *, " + Binary + " device config diff *, " + Binary + " device config plan *, \\\n" +
 		"    " + Binary + " ssh *, " + Binary + " device ssh *, \\\n" +
-		"    " + Binary + " scope block * adopt *, " + Binary + " device block * adopt *\n" +
+		"    " + Binary + " scope block * adopt *, " + Binary + " device block * adopt *, \\\n" +
+		"    " + Binary + " device config apply *, " + Binary + " device config shapes seed *, \\\n" +
+		"    " + Binary + " device onboard *, " + Binary + " device collect *\n" +
 		"Defaults!" + alias + " env_keep += \"" + AskpassVar + "\"\n"
 }
 

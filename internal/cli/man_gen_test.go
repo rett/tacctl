@@ -374,6 +374,8 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"device.config.transport":              {setWith("config devices transport"), "How device config pull reads a device: NETCONF where it answers and the ssh command line otherwise (auto), NETCONF only, or ssh only."},
 	"device.config.timeout":                {setWith("config devices timeout"), "Seconds one device may take in a pull, connect included."},
 	"device.config.confirm_timeout":        {setWith("config devices confirm-timeout"), "Minutes of the commit confirmed that ends the region of a Junos device config plan: the switch undoes the paste by itself after that long unless the one word commit is typed."},
+	"device.apply.confirm_timeout":         {setWith("config devices apply-confirm-timeout"), "Minutes of the commit confirmed of every device config apply: the device undoes the change by itself after that long unless the confirming commit is typed."},
+	"device.apply.pause":                   {setWith("config devices apply-pause"), "Seconds device config apply waits between the devices of a batch after the canary; 0: none."},
 	"privileges.<group>":                   {setWith("group privilege"), "The Cisco priv-exec commands the group's level may run; unset: the shipped list."},
 	"commands.<group>":                     {setWith("group commands"), "The group's command rules, in order, ending in the catch-all; unset: the shipped rules."},
 	"aaa.order.<scope>":                    {setWith("scope aaa-order"), "Order of the methods in the Cisco aaa lines and the Junos authentication-order the scope's configurations emit."},

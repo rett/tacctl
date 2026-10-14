@@ -218,6 +218,12 @@ func askpassWords(words []string) bool {
 		return true
 	case words[0] == "device" && len(words) > 2 && words[1] == "config" && words[2] == "pull":
 		return true
+	// 'device config apply' (with or without --check) logs in to the
+	// devices as the caller (0.2.9, D141); 'shapes' reads and writes the
+	// shape store and logs in to nothing, so its lines leave the cache shut,
+	// though the sudoers alias names 'shapes seed'.
+	case words[0] == "device" && len(words) > 2 && words[1] == "config" && words[2] == "apply":
+		return true
 	// 'block adopt' reads one device with the caller's login (0.2.7):
 	// 'scope block <scope> juniper adopt <device> <block>' and 'device block
 	// <name> adopt <block>'.

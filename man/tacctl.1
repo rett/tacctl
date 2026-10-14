@@ -226,6 +226,8 @@ the keys 0.2.5 added
 .BR device.config.transport ,
 .BR device.config.timeout ,
 .BR device.config.confirm_timeout ,
+.BR device.apply.confirm_timeout ,
+.BR device.apply.pause ,
 .BR cisco.source_interface.<scope> ,
 .BR breakglass_hold.<device> )
 and any other key a 0.2.3 binary does not know; removes
@@ -2726,8 +2728,9 @@ Show the settings that govern how
 .B "device config diff \-\-pull"
 and
 .B "device config plan \-\-pull"
-read the devices and how long a Junos plan lets the switch wait, and whether
-each is set or the default. They are
+read the devices, how long a Junos plan lets the switch wait and how
+.B "device config apply"
+runs, and whether each is set or the default. They are
 .B device.config.max_concurrency
 (the most devices read at once, 1 to 64, default 8),
 .B device.config.transport
@@ -2743,7 +2746,18 @@ or
 .B "commit confirmed"
 that ends the region of
 .BR "device config plan" ,
-1 to 60, default 5) in
+1 to 60, default 5),
+.B device.apply.confirm_timeout
+(the minutes of the
+.B "commit confirmed"
+of every
+.BR "device config apply" ,
+3 to 60, default 10) and
+.B device.apply.pause
+(the seconds
+.B "device config apply"
+waits between the devices of a batch after the canary, 0 to 3600, default 60;
+0 is none) in
 .IR tacctl.yaml ,
 checked by the schema.
 .B \-\-concurrency
@@ -2800,8 +2814,36 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config devices confirm-timeout
 .TP
+.BI "config devices apply\-confirm\-timeout " "[ minutes ]"
+Show or set the minutes of the
+.B "commit confirmed N"
+of every
+.BR "device config apply" ,
+3 to 60 (default 10): the device undoes the change by itself after N minutes
+unless the verification passes and the confirming commit is typed. A window
+under three minutes cannot hold the verification, so the schema refuses it.
+.\" BEGIN GENERATED: command config devices apply-confirm-timeout
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config devices apply-confirm-timeout
+.TP
+.BI "config devices apply\-pause " "[ seconds ]"
+Show or set the seconds
+.B "device config apply"
+waits between the devices of a batch after the canary, 0 to 3600 (default 60;
+0 is none). A run can replace it with
+.BR \-\-pause .
+.\" BEGIN GENERATED: command config devices apply-pause
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config devices apply-pause
+.TP
 .B "config devices show"
-Show the four settings.
+Show the settings.
 .\" BEGIN GENERATED: command config devices show
 .RS
 .PP
@@ -9767,6 +9809,14 @@ Where tacquito's Prometheus exporter listens. Set with \fBtacctl config metrics 
 .B bcrypt.cost
 integer, 10 to 14. Default: 12.
 Cost of the bcrypt hashes tacctl makes from now on. Set with \fBtacctl config bcrypt\-cost\fR.
+.TP
+.B device.apply.confirm_timeout
+integer, 3 to 60. Default: 10.
+Minutes of the commit confirmed of every device config apply: the device undoes the change by itself after that long unless the confirming commit is typed. Set with \fBtacctl config devices apply\-confirm\-timeout\fR.
+.TP
+.B device.apply.pause
+integer, 0 to 3600. Default: 60.
+Seconds device config apply waits between the devices of a batch after the canary; 0: none. Set with \fBtacctl config devices apply\-pause\fR.
 .TP
 .B device.config.confirm_timeout
 integer, 1 to 60. Default: 5.

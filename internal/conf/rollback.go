@@ -118,6 +118,19 @@ var Added027 = []Family{
 	{"blocks_device.", true},
 }
 
+// Added029 are the key families 0.2.9 added: the confirm window and the
+// pause of 'device config apply' (device.apply.*). A 0.2.8 or older
+// binary does not know them (its schema refuses the keys, so its 'config
+// validate' reports them and its 'backup restore' refuses a snapshot that
+// holds them), so a rollback removes them.
+var Added029 = []Family{
+	{"device.apply.confirm_timeout", false},
+	{"device.apply.pause", false},
+}
+
+// Added029Key reports whether path is a key 0.2.9 added.
+func Added029Key(path string) bool { return inFamilies(Added029, path) }
+
 // Added024Key reports whether path is a key 0.2.4 added.
 func Added024Key(path string) bool { return inFamilies(Added024, path) }
 

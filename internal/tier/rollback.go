@@ -17,12 +17,55 @@ import "strings"
 // Sudoers023 is the per-tier drop-in 0.2.3 wrote.
 func Sudoers023() string { return sudoers023 }
 
-// Sudoers027 is the per-tier drop-in 0.2.4 to 0.2.7 wrote: this release's
-// rules without the 'version --long' item and with the env_keep line that has not the colour variables. It is the
-// text 'tacctl rollback' and the upgrade's refresh know as an older one; it
-// is derived (a rule that moves on again makes its own frozen copy).
+// Sudoers028 is the per-tier drop-in 0.2.8 wrote: this release's rules with
+// the password cache's alias as 0.2.8 had it (without the 0.2.9 families
+// 'device config apply', 'device config shapes seed', 'device onboard' and
+// 'device collect', D141/D143) and the
+// env_keep line as 0.2.8 had it. 'tacctl rollback 0.2.8' puts it back, and
+// the upgrade's refresh knows it as an older text. The rows of the table are
+// the same in the two releases, so it is derived from them (a rule that
+// moves on again makes its own frozen copy); the two lines that did move are
+// frozen below, and a test reads the 0.2.8 tag's golden file where the tag
+// is available.
+func Sudoers028() string {
+	t := strings.Replace(Sudoers(), AskpassKeep(AskpassAlias), askpassKeep028(AskpassAlias), 1)
+	return strings.Replace(t, EnvKeep, envKeep028, 1)
+}
+
+// GroupSudoers028 is the drop-in 'config sudoers install <group>' wrote in
+// 0.2.8: 0.2.7's, with the colour variables on the env_keep line. 'tacctl
+// rollback 0.2.8' puts it back over this release's. Frozen.
+func GroupSudoers028(group string) string {
+	return "# Managed by tacctl. Grants passwordless sudo on " + Binary + "\n" +
+		"# to members of group '" + group + "'. Remove with: tacctl config sudoers remove\n" +
+		groupAskpass027 + groupEditor027 + envKeep028 +
+		"%" + group + " ALL=(ALL) NOPASSWD: " + Binary + "\n"
+}
+
+// envKeep028 is the env_keep line of the drop-ins of 0.2.8, frozen: the
+// line that release wrote, not EnvKeep, which moves on.
+const envKeep028 = "Defaults!" + Binary + " env_keep += \"" + envKeepNames027 + " NO_COLOR TACCTL_COLOR\"\n"
+
+// askpassKeep028 is the password cache's alias and its 'Defaults!' line as
+// the per-tier drop-in of 0.2.7 and 0.2.8 carries them (the lines of 'device
+// config', 'ssh' and 'block adopt'), before 0.2.9 added the 'device config
+// apply', 'device config shapes seed', 'device onboard' and 'device collect'
+// lines. Frozen: not AskpassKeep.
+func askpassKeep028(alias string) string {
+	return "Cmnd_Alias " + alias + " = " +
+		Binary + " device config pull *, " + Binary + " device config diff *, " + Binary + " device config plan *, \\\n" +
+		"    " + Binary + " ssh *, " + Binary + " device ssh *, \\\n" +
+		"    " + Binary + " scope block * adopt *, " + Binary + " device block * adopt *\n" +
+		"Defaults!" + alias + " env_keep += \"" + AskpassVar + "\"\n"
+}
+
+// Sudoers027 is the per-tier drop-in 0.2.4 to 0.2.7 wrote: 0.2.8's text
+// without the 'version --long' item and with the env_keep line that has not
+// the colour variables. It is the text 'tacctl rollback' and the upgrade's
+// refresh know as an older one; it is derived (a rule that moves on again
+// makes its own frozen copy).
 func Sudoers027() string {
-	t := strings.Replace(Sudoers(), EnvKeep, envKeep027, 1)
+	t := strings.Replace(Sudoers028(), envKeep028, envKeep027, 1)
 	// 0.2.8 lists 'version --long' beside 'version'; 0.2.7 did not.
 	return strings.Replace(t, ", "+Binary+" version --long", "", 1)
 }

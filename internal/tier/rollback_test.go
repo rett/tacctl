@@ -61,9 +61,9 @@ func TestGroupSudoers023(t *testing.T) {
 // text is that tag's golden file.
 func TestSudoers027(t *testing.T) {
 	old, cur := Sudoers027(), Sudoers()
-	// the current text with the old env_keep line and without 0.2.8's
+	// 0.2.8's text with the old env_keep line and without 0.2.8's
 	// 'version --long' item
-	want := strings.Replace(strings.Replace(cur, EnvKeep, envKeep027, 1), ", "+Binary+" version --long", "", 1)
+	want := strings.Replace(strings.Replace(Sudoers028(), envKeep028, envKeep027, 1), ", "+Binary+" version --long", "", 1)
 	if old == cur || want != old {
 		t.Fatalf("Sudoers027 is not the current text with the old env_keep line:\n%s", old)
 	}
@@ -74,7 +74,7 @@ func TestSudoers027(t *testing.T) {
 	if g, kind := ClassifyGroupSudoers(text); g != "tac-admins" || kind != GroupOlder {
 		t.Errorf("classified %q %v", g, kind)
 	}
-	if strings.Contains(text, "NO_COLOR") || strings.Replace(GroupSudoers("tac-admins"), EnvKeep, envKeep027, 1) != text {
+	if strings.Contains(text, "NO_COLOR") || strings.Replace(GroupSudoers028("tac-admins"), envKeep028, envKeep027, 1) != text {
 		t.Errorf("the 0.2.7 group text is not the current one with the old env_keep line:\n%s", text)
 	}
 	r := execx.Real{}
@@ -90,5 +90,49 @@ func TestSudoers027(t *testing.T) {
 	}
 	if string(res.Stdout) != old {
 		t.Error("Sudoers027 differs from the golden file of the 0.2.7 tag")
+	}
+}
+
+// The texts 0.2.8 wrote are the current ones without the cache's lines of
+// 'device config apply', 'device config shapes seed', 'device onboard' and
+// 'device collect' (0.2.9, D141); the
+// upgrade knows them as older ones, 'rollback 0.2.8' puts them back, and
+// where the 0.2.8 tag is in the repository the per-tier text is that tag's
+// golden file.
+func TestSudoers028(t *testing.T) {
+	old, cur := Sudoers028(), Sudoers()
+	if old == cur {
+		t.Fatal("Sudoers028 is the current text")
+	}
+	for _, v := range []string{"device config apply *", "device config shapes seed *", "device onboard *", "device collect *"} {
+		if strings.Contains(old, v) || !strings.Contains(cur, v) {
+			t.Errorf("%q: in the 0.2.8 text %v, in the current one %v", v, strings.Contains(old, v), strings.Contains(cur, v))
+		}
+	}
+	// nothing but the cache's alias differs
+	if strings.Replace(cur, AskpassKeep(AskpassAlias), askpassKeep028(AskpassAlias), 1) != old {
+		t.Errorf("Sudoers028 differs from the current text in more than the cache's alias:\n%s", old)
+	}
+	text := GroupSudoers028("tac-admins")
+	if g, kind := ClassifyGroupSudoers(text); g != "tac-admins" || kind != GroupOlder {
+		t.Errorf("classified %q %v", g, kind)
+	}
+	if strings.Contains(text, "device config apply") || !strings.Contains(text, "NO_COLOR TACCTL_COLOR") ||
+		strings.Replace(GroupSudoers("tac-admins"), AskpassKeep(AskpassGroupAlias), groupAskpass027, 1) != text {
+		t.Errorf("the 0.2.8 group text is not the current one without the apply lines:\n%s", text)
+	}
+	r := execx.Real{}
+	if _, err := r.LookPath("git"); err != nil {
+		t.Skip("git is not installed, so the 0.2.8 tag cannot be read")
+	}
+	if res, err := r.Run(context.Background(), execx.Cmd{Name: "git", Args: []string{"rev-parse", "-q", "--verify", "0.2.8^{commit}"}}); err != nil || res.Code != 0 {
+		t.Skip("the 0.2.8 tag is not in this repository (CI must fetch tags: git fetch --tags)")
+	}
+	res, err := r.Run(context.Background(), execx.Cmd{Name: "git", Args: []string{"show", "0.2.8:internal/tier/testdata/sudoers.tiers"}})
+	if err != nil || res.Code != 0 {
+		t.Fatalf("cannot read the 0.2.8 tag's golden file: %v %s", err, res.Stderr)
+	}
+	if string(res.Stdout) != old {
+		t.Error("Sudoers028 differs from the golden file of the 0.2.8 tag")
 	}
 }

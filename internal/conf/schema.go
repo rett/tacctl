@@ -134,6 +134,18 @@ func NewSchema(backends []string) *Schema {
 			// 'device config plan' (0.2.5, D104): the switch undoes the
 			// paste by itself unless the one word is typed in time.
 			"device.config.confirm_timeout": {Type: TypeInt, Min: intp(1), Max: intp(60), Default: 5, HasDefault: true},
+			// How 'device config apply' runs (0.2.9, D140). The minutes of
+			// its 'commit confirmed' (3-60, the range of
+			// devrollout.MinConfirmMinutes and MaxConfirmMinutes: a window
+			// shorter than three minutes cannot hold the verification) and
+			// the seconds it waits between the devices of a batch, after
+			// the canary (0 is no pause). Both are written only when set.
+			// A 0.2.8 binary does not know them: its 'config validate'
+			// reports "unknown key" and its 'backup restore' refuses a
+			// snapshot that has them, so 'tacctl rollback 0.2.8' removes
+			// exactly Added029 (rollback.go).
+			"device.apply.confirm_timeout": {Type: TypeInt, Min: intp(3), Max: intp(60), Default: 10, HasDefault: true},
+			"device.apply.pause":           {Type: TypeInt, Min: intp(0), Max: intp(3600), Default: 60, HasDefault: true},
 		},
 		wildcards: append([]wildcard{
 			{"privileges.", Rule{Type: TypeCiscoCmdList}},

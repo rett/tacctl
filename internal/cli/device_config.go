@@ -122,29 +122,45 @@ func (inv *invocation) argErr(msgs ...string) error {
 var deviceConfigNeeds = map[string]tier.Tier{
 	"list": tier.Operator, "show": tier.Engineer, "pull": tier.Engineer, "diff": tier.Engineer, "plan": tier.Engineer,
 	"forget": tier.Superuser,
+	// 'apply' (0.2.9, D130, D141) changes a device and 'shapes' (with its
+	// 'list' and 'seed') files what was confirmed: the superuser's. No
+	// sudoers row names them, so sudo refuses a lower tier before the verb
+	// runs, and the verb asks again.
+	"apply": tier.Superuser, "shapes": tier.Superuser,
+}
+
+// tierPermits is whether tier t may run a verb that needs tier need.
+func tierPermits(t, need tier.Tier) bool {
+	return t == tier.Unrestricted || t == tier.Superuser || (tier.Rank(t) >= 0 && tier.Rank(t) >= tier.Rank(need))
 }
 
 // deviceConfigPermits is the caller's tier and whether it may run the verb.
 func (inv *invocation) deviceConfigPermits(sub string) (tier.Tier, bool) {
-	need := deviceConfigNeeds[sub]
 	t := inv.tierGate().Caller(inv.ctx)
-	return t, t == tier.Unrestricted || t == tier.Superuser || (tier.Rank(t) >= 0 && tier.Rank(t) >= tier.Rank(need))
+	return t, tierPermits(t, deviceConfigNeeds[sub])
 }
 
 // deviceConfigAllowed is nil when the caller's tier may run the verb; the
 // refusal is the gate's, printed and logged.
 func (inv *invocation) deviceConfigAllowed(sub string) error {
-	t, ok := inv.deviceConfigPermits(sub)
-	if ok {
+	return inv.deviceVerbAllowed("device config", sub, deviceConfigNeeds[sub])
+}
+
+// deviceVerbAllowed holds a verb of a 'device' family whose gate row is
+// wider than the verb to its own tier: nil when the caller's tier is at least
+// need.
+func (inv *invocation) deviceVerbAllowed(family, sub string, need tier.Tier) error {
+	g := inv.tierGate()
+	t := g.Caller(inv.ctx)
+	if tierPermits(t, need) {
 		return nil
 	}
-	g := inv.tierGate()
 	user := inv.sudoUser()
-	inv.app.Logger(inv.ctx, "auth.warning", "tier DENY user="+user+" tier="+string(t)+" cmd=device config "+sub)
+	inv.app.Logger(inv.ctx, "auth.warning", "tier DENY user="+user+" tier="+string(t)+" cmd="+family+" "+sub)
 	if t == tier.None {
 		inv.app.Out.ErrorE("'" + g.SudoUser + "' has no active tacctl user, so tacctl access is denied.")
 	} else {
-		inv.app.Out.ErrorE("'tacctl device config " + sub + "' is not permitted for the " + string(t) + " tier.")
+		inv.app.Out.ErrorE("'tacctl " + family + " " + sub + "' is not permitted for the " + string(t) + " tier.")
 	}
 	return tier.ErrDenied
 }
@@ -313,6 +329,13 @@ func (inv *invocation) deviceConfig(args []string) error {
 	case "forget":
 		return inv.deviceConfigForget(args[1:])
 	default:
+		// A verb the table holds is refused to a lower tier as the verb itself
+		// will refuse it; the handlers of 'apply' and 'shapes' are above.
+		if _, held := deviceConfigNeeds[sub]; held {
+			if err := inv.deviceConfigAllowed(sub); err != nil {
+				return err
+			}
+		}
 		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
 		inv.write(deviceConfigUsage())
 		return exit(1)

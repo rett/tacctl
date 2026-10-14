@@ -40,11 +40,14 @@ config snmp v3-user <user> [--auth sha|sha256] [--priv aes128] [--stdin]
 config snmp port [<n>] | timeout [<seconds>]  Show or set the agents' UDP port (default 161) and the wait for an answer (1-10, default 2; one retry)
 config snmp clear                           Remove the credentials and unset the version: no lookups
 config snmp test <address|device>           Read one device's sysName, or say why there is none (timeout, unknownUserName, wrongDigest, ...); a registered device is read with its own settings, else its scope's, else the default's
-config devices [show]                       How `device config pull`, `diff --pull` and `plan --pull` read the devices, and the confirm timeout of `plan`: the four settings and where each stands (administrators)
+config devices [show]                       How `device config pull`, `diff --pull` and `plan --pull` read the devices, the confirm timeout of `plan` and the confirm timeout and pause of `device config apply`: the settings and where each stands (administrators)
 config devices max-concurrency [<n>]        Show or set the most devices read at once, 1-64 (default 8; `--concurrency` can lower it per run, never raise it)
 config devices transport [auto|netconf|ssh]  Show or set the default transport (default auto)
 config devices timeout [<seconds>]          Show or set the time one device may take, connect included, 10-600 (default 90)
 config devices confirm-timeout [<minutes>]  Show or set the minutes of the `commit confirmed` that ends a Junos plan, 1-60 (default 5)
+config devices apply-confirm-timeout [<minutes>]
+                                            Show or set the minutes of the `commit confirmed` of `device config apply`, 3-60 (default 10)
+config devices apply-pause [<seconds>]    Show or set the seconds `device config apply` waits between the devices of a batch after the canary, 0-3600 (default 60; 0 none)
 config sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl
 config sudoers tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for tacctl users with local accounts
 config password-age [days]                  Show or set password age warning threshold (default 90)
