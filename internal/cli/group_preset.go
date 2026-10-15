@@ -14,6 +14,7 @@ import (
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/policy"
 	"github.com/rett/tacctl/internal/store"
+	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -21,8 +22,11 @@ import (
 type presetStep struct {
 	what  string // "WTI level superuser", ...
 	state string // "set", "unchanged", "kept (pass --force)"
-	apply func(c *conf.Config) error
-	store func(s *store.Store) error
+	// detail is what the step changes, as 'group reset' words it: the
+	// value now and the preset's, or the lines removed and added.
+	detail []string
+	apply  func(c *conf.Config) error
+	store  func(s *store.Store) error
 }
 
 func (p presetStep) writes() bool { return p.state == "set" || p.state == "replaced" }
@@ -89,6 +93,11 @@ func (inv *invocation) groupPreset(args []string) error {
 		inv.echo("  " + name)
 		for _, s := range steps[r.Group] {
 			inv.echo(fmt.Sprintf("    %-48s %s", s.what, s.state))
+			if s.state != "unchanged" {
+				for _, l := range s.detail {
+					inv.echo("        " + l)
+				}
+			}
 			if s.writes() {
 				changes++
 			} else if s.state != "unchanged" {
@@ -157,16 +166,28 @@ func (inv *invocation) presetSteps(m *model.Model, c *conf.Config, r policy.Role
 	if g == nil {
 		priv, class := strconv.Itoa(r.PrivLvl), r.Class
 		out = append(out, presetStep{what: "create (priv-lvl " + priv + ", class " + class + ")", state: "set",
-			store: func(s *store.Store) error { return s.GroupSet(group, "priv_lvl="+priv, "juniper_class="+class) }})
+			detail: []string{"group does not exist: it is created with Cisco priv-lvl " + priv + " and Juniper class " + class},
+			store:  func(s *store.Store) error { return s.GroupSet(group, "priv_lvl="+priv, "juniper_class="+class) }})
 	} else if r.Class != "" {
 		// An existing group keeps its priv-lvl; its class only with --force (D20).
 		class := r.Class
+		from := g.JuniperClass
+		if from == "" {
+			from = "none"
+		}
 		out = append(out, presetStep{what: "Juniper class " + class, state: presetState(g.JuniperClass, class, force),
-			store: func(s *store.Store) error { return s.GroupSet(group, "juniper_class="+class) }})
+			detail: []string{"Juniper class: " + from + " -> " + class},
+			store:  func(s *store.Store) error { return s.GroupSet(group, "juniper_class="+class) }})
 	}
 	if r.Tier != "" {
 		t := r.Tier
+		cur := r.PrivLvl // the band of a group that is created
+		if g != nil {
+			cur = privOf(g)
+		}
 		out = append(out, presetStep{what: "tacctl tier " + t, state: presetState(policy.GroupTier(c, group), t, force),
+			detail: []string{"tacctl tier: " + ifGroup(g, tierSettingText(policy.GroupTier(c, group), cur)) + " -> " + tierSettingText(t, r.PrivLvl) +
+				sameNote(g != nil && tier.ForGroup(policy.GroupTier(c, group), strconv.Itoa(cur)) == tier.ForGroup(t, strconv.Itoa(r.PrivLvl)))},
 			apply: func(c *conf.Config) error { return policy.WriteGroupTier(c, group, t) }})
 	}
 	have := ""
@@ -174,7 +195,13 @@ func (inv *invocation) presetSteps(m *model.Model, c *conf.Config, r policy.Role
 		have = level
 	}
 	wti := r.WTI
+	cur := r.PrivLvl
+	if g != nil {
+		cur = privOf(g)
+	}
 	out = append(out, presetStep{what: "WTI level " + wti, state: presetState(have, wti, force),
+		detail: []string{"WTI level: " + ifGroup(g, wtiSettingText(have, cur)) + " -> " + wtiSettingText(wti, r.PrivLvl) +
+			sameNote(g != nil && policyWTI(c, group, cur) == wti)},
 		apply: func(c *conf.Config) error { return policy.WriteWTILevel(c, group, wti) }})
 	for _, attr := range conf.JunosAttrs {
 		items, ok := r.Junos[attr]
@@ -187,8 +214,9 @@ func (inv *invocation) presetSteps(m *model.Model, c *conf.Config, r policy.Role
 		}
 		what := fmt.Sprintf("Junos %s (%d/%d bytes)", conf.JunosArg(attr), len(conf.JunosValue(items)), conf.JunosLimit(attr))
 		out = append(out, presetStep{what: what,
-			state: presetState(have, strings.Join(items, "\n"), force),
-			apply: func(c *conf.Config) error { return policy.WriteJunosSet(c, group, attr, items) }})
+			state:  presetState(have, strings.Join(items, "\n"), force),
+			detail: junosDiffLines(attr, policy.JunosSet(c, group, attr), items),
+			apply:  func(c *conf.Config) error { return policy.WriteJunosSet(c, group, attr, items) }})
 	}
 	if r.Commands != nil {
 		lines := r.Commands
@@ -207,6 +235,7 @@ func (inv *invocation) presetSteps(m *model.Model, c *conf.Config, r policy.Role
 			levels = append(levels, group+"|"+strconv.Itoa(r.PrivLvl)+"|"+r.Class)
 		}
 		out = append(out, presetStep{what: fmt.Sprintf("Cisco command rules (%d, default %s)", len(lines), policy.Field(lines[len(lines)-1], 2)), state: state,
+			detail: ruleDiffLines(policy.Lines(c, group), lines),
 			apply: func(c *conf.Config) error {
 				// The other groups at its priv-lvl keep working once
 				// devices ask per command (as 'group commands' does).
@@ -217,6 +246,20 @@ func (inv *invocation) presetSteps(m *model.Model, c *conf.Config, r policy.Role
 			}})
 	}
 	return out
+}
+
+// sameNote words a setting that is written and changes nothing that applies.
+func sameNote(same bool) string {
+	if same {
+		return "  (same level; now set explicitly)"
+	}
+	return ""
+}
+
+// policyWTI is the WTI level a group has now, set or from its priv-lvl.
+func policyWTI(c *conf.Config, group string, privlvl int) string {
+	level, _ := policy.WTILevel(c, group, privlvl)
+	return level
 }
 
 // presetHints are the closing lines: users are not moved, and where the

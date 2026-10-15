@@ -1291,7 +1291,11 @@ gets a
 .BR deny-configuration
 (nothing is hidden from reading; a site that wants a Junos boundary sets
 engineer's itself). The roles nest: what a role may run, the role above may
-run.
+run. Under each setting that is not unchanged the command prints what it
+changes, in the form of
+.B group reset
+(the value now and the preset's, the Cisco rules and the deny-set patterns
+removed and added), and shows it again at the confirmation.
 .IP
 Junos: the operator's set denies
 .I clear

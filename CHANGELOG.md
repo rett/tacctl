@@ -3,6 +3,17 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.11 (unreleased)
+
+1. **`tacctl group preset roles` shows what each setting changes.** Under every
+   setting that is not unchanged, `--dry-run` (and the confirmation of a real
+   run) prints the value now and the preset's, the Cisco rules and the Junos
+   deny-set patterns removed and added, in the form `group reset` uses; a
+   setting that is written without changing what applies says so (the WTI
+   level or tier that follows the priv-lvl and is now set explicitly). A step
+   that is unchanged prints nothing more. Before, the line said only `set`,
+   `kept (pass --force)` or `replaced`.
+
 ## 0.2.10 (2026-10-15)
 
 1. **`tacctl scope netconf` and `tacctl device netconf`: the NETCONF service
