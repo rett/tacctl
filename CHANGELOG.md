@@ -26,6 +26,23 @@ current behaviour; this file is where history lives.
    running or a read-only caller leave the cache as it was. `list --scan`
    and `device scan` are unchanged.
 
+3. **Every release is rebuilt and compared by a published check.** The
+   repository gains its first workflow, `release-reproducible`: when a
+   release is published it checks out the tag on a clean runner, installs the
+   Go version that tag's `bin/tacctl.sh` names, rebuilds both binaries and
+   compares the sums with the published `SHA256SUMS`, whose signature it
+   verifies with the tag's own `release/allowed_signers` (no key and no
+   secret are involved). It also checks that the rebuilt binaries have the
+   test knobs off and the tag's commit stamped in, and it can be run by hand
+   for an older tag. The logic is one script,
+   `tests/tools/release-reproduce.sh` (`make release-reproduce TAG=<tag>`
+   runs it locally), which replaces the second build of `docs/releasing.md`.
+   Around it, `make release-verify` also checks both binaries for test knobs
+   and commit without running them, and `make release-assets` first checks
+   that the release metadata is in place (the dated CHANGELOG heading, the
+   man page's `.TH` line, the release notes file). No change to the binary
+   or the commands.
+
 ## 0.2.10 (2026-10-15)
 
 1. **`tacctl scope netconf` and `tacctl device netconf`: the NETCONF service
