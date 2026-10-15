@@ -4,10 +4,14 @@ package devapply
 // of Transport, over devssh.NetconfSession. The driver is the one the command
 // line uses; what differs is the way in and three properties of the device:
 //
-//   - A confirmed commit that the session which made it closes without
-//     confirming is rolled back at once (0.2.4 spike (d)): RollsBackOnClose is
-//     true and Cancel is the close of the held session. Nothing but the held
-//     session can confirm (no 'persist'), so Revert is never reached.
+//   - A confirmed commit that the session which made it closes or loses
+//     without confirming stays pending to the window's end, as over the
+//     command line (lab, plan N2: a killed tacctl left it pending; the
+//     "rolled back at once" of 0.2.4 spike (d) was a window of seconds):
+//     RollsBackOnClose is false. Cancel is the CLI's: in the held session
+//     <load-configuration rollback="1"/>, the compare that must be exactly
+//     the inverse of the commit, and a commit. Any session's bare commit
+//     confirms a pending one (no 'persist'), so Revert is real too.
 //   - There is no prompt, so no banner: a pending confirmed commit is read
 //     from the history's own 'rollback pending' line under entry 0 (plan
 //     N5), never from the 'rollback in Nmins' label, which rounds down.
@@ -78,9 +82,6 @@ func (m NetconfMode) lockMode() bool { return m != ModePrivate }
 // again in ModeExclusive (JunosNetconf.RetryExclusive).
 var ErrPrivateConfirmRefused = errors.New("the device refuses a confirmed commit in a private session")
 
-// ErrNotApplicable: the method has no meaning for this transport.
-var ErrNotApplicable = errors.New("not applicable for this transport")
-
 const (
 	capCandidate = "urn:ietf:params:netconf:capability:candidate:1.0"
 	capConfirmed = "urn:ietf:params:netconf:capability:confirmed-commit:1.0"
@@ -124,6 +125,11 @@ type JunosNetconf struct {
 	// private session.
 	retry   bool
 	release context.CancelFunc
+	// committed is the held session's last Compare, the change the
+	// confirmed commit committed, and committedDelta the delta it was read
+	// for: what Cancel and Revert hold the loaded candidate against.
+	committed      *plan.CompareText
+	committedDelta plan.Delta
 }
 
 // NewJunosNetconf is the transport over an authenticated client (dialled as
@@ -149,9 +155,10 @@ func DialJunosNetconf(ctx context.Context, t devssh.Target, mode NetconfMode) (*
 // Vendor is the registry's word.
 func (j *JunosNetconf) Vendor() string { return devssh.VendorJuniper }
 
-// RollsBackOnClose is true: a confirmed commit whose session closes without
-// confirming is rolled back at once (0.2.4 spike (d)).
-func (j *JunosNetconf) RollsBackOnClose() bool { return true }
+// RollsBackOnClose is false: a confirmed commit whose session closes or dies
+// without confirming stays pending to the window's end (lab, plan N2); only
+// the window's end or an active cancel rolls it back.
+func (j *JunosNetconf) RollsBackOnClose() bool { return false }
 
 // LocalAddr is the local end of the connection.
 func (j *JunosNetconf) LocalAddr() net.IP {
@@ -215,9 +222,9 @@ func (j *JunosNetconf) Held() bool {
 	return j.held != nil && j.open
 }
 
-// Close closes the sessions and the connection. A private or exclusive
-// candidate that was not committed goes with its session, and so does a
-// confirmed commit that was not confirmed (it is rolled back).
+// Close closes the sessions and the connection. A candidate that was not
+// committed goes with its session and the lock with it; a confirmed commit
+// that was not confirmed stays pending to the window's end.
 func (j *JunosNetconf) Close() error {
 	j.mu.Lock()
 	held, rd := j.held, j.rd
@@ -239,7 +246,7 @@ func (j *JunosNetconf) Close() error {
 }
 
 // dropHeld closes the held session after a failure: nothing more is sent
-// in it, and the device rolls back what it had not confirmed.
+// in it, and the device's window rolls back what it had not confirmed.
 func (j *JunosNetconf) dropHeld() {
 	j.mu.Lock()
 	held := j.held
@@ -806,8 +813,25 @@ func (j *JunosNetconf) Load(ctx context.Context, l plan.Line) (Loaded, error) {
 // Compare asks for the candidate's difference against the committed
 // configuration ('show | compare').
 func (j *JunosNetconf) Compare(ctx context.Context, d plan.Delta) (plan.CompareText, error) {
-	if err := j.mustHold(plan.ApplyCompare); err != nil {
+	out, err := j.heldCompareText(ctx)
+	if err != nil {
 		return plan.CompareText{}, err
+	}
+	c, err := plan.ParseCompareFor(out, d)
+	if err != nil {
+		return plan.CompareText{}, fmt.Errorf("%s: %w: %v", plan.ApplyCompare, ErrUnrecognised, j.m.text(err.Error()))
+	}
+	j.mu.Lock()
+	j.committed, j.committedDelta = &c, d
+	j.mu.Unlock()
+	return c, nil
+}
+
+// heldCompareText is the held session's compare against the committed
+// configuration, as the device prints it.
+func (j *JunosNetconf) heldCompareText(ctx context.Context) (string, error) {
+	if err := j.mustHold(plan.ApplyCompare); err != nil {
+		return "", err
 	}
 	j.logf(plan.ApplyCompare)
 	j.mu.Lock()
@@ -817,20 +841,16 @@ func (j *JunosNetconf) Compare(ctx context.Context, d plan.Delta) (plan.CompareT
 	var re devssh.RPCError
 	switch {
 	case errors.As(err, &re):
-		return plan.CompareText{}, answerError(plan.ApplyCompare, []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
+		return "", answerError(plan.ApplyCompare, []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
 	case err != nil:
 		j.dropHeld()
-		return plan.CompareText{}, fmt.Errorf("%w: %s: %v", ErrSessionLost, plan.ApplyCompare, j.m.text(err.Error()))
+		return "", fmt.Errorf("%w: %s: %v", ErrSessionLost, plan.ApplyCompare, j.m.text(err.Error()))
 	}
 	out, err := devssh.ReplyText(reply)
 	if err != nil {
-		return plan.CompareText{}, fmt.Errorf("%s: %w: %v", plan.ApplyCompare, ErrUnrecognised, j.m.text(err.Error()))
+		return "", fmt.Errorf("%s: %w: %v", plan.ApplyCompare, ErrUnrecognised, j.m.text(err.Error()))
 	}
-	c, err := plan.ParseCompareFor(out, d)
-	if err != nil {
-		return plan.CompareText{}, fmt.Errorf("%s: %w: %v", plan.ApplyCompare, ErrUnrecognised, j.m.text(err.Error()))
-	}
-	return c, nil
+	return out, nil
 }
 
 // Check is the commit check; the answer must be its success element. It is
@@ -964,44 +984,130 @@ func (j *JunosNetconf) Confirm(ctx context.Context, id, user string) error {
 	}
 	j.mu.Lock()
 	j.own = false
+	j.mu.Unlock()
+	j.releaseLock(ctx)
+	return nil
+}
+
+// releaseLock ends a finished transaction's hold on the candidate now, not at
+// the session's end. Best effort: the close releases it all the same, and
+// the commit it follows is made.
+func (j *JunosNetconf) releaseLock(ctx context.Context) {
+	j.mu.Lock()
 	locked := j.locked
 	j.mu.Unlock()
-	if locked {
-		// The transaction is over: release the lock now, not at the
-		// session's end. Best effort: the close releases it all the same,
-		// and the commit it follows is confirmed.
-		j.logf("netconf: unlock-configuration")
-		if _, err := j.rpcHeld(ctx, `<unlock-configuration/>`, "unlock-configuration"); err == nil {
-			j.mu.Lock()
-			j.locked = false
-			j.mu.Unlock()
-		}
+	if !locked {
+		return
 	}
-	return nil
+	j.logf("netconf: unlock-configuration")
+	if _, err := j.rpcHeld(ctx, `<unlock-configuration/>`, "unlock-configuration"); err == nil {
+		j.mu.Lock()
+		j.locked = false
+		j.mu.Unlock()
+	}
 }
 
-// Cancel closes the held session without confirming: the device rolls the
-// confirmed commit back at once (0.2.4 spike (d)). The driver reads the
-// state afterwards and names what happened; nothing is committed by the
-// transport.
+// Cancel loads 'rollback 1' into the held candidate, reads its compare and,
+// only when the history still shows a pending commit and the compare is
+// exactly the inverse of the held session's last compare (the change the
+// confirmed commit committed), commits it with the cancel's comment: that
+// ends the window at once and is a normal entry (lab, plan N2). Anything
+// else commits nothing: 'rollback 1' loaded after the device's own rollback
+// is the change itself, and committing it would keep it. A load that did not
+// answer closes the session; a missing marker or a compare that is not the
+// inverse (or does not parse) is discarded, and the window's end is the
+// cancel. Closing the held session is not a cancel: the commit stays
+// pending (RollsBackOnClose).
 func (j *JunosNetconf) Cancel(ctx context.Context, id string) error {
-	_ = ctx
-	j.mu.Lock()
-	held := j.held
-	j.mu.Unlock()
-	if held == nil {
-		return fmt.Errorf("%w: cancel %s", ErrSessionLost, cut(id))
-	}
-	j.logf("netconf: close-session (cancel " + cut(id) + ")")
-	j.dropHeld()
-	return nil
+	return j.undo(ctx, id, true)
 }
 
-// Revert is not applicable: nothing but the held session confirms a NETCONF
-// commit, so a commit that "something else confirmed" cannot happen to it.
+// Revert is Cancel for a commit that something confirmed before tacctl's
+// confirm (any session's bare commit confirms): the same load and the same
+// inverse compare, and the history must show no pending commit (one that
+// stands is a commit the driver did not see, and is not committed over).
 func (j *JunosNetconf) Revert(ctx context.Context, id string) error {
-	_, _ = ctx, id
-	return fmt.Errorf("%w: a NETCONF confirmed commit is confirmed by its own session only", ErrNotApplicable)
+	return j.undo(ctx, id, false)
+}
+
+// undo is Cancel (pending true: the marker must stand after the load) and
+// Revert (false: it must not).
+func (j *JunosNetconf) undo(ctx context.Context, id string, pending bool) error {
+	j.mu.Lock()
+	committed, d := j.committed, j.committedDelta
+	j.mu.Unlock()
+	if committed == nil {
+		return fmt.Errorf("%w: no compare of the commit to undo", ErrNotSent)
+	}
+	if err := j.mustHold(plan.ApplyRollback1); err != nil {
+		return err
+	}
+	j.logf("netconf: load-configuration rollback 1")
+	r, err := j.rpcHeld(ctx, `<load-configuration rollback="1"/>`, plan.ApplyRollback1)
+	var re devssh.RPCError
+	switch {
+	case errors.As(err, &re):
+		j.dropHeld()
+		return j.firstError(plan.ApplyRollback1, r)
+	case err != nil:
+		return err
+	case len(r.Errs) > 0 || !r.Seen["ok"]:
+		j.dropHeld()
+		return j.firstError(plan.ApplyRollback1, r)
+	}
+	nothing := func(why string) error {
+		if derr := j.Discard(ctx); derr != nil {
+			why += "; the discard did not answer as it must, the held session was closed"
+		} else {
+			why += "; it was discarded"
+		}
+		return fmt.Errorf("%w: %s: nothing was committed", ErrUnrecognised, why)
+	}
+	st, err := j.State(ctx)
+	switch {
+	case err != nil:
+		return nothing("the history after the load: " + j.m.text(err.Error()))
+	case st.Pending != pending && pending:
+		return nothing("the history after the load shows no pending commit (the window may have ended)")
+	case st.Pending != pending:
+		return nothing("the history after the load shows a pending commit")
+	}
+	out, err := j.heldCompareText(ctx)
+	if err != nil {
+		j.dropHeld()
+		return err
+	}
+	c, err := plan.ParseCompareFor(out, d)
+	if err != nil || !c.Equal(committed.Inverse()) {
+		why := "the candidate the load made is not the inverse of the commit (the window may have ended)"
+		if err != nil {
+			why = fmt.Sprintf("the candidate the load made: %v", j.m.text(err.Error()))
+		}
+		return nothing(why)
+	}
+	line := plan.ApplyCancel(id)
+	_, comment, err := commitParts(line)
+	if err != nil {
+		return err
+	}
+	var b strings.Builder
+	_ = xml.EscapeText(&b, []byte(comment))
+	j.logf(line)
+	r, err = j.rpcHeld(ctx, "<commit><log>"+b.String()+"</log></commit>", line)
+	switch {
+	case errors.As(err, &re):
+		return j.firstError(line, r)
+	case err != nil:
+		return err
+	}
+	if !r.Seen["ok"] && !r.Seen["commit-success"] || len(r.Errs) > 0 {
+		return j.firstError(line, r)
+	}
+	j.mu.Lock()
+	j.own = false
+	j.mu.Unlock()
+	j.releaseLock(ctx)
+	return nil
 }
 
 // Discard drops the candidate and ends the held session: a discard-changes

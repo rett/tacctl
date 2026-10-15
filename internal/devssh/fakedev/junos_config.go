@@ -55,10 +55,15 @@ package fakedev
 //	timer.minute        seconds one minute of 'commit confirmed' lasts on the
 //	                    server's clock (default 60; bats sets 1)
 //	netconf.private.confirm
-//	                    'refuse': a NETCONF private session's confirmed
-//	                    commit is refused as the command line refuses it
-//	                    (absent: accepted); see junos_config_netconf.go, which
-//	                    also says how the knobs above act over NETCONF
+//	                    'accept': a NETCONF private session's confirmed
+//	                    commit is accepted (absent: refused, as the lab
+//	                    switch refuses it); see junos_config_netconf.go,
+//	                    which also says how the knobs above act over NETCONF
+//	netconf.close.rollback
+//	                    'on': a NETCONF session whose close ends a confirmed
+//	                    commit it made and did not confirm rolls it back at
+//	                    once (absent: it stays pending to the window's end,
+//	                    as on the lab switch)
 //
 // The device writes 'committed.set' (to the state directory, the transcript
 // directory unless WithStateDir) at its first use and after every commit, the
@@ -209,9 +214,9 @@ type junosPending struct {
 	timer  ClockTimer
 	until  time.Time
 	before *jcfg
-	// owner is the NETCONF session whose close rolls the commit back at
-	// once (0.2.4 spike (d)); nil for a commit of the command line, which
-	// only the window's end rolls back.
+	// owner is the NETCONF session that made the commit; its close rolls
+	// the commit back only under the knob netconf.close.rollback=on (the
+	// device does not: lab, plan N2); nil for a commit of the command line.
 	owner *jsession
 }
 

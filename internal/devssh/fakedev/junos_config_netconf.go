@@ -100,9 +100,13 @@ func (s *Server) newNetconfSession(user string, drop func()) *nsession {
 	return &nsession{d: d, sess: d.newSession(user), drop: drop}
 }
 
-// end is the session's end, clean or not: a confirmed commit it made and did
-// not confirm is rolled back at once, the exclusive lock goes, and a private
-// candidate with it. It is safe to call twice and on nil.
+// end is the session's end, clean or not: the lock goes and a private
+// candidate with it. A confirmed commit the session made and did not
+// confirm stays pending: the device rolls it back at the window's end only
+// (lab, plan N2: a killed session left it pending for as long as it was
+// watched; the earlier "rolled back at once" was a window of seconds). The
+// knob netconf.close.rollback=on restores the old model for a test of a
+// device that does roll back on close. It is safe to call twice and on nil.
 func (ns *nsession) end() {
 	if ns == nil {
 		return
@@ -110,14 +114,22 @@ func (ns *nsession) end() {
 	d := ns.d
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if p := d.pending; p != nil && p.owner == ns.sess {
+	if w, _ := d.knobWord("netconf.close.rollback"); w == "on" {
+		d.rollbackOwned(ns.sess)
+	}
+	d.leave(ns.sess)
+	delete(d.sessions, ns.sess)
+}
+
+// rollbackOwned rolls back a confirmed commit that sess made and has not
+// confirmed (the knob's model). The caller holds d.mu.
+func (d *junosDevice) rollbackOwned(sess *jsession) {
+	if p := d.pending; p != nil && p.owner == sess {
 		p.timer.Stop()
 		d.pending = nil
 		d.committed = p.before.clone()
 		d.record(jtExpiryUser, jtExpiryVia, "", 0)
 	}
-	d.leave(ns.sess)
-	delete(d.sessions, ns.sess)
 }
 
 // --- the replies' pieces -------------------------------------------------------------------------
@@ -240,6 +252,26 @@ func (ns *nsession) implicit() {
 
 func (ns *nsession) load(op xnode) string {
 	d, sess := ns.d, ns.sess
+	if rb := op.attr("rollback"); rb != "" {
+		// <load-configuration rollback="N"/>: the candidate becomes the
+		// configuration N commits back (0 discards the changes), as the
+		// CLI's 'rollback N' does [lab: plan N2, the working cancel]
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		if !mayConfigure(sess.class) {
+			return nsError("error", "access-denied", "permission denied", "", "")
+		}
+		if t := d.blocked(sess, true); t != "" {
+			return d.lockDenied(d.holder())
+		}
+		if !sess.configure {
+			ns.implicit()
+		}
+		if out := d.cfgRollback(sess, []string{rb}); out != jtLoadComplete+"\n" {
+			return nsError("error", "operation-failed", plainMsg(out), "", "rollback")
+		}
+		return "<load-configuration-results><ok/></load-configuration-results>"
+	}
 	if a := op.attr("action"); a != "set" {
 		return nsError("error", "operation-not-supported", "load-configuration action '"+a+"' is not supported", "", "")
 	}

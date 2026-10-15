@@ -33,10 +33,12 @@ is failed with the reason.
 Over NETCONF the change is loaded under the candidate's lock (a Junos device
 refuses a confirmed commit in a private session), checked, committed under a
 confirmed commit and confirmed by the session that made it. A session that
-closes without confirming is rolled back by the device within seconds, and
-the fresh login still proves the device before the confirming commit. A
-candidate that holds another editor's staged change is refused, never
-committed with the change.
+closes or dies without confirming leaves the commit pending until its window
+ends (10 minutes by default, `device.apply.confirm_timeout`), as over the
+command line; while tacctl runs, a failed verification is cancelled at once
+with `rollback 1` and a commit. The fresh login still proves the device
+before the confirming commit. A candidate that holds another editor's staged
+change is refused, never committed with the change.
 
 ## The NETCONF service setting
 
@@ -85,7 +87,7 @@ The upgrade writes nothing to a device and no sudoers drop-in changes.
 
 - **The NETCONF transport has been exercised against one real device only
   in part.** It is tested against the fake device, which models the
-  configuration RPCs, the confirmed commit and the session-close rollback,
+  configuration RPCs, the confirmed commit and its cancel,
   and the replies, the lock, the refusal of a private confirmed commit and
   the pending marker were checked on a Junos 25.4 switch with raw RPCs.
   What is still to be confirmed with the release build before `auto` can be

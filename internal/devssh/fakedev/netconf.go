@@ -143,8 +143,8 @@ func (s *Server) netconf(ch ssh.Channel, user string, drop func()) {
 		return err == nil
 	}
 	// The configure model's session (nil when the model is off). Whatever
-	// ends this loop ends it: a confirmed commit it made and did not
-	// confirm is rolled back at once.
+	// ends this loop ends it: its lock and private candidate go; a confirmed
+	// commit it made and did not confirm stays pending to the window's end.
 	ns := s.newNetconfSession(user, drop)
 	defer ns.end()
 	for {
