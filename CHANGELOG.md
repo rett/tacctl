@@ -3,7 +3,7 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.10 (unreleased)
+## 0.2.10 (2026-10-15)
 
 1. **`tacctl scope netconf` and `tacctl device netconf`: the NETCONF service
    of the Junos devices, per scope with a per-device override.** Three states:
