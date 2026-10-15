@@ -902,7 +902,10 @@ func (j *JunosNetconf) CommitConfirmed(ctx context.Context, minutes int, id, use
 	var b strings.Builder
 	_ = xml.EscapeText(&b, []byte(comment))
 	j.logf(line)
-	r, err := j.rpcHeld(ctx, "<commit><confirmed/><confirm-timeout>"+strconv.Itoa(n)+"</confirm-timeout><log>"+b.String()+"</log></commit>", line)
+	// the device reads <confirm-timeout> in seconds, not the minutes its
+	// reference gives (lab: 180 reads 'rollback in 3mins', 5 rolls back
+	// after seconds)
+	r, err := j.rpcHeld(ctx, "<commit><confirmed/><confirm-timeout>"+strconv.Itoa(n*60)+"</confirm-timeout><log>"+b.String()+"</log></commit>", line)
 	var re devssh.RPCError
 	switch {
 	case errors.As(err, &re):

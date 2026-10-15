@@ -200,6 +200,9 @@ type JunosCommit struct {
 	// device's history does, also after a 'commit check' confirmed it: it
 	// is not a pending marker (PendingUntil and the prompt's banner are).
 	RollbackIn int
+	// Confirmed marks a confirmed commit whose window is under a minute
+	// (RollbackIn 0), which the device still labels 'rollback in 0mins'.
+	Confirmed bool
 }
 
 type junosPending struct {
@@ -585,15 +588,11 @@ func (d *junosDevice) historyText() string {
 	var b strings.Builder
 	for i, h := range d.history {
 		fmt.Fprintf(&b, "%-3d %s by %s via %s", i, formatTime(h.Time), h.User, h.Via)
-		if h.RollbackIn > 0 {
-			mins := h.RollbackIn
-			if h.Via == jtNetconfVia && mins > 0 {
-				// a commit made over NETCONF reads the window rounded
-				// down: a one-minute window is 'rollback in 0mins' [C: one
-				// observation on the lab switch, plan N5]
-				mins--
-			}
-			b.WriteString(" " + fmt.Sprintf(jtRollbackInFmt, mins))
+		if h.Confirmed || h.RollbackIn > 0 {
+			// the label is the window in whole minutes, rounded down: a
+			// NETCONF commit's seconds make 'rollback in 0mins' under a
+			// minute [lab: 1 and 5 seconds read 0mins, 180 reads 3mins]
+			b.WriteString(" " + fmt.Sprintf(jtRollbackInFmt, h.RollbackIn))
 		}
 		b.WriteString("\n")
 		if h.Comment != "" {

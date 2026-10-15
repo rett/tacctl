@@ -301,7 +301,7 @@ func TestNetconfConfirmedCommitConfirmedBySameSession(t *testing.T) {
 		t.Fatalf("lock-configuration: %s", got)
 	}
 	c.load("set system login idle-timeout 30")
-	got := c.rpc("<commit-configuration><confirmed/><confirm-timeout>2</confirm-timeout><log>tacctl apply 1</log></commit-configuration>")
+	got := c.rpc("<commit-configuration><confirmed/><confirm-timeout>120</confirm-timeout><log>tacctl apply 1</log></commit-configuration>")
 	mustContain(t, "confirmed commit", got, "<commit-success/>")
 	until, pending := srv.PendingUntil()
 	if !pending || !until.Equal(clk.Now().Add(2*time.Minute)) {
@@ -311,12 +311,11 @@ func TestNetconfConfirmedCommitConfirmedBySameSession(t *testing.T) {
 	if h[0].RollbackIn != 2 || h[0].Comment != "tacctl apply 1" {
 		t.Errorf("history: %+v", h[0])
 	}
-	// the history as the device prints it, over the command and the RPC
-	// the window's label rounds down for a NETCONF commit (a two-minute
-	// window reads 1mins) and the device's own marker stands under the
-	// entry [C: plan N5]
+	// the history as the device prints it, over the command and the RPC:
+	// the window is read in seconds (120 is two minutes) and the device's
+	// own marker stands under the entry [lab: N5]
 	mustContain(t, "show system commit", c.command("show system commit"),
-		"by "+DefaultUser+" via netconf commit confirmed, rollback in 1mins", "tacctl apply 1", "rollback pending")
+		"by "+DefaultUser+" via netconf commit confirmed, rollback in 2mins", "tacctl apply 1", "rollback pending")
 	info := c.rpc("<get-commit-information/>")
 	mustContain(t, "commit information", info, "<sequence-number>0</sequence-number>",
 		"<client>netconf</client>", "<log>tacctl apply 1</log>", "<rollback-in>2</rollback-in>")
@@ -349,7 +348,7 @@ func TestNetconfConfirmedCommitRollsBackWhenTheSessionCloses(t *testing.T) {
 	c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
 	c.rpc("<lock-configuration/>")
 	c.load("set system login idle-timeout 30")
-	mustContain(t, "commit", c.rpc("<commit-configuration><confirmed/><confirm-timeout>5</confirm-timeout></commit-configuration>"), "<commit-success/>")
+	mustContain(t, "commit", c.rpc("<commit-configuration><confirmed/><confirm-timeout>300</confirm-timeout></commit-configuration>"), "<commit-success/>")
 	if !hasStmt(srv.Committed(), "set system login idle-timeout 30") {
 		t.Fatal("not committed")
 	}
@@ -377,7 +376,7 @@ func TestNetconfConfirmedCommitRollsBackAtTheWindowsEnd(t *testing.T) {
 	c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
 	c.rpc("<lock-configuration/>")
 	c.load("set system login idle-timeout 30")
-	c.rpc("<commit-configuration><confirmed/><confirm-timeout>2</confirm-timeout></commit-configuration>")
+	c.rpc("<commit-configuration><confirmed/><confirm-timeout>120</confirm-timeout></commit-configuration>")
 	clk.Advance(time.Minute)
 	if !hasStmt(srv.Committed(), "set system login idle-timeout 30") {
 		t.Fatal("rolled back early")
@@ -400,7 +399,7 @@ func TestNetconfConfirmedCommitInAPrivateSessionKnob(t *testing.T) {
 	c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
 	c.open("private")
 	c.load("set system login idle-timeout 30")
-	got := c.rpc("<commit-configuration><confirmed/><confirm-timeout>2</confirm-timeout></commit-configuration>")
+	got := c.rpc("<commit-configuration><confirmed/><confirm-timeout>120</confirm-timeout></commit-configuration>")
 	mustContain(t, "refused", got, "<error-type>protocol</error-type>", "<error-tag>operation-failed</error-tag>",
 		"<error-severity>error</error-severity>",
 		`<error-message>"commit confirmed" is not supported for private configuration</error-message>`)
@@ -413,13 +412,13 @@ func TestNetconfConfirmedCommitInAPrivateSessionKnob(t *testing.T) {
 		t.Fatalf("lock: %s", got)
 	}
 	d.load("set system login idle-timeout 30")
-	mustContain(t, "locked confirmed", d.rpc("<commit-configuration><confirmed/><confirm-timeout>2</confirm-timeout></commit-configuration>"), "<commit-success/>")
+	mustContain(t, "locked confirmed", d.rpc("<commit-configuration><confirmed/><confirm-timeout>120</confirm-timeout></commit-configuration>"), "<commit-success/>")
 	// a device that allows it
 	srv2, _, _ := newJunos(t, map[string]string{"netconf.private.confirm": "accept\n"})
 	e := netconfLogin(t, srv2, DefaultUser, DefaultPassword)
 	e.open("private")
 	e.load("set system login idle-timeout 30")
-	mustContain(t, "accepted", e.rpc("<commit-configuration><confirmed/><confirm-timeout>2</confirm-timeout></commit-configuration>"), "<commit-success/>")
+	mustContain(t, "accepted", e.rpc("<commit-configuration><confirmed/><confirm-timeout>120</confirm-timeout></commit-configuration>"), "<commit-success/>")
 }
 
 func TestNetconfAndCommandLineShareOneConfiguration(t *testing.T) {
@@ -533,7 +532,7 @@ func TestNetconfKnobsAct(t *testing.T) {
 		// unconfirmed commit goes with the session
 		c.id++
 		_, _ = io.WriteString(c.in, fmt.Sprintf(`<rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="%d">`+
-			`<commit-configuration><confirmed/><confirm-timeout>2</confirm-timeout></commit-configuration></rpc>]]>]]>`, c.id))
+			`<commit-configuration><confirmed/><confirm-timeout>120</confirm-timeout></commit-configuration></rpc>]]>]]>`, c.id))
 		done := make(chan error, 1)
 		go func() { done <- c.sess.Wait() }()
 		select {
@@ -551,7 +550,7 @@ func TestNetconfKnobsAct(t *testing.T) {
 		c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
 		c.rpc("<lock-configuration/>")
 		c.load("set system login idle-timeout 30")
-		got := c.rpc("<commit-configuration><confirmed/><confirm-timeout>2</confirm-timeout></commit-configuration>")
+		got := c.rpc("<commit-configuration><confirmed/><confirm-timeout>120</confirm-timeout></commit-configuration>")
 		mustContain(t, "reply", got, "<commit-success/>")
 		waitFor(t, "the rollback", func() bool { return !hasStmt(srv.Committed(), "set system login idle-timeout 30") })
 	})
@@ -560,7 +559,7 @@ func TestNetconfKnobsAct(t *testing.T) {
 		c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
 		c.rpc("<lock-configuration/>")
 		c.load("set system login idle-timeout 30")
-		c.rpc("<commit-configuration><confirmed/><confirm-timeout>2</confirm-timeout></commit-configuration>")
+		c.rpc("<commit-configuration><confirmed/><confirm-timeout>120</confirm-timeout></commit-configuration>")
 		if _, err := dialJunos(t, srv, DefaultUser, DefaultPassword); err == nil {
 			t.Fatal("a new login was accepted while the commit is pending")
 		}
@@ -629,4 +628,34 @@ func (s *Server) junosSessions() []*jsession {
 		out = append(out, sess)
 	}
 	return out
+}
+
+// TestNetconfConfirmTimeoutIsSeconds pins the lab switch's reading of
+// <confirm-timeout>: seconds, not the minutes its reference gives. 180 is
+// 'rollback in 3mins'; five seconds is 'rollback in 0mins' and the
+// commit is rolled back after five seconds, not five minutes.
+func TestNetconfConfirmTimeoutIsSeconds(t *testing.T) {
+	srv, _, clk := newJunos(t, map[string]string{})
+	c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
+	c.rpc("<lock-configuration/>")
+	c.load("set system login idle-timeout 30")
+	mustContain(t, "180", c.rpc("<commit><confirmed/><confirm-timeout>180</confirm-timeout></commit>"), "<ok/>")
+	mustContain(t, "180 label", c.command("show system commit"), "rollback in 3mins", "rollback pending")
+	until, pending := srv.PendingUntil()
+	if !pending || !until.Equal(clk.Now().Add(180*time.Second)) {
+		t.Errorf("window: pending %v until %v", pending, until)
+	}
+	mustContain(t, "confirm", c.rpc("<commit/>"), "<ok/>")
+
+	c.load("set system login idle-timeout 31")
+	mustContain(t, "5", c.rpc("<commit><confirmed/><confirm-timeout>5</confirm-timeout></commit>"), "<ok/>")
+	mustContain(t, "5 label", c.command("show system commit"), "rollback in 0mins", "rollback pending")
+	clk.Advance(4 * time.Second)
+	if !hasStmt(srv.Committed(), "set system login idle-timeout 31") {
+		t.Fatal("rolled back before five seconds")
+	}
+	clk.Advance(2 * time.Second)
+	if hasStmt(srv.Committed(), "set system login idle-timeout 31") {
+		t.Error("not rolled back after five seconds")
+	}
 }

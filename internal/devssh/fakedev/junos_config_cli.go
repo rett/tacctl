@@ -597,7 +597,7 @@ func (d *junosDevice) cfgCommit(sess *jsession, args []string) jresult {
 		// a private session refuses a confirmed commit (lab L5)
 		return jresult{out: jtNoConfirmedPrivate + "\n"}
 	}
-	o := d.commitApply(sess, check, confirmed, minutes, comment, jtCommitVia, nil)
+	o := d.commitApply(sess, check, confirmed, time.Duration(minutes)*d.minute(), minutes, comment, jtCommitVia, nil)
 	if len(o.fails) > 0 {
 		return jresult{out: strings.Join(o.fails, "\n") + "\n" + jtCheckFailed + "\n"}
 	}
@@ -636,7 +636,7 @@ type commitOutcome struct {
 // session whose close rolls an unconfirmed commit back at once (nil for the
 // command line, which only the window's end does). The caller holds d.mu and
 // has checked blocked.
-func (d *junosDevice) commitApply(sess *jsession, check, confirmed bool, minutes int, comment, via string, owner *jsession) commitOutcome {
+func (d *junosDevice) commitApply(sess *jsession, check, confirmed bool, window time.Duration, label int, comment, via string, owner *jsession) commitOutcome {
 	cand := d.candidate(sess)
 	if fails := d.checkFailures(cand); len(fails) > 0 {
 		return commitOutcome{fails: fails}
@@ -680,12 +680,15 @@ func (d *junosDevice) commitApply(sess *jsession, check, confirmed bool, minutes
 	}
 	rollbackIn := 0
 	if confirmed {
-		rollbackIn = minutes
+		rollbackIn = label
 		p := &junosPending{before: before.clone(), owner: owner}
-		p.until = d.s.clock.Now().Add(time.Duration(minutes) * d.minute())
-		p.timer = d.s.clock.AfterFunc(time.Duration(minutes)*d.minute(), func() { d.expire(p) })
+		p.until = d.s.clock.Now().Add(window)
+		p.timer = d.s.clock.AfterFunc(window, func() { d.expire(p) })
 		d.pending = p
 	}
 	d.record(sess.user, via, comment, rollbackIn)
+	if confirmed {
+		d.history[0].Confirmed = true
+	}
 	return commitOutcome{}
 }

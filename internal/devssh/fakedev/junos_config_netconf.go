@@ -23,8 +23,9 @@ package fakedev
 //	get-configuration       database="committed|candidate", format="set|
 //	                        text", compare="rollback" rollback="N", and a
 //	                        <configuration> filter of one path
-//	commit-configuration    <check/>, <confirmed/>, <confirm-timeout>,
-//	                        <log> (also named <commit>)
+//	commit-configuration    <check/>, <confirmed/>, <confirm-timeout> (in
+//	                        seconds, as the lab switch reads it), <log>
+//	                        (also named <commit>)
 //	discard-changes         the candidate goes back to the committed
 //	lock, unlock            <target><candidate/></target>
 //	get-commit-information  the history, newest first
@@ -50,6 +51,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // xnode is an element of a request, whatever it holds.
@@ -283,7 +285,7 @@ func (ns *nsession) load(op xnode) string {
 
 func (ns *nsession) commit(op xnode) (string, int) {
 	d, sess := ns.d, ns.sess
-	check, confirmed, minutes, comment := false, false, 10, ""
+	check, confirmed, seconds, comment := false, false, 600, ""
 	for _, k := range op.Kids {
 		switch k.XMLName.Local {
 		case "check":
@@ -292,10 +294,12 @@ func (ns *nsession) commit(op xnode) (string, int) {
 			confirmed = true
 		case "confirm-timeout":
 			n, err := strconv.Atoi(strings.TrimSpace(k.Text))
-			if err != nil || n < 1 || n > 65535 {
+			if err != nil || n < 1 || n > 65535*60 {
 				return nsError("error", "invalid-value", plainMsg(jtBadConfirmed), "", "confirm-timeout"), dropNone
 			}
-			minutes = n
+			// seconds, as the lab switch reads it (180 is 'rollback in
+			// 3mins'; its reference says minutes)
+			seconds = n
 		case "log":
 			comment = strings.TrimSpace(k.Text)
 		case "synchronize", "force", "full":
@@ -319,7 +323,7 @@ func (ns *nsession) commit(op xnode) (string, int) {
 			return nsError("error", "operation-failed", jtNetconfNoConfirmedPrivate, "", ""), dropNone
 		}
 	}
-	o := d.commitApply(sess, check, confirmed, minutes, comment, jtNetconfVia, sess)
+	o := d.commitApply(sess, check, confirmed, time.Duration(seconds)*d.minute()/60, seconds/60, comment, jtNetconfVia, sess)
 	if len(o.fails) > 0 {
 		var b strings.Builder
 		for _, f := range o.fails {
@@ -409,7 +413,7 @@ func (ns *nsession) commitInformation() string {
 		if h.Comment != "" {
 			b.WriteString("<log>" + esc(h.Comment) + "</log>")
 		}
-		if h.RollbackIn > 0 {
+		if h.Confirmed || h.RollbackIn > 0 {
 			fmt.Fprintf(&b, "<rollback-in>%d</rollback-in>", h.RollbackIn)
 		}
 		b.WriteString("</commit-history>")
