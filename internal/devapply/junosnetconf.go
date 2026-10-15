@@ -671,7 +671,8 @@ func (j *JunosNetconf) Open(ctx context.Context, allow func(string) error) error
 		j.dropHeld()
 		return err
 	}
-	for _, e := range r.Errs {
+	if len(r.Errs) > 0 {
+		e := r.Errs[0]
 		j.dropHeld()
 		if strings.Contains(e.Message, "exclusive") {
 			return &LockedError{}

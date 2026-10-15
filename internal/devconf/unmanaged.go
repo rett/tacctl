@@ -302,7 +302,7 @@ func unmanaged(fam, section string, x stmt, rs *renderedSet) bool {
 		if wtiKept(section, x, rs) {
 			return true
 		}
-	} else if section != SectionSNMP && section != SectionSystem && !(fam == FamilyJunos && section == SectionNetconf) ||
+	} else if section != SectionSNMP && section != SectionSystem && (fam != FamilyJunos || section != SectionNetconf) ||
 		strings.HasPrefix(x.stem, "deactivate ") {
 		return false
 	}
