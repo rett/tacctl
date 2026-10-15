@@ -155,3 +155,31 @@ func TestResolveKnob(t *testing.T) {
 		t.Errorf("unset: %v", err)
 	}
 }
+
+func TestApplyPauseKnob(t *testing.T) {
+	k, err := load(t, EnvTestApplyPause+"=gate:0.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pause := k.ApplyPause()
+	if pause == nil {
+		t.Fatal("no pause for a set knob")
+	}
+	start := time.Now()
+	pause("open")
+	if time.Since(start) > 100*time.Millisecond {
+		t.Error("paused at a point the knob does not name")
+	}
+	pause("gate")
+	if time.Since(start) < 200*time.Millisecond {
+		t.Errorf("gate pause was %v", time.Since(start))
+	}
+	if k, _ := load(t); k.ApplyPause() != nil {
+		t.Error("a pause without the knob")
+	}
+	for _, bad := range []string{"gate", "gate:", "gate:x", "gate:-1", "gate:9999", ":5"} {
+		if _, err := load(t, EnvTestApplyPause+"="+bad); err == nil || !strings.Contains(err.Error(), EnvTestApplyPause) {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+}

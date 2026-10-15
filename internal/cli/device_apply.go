@@ -659,7 +659,7 @@ func (r *applyRun) transact(ctx context.Context, e devreg.Entry, o *applyOutcome
 			Plan:           r.planner(e, expected, c.plain, st),
 			Allow:          plan.Allow{Login: r.user, Expected: expected},
 			ConfirmMinutes: r.minutes,
-			Clock:          r.inv.app.Knobs.Now, Rand: r.inv.app.Knobs.Rand(),
+			Clock:          r.inv.app.Knobs.Now, Rand: r.inv.app.Knobs.Rand(), Pause: r.inv.app.Knobs.ApplyPause(),
 			StateDir: r.stateDir,
 		}
 		if reviewed == nil {

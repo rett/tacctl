@@ -767,6 +767,7 @@ not a knob: it stays an ordinary environment check.
 | `TACCTL_TEST_DEVICE_DIAL=<host:port>` | every device `device config pull` logs in to is dialled at this loopback address instead of its own (the fake device below); a non-loopback value is an error |
 | `TACCTL_TEST_DEVICE_PASSWORD=<text>` | the password a pull logs in with, in place of the terminal prompt (a bats test has no terminal) |
 | `TACCTL_TEST_LOCAL_PASSWORD=<text>` | the password of the device's local account that `--login` and `device onboard` log in with, in place of the terminal prompt |
+| `TACCTL_TEST_APPLY_PAUSE=gate:<seconds>` | `device config apply` waits that long (at most 600) between the gate and the open of its session, so a second session can commit in that window (`docs/plans/0.2.11-lab.md`, N4); read only in a `-tags testknobs` build; a malformed value is an error |
 | `TACCTL_TEST_RESOLVE=<name>=<address>[,<address>][;<name>=...]` | the host name lookups of `device sync` (a reported host name must resolve to the device's address and no other) and of `--server` answer from this table instead of DNS; a name it lacks does not resolve |
 
 `tacctl _fake-device <dir> [--user <name> --password <text>] [--info-file <file>] [--netconf off] [--seconds <n>]`
