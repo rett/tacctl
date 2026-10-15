@@ -25,7 +25,11 @@ current behaviour; this file is where history lives.
    run one scan, the others leave at once), and re-scans a device's host keys
    only when its last scan is a day old, so a session start does not touch
    every device; `--quiet` prints nothing. Both are options of `device scan`
-   for use by hand too; `--if-stale` refuses `--full` and `--since`.
+   for use by hand too; `--if-stale` refuses `--full` and `--since`. When the
+   seen data is an hour old or more (no session has started since), the
+   footer of `device list` and the `Last seen` line of `device show` say how
+   old it is and to run `tacctl device scan` (a read-only caller is told that
+   an operator can).
 
 3. **`tacctl group list` says when no group has the engineer tier.** The
    engineer tier exists only through a tier setting, so an install without

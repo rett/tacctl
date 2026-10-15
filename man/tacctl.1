@@ -5967,7 +5967,13 @@ list is looked at and nothing a person types waits for it. That scan does
 nothing when the cache is younger than five minutes or another scan holds it
 (sessions that start together run one), reads a device's host keys again only
 when that device's last scan is a day old, goes on after the session ends and
-prints nothing.
+prints nothing. Seen data an hour old or more is said so, with the command to
+bring it up to date, in the footer of
+.B list
+and in the
+.B Last seen
+line of
+.BR show .
 .PP
 Notices are computed each time they are shown; only acknowledgements are
 stored. Besides the registry's own

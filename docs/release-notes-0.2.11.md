@@ -46,7 +46,8 @@ it may put back to after its last restart:
   or another scan holds it, so sessions that start together run one scan, and
   it connects to a device's SSH port for its host keys only when its last
   scan is a day old. `device scan` itself is unchanged; the two options are
-  available by hand.
+  available by hand. Seen data an hour old or more is said so, with the
+  command to run, in `device list` and `device show`.
 - `group list` says when no group has the engineer tier, and `config
   validate` and `group privilege list` name an empty `privileges.<group>`
   that hides a shipped default.

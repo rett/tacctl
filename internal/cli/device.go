@@ -1015,7 +1015,7 @@ func (inv *invocation) deviceList(args []string) error {
 	}
 	inv.write(tb.String())
 	inv.echo("")
-	inv.echo("  " + deviceSeenFooter(res))
+	inv.echo("  " + inv.deviceSeenFooter(res))
 	if reach != nil {
 		inv.echo("  REACH: a TCP connect to the ssh port; this server often has no path to management ports, so a timeout may be a false alarm")
 	}
@@ -1132,6 +1132,9 @@ func (inv *invocation) deviceShow(args []string) error {
 	last, by, via, stale := deviceSeenCols(inv, res, e)
 	if stale {
 		last += "  (stale: older than " + strconv.Itoa(res.File.StaleDays) + " days)"
+	}
+	if old := inv.seenOldText(res); old != "" && last != "-" {
+		last += "  (seen data is " + old + " old: " + inv.seenRunText() + ")"
 	}
 	row("Last seen", last)
 	if by != "-" || via != "-" {

@@ -64,12 +64,48 @@ func deviceSeenCols(inv *invocation, res *devreg.Resolver, e devreg.Entry) (last
 	return last, dash(x.LastUser), x.Via, stale
 }
 
+// seenRemindAge is how old the seen data is before the list and show remind
+// the reader to run 'device scan': a session start refreshes it, so older
+// than this means no session has started since.
+const seenRemindAge = time.Hour
+
+// seenOldText is how old the seen data is when it is old enough to be
+// reminded of ("3 hours", "2 days"), and "" when it is not.
+func (inv *invocation) seenOldText(res *devreg.Resolver) string {
+	if !res.Seen.HasData() {
+		return ""
+	}
+	d := inv.app.Knobs.Now().Sub(res.Seen.Updated)
+	switch {
+	case d < seenRemindAge:
+		return ""
+	case d < 2*time.Hour:
+		return "an hour"
+	case d < 48*time.Hour:
+		return strconv.Itoa(int(d/time.Hour)) + " hours"
+	}
+	return strconv.Itoa(int(d/(24*time.Hour))) + " days"
+}
+
+// seenRunText is the reminder to bring old seen data up to date, worded for
+// who may do it.
+func (inv *invocation) seenRunText() string {
+	if inv.scanAllowed() {
+		return "run 'tacctl device scan' to bring it up to date"
+	}
+	return "an operator can run 'tacctl device scan' to bring it up to date"
+}
+
 // deviceSeenFooter is the line under 'device list' about the seen data.
-func deviceSeenFooter(res *devreg.Resolver) string {
+func (inv *invocation) deviceSeenFooter(res *devreg.Resolver) string {
 	if !res.Seen.HasData() {
 		return "seen data: none (tacctl device scan)"
 	}
-	return "seen data as of " + seenTime(res.Seen.Updated) + " (tacctl device scan to refresh); stale after " +
+	refresh := "tacctl device scan to refresh"
+	if old := inv.seenOldText(res); old != "" {
+		refresh = old + " old: " + inv.seenRunText()
+	}
+	return "seen data as of " + seenTime(res.Seen.Updated) + " (" + refresh + "); stale after " +
 		strconv.Itoa(res.File.StaleDays) + " days"
 }
 
@@ -723,11 +759,18 @@ func (inv *invocation) checkRows(res *devreg.Resolver, e devreg.Entry, reach str
 	case "-":
 		row("Seen", "no seen data (tacctl device scan)")
 	case "never":
-		row("Seen", "never (seen data as of "+seenTime(res.Seen.Updated)+")")
+		s := "never (seen data as of " + seenTime(res.Seen.Updated)
+		if old := inv.seenOldText(res); old != "" {
+			s += ", " + old + " old: " + inv.seenRunText()
+		}
+		row("Seen", s+")")
 	default:
 		s := last + " by " + by + " via " + via
 		if stale {
 			s += "  (stale: older than " + strconv.Itoa(res.File.StaleDays) + " days)"
+		}
+		if old := inv.seenOldText(res); old != "" {
+			s += "  (seen data is " + old + " old: " + inv.seenRunText() + ")"
 		}
 		row("Seen", s)
 	}

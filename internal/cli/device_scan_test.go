@@ -428,3 +428,50 @@ func TestSessionStartsTheSeenRefresh(t *testing.T) {
 		t.Errorf("a readonly session started %q", got)
 	}
 }
+
+// Seen data an hour old or more is reminded of in the list's footer and in
+// show, worded for who may run the scan; fresh data keeps the plain footer.
+func TestDeviceListRemindsToScanWhenTheDataIsOld(t *testing.T) {
+	sb, script, _ := scanSandbox(t)
+	sb.devScan("", script, "scan", "--full")
+	if out := sb.dev("", "list"); !strings.Contains(out, "(tacctl device scan to refresh)") || strings.Contains(out, "old:") {
+		t.Fatalf("fresh:\n%s", out)
+	}
+	cache := sb.path("var-lib", "devices-seen.json")
+	age := func(d time.Duration) {
+		t.Helper()
+		s, err := devreg.LoadSeen(cache)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.Updated = time.Now().Add(-d)
+		if err := s.Save(cache); err != nil {
+			t.Fatal(err)
+		}
+	}
+	age(3 * time.Hour)
+	out := sb.dev("", "list")
+	if !strings.Contains(out, "(3 hours old: run 'tacctl device scan' to bring it up to date)") {
+		t.Errorf("list:\n%s", out)
+	}
+	for _, name := range []string{"core-sw1", "lab-rtr2"} {
+		if out = sb.dev("", "show", name); !strings.Contains(out, "(seen data is 3 hours old: run 'tacctl device scan' to bring it up to date)") {
+			t.Errorf("show %s:\n%s", name, out)
+		}
+	}
+	age(90 * time.Minute)
+	if out = sb.dev("", "list"); !strings.Contains(out, "(an hour old: run") {
+		t.Errorf("an hour:\n%s", out)
+	}
+	age(50 * time.Hour)
+	if out = sb.dev("", "list"); !strings.Contains(out, "(2 days old: run") {
+		t.Errorf("days:\n%s", out)
+	}
+	// A read-only caller is told who can.
+	out = plain(sb.cfgRun("", []string{"device", "list"}, func(r *fake.Runner) {
+		r.On([]string{"id", "-nG", "--", "carol"}, execx.Result{Stdout: []byte("carol tac-users tac-readonly\n")})
+	}, "SUDO_USER=carol"))
+	if !strings.Contains(out, "(2 days old: an operator can run 'tacctl device scan' to bring it up to date)") {
+		t.Errorf("read-only:\n%s", out)
+	}
+}
