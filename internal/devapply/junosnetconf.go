@@ -171,6 +171,13 @@ func (j *JunosNetconf) Confirms() bool {
 	return cand && conf
 }
 
+// NoPendingWord is the driver's reason when a fresh NETCONF login reads no
+// pending confirmed commit: there is no prompt, the state is the history's
+// entry 0 (State).
+func (j *JunosNetconf) NoPendingWord() string {
+	return "the fresh login's commit history shows no pending confirmed commit"
+}
+
 // Log is what was sent, a secret's value elided.
 func (j *JunosNetconf) Log() []string {
 	j.mu.Lock()

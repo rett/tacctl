@@ -161,3 +161,96 @@ print("ok")' <<< "$output"
     assert_success
     [[ "$(applied via)" == netconf ]]
 }
+
+# --- a change to the NETCONF service: proved by a probe (D148) -------------------
+
+# scope_of: the scope the registered device is covered by.
+scope_of() {
+    SUDO_USER=alice "$TACCTL_BIN_SCRIPT" device config apply example-sw1 --check --json 2> /dev/null \
+        | python3 -c '
+import json, sys
+for l in sys.stdin:
+    if l.startswith("{"):
+        d = json.loads(l)
+        if "scope" in d:
+            print(d["scope"]); break'
+}
+
+set_netconf() {
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" scope netconf "$1" "$2"
+    assert_success
+}
+
+seed() {
+    apply example-sw1 --check
+    assert_success
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes seed example-sw1 -y
+    assert_success
+}
+
+# probe: the device's NETCONF probe in its record.
+probe() {
+    python3 -c '
+import json, sys
+r = json.load(open(sys.argv[1]))["devices"].get(sys.argv[2], {})
+print(r.get("netconf", ""))' "${TACCTL_VAR_LIB}/devices-config.json" example-sw1
+}
+
+@test "apply: enabling the NETCONF service is proved by a hello and the record learns it" {
+    start
+    : > "${JDIR}/netconf.follow"
+    scope=$(scope_of)
+    [[ -n "$scope" ]]
+    set_netconf "$scope" enable
+    seed
+    apply example-sw1 --confirmed --yes
+    assert_success
+    assert_output --partial "applied"
+    assert_output --partial "[NETCONF verified: hello ok]"
+    run committed
+    assert_output --partial "set system services netconf ssh"
+    [[ "$(probe)" == "hello ok" ]]
+    # the change is made over the command line; it is not an apply over NETCONF
+    [[ "$(applied via)" == cli ]]
+}
+
+@test "apply: disabling the NETCONF service is proved by a refused hello" {
+    start
+    : > "${JDIR}/netconf.follow"
+    scope=$(scope_of)
+    set_netconf "$scope" enable
+    seed
+    apply example-sw1 --confirmed --yes
+    assert_success
+    set_netconf "$scope" disable
+    seed
+    apply example-sw1 --confirmed --yes --json
+    assert_success
+    assert_output --partial '"service_proof":"NETCONF verified: not answering"'
+    run committed
+    refute_output --partial "set system services netconf"
+    [[ "$(probe)" == "port closed" ]]
+    apply example-sw1 --check
+    assert_success
+    assert_output --partial "no change"
+}
+
+@test "apply: a disable that did not take effect is rolled back and the record keeps its probe" {
+    start
+    : > "${JDIR}/netconf.follow"
+    scope=$(scope_of)
+    set_netconf "$scope" enable
+    seed
+    apply example-sw1 --confirmed --yes
+    assert_success
+    set_netconf "$scope" disable
+    seed
+    : > "${JDIR}/netconf.disable.noeffect"
+    before=$(committed)
+    apply example-sw1 --confirmed --yes
+    assert_failure 1
+    assert_output --partial "still answers NETCONF after the change"
+    assert_output --partial "the record's NETCONF probe stays 'hello ok'"
+    [[ "$(committed)" == "$before" ]]
+    [[ "$(probe)" == "hello ok" ]]
+}

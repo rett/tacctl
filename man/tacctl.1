@@ -8852,7 +8852,18 @@ A change to the NETCONF service itself
 is always made over the command line, because its verification depends on the
 service; with
 .B "\-\-transport netconf"
-it is refused.
+it is refused. Its verification is a NETCONF probe on a fresh login before the
+confirming commit: enabling the service must be answered by a hello as you,
+disabling it must find the hello no longer answered
+.RB ( "port closed"
+or
+.BR "no hello" );
+a probe that cannot tell fails the proof and the change is rolled back. The
+line says
+.B "[NETCONF verified: hello ok]"
+or
+.BR "[NETCONF verified: not answering]" ,
+and the record's NETCONF probe becomes what was proved.
 .PP
 .B \-\-check
 stops after the device's own check: nothing is committed, the shape and the

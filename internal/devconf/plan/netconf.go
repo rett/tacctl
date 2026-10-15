@@ -100,6 +100,25 @@ func TouchesNetconf(d Delta) bool {
 	return false
 }
 
+// NetconfService says what a delta does to the NETCONF service: "disable"
+// when it deletes the hierarchy (the setting's one whole delete), "enable"
+// when it sets statements under it, "" when it does not touch it. The
+// verification of the change (D148) is chosen by it.
+func NetconfService(d Delta) string {
+	out := ""
+	for _, l := range slices.Concat(d.Lines, d.Cleanup.Lines) {
+		t := splitTokens(strings.TrimSpace(l.Text))
+		if len(t) < 2 || !netconfStatement(t[1:]) {
+			continue
+		}
+		if t[0] == "delete" && len(t[1:]) == len(strings.Fields(netconfPrefix)) {
+			return "disable"
+		}
+		out = "enable"
+	}
+	return out
+}
+
 // junosAbsent plans a section the rendering expects to be absent (D146): one
 // statement deletes the hierarchy when the device holds anything under it.
 // What a login's class cannot see is withheld, and a statement that comes

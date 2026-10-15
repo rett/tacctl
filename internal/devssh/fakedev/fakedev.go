@@ -194,6 +194,28 @@ func WithNetconfFraming(f Framing) Option { return func(s *Server) { s.framing =
 // 'netconf.off' in the transcript does).
 func WithNetconfOff() Option { return func(s *Server) { s.netconfOff = true } }
 
+// netconfFollowsOff is true when the transcript says 'netconf.follow' and
+// the configure model's committed configuration holds nothing under
+// 'system services netconf': the subsystem then answers exactly when the
+// service is configured, as a Junos device does (a commit of 'set system
+// services netconf ssh' starts it, a commit of the delete stops it).
+// 'netconf.disable.noeffect' keeps it answering whatever is committed (a
+// delete that did not take effect).
+func (s *Server) netconfFollowsOff() bool {
+	if !s.t.exists("netconf.follow") || s.t.exists("netconf.disable.noeffect") {
+		return false
+	}
+	if s.junos() == nil {
+		return false
+	}
+	for _, l := range strings.Split(s.Committed(), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(l), "set system services netconf") {
+			return false
+		}
+	}
+	return true
+}
+
 // WithNoRead makes the NETCONF subsystem stop reading after it has sent its
 // hello, as a device with a stuck process does: a client's writes fill the
 // window and block.
@@ -589,7 +611,7 @@ func (s *Server) session(sc *ssh.ServerConn, ch ssh.Channel, reqs <-chan *ssh.Re
 				if ssh.Unmarshal(r.Payload, &p) != nil || p.Name != "netconf" {
 					break
 				}
-				if s.netconfOff || s.t.exists("netconf.off") {
+				if s.netconfOff || s.t.exists("netconf.off") || s.netconfFollowsOff() {
 					break
 				}
 				run = func() { s.netconf(ch, sc.User(), func() { _ = sc.Close() }) }

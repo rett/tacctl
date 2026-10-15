@@ -33,6 +33,11 @@ import (
 //	                       screens as a menu, with 'prompt' and 'login'
 //	                       as above (menu.go)
 //	netconf.off            the netconf subsystem is refused
+//	netconf.follow         the netconf subsystem answers exactly when the
+//	                       committed configuration (config.set) holds a
+//	                       'system services netconf' statement
+//	netconf.disable.noeffect  with netconf.follow: the subsystem keeps
+//	                       answering after the statement is deleted
 //	netconf.hello          the device's hello document, whole (the default
 //	                       one advertises base:1.0 and, when the server
 //	                       chunks, base:1.1)
