@@ -417,7 +417,9 @@ state_dump() {
     local sidedir="$1" script="$2" root="${1}/root" f p t m
     (
         cd "$root"
-        find . -mindepth 1 -printf '%P\t%y\t%m\t%l\n' | LC_ALL=C sort | while IFS=$'\t' read -r p t m l; do
+        # The apply lock's file (0.2.11) is runtime, not state: a binary
+        # before it never made one.
+        find . -mindepth 1 ! -name .store-apply.lock -printf '%P\t%y\t%m\t%l\n' | LC_ALL=C sort | while IFS=$'\t' read -r p t m l; do
             case "$t" in
                 f) printf '%s\tfile\t%s\t%s bytes\n' "$(printf '%s' "$p" | norm "$script")" "$m" "$(norm "$script" < "$p" | wc -c)" ;;
                 d) printf '%s/\tdir\t%s\n' "$(printf '%s' "$p" | norm "$script")" "$m" ;;
@@ -426,7 +428,7 @@ state_dump() {
             esac
         done
         echo "--- contents"
-        find . -mindepth 1 -type f -print | LC_ALL=C sort | while IFS= read -r f; do
+        find . -mindepth 1 -type f ! -name .store-apply.lock -print | LC_ALL=C sort | while IFS= read -r f; do
             printf '== %s\n' "$(printf '%s' "${f#./}" | norm "$script")"
             norm "$script" < "$f"
             echo

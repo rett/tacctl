@@ -88,11 +88,11 @@ current behaviour; this file is where history lives.
    another command had written in between, which printed success. The next
    change then found the rendered file recorded as hand-edited and was
    refused. Every command that changes the store or `tacctl.yaml` now takes
-   one lock, `.store-apply.lock` in the state directory, from before its
-   first read to after its last restart: a second command prints `Waiting
-   for another tacctl command that is changing the configuration...` once and
-   runs when the first is done, and Ctrl-C ends the wait with `Nothing was
-   changed.` and exit 1. It covers the store commands, `config render`,
+   one lock, `.store-apply.lock` in the state directory, from before it
+   copies the files it may put back to after its last restart: a second
+   command prints `Waiting for another tacctl command that is changing the
+   configuration...` once and runs when the first is done, and Ctrl-C ends
+   the wait with `Nothing was changed.` and exit 1. It covers the store commands, `config render`,
    `config listen|loglevel|metrics`, the RADIUS listener changes,
    `backend enable|disable`, `store import` and `store rollback`, `backup
    restore`, every write of `tacctl.yaml`, and `upgrade` after its
