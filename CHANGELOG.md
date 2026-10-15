@@ -53,6 +53,30 @@ current behaviour; this file is where history lives.
    written. The plan warns that disabling the service ends it for every NETCONF
    client of the device, and its back-out types the service again.
 
+4. **`device config apply` writes over NETCONF where the device offers it
+   (`--transport auto|cli|netconf`, `config devices apply-transport`).** The
+   check and the apply of a Junos device go over the NETCONF subsystem when
+   the device's last read found it answering and the login may commit, and
+   over the command line otherwise. `auto`, the default, says why a device
+   was not taken over NETCONF (`[via cli: NETCONF port closed at the last
+   read]`; a device never read says nothing); `cli` is what 0.2.9 did;
+   `netconf` never falls back, and a device that does not answer or cannot
+   confirm is failed. `--transport` of one run replaces the setting
+   (`device.apply.transport`, a superuser's, written only when set). Over
+   NETCONF the change is loaded in a private session, checked, committed
+   under a confirmed commit and confirmed by the session that made it; a
+   session that closes without confirming is rolled back by the device at
+   once, and the fresh login proves the device through NETCONF as before. A
+   device that refuses a confirmed commit in a private session is run again,
+   whole, in an exclusive one (`[via netconf, exclusive session]`). A change
+   to the NETCONF service itself (`scope netconf`, `device netconf`) is
+   always made over the command line, because its verification depends on the
+   service: `auto` takes the command line and says so, `--transport netconf`
+   refuses it. The device's line, the JSON (`via`, `via_reason`,
+   `exclusive`) and the record (`applied.via`) say which transport ran; a
+   read through NETCONF also records the hello. A 0.2.9 binary does not know
+   `device.apply.transport`.
+
 ## 0.2.9 (2026-10-14)
 
 1. **`config devices apply-confirm-timeout` and `apply-pause`.** The two

@@ -66,6 +66,9 @@ type applyArgs struct {
 	pause    time.Duration
 	pauseSet bool
 	sections []string
+	// transport is how the run writes: --transport over
+	// device.apply.transport (auto, cli or netconf, D150).
+	transport devapply.Setting
 }
 
 // applyArgsOf reads and checks the options that need no device (exit 2).
@@ -81,6 +84,14 @@ func (inv *invocation) applyArgsOf(p Parsed) (applyArgs, error) {
 	a.noCanary, a.yes, a.exitCode = p.Has("--no-canary"), p.Has("-y"), p.Has("--exit-code")
 	a.max = applyMaxDefault
 	_, a.pause = inv.applySettings()
+	a.transport = devapply.Setting(inv.applyTransport())
+	if p.Has("--transport") {
+		t := devapply.Setting(p.Value("--transport"))
+		if !t.Valid() {
+			return a, inv.argErr("--transport takes auto, cli or netconf: '"+p.Value("--transport")+"'", usage)
+		}
+		a.transport = t
+	}
 	if p.Has("--max") {
 		n, err := atoiIn(p.Value("--max"), 1, applyMaxLimit)
 		if err != nil {
@@ -158,6 +169,13 @@ type applyOutcome struct {
 	// Settled is the settle of an earlier apply's pending record, nil when
 	// the record was not pending.
 	Settled *applySettled
+	// Via is the transport the transaction ran through ("" when none ran),
+	// ViaReason why it was not the first choice (the setting's), and
+	// Exclusive is set when NETCONF ran again in an exclusive session
+	// because the device refused a confirmed commit in a private one (D150).
+	Via       devapply.Via
+	ViaReason string
+	Exclusive bool
 }
 
 // word is the device's state as the summary and the JSON name it.
@@ -243,7 +261,11 @@ type applyRun struct {
 	password string
 	sections []string
 	minutes  int
-	driver   devapply.Driver
+	// transport is the run's setting (--transport over
+	// device.apply.transport, D150); the zero value is not used by onboard,
+	// which writes over the command line only.
+	transport devapply.Setting
+	driver    devapply.Driver
 	// holdOn asks the person for the proof of every login class.
 	holdOn bool
 	// holdLines are the lines the person types while --hold waits, read by
@@ -297,7 +319,18 @@ type applyState struct {
 	first *readPlan
 	after *readPlan
 	pre   map[string]string
+	// via is the transport of this attempt; serviceChange is set by the
+	// planner when a NETCONF attempt's first read plans a statement of the
+	// NETCONF service (D148): the attempt ends before anything is opened
+	// and the transaction runs again over the command line.
+	via           devapply.Via
+	serviceChange bool
 }
+
+// errServiceChange is the planner's answer to a NETCONF attempt whose delta
+// changes the NETCONF service: nothing was opened, the caller runs the
+// transaction again over the command line.
+var errServiceChange = errors.New("the change is to the NETCONF service: it is made over the command line")
 
 // readPlan is one read of a device, extracted, compared and planned.
 type readPlan struct {
@@ -306,6 +339,9 @@ type readPlan struct {
 	plain   map[string]devices.Section
 	delta   plan.Delta
 	raw     string
+	// via is the transport the read came through ("" is the command line,
+	// as 0.2.9 read); the record's Transport and probe follow it.
+	via devapply.Via
 }
 
 // planRead makes the delta of a read the way 'device config plan' does from
@@ -383,6 +419,10 @@ func (r *applyRun) refresh(e devreg.Entry, rp *readPlan, dur time.Duration) erro
 	pr := &pullRun{inv: r.inv, user: r.user, store: r.store}
 	o := &pullOutcome{Name: e.Name, Scope: e.Scope, Vendor: e.Vendor, Transport: transportSSH, Netconf: netconfNotProbed,
 		Facts: devconf.CleanFacts(facts), Duration: dur}
+	if rp.via == devapply.ViaNetconf {
+		// a read that came through the subsystem is a hello
+		o.Transport, o.Netconf = transportNetconf, netconfHelloOK
+	}
 	return pr.recordSuccess(o, e, rp.ext, rp.results, rp.plain)
 }
 
@@ -390,13 +430,19 @@ func (r *applyRun) refresh(e devreg.Entry, rp *readPlan, dur time.Duration) erro
 // login (its connection reads the plain view). The first read refreshes the
 // pull record; the second is the convergence read after the commit, kept only
 // in memory until the apply is known to have stuck.
-func (r *applyRun) planner(e devreg.Entry, expected []devices.Section, t *devapply.JunosCLI, st *applyState) func(context.Context, string, net.IP) (plan.Delta, error) {
+func (r *applyRun) planner(e devreg.Entry, expected []devices.Section, t plainReader, st *applyState) func(context.Context, string, net.IP) (plan.Delta, error) {
 	return func(ctx context.Context, raw string, from net.IP) (plan.Delta, error) {
 		st.calls++
 		n := st.calls
 		rp, err := r.planRead(e, expected, raw, t.ReadPlain(ctx), from)
 		if err != nil {
 			return plan.Delta{}, err
+		}
+		rp.via = st.via
+		if n == 1 && st.via == devapply.ViaNetconf && plan.TouchesNetconf(rp.delta) {
+			// nothing has been opened: the command line makes this change
+			st.serviceChange = true
+			return plan.Delta{}, errServiceChange
 		}
 		switch n {
 		case 1:
@@ -472,6 +518,93 @@ func (r *applyRun) target(e devreg.Entry) devssh.Target {
 	return r.inv.deviceTarget(e, r.user, func() (string, error) { return r.password, nil })
 }
 
+// plainReader is the transport's read of the plain view (the groups).
+type plainReader interface {
+	ReadPlain(ctx context.Context) string
+}
+
+// applyConn is the dialled transport of one attempt.
+type applyConn struct {
+	t     devapply.Transport
+	plain plainReader
+	// nc is the NETCONF transport, nil over the command line (its
+	// RetryExclusive says whether the transaction runs again).
+	nc *devapply.JunosNetconf
+	// verify dials the fresh login of the verification on the same path
+	// the transaction wrote through.
+	verify func(ctx context.Context) (devapply.Reader, error)
+}
+
+// netconfUnavailable is --transport netconf for a device that does not
+// answer or cannot confirm: failed, never written over the command line.
+type netconfUnavailable struct{ why string }
+
+func (e *netconfUnavailable) Error() string { return "NETCONF: " + e.why }
+
+// probeOf is the device's last NETCONF probe from its record ("" when it
+// has none): what 'auto' chooses from, D150.
+func (r *applyRun) probeOf(name string) string {
+	recs, err := r.store.Load()
+	if err != nil {
+		return ""
+	}
+	if rec, ok := recs.Of(name); ok {
+		return rec.Netconf
+	}
+	return ""
+}
+
+// openVia dials the transport of one attempt. It returns the transport
+// that was dialled and why it is not the one asked for ("" when it is): under
+// auto a NETCONF login that cannot be had, or cannot confirm, is the command
+// line with the reason; under netconf it is a *netconfUnavailable. A dial
+// that fails is the error as the command line's would be (an authentication
+// failure is the run's).
+func (r *applyRun) openVia(ctx context.Context, target devssh.Target, via devapply.Via, reason string, mode devapply.NetconfMode) (*applyConn, devapply.Via, string, error) {
+	if via == devapply.ViaNetconf {
+		n, err := devapply.DialJunosNetconf(ctx, target, mode)
+		if err != nil {
+			return nil, via, reason, err
+		}
+		detail, err := n.Capable(ctx)
+		var fallback string
+		switch {
+		case err != nil && ctx.Err() != nil:
+			_ = n.Close()
+			return nil, via, reason, err
+		case err != nil:
+			detail = "login failed: " + shortReason(err)
+			fallback = "NETCONF " + detail
+		case detail != "":
+			fallback = devapply.ReasonCannotConfirm + ": " + detail
+		default:
+			return &applyConn{t: n, plain: n, nc: n, verify: func(ctx context.Context) (devapply.Reader, error) {
+				v, err := devapply.DialJunosNetconf(ctx, target, devapply.ModeAuto)
+				if err != nil {
+					return nil, err
+				}
+				return v, nil
+			}}, devapply.ViaNetconf, reason, nil
+		}
+		_ = n.Close()
+		if r.transport == devapply.SettingNetconf {
+			return nil, via, reason, &netconfUnavailable{why: detail}
+		}
+		reason = fallback
+	}
+	j, err := devapply.DialJunos(ctx, target)
+	if err != nil {
+		return nil, devapply.ViaCLI, reason, err
+	}
+	return &applyConn{t: j, plain: j, verify: func(ctx context.Context) (devapply.Reader, error) {
+		v, err := devapply.DialJunos(ctx, target)
+		if err != nil {
+			return nil, err
+		}
+		return v, nil
+	}}, devapply.ViaCLI, reason, nil
+}
+
 // transact is one device's phase.
 func (r *applyRun) transact(ctx context.Context, e devreg.Entry, o *applyOutcome, reviewed *plan.Delta) batch.Result {
 	fail := func(reason, hint string) batch.Result {
@@ -486,46 +619,76 @@ func (r *applyRun) transact(ctx context.Context, e devreg.Entry, o *applyOutcome
 	if why := r.settle(ctx, e, expected, target, o); why != "" {
 		return fail(why, "")
 	}
-	t, err := devapply.DialJunos(ctx, target)
-	if err != nil {
-		_, reason, hint := resultOf(ctx, e.Name, err)
-		o.Reason, o.Hint = reason, hint
-		if errors.Is(err, devssh.ErrAuth) {
-			r.rejectOnce.Do(r.passwd.Rejected)
-			res := o.batchResult()
-			res.Status = batch.StatusAuthFailed
-			return res
-		}
-		return o.batchResult()
-	}
-	r.acceptOnce.Do(r.passwd.Accepted)
-
-	st := &applyState{}
-	in := devapply.Input{
-		Device: e.Name, Names: applyNames(e), User: r.user, Transport: t,
-		Plan:           r.planner(e, expected, t, st),
-		Allow:          plan.Allow{Login: r.user, Expected: expected},
-		ConfirmMinutes: r.minutes,
-		Clock:          r.inv.app.Knobs.Now, Rand: r.inv.app.Knobs.Rand(),
-		StateDir: r.stateDir,
-	}
-	var out devapply.Outcome
-	if reviewed == nil {
-		out = r.driver.Check(ctx, in)
-	} else {
-		in.Verify = func(ctx context.Context) (devapply.Reader, error) {
-			v, err := devapply.DialJunos(ctx, target)
-			if err != nil {
-				return nil, err
+	// The transport (D150): the setting and the record's last probe choose;
+	// what a dialled login or a planned delta shows can change the choice,
+	// and then the whole transaction runs again, never the middle of one.
+	choice := devapply.Choose(devapply.ChooseInput{Setting: r.transport, Probe: r.probeOf(e.Name)})
+	via, viaReason := choice.Via, choice.Reason
+	mode := devapply.ModeAuto
+	var (
+		st  *applyState
+		out devapply.Outcome
+	)
+	for attempt := 0; ; attempt++ {
+		c, v, why, err := r.openVia(ctx, target, via, viaReason, mode)
+		if err != nil {
+			var nu *netconfUnavailable
+			if errors.As(err, &nu) {
+				return fail(nu.Error(), "use --transport auto or cli, or 'tacctl device config pull "+e.Name+"' to refresh what the device answers")
 			}
-			return v, nil
+			_, reason, hint := resultOf(ctx, e.Name, err)
+			o.Reason, o.Hint = reason, hint
+			if errors.Is(err, devssh.ErrAuth) {
+				r.rejectOnce.Do(r.passwd.Rejected)
+				res := o.batchResult()
+				res.Status = batch.StatusAuthFailed
+				return res
+			}
+			return o.batchResult()
 		}
-		in.Committed = func(c devapply.Outcome) { r.pending(e, o, c, st) }
-		if r.holdOn {
-			in.Hold = r.holdFunc(e.Name)
+		via, viaReason = v, why
+		r.acceptOnce.Do(r.passwd.Accepted)
+
+		st = &applyState{via: via}
+		in := devapply.Input{
+			Device: e.Name, Names: applyNames(e), User: r.user, Transport: c.t,
+			Plan:           r.planner(e, expected, c.plain, st),
+			Allow:          plan.Allow{Login: r.user, Expected: expected},
+			ConfirmMinutes: r.minutes,
+			Clock:          r.inv.app.Knobs.Now, Rand: r.inv.app.Knobs.Rand(),
+			StateDir: r.stateDir,
 		}
-		out = r.driver.Apply(ctx, in, *reviewed)
+		if reviewed == nil {
+			out = r.driver.Check(ctx, in)
+		} else {
+			in.Verify = c.verify
+			in.Committed = func(c devapply.Outcome) { r.pending(e, o, c, st) }
+			if r.holdOn {
+				in.Hold = r.holdFunc(e.Name)
+			}
+			out = r.driver.Apply(ctx, in, *reviewed)
+		}
+		switch {
+		case st.serviceChange && attempt < 3:
+			// a change to the NETCONF service: nothing was opened, and
+			// the command line makes it (D148)
+			ch := devapply.Choose(devapply.ChooseInput{Setting: r.transport, Probe: r.probeOf(e.Name), ServiceChange: true})
+			if ch.Fail != "" {
+				return fail(ch.Fail, "")
+			}
+			via, viaReason = ch.Via, ch.Reason
+			continue
+		case c.nc != nil && c.nc.RetryExclusive() && mode != devapply.ModeExclusive && attempt < 3:
+			// the device refuses a confirmed commit in a private session;
+			// nothing was committed, so the transaction runs again in an
+			// exclusive one
+			mode = devapply.ModeExclusive
+			continue
+		}
+		break
 	}
+	o.Via, o.ViaReason = via, viaReason
+	o.Exclusive = via == devapply.ViaNetconf && mode == devapply.ModeExclusive
 	o.Out = &out
 	if st.first != nil {
 		o.Delta, o.HasDelta = st.first.delta, true
@@ -570,7 +733,13 @@ func (r *applyRun) keep(e devreg.Entry, o *applyOutcome, st *applyState, apply b
 	if st != nil {
 		pre = st.pre
 	}
-	if err := r.writeApplied(e, r.appliedOf(out, kind, pre)); err != nil {
+	a := r.appliedOf(out, kind, pre)
+	// onboard writes over the command line and sets no transport
+	a.Via = string(devapply.ViaCLI)
+	if o.Via != "" {
+		a.Via = string(o.Via)
+	}
+	if err := r.writeApplied(e, a); err != nil {
 		o.RecordErr = strings.Join(msgs(err), " ")
 	}
 }
@@ -582,6 +751,7 @@ func (r *applyRun) keep(e devreg.Entry, o *applyOutcome, st *applyState, apply b
 // may be pending and nothing records it. The transaction goes on.
 func (r *applyRun) pending(e devreg.Entry, o *applyOutcome, c devapply.Outcome, st *applyState) {
 	a := r.appliedOf(c, devconf.AppliedKindApply, st.pre)
+	a.Via = string(st.via)
 	a.Result, a.Reason, a.Until = devconf.AppliedPending, "committed, verifying", c.Until
 	if err := r.writeApplied(e, a); err != nil {
 		o.PendingErr = strings.Join(msgs(err), " ")
@@ -840,7 +1010,8 @@ func (inv *invocation) deviceConfigApply(args []string) error {
 	confirm, _ := inv.applySettings()
 	run := &applyRun{inv: inv, user: user, render: chosen.render, store: inv.configStore(),
 		shapes: devapply.OpenShapes(inv.app.Paths.ApplyDir), stateDir: inv.app.Paths.ApplyDir,
-		passwd: newDevicePasswords(inv), sections: aa.sections, minutes: confirm, holdOn: aa.hold, holdDone: make(chan struct{})}
+		passwd: newDevicePasswords(inv), sections: aa.sections, minutes: confirm, holdOn: aa.hold, holdDone: make(chan struct{}),
+		transport: aa.transport}
 	defer close(run.holdDone)
 	ctl := &applyCtl{inv: inv, user: user, aa: aa, run: run, settings: st, chosen: chosen, usage: usage}
 	for _, o := range refused {

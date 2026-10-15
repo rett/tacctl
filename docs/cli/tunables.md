@@ -77,6 +77,7 @@ Keys without a shipped default (`backends.*`, `listeners.*`, `snmp.*`, `device.c
 | `snmp.version`, `snmp.port`, `snmp.timeout`, `snmp.v3.auth`, `snmp.v3.priv` | `v2c`/`v3` (unset); 1 to 65535 (161); 1 to 10 (2); `sha`/`sha256`; `aes128` | `config snmp` |
 | `device.config.max_concurrency`, `device.config.transport`, `device.config.timeout`, `device.config.confirm_timeout` | 1 to 64 (8); `auto`, `netconf` or `ssh` (`auto`); 10 to 600 seconds (90); 1 to 60 minutes (5) | `config devices` |
 | `device.apply.confirm_timeout`, `device.apply.pause` | 3 to 60 minutes (10); 0 to 3600 seconds (60) | `config devices apply-confirm-timeout`, `apply-pause` |
+| `device.apply.transport` | `auto`, `cli` or `netconf` (auto) | `config devices apply-transport` |
 | `privileges.<group>` | list of Cisco priv-exec commands (the shipped list of a built-in group) | `group privilege` |
 | `commands.<group>` | ordered `{name, action, match}` rules ending in the `*` catch-all (shipped) | `group commands` |
 | `aaa.order.<scope>` | `tacacs-first` or `local-first` (`tacacs-first`) | `scope aaa-order` |
