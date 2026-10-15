@@ -66,9 +66,10 @@ const (
 	jtEditingPriv   = "      private %s[edit]"                    // [L]
 
 	// The expiry of a confirmed commit is a commit of the device's own.
-	jtExpiryUser = "root"  // [C] (capture of 2026-10-09)
-	jtExpiryVia  = "other" // [C] (capture of 2026-10-09)
-	jtCommitVia  = "cli"   // [C]
+	jtExpiryUser = "root"    // [C] (capture of 2026-10-09)
+	jtExpiryVia  = "other"   // [C] (capture of 2026-10-09)
+	jtCommitVia  = "cli"     // [C]
+	jtNetconfVia = "netconf" // [L] the way of a commit made over NETCONF
 
 	// The layout of a commit's time in 'show system commit' [C]; the zone
 	// is the fake's own clock's (UTC), the capture's was a local one.

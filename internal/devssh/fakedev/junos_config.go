@@ -54,6 +54,11 @@ package fakedev
 //	                    every command): the answer waits on the clock
 //	timer.minute        seconds one minute of 'commit confirmed' lasts on the
 //	                    server's clock (default 60; bats sets 1)
+//	netconf.private.confirm
+//	                    'refuse': a NETCONF private session's confirmed
+//	                    commit is refused as the command line refuses it
+//	                    (absent: accepted); see junos_config_netconf.go, which
+//	                    also says how the knobs above act over NETCONF
 //
 // The device writes 'committed.set' (to the state directory, the transcript
 // directory unless WithStateDir) at its first use and after every commit, the
@@ -201,6 +206,10 @@ type junosPending struct {
 	timer  ClockTimer
 	until  time.Time
 	before *jcfg
+	// owner is the NETCONF session whose close rolls the commit back at
+	// once (0.2.4 spike (d)); nil for a commit of the command line, which
+	// only the window's end rolls back.
+	owner *jsession
 }
 
 // junosDevice is the state of the configure model, shared by the sessions

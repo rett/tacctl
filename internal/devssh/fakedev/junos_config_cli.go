@@ -200,6 +200,52 @@ func (d *junosDevice) editors(self *jsession) string {
 	return jtUsersEditing + "\n" + b.String()
 }
 
+// What enterMode did.
+const (
+	enterShared      = iota // a shared session
+	enterExclusive          // the exclusive lock is now the session's
+	enterPrivate            // a private session
+	enterPrivateHeld        // a private session, entered under another's lock
+	enterLocked             // refused: another session holds the lock
+	enterModified           // refused: the shared candidate holds a staged change
+)
+
+// enterMode puts a session into configuration mode: mode is "", "exclusive"
+// or "private". Under another session's exclusive lock only 'configure
+// exclusive' is refused: a shared session enters and lists the holder among
+// the editors, a private one enters with a warning (lab L1); neither can
+// change or commit (blocked). The second result is the lock's holder for
+// enterLocked. The caller holds d.mu and has checked the class.
+func (d *junosDevice) enterMode(sess *jsession, mode string) (int, string) {
+	h := d.holder()
+	held := h != "" && d.excl != sess
+	st := enterShared
+	switch mode {
+	case "exclusive":
+		if held {
+			return enterLocked, h
+		}
+		if d.modified() {
+			return enterModified, ""
+		}
+		d.shared = nil
+		d.excl = sess
+		sess.exclusive = true
+		st = enterExclusive
+	case "private":
+		st = enterPrivate
+		if held {
+			st = enterPrivateHeld
+		}
+		sess.private = true
+		sess.base = d.committed.clone()
+		sess.cand = d.committed.clone()
+	}
+	sess.configure = true
+	sess.edit = nil
+	return st, ""
+}
+
 // enter is 'configure [exclusive|private]'.
 func (d *junosDevice) enter(sess *jsession, args []string) string {
 	mode := ""
@@ -213,35 +259,17 @@ func (d *junosDevice) enter(sess *jsession, args []string) string {
 	if !mayConfigure(sess.class) {
 		return unknownText()
 	}
-	// Under another session's exclusive lock only 'configure exclusive' is
-	// refused: a shared session enters and lists the holder among the
-	// editors, a private one enters with a warning (lab L1); neither can
-	// change or commit (blocked).
-	h := d.holder()
-	held := h != "" && d.excl != sess
 	out := ""
-	switch mode {
-	case "exclusive":
-		if held {
-			return d.lockedText(h)
-		}
-		if d.modified() {
-			return jtModified + "\n"
-		}
-		d.shared = nil
-		d.excl = sess
-		sess.exclusive = true
+	switch st, h := d.enterMode(sess, mode); st {
+	case enterLocked:
+		return d.lockedText(h)
+	case enterModified:
+		return jtModified + "\n"
+	case enterExclusive:
 		out = jtExclusiveWarning + "\n"
-	case "private":
-		if held {
-			out = jtPrivateUnderExcl + "\n"
-		}
-		sess.private = true
-		sess.base = d.committed.clone()
-		sess.cand = d.committed.clone()
+	case enterPrivateHeld:
+		out = jtPrivateUnderExcl + "\n"
 	}
-	sess.configure = true
-	sess.edit = nil
 	out += jtEnterConfig + "\n"
 	if e := d.editors(sess); e != "" {
 		out += e
@@ -367,9 +395,31 @@ func (d *junosDevice) cfgEdit(sess *jsession, cmd string) string {
 	if len(rest) == 0 {
 		return syntaxText()
 	}
-	abs := slices.Concat(sess.edit, rest)
-	if msg, ok := d.loadRefusal(verb + " " + strings.Join(abs, " ")); ok {
+	switch kind, msg := d.editStatement(sess, verb, slices.Concat(sess.edit, rest)); kind {
+	case editRefused:
 		return msg
+	case editNotFound:
+		return jtStatementNotFound + "\n"
+	case editBad:
+		return "error: " + msg + "\n"
+	}
+	return ""
+}
+
+// What editStatement did.
+const (
+	editApplied  = iota
+	editRefused  // the text the device printed is the message
+	editNotFound // a delete of a node that is not there
+	editBad      // the message is the error
+)
+
+// editStatement applies one set, delete or insert statement (abs is its
+// absolute path) to the session's candidate. The caller holds d.mu and has
+// checked blocked.
+func (d *junosDevice) editStatement(sess *jsession, verb string, abs []string) (int, string) {
+	if msg, ok := d.loadRefusal(verb + " " + strings.Join(abs, " ")); ok {
+		return editRefused, msg
 	}
 	cand := d.writable(sess)
 	switch verb {
@@ -385,14 +435,14 @@ func (d *junosDevice) cfgEdit(sess *jsession, cmd string) string {
 			}
 		}
 		if !found {
-			return jtStatementNotFound + "\n"
+			return editNotFound, ""
 		}
 	case "insert":
 		if err := cand.insert(abs); err != nil {
-			return "error: " + err.Error() + "\n"
+			return editBad, err.Error()
 		}
 	}
-	return ""
+	return editApplied, ""
 }
 
 // compare is what a compare prints: compareText, with the context lines of
@@ -547,19 +597,56 @@ func (d *junosDevice) cfgCommit(sess *jsession, args []string) jresult {
 		// a private session refuses a confirmed commit (lab L5)
 		return jresult{out: jtNoConfirmedPrivate + "\n"}
 	}
-	cand := d.candidate(sess)
-	if fails := d.checkFailures(cand); len(fails) > 0 {
-		return jresult{out: strings.Join(fails, "\n") + "\n" + jtCheckFailed + "\n"}
+	o := d.commitApply(sess, check, confirmed, minutes, comment, jtCommitVia, nil)
+	if len(o.fails) > 0 {
+		return jresult{out: strings.Join(o.fails, "\n") + "\n" + jtCheckFailed + "\n"}
 	}
 	if check {
-		// A commit check from any session confirms a pending confirmed
-		// commit and leaves no history entry (lab L2): entry 0 keeps its
-		// 'rollback in' label, and the banner goes.
+		return jresult{out: jtCheckOK + "\n"}
+	}
+	out := jtCheckOK + "\n" + jtCommitComplete + "\n"
+	if confirmed {
+		out = jtCheckOK + "\n" + fmt.Sprintf(jtConfirmedFmt, minutes) + "\n" + jtCommitComplete + "\n"
+	}
+	return jresult{out: out, drop: d.commitDrop(confirmed)}
+}
+
+// commitDrop is the 'commit.drop' knob's drop mode for a commit.
+func (d *junosDevice) commitDrop(confirmed bool) int {
+	if !confirmed || !d.s.t.exists("commit.drop") {
+		return dropNone
+	}
+	if w, _ := d.knobWord("commit.drop"); w == "after-output" {
+		return dropAfterOutput
+	}
+	return dropSilent
+}
+
+// commitOutcome is what commitApply did.
+type commitOutcome struct {
+	// fails are the messages of a refused check; nothing else happened.
+	fails []string
+}
+
+// commitApply is the commit of either channel, after the arguments are
+// checked: the candidate's check, then for a check alone the confirmation of
+// a pending commit (a 'commit check' from any session confirms it and leaves
+// no history entry, lab L2), else the commit, the confirmed commit's window
+// and the history entry. via is the history entry's way and owner the
+// session whose close rolls an unconfirmed commit back at once (nil for the
+// command line, which only the window's end does). The caller holds d.mu and
+// has checked blocked.
+func (d *junosDevice) commitApply(sess *jsession, check, confirmed bool, minutes int, comment, via string, owner *jsession) commitOutcome {
+	cand := d.candidate(sess)
+	if fails := d.checkFailures(cand); len(fails) > 0 {
+		return commitOutcome{fails: fails}
+	}
+	if check {
 		if d.pending != nil {
 			d.pending.timer.Stop()
 			d.pending = nil
 		}
-		return jresult{out: jtCheckOK + "\n"}
+		return commitOutcome{}
 	}
 	next := d.committed.clone()
 	if sess.private {
@@ -592,22 +679,13 @@ func (d *junosDevice) cfgCommit(sess *jsession, args []string) jresult {
 		d.shared = nil
 	}
 	rollbackIn := 0
-	out := jtCheckOK + "\n" + jtCommitComplete + "\n"
 	if confirmed {
 		rollbackIn = minutes
-		p := &junosPending{before: before.clone()}
+		p := &junosPending{before: before.clone(), owner: owner}
 		p.until = d.s.clock.Now().Add(time.Duration(minutes) * d.minute())
 		p.timer = d.s.clock.AfterFunc(time.Duration(minutes)*d.minute(), func() { d.expire(p) })
 		d.pending = p
-		out = jtCheckOK + "\n" + fmt.Sprintf(jtConfirmedFmt, minutes) + "\n" + jtCommitComplete + "\n"
 	}
-	d.record(sess.user, jtCommitVia, comment, rollbackIn)
-	res := jresult{out: out}
-	if confirmed && d.s.t.exists("commit.drop") {
-		res.drop = dropSilent
-		if w, _ := d.knobWord("commit.drop"); w == "after-output" {
-			res.drop = dropAfterOutput
-		}
-	}
-	return res
+	d.record(sess.user, via, comment, rollbackIn)
+	return commitOutcome{}
 }
