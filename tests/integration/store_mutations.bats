@@ -761,10 +761,20 @@ hold_apply_lock() {
 
 @test "apply lock: Ctrl-C ends the wait with nothing changed" {
     rendered_install
-    hold_apply_lock 4
+    hold_apply_lock 20
     snapshot_state
-    run timeout --preserve-status -s INT 1 "$TACCTL_BIN_SCRIPT" user add dave operator --hash "$HASH" --scopes lab
-    assert_failure 1
+    local out="$BATS_TEST_TMPDIR/ctrlc.out" pid status=0 _i
+    "$TACCTL_BIN_SCRIPT" user add dave operator --hash "$HASH" --scopes lab > "$out" 2>&1 &
+    pid=$!
+    for _i in $(seq 200); do
+        grep -qF "$WAITING" "$out" && break
+        sleep 0.1
+    done
+    grep -qF "$WAITING" "$out"
+    kill -INT "$pid"
+    wait "$pid" || status=$?
+    output="$(cat "$out")"
+    [[ "$status" -eq 1 ]]
     assert_output --partial "$WAITING"
     assert_output --partial "Nothing was changed."
     refute_output --partial "User 'dave' added"

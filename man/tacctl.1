@@ -1563,7 +1563,8 @@ left in the state directory
 .B .units.*
 or
 .BR .disable.* ,
-older than ten minutes) is a warning as well, a
+older than ten minutes, with no command holding the apply lock) is a warning
+as well, a
 .B Leftovers:
 line naming it.
 .IP
@@ -10672,7 +10673,7 @@ A command that changes the store or
 .I tacctl.yaml
 holds one lock,
 .IR /etc/tacctl/.store\-apply.lock ,
-from before its first read to after its last restart, so that a command that
+from before it copies the files it may put back to after its last restart, so that a command that
 fails does not put back what another one wrote in between. A second command
 prints
 .I "Waiting for another tacctl command that is changing the configuration..."
@@ -10685,6 +10686,7 @@ exit 1). Every write of
 the store commands,
 .BR "config render" ,
 .BR "config listen|loglevel|metrics" ,
+the RADIUS listener changes,
 .BR "backend enable|disable" ,
 .BR "store import" ,
 .BR "store rollback" ,

@@ -113,6 +113,21 @@ func (l *Lock) release() {
 	}
 }
 
+// Busy reports whether another process holds the lock in dir right now (a
+// file that does not exist, or cannot be opened, is not busy). It takes and
+// gives back the lock for the probe only.
+func Busy(dir string) bool {
+	f, err := os.OpenFile(filepath.Join(dir, FileName), os.O_RDWR, 0o600)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		return errors.Is(err, unix.EWOULDBLOCK)
+	}
+	return false
+}
+
 // flock opens the file and waits for the exclusive lock on it. The caller
 // holds l.mu.
 //

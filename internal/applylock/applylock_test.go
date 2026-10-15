@@ -232,3 +232,21 @@ func TestANilLockIsNeverContended(t *testing.T) {
 		t.Fatal("held")
 	}
 }
+
+func TestBusyProbesWithoutKeepingTheLock(t *testing.T) {
+	dir := t.TempDir()
+	if Busy(dir) {
+		t.Fatal("busy with no lock file")
+	}
+	a := New(dir)
+	rel := acquire(t, a)
+	if !Busy(dir) {
+		t.Fatal("not busy while held")
+	}
+	rel()
+	if Busy(dir) {
+		t.Fatal("busy after release")
+	}
+	// The probe gave the lock back.
+	acquire(t, New(dir))()
+}

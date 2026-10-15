@@ -103,11 +103,12 @@ current behaviour; this file is where history lives.
 
 10. **`config validate` names what an interrupted command left behind.** A
     command that is killed while it changes the configuration leaves a
-    private copy of `store.yaml` and `tacctl.yaml` (secrets included) in the
-    state directory: `.apply.*`, `.restore.*`, `.enable.*`, `.units.*` or
-    `.disable.*`. When one is older than ten minutes, `config validate`
-    prints a `Leftovers:` warning naming it and what to check before
-    removing it. The exit code is unchanged.
+    private copy of `tacctl.yaml`, usually with `store.yaml` (secrets
+    included), in the state directory: `.apply.*`, `.restore.*`, `.enable.*`,
+    `.units.*` or `.disable.*`. When one is older than ten minutes and no
+    command holds the apply lock, `config validate` prints a `Leftovers:`
+    warning naming it and what to check before removing it. The exit code is
+    unchanged.
 
 ## 0.2.10 (2026-10-15)
 

@@ -220,7 +220,6 @@ func (s *switcher) enable(args []string) error {
 		}
 	}
 
-	newEnabled := append(slices.Clone(enabled), id)
 	keptNote := ""
 	if fresh {
 		keptNote = "; the install stays on this machine"
@@ -233,6 +232,17 @@ func (s *switcher) enable(args []string) error {
 		return exit(s.applyError(err))
 	}
 	defer unlock()
+	// What was read before the install and the prompt may be stale: another
+	// command that changed the set of enabled backends has finished since.
+	enabled, err = s.enabled()
+	if err != nil {
+		return err
+	}
+	if slices.Contains(enabled, id) {
+		s.out.Info("Backend '" + id + "' is already enabled.")
+		return nil
+	}
+	newEnabled := append(slices.Clone(enabled), id)
 	keep, err := os.MkdirTemp(p.StateDir, ".enable.")
 	if err != nil {
 		return s.fail("Cannot create " + filepath.Join(p.StateDir, ".enable.*") + ": " + err.Error())

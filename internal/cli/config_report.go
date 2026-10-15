@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rett/tacctl/internal/applylock"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/model"
@@ -627,6 +628,9 @@ const leftoverMinAge = 10 * time.Minute
 // command left in the state directory, each with the age and what to do.
 func (inv *invocation) leftoverLines() []string {
 	dir := inv.app.Paths.StateDir
+	if applylock.Busy(dir) {
+		return nil // a command is at work: its directories are not leftovers
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
@@ -650,7 +654,7 @@ func (inv *invocation) leftoverLines() []string {
 		}
 		out = append(out, filepath.Join(dir, name)+" is a leftover of an interrupted command ("+
 			strconv.Itoa(int(now.Sub(fi.ModTime()).Round(time.Minute)/time.Minute))+" minutes old) and holds a copy of the configuration; "+
-			"check 'tacctl config validate' and 'tacctl backup list', then remove it")
+			"check 'tacctl backup list' and 'tacctl status', then remove it")
 	}
 	return out
 }

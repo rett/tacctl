@@ -462,17 +462,24 @@ func (inv *invocation) restoreSnapshot(id string) error {
 	// The backends it enables must be on this machine: a restore cannot
 	// install one. (Nothing is touched yet.)
 	set := a.Backends()
-	before, err := inv.enabledOrFail()
-	if err != nil {
-		return err
+	var before []string
+	checkInstalled := func() error {
+		var err error
+		if before, err = inv.enabledOrFail(); err != nil {
+			return err
+		}
+		for _, b := range inv.snapshotEnabled(dir) {
+			if slices.Contains(before, b) {
+				continue
+			}
+			if mod, err := set.Get(b); err != nil || !mod.Installed() {
+				return inv.usageErr("Snapshot " + id + " enables backend '" + b + "', which is not installed here. Run 'tacctl backend enable " + b + "' first. Nothing was changed.")
+			}
+		}
+		return nil
 	}
-	for _, b := range inv.snapshotEnabled(dir) {
-		if slices.Contains(before, b) {
-			continue
-		}
-		if mod, err := set.Get(b); err != nil || !mod.Installed() {
-			return inv.usageErr("Snapshot " + id + " enables backend '" + b + "', which is not installed here. Run 'tacctl backend enable " + b + "' first. Nothing was changed.")
-		}
+	if err := checkInstalled(); err != nil {
+		return err
 	}
 
 	inv.echo("")
@@ -496,6 +503,12 @@ func (inv *invocation) restoreSnapshot(id string) error {
 	// interleaved with another command's either.
 	unlock, err := inv.holdApply()
 	if err != nil {
+		return err
+	}
+	// The set of enabled backends was read before the prompt: read it again
+	// under the lock, for a command that finished while this one waited.
+	if err := checkInstalled(); err != nil {
+		unlock()
 		return err
 	}
 	defer unlock()

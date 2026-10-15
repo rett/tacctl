@@ -94,6 +94,20 @@ func (inv *invocation) storeRollback(args []string) error {
 		return err
 	}
 	defer unlock()
+	// The checks above were made before the prompt: repeat them under the
+	// lock, for a command that finished while this one waited.
+	if !isRegularFile(p.StoreFile) {
+		return inv.usageErr("There is no store at " + p.StoreFile + ": this install is already in legacy read-only mode. Nothing to roll back.")
+	}
+	if ids, err = a.Backends().Enabled(); err != nil {
+		return inv.usageErr(err.Error())
+	}
+	for _, id := range ids {
+		if id != backend.TACACS {
+			return inv.usageErr("Backend "+id+" was enabled while this command waited, and legacy mode (what a rollback returns to) serves TACACS+ only.",
+				"Disable it first ('tacctl backend disable <id>'). Nothing was changed.")
+		}
+	}
 	if _, err := a.Snapshots().Take(); err != nil {
 		return inv.usageErr(err.Error(), "Could not snapshot the store. Nothing was changed.")
 	}

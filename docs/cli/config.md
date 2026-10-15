@@ -71,7 +71,7 @@ config validate
     empty privileges.<group> list on a built-in group that ships one (it hides the shipped list;
     `group privilege reset <group>` removes it) is a warning, and so is a private copy of the
     configuration that a killed command left in the state directory (`.apply.*`, `.restore.*`,
-    `.enable.*`, `.units.*`, `.disable.*`, older than ten minutes). Exits 1 on errors
+    `.enable.*`, `.units.*`, `.disable.*`, older than ten minutes, with no command holding the apply lock). Exits 1 on errors
 
 config diff [timestamp]
 

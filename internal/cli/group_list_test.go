@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rett/tacctl/internal/applylock"
 )
 
 const engineerHint = "No group has the engineer tier; a superuser gives it with 'tacctl group preset roles'"
@@ -96,5 +99,28 @@ func TestConfigValidateNamesLeftovers(t *testing.T) {
 	}
 	if sb.code != 0 || strings.Contains(out, ".apply.young") {
 		t.Errorf("exit %d, young one named:\n%s", sb.code, out)
+	}
+}
+
+// No leftover is named while a command holds the apply lock: its private
+// directories are at work, not left over.
+func TestConfigValidateNamesNoLeftoverWhileTheLockIsHeld(t *testing.T) {
+	sb := renderedSandbox(t)
+	old := time.Now().Add(-time.Hour)
+	p := sb.path("state", ".apply.busy")
+	if err := os.Mkdir(p, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(p, old, old); err != nil {
+		t.Fatal(err)
+	}
+	hold, err := applylock.New(sb.path("state")).Acquire(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := plain(sb.run("", []string{"config", "validate"}))
+	hold()
+	if strings.Contains(out, "leftover") {
+		t.Errorf("named while the lock is held:\n%s", out)
 	}
 }
