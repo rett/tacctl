@@ -173,15 +173,12 @@ func (o *applyOutcome) line() string {
 	return s
 }
 
-// viaWords is the transport as a line says it (D150): "via netconf" (and
-// ", exclusive session" when the device refused a private one), or "via cli:
-// <why>" for a device that 'auto' did not take over NETCONF. The command line
-// that was asked for, and a device never probed, say nothing: a line of 0.2.9
-// stays as it was (the JSON has both words always).
+// viaWords is the transport as a line says it (D150): "via netconf", or "via
+// cli: <why>" for a device that 'auto' did not take over NETCONF. The command
+// line that was asked for, and a device never probed, say nothing: a line of
+// 0.2.9 stays as it was (the JSON has both words always).
 func (o *applyOutcome) viaWords() string {
 	switch {
-	case o.Via == devapply.ViaNetconf && o.Exclusive:
-		return "via netconf, exclusive session"
 	case o.Via == devapply.ViaNetconf:
 		return "via netconf"
 	case o.Via == devapply.ViaCLI && o.ViaReason != "" && o.ViaReason != devapply.ReasonNotProbed:
@@ -229,11 +226,9 @@ type applyJSON struct {
 	Result string `json:"result,omitempty"`
 	Reason string `json:"reason,omitempty"`
 	// Via is the transport the transaction ran through, ViaReason why it
-	// was not the first choice ("not probed" included), Exclusive that
-	// NETCONF ran in an exclusive session (D150).
+	// was not the first choice ("not probed" included), D150.
 	Via       string `json:"via,omitempty"`
 	ViaReason string `json:"via_reason,omitempty"`
-	Exclusive bool   `json:"exclusive,omitempty"`
 	// ServiceProof is what the verification proved of a change to the
 	// NETCONF service (D148).
 	ServiceProof string   `json:"service_proof,omitempty"`
@@ -279,7 +274,7 @@ func (o *applyOutcome) json(j applyJSON) applyJSON {
 	j.Name, j.Scope, j.Vendor, j.Phase = o.Name, o.Scope, o.Vendor, o.Phase
 	j.Status = o.word()
 	j.Confirmed, j.DurationMS = o.ConfirmedOn, o.Duration.Milliseconds()
-	j.Via, j.ViaReason, j.Exclusive = string(o.Via), o.ViaReason, o.Exclusive
+	j.Via, j.ViaReason = string(o.Via), o.ViaReason
 	if o.Out != nil {
 		j.ServiceProof = o.Out.ServiceProof
 	}

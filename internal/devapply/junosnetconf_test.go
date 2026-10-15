@@ -250,7 +250,7 @@ func (c *cancelN) Load(ctx context.Context, l plan.Line) (Loaded, error) {
 func TestNetconfSessionDroppedIsRolledBackAtOnce(t *testing.T) {
 	for _, knob := range []string{"", "after-output"} {
 		t.Run("drop="+knob, func(t *testing.T) {
-			d := netDevice(t, map[string]string{"commit.drop": knob}, ModePrivate)
+			d := netDevice(t, map[string]string{"commit.drop": knob}, ModeAuto)
 			before := d.srv.Committed()
 			o := apply(t, d, &planner{desired: desiredLines()}, nil)
 			t.Logf("exit %s: %s", o.Exit, o.Line())
@@ -278,11 +278,11 @@ func TestNetconfPendingAtPreflight(t *testing.T) {
 	o := apply(t, d, &planner{desired: desiredLines()}, nil)
 	wantExit(t, o, ExitPending, ResultPending)
 	d.unknob("commit.drop")
-	d.netconf, d.mode = true, ModePrivate
-	nc := d.dialNetconf(ModePrivate)
+	d.netconf, d.mode = true, ModeAuto
+	nc := d.dialNetconf(ModeAuto)
 	st, err := nc.State(context.Background())
 	_ = nc.Close()
-	if err != nil || !st.Pending || st.Minutes != 10 {
+	if err != nil || !st.Pending || st.Minutes != 11 {
 		t.Errorf("state %+v (%v)", st, err)
 	}
 	o2 := check(t, d, &planner{desired: desiredLines()}, nil)
@@ -303,19 +303,20 @@ func TestNetconfPendingAtPreflight(t *testing.T) {
 // With the fresh login's state unreadable and the held session gone, the
 // outcome is unknown, never applied.
 func TestNetconfStateUnreadableIsUnknown(t *testing.T) {
-	d := netDevice(t, map[string]string{"commit.drop": ""}, ModePrivate)
+	d := netDevice(t, map[string]string{"commit.drop": ""}, ModeAuto)
 	o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
 		in.Verify = func(context.Context) (Reader, error) { return nil, errors.New("no login") }
 	})
 	wantExit(t, o, ExitUnknown, ResultUnknown)
 }
 
-// N1: a device that refuses the confirmed commit in a private session gives
-// the typed error and RetryExclusive; nothing is committed, the transaction
-// is not switched in the middle, and the same device applies in exclusive
-// mode.
+// N1 (refuted on the lab switch): the device refuses the confirmed commit
+// in a private session, in its own words. An explicit private transport
+// gives the typed error and RetryExclusive; nothing is committed and the
+// transaction is not switched in the middle. The default mode never tries a
+// private session: it takes the candidate's lock at once and applies.
 func TestNetconfPrivateConfirmRefused(t *testing.T) {
-	d := netDevice(t, map[string]string{"netconf.private.confirm": "refuse\n"}, ModeAuto)
+	d := netDevice(t, nil, ModePrivate)
 	before := d.srv.Committed()
 	p := &planner{desired: desiredLines()}
 	rev := d.reviewed(p)
@@ -336,12 +337,12 @@ func TestNetconfPrivateConfirmRefused(t *testing.T) {
 		t.Error("pending or locked")
 	}
 	for _, l := range o.Log {
-		if strings.Contains(l, "exclusive") {
+		if l == "netconf: lock-configuration" {
 			t.Errorf("the mode was switched inside the transaction: %q", o.Log)
 		}
 	}
-	// the typed error itself
-	d2 := netDevice(t, map[string]string{"netconf.private.confirm": "refuse\n"}, ModePrivate)
+	// the typed error itself, in the device's words
+	d2 := netDevice(t, nil, ModePrivate)
 	j := d2.dialNetconf(ModePrivate)
 	defer func() { _ = j.Close() }()
 	ctx := context.Background()
@@ -353,12 +354,64 @@ func TestNetconfPrivateConfirmRefused(t *testing.T) {
 		t.Errorf("err %v retry %v", err, j.RetryExclusive())
 	}
 	_ = j.Discard(ctx)
-	// the retry: exclusive mode on the same device
-	d.mode = ModeExclusive
-	o = apply(t, d, &planner{desired: desiredLines()}, nil)
-	wantExit(t, o, ExitApplied, ResultApplied)
-	if d.srv.ExclusiveHolder() != "" {
+	// the default mode applies on the same kind of device, under the lock,
+	// and never opens a private session
+	d3 := netDevice(t, nil, ModeAuto)
+	o3 := apply(t, d3, &planner{desired: desiredLines()}, nil)
+	wantExit(t, o3, ExitApplied, ResultApplied)
+	if d3.srv.ExclusiveHolder() != "" {
 		t.Error("the lock is still held")
+	}
+	lockSeen := false
+	for _, l := range o3.Log {
+		if strings.Contains(l, "open-configuration") {
+			t.Errorf("a private session was opened: %q", o3.Log)
+		}
+		if l == "netconf: lock-configuration" {
+			lockSeen = true
+		}
+	}
+	if !lockSeen {
+		t.Errorf("the lock was not taken: %q", o3.Log)
+	}
+}
+
+// The lock mode refuses a candidate that another editor staged (the commit
+// would carry it), and leaves no lock behind.
+func TestNetconfLockModeRefusesAStagedCandidate(t *testing.T) {
+	d := netDevice(t, map[string]string{"dirty.shared": "user carol\nset snmp contact carol\n"}, ModeAuto)
+	j := d.dialNetconf(ModeAuto)
+	defer func() { _ = j.Close() }()
+	err := j.Open(context.Background(), func(string) error { return nil })
+	var le *LockedError
+	if !errors.As(err, &le) || !le.Modified {
+		t.Fatalf("err %v", err)
+	}
+	if d.srv.ExclusiveHolder() != "" || j.Held() {
+		t.Error("the lock or the session is left")
+	}
+}
+
+// Plan N5: the pending marker is the device's own 'rollback pending' line,
+// never the label, which rounds down to 0mins for a one-minute window; the
+// 'rollback in' label of a command-line commit still parses as before.
+func TestNetconfPendingIsTheDevicesLineNotTheLabel(t *testing.T) {
+	h, err := parseHistory("0   2026-10-15 04:09:56 AKDT by admin via netconf commit confirmed, rollback in 0mins\n" +
+		"    tacctl lab N1\n    rollback pending\n" +
+		"1   2026-10-15 00:41:23 AKDT by admin via junoscript\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !h[0].Pending || h[0].RollbackIn != 0 || h[0].Comment != "tacctl lab N1" || h[1].Pending {
+		t.Errorf("entries %+v", h)
+	}
+	h2, err := parseHistory("0   2026-10-15 04:10:45 AKDT by admin via netconf\n    tacctl lab N2 confirm\n" +
+		"1   2026-10-15 04:10:43 AKDT by admin via netconf commit confirmed, rollback in 0mins\n    tacctl lab N1\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h2[0].Pending || h2[1].Pending {
+		t.Errorf("a confirmed commit reads pending: %+v", h2)
 	}
 }
 
@@ -381,19 +434,23 @@ func TestNetconfExclusiveModeLocksOut(t *testing.T) {
 	}
 }
 
-// A private session under another's exclusive lock is refused the way the
-// command line's configure exclusive is: a LockedError.
+// Another session's lock refuses the transaction in every mode, the way the
+// command line's configure exclusive is: a LockedError (the lock mode is
+// denied; a private session opens with a warning that nothing can be
+// committed, which is refused the same way).
 func TestNetconfOpenUnderForeignLock(t *testing.T) {
-	d := netDevice(t, map[string]string{"exclusive.held-by": "bob\n"}, ModePrivate)
-	j := d.dialNetconf(ModePrivate)
-	defer func() { _ = j.Close() }()
-	err := j.Open(context.Background(), func(string) error { return nil })
-	var le *LockedError
-	if !errors.As(err, &le) {
-		t.Fatalf("err %v", err)
-	}
-	if j.Held() {
-		t.Error("held")
+	for _, mode := range []NetconfMode{ModeAuto, ModeExclusive, ModePrivate} {
+		d := netDevice(t, map[string]string{"exclusive.held-by": "bob\n"}, mode)
+		j := d.dialNetconf(mode)
+		err := j.Open(context.Background(), func(string) error { return nil })
+		var le *LockedError
+		if !errors.As(err, &le) {
+			t.Fatalf("mode %d: err %v", mode, err)
+		}
+		if j.Held() {
+			t.Errorf("mode %d: held", mode)
+		}
+		_ = j.Close()
 	}
 }
 
@@ -437,7 +494,7 @@ func TestNetconfRevertIsNeverReached(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			d := netDevice(t, c.knobs, ModePrivate)
+			d := netDevice(t, c.knobs, ModeAuto)
 			p := &planner{desired: desiredLines()}
 			rev := d.reviewed(p)
 			in := d.input(p)
@@ -489,8 +546,8 @@ func TestNetconfConfirmsNeedsCapabilitiesAndClass(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			d := netDevice(t, c.knobs, ModePrivate)
-			j := d.dialNetconf(ModePrivate)
+			d := netDevice(t, c.knobs, ModeAuto)
+			j := d.dialNetconf(ModeAuto)
 			defer func() { _ = j.Close() }()
 			if j.Confirms() {
 				t.Error("Confirms before Login")
@@ -510,7 +567,7 @@ func TestNetconfReadsAgreeWithTheCommandLine(t *testing.T) {
 	d := newDevice(t, nil)
 	cli := d.dial()
 	defer func() { _ = cli.Close() }()
-	nc := d.dialNetconf(ModePrivate)
+	nc := d.dialNetconf(ModeAuto)
 	defer func() { _ = nc.Close() }()
 	ctx := context.Background()
 	ci, err := cli.Identity(ctx)
@@ -563,8 +620,8 @@ func TestNetconfReadsAgreeWithTheCommandLine(t *testing.T) {
 // Nothing the transport sends or logs holds a secret, and the guards refuse
 // what the command line's refuse.
 func TestNetconfGuardsAndLog(t *testing.T) {
-	d := netDevice(t, nil, ModePrivate)
-	j := d.dialNetconf(ModePrivate)
+	d := netDevice(t, nil, ModeAuto)
+	j := d.dialNetconf(ModeAuto)
 	defer func() { _ = j.Close() }()
 	ctx := context.Background()
 	line := plan.Line{Op: plan.OpSet, Text: "set snmp contact noc"}
@@ -593,9 +650,13 @@ func TestNetconfGuardsAndLog(t *testing.T) {
 	if err := j.Open(ctx, refuse); !errors.Is(err, ErrNotSent) {
 		t.Errorf("a second Open: %v", err)
 	}
+	// the first transaction ends before another takes the lock
+	if err := j.Discard(ctx); err != nil {
+		t.Fatal(err)
+	}
 	secret := desiredLines()[0]
 	allow := func(string) error { return nil }
-	j2 := d.dialNetconf(ModePrivate)
+	j2 := d.dialNetconf(ModeAuto)
 	defer func() { _ = j2.Close() }()
 	if err := j2.Open(ctx, allow); err != nil {
 		t.Fatal(err)
@@ -612,9 +673,6 @@ func TestNetconfGuardsAndLog(t *testing.T) {
 				t.Errorf("a secret in the log: %q", l)
 			}
 		}
-	}
-	if err := j.Discard(ctx); err != nil {
-		t.Fatal(err)
 	}
 	if d.srv.ExclusiveHolder() != "" {
 		t.Error("lock left")

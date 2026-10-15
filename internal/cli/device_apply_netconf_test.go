@@ -131,16 +131,17 @@ func TestApplyNetconfOnlyFailsWhenTheDeviceHasNone(t *testing.T) {
 	}
 }
 
-// A device that refuses a confirmed commit in a private session is run again,
-// whole, in an exclusive one, and the line says so.
-func TestApplyNetconfRetriesInAnExclusiveSession(t *testing.T) {
+// The device refuses a confirmed commit in a private session (plan N1), so a
+// NETCONF apply takes the candidate's lock and never opens a private one: it
+// applies on a device that refuses the private form, and the line carries no
+// session word.
+func TestApplyNetconfRunsUnderTheLock(t *testing.T) {
 	b := newApplyBox(t)
 	b.register("example-sw1")
-	b.knob("netconf.private.confirm", "refuse")
 	b.seed("example-sw1")
 	before := b.committed()
 	code, out, errs := b.apply("example-sw1", "--confirmed", "--yes", "--transport", "netconf")
-	if code != 0 || !strings.Contains(out, "via netconf, exclusive session") {
+	if code != 0 || !strings.Contains(out, "via netconf") || strings.Contains(out, "exclusive") {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errs)
 	}
 	if b.committed() == before {

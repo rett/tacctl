@@ -8836,12 +8836,11 @@ is the command line always; and
 .B netconf
 never falls back: a device that does not answer or cannot confirm is
 .BR failed .
-Over NETCONF the change is loaded in a private session, checked, committed
-with a confirmed commit and confirmed in the session that committed; a session
-that closes without confirming is rolled back by the device at once. A device
-that refuses a confirmed commit in a private session is run again, whole, in
-an exclusive one
-.RB ( "via netconf, exclusive session" ).
+Over NETCONF the change is loaded under the candidate's lock (a Junos device
+refuses a confirmed commit in a private session), checked, committed with a
+confirmed commit and confirmed in the session that committed; a session that
+closes without confirming is rolled back by the device within seconds. A
+candidate that holds another editor's staged change is refused.
 A change to the NETCONF service itself
 .RB ( "scope netconf" ,
 .BR "device netconf" )
