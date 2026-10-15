@@ -75,9 +75,11 @@ var deviceConfigSpecs = func() map[string]Spec {
 			flagJSON}},
 		"forget": {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}}},
 		// 'apply' (0.2.9, D130): the selection and the read options of a
-		// pull, minus the transport (the apply is the Junos command line).
+		// pull; --transport is how it writes (0.2.10, D150: auto, cli or
+		// netconf), not how a pull reads.
 		"apply": {MaxArgs: -1, Args: []string{KindDevices + KindList},
 			Flags: join(selectors, []Flag{
+				{Names: []string{"--transport"}, Value: true, Kind: "auto|cli|netconf"},
 				{Names: []string{"--concurrency"}, Value: true}, {Names: []string{"--timeout"}, Value: true},
 				{Names: []string{"--max-failures"}, Value: true}, {Names: []string{"--server"}, Value: true},
 				{Names: []string{"--source"}, Value: true},
@@ -320,9 +322,10 @@ skipped) and is the only form --yes answers the question for, so a script runs
 it without a terminal; --max (default 5) caps the devices of a run, --pause the
 seconds between them (config devices apply-pause), --hold asks you to log in
 with one account of each class and type OK before the change is kept,
---section limits the sections. Never written: the break-glass and
-NETCONF sections, the root and your own account, system services, interfaces,
-groups. Exit status: 0 every device applied, was checked or had no change, 1 a
+--section limits the sections. Never written: the break-glass section, the
+NETCONF section unless the scope's or the device's NETCONF setting enables or
+disables the service (then only its own statements), the root and your own
+account, system services, interfaces, groups. Exit status: 0 every device applied, was checked or had no change, 1 a
 device failed, was rolled back or is pending, 2 wrong arguments (or, with
 --check --exit-code, a device that needs a change), 130 interrupted (the first
 Ctrl-C starts no more devices, the second cancels the running ones).

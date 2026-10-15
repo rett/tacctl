@@ -120,6 +120,14 @@ type CommitEntry struct {
 	// (CommitState.Pending is).
 	RollbackIn int
 	Comment    string
+	// Pending is set by the device's own 'rollback pending' line under the
+	// entry: the commit is confirmed-and-waiting (a lab fact, plan N5). It
+	// is the NETCONF transport's pending marker (a command-line session has
+	// the banner); the 'rollback in Nmins' label rounds down (a one-minute
+	// window reads 'rollback in 0mins'), so RollbackIn never decides it.
+	// Same ignores it: the entry is the same commit before and after the
+	// confirm.
+	Pending bool
 }
 
 // Same reports whether two entries are the same commit.

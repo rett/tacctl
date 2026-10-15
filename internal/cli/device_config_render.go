@@ -69,6 +69,17 @@ func (inv *invocation) deviceRenderInput(p renderParams) (devices.Request, devic
 		AuthServer:  p.AuthServer, AuthName: p.AuthName, SourceIP: p.SourceIP,
 	}
 	d.Release = inv.recordedRelease(p.Device.DeviceName, p.Vendor)
+	// The NETCONF service setting of a Junos device (0.2.10, D145): its own
+	// over its scope's; leave renders the commented step, as before.
+	if p.Vendor == "juniper" {
+		var own devreg.Netconf
+		if p.Device.DeviceName != "" {
+			if dev := inv.deviceNamed(p.Device.DeviceName); dev != nil {
+				own = dev.Netconf
+			}
+		}
+		d.Netconf = inv.netconfOf(p.Scope, own).NetconfSetting
+	}
 	if d.SNMP, err = inv.walkthroughSNMP(p.Scope, p.Device); err != nil {
 		// A credentials file that cannot be read leaves the step out; the
 		// rest of the walkthrough is still good.
@@ -423,6 +434,11 @@ func (r *managedRender) expectedFor(e devreg.Entry, k managedKey) ([]devices.Sec
 		return nil, &renderProblem{msg: why}
 	}
 	d := b.d
+	// a device's own NETCONF service setting over its scope's, which the
+	// shared base holds
+	if b.req.Vendor == "juniper" && !e.Netconf.Empty() {
+		d.Netconf = r.inv.netconfOf(k.scope, e.Netconf).NetconfSetting
+	}
 	if db, ok := r.devBlocks[lc]; ok {
 		if db.problem != "" {
 			return nil, &renderProblem{msg: db.problem}

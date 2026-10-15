@@ -3,49 +3,116 @@
 [Documentation](../README.md) › [CLI reference](README.md)
 
 ```
-group list                                                List all groups with Cisco priv-lvl, Juniper class, user count
-group show <name>                                         Every setting and where it comes from, with the Junos patterns (open to every tier)
-group add <name> <priv-lvl> <class> [--tier <tier>]       Add a custom group (at priv-lvl 15 its tier is recorded: superuser unless --tier; a leftover tier, WTI level or Junos setting of that name in tacctl.yaml is cleared)
-                                    [--wti-level <level>] --wti-level gives it a WTI access level instead of its priv-lvl band
-group edit <name> tier auto|<tier>                        tacctl tier of the group (auto = the priv-lvl band; recorded as superuser at 15)
-group edit <name> priv-lvl <0-15>                         Change Cisco privilege level
-group edit <name> juniper-class <CLASS>                   Change Juniper class name
-group edit <name> wti-level auto|<level>                  WTI access level: viewonly, user, superuser or administrator (auto = the priv-lvl band)
-group remove <name>                                       Remove a custom group (built-ins protected)
-group commands list <group>                               Show per-command rules + default action
-group commands default <group> <permit|deny>              Set default action (catchall)
-group commands add <group> <name> [--match <regex>]...    Add a command rule
-                                  [--action permit|deny]
-                                  [--before <name>|--first]
-group commands remove <group> <name> [--all]              Drop a rule (--match/--action pick one of several)
-                                  [--match <regex>]... [--action permit|deny]
-group commands reset <group> [--dry-run] [--yes]          Put the group's rules back to the shipped defaults:
-                                                          the difference first, then a confirmation
-group commands seed [<group>] [--force]                   Populate built-ins with sensible defaults
-group preset roles [--dry-run] [--force]                  Starting values for viewer, operator, engineer and superuser
-group reset <name> [--preset] [--dry-run] [--yes]         Put readonly, operator, superuser or engineer back to its canonical state:
-                   [--only settings,commands,privileges,junos]   the difference first, then a confirmation
-group privilege list <group>                              Show Cisco privilege mappings and their modes
-group privilege add <group> '<cmd>'[,'<cmd>'...]          Move one or more commands to the group's priv-lvl ('<mode>: <cmd>'
-                                                          for exec all, configure or configure all; exec without one)
-group privilege remove <group> '<cmd>'[,'<cmd>'...]       Remove one or more mappings
-group privilege reset <group> [--dry-run] [--yes]         Put the group's mappings back to the shipped default:
-                                                          the difference first, then a confirmation
-group privilege seed [<group>] [--force]                  Populate built-ins with safe priv-exec defaults
-group junos <group> list|clear                            Both Junos deny sets and their sizes, or drop both (confirms)
-group junos <group> deny-commands|deny-configuration      The patterns the server sends with the group's login class
-                    list|add '<regex>'|remove '<regex>'|clear
+group list
+
+    List all groups with Cisco priv-lvl, Juniper class, user count
+
+group show <name>
+
+    Every setting and where it comes from, with the Junos patterns (open to every tier)
+
+group add <name> <priv-lvl> <class> [--tier <tier>]
+
+    Add a custom group (at priv-lvl 15 its tier is recorded: superuser unless --tier; a leftover
+    tier, WTI level or Junos setting of that name in tacctl.yaml is cleared) [--wti-level <level>]
+    --wti-level gives it a WTI access level instead of its priv-lvl band
+
+group edit <name> tier auto|<tier>
+
+    tacctl tier of the group (auto = the priv-lvl band; recorded as superuser at 15)
+
+group edit <name> priv-lvl <0-15>
+
+    Change Cisco privilege level
+
+group edit <name> juniper-class <CLASS>
+
+    Change Juniper class name
+
+group edit <name> wti-level auto|<level>
+
+    WTI access level: viewonly, user, superuser or administrator (auto = the priv-lvl band)
+
+group remove <name>
+
+    Remove a custom group (built-ins protected)
+
+group commands list <group>
+
+    Show per-command rules + default action
+
+group commands default <group> <permit|deny>
+
+    Set default action (catchall)
+
+group commands add <group> <name> [--match <regex>]...
+
+    Add a command rule [--action permit|deny] [--before <name>|--first]
+
+group commands remove <group> <name> [--all]
+
+    Drop a rule (--match/--action pick one of several) [--match <regex>]... [--action permit|deny]
+
+group commands reset <group> [--dry-run] [--yes]
+
+    Put the group's rules back to the shipped defaults: the difference first, then a confirmation
+
+group commands seed [<group>] [--force]
+
+    Populate built-ins with sensible defaults
+
+group preset roles [--dry-run] [--force]
+
+    Starting values for viewer, operator, engineer and superuser
+
+group reset <name> [--preset] [--dry-run] [--yes]
+
+    Put readonly, operator, superuser or engineer back to its canonical state: [--only
+    settings,commands,privileges,junos]   the difference first, then a confirmation
+
+group privilege list <group>
+
+    Show Cisco privilege mappings and their modes
+
+group privilege add <group> '<cmd>'[,'<cmd>'...]
+
+    Move one or more commands to the group's priv-lvl ('<mode>: <cmd>' for exec all, configure or
+    configure all; exec without one)
+
+group privilege remove <group> '<cmd>'[,'<cmd>'...]
+
+    Remove one or more mappings
+
+group privilege reset <group> [--dry-run] [--yes]
+
+    Put the group's mappings back to the shipped default: the difference first, then a confirmation
+
+group privilege seed [<group>] [--force]
+
+    Populate built-ins with safe priv-exec defaults
+
+group junos <group> list|clear
+
+    Both Junos deny sets and their sizes, or drop both (confirms)
+
+group junos <group> deny-commands|deny-configuration
+
+    The patterns the server sends with the group's login class list|add '<regex>'|remove
+    '<regex>'|clear
 ```
 
-**Default Groups:**
+**Default Groups:** the three built-in groups every store holds, and the optional `engineer` role.
 
 | Group | Cisco priv-lvl | Juniper class | WTI access level | Use Case |
 |-------|---------------|---------------|------------------|----------|
 | `readonly` | 1 | RO-CLASS | ViewOnly | Monitoring and configuration backup (NCM): reads, changes nothing |
 | `operator` | 7 | OP-CLASS | User | Troubleshooting (show, ping, traceroute): changes nothing and interrupts nothing, even intermittently (on Junos `ping ... rapid|interval` and `monitor traffic` are denied only where the role preset's deny sets are sent); the `engineer` is the escalation |
 | `superuser` | 15 | RW-CLASS | Administrator | Full administrative access |
+| `engineer` | 15 | EN-CLASS | SuperUser | Optional. Changing devices day to day: everything but the exec-level lifecycle (`reload`, `erase`, `request`, `upgrade`, ...). Not in a fresh store: create it with `tacctl group preset roles` ([Role preset](#role-preset)) |
 
-**Role preset** (opt-in): `tacctl group preset roles [--dry-run] [--force]` writes starting values for four roles: the built-in `readonly` as the viewer, `operator`, an `engineer` group it creates (priv-lvl 15, class `EN-CLASS`, tier `engineer`) and `superuser`. It changes nothing that already has a value unless `--force` replaces it, and moves no user. `--dry-run` shows each setting and whether it would be set, kept or replaced. What it adds to the shipped defaults:
+## Role preset
+
+Opt-in, and the way to have the optional `engineer` group: `tacctl group preset roles [--dry-run] [--force]` writes starting values for four roles: the built-in `readonly` as the viewer, `operator`, an `engineer` group it creates (priv-lvl 15, class `EN-CLASS`, tier `engineer`) and `superuser`. It changes nothing that already has a value unless `--force` replaces it, and moves no user. `--dry-run` shows each setting and whether it would be set, kept or replaced; run it first. The `engineer` group it creates is an ordinary group, not a protected built-in: `group rm engineer` removes it and `group reset engineer` puts its preset values back. What it adds to the shipped defaults:
 
 - **Cisco, viewer and operator:** a `show` deny in front of the shipped permits for the secret-bearing, unfiltered sub-trees (`running-config view full`, `tech-support`, `startup-config`, `derived-config`, `key chain`, `snmp community|user`, `archive log`; the viewer also `crypto`, the operator `crypto isakmp key` and `crypto key`). The deny has a `--match`, so a `show` that misses it falls through to the permit.
 - **Cisco, engineer:** 34 rules that permit everything except the exec-level lifecycle (`reload`, `delete`, `erase`, `format`, `fsck`, `rename`, `mkdir`, `rmdir`, `request`, `install`, `software`, `upgrade`, `issu`, `write erase`, `archive` other than `archive config`), `copy` that would load a configuration or write flash (saving to `startup-config`, flash or a remote URL and exporting a file are permitted), `configure network|memory` and `configure replace <url>`, the shell escapes (`tclsh`, `guestshell`, `app-hosting`, `iox`, `scripting`), `hw-module`, `redundancy`, `switch`, `test aaa`, `debug all|aaa|tacacs|radius`, `clear aaa|logging|archive`, and the `do` form of those. **Configuration mode is not restricted as a mode**: an engineer can change AAA, the TACACS+ and RADIUS servers and keys, lines, privilege levels, SNMP and the management ACL, so that tacctl's push can run with the engineer's own login. A mistake there can lock a device out. Because tacquito sees only a command's first word and arguments and cannot tell exec from configuration mode, the rules apply inside it as well: `archive` (other than `archive config`), `switch`, `redundancy`, `hw-module`, `iox`, `app-hosting`, `scripting`, `software` and a bare `configure` are refused there. A site that wants a boundary adds rules, for example `tacctl group commands add engineer aaa --action deny` (a rule goes before the catchall).
@@ -54,7 +121,9 @@ group junos <group> deny-commands|deny-configuration      The patterns the serve
 
 The Junos classes are `RO-CLASS`, `OP-CLASS`, `RW-CLASS` and, for the engineer, `EN-CLASS`. Their permission bits are the ceiling on the device and are final: the viewer has `network view view-configuration`, the operator `network trace view view-configuration` (no `clear`: an operator may not interrupt service, even intermittently, so nothing under `clear` is theirs, with or without the deny sets), the engineer the bits listed in [Juniper Junos](../devices/junos.md) (`clear` among them), the superuser `all`. What a role may do beyond them is the server-sent deny sets, which change without touching a device. The bit removal is the protection every install has: without the preset (or sets of your own with `tacctl group junos`, or the RADIUS `Juniper-Deny-Commands` attribute) nothing denies `ping ... rapid`, `ping ... interval` or an unbounded `monitor traffic`, and which bit `test interface restart-auto-negotiation` needs is not known. A device pasted from an older version keeps `clear` in `OP-CLASS` until Step 1 of `tacctl config juniper` is pasted again (`tacctl device config plan <device>` prints `delete system login class OP-CLASS permissions clear`). `tacctl upgrade` and `tacctl config validate` name stored deny sets from an older preset; `tacctl group reset operator --preset` and `tacctl group reset readonly --preset` bring the current ones. An install that ran an early version of the preset gets a red notice from `tacctl upgrade`, because that preset's Cisco denies did not hold; `tacctl group reset engineer` is the fix.
 
-**Resetting a group:** `tacctl group reset <group> [--preset] [--only settings,commands,privileges,junos] [--dry-run] [--yes]` puts a group back to its canonical state and shows what changes before it writes anything. Superuser only. Canonical means:
+## Resetting a group
+
+`tacctl group reset <group> [--preset] [--only settings,commands,privileges,junos] [--dry-run] [--yes]` puts a group back to its canonical state and shows what changes before it writes anything. Superuser only. Canonical means:
 
 - for `readonly`, `operator` and `superuser`, what a fresh install gives them: the shipped command rules and Cisco privileges, the priv-lvl and Junos class of the table above, and no setting of their own for the tier, the WTI level or the Junos sets (the priv-lvl band decides the first two);
 - with `--preset`, the role preset's values instead (priv-lvl, class, WTI level, tier, Junos deny sets and Cisco rules of viewer, operator and superuser), which sets a built-in group back to its role;

@@ -18,15 +18,17 @@ bcrypt:
   cost: 12                   # applies only to new hashes  (int, 10..14)
 
 scope:
-  default: lab               # matches the fresh-install seed scope; override via `tacctl scope default`
+  default: lab               # matches the fresh-install seed scope; override via `tacctl scope
+                             default`
 
 host:
   default_method: tacplus    # how `tacctl host enroll` sets up a new Linux host: tacplus | radius
 
 mgmt_acl:
   names:
-    cisco: VTY-ACL           # ACL name emitted by `tacctl config cisco`  (letter-start, [A-Za-z0-9_-], 1..63)
-    juniper: MGMT-ACL    # filter name emitted by `tacctl config juniper`  (same rules)
+    cisco: VTY-ACL           # ACL name emitted by `tacctl config cisco`  (letter-start,
+                             [A-Za-z0-9_-], 1..63)
+    juniper: MGMT-ACL        # filter name emitted by `tacctl config juniper`  (same rules)
   permits: []                # list of CIDRs; each element validated
 
 privileges:                  # per-group Cisco priv-exec lowering (move commands DOWN from priv 15)
@@ -35,23 +37,23 @@ privileges:                  # per-group Cisco priv-exec lowering (move commands
   operator:
     - undebug all
 
-commands:                    # per-group command-authz rules. Rendered for both Cisco
-                             # (tacquito enforces) and Juniper (class allow/deny-commands)
-                             # from this single tacctl-authored source. Ordered
-                             # superuser → operator → readonly. Not enforced over RADIUS.
+commands:                    # per-group command-authz rules. Rendered for both Cisco # (tacquito
+                             enforces) and Juniper (class allow/deny-commands) # from this single
+                             tacctl-authored source. Ordered # superuser → operator → readonly. Not
+                             enforced over RADIUS.
   superuser:
     - { name: "*", action: permit }
   operator:
-    - { name: show,       action: permit }
-    - { name: ping,       action: permit }
+    - { name: show,          action: permit }
+    - { name: ping,          action: permit }
     - { name: traceroute, action: permit }
-    - { name: terminal,   action: permit }
-    - { name: "*",        action: deny }
+    - { name: terminal,      action: permit }
+    - { name: "*",           action: deny }
   readonly:
-    - { name: show,       action: permit }
-    - { name: ping,       action: permit }
+    - { name: show,          action: permit }
+    - { name: ping,          action: permit }
     - { name: traceroute, action: permit }
-    - { name: "*",        action: deny }
+    - { name: "*",           action: deny }
 ```
 
 Keys without a shipped default (`backends.*`, `listeners.*`, `snmp.*`, `device.config.*` and the per-scope keys) are written only by their commands. With `snmp.version` unset there is no SNMP lookup; `snmp.timeout` is in seconds. The SNMP credentials are never in `tacctl.yaml`. `snmp_scope.<scope>.*` is written only when set; its `clients` is a list of at most 32 canonical IPv4 CIDRs, never `0.0.0.0/0`, none twice.
@@ -77,6 +79,7 @@ Keys without a shipped default (`backends.*`, `listeners.*`, `snmp.*`, `device.c
 | `snmp.version`, `snmp.port`, `snmp.timeout`, `snmp.v3.auth`, `snmp.v3.priv` | `v2c`/`v3` (unset); 1 to 65535 (161); 1 to 10 (2); `sha`/`sha256`; `aes128` | `config snmp` |
 | `device.config.max_concurrency`, `device.config.transport`, `device.config.timeout`, `device.config.confirm_timeout` | 1 to 64 (8); `auto`, `netconf` or `ssh` (`auto`); 10 to 600 seconds (90); 1 to 60 minutes (5) | `config devices` |
 | `device.apply.confirm_timeout`, `device.apply.pause` | 3 to 60 minutes (10); 0 to 3600 seconds (60) | `config devices apply-confirm-timeout`, `apply-pause` |
+| `device.apply.transport` | `cli`, `auto` or `netconf` (cli) | `config devices apply-transport` |
 | `privileges.<group>` | list of Cisco priv-exec commands (the shipped list of a built-in group) | `group privilege` |
 | `commands.<group>` | ordered `{name, action, match}` rules ending in the `*` catch-all (shipped) | `group commands` |
 | `aaa.order.<scope>` | `tacacs-first` or `local-first` (`tacacs-first`) | `scope aaa-order` |
@@ -92,6 +95,7 @@ Keys without a shipped default (`backends.*`, `listeners.*`, `snmp.*`, `device.c
 | `breakglass_scope.<scope>.users` | list of `name:role` (role `admin`, `operator` or `readonly`), at most 16; names and roles only | `scope breakglass` |
 | `breakglass_hold.<device>.address`, `.since`, `.by`, `.reason` | the record of a [break-glass hold](../devices/break-glass.md#holding-break-glass): the address the server does not answer, when and by whom, and why (1 to 256 characters; never rendered into a backend file); no expiry. A device name's dots are written `~` in the key | `breakglass hold`, `breakglass release` |
 | `snmp_scope.<scope>.version`, `snmp_scope.<scope>.port`, `snmp_scope.<scope>.timeout`, `snmp_scope.<scope>.v3.auth`, `snmp_scope.<scope>.v3.priv`, `snmp_scope.<scope>.contact`, `snmp_scope.<scope>.clients` | the scope's own SNMP settings, in place of `snmp.*`; `contact` up to 120 characters; `clients` at most 32 IPv4 CIDRs | `scope snmp` |
+| `netconf_scope.<scope>.state`, `netconf_scope.<scope>.connection_limit`, `netconf_scope.<scope>.rate_limit` | the scope's NETCONF service setting: `state` is `enable` or `disable` (no key is `leave`, the default); the limits 1 to 250, with `enable` only | `scope netconf` |
 
 Merge semantics:
 - Maps deep-merge (overriding `password.max_age_days` keeps the default `password.min_length`).

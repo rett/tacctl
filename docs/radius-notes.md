@@ -319,13 +319,20 @@ Hence the lines (the gate and the control are those of the pam_tacplus stack):
 
 ```
 # tacctl-auth
-auth    [success=ok default=1]                               pam_succeed_if.so quiet user ingroup tac-users
-auth    [success=done authinfo_unavail=ignore default=die]   pam_radius_auth.so conf=/etc/tacctl-pam_radius.conf retry=1 [require_message_authenticator]
-@include common-auth                                         (Debian family; on the RHEL family the service's own password-auth line follows)
+auth    [success=ok default=1]                               pam_succeed_if.so quiet user ingroup
+                                                             tac-users
+auth    [success=done authinfo_unavail=ignore default=die]   pam_radius_auth.so
+                                                             conf=/etc/tacctl-pam_radius.conf
+                                                             retry=1 [require_message_authenticator]
+@include common-auth                                         (Debian family; on the RHEL
+                                                             family the service's own password-auth
+                                                             line follows)
 # tacctl-account: no module line (only '@include common-account' on the Debian family)
 # tacctl-session (left empty on pam_radius_auth 2.0.1, or when the accounting port is not auth+1)
-session [success=ok default=1]                               pam_succeed_if.so quiet user ingroup tac-users
-session optional                                             pam_radius_auth.so conf=/etc/tacctl-pam_radius.conf
+session [success=ok default=1]                               pam_succeed_if.so quiet user ingroup
+                                                             tac-users
+session optional                                             pam_radius_auth.so
+                                                             conf=/etc/tacctl-pam_radius.conf
 ```
 
 `/etc/tacctl-pam_radius.conf` is `<server>:<port> <secret> 3`, 0600 root.

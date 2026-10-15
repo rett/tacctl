@@ -115,9 +115,11 @@ var deviceSpecs = map[string]Spec{
 	"legacy-ssh":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "enable|disable"}},
 	// The Cisco configuration syntax (D113).
 	"config-syntax": {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "auto|ios12|modern"}, Flags: []Flag{flagApply}},
-	"stale-days":    {MaxArgs: 1, Args: []string{""}},
-	"notice":        {MinArgs: 3, MaxArgs: 3, Args: []string{KindDevices, "ack|unack", noticeWords}},
-	"notices":       {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagAllNotices}},
+	// The NETCONF service of a Junos device (0.2.10, D145).
+	"netconf":    {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "show|enable|disable|leave|clear"}, Flags: deviceNetconfFlags},
+	"stale-days": {MaxArgs: 1, Args: []string{""}},
+	"notice":     {MinArgs: 3, MaxArgs: 3, Args: []string{KindDevices, "ack|unack", noticeWords}},
+	"notices":    {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagAllNotices}},
 	"import": {MinArgs: 1, MaxArgs: 1, Args: []string{KindFile}, Flags: []Flag{
 		{Names: []string{"--check"}}, {Names: []string{"--replace"}}, flagAllowGeneric, flagYes}},
 	"export":  {MaxArgs: 0, Flags: []Flag{{Names: []string{"--csv"}}, flagJSON}},
@@ -166,6 +168,7 @@ var deviceVerbs = [][2]string{
 	{"import [--check] [--replace] [--allow-generic] [-y] <file|->", "Import devices from CSV or the registry's YAML (an engineer: from standard input only, `-` first)"},
 	{"export [--csv|--json]", "Print the registry (YAML by default)"},
 	{"hostkey <name> [show|accept [-y]|set SHA256:<fp>]", "Show the pinned ssh host keys, or re-pin them after a verified change"},
+	{deviceNetconfUse, deviceNetconfShort},
 	{deviceSNMPUse, "A device's own SNMP settings over its scope's: version, port, timeout, allowed clients and credentials, and where each comes from"},
 	{deviceBlockUse, "A device's own configuration blocks (Junos snmp and system, IOS snmp) over its scope's: list, show, check, set, remove, edit, adopt"},
 	{"ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
@@ -231,7 +234,7 @@ var deviceOptions = map[string][][2]string{
 	},
 	"location": {
 		{"--from-device", "Read the location from the device (SNMP sysLocation) and store it"},
-		{"--apply", "(address, description, location, config-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question"},
+		{"--apply", "(address, description, location, config-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question"},
 	},
 	"import": {
 		{"--check", "Write nothing; say what the import would do"},
@@ -240,7 +243,8 @@ var deviceOptions = map[string][][2]string{
 	"export": {
 		{"--csv", "Print CSV instead of YAML"},
 	},
-	"snmp": deviceSNMPOptions,
+	"snmp":    deviceSNMPOptions,
+	"netconf": deviceNetconfOptions,
 	"block": {
 		{"--effective", "(block show) The block as rendered for the device, with the layer each object is from"},
 		{"--reveal", "(block show) Print the strings (an engineer: their own scopes' devices; logged)"},
@@ -292,7 +296,7 @@ var deviceOptions = map[string][][2]string{
 	},
 	"config plan": {
 		{"--pull", "Read the devices first (takes the pull options); the plan is made from that pull"},
-		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, system (the report still names the others; a WTI unit has aaa, snmp and mgmt-acl)"},
+		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, system, netconf (the report still names the others; a WTI unit has aaa, snmp and mgmt-acl)"},
 		{"--converge", "Add the cleanup of a device with nothing else to paste: the region that removes the old servers and the like (a device with a first region gets that and a line to plan again after the paste; a WTI unit: the read/write community and the other protocol's switch)"},
 		{"--secrets", "Type every secret of the planned sections, also the ones the device has (a WTI step names the command that shows the value unless given)"},
 		{"--no-secrets", "Leave each secret as a marked line to fill in (no plain form; a WTI step already does)"},
@@ -314,7 +318,7 @@ var deviceOptions = map[string][][2]string{
 		{"--pause <seconds>", "Wait between the devices after each shape's first, 0-3600 (default device.apply.pause)"},
 		{"--hold", "After the fresh login keep the change only when you log in with one account of each class and type OK (needs a terminal)"},
 		{"--no-canary", "Start every device of a shape at once, not the first alone"},
-		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, system"},
+		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, system, netconf"},
 		{"--json", "(apply) One object per device and phase, then the summary; the review goes to standard error"},
 		{"--exit-code", "(apply) With --check: exit 2 when a device needs a change (and none failed)"},
 		{"-y, --yes", "(apply) With --confirmed: answer the review (no terminal needed)"},
@@ -478,7 +482,7 @@ func (inv *invocation) device(args []string) error {
 	}
 	run := map[string]func([]string) error{
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
-		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "config-syntax": inv.deviceConfigSyntax, "stale-days": inv.deviceStaleDays,
+		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "config-syntax": inv.deviceConfigSyntax, "netconf": inv.deviceNetconf, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "notices": inv.deviceNotices, "import": inv.deviceImport, "export": inv.deviceExport,
 		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "collect": inv.deviceCollect, "sync": inv.deviceSync, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig, "config": inv.deviceConfig,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
@@ -746,6 +750,9 @@ type deviceJSON struct {
 	// last pull's version line (OS) derives to: the setting wins, and
 	// ImageSyntax is what the line says.
 	ConfigSyntax string `json:"config_syntax,omitempty"`
+	// Netconf is a Junos device's NETCONF service setting (0.2.10), only
+	// when it is not the default.
+	Netconf *netconfJSON `json:"netconf,omitempty"`
 	// Applied is what 'device config apply' last did to the device (a
 	// check or an apply), for the tiers that see the configuration state.
 	Applied        *appliedJSON       `json:"applied,omitempty"`
@@ -832,6 +839,11 @@ func deviceJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry, recs *d
 	}
 	j.Seen = deviceSeenJSONOf(inv, res, e)
 	j.Breakglass = inv.deviceHoldOf(e)
+	if e.Source == devreg.SourceDevice && e.Vendor == "juniper" {
+		if eff := inv.netconfOf(e.Scope, e.Netconf); eff.shown(e.Netconf) {
+			j.Netconf = eff.json()
+		}
+	}
 	if e.Source == devreg.SourceDevice && (e.Vendor == "cisco" || e.ConfigSyntax != "") {
 		j.ConfigSyntax = devreg.SyntaxAuto
 		if e.ConfigSyntax != "" {
@@ -1064,6 +1076,13 @@ func (inv *invocation) deviceShow(args []string) error {
 		row("Legacy ssh", map[bool]string{true: "enabled", false: "disabled"}[e.LegacySSH])
 		if e.Vendor == "cisco" || e.ConfigSyntax != "" {
 			row("Config syntax", inv.configSyntaxText(e))
+		}
+		// a Junos device's NETCONF service setting, when it is not the
+		// default (0.2.10)
+		if e.Vendor == "juniper" {
+			if eff := inv.netconfOf(e.Scope, e.Netconf); eff.shown(e.Netconf) {
+				row("NETCONF", eff.words()+"  ("+eff.sourceText(e.Scope)+")")
+			}
 		}
 		row("Description", dash(e.Description))
 		row("Location", dash(e.Location))
@@ -1553,6 +1572,7 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		// A configuration syntax setting is a Cisco setting: it goes with
 		// the vendor, and the message says which one went.
 		droppedSyntax := d.ConfigSyntax != "" && probe.ConfigSyntax == ""
+		droppedNetconf := !d.Netconf.Empty() && probe.Netconf.Empty()
 		changed := fieldValue(d, field) != fieldValue(&probe, field)
 		if applyReq && changed {
 			e, err := inv.deviceFind(res, name)
@@ -1598,6 +1618,9 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		}
 		if droppedSyntax {
 			inv.app.Out.Warn("The configuration syntax setting (" + d.ConfigSyntax + ") was removed: it is a Cisco setting.")
+		}
+		if droppedNetconf {
+			inv.app.Out.Warn("The NETCONF service setting (" + d.Netconf.State + ") was removed: it is a Junos setting.")
 		}
 		return inv.afterSetter(name, field, changed, applyReq)
 	}
@@ -1671,6 +1694,10 @@ func setField(d *devreg.Device, field, value string, clearing bool) error {
 		// being one does not keep it (the registry refuses the pair).
 		if d.Vendor != "cisco" {
 			d.ConfigSyntax = ""
+		}
+		// And the NETCONF service setting is a Junos one.
+		if d.Vendor != "juniper" {
+			d.Netconf = devreg.Netconf{}
 		}
 	case "port":
 		d.Port = 0

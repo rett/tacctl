@@ -102,8 +102,10 @@ func (f *frames) split() (msg []byte, used int, ok bool) {
 	}
 }
 
-// netconf is the subsystem: hello exchange, then one reply per RPC.
-func (s *Server) netconf(ch ssh.Channel) {
+// netconf is the subsystem: hello exchange, then one reply per RPC. user is
+// the login the configure model's session belongs to and drop closes the
+// connection (the knobs of the model).
+func (s *Server) netconf(ch ssh.Channel, user string, drop func()) {
 	s.mu.Lock()
 	id := s.logins
 	s.mu.Unlock()
@@ -140,13 +142,28 @@ func (s *Server) netconf(ch ssh.Channel) {
 		_, err := io.WriteString(ch, out)
 		return err == nil
 	}
+	// The configure model's session (nil when the model is off). Whatever
+	// ends this loop ends it: its lock and private candidate go; a confirmed
+	// commit it made and did not confirm stays pending to the window's end.
+	ns := s.newNetconfSession(user, drop)
+	defer ns.end()
 	for {
 		raw, err := fr.next()
 		if err != nil {
 			return
 		}
-		reply, end := s.rpc(raw)
+		reply, end, dr := s.rpcFor(ns, raw)
+		if dr == dropSilent {
+			ns.end()
+			ns.drop()
+			return
+		}
 		if !send(reply) || end {
+			return
+		}
+		if dr == dropAfterOutput {
+			ns.end()
+			ns.drop()
 			return
 		}
 	}
@@ -165,15 +182,21 @@ func esc(s string) string {
 	return b.String()
 }
 
-// rpc answers one <rpc>; end is true after <close-session/>.
+// rpc answers one <rpc> of a session without the configure model; end is
+// true after <close-session/>.
 func (s *Server) rpc(raw []byte) (reply string, end bool) {
+	reply, end, _ = s.rpcFor(nil, raw)
+	return reply, end
+}
+
+// rpcFor answers one <rpc> for a session of the configure model (ns is nil
+// when it is off); end is true after <close-session/> and drop says whether
+// the connection closes (dropSilent: before the reply, dropAfterOutput:
+// after it).
+func (s *Server) rpcFor(ns *nsession, raw []byte) (reply string, end bool, drop int) {
 	var d struct {
-		ID    string `xml:"message-id,attr"`
-		Inner []struct {
-			XMLName xml.Name
-			Attrs   []xml.Attr `xml:",any,attr"`
-			Text    string     `xml:",chardata"`
-		} `xml:",any"`
+		ID    string  `xml:"message-id,attr"`
+		Inner []xnode `xml:",any"`
 	}
 	wrap := func(id, body string) string {
 		return `<?xml version="1.0" encoding="us-ascii"?>` +
@@ -185,7 +208,7 @@ func (s *Server) rpc(raw []byte) (reply string, end bool) {
 			"</error-tag><error-severity>error</error-severity><error-message>"+esc(msg)+"</error-message></rpc-error>")
 	}
 	if err := decode(raw, &d); err != nil || len(d.Inner) == 0 {
-		return rpcErr("", "malformed-message", "not an rpc"), false
+		return rpcErr("", "malformed-message", "not an rpc"), false, dropNone
 	}
 	if s.wrongID {
 		d.ID = "0"
@@ -200,6 +223,10 @@ func (s *Server) rpc(raw []byte) (reply string, end bool) {
 	}
 	text := func(cmd, element string) string {
 		out, deny, known := s.t.command(cmd)
+		if !known && ns != nil {
+			// the configure model answers what the transcript has no file for
+			out, known = ns.command(cmd)
+		}
 		switch {
 		case deny != "":
 			return rpcErr(d.ID, "access-denied", deny)
@@ -216,27 +243,47 @@ func (s *Server) rpc(raw []byte) (reply string, end bool) {
 	}
 	switch op.XMLName.Local {
 	case "close-session":
-		return wrap(d.ID, "<ok/>"), true
+		return wrap(d.ID, "<ok/>"), true, dropNone
 	case "command":
 		cmd := strings.TrimSpace(op.Text)
 		if s.t.hangs(cmd) {
 			<-s.quit
-			return "", true
+			return "", true, dropNone
+		}
+		if ns != nil {
+			if ns.d.dropsBefore(cmd) {
+				return "", false, dropSilent
+			}
+			if !ns.d.delay(cmd) {
+				return "", true, dropNone
+			}
 		}
 		if strings.HasPrefix(cmd, "show configuration") {
-			return text(cmd, "configuration-output"), false
+			return text(cmd, "configuration-output"), false, dropNone
 		}
-		return text(cmd, "output"), false
+		return text(cmd, "output"), false, dropNone
 	case "get-configuration":
+		if ns != nil {
+			if _, canned := s.t.rpcReply("get-configuration", format); !canned {
+				if body, ok := ns.getConfiguration(op, format, s.t); ok {
+					return wrap(d.ID, body), false, dropNone
+				}
+			}
+		}
 		switch format {
 		case "set":
-			return text("show configuration | display set", "configuration-set"), false
+			return text("show configuration | display set", "configuration-set"), false, dropNone
 		case "text":
-			return text("show configuration", "configuration-text"), false
+			return text("show configuration", "configuration-text"), false, dropNone
 		}
 	}
 	if body, ok := s.t.rpcReply(op.XMLName.Local, format); ok {
-		return wrap(d.ID, body), false
+		return wrap(d.ID, body), false, dropNone
 	}
-	return rpcErr(d.ID, "operation-not-supported", "unsupported rpc "+op.XMLName.Local), false
+	if ns != nil {
+		if body, dr, ok := ns.configRPC(op); ok {
+			return wrap(d.ID, body), false, dr
+		}
+	}
+	return rpcErr(d.ID, "operation-not-supported", "unsupported rpc "+op.XMLName.Local), false, dropNone
 }

@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -98,9 +99,13 @@ func TestVersion(t *testing.T) {
 		}
 		want := "tacctl 0.2.0-test\n"
 		if len(args) > 1 && args[1] == "--long" {
-			want += "commit:     abc123\nbuilt:      2026-10-03T00:00:00Z (commit date)\ngo:         " +
-				runtime.Version() + "\ntest knobs: " + map[bool]string{true: "on", false: "off"}[app.TestKnobs] + "\n" +
-				"Copyright (c) 2026 Everett C. Haimes III · MIT License · https://github.com/rett/tacctl\n"
+			built := time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC).Local().Format("2006-01-02 15:04 MST")
+			want = "tacctl 0.2.0-test\n\n" +
+				"Pluggable network-device AAA management\n" +
+				"https://github.com/rett/tacctl · MIT License\n" +
+				"Copyright (c) 2026 Everett C. Haimes III\n\n" +
+				"commit:      abc123\nbuilt:       " + built + " (commit date)\ngo:          " +
+				runtime.Version() + "\ntest knobs:  " + map[bool]string{true: "on", false: "off"}[app.TestKnobs] + "\n"
 		}
 		if h.out.String() != want || h.err.Len() != 0 || len(h.runner.Execs()) != 0 {
 			t.Errorf("%q: stdout %q stderr %q execs %d", args, h.out.String(), h.err.String(), len(h.runner.Execs()))

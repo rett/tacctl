@@ -59,6 +59,12 @@ type Input struct {
 	// class, never a local account of the person's name); an error fails
 	// the verification, which rolls the change back. Nil: any login.
 	VerifyLogin func(Login) error
+	// VerifyService is optional: it proves a change to the NETCONF service
+	// itself (D148) on the verification, after the fresh login and before
+	// the confirming commit. It returns the proof's words (kept in
+	// Outcome.ServiceProof); an error fails the verification, which rolls
+	// the change back. Nil: nothing more is proved.
+	VerifyService func(ctx context.Context, d plan.Delta) (string, error)
 	// Plan is the caller's planner: the delta for the read text of the
 	// device, with the address tacctl connects from (D133's --from). It
 	// may refresh the pull record from the text; it must not keep the text.
@@ -657,6 +663,21 @@ func (r *run) discard(e Exit, reason string) {
 	}
 }
 
+// noPendingWord is the reason when the fresh login sees no pending commit,
+// in the words of the transport it read through: the command line's prompt
+// shows a banner, a NETCONF transport has none and says what it read
+// instead (a transport opts in with NoPendingWord).
+func (r *run) noPendingWord() string {
+	rd := Reader(r.t)
+	if r.vr != nil {
+		rd = r.vr
+	}
+	if w, ok := rd.(interface{ NoPendingWord() string }); ok {
+		return w.NoPendingWord()
+	}
+	return "the fresh login's prompt shows no pending confirmed commit"
+}
+
 // verify is D131 step 9 on a fresh login; it returns why it failed ("" it
 // passed).
 func (r *run) verify() string {
@@ -681,7 +702,7 @@ func (r *run) verify() string {
 		// and only its proof makes the change applied by someone else
 		r.noBanner = true
 	case !st.Pending:
-		return "the fresh login's prompt shows no pending confirmed commit"
+		return r.noPendingWord()
 	case !ours(st.History[0], r.id):
 		return "entry 0 of the history is not tacctl's pending commit"
 	}
@@ -693,6 +714,13 @@ func (r *run) verify() string {
 		if err := r.in.VerifyLogin(lg); err != nil {
 			return "the fresh login: " + r.errText(err)
 		}
+	}
+	if r.in.VerifyService != nil {
+		note, err := r.in.VerifyService(ctx, r.delta)
+		if err != nil {
+			return "the NETCONF service: " + r.errText(err)
+		}
+		r.o.ServiceProof = note
 	}
 	landed, err := vr.LandedCompare(ctx, r.delta)
 	if err != nil {
@@ -1147,7 +1175,7 @@ func (r *run) confirmedByOther() {
 	case st.Pending && ours(st.History[0], r.id):
 		// the fresh login's prompt showed no banner and the held login's
 		// does: the fresh login's state is not to be trusted
-		r.cancel("verification failed (the fresh login's prompt shows no pending confirmed commit)")
+		r.cancel("verification failed (" + r.noPendingWord() + ")")
 		return
 	case st.Pending || !ours(st.History[0], r.id):
 		r.named(r.settle(ctx, st), "after the verification")

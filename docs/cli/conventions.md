@@ -19,31 +19,109 @@ These patterns apply across every subcommand family:
 ## Top-Level Commands
 
 ```
-tacctl install [--branch name] [-y|--yes]  # Install tacctl and the TACACS+ backend from scratch (-y: no confirmation)
-tacctl upgrade [--branch name]  # Pull latest source, rebuild, update system files and every enabled backend
-tacctl uninstall [-y|--yes]     # Remove tacctl, its backends' services and all associated files (-y: no confirmation, keeps no archive)
-tacctl rollback <version> [--apply] [--yes] [--hosts]  # Prepare the state for the release before this one (0.2.8) or for 0.2.3: a dry run unless --apply; see install/upgrading.md, "Rolling back"
-tacctl status                   # Service health, stats, errors, password age warnings (per backend)
-tacctl passwd                   # Change your own password (asks for the current one; all tiers)
-tacctl user <subcommand>        # User management (incl. per-user scope membership)
-tacctl group <subcommand>       # Group management
-tacctl scope <subcommand>       # Scope management (CIDR+secret bundles)
-tacctl host <subcommand>        # Linux hosts: enroll, sync, unenroll, default-method
-tacctl device <subcommand>      # Device registry: names, addresses and notices for the devices that authenticate here
-tacctl breakglass <subcommand>  # Break-glass hold: make the server stop answering one device (hold, release, list); see devices/break-glass.md, "Holding break-glass"
-tacctl ssh <name|address> [-p port] [-X|-Y] [-g] [-L|-R|-D spec]... [-- ssh args]  # ssh session to a registered device or enrolled host, as you, by password (never root)
-tacctl console <subcommand>     # Login console: tiers, per-user overrides, settings
-tacctl backend <subcommand>     # Backends: list, status, enable, disable
-tacctl store <subcommand>       # The canonical store: show, import, rollback
-tacctl config <subcommand>      # Configuration
-tacctl log <subcommand>         # Log viewer
-tacctl backup <subcommand>      # Backup management
-tacctl hash                     # Show usage
-tacctl hash generate            # Prompt + print a bcrypt hash
-tacctl hash commands            # Print OS-specific client-side recipes
-tacctl version [--long]         # Print tacctl version (--long: commit, build date, Go version); `tacctl --version` and `-v` print it too
-tacctl completion bash|zsh|fish # Print the completion script of a shell (install and upgrade place the bash one)
-tacctl shell [--no-history] [--idle min] [--space-completion on|off] [--password-cache] [-c line]  # Interactive prompt: one tacctl command per line (runs as you; sudo per line)
+tacctl install [--branch name] [-y|--yes]
+
+    Install tacctl and the TACACS+ backend from scratch (-y: no confirmation)
+
+tacctl upgrade [--branch name]
+
+    Pull latest source, rebuild, update system files and every enabled backend
+
+tacctl uninstall [-y|--yes]
+
+    Remove tacctl, its backends' services and all associated files (-y: no confirmation, keeps no
+    archive)
+
+tacctl rollback <version> [--apply] [--yes] [--hosts]
+
+    Prepare the state for the release before this one (0.2.9) or for 0.2.3: a dry run unless
+    --apply; see install/upgrading.md, "Rolling back"
+
+tacctl status
+
+    Service health, stats, errors, password age warnings (per backend)
+
+tacctl passwd
+
+    Change your own password (asks for the current one; all tiers)
+
+tacctl user <subcommand>
+
+    User management (incl. per-user scope membership)
+
+tacctl group <subcommand>
+
+    Group management
+
+tacctl scope <subcommand>
+
+    Scope management (CIDR+secret bundles)
+
+tacctl host <subcommand>
+
+    Linux hosts: enroll, sync, unenroll, default-method
+
+tacctl device <subcommand>
+
+    Device registry: names, addresses and notices for the devices that authenticate here
+
+tacctl breakglass <subcommand>
+
+    Break-glass hold: make the server stop answering one device (hold, release, list); see
+    devices/break-glass.md, "Holding break-glass"
+
+tacctl ssh <name|address> [-p port] [-X|-Y] [-g] [-L|-R|-D spec]... [-- ssh args]
+
+    ssh session to a registered device or enrolled host, as you, by password (never root)
+
+tacctl console <subcommand>
+
+    Login console: tiers, per-user overrides, settings
+
+tacctl backend <subcommand>
+
+    Backends: list, status, enable, disable
+
+tacctl store <subcommand>
+
+    The canonical store: show, import, rollback
+
+tacctl config <subcommand>
+
+    Configuration
+
+tacctl log <subcommand>
+
+    Log viewer
+
+tacctl backup <subcommand>
+
+    Backup management
+
+tacctl hash
+
+    Show usage
+
+tacctl hash generate
+
+    Prompt + print a bcrypt hash
+
+tacctl hash commands
+
+    Print OS-specific client-side recipes
+
+tacctl version [--long]
+
+    Print tacctl version (--long: the project, licence and copyright, then commit, build date, Go
+    version); `tacctl --version` and `-v` print it too
+
+tacctl completion bash|zsh|fish
+
+    Print the completion script of a shell (install and upgrade place the bash one)
+
+tacctl shell [--no-history] [--idle min] [--space-completion on|off] [--password-cache] [-c line]
+
+    Interactive prompt: one tacctl command per line (runs as you; sudo per line)
 ```
 
 Run any command without arguments for detailed help.

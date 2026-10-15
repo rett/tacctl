@@ -198,6 +198,9 @@ const orderPrefix = "system authentication-order"
 func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 	var o secOut
 	exp := p.expected(name)
+	if exp.Absent {
+		return p.junosAbsent(name, r)
+	}
 	rows := junosRows(name, exp)
 	raws := junosRaw(devconf.FamilyJunos, exp)
 	ls := parseJunosLines(r)

@@ -1,0 +1,143 @@
+# tacctl 0.2.10
+
+0.2.10 adds a NETCONF service setting for Junos devices and a second
+transport for `device config apply`. A scope or a device can say that the
+NETCONF service is enabled, disabled or left alone; `apply` can load,
+check, commit under a confirmed commit and confirm over NETCONF where a
+device offers it, with the command line as before for the rest. The numbered
+list in `CHANGELOG.md` (0.2.10, items 1 to 7) is everything that differs from
+0.2.9.
+
+"Upgrading" covers 0.2.9 to 0.2.10. Nothing is written to a device unless you
+run `device config apply` or `device onboard` and answer its question.
+
+## What changes for existing devices
+
+Nothing changes for a device you do not opt in: `device config apply`
+writes over the Junos command line, as in 0.2.9. NETCONF is opt-in, per run
+or as a setting:
+
+```bash
+tacctl device config apply <name> --transport auto
+tacctl config devices apply-transport auto
+```
+
+`auto` takes a Junos device whose last read found NETCONF answering, and
+whose login may commit, over NETCONF; every other device goes over the
+command line and the device's line says why (`[via cli: NETCONF port closed
+at the last read]`). `netconf` never falls back: a device that does not
+answer or cannot confirm is failed with the reason. A change to the NETCONF
+service itself is always made over the command line.
+
+Over NETCONF the change is loaded under the candidate's lock (a Junos device
+refuses a confirmed commit in a private session), checked, committed under a
+confirmed commit and confirmed by the session that made it. A session that
+closes or dies without confirming leaves the commit pending until its window
+ends (10 minutes by default, `device.apply.confirm_timeout`), as over the
+command line; while tacctl runs, a failed verification is cancelled at once
+with `rollback 1` and a commit. The fresh login still proves the device
+before the confirming commit. A candidate that holds another editor's staged
+change is refused, never committed with the change.
+
+## The NETCONF service setting
+
+```bash
+tacctl scope netconf <scope> enable [--connection-limit <n>] [--rate-limit <n>]
+tacctl scope netconf <scope> disable
+tacctl scope netconf <scope> leave              # the default
+tacctl device netconf <name> enable|disable|leave|clear
+```
+
+- `leave`, the default, plans and compares nothing of the service: a scope
+  that never ran these verbs renders, pulls, diffs and plans exactly as in
+  0.2.9.
+- `enable` renders and plans `set system services netconf ssh`, or the
+  statements of the limits that are set; `disable` plans `delete system
+  services netconf`. A device's own value wins over its scope's; `clear`
+  gives the decision back to the scope.
+- `apply` writes only those statements. Everything else under `system
+  services` (the SSH service, the web management, a trace option, the port)
+  stays on the list of what is never written; a limit the setting states
+  none of is the device's own and is kept.
+- A change to the service is always made over the command line, because the
+  confirmation depends on the service: an enabling change must be answered
+  by a NETCONF hello as you before it is confirmed, and a disabling one must
+  find the service no longer answering. A probe that cannot tell rolls the
+  change back.
+- Disabling the service ends it for every NETCONF client of the device, not
+  only tacctl's; the plan says so.
+
+## Also
+
+`tacctl version --long` has a new layout: the version first, then the
+project, address, licence and copyright, then the commit, the build date
+and the rest with their values aligned. The labels, `commit:` among them,
+are as before.
+
+## Upgrading from 0.2.9
+
+Upgrade with `sudo tacctl upgrade` as always; a second run changes nothing.
+The upgrade writes nothing to a device and no sudoers drop-in changes.
+
+- **New settings are absent until set.** `device.apply.transport` and the
+  `netconf_scope` keys are written to `tacctl.yaml` only when you set them;
+  a device's own setting is a `netconf:` map of its `devices.yaml` entry,
+  written only by `device netconf`.
+- **Records gain a field.** The `applied` part of a record names the
+  transport that wrote it (`via`). A record made by 0.2.9 has none and was
+  the command line. 0.2.9 ignores the field.
+- A device's rendered configuration is unchanged until a scope or a device
+  is given a NETCONF setting.
+
+## Known limits
+
+- **NETCONF is opt-in because it has been tried on one switch and one Junos
+  release.** It is tested against the fake device, and with the release
+  build on a Junos 25.4 lab switch: the read, the check, an apply with the
+  fresh-login proof, the cancel on an interrupt and on a declined hold, the
+  refusal of another editor's staged change, a change of the NETCONF
+  connection limit and the disabling and enabling of the service, each
+  compared with the configuration before it. Not yet run: a large batch
+  against one switch (the NETCONF connection and rate limits), another
+  editor's commit between the gate and the lock, and other Junos releases
+  and platforms (the refusal texts and the pending marker are those of one
+  release). A tacctl that is killed leaves a confirmed commit pending until
+  its window ends, as over the command line; the next run names it and
+  refuses until then.
+- The connection and rate limits are checked at 1 to 250 from the Junos
+  reference, not on a device.
+- A change to the NETCONF service is always made over the command line, and
+  `--transport netconf` refuses it.
+- `device config rollback` (undoing an apply from the device's commit
+  history), device accounts and break-glass rotation, and unattended drift
+  detection are not in this release.
+- Apply is Junos only; Cisco devices and WTI units are refused as in 0.2.9.
+
+## Rolling back
+
+`tacctl rollback 0.2.9` takes the release before this one as a target, as a
+dry run until `--apply [--yes]`:
+
+```
+tacctl rollback 0.2.9                  # the dry run: steps, warnings, nothing written
+tacctl rollback 0.2.9 --apply --yes    # convert (after a snapshot)
+tacctl upgrade --branch 0.2.9          # install 0.2.9
+```
+
+It removes `device.apply.transport` and the `netconf_scope` keys from
+`tacctl.yaml` and the `netconf:` map of each device from `devices.yaml`
+(0.2.9 refuses them; `--yes` is needed while one is set). It rewrites no
+drop-in: this release changed none. It lists, and does not delete, what
+0.2.10 left that 0.2.9 ignores: the `via` field of the apply records.
+
+**An apply that is not settled stops the rollback**, the dry run too: a
+device whose record says `pending` or `unknown` is named with its time and
+the command that settles it, `tacctl device config apply <name> --check`
+(or `tacctl device config forget <name>` once the device was looked at by
+hand). Until 0.2.9 is installed, do not run `scope netconf`, `device
+netconf`, `config devices apply-transport` or `device config apply
+--transport`; they write the settings again.
+
+`tacctl rollback 0.2.3` works as before and removes the same settings with
+the other keys 0.2.3 lacks. `0.2.8` is no longer a target: roll back to 0.2.9
+and then use 0.2.9's own `tacctl rollback 0.2.8`.

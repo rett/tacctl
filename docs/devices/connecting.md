@@ -5,9 +5,13 @@
 The device registry (`/etc/tacctl/devices.yaml`) gives the network devices that authenticate against this server a name, and `tacctl ssh <name>` opens a session to one. Enrolled Linux hosts are in the same namespace.
 
 ```
-tacctl device add core-sw1 10.99.0.1 --vendor cisco --legacy-ssh   # register; pins the ssh host keys and prints their fingerprints
-tacctl device check core-sw1        # scope, vendor tag, last seen, reachable, host key against the pin, SNMP name and location
-tacctl device config show core-sw1  # the device's data, then the walkthrough for its vendor and scope
+tacctl device add core-sw1 10.99.0.1 --vendor cisco --legacy-ssh   # register; pins the ssh host
+                                                                   # keys and prints their
+                                                                   # fingerprints
+tacctl device check core-sw1        # scope, vendor tag, last seen, reachable, host key against the
+                                    # pin, SNMP name and location
+tacctl device config show core-sw1  # the device's data, then the walkthrough for its vendor and
+                                    # scope
 tacctl ssh core-sw1                 # a session, as you
 tacctl ssh core-sw1 -- show version # one remote command
 ```

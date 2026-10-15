@@ -329,7 +329,7 @@ user add alice superuser --hash {HASH} --scopes lab ;; _completion-names users
 version
 --version
 -v
-@known 3.9 item 1: 'version --long' adds commit, build date, Go version and the test knobs
+@known 3.9 item 1: 'version --long' adds commit, build date, Go version and the test knobs; 0.2.10 item 7: the project, address, licence and copyright come under the version and the facts are aligned
 version --long
 
 # the tunables come from tacctl.yaml

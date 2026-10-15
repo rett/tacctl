@@ -139,6 +139,15 @@ var keptShapes = map[string][]keptShape{
 		{Row: "junos.system.ntp-trusted-key", Pattern: "system ntp trusted-key $", keep: notRendered},
 		// no row: the rest of 'system ntp' (threshold, interval-range, ...)
 		{Pattern: "system ntp", keep: always},
+		// The NETCONF service (0.2.10): a limit the setting states and the
+		// device holds otherwise is a difference (the plan replaces it in
+		// place); a limit the setting states none of, the bare 'ssh' and every
+		// other statement under the service are the device's own.
+		{Row: "junos.netconf.connection-limit", Pattern: "system services netconf ssh connection-limit", keep: notRendered},
+		{Row: "junos.netconf.rate-limit", Pattern: "system services netconf ssh rate-limit", keep: notRendered},
+		{Row: "junos.netconf.ssh", Pattern: "system services netconf ssh", keep: always},
+		// no row: the rest of the service (a trace option, ...)
+		{Pattern: "system services netconf", keep: always},
 	},
 	FamilyWTI: wtiShapes,
 	FamilyIOS: {
@@ -293,7 +302,8 @@ func unmanaged(fam, section string, x stmt, rs *renderedSet) bool {
 		if wtiKept(section, x, rs) {
 			return true
 		}
-	} else if section != SectionSNMP && section != SectionSystem || strings.HasPrefix(x.stem, "deactivate ") {
+	} else if section != SectionSNMP && section != SectionSystem && !(fam == FamilyJunos && section == SectionNetconf) ||
+		strings.HasPrefix(x.stem, "deactivate ") {
 		return false
 	}
 	words := stmtWords(fam, x)

@@ -4,19 +4,27 @@
 
 `tacctl host` does the copy-and-run for you and keeps a registry of enrolled hosts:
 ```
-tacctl host enroll admin@web1.example.net     # into the scope that covers web1's address; installs, registers
-tacctl host enroll admin@web2 --method radius # the same with pam_radius_auth against the RADIUS backend
+tacctl host enroll admin@web1.example.net     # into the scope that covers web1's address; installs,
+                                              # registers
+tacctl host enroll admin@web2 --method radius # the same with pam_radius_auth against the RADIUS
+                                              # backend
 tacctl host enroll --local                    # this machine
 tacctl user scope jsmith add <scope>          # give a user a login on hosts of that scope...
 tacctl host sync web1                         # ...and push the account (or: tacctl host sync --all)
 tacctl host list                              # with each host's METHOD
-tacctl host show web1                         # web1 in full: scope, keys, sightings, accounts, last sync, OS facts
-tacctl host show web1 --check                 # ...and compare the host itself with what tacctl would make it
-tacctl host target web1                       # how web1 is reached (target, port, identity, addresses)
+tacctl host show web1                         # web1 in full: scope, keys, sightings, accounts, last
+                                              # sync, OS facts
+tacctl host show web1 --check                 # ...and compare the host itself with what tacctl
+                                              # would make it
+tacctl host target web1                       # how web1 is reached (target, port, identity,
+                                              # addresses)
 tacctl host target web1 root@web1-mgmt.example.net --port 2222   # change it, tested first
-tacctl host provisioner web1 rotate deploy --key ~/.ssh/web1-deploy --remove-old   # switch the account tacctl logs in with
-tacctl host unenroll web1                     # remove the login method; accounts and home directories stay
-tacctl host default-method radius             # what hosts enrolled without --method get (host.default_method)
+# switch the account tacctl logs in with:
+tacctl host provisioner web1 rotate deploy --key ~/.ssh/web1-deploy --remove-old
+tacctl host unenroll web1                     # remove the login method; accounts and home
+                                              # directories stay
+tacctl host default-method radius             # what hosts enrolled without --method get
+                                              # (host.default_method)
 ```
 The method of a host is, in order: `--method`; the method the host is registered with; the scope's `auth-method` (`tacctl scope auth-method`); the one protocol the scope's `protocols` filter names; `host default-method` (default `tacplus`). Its backend must be enabled and the scope must allow its protocol.
 
@@ -29,7 +37,8 @@ The scope of a host is, in order: `--scope`; the scope the host is registered in
 **One host in full.** `tacctl host show <name>` prints, in sections: Connection (target, port, identity, server, method), Scope (the registered one, the scope and prefix that answer the host's address today, the drift warning of `host list` with its `host move` fix, a pending staging /32), Address (recorded, previous and when it changed), Host keys (the pinned fingerprints and the command that shows them on the host), Sightings, Notices (`--all`: the acknowledged ones too), Accounts (the tacctl users the next sync makes there, with tier, UID and groups; disabled users counted), Last sync (when, by whom, the result or why it failed, the client script protocol, the accounts created, updated and removed) and Host facts (OS, sshd version, the PAM module and its version, `useradd`'s UID range from `login.defs`, as that run read them). The last two are kept in `/etc/tacctl/hosts/<name>.json`, written by each `host enroll` and `host sync` (a failed sync too) and removed by `host unenroll`; they are only shown, never used to decide anything, and a host with no such record shows `not recorded (before 0.2.2)`. `--json` prints every field. `--check` logs in read-only (as `host sync` does: your ssh, sudo with a terminal for its password) and compares the host with what tacctl would make it: tacctl's groups and their GIDs, each account's UID, primary group and home mode, the PAM files tacctl writes (present, and the text the client script recorded writing), the client script protocol and the host's ssh keys against the pins; each difference is one line with the command that fixes it, and the exit status is 1 when there is one:
 ```
   - group tac-superuser has GID 1002, not 80002. Fix: tacctl host sync web1
-  - /etc/pam.d/tacctl-auth is not the text tacctl wrote there. Fix: tacctl host enroll admin@web1.example.net --name web1
+  - /etc/pam.d/tacctl-auth is not the text tacctl wrote there. Fix:
+    tacctl host enroll admin@web1.example.net --name web1
 ```
 
 **Provisioning off-site.** A host or network device set up on a bench, at an address its scope does not cover, before it is shipped to the scope's network: give the scope it will be installed in and `--staging` (`tacctl host enroll admin@bench-host --scope lab --staging`; `tacctl config cisco|juniper|wti --scope lab --staging <bench-ip> [--name <device>]`). The bench address joins the scope as a `/32`, so the scope's own secret and users answer the device on the bench and nothing changes on it when it comes online in the scope's prefixes. tacctl records it (`tacctl scope staging` lists each, with where its host or device is seen now) and removes the `/32` once the host (its next enroll or sync) or the registered device (`tacctl device address <name> <ip>`, `device add`) is seen at another address the scope covers: `Staging address 203.0.113.9/32 removed from scope 'lab': sw1 is now seen at 192.168.5.9 (prefix 192.168.0.0/16).` A device staged without a name, and not registered at its bench address, is removed by hand: `tacctl scope staging remove <address>`. **Moving a host:** `tacctl host move <host> [<scope>]` (without a scope: the one that answers its address; `--all`: every host another scope answers), which is an enroll of the registered host naming the new scope; before anything changes it says `Moving dev from scope 'linux-dev' to scope 'lab': it gets that scope's secret and users.` and names the users whose accounts the move deletes, then asks on a terminal (`[y/N]`); without a terminal it stops unless given `--yes`. Removed users' homes follow the usual rules (asked, `--remove-home`, or kept). **Switching:** re-enrolling a registered host with the other `--method` removes the first method's module, secret file and SELinux module and installs the other; re-enrolling without `--method` keeps the host's method.

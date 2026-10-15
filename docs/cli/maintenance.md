@@ -5,30 +5,62 @@
 ## Backend Commands — `tacctl backend`
 
 ```
-backend list                Every backend: protocol, implementation, installed, enabled, service
-backend status [<id>]       Service and listener state of every backend (or one)
-backend enable <id> [-y]    Install the backend if needed, enable it, render its config, start it
-backend disable <id> [-y]   Stop and disable it, take it out of backends.enabled (confirms); its package and rendered files stay
+backend list
+
+    Every backend: protocol, implementation, installed, enabled, service
+
+backend status [<id>]
+
+    Service and listener state of every backend (or one)
+
+backend enable <id> [-y]
+
+    Install the backend if needed, enable it, render its config, start it
+
+backend disable <id> [-y]
+
+    Stop and disable it, take it out of backends.enabled (confirms); its package and rendered files
+    stay
 ```
 
 ## Store Commands — `tacctl store`
 
 ```
-store show [--json]                          Print the model (users, groups, scopes, filters); superuser-only (secrets, hashes)
+store show [--json]                          Print the model (users, groups, scopes, filters);
+                                             superuser-only (secrets, hashes)
 store import [--check|--force] [--replace] [<file>]
-                                             Import an old-style tacquito.yaml (default: the live one). --check writes nothing and
-                                             proves equivalence; --force drops what the store cannot represent; --replace overwrites a store
-store rollback                               Restore the pre-store tacquito.yaml, remove the store, restart (legacy read-only mode)
+                                             Import an old-style tacquito.yaml (default: the live
+                                             one). --check writes nothing and proves equivalence;
+                                             --force drops what the store cannot represent;
+                                             --replace overwrites a store
+store rollback                               Restore the pre-store tacquito.yaml, remove the store,
+                                             restart (legacy read-only mode)
 ```
 
 ## Log Commands — `tacctl log`
 
 ```
-log tail [-f|--follow] [n] [--backend <id>]  Last N entries (default 20): TACACS+ journal; RADIUS auth log and daemon log; -f/--follow follows new ones until Ctrl-C
-log search <term> [--backend <id>]  Search the logs for a username or keyword (TACACS+: last 7 days)
-log failures [--backend <id>]       Auth failures from the last 24 hours
-log accounting [n] [--backend <id>] Last N accounting records
-log clear [--force|-y] [--backend <id>]  Purge the TACACS+ journal and truncate the accounting logs; truncate the RADIUS auth, accounting and daemon logs (prompts)
+log tail [-f|--follow] [n] [--backend <id>]
+
+    Last N entries (default 20): TACACS+ journal; RADIUS auth log and daemon log; -f/--follow
+    follows new ones until Ctrl-C
+
+log search <term> [--backend <id>]
+
+    Search the logs for a username or keyword (TACACS+: last 7 days)
+
+log failures [--backend <id>]
+
+    Auth failures from the last 24 hours
+
+log accounting [n] [--backend <id>]
+
+    Last N accounting records
+
+log clear [--force|-y] [--backend <id>]
+
+    Purge the TACACS+ journal and truncate the accounting logs; truncate the RADIUS auth, accounting
+    and daemon logs (prompts)
 ```
 
 With more than one backend enabled each subcommand shows every backend's log in a section headed by its name; `--backend <id>` (anywhere on the line) shows one.
@@ -39,8 +71,10 @@ TACACS+ authentication lines read `accepting user [<user>] from [<address>] usin
 
 ```
 backup list                    Show snapshots (newest first), then old-style backups
-backup diff [timestamp]        Diff store.yaml and tacctl.yaml against a snapshot (default: most recent)
-backup restore <ts> [--legacy] Restore a snapshot (with confirmation); --legacy for an old-style backup
+backup diff [timestamp]        Diff store.yaml and tacctl.yaml against a snapshot (default: most
+                               recent)
+backup restore <ts> [--legacy] Restore a snapshot (with confirmation); --legacy for an old-style
+      backup
 ```
 
 A backup is a snapshot of the canonical files, `/etc/tacctl/backups/<timestamp>/{store.yaml,tacctl.yaml,manifest}`, taken automatically before every change that would alter them (nothing is added when they already equal the newest snapshot). The manifest records `rendered.json` and the tacctl version. The newest 30 snapshots are kept. Snapshots hold shared secrets and password hashes: the directory is `0700`, the files `0600`, and `backup diff` and `backup restore` are superuser-only.

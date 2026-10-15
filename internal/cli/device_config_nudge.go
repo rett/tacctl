@@ -27,7 +27,7 @@ import (
 // name is not either.
 func rendersField(field string) bool {
 	switch field {
-	case "location", "description", "address", "vendor", "config-syntax":
+	case "location", "description", "address", "vendor", "config-syntax", "netconf":
 		return true
 	}
 	return false
@@ -183,6 +183,8 @@ func scopeWrites(verb string, args []string) bool {
 		}
 	case "protocols":
 		return sub == "set" || sub == "clear"
+	case "netconf":
+		return sub == "enable" || sub == "disable" || sub == "leave"
 	case "aaa-order", "exec-timeout", "tacacs-group", "radius-group", "auth-method":
 		return n > 1
 	}

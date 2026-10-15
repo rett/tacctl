@@ -429,6 +429,12 @@ func parseDevice(name string, v any) (*Device, error) {
 				return nil, err
 			}
 			d.SNMP = sn
+		case "netconf":
+			nc, err := parseNetconf(name, val)
+			if err != nil {
+				return nil, err
+			}
+			d.Netconf = nc
 		case "host_keys", "ack":
 			l, ok := strList(val)
 			if !ok {
@@ -489,6 +495,55 @@ func parseSNMP(name string, v any) (SNMP, error) {
 	return s, nil
 }
 
+// parseNetconf reads a device's 'netconf:' map (D145): state, connection_limit
+// and rate_limit; anything else is refused, as everywhere in the file.
+func parseNetconf(name string, v any) (Netconf, error) {
+	var n Netconf
+	m, ok := v.(*yamlpy.Map)
+	if !ok {
+		return n, fail("device '" + name + "': netconf must be a mapping.")
+	}
+	bad := func(key string) error { return fail("device '" + name + "': netconf: invalid '" + key + "'.") }
+	for k, val := range m.All() {
+		switch k {
+		case "state":
+			t, ok := val.(string)
+			if !ok || t == "" {
+				return n, bad(k)
+			}
+			n.State = t
+		case "connection_limit", "rate_limit":
+			i, ok := val.(int)
+			if !ok || i == 0 {
+				return n, bad(k)
+			}
+			if k == "connection_limit" {
+				n.ConnectionLimit = i
+			} else {
+				n.RateLimit = i
+			}
+		default:
+			return n, fail("device '" + name + "': netconf: unknown key '" + k + "'.")
+		}
+	}
+	return n, nil
+}
+
+// netconfDoc is the 'netconf:' map of a device's setting, only what is set.
+func netconfDoc(n Netconf) *yamlpy.Map {
+	m := yamlpy.NewMap()
+	if n.State != "" {
+		m.Set("state", n.State)
+	}
+	if n.ConnectionLimit != 0 {
+		m.Set("connection_limit", n.ConnectionLimit)
+	}
+	if n.RateLimit != 0 {
+		m.Set("rate_limit", n.RateLimit)
+	}
+	return m
+}
+
 // snmpDoc is the 'snmp:' map of a device's settings, only what is set.
 func snmpDoc(s SNMP) *yamlpy.Map {
 	m := yamlpy.NewMap()
@@ -532,6 +587,9 @@ func (f *File) doc() *yamlpy.Map {
 		}
 		if !d.SNMP.Empty() {
 			m.Set("snmp", snmpDoc(d.SNMP))
+		}
+		if !d.Netconf.Empty() {
+			m.Set("netconf", netconfDoc(d.Netconf))
 		}
 		if len(d.HostKeys) > 0 {
 			m.Set("host_keys", slices.Clone(d.HostKeys))

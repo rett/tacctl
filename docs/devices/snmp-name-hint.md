@@ -8,7 +8,8 @@
 $ tacctl device add core-sw1 192.0.2.10 --vendor juniper
 [INFO] Device 'core-sw1' registered: 192.0.2.10, juniper.
   The device calls itself 'sw1.site-a.example' (SNMP sysName).
-  ! That is not the name given or its --hostname: add --hostname sw1.site-a.example, or register it as sw1.site-a.example.
+  ! That is not the name given or its --hostname: add --hostname sw1.site-a.example, or register
+    it as sw1.site-a.example.
 ```
 
 A match (the name, the `--hostname`, or the first label of either, in any case) prints the first line only; a mismatch is a warning, never a refusal. A device that does not answer within the timeout (`snmp.timeout`, 2 s by default, one retry), an empty sysName, or no SNMP set up is one info line (`No SNMP answer from 192.0.2.10; no name hint.`), and the add goes ahead; when a scan recorded a NAS-Identifier for the address, that is shown instead, labelled `(NAS-Identifier seen by a scan)`. `--no-lookup` skips it. `device add <address>` with no name offers the sysName, lowercased, and takes it only after a `y` at a terminal; without a terminal, without an answer, or when the sysName is no valid device name or a generic one (a WTI unit's Site ID `WTI`), it is refused with the usage line. `device check` shows the sysName in a `SNMP name` row (`match` or `differs`), and `--json` as `sysname`. Nothing of it is stored.

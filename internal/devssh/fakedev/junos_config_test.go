@@ -280,7 +280,7 @@ func TestJunosConfirmedCommitExpiresOnTheClock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(h, "0   2026-10-12 02:00:00 UTC by gotest via cli commit confirmed, rollback in 2mins\n    tacctl apply x\n1   ") {
+	if !strings.HasPrefix(h, "0   2026-10-12 02:00:00 UTC by gotest via cli commit confirmed, rollback in 2mins\n    tacctl apply x\n    rollback pending\n1   ") {
 		t.Errorf("history:\n%s", h)
 	}
 	// the banner stands before every prompt of every session, the minutes

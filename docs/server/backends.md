@@ -13,7 +13,8 @@ TACACS+ over TLS is reserved, not implemented: a listener's `tls` block is part 
 
 ```
 tacctl backend list             # protocol, implementation, installed, enabled, service state
-tacctl backend status [<id>]    # state, uptime, PID, and each listener: unit state, whether something listens
+tacctl backend status [<id>]    # state, uptime, PID, and each listener: unit state, whether
+                                # something listens
 tacctl backend enable <id> [-y] # install if needed, render, enable at boot, start
 tacctl backend disable <id> [-y]
 ```

@@ -155,3 +155,53 @@ func RollbackConfigSyntax(path string, before func() error) ([]string, error) {
 	}
 	return cleared, nil
 }
+
+// The per-device NETCONF service setting of 0.2.10 (D145 of docs/plans/
+// 0.2.10-plan.md, 'tacctl device netconf'): 0.2.9's parser refuses a device
+// with a key it does not know (device 'x': unknown key 'netconf'), so the
+// key goes before an older release is installed, as the configuration
+// syntax does: a rollback plans with NetconfSet and applies with
+// RollbackNetconf.
+
+// NetconfSet are the names of the devices that have a NETCONF service
+// setting, in file order, of the registry at path (none when the file is
+// missing).
+func NetconfSet(path string) ([]string, error) {
+	f, err := Load(path)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, d := range f.Devices {
+		if !d.Netconf.Empty() {
+			out = append(out, d.Name)
+		}
+	}
+	return out, nil
+}
+
+// RollbackNetconf removes the NETCONF service setting of every device, under
+// the registry's lock, in one write; before runs first (a snapshot). It
+// returns the names it cleared, in file order. A registry without any is not
+// written (before does not run), and a missing file is not created.
+func RollbackNetconf(path string, before func() error) ([]string, error) {
+	names, err := NetconfSet(path)
+	if err != nil || len(names) == 0 {
+		return nil, err
+	}
+	var cleared []string
+	_, err = Mutate(path, "", before, func(f *File) error {
+		cleared = cleared[:0]
+		for _, d := range f.Devices {
+			if !d.Netconf.Empty() {
+				cleared = append(cleared, d.Name)
+				d.Netconf = Netconf{}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return cleared, nil
+}
