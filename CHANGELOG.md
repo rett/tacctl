@@ -14,19 +14,18 @@ current behaviour; this file is where history lives.
    that is unchanged prints nothing more. Before, the line said only `set`,
    `kept (pass --force)` or `replaced`.
 
-2. **`device list` and `device show` refresh the seen cache from the logs.**
-   A login used to show in LAST SEEN only after someone ran `device scan`.
-   When the cache is older than five minutes, `list` and `show` first read
-   the backends' logs again from where the last scan stopped. The refresh is
-   narrow on purpose: logs only (no host-key re-scan, no connection to a
-   device), at most five seconds, only for a caller who may scan (operator
-   tier and up), never the first scan of an install and never the catch-up
-   of a cache older than `stale-days` (both stay `device scan`). It says
-   nothing, except one line on standard error when the cache is an hour old
-   or more (the catch-up can take seconds). A log that cannot be read, a
-   read that runs out of its five seconds, a scan already running or a
-   read-only caller leave the cache as it was, and a failed read is not
-   tried again for an hour. `list --scan` and `device scan` are unchanged.
+2. **A session start brings the seen data up to date in the background.** A
+   login used to show in LAST SEEN only after someone ran `device scan`.
+   An interactive session of the console or of `tacctl shell` (operator tier
+   and up) now starts `device scan --if-stale --quiet` as it opens, detached,
+   with its output thrown away, under the same sudo rules as the session's
+   own lines; nothing a person types waits for it, and `list` and `show` still
+   read the cache only. `--if-stale` does nothing when the cache is younger
+   than five minutes or another scan holds it (sessions that start together
+   run one scan, the others leave at once), and re-scans a device's host keys
+   only when its last scan is a day old, so a session start does not touch
+   every device; `--quiet` prints nothing. Both are options of `device scan`
+   for use by hand too; `--if-stale` refuses `--full` and `--since`.
 
 3. **`tacctl group list` says when no group has the engineer tier.** The
    engineer tier exists only through a tier setting, so an install without

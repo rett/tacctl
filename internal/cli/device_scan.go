@@ -6,15 +6,12 @@ package cli
 // enabled backend's log of its devices (backend.Sighter) into the seen cache
 // (/var/lib/tacctl/devices-seen.json, internal/devreg/seen.go), re-scans the
 // pinned host keys and prints the scan-time notices. 'list' and 'show' read
-// the cache, after a bounded log-only refresh of it (refreshSeen); 'scan' is
-// explicit. A scan never writes devices.yaml.
+// the cache only; 'scan' is explicit, and a session start runs it in the
+// background (--if-stale --quiet, seen_refresh.go). A scan never writes devices.yaml.
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -92,121 +89,6 @@ func (inv *invocation) scanAllowed() bool {
 	return tier.Permits(inv.tierGate().Caller(inv.ctx), "device", "scan")
 }
 
-// --- the refresh of a read -------------------------------------------------------------
-
-const (
-	// seenAutoMinAge is how old the seen cache must be before 'device list'
-	// and 'device show' read the logs again.
-	seenAutoMinAge = 5 * time.Minute
-	// seenAutoBudget bounds one such read.
-	seenAutoBudget = 5 * time.Second
-	// seenAutoBackoff is how long a read that failed or ran out of time is
-	// not tried again: a log too long to catch up inside the budget must not
-	// cost every 'device list' the whole budget. 'device scan' has none.
-	seenAutoBackoff = time.Hour
-	// seenAutoNoteAge is how old the cache must be for the read to say it is
-	// reading the logs: a catch-up of that size can take seconds.
-	seenAutoNoteAge = time.Hour
-	// seenAutoFailedMark is the marker file of the last failed read, beside
-	// the cache.
-	seenAutoFailedMark = ".devices-seen.refresh-failed"
-)
-
-// refreshSeen brings the seen cache up to date for 'device list' and
-// 'device show', so a login shows without a person running 'device scan'.
-// It is deliberately narrow: it only reads the logs of the enabled backends
-// from where the last scan stopped (no host-key re-scan, no connection to a
-// device); it never makes the first scan of an install or the catch-up of a
-// cache older than stale-days, which stay an explicit 'device scan'; the
-// caller must be allowed to scan; another scan under way, a source that
-// cannot be read, or the time budget leave the cache as it was; and it
-// prints nothing, but for one line on standard error when the cache is an
-// hour old or more (the catch-up can take seconds). A read that failed or
-// ran out of its budget is not tried again for an hour. res.Seen is replaced
-// only when the cache was saved.
-func (inv *invocation) refreshSeen(res *devreg.Resolver) {
-	if res == nil || !res.Seen.HasData() || !inv.scanAllowed() {
-		return
-	}
-	days := res.File.StaleDays
-	if days < 1 {
-		days = devreg.DefaultStaleDays
-	}
-	now := inv.app.Knobs.Now()
-	if age := now.Sub(res.Seen.Updated); age < seenAutoMinAge || age > time.Duration(days)*24*time.Hour {
-		return
-	}
-	mark := filepath.Join(filepath.Dir(inv.app.Paths.SeenCache), seenAutoFailedMark)
-	if fi, err := os.Stat(mark); err == nil && now.Sub(fi.ModTime()) < seenAutoBackoff {
-		return
-	}
-	set := inv.app.Backends()
-	ids, err := set.Enabled()
-	if err != nil {
-		return
-	}
-	var srcs []devreg.ScanSource
-	for _, id := range ids {
-		b, err := set.Get(id)
-		if err != nil {
-			return
-		}
-		src := devreg.ScanSource{ID: id}
-		if s, ok := b.(backend.Sighter); ok {
-			src.Sighter = s
-		}
-		srcs = append(srcs, src)
-	}
-	path := inv.app.Paths.SeenCache
-	unlock, ok, err := devreg.TryLockSeen(path)
-	if err != nil || !ok {
-		return
-	}
-	defer unlock()
-	seen, err := devreg.LoadSeen(path)
-	if err != nil || !seen.HasData() || now.Sub(seen.Updated) < seenAutoMinAge {
-		return
-	}
-	if now.Sub(seen.Updated) >= seenAutoNoteAge {
-		inv.stderrLine("Reading the logs for the seen data (the cache is " + ageText(now.Sub(seen.Updated)) +
-			" old; at most " + strconv.Itoa(int(seenAutoBudget/time.Second)) + " seconds, 'tacctl device scan' reads them without a limit)...")
-	}
-	failed := func() {
-		_ = os.WriteFile(mark, nil, 0o600)
-		_ = os.Chtimes(mark, now, now)
-	}
-	ctx, cancel := context.WithTimeout(inv.ctx, seenAutoBudget)
-	defer cancel()
-	for _, r := range devreg.ScanSources(ctx, seen, srcs, devreg.ScanOptions{Now: now, StaleDays: days}) {
-		if r.Err != nil {
-			failed()
-			return
-		}
-	}
-	var names []string
-	for _, e := range res.All() {
-		names = append(names, e.Name)
-	}
-	seen.Prune(now, days, names)
-	if seen.Save(path) != nil {
-		failed()
-		return
-	}
-	_ = os.Remove(mark)
-	res.Seen = seen
-}
-
-// ageText is a cache's age as a note words it.
-func ageText(d time.Duration) string {
-	if d >= 48*time.Hour {
-		return strconv.Itoa(int(d/(24*time.Hour))) + " days"
-	}
-	if d < 2*time.Hour {
-		return "an hour"
-	}
-	return strconv.Itoa(int(d/time.Hour)) + " hours"
-}
-
 // --- the scan ------------------------------------------------------------------------
 
 // scanRequest is what a scan reads: --full, --since, --backend.
@@ -214,7 +96,20 @@ type scanRequest struct {
 	full  bool
 	since time.Duration
 	only  string
+	// ifStale is the background form (a session start): do nothing when
+	// another scan holds the cache or the cache is younger than
+	// seenFreshAge, and re-scan a device's host keys only when its last scan
+	// is older than keyRescanAge.
+	ifStale bool
 }
+
+const (
+	// seenFreshAge is how young the seen cache is when --if-stale leaves it.
+	seenFreshAge = 5 * time.Minute
+	// keyRescanAge is how old a device's host-key scan is before --if-stale
+	// connects to it again: every session start must not touch every device.
+	keyRescanAge = 24 * time.Hour
+)
 
 // scanResult is what runScan leaves for the printing.
 type scanResult struct {
@@ -223,6 +118,8 @@ type scanResult struct {
 	keyErr  error
 	res     *devreg.Resolver
 	rebuilt bool
+	// skipped: --if-stale found the cache current, or a scan under way.
+	skipped bool
 }
 
 // scanBackends are the sources of a scan: every enabled backend, or the one
@@ -282,8 +179,17 @@ func (inv *invocation) runScan(rq scanRequest) (*scanResult, error) {
 		return nil, err
 	}
 	path := inv.app.Paths.SeenCache
-	unlock, err := devreg.LockSeen(path)
-	if err != nil {
+	var unlock func()
+	if rq.ifStale {
+		// Many sessions may start at once: the one that finds a scan
+		// under way leaves it to that scan.
+		var ok bool
+		if unlock, ok, err = devreg.TryLockSeen(path); err != nil {
+			return nil, err
+		} else if !ok {
+			return &scanResult{skipped: true, res: res}, nil
+		}
+	} else if unlock, err = devreg.LockSeen(path); err != nil {
 		return nil, err
 	}
 	defer unlock()
@@ -294,10 +200,25 @@ func (inv *invocation) runScan(rq scanRequest) (*scanResult, error) {
 		seen = devreg.NewSeen()
 	}
 	now := inv.app.Knobs.Now()
+	if rq.ifStale && seen.HasData() && now.Sub(seen.Updated) < seenFreshAge {
+		// Another session's scan finished while this one started.
+		res.Seen = seen
+		return &scanResult{skipped: true, res: res}, nil
+	}
 	out.reports = devreg.ScanSources(inv.ctx, seen, srcs, devreg.ScanOptions{
 		Now: now, StaleDays: f.StaleDays, Full: rq.full || out.rebuilt, Since: rq.since})
 	all := res.All()
-	out.keys = devreg.RescanKeys(inv.ctx, inv.app.Runner, keyTargets(all, false), keyFallback(inv))
+	targets := keyTargets(all, false)
+	if rq.ifStale {
+		var due []devreg.KeyTarget
+		for _, t := range targets {
+			if k := seen.HostKeys[strings.ToLower(t.Name)]; k == nil || now.Sub(k.Scanned) >= keyRescanAge {
+				due = append(due, t)
+			}
+		}
+		targets = due
+	}
+	out.keys = devreg.RescanKeys(inv.ctx, inv.app.Runner, targets, keyFallback(inv))
 	out.keyErr = seen.RecordKeyResults(out.keys, now)
 	var names []string
 	for _, e := range all {
@@ -435,7 +356,10 @@ func (inv *invocation) printNotices(res *devreg.Resolver) {
 
 // scanFlags reads --full, --since and --backend.
 func (inv *invocation) scanFlags(p Parsed) (scanRequest, error) {
-	rq := scanRequest{full: p.Has("--full"), only: p.Value("--backend")}
+	rq := scanRequest{full: p.Has("--full"), only: p.Value("--backend"), ifStale: p.Has("--if-stale")}
+	if rq.ifStale && (rq.full || p.Has("--since")) {
+		return rq, inv.usageErr("--if-stale is the background form: give it without --full or --since.")
+	}
 	if p.Has("--backend") && rq.only == "" {
 		return rq, inv.usageErr("--backend needs a backend id.")
 	}
@@ -465,9 +389,15 @@ func (inv *invocation) deviceScan(args []string) error {
 	if err != nil {
 		return err
 	}
-	inv.printScan(sr)
-	inv.printNotices(sr.res)
-	inv.echo("")
+	switch {
+	case p.Has("--quiet"):
+	case sr.skipped:
+		inv.app.Out.Info("The seen data is current, or a scan is under way; nothing was read.")
+	default:
+		inv.printScan(sr)
+		inv.printNotices(sr.res)
+		inv.echo("")
+	}
 	return nil
 }
 

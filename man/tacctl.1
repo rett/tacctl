@@ -5957,17 +5957,17 @@ the count, the last user, outcome and backend, and the last NAS-Identifier.
 .B list
 and
 .B show
-read the cache, and say how old it is. When it is older than five minutes
-they first read the logs again from where the last scan stopped, for a caller
-who may scan: only the logs, never the host keys, within five seconds, and
-without a word (one line on standard error when the cache is an hour old or
-more), so a login shows without
-.BR "device scan" .
-They never make the first scan of an install or the catch-up of a cache older
-than
-.BR stale-days ,
-and a log that cannot be read, or a read that runs out of its time, leaves the
-cache as it was and is not tried again for an hour.
+read the cache only, and say how old it is. An interactive session of the
+console or of
+.B "tacctl shell"
+for the operator tier and up starts
+.B "device scan \-\-if\-stale \-\-quiet"
+in the background as it opens, so the logins are in the cache by the time the
+list is looked at and nothing a person types waits for it. That scan does
+nothing when the cache is younger than five minutes or another scan holds it
+(sessions that start together run one), reads a device's host keys again only
+when that device's last scan is a day old, goes on after the session ends and
+prints nothing.
 .PP
 Notices are computed each time they are shown; only acknowledgements are
 stored. Besides the registry's own
@@ -7438,6 +7438,12 @@ Re\-read everything the logs still hold.
 .TP
 \fB\-\-since\fR \fI<dur>\fR
 Read this stretch of the logs (7d, 12h, 2w).
+.TP
+\fB\-\-if\-stale\fR
+The background form: read only when the data is older than five minutes and no scan is under way; re\-scan a device's host keys only when its last scan is a day old.
+.TP
+\fB\-\-quiet\fR
+Print nothing (with \-\-if\-stale: what a session start runs).
 .TP
 \fB\-\-backend\fR \fI<id>\fR
 (scan, discover) Only that backend's log.

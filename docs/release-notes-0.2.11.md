@@ -39,13 +39,14 @@ it may put back to after its last restart:
   now and the preset's, and the rules and deny-set patterns removed and
   added, in the form `group reset` uses. A setting that is written without
   changing what applies says so.
-- `device list` and `device show` read the backends' logs again when the
-  seen cache is older than five minutes, so a login shows without `device
-  scan`. Logs only, at most five seconds, only for a caller who may scan,
-  never the first scan of an install, never the catch-up of a cache older
-  than `stale-days`; a failure leaves the cache as it was and is not tried
-  again for an hour. One line on standard error says so when the cache is an
-  hour old or more.
+- A session of the console or of `tacctl shell` (operator tier and up)
+  starts `device scan --if-stale --quiet` in the background as it opens, so
+  the logins are in `device list` by the time you look and nothing you type
+  waits for it. It does nothing when the cache is younger than five minutes
+  or another scan holds it, so sessions that start together run one scan, and
+  it connects to a device's SSH port for its host keys only when its last
+  scan is a day old. `device scan` itself is unchanged; the two options are
+  available by hand.
 - `group list` says when no group has the engineer tier, and `config
   validate` and `group privilege list` name an empty `privileges.<group>`
   that hides a shipped default.

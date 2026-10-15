@@ -105,3 +105,18 @@ func TestRealExecFailure(t *testing.T) {
 		t.Error("Exec of a missing file returned nil")
 	}
 }
+
+// A detached program is in a session of its own and outside the context it
+// was started with: cancelling that context does not kill it.
+func TestDetachedProgramOutlivesItsContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	p, err := Real{}.Start(ctx, Cmd{Name: "sh", Args: []string{"-c", "sleep 0.3; exit 7"}, Detach: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	res, err := p.Wait()
+	if err != nil || res.Code != 7 {
+		t.Fatalf("code %d, err %v", res.Code, err)
+	}
+}

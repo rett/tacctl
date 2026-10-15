@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net"
@@ -11,9 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rett/tacctl/internal/app"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
+	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/tier"
 )
 
 // The seen cache, scans, discover, check, the seen columns and the status
@@ -331,119 +335,96 @@ func TestDeviceListProbe(t *testing.T) {
 	}
 }
 
-// 'device list' and 'device show' bring the seen cache up to date from the
-// logs when it is older than a few minutes, and only then: a login shows
-// without a scan, nothing connects to a device, nothing is printed, and a
-// failure, a read-only caller or an old cache leave it as it was.
-func TestDeviceReadRefreshesTheSeenCache(t *testing.T) {
+// 'device scan --if-stale --quiet' is what a session start runs: nothing is
+// printed, a cache younger than five minutes and a scan under way are left
+// alone, and a device's host keys are scanned again only when its last scan
+// is a day old.
+func TestDeviceScanIfStale(t *testing.T) {
 	sb, script, _ := scanSandbox(t)
-	sb.devScan("", script, "scan", "--full")
-	if sb.code != 0 {
-		t.Fatalf("scan: %d %s", sb.code, sb.stderr())
-	}
 	cache := sb.path("var-lib", "devices-seen.json")
-	age := func(d time.Duration) {
+	argvs := func() string { return strings.Join(sb.runner.Argvs(), "\n") }
+	age := func(d time.Duration, mutate func(*devreg.Seen)) {
 		t.Helper()
 		s, err := devreg.LoadSeen(cache)
 		if err != nil {
 			t.Fatal(err)
 		}
 		s.Updated = time.Now().Add(-d)
+		if mutate != nil {
+			mutate(s)
+		}
 		if err := s.Save(cache); err != nil {
 			t.Fatal(err)
 		}
 	}
-	updated := func() time.Time {
-		t.Helper()
-		s, err := devreg.LoadSeen(cache)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return s.Updated
-	}
-	argvs := func() string { return strings.Join(sb.runner.Argvs(), "\n") }
-	login := journalRec("s=6", time.Now().Add(-time.Minute),
-		"INFO: x bcrypt.go:143: accepting user [dave] from [198.51.100.7] using a bcrypt password")
-	journal := func(res execx.Result, err error) func(*fake.Runner) {
-		return func(r *fake.Runner) {
-			r.Func(func(c execx.Cmd) bool { return c.Name == "journalctl" }, func(execx.Cmd) (execx.Result, error) { return res, err })
-		}
-	}
-	row := regexp.MustCompile(`(?m)^  lab-rtr2 +198\.51\.100\.7 +juniper +\S+ +\S+ +(\S+ \S+) +(\S+) `)
 
-	// A cache that is current is not read again.
-	if out := sb.devScan("", journal(execx.Result{Stdout: []byte(login)}, nil), "list"); !strings.Contains(out, "never") ||
-		strings.Contains(argvs(), "journalctl") {
-		t.Errorf("a fresh cache was refreshed (%q):\n%s", argvs(), out)
+	// No cache yet: it reads, and says nothing.
+	if out := sb.devScan("", script, "scan", "--if-stale", "--quiet"); out != "" || sb.code != 0 {
+		t.Fatalf("exit %d, output %q, stderr %q", sb.code, out, sb.stderr())
+	}
+	if !strings.Contains(argvs(), "journalctl") || !strings.Contains(argvs(), "ssh-keyscan") {
+		t.Fatalf("the first scan read nothing (%q)", argvs())
 	}
 
-	// Older than the minimum: the login after the cursor shows; the logs
-	// were read from the cursor and no device was connected to.
-	age(time.Hour)
-	out := sb.devScan("", journal(execx.Result{Stdout: []byte(login)}, nil), "list")
-	if m := row.FindStringSubmatch(out); m == nil || m[2] != "dave" {
-		t.Errorf("list does not show the login:\n%s", out)
+	// A cache younger than five minutes: nothing is read.
+	sb.devScan("", script, "scan", "--if-stale", "--quiet")
+	if strings.Contains(argvs(), "journalctl") || strings.Contains(argvs(), "ssh-keyscan") {
+		t.Errorf("a current cache was read again (%q)", argvs())
 	}
-	if !strings.Contains(argvs(), "--after-cursor s=5") || strings.Contains(argvs(), "ssh-keyscan") || strings.Contains(argvs(), "ssh ") {
-		t.Errorf("argv %q", argvs())
-	}
-	if time.Since(updated()) > time.Minute {
-		t.Error("the refreshed cache was not saved")
-	}
-	// Only the note of an hour-old cache is said, and nothing else.
-	if sb.code != 0 || strings.Contains(sb.stderr(), "[ERROR]") || strings.Count(sb.stderr(), "Reading the logs for the seen data (the cache is an hour old;") != 1 {
-		t.Errorf("refresh said more than its note: %d %q", sb.code, sb.stderr())
+	if out := sb.devScan("", script, "scan", "--if-stale"); !strings.Contains(out, "nothing was read") {
+		t.Errorf("without --quiet:\n%s", out)
 	}
 
-	// show refreshes the same way.
-	age(time.Hour)
-	if out = sb.devScan("", journal(execx.Result{}, nil), "show", "lab-rtr2"); !strings.Contains(argvs(), "journalctl") || !strings.Contains(out, "dave") {
-		t.Errorf("show (%q):\n%s", argvs(), out)
+	// Older than five minutes: the logs are read; the host keys, scanned
+	// just now, are not.
+	age(time.Hour, nil)
+	sb.devScan("", script, "scan", "--if-stale", "--quiet")
+	if !strings.Contains(argvs(), "journalctl") || strings.Contains(argvs(), "ssh-keyscan") {
+		t.Errorf("hour-old cache (%q)", argvs())
 	}
 
-	// A source that cannot be read: the cache and the list are as before.
-	age(time.Hour)
-	before := updated()
-	out = sb.devScan("", journal(execx.Result{}, os.ErrPermission), "list")
-	if sb.code != 0 || !updated().Equal(before) || !strings.Contains(out, "lab-rtr2") {
-		t.Errorf("failed refresh: %d %v %v\n%s", sb.code, before, updated(), out)
+	// A device whose last key scan is a day old is scanned; the others not.
+	age(time.Hour, func(s *devreg.Seen) { s.HostKeys["core-sw1"].Scanned = time.Now().Add(-48 * time.Hour) })
+	sb.devScan("", script, "scan", "--if-stale", "--quiet")
+	if n := strings.Count(argvs(), "ssh-keyscan"); n != 1 || !strings.Contains(argvs(), "203.0.113.1") {
+		t.Errorf("key scans %d (%q)", n, argvs())
 	}
 
-	// A read that failed is not tried again for an hour (a log too long to
-	// catch up inside the budget must not cost every list the budget), and
-	// the one line on standard error names the age of an old cache.
-	age(3 * time.Hour)
-	sb.devScan("", journal(execx.Result{Stdout: []byte(login)}, nil), "list")
-	if strings.Contains(argvs(), "journalctl") {
-		t.Errorf("a failed read was retried at once (%q)", argvs())
-	}
-	if err := os.Remove(sb.path("var-lib", ".devices-seen.refresh-failed")); err != nil {
+	// Another scan holds the cache: this one leaves it.
+	age(time.Hour, nil)
+	unlock, err := devreg.LockSeen(cache)
+	if err != nil {
 		t.Fatal(err)
 	}
-	sb.devScan("", journal(execx.Result{Stdout: []byte(login)}, nil), "list")
-	if !strings.Contains(argvs(), "journalctl") || !strings.Contains(sb.stderr(), "Reading the logs for the seen data (the cache is 3 hours old") {
-		t.Errorf("no note on an old cache (%q): %q", argvs(), sb.stderr())
-	}
-	if _, err := os.Stat(sb.path("var-lib", ".devices-seen.refresh-failed")); err == nil {
-		t.Error("the failure marker was left after a good read")
+	out := sb.devScan("", script, "scan", "--if-stale", "--quiet")
+	unlock()
+	if out != "" || sb.code != 0 || strings.Contains(argvs(), "journalctl") {
+		t.Errorf("a scan under way was joined: exit %d %q (%q)", sb.code, out, argvs())
 	}
 
-	// A cache older than stale-days is caught up by an explicit scan.
-	age(60 * 24 * time.Hour)
-	before = updated()
-	sb.devScan("", journal(execx.Result{Stdout: []byte(login)}, nil), "list")
-	if strings.Contains(argvs(), "journalctl") || !updated().Equal(before) {
-		t.Errorf("an old cache was refreshed by a read (%q)", argvs())
-	}
+	// The background form takes neither --full nor --since.
+	sb.devScan("", script, "scan", "--if-stale", "--full")
+	sb.expect(1, "", "--if-stale is the background form")
+}
 
-	// A read-only caller may not scan, so a read does not either.
-	age(time.Hour)
-	before = updated()
-	sb.cfgRun("", []string{"device", "list"}, func(r *fake.Runner) {
-		r.On([]string{"id", "-nG", "--", "carol"}, execx.Result{Stdout: []byte("carol tac-users tac-readonly\n")})
-		journal(execx.Result{Stdout: []byte(login)}, nil)(r)
-	}, "SUDO_USER=carol")
-	if strings.Contains(argvs(), "journalctl") || !updated().Equal(before) {
-		t.Errorf("a read-only list refreshed the cache (%q)", argvs())
+// An interactive session of an operator or above starts the background scan
+// through the same sudo as its lines; a readonly caller and a run without
+// sudo start none.
+func TestSessionStartsTheSeenRefresh(t *testing.T) {
+	r := &fake.Runner{}
+	var so, se bytes.Buffer
+	a := app.New(nil, paths.NewEnv([]string{"PATH=/usr/bin"}), "/opt/x/dist/tacctl", 1000,
+		app.Stdio{Stdin: strings.NewReader(""), Stdout: &so, Stderr: &se}, r)
+	h := struct{ runner *fake.Runner }{r}
+	inv := &invocation{app: a}
+	inv.startSeenRefresh("/usr/local/bin/tacctl", tier.Operator, []string{"TACCTL_CONSOLE=abc"})
+	got := strings.Join(h.runner.Argvs(), "\n")
+	if !strings.Contains(got, "sudo -n TACCTL_CONSOLE=abc /usr/local/bin/tacctl device scan --if-stale --quiet") {
+		t.Errorf("started %q", got)
+	}
+	h.runner.Reset()
+	inv.startSeenRefresh("/usr/local/bin/tacctl", tier.Readonly, nil)
+	if got := strings.Join(h.runner.Argvs(), "\n"); got != "" {
+		t.Errorf("a readonly session started %q", got)
 	}
 }

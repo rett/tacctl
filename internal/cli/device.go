@@ -133,6 +133,7 @@ var deviceSpecs = map[string]Spec{
 	"ssh":        sshSpec,
 	"ssh-config": {MaxArgs: 0},
 	"scan": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--full"}}, {Names: []string{"--since"}, Value: true},
+		{Names: []string{"--if-stale"}}, {Names: []string{"--quiet"}},
 		{Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
 	"discover": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--all"}}, {Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
 	"check":    {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagJSON}},
@@ -263,6 +264,8 @@ var deviceOptions = map[string][][2]string{
 	"scan": {
 		{"--full", "Re-read everything the logs still hold"},
 		{"--since <dur>", "Read this stretch of the logs (7d, 12h, 2w)"},
+		{"--if-stale", "The background form: read only when the data is older than five minutes and no scan is under way; re-scan a device's host keys only when its last scan is a day old"},
+		{"--quiet", "Print nothing (with --if-stale: what a session start runs)"},
 		{"--backend <id>", "(scan, discover) Only that backend's log"},
 	},
 	"discover": {
@@ -444,11 +447,9 @@ are the superuser's; an engineer reads the devices of their own scopes.
 Seen data: 'scan' reads each enabled backend's log (the tacquito journal,
 FreeRADIUS's tacctl-auth.log) from where the last scan stopped into
 /var/lib/tacctl/devices-seen.json, and re-scans the pinned host keys (a scan
-never changes a pin). 'list' and 'show' read that cache, after reading the
-logs again when it is older than five minutes (the logs only, five seconds at
-most, never the first scan, for callers who may scan; a failed read is not
-tried again for an hour); 'list --scan'
-scans first. --full re-reads everything the logs still hold, --since <dur>
+never changes a pin). 'list' and 'show' read that cache only; 'list --scan'
+scans first, and an interactive session of the console or of 'tacctl shell'
+starts 'scan --if-stale --quiet' in the background (operator tier and up). --full re-reads everything the logs still hold, --since <dur>
 (7d, 12h, 2w) that stretch. 'discover' lists the addresses that authenticated
 without being registered, each with its 'device add' line (--all: those only
 refused too). 'check' and 'list --probe' connect to each ssh port (3 s): this
@@ -916,11 +917,8 @@ func (inv *invocation) deviceList(args []string) error {
 			inv.printScan(sr)
 		}
 		res = sr.res
-	} else {
-		if _, res, err = inv.deviceLoad(); err != nil {
-			return err
-		}
-		inv.refreshSeen(res)
+	} else if _, res, err = inv.deviceLoad(); err != nil {
+		return err
 	}
 	var shown []devreg.Entry
 	narrow := newDeviceListFilter(p)
@@ -1040,7 +1038,6 @@ func (inv *invocation) deviceShow(args []string) error {
 	if err != nil {
 		return err
 	}
-	inv.refreshSeen(res)
 	e, err := inv.deviceFind(res, p.Args[0])
 	if err != nil {
 		return err

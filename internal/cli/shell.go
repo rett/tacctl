@@ -246,6 +246,11 @@ func (inv *invocation) runShell(r shellRun) (int, *shell.Shell) {
 	case shellCommandMode:
 		status = sh.Command(inv.ctx, r.line, a.Stdin)
 	case shellInteractive:
+		// The seen data is brought up to date while the person reads the
+		// banner (seen_refresh.go): never a wait of theirs.
+		if managed {
+			inv.startSeenRefresh(r.exe, sudoTier(groups), r.extraEnv)
+		}
 		status = sh.Interactive(inv.ctx, r.tty)
 	default:
 		status = sh.Batch(inv.ctx, a.Stdin)
