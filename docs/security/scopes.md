@@ -13,8 +13,8 @@ Example multi-environment setup (broader prod with narrower lab and sandbox carv
 tacctl scope add prod_dc_east  --prefixes 10.10.0.0/16      --secret generate
 tacctl scope add prod_dc_west  --prefixes 10.20.0.0/16      --secret generate
 tacctl scope add corp_campus   --prefixes 172.20.0.0/16     --secret generate
-tacctl scope add lab_east      --prefixes 10.10.99.0/24     --secret generate   # carved from prod_dc_east
-tacctl scope add sandbox       --prefixes 10.10.200.0/23    --secret generate   # carved from prod_dc_east
+tacctl scope add lab_east      --prefixes 10.10.99.0/24     --secret generate   # carved from
+tacctl scope add sandbox       --prefixes 10.10.200.0/23    --secret generate   # prod_dc_east
 
 tacctl scope default prod_dc_east                  # optional: new users land in prod by default
 tacctl user add alice superuser --scopes prod_dc_east,prod_dc_west
@@ -33,12 +33,16 @@ tacctl config juniper --scope lab_east
 Scope management commands:
 ```
 tacctl scope list                              # name, prefix list, user count, default marker
-tacctl scope show <name>                       # full detail + secret length/posture (not its value) + users + default-ness
-tacctl scope add <name> --prefixes <cidrs>     # --secret <v> | --secret generate | --protocols | --vendor-attrs | --default
+tacctl scope show <name>                       # full detail + secret length/posture (not its value)
+                                               # + users + default-ness
+tacctl scope add <name> --prefixes <cidrs>     # --secret <v> | --secret generate | --protocols |
+                                               # --vendor-attrs | --default
 tacctl scope remove <name> [--force]           # refuses if users reference it; --force strips them
-tacctl scope rename <old> <new>                # rewrites user refs, default marker and per-scope settings
+tacctl scope rename <old> <new>                # rewrites user refs, default marker and per-scope
+                                               # settings
 tacctl scope default [<name>]                  # show / set the default
-tacctl scope lookup <ip|cidr>                  # trace which scope owns an address (+ shadow overlaps)
+tacctl scope lookup <ip|cidr>                  # trace which scope owns an address (+ shadow
+                                               # overlaps)
 tacctl scope prefixes <name> list|add <cidrs>|remove <cidrs>|remove --all [--force]
 tacctl scope secret <name>   show|set <v>|generate
 tacctl scope protocols <name> list|set <csv>|clear

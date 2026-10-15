@@ -18,15 +18,17 @@ bcrypt:
   cost: 12                   # applies only to new hashes  (int, 10..14)
 
 scope:
-  default: lab               # matches the fresh-install seed scope; override via `tacctl scope default`
+  default: lab               # matches the fresh-install seed scope; override via `tacctl scope
+                             default`
 
 host:
   default_method: tacplus    # how `tacctl host enroll` sets up a new Linux host: tacplus | radius
 
 mgmt_acl:
   names:
-    cisco: VTY-ACL           # ACL name emitted by `tacctl config cisco`  (letter-start, [A-Za-z0-9_-], 1..63)
-    juniper: MGMT-ACL    # filter name emitted by `tacctl config juniper`  (same rules)
+    cisco: VTY-ACL           # ACL name emitted by `tacctl config cisco`  (letter-start,
+                             [A-Za-z0-9_-], 1..63)
+    juniper: MGMT-ACL        # filter name emitted by `tacctl config juniper`  (same rules)
   permits: []                # list of CIDRs; each element validated
 
 privileges:                  # per-group Cisco priv-exec lowering (move commands DOWN from priv 15)
@@ -35,23 +37,23 @@ privileges:                  # per-group Cisco priv-exec lowering (move commands
   operator:
     - undebug all
 
-commands:                    # per-group command-authz rules. Rendered for both Cisco
-                             # (tacquito enforces) and Juniper (class allow/deny-commands)
-                             # from this single tacctl-authored source. Ordered
-                             # superuser → operator → readonly. Not enforced over RADIUS.
+commands:                    # per-group command-authz rules. Rendered for both Cisco # (tacquito
+                             enforces) and Juniper (class allow/deny-commands) # from this single
+                             tacctl-authored source. Ordered # superuser → operator → readonly. Not
+                             enforced over RADIUS.
   superuser:
     - { name: "*", action: permit }
   operator:
-    - { name: show,       action: permit }
-    - { name: ping,       action: permit }
+    - { name: show,          action: permit }
+    - { name: ping,          action: permit }
     - { name: traceroute, action: permit }
-    - { name: terminal,   action: permit }
-    - { name: "*",        action: deny }
+    - { name: terminal,      action: permit }
+    - { name: "*",           action: deny }
   readonly:
-    - { name: show,       action: permit }
-    - { name: ping,       action: permit }
+    - { name: show,          action: permit }
+    - { name: ping,          action: permit }
     - { name: traceroute, action: permit }
-    - { name: "*",        action: deny }
+    - { name: "*",           action: deny }
 ```
 
 Keys without a shipped default (`backends.*`, `listeners.*`, `snmp.*`, `device.config.*` and the per-scope keys) are written only by their commands. With `snmp.version` unset there is no SNMP lookup; `snmp.timeout` is in seconds. The SNMP credentials are never in `tacctl.yaml`. `snmp_scope.<scope>.*` is written only when set; its `clients` is a list of at most 32 canonical IPv4 CIDRs, never `0.0.0.0/0`, none twice.

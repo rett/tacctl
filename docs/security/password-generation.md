@@ -16,18 +16,21 @@ tacctl hash generate
 
 **Linux / macOS:**
 ```bash
-python3 -c "import bcrypt,getpass; print(bcrypt.hashpw(getpass.getpass().encode(), bcrypt.gensalt()).decode())"
+python3 -c "import bcrypt,getpass
+print(bcrypt.hashpw(getpass.getpass().encode(), bcrypt.gensalt()).decode())"
 ```
 
 **Windows (Python):**
 ```powershell
-python -c "import bcrypt,getpass; print(bcrypt.hashpw(getpass.getpass().encode(), bcrypt.gensalt()).decode())"
+python -c "import bcrypt,getpass
+print(bcrypt.hashpw(getpass.getpass().encode(), bcrypt.gensalt()).decode())"
 ```
 
 **Windows (PowerShell, no Python):**
 ```powershell
 Install-Module -Name BcryptNet -Scope CurrentUser
-[BCrypt.Net.BCrypt]::HashPassword((Read-Host -AsSecureString "Password" | ConvertFrom-SecureString -AsPlainText))
+[BCrypt.Net.BCrypt]::HashPassword((Read-Host -AsSecureString "Password" |
+    ConvertFrom-SecureString -AsPlainText))
 ```
 
 **Admin adds with pre-generated hash:**

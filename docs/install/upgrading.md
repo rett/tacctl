@@ -48,7 +48,8 @@ This release adds settings that a 0.2.9 binary refuses (`device.apply.transport`
 ```bash
 tacctl rollback 0.2.9                  # the dry run: steps, warnings, nothing written
 tacctl rollback 0.2.9 --apply --yes    # convert (after a snapshot)
-tacctl upgrade --branch 0.2.9          # install 0.2.9: switches the clone to the tag, builds it, re-executes it
+tacctl upgrade --branch 0.2.9          # install 0.2.9: switches the clone to the tag, builds it,
+                                       # re-executes it
 ```
 
 `--apply` takes a snapshot first (`tacctl backup list`), then, in this order:
@@ -69,7 +70,8 @@ This release writes keys and fields that a 0.2.3 binary refuses (it reads `conso
 ```bash
 tacctl rollback 0.2.3                  # the dry run: steps, warnings, nothing written
 tacctl rollback 0.2.3 --apply --yes    # convert (after a snapshot)
-tacctl upgrade --branch 0.2.3          # install 0.2.3: switches the clone to the tag, builds it, re-executes it
+tacctl upgrade --branch 0.2.3          # install 0.2.3: switches the clone to the tag, builds it,
+                                       # re-executes it
 ```
 
 `--apply` takes a snapshot first (`tacctl backup list`), then, in this order:

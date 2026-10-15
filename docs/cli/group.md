@@ -3,38 +3,102 @@
 [Documentation](../README.md) › [CLI reference](README.md)
 
 ```
-group list                                                List all groups with Cisco priv-lvl, Juniper class, user count
-group show <name>                                         Every setting and where it comes from, with the Junos patterns (open to every tier)
-group add <name> <priv-lvl> <class> [--tier <tier>]       Add a custom group (at priv-lvl 15 its tier is recorded: superuser unless --tier; a leftover tier, WTI level or Junos setting of that name in tacctl.yaml is cleared)
-                                    [--wti-level <level>] --wti-level gives it a WTI access level instead of its priv-lvl band
-group edit <name> tier auto|<tier>                        tacctl tier of the group (auto = the priv-lvl band; recorded as superuser at 15)
-group edit <name> priv-lvl <0-15>                         Change Cisco privilege level
-group edit <name> juniper-class <CLASS>                   Change Juniper class name
-group edit <name> wti-level auto|<level>                  WTI access level: viewonly, user, superuser or administrator (auto = the priv-lvl band)
-group remove <name>                                       Remove a custom group (built-ins protected)
-group commands list <group>                               Show per-command rules + default action
-group commands default <group> <permit|deny>              Set default action (catchall)
-group commands add <group> <name> [--match <regex>]...    Add a command rule
-                                  [--action permit|deny]
-                                  [--before <name>|--first]
-group commands remove <group> <name> [--all]              Drop a rule (--match/--action pick one of several)
-                                  [--match <regex>]... [--action permit|deny]
-group commands reset <group> [--dry-run] [--yes]          Put the group's rules back to the shipped defaults:
-                                                          the difference first, then a confirmation
-group commands seed [<group>] [--force]                   Populate built-ins with sensible defaults
-group preset roles [--dry-run] [--force]                  Starting values for viewer, operator, engineer and superuser
-group reset <name> [--preset] [--dry-run] [--yes]         Put readonly, operator, superuser or engineer back to its canonical state:
-                   [--only settings,commands,privileges,junos]   the difference first, then a confirmation
-group privilege list <group>                              Show Cisco privilege mappings and their modes
-group privilege add <group> '<cmd>'[,'<cmd>'...]          Move one or more commands to the group's priv-lvl ('<mode>: <cmd>'
-                                                          for exec all, configure or configure all; exec without one)
-group privilege remove <group> '<cmd>'[,'<cmd>'...]       Remove one or more mappings
-group privilege reset <group> [--dry-run] [--yes]         Put the group's mappings back to the shipped default:
-                                                          the difference first, then a confirmation
-group privilege seed [<group>] [--force]                  Populate built-ins with safe priv-exec defaults
-group junos <group> list|clear                            Both Junos deny sets and their sizes, or drop both (confirms)
-group junos <group> deny-commands|deny-configuration      The patterns the server sends with the group's login class
-                    list|add '<regex>'|remove '<regex>'|clear
+group list
+
+    List all groups with Cisco priv-lvl, Juniper class, user count
+
+group show <name>
+
+    Every setting and where it comes from, with the Junos patterns (open to every tier)
+
+group add <name> <priv-lvl> <class> [--tier <tier>]
+
+    Add a custom group (at priv-lvl 15 its tier is recorded: superuser unless --tier; a leftover
+    tier, WTI level or Junos setting of that name in tacctl.yaml is cleared) [--wti-level <level>]
+    --wti-level gives it a WTI access level instead of its priv-lvl band
+
+group edit <name> tier auto|<tier>
+
+    tacctl tier of the group (auto = the priv-lvl band; recorded as superuser at 15)
+
+group edit <name> priv-lvl <0-15>
+
+    Change Cisco privilege level
+
+group edit <name> juniper-class <CLASS>
+
+    Change Juniper class name
+
+group edit <name> wti-level auto|<level>
+
+    WTI access level: viewonly, user, superuser or administrator (auto = the priv-lvl band)
+
+group remove <name>
+
+    Remove a custom group (built-ins protected)
+
+group commands list <group>
+
+    Show per-command rules + default action
+
+group commands default <group> <permit|deny>
+
+    Set default action (catchall)
+
+group commands add <group> <name> [--match <regex>]...
+
+    Add a command rule [--action permit|deny] [--before <name>|--first]
+
+group commands remove <group> <name> [--all]
+
+    Drop a rule (--match/--action pick one of several) [--match <regex>]... [--action permit|deny]
+
+group commands reset <group> [--dry-run] [--yes]
+
+    Put the group's rules back to the shipped defaults: the difference first, then a confirmation
+
+group commands seed [<group>] [--force]
+
+    Populate built-ins with sensible defaults
+
+group preset roles [--dry-run] [--force]
+
+    Starting values for viewer, operator, engineer and superuser
+
+group reset <name> [--preset] [--dry-run] [--yes]
+
+    Put readonly, operator, superuser or engineer back to its canonical state: [--only
+    settings,commands,privileges,junos]   the difference first, then a confirmation
+
+group privilege list <group>
+
+    Show Cisco privilege mappings and their modes
+
+group privilege add <group> '<cmd>'[,'<cmd>'...]
+
+    Move one or more commands to the group's priv-lvl ('<mode>: <cmd>' for exec all, configure or
+    configure all; exec without one)
+
+group privilege remove <group> '<cmd>'[,'<cmd>'...]
+
+    Remove one or more mappings
+
+group privilege reset <group> [--dry-run] [--yes]
+
+    Put the group's mappings back to the shipped default: the difference first, then a confirmation
+
+group privilege seed [<group>] [--force]
+
+    Populate built-ins with safe priv-exec defaults
+
+group junos <group> list|clear
+
+    Both Junos deny sets and their sizes, or drop both (confirms)
+
+group junos <group> deny-commands|deny-configuration
+
+    The patterns the server sends with the group's login class list|add '<regex>'|remove
+    '<regex>'|clear
 ```
 
 **Default Groups:**

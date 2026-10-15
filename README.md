@@ -6,7 +6,8 @@ Management toolkit for network-device AAA. Users, groups and scopes are kept onc
 
 ```bash
 # Install on a new server (TACACS+; RADIUS can be added later)
-sudo bash -c 'git clone https://github.com/rett/tacctl.git /opt/tacctl && /opt/tacctl/bin/tacctl.sh install'
+sudo bash -c 'git clone https://github.com/rett/tacctl.git /opt/tacctl &&
+  /opt/tacctl/bin/tacctl.sh install'
 
 # Or upgrade an existing server (pulls the latest from GitHub, rebuilds if needed)
 tacctl upgrade
@@ -31,14 +32,17 @@ tacctl user list
 tacctl config cisco                   # default scope
 tacctl config cisco --scope prod      # specific scope
 tacctl config cisco --scope prod --legacy   # IOS 12.x syntax (pre-15.0 devices)
-tacctl config cisco source-interface prod Loopback0   # pin the devices' TACACS+/RADIUS source address
+tacctl config cisco source-interface prod Loopback0   # pin the devices' TACACS+/RADIUS source
+                                                      # address
 tacctl config juniper --scope prod
 tacctl config wti --scope prod        # WTI console server: serial-menu walkthrough
-tacctl device config show core-sw1    # a registered device's data, then its walkthrough with its scope, location and name
+tacctl device config show core-sw1    # a registered device's data, then its walkthrough with its
+                                      # scope, location and name
 
 # Serve the same users over RADIUS as well
 tacctl backend enable radius
-tacctl scope vendor-attrs prod enable cisco,juniper   # RADIUS sends a vendor's privilege attribute only where a scope enables it
+tacctl scope vendor-attrs prod enable cisco,juniper   # RADIUS sends a vendor's privilege attribute
+                                                      # only where a scope enables it
 tacctl config cisco --scope prod --protocol radius
 tacctl config juniper --scope prod --protocol radius
 tacctl config wti --scope prod --protocol radius

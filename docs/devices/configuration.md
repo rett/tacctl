@@ -47,8 +47,10 @@ Device core-sw2 (lab, juniper): pulled 2026-10-09 14:02 by alice over netconf
 version: 1
 settings: {stale_days: 30}
 devices:
-  core-sw1: {address: 10.99.0.1, vendor: cisco, legacy_ssh: true, config_syntax: modern, description: DC1 core}
-  lab-rtr2: {address: 192.0.2.7, vendor: juniper, hostname: lab-rtr2.lab.example.net, snmp: {version: v3, port: 1161, clients: [192.0.2.0/24]}}
+  core-sw1: {address: 10.99.0.1, vendor: cisco, legacy_ssh: true, config_syntax: modern,
+    description: DC1 core}
+  lab-rtr2: {address: 192.0.2.7, vendor: juniper, hostname: lab-rtr2.lab.example.net,
+    snmp: {version: v3, port: 1161, clients: [192.0.2.0/24]}}
 ```
 
 The optional `snmp:` map of a device (`version`, `port`, `timeout`, `clients`) is written only for a device that sets its own SNMP settings (`tacctl device snmp`); its credentials are not in this file.

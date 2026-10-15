@@ -24,9 +24,11 @@ $ tacctl device config plan sw-lab-1
 #
 # Type this first, on sw-lab-1, and check the name:   show version | match Hostname
 # The region opens configure exclusive: the session holds the configuration lock until you type exit
-# (after commit, to confirm). If it printed "error: configuration database modified", another session
+# (after commit, to confirm). If it printed "error: configuration database modified", another
+# session
 # has uncommitted changes: have that person commit or discard them, then paste again. If it printed
-# "error: configuration database locked by", another session holds the exclusive lock: wait for it to
+# "error: configuration database locked by", another session holds the exclusive lock: wait for it
+# to
 # exit, then paste again. Either way nothing happened (every later line is an unknown command).
 #
 ##### PASTE FROM HERE: sw-lab-1 #####
@@ -76,7 +78,9 @@ Shape 3f2a1b9c0d4e, 2 devices (sw-lab-1, sw-lab-2), not confirmed yet:
     set system tacplus-server 192.0.2.10 secret <secret>
     ...
 
-Apply to 2 devices (sw-lab-1, sw-lab-2), one shape's first device at a time, each under commit confirmed 10 and kept only after a fresh login as alice works and what landed is what the check showed?
+Apply to 2 devices (sw-lab-1, sw-lab-2), one shape's first device at a time, each under commit
+  confirmed 10 and kept only after a fresh login as alice works and what landed is what the check
+  showed?
   Type 2 to go on: 2
   sw-lab-1  committed, verifying ...
   sw-lab-1  confirming ...
@@ -107,7 +111,8 @@ $ tacctl device onboard 192.0.2.31 --login admin --name sw-lab-5
   A blank device has no other proof: compare one with its console (...).
 Trust these keys and send the local password of 'admin' to 192.0.2.31? [y/N] y
 Password of admin on 192.0.2.31 (a local account; asked once, never kept):
-  192.0.2.31  Junos 25.4R1  ex4300-48mp  device reports host name sw-lab-5; no TACACS+ or RADIUS server
+  192.0.2.31  Junos 25.4R1  ex4300-48mp  device reports host name sw-lab-5; no TACACS+ or RADIUS
+                                         server
 [INFO] Device 'sw-lab-5' registered: 192.0.2.31, juniper.
   ...
   From the device: location "Lab rack 2"
@@ -116,7 +121,8 @@ Password of admin on 192.0.2.31 (a local account; asked once, never kept):
 
 Shape ee791d20ded1, 1 device (sw-lab-5), first-time plan:
   ...
-Apply to sw-lab-5 under commit confirmed 10, as 'admin', kept only after a TACACS+ login as alice works and what landed is what the check showed?
+Apply to sw-lab-5 under commit confirmed 10, as 'admin', kept only after a TACACS+ login as
+  alice works and what landed is what the check showed?
   Type the device name to go on: sw-lab-5
 Password for alice (device login):
   sw-lab-5  committing as admin, verifying as alice ...
@@ -145,15 +151,21 @@ $ tacctl device collect 192.0.2.31 192.0.2.32 --register
     ED25519  SHA256:...
   192.0.2.32 offers:
     ED25519  SHA256:...
-  Nobody registered these 2 addresses, one attempt at each: compare the keys with each device's console (...).
-Trust these keys and send the password of 'alice' (your tacctl password) to these 2 addresses, one attempt at each? [y/N] y
+  Nobody registered these 2 addresses, one attempt at each: compare the keys with each device's
+  console (...).
+Trust these keys and send the password of 'alice' (your tacctl password) to these 2 addresses,
+  one attempt at each? [y/N] y
 Password for alice (device login):
 
 Collected from 2 address(es)
 ------------------------------
-  ADDRESS      HOSTNAME  MODEL        RELEASE      AUTH-ORDER        SERVERS    EN-CLASS  NETCONF  LO0-FILTER  LEGACY  RESULT
-  192.0.2.31   sw-lab-5  ex4300-48mp  25.4R1-S2.3  tacplus,password  tacplus:2  yes       yes      MGMT-ACL    -       collected
-  192.0.2.32   -         -            -            -                 -          -         -        -           -       not-junos
+  ADDRESS      HOSTNAME  MODEL        RELEASE      AUTH-ORDER        SERVERS    RESULT
+  192.0.2.31   sw-lab-5  ex4300-48mp  25.4R1-S2.3  tacplus,password  tacplus:2  collected
+  192.0.2.32   -         -            -            -                 -          not-junos
+
+  ADDRESS      EN-CLASS  NETCONF  LO0-FILTER  LEGACY
+  192.0.2.31   yes       yes      MGMT-ACL    -
+  192.0.2.32   -         -        -           -
 
   192.0.2.32: not a Junos device (...); the session was closed
   tacctl device add sw-lab-5 192.0.2.31 --vendor juniper
