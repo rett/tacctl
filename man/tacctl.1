@@ -5060,7 +5060,9 @@ and drops the scope's limits.
 (the default, and what removes the scope's setting) plans and compares nothing
 of the service, as before. A device's own setting
 .RB ( "device netconf" )
-wins over the scope's, and each limit layers on its own.
+wins over the scope's, and each limit layers on its own. The limits bound the
+service's own port (830); tacctl reaches NETCONF through the SSH subsystem,
+which they do not bound on Junos 25.4.
 .B show
 (or no word) prints the setting. The values are
 .B netconf_scope.\fIscope\fR.{state,connection_limit,rate_limit}

@@ -43,6 +43,13 @@ current behaviour; this file is where history lives.
    man page's `.TH` line, the release notes file). No change to the binary
    or the commands.
 
+4. **The NETCONF limits are documented as the service port's.** A lab run
+   showed that `--connection-limit` and `--rate-limit` bound the NETCONF
+   service on TCP 830 and not the SSH subsystem that `device config apply`
+   and the pull use (seven simultaneous sessions and four applies inside a
+   minute were not refused on Junos 25.4 with the limits at 5 and 10). The
+   manual page and `docs/cli/scope.md` say so; nothing else changes.
+
 ## 0.2.10 (2026-10-15)
 
 1. **`tacctl scope netconf` and `tacctl device netconf`: the NETCONF service
