@@ -10,7 +10,9 @@ cite them by number and file name.
 | File | What it is |
 |---|---|
 | `backlog.md` | The roadmap (section 0) and the open items |
-| `0.2.10-handoff.md` | State, scope and working rules for 0.2.10 |
+| `0.2.11-handoff.md` | State, scope and working rules for 0.2.11 |
+| `0.2.10-plan.md` | NETCONF service setting and apply over NETCONF (D145-D151) |
+| `0.2.10-lab.md` | Junos NETCONF lab results the code cites |
 | `0.2.9-rollout-plan.md` | Apply and onboard over the Junos CLI (D128-D144) |
 | `0.2.9-lab.md` | Junos apply lab results the code cites |
 | `0.2.9-conversion.md` | Map from the helper script to the 0.2.9 verbs |
