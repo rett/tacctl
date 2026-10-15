@@ -11,6 +11,8 @@ cite them by number and file name.
 |---|---|
 | `backlog.md` | The roadmap (section 0) and the open items |
 | `0.2.11-handoff.md` | State, scope and working rules for 0.2.11 |
+| `0.2.11-plan.md` | The apply lock (D152-D158) |
+| `0.2.11-lab.md` | NETCONF limits and a competing commit: run sheets |
 | `0.2.10-plan.md` | NETCONF service setting and apply over NETCONF (D145-D151) |
 | `0.2.10-lab.md` | Junos NETCONF lab results the code cites |
 | `0.2.9-rollout-plan.md` | Apply and onboard over the Junos CLI (D128-D144) |
