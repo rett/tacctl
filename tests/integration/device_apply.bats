@@ -264,7 +264,7 @@ print("fine")' <<< "$output"
     assert_failure 2
     apply example-sw1 --check --max 0
     assert_failure 2
-    apply example-sw1 --check --section netconf
+    apply example-sw1 --check --section breakglass
     assert_failure 2
     assert_output --partial "never written"
     # nothing was dialled for any of them

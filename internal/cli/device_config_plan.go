@@ -29,10 +29,12 @@ import (
 	"github.com/rett/tacctl/internal/devreg"
 )
 
-// planSections are the sections a plan may name (--section): the other two
-// are never planned (netconf and breakglass are the walkthrough's steps). The
-// system section exists only for a scope with a system block (0.2.7).
-var planSections = []string{"aaa", "roles", "mgmt-acl", "snmp", "system"}
+// planSections are the sections a plan may name (--section): break-glass is
+// never planned (it is the walkthrough's step). The system section exists
+// only for a scope with a system block (0.2.7), and the netconf section only
+// where the scope's or the device's NETCONF setting enables or disables the
+// service (0.2.10).
+var planSections = []string{"aaa", "roles", "mgmt-acl", "snmp", "system", "netconf"}
 
 // planOptions is what the command line asked of a plan.
 type planOptions struct {
@@ -127,7 +129,7 @@ func (inv *invocation) parsePlanOptions(p Parsed) (planOptions, error) {
 		for _, s := range strings.Split(p.Value("--section"), ",") {
 			s = strings.TrimSpace(s)
 			switch {
-			case s == "netconf" || s == "breakglass":
+			case s == "breakglass":
 				return bad("--section: '" + s + "' is never planned (it is a step of the walkthrough, 'tacctl device config show'); the sections are " +
 					strings.Join(planSections, ", ") + ".")
 			case !slices.Contains(planSections, s):

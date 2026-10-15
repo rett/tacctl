@@ -319,7 +319,7 @@ device config plan nosuch --plain --json
 device config plan nosuch --plain --no-secrets
 @known 0.2.5 item 37: device config plan is new
 device config plan nosuch --secrets --no-secrets
-@known 0.2.5 item 37: device config plan is new
+@known 0.2.5 item 37: device config plan is new; 0.2.10 item 3: netconf is a section a plan may name
 device config plan nosuch --section netconf
 @known 0.2.5 item 37: device config plan is new
 device config plan nosuch --transport ssh

@@ -99,7 +99,7 @@ func (inv *invocation) applyArgsOf(p Parsed) (applyArgs, error) {
 		for _, s := range strings.Split(p.Value("--section"), ",") {
 			s = strings.TrimSpace(s)
 			switch {
-			case s == "netconf" || s == "breakglass":
+			case s == "breakglass":
 				return a, inv.argErr("--section: '"+s+"' is never written (it is a step of the walkthrough); the sections are "+
 					strings.Join(planSections, ", ")+".", usage)
 			case !slices.Contains(planSections, s):

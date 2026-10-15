@@ -9,8 +9,6 @@ package plan
 import (
 	"slices"
 	"strings"
-
-	"github.com/rett/tacctl/internal/devconf"
 )
 
 // junosBackout returns the back-out of the delta's lines, in the order to
@@ -18,7 +16,7 @@ import (
 func (p *planner) junosBackout(d Delta) []Line {
 	var texts []string
 	secret := map[string]bool{}
-	for _, name := range PlanOrder(devconf.FamilyJunos) {
+	for _, name := range d.order() {
 		sec := p.cur.Sections[name]
 		for i, l := range sec.Lines {
 			for _, st := range ParseJunos(l).stmts {

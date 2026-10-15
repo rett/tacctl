@@ -3609,7 +3609,11 @@ says to ask one; IOS 12.x has none. The Junos walkthrough has a commented
 step with the optional connection and rate limits and the check
 .RB ( "ssh -p 830 -s" " user@device " netconf ),
 and its management filter permits tcp port 830 next to ssh; the WTI unit has
-no NETCONF. tacctl enables none of it itself.
+no NETCONF. tacctl enables none of it itself unless the scope's or the
+device's NETCONF setting says so
+.RB ( "scope netconf" ,
+.BR "device netconf" ),
+and then the Junos step is live.
 .B "--server"
 .IR address|name
 sets the address in the TACACS+ or RADIUS server lines; a host name must
@@ -5002,6 +5006,54 @@ and the commented lo0 apply.
 Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command scope mgmt-acl
+.SS Per-scope NETCONF service \fB(tacctl scope netconf)\fR
+.TP
+.BI "scope netconf " scope " [ show | enable | disable | leave ] [ \-\-connection\-limit " n " | none ] [ \-\-rate\-limit " n " | none ]"
+The NETCONF service of the Junos devices of a scope.
+.B enable
+renders and plans
+.BR "set system services netconf ssh" ;
+.B \-\-connection\-limit
+and
+.B \-\-rate\-limit
+(1 to 250; an enable's, and
+.B none
+removes one) add the limits, in which case the statements are the limits' own:
+a limit's statement creates
+.B ssh
+by itself, and the device prints no bare
+.B ssh
+beside it.
+.B disable
+plans
+.BR "delete system services netconf"
+and drops the scope's limits.
+.B leave
+(the default, and what removes the scope's setting) plans and compares nothing
+of the service, as before. A device's own setting
+.RB ( "device netconf" )
+wins over the scope's, and each limit layers on its own.
+.B show
+(or no word) prints the setting. The values are
+.B netconf_scope.\fIscope\fR.{state,connection_limit,rate_limit}
+in
+.IR tacctl.yaml ,
+written only when set; a rename moves them, a removal deletes them. The verb is
+the superuser's.
+.\" BEGIN GENERATED: command scope netconf
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-connection\-limit\fR \fI<n>\fR
+(enable) The connection limit of the service, 1 to 250; none removes it.
+.TP
+\fB\-\-rate\-limit\fR \fI<n>\fR
+(enable) The rate limit of the service, 1 to 250; none removes it.
+.RE
+.\" END GENERATED: command scope netconf
 .SS Per-scope SNMP \fB(tacctl scope snmp)\fR
 .PP
 The SNMP settings of the devices of a scope. A setting the scope does not set
@@ -6610,7 +6662,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device address
 .TP
@@ -6665,7 +6717,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device description
 .TP
@@ -6717,7 +6769,7 @@ Read the location from the device (SNMP sysLocation) and store it.
 (remove, import, hostkey, location) Answer yes to the confirmation.
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device location
 .TP
@@ -6820,9 +6872,60 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device config-syntax
+.TP
+.BI "device netconf " name " [ show | enable | disable | leave | clear ] [ \-\-connection\-limit " n " | none ] [ \-\-rate\-limit " n " | none ] [ \-\-apply ]"
+The NETCONF service setting of one Junos device, over its scope's
+.RB ( "scope netconf" ):
+.BR enable ,
+.B disable
+or
+.B leave
+(the device is left alone, whatever its scope says) are the device's own;
+.B clear
+removes it, so the scope's decides again. The state and each limit layer on
+their own, the device's value first. With no word, or
+.BR show ,
+the setting is printed with where each value comes from;
+.B "device show"
+has a
+.B NETCONF
+row, and
+.B \-\-json
+a
+.B netconf
+object, when the setting of a Junos device is not the default. The setting is
+the device's
+.B netconf:
+map in
+.IR devices.yaml :
+a file or an import that gives one to a device of another vendor is refused, and
+.B "device vendor"
+takes it away from a device that stops being Junos, saying so.
+.B \-\-apply
+runs
+.B "device config apply"
+for the device afterwards, as for the fields above. The verb is the
+superuser's.
+.\" BEGIN GENERATED: command device netconf
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-connection\-limit\fR \fI<n>\fR
+(enable) The connection limit of the service, 1 to 250; none takes the scope's.
+.TP
+\fB\-\-rate\-limit\fR \fI<n>\fR
+(enable) The rate limit of the service, 1 to 250; none takes the scope's.
+.TP
+\fB\-\-apply\fR
+(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+.RE
+.\" END GENERATED: command device netconf
 .TP
 .BI "device snmp " "name " "[ show [ \-\-reveal ] | version v2c|v3 | port " n " | timeout " seconds " | clients { list | add | remove } " "[ cidr [ , cidr ...]] | community [ \-\-stdin ] | v3\-user " "user [ \-\-stdin ] | clear ]"
 The SNMP settings of one registered device, over its scope's and the default's:
@@ -7807,7 +7910,8 @@ statements tacctl renders for it now. The sections are
 .BR mgmt\-acl ,
 .BR snmp ,
 .B netconf
-(compared only when tacctl renders it) and
+(compared only where the scope's or the device's NETCONF setting enables or
+disables the service) and
 .B breakglass
 (the accounts by name, never a hash; an account that differs from the scope's
 only in case, such as
@@ -8743,7 +8847,12 @@ to standard error.
 .PP
 Never written, whatever is given:
 .BR breakglass ,
-.BR netconf ,
+.B netconf
+(unless the scope's or the device's NETCONF setting enables or disables the
+service: then
+.BR "set system services netconf ssh"
+with its limits, or
+.BR "delete system services netconf" ),
 .BR "system root\-authentication" ,
 .BR "system services" ,
 .BR interfaces ,
@@ -10881,6 +10990,18 @@ The user who held it. Set with \fBtacctl breakglass hold\fR.
 .B breakglass_hold.<device>.reason
 text of 1 to 256 characters (a user name for by). Default: none (unset).
 Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the hold by tacctl breakglass release. Set with \fBtacctl breakglass hold\fR.
+.TP
+.B netconf_scope.<scope>.state
+one of enable, disable. Default: none (unset).
+The NETCONF service of the scope's Junos devices: enable or disable (unset: leave, nothing is planned or compared). Set with \fBtacctl scope netconf\fR.
+.TP
+.B netconf_scope.<scope>.connection_limit
+integer, 1 to 250. Default: none (unset).
+The connection limit of an enabled NETCONF service (1 to 250); unset: none stated. Set with \fBtacctl scope netconf\fR.
+.TP
+.B netconf_scope.<scope>.rate_limit
+integer, 1 to 250. Default: none (unset).
+The rate limit of an enabled NETCONF service (1 to 250); unset: none stated. Set with \fBtacctl scope netconf\fR.
 .\" END GENERATED: config-keys
 .SS console.yaml
 .I /etc/tacctl/console.yaml

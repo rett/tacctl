@@ -165,6 +165,12 @@ func (a Allow) Check(line string) error {
 		return refuse(line, false, "a statement with no path")
 	}
 
+	// the exact statements of the NETCONF setting (D147), when the rendering
+	// states them: the one place under 'system services' a plan may write
+	if netconfStatement(path) && a.netconfAllowed(line) {
+		return nil
+	}
+
 	// the never list, whatever the tables say
 	if id, ok := neverMatch(fam, Line{Text: line}); ok {
 		return refuse(line, true, "on the never list (%s)", id)

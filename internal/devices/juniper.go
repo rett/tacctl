@@ -367,7 +367,8 @@ func JuniperVars(req Request, d Data) map[string]string {
 		"SNMP_BLOCK":          snmpBlock,
 		"SNMP_STEP":           snmpStep,
 		"SYSTEM_BLOCK":        strings.Join(system, "\n"),
-		"NETCONF_BLOCK":       JuniperNetconf(NetconfInput{Restricted: d.Restricted, MgmtFilter: terms.Len() > 0}),
+		"NETCONF_BLOCK": JuniperNetconf(NetconfInput{Restricted: d.Restricted, MgmtFilter: terms.Len() > 0,
+			State: d.Netconf.State, ConnectionLimit: d.Netconf.ConnectionLimit, RateLimit: d.Netconf.RateLimit}),
 		// Not a template variable: the authentication-order the notes name.
 		"authn_order": order,
 	}

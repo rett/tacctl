@@ -122,6 +122,11 @@ type Data struct {
 	// the device (0.2.7, blocks.go): rendered into the Junos SNMP step and
 	// the managed snmp section. The zero value is "no block".
 	Blocks Blocks
+	// Netconf is the effective NETCONF service setting of a Junos device
+	// (D145 of docs/plans/0.2.10-plan.md): the walkthrough's NETCONF step
+	// and the managed netconf section follow it. The zero value is leave: the
+	// step stays commented and nothing is compared.
+	Netconf NetconfSetting
 	// Restricted is an engineer's walkthrough: the Cisco NETCONF step is a
 	// superuser's (D53).
 	Restricted bool

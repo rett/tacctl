@@ -313,6 +313,10 @@ Usage:
       <o>--role <role></o>                                        (add) admin (default), operator or readonly
   <b>tacctl scope snmp</b> <o><scope></o> show|version|community|v3-user|clients|contact|port|timeout|clear|test
                                                            SNMP of a scope: credentials, allowed clients, contact (default beneath: tacctl config snmp)
+  <b>tacctl scope netconf</b> <o><scope></o> [show|enable|disable|leave]
+                                                           NETCONF service of the scope's Junos devices (default leave: nothing is planned or compared; a device's own setting wins)
+      <o>--connection-limit <n>|none</o>                          (enable) The connection limit of the service, 1 to 250; none removes it
+      <o>--rate-limit <n>|none</o>                                (enable) The rate limit of the service, 1 to 250; none removes it
   <b>tacctl scope block</b> <o><scope></o> {juniper|cisco} list|show|check|set|remove|edit|adopt [<o><block></o>]
                                                            Configuration blocks of a scope (Junos snmp and system, IOS snmp): community strings, trap groups and hosts, access lists, login message, domain, time zone, name servers, NTP
 

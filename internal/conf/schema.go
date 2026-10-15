@@ -180,7 +180,7 @@ func NewSchema(backends []string) *Schema {
 			{BlocksPrefix, Rule{Type: TypeBlockList, Depth: 2}},
 			// And one device's own, under its name written with '~' for '.'.
 			{BlocksDevicePrefix, Rule{Type: TypeBlockList, Depth: 2}},
-		}, append(snmpScopeWildcards(), holdWildcards()...)...),
+		}, slices.Concat(snmpScopeWildcards(), holdWildcards(), netconfScopeWildcards())...),
 	}
 }
 

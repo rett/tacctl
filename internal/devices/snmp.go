@@ -13,9 +13,11 @@ package devices
 // stored.
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/rett/tacctl/internal/cidr"
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/names"
 )
 
@@ -568,11 +570,68 @@ type NetconfInput struct {
 	// MgmtFilter says that the walkthrough renders a management filter
 	// (Junos), which already permits tcp/830 next to ssh.
 	MgmtFilter bool
+	// State is the scope's (or the device's) NETCONF service setting for a
+	// Junos device (D145): conf.NetconfEnable, conf.NetconfDisable, or ""
+	// for leave, the step that stays commented. ConnectionLimit and
+	// RateLimit are the enable's optional limits, 0 for none.
+	State                      string
+	ConnectionLimit, RateLimit int
 }
+
+// The states of a NETCONF service setting (the empty state is leave).
+const (
+	NetconfEnable  = conf.NetconfEnable
+	NetconfDisable = conf.NetconfDisable
+)
+
+// NetconfSetting is the effective NETCONF service setting of one Junos
+// device, as the CLI resolved it (the device's own over the scope's over
+// leave, D145). The zero value is leave.
+type NetconfSetting struct {
+	// State is conf.NetconfEnable, conf.NetconfDisable or "" (leave).
+	State string
+	// ConnectionLimit and RateLimit are the limits of 'system services
+	// netconf ssh' when State is enable, 0 for none.
+	ConnectionLimit, RateLimit int
+}
+
+// NetconfStatements are the statements an enabled service has (D145): the
+// limits when any is set, since a limit's statement creates 'ssh' by itself
+// and 'show configuration | display set' prints no bare 'ssh' beside it,
+// else the bare 'ssh'.
+func NetconfStatements(connectionLimit, rateLimit int) []string {
+	const base = "set system services netconf ssh"
+	var out []string
+	if connectionLimit > 0 {
+		out = append(out, base+" connection-limit "+strconv.Itoa(connectionLimit))
+	}
+	if rateLimit > 0 {
+		out = append(out, base+" rate-limit "+strconv.Itoa(rateLimit))
+	}
+	if len(out) == 0 {
+		out = []string{base}
+	}
+	return out
+}
+
+// NetconfDeleteStatement is the one statement a disabled service plans.
+const NetconfDeleteStatement = "delete system services netconf"
 
 // JuniperNetconf is the Junos NETCONF step: commented, to review and
 // uncomment. Nothing is enabled by tacctl.
 func JuniperNetconf(in NetconfInput) string {
+	switch in.State {
+	case NetconfEnable:
+		return strings.Join(append(append([]string{
+			"# NETCONF over ssh is enabled by the scope's setting (tacctl scope netconf):",
+		}, NetconfStatements(in.ConnectionLimit, in.RateLimit)...), juniperNetconfNotes(in)...), "\n")
+	case NetconfDisable:
+		return strings.Join([]string{
+			"# NETCONF is turned off by the scope's setting (tacctl scope netconf). Every NETCONF",
+			"# client of the device, tacctl's own included, loses the service:",
+			NetconfDeleteStatement,
+		}, "\n")
+	}
 	l := []string{
 		"# NETCONF over ssh is off by default. Review, then uncomment to enable it:",
 		"#   set system services netconf ssh",
@@ -597,6 +656,28 @@ func JuniperNetconf(in NetconfInput) string {
 		"# and on the device:",
 		"#   show system connections | match \"\\.830 \"")
 	return strings.Join(l, "\n")
+}
+
+// juniperNetconfNotes are the notes that follow an enabled service's
+// statements.
+func juniperNetconfNotes(in NetconfInput) []string {
+	var l []string
+	if in.MgmtFilter {
+		l = append(l,
+			"# The management filter of Step 4 permits tcp port 830 next to ssh from the same",
+			"# sources, so enabling NETCONF needs no filter change.")
+	} else {
+		l = append(l,
+			"# No management filter is rendered (Step 4): when you add one, permit tcp port 830",
+			"# next to ssh from the same sources.")
+	}
+	return append(l,
+		"# Who may use it is decided by the login class bits of the user (the template users",
+		"# of Step 1), not by this step.",
+		"# Check after the commit, from a permitted address:",
+		"#   ssh -p 830 -s <user>@<device> netconf     (expect a <hello> from the device)",
+		"# and on the device:",
+		"#   show system connections | match \"\\.830 \"")
 }
 
 // CiscoNetconf is the IOS-XE NETCONF step: commented, for superusers; an

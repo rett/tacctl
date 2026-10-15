@@ -176,6 +176,20 @@ var junosOwned = []OwnedRow{
 		Why:  "the statements of the system block of scope <scope>",
 		Kept: "the device's other trusted NTP keys"},
 
+	// The NETCONF service (0.2.10, D145): the setting's statements only. The
+	// rows of a limit come first: the first row a statement matches decides.
+	// What the device holds beside them is kept and listed; a disabled
+	// service has its hierarchy deleted in one statement (junos.go).
+	{ID: "junos.netconf.connection-limit", Section: "netconf", Pattern: "system services netconf ssh connection-limit", Mode: ModeSingle,
+		Why:  "the connection limit of the NETCONF service the scope's setting states",
+		Kept: "the limit when the setting states none"},
+	{ID: "junos.netconf.rate-limit", Section: "netconf", Pattern: "system services netconf ssh rate-limit", Mode: ModeSingle,
+		Why:  "the rate limit of the NETCONF service the scope's setting states",
+		Kept: "the limit when the setting states none"},
+	{ID: "junos.netconf.ssh", Section: "netconf", Pattern: "system services netconf ssh", Mode: ModeSingle,
+		Why:  "NETCONF over ssh, enabled by the scope's setting",
+		Kept: "every other statement under the service (a trace option, the port)"},
+
 	{ID: "junos.mgmt-acl.filter", Section: "mgmt-acl", Pattern: "firewall family inet filter $", Mode: ModeWhole, Ordered: true,
 		Why:  "the management filter tacctl renders (its terms, their leaves and their order)",
 		Kept: "other filters; the lo0 application"},
@@ -374,6 +388,12 @@ func neverMatch(family string, l Line) (string, bool) {
 	}
 	for _, r := range neverEmitted {
 		if r.Family != family {
+			continue
+		}
+		// the exact statements of an enabled or disabled service, in the
+		// netconf section's own lines (D147); the allow-list holds them
+		// against the rendering
+		if r.ID == "junos.netconf" && l.Section == devconf.SectionNetconf && NetconfStatementAllowed(l.Text) {
 			continue
 		}
 		if (text == r.Prefix || strings.HasPrefix(text, r.Prefix+" ")) && strings.Contains(" "+text+" ", r.Contains) {
