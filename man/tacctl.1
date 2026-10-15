@@ -212,15 +212,15 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.8
+.B 0.2.9
 (the release before this one) and
 .BR 0.2.3 ;
-.BR 0.2.4 " to " 0.2.7
+.BR 0.2.4 " to " 0.2.8
 and
 .B 0.2.2
 and older are refused, with the way there (one release at a time: this
 rollback,
-.BR "tacctl upgrade \-\-branch 0.2.8" ,
+.BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word. Either target is
 refused while a device's record says a confirmed commit of
 .B "device config apply"
@@ -234,50 +234,42 @@ or
 .B "device config forget <name>"
 settles it).
 .IP
-.B "rollback 0.2.8"
+.B "rollback 0.2.9"
 .B \-\-apply
 takes a snapshot, then removes from
 .I tacctl.yaml
-the two keys a 0.2.8 binary refuses
-.RB ( device.apply.confirm_timeout
-and
-.BR device.apply.pause ;
+the keys a 0.2.9 binary refuses
+.RB ( device.apply.transport
+and the
+.B netconf_scope
+settings of
+.BR "scope netconf" ;
 the dry run warns, and
 .B \-\-apply
 refuses without
 .B \-\-yes
-while one is set) and rewrites the per\-tier and group sudoers drop\-ins that
-are exactly this release's text with 0.2.8's, after
-.B "visudo \-cf"
-(the password cache's alias loses the lines of
-.BR "device config apply" ,
-.B "device onboard"
-and
-.BR "device collect" ).
-A drop\-in that was edited, or that
-.B visudo
-refuses, is left and named. It leaves and lists, and never deletes, what 0.2.8
-ignores:
-.I /var/lib/tacctl/devices\-config.json
-(the
+while one is set) and from
+.I devices.yaml
+the
+.B netconf
+map of each device that has one
+.RB ( "device netconf" ).
+It leaves and lists, and never deletes, what 0.2.9 ignores: the
+.B via
+field of the
 .B applied
-parts, and the
-.BR login ,
-.B user_pulled
-and
-.B hostname
-fields; 0.2.8 reads the file without fields it does not know) and
-.IR /var/lib/tacctl/device\-apply/
-(the shape store and the device locks). Nothing else is converted:
+parts of
+.I /var/lib/tacctl/devices\-config.json
+(0.2.9 reads the file without fields it does not know). Nothing else is
+converted: 0.2.10 changed no sudoers text, and
 .IR console.yaml ,
-.IR devices.yaml ,
-.I store.yaml
-and the hosts are in formats 0.2.8 reads.
+.IR store.yaml ,
+the apply state directory and the hosts are in formats 0.2.9 reads.
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
-.BR "tacctl upgrade \-\-branch 0.2.8" ,
+.BR "tacctl upgrade \-\-branch 0.2.9" ,
 and the audit line
-.BR "rollback target=0.2.8" .
+.BR "rollback target=0.2.9" .
 .IP
 .B "rollback 0.2.3"
 .B \-\-apply
@@ -290,6 +282,8 @@ the keys 0.2.5 added
 .BR device.config.confirm_timeout ,
 .BR device.apply.confirm_timeout ,
 .BR device.apply.pause ,
+.BR device.apply.transport ,
+.BR netconf_scope.<scope> ,
 .BR cisco.source_interface.<scope> ,
 .BR breakglass_hold.<device> )
 and any other key a 0.2.3 binary does not know; removes
@@ -298,9 +292,11 @@ from
 .I console.yaml
 and writes it the way 0.2.3 reads it (the cache is off); removes the
 .B snmp
-map and the
+map, the
 .B config_syntax
-key of every device from
+key and the
+.B netconf
+map of every device from
 .IR devices.yaml
 (devices use their scope's or the default's settings; a
 .B legacy\-ssh
@@ -10778,26 +10774,27 @@ privilege 15 with their own password. A device with no enable secret has no
 .B enable
 once the list is gone: set one first (Step 0).
 .PP
-Going back to 0.2.8 is
-.B "tacctl rollback 0.2.8"
+Going back to 0.2.9 is
+.B "tacctl rollback 0.2.9"
 (a dry run), then
-.B "tacctl rollback 0.2.8 \-\-apply"
+.B "tacctl rollback 0.2.9 \-\-apply"
 and
-.BR "tacctl upgrade \-\-branch 0.2.8" ;
-it removes the two
-.B device.apply
-keys and puts back 0.2.8's sudoers drop\-ins, and lists what 0.2.9 left that
-0.2.8 ignores (the
-.B applied
-parts of the pull records and the apply state directory). Until 0.2.8 is
-installed, do not run
-.BR "device config apply" ,
-.BR "device onboard" ,
-.B "device collect"
+.BR "tacctl upgrade \-\-branch 0.2.9" ;
+it removes the transport setting of
+.B "device config apply"
+and the NETCONF service setting of the scopes and devices, and lists what
+0.2.10 left that 0.2.9 ignores (the
+.B via
+field of the apply records). Until 0.2.9 is installed, do not run
+.BR "scope netconf" ,
+.BR "device netconf" ,
+.B "config devices apply\-transport"
 or
-.BR "config devices apply\-confirm\-timeout|apply\-pause" ;
-run the rollback again if one ran. The snapshot it takes holds the 0.2.9 form
-and is restored with 0.2.9.
+.BR "device config apply \-\-transport" ;
+run the rollback again if one ran. The snapshot it takes holds the 0.2.10 form
+and is restored with 0.2.10. Going back to 0.2.8 is this rollback, the install
+of 0.2.9 and then 0.2.9's own
+.BR "tacctl rollback 0.2.8" .
 .PP
 Going back to 0.2.3 is
 .B "tacctl rollback 0.2.3"

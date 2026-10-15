@@ -6,13 +6,13 @@ package lifecycle
 // one. The command (internal/cli/rollback.go) adds what needs the
 // invocation: the snapshot and the sudoers installer.
 //
-// The targets are 0.2.8 (the release before this one: RollbackTarget028,
-// docs/plans/0.2.9-rollout-plan.md D143) and 0.2.3 (RollbackTarget). A
-// release's tool converts what that release changed and prepares the state
-// for the one before it, so 0.2.7 is not a target: the way is this tool for
-// 0.2.8, the install of 0.2.8, then that release's own tool.
+// The targets are 0.2.9 (the release before this one: RollbackTarget029,
+// docs/plans/0.2.10-plan.md) and 0.2.3 (RollbackTarget). A release's tool
+// converts what that release changed and prepares the state for the one
+// before it, so 0.2.8 is not a target: the way is this tool for 0.2.9, the
+// install of 0.2.9, then that release's own tool.
 //
-// What the rollback to 0.2.8 does (PlanRollback with Target 0.2.8) is the
+// What the rollback to 0.2.9 does (PlanRollback with Target 0.2.9) is the
 // last section of this comment. The rest of it is the rollback to 0.2.3: the
 // formats 0.2.4 changed, and what a 0.2.3 binary does with each (verified
 // against the sources of the 0.2.3 tag):
@@ -42,8 +42,10 @@ package lifecycle
 //	console.yaml           0.2.3's parser rejects settings.password_cache;
 //	                       removed (console.Rollback). 'tiers.engineer' and
 //	                       'settings.space_completion' are 0.2.3's own.
-//	devices.yaml           0.2.3's parser rejects the per-device 'snmp:' map;
-//	                       removed (devreg.RollbackSNMP).
+//	devices.yaml           0.2.3's parser rejects the per-device 'snmp:' map
+//	                       and the keys 'config_syntax' and 'netconf';
+//	                       removed (devreg.RollbackSNMP,
+//	                       RollbackConfigSyntax, RollbackNetconf).
 //	snmp/devices/*.yaml    the per-device credentials: 0.2.3 opens
 //	                       snmp/<scope>.yaml by name and never lists the
 //	                       directory, so it ignores the subdirectory; left.
@@ -79,28 +81,25 @@ package lifecycle
 // confirmed commit on the device is a state of the device that no file
 // conversion settles, and a rollback must not hide a window that is open.
 //
-// The rollback to 0.2.8 (0.2.9 changed no format 0.2.8 reads strictly except
-// the two settings and two sudoers texts):
+// The rollback to 0.2.9 (0.2.10 changed no format 0.2.9 reads strictly except
+// one family of settings, the NETCONF service setting of a scope, and one
+// per-device key; it changed no sudoers text):
 //
-//	tacctl.yaml            0.2.8's schema lacks device.apply.confirm_timeout
-//	                       and device.apply.pause (conf.Added029): they are
-//	                       removed. Every other key is one 0.2.8 has.
-//	sudoers drop-ins       the per-tier drop-in and the group drop-in that
-//	                       are exactly this release's text are rewritten
-//	                       with 0.2.8's (tier.Sudoers028, GroupSudoers028:
-//	                       without the cache's lines of 'device config
-//	                       apply', 'device onboard' and 'device collect'),
-//	                       through 'visudo -cf'; any other file is left.
-//	devices-config.json    the 'applied' fields of the last-pull records
-//	                       (id, kind, reason, until, shape, ...) and the
-//	                       'login', 'user_pulled' and 'hostname' fields:
-//	                       0.2.8 decodes the file without them (unknown JSON
-//	                       fields are ignored); left, listed.
-//	device-apply/          the shape store and the device locks: 0.2.8 never
-//	                       opens the directory; left, listed.
+//	tacctl.yaml            0.2.9's schema lacks device.apply.transport and
+//	                       the netconf_scope.<scope>.* keys (conf.Added0210):
+//	                       they are removed. Every other key is one 0.2.9 has.
+//	devices.yaml           0.2.9's parser rejects the per-device 'netconf:'
+//	                       map (the NETCONF service setting of a device):
+//	                       removed (devreg.RollbackNetconf).
+//	devices-config.json    the 'applied.via' field of the last-pull records
+//	                       (the transport an apply wrote through): 0.2.9
+//	                       decodes the file without it (unknown JSON fields
+//	                       are ignored); left, listed.
+//	sudoers drop-ins       0.2.10 changed none: the drop-ins are the text
+//	                       0.2.9 writes and are left.
 //
-// console.yaml, devices.yaml and the hosts need no conversion (0.2.9 changed
-// none of them).
+// console.yaml, the SNMP credentials, the blocks, the apply state directory
+// and the hosts need no conversion (0.2.10 changed none of them).
 
 import (
 	"fmt"
@@ -122,10 +121,10 @@ import (
 )
 
 // RollbackTarget is the oldest release 'tacctl rollback' prepares for;
-// RollbackTarget028 is the release before this one.
+// RollbackTarget029 is the release before this one.
 const (
 	RollbackTarget    = "0.2.3"
-	RollbackTarget028 = "0.2.8"
+	RollbackTarget029 = "0.2.9"
 )
 
 // RollbackRefusal is a version the command does not take: Lines say why.
@@ -187,10 +186,10 @@ func pluralWord(n int, one, many string) string {
 
 var reVersion = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 
-const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget028 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
+const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
 
-// CheckRollbackVersion is the version a rollback is asked for ("0.2.8",
-// "0.2.3" or either with a "v"), or a *RollbackRefusal: 0.2.4 to 0.2.7 and
+// CheckRollbackVersion is the version a rollback is asked for ("0.2.9",
+// "0.2.3" or either with a "v"), or a *RollbackRefusal: 0.2.4 to 0.2.8 and
 // older than 0.2.3 (a release's tool prepares the state for the one release
 // it knows, so the way back is one release at a time), this release or a
 // newer one, or something that is not a release.
@@ -202,18 +201,18 @@ func CheckRollbackVersion(arg string) (string, error) {
 			rollbackUsage}}
 	}
 	v := strings.TrimPrefix(arg, "v")
-	if v == RollbackTarget || v == RollbackTarget028 {
+	if v == RollbackTarget || v == RollbackTarget029 {
 		return v, nil
 	}
 	n := func(i int) int { x, _ := strconv.Atoi(m[i]); return x }
-	both := "'tacctl rollback' prepares the state for " + RollbackTarget028 + " (the release before this one) and " + RollbackTarget + " only"
+	both := "'tacctl rollback' prepares the state for " + RollbackTarget029 + " (the release before this one) and " + RollbackTarget + " only"
 	fallback := "The fallback that needs no tool is 'tacctl backup restore' of a snapshot of the time (see 'tacctl backup list')."
 	switch {
-	case n(1) == 0 && n(2) == 2 && n(3) > 3 && n(3) < 8:
+	case n(1) == 0 && n(2) == 2 && n(3) > 3 && n(3) < 9:
 		return "", &RollbackRefusal{Lines: []string{
 			"Rolling back to " + v + " is not supported from this release: " + both + " (" + v + " is further back).",
-			"Go back one release at a time: run 'tacctl rollback " + RollbackTarget028 + " --apply', install it with 'tacctl upgrade --branch " + RollbackTarget028 + "', and run the rollback of that release",
-			"(" + RollbackTarget028 + "'s prepares the state for " + RollbackTarget + "). " + fallback}}
+			"Go back one release at a time: run 'tacctl rollback " + RollbackTarget029 + " --apply', install it with 'tacctl upgrade --branch " + RollbackTarget029 + "', and run the rollback of that release",
+			"(" + RollbackTarget029 + "'s prepares the state for 0.2.8 and " + RollbackTarget + "). " + fallback}}
 	case n(1) == 0 && (n(2) < 2 || (n(2) == 2 && n(3) < 3)):
 		return "", &RollbackRefusal{Lines: []string{
 			"Rolling back to " + v + " is not supported from this release: " + both + " (" + v + " is older).",
@@ -303,7 +302,7 @@ type RollbackInput struct {
 	HasStore bool
 	// WithHosts: the command was given --hosts.
 	WithHosts bool
-	// Target is the release rolled back to: RollbackTarget028 or
+	// Target is the release rolled back to: RollbackTarget029 or
 	// RollbackTarget (the zero value is 0.2.3, as before 0.2.9).
 	Target string
 	// InstallSudoers writes a sudoers drop-in the way the commands do
@@ -345,7 +344,10 @@ type RollbackPlan struct {
 	// (D113, 0.2.5): an older parser refuses the key, so it goes like the
 	// SNMP map does.
 	syntaxDev []devSyntax
-	sudoers   []sudoersPlan
+	// netconfDev are the devices with a NETCONF service setting of their
+	// own (0.2.10, D145): removed like the syntax setting is.
+	netconfDev []devNetconf
+	sudoers    []sudoersPlan
 	// notWritten says, after ApplyRollback, which drop-ins could not be
 	// rewritten and why (the apply goes on: 0.2.3's upgrade rewrites the
 	// tiers one itself).
@@ -360,6 +362,12 @@ type devSNMP struct {
 // devSyntax is a device with a configuration syntax setting.
 type devSyntax struct {
 	name, syntax string
+}
+
+// devNetconf is a device with a NETCONF service setting of its own,
+// described.
+type devNetconf struct {
+	name, what string
 }
 
 // sudoersPlan is one drop-in the rollback may rewrite.
@@ -378,7 +386,7 @@ func (p *RollbackPlan) Pending() bool {
 // PendingFiles: there is a file of tacctl's own to convert (the snapshot
 // holds those; the sudoers drop-ins are not in it).
 func (p *RollbackPlan) PendingFiles() bool {
-	return len(p.keys) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0
+	return len(p.keys) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0
 }
 
 func (p *RollbackPlan) todoSudoers() []sudoersPlan {
@@ -432,8 +440,8 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	if len(pend) > 0 {
 		return nil, PendingRefusal(pend)
 	}
-	if in.Target == RollbackTarget028 {
-		return planRollback028(p)
+	if in.Target == RollbackTarget029 {
+		return planRollback029(p)
 	}
 	// A break-glass hold is refused, in the dry run and --apply alike: the
 	// release being left has the record (docs/plans/0.2.5-plan.md D122), and
@@ -472,6 +480,9 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 		if d.ConfigSyntax != "" {
 			p.syntaxDev = append(p.syntaxDev, devSyntax{d.Name, d.ConfigSyntax})
 		}
+		if !d.Netconf.Empty() {
+			p.netconfDev = append(p.netconfDev, devNetconf{d.Name, describeNetconf(d.Netconf)})
+		}
 	}
 	p.Steps = append(p.Steps, p.devicesStep())
 
@@ -490,6 +501,22 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	p.Warnings = p.warnings()
 	p.Notes = p.notes()
 	return p, nil
+}
+
+// describeNetconf says a device's own NETCONF service setting in a few
+// words: the state and the limits it states.
+func describeNetconf(n devreg.Netconf) string {
+	var w []string
+	if n.State != "" {
+		w = append(w, n.State)
+	}
+	if n.ConnectionLimit != 0 {
+		w = append(w, "connection-limit "+strconv.Itoa(n.ConnectionLimit))
+	}
+	if n.RateLimit != 0 {
+		w = append(w, "rate-limit "+strconv.Itoa(n.RateLimit))
+	}
+	return strings.Join(w, ", ")
 }
 
 func describeSNMP(s devreg.SNMP) string {
@@ -517,7 +544,7 @@ func (p *RollbackPlan) confStep() RollbackStep {
 	}
 	var added, other []string
 	for _, k := range p.keys {
-		if conf.Added024Key(k) || conf.Added025Key(k) || conf.Added027Key(k) || conf.Added029Key(k) {
+		if conf.Added024Key(k) || conf.Added025Key(k) || conf.Added027Key(k) || conf.Added029Key(k) || conf.Added0210Key(k) {
 			added = append(added, k)
 		} else {
 			other = append(other, k)
@@ -551,11 +578,14 @@ func (p *RollbackPlan) consoleStep() RollbackStep {
 
 func (p *RollbackPlan) devicesStep() RollbackStep {
 	s := RollbackStep{Title: p.in.Paths.DevicesFile + ": remove the per-device SNMP settings",
-		Todo: len(p.snmpDev) > 0 || len(p.syntaxDev) > 0}
+		Todo: len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0}
 	if len(p.syntaxDev) > 0 {
 		s.Title += " and configuration syntax"
 	}
-	if len(p.snmpDev) == 0 && len(p.syntaxDev) == 0 {
+	if len(p.netconfDev) > 0 {
+		s.Title += " and NETCONF service"
+	}
+	if len(p.snmpDev) == 0 && len(p.syntaxDev) == 0 && len(p.netconfDev) == 0 {
 		s.Lines = []string{"no device has SNMP settings of its own"}
 		return s
 	}
@@ -565,7 +595,10 @@ func (p *RollbackPlan) devicesStep() RollbackStep {
 	for _, d := range p.syntaxDev {
 		s.Lines = append(s.Lines, "remove the config_syntax key of "+d.name+" ("+d.syntax+")")
 	}
-	s.Lines = append(s.Lines, "(0.2.3's parser refuses a device with a key it does not know: \"unknown key 'snmp'\", \"unknown key 'config_syntax'\")")
+	for _, d := range p.netconfDev {
+		s.Lines = append(s.Lines, "remove the netconf map of "+d.name+" ("+d.what+")")
+	}
+	s.Lines = append(s.Lines, "(0.2.3's parser refuses a device with a key it does not know: \"unknown key 'snmp'\", \"unknown key 'config_syntax'\", \"unknown key 'netconf'\")")
 	return s
 }
 
@@ -771,6 +804,22 @@ func (p *RollbackPlan) warnings() []RollbackWarning {
 			lines = append(lines, "  "+d.name+": "+d.syntax)
 		}
 	}
+	var nc []string
+	for _, k := range p.keys {
+		if strings.HasPrefix(k, "netconf_scope.") {
+			v, _ := in.Conf.Get(k, "")
+			nc = append(nc, k+"="+v)
+		}
+	}
+	if len(nc) > 0 || len(p.netconfDev) > 0 {
+		lines = append(lines, "The NETCONF service setting (scope netconf, device netconf) is removed; a release without it neither plans nor compares the service, and what a device runs stays as it is:")
+		for _, k := range nc {
+			lines = append(lines, "  "+k)
+		}
+		for _, d := range p.netconfDev {
+			lines = append(lines, "  "+d.name+": "+d.what)
+		}
+	}
 	if len(p.console.Remove) > 0 {
 		lines = append(lines, "The password cache's settings of console.yaml are removed ("+strings.TrimPrefix(p.console.Remove[0], "settings.password_cache: ")+"): 0.2.3 has no cache, every login is asked for its password.")
 	}
@@ -839,6 +888,15 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 		}
 		if len(cleared) > 0 {
 			done = append(done, fmt.Sprintf("%s: removed the configuration syntax of %d %s", pt.DevicesFile, len(cleared), plural(len(cleared), "device", "devices")))
+		}
+	}
+	if len(p.netconfDev) > 0 {
+		cleared, err := devreg.RollbackNetconf(pt.DevicesFile, nil)
+		if err != nil {
+			return done, err
+		}
+		if len(cleared) > 0 {
+			done = append(done, fmt.Sprintf("%s: removed the NETCONF service setting of %d %s", pt.DevicesFile, len(cleared), plural(len(cleared), "device", "devices")))
 		}
 	}
 	p.notWritten = nil

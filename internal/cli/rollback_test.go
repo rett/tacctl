@@ -623,11 +623,18 @@ var oldBinaryFlag = flag.String("old-bin", "", "a tacctl 0.2.3 binary built with
 // that fails is a failure.
 func oldBinary(t *testing.T) string {
 	t.Helper()
-	if *oldBinaryFlag != "" {
-		return *oldBinaryFlag
+	return oldBinaryOf(t, "0.2.3", oldBinaryFlag)
+}
+
+// oldBinaryOf is the tacctl of the release tag, built the same way;
+// flagVal names a binary that skips the build.
+func oldBinaryOf(t *testing.T, tag string, flagVal *string) string {
+	t.Helper()
+	if *flagVal != "" {
+		return *flagVal
 	}
 	if testing.Short() {
-		t.Skip("building the 0.2.3 release takes a while; -short skips it (-args -old-bin=<binary built from the 0.2.3 tag with -tags testknobs> skips the build)")
+		t.Skip("building the " + tag + " release takes a while; -short skips it (a binary built from the tag with -tags testknobs, named by the flag, skips the build)")
 	}
 	ctx := context.Background()
 	r := execx.Real{}
@@ -644,17 +651,17 @@ func oldBinary(t *testing.T) string {
 	// fetch --tags) or this test never runs there.
 	for _, tool := range []string{"git", "tar"} {
 		if _, err := r.LookPath(tool); err != nil {
-			t.Skipf("%s is not installed, so the 0.2.3 tag cannot be archived and built; the converted files are checked by the fixtures of its parsers only", tool)
+			t.Skipf("%s is not installed, so the %s tag cannot be archived and built; the converted files are checked by the fixtures of its parsers only", tool, tag)
 		}
 	}
-	if _, err := do("", "git", "rev-parse", "-q", "--verify", "0.2.3^{commit}"); err != nil {
-		t.Skipf("the 0.2.3 tag is not in this repository (CI must fetch tags: git fetch --tags), so that release cannot be built; the converted files are checked by the fixtures of its parsers only (%v)", err)
+	if _, err := do("", "git", "rev-parse", "-q", "--verify", tag+"^{commit}"); err != nil {
+		t.Skipf("the %s tag is not in this repository (CI must fetch tags: git fetch --tags), so that release cannot be built; the converted files are checked by the fixtures of its parsers only (%v)", tag, err)
 	}
 	goBin := "go"
 	if _, err := r.LookPath(goBin); err != nil {
 		goBin = filepath.Join(runtime.GOROOT(), "bin", "go") //nolint:staticcheck // the toolchain that runs this test, when it is not in PATH
 		if _, err := os.Stat(goBin); err != nil {
-			t.Skip("the go toolchain is not available, so the 0.2.3 tag cannot be built")
+			t.Skip("the go toolchain is not available, so the " + tag + " tag cannot be built")
 		}
 	}
 	tmp := t.TempDir()
@@ -666,8 +673,8 @@ func oldBinary(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("git rev-parse --show-toplevel: %v", err)
 	}
-	if _, err := do(strings.TrimSpace(string(top.Stdout)), "git", "archive", "-o", archive, "0.2.3"); err != nil {
-		t.Fatalf("git archive of the 0.2.3 tag failed: %v", err)
+	if _, err := do(strings.TrimSpace(string(top.Stdout)), "git", "archive", "-o", archive, tag); err != nil {
+		t.Fatalf("git archive of the %s tag failed: %v", tag, err)
 	}
 	src := filepath.Join(tmp, "src")
 	if err := os.Mkdir(src, 0o755); err != nil {
@@ -676,9 +683,9 @@ func oldBinary(t *testing.T) string {
 	if _, err := do("", "tar", "-x", "-f", archive, "-C", src); err != nil {
 		t.Fatalf("tar failed: %v", err)
 	}
-	bin := filepath.Join(tmp, "tacctl-0.2.3")
+	bin := filepath.Join(tmp, "tacctl-"+tag)
 	if _, err := do(src, goBin, "build", "-trimpath", "-buildvcs=false", "-tags", "testknobs", "-o", bin, "./cmd/tacctl"); err != nil {
-		t.Fatalf("the 0.2.3 release did not build: %v", err)
+		t.Fatalf("the %s release did not build: %v", tag, err)
 	}
 	return bin
 }
@@ -689,7 +696,7 @@ func TestRollbackCompletion(t *testing.T) {
 		words []string
 		want  []string
 	}{
-		{[]string{"rollback", ""}, []string{"0.2.8", "0.2.3"}},
+		{[]string{"rollback", ""}, []string{"0.2.9", "0.2.3"}},
 		{[]string{"rollback", "0.2.3", ""}, []string{"--apply", "--yes", "--hosts"}},
 		{[]string{"rollback", "0.2.3", "--apply", ""}, []string{"--yes", "--hosts"}},
 		{[]string{"rollback", "0.2.3", "--apply", "--yes", "--hosts", ""}, nil},
