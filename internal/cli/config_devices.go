@@ -25,7 +25,7 @@ func init() {
 
 // configDevicesFamilySpec is the spec of 'config devices' as
 // registerConfigVerb takes it.
-var configDevicesFamilySpec = Spec{MaxArgs: 2, Args: []string{"show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause", ""}}
+var configDevicesFamilySpec = Spec{MaxArgs: 2, Args: []string{"show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport", ""}}
 
 // configDevicesSpecs are the arguments of each verb.
 var configDevicesSpecs = map[string]Spec{
@@ -37,7 +37,17 @@ var configDevicesSpecs = map[string]Spec{
 	// The settings of 'device config apply' (0.2.9, D140).
 	"apply-confirm-timeout": {MaxArgs: 1, Args: []string{""}},
 	"apply-pause":           {MaxArgs: 1, Args: []string{""}},
+	// How 'device config apply' reaches a device (0.2.10, D150).
+	"apply-transport": {MaxArgs: 1, Args: []string{"auto|cli|netconf"}},
 }
+
+// The values of device.apply.transport and of --transport on 'device config
+// apply' (D150), devapply's own words.
+const (
+	applyTransportAuto    = string(devapply.SettingAuto)
+	applyTransportCLI     = string(devapply.SettingCLI)
+	applyTransportNetconf = string(devapply.SettingNetconf)
+)
 
 // The defaults and the pause's range of the two device.apply.* settings
 // (D140). The confirm window's range is devapply's (a window under three
@@ -58,6 +68,7 @@ var configDevicesVerbs = [][2]string{
 	{"confirm-timeout [<minutes>]", "Show or set the minutes of the 'commit confirmed' that ends a Junos plan, 1-60 (default 5)"},
 	{"apply-confirm-timeout [<minutes>]", "Show or set the minutes of the 'commit confirmed' of 'device config apply', 3-60 (default 10)"},
 	{"apply-pause [<seconds>]", "Show or set the seconds 'device config apply' waits between the devices of a batch after the canary, 0-3600 (default 60)"},
+	{"apply-transport [auto|cli|netconf]", "Show or set how 'device config apply' reaches a Junos device (auto: NETCONF where the device answers and confirms, else the command line)"},
 }
 
 func configDevicesCmd(inv *invocation) *cobra.Command {
@@ -75,7 +86,7 @@ func configDevicesCmd(inv *invocation) *cobra.Command {
 // configDevicesUsage is the usage of 'config devices'.
 func configDevicesUsage() string {
 	var b strings.Builder
-	b.WriteString("\n" + ui.Bold + "Device reads" + ui.NC + "\n\nUsage: tacctl config devices [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause] [value]\n\n")
+	b.WriteString("\n" + ui.Bold + "Device reads" + ui.NC + "\n\nUsage: tacctl config devices [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport] [value]\n\n")
 	for _, v := range configDevicesVerbs {
 		fmt.Fprintf(&b, "  %-38s  %s\n", v[0], v[1])
 	}
@@ -93,6 +104,12 @@ the time the verification and the confirming commit have before the device
 undoes the change by itself. 'apply-pause' (device.apply.pause) is the
 seconds 'device config apply' waits between the devices of a batch after the
 canary, 0 to 3600 (0 is none); --pause of one run replaces it.
+'apply-transport' (device.apply.transport) is how 'device config apply'
+reaches a Junos device: 'auto' (the default) uses NETCONF where the device's
+last read found it answering and the login may commit, else the command line
+and says why; 'cli' is always the command line; 'netconf' never falls back.
+--transport of one run replaces it. A change to the NETCONF service itself
+(see 'scope netconf') is always made over the command line.
 The setters are for administrators.
 
 Examples:
@@ -103,6 +120,7 @@ Examples:
   tacctl config devices confirm-timeout 10
   tacctl config devices apply-confirm-timeout 15
   tacctl config devices apply-pause 120
+  tacctl config devices apply-transport cli
 
 `)
 	return b.String()
@@ -140,6 +158,9 @@ func (inv *invocation) configDevices(args []string) error {
 	case "apply-pause":
 		return inv.configDevicesSet(rest, "device.apply.pause", "Apply pause",
 			"  Usage: tacctl config devices apply-pause <0-3600>", "The pause between the devices of an apply set to %v s.")
+	case "apply-transport":
+		return inv.configDevicesSet(rest, "device.apply.transport", "Apply transport",
+			"  Usage: tacctl config devices apply-transport <auto|cli|netconf>", "The transport of an apply set to %v.")
 	default:
 		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
 		inv.write(configDevicesUsage())
@@ -150,7 +171,7 @@ func (inv *invocation) configDevices(args []string) error {
 // configDevicesShow prints the settings.
 func (inv *invocation) configDevicesShow(rest []string) error {
 	if len(rest) > 0 {
-		return inv.usageErr("Unknown argument: '"+rest[0]+"'", "Usage: tacctl config devices [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause] [value]")
+		return inv.usageErr("Unknown argument: '"+rest[0]+"'", "Usage: tacctl config devices [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport] [value]")
 	}
 	s := inv.deviceConfigSettings()
 	src := func(path string) string {
@@ -172,6 +193,7 @@ func (inv *invocation) configDevicesShow(rest []string) error {
 	inv.echo("  Device configuration apply ('tacctl device config apply')")
 	inv.echo("  apply-confirm-timeout: " + strconv.Itoa(confirm) + " min   (" + src("device.apply.confirm_timeout") + "; 3-60, the N of 'commit confirmed N' of every apply)")
 	inv.echo("  apply-pause:           " + strconv.Itoa(int(pause.Seconds())) + " s   (" + src("device.apply.pause") + "; 0-3600, between the devices of a batch after the canary)")
+	inv.echo("  apply-transport:       " + inv.applyTransport() + "   (" + src("device.apply.transport") + "; auto, cli or netconf)")
 	inv.echo("")
 	return nil
 }
@@ -191,6 +213,17 @@ func (inv *invocation) applySettings() (confirmMinutes int, pause time.Duration)
 		pause = time.Duration(n) * time.Second
 	}
 	return confirmMinutes, pause
+}
+
+// applyTransport reads device.apply.transport (D150): auto, cli or netconf.
+// A value the schema would refuse (a hand-edited file) reads as the default,
+// as applySettings does.
+func (inv *invocation) applyTransport() string {
+	switch v := inv.confGet("device.apply.transport", applyTransportAuto); v {
+	case applyTransportAuto, applyTransportCLI, applyTransportNetconf:
+		return v
+	}
+	return applyTransportAuto
 }
 
 // configDevicesSet shows or sets one key through the schema.

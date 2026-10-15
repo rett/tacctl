@@ -129,10 +129,11 @@ var Added029 = []Family{
 }
 
 // Added0210 are the key families 0.2.10 added: the NETCONF service setting
-// of a scope (netconf_scope.<scope>.*). A 0.2.9 or older binary does not
+// of a scope (netconf_scope.<scope>.*) and device.apply.transport. A 0.2.9 or older binary does not
 // know them (its schema refuses the keys), so a rollback removes them.
 var Added0210 = []Family{
 	{"netconf_scope.", true},
+	{"device.apply.transport", false},
 }
 
 // Added0210Key reports whether path is a key 0.2.10 added.

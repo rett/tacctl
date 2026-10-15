@@ -154,7 +154,9 @@ func (inv *invocation) pullArgsOf(p Parsed, verb string) (pullArgs, error) {
 	st := inv.deviceConfigSettings()
 	usage := "Usage: tacctl device config " + deviceConfigUse(verb)
 	a := pullArgs{transport: st.transport, timeout: st.timeout, showDiff: p.Has("--diff"), json: p.Has("--json")}
-	if p.Has("--transport") {
+	// 'apply' has a --transport of its own (auto, cli or netconf: how it
+	// writes, D150); the reads of a pull are the settings'.
+	if p.Has("--transport") && verb != "apply" {
 		switch t := p.Value("--transport"); t {
 		case transportAuto, transportNetconf, transportSSH:
 			a.transport = t

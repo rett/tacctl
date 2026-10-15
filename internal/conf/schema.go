@@ -146,6 +146,11 @@ func NewSchema(backends []string) *Schema {
 			// exactly Added029 (rollback.go).
 			"device.apply.confirm_timeout": {Type: TypeInt, Min: intp(3), Max: intp(60), Default: 10, HasDefault: true},
 			"device.apply.pause":           {Type: TypeInt, Min: intp(0), Max: intp(3600), Default: 60, HasDefault: true},
+			// The transport 'device config apply' writes through (0.2.10,
+			// D150): auto is NETCONF where the device answers and
+			// confirms, else the Junos command line. A 0.2.9 binary does
+			// not know the key (Added0210, rollback.go).
+			"device.apply.transport": {Type: TypeEnum, Values: []string{"auto", "cli", "netconf"}, Default: "auto", HasDefault: true},
 		},
 		wildcards: append([]wildcard{
 			{"privileges.", Rule{Type: TypeCiscoCmdList}},

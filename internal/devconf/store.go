@@ -118,6 +118,9 @@ type Applied struct {
 	Kind string `json:"kind,omitempty"`
 	// Reason says why a run failed, was rolled back or is unknown.
 	Reason string `json:"reason,omitempty"`
+	// Via is the transport the run wrote through, "cli" or "netconf"
+	// (0.2.10, D150); a record of 0.2.9 has none and was the command line.
+	Via string `json:"via,omitempty"`
 	// Until is the end of a pending window by this server's clock: a record
 	// that says pending is settled by the next verb that reads the device.
 	Until time.Time `json:"until,omitzero"`

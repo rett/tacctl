@@ -158,6 +158,9 @@ func (o *applyOutcome) line() string {
 			s = ui.Red + s + ui.NC
 		}
 	}
+	if w := o.viaWords(); w != "" {
+		s += " [" + w + "]"
+	}
 	if o.PendingErr != "" {
 		s += " (the pending record at the commit was not kept: " + o.PendingErr + ")"
 	}
@@ -165,6 +168,23 @@ func (o *applyOutcome) line() string {
 		s += " (the record was not kept: " + o.RecordErr + ")"
 	}
 	return s
+}
+
+// viaWords is the transport as a line says it (D150): "via netconf" (and
+// ", exclusive session" when the device refused a private one), or "via cli:
+// <why>" for a device that 'auto' did not take over NETCONF. The command line
+// that was asked for, and a device never probed, say nothing: a line of 0.2.9
+// stays as it was (the JSON has both words always).
+func (o *applyOutcome) viaWords() string {
+	switch {
+	case o.Via == devapply.ViaNetconf && o.Exclusive:
+		return "via netconf, exclusive session"
+	case o.Via == devapply.ViaNetconf:
+		return "via netconf"
+	case o.Via == devapply.ViaCLI && o.ViaReason != "" && o.ViaReason != devapply.ReasonNotProbed:
+		return "via cli: " + o.ViaReason
+	}
+	return ""
 }
 
 // counts is "n set, m delete[, k insert]".
@@ -198,13 +218,19 @@ func (o *applyOutcome) checkedLine() string {
 
 // applyJSON is one device of one phase in --json.
 type applyJSON struct {
-	Name      string   `json:"name"`
-	Scope     string   `json:"scope"`
-	Vendor    string   `json:"vendor"`
-	Phase     string   `json:"phase"`
-	Status    string   `json:"status"`
-	Result    string   `json:"result,omitempty"`
-	Reason    string   `json:"reason,omitempty"`
+	Name   string `json:"name"`
+	Scope  string `json:"scope"`
+	Vendor string `json:"vendor"`
+	Phase  string `json:"phase"`
+	Status string `json:"status"`
+	Result string `json:"result,omitempty"`
+	Reason string `json:"reason,omitempty"`
+	// Via is the transport the transaction ran through, ViaReason why it
+	// was not the first choice ("not probed" included), Exclusive that
+	// NETCONF ran in an exclusive session (D150).
+	Via       string   `json:"via,omitempty"`
+	ViaReason string   `json:"via_reason,omitempty"`
+	Exclusive bool     `json:"exclusive,omitempty"`
 	ID        string   `json:"id,omitempty"`
 	Shape     string   `json:"shape,omitempty"`
 	Confirmed string   `json:"confirmed_on,omitempty"`
@@ -247,6 +273,7 @@ func (o *applyOutcome) json(j applyJSON) applyJSON {
 	j.Name, j.Scope, j.Vendor, j.Phase = o.Name, o.Scope, o.Vendor, o.Phase
 	j.Status = o.word()
 	j.Confirmed, j.DurationMS = o.ConfirmedOn, o.Duration.Milliseconds()
+	j.Via, j.ViaReason, j.Exclusive = string(o.Via), o.ViaReason, o.Exclusive
 	if s := o.Settled; s != nil {
 		j.Settled = &applySettledJSON{ID: s.ID, Result: s.Result, Text: cleanLine(s.Line)}
 	}

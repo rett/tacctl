@@ -2819,7 +2819,18 @@ of every
 (the seconds
 .B "device config apply"
 waits between the devices of a batch after the canary, 0 to 3600, default 60;
-0 is none) in
+0 is none) and
+.B device.apply.transport
+(how
+.B "device config apply"
+reaches a Junos device:
+.BR auto ,
+the default, NETCONF where the device answers and can confirm and else the
+command line;
+.BR cli ;
+or
+.BR netconf )
+in
 .IR tacctl.yaml ,
 checked by the schema.
 .B \-\-concurrency
@@ -2903,6 +2914,22 @@ waits between the devices of a batch after the canary, 0 to 3600 (default 60;
 Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config devices apply-pause
+.TP
+.BI "config devices apply\-transport " "[ auto | cli | netconf ]"
+Show or set how
+.B "device config apply"
+reaches a Junos device: NETCONF where the device's last read found it
+answering and the login may commit, else the command line, and the reason
+(auto, the default); the command line only (cli); or NETCONF only, a device
+that cannot being failed (netconf). A run can replace it with
+.BR \-\-transport .
+A change to the NETCONF service is always made over the command line.
+.\" BEGIN GENERATED: command config devices apply-transport
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config devices apply-transport
 .TP
 .B "config devices show"
 Show the settings.
@@ -8715,7 +8742,7 @@ Exit 2 when a device needs a change (and none could not be planned).
 .RE
 .\" END GENERATED: command device config plan
 .TP
-.BI "device config apply " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor juniper | \-\-stale [ \-\-check ] [ \-\-confirmed ] [ \-\-max " n " ] [ \-\-pause " seconds " ] [ \-\-hold ] [ \-\-no\-canary ] [ \-\-section " list " ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-server " address " ] [ \-\-source " address " ] [ \-\-exit\-code ] [ \-\-json ] [ \-y ]"
+.BI "device config apply " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor juniper | \-\-stale [ \-\-check ] [ \-\-confirmed ] [ \-\-max " n " ] [ \-\-pause " seconds " ] [ \-\-hold ] [ \-\-no\-canary ] [ \-\-section " list " ] [ \-\-transport " auto | cli | netconf " ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-server " address " ] [ \-\-source " address " ] [ \-\-exit\-code ] [ \-\-json ] [ \-y ]"
 Write the plan to Junos devices: what
 .B "device config plan"
 would have a person paste, typed by tacctl, under a confirmed commit and
@@ -8794,6 +8821,38 @@ from the moment the confirmed commit is typed, so a tacctl killed during the
 verification leaves a record the next run settles; a record that cannot be
 written then is said at once, in red, on standard error, and the transaction
 goes on.
+.PP
+A device is reached over NETCONF or the command line, as
+.B \-\-transport
+(default
+.BR device.apply.transport )
+says.
+.B auto
+uses NETCONF for a device whose last read found the NETCONF service answering
+and whose login may commit, and otherwise the command line, with the reason
+after the device's line
+.RB ( "via cli: NETCONF port closed at the last read" ;
+a device never read says nothing; JSON
+.BR via ,
+.BR via_reason );
+.B cli
+is the command line always; and
+.B netconf
+never falls back: a device that does not answer or cannot confirm is
+.BR failed .
+Over NETCONF the change is loaded in a private session, checked, committed
+with a confirmed commit and confirmed in the session that committed; a session
+that closes without confirming is rolled back by the device at once. A device
+that refuses a confirmed commit in a private session is run again, whole, in
+an exclusive one
+.RB ( "via netconf, exclusive session" ).
+A change to the NETCONF service itself
+.RB ( "scope netconf" ,
+.BR "device netconf" )
+is always made over the command line, because its verification depends on the
+service; with
+.B "\-\-transport netconf"
+it is refused.
 .PP
 .B \-\-check
 stops after the device's own check: nothing is committed, the shape and the
@@ -8920,6 +8979,9 @@ Only that vendor's devices (apply writes to Junos devices only).
 .TP
 \fB\-\-stale\fR
 Only the devices never read, last read in failure, or differing.
+.TP
+\fB\-\-transport\fR \fIauto|netconf|ssh\fR
+How the check and the apply reach a device: auto (NETCONF where the last read found it answering and the login may commit, else the command line, with the reason), cli, or netconf (never falls back); default device.apply.transport. A change to the NETCONF service is made over the command line.
 .TP
 \fB\-\-concurrency\fR \fI<n>\fR
 Check or apply at most n devices at once (never above device.config.max_concurrency; an apply runs one at a time unless given).
@@ -10790,6 +10852,10 @@ Minutes of the commit confirmed of every device config apply: the device undoes 
 .B device.apply.pause
 integer, 0 to 3600. Default: 60.
 Seconds device config apply waits between the devices of a batch after the canary; 0: none. Set with \fBtacctl config devices apply\-pause\fR.
+.TP
+.B device.apply.transport
+one of auto, cli, netconf. Default: auto.
+How device config apply reaches a Junos device: NETCONF where the last read found it answering and the login may commit, else the command line (auto), the command line only (cli), or NETCONF only (netconf). Set with \fBtacctl config devices apply\-transport\fR.
 .TP
 .B device.config.confirm_timeout
 integer, 1 to 60. Default: 5.
