@@ -390,7 +390,7 @@ normalise_script() {
         printf 's/^tacctl (unknown|<VERSION>)$/tacctl <VERSION>/\n'
         # 'version --long': the commit and build date of the binary itself.
         printf 's/^commit: +[0-9a-f]{7,40}(-dirty)?$/commit:     <COMMIT>/\n'
-        printf 's/^built: +[0-9]{4}-[0-9]{2}-[0-9]{2}T.*$/built:      <BUILT>/\n'
+        printf 's/^built: +[0-9]{4}-[0-9]{2}-[0-9]{2}[T ].*$/built:      <BUILT>/\n'
         # The toolchain the install plan names is the release's own.
         printf 's/Go [0-9]+\\.[0-9]+(\\.[0-9]+)? \\(if not present\\)/Go <GOVERSION> (if not present)/g\n'
         printf 's/[0-9]{8}[_-][0-9]{6}(_[0-9]{3})?/<TS>/g\n'

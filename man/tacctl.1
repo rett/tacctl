@@ -424,10 +424,11 @@ Print the tacctl version, derived from
 .BR git-describe (1)
 when the binary was built.
 .B --long
-adds the commit, the build date, the Go version and whether the test knobs
-are compiled in
-.RB ( "test knobs: off" ),
-and ends with the copyright and licence line and the project address.
+names the project under the version after a blank line, then the project
+address, the licence and the copyright, a blank line and the commit, the
+build date (the commit's date, in the local time zone), the Go version and whether the test
+knobs are compiled in
+.RB ( "test knobs: off" ).
 .\" BEGIN GENERATED: command version
 .RS
 .PP

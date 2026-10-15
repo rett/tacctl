@@ -41,7 +41,7 @@ tacctl backup <subcommand>      # Backup management
 tacctl hash                     # Show usage
 tacctl hash generate            # Prompt + print a bcrypt hash
 tacctl hash commands            # Print OS-specific client-side recipes
-tacctl version [--long]         # Print tacctl version (--long: commit, build date, Go version); `tacctl --version` and `-v` print it too
+tacctl version [--long]         # Print tacctl version (--long: the project, licence and copyright, then commit, build date, Go version); `tacctl --version` and `-v` print it too
 tacctl completion bash|zsh|fish # Print the completion script of a shell (install and upgrade place the bash one)
 tacctl shell [--no-history] [--idle min] [--space-completion on|off] [--password-cache] [-c line]  # Interactive prompt: one tacctl command per line (runs as you; sudo per line)
 ```

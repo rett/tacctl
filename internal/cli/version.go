@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/rett/tacctl/internal/app"
 )
@@ -58,22 +59,45 @@ func (b BuildInfo) resolved(read func() (*debug.BuildInfo, bool)) BuildInfo {
 	return b
 }
 
-// writeVersion prints 'tacctl <version>' (the bash line) and, for --long,
-// the commit, the commit date, the Go version and whether the test knobs
-// are compiled in (new in 0.2.0, docs/plans/go-rewrite.md 3.9 item 1).
+// builtAt is the commit date as the person reading it knows it: the
+// RFC 3339 stamp in the local zone as 'date time ZONE', or the stamp as it
+// is when it is not one (a build that has none says "unknown").
+func builtAt(stamp string) string {
+	t, err := time.Parse(time.RFC3339, stamp)
+	if err != nil {
+		return stamp
+	}
+	return t.Local().Format("2006-01-02 15:04 MST")
+}
+
+// writeVersion prints 'tacctl <version>' (the bash line, also the first line
+// of --long) and, for --long, the project, the address, the licence and the
+// copyright under it after a blank line, then the commit, the
+// commit date, the Go version and whether the test knobs are compiled in
+// (new in 0.2.0, docs/plans/go-rewrite.md 3.9 item 1). The field labels
+// are what bin/tacctl.sh and the upgrade checks read ('commit:').
 func writeVersion(w io.Writer, b BuildInfo, long bool) {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "tacctl %s\n", b.Version)
-	if long {
-		knobs := "off"
-		if app.TestKnobs {
-			knobs = "on"
-		}
-		fmt.Fprintf(&sb, "commit:     %s\n", b.Commit)
-		fmt.Fprintf(&sb, "built:      %s (commit date)\n", b.Date)
-		fmt.Fprintf(&sb, "go:         %s\n", runtime.Version())
-		fmt.Fprintf(&sb, "test knobs: %s\n", knobs)
-		sb.WriteString("Copyright (c) 2026 Everett C. Haimes III · MIT License · https://github.com/rett/tacctl\n")
+	if !long {
+		fmt.Fprintf(&sb, "tacctl %s\n", b.Version)
+		_, _ = io.WriteString(w, sb.String())
+		return
+	}
+	knobs := "off"
+	if app.TestKnobs {
+		knobs = "on"
+	}
+	fmt.Fprintf(&sb, "tacctl %s\n\n", b.Version)
+	sb.WriteString("Pluggable network-device AAA management\n")
+	sb.WriteString("https://github.com/rett/tacctl · MIT License\n")
+	sb.WriteString("Copyright (c) 2026 Everett C. Haimes III\n\n")
+	for _, f := range [][2]string{
+		{"commit:", b.Commit},
+		{"built:", builtAt(b.Date) + " (commit date)"},
+		{"go:", runtime.Version()},
+		{"test knobs:", knobs},
+	} {
+		fmt.Fprintf(&sb, "%-12s %s\n", f[0], f[1])
 	}
 	_, _ = io.WriteString(w, sb.String())
 }

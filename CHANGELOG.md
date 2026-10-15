@@ -107,6 +107,16 @@ current behaviour; this file is where history lives.
    0.2.9's own `tacctl rollback 0.2.8`, and the refusal of `0.2.4` to `0.2.8`
    says so.
 
+7. **`tacctl version --long` is laid out as a title card and a list of
+   facts.** The first line is the version, as `tacctl version` prints it; the
+   project's name, the address and licence, and the copyright follow on
+   their own lines, and the facts (commit, build date, Go version, test
+   knobs) come after a blank line with their values aligned; no line is wider
+   than 62 columns, where the old copyright line wrapped on an 80-column
+   terminal. The build date is the commit's date shown as `2026-10-14 15:34
+   AKDT` in the local time zone. The field labels (`commit:`) and the short
+   `tacctl version` are as before.
+
 ## 0.2.9 (2026-10-14)
 
 1. **`config devices apply-confirm-timeout` and `apply-pause`.** The two
