@@ -90,6 +90,21 @@ current behaviour; this file is where history lives.
    reason says so. A NETCONF fresh login that sees no pending confirmed
    commit names the history it read, not a prompt.
 
+6. **`tacctl rollback 0.2.9` prepares the state for the release before this
+   one.** It is the dry run it always was until `--apply`, which takes a
+   snapshot and then removes `device.apply.transport` and the
+   `netconf_scope` keys from `tacctl.yaml` (the dry run warns with their
+   values and `--apply` refuses without `--yes` while one is set) and the
+   `netconf:` map of every device from `devices.yaml`, so a 0.2.9 binary's
+   `config validate`, `backup restore` and device registry read the files.
+   What 0.2.9 ignores is left and listed: the `via` field of the apply
+   records. 0.2.10 changed no sudoers text, so no drop-in is rewritten.
+   `rollback 0.2.3` removes the same settings on its way, and the refusal of a
+   rollback while an apply is not settled stands for both targets. `0.2.8` is
+   no longer a target: the way is this rollback, the install of 0.2.9, then
+   0.2.9's own `tacctl rollback 0.2.8`, and the refusal of `0.2.4` to `0.2.8`
+   says so.
+
 ## 0.2.9 (2026-10-14)
 
 1. **`config devices apply-confirm-timeout` and `apply-pause`.** The two

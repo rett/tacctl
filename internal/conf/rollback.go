@@ -218,15 +218,16 @@ func (c *Config) unknown023(path string) bool {
 	return !ok
 }
 
-// RollbackKeys028 are the leaf keys of the overrides that a 0.2.8 binary
-// does not know, in file order: the dotted path of each. 0.2.9 added the two
-// device.apply keys (Added029) and nothing else, so these are the leaves of
-// that family; a key neither release knows is not listed (0.2.8 refuses it as
-// 0.2.9 does, and 'config validate' says so).
-func (c *Config) RollbackKeys028() []string {
+// RollbackKeys029 are the leaf keys of the overrides that a 0.2.9 binary
+// does not know, in file order: the dotted path of each. 0.2.10 added
+// device.apply.transport and the netconf_scope keys (Added0210) and nothing
+// else, so these are the leaves of those families; a key neither release
+// knows is not listed (0.2.9 refuses it as 0.2.10 does, and 'config
+// validate' says so).
+func (c *Config) RollbackKeys029() []string {
 	var out []string
 	walkLeaves(c.Overrides(), "", func(p string, _ any) {
-		if Added029Key(p) {
+		if Added0210Key(p) {
 			out = append(out, p)
 		}
 	})
