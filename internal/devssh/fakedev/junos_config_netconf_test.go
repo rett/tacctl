@@ -145,7 +145,9 @@ func hasStmt(set, stmt string) bool {
 func TestNetconfPrivateLoadCompareCommit(t *testing.T) {
 	srv, dir, _ := newJunos(t, map[string]string{})
 	c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
-	if got := c.open("private"); !strings.Contains(got, "<ok/>") || strings.Contains(got, "rpc-error") {
+	// the device answers an open with an EMPTY reply [C: plan N1]
+	if got := c.open("private"); strings.Contains(got, "<ok/>") || strings.Contains(got, "rpc-error") ||
+		!strings.Contains(got, `message-id="1"></rpc-reply>`) {
 		t.Errorf("open private: %s", got)
 	}
 	got := c.load("set system login idle-timeout 30", "set snmp community example-ro authorization read-only")
@@ -242,15 +244,20 @@ func TestNetconfContentionWithAnExclusiveCLI(t *testing.T) {
 	cli, _ := shell(t, srv, DefaultUser, DefaultPassword)
 	cli.send("configure exclusive")
 	c := netconfLogin(t, srv, "local-admin", "pw")
+	// there is no exclusive <open-configuration> [C: plan N1]
 	got := c.open("exclusive")
-	mustContain(t, "exclusive", got, "<error-tag>lock-denied</error-tag>", "locked by: "+DefaultUser)
+	mustContain(t, "exclusive form", got, "<error-tag>operation-failed</error-tag>",
+		"syntax error, expecting <invoke-on>", "<bad-element>exclusive</bad-element>")
+	// the lock is the exclusive analogue
+	got = c.rpc("<lock-configuration/>")
+	mustContain(t, "lock-configuration", got, "<error-tag>lock-denied</error-tag>", "locked by: "+DefaultUser)
 	if got := c.rpc("<lock><target><candidate/></target></lock>"); !strings.Contains(got, "lock-denied") {
 		t.Errorf("lock: %s", got)
 	}
 	// a private session opens with a warning, loads, and cannot commit
 	got = c.open("private")
 	mustContain(t, "private", got, "<error-severity>warning</error-severity>",
-		"changes cannot be committed while 'configure exclusive' is active", "<ok/>")
+		"changes cannot be committed while 'configure exclusive' is active")
 	if got := c.load("set system login idle-timeout 30"); strings.Contains(got, "rpc-error") {
 		t.Errorf("private load under a lock: %s", got)
 	}
@@ -289,7 +296,10 @@ func TestNetconfLockHeldByNetconf(t *testing.T) {
 func TestNetconfConfirmedCommitConfirmedBySameSession(t *testing.T) {
 	srv, _, clk := newJunos(t, map[string]string{"timer.minute": "60\n"})
 	c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
-	c.open("private")
+	// the lock is the form that may confirm [C: plan N1, N2]; the empty reply
+	if got := c.rpc("<lock-configuration/>"); strings.Contains(got, "rpc-error") || strings.Contains(got, "<ok/>") {
+		t.Fatalf("lock-configuration: %s", got)
+	}
 	c.load("set system login idle-timeout 30")
 	got := c.rpc("<commit-configuration><confirmed/><confirm-timeout>2</confirm-timeout><log>tacctl apply 1</log></commit-configuration>")
 	mustContain(t, "confirmed commit", got, "<commit-success/>")
@@ -302,8 +312,11 @@ func TestNetconfConfirmedCommitConfirmedBySameSession(t *testing.T) {
 		t.Errorf("history: %+v", h[0])
 	}
 	// the history as the device prints it, over the command and the RPC
+	// the window's label rounds down for a NETCONF commit (a two-minute
+	// window reads 1mins) and the device's own marker stands under the
+	// entry [C: plan N5]
 	mustContain(t, "show system commit", c.command("show system commit"),
-		"by "+DefaultUser+" via netconf commit confirmed, rollback in 2mins", "tacctl apply 1")
+		"by "+DefaultUser+" via netconf commit confirmed, rollback in 1mins", "tacctl apply 1", "rollback pending")
 	info := c.rpc("<get-commit-information/>")
 	mustContain(t, "commit information", info, "<sequence-number>0</sequence-number>",
 		"<client>netconf</client>", "<log>tacctl apply 1</log>", "<rollback-in>2</rollback-in>")
@@ -314,6 +327,13 @@ func TestNetconfConfirmedCommitConfirmedBySameSession(t *testing.T) {
 	}
 	if _, pending := srv.PendingUntil(); pending {
 		t.Error("still pending after the confirming commit")
+	}
+	if got := c.command("show system commit"); strings.Contains(got, "rollback pending") {
+		t.Errorf("the marker stands after the confirm: %s", got)
+	}
+	mustContain(t, "unlock", c.rpc("<unlock-configuration/>"), `message-id="`)
+	if h := srv.ExclusiveHolder(); h != "" {
+		t.Errorf("holder after unlock-configuration %q", h)
 	}
 	// the window's end changes nothing now, nor does closing the session
 	clk.Advance(5 * time.Minute)
@@ -327,7 +347,7 @@ func TestNetconfConfirmedCommitConfirmedBySameSession(t *testing.T) {
 func TestNetconfConfirmedCommitRollsBackWhenTheSessionCloses(t *testing.T) {
 	srv, dir, clk := newJunos(t, map[string]string{})
 	c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
-	c.open("private")
+	c.rpc("<lock-configuration/>")
 	c.load("set system login idle-timeout 30")
 	mustContain(t, "commit", c.rpc("<commit-configuration><confirmed/><confirm-timeout>5</confirm-timeout></commit-configuration>"), "<commit-success/>")
 	if !hasStmt(srv.Committed(), "set system login idle-timeout 30") {
@@ -355,7 +375,7 @@ func TestNetconfConfirmedCommitRollsBackWhenTheSessionCloses(t *testing.T) {
 func TestNetconfConfirmedCommitRollsBackAtTheWindowsEnd(t *testing.T) {
 	srv, _, clk := newJunos(t, map[string]string{})
 	c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
-	c.open("private")
+	c.rpc("<lock-configuration/>")
 	c.load("set system login idle-timeout 30")
 	c.rpc("<commit-configuration><confirmed/><confirm-timeout>2</confirm-timeout></commit-configuration>")
 	clk.Advance(time.Minute)
@@ -372,24 +392,34 @@ func TestNetconfConfirmedCommitRollsBackAtTheWindowsEnd(t *testing.T) {
 	}
 }
 
+// The lab switch refuses a confirmed commit in a private session with these
+// words [C: plan N1], by default; the knob 'accept' is a device that allows
+// it. The lock may confirm either way.
 func TestNetconfConfirmedCommitInAPrivateSessionKnob(t *testing.T) {
-	srv, _, _ := newJunos(t, map[string]string{"netconf.private.confirm": "refuse\n"})
+	srv, _, _ := newJunos(t, map[string]string{})
 	c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
 	c.open("private")
 	c.load("set system login idle-timeout 30")
 	got := c.rpc("<commit-configuration><confirmed/><confirm-timeout>2</confirm-timeout></commit-configuration>")
-	mustContain(t, "refused", got, "<error-severity>error</error-severity>",
-		"commit confirmed not supported for private configuration")
+	mustContain(t, "refused", got, "<error-type>protocol</error-type>", "<error-tag>operation-failed</error-tag>",
+		"<error-severity>error</error-severity>",
+		`<error-message>"commit confirmed" is not supported for private configuration</error-message>`)
 	if hasStmt(srv.Committed(), "set system login idle-timeout 30") {
 		t.Error("committed")
 	}
-	// an exclusive session may confirm
+	// the lock may confirm
 	d := netconfLogin(t, srv, DefaultUser, DefaultPassword)
-	if got := d.open("exclusive"); !strings.Contains(got, "<ok/>") {
-		t.Fatalf("exclusive: %s", got)
+	if got := d.rpc("<lock-configuration/>"); strings.Contains(got, "rpc-error") {
+		t.Fatalf("lock: %s", got)
 	}
 	d.load("set system login idle-timeout 30")
-	mustContain(t, "exclusive confirmed", d.rpc("<commit-configuration><confirmed/><confirm-timeout>2</confirm-timeout></commit-configuration>"), "<commit-success/>")
+	mustContain(t, "locked confirmed", d.rpc("<commit-configuration><confirmed/><confirm-timeout>2</confirm-timeout></commit-configuration>"), "<commit-success/>")
+	// a device that allows it
+	srv2, _, _ := newJunos(t, map[string]string{"netconf.private.confirm": "accept\n"})
+	e := netconfLogin(t, srv2, DefaultUser, DefaultPassword)
+	e.open("private")
+	e.load("set system login idle-timeout 30")
+	mustContain(t, "accepted", e.rpc("<commit-configuration><confirmed/><confirm-timeout>2</confirm-timeout></commit-configuration>"), "<commit-success/>")
 }
 
 func TestNetconfAndCommandLineShareOneConfiguration(t *testing.T) {
@@ -464,8 +494,8 @@ func TestNetconfSharedCandidatePersistsAndExclusiveDropsOnClose(t *testing.T) {
 		t.Errorf("staged change lost:\n%s", srv.Candidate())
 	}
 	d := netconfLogin(t, srv, DefaultUser, DefaultPassword)
-	if got := d.open("exclusive"); !strings.Contains(got, "configuration database modified") {
-		t.Errorf("exclusive over a staged change: %s", got)
+	if got := d.rpc("<lock-configuration/>"); !strings.Contains(got, "configuration database modified") {
+		t.Errorf("the lock over a staged change: %s", got)
 	}
 }
 
@@ -492,12 +522,12 @@ func TestNetconfKnobsAct(t *testing.T) {
 	t.Run("exclusive.held-by", func(t *testing.T) {
 		srv, _, _ := newJunos(t, map[string]string{"exclusive.held-by": "bob\n"})
 		c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
-		mustContain(t, "exclusive", c.open("exclusive"), "lock-denied", "locked by: bob")
+		mustContain(t, "lock", c.rpc("<lock-configuration/>"), "lock-denied", "locked by: bob")
 	})
 	t.Run("commit.drop", func(t *testing.T) {
 		srv, _, _ := newJunos(t, map[string]string{"commit.drop": "\n"})
 		c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
-		c.open("private")
+		c.rpc("<lock-configuration/>")
 		c.load("set system login idle-timeout 30")
 		// the connection closes before the answer: no reply, and the
 		// unconfirmed commit goes with the session
@@ -519,7 +549,7 @@ func TestNetconfKnobsAct(t *testing.T) {
 	t.Run("commit.drop after-output", func(t *testing.T) {
 		srv, _, _ := newJunos(t, map[string]string{"commit.drop": "after-output\n"})
 		c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
-		c.open("private")
+		c.rpc("<lock-configuration/>")
 		c.load("set system login idle-timeout 30")
 		got := c.rpc("<commit-configuration><confirmed/><confirm-timeout>2</confirm-timeout></commit-configuration>")
 		mustContain(t, "reply", got, "<commit-success/>")
@@ -528,7 +558,7 @@ func TestNetconfKnobsAct(t *testing.T) {
 	t.Run("verify.fail", func(t *testing.T) {
 		srv, _, _ := newJunos(t, map[string]string{"verify.fail": "deny\n"})
 		c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
-		c.open("private")
+		c.rpc("<lock-configuration/>")
 		c.load("set system login idle-timeout 30")
 		c.rpc("<commit-configuration><confirmed/><confirm-timeout>2</confirm-timeout></commit-configuration>")
 		if _, err := dialJunos(t, srv, DefaultUser, DefaultPassword); err == nil {

@@ -30,12 +30,13 @@ tacctl config devices apply-transport cli
 `netconf` never falls back: a device that does not answer or cannot confirm
 is failed with the reason.
 
-Over NETCONF the change is loaded in a private session, checked, committed
-under a confirmed commit and confirmed by the session that made it. A
-session that closes without confirming is rolled back by the device at once,
-and the fresh login still proves the device before the confirming commit.
-A device that refuses a confirmed commit in a private session is run again,
-whole, in an exclusive one (`[via netconf, exclusive session]`).
+Over NETCONF the change is loaded under the candidate's lock (a Junos device
+refuses a confirmed commit in a private session), checked, committed under a
+confirmed commit and confirmed by the session that made it. A session that
+closes without confirming is rolled back by the device within seconds, and
+the fresh login still proves the device before the confirming commit. A
+candidate that holds another editor's staged change is refused, never
+committed with the change.
 
 ## The NETCONF service setting
 
@@ -82,16 +83,16 @@ The upgrade writes nothing to a device and no sudoers drop-in changes.
 
 ## Known limits
 
-- **The NETCONF transport has not been run against a real device in this
-  release.** It is tested against the fake device, which models the
-  configuration RPCs, the confirmed commit and the session-close rollback.
-  Seven things are still to be confirmed on a real Junos device before
-  `auto` can be trusted on a fleet: whether a confirmed commit is accepted in
-  a private NETCONF session (N1), what the device does when a session closes
-  without confirming and when its connection drops (N2), the reply shapes of
-  a load with a bad statement among good ones (N3), a dirty shared candidate
-  and another editor's commit during the session (N4), the history the
-  device reports as a pending marker (N5), what an open session sees when
+- **The NETCONF transport has been exercised against one real device only
+  in part.** It is tested against the fake device, which models the
+  configuration RPCs, the confirmed commit and the session-close rollback,
+  and the replies, the lock, the refusal of a private confirmed commit and
+  the pending marker were checked on a Junos 25.4 switch with raw RPCs.
+  What is still to be confirmed with the release build before `auto` can be
+  trusted on a fleet: the connection and rate limits of the NETCONF service
+  against the sessions one apply opens (N8), the reply shapes of a load with
+  a bad statement among good ones (N3), a dirty shared candidate and another
+  editor's commit during the session (N4), what an open session sees when
   the service is deleted (N6), and a whole enable and disable compared byte
   for byte (N7). Until then `--transport cli` is the proven path.
 - The connection and rate limits are checked at 1 to 250 from the Junos

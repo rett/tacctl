@@ -9,15 +9,22 @@ package devapply
 //     true and Cancel is the close of the held session. Nothing but the held
 //     session can confirm (no 'persist'), so Revert is never reached.
 //   - There is no prompt, so no banner: a pending confirmed commit is read
-//     from the history's own label ('commit confirmed, rollback in Nmins' on
-//     entry 0), which is the fail-closed reading: a label that a 'commit
-//     check' of someone else left behind is taken for pending until the next
-//     commit (the CLI transport tells the two apart by the banner).
-//   - The session mode is private first; a device that refuses 'commit
-//     confirmed' in a private session (as the command line does, 0.2.9 lab
-//     L5) gives a typed error (ErrPrivateConfirmRefused) and RetryExclusive,
-//     and the caller runs the whole transaction again with ModeExclusive. The
-//     mode is never switched in the middle of a transaction.
+//     from the history's own 'rollback pending' line under entry 0 (plan
+//     N5), never from the 'rollback in Nmins' label, which rounds down.
+//   - The session mode is the candidate's lock (<lock-configuration/>): the
+//     device refuses 'commit confirmed' in a private session (as the command
+//     line does, 0.2.9 lab L5; plan N1 over NETCONF) and has no exclusive
+//     <open-configuration>. Under the lock the shared candidate must be clean
+//     (the compare against the committed configuration is empty), or the
+//     commit would carry another editor's staged work. ModePrivate is
+//     selectable; its refusal gives a typed error (ErrPrivateConfirmRefused)
+//     and RetryExclusive, and the caller runs the whole transaction again
+//     with ModeExclusive. The mode is never switched in the middle of a
+//     transaction.
+//   - open-configuration, lock-configuration and unlock-configuration answer
+//     with an empty <rpc-reply> on success (plan N1): no <ok/>. Success is
+//     the absence of an rpc-error for those; a load, a check and a commit
+//     must still say their success element.
 //
 // Every read is a <command> RPC of the apply word the command-line reader
 // types, parsed by the same parsers, so both transports yield the same typed
@@ -47,14 +54,24 @@ import (
 // NetconfMode is the kind of edit session a NETCONF transaction opens.
 type NetconfMode int
 
-// The modes. ModeAuto is ModePrivate with RetryExclusive (see the package
-// comment): a refusal of the confirmed commit is reported, never worked
-// around inside the transaction.
+// The modes. A private session cannot make a confirmed commit on Junos
+// 25.4 (plan N1, refuted on the lab switch) and there is no exclusive form
+// of <open-configuration>: the exclusive analogue is the candidate's lock,
+// <lock-configuration/>, with the shared candidate edited under it. So
+// ModeAuto and ModeExclusive are the lock (ModeAuto is the default and never
+// tries a private session first); ModePrivate is selectable and is refused
+// by the device at the confirmed commit, which gives
+// ErrPrivateConfirmRefused and RetryExclusive: the caller runs the whole
+// transaction again with ModeExclusive, never a switch in the middle.
 const (
 	ModeAuto NetconfMode = iota
 	ModePrivate
 	ModeExclusive
 )
+
+// lockMode reports whether the transaction edits the shared candidate under
+// the lock (every mode but ModePrivate).
+func (m NetconfMode) lockMode() bool { return m != ModePrivate }
 
 // ErrPrivateConfirmRefused: the device refused 'commit confirmed' in a
 // private session. Nothing was committed; the caller runs the transaction
@@ -71,9 +88,12 @@ const (
 	// offers beside the first; either makes a confirmed commit.
 	capConfirmed11 = "urn:ietf:params:netconf:capability:confirmed-commit:1.1"
 
-	// textNoConfirmedPrivate is what a device says to a confirmed commit in
-	// a private session [C: 0.2.9 lab L5].
-	textNoConfirmedPrivate = "commit confirmed not supported for private configuration"
+	// textNoConfirmedPrivate is the stable part of what a device says to a
+	// confirmed commit in a private session: the command line says 'commit
+	// confirmed not supported for private configuration' [C: 0.2.9 lab L5],
+	// NETCONF '"commit confirmed" is not supported for private
+	// configuration' [C: plan N1, Junos 25.4R1-S2.3].
+	textNoConfirmedPrivate = "not supported for private configuration"
 )
 
 // JunosNetconf is the Junos NETCONF subsystem of one login. Its methods are
@@ -88,12 +108,15 @@ type JunosNetconf struct {
 	rd devssh.NetconfSession
 	// held is the transaction's session; open is set while it has the
 	// configuration open.
-	held  devssh.NetconfSession
-	open  bool
-	allow func(string) error
-	login *Login
-	log   []string
-	m     *masker
+	held devssh.NetconfSession
+	open bool
+	// locked is set while the held session holds the candidate's lock
+	// (lock mode).
+	locked bool
+	allow  func(string) error
+	login  *Login
+	log    []string
+	m      *masker
 	// own is set from the confirmed commit's answer to the confirming
 	// commit: this session has a commit pending that only it can confirm.
 	own bool
@@ -198,7 +221,7 @@ func (j *JunosNetconf) Held() bool {
 func (j *JunosNetconf) Close() error {
 	j.mu.Lock()
 	held, rd := j.held, j.rd
-	j.held, j.rd, j.open, j.own = nil, nil, false, false
+	j.held, j.rd, j.open, j.own, j.locked = nil, nil, false, false, false
 	j.mu.Unlock()
 	if held != nil {
 		_ = held.Close()
@@ -220,7 +243,7 @@ func (j *JunosNetconf) Close() error {
 func (j *JunosNetconf) dropHeld() {
 	j.mu.Lock()
 	held := j.held
-	j.held, j.open, j.own = nil, false, false
+	j.held, j.open, j.own, j.locked = nil, false, false, false
 	j.mu.Unlock()
 	if held != nil {
 		_ = held.Close()
@@ -399,17 +422,19 @@ func (j *JunosNetconf) History(ctx context.Context) (History, error) {
 }
 
 // State reads the history and says a confirmed commit is pending when entry
-// 0 carries a window ('commit confirmed, rollback in Nmins'): over NETCONF
-// there is no prompt and so no banner (see the package comment). Minutes is
-// the entry's window, which is an upper bound of the minutes left.
+// 0 carries the device's 'rollback pending' line (plan N5): over NETCONF
+// there is no prompt and so no banner (see the package comment). The label
+// 'rollback in Nmins' decides nothing: it rounds down (a one-minute window
+// reads 'rollback in 0mins'). Minutes is the label plus one, an upper bound
+// of the minutes left.
 func (j *JunosNetconf) State(ctx context.Context) (CommitState, error) {
 	h, err := j.History(ctx)
 	if err != nil {
 		return CommitState{}, err
 	}
 	st := CommitState{History: h}
-	if h[0].RollbackIn > 0 {
-		st.Pending, st.Minutes = true, h[0].RollbackIn
+	if h[0].Pending {
+		st.Pending, st.Minutes = true, h[0].RollbackIn+1
 	}
 	return st, nil
 }
@@ -532,7 +557,7 @@ func (j *JunosNetconf) SharedDirty(ctx context.Context) (Dirty, error) {
 		d.Staged = true
 	}
 	j.logf("netconf: lock candidate (the gate)")
-	_, err = rpc(`<lock><target><candidate/></target></lock>`)
+	_, err = rpc(`<lock-configuration/>`)
 	if err != nil {
 		var re devssh.RPCError
 		if !errors.As(err, &re) {
@@ -548,7 +573,7 @@ func (j *JunosNetconf) SharedDirty(ctx context.Context) (Dirty, error) {
 		return Dirty{}, answerError("lock candidate", []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
 	}
 	j.logf("netconf: unlock candidate (the gate)")
-	if _, err := rpc(`<unlock><target><candidate/></target></unlock>`); err != nil {
+	if _, err := rpc(`<unlock-configuration/>`); err != nil {
 		var re devssh.RPCError
 		if errors.As(err, &re) {
 			// closing the throwaway session releases the lock all the same
@@ -607,12 +632,15 @@ func (j *JunosNetconf) Open(ctx context.Context, allow func(string) error) error
 	j.mu.Lock()
 	j.held, j.allow = s, allow
 	j.mu.Unlock()
-	child, word := "<private/>", "private"
-	if j.mode == ModeExclusive {
-		child, word = "<exclusive/>", "exclusive"
+	// The device answers both forms with an empty reply on success (plan
+	// N1): the absence of an rpc-error is the success.
+	body, word := `<open-configuration><private/></open-configuration>`, "open-configuration private"
+	lock := j.mode.lockMode()
+	if lock {
+		body, word = `<lock-configuration/>`, "lock-configuration"
 	}
-	j.logf("netconf: open-configuration " + word)
-	reply, err := s.RPC(ctx, "<open-configuration>"+child+"</open-configuration>")
+	j.logf("netconf: " + word)
+	reply, err := s.RPC(ctx, body)
 	var re devssh.RPCError
 	switch {
 	case errors.As(err, &re):
@@ -623,10 +651,10 @@ func (j *JunosNetconf) Open(ctx context.Context, allow func(string) error) error
 		case strings.Contains(re.Message, "modified"):
 			return &LockedError{Modified: true}
 		}
-		return answerError("open-configuration "+word, []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
+		return answerError(word, []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
 	case err != nil:
 		j.dropHeld()
-		return fmt.Errorf("%w: open-configuration: %v", ErrSessionLost, j.m.text(err.Error()))
+		return fmt.Errorf("%w: %s: %v", ErrSessionLost, word, j.m.text(err.Error()))
 	}
 	r, err := parseReply(reply)
 	if err != nil {
@@ -634,21 +662,60 @@ func (j *JunosNetconf) Open(ctx context.Context, allow func(string) error) error
 		return err
 	}
 	for _, e := range r.Errs {
+		j.dropHeld()
 		if strings.Contains(e.Message, "exclusive") {
-			j.dropHeld()
 			return &LockedError{}
 		}
-		j.dropHeld()
-		return answerError("open-configuration "+word, []string{e.text(j.m)}, j.m)
-	}
-	if !r.Seen["ok"] {
-		j.dropHeld()
-		return answerError("open-configuration "+word, []string{"no <ok/>"}, j.m)
+		return answerError(word, []string{e.text(j.m)}, j.m)
 	}
 	j.mu.Lock()
 	j.open = true
+	j.locked = lock
 	j.mu.Unlock()
+	if lock {
+		// The lock edits the shared candidate: whatever another editor
+		// staged would be committed with tacctl's change. The gate read
+		// the same before the lock; this is the read under it.
+		if err := j.cleanUnderLock(ctx); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// cleanUnderLock refuses a locked candidate that differs from the committed
+// configuration: the lock is released and the session dropped, and nothing
+// of the stranger's staged work is quoted.
+func (j *JunosNetconf) cleanUnderLock(ctx context.Context) error {
+	j.mu.Lock()
+	held := j.held
+	j.mu.Unlock()
+	j.logf("netconf: get-configuration compare rollback 0 (under the lock)")
+	reply, err := held.RPC(ctx, `<get-configuration compare="rollback" rollback="0" format="text"/>`)
+	if err != nil {
+		var re devssh.RPCError
+		j.dropHeld()
+		if errors.As(err, &re) {
+			return answerError(plan.ApplyCompare, []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
+		}
+		return fmt.Errorf("%w: %s: %v", ErrSessionLost, plan.ApplyCompare, j.m.text(err.Error()))
+	}
+	out, err := devssh.ReplyText(reply)
+	if err != nil {
+		j.dropHeld()
+		return fmt.Errorf("%s: %w: the locked candidate's compare (not quoted)", plan.ApplyCompare, ErrUnrecognised)
+	}
+	c, perr := plan.ParseCompare(out)
+	if perr == nil && c.Empty() {
+		return nil
+	}
+	if perr != nil && strings.TrimSpace(out) == "" {
+		return nil
+	}
+	// staged work of another editor: release the lock, never quote it
+	_, _ = held.RPC(ctx, `<unlock-configuration/>`)
+	j.dropHeld()
+	return &LockedError{Modified: true}
 }
 
 // rpcHeld sends one RPC in the held session and returns the parsed reply; a
@@ -894,7 +961,19 @@ func (j *JunosNetconf) Confirm(ctx context.Context, id, user string) error {
 	}
 	j.mu.Lock()
 	j.own = false
+	locked := j.locked
 	j.mu.Unlock()
+	if locked {
+		// The transaction is over: release the lock now, not at the
+		// session's end. Best effort: the close releases it all the same,
+		// and the commit it follows is confirmed.
+		j.logf("netconf: unlock-configuration")
+		if _, err := j.rpcHeld(ctx, `<unlock-configuration/>`, "unlock-configuration"); err == nil {
+			j.mu.Lock()
+			j.locked = false
+			j.mu.Unlock()
+		}
+	}
 	return nil
 }
 
@@ -923,36 +1002,39 @@ func (j *JunosNetconf) Revert(ctx context.Context, id string) error {
 }
 
 // Discard drops the candidate and ends the held session: a discard-changes
-// (an exclusive candidate has the changes of nobody else), the configuration
-// closed, then the session. A device that does not answer closes the session
-// all the same.
+// (under the lock the candidate holds the changes of nobody else: the lock
+// was taken on a clean one, cleanUnderLock), then the lock released
+// (unlock-configuration) or, for a private session, the configuration closed;
+// then the session. These control RPCs answer an empty reply on success (plan
+// N1), so the absence of an rpc-error is the success. A device that does not
+// answer closes the session all the same.
 func (j *JunosNetconf) Discard(ctx context.Context) error {
 	defer j.dropHeld()
 	if err := j.mustHold("discard"); err != nil {
 		return err
 	}
-	j.logf("netconf: discard-changes")
-	r, err := j.rpcHeld(ctx, "<discard-changes/>", "discard-changes")
-	var re devssh.RPCError
-	switch {
-	case errors.As(err, &re):
-		return j.firstError("discard-changes", r)
-	case err != nil:
+	step := func(body, word string) error {
+		j.logf("netconf: " + word)
+		r, err := j.rpcHeld(ctx, body, word)
+		var re devssh.RPCError
+		switch {
+		case errors.As(err, &re):
+			return j.firstError(word, r)
+		case err != nil:
+			return err
+		case len(r.Errs) > 0:
+			return j.firstError(word, r)
+		}
+		return nil
+	}
+	if err := step("<discard-changes/>", "discard-changes"); err != nil {
 		return err
 	}
-	if !r.Seen["ok"] {
-		return j.firstError("discard-changes", r)
+	j.mu.Lock()
+	locked := j.locked
+	j.mu.Unlock()
+	if locked {
+		return step("<unlock-configuration/>", "unlock-configuration")
 	}
-	j.logf("netconf: close-configuration")
-	r, err = j.rpcHeld(ctx, "<close-configuration/>", "close-configuration")
-	switch {
-	case errors.As(err, &re):
-		return j.firstError("close-configuration", r)
-	case err != nil:
-		return err
-	}
-	if !r.Seen["ok"] {
-		return j.firstError("close-configuration", r)
-	}
-	return nil
+	return step("<close-configuration/>", "close-configuration")
 }

@@ -586,11 +586,23 @@ func (d *junosDevice) historyText() string {
 	for i, h := range d.history {
 		fmt.Fprintf(&b, "%-3d %s by %s via %s", i, formatTime(h.Time), h.User, h.Via)
 		if h.RollbackIn > 0 {
-			b.WriteString(" " + fmt.Sprintf(jtRollbackInFmt, h.RollbackIn))
+			mins := h.RollbackIn
+			if h.Via == jtNetconfVia && mins > 0 {
+				// a commit made over NETCONF reads the window rounded
+				// down: a one-minute window is 'rollback in 0mins' [C: one
+				// observation on the lab switch, plan N5]
+				mins--
+			}
+			b.WriteString(" " + fmt.Sprintf(jtRollbackInFmt, mins))
 		}
 		b.WriteString("\n")
 		if h.Comment != "" {
 			b.WriteString("    " + h.Comment + "\n")
+		}
+		// the device's own marker under a commit that waits for its confirm
+		// (entry 0 only: a later commit or a check confirmed it) [C: plan N5]
+		if i == 0 && d.pending != nil {
+			b.WriteString("    " + jtRollbackPending + "\n")
 		}
 	}
 	// a saved rescue configuration (the 'rescue' knob): the marker line

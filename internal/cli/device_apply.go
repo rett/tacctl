@@ -169,13 +169,10 @@ type applyOutcome struct {
 	// Settled is the settle of an earlier apply's pending record, nil when
 	// the record was not pending.
 	Settled *applySettled
-	// Via is the transport the transaction ran through ("" when none ran),
-	// ViaReason why it was not the first choice (the setting's), and
-	// Exclusive is set when NETCONF ran again in an exclusive session
-	// because the device refused a confirmed commit in a private one (D150).
+	// Via is the transport the transaction ran through ("" when none ran)
+	// and ViaReason why it was not the first choice (the setting's), D150.
 	Via       devapply.Via
 	ViaReason string
-	Exclusive bool
 }
 
 // word is the device's state as the summary and the JSON name it.
@@ -536,8 +533,7 @@ type plainReader interface {
 type applyConn struct {
 	t     devapply.Transport
 	plain plainReader
-	// nc is the NETCONF transport, nil over the command line (its
-	// RetryExclusive says whether the transaction runs again).
+	// nc is the NETCONF transport, nil over the command line.
 	nc *devapply.JunosNetconf
 	// verify dials the fresh login of the verification on the same path
 	// the transaction wrote through.
@@ -569,9 +565,9 @@ func (r *applyRun) probeOf(name string) string {
 // line with the reason; under netconf it is a *netconfUnavailable. A dial
 // that fails is the error as the command line's would be (an authentication
 // failure is the run's).
-func (r *applyRun) openVia(ctx context.Context, target devssh.Target, via devapply.Via, reason string, mode devapply.NetconfMode) (*applyConn, devapply.Via, string, error) {
+func (r *applyRun) openVia(ctx context.Context, target devssh.Target, via devapply.Via, reason string) (*applyConn, devapply.Via, string, error) {
 	if via == devapply.ViaNetconf {
-		n, err := devapply.DialJunosNetconf(ctx, target, mode)
+		n, err := devapply.DialJunosNetconf(ctx, target, devapply.ModeAuto)
 		if err != nil {
 			return nil, via, reason, err
 		}
@@ -633,13 +629,12 @@ func (r *applyRun) transact(ctx context.Context, e devreg.Entry, o *applyOutcome
 	// and then the whole transaction runs again, never the middle of one.
 	choice := devapply.Choose(devapply.ChooseInput{Setting: r.transport, Probe: r.probeOf(e.Name)})
 	via, viaReason := choice.Via, choice.Reason
-	mode := devapply.ModeAuto
 	var (
 		st  *applyState
 		out devapply.Outcome
 	)
 	for attempt := 0; ; attempt++ {
-		c, v, why, err := r.openVia(ctx, target, via, viaReason, mode)
+		c, v, why, err := r.openVia(ctx, target, via, viaReason)
 		if err != nil {
 			var nu *netconfUnavailable
 			if errors.As(err, &nu) {
@@ -688,17 +683,10 @@ func (r *applyRun) transact(ctx context.Context, e devreg.Entry, o *applyOutcome
 			}
 			via, viaReason = ch.Via, ch.Reason
 			continue
-		case c.nc != nil && c.nc.RetryExclusive() && mode != devapply.ModeExclusive && attempt < 3:
-			// the device refuses a confirmed commit in a private session;
-			// nothing was committed, so the transaction runs again in an
-			// exclusive one
-			mode = devapply.ModeExclusive
-			continue
 		}
 		break
 	}
 	o.Via, o.ViaReason = via, viaReason
-	o.Exclusive = via == devapply.ViaNetconf && mode == devapply.ModeExclusive
 	o.Out = &out
 	if st.first != nil {
 		o.Delta, o.HasDelta = st.first.delta, true

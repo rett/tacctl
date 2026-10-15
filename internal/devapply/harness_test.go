@@ -130,7 +130,7 @@ func (d *device) transport() Transport {
 // verify is the fresh login of the verification.
 func (d *device) verify(ctx context.Context) (Reader, error) {
 	if d.netconf {
-		return DialJunosNetconf(ctx, d.target(fakedev.DefaultUser, fakedev.DefaultPassword), ModePrivate)
+		return DialJunosNetconf(ctx, d.target(fakedev.DefaultUser, fakedev.DefaultPassword), ModeAuto)
 	}
 	return DialJunos(ctx, d.target(fakedev.DefaultUser, fakedev.DefaultPassword))
 }

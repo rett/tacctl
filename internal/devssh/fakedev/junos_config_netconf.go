@@ -12,7 +12,11 @@ package fakedev
 // The RPCs, each over the model only when the transcript has no canned
 // 'rpc.<element>.xml' for it:
 //
-//	open-configuration      <private/> | <exclusive/> | nothing (shared)
+//	open-configuration      <private/> | nothing (shared); an <exclusive/>
+//	                        child is a syntax error as on the device; success
+//	                        is an EMPTY reply [C: plan N1]
+//	lock-configuration      the exclusive analogue: the candidate's lock,
+//	unlock-configuration    an empty reply on success [C: plan N1]
 //	close-configuration     leaves the mode; a private candidate is dropped
 //	load-configuration      action="set" with <configuration-set> (text):
 //	                        statement by statement, not atomic
@@ -31,10 +35,12 @@ package fakedev
 // (load.errors, version-gate, check.errors, exclusive.held-by, verify.fail,
 // commit.drop, drop, slow, timer.minute); one more is NETCONF's own:
 //
-//	netconf.private.confirm   'refuse': a confirmed commit in a private
-//	                          session is refused as the command line refuses
-//	                          it; absent it is accepted (the plan's unknown
-//	                          N1: a transport tests both modes)
+//	netconf.private.confirm   a confirmed commit in a private session is
+//	                          refused, as the lab switch does [C: plan N1:
+//	                          '"commit confirmed" is not supported for
+//	                          private configuration'], unless the knob says
+//	                          'accept' (a device that allows it: a transport
+//	                          tests both)
 //
 // 'persist' and 'persist-id' are not modelled: the RPC is refused as not
 // supported.
@@ -173,6 +179,10 @@ func (ns *nsession) configRPC(op xnode) (body string, drop int, ok bool) {
 		return ns.lock(op), dropNone, true
 	case "unlock":
 		return ns.unlock(), dropNone, true
+	case "lock-configuration":
+		return emptyOK(ns.lockConfiguration()), dropNone, true
+	case "unlock-configuration":
+		return emptyOK(ns.unlock()), dropNone, true
 	case "get-commit-information":
 		return ns.commitInformation(), dropNone, true
 	}
@@ -184,8 +194,10 @@ func (ns *nsession) open(op xnode) string {
 	mode := ""
 	for _, k := range op.Kids {
 		switch k.XMLName.Local {
-		case "private", "exclusive":
+		case "private":
 			mode = k.XMLName.Local
+		case "exclusive":
+			return nsError("error", "operation-failed", jtNetconfNoExclusive, "", "exclusive")
 		default:
 			return nsError("error", "operation-not-supported", "open-configuration <"+k.XMLName.Local+"> is not supported", "", "")
 		}
@@ -204,9 +216,10 @@ func (ns *nsession) open(op xnode) string {
 	case enterModified:
 		return nsError("error", "operation-failed", plainMsg(jtModified), "", "")
 	case enterPrivateHeld:
-		return nsError("warning", "operation-failed", plainMsg(jtPrivateUnderExcl), "", "") + "<ok/>"
+		return nsError("warning", "operation-failed", plainMsg(jtPrivateUnderExcl), "", "")
 	}
-	return "<ok/>"
+	// the device answers an open with an empty reply [C: plan N1]
+	return ""
 }
 
 func (ns *nsession) closeConfig() string {
@@ -302,8 +315,8 @@ func (ns *nsession) commit(op xnode) (string, int) {
 		return d.lockDenied(d.holder()), dropNone
 	}
 	if confirmed && sess.private {
-		if w, _ := d.knobWord("netconf.private.confirm"); w == "refuse" {
-			return nsError("error", "operation-failed", plainMsg(jtNoConfirmedPrivate), "", ""), dropNone
+		if w, _ := d.knobWord("netconf.private.confirm"); w != "accept" {
+			return nsError("error", "operation-failed", jtNetconfNoConfirmedPrivate, "", ""), dropNone
 		}
 	}
 	o := d.commitApply(sess, check, confirmed, minutes, comment, jtNetconfVia, sess)
@@ -336,11 +349,25 @@ func (ns *nsession) discard() string {
 	return "<ok/>"
 }
 
+// emptyOK is the device's answer to a control RPC that succeeded: an empty
+// reply, where the model's own helpers say <ok/> [C: plan N1].
+func emptyOK(body string) string {
+	if body == "<ok/>" {
+		return ""
+	}
+	return body
+}
+
 func (ns *nsession) lock(op xnode) string {
-	d, sess := ns.d, ns.sess
 	if t, ok := op.kid("target"); !ok || !t.has("candidate") {
 		return nsError("error", "operation-not-supported", "lock takes <target><candidate/></target>", "", "")
 	}
+	return ns.lockConfiguration()
+}
+
+// lockConfiguration is the candidate's lock, whichever RPC asked for it.
+func (ns *nsession) lockConfiguration() string {
+	d, sess := ns.d, ns.sess
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if h := d.holder(); h != "" && d.excl != sess {
