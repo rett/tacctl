@@ -491,6 +491,14 @@ func (inv *invocation) restoreSnapshot(id string) error {
 		return nil
 	}
 
+	// The whole restore is one change: ApplyForced holds the lock for the
+	// render only, and the restarts and the file puts after it must not be
+	// interleaved with another command's either.
+	unlock, err := inv.holdApply()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	// The current state first, so the restore can be undone with another
 	// one. Retention must not take the snapshot being read.
 	a.Snapshots().KeepID = id
@@ -832,6 +840,11 @@ func (inv *invocation) restoreLegacy(id string) error {
 		return nil
 	}
 
+	unlock, err := inv.holdApply()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	before := inv.storeGroups()
 	if err := inv.snapshotFirst(); err != nil {
 		return err

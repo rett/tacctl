@@ -722,6 +722,82 @@ PY
 }
 
 # =============================================================================
+#  The apply lock
+# =============================================================================
+
+WAITING="Waiting for another tacctl command that is changing the configuration..."
+
+# hold_apply_lock <seconds>: another command holds the apply lock; returns
+# once it does. The holder lets go of the test's descriptors so that bats
+# does not wait for it.
+hold_apply_lock() {
+    local ready="${BATS_TEST_TMPDIR}/lock.ready"
+    rm -f "$ready"
+    (
+        exec 9> "${TACCTL_STATE_DIR}/.store-apply.lock"
+        flock 9
+        : > "$ready"
+        sleep "$1"
+    ) > /dev/null 2>&1 3>&- &
+    disown
+    local i
+    for ((i = 0; i < 100; i++)); do
+        [[ -e "$ready" ]] && return 0
+        sleep 0.05
+    done
+    echo "the lock holder did not start" >&2
+    return 1
+}
+
+@test "apply lock: a command waits for another one that is changing the configuration, says so once, and runs" {
+    rendered_install
+    hold_apply_lock 2
+    run "$TACCTL_BIN_SCRIPT" user add dave operator --hash "$HASH" --scopes lab
+    assert_success
+    assert_output --partial "User 'dave' added"
+    [[ "$(grep -cF "$WAITING" <<< "$output")" -eq 1 ]]
+    [[ "$(store_get users dave group)" == "operator" ]]
+}
+
+@test "apply lock: Ctrl-C ends the wait with nothing changed" {
+    rendered_install
+    hold_apply_lock 4
+    snapshot_state
+    run timeout --preserve-status -s INT 1 "$TACCTL_BIN_SCRIPT" user add dave operator --hash "$HASH" --scopes lab
+    assert_failure 1
+    assert_output --partial "$WAITING"
+    assert_output --partial "Nothing was changed."
+    refute_output --partial "User 'dave' added"
+    assert_state_unchanged
+    run store_get users dave
+    assert_failure
+}
+
+@test "apply lock: a failed render leaves the store as it was and the next command works" {
+    rendered_install
+    snapshot_state
+    run env TACCTL_FAULT=render-commit:tacacs "$TACCTL_BIN_SCRIPT" user add dave operator --hash "$HASH" --scopes lab
+    assert_failure 1
+    assert_output --partial "The change was not applied"
+    assert_state_unchanged
+    run "$TACCTL_BIN_SCRIPT" config bcrypt-cost 11
+    assert_success
+    [[ "$(conf_get bcrypt.cost)" == "11" ]]
+    # The lock is not left held.
+    run flock -n "${TACCTL_STATE_DIR}/.store-apply.lock" true
+    assert_success
+}
+
+@test "apply lock: a settings change waits for it as well" {
+    rendered_install
+    hold_apply_lock 2
+    run "$TACCTL_BIN_SCRIPT" config loglevel debug
+    assert_success
+    [[ "$(grep -cF "$WAITING" <<< "$output")" -eq 1 ]]
+    assert_output --partial "Log level changed to debug"
+}
+
+# =============================================================================
 #  Secrets and hashes
 # =============================================================================
 

@@ -69,7 +69,9 @@ config validate
     pointing at a nonexistent scope, reserved usernames, missing accounter:), then each enabled
     backend: rendered config up to date, drift; RADIUS scopes that send no vendor attribute. An
     empty privileges.<group> list on a built-in group that ships one (it hides the shipped list;
-    `group privilege reset <group>` removes it) is a warning. Exits 1 on errors
+    `group privilege reset <group>` removes it) is a warning, and so is a private copy of the
+    configuration that a killed command left in the state directory (`.apply.*`, `.restore.*`,
+    `.enable.*`, `.units.*`, `.disable.*`, older than ten minutes). Exits 1 on errors
 
 config diff [timestamp]
 

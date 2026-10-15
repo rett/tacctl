@@ -44,8 +44,9 @@ type Env struct {
 	// ApplyLock is the process's apply lock, the one conf.Config.Lock of
 	// Conf takes too (nil: none is taken, as in a test of one command).
 	// StoreApply, ApplyForced and ConfigRender hold it from before their
-	// first read to after their last restart; it is reentrant, so a
-	// transaction that holds it may call them.
+	// first read to after their last restart, and the transactions that
+	// copy whole files themselves hold it through HoldApply; it is
+	// reentrant, so a transaction that holds it may call them.
 	ApplyLock *applylock.Lock
 
 	// inWriter is set while the writer of a StoreApply or ApplyForced runs:

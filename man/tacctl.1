@@ -1555,7 +1555,17 @@ warning too (a
 .B Group settings:
 line), and
 .B group privilege reset
-removes it.
+removes it. A private copy of the configuration that an interrupted command
+left in the state directory
+.RB ( .apply.* ,
+.BR .restore.* ,
+.BR .enable.* ,
+.B .units.*
+or
+.BR .disable.* ,
+older than ten minutes) is a warning as well, a
+.B Leftovers:
+line naming it.
 .IP
 Then, for every enabled backend, whether its rendered config is up to date
 with the store and whether any of its files was edited by hand (drift). With
@@ -10657,6 +10667,37 @@ changed are restarted; a failure at any step puts the store,
 .I tacctl.yaml
 and every generated file back.
 .PP
+.B Concurrent commands.
+A command that changes the store or
+.I tacctl.yaml
+holds one lock,
+.IR /etc/tacctl/.store\-apply.lock ,
+from before its first read to after its last restart, so that a command that
+fails does not put back what another one wrote in between. A second command
+prints
+.I "Waiting for another tacctl command that is changing the configuration..."
+once and runs when the first is done;
+.B Ctrl\-C
+ends the wait (\c
+.IR "Nothing was changed." ,
+exit 1). Every write of
+.IR tacctl.yaml ,
+the store commands,
+.BR "config render" ,
+.BR "config listen|loglevel|metrics" ,
+.BR "backend enable|disable" ,
+.BR "store import" ,
+.BR "store rollback" ,
+.B "backup restore"
+and
+.B upgrade
+(after its self-update) take it; a command that only reads does not. A file
+that was edited by hand while a command ran is saved as
+.I <file>.overwritten\-<timestamp>
+in
+.I /etc/tacctl
+(and named in a warning) before the command puts its own copy back.
+.PP
 .B Drift.
 A generated file that no longer matches its checksum was edited by hand:
 .B status
@@ -11675,6 +11716,23 @@ The checksum of every file tacctl rendered, from which
 and
 .B config validate
 report a hand edit as drift.
+.TP
+.I /etc/tacctl/.store.lock
+.TQ
+.I /etc/tacctl/.store\-apply.lock
+Lock files, mode 0600, created when first needed and left in place. The first
+serialises writes of the store; the second is the apply lock, taken by every
+command that changes the store or
+.I tacctl.yaml
+and held through its restarts (see
+.BR "STORE AND GENERATED CONFIGURATION" ).
+Do not delete them while a command runs.
+.TP
+.I /etc/tacctl/<file>.overwritten\-<timestamp>
+The version of
+.IR store.yaml " or " tacctl.yaml
+that a command found edited by hand while it ran and replaced when it put its
+own copy back. Mode 0600; kept until removed.
 .TP
 .I /etc/tacctl/backups/
 Automatic snapshots of the canonical files, one directory per snapshot, last

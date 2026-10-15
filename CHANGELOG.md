@@ -82,6 +82,33 @@ current behaviour; this file is where history lives.
    minute were not refused on Junos 25.4 with the limits at 5 and 10). The
    manual page and `docs/cli/scope.md` say so; nothing else changes.
 
+9. **Commands that change the configuration wait for each other.** A
+   command that failed put back the whole of `store.yaml`, `tacctl.yaml` and
+   `rendered.json` from the copies it took at its start, and with them what
+   another command had written in between, which printed success. The next
+   change then found the rendered file recorded as hand-edited and was
+   refused. Every command that changes the store or `tacctl.yaml` now takes
+   one lock, `.store-apply.lock` in the state directory, from before its
+   first read to after its last restart: a second command prints `Waiting
+   for another tacctl command that is changing the configuration...` once and
+   runs when the first is done, and Ctrl-C ends the wait with `Nothing was
+   changed.` and exit 1. It covers the store commands, `config render`,
+   `config listen|loglevel|metrics`, the RADIUS listener changes,
+   `backend enable|disable`, `store import` and `store rollback`, `backup
+   restore`, every write of `tacctl.yaml`, and `upgrade` after its
+   self-update. A file that was edited by hand while a command ran is saved
+   as `<file>.overwritten-<stamp>` in the state directory (and named in a
+   warning) before the command puts its own copy back. A read command takes
+   no lock.
+
+10. **`config validate` names what an interrupted command left behind.** A
+    command that is killed while it changes the configuration leaves a
+    private copy of `store.yaml` and `tacctl.yaml` (secrets included) in the
+    state directory: `.apply.*`, `.restore.*`, `.enable.*`, `.units.*` or
+    `.disable.*`. When one is older than ten minutes, `config validate`
+    prints a `Leftovers:` warning naming it and what to check before
+    removing it. The exit code is unchanged.
+
 ## 0.2.10 (2026-10-15)
 
 1. **`tacctl scope netconf` and `tacctl device netconf`: the NETCONF service

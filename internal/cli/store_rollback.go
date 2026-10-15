@@ -87,6 +87,13 @@ func (inv *invocation) storeRollback(args []string) error {
 		return nil
 	}
 
+	// From the snapshot through the restart: the files this puts back and
+	// removes are not another command's to change in between.
+	unlock, err := inv.holdApply()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if _, err := a.Snapshots().Take(); err != nil {
 		return inv.usageErr(err.Error(), "Could not snapshot the store. Nothing was changed.")
 	}

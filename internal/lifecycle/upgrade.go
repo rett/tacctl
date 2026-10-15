@@ -154,6 +154,18 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 		}
 	}
 
+	// From here on the phases write tacctl.yaml, the store and rendered.json
+	// (the tier pins, the migrations, the units, the store gate and its
+	// render, the restart): no other command changes them between. After
+	// the self-update exec, so that the re-executed process takes it and a
+	// lock is never held across the exec (the descriptor is close-on-exec
+	// all the same). The phases before it read, build or fetch only.
+	unlock, err := h.HoldApply(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	// A group at priv-lvl 15 gets the explicit tier 0.2.2 gave it by its band.
 	h.pinGroupTiers()
 

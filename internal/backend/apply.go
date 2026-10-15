@@ -33,12 +33,29 @@ func (s *Set) begin() error {
 	return nil
 }
 
-// lock takes the apply lock (Env.ApplyLock; none when it is nil) and returns
-// the function that gives it back, or the error to return, its messages
-// written: a wait that ctx ended is "Nothing was changed." (exit 1).
-func (s *Set) lock(ctx context.Context) (func(), error) {
-	out := s.Env.Out
-	release, err := s.Env.ApplyLock.Acquire(ctx, func() { out.Info(WaitingMsg) })
+// lock is Env.HoldApply for a transaction of this Set.
+func (s *Set) lock(ctx context.Context) (func(), error) { return s.Env.HoldApply(ctx) }
+
+// HoldApply takes the process's apply lock (Env.ApplyLock; none when it is
+// nil) for a transaction that is not a StoreApply but puts whole files back
+// all the same (settingsApply, backend enable and its undo, store import,
+// backup restore, upgrade): from before its first copy to after its last
+// restore or restart. It returns the function that gives the lock back, or
+// the error to return, its messages written: the waiting line while another
+// command holds the lock, and "Nothing was changed." (exit 1) when the wait
+// ended with ctx or the lock could not be taken. The lock is reentrant: the
+// StoreApply and Conf writes the transaction makes inside do not wait for
+// it. With no state directory there is nothing to protect and nothing the
+// lock may create: the release is a no-op.
+func (e *Env) HoldApply(ctx context.Context) (func(), error) {
+	if e == nil || e.ApplyLock == nil {
+		return func() {}, nil
+	}
+	if st, err := os.Stat(e.Paths.StateDir); err != nil || !st.IsDir() {
+		return func() {}, nil
+	}
+	out := e.Out
+	release, err := e.ApplyLock.Acquire(ctx, func() { out.Info(WaitingMsg) })
 	if err == nil {
 		return release, nil
 	}

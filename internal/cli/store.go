@@ -157,6 +157,15 @@ func (inv *invocation) storeImport(args []string) error {
 	if err != nil {
 		return err
 	}
+	if !p.check {
+		// The import and the tier pins after it are one change of the
+		// store and tacctl.yaml: no other command changes them between.
+		unlock, err := inv.holdApply()
+		if err != nil {
+			return err
+		}
+		defer unlock()
+	}
 	before := inv.storeGroups()
 	if err := store.Import(inv.app.Out, inv.importOptions(p)); err != nil {
 		return err
@@ -170,6 +179,18 @@ func (inv *invocation) storeImport(args []string) error {
 		inv.warnServerSync("Users whose tier is lower now keep their old groups")
 	}
 	return nil
+}
+
+// holdApply takes the invocation's apply lock for a command that changes the
+// configuration outside StoreApply, for the rest of the command: the caller
+// defers the returned release. A wait that Ctrl-C ended, or a lock that could
+// not be taken, is "Nothing was changed." and exit 1 (messages written).
+func (inv *invocation) holdApply() (func(), error) {
+	release, err := inv.app.BackendEnv().HoldApply(inv.ctx)
+	if err != nil {
+		return nil, exit(backend.ExitCode(err))
+	}
+	return release, nil
 }
 
 // importOptions are store.Import's inputs for this invocation.

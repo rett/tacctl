@@ -8,8 +8,10 @@ package cli
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/execx"
@@ -463,6 +465,15 @@ func (inv *invocation) configValidate([]string) error {
 			n + ": " + strings.Join(def, ", ") + "); 'tacctl group privilege reset " + g + "' removes it")
 	}
 
+	// What an interrupted command left in the state directory: the private
+	// copies of store.yaml and tacctl.yaml that StoreApply, a restore, an
+	// enable and a settings change take. A command that is running holds the
+	// apply lock and its directory is young; an old one is a leftover (a
+	// kill), and it holds secrets. A warning.
+	for _, l := range inv.leftoverLines() {
+		inv.echoE("  " + Y + "Leftovers:" + NC + "           " + l)
+	}
+
 	// Rendered artifacts: can the store be rendered, and are the live files
 	// that render? A hand-edited file is reported by the DRIFT line
 	// instead, and counted once. With one enabled backend these are plain
@@ -606,4 +617,40 @@ func cfgHostCounts(path string) map[string]int {
 		}
 	}
 	return counts
+}
+
+// leftoverMinAge is how old a private copy under the state directory must be
+// before it is a leftover and not a command at work.
+const leftoverMinAge = 10 * time.Minute
+
+// leftoverLines names the directories (and the one file) that an interrupted
+// command left in the state directory, each with the age and what to do.
+func (inv *invocation) leftoverLines() []string {
+	dir := inv.app.Paths.StateDir
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	now := inv.app.Knobs.Now()
+	var out []string
+	for _, e := range entries {
+		name := e.Name()
+		match := false
+		for _, p := range []string{".apply.", ".restore.", ".enable.", ".units.", ".disable."} {
+			if strings.HasPrefix(name, p) {
+				match = true
+			}
+		}
+		if !match {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil || now.Sub(fi.ModTime()) < leftoverMinAge {
+			continue
+		}
+		out = append(out, filepath.Join(dir, name)+" is a leftover of an interrupted command ("+
+			strconv.Itoa(int(now.Sub(fi.ModTime()).Round(time.Minute)/time.Minute))+" minutes old) and holds a copy of the configuration; "+
+			"check 'tacctl config validate' and 'tacctl backup list', then remove it")
+	}
+	return out
 }

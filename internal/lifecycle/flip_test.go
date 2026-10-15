@@ -297,12 +297,15 @@ func TestFlipAStoreThatExistsIsNeverReimported(t *testing.T) {
 }
 
 // treeSums is every file under etc and state with its sha256 (the lock
-// file left out).
+// files left out).
 func (e *tenv) treeSums() string {
 	var b strings.Builder
 	for _, root := range []string{e.p.Etc, e.p.StateDir} {
 		_ = filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
-			if err == nil && fi.Mode().IsRegular() && fi.Name() != ".store.lock" {
+			if err != nil || !fi.Mode().IsRegular() {
+				return nil
+			}
+			if n := fi.Name(); !strings.HasPrefix(n, ".") || !strings.HasSuffix(n, ".lock") {
 				b.WriteString(p + " " + sha(e.t, p) + "\n")
 			}
 			return nil

@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 const engineerHint = "No group has the engineer tier; a superuser gives it with 'tacctl group preset roles'"
@@ -65,5 +67,34 @@ func TestEmptyPrivilegesOverrideIsReported(t *testing.T) {
 	}
 	if out := sb.plainRun("", "group", "privilege", "list", "operator"); !strings.Contains(out, "undebug all") || strings.Contains(out, "stores an empty list") {
 		t.Errorf("privilege list after reset:\n%s", out)
+	}
+}
+
+// An old private copy of the configuration left in the state directory by an
+// interrupted command is a warning of 'config validate'; a young one (a
+// command at work) is not.
+func TestConfigValidateNamesLeftovers(t *testing.T) {
+	sb := renderedSandbox(t)
+	old := time.Now().Add(-time.Hour)
+	for _, name := range []string{".apply.old1", ".enable.old2"} {
+		p := sb.path("state", name)
+		if err := os.Mkdir(p, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(sb.path("state", ".apply.young"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	out := plain(sb.run("", []string{"config", "validate"}))
+	for _, want := range []string{".apply.old1 is a leftover of an interrupted command (60 minutes old)", ".enable.old2 is a leftover"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("validate lacks %q:\n%s", want, out)
+		}
+	}
+	if sb.code != 0 || strings.Contains(out, ".apply.young") {
+		t.Errorf("exit %d, young one named:\n%s", sb.code, out)
 	}
 }
