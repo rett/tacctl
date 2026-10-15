@@ -42,6 +42,10 @@ type device struct {
 	clk   *fakedev.FakeClock
 	dir   string
 	state string
+	// netconf makes the held transport and the fresh login NETCONF ones
+	// (mode is the held transport's edit-session mode).
+	netconf bool
+	mode    NetconfMode
 }
 
 // newDevice copies the fixture, adds the knob files and serves it.
@@ -105,8 +109,29 @@ func (d *device) dial() *JunosCLI {
 	return j
 }
 
+// dialNetconf is the held login over NETCONF.
+func (d *device) dialNetconf(mode NetconfMode) *JunosNetconf {
+	d.t.Helper()
+	j, err := DialJunosNetconf(context.Background(), d.target(fakedev.DefaultUser, fakedev.DefaultPassword), mode)
+	if err != nil {
+		d.t.Fatalf("dial netconf: %v", err)
+	}
+	return j
+}
+
+// transport is the held transport of the device's kind.
+func (d *device) transport() Transport {
+	if d.netconf {
+		return d.dialNetconf(d.mode)
+	}
+	return d.dial()
+}
+
 // verify is the fresh login of the verification.
 func (d *device) verify(ctx context.Context) (Reader, error) {
+	if d.netconf {
+		return DialJunosNetconf(ctx, d.target(fakedev.DefaultUser, fakedev.DefaultPassword), ModePrivate)
+	}
 	return DialJunos(ctx, d.target(fakedev.DefaultUser, fakedev.DefaultPassword))
 }
 
@@ -212,7 +237,7 @@ func (d *device) input(p *planner) Input {
 	return Input{
 		Device: "example-sw1", Names: []string{"example-sw1", "example-sw1.lab.example.net"},
 		User:           "alice",
-		Transport:      d.dial(),
+		Transport:      d.transport(),
 		Verify:         d.verify,
 		Plan:           p.plan,
 		Allow:          plan.Allow{Login: fakedev.DefaultUser, Expected: expected()},
@@ -251,7 +276,7 @@ func assertLog(t *testing.T, o Outcome, delta []plan.Line) {
 	}
 	for _, logs := range [][]string{o.Log, o.VerifyLog} {
 		for _, l := range logs {
-			if plan.IsApplyWord(l) || l == read || shown[l] {
+			if plan.IsApplyWord(l) || l == read || shown[l] || strings.HasPrefix(l, "netconf: ") {
 				continue
 			}
 			t.Errorf("the log holds %q, which is neither a delta statement nor an apply word", l)
