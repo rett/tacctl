@@ -245,3 +245,25 @@ func endsWithSub(log []string, words ...string) bool {
 	}
 	return i == len(words)
 }
+
+// TestHolderOfTheDevicesLockDenied pins the wording the lab switch gave a
+// second locker (a line break after 'locked by:', which reaches the transport
+// as '?').
+func TestHolderOfTheDevicesLockDenied(t *testing.T) {
+	for name, msg := range map[string]string{
+		"raw":       "\nconfiguration database locked by:\n  admin terminal  (pid 85829) on since 2026-10-15 05:47:43 AKDT\n      exclusive \n",
+		"sanitised": "?configuration database locked by:?  admin terminal  (pid 85829) on since 2026-10-15 05:47:43 AKDT?      exclusive ?",
+		"same line": "configuration database locked by: bob terminal",
+	} {
+		want := "admin"
+		if name == "same line" {
+			want = "bob"
+		}
+		if got := holderOf(msg); got != want {
+			t.Errorf("%s: holderOf = %q, want %q", name, got, want)
+		}
+	}
+	if got := holderOf("no holder named"); got != "" {
+		t.Errorf("no 'locked by': %q", got)
+	}
+}

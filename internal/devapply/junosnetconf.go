@@ -607,9 +607,12 @@ func holderOf(msg string) string {
 	if !ok {
 		return ""
 	}
-	rest = strings.TrimLeft(rest, ": \t\r\n")
+	// the device puts the holder on the next line ("locked by:", then
+	// "  admin terminal (pid 85829) on since ..."); a control character
+	// reaches here as '?'
+	rest = strings.TrimLeft(rest, ": \t\r\n?")
 	if f := strings.Fields(rest); len(f) > 0 {
-		return cut(f[0])
+		return cut(strings.TrimLeft(f[0], "?"))
 	}
 	return ""
 }
