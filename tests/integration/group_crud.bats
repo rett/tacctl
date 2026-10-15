@@ -27,6 +27,20 @@ setup() {
     assert_output --partial "superuser"
 }
 
+@test "group list: says when no group has the engineer tier, until one has" {
+    run "$TACCTL_BIN_SCRIPT" group list
+    assert_success
+    assert_output --partial "No group has the engineer tier; a superuser gives it with 'tacctl group preset roles'"
+    assert_output --partial "'tacctl group edit <group> tier engineer'."
+
+    run "$TACCTL_BIN_SCRIPT" group edit operator tier engineer
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" group list
+    assert_success
+    assert_output --partial "operator"
+    refute_output --partial "engineer tier"
+}
+
 # --- group add ---------------------------------------------------------------
 
 @test "group add: creates a new group with Cisco priv-lvl + Juniper class" {

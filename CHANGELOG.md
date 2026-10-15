@@ -26,7 +26,39 @@ current behaviour; this file is where history lives.
    running or a read-only caller leave the cache as it was. `list --scan`
    and `device scan` are unchanged.
 
-3. **Every release is rebuilt and compared by a published check.** The
+3. **`tacctl group list` says when no group has the engineer tier.** The
+   engineer tier exists only through a tier setting, so an install without
+   the role looked the same as one that had decided against it. When the
+   table has no group at the engineer tier, one `[INFO]` line follows it
+   (for every caller tier) naming the two ways to give it: `group preset
+   roles` and `group edit <group> tier engineer`. The line is not printed
+   once any group has the tier, nor while a `tier.<group>` setting of
+   `tacctl.yaml` is not a tier (`config validate` and the other warnings
+   own that).
+
+4. **`config validate` warns about an empty `privileges.<group>` on a
+   built-in group that ships a list.** An empty list in `tacctl.yaml`
+   (what removing the last mapping once stored) hides the shipped default
+   of `readonly` (`show running-config`) and `operator` (`undebug all`). The
+   warning is a `Group settings:` line naming the shipped mappings and
+   `group privilege reset <group>`, which removes it; the exit code is
+   unchanged. `group privilege list` of such a group no longer reads as if
+   the group had never been given a list: a second line says that
+   `tacctl.yaml` stores an empty list that hides the shipped default.
+
+5. **`config devices` help names the apply transport default as `cli`.**
+   The one-line help of `tacctl config devices` said the apply transport
+   defaults to `auto`; it is `cli` (`config devices apply-transport`), as
+   the manual and the documentation already said.
+
+6. **Tab completion offers the values of `--tier`, `--wti-level`, `--priv`
+   and `group edit <group> tier`.** `group add --tier` and `--wti-level`
+   and `group edit <group> tier` (with `auto`) take their words from the
+   lists the commands validate against, and `--priv` of `config snmp v3-user`
+   and `scope snmp v3-user` offers `aes128`, as `--auth` of the same
+   verbs offers `sha` and `sha256`.
+
+7. **Every release is rebuilt and compared by a published check.** The
    repository gains its first workflow, `release-reproducible`: when a
    release is published it checks out the tag on a clean runner, installs the
    Go version that tag's `bin/tacctl.sh` names, rebuilds both binaries and
@@ -43,7 +75,7 @@ current behaviour; this file is where history lives.
    man page's `.TH` line, the release notes file). No change to the binary
    or the commands.
 
-4. **The NETCONF limits are documented as the service port's.** A lab run
+8. **The NETCONF limits are documented as the service port's.** A lab run
    showed that `--connection-limit` and `--rate-limit` bound the NETCONF
    service on TCP 830 and not the SSH subsystem that `device config apply`
    and the pull use (seven simultaneous sessions and four applies inside a

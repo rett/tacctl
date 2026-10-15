@@ -5,7 +5,8 @@
 ```
 group list
 
-    List all groups with Cisco priv-lvl, Juniper class, user count
+    List all groups with Cisco priv-lvl, Juniper class, user count (a line after the table says
+    when no group has the engineer tier and how to give it)
 
 group show <name>
 
@@ -73,6 +74,7 @@ group reset <name> [--preset] [--dry-run] [--yes]
 group privilege list <group>
 
     Show Cisco privilege mappings and their modes
+    (names an empty stored list that hides a shipped one)
 
 group privilege add <group> '<cmd>'[,'<cmd>'...]
 

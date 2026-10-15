@@ -35,6 +35,7 @@ git show 0.2.7:docs/plans/0.2.5-plan.md
 ```
 
 `0.2.2-plan.md` (D1-D28), `0.2.3-plan.md` (D29-D59), `0.2.4-plan.md`
-(D60-D76), `0.2.5-plan.md` (D94-D127), `0.2.7-blocks-plan.md`,
-`0.2.4-handoff.md` (working rules, gates), the `go-rewrite*.md` set,
-`operator-console*.md` and `pluggable-backends.md`.
+(D60-D76), `0.2.5-plan.md` (D94-D127), `0.2.5-operator-audit.md` (the
+operator's command audit), `0.2.7-blocks-plan.md`, `0.2.4-handoff.md`
+(working rules, gates), the `go-rewrite*.md` set, `operator-console*.md` and
+`pluggable-backends.md`.

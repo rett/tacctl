@@ -649,6 +649,10 @@ Remove every scope from the user.
 .TP
 .B group list
 List all groups with Cisco privilege level, Juniper class, and user count.
+When no group has the engineer tier, one line after the table says so and names
+the two ways to give it: \fBgroup preset roles\fR and \fBgroup edit\fR
+\fIgroup\fR \fBtier engineer\fR. It is not shown while a tier setting of
+tacctl.yaml is not a tier.
 .\" BEGIN GENERATED: command group list
 .RS
 .PP
@@ -1064,7 +1068,12 @@ override (in
 .I /etc/tacctl/tacctl.yaml
 under
 .BR privileges.\fIgroup\fR )
-or the built-in default set (move-DOWN commands only).
+or the built-in default set (move-DOWN commands only). When
+.I tacctl.yaml
+stores an empty list on a built-in group that ships one, the list says so: the
+empty list hides the shipped default, and
+.B group privilege reset
+removes it.
 .\" BEGIN GENERATED: command group privilege list
 .RS
 .PP
@@ -1539,7 +1548,14 @@ line each): an empty or invalid match, a prefix form without
 that matches the exact arguments only, and a rule that is never reached
 because an earlier rule of the same name has no match or follows the
 .RB ` * `
-catchall.
+catchall. An empty
+.BR privileges.\fIgroup\fR
+list on a built-in group that ships one hides the shipped list; that is a
+warning too (a
+.B Group settings:
+line), and
+.B group privilege reset
+removes it.
 .IP
 Then, for every enabled backend, whether its rendered config is up to date
 with the store and whether any of its files was edited by hand (drift). With
@@ -11179,7 +11195,13 @@ command, a check that found a problem
 .RB ( "config validate" ", " "console check" ", " "device check" ),
 a device that could not be read, compared or planned
 .RB ( "device config pull" ", " "device config diff" ", " "device config plan" ),
-a step of a lifecycle phase that failed. An unknown sub-command prints the
+a device
+.B "device config apply"
+failed, rolled back or left pending (and a review that was not answered, and
+an apply that applied none of its devices and found none already applied:
+.B "\-\-confirmed \-\-yes"
+that skipped them all), a step of a lifecycle phase that failed. An unknown
+sub-command prints the
 usage of its family and ends with 1 as well. Nothing was changed unless the
 message says what was.
 .TP
@@ -11193,9 +11215,17 @@ of it, or
 .B "device config diff \-\-exit\-code"
 found a device that differs, or
 .B "device config plan \-\-exit\-code"
+found a device that needs a change, or
+.B "device config apply \-\-check \-\-exit\-code"
 found a device that needs a change, or the arguments of
-.BR "device config pull" ", " diff ", " plan ", " list " or " forget
-were wrong.
+.BR "device config pull" ", " diff ", " plan ", " apply ", " shapes ", " list " or " forget
+were wrong
+.RB ( apply
+without a terminal and without
+.BR "\-\-confirmed \-\-yes" ,
+and
+.BR "apply \-\-hold \-\-json" ,
+included).
 .TP
 .B 3
 A backend command was refused because a file tacctl rendered holds a hand edit
@@ -11221,7 +11251,13 @@ example), or a
 or
 .B "device config plan \-\-pull"
 was stopped by Ctrl-C (the first stops starting devices and lets the running
-ones finish, a second cuts them off). Nothing was changed.
+ones finish, a second cuts them off), or a
+.B "device config apply"
+was (a transaction in flight finishes under the first; under the second a
+candidate is discarded and a pending commit cancelled where the window allows,
+else reported
+.BR PENDING ).
+A pull changes nothing on a device.
 .PP
 .B "tacctl ssh"
 and

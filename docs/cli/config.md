@@ -67,8 +67,9 @@ config validate
     Validate the store, tacctl.yaml (schema walk, incl. commands.<group> / privileges.<group> /
     mgmt_acl.* / listeners) and the server-config structure (orphan scope refs, scope.default
     pointing at a nonexistent scope, reserved usernames, missing accounter:), then each enabled
-    backend: rendered config up to date, drift; RADIUS scopes that send no vendor attribute. Exits 1
-    on errors
+    backend: rendered config up to date, drift; RADIUS scopes that send no vendor attribute. An
+    empty privileges.<group> list on a built-in group that ships one (it hides the shipped list;
+    `group privilege reset <group>` removes it) is a warning. Exits 1 on errors
 
 config diff [timestamp]
 

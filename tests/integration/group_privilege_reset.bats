@@ -128,6 +128,25 @@ on_tty() {
     assert_output --partial "Source: default"
 }
 
+@test "an empty privileges list on a built-in group is a validate warning and a privilege list line, until reset" {
+    "$TACCTL_BIN_SCRIPT" group privilege remove readonly 'show running-config' > /dev/null
+    run grep -F 'readonly: []' "$YAML"
+    assert_success
+    # The fixture has no users, so validate fails on that; the warning is not
+    # what makes it fail (the Go test holds the exit code).
+    prun "$TACCTL_BIN_SCRIPT" config validate
+    assert_output --partial "privileges.readonly is an empty list in tacctl.yaml: it hides the shipped default (1 mapping: show running-config); 'tacctl group privilege reset readonly' removes it"
+    prun "$TACCTL_BIN_SCRIPT" group privilege list readonly
+    assert_success
+    assert_output --partial "(no mappings"
+    assert_output --partial "(tacctl.yaml stores an empty list that hides the shipped default; 'tacctl group privilege reset readonly' removes it)"
+
+    prun "$TACCTL_BIN_SCRIPT" group privilege reset readonly --yes
+    assert_success
+    prun "$TACCTL_BIN_SCRIPT" config validate
+    refute_output --partial "is an empty list"
+}
+
 @test "group privilege reset: a custom group has no shipped list, so its override is removed" {
     "$TACCTL_BIN_SCRIPT" group add helpdesk 5 HD-CLASS > /dev/null
     "$TACCTL_BIN_SCRIPT" group privilege add helpdesk 'show clock' > /dev/null

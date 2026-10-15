@@ -451,6 +451,18 @@ func (inv *invocation) configValidate([]string) error {
 		}
 	}
 
+	// An empty privileges.<group> on a built-in group that ships a list: the
+	// empty list hides it. A warning; 'group privilege reset' removes it.
+	for _, g := range policy.EmptyPrivilegeOverrides(cfg) {
+		def := policy.DefaultPrivileges(g)
+		n := "1 mapping"
+		if len(def) != 1 {
+			n = strconv.Itoa(len(def)) + " mappings"
+		}
+		inv.echoE("  " + Y + "Group settings:" + NC + "       privileges." + g + " is an empty list in tacctl.yaml: it hides the shipped default (" +
+			n + ": " + strings.Join(def, ", ") + "); 'tacctl group privilege reset " + g + "' removes it")
+	}
+
 	// Rendered artifacts: can the store be rendered, and are the live files
 	// that render? A hand-edited file is reported by the DRIFT line
 	// instead, and counted once. With one enabled backend these are plain

@@ -430,6 +430,20 @@ func ClearPrivileges(c *conf.Config, group string) error {
 	return c.Unset(privilegesPath(group))
 }
 
+// EmptyPrivilegeOverrides lists the built-in groups whose tacctl.yaml stores
+// an empty privileges.<group>, which hides the shipped list the group has
+// (ClearPrivileges, 'group privilege reset', makes it apply again). An empty
+// list on a group with no shipped list hides nothing and is not named.
+func EmptyPrivilegeOverrides(c *conf.Config) []string {
+	var out []string
+	for _, g := range Builtins {
+		if c.HasOverride(privilegesPath(g)) && len(Privileges(c, g)) == 0 && len(DefaultPrivileges(g)) > 0 {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
 // --- healing ----------------------------------------------------------------
 
 // Healed is one group conf_migrate_dead_command_matches changed: its
