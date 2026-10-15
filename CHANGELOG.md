@@ -3,6 +3,120 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.10 (unreleased)
+
+1. **`tacctl scope netconf` and `tacctl device netconf`: the NETCONF service
+   of the Junos devices, per scope with a per-device override.** Three states:
+   `enable` (`set system services netconf ssh`, with `--connection-limit <n>`
+   and `--rate-limit <n>`, 1 to 250 each, `none` to remove one), `disable`
+   (`delete system services netconf`) and `leave`, the default, which plans and
+   compares nothing of the service, as before. `scope netconf <scope>` with
+   `leave` removes the scope's setting and with `disable` drops its limits.
+   `device netconf <name>` takes the device's own word over its scope's: `leave`
+   leaves the device alone whatever its scope says, `clear` gives the decision
+   back to the scope, and the state and each limit layer on their own, the
+   device's value over the scope's. `show` (or no word) prints the setting and
+   where each value comes from, `device netconf --apply` runs `device config
+   apply` for the device as the other setters do, and `device show` has a
+   `NETCONF` row (and `--json` a `netconf` object) for a Junos device whose
+   setting is not the default. Both verbs are the superuser's. The scope's
+   values are `netconf_scope.<scope>.state`, `.connection_limit` and
+   `.rate_limit` in `tacctl.yaml`, and follow the scope on rename and removal;
+   a device's own is the optional `netconf:` map of its entry in
+   `devices.yaml`, refused for a device of another vendor, and removed with a
+   warning when `device vendor` makes the device one. A 0.2.9 binary does not
+   know the keys and its `devices.yaml` reader refuses the map.
+
+2. **The walkthrough, `device config pull`, `diff` and `list` follow the
+   setting.** For `enable` the Junos walkthrough's NETCONF step is live: the
+   statement, or the limits' statements when a limit is set (a limit's
+   statement creates `ssh` and the device prints no bare `ssh` beside it), and
+   `netconf` is a section like the others: compared by statement, with what
+   the device holds under `system services netconf` beside them (a trace
+   option, the SSH port, a limit the setting states none of) shown as
+   unmanaged and kept, and a limit with another value a difference. For
+   `disable` the step is a live `delete system services netconf` and the
+   section expects nothing under the hierarchy: every statement the device has
+   there is a difference. `leave` is the commented step and no section, byte
+   for byte as in 0.2.9.
+
+3. **`device config plan` and `device config apply` write the setting.** The
+   `netconf` section is planned where the setting is `enable` or `disable`
+   (`--section netconf` names it; it is refused with the setting to make where
+   the scope leaves the service alone): `set system services netconf ssh` and
+   the limits, or the one statement `delete system services netconf`, and
+   nothing else under `system services`, the delete of a limit included. The
+   statements are held against the rendering before the first is typed, as
+   every other statement is: `set` of what the section renders and `delete` of
+   the service only when the setting disables it; the rest of `system
+   services`, the SSH service among it, stays on the list of what is never
+   written. The plan warns that disabling the service ends it for every NETCONF
+   client of the device, and its back-out types the service again.
+
+4. **`device config apply` writes over NETCONF where the device offers it
+   (`--transport auto|cli|netconf`, `config devices apply-transport`).** The
+   check and the apply of a Junos device go over the NETCONF subsystem when
+   the device's last read found it answering and the login may commit, and
+   over the command line otherwise, when asked for: NETCONF is opt-in and
+   `cli`, the default, is what 0.2.9 did. `auto` says why a device was not
+   taken over NETCONF (`[via cli: NETCONF port closed at the last read]`; a
+   device never read says nothing);
+   `netconf` never falls back, and a device that does not answer or cannot
+   confirm is failed. `--transport` of one run replaces the setting
+   (`device.apply.transport`, a superuser's, written only when set). Over
+   NETCONF the change is loaded under the candidate's lock (a Junos device
+   refuses a confirmed commit in a private session, and a locked candidate
+   that holds another editor's staged change is refused), checked, committed
+   under a confirmed commit and confirmed by the session that made it; a
+   session that closes or dies without confirming leaves the commit pending
+   until the window ends, as over the command line (a failed verification
+   is cancelled at once while tacctl runs), and the fresh login proves the
+   device through NETCONF as before. A change to the NETCONF service itself (`scope netconf`, `device
+   netconf`) is always made over the command line, because its verification
+   depends on the service: `auto` takes the command line and says so,
+   `--transport netconf` refuses it. The device's line, the JSON (`via`,
+   `via_reason`) and the record (`applied.via`) say which transport ran; a
+   read through NETCONF also records the hello. A 0.2.9 binary does not know
+   `device.apply.transport`.
+
+5. **A change to the NETCONF service is proved by a NETCONF probe before it
+   is confirmed.** After the fresh login and before the confirming commit,
+   an apply that enables the service must be answered by a NETCONF hello as
+   you, and one that disables it must find the hello no longer answered
+   (`port closed` or `no hello`); a probe that cannot tell is a failed
+   proof, and a failed proof rolls the change back. The line says
+   `[NETCONF verified: hello ok]` or `[NETCONF verified: not answering]`
+   (the JSON has `service_proof`), and the record's NETCONF probe becomes
+   what was proved, so `device config list` and the next apply see it at
+   once; a rolled-back change leaves the record's probe as it was and the
+   reason says so. A NETCONF fresh login that sees no pending confirmed
+   commit names the history it read, not a prompt.
+
+6. **`tacctl rollback 0.2.9` prepares the state for the release before this
+   one.** It is the dry run it always was until `--apply`, which takes a
+   snapshot and then removes `device.apply.transport` and the
+   `netconf_scope` keys from `tacctl.yaml` (the dry run warns with their
+   values and `--apply` refuses without `--yes` while one is set) and the
+   `netconf:` map of every device from `devices.yaml`, so a 0.2.9 binary's
+   `config validate`, `backup restore` and device registry read the files.
+   What 0.2.9 ignores is left and listed: the `via` field of the apply
+   records. 0.2.10 changed no sudoers text, so no drop-in is rewritten.
+   `rollback 0.2.3` removes the same settings on its way, and the refusal of a
+   rollback while an apply is not settled stands for both targets. `0.2.8` is
+   no longer a target: the way is this rollback, the install of 0.2.9, then
+   0.2.9's own `tacctl rollback 0.2.8`, and the refusal of `0.2.4` to `0.2.8`
+   says so.
+
+7. **`tacctl version --long` is laid out as a title card and a list of
+   facts.** The first line is the version, as `tacctl version` prints it; the
+   project's name, the address and licence, and the copyright follow on
+   their own lines, and the facts (commit, build date, Go version, test
+   knobs) come after a blank line with their values aligned; no line is wider
+   than 62 columns, where the old copyright line wrapped on an 80-column
+   terminal. The build date is the commit's date shown as `2026-10-14 15:34
+   AKDT` in the local time zone. The field labels (`commit:`) and the short
+   `tacctl version` are as before.
+
 ## 0.2.9 (2026-10-14)
 
 1. **`config devices apply-confirm-timeout` and `apply-pause`.** The two

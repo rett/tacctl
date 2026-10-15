@@ -21,13 +21,33 @@ The scripts ask `tacctl __complete` for the words, so they match the installed b
 ## Interactive Shell — `tacctl shell`
 
 ```
-tacctl shell                      # Prompt 'tacctl> ': type commands without 'tacctl' (user list, scope show lab)
-tacctl shell --no-history         # Keep this session's history in memory only
-tacctl shell --idle 30            # Leave after 30 minutes at the prompt without input (0, the default: never)
-tacctl shell --space-completion off  # A typed space is only a space (default on)
-tacctl shell --password-cache     # Keep your network password in this shell's memory (see Password cache)
-tacctl shell -c 'user list'       # Run one line and exit with its status
-tacctl shell < commands.txt       # Run the lines in order; stop at the first non-zero status and exit with it
+tacctl shell
+
+    Prompt 'tacctl> ': type commands without 'tacctl' (user list, scope show lab)
+
+tacctl shell --no-history
+
+    Keep this session's history in memory only
+
+tacctl shell --idle 30
+
+    Leave after 30 minutes at the prompt without input (0, the default: never)
+
+tacctl shell --space-completion off
+
+    A typed space is only a space (default on)
+
+tacctl shell --password-cache
+
+    Keep your network password in this shell's memory (see Password cache)
+
+tacctl shell -c 'user list'
+
+    Run one line and exit with its status
+
+tacctl shell < commands.txt
+
+    Run the lines in order; stop at the first non-zero status and exit with it
 ```
 
 The shell runs as you and holds no privilege: each line runs as `sudo [-n] tacctl <words>` with the terminal attached, so sudo's rules and log, and the tier gate, apply to every line as they do from bash; prompts and password input work as usual. Tier users of the readonly and operator tiers (members of `tac-users`, who have no local password) get `sudo -n`, and a line their tier's sudoers rules do not cover is reported as not permitted; superusers (`tac-superuser`) get plain `sudo`, which asks for their network password on the terminal when a line needs it (once; sudo's cache applies), so their write verbs work from the shell. `hash` and `completion` lines run without sudo; `host` lines carry `SSH_AUTH_SOCK` as the re-exec does.
@@ -47,10 +67,21 @@ History lives in `~/.local/state/tacctl/history` (0600, newest 1000 lines). Line
 `device config pull` (and `diff --pull`, `plan --pull`) and `tacctl ssh` log in to devices with your own network password. In a shell or console session that password can be asked once and kept **in memory, for that session only**, so a pull of sixty devices, a diff and a few `ssh` lines ask once:
 
 ```
-tacctl console password-cache tiers [<csv>|none]   # operator, engineer, superuser; default none (off for every tier)
-tacctl console password-cache idle [<min>]         # forgotten after this long without a use (1-120, default 15)
-tacctl console password-cache max [<hours>]        # forgotten this long after it was cached (1-24, default 8)
-console forget                                     # a word of the shell and the console: forget it now
+tacctl console password-cache tiers [<csv>|none]
+
+    operator, engineer, superuser; default none (off for every tier)
+
+tacctl console password-cache idle [<min>]
+
+    forgotten after this long without a use (1-120, default 15)
+
+tacctl console password-cache max [<hours>]
+
+    forgotten this long after it was cached (1-24, default 8)
+
+console forget
+
+    a word of the shell and the console: forget it now
 ```
 
 It is on in the login console for the tiers listed, and in a plain `tacctl shell` when you give `--password-cache` and the same policy opens the cache to your tier (a caller outside `tac-users` asks for it themselves). It is for the interactive session only: `-c` and batch lines keep no process to hold it, and the plain CLI from bash asks per run.

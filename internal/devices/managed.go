@@ -46,6 +46,12 @@ type Section struct {
 	// block's; else Block[i] belongs to Lines[i]. Every line of the system
 	// section is a block's.
 	Block []bool
+	// Absent says the section's hierarchy is expected to hold nothing (0.2.10,
+	// D146: the NETCONF service of a scope that disables it). Lines is empty;
+	// a statement the device has under the section is a difference, and the
+	// planner deletes the hierarchy in one statement. False for every other
+	// section.
+	Absent bool
 }
 
 // The sections, in the order Managed returns them.
@@ -206,7 +212,15 @@ func managedJuniper(req Request, d Data) []Section {
 	// message, domain and NTP are no business of a scope without one).
 	sys := junosStatements(v["SYSTEM_BLOCK"])
 	s.addFrom(sectionSystem, sys, setOf(sys))
-	s.add(sectionNetconf, junosStatements(v["NETCONF_BLOCK"]))
+	switch d.Netconf.State {
+	case NetconfEnable:
+		s.add(sectionNetconf, junosStatements(v["NETCONF_BLOCK"]))
+	case NetconfDisable:
+		s.out = append(s.out, Section{Name: sectionNetconf, Absent: true})
+	default:
+		// leave: the step is commented, so the section has no statement
+		s.add(sectionNetconf, junosStatements(v["NETCONF_BLOCK"]))
+	}
 	// Step 7: the account lines are rendered commented, to be completed
 	// with a hash; the statement is the line as it is once pasted.
 	s.add(sectionBreakGlass, uncommented(juniperBreakGlass(BreakGlassFor(req, d)), "# ", "# set system login user "))

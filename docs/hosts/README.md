@@ -10,10 +10,12 @@ Linux hosts log in against this server by one of two methods. Accounts, tiers, s
 | `radius` | `pam_radius_auth` | RADIUS (`tacctl backend enable radius` first) | The host's distribution package: `libpam-radius-auth` on Debian/Ubuntu; `pam_radius` from EPEL on the RHEL family, enabling EPEL (`epel-release`) when the host does not have it |
 
 ```
-tacctl config linux build                                  # once, on the server: prepare the pam_tacplus source tarball
+tacctl config linux build                                  # once, on the server: prepare the
+                                                           # pam_tacplus source tarball
 tacctl config linux script --scope prod -o enroll.sh       # install script for hosts in a scope
 tacctl config linux script --scope prod --method radius -o enroll.sh
-tacctl config linux remove-script -o unenroll.sh           # removal script (no secrets; removes either method)
+tacctl config linux remove-script -o unenroll.sh           # removal script (no secrets; removes
+                                                           # either method)
 ```
 Copy the install script to the host and run it as root from a session you keep open. It:
 - installs the PAM module before creating any account (`tacplus`: builds and installs `pam_tacplus`, installing `gcc`, `make` and `libpam0g-dev` with apt if missing, and leaving a host that already has the module from the same source alone; `radius`: installs the package, and stops before any account or PAM change when it cannot);

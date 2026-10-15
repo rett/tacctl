@@ -193,6 +193,11 @@ func (f *File) Import(rows []Row, replace, allowGeneric bool, hostEntries []Entr
 		if merged.ConfigSyntax == "" && merged.Vendor == "cisco" {
 			merged.ConfigSyntax = old.ConfigSyntax
 		}
+		// Nor its NETCONF service setting (D145): a file that says nothing of
+		// it leaves the registered one, unless the vendor is no longer Junos.
+		if merged.Netconf.Empty() && merged.Vendor == "juniper" {
+			merged.Netconf = old.Netconf
+		}
 		merged.Name = old.Name
 		if len(merged.Ack) == 0 {
 			merged.Ack = slices.Clone(old.Ack)
@@ -277,6 +282,16 @@ type jsonDevice struct {
 	// SNMP is the device's own non-secret SNMP settings (D72), only when
 	// set.
 	SNMP *jsonSNMP `json:"snmp,omitempty"`
+	// Netconf is the device's own NETCONF service setting (D145), only when
+	// set.
+	Netconf *jsonNetconf `json:"netconf,omitempty"`
+}
+
+// jsonNetconf is the JSON form of a device's NETCONF service setting.
+type jsonNetconf struct {
+	State           string `json:"state,omitempty"`
+	ConnectionLimit int    `json:"connection_limit,omitempty"`
+	RateLimit       int    `json:"rate_limit,omitempty"`
 }
 
 // jsonSNMP is the JSON form of a device's SNMP settings.
@@ -293,6 +308,9 @@ func JSONDevice(d Device) any {
 		LegacySSH: d.LegacySSH, ConfigSyntax: d.ConfigSyntax, Description: d.Description, Location: d.Location, HostKeys: d.HostKeys, Ack: d.Ack}
 	if !d.SNMP.Empty() {
 		j.SNMP = &jsonSNMP{Version: d.SNMP.Version, Port: d.SNMP.Port, Timeout: d.SNMP.Timeout, Clients: slices.Clone(d.SNMP.Clients)}
+	}
+	if !d.Netconf.Empty() {
+		j.Netconf = &jsonNetconf{State: d.Netconf.State, ConnectionLimit: d.Netconf.ConnectionLimit, RateLimit: d.Netconf.RateLimit}
 	}
 	return j
 }

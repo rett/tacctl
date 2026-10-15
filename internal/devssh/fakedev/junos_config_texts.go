@@ -66,9 +66,10 @@ const (
 	jtEditingPriv   = "      private %s[edit]"                    // [L]
 
 	// The expiry of a confirmed commit is a commit of the device's own.
-	jtExpiryUser = "root"  // [C] (capture of 2026-10-09)
-	jtExpiryVia  = "other" // [C] (capture of 2026-10-09)
-	jtCommitVia  = "cli"   // [C]
+	jtExpiryUser = "root"    // [C] (capture of 2026-10-09)
+	jtExpiryVia  = "other"   // [C] (capture of 2026-10-09)
+	jtCommitVia  = "cli"     // [C]
+	jtNetconfVia = "netconf" // [C] the way of a commit made over NETCONF (lab switch, Junos 25.4)
 
 	// The layout of a commit's time in 'show system commit' [C]; the zone
 	// is the fake's own clock's (UTC), the capture's was a local one.
@@ -77,6 +78,15 @@ const (
 	// stays for good, also after a 'commit check' confirmed the commit: it
 	// is a label, not a pending marker (the banner is).
 	jtRollbackInFmt = "commit confirmed, rollback in %dmins"
+	// jtRollbackPending is the line under the entry of a confirmed commit
+	// that waits for its confirm [C: plan N5, CLI and NETCONF alike].
+	jtRollbackPending = "rollback pending"
+	// jtNetconfNoConfirmedPrivate is a NETCONF session's refusal of a
+	// confirmed commit in a private configuration [C: plan N1].
+	jtNetconfNoConfirmedPrivate = `"commit confirmed" is not supported for private configuration`
+	// jtNetconfNoExclusive is the device's answer to <exclusive/> in an
+	// <open-configuration>: there is no such form [C: plan N1].
+	jtNetconfNoExclusive = "syntax error, expecting <invoke-on>"
 	// jtRescueFmt is the line 'show system commit' ends with when a rescue
 	// configuration is saved: the time, the user and the way [C]. It is no
 	// entry and has no number.

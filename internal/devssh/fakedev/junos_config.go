@@ -54,6 +54,16 @@ package fakedev
 //	                    every command): the answer waits on the clock
 //	timer.minute        seconds one minute of 'commit confirmed' lasts on the
 //	                    server's clock (default 60; bats sets 1)
+//	netconf.private.confirm
+//	                    'accept': a NETCONF private session's confirmed
+//	                    commit is accepted (absent: refused, as the lab
+//	                    switch refuses it); see junos_config_netconf.go,
+//	                    which also says how the knobs above act over NETCONF
+//	netconf.close.rollback
+//	                    'on': a NETCONF session whose close ends a confirmed
+//	                    commit it made and did not confirm rolls it back at
+//	                    once (absent: it stays pending to the window's end,
+//	                    as on the lab switch)
 //
 // The device writes 'committed.set' (to the state directory, the transcript
 // directory unless WithStateDir) at its first use and after every commit, the
@@ -195,12 +205,19 @@ type JunosCommit struct {
 	// device's history does, also after a 'commit check' confirmed it: it
 	// is not a pending marker (PendingUntil and the prompt's banner are).
 	RollbackIn int
+	// Confirmed marks a confirmed commit whose window is under a minute
+	// (RollbackIn 0), which the device still labels 'rollback in 0mins'.
+	Confirmed bool
 }
 
 type junosPending struct {
 	timer  ClockTimer
 	until  time.Time
 	before *jcfg
+	// owner is the NETCONF session that made the commit; its close rolls
+	// the commit back only under the knob netconf.close.rollback=on (the
+	// device does not: lab, plan N2); nil for a commit of the command line.
+	owner *jsession
 }
 
 // junosDevice is the state of the configure model, shared by the sessions
@@ -576,12 +593,20 @@ func (d *junosDevice) historyText() string {
 	var b strings.Builder
 	for i, h := range d.history {
 		fmt.Fprintf(&b, "%-3d %s by %s via %s", i, formatTime(h.Time), h.User, h.Via)
-		if h.RollbackIn > 0 {
+		if h.Confirmed || h.RollbackIn > 0 {
+			// the label is the window in whole minutes, rounded down: a
+			// NETCONF commit's seconds make 'rollback in 0mins' under a
+			// minute [lab: 1 and 5 seconds read 0mins, 180 reads 3mins]
 			b.WriteString(" " + fmt.Sprintf(jtRollbackInFmt, h.RollbackIn))
 		}
 		b.WriteString("\n")
 		if h.Comment != "" {
 			b.WriteString("    " + h.Comment + "\n")
+		}
+		// the device's own marker under a commit that waits for its confirm
+		// (entry 0 only: a later commit or a check confirmed it) [C: plan N5]
+		if i == 0 && d.pending != nil {
+			b.WriteString("    " + jtRollbackPending + "\n")
 		}
 	}
 	// a saved rescue configuration (the 'rescue' knob): the marker line

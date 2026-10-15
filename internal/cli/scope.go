@@ -65,6 +65,8 @@ var scopeSpecs = map[string]Spec{
 	// 'scope block' parses each verb with scopeBlockSpecs; this is the whole of
 	// it for completion.
 	"block": scopeBlockCompletion,
+	// The NETCONF service of the scope's Junos devices (0.2.10, D145).
+	"netconf": {MinArgs: 1, MaxArgs: 2, Args: []string{KindScopes, scopeNetconfWords}, Flags: scopeNetconfFlags},
 	"snmp": {MinArgs: 1, MaxArgs: -1, Args: []string{KindScopes, "show|version|community|v3-user|clients|contact|port|timeout|clear|test",
 		After("clients", "list|add|remove"), ""}, Flags: []Flag{
 		{Names: []string{"--reveal"}, Only: "show"}, {Names: []string{"--clear"}, Only: "contact"},
@@ -114,6 +116,7 @@ func scopeCmd(inv *invocation) *cobra.Command {
 		withRun(verb("breakglass <scope> {list|add <name> [--role admin|operator|readonly]|remove <name>}",
 			"Per-scope break-glass local users (names and roles; no credential is stored): the accounts a breakglass hold makes usable"), n(inv.scopeBreakGlass)),
 		withRun(verb(scopeSNMPUse, scopeSNMPShort), nn("snmp", inv.scopeSNMP)),
+		withRun(verb(scopeNetconfUse, scopeNetconfShort), nn("netconf", inv.scopeNetconf)),
 		withRun(verb(scopeBlockUse, scopeBlockShort), nn("block", inv.scopeBlock)),
 	)
 	// No sub-command, help, -h, --help: the usage, exit 0; anything else:
@@ -433,6 +436,10 @@ func (inv *invocation) writeMgmtACLCIDRs(list []string, scope string) error {
 func (inv *invocation) scopeConfKeysMove(old, newName string) error {
 	// The scope's SNMP settings and credentials file (D46) follow it too.
 	if err := inv.scopeSNMPMove(old, newName); err != nil {
+		return err
+	}
+	// So does its NETCONF service setting (0.2.10).
+	if err := inv.scopeNetconfMove(old, newName); err != nil {
 		return err
 	}
 	// So do its configuration blocks (0.2.7): the list in force and the files.

@@ -24,7 +24,7 @@ Commands:
       <o>-y</o>, <o>--yes</o>                         Answer yes to the confirmations
   <b>upgrade</b> [<o>--branch <name></o>]             Pull latest source, rebuild, update scripts and every enabled backend
   <b>uninstall</b> [<o>-y</o>|<o>--yes</o>]                  Remove tacctl, its backends' services and all associated files
-  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.8) or for 0.2.3: a dry run unless <o>--apply</o>
+  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.9) or for 0.2.3: a dry run unless <o>--apply</o>
       <o>--apply</o>                           Take a snapshot, then convert the files the target cannot read (tacctl.yaml, sudoers; for 0.2.3 also console.yaml, devices.yaml)
       <o>--yes</o>                             Acknowledge the warnings that <o>--apply</o> refuses to go on without
       <o>--hosts</o>                           Accepted; the hosts need nothing for this target (no host is synced)
@@ -313,6 +313,10 @@ Usage:
       <o>--role <role></o>                                        (add) admin (default), operator or readonly
   <b>tacctl scope snmp</b> <o><scope></o> show|version|community|v3-user|clients|contact|port|timeout|clear|test
                                                            SNMP of a scope: credentials, allowed clients, contact (default beneath: tacctl config snmp)
+  <b>tacctl scope netconf</b> <o><scope></o> [show|enable|disable|leave]
+                                                           NETCONF service of the scope's Junos devices (default leave: nothing is planned or compared; a device's own setting wins)
+      <o>--connection-limit <n>|none</o>                          (enable) The connection limit of the service, 1 to 250; none removes it
+      <o>--rate-limit <n>|none</o>                                (enable) The rate limit of the service, 1 to 250; none removes it
   <b>tacctl scope block</b> <o><scope></o> {juniper|cisco} list|show|check|set|remove|edit|adopt [<o><block></o>]
                                                            Configuration blocks of a scope (Junos snmp and system, IOS snmp): community strings, trap groups and hosts, access lists, login message, domain, time zone, name servers, NTP
 
@@ -422,7 +426,7 @@ Subcommands:
       <o>--snmp-location <text></o>           (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location)
   <b>linux</b>   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
   <b>snmp</b>    show|community|v3-user|port|timeout|clear|test  SNMP for the name hint of 'device add' (sysName)
-  <b>devices</b> [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause] [value]  How 'device config pull' reads the devices (default 8 at once, auto, 90 s), the confirm timeout of 'plan' (5 min) and how 'device config apply' runs (confirm 10 min, pause 60 s)
+  <b>devices</b> [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport] [value]  How 'device config pull' reads the devices (default 8 at once, auto, 90 s), the confirm timeout of 'plan' (5 min) and how 'device config apply' runs (confirm 10 min, pause 60 s, transport auto)
   <b>branch</b> [name]                        Show or change the tacctl repo branch
 
 Examples:

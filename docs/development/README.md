@@ -27,8 +27,10 @@ tacctl/
   man/tacctl.1              # `man tacctl`
   patches/                  # tacquito source patch overlay (patches/README.md)
   release/allowed_signers   # the public key that signs release binaries
-  docs/                     # user documentation by topic (install, server, security, hosts, devices, cli),
-                            # development/ (this page), releasing.md (the release procedure and how hosts
+  docs/                     # user documentation by topic (install, server, security, hosts,
+                            # devices, cli),
+                            # development/ (this page), releasing.md (the release procedure and how
+                            # hosts
                             # verify a release binary), radius-notes.md, release notes, plans/
   tests/                    # Go and bats suites, containers (tests/README.md)
   CHANGELOG.md

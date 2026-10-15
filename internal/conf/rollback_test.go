@@ -32,24 +32,24 @@ func TestRollbackTablesMatchTheSchema(t *testing.T) {
 		}
 	}
 	for _, f := range schema {
-		in022, in023, in024, in025, in027, in029 := slices.Contains(Known022, f), slices.Contains(Added023, f), slices.Contains(Added024, f), slices.Contains(Added025, f), slices.Contains(Added027, f), slices.Contains(Added029, f)
+		in022, in023, in024, in025, in027, in029, in0210 := slices.Contains(Known022, f), slices.Contains(Added023, f), slices.Contains(Added024, f), slices.Contains(Added025, f), slices.Contains(Added027, f), slices.Contains(Added029, f), slices.Contains(Added0210, f)
 		n := 0
-		for _, in := range []bool{in022, in023, in024, in025, in027, in029} {
+		for _, in := range []bool{in022, in023, in024, in025, in027, in029, in0210} {
 			if in {
 				n++
 			}
 		}
 		switch {
 		case n > 1:
-			t.Errorf("%+v is in more than one of Known022, Added023, Added024, Added025, Added027 and Added029", f)
+			t.Errorf("%+v is in more than one of Known022, Added023, Added024, Added025, Added027, Added029 and Added0210", f)
 		case n == 0:
-			t.Errorf("schema.go has the key family %+v, which rollback.go lists in none of Known022 (0.2.2 has it), Added023 (0.2.3 added it), Added024 (0.2.4 added it), Added025 (0.2.5 added it), Added027 (0.2.7 added it) and Added029 (0.2.9 added it): decide, so a rollback knows what to remove", f)
+			t.Errorf("schema.go has the key family %+v, which rollback.go lists in none of Known022 (0.2.2 has it), Added023 (0.2.3 added it), Added024 (0.2.4 added it), Added025 (0.2.5 added it), Added027 (0.2.7 added it), Added029 (0.2.9 added it) and Added0210 (0.2.10 added it): decide, so a rollback knows what to remove", f)
 		}
 	}
 	for _, tbl := range []struct {
 		name string
 		list []Family
-	}{{"Known022", Known022}, {"Added023", Added023}, {"Added024", Added024}, {"Added025", Added025}, {"Added027", Added027}, {"Added029", Added029}} {
+	}{{"Known022", Known022}, {"Added023", Added023}, {"Added024", Added024}, {"Added025", Added025}, {"Added027", Added027}, {"Added029", Added029}, {"Added0210", Added0210}} {
 		for _, f := range tbl.list {
 			if !slices.Contains(schema, f) {
 				t.Errorf("%s lists %+v, which schema.go no longer has", tbl.name, f)
@@ -154,6 +154,21 @@ func TestAdded029IsNotInTheSchemaOfTheTag(t *testing.T) {
 	if !Added029Key("device.apply.pause") || !Added029Key("device.apply.confirm_timeout") ||
 		Added029Key("device.config.confirm_timeout") || Added029Key("device.apply.pause.x") {
 		t.Error("Added029Key is not the two device.apply keys")
+	}
+}
+
+// Where the 0.2.9 tag is here, Added0210 holds nothing its schema has, and is
+// exactly the NETCONF service keys of a scope.
+func TestAdded0210IsNotInTheSchemaOfTheTag(t *testing.T) {
+	want := tagSchemaKeys(t, "0.2.9")
+	for _, f := range Added0210 {
+		if slices.Contains(want, f.Path) {
+			t.Errorf("Added0210 lists %q, which the schema of 0.2.9 has", f.Path)
+		}
+	}
+	if !Added0210Key(NetconfPath("lab", NetconfKeyState)) || !Added0210Key(NetconfPath("lab", NetconfKeyRateLimit)) ||
+		Added0210Key("snmp_scope.lab.version") || Added0210Key("netconf_scopex.lab.state") {
+		t.Error("Added0210Key is not the netconf_scope keys")
 	}
 }
 

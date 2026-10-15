@@ -212,15 +212,15 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.8
+.B 0.2.9
 (the release before this one) and
 .BR 0.2.3 ;
-.BR 0.2.4 " to " 0.2.7
+.BR 0.2.4 " to " 0.2.8
 and
 .B 0.2.2
 and older are refused, with the way there (one release at a time: this
 rollback,
-.BR "tacctl upgrade \-\-branch 0.2.8" ,
+.BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word. Either target is
 refused while a device's record says a confirmed commit of
 .B "device config apply"
@@ -234,50 +234,42 @@ or
 .B "device config forget <name>"
 settles it).
 .IP
-.B "rollback 0.2.8"
+.B "rollback 0.2.9"
 .B \-\-apply
 takes a snapshot, then removes from
 .I tacctl.yaml
-the two keys a 0.2.8 binary refuses
-.RB ( device.apply.confirm_timeout
-and
-.BR device.apply.pause ;
+the keys a 0.2.9 binary refuses
+.RB ( device.apply.transport
+and the
+.B netconf_scope
+settings of
+.BR "scope netconf" ;
 the dry run warns, and
 .B \-\-apply
 refuses without
 .B \-\-yes
-while one is set) and rewrites the per\-tier and group sudoers drop\-ins that
-are exactly this release's text with 0.2.8's, after
-.B "visudo \-cf"
-(the password cache's alias loses the lines of
-.BR "device config apply" ,
-.B "device onboard"
-and
-.BR "device collect" ).
-A drop\-in that was edited, or that
-.B visudo
-refuses, is left and named. It leaves and lists, and never deletes, what 0.2.8
-ignores:
-.I /var/lib/tacctl/devices\-config.json
-(the
+while one is set) and from
+.I devices.yaml
+the
+.B netconf
+map of each device that has one
+.RB ( "device netconf" ).
+It leaves and lists, and never deletes, what 0.2.9 ignores: the
+.B via
+field of the
 .B applied
-parts, and the
-.BR login ,
-.B user_pulled
-and
-.B hostname
-fields; 0.2.8 reads the file without fields it does not know) and
-.IR /var/lib/tacctl/device\-apply/
-(the shape store and the device locks). Nothing else is converted:
+parts of
+.I /var/lib/tacctl/devices\-config.json
+(0.2.9 reads the file without fields it does not know). Nothing else is
+converted: 0.2.10 changed no sudoers text, and
 .IR console.yaml ,
-.IR devices.yaml ,
-.I store.yaml
-and the hosts are in formats 0.2.8 reads.
+.IR store.yaml ,
+the apply state directory and the hosts are in formats 0.2.9 reads.
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
-.BR "tacctl upgrade \-\-branch 0.2.8" ,
+.BR "tacctl upgrade \-\-branch 0.2.9" ,
 and the audit line
-.BR "rollback target=0.2.8" .
+.BR "rollback target=0.2.9" .
 .IP
 .B "rollback 0.2.3"
 .B \-\-apply
@@ -290,6 +282,8 @@ the keys 0.2.5 added
 .BR device.config.confirm_timeout ,
 .BR device.apply.confirm_timeout ,
 .BR device.apply.pause ,
+.BR device.apply.transport ,
+.BR netconf_scope.<scope> ,
 .BR cisco.source_interface.<scope> ,
 .BR breakglass_hold.<device> )
 and any other key a 0.2.3 binary does not know; removes
@@ -298,9 +292,11 @@ from
 .I console.yaml
 and writes it the way 0.2.3 reads it (the cache is off); removes the
 .B snmp
-map and the
+map, the
 .B config_syntax
-key of every device from
+key and the
+.B netconf
+map of every device from
 .IR devices.yaml
 (devices use their scope's or the default's settings; a
 .B legacy\-ssh
@@ -428,10 +424,11 @@ Print the tacctl version, derived from
 .BR git-describe (1)
 when the binary was built.
 .B --long
-adds the commit, the build date, the Go version and whether the test knobs
-are compiled in
-.RB ( "test knobs: off" ),
-and ends with the copyright and licence line and the project address.
+names the project under the version after a blank line, then the project
+address, the licence and the copyright, a blank line and the commit, the
+build date (the commit's date, in the local time zone), the Go version and whether the test
+knobs are compiled in
+.RB ( "test knobs: off" ).
 .\" BEGIN GENERATED: command version
 .RS
 .PP
@@ -2819,7 +2816,18 @@ of every
 (the seconds
 .B "device config apply"
 waits between the devices of a batch after the canary, 0 to 3600, default 60;
-0 is none) in
+0 is none) and
+.B device.apply.transport
+(how
+.B "device config apply"
+reaches a Junos device:
+.BR auto ,
+the default, NETCONF where the device answers and can confirm and else the
+command line;
+.BR cli ;
+or
+.BR netconf )
+in
 .IR tacctl.yaml ,
 checked by the schema.
 .B \-\-concurrency
@@ -2903,6 +2911,22 @@ waits between the devices of a batch after the canary, 0 to 3600 (default 60;
 Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config devices apply-pause
+.TP
+.BI "config devices apply\-transport " "[ cli | auto | netconf ]"
+Show or set how
+.B "device config apply"
+reaches a Junos device: the command line only (cli, the default); NETCONF
+where the device's last read found it answering and the login may commit,
+else the command line, and the reason (auto); or NETCONF only, a device
+that cannot being failed (netconf). A run can replace it with
+.BR \-\-transport .
+A change to the NETCONF service is always made over the command line.
+.\" BEGIN GENERATED: command config devices apply-transport
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config devices apply-transport
 .TP
 .B "config devices show"
 Show the settings.
@@ -3609,7 +3633,11 @@ says to ask one; IOS 12.x has none. The Junos walkthrough has a commented
 step with the optional connection and rate limits and the check
 .RB ( "ssh -p 830 -s" " user@device " netconf ),
 and its management filter permits tcp port 830 next to ssh; the WTI unit has
-no NETCONF. tacctl enables none of it itself.
+no NETCONF. tacctl enables none of it itself unless the scope's or the
+device's NETCONF setting says so
+.RB ( "scope netconf" ,
+.BR "device netconf" ),
+and then the Junos step is live.
 .B "--server"
 .IR address|name
 sets the address in the TACACS+ or RADIUS server lines; a host name must
@@ -5002,6 +5030,54 @@ and the commented lo0 apply.
 Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command scope mgmt-acl
+.SS Per-scope NETCONF service \fB(tacctl scope netconf)\fR
+.TP
+.BI "scope netconf " scope " [ show | enable | disable | leave ] [ \-\-connection\-limit " n " | none ] [ \-\-rate\-limit " n " | none ]"
+The NETCONF service of the Junos devices of a scope.
+.B enable
+renders and plans
+.BR "set system services netconf ssh" ;
+.B \-\-connection\-limit
+and
+.B \-\-rate\-limit
+(1 to 250; an enable's, and
+.B none
+removes one) add the limits, in which case the statements are the limits' own:
+a limit's statement creates
+.B ssh
+by itself, and the device prints no bare
+.B ssh
+beside it.
+.B disable
+plans
+.BR "delete system services netconf"
+and drops the scope's limits.
+.B leave
+(the default, and what removes the scope's setting) plans and compares nothing
+of the service, as before. A device's own setting
+.RB ( "device netconf" )
+wins over the scope's, and each limit layers on its own.
+.B show
+(or no word) prints the setting. The values are
+.B netconf_scope.\fIscope\fR.{state,connection_limit,rate_limit}
+in
+.IR tacctl.yaml ,
+written only when set; a rename moves them, a removal deletes them. The verb is
+the superuser's.
+.\" BEGIN GENERATED: command scope netconf
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-connection\-limit\fR \fI<n>\fR
+(enable) The connection limit of the service, 1 to 250; none removes it.
+.TP
+\fB\-\-rate\-limit\fR \fI<n>\fR
+(enable) The rate limit of the service, 1 to 250; none removes it.
+.RE
+.\" END GENERATED: command scope netconf
 .SS Per-scope SNMP \fB(tacctl scope snmp)\fR
 .PP
 The SNMP settings of the devices of a scope. A setting the scope does not set
@@ -6610,7 +6686,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device address
 .TP
@@ -6665,7 +6741,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device description
 .TP
@@ -6717,7 +6793,7 @@ Read the location from the device (SNMP sysLocation) and store it.
 (remove, import, hostkey, location) Answer yes to the confirmation.
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device location
 .TP
@@ -6820,9 +6896,60 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device config-syntax
+.TP
+.BI "device netconf " name " [ show | enable | disable | leave | clear ] [ \-\-connection\-limit " n " | none ] [ \-\-rate\-limit " n " | none ] [ \-\-apply ]"
+The NETCONF service setting of one Junos device, over its scope's
+.RB ( "scope netconf" ):
+.BR enable ,
+.B disable
+or
+.B leave
+(the device is left alone, whatever its scope says) are the device's own;
+.B clear
+removes it, so the scope's decides again. The state and each limit layer on
+their own, the device's value first. With no word, or
+.BR show ,
+the setting is printed with where each value comes from;
+.B "device show"
+has a
+.B NETCONF
+row, and
+.B \-\-json
+a
+.B netconf
+object, when the setting of a Junos device is not the default. The setting is
+the device's
+.B netconf:
+map in
+.IR devices.yaml :
+a file or an import that gives one to a device of another vendor is refused, and
+.B "device vendor"
+takes it away from a device that stops being Junos, saying so.
+.B \-\-apply
+runs
+.B "device config apply"
+for the device afterwards, as for the fields above. The verb is the
+superuser's.
+.\" BEGIN GENERATED: command device netconf
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-connection\-limit\fR \fI<n>\fR
+(enable) The connection limit of the service, 1 to 250; none takes the scope's.
+.TP
+\fB\-\-rate\-limit\fR \fI<n>\fR
+(enable) The rate limit of the service, 1 to 250; none takes the scope's.
+.TP
+\fB\-\-apply\fR
+(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+.RE
+.\" END GENERATED: command device netconf
 .TP
 .BI "device snmp " "name " "[ show [ \-\-reveal ] | version v2c|v3 | port " n " | timeout " seconds " | clients { list | add | remove } " "[ cidr [ , cidr ...]] | community [ \-\-stdin ] | v3\-user " "user [ \-\-stdin ] | clear ]"
 The SNMP settings of one registered device, over its scope's and the default's:
@@ -7807,7 +7934,8 @@ statements tacctl renders for it now. The sections are
 .BR mgmt\-acl ,
 .BR snmp ,
 .B netconf
-(compared only when tacctl renders it) and
+(compared only where the scope's or the device's NETCONF setting enables or
+disables the service) and
 .B breakglass
 (the accounts by name, never a hash; an account that differs from the scope's
 only in case, such as
@@ -8611,7 +8739,7 @@ Exit 2 when a device needs a change (and none could not be planned).
 .RE
 .\" END GENERATED: command device config plan
 .TP
-.BI "device config apply " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor juniper | \-\-stale [ \-\-check ] [ \-\-confirmed ] [ \-\-max " n " ] [ \-\-pause " seconds " ] [ \-\-hold ] [ \-\-no\-canary ] [ \-\-section " list " ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-server " address " ] [ \-\-source " address " ] [ \-\-exit\-code ] [ \-\-json ] [ \-y ]"
+.BI "device config apply " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor juniper | \-\-stale [ \-\-check ] [ \-\-confirmed ] [ \-\-max " n " ] [ \-\-pause " seconds " ] [ \-\-hold ] [ \-\-no\-canary ] [ \-\-section " list " ] [ \-\-transport " auto | cli | netconf " ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-server " address " ] [ \-\-source " address " ] [ \-\-exit\-code ] [ \-\-json ] [ \-y ]"
 Write the plan to Junos devices: what
 .B "device config plan"
 would have a person paste, typed by tacctl, under a confirmed commit and
@@ -8691,6 +8819,50 @@ verification leaves a record the next run settles; a record that cannot be
 written then is said at once, in red, on standard error, and the transaction
 goes on.
 .PP
+A device is reached over NETCONF or the command line, as
+.B \-\-transport
+(default
+.BR device.apply.transport )
+says.
+.B auto
+uses NETCONF for a device whose last read found the NETCONF service answering
+and whose login may commit, and otherwise the command line, with the reason
+after the device's line
+.RB ( "via cli: NETCONF port closed at the last read" ;
+a device never read says nothing; JSON
+.BR via ,
+.BR via_reason );
+.B cli
+is the command line always; and
+.B netconf
+never falls back: a device that does not answer or cannot confirm is
+.BR failed .
+Over NETCONF the change is loaded under the candidate's lock (a Junos device
+refuses a confirmed commit in a private session), checked, committed with a
+confirmed commit and confirmed in the session that committed; a session that
+closes or dies without confirming leaves the commit pending until its window
+ends, as over the command line, and a failed verification is cancelled at once
+(\fBrollback 1\fR and a commit) while tacctl runs. A
+candidate that holds another editor's staged change is refused.
+A change to the NETCONF service itself
+.RB ( "scope netconf" ,
+.BR "device netconf" )
+is always made over the command line, because its verification depends on the
+service; with
+.B "\-\-transport netconf"
+it is refused. Its verification is a NETCONF probe on a fresh login before the
+confirming commit: enabling the service must be answered by a hello as you,
+disabling it must find the hello no longer answered
+.RB ( "port closed"
+or
+.BR "no hello" );
+a probe that cannot tell fails the proof and the change is rolled back. The
+line says
+.B "[NETCONF verified: hello ok]"
+or
+.BR "[NETCONF verified: not answering]" ,
+and the record's NETCONF probe becomes what was proved.
+.PP
 .B \-\-check
 stops after the device's own check: nothing is committed, the shape and the
 result are recorded
@@ -8743,7 +8915,12 @@ to standard error.
 .PP
 Never written, whatever is given:
 .BR breakglass ,
-.BR netconf ,
+.B netconf
+(unless the scope's or the device's NETCONF setting enables or disables the
+service: then
+.BR "set system services netconf ssh"
+with its limits, or
+.BR "delete system services netconf" ),
 .BR "system root\-authentication" ,
 .BR "system services" ,
 .BR interfaces ,
@@ -8811,6 +8988,9 @@ Only that vendor's devices (apply writes to Junos devices only).
 .TP
 \fB\-\-stale\fR
 Only the devices never read, last read in failure, or differing.
+.TP
+\fB\-\-transport\fR \fIauto|netconf|ssh\fR
+How the check and the apply reach a device: auto (NETCONF where the last read found it answering and the login may commit, else the command line, with the reason), cli, or netconf (never falls back); default device.apply.transport. A change to the NETCONF service is made over the command line.
 .TP
 \fB\-\-concurrency\fR \fI<n>\fR
 Check or apply at most n devices at once (never above device.config.max_concurrency; an apply runs one at a time unless given).
@@ -10596,26 +10776,27 @@ privilege 15 with their own password. A device with no enable secret has no
 .B enable
 once the list is gone: set one first (Step 0).
 .PP
-Going back to 0.2.8 is
-.B "tacctl rollback 0.2.8"
+Going back to 0.2.9 is
+.B "tacctl rollback 0.2.9"
 (a dry run), then
-.B "tacctl rollback 0.2.8 \-\-apply"
+.B "tacctl rollback 0.2.9 \-\-apply"
 and
-.BR "tacctl upgrade \-\-branch 0.2.8" ;
-it removes the two
-.B device.apply
-keys and puts back 0.2.8's sudoers drop\-ins, and lists what 0.2.9 left that
-0.2.8 ignores (the
-.B applied
-parts of the pull records and the apply state directory). Until 0.2.8 is
-installed, do not run
-.BR "device config apply" ,
-.BR "device onboard" ,
-.B "device collect"
+.BR "tacctl upgrade \-\-branch 0.2.9" ;
+it removes the transport setting of
+.B "device config apply"
+and the NETCONF service setting of the scopes and devices, and lists what
+0.2.10 left that 0.2.9 ignores (the
+.B via
+field of the apply records). Until 0.2.9 is installed, do not run
+.BR "scope netconf" ,
+.BR "device netconf" ,
+.B "config devices apply\-transport"
 or
-.BR "config devices apply\-confirm\-timeout|apply\-pause" ;
-run the rollback again if one ran. The snapshot it takes holds the 0.2.9 form
-and is restored with 0.2.9.
+.BR "device config apply \-\-transport" ;
+run the rollback again if one ran. The snapshot it takes holds the 0.2.10 form
+and is restored with 0.2.10. Going back to 0.2.8 is this rollback, the install
+of 0.2.9 and then 0.2.9's own
+.BR "tacctl rollback 0.2.8" .
 .PP
 Going back to 0.2.3 is
 .B "tacctl rollback 0.2.3"
@@ -10681,6 +10862,10 @@ Minutes of the commit confirmed of every device config apply: the device undoes 
 .B device.apply.pause
 integer, 0 to 3600. Default: 60.
 Seconds device config apply waits between the devices of a batch after the canary; 0: none. Set with \fBtacctl config devices apply\-pause\fR.
+.TP
+.B device.apply.transport
+one of auto, cli, netconf. Default: cli.
+How device config apply reaches a Junos device: NETCONF where the last read found it answering and the login may commit, else the command line (auto), the command line only (cli), or NETCONF only (netconf). Set with \fBtacctl config devices apply\-transport\fR.
 .TP
 .B device.config.confirm_timeout
 integer, 1 to 60. Default: 5.
@@ -10881,6 +11066,18 @@ The user who held it. Set with \fBtacctl breakglass hold\fR.
 .B breakglass_hold.<device>.reason
 text of 1 to 256 characters (a user name for by). Default: none (unset).
 Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the hold by tacctl breakglass release. Set with \fBtacctl breakglass hold\fR.
+.TP
+.B netconf_scope.<scope>.state
+one of enable, disable. Default: none (unset).
+The NETCONF service of the scope's Junos devices: enable or disable (unset: leave, nothing is planned or compared). Set with \fBtacctl scope netconf\fR.
+.TP
+.B netconf_scope.<scope>.connection_limit
+integer, 1 to 250. Default: none (unset).
+The connection limit of an enabled NETCONF service (1 to 250); unset: none stated. Set with \fBtacctl scope netconf\fR.
+.TP
+.B netconf_scope.<scope>.rate_limit
+integer, 1 to 250. Default: none (unset).
+The rate limit of an enabled NETCONF service (1 to 250); unset: none stated. Set with \fBtacctl scope netconf\fR.
 .\" END GENERATED: config-keys
 .SS console.yaml
 .I /etc/tacctl/console.yaml

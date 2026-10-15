@@ -2,8 +2,8 @@ package cli
 
 // 'tacctl rollback <version> [--apply] [--yes] [--hosts]' (docs/plans/
 // 0.2.3-plan.md D50, docs/plans/0.2.4-plan.md D73, docs/plans/
-// 0.2.9-rollout-plan.md D143): prepare tacctl's state for the release before
-// this one (0.2.8) or for 0.2.3. The plan and the conversions of
+// 0.2.9-rollout-plan.md D143, docs/plans/0.2.10-plan.md): prepare tacctl's
+// state for the release before this one (0.2.9) or for 0.2.3. The plan and the conversions of
 // the files are internal/lifecycle's (rollback.go); this is the command
 // around them: the arguments, what is printed, the snapshot and the
 // sudoers installer.
@@ -30,7 +30,7 @@ const rollbackUsage = "Usage: tacctl rollback <version> [--apply] [--yes] [--hos
 var rollbackSpec = Spec{
 	Flags:   []Flag{{Names: []string{"--apply"}}, {Names: []string{"--yes"}}, {Names: []string{"--hosts"}}},
 	MinArgs: 1, MaxArgs: 1,
-	Args: []string{lifecycle.RollbackTarget028 + "|" + lifecycle.RollbackTarget},
+	Args: []string{lifecycle.RollbackTarget029 + "|" + lifecycle.RollbackTarget},
 }
 
 func rollbackCmd(inv *invocation) *cobra.Command {
@@ -174,8 +174,8 @@ func (inv *invocation) printRollbackPlan(version string, plan *lifecycle.Rollbac
 
 // rollbackNextSteps tells the operator what to do next, exactly.
 func (inv *invocation) rollbackNextSteps(version string) {
-	if version == lifecycle.RollbackTarget028 {
-		inv.rollbackNextSteps028(version)
+	if version == lifecycle.RollbackTarget029 {
+		inv.rollbackNextSteps029(version)
 		return
 	}
 	inv.echo("")
@@ -191,18 +191,18 @@ func (inv *invocation) rollbackNextSteps(version string) {
 	inv.echo("state back and loses what changed since; " + version + "'s restore refuses a tacctl.yaml with a key it does not know.")
 }
 
-// rollbackNextSteps028 is the next steps of the rollback to 0.2.8: the
+// rollbackNextSteps029 is the next steps of the rollback to 0.2.9: the
 // upgrade of the tag is the documented way, and what must not run until it.
-func (inv *invocation) rollbackNextSteps028(version string) {
+func (inv *invocation) rollbackNextSteps029(version string) {
 	inv.echo("")
 	inv.echo(ui.Bold + "Next steps" + ui.NC)
 	inv.echo("  1. Install " + version + " with the upgrade (see Upgrading in the README), which switches the clone in " + inv.app.Paths.Deploy + " to the tag, builds it and re-executes it:")
 	inv.echo("       tacctl upgrade --branch " + version)
 	inv.echo("  2. Check it: tacctl status; tacctl config validate")
 	inv.echo("")
-	inv.echo("Until the upgrade, do not run 'tacctl device config apply', 'device onboard', 'device collect' or 'tacctl config devices apply-confirm-timeout|apply-pause':")
-	inv.echo("they write the apply records, the shape store and the two settings again. If one did, run 'tacctl rollback " + version + " --apply' again (it converts what is left).")
+	inv.echo("Until the upgrade, do not run 'tacctl scope netconf', 'tacctl device netconf', 'tacctl config devices apply-transport' or 'tacctl device config apply --transport':")
+	inv.echo("they write the NETCONF service setting and the transport setting again. If one did, run 'tacctl rollback " + version + " --apply' again (it converts what is left).")
 	inv.echo("")
-	inv.echo("The snapshot taken first (the newest entry of 'tacctl backup list') holds the 0.2.9 state. Restore it with 0.2.9 only: 'tacctl backup restore <id>' of this release brings that")
+	inv.echo("The snapshot taken first (the newest entry of 'tacctl backup list') holds the 0.2.10 state. Restore it with 0.2.10 only: 'tacctl backup restore <id>' of this release brings that")
 	inv.echo("state back and loses what changed since; " + version + "'s restore refuses a tacctl.yaml with a key it does not know.")
 }

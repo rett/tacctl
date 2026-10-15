@@ -9,7 +9,8 @@ tacctl group privilege list operator         # show current mappings + source (e
 tacctl group privilege add operator 'show ip route'
 tacctl group privilege add operator 'configure: router bgp','exec all: show ip'
 tacctl group privilege remove operator 'show running-config'
-tacctl group privilege reset operator --dry-run    # back to the shipped default: the difference, nothing written
+tacctl group privilege reset operator --dry-run    # back to the shipped default: the difference,
+                                                   # nothing written
 ```
 An entry may start with a mode: `exec:` (the default when there is none), `exec all:`, `configure:` or `configure all:`. `config cisco` renders it as `privilege <mode> [all] level <N> <command>` (`privilege configure level 7 router bgp`), and `group privilege list` shows the mode in its own column. An entry is stored as typed in its mode's form (`exec: show ip` and `show ip` are the same mapping).
 

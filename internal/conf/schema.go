@@ -142,10 +142,16 @@ func NewSchema(backends []string) *Schema {
 			// the canary (0 is no pause). Both are written only when set.
 			// A 0.2.8 binary does not know them: its 'config validate'
 			// reports "unknown key" and its 'backup restore' refuses a
-			// snapshot that has them, so 'tacctl rollback 0.2.8' removes
-			// exactly Added029 (rollback.go).
+			// snapshot that has them, so the rollback to 0.2.8 of 0.2.9's
+			// tool removes exactly Added029 (rollback.go; 0.2.10's tool
+			// goes back to 0.2.9 and 0.2.3 only).
 			"device.apply.confirm_timeout": {Type: TypeInt, Min: intp(3), Max: intp(60), Default: 10, HasDefault: true},
 			"device.apply.pause":           {Type: TypeInt, Min: intp(0), Max: intp(3600), Default: 60, HasDefault: true},
+			// The transport 'device config apply' writes through (0.2.10,
+			// D150): auto is NETCONF where the device answers and
+			// confirms, else the Junos command line. A 0.2.9 binary does
+			// not know the key (Added0210, rollback.go).
+			"device.apply.transport": {Type: TypeEnum, Values: []string{"auto", "cli", "netconf"}, Default: "cli", HasDefault: true},
 		},
 		wildcards: append([]wildcard{
 			{"privileges.", Rule{Type: TypeCiscoCmdList}},
@@ -180,7 +186,7 @@ func NewSchema(backends []string) *Schema {
 			{BlocksPrefix, Rule{Type: TypeBlockList, Depth: 2}},
 			// And one device's own, under its name written with '~' for '.'.
 			{BlocksDevicePrefix, Rule{Type: TypeBlockList, Depth: 2}},
-		}, append(snmpScopeWildcards(), holdWildcards()...)...),
+		}, slices.Concat(snmpScopeWildcards(), holdWildcards(), netconfScopeWildcards())...),
 	}
 }
 

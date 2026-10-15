@@ -123,7 +123,8 @@ otherwise, is kept in the repository):
 
 ```sh
 ssh-keygen -q -t ed25519 -N '' -f /tmp/trial-key
-printf 'tacctl-release namespaces="tacctl-release" %s\n' "$(cut -d' ' -f1,2 /tmp/trial-key.pub)" > /tmp/trial-signers
+printf 'tacctl-release namespaces="tacctl-release" %s\n' "$(cut -d' ' -f1,2 /tmp/trial-key.pub)" \
+    > /tmp/trial-signers
 RELEASE_TAG=trial make release-assets
 ssh-keygen -Y sign -f /tmp/trial-key -n tacctl-release dist/release/SHA256SUMS
 make release-verify ALLOWED_SIGNERS=/tmp/trial-signers
@@ -134,7 +135,8 @@ make release-verify ALLOWED_SIGNERS=/tmp/trial-signers
 ```sh
 git checkout develop
 git push origin develop master 0.2.1
-gh release create 0.2.1 --verify-tag --title "tacctl 0.2.1" --notes-file docs/release-notes-0.2.1.md \
+gh release create 0.2.1 --verify-tag --title "tacctl 0.2.1" \
+    --notes-file docs/release-notes-0.2.1.md \
     dist/release/tacctl-0.2.1-linux-amd64 dist/release/tacctl-0.2.1-linux-arm64 \
     dist/release/SHA256SUMS dist/release/SHA256SUMS.sig
 ```
@@ -143,7 +145,8 @@ Once, for discoverability, set the repository topics:
 
 ```sh
 gh repo edit --add-topic tacacs-plus --add-topic tacacs --add-topic radius --add-topic aaa \
-    --add-topic freeradius --add-topic network-automation --add-topic cisco --add-topic junos --add-topic golang
+    --add-topic freeradius --add-topic network-automation --add-topic cisco --add-topic junos \
+    --add-topic golang
 ```
 
 A release's title is always `tacctl <tag>` (`tacctl 0.2.1`), never the bare
@@ -166,7 +169,8 @@ On a host that follows `master`:
 
 ```sh
 sudo tacctl upgrade         # [INFO] Installing the 0.2.1 release binary (linux/amd64, verified)
-tacctl version --long       # commit: the commit of the tag (git rev-parse 0.2.1^{commit}), test knobs: off
+tacctl version --long       # commit: the commit of the tag (git rev-parse 0.2.1^{commit}), test
+                            # knobs: off
 ```
 
 To verify the assets by hand anywhere:

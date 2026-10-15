@@ -217,13 +217,13 @@ complete_words() {
     complete_words tacctl device config apply --che
     assert_output "--check"
     complete_words tacctl device config apply --section ""
-    assert_output "$(printf 'aaa\nroles\nmgmt-acl\nsnmp\nsystem')"
+    assert_output "$(printf 'aaa\nroles\nmgmt-acl\nsnmp\nsystem\nnetconf')"
     complete_words tacctl device config shapes ""
     assert_output "$(printf 'list\nseed')"
     complete_words tacctl device config plan --conv
     assert_output "--converge"
     complete_words tacctl device config plan --section ""
-    assert_output "$(printf 'aaa\nroles\nmgmt-acl\nsnmp\nsystem')"
+    assert_output "$(printf 'aaa\nroles\nmgmt-acl\nsnmp\nsystem\nnetconf')"
     complete_words tacctl device config plan --out-dir
     assert_success
     complete_words tacctl device config plan --restore

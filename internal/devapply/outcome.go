@@ -130,6 +130,9 @@ type Outcome struct {
 	// verification failure, never a rejected password: the caller must not
 	// tell its password cache to forget.
 	LoginRefused bool
+	// ServiceProof is what the verification proved of a change to the
+	// NETCONF service (Input.VerifyService), "" when it proved none.
+	ServiceProof string
 	// Durations are the steps' times.
 	Durations map[string]time.Duration
 	// Log is what the held login typed and read, VerifyLog what the

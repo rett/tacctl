@@ -207,6 +207,12 @@ func parseHistory(out string) (History, error) {
 				continue
 			}
 			c := strings.TrimSpace(l)
+			if c == "rollback pending" {
+				// the device's marker under a commit that waits for its
+				// confirm: no part of the comment
+				h[len(h)-1].Pending = true
+				continue
+			}
 			if h[len(h)-1].Comment != "" {
 				h[len(h)-1].Comment += " " + c
 			} else {

@@ -128,6 +128,17 @@ var Added029 = []Family{
 	{"device.apply.pause", false},
 }
 
+// Added0210 are the key families 0.2.10 added: the NETCONF service setting
+// of a scope (netconf_scope.<scope>.*) and device.apply.transport. A 0.2.9 or older binary does not
+// know them (its schema refuses the keys), so a rollback removes them.
+var Added0210 = []Family{
+	{"netconf_scope.", true},
+	{"device.apply.transport", false},
+}
+
+// Added0210Key reports whether path is a key 0.2.10 added.
+func Added0210Key(path string) bool { return inFamilies(Added0210, path) }
+
 // Added029Key reports whether path is a key 0.2.9 added.
 func Added029Key(path string) bool { return inFamilies(Added029, path) }
 
@@ -207,15 +218,16 @@ func (c *Config) unknown023(path string) bool {
 	return !ok
 }
 
-// RollbackKeys028 are the leaf keys of the overrides that a 0.2.8 binary
-// does not know, in file order: the dotted path of each. 0.2.9 added the two
-// device.apply keys (Added029) and nothing else, so these are the leaves of
-// that family; a key neither release knows is not listed (0.2.8 refuses it as
-// 0.2.9 does, and 'config validate' says so).
-func (c *Config) RollbackKeys028() []string {
+// RollbackKeys029 are the leaf keys of the overrides that a 0.2.9 binary
+// does not know, in file order: the dotted path of each. 0.2.10 added
+// device.apply.transport and the netconf_scope keys (Added0210) and nothing
+// else, so these are the leaves of those families; a key neither release
+// knows is not listed (0.2.9 refuses it as 0.2.10 does, and 'config
+// validate' says so).
+func (c *Config) RollbackKeys029() []string {
 	var out []string
 	walkLeaves(c.Overrides(), "", func(p string, _ any) {
-		if Added029Key(p) {
+		if Added0210Key(p) {
 			out = append(out, p)
 		}
 	})

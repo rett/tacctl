@@ -21,8 +21,8 @@ func Sudoers023() string { return sudoers023 }
 // the password cache's alias as 0.2.8 had it (without the 0.2.9 families
 // 'device config apply', 'device onboard' and 'device collect', D141/D143)
 // and the
-// env_keep line as 0.2.8 had it. 'tacctl rollback 0.2.8' puts it back, and
-// the upgrade's refresh knows it as an older text. The rows of the table are
+// env_keep line as 0.2.8 had it. The rollback to 0.2.3 recognises it as an
+// older text, and the upgrade's refresh knows it as one. The rows of the table are
 // the same in the two releases, so it is derived from them (a rule that
 // moves on again makes its own frozen copy); the two lines that did move are
 // frozen below, and a test reads the 0.2.8 tag's golden file where the tag
@@ -33,8 +33,8 @@ func Sudoers028() string {
 }
 
 // GroupSudoers028 is the drop-in 'config sudoers install <group>' wrote in
-// 0.2.8: 0.2.7's, with the colour variables on the env_keep line. 'tacctl
-// rollback 0.2.8' puts it back over this release's. Frozen.
+// 0.2.8: 0.2.7's, with the colour variables on the env_keep line. The
+// rollback to 0.2.3 recognises it as an older text. Frozen.
 func GroupSudoers028(group string) string {
 	return "# Managed by tacctl. Grants passwordless sudo on " + Binary + "\n" +
 		"# to members of group '" + group + "'. Remove with: tacctl config sudoers remove\n" +

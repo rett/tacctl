@@ -13,8 +13,9 @@ import (
 // Options are the inputs of Plan that are not the comparison.
 type Options struct {
 	// Sections limits the plan to the named sections (empty: every
-	// plannable one). 'netconf' and 'breakglass' are never plannable and
-	// naming them is ErrNeverEmitted.
+	// plannable one). 'breakglass' is never plannable, and 'netconf' is
+	// plannable only where the scope enables or disables the service
+	// (D145); naming one that is not is ErrNeverEmitted.
 	Sections []string
 	// Secrets emits every secret statement of the planned sections by value
 	// (D98); NoSecrets emits them with '<SECRET>' in place of the value.
@@ -126,11 +127,8 @@ func PlanOrder(family string) []string {
 		// out), then the AAA pages, and the IP tables paste last
 		return []string{devconf.SectionSNMP, devconf.SectionAAA, devconf.SectionMgmtACL}
 	}
-	return []string{"roles", "aaa", "snmp", devconf.SectionSystem, "mgmt-acl"}
+	return []string{"roles", "aaa", "snmp", devconf.SectionSystem, devconf.SectionNetconf, "mgmt-acl"}
 }
-
-// never are the two sections that are never planned.
-var never = []string{"netconf", "breakglass"}
 
 // secOut is what one section's planner returns.
 type secOut struct {
@@ -186,7 +184,10 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 		return Delta{}, fmt.Errorf("%w: --secrets and --no-secrets exclude each other", ErrUsage)
 	}
 	for _, s := range opt.Sections {
-		if slices.Contains(never, s) {
+		if slices.Contains(neverFor(expected), s) {
+			if s == devconf.SectionNetconf {
+				return Delta{}, fmt.Errorf("%w: netconf (it is planned only where the NETCONF setting enables or disables the service: tacctl scope netconf, tacctl device netconf)", ErrNeverEmitted)
+			}
 			return Delta{}, fmt.Errorf("%w: %s", ErrNeverEmitted, s)
 		}
 		if !slices.Contains(devconf.SectionNames, s) {
@@ -238,6 +239,10 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 	for _, name := range PlanOrder(fam) {
 		// the system section exists only where the rendering has one
 		if name == devconf.SectionSystem && len(p.expected(name).Lines) == 0 {
+			continue
+		}
+		// and the netconf section where the scope leaves the service alone
+		if name == devconf.SectionNetconf && !netconfRendered(expected) {
 			continue
 		}
 		r := byName[name]
@@ -294,7 +299,7 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 	if fam == devconf.FamilyIOS && iosHasNTPKeyLines(p.expected(devconf.SectionSystem).Lines) {
 		d.Notes = appendNew(d.Notes, iosSystemNote(opt.Scope))
 	}
-	for _, n := range never {
+	for _, n := range neverFor(expected) {
 		d.Sections = append(d.Sections, SectionPlan{Name: n, State: StateNever})
 	}
 	// D118: the lines that use the lists (the console's and the vty lines'
