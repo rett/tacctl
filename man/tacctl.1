@@ -5928,7 +5928,15 @@ the count, the last user, outcome and backend, and the last NAS-Identifier.
 .B list
 and
 .B show
-read the cache only, and say how old it is.
+read the cache, and say how old it is. When it is older than five minutes
+they first read the logs again from where the last scan stopped, for a caller
+who may scan: only the logs, never the host keys, within ten seconds, and
+silently, so a login shows without
+.BR "device scan" .
+They never make the first scan of an install or the catch-up of a cache older
+than
+.BR stale-days ,
+and a log that cannot be read leaves the cache as it was.
 .PP
 Notices are computed each time they are shown; only acknowledgements are
 stored. Besides the registry's own

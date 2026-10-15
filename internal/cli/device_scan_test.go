@@ -330,3 +330,100 @@ func TestDeviceListProbe(t *testing.T) {
 		t.Errorf("%s", out)
 	}
 }
+
+// 'device list' and 'device show' bring the seen cache up to date from the
+// logs when it is older than a few minutes, and only then: a login shows
+// without a scan, nothing connects to a device, nothing is printed, and a
+// failure, a read-only caller or an old cache leave it as it was.
+func TestDeviceReadRefreshesTheSeenCache(t *testing.T) {
+	sb, script, _ := scanSandbox(t)
+	sb.devScan("", script, "scan", "--full")
+	if sb.code != 0 {
+		t.Fatalf("scan: %d %s", sb.code, sb.stderr())
+	}
+	cache := sb.path("var-lib", "devices-seen.json")
+	age := func(d time.Duration) {
+		t.Helper()
+		s, err := devreg.LoadSeen(cache)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.Updated = time.Now().Add(-d)
+		if err := s.Save(cache); err != nil {
+			t.Fatal(err)
+		}
+	}
+	updated := func() time.Time {
+		t.Helper()
+		s, err := devreg.LoadSeen(cache)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s.Updated
+	}
+	argvs := func() string { return strings.Join(sb.runner.Argvs(), "\n") }
+	login := journalRec("s=6", time.Now().Add(-time.Minute),
+		"INFO: x bcrypt.go:143: accepting user [dave] from [198.51.100.7] using a bcrypt password")
+	journal := func(res execx.Result, err error) func(*fake.Runner) {
+		return func(r *fake.Runner) {
+			r.Func(func(c execx.Cmd) bool { return c.Name == "journalctl" }, func(execx.Cmd) (execx.Result, error) { return res, err })
+		}
+	}
+	row := regexp.MustCompile(`(?m)^  lab-rtr2 +198\.51\.100\.7 +juniper +\S+ +\S+ +(\S+ \S+) +(\S+) `)
+
+	// A cache that is current is not read again.
+	if out := sb.devScan("", journal(execx.Result{Stdout: []byte(login)}, nil), "list"); !strings.Contains(out, "never") ||
+		strings.Contains(argvs(), "journalctl") {
+		t.Errorf("a fresh cache was refreshed (%q):\n%s", argvs(), out)
+	}
+
+	// Older than the minimum: the login after the cursor shows; the logs
+	// were read from the cursor and no device was connected to.
+	age(time.Hour)
+	out := sb.devScan("", journal(execx.Result{Stdout: []byte(login)}, nil), "list")
+	if m := row.FindStringSubmatch(out); m == nil || m[2] != "dave" {
+		t.Errorf("list does not show the login:\n%s", out)
+	}
+	if !strings.Contains(argvs(), "--after-cursor s=5") || strings.Contains(argvs(), "ssh-keyscan") || strings.Contains(argvs(), "ssh ") {
+		t.Errorf("argv %q", argvs())
+	}
+	if time.Since(updated()) > time.Minute {
+		t.Error("the refreshed cache was not saved")
+	}
+	if strings.Contains(sb.stderr(), "scan") || sb.code != 0 {
+		t.Errorf("refresh was not silent: %d %q", sb.code, sb.stderr())
+	}
+
+	// show refreshes the same way.
+	age(time.Hour)
+	if out = sb.devScan("", journal(execx.Result{}, nil), "show", "lab-rtr2"); !strings.Contains(argvs(), "journalctl") || !strings.Contains(out, "dave") {
+		t.Errorf("show (%q):\n%s", argvs(), out)
+	}
+
+	// A source that cannot be read: the cache and the list are as before.
+	age(time.Hour)
+	before := updated()
+	out = sb.devScan("", journal(execx.Result{}, os.ErrPermission), "list")
+	if sb.code != 0 || !updated().Equal(before) || !strings.Contains(out, "lab-rtr2") {
+		t.Errorf("failed refresh: %d %v %v\n%s", sb.code, before, updated(), out)
+	}
+
+	// A cache older than stale-days is caught up by an explicit scan.
+	age(60 * 24 * time.Hour)
+	before = updated()
+	sb.devScan("", journal(execx.Result{Stdout: []byte(login)}, nil), "list")
+	if strings.Contains(argvs(), "journalctl") || !updated().Equal(before) {
+		t.Errorf("an old cache was refreshed by a read (%q)", argvs())
+	}
+
+	// A read-only caller may not scan, so a read does not either.
+	age(time.Hour)
+	before = updated()
+	sb.cfgRun("", []string{"device", "list"}, func(r *fake.Runner) {
+		r.On([]string{"id", "-nG", "--", "carol"}, execx.Result{Stdout: []byte("carol tac-users tac-readonly\n")})
+		journal(execx.Result{Stdout: []byte(login)}, nil)(r)
+	}, "SUDO_USER=carol")
+	if strings.Contains(argvs(), "journalctl") || !updated().Equal(before) {
+		t.Errorf("a read-only list refreshed the cache (%q)", argvs())
+	}
+}

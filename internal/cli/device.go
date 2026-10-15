@@ -444,7 +444,9 @@ are the superuser's; an engineer reads the devices of their own scopes.
 Seen data: 'scan' reads each enabled backend's log (the tacquito journal,
 FreeRADIUS's tacctl-auth.log) from where the last scan stopped into
 /var/lib/tacctl/devices-seen.json, and re-scans the pinned host keys (a scan
-never changes a pin). 'list' and 'show' read that cache only; 'list --scan'
+never changes a pin). 'list' and 'show' read that cache, after reading the
+logs again when it is older than five minutes (the logs only, a few seconds at
+most, never the first scan, and for callers who may scan); 'list --scan'
 scans first. --full re-reads everything the logs still hold, --since <dur>
 (7d, 12h, 2w) that stretch. 'discover' lists the addresses that authenticated
 without being registered, each with its 'device add' line (--all: those only
@@ -913,8 +915,11 @@ func (inv *invocation) deviceList(args []string) error {
 			inv.printScan(sr)
 		}
 		res = sr.res
-	} else if _, res, err = inv.deviceLoad(); err != nil {
-		return err
+	} else {
+		if _, res, err = inv.deviceLoad(); err != nil {
+			return err
+		}
+		inv.refreshSeen(res)
 	}
 	var shown []devreg.Entry
 	narrow := newDeviceListFilter(p)
@@ -1034,6 +1039,7 @@ func (inv *invocation) deviceShow(args []string) error {
 	if err != nil {
 		return err
 	}
+	inv.refreshSeen(res)
 	e, err := inv.deviceFind(res, p.Args[0])
 	if err != nil {
 		return err

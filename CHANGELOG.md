@@ -14,6 +14,18 @@ current behaviour; this file is where history lives.
    that is unchanged prints nothing more. Before, the line said only `set`,
    `kept (pass --force)` or `replaced`.
 
+2. **`device list` and `device show` refresh the seen cache from the logs.**
+   A login used to show in LAST SEEN only after someone ran `device scan`.
+   When the cache is older than five minutes, `list` and `show` first read
+   the backends' logs again from where the last scan stopped, and print
+   nothing about it. The refresh is narrow on purpose: logs only (no host-key
+   re-scan, no connection to a device), at most ten seconds, only for a
+   caller who may scan (operator tier and up), never the first scan of an
+   install and never the catch-up of a cache older than `stale-days` (both
+   stay `device scan`), and a log that cannot be read, a scan already
+   running or a read-only caller leave the cache as it was. `list --scan`
+   and `device scan` are unchanged.
+
 ## 0.2.10 (2026-10-15)
 
 1. **`tacctl scope netconf` and `tacctl device netconf`: the NETCONF service

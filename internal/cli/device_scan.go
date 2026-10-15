@@ -6,9 +6,11 @@ package cli
 // enabled backend's log of its devices (backend.Sighter) into the seen cache
 // (/var/lib/tacctl/devices-seen.json, internal/devreg/seen.go), re-scans the
 // pinned host keys and prints the scan-time notices. 'list' and 'show' read
-// the cache only; 'scan' is explicit. A scan never writes devices.yaml.
+// the cache, after a bounded log-only refresh of it (refreshSeen); 'scan' is
+// explicit. A scan never writes devices.yaml.
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -86,6 +88,81 @@ func (inv *invocation) seenLoad() *devreg.Seen {
 // (operator tier and up, as 'device scan').
 func (inv *invocation) scanAllowed() bool {
 	return tier.Permits(inv.tierGate().Caller(inv.ctx), "device", "scan")
+}
+
+// --- the refresh of a read -------------------------------------------------------------
+
+const (
+	// seenAutoMinAge is how old the seen cache must be before 'device list'
+	// and 'device show' read the logs again.
+	seenAutoMinAge = 5 * time.Minute
+	// seenAutoBudget bounds one such read.
+	seenAutoBudget = 10 * time.Second
+)
+
+// refreshSeen brings the seen cache up to date for 'device list' and
+// 'device show', so a login shows without a person running 'device scan'.
+// It is deliberately narrow: it only reads the logs of the enabled backends
+// from where the last scan stopped (no host-key re-scan, no connection to a
+// device); it never makes the first scan of an install or the catch-up of a
+// cache older than stale-days, which stay an explicit 'device scan'; the
+// caller must be allowed to scan; another scan under way, a source that
+// cannot be read, or the time budget leave the cache as it was; and it
+// prints nothing. res.Seen is replaced only when the cache was saved.
+func (inv *invocation) refreshSeen(res *devreg.Resolver) {
+	if res == nil || !res.Seen.HasData() || !inv.scanAllowed() {
+		return
+	}
+	days := res.File.StaleDays
+	if days < 1 {
+		days = devreg.DefaultStaleDays
+	}
+	now := inv.app.Knobs.Now()
+	if age := now.Sub(res.Seen.Updated); age < seenAutoMinAge || age > time.Duration(days)*24*time.Hour {
+		return
+	}
+	set := inv.app.Backends()
+	ids, err := set.Enabled()
+	if err != nil {
+		return
+	}
+	var srcs []devreg.ScanSource
+	for _, id := range ids {
+		b, err := set.Get(id)
+		if err != nil {
+			return
+		}
+		src := devreg.ScanSource{ID: id}
+		if s, ok := b.(backend.Sighter); ok {
+			src.Sighter = s
+		}
+		srcs = append(srcs, src)
+	}
+	path := inv.app.Paths.SeenCache
+	unlock, ok, err := devreg.TryLockSeen(path)
+	if err != nil || !ok {
+		return
+	}
+	defer unlock()
+	seen, err := devreg.LoadSeen(path)
+	if err != nil || !seen.HasData() || now.Sub(seen.Updated) < seenAutoMinAge {
+		return
+	}
+	ctx, cancel := context.WithTimeout(inv.ctx, seenAutoBudget)
+	defer cancel()
+	for _, r := range devreg.ScanSources(ctx, seen, srcs, devreg.ScanOptions{Now: now, StaleDays: days}) {
+		if r.Err != nil {
+			return
+		}
+	}
+	var names []string
+	for _, e := range res.All() {
+		names = append(names, e.Name)
+	}
+	seen.Prune(now, days, names)
+	if seen.Save(path) == nil {
+		res.Seen = seen
+	}
 }
 
 // --- the scan ------------------------------------------------------------------------
