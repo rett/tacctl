@@ -207,6 +207,11 @@ var keptExamples = map[string]struct {
 	"junos.snmp.location":     {stmt: `set snmp location "Rack 5"`, unmanaged: true, unrender: "set snmp location"},
 	"junos.snmp.contact":      {stmt: `set snmp contact "Other NOC"`, unmanaged: true, unrender: "set snmp contact"},
 	"junos.snmp.description":  {stmt: `set snmp description "Other switch"`, unmanaged: true, unrender: "set snmp description"},
+	// 0.2.10: the NETCONF service the setting enables; the device's limits
+	// and port are its own while the setting states none
+	"junos.netconf.ssh":              {stmt: "set system services netconf ssh port 830", unmanaged: true},
+	"junos.netconf.connection-limit": {stmt: "set system services netconf ssh connection-limit 7", unmanaged: true},
+	"junos.netconf.rate-limit":       {stmt: "set system services netconf ssh rate-limit 7", unmanaged: true},
 	// 0.2.7: the system section is additive, so what the device holds
 	// beside the block's statements is its own (the stems of the compared
 	// form: the message is its mark)
@@ -300,7 +305,7 @@ func TestKeptShapesFollowTheOwnedRows(t *testing.T) {
 			case devconf.FamilyWTI:
 				ok = named && r.Kept != "" && slices.Contains([]string{devconf.SectionAAA, devconf.SectionSNMP, devconf.SectionMgmtACL}, r.Section)
 			default:
-				ok = named && (r.Section == devconf.SectionSNMP || r.Section == devconf.SectionSystem)
+				ok = named && (r.Section == devconf.SectionSNMP || r.Section == devconf.SectionSystem || r.Section == devconf.SectionNetconf)
 			}
 			if s.Row != "" && !ok {
 				t.Errorf("%s: shape %q names %q, not a row of the table that keeps something of the device's own", fam, s.Pattern, s.Row)
@@ -349,6 +354,12 @@ func TestKeptShapesFollowTheOwnedRows(t *testing.T) {
 				}
 				f := fixtureNamed(t, fixture)
 				e, cur, _ := f.load(t)
+				if r.Section == devconf.SectionNetconf {
+					// the fixture's scope leaves the service alone: this one
+					// enables it
+					e = append(slices.DeleteFunc(slices.Clone(e), func(s devices.Section) bool { return s.Name == devconf.SectionNetconf }),
+						devices.Section{Name: devconf.SectionNetconf, Lines: []string{"set system services netconf ssh"}, Secret: []bool{false}})
+				}
 				exp, dev = e, cur.Sections[r.Section]
 			default:
 				fixture := "cisco.reference-lab"

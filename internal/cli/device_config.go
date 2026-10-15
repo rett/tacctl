@@ -320,9 +320,10 @@ skipped) and is the only form --yes answers the question for, so a script runs
 it without a terminal; --max (default 5) caps the devices of a run, --pause the
 seconds between them (config devices apply-pause), --hold asks you to log in
 with one account of each class and type OK before the change is kept,
---section limits the sections. Never written: the break-glass and
-NETCONF sections, the root and your own account, system services, interfaces,
-groups. Exit status: 0 every device applied, was checked or had no change, 1 a
+--section limits the sections. Never written: the break-glass section, the
+NETCONF section unless the scope's or the device's NETCONF setting enables or
+disables the service (then only its own statements), the root and your own
+account, system services, interfaces, groups. Exit status: 0 every device applied, was checked or had no change, 1 a
 device failed, was rolled back or is pending, 2 wrong arguments (or, with
 --check --exit-code, a device that needs a change), 130 interrupted (the first
 Ctrl-C starts no more devices, the second cancels the running ones).

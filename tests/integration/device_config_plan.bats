@@ -107,9 +107,9 @@ print("fine")' <<< "$output"
     assert_failure 2
     alice device config plan lab-j --secrets --no-secrets
     assert_failure 2
-    alice device config plan lab-j --section netconf
+    alice device config plan lab-j --section breakglass
     assert_failure 2
-    assert_output --partial "'netconf' is never planned"
+    assert_output --partial "'breakglass' is never planned"
     alice device config plan lab-j --transport ssh
     assert_failure 2
     assert_output --partial "--transport is for --pull"

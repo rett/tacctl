@@ -253,13 +253,19 @@ func TestPlanFormatsAndFiles(t *testing.T) {
 	bad("--backout is the undo of the plan", "--backout", "--converge")
 	bad("--out is one file for one device and --out-dir one file per device", "--out", "x", "--out-dir", "y")
 	bad("--force replaces files", "--force")
-	bad("never planned", "--section", "netconf")
 	bad("never planned", "--section", "breakglass")
-	bad("--section takes sections of aaa, roles, mgmt-acl, snmp, system: 'nope'", "--section", "nope")
+	bad("--section takes sections of aaa, roles, mgmt-acl, snmp, system, netconf: 'nope'", "--section", "nope")
 	bad("--transport is for --pull", "--transport", "ssh")
 	bad("--from takes the address you are logged in", "--from", "10.0.0.0/8")
 	bad("--plain --converge makes two files", "--plain", "--converge")
 
+	// the netconf section is planned where the scope's setting enables or
+	// disables the service (0.2.10); a scope that leaves it alone refuses it,
+	// naming the setting
+	b.run("device", "config", "plan", "lab-j", "--section", "netconf")
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "the section is never emitted: netconf (it is planned only where the NETCONF setting enables or disables the service") {
+		t.Errorf("--section netconf with the service left alone: exit %d stderr %q", b.sb.code, b.sb.stderr())
+	}
 	// --plain: the statements alone, no wrapper line, no comment, no banner
 	out := b.run("device", "config", "plan", "lab-j", "--plain")
 	if b.sb.code != 0 || out != "set system authentication-order tacplus\n" {

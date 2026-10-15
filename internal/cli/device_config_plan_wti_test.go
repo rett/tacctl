@@ -201,7 +201,11 @@ func TestPlanWTIRefusals(t *testing.T) {
 	bad("a WTI unit (pdu1) has no roles or system section", "pdu1", "--section", "roles")
 	bad("a WTI unit (pdu1) has no roles or system section", "--all", "--section", "aaa,system")
 	bad("never planned", "pdu1", "--section", "breakglass")
-	bad("never planned", "pdu1", "--section", "netconf")
+	// a unit has no NETCONF: the planner names the setting that has none
+	b.run("device", "config", "plan", "pdu1", "--section", "netconf")
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "the section is never emitted: netconf") {
+		t.Errorf("--section netconf on a unit: exit %d stderr %q", b.sb.code, b.sb.stderr())
+	}
 
 	// --section selects: aaa alone has no block
 	out := b.run("device", "config", "plan", "pdu1", "--section", "aaa")

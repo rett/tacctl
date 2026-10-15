@@ -51,6 +51,59 @@ type Device struct {
 	// StateDir/snmp/devices/<name>.yaml, internal/snmpcred). The zero value
 	// is "nothing of its own"; the file has the map only when it is set.
 	SNMP SNMP
+	// Netconf is the device's own NETCONF service setting (D145 of
+	// docs/plans/0.2.10-plan.md, 'tacctl device netconf'): the device's value
+	// wins over its scope's. The zero value is "nothing of its own" (the
+	// scope's decides); the file has the map only when it is set.
+	Netconf Netconf
+}
+
+// Netconf is a device's own NETCONF service setting (Junos only). The zero
+// value is "not set here".
+type Netconf struct {
+	// State is NetconfEnable, NetconfDisable or NetconfLeave; "" is not set
+	// here (the scope's decides). A device's own 'leave' overrides a scope's
+	// enable or disable.
+	State string
+	// ConnectionLimit and RateLimit are the limits of 'system services
+	// netconf ssh' when the device enables the service; 0 is not set here.
+	ConnectionLimit, RateLimit int
+}
+
+// The states of a NETCONF service setting and the bounds of its limits (the
+// scope's, internal/conf's NetconfEnable and NetconfMinLimit; a test holds
+// them equal).
+const (
+	NetconfEnable   = "enable"
+	NetconfDisable  = "disable"
+	NetconfLeave    = "leave"
+	NetconfMinLimit = 1
+	NetconfMaxLimit = 250
+)
+
+// Empty reports whether nothing is set.
+func (n Netconf) Empty() bool { return n == Netconf{} }
+
+// validate is every field rule of the setting.
+func (n Netconf) validate() error {
+	switch n.State {
+	case "", NetconfEnable, NetconfDisable, NetconfLeave:
+	default:
+		return fail("Invalid netconf state '" + n.State + "': enable, disable or leave.")
+	}
+	for _, l := range []struct {
+		name string
+		v    int
+	}{{"connection_limit", n.ConnectionLimit}, {"rate_limit", n.RateLimit}} {
+		if l.v != 0 && (l.v < NetconfMinLimit || l.v > NetconfMaxLimit) {
+			return fail("Invalid netconf " + l.name + " " + strconv.Itoa(l.v) + ": expected " +
+				strconv.Itoa(NetconfMinLimit) + "-" + strconv.Itoa(NetconfMaxLimit) + ".")
+		}
+	}
+	if n.State == "" && !n.Empty() {
+		return fail("A netconf limit needs a state: set 'state' too.")
+	}
+	return nil
 }
 
 // SNMP is a device's own SNMP settings: the non-secret ones. Zero is "not
@@ -352,6 +405,12 @@ func (d Device) validate() error {
 		if !slices.Contains(AckableKinds, k) {
 			return fail("Unknown notice kind '" + k + "'.")
 		}
+	}
+	if !d.Netconf.Empty() && d.Vendor != "juniper" {
+		return fail("netconf is a Junos setting; the vendor is '" + d.Vendor + "'.")
+	}
+	if err := d.Netconf.validate(); err != nil {
+		return err
 	}
 	return d.SNMP.validate()
 }

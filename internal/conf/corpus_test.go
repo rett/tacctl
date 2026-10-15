@@ -437,6 +437,9 @@ func TestGolden(t *testing.T) {
 		if prefix == BlocksPrefix || prefix == BlocksDevicePrefix {
 			continue // 0.2.7's lists of configuration blocks in force: not in 0.1.16's golden
 		}
+		if prefix == NetconfScopePrefix {
+			continue // 0.2.10's per-scope NETCONF service setting: not in 0.1.16's golden
+		}
 		v, ok := walk(m, strings.TrimSuffix(prefix, "."), false)
 		if sub, isMap := v.(*yamlpy.Map); !ok || !isMap || sub.Len() == 0 {
 			t.Errorf("golden lacks a %s<name> key", prefix)

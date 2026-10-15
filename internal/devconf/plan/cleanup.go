@@ -141,7 +141,7 @@ func (p *planner) buildCleanup(d *Delta) {
 
 	// the sections the cleanup may touch at all
 	secWhy := map[string]string{}
-	for _, name := range PlanOrder(d.Vendor) {
+	for _, name := range d.order() {
 		sp := d.Of(name)
 		switch sp.State {
 		case StateNotSelected:
@@ -305,7 +305,7 @@ func (p *planner) buildCleanup(d *Delta) {
 	// order: sections as PlanOrder; within a section the leaves under a
 	// header first, then the groups, then the servers (a group's entry goes
 	// before the group, the group before the server it names)
-	for _, name := range PlanOrder(d.Vendor) {
+	for _, name := range d.order() {
 		var ss []*slot
 		for _, s := range slots {
 			if s.bad == "" && s.line.Section == name {

@@ -32,7 +32,7 @@ func (p *planner) buildItems(d *Delta, byName map[string]devconf.SectionResult) 
 	for _, e := range d.Extras {
 		extraOf[e.Section+"|"+e.Text] = e
 	}
-	for _, name := range PlanOrder(d.Vendor) {
+	for _, name := range d.order() {
 		sp := d.Of(name)
 		if sp.State == StateNotSelected || sp.State == StateNA {
 			continue
@@ -912,7 +912,12 @@ func Report(d Delta, h Header, w Wrapper) string {
 	case devconf.FamilyIOS:
 		line += "Not planned: netconf, breakglass."
 	default:
-		line += "Not planned: netconf, breakglass (walkthrough Steps 6 and 7)."
+		if st := d.Of(devconf.SectionNetconf).State; st != "" && st != StateNever {
+			// the scope's NETCONF setting plans the section (D145)
+			line += "Not planned: breakglass (walkthrough Step 7)."
+		} else {
+			line += "Not planned: netconf, breakglass (walkthrough Steps 6 and 7)."
+		}
 	}
 	add(line)
 	if len(notrendered) > 0 {

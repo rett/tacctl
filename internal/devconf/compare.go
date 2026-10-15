@@ -410,6 +410,21 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 		res.Notes = append(res.Notes, noteLegacyCommunities)
 	}
 	exp := uniq(canon(expected.Lines, expected.Secret, lb))
+	if expected.Absent {
+		// An absence (D146): the hierarchy is expected to hold nothing, so
+		// every statement the device has under it is a difference.
+		for _, x := range dev {
+			res.Lines = append(res.Lines, DiffLine{Op: OpExtra, Text: x.stem, Secret: x.secret})
+		}
+		res.State = StateOK
+		if len(dev) > 0 {
+			res.State = StateDiffers
+		}
+		return res, nil
+	}
+	if fam == FamilyJunos && res.Name == SectionNetconf {
+		dev = withImpliedNetconfSSH(exp, dev)
+	}
 	if res.Name == SectionBreakGlass {
 		var notes []string
 		dev, notes = foldLoginNames(exp, dev)

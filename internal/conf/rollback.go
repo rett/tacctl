@@ -128,6 +128,16 @@ var Added029 = []Family{
 	{"device.apply.pause", false},
 }
 
+// Added0210 are the key families 0.2.10 added: the NETCONF service setting
+// of a scope (netconf_scope.<scope>.*). A 0.2.9 or older binary does not
+// know them (its schema refuses the keys), so a rollback removes them.
+var Added0210 = []Family{
+	{"netconf_scope.", true},
+}
+
+// Added0210Key reports whether path is a key 0.2.10 added.
+func Added0210Key(path string) bool { return inFamilies(Added0210, path) }
+
 // Added029Key reports whether path is a key 0.2.9 added.
 func Added029Key(path string) bool { return inFamilies(Added029, path) }
 

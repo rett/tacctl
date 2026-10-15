@@ -3,6 +3,56 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.10 (unreleased)
+
+1. **`tacctl scope netconf` and `tacctl device netconf`: the NETCONF service
+   of the Junos devices, per scope with a per-device override.** Three states:
+   `enable` (`set system services netconf ssh`, with `--connection-limit <n>`
+   and `--rate-limit <n>`, 1 to 250 each, `none` to remove one), `disable`
+   (`delete system services netconf`) and `leave`, the default, which plans and
+   compares nothing of the service, as before. `scope netconf <scope>` with
+   `leave` removes the scope's setting and with `disable` drops its limits.
+   `device netconf <name>` takes the device's own word over its scope's: `leave`
+   leaves the device alone whatever its scope says, `clear` gives the decision
+   back to the scope, and the state and each limit layer on their own, the
+   device's value over the scope's. `show` (or no word) prints the setting and
+   where each value comes from, `device netconf --apply` runs `device config
+   apply` for the device as the other setters do, and `device show` has a
+   `NETCONF` row (and `--json` a `netconf` object) for a Junos device whose
+   setting is not the default. Both verbs are the superuser's. The scope's
+   values are `netconf_scope.<scope>.state`, `.connection_limit` and
+   `.rate_limit` in `tacctl.yaml`, and follow the scope on rename and removal;
+   a device's own is the optional `netconf:` map of its entry in
+   `devices.yaml`, refused for a device of another vendor, and removed with a
+   warning when `device vendor` makes the device one. A 0.2.9 binary does not
+   know the keys and its `devices.yaml` reader refuses the map.
+
+2. **The walkthrough, `device config pull`, `diff` and `list` follow the
+   setting.** For `enable` the Junos walkthrough's NETCONF step is live: the
+   statement, or the limits' statements when a limit is set (a limit's
+   statement creates `ssh` and the device prints no bare `ssh` beside it), and
+   `netconf` is a section like the others: compared by statement, with what
+   the device holds under `system services netconf` beside them (a trace
+   option, the SSH port, a limit the setting states none of) shown as
+   unmanaged and kept, and a limit with another value a difference. For
+   `disable` the step is a live `delete system services netconf` and the
+   section expects nothing under the hierarchy: every statement the device has
+   there is a difference. `leave` is the commented step and no section, byte
+   for byte as in 0.2.9.
+
+3. **`device config plan` and `device config apply` write the setting.** The
+   `netconf` section is planned where the setting is `enable` or `disable`
+   (`--section netconf` names it; it is refused with the setting to make where
+   the scope leaves the service alone): `set system services netconf ssh` and
+   the limits, or the one statement `delete system services netconf`, and
+   nothing else under `system services`, the delete of a limit included. The
+   statements are held against the rendering before the first is typed, as
+   every other statement is: `set` of what the section renders and `delete` of
+   the service only when the setting disables it; the rest of `system
+   services`, the SSH service among it, stays on the list of what is never
+   written. The plan warns that disabling the service ends it for every NETCONF
+   client of the device, and its back-out types the service again.
+
 ## 0.2.9 (2026-10-14)
 
 1. **`config devices apply-confirm-timeout` and `apply-pause`.** The two
