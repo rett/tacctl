@@ -76,9 +76,19 @@ func TestApplyCheckOverNetconf(t *testing.T) {
 		t.Errorf("the read through NETCONF is a hello: %+v", rec)
 	}
 	// the read through NETCONF recorded the hello, so auto now takes it
-	code, out, errs = b.apply("example-sw1", "--check")
+	code, out, errs = b.apply("example-sw1", "--check", "--transport", "auto")
 	if code != 0 || !strings.Contains(out, "[via netconf]") {
 		t.Errorf("auto after a hello: exit %d\n%s\n%s", code, out, errs)
+	}
+	// and the default is the command line: NETCONF is opt-in, whatever the
+	// device answered
+	code, out, errs = b.apply("example-sw1", "--check", "--json")
+	rows := jsonRows(t, out)
+	if code != 0 || len(rows) != 1 || rows[0]["via"] != "cli" {
+		t.Errorf("the default after a hello: exit %d %v\n%s", code, rows, errs)
+	}
+	if code, out, _ = b.apply("example-sw1", "--check"); strings.Contains(out, "[via netconf]") {
+		t.Errorf("the default is not the command line:\n%s", out)
 	}
 }
 
@@ -88,12 +98,12 @@ func TestApplyCheckOverNetconf(t *testing.T) {
 func TestApplyAutoFallsBackWithTheReason(t *testing.T) {
 	b := newApplyBox(t)
 	b.register("example-sw1")
-	code, out, errs := b.apply("example-sw1", "--check", "--json")
+	code, out, errs := b.apply("example-sw1", "--check", "--json", "--transport", "auto")
 	rows := jsonRows(t, out)
 	if code != 0 || len(rows) != 1 || rows[0]["via"] != "cli" || !strings.Contains(rows[0]["via_reason"].(string), "not probed") {
 		t.Fatalf("never probed: exit %d %v\n%s", code, rows, errs)
 	}
-	code, out, _ = b.apply("example-sw1", "--check")
+	code, out, _ = b.apply("example-sw1", "--check", "--transport", "auto")
 	if code != 0 || strings.Contains(out, "[via") {
 		t.Errorf("a never probed device's line is 0.2.9's: %d\n%s", code, out)
 	}
@@ -104,7 +114,7 @@ func TestApplyAutoFallsBackWithTheReason(t *testing.T) {
 	if err := b.invoke().configStore().Save(recs); err != nil {
 		t.Fatal(err)
 	}
-	code, out, errs = b.apply("example-sw1", "--check")
+	code, out, errs = b.apply("example-sw1", "--check", "--transport", "auto")
 	if code != 0 || !strings.Contains(out, "[via cli: NETCONF port closed at the last read]") {
 		t.Errorf("exit %d\n%s\n%s", code, out, errs)
 	}
@@ -177,7 +187,7 @@ func TestApplyServiceChangeIsMadeOverTheCommandLine(t *testing.T) {
 	}
 	before := b.committed()
 
-	code, out, errs = b.apply("example-sw1", "--check", "--json")
+	code, out, errs = b.apply("example-sw1", "--check", "--json", "--transport", "auto")
 	rows = jsonRows(t, out)
 	if code != 0 || len(rows) != 1 || rows[0]["via"] != "cli" || rows[0]["via_reason"] != "netconf service change" {
 		t.Fatalf("auto: exit %d %v\n%s", code, rows, errs)

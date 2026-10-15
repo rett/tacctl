@@ -151,7 +151,7 @@ func NewSchema(backends []string) *Schema {
 			// D150): auto is NETCONF where the device answers and
 			// confirms, else the Junos command line. A 0.2.9 binary does
 			// not know the key (Added0210, rollback.go).
-			"device.apply.transport": {Type: TypeEnum, Values: []string{"auto", "cli", "netconf"}, Default: "auto", HasDefault: true},
+			"device.apply.transport": {Type: TypeEnum, Values: []string{"auto", "cli", "netconf"}, Default: "cli", HasDefault: true},
 		},
 		wildcards: append([]wildcard{
 			{"privileges.", Rule{Type: TypeCiscoCmdList}},

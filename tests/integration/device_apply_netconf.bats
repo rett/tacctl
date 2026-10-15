@@ -86,14 +86,23 @@ r = json.load(open(sys.argv[1]))["devices"]["example-sw1"]
 print(r["transport"], r["netconf"])' "${TACCTL_VAR_LIB}/devices-config.json"
     assert_output "netconf hello ok"
     # the read has recorded a hello, so auto now takes the subsystem
-    apply example-sw1 --check
+    apply example-sw1 --check --transport auto
     assert_success
     assert_output --partial "[via netconf]"
+    # and the default is the command line: NETCONF is opt-in
+    apply example-sw1 --check --json
+    assert_success
+    run python3 -c '
+import json, sys
+d = json.loads(sys.stdin.read().splitlines()[0])
+assert d["via"] == "cli", d
+print("ok")' <<< "$output"
+    assert_output ok
 }
 
 @test "apply --check --json: via, via_reason; a never probed device is the command line" {
     start
-    apply example-sw1 --check --json
+    apply example-sw1 --check --json --transport auto
     assert_success
     run python3 -c '
 import json, sys
@@ -102,7 +111,7 @@ assert d["via"] == "cli" and "not probed" in d["via_reason"], d
 print("ok")' <<< "$output"
     assert_output ok
     # and its line says nothing of it
-    apply example-sw1 --check
+    apply example-sw1 --check --transport auto
     assert_success
     refute_output --partial "[via"
     [[ "$(applied via)" == cli ]]
