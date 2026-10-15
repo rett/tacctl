@@ -161,6 +161,9 @@ func (o *applyOutcome) line() string {
 	if w := o.viaWords(); w != "" {
 		s += " [" + w + "]"
 	}
+	if o.Out != nil && o.Out.ServiceProof != "" {
+		s += " [" + o.Out.ServiceProof + "]"
+	}
 	if o.PendingErr != "" {
 		s += " (the pending record at the commit was not kept: " + o.PendingErr + ")"
 	}
@@ -228,19 +231,22 @@ type applyJSON struct {
 	// Via is the transport the transaction ran through, ViaReason why it
 	// was not the first choice ("not probed" included), Exclusive that
 	// NETCONF ran in an exclusive session (D150).
-	Via       string   `json:"via,omitempty"`
-	ViaReason string   `json:"via_reason,omitempty"`
-	Exclusive bool     `json:"exclusive,omitempty"`
-	ID        string   `json:"id,omitempty"`
-	Shape     string   `json:"shape,omitempty"`
-	Confirmed string   `json:"confirmed_on,omitempty"`
-	Sections  []string `json:"sections,omitempty"`
-	Set       int      `json:"set,omitempty"`
-	Delete    int      `json:"delete,omitempty"`
-	Insert    int      `json:"insert,omitempty"`
-	NotFound  int      `json:"not_found,omitempty"`
-	Until     string   `json:"until,omitempty"`
-	Commit    *struct {
+	Via       string `json:"via,omitempty"`
+	ViaReason string `json:"via_reason,omitempty"`
+	Exclusive bool   `json:"exclusive,omitempty"`
+	// ServiceProof is what the verification proved of a change to the
+	// NETCONF service (D148).
+	ServiceProof string   `json:"service_proof,omitempty"`
+	ID           string   `json:"id,omitempty"`
+	Shape        string   `json:"shape,omitempty"`
+	Confirmed    string   `json:"confirmed_on,omitempty"`
+	Sections     []string `json:"sections,omitempty"`
+	Set          int      `json:"set,omitempty"`
+	Delete       int      `json:"delete,omitempty"`
+	Insert       int      `json:"insert,omitempty"`
+	NotFound     int      `json:"not_found,omitempty"`
+	Until        string   `json:"until,omitempty"`
+	Commit       *struct {
 		Seq  int    `json:"seq,omitempty"`
 		Time string `json:"time,omitempty"`
 	} `json:"commit,omitempty"`
@@ -274,6 +280,9 @@ func (o *applyOutcome) json(j applyJSON) applyJSON {
 	j.Status = o.word()
 	j.Confirmed, j.DurationMS = o.ConfirmedOn, o.Duration.Milliseconds()
 	j.Via, j.ViaReason, j.Exclusive = string(o.Via), o.ViaReason, o.Exclusive
+	if o.Out != nil {
+		j.ServiceProof = o.Out.ServiceProof
+	}
 	if s := o.Settled; s != nil {
 		j.Settled = &applySettledJSON{ID: s.ID, Result: s.Result, Text: cleanLine(s.Line)}
 	}

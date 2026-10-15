@@ -325,6 +325,9 @@ type applyState struct {
 	// and the transaction runs again over the command line.
 	via           devapply.Via
 	serviceChange bool
+	// probe is the NETCONF probe the verification of a service change made
+	// (D148): what the record's probe becomes once the change is applied.
+	probe string
 }
 
 // errServiceChange is the planner's answer to a NETCONF attempt whose delta
@@ -342,6 +345,9 @@ type readPlan struct {
 	// via is the transport the read came through ("" is the command line,
 	// as 0.2.9 read); the record's Transport and probe follow it.
 	via devapply.Via
+	// probe is a NETCONF probe made after the commit (D148); it replaces
+	// what the transport of the read implies.
+	probe string
 }
 
 // planRead makes the delta of a read the way 'device config plan' does from
@@ -422,6 +428,9 @@ func (r *applyRun) refresh(e devreg.Entry, rp *readPlan, dur time.Duration) erro
 	if rp.via == devapply.ViaNetconf {
 		// a read that came through the subsystem is a hello
 		o.Transport, o.Netconf = transportNetconf, netconfHelloOK
+	}
+	if rp.probe != "" {
+		o.Netconf = rp.probe
 	}
 	return pr.recordSuccess(o, e, rp.ext, rp.results, rp.plain)
 }
@@ -662,6 +671,7 @@ func (r *applyRun) transact(ctx context.Context, e devreg.Entry, o *applyOutcome
 			out = r.driver.Check(ctx, in)
 		} else {
 			in.Verify = c.verify
+			in.VerifyService = r.serviceVerifier(e, target, st)
 			in.Committed = func(c devapply.Outcome) { r.pending(e, o, c, st) }
 			if r.holdOn {
 				in.Hold = r.holdFunc(e.Name)
@@ -722,6 +732,7 @@ func (r *applyRun) keep(e devreg.Entry, o *applyOutcome, st *applyState, apply b
 	case devapply.ExitApplied, devapply.ExitAppliedByOther:
 		// the read after the commit is what the device runs now
 		if st.after != nil {
+			st.after.probe = st.probe
 			_ = r.refresh(e, st.after, 0)
 		}
 	}

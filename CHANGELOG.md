@@ -77,6 +77,19 @@ current behaviour; this file is where history lives.
    read through NETCONF also records the hello. A 0.2.9 binary does not know
    `device.apply.transport`.
 
+5. **A change to the NETCONF service is proved by a NETCONF probe before it
+   is confirmed.** After the fresh login and before the confirming commit,
+   an apply that enables the service must be answered by a NETCONF hello as
+   you, and one that disables it must find the hello no longer answered
+   (`port closed` or `no hello`); a probe that cannot tell is a failed
+   proof, and a failed proof rolls the change back. The line says
+   `[NETCONF verified: hello ok]` or `[NETCONF verified: not answering]`
+   (the JSON has `service_proof`), and the record's NETCONF probe becomes
+   what was proved, so `device config list` and the next apply see it at
+   once; a rolled-back change leaves the record's probe as it was and the
+   reason says so. A NETCONF fresh login that sees no pending confirmed
+   commit names the history it read, not a prompt.
+
 ## 0.2.9 (2026-10-14)
 
 1. **`config devices apply-confirm-timeout` and `apply-pause`.** The two
