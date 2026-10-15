@@ -390,8 +390,9 @@ func TestDeviceReadRefreshesTheSeenCache(t *testing.T) {
 	if time.Since(updated()) > time.Minute {
 		t.Error("the refreshed cache was not saved")
 	}
-	if strings.Contains(sb.stderr(), "scan") || sb.code != 0 {
-		t.Errorf("refresh was not silent: %d %q", sb.code, sb.stderr())
+	// Only the note of an hour-old cache is said, and nothing else.
+	if sb.code != 0 || strings.Contains(sb.stderr(), "[ERROR]") || strings.Count(sb.stderr(), "Reading the logs for the seen data (the cache is an hour old;") != 1 {
+		t.Errorf("refresh said more than its note: %d %q", sb.code, sb.stderr())
 	}
 
 	// show refreshes the same way.
@@ -406,6 +407,25 @@ func TestDeviceReadRefreshesTheSeenCache(t *testing.T) {
 	out = sb.devScan("", journal(execx.Result{}, os.ErrPermission), "list")
 	if sb.code != 0 || !updated().Equal(before) || !strings.Contains(out, "lab-rtr2") {
 		t.Errorf("failed refresh: %d %v %v\n%s", sb.code, before, updated(), out)
+	}
+
+	// A read that failed is not tried again for an hour (a log too long to
+	// catch up inside the budget must not cost every list the budget), and
+	// the one line on standard error names the age of an old cache.
+	age(3 * time.Hour)
+	sb.devScan("", journal(execx.Result{Stdout: []byte(login)}, nil), "list")
+	if strings.Contains(argvs(), "journalctl") {
+		t.Errorf("a failed read was retried at once (%q)", argvs())
+	}
+	if err := os.Remove(sb.path("var-lib", ".devices-seen.refresh-failed")); err != nil {
+		t.Fatal(err)
+	}
+	sb.devScan("", journal(execx.Result{Stdout: []byte(login)}, nil), "list")
+	if !strings.Contains(argvs(), "journalctl") || !strings.Contains(sb.stderr(), "Reading the logs for the seen data (the cache is 3 hours old") {
+		t.Errorf("no note on an old cache (%q): %q", argvs(), sb.stderr())
+	}
+	if _, err := os.Stat(sb.path("var-lib", ".devices-seen.refresh-failed")); err == nil {
+		t.Error("the failure marker was left after a good read")
 	}
 
 	// A cache older than stale-days is caught up by an explicit scan.

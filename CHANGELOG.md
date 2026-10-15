@@ -17,14 +17,16 @@ current behaviour; this file is where history lives.
 2. **`device list` and `device show` refresh the seen cache from the logs.**
    A login used to show in LAST SEEN only after someone ran `device scan`.
    When the cache is older than five minutes, `list` and `show` first read
-   the backends' logs again from where the last scan stopped, and print
-   nothing about it. The refresh is narrow on purpose: logs only (no host-key
-   re-scan, no connection to a device), at most ten seconds, only for a
-   caller who may scan (operator tier and up), never the first scan of an
-   install and never the catch-up of a cache older than `stale-days` (both
-   stay `device scan`), and a log that cannot be read, a scan already
-   running or a read-only caller leave the cache as it was. `list --scan`
-   and `device scan` are unchanged.
+   the backends' logs again from where the last scan stopped. The refresh is
+   narrow on purpose: logs only (no host-key re-scan, no connection to a
+   device), at most five seconds, only for a caller who may scan (operator
+   tier and up), never the first scan of an install and never the catch-up
+   of a cache older than `stale-days` (both stay `device scan`). It says
+   nothing, except one line on standard error when the cache is an hour old
+   or more (the catch-up can take seconds). A log that cannot be read, a
+   read that runs out of its five seconds, a scan already running or a
+   read-only caller leave the cache as it was, and a failed read is not
+   tried again for an hour. `list --scan` and `device scan` are unchanged.
 
 3. **`tacctl group list` says when no group has the engineer tier.** The
    engineer tier exists only through a tier setting, so an install without

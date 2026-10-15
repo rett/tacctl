@@ -13,6 +13,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -97,7 +99,17 @@ const (
 	// and 'device show' read the logs again.
 	seenAutoMinAge = 5 * time.Minute
 	// seenAutoBudget bounds one such read.
-	seenAutoBudget = 10 * time.Second
+	seenAutoBudget = 5 * time.Second
+	// seenAutoBackoff is how long a read that failed or ran out of time is
+	// not tried again: a log too long to catch up inside the budget must not
+	// cost every 'device list' the whole budget. 'device scan' has none.
+	seenAutoBackoff = time.Hour
+	// seenAutoNoteAge is how old the cache must be for the read to say it is
+	// reading the logs: a catch-up of that size can take seconds.
+	seenAutoNoteAge = time.Hour
+	// seenAutoFailedMark is the marker file of the last failed read, beside
+	// the cache.
+	seenAutoFailedMark = ".devices-seen.refresh-failed"
 )
 
 // refreshSeen brings the seen cache up to date for 'device list' and
@@ -108,7 +120,10 @@ const (
 // cache older than stale-days, which stay an explicit 'device scan'; the
 // caller must be allowed to scan; another scan under way, a source that
 // cannot be read, or the time budget leave the cache as it was; and it
-// prints nothing. res.Seen is replaced only when the cache was saved.
+// prints nothing, but for one line on standard error when the cache is an
+// hour old or more (the catch-up can take seconds). A read that failed or
+// ran out of its budget is not tried again for an hour. res.Seen is replaced
+// only when the cache was saved.
 func (inv *invocation) refreshSeen(res *devreg.Resolver) {
 	if res == nil || !res.Seen.HasData() || !inv.scanAllowed() {
 		return
@@ -119,6 +134,10 @@ func (inv *invocation) refreshSeen(res *devreg.Resolver) {
 	}
 	now := inv.app.Knobs.Now()
 	if age := now.Sub(res.Seen.Updated); age < seenAutoMinAge || age > time.Duration(days)*24*time.Hour {
+		return
+	}
+	mark := filepath.Join(filepath.Dir(inv.app.Paths.SeenCache), seenAutoFailedMark)
+	if fi, err := os.Stat(mark); err == nil && now.Sub(fi.ModTime()) < seenAutoBackoff {
 		return
 	}
 	set := inv.app.Backends()
@@ -148,10 +167,19 @@ func (inv *invocation) refreshSeen(res *devreg.Resolver) {
 	if err != nil || !seen.HasData() || now.Sub(seen.Updated) < seenAutoMinAge {
 		return
 	}
+	if now.Sub(seen.Updated) >= seenAutoNoteAge {
+		inv.stderrLine("Reading the logs for the seen data (the cache is " + ageText(now.Sub(seen.Updated)) +
+			" old; at most " + strconv.Itoa(int(seenAutoBudget/time.Second)) + " seconds, 'tacctl device scan' reads them without a limit)...")
+	}
+	failed := func() {
+		_ = os.WriteFile(mark, nil, 0o600)
+		_ = os.Chtimes(mark, now, now)
+	}
 	ctx, cancel := context.WithTimeout(inv.ctx, seenAutoBudget)
 	defer cancel()
 	for _, r := range devreg.ScanSources(ctx, seen, srcs, devreg.ScanOptions{Now: now, StaleDays: days}) {
 		if r.Err != nil {
+			failed()
 			return
 		}
 	}
@@ -160,9 +188,23 @@ func (inv *invocation) refreshSeen(res *devreg.Resolver) {
 		names = append(names, e.Name)
 	}
 	seen.Prune(now, days, names)
-	if seen.Save(path) == nil {
-		res.Seen = seen
+	if seen.Save(path) != nil {
+		failed()
+		return
 	}
+	_ = os.Remove(mark)
+	res.Seen = seen
+}
+
+// ageText is a cache's age as a note words it.
+func ageText(d time.Duration) string {
+	if d >= 48*time.Hour {
+		return strconv.Itoa(int(d/(24*time.Hour))) + " days"
+	}
+	if d < 2*time.Hour {
+		return "an hour"
+	}
+	return strconv.Itoa(int(d/time.Hour)) + " hours"
 }
 
 // --- the scan ------------------------------------------------------------------------

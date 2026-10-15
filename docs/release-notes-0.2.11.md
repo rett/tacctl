@@ -41,9 +41,11 @@ it may put back to after its last restart:
   changing what applies says so.
 - `device list` and `device show` read the backends' logs again when the
   seen cache is older than five minutes, so a login shows without `device
-  scan`. Logs only, at most ten seconds, only for a caller who may scan,
+  scan`. Logs only, at most five seconds, only for a caller who may scan,
   never the first scan of an install, never the catch-up of a cache older
-  than `stale-days`; a failure leaves the cache as it was.
+  than `stale-days`; a failure leaves the cache as it was and is not tried
+  again for an hour. One line on standard error says so when the cache is an
+  hour old or more.
 - `group list` says when no group has the engineer tier, and `config
   validate` and `group privilege list` name an empty `privileges.<group>`
   that hides a shipped default.

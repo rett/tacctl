@@ -445,8 +445,9 @@ Seen data: 'scan' reads each enabled backend's log (the tacquito journal,
 FreeRADIUS's tacctl-auth.log) from where the last scan stopped into
 /var/lib/tacctl/devices-seen.json, and re-scans the pinned host keys (a scan
 never changes a pin). 'list' and 'show' read that cache, after reading the
-logs again when it is older than five minutes (the logs only, a few seconds at
-most, never the first scan, and for callers who may scan); 'list --scan'
+logs again when it is older than five minutes (the logs only, five seconds at
+most, never the first scan, for callers who may scan; a failed read is not
+tried again for an hour); 'list --scan'
 scans first. --full re-reads everything the logs still hold, --since <dur>
 (7d, 12h, 2w) that stretch. 'discover' lists the addresses that authenticated
 without being registered, each with its 'device add' line (--all: those only
