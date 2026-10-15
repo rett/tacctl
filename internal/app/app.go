@@ -55,6 +55,8 @@ type App struct {
 	HostsTTY func() bool
 
 	svc services
+	// ctx is the invocation's context (SetContext).
+	ctx context.Context
 	// sinks are the streams New wrapped to take the colour out of them.
 	sinks []io.Closer
 }

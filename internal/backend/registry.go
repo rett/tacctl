@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rett/tacctl/internal/applylock"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/paths"
@@ -40,6 +41,17 @@ type Env struct {
 	// Set is the invocation's backend set, filled in by NewSet, so a module
 	// can run its own changes through Set.StoreApply.
 	Set *Set
+	// ApplyLock is the process's apply lock, the one conf.Config.Lock of
+	// Conf takes too (nil: none is taken, as in a test of one command).
+	// StoreApply, ApplyForced and ConfigRender hold it from before their
+	// first read to after their last restart; it is reentrant, so a
+	// transaction that holds it may call them.
+	ApplyLock *applylock.Lock
+
+	// inWriter is set while the writer of a StoreApply or ApplyForced runs:
+	// a StoreApply, ApplyForced or ConfigRender then is a change inside a
+	// change, which is refused (nested in an outer transaction is legal).
+	inWriter bool
 }
 
 // Prompt is the invocation's prompter: Env.Prompter, made from Stdin (an

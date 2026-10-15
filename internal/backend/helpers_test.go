@@ -11,9 +11,11 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/rett/tacctl/internal/applylock"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/backend/faketest"
 	"github.com/rett/tacctl/internal/conf"
@@ -41,16 +43,55 @@ type tenv struct {
 	set      *backend.Set
 	tac      *tacacsTest
 	fake     *faketest.Backend
-	stdout   *bytes.Buffer
-	stderr   *bytes.Buffer
+	stdout   *safeBuf
+	stderr   *safeBuf
 	faults   map[string]bool
 	fakeConf string
+	// lock is this invocation's apply lock (Env.ApplyLock and the Conf's
+	// hook); lockCtx is what a Conf write waits with (nil: Background).
+	lock    *applylock.Lock
+	lockCtx context.Context
 }
 
-func newTenv(t *testing.T) *tenv {
+// safeBuf is a buffer a test may read while a command it started in a
+// goroutine writes.
+type safeBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *safeBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *safeBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+func (s *safeBuf) Len() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Len()
+}
+
+func (s *safeBuf) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.b.Reset()
+}
+
+func newTenv(t *testing.T) *tenv { return newTenvAt(t, t.TempDir()) }
+
+// newTenvAt is a test environment on the tree w. Two of them on one tree are
+// two tacctl processes: each has its own Env, Conf, backends, output and
+// apply lock, and they share the files.
+func newTenvAt(t *testing.T, w string) *tenv {
 	t.Helper()
-	w := t.TempDir()
-	e := &tenv{t: t, w: w, stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{}, faults: map[string]bool{}}
+	e := &tenv{t: t, w: w, stdout: &safeBuf{}, stderr: &safeBuf{}, faults: map[string]bool{}}
 	for _, d := range []string{"etc", "state", "systemd/tacquito.service.d", "log", "tmp", "fake"} {
 		if err := os.MkdirAll(filepath.Join(w, d), 0o700); err != nil {
 			t.Fatal(err)
@@ -87,8 +128,22 @@ func newTenv(t *testing.T) *tenv {
 		Snapshots: snaps,
 	}
 	e.env.Conf.Owner = nil
+	// What the App wires: one reentrant lock, for the transactions and for
+	// every write of tacctl.yaml.
+	e.lock = applylock.New(e.p.StateDir)
+	e.env.ApplyLock = e.lock
+	e.env.Conf.Lock = e.confLock
 	e.set = backend.NewSet(e.reg, e.env)
 	return e
+}
+
+// confLock is conf.Config.Lock.
+func (e *tenv) confLock() (func(), error) {
+	ctx := e.lockCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return e.lock.Acquire(ctx, func() { e.env.Out.Info(backend.WaitingMsg) })
 }
 
 func (e *tenv) fault(point string) error {
@@ -130,7 +185,9 @@ func (e *tenv) enable(list string) {
 
 // reset forgets the calls and output so far.
 func (e *tenv) reset() {
+	e.tac.mu.Lock()
 	e.tac.calls = nil
+	e.tac.mu.Unlock()
 	e.fake.ResetCalls()
 	e.stdout.Reset()
 	e.stderr.Reset()
@@ -228,9 +285,27 @@ func wantCode(t *testing.T, err error, code int) {
 // TACACS+ backend for the mutation machinery to be tested against what
 // the bats tests used. Its service calls are recorded, not run.
 type tacacsTest struct {
-	env   *backend.Env
-	r     *rtacacs.Renderer
+	env *backend.Env
+	r   *rtacacs.Renderer
+	// calls is every call so far; read it directly only when no other
+	// goroutine is running, else through callList and called.
 	calls []string
+	mu    sync.Mutex
+	// onRestart, when set, runs at the start of every restart (a test
+	// that holds a restart open).
+	onRestart func()
+}
+
+func (b *tacacsTest) record(call string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.calls = append(b.calls, call)
+}
+
+func (b *tacacsTest) callList() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return slices.Clone(b.calls)
 }
 
 func (b *tacacsTest) factory(env *backend.Env) backend.Backend {
@@ -277,7 +352,7 @@ func (b *tacacsTest) DeviceVars(context.Context, string, string) (map[string]str
 }
 
 func (b *tacacsTest) RenderGate(context.Context) backend.GateResult {
-	b.calls = append(b.calls, "gate")
+	b.record("gate")
 	switch b.r.Gate() {
 	case rtacacs.GateOK:
 		return backend.GateOK
@@ -290,7 +365,7 @@ func (b *tacacsTest) RenderGate(context.Context) backend.GateResult {
 }
 
 func (b *tacacsTest) RenderStage(_ context.Context, dir string, force bool) error {
-	b.calls = append(b.calls, "stage")
+	b.record("stage")
 	err := b.r.Stage(dir, force, true)
 	switch {
 	case err == nil:
@@ -302,7 +377,7 @@ func (b *tacacsTest) RenderStage(_ context.Context, dir string, force bool) erro
 }
 
 func (b *tacacsTest) RenderCommit(_ context.Context, dir string) (bool, error) {
-	b.calls = append(b.calls, "commit")
+	b.record("commit")
 	changed, err := b.r.CommitConfig(dir)
 	if err != nil {
 		return false, backend.ErrFailed
@@ -315,11 +390,14 @@ func (b *tacacsTest) RenderCommit(_ context.Context, dir string) (bool, error) {
 }
 
 func (b *tacacsTest) Service(_ context.Context, action backend.ServiceAction, listener string) (string, error) {
-	b.calls = append(b.calls, strings.TrimSpace("service "+string(action)+" "+listener))
+	b.record(strings.TrimSpace("service " + string(action) + " " + listener))
+	if action == backend.ServiceRestart && b.onRestart != nil {
+		b.onRestart()
+	}
 	return "", nil
 }
 
-func (b *tacacsTest) called(line string) bool { return slices.Contains(b.calls, line) }
+func (b *tacacsTest) called(line string) bool { return slices.Contains(b.callList(), line) }
 
 func (b *tacacsTest) restarted() bool { return b.called("service restart") }
 
@@ -333,5 +411,6 @@ func (e *tenv) addFake(id string) *faketest.Backend {
 	}
 	e.env.Conf = conf.Load(e.p.Overrides, e.reg.IDs())
 	e.env.Conf.Owner = nil
+	e.env.Conf.Lock = e.confLock
 	return b
 }
