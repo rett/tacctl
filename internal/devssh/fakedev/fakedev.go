@@ -592,7 +592,7 @@ func (s *Server) session(sc *ssh.ServerConn, ch ssh.Channel, reqs <-chan *ssh.Re
 				if s.netconfOff || s.t.exists("netconf.off") {
 					break
 				}
-				run = func() { s.netconf(ch) }
+				run = func() { s.netconf(ch, sc.User(), func() { _ = sc.Close() }) }
 			}
 			if run == nil {
 				break
