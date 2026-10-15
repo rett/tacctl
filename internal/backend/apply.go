@@ -21,6 +21,11 @@ const WaitingMsg = "Waiting for another tacctl command that is changing the conf
 // writer of another: a change inside a change. The outer rollback would take
 // the inner change with it, and the inner one would wait for a lock its own
 // writer holds were the lock not reentrant.
+// ErrNotStarted: the apply lock could not be had (the wait was ended, or the
+// lock file cannot be used); nothing was read or written, and the messages
+// are written (exit 1). Callers that name a failed render must not name it.
+var ErrNotStarted = &Error{Code: 1, Reason: "not started: the apply lock was not taken"}
+
 var errNested = &Error{Code: 1, Reason: "internal: a change inside a change"}
 
 // begin is what every transaction of this file does first: refuse a change
@@ -63,7 +68,7 @@ func (e *Env) HoldApply(ctx context.Context) (func(), error) {
 		out.Error(err.Error())
 	}
 	out.Error("Nothing was changed.")
-	return nil, ErrFailed
+	return nil, ErrNotStarted
 }
 
 // runWriter runs a transaction's writer with the snapshot held and

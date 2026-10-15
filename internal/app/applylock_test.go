@@ -94,3 +94,20 @@ func TestApplyLockIsOneObjectAndTheConfWaitsWithTheInvocationContext(t *testing.
 		t.Fatalf("stdout %q stderr %q", out, errb)
 	}
 }
+
+// A write after a Ctrl-C (an editor's save in 'blocks edit') still goes
+// through when nobody holds the lock: the context only ends a wait.
+func TestAConfWriteWithACancelledContextProceedsWhenTheLockIsFree(t *testing.T) {
+	w := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(w, "state"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	a := New(nil, paths.NewEnv([]string{"TACCTL_ETC=" + w + "/etc", "TACCTL_STATE_DIR=" + w + "/state"}),
+		"", 0, Stdio{Stdin: strings.NewReader(""), Stdout: &lockedBuf{}, Stderr: &lockedBuf{}}, &fake.Runner{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	a.SetContext(ctx)
+	if err := a.Conf().Set("bcrypt.cost", "13"); err != nil {
+		t.Fatalf("a free lock refused to a cancelled context: %v", err)
+	}
+}

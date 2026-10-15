@@ -6,7 +6,13 @@
 // The lock is reentrant and one per process: a transaction that holds it and
 // calls StoreApply or Conf.Set does not wait for itself. The depth is counted
 // here, so a nested Acquire never touches the file; the flock is taken at
-// depth 0 and given up when the count returns to 0.
+// depth 0 and given up when the count returns to 0. It is reentrant per
+// process, not per goroutine: a second goroutine of the process that holds
+// it re-enters too, so no code that writes the configuration may run on
+// concurrent goroutines (none does).
+//
+// A context that is over does not refuse a lock that is free; it only ends a
+// wait (a command that outlives its Ctrl-C, an editor's save, still writes).
 package applylock
 
 import (
@@ -109,10 +115,11 @@ func (l *Lock) release() {
 
 // flock opens the file and waits for the exclusive lock on it. The caller
 // holds l.mu.
+//
+// A context that is already over does not refuse a lock that is free: a
+// command that outlives its Ctrl-C (an editor's save) must still write. It
+// only ends a wait.
 func (l *Lock) flock(ctx context.Context, onWait func()) (*os.File, error) {
-	if ctx.Err() != nil {
-		return nil, fmt.Errorf("%w: %v", ErrCancelled, ctx.Err())
-	}
 	f, err := os.OpenFile(l.path, os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		var pe *fs.PathError
@@ -133,6 +140,10 @@ func (l *Lock) flock(ctx context.Context, onWait func()) (*os.File, error) {
 		case !errors.Is(err, unix.EWOULDBLOCK):
 			_ = f.Close()
 			return nil, fmt.Errorf("cannot lock %s: %w", l.path, err)
+		}
+		if ctx.Err() != nil {
+			_ = f.Close()
+			return nil, fmt.Errorf("%w: %v", ErrCancelled, ctx.Err())
 		}
 		if tick == nil {
 			if onWait != nil && !l.announced {

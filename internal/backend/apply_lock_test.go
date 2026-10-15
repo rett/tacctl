@@ -531,7 +531,7 @@ func TestApplyLockIsTakenBeforeTheStoreLock(t *testing.T) {
 	cctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 	defer cancel()
 	_, err = b.set.StoreApply(cctx, backend.ApplyOptions{}, func() error { return nil })
-	if !b.waiting() || !errors.Is(err, backend.ErrFailed) {
+	if !b.waiting() || !errors.Is(err, backend.ErrNotStarted) {
 		t.Fatalf("waiting %v, err %v", b.waiting(), err)
 	}
 	unlock()

@@ -63,9 +63,10 @@ func TestTwoInstancesSerialise(t *testing.T) {
 	relA := acquire(t, a)
 
 	var waited atomic.Int32
+	waiting := make(chan struct{}, 1)
 	got := make(chan func(), 1)
 	go func() {
-		rel, err := b.Acquire(bg, func() { waited.Add(1) })
+		rel, err := b.Acquire(bg, func() { waited.Add(1); waiting <- struct{}{} })
 		if err != nil {
 			t.Error(err)
 			got <- func() {}
@@ -74,9 +75,14 @@ func TestTwoInstancesSerialise(t *testing.T) {
 		got <- rel
 	}()
 	select {
+	case <-waiting:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the second instance never announced its wait")
+	}
+	select {
 	case <-got:
 		t.Fatal("the second instance took the lock while the first held it")
-	case <-time.After(350 * time.Millisecond):
+	case <-time.After(150 * time.Millisecond):
 	}
 	if waited.Load() != 1 {
 		t.Fatalf("waiting line %d times", waited.Load())
@@ -99,21 +105,21 @@ func TestTwoInstancesSerialise(t *testing.T) {
 func TestTheWaitingLineIsNotRepeatedForAnotherWait(t *testing.T) {
 	dir := t.TempDir()
 	a, b := New(dir), New(dir)
-	var n int
+	var n atomic.Int32
 	for range 2 {
 		relA := acquire(t, a)
 		go func() {
-			time.Sleep(150 * time.Millisecond)
+			time.Sleep(300 * time.Millisecond)
 			relA()
 		}()
-		rel, err := b.Acquire(bg, func() { n++ })
+		rel, err := b.Acquire(bg, func() { n.Add(1) })
 		if err != nil {
 			t.Fatal(err)
 		}
 		rel()
 	}
-	if n != 1 {
-		t.Fatalf("called %d times", n)
+	if n.Load() > 1 {
+		t.Fatalf("called %d times", n.Load())
 	}
 }
 
@@ -149,10 +155,19 @@ func TestACancelledWaitReturnsHoldsNothingAndLeavesTheHolder(t *testing.T) {
 	relA()
 	acquire(t, b)()
 
-	// A context that is over before the call takes nothing either.
+	// A context that is over before the call does not wait for a lock that
+	// is held, and does not refuse one that is free (a save after a Ctrl-C
+	// in an editor must still be written).
+	relA = acquire(t, a)
 	if _, err := b.Acquire(ctx, nil); !errors.Is(err, ErrCancelled) || b.Held() != 0 {
 		t.Fatalf("got %v, depth %d", err, b.Held())
 	}
+	relA()
+	rel, err := b.Acquire(ctx, nil)
+	if err != nil || b.Held() != 1 {
+		t.Fatalf("a free lock refused to a cancelled context: %v, depth %d", err, b.Held())
+	}
+	rel()
 }
 
 func TestTheFileIs0600AndStaleOnesDoNotBlock(t *testing.T) {

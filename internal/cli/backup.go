@@ -506,6 +506,9 @@ func (inv *invocation) restoreSnapshot(id string) error {
 		return err
 	}
 	if _, err := set.ApplyForced(inv.ctx, func() error { return inv.installSnapshot(dir) }); err != nil {
+		if err == backend.ErrNotStarted {
+			return err
+		}
 		names := set.AllArtifactNames()
 		return inv.usageErr("Snapshot " + id + " was not restored: " + names + " could not be rendered from it. Store, tacctl.yaml and " + names + " are as they were.")
 	}
@@ -854,6 +857,9 @@ func (inv *invocation) restoreLegacy(id string) error {
 	if _, err := set.ApplyForced(inv.ctx, func() error {
 		return store.Import(quiet, inv.importOptions(importArgs{replace: true, src: file}))
 	}); err != nil {
+		if err == backend.ErrNotStarted {
+			return err
+		}
 		return inv.usageErr("Old-style backup " + id + " was not restored. Store, tacctl.yaml and " + set.AllArtifactNames() + " are as they were.")
 	}
 	if err := set.RestartAll(inv.ctx); err != nil {

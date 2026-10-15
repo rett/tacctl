@@ -194,6 +194,7 @@ func (inv *invocation) runShell(r shellRun) (int, *shell.Shell) {
 		// Ctrl-C during a command cancels the invocation's context (Main);
 		// the session carries on, so nothing of it may depend on that.
 		inv.ctx = context.WithoutCancel(inv.ctx)
+		inv.app.SetContext(inv.ctx)
 	}
 	// Live names are asked of 'sudo -n tacctl _completion-names' at most
 	// once per kind every shellNamesTTL.
