@@ -5,7 +5,7 @@ transport for `device config apply`. A scope or a device can say that the
 NETCONF service is enabled, disabled or left alone; `apply` can load,
 check, commit under a confirmed commit and confirm over NETCONF where a
 device offers it, with the command line as before for the rest. The numbered
-list in `CHANGELOG.md` (0.2.10, items 1 to 6) is everything that differs from
+list in `CHANGELOG.md` (0.2.10, items 1 to 7) is everything that differs from
 0.2.9.
 
 "Upgrading" covers 0.2.9 to 0.2.10. Nothing is written to a device unless you
@@ -67,6 +67,13 @@ tacctl device netconf <name> enable|disable|leave|clear
 - Disabling the service ends it for every NETCONF client of the device, not
   only tacctl's; the plan says so.
 
+## Also
+
+`tacctl version --long` has a new layout: the version first, then the
+project, address, licence and copyright, then the commit, the build date
+and the rest with their values aligned. The labels, `commit:` among them,
+are as before.
+
 ## Upgrading from 0.2.9
 
 Upgrade with `sudo tacctl upgrade` as always; a second run changes nothing.
@@ -84,18 +91,19 @@ The upgrade writes nothing to a device and no sudoers drop-in changes.
 
 ## Known limits
 
-- **The NETCONF transport has been exercised against one real device only
-  in part.** It is tested against the fake device, which models the
-  configuration RPCs, the confirmed commit and its cancel,
-  and the replies, the lock, the refusal of a private confirmed commit and
-  the pending marker were checked on a Junos 25.4 switch with raw RPCs.
-  What is still to be confirmed with the release build before `auto` can be
-  trusted on a fleet: the connection and rate limits of the NETCONF service
-  against the sessions one apply opens (N8), the reply shapes of a load with
-  a bad statement among good ones (N3), a dirty shared candidate and another
-  editor's commit during the session (N4), what an open session sees when
-  the service is deleted (N6), and a whole enable and disable compared byte
-  for byte (N7). Until then `--transport cli` is the proven path.
+- **NETCONF is opt-in because it has been tried on one switch and one Junos
+  release.** It is tested against the fake device, and with the release
+  build on a Junos 25.4 lab switch: the read, the check, an apply with the
+  fresh-login proof, the cancel on an interrupt and on a declined hold, the
+  refusal of another editor's staged change, a change of the NETCONF
+  connection limit and the disabling and enabling of the service, each
+  compared with the configuration before it. Not yet run: a large batch
+  against one switch (the NETCONF connection and rate limits), another
+  editor's commit between the gate and the lock, and other Junos releases
+  and platforms (the refusal texts and the pending marker are those of one
+  release). A tacctl that is killed leaves a confirmed commit pending until
+  its window ends, as over the command line; the next run names it and
+  refuses until then.
 - The connection and rate limits are checked at 1 to 250 from the Junos
   reference, not on a device.
 - A change to the NETCONF service is always made over the command line, and
