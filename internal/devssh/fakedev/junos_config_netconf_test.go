@@ -343,7 +343,11 @@ func TestNetconfConfirmedCommitConfirmedBySameSession(t *testing.T) {
 	}
 }
 
-func TestNetconfConfirmedCommitRollsBackWhenTheSessionCloses(t *testing.T) {
+// TestNetconfConfirmedCommitStaysPendingWhenTheSessionCloses pins the lab
+// switch's behaviour (plan N2): a session that closes or dies without
+// confirming leaves the confirmed commit pending to the window's end; the
+// earlier "rolled back at once" was a window of seconds.
+func TestNetconfConfirmedCommitStaysPendingWhenTheSessionCloses(t *testing.T) {
 	srv, dir, clk := newJunos(t, map[string]string{})
 	c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
 	c.rpc("<lock-configuration/>")
@@ -352,9 +356,24 @@ func TestNetconfConfirmedCommitRollsBackWhenTheSessionCloses(t *testing.T) {
 	if !hasStmt(srv.Committed(), "set system login idle-timeout 30") {
 		t.Fatal("not committed")
 	}
-	// closed without confirming: back at once, the window is not waited for
+	// closed without confirming: nothing happens at the close
 	_ = c.conn.Close()
-	waitFor(t, "the rollback", func() bool { return !hasStmt(srv.Committed(), "set system login idle-timeout 30") })
+	time.Sleep(100 * time.Millisecond)
+	if !hasStmt(srv.Committed(), "set system login idle-timeout 30") {
+		t.Fatal("rolled back by the close")
+	}
+	if _, pending := srv.PendingUntil(); !pending {
+		t.Fatal("not pending after the close")
+	}
+	// and the window's end rolls it back
+	clk.Advance(4 * time.Minute)
+	if !hasStmt(srv.Committed(), "set system login idle-timeout 30") {
+		t.Fatal("rolled back before the window's end")
+	}
+	clk.Advance(2 * time.Minute)
+	if hasStmt(srv.Committed(), "set system login idle-timeout 30") {
+		t.Errorf("not rolled back at the window's end:\n%s", srv.Committed())
+	}
 	if _, pending := srv.PendingUntil(); pending {
 		t.Error("still pending")
 	}
@@ -369,6 +388,77 @@ func TestNetconfConfirmedCommitRollsBackWhenTheSessionCloses(t *testing.T) {
 	if strings.Contains(string(b), "idle-timeout") {
 		t.Errorf("committed.set:\n%s", b)
 	}
+}
+
+// The knob netconf.close.rollback=on is the model of a device that does roll
+// a confirmed commit back at the close (the lab switch does not).
+func TestNetconfCloseRollbackKnob(t *testing.T) {
+	srv, _, _ := newJunos(t, map[string]string{"netconf.close.rollback": "on\n"})
+	c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
+	c.rpc("<lock-configuration/>")
+	c.load("set system login idle-timeout 30")
+	mustContain(t, "commit", c.rpc("<commit-configuration><confirmed/><confirm-timeout>300</confirm-timeout></commit-configuration>"), "<commit-success/>")
+	_ = c.conn.Close()
+	waitFor(t, "the rollback", func() bool { return !hasStmt(srv.Committed(), "set system login idle-timeout 30") })
+	if _, pending := srv.PendingUntil(); pending {
+		t.Error("still pending")
+	}
+}
+
+// TestNetconfLoadRollbackCancelsAPendingCommit is the cancel that works on
+// the lab switch (plan N2): in a locked session <load-configuration
+// rollback="1"/> makes the candidate the configuration before the newest
+// commit, the compare is the inverse of the change, and a commit ends the
+// window at once as a normal entry. A new session does the same.
+func TestNetconfLoadRollbackCancelsAPendingCommit(t *testing.T) {
+	for _, fresh := range []bool{false, true} {
+		name := "held session"
+		if fresh {
+			name = "new session"
+		}
+		t.Run(name, func(t *testing.T) {
+			srv, _, clk := newJunos(t, map[string]string{})
+			before := srv.Committed()
+			c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
+			c.rpc("<lock-configuration/>")
+			c.load("set system login idle-timeout 30")
+			mustContain(t, "commit", c.rpc("<commit-configuration><confirmed/><confirm-timeout>600</confirm-timeout><log>apply</log></commit-configuration>"), "<commit-success/>")
+			if fresh {
+				_ = c.conn.Close()
+				time.Sleep(100 * time.Millisecond)
+				c = netconfLogin(t, srv, DefaultUser, DefaultPassword)
+				c.rpc("<lock-configuration/>")
+			}
+			mustContain(t, "load", c.rpc(`<load-configuration rollback="1"/>`), "<ok/>")
+			got := c.rpc(`<get-configuration compare="rollback" rollback="0" format="text"/>`)
+			if !strings.Contains(got, "idle-timeout 30") || !strings.Contains(got, "-") {
+				t.Errorf("compare is not the inverse: %s", got)
+			}
+			mustContain(t, "cancel", c.rpc("<commit><log>tacctl apply cancel x</log></commit>"), "<ok/>")
+			if srv.Committed() != before {
+				t.Errorf("not back to the configuration before the change:\n%s", srv.Committed())
+			}
+			if _, pending := srv.PendingUntil(); pending {
+				t.Error("still pending after the cancel")
+			}
+			h := srv.History()
+			if h[0].Comment != "tacctl apply cancel x" || h[0].Confirmed || h[0].RollbackIn != 0 {
+				t.Errorf("history[0]: %+v", h[0])
+			}
+			got = c.command("show system commit")
+			if strings.Contains(got, "rollback pending") {
+				t.Errorf("a pending line stands:\n%s", got)
+			}
+			if clk.Timers() != 0 {
+				t.Errorf("a timer is left: %d", clk.Timers())
+			}
+		})
+	}
+	// a rollback the device does not keep
+	srv, _, _ := newJunos(t, map[string]string{})
+	c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
+	c.rpc("<lock-configuration/>")
+	mustContain(t, "no such rollback", c.rpc(`<load-configuration rollback="99"/>`), "rpc-error")
 }
 
 func TestNetconfConfirmedCommitRollsBackAtTheWindowsEnd(t *testing.T) {
@@ -524,12 +614,12 @@ func TestNetconfKnobsAct(t *testing.T) {
 		mustContain(t, "lock", c.rpc("<lock-configuration/>"), "lock-denied", "locked by: bob")
 	})
 	t.Run("commit.drop", func(t *testing.T) {
-		srv, _, _ := newJunos(t, map[string]string{"commit.drop": "\n"})
+		srv, _, clk := newJunos(t, map[string]string{"commit.drop": "\n"})
 		c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
 		c.rpc("<lock-configuration/>")
 		c.load("set system login idle-timeout 30")
 		// the connection closes before the answer: no reply, and the
-		// unconfirmed commit goes with the session
+		// unconfirmed commit stays pending to the window's end
 		c.id++
 		_, _ = io.WriteString(c.in, fmt.Sprintf(`<rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="%d">`+
 			`<commit-configuration><confirmed/><confirm-timeout>120</confirm-timeout></commit-configuration></rpc>]]>]]>`, c.id))
@@ -540,19 +630,30 @@ func TestNetconfKnobsAct(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatal("the connection was not closed")
 		}
-		waitFor(t, "the rollback", func() bool { return len(srv.History()) == 3 })
+		time.Sleep(100 * time.Millisecond)
+		if _, p := srv.PendingUntil(); !p || !hasStmt(srv.Committed(), "set system login idle-timeout 30") {
+			t.Errorf("the commit is not pending:\n%s", srv.Committed())
+		}
+		clk.Advance(3 * time.Minute)
 		if hasStmt(srv.Committed(), "set system login idle-timeout 30") {
-			t.Errorf("not rolled back:\n%s", srv.Committed())
+			t.Errorf("not rolled back at the window's end:\n%s", srv.Committed())
 		}
 	})
 	t.Run("commit.drop after-output", func(t *testing.T) {
-		srv, _, _ := newJunos(t, map[string]string{"commit.drop": "after-output\n"})
+		srv, _, clk := newJunos(t, map[string]string{"commit.drop": "after-output\n"})
 		c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
 		c.rpc("<lock-configuration/>")
 		c.load("set system login idle-timeout 30")
 		got := c.rpc("<commit-configuration><confirmed/><confirm-timeout>120</confirm-timeout></commit-configuration>")
 		mustContain(t, "reply", got, "<commit-success/>")
-		waitFor(t, "the rollback", func() bool { return !hasStmt(srv.Committed(), "set system login idle-timeout 30") })
+		time.Sleep(100 * time.Millisecond)
+		if _, p := srv.PendingUntil(); !p {
+			t.Error("not pending after the dropped session")
+		}
+		clk.Advance(3 * time.Minute)
+		if hasStmt(srv.Committed(), "set system login idle-timeout 30") {
+			t.Errorf("not rolled back at the window's end:\n%s", srv.Committed())
+		}
 	})
 	t.Run("verify.fail", func(t *testing.T) {
 		srv, _, _ := newJunos(t, map[string]string{"verify.fail": "deny\n"})

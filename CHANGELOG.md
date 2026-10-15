@@ -67,9 +67,10 @@ current behaviour; this file is where history lives.
    refuses a confirmed commit in a private session, and a locked candidate
    that holds another editor's staged change is refused), checked, committed
    under a confirmed commit and confirmed by the session that made it; a
-   session that closes without confirming is rolled back by the device
-   within seconds, and the fresh login proves the device through NETCONF as
-   before. A change to the NETCONF service itself (`scope netconf`, `device
+   session that closes or dies without confirming leaves the commit pending
+   until the window ends, as over the command line (a failed verification
+   is cancelled at once while tacctl runs), and the fresh login proves the
+   device through NETCONF as before. A change to the NETCONF service itself (`scope netconf`, `device
    netconf`) is always made over the command line, because its verification
    depends on the service: `auto` takes the command line and says so,
    `--transport netconf` refuses it. The device's line, the JSON (`via`,

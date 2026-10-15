@@ -245,26 +245,38 @@ func (c *cancelN) Load(ctx context.Context, l plan.Line) (Loaded, error) {
 
 // --- what differs by design ---------------------------------------------------------------------
 
-// A NETCONF session that is lost after the confirmed commit is the rollback:
-// the device rolls back at once, and the driver names what it finds.
-func TestNetconfSessionDroppedIsRolledBackAtOnce(t *testing.T) {
+// A NETCONF session that is lost after the confirmed commit leaves the
+// commit pending to the window's end (lab, plan N2), as over the command
+// line: the driver cannot cancel from another session and says PENDING
+// until the window's end, which the device then rolls back.
+func TestNetconfSessionDroppedLeavesTheCommitPending(t *testing.T) {
 	for _, knob := range []string{"", "after-output"} {
 		t.Run("drop="+knob, func(t *testing.T) {
 			d := netDevice(t, map[string]string{"commit.drop": knob}, ModeAuto)
 			before := d.srv.Committed()
 			o := apply(t, d, &planner{desired: desiredLines()}, nil)
 			t.Logf("exit %s: %s", o.Exit, o.Line())
-			if o.Exit == ExitApplied || o.Exit == ExitPending {
+			if o.Exit == ExitApplied {
 				t.Fatalf("exit %s: %s\nlog: %q", o.Exit, o.Line(), o.Log)
 			}
-			if d.srv.Committed() != before {
-				t.Errorf("not rolled back:\n%s", d.srv.Committed())
+			if o.Exit != ExitPending && o.Exit != ExitUnknown {
+				t.Fatalf("exit %s: %s", o.Exit, o.Line())
 			}
-			if _, p := d.srv.PendingUntil(); p {
-				t.Error("pending")
+			if d.srv.Committed() == before {
+				t.Error("rolled back by the lost session")
 			}
-			if indexOf(o.Log, plan.ApplyConfirm(o.ID, "alice")) >= 0 {
+			if _, p := d.srv.PendingUntil(); !p {
+				t.Error("not pending")
+			}
+			// a dropped session after the answer lets the driver try the
+			// confirm (it is in the log, and failed: the commit is pending)
+			if knob == "" && indexOf(o.Log, plan.ApplyConfirm(o.ID, "alice")) >= 0 {
 				t.Error("confirmed")
+			}
+			// the window's end is the rollback
+			d.clk.Advance(11 * time.Minute)
+			if d.srv.Committed() != before {
+				t.Errorf("not rolled back at the window's end:\n%s", d.srv.Committed())
 			}
 		})
 	}
@@ -454,11 +466,10 @@ func TestNetconfOpenUnderForeignLock(t *testing.T) {
 	}
 }
 
-// The driver's cancel never reaches Revert on this transport: a commit of
-// tacctl's that is entry 0 carries its window, which is what the state
-// reports as pending, so the revert branch (no pending commit and tacctl's
-// confirmed commit at entry 0) cannot be taken. Every failure after the
-// confirmed commit is run with a counting wrapper.
+// The driver's cancel is the one used while tacctl's commit is still
+// pending: every failure after the confirmed commit is run with a counting
+// wrapper, and a rolled-back outcome comes from one Cancel and no Revert
+// (the revert branch needs a commit that something else confirmed).
 type countRevert struct {
 	*JunosNetconf
 	reverts, cancels atomic.Int32
@@ -474,7 +485,7 @@ func (c *countRevert) Cancel(ctx context.Context, id string) error {
 	return c.JunosNetconf.Cancel(ctx, id)
 }
 
-func TestNetconfRevertIsNeverReached(t *testing.T) {
+func TestNetconfCancelIsTheRollbackWhileTheCommitPends(t *testing.T) {
 	cases := []struct {
 		name  string
 		knobs map[string]string
@@ -509,15 +520,13 @@ func TestNetconfRevertIsNeverReached(t *testing.T) {
 			if cr.reverts.Load() != 0 {
 				t.Errorf("Revert was called %d times (exit %s: %s)", cr.reverts.Load(), o.Exit, o.Line())
 			}
+			if o.Exit == ExitRolledBack && cr.cancels.Load() != 1 {
+				t.Errorf("rolled back with %d cancels (exit %s: %s)", cr.cancels.Load(), o.Exit, o.Line())
+			}
 			if o.Exit == ExitApplied {
 				t.Errorf("applied: %s", o.Line())
 			}
 		})
-	}
-	// and the method itself says so
-	j := &JunosNetconf{m: &masker{}}
-	if err := j.Revert(context.Background(), "x"); !errors.Is(err, ErrNotApplicable) {
-		t.Errorf("Revert: %v", err)
 	}
 }
 
@@ -612,7 +621,7 @@ func TestNetconfReadsAgreeWithTheCommandLine(t *testing.T) {
 	if _, err := nc.RollbackCompare(ctx, plan.MaxRollback+1); !errors.Is(err, ErrNotSent) {
 		t.Errorf("a rollback the device does not keep: %v", err)
 	}
-	if nc.Vendor() != devssh.VendorJuniper || !nc.RollsBackOnClose() {
+	if nc.Vendor() != devssh.VendorJuniper || nc.RollsBackOnClose() {
 		t.Error("vendor or RollsBackOnClose")
 	}
 }

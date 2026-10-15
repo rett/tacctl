@@ -633,9 +633,10 @@ type commitOutcome struct {
 // a pending commit (a 'commit check' from any session confirms it and leaves
 // no history entry, lab L2), else the commit, the confirmed commit's window
 // and the history entry. via is the history entry's way and owner the
-// session whose close rolls an unconfirmed commit back at once (nil for the
-// command line, which only the window's end does). The caller holds d.mu and
-// has checked blocked.
+// session that made the commit (nil for the command line): its close rolls
+// an unconfirmed commit back only under the knob netconf.close.rollback=on,
+// otherwise only the window's end does, as on the device. The caller holds
+// d.mu and has checked blocked.
 func (d *junosDevice) commitApply(sess *jsession, check, confirmed bool, window time.Duration, label int, comment, via string, owner *jsession) commitOutcome {
 	cand := d.candidate(sess)
 	if fails := d.checkFailures(cand); len(fails) > 0 {
