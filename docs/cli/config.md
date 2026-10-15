@@ -48,8 +48,8 @@ config devices confirm-timeout [<minutes>]  Show or set the minutes of the `comm
 config devices apply-confirm-timeout [<minutes>]
                                             Show or set the minutes of the `commit confirmed` of `device config apply`, 3-60 (default 10)
 config devices apply-pause [<seconds>]    Show or set the seconds `device config apply` waits between the devices of a batch after the canary, 0-3600 (default 60; 0 none)
-config devices apply-transport [auto|cli|netconf]
-                                            Show or set how `device config apply` reaches a Junos device: NETCONF where the device answers and can confirm, else the command line (auto, the default), the command line only (cli), or NETCONF only (netconf); `--transport` of one run replaces it
+config devices apply-transport [cli|auto|netconf]
+                                            Show or set how `device config apply` reaches a Junos device: the command line only (cli, the default), NETCONF where the device answers and can confirm, else the command line (auto), or NETCONF only (netconf); `--transport` of one run replaces it
 config sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl
 config sudoers tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for tacctl users with local accounts
 config password-age [days]                  Show or set password age warning threshold (default 90)

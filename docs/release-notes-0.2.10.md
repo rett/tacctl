@@ -13,22 +13,21 @@ run `device config apply` or `device onboard` and answer its question.
 
 ## What changes for existing devices
 
-`device config apply` now chooses its transport per device (`--transport
-auto`, the default). A Junos device whose last read found NETCONF answering,
-and whose login may commit, is applied over NETCONF; every other device is
-applied over the command line as in 0.2.9, and the device's line says why
-(`[via cli: NETCONF port closed at the last read]`). A device never read
-says nothing and uses the command line.
-
-To keep the 0.2.9 behaviour, either run with `--transport cli` or set it
-once:
+Nothing changes for a device you do not opt in: `device config apply`
+writes over the Junos command line, as in 0.2.9. NETCONF is opt-in, per run
+or as a setting:
 
 ```bash
-tacctl config devices apply-transport cli
+tacctl device config apply <name> --transport auto
+tacctl config devices apply-transport auto
 ```
 
-`netconf` never falls back: a device that does not answer or cannot confirm
-is failed with the reason.
+`auto` takes a Junos device whose last read found NETCONF answering, and
+whose login may commit, over NETCONF; every other device goes over the
+command line and the device's line says why (`[via cli: NETCONF port closed
+at the last read]`). `netconf` never falls back: a device that does not
+answer or cannot confirm is failed with the reason. A change to the NETCONF
+service itself is always made over the command line.
 
 Over NETCONF the change is loaded under the candidate's lock (a Junos device
 refuses a confirmed commit in a private session), checked, committed under a

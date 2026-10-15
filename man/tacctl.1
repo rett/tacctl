@@ -2911,12 +2911,12 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config devices apply-pause
 .TP
-.BI "config devices apply\-transport " "[ auto | cli | netconf ]"
+.BI "config devices apply\-transport " "[ cli | auto | netconf ]"
 Show or set how
 .B "device config apply"
-reaches a Junos device: NETCONF where the device's last read found it
-answering and the login may commit, else the command line, and the reason
-(auto, the default); the command line only (cli); or NETCONF only, a device
+reaches a Junos device: the command line only (cli, the default); NETCONF
+where the device's last read found it answering and the login may commit,
+else the command line, and the reason (auto); or NETCONF only, a device
 that cannot being failed (netconf). A run can replace it with
 .BR \-\-transport .
 A change to the NETCONF service is always made over the command line.
@@ -10863,7 +10863,7 @@ integer, 0 to 3600. Default: 60.
 Seconds device config apply waits between the devices of a batch after the canary; 0: none. Set with \fBtacctl config devices apply\-pause\fR.
 .TP
 .B device.apply.transport
-one of auto, cli, netconf. Default: auto.
+one of auto, cli, netconf. Default: cli.
 How device config apply reaches a Junos device: NETCONF where the last read found it answering and the login may commit, else the command line (auto), the command line only (cli), or NETCONF only (netconf). Set with \fBtacctl config devices apply\-transport\fR.
 .TP
 .B device.config.confirm_timeout

@@ -57,9 +57,10 @@ current behaviour; this file is where history lives.
    (`--transport auto|cli|netconf`, `config devices apply-transport`).** The
    check and the apply of a Junos device go over the NETCONF subsystem when
    the device's last read found it answering and the login may commit, and
-   over the command line otherwise. `auto`, the default, says why a device
-   was not taken over NETCONF (`[via cli: NETCONF port closed at the last
-   read]`; a device never read says nothing); `cli` is what 0.2.9 did;
+   over the command line otherwise, when asked for: NETCONF is opt-in and
+   `cli`, the default, is what 0.2.9 did. `auto` says why a device was not
+   taken over NETCONF (`[via cli: NETCONF port closed at the last read]`; a
+   device never read says nothing);
    `netconf` never falls back, and a device that does not answer or cannot
    confirm is failed. `--transport` of one run replaces the setting
    (`device.apply.transport`, a superuser's, written only when set). Over
