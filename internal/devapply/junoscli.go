@@ -117,6 +117,18 @@ func DialJunosWith(ctx context.Context, t devssh.Target, opts ...devssh.CLIOptio
 // can still type the discard or the cancel after the second interrupt
 // whatever context the caller holds; Close ends it.
 func DialJunos(ctx context.Context, t devssh.Target) (*JunosCLI, error) {
+	c, release, err := dialLife(ctx, t)
+	if err != nil {
+		return nil, err
+	}
+	j := NewJunosCLI(c)
+	j.release = release
+	return j, nil
+}
+
+// dialLife dials with the lifetime DialJunos describes and returns the
+// client and the function that ends its context.
+func dialLife(ctx context.Context, t devssh.Target) (*devssh.Client, context.CancelFunc, error) {
 	deadline := time.Now().Add(DefaultConnLifetime)
 	if d, ok := ctx.Deadline(); ok && d.Add(DefaultGrace).Before(deadline) {
 		deadline = d.Add(DefaultGrace)
@@ -131,11 +143,9 @@ func DialJunos(ctx context.Context, t devssh.Target) (*JunosCLI, error) {
 	}
 	if err != nil {
 		release()
-		return nil, err
+		return nil, nil, err
 	}
-	j := NewJunosCLI(c)
-	j.release = release
-	return j, nil
+	return c, release, nil
 }
 
 // Vendor is the registry's word.
@@ -235,15 +245,22 @@ func guardWord(line string) error {
 
 // guardStatement refuses a statement the allow-list does not pass.
 func (j *JunosCLI) guardStatement(l plan.Line) error {
+	j.mu.Lock()
+	allow := j.allow
+	j.mu.Unlock()
+	return checkStatement(allow, l)
+}
+
+// checkStatement is the guard both transports apply to every statement
+// before anything is sent: a statement, not an apply word, nothing a shell
+// would take for more than one line, and a statement the allow-list passes.
+func checkStatement(allow func(string) error, l plan.Line) error {
 	if !isStatement(l.Text) || plan.IsApplyWord(l.Text) {
 		return fmt.Errorf("%w: not a statement: %s", ErrNotSent, cut(l.Shown()))
 	}
 	if strings.ContainsAny(l.Text, "?\n\r") {
 		return fmt.Errorf("%w: a statement with '?' or a line break cannot be typed in a shell: %s", ErrNotSent, cut(l.Shown()))
 	}
-	j.mu.Lock()
-	allow := j.allow
-	j.mu.Unlock()
 	if allow == nil {
 		return fmt.Errorf("%w: no allow-list: %s", ErrNotSent, cut(l.Shown()))
 	}
