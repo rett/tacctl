@@ -75,6 +75,14 @@ current behaviour; this file is where history lives.
    not held under `Not released:`, releases the rest and exits 1. One device
    is held, asked and reported exactly as before.
 
+7. **A source interface typed inside the server group is named as an older
+   form.** `ip tacacs source-interface` under `aaa group server tacacs+ <G>`
+   (or the RADIUS equivalent) was listed with the group's other leaves as a
+   statement nobody explained. The plan and the diff now say that the group
+   has its own source interface, an older per-group form, and that the
+   standard sets one for the device. Nothing is rendered or removed
+   differently.
+
 ## 0.2.11 (2026-10-15)
 
 1. **`tacctl group preset roles` shows what each setting changes.** Under every
