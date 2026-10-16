@@ -194,6 +194,8 @@ Deferred:
 
 ## 3g. Findings from comparing the standard block with three real Cisco images (filed 2026-10-11, for the WP13.2 review)
 
+**Closed in 0.2.12 (2026-10-15).** The role line that no router image stores (`clear mac address-table dynamic`) and `monitor capture` left the operator list in 0.2.5 (`stale_025.go`), so the shipped presets hold nothing to split by platform; a site that kept the 0.2.3 list is warned by the upgrade and by `config validate`. The second bullet (a source interface inside the group) is named as an older per-group form by the plan and the diff (CHANGELOG `## 0.2.12`, item 7). What follows is the finding as filed.
+
 Pulling a 12.4 router image, an IOS 15.6 router image and an IOS-XE 16.7 image
 against the standard block (all three on TACACS+) leaves two kinds of
 difference the comparison reports but a paste cannot remove:
