@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -72,6 +73,7 @@ func TestGroupAddAtPriv15RecordsItsTierWithoutLockout(t *testing.T) {
 func ambiguousSandbox(t *testing.T, yaml *string) *sandbox {
 	t.Helper()
 	sb := newSandbox(t, true)
+	sandboxTarball(t, sb)
 	sb.write("state/linux-hosts", "authsrv|local||lab|127.0.0.1|\n", 0o600)
 	for _, a := range [][]string{{"group", "add", "neteng", "15", "EN-CLASS"}, {"user", "move", "bob", "neteng"}} {
 		if sb.cfgRun("", a, nil); sb.code != 0 {
@@ -86,6 +88,21 @@ func ambiguousSandbox(t *testing.T, yaml *string) *sandbox {
 		sb.write("state/tacctl.yaml", *yaml, 0o600)
 	}
 	return sb
+}
+
+// sandboxTarball gives the sandbox its own Linux directory with a stand-in
+// for the pam_tacplus tarball, so a script is written whether or not the
+// machine running the tests has the real one.
+func sandboxTarball(t *testing.T, sb *sandbox) {
+	t.Helper()
+	dir := sb.path("var-lib", "linux")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pam_tacplus-1.7.0.tar.gz"), []byte("not really a tarball\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sb.env = append(sb.env, "TACCTL_LINUX_DIR="+dir)
 }
 
 // S2: a group at priv-lvl 15 without a tier setting (the file is missing,
