@@ -3,7 +3,7 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.12 (unreleased)
+## 0.2.12 (2026-10-16)
 
 1. **`config get` and `config get-list` complete every key of the schema.**
    Tab used to offer a short fixed list of top-level keys. It now offers
