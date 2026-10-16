@@ -87,7 +87,7 @@ func TestApplyCheckOverNetconf(t *testing.T) {
 	if code != 0 || len(rows) != 1 || rows[0]["via"] != "cli" {
 		t.Errorf("the default after a hello: exit %d %v\n%s", code, rows, errs)
 	}
-	if code, out, _ = b.apply("example-sw1", "--check"); strings.Contains(out, "[via netconf]") {
+	if _, out, _ = b.apply("example-sw1", "--check"); strings.Contains(out, "[via netconf]") {
 		t.Errorf("the default is not the command line:\n%s", out)
 	}
 }

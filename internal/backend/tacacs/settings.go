@@ -264,7 +264,8 @@ func (b *Backend) unitsStage(dir string) bool {
 // restarts, starts (new) or stops (removed) only that listener's instance.
 // An install that is not converted is converted first. On failure
 // tacctl.yaml, the drop-ins and the units are as they were, the messages
-// are written and ErrFailed returned.
+// are written and ErrFailed returned. It holds the apply lock from before
+// the copies through the restart and the restore that may follow it.
 func (b *Backend) settingsApply(ctx context.Context, target string, writer func() error) error {
 	out := b.out()
 	if !b.overridesReadable() {
@@ -275,6 +276,13 @@ func (b *Backend) settingsApply(ctx context.Context, target string, writer func(
 		out.Error("Cannot create " + stateDir + ": " + err.Error())
 		return backend.ErrFailed
 	}
+	// Held from before the copies to after the last restore or restart: a
+	// command that changes the files in between would be put back with them.
+	unlock, err := b.env.HoldApply(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	keep, err := os.MkdirTemp(stateDir, ".units.")
 	if err != nil {
 		out.Error("Cannot create " + filepath.Join(stateDir, ".units.*") + ": " + err.Error())

@@ -168,8 +168,9 @@ scope netconf <name> [show|enable|disable|leave] [--connection-limit <n>|none]
     `none` to remove it; a limit's statement enables the service by itself, so with a limit the
     statement is the limit's), `disable` plans `delete system services netconf` (and drops the
     limits), `leave` (the default, and what removes the scope's setting) plans and compares nothing
-    of it; a device's own setting (`device netconf`) wins. `show` prints the setting. Stored as
-    `netconf_scope.<name>.*`, only when set
+    of it; a device's own setting (`device netconf`) wins. The limits bound the service's own port
+    (830); tacctl reaches NETCONF through the SSH subsystem, which they do not bound on Junos 25.4.
+    `show` prints the setting. Stored as `netconf_scope.<name>.*`, only when set
 
 scope block <name> {juniper|cisco} list
 

@@ -32,10 +32,10 @@ import (
 var groupSpecs = map[string]Spec{
 	"list": {},
 	"add": {MinArgs: 3, MaxArgs: 3, Args: []string{"", "", ""}, Flags: []Flag{
-		{Names: []string{"--tier"}, Value: true, Kind: "readonly|operator|engineer|superuser"},
-		{Names: []string{"--wti-level"}, Value: true, Kind: "viewonly|user|superuser|administrator"}}},
+		{Names: []string{"--tier"}, Value: true, Kind: strings.Join(conf.Tiers, "|")},
+		{Names: []string{"--wti-level"}, Value: true, Kind: strings.Join(conf.WTILevels, "|")}}},
 	"remove": {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
-	"edit":   {MinArgs: 3, MaxArgs: 3, Args: []string{KindGroups, "priv-lvl|juniper-class|wti-level|tier", ""}},
+	"edit":   {MinArgs: 3, MaxArgs: 3, Args: []string{KindGroups, "priv-lvl|juniper-class|wti-level|tier", After("tier", "auto|"+strings.Join(conf.Tiers, "|"))}},
 	"show":   {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
 	"preset roles": {Flags: []Flag{
 		{Names: []string{"--dry-run"}}, {Names: []string{"--force"}}}},
@@ -144,6 +144,8 @@ func (inv *invocation) groupList([]string) error {
 		return err
 	}
 	t := ui.NewTable("Groups", ui.Left("GROUP"), ui.Left("CISCO PRIV-LVL"), ui.Left("JUNIPER CLASS"), ui.Left("USERS"))
+	c := inv.app.Conf()
+	hasEngineer := false
 	for _, row := range m.GroupRows() {
 		f := strings.SplitN(row, "|", 4)
 		for len(f) < 4 {
@@ -153,10 +155,19 @@ func (inv *invocation) groupList([]string) error {
 			continue
 		}
 		t.Add(f[0], f[1], f[2], f[3])
+		if tier.ForGroup(policy.GroupTier(c, f[0]), f[1]) == tier.Engineer {
+			hasEngineer = true
+		}
 	}
 	inv.echo("")
 	inv.write(t.String())
 	inv.echo("")
+	// The engineer tier exists only through a tier setting, so an install
+	// that has no engineers has to be told how to get one. Not while the tier
+	// settings are a hand-edit problem: the warnings elsewhere own that.
+	if !hasEngineer && policy.TierProblem(c) == "" {
+		inv.app.Out.Info("No group has the engineer tier; a superuser gives it with 'tacctl group preset roles' (the role preset) or 'tacctl group edit <group> tier engineer'.")
+	}
 	return nil
 }
 
@@ -970,6 +981,9 @@ func (inv *invocation) groupPrivilege(args []string) error {
 		switch {
 		case captured(merged) == "":
 			inv.echo("  (no mappings — group's priv-lvl uses Cisco defaults)")
+			if c.HasOverride(path) && len(policy.DefaultPrivileges(group)) > 0 {
+				inv.echo("  (tacctl.yaml stores an empty list that hides the shipped default; 'tacctl group privilege reset " + group + "' removes it)")
+			}
 		case c.HasOverride(path):
 			inv.echoE("  Source: " + b + "explicit" + nc + " (tacctl.yaml: " + path + ")")
 			inv.echo("")

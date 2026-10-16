@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rett/tacctl/internal/applylock"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/backend/faketest"
 	"github.com/rett/tacctl/internal/conf"
@@ -46,9 +47,12 @@ type swEnv struct {
 	set      *backend.Set
 	tac      *faketest.Backend
 	fake     *faketest.Backend
-	stdout   *bytes.Buffer
-	stderr   *bytes.Buffer
+	stdout   *lockedBuf
+	stderr   *lockedBuf
 	fakeConf string
+	// lock is this invocation's apply lock (Env.ApplyLock and the Conf's
+	// hook, as the App wires them).
+	lock *applylock.Lock
 }
 
 // newSwEnv is the setup of backend_cli.bats: the multiscope store,
@@ -57,7 +61,7 @@ type swEnv struct {
 func newSwEnv(t *testing.T) *swEnv {
 	t.Helper()
 	w := t.TempDir()
-	e := &swEnv{t: t, w: w, stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{}}
+	e := &swEnv{t: t, w: w, stdout: &lockedBuf{}, stderr: &lockedBuf{}}
 	for _, d := range []string{"etc", "state", "tmp", "fake", "tac"} {
 		if err := os.MkdirAll(filepath.Join(w, d), 0o700); err != nil {
 			t.Fatal(err)
@@ -80,7 +84,11 @@ func newSwEnv(t *testing.T) *swEnv {
 	snaps.Chown = nil
 	cfg := conf.Load(e.p.Overrides, e.reg.IDs())
 	cfg.Owner = nil
-	e.env = &backend.Env{Paths: e.p, Conf: cfg, Out: out, Now: time.Now, Snapshots: snaps}
+	e.lock = applylock.New(e.p.StateDir)
+	cfg.Lock = func() (func(), error) {
+		return e.lock.Acquire(context.Background(), func() { out.Info(backend.WaitingMsg) })
+	}
+	e.env = &backend.Env{Paths: e.p, Conf: cfg, Out: out, Now: time.Now, Snapshots: snaps, ApplyLock: e.lock}
 	e.set = backend.NewSet(e.reg, e.env)
 
 	data, err := os.ReadFile("../../tests/fixtures/store.multiscope.yaml")

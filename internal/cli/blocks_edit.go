@@ -339,6 +339,7 @@ func (c *blockCtx) runEditor(name string, seed []byte) (editorRun, error) {
 	// told by it, not stopped): it neither ends the edit nor, being the
 	// editor's, the steps after it.
 	inv.ctx = context.WithoutCancel(inv.ctx)
+	inv.app.SetContext(inv.ctx) // the tacctl.yaml writers wait on this one
 	sigc := make(chan os.Signal, 4)
 	signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(sigc)

@@ -129,6 +129,19 @@ complete_words() {
     assert_output "--yes"
 }
 
+@test "completion: the tier, WTI level and SNMP privacy words come from the code's lists" {
+    complete_words tacctl group add eng 15 EN-CLASS --tier ""
+    assert_output "$(printf 'readonly\noperator\nengineer\nsuperuser')"
+    complete_words tacctl group add eng 15 EN-CLASS --wti-level ""
+    assert_output "$(printf 'viewonly\nuser\nsuperuser\nadministrator')"
+    complete_words tacctl group edit ops tier ""
+    assert_output "$(printf 'auto\nreadonly\noperator\nengineer\nsuperuser')"
+    complete_words tacctl config snmp v3-user monitor --priv ""
+    assert_output "aes128"
+    complete_words tacctl scope snmp lab v3-user monitor --auth ""
+    assert_output "$(printf 'sha\nsha256')"
+}
+
 @test "completion: config offers render with --dry-run and --out, and listen takes --backend and --listener" {
     complete_words tacctl config ren
     assert_output "render"

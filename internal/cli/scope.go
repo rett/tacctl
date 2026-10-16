@@ -29,6 +29,7 @@ import (
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/shellquote"
+	"github.com/rett/tacctl/internal/snmp"
 	"github.com/rett/tacctl/internal/snmpcred"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/ui"
@@ -70,8 +71,8 @@ var scopeSpecs = map[string]Spec{
 	"snmp": {MinArgs: 1, MaxArgs: -1, Args: []string{KindScopes, "show|version|community|v3-user|clients|contact|port|timeout|clear|test",
 		After("clients", "list|add|remove"), ""}, Flags: []Flag{
 		{Names: []string{"--reveal"}, Only: "show"}, {Names: []string{"--clear"}, Only: "contact"},
-		{Names: []string{"--stdin"}}, {Names: []string{"--auth"}, Value: true, Only: "v3-user", Kind: "sha|sha256"},
-		{Names: []string{"--priv"}, Value: true, Only: "v3-user"}}},
+		{Names: []string{"--stdin"}}, {Names: []string{"--auth"}, Value: true, Only: "v3-user", Kind: strings.Join(snmp.AuthProtocols, "|")},
+		{Names: []string{"--priv"}, Value: true, Only: "v3-user", Kind: strings.Join(snmp.PrivProtocols, "|")}}},
 }
 
 func scopeCmd(inv *invocation) *cobra.Command {

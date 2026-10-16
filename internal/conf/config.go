@@ -31,6 +31,16 @@ type Config struct {
 	// best-effort 'chown tacquito:tacquito' of 0.1.16; ok false skips the
 	// chown. The default looks up the tacquito user and group.
 	Owner func() (uid, gid int, ok bool)
+	// Lock, when set, is the apply lock: every write of the file (write,
+	// edit, UnsetMany) takes it, after the directory exists and before the
+	// directory flock, and gives it back (the returned function) when the
+	// write is done, so a write waits for a command that is putting whole
+	// files back and the other way round. An error is the write's error,
+	// nothing written. The App sets it to the process's applylock.Lock,
+	// which is reentrant: a write inside a StoreApply writer does not wait
+	// for the transaction it is part of. nil (tests, snapshot views) is no
+	// lock.
+	Lock func() (release func(), err error)
 
 	overrides *yamlpy.Map
 	problem   string

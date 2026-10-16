@@ -3,6 +3,118 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.11 (unreleased)
+
+1. **`tacctl group preset roles` shows what each setting changes.** Under every
+   setting that is not unchanged, `--dry-run` (and the confirmation of a real
+   run) prints the value now and the preset's, the Cisco rules and the Junos
+   deny-set patterns removed and added, in the form `group reset` uses; a
+   setting that is written without changing what applies says so (the WTI
+   level or tier that follows the priv-lvl and is now set explicitly). A step
+   that is unchanged prints nothing more. Before, the line said only `set`,
+   `kept (pass --force)` or `replaced`.
+
+2. **A session start brings the seen data up to date in the background.** A
+   login used to show in LAST SEEN only after someone ran `device scan`.
+   An interactive session of the console or of `tacctl shell` (operator tier
+   and up) now starts `device scan --if-stale --quiet` as it opens, detached,
+   with its output thrown away, under the same sudo rules as the session's
+   own lines; nothing a person types waits for it, and `list` and `show` still
+   read the cache only. `--if-stale` does nothing when the cache is younger
+   than five minutes or another scan holds it (sessions that start together
+   run one scan, the others leave at once), and re-scans a device's host keys
+   only when its last scan is a day old, so a session start does not touch
+   every device; `--quiet` prints nothing. Both are options of `device scan`
+   for use by hand too; `--if-stale` refuses `--full` and `--since`. When the
+   seen data is an hour old or more (no session has started since), the
+   footer of `device list` and the `Last seen` line of `device show` say how
+   old it is and to run `tacctl device scan` (a read-only caller is told that
+   an operator can).
+
+3. **`tacctl group list` says when no group has the engineer tier.** The
+   engineer tier exists only through a tier setting, so an install without
+   the role looked the same as one that had decided against it. When the
+   table has no group at the engineer tier, one `[INFO]` line follows it
+   (for every caller tier) naming the two ways to give it: `group preset
+   roles` and `group edit <group> tier engineer`. The line is not printed
+   once any group has the tier, nor while a `tier.<group>` setting of
+   `tacctl.yaml` is not a tier (`config validate` and the other warnings
+   own that).
+
+4. **`config validate` warns about an empty `privileges.<group>` on a
+   built-in group that ships a list.** An empty list in `tacctl.yaml`
+   (what removing the last mapping once stored) hides the shipped default
+   of `readonly` (`show running-config`) and `operator` (`undebug all`). The
+   warning is a `Group settings:` line naming the shipped mappings and
+   `group privilege reset <group>`, which removes it; the exit code is
+   unchanged. `group privilege list` of such a group no longer reads as if
+   the group had never been given a list: a second line says that
+   `tacctl.yaml` stores an empty list that hides the shipped default.
+
+5. **`config devices` help names the apply transport default as `cli`.**
+   The one-line help of `tacctl config devices` said the apply transport
+   defaults to `auto`; it is `cli` (`config devices apply-transport`), as
+   the manual and the documentation already said.
+
+6. **Tab completion offers the values of `--tier`, `--wti-level`, `--priv`
+   and `group edit <group> tier`.** `group add --tier` and `--wti-level`
+   and `group edit <group> tier` (with `auto`) take their words from the
+   lists the commands validate against, and `--priv` of `config snmp v3-user`
+   and `scope snmp v3-user` offers `aes128`, as `--auth` of the same
+   verbs offers `sha` and `sha256`.
+
+7. **Every release is rebuilt and compared by a published check.** The
+   repository gains its first workflow, `release-reproducible`: when a
+   release is published it checks out the tag on a clean runner, installs the
+   Go version that tag's `bin/tacctl.sh` names, rebuilds both binaries and
+   compares the sums with the published `SHA256SUMS`, whose signature it
+   verifies with the tag's own `release/allowed_signers` (no key and no
+   secret are involved). It also checks that the rebuilt binaries have the
+   test knobs off and the tag's commit stamped in, and it can be run by hand
+   for an older tag. The logic is one script,
+   `tests/tools/release-reproduce.sh` (`make release-reproduce TAG=<tag>`
+   runs it locally), which replaces the second build of `docs/releasing.md`.
+   Around it, `make release-verify` also checks both binaries for test knobs
+   and commit without running them, and `make release-assets` first checks
+   that the release metadata is in place (the dated CHANGELOG heading, the
+   man page's `.TH` line, the release notes file). No change to the binary
+   or the commands.
+
+8. **The NETCONF limits are documented as the service port's.** A lab run
+   showed that `--connection-limit` and `--rate-limit` bound the NETCONF
+   service on TCP 830 and not the SSH subsystem that `device config apply`
+   and the pull use (seven simultaneous sessions and four applies inside a
+   minute were not refused on Junos 25.4 with the limits at 5 and 10). The
+   manual page and `docs/cli/scope.md` say so; nothing else changes.
+
+9. **Commands that change the configuration wait for each other.** A
+   command that failed put back the whole of `store.yaml`, `tacctl.yaml` and
+   `rendered.json` from the copies it took at its start, and with them what
+   another command had written in between, which printed success. The next
+   change then found the rendered file recorded as hand-edited and was
+   refused. Every command that changes the store or `tacctl.yaml` now takes
+   one lock, `.store-apply.lock` in the state directory, from before it
+   copies the files it may put back to after its last restart: a second
+   command prints `Waiting for another tacctl command that is changing the
+   configuration...` once and runs when the first is done, and Ctrl-C ends
+   the wait with `Nothing was changed.` and exit 1. It covers the store commands, `config render`,
+   `config listen|loglevel|metrics`, the RADIUS listener changes,
+   `backend enable|disable`, `store import` and `store rollback`, `backup
+   restore`, every write of `tacctl.yaml`, and `upgrade` after its
+   self-update. A file that was edited by hand while a command ran is saved
+   as `<file>.overwritten-<stamp>` in the state directory (and named in a
+   warning) before the command puts its own copy back. A read command takes
+   no lock.
+
+10. **`config validate` names what an interrupted command left behind.** A
+    command that is killed while it changes the configuration leaves a
+    private copy of `tacctl.yaml`, usually with `store.yaml` (secrets
+    included), in the state directory: `.apply.*`, `.restore.*`, `.enable.*`,
+    `.units.*` or `.disable.*`. When one is older than ten minutes and no
+    command holds the apply lock, `config validate` prints a `Leftovers:`
+    warning naming it and what to check before removing it. The exit code is
+    unchanged.
+
 ## 0.2.10 (2026-10-15)
 
 1. **`tacctl scope netconf` and `tacctl device netconf`: the NETCONF service

@@ -649,6 +649,18 @@ func (l *lockedBuf) String() string {
 	return l.b.String()
 }
 
+func (l *lockedBuf) Len() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Len()
+}
+
+func (l *lockedBuf) Reset() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.b.Reset()
+}
+
 // start runs tacctl as alice in the background and returns what it prints
 // and the channel its exit status arrives on, so a test can watch the run.
 func (b *pullBox) start(out *lockedBuf, args ...string) chan int {

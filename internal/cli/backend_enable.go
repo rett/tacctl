@@ -176,6 +176,10 @@ func (s *switcher) applyError(err error) int {
 //     disabled, and the backends the render had restarted are restarted
 //     again. The store was not changed by any of it.
 //
+// Steps 3 and 4, with the copies and the undo, run under the apply lock
+// (backend.Env.HoldApply): another command that changes the configuration
+// waits, and is not put back with the files.
+//
 // Whatever fails exits 1 (3 when a gate refused: a rendered file was edited
 // by hand), saying what state it left.
 func (s *switcher) enable(args []string) error {
@@ -216,12 +220,29 @@ func (s *switcher) enable(args []string) error {
 		}
 	}
 
-	newEnabled := append(slices.Clone(enabled), id)
 	keptNote := ""
 	if fresh {
 		keptNote = "; the install stays on this machine"
 	}
 	p := s.set.Env.Paths
+	// The apply lock is held from before the copies to after the undo: the
+	// files they put back are not another command's to lose.
+	unlock, err := s.set.Env.HoldApply(s.ctx)
+	if err != nil {
+		return exit(s.applyError(err))
+	}
+	defer unlock()
+	// What was read before the install and the prompt may be stale: another
+	// command that changed the set of enabled backends has finished since.
+	enabled, err = s.enabled()
+	if err != nil {
+		return err
+	}
+	if slices.Contains(enabled, id) {
+		s.out.Info("Backend '" + id + "' is already enabled.")
+		return nil
+	}
+	newEnabled := append(slices.Clone(enabled), id)
 	keep, err := os.MkdirTemp(p.StateDir, ".enable.")
 	if err != nil {
 		return s.fail("Cannot create " + filepath.Join(p.StateDir, ".enable.*") + ": " + err.Error())
@@ -411,6 +432,13 @@ func (s *switcher) disableLegacy(remaining []string) int {
 	keep := f.Name()
 	_ = f.Close()
 	defer func() { _ = os.Remove(keep) }()
+	// Held from before the copy to after the restore (the state directory
+	// exists now; in legacy mode it may not have before).
+	unlock, err := s.set.Env.HoldApply(s.ctx)
+	if err != nil {
+		return s.applyError(err)
+	}
+	defer unlock()
 	// 'cp -p tacctl.yaml keep 2>/dev/null || : > keep'
 	if copyKeep(p.Overrides, keep) != nil {
 		_ = os.WriteFile(keep, nil, 0o600)

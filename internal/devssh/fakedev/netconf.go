@@ -182,13 +182,6 @@ func esc(s string) string {
 	return b.String()
 }
 
-// rpc answers one <rpc> of a session without the configure model; end is
-// true after <close-session/>.
-func (s *Server) rpc(raw []byte) (reply string, end bool) {
-	reply, end, _ = s.rpcFor(nil, raw)
-	return reply, end
-}
-
 // rpcFor answers one <rpc> for a session of the configure model (ns is nil
 // when it is off); end is true after <close-session/> and drop says whether
 // the connection closes (dropSilent: before the reply, dropAfterOutput:

@@ -9,9 +9,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/rett/tacctl/internal/applylock"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/execx"
@@ -42,15 +44,56 @@ type tenv struct {
 	env    *backend.Env
 	set    *backend.Set
 	b      *Backend
-	stdout *bytes.Buffer
-	stderr *bytes.Buffer
+	stdout *safeBuf
+	stderr *safeBuf
 	sleeps []time.Duration
+	// lock is this invocation's apply lock (Env.ApplyLock and the Conf's
+	// hook, as the App wires them).
+	lock *applylock.Lock
+}
+
+// safeBuf is a buffer a test may read while a command it started in a
+// goroutine writes.
+type safeBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *safeBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *safeBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+func (s *safeBuf) Len() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Len()
+}
+
+func (s *safeBuf) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.b.Reset()
 }
 
 func newTenv(t *testing.T, extraEnv ...string) *tenv {
 	t.Helper()
-	w := t.TempDir()
-	e := &tenv{t: t, w: w, run: &fake.Runner{}, stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{}}
+	return newTenvAt(t, t.TempDir(), extraEnv...)
+}
+
+// newTenvAt is a test environment on the tree w. Two of them on one tree
+// are two tacctl processes: each has its own Env, Conf and apply lock, and
+// they share the files.
+func newTenvAt(t *testing.T, w string, extraEnv ...string) *tenv {
+	t.Helper()
+	e := &tenv{t: t, w: w, run: &fake.Runner{}, stdout: &safeBuf{}, stderr: &safeBuf{}}
 	for _, d := range []string{"etc", "state", "log", "bin", "systemd", "tmp"} {
 		if err := os.MkdirAll(filepath.Join(w, d), 0o700); err != nil {
 			t.Fatal(err)
@@ -91,6 +134,11 @@ func newTenv(t *testing.T, extraEnv ...string) *tenv {
 		Snapshots: snaps,
 	}
 	e.env.Conf.Owner = nil
+	e.lock = applylock.New(e.p.StateDir)
+	e.env.ApplyLock = e.lock
+	e.env.Conf.Lock = func() (func(), error) {
+		return e.lock.Acquire(context.Background(), func() { out.Info(backend.WaitingMsg) })
+	}
 	e.b = New(e.env)
 	e.b.Chown = func(string) {}
 	e.b.Sleep = func(_ context.Context, d time.Duration) { e.sleeps = append(e.sleeps, d) }

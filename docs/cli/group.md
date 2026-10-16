@@ -5,7 +5,8 @@
 ```
 group list
 
-    List all groups with Cisco priv-lvl, Juniper class, user count
+    List all groups with Cisco priv-lvl, Juniper class, user count (a line after the table says
+    when no group has the engineer tier and how to give it)
 
 group show <name>
 
@@ -73,6 +74,7 @@ group reset <name> [--preset] [--dry-run] [--yes]
 group privilege list <group>
 
     Show Cisco privilege mappings and their modes
+    (names an empty stored list that hides a shipped one)
 
 group privilege add <group> '<cmd>'[,'<cmd>'...]
 
@@ -112,7 +114,7 @@ group junos <group> deny-commands|deny-configuration
 
 ## Role preset
 
-Opt-in, and the way to have the optional `engineer` group: `tacctl group preset roles [--dry-run] [--force]` writes starting values for four roles: the built-in `readonly` as the viewer, `operator`, an `engineer` group it creates (priv-lvl 15, class `EN-CLASS`, tier `engineer`) and `superuser`. It changes nothing that already has a value unless `--force` replaces it, and moves no user. `--dry-run` shows each setting and whether it would be set, kept or replaced; run it first. The `engineer` group it creates is an ordinary group, not a protected built-in: `group rm engineer` removes it and `group reset engineer` puts its preset values back. What it adds to the shipped defaults:
+Opt-in, and the way to have the optional `engineer` group: `tacctl group preset roles [--dry-run] [--force]` writes starting values for four roles: the built-in `readonly` as the viewer, `operator`, an `engineer` group it creates (priv-lvl 15, class `EN-CLASS`, tier `engineer`) and `superuser`. It changes nothing that already has a value unless `--force` replaces it, and moves no user. `--dry-run` shows each setting and whether it would be set, kept or replaced, and under each one what changes: the value now and the preset's, the rules and deny-set patterns removed (`-`) and added (`+`) as `group reset` shows them; run it first. The confirmation of a real run shows the same. The `engineer` group it creates is an ordinary group, not a protected built-in: `group rm engineer` removes it and `group reset engineer` puts its preset values back. What it adds to the shipped defaults:
 
 - **Cisco, viewer and operator:** a `show` deny in front of the shipped permits for the secret-bearing, unfiltered sub-trees (`running-config view full`, `tech-support`, `startup-config`, `derived-config`, `key chain`, `snmp community|user`, `archive log`; the viewer also `crypto`, the operator `crypto isakmp key` and `crypto key`). The deny has a `--match`, so a `show` that misses it falls through to the permit.
 - **Cisco, engineer:** 34 rules that permit everything except the exec-level lifecycle (`reload`, `delete`, `erase`, `format`, `fsck`, `rename`, `mkdir`, `rmdir`, `request`, `install`, `software`, `upgrade`, `issu`, `write erase`, `archive` other than `archive config`), `copy` that would load a configuration or write flash (saving to `startup-config`, flash or a remote URL and exporting a file are permitted), `configure network|memory` and `configure replace <url>`, the shell escapes (`tclsh`, `guestshell`, `app-hosting`, `iox`, `scripting`), `hw-module`, `redundancy`, `switch`, `test aaa`, `debug all|aaa|tacacs|radius`, `clear aaa|logging|archive`, and the `do` form of those. **Configuration mode is not restricted as a mode**: an engineer can change AAA, the TACACS+ and RADIUS servers and keys, lines, privilege levels, SNMP and the management ACL, so that tacctl's push can run with the engineer's own login. A mistake there can lock a device out. Because tacquito sees only a command's first word and arguments and cannot tell exec from configuration mode, the rules apply inside it as well: `archive` (other than `archive config`), `switch`, `redundancy`, `hw-module`, `iox`, `app-hosting`, `scripting`, `software` and a bare `configure` are refused there. A site that wants a boundary adds rules, for example `tacctl group commands add engineer aaa --action deny` (a rule goes before the catchall).

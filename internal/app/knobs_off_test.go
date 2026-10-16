@@ -52,3 +52,9 @@ func TestKnobsIgnoredWithoutTag(t *testing.T) {
 		t.Errorf("malformed knob must be ignored, got %v", err)
 	}
 }
+
+func TestApplyPauseOff(t *testing.T) {
+	if k, err := LoadKnobs(paths.NewEnv([]string{"TACCTL_TEST_APPLY_PAUSE=gate:5"})); err != nil || k.ApplyPause() != nil {
+		t.Errorf("a production build read the pause knob: %v", err)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
 	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/snmp"
 )
 
 // The scope and group families and 'config allow|deny|mgmt-acl' end to
@@ -442,7 +444,7 @@ func TestScopeGroupConfigSpecs(t *testing.T) {
 					_, native := completionKinds[k]
 					_, argKind := completionArgKinds[k]
 					// a one-word list of fixed words is a list too
-					if k != "" && !native && !argKind && !strings.Contains(k, "|") && k != KindFile && k != "juniper" {
+					if k != "" && !native && !argKind && !strings.Contains(k, "|") && k != KindFile && k != "juniper" && !slices.Contains(snmp.PrivProtocols, k) {
 						t.Errorf("%s %s: kind %q is no completion kind", family, c.Name(), k)
 					}
 				}

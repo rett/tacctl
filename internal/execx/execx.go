@@ -38,6 +38,10 @@ type Cmd struct {
 	// terminal, a live log); Result then holds only what was not streamed.
 	Stdout io.Writer
 	Stderr io.Writer
+	// Detach starts the program in a session of its own, outside ctx and
+	// with its output thrown away: it goes on when the caller's session
+	// ends (a background scan at the start of a login).
+	Detach bool
 }
 
 // Argv is the program and arguments actually run, AsUser applied.
@@ -113,12 +117,22 @@ func (r Real) Run(ctx context.Context, c Cmd) (Result, error) {
 // Start starts c and returns at once.
 func (Real) Start(ctx context.Context, c Cmd) (Process, error) {
 	argv := c.Argv()
+	if c.Detach {
+		ctx = context.Background()
+	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Stdin = c.Stdin
 	cmd.Env = c.Env
 	cmd.Dir = c.Dir
 	if c.Credential != nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: c.Credential}
+	}
+	if c.Detach {
+		if cmd.SysProcAttr == nil {
+			cmd.SysProcAttr = &syscall.SysProcAttr{}
+		}
+		cmd.SysProcAttr.Setsid = true
+		c.Stdout, c.Stderr = io.Discard, io.Discard
 	}
 	p := &realProcess{ctx: ctx, cmd: cmd}
 	cmd.Stdout = &p.stdout

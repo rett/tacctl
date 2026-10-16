@@ -1,0 +1,70 @@
+# Rebuilds a published release from a clean checkout of its tag, with the Go
+# toolchain that tag's bin/tacctl.sh names, and compares the result with the
+# published SHA256SUMS (tests/tools/release-reproduce.sh; docs/releasing.md).
+# It holds no secret and no signing key: the signature it checks is the
+# release key's public half, release/allowed_signers of the tag.
+name: release-reproducible
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to rebuild and compare (for example 0.2.11)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # The script of this workflow's own ref (the tag itself for a release;
+      # the branch picked for a manual run, so an older tag can be re-checked).
+      - name: Check out the script
+        uses: actions/checkout@v4.2.2
+        with:
+          path: tools
+          persist-credentials: false
+      - name: Check out the tag
+        uses: actions/checkout@v4.2.2
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          path: src
+          persist-credentials: false
+          fetch-depth: 0
+          fetch-tags: true
+      - name: The Go version of the tag
+        id: go
+        run: |
+          v=$(sed -n 's/^GO_VERSION="\([0-9.]*\)"$/\1/p' src/bin/tacctl.sh)
+          [ -n "$v" ] || { echo "no GO_VERSION in src/bin/tacctl.sh" >&2; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: Install that Go where tacctl.sh looks for it
+        uses: actions/setup-go@v5.5.0
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          check-latest: false
+          cache: false
+      - name: Link it as /usr/local/go
+        run: |
+          sudo rm -rf /usr/local/go
+          sudo ln -s "$(go env GOROOT)" /usr/local/go
+          /usr/local/go/bin/go version
+      - name: Rebuild and compare
+        working-directory: src
+        run: ../tools/tests/tools/release-reproduce.sh "$TAG" "$GITHUB_WORKSPACE/reproduce"
+      - name: Keep the sums and the diff
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: release-${{ env.TAG }}-sums
+          path: reproduce/
+          if-no-files-found: ignore

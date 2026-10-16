@@ -79,6 +79,9 @@ type Backend struct {
 	// OnStage, when set, runs at the start of every RenderStage (to look at
 	// the other backends' artifacts at that moment).
 	OnStage func(dir string)
+	// OnService, when set, runs at the start of every Service call, before
+	// it acts (a test that does something while the backend starts).
+	OnService func(action backend.ServiceAction)
 
 	mu  sync.Mutex
 	log []string
@@ -322,6 +325,9 @@ func (b *Backend) RenderNotes(context.Context) {}
 
 // Service implements backend.Backend.
 func (b *Backend) Service(_ context.Context, action backend.ServiceAction, listener string) (string, error) {
+	if b.OnService != nil {
+		b.OnService(action)
+	}
 	if listener != "" {
 		b.note("service %s %s", action, listener)
 	} else {

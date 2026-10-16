@@ -55,6 +55,7 @@ setup() {
     run grep -c '2026-08-15' "$STORE"
     assert_output 1
     [[ ! -e "${TACCTL_STATE_DIR}/.store.lock" ]]
+    [[ ! -e "${TACCTL_STATE_DIR}/.store-apply.lock" ]]
 }
 
 @test "load_fixture: a tacquito.* fixture the importer rejects fails the test and shows why" {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +31,10 @@ const (
 	// EnvTestLocalPassword is the password of the local account of
 	// '--login' and 'device onboard'.
 	EnvTestLocalPassword = "TACCTL_TEST_LOCAL_PASSWORD"
+	// EnvTestApplyPause is <point>:<seconds>: 'device config apply' waits
+	// that long at the point ("gate": between the gate and the open of its
+	// session), so a second session can commit in that window.
+	EnvTestApplyPause = "TACCTL_TEST_APPLY_PAUSE"
 	// EnvTestResolve is the fixed host name table the lookups of 'device
 	// sync' and --server answer from: name=address[,address][;name=...].
 	EnvTestResolve = "TACCTL_TEST_RESOLVE"
@@ -95,6 +100,14 @@ func loadKnobs(env paths.Env) (Knobs, error) {
 			}
 			k.resolve[strings.ToLower(name)] = l
 		}
+	}
+	if v := env.Get(EnvTestApplyPause); v != "" {
+		point, secs, ok := strings.Cut(v, ":")
+		n, err := strconv.ParseFloat(secs, 64)
+		if !ok || point == "" || err != nil || n <= 0 || n > 600 {
+			return Knobs{}, fmt.Errorf("%s=%q: not <point>:<seconds> (gate:20, at most 600)", EnvTestApplyPause, v)
+		}
+		k.applyPause.point, k.applyPause.wait = point, time.Duration(n*float64(time.Second))
 	}
 	k.devPass = env.Get(EnvTestDevicePassword)
 	k.localPass = env.Get(EnvTestLocalPassword)

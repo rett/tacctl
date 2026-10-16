@@ -95,6 +95,7 @@ func Run(ctx context.Context, a *app.App, build BuildInfo) error {
 	if a.Version == "" {
 		a.Version = build.Version
 	}
+	a.SetContext(ctx)
 	inv := &invocation{ctx: ctx, app: a, build: build}
 	root := newRoot(inv)
 	if isComplete(a.Args) {

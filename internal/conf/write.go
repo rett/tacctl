@@ -156,6 +156,11 @@ func (c *Config) edit(fn func(overrides *yamlpy.Map) (bool, error)) error {
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return fmt.Errorf("tacctl.yaml: cannot create %s: %w", dir, err)
 	}
+	releaseApply, err := c.applyLock()
+	if err != nil {
+		return err
+	}
+	defer releaseApply()
 	unlock, err := lockDir(dir)
 	if err != nil {
 		return err
@@ -282,6 +287,11 @@ func (c *Config) write(mode, path string, value any, jsonErr error) error {
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return fmt.Errorf("tacctl.yaml: cannot create %s: %w", dir, err)
 	}
+	releaseApply, err := c.applyLock()
+	if err != nil {
+		return err
+	}
+	defer releaseApply()
 	unlock, err := lockDir(dir)
 	if err != nil {
 		return err
@@ -389,6 +399,19 @@ func (c *Config) chown() {
 		return
 	}
 	_ = os.Chown(c.Path, uid, gid)
+}
+
+// applyLock is the apply lock through Config.Lock (none: nothing to give
+// back).
+func (c *Config) applyLock() (func(), error) {
+	if c.Lock == nil {
+		return func() {}, nil
+	}
+	release, err := c.Lock()
+	if err != nil {
+		return nil, err
+	}
+	return release, nil
 }
 
 // lockDir takes an exclusive flock on the directory itself (no lock file
