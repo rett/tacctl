@@ -32,7 +32,7 @@ func (e *Env) BuildTarball(ctx context.Context) error {
 			return ErrFailed
 		}
 	}
-	work, err := TempDir()
+	work, err := TempDir(e.Paths.TempDir)
 	if err != nil {
 		return err
 	}

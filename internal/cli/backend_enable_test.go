@@ -68,7 +68,6 @@ func newSwEnv(t *testing.T) *swEnv {
 		}
 	}
 	e.tmp = filepath.Join(w, "tmp")
-	t.Setenv("TMPDIR", e.tmp)
 	e.p = paths.Resolve(paths.NewEnv(sandboxPathEnv(w)), "", func(string) bool { return false }).Reroot(w)
 	e.fakeConf = filepath.Join(w, "etc", "fake.conf")
 	e.reg = backend.NewRegistry(backend.TACACS, backend.RADIUS)

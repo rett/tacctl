@@ -97,7 +97,7 @@ func (b *Backend) LoadSmoke(ctx context.Context, rendered string) SmokeResult {
 	if limit <= 0 {
 		limit = SmokeTimeDefault
 	}
-	tmpd, err := os.MkdirTemp("", "tmp.")
+	tmpd, err := os.MkdirTemp(b.env.Paths.TempDir, "tmp.")
 	if err != nil {
 		b.out().Error("Load-smoke: " + err.Error())
 		return SmokeFailed

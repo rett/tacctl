@@ -50,7 +50,6 @@ func newSandbox(t *testing.T, withStore bool) *sandbox {
 			t.Fatal(err)
 		}
 	}
-	t.Setenv("TMPDIR", filepath.Join(w, "tmp"))
 	if withStore {
 		data, err := os.ReadFile("../../tests/fixtures/store.multiscope.yaml")
 		if err != nil {

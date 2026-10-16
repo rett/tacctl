@@ -25,7 +25,8 @@ make coverage        # go test -coverprofile; coverage/go.out, coverage/index.ht
 make lint            # shellcheck (bin/tacctl.sh, config/linux, tests/helpers, tests/tools, tests/diff and its stubs,
                      #   tests/containers/{crossover,fresh}), gofmt, go vet, golangci-lint (pinned; prints how
                      #   to install it when missing), the manual page (make lint-man: the Man tests of
-                     #   internal/cli and groff -k -ww), and tests/tools/no-private.sh
+                     #   internal/cli and groff -k -ww), tests/tools/no-private.sh, and
+                     #   tests/tools/no-os-tempdir.sh (no read of the process's temporary directory)
 make man             # rewrite the generated blocks of man/tacctl.1 from the code (below)
 make test-pyyaml     # the yamlpy and conf PyYAML corpora regenerated with PyYAML and compared
 make test-diff CORPUS=users   # the differential runner on one corpus
@@ -38,8 +39,11 @@ round-robin; `--check <count>` fails unless every test is in exactly one
 shard), beside one job for every other package and a static job (gofmt,
 `go vet`). Both tag sets run, as `make test-go` does; the bats suite, the
 diff corpus and the container matrix stay on the maintainer's machine. The
-sandbox of these tests sets `TMPDIR` for the process, so they cannot run in
-parallel inside one process; sharding is what keeps CI short.
+sandbox of many of these tests replaces package-level hooks, so they cannot yet run
+in parallel inside one process; sharding is what keeps CI short. The
+temporary directory is not one of them: it is `Paths.TempDir`, the `TMPDIR` of
+the environment a test gives the invocation, and the code never reads the
+process's (`tests/tools/no-os-tempdir.sh`, part of `make lint`).
 
 The bats files run in parallel (`bats --jobs`, one file per job, the tests of
 a file in order) when GNU `parallel` is installed: `BATS_JOBS` sets the number
@@ -82,7 +86,7 @@ tests/
 ├── integration/         # the command line against real files in the test's tmpdir
 ├── e2e/                 # whole command flows with stubbed system commands
 ├── diff/                # the differential runner, its corpora, stubs and state roots
-├── tools/               # no-private.sh (lint), pyyaml-corpus.py, usage-goldens.sh, permcheck.py and permcheck-baseline.txt (the lab permission check, below), pre-push, release-preflight.sh, release-stamps.sh and release-reproduce.sh (the release checks, docs/releasing.md)
+├── tools/               # no-private.sh and no-os-tempdir.sh (lint), pyyaml-corpus.py, usage-goldens.sh, permcheck.py and permcheck-baseline.txt (the lab permission check, below), pre-push, release-preflight.sh, release-stamps.sh and release-reproduce.sh (the release checks, docs/releasing.md)
 ├── containers/radius/   # real FreeRADIUS in podman
 ├── containers/hosts/    # 'host enroll|sync|unenroll' for real, server and client containers
 ├── containers/crossover/ # the upgrade from the bash release to the Go binary, and back

@@ -324,7 +324,7 @@ func noVendorScope(detail string) bool {
 // (ErrRefused: an artifact was edited by hand; ErrFailed) replaced nothing;
 // the messages are written.
 func (m *Module) renderApply(ctx context.Context) (changed bool, err error) {
-	tmp, err := os.MkdirTemp("", "tmp.")
+	tmp, err := os.MkdirTemp(m.env.Paths.TempDir, "tmp.")
 	if err != nil {
 		m.env.Out.Error("Cannot create a staging directory: " + err.Error())
 		return false, backend.ErrFailed

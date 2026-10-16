@@ -42,10 +42,6 @@ import (
 	"github.com/rett/tacctl/internal/policy"
 )
 
-// blockEditDir is where the private directories of an edit are made; tests
-// replace it.
-var blockEditDir = "/var/tmp"
-
 // blockEditRounds is how many times a text that fails its check is offered
 // back to the editor.
 const blockEditRounds = 5
@@ -288,7 +284,7 @@ func (c *blockCtx) runEditor(name string, seed []byte) (editorRun, error) {
 	if err != nil {
 		return run, err
 	}
-	dir, err := os.MkdirTemp(blockEditDir, "tacctl-edit-")
+	dir, err := os.MkdirTemp(a.Paths.EditDir, "tacctl-edit-")
 	if err != nil {
 		return run, fmt.Errorf("cannot make a private directory for the editor: %w", err)
 	}

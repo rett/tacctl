@@ -11,6 +11,16 @@ current behaviour; this file is where history lives.
    opens a pull request to `master`, so the Go tests run on the release
    commit before the tag exists (`docs/releasing.md`).
 
+2. **The temporary directory is read from the invocation's environment.**
+   Where tacctl stages private copies while it works (rendered trees, a
+   candidate sudoers file, a script for a host, an import check) is the
+   `TMPDIR` of the environment the command was given, now documented in the
+   manual page (ENVIRONMENT, FILES) and in `docs/cli/exit-status.md`; unset,
+   it is the system temporary directory as before, and sudo's environment
+   policy may replace it. For developers: the Go tests no longer set `TMPDIR`
+   for the process, and `tests/tools/no-os-tempdir.sh` (in `make lint`)
+   keeps the code from reading the process's temporary directory.
+
 ## 0.2.12 (2026-10-16)
 
 1. **`config get` and `config get-list` complete every key of the schema.**

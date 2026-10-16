@@ -49,16 +49,15 @@ func newEditBox(t *testing.T) *editBox {
 // box's).
 func newEditBoxOn(t *testing.T, sb *sandbox) *editBox {
 	t.Helper()
-	b := &editBox{t: t, sb: sb, base: sb.path("vartmp"), rec: sb.path("rec")}
+	b := &editBox{t: t, sb: sb, base: sb.editDir(), rec: sb.path("rec")}
 	for _, d := range []string{b.base, b.rec} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	oldDir, oldW := blockEditDir, isTerminalWriter
-	blockEditDir = b.base
+	oldW := isTerminalWriter
 	isTerminalWriter = func(io.Writer) bool { return true }
-	t.Cleanup(func() { blockEditDir, isTerminalWriter = oldDir, oldW })
+	t.Cleanup(func() { isTerminalWriter = oldW })
 	withTerminal(t, true)
 	return b
 }
@@ -439,11 +438,8 @@ func TestEditRefusals(t *testing.T) {
 
 func TestEditIsTheSuperusersOnly(t *testing.T) {
 	sb := engineerSandbox(t)
-	b := &editBox{t: t, sb: sb, base: sb.path("vartmp"), rec: sb.path("rec")}
+	b := &editBox{t: t, sb: sb, base: sb.editDir(), rec: sb.path("rec")}
 	_ = os.MkdirAll(b.base, 0o755)
-	oldDir := blockEditDir
-	blockEditDir = b.base
-	t.Cleanup(func() { blockEditDir = oldDir })
 	withTerminal(t, true)
 	old := isTerminalWriter
 	isTerminalWriter = func(io.Writer) bool { return true }

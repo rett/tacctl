@@ -23,6 +23,9 @@ const (
 	Completion = "/etc/bash_completion.d/tacctl"
 	// ManPage is the installed man page.
 	ManPage = "/usr/share/man/man1/tacctl.1.gz"
+	// EditDir is where 'block edit' makes the private directory its editor
+	// works in (the invoking user's own copy of a block).
+	EditDir = "/var/tmp"
 	// ArchiveDir is where uninstall keeps what it was asked to preserve
 	// (a fixed /root, as in 0.1.16).
 	ArchiveDir = "/root"
@@ -115,6 +118,7 @@ type Paths struct {
 	Completion     string // /etc/bash_completion.d/tacctl
 	ManPage        string // /usr/share/man/man1/tacctl.1.gz
 	ArchiveDir     string // where uninstall archives what it keeps (/root)
+	EditDir        string // where 'block edit' makes its private directories (/var/tmp; no variable)
 
 	// RADIUS overrides as given; the family decides the defaults (Radius).
 	RadiusFamily string // TACCTL_RADIUS_FAMILY
@@ -125,6 +129,12 @@ type Paths struct {
 
 	// SkipSudo is TACCTL_SKIP_SUDO=1: no sudo re-exec (tests only).
 	SkipSudo bool
+
+	// TempDir is where an invocation stages private copies (rendered trees,
+	// sudoers candidates, an import check): TMPDIR of the invocation's
+	// environment, else os.TempDir(). It is the only os.TempDir call in the
+	// program; tests/tools/no-os-tempdir.sh keeps it so.
+	TempDir string // TMPDIR (default os.TempDir())
 }
 
 // Resolve computes Paths from env. exe is the running executable (for the
@@ -195,6 +205,8 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.radiusDict = env.Get("TACCTL_RADIUS_DICT")
 
 	p.SkipSudo = env.Get("TACCTL_SKIP_SUDO") == "1"
+	p.TempDir = env.Or("TMPDIR", os.TempDir())
+	p.EditDir = EditDir
 	return p
 }
 
@@ -218,7 +230,7 @@ func Tree(env Env, exe string, exists func(string) bool) string {
 }
 
 // Reroot moves tacctl's fixed host locations (Deploy, Command, ConsoleCommand,
-// GoBin, Completion, ManPage, ArchiveDir) under root,
+// GoBin, Completion, ManPage, ArchiveDir, EditDir) under root,
 // keeping their paths below it: /usr/local/bin/tacctl becomes
 // <root>/usr/local/bin/tacctl. It is for tests (the -tags testknobs knob
 // TACCTL_TEST_ROOT, and Go tests), so that install, upgrade and uninstall
@@ -230,6 +242,7 @@ func (p Paths) Reroot(root string) Paths {
 	under := func(path string) string { return filepath.Join(root, path) }
 	p.Deploy, p.Command, p.GoBin, p.Completion = under(p.Deploy), under(p.Command), under(p.GoBin), under(p.Completion)
 	p.ManPage, p.ArchiveDir, p.ConsoleCommand = under(p.ManPage), under(p.ArchiveDir), under(p.ConsoleCommand)
+	p.EditDir = under(p.EditDir)
 	return p
 }
 

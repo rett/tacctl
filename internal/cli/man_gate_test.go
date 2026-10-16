@@ -514,7 +514,8 @@ var manPathExempt = map[string]string{
 func pathValues(t *testing.T) map[string]string {
 	t.Helper()
 	out := map[string]string{}
-	p := paths.Resolve(paths.NewEnv(nil), "", func(string) bool { return false })
+	// TMPDIR is fixed: the default of Paths.TempDir is the process's.
+	p := paths.Resolve(paths.NewEnv([]string{"TMPDIR=/tmp"}), "", func(string) bool { return false })
 	v := reflect.ValueOf(p)
 	for i := range v.NumField() {
 		f := v.Type().Field(i)

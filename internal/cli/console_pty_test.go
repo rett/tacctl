@@ -259,7 +259,14 @@ func TestConsolePtySystemShell(t *testing.T) {
 	}
 
 	// Started for a superuser: the stub prints its environment.
-	stub := filepath.Join(t.TempDir(), "stub-shell")
+	// A short path: the log keeps 64 bytes of a value (console.LogValue), and
+	// the line below must end with the shell's name whatever TMPDIR is.
+	stubDir, err := os.MkdirTemp("/tmp", "ss")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(stubDir) })
+	stub := filepath.Join(stubDir, "stub-shell")
 	if err := os.WriteFile(stub, []byte("#!/bin/sh\necho \"ARGS=$#\"\nenv | sort | sed 's/^/ENV /'\nexit 7\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}

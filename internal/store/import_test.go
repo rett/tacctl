@@ -672,18 +672,19 @@ func TestImportLeavesNoTempFiles(t *testing.T) {
 	// the check passes or not.
 	e := newImportEnv(t)
 	tmp := t.TempDir()
-	t.Setenv("TMPDIR", tmp)
 	e.place("tacquito.multiscope.yaml")
 	e.mustImport()
 	for _, render := range []string{e.config, fixtures + "tacquito.minimal.yaml"} {
 		o := e.opts("--check")
-		o.TempDir = ""
+		o.TempDir = tmp
 		o.Render = func(*store.Store) ([]byte, error) { return readFile(t, render), nil }
 		o.Equiv = model.EquivCheck
 		e.run(o)
 	}
 	e.place("legacy.unrepresentable.yaml")
-	out, rc := e.imp("--replace")
+	o := e.opts("--replace")
+	o.TempDir = tmp
+	out, rc := e.run(o)
 	status(t, rc, 1, out)
 	left, _ := os.ReadDir(tmp)
 	if len(left) != 0 {

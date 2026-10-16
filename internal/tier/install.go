@@ -30,11 +30,12 @@ func (e *TempError) Unwrap() error { return e.Err }
 // 'config sudoers [tiers] install' and the upgrade's refresh of the tiers
 // file): body is written to a temporary file, 'visudo -cf' checks it (its
 // complaints go to stderr), and 'install -m 0440 -o root -g root' puts it
-// in place as dst. Both programs are external, so the suite stubs them. A
+// in place as dst. The temporary file is made in tmpDir (the invocation's
+// paths.Paths.TempDir). Both programs are external, so the suite stubs them. A
 // rejected body is ErrVisudo and dst is left as it was; the temporary
 // file never stays behind.
-func InstallSudoers(ctx context.Context, r execx.Runner, stdout, stderr io.Writer, body, dst string) error {
-	return checked(ctx, r, stderr, body, func(tmp string) error {
+func InstallSudoers(ctx context.Context, r execx.Runner, stdout, stderr io.Writer, tmpDir, body, dst string) error {
+	return checked(ctx, r, stderr, tmpDir, body, func(tmp string) error {
 		res, _ := r.Run(ctx, execx.Cmd{Name: "install", Args: []string{"-m", "0440", "-o", "root", "-g", "root", tmp, dst},
 			Stdout: stdout, Stderr: stderr})
 		if res.Code != 0 {
@@ -46,15 +47,17 @@ func InstallSudoers(ctx context.Context, r execx.Runner, stdout, stderr io.Write
 
 // CheckSudoers is InstallSudoers' check alone: body is written to a
 // temporary file and 'visudo -cf' checks it (its complaints go to
-// stderr); nothing is installed. A rejected body is ErrVisudo.
-func CheckSudoers(ctx context.Context, r execx.Runner, stderr io.Writer, body string) error {
-	return checked(ctx, r, stderr, body, func(string) error { return nil })
+// stderr); nothing is installed. A rejected body is ErrVisudo. The temporary
+// file is made in tmpDir (paths.Paths.TempDir).
+func CheckSudoers(ctx context.Context, r execx.Runner, stderr io.Writer, tmpDir, body string) error {
+	return checked(ctx, r, stderr, tmpDir, body, func(string) error { return nil })
 }
 
 // checked writes body to a temporary file, has 'visudo -cf' check it, and
-// runs then with the file's path; the file never stays behind.
-func checked(ctx context.Context, r execx.Runner, stderr io.Writer, body string, then func(tmp string) error) error {
-	f, err := os.CreateTemp("", "tmp.")
+// runs then with the file's path; the file never stays behind. It is made in
+// tmpDir.
+func checked(ctx context.Context, r execx.Runner, stderr io.Writer, tmpDir, body string, then func(tmp string) error) error {
+	f, err := os.CreateTemp(tmpDir, "tmp.")
 	if err != nil {
 		return &TempError{Err: err}
 	}

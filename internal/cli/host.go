@@ -589,7 +589,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 		}
 	}
 
-	script, err := hosts.TempFile()
+	script, err := hosts.TempFile(a.Paths.TempDir)
 	if err != nil {
 		return err
 	}
@@ -1197,7 +1197,7 @@ func (inv *invocation) syncRun(he *hosts.Env, e hosts.Entry, method string, scri
 	} else if err != nil {
 		return false, "", false, err
 	}
-	script, err := hosts.TempFile()
+	script, err := hosts.TempFile(inv.app.Paths.TempDir)
 	if err != nil {
 		return false, "", false, err
 	}
@@ -1314,7 +1314,7 @@ func (inv *invocation) hostUnenroll(args []string) error {
 	label := hosts.MethodLabel(reg.Method(name))
 	a.Out.InfoE("Removing " + label + " authentication from " + name + " (" + e.Target + ")...")
 
-	script, err := hosts.TempFile()
+	script, err := hosts.TempFile(a.Paths.TempDir)
 	if err != nil {
 		return err
 	}

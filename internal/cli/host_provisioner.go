@@ -214,7 +214,7 @@ func (inv *invocation) hostRotate(o rotateOpts) error {
 		login.Identity = r.keyFile
 	}
 	if len(r.pins) > 0 {
-		kh, cleanup, err := hosts.TempKnownHosts(o.name, pinStrings(r.pins))
+		kh, cleanup, err := hosts.TempKnownHosts(a.Paths.TempDir, o.name, pinStrings(r.pins))
 		if err != nil {
 			return inv.rotateProofFailed(r, st, "the pinned host keys could not be made ready for the proof: "+strings.Join(msgs(err), " "), audit(" step=prove"))
 		}

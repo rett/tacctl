@@ -524,7 +524,7 @@ func (h *Host) updateTierSudoers(ctx context.Context) int {
 		h.Out.Info("  Unchanged: tiers sudoers")
 		return 0
 	}
-	if err := tier.InstallSudoers(ctx, h.Runner, h.Out.Stdout, h.Out.Stderr, body, file); err != nil {
+	if err := tier.InstallSudoers(ctx, h.Runner, h.Out.Stdout, h.Out.Stderr, h.Paths.TempDir, body, file); err != nil {
 		why := "install failed"
 		if errors.Is(err, tier.ErrVisudo) {
 			why = "visudo validation failed"
@@ -564,7 +564,7 @@ func (h *Host) updateGroupSudoers(ctx context.Context) int {
 	default:
 		return 0
 	}
-	if err := tier.InstallSudoers(ctx, h.Runner, h.Out.Stdout, h.Out.Stderr, tier.GroupSudoers(group), file); err != nil {
+	if err := tier.InstallSudoers(ctx, h.Runner, h.Out.Stdout, h.Out.Stderr, h.Paths.TempDir, tier.GroupSudoers(group), file); err != nil {
 		why := "install failed"
 		if errors.Is(err, tier.ErrVisudo) {
 			why = "visudo validation failed"
