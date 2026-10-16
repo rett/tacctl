@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"net"
 	"strconv"
 	"strings"
@@ -14,27 +13,13 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// No test of this package reaches a real address through the host-key
-// fallback of a legacy-ssh device: it reads nothing unless a test replaces
-// keyFallback (or sets realKeyFallback with deviceDialOverride, as the fake
-// old device's test does).
-func init() {
-	keyFallback = func(*invocation) devreg.KeyFallback {
-		return func(_ context.Context, address string, port int) ([]devreg.HostKey, error) {
-			return nil, errors.New("tests do not dial " + address + ":" + strconv.Itoa(port))
-		}
-	}
-}
-
 // The built-in scan is the fallback for a legacy-ssh device that
 // ssh-keyscan reads nothing from, and for no other.
 func TestDeviceAddLegacyFallsBackToBuiltinScan(t *testing.T) {
 	sb := newSandbox(t, true)
 	rsa := hkKey(t, "rsa")
 	var calls []string
-	prev := keyFallback
-	t.Cleanup(func() { keyFallback = prev })
-	keyFallback = func(*invocation) devreg.KeyFallback {
+	sb.hooks.keyFallback = func(*invocation) devreg.KeyFallback {
 		return func(_ context.Context, address string, port int) ([]devreg.HostKey, error) {
 			calls = append(calls, address+":"+strconv.Itoa(port))
 			return []devreg.HostKey{rsa}, nil
@@ -72,10 +57,8 @@ func TestDeviceAddLegacyFallsBackToBuiltinScan(t *testing.T) {
 // both reads, with the way on.
 func TestDeviceAddLegacyBothScansFail(t *testing.T) {
 	sb := newSandbox(t, true)
-	prev := keyFallback
-	t.Cleanup(func() { keyFallback = prev })
 	called := 0
-	keyFallback = func(*invocation) devreg.KeyFallback {
+	sb.hooks.keyFallback = func(*invocation) devreg.KeyFallback {
 		return func(context.Context, string, int) ([]devreg.HostKey, error) {
 			called++
 			return nil, devssh.ErrHandshake
@@ -98,10 +81,8 @@ func TestDeviceAddLegacyScansTheFakeOldDevice(t *testing.T) {
 	sb := newSandbox(t, true)
 	srv := fakedev.New(t.TempDir(), fakedev.WithLegacy())
 	t.Cleanup(srv.Stop)
-	prevDial, prevFallback := deviceDialOverride, keyFallback
-	t.Cleanup(func() { deviceDialOverride, keyFallback = prevDial, prevFallback })
-	keyFallback = realKeyFallback
-	deviceDialOverride = func(ctx context.Context, network, _ string) (net.Conn, error) {
+	sb.hooks.keyFallback = realKeyFallback
+	sb.hooks.deviceDial = func(ctx context.Context, network, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, network, srv.Addr())
 	}
 	pub, _, _, _, err := ssh.ParseAuthorizedKey([]byte(srv.HostKey()))

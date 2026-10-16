@@ -119,7 +119,7 @@ func (s *sectionsSandbox) run(stdin string, args ...string) string {
 	a := app.New(args, paths.NewEnv(append([]string(nil), sb.env...)), "/opt/x/dist/tacctl", 1000,
 		app.Stdio{Stdin: strings.NewReader(stdin), Stdout: &sb.out, Stderr: &sb.err}, r)
 	a.Paths = a.Paths.Reroot(sb.dir)
-	sb.code = exitCode(Run(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}), a.Out)
+	sb.code = exitCode(runWith(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}, sb.hooks), a.Out)
 	if n := len(r.Execs()); n != 0 {
 		s.t.Errorf("%q: exec'd (%d execs)", args, n)
 	}

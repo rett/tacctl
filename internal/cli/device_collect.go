@@ -410,7 +410,7 @@ func (c *collect) identity(rows []*collectRow) error {
 func (c *collect) password() error {
 	inv := c.inv
 	if c.local != nil {
-		c.src = newLocalPasswords(inv, c.local.account, fmt.Sprintf("%d address(es) nobody registered", len(c.keyed())))
+		c.src = inv.hooks.newLocalPasswords(inv, c.local.account, fmt.Sprintf("%d address(es) nobody registered", len(c.keyed())))
 		if len(c.keyed()) == 1 {
 			c.src.where = c.keyed()[0].Address
 		}
@@ -423,7 +423,7 @@ func (c *collect) password() error {
 		c.local.mu.Unlock()
 		return nil
 	}
-	c.tp = newDevicePasswords(inv)
+	c.tp = inv.hooks.newDevicePasswords(inv)
 	pw, err := c.tp.Password(inv.ctx, c.user)
 	if err != nil {
 		return err

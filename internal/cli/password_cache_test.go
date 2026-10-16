@@ -127,13 +127,11 @@ func withPasswd(t *testing.T, uid int, name string) {
 func TestNewDevicePasswordsHardensAndTakesTheVariable(t *testing.T) {
 	c := newCacheAgent(t)
 	n := 0
-	old := setNotDumpable
-	setNotDumpable = func() error { n++; return nil }
-	t.Cleanup(func() { setNotDumpable = old })
+	hk := &hooks{setNotDumpable: func() error { n++; return nil }}
 	t.Setenv(askpass.EnvVar, c.ag.Env())
 	a := app.New(nil, paths.NewEnv([]string{askpass.EnvVar + "=" + c.ag.Env(), "SUDO_UID=" + strconv.Itoa(c.uid)}), "/opt/x/dist/tacctl", 0,
 		app.Stdio{}, &fake.Runner{})
-	src := newDevicePasswords(&invocation{ctx: context.Background(), app: a})
+	src := hk.newDevicePasswords(&invocation{ctx: context.Background(), app: a, hooks: hk})
 	tp, ok := src.(*terminalPasswords)
 	if !ok || tp.client == nil || tp.client.ExpectUID != c.uid {
 		t.Fatalf("source %#v", src)
@@ -157,7 +155,7 @@ func TestPullUsesTheCachedPassword(t *testing.T) {
 	}
 	c.stored() // the store above
 	before := c.stored()
-	newDevicePasswords = func(inv *invocation) devicePasswords { return &terminalPasswords{inv: inv, client: c.cl} }
+	b.sb.hooks.devicePasswords = func(inv *invocation) devicePasswords { return &terminalPasswords{inv: inv, client: c.cl} }
 	b.run("device", "config", "pull", "lab-a", "lab-b")
 	if b.sb.code != 0 {
 		t.Fatalf("exit %d: %q", b.sb.code, b.sb.stderr())
@@ -182,7 +180,7 @@ func TestPullForgetsAWrongCachedPassword(t *testing.T) {
 	if err := c.ag.Store([]byte("not-the-password")); err != nil {
 		t.Fatal(err)
 	}
-	newDevicePasswords = func(inv *invocation) devicePasswords { return &terminalPasswords{inv: inv, client: c.cl} }
+	b.sb.hooks.devicePasswords = func(inv *invocation) devicePasswords { return &terminalPasswords{inv: inv, client: c.cl} }
 	b.run("device", "config", "pull", "lab-a", "lab-b")
 	if b.sb.code != 1 {
 		t.Fatalf("exit %d: %q", b.sb.code, b.sb.stderr())
@@ -205,7 +203,7 @@ func TestPullStoresTheTypedPasswordAfterTheDeviceAccepted(t *testing.T) {
 		b := newPullBox(t)
 		b.devices([3]string{"lab-a", "192.168.1.21", "juniper"})
 		b.serve("juniper", "set system host-name x\n")
-		newDevicePasswords = func(inv *invocation) devicePasswords { return &terminalPasswords{inv: inv, client: c.cl} }
+		b.sb.hooks.devicePasswords = func(inv *invocation) devicePasswords { return &terminalPasswords{inv: inv, client: c.cl} }
 		master, slave, err := testpty.Open()
 		if err != nil {
 			t.Skipf("no pty: %v", err)
@@ -272,7 +270,7 @@ func TestTakeAskpass(t *testing.T) {
 	c := newCacheAgent(t)
 	mk := func(env ...string) *invocation {
 		a := app.New(nil, paths.NewEnv(env), "/opt/x/dist/tacctl", 0, app.Stdio{}, &fake.Runner{})
-		return &invocation{ctx: context.Background(), app: a}
+		return &invocation{ctx: context.Background(), app: a, hooks: newTestHooks()}
 	}
 	val := c.ag.Env()
 	t.Setenv(askpass.EnvVar, val)
@@ -296,16 +294,14 @@ func TestTakeAskpass(t *testing.T) {
 }
 
 // withAccount makes the sandbox's alice a local account with these ids.
-func withAccount(t *testing.T, acct sshAccount) {
-	t.Helper()
-	old := sshAccountOf
-	sshAccountOf = func(name string) (sshAccount, error) {
+func (sb *sandbox) withAccount(acct sshAccount) {
+	sb.t.Helper()
+	sb.hooks.sshAccountOf = func(name string) (sshAccount, error) {
 		if name != "alice" {
 			return sshAccount{}, errors.New("no such account")
 		}
 		return acct, nil
 	}
-	t.Cleanup(func() { sshAccountOf = old })
 }
 
 // testAccount is alice's account for the cached ssh path: her uid is the
@@ -322,9 +318,8 @@ func TestSSHUsesTheCachedPassword(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("the agent's user must not be root")
 	}
-	withTerminal(t, true)
-	withAccount(t, testAccount())
 	sb, _, _ := sshSandbox(t)
+	sb.withAccount(testAccount())
 	c := newCacheAgent(t)
 	withPasswd(t, c.uid, "alice")
 	if err := c.ag.Store([]byte("secret-pw-17")); err != nil {
@@ -436,11 +431,8 @@ func TestSSHCachedPathNeedsTheLocalAccount(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("the agent's user must not be root")
 	}
-	withTerminal(t, true)
-	old := sshAccountOf
-	sshAccountOf = func(string) (sshAccount, error) { return sshAccount{}, errors.New("not in the local database") }
-	t.Cleanup(func() { sshAccountOf = old })
 	sb, _, _ := sshSandbox(t)
+	sb.hooks.sshAccountOf = func(string) (sshAccount, error) { return sshAccount{}, errors.New("not in the local database") }
 	c := newCacheAgent(t)
 	withPasswd(t, c.uid, "alice")
 	if err := c.ag.Store([]byte("secret-pw-17")); err != nil {
@@ -488,9 +480,8 @@ func TestSSHForgetsOn255(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("the agent's user must not be root")
 	}
-	withTerminal(t, true)
-	withAccount(t, testAccount())
 	sb, rsa, _ := sshSandbox(t)
+	sb.withAccount(testAccount())
 	c := newCacheAgent(t)
 	withPasswd(t, c.uid, "alice")
 	for _, tc := range []struct {
@@ -628,17 +619,15 @@ func TestAskpassWords(t *testing.T) {
 // The shell's agent: it starts when asked and allowed, says why when it
 // cannot (one line), and is never created otherwise.
 func TestOpenPasswordCache(t *testing.T) {
+	called := 0
+	hk := &hooks{newAskpassAgent: func(o askpass.Options) (*askpass.Agent, error) { called++; return askpass.New(o) }}
 	newInv := func(env ...string) (*invocation, *strings.Builder) {
 		var errb strings.Builder
 		r := &fake.Runner{}
 		a := app.New(nil, paths.NewEnv(env), "/opt/x/dist/tacctl", os.Geteuid(),
 			app.Stdio{Stdin: strings.NewReader(""), Stdout: &strings.Builder{}, Stderr: &errb}, r)
-		return &invocation{ctx: context.Background(), app: a}, &errb
+		return &invocation{ctx: context.Background(), app: a, hooks: hk}, &errb
 	}
-	called := 0
-	old := newAskpassAgent
-	newAskpassAgent = func(o askpass.Options) (*askpass.Agent, error) { called++; return old(o) }
-	t.Cleanup(func() { newAskpassAgent = old })
 
 	// Off: nothing is created, nothing is said.
 	inv, errb := newInv()
@@ -704,7 +693,7 @@ func TestOpenPasswordCache(t *testing.T) {
 	}
 
 	// No lock: exactly one line, no cache.
-	newAskpassAgent = func(askpass.Options) (*askpass.Agent, error) { return nil, askpass.ErrNoLock }
+	hk.newAskpassAgent = func(askpass.Options) (*askpass.Agent, error) { return nil, askpass.ErrNoLock }
 	inv, errb = newInv("XDG_RUNTIME_DIR=" + dir)
 	if c := inv.openPasswordCache(shellRun{mode: shellInteractive, cacheMode: cacheOn}, true); c != nil {
 		t.Error("a cache without a lock")
@@ -714,7 +703,7 @@ func TestOpenPasswordCache(t *testing.T) {
 	}
 	// A socket directory that cannot be made: one line too, and no agent
 	// left behind.
-	newAskpassAgent = old
+	hk.newAskpassAgent = nil
 	bad, err := os.MkdirTemp("/tmp", "pc")
 	if err != nil {
 		t.Fatal(err)
@@ -741,7 +730,7 @@ func TestPlainShellCachePolicy(t *testing.T) {
 		r.On([]string{"sudo", "-n"}, execx.Result{Stdout: []byte(out), Code: code})
 		a := app.New(nil, paths.NewEnv(nil), "/opt/x/dist/tacctl", os.Geteuid(),
 			app.Stdio{Stdin: strings.NewReader(""), Stdout: &strings.Builder{}, Stderr: &errb}, r)
-		return &invocation{ctx: context.Background(), app: a}, &errb
+		return &invocation{ctx: context.Background(), app: a, hooks: newTestHooks()}, &errb
 	}
 	r := shellRun{exe: "/opt/x/dist/tacctl", mode: shellInteractive, cacheMode: cacheAsk}
 	inv, errb := policy("", 0)
@@ -865,7 +854,7 @@ func TestShellPassesTheLineTokenInTheEnvironment(t *testing.T) {
 	const line2 = "/run/user/1000/tacctl/ap-h-1-x.sock:" + "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
 	stale := askpass.EnvVar + "=/tmp/stale.sock:" + "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 	h := newHarness(t, nil, "HOME="+t.TempDir(), stale)
-	inv := &invocation{ctx: context.Background(), app: h.app}
+	inv := &invocation{ctx: context.Background(), app: h.app, hooks: newTestHooks()}
 	exec := inv.shellExec(testExe, true, tier.Engineer, []string{"TACCTL_CONSOLE=0123456789ab"})
 	last := func() execx.Cmd {
 		var got execx.Cmd
@@ -938,7 +927,7 @@ func TestCaptureAskpassKeepsChildrenFromInheritingIt(t *testing.T) {
 	// The app's environment (built from the cleaned one) has none; the
 	// verb that uses it gets it, once.
 	a := app.New(nil, paths.NewEnv(got), "/opt/x/dist/tacctl", 0, app.Stdio{}, &fake.Runner{})
-	inv := &invocation{ctx: context.Background(), app: a}
+	inv := &invocation{ctx: context.Background(), app: a, hooks: newTestHooks()}
 	if v := inv.askpassValue(); v != val {
 		t.Errorf("first take: %q", v)
 	}
@@ -996,7 +985,6 @@ func TestSSHCachedPathRequiresTheSudoAccount(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("the agent's user must not be root")
 	}
-	withTerminal(t, true)
 	sb, _, _ := sshSandbox(t)
 	c := newCacheAgent(t)
 	withPasswd(t, c.uid, "alice")
@@ -1009,7 +997,7 @@ func TestSSHCachedPathRequiresTheSudoAccount(t *testing.T) {
 	} {
 		acct := testAccount()
 		acct.UID = uid
-		withAccount(t, acct)
+		sb.withAccount(acct)
 		c.begin(t)
 		sb.cfgRun("", []string{"ssh", "core-sw1"}, nil, "SUDO_USER=alice", "SUDO_UID="+strconv.Itoa(c.uid), askpass.EnvVar+"="+c.ag.Env())
 		if sb.code != 0 {

@@ -142,7 +142,7 @@ func TestSetViewInteractiveAsksInTheBackground(t *testing.T) {
 		}
 		return execx.Result{Stdout: []byte("shell=console tier=operator\n")}, nil
 	})
-	inv := &invocation{ctx: t.Context(), app: h.app}
+	inv := &invocation{ctx: t.Context(), app: h.app, hooks: newTestHooks()}
 	inv.setView(shellRun{exe: testExe, mode: shellInteractive}, true)
 	eventually(t, "the question to start", func() bool { return calls.Load() == 1 })
 	if got := inv.view(); got != viewUnread {
@@ -166,7 +166,7 @@ func TestSetViewBatchWaitsForTheAnswer(t *testing.T) {
 		time.Sleep(30 * time.Millisecond)
 		return execx.Result{Stdout: []byte("tier=readonly\n")}, nil
 	})
-	inv := &invocation{ctx: t.Context(), app: h.app}
+	inv := &invocation{ctx: t.Context(), app: h.app, hooks: newTestHooks()}
 	inv.setView(shellRun{exe: testExe, mode: shellCommandMode}, true)
 	if got := inv.view(); got != tier.Readonly {
 		t.Errorf("view = %q", got)

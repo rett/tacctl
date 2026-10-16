@@ -388,7 +388,7 @@ func TestConsoleCheckFlagsRemovedSuperusers(t *testing.T) {
 func TestLoweredWithoutAModelSaysWhatRemains(t *testing.T) {
 	hs := hostLowerSandbox(t)
 	h := newHarness(t, nil, hs.env...)
-	inv := &invocation{ctx: context.Background(), app: h.app}
+	inv := &invocation{ctx: context.Background(), app: h.app, hooks: newTestHooks()}
 	w := &tierWatch{inv: inv, scope: "lab", before: map[string]tier.Tier{"alice": tier.Superuser}}
 	if err := os.WriteFile(hs.path("state", "store.yaml"), []byte("not: [a store\n"), 0o600); err != nil {
 		t.Fatal(err)

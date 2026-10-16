@@ -21,9 +21,10 @@ import (
 	"github.com/rett/tacctl/internal/ui"
 )
 
-// isTerminalWriter reports whether w is a terminal (tests replace it); a
-// stream with its colour taken out (app.New) is the terminal it wraps.
-var isTerminalWriter = func(w io.Writer) bool {
+// realTerminalWriter reports whether w is a terminal (hooks.isTerminalWriter
+// replaces it in tests); a stream with its colour taken out (app.New) is the
+// terminal it wraps.
+func realTerminalWriter(w io.Writer) bool {
 	f, ok := ui.File(w)
 	return ok && term.IsTerminal(int(f.Fd()))
 }
@@ -74,7 +75,7 @@ func (inv *invocation) newPullView(entries []devreg.Entry, asJSON bool, user str
 		v.vendors = append(v.vendors, e.Vendor)
 		v.width = max(v.width, len(e.Name))
 	}
-	v.tty = !asJSON && !quiet && isTerminalWriter(v.out)
+	v.tty = !asJSON && !quiet && inv.hooks.terminalWriter(v.out)
 	if v.tty {
 		// More rows than the terminal has cannot be repainted: append.
 		if h := terminalHeight(v.out); h > 0 && len(entries)+4 > h {

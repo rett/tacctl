@@ -95,8 +95,9 @@ func TestConsolePtyHelper(t *testing.T) {
 			opt[k] = v
 		}
 	}
+	hk := newTestHooks()
 	if opt["idle"] != "" {
-		consolePolicyHook = func(p *console.Remote) { p.Idle = p.Idle / time.Minute * time.Second }
+		hk.consolePolicy = func(p *console.Remote) { p.Idle = p.Idle / time.Minute * time.Second }
 	}
 	dirty := []string{"TERM=xterm", "USER=carol", "HOME=" + opt["home"], "SSH_CLIENT=192.0.2.9 50000 22",
 		"SSH_TTY=/dev/pts/9", "TACCTL_LEAK=1", "LD_PRELOAD=/nonexistent.so", "PATH=/usr/bin:/bin"}
@@ -109,7 +110,7 @@ func TestConsolePtyHelper(t *testing.T) {
 	if opt["c"] != "" {
 		args = []string{"-c", opt["c"]}
 	}
-	code := exitCode(RunConsole(context.Background(), a, BuildInfo{Version: "0.2.1-pty"}, args), a.Out)
+	code := exitCode(runConsoleWith(context.Background(), a, BuildInfo{Version: "0.2.1-pty"}, args, hk), a.Out)
 	_, _ = io.WriteString(os.Stdout, "CONSOLE-EXIT "+strconv.Itoa(code)+"\n")
 }
 

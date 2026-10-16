@@ -46,7 +46,7 @@ func TestDeviceConfigApplyAndShapesAreTheSuperusers(t *testing.T) {
 		sb.err.Reset()
 		a := app.New(nil, paths.NewEnv(env), "/opt/x/dist/tacctl", 1000,
 			app.Stdio{Stdin: strings.NewReader(""), Stdout: &sb.out, Stderr: &sb.err}, r)
-		inv := &invocation{ctx: t.Context(), app: a}
+		inv := &invocation{ctx: t.Context(), app: a, hooks: newTestHooks()}
 		err := inv.deviceConfigAllowed(sub)
 		_ = a.Close() // the plain-text filter holds what it has not passed on
 		return plain(sb.err.String()), err

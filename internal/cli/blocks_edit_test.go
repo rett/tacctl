@@ -55,10 +55,8 @@ func newEditBoxOn(t *testing.T, sb *sandbox) *editBox {
 			t.Fatal(err)
 		}
 	}
-	oldW := isTerminalWriter
-	isTerminalWriter = func(io.Writer) bool { return true }
-	t.Cleanup(func() { isTerminalWriter = oldW })
-	withTerminal(t, true)
+	sb.hooks.isTerminalWriter = func(io.Writer) bool { return true }
+	sb.terminal(true)
 	return b
 }
 
@@ -406,18 +404,18 @@ func TestEditAnswerNoLeavesEverythingAsItWas(t *testing.T) {
 func TestEditRefusals(t *testing.T) {
 	// no terminal
 	b := newEditBox(t)
-	withTerminal(t, false)
+	b.sb.terminal(false)
 	ed := b.editor("ed-add", editSNMPAdd)
 	b.edit("y\n", ed, "snmp")
 	b.sb.expect(1, "", "edit opens an editor and needs a terminal on standard input and output. Nothing was changed.")
 	if b.ran() != 0 {
 		t.Error("the editor ran without a terminal")
 	}
-	withTerminal(t, true)
-	isTerminalWriter = func(io.Writer) bool { return false }
+	b.sb.terminal(true)
+	b.sb.hooks.isTerminalWriter = func(io.Writer) bool { return false }
 	b.edit("y\n", ed, "snmp")
 	b.sb.expect(1, "", "needs a terminal on standard input and output")
-	isTerminalWriter = func(io.Writer) bool { return true }
+	b.sb.hooks.isTerminalWriter = func(io.Writer) bool { return true }
 
 	// usage and the block name
 	b.edit("", ed)
@@ -440,10 +438,8 @@ func TestEditIsTheSuperusersOnly(t *testing.T) {
 	sb := engineerSandbox(t)
 	b := &editBox{t: t, sb: sb, base: sb.editDir(), rec: sb.path("rec")}
 	_ = os.MkdirAll(b.base, 0o755)
-	withTerminal(t, true)
-	old := isTerminalWriter
-	isTerminalWriter = func(io.Writer) bool { return true }
-	t.Cleanup(func() { isTerminalWriter = old })
+	sb.terminal(true)
+	sb.hooks.isTerminalWriter = func(io.Writer) bool { return true }
 	_ = os.MkdirAll(b.rec, 0o755)
 	ed := b.editor("ed-add", editSNMPAdd)
 	for _, args := range [][]string{
@@ -653,16 +649,14 @@ func TestEditRunsAsTheInvokingUser(t *testing.T) {
 	b := newEditBox(t)
 	ed := b.editor("ed-add", editSNMPAdd)
 	uid, gid := os.Getuid(), os.Getgid()
-	oldE, oldA := editEuid, sshAccountOf
-	editEuid = func() int { return 0 }
-	sshAccountOf = func(name string) (sshAccount, error) {
+	b.sb.hooks.editEuid = func() int { return 0 }
+	b.sb.hooks.sshAccountOf = func(name string) (sshAccount, error) {
 		if name != "alice" {
 			t.Errorf("the account looked up is %q", name)
 		}
 		// this process's own ids, so that the directory can be handed over
 		return sshAccount{UID: uint32(uid), GID: uint32(gid), Groups: []uint32{uint32(gid), 4242}, Home: "/home/alice"}, nil
 	}
-	t.Cleanup(func() { editEuid, sshAccountOf = oldE, oldA })
 	run := func(name string) string {
 		b.cmds = nil
 		return plain(b.sb.cfgRun("y\n", []string{"scope", "block", "lab", "juniper", "edit", "snmp", "-y"}, func(r *fake.Runner) {
@@ -700,7 +694,7 @@ func TestEditRunsAsTheInvokingUser(t *testing.T) {
 		t.Errorf("spoofed pair: %d, %d cmds, %q", b.sb.code, len(b.cmds), b.sb.stderr())
 	}
 	// an account that is root's is never a drop target
-	sshAccountOf = func(string) (sshAccount, error) { return sshAccount{UID: 0, Home: "/root"}, nil }
+	b.sb.hooks.sshAccountOf = func(string) (sshAccount, error) { return sshAccount{UID: 0, Home: "/root"}, nil }
 	run("alice")
 	if b.sb.code != 1 || len(b.cmds) != 0 || !strings.Contains(b.sb.stderr(), "is not the one sudo ran this for") {
 		t.Errorf("root account: %d, %d cmds, %q", b.sb.code, len(b.cmds), b.sb.stderr())

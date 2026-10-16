@@ -127,7 +127,7 @@ func flat(secs []devices.Section) string {
 // Every line a comparison can hold is printed with its mark, a secret's
 // value is not, and a section that agrees says only so.
 func TestPrintDeviceDiffEveryOp(t *testing.T) {
-	inv := &invocation{app: newHarness(t, nil).app}
+	inv := &invocation{app: newHarness(t, nil).app, hooks: newTestHooks()}
 	rs := []devconf.SectionResult{
 		{Name: "aaa", State: devconf.StateDiffers, Lines: []devconf.DiffLine{
 			{Op: devconf.OpSame, Text: "set system tacplus-server 192.0.2.10 secret (present, not compared)", Secret: true},

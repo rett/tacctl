@@ -57,7 +57,7 @@ func TestScopeBlocksFollowRenameRemoveAndRestore(t *testing.T) {
 	if strings.Contains(sb.overrides(), "blocks") {
 		t.Errorf("keys left after the removal:\n%s", sb.overrides())
 	}
-	id := (&invocation{app: newHarness(t, nil, sb.env...).app}).snapshotIDs()[0]
+	id := (&invocation{app: newHarness(t, nil, sb.env...).app, hooks: newTestHooks()}).snapshotIDs()[0]
 	for rel, mode := range map[string]os.FileMode{"blocks": 0o700, "blocks/edge": 0o700, "blocks/edge/juniper": 0o700, "blocks/edge/juniper/snmp": 0o600} {
 		st, err := os.Stat(sb.path("state/backups/" + id + "/" + rel))
 		if err != nil || st.Mode().Perm() != mode {

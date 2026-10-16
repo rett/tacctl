@@ -248,7 +248,7 @@ func shellTestInv(t *testing.T) (*invocation, *cobra.Command, *fake.Runner) {
 		}
 		return execx.Result{}, nil
 	})
-	inv := &invocation{ctx: t.Context(), app: h.app, build: BuildInfo{Version: "0.2.1-test"}}
+	inv := &invocation{ctx: t.Context(), app: h.app, build: BuildInfo{Version: "0.2.1-test"}, hooks: newTestHooks()}
 	h.app.Runner = &namesCache{Runner: h.runner, ttl: time.Hour, now: time.Now}
 	return inv, newRoot(inv), h.runner
 }

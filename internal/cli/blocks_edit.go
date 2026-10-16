@@ -46,10 +46,6 @@ import (
 // back to the editor.
 const blockEditRounds = 5
 
-// editEuid is the identity this process has (tests replace it, to run the
-// credential drop on a process that is not root).
-var editEuid = os.Geteuid
-
 // findingPrefix starts every line the editor is shown that is not the
 // block's: the findings of the last attempt. Every such line is removed
 // before a text is read as a block.
@@ -182,7 +178,7 @@ type editorIdentity struct {
 // person's own root session, which is who the editor runs as.
 func (inv *invocation) editorIdentity() (editorIdentity, error) {
 	a := inv.app
-	euid := editEuid()
+	euid := inv.hooks.euid()
 	uid, _, ok := inv.callerIDs()
 	switch {
 	case euid != 0:
@@ -199,7 +195,7 @@ func (inv *invocation) editorIdentity() (editorIdentity, error) {
 		return editorIdentity{}, errors.New("the invoking user could not be verified")
 	}
 	user := inv.sudoUser()
-	acct, err := sshAccountOf(user)
+	acct, err := inv.hooks.account(user)
 	if err != nil || acct.Home == "" {
 		return editorIdentity{}, errors.New("the account of '" + user + "' cannot be looked up here")
 	}
@@ -234,7 +230,7 @@ func (inv *invocation) editorAllowed(what string) error {
 
 // terminalRequired refuses a verb that needs the person at a terminal.
 func (inv *invocation) terminalRequired(what string) error {
-	if sshTerminal(inv.app.Stdin) && isTerminalWriter(inv.app.Out.Stdout) {
+	if inv.hooks.terminalIn(inv.app.Stdin) && inv.hooks.terminalWriter(inv.app.Out.Stdout) {
 		return nil
 	}
 	return inv.usageErr(what + " opens an editor and needs a terminal on standard input and output. Nothing was changed.")

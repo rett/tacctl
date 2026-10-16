@@ -420,8 +420,8 @@ func TestPullWTIUserDirectoryNotRead(t *testing.T) {
 	b.sb.run("", []string{"scope", "breakglass", "lab", "add", "lab-admin"})
 	// the second connection of the read (the user directory's) is refused
 	var dials atomic.Int32
-	inner := deviceDialOverride
-	deviceDialOverride = func(ctx context.Context, network, addr string) (net.Conn, error) {
+	inner := b.sb.hooks.deviceDial
+	b.sb.hooks.deviceDial = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		if dials.Add(1) > 1 {
 			return nil, errors.New("connection refused")
 		}
@@ -537,7 +537,7 @@ func TestPullWTIFailedKeepsTheLastGoodPull(t *testing.T) {
 	srv := fakedev.New(wtiUnitDir(t, "user", "8.10", 0), fakedev.WithCredentials("alice", testPassword))
 	t.Cleanup(srv.Stop)
 	addr := srv.Addr()
-	deviceDialOverride = func(ctx context.Context, network, _ string) (net.Conn, error) {
+	b.sb.hooks.deviceDial = func(ctx context.Context, network, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, network, addr)
 	}
 	b.srv = srv

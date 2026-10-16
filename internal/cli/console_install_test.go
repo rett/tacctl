@@ -33,7 +33,7 @@ func (sb *sandbox) rootRun(args []string, script func(*fake.Runner)) string {
 	a := app.New(args, paths.NewEnv(sb.env), "/opt/x/dist/tacctl", 1000,
 		app.Stdio{Stdin: strings.NewReader(""), Stdout: &sb.out, Stderr: &sb.err}, sb.runner)
 	a.Paths = a.Paths.Reroot(sb.dir)
-	sb.code = exitCode(Run(context.Background(), a, BuildInfo{Version: "0.2.1-test", Commit: "c", Date: "d"}), a.Out)
+	sb.code = exitCode(runWith(context.Background(), a, BuildInfo{Version: "0.2.1-test", Commit: "c", Date: "d"}, sb.hooks), a.Out)
 	return plain(sb.out.String() + sb.err.String())
 }
 

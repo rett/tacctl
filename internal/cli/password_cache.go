@@ -42,13 +42,6 @@ const (
 	cacheOn         // the console: its policy answer said yes
 )
 
-// newAskpassAgent makes the agent (askpass.New: tests replace it to
-// simulate a memory limit).
-var newAskpassAgent = askpass.New
-
-// setNotDumpable marks the process not dumpable (tests replace it).
-var setNotDumpable = askpass.MarkNotDumpable
-
 // passwordCacheUnavailable is the one line the shell prints when it asked
 // for a cache and could not have it (for the lock, the first words).
 func passwordCacheUnavailable(err error) string {
@@ -156,7 +149,7 @@ func (inv *invocation) openPasswordCache(r shellRun, managed bool) *passwordCach
 		max = askpass.DefaultMax
 	}
 	c := &passwordCache{}
-	ag, err := newAskpassAgent(askpass.Options{UID: os.Geteuid(), Idle: idle, Max: max, Notify: c.note})
+	ag, err := inv.hooks.agent(askpass.Options{UID: os.Geteuid(), Idle: idle, Max: max, Notify: c.note})
 	if err != nil {
 		_, _ = fmt.Fprintln(a.Out.Stderr, passwordCacheUnavailable(err))
 		return nil

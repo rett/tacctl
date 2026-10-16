@@ -53,7 +53,7 @@ func (sb *sandbox) runFamily(stdin string, mk func(*invocation) *cobra.Command, 
 	a := app.New(args, paths.NewEnv(sb.env), "/opt/x/dist/tacctl", 1000,
 		app.Stdio{Stdin: strings.NewReader(stdin), Stdout: &sb.out, Stderr: &sb.err}, sb.runner)
 	a.Paths.ConsoleCommand = sb.consoleCommand()
-	inv := &invocation{ctx: context.Background(), app: a}
+	inv := &invocation{ctx: context.Background(), app: a, hooks: newTestHooks()}
 	cmd, rest := resolve(mk(inv), args[2:])
 	sb.code = exitCode(cmd.RunE(cmd, rest), a.Out)
 	if len(sb.runner.Execs()) != 0 {
@@ -415,7 +415,7 @@ func TestGroupCommandsPositionAndSelector(t *testing.T) {
 // Every verb has a Spec (its arguments for completion), and every kind a
 // Spec names is one completion can answer or a fixed word list.
 func TestScopeGroupConfigSpecs(t *testing.T) {
-	inv := &invocation{app: newHarness(t, nil).app}
+	inv := &invocation{app: newHarness(t, nil).app, hooks: newTestHooks()}
 	check := func(family string, specs map[string]Spec, cmds []*cobra.Command) {
 		t.Helper()
 		var count int

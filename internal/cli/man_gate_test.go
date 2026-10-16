@@ -91,7 +91,7 @@ func readManDoc(t *testing.T) *manDoc {
 		t.Fatal(err)
 	}
 	d := &manDoc{lines: strings.Split(strings.TrimSuffix(string(src), "\n"), "\n"), sections: map[string][2]int{}}
-	root := newRoot(&invocation{app: newHarness(t, nil).app})
+	root := newRoot(&invocation{app: newHarness(t, nil).app, hooks: newTestHooks()})
 	section, sub, last := "", "", ""
 	closeEntry := func(i int) {
 		if n := len(d.entries); n > 0 && d.entries[n-1].end == 0 {
@@ -217,7 +217,7 @@ func manHas(text, word string) bool {
 // TestEveryFlagHasADescription walks).
 func TestManPageDocumentsEveryFlag(t *testing.T) {
 	d := readManDoc(t)
-	root := newRoot(&invocation{app: newHarness(t, nil).app})
+	root := newRoot(&invocation{app: newHarness(t, nil).app, hooks: newTestHooks()})
 	var all [][]string
 	treeVerbs(root, nil, &all)
 	checked := 0

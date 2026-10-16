@@ -171,24 +171,23 @@ func TestProbe(t *testing.T) {
 	}
 	closed := ln2.Addr().(*net.TCPAddr).Port
 	_ = ln2.Close()
-	got := Probe(t.Context(), []ProbeTarget{{Host: "127.0.0.1", Port: open}, {Host: "127.0.0.1", Port: closed}})
+	got := Probe(t.Context(), []ProbeTarget{{Host: "127.0.0.1", Port: open}, {Host: "127.0.0.1", Port: closed}}, nil)
 	if got[0] != ProbeOpen || got[1] != ProbeClosed {
 		t.Errorf("%q", got)
 	}
 
 	// Timeouts and other failures, through a dialer that never leaves the
 	// machine.
-	ProbeDial = func(ctx context.Context, _, addr string) (net.Conn, error) {
+	dial := func(ctx context.Context, _, addr string) (net.Conn, error) {
 		if strings.HasPrefix(addr, "[2001:db8::1]") {
 			<-ctx.Done()
 			return nil, ctx.Err()
 		}
 		return nil, &net.DNSError{Err: "no such host", Name: addr, IsNotFound: true}
 	}
-	defer func() { ProbeDial = nil }()
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
-	got = Probe(ctx, []ProbeTarget{{Host: "2001:db8::1", Port: 22}, {Host: "sw.example.net", Port: 22}})
+	got = Probe(ctx, []ProbeTarget{{Host: "2001:db8::1", Port: 22}, {Host: "sw.example.net", Port: 22}}, dial)
 	if got[0] != ProbeTimedOut || got[1] != ProbeUnreachable {
 		t.Errorf("%q", got)
 	}

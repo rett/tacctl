@@ -140,7 +140,7 @@ func TestBackendListStatusAndUsage(t *testing.T) {
 // Every native verb of the families of this file has a Spec, and every
 // kind a Spec names is one completion can answer.
 func TestWP24dSpecs(t *testing.T) {
-	inv := &invocation{app: newHarness(t, nil).app}
+	inv := &invocation{app: newHarness(t, nil).app, hooks: newTestHooks()}
 	families := []struct {
 		cmd   *cobra.Command
 		specs map[string]Spec

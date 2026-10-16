@@ -210,7 +210,7 @@ func (ob *onboard) run() (int, error) {
 	// 2. The local account's password, then the pre-flight. From the dial to
 	// the end of the check a Ctrl-C cancels (nothing is committed before the
 	// review), within twice the per-device timeout of a pull.
-	ob.src = newLocalPasswords(inv, ob.local.account, ob.addr)
+	ob.src = inv.hooks.newLocalPasswords(inv, ob.local.account, ob.addr)
 	pw, err := ob.src.Password(inv.ctx, ob.local.account)
 	if err != nil {
 		return 0, err
@@ -295,7 +295,7 @@ func (ob *onboard) run() (int, error) {
 	if !ob.review(o) {
 		return batch.ExitFailed, nil
 	}
-	tp := newDevicePasswords(inv)
+	tp := inv.hooks.newDevicePasswords(inv)
 	tpw, err := tp.Password(inv.ctx, ob.user)
 	if err != nil {
 		inv.app.Out.ErrorE(err.Error())

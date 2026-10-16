@@ -59,7 +59,7 @@ func syncInputs(t *testing.T, sb *sandbox) map[string]string {
 	a := app.New(nil, paths.NewEnv(env), "/opt/x/dist/tacctl", 0, app.Stdio{Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr}, runner)
 	a.Resolve = sb.resolve
 	a.Paths = a.Paths.Reroot(sb.dir)
-	inv := &invocation{ctx: context.Background(), app: a}
+	inv := &invocation{ctx: context.Background(), app: a, hooks: newTestHooks()}
 
 	reg, err := inv.registry()
 	if err != nil {

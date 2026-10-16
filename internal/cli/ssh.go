@@ -123,8 +123,9 @@ Examples:
 `
 }
 
-// sshTerminal reports whether stdin is a terminal; the Go tests replace it.
-var sshTerminal = func(r io.Reader) bool {
+// realTerminalIn reports whether stdin is a terminal (hooks.sshTerminal
+// replaces it in the Go tests).
+func realTerminalIn(r io.Reader) bool {
 	f, ok := r.(*os.File)
 	return ok && term.IsTerminal(int(f.Fd()))
 }
@@ -177,7 +178,7 @@ func (inv *invocation) ssh(args []string) error {
 	if err := inv.verifySudoUser("tacctl ssh"); err != nil {
 		return err
 	}
-	if !sshTerminal(a.Stdin) {
+	if !inv.hooks.terminalIn(a.Stdin) {
 		return inv.usageErr("a terminal is required: tacctl ssh opens an interactive session")
 	}
 	if inv.sshConsole() && len(extra) > 0 && strings.HasPrefix(extra[0], "-") {
@@ -343,9 +344,9 @@ type sshAccount struct {
 	Home     string
 }
 
-// sshAccountOf looks the caller up in the local account database, with the
-// supplementary groups (tests replace it).
-var sshAccountOf = func(name string) (sshAccount, error) {
+// lookupAccount looks the caller up in the local account database, with the
+// supplementary groups (hooks.sshAccountOf replaces it in tests).
+func lookupAccount(name string) (sshAccount, error) {
 	u, err := user.Lookup(name)
 	if err != nil {
 		return sshAccount{}, err
@@ -427,7 +428,7 @@ func sshUserEnviron(environ []string, acct sshAccount, name string, extra []stri
 // caller's account cannot be looked up here.
 func (inv *invocation) sshCachedCommand(plan sshPlan, caller string, c *askpass.Client) (execx.Cmd, bool) {
 	a := inv.app
-	acct, err := sshAccountOf(caller)
+	acct, err := inv.hooks.account(caller)
 	if err != nil || acct.Home == "" {
 		return execx.Cmd{}, false
 	}

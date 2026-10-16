@@ -73,7 +73,7 @@ func TestDeviceBlocksFollowRenameRemoveAndRestore(t *testing.T) {
 		t.Errorf("tacctl.yaml after the rename:\n%s", o)
 	}
 	// The snapshot the rename took first holds the files under the old name.
-	id := (&invocation{app: newHarness(t, nil, sb.env...).app}).snapshotIDs()[0]
+	id := (&invocation{app: newHarness(t, nil, sb.env...).app, hooks: newTestHooks()}).snapshotIDs()[0]
 	if _, err := os.Stat(sb.path("state/backups/" + id + "/blocks/_devices/js1.lab.example.net/juniper/snmp")); err != nil {
 		t.Errorf("the snapshot lacks the block: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestDeviceBlocksFollowRenameRemoveAndRestore(t *testing.T) {
 	if strings.Contains(sb.overrides(), "blocks_device") {
 		t.Errorf("keys left after the removal:\n%s", sb.overrides())
 	}
-	id = (&invocation{app: newHarness(t, nil, sb.env...).app}).snapshotIDs()[0]
+	id = (&invocation{app: newHarness(t, nil, sb.env...).app, hooks: newTestHooks()}).snapshotIDs()[0]
 	for rel, mode := range map[string]os.FileMode{
 		"blocks/_devices": 0o700, "blocks/_devices/" + devBlocksNew + "/juniper": 0o700, "blocks/_devices/" + devBlocksNew + "/juniper/snmp": 0o600,
 	} {
@@ -203,7 +203,7 @@ func TestDeviceBlocksRenameThatCannotMoveFilesPutsTheKeysBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := newHarness(t, nil, sb.env...)
-	(&invocation{app: h.app}).blocksDeviceCarry(devBlocksOld, devBlocksNew)
+	(&invocation{app: h.app, hooks: newTestHooks()}).blocksDeviceCarry(devBlocksOld, devBlocksNew)
 	if w := plain(h.out.String()); !strings.Contains(w, "were not carried over to '"+devBlocksNew+"'") || !strings.Contains(w, "already on disk") ||
 		!strings.Contains(w, "still kept under the old name") {
 		t.Errorf("the warning:\n%s", w)

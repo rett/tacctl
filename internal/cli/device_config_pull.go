@@ -232,32 +232,14 @@ type devicePasswords interface {
 	Rejected()
 }
 
-// newDevicePasswords is the source of the invocation's password; tests
-// replace it. The process is marked not dumpable first (a password it
-// prompted for will live in its memory) and the session's password cache
-// variable is read, once, and taken out of the environment
-// (password_cache.go).
-var newDevicePasswords = func(inv *invocation) devicePasswords {
-	_ = setNotDumpable()
-	return &terminalPasswords{inv: inv, client: inv.takeAskpass()}
-}
-
-// passwordPrompt reads a line from a terminal without echo (tests replace
-// it).
-var passwordPrompt = askpass.Prompt
+// The source of the invocation's password is hooks.newDevicePasswords
+// (hooks.go).
 
 // errNoPassword is a pull with no terminal and no cached password.
 var errNoPassword = errors.New("a password is needed and no terminal or cached password is available")
 
-// newLocalPasswords is the source of a local account's password ('--login',
-// 'device onboard', D136): the terminal only, with no password cache
-// client, so nothing is ever asked of the cache, stored in it or forgotten
-// by it. account is the device's local account and where the device it is
-// asked for. Tests replace it.
-var newLocalPasswords = func(inv *invocation, account, where string) *terminalPasswords {
-	_ = setNotDumpable()
-	return &terminalPasswords{inv: inv, local: account, where: where}
-}
+// A local account's password source ('--login', 'device onboard', D136) is
+// hooks.newLocalPasswords (hooks.go).
 
 // terminalPasswords is the default source: the session's password cache
 // first, then the terminal.
@@ -324,7 +306,7 @@ func (t *terminalPasswords) Password(ctx context.Context, user string) ([]byte, 
 		return nil, errNoPassword
 	}
 	defer closeTTY()
-	pw, err := passwordPrompt(tty, "Password for "+user+" (device login): ")
+	pw, err := t.inv.hooks.prompt(tty, "Password for "+user+" (device login): ")
 	if err != nil {
 		if errors.Is(err, askpass.ErrCancelled) {
 			return nil, ui.ErrInterrupted
@@ -355,7 +337,7 @@ func (t *terminalPasswords) localPassword() ([]byte, error) {
 		}
 		defer closeTTY()
 		var err error
-		pw, err = passwordPrompt(tty, "Password of "+t.local+" on "+t.where+" (a local account; asked once, never kept): ")
+		pw, err = t.inv.hooks.prompt(tty, "Password of "+t.local+" on "+t.where+" (a local account; asked once, never kept): ")
 		switch {
 		case errors.Is(err, askpass.ErrCancelled):
 			return nil, ui.ErrInterrupted
@@ -450,21 +432,16 @@ func (inv *invocation) passwordTerminal() (*os.File, func()) {
 
 // --- the dial ------------------------------------------------------------------
 
-// deviceDialOverride replaces the TCP dial of every device in tests (the
-// in-process fake device); nil dials the device's own address. A test build
-// can also set the knob TACCTL_TEST_DEVICE_DIAL.
-var deviceDialOverride devssh.Dialer
-
 // deviceDialer is the dialer of this invocation's device sessions: the
-// knob's loopback address (test builds) or the tests' override, else nil
-// (the device's own address).
+// knob's loopback address (test builds) or the tests' override
+// (hooks.deviceDial), else nil (the device's own address).
 func (inv *invocation) deviceDialer() devssh.Dialer {
 	if addr := inv.app.Knobs.DeviceDial(); addr != "" {
 		return func(ctx context.Context, network, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, network, addr)
 		}
 	}
-	return deviceDialOverride
+	return inv.hooks.dialer()
 }
 
 // deviceTarget is where and how to log in to a registered device.
@@ -544,14 +521,9 @@ func (r netconfRunner) Run(ctx context.Context, cmd string) (string, error) {
 	return devssh.ReplyText(reply)
 }
 
-// factsTimeout bounds the fact commands of a pull (all of them together): a
-// device that stalls on one costs the pull this much more, never the rest of
-// its timeout, and the pull is recorded with the facts it has.
-var factsTimeout = 15 * time.Second
-
-// readFacts is devconf.ReadFacts within factsTimeout.
-func readFacts(ctx context.Context, r devconf.Runner, vendor string, f devconf.Facts) devconf.Facts {
-	fctx, cancel := context.WithTimeout(ctx, factsTimeout)
+// readFacts is devconf.ReadFacts within the facts limit (hooks.factsLimit).
+func readFacts(ctx context.Context, limit time.Duration, r devconf.Runner, vendor string, f devconf.Facts) devconf.Facts {
+	fctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	return devconf.ReadFacts(fctx, r, vendor, f)
 }
@@ -567,7 +539,7 @@ func readFacts(ctx context.Context, r devconf.Runner, vendor string, f devconf.F
 //
 // opts open the command-line session (a root login's wrapper, D136); with
 // them the session is a shell.
-func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string, second func(context.Context) (*devssh.Client, error), opts ...devssh.CLIOption) (deviceRead, error) {
+func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string, factsLimit time.Duration, second func(context.Context) (*devssh.Client, error), opts ...devssh.CLIOption) (deviceRead, error) {
 	var out deviceRead
 	if fam, _ := devconf.Family(vendor); fam == devconf.FamilyWTI {
 		return readWTI(ctx, c, mode, second)
@@ -593,7 +565,7 @@ func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string
 				}
 				plain := devconf.ReadPlain(ctx, netconfRunner{ns}, vendor)
 				// last: what the pull needs is read first
-				return text, plain, readFacts(ctx, netconfRunner{ns}, vendor, facts), nil
+				return text, plain, readFacts(ctx, factsLimit, netconfRunner{ns}, vendor, facts), nil
 			}()
 			if rerr == nil {
 				out.Raw, out.Plain, out.Facts, out.Transport = raw, plain, facts, transportNetconf
@@ -630,7 +602,7 @@ func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string
 	}
 	out.Raw, out.Version, out.Transport = raw, version, transportSSH
 	out.Plain = devconf.ReadPlain(ctx, s, vendor)
-	out.Facts = readFacts(ctx, s, vendor, facts)
+	out.Facts = readFacts(ctx, factsLimit, s, vendor, facts)
 	return out, nil
 }
 
@@ -887,7 +859,7 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 			mode = transportSSH
 		}
 	}
-	rd, err := readDeviceConfig(ctx, client, e.Vendor, mode, second, opts...)
+	rd, err := readDeviceConfig(ctx, client, e.Vendor, mode, inv.hooks.factsLimit(), second, opts...)
 	if rd.Netconf != "" {
 		o.Netconf = rd.Netconf
 	}
@@ -1106,20 +1078,14 @@ func (inv *invocation) configStore() devconf.Store {
 	return devconf.Store{Records: inv.app.Paths.ConfigRecords, Dir: inv.app.Paths.ConfigDir}
 }
 
-// interruptSource, when a test sets it, is the source of the operator's
-// interrupts instead of the process's signals: the channel each Ctrl-C
-// arrives on, so a test delivers them without a signal that any other code
-// of the process could see.
-var interruptSource func() <-chan struct{}
-
 // batchInterrupts wires the operator's Ctrl-C to the runner: the first
 // SIGINT stops new devices from starting, the second cancels the running
 // ones; SIGTERM and SIGHUP cancel at once. The context is not the
 // invocation's (whose cancellation is the first SIGINT).
 func (inv *invocation) batchInterrupts() (ctx context.Context, interrupts <-chan struct{}, stop func()) {
 	ctx, cancel := context.WithCancel(context.WithoutCancel(inv.ctx))
-	if interruptSource != nil {
-		return ctx, interruptSource(), cancel
+	if src := inv.hooks.interrupts(); src != nil {
+		return ctx, src(), cancel
 	}
 	ch := make(chan os.Signal, 4)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
@@ -1174,7 +1140,7 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 		if len(b.entries) != 1 {
 			return batch.Summary{}, nil, errors.New("a local login reads one device")
 		}
-		src := newLocalPasswords(inv, b.local.account, b.entries[0].Name+" ("+b.entries[0].Address+")")
+		src := inv.hooks.newLocalPasswords(inv, b.local.account, b.entries[0].Name+" ("+b.entries[0].Address+")")
 		run.passwd = src
 		pw, err := src.Password(inv.ctx, b.local.account)
 		if err != nil {
@@ -1185,7 +1151,7 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 		inv.app.Logger(inv.auditContext(), "auth.info", fmt.Sprintf("device config pull user=%s device=%s login=%s%s",
 			b.user, b.entries[0].Name, devconf.LocalLoginPrefix, b.local.account))
 	} else {
-		run.passwd = newDevicePasswords(inv)
+		run.passwd = inv.hooks.newDevicePasswords(inv)
 		// The password, once, before any connection.
 		pw, err := run.passwd.Password(inv.ctx, b.user)
 		if err != nil {

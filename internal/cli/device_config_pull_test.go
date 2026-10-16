@@ -79,13 +79,11 @@ func newPullBoxIn(t *testing.T, dir string, opts ...fakedev.Option) *pullBox {
 	srv := fakedev.New(dir, opts...)
 	t.Cleanup(srv.Stop)
 	addr := srv.Addr()
-	prevDial, prevPW := deviceDialOverride, newDevicePasswords
-	deviceDialOverride = func(ctx context.Context, network, _ string) (net.Conn, error) {
+	b := &pullBox{t: t, sb: newSandbox(t, true), dir: dir, srv: srv, pw: &staticPasswords{pw: testPassword}}
+	b.sb.hooks.deviceDial = func(ctx context.Context, network, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, network, addr)
 	}
-	b := &pullBox{t: t, sb: newSandbox(t, true), dir: dir, srv: srv, pw: &staticPasswords{pw: testPassword}}
-	newDevicePasswords = func(*invocation) devicePasswords { return b.pw }
-	t.Cleanup(func() { deviceDialOverride, newDevicePasswords = prevDial, prevPW })
+	b.sb.hooks.devicePasswords = func(*invocation) devicePasswords { return b.pw }
 	return b
 }
 
@@ -118,7 +116,7 @@ func (b *pullBox) invoke() *invocation {
 	route(r)
 	a := app.New(nil, paths.NewEnv(append(append([]string(nil), b.sb.env...), "SUDO_USER=alice")), "/opt/x/dist/tacctl", 1000,
 		app.Stdio{Stdin: strings.NewReader(""), Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}, r)
-	return &invocation{ctx: context.Background(), app: a}
+	return &invocation{ctx: context.Background(), app: a, hooks: b.sb.hooks}
 }
 
 // expected is the configuration text of the named registered device as
@@ -678,7 +676,7 @@ func (b *pullBox) start(out *lockedBuf, args ...string) chan int {
 	a.Paths.ConsoleCommand = b.sb.consoleCommand()
 	code := make(chan int, 1)
 	go func() {
-		code <- exitCode(Run(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}), a.Out)
+		code <- exitCode(runWith(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}, b.sb.hooks), a.Out)
 	}()
 	return code
 }
@@ -730,10 +728,7 @@ func TestPullInterruptStagesExit130(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(b.dir, junosReadCmd+".hang"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ch := make(chan struct{}) // unbuffered: a send returns when the runner took it
-	prev := interruptSource
-	interruptSource = func() <-chan struct{} { return ch }
-	t.Cleanup(func() { interruptSource = prev })
+	ch := b.interrupts()
 
 	out := &lockedBuf{}
 	code := b.start(out, "device", "config", "pull", "--all", "--concurrency", "1", "--transport", "ssh")
@@ -839,10 +834,7 @@ func TestDiffPullExitStatusFollowsThePull(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(b.dir, junosReadCmd+".hang"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ch := make(chan struct{})
-	prev := interruptSource
-	interruptSource = func() <-chan struct{} { return ch }
-	t.Cleanup(func() { interruptSource = prev })
+	ch := b.interrupts()
 	before := b.served(junosReadCmd)
 	out2 := &lockedBuf{}
 	code := b.start(out2, "device", "config", "diff", "lab-a", "--pull", "--transport", "ssh")
@@ -917,7 +909,7 @@ func TestDeviceConfigTiers(t *testing.T) {
 	srv := fakedev.New(b.dir, fakedev.WithCredentials("bob", testPassword))
 	t.Cleanup(srv.Stop)
 	addr := srv.Addr()
-	deviceDialOverride = func(ctx context.Context, network, _ string) (net.Conn, error) {
+	b.sb.hooks.deviceDial = func(ctx context.Context, network, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, network, addr)
 	}
 	b.srv = srv
@@ -1228,7 +1220,7 @@ func TestConfigStatesRendered(t *testing.T) {
 // pty.
 func TestPullPromptsOnTheTerminalOnce(t *testing.T) {
 	b := newPullBox(t)
-	newDevicePasswords = func(inv *invocation) devicePasswords { return &terminalPasswords{inv: inv} }
+	b.sb.hooks.devicePasswords = func(inv *invocation) devicePasswords { return &terminalPasswords{inv: inv} }
 	b.devices([3]string{"lab-a", "192.168.1.21", "juniper"}, [3]string{"lab-b", "192.168.1.22", "juniper"})
 	b.serve("juniper", "set system host-name x\n")
 	master, slave, err := testpty.Open()
@@ -1289,7 +1281,7 @@ func TestPullWithoutTerminalRefuses(t *testing.T) {
 		t.Skip("this process has a controlling terminal, which the prompt would use")
 	}
 	b := newPullBox(t)
-	newDevicePasswords = func(inv *invocation) devicePasswords { return &terminalPasswords{inv: inv} }
+	b.sb.hooks.devicePasswords = func(inv *invocation) devicePasswords { return &terminalPasswords{inv: inv} }
 	b.devices([3]string{"lab-a", "192.168.1.21", "juniper"})
 	b.run("device", "config", "pull", "lab-a")
 	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "a password is needed and no terminal or cached password is available") {

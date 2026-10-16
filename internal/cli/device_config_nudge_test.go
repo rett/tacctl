@@ -27,12 +27,10 @@ func TestSettersNudgeFromTheStoredPull(t *testing.T) {
 	}
 	calls := len(b.sb.runner.Calls())
 	// the nudge reads the stored pull: a dial of the device fails the test
-	prevDial := deviceDialOverride
-	deviceDialOverride = func(context.Context, string, string) (net.Conn, error) {
+	b.sb.hooks.deviceDial = func(context.Context, string, string) (net.Conn, error) {
 		t.Error("a setter dialled the device")
 		return nil, errors.New("no network in a nudge")
 	}
-	defer func() { deviceDialOverride = prevDial }()
 	for _, args := range [][]string{
 		{"device", "location", "lab-j", "Row 3"},
 		{"device", "description", "lab-j", "Core", "switch"},
