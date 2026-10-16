@@ -148,6 +148,18 @@ func Install(ctx context.Context, h *Host, args []string) error {
 	if err := h.install(ctx, ids, backend.PhaseAccount, tree); err != nil {
 		return err
 	}
+	// From here the phases write the store, tacctl.yaml and rendered.json
+	// and restart the services (the seed, the render, the start): no other
+	// command changes them between, as for an upgrade. Before it, nothing
+	// does: the builds, the clone, the packages and the accounts. A fresh
+	// install has no other command to wait for; a re-run over a live
+	// store does.
+	unlock, err := h.HoldApply(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	// Shared secret, store, configuration.
 	seed, err := InstallSeed(ctx, h.Env)
 	if err != nil {

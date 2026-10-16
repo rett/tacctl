@@ -622,6 +622,60 @@ func TestInstallOverExistingCloneAndStore(t *testing.T) {
 	}
 }
 
+// The apply lock: an install over a live store holds it from the seed (the
+// store's configuration step, the render) to the end of the start phase, and
+// not during the builds, the files and the account; another command that
+// holds it makes the install wait once.
+func TestInstallHoldsTheApplyLockFromTheSeed(t *testing.T) {
+	o := newOhost(t)
+	o.write(filepath.Join(o.p.Deploy, "bin", "tacctl.sh"), "#!/bin/bash\n")
+	_ = os.MkdirAll(filepath.Join(o.p.Deploy, ".git"), 0o755)
+	o.write(o.p.Command, "the shim built this\n")
+	_ = os.Chmod(o.p.Command, 0o755)
+	o.write(o.p.StoreFile, fixture(t, "store.minimal.yaml"))
+	hold, err := applylock.New(o.p.StateDir).Acquire(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		time.Sleep(800 * time.Millisecond)
+		hold()
+	}()
+	start := time.Now()
+	if code := install(o, "-y"); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if took := time.Since(start); took < 700*time.Millisecond {
+		t.Errorf("took %v: did not wait", took)
+	}
+	if n := strings.Count(o.text(), backend.WaitingMsg); n != 1 {
+		t.Errorf("waiting line %d times", n)
+	}
+	// held is the depth at the phase line that starts with prefix (the
+	// install phases carry the tree after the phase).
+	held := func(prefix string) (int, bool) {
+		for line, h := range o.heldAt {
+			if strings.HasPrefix(line, prefix) {
+				return h, true
+			}
+		}
+		return 0, false
+	}
+	for _, line := range []string{"tacacs install build", "tacacs install account"} {
+		if h, ok := held(line); !ok || h != 0 {
+			t.Errorf("%s: held %d (seen %v)", line, h, ok)
+		}
+	}
+	for _, line := range []string{"tacacs upgrade config", "tacacs install start"} {
+		if h, ok := held(line); !ok || h != 1 {
+			t.Errorf("%s: held %d (seen %v), want 1", line, h, ok)
+		}
+	}
+	if o.lock.Held() != 0 {
+		t.Error("the lock is still held after the install")
+	}
+}
+
 // Over an existing store, a backend's 'upgrade config' phase that fails is
 // named with the way to finish (after its own messages), and the install
 // carries on to the start phase and the summary, exit 0.

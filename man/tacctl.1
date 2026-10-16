@@ -10715,10 +10715,11 @@ the RADIUS listener changes,
 .BR "backend enable|disable" ,
 .BR "store import" ,
 .BR "store rollback" ,
-.B "backup restore"
-and
+.BR "backup restore" ,
 .B upgrade
-(after its self-update) take it; a command that only reads does not. A file
+(after its self-update) and
+.B install
+(from its seed to its end) take it; a command that only reads does not. A file
 that was edited by hand while a command ran is saved as
 .I <file>.overwritten\-<timestamp>
 in

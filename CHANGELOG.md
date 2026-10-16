@@ -33,6 +33,15 @@ current behaviour; this file is where history lives.
    explains, and the manual page's TIERS block reads it from there. No help
    text changes.
 
+4. **A re-run of `tacctl install` takes the apply lock.** Over a live
+   store it renders and restarts the services as an upgrade does, and
+   took no lock, so another command's change could be put back or lost
+   between its steps. It now holds the lock from the seed (the store
+   check, the configuration step of each backend, the render) to the end of
+   the start phase, and waits as the other commands do while another one
+   holds it. The builds, the clone, the packages and the service accounts
+   before it do not hold it; a fresh install has nothing to wait for.
+
 ## 0.2.11 (2026-10-15)
 
 1. **`tacctl group preset roles` shows what each setting changes.** Under every
