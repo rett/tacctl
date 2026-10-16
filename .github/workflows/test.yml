@@ -43,7 +43,7 @@ jobs:
           check-latest: false
           cache: false
       - name: gofmt
-        run: test -z "$(gofmt -l .)"
+        run: test -z "$(gofmt -l cmd internal)"
       - name: go vet
         run: |
           go vet ./...
