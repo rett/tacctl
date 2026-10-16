@@ -1,6 +1,8 @@
-# The Go tests, on a pull request and on a push to develop or master (the
-# bats suite, the diff corpus and the container matrix need a root-owned
-# host and stay on the maintainer's machines: tests/README.md).
+# The Go tests, on a pull request and on a push to develop. master is not
+# listed: after a release it holds develop's files, and the release is a pull
+# request first (docs/releasing.md). The bats suite, the diff corpus and the
+# container matrix need a root-owned host and stay on the maintainer's
+# machines (tests/README.md).
 # The tag 0.2.2 is fetched (fetch-tags): two tests build or read it and skip
 # without it. internal/cli takes over twenty minutes in one piece, so it
 # runs in four shards (tests/tools/go-test-shard.sh); every other package
@@ -11,7 +13,7 @@ name: test
 on:
   pull_request:
   push:
-    branches: [develop, master]
+    branches: [develop]
   workflow_dispatch:
 
 permissions:

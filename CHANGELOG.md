@@ -3,6 +3,14 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.13 (unreleased)
+
+1. **The `test` workflow no longer runs on a push to `master`.** After a
+   release `master` and `develop` hold the same files, so the second run
+   tested nothing new. The release procedure pushes the release branch and
+   opens a pull request to `master`, so the Go tests run on the release
+   commit before the tag exists (`docs/releasing.md`).
+
 ## 0.2.12 (2026-10-16)
 
 1. **`config get` and `config get-list` complete every key of the schema.**
