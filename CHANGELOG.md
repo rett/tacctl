@@ -26,6 +26,13 @@ current behaviour; this file is where history lives.
    the name would take it over). They come from a store import, a restore
    or a hand edit; `group remove` and `scope remove` drop what they own.
 
+3. **The tier notes are a field of the tier table.** The sentences that say
+   what a family's help adds to the tier a verb needs (`scope secret`,
+   `scope snmp`, `host show`, `device config` ...) were a second list in
+   the shell code next to the table; each is now the `Note` of the row it
+   explains, and the manual page's TIERS block reads it from there. No help
+   text changes.
+
 ## 0.2.11 (2026-10-15)
 
 1. **`tacctl group preset roles` shows what each setting changes.** Under every
