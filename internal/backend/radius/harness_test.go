@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rett/tacctl/internal/applylock"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/backend/faketest"
 	"github.com/rett/tacctl/internal/backend/radius"
@@ -53,9 +54,12 @@ type renv struct {
 	m      *radius.Module
 	tac    *faketest.Backend
 	run    *fake.Runner
-	stdout *bytes.Buffer
-	stderr *bytes.Buffer
-	now    time.Time
+	stdout *safeBuf
+	stderr *safeBuf
+	// lock is this invocation's apply lock (Env.ApplyLock and the Conf's
+	// hook, as the App wires them).
+	lock *applylock.Lock
+	now  time.Time
 
 	mu        sync.Mutex
 	active    map[string]bool // units that are running
@@ -78,6 +82,37 @@ type checkSeen struct {
 	ConfData  string
 }
 
+// safeBuf is a buffer a test may read while a command it started in a
+// goroutine writes.
+type safeBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *safeBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *safeBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+func (s *safeBuf) Len() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Len()
+}
+
+func (s *safeBuf) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.b.Reset()
+}
+
 type option func(*renv)
 
 // rhel selects the RHEL-family layout.
@@ -88,7 +123,7 @@ func newEnv(t *testing.T, opts ...option) *renv {
 	w := t.TempDir()
 	r := &renv{
 		t: t, w: w, family: "debian",
-		stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{},
+		stdout: &safeBuf{}, stderr: &safeBuf{},
 		active: map[string]bool{}, enabled: map[string]bool{},
 		now: time.Date(2026, 10, 2, 12, 0, 0, 0, time.Local),
 	}
@@ -156,10 +191,15 @@ func newEnv(t *testing.T, opts ...option) *renv {
 	snaps.Chown = nil
 	cfg := conf.Load(r.p.Overrides, r.reg.IDs())
 	cfg.Owner = nil
+	r.lock = applylock.New(r.p.StateDir)
+	cfg.Lock = func() (func(), error) {
+		return r.lock.Acquire(context.Background(), func() { out.Info(backend.WaitingMsg) })
+	}
 	r.env = &backend.Env{
 		Paths: r.p, Conf: cfg, Runner: r.run, Out: out,
 		Now:       func() time.Time { return r.now },
 		Snapshots: snaps,
+		ApplyLock: r.lock,
 	}
 	r.set = backend.NewSet(r.reg, r.env)
 	if _, err := r.set.Get(backend.RADIUS); err != nil {

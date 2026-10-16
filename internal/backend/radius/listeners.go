@@ -240,9 +240,16 @@ func (m *Module) serving() bool {
 // of the rendered config) with the restart deferred, restart, and require
 // the unit to stay up; when it does not, tacctl.yaml and the artifacts go
 // back and the unit is restarted on them. The error is ErrFailed (messages
-// written) or StoreApply's, with everything as it was.
+// written) or StoreApply's, with everything as it was. The apply lock is
+// held from before tacctl.yaml is read to after the unit is restarted.
 func (m *Module) listenerApply(ctx context.Context, writer func() error) error {
 	out := m.env.Out
+	// The two applies below re-enter the lock.
+	unlock, err := m.env.HoldApply(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	keep, err := readKept(m.env.Paths.Overrides)
 	if err != nil {
 		out.Error("Cannot read " + m.env.Paths.Overrides + ": " + err.Error())

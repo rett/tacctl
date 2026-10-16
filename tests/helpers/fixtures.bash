@@ -72,7 +72,7 @@ seed_store_from_fixture() {
             _fixture_seed_failed "${name}" "${rc}" "${out}"
             return 1
         fi
-        rm -f "${TACCTL_STATE_DIR}/.store.lock"
+        rm -f "${TACCTL_STATE_DIR}/.store.lock" "${TACCTL_STATE_DIR}/.store-apply.lock"
         _fixture_model_reset
         return 0
     fi

@@ -6,7 +6,7 @@
 group
 @known 0.2.2 item 9: the group usage lists show, junos, preset and wti-level; 0.2.3 item 2: and show names the Junos patterns
 group bogus
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.11 item 3: group list ends with a line when no group has the engineer tier
 group list
 
 # add
@@ -25,7 +25,7 @@ group add netops 7 'bad class'
 group add superuser 14 RW-CLASS
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 group add helpdesk 5 HELPDESK-CLASS
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.11 item 3: group list ends with a line when no group has the engineer tier
 group add helpdesk 5 HELPDESK-CLASS ;; group list
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 group add helpdesk 5 HELPDESK-CLASS ;; group add helpdesk 6 OTHER-CLASS
@@ -44,12 +44,12 @@ group edit nosuchgroup priv-lvl 5
 group edit operator priv-lvl
 group edit operator priv-lvl 99
 group edit operator priv-lvl ten
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.11 item 3: group list ends with a line when no group has the engineer tier
 group edit operator priv-lvl 10 ;; group list
 @known 0.2.2 item 9: the edit usage line and refusal name wti-level
 group edit operator juniper-class
 group edit operator juniper-class 'bad class'
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.11 item 3: group list ends with a line when no group has the engineer tier
 group edit operator juniper-class NEW-OP-CLASS ;; group list
 
 # remove
@@ -57,11 +57,11 @@ group remove
 group remove nosuchgroup
 group remove superuser
 group remove operator
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.11 item 3: group list ends with a line when no group has the engineer tier
 group add helpdesk 5 HELPDESK-CLASS ;; group remove helpdesk <<< y ;; group list
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.11 item 3: group list ends with a line when no group has the engineer tier
 group add helpdesk 5 HELPDESK-CLASS ;; group remove helpdesk <<< n ;; group list
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.11 item 3: group list ends with a line when no group has the engineer tier
 group add helpdesk 5 HELPDESK-CLASS ;; group remove helpdesk ;; group list
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 group add helpdesk 5 HELPDESK-CLASS ;; user add alice helpdesk --hash {HASH} --scopes lab ;; group remove helpdesk <<< y
@@ -170,7 +170,7 @@ group privilege seed nosuchgroup
 group -h
 @known 0.2.2 item 9: the group usage lists show, junos, preset and wti-level; 0.2.3 item 2: and show names the Junos patterns
 group help
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.11 item 3: group list ends with a line when no group has the engineer tier
 group list extra
 @known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 4: the group commands usage lists --before/--first and remove's --match/--action/--all, and says how a --match is tested; 0.2.2 item 5: the commands usage says Junos devices get their own deny sets
 group commands -h
@@ -180,21 +180,21 @@ group commands help
 group privilege --help
 @known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 6: the privilege usage names the modes
 group privilege help
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.11 item 3: group list ends with a line when no group has the engineer tier
 group add helpdesk 05 HELPDESK-CLASS ;; group list
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 group add helpdesk 015 HELPDESK-CLASS
 group add helpdesk 1.5 HELPDESK-CLASS
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.11 item 3: group list ends with a line when no group has the engineer tier
 group add help-desk_2 0 HD ;; group list
 group add helpdesk 5 'bad\tclass'
 group add 'bad\tname' 5 HD
 group edit helpdesk priv-lvl 5
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.11 item 3: group list ends with a line when no group has the engineer tier
 group edit operator priv-lvl 15 ;; group list ;; user add alice operator --hash {HASH} --scopes lab ;; user show alice
 group edit operator juniper-class 'x y'
 group remove helpdesk extra
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.11 item 3: group list ends with a line when no group has the engineer tier
 group add helpdesk 5 HELPDESK-CLASS ;; group remove helpdesk <<< yes ;; group list
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 group add helpdesk 5 HELPDESK-CLASS ;; group remove helpdesk <<< Y
@@ -329,7 +329,7 @@ group privilege remove operator ''
 
 # no store: legacy read-only mode answers the reads, refuses the writes
 @fixture legacy.fresh-install.yaml
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.11 item 3: group list ends with a line when no group has the engineer tier
 group list
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 group commands list operator

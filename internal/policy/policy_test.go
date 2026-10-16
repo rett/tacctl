@@ -337,6 +337,37 @@ func TestPrivileges(t *testing.T) {
 	}
 }
 
+// An empty privileges.<group> hides a shipped list: the built-in groups that
+// have one are named, a group with none and a custom group are not.
+func TestEmptyPrivilegeOverrides(t *testing.T) {
+	c, _ := newConf(t, "")
+	if got := EmptyPrivilegeOverrides(c); got != nil {
+		t.Errorf("shipped: %q", got)
+	}
+	c, _ = newConf(t, "privileges:\n  readonly: []\n  operator: []\n  superuser: []\n  helpdesk: []\n")
+	if got := EmptyPrivilegeOverrides(c); !reflect.DeepEqual(got, []string{"readonly", "operator"}) {
+		t.Errorf("empty lists: %q", got)
+	}
+	c, _ = newConf(t, "privileges:\n  operator:\n  - show clock\n")
+	if got := EmptyPrivilegeOverrides(c); got != nil {
+		t.Errorf("a list with a mapping: %q", got)
+	}
+	// 'group privilege remove' of the last mapping stores the empty list.
+	c, _ = newConf(t, "")
+	if err := WritePrivileges(c, "operator", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := EmptyPrivilegeOverrides(c); !reflect.DeepEqual(got, []string{"operator"}) {
+		t.Errorf("after an empty write: %q", got)
+	}
+	if err := ClearPrivileges(c, "operator"); err != nil {
+		t.Fatal(err)
+	}
+	if got := EmptyPrivilegeOverrides(c); got != nil {
+		t.Errorf("after the reset: %q", got)
+	}
+}
+
 // shippedOperator is operator's shipped rule lines (defaults.yaml).
 func shippedOperator() []string { return DefaultLines("operator") }
 

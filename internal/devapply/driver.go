@@ -88,6 +88,9 @@ type Input struct {
 	Committed func(o Outcome)
 	// Clock and Rand are the time and the random source of the change id.
 	Clock func() time.Time
+	// Pause, when set, is called at named points of the transaction ("gate":
+	// between the gate and the open); a test build's lab knob sleeps there.
+	Pause func(point string)
 	Rand  io.Reader
 	// StateDir, when set, holds the device's lock ('<dir>/locks/<device>.lock')
 	// for the transaction and the shape store, which an applied apply
@@ -456,6 +459,10 @@ func (r *run) transaction(reviewed *plan.Delta) {
 		r.o.Interrupted = errors.Is(ctx.Err(), context.Canceled)
 		r.end(ExitInterrupted, "interrupted before the device was changed")
 		return
+	}
+
+	if r.in.Pause != nil {
+		r.in.Pause("gate")
 	}
 
 	// OPEN

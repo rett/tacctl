@@ -268,6 +268,11 @@ func (c *Config) unknown022(path string) bool {
 // locking, parse check, atomic replace and ownership.
 func (c *Config) UnsetMany(paths []string) error {
 	dir := filepath.Dir(c.Path)
+	releaseApply, err := c.applyLock()
+	if err != nil {
+		return err
+	}
+	defer releaseApply()
 	unlock, err := lockDir(dir)
 	if err != nil {
 		return err

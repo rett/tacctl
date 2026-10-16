@@ -2,11 +2,13 @@ package app
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/rett/tacctl/internal/applylock"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/execx"
@@ -24,15 +26,54 @@ type services struct {
 	snaps    *snapshot.Snapshotter
 	env      *backend.Env
 	set      *backend.Set
+	lock     *applylock.Lock
+}
+
+// nothingChanged is a wait for the apply lock that the invocation's context
+// ended (Ctrl-C): the message is the operator's whole answer.
+type nothingChanged struct{}
+
+func (nothingChanged) Error() string { return "Nothing was changed." }
+
+// SetContext gives the App the invocation's context (the one Ctrl-C cancels),
+// which a wait for the apply lock watches. cli.Run sets it; an App without
+// one waits on context.Background.
+func (a *App) SetContext(ctx context.Context) { a.ctx = ctx }
+
+// ApplyLock is the invocation's apply lock (internal/applylock) on
+// <StateDir>/.store-apply.lock: the one lock object of the process, which
+// backend.Env.ApplyLock and the tacctl.yaml writers (Conf) share, so that a
+// write inside a transaction re-enters it instead of waiting for it.
+func (a *App) ApplyLock() *applylock.Lock {
+	if a.svc.lock == nil {
+		a.svc.lock = applylock.New(a.Paths.StateDir)
+	}
+	return a.svc.lock
+}
+
+// confLock is conf.Config.Lock: the apply lock with the invocation's context
+// and the waiting line.
+func (a *App) confLock() (func(), error) {
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	release, err := a.ApplyLock().Acquire(ctx, func() { a.Out.Info(backend.WaitingMsg) })
+	if errors.Is(err, applylock.ErrCancelled) {
+		return nil, nothingChanged{}
+	}
+	return release, err
 }
 
 // Conf is tacctl.yaml as this invocation sees it: conf.Load of the
 // overrides file with the registered backends (the CLI blank-imports
 // internal/backend/all, so the registry holds the shipped modules). Writes
-// through it reload it; StoreApply's rollback does too.
+// through it reload it, StoreApply's rollback does too, and each takes the
+// apply lock (ApplyLock) around the write.
 func (a *App) Conf() *conf.Config {
 	if a.svc.conf == nil {
 		a.svc.conf = conf.Load(a.Paths.Overrides, backend.Default().IDs())
+		a.svc.conf.Lock = a.confLock
 	}
 	return a.svc.conf
 }
@@ -86,6 +127,7 @@ func (a *App) BackendEnv() *backend.Env {
 			Now:       a.Knobs.Now,
 			Fault:     a.Knobs.Fault,
 			Snapshots: a.Snapshots(),
+			ApplyLock: a.ApplyLock(),
 		}
 	}
 	return a.svc.env

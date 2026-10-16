@@ -1,5 +1,5 @@
 // Package devapply is the transaction that writes a planner-generated
-// change to a network device (docs/plans/0.2.9-apply-plan.md D129, D131,
+// change to a network device (docs/plans/0.2.9-rollout-plan.md D129, D131,
 // D132, D138): the transport interface with its first implementation, the
 // Junos command line over one held 'configure exclusive' session; the driver
 // that takes one device through the state machine of plan §3.1 and ends at

@@ -1,5 +1,5 @@
 .PHONY: test test-go test-bats test-integration test-e2e test-diff test-pyyaml build \
-	coverage lint lint-sh lint-go lint-man lint-private man hooks clean bootstrap release-assets release-verify
+	coverage lint lint-sh lint-go lint-man lint-private man hooks clean bootstrap release-assets release-verify release-reproduce
 
 BATS := tests/bats/bats-core/bin/bats
 BATS_FLAGS ?= --print-output-on-failure
@@ -86,10 +86,17 @@ build:
 # release-assets: the release binaries of the tag HEAD is at, built with the
 # deploy recipe for each architecture (test knobs off), and their SHA256SUMS,
 # in dist/release/. A tree with local changes or not at a release tag is
-# refused; RELEASE_TAG=<name> builds trial assets from any tree.
+# refused, and so is one whose release metadata is not in place
+# (tests/tools/release-preflight.sh); RELEASE_TAG=<name> builds trial assets
+# from any tree, without the metadata check.
 # release-verify: the user's check before uploading: SHA256SUMS.sig verifies
 # with ALLOWED_SIGNERS, every file matches SHA256SUMS, the binary for this
-# machine was built from HEAD.
+# machine was built from HEAD, and both binaries have the test knobs off and
+# HEAD's commit stamped (tests/tools/release-stamps.sh).
+# release-reproduce: after the upload, TAG=<tag> from a clean checkout of the
+# tag: the published SHA256SUMS is signed and a rebuild gives the same sums
+# (tests/tools/release-reproduce.sh, which the release-reproducible workflow
+# runs too).
 RELEASE_DIR := dist/release
 RELEASE_ARCHES := amd64 arm64
 ALLOWED_SIGNERS ?= release/allowed_signers
@@ -101,6 +108,7 @@ release-assets:
 			|| { echo "make: HEAD is not at a release tag (RELEASE_TAG=<name> builds trial assets)"; exit 1; }; \
 		[ -z "$$(git status --porcelain)" ] \
 			|| { echo "make: the tree has local changes; release assets are built from a clean checkout of the tag"; exit 1; }; \
+		tests/tools/release-preflight.sh "$$tag" || exit 1; \
 	fi; \
 	rm -rf $(RELEASE_DIR) && mkdir -p $(RELEASE_DIR) || exit 1; \
 	for arch in $(RELEASE_ARCHES); do \
@@ -111,6 +119,11 @@ release-assets:
 
 release-verify:
 	bin/tacctl.sh --verify-release $(RELEASE_DIR) $(ALLOWED_SIGNERS)
+	GO=$(GO) tests/tools/release-stamps.sh $(RELEASE_DIR) "$$(git rev-parse HEAD)"
+
+release-reproduce:
+	@[ -n "$(TAG)" ] || { echo "make: release-reproduce needs TAG=<release tag> (from a clean checkout of it)"; exit 1; }
+	GO=$(GO) tests/tools/release-reproduce.sh "$(TAG)"
 
 # Statement coverage of the Go tests (with the test knobs, which the bats
 # suite's binary has too): coverage/go.out, a per-function summary and

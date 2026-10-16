@@ -1,6 +1,6 @@
 .\" Manual page for tacctl, the management CLI for pluggable network-device AAA.
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-10-15" "tacctl 0.2.10" "tacctl Manual"
+.TH TACCTL 1 "2026-10-15" "tacctl 0.2.11" "tacctl Manual"
 .SH NAME
 tacctl \- manage pluggable network-device AAA: users, groups, scopes and devices
 .SH SYNOPSIS
@@ -649,6 +649,10 @@ Remove every scope from the user.
 .TP
 .B group list
 List all groups with Cisco privilege level, Juniper class, and user count.
+When no group has the engineer tier, one line after the table says so and names
+the two ways to give it: \fBgroup preset roles\fR and \fBgroup edit\fR
+\fIgroup\fR \fBtier engineer\fR. It is not shown while a tier setting of
+tacctl.yaml is not a tier.
 .\" BEGIN GENERATED: command group list
 .RS
 .PP
@@ -1064,7 +1068,12 @@ override (in
 .I /etc/tacctl/tacctl.yaml
 under
 .BR privileges.\fIgroup\fR )
-or the built-in default set (move-DOWN commands only).
+or the built-in default set (move-DOWN commands only). When
+.I tacctl.yaml
+stores an empty list on a built-in group that ships one, the list says so: the
+empty list hides the shipped default, and
+.B group privilege reset
+removes it.
 .\" BEGIN GENERATED: command group privilege list
 .RS
 .PP
@@ -1291,7 +1300,11 @@ gets a
 .BR deny-configuration
 (nothing is hidden from reading; a site that wants a Junos boundary sets
 engineer's itself). The roles nest: what a role may run, the role above may
-run.
+run. Under each setting that is not unchanged the command prints what it
+changes, in the form of
+.B group reset
+(the value now and the preset's, the Cisco rules and the deny-set patterns
+removed and added), and shows it again at the confirmation.
 .IP
 Junos: the operator's set denies
 .I clear
@@ -1535,7 +1548,25 @@ line each): an empty or invalid match, a prefix form without
 that matches the exact arguments only, and a rule that is never reached
 because an earlier rule of the same name has no match or follows the
 .RB ` * `
-catchall.
+catchall. An empty
+.BR privileges.\fIgroup\fR
+list on a built-in group that ships one hides the shipped list; that is a
+warning too (a
+.B Group settings:
+line), and
+.B group privilege reset
+removes it. A private copy of the configuration that an interrupted command
+left in the state directory
+.RB ( .apply.* ,
+.BR .restore.* ,
+.BR .enable.* ,
+.B .units.*
+or
+.BR .disable.* ,
+older than ten minutes, with no command holding the apply lock) is a warning
+as well, a
+.B Leftovers:
+line naming it.
 .IP
 Then, for every enabled backend, whether its rendered config is up to date
 with the store and whether any of its files was edited by hand (drift). With
@@ -5056,7 +5087,9 @@ and drops the scope's limits.
 (the default, and what removes the scope's setting) plans and compares nothing
 of the service, as before. A device's own setting
 .RB ( "device netconf" )
-wins over the scope's, and each limit layers on its own.
+wins over the scope's, and each limit layers on its own. The limits bound the
+service's own port (830); tacctl reaches NETCONF through the SSH subsystem,
+which they do not bound on Junos 25.4.
 .B show
 (or no word) prints the setting. The values are
 .B netconf_scope.\fIscope\fR.{state,connection_limit,rate_limit}
@@ -5924,7 +5957,23 @@ the count, the last user, outcome and backend, and the last NAS-Identifier.
 .B list
 and
 .B show
-read the cache only, and say how old it is.
+read the cache only, and say how old it is. An interactive session of the
+console or of
+.B "tacctl shell"
+for the operator tier and up starts
+.B "device scan \-\-if\-stale \-\-quiet"
+in the background as it opens, so the logins are in the cache by the time the
+list is looked at and nothing a person types waits for it. That scan does
+nothing when the cache is younger than five minutes or another scan holds it
+(sessions that start together run one), reads a device's host keys again only
+when that device's last scan is a day old, goes on after the session ends and
+prints nothing. Seen data an hour old or more is said so, with the command to
+bring it up to date, in the footer of
+.B list
+and in the
+.B Last seen
+line of
+.BR show .
 .PP
 Notices are computed each time they are shown; only acknowledgements are
 stored. Besides the registry's own
@@ -7395,6 +7444,12 @@ Re\-read everything the logs still hold.
 .TP
 \fB\-\-since\fR \fI<dur>\fR
 Read this stretch of the logs (7d, 12h, 2w).
+.TP
+\fB\-\-if\-stale\fR
+The background form: read only when the data is older than five minutes and no scan is under way; re\-scan a device's host keys only when its last scan is a day old.
+.TP
+\fB\-\-quiet\fR
+Print nothing (with \-\-if\-stale: what a session start runs).
 .TP
 \fB\-\-backend\fR \fI<id>\fR
 (scan, discover) Only that backend's log.
@@ -10627,6 +10682,38 @@ changed are restarted; a failure at any step puts the store,
 .I tacctl.yaml
 and every generated file back.
 .PP
+.B Concurrent commands.
+A command that changes the store or
+.I tacctl.yaml
+holds one lock,
+.IR /etc/tacctl/.store\-apply.lock ,
+from before it copies the files it may put back to after its last restart, so that a command that
+fails does not put back what another one wrote in between. A second command
+prints
+.I "Waiting for another tacctl command that is changing the configuration..."
+once and runs when the first is done;
+.B Ctrl\-C
+ends the wait (\c
+.IR "Nothing was changed." ,
+exit 1). Every write of
+.IR tacctl.yaml ,
+the store commands,
+.BR "config render" ,
+.BR "config listen|loglevel|metrics" ,
+the RADIUS listener changes,
+.BR "backend enable|disable" ,
+.BR "store import" ,
+.BR "store rollback" ,
+.B "backup restore"
+and
+.B upgrade
+(after its self-update) take it; a command that only reads does not. A file
+that was edited by hand while a command ran is saved as
+.I <file>.overwritten\-<timestamp>
+in
+.I /etc/tacctl
+(and named in a warning) before the command puts its own copy back.
+.PP
 .B Drift.
 A generated file that no longer matches its checksum was edited by hand:
 .B status
@@ -11165,7 +11252,13 @@ command, a check that found a problem
 .RB ( "config validate" ", " "console check" ", " "device check" ),
 a device that could not be read, compared or planned
 .RB ( "device config pull" ", " "device config diff" ", " "device config plan" ),
-a step of a lifecycle phase that failed. An unknown sub-command prints the
+a device
+.B "device config apply"
+failed, rolled back or left pending (and a review that was not answered, and
+an apply that applied none of its devices and found none already applied:
+.B "\-\-confirmed \-\-yes"
+that skipped them all), a step of a lifecycle phase that failed. An unknown
+sub-command prints the
 usage of its family and ends with 1 as well. Nothing was changed unless the
 message says what was.
 .TP
@@ -11179,9 +11272,17 @@ of it, or
 .B "device config diff \-\-exit\-code"
 found a device that differs, or
 .B "device config plan \-\-exit\-code"
+found a device that needs a change, or
+.B "device config apply \-\-check \-\-exit\-code"
 found a device that needs a change, or the arguments of
-.BR "device config pull" ", " diff ", " plan ", " list " or " forget
-were wrong.
+.BR "device config pull" ", " diff ", " plan ", " apply ", " shapes ", " list " or " forget
+were wrong
+.RB ( apply
+without a terminal and without
+.BR "\-\-confirmed \-\-yes" ,
+and
+.BR "apply \-\-hold \-\-json" ,
+included).
 .TP
 .B 3
 A backend command was refused because a file tacctl rendered holds a hand edit
@@ -11207,7 +11308,13 @@ example), or a
 or
 .B "device config plan \-\-pull"
 was stopped by Ctrl-C (the first stops starting devices and lets the running
-ones finish, a second cuts them off). Nothing was changed.
+ones finish, a second cuts them off), or a
+.B "device config apply"
+was (a transaction in flight finishes under the first; under the second a
+candidate is discarded and a pending commit cancelled where the window allows,
+else reported
+.BR PENDING ).
+A pull changes nothing on a device.
 .PP
 .B "tacctl ssh"
 and
@@ -11625,6 +11732,23 @@ The checksum of every file tacctl rendered, from which
 and
 .B config validate
 report a hand edit as drift.
+.TP
+.I /etc/tacctl/.store.lock
+.TQ
+.I /etc/tacctl/.store\-apply.lock
+Lock files, mode 0600, created when first needed and left in place. The first
+serialises writes of the store; the second is the apply lock, taken by every
+command that changes the store or
+.I tacctl.yaml
+and held through its restarts (see
+.BR "STORE AND GENERATED CONFIGURATION" ).
+Do not delete them while a command runs.
+.TP
+.I /etc/tacctl/<file>.overwritten\-<timestamp>
+The version of
+.IR store.yaml " or " tacctl.yaml
+that a command found edited by hand while it ran and replaced when it put its
+own copy back. Mode 0600; kept until removed.
 .TP
 .I /etc/tacctl/backups/
 Automatic snapshots of the canonical files, one directory per snapshot, last

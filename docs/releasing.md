@@ -1,7 +1,8 @@
 # Releasing tacctl
 
 A release is a tag on `master` plus four GitHub release assets, built and
-signed on the release manager's own machine (there is no CI):
+signed on the release manager's own machine; a workflow then rebuilds them
+independently and compares (step 4):
 
 | Asset | What it is |
 |---|---|
@@ -91,18 +92,15 @@ make release-assets         # dist/release/tacctl-0.2.1-linux-{amd64,arm64} and 
 ```
 
 `make release-assets` refuses a tree that is not at a release tag or has
-local changes. It builds both architectures with the same recipe as a host
-(`bin/tacctl.sh --build … --goarch <arch>`, test knobs off, the version and
-commit stamped from git) and prints `SHA256SUMS`.
-
-Optional reproducibility check: the build is deterministic (`-trimpath`, the
-pinned Go, the stamp from the commit), so a second build gives the same sums:
-
-```sh
-cp dist/release/SHA256SUMS /tmp/SHA256SUMS.first
-make release-assets
-diff /tmp/SHA256SUMS.first dist/release/SHA256SUMS && echo reproducible
-```
+local changes, and one whose release metadata is not in place
+(`tests/tools/release-preflight.sh`, which lists every problem): the tag has
+its dated `## <tag> (YYYY-MM-DD)` CHANGELOG heading and no `(unreleased)`
+one, the `.TH` line of `man/tacctl.1` names `tacctl <tag>` and the same date,
+and `docs/release-notes-<tag>.md` exists. It then builds both architectures
+with the same recipe as a host (`bin/tacctl.sh --build … --goarch <arch>`,
+test knobs off, the version and commit stamped from git) and prints
+`SHA256SUMS`. `RELEASE_TAG=<name>` builds trial assets from any tree and
+skips the metadata check.
 
 ### 3. Sign and verify
 
@@ -114,8 +112,11 @@ make release-verify
 `ssh-keygen -Y sign` writes `dist/release/SHA256SUMS.sig`. `make
 release-verify` checks what a host will check, with the committed
 `release/allowed_signers`: the signature, every file against `SHA256SUMS`,
-and that the binary for this machine was built from `HEAD`. It must print
-`Release assets in dist/release verified.`
+that the binary for this machine was built from `HEAD`, and, for both
+binaries and without running either, that the test knobs are off and `HEAD`'s
+commit is stamped in (`tests/tools/release-stamps.sh`). It must print
+`Release assets in dist/release verified.` and then `Release binaries in
+dist/release: test knobs off, built from <commit> (amd64 and arm64).`
 
 `ALLOWED_SIGNERS=<file>` points `make release-verify` at another
 allowed_signers file, for a trial with a throwaway key (no key, test or
@@ -139,7 +140,39 @@ gh release create 0.2.1 --verify-tag --title "tacctl 0.2.1" \
     --notes-file docs/release-notes-0.2.1.md \
     dist/release/tacctl-0.2.1-linux-amd64 dist/release/tacctl-0.2.1-linux-arm64 \
     dist/release/SHA256SUMS dist/release/SHA256SUMS.sig
+gh run list --workflow release-reproducible.yml --limit 1   # the job the publish started
+gh run watch <run id>
 ```
+
+The `release-reproducible` workflow
+(`.github/workflows/release-reproducible.yml`) starts when the release is
+published. On a clean runner it checks out the tag, installs the Go version
+that tag's `bin/tacctl.sh` names, and runs
+`tests/tools/release-reproduce.sh <tag>`:
+
+1. downloads the published `SHA256SUMS` and `SHA256SUMS.sig`;
+2. verifies the signature with the tag's own `release/allowed_signers` (the
+   published sums are the signed ones; the job holds no key and no secret);
+3. rebuilds both binaries with `make release-assets` and diffs the sums;
+4. checks that the rebuilt binaries have the test knobs off and the tag's
+   commit stamped in.
+
+A red job means the uploaded binaries are not what a clean checkout of the
+tag builds (a dirty tree, another Go, another commit): replace the assets
+with a set built from the tag and signed again (`gh release upload --clobber`
+with the four files). The job's artifact holds both sums files and the diff.
+
+The same check by hand, from a clean checkout of the tag (after the upload;
+exit 0 is reproducible):
+
+```sh
+git checkout 0.2.1 && make release-reproduce TAG=0.2.1
+```
+
+The workflow also runs by hand for any published tag, older releases
+included (it takes the script from the branch it is run on and the build
+recipe from the tag): `gh workflow run release-reproducible.yml -f tag=0.2.1`.
+The workflow file must be on the default branch for that.
 
 Once, for discoverability, set the repository topics:
 

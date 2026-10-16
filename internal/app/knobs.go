@@ -81,6 +81,11 @@ type Knobs struct {
 	// localPass is the local account's password ('--login', 'device
 	// onboard'): "" asks on the terminal.
 	localPass string
+	// applyPause is the point and the wait of TACCTL_TEST_APPLY_PAUSE.
+	applyPause struct {
+		point string
+		wait  time.Duration
+	}
 	// resolve is the fixed name table of TACCTL_TEST_RESOLVE: nil asks
 	// the system resolver.
 	resolve map[string][]string
@@ -113,6 +118,20 @@ func (k Knobs) DevicePassword() string { return k.devPass }
 // LocalPassword is the password of the local account a test build logs in
 // with for '--login' and 'device onboard' ("": ask on the terminal).
 func (k Knobs) LocalPassword() string { return k.localPass }
+
+// ApplyPause is the lab pause of 'device config apply' (docs/plans/0.2.11-lab.md):
+// nil unless a test build's knob names a point, then a function that waits
+// at that point.
+func (k Knobs) ApplyPause() func(point string) {
+	if k.applyPause.wait <= 0 {
+		return nil
+	}
+	return func(point string) {
+		if point == k.applyPause.point {
+			time.Sleep(k.applyPause.wait)
+		}
+	}
+}
 
 // ProcSelf is the directory TACCTL_TEST_PROC names ("" when unset: the
 // real /proc/self).

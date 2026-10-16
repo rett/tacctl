@@ -68,6 +68,7 @@ func RunConsole(ctx context.Context, a *app.App, build BuildInfo, args []string)
 	if a.Version == "" {
 		a.Version = build.Version
 	}
+	a.SetContext(ctx)
 	inv := &invocation{ctx: ctx, app: a, build: build}
 	return inv.runConsoleSession(args)
 }

@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rett/tacctl/internal/applylock"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/backend/faketest"
 	"github.com/rett/tacctl/internal/conf"
@@ -55,6 +56,7 @@ func (s *stand) phase(verb string, p backend.Phase, extra string) error {
 	s.o.phases = append(s.o.phases, line)
 	_, err := os.Stat(s.o.p.StoreFile)
 	s.o.storeAt[line] = err == nil
+	s.o.heldAt[line] = s.o.lock.Held()
 	s.o.out.Info("PHASE " + line)
 	if s.failAt == verb+" "+string(p) {
 		s.o.out.Error("PHASE FAILED " + line)
@@ -109,13 +111,17 @@ type ohost struct {
 	phases   []string
 	storeAt  map[string]bool
 	head     string // the deploy clone's HEAD (git rev-parse HEAD)
+	// lock is the apply lock of the invocation (Env.ApplyLock and the
+	// Conf's hook); heldAt is its depth at each phase.
+	lock   *applylock.Lock
+	heldAt map[string]int
 }
 
 func newOhost(t *testing.T) *ohost {
 	t.Helper()
 	w := t.TempDir()
 	o := &ohost{t: t, w: w, run: &fake.Runner{}, stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{},
-		storeAt: map[string]bool{}, commit: "c0ffee", head: "c0ffee"}
+		storeAt: map[string]bool{}, heldAt: map[string]int{}, commit: "c0ffee", head: "c0ffee"}
 	o.out = ui.Output{Stdout: o.stdout, Stderr: o.stderr}
 	j := func(p ...string) string { return filepath.Join(append([]string{w}, p...)...) }
 	o.environ = []string{"PATH=/usr/bin:/bin",
@@ -155,9 +161,13 @@ func newOhost(t *testing.T) *ohost {
 	snaps.Chown = nil
 	cfg := conf.Load(o.p.Overrides, reg.IDs())
 	cfg.Owner = nil
+	o.lock = applylock.New(o.p.StateDir)
+	cfg.Lock = func() (func(), error) {
+		return o.lock.Acquire(context.Background(), func() { o.out.Info(backend.WaitingMsg) })
+	}
 	o.be = &backend.Env{Paths: o.p, Conf: cfg, Runner: o.run, Out: o.out, Now: func() time.Time {
 		return time.Date(2026, 10, 3, 12, 34, 56, 0, time.Local)
-	}, Snapshots: snaps}
+	}, Snapshots: snaps, ApplyLock: o.lock}
 	o.set = backend.NewSet(reg, o.be)
 	o.script()
 	return o
@@ -743,6 +753,77 @@ func TestUpgradeOrderAndSummary(t *testing.T) {
 	o.rad.summary = backend.UpgradeSummary{Notes: []string{"RADIUS: config re-rendered for this release, FreeRADIUS restarted"}}
 	upgrade(o)
 	inOrder(t, o.text(), "[INFO] 0 file(s) updated.", "  Scripts Updated (source unchanged at abc1234)\n  Managed scripts: 0 updated\n")
+}
+
+// The apply lock (D154): the phases that write tacctl.yaml, the store and
+// rendered.json run under it, from the tier pins to the end of finish; the
+// preflight and the build before them, and everything up to the self-update
+// exec, do not, so a re-executed process takes it and none is held across
+// the exec. Another command holding it makes the upgrade wait, once, between
+// the build and the config phase.
+func TestUpgradeHoldsTheApplyLockAfterTheSelfUpdateOnly(t *testing.T) {
+	o := newOhost(t)
+	o.cloned()
+	if err := os.MkdirAll(o.p.StateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	for _, line := range []string{"tacacs upgrade preflight", "tacacs upgrade build"} {
+		if h, ok := o.heldAt[line]; !ok || h != 0 {
+			t.Errorf("%s: held %d (seen %v)", line, h, ok)
+		}
+	}
+	for _, line := range []string{"tacacs upgrade config", "tacacs upgrade files " + o.p.Deploy, "tacacs upgrade finish"} {
+		if h := o.heldAt[line]; h != 1 {
+			t.Errorf("%s: held %d, want 1", line, h)
+		}
+	}
+	if o.lock.Held() != 0 {
+		t.Error("the lock is still held after the upgrade")
+	}
+
+	// The self-update: the exec comes before the lock, which is not even
+	// opened by this process.
+	if err := os.Remove(filepath.Join(o.p.StateDir, applylock.FileName)); err != nil {
+		t.Fatal(err)
+	}
+	o.commit = "old"
+	o.heldAt = map[string]int{}
+	if code := upgrade(o); code != 0 || len(o.run.Execs()) != 1 {
+		t.Fatalf("exit %d execs %v", code, o.run.Execs())
+	}
+	if exists(filepath.Join(o.p.StateDir, applylock.FileName)) || len(o.heldAt) != 2 {
+		t.Errorf("the self-update locked: held %v", o.heldAt)
+	}
+}
+
+func TestUpgradeWaitsForTheApplyLockAfterTheBuild(t *testing.T) {
+	o := newOhost(t)
+	o.cloned()
+	if err := os.MkdirAll(o.p.StateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	hold, err := applylock.New(o.p.StateDir).Acquire(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		time.Sleep(800 * time.Millisecond)
+		hold()
+	}()
+	start := time.Now()
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if took := time.Since(start); took < 700*time.Millisecond {
+		t.Errorf("took %v: did not wait", took)
+	}
+	if n := strings.Count(o.text(), backend.WaitingMsg); n != 1 {
+		t.Fatalf("waiting line %d times", n)
+	}
+	inOrder(t, o.text(), "PHASE tacacs upgrade build", backend.WaitingMsg, "PHASE tacacs upgrade config")
 }
 
 // The completion is the binary's own output, written only when the

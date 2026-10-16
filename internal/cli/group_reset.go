@@ -370,25 +370,59 @@ func planCommands(c *conf.Config, canon policy.Canonical) *resetSection {
 	if policy.SameLines(have, canon.Rules) {
 		return s
 	}
-	removed, added, moved := diffSequences(nonBlankLines(have), nonBlankLines(canon.Rules))
-	for _, l := range removed {
-		s.lines = append(s.lines, "- "+ruleText(l))
-	}
-	for _, l := range added {
-		s.lines = append(s.lines, "+ "+ruleText(l))
-	}
-	for _, l := range moved {
-		s.lines = append(s.lines, "~ "+ruleText(l)+"  (moved)")
-	}
-	if from, to := policy.DefaultActionOf(have), policy.DefaultActionOf(canon.Rules); from != to {
-		s.lines = append(s.lines, "default action: "+from+" -> "+to)
-	}
+	s.lines = ruleDiffLines(have, canon.Rules)
 	rules := canon.Rules
 	if !canon.RulesOverride {
 		rules = nil // no commands.<group> of its own: the shipped rules apply
 	}
 	s.writes = append(s.writes, func(c *conf.Config) error { return policy.Write(c, canon.Group, rules) })
 	return s
+}
+
+// ruleDiffLines is the difference of two Cisco rule lists as 'group reset'
+// and 'group preset roles' show it.
+func ruleDiffLines(have, want []string) []string {
+	var lines []string
+	removed, added, moved := diffSequences(nonBlankLines(have), nonBlankLines(want))
+	for _, l := range removed {
+		lines = append(lines, "- "+ruleText(l))
+	}
+	for _, l := range added {
+		lines = append(lines, "+ "+ruleText(l))
+	}
+	for _, l := range moved {
+		lines = append(lines, "~ "+ruleText(l)+"  (moved)")
+	}
+	if from, to := policy.DefaultActionOf(have), policy.DefaultActionOf(want); from != to {
+		lines = append(lines, "default action: "+from+" -> "+to)
+	}
+	return lines
+}
+
+// junosDiffLines is the difference of one deny set (nil when equal), with
+// the sizes against the attribute's limit.
+func junosDiffLines(attr string, have, want []string) []string {
+	if slices.Equal(have, want) {
+		return nil
+	}
+	size := func(items []string) string {
+		if len(items) == 0 {
+			return "none"
+		}
+		return fmt.Sprintf("%d/%d bytes", len(conf.JunosValue(items)), conf.JunosLimit(attr))
+	}
+	lines := []string{fmt.Sprintf("%s: %s -> %s", conf.JunosArg(attr), size(have), size(want))}
+	removed, added, moved := diffSequences(have, want)
+	for _, l := range removed {
+		lines = append(lines, "  - "+l+"  ("+strconv.Itoa(len(l))+" bytes)")
+	}
+	for _, l := range added {
+		lines = append(lines, "  + "+l+"  ("+strconv.Itoa(len(l))+" bytes)")
+	}
+	for _, l := range moved {
+		lines = append(lines, "  ~ "+l+"  (moved)")
+	}
+	return lines
 }
 
 // ruleText is a rule line as 'group commands list' shows its columns.
@@ -420,26 +454,11 @@ func planJunos(c *conf.Config, canon policy.Canonical) *resetSection {
 	s := &resetSection{name: sectionJunos}
 	for _, attr := range conf.JunosAttrs {
 		have, want := policy.JunosSet(c, canon.Group, attr), canon.JunosItems(attr)
-		if slices.Equal(have, want) {
+		lines := junosDiffLines(attr, have, want)
+		if lines == nil {
 			continue
 		}
-		size := func(items []string) string {
-			if len(items) == 0 {
-				return "none"
-			}
-			return fmt.Sprintf("%d/%d bytes", len(conf.JunosValue(items)), conf.JunosLimit(attr))
-		}
-		s.lines = append(s.lines, fmt.Sprintf("%s: %s -> %s", conf.JunosArg(attr), size(have), size(want)))
-		removed, added, moved := diffSequences(have, want)
-		for _, l := range removed {
-			s.lines = append(s.lines, "  - "+l+"  ("+strconv.Itoa(len(l))+" bytes)")
-		}
-		for _, l := range added {
-			s.lines = append(s.lines, "  + "+l+"  ("+strconv.Itoa(len(l))+" bytes)")
-		}
-		for _, l := range moved {
-			s.lines = append(s.lines, "  ~ "+l+"  (moved)")
-		}
+		s.lines = append(s.lines, lines...)
 		attr, want := attr, want
 		s.writes = append(s.writes, func(c *conf.Config) error { return policy.WriteJunosSet(c, canon.Group, attr, want) })
 	}

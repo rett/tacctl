@@ -275,8 +275,22 @@ func (s *Set) RestartAll(ctx context.Context) error {
 // check (cmd_config_render): render every enabled backend, then per
 // backend "Rendered <artifacts>." and a restart when its artifacts
 // changed, "<artifacts> is already up to date." when not, and its render
-// notes. A failed render is RenderAll's error.
+// notes. A failed render is RenderAll's error. It holds the apply lock from
+// the render through the last restart (another command's rollback must not
+// be rendered half way), and is refused inside a writer.
 func (s *Set) ConfigRender(ctx context.Context, force bool) error {
+	if err := s.begin(); err != nil {
+		return err
+	}
+	// Before the lock, as StoreApply: no store, no state directory to lock.
+	if err := s.Require(); err != nil {
+		return err
+	}
+	unlock, err := s.lock(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	changed, err := s.RenderAll(ctx, RenderOptions{ForceAll: force})
 	if err != nil {
 		return err

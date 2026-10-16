@@ -462,17 +462,24 @@ func (inv *invocation) restoreSnapshot(id string) error {
 	// The backends it enables must be on this machine: a restore cannot
 	// install one. (Nothing is touched yet.)
 	set := a.Backends()
-	before, err := inv.enabledOrFail()
-	if err != nil {
-		return err
+	var before []string
+	checkInstalled := func() error {
+		var err error
+		if before, err = inv.enabledOrFail(); err != nil {
+			return err
+		}
+		for _, b := range inv.snapshotEnabled(dir) {
+			if slices.Contains(before, b) {
+				continue
+			}
+			if mod, err := set.Get(b); err != nil || !mod.Installed() {
+				return inv.usageErr("Snapshot " + id + " enables backend '" + b + "', which is not installed here. Run 'tacctl backend enable " + b + "' first. Nothing was changed.")
+			}
+		}
+		return nil
 	}
-	for _, b := range inv.snapshotEnabled(dir) {
-		if slices.Contains(before, b) {
-			continue
-		}
-		if mod, err := set.Get(b); err != nil || !mod.Installed() {
-			return inv.usageErr("Snapshot " + id + " enables backend '" + b + "', which is not installed here. Run 'tacctl backend enable " + b + "' first. Nothing was changed.")
-		}
+	if err := checkInstalled(); err != nil {
+		return err
 	}
 
 	inv.echo("")
@@ -491,6 +498,20 @@ func (inv *invocation) restoreSnapshot(id string) error {
 		return nil
 	}
 
+	// The whole restore is one change: ApplyForced holds the lock for the
+	// render only, and the restarts and the file puts after it must not be
+	// interleaved with another command's either.
+	unlock, err := inv.holdApply()
+	if err != nil {
+		return err
+	}
+	// The set of enabled backends was read before the prompt: read it again
+	// under the lock, for a command that finished while this one waited.
+	if err := checkInstalled(); err != nil {
+		unlock()
+		return err
+	}
+	defer unlock()
 	// The current state first, so the restore can be undone with another
 	// one. Retention must not take the snapshot being read.
 	a.Snapshots().KeepID = id
@@ -498,6 +519,9 @@ func (inv *invocation) restoreSnapshot(id string) error {
 		return err
 	}
 	if _, err := set.ApplyForced(inv.ctx, func() error { return inv.installSnapshot(dir) }); err != nil {
+		if err == backend.ErrNotStarted {
+			return err
+		}
 		names := set.AllArtifactNames()
 		return inv.usageErr("Snapshot " + id + " was not restored: " + names + " could not be rendered from it. Store, tacctl.yaml and " + names + " are as they were.")
 	}
@@ -832,6 +856,11 @@ func (inv *invocation) restoreLegacy(id string) error {
 		return nil
 	}
 
+	unlock, err := inv.holdApply()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	before := inv.storeGroups()
 	if err := inv.snapshotFirst(); err != nil {
 		return err
@@ -841,6 +870,9 @@ func (inv *invocation) restoreLegacy(id string) error {
 	if _, err := set.ApplyForced(inv.ctx, func() error {
 		return store.Import(quiet, inv.importOptions(importArgs{replace: true, src: file}))
 	}); err != nil {
+		if err == backend.ErrNotStarted {
+			return err
+		}
 		return inv.usageErr("Old-style backup " + id + " was not restored. Store, tacctl.yaml and " + set.AllArtifactNames() + " are as they were.")
 	}
 	if err := set.RestartAll(inv.ctx); err != nil {

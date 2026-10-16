@@ -156,6 +156,31 @@ func LockSeen(path string) (unlock func(), err error) {
 	return func() { _ = lf.Close() }, nil
 }
 
+// TryLockSeen is LockSeen without the wait: ok is false when another process
+// holds the lock.
+func TryLockSeen(path string) (unlock func(), ok bool, err error) {
+	d := filepath.Dir(path)
+	lf, err := os.OpenFile(filepath.Join(d, SeenLockName), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, false, fail("Cannot open the seen cache lock: " + errText(err))
+	}
+	for {
+		err = unix.Flock(int(lf.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		if !errors.Is(err, unix.EINTR) {
+			break
+		}
+	}
+	switch {
+	case errors.Is(err, unix.EWOULDBLOCK):
+		_ = lf.Close()
+		return nil, false, nil
+	case err != nil:
+		_ = lf.Close()
+		return nil, false, fail("Cannot lock the seen cache: " + err.Error())
+	}
+	return func() { _ = lf.Close() }, true, nil
+}
+
 // Apply adds a source's sightings, in log order. It returns how many named
 // no address (they are counted, not kept).
 func (s *Seen) Apply(source string, ss []backend.Sighting) (unattributed int) {

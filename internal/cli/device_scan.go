@@ -6,7 +6,8 @@ package cli
 // enabled backend's log of its devices (backend.Sighter) into the seen cache
 // (/var/lib/tacctl/devices-seen.json, internal/devreg/seen.go), re-scans the
 // pinned host keys and prints the scan-time notices. 'list' and 'show' read
-// the cache only; 'scan' is explicit. A scan never writes devices.yaml.
+// the cache only; 'scan' is explicit, and a session start runs it in the
+// background (--if-stale --quiet, seen_refresh.go). A scan never writes devices.yaml.
 
 import (
 	"errors"
@@ -63,12 +64,48 @@ func deviceSeenCols(inv *invocation, res *devreg.Resolver, e devreg.Entry) (last
 	return last, dash(x.LastUser), x.Via, stale
 }
 
+// seenRemindAge is how old the seen data is before the list and show remind
+// the reader to run 'device scan': a session start refreshes it, so older
+// than this means no session has started since.
+const seenRemindAge = time.Hour
+
+// seenOldText is how old the seen data is when it is old enough to be
+// reminded of ("3 hours", "2 days"), and "" when it is not.
+func (inv *invocation) seenOldText(res *devreg.Resolver) string {
+	if !res.Seen.HasData() {
+		return ""
+	}
+	d := inv.app.Knobs.Now().Sub(res.Seen.Updated)
+	switch {
+	case d < seenRemindAge:
+		return ""
+	case d < 2*time.Hour:
+		return "an hour"
+	case d < 48*time.Hour:
+		return strconv.Itoa(int(d/time.Hour)) + " hours"
+	}
+	return strconv.Itoa(int(d/(24*time.Hour))) + " days"
+}
+
+// seenRunText is the reminder to bring old seen data up to date, worded for
+// who may do it.
+func (inv *invocation) seenRunText() string {
+	if inv.scanAllowed() {
+		return "run 'tacctl device scan' to bring it up to date"
+	}
+	return "an operator can run 'tacctl device scan' to bring it up to date"
+}
+
 // deviceSeenFooter is the line under 'device list' about the seen data.
-func deviceSeenFooter(res *devreg.Resolver) string {
+func (inv *invocation) deviceSeenFooter(res *devreg.Resolver) string {
 	if !res.Seen.HasData() {
 		return "seen data: none (tacctl device scan)"
 	}
-	return "seen data as of " + seenTime(res.Seen.Updated) + " (tacctl device scan to refresh); stale after " +
+	refresh := "tacctl device scan to refresh"
+	if old := inv.seenOldText(res); old != "" {
+		refresh = old + " old: " + inv.seenRunText()
+	}
+	return "seen data as of " + seenTime(res.Seen.Updated) + " (" + refresh + "); stale after " +
 		strconv.Itoa(res.File.StaleDays) + " days"
 }
 
@@ -95,7 +132,20 @@ type scanRequest struct {
 	full  bool
 	since time.Duration
 	only  string
+	// ifStale is the background form (a session start): do nothing when
+	// another scan holds the cache or the cache is younger than
+	// seenFreshAge, and re-scan a device's host keys only when its last scan
+	// is older than keyRescanAge.
+	ifStale bool
 }
+
+const (
+	// seenFreshAge is how young the seen cache is when --if-stale leaves it.
+	seenFreshAge = 5 * time.Minute
+	// keyRescanAge is how old a device's host-key scan is before --if-stale
+	// connects to it again: every session start must not touch every device.
+	keyRescanAge = 24 * time.Hour
+)
 
 // scanResult is what runScan leaves for the printing.
 type scanResult struct {
@@ -104,6 +154,8 @@ type scanResult struct {
 	keyErr  error
 	res     *devreg.Resolver
 	rebuilt bool
+	// skipped: --if-stale found the cache current, or a scan under way.
+	skipped bool
 }
 
 // scanBackends are the sources of a scan: every enabled backend, or the one
@@ -163,8 +215,17 @@ func (inv *invocation) runScan(rq scanRequest) (*scanResult, error) {
 		return nil, err
 	}
 	path := inv.app.Paths.SeenCache
-	unlock, err := devreg.LockSeen(path)
-	if err != nil {
+	var unlock func()
+	if rq.ifStale {
+		// Many sessions may start at once: the one that finds a scan
+		// under way leaves it to that scan.
+		var ok bool
+		if unlock, ok, err = devreg.TryLockSeen(path); err != nil {
+			return nil, err
+		} else if !ok {
+			return &scanResult{skipped: true, res: res}, nil
+		}
+	} else if unlock, err = devreg.LockSeen(path); err != nil {
 		return nil, err
 	}
 	defer unlock()
@@ -175,10 +236,25 @@ func (inv *invocation) runScan(rq scanRequest) (*scanResult, error) {
 		seen = devreg.NewSeen()
 	}
 	now := inv.app.Knobs.Now()
+	if rq.ifStale && seen.HasData() && now.Sub(seen.Updated) < seenFreshAge {
+		// Another session's scan finished while this one started.
+		res.Seen = seen
+		return &scanResult{skipped: true, res: res}, nil
+	}
 	out.reports = devreg.ScanSources(inv.ctx, seen, srcs, devreg.ScanOptions{
 		Now: now, StaleDays: f.StaleDays, Full: rq.full || out.rebuilt, Since: rq.since})
 	all := res.All()
-	out.keys = devreg.RescanKeys(inv.ctx, inv.app.Runner, keyTargets(all, false), keyFallback(inv))
+	targets := keyTargets(all, false)
+	if rq.ifStale {
+		var due []devreg.KeyTarget
+		for _, t := range targets {
+			if k := seen.HostKeys[strings.ToLower(t.Name)]; k == nil || now.Sub(k.Scanned) >= keyRescanAge {
+				due = append(due, t)
+			}
+		}
+		targets = due
+	}
+	out.keys = devreg.RescanKeys(inv.ctx, inv.app.Runner, targets, keyFallback(inv))
 	out.keyErr = seen.RecordKeyResults(out.keys, now)
 	var names []string
 	for _, e := range all {
@@ -316,7 +392,10 @@ func (inv *invocation) printNotices(res *devreg.Resolver) {
 
 // scanFlags reads --full, --since and --backend.
 func (inv *invocation) scanFlags(p Parsed) (scanRequest, error) {
-	rq := scanRequest{full: p.Has("--full"), only: p.Value("--backend")}
+	rq := scanRequest{full: p.Has("--full"), only: p.Value("--backend"), ifStale: p.Has("--if-stale")}
+	if rq.ifStale && (rq.full || p.Has("--since")) {
+		return rq, inv.usageErr("--if-stale is the background form: give it without --full or --since.")
+	}
 	if p.Has("--backend") && rq.only == "" {
 		return rq, inv.usageErr("--backend needs a backend id.")
 	}
@@ -346,9 +425,15 @@ func (inv *invocation) deviceScan(args []string) error {
 	if err != nil {
 		return err
 	}
-	inv.printScan(sr)
-	inv.printNotices(sr.res)
-	inv.echo("")
+	switch {
+	case p.Has("--quiet"):
+	case sr.skipped:
+		inv.app.Out.Info("The seen data is current, or a scan is under way; nothing was read.")
+	default:
+		inv.printScan(sr)
+		inv.printNotices(sr.res)
+		inv.echo("")
+	}
 	return nil
 }
 
@@ -674,11 +759,18 @@ func (inv *invocation) checkRows(res *devreg.Resolver, e devreg.Entry, reach str
 	case "-":
 		row("Seen", "no seen data (tacctl device scan)")
 	case "never":
-		row("Seen", "never (seen data as of "+seenTime(res.Seen.Updated)+")")
+		s := "never (seen data as of " + seenTime(res.Seen.Updated)
+		if old := inv.seenOldText(res); old != "" {
+			s += ", " + old + " old: " + inv.seenRunText()
+		}
+		row("Seen", s+")")
 	default:
 		s := last + " by " + by + " via " + via
 		if stale {
 			s += "  (stale: older than " + strconv.Itoa(res.File.StaleDays) + " days)"
+		}
+		if old := inv.seenOldText(res); old != "" {
+			s += "  (seen data is " + old + " old: " + inv.seenRunText() + ")"
 		}
 		row("Seen", s)
 	}

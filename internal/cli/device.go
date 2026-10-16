@@ -133,6 +133,7 @@ var deviceSpecs = map[string]Spec{
 	"ssh":        sshSpec,
 	"ssh-config": {MaxArgs: 0},
 	"scan": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--full"}}, {Names: []string{"--since"}, Value: true},
+		{Names: []string{"--if-stale"}}, {Names: []string{"--quiet"}},
 		{Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
 	"discover": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--all"}}, {Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
 	"check":    {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagJSON}},
@@ -263,6 +264,8 @@ var deviceOptions = map[string][][2]string{
 	"scan": {
 		{"--full", "Re-read everything the logs still hold"},
 		{"--since <dur>", "Read this stretch of the logs (7d, 12h, 2w)"},
+		{"--if-stale", "The background form: read only when the data is older than five minutes and no scan is under way; re-scan a device's host keys only when its last scan is a day old"},
+		{"--quiet", "Print nothing (with --if-stale: what a session start runs)"},
 		{"--backend <id>", "(scan, discover) Only that backend's log"},
 	},
 	"discover": {
@@ -445,7 +448,8 @@ Seen data: 'scan' reads each enabled backend's log (the tacquito journal,
 FreeRADIUS's tacctl-auth.log) from where the last scan stopped into
 /var/lib/tacctl/devices-seen.json, and re-scans the pinned host keys (a scan
 never changes a pin). 'list' and 'show' read that cache only; 'list --scan'
-scans first. --full re-reads everything the logs still hold, --since <dur>
+scans first, and an interactive session of the console or of 'tacctl shell'
+starts 'scan --if-stale --quiet' in the background (operator tier and up). --full re-reads everything the logs still hold, --since <dur>
 (7d, 12h, 2w) that stretch. 'discover' lists the addresses that authenticated
 without being registered, each with its 'device add' line (--all: those only
 refused too). 'check' and 'list --probe' connect to each ssh port (3 s): this
@@ -1011,7 +1015,7 @@ func (inv *invocation) deviceList(args []string) error {
 	}
 	inv.write(tb.String())
 	inv.echo("")
-	inv.echo("  " + deviceSeenFooter(res))
+	inv.echo("  " + inv.deviceSeenFooter(res))
 	if reach != nil {
 		inv.echo("  REACH: a TCP connect to the ssh port; this server often has no path to management ports, so a timeout may be a false alarm")
 	}
@@ -1128,6 +1132,9 @@ func (inv *invocation) deviceShow(args []string) error {
 	last, by, via, stale := deviceSeenCols(inv, res, e)
 	if stale {
 		last += "  (stale: older than " + strconv.Itoa(res.File.StaleDays) + " days)"
+	}
+	if old := inv.seenOldText(res); old != "" && last != "-" {
+		last += "  (seen data is " + old + " old: " + inv.seenRunText() + ")"
 	}
 	row("Last seen", last)
 	if by != "-" || via != "-" {

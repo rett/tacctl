@@ -36,7 +36,7 @@ var configSNMPSpecs = map[string]Spec{
 	"community": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stdin"}}}},
 	"v3-user": {MinArgs: 1, MaxArgs: 1, Args: []string{""}, Flags: []Flag{
 		{Names: []string{"--auth"}, Value: true, Kind: strings.Join(snmp.AuthProtocols, "|")},
-		{Names: []string{"--priv"}, Value: true},
+		{Names: []string{"--priv"}, Value: true, Kind: strings.Join(snmp.PrivProtocols, "|")},
 		{Names: []string{"--stdin"}}}},
 	"port":    {MaxArgs: 1, Args: []string{""}},
 	"timeout": {MaxArgs: 1, Args: []string{""}},

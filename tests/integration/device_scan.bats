@@ -297,3 +297,35 @@ two_scans() {
     assert_output --regexp "core-sw1 +203\.0\.113\.1 +cisco +dmz +configured +2026-08-20 10:00 +alice +tacacs"
     [[ -f "$SEEN" ]]
 }
+
+@test "device scan --if-stale --quiet: sessions that start together run one scan and race on nothing" {
+    register
+    : > "$CALLS_LOG"
+    local pids=() p i
+    for i in 1 2 3 4 5 6 7 8; do
+        "$TACCTL_BIN_SCRIPT" device scan --if-stale --quiet > "${BATS_TEST_TMPDIR}/out.$i" 2>&1 &
+        pids+=("$!")
+    done
+    for p in "${pids[@]}"; do
+        wait "$p"
+    done
+    # Nothing printed by any of them.
+    # (The sandbox has no rendered tacquito.yaml: the startup warning of every
+    # command is the one line it may hold.)
+    for i in 1 2 3 4 5 6 7 8; do
+        [[ -z "$(grep -v 'tacquito.yaml is missing' "${BATS_TEST_TMPDIR}/out.$i")" ]]
+    done
+    # One of them read the journal; the rest found a scan under way or a
+    # cache that was current.
+    [[ "$(grep -c '^journalctl ' "$CALLS_LOG")" -eq 1 ]]
+    # The cache is whole.
+    python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$SEEN"
+    run "$TACCTL_BIN_SCRIPT" device list
+    assert_success
+    plain
+    [[ "$output" == *"seen data as of"* ]]
+    # A later one, within five minutes, reads nothing.
+    : > "$CALLS_LOG"
+    "$TACCTL_BIN_SCRIPT" device scan --if-stale --quiet
+    ! stub_called "^journalctl"
+}
