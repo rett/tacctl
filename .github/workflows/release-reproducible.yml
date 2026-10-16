@@ -29,12 +29,12 @@ jobs:
       # The script of this workflow's own ref (the tag itself for a release;
       # the branch picked for a manual run, so an older tag can be re-checked).
       - name: Check out the script
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: tools
           persist-credentials: false
       - name: Check out the tag
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/tags/${{ env.TAG }}
           path: src
@@ -48,7 +48,7 @@ jobs:
           [ -n "$v" ] || { echo "no GO_VERSION in src/bin/tacctl.sh" >&2; exit 1; }
           echo "version=$v" >> "$GITHUB_OUTPUT"
       - name: Install that Go where tacctl.sh looks for it
-        uses: actions/setup-go@v5.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ steps.go.outputs.version }}
           check-latest: false
@@ -63,7 +63,7 @@ jobs:
         run: ../tools/tests/tools/release-reproduce.sh "$TAG" "$GITHUB_WORKSPACE/reproduce"
       - name: Keep the sums and the diff
         if: always()
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-${{ env.TAG }}-sums
           path: reproduce/

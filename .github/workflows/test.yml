@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -37,7 +37,7 @@ jobs:
           v=$(sed -n 's/^GO_VERSION="\([0-9.]*\)"$/\1/p' bin/tacctl.sh)
           [ -n "$v" ] || { echo "no GO_VERSION in bin/tacctl.sh" >&2; exit 1; }
           echo "version=$v" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-go@v5.5.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ steps.go.outputs.version }}
           check-latest: false
@@ -59,7 +59,7 @@ jobs:
       matrix:
         tags: ["", testknobs]
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -70,7 +70,7 @@ jobs:
           v=$(sed -n 's/^GO_VERSION="\([0-9.]*\)"$/\1/p' bin/tacctl.sh)
           [ -n "$v" ] || { echo "no GO_VERSION in bin/tacctl.sh" >&2; exit 1; }
           echo "version=$v" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-go@v5.5.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ steps.go.outputs.version }}
           check-latest: false
@@ -97,7 +97,7 @@ jobs:
         shard: [0, 1, 2, 3]
         tags: ["", testknobs]
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -108,7 +108,7 @@ jobs:
           v=$(sed -n 's/^GO_VERSION="\([0-9.]*\)"$/\1/p' bin/tacctl.sh)
           [ -n "$v" ] || { echo "no GO_VERSION in bin/tacctl.sh" >&2; exit 1; }
           echo "version=$v" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-go@v5.5.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ steps.go.outputs.version }}
           check-latest: false
