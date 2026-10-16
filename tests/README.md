@@ -32,18 +32,24 @@ make test-pyyaml     # the yamlpy and conf PyYAML corpora regenerated with PyYAM
 make test-diff CORPUS=users   # the differential runner on one corpus
 ```
 
-`internal/cli` takes over twenty minutes in one run, so CI
-(`.github/workflows/test.yml`) runs its tests in four shards,
+The tests of `internal/cli` run in parallel inside one process: the
+sandbox helpers (`newSandbox`, `newHarness`, `newSwEnv`) call `parallel(t)`,
+and everything a test replaces (a dial, a prompt, a terminal check) is a
+field of the `hooks` value of its invocation, not a package variable. A test
+that cannot share the process calls `serial(t)` as its first statement
+(Go runs every serial test before the first parallel one): those that set the
+process environment, signal the process, or write a package-level registry
+(`withFakeBackend`, `withPasswd`). The whole package takes about six minutes
+(about 24 serially). CI (`.github/workflows/test.yml`) runs it in two shards,
 `tests/tools/go-test-shard.sh <index> <count>` (the top-level tests dealt
 round-robin; `--check <count>` fails unless every test is in exactly one
-shard), beside one job for every other package and a static job (gofmt,
-`go vet`). Both tag sets run, as `make test-go` does; the bats suite, the
-diff corpus and the container matrix stay on the maintainer's machine. The
-sandbox of many of these tests replaces package-level hooks, so they cannot yet run
-in parallel inside one process; sharding is what keeps CI short. The
-temporary directory is not one of them: it is `Paths.TempDir`, the `TMPDIR` of
-the environment a test gives the invocation, and the code never reads the
-process's (`tests/tools/no-os-tempdir.sh`, part of `make lint`).
+shard), the ones without tags with the race detector, beside one job for
+every other package and a static job (gofmt, `go vet`). Both tag sets run,
+as `make test-go` does; the bats suite, the diff corpus and the container
+matrix stay on the maintainer's machine. The temporary directory is
+`Paths.TempDir`, the `TMPDIR` of the environment a test gives the
+invocation, and the code never reads the process's
+(`tests/tools/no-os-tempdir.sh`, part of `make lint`).
 
 The bats files run in parallel (`bats --jobs`, one file per job, the tests of
 a file in order) when GNU `parallel` is installed: `BATS_JOBS` sets the number
