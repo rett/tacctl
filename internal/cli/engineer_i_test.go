@@ -23,6 +23,7 @@ import (
 // line names the repair.
 func TestBuiltinOperatorAt15WithALostTierIsAmbiguous(t *testing.T) {
 	sb := newSandbox(t, true)
+	sandboxTarball(t, sb)
 	sb.write("state/linux-hosts", "authsrv|local||lab|127.0.0.1|\n", 0o600)
 	for _, a := range [][]string{{"group", "edit", "operator", "tier", "engineer"}, {"group", "edit", "operator", "priv-lvl", "15"}} {
 		if sb.cfgRun("", a, nil); sb.code != 0 {

@@ -19,14 +19,27 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/execx"
 )
 
-// configPaths are the shipped top-level keys 'config get' completes, as a
-// word list; nested paths are typed by hand.
-const configPaths = "bcrypt.cost|password.max_age_days|password.min_length|secret.min_length|scope.default|" +
-	"mgmt_acl.names.cisco|mgmt_acl.names.juniper|mgmt_acl.permits|privileges.operator|" +
-	"commands.superuser|commands.operator|commands.readonly"
+// configPaths are the keys 'config get' completes, as a word list: every
+// exact key of the schema and the prefix of every key family (so 'tier.' is
+// offered and the group is typed by hand), with the shipped built-in
+// instances. Generated from the schema, so a new key is completed without a
+// second list; TestConfigPathsCoverSchema holds it to that.
+var configPaths = configKeyWords(conf.NewSchema(nil))
+
+// shippedInstances are the family keys a fresh install already has.
+var shippedInstances = []string{"privileges.operator", "commands.superuser", "commands.operator", "commands.readonly"}
+
+// configKeyWords is the sorted, de-duplicated 'a|b|c' list of a schema's
+// exact keys, family prefixes and shippedInstances.
+func configKeyWords(s *conf.Schema) string {
+	words := slices.Concat(s.Keys(), s.Wildcards(), shippedInstances)
+	slices.Sort(words)
+	return strings.Join(slices.Compact(words), "|")
+}
 
 // topSpecs are the verbs outside the families.
 var topSpecs = map[string]Spec{
@@ -337,6 +350,10 @@ func (inv *invocation) completeKind(kind, toComplete string, values map[string]s
 			prefix = toComplete[:i+1]
 		}
 		have := strings.Split(strings.TrimSuffix(prefix, ","), ",")
+		for i, h := range have {
+			// 'name=reason' elements (breakglass hold) name the device
+			have[i], _, _ = strings.Cut(h, "=")
+		}
 		cur := strings.TrimPrefix(toComplete, prefix)
 		var out []cobra.Completion
 		for _, w := range inv.kindWords(base, values) {
@@ -353,7 +370,59 @@ func (inv *invocation) completeKind(kind, toComplete string, values map[string]s
 			out = append(out, w)
 		}
 	}
-	return out, cobra.ShellCompDirectiveNoFileComp
+	dir := cobra.ShellCompDirectiveNoFileComp
+	if kind == configPaths {
+		// A family prefix is not a whole key: no space after it, and once
+		// it is typed the names it takes come from the store.
+		for _, w := range inv.configFamilyWords(toComplete) {
+			if !slices.Contains(out, w) {
+				out = append(out, w)
+			}
+		}
+		if slices.ContainsFunc(out, func(w cobra.Completion) bool { return strings.HasSuffix(w, ".") }) {
+			dir |= cobra.ShellCompDirectiveNoSpace
+		}
+	}
+	return out, dir
+}
+
+// configFamilies says what names the keys of each wildcard family of the
+// schema take after their prefix: the groups or the scopes of the store, or
+// "" when the name is typed by hand (a listener, a device, a hold). The
+// last word of a family with a key after the name ends in a dot.
+// TestConfigFamiliesCoverSchema holds it to the schema's prefixes.
+var configFamilies = map[string]string{
+	"privileges.": KindGroups, "commands.": KindGroups, "tier.": KindGroups, "wti_level.": KindGroups,
+	"junos.":     KindGroups,
+	"aaa.order.": KindScopes, "exec_timeout.": KindScopes, "tacacs_group.": KindScopes, "radius_group.": KindScopes,
+	"cisco.source_interface.": KindScopes, "scope_auth_method.": KindScopes,
+	"scope_mgmt_acl.names.cisco.": KindScopes, "scope_mgmt_acl.names.juniper.": KindScopes,
+	"scope_mgmt_acl.permits.": KindScopes, "breakglass_scope.": KindScopes, "blocks.": KindScopes,
+	"snmp_scope.": KindScopes, "netconf_scope.": KindScopes,
+	"listeners.": "", "blocks_device.": "", "breakglass_hold.": "",
+}
+
+// configFamilyWords are the keys of the families whose prefix toComplete
+// already starts with, one per group or scope the store has ('tier.ops',
+// and 'junos.ops.' where a key follows the name).
+func (inv *invocation) configFamilyWords(toComplete string) []string {
+	var out []string
+	for fam, kind := range configFamilies {
+		if kind == "" || !strings.HasPrefix(toComplete, fam) {
+			continue
+		}
+		more := ""
+		if r, ok := conf.NewSchema(nil).RuleFor(fam + "x"); !ok || r.Depth > 1 || r.Tail != "" {
+			more = "."
+		}
+		for _, n := range inv.liveNames(inv.ctx, kind) {
+			if w := fam + n + more; strings.HasPrefix(w, toComplete) {
+				out = append(out, w)
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // kindWords are all the words of a kind: a fixed list written 'a|b|c', or

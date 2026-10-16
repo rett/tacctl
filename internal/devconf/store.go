@@ -969,3 +969,42 @@ func StoredForm(vendor string, secs map[string]devices.Section) (map[string]devi
 	}
 	return out, nil
 }
+
+// Names are the devices (lower case, sorted) that the store holds anything
+// of: a record, or a sections, plain-view or back-out file. A device that
+// was removed by an import or a restore of the registry, not by 'device
+// remove' (which forgets all of these), is still named here.
+func (s Store) Names() ([]string, error) {
+	set := map[string]bool{}
+	if _, err := os.Stat(s.Records); err == nil {
+		r, err := s.Load()
+		if err != nil {
+			return nil, err
+		}
+		for k := range r.Devices {
+			set[strings.ToLower(k)] = true
+		}
+	}
+	ents, err := os.ReadDir(s.Dir)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fail("Cannot read " + s.Dir + ": " + errText(err))
+	}
+	for _, e := range ents {
+		n := e.Name()
+		switch {
+		case e.IsDir() || strings.HasPrefix(n, "."):
+		case strings.HasSuffix(n, ".yaml"):
+			set[strings.ToLower(strings.TrimSuffix(n, ".yaml"))] = true
+		case strings.HasSuffix(n, plainSuffix):
+			set[strings.ToLower(strings.TrimSuffix(n, plainSuffix))] = true
+		case strings.HasSuffix(n, backoutSuffix):
+			set[strings.ToLower(strings.TrimSuffix(n, backoutSuffix))] = true
+		}
+	}
+	out := make([]string, 0, len(set))
+	for n := range set {
+		out = append(out, n)
+	}
+	slices.Sort(out)
+	return out, nil
+}

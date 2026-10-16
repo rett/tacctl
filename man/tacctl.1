@@ -1498,7 +1498,9 @@ Lists and maps produce no output; use
 .B "config get-list"
 or
 .B "config dump"
-instead.
+instead. Tab completes every key of the configuration and the start of each
+family of keys that takes a name (\fBtier.\fR, \fBsnmp_scope.\fR), then the
+groups or scopes of the store.
 .\" BEGIN GENERATED: command config get
 .RS
 .PP
@@ -1555,7 +1557,21 @@ warning too (a
 .B Group settings:
 line), and
 .B group privilege reset
-removes it. A private copy of the configuration that an interrupted command
+removes it. A key of
+.I tacctl.yaml
+that names a group or a scope the store does not have
+.RB ( privileges.\fIgroup\fR ,
+.BR commands.\fIgroup\fR ,
+.BR snmp_scope.\fIscope\fR ,
+.BR exec_timeout.\fIscope\fR
+and the other per-scope keys; the built-in groups never count) is a warning, an
+.B Orphan settings:
+line per key: a group or scope added later under that name would take it
+over. The files of a device or scope that is not registered (the records of a
+device's last pull, SNMP credentials of a device or a scope) are a warning as
+well, an
+.B Orphan files:
+line each. A private copy of the configuration that an interrupted command
 left in the state directory
 .RB ( .apply.* ,
 .BR .restore.* ,
@@ -3615,7 +3631,9 @@ uses the local enable secret). The source interface is
 the one policy value the standard needs from the operator
 .RB ( "config cisco source-interface" ):
 unset, the walkthrough prints the line commented with that command and nothing
-is rendered or compared.
+is rendered or compared. One typed inside
+.B aaa group server
+is an older per\-group form: the plan and the diff name it as such.
 .IP
 Every walkthrough of
 .BR "config cisco" ", " "config juniper " "and " "config wti"
@@ -9476,10 +9494,17 @@ privilege 1, and
 .B enable
 with the local enable secret takes it to 15. A
 .I hold
-makes the server stop answering one registered device on purpose, so that
-its local accounts can be used on a vty (and those of a Junos or WTI device)
-while the server is up. A hold is for one device in an exceptional case; it
-has no timer, no automatic release and no whole\-scope form.
+makes the server stop answering the registered devices named on purpose, so
+that their local accounts can be used on a vty (and those of a Junos or WTI
+device) while the server is up. A hold is for an exceptional case; it has no
+timer, no automatic release and no whole\-scope form. Several devices are
+held in one command, best effort: each is checked on its own, the ones that
+pass are held together (one write of
+.IR tacctl.yaml ,
+one render, one restart of each backend that changed) and the others are
+named with why under
+.BR "Not held:" ;
+the exit code is 1 when any was not held.
 .PP
 The record is
 .B breakglass_hold.<device>.address|since|by|reason
@@ -9549,19 +9574,36 @@ and
 .B "config validate"
 say so for as long as it stands. Both verbs write an
 .B auth.info
-line (the reason is in the hold's:
+line per device (the reason is in the hold's:
 .BI "breakglass hold device=" name " addr=" ip " reason=\(dq" text "\(dq by=" user
 and
 .BI "breakglass release device=" name " addr=" ip " held=" duration " by=" user )
 and take the snapshot every change takes.
 .TP
-.BI "breakglass hold " device " \-\-reason " text
-Hold break\-glass on a registered device (not an enrolled host). The reason is
-required, 1 to 256 characters. At a terminal it asks for the device's name typed
-back (there is no
+.BI "breakglass hold " "device[=reason][,device[=reason]...]" " [\-\-reason " text ]
+Hold break\-glass on registered devices (not enrolled hosts), given as one comma
+list in one argument (quote it when a reason holds a space). Each device has a reason, 1 to 256
+characters: its own after
+.B =
+(which ends at the next comma, so a reason that holds a comma is given with
+.BR \-\-reason )
+or the
+.B \-\-reason
+default; a device with neither is a usage error that names it, and a device is
+named once. Each device is checked on its own, as below: the ones that pass
+are held together, and each that does not is named with why on a
+.B "Not held: <name>: <why>"
+line, in the confirmation and again in the report. When none passes nothing is
+asked or changed and the verb exits 1; when some were not held it exits 1 after
+holding the rest. A hold made by another superuser while the names were typed
+is skipped and named the same way. At a terminal it asks for the names of the
+devices that passed typed back as printed, comma separated (for one device,
+the device's name; there is no
 .BR \-\-yes ;
-without a terminal the verb refuses) and prints one report: the record, what was
-rendered and which backends restarted, the way in for the device's vendor (Cisco:
+without a terminal the verb refuses) and prints one report: the record of each
+device, what was rendered and which backends restarted (said once), the way in
+for the vendors present (for one device
+the way in of its vendor; Cisco:
 ssh as a local account, the local
 .B CONSOLE
 login and
@@ -9572,7 +9614,8 @@ WTI: its Fallback Local), that the device's accounting goes to a server that
 does not answer it,
 .B "Held now:"
 (every hold that stands) and
-.BR "When done:" .
+.B "When done:"
+(the release of the devices held).
 A
 .B "Carved:"
 line says that only the registered address is carved and that a device that
@@ -9598,11 +9641,11 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-reason\fR \fI<value>\fR
-(hold) Why, 1 to 256 characters; kept with the record and in the log.
+(hold) Why, 1 to 256 characters; kept with the record and in the log (the reason of every device that has no <device>=<reason>).
 .RE
 .\" END GENERATED: command breakglass hold
 .TP
-.BI "breakglass release " device
+.BI "breakglass release " "device[,device]..."
 Make the server answer the device again. Works from the record alone: a
 device removed from
 .I devices.yaml
@@ -9614,6 +9657,13 @@ and the verb exits 1. The report names how long it was held, by whom and why,
 what was rendered, the check
 .RB ( "tacctl device config pull " device " \-\-diff" ,
 then a new ssh login as yourself) and the holds that remain. Superuser only.
+Given a comma list, the devices that are held (or whose entry carved nothing)
+are released together, in one write, one render and one restart of each
+backend that changed, with one report block each and the rendering and the
+check said once; a name that is not held is named on a
+.B "Not released: <name>"
+line, the rest are released, and the exit code is 1. When none is held nothing
+is changed.
 .\" BEGIN GENERATED: command breakglass release
 .RS
 .PP
@@ -10695,7 +10745,13 @@ once and runs when the first is done;
 .B Ctrl\-C
 ends the wait (\c
 .IR "Nothing was changed." ,
-exit 1). Every write of
+exit 1;
+.B install
+and
+.BR upgrade ,
+which have built or pulled by then, say that the store,
+.I tacctl.yaml
+and the services were not changed and to run the command again). Every write of
 .IR tacctl.yaml ,
 the store commands,
 .BR "config render" ,
@@ -10704,10 +10760,11 @@ the RADIUS listener changes,
 .BR "backend enable|disable" ,
 .BR "store import" ,
 .BR "store rollback" ,
-.B "backup restore"
-and
+.BR "backup restore" ,
 .B upgrade
-(after its self-update) take it; a command that only reads does not. A file
+(after its self-update) and
+.B install
+(from its seed to its end) take it; a command that only reads does not. A file
 that was edited by hand while a command ran is saved as
 .I <file>.overwritten\-<timestamp>
 in

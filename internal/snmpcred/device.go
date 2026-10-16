@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -141,4 +142,36 @@ func CheckNoDeviceFile(dir, name string) error {
 			"They belong to an earlier device of that name, and the new one would use them. Remove the file (or move it away), then run the command again.")
 	}
 	return nil
+}
+
+// DeviceNames are the devices (lower case, sorted) that have a credentials
+// file under dir (the SNMP directory).
+func DeviceNames(dir string) ([]string, error) {
+	return yamlNames(filepath.Join(dir, DevicesDir))
+}
+
+// ScopeNames are the scopes that have a credentials file directly under dir
+// (the SNMP directory), sorted; the devices subdirectory is not one.
+func ScopeNames(dir string) ([]string, error) {
+	return yamlNames(dir)
+}
+
+// yamlNames lists the <name>.yaml files of a directory (none: no
+// directory), without the extension, sorted.
+func yamlNames(dir string) ([]string, error) {
+	ents, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fail("Cannot read " + dir + ": " + errText(err))
+	}
+	var out []string
+	for _, e := range ents {
+		if n, ok := strings.CutSuffix(e.Name(), ".yaml"); ok && !e.IsDir() && !strings.HasPrefix(n, ".") {
+			out = append(out, n)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }

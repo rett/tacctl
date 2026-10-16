@@ -1,9 +1,11 @@
 package cli
 
-// 'tacctl breakglass hold <device> --reason "<text>" | release <device> |
-// list [--json]' (docs/plans/0.2.5-plan.md D121-D126): make the server stop
-// answering one managed device, so its local accounts are usable while the
-// server is up, and answer it again. The record is breakglass_hold.<device>
+// 'tacctl breakglass hold <device>[=<reason>][,...] [--reason "<text>"] |
+// release <device>[,...] | list [--json]' (docs/plans/0.2.5-plan.md
+// D121-D126): make the server stop answering managed devices, so their local
+// accounts are usable while the server is up, and answer them again. A list
+// is held best effort: each device is checked on its own, those that pass are
+// held together in one write, one render and one restart. The record is breakglass_hold.<device>
 // in tacctl.yaml (internal/conf); both renderers take its address out of
 // every scope's prefixes (internal/model WithoutAddresses) and nothing in
 // store.yaml changes. A hold is shown until it is released: there is no
@@ -40,23 +42,23 @@ import (
 const KindHeld = "held"
 
 const (
-	breakglassUsageHold    = `Usage: tacctl breakglass hold <device> --reason "<text>"`
-	breakglassUsageRelease = "Usage: tacctl breakglass release <device>"
+	breakglassUsageHold    = `Usage: tacctl breakglass hold <device>[=<reason>][,<device>[=<reason>]...] [--reason "<text>"]`
+	breakglassUsageRelease = "Usage: tacctl breakglass release <device>[,<device>...]"
 	breakglassUsageList    = "Usage: tacctl breakglass list [--json]"
 )
 
 // breakglassSpecs are the arguments of each verb (completion and parsing).
 var breakglassSpecs = map[string]Spec{
-	"hold": {MinArgs: 1, MaxArgs: 1, Args: []string{KindDevices},
+	"hold": {MinArgs: 1, MaxArgs: 1, Args: []string{KindDevices + KindList},
 		Flags: []Flag{{Names: []string{"--reason"}, Value: true}}},
-	"release": {MinArgs: 1, MaxArgs: 1, Args: []string{KindHeld}},
+	"release": {MinArgs: 1, MaxArgs: 1, Args: []string{KindHeld + KindList}},
 	"list":    {Flags: []Flag{flagJSON}},
 }
 
 // breakglassVerbs are the family's rows: usage and one-line description.
 var breakglassVerbs = [][2]string{
-	{`hold <device> --reason "<text>"`, "Make the server stop answering one device, so its local accounts are usable (the superuser's)"},
-	{"release <device>", "Make the server answer the device again (the superuser's)"},
+	{`hold <device>[=<reason>][,...] [--reason "<text>"]`, "Make the server stop answering the devices named, so their local accounts are usable (the superuser's)"},
+	{"release <device>[,<device>...]", "Make the server answer the devices again (the superuser's)"},
 	{"list [--json]", "The devices held now: since when, by whom and why; an engineer sees the devices of their own scopes"},
 }
 
@@ -90,6 +92,7 @@ func breakglassUsage() string {
 		}
 	}
 	b.WriteString(`      --reason "<text>"                 (hold) Why, 1 to 256 characters; kept with the record and in the log
+                                        (the reason of every device that has no <device>=<reason>)
       --json                            (list) Print the holds as a JSON array
 
 A device that authenticates against this server is answered by a scope whose
@@ -100,16 +103,21 @@ ones 'tacctl scope breakglass <scope> list' records, are usable while the
 server is up; a device that sends its AAA from another address (a source
 interface, a NAT) is still answered, and the report says so. It
 asks for the device's name typed back, restarts the backends that serve it
-and shows the way in for the device's vendor. A hold is for one device, for an
-exceptional case, and is shown until 'release' (there is no timer): 'status',
+and shows the way in for the device's vendor. A hold is for an exceptional
+case, and is shown until 'release' (there is no timer). Several devices are
+held in one command, each with its own reason or the --reason default:
+every device is checked on its own, those that pass are held together (one
+render, one restart of each backend) and the others are named under 'Not
+held' with why, and the exit code is 1 when any was not held. 'status',
 'device show|list|check', 'scope show|list|routing|lookup' and 'config
 validate' say so while it stands. Only the superuser holds and releases; an
 engineer lists the holds of the devices of their own scopes.
 
 Examples:
   tacctl breakglass hold sw-lab-1 --reason "console recovery after a failed paste"
+  tacctl breakglass hold sw-lab-1=console,sw-lab-2=paste --reason "failed paste"
   tacctl breakglass list
-  tacctl breakglass release sw-lab-1
+  tacctl breakglass release sw-lab-1,sw-lab-2
 
 `)
 	return b.String()
@@ -406,6 +414,159 @@ func vendorWayIn(vendor string) []string {
 	}
 }
 
+// holdRequest is one device of a hold as typed: its name, and the reason it
+// is held for (its own after '=', else the --reason default).
+type holdRequest struct {
+	Name, Reason string
+	// Own is whether the reason came with the name.
+	Own bool
+}
+
+// splitDeviceArgs reads the argument of 'breakglass hold' (with reasons) and
+// 'breakglass release' (names only): a comma list. One argument only: an
+// unquoted --reason would otherwise hold its words as devices. A name is
+// given once, whatever its case.
+// problem is "" when the list is usable. A per-device reason ends at the next
+// comma, so one that holds a comma is given with --reason.
+func splitDeviceArgs(args []string, withReason bool) (out []holdRequest, problem string) {
+	for _, a := range args {
+		for _, piece := range strings.Split(a, ",") {
+			r := holdRequest{Name: strings.TrimSpace(piece)}
+			if withReason {
+				if n, why, ok := strings.Cut(piece, "="); ok {
+					r.Name, r.Reason, r.Own = strings.TrimSpace(n), strings.TrimSpace(why), true
+				}
+			}
+			if r.Name == "" {
+				return nil, "A device name is missing in '" + a + "'"
+			}
+			if slices.ContainsFunc(out, func(x holdRequest) bool { return strings.EqualFold(x.Name, r.Name) }) {
+				return nil, "'" + r.Name + "' is named twice"
+			}
+			out = append(out, r)
+		}
+	}
+	return out, ""
+}
+
+// holdCandidate is a requested device that passed every check.
+type holdCandidate struct {
+	req    holdRequest
+	e      devreg.Entry
+	scope  string
+	vendor string
+	local  string
+}
+
+// holdNotHeld is a requested device that did not pass: why is the clause of
+// its 'Not held:' line, and show and msg are what a single device's refusal
+// prints (the lines before, and the final error).
+type holdNotHeld struct {
+	name, why string
+	// dup is the name of the device an earlier element of the line
+	// already named, when this one is the same device (by name and by
+	// address): a mistake of the line, which refuses it whole.
+	dup  string
+	show func()
+	msg  string
+}
+
+// quoteNames is 'a', 'b', 'c'.
+func quoteNames(names []string) string {
+	q := make([]string, len(names))
+	for i, n := range names {
+		q[i] = "'" + n + "'"
+	}
+	return strings.Join(q, ", ")
+}
+
+// holdCheck runs the five checks of a hold, in order, on one requested
+// device. A refusal is returned, not printed; err is a failure of the
+// checks themselves. taken are the candidates of the same command: two
+// devices of one address cannot both be held. m is read once, when a device
+// reaches the fifth check.
+func (inv *invocation) holdCheck(r holdRequest, f *devreg.File, res *devreg.Resolver, taken []holdCandidate, m **model.Model) (c holdCandidate, rf *holdNotHeld, err error) {
+	name := r.Name
+	refuse := func(why, msg string, show func()) (holdCandidate, *holdNotHeld, error) {
+		return holdCandidate{}, &holdNotHeld{name: name, why: why, show: show, msg: msg}, nil
+	}
+	// 1. A registered device (an enrolled Linux host is not one).
+	e, ok := res.Lookup(name, devreg.ScopeFilter{})
+	if !ok {
+		return refuse("not found (tacctl device list)", "Device '"+name+"' not found. List them with: tacctl device list", nil)
+	}
+	if e.Source == devreg.SourceHost {
+		return refuse("an enrolled host, not a registered device: a break-glass hold is for network devices ('tacctl host' manages hosts, which keep a local administrator)",
+			"'"+e.Name+"' is an enrolled host, not a registered device: a break-glass hold is for network devices ('tacctl host' manages hosts, which keep a local administrator).", nil)
+	}
+	// 2. With an address.
+	if e.Address == "" {
+		return refuse("it has no address: the hold is on the address the server sees (register one: tacctl device address "+e.Name+" <address>)",
+			"Device '"+e.Name+"' has no address: the hold is on the address the server sees. Register one: tacctl device address "+e.Name+" <address>", nil)
+	}
+	// 3. Not already held.
+	if cur, held := inv.holdNamed(e.Name); held {
+		if !sameAddress(cur.Address, e.Address) {
+			// A record of that name at another address (the device was
+			// registered again): writing over it would drop its carve-out.
+			a := "A break-glass record named '" + cur.Device + "' stands at " + cur.Address + " " + inv.holdSummary(cur) + ", not at the address the device is registered at (" + e.Address + ")."
+			return refuse("a break-glass record of that name stands at "+cur.Address+" "+inv.holdSummary(cur)+", not at the address the device is registered at ("+e.Address+"); release it first (tacctl breakglass release "+cur.Device+"), then hold again",
+				"Release it first (tacctl breakglass release "+cur.Device+"), then hold again. Nothing was changed.",
+				func() { inv.app.Out.Error(a) })
+		}
+		a := "Break-glass is already held on '" + cur.Device + "' (" + cur.Address + ") " + inv.holdSummary(cur) + "."
+		return refuse("already held ("+cur.Address+") "+inv.holdSummary(cur)+": "+cur.Reason+"; release it first (tacctl breakglass release "+cur.Device+"), then hold again",
+			"Release it first (tacctl breakglass release "+cur.Device+"), then hold again with the new reason. Nothing was changed.",
+			func() {
+				inv.app.Out.Error(a)
+				inv.echo("  Reason: " + cur.Reason)
+			})
+	}
+	// 4. Not an address this server answers from or its own hosts use.
+	if why := inv.serverOwnAddress(e.Address, f, res.Hosts); why != "" {
+		return refuse(why, why+". Nothing was changed.", nil)
+	}
+	if other, held := inv.holdAt(e.Address); held {
+		return refuse("address "+e.Address+" is already held, on '"+other.Device+"'",
+			"Address "+e.Address+" is already held, on '"+other.Device+"'. Nothing was changed.", nil)
+	}
+	for _, t := range taken {
+		if strings.EqualFold(t.e.Name, e.Name) {
+			// the same device named twice (by name and by address): a
+			// mistake of the line, not a device that was refused
+			return holdCandidate{}, &holdNotHeld{name: r.Name, dup: t.e.Name}, nil
+		}
+		if sameAddress(t.e.Address, e.Address) {
+			return refuse("address "+e.Address+" is also the address of '"+t.e.Name+"', which is in this list",
+				"Address "+e.Address+" is also the address of '"+t.e.Name+"'. Nothing was changed.", nil)
+		}
+	}
+	// 5. Some scope answers it now.
+	if *m == nil {
+		if *m, err = inv.model(); err != nil {
+			return holdCandidate{}, nil, err
+		}
+	}
+	info, covered := (*m).LookupAddr(e.Address)
+	if !covered {
+		return refuse("it is already unanswered: no scope covers "+e.Address+" (tacctl scope lookup "+e.Address+"), so its local accounts work now and there is nothing to record",
+			"'"+e.Name+"' is already unanswered: no scope covers "+e.Address+" (tacctl scope lookup "+e.Address+"), so its local accounts work now and there is nothing to record. Nothing was changed.", nil)
+	}
+	c = holdCandidate{req: r, e: e, scope: info.Scope, vendor: e.Vendor}
+	c.local = "no local account is recorded for scope '" + info.Scope + "' (tacctl scope breakglass " + info.Scope + " add <name>)"
+	if us := policy.BreakGlassUsers(inv.app.Conf(), info.Scope); len(us) > 0 {
+		parts := make([]string, len(us))
+		for i, u := range us {
+			parts[i] = u.Name + " [" + u.Role + "]"
+		}
+		c.local = strings.Join(parts, ", ")
+	}
+	if c.vendor == "" {
+		c.vendor = "other"
+	}
+	return c, nil, nil
+}
+
 func (inv *invocation) breakglassHold(args []string) error {
 	p, err := Parse(breakglassSpecs["hold"], args)
 	if err != nil {
@@ -418,58 +579,76 @@ func (inv *invocation) breakglassHold(args []string) error {
 	if f := inv.callerScopes(); f.restricted {
 		return inv.usageErr("'tacctl breakglass hold' is the superuser's. Nothing was changed.")
 	}
-	reason := strings.TrimSpace(p.Value("--reason"))
-	if !p.Has("--reason") {
-		return inv.usageErr("--reason is required: a hold is for one device in exceptional circumstances, and why is part of the record and of the log.", breakglassUsageHold)
+	reqs, problem := splitDeviceArgs(p.Args, true)
+	if problem != "" {
+		return inv.usageErr(problem+".", breakglassUsageHold)
 	}
-	if why := conf.HoldReasonProblem(reason); why != "" {
-		return inv.usageErr("--reason "+why+".", breakglassUsageHold)
+	// The reason of each device: its own, or the --reason default.
+	def := strings.TrimSpace(p.Value("--reason"))
+	usesDefault := slices.ContainsFunc(reqs, func(r holdRequest) bool { return !r.Own })
+	if p.Has("--reason") && usesDefault {
+		if why := conf.HoldReasonProblem(def); why != "" {
+			return inv.usageErr("--reason "+why+".", breakglassUsageHold)
+		}
+	}
+	var missing []string
+	for i := range reqs {
+		r := &reqs[i]
+		switch {
+		case r.Own:
+			if why := conf.HoldReasonProblem(r.Reason); why != "" {
+				return inv.usageErr("The reason of '"+r.Name+"' "+why+".", breakglassUsageHold)
+			}
+		case p.Has("--reason"):
+			r.Reason = def
+		default:
+			missing = append(missing, r.Name)
+		}
+	}
+	switch {
+	case len(missing) == 1 && len(reqs) == 1:
+		return inv.usageErr("--reason is required: a hold is for one device in exceptional circumstances, and why is part of the record and of the log.", breakglassUsageHold)
+	case len(missing) > 0:
+		return inv.usageErr("A reason is required for "+quoteNames(missing)+": give --reason \"<text>\" for every device that has none, or <device>=<reason>. Why is part of the record and of the log.", breakglassUsageHold)
 	}
 
 	f, res, err := inv.deviceLoad()
 	if err != nil {
 		return err
 	}
-	name := p.Args[0]
-	// 1. A registered device (an enrolled Linux host is not one).
-	e, ok := res.Lookup(name, devreg.ScopeFilter{})
-	if !ok {
-		return inv.usageErr("Device '" + name + "' not found. List them with: tacctl device list")
-	}
-	if e.Source == devreg.SourceHost {
-		return inv.usageErr("'" + e.Name + "' is an enrolled host, not a registered device: a break-glass hold is for network devices ('tacctl host' manages hosts, which keep a local administrator).")
-	}
-	// 2. With an address.
-	if e.Address == "" {
-		return inv.usageErr("Device '" + e.Name + "' has no address: the hold is on the address the server sees. Register one: tacctl device address " + e.Name + " <address>")
-	}
-	// 3. Not already held.
-	if cur, held := inv.holdNamed(e.Name); held {
-		if !sameAddress(cur.Address, e.Address) {
-			// A record of that name at another address (the device was
-			// registered again): writing over it would drop its carve-out.
-			inv.app.Out.Error("A break-glass record named '" + cur.Device + "' stands at " + cur.Address + " " + inv.holdSummary(cur) + ", not at the address the device is registered at (" + e.Address + ").")
-			return inv.usageErr("Release it first (tacctl breakglass release " + cur.Device + "), then hold again. Nothing was changed.")
+	multi := len(reqs) > 1
+	var (
+		m        *model.Model
+		cands    []holdCandidate
+		refusals []holdNotHeld
+	)
+	for _, r := range reqs {
+		c, rf, err := inv.holdCheck(r, f, res, cands, &m)
+		if err != nil {
+			return err
 		}
-		inv.app.Out.Error("Break-glass is already held on '" + cur.Device + "' (" + cur.Address + ") " + inv.holdSummary(cur) + ".")
-		inv.echo("  Reason: " + cur.Reason)
-		return inv.usageErr("Release it first (tacctl breakglass release " + cur.Device + "), then hold again with the new reason. Nothing was changed.")
+		if rf != nil && rf.dup != "" {
+			return inv.usageErr("'"+rf.name+"' is the device '"+rf.dup+"', which is in the list already. Nothing was changed.", breakglassUsageHold)
+		}
+		if rf != nil {
+			refusals = append(refusals, *rf)
+			continue
+		}
+		cands = append(cands, c)
 	}
-	// 4. Not an address this server answers from or its own hosts use.
-	if why := inv.serverOwnAddress(e.Address, f, res.Hosts); why != "" {
-		return inv.usageErr(why + ". Nothing was changed.")
-	}
-	if other, held := inv.holdAt(e.Address); held {
-		return inv.usageErr("Address " + e.Address + " is already held, on '" + other.Device + "'. Nothing was changed.")
-	}
-	// 5. Some scope answers it now.
-	m, err := inv.model()
-	if err != nil {
-		return err
-	}
-	info, covered := m.LookupAddr(e.Address)
-	if !covered {
-		return inv.usageErr("'" + e.Name + "' is already unanswered: no scope covers " + e.Address + " (tacctl scope lookup " + e.Address + "), so its local accounts work now and there is nothing to record. Nothing was changed.")
+	if len(cands) == 0 {
+		if !multi {
+			rf := refusals[0]
+			if rf.show != nil {
+				rf.show()
+			}
+			return inv.usageErr(rf.msg)
+		}
+		var lines []string
+		for _, rf := range refusals {
+			lines = append(lines, "Not held: "+rf.name+": "+rf.why)
+		}
+		return inv.usageErr(append(lines, "Nothing was changed.")...)
 	}
 
 	// The prompt: the act is exceptional, and the name typed back is the
@@ -478,37 +657,59 @@ func (inv *invocation) breakglassHold(args []string) error {
 	if !pr.Interactive() {
 		return inv.usageErr("No terminal to confirm on: a hold is a person's act, and the device name is typed back. Nothing was changed.")
 	}
-	local := "no local account is recorded for scope '" + info.Scope + "' (tacctl scope breakglass " + info.Scope + " add <name>)"
-	if us := policy.BreakGlassUsers(inv.app.Conf(), info.Scope); len(us) > 0 {
-		parts := make([]string, len(us))
-		for i, u := range us {
-			parts[i] = u.Name + " [" + u.Role + "]"
-		}
-		local = strings.Join(parts, ", ")
+	names := make([]string, len(cands))
+	for i, c := range cands {
+		names[i] = c.e.Name
 	}
-	vendor := e.Vendor
-	if vendor == "" {
-		vendor = "other"
-	}
+	typedBack := strings.Join(names, ",")
 	inv.echo("")
-	inv.echo("Hold break-glass on " + e.Name + " (" + e.Address + ", scope " + info.Scope + ", " + vendor + ")?")
-	inv.echo("  This is for one device in exceptional circumstances. The server stops answering " + e.Address + ": every login at")
-	inv.echo("  that device falls to its local accounts (" + local + "); nobody without one can")
-	inv.echo("  log in there until you release it.")
-	inv.echo("  The backends that serve it restart now and again at release (the restart every scope change makes).")
-	inv.echo("  Nothing releases it but 'tacctl breakglass release " + e.Name + "'.")
-	if typed := pr.Ask("  Type the device name to go on: "); typed != e.Name {
-		return inv.usageErr("The name typed back is not '" + e.Name + "'. Nothing was changed.")
+	if !multi {
+		c := cands[0]
+		e := c.e
+		inv.echo("Hold break-glass on " + e.Name + " (" + e.Address + ", scope " + c.scope + ", " + c.vendor + ")?")
+		inv.echo("  This is for one device in exceptional circumstances. The server stops answering " + e.Address + ": every login at")
+		inv.echo("  that device falls to its local accounts (" + c.local + "); nobody without one can")
+		inv.echo("  log in there until you release it.")
+		inv.echo("  The backends that serve it restart now and again at release (the restart every scope change makes).")
+		inv.echo("  Nothing releases it but 'tacctl breakglass release " + e.Name + "'.")
+		if typed := pr.Ask("  Type the device name to go on: "); typed != e.Name {
+			return inv.usageErr("The name typed back is not '" + e.Name + "'. Nothing was changed.")
+		}
+	} else {
+		inv.echo("Hold break-glass on " + strconv.Itoa(len(cands)) + " " + plural(len(cands), "device", "devices") + " (" + typedBack + ")?")
+		for _, c := range cands {
+			inv.echo("  " + c.e.Name + " (" + c.e.Address + ", scope " + c.scope + ", " + c.vendor + ")")
+			inv.echo("    Reason: " + c.req.Reason)
+			inv.echo("    Local accounts: " + c.local)
+		}
+		for _, rf := range refusals {
+			inv.echo("  Not held: " + rf.name + ": " + rf.why)
+		}
+		inv.echo("  This is for devices in exceptional circumstances. The server stops answering each address: every login at")
+		inv.echo("  those devices falls to their local accounts; nobody without one can log in there until you release them.")
+		inv.echo("  The backends that serve them restart now (once) and again at release (the restart every scope change makes).")
+		inv.echo("  Nothing releases them but 'tacctl breakglass release " + typedBack + "'.")
+		if typed := pr.Ask("  Type the device names as printed above, to go on: "); strings.ReplaceAll(typed, " ", "") != typedBack {
+			return inv.usageErr("The names typed back are not '" + typedBack + "'. Nothing was changed.")
+		}
 	}
 
 	now := inv.app.Knobs.Now()
-	h := conf.Hold{Device: e.Name, Address: e.Address, Since: now.Format(time.RFC3339), By: inv.sudoUser(), Reason: reason}
-	// Another hold may have been made while the name was typed: the check
-	// and the write are one step under tacctl.yaml's lock (SetHoldIf), so
-	// two superusers cannot both pass it.
-	var raced *conf.Hold
+	holds := make([]conf.Hold, len(cands))
+	for i, c := range cands {
+		holds[i] = conf.Hold{Device: c.e.Name, Address: c.e.Address, Since: now.Format(time.RFC3339), By: inv.sudoUser(), Reason: c.req.Reason}
+	}
+	// Another hold may have been made while the names were typed: each
+	// check and the write are one step under tacctl.yaml's lock
+	// (SetHoldsIf), so two superusers cannot both pass it. The holds that
+	// pass are written together.
+	var (
+		written []conf.Hold
+		skipped []conf.HoldSkip
+	)
 	res2, err := inv.app.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, func() error {
-		err := inv.app.Conf().SetHoldIf(h, func(existing []conf.Hold) error {
+		var err error
+		written, skipped, err = inv.app.Conf().SetHoldsIf(holds, func(existing []conf.Hold, h conf.Hold) error {
 			for _, x := range existing {
 				if strings.EqualFold(x.Device, h.Device) || sameAddress(x.Address, h.Address) {
 					return &heldNowError{x}
@@ -516,48 +717,122 @@ func (inv *invocation) breakglassHold(args []string) error {
 			}
 			return nil
 		})
-		var hn *heldNowError
-		if errors.As(err, &hn) {
-			// Nothing was written. Returning it would have StoreApply put
-			// back its copy of tacctl.yaml, taken before the other hold
-			// landed, over the record that did.
-			raced = &hn.hold
-			return nil
-		}
+		// Nothing was written when every hold was skipped: returning
+		// nothing keeps StoreApply from putting back its copy of
+		// tacctl.yaml, taken before the other hold landed, over the record
+		// that did.
 		return err
 	})
 	inv.loaded = false
 	if err != nil {
 		return err
 	}
-	if raced != nil {
-		inv.app.Out.Error("Break-glass is already held on '" + raced.Device + "' (" + raced.Address + ") " + inv.holdSummary(*raced) + ": another hold was made while the name was typed.")
-		return inv.usageErr("Nothing was changed.")
+	var notHeld []string
+	for _, rf := range refusals {
+		notHeld = append(notHeld, rf.name+": "+rf.why)
 	}
-	inv.app.Logger(inv.ctx, "auth.info", "breakglass hold device="+e.Name+" addr="+e.Address+" reason="+strconv.Quote(reason)+" by="+h.By)
+	for _, sk := range skipped {
+		var hn *heldNowError
+		if errors.As(sk.Err, &hn) {
+			notHeld = append(notHeld, sk.Hold.Device+": break-glass is already held on '"+hn.hold.Device+"' ("+hn.hold.Address+") "+inv.holdSummary(hn.hold)+": another hold was made while the name was typed")
+		}
+	}
+	if len(written) == 0 {
+		if !multi {
+			var hn *heldNowError
+			errors.As(skipped[0].Err, &hn)
+			raced := hn.hold
+			inv.app.Out.Error("Break-glass is already held on '" + raced.Device + "' (" + raced.Address + ") " + inv.holdSummary(raced) + ": another hold was made while the name was typed.")
+			return inv.usageErr("Nothing was changed.")
+		}
+		var lines []string
+		for _, n := range notHeld {
+			lines = append(lines, "Not held: "+n)
+		}
+		return inv.usageErr(append(lines, "Nothing was changed.")...)
+	}
+	// The candidates that were written, in the order asked.
+	var done []holdCandidate
+	for _, c := range cands {
+		if slices.ContainsFunc(written, func(h conf.Hold) bool { return h.Device == c.e.Name }) {
+			done = append(done, c)
+		}
+	}
+	addrs := make([]string, len(done))
+	doneNames := make([]string, len(done))
+	for i, c := range done {
+		h := written[slices.IndexFunc(written, func(h conf.Hold) bool { return h.Device == c.e.Name })]
+		addrs[i], doneNames[i] = c.e.Address, c.e.Name
+		inv.app.Logger(inv.ctx, "auth.info", "breakglass hold device="+c.e.Name+" addr="+c.e.Address+" reason="+strconv.Quote(c.req.Reason)+" by="+h.By)
+	}
+	releaseCmd := "tacctl breakglass release " + strings.Join(doneNames, ",")
 
 	inv.echo("")
-	inv.echoE(ui.Red + "Break-glass HELD" + ui.NC + " on " + e.Name + " (" + e.Address + ") since " + holdTime(h) + " by " + h.By + ".")
-	inv.echo("  Reason:   " + reason)
-	inv.echo("  Rendered: " + inv.renderedSentence(m, e.Address, res2, true))
-	inv.echo("  Carved:   " + holdCarvedText(e))
-	if w := holdSourceWarning(e, res); w != "" {
-		inv.echo("  " + ui.Yellow + "Warning:" + ui.NC + "  " + w)
+	rendered := inv.renderedSentenceOf(m, addrs, res2, true)
+	for i, c := range done {
+		h := written[slices.IndexFunc(written, func(h conf.Hold) bool { return h.Device == c.e.Name })]
+		e := c.e
+		inv.echoE(ui.Red + "Break-glass HELD" + ui.NC + " on " + e.Name + " (" + e.Address + ") since " + holdTime(h) + " by " + h.By + ".")
+		inv.echo("  Reason:   " + c.req.Reason)
+		if !multi {
+			inv.echo("  Rendered: " + rendered)
+		}
+		inv.echo("  Carved:   " + holdCarvedText(e))
+		if w := holdSourceWarning(e, res); w != "" {
+			inv.echo("  " + ui.Yellow + "Warning:" + ui.NC + "  " + w)
+		}
+		if multi && i < len(done)-1 {
+			inv.echo("")
+		}
+	}
+	if multi {
+		inv.echo("")
+		inv.echo("  Rendered: " + rendered)
 	}
 	inv.echo("")
-	for _, l := range vendorWayIn(e.Vendor) {
-		inv.echo("  " + l)
+	if !multi {
+		for _, l := range vendorWayIn(done[0].e.Vendor) {
+			inv.echo("  " + l)
+		}
+	} else {
+		var order []string
+		byVendor := map[string][]string{}
+		for _, c := range done {
+			if _, ok := byVendor[c.e.Vendor]; !ok {
+				order = append(order, c.e.Vendor)
+			}
+			byVendor[c.e.Vendor] = append(byVendor[c.e.Vendor], c.e.Name)
+		}
+		for _, v := range order {
+			label := v
+			if label == "" {
+				label = "other"
+			}
+			inv.echo("  Way in, " + label + " (" + strings.Join(byVendor[v], ", ") + "):")
+			for _, l := range vendorWayIn(v) {
+				inv.echo("    " + l)
+			}
+		}
 	}
 	inv.echo("  Nothing it does is accounted here: a held device sends its accounting to a server that does not answer it;")
 	inv.echo("  what the technician types is in the device's own log only.")
 	inv.echo("")
 	inv.echo("  " + inv.heldNow("Held now: "))
-	inv.echo("  When done: tacctl breakglass release " + e.Name)
+	inv.echo("  When done: " + releaseCmd)
+	for _, n := range notHeld {
+		inv.echo("  Not held: " + n)
+	}
 	inv.echo("")
+	if len(notHeld) > 0 {
+		inv.app.Out.Error(strconv.Itoa(len(notHeld)) + " of " + strconv.Itoa(len(reqs)) + " devices " + plural(len(notHeld), "was", "were") + " not held (see Not held).")
+	}
 	if len(res2.RestartFailed) > 0 {
 		// The record and the rendered files stay: they are what the next
 		// restart, or the next boot, serves.
-		inv.app.Out.Error("The hold is recorded and the rendered files are kept, but it is not in force until the backend named under Rendered is restarted; 'tacctl breakglass release " + e.Name + "' removes the record.")
+		inv.app.Out.Error("The hold is recorded and the rendered files are kept, but it is not in force until the backend named under Rendered is restarted; '" + releaseCmd + "' removes the record.")
+		return exit(1)
+	}
+	if len(notHeld) > 0 {
 		return exit(1)
 	}
 	return nil
@@ -606,35 +881,59 @@ func holdSourceWarning(e devreg.Entry, res *devreg.Resolver) string {
 // is restarted and the command that does it. held is the state after the
 // change.
 func (inv *invocation) renderedSentence(m *model.Model, addr string, res backend.Result, held bool) string {
-	var parts []string
-	for _, c := range m.CarvedFrom(addr, "", true) {
-		what := c.CIDR + " of scope '" + c.Scope + "'"
-		if c.Tagged {
-			what = "the tagged " + c.CIDR + " of scope '" + c.Scope + "'"
+	return inv.renderedSentenceOf(m, []string{addr}, res, held)
+}
+
+// renderedSentenceOf is renderedSentence for the addresses of one command:
+// what each did to the prefixes of its scopes, then the restarts, said once.
+func (inv *invocation) renderedSentenceOf(m *model.Model, addrs []string, res backend.Result, held bool) string {
+	// One entry per prefix that holds an address of the command, with the
+	// addresses it held: a /16 that held two is said once.
+	type carve struct {
+		what  string
+		cidr  string
+		addrs []string
+	}
+	var carves []*carve
+	for _, addr := range addrs {
+		for _, c := range m.CarvedFrom(addr, "", true) {
+			what := c.CIDR + " of scope '" + c.Scope + "'"
+			if c.Tagged {
+				what = "the tagged " + c.CIDR + " of scope '" + c.Scope + "'"
+			}
+			i := slices.IndexFunc(carves, func(x *carve) bool { return x.what == what })
+			if i < 0 {
+				carves = append(carves, &carve{what: what, cidr: c.CIDR})
+				i = len(carves) - 1
+			}
+			carves[i].addrs = append(carves[i].addrs, addr)
 		}
-		n := len(cidr.Subtract([]string{c.CIDR}, []string{addr}))
+	}
+	var parts []string
+	for _, c := range carves {
+		n := len(cidr.Subtract([]string{c.cidr}, c.addrs))
 		switch {
 		case !held:
-			parts = append(parts, what+" answers whole again")
+			parts = append(parts, c.what+" answers whole again")
 		case n == 0:
-			parts = append(parts, what+" is gone")
+			parts = append(parts, c.what+" is gone")
 		default:
-			parts = append(parts, what+" answers as "+strconv.Itoa(n)+" "+plural(n, "prefix", "prefixes")+" without "+addr)
+			parts = append(parts, c.what+" answers as "+strconv.Itoa(n)+" "+plural(n, "prefix", "prefixes")+" without "+strings.Join(c.addrs, ", "))
 		}
 	}
 	var s string
 	switch {
 	case len(parts) == 0:
-		s = "no scope covers " + addr + ", so the rendering did not change"
+		s = "no scope covers " + strings.Join(addrs, ", ") + ", so the rendering did not change"
 	default:
 		s = strings.Join(parts, "; ")
 	}
 	if len(res.Changed) == 0 {
 		return s + "; no backend file changed, nothing restarted."
 	}
-	still := "still answers " + addr
+	still := "still answers " + strings.Join(addrs, ", ")
 	if !held {
-		still = "still does not answer " + addr
+		still = "still does not answer " + strings.Join(addrs, ", ")
 	}
 	rs := make([]string, len(res.Changed))
 	for i, id := range res.Changed {
@@ -658,7 +957,112 @@ func (inv *invocation) breakglassRelease(args []string) error {
 	if f := inv.callerScopes(); f.restricted {
 		return inv.usageErr("'tacctl breakglass release' is the superuser's. Nothing was changed.")
 	}
-	name := p.Args[0]
+	reqs, problem := splitDeviceArgs(p.Args, false)
+	if problem != "" {
+		return inv.usageErr(problem+".", breakglassUsageRelease)
+	}
+	if len(reqs) == 1 {
+		return inv.breakglassReleaseOne(reqs[0].Name)
+	}
+	// Each name is a hold, an entry that carved nothing (removed by name,
+	// as the validator tells), or not held; the ones found go in one write.
+	var (
+		holds    []conf.Hold
+		unusable []conf.HoldRecord
+		notHeld  []string
+	)
+	for _, r := range reqs {
+		if h, ok := inv.holdNamed(r.Name); ok {
+			holds = append(holds, h)
+			continue
+		}
+		found := false
+		for _, d := range inv.app.Conf().HoldDefects() {
+			if !d.Usable && strings.EqualFold(d.Device, r.Name) {
+				unusable, found = append(unusable, d), true
+				break
+			}
+		}
+		if !found {
+			notHeld = append(notHeld, r.Name)
+		}
+	}
+	if len(holds) == 0 && len(unusable) == 0 {
+		lines := make([]string, 0, len(notHeld)+2)
+		for _, n := range notHeld {
+			lines = append(lines, "Not released: "+n+": break-glass is not held on it")
+		}
+		return inv.usageErr(append(lines, "Held now: "+inv.heldNow("")+" (tacctl breakglass list)", "Nothing was changed.")...)
+	}
+	m, err := inv.model()
+	if err != nil {
+		return err
+	}
+	// What the holds stood for, before the records go.
+	ages := make([]string, len(holds))
+	for i, h := range holds {
+		ages[i] = holdAge(h, inv.app.Knobs.Now())
+	}
+	remove := make([]string, 0, len(holds)+len(unusable))
+	addrs := make([]string, len(holds))
+	for i, h := range holds {
+		remove, addrs[i] = append(remove, h.Device), h.Address
+	}
+	for _, d := range unusable {
+		remove = append(remove, d.Device)
+	}
+	res, err := inv.app.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, func() error {
+		return inv.app.Conf().UnsetHolds(remove)
+	})
+	inv.loaded = false
+	if err != nil {
+		return err
+	}
+	inv.echo("")
+	var known []string
+	for i, h := range holds {
+		held := ages[i]
+		if t := h.SinceTime(); !t.IsZero() {
+			held = inv.app.Knobs.Now().Sub(t).Round(time.Minute).String()
+		}
+		inv.app.Logger(inv.ctx, "auth.info", "breakglass release device="+h.Device+" addr="+h.Address+" held="+held+" by="+inv.sudoUser())
+		inv.echo(ui.Green + "Break-glass RELEASED" + ui.NC + " on " + h.Device + " (" + h.Address + "): held " + ages[i] + " by " + h.By + " (" + h.Reason + ").")
+		if v := inv.registeredVendor(h.Device, h.Address); v == "cisco" || v == "juniper" || v == "wti" {
+			known = append(known, h.Device)
+		}
+	}
+	for _, d := range unusable {
+		inv.app.Logger(inv.ctx, "auth.info", "breakglass remove-record device="+d.Device+" by="+inv.sudoUser())
+		inv.echo(ui.Green + "Break-glass record REMOVED" + ui.NC + " for " + d.Device + ": the entry " + d.Defect + "; the rendering did not change.")
+	}
+	if len(holds) > 0 {
+		inv.echo("  Rendered: " + inv.renderedSentenceOf(m, addrs, res, false))
+		if len(known) > 0 {
+			inv.echo("  Check:    tacctl device config pull " + strings.Join(known, ",") + " --diff (aaa: ok), then a new ssh login as yourself.")
+		} else {
+			inv.echo("  Check:    a new login as yourself at the device.")
+		}
+	}
+	inv.echo("  " + inv.heldNow("Still held: "))
+	for _, n := range notHeld {
+		inv.echo("  Not released: " + n + ": break-glass is not held on it")
+	}
+	inv.echo("")
+	if len(notHeld) > 0 {
+		inv.app.Out.Error(strconv.Itoa(len(notHeld)) + " of " + strconv.Itoa(len(reqs)) + " devices " + plural(len(notHeld), "was", "were") + " not held, so not released.")
+	}
+	if len(res.RestartFailed) > 0 {
+		inv.app.Out.Error("The records are removed and the rendered files are kept, but the release is not in force until the backend named under Rendered is restarted.")
+		return exit(1)
+	}
+	if len(notHeld) > 0 {
+		return exit(1)
+	}
+	return nil
+}
+
+// breakglassReleaseOne is the release of one name.
+func (inv *invocation) breakglassReleaseOne(name string) error {
 	h, ok := inv.holdNamed(name)
 	if !ok {
 		// An entry of that name that carved nothing (no address, or one that

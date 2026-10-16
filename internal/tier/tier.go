@@ -129,6 +129,11 @@ type Rule struct {
 	Sudoers []string
 	// Wrap ends the drop-in's line after the row's patterns.
 	Wrap bool
+	// Note is the sentence the verb's help carries where the gate cannot
+	// tell its sub-verbs apart (it sees two words): what the code decides
+	// beyond the row. One note per Cmd and Sub, on the first row of the
+	// pair; the manual page's TIERS block is generated from it.
+	Note string
 }
 
 // Rules is the tier table (tier_permits and emit_tier_sudoers). Anything
@@ -177,8 +182,10 @@ var Rules = []Rule{
 	// 'ssh <name>' and the device registry's reads (0.2.1): the root side
 	// filters them to the caller's own scopes (docs/plans/operator-console.md 8).
 	{Tier: Readonly, Cmd: "ssh", AnySub: true, Sudoers: []string{"ssh *"}},
-	{Tier: Readonly, Cmd: "device", Sub: "list", Sudoers: []string{"device list", "device list *"}},
-	{Tier: Readonly, Cmd: "device", Sub: "show", Sudoers: []string{"device show *"}},
+	{Tier: Readonly, Cmd: "device", Sub: "list", Sudoers: []string{"device list", "device list *"},
+		Note: "device list: the CONFIG column (and config, release, model and serial of --json) is the operator tier's; a read-only user's list has none."},
+	{Tier: Readonly, Cmd: "device", Sub: "show", Sudoers: []string{"device show *"},
+		Note: "device show: the Configuration, Release, Model and Serial rows (and config, release, model and serial of --json) are the operator tier's; a read-only user's output has none."},
 	{Tier: Readonly, Cmd: "device", Sub: "notices", Sudoers: []string{"device notices", "device notices *"}},
 	{Tier: Readonly, Cmd: "device", Sub: "ssh", Sudoers: []string{"device ssh *"}},
 	{Tier: Readonly, Cmd: "device", Sub: "ssh-config", Sudoers: []string{"device ssh-config"}, Wrap: true},
@@ -203,7 +210,8 @@ var Rules = []Rule{
 	// text. The gate sees 'device config'; the verb limits an operator to
 	// 'list' (show, pull and diff are the engineer's, forget the
 	// superuser's), and sudoers grants the operator nothing else of it.
-	{Tier: Operator, Cmd: "device", Sub: "config", Sudoers: []string{"device config", "device config list", "device config list *"}, Wrap: true},
+	{Tier: Operator, Cmd: "device", Sub: "config", Sudoers: []string{"device config", "device config list", "device config list *"}, Wrap: true,
+		Note: "device config: an operator may run list; show, pull, diff and plan need the engineer tier (a device's walkthrough carries its scope's secret, a plan can type it, and a pull logs in to the device as you), and an engineer gets the devices of their own scopes only; forget, apply and shapes (a check or an apply writes to the device; shapes files what an apply confirmed) need the superuser tier."},
 	{Tier: Operator, Cmd: "console", Sub: "show", Sudoers: []string{"console show"}},
 	{Tier: Operator, Cmd: "console", Sub: "check", Sudoers: []string{"console check"}},
 	// 'console forget' (0.2.4, D70) is a word of the shell and the console,
@@ -228,7 +236,8 @@ var Rules = []Rule{
 	{Tier: Engineer, Cmd: "device", Sub: "hostkey", Sudoers: []string{"device hostkey *"}},
 	// An engineer imports from standard input only: sudoers matches the
 	// first argument, so 'device import /etc/shadow' never reaches tacctl.
-	{Tier: Engineer, Cmd: "device", Sub: "import", Sudoers: []string{"device import -", "device import - *"}, Wrap: true},
+	{Tier: Engineer, Cmd: "device", Sub: "import", Sudoers: []string{"device import -", "device import - *"}, Wrap: true,
+		Note: "device import: an engineer imports from standard input only (device import -)."},
 	{Tier: Engineer, Cmd: "scope", Sub: "devices", Sudoers: []string{"scope devices *"}, Wrap: true},
 	// 'device config show <name>' prints a device's walkthrough, secret and
 	// all, 'device config pull' and 'diff' log in to the devices as the
@@ -241,37 +250,46 @@ var Rules = []Rule{
 	// scopes' devices, and the output holds the scope's key where the
 	// device lacks it, as 'device config show' does.
 	{Tier: Engineer, Cmd: "device", Sub: "config", Sudoers: []string{"device config show *", "device config pull *", "device config diff *", "device config plan *"}},
-	{Tier: Engineer, Cmd: "config", Sub: "cisco", Sudoers: []string{"config cisco", "config cisco *"}},
+	{Tier: Engineer, Cmd: "config", Sub: "cisco", Sudoers: []string{"config cisco", "config cisco *"},
+		Note: "config cisco: an engineer may print the walkthrough and read source-interface for a scope of their own; setting or unsetting source-interface needs the superuser tier."},
 	{Tier: Engineer, Cmd: "config", Sub: "juniper", Sudoers: []string{"config juniper", "config juniper *"}},
 	{Tier: Engineer, Cmd: "config", Sub: "wti", Sudoers: []string{"config wti", "config wti *"}, Wrap: true},
 	// Engineers read the Linux hosts of their scopes and change nothing on
 	// them: enrolling, syncing and the rest of host deployment are the
 	// superuser's.
 	{Tier: Engineer, Cmd: "host", Sub: "list", Sudoers: []string{"host list"}},
-	{Tier: Engineer, Cmd: "host", Sub: "show", Sudoers: []string{"host show *"}, Wrap: true},
-	{Tier: Engineer, Cmd: "scope", Sub: "staging", Sudoers: []string{"scope staging", "scope staging list"}},
-	{Tier: Engineer, Cmd: "scope", Sub: "secret", Sudoers: []string{"scope secret *"}},
+	{Tier: Engineer, Cmd: "host", Sub: "show", Sudoers: []string{"host show *"}, Wrap: true,
+		Note: "host show: an engineer reads what tacctl recorded of a host; --check logs in to it and needs the superuser tier."},
+	{Tier: Engineer, Cmd: "scope", Sub: "staging", Sudoers: []string{"scope staging", "scope staging list"},
+		Note: "scope staging: an engineer may run list for a scope of their own; the other verbs need the superuser tier."},
+	{Tier: Engineer, Cmd: "scope", Sub: "secret", Sudoers: []string{"scope secret *"},
+		Note: "scope secret: an engineer may run show for a scope of their own; set and generate need the superuser tier."},
 	// The scope's SNMP settings: an engineer reads their own scopes' ('show
 	// [--reveal]', D45); the verb refuses every setter, clear and test.
-	{Tier: Engineer, Cmd: "scope", Sub: "snmp", Sudoers: []string{"scope snmp *"}},
+	{Tier: Engineer, Cmd: "scope", Sub: "snmp", Sudoers: []string{"scope snmp *"},
+		Note: "scope snmp: an engineer may read the settings of a scope of their own (show [--reveal], version, port, timeout, contact, clients list); every setter, clear and test needs the superuser tier."},
 	// 'device snmp <name> ...' (0.2.4, D72): the engineer reads the SNMP
 	// settings of the devices of their own scopes ('show [--reveal]', the
 	// plain reads, each reveal logged); the verbs that set or clear are the
 	// superuser's (the verb sees to that, as 'scope snmp' does).
-	{Tier: Engineer, Cmd: "device", Sub: "snmp", Sudoers: []string{"device snmp *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "snmp", Sudoers: []string{"device snmp *"},
+		Note: "device snmp: an engineer may read the settings of a device of their own scope (show [--reveal], version, port, timeout, clients list); every setter and clear needs the superuser tier."},
 	// 'scope block' and 'device block' (0.2.7): the engineer reads the
 	// configuration blocks of their own scopes and of the devices there
 	// ('list', 'show' elided or --reveal, logged, 'check'); 'set' and
 	// 'remove' are the superuser's (the verbs see to that, as 'scope snmp'
 	// does).
-	{Tier: Engineer, Cmd: "scope", Sub: "block", Sudoers: []string{"scope block *"}},
-	{Tier: Engineer, Cmd: "device", Sub: "block", Sudoers: []string{"device block *"}},
+	{Tier: Engineer, Cmd: "scope", Sub: "block", Sudoers: []string{"scope block *"},
+		Note: "scope block: an engineer may read the configuration blocks of a scope of their own (list, show [--reveal], check); set, remove, edit and adopt need the superuser tier."},
+	{Tier: Engineer, Cmd: "device", Sub: "block", Sudoers: []string{"device block *"},
+		Note: "device block: an engineer may read the configuration blocks of a device of their own scope (list, show [--effective] [--reveal], check); set, remove, edit and adopt need the superuser tier."},
 	{Tier: Engineer, Cmd: "scope", Sub: "show", Sudoers: []string{"scope show *"}},
 	// The break-glass holds (0.2.5, D125): an engineer reads the holds on
 	// the devices of their own scopes (the verb sees to that). 'hold' and
 	// 'release' have no row: what the scopes answer is the superuser's to
 	// change, and a hold takes one device out of AAA for everyone.
-	{Tier: Engineer, Cmd: "breakglass", Sub: "list", Sudoers: []string{"breakglass list", "breakglass list *"}},
+	{Tier: Engineer, Cmd: "breakglass", Sub: "list", Sudoers: []string{"breakglass list", "breakglass list *"},
+		Note: "breakglass list: an engineer lists the holds of the devices of their own scopes only; hold and release need the superuser tier."},
 }
 
 // Permits is tier_permits: whether tier may run 'tacctl cmd sub'.
@@ -663,4 +681,15 @@ func (g Gate) Enforce(ctx context.Context, cmd, sub string) error {
 		g.Out.ErrorE("'tacctl " + cmd + " " + sub + "' is not permitted for the " + string(t) + " tier.")
 	}
 	return ErrDenied
+}
+
+// Notes are the Note of every row, keyed "<Cmd> <Sub>".
+func Notes() map[string]string {
+	out := map[string]string{}
+	for _, r := range Rules {
+		if r.Note != "" {
+			out[r.Cmd+" "+r.Sub] = r.Note
+		}
+	}
+	return out
 }

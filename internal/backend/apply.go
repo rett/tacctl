@@ -53,6 +53,15 @@ func (s *Set) lock(ctx context.Context) (func(), error) { return s.Env.HoldApply
 // it. With no state directory there is nothing to protect and nothing the
 // lock may create: the release is a no-op.
 func (e *Env) HoldApply(ctx context.Context) (func(), error) {
+	return e.HoldApplyAfter(ctx, "Nothing was changed.")
+}
+
+// HoldApplyAfter is HoldApply for a command that has written things before
+// it needs the lock (an install's builds and clone, an upgrade's pull): when
+// the wait ends without the lock, notChanged is the closing line instead of
+// "Nothing was changed.", which would not be true of the command as a
+// whole.
+func (e *Env) HoldApplyAfter(ctx context.Context, notChanged string) (func(), error) {
 	if e == nil || e.ApplyLock == nil {
 		return func() {}, nil
 	}
@@ -67,7 +76,7 @@ func (e *Env) HoldApply(ctx context.Context) (func(), error) {
 	if !errors.Is(err, applylock.ErrCancelled) {
 		out.Error(err.Error())
 	}
-	out.Error("Nothing was changed.")
+	out.Error(notChanged)
 	return nil, ErrNotStarted
 }
 

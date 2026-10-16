@@ -24,7 +24,8 @@ tacctl/
     templates/              # Device config templates: cisco, cisco-legacy, juniper, wti,
                             # and cisco-radius, juniper-radius, wti-radius for --protocol radius
     linux/                  # client-install.sh, client-remove.sh (Linux host enrollment)
-  .github/workflows/        # release-reproducible.yml: rebuilds each published release and compares
+  .github/workflows/        # test.yml: the Go tests (internal/cli in shards);
+                            # release-reproducible.yml: rebuilds each published release and compares
   man/tacctl.1              # `man tacctl`
   patches/                  # tacquito source patch overlay (patches/README.md)
   release/allowed_signers   # the public key that signs release binaries

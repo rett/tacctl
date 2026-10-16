@@ -16,10 +16,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rett/tacctl/internal/conf"
+	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/policy"
 	"github.com/rett/tacctl/internal/shellquote"
+	"github.com/rett/tacctl/internal/snmpcred"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
@@ -312,6 +314,74 @@ func (inv *invocation) staleGroupLines(m *model.Model) []string {
 			"', which does not exist: a group that arrives under that name (a store import, a restore) would take them over. "+
 			"Remove them from tacctl.yaml ('tacctl group add' clears them for a group it creates).")
 	}
+	return out
+}
+
+// scopeKeyFamilies are the tacctl.yaml mappings keyed by scope name:
+// scopeConfKeys and the families with their own sub-keys (snmp_scope,
+// breakglass_scope, blocks, netconf_scope).
+var scopeKeyFamilies = append(slices.Clone(scopeConfKeys), "snmp_scope", "breakglass_scope", "blocks", "netconf_scope")
+
+// orphanKeyLines are the 'config validate' lines for keys of tacctl.yaml
+// that name a group or a scope the store does not have, in the families
+// staleGroupLines does not cover: one line per key.
+func (inv *invocation) orphanKeyLines(m *model.Model) []string {
+	c := inv.app.Conf()
+	var keys []string
+	// The built-in groups are the store's even where a hand-edited
+	// store lacks them: they are never orphans.
+	keys = append(keys, policy.OrphanKeys(c, policy.GroupKeyFamilies, func(g string) bool {
+		return m.Exists("groups", g) || slices.Contains(policy.Builtins, g)
+	})...)
+	keys = append(keys, policy.OrphanKeys(c, scopeKeyFamilies, func(s string) bool { return m.Exists("scopes", s) })...)
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, k+" in tacctl.yaml names a group or scope the store does not have: one added later under that name would "+
+			"take it over; remove it from tacctl.yaml")
+	}
+	return out
+}
+
+// orphanFileLines are the 'config validate' lines for files in the state
+// that belong to a device or a scope the registries no longer have: the
+// last pull's records and files of a device, the SNMP credentials of a
+// device or of a scope. 'device remove' and 'scope remove' take their own
+// away, so these come from an import, a restore or a hand edit; a new
+// device or scope of the name would take them over (a new device or scope
+// that finds one is refused). Nothing is printed for a caller with scopes of
+// their own: the leftovers have none.
+func (inv *invocation) orphanFileLines(m *model.Model) []string {
+	if inv.callerScopes().restricted {
+		return nil
+	}
+	f, err := devreg.Load(inv.app.Paths.DevicesFile)
+	if err != nil {
+		return nil
+	}
+	devs := map[string]bool{}
+	for _, d := range f.Devices {
+		devs[strings.ToLower(d.Name)] = true
+	}
+	var out []string
+	dir := inv.app.Paths.SNMPDir
+	check := func(names []string, err error, known func(string) bool, what, where, fix string) {
+		if err != nil {
+			return
+		}
+		for _, n := range names {
+			if !known(n) {
+				out = append(out, where+" holds "+what+" for '"+n+"', which is "+strings.ReplaceAll(fix, "%s", n))
+			}
+		}
+	}
+	isDev := func(n string) bool { return devs[strings.ToLower(n)] }
+	isScope := func(n string) bool { return m.Exists("scopes", n) }
+	cfgNames, err := inv.configStore().Names()
+	check(cfgNames, err, isDev, "the last configuration pull", inv.app.Paths.ConfigDir+" and its records", "not a registered device ('tacctl device config forget %s' removes it)")
+	snmpDev, err := snmpcred.DeviceNames(dir)
+	check(snmpDev, err, isDev, "SNMP credentials", dir+"/"+snmpcred.DevicesDir, "not a registered device (remove the file)")
+	snmpScope, err := snmpcred.ScopeNames(dir)
+	check(snmpScope, err, isScope, "SNMP credentials", dir, "not a scope of the store (remove the file)")
 	return out
 }
 

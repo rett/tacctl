@@ -17,7 +17,9 @@ config defaults
 
 config get <path> [fallback]
 
-    Read a dotted-path value from the merged config
+    Read a dotted-path value from the merged config. Tab completes every key of the configuration
+    and the start of each family of keys that takes a name (`tier.`, `snmp_scope.`), then the groups
+    or scopes of the store
 
 config get-list <path>
 
@@ -69,8 +71,13 @@ config validate
     pointing at a nonexistent scope, reserved usernames, missing accounter:), then each enabled
     backend: rendered config up to date, drift; RADIUS scopes that send no vendor attribute. An
     empty privileges.<group> list on a built-in group that ships one (it hides the shipped list;
-    `group privilege reset <group>` removes it) is a warning, and so is a private copy of the
-    configuration that a killed command left in the state directory (`.apply.*`, `.restore.*`,
+    `group privilege reset <group>` removes it) is a warning, and so is a key that names a group or
+    scope the store does not have (`privileges.<group>`, `commands.<group>`, `snmp_scope.<scope>`,
+    `exec_timeout.<scope>` and the other per-scope keys; a group or scope added later under that
+    name would take it over), one `Orphan settings:` line per key, and so are the files of a device
+    or scope that is not registered (a pull's records, SNMP credentials), an `Orphan files:` line
+    each, and so is a private copy of the configuration that a killed command left in the state
+    directory (`.apply.*`, `.restore.*`,
     `.enable.*`, `.units.*`, `.disable.*`, older than ten minutes, with no command holding the
     apply lock). Exits 1 on errors
 
