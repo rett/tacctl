@@ -454,6 +454,16 @@ func (inv *invocation) configValidate([]string) error {
 		}
 	}
 
+	// Keys of a group or scope the store does not have, in the families the
+	// block above does not cover: the next one of that name would take them
+	// over. Warnings; 'scope remove' and 'group remove' drop what they own,
+	// so these come from an import, a restore or a hand edit.
+	if merr == nil && storeMode {
+		for _, l := range inv.orphanKeyLines(m) {
+			inv.echoE("  " + Y + "Orphan settings:" + NC + "      " + l)
+		}
+	}
+
 	// An empty privileges.<group> on a built-in group that ships a list: the
 	// empty list hides it. A warning; 'group privilege reset' removes it.
 	for _, g := range policy.EmptyPrivilegeOverrides(cfg) {

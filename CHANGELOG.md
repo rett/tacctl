@@ -13,6 +13,19 @@ current behaviour; this file is where history lives.
    `blocks.`), after which the name is typed. The list is built from the
    schema, so a key added to it is completed with no second list to keep.
 
+2. **`config validate` warns of keys that name a group or scope the store
+   does not have.** `tier`, `wti_level` and `junos` settings of a missing
+   group were reported already; the same check now covers
+   `privileges.<group>` and `commands.<group>` and every per-scope key
+   (`snmp_scope`, `breakglass_scope`, `blocks`, `netconf_scope`,
+   `exec_timeout`, `aaa.order`, `tacacs_group`, `radius_group`,
+   `scope_auth_method`, `scope_mgmt_acl.*`, `cisco.source_interface`). One
+   `Orphan settings:` line names each key; the built-in groups are never
+   named, the exit code does not change, and the line says the key is
+   removed from `tacctl.yaml` by hand (a group or scope added later under
+   the name would take it over). They come from a store import, a restore
+   or a hand edit; `group remove` and `scope remove` drop what they own.
+
 ## 0.2.11 (2026-10-15)
 
 1. **`tacctl group preset roles` shows what each setting changes.** Under every

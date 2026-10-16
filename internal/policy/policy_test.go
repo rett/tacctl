@@ -431,3 +431,21 @@ func TestHealDeadMatches(t *testing.T) {
 		t.Errorf("bad file: %+v %v", healed, err)
 	}
 }
+
+func TestOrphanKeys(t *testing.T) {
+	c, _ := newConf(t, "privileges:\n  helpdesk: []\n  gone:\n  - show clock\n  operator: []\n"+
+		"snmp_scope:\n  lab:\n    version: v2c\n  old:\n    version: v3\n"+
+		"scope_mgmt_acl:\n  permits:\n    old:\n    - 192.0.2.0/24\n")
+	groups := func(n string) bool { return n == "helpdesk" }
+	scopes := func(n string) bool { return n == "lab" }
+	if got := OrphanKeys(c, GroupKeyFamilies, groups); !reflect.DeepEqual(got, []string{"privileges.gone"}) {
+		t.Errorf("groups: %q (built-ins and existing groups are not orphans)", got)
+	}
+	got := OrphanKeys(c, []string{"snmp_scope", "scope_mgmt_acl.permits", "netconf_scope"}, scopes)
+	if want := []string{"snmp_scope.old", "scope_mgmt_acl.permits.old"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("scopes: %q, want %q", got, want)
+	}
+	if got := OrphanKeys(c, GroupKeyFamilies, func(string) bool { return true }); got != nil {
+		t.Errorf("everything exists: %q", got)
+	}
+}

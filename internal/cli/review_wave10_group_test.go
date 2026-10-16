@@ -133,3 +133,25 @@ func TestResetFamilyRestartsEachBackendOnce(t *testing.T) {
 		}
 	}
 }
+
+// config validate warns (no error) of tacctl.yaml keys that name a group or
+// a scope the store does not have, in the families the group-settings line
+// does not cover; built-in groups and existing scopes are not named.
+func TestOrphanKeysAreWarnedOf(t *testing.T) {
+	sb := renderedSandbox(t)
+	sb.write("state/tacctl.yaml", sb.overrides()+"privileges:\n  ghostgrp: []\n  operator: []\n"+
+		"exec_timeout:\n  ghostscope: 30\n  lab: 30\nsnmp_scope:\n  ghostscope:\n    version: v2c\n", 0o640)
+	out := plain(sb.run("", []string{"config", "validate"}))
+	for _, want := range []string{"privileges.ghostgrp in tacctl.yaml names a group or scope the store does not have",
+		"exec_timeout.ghostscope in tacctl.yaml", "snmp_scope.ghostscope in tacctl.yaml"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "privileges.operator in tacctl.yaml") || strings.Contains(out, "exec_timeout.lab in tacctl.yaml") {
+		t.Errorf("a built-in group or an existing scope is named:\n%s", out)
+	}
+	if sb.code != 0 {
+		t.Errorf("an orphan key is a warning, not an error: exit %d %q", sb.code, sb.stderr())
+	}
+}

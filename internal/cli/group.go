@@ -315,6 +315,27 @@ func (inv *invocation) staleGroupLines(m *model.Model) []string {
 	return out
 }
 
+// scopeKeyFamilies are the tacctl.yaml mappings keyed by scope name:
+// scopeConfKeys and the families with their own sub-keys (snmp_scope,
+// breakglass_scope, blocks, netconf_scope).
+var scopeKeyFamilies = append(slices.Clone(scopeConfKeys), "snmp_scope", "breakglass_scope", "blocks", "netconf_scope")
+
+// orphanKeyLines are the 'config validate' lines for keys of tacctl.yaml
+// that name a group or a scope the store does not have, in the families
+// staleGroupLines does not cover: one line per key.
+func (inv *invocation) orphanKeyLines(m *model.Model) []string {
+	c := inv.app.Conf()
+	var keys []string
+	keys = append(keys, policy.OrphanKeys(c, policy.GroupKeyFamilies, func(g string) bool { return m.Exists("groups", g) })...)
+	keys = append(keys, policy.OrphanKeys(c, scopeKeyFamilies, func(s string) bool { return m.Exists("scopes", s) })...)
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, k+" in tacctl.yaml names a group or scope the store does not have: one added later under that name would "+
+			"take it over; remove it from tacctl.yaml")
+	}
+	return out
+}
+
 // warnStaleGroupSettings prints staleGroupLines for the store as it is now,
 // after a step that replaced the store and kept tacctl.yaml.
 func (inv *invocation) warnStaleGroupSettings() {
