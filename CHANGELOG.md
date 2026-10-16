@@ -90,7 +90,8 @@ current behaviour; this file is where history lives.
    the test knobs. `tests/tools/go-test-shard.sh <index> <count>` runs one
    shard and `--check <count>` fails unless every test is in exactly one.
    The bats suite, the diff corpus and the container matrix stay on the
-   maintainer's machine.
+   maintainer's machine. The actions of both workflows (the release
+   rebuild too) run on Node 24 and are pinned by commit.
 
 ## 0.2.11 (2026-10-15)
 
