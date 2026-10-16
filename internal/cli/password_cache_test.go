@@ -39,6 +39,7 @@ type cacheAgent struct {
 }
 
 func newCacheAgent(t *testing.T) *cacheAgent {
+	serial(t) // withPasswd writes the passwd database of the suite
 	t.Helper()
 	c := &cacheAgent{uid: os.Geteuid()}
 	ag, err := askpass.New(askpass.Options{
@@ -110,6 +111,7 @@ func (c *cacheAgent) peek(t *testing.T) string {
 // withPasswd makes uid the account of name in the sandbox's passwd database.
 func withPasswd(t *testing.T, uid int, name string) {
 	t.Helper()
+	mustBeSerial(t)
 	key := strconv.Itoa(uid)
 	old, had := testPasswd[key]
 	testPasswd[key] = name
@@ -125,6 +127,7 @@ func withPasswd(t *testing.T, uid int, name string) {
 // The pull's password source marks the process not dumpable and takes the
 // variable out of the environment before it asks anything.
 func TestNewDevicePasswordsHardensAndTakesTheVariable(t *testing.T) {
+	serial(t)
 	c := newCacheAgent(t)
 	n := 0
 	hk := &hooks{setNotDumpable: func() error { n++; return nil }}
@@ -267,10 +270,11 @@ func TestTerminalPasswordsDropTheirCopy(t *testing.T) {
 // takeAskpass reads the variable once, removes it from the process
 // environment, and holds the socket to the user sudo ran for.
 func TestTakeAskpass(t *testing.T) {
+	serial(t)
 	c := newCacheAgent(t)
 	mk := func(env ...string) *invocation {
 		a := app.New(nil, paths.NewEnv(env), "/opt/x/dist/tacctl", 0, app.Stdio{}, &fake.Runner{})
-		return &invocation{ctx: context.Background(), app: a, hooks: newTestHooks()}
+		return &invocation{ctx: context.Background(), app: a} // the real handover
 	}
 	val := c.ag.Env()
 	t.Setenv(askpass.EnvVar, val)
@@ -315,6 +319,7 @@ func testAccount() sshAccount {
 // the user directly (no sudo), with the line's token in its environment
 // once and in no argument.
 func TestSSHUsesTheCachedPassword(t *testing.T) {
+	serial(t) // the cache reads and clears the process environment
 	if os.Geteuid() == 0 {
 		t.Skip("the agent's user must not be root")
 	}
@@ -428,6 +433,7 @@ func TestSSHUsesTheCachedPassword(t *testing.T) {
 // An account this process cannot look up keeps the old path and its prompt:
 // no cache, nothing in the environment, the line still runs.
 func TestSSHCachedPathNeedsTheLocalAccount(t *testing.T) {
+	serial(t) // the cache reads and clears the process environment
 	if os.Geteuid() == 0 {
 		t.Skip("the agent's user must not be root")
 	}
@@ -477,6 +483,7 @@ func countPrefix(l []string, p string) int {
 // ssh ending with 255 after using the cache makes it forget (a refusal
 // cannot be told from the other failures); any other status does not.
 func TestSSHForgetsOn255(t *testing.T) {
+	serial(t) // the cache reads and clears the process environment
 	if os.Geteuid() == 0 {
 		t.Skip("the agent's user must not be root")
 	}
@@ -910,6 +917,7 @@ func TestShellPassesTheLineTokenInTheEnvironment(t *testing.T) {
 // none, a program started by an unrelated verb sees none, and the value is
 // handed over once.
 func TestCaptureAskpassKeepsChildrenFromInheritingIt(t *testing.T) {
+	serial(t)
 	const val = "/run/user/1000/tacctl/ap-h-1-x.sock:" + "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	t.Setenv(askpass.EnvVar, val)
 	t.Setenv("KEEP_ME", "yes")
@@ -927,7 +935,7 @@ func TestCaptureAskpassKeepsChildrenFromInheritingIt(t *testing.T) {
 	// The app's environment (built from the cleaned one) has none; the
 	// verb that uses it gets it, once.
 	a := app.New(nil, paths.NewEnv(got), "/opt/x/dist/tacctl", 0, app.Stdio{}, &fake.Runner{})
-	inv := &invocation{ctx: context.Background(), app: a, hooks: newTestHooks()}
+	inv := &invocation{ctx: context.Background(), app: a} // no hooks: the real handover
 	if v := inv.askpassValue(); v != val {
 		t.Errorf("first take: %q", v)
 	}
@@ -982,6 +990,7 @@ func TestAcceptedNeverStoresAfterRejected(t *testing.T) {
 // The account looked up must be the one SUDO_UID names, and never root: any
 // other falls back to the sudo path with its prompt, and no get is spent.
 func TestSSHCachedPathRequiresTheSudoAccount(t *testing.T) {
+	serial(t) // the cache reads and clears the process environment
 	if os.Geteuid() == 0 {
 		t.Skip("the agent's user must not be root")
 	}

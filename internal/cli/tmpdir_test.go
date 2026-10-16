@@ -30,6 +30,7 @@ func dirNames(t *testing.T, dir string) []string {
 //
 // This test sets the process environment, so it is serial.
 func TestTempDirIsTheInvocationsNotTheProcess(t *testing.T) {
+	serial(t)
 	sentinel := t.TempDir()
 	if err := os.WriteFile(filepath.Join(sentinel, "keep"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)

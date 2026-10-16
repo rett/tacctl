@@ -313,6 +313,10 @@ func captureAskpass(environ []string) []string {
 // invocation was built without Main (the in-process callers), the app's
 // environment. The process environment is cleared of it either way.
 func (inv *invocation) askpassValue() string {
+	if inv.hooks != nil && inv.hooks.askpassFromApp {
+		// A test: the app's environment only, no process state touched.
+		return inv.app.Env.Get(askpass.EnvVar)
+	}
 	v := processAskpass
 	processAskpass = ""
 	if v == "" {

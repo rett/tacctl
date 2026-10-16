@@ -38,6 +38,7 @@ type harness struct {
 // not root.
 func newHarness(t *testing.T, args []string, extraEnv ...string) *harness {
 	t.Helper()
+	parallel(t)
 	h := &harness{runner: &fake.Runner{}, hooks: newTestHooks()}
 	env := append([]string{"TACCTL_SKIP_SUDO=1", "PATH=/usr/bin"}, extraEnv...)
 	h.app = app.New(args, paths.NewEnv(env), "/opt/x/dist/tacctl", 1000,

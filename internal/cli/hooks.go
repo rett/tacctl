@@ -68,6 +68,10 @@ type hooks struct {
 	probeDial devreg.Dialer
 	// utmpFile is the login-records file ("": the system's).
 	utmpFile string
+	// askpassFromApp makes the password cache's value the app's
+	// environment alone: nothing is read from or removed from the process's
+	// own (a test runs beside others in one process).
+	askpassFromApp bool
 }
 
 // interrupts is the test's source of interrupts, or nil.

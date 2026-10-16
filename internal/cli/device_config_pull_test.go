@@ -766,6 +766,7 @@ func TestPullInterruptStagesExit130(t *testing.T) {
 // handler: each is sent when the state it acts on has been seen, the second
 // only after the first has been handled.
 func TestPullInterruptBySignal(t *testing.T) {
+	serial(t)
 	b := newPullBox(t)
 	b.devices([3]string{"lab-a", "192.168.1.20", "juniper"}, [3]string{"lab-b", "192.168.1.21", "juniper"})
 	if err := os.WriteFile(filepath.Join(b.dir, junosReadCmd+".hang"), nil, 0o644); err != nil {

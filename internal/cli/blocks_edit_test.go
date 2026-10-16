@@ -619,6 +619,7 @@ func TestEditReadBackIgnoresLinksAndHugeFiles(t *testing.T) {
 // A stop signal while the editor runs abandons the edit and the directory is
 // removed by tacctl.
 func TestEditInterruptedRemovesTheDirectory(t *testing.T) {
+	serial(t)
 	b := newEditBox(t)
 	ed := b.editor("ed-add", editSNMPAdd)
 	n := b.sb.snapshots()
@@ -705,6 +706,7 @@ func TestEditRunsAsTheInvokingUser(t *testing.T) {
 }
 
 func TestCaptureEditorTakesTheVariablesOffTheRootSide(t *testing.T) {
+	serial(t)
 	old := processEditor
 	t.Cleanup(func() { processEditor = old })
 	t.Setenv("VISUAL", "vim")

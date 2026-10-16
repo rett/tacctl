@@ -71,6 +71,7 @@ func withFakeBackend(t *testing.T, b *faketest.Backend) {
 
 func newSectionsSandbox(t *testing.T, withStore bool) *sectionsSandbox {
 	t.Helper()
+	serial(t) // withFakeBackend swaps the process-wide default registry
 	sb := newSandbox(t, withStore)
 	sandboxRADIUS(sb)
 	s := &sectionsSandbox{

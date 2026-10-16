@@ -46,6 +46,7 @@ type sandbox struct {
 
 func newSandbox(t *testing.T, withStore bool) *sandbox {
 	t.Helper()
+	parallel(t)
 	w := t.TempDir()
 	sb := &sandbox{t: t, dir: w, hooks: newTestHooks()}
 	for _, d := range []string{"etc", "state", "log", "bin", "systemd", "tmp"} {

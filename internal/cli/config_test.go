@@ -91,6 +91,7 @@ func TestConfigVerbsAllNative(t *testing.T) {
 // replaces a declared word of the same name), keeps the family's preflight
 // and brings its Spec.
 func TestRegisterConfigVerb(t *testing.T) {
+	serial(t)
 	inv := &invocation{app: newHarness(t, nil).app, hooks: newTestHooks()}
 	before := len(configCmd(inv).Commands())
 	const name = "test-verb"
