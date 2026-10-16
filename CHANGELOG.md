@@ -3,7 +3,7 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.11 (unreleased)
+## 0.2.11 (2026-10-15)
 
 1. **`tacctl group preset roles` shows what each setting changes.** Under every
    setting that is not unchanged, `--dry-run` (and the confirmation of a real
