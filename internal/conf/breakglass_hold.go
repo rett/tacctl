@@ -307,11 +307,69 @@ func (c *Config) SetHoldIf(h Hold, check func(existing []Hold) error) error {
 	})
 }
 
+// HoldSkip is a hold SetHoldsIf did not write: the one asked for, and why
+// the check refused it.
+type HoldSkip struct {
+	Hold Hold
+	Err  error
+}
+
+// SetHoldsIf writes several holds in one write, each only while check, run
+// under the file's lock, accepts it. check gets the usable records the file
+// holds at that moment, with those of hs already accepted in this call (two
+// holds of one address cannot both stand), and the hold in question; a
+// non-nil error skips that hold, and the others are written. It returns what
+// was written and what was skipped, each in the order of hs. Nothing is
+// written when no hold is accepted. A hold that fails the schema fails the
+// whole call, and nothing is written.
+func (c *Config) SetHoldsIf(hs []Hold, check func(existing []Hold, h Hold) error) (written []Hold, skipped []HoldSkip, err error) {
+	err = c.edit(func(overrides *yamlpy.Map) (bool, error) {
+		v, _ := overrides.Get("breakglass_hold")
+		existing := holdsOf(v)
+		var pairs []PathValue
+		written, skipped = nil, nil
+		for _, h := range hs {
+			if check != nil {
+				if cerr := check(existing, h); cerr != nil {
+					skipped = append(skipped, HoldSkip{Hold: h, Err: cerr})
+					continue
+				}
+			}
+			pairs = append(pairs,
+				PathValue{HoldPath(h.Device, HoldKeyAddress), h.Address},
+				PathValue{HoldPath(h.Device, HoldKeySince), h.Since},
+				PathValue{HoldPath(h.Device, HoldKeyBy), h.By},
+				PathValue{HoldPath(h.Device, HoldKeyReason), h.Reason})
+			existing = append(existing, h)
+			written = append(written, h)
+		}
+		if len(pairs) == 0 {
+			return false, nil
+		}
+		for _, pv := range pairs {
+			if msg := c.Schema.Validate(pv.Path, pv.Value, false); msg != "" {
+				return false, &ValidationError{Path: pv.Path, Msg: msg}
+			}
+		}
+		for _, pv := range pairs {
+			setNested(overrides, pv.Path, pv.Value)
+		}
+		return true, nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return written, skipped, nil
+}
+
 // UnsetHold removes every entry of a device (the mapping it leaves empty
 // goes too), under the key each is stored under: the one tacctl writes
 // (dots as '~') or a hand-written one with the dot in it. Nothing is
 // written when there is none.
-func (c *Config) UnsetHold(device string) error {
+func (c *Config) UnsetHold(device string) error { return c.UnsetHolds([]string{device}) }
+
+// UnsetHolds is UnsetHold for several devices, in one write.
+func (c *Config) UnsetHolds(devices []string) error {
 	return c.edit(func(overrides *yamlpy.Map) (bool, error) {
 		v, _ := overrides.Get("breakglass_hold")
 		m, ok := v.(*yamlpy.Map)
@@ -320,7 +378,7 @@ func (c *Config) UnsetHold(device string) error {
 		}
 		changed := false
 		for _, key := range m.Keys() {
-			if HoldDevice(key) == device {
+			if slices.Contains(devices, HoldDevice(key)) {
 				m.Delete(key)
 				changed = true
 			}

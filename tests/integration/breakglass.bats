@@ -46,6 +46,17 @@ hold() {
     return "$rc"
 }
 
+# hold_list <typed> <argument>... : `breakglass hold` of a list on a
+# terminal, <typed> typed back; the arguments are the hold's own.
+hold_list() {
+    local typed="$1" cmd rc=0
+    shift
+    printf -v cmd '%q ' "$TACCTL_BIN_SCRIPT" breakglass hold "$@"
+    printf '%s\n' "$typed" | script -qec "$cmd" /dev/null > "${BATS_TEST_TMPDIR}/hold.out" 2>&1 || rc=$?
+    sed -E 's/\r$//; s/\x1b\[[0-9;]*m//g' "${BATS_TEST_TMPDIR}/hold.out"
+    return "$rc"
+}
+
 rendered() { sha256sum < "$TACCTL_CONFIG"; }
 
 # restarts: the restarts of a service so far (the setup's render counts).
@@ -196,4 +207,36 @@ restarts() { grep -c 'systemctl restart' "$CALLS_LOG" || true; }
     run plain rollback 0.2.3
     assert_success
     refute_output --partial "Break-glass is held"
+}
+
+@test "hold and release of a list: best effort, one restart each way, exit 1 for what was not held" {
+    local before base
+    before=$(rendered)
+    base=$(restarts)
+    run hold_list "lab-sw,prod-sw" "lab-sw=console recovery,prod-sw,core-rtr,nosuch" --reason "paste cut the session"
+    assert_failure 1
+    assert_output --partial "Hold break-glass on 2 devices (lab-sw,prod-sw)?"
+    assert_output --partial "Break-glass HELD on lab-sw (192.168.1.1) since "
+    assert_output --partial "Break-glass HELD on prod-sw (10.20.30.40) since "
+    assert_output --partial "Reason:   console recovery"
+    assert_output --partial "Reason:   paste cut the session"
+    assert_output --partial "Not held: core-rtr: it is already unanswered: no scope covers 100.64.0.9"
+    assert_output --partial "Not held: nosuch: not found (tacctl device list)"
+    assert_output --partial "When done: tacctl breakglass release lab-sw,prod-sw"
+    [[ "$(restarts)" == "$((base + 1))" ]]
+    stub_called 'logger -t tacctl -p auth.info breakglass hold device=lab-sw addr=192.168.1.1 reason="console recovery" by=root'
+    stub_called 'logger -t tacctl -p auth.info breakglass hold device=prod-sw addr=10.20.30.40 reason="paste cut the session" by=root'
+    run plain breakglass list
+    assert_output --partial "Break-glass holds (2)"
+
+    run plain breakglass release lab-sw,prod-sw,nosuch
+    assert_failure 1
+    assert_output --partial "Break-glass RELEASED on lab-sw (192.168.1.1): held "
+    assert_output --partial "Break-glass RELEASED on prod-sw (10.20.30.40): held "
+    assert_output --partial "Not released: nosuch: break-glass is not held on it"
+    assert_output --partial "Still held: none"
+    [[ "$(restarts)" == "$((base + 2))" ]]
+    [[ "$(rendered)" == "$before" ]]
+    run grep -c breakglass_hold "$OVERRIDES"
+    assert_output "0"
 }

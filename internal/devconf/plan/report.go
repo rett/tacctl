@@ -466,6 +466,13 @@ func plainIOS(stem string) string {
 		w = "the TACACS+ server " + f[2]
 	case len(f) >= 3 && f[0] == "radius-server" && f[1] == "host":
 		w = "the RADIUS server " + f[2]
+	case len(path) == 2 && strings.HasPrefix(path[0], "aaa group server ") && len(f) >= 4 && f[0] == "ip" &&
+		(f[1] == "tacacs" || f[1] == "radius") && f[2] == "source-interface":
+		// D119: the standard sets the source interface once for the
+		// device; one typed inside the group is an older per-group form.
+		w = "the server group " + strings.Fields(path[0])[len(strings.Fields(path[0]))-1] + " has its own " +
+			map[string]string{"tacacs": "TACACS+", "radius": "RADIUS"}[f[1]] + " source interface, " + strings.Join(f[3:], " ") +
+			" (an older per-group form; the standard sets one for the device)"
 	case len(path) == 2 && strings.HasPrefix(path[0], "aaa group server "):
 		w = "the server group " + strings.Fields(path[0])[len(strings.Fields(path[0]))-1] + ": " + leaf
 	case len(f) >= 4 && f[0] == "aaa" && f[1] == "authentication" && f[2] == "enable" && f[3] == "default":

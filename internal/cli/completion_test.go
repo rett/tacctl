@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/spf13/cobra"
 )
@@ -315,6 +316,73 @@ func TestCompletionCommand(t *testing.T) {
 		h := newHarness(t, args)
 		if code := exitCode(h.run(), h.app.Out); code != 1 || h.out.Len() != 0 || !strings.Contains(h.err.String(), "Usage: tacctl completion bash|zsh|fish") {
 			t.Errorf("%q: %d %q %q", args, code, h.out.String(), h.err.String())
+		}
+	}
+}
+
+// TestConfigPathsCoverSchema: 'config get' completes every exact key of the
+// schema and the prefix of every key family, so a key added to the schema
+// is completed without a second list.
+func TestConfigPathsCoverSchema(t *testing.T) {
+	words := strings.Split(configPaths, "|")
+	s := conf.NewSchema([]string{"tacacs", "radius"})
+	for _, k := range slices.Concat(s.Keys(), s.Wildcards()) {
+		if !slices.Contains(words, k) {
+			t.Errorf("config get does not complete %q", k)
+		}
+	}
+	if !slices.IsSorted(words) || len(slices.Compact(slices.Clone(words))) != len(words) {
+		t.Errorf("configPaths is not sorted and unique")
+	}
+	for _, w := range words {
+		if w == "" || strings.ContainsAny(w, " \t") {
+			t.Errorf("bad word %q", w)
+		}
+	}
+}
+
+// A family prefix is offered without a trailing space; once it is typed the
+// names come from the store, and a family whose key follows the name ends in
+// a dot again.
+func TestConfigGetCompletesFamiliesFromTheStore(t *testing.T) {
+	got, dir := completeWords(t, liveNames, "config", "get", "ti")
+	if !slices.Contains(got, "tier.") || dir != ":6" { // NoFileComp (4) | NoSpace (2)
+		t.Errorf("ti: %q %s", got, dir)
+	}
+	got, _ = completeWords(t, liveNames, "config", "get", "tier.")
+	if !slices.Contains(got, "tier.ops") || !slices.Contains(got, "tier.admins") {
+		t.Errorf("tier.: %q", got)
+	}
+	got, dir = completeWords(t, liveNames, "config", "get", "exec_timeout.l")
+	if !reflect.DeepEqual(got, []string{"exec_timeout.lab"}) || dir != ":4" {
+		t.Errorf("exec_timeout.l: %q %s", got, dir)
+	}
+	got, dir = completeWords(t, liveNames, "config", "get", "junos.o")
+	if !reflect.DeepEqual(got, []string{"junos.ops."}) || dir != ":6" {
+		t.Errorf("junos.o: %q %s", got, dir)
+	}
+	got, _ = completeWords(t, liveNames, "config", "get", "snmp_scope.")
+	if !slices.Contains(got, "snmp_scope.lab.") {
+		t.Errorf("snmp_scope.: %q", got)
+	}
+	// A free-text family names nothing from the store.
+	if got, _ = completeWords(t, liveNames, "config", "get", "listeners."); len(got) > 1 {
+		t.Errorf("listeners.: %q", got)
+	}
+}
+
+// Every wildcard family of the schema is in configFamilies, with the kind
+// of name it takes or "" for one typed by hand: a new family has to be
+// decided.
+func TestConfigFamiliesCoverSchema(t *testing.T) {
+	for _, p := range conf.NewSchema(nil).Wildcards() {
+		if _, ok := configFamilies[p]; !ok {
+			t.Errorf("configFamilies lacks the family %q", p)
+		}
+	}
+	for p := range configFamilies {
+		if !slices.Contains(conf.NewSchema(nil).Wildcards(), p) {
+			t.Errorf("configFamilies names %q, which is not a family of the schema", p)
 		}
 	}
 }

@@ -133,3 +133,55 @@ func TestResetFamilyRestartsEachBackendOnce(t *testing.T) {
 		}
 	}
 }
+
+// config validate warns (no error) of tacctl.yaml keys that name a group or
+// a scope the store does not have, in the families the group-settings line
+// does not cover; built-in groups and existing scopes are not named.
+func TestOrphanKeysAreWarnedOf(t *testing.T) {
+	sb := renderedSandbox(t)
+	sb.write("state/tacctl.yaml", sb.overrides()+"privileges:\n  ghostgrp: []\n  operator: []\n"+
+		"exec_timeout:\n  ghostscope: 30\n  lab: 30\nsnmp_scope:\n  ghostscope:\n    version: v2c\n", 0o640)
+	out := plain(sb.run("", []string{"config", "validate"}))
+	for _, want := range []string{"privileges.ghostgrp in tacctl.yaml names a group or scope the store does not have",
+		"exec_timeout.ghostscope in tacctl.yaml", "snmp_scope.ghostscope in tacctl.yaml"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "privileges.operator in tacctl.yaml") || strings.Contains(out, "exec_timeout.lab in tacctl.yaml") {
+		t.Errorf("a built-in group or an existing scope is named:\n%s", out)
+	}
+	if sb.code != 0 {
+		t.Errorf("an orphan key is a warning, not an error: exit %d %q", sb.code, sb.stderr())
+	}
+}
+
+// config validate warns (no error) of files in the state that belong to a
+// device or a scope that is not registered: a pull's file, SNMP credentials.
+func TestOrphanFilesAreWarnedOf(t *testing.T) {
+	sb := renderedSandbox(t)
+	for _, f := range []struct{ path, text string }{
+		{"var-lib/device-config/ghost-sw.yaml", "version: 1\n"},
+		{"state/snmp/devices/ghost-sw.yaml", "version: 1\ncommunity: sentinel-0123456789\n"},
+		{"state/snmp/ghostscope.yaml", "version: 1\ncommunity: sentinel-0123456789\n"},
+		{"state/snmp/lab.yaml", "version: 1\ncommunity: sentinel-lab-0123456789\n"},
+	} {
+		sb.write(f.path, f.text, 0o600)
+	}
+	out := plain(sb.run("", []string{"config", "validate"}))
+	for _, want := range []string{
+		"holds the last configuration pull for 'ghost-sw', which is not a registered device ('tacctl device config forget ghost-sw' removes it)",
+		"holds SNMP credentials for 'ghost-sw', which is not a registered device",
+		"holds SNMP credentials for 'ghostscope', which is not a scope of the store",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "for 'lab', which") {
+		t.Errorf("a scope of the store is named:\n%s", out)
+	}
+	if sb.code != 0 {
+		t.Errorf("a leftover file is a warning, not an error: exit %d %q", sb.code, sb.stderr())
+	}
+}

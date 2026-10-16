@@ -3,6 +3,96 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.12 (2026-10-16)
+
+1. **`config get` and `config get-list` complete every key of the schema.**
+   Tab used to offer a short fixed list of top-level keys. It now offers
+   every key the schema holds (`device.apply.transport`,
+   `backends.tacacs.level`, `linux.uid_min` ...) and the start of each family
+   of keys that carries a name (`tier.`, `privileges.`, `snmp_scope.`,
+   `blocks.`) with no space after it; once the prefix is typed the groups
+   or the scopes of the store follow (`tier.ops`, `snmp_scope.lab.`). The
+   list is built from the schema, and a test fails for a family that is
+   not decided, so a key added to the schema is completed with no second
+   list to keep.
+
+2. **`config validate` warns of keys that name a group or scope the store
+   does not have.** `tier`, `wti_level` and `junos` settings of a missing
+   group were reported already; the same check now covers
+   `privileges.<group>` and `commands.<group>` and every per-scope key
+   (`snmp_scope`, `breakglass_scope`, `blocks`, `netconf_scope`,
+   `exec_timeout`, `aaa.order`, `tacacs_group`, `radius_group`,
+   `scope_auth_method`, `scope_mgmt_acl.*`, `cisco.source_interface`). One
+   `Orphan settings:` line names each key; the built-in groups are never
+   named, the exit code does not change, and the line says the key is
+   removed from `tacctl.yaml` by hand (a group or scope added later under
+   the name would take it over). They come from a store import, a restore
+   or a hand edit; `group remove` and `scope remove` drop what they own.
+
+3. **The tier notes are a field of the tier table.** The sentences that say
+   what a family's help adds to the tier a verb needs (`scope secret`,
+   `scope snmp`, `host show`, `device config` ...) were a second list in
+   the shell code next to the table; each is now the `Note` of the row it
+   explains, and the manual page's TIERS block reads it from there. No help
+   text changes.
+
+4. **A re-run of `tacctl install` takes the apply lock.** Over a live
+   store it renders and restarts the services as an upgrade does, and
+   took no lock, so another command's change could be put back or lost
+   between its steps. It now holds the lock from the seed (the store
+   check, the configuration step of each backend, the render) to the end of
+   the start phase, and waits as the other commands do while another one
+   holds it. The builds, the clone, the packages and the service accounts
+   before it do not hold it; a fresh install has nothing to wait for.
+   Ctrl-C while it waits, there or in `upgrade` after its pull, now says that
+   the store, `tacctl.yaml` and the services were not changed and to run
+   the command again, not "Nothing was changed.", which was not true of the
+   builds and the clone before it.
+
+5. **`config validate` warns of files that belong to a device or scope that is
+   not registered.** The records and files of a device's last pull
+   (`device-config`), the SNMP credentials of a device (`snmp/devices`) and
+   of a scope (`snmp/<scope>.yaml`) are taken away by `device remove` and
+   `scope remove`, but not by an import or a restore of the registry or by
+   a hand edit; a device or scope added later under that name picks them up,
+   or is refused for them. One `Orphan files:` line names each, with the
+   command that removes it where there is one. A warning; the exit code does
+   not change; an engineer's run, which has no scopes of the leftovers, does
+   not print them.
+
+6. **`breakglass hold` and `release` take a list of devices.**
+   `tacctl breakglass hold sw1=<reason>,sw2 --reason "<text>"` holds
+   several devices in one command (the list is one argument; quote it when a
+   reason holds a space), each with its own reason after `=` or
+   the `--reason` default (a device with neither is a usage error naming
+   it), and `tacctl breakglass release sw1,sw2` releases several. The list
+   is best effort: each device is checked as a single one is, the ones that
+   pass are held together in one write, one render and one restart of each
+   backend, and each refused or already-held device is named with why on a
+   `Not held: <name>: <why>` line, in the confirmation and in the report;
+   the exit code is 1 when any was not held. The names of the devices that
+   pass are typed back, as printed, comma separated. A release names what is
+   not held under `Not released:`, releases the rest and exits 1. One device
+   is held, asked and reported exactly as before.
+
+7. **A source interface typed inside the server group is named as an older
+   form.** `ip tacacs source-interface` under `aaa group server tacacs+ <G>`
+   (or the RADIUS equivalent) was listed with the group's other leaves as a
+   statement nobody explained. The plan and the diff now say that the group
+   has its own source interface, an older per-group form, and that the
+   standard sets one for the device. Nothing is rendered or removed
+   differently.
+
+8. **The Go tests run in CI.** A `test` workflow runs on a pull request and
+   on a push to `develop` or `master`: gofmt, `go vet`, every package but
+   `internal/cli` with the race detector, and `internal/cli` (which takes
+   over twenty minutes in one run) in four shards, each with and without
+   the test knobs. `tests/tools/go-test-shard.sh <index> <count>` runs one
+   shard and `--check <count>` fails unless every test is in exactly one.
+   The bats suite, the diff corpus and the container matrix stay on the
+   maintainer's machine. The actions of both workflows (the release
+   rebuild too) run on Node 24 and are pinned by commit.
+
 ## 0.2.11 (2026-10-15)
 
 1. **`tacctl group preset roles` shows what each setting changes.** Under every

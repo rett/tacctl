@@ -748,3 +748,25 @@ func TestClassifyGroupSudoers(t *testing.T) {
 		}
 	}
 }
+
+// A note belongs to a Cmd and Sub once: two rows with a note for the same
+// pair would leave one of them unread.
+func TestNotesAreOnePerCommandAndSub(t *testing.T) {
+	seen := map[string]bool{}
+	for _, r := range Rules {
+		if r.Note == "" {
+			continue
+		}
+		k := r.Cmd + " " + r.Sub
+		if seen[k] {
+			t.Errorf("two rows carry a note for %q", k)
+		}
+		seen[k] = true
+		if r.Cmd == "" || r.Sub == "" || r.AnySub {
+			t.Errorf("a note on a row without Cmd and Sub: %+v", r)
+		}
+	}
+	if len(seen) != len(Notes()) || len(seen) < 13 {
+		t.Errorf("notes: %d rows, Notes() %d", len(seen), len(Notes()))
+	}
+}
