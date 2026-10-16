@@ -136,11 +136,11 @@ func newEnv(t *testing.T, opts ...option) *renv {
 		}
 	}
 	r.tmp = filepath.Join(w, "tmp")
-	t.Setenv("TMPDIR", r.tmp)
 	if err := os.WriteFile(filepath.Join(w, "radius-share", "dictionary"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	env := paths.NewEnv([]string{
+		"TMPDIR=" + r.tmp,
 		"TACCTL_ETC=" + filepath.Join(w, "etc"),
 		"TACCTL_STATE_DIR=" + filepath.Join(w, "state"),
 		"TACCTL_LOG=" + filepath.Join(w, "log"),

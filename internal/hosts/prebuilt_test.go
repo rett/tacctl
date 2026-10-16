@@ -135,7 +135,7 @@ func TestPrebuilt(t *testing.T) {
 	if !strings.Contains(out.String(), "Building pam_tacplus for ubuntu:noble in a container") || !strings.Contains(out.String(), "Cached in "+dir+".") {
 		t.Errorf("out %q", out.String())
 	}
-	if ents, _ := os.ReadDir(os.TempDir()); len(ents) != 0 {
+	if ents, _ := os.ReadDir(e.Paths.TempDir); len(ents) != 0 {
 		t.Errorf("TMPDIR left %v", ents)
 	}
 

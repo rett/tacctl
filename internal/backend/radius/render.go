@@ -161,7 +161,7 @@ func (m *Module) DaemonCheck(ctx context.Context, dir string) (checked bool, err
 // store, proved by the daemon when there is one, nothing installed; the
 // state furthest from the render among the three files.
 func (m *Module) RenderCheck(ctx context.Context) (string, error) {
-	tmp, err := os.MkdirTemp("", "tmp.")
+	tmp, err := os.MkdirTemp(m.env.Paths.TempDir, "tmp.")
 	if err != nil {
 		m.env.Out.Error("Cannot create a staging directory: " + err.Error())
 		return "", backend.ErrFailed

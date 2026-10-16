@@ -254,7 +254,7 @@ func (inv *invocation) runScan(rq scanRequest) (*scanResult, error) {
 		}
 		targets = due
 	}
-	out.keys = devreg.RescanKeys(inv.ctx, inv.app.Runner, targets, keyFallback(inv))
+	out.keys = devreg.RescanKeys(inv.ctx, inv.app.Runner, targets, inv.hooks.scanFallback(inv))
 	out.keyErr = seen.RecordKeyResults(out.keys, now)
 	var names []string
 	for _, e := range all {
@@ -531,7 +531,7 @@ func (inv *invocation) deviceCheck(args []string) error {
 	var sys []checkSysName
 	done := make(chan struct{}, 2)
 	go func() {
-		for j, r := range devreg.Probe(inv.ctx, probes) {
+		for j, r := range devreg.Probe(inv.ctx, probes, inv.hooks.probe()) {
 			reach[probeOf[j]] = r
 		}
 		done <- struct{}{}
@@ -540,7 +540,7 @@ func (inv *invocation) deviceCheck(args []string) error {
 		sys = inv.checkSysNames(entries)
 		done <- struct{}{}
 	}()
-	keys := devreg.RescanKeys(inv.ctx, inv.app.Runner, targets, keyFallback(inv))
+	keys := devreg.RescanKeys(inv.ctx, inv.app.Runner, targets, inv.hooks.scanFallback(inv))
 	<-done
 	<-done
 	path := inv.app.Paths.SeenCache
@@ -859,7 +859,7 @@ func (inv *invocation) probeEntries(entries []devreg.Entry) []string {
 	for i := range out {
 		out[i] = "-"
 	}
-	for j, r := range devreg.Probe(inv.ctx, targets) {
+	for j, r := range devreg.Probe(inv.ctx, targets, inv.hooks.probe()) {
 		out[of[j]] = r
 	}
 	return out

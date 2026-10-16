@@ -138,8 +138,9 @@ coverage:
 # Static analysis: the shell that remains (the bootstrap shim, the Linux
 # client scripts, the test helpers and tools), then all Go, then the manual
 # page (complete and current against the code, and clean under groff), then
-# no private names (the repo is public; see tests/tools/no-private.sh).
-lint: lint-sh lint-go lint-man lint-private lint-docs
+# no private names (the repo is public; see tests/tools/no-private.sh), then
+# no read of the process's temporary directory (tests/tools/no-os-tempdir.sh).
+lint: lint-sh lint-go lint-man lint-private lint-tempdir lint-docs
 
 # man/tacctl.1 against the code (docs/plans/0.2.3-plan.md D57): the Man tests
 # of internal/cli (every command, flag, configuration key, path, environment
@@ -161,6 +162,10 @@ man:
 
 lint-private:
 	tests/tools/no-private.sh
+
+# The temporary directory of an invocation is paths.Paths.TempDir.
+lint-tempdir:
+	tests/tools/no-os-tempdir.sh
 
 # No line of a fenced code block of the user documentation is wider than
 # GitHub shows (tests/tools/doc-width.sh).

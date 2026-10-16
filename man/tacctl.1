@@ -11530,6 +11530,16 @@ and
 .B upgrade
 build the server from (default
 .IR /opt/tacquito\-src ).
+.TP
+.B TMPDIR
+The directory where tacctl stages private copies while it works (rendered
+configuration trees, a candidate sudoers file, a script for a host, a check of
+an import), each made with mode 0600 or 0700 and removed on every path. Default:
+the system temporary directory
+.RI ( /tmp ).
+.BR sudo (8)
+may replace the variable with its own environment policy, in which case
+tacctl sees the value that policy leaves.
 .PP
 tacctl also reads variables that move its files and set its clock for the test
 suite
@@ -11970,6 +11980,23 @@ leaves what it is asked to keep:
 .I tacquito\-logs\-<time>.tar.gz
 (the accounting logs) and, for the RADIUS backend,
 .IR tacctl\-radius\-logs\-<time>.tar.gz .
+.TP
+.I /tmp/
+The default of
+.B TMPDIR
+(see
+.BR ENVIRONMENT ):
+where tacctl makes the private files and directories it stages while it works
+and removes them afterwards.
+.TP
+.I /var/tmp/
+Where
+.B "scope block ... edit"
+and
+.B "device block ... edit"
+make the private directory of the editor (mode 0700, handed to the invoking
+user, removed afterwards on every path). It is not
+.BR TMPDIR .
 .TP
 .I /usr/share/man/man1/tacctl.1.gz
 This manual.

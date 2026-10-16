@@ -7,7 +7,7 @@ package cli
 // a device that has no TACACS+ server yet.
 //
 // Where the local password goes: askpass.Prompt reads it on the terminal
-// into a []byte (newLocalPasswords: a terminalPasswords with no cache
+// into a []byte (hooks.newLocalPasswords: a terminalPasswords with no cache
 // client, so the cache is never asked, never stored into and never told to
 // forget); a devssh.PasswordSource makes the string ssh takes from those
 // bytes at the send (devssh's passwordMemo hands it over once per

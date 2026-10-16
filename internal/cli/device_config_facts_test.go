@@ -278,9 +278,6 @@ func TestNetconfRunnerSendsTheBareCommand(t *testing.T) {
 // not the rest of the device's: the pull is ok, the sections are recorded
 // and the facts are empty.
 func TestHangingFactCommandDoesNotHoldThePull(t *testing.T) {
-	prev := factsTimeout
-	factsTimeout = time.Second
-	t.Cleanup(func() { factsTimeout = prev })
 	hang := func(b *pullBox, cmds ...string) {
 		for _, c := range cmds {
 			if err := os.WriteFile(filepath.Join(b.dir, c+".hang"), nil, 0o644); err != nil {
@@ -290,6 +287,7 @@ func TestHangingFactCommandDoesNotHoldThePull(t *testing.T) {
 	}
 	check := func(t *testing.T, b *pullBox, name string, args ...string) {
 		t.Helper()
+		b.sb.hooks.factsTimeout = time.Second
 		start := time.Now()
 		out := b.run(append([]string{"device", "config", "pull", name, "--timeout", "10"}, args...)...)
 		took := time.Since(start)

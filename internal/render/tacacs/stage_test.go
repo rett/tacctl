@@ -552,7 +552,7 @@ func TestCheckWithUnitsIsTheFurthestWord(t *testing.T) {
 	}
 	// Nothing is left in TMPDIR.
 	tmp := t.TempDir()
-	t.Setenv("TMPDIR", tmp)
+	e.r.Paths.TempDir = tmp
 	if _, err := e.r.Check(true); err != nil {
 		t.Fatal(err)
 	}

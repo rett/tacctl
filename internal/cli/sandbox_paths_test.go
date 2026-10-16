@@ -23,7 +23,7 @@ func sandboxPathEnv(dir string) []string {
 		"TACCTL_VAR_LIB=" + j("var-lib"),
 		"TACCTL_SSHD_DROPIN=" + j("sshd_config.d", "tacctl-console.conf"), "TACCTL_SHELLS_FILE=" + j("shells"),
 		"TACCTL_SSH_DIR=" + j("ssh"),
-		"TACCTL_TREE=" + j("tree"),
+		"TACCTL_TREE=" + j("tree"), "TMPDIR=" + j("tmp"),
 		"TACCTL_RADIUS_DIR=" + j("raddb"), "TACCTL_RADIUS_LOG=" + j("radius-log"),
 		"TACCTL_RADIUS_BIN=" + j("radius-bin", "radiusd"), "TACCTL_RADIUS_DICT=" + j("radius-share", "dictionary"),
 	}
@@ -48,7 +48,7 @@ func hostDefaults(p paths.Paths, root string) []string {
 		"LogrotateDir": p.LogrotateDir, "TacquitoSrc": p.TacquitoSrc, "LinuxDir": p.LinuxDir, "LoginDefs": p.LoginDefs,
 		"Tree": p.Tree, "PatchDir": p.PatchDir,
 		"Deploy": p.Deploy, "Command": p.Command, "ConsoleCommand": p.ConsoleCommand, "GoBin": p.GoBin, "Completion": p.Completion,
-		"ManPage": p.ManPage, "ArchiveDir": p.ArchiveDir,
+		"ManPage": p.ManPage, "ArchiveDir": p.ArchiveDir, "EditDir": p.EditDir, "TempDir": p.TempDir,
 	}
 	for _, fam := range []string{"debian", "rhel"} {
 		l := p.Radius(fam)

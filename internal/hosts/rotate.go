@@ -40,7 +40,7 @@ import (
 // even when tacctl has none (Env.HangUp), so that a lost connection hangs it
 // up and its own rollback runs.
 func (e *Env) RunRotateScript(ctx context.Context, target, port, identity string, body []byte) (int, RotateStatus, error) {
-	f, err := TempFile()
+	f, err := TempFile(e.Paths.TempDir)
 	if err != nil {
 		return 1, RotateStatus{}, err
 	}
@@ -89,9 +89,10 @@ func (s *statusWriter) Write(p []byte) (int, error) {
 // TempKnownHosts writes a known_hosts file of the pinned keys of one host
 // (keys are 'type base64' strings), filed under alias, in a new directory of
 // its own that the invoking user's ssh can read (public keys only), and
-// returns its path and the function that removes it.
-func TempKnownHosts(alias string, keys []string) (path string, cleanup func(), err error) {
-	dir, err := TempDir()
+// returns its path and the function that removes it. The directory is made in
+// tmp (the invocation's TMPDIR: paths.Paths.TempDir).
+func TempKnownHosts(tmp, alias string, keys []string) (path string, cleanup func(), err error) {
+	dir, err := TempDir(tmp)
 	if err != nil {
 		return "", nil, err
 	}

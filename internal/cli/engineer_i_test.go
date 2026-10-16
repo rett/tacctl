@@ -169,7 +169,7 @@ func TestUserRenameSyncsTheServer(t *testing.T) {
 func TestLoweredWithNoTiersFromBeforeSaysWhatRemains(t *testing.T) {
 	hs := hostLowerSandbox(t)
 	h := newHarness(t, nil, hs.env...)
-	inv := &invocation{ctx: context.Background(), app: h.app}
+	inv := &invocation{ctx: context.Background(), app: h.app, hooks: newTestHooks()}
 	w := &tierWatch{inv: inv, scope: "lab"}
 	if err := w.lowered("'alice'", "'alice' keeps the groups of the old tier"); err != nil {
 		t.Fatal(err)
@@ -183,7 +183,7 @@ func TestLoweredWithNoTiersFromBeforeSaysWhatRemains(t *testing.T) {
 		t.Fatal(err)
 	}
 	h = newHarness(t, nil, hs.env...)
-	inv = &invocation{ctx: context.Background(), app: h.app}
+	inv = &invocation{ctx: context.Background(), app: h.app, hooks: newTestHooks()}
 	if w := inv.watchServerTiers(); w.before != nil {
 		t.Errorf("tiers from an unreadable model: %v", w.before)
 	}
@@ -201,7 +201,7 @@ func TestLegacyInstallHasNoAmbiguousGroups(t *testing.T) {
 	hs.write("state/tacctl.yaml", "backends:\n  enabled: [tacacs]\n", 0o600)
 	inv := func() *invocation {
 		h := newHarness(t, nil, hs.env...)
-		return &invocation{ctx: context.Background(), app: h.app}
+		return &invocation{ctx: context.Background(), app: h.app, hooks: newTestHooks()}
 	}
 	if i := inv(); !i.hasTierSettings() || len(i.ambiguousGroups()) != 1 || i.userAmbiguousGroup("bob") != "neteng" || i.userTier("bob", "15") != tier.Operator {
 		t.Fatalf("with a store: ambiguous %v, bob's group %q, tier %q", inv().ambiguousGroups(), inv().userAmbiguousGroup("bob"), inv().userTier("bob", "15"))
@@ -255,7 +255,7 @@ func TestResolveV4IsKeptForTheInvocation(t *testing.T) {
 	h.runner.Seq([]string{"getent", "ahostsv4", "web1.example.net"},
 		execx.Result{Stdout: []byte("192.0.2.77 STREAM web1.example.net\n")},
 		execx.Result{Stdout: []byte("192.0.2.99 STREAM web1.example.net\n")})
-	inv := &invocation{ctx: context.Background(), app: h.app}
+	inv := &invocation{ctx: context.Background(), app: h.app, hooks: newTestHooks()}
 	if a, b := inv.resolveV4("web1.example.net"), inv.resolveV4("web1.example.net"); a != "192.0.2.77" || b != "192.0.2.77" {
 		t.Errorf("resolved %q then %q", a, b)
 	}
@@ -269,7 +269,7 @@ func TestResolveV4IsKeptForTheInvocation(t *testing.T) {
 	}
 	// A second resolution of the same name keeps the first answer.
 	h = newHarness(t, nil, hs.env...)
-	inv = &invocation{ctx: context.Background(), app: h.app}
+	inv = &invocation{ctx: context.Background(), app: h.app, hooks: newTestHooks()}
 	inv.noteResolved("web1.example.net", "192.0.2.77")
 	h.runner.On([]string{"getent", "ahostsv4", "web1.example.net"}, execx.Result{Stdout: []byte("192.0.2.99 STREAM web1.example.net\n")})
 	if got := inv.resolveV4("web1.example.net"); got != "192.0.2.77" {

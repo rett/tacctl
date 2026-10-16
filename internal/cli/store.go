@@ -211,6 +211,7 @@ func (inv *invocation) importOptions(p importArgs) store.ImportOptions {
 		Equiv:       model.EquivCheckRand(a.Knobs.Rand()),
 		Smoke:       func(rendered string) error { return inv.importSmoke(inv.ctx, rendered) },
 		Now:         a.Knobs.Now,
+		TempDir:     a.Paths.TempDir,
 	}
 }
 
@@ -228,7 +229,7 @@ func (inv *invocation) importRender(s *store.Store) ([]byte, error) {
 	if err := rtacacs.CheckOverrides(cfg.Path); err != nil {
 		return fail(err)
 	}
-	dir, err := os.MkdirTemp("", "tacctl-render.")
+	dir, err := os.MkdirTemp(inv.app.Paths.TempDir, "tacctl-render.")
 	if err != nil {
 		return fail(err)
 	}

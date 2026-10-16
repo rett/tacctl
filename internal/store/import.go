@@ -250,8 +250,9 @@ type ImportOptions struct {
 	Smoke func(rendered string) error
 	// Now is the clock of the pre-store copy's name (nil: time.Now).
 	Now func() time.Time
-	// TempDir is where --check renders ("" for os.TempDir); the directory
-	// it creates there is removed before Import returns.
+	// TempDir is where --check renders (the callers pass
+	// paths.Paths.TempDir; "" is the process's temporary directory); the
+	// directory it creates there is removed before Import returns.
 	TempDir string
 }
 

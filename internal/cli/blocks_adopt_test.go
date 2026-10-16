@@ -365,12 +365,12 @@ func TestAdoptRefusals(t *testing.T) {
 		t.Errorf("an editor ran or a password was asked for a refused adopt: %d %d", a.e.ran(), a.pw.asked)
 	}
 	// no terminal
-	withTerminal(t, false)
+	a.sb.terminal(false)
 	a.adopt("y\n", ed, "js1.lab.example.net", "snmp")
 	if a.sb.code != 1 || !strings.Contains(a.sb.stderr(), "adopt opens an editor and needs a terminal on standard input and output. Nothing was changed.") || a.pw.asked != 0 {
 		t.Errorf("no terminal: %d %q (asked %d)", a.sb.code, a.sb.stderr(), a.pw.asked)
 	}
-	withTerminal(t, true)
+	a.sb.terminal(true)
 	// a block of the scope that has errors: no draft goes beneath it
 	a.sb.putBlock("lab", "set snmp community broken authorization read-only\n")
 	a.adopt("y\n", ed, "js1.lab.example.net", "snmp")

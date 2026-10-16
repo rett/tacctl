@@ -130,7 +130,7 @@ func (inv *invocation) hostsEnv() *hosts.Env {
 		asUser = u
 	}
 	env := &hosts.Env{
-		Paths:    hosts.Paths{Dir: a.Paths.LinuxDir, VarLib: a.Paths.VarLib, UIDs: a.Paths.LinuxUIDs, Hosts: a.Paths.LinuxHosts, LoginDefs: a.Paths.LoginDefs, ProcSelf: a.Knobs.ProcSelf()},
+		Paths:    hosts.Paths{Dir: a.Paths.LinuxDir, VarLib: a.Paths.VarLib, TempDir: a.Paths.TempDir, UIDs: a.Paths.LinuxUIDs, Hosts: a.Paths.LinuxHosts, LoginDefs: a.Paths.LoginDefs, ProcSelf: a.Knobs.ProcSelf()},
 		Range:    rng,
 		Runner:   a.Runner,
 		Out:      a.Out,
@@ -370,7 +370,7 @@ func (inv *invocation) configLinuxEngineerSudo(args []string) error {
 		}
 	}
 	line := hosts.EngineerSudoLine(cmds)
-	err := tier.CheckSudoers(inv.ctx, a.Runner, a.Out.Stderr, line+"\n")
+	err := tier.CheckSudoers(inv.ctx, a.Runner, a.Out.Stderr, a.Paths.TempDir, line+"\n")
 	var te *tier.TempError
 	switch {
 	case errors.Is(err, tier.ErrVisudo):

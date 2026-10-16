@@ -24,6 +24,8 @@ type invocation struct {
 	ctx   context.Context
 	app   *app.App
 	build BuildInfo
+	// hooks are what a test replaces (hooks.go); nil in tacctl.
+	hooks *hooks
 
 	// shellMode: completion is for the tacctl shell's lists (live names
 	// with descriptions; flags only after a '-').
@@ -89,6 +91,11 @@ func Main(argv, environ []string, stdio app.Stdio, build BuildInfo) int {
 // Run dispatches a.Args: the sudo re-exec of bin/tacctl.sh first, then the
 // command. It returns the command's error for Main to map to a status.
 func Run(ctx context.Context, a *app.App, build BuildInfo) error {
+	return runWith(ctx, a, build, nil)
+}
+
+// runWith is Run with the hooks a test replaces (nil: the real ones).
+func runWith(ctx context.Context, a *app.App, build BuildInfo, hk *hooks) error {
 	if needsSudo(a) {
 		return reexec(a)
 	}
@@ -96,7 +103,7 @@ func Run(ctx context.Context, a *app.App, build BuildInfo) error {
 		a.Version = build.Version
 	}
 	a.SetContext(ctx)
-	inv := &invocation{ctx: ctx, app: a, build: build}
+	inv := &invocation{ctx: ctx, app: a, build: build, hooks: hk}
 	root := newRoot(inv)
 	if isComplete(a.Args) {
 		return complete(ctx, a, root)

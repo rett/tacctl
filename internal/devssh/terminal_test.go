@@ -452,7 +452,10 @@ func TestTerminalHugeSingleLine(t *testing.T) {
 		}
 		_, _ = io.WriteString(ch, "\r\nDSM> ")
 	}
-	s, _ := openTerm(t, d, 100*time.Millisecond)
+	// The screen ends on the quiet period (the last chunk is too small to
+	// run the predicate again), so it is longer than the stall of a loaded
+	// machine: a gap in the writes shorter than it must not end the screen.
+	s, _ := openTerm(t, d, time.Second)
 	calls := 0
 	got, err := s.Expect(within(t, 60*time.Second), func(sc string) bool { calls++; return strings.HasSuffix(sc, "DSM> ") })
 	if err != nil || len(got) != len(line)+len("\nDSM> ") || !strings.HasSuffix(got, "yyy\nDSM> ") {
@@ -563,7 +566,7 @@ func TestTerminalCloseAnytime(t *testing.T) {
 			}
 		}
 	}
-	s, _ := openTerm(t, d, 5*time.Second)
+	s, _ := openTerm(t, d, time.Second)
 	// MENU has arrived but the quiet period is long: Expect is waiting.
 	res := make(chan error, 1)
 	go func() {

@@ -75,6 +75,9 @@ type Paths struct {
 	UIDs   string // LINUX_UID_FILE
 	Hosts  string // LINUX_HOSTS_FILE
 	VarLib string // paths.VarLib: made 0711 first when Dir is under it (mkDir)
+	// TempDir is where scripts and build trees are staged (paths.TempDir:
+	// TMPDIR of the invocation). It has no default here: the caller sets it.
+	TempDir string
 	// LoginDefs is this server's login.defs, read for a host enrolled with
 	// --local (paths.LoginDefs).
 	LoginDefs string

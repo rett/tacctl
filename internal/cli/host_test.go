@@ -92,7 +92,7 @@ func (hs *hostSandbox) run(r *fake.Runner, args ...string) string {
 		a.Paths = a.Paths.Reroot(hs.dir)
 	}
 	a.HostsTTY = hs.tty
-	hs.code = exitCode(Run(context.Background(), a, BuildInfo{Version: "0.2.0-test"}), a.Out)
+	hs.code = exitCode(runWith(context.Background(), a, BuildInfo{Version: "0.2.0-test"}, hs.hooks), a.Out)
 	if n := len(r.Execs()); n != 0 {
 		hs.t.Errorf("%q: exec'd", args)
 	}
@@ -508,7 +508,7 @@ func TestConfigLinuxScriptUIDRangeFull(t *testing.T) {
 }
 
 func TestHostAndLinuxSpecs(t *testing.T) {
-	inv := &invocation{app: newHarness(t, nil).app}
+	inv := &invocation{app: newHarness(t, nil).app, hooks: newTestHooks()}
 	check := func(family string, specs map[string]Spec, cmds []*cobra.Command) {
 		t.Helper()
 		if len(cmds) != len(specs) {

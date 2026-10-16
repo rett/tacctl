@@ -65,17 +65,19 @@ func consoleMain(ctx context.Context, argv, environ []string, stdio app.Stdio, b
 // RunConsole runs the console with its arguments (none, or '-c <line>') in
 // a's environment, which is the console's (consoleMain scrubbed it).
 func RunConsole(ctx context.Context, a *app.App, build BuildInfo, args []string) error {
+	return runConsoleWith(ctx, a, build, args, nil)
+}
+
+// runConsoleWith is RunConsole with the hooks a test replaces (nil: the real
+// ones).
+func runConsoleWith(ctx context.Context, a *app.App, build BuildInfo, args []string, hk *hooks) error {
 	if a.Version == "" {
 		a.Version = build.Version
 	}
 	a.SetContext(ctx)
-	inv := &invocation{ctx: ctx, app: a, build: build}
+	inv := &invocation{ctx: ctx, app: a, build: build, hooks: hk}
 	return inv.runConsoleSession(args)
 }
-
-// consolePolicyHook, when set, adjusts the policy a session got (the Go
-// pty tests: an idle time in seconds); nil in tacctl.
-var consolePolicyHook func(*console.Remote)
 
 // consoleSession is the state of one console session.
 type consoleSession struct {
@@ -136,9 +138,7 @@ func (inv *invocation) runConsoleSession(args []string) error {
 
 	marker := console.EnvMarker + "=" + id
 	cs.pol = inv.consoleRemotePolicy(exe, marker)
-	if consolePolicyHook != nil {
-		consolePolicyHook(&cs.pol)
-	}
+	inv.hooks.adjustConsolePolicy(&cs.pol)
 	groups := inv.callerGroups()
 	cs.tier = sudoTier(groups)
 	if cs.pol.Known {

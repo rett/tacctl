@@ -325,10 +325,9 @@ func TestDeviceListProbe(t *testing.T) {
 	sb := newSandbox(t, true)
 	ed := hkKey(t, "ed25519")
 	sb.devScan("", scan("127.0.0.1", ed), "add", "loop", "127.0.0.1", "--port", "1", "--vendor", "cisco")
-	devreg.ProbeDial = func(_ context.Context, _, _ string) (net.Conn, error) {
+	sb.hooks.probeDial = func(_ context.Context, _, _ string) (net.Conn, error) {
 		return nil, &net.OpError{Op: "dial", Err: os.ErrDeadlineExceeded}
 	}
-	defer func() { devreg.ProbeDial = nil }()
 	out := sb.dev("", "list", "--probe")
 	if !regexp.MustCompile(`(?m)^  loop +127\.0\.0\.1 .* +- +- +- +- +timeout +-$`).MatchString(out) || !strings.Contains(out, "REACH: a TCP connect") {
 		t.Errorf("%s", out)
@@ -416,7 +415,7 @@ func TestSessionStartsTheSeenRefresh(t *testing.T) {
 	a := app.New(nil, paths.NewEnv([]string{"PATH=/usr/bin"}), "/opt/x/dist/tacctl", 1000,
 		app.Stdio{Stdin: strings.NewReader(""), Stdout: &so, Stderr: &se}, r)
 	h := struct{ runner *fake.Runner }{r}
-	inv := &invocation{app: a}
+	inv := &invocation{app: a, hooks: newTestHooks()}
 	inv.startSeenRefresh("/usr/local/bin/tacctl", tier.Operator, []string{"TACCTL_CONSOLE=abc"})
 	got := strings.Join(h.runner.Argvs(), "\n")
 	if !strings.Contains(got, "sudo -n TACCTL_CONSOLE=abc /usr/local/bin/tacctl device scan --if-stale --quiet") {

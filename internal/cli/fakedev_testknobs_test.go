@@ -28,7 +28,7 @@ func TestFakeDeviceVerbAndDialKnob(t *testing.T) {
 	sb.expect(1, "", "is not a transcript directory")
 
 	h := newHarness(t, nil, "TACCTL_TEST_DEVICE_DIAL=127.0.0.1:2222", "TACCTL_TEST_DEVICE_PASSWORD=pw")
-	inv := &invocation{app: h.app}
+	inv := &invocation{app: h.app, hooks: newTestHooks()}
 	if inv.deviceDialer() == nil || h.app.Knobs.DevicePassword() != "pw" {
 		t.Error("the knobs did not take effect in a test build")
 	}

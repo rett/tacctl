@@ -249,7 +249,7 @@ func TestRotateHostWithoutPins(t *testing.T) {
 func TestRotateUnpinnedKeysNotConfirmed(t *testing.T) {
 	h := newHarness(t, nil)
 	h.app.Stdin = strings.NewReader("n\n")
-	inv := &invocation{app: h.app, ctx: context.Background()}
+	inv := &invocation{app: h.app, ctx: context.Background(), hooks: newTestHooks()}
 	r := &rotation{o: rotateOpts{name: "web1"}}
 	proof := hosts.Proof{Connected: true, UID: "0", Keys: []byte(hkKey(t, "ed25519").String() + " root@web1\n")}
 	if got := inv.proofProblem(r, proof); got != "the host's ssh keys were not confirmed" {
@@ -257,7 +257,7 @@ func TestRotateUnpinnedKeysNotConfirmed(t *testing.T) {
 	}
 	h = newHarness(t, nil)
 	h.app.Stdin = strings.NewReader("y\n")
-	inv = &invocation{app: h.app, ctx: context.Background()}
+	inv = &invocation{app: h.app, ctx: context.Background(), hooks: newTestHooks()}
 	if got := inv.proofProblem(r, proof); got != "" {
 		t.Errorf("answer y: %q", got)
 	}
@@ -265,7 +265,7 @@ func TestRotateUnpinnedKeysNotConfirmed(t *testing.T) {
 		t.Errorf("the keys were not shown: %q", shown)
 	}
 	// No keys read: nothing to confirm.
-	inv = &invocation{app: newHarness(t, nil).app, ctx: context.Background()}
+	inv = &invocation{app: newHarness(t, nil).app, ctx: context.Background(), hooks: newTestHooks()}
 	if got := inv.proofProblem(r, hosts.Proof{Connected: true, UID: "0", KeysErr: hosts.ErrKeysUnread}); !strings.Contains(got, "nothing to confirm it is 'web1'") {
 		t.Errorf("no keys: %q", got)
 	}

@@ -1,6 +1,7 @@
 package paths
 
 import (
+	"os"
 	"reflect"
 	"testing"
 )
@@ -127,6 +128,20 @@ func TestResolveOverrides(t *testing.T) {
 	}
 }
 
+// TempDir is TMPDIR of the invocation's environment; the process's own
+// temporary directory is the default (an empty TMPDIR is unset).
+func TestTempDir(t *testing.T) {
+	if got := Resolve(NewEnv(nil), "", none).TempDir; got != os.TempDir() {
+		t.Errorf("TMPDIR unset: TempDir = %q, want os.TempDir() %q", got, os.TempDir())
+	}
+	if got := Resolve(NewEnv([]string{"TMPDIR="}), "", none).TempDir; got != os.TempDir() {
+		t.Errorf("TMPDIR empty: TempDir = %q, want os.TempDir() %q", got, os.TempDir())
+	}
+	if got := Resolve(NewEnv([]string{"TMPDIR=/t/tmp"}), "", none).TempDir; got != "/t/tmp" {
+		t.Errorf("TMPDIR=/t/tmp: TempDir = %q", got)
+	}
+}
+
 func TestTree(t *testing.T) {
 	has := func(want string) func(string) bool { return func(p string) bool { return p == want } }
 	if got := Tree(NewEnv(nil), "/home/u/src/tacctl/dist/tacctl", has("/home/u/src/tacctl/go.mod")); got != "/home/u/src/tacctl" {
@@ -232,10 +247,11 @@ func TestHostLocationsAndReroot(t *testing.T) {
 	want := map[string]string{
 		"Deploy": "/opt/tacctl", "Command": "/usr/local/bin/tacctl", "ConsoleCommand": "/usr/local/bin/tacctl-console", "GoBin": "/usr/local/go/bin/go",
 		"Completion": "/etc/bash_completion.d/tacctl", "ManPage": "/usr/share/man/man1/tacctl.1.gz", "ArchiveDir": "/root",
+		"EditDir": "/var/tmp",
 	}
 	got := func(p Paths) map[string]string {
 		return map[string]string{"Deploy": p.Deploy, "Command": p.Command, "ConsoleCommand": p.ConsoleCommand, "GoBin": p.GoBin,
-			"Completion": p.Completion, "ManPage": p.ManPage, "ArchiveDir": p.ArchiveDir}
+			"Completion": p.Completion, "ManPage": p.ManPage, "ArchiveDir": p.ArchiveDir, "EditDir": p.EditDir}
 	}
 	for k, v := range got(p) {
 		if want[k] != v {
@@ -250,6 +266,9 @@ func TestHostLocationsAndReroot(t *testing.T) {
 		if v != "/sb"+want[k] {
 			t.Errorf("rerooted %s = %q", k, v)
 		}
+	}
+	if r.TempDir != p.TempDir {
+		t.Error("Reroot moved TempDir, which is the invocation's TMPDIR")
 	}
 	if r.Etc != p.Etc || r.StateDir != p.StateDir || r.Bin != p.Bin {
 		t.Error("Reroot moved a TACCTL_* location")

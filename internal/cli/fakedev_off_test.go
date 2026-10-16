@@ -16,7 +16,7 @@ func TestFakeDeviceAndDeviceKnobsAreAbsentWithoutTestKnobs(t *testing.T) {
 		}
 	}
 	h := newHarness(t, nil, "TACCTL_TEST_DEVICE_DIAL=127.0.0.1:2222", "TACCTL_TEST_DEVICE_PASSWORD=fakedev-password")
-	inv := &invocation{app: h.app}
+	inv := &invocation{app: h.app, hooks: newTestHooks()}
 	if d := inv.deviceDialer(); d != nil {
 		t.Error("the dial knob took effect in a build without the tag")
 	}

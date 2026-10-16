@@ -75,6 +75,7 @@ func TestReexecTablesForSSHDeviceAndShell(t *testing.T) {
 // registrations are visible to the tree and to specFor without an edit of
 // root.go or completion.go.
 func TestFamilyAndSpecRegistries(t *testing.T) {
+	serial(t)
 	saveF, saveS := families, specLookups
 	t.Cleanup(func() { families, specLookups = saveF, saveS })
 	specLookups = map[string]func([]string) (Spec, bool){}
@@ -135,6 +136,7 @@ const linuxHostsFixture = "web1|root@192.0.2.10||lab|192.0.2.1|\n" +
 // providers' and sorts; an administrator sees all, a lower tier its own
 // scopes (carol: lab, dmz).
 func TestCompletionNamesHostsAndDevices(t *testing.T) {
+	serial(t)
 	saved := deviceNameProviders
 	t.Cleanup(func() { deviceNameProviders = saved })
 	registerDeviceNames(func(_ *invocation, f scopeFilter) []string {

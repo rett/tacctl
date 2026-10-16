@@ -463,17 +463,11 @@ func (r *applyRun) planner(e devreg.Entry, expected []devices.Section, t plainRe
 	}
 }
 
-// applyRecordFault, when a test sets it, is asked before each apply record
-// is written and a non-nil answer is the write's failure.
-var applyRecordFault func(device string, a devconf.Applied) error
-
 // writeApplied keeps the record of what this run did to the device. The pull
 // part of the record is left as the last read made it.
 func (r *applyRun) writeApplied(e devreg.Entry, a devconf.Applied) error {
-	if applyRecordFault != nil {
-		if err := applyRecordFault(e.Name, a); err != nil {
-			return err
-		}
+	if err := r.inv.hooks.recordFault(e.Name, a); err != nil {
+		return err
 	}
 	unlock, err := r.store.Lock()
 	if err != nil {
@@ -870,9 +864,10 @@ type applySettled struct {
 	Line string
 }
 
-// applyHoldWait is how long --hold waits for the word: until a minute of the
-// window is left (DefaultMinWindow), and at least a second. A test shortens it.
-var applyHoldWait = func(until, now time.Time) time.Duration {
+// realHoldWait is how long --hold waits for the word: until a minute of the
+// window is left (DefaultMinWindow), and at least a second. A test shortens it
+// (hooks.applyHoldWait).
+func realHoldWait(until, now time.Time) time.Duration {
 	return max(until.Sub(now)-devapply.DefaultMinWindow, time.Second)
 }
 
@@ -925,7 +920,7 @@ func (r *applyRun) holdFunc(name string) func(context.Context, time.Time) (bool,
 		inv.echo("  " + name + "  verified; the change is held until you answer. Log in with one account of each class in another terminal.")
 		inv.echo("  " + name + "  it rolls back by itself at " + until.Format("15:04:05") + " unless you answer before then.")
 		_, _ = io.WriteString(inv.app.Out.Stderr, "  Type OK to keep the change, anything else rolls it back: ")
-		t := time.NewTimer(applyHoldWait(until, inv.app.Knobs.Now()))
+		t := time.NewTimer(inv.hooks.holdWait(until, inv.app.Knobs.Now()))
 		defer t.Stop()
 		select {
 		case a, ok := <-lines:
@@ -1009,7 +1004,7 @@ func (inv *invocation) deviceConfigApply(args []string) error {
 	confirm, _ := inv.applySettings()
 	run := &applyRun{inv: inv, user: user, render: chosen.render, store: inv.configStore(),
 		shapes: devapply.OpenShapes(inv.app.Paths.ApplyDir), stateDir: inv.app.Paths.ApplyDir,
-		passwd: newDevicePasswords(inv), sections: aa.sections, minutes: confirm, holdOn: aa.hold, holdDone: make(chan struct{}),
+		passwd: inv.hooks.newDevicePasswords(inv), sections: aa.sections, minutes: confirm, holdOn: aa.hold, holdDone: make(chan struct{}),
 		transport: aa.transport}
 	defer close(run.holdDone)
 	ctl := &applyCtl{inv: inv, user: user, aa: aa, run: run, settings: st, chosen: chosen, usage: usage}

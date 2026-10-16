@@ -29,7 +29,7 @@ const consoleTestPolicy = "shell=console idle=30 system_shell=no system_shell_pa
 // caller's groups and the root side's policy answer ("": sudo fails).
 func consoleHarness(t *testing.T, stdin, groups, policy string, args ...string) (*harness, func() error) {
 	t.Helper()
-	h := &harness{runner: &fake.Runner{}}
+	h := &harness{runner: &fake.Runner{}, hooks: newTestHooks()}
 	env := []string{"USER=carol", "HOME=" + t.TempDir(), "SSH_CLIENT=192.0.2.9 50000 22", "PATH=" + console.ConsolePath,
 		"SHELL=/usr/local/bin/tacctl-console"}
 	h.app = app.New(nil, paths.NewEnv(env), testExe, 1000,
@@ -41,7 +41,9 @@ func consoleHarness(t *testing.T, stdin, groups, policy string, args ...string) 
 		h.runner.Func(func(c execx.Cmd) bool { return c.Name == "sudo" && slices.Contains(c.Args, "_console-policy") },
 			func(execx.Cmd) (execx.Result, error) { return execx.Result{Stdout: []byte(policy)}, nil })
 	}
-	return h, func() error { return RunConsole(context.Background(), h.app, BuildInfo{Version: "0.2.1-test"}, args) }
+	return h, func() error {
+		return runConsoleWith(context.Background(), h.app, BuildInfo{Version: "0.2.1-test"}, args, h.hooks)
+	}
 }
 
 // consoleLog are the console's own log lines (logger -t tacctl-console).
@@ -186,7 +188,7 @@ func TestConsoleSystemShell(t *testing.T) {
 		h, _ := consoleHarness(t, "", "", consoleTestPolicy)
 		h.app.Env = paths.NewEnv([]string{"USER=carol", "TERM=xterm", "PATH=" + console.ConsolePath, "SHELL=/usr/local/bin/tacctl-console",
 			"TACCTL_STATE_DIR=/x"})
-		inv := &invocation{ctx: context.Background(), app: h.app}
+		inv := &invocation{ctx: context.Background(), app: h.app, hooks: newTestHooks()}
 		return &consoleSession{inv: inv, sess: console.Session{ID: "0123456789ab", User: "carol", TTY: "/dev/pts/4"}, pol: pol, tier: tr}, h
 	}
 	// Refused for the tier: the message names the command that opens it.
@@ -244,12 +246,12 @@ func TestConsoleRemotePolicy(t *testing.T) {
 	if got := lines(h.runner); len(got) != 2 || !strings.HasPrefix(got[1], "sudo -n TACCTL_CONSOLE=") {
 		t.Errorf("ran %q", got)
 	}
-	inv := &invocation{ctx: context.Background(), app: h.app}
+	inv := &invocation{ctx: context.Background(), app: h.app, hooks: newTestHooks()}
 	if pol := inv.consoleRemotePolicy(testExe, "TACCTL_CONSOLE=0123456789ab"); pol != console.DefaultRemote() {
 		t.Errorf("policy %+v", pol)
 	}
 	h, _ = consoleHarness(t, "", "", "idle=7 system_shell=yes tier=operator")
-	inv = &invocation{ctx: context.Background(), app: h.app}
+	inv = &invocation{ctx: context.Background(), app: h.app, hooks: newTestHooks()}
 	if pol := inv.consoleRemotePolicy(testExe, "TACCTL_CONSOLE=0123456789ab"); !pol.Known || !pol.SystemShell || pol.Tier != tier.Operator {
 		t.Errorf("policy %+v", pol)
 	}

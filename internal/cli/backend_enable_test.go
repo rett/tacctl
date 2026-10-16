@@ -60,6 +60,7 @@ type swEnv struct {
 // the stand-in not installed.
 func newSwEnv(t *testing.T) *swEnv {
 	t.Helper()
+	parallel(t)
 	w := t.TempDir()
 	e := &swEnv{t: t, w: w, stdout: &lockedBuf{}, stderr: &lockedBuf{}}
 	for _, d := range []string{"etc", "state", "tmp", "fake", "tac"} {
@@ -68,7 +69,6 @@ func newSwEnv(t *testing.T) *swEnv {
 		}
 	}
 	e.tmp = filepath.Join(w, "tmp")
-	t.Setenv("TMPDIR", e.tmp)
 	e.p = paths.Resolve(paths.NewEnv(sandboxPathEnv(w)), "", func(string) bool { return false }).Reroot(w)
 	e.fakeConf = filepath.Join(w, "etc", "fake.conf")
 	e.reg = backend.NewRegistry(backend.TACACS, backend.RADIUS)

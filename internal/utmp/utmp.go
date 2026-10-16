@@ -10,8 +10,8 @@ import (
 	"os"
 )
 
-// File is the login-records file of a Linux system.
-var File = "/var/run/utmp"
+// DefaultFile is the login-records file of a Linux system.
+const DefaultFile = "/var/run/utmp"
 
 // The struct utmp of glibc, 384 bytes on every 64-bit Linux ABI.
 const (
@@ -25,11 +25,14 @@ const (
 )
 
 // Remote is the host field of the newest login record on terminal line
-// ("pts/3": the device name without /dev/), "" when there is none or the file
-// cannot be read. For an ssh login it is the client's address, or its name
-// when sshd resolves names.
-func Remote(line string) string {
-	return remote(File, line)
+// ("pts/3": the device name without /dev/) in file ("" is DefaultFile), ""
+// when there is none or the file cannot be read. For an ssh login it is the
+// client's address, or its name when sshd resolves names.
+func Remote(file, line string) string {
+	if file == "" {
+		file = DefaultFile
+	}
+	return remote(file, line)
 }
 
 func remote(path, line string) string {
