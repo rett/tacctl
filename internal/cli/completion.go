@@ -19,14 +19,27 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/execx"
 )
 
-// configPaths are the shipped top-level keys 'config get' completes, as a
-// word list; nested paths are typed by hand.
-const configPaths = "bcrypt.cost|password.max_age_days|password.min_length|secret.min_length|scope.default|" +
-	"mgmt_acl.names.cisco|mgmt_acl.names.juniper|mgmt_acl.permits|privileges.operator|" +
-	"commands.superuser|commands.operator|commands.readonly"
+// configPaths are the keys 'config get' completes, as a word list: every
+// exact key of the schema and the prefix of every key family (so 'tier.' is
+// offered and the group is typed by hand), with the shipped built-in
+// instances. Generated from the schema, so a new key is completed without a
+// second list; TestConfigPathsCoverSchema holds it to that.
+var configPaths = configKeyWords(conf.NewSchema(nil))
+
+// shippedInstances are the family keys a fresh install already has.
+var shippedInstances = []string{"privileges.operator", "commands.superuser", "commands.operator", "commands.readonly"}
+
+// configKeyWords is the sorted, de-duplicated 'a|b|c' list of a schema's
+// exact keys, family prefixes and shippedInstances.
+func configKeyWords(s *conf.Schema) string {
+	words := slices.Concat(s.Keys(), s.Wildcards(), shippedInstances)
+	slices.Sort(words)
+	return strings.Join(slices.Compact(words), "|")
+}
 
 // topSpecs are the verbs outside the families.
 var topSpecs = map[string]Spec{

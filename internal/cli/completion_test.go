@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/spf13/cobra"
 )
@@ -315,6 +316,27 @@ func TestCompletionCommand(t *testing.T) {
 		h := newHarness(t, args)
 		if code := exitCode(h.run(), h.app.Out); code != 1 || h.out.Len() != 0 || !strings.Contains(h.err.String(), "Usage: tacctl completion bash|zsh|fish") {
 			t.Errorf("%q: %d %q %q", args, code, h.out.String(), h.err.String())
+		}
+	}
+}
+
+// TestConfigPathsCoverSchema: 'config get' completes every exact key of the
+// schema and the prefix of every key family, so a key added to the schema
+// is completed without a second list.
+func TestConfigPathsCoverSchema(t *testing.T) {
+	words := strings.Split(configPaths, "|")
+	s := conf.NewSchema([]string{"tacacs", "radius"})
+	for _, k := range slices.Concat(s.Keys(), s.Wildcards()) {
+		if !slices.Contains(words, k) {
+			t.Errorf("config get does not complete %q", k)
+		}
+	}
+	if !slices.IsSorted(words) || len(slices.Compact(slices.Clone(words))) != len(words) {
+		t.Errorf("configPaths is not sorted and unique")
+	}
+	for _, w := range words {
+		if w == "" || strings.ContainsAny(w, " \t") {
+			t.Errorf("bad word %q", w)
 		}
 	}
 }

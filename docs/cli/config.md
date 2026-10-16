@@ -17,7 +17,8 @@ config defaults
 
 config get <path> [fallback]
 
-    Read a dotted-path value from the merged config
+    Read a dotted-path value from the merged config. Tab completes every key of the configuration
+    and the start of each family of keys that takes a name (`tier.`, `snmp_scope.`)
 
 config get-list <path>
 
