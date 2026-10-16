@@ -1499,7 +1499,8 @@ Lists and maps produce no output; use
 or
 .B "config dump"
 instead. Tab completes every key of the configuration and the start of each
-family of keys that takes a name (\fBtier.\fR, \fBsnmp_scope.\fR).
+family of keys that takes a name (\fBtier.\fR, \fBsnmp_scope.\fR), then the
+groups or scopes of the store.
 .\" BEGIN GENERATED: command config get
 .RS
 .PP
@@ -10706,7 +10707,13 @@ once and runs when the first is done;
 .B Ctrl\-C
 ends the wait (\c
 .IR "Nothing was changed." ,
-exit 1). Every write of
+exit 1;
+.B install
+and
+.BR upgrade ,
+which have built or pulled by then, say that the store,
+.I tacctl.yaml
+and the services were not changed and to run the command again). Every write of
 .IR tacctl.yaml ,
 the store commands,
 .BR "config render" ,

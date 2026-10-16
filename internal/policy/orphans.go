@@ -16,8 +16,7 @@ var GroupKeyFamilies = []string{"privileges", "commands"}
 // tacctl.yaml (each a dotted path to a mapping keyed by a group or scope
 // name) whose name exists says is not there, sorted by family and name. A
 // family that is absent or is not a mapping adds nothing. The names are the
-// ones a later group or scope of that name would take over; the built-in
-// groups are never orphans.
+// ones a later group or scope of that name would take over.
 func OrphanKeys(c *conf.Config, families []string, exists func(name string) bool) []string {
 	var out []string
 	for _, fam := range families {
@@ -31,7 +30,7 @@ func OrphanKeys(c *conf.Config, families []string, exists func(name string) bool
 		}
 		var names []string
 		for _, n := range m.Keys() {
-			if !exists(n) && !slices.Contains(Builtins, n) {
+			if !exists(n) {
 				names = append(names, n)
 			}
 		}

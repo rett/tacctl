@@ -326,7 +326,11 @@ var scopeKeyFamilies = append(slices.Clone(scopeConfKeys), "snmp_scope", "breakg
 func (inv *invocation) orphanKeyLines(m *model.Model) []string {
 	c := inv.app.Conf()
 	var keys []string
-	keys = append(keys, policy.OrphanKeys(c, policy.GroupKeyFamilies, func(g string) bool { return m.Exists("groups", g) })...)
+	// The built-in groups are the store's even where a hand-edited
+	// store lacks them: they are never orphans.
+	keys = append(keys, policy.OrphanKeys(c, policy.GroupKeyFamilies, func(g string) bool {
+		return m.Exists("groups", g) || slices.Contains(policy.Builtins, g)
+	})...)
 	keys = append(keys, policy.OrphanKeys(c, scopeKeyFamilies, func(s string) bool { return m.Exists("scopes", s) })...)
 	out := make([]string, 0, len(keys))
 	for _, k := range keys {

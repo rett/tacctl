@@ -154,7 +154,7 @@ func Install(ctx context.Context, h *Host, args []string) error {
 	// does: the builds, the clone, the packages and the accounts. A fresh
 	// install has no other command to wait for; a re-run over a live
 	// store does.
-	unlock, err := h.HoldApply(ctx)
+	unlock, err := h.HoldApplyAfter(ctx, "The store, tacctl.yaml and the services were not changed; run 'tacctl install' again when the other command is done.")
 	if err != nil {
 		return err
 	}

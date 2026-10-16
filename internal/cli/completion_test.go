@@ -340,3 +340,49 @@ func TestConfigPathsCoverSchema(t *testing.T) {
 		}
 	}
 }
+
+// A family prefix is offered without a trailing space; once it is typed the
+// names come from the store, and a family whose key follows the name ends in
+// a dot again.
+func TestConfigGetCompletesFamiliesFromTheStore(t *testing.T) {
+	got, dir := completeWords(t, liveNames, "config", "get", "ti")
+	if !slices.Contains(got, "tier.") || dir != ":6" { // NoFileComp (4) | NoSpace (2)
+		t.Errorf("ti: %q %s", got, dir)
+	}
+	got, _ = completeWords(t, liveNames, "config", "get", "tier.")
+	if !slices.Contains(got, "tier.ops") || !slices.Contains(got, "tier.admins") {
+		t.Errorf("tier.: %q", got)
+	}
+	got, dir = completeWords(t, liveNames, "config", "get", "exec_timeout.l")
+	if !reflect.DeepEqual(got, []string{"exec_timeout.lab"}) || dir != ":4" {
+		t.Errorf("exec_timeout.l: %q %s", got, dir)
+	}
+	got, dir = completeWords(t, liveNames, "config", "get", "junos.o")
+	if !reflect.DeepEqual(got, []string{"junos.ops."}) || dir != ":6" {
+		t.Errorf("junos.o: %q %s", got, dir)
+	}
+	got, _ = completeWords(t, liveNames, "config", "get", "snmp_scope.")
+	if !slices.Contains(got, "snmp_scope.lab.") {
+		t.Errorf("snmp_scope.: %q", got)
+	}
+	// A free-text family names nothing from the store.
+	if got, _ = completeWords(t, liveNames, "config", "get", "listeners."); len(got) > 1 {
+		t.Errorf("listeners.: %q", got)
+	}
+}
+
+// Every wildcard family of the schema is in configFamilies, with the kind
+// of name it takes or "" for one typed by hand: a new family has to be
+// decided.
+func TestConfigFamiliesCoverSchema(t *testing.T) {
+	for _, p := range conf.NewSchema(nil).Wildcards() {
+		if _, ok := configFamilies[p]; !ok {
+			t.Errorf("configFamilies lacks the family %q", p)
+		}
+	}
+	for p := range configFamilies {
+		if !slices.Contains(conf.NewSchema(nil).Wildcards(), p) {
+			t.Errorf("configFamilies names %q, which is not a family of the schema", p)
+		}
+	}
+}

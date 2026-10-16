@@ -10,8 +10,11 @@ current behaviour; this file is where history lives.
    every key the schema holds (`device.apply.transport`,
    `backends.tacacs.level`, `linux.uid_min` ...) and the start of each family
    of keys that carries a name (`tier.`, `privileges.`, `snmp_scope.`,
-   `blocks.`), after which the name is typed. The list is built from the
-   schema, so a key added to it is completed with no second list to keep.
+   `blocks.`) with no space after it; once the prefix is typed the groups
+   or the scopes of the store follow (`tier.ops`, `snmp_scope.lab.`). The
+   list is built from the schema, and a test fails for a family that is
+   not decided, so a key added to the schema is completed with no second
+   list to keep.
 
 2. **`config validate` warns of keys that name a group or scope the store
    does not have.** `tier`, `wti_level` and `junos` settings of a missing
@@ -41,6 +44,10 @@ current behaviour; this file is where history lives.
    the start phase, and waits as the other commands do while another one
    holds it. The builds, the clone, the packages and the service accounts
    before it do not hold it; a fresh install has nothing to wait for.
+   Ctrl-C while it waits, there or in `upgrade` after its pull, now says that
+   the store, `tacctl.yaml` and the services were not changed and to run
+   the command again, not "Nothing was changed.", which was not true of the
+   builds and the clone before it.
 
 ## 0.2.11 (2026-10-15)
 

@@ -160,7 +160,7 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	// the self-update exec, so that the re-executed process takes it and a
 	// lock is never held across the exec (the descriptor is close-on-exec
 	// all the same). The phases before it read, build or fetch only.
-	unlock, err := h.HoldApply(ctx)
+	unlock, err := h.HoldApplyAfter(ctx, "The store, tacctl.yaml and the services were not changed; run 'tacctl upgrade' again when the other command is done.")
 	if err != nil {
 		return err
 	}

@@ -676,6 +676,35 @@ func TestInstallHoldsTheApplyLockFromTheSeed(t *testing.T) {
 	}
 }
 
+// A wait for the apply lock that ends with the context says what was not
+// changed (the store, tacctl.yaml, the services), not "Nothing was changed.",
+// which the builds and the clone before it would contradict.
+func TestInstallCancelledWaitForTheApplyLock(t *testing.T) {
+	o := newOhost(t)
+	o.write(filepath.Join(o.p.Deploy, "bin", "tacctl.sh"), "#!/bin/bash\n")
+	_ = os.MkdirAll(filepath.Join(o.p.Deploy, ".git"), 0o755)
+	o.write(o.p.Command, "the shim built this\n")
+	_ = os.Chmod(o.p.Command, 0o755)
+	o.write(o.p.StoreFile, fixture(t, "store.minimal.yaml"))
+	hold, err := applylock.New(o.p.StateDir).Acquire(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hold()
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+	o.run.Reset()
+	err = lifecycle.Install(ctx, o.host(), []string{"-y"})
+	if backend.ExitCode(err) != 1 {
+		t.Fatalf("exit %d (%v)", backend.ExitCode(err), err)
+	}
+	text := o.stdout.String() + o.stderr.String()
+	if !strings.Contains(text, "The store, tacctl.yaml and the services were not changed; run 'tacctl install' again") ||
+		strings.Contains(text, "Nothing was changed.") {
+		t.Errorf("message:\n%s", text)
+	}
+}
+
 // Over an existing store, a backend's 'upgrade config' phase that fails is
 // named with the way to finish (after its own messages), and the install
 // carries on to the start phase and the summary, exit 0.
