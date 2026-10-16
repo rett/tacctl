@@ -155,3 +155,33 @@ func TestOrphanKeysAreWarnedOf(t *testing.T) {
 		t.Errorf("an orphan key is a warning, not an error: exit %d %q", sb.code, sb.stderr())
 	}
 }
+
+// config validate warns (no error) of files in the state that belong to a
+// device or a scope that is not registered: a pull's file, SNMP credentials.
+func TestOrphanFilesAreWarnedOf(t *testing.T) {
+	sb := renderedSandbox(t)
+	for _, f := range []struct{ path, text string }{
+		{"var-lib/device-config/ghost-sw.yaml", "version: 1\n"},
+		{"state/snmp/devices/ghost-sw.yaml", "version: 1\ncommunity: sentinel-0123456789\n"},
+		{"state/snmp/ghostscope.yaml", "version: 1\ncommunity: sentinel-0123456789\n"},
+		{"state/snmp/lab.yaml", "version: 1\ncommunity: sentinel-lab-0123456789\n"},
+	} {
+		sb.write(f.path, f.text, 0o600)
+	}
+	out := plain(sb.run("", []string{"config", "validate"}))
+	for _, want := range []string{
+		"holds the last configuration pull for 'ghost-sw', which is not a registered device ('tacctl device config forget ghost-sw' removes it)",
+		"holds SNMP credentials for 'ghost-sw', which is not a registered device",
+		"holds SNMP credentials for 'ghostscope', which is not a scope of the store",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "for 'lab', which") {
+		t.Errorf("a scope of the store is named:\n%s", out)
+	}
+	if sb.code != 0 {
+		t.Errorf("a leftover file is a warning, not an error: exit %d %q", sb.code, sb.stderr())
+	}
+}

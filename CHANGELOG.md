@@ -49,6 +49,17 @@ current behaviour; this file is where history lives.
    the command again, not "Nothing was changed.", which was not true of the
    builds and the clone before it.
 
+5. **`config validate` warns of files that belong to a device or scope that is
+   not registered.** The records and files of a device's last pull
+   (`device-config`), the SNMP credentials of a device (`snmp/devices`) and
+   of a scope (`snmp/<scope>.yaml`) are taken away by `device remove` and
+   `scope remove`, but not by an import or a restore of the registry or by
+   a hand edit; a device or scope added later under that name picks them up,
+   or is refused for them. One `Orphan files:` line names each, with the
+   command that removes it where there is one. A warning; the exit code does
+   not change; an engineer's run, which has no scopes of the leftovers, does
+   not print them.
+
 ## 0.2.11 (2026-10-15)
 
 1. **`tacctl group preset roles` shows what each setting changes.** Under every

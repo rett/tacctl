@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -708,5 +709,26 @@ func TestUnsafeCharactersDoNotBreakTheSectionsFile(t *testing.T) {
 	got, err := s.Sections("direct", "junos")
 	if err != nil || len(got[SectionSNMP].Lines) != 1 {
 		t.Fatalf("direct: %v %q", err, got[SectionSNMP].Lines)
+	}
+}
+
+func TestStoreNamesListsRecordsAndFiles(t *testing.T) {
+	dir := t.TempDir()
+	s := Store{Records: filepath.Join(dir, "records.json"), Dir: filepath.Join(dir, "device-config")}
+	if got, err := s.Names(); err != nil || len(got) != 0 {
+		t.Fatalf("empty: %v %v", got, err)
+	}
+	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"Sw1.yaml", "sw2.plain", "sw3.backout", "sw4.lab.yaml", ".hidden.yaml", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(s.Dir, f), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.Names()
+	want := []string{"sw1", "sw2", "sw3", "sw4.lab"}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("Names = %v %v, want %v", got, err, want)
 	}
 }

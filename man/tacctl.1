@@ -1567,7 +1567,11 @@ that names a group or a scope the store does not have
 and the other per-scope keys; the built-in groups never count) is a warning, an
 .B Orphan settings:
 line per key: a group or scope added later under that name would take it
-over. A private copy of the configuration that an interrupted command
+over. The files of a device or scope that is not registered (the records of a
+device's last pull, SNMP credentials of a device or a scope) are a warning as
+well, an
+.B Orphan files:
+line each. A private copy of the configuration that an interrupted command
 left in the state directory
 .RB ( .apply.* ,
 .BR .restore.* ,

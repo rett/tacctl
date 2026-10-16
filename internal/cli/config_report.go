@@ -462,6 +462,9 @@ func (inv *invocation) configValidate([]string) error {
 		for _, l := range inv.orphanKeyLines(m) {
 			inv.echoE("  " + Y + "Orphan settings:" + NC + "      " + l)
 		}
+		for _, l := range inv.orphanFileLines(m) {
+			inv.echoE("  " + Y + "Orphan files:" + NC + "         " + l)
+		}
 	}
 
 	// An empty privileges.<group> on a built-in group that ships a list: the
