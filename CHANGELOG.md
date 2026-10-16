@@ -60,6 +60,21 @@ current behaviour; this file is where history lives.
    not change; an engineer's run, which has no scopes of the leftovers, does
    not print them.
 
+6. **`breakglass hold` and `release` take a list of devices.**
+   `tacctl breakglass hold sw1=<reason>,sw2 --reason "<text>"` holds
+   several devices in one command (the list is one argument; quote it when a
+   reason holds a space), each with its own reason after `=` or
+   the `--reason` default (a device with neither is a usage error naming
+   it), and `tacctl breakglass release sw1,sw2` releases several. The list
+   is best effort: each device is checked as a single one is, the ones that
+   pass are held together in one write, one render and one restart of each
+   backend, and each refused or already-held device is named with why on a
+   `Not held: <name>: <why>` line, in the confirmation and in the report;
+   the exit code is 1 when any was not held. The names of the devices that
+   pass are typed back, as printed, comma separated. A release names what is
+   not held under `Not released:`, releases the rest and exits 1. One device
+   is held, asked and reported exactly as before.
+
 ## 0.2.11 (2026-10-15)
 
 1. **`tacctl group preset roles` shows what each setting changes.** Under every

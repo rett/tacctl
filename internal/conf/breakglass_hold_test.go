@@ -271,6 +271,85 @@ func TestHoldWriteReadAndRelease(t *testing.T) {
 	}
 }
 
+// Several holds in one write: each is checked under the lock against the file
+// and against those accepted before it; the refused are returned, the rest
+// written together, and UnsetHolds takes several away in one write, leaving
+// the file as it was.
+func TestSetHoldsIfWritesTheAcceptedAndUnsetHoldsReleasesThem(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "tacctl.yaml")
+	c := Load(p, DefaultBackends)
+	if err := c.Set("exec_timeout.lab", "30"); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(p)
+	mk := func(dev, addr, reason string) Hold {
+		return Hold{Device: dev, Address: addr, Since: "2026-10-10T14:02:00Z", By: "alice", Reason: reason}
+	}
+	// A record made meanwhile by another writer: the stale view does not see it.
+	stale := Load(p, DefaultBackends)
+	if err := c.SetHold(mk("sw-3", "192.0.2.23", "earlier")); err != nil {
+		t.Fatal(err)
+	}
+	if len(stale.Holds()) != 0 {
+		t.Fatal("the stale view saw the write")
+	}
+	check := func(existing []Hold, h Hold) error {
+		for _, x := range existing {
+			if x.Device == h.Device || x.Address == h.Address {
+				return errors.New("held already: " + x.Device)
+			}
+		}
+		return nil
+	}
+	got, skipped, err := stale.SetHoldsIf([]Hold{
+		mk("sw-1", "192.0.2.21", "first"),
+		mk("sw-3", "192.0.2.23", "raced"),
+		mk("sw-2", "192.0.2.22", "second"),
+		mk("sw-4", "192.0.2.21", "same address as the first"),
+	}, check)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Device != "sw-1" || got[1].Device != "sw-2" {
+		t.Errorf("written %+v", got)
+	}
+	if len(skipped) != 2 || skipped[0].Hold.Device != "sw-3" || skipped[1].Hold.Device != "sw-4" ||
+		skipped[0].Err.Error() != "held already: sw-3" || skipped[1].Err.Error() != "held already: sw-1" {
+		t.Errorf("skipped %+v", skipped)
+	}
+	holds := Load(p, DefaultBackends).Holds()
+	if len(holds) != 3 || holds[0].Reason != "first" || holds[1].Reason != "second" || holds[2].Reason != "earlier" {
+		t.Errorf("records %+v", holds)
+	}
+	// Nothing accepted: nothing is written.
+	text, _ := os.ReadFile(p)
+	got, skipped, err = c.SetHoldsIf([]Hold{mk("sw-1", "192.0.2.21", "again")}, check)
+	if err != nil || len(got) != 0 || len(skipped) != 1 {
+		t.Errorf("nothing accepted: %+v %+v %v", got, skipped, err)
+	}
+	if again, _ := os.ReadFile(p); string(again) != string(text) {
+		t.Error("a call that accepted nothing changed the file")
+	}
+	// One that fails the schema fails the call whole.
+	bad := mk("sw-9", "192.0.2.29", "")
+	if got, skipped, err = c.SetHoldsIf([]Hold{mk("sw-8", "192.0.2.28", "ok"), bad}, nil); err == nil || got != nil || skipped != nil {
+		t.Errorf("an empty reason: %+v %+v %v", got, skipped, err)
+	}
+	if again, _ := os.ReadFile(p); string(again) != string(text) {
+		t.Error("a refused call changed the file")
+	}
+	// Released together; an unknown name is ignored.
+	if err := c.UnsetHolds([]string{"sw-1", "sw-2", "sw-3", "nosuch"}); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := os.ReadFile(p); string(after) != string(before) {
+		t.Errorf("not byte-identical after the release:\n%s\nwas:\n%s", after, before)
+	}
+	if err := c.UnsetHolds([]string{"sw-1"}); err != nil {
+		t.Errorf("releasing none: %v", err)
+	}
+}
+
 func TestHoldFamilyIsAdded025(t *testing.T) {
 	for _, k := range []string{"breakglass_hold.sw.address", "breakglass_hold.sw~lab.reason", "breakglass_hold"} {
 		if !Added025Key(k) {

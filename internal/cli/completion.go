@@ -350,6 +350,10 @@ func (inv *invocation) completeKind(kind, toComplete string, values map[string]s
 			prefix = toComplete[:i+1]
 		}
 		have := strings.Split(strings.TrimSuffix(prefix, ","), ",")
+		for i, h := range have {
+			// 'name=reason' elements (breakglass hold) name the device
+			have[i], _, _ = strings.Cut(h, "=")
+		}
 		cur := strings.TrimPrefix(toComplete, prefix)
 		var out []cobra.Completion
 		for _, w := range inv.kindWords(base, values) {
