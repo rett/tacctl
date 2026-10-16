@@ -31,6 +31,16 @@ make test-pyyaml     # the yamlpy and conf PyYAML corpora regenerated with PyYAM
 make test-diff CORPUS=users   # the differential runner on one corpus
 ```
 
+`internal/cli` takes over twenty minutes in one run, so CI
+(`.github/workflows/test.yml`) runs its tests in four shards,
+`tests/tools/go-test-shard.sh <index> <count>` (the top-level tests dealt
+round-robin; `--check <count>` fails unless every test is in exactly one
+shard), beside one job for every other package and a static job (gofmt,
+`go vet`). Both tag sets run, as `make test-go` does; the bats suite, the
+diff corpus and the container matrix stay on the maintainer's machine. The
+sandbox of these tests sets `TMPDIR` for the process, so they cannot run in
+parallel inside one process; sharding is what keeps CI short.
+
 The bats files run in parallel (`bats --jobs`, one file per job, the tests of
 a file in order) when GNU `parallel` is installed: `BATS_JOBS` sets the number
 of jobs (default: the CPU count), `BATS_JOBS=1` runs serially. `BATS_FLAGS`

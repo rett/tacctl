@@ -83,6 +83,15 @@ current behaviour; this file is where history lives.
    standard sets one for the device. Nothing is rendered or removed
    differently.
 
+8. **The Go tests run in CI.** A `test` workflow runs on a pull request and
+   on a push to `develop` or `master`: gofmt, `go vet`, every package but
+   `internal/cli` with the race detector, and `internal/cli` (which takes
+   over twenty minutes in one run) in four shards, each with and without
+   the test knobs. `tests/tools/go-test-shard.sh <index> <count>` runs one
+   shard and `--check <count>` fails unless every test is in exactly one.
+   The bats suite, the diff corpus and the container matrix stay on the
+   maintainer's machine.
+
 ## 0.2.11 (2026-10-15)
 
 1. **`tacctl group preset roles` shows what each setting changes.** Under every
