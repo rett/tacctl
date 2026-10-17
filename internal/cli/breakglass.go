@@ -480,6 +480,34 @@ func quoteNames(names []string) string {
 	return strings.Join(q, ", ")
 }
 
+// holdAddressBlock is the fourth check of a hold, and the first that the
+// new address of a held device passes ('device address'): why is "" when
+// addr may be held. It is not an address this server answers from or its
+// own hosts use (serverOwnAddress), and no record holds it already. msg is
+// the refusal as a command prints it, closing line included.
+func (inv *invocation) holdAddressBlock(addr string, f *devreg.File, hostEntries []hosts.Entry) (why, msg string) {
+	if why := inv.serverOwnAddress(addr, f, hostEntries); why != "" {
+		return why, why + ". Nothing was changed."
+	}
+	if other, held := inv.holdAt(addr); held {
+		return "address " + addr + " is already held, on '" + other.Device + "'",
+			"Address " + addr + " is already held, on '" + other.Device + "'. Nothing was changed."
+	}
+	return "", ""
+}
+
+// holdCovered is the fifth check of a hold: some scope answers addr now.
+// The model is read once into *m, when the first address reaches this check.
+func (inv *invocation) holdCovered(addr string, m **model.Model) (info model.AddrInfo, covered bool, err error) {
+	if *m == nil {
+		if *m, err = inv.model(); err != nil {
+			return model.AddrInfo{}, false, err
+		}
+	}
+	info, covered = (*m).LookupAddr(addr)
+	return info, covered, nil
+}
+
 // holdCheck runs the five checks of a hold, in order, on one requested
 // device. A refusal is returned, not printed; err is a failure of the
 // checks themselves. taken are the candidates of the same command: two
@@ -523,12 +551,8 @@ func (inv *invocation) holdCheck(r holdRequest, f *devreg.File, res *devreg.Reso
 			})
 	}
 	// 4. Not an address this server answers from or its own hosts use.
-	if why := inv.serverOwnAddress(e.Address, f, res.Hosts); why != "" {
-		return refuse(why, why+". Nothing was changed.", nil)
-	}
-	if other, held := inv.holdAt(e.Address); held {
-		return refuse("address "+e.Address+" is already held, on '"+other.Device+"'",
-			"Address "+e.Address+" is already held, on '"+other.Device+"'. Nothing was changed.", nil)
+	if why, msg := inv.holdAddressBlock(e.Address, f, res.Hosts); why != "" {
+		return refuse(why, msg, nil)
 	}
 	for _, t := range taken {
 		if strings.EqualFold(t.e.Name, e.Name) {
@@ -542,12 +566,10 @@ func (inv *invocation) holdCheck(r holdRequest, f *devreg.File, res *devreg.Reso
 		}
 	}
 	// 5. Some scope answers it now.
-	if *m == nil {
-		if *m, err = inv.model(); err != nil {
-			return holdCandidate{}, nil, err
-		}
+	info, covered, err := inv.holdCovered(e.Address, m)
+	if err != nil {
+		return holdCandidate{}, nil, err
 	}
-	info, covered := (*m).LookupAddr(e.Address)
 	if !covered {
 		return refuse("it is already unanswered: no scope covers "+e.Address+" (tacctl scope lookup "+e.Address+"), so its local accounts work now and there is nothing to record",
 			"'"+e.Name+"' is already unanswered: no scope covers "+e.Address+" (tacctl scope lookup "+e.Address+"), so its local accounts work now and there is nothing to record. Nothing was changed.", nil)
@@ -887,6 +909,16 @@ func (inv *invocation) renderedSentence(m *model.Model, addr string, res backend
 // renderedSentenceOf is renderedSentence for the addresses of one command:
 // what each did to the prefixes of its scopes, then the restarts, said once.
 func (inv *invocation) renderedSentenceOf(m *model.Model, addrs []string, res backend.Result, held bool) string {
+	still := "still answers " + strings.Join(addrs, ", ")
+	if !held {
+		still = "still does not answer " + strings.Join(addrs, ", ")
+	}
+	return renderedSentenceStill(m, addrs, res, held, still)
+}
+
+// renderedSentenceStill is renderedSentenceOf with the clause that says what
+// the running server does until a backend that did not restart is restarted.
+func renderedSentenceStill(m *model.Model, addrs []string, res backend.Result, held bool, still string) string {
 	// One entry per prefix that holds an address of the command, with the
 	// addresses it held: a /16 that held two is said once.
 	type carve struct {
@@ -930,10 +962,6 @@ func (inv *invocation) renderedSentenceOf(m *model.Model, addrs []string, res ba
 	}
 	if len(res.Changed) == 0 {
 		return s + "; no backend file changed, nothing restarted."
-	}
-	still := "still answers " + strings.Join(addrs, ", ")
-	if !held {
-		still = "still does not answer " + strings.Join(addrs, ", ")
 	}
 	rs := make([]string, len(res.Changed))
 	for i, id := range res.Changed {
@@ -1315,4 +1343,142 @@ func (inv *invocation) heldNames([]string) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// holdMove is 'device address' on a held device (D175): the hold moves to
+// the new address with the device. newAddr passes the checks a new hold
+// passes (holdAddressBlock, holdCovered) and the registry's own; one line
+// names both addresses and asks to confirm (yes: -y). The registry and the
+// record are written under one StoreApply, so the render and the restart of
+// the backends that serve the addresses follow at once: the address is what
+// the renderers carve. A refusal changes nothing. The registry is not part
+// of StoreApply's rollback, so a render that fails after it has been written
+// puts the old address back.
+func (inv *invocation) holdMove(f *devreg.File, res *devreg.Resolver, d *devreg.Device, newAddr string, yes bool) error {
+	a := inv.app
+	name, oldAddr := d.Name, d.Address
+	cur, ok := inv.holdOf(name, oldAddr)
+	if !ok {
+		return inv.usageErr("Break-glass is not held on '" + name + "'. Nothing was changed.")
+	}
+	if inv.callerScopes().restricted {
+		return inv.usageErr("break-glass is held on " + name + ": moving its address moves the hold, which is the superuser's. Nothing was changed.")
+	}
+	// What a new hold at newAddr would be refused for.
+	if _, msg := inv.holdAddressBlock(newAddr, f, res.Hosts); msg != "" {
+		return inv.usageErr(msg)
+	}
+	var m *model.Model
+	_, covered, err := inv.holdCovered(newAddr, &m)
+	if err != nil {
+		return err
+	}
+	if !covered {
+		return inv.usageErr("No scope covers " + newAddr + " (tacctl scope lookup " + newAddr + "), so a hold there would carve nothing and the device would be unanswered. Nothing was changed.")
+	}
+	trial := f.Clone()
+	tr := devreg.NewResolver(trial, nil, res.Model)
+	tr.Hosts = res.Hosts
+	if err := tr.CheckAddress(newAddr, name); err != nil {
+		return fail1(err.Error() + " Nothing was changed.")
+	}
+	trial.Find(name).Address = newAddr
+	if _, err := trial.Text(); err != nil {
+		return fail1(err.Error() + " Nothing was changed.")
+	}
+
+	a.Out.Warn("Break-glass is held on " + name + ": the hold moves with the device, and the backends that serve it restart now.")
+	if !yes && !a.Prompter().ConfirmPrefix("  Confirm moving the hold from "+oldAddr+" to "+newAddr+"? [y/N]: ") {
+		a.Out.Info("Aborted.")
+		return nil
+	}
+
+	moved := cur
+	moved.Address = newAddr
+	var (
+		wrote   bool
+		oldKeys []string
+	)
+	registry := func(fn func(live *devreg.File) error) (bool, error) {
+		return devreg.Mutate(a.Paths.DevicesFile, a.Paths.KnownHosts, nil, fn)
+	}
+	res2, err := a.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, func() error {
+		// The record first: its check runs under tacctl.yaml's lock, and a
+		// refusal leaves the registry as it is.
+		if err := a.Conf().SetHoldIf(moved, func(existing []conf.Hold) error {
+			own := false
+			for _, x := range existing {
+				switch {
+				case strings.EqualFold(x.Device, name):
+					own = sameAddress(x.Address, oldAddr)
+				case sameAddress(x.Address, newAddr):
+					return fail1("Address " + newAddr + " is already held, on '" + x.Device + "': another hold was made while this command ran. Nothing was changed.")
+				}
+			}
+			if !own {
+				return fail1("The break-glass hold of '" + name + "' changed while this command ran. Nothing was changed.")
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		changed, err := registry(func(live *devreg.File) error {
+			ld := live.Find(name)
+			if ld == nil || !sameAddress(ld.Address, oldAddr) {
+				return fail1("Device '" + name + "' changed while this command ran. Nothing was changed.")
+			}
+			r := devreg.NewResolver(live, nil, res.Model)
+			r.Hosts = res.Hosts
+			if err := r.CheckAddress(newAddr, name); err != nil {
+				return err
+			}
+			oldKeys = slices.Clone(ld.HostKeys)
+			ld.Address, ld.HostKeys = newAddr, nil
+			return nil
+		})
+		wrote = changed
+		return err
+	})
+	inv.loaded = false
+	if err != nil {
+		if wrote {
+			// The render failed after the registry was written: StoreApply
+			// put tacctl.yaml back, so the registry goes back too.
+			if _, uerr := registry(func(live *devreg.File) error {
+				if ld := live.Find(name); ld != nil && sameAddress(ld.Address, newAddr) {
+					ld.Address, ld.HostKeys = oldAddr, oldKeys
+				}
+				return nil
+			}); uerr != nil {
+				a.Out.Error("The device registry could not be put back: '" + name + "' is registered at " + newAddr + " and the hold is at " + oldAddr + "; put them together with: tacctl device address " + name + " " + oldAddr)
+			}
+		}
+		return err
+	}
+	a.Logger(inv.ctx, "auth.info", "breakglass hold-move device="+name+" from="+oldAddr+" to="+newAddr+" by="+inv.sudoUser())
+
+	a.Out.Info("Device '" + name + "' address set to " + newAddr + ".")
+	if len(oldKeys) > 0 {
+		a.Out.Warn("The pinned host keys belonged to the old address and were dropped.")
+	}
+	inv.echo("")
+	still := "still answers " + newAddr + " and does not answer " + oldAddr
+	rendered := renderedSentenceStill(m, []string{newAddr}, res2, true, still)
+	inv.echoE(ui.Red + "Break-glass hold MOVED" + ui.NC + " on " + name + " from " + oldAddr + " to " + newAddr + " (held since " + holdTime(cur) + " by " + cur.By + ").")
+	inv.echo("  Reason:   " + cur.Reason)
+	inv.echo("  Rendered: " + rendered)
+	if info, ok := m.LookupAddr(oldAddr); ok && len(res2.RestartFailed) == 0 {
+		inv.echo("  Old address: " + oldAddr + " is answered again (scope '" + info.Scope + "').")
+	}
+	inv.echo("  Carved:   " + holdCarvedText(devreg.Entry{Device: devreg.Device{Name: name, Address: newAddr}}))
+	inv.echo("")
+	inv.echo("  " + inv.heldNow("Held now: "))
+	inv.echo("  When done: tacctl breakglass release " + name)
+	inv.echo("")
+	inv.stagingSweep()
+	if len(res2.RestartFailed) > 0 {
+		a.Out.Error("The hold and the registry are on " + newAddr + " and the rendered files are kept, but the move is not in force until the backend named under Rendered is restarted; 'tacctl breakglass release " + name + "' removes the hold.")
+		return exit(1)
+	}
+	return nil
 }

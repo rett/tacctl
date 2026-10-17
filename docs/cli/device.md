@@ -118,6 +118,17 @@ device address|description|location <name> <value> --apply
     Junos devices, at a terminal (anything else is refused before the registry changes); a value
     that is already set applies nothing; the exit status is the apply's
 
+device address <name> <address> [-y]
+
+    On a device with a break-glass hold the hold moves with the address (superuser; an engineer
+    is refused). The new address must pass what a new hold passes: not a loopback address, not
+    one a listener of either backend binds, not an enrolled host's, not held by another record,
+    covered by a scope. One line names both addresses and asks to confirm (`-y` skips it); the
+    registry and the record are written together, rendered once, and each backend whose file
+    changed is restarted once (a restart that fails is reported as `NOT restarted`, exit 1; both
+    stay on the new address). A refused address changes nothing. `--apply` is refused for a held
+    device. `device remove` and `device import` of a held device are still refused
+
 device location <name> --from-device [-y]
 
     Read the device's own location (SNMP sysLocation) now and store it; an empty answer is refused;

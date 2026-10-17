@@ -34,4 +34,11 @@ tacctl breakglass release sw-lab-1,sw-lab-2
 A per-device reason ends at the next comma: a reason that holds a comma is given
 with `--reason`, which every device without its own reason takes.
 
+A hold follows its device: `tacctl device address <device> <address> [-y]`
+moves the hold to the new address after one question that names both
+addresses. The new address passes the checks of a new hold, the registry and
+the record are written together, and the backends are rendered and restarted
+once; see [`device`](device.md). `device remove` of a held device is refused
+until the hold is released.
+
 See [Holding break-glass](../devices/break-glass.md#holding-break-glass) for what a hold does and when to use it. `scope breakglass <scope>` records the *names* of a scope's local accounts, which a hold makes usable.

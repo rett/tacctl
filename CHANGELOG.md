@@ -3,6 +3,23 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.14
+
+1. **`device address` moves a break-glass hold with its device.** On a
+   device that is held, changing the address used to be refused until the
+   hold was released, which answered the old address again. It now moves the
+   hold: the new address must pass what a new hold passes (not a loopback
+   address, not one a listener of either backend binds, not an enrolled
+   host's address, not held by another record, covered by a scope), and one
+   line names both addresses and asks to confirm (`-y` skips it). The
+   registry and the record are written together, rendered once, and each
+   backend whose file changed is restarted once; a restart that fails is
+   reported as `NOT restarted` and exits 1, with both left on the new
+   address. A refused address changes nothing. The superuser moves a hold
+   (an engineer is refused), `--apply` is refused for a held device, and
+   `device remove` and `device import` of a held device are still refused.
+   The log line is `breakglass hold-move device= from= to= by=`.
+
 ## 0.2.13 (2026-10-16)
 
 1. **The `test` workflow no longer runs on a push to `master`.** After a

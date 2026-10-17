@@ -6594,7 +6594,7 @@ Trust only this key, read on the device's console (no question; needed without a
 After the table, register each collected device through 'device add' with the keys shown pinned (one question) and keep the read as its first pull record.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location) Answer yes to the confirmation.
+(remove, import, hostkey, location, address) Answer yes to the confirmation.
 .TP
 \fB\-\-json\fR
 One object at the end (the progress goes to standard error).
@@ -6678,7 +6678,7 @@ Write the fields, in one registry write, after one question.
 Also replace a field that is set, showing the old value.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location) Answer yes to the confirmation.
+(remove, import, hostkey, location, address) Answer yes to the confirmation.
 .TP
 \fB\-\-json\fR
 One object: each device's fields, actions and facts.
@@ -6701,7 +6701,7 @@ Options:
 Remove every device (an engineer: those of their own scopes).
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location) Answer yes to the confirmation.
+(remove, import, hostkey, location, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device remove
 .TP
@@ -6720,11 +6720,25 @@ Options:
 .RE
 .\" END GENERATED: command device rename
 .TP
-.BI "device address " "name " [ address " [" \-\-apply ] ]
+.BI "device address " "name " [ address " [" \-\-apply "] [" \-y ] ]
 Show or set the address, the AAA identity of the device, stored canonically. It
 cannot be cleared or be one another device holds. Pinned host keys belong
 to the old address and are dropped. The address decides which scope covers the
 device.
+On a device with a break-glass hold the hold moves with the address, for the
+superuser (an engineer is refused): the new address must pass what a new hold
+passes (not a loopback address, not an address a listener of either backend
+binds, not the address of an enrolled host, not held by another record, covered
+by a scope), and one line names both addresses and asks to confirm
+.RB ( \-y
+skips the question); the registry and the record are then written together,
+rendered once and each backend whose rendered file changed restarted once (a
+restart that failed is reported as
+.B "NOT restarted"
+and the verb exits 1; the registry and the record stay on the new address). A
+refused address changes nothing, and
+.B \-\-apply
+is refused for a held device.
 A setter that changes what is rendered for the device (this one, the
 .BR description ", " location ", " address ", " vendor
 and
@@ -6754,6 +6768,9 @@ Options:
 .TP
 \fB\-\-apply\fR
 (address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+(remove, import, hostkey, location, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device address
 .TP
@@ -6857,7 +6874,7 @@ Options:
 Read the location from the device (SNMP sysLocation) and store it.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location) Answer yes to the confirmation.
+(remove, import, hostkey, location, address) Answer yes to the confirmation.
 .TP
 \fB\-\-apply\fR
 (address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
@@ -7291,7 +7308,7 @@ Replace the registry instead of merging into it.
 (add, rename, import) Allow a generic name such as 'switch'.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location) Answer yes to the confirmation.
+(remove, import, hostkey, location, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device import
 .TP
@@ -7339,7 +7356,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location) Answer yes to the confirmation.
+(remove, import, hostkey, location, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device hostkey
 .TP
@@ -9538,10 +9555,14 @@ name, whose address stays carved, and which
 .B "breakglass release"
 removes.
 While a hold stands,
-.B "device address"
-and
 .B "device remove"
-of the device are refused,
+of the device is refused,
+.B "device address"
+moves the record to the new address (the registry and the record in one write,
+one render, one restart of each backend that changed; the new address passes
+the checks a new hold passes, and one question names both addresses unless
+.B \-y
+is given),
 .B "device rename"
 moves the record,
 .BR "device config pull" ,
@@ -9578,7 +9599,10 @@ line per device (the reason is in the hold's:
 .BI "breakglass hold device=" name " addr=" ip " reason=\(dq" text "\(dq by=" user
 and
 .BI "breakglass release device=" name " addr=" ip " held=" duration " by=" user )
-and take the snapshot every change takes.
+and take the snapshot every change takes. A hold that
+.B "device address"
+moves writes
+.BI "breakglass hold\-move device=" name " from=" ip " to=" ip " by=" user .
 .TP
 .BI "breakglass hold " "device[=reason][,device[=reason]...]" " [\-\-reason " text ]
 Hold break\-glass on registered devices (not enrolled hosts), given as one comma

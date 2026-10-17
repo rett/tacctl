@@ -166,9 +166,11 @@ func TestBreakglassHoldRoundTrip(t *testing.T) {
 		}
 	}
 
-	// The held device cannot be moved or removed; a rename follows.
-	sb.run("", []string{"device", "address", "lab-sw", "192.168.1.9"})
-	sb.expect(1, "", "break-glass is held on lab-sw: release it first (tacctl breakglass release lab-sw)")
+	// The held device cannot be removed, nor moved to an address a hold
+	// would be refused at (its move is breakglass_move_test.go); a rename
+	// follows.
+	sb.run("", []string{"device", "address", "lab-sw", "127.0.0.9", "-y"})
+	sb.expect(1, "", "127.0.0.9 is a loopback address")
 	sb.run("", []string{"device", "remove", "lab-sw", "-y"})
 	sb.expect(1, "", "break-glass is held on lab-sw: release it first")
 	sb.run("", []string{"device", "remove", "--all", "-y"})
@@ -322,9 +324,9 @@ func TestBreakglassEngineerTier(t *testing.T) {
 	if got := sb.asEngineer("", "scope", "show", "prod"); sb.code != 1 || strings.Contains(got, "prod-sw") {
 		t.Errorf("scope show prod: %d %q", sb.code, got)
 	}
-	// The engineer's own device changes are refused while held.
+	// Moving a held device moves the hold, which is not the engineer's.
 	sb.asEngineer("", "device", "address", "lab-sw", "192.168.1.3")
-	if sb.code != 1 || !strings.Contains(sb.stderr(), "break-glass is held on lab-sw: release it first") {
+	if sb.code != 1 || !strings.Contains(sb.stderr(), "break-glass is held on lab-sw: moving its address moves the hold, which is the superuser's") {
 		t.Errorf("engineer address: %d %q", sb.code, sb.stderr())
 	}
 	// A superuser's list shows both.
