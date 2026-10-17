@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/hosts"
@@ -75,6 +76,9 @@ type hostShowJSON struct {
 	LastSync   *hosts.SyncRecord  `json:"last_sync"`
 	Facts      *hosts.FactsRecord `json:"facts"`
 	Check      *hostCheckJSON     `json:"check,omitempty"`
+	// Breakglass is the hold on the host ('tacctl breakglass') while there
+	// is one.
+	Breakglass *deviceHoldJSON `json:"breakglass,omitempty"`
 }
 
 type hostConnJSON struct {
@@ -178,6 +182,12 @@ func (inv *invocation) hostShow(args []string) error {
 	if p.Has("--check") && inv.callerScopes().restricted {
 		return inv.usageErr("'host show --check' logs in to the host over ssh, which is the superuser's; 'tacctl host show " + name + "' shows what tacctl recorded of it.")
 	}
+	// --check logs in to the host: a held host is not (D179).
+	if p.Has("--check") {
+		if err := inv.hostHeldErr(e, "tacctl host show "+name+" --check"); err != nil {
+			return err
+		}
+	}
 	v, err := inv.hostView(e)
 	if err != nil {
 		return err
@@ -222,6 +232,7 @@ func (inv *invocation) hostView(e hosts.Entry) (*hostShowJSON, error) {
 	}
 	local := e.Target == hosts.Local
 	v := &hostShowJSON{Name: e.Name, Notices: []deviceNoticeJSON{}}
+	v.Breakglass = inv.hostHoldJSON(e)
 
 	// Connection.
 	c := hostConnJSON{Local: local, Target: e.Target, Identity: e.Identity, Server: e.Server, Method: e.EffectiveMethod()}
@@ -367,6 +378,15 @@ func (inv *invocation) hostShowText(v *hostShowJSON, all bool) {
 		inv.echo("  " + padTo(k, 13) + " " + val)
 	}
 	end := func() { inv.echo("") }
+
+	// Break-glass, first: a held host is not answered by the server.
+	if b := v.Breakglass; b != nil {
+		h := conf.Hold{Address: b.Address, Since: b.Since, By: b.By, Reason: b.Reason}
+		section("Break-glass")
+		row("Held", ui.Red+inv.holdRowText(h)+ui.NC)
+		row("Release", "tacctl breakglass release "+v.Name)
+		end()
+	}
 
 	// Connection.
 	c := v.Connection

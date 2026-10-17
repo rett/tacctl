@@ -1801,7 +1801,12 @@ Requires: \fBsuperuser\fR.
 .TP
 .B "host list"
 Show enrolled Linux hosts with their SSH target, scope, server address,
-method and user count.
+method and user count. A host with a break\-glass hold is marked
+.B BREAK\-GLASS
+in a
+.B STATE
+column, which is there while one is held in the caller's scopes, and a footer
+counts them.
 .\" BEGIN GENERATED: command host list
 .RS
 .PP
@@ -1853,7 +1858,14 @@ and
 .BR "host unenroll" ;
 a host with no such record shows
 .BR "not recorded (before 0.2.2)" .
-They are only shown, never used to decide anything.
+They are only shown, never used to decide anything. A host with a break\-glass
+hold has a
+.B Break\-glass
+section first (the hold's time, age, user and reason, the address the server
+does not answer and the release command;
+.B breakglass
+in
+.BR \-\-json ).
 .B \-\-check
 logs in read-only, as
 .B "host target"
@@ -1867,7 +1879,9 @@ Sudo with a password needs a terminal, else
 .B \-\-check
 fails with the message
 .B "host sync"
-gives.
+gives. A held host is refused
+.B \-\-check
+with the hold named, before anything is attempted over ssh.
 .\" BEGIN GENERATED: command host show
 .RS
 .PP
@@ -2209,6 +2223,24 @@ enrollment. A pin is never changed by a sync: a key that differs from the
 pinned one is reported, with the pinned and offered fingerprints, and new key
 types are reported; both are fixed with
 .BI "device hostkey " name " accept" \fR.
+.IP
+A host with a break\-glass hold
+.RB ( "breakglass hold" )
+is not logged in to: a named host is refused, the hold's time, user and reason
+and the release command are printed, and nothing is attempted over ssh (nor
+when the device registry that records the host's address cannot be read);
+.B \-\-all
+skips it and says so. The same refusal covers
+.B "host enroll"
+of a registered host (so
+.BR "host move" ),
+.B "host target"
+with a change,
+.B "host provisioner rotate"
+and
+.B "host unenroll"
+(with or without
+.BR \-\-force ).
 .\" BEGIN GENERATED: command host sync
 .RS
 .PP
@@ -2449,7 +2481,10 @@ Run the removal script on the host and drop it from the registry, with its
 pinned host keys. Local accounts and home directories stay. If the removal
 fails the host stays registered unless
 .B \-\-force
-is given.
+is given. A host with a break\-glass hold is refused, with or without
+.BR \-\-force :
+release it first
+.RB ( "breakglass release" ).
 .\" BEGIN GENERATED: command host unenroll
 .RS
 .PP
@@ -9511,7 +9546,8 @@ privilege 1, and
 .B enable
 with the local enable secret takes it to 15. A
 .I hold
-makes the server stop answering the registered devices named on purpose, so
+makes the server stop answering the registered devices (or enrolled Linux
+hosts, below) named on purpose, so
 that their local accounts can be used on a vty (and those of a Junos or WTI
 device) while the server is up. A hold is for an exceptional case; it has no
 timer, no automatic release and no whole\-scope form. Several devices are
@@ -9522,6 +9558,54 @@ one render, one restart of each backend that changed) and the others are
 named with why under
 .BR "Not held:" ;
 the exit code is 1 when any was not held.
+.PP
+An enrolled Linux host
+.RB ( "host list" )
+is held the same way, by name, with the same record and carve\-out. Its
+address is the one
+.B "host enroll"
+or
+.B "host sync"
+recorded, else its ssh target's when that is an address (a name is never
+resolved for this). The server then answers no TACACS+ or RADIUS login and no
+sudo check for it, while the host's local administrator (an account that does
+not authenticate through tacctl) and its console work. The report, the prompt
+and the way in are the host's own, and the audit lines read
+.B host=
+in place of
+.BR device= .
+This server's own host
+.RB ( "host enroll \-\-local" ),
+a loopback address, a listener's address, a host with no recorded address and
+no address as its ssh target, and a name that is both an enrolled host and a
+registered device (refused as ambiguous, both named) are not held; a device is
+not held, nor moved by
+.BR "device address" ,
+at an enrolled host's address, and a host is not held at a registered
+device's address (a hold there would silence the device too). A host is held
+by its name: an address that is only its ssh target's is refused, naming the
+host. While the hold stands
+.BR "host sync" ,
+.BR "host show \-\-check" ,
+.B "host enroll"
+of the registered host
+.RB ( "host move" ),
+.B "host target"
+with a change,
+.B "host provisioner rotate"
+and
+.B "host unenroll"
+are refused with the hold named, before anything is attempted over ssh;
+.B "host sync \-\-all"
+skips the host;
+.B "host list"
+marks it,
+.B "host show"
+has a
+.B Break\-glass
+section, and
+.B "tacctl ssh"
+warns and connects.
 .PP
 The record is
 .B breakglass_hold.<device>.address|since|by|reason
@@ -9544,8 +9628,9 @@ carved from, never the reason. Each backend whose file changed restarts once,
 at the hold and at the release; a release that changes nothing restarts nothing.
 Only the address the device is registered at is carved: a device that sends its
 AAA from another address (a source interface, a NAT) is still answered. A record holds a device only while the device is
-registered at the record's address; any other record (the device was removed by
-hand, or registered under the name at another address) is an
+registered at the record's address (a host: while a host of the name is
+enrolled and its recorded address is the record's); any other record (the
+device was removed by hand, or registered under the name at another address) is an
 orphan, which
 .BR "breakglass list" ,
 .B status
@@ -9604,8 +9689,8 @@ and take the snapshot every change takes. A hold that
 moves writes
 .BI "breakglass hold\-move device=" name " from=" ip " to=" ip " by=" user .
 .TP
-.BI "breakglass hold " "device[=reason][,device[=reason]...]" " [\-\-reason " text ]
-Hold break\-glass on registered devices (not enrolled hosts), given as one comma
+.BI "breakglass hold " "name[=reason][,name[=reason]...]" " [\-\-reason " text ]
+Hold break\-glass on registered devices and enrolled Linux hosts, given as one comma
 list in one argument (quote it when a reason holds a space). Each device has a reason, 1 to 256
 characters: its own after
 .B =
@@ -9613,8 +9698,8 @@ characters: its own after
 .BR \-\-reason )
 or the
 .B \-\-reason
-default; a device with neither is a usage error that names it, and a device is
-named once. Each device is checked on its own, as below: the ones that pass
+default; a name with neither is a usage error that names it, and a name is
+given once. Each name is checked on its own, as below: the ones that pass
 are held together, and each that does not is named with why on a
 .B "Not held: <name>: <why>"
 line, in the confirmation and again in the report. When none passes nothing is
@@ -9652,11 +9737,12 @@ the device's log). A backend whose restart failed is reported as
 .BR "NOT restarted" ,
 with the command, and the verb exits 1; the record and the rendered files are
 kept. A device already held is refused.
-Refused, with nothing changed, for a device that is not registered or is an
-enrolled host, has no address, is held already, is at a loopback address, an
-address a listener of either backend binds or the recorded address of an enrolled
-host (the server's own logins come from 127.0.0.1), or that no scope covers
-(it is unanswered already). Superuser only.
+Refused, with nothing changed, for a name that is neither a registered device
+nor an enrolled host, or is both (ambiguous), is this server's own host, has no
+address, is held already, is at a loopback address or an address a listener of
+either backend binds (the server's own logins come from 127.0.0.1), is a
+device at the address of an enrolled host (a hold there would silence the host
+too), or that no scope covers (it is unanswered already). Superuser only.
 .\" BEGIN GENERATED: command breakglass hold
 .RS
 .PP
@@ -9665,12 +9751,12 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-reason\fR \fI<value>\fR
-(hold) Why, 1 to 256 characters; kept with the record and in the log (the reason of every device that has no <device>=<reason>).
+(hold) Why, 1 to 256 characters; kept with the record and in the log (the reason of every name that has no <name>=<reason>).
 .RE
 .\" END GENERATED: command breakglass hold
 .TP
-.BI "breakglass release " "device[,device]..."
-Make the server answer the device again. Works from the record alone: a
+.BI "breakglass release " "name[,name]..."
+Make the server answer the device or host again. Works from the record alone: a
 device removed from
 .I devices.yaml
 by hand is still released, and an entry that carved nothing (no address, or one
@@ -9696,15 +9782,18 @@ Requires: \fBsuperuser\fR.
 .\" END GENERATED: command breakglass release
 .TP
 .BR "breakglass list " [ \-\-json ]
-The holds that stand: device, address, scope that answers the address, since,
-how long, by whom and why (a record whose address no scope covers says so; a
-record that holds no registered device is marked
+The holds that stand: name, kind (device or host), address, scope that answers
+the address, since, how long, by whom and why (a record whose address no scope
+covers says so; a record that holds no registered device or enrolled host is
+marked
 .BR orphan ,
 and
 .B \-\-json
 has
-.BR orphan:true ). An engineer sees the devices of their own
-scopes only.
+.BR orphan:true ,
+and
+.BR kind ).
+An engineer sees the devices and hosts of their own scopes only.
 .\" BEGIN GENERATED: command breakglass list
 .RS
 .PP
@@ -11221,7 +11310,7 @@ The SNMP clients the scope's walkthroughs allow (the server's own address first 
 .TP
 .B breakglass_hold.<device>.address
 one IPv4 or IPv6 address, in its canonical form, without a prefix length. Default: none (unset).
-The address the server does not answer while the hold stands; a device name's dots are written ~ in the key. The renderers take it out of every prefix and tagged address. Set with \fBtacctl breakglass hold\fR.
+The address the server does not answer while the hold stands (a device's registered address, a host's recorded one); a name's dots are written ~ in the key. The renderers take it out of every prefix and tagged address. Set with \fBtacctl breakglass hold\fR.
 .TP
 .B breakglass_hold.<device>.since
 RFC 3339 time. Default: none (unset).

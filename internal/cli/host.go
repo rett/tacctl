@@ -161,7 +161,22 @@ func (inv *invocation) hostList() error {
 	}
 	// An engineer lists the hosts of their own scopes (D47).
 	f := inv.callerScopes()
-	t := ui.NewTable("Enrolled Linux hosts", ui.Left("NAME"), ui.Left("TARGET"), ui.Left("SCOPE"), ui.Left("SERVER"), ui.Left("METHOD"), ui.Left("USERS"))
+	// A host the server has been told not to answer is marked in a STATE
+	// column, which is there only while one is held in the caller's scopes.
+	held := map[string]bool{}
+	devs, _ := inv.hostDevices()
+	for _, e := range reg.Entries() {
+		if f.allows(e.Scope) {
+			if _, ok := inv.hostHoldIn(devs, e); ok {
+				held[e.Name] = true
+			}
+		}
+	}
+	cols := []ui.Col{ui.Left("NAME"), ui.Left("TARGET"), ui.Left("SCOPE"), ui.Left("SERVER"), ui.Left("METHOD"), ui.Left("USERS")}
+	if len(held) > 0 {
+		cols = append(cols, ui.Left("STATE"))
+	}
+	t := ui.NewTable("Enrolled Linux hosts", cols...)
 	for _, e := range reg.Entries() {
 		if !f.allows(e.Scope) {
 			continue
@@ -174,7 +189,15 @@ func (inv *invocation) hostList() error {
 		if m, err := inv.model(); err == nil {
 			users = hosts.UserCount(m.LinuxUsers(e.Scope))
 		}
-		t.Add(e.Name, target, e.Scope, e.Server, reg.Method(e.Name), strconv.Itoa(users))
+		row := []any{e.Name, target, e.Scope, e.Server, reg.Method(e.Name), strconv.Itoa(users)}
+		if len(held) > 0 {
+			state := any("")
+			if held[e.Name] {
+				state = ui.Styled(ui.Red, "BREAK-GLASS")
+			}
+			row = append(row, state)
+		}
+		t.Add(row...)
 	}
 	if t.Len() == 0 {
 		inv.echoE(ui.Bold + "Enrolled Linux hosts" + ui.NC)
@@ -185,6 +208,10 @@ func (inv *invocation) hostList() error {
 	}
 	inv.write(t.String())
 	inv.echo("")
+	if len(held) > 0 {
+		inv.echoE(fmt.Sprintf("  %s%d host(s) held for break-glass%s: tacctl breakglass list", ui.Red, len(held), ui.NC))
+		inv.echo("")
+	}
 	for _, e := range reg.Entries() {
 		if !f.allows(e.Scope) {
 			continue
@@ -291,6 +318,15 @@ func (inv *invocation) hostEnroll(args []string) error {
 	if err != nil {
 		return err
 	}
+	// Enrolling a registered host again (and 'host move') logs in to it: a
+	// held host is refused before anything is resolved.
+	if name != "" {
+		if cur, ok := reg.Find(name); ok {
+			if err := inv.hostHeldErr(cur, "tacctl host enroll "+name); err != nil {
+				return err
+			}
+		}
+	}
 	var hostPart, hostIP string
 	if isLocal {
 		if target != "" {
@@ -372,7 +408,13 @@ func (inv *invocation) hostEnroll(args []string) error {
 	if !reHostName.MatchString(name) {
 		return inv.usageErr("Invalid host name '" + name + "'. Pass --name <letters, digits, _ or -, starting with a letter, max 26>.")
 	}
-	_, enrolled := reg.Find(name)
+	cur, enrolled := reg.Find(name)
+	if enrolled {
+		// The name was worked out from the target: the same refusal.
+		if err := inv.hostHeldErr(cur, "tacctl host enroll "+name); err != nil {
+			return err
+		}
+	}
 	if err := inv.hostNameCheck(name, enrolled); err != nil {
 		return err
 	}
@@ -1104,10 +1146,26 @@ func (inv *invocation) hostSync(args []string) error {
 			return nil
 		}
 	} else {
-		if e, ok := reg.Find(which); !ok || e.Line == "" {
+		e, ok := reg.Find(which)
+		if !ok || e.Line == "" {
 			return inv.usageErr("No enrolled host named '" + which + "'. See 'tacctl host list'.")
 		}
+		// A held host is not logged in to: refused before anything is
+		// attempted (D179).
+		if err := inv.hostHeldErr(e, "tacctl host sync "+which); err != nil {
+			return err
+		}
 		names = []string{which}
+	}
+	if which == "--all" {
+		var err error
+		if names, err = inv.hostSkipHeld(reg, names, "sync"); err != nil {
+			return err
+		}
+		if len(names) == 0 {
+			a.Out.Info("No hosts to sync.")
+			return nil
+		}
 	}
 
 	if err := inv.renumberUIDs(true); err != nil {
@@ -1310,6 +1368,15 @@ func (inv *invocation) hostUnenroll(args []string) error {
 	e, ok := reg.Find(name)
 	if !ok || e.Line == "" {
 		return inv.usageErr("No enrolled host named '" + name + "'. See 'tacctl host list'.")
+	}
+	// A held host is neither logged in to nor forgotten: release it first.
+	h, held, err := inv.hostHold(e)
+	if err != nil {
+		return err
+	}
+	if held {
+		return inv.hostRefuse(inv.hostHoldLine(e, h),
+			"Break-glass is held on '"+name+"': release it first (tacctl breakglass release "+name+"). Nothing was attempted over ssh and nothing was changed.")
 	}
 	label := hosts.MethodLabel(reg.Method(name))
 	a.Out.InfoE("Removing " + label + " authentication from " + name + " (" + e.Target + ")...")
