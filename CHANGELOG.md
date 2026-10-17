@@ -3,7 +3,7 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.13 (unreleased)
+## 0.2.13 (2026-10-16)
 
 1. **The `test` workflow no longer runs on a push to `master`.** After a
    release `master` and `develop` hold the same files, so the second run
