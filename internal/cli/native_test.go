@@ -39,18 +39,21 @@ type sandbox struct {
 	resolve func(context.Context, string) ([]string, error)
 	// script, when set, adds rules to the fake runner of every run.
 	script func(*fake.Runner)
+	// hooks are what this sandbox's runs replace (hooks.go); a test sets
+	// the ones it needs before it runs.
+	hooks *hooks
 }
 
 func newSandbox(t *testing.T, withStore bool) *sandbox {
 	t.Helper()
+	parallel(t)
 	w := t.TempDir()
-	sb := &sandbox{t: t, dir: w}
+	sb := &sandbox{t: t, dir: w, hooks: newTestHooks()}
 	for _, d := range []string{"etc", "state", "log", "bin", "systemd", "tmp"} {
 		if err := os.MkdirAll(filepath.Join(w, d), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
-	t.Setenv("TMPDIR", filepath.Join(w, "tmp"))
 	if withStore {
 		data, err := os.ReadFile("../../tests/fixtures/store.multiscope.yaml")
 		if err != nil {
@@ -104,7 +107,7 @@ func (sb *sandbox) run(stdin string, args []string, extraEnv ...string) string {
 	// tacctl's fixed host locations (the installed command, /root, ...)
 	// stay in the sandbox too.
 	a.Paths = a.Paths.Reroot(sb.dir)
-	sb.code = exitCode(Run(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}), a.Out)
+	sb.code = exitCode(runWith(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}, sb.hooks), a.Out)
 	if n := len(sb.runner.Execs()); n != 0 {
 		sb.t.Errorf("%q: exec'd (%d execs)", args, n)
 	}
@@ -344,7 +347,7 @@ func TestNativePrelude(t *testing.T) {
 		sb.runner = r
 		a := app.New(args, paths.NewEnv(append(append([]string(nil), sb.env...), "SUDO_USER=carol")), "/x", 1000,
 			app.Stdio{Stdin: strings.NewReader(""), Stdout: &sb.out, Stderr: &sb.err}, r)
-		sb.code = exitCode(Run(context.Background(), a, BuildInfo{Version: "v"}), a.Out)
+		sb.code = exitCode(runWith(context.Background(), a, BuildInfo{Version: "v"}, sb.hooks), a.Out)
 	}
 	ro("user", "list")
 	sb.expect(0, "carol", "")
@@ -423,7 +426,7 @@ func TestStoreApplyWriterErrorIsReported(t *testing.T) {
 // Every user verb has a Spec (its arguments for completion), and every
 // kind a Spec names is one completion can answer.
 func TestUserSpecs(t *testing.T) {
-	inv := &invocation{app: newHarness(t, nil).app}
+	inv := &invocation{app: newHarness(t, nil).app, hooks: newTestHooks()}
 	for _, c := range userCmd(inv).Commands() {
 		spec, ok := userSpecs[c.Name()]
 		if !ok {

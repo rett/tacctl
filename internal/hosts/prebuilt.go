@@ -121,7 +121,7 @@ func (e *Env) Prebuilt(ctx context.Context, image string) (string, error) {
 	name := image[strings.LastIndexByte(image, '/')+1:]
 	e.Out.InfoE("Building pam_tacplus for " + name + " in a container (once per OS release; takes a minute or two)...")
 	tools := "localhost/tacctl-build:" + key
-	work, err := TempDir()
+	work, err := TempDir(e.Paths.TempDir)
 	if err != nil {
 		return "", err
 	}

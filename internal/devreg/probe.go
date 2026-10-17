@@ -27,12 +27,9 @@ const (
 	ProbeUnreachable = "unreachable"
 )
 
-// Dialer opens a connection; tests replace ProbeDial with one that never
-// leaves the machine.
+// Dialer opens a connection; a test hands Probe one that never leaves the
+// machine.
 type Dialer func(ctx context.Context, network, address string) (net.Conn, error)
-
-// ProbeDial is the dialer of every probe (nil: a net.Dialer).
-var ProbeDial Dialer
 
 // ProbeTarget is the host (a name or an address) and port of one probe.
 type ProbeTarget struct {
@@ -44,9 +41,9 @@ type ProbeTarget struct {
 func (t ProbeTarget) Addr() string { return net.JoinHostPort(t.Host, strconv.Itoa(t.Port)) }
 
 // Probe connects to every target at once and returns, in order, open,
-// closed (refused), timeout, or unreachable (no route, no such name).
-func Probe(ctx context.Context, targets []ProbeTarget) []string {
-	dial := ProbeDial
+// closed (refused), timeout, or unreachable (no route, no such name). dial
+// opens the connections (nil: a net.Dialer).
+func Probe(ctx context.Context, targets []ProbeTarget, dial Dialer) []string {
 	if dial == nil {
 		d := &net.Dialer{}
 		dial = d.DialContext

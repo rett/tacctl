@@ -40,7 +40,8 @@ func (sb *sandbox) cfgRun(stdin string, args []string, script func(*fake.Runner)
 	a.SNMP = sb.snmp
 	a.Resolve = sb.resolve
 	a.Paths.ConsoleCommand = sb.consoleCommand()
-	sb.code = exitCode(Run(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}), a.Out)
+	a.Paths.EditDir = sb.editDir()
+	sb.code = exitCode(runWith(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}, sb.hooks), a.Out)
 	if n := len(sb.runner.Execs()); n != 0 {
 		sb.t.Errorf("%q: exec'd (%d execs)", args, n)
 	}
@@ -51,12 +52,17 @@ func (sb *sandbox) cfgRun(stdin string, args []string, script func(*fake.Runner)
 // Paths.Reroot puts it: a test never looks at the installed one.
 func (sb *sandbox) consoleCommand() string { return sb.path("usr", "local", "bin", "tacctl-console") }
 
+// editDir is where 'block edit' makes its private directories in the
+// sandbox, where Paths.Reroot puts it (/var/tmp): a test never uses the
+// machine's own.
+func (sb *sandbox) editDir() string { return sb.path("var", "tmp") }
+
 func (sb *sandbox) path(p ...string) string { return filepath.Join(append([]string{sb.dir}, p...)...) }
 
 // Every config verb has a handler; the family itself prints its usage and
 // exits 1.
 func TestConfigVerbsAllNative(t *testing.T) {
-	inv := &invocation{app: newHarness(t, nil).app}
+	inv := &invocation{app: newHarness(t, nil).app, hooks: newTestHooks()}
 	native := map[string]bool{}
 	for _, c := range configCmd(inv).Commands() {
 		if c.RunE == nil {
@@ -85,7 +91,8 @@ func TestConfigVerbsAllNative(t *testing.T) {
 // replaces a declared word of the same name), keeps the family's preflight
 // and brings its Spec.
 func TestRegisterConfigVerb(t *testing.T) {
-	inv := &invocation{app: newHarness(t, nil).app}
+	serial(t)
+	inv := &invocation{app: newHarness(t, nil).app, hooks: newTestHooks()}
 	before := len(configCmd(inv).Commands())
 	const name = "test-verb"
 	registerConfigVerb(name, Spec{MaxArgs: 1, Args: []string{"list|add"}}, func(inv *invocation) *cobra.Command {
@@ -116,7 +123,7 @@ func TestRegisterConfigVerb(t *testing.T) {
 // Every native config verb has a Spec, and every kind it names is one
 // completion can answer.
 func TestConfigSpecs(t *testing.T) {
-	inv := &invocation{app: newHarness(t, nil).app}
+	inv := &invocation{app: newHarness(t, nil).app, hooks: newTestHooks()}
 	n := 0
 	for _, c := range configCmd(inv).Commands() {
 		if c.RunE == nil {
@@ -409,7 +416,7 @@ func TestConfigBranchIgnoresTheDevCheckout(t *testing.T) {
 	if a.Paths.Tree != dev {
 		t.Fatalf("tree %q, want the dev checkout", a.Paths.Tree)
 	}
-	exitCode(Run(context.Background(), a, BuildInfo{Version: "t"}), a.Out)
+	exitCode(runWith(context.Background(), a, BuildInfo{Version: "t"}, sb.hooks), a.Out)
 	for _, argv := range r.Argvs() {
 		if strings.Contains(argv, dev) {
 			t.Errorf("ran %q on the dev checkout", argv)

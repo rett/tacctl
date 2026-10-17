@@ -5,12 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/rett/tacctl/internal/utmp"
 )
-
-// The suite never reads the real terminal's login record.
-func init() { terminalLine = func() string { return "" } }
 
 // utmpFile is a utmp with one login of 'line' from 'host'.
 func utmpFile(t *testing.T, line, host string) string {
@@ -40,7 +35,6 @@ func (sb *sandbox) sshAuditFrom(extraEnv ...string) {
 }
 
 func TestSSHAuditNamesWhereTheCallerLoggedInFrom(t *testing.T) {
-	withTerminal(t, true)
 
 	// From the environment, as a caller without sudo's env_reset has it.
 	sb, _, _ := sshSandbox(t)
@@ -50,19 +44,18 @@ func TestSSHAuditNamesWhereTheCallerLoggedInFrom(t *testing.T) {
 	}
 
 	// From the login record of the terminal, which sudo leaves intact.
-	oldLine, oldFile := terminalLine, utmp.File
-	t.Cleanup(func() { terminalLine, utmp.File = oldLine, oldFile })
-	terminalLine = func() string { return "pts/4" }
-	utmp.File = utmpFile(t, "pts/4", "203.0.113.20")
 	sb, _, _ = sshSandbox(t)
+	sb.hooks.terminalLine = func() string { return "pts/4" }
+	sb.hooks.utmpFile = utmpFile(t, "pts/4", "203.0.113.20")
 	sb.sshAuditFrom()
 	if !sb.runner.CalledRegexp(`ssh user=alice device=core-sw1 addr=10\.99\.0\.1 from=203\.0\.113\.20$`) {
 		t.Errorf("utmp: %q", sb.runner.Argvs())
 	}
 
 	// A host field that is not an address or a name is not logged.
-	utmp.File = utmpFile(t, "pts/4", "evil host=x")
 	sb, _, _ = sshSandbox(t)
+	sb.hooks.terminalLine = func() string { return "pts/4" }
+	sb.hooks.utmpFile = utmpFile(t, "pts/4", "evil host=x")
 	sb.sshAuditFrom()
 	if !sb.runner.CalledRegexp(`ssh user=alice device=core-sw1 addr=10\.99\.0\.1$`) {
 		t.Errorf("hostile: %q", sb.runner.Argvs())

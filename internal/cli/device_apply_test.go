@@ -186,7 +186,7 @@ func TestApplyReviewGroupsByWhatItShows(t *testing.T) {
 	var out bytes.Buffer
 	a := app.New(nil, paths.NewEnv(append(append([]string(nil), sb.env...), "SUDO_USER=alice")), "/opt/x/dist/tacctl", 1000,
 		app.Stdio{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &out}, r)
-	inv := &invocation{ctx: context.Background(), app: a}
+	inv := &invocation{ctx: context.Background(), app: a, hooks: newTestHooks()}
 	delta := func(loc string) plan.Delta {
 		return plan.Delta{Vendor: devconf.FamilyJunos, Lines: []plan.Line{
 			{Section: "aaa", Op: plan.OpSet, Text: "set system accounting events login"},

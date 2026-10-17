@@ -1,17 +1,21 @@
-# The Go tests, on a pull request and on a push to develop or master (the
-# bats suite, the diff corpus and the container matrix need a root-owned
-# host and stay on the maintainer's machines: tests/README.md).
+# The Go tests, on a pull request and on a push to develop. master is not
+# listed: after a release it holds develop's files, and the release is a pull
+# request first (docs/releasing.md). The bats suite, the diff corpus and the
+# container matrix need a root-owned host and stay on the maintainer's
+# machines (tests/README.md).
 # The tag 0.2.2 is fetched (fetch-tags): two tests build or read it and skip
-# without it. internal/cli takes over twenty minutes in one piece, so it
-# runs in four shards (tests/tools/go-test-shard.sh); every other package
-# is one job. Each runs twice, as 'make test-go' does: without tags and
-# with the test knobs.
+# without it. The tests of internal/cli run in parallel inside a process
+# (about six minutes on eight cores); two shards
+# (tests/tools/go-test-shard.sh) keep a four-core runner short, the ones
+# without tags with the race detector. Every other package is one job.
+# Each runs twice, as 'make test-go' does: without tags and with the test
+# knobs.
 name: test
 
 on:
   pull_request:
   push:
-    branches: [develop, master]
+    branches: [develop]
   workflow_dispatch:
 
 permissions:
@@ -49,7 +53,7 @@ jobs:
           go vet ./...
           go vet -tags testknobs ./...
       - name: The shards hold every test of internal/cli once
-        run: tests/tools/go-test-shard.sh --check 4
+        run: tests/tools/go-test-shard.sh --check 2
 
   other-packages:
     runs-on: ubuntu-24.04
@@ -94,7 +98,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: [0, 1]
         tags: ["", testknobs]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -117,8 +121,9 @@ jobs:
         run: |
           sudo rm -rf /usr/local/go
           sudo ln -s "$(go env GOROOT)" /usr/local/go
-      - name: internal/cli, shard ${{ matrix.shard }} of 4
+      - name: internal/cli, shard ${{ matrix.shard }} of 2
         env:
           LANG: C.UTF-8
-          GOFLAGS: ${{ matrix.tags != '' && format('-tags={0}', matrix.tags) || '' }}
-        run: tests/tools/go-test-shard.sh ${{ matrix.shard }} 4
+          CGO_ENABLED: "1"
+          GOFLAGS: ${{ matrix.tags != '' && format('-tags={0}', matrix.tags) || '-race' }}
+        run: tests/tools/go-test-shard.sh ${{ matrix.shard }} 2

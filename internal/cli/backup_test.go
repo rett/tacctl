@@ -141,7 +141,7 @@ func TestBackupRestoreSnapshotRoundTripAndKeepsWhatItReads(t *testing.T) {
 	if _, err := os.Stat(sb.path("state/backups/20200101_000000_001")); err != nil {
 		t.Error("retention took the snapshot the restore read")
 	}
-	ids := (&invocation{app: newHarness(t, nil, sb.env...).app}).snapshotIDs()
+	ids := (&invocation{app: newHarness(t, nil, sb.env...).app, hooks: newTestHooks()}).snapshotIDs()
 	if len(ids) != 31 {
 		t.Errorf("%d snapshots, want 31", len(ids))
 	}
@@ -206,7 +206,7 @@ func TestBackupRestoreRefusesBeforeTouchingAnything(t *testing.T) {
 	if after := sb.liveState(); after != before {
 		t.Errorf("state changed:\n%s\n%s", before, after)
 	}
-	if n := len((&invocation{app: newHarness(t, nil, sb.env...).app}).snapshotIDs()); n != 5 {
+	if n := len((&invocation{app: newHarness(t, nil, sb.env...).app, hooks: newTestHooks()}).snapshotIDs()); n != 5 {
 		t.Errorf("%d snapshots: a refused restore took one", n)
 	}
 }

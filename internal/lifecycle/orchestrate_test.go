@@ -143,7 +143,6 @@ func newOhost(t *testing.T) *ohost {
 			t.Fatal(err)
 		}
 	}
-	t.Setenv("TMPDIR", j("tmp"))
 	o.write(j("tree", "bin", "tacctl.sh"), "#!/bin/bash\n# the shim\n")
 	o.write(j("tree", "man", "tacctl.1"), ".TH TACCTL 1\n")
 	o.write(j("tree", "go.mod"), "module github.com/rett/tacctl\n")

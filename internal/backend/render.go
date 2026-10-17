@@ -79,9 +79,9 @@ func (o RenderOptions) forced(id string) bool { return o.ForceAll || slices.Cont
 // of drift) or ErrFailed. Messages are written to Stderr (the store must
 // exist; the enabled list must resolve; each backend writes its own).
 //
-// Pass 1 stages every backend into a private directory under os.TempDir
-// (it holds every candidate config, secrets included, and is removed on
-// every path). Then every artifact of the enabled backends and
+// Pass 1 stages every backend into a private directory under
+// Paths.TempDir (it holds every candidate config, secrets included, and is
+// removed on every path). Then every artifact of the enabled backends and
 // rendered.json are copied aside, and pass 2 commits: if a commit fails,
 // every artifact and rendered.json are put back from the copies.
 func (s *Set) RenderAll(ctx context.Context, opts RenderOptions) ([]string, error) {
@@ -95,7 +95,7 @@ func (s *Set) RenderAll(ctx context.Context, opts RenderOptions) ([]string, erro
 		out.Error(err.Error())
 		return nil, ErrFailed
 	}
-	tmpd, err := os.MkdirTemp("", "tmp.")
+	tmpd, err := os.MkdirTemp(s.Env.Paths.TempDir, "tmp.")
 	if err != nil {
 		out.Error("Cannot create a staging directory: " + err.Error())
 		return nil, ErrFailed

@@ -47,7 +47,7 @@ set snmp location "Lab rack 2"
 
 // newOnboardBox is a pull box whose fake device is the blank configure
 // model. The terminal's local password prompt is answered by the test
-// (passwordPrompt), as a person types it.
+// (hooks.passwordPrompt), as a person types it.
 func newOnboardBox(t *testing.T, opts ...fakedev.Option) *pullBox {
 	t.Helper()
 	dir := t.TempDir()
@@ -68,8 +68,7 @@ func newOnboardBox(t *testing.T, opts ...fakedev.Option) *pullBox {
 	b.knob("echo.plain", "")
 	// alice's TACACS+ login maps to her group's template user (D136's proof)
 	b.knob("template", "alice "+aliceTemplate+" "+aliceTemplate+"\n")
-	prev := passwordPrompt
-	passwordPrompt = func(_ *os.File, prompt string) ([]byte, error) {
+	b.sb.hooks.passwordPrompt = func(_ *os.File, prompt string) ([]byte, error) {
 		switch {
 		case strings.HasPrefix(prompt, "Password of root "):
 			return []byte(rootPassword), nil
@@ -78,7 +77,6 @@ func newOnboardBox(t *testing.T, opts ...fakedev.Option) *pullBox {
 		}
 		return nil, askpass.ErrNoTerminal
 	}
-	t.Cleanup(func() { passwordPrompt = prev })
 	return b
 }
 
@@ -331,7 +329,7 @@ func TestOnboardAsRootUsesTheWrapper(t *testing.T) {
 // --- --login on pull, diff and plan --------------------------------------------------
 
 // trun runs tacctl as alice on a terminal (the local password is asked on
-// one; passwordPrompt answers it).
+// one; hooks.passwordPrompt answers it).
 func (b *pullBox) trun(args ...string) string {
 	b.t.Helper()
 	master, slave, err := testpty.Open()
@@ -410,19 +408,17 @@ func TestPullLoginNeverTouchesTheCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := c.stored()
-	newDevicePasswords = func(inv *invocation) devicePasswords {
+	b.sb.hooks.devicePasswords = func(inv *invocation) devicePasswords {
 		t.Error("the local login asked the invoking user's password source")
 		return &terminalPasswords{inv: inv, client: c.cl}
 	}
-	prevLocal := newLocalPasswords
-	newLocalPasswords = func(inv *invocation, account, where string) *terminalPasswords {
+	b.sb.hooks.localPasswords = func(inv *invocation, account, where string) *terminalPasswords {
 		// the real source, handed a cache client all the same: it must not
 		// use it
-		tp := prevLocal(inv, account, where)
+		tp := (*hooks)(nil).newLocalPasswords(inv, account, where)
 		tp.client = c.cl
 		return tp
 	}
-	t.Cleanup(func() { newLocalPasswords = prevLocal })
 	b.sb.tty = nil
 	master, slave, err := testpty.Open()
 	if err != nil {
@@ -476,16 +472,14 @@ func TestLocalPasswordsZeroedAtDone(t *testing.T) {
 		t.Skip("no pty:", err)
 	}
 	t.Cleanup(func() { _ = master.Close(); _ = slave.Close() })
-	prev := passwordPrompt
-	passwordPrompt = func(_ *os.File, prompt string) ([]byte, error) {
+	hk := &hooks{passwordPrompt: func(_ *os.File, prompt string) ([]byte, error) {
 		if !strings.HasPrefix(prompt, "Password of root on sw (192.0.2.1) (a local account; asked once, never kept): ") {
 			t.Errorf("prompt %q", prompt)
 		}
 		return []byte(localPassword), nil
-	}
-	t.Cleanup(func() { passwordPrompt = prev })
+	}}
 	a := app.New(nil, paths.NewEnv(nil), "/opt/x/dist/tacctl", 0, app.Stdio{Stdin: slave}, &fake.Runner{})
-	tp := &terminalPasswords{inv: &invocation{ctx: context.Background(), app: a}, client: c.cl, local: "root", where: "sw (192.0.2.1)"}
+	tp := &terminalPasswords{inv: &invocation{ctx: context.Background(), app: a, hooks: hk}, client: c.cl, local: "root", where: "sw (192.0.2.1)"}
 	pw, err := tp.Password(context.Background(), "root")
 	if err != nil || string(pw) != localPassword {
 		t.Fatalf("%q %v", pw, err)
@@ -544,7 +538,7 @@ func TestPullLoginRefusalsAndRoot(t *testing.T) {
 		t.Errorf("root after a local pull over alice's: %d", b.sb.code)
 	}
 	// a wrong local password is the pull's auth failure, and nothing more
-	passwordPrompt = func(*os.File, string) ([]byte, error) { return []byte("wrong"), nil }
+	b.sb.hooks.passwordPrompt = func(*os.File, string) ([]byte, error) { return []byte("wrong"), nil }
 	b.trun("device", "config", "pull", "sw-lab-5", "--login", localAccount)
 	if b.sb.code != 1 || !strings.Contains(b.sb.out.String()+b.sb.stderr(), "refused the password of its local account 'admin'") {
 		t.Errorf("wrong password: %d %q %q", b.sb.code, b.sb.out.String(), b.sb.stderr())

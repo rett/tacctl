@@ -56,13 +56,13 @@ func newTenv(t *testing.T) *tenv {
 			t.Fatal(err)
 		}
 	}
-	t.Setenv("TMPDIR", filepath.Join(w, "tmp"))
 	t.Cleanup(func() {
 		if left, _ := os.ReadDir(filepath.Join(w, "tmp")); len(left) != 0 {
 			t.Errorf("TMPDIR not empty: %v", left)
 		}
 	})
 	vars := []string{
+		"TMPDIR=" + filepath.Join(w, "tmp"),
 		"TACCTL_ETC=" + filepath.Join(w, "etc"),
 		"TACCTL_STATE_DIR=" + filepath.Join(w, "state"),
 		"TACCTL_LOG=" + filepath.Join(w, "log"),

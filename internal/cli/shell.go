@@ -217,7 +217,7 @@ func (inv *invocation) runShell(r shellRun) (int, *shell.Shell) {
 	// shell runs as the user; the console is this code in-process, and its
 	// environment (console.Scrub) holds neither NO_COLOR nor TACCTL_COLOR,
 	// so it decides by its terminal alone.
-	styled, _ := ui.Colour(a.Env.Get, isTerminalWriter(a.Out.Stdout), isTerminalWriter(a.Out.Stderr))
+	styled, _ := ui.Colour(a.Env.Get, inv.hooks.terminalWriter(a.Out.Stdout), inv.hooks.terminalWriter(a.Out.Stderr))
 	o := shell.Options{
 		Prompt:          r.prompt,
 		Styled:          styled,

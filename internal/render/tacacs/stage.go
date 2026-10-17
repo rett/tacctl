@@ -31,6 +31,7 @@ type Paths struct {
 	AcctLog     string // ACCT_LOG: the default listener's accounting log
 	OverrideDir string // OVERRIDE_DIR: tacquito.service's drop-in directory
 	UnitDir     string // TACACS_UNIT_DIR: unit files and the instances' drop-in directories
+	TempDir     string // paths.TempDir: where Check stages its trial render
 }
 
 // PathsFrom takes the render paths from the resolved TACCTL_* paths.
@@ -44,6 +45,7 @@ func PathsFrom(p paths.Paths) Paths {
 		AcctLog:     p.AcctLog,
 		OverrideDir: p.OverrideDir,
 		UnitDir:     p.TacacsUnitDir,
+		TempDir:     p.TempDir,
 	}
 }
 
@@ -512,7 +514,7 @@ func (r *Renderer) matchesStore(path string) bool {
 // (rendered.Furthest). A store or listener model that cannot be rendered
 // is ErrFailed (message written).
 func (r *Renderer) Check(units bool) (string, error) {
-	tmp, err := os.MkdirTemp("", "tmp.")
+	tmp, err := os.MkdirTemp(r.Paths.TempDir, "tmp.")
 	if err != nil {
 		r.report(err)
 		return "", ErrFailed

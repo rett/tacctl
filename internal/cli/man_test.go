@@ -154,7 +154,7 @@ func TestManPageNamesEveryCommand(t *testing.T) {
 	lines, tags := manText(t)
 	text := strings.Join(lines, "\n")
 	var all [][]string
-	treeVerbs(newRoot(&invocation{app: newHarness(t, nil).app}), nil, &all)
+	treeVerbs(newRoot(&invocation{app: newHarness(t, nil).app, hooks: newTestHooks()}), nil, &all)
 	if len(all) < 100 {
 		t.Fatalf("the tree has %d commands", len(all))
 	}
@@ -183,7 +183,7 @@ var removedPhrases = []*regexp.Regexp{
 // sub-commands, and none of the removed verbs.
 func TestManPageNamesNoMissingCommand(t *testing.T) {
 	lines, tags := manText(t)
-	root := newRoot(&invocation{app: newHarness(t, nil).app})
+	root := newRoot(&invocation{app: newHarness(t, nil).app, hooks: newTestHooks()})
 	word := regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 	check := func(where string, words []string) {
 		c := root

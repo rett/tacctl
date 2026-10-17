@@ -91,7 +91,7 @@ func readManDoc(t *testing.T) *manDoc {
 		t.Fatal(err)
 	}
 	d := &manDoc{lines: strings.Split(strings.TrimSuffix(string(src), "\n"), "\n"), sections: map[string][2]int{}}
-	root := newRoot(&invocation{app: newHarness(t, nil).app})
+	root := newRoot(&invocation{app: newHarness(t, nil).app, hooks: newTestHooks()})
 	section, sub, last := "", "", ""
 	closeEntry := func(i int) {
 		if n := len(d.entries); n > 0 && d.entries[n-1].end == 0 {
@@ -217,7 +217,7 @@ func manHas(text, word string) bool {
 // TestEveryFlagHasADescription walks).
 func TestManPageDocumentsEveryFlag(t *testing.T) {
 	d := readManDoc(t)
-	root := newRoot(&invocation{app: newHarness(t, nil).app})
+	root := newRoot(&invocation{app: newHarness(t, nil).app, hooks: newTestHooks()})
 	var all [][]string
 	treeVerbs(root, nil, &all)
 	checked := 0
@@ -514,7 +514,8 @@ var manPathExempt = map[string]string{
 func pathValues(t *testing.T) map[string]string {
 	t.Helper()
 	out := map[string]string{}
-	p := paths.Resolve(paths.NewEnv(nil), "", func(string) bool { return false })
+	// TMPDIR is fixed: the default of Paths.TempDir is the process's.
+	p := paths.Resolve(paths.NewEnv([]string{"TMPDIR=/tmp"}), "", func(string) bool { return false })
 	v := reflect.ValueOf(p)
 	for i := range v.NumField() {
 		f := v.Type().Field(i)

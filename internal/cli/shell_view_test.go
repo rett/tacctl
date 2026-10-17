@@ -400,7 +400,7 @@ func TestSetViewAsksThePolicy(t *testing.T) {
 				return execx.Result{Stdout: []byte(answer)}, nil
 			})
 		}
-		return &invocation{ctx: t.Context(), app: h.app}, h
+		return &invocation{ctx: t.Context(), app: h.app, hooks: newTestHooks()}, h
 	}
 
 	inv, h := newInv("shell=console idle=30 tier=engineer gate=operator list_max=40\n", false)

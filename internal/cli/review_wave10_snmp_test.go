@@ -19,7 +19,7 @@ func TestSnapshotsHoldTheSNMPCredentials(t *testing.T) {
 	// Any change snapshots the state it starts from.
 	sb.run("", []string{"group", "add", "extra", "5", "EXTRA-CLASS"})
 	sb.expect(0, "Group 'extra' added", "")
-	ids := (&invocation{app: newHarness(t, nil, sb.env...).app}).snapshotIDs()
+	ids := (&invocation{app: newHarness(t, nil, sb.env...).app, hooks: newTestHooks()}).snapshotIDs()
 	if len(ids) == 0 {
 		t.Fatal("no snapshot")
 	}

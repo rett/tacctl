@@ -165,7 +165,7 @@ func TestPhaseUsage(t *testing.T) {
 	sb.run("", []string{"_phase", "ldap", "upgrade", "files"})
 	sb.expect(2, "", "[ERROR] Unknown backend 'ldap'.")
 	// Hidden: no usage, no completion.
-	if c := child(newRoot(&invocation{app: newHarness(t, nil).app}), "_phase"); c == nil || !c.Hidden {
+	if c := child(newRoot(&invocation{app: newHarness(t, nil).app, hooks: newTestHooks()}), "_phase"); c == nil || !c.Hidden {
 		t.Error("_phase is not a hidden command")
 	}
 }

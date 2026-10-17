@@ -55,7 +55,7 @@ type adoptRead struct {
 func (inv *invocation) readHierarchy(e devreg.Entry, user, hierarchy string) (adoptRead, error) {
 	var out adoptRead
 	st := inv.deviceConfigSettings()
-	pw := newDevicePasswords(inv)
+	pw := inv.hooks.newDevicePasswords(inv)
 	defer func() {
 		if d, ok := pw.(interface{ Done() }); ok {
 			d.Done()

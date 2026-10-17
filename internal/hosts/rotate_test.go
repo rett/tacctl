@@ -232,7 +232,7 @@ func TestProveLoginChecksThePinnedKeys(t *testing.T) {
 }
 
 func TestTempKnownHosts(t *testing.T) {
-	path, cleanup, err := TempKnownHosts("web1", []string{"ssh-ed25519 AAAA1", "ssh-rsa AAAA2"})
+	path, cleanup, err := TempKnownHosts(t.TempDir(), "web1", []string{"ssh-ed25519 AAAA1", "ssh-rsa AAAA2"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +251,7 @@ func TestTempKnownHosts(t *testing.T) {
 	if _, err := os.Stat(path); err == nil {
 		t.Error("not removed")
 	}
-	if _, _, err := TempKnownHosts("web1", []string{"ssh-ed25519 AAAA\nweb1 ssh-rsa BBBB"}); err == nil {
+	if _, _, err := TempKnownHosts(t.TempDir(), "web1", []string{"ssh-ed25519 AAAA\nweb1 ssh-rsa BBBB"}); err == nil {
 		t.Error("a key with a newline was accepted")
 	}
 }
@@ -261,7 +261,7 @@ func TestTempKnownHosts(t *testing.T) {
 func TestTempKnownHostsIgnoresUmask(t *testing.T) {
 	old := syscall.Umask(0o077)
 	defer syscall.Umask(old)
-	path, cleanup, err := TempKnownHosts("web1", []string{"ssh-ed25519 AAAA1"})
+	path, cleanup, err := TempKnownHosts(t.TempDir(), "web1", []string{"ssh-ed25519 AAAA1"})
 	if err != nil {
 		t.Fatal(err)
 	}

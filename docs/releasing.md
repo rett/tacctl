@@ -79,10 +79,20 @@ git flow release start 0.2.1
 sed -i 's/^## 0\.2\.1 (unreleased)$/## 0.2.1 (YYYY-MM-DD)/' CHANGELOG.md
 # man/tacctl.1's .TH date and version, as in earlier releases
 git commit -am "docs: 0.2.1 release date"
+git push -u origin release/0.2.1
+gh pr create --base master --head release/0.2.1 --title "0.2.1" --body "Release 0.2.1"
+gh pr checks --watch          # the Go tests on the release commit; all green before the tag
 git flow release finish -m "Release 0.2.1" 0.2.1
 git tag -f -a 0.2.1 -m "Release 0.2.1" master   # git-flow writes "Release 0.2.1 0.2.1"
 git describe master                               # 0.2.1
 ```
+
+The release branch is pushed first so that the `test` workflow runs on the
+release commit (the date changes and the notes) before the tag exists; it
+runs on a pull request and on a push to `develop`, not on a push to
+`master`, whose files are the same as `develop`'s after the finish. The
+pull request closes by itself when `master` is pushed (step 4); delete the
+remote branch then: `git push origin --delete release/0.2.1`.
 
 ### 2. Build the assets from the tag
 

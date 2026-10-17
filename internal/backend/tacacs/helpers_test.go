@@ -99,8 +99,8 @@ func newTenvAt(t *testing.T, w string, extraEnv ...string) *tenv {
 			t.Fatal(err)
 		}
 	}
-	t.Setenv("TMPDIR", filepath.Join(w, "tmp"))
 	vars := append([]string{
+		"TMPDIR=" + filepath.Join(w, "tmp"),
 		"TACCTL_ETC=" + filepath.Join(w, "etc"),
 		"TACCTL_STATE_DIR=" + filepath.Join(w, "state"),
 		"TACCTL_LOG=" + filepath.Join(w, "log"),

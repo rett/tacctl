@@ -65,7 +65,7 @@ func (inv *invocation) rollback(args []string) error {
 
 	in := lifecycle.RollbackInput{Paths: a.Paths, Conf: a.Conf(), HasStore: isRegularFile(a.Paths.StoreFile), WithHosts: withHosts, Target: version,
 		InstallSudoers: func(body, dst string) error {
-			return tier.InstallSudoers(inv.ctx, a.Runner, a.Out.Stdout, a.Out.Stderr, body, dst)
+			return tier.InstallSudoers(inv.ctx, a.Runner, a.Out.Stdout, a.Out.Stderr, a.Paths.TempDir, body, dst)
 		}}
 	plan, err := lifecycle.PlanRollback(in)
 	if err != nil {

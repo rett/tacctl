@@ -12,10 +12,10 @@ import (
 // a host name, nothing that would break the key=value line.
 var clientHostOK = regexp.MustCompile(`^[0-9A-Za-z.:_-]{1,253}$`)
 
-// terminalLine is the name of the terminal this command runs on, as the login
-// record names it ("pts/3"), or "" without one. It is read from the open
-// standard streams, which sudo leaves on the caller's terminal.
-var terminalLine = func() string {
+// realTerminalLine is the name of the terminal this command runs on, as the
+// login record names it ("pts/3"), or "" without one. It is read from the
+// open standard streams, which sudo leaves on the caller's terminal.
+func realTerminalLine() string {
 	for _, fd := range []string{"0", "1", "2"} {
 		target, err := os.Readlink("/proc/self/fd/" + fd)
 		if err != nil {
@@ -36,7 +36,7 @@ func (inv *invocation) clientAddr() string {
 	if f := strings.Fields(inv.app.Env.Get("SSH_CONNECTION")); len(f) > 0 && clientHostOK.MatchString(f[0]) {
 		return f[0]
 	}
-	if h := utmp.Remote(terminalLine()); clientHostOK.MatchString(h) {
+	if h := utmp.Remote(inv.hooks.loginRecords(), inv.hooks.line()); clientHostOK.MatchString(h) {
 		return h
 	}
 	return ""

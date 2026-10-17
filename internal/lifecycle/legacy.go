@@ -158,6 +158,7 @@ func (e *Env) importOptions(ctx context.Context, check bool) store.ImportOptions
 		Equiv:       model.EquivCheckRand(e.rand()),
 		Smoke:       func(rendered string) error { return e.smoke(ctx, rendered) },
 		Now:         e.Now,
+		TempDir:     p.TempDir,
 	}
 }
 
@@ -175,7 +176,7 @@ func (e *Env) importRender(s *store.Store) ([]byte, error) {
 	if err := rtacacs.CheckOverrides(e.Conf.Path); err != nil {
 		return fail(err)
 	}
-	dir, err := os.MkdirTemp("", "tacctl-render.")
+	dir, err := os.MkdirTemp(e.Paths.TempDir, "tacctl-render.")
 	if err != nil {
 		return fail(err)
 	}
@@ -701,7 +702,7 @@ func RenderApply(ctx context.Context, env *Env, force bool) (bool, error) {
 		env.Out.ErrorE(store.NotInitialisedMsg)
 		return false, backend.ErrFailed
 	}
-	tmp, err := os.MkdirTemp("", "tmp.")
+	tmp, err := os.MkdirTemp(env.Paths.TempDir, "tmp.")
 	if err != nil {
 		stderrLine(env.Out, "mktemp: "+err.Error())
 		return false, backend.ErrFailed
@@ -810,7 +811,7 @@ func ConfigSyncExisting(ctx context.Context, env *Env, opts SyncOptions) (bool, 
 // equivalent to the live tacquito.yaml and the daemon loads it. As at the
 // gate, a load-smoke that cannot run is not a pass.
 func renderIsProven(ctx context.Context, env *Env) bool {
-	tmp, err := os.MkdirTemp("", "tmp.")
+	tmp, err := os.MkdirTemp(env.Paths.TempDir, "tmp.")
 	if err != nil {
 		return false
 	}

@@ -3,6 +3,34 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.13 (2026-10-16)
+
+1. **The `test` workflow no longer runs on a push to `master`.** After a
+   release `master` and `develop` hold the same files, so the second run
+   tested nothing new. The release procedure pushes the release branch and
+   opens a pull request to `master`, so the Go tests run on the release
+   commit before the tag exists (`docs/releasing.md`).
+
+2. **The temporary directory is read from the invocation's environment.**
+   Where tacctl stages private copies while it works (rendered trees, a
+   candidate sudoers file, a script for a host, an import check) is the
+   `TMPDIR` of the environment the command was given, now documented in the
+   manual page (ENVIRONMENT, FILES) and in `docs/cli/exit-status.md`; unset,
+   it is the system temporary directory as before, and sudo's environment
+   policy may replace it. For developers: the Go tests no longer set `TMPDIR`
+   for the process, and `tests/tools/no-os-tempdir.sh` (in `make lint`)
+   keeps the code from reading the process's temporary directory.
+
+3. **The `internal/cli` tests run in parallel.** The package took 24
+   minutes in one run. What a test replaced for the whole process (a dial,
+   a prompt, a terminal check, a timeout, the login records, the temporary
+   directory) is now a field of the invocation, so the sandbox tests run
+   side by side in one process: about six minutes on eight cores, also
+   under the race detector, in a shuffled order and with `-parallel 32`.
+   The tests that set the process environment, signal the process or write
+   a registry stay serial. CI runs `internal/cli` in two shards instead of
+   four. Nothing in tacctl changes.
+
 ## 0.2.12 (2026-10-16)
 
 1. **`config get` and `config get-list` complete every key of the schema.**

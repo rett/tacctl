@@ -139,7 +139,6 @@ func TestBase64WrapsAt76(t *testing.T) {
 func testEnv(t *testing.T) (*Env, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
 	d := t.TempDir()
-	t.Setenv("TMPDIR", filepath.Join(d, "tmp"))
 	if err := os.MkdirAll(filepath.Join(d, "tmp"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +147,7 @@ func testEnv(t *testing.T) (*Env, *bytes.Buffer, *bytes.Buffer) {
 	}
 	var out, errb bytes.Buffer
 	e := &Env{
-		Paths:    Paths{Dir: filepath.Join(d, "linux"), UIDs: filepath.Join(d, "linux-uids"), Hosts: filepath.Join(d, "linux-hosts")},
+		Paths:    Paths{Dir: filepath.Join(d, "linux"), TempDir: filepath.Join(d, "tmp"), UIDs: filepath.Join(d, "linux-uids"), Hosts: filepath.Join(d, "linux-hosts")},
 		Out:      ui.Output{Stdout: &out, Stderr: &errb},
 		Now:      func() time.Time { return goldenWhen },
 		TTY:      func() bool { return false },
@@ -318,19 +317,25 @@ func TestWriteRemoveScript(t *testing.T) {
 }
 
 func TestTempFiles(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
-	f, err := TempFile()
+	tmp := t.TempDir()
+	f, err := TempFile(tmp)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if st, _ := os.Stat(f); st.Mode().Perm() != 0o600 || !strings.HasPrefix(filepath.Base(f), "tmp.") || len(filepath.Base(f)) != 14 {
 		t.Errorf("temp file %s %v", f, st.Mode())
 	}
-	d, err := TempDir()
+	if filepath.Dir(f) != tmp {
+		t.Errorf("temp file %s is not in the directory given, %s", f, tmp)
+	}
+	d, err := TempDir(tmp)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if st, _ := os.Stat(d); !st.IsDir() || st.Mode().Perm() != 0o700 {
 		t.Errorf("temp dir %v", st.Mode())
+	}
+	if filepath.Dir(d) != tmp {
+		t.Errorf("temp dir %s is not in the directory given, %s", d, tmp)
 	}
 }

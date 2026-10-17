@@ -140,7 +140,7 @@ func TestBackendListStatusAndUsage(t *testing.T) {
 // Every native verb of the families of this file has a Spec, and every
 // kind a Spec names is one completion can answer.
 func TestWP24dSpecs(t *testing.T) {
-	inv := &invocation{app: newHarness(t, nil).app}
+	inv := &invocation{app: newHarness(t, nil).app, hooks: newTestHooks()}
 	families := []struct {
 		cmd   *cobra.Command
 		specs map[string]Spec
@@ -175,6 +175,7 @@ func TestWP24dSpecs(t *testing.T) {
 // 'store rollback' and 'backend enable|disable' come from files of their
 // own, in place of the family's declared word.
 func TestRegisterFamilyVerbReplacesTheStub(t *testing.T) {
+	serial(t)
 	for _, c := range []struct{ family, name string }{{"store", "rollback"}, {"backend", "enable"}} {
 		// The real registrations (store rollback: WP3.3a) come back after.
 		prevStore, hadStore := storeVerbs[c.name]

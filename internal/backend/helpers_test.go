@@ -98,8 +98,8 @@ func newTenvAt(t *testing.T, w string) *tenv {
 		}
 	}
 	e.tmp = filepath.Join(w, "tmp")
-	t.Setenv("TMPDIR", e.tmp)
 	e.p = paths.Resolve(paths.NewEnv([]string{
+		"TMPDIR=" + e.tmp,
 		"TACCTL_ETC=" + filepath.Join(w, "etc"),
 		"TACCTL_STATE_DIR=" + filepath.Join(w, "state"),
 		"TACCTL_LOG=" + filepath.Join(w, "log"),

@@ -86,10 +86,11 @@ func tempName(dir string) string {
 	return filepath.Join(dir, "tmp."+string(b))
 }
 
-// TempFile is 'mktemp': an empty file, mode 0600, in TMPDIR.
-func TempFile() (string, error) {
+// TempFile is 'mktemp': an empty file, mode 0600, in dir (the invocation's
+// TMPDIR: paths.Paths.TempDir).
+func TempFile(dir string) (string, error) {
 	for range 100 {
-		p := tempName(os.TempDir())
+		p := tempName(dir)
 		f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if errors.Is(err, fs.ErrExist) {
 			continue
@@ -102,10 +103,11 @@ func TempFile() (string, error) {
 	return "", errors.New("mktemp: too many attempts")
 }
 
-// TempDir is 'mktemp -d': a directory, mode 0700, in TMPDIR.
-func TempDir() (string, error) {
+// TempDir is 'mktemp -d': a directory, mode 0700, in dir (the invocation's
+// TMPDIR: paths.Paths.TempDir).
+func TempDir(dir string) (string, error) {
 	for range 100 {
-		p := tempName(os.TempDir())
+		p := tempName(dir)
 		err := os.Mkdir(p, 0o700)
 		if errors.Is(err, fs.ErrExist) {
 			continue

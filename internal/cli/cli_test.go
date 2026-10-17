@@ -30,13 +30,16 @@ type harness struct {
 	app      *app.App
 	runner   *fake.Runner
 	out, err bytes.Buffer
+	// hooks are what its runs replace (hooks.go).
+	hooks *hooks
 }
 
 // newHarness is an invocation as the bats suite makes it: TACCTL_SKIP_SUDO=1,
 // not root.
 func newHarness(t *testing.T, args []string, extraEnv ...string) *harness {
 	t.Helper()
-	h := &harness{runner: &fake.Runner{}}
+	parallel(t)
+	h := &harness{runner: &fake.Runner{}, hooks: newTestHooks()}
 	env := append([]string{"TACCTL_SKIP_SUDO=1", "PATH=/usr/bin"}, extraEnv...)
 	h.app = app.New(args, paths.NewEnv(env), "/opt/x/dist/tacctl", 1000,
 		app.Stdio{Stdin: strings.NewReader(""), Stdout: &h.out, Stderr: &h.err}, h.runner)
@@ -44,7 +47,7 @@ func newHarness(t *testing.T, args []string, extraEnv ...string) *harness {
 }
 
 func (h *harness) run() error {
-	return Run(context.Background(), h.app, BuildInfo{Version: "0.2.0-test", Commit: "abc123", Date: "2026-10-03T00:00:00Z"})
+	return runWith(context.Background(), h.app, BuildInfo{Version: "0.2.0-test", Commit: "abc123", Date: "2026-10-03T00:00:00Z"}, h.hooks)
 }
 
 // commandPaths lists every command of the tree as its argv words.
@@ -60,7 +63,7 @@ func commandPaths(c *cobra.Command, prefix []string, out *[][]string) {
 // the command it resolves.
 func TestEveryCommandHasAHandler(t *testing.T) {
 	var all [][]string
-	root := newRoot(&invocation{app: newHarness(t, nil).app})
+	root := newRoot(&invocation{app: newHarness(t, nil).app, hooks: newTestHooks()})
 	commandPaths(root, nil, &all)
 	if len(all) < 100 {
 		t.Fatalf("tree has %d commands; the families of 1.2 are missing", len(all))

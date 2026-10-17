@@ -8,19 +8,10 @@ package cli
 
 import (
 	"io"
-	"os"
 	"slices"
 
 	"github.com/rett/tacctl/internal/devreg"
 )
-
-// sshConfigServer names this machine in the fragment's header line.
-var sshConfigServer = func() string {
-	if h, err := os.Hostname(); err == nil && h != "" {
-		return h
-	}
-	return "this server"
-}
 
 func (inv *invocation) deviceSSHConfig(args []string) error {
 	if _, err := inv.deviceParse("ssh-config", args); err != nil {
@@ -39,7 +30,7 @@ func (inv *invocation) deviceSSHConfig(args []string) error {
 			return err
 		}
 	}
-	inv.write(string(devreg.SSHConfig(entries, a.Paths.KnownHosts, sshConfigServer(), a.Knobs.Now())))
+	inv.write(string(devreg.SSHConfig(entries, a.Paths.KnownHosts, inv.hooks.serverName(), a.Knobs.Now())))
 	_, _ = io.WriteString(a.Out.Stderr, devreg.SSHConfigHint)
 	return nil
 }

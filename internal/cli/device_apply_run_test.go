@@ -107,7 +107,7 @@ func (b *applyBox) start(in io.Reader, out, errb *lockedBuf, args ...string) cha
 	})
 	code := make(chan int, 1)
 	go func() {
-		code <- exitCode(Run(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}), a.Out)
+		code <- exitCode(runWith(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}, b.sb.hooks), a.Out)
 	}()
 	return code
 }
@@ -154,11 +154,9 @@ func (b *applyBox) seed(name string) {
 }
 
 // interrupts makes the runner's Ctrl-Cs come from the returned channel.
-func interrupts(t *testing.T) chan struct{} {
+func (b *pullBox) interrupts() chan struct{} {
 	ch := make(chan struct{}) // unbuffered: a send returns when the runner took it
-	prev := interruptSource
-	interruptSource = func() <-chan struct{} { return ch }
-	t.Cleanup(func() { interruptSource = prev })
+	b.sb.hooks.interruptSource = func() <-chan struct{} { return ch }
 	return ch
 }
 
@@ -210,7 +208,7 @@ func TestApplyPhaseBInterruptsAndPendingRecord(t *testing.T) {
 	b.seed("example-sw1")
 	before := b.committed()
 	b.knob("verify.fail", "hang\n")
-	ch := interrupts(t)
+	ch := b.interrupts()
 	out, errb := &lockedBuf{}, &lockedBuf{}
 	code := b.start(nil, out, errb, "example-sw1,example-sw2", "--confirmed", "--yes", "--pause", "0", "--concurrency", "1")
 	waitLong(t, "the commit's pending record", func() bool {
@@ -250,14 +248,13 @@ func TestApplyPendingRecordWriteFailure(t *testing.T) {
 	b.register("example-sw1")
 	b.seed("example-sw1")
 	var refused atomic.Int32
-	applyRecordFault = func(_ string, a devconf.Applied) error {
+	b.sb.hooks.applyRecordFault = func(_ string, a devconf.Applied) error {
 		if a.Result == devconf.AppliedPending {
 			refused.Add(1)
 			return errors.New("disk full")
 		}
 		return nil
 	}
-	t.Cleanup(func() { applyRecordFault = nil })
 	code, out, errs := b.apply("example-sw1", "--confirmed", "--yes")
 	if code != 0 || !strings.Contains(out, "example-sw1  applied ") || !strings.Contains(out, "(the pending record at the commit was not kept: disk full)") {
 		t.Errorf("exit %d\n%s\n%s", code, out, errs)
@@ -281,7 +278,7 @@ func TestApplyPhaseAInterrupts(t *testing.T) {
 	b.register("example-sw1", "example-sw2")
 	before := b.committed()
 	b.knob(junosReadCmd+".hang", "")
-	ch := interrupts(t)
+	ch := b.interrupts()
 	out, errb := &lockedBuf{}, &lockedBuf{}
 	code := b.start(nil, out, errb, "example-sw1,example-sw2", "--confirmed", "--yes", "--concurrency", "1")
 	waitLong(t, "the device to have the read command", func() bool { return b.served(junosReadCmd) == 1 })
@@ -351,14 +348,12 @@ func TestApplyHoldOneReaderAcrossDevices(t *testing.T) {
 	b := newApplyBox(t)
 	b.register("example-sw1", "example-sw2")
 	var calls atomic.Int32
-	prev := applyHoldWait
-	applyHoldWait = func(until, now time.Time) time.Duration {
+	b.sb.hooks.applyHoldWait = func(until, now time.Time) time.Duration {
 		if calls.Add(1) == 1 {
 			return 300 * time.Millisecond
 		}
 		return 30 * time.Second
 	}
-	t.Cleanup(func() { applyHoldWait = prev })
 	master, slave := terminal(t)
 	out, errb := &lockedBuf{}, &lockedBuf{}
 	code := b.start(slave, out, errb, "example-sw1,example-sw2", "--hold", "--no-canary", "--max-failures", "2", "--pause", "0", "--concurrency", "1")

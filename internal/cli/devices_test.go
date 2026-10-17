@@ -23,7 +23,7 @@ func route(r *fake.Runner) {
 }
 
 func TestDeviceVerbsAreNative(t *testing.T) {
-	inv := &invocation{app: newHarness(t, nil).app}
+	inv := &invocation{app: newHarness(t, nil).app, hooks: newTestHooks()}
 	c := configCmd(inv)
 	for _, v := range []string{"cisco", "juniper", "wti"} {
 		sub := child(c, v)

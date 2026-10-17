@@ -29,11 +29,12 @@ func scanTarget(e devreg.Entry) (addr string, port int, legacy, ok bool) {
 	return e.Address, e.SSHPort(), e.LegacySSH, true
 }
 
-// keyFallback is the host-key scan of a legacy-ssh device that ssh-keyscan
-// read nothing from: tacctl's own ssh client, which negotiates the SHA-1 key
-// exchange and CBC ciphers old IOS needs and stops at the host key, before
-// any authentication (devssh.ScanHostKeys). It dials as the device sessions
-// do, so the tests' dial override applies.
+// realKeyFallback is the host-key scan of a legacy-ssh device that
+// ssh-keyscan read nothing from (hooks.keyFallback replaces it in tests):
+// tacctl's own ssh client, which negotiates the SHA-1 key exchange and CBC
+// ciphers old IOS needs and stops at the host key, before any authentication
+// (devssh.ScanHostKeys). It dials as the device sessions do, so the tests'
+// dial override applies.
 func realKeyFallback(inv *invocation) devreg.KeyFallback {
 	dial := inv.deviceDialer()
 	return func(ctx context.Context, address string, port int) ([]devreg.HostKey, error) {
@@ -45,14 +46,10 @@ func realKeyFallback(inv *invocation) devreg.KeyFallback {
 	}
 }
 
-// keyFallback is the fallback the verbs use: a variable so that a test
-// replaces the whole scan.
-var keyFallback = realKeyFallback
-
 // scanDevice reads the host keys of a device or host at addr: ssh-keyscan,
 // and for a legacy-ssh device the built-in client when that reads nothing.
 func (inv *invocation) scanDevice(addr string, port int, legacy bool) ([]devreg.HostKey, error) {
-	return devreg.ScanWith(inv.ctx, inv.app.Runner, addr, port, legacy, keyFallback(inv))
+	return devreg.ScanWith(inv.ctx, inv.app.Runner, addr, port, legacy, inv.hooks.scanFallback(inv))
 }
 
 // scanKeys reads the keys at addr; a device that does not answer is the

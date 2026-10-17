@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"io"
 	"os"
 	"regexp"
 	"slices"
@@ -21,14 +20,6 @@ import (
 
 const sshTestSock = "/tmp/agent.sock"
 
-// withTerminal makes stdin count as a terminal for the test.
-func withTerminal(t *testing.T, tty bool) {
-	t.Helper()
-	old := sshTerminal
-	sshTerminal = func(io.Reader) bool { return tty }
-	t.Cleanup(func() { sshTerminal = old })
-}
-
 // sshSandbox registers the devices of the table: core-sw1 (cisco, legacy,
 // pinned, prod), lab-rtr2 (juniper, pinned, lab), oob-con1 (wti, unpinned,
 // prod), edge-fw (other, port, pinned, dmz), and the enrolled host web1
@@ -38,6 +29,7 @@ func withTerminal(t *testing.T, tty bool) {
 func sshSandbox(t *testing.T) (*sandbox, devreg.HostKey, devreg.HostKey) {
 	t.Helper()
 	sb := newSandbox(t, true)
+	sb.terminal(true)
 	rsa, ed := hkKey(t, "rsa"), hkKey(t, "ed25519")
 	for _, add := range []struct {
 		args []string
@@ -85,7 +77,6 @@ func (sb *sandbox) sshArgv() string {
 }
 
 func TestSSHArgvTable(t *testing.T) {
-	withTerminal(t, true)
 	sb, _, _ := sshSandbox(t)
 	kh := sb.path("var-lib", "ssh", "known_hosts")
 	ct := "-o ConnectTimeout=10 -o PubkeyAuthentication=no -o PreferredAuthentications=keyboard-interactive,password"
@@ -134,7 +125,6 @@ func TestSSHArgvTable(t *testing.T) {
 }
 
 func TestSSHAuditKnownHostsAndNotices(t *testing.T) {
-	withTerminal(t, true)
 	sb, rsa, _ := sshSandbox(t)
 	if err := os.Remove(sb.path("var-lib", "ssh", "known_hosts")); err != nil {
 		t.Fatal(err)
@@ -175,7 +165,6 @@ func TestSSHAuditKnownHostsAndNotices(t *testing.T) {
 }
 
 func TestSSHRefusals(t *testing.T) {
-	withTerminal(t, true)
 	sb, _, _ := sshSandbox(t)
 	carol := func(r *fake.Runner) {
 		r.On([]string{"id", "-nG", "--", "carol"}, execx.Result{Stdout: []byte("carol tac-users tac-readonly\n")})
@@ -234,7 +223,7 @@ func TestSSHRefusals(t *testing.T) {
 		t.Errorf("disabled: %d %q %q", sb.code, sb.stderr(), sb.runner.Argvs())
 	}
 	// No terminal.
-	withTerminal(t, false)
+	sb.terminal(false)
 	sb.sshRun("alice", nil, "ssh", "core-sw1")
 	if sb.code != 1 || !strings.Contains(sb.stderr(), "a terminal is required") || sb.sshArgv() != "" {
 		t.Errorf("no tty: %d %q", sb.code, sb.stderr())
@@ -247,7 +236,6 @@ func TestSSHRefusals(t *testing.T) {
 }
 
 func TestSSHExitStatusAndHostKeyDiagnosis(t *testing.T) {
-	withTerminal(t, true)
 	sb, rsa, ed := sshSandbox(t)
 	status := func(code int, keys ...devreg.HostKey) func(*fake.Runner) {
 		return func(r *fake.Runner) {
@@ -304,7 +292,6 @@ func TestSSHExitStatusAndHostKeyDiagnosis(t *testing.T) {
 // No child of 'tacctl ssh' carries a secret: the scope secrets and the
 // password hashes of the store stay off every argv.
 func TestSSHNoSecretOnArgv(t *testing.T) {
-	withTerminal(t, true)
 	sb, rsa, _ := sshSandbox(t)
 	var secrets []string
 	for _, m := range regexp.MustCompile(`(?m)^\s+(?:secret|hash): (\S+)$`).FindAllStringSubmatch(sb.store(), -1) {
@@ -331,9 +318,7 @@ func TestSSHNoSecretOnArgv(t *testing.T) {
 // ssh', the hint on stderr; nothing written into a home.
 func TestDeviceSSHConfig(t *testing.T) {
 	sb, _, _ := sshSandbox(t)
-	old := sshConfigServer
-	sshConfigServer = func() string { return "authsrv" }
-	t.Cleanup(func() { sshConfigServer = old })
+	sb.hooks.sshConfigServer = func() string { return "authsrv" }
 	kh := sb.path("var-lib", "ssh", "known_hosts")
 	out := sb.sshRun("alice", nil, "device", "ssh-config")
 	if sb.code != 0 {
@@ -393,7 +378,6 @@ func TestDeviceSSHConfig(t *testing.T) {
 // entry is refused; the log lines carry console=<session>; every session
 // logs its end.
 func TestSSHConsoleSession(t *testing.T) {
-	withTerminal(t, true)
 	sb, _, _ := sshSandbox(t)
 	kh := sb.path("var-lib", "ssh", "known_hosts")
 	ct := "-o ConnectTimeout=10 -o PubkeyAuthentication=no -o PreferredAuthentications=keyboard-interactive,password"
@@ -466,7 +450,6 @@ func TestSSHConsoleSession(t *testing.T) {
 // forwarding tiers (default superuser) may, ClearAllForwardings is left out
 // for them, and anyone else is refused and logged.
 func TestSSHForwarding(t *testing.T) {
-	withTerminal(t, true)
 	sb, _, _ := sshSandbox(t)
 	groups := func(r *fake.Runner) {
 		r.On([]string{"id", "-nG", "--", "alice"}, execx.Result{Stdout: []byte("alice tac-users tac-superuser\n")})

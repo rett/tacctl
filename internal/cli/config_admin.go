@@ -183,14 +183,14 @@ func (inv *invocation) removeFile(file string) error {
 // errexit), after its own message.
 func (inv *invocation) installSudoers(body, dst string) error {
 	a := inv.app
-	err := tier.InstallSudoers(inv.ctx, a.Runner, a.Out.Stdout, a.Out.Stderr, body, dst)
+	err := tier.InstallSudoers(inv.ctx, a.Runner, a.Out.Stdout, a.Out.Stderr, a.Paths.TempDir, body, dst)
 	var te *tier.TempError
 	var ie *tier.InstallError
 	switch {
 	case err == nil:
 		return nil
 	case errors.As(err, &te):
-		inv.stderrLine("mktemp: failed to create file via template '" + filepath.Join(os.TempDir(), "tmp.XXXXXXXXXX") + "': " + cfgErrno(te.Err))
+		inv.stderrLine("mktemp: failed to create file via template '" + filepath.Join(a.Paths.TempDir, "tmp.XXXXXXXXXX") + "': " + cfgErrno(te.Err))
 		return exit(1)
 	case errors.Is(err, tier.ErrVisudo):
 		a.Out.Error("visudo validation failed. Not installed.")
@@ -363,7 +363,7 @@ func (inv *invocation) configRenderDryRun(args []string) error {
 		a.Out.ErrorE(err.Error())
 		return exit(1)
 	}
-	tmpd, err := os.MkdirTemp("", "tmp.")
+	tmpd, err := os.MkdirTemp(a.Paths.TempDir, "tmp.")
 	if err != nil {
 		a.Out.Error("Cannot create a staging directory: " + err.Error())
 		return exit(1)
