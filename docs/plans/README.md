@@ -11,7 +11,7 @@ cite them by number and file name.
 |---|---|
 | `backlog.md` | The roadmap (section 0) and the open items |
 | `0.2.14-handoff.md` | State, scope and working rules for 0.2.14 |
-| `0.2.14-plan.md` | A hold that follows `device address`, action pins (D175-D178) |
+| `0.2.14-plan.md` | Holds: follow `device address`, Linux hosts; action pins (D175-D181) |
 | `0.2.13-handoff.md` | State, scope and working rules for 0.2.13 |
 | `0.2.13-plan.md` | Parallel `internal/cli` tests (D166-D174) |
 | `0.2.12-handoff.md` | State, scope and working rules for 0.2.12 |
