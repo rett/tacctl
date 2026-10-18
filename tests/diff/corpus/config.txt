@@ -60,14 +60,17 @@ config bcrypt-cost 10 ;; config validate
 
 # loglevel, listen, metrics
 config loglevel
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config loglevel debug ;; config loglevel
 config loglevel info ;; config loglevel
 config loglevel trace
 config listen
 config listen show
 config listen tcp
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config listen tcp 10.1.0.1:49 ;; config listen show
 config listen tcp6 [::]:49 ;; config listen show
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config listen tcp 10.1.0.1:49 ;; config listen reset ;; config listen show
 config listen bogus
 config listen tcp notanaddress
@@ -77,11 +80,15 @@ config listen --backend nosuch
 config metrics
 config metrics show
 config metrics enable ;; config metrics show
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config metrics disable ;; config metrics show
 config metrics address
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config metrics address 10.1.0.1:9090 ;; config metrics show
 config metrics address 127.0.0.1
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config metrics address :9090
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config metrics address 127.0.0.1:8080 ;; config metrics reset ;; config metrics show
 config metrics bogus
 
@@ -91,27 +98,27 @@ config allow list
 config allow bogus
 config allow add
 config allow add notacidr
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config allow add 10.0.0.0/8,192.168.0.0/16,2001:db8::/32 ;; config allow list
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config allow add 192.168.0.0/16,10.0.0.0/8 ;; config allow list
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config allow add 10.0.0.0/8 ;; config allow remove 10.0.0.0/8 ;; config allow list
 config allow remove 10.0.0.0/8
 config allow clear <<< y
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config allow add 10.0.0.0/8 ;; config allow clear <<< y ;; config allow list
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config allow add 10.0.0.0/8 ;; config allow clear <<< n ;; config allow list
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config allow add 10.0.0.0/8 ;; config allow clear
 config deny list
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config deny add 10.66.0.0/16 ;; config deny list
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config deny add 10.66.0.9/16 ;; config deny list
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config deny add 10.66.0.0/16 ;; config allow add 10.0.0.0/8 ;; config validate
 config deny add notacidr
 config deny remove 10.66.0.0/16
@@ -145,9 +152,9 @@ config sudoers
 config sudoers show
 config sudoers bogus
 config sudoers remove
-@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax; 0.2.9 item 2: the cache's alias gains device config apply, device onboard and device collect
+@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax; 0.2.9 item 2: the cache's alias gains device config apply, device onboard and device collect; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config sudoers tiers
-@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax; 0.2.9 item 2: the cache's alias gains device config apply, device onboard and device collect
+@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax; 0.2.9 item 2: the cache's alias gains device config apply, device onboard and device collect; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config sudoers tiers show
 config sudoers tiers bogus
 
@@ -177,13 +184,16 @@ config password-age -1
 config password-age 1 2
 config password-min-length 7.5
 config secret-min-length 0
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config loglevel debug info
 config loglevel ''
 config listen tcp6
 config listen tcp6 10.1.0.1:49
 config listen tcp ''
 config listen reset extra
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config metrics address 127.0.0.1:99999
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config metrics address 127.0.0.1:0
 config metrics enable extra
 config allow add ''
@@ -230,7 +240,7 @@ config get-list a b c
 config sudoers show extra
 config sudoers remove extra
 config sudoers tiers remove extra
-@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax; 0.2.9 item 2: the cache's alias gains device config apply, device onboard and device collect
+@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax; 0.2.9 item 2: the cache's alias gains device config apply, device onboard and device collect; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config sudoers tiers show extra
 config restore {TS} --bogus
 config diff {TS} extra
@@ -281,7 +291,7 @@ config sudoers install 'bad group' <<< y
 config sudoers install wheel extra <<< n
 # Unprivileged, the real 'install -o root' fails; 0.1.16 then exits under errexit and
 # leaves its mktemp copy of the drop-in in TMPDIR, 0.2.0 removes it (3.9 item 18).
-@known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind; 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax; 0.2.9 item 2: the cache's alias gains device config apply, device onboard and device collect
+@known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind; 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax; 0.2.9 item 2: the cache's alias gains device config apply, device onboard and device collect; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config sudoers tiers install
 @known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind
 config sudoers install wheel <<< y
@@ -291,8 +301,9 @@ config bcrypt-cost ''
 config password-age ''
 @known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 config secret-min-length 20 ;; config password-min-length 9 ;; config password-age 30 ;; config dump
-@known 0.2.3 item 78: config validate warns about a scope without a break-glass user
+@known 0.2.3 item 78: config validate warns about a scope without a break-glass user; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config loglevel debug ;; config loglevel debug ;; config validate ;; config show
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config metrics disable ;; config metrics enable ;; config metrics address 10.1.0.1:9090 ;; config metrics reset ;; config metrics
 
 # render --dry-run is new in 0.2.0 (docs/plans/go-rewrite.md 3.9 item 8)
