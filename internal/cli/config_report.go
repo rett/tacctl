@@ -358,6 +358,12 @@ func (inv *invocation) configValidate([]string) error {
 			inv.echoE("  " + G + "Linux hosts:" + NC + "          each answered by its scope")
 		}
 	}
+	// Hosts registered twice under one name, a host named like a device, two
+	// hosts at one address, and what a registry line no longer has: warnings
+	// that name the verb that puts each right (D187).
+	for _, fnd := range inv.hostFindings() {
+		inv.echoE("  " + Y + "Linux hosts:" + NC + "          " + fnd.String())
+	}
 
 	// Break-glass local users (D55): a scope without one is a lockout risk
 	// when the server is unreachable, and a name that is also a tacctl user

@@ -357,7 +357,7 @@ func TestHostRenameWarnsForWhatStayed(t *testing.T) {
 	}
 	sb.run("", []string{"host", "rename", "web1", "web7", "--yes"})
 	sb.expect(0, "Host 'web1' renamed to 'web7'.", "")
-	for _, want := range []string{"web7: the record of an earlier host of that name could not be removed", "web7: its staging addresses still name 'web1' (192.0.2.9)"} {
+	for _, want := range []string{"web7: its record (", "web7: its staging addresses still name 'web1' (192.0.2.9)"} {
 		if !strings.Contains(sb.printed(), want) {
 			t.Errorf("no warning %q:\n%s", want, sb.printed())
 		}

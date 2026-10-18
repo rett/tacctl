@@ -34,6 +34,17 @@ The scope of a host is, in order: `--scope`; the scope the host is registered in
 
 **One machine, one registration.** Enroll refuses this server's own address unless it is `--local` (`'<target>' is this server; enroll it with --local`), and a new name for a machine already enrolled under another one (the same address on the same ssh port, or one of this server's own addresses when it is enrolled with `--local`): `'h192-0-2-22' is the enrolled host 'dev' (enrolled as admin@host.example.net): both reach 192.0.2.22.` Re-enroll it under its registered name (`--name dev`) or change how it is reached (`tacctl host target dev <[user@]host>`).
 
+**A machine registered twice.** Registrations made before the name rules
+(`Web1` and `web1` both enrolled, or a host and a device with one name), or
+left half-removed by a failed command, are reported by `config validate` and
+`host list` (see [`host` findings](../cli/host.md)), each with its fix. They
+are repaired from the registry alone: `tacctl host forget <name>` drops one
+registration (registry line, pin, record, staging addresses) and sends nothing
+to the host, so the surviving registration keeps its accounts and `host
+unenroll --force` (which would run the removal script on the shared machine)
+is not needed. It is also the way to remove the leftovers of a name that has
+no registry line.
+
 **Renaming a registration.** A host enrolled under the wrong name is not
 enrolled again (that would be a second registration of the machine, refused
 as above): `tacctl host rename <old> <new>` gives the registration another
@@ -74,8 +85,8 @@ its address. While the hold stands the `host` verbs that log in over ssh
 refuse it, naming the hold and `tacctl breakglass release <name>`: `host sync`,
 `host show --check`, `host enroll` of the registered host (so `host move`),
 `host target <name> <target>`, `host provisioner <name> rotate` and
-`host unenroll` (also with `--force`). `host sync --all` skips the host and
-says so. `host list` marks it `BREAK-GLASS`, and `host show` has a
+`host unenroll` (also with `--force`) and `host forget`. `host sync --all`
+skips the host and says so. `host list` marks it `BREAK-GLASS`, and `host show` has a
 Break-glass section. This server's own host (`--local`) cannot be held. See
 [Holding break-glass](../devices/break-glass.md#holding-break-glass).
 
@@ -83,9 +94,9 @@ Break-glass section. This server's own host (`--local`) cannot be held. See
 
 `ssh` runs as the user who invoked `sudo`, with their keys; the remote login must be root or able to `sudo` (a password prompt works when run from a terminal). That login (the provisioning account: the target's `user@`, else your own username) must be a local account on the host that does not authenticate through tacctl, so enrolment and sync keep working when this server cannot be reached: `host enroll` refuses a tacctl user, and `host sync` warns about an existing enrolment that uses one. `tacctl ssh` never uses it. Without a terminal, a host whose sudo needs a password is reported as such rather than attempted. The steps of one command share a single ssh connection per host, so a login without a key asks for its ssh password once, followed by one sudo prompt; with a key (or agent) and passwordless sudo or a root login there is no prompt at all. `--scope` enrolls into an existing scope instead of creating one (the scope must answer the host's requests: `--local` is refused, nothing changed, when the scope does not cover 127.0.0.1, the address this server's own logins come from; another host gets a warning when the scope does not cover the address its name resolves to, and `host sync` of this server warns when its scope stops covering 127.0.0.1), `--server` overrides the detected server address, `--name` the registry name, and `--port` / `--identity` are passed to ssh. `host target <name> [<[user@]host>] [--port <n>] [--identity <file>|--no-identity]` changes how a host is reached without re-enrolling it: it logs in to the new target the same way first, checks that the login is root or may use sudo, compares the host's ssh keys read over that session with the pinned ones (a host whose keys differ is refused: it is not the same machine), records the address reached, and only then rewrites the registry line (scope, server and method kept), after a snapshot. Account changes are not pushed automatically: run `host sync` after `user add`, `remove`, `move`, `disable` or `scope` changes. Until then a removed user is already refused at password login by the server, but an SSH key on the host keeps working.
 
-**Snapshots.** `host enroll` (so `host move`) and `host unenroll` take a
-snapshot just before they change the registry, after the script on the host
-has succeeded; `host sync` takes none. A snapshot holds `linux-hosts` (the
+**Snapshots.** `host enroll` (so `host move`), `host unenroll`, `host rename`
+and `host forget` take a snapshot just before they change the registry (for
+`host enroll`, after the script on the host has succeeded); `host sync` takes none. A snapshot holds `linux-hosts` (the
 registry), `hosts/` (the records), `staging` and `linux-uids` (the UID
 ledger). `tacctl backup restore <timestamp>` puts them back when the snapshot
 has `linux-hosts` (one from 0.2.13 or older does not, and leaves them alone).

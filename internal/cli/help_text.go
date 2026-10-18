@@ -554,6 +554,10 @@ Usage: tacctl host <subcommand> [arguments]
                                        addresses and break-glass hold follow; nothing is sent to the host. When the host
                                        is the only user of scope linux-<old>, asks whether to rename that scope too
       --yes                            (rename) Replace what an earlier host of the new name left, and rename the scope
+  forget <name>                        Drop the host's registration from this server (registry line, pinned keys,
+                                       record, staging addresses) and run nothing on the host; also what a registry
+                                       line no longer has. Refused for a held host
+      --yes                            (forget) Do not ask first
   unenroll <name> [--force]            Remove the login method from the host (accounts and homes are kept)
       --force                          Forget the host even when the removal there failed
   default-method [tacplus|radius]      Show or set the method for hosts enrolled without --method

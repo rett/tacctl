@@ -79,7 +79,10 @@ config validate
     each, and so is a private copy of the configuration that a killed command left in the state
     directory (`.apply.*`, `.restore.*`,
     `.enable.*`, `.units.*`, `.disable.*`, older than ten minutes, with no command holding the
-    apply lock). Exits 1 on errors
+    apply lock). Under `Linux hosts:` it also warns of two hosts whose names are equal ignoring
+    case, a host named like a device, two hosts with the same recorded address, and a pin, record
+    or staging entry with no registry line (each names its fix: `host forget`, `host rename`; see
+    cli/host.md). Exits 1 on errors
 
 config diff [timestamp]
 

@@ -216,7 +216,7 @@ group edit|user move|scope snmp|device location|host show|rollback|group reset`
 	}
 	// Linux host deployment is the superuser's: an engineer reads hosts
 	// ('host list', 'host show') and runs none of the rest.
-	for _, sub := range []string{"enroll", "sync", "move", "target", "provisioner", "rename", "unenroll", "default-method"} {
+	for _, sub := range []string{"enroll", "sync", "move", "target", "provisioner", "rename", "forget", "unenroll", "default-method"} {
 		if Permits(Operator, "host", sub) || Permits(Engineer, "host", sub) || !Permits(Superuser, "host", sub) {
 			t.Errorf("host %s: operator %v, engineer %v, superuser %v", sub, Permits(Operator, "host", sub),
 				Permits(Engineer, "host", sub), Permits(Superuser, "host", sub))
@@ -239,7 +239,7 @@ func TestEngineerSudoersRowsAreExact(t *testing.T) {
 	}
 	for _, item := range []string{"device import *", "scope staging *", "host list *", "scope secret", "scope snmp",
 		"config snmp *", "host enroll *", "host sync *", "host move *", "host target *", "host provisioner *",
-		"host rename *", "host unenroll *", "host default-method", "host default-method *"} {
+		"host rename *", "host forget *", "host unenroll *", "host default-method", "host default-method *"} {
 		if has(item) {
 			t.Errorf("engineer alias has %q", item)
 		}

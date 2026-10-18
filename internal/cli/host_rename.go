@@ -29,15 +29,16 @@ type hostRenamePlan struct {
 	// holdAddr is the address a hold on the host carves, read before the pin
 	// moves with the name ("" for this server's own host or an unknown one).
 	holdAddr string
-	// pins says whether devices.yaml has to be changed (a pin under either
-	// name); leftovers are what the new name has from an earlier host.
-	pins     bool
+	// leftover is what the new name has from an earlier host.
 	leftover []string
-	// leftRecord and leftStaging say which leftovers are there.
-	leftRecord, leftStaging bool
+	// leftPin and leftRecord say which leftovers are there.
+	leftPin, leftRecord bool
 	// offer is the host's own scope when it is offered the same rename.
 	oldScope, newScope string
 	offer              bool
+	// stays is why the scope is not offered ("" when it is, or when the host
+	// is not in a scope named for it).
+	stays string
 }
 
 // hostRename is 'host rename <old> <new> [--yes]'.
@@ -81,6 +82,9 @@ func (inv *invocation) hostRename(args []string) error {
 		return err
 	}
 	defer unlock()
+	if p.stays != "" {
+		a.Out.InfoE("Scope 'linux-" + oldName + "' keeps its name: " + p.stays + ".")
+	}
 
 	// The questions, all before the first write (D184, D200). --yes answers
 	// them yes; a question that gets no answer is a no.
@@ -116,16 +120,21 @@ func (inv *invocation) hostRename(args []string) error {
 	inv.hooks.renameStep("registry")
 
 	// The pin, the address history and the acknowledgements in one write of
-	// devices.yaml (known_hosts regenerated). If it fails the registry line
-	// goes back, and nothing was changed.
-	if p.pins {
-		changed, err := devreg.Mutate(a.Paths.DevicesFile, a.Paths.KnownHosts, nil, func(f *devreg.File) error {
-			f.RenameHost(oldName, newName)
-			return nil
-		})
-		if err != nil {
-			return inv.hostRenameUndo(reg, p, changed, err)
+	// devices.yaml (known_hosts regenerated). It runs whether or not there
+	// is a pin (it writes nothing when the bytes do not change), because it
+	// is also where a device registered under the new name since the checks
+	// is found: the registry line has been written, and a command that
+	// registers a device reads the hosts under this same lock. If it fails
+	// the registry line goes back, and nothing was changed.
+	changed, err := devreg.Mutate(a.Paths.DevicesFile, a.Paths.KnownHosts, nil, func(f *devreg.File) error {
+		if d := f.Find(newName); d != nil {
+			return errors.New("A device named '" + d.Name + "' (" + d.Address + ") was registered meanwhile; a host and a device cannot share a name.")
 		}
+		f.RenameHost(oldName, newName)
+		return nil
+	})
+	if err != nil {
+		return inv.hostRenameUndo(reg, p, changed, err)
 	}
 	inv.hooks.renameStep("pins")
 
@@ -144,6 +153,15 @@ func (inv *invocation) hostRename(args []string) error {
 	a.Out.InfoE("Host '" + oldName + "' renamed to '" + newName + "'. Nothing was sent to the host.")
 
 	if renameScope {
+		// The question's premise was that no other host uses the scope; a
+		// host enrolled into it since is read from the registry again.
+		if now, rerr := inv.registry(); rerr == nil && now.OtherHostsUse(p.oldScope, newName) {
+			a.Out.InfoE("Scope '" + p.oldScope + "' keeps its name: other enrolled hosts use it.")
+			inv.echo("")
+			inv.echo("  To rename the scope as well: tacctl scope rename " + p.oldScope + " " + p.newScope)
+			inv.echo("")
+			return nil
+		}
 		err := inv.scopeRenameCheck(p.oldScope, p.newScope)
 		if err == nil {
 			err = inv.scopeRenameRun(p.oldScope, p.newScope)
@@ -208,18 +226,14 @@ func (inv *invocation) hostRenameChecks(reg *hosts.Registry, oldArg, newName str
 
 	// What an earlier host of the new name left (D184).
 	if !sameHost && f.Host(newName) != nil {
-		p.pins = true
+		p.leftPin = true
 		p.leftover = append(p.leftover, "its pinned ssh keys and address in the device registry")
-	}
-	if f.Host(oldName) != nil {
-		p.pins = true
 	}
 	if oldName != newName && inv.hostRecords().Has(newName) {
 		p.leftRecord = true
 		p.leftover = append(p.leftover, "its record "+filepath.Join(a.Paths.HostRecords, newName+".json"))
 	}
 	if n := inv.hostRenameStrays(oldName, newName); n > 0 {
-		p.leftStaging = true
 		p.leftover = append(p.leftover, strconv.Itoa(n)+" staging address(es)")
 	}
 
@@ -271,7 +285,7 @@ func (inv *invocation) hostRenameOffer(reg *hosts.Registry, p *hostRenamePlan) {
 		}
 	}
 	if why != "" {
-		inv.app.Out.InfoE("Scope '" + oldScope + "' keeps its name: " + why + ".")
+		p.stays = why
 		return
 	}
 	p.oldScope, p.newScope, p.offer = oldScope, newScope, true
@@ -283,36 +297,60 @@ func (inv *invocation) hostRenameOffer(reg *hosts.Registry, p *hostRenamePlan) {
 // both states are named and the exit status is 1.
 func (inv *invocation) hostRenameUndo(reg *hosts.Registry, p *hostRenamePlan, pinsWritten bool, cause error) error {
 	a := inv.app
-	var back error
+	inv.hooks.renameStep("undo")
+	var pinBack, back error
+	// The pins are back under the old name when they were never moved, or
+	// when devices.yaml was written again (a failure after that write is
+	// known_hosts alone).
+	restored := !pinsWritten
 	if pinsWritten {
-		_, back = devreg.Mutate(a.Paths.DevicesFile, a.Paths.KnownHosts, nil, func(f *devreg.File) error {
+		var rewritten bool
+		rewritten, pinBack = devreg.Mutate(a.Paths.DevicesFile, a.Paths.KnownHosts, nil, func(f *devreg.File) error {
 			f.RenameHost(p.newName, p.oldName)
 			return nil
 		})
+		restored = pinBack == nil || rewritten
+		if pinBack != nil && rewritten {
+			a.Out.WarnE("The host-key file (" + a.Paths.KnownHosts + ") could not be written: " + strings.Join(msgs(pinBack), " ") + ". Any later change of the device registry writes it again.")
+			pinBack = nil
+		}
 	}
-	if back == nil {
+	if restored {
 		back = reg.Rename(p.newName, p.oldName)
 	}
-	if back != nil {
-		a.Out.ErrorE("The device registry could not be changed (" + strings.Join(msgs(cause), " ") + ") and the registry line could not be put back (" + strings.Join(msgs(back), " ") + ").")
-		a.Out.ErrorE("The host registry names the host '" + p.newName + "'; its pinned ssh keys and address are under '" + p.oldName + "'. The state before is the latest snapshot: tacctl backup list, tacctl backup restore <id>.")
+	snapshot := "The state before is the latest snapshot: tacctl backup list, tacctl backup restore <id>."
+	switch {
+	case !restored:
+		// The pins are under the new name and so is the registry line.
+		a.Out.ErrorE("The device registry could not be changed back (" + strings.Join(msgs(cause), " ") + "; " + strings.Join(msgs(pinBack), " ") + ").")
+		a.Out.ErrorE("The host registry and the device registry both name the host '" + p.newName + "'; the host-key file (" + a.Paths.KnownHosts + ") may be stale. " + snapshot)
 		return exit(1)
+	case back != nil:
+		a.Out.ErrorE("The device registry could not be changed (" + strings.Join(msgs(cause), " ") + ") and the registry line could not be put back (" + strings.Join(msgs(back), " ") + ").")
+		a.Out.ErrorE("The host registry names the host '" + p.newName + "'; its pinned ssh keys and address are under '" + p.oldName + "'. " + snapshot)
+		return exit(1)
+	}
+	if pinsWritten && p.leftPin {
+		// The pins were written, so the pin an earlier host of the new name
+		// left was replaced, and putting the old name back does not restore it.
+		return inv.usageErr(strings.Join(msgs(cause), " "), "Host '"+p.oldName+"' was not renamed. The pinned ssh keys and address an earlier host of the name '"+p.newName+"' left were replaced; the latest snapshot has them: tacctl backup list.")
 	}
 	return inv.usageErr(strings.Join(msgs(cause), " "), "Host '"+p.oldName+"' was not renamed; nothing was changed.")
 }
 
-// hostRenameRecord moves the record; a leftover record of the new name goes
-// first. A failure is a warning: the record is only shown.
+// hostRenameRecord moves the record over a leftover record of the new name
+// (the move replaces it); with no record of the old name, the leftover goes by
+// itself. A failure is a warning: the record is only shown.
 func (inv *invocation) hostRenameRecord(p *hostRenamePlan) {
 	rs := inv.hostRecords()
-	if p.leftRecord {
+	if p.leftRecord && !rs.Has(p.oldName) {
 		if err := rs.Forget(p.newName); err != nil {
 			inv.app.Out.WarnE(p.newName + ": the record of an earlier host of that name could not be removed: " + strings.Join(msgs(err), " ") + ". Remove it, then: tacctl host sync " + p.newName)
-			return
 		}
+		return
 	}
 	if err := rs.Rename(p.oldName, p.newName); err != nil {
-		inv.app.Out.WarnE(p.newName + ": its record (" + filepath.Join(inv.app.Paths.HostRecords, p.oldName+".json") + ") could not be moved: " + strings.Join(msgs(err), " ") + ". 'tacctl host sync " + p.newName + "' writes a new one.")
+		inv.app.Out.WarnE(p.newName + ": its record (" + filepath.Join(inv.app.Paths.HostRecords, p.oldName+".json") + ") could not be moved: " + strings.Join(msgs(err), " ") + ". It stays under the old name, where nothing reads it (tacctl host forget " + p.oldName + " drops it); 'tacctl host sync " + p.newName + "' writes a new one.")
 	}
 }
 

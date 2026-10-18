@@ -1325,3 +1325,58 @@ YAML
     run _hosts
     assert_output "web7|admin@web1.example.net||lab|192.0.2.1|"
 }
+
+@test "host forget: a registration is dropped locally; orphans are reported and forgotten" {
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab > /dev/null
+    cat > "${TACCTL_STATE_DIR}/devices.yaml" << 'YAML'
+# tacctl device registry: names for the devices and hosts that authenticate here.
+version: 1
+settings: {stale_days: 30}
+devices: {}
+hosts:
+  web1:
+    address: 192.0.2.50
+    host_keys: [ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl]
+YAML
+    chmod 600 "${TACCTL_STATE_DIR}/devices.yaml"
+    # The leftover of a host that has no registry line.
+    cp "${TACCTL_STATE_DIR}/hosts/web1.json" "${TACCTL_STATE_DIR}/hosts/ghost.json"
+
+    run "$TACCTL_BIN_SCRIPT" host list
+    assert_success
+    assert_output --partial "1 finding(s): see tacctl config validate"
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_output --partial "'ghost' is not an enrolled host but has a record (tacctl host forget ghost)"
+
+    # Without --yes and without an answer nothing is changed.
+    run "$TACCTL_BIN_SCRIPT" host forget ghost < /dev/null
+    assert_failure
+    assert_output --partial "Nothing was changed."
+    [ -f "${TACCTL_STATE_DIR}/hosts/ghost.json" ]
+
+    run "$TACCTL_BIN_SCRIPT" host forget ghost --yes
+    assert_success
+    assert_output --partial "Host 'ghost' forgotten."
+    [ ! -e "${TACCTL_STATE_DIR}/hosts/ghost.json" ]
+    run "$TACCTL_BIN_SCRIPT" host list
+    refute_output --partial "finding(s)"
+
+    local before calls
+    before=$(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l)
+    calls=$(wc -l < "${CALLS_LOG}")
+    run "$TACCTL_BIN_SCRIPT" host forget web1 --yes
+    assert_success
+    assert_output --partial "The host itself is not touched"
+    run _hosts
+    assert_output ""
+    [ ! -e "${TACCTL_STATE_DIR}/hosts/web1.json" ]
+    ! grep -q '^  web1:' "${TACCTL_STATE_DIR}/devices.yaml"
+    [[ $(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l) -gt $before ]]
+    stub_called "logger .*host forget name=web1 by="
+    # Nothing was run on the host.
+    ! tail -n +$((calls + 1)) "${CALLS_LOG}" | grep -qE '^(ssh|scp)'
+
+    run "$TACCTL_BIN_SCRIPT" host forget web1 --yes
+    assert_failure
+    assert_output --partial "No enrolled host or leftover named 'web1'"
+}

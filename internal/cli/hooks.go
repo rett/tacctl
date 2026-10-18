@@ -49,6 +49,10 @@ type hooks struct {
 	// hostRenameStep is called by 'host rename' after each step that changed
 	// something ("registry", "pins"); a test changes the world at that point.
 	hostRenameStep func(step string)
+	// deviceWriteStep is called by every write of the device registry after
+	// it was checked on a copy and before the lock is taken; a test changes
+	// the world at that point.
+	deviceWriteStep func()
 	// isTerminalWriter reports whether a stream is a terminal.
 	isTerminalWriter func(w io.Writer) bool
 	// editEuid is the identity this process has.
@@ -175,6 +179,14 @@ func (h *hooks) recordFault(device string, a devconf.Applied) error {
 func (h *hooks) renameStep(step string) {
 	if h != nil && h.hostRenameStep != nil {
 		h.hostRenameStep(step)
+	}
+}
+
+// deviceStep tells the test that a write of the device registry is about
+// to take its lock.
+func (h *hooks) deviceStep() {
+	if h != nil && h.deviceWriteStep != nil {
+		h.deviceWriteStep()
 	}
 }
 

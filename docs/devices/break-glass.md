@@ -58,8 +58,8 @@ The local accounts of [Break-glass local users](#break-glass-local-users) reach 
   is refused, naming the host. While a host is
   held, `host sync`, `host show --check`, `host enroll` of the registered host
   (and `host move`), `host target <name> <target>`,
-  `host provisioner <name> rotate` and `host unenroll` (also with `--force`)
-  are refused, naming the hold (since, by whom, why) and
+  `host provisioner <name> rotate`, `host unenroll` (also with `--force`) and
+  `host forget` are refused, naming the hold (since, by whom, why) and
   `tacctl breakglass release <name>`, before anything is attempted over ssh
   (also when the device registry, which records the address, cannot be read);
   `host sync --all` skips it and says so, and `tacctl ssh` warns and connects.

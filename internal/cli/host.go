@@ -58,6 +58,7 @@ var hostSpecs = map[string]Spec{
 		{Names: []string{"--yes"}}, flagAllowUIDMismatch, flagRemoveHome}},
 	"unenroll": {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--force"}}}},
 	"rename":   {MinArgs: 2, MaxArgs: 2, Args: []string{KindHosts, ""}, Flags: []Flag{{Names: []string{"--yes"}}}},
+	"forget":   {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--yes"}}}},
 	"target": {MinArgs: 1, MaxArgs: 2, Args: []string{KindHosts, ""}, Flags: []Flag{
 		{Names: []string{"--port"}, Value: true},
 		{Names: []string{"--identity"}, Value: true, Kind: KindFile},
@@ -82,6 +83,7 @@ var hostVerbs = [][2]string{
 	{"target <name> [<[user@]host>] [options]", "Show or change how tacctl reaches an enrolled host over ssh"},
 	{"provisioner <name> rotate <user> [options]", "Switch the account tacctl logs in to the host with, proving the new one before the registry changes"},
 	{"rename <old> <new> [--yes]", "Give an enrolled host another name; its own linux-<name> scope can follow"},
+	{"forget <name> [--yes]", "Drop a host's registration from this server without contacting the host"},
 	{"unenroll <name> [--force]", "Remove the login method from the host (accounts and homes are kept)"},
 	{"default-method [tacplus|radius]", "Show or set the method for hosts enrolled without --method"},
 }
@@ -128,6 +130,8 @@ func (inv *invocation) host(args []string) error {
 		return inv.hostProvisioner(rest)
 	case "rename":
 		return inv.hostRename(rest)
+	case "forget":
+		return inv.hostForget(rest)
 	case "unenroll":
 		return inv.hostUnenroll(rest)
 	case "default-method":
@@ -161,6 +165,7 @@ func (inv *invocation) hostList() error {
 		inv.echo(ui.Rule("Enrolled Linux hosts"))
 		inv.echo("  None. Enroll one with: tacctl host enroll <[user@]host>")
 		inv.echo("")
+		inv.hostFindingsFooter()
 		return nil
 	}
 	// An engineer lists the hosts of their own scopes (D47).
@@ -208,6 +213,7 @@ func (inv *invocation) hostList() error {
 		inv.echo(ui.Rule("Enrolled Linux hosts"))
 		inv.echo("  None in your scopes.")
 		inv.echo("")
+		inv.hostFindingsFooter()
 		return nil
 	}
 	inv.write(t.String())
@@ -224,7 +230,18 @@ func (inv *invocation) hostList() error {
 			inv.app.Out.WarnE(msg)
 		}
 	}
+	inv.hostFindingsFooter()
 	return nil
+}
+
+// hostFindingsFooter is the one line 'host list' ends with when the
+// registrations have findings (the superuser's view; 'config validate' lists
+// them).
+func (inv *invocation) hostFindingsFooter() {
+	if n := len(inv.hostFindings()); n > 0 {
+		inv.echoE(fmt.Sprintf("  %s%d finding(s)%s: see tacctl config validate", ui.Yellow, n, ui.NC))
+		inv.echo("")
+	}
 }
 
 // --- enroll ----------------------------------------------------------------------

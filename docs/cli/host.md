@@ -6,7 +6,8 @@
 host list
 
     Show enrolled Linux hosts (target, scope, server, METHOD, users); a host with a break-glass
-    hold is marked BREAK-GLASS in a STATE column
+    hold is marked BREAK-GLASS in a STATE column; when the registrations have findings (below), a
+    last line says how many and points to `config validate`
 
 host show <name> [--all] [--json] [--check]
 
@@ -66,6 +67,12 @@ host rename <old> <new> [--yes]
     Give an enrolled host another name; nothing is sent to the host. Its pinned host keys, record,
     staging addresses and break-glass hold follow; asks about its own linux-<name> scope
 
+host forget <name> [--yes]
+
+    Drop a host's registration from this server (registry line, pinned keys, record, staging
+    addresses, host-key scan result) and send nothing to the host; also what a registry line no
+    longer has. Refused for a held host
+
 host unenroll <name> [--force]
 
     Remove the login method from the host (accounts are kept) and its pinned host keys; --force
@@ -85,7 +92,15 @@ no tacctl word; no generic name; and not equal, in any case, to another
 host or a registered device. Changing only the spelling (`web1` to `Web1`)
 is allowed; the same name is refused (`'web1' already has that name.`). A
 running `host provisioner rotate` of the host refuses the rename. Everything
-is checked before anything is written, and a refusal changes nothing.
+is checked before anything is written, and a refusal changes nothing. The
+device registry is checked once more under its lock when it is written: a
+device registered under the new name since the checks (another command, at
+the same moment) puts the registry line back and changes nothing, and
+`device add|rename` likewise refuse a name that an enrolled host has taken
+meanwhile. A `host sync` running on the host at the moment of the rename can
+write its record and its pin under the old name; `host list` and
+`config validate` then report them as leftovers of a host that is not
+enrolled, and `host forget <old>` removes them.
 
 What an earlier host of the new name left (a pinned key and address in the
 device registry, a record, staging addresses) is listed and replaced after a
@@ -123,19 +138,62 @@ linux-web1 linux-web9.` and exit status 1. Without the question, enrolling
 the renamed host again without `--scope` would default to `linux-<new>` and
 move it.
 
-`host enroll` (so `host move`), `host unenroll` and `host rename` take a
-snapshot just before the registry changes (for `host enroll` once the script
-on the host has succeeded); `host sync` takes none. It holds the registry,
-the host records, `staging` and the UID ledger, so `backup restore` can put
-them back (see [Backup commands](maintenance.md#backup-commands--tacctl-backup)).
+**Forgetting a host.** `tacctl host forget <name>` is the superuser's and
+local: it sends nothing to the host and runs no ssh. After a snapshot it
+drops, for the name, the registry line, the pinned keys, recorded address and
+history in the device registry (the generated `known_hosts` follows), the
+record (`/etc/tacctl/hosts/<name>.json`), the host's staging addresses from
+the `staging` file and the host-key scan result of the seen cache. It lists
+what it will drop and asks (`--yes` skips the question). The host itself is
+not touched: its accounts, secrets and PAM setup stay, so the command is for a
+registration that is wrong, not for taking a host out of service (`host
+unenroll` does that on a host that can be reached). A scope's staging /32
+stays a prefix of the scope; the command prints the `scope prefixes <scope>
+remove` line for it, and the scope of a host that was the last one using it is
+named with `scope remove`. The log line is `host forget name= by=`.
+
+The name is the registered spelling. A leftover that no registry line has (an
+orphan: a pin, a record or a staging entry) is named by exactly its spelling
+and forgotten the same way. A name that matches neither exactly but one
+enrolled host ignoring case is that host (this is how a stray `Web1` is
+forgotten by typing `web1`); several such hosts are refused, naming them. The
+pins and the scan result are shared by names equal ignoring case, so they stay
+while another enrolled host has such a name (a device of that name keeps the
+scan result). A host with a [break-glass hold](breakglass.md) is refused:
+`tacctl breakglass release <name>` first, and so is the leftover of a name
+that a hold is recorded under. A running `host provisioner rotate` of the host
+refuses it. `host unenroll --force` is not the repair for a duplicate: it runs
+the removal script on the machine that the surviving registration shares.
+
+**Findings.** `config validate` (under `Linux hosts:`, warnings that change no
+exit status) and `host list` (one last line, `N finding(s): see tacctl config
+validate`) report, for the superuser, registrations that cannot all be right.
+Nothing is repaired where they are reported; each names the verb that does.
+
+| Finding | Fix |
+|---|---|
+| two enrolled names equal ignoring case (they share one record of pinned keys) | `host forget <name>`, or `host rename <name> <new>` |
+| a host named like a registered device | `host rename <name> <new>` |
+| two hosts with the same recorded address (the one `enroll` or `sync` recorded; nothing is resolved) | `host forget <name>` for a registration made twice |
+| a pin, a record or a staging entry with no registry line | `host forget <name>` |
+
+A break-glass hold with no host is the hold's own orphan line in
+`config validate` and `breakglass list`: `tacctl breakglass release <name>`.
+
+`host enroll` (so `host move`), `host unenroll`, `host rename` and `host
+forget` take a snapshot just before the registry changes (for `host enroll`
+once the script on the host has succeeded); `host sync` takes none. It holds
+the registry, the host records, `staging` and the UID ledger, so `backup
+restore` can put them back (see [Backup
+commands](maintenance.md#backup-commands--tacctl-backup)).
 
 A host with a [break-glass hold](breakglass.md)
 (`tacctl breakglass hold <host>`) is one the server does not answer, so that
 its local administrator and console work. The `host` verbs that log in over
 ssh refuse it: `host sync`, `host show --check`, `host enroll` of the
 registered host (and so `host move`), `host target <name> <target>`,
-`host provisioner <name> rotate` and `host unenroll` (also with `--force`).
-They name the hold (since, by whom, why) and
+`host provisioner <name> rotate` and `host unenroll` (also with `--force`);
+`host forget` is refused too, though it logs in nowhere. They name the hold (since, by whom, why) and
 `tacctl breakglass release <name>`; nothing is attempted over ssh and nothing
 is changed. The same refusal stands when the device registry, which records
 the host's address, cannot be read. `host sync --all` skips a held host and

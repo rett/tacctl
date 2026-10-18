@@ -136,6 +136,7 @@ host|move|0|0|0|1|1|0
 host|target|0|0|0|1|1|0
 host|provisioner|0|0|0|1|1|0
 host|rename|0|0|0|1|1|0
+host|forget|0|0|0|1|1|0
 host|default-method|0|0|0|1|1|0
 config|mgmt-acl|0|0|0|1|1|0
 host|show|0|0|1|1|1|0

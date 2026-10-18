@@ -15,6 +15,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 )
 
 // Record is one host's record.
@@ -183,4 +185,24 @@ func (rs Records) Rename(old, new string) error {
 		return err
 	}
 	return nil
+}
+
+// Names are the hosts that have a record, sorted (the names of the files of
+// the directory, without their .json; a temporary file of a write is not a
+// record). A missing directory has none.
+func (rs Records) Names() []string {
+	ents, err := os.ReadDir(rs.Dir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range ents {
+		n, ok := strings.CutSuffix(e.Name(), ".json")
+		if !ok || n == "" || strings.HasPrefix(e.Name(), ".") || e.IsDir() {
+			continue
+		}
+		out = append(out, n)
+	}
+	slices.Sort(out)
+	return out
 }

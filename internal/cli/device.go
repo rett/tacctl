@@ -590,9 +590,25 @@ func (inv *invocation) deviceWrite(fn func(*devreg.File, *devreg.Resolver) error
 	if _, err := trial.Text(); err != nil {
 		return nil, err
 	}
-	_, err = devreg.Mutate(inv.app.Paths.DevicesFile, inv.app.Paths.KnownHosts, inv.snapshotFirst, func(live *devreg.File) error {
-		before := resolver(live.Clone())
-		r := resolver(live)
+	_, err = devreg.Mutate(inv.app.Paths.DevicesFile, inv.app.Paths.KnownHosts, func() error {
+		inv.hooks.deviceStep()
+		return inv.snapshotFirst()
+	}, func(live *devreg.File) error {
+		// The enrolled hosts are read again under the registry's lock: a
+		// host enrolled or renamed since the trial run takes a name from
+		// the device (a rename checks the devices under the same lock, so
+		// one of the two sees the other).
+		cur, err := inv.registry()
+		if err != nil {
+			return err
+		}
+		fresh := func(f *devreg.File) *devreg.Resolver {
+			r := resolver(f)
+			r.Hosts = cur.Entries()
+			return r
+		}
+		before := fresh(live.Clone())
+		r := fresh(live)
 		if err := fn(live, r); err != nil {
 			return err
 		}

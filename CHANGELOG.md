@@ -147,6 +147,38 @@ current behaviour; this file is where history lives.
    `host files: not in this snapshot (it predates 0.2.14)` when the server
    has host files.
 
+6. **`host forget <name>` repairs duplicate and orphaned hosts, and
+   `config validate` and `host list` report them.** `config validate`
+   (under `Linux hosts:`, warnings only) and `host list` (one last line,
+   `N finding(s): see tacctl config validate`) now name, for the superuser,
+   two enrolled names equal ignoring case, a host named like a registered
+   device, two hosts with the same recorded address, and a pin, record or
+   staging entry that no registry line has, each with the verb that fixes it
+   (a break-glass hold with no host is the hold's own orphan line). Nothing
+   is repaired where it is reported. `tacctl host forget <name> [--yes]` is
+   the repair: superuser only, local, with no ssh and nothing sent to the
+   host. After a snapshot it drops the registry line, the pinned keys,
+   address and history (the generated `known_hosts` follows), the record, the
+   host's staging entries and the host-key scan result, after listing them
+   and asking (`--yes` skips the question). The host itself is not touched:
+   its accounts, secrets and PAM setup stay (`host unenroll` cleans a host
+   that can be reached). It is refused for a held host (release it first), a
+   name a hold is recorded under, and while a rotation of the host runs. The
+   name is the registered spelling; the leftovers of a name with no registry
+   line are named by their spelling and forgotten the same way; a name that
+   matches one enrolled host ignoring case is that host, several are refused;
+   pins shared by names equal ignoring case stay while another host has such
+   a name. The log line is `host forget name= by=`. The state format does not
+   change. Also, in `host rename`: the device registry is checked for the new
+   name under its lock when the pins are written, so a device registered at
+   that moment can no longer share a name with the renamed host (the registry
+   line goes back and nothing is changed), and `device add|rename` refuse a
+   name an enrolled host has taken since their checks; the messages for an
+   undo that cannot restore the pins, or that replaced a leftover pin, say
+   what was left; a scope another host was enrolled into since the question
+   keeps its name; a record that cannot be moved stays under the old name,
+   which `host forget` drops.
+
 ## 0.2.13 (2026-10-16)
 
 1. **The `test` workflow no longer runs on a push to `master`.** After a

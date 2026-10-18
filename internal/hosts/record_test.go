@@ -217,3 +217,30 @@ func TestParseCheck(t *testing.T) {
 		t.Error("groups")
 	}
 }
+
+// The names of the records are the files of the directory without their
+// extension; a temporary file of a write, a directory and another file are
+// none.
+func TestRecordNames(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "hosts")
+	rs := Records{Dir: dir}
+	if n := rs.Names(); len(n) != 0 {
+		t.Fatalf("missing directory: %q", n)
+	}
+	for _, n := range []string{"web2", "Web1"} {
+		if err := rs.Save(n, Record{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []string{".web3.12345", ".hidden.json", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, f), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "dir.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := rs.Names(), []string{"Web1", "web2"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("names %q, want %q", got, want)
+	}
+}

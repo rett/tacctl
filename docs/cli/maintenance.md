@@ -84,8 +84,8 @@ A snapshot also holds the files of the enrolled Linux hosts: `linux-hosts`
 addresses) and `linux-uids` (the UID ledger), in the same modes. `linux-hosts`
 is in every snapshot, empty when there is no registry, so a snapshot that has
 it knows the hosts; the provisioner's lock files and the caches are not kept.
-`host enroll`, `host move` and `host unenroll` take a snapshot just before
-they change the registry; `host move --all` takes one before the first move
+`host enroll`, `host move`, `host unenroll`, `host rename` and `host forget`
+take a snapshot just before they change the registry; `host move --all` takes one before the first move
 and none per host, so a long batch does not push the state before it out of
 the newest 30. `host sync` takes none. A snapshot made by tacctl 0.2.13 or
 older has no `linux-hosts`, and tacctl 0.2.13 ignores the host entries of a

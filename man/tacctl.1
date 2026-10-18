@@ -1582,7 +1582,17 @@ or
 older than ten minutes, with no command holding the apply lock) is a warning
 as well, a
 .B Leftovers:
-line naming it.
+line naming it. Registrations of Linux hosts that cannot all be right are
+warnings under
+.BR "Linux hosts:" ,
+each naming its fix: two enrolled names equal ignoring case
+.RB ( "host forget" " or " "host rename" ),
+a host named like a registered device
+.RB ( "host rename" ),
+two hosts with the same recorded address
+.RB ( "host forget" )
+and a pin, record or staging entry with no registry line
+.RB ( "host forget" ).
 .IP
 Then, for every enabled backend, whether its rendered config is up to date
 with the store and whether any of its files was edited by hand (drift). With
@@ -1806,7 +1816,12 @@ method and user count. A host with a break\-glass hold is marked
 in a
 .B STATE
 column, which is there while one is held in the caller's scopes, and a footer
-counts them.
+counts them. For the superuser a last line,
+.BR "N finding(s): see tacctl config validate" ,
+says that the registrations have findings
+.RB ( "config validate" ;
+see
+.BR "host forget" ).
 .\" BEGIN GENERATED: command host list
 .RS
 .PP
@@ -2562,8 +2577,20 @@ undoes the rename). Then the registry line is renamed where it is, and one
 write of
 .I devices.yaml
 renames the pinned host keys, the address and its history and the
-acknowledged notices (the generated known_hosts follows); if that write fails
-the registry line is renamed back and nothing was changed. Then the record
+acknowledged notices (the generated known_hosts follows); the write also finds
+a device registered under the new name since the checks (another command at the
+same moment), and when it fails or finds one the registry line is renamed back
+and nothing was changed.
+.B "device add"
+and
+.B "device rename"
+likewise refuse a name that an enrolled host has taken meanwhile. A
+.B "host sync"
+running on the host at the moment of the rename can write its record and its pin
+under the old name; they are reported as leftovers of a host that is not
+enrolled and
+.B "host forget"
+removes them. Then the record
 .RI ( /etc/tacctl/hosts/ name .json),
 the staging addresses, the break\-glass hold (it stays on the same address
 and follows the name) and the host\-key scan result of the seen cache follow;
@@ -2579,7 +2606,7 @@ store has it, no scope
 exists and
 .B "scope rename"
 would accept the new name, both questions come first and
-.RB "\(lq" "Scope 'linux\-" old "' is this host's own (no other host uses it). Rename it to 'linux\-" new "' too? [y/N]\(rq"
+.RI "\(lqScope 'linux\-" old "' is this host's own (no other host uses it). Rename it to 'linux\-" new "' too? [y/N]\(rq"
 is asked.
 .B \-\-yes
 answers both questions yes. The host rename runs whole; then the scope is
@@ -2587,11 +2614,12 @@ renamed as
 .B "scope rename"
 does, with a snapshot of its own (two points to undo to). If the scope step
 fails the host stays renamed in its old scope and the command says
-.RB "\(lqHost renamed. Scope 'linux\-" old "' was NOT renamed: ... Retry: tacctl scope rename linux\-" old " linux\-" new "\(rq"
+.RI "\(lqHost renamed. Scope 'linux\-" old "' was NOT renamed: ... Retry: tacctl scope rename linux\-" old " linux\-" new "\(rq"
 and exits 1. When the scope is not renamed with the host, one line says why,
 and a declined offer ends with the
 .B "scope rename"
-line to run. Re\-enrolling the renamed host without
+line to run. If another host has been enrolled in the scope since the question,
+the scope keeps its name and the line is printed as for a declined offer. Re\-enrolling the renamed host without
 .B \-\-scope
 would otherwise put it in
 .BI linux\- new \fR.
@@ -2606,6 +2634,64 @@ Options:
 (rename) Answer both questions yes: replace what an earlier host of the new name left, and rename the host's own linux\-<name> scope.
 .RE
 .\" END GENERATED: command host rename
+.TP
+.B "host forget " name " [ \-\-yes ]"
+Drop the registration of the host
+.I name
+from this server, and nothing else. It is local: nothing is sent to the host and
+no ssh runs, so it works for a host that no longer answers. After a snapshot it
+removes, for the name, the registry line, the pinned keys, address and history in
+.I devices.yaml
+(the generated known_hosts follows), the record
+.RI ( /etc/tacctl/hosts/ name .json),
+the host's entries in the
+.I staging
+file and the host\-key scan result of the seen cache. It lists what it will drop
+and asks; the question is skipped with
+.BR \-\-yes .
+The host itself is not touched: its accounts, secrets and PAM setup stay
+.RB ( "host unenroll"
+cleans a host that can be reached). A staging /32 stays a prefix of its scope;
+the
+.B "scope prefixes"
+line that drops it is printed. The log line is
+.BR "host forget name= by=" .
+.IP
+.I name
+is the registered spelling. What no registry line has (an orphan: a pin, a
+record or a staging entry) is named by exactly its spelling and forgotten the
+same way. A name that matches no registered spelling exactly but one enrolled
+host ignoring case is that host (a stray
+.B Web1
+is forgotten by
+.BR web1 );
+several such hosts are refused, naming them. The pinned keys and the scan result
+are shared by names equal ignoring case, so they stay while another enrolled
+host has such a name. A host with a break\-glass hold is refused, and so is a
+name a hold is recorded under:
+.B "breakglass release"
+first. A running
+.B "host provisioner rotate"
+of the host refuses it. This is the repair for the findings of
+.B "config validate"
+and
+.BR "host list" :
+two names equal ignoring case, a host named like a device, two hosts with the
+same recorded address, and a pin, record or staging entry with no registry line.
+.B "host unenroll \-\-force"
+is not the repair for a duplicate, as it runs the removal script on the machine
+the surviving registration shares.
+.\" BEGIN GENERATED: command host forget
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-yes\fR
+(forget) Forget the host without asking.
+.RE
+.\" END GENERATED: command host forget
 .TP
 .B "host unenroll " name " [ \-\-force ]"
 Run the removal script on the host and drop it from the registry, with its
@@ -3253,7 +3339,7 @@ Each read of a secret by an engineer is logged to syslog as
 scopes, a secret's change, backends, backups, upgrades, the default host
 method and the console's settings stay the superuser's, and so does the
 deployment of Linux hosts
-.RB ( "host enroll" ", " sync ", " move ", " target ", " provisioner ", " rename ", " unenroll
+.RB ( "host enroll" ", " sync ", " move ", " target ", " provisioner ", " rename ", " forget ", " unenroll
 and
 .BR default\-method ):
 an engineer changes no setting that makes a host sync necessary, and a host is
@@ -9795,9 +9881,10 @@ of the registered host
 .RB ( "host move" ),
 .B "host target"
 with a change,
-.B "host provisioner rotate"
-and
+.BR "host provisioner rotate" ,
 .B "host unenroll"
+and
+.B "host forget"
 are refused with the hold named, before anything is attempted over ssh;
 .B "host sync \-\-all"
 skips the host;

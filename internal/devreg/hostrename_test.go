@@ -131,3 +131,21 @@ func TestCheckRenameHostName(t *testing.T) {
 		t.Errorf("spelling of a generic name: %v", err)
 	}
 }
+
+func TestSeenForgetKeyScan(t *testing.T) {
+	s := NewSeen()
+	s.RecordKeyScan("Web1", "192.0.2.5", 22, nil, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))
+	if s.ForgetKeyScan("nobody") {
+		t.Error("reported a change for a name it does not keep")
+	}
+	if !s.ForgetKeyScan("WEB1") || s.HasKeyScanFor("web1") {
+		t.Error("the result stayed")
+	}
+	if s.ForgetKeyScan("web1") {
+		t.Error("reported a change twice")
+	}
+	var none *Seen
+	if none.ForgetKeyScan("web1") {
+		t.Error("a nil cache changed")
+	}
+}
