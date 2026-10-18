@@ -1982,6 +1982,36 @@ warns about an existing enrolment that uses one.
 .B "tacctl ssh"
 never uses it.
 .IP
+The registry name is
+.B \-\-name
+or the host's short name. A name no enrolled host has with exactly that
+spelling is a new one: it is letters, digits,
+.B _
+or
+.B \-
+starting with a letter (26 at most), is not a tacctl word (the words a device
+cannot be called either, such as
+.BR all ,
+.B scope
+or
+.BR local ),
+and is not the name of an enrolled host or a registered device in any case:
+names are not case\-sensitive, so
+.B web1
+and
+.B Web1
+are one name. Enrolling a registered host again under its registered
+spelling is allowed (that is how it is enrolled again or moved). A refused
+name changes nothing and nothing is attempted over ssh. An option that takes
+a value
+.RB ( \-\-method ,
+.BR \-\-scope ,
+.BR \-\-server ,
+.BR \-\-name ,
+.BR \-\-port ,
+.BR \-\-identity )
+given without one is a usage error that names the option.
+.IP
 After a successful run the host's public key files are read over the same
 ssh connection
 .RB ( "cat /etc/ssh/ssh_host_*_key.pub" ),
@@ -2056,7 +2086,7 @@ The host's scope (default: its registered one, else the scope covering its addre
 Address the host should use for this server (default: detected).
 .TP
 \fB\-\-name\fR \fI<name>\fR
-Registry name (default: short hostname).
+Registry name (default: short hostname; not a tacctl word; names are not case\-sensitive).
 .TP
 \fB\-\-port\fR \fI<n>\fR
 The ssh port of the host.

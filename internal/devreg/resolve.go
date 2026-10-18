@@ -244,11 +244,30 @@ func (r *Resolver) CheckAddress(address, except string) error {
 // registry existed are not refused retroactively; they carry a notice).
 func CheckHostName(f *File, name string, enrolled bool) error {
 	if d := f.Find(name); d != nil {
-		return fail("'" + d.Name + "' is already registered as a device (" + d.Address + "); choose another --name, or see 'tacctl device show " + d.Name + "'")
+		return fail("'" + d.Name + "' is already registered as a device (" + d.Address + "); choose another --name, or see 'tacctl device show " + d.Name + "'. Nothing was changed.")
 	}
 	if !enrolled && IsGeneric(name, f.GenericNames) {
 		return fail("'"+name+"' is a generic name (a factory or image default); hosts are told apart by name.",
 			"Pass --name <a name of its own>, or give the host one first: 'hostnamectl set-hostname <name>'.")
+	}
+	return nil
+}
+
+// CheckNewHostName is what 'host enroll' asks of a name that no enrolled
+// host has with exactly that spelling: it is no tacctl word (the device
+// reserved words, so a host can no more be called 'all' than a device can),
+// and no enrolled host is equal to it ignoring case (the registry finds a
+// name exactly, the pins of the devices registry do not: 'Web1' and 'web1'
+// would share one pin record). A device of that name is CheckHostName's.
+func CheckNewHostName(reg *hosts.Registry, name string) error {
+	if IsReserved(name) {
+		return fail("'" + name + "' is a tacctl word and cannot name a host; pass --name <a name of its own>. Nothing was changed.")
+	}
+	for _, e := range reg.Entries() {
+		if e.Name != name && strings.EqualFold(e.Name, name) {
+			return fail("'"+e.Name+"' is enrolled; names are not case-sensitive. Nothing was changed.",
+				"Re-enroll it under its registered name: --name "+e.Name)
+		}
 	}
 	return nil
 }

@@ -7,8 +7,10 @@ package hosts
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -56,4 +58,47 @@ func (rs Records) lockRecords() (unlock func(), err error) {
 		return nil, err
 	}
 	return func() { _ = unix.Flock(int(f.Fd()), unix.LOCK_UN); _ = f.Close() }, nil
+}
+
+// ErrRegistryBusy is returned by the registry's writes when another command
+// kept the registry's lock for longer than registryLockWait.
+var ErrRegistryBusy = errors.New("the host registry is locked by another tacctl command; try again in a moment")
+
+// registryLockWait is how long a write of the registry waits for the lock
+// (the commands that hold it write one file and let go); a variable for the
+// tests.
+var registryLockWait = 30 * time.Second
+
+// registryLockPoll is the pause between two tries of the lock.
+const registryLockPoll = 20 * time.Millisecond
+
+// lock takes the lock of the registry's writes: the same file as the
+// records' (.hosts.lock, beside the registry), so that a record and the
+// registry are never changed at once. It waits up to registryLockWait for
+// it, and the lock goes with the process.
+func (r *Registry) lock() (unlock func(), err error) {
+	dir := filepath.Dir(r.Path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, ".hosts.lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	deadline := time.Now().Add(registryLockWait)
+	for {
+		err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		if err == nil {
+			return func() { _ = unix.Flock(int(f.Fd()), unix.LOCK_UN); _ = f.Close() }, nil
+		}
+		if !errors.Is(err, unix.EWOULDBLOCK) {
+			_ = f.Close()
+			return nil, err
+		}
+		if time.Now().After(deadline) {
+			_ = f.Close()
+			return nil, fmt.Errorf("%w (waited %s)", ErrRegistryBusy, registryLockWait)
+		}
+		time.Sleep(registryLockPoll)
+	}
 }

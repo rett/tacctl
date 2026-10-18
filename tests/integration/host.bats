@@ -120,6 +120,25 @@ _own_scope() {
     assert_output --regexp "^ssh .*-O exit admin@web1.example.net$"
 }
 
+@test "host enroll: a new name passes the device name rules; a missing option value is named" {
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --name all
+    assert_failure 1
+    assert_output --partial "'all' is a tacctl word and cannot name a host"
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --name Web1
+    assert_failure 1
+    assert_output --partial "'web1' is enrolled; names are not case-sensitive. Nothing was changed."
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --name web1
+    assert_success
+    run _hosts
+    assert_output --partial "web1|"
+    refute_output --partial "Web1|"
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope
+    assert_failure 1
+    assert_output --partial "--scope needs a value."
+}
+
 @test "host enroll: rejects option-like and malformed targets" {
     run "$TACCTL_BIN_SCRIPT" host enroll "web1;reboot" --scope lab
     assert_failure

@@ -53,6 +53,24 @@ current behaviour; this file is where history lives.
    are `breakglass hold|release host=<name> addr=<ip>`. The state format is
    unchanged.
 
+3. **`host enroll` holds a new host name to the device name rules, and a
+   missing option value is a usage error.** A name no enrolled host has with
+   exactly that spelling (`--name`, or the one worked out from the target)
+   must now be no tacctl word, as for a device: a host can no longer be
+   called `all`, `scope`, `local` and the like. Names are not
+   case-sensitive: `Web1` is refused while `web1` is enrolled (`'web1' is
+   enrolled; names are not case-sensitive.`), where both could be enrolled
+   before and shared one pin record in the device registry; a registered
+   device of that name, in any case, is refused as before and now says
+   `Nothing was changed.` A refusal changes nothing and attempts nothing over
+   ssh. Enrolling a registered host again under its registered spelling is
+   allowed, as before, so a host already named with a reserved word or
+   enrolled twice in two cases keeps working. `host enroll --scope`,
+   `--server`, `--name`, `--port` or `--identity` with no value (or an empty
+   one) used to exit 1 without a word; it now prints `<option> needs a
+   value.` and the usage line, as `--method` does. No other `host` verb
+   exited silently on a missing value.
+
 ## 0.2.13 (2026-10-16)
 
 1. **The `test` workflow no longer runs on a push to `master`.** After a

@@ -288,7 +288,7 @@ func TestHostEnrollRefusals(t *testing.T) {
 		// The provisioning account is local and never a tacctl user.
 		{[]string{"carol@web1", "--scope", "lab"}, 1, "", "The provisioning account 'carol' (the ssh login for carol@web1) is a tacctl user."},
 		// A value flag at the end of the line: 0.1.16 never returned.
-		{[]string{"web1", "--scope"}, 1, "", ""},
+		{[]string{"web1", "--scope"}, 1, "", "--scope needs a value."},
 	} {
 		r := hs.runner()
 		hs.run(r, append([]string{"host", "enroll"}, c.args...)...)

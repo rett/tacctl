@@ -27,7 +27,7 @@ host enroll <[user@]host>|--local [opts]
     --server <address>
         Address the host should use for this server (default: detected)
     --name <name>
-        Registry name (default: short hostname)
+        Registry name (default: short hostname; not a tacctl word; names are not case-sensitive)
     --port <n>, --identity <file>
         SSH port and key
     --build-on-host

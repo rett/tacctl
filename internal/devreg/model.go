@@ -238,10 +238,15 @@ func ValidateName(name string) error {
 	if !reName.MatchString(name) || !labelsOK(name) {
 		return fail("Invalid device name '" + name + "'. Use letters, digits, '.', '_' or '-', starting with a letter or digit; at most 253 characters, each dotted part at most 63.")
 	}
-	if slices.Contains(ReservedNames, strings.ToLower(name)) {
+	if IsReserved(name) {
 		return fail("'" + name + "' is a tacctl word and cannot name a device.")
 	}
 	return nil
+}
+
+// IsReserved reports whether name is one of ReservedNames, in any case.
+func IsReserved(name string) bool {
+	return slices.Contains(ReservedNames, strings.ToLower(name))
 }
 
 // labelsOK reports whether every dotted part of name has 1 to 63

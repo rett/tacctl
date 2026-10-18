@@ -257,6 +257,9 @@ func shortHostname() string {
 // the command's end would, and goes on ('... || warn ...').
 func (inv *invocation) reportOnly(err error) { _ = exitCode(err, inv.app.Out) }
 
+// hostEnrollUsage is the usage line of 'host enroll'.
+const hostEnrollUsage = "Usage: tacctl host enroll <[user@]host> | --local  [options]"
+
 // hostEnroll is cmd_host_enroll.
 func (inv *invocation) hostEnroll(args []string) error {
 	a := inv.app
@@ -285,9 +288,10 @@ func (inv *invocation) hostEnroll(args []string) error {
 			staging = true
 			i++
 		case "--scope", "--server", "--name", "--port", "--identity":
-			if i+1 >= len(args) {
-				// 0.1.16 spins forever here ('shift 2 || true' cannot shift).
-				return exit(1)
+			// 0.1.16 spins forever here ('shift 2 || true' cannot shift); a
+			// missing or empty value is a usage error naming the option.
+			if arg(args, i+1) == "" {
+				return inv.usageErr(w+" needs a value.", hostEnrollUsage)
 			}
 			*map[string]*string{"--scope": &scope, "--server": &server, "--name": &name, "--port": &port, "--identity": &identity}[w] = args[i+1]
 			i += 2
@@ -341,7 +345,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 		}
 	} else {
 		if !reTarget.MatchString(target) {
-			return inv.usageErr("Usage: tacctl host enroll <[user@]host> | --local  [options]")
+			return inv.usageErr(hostEnrollUsage)
 		}
 		hostPart = target
 		if _, after, ok := strings.Cut(target, "@"); ok {
@@ -412,6 +416,14 @@ func (inv *invocation) hostEnroll(args []string) error {
 	if enrolled {
 		// The name was worked out from the target: the same refusal.
 		if err := inv.hostHeldErr(cur, "tacctl host enroll "+name); err != nil {
+			return err
+		}
+	}
+	// A name no host has with exactly that spelling is a new one: the
+	// device name rules apply to it (a re-enrolment under the registered
+	// name is how a host is moved).
+	if !enrolled {
+		if err := devreg.CheckNewHostName(reg, name); err != nil {
 			return err
 		}
 	}

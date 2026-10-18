@@ -34,6 +34,20 @@ The scope of a host is, in order: `--scope`; the scope the host is registered in
 
 **One machine, one registration.** Enroll refuses this server's own address unless it is `--local` (`'<target>' is this server; enroll it with --local`), and a new name for a machine already enrolled under another one (the same address on the same ssh port, or one of this server's own addresses when it is enrolled with `--local`): `'h192-0-2-22' is the enrolled host 'dev' (enrolled as admin@host.example.net): both reach 192.0.2.22.` Re-enroll it under its registered name (`--name dev`) or change how it is reached (`tacctl host target dev <[user@]host>`).
 
+**Host names.** The registry name is `--name`, else the host's short name. A
+name no enrolled host has with exactly that spelling is a new one and must
+pass the rules a device name passes: letters, digits, `_` or `-`, starting
+with a letter (26 at most); not a tacctl word (`all`, `scope`, `local` and
+the other words a device cannot be called); and not the name of an enrolled
+host or a registered device in any case. Names are not case-sensitive, so
+`Web1` is refused while `web1` is enrolled (`'web1' is enrolled; names are
+not case-sensitive.`) and a device `core-sw1` keeps `Core-SW1` from being a
+host. Nothing is changed and nothing is attempted over ssh. Enrolling a
+registered host again under its registered spelling is allowed: that is how
+it is enrolled again or moved. An option that takes a value (`--method`,
+`--scope`, `--server`, `--name`, `--port`, `--identity`) given without one is
+a usage error that names the option.
+
 **One host in full.** `tacctl host show <name>` prints, in sections: Connection (target, port, identity, server, method), Scope (the registered one, the scope and prefix that answer the host's address today, the drift warning of `host list` with its `host move` fix, a pending staging /32), Address (recorded, previous and when it changed), Host keys (the pinned fingerprints and the command that shows them on the host), Sightings, Notices (`--all`: the acknowledged ones too), Accounts (the tacctl users the next sync makes there, with tier, UID and groups; disabled users counted), Last sync (when, by whom, the result or why it failed, the client script protocol, the accounts created, updated and removed) and Host facts (OS, sshd version, the PAM module and its version, `useradd`'s UID range from `login.defs`, as that run read them). The last two are kept in `/etc/tacctl/hosts/<name>.json`, written by each `host enroll` and `host sync` (a failed sync too) and removed by `host unenroll`; they are only shown, never used to decide anything, and a host with no such record shows `not recorded (before 0.2.2)`. `--json` prints every field. `--check` logs in read-only (as `host sync` does: your ssh, sudo with a terminal for its password) and compares the host with what tacctl would make it: tacctl's groups and their GIDs, each account's UID, primary group and home mode, the PAM files tacctl writes (present, and the text the client script recorded writing), the client script protocol and the host's ssh keys against the pins; each difference is one line with the command that fixes it, and the exit status is 1 when there is one:
 ```
   - group tac-superuser has GID 1002, not 80002. Fix: tacctl host sync web1

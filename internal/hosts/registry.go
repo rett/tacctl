@@ -175,8 +175,14 @@ func (r *Registry) OtherHostsUse(scope, name string) bool {
 }
 
 // Forget is host_forget: every line of name removed, the file rewritten
-// with mode 0600. Nothing happens when there is no file.
+// with mode 0600. Nothing happens when there is no file. It takes the
+// registry's lock and reads the file again under it.
 func (r *Registry) Forget(name string) error {
+	return r.locked(func() error { return r.forget(name) })
+}
+
+// forget is Forget under the lock.
+func (r *Registry) forget(name string) error {
 	if !r.found {
 		return nil
 	}
@@ -194,31 +200,39 @@ func (r *Registry) Forget(name string) error {
 
 // Replace writes e over the line of e.Name where it is (other lines of
 // that name are dropped), the file mode 0600; a name with no line is
-// appended.
+// appended. It takes the registry's lock and reads the file again under it.
 func (r *Registry) Replace(e Entry) error {
-	if _, ok := r.Find(e.Name); !ok {
-		return r.Remember(e)
-	}
-	var b strings.Builder
-	done := false
-	for _, l := range awkRecords(r.text) {
-		if !awkEqual(awkField(awkFields(l, "|"), 1), e.Name) {
-			b.WriteString(l + "\n")
-		} else if !done {
-			b.WriteString(e.format() + "\n")
-			done = true
+	return r.locked(func() error {
+		if _, ok := r.Find(e.Name); !ok {
+			return r.remember(e)
 		}
-	}
-	if err := replaceFile(r.Path, []byte(b.String()), 0o600); err != nil {
-		return err
-	}
-	return r.Load()
+		var b strings.Builder
+		done := false
+		for _, l := range awkRecords(r.text) {
+			if !awkEqual(awkField(awkFields(l, "|"), 1), e.Name) {
+				b.WriteString(l + "\n")
+			} else if !done {
+				b.WriteString(e.format() + "\n")
+				done = true
+			}
+		}
+		if err := replaceFile(r.Path, []byte(b.String()), 0o600); err != nil {
+			return err
+		}
+		return r.Load()
+	})
 }
 
 // Remember is host_remember: e's old lines forgotten, its line appended,
-// the file mode 0600.
+// the file mode 0600. It takes the registry's lock and reads the file
+// again under it.
 func (r *Registry) Remember(e Entry) error {
-	if err := r.Forget(e.Name); err != nil {
+	return r.locked(func() error { return r.remember(e) })
+}
+
+// remember is Remember under the lock.
+func (r *Registry) remember(e Entry) error {
+	if err := r.forget(e.Name); err != nil {
 		return err
 	}
 	f, err := os.OpenFile(r.Path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
@@ -236,6 +250,23 @@ func (r *Registry) Remember(e Entry) error {
 		return err
 	}
 	return r.Load()
+}
+
+// locked runs fn holding the registry's lock, on the file as it is now:
+// the registry is read again after the lock is taken, so a change made
+// by another command while this one waited is not written over. The
+// functions fn calls must be the unlocked ones (the lock is not reentrant:
+// a second flock on another descriptor of the same process blocks).
+func (r *Registry) locked(fn func() error) error {
+	unlock, err := r.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err := r.Load(); err != nil {
+		return err
+	}
+	return fn()
 }
 
 // Formatted is the registry line of e as it would be written now.
