@@ -71,6 +71,35 @@ current behaviour; this file is where history lives.
    value.` and the usage line, as `--method` does. No other `host` verb
    exited silently on a missing value.
 
+4. **Snapshots hold the host state, and a restore puts it back.** A
+   snapshot now also holds `linux-hosts` (the registry of enrolled Linux
+   hosts), `hosts/` (the per-host records), `staging` (the staging addresses)
+   and `linux-uids` (the UID ledger), 0600 in a 0700 directory. `linux-hosts`
+   is in every new snapshot, empty when there is no registry, so a snapshot
+   that has it is one that knows the hosts; the provisioner's lock files and
+   the caches are not kept. A snapshot is skipped only when all of it equals
+   the newest one, so a change of the registry alone makes a new snapshot,
+   and the first one after the upgrade is taken once even when nothing else
+   changed. `host enroll` (so `host move`) and `host unenroll` take a
+   snapshot just before the registry changes, after the script on the host
+   has succeeded; if the snapshot cannot be taken the registry is left and
+   the command says so. `host sync` takes none. `backup restore` of a
+   snapshot that knows the hosts puts `linux-hosts` back whole, makes
+   `hosts/` match (a record the snapshot lacks goes), puts `staging` back or
+   removes it and puts `linux-uids` back as it was, after the render and the
+   other files, under the apply lock; the snapshot of the current state it
+   takes first holds the live host files, so the restore can be undone. A
+   snapshot without `linux-hosts` (0.2.13 and older) leaves all four alone.
+   No host is touched and nothing is reconciled: before the question, and
+   again after the restore, a note names the hosts that come back, go or are
+   registered differently, what to do about a host whose state no longer
+   matches (`host sync`, `host show --check`, `host unenroll` again, `host
+   enroll` again), and every user whose UID the restored ledger drops or
+   changes, since a host may already hold that number. `backup diff` adds
+   `linux-hosts`, `staging`, `linux-uids` and each host record where either
+   side has one; `backup list` is unchanged. The state format does not
+   change and 0.2.13 ignores the new entries.
+
 ## 0.2.13 (2026-10-16)
 
 1. **The `test` workflow no longer runs on a push to `master`.** After a

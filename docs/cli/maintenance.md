@@ -79,6 +79,34 @@ backup restore <ts> [--legacy] Restore a snapshot (with confirmation); --legacy 
 
 A backup is a snapshot of the canonical files, `/etc/tacctl/backups/<timestamp>/{store.yaml,tacctl.yaml,manifest}`, taken automatically before every change that would alter them (nothing is added when they already equal the newest snapshot). The manifest records `rendered.json` and the tacctl version. The newest 30 snapshots are kept. Snapshots hold shared secrets and password hashes: the directory is `0700`, the files `0600`, and `backup diff` and `backup restore` are superuser-only.
 
+A snapshot also holds the files of the enrolled Linux hosts: `linux-hosts`
+(the registry), `hosts/` (one record per host), `staging` (the staging
+addresses) and `linux-uids` (the UID ledger), in the same modes. `linux-hosts`
+is in every snapshot, empty when there is no registry, so a snapshot that has
+it knows the hosts; the provisioner's lock files and the caches are not kept.
+`host enroll`, `host move` and `host unenroll` take a snapshot just before they
+change the registry; `host sync` takes none. A snapshot made by tacctl 0.2.13
+or older has no `linux-hosts`, and tacctl 0.2.13 ignores the host entries of a
+newer one.
+
 `backup restore <ts>` puts back both files, re-renders every enabled backend's config (a hand-edited file is kept under `backups/legacy/` first), and restarts the backends. It snapshots the current state first, so a restore can be undone with another restore, and it changes nothing if the snapshot is invalid or the render fails. The snapshot's `backends.enabled` comes back with the rest of `tacctl.yaml`: a backend it enables must already be installed (otherwise nothing changes and the message says to run `backend enable`) and is started; one it leaves out is stopped and disabled.
+
+A snapshot that knows the hosts also puts the host files back: `linux-hosts`
+whole, `hosts/` made to match (a record the snapshot lacks is removed),
+`staging` back or removed, and `linux-uids` as it was. A snapshot without
+`linux-hosts` leaves all four as they are. No host is touched and nothing is
+reconciled. Before the question, and again after the restore, a note names the
+hosts that come back, those that go and those registered differently. The
+restored ledger can forget a number that a host already holds, so the note also
+names every user whose UID it drops or changes. A host that comes back after
+`host unenroll` is still cleaned up: `host sync`, `host show <name> --check`,
+or `host unenroll <name>` again. A host that goes stays set up: `host enroll`
+it again, or `host unenroll <name> --force` after that. The snapshot of the
+current state taken first holds the live host files, so another restore undoes
+this one.
+
+`backup diff` adds `linux-hosts`, `staging`, `linux-uids` and each host record,
+each only where either side has one. `backup list` is unchanged, and
+`restore --legacy` leaves the host files alone.
 
 Old-style `tacquito.yaml.<timestamp>` files (made before the store existed, or kept in `backups/legacy/`) are listed after the snapshots. `backup restore <timestamp> --legacy` runs `store import --check` on one, then imports it. Without a store (legacy read-only mode) `list`, `diff` and `restore` work on those files.

@@ -128,6 +128,28 @@ func (u UIDs) Recorded() (Range, []Range, error) {
 	return cur, prev, nil
 }
 
+// Numbers are the users of the file and their numbers, in file order, the
+// first line of a name winning (as Lookup does); a missing file has none.
+// 'backup restore' compares two ledgers with it.
+func (u UIDs) Numbers() ([][2]string, error) {
+	recs, err := u.records()
+	if err != nil {
+		return nil, err
+	}
+	var out [][2]string
+	seen := map[string]bool{}
+	for _, r := range recs {
+		f := awkFields(r, ":")
+		name := awkField(f, 1)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, [2]string{name, awkField(f, 2)})
+	}
+	return out, nil
+}
+
 // Lookup is "awk -F: -v u=<name> '$1 == u { print $2; exit }'": the number
 // of the first line for name ("" when there is none).
 func (u UIDs) Lookup(name string) (string, error) {

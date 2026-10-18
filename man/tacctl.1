@@ -2069,6 +2069,16 @@ Session accounting over RADIUS is sent only when the RADIUS
 .B acct
 listener is on the authentication port plus one, and never from Ubuntu
 24.04 (malformed records).
+.IP
+Once the script has succeeded on the host, a snapshot is taken just before the
+registry changes (so also for
+.BR "host move" ),
+holding the registry, the host records,
+.I staging
+and the UID ledger
+.RB ( "backup restore"
+puts them back); if it cannot be taken the registry is left as it was and the
+command says so.
 .\" BEGIN GENERATED: command host enroll
 .RS
 .PP
@@ -2511,7 +2521,10 @@ Run the removal script on the host and drop it from the registry, with its
 pinned host keys. Local accounts and home directories stay. If the removal
 fails the host stays registered unless
 .B \-\-force
-is given. A host with a break\-glass hold is refused, with or without
+is given. A snapshot is taken just before the registry changes, so
+.B "backup restore"
+can bring the host back into the registry. A host with a break\-glass hold is
+refused, with or without
 .BR \-\-force :
 release it first
 .RB ( "breakglass release" ).
@@ -4299,8 +4312,17 @@ Diff
 .I store.yaml
 and
 .I tacctl.yaml
-against a snapshot (default: most recent). The output shows shared secrets and
-password hashes.
+against a snapshot (default: most recent), then, each only where either side has
+one,
+.IR devices.yaml ,
+.IR console.yaml ,
+.IR linux\-hosts ,
+each record of
+.IR hosts/ ,
+.I staging
+and
+.IR linux\-uids .
+The output shows shared secrets and password hashes.
 .\" BEGIN GENERATED: command backup diff
 .RS
 .PP
@@ -4329,6 +4351,34 @@ before it is imported. When the tacctl server is enrolled a red line says that
 users whose tier fell keep their old groups until
 .BR "host sync" .
 .PP
+A snapshot that knows the hosts (it holds
+.IR linux\-hosts ,
+which every snapshot of this release does) also puts the host files back:
+.I linux\-hosts
+whole,
+.I hosts/
+made to match (a record the snapshot lacks is removed),
+.I staging
+back or removed, and
+.I linux\-uids
+as it was. A snapshot without
+.I linux\-hosts
+(tacctl 0.2.13 and older) leaves all four as they are. No host is touched and
+nothing is reconciled. Before the confirmation, and again after the restore, a
+note names the hosts that come back, those that go and those registered
+differently, and what to do about a host that no longer matches
+.RB ( "host sync" ,
+.BR "host show \-\-check" ,
+.B "host unenroll"
+again for one that comes back after
+.BR "host unenroll" ;
+.B "host enroll"
+again, or
+.B "host unenroll \-\-force"
+after that, for one that goes). The restored ledger can forget a number a host
+already holds, so the note also names every user whose UID it drops or
+changes. The snapshot of the current state taken first holds the live host files.
+.PP
 A snapshot is the directory
 .I /etc/tacctl/backups/<timestamp>/
 holding
@@ -4336,7 +4386,19 @@ holding
 .I tacctl.yaml
 and a manifest (the
 .I rendered.json
-of that moment and the tacctl version), root-only. One is taken
+of that moment and the tacctl version), root-only, and the files of the
+registries and hosts when they exist
+.RI ( devices.yaml ,
+.IR console.yaml ,
+.IR snmp* ,
+.IR blocks/ ,
+.IR linux\-hosts ,
+.IR hosts/ ,
+.I staging
+and
+.IR linux\-uids ;
+.I linux\-hosts
+is always there, empty when there is no registry). One is taken
 automatically before every change, unless the files already equal the
 newest snapshot. The newest 30 are retained. Without a store, list, diff
 and restore work on old-style backups only.
@@ -11999,7 +12061,9 @@ tacctl shipped, according to the git history of
 .TP
 .IR /etc/tacctl/linux\-hosts ", " /etc/tacctl/linux\-uids
 The registry of enrolled Linux hosts (with each host's method) and the
-UID each user gets on every host.
+UID each user gets on every host. Snapshots include both, and
+.B backup restore
+puts them back.
 .TP
 .I /etc/tacctl/hosts/
 One
@@ -12017,6 +12081,7 @@ Printed by
 .BR "host show" .
 Mode 0600 in a 0700 directory, root only; renamed with the host and removed by
 .BR "host unenroll" .
+Snapshots include them.
 .TP
 .I /var/lib/tacctl/linux/
 The pam_tacplus source tarball and the modules built in containers.

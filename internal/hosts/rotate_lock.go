@@ -102,3 +102,16 @@ func (r *Registry) lock() (unlock func(), err error) {
 		time.Sleep(registryLockPoll)
 	}
 }
+
+// WithLock runs fn holding the registry's lock, the one its writes take
+// (and the records'), waiting for it as they do. fn must not call a write of
+// the registry or of the records: the lock is not reentrant. 'backup
+// restore' puts the registry and the records back under it.
+func (r *Registry) WithLock(fn func() error) error {
+	unlock, err := r.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return fn()
+}

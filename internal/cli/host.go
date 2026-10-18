@@ -691,6 +691,12 @@ func (inv *invocation) hostEnroll(args []string) error {
 		}
 		return exit(1)
 	}
+	// The state before the registry changes (D191): an enrolment, a move
+	// and a re-enrolment all end here.
+	if err := inv.snapshotFirst(); err != nil {
+		a.Out.WarnE("The client script succeeded on " + name + " but the registry was not changed; run the same command again.")
+		return err
+	}
 	if err := reg.Remember(hosts.Entry{Name: name, Target: target, Port: port, Scope: scope, Server: server, Identity: identity, Method: method}); err != nil {
 		return err
 	}
@@ -1410,6 +1416,12 @@ func (inv *invocation) hostUnenroll(args []string) error {
 			return inv.usageErr("Removal on " + name + " failed; it is still registered. Fix the cause, or pass --force to forget the host anyway.")
 		}
 		a.Out.WarnE("Removal on " + name + " failed; forgetting the host anyway (--force).")
+	}
+	// The state before the host is forgotten (D191): the registry line, the
+	// pins and the record go together.
+	if err := inv.snapshotFirst(); err != nil {
+		a.Out.WarnE("The removal ran on " + name + " but the host is still registered; run the same command again.")
+		return err
 	}
 	if err := reg.Forget(name); err != nil {
 		return err

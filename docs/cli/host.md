@@ -71,6 +71,12 @@ host default-method [tacplus|radius]
     Show or set the method for hosts enrolled without --method (host.default_method)
 ```
 
+`host enroll` (so `host move`) and `host unenroll` take a snapshot just
+before the registry changes, once the script on the host has succeeded; `host
+sync` takes none. It holds the registry, the host records, `staging` and the
+UID ledger, so `backup restore` can put them back (see
+[Backup commands](maintenance.md#backup-commands--tacctl-backup)).
+
 A host with a [break-glass hold](breakglass.md)
 (`tacctl breakglass hold <host>`) is one the server does not answer, so that
 its local administrator and console work. The `host` verbs that log in over

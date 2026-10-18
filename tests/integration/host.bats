@@ -1230,3 +1230,41 @@ _container_ssh() {
     refute_output --partial "tac-engineer is missing"
     assert_line "  3 differences."
 }
+
+@test "backup restore: a snapshot taken by host unenroll brings the host, its record and the ledger back" {
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab > /dev/null
+    run _hosts
+    assert_output "web1|admin@web1.example.net||lab|192.0.2.1|"
+    cp "${TACCTL_STATE_DIR}/linux-uids" "${BATS_TEST_TMPDIR}/uids.before"
+    local before
+    before=$(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l)
+
+    "$TACCTL_BIN_SCRIPT" host unenroll web1 > /dev/null
+    run _hosts
+    assert_output ""
+    [ ! -e "${TACCTL_STATE_DIR}/hosts/web1.json" ]
+    local snap
+    snap=$(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | tail -n 1)
+    [[ $(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l) -gt $before ]]
+    # The snapshot has the registry line, the record and the ledger, 0600.
+    grep -q '^web1|' "${TACCTL_STATE_DIR}/backups/${snap}/linux-hosts"
+    [ -f "${TACCTL_STATE_DIR}/backups/${snap}/hosts/web1.json" ]
+    [ "$(stat -c %a "${TACCTL_STATE_DIR}/backups/${snap}/linux-hosts")" = 600 ]
+    [ "$(stat -c %a "${TACCTL_STATE_DIR}/backups/${snap}/hosts")" = 700 ]
+    cmp "${TACCTL_STATE_DIR}/backups/${snap}/linux-uids" "${BATS_TEST_TMPDIR}/uids.before"
+
+    run "$TACCTL_BIN_SCRIPT" backup diff "$snap"
+    assert_success
+    assert_output --partial "linux-hosts"
+    assert_output --partial "hosts/web1.json"
+
+    run "$TACCTL_BIN_SCRIPT" backup restore "$snap" <<< "y"
+    assert_success
+    assert_output --partial "come back: web1"
+    assert_output --partial "The hosts themselves are not touched."
+    assert_output --partial "Restored snapshot ${snap}"
+    run _hosts
+    assert_output "web1|admin@web1.example.net||lab|192.0.2.1|"
+    [ -f "${TACCTL_STATE_DIR}/hosts/web1.json" ]
+    cmp "${TACCTL_STATE_DIR}/linux-uids" "${BATS_TEST_TMPDIR}/uids.before"
+}
