@@ -143,6 +143,11 @@ make release-verify ALLOWED_SIGNERS=/tmp/trial-signers
 
 ### 4. Push and publish
 
+The GitHub repository refuses force pushes and deletion of `master` and
+`develop` and any move or deletion of a `0.*` tag, so the tag is made
+and checked locally (`git tag -f` above) and pushed once, with the signed
+assets already built from it; a pushed tag is final.
+
 ```sh
 git checkout develop
 git push origin develop master 0.2.1
