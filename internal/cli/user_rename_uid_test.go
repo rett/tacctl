@@ -137,3 +137,14 @@ func TestUserRenameLedgerFailureNamesTheSnapshot(t *testing.T) {
 		t.Errorf("the rename was not applied:\n%s", sb.store())
 	}
 }
+
+// A server that is not enrolled holds no accounts: renaming a user says
+// nothing of tiers or of syncing it.
+func TestUserRenameOnAServerThatIsNotEnrolledSaysNothingOfTiers(t *testing.T) {
+	sb := newSandbox(t, true)
+	sb.write("state/linux-uids", renameLedger, 0o600)
+	sb.run("", []string{"user", "rename", "alice", "zed"})
+	if sb.code != 0 || strings.Contains(sb.stderr(), "keeps the groups") || strings.Contains(sb.stderr(), "host sync") {
+		t.Errorf("exit %d\n%s", sb.code, sb.stderr())
+	}
+}

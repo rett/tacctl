@@ -779,6 +779,11 @@ func (inv *invocation) userRename(args []string) error {
 			") is removed on hosts and '" + newname + "' created with " + mv.heldBy)
 	}
 	inv.echo("")
+	// A server that is not enrolled holds no accounts to sync; an enrolled
+	// one syncs now, and the sync renames the account with its UID.
+	if _, ok, _ := inv.localHost(); !ok {
+		return nil
+	}
 	return watch.lowered("'"+oldname+"'", "'"+oldname+"' keeps the groups of the old tier")
 }
 
