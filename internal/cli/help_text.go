@@ -35,7 +35,7 @@ Commands:
   <b>scope</b> <o><subcommand></o>                    Scope management (named CIDR + shared-secret bundles)
   <b>host</b> <o><subcommand></o>                     Linux hosts: enroll, sync, unenroll TACACS+ or RADIUS login over SSH
   <b>device</b> <o><subcommand></o>                   Device registry: list, add, scan, discover, check, host keys (ssh-config)
-  <b>breakglass</b> <o><subcommand></o>               Break-glass hold: make the server stop answering one device (hold, release, list)
+  <b>breakglass</b> <o><subcommand></o>               Break-glass hold: make the server stop answering one device or host (hold, release, list)
   <b>ssh</b> <o><name|address></o> [<o>-p <port></o>]        Open an ssh session to a registered device or enrolled host, as you
       <o>-p <port></o>                         Connect to this port instead of the registered one
   <b>shell</b> [<o>--idle <min></o>] [<o>-c <line></o>]      An interactive tacctl prompt with history and completion

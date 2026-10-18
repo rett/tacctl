@@ -315,6 +315,9 @@ func (inv *invocation) rotateValidate(o rotateOpts) (*rotation, error) {
 	if e.Target == hosts.Local {
 		return nil, inv.usageErr("'" + o.name + "' is this server (enrolled with --local); it is not reached over ssh, so it has no provisioning account to rotate.")
 	}
+	if err := inv.hostHeldErr(e, "tacctl host provisioner "+o.name+" rotate"); err != nil {
+		return nil, err
+	}
 	r := &rotation{o: o, entry: e, he: inv.hostsEnv()}
 	r.hostPart = e.Target
 	if u, h, found := strings.Cut(e.Target, "@"); found {

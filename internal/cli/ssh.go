@@ -224,11 +224,20 @@ func (inv *invocation) ssh(args []string) error {
 			cached = false
 		}
 	}
-	// A held device takes local accounts only; the session goes on (the
-	// person may be about to type the local name).
-	if e.Source == devreg.SourceDevice {
+	// A held device or host takes local accounts only; the session goes on
+	// (the person may be about to type the local name).
+	switch e.Source {
+	case devreg.SourceDevice:
 		if _, held := inv.holdOf(e.Name, e.Address); held {
 			a.Out.Warn("break-glass is held on " + e.Name + ": it takes local accounts only")
+		}
+	case devreg.SourceHost:
+		if reg, err := inv.registry(); err == nil {
+			if he, ok := reg.Find(e.Name); ok {
+				if _, held := inv.hostHoldShown(he); held {
+					a.Out.Warn("break-glass is held on " + e.Name + ": it takes local accounts only")
+				}
+			}
 		}
 	}
 	a.Logger(inv.ctx, "auth.info", "ssh user="+caller+" device="+e.Name+" addr="+addr+forward+cacheNote+inv.originFields())

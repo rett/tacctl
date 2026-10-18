@@ -3,6 +3,56 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.14
+
+1. **`device address` moves a break-glass hold with its device.** On a
+   device that is held, changing the address used to be refused until the
+   hold was released, which answered the old address again. It now moves the
+   hold: the new address must pass what a new hold passes (not a loopback
+   address, not one a listener of either backend binds, not an enrolled
+   host's address, not held by another record, covered by a scope), and one
+   line names both addresses and asks to confirm (`-y` skips it). The
+   registry and the record are written together, rendered once, and each
+   backend whose file changed is restarted once; a restart that fails is
+   reported as `NOT restarted` and exits 1, with both left on the new
+   address. A refused address changes nothing. The superuser moves a hold
+   (an engineer is refused), `--apply` is refused for a held device, and
+   `device remove` and `device import` of a held device are still refused.
+   The log line is `breakglass hold-move device= from= to= by=`.
+
+2. **A break-glass hold can be placed on an enrolled Linux host.**
+   `tacctl breakglass hold|release|list` now name hosts and devices alike,
+   with the same record (`breakglass_hold.<name>` in `tacctl.yaml`: since,
+   by, reason, address) and the same carve-out: the host's address, the one
+   `host enroll` or `host sync` recorded (else its ssh target's, when that is
+   an address), is taken out of every scope's prefixes at render time, so
+   the server answers no login and no sudo check for it while the host's
+   local administrator and its console keep working. The hold report, the
+   prompt and the way in are the host's own; `list` has a KIND column and
+   `--json` a `kind` field. The refusals stay for this server's own host
+   (`--local`), loopback addresses, listener addresses, a host with no
+   address, an address no scope covers and a name that is both an enrolled
+   host and a registered device (ambiguous: both are named, nothing is
+   changed); a device is still not held, nor moved by `device address`, at
+   an enrolled host's address, and a host is not held at a registered
+   device's address. A host is held by its name: an address that is only its
+   ssh target's is refused, naming the host. `host sync`, `host show --check`, `host
+   enroll` of a registered host (and so `host move`), `host target <name>
+   <target>`, `host provisioner <name> rotate` and `host unenroll` (also
+   with `--force`) are refused for a held host, naming the hold and
+   `tacctl breakglass release <name>`, before anything is attempted over
+   ssh (also when the device registry, which records the host's address,
+   cannot be read: nothing is attempted); `host sync --all` skips a held host
+   and says so; `tacctl ssh` of a
+   held host warns. `host list` marks a held host (`BREAK-GLASS` in a STATE
+   column and a footer), `host show` has a Break-glass section (`breakglass`
+   in `--json`), `status`, `scope` and `config validate` name the hold, and a
+   record whose host is no longer enrolled at the record's address is an
+   orphan, as for a device. Holds and releases are the superuser's; an
+   engineer sees the holds of the hosts of their own scopes. The log lines
+   are `breakglass hold|release host=<name> addr=<ip>`. The state format is
+   unchanged.
+
 ## 0.2.13 (2026-10-16)
 
 1. **The `test` workflow no longer runs on a push to `master`.** After a

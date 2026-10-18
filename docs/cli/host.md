@@ -5,14 +5,16 @@
 ```
 host list
 
-    Show enrolled Linux hosts (target, scope, server, METHOD, users)
+    Show enrolled Linux hosts (target, scope, server, METHOD, users); a host with a break-glass
+    hold is marked BREAK-GLASS in a STATE column
 
 host show <name> [--all] [--json] [--check]
 
     One enrolled host in full: connection, scope (and the one answering its address), address
     history, pinned keys, sightings, notices, the accounts the next sync makes, the last enroll or
     sync and the host's facts; --check compares the host with what tacctl would make it (exit 1 on a
-    difference; superuser only: it logs in)
+    difference; superuser only: it logs in). A held host shows its break-glass hold (breakglass in
+    --json) and is not checked
 
 host enroll <[user@]host>|--local [opts]
 
@@ -68,3 +70,17 @@ host default-method [tacplus|radius]
 
     Show or set the method for hosts enrolled without --method (host.default_method)
 ```
+
+A host with a [break-glass hold](breakglass.md)
+(`tacctl breakglass hold <host>`) is one the server does not answer, so that
+its local administrator and console work. The `host` verbs that log in over
+ssh refuse it: `host sync`, `host show --check`, `host enroll` of the
+registered host (and so `host move`), `host target <name> <target>`,
+`host provisioner <name> rotate` and `host unenroll` (also with `--force`).
+They name the hold (since, by whom, why) and
+`tacctl breakglass release <name>`; nothing is attempted over ssh and nothing
+is changed. The same refusal stands when the device registry, which records
+the host's address, cannot be read. `host sync --all` skips a held host and
+says so.
+`host target <name>` without a change, `host list` and `host show` only read,
+and `tacctl ssh` warns and connects.

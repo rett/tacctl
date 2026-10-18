@@ -106,7 +106,7 @@ var deviceSpecs = map[string]Spec{
 		flagApply, {Names: []string{"--overwrite"}}, flagYes, flagJSON}},
 	"remove":      {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagYes}},
 	"rename":      {MinArgs: 2, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagAllowGeneric}},
-	"address":     {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagApply}},
+	"address":     {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagApply, flagYes}},
 	"hostname":    {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
 	"vendor":      {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, KindVendors + "|clear"}},
 	"port":        {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
@@ -155,7 +155,7 @@ var deviceVerbs = [][2]string{
 	{"sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite] [--json] [-y]", "Superusers: fill the registry's empty hostname, location and description from what each device's last pull record says of itself (no login; the preview first, --apply writes after one question)"},
 	{"remove <name>[,<name>...] | --all [-y]", "Remove devices from the registry (confirms)"},
 	{"rename <old> <new> [--allow-generic]", "Rename a device"},
-	{"address <name> [<address>]", "Show or set the address (--apply: then run 'device config apply' for the device)"},
+	{"address <name> [<address>] [-y]", "Show or set the address (--apply: then run 'device config apply' for the device); on a device with a break-glass hold, the hold moves with it after one question (-y: no question)"},
 	{"hostname <name> [<dns>|clear]", "Show, set or clear the DNS name"},
 	{"vendor <name> [cisco|juniper|wti|other]", "Show or set the vendor"},
 	{"port <name> [<n>|clear]", "Show, set or clear the ssh port"},
@@ -231,7 +231,7 @@ var deviceOptions = map[string][][2]string{
 	},
 	"remove": {
 		{"--all", "(remove, check) Every device; (show, notices) the acknowledged notices too"},
-		{"-y, --yes", "(remove, import, hostkey, location) Answer yes to the confirmation"},
+		{"-y, --yes", "(remove, import, hostkey, location, address) Answer yes to the confirmation"},
 	},
 	"location": {
 		{"--from-device", "Read the location from the device (SNMP sysLocation) and store it"},
@@ -1558,13 +1558,6 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 			return err
 		}
 		name := d.Name
-		// The hold is on the address the server sees: moving the device
-		// would leave the old address silenced and the new one answered.
-		if field == "address" {
-			if inv.isHeld(name, d.Address) {
-				return inv.usageErr("break-glass is held on " + name + ": release it first (tacctl breakglass release " + name + "). Nothing was changed.")
-			}
-		}
 		value := strings.Join(p.Args[1:], " ")
 		if field != "description" && field != "location" && len(p.Args) > 2 {
 			return inv.usageErr("Usage: tacctl device " + field + " <name> [<value>|clear]")
@@ -1575,6 +1568,19 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		probe := d.Clone()
 		if err := set(&probe); err != nil {
 			return err
+		}
+		// The hold is on the address the server sees: a held device that
+		// moves takes the hold with it (D175).
+		if field == "address" && probe.Address != d.Address && inv.isHeld(name, d.Address) {
+			if applyReq {
+				return inv.usageErr("--apply does not go with a held device: the device does not authenticate your login until the hold is released (tacctl breakglass release " + name + "). Nothing was changed.")
+			}
+			if err := inv.holdMove(f, res, d, probe.Address, p.Has("-y")); err != nil {
+				return err
+			}
+			// No configuration nudge: pull, plan and apply refuse a held
+			// device, and the move's report says what to do next.
+			return nil
 		}
 		// A configuration syntax setting is a Cisco setting: it goes with
 		// the vendor, and the message says which one went.
@@ -1959,7 +1965,8 @@ func (inv *invocation) deviceImport(args []string) error {
 		return err
 	}
 	// An import that removes a held device or moves it to another address
-	// is refused, as 'remove' and 'address' are.
+	// is refused, as 'remove' is: 'device address' moves a hold, an import
+	// does not.
 	for _, h := range inv.holds() {
 		// A record holds the device only while the device is registered at
 		// the record's address; an orphan is not the import's to refuse.
@@ -1967,7 +1974,7 @@ func (inv *invocation) deviceImport(args []string) error {
 			continue
 		}
 		if d := trial.Find(h.Device); d == nil || !sameAddress(d.Address, h.Address) {
-			return inv.usageErr("break-glass is held on " + h.Device + ": release it first (tacctl breakglass release " + h.Device + "). Nothing was changed.")
+			return inv.usageErr("break-glass is held on " + h.Device + ": an import neither removes it nor moves it to another address; move the hold with 'tacctl device address " + h.Device + " <address>', or release it first (tacctl breakglass release " + h.Device + "). Nothing was changed.")
 		}
 	}
 	a := inv.app
