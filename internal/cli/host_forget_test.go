@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"io"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/execx/fake"
 	"github.com/rett/tacctl/internal/hosts"
 )
 
@@ -15,6 +18,8 @@ import (
 // host-key scan.
 
 const (
+	// renameStaging is the staging file of renameLab.
+	renameStaging = "192.0.2.9/32|lab|host|web1|2026-01-01\n192.0.2.8/32|lab|device|web1|2026-01-01\n192.0.2.7/32|lab|host|web2|2026-01-01\n"
 	// stagingAfterWeb1 is the staging file without the host entry of web1.
 	stagingAfterWeb1 = "192.0.2.8/32|lab|device|web1|2026-01-01\n192.0.2.7/32|lab|host|web2|2026-01-01\n"
 	// withoutWeb1 is the registry of the lab without web1.
@@ -82,7 +87,7 @@ func TestHostForgetConfirms(t *testing.T) {
 	for _, stdin := range []string{"n\n", "", "yes please\n", "\n"} {
 		sb.run(stdin, []string{"host", "forget", "web1"})
 		sb.expect(1, "Nothing was changed.", "")
-		if want := "Forget the host 'web1' (root@192.168.1.10, scope lab). Dropped from this server:"; !strings.Contains(sb.printed(), want) {
+		if want := "Forget the host 'web1' (root@192.168.1.10, scope lab). Would drop from this server:"; !strings.Contains(sb.printed(), want) {
 			t.Errorf("%q: lacks %q:\n%s", stdin, want, sb.printed())
 		}
 		if after := sb.renameState(); after != before {
@@ -222,15 +227,95 @@ func TestHostForgetOrphan(t *testing.T) {
 	}
 }
 
-// A host enrolled with --local is forgotten like another; nothing is run.
+// A host enrolled with --local is forgotten like another, but nothing is run
+// on this server, so its PAM setup and console accounts keep using the scope:
+// the warning comes before the question, and the scope is not offered for
+// removal.
 func TestHostForgetLocalHost(t *testing.T) {
 	sb := hostLab(t)
-	sb.write("state/linux-hosts", hostLines+"here|local||lab|192.0.2.1|\n", 0o600)
+	// The only host of its scope, so that a hint to remove the scope would be
+	// given for any other host.
+	sb.write("state/linux-hosts", "here|local||lab|192.0.2.1|\n", 0o600)
+	warn := "This is the registration of this server itself. Its PAM setup and console accounts still use scope 'lab'"
+	way := "'tacctl host unenroll here' cleans this server properly"
+
+	// Declined, the warning has been given and nothing has changed.
+	sb.run("n\n", []string{"host", "forget", "here"})
+	sb.expect(1, "Nothing was changed.", "")
+	out := sb.printed()
+	i, j := strings.Index(out, warn), strings.Index(out, "Forget it?")
+	if i < 0 || j >= 0 && i > j || !strings.Contains(out, way) || !strings.Contains(out, "Forget it only when the line is a stray duplicate.") {
+		t.Errorf("the warning is missing or after the question:\n%s", out)
+	}
+	if sb.registryText() != "here|local||lab|192.0.2.1|\n" {
+		t.Errorf("declining changed the registry: %q", sb.registryText())
+	}
+
+	// With --yes the warning is still printed, then the line goes.
 	sb.run("", []string{"host", "forget", "here", "--yes"})
 	sb.expect(0, "Host 'here' forgotten.", "")
-	if sb.registryText() != hostLines || sb.sshCalls() != 0 {
+	out = sb.printed()
+	if !strings.Contains(out, warn) || !strings.Contains(out, way) {
+		t.Errorf("--yes hides the warning:\n%s", out)
+	}
+	for _, bad := range []string{"tacctl scope remove", "No enrolled host uses scope", "cleans a host that can be reached", "nothing is sent to it"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("the output for this server's own host has %q:\n%s", bad, out)
+		}
+	}
+	if sb.registryText() != "" || sb.sshCalls() != 0 {
 		t.Errorf("registry %q, %d ssh calls", sb.registryText(), sb.sshCalls())
 	}
+	if sb.runner.CalledRegexp(`sshd|/etc/shells|systemctl`) {
+		t.Errorf("something was run: %v", sb.runner.Argvs())
+	}
+
+	// Another host: no such warning, and the scope hint stays.
+	sb = hostLab(t)
+	sb.write("state/linux-hosts", "web1|root@192.168.1.10||lab|192.0.2.1|\n", 0o600)
+	sb.run("", []string{"host", "forget", "web1", "--yes"})
+	sb.expect(0, "Host 'web1' forgotten.", "")
+	out = sb.printed()
+	if strings.Contains(out, "this server itself") || !strings.Contains(out, "tacctl scope remove lab") || !strings.Contains(out, "'tacctl host unenroll' cleans a host that can be reached") {
+		t.Errorf("output for another host:\n%s", out)
+	}
+}
+
+// A pin that could not be removed is found again by its own spelling, which
+// the hint names, whatever the registry's spelling was.
+func TestHostForgetRetryHintNamesThePinsSpelling(t *testing.T) {
+	sb := renameLab(t)
+	// Registered as Web1; the pin, the record and the staging are web1's.
+	sb.write("state/linux-hosts", strings.Replace(hostLines, "web1|", "Web1|", 1), 0o600)
+	// The registry of the pins cannot be locked.
+	_ = os.Remove(sb.path("state", devreg.LockName))
+	if err := os.Mkdir(sb.path("state", devreg.LockName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sb.run("", []string{"host", "forget", "Web1", "--yes"})
+	sb.expect(0, "Host 'Web1' forgotten.", "")
+	if want := "Web1: its pinned ssh keys and address could not be removed"; !strings.Contains(sb.printed(), want) {
+		t.Fatalf("no warning %q:\n%s", want, sb.printed())
+	}
+	if !strings.Contains(sb.printed(), "Run: tacctl host forget web1") || strings.Contains(sb.printed(), "Run: tacctl host forget Web1") {
+		t.Errorf("the hint does not name the pin's spelling:\n%s", sb.printed())
+	}
+	if strings.Contains(sb.registryText(), "Web1|") || sb.pin("web1") == nil {
+		t.Fatalf("registry %q, pin %+v", sb.registryText(), sb.pin("web1"))
+	}
+
+	// Running what the hint says finishes it.
+	if err := os.Remove(sb.path("state", devreg.LockName)); err != nil {
+		t.Fatal(err)
+	}
+	sb.run("", []string{"host", "forget", "web1", "--yes"})
+	sb.expect(0, "Host 'web1' forgotten.", "")
+	if sb.pin("web1") != nil {
+		t.Error("the pin stayed")
+	}
+	// And the registry spelling is not a name any more.
+	sb.run("", []string{"host", "forget", "Web1", "--yes"})
+	sb.expect(1, "", "No enrolled host or leftover named 'Web1'")
 }
 
 // A running rotation of the host refuses it without waiting.
@@ -270,6 +355,57 @@ func TestHostForgetWarnsForWhatStayed(t *testing.T) {
 	}
 	if strings.Contains(sb.registryText(), "web1|") {
 		t.Error("the registry line stayed")
+	}
+}
+
+// sshWorks makes the script copy and run of the fake ssh succeed.
+func sshWorks(sb *sandbox) {
+	sb.script = func(r *fake.Runner) {
+		r.Func(func(c execx.Cmd) bool { return c.Name == "ssh" }, func(c execx.Cmd) (execx.Result, error) {
+			if strings.Contains(strings.Join(c.Args, " "), "mktemp") {
+				if c.Stdin != nil {
+					_, _ = io.Copy(io.Discard, c.Stdin)
+				}
+				return execx.Result{Stdout: []byte("/tmp/tacctl.AbCd1234\n")}, nil
+			}
+			return execx.Result{}, nil
+		})
+	}
+}
+
+// A routine 'host unenroll' of a host enrolled with --staging leaves no
+// orphan: the host's staging entries go with it, and the /32 each added is
+// still a prefix of the scope, which the output says how to drop.
+func TestHostUnenrollDropsTheStagingEntries(t *testing.T) {
+	sb := renameLab(t)
+	sshWorks(sb)
+	sb.run("", []string{"host", "unenroll", "web1"})
+	sb.expect(0, "Host 'web1' unenrolled.", "")
+	if got := sb.read("state/staging"); got != stagingAfterWeb1 {
+		t.Errorf("staging %q, want %q", got, stagingAfterWeb1)
+	}
+	if want := "The scope 'lab' still answers 192.0.2.9/32. To drop it: tacctl scope prefixes lab remove 192.0.2.9/32"; !strings.Contains(sb.printed(), want) {
+		t.Errorf("the output lacks %q:\n%s", want, sb.printed())
+	}
+	if strings.Contains(sb.printed(), "192.0.2.8/32") || strings.Contains(sb.printed(), "192.0.2.7/32") {
+		t.Errorf("the staging of another kind or host is named:\n%s", sb.printed())
+	}
+	// The pins, the record and the staging are gone: nothing is left to find.
+	if sb.pin("web1") != nil || sb.fileExists("state/hosts/web1.json") {
+		t.Error("the pin or the record stayed")
+	}
+	v, l := sb.findings(t)
+	if strings.Contains(v, "is not an enrolled host") || strings.Contains(l, "finding(s)") {
+		t.Errorf("findings after a routine unenroll:\n%s\n%s", v, l)
+	}
+
+	// A host with no staging entry prints no such line.
+	sb = renameLab(t)
+	sshWorks(sb)
+	sb.run("", []string{"host", "unenroll", "db1"})
+	sb.expect(0, "Host 'db1' unenrolled.", "")
+	if strings.Contains(sb.printed(), "still answers") || sb.read("state/staging") != renameStaging {
+		t.Errorf("staging %q:\n%s", sb.read("state/staging"), sb.printed())
 	}
 }
 
@@ -327,11 +463,58 @@ func TestHostFindingsSameRecordedAddress(t *testing.T) {
 	sb := renameLab(t)
 	sb.seedPin("db1", "192.168.1.10")
 	v, l := sb.findings(t)
-	if want := "the hosts 'web1', 'db1' have the same recorded address, 192.168.1.10 (tacctl host forget <name> drops a registration made twice)"; !strings.Contains(v, want) {
+	if want := "the hosts 'web1', 'db1' have the same recorded address and ssh port, 192.168.1.10:22 (tacctl host forget <name> drops a registration made twice)"; !strings.Contains(v, want) {
 		t.Errorf("validate lacks %q:\n%s", want, v)
 	}
 	if !strings.Contains(l, "1 finding(s)") {
 		t.Errorf("host list:\n%s", l)
+	}
+	js := hostListJSONOf(t, sb.run("", []string{"host", "list", "--json"}))
+	for _, n := range []string{"web1", "db1"} {
+		if fs := js[n].Findings; len(fs) != 1 || !strings.Contains(fs[0].Text, "same recorded address and ssh port, 192.168.1.10:22") {
+			t.Errorf("%s findings %+v", n, fs)
+		}
+	}
+	if len(js["web2"].Findings) != 0 {
+		t.Errorf("web2 findings %+v", js["web2"].Findings)
+	}
+}
+
+// One address on another ssh port is another machine (hosts behind one NAT
+// address), as 'host enroll' judges it.
+func TestHostFindingsSameAddressOtherPortIsNoFinding(t *testing.T) {
+	sb := renameLab(t)
+	sb.seedPin("db1", "192.168.1.10")
+	sb.write("state/linux-hosts", "web1|root@192.168.1.10|2201|lab|192.0.2.1|\ndb1|root@192.168.1.10|2202|prod|192.0.2.1|\nweb2|root@web2.example.net||lab|192.0.2.1|\n", 0o600)
+	v, l := sb.findings(t)
+	if strings.Contains(v, "same recorded address") || strings.Contains(l, "finding(s)") {
+		t.Errorf("two ports are two machines:\n%s\n%s", v, l)
+	}
+	for n, h := range hostListJSONOf(t, sb.run("", []string{"host", "list", "--json"})) {
+		if len(h.Findings) != 0 {
+			t.Errorf("%s findings %+v", n, h.Findings)
+		}
+	}
+
+	// This server's own host has no port: it is the machine at its address on
+	// every port, as for 'host enroll'.
+	sb.seedPin("here", "192.168.1.10")
+	sb.write("state/linux-hosts", "web1|root@192.168.1.10|2201|lab|192.0.2.1|\nhere|local||lab|192.0.2.1|\nweb2|root@web2.example.net||lab|192.0.2.1|\n", 0o600)
+	v, _ = sb.findings(t)
+	if want := "the hosts 'web1', 'here' have the same recorded address and ssh port, 192.168.1.10:2201"; !strings.Contains(v, want) {
+		t.Errorf("validate lacks %q:\n%s", want, v)
+	}
+
+	// The same port is a finding, with the port in it; the default port is 22.
+	sb.write("state/linux-hosts", "web1|root@192.168.1.10|2201|lab|192.0.2.1|\ndb1|root@192.168.1.10|2201|prod|192.0.2.1|\nweb2|root@web2.example.net||lab|192.0.2.1|\n", 0o600)
+	v, _ = sb.findings(t)
+	if want := "the hosts 'web1', 'db1' have the same recorded address and ssh port, 192.168.1.10:2201"; !strings.Contains(v, want) {
+		t.Errorf("validate lacks %q:\n%s", want, v)
+	}
+	sb.write("state/linux-hosts", "web1|root@192.168.1.10|22|lab|192.0.2.1|\ndb1|root@192.168.1.10||prod|192.0.2.1|\nweb2|root@web2.example.net||lab|192.0.2.1|\n", 0o600)
+	v, _ = sb.findings(t)
+	if want := "have the same recorded address and ssh port, 192.168.1.10:22"; !strings.Contains(v, want) {
+		t.Errorf("22 and no port are one port:\n%s", v)
 	}
 }
 

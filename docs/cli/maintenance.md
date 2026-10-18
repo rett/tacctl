@@ -85,11 +85,11 @@ addresses) and `linux-uids` (the UID ledger), in the same modes. `linux-hosts`
 is in every snapshot, empty when there is no registry, so a snapshot that has
 it knows the hosts; the provisioner's lock files and the caches are not kept.
 `host enroll`, `host move`, `host unenroll`, `host rename` and `host forget`
-take a snapshot just before they change the registry; `host move --all` takes one before the first move
-and none per host, so a long batch does not push the state before it out of
-the newest 30. `host sync` takes none. A snapshot made by tacctl 0.2.13 or
-older has no `linux-hosts`, and tacctl 0.2.13 ignores the host entries of a
-newer one.
+take a snapshot just before they change the registry; `host move --all`
+takes one before the first move and none per host, so a long batch does not
+push the state before it out of the newest 30. `host sync` takes none. A
+snapshot made by tacctl 0.2.13 or older has no `linux-hosts`, and tacctl
+0.2.13 ignores the host entries of a newer one.
 
 `backup restore <ts>` puts back both files, re-renders every enabled backend's config (a hand-edited file is kept under `backups/legacy/` first), and restarts the backends. It snapshots the current state first, so a restore can be undone with another restore, and it changes nothing if the snapshot is invalid or the render fails. The snapshot's `backends.enabled` comes back with the rest of `tacctl.yaml`: a backend it enables must already be installed (otherwise nothing changes and the message says to run `backend enable`) and is started; one it leaves out is stopped and disabled.
 

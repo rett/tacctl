@@ -1577,6 +1577,20 @@ func (inv *invocation) hostUnenroll(args []string) error {
 	if err := inv.hostRecords().Forget(name); err != nil {
 		a.Out.WarnE(name + ": its record (" + inv.app.Paths.HostRecords + "/" + name + ".json) could not be removed: " + strings.Join(msgs(err), " "))
 	}
+	// The host's staging entries go with it; the /32 each added stays a
+	// prefix of its scope (said below), as 'host forget' leaves it.
+	var staged []stagingEntry
+	for _, s := range inv.stagingLoad() {
+		if s.Kind == "host" && s.Name == name {
+			staged = append(staged, s)
+		}
+	}
+	if len(staged) > 0 {
+		if err := inv.hostStagingDrop(name); err != nil {
+			a.Out.WarnE(name + ": its staging addresses could not be dropped from " + inv.stagingPath() + ": " + strings.Join(msgs(err), " ") + ". Run: tacctl host forget " + name)
+			staged = nil
+		}
+	}
 	if e.Target == hosts.Local {
 		// The remove script gave tacctl's accounts /bin/bash back; the
 		// console's pieces go now (refused, and said, while an account
@@ -1585,10 +1599,16 @@ func (inv *invocation) hostUnenroll(args []string) error {
 	}
 	a.Logger(inv.ctx, "auth.info", "host unenroll name="+name+" target="+e.Target+" by="+inv.sudoUser())
 	a.Out.InfoE("Host '" + name + "' unenrolled. Local accounts and home directories were left in place.")
+	if len(staged) > 0 {
+		inv.echo("")
+		inv.hostStagingHints(staged)
+	}
 	if !reg.ScopeInUse(e.Scope) {
 		inv.echo("")
 		inv.echo("  No enrolled host uses scope '" + e.Scope + "' any more. To stop its secret being accepted:")
 		inv.echo("    tacctl scope remove " + e.Scope)
+		inv.echo("")
+	} else if len(staged) > 0 {
 		inv.echo("")
 	}
 	return nil

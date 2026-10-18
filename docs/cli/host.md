@@ -79,8 +79,8 @@ host forget <name> [--yes]
 
 host unenroll <name> [--force]
 
-    Remove the login method from the host (accounts are kept) and its pinned host keys; --force
-    drops it from the registry even if the removal fails
+    Remove the login method from the host (accounts are kept), then its pinned host keys, record
+    and staging addresses; --force drops it from the registry even if the removal fails
 
 host default-method [tacplus|radius]
 
@@ -148,13 +148,20 @@ drops, for the name, the registry line, the pinned keys, recorded address and
 history in the device registry (the generated `known_hosts` follows), the
 record (`/etc/tacctl/hosts/<name>.json`), the host's staging addresses from
 the `staging` file and the host-key scan result of the seen cache. It lists
-what it will drop and asks (`--yes` skips the question). The host itself is
+what it would drop and asks (`--yes` skips the question). The host itself is
 not touched: its accounts, secrets and PAM setup stay, so the command is for a
 registration that is wrong, not for taking a host out of service (`host
-unenroll` does that on a host that can be reached). A scope's staging /32
-stays a prefix of the scope; the command prints the `scope prefixes <scope>
-remove` line for it, and the scope of a host that was the last one using it is
-named with `scope remove`. The log line is `host forget name= by=`.
+unenroll` does that on a host that can be reached, and drops the host's
+staging addresses and record the same way). A scope's staging /32 stays a
+prefix of the scope; both commands print the `scope prefixes <scope> remove`
+line for it, and the scope of a host that was the last one using it is named
+with `scope remove`. The log line is `host forget name= by=`.
+
+This server's own host (`host enroll --local`) is the exception. Forgetting it
+runs nothing here, so this server's PAM setup and console accounts keep using
+its scope: the command says so before it asks, and does not suggest removing
+the scope. `host unenroll <name>` is what takes this server's own host out of
+service; `host forget` of it is for a stray duplicate line only.
 
 The name is the registered spelling. A leftover that no registry line has (an
 orphan: a pin, a record or a staging entry) is named by exactly its spelling
@@ -190,7 +197,7 @@ Nothing is repaired where they are reported; each names the verb that does.
 |---|---|
 | two enrolled names equal ignoring case (they share one record of pinned keys) | `host forget <name>`, or `host rename <name> <new>` |
 | a host named like a registered device | `host rename <name> <new>` |
-| two hosts with the same recorded address (the one `enroll` or `sync` recorded; nothing is resolved) | `host forget <name>` for a registration made twice |
+| two hosts with the same recorded address and ssh port (the address `enroll` or `sync` recorded; nothing is resolved; one address on another port is another machine) | `host forget <name>` for a registration made twice |
 | a pin, a record or a staging entry with no registry line | `host forget <name>` |
 
 A break-glass hold with no host is the hold's own orphan line in
@@ -209,7 +216,8 @@ its local administrator and console work. The `host` verbs that log in over
 ssh refuse it: `host sync`, `host show --check`, `host enroll` of the
 registered host (and so `host move`), `host target <name> <target>`,
 `host provisioner <name> rotate` and `host unenroll` (also with `--force`);
-`host forget` is refused too, though it logs in nowhere. They name the hold (since, by whom, why) and
+`host forget` is refused too, though it logs in nowhere. They name the hold
+(since, by whom, why) and
 `tacctl breakglass release <name>`; nothing is attempted over ssh and nothing
 is changed. The same refusal stands when the device registry, which records
 the host's address, cannot be read. `host sync --all` skips a held host and

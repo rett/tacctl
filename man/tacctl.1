@@ -1589,7 +1589,7 @@ each naming its fix: two enrolled names equal ignoring case
 .RB ( "host forget" " or " "host rename" ),
 a host named like a registered device
 .RB ( "host rename" ),
-two hosts with the same recorded address
+two hosts with the same recorded address and ssh port
 .RB ( "host forget" )
 and a pin, record or staging entry with no registry line
 .RB ( "host forget" ).
@@ -2671,16 +2671,25 @@ removes, for the name, the registry line, the pinned keys, address and history i
 .RI ( /etc/tacctl/hosts/ name .json),
 the host's entries in the
 .I staging
-file and the host\-key scan result of the seen cache. It lists what it will drop
+file and the host\-key scan result of the seen cache. It lists what it would drop
 and asks; the question is skipped with
 .BR \-\-yes .
 The host itself is not touched: its accounts, secrets and PAM setup stay
 .RB ( "host unenroll"
-cleans a host that can be reached). A staging /32 stays a prefix of its scope;
-the
+cleans a host that can be reached, and drops its staging entries and record
+the same way). A staging /32 stays a prefix of its scope; the
 .B "scope prefixes"
-line that drops it is printed. The log line is
+line that drops it is printed, by both commands. The log line is
 .BR "host forget name= by=" .
+.IP
+This server's own host
+.RB ( "host enroll \-\-local" )
+is the exception. Forgetting it runs nothing here, so this server's PAM setup
+and console accounts keep using its scope: the command says so before it asks
+and does not suggest removing the scope.
+.BI "host unenroll " name
+takes this server's own host out of service; forgetting it is for a stray
+duplicate line only.
 .IP
 .I name
 is the registered spelling. What no registry line has (an orphan: a pin, a
@@ -2702,7 +2711,8 @@ of the host refuses it. This is the repair for the findings of
 and
 .BR "host list" :
 two names equal ignoring case, a host named like a device, two hosts with the
-same recorded address, and a pin, record or staging entry with no registry line.
+same recorded address and ssh port (one address on another port is another
+machine), and a pin, record or staging entry with no registry line.
 .B "host unenroll \-\-force"
 is not the repair for a duplicate, as it runs the removal script on the machine
 the surviving registration shares.
@@ -2720,7 +2730,10 @@ Options:
 .TP
 .B "host unenroll " name " [ \-\-force ]"
 Run the removal script on the host and drop it from the registry, with its
-pinned host keys. Local accounts and home directories stay. If the removal
+pinned host keys, its record and its staging entries (the staging /32 stays a
+prefix of its scope; the
+.B "scope prefixes"
+line that drops it is printed). Local accounts and home directories stay. If the removal
 fails the host stays registered unless
 .B \-\-force
 is given. A snapshot is taken just before the registry changes, so

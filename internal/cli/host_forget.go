@@ -141,7 +141,7 @@ func (inv *invocation) hostForget(args []string) error {
 	} else {
 		subject = "Forget what remains of the host '" + name + "', which is not enrolled"
 	}
-	a.Out.InfoE(subject + ". Dropped from this server:")
+	a.Out.InfoE(subject + ". Would drop from this server:")
 	if registered {
 		a.Out.InfoE("  - its line in the host registry (" + a.Paths.LinuxHosts + ")")
 	}
@@ -157,7 +157,16 @@ func (inv *invocation) hostForget(args []string) error {
 	if other != "" {
 		a.Out.InfoE("  The pinned keys stay: the enrolled host '" + other + "' has the same name ignoring case.")
 	}
-	a.Out.InfoE("The host itself is not touched: nothing is sent to it, and its accounts, secrets and PAM setup stay as they are. 'tacctl host unenroll' cleans a host that can be reached.")
+	isLocal := registered && entry.Target == hosts.Local
+	if isLocal {
+		// Unlike 'host unenroll' of it, forgetting runs nothing here: the
+		// PAM setup and the console accounts of this server keep using the
+		// scope.
+		a.Out.WarnE("This is the registration of this server itself. Its PAM setup and console accounts still use scope '" + entry.Scope + "' and are not cleaned by forgetting it; 'tacctl host unenroll " + name + "' cleans this server properly. Forget it only when the line is a stray duplicate.")
+		a.Out.InfoE("Nothing is run on this server: its accounts, secrets and PAM setup stay as they are.")
+	} else {
+		a.Out.InfoE("The host itself is not touched: nothing is sent to it, and its accounts, secrets and PAM setup stay as they are. 'tacctl host unenroll' cleans a host that can be reached.")
+	}
 	if !yes && !a.Prompter().Confirm("Forget it? [y/N] ") {
 		a.Out.InfoE("Nothing was changed.")
 		return exit(1)
@@ -175,11 +184,17 @@ func (inv *invocation) hostForget(args []string) error {
 		}
 	}
 	if pieces.pin {
+		// A leftover pin is found again by its own spelling, which may not
+		// be the registry's.
+		pinName := name
+		if h := f.Host(name); h != nil {
+			pinName = h.Name
+		}
 		if _, err := devreg.Mutate(a.Paths.DevicesFile, a.Paths.KnownHosts, nil, func(f *devreg.File) error {
 			f.ForgetHost(name)
 			return nil
 		}); err != nil {
-			a.Out.WarnE(name + ": its pinned ssh keys and address could not be removed: " + msgsJoin(err) + ". Run: tacctl host forget " + name)
+			a.Out.WarnE(name + ": its pinned ssh keys and address could not be removed: " + msgsJoin(err) + ". Run: tacctl host forget " + pinName)
 		}
 	}
 	if pieces.record {
@@ -188,13 +203,7 @@ func (inv *invocation) hostForget(args []string) error {
 		}
 	}
 	if len(pieces.staging) > 0 {
-		var kept []stagingEntry
-		for _, s := range inv.stagingLoad() {
-			if s.Kind != "host" || s.Name != name {
-				kept = append(kept, s)
-			}
-		}
-		if err := inv.stagingSave(kept); err != nil {
+		if err := inv.hostStagingDrop(name); err != nil {
 			a.Out.WarnE(name + ": its staging addresses could not be dropped from " + inv.stagingPath() + ": " + msgsJoin(err) + ". Run: tacctl host forget " + name)
 		}
 	}
@@ -203,16 +212,37 @@ func (inv *invocation) hostForget(args []string) error {
 	a.Logger(inv.ctx, "auth.info", "host forget name="+name+" by="+inv.sudoUser())
 	a.Out.InfoE("Host '" + name + "' forgotten. Nothing was sent to the host.")
 	inv.echo("")
-	for _, s := range pieces.staging {
-		inv.echo("  The scope '" + s.Scope + "' still answers " + s.CIDR + ". To drop it: tacctl scope prefixes " + s.Scope + " remove " + s.CIDR)
-	}
-	if registered && !reg.ScopeInUse(entry.Scope) {
+	inv.hostStagingHints(pieces.staging)
+	// This server's own scope is still used by its PAM setup, so the hint
+	// to remove it is not given for --local.
+	unused := registered && !isLocal && !reg.ScopeInUse(entry.Scope)
+	if unused {
 		inv.echo("  No enrolled host uses scope '" + entry.Scope + "' any more. To stop its secret being accepted: tacctl scope remove " + entry.Scope)
 	}
-	if len(pieces.staging) > 0 || registered && !reg.ScopeInUse(entry.Scope) {
+	if len(pieces.staging) > 0 || unused {
 		inv.echo("")
 	}
 	return nil
+}
+
+// hostStagingDrop removes the staging entries of the host name (kind host)
+// from the staging file. The /32 each one added stays a prefix of its scope.
+func (inv *invocation) hostStagingDrop(name string) error {
+	var kept []stagingEntry
+	for _, s := range inv.stagingLoad() {
+		if s.Kind != "host" || s.Name != name {
+			kept = append(kept, s)
+		}
+	}
+	return inv.stagingSave(kept)
+}
+
+// hostStagingHints says, for each dropped staging entry, that its scope still
+// answers the address and how to drop that.
+func (inv *invocation) hostStagingHints(dropped []stagingEntry) {
+	for _, s := range dropped {
+		inv.echo("  The scope '" + s.Scope + "' still answers " + s.CIDR + ". To drop it: tacctl scope prefixes " + s.Scope + " remove " + s.CIDR)
+	}
 }
 
 // stagingCIDRs are the addresses of entries.
@@ -371,30 +401,62 @@ func (inv *invocation) hostFindings() []hostFinding {
 			}
 		}
 
-		// Two hosts with one recorded address; names equal ignoring case are
-		// one registration found above.
-		var addrs []string
-		byAddr := map[string][]string{}
+		// Two hosts with one recorded address and ssh port (as in
+		// hostDuplicate, one address on another port is another machine:
+		// hosts behind one NAT address are told apart by their ports, and
+		// the --local host, which has no port, is the machine at every
+		// port of its address); names equal ignoring case are one
+		// registration found above.
+		type sshAddr struct{ addr, port string }
+		var keys []sshAddr
+		byKey := map[sshAddr][]string{}
+		locals := map[string][]string{}
+		var localAddrs []string
 		seen := map[string]bool{}
 		for _, e := range entries {
 			if seen[strings.ToLower(e.Name)] {
 				continue
 			}
 			seen[strings.ToLower(e.Name)] = true
-			if a := f.HostAddressOf(e.Name); a != "" {
-				if len(byAddr[a]) == 0 {
-					addrs = append(addrs, a)
-				}
-				byAddr[a] = append(byAddr[a], e.Name)
+			a := f.HostAddressOf(e.Name)
+			if a == "" {
+				continue
 			}
+			if e.Target == hosts.Local {
+				if len(locals[a]) == 0 {
+					localAddrs = append(localAddrs, a)
+				}
+				locals[a] = append(locals[a], e.Name)
+				continue
+			}
+			k := sshAddr{a, e.Port}
+			if k.port == "" {
+				k.port = "22"
+			}
+			if len(byKey[k]) == 0 {
+				keys = append(keys, k)
+			}
+			byKey[k] = append(byKey[k], e.Name)
 		}
-		for _, a := range addrs {
-			if names := byAddr[a]; len(names) > 1 {
+		report := func(names []string, k sshAddr) {
+			if len(names) > 1 {
+				where := k.addr
+				if k.port != "" {
+					where += ":" + k.port
+				}
 				out = append(out, hostFinding{
-					Text:  "the hosts " + quoteJoin(names) + " have the same recorded address, " + a,
+					Text:  "the hosts " + quoteJoin(names) + " have the same recorded address and ssh port, " + where,
 					Fix:   "tacctl host forget <name> drops a registration made twice",
 					Hosts: names,
 				})
+			}
+		}
+		for _, k := range keys {
+			report(append(slices.Clone(byKey[k]), locals[k.addr]...), k)
+		}
+		for _, a := range localAddrs {
+			if !slices.ContainsFunc(keys, func(k sshAddr) bool { return k.addr == a }) {
+				report(locals[a], sshAddr{a, ""})
 			}
 		}
 	}

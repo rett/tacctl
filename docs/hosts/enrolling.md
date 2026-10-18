@@ -44,7 +44,8 @@ registration (registry line, pin, record, staging addresses) and sends nothing
 to the host, so the surviving registration keeps its accounts and `host
 unenroll --force` (which would run the removal script on the shared machine)
 is not needed. It is also the way to remove the leftovers of a name that has
-no registry line.
+no registry line. (`host unenroll` drops a host's pin, record and staging
+addresses itself.)
 
 **Renaming a registration.** A host enrolled under the wrong name is not
 enrolled again (that would be a second registration of the machine, refused
@@ -81,15 +82,15 @@ a usage error that names the option.
 **A held host.** `tacctl breakglass hold <host> --reason "<text>"` makes the
 server stop answering a host (its recorded address, else its ssh target's when
 that is an address), so that tacctl users cannot log in or use sudo on it
-while its local administrator and its console work; the host is named, not
-its address. While the hold stands the `host` verbs that log in over ssh
-refuse it, naming the hold and `tacctl breakglass release <name>`: `host sync`,
-`host show --check`, `host enroll` of the registered host (so `host move`),
-`host target <name> <target>`, `host provisioner <name> rotate` and
-`host unenroll` (also with `--force`) and `host forget`. `host sync --all`
-skips the host and says so. `host list` marks it `BREAK-GLASS`, and `host show` has a
-Break-glass section. This server's own host (`--local`) cannot be held. See
-[Holding break-glass](../devices/break-glass.md#holding-break-glass).
+while its local administrator and its console work; the host is named, not its
+address. While the hold stands the `host` verbs that log in over ssh refuse
+it, naming the hold and `tacctl breakglass release <name>`: `host sync`, `host
+show --check`, `host enroll` of the registered host (so `host move`), `host
+target <name> <target>`, `host provisioner <name> rotate` and `host unenroll`
+(also with `--force`) and `host forget`. `host sync --all` skips the host and
+says so. `host list` marks it `BREAK-GLASS`, and `host show` has a Break-glass
+section. This server's own host (`--local`) cannot be held. See [Holding
+break-glass](../devices/break-glass.md#holding-break-glass).
 
 **Provisioning off-site.** A host or network device set up on a bench, at an address its scope does not cover, before it is shipped to the scope's network: give the scope it will be installed in and `--staging` (`tacctl host enroll admin@bench-host --scope lab --staging`; `tacctl config cisco|juniper|wti --scope lab --staging <bench-ip> [--name <device>]`). The bench address joins the scope as a `/32`, so the scope's own secret and users answer the device on the bench and nothing changes on it when it comes online in the scope's prefixes. tacctl records it (`tacctl scope staging` lists each, with where its host or device is seen now) and removes the `/32` once the host (its next enroll or sync) or the registered device (`tacctl device address <name> <ip>`, `device add`) is seen at another address the scope covers: `Staging address 203.0.113.9/32 removed from scope 'lab': sw1 is now seen at 192.168.5.9 (prefix 192.168.0.0/16).` A device staged without a name, and not registered at its bench address, is removed by hand: `tacctl scope staging remove <address>`. **Moving a host:** `tacctl host move <host> [<scope>]` (without a scope: the one that answers its address; `--all`: every host another scope answers, with one snapshot taken before the first move and none per host), which is an enroll of the registered host naming the new scope; before anything changes it says `Moving dev from scope 'linux-dev' to scope 'lab': it gets that scope's secret and users.` and names the users whose accounts the move deletes, then asks on a terminal (`[y/N]`); without a terminal it stops unless given `--yes`. Removed users' homes follow the usual rules (asked, `--remove-home`, or kept). **Switching:** re-enrolling a registered host with the other `--method` removes the first method's module, secret file and SELinux module and installs the other; re-enrolling without `--method` keeps the host's method.
 
@@ -97,14 +98,14 @@ Break-glass section. This server's own host (`--local`) cannot be held. See
 
 **Snapshots.** `host enroll` (so `host move`), `host unenroll`, `host rename`
 and `host forget` take a snapshot just before they change the registry (for
-`host enroll`, after the script on the host has succeeded); `host sync` takes none. A snapshot holds `linux-hosts` (the
-registry), `hosts/` (the records), `staging` and `linux-uids` (the UID
-ledger). `tacctl backup restore <timestamp>` puts them back when the snapshot
-has `linux-hosts` (one from 0.2.13 or older does not, and leaves them alone).
-It touches no host: it names, before it asks, the hosts that come back or go
-and the users whose UID the ledger drops or changes, and a host that no longer
-matches is fixed with `host sync`, `host show <name> --check`, `host unenroll`
-or `host enroll`. See
+`host enroll`, after the script on the host has succeeded); `host sync` takes
+none. A snapshot holds `linux-hosts` (the registry), `hosts/` (the records),
+`staging` and `linux-uids` (the UID ledger). `tacctl backup restore
+<timestamp>` puts them back when the snapshot has `linux-hosts` (one from
+0.2.13 or older does not, and leaves them alone). It touches no host: it
+names, before it asks, the hosts that come back or go and the users whose UID
+the ledger drops or changes, and a host that no longer matches is fixed with
+`host sync`, `host show <name> --check`, `host unenroll` or `host enroll`. See
 [Backup commands](../cli/maintenance.md#backup-commands--tacctl-backup).
 
 **Rotating the provisioning account.** `tacctl host provisioner <name> rotate <user> (--key <file>|--password) [--remove-old [--remove-home]] [--dry-run] [--yes]` changes the account tacctl logs in to a host with, and cannot lock tacctl out of it. One rotation of a host runs at a time on the tacctl server (a second one fails at once: "another rotation of <name> is running"), and nothing is changed until the local checks pass (an enrolled host that is not this server's own `--local` entry; the new account is not `root`, the login in use or a tacctl user; exactly one of `--key` and `--password`, the latter on a terminal and for a host whose ssh host keys are pinned; `--remove-old` only when the registry target names its user as `user@host`). Then, in this order: (1) the new account is created over the login in use by a small script of its own, below tacctl's UID range (its group too) and out of the ranges the server used before (`useradd -m -U -s /bin/bash -c 'tacctl provisioning account'`; that comment is for display, since the account can change it itself and a directory service may supply it). Root's proof that tacctl made the account is a record the script writes at once under `/var/lib/tacctl-provisioner` (root's alone, 0700): a re-run adopts an account only when it is in `/etc/passwd` itself and that record agrees, and any other account of that name is refused. The key (or password) is set first and the account's sudoers line comes last, in `/etc/sudoers.d/tacctl-provisioner` (checked with `visudo -cf`, written under a lock on the host; never `tacctl-host`, which each sync rewrites). A failure takes back what the run did, the line included. (2) A fresh ssh login in a new connection, with only the new account's credentials, must run `sudo id -u` and get `0`; its ssh trusts the host's pinned ssh keys and no others (a temporary known_hosts of the pins, strict host key checking, your own known_hosts is not used), so another machine is refused by ssh itself. A host with no pinned keys has nothing to trust: the proof goes by your own known_hosts, lists the keys the host answered with and asks you to confirm them (`--yes` confirms), and `--password` is refused (it would be typed to a peer nothing has authenticated). (3) Only then does the registry change, as `host target` does it (after a snapshot, the entry read again so a `host move` that ran meanwhile is kept, the old login kept in the host's record, the audit line `host provisioner rotate name= old= new= auth=key|password by=`); (4) with `--remove-old`, the old account is removed last, over the new one: its sudoers line first, then its processes end, `userdel` runs, and its home is moved out of reach and made root-owned, or deleted with `--remove-home` (a terminal is asked when neither is given). It refuses to remove an account that is `root`, a tacctl user, the new account, or one with a number in tacctl's UID range, and while the registry does not point at the new account. With `--key <file>` the account has a locked password, `NOPASSWD: ALL` and only that public key in its `authorized_keys`, written by the account itself and only into a `~/.ssh` that is not a link, is the account's own and is not writable by others; a missing file is made by `ssh-keygen -t ed25519` (it asks for the passphrase, empty is your choice), and every access to the file runs as you, never as root. An adopted account's `~/.ssh` is emptied first and adopted only if tacctl made it; the rest of its home is not scanned, so an account that has been in use is better removed and made again. With `--password` the account has `ALL` with a password that you type into the host's own `passwd` over the ssh terminal: it never passes through tacctl, an argument, the environment, a file, a log or the audit line (a host whose sshd has `PasswordAuthentication no` always fails that proof). If the create script fails it takes back its own steps (an account it made, the sudoers line it wrote) and names anything it could not; an interrupted run without a terminal is hung up on the host too. What can remain: a host that loses power during the run, a shell killed outright, a removal that itself fails (named), and an adopted account's emptied `~/.ssh`. If the proof fails, an account this run created is removed with its home and its line, an adopted one is never deleted (only the sudoers line this run added is taken out, and the output says what was left), the registry is left alone (`auth.warning host provisioner rotate ... step=prove`), and if a removal fails too what is left is named; a run interrupted before the registry changed is repeated with the same command, which adopts the account, and one interrupted after it is finished by the same command with `--remove-old`. `--dry-run` prints the plan (the `useradd` line, the sudoers line, the key's fingerprint, the registry line before and after) and runs only a test login to the current target, a look at whether the account exists and whether root's record names it, and the host's `sshd -T` value of `passwordauthentication`.
