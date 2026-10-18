@@ -271,3 +271,31 @@ func TestHostListJSONUsers(t *testing.T) {
 		}
 	}
 }
+
+// The --local host is a row like the others: local, no ssh port, the address
+// its record has, and no hold.
+func TestHostListJSONLocalHost(t *testing.T) {
+	sb := hostLab(t)
+	sb.write("state/linux-hosts", hostLines+"here|local||lab|192.0.2.1|\n", 0o600)
+	sb.recordHostAddress("here", "127.0.0.1")
+	out := sb.run("", []string{"host", "list", "--json"})
+	if sb.code != 0 {
+		t.Fatalf("exit %d %q", sb.code, sb.stderr())
+	}
+	here, ok := hostListJSONOf(t, out)["here"]
+	if !ok || !here.Local || here.Port != 0 || here.Address != "127.0.0.1" || here.Breakglass != nil || here.Target != "local" || here.Scope != "lab" {
+		t.Errorf("here %+v\n%s", here, out)
+	}
+	var raw []map[string]any
+	if err := json.Unmarshal([]byte(out), &raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range raw {
+		if r["name"] != "here" {
+			continue
+		}
+		if _, has := r["breakglass"]; has {
+			t.Errorf("a local host has a hold: %v", r)
+		}
+	}
+}

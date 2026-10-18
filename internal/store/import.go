@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/ui"
 	"github.com/rett/tacctl/internal/yamlpy"
 )
@@ -199,6 +200,33 @@ func ImportLoad(stdout, stderr io.Writer, opts ImportLoadOptions) (s *Store, ok 
 	return s, true, nil
 }
 
+// mixedCaseNote is the one line an import says when users or scopes have
+// names with upper case: existing data loads as it is, and only new names are
+// lower case (0.2.14). "" when there are none.
+func (s *Store) mixedCaseNote() string {
+	count := func(section string) int {
+		n := 0
+		for _, k := range sortedKeys(s.section(section)) {
+			if names.HasUpper(k) {
+				n++
+			}
+		}
+		return n
+	}
+	u, sc := count("users"), count("scopes")
+	if u+sc == 0 {
+		return ""
+	}
+	var parts []string
+	if u > 0 {
+		parts = append(parts, fmt.Sprintf("%d user", u))
+	}
+	if sc > 0 {
+		parts = append(parts, fmt.Sprintf("%d scope", sc))
+	}
+	return strings.Join(parts, " and ") + " name(s) have upper case and are loaded as they are; new names are lower case (tacctl config validate lists them)."
+}
+
 // pyLen is len() of a list (0 for anything else).
 func pyLen(v any) int {
 	l, _ := v.([]any)
@@ -306,6 +334,10 @@ func Import(out ui.Output, opts ImportOptions) error {
 		say("")
 		out.Error("Import failed. Nothing was written.")
 		return ImportFailed
+	}
+	if n := s.mixedCaseNote(); n != "" {
+		say("")
+		say("  " + n)
 	}
 	say("")
 

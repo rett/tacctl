@@ -17,6 +17,7 @@ import (
 
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/hosts"
+	"github.com/rett/tacctl/internal/names"
 )
 
 // hostRenameUsage is the usage line of 'host rename'.
@@ -217,6 +218,12 @@ func (inv *invocation) hostRenameChecks(reg *hosts.Registry, oldArg, newName str
 		return nil, inv.hostRefuse(
 			"A break-glass hold is recorded under the name '"+h.Device+"' ("+h.Address+") "+inv.holdSummary(h)+": "+h.Reason+".",
 			"A hold is removed only by 'tacctl breakglass release "+h.Device+"'. Nothing was changed.")
+	}
+
+	// A new name is lower case; changing only the spelling to lower case is
+	// how an old name is fixed.
+	if err := names.RequireLower(newName); err != nil {
+		return nil, err
 	}
 
 	p := &hostRenamePlan{oldName: oldName, newName: newName, entry: e}

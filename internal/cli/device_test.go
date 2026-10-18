@@ -339,11 +339,16 @@ func TestDeviceRename(t *testing.T) {
 		sb.dev("", c.args...)
 		sb.expect(1, "", c.err)
 	}
-	if out := sb.dev("", "rename", "core-sw1", "Core-SW1"); sb.code != 0 || !strings.Contains(out, "renamed to 'Core-SW1'") {
+	// A new spelling with upper case is refused, in a rename of the spelling
+	// only as well; an old name with upper case is fixed by renaming it.
+	sb.dev("", "rename", "core-sw1", "Core-SW1")
+	sb.expect(1, "", "Names are lower case: use 'core-sw1'. Nothing was changed.")
+	sb.write("state/devices.yaml", strings.Replace(sb.devices(), "  core-sw1:", "  Core-SW1:", 1), 0o600)
+	if out := sb.dev("", "rename", "Core-SW1", "core-sw1"); sb.code != 0 || !strings.Contains(out, "renamed to 'core-sw1'") || strings.Contains(sb.devices(), "Core-SW1") {
 		t.Errorf("case-only rename: %d %q %q", sb.code, out, sb.stderr())
 	}
-	out := sb.dev("", "rename", "Core-SW1", "dc1-core1")
-	if sb.code != 0 || !strings.Contains(out, "renamed to 'dc1-core1'") || !strings.Contains(sb.devices(), "dc1-core1:") || strings.Contains(sb.devices(), "Core-SW1") {
+	out := sb.dev("", "rename", "core-sw1", "dc1-core1")
+	if sb.code != 0 || !strings.Contains(out, "renamed to 'dc1-core1'") || !strings.Contains(sb.devices(), "dc1-core1:") || strings.Contains(sb.devices(), "core-sw1:") {
 		t.Errorf("rename: %d %q\n%s", sb.code, out, sb.devices())
 	}
 	if !strings.Contains(sb.devices(), "ack: [hostkey-unpinned]") {

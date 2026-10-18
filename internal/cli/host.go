@@ -26,6 +26,7 @@ import (
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/hosts"
+	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -224,7 +225,8 @@ func (inv *invocation) hostList(args []string) error {
 			shown = append(shown, e)
 		}
 	}
-	// The model and the device registry are read once for every row.
+	// The model and the device registry are read once here; hostAddress, which
+	// the drift check of each row calls, loads the registry again for its row.
 	m, merr := inv.model()
 	devs, _ := inv.hostDevices()
 	users := func(e hosts.Entry) int {
@@ -354,6 +356,16 @@ var (
 	rePort       = regexp.MustCompile(`^[0-9]{1,5}$`)
 )
 
+// lowerDerived is a host name worked out from a host name: DNS names are not
+// case-sensitive, so it is lowercased (0.2.14) unless a host is enrolled
+// under exactly that spelling (a name from before, which a re-enrolment keeps).
+func lowerDerived(reg *hosts.Registry, name string) string {
+	if _, ok := reg.Find(name); ok {
+		return name
+	}
+	return strings.ToLower(name)
+}
+
 // cutField is "cut -d'|' -f<n>" of one line: the whole line when it has
 // no '|', "" when it has fewer fields.
 func cutField(line string, n int) string {
@@ -459,7 +471,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 		}
 		target, hostIP = hosts.Local, "127.0.0.1"
 		if name == "" {
-			name = shortHostname()
+			name = lowerDerived(reg, shortHostname())
 		}
 		if server == "" {
 			server = "127.0.0.1"
@@ -509,6 +521,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 				name = "h" + strings.ReplaceAll(hostPart, ".", "-")
 			} else {
 				name, _, _ = strings.Cut(hostPart, ".")
+				name = lowerDerived(reg, name)
 			}
 		}
 		// Re-enrolling a registered host keeps the server address it has.
@@ -550,6 +563,13 @@ func (inv *invocation) hostEnroll(args []string) error {
 	}
 	if err := inv.hostNameCheck(name, enrolled); err != nil {
 		return err
+	}
+	// A name given with --name is not folded: a new one is lower case. (One
+	// worked out from the target was lowercased above.)
+	if !enrolled {
+		if err := names.RequireLower(name); err != nil {
+			return err
+		}
 	}
 	if port != "" && !rePort.MatchString(port) {
 		return inv.usageErr("Invalid --port '" + port + "'.")

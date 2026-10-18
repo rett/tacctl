@@ -38,7 +38,7 @@ user add alice superuser --hash {HASH} ;; user show alice
 user add alice superuser --hash '$2b$12$abcdefghijklmnopqrstuvABCDEFGHIJKLMNOPQRSTUVWXYZ01234' ;; user show alice
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 user add alice superuser --hash {HASH} --scopes lab ;; user add alice operator --hash {HASH} --scopes lab
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 8: new names are lower case
 user add alice superuser --hash {HASH} --scopes lab ;; user add Alice operator --hash {HASH} --scopes lab
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 user add alice superuser --hash {HASH} --scopes lab ;; user add bob operator --hash {HASH} --scopes lab ;; user list

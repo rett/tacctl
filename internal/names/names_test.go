@@ -262,3 +262,32 @@ func TestPrivCommandWhitespaceClass(t *testing.T) {
 		}
 	}
 }
+
+// --- lower case names (0.2.14) ---
+
+func TestRequireLower(t *testing.T) {
+	for _, ok := range []string{"alice", "core-sw1", "sw1.site-a.example", "a_b-9", ""} {
+		if err := RequireLower(ok); err != nil {
+			t.Errorf("RequireLower(%q) = %v", ok, err)
+		}
+	}
+	for name, want := range map[string]string{
+		"Alice":    "Names are lower case: use 'alice'. Nothing was changed.",
+		"core-SW1": "Names are lower case: use 'core-sw1'. Nothing was changed.",
+		"WEB":      "Names are lower case: use 'web'. Nothing was changed.",
+	} {
+		if got := msg(t, RequireLower(name)); got != want {
+			t.Errorf("RequireLower(%q) = %q, want %q", name, got, want)
+		}
+	}
+	if got := LowerLine("Lab"); got != "Names are lower case: use 'lab'." {
+		t.Errorf("LowerLine = %q", got)
+	}
+}
+
+// The patterns that read existing data still take upper case.
+func TestMatchersStillTakeUpperCase(t *testing.T) {
+	if !MatchUser("Alice") || !MatchScope("Lab") || !MatchClass("OP-CLASS") {
+		t.Error("an existing name with upper case no longer matches")
+	}
+}

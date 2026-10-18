@@ -214,7 +214,7 @@ func (r *Resolver) Unregistered(all bool) []Unregistered {
 				u.Scope, u.Tag = info.Scope, info.Tag
 			}
 		}
-		if n := s.LastNASID; n != "" && ValidateName(n) == nil && r.CheckName(n, VendorOther, false, "") == nil &&
+		if n := strings.ToLower(s.LastNASID); n != "" && ValidateName(n) == nil && r.CheckName(n, VendorOther, false, "") == nil &&
 			len(r.index().byNAS[strings.ToLower(n)]) == 1 {
 			u.Suggest = n
 		}

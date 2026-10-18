@@ -487,7 +487,12 @@ Requires: \fBreadonly\fR.
 .\" END GENERATED: command user show
 .TP
 .BI "user add " "name group " [ "--hash " hash ] [ "--scopes " name[,name...] ]
-Add a user. Prompts for the password with confirmation. If
+Add a user. The name is lower case (lower\-case letters, digits,
+.BR _ " and " \- ):
+a name with upper case is refused with the lower\-case spelling to use, and a
+user that exists with upper case keeps working as it is
+.RB ( "tacctl config validate"
+lists it). Prompts for the password with confirmation. If
 .BI --hash " hash"
 is given, the bcrypt hash is used directly and no password is prompted
 (use this when users self-generate a hash; see
@@ -583,7 +588,12 @@ Requires: \fBsuperuser\fR.
 .\" END GENERATED: command user enable
 .TP
 .BI "user rename " "old new"
-Rename a user.
+Rename a user. The new name is lower case; changing only the spelling
+.RB ( "user rename Alice alice" )
+is how a name from before is fixed. A device matches the typed login name
+exactly, so the rename changes what the person types at the device. The Linux
+UID ledger is keyed by name and is left alone: the new name gets a number at
+its first sync and the old name keeps its own.
 .\" BEGIN GENERATED: command user rename
 .RS
 .PP
@@ -1593,6 +1603,14 @@ two hosts with the same recorded address and ssh port
 .RB ( "host forget" )
 and a pin, record or staging entry with no registry line
 .RB ( "host forget" ).
+A device, host, user or scope whose name has upper case (new names are lower
+case) is a warning under
+.BR "Names:" ,
+naming the rename that fixes it
+.RB ( "tacctl user rename Alice alice" ,
+and the like); the one for a user adds that devices match the typed login name
+exactly, so the rename changes what the person types at the device. Only the
+superuser's view has these warnings.
 .IP
 Then, for every enabled backend, whether its rendered config is up to date
 with the store and whether any of its files was edited by hand (drift). With
@@ -2024,8 +2042,9 @@ never uses it.
 .IP
 The registry name is
 .B \-\-name
-or the host's short name. A name no enrolled host has with exactly that
-spelling is a new one: it is letters, digits,
+or the host's short name, lowercased (host names are not case\-sensitive; a host
+already enrolled under exactly that spelling keeps it). A name no enrolled host
+has with exactly that spelling is a new one: it is lower\-case letters, digits,
 .B _
 or
 .B \-
@@ -2040,7 +2059,14 @@ names are not case\-sensitive, so
 .B web1
 and
 .B Web1
-are one name. Enrolling a registered host again under its registered
+are one name. A
+.B \-\-name
+with upper case is refused with the lower\-case spelling to use. A host enrolled
+before with upper case keeps working, is listed by
+.BR "tacctl config validate" ,
+and is renamed with
+.BR "host rename Web1 web1" .
+Enrolling a registered host again under its registered
 spelling is allowed (that is how it is enrolled again or moved). A refused
 name changes nothing and nothing is attempted over ssh. An option that takes
 a value
@@ -2136,7 +2162,7 @@ The host's scope (default: its registered one, else the scope covering its addre
 Address the host should use for this server (default: detected).
 .TP
 \fB\-\-name\fR \fI<name>\fR
-Registry name (default: short hostname; not a tacctl word; names are not case\-sensitive).
+Registry name (default: short hostname, lowercased; lower case, not a tacctl word).
 .TP
 \fB\-\-port\fR \fI<n>\fR
 The ssh port of the host.
@@ -2567,7 +2593,7 @@ the name
 .IR new .
 It is local: the remote host records no registry name, so nothing is sent
 over ssh, and a host with a break\-glass hold may be renamed. The new name
-follows the rules of a new host name: letters, digits,
+follows the rules of a new host name: lower\-case letters, digits,
 .B _
 and
 .BR \- ,
@@ -2576,12 +2602,12 @@ starting with a letter, at most 26 characters; no tacctl word
 .BR scope ,
 .BR local ,
 and the like) and no generic name; and no other enrolled host and no
-registered device is equal to it ignoring case. A rename that changes only the
-spelling
-.RB ( web1
+registered device is equal to it ignoring case. A name with upper case is
+refused. A rename that changes only the spelling to lower case
+.RB ( Web1
 to
-.BR Web1 )
-is allowed. Giving the host the name it has is refused
+.BR web1 )
+is allowed and fixes a name from before. Giving the host the name it has is refused
 .RB ( "already has that name" ),
 and so is a rename while a
 .B "host provisioner rotate"
@@ -5030,7 +5056,11 @@ Requires: \fBengineer\fR.
 .\" END GENERATED: command scope show
 .TP
 .B "scope add " \fIname\fR " --prefixes " \fIcidr\fR[,cidr...] " [ --secret \fIvalue\fR | --secret generate ] [ --protocols \fIcsv\fR ] [ --vendor-attrs \fIcsv\fR ] [ --default ]
-Create a new scope. Prefixes are required; each must not already
+Create a new scope. The name is lower case: a letter, then up to 31 lower\-case
+letters, digits,
+.BR _ " or " \- ;
+a name with upper case is refused with the lower\-case spelling to use.
+Prefixes are required; each must not already
 belong to another scope (overlap with a broader scope's supernet is
 fine: the new scope's narrower prefix wins first-match).
 .B --secret generate
@@ -5104,7 +5134,9 @@ Options:
 .\" END GENERATED: command scope remove
 .TP
 .BI "scope rename " "old new"
-Rename a scope. Rewrites the scope in the store (protocols, vendor
+Rename a scope. The new name is lower case; changing only the spelling
+.RB ( "scope rename Lab lab" )
+is how a name from before is fixed. Rewrites the scope in the store (protocols, vendor
 attributes and tagged addresses included), every user's
 .B scopes
 reference, and
@@ -6573,7 +6605,11 @@ The acknowledged notices too.
 .\" END GENERATED: command device show
 .TP
 .BI "device add " "[ name ] address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-snmp\-location " text " ] [ \-\-legacy\-ssh ] [ \-\-config\-syntax auto|ios12|modern ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-no\-lookup ] [ \-\-pull ] [ \-\-allow\-generic ]"
-Register a device. A name is letters, digits,
+Register a device. A new name is lower case: a name with upper case is refused with
+the lower\-case spelling to use (the name a device reports, or its SNMP sysName, is
+lowercased); a device that exists with upper case keeps working and is listed by
+.BR "tacctl config validate" .
+A name is letters, digits,
 .RB ` . ` ,
 .RB ` _ `
 and
@@ -7068,7 +7104,10 @@ Remove every device (an engineer: those of their own scopes).
 .\" END GENERATED: command device remove
 .TP
 .BI "device rename " "old new " [ \-\-allow\-generic ]
-Rename a device; acknowledgements stay with it. The device's own host name is
+Rename a device; acknowledgements stay with it. The new name is lower case;
+changing only the spelling to lower case
+.RB ( "device rename Core\-SW1 core\-sw1" )
+is how a name from before is fixed. The device's own host name is
 unchanged and not planned by tacctl: the verb says so.
 .\" BEGIN GENERATED: command device rename
 .RS
@@ -7635,7 +7674,9 @@ are skipped) or from the registry's own YAML, from a file or from stdin
 .RB ( \- ;
 an engineer's import is from stdin only, with the options after the
 .BR \- ).
-Devices of the file are added, or update the registered device of the same name
+A CSV row for a device the registry does not have must have a lower\-case name; a
+registry file is existing data and its names are loaded as they are, with one line
+saying how many have upper case. Devices of the file are added, or update the registered device of the same name
 (a CSV row leaves the hostname and the legacy-ssh setting alone, and a file that
 carries no
 .B config_syntax

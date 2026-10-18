@@ -295,7 +295,7 @@ scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; sc
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope aaa-order prod local-first ;; scope remove prod <<< y ;; scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope aaa-order prod
 @known 0.2.1 item 58: the scope on a line of its own; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope exec-timeout prod 5 ;; scope prefixes prod remove --all <<< y ;; scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope exec-timeout prod
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 8: new names are lower case
 scope rename lab LAB2 ;; scope list
 scope rename lab ''
 scope rename lab 9lab

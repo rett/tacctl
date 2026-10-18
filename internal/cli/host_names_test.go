@@ -108,14 +108,15 @@ func TestHostEnrollOptionNeedsAValue(t *testing.T) {
 	}
 }
 
-// Two enrolments of one name in two cases that both passed the check: the
-// registry's lock decides, the first to write wins and the other is refused
-// with nothing written, never two hosts sharing one pin record.
+// Two enrolments of one name in two cases that both passed the check (one is
+// a name from before, with upper case): the registry's lock decides, the
+// first to write wins and the other is refused with nothing written, never
+// two hosts sharing one pin record.
 func TestHostEnrollOfAFoldEqualNameFinishedMeanwhileIsRefused(t *testing.T) {
 	hs := newHostSandbox(t)
 	r := hs.runner()
 	written := false
-	const other = "web1|root@other.example.net||lab|192.0.2.1|\n"
+	const other = "Web1|root@other.example.net||lab|192.0.2.1|\n"
 	r.Func(func(c execx.Cmd) bool { return c.Name == "ssh" }, func(c execx.Cmd) (execx.Result, error) {
 		if strings.Contains(strings.Join(c.Args, " "), "mktemp") {
 			_, _ = io.ReadAll(c.Stdin)
@@ -128,8 +129,8 @@ func TestHostEnrollOfAFoldEqualNameFinishedMeanwhileIsRefused(t *testing.T) {
 		}
 		return execx.Result{}, nil
 	})
-	hs.run(r, "host", "enroll", "admin@web1.example.net", "--name", "Web1", "--scope", "lab", "--allow-uid-mismatch", "--remove-home", "--build-on-host")
-	hs.expect(1, "", "'web1' is enrolled; names are not case-sensitive. The client script already ran on the host; the registry was not changed.")
+	hs.run(r, "host", "enroll", "admin@web1.example.net", "--name", "web1", "--scope", "lab", "--allow-uid-mismatch", "--remove-home", "--build-on-host")
+	hs.expect(1, "", "'Web1' is enrolled; names are not case-sensitive. The client script already ran on the host; the registry was not changed.")
 	if hs.registry() != other {
 		t.Errorf("registry %q", hs.registry())
 	}

@@ -244,6 +244,16 @@ func ValidateName(name string) error {
 	return nil
 }
 
+// ValidateNewName is ValidateName for a name about to be created or given
+// by a rename: it must also have no upper case (0.2.14). Names read from a
+// file keep ValidateName: a registry that has 'Core-SW1' still loads.
+func ValidateNewName(name string) error {
+	if err := ValidateName(name); err != nil {
+		return err
+	}
+	return names.RequireLower(name)
+}
+
 // IsReserved reports whether name is one of ReservedNames, in any case.
 func IsReserved(name string) bool {
 	return slices.Contains(ReservedNames, strings.ToLower(name))

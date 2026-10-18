@@ -4,8 +4,8 @@ package lifecycle
 // PlanRollback that runs when RollbackInput.Target is RollbackTarget029. The
 // file header of rollback.go has the table of what it does and why;
 // ApplyRollback is shared (tacctl.yaml's keys and the NETCONF setting of the
-// devices are all it converts for this target; 0.2.10 changed no sudoers
-// text, so there is no drop-in step).
+// devices are all it converts for this target; there is no drop-in step: the
+// tiers file is left, and 0.2.9's upgrade rewrites it).
 
 import (
 	"strconv"
@@ -101,7 +101,8 @@ func (p *RollbackPlan) recordsStep029() RollbackStep {
 func (p *RollbackPlan) otherStep029() RollbackStep {
 	pt := p.in.Paths
 	return RollbackStep{Title: "leave every other file untouched",
-		Lines: []string{pt.ConsoleFile + ", " + pt.StoreFile + ", the SNMP credentials, the blocks, the apply state directory, the sudoers drop-ins and the rendered backend files are in formats " + RollbackTarget029 + " reads (0.2.10 changed none of them);",
+		Lines: []string{pt.ConsoleFile + ", " + pt.StoreFile + ", the SNMP credentials, the blocks, the apply state directory and the rendered backend files are in formats " + RollbackTarget029 + " reads (0.2.10 changed none of them);",
+			"the sudoers drop-ins are left: sudo accepts them, the tiers file is left, and " + RollbackTarget029 + "'s upgrade rewrites it;",
 			"nothing is re-rendered or restarted, and no device is contacted"}}
 }
 

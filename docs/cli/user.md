@@ -13,8 +13,9 @@ user show <name>
 
 user add <name> <group>
 
-    Add a new user; lands in default scope. Reserved names `root` and `tacquito` are rejected (they
-    collide with OS accounts tacquito resolves locally).
+    Add a new user; lands in default scope. The name is lower case (`Names are lower case: use
+    'alice'.`): lower-case letters, digits, `_` and `-`. Reserved names `root` and `tacquito` are
+    rejected (they collide with OS accounts tacquito resolves locally).
 
 user add <name> <group> --scopes <name>[,name...]
 
@@ -50,7 +51,10 @@ user enable <name>
 
 user rename <old> <new>
 
-    Rename a user
+    Rename a user; the new name is lower case. Changing only the spelling (`user rename Alice
+    alice`) fixes a name from before. Devices match the typed login name exactly, so the rename
+    changes what the person types at the device. The Linux UID ledger is keyed by name and is left
+    alone: the new name gets a number at the next host sync and the old one keeps its own
 
 user move <name> <group>
 

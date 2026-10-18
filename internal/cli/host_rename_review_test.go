@@ -201,18 +201,19 @@ func TestHostRenameOfTheLocalHost(t *testing.T) {
 	}
 }
 
-// A held host renamed only in its spelling keeps its hold on the same
-// address, the rendered file names the new spelling, and the hold is no
-// orphan.
+// A held host renamed only in its spelling (a name from before, with upper
+// case, to lower case) keeps its hold on the same address, the rendered file
+// names the new spelling, and the hold is no orphan.
 func TestHostRenameSpellingOnlyOfAHeldHost(t *testing.T) {
 	sb := renameLab(t)
 	holdHost(t, sb, "web1", "locked out of sudo")
-	sb.run("", []string{"host", "rename", "web1", "WEB1"})
-	sb.expect(0, "Host 'web1' renamed to 'WEB1'.", "")
-	if cfg := sb.renderedConfig(); !strings.Contains(cfg, "# break-glass held: 192.168.1.10 (device WEB1)") || strings.Contains(cfg, "device web1") {
+	sb.legacyHostCase("web1", "WEB1")
+	sb.run("", []string{"host", "rename", "WEB1", "web1"})
+	sb.expect(0, "Host 'WEB1' renamed to 'web1'.", "")
+	if cfg := sb.renderedConfig(); !strings.Contains(cfg, "# break-glass held: 192.168.1.10 (device web1)") || strings.Contains(cfg, "device WEB1") {
 		t.Errorf("the rendered file:\n%s", cfg)
 	}
-	if got := plain(sb.run("", []string{"breakglass", "list"})); !strings.Contains(got, "WEB1") || strings.Contains(got, "ORPHAN") {
+	if got := plain(sb.run("", []string{"breakglass", "list"})); !strings.Contains(got, "web1") || strings.Contains(got, "WEB1") || strings.Contains(got, "ORPHAN") {
 		t.Errorf("breakglass list:\n%s", got)
 	}
 	if got := plain(sb.run("", []string{"host", "list"})); !strings.Contains(got, "BREAK-GLASS") {

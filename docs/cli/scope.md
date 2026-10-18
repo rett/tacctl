@@ -18,7 +18,8 @@ scope show <name>
 
 scope add <name> --prefixes <cidrs>
 
-    Create a new scope
+    Create a new scope; the name is lower case (`Names are lower case: use 'lab'.`): a letter, then
+    up to 31 lower-case letters, digits, `_` or `-`
 
     [--secret <value>|--secret generate] [--protocols <csv>] [--vendor-attrs <csv>] [--default]
 
@@ -30,7 +31,8 @@ scope rename <old> <new>
 
     Rewrites every user's scopes[], the default marker and every per-scope setting; the enrolled
     hosts and staging addresses that name the scope follow. host rename offers this for a host's
-    own linux-<name> scope
+    own linux-<name> scope. The new name is lower case; `scope rename Lab lab` fixes a name from
+    before
 
 scope default [<name>]
 

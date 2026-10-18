@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/pyyaml"
 	"github.com/rett/tacctl/internal/yamlpy"
 )
@@ -118,6 +119,10 @@ func ParseImport(data []byte) ([]Row, error) {
 // ImportResult is what an import did (or, for a check, would do).
 type ImportResult struct {
 	Added, Updated, Unchanged, Removed []string
+	// Mixed are the names in the rows with upper case that the import
+	// loaded as they are: a registry file is existing data, and so is a CSV
+	// row for a device that is registered under such a name.
+	Mixed []string
 }
 
 // Import applies rows to f: devices of the file are added, or update the
@@ -164,6 +169,21 @@ func (f *File) Import(rows []Row, replace, allowGeneric bool, hostEntries []Entr
 			continue
 		}
 		old := next.Find(d.Name)
+		// A CSV row creates a device: a new name is lower case. A registry
+		// file (the export of another server, or this one) is existing data
+		// and loads as it is; so does a device that is registered under a
+		// name with upper case.
+		stored := d.Name
+		if old != nil {
+			stored = old.Name
+		}
+		if names.HasUpper(stored) {
+			if row.CSV && old == nil {
+				say(row, names.LowerLine(d.Name))
+				continue
+			}
+			res.Mixed = append(res.Mixed, stored)
+		}
 		if old == nil && !allowGeneric && IsGeneric(d.Name, next.GenericNames) {
 			say(row, "'"+d.Name+"' is a generic name; rename the device in the file, or import with --allow-generic.")
 			continue

@@ -47,6 +47,7 @@ import (
 	"github.com/rett/tacctl/internal/devices"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/devssh"
+	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -426,6 +427,11 @@ func (ob *onboard) admissible() error {
 		return nil
 	}
 	if ob.name != "" {
+		// A device registered under a name with upper case is onboarded
+		// above; a name for a new registration is lower case.
+		if err := names.RequireLower(ob.name); err != nil {
+			return err
+		}
 		if err := res.CheckName(ob.name, devssh.VendorJuniper, false, ""); err != nil {
 			return err
 		}
@@ -708,8 +714,10 @@ func (ob *onboard) chooseName(id devapply.Identity) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	name := id.Hostname
-	if name != "" && devreg.ValidateName(name) == nil && res.CheckName(name, devssh.VendorJuniper, false, "") == nil {
+	// What the device reports is not case-sensitive for the device, and a
+	// new name is lower case: it is lowercased, as 'device add' offers it.
+	name := strings.ToLower(id.Hostname)
+	if name != "" && devreg.ValidateNewName(name) == nil && res.CheckName(name, devssh.VendorJuniper, false, "") == nil {
 		return name, nil
 	}
 	if !ob.pr.Interactive() {
@@ -718,7 +726,7 @@ func (ob *onboard) chooseName(id devapply.Identity) (string, error) {
 	}
 	inv.echo("  The device calls itself '" + reportedName(id.Hostname) + "', which is generic, taken or not a name.")
 	name = ob.pr.Ask("  Name to register it as: ")
-	if err := devreg.ValidateName(name); err != nil {
+	if err := devreg.ValidateNewName(name); err != nil {
 		return "", err
 	}
 	if err := res.CheckName(name, devssh.VendorJuniper, false, ""); err != nil {

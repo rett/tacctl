@@ -82,7 +82,11 @@ config validate
     apply lock). Under `Linux hosts:` it also warns of two hosts whose names are equal ignoring
     case, a host named like a device, two hosts with the same recorded address and ssh port, and
     a pin, record or staging entry with no registry line (each names its fix: `host forget`,
-    `host rename`; see cli/host.md). Exits 1 on errors
+    `host rename`; see cli/host.md). A device, host, user or scope whose name has upper case (the
+    names of new ones are lower case) gets a `Names:` warning that names the rename which fixes it
+    (`tacctl user rename Alice alice`; for a user it adds that devices match the typed login name
+    exactly, so the rename changes what the person types); the superuser's view only. Exits 1 on
+    errors
 
 config diff [timestamp]
 

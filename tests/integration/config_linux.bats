@@ -186,7 +186,11 @@ _client_env() {
 }
 
 @test "config linux script: skips names Linux would reject, without polluting the list" {
-    "$TACCTL_BIN_SCRIPT" user add Dave readonly --hash "$HASH" --scopes lab > /dev/null
+    # New names are lower case; a user from before can still have upper case.
+    run "$TACCTL_BIN_SCRIPT" user add Dave readonly --hash "$HASH" --scopes lab
+    assert_failure 1
+    "$TACCTL_BIN_SCRIPT" user add dave readonly --hash "$HASH" --scopes lab > /dev/null
+    sed -i 's/^  dave:$/  Dave:/' "${TACCTL_STATE_DIR}/store.yaml"
     run _gen
     assert_success
     assert_output --partial "Skipping 'Dave'"

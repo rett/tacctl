@@ -51,6 +51,26 @@ setup() {
     assert_failure
 }
 
+@test "scope add and rename: a new name is lower case; changing the spelling to lower case is a rename" {
+    run "$TACCTL_BIN_SCRIPT" scope add Prod \
+        --prefixes 10.0.0.0/8 \
+        --secret "prod-secret-1234567890abcdef"
+    assert_failure 1
+    assert_output --partial "Names are lower case: use 'prod'. Nothing was changed."
+    run "$TACCTL_BIN_SCRIPT" scope add dmz \
+        --prefixes 203.0.113.0/24 \
+        --secret "dmz-secret-1234567890abcdef"
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" scope rename dmz Dmz
+    assert_failure 1
+    assert_output --partial "Names are lower case: use 'dmz'. Nothing was changed."
+    # A scope from before, with upper case, is renamed to lower case.
+    sed -i 's/^  dmz:$/  Dmz:/' "${TACCTL_STATE_DIR}/store.yaml"
+    run "$TACCTL_BIN_SCRIPT" scope rename Dmz dmz
+    assert_success
+    assert_output --partial "Scope renamed: Dmz -> dmz"
+}
+
 @test "scopes add: rejects duplicate scope name" {
     "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef"

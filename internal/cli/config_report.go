@@ -365,6 +365,12 @@ func (inv *invocation) configValidate([]string) error {
 		inv.echoE("  " + Y + "Linux hosts:" + NC + "          " + fnd.String())
 	}
 
+	// Names with upper case: they keep working, and each is listed with the
+	// verb that renames it (D204).
+	for _, fnd := range inv.caseFindings() {
+		inv.echoE("  " + Y + "Names:" + NC + "                " + fnd.String())
+	}
+
 	// Break-glass local users (D55): a scope without one is a lockout risk
 	// when the server is unreachable, and a name that is also a tacctl user
 	// of its scope is shadowed on the device. Warnings, never errors.

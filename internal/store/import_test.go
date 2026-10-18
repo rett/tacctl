@@ -1088,3 +1088,21 @@ func TestImportCLIReplaceKeepsNoPreStoreCopy(t *testing.T) {
 		t.Error("a pre-store copy was kept")
 	}
 }
+
+// Names from before keep loading: a user or a scope with upper case is
+// imported as it is, and one line says how many (0.2.14: new names are lower
+// case).
+func TestImportNotesNamesWithUpperCase(t *testing.T) {
+	e := newImportEnv(t)
+	e.place("legacy.fresh-install.yaml")
+	out, _ := e.imp("--check")
+	refute(t, out, "upper case")
+
+	e = newImportEnv(t)
+	text := string(readFile(t, fixtures+"legacy.fresh-install.yaml"))
+	text = strings.Replace(text, "  - name: engineer\n", "  - name: Engineer\n", 1)
+	e.write(e.config, text)
+	out = e.mustImport()
+	contains(t, out, "1 user name(s) have upper case and are loaded as they are; new names are lower case")
+	contains(t, string(readFile(t, e.path)), "  Engineer:\n")
+}

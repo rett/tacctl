@@ -168,31 +168,33 @@ func TestHostRenameCarriesEverythingTheHostHas(t *testing.T) {
 	}
 }
 
-// A rename that changes only the spelling is legal; the host is not equal
-// to a different host by it.
+// A rename that changes only the spelling to lower case is legal and is how
+// a name from before, with upper case, is fixed; the host is not equal to a
+// different host by it, and everything the host has follows.
 func TestHostRenameSpellingOnly(t *testing.T) {
 	sb := renameLab(t)
 	holdHost(t, sb, "web1", "locked out of sudo")
-	sb.run("", []string{"host", "rename", "web1", "Web1"})
-	sb.expect(0, "Host 'web1' renamed to 'Web1'.", "")
-	if got, want := sb.registryText(), strings.Replace(hostLines, "web1|", "Web1|", 1); got != want {
+	sb.legacyHostCase("web1", "Web1")
+	sb.run("", []string{"host", "rename", "Web1", "web1"})
+	sb.expect(0, "Host 'Web1' renamed to 'web1'.", "")
+	if got, want := sb.registryText(), hostLines; got != want {
 		t.Errorf("registry %q, want %q", got, want)
 	}
-	if p := sb.pin("web1"); p == nil || p.Name != "Web1" || len(p.Keys) != 1 {
+	if p := sb.pin("web1"); p == nil || p.Name != "web1" || len(p.Keys) != 1 {
 		t.Errorf("pin %+v", p)
 	}
-	if !sb.fileExists("state/hosts/Web1.json") || sb.fileExists("state/hosts/web1.json") {
+	if !sb.fileExists("state/hosts/web1.json") || sb.fileExists("state/hosts/Web1.json") {
 		t.Error("the record did not move")
 	}
-	if !strings.Contains(sb.read("state/staging"), "|host|Web1|") {
+	if !strings.Contains(sb.read("state/staging"), "|host|web1|") || strings.Contains(sb.read("state/staging"), "|host|Web1|") {
 		t.Errorf("staging %q", sb.read("state/staging"))
 	}
-	if o := sb.overrides(); !strings.Contains(o, "  Web1:\n    address: 192.168.1.10\n") || strings.Contains(o, "  web1:") {
+	if o := sb.overrides(); !strings.Contains(o, "  web1:\n    address: 192.168.1.10\n") || strings.Contains(o, "  Web1:") {
 		t.Errorf("tacctl.yaml:\n%s", o)
 	}
-	// And back; the same name is refused.
-	sb.run("", []string{"host", "rename", "Web1", "web1"})
-	sb.expect(0, "renamed to 'web1'", "")
+	// The other way is refused, and so is the same name.
+	sb.run("", []string{"host", "rename", "web1", "Web1"})
+	sb.expect(1, "", "Names are lower case: use 'web1'. Nothing was changed.")
 	sb.run("", []string{"host", "rename", "web1", "web1"})
 	sb.expect(1, "", "'web1' already has that name.")
 }
@@ -226,7 +228,8 @@ func TestHostRenameRefusals(t *testing.T) {
 		{[]string{"web1", "LAB-sw"}, "'lab-sw' is already registered as a device (192.168.1.1)"},
 		// The hold of a host that is gone is not a new host's.
 		{[]string{"web1", "web2"}, "A break-glass hold is recorded under the name 'web2' (192.168.1.12)"},
-		{[]string{"web1", "WEB2", "--yes"}, "tacctl breakglass release web2'. Nothing was changed."},
+		{[]string{"web1", "web2", "--yes"}, "tacctl breakglass release web2'. Nothing was changed."},
+		{[]string{"web1", "Web7"}, "Names are lower case: use 'web7'. Nothing was changed."},
 	} {
 		sb.run("y\n", append([]string{"host", "rename"}, c.args...))
 		if sb.code != 1 || !strings.Contains(sb.stderr(), c.err) {

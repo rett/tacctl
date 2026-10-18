@@ -14,7 +14,7 @@ func TestUserVerbsRefuseABreakGlassName(t *testing.T) {
 	sb := newSandbox(t, true)
 	// Recorded: 'ghost' in lab, 'bob' in dmz (bob is a user of lab only),
 	// 'zed' in dmz.
-	for _, a := range [][]string{{"lab", "add", "ghost"}, {"dmz", "add", "bob"}, {"dmz", "add", "zed"}} {
+	for _, a := range [][]string{{"lab", "add", "ghost"}, {"lab", "add", "Phantom"}, {"dmz", "add", "bob"}, {"dmz", "add", "zed"}} {
 		sb.run("", append([]string{"scope", "breakglass"}, a...))
 		sb.expect(0, "recorded", "")
 	}
@@ -24,7 +24,7 @@ func TestUserVerbsRefuseABreakGlassName(t *testing.T) {
 	sb.run("", []string{"user", "add", "ghost", "readonly", "--scopes", "lab", "--hash", testHash})
 	sb.expect(1, "", "'ghost' is a break-glass local user of scope 'lab' (admin)")
 	sb.expect(1, "", way)
-	sb.run("", []string{"user", "add", "GHOST", "readonly", "--scopes", "prod,lab", "--hash", testHash})
+	sb.run("", []string{"user", "add", "phantom", "readonly", "--scopes", "prod,lab", "--hash", testHash})
 	sb.expect(1, "", "break-glass local user of scope 'lab'")
 	// The default scope counts as well, and so does a scope that is not the
 	// one the account is recorded in: no collision there.
@@ -52,7 +52,7 @@ func TestUserVerbsRefuseABreakGlassName(t *testing.T) {
 	sb.run("", []string{"scope", "breakglass", "lab", "add", "newname"})
 	sb.run("", []string{"user", "rename", "bob", "newname"})
 	sb.expect(1, "", "'newname' is a break-glass local user of scope 'lab' (admin)")
-	sb.run("", []string{"user", "rename", "bob", "Newname"})
+	sb.run("", []string{"user", "rename", "bob", "phantom"})
 	sb.expect(1, "", "break-glass local user of scope 'lab'")
 	// carol is in lab and dmz: 'zed' is recorded for dmz.
 	sb.run("", []string{"user", "rename", "carol", "zed"})

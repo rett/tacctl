@@ -32,7 +32,7 @@ host enroll <[user@]host>|--local [opts]
     --server <address>
         Address the host should use for this server (default: detected)
     --name <name>
-        Registry name (default: short hostname; not a tacctl word; names are not case-sensitive)
+        Registry name (default: short hostname, lowercased; lower case, not a tacctl word)
     --port <n>, --identity <file>
         SSH port and key
     --build-on-host
@@ -68,8 +68,9 @@ host provisioner <name> rotate <user> (--key <file>|--password) [--remove-old [-
 
 host rename <old> <new> [--yes]
 
-    Give an enrolled host another name; nothing is sent to the host. Its pinned host keys, record,
-    staging addresses and break-glass hold follow; asks about its own linux-<name> scope
+    Give an enrolled host another name (lower case; `host rename Web1 web1` fixes a name from
+    before); nothing is sent to the host. Its pinned host keys, record, staging addresses and
+    break-glass hold follow; asks about its own linux-<name> scope
 
 host forget <name> [--yes]
 
@@ -91,10 +92,12 @@ host default-method [tacplus|radius]
 runs nothing on the host (the machine records no registry name), so a host
 with a break-glass hold may be renamed. The new name follows the rules of a
 new host name (see [Enrolling hosts](../hosts/enrolling.md)) with no way
-round them: letters, digits, `_` or `-`, starting with a letter (26 at most);
-no tacctl word; no generic name; and not equal, in any case, to another
-host or a registered device. Changing only the spelling (`web1` to `Web1`)
-is allowed; the same name is refused (`'web1' already has that name.`). A
+round them: lower-case letters, digits, `_` or `-`, starting with a letter
+(26 at most); no tacctl word; no generic name; and not equal, in any case,
+to another host or a registered device. A name with upper case is refused
+(`Names are lower case: use 'web1'.`). Changing only the spelling to lower
+case (`Web1` to `web1`) is allowed and is how a name from before is fixed;
+the same name is refused (`'web1' already has that name.`). A
 running `host provisioner rotate` of the host refuses the rename. Everything
 is checked before anything is written, and a refusal changes nothing. The
 device registry is checked once more under its lock when it is written: a

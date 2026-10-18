@@ -894,6 +894,9 @@ func (inv *invocation) scopeAdd(args []string) error {
 	if err := names.ValidateScopeName(name); err != nil {
 		return inv.validated(err)
 	}
+	if err := names.RequireLower(name); err != nil {
+		return inv.validated(err)
+	}
 	if exists, err := inv.scopeExists(name); err != nil {
 		return err
 	} else if exists {
@@ -1181,6 +1184,9 @@ func (inv *invocation) scopeRenameCheck(old, newName string) error {
 	}
 	if !names.MatchScope(newName) {
 		return scopeRefusal{"Invalid new name '" + newName + "'."}
+	}
+	if err := names.RequireLower(newName); err != nil {
+		return refusalOf(err)
 	}
 	// The rename moves the scope's SNMP credentials file: one already named
 	// like the new scope is not overwritten, nor taken over.

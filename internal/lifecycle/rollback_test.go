@@ -323,7 +323,7 @@ func TestPlanRollbackFull(t *testing.T) {
 		"remove the config_syntax key of core-sw1 (modern)",
 		"unknown key 'config_syntax'",
 		"put back the sudoers drop-ins 0.2.3 writes",
-		"rewrite " + s.p.TierSudoersFile + " (the per-tier drop-in: 0.2.3's text, after 'visudo -cf'; it loses the TACCTL_ASKPASS alias and env_keep line and the rows of 'device config', 'device snmp' and 'console forget')",
+		"rewrite " + s.p.TierSudoersFile + " (the per-tier drop-in: 0.2.3's text, after 'visudo -cf'; it loses the TACCTL_ASKPASS alias and env_keep line and the rows of 'device config', 'device snmp', 'console forget' and 'host list --json')",
 		"rewrite " + s.p.SudoersFile + " (the drop-in of group ops: 0.2.3's text",
 		"leave " + filepath.Join(s.p.SNMPDir, "devices"),
 		"1 file (mode 0600, kept): core-sw1",

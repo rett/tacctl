@@ -213,6 +213,35 @@ current behaviour; this file is where history lives.
    a host with no record under its name: nothing tells a host enrolled
    before the records from one whose record was lost or forgotten.
 
+8. **New device, host, user and scope names are lower case.** `device add`,
+   `rename` and `import` (a CSV row for a device the registry does not have),
+   `host enroll` and `host rename`, `user add` and `user rename`, and
+   `scope add` and `scope rename` (also the scope that `host rename` offers
+   to rename) refuse a name with an upper-case letter: `Names are lower
+   case: use 'alice'. Nothing was changed.` For a device or a host, a name
+   taken in another case or a generic one is refused for that reason first.
+   A host name worked out from the host name
+   (`host enroll admin@Web1.example.net`, `--local`) is lowercased without a
+   word, because host names are not case-sensitive, unless a host is already
+   enrolled under exactly that spelling; a name given with `--name` is not
+   changed. The name a device reports to `device onboard` and `device collect
+   --register`, and the name `device discover` suggests, are lowercased the
+   same way. A name that exists with upper case keeps working as it is:
+   nothing is migrated or folded, no login changes, and the verbs that read
+   names match them as before. A rename that changes only the spelling to
+   lower case (`user rename Alice alice`, `device rename Core-SW1 core-sw1`,
+   `scope rename Lab lab`, `host rename Web1 web1`) is how an old name is
+   fixed; what follows the name (the users' scope lists, the keys and files
+   of a scope or device, the registration of a host) follows it as in any
+   rename. The Linux UID ledger is keyed by name and a user rename leaves it:
+   `alice` has no number until a host is synced and `Alice` keeps its own.
+   `device import` of a registry file and `store import` load names with
+   upper case as they are and say in one line how many. `config validate`
+   warns of each such device, host, user and scope with the verb that
+   renames it (`Names:`); the warning for a user says that devices match the
+   typed login name exactly, so the rename changes what the person types at
+   the device. The superuser sees the warnings; an engineer none.
+
 ## 0.2.13 (2026-10-16)
 
 1. **The `test` workflow no longer runs on a push to `master`.** After a
