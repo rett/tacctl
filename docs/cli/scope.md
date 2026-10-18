@@ -28,7 +28,9 @@ scope remove <name> [--force]
 
 scope rename <old> <new>
 
-    Rewrites every user's scopes[], the default marker and every per-scope setting
+    Rewrites every user's scopes[], the default marker and every per-scope setting; the enrolled
+    hosts and staging addresses that name the scope follow. host rename offers this for a host's
+    own linux-<name> scope
 
 scope default [<name>]
 

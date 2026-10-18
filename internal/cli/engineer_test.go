@@ -119,7 +119,7 @@ func TestEngineerHostsAreReadOnly(t *testing.T) {
 	hosts := sb.read("state/linux-hosts")
 	for _, args := range [][]string{{"host", "sync", "web1"}, {"host", "sync", "--all"}, {"host", "target", "web1"}, {"host", "move", "web1", "lab"},
 		{"host", "enroll", "--local", "--scope", "lab"}, {"host", "enroll", "root@192.0.2.50", "--name", "h1", "--scope", "lab"},
-		{"host", "unenroll", "web1", "--force"}, {"host", "default-method"}, {"host", "default-method", "radius"},
+		{"host", "unenroll", "web1", "--force"}, {"host", "rename", "web1", "web9"}, {"host", "rename", "web1", "web9", "--yes"}, {"host", "default-method"}, {"host", "default-method", "radius"},
 		{"host", "provisioner", "web1", "rotate", "deploy2", "--key", "/tmp/k", "--yes"}} {
 		sb.asEngineer("", args...)
 		if sb.code != 1 || !strings.Contains(sb.stderr(), "'tacctl host "+args[1]+"' is not permitted for the engineer tier.") {

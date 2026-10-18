@@ -100,6 +100,42 @@ current behaviour; this file is where history lives.
    side has one; `backup list` is unchanged. The state format does not
    change and 0.2.13 ignores the new entries.
 
+5. **`host rename <old> <new>` gives an enrolled host another name, and
+   `host enroll` can no longer register a name twice.** The rename is the
+   superuser's and local: nothing is sent to the host, so a host with a
+   break-glass hold may be renamed, and a running `host provisioner rotate`
+   of the host refuses it. The new name follows the rules of a new host name
+   with no way round them: no tacctl word, no generic name, no other host or
+   registered device equal to it in any case; changing only the spelling
+   (`web1` to `Web1`) is allowed and the same name says `already has that
+   name`. What an earlier host of the new name left (a pin, a record,
+   staging addresses) is listed and replaced after a confirmation (`--yes`
+   skips it); a break-glass hold under the new name is always refused. After
+   a snapshot the registry line is renamed where it is, one write of the
+   device registry renames the pinned keys, the address, its history and the
+   acknowledged notices (`known_hosts` follows; if that write fails the
+   registry line is renamed back and nothing is changed), then the record,
+   the staging addresses, the hold (same address) and the host-key scan
+   result follow, each a warning with the fix when it cannot. The log line
+   is `host rename old= new= by=`. When the host's scope is `linux-<old>`,
+   no other host uses it and `scope rename` would accept `linux-<new>`, the
+   command also asks `Scope 'linux-<old>' is this host's own (no other host
+   uses it). Rename it to 'linux-<new>' too? [y/N]` (`--yes` answers yes);
+   the scope is then renamed after the host, with its own snapshot, and the
+   host's registry line and staging addresses follow it. A scope left alone
+   gets one line saying why, or the `tacctl scope rename` line to run; if the
+   scope step fails the host stays renamed in its old scope and the command
+   says `Host renamed. Scope 'linux-<old>' was NOT renamed` with the retry
+   and exits 1. `scope rename` itself is unchanged. The registry write of
+   `host enroll` for a new name is now checked again under the registry's
+   lock: two enrolments of `Web1` and `web1` started together can no longer
+   both be written, the second says the name is taken and writes nothing
+   (the client script has already run on its host). `backup diff` against a
+   snapshot of 0.2.13 or older no longer lists the live host files as only in
+   the current state, which a restore of it would not change; it prints
+   `host files: not in this snapshot (it predates 0.2.14)` when the server
+   has host files.
+
 ## 0.2.13 (2026-10-16)
 
 1. **The `test` workflow no longer runs on a push to `master`.** After a

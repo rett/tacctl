@@ -2,6 +2,7 @@ package hosts
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"strings"
@@ -229,6 +230,91 @@ func (r *Registry) Replace(e Entry) error {
 func (r *Registry) Remember(e Entry) error {
 	return r.locked(func() error { return r.remember(e) })
 }
+
+// ErrNameTaken is what RememberNew and Rename return (wrapped in a
+// *NameTakenError) when, under the lock, a host with the name is found in
+// any case.
+var ErrNameTaken = errors.New("a host with that name is enrolled")
+
+// NameTakenError says which enrolled host holds the name asked for.
+type NameTakenError struct {
+	// Name is the name asked for, Holder the registered name equal to it
+	// ignoring case.
+	Name, Holder string
+}
+
+func (e *NameTakenError) Error() string {
+	return "'" + e.Holder + "' is enrolled; names are not case-sensitive."
+}
+
+// Is makes errors.Is(err, ErrNameTaken) true.
+func (e *NameTakenError) Is(target error) bool { return target == ErrNameTaken }
+
+// takenBy is the registered name that name is equal to ignoring case, other
+// than except (a host's own name when it is renamed); "" when there is none.
+func (r *Registry) takenBy(name, except string) string {
+	for _, e := range r.Entries() {
+		if e.Name != except && strings.EqualFold(e.Name, name) {
+			return e.Name
+		}
+	}
+	return ""
+}
+
+// RememberNew is Remember for a name that is new: under the lock, after the
+// registry has been read again, a host equal to e.Name ignoring case (the
+// same spelling too) is refused with a *NameTakenError and nothing is
+// written. Two commands that checked the name before either wrote it cannot
+// both enroll it.
+func (r *Registry) RememberNew(e Entry) error {
+	return r.locked(func() error {
+		if holder := r.takenBy(e.Name, ""); holder != "" {
+			return &NameTakenError{Name: e.Name, Holder: holder}
+		}
+		return r.remember(e)
+	})
+}
+
+// Rename gives the host oldName the name newName, its line renamed where it
+// is (every other field as written, the file mode 0600, replaced
+// atomically). Under the lock, after the registry has been read again, it
+// refuses with ErrNotEnrolled a registry with no line of oldName and with a
+// *NameTakenError one in which another host is equal to newName ignoring
+// case; a rename of the spelling only (the host is equal to itself) is
+// allowed. Other lines of oldName (a registry edited by hand) are dropped
+// with it, as Replace drops them.
+func (r *Registry) Rename(oldName, newName string) error {
+	return r.locked(func() error {
+		if _, ok := r.Find(oldName); !ok {
+			return fmt.Errorf("%w: %s", ErrNotEnrolled, oldName)
+		}
+		if holder := r.takenBy(newName, oldName); holder != "" {
+			return &NameTakenError{Name: newName, Holder: holder}
+		}
+		var b strings.Builder
+		done := false
+		for _, l := range awkRecords(r.text) {
+			if !awkEqual(awkField(awkFields(l, "|"), 1), oldName) {
+				b.WriteString(l + "\n")
+			} else if !done {
+				_, rest, found := strings.Cut(l, "|")
+				if found {
+					b.WriteString(newName + "|" + rest + "\n")
+				} else {
+					b.WriteString(newName + "\n")
+				}
+				done = true
+			}
+		}
+		if err := writeAtomic(r.Path, []byte(b.String()), 0o600); err != nil {
+			return err
+		}
+		return r.Load()
+	})
+}
+
+// ErrNotEnrolled is what Rename returns for a name with no line.
+var ErrNotEnrolled = errors.New("no enrolled host of that name")
 
 // remember is Remember under the lock.
 func (r *Registry) remember(e Entry) error {

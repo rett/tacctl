@@ -317,12 +317,22 @@ func (inv *invocation) diffSnapshot(id string) {
 // diffHosts adds the host state to the diff (D196): linux-hosts, each record
 // of hosts/ (the union of both sides), staging and linux-uids, each only
 // where one side has it; the registry counts when it holds a line, so a
-// server without hosts diffs as before.
+// server without hosts diffs as before. A snapshot that does not know the
+// hosts (0.2.13 or older) is not compared: a restore of it leaves the live
+// host files alone, so they are not "only in current"; one line says so, and
+// only when there are host files.
 func (inv *invocation) diffHosts(dir, id string) {
 	p := inv.app.Paths
 	nonEmpty := func(path string) bool {
 		st, err := os.Stat(path)
 		return err == nil && st.Mode().IsRegular() && st.Size() > 0
+	}
+	if !snapshot.KnowsHosts(dir) {
+		if nonEmpty(p.LinuxHosts) || len(snapshot.HostRecordFiles(p.HostRecords)) > 0 ||
+			cfgIsFile(inv.stagingPath()) || cfgIsFile(p.LinuxUIDs) {
+			inv.echo("  host files: not in this snapshot (it predates 0.2.14)")
+		}
+		return
 	}
 	if snap := filepath.Join(dir, snapshot.HostsName); nonEmpty(snap) || nonEmpty(p.LinuxHosts) {
 		inv.diffFile(snapshot.HostsName, snap, p.LinuxHosts, id)

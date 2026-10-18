@@ -278,6 +278,34 @@ func TestBackupDiffShowsTheHostFiles(t *testing.T) {
 	}
 }
 
+// A snapshot of 0.2.13 or older does not know the hosts: a restore of it
+// leaves the live host files alone, so the diff does not list them as only in
+// the current state. One line says so, when there are host files.
+func TestBackupDiffOfASnapshotThatPredatesTheHostFiles(t *testing.T) {
+	sb := hostsSandbox(t)
+	const line = "  host files: not in this snapshot (it predates 0.2.14)"
+	old := "20200101_000000_001" // no linux-hosts in it
+	out := plain(sb.run("", []string{"backup", "diff", old}))
+	if !strings.Contains(out, line) {
+		t.Errorf("no line:\n%s", out)
+	}
+	if argv := strings.Join(sb.runner.Argvs(), "\n"); strings.Contains(argv, "current/linux-hosts") || strings.Contains(argv, "current/hosts/") ||
+		strings.Contains(argv, "current/staging") || strings.Contains(argv, "current/linux-uids") {
+		t.Errorf("the live host files were diffed:\n%s", argv)
+	}
+	// The snapshot that knows them is diffed as before, without the line.
+	if out := plain(sb.run("", []string{"backup", "diff", "20200101_000000_002"})); strings.Contains(out, "predates") {
+		t.Errorf("the line is there for a snapshot that knows the hosts:\n%s", out)
+	}
+	// No host files at all: nothing to say.
+	for _, rel := range []string{"state/linux-hosts", "state/staging", "state/linux-uids", "state/hosts/web1.json", "state/hosts/web2.json"} {
+		_ = os.Remove(sb.path(rel))
+	}
+	if out := plain(sb.run("", []string{"backup", "diff", old})); strings.Contains(out, "host files") {
+		t.Errorf("a line for a server with no hosts:\n%s", out)
+	}
+}
+
 // D191: enroll (and so move) and unenroll take a snapshot before the registry
 // changes; sync does not.
 func TestHostVerbsSnapshotBeforeTheRegistryChanges(t *testing.T) {

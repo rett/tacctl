@@ -279,6 +279,7 @@ var manFlagOverrides = map[string]string{
 	"ssh -Y":                             "Forward X11 to this server's display (trusted, as ssh -Y).",
 	"host provisioner --remove-home":     "(provisioner) With --remove-old: also delete the old account's home directory, without asking (otherwise it is moved out of reach, made root's)",
 	"host provisioner --yes":             "(provisioner) Rotate without asking, and continue with the host keys shown when none is pinned",
+	"host rename --yes":                  "(rename) Answer both questions yes: replace what an earlier host of the new name left, and rename the host's own linux-<name> scope.",
 }
 
 // capitalizeDesc starts the sentence of a description with a capital: the

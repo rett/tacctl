@@ -271,3 +271,32 @@ func CheckNewHostName(reg *hosts.Registry, name string) error {
 	}
 	return nil
 }
+
+// CheckRenameHostName is what 'host rename' asks of the new name of the
+// enrolled host oldName, flat (there is no way round it): no tacctl word,
+// not a generic name (a factory or image default; hosts are told apart by
+// name), no other enrolled host equal to it ignoring case, and no registered
+// device equal to it ignoring case. The host itself is exempt from the
+// comparisons (and an old generic name from the generic rule), so changing
+// only the spelling of its name is allowed.
+func CheckRenameHostName(reg *hosts.Registry, f *File, oldName, name string) error {
+	if IsReserved(name) {
+		return fail("'" + name + "' is a tacctl word and cannot name a host. Nothing was changed.")
+	}
+	for _, e := range reg.Entries() {
+		switch {
+		case e.Name == oldName:
+		case e.Name == name:
+			return fail("A host named '" + e.Name + "' is already enrolled. Nothing was changed.")
+		case strings.EqualFold(e.Name, name):
+			return fail("'" + e.Name + "' is enrolled; names are not case-sensitive. Nothing was changed.")
+		}
+	}
+	if err := CheckHostName(f, name, true); err != nil {
+		return err
+	}
+	if !strings.EqualFold(name, oldName) && IsGeneric(name, f.GenericNames) {
+		return fail("'" + name + "' is a generic name (a factory or image default); hosts are told apart by name. Choose a name of its own. Nothing was changed.")
+	}
+	return nil
+}

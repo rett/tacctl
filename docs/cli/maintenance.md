@@ -106,7 +106,11 @@ current state taken first holds the live host files, so another restore undoes
 this one.
 
 `backup diff` adds `linux-hosts`, `staging`, `linux-uids` and each host record,
-each only where either side has one. `backup list` is unchanged, and
-`restore --legacy` leaves the host files alone.
+each only where either side has one. A snapshot that does not know the hosts
+(taken by 0.2.13 or older) is not compared with them, because a restore of it
+leaves the live host files alone: one line, `host files: not in this snapshot
+(it predates 0.2.14)`, stands in their place, and only when the server has
+host files. `backup list` is unchanged, and `restore --legacy` leaves the host
+files alone.
 
 Old-style `tacquito.yaml.<timestamp>` files (made before the store existed, or kept in `backups/legacy/`) are listed after the snapshots. `backup restore <timestamp> --legacy` runs `store import --check` on one, then imports it. Without a store (legacy read-only mode) `list`, `diff` and `restore` work on those files.

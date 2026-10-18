@@ -140,7 +140,7 @@ var engineerRowCases = map[string]engineerRow{
 	"config juniper": {cases: cases("config juniper --scope lab", "config juniper --scope lab --staging 192.168.1.51")},
 	"config wti":     {cases: cases("config wti --scope lab", "config wti --scope lab --staging 192.168.1.52")},
 	// An engineer reads the hosts of their scopes and deploys none: host
-	// enroll, sync, move, target, provisioner, unenroll and default-method
+	// enroll, sync, move, target, provisioner, rename, unenroll and default-method
 	// are the superuser's (no Engineer row). 'host show --check' opens ssh as
 	// the invoker and is refused.
 	"host list": {cases: cases("host list")},

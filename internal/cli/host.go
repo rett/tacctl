@@ -57,6 +57,7 @@ var hostSpecs = map[string]Spec{
 	"move": {MaxArgs: 2, Args: []string{KindHosts, KindScopes}, Flags: []Flag{{Names: []string{"--all"}, Alone: true},
 		{Names: []string{"--yes"}}, flagAllowUIDMismatch, flagRemoveHome}},
 	"unenroll": {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--force"}}}},
+	"rename":   {MinArgs: 2, MaxArgs: 2, Args: []string{KindHosts, ""}, Flags: []Flag{{Names: []string{"--yes"}}}},
 	"target": {MinArgs: 1, MaxArgs: 2, Args: []string{KindHosts, ""}, Flags: []Flag{
 		{Names: []string{"--port"}, Value: true},
 		{Names: []string{"--identity"}, Value: true, Kind: KindFile},
@@ -80,6 +81,7 @@ var hostVerbs = [][2]string{
 	{"move <name> [<scope>] | --all [options]", "Move an enrolled host to another scope (default: the scope answering its address)"},
 	{"target <name> [<[user@]host>] [options]", "Show or change how tacctl reaches an enrolled host over ssh"},
 	{"provisioner <name> rotate <user> [options]", "Switch the account tacctl logs in to the host with, proving the new one before the registry changes"},
+	{"rename <old> <new> [--yes]", "Give an enrolled host another name; its own linux-<name> scope can follow"},
 	{"unenroll <name> [--force]", "Remove the login method from the host (accounts and homes are kept)"},
 	{"default-method [tacplus|radius]", "Show or set the method for hosts enrolled without --method"},
 }
@@ -124,6 +126,8 @@ func (inv *invocation) host(args []string) error {
 		return inv.hostTarget(rest)
 	case "provisioner":
 		return inv.hostProvisioner(rest)
+	case "rename":
+		return inv.hostRename(rest)
 	case "unenroll":
 		return inv.hostUnenroll(rest)
 	case "default-method":
@@ -697,7 +701,21 @@ func (inv *invocation) hostEnroll(args []string) error {
 		a.Out.WarnE("The client script succeeded on " + name + " but the registry was not changed; run the same command again.")
 		return err
 	}
-	if err := reg.Remember(hosts.Entry{Name: name, Target: target, Port: port, Scope: scope, Server: server, Identity: identity, Method: method}); err != nil {
+	entry := hosts.Entry{Name: name, Target: target, Port: port, Scope: scope, Server: server, Identity: identity, Method: method}
+	if enrolled {
+		err = reg.Remember(entry)
+	} else {
+		// A new name is held to the one-name rule again under the registry's
+		// lock: another enrolment of the same name in any case that finished
+		// since the check above wins, and this one does not write.
+		err = reg.RememberNew(entry)
+	}
+	if err != nil {
+		var taken *hosts.NameTakenError
+		if errors.As(err, &taken) {
+			a.Out.ErrorE(taken.Error() + " The client script already ran on the host; the registry was not changed.")
+			return exit(1)
+		}
 		return err
 	}
 	if narrowScope {

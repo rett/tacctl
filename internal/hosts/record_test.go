@@ -67,6 +67,21 @@ func TestRecords(t *testing.T) {
 	if got, _ := rs.Load("web3"); got.Facts == nil {
 		t.Error("not renamed")
 	}
+	if !rs.Has("web3") || rs.Has("web1") {
+		t.Error("Has after a rename")
+	}
+	if err := rs.Save("web5", Record{LastSync: &SyncRecord{Command: "sync"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.Rename("web3", "web5"); err != nil {
+		t.Errorf("renaming over a record: %v", err)
+	}
+	if got, _ := rs.Load("web5"); got.Facts == nil {
+		t.Error("the record of the new name was not replaced")
+	}
+	if err := rs.Rename("web5", "web3"); err != nil {
+		t.Fatal(err)
+	}
 	if err := rs.Rename("ghost", "web4"); err != nil {
 		t.Errorf("renaming nothing: %v", err)
 	}

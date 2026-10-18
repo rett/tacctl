@@ -34,6 +34,17 @@ The scope of a host is, in order: `--scope`; the scope the host is registered in
 
 **One machine, one registration.** Enroll refuses this server's own address unless it is `--local` (`'<target>' is this server; enroll it with --local`), and a new name for a machine already enrolled under another one (the same address on the same ssh port, or one of this server's own addresses when it is enrolled with `--local`): `'h192-0-2-22' is the enrolled host 'dev' (enrolled as admin@host.example.net): both reach 192.0.2.22.` Re-enroll it under its registered name (`--name dev`) or change how it is reached (`tacctl host target dev <[user@]host>`).
 
+**Renaming a registration.** A host enrolled under the wrong name is not
+enrolled again (that would be a second registration of the machine, refused
+as above): `tacctl host rename <old> <new>` gives the registration another
+name. It is local and sends nothing to the host. The pinned ssh keys and
+recorded address, the host's record, its staging addresses and its
+break-glass hold follow the name, after a snapshot. If the host is the only
+one in its own scope `linux-<old>`, the command asks whether to rename that
+scope to `linux-<new>` too (`--yes` says yes); without that, enrolling the
+renamed host again without `--scope` would put it in `linux-<new>`. See
+[`host rename`](../cli/host.md).
+
 **Host names.** The registry name is `--name`, else the host's short name. A
 name no enrolled host has with exactly that spelling is a new one and must
 pass the rules a device name passes: letters, digits, `_` or `-`, starting

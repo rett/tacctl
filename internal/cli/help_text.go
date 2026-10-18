@@ -550,6 +550,10 @@ Usage: tacctl host <subcommand> [arguments]
       --remove-old                     (provisioner) Last, over the new account, remove the old one; its home is moved
                                        out of reach unless --remove-home. Needs a registry target with an explicit user@
       --dry-run                        (provisioner) Print the plan and test the current login; change nothing
+  rename <old> <new>                   Give an enrolled host another name: registry line, pinned keys, record, staging
+                                       addresses and break-glass hold follow; nothing is sent to the host. When the host
+                                       is the only user of scope linux-<old>, asks whether to rename that scope too
+      --yes                            (rename) Replace what an earlier host of the new name left, and rename the scope
   unenroll <name> [--force]            Remove the login method from the host (accounts and homes are kept)
       --force                          Forget the host even when the removal there failed
   default-method [tacplus|radius]      Show or set the method for hosts enrolled without --method

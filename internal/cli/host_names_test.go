@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/execx"
 )
 
 // withDevice registers a device in the sandbox's devices file.
@@ -103,5 +105,35 @@ func TestHostEnrollOptionNeedsAValue(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(hs.dir, "state", "linux-hosts")); err == nil {
 		t.Error("a registry was made")
+	}
+}
+
+// Two enrolments of one name in two cases that both passed the check: the
+// registry's lock decides, the first to write wins and the other is refused
+// with nothing written, never two hosts sharing one pin record.
+func TestHostEnrollOfAFoldEqualNameFinishedMeanwhileIsRefused(t *testing.T) {
+	hs := newHostSandbox(t)
+	r := hs.runner()
+	written := false
+	const other = "web1|root@other.example.net||lab|192.0.2.1|\n"
+	r.Func(func(c execx.Cmd) bool { return c.Name == "ssh" }, func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(strings.Join(c.Args, " "), "mktemp") {
+			_, _ = io.ReadAll(c.Stdin)
+			return execx.Result{Stdout: []byte("/tmp/tacctl.AbCd1234\n")}, nil
+		}
+		if !written {
+			// The other enrolment finishes while this one's script runs.
+			written = true
+			hs.write("state/linux-hosts", other, 0o600)
+		}
+		return execx.Result{}, nil
+	})
+	hs.run(r, "host", "enroll", "admin@web1.example.net", "--name", "Web1", "--scope", "lab", "--allow-uid-mismatch", "--remove-home", "--build-on-host")
+	hs.expect(1, "", "'web1' is enrolled; names are not case-sensitive. The client script already ran on the host; the registry was not changed.")
+	if hs.registry() != other {
+		t.Errorf("registry %q", hs.registry())
+	}
+	if strings.Contains(hs.out.String(), "enrolled.") {
+		t.Errorf("stdout %q", hs.out.String())
 	}
 }

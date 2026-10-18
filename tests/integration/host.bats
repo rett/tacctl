@@ -1268,3 +1268,60 @@ _container_ssh() {
     [ -f "${TACCTL_STATE_DIR}/hosts/web1.json" ]
     cmp "${TACCTL_STATE_DIR}/linux-uids" "${BATS_TEST_TMPDIR}/uids.before"
 }
+
+@test "host rename: the registry line, the pin and the record follow the name; the next sync has no pin warning" {
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab > /dev/null
+    # A pin and a recorded address under the old name, as an enrolment on a
+    # real host leaves them.
+    cat > "${TACCTL_STATE_DIR}/devices.yaml" << 'YAML'
+# tacctl device registry: names for the devices and hosts that authenticate here.
+version: 1
+settings: {stale_days: 30}
+devices: {}
+hosts:
+  web1:
+    address: 192.0.2.50
+    host_keys: [ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl]
+YAML
+    chmod 600 "${TACCTL_STATE_DIR}/devices.yaml"
+    [ -f "${TACCTL_STATE_DIR}/hosts/web1.json" ]
+    local before
+    before=$(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l)
+
+    run "$TACCTL_BIN_SCRIPT" host rename web1 web7
+    assert_success
+    assert_output --partial "Host 'web1' renamed to 'web7'."
+    run _hosts
+    assert_output "web7|admin@web1.example.net||lab|192.0.2.1|"
+    [ -f "${TACCTL_STATE_DIR}/hosts/web7.json" ]
+    [ ! -e "${TACCTL_STATE_DIR}/hosts/web1.json" ]
+    grep -q '^  web7:' "${TACCTL_STATE_DIR}/devices.yaml"
+    ! grep -q '^  web1:' "${TACCTL_STATE_DIR}/devices.yaml"
+    [[ $(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l) -gt $before ]]
+    stub_called "logger .*host rename old=web1 new=web7 by="
+
+    run "$TACCTL_BIN_SCRIPT" host sync web7
+    assert_success
+    assert_output --partial "web7: synced"
+    refute_output --partial "no host key is pinned"
+    # The pin made under the old name is the one the sync finds (the stubbed
+    # session reports no keys, so it neither adds nor changes one).
+    grep -q 'AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' "${TACCTL_STATE_DIR}/devices.yaml"
+    run "$TACCTL_BIN_SCRIPT" host show web7
+    assert_success
+    assert_output --partial "192.0.2.50"
+    run "$TACCTL_BIN_SCRIPT" host show web1
+    assert_failure
+
+    # Refusals: the same name, a name that is a tacctl word, an unknown host.
+    run "$TACCTL_BIN_SCRIPT" host rename web7 web7
+    assert_failure
+    assert_output --partial "'web7' already has that name."
+    run "$TACCTL_BIN_SCRIPT" host rename web7 all
+    assert_failure
+    assert_output --partial "'all' is a tacctl word and cannot name a host"
+    run "$TACCTL_BIN_SCRIPT" host rename ghost web8
+    assert_failure
+    run _hosts
+    assert_output "web7|admin@web1.example.net||lab|192.0.2.1|"
+}

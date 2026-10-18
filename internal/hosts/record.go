@@ -164,8 +164,21 @@ func (rs Records) Forget(name string) error {
 	return nil
 }
 
-// Rename moves the record of old to new (none is no error).
+// Has reports whether there is a record of name.
+func (rs Records) Has(name string) bool {
+	_, err := os.Lstat(rs.path(name))
+	return err == nil
+}
+
+// Rename moves the record of old to new (none is no error), over a record
+// of new there is, under the records' lock so that a sync or a rotation
+// writing the record is not interleaved with the move.
 func (rs Records) Rename(old, new string) error {
+	unlock, err := rs.lockRecords()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := os.Rename(rs.path(old), rs.path(new)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}

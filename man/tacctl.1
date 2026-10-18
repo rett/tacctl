@@ -2516,6 +2516,93 @@ Options:
 .RE
 .\" END GENERATED: command host provisioner
 .TP
+.B "host rename " old " " new " [ \-\-yes ]"
+Give the enrolled host
+.I old
+the name
+.IR new .
+It is local: the remote host records no registry name, so nothing is sent
+over ssh, and a host with a break\-glass hold may be renamed. The new name
+follows the rules of a new host name: letters, digits,
+.B _
+and
+.BR \- ,
+starting with a letter, at most 26 characters; no tacctl word
+.RB ( all ,
+.BR scope ,
+.BR local ,
+and the like) and no generic name; and no other enrolled host and no
+registered device is equal to it ignoring case. A rename that changes only the
+spelling
+.RB ( web1
+to
+.BR Web1 )
+is allowed. Giving the host the name it has is refused
+.RB ( "already has that name" ),
+and so is a rename while a
+.B "host provisioner rotate"
+of the host is running. A break\-glass hold recorded under the new name is
+always refused: only
+.B "breakglass release"
+removes a hold.
+.IP
+What an earlier host of the new name left (a pin and address in
+.IR devices.yaml ,
+a record, staging addresses) is listed and replaced after a confirmation
+.RB ( \-\-yes
+skips it); declining changes nothing.
+.IP
+After every refusal and the questions, a snapshot is taken
+.RB ( "backup restore"
+undoes the rename). Then the registry line is renamed where it is, and one
+write of
+.I devices.yaml
+renames the pinned host keys, the address and its history and the
+acknowledged notices (the generated known_hosts follows); if that write fails
+the registry line is renamed back and nothing was changed. Then the record
+.RI ( /etc/tacctl/hosts/ name .json),
+the staging addresses, the break\-glass hold (it stays on the same address
+and follows the name) and the host\-key scan result of the seen cache follow;
+each that fails is a warning that names what stayed and the command that puts
+it right. The rename is logged
+.RB ( "host rename old= new= by=" ).
+.IP
+When the host is registered in scope
+.BI linux\- old
+(the scope earlier releases made for it), no other host uses that scope, the
+store has it, no scope
+.BI linux\- new
+exists and
+.B "scope rename"
+would accept the new name, both questions come first and
+.RB "\(lq" "Scope 'linux\-" old "' is this host's own (no other host uses it). Rename it to 'linux\-" new "' too? [y/N]\(rq"
+is asked.
+.B \-\-yes
+answers both questions yes. The host rename runs whole; then the scope is
+renamed as
+.B "scope rename"
+does, with a snapshot of its own (two points to undo to). If the scope step
+fails the host stays renamed in its old scope and the command says
+.RB "\(lqHost renamed. Scope 'linux\-" old "' was NOT renamed: ... Retry: tacctl scope rename linux\-" old " linux\-" new "\(rq"
+and exits 1. When the scope is not renamed with the host, one line says why,
+and a declined offer ends with the
+.B "scope rename"
+line to run. Re\-enrolling the renamed host without
+.B \-\-scope
+would otherwise put it in
+.BI linux\- new \fR.
+.\" BEGIN GENERATED: command host rename
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-yes\fR
+(rename) Answer both questions yes: replace what an earlier host of the new name left, and rename the host's own linux\-<name> scope.
+.RE
+.\" END GENERATED: command host rename
+.TP
 .B "host unenroll " name " [ \-\-force ]"
 Run the removal script on the host and drop it from the registry, with its
 pinned host keys. Local accounts and home directories stay. If the removal
@@ -3162,7 +3249,7 @@ Each read of a secret by an engineer is logged to syslog as
 scopes, a secret's change, backends, backups, upgrades, the default host
 method and the console's settings stay the superuser's, and so does the
 deployment of Linux hosts
-.RB ( "host enroll" ", " sync ", " move ", " target ", " provisioner ", " unenroll
+.RB ( "host enroll" ", " sync ", " move ", " target ", " provisioner ", " rename ", " unenroll
 and
 .BR default\-method ):
 an engineer changes no setting that makes a host sync necessary, and a host is
@@ -4322,6 +4409,11 @@ each record of
 .I staging
 and
 .IR linux\-uids .
+A snapshot taken by 0.2.13 or older does not know the hosts and a restore of it
+leaves the live host files alone, so they are not listed as only in the current
+state: one line,
+.BR "host files: not in this snapshot (it predates 0.2.14)" ,
+stands in their place when the server has host files.
 The output shows shared secrets and password hashes.
 .\" BEGIN GENERATED: command backup diff
 .RS
@@ -4885,7 +4977,12 @@ in
 .IR old ),
 and moves every
 .I tacctl.yaml
-setting stored under the old name to the new one.
+setting stored under the old name to the new one. The enrolled hosts that are
+registered in the scope and the staging addresses of it name the new scope
+afterwards.
+.B "host rename"
+offers this rename for a host's own scope
+.BI linux\- name \fR.
 .\" BEGIN GENERATED: command scope rename
 .RS
 .PP
@@ -9741,7 +9838,9 @@ the checks a new hold passes, and one question names both addresses unless
 .B \-y
 is given),
 .B "device rename"
-moves the record,
+and
+.B "host rename"
+move the record,
 .BR "device config pull" ,
 .B "diff \-\-pull"
 and

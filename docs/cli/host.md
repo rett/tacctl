@@ -61,6 +61,11 @@ host provisioner <name> rotate <user> (--key <file>|--password) [--remove-old [-
     a new connection (sudo id -u gives 0), then change the registry; --remove-old removes the old
     account last, over the new one
 
+host rename <old> <new> [--yes]
+
+    Give an enrolled host another name; nothing is sent to the host. Its pinned host keys, record,
+    staging addresses and break-glass hold follow; asks about its own linux-<name> scope
+
 host unenroll <name> [--force]
 
     Remove the login method from the host (accounts are kept) and its pinned host keys; --force
@@ -71,11 +76,58 @@ host default-method [tacplus|radius]
     Show or set the method for hosts enrolled without --method (host.default_method)
 ```
 
-`host enroll` (so `host move`) and `host unenroll` take a snapshot just
-before the registry changes, once the script on the host has succeeded; `host
-sync` takes none. It holds the registry, the host records, `staging` and the
-UID ledger, so `backup restore` can put them back (see
-[Backup commands](maintenance.md#backup-commands--tacctl-backup)).
+**Renaming a host.** `tacctl host rename <old> <new>` is the superuser's. It
+runs nothing on the host (the machine records no registry name), so a host
+with a break-glass hold may be renamed. The new name follows the rules of a
+new host name (see [Enrolling hosts](../hosts/enrolling.md)) with no way
+round them: letters, digits, `_` or `-`, starting with a letter (26 at most);
+no tacctl word; no generic name; and not equal, in any case, to another
+host or a registered device. Changing only the spelling (`web1` to `Web1`)
+is allowed; the same name is refused (`'web1' already has that name.`). A
+running `host provisioner rotate` of the host refuses the rename. Everything
+is checked before anything is written, and a refusal changes nothing.
+
+What an earlier host of the new name left (a pinned key and address in the
+device registry, a record, staging addresses) is listed and replaced after a
+confirmation; `--yes` skips it and declining changes nothing. A break-glass
+hold recorded under the new name is refused whatever `--yes` says: only
+`breakglass release` removes a hold.
+
+A snapshot is taken, then the registry line is renamed where it is and one
+write of the device registry renames the host's pinned keys, recorded
+address, address history and acknowledged notices (the generated
+`known_hosts` follows). If that write fails the registry line is renamed
+back and the command says that nothing was changed. After that the record
+(`/etc/tacctl/hosts/<name>.json`), the staging addresses, the break-glass
+hold (same address, new name) and the host-key scan result of the seen cache
+follow; a step that fails is a warning that names what stayed and the command
+that puts it right. The log line is `host rename old= new= by=`.
+
+When the host's scope is `linux-<old>` (the scope earlier releases made for
+it), no other host uses it, the store has it, `linux-<new>` does not exist and
+`scope rename` would accept the name, both questions come before the first
+write:
+```
+Scope 'linux-web1' is this host's own (no other host uses it). Rename it to 'linux-web9' too? [y/N]
+```
+`--yes` answers both yes. The host is renamed whole first; then the scope is
+renamed as `scope rename` does it, with a snapshot of its own (two points to
+undo to), and the host's registry line and its staging addresses follow the
+scope. Answering no keeps the scope and ends with
+`tacctl scope rename linux-web1 linux-web9`; a scope that cannot be offered
+(shared, missing, `linux-<new>` taken, or refused by `scope rename`) stays,
+and one line says why. If the scope step fails the host stays renamed in
+`linux-<old>`, which is a valid state: `Host renamed. Scope 'linux-web1' was
+NOT renamed: <reason>; the host keeps it. Retry: tacctl scope rename
+linux-web1 linux-web9.` and exit status 1. Without the question, enrolling
+the renamed host again without `--scope` would default to `linux-<new>` and
+move it.
+
+`host enroll` (so `host move`), `host unenroll` and `host rename` take a
+snapshot just before the registry changes (for `host enroll` once the script
+on the host has succeeded); `host sync` takes none. It holds the registry,
+the host records, `staging` and the UID ledger, so `backup restore` can put
+them back (see [Backup commands](maintenance.md#backup-commands--tacctl-backup)).
 
 A host with a [break-glass hold](breakglass.md)
 (`tacctl breakglass hold <host>`) is one the server does not answer, so that
