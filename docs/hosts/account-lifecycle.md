@@ -11,26 +11,35 @@ tacctl manages an account on a host only when it created it (the host's `/var/li
 - **Renamed user** (`tacctl user rename`): the ledger line `linux-uids`
   moves to the new name, so the user keeps its UID. The next `host sync`
   renames the account on each host by that UID alone, with nothing stored:
-  a listed user with no account whose UID belongs to an account tacctl
-  created under a name no longer listed is that account renamed
-  (`usermod -l`, the login name only). The home directory keeps its path
-  (`/home/Alice` stays), the full name becomes `alice (TACACS+)`, and the
-  `created` and `expired` lists follow. The host prints `'Alice' is now
-  'alice' (renamed; UID 80001; home kept at /home/Alice)`, `host show` lists
-  the account under Updated, and `host sync` does not ask whether to delete
-  the home of `Alice`. A host that was offline, synced later or saw two
-  renames ends the same. Files elsewhere (`/var/mail/Alice`, cron spools)
-  stay under the old name. A user who is logged in (a process runs under
-  the UID) is not renamed: `'Alice': not renamed to 'alice': processes run
-  as UID 80001 (logged in?); tried again at the next sync`, both names are
-  left untouched and the user is named as refused in the summary. A local
-  account `alice` that tacctl did not create keeps `Alice` as it is
-  (`'Alice' keeps its account: 'alice' is a local account here`). If
-  `alice` was already created by tacctl with another UID, nothing is
-  renamed: `Alice` is removed as a removed user and the difference is
-  reported. A script written with `config linux script` before 0.2.14 has
-  no rename: it stops at the UID check (the number belongs to `Alice`)
-  until it is written again.
+  a listed or disabled user with no account whose UID belongs to an
+  account tacctl created under a name no longer listed is that account
+  renamed (`usermod -l`, the login name only). The home directory keeps its
+  path (`/home/Alice` stays), the full name becomes `alice (TACACS+)`, and
+  the `created` and `expired` lists follow; a disabled user's account stays
+  expired. The host prints `'Alice' is now 'alice' (renamed; UID 80001; home
+  kept at /home/Alice)`, `host show` lists the account under Updated, and
+  `host sync` does not ask whether to delete the home of `Alice`. A host
+  that was offline, synced later or saw two renames ends the same, and so
+  does a host still on an earlier UID range (renamed at the number the user
+  had there, renumbered by the same run). Files elsewhere (`/var/mail/Alice`,
+  cron spools) stay under the old name. A user who is logged in (a process
+  runs under the UID) is not renamed: `'Alice': not renamed to 'alice':
+  processes run as UID 80001 (logged in?); tried again at the next sync`,
+  both names are left untouched and the user is named as refused in the
+  summary. A local account `alice` that tacctl did not create keeps `Alice`
+  as it is (`'Alice' keeps its account: 'alice' is a local account here`).
+  If `alice` was already created by tacctl with another UID, nothing is
+  renamed and neither account is removed (`'Alice' keeps its account: its
+  UID 80001 is assigned to 'alice' by the server; it is not removed here.`);
+  the UID check reports the difference. Two users that swap names are not
+  renamed either. After a rename, do not give the old name to a new user
+  (`user add Alice`) before every host has synced the rename: the host's
+  account `Alice` still holds the renamed user's number, so the UID check
+  refuses the sync of that host; sync all hosts first. A script written with
+  `config linux script` before 0.2.14 has no rename: it stops at the UID
+  check (the number belongs to `Alice`) until it is written again; do not
+  pass `--allow-uid-mismatch` to it, which would create `alice` at a free
+  number and delete `Alice`.
 - **Local accounts and tacctl's UID range:** local `useradd` on a host must not give out UIDs of the server's range, or a local account could take a number tacctl has given out. `host enroll` and `host sync` read the host's `/etc/login.defs` and warn when its `UID_MIN`-`UID_MAX` overlaps the range (the default `UID_MAX` 60000 does not overlap 80000-89999); keep it clear of the range there. tacctl never edits the file.
 - **Accounts an earlier release adopted:** reported once (`Accounts an earlier tacctl adopted are no longer tracked`), taken out of tacctl's groups in that run, and not tracked after that.
 

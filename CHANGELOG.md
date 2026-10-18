@@ -272,17 +272,33 @@ current behaviour; this file is where history lives.
     the login name only; the home keeps its path, the full name and the
     `created` and `expired` lists follow). It works from the UID alone, so a
     host that was offline, synced later, or saw the user renamed twice or
-    back ends the same. A user who is logged in (processes under the UID)
+    back ends the same, and so does a host still on an earlier UID range
+    (the account is found at the number the user had there, renamed, then
+    renumbered). A disabled user is renamed too: the server writes the
+    numbers of the scope's disabled users that have one in a new header
+    line, `TAC_INACTIVE_UIDS` (`name:uid` lines, left out when there is
+    none; a header without it still works), and the account stays expired
+    under its new name. A user who is logged in (processes under the UID)
     defers the rename to the next sync, with both names left untouched; a
-    local account of the new name keeps the old account and says so; a new
-    name that tacctl already created with another UID is no rename. `host
-    sync` no longer asks whether to delete the home of the renamed user's old
-    name, and `host show` lists the account under Updated. The script
-    protocol stays 6; a script written by an earlier release with `config
-    linux script` has no rename and stops at the UID check until it is
-    written again. The ledger has no lock of its own: a `host sync` that
-    reads it at the moment of the rename sees the file before or after it.
-    `config validate` says that the next sync renames the account.
+    local account of the new name keeps the old account and says so; two
+    users that swapped names are no rename, and the UID check reports the
+    differences. The script never removes an account of tacctl's whose UID
+    the server has given to a listed or disabled user: it keeps it and says
+    so, which includes a new name that tacctl already created with another
+    UID (no rename: both accounts stay and the UID check reports the
+    difference). If the lists of created and expired accounts cannot be
+    rewritten, nothing is renamed. `host sync` no longer asks whether to
+    delete the home of the renamed user's old name, and `host show` lists
+    the account under Updated. The script protocol stays 6; a script written
+    by an earlier release with `config linux script` has no rename and
+    stops at the UID check until it is written again (do not pass
+    `--allow-uid-mismatch` to such a script: it would create the new name
+    at a free number and delete the old account). Until every host has
+    synced the rename, do not give the old name to a new user: that host's
+    UID check refuses the sync. The ledger has no lock of its own: a `host
+    sync` that reads it at the moment of the rename sees the file before or
+    after it. `config validate` says that the next sync renames the
+    account.
 
 ## 0.2.13 (2026-10-16)
 

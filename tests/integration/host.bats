@@ -284,6 +284,18 @@ on_tty() {
     assert_line --index 2 --partial "mktemp"
 }
 
+@test "host sync: a renamed disabled user's account is renamed there: no home question, its number in the header" {
+    _removed_users
+    "$TACCTL_BIN_SCRIPT" user rename fred freddy > /dev/null
+    on_tty 'n\nn\n' host sync web1
+    assert_success
+    assert_output --partial "Delete /home/dave of removed user 'dave'? [y/N]"
+    refute_output --partial "/home/fred"
+    run sed '/^__TARBALL__$/,$d' "$PUSHED"
+    assert_line "TAC_INACTIVE=freddy"
+    assert_line "TAC_INACTIVE_UIDS=freddy:80003"
+}
+
 @test "host sync: without a terminal nothing is asked and every home is kept; --remove-home deletes them all" {
     _removed_users
     run "$TACCTL_BIN_SCRIPT" host sync web1

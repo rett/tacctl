@@ -2296,25 +2296,35 @@ host, is left as it is and named as refused until a later sync.
 .IP
 An account of a renamed user
 .RB ( "user rename" )
-is renamed by its UID alone, before anything else is checked: a listed user
-with no account on the host whose UID belongs to an account tacctl created
-under a name that is no longer listed is that account renamed
+is renamed by its UID alone, before anything else is checked: a listed or
+disabled user with no account on the host whose UID belongs to an account
+tacctl created under a name that is no longer listed is that account renamed
 .RB ( "usermod \-l" ,
 the login name only; the home directory keeps its path, the full name follows,
-and so do tacctl's lists of the accounts it created and expired)
+and so do tacctl's lists of the accounts it created and expired; a disabled
+user's account stays expired)
 .RI "(\(lq'" old "' is now '" new "' (renamed; UID " uid "; home kept at " home )\(rq).
-A host that missed a rename, or saw two, ends the same. No question is asked
+A host that missed a rename, or saw two, ends the same, and so does a host
+still on an earlier UID range (the account is found at the number the user had
+there and renumbered by the same run). No question is asked
 about the home of the old name, and
 .B "host show"
 lists the account as updated. Mail and cron spools under the old name are
 left. An account whose user is logged in is not renamed, and neither name is
 created or deleted, until a later sync; a local account of the new name that
 tacctl did not create keeps the old account in place; a new name tacctl already
-created with another UID is no rename (the old account is removed as a removed
-user and the difference is reported). A script written by
+created with another UID is no rename, two users that swapped names are none
+either, and an account whose UID the server has given to a listed or disabled
+user is never removed (it is kept and named in a warning; the UID check
+reports the difference). If tacctl's lists of created and expired accounts
+cannot be rewritten, nothing is renamed. After a rename, the old name must not
+be given to a new user until every host has synced the rename: the UID check
+of a host that has not refuses its sync. A script written by
 .B "config linux script"
 before 0.2.14 has no rename and stops at its UID check until it is written
-again.
+again; it must not be run with
+.BR \-\-allow\-uid\-mismatch ,
+which would create the new name at a free number and delete the old account.
 .IP
 A removed user's home directory is deleted only when asked for. From a
 terminal, enroll and sync read the host's

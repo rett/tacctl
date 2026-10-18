@@ -772,7 +772,7 @@ func (inv *invocation) userRename(args []string) error {
 		out.Info("UID " + mv.uid + " follows the rename (linux-uids).")
 		if hostCount > 0 {
 			out.Info(hostsText(hostCount) + ": the account '" + oldname + "' is renamed to '" + newname +
-				"' at each host's next sync, home kept at /home/" + oldname + ": tacctl host sync --all")
+				"' at each host's next sync, home kept where it is: tacctl host sync --all")
 		}
 	case mv.heldBy != "":
 		out.Warn("'" + newname + "' already has UID " + mv.heldBy + " in linux-uids; the account '" + oldname + "' (UID " + mv.uid +
@@ -814,8 +814,9 @@ func (inv *invocation) moveUID(oldname, newname string) uidMove {
 	return uidMove{uid: uid, heldBy: held, err: err}
 }
 
-// enrolledHostsWith is how many enrolled hosts have the user in their scope (an
-// active one: a disabled user's account is expired there, not renamed).
+// enrolledHostsWith is how many enrolled hosts have the user in their scope,
+// disabled or not: a disabled user's account is expired there and is renamed
+// all the same (the script gets the number in TAC_INACTIVE_UIDS).
 func (inv *invocation) enrolledHostsWith(user string) int {
 	reg, err := inv.registry()
 	m, merr := inv.model()
@@ -824,11 +825,18 @@ func (inv *invocation) enrolledHostsWith(user string) int {
 	}
 	n := 0
 	for _, e := range reg.Entries() {
+		found := false
 		for _, r := range m.LinuxUsers(e.Scope) {
 			if name, _, _ := strings.Cut(r, "|"); name == user {
-				n++
+				found = true
 				break
 			}
+		}
+		for _, name := range m.LinuxInactive(e.Scope) {
+			found = found || name == user
+		}
+		if found {
+			n++
 		}
 	}
 	return n

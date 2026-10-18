@@ -1610,10 +1610,14 @@ _synced_host() {
     run bash "$OUT" --accounts-only
     assert_success
     assert_output --partial "UID 80777 on this host, 80000 assigned by tacctl"
-    refute_output --partial "renamed"
-    assert_output --partial "Deleted account 'alice'"
-    run grep -c "^usermod -l" "$CALLS_LOG"
+    refute_output --partial "is now"
+    # alice's number is carol's: the old account is kept, never removed.
+    assert_output --partial "[WARN] 'alice' keeps its account: its UID 80000 is assigned to 'carol' by the server; it is not removed here."
+    refute_output --partial "Deleted account"
+    run grep -cE "^(usermod -l|userdel) " "$CALLS_LOG"
     assert_output "0"
+    run cat "$TACCTL_CLIENT_STATE/created"
+    assert_output $'alice\nbob\ncarol'
 }
 
 @test "client install: renames in a row and back converge on the ledger's name" {
@@ -1638,6 +1642,162 @@ _synced_host() {
     assert_output "alice:x:80000:80000:alice (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/alice:/bin/bash"
     run cat "$TACCTL_CLIENT_STATE/created"
     assert_output $'alice\nbob'
+}
+
+@test "client install: a disabled user's account is renamed too: one account, still expired, nothing deleted" {
+    _synced_host
+    echo note > "$TACCTL_CLIENT_HOME_ROOT/alice/note"
+    "$TACCTL_BIN_SCRIPT" user disable alice > /dev/null
+    _gen > /dev/null
+    bash "$OUT" --accounts-only > /dev/null
+    run cat "$TACCTL_CLIENT_STATE/expired"
+    assert_output "alice"
+    "$TACCTL_BIN_SCRIPT" user rename alice carol > /dev/null
+    _gen > /dev/null
+    run sed '/^__TARBALL__$/,$d' "$OUT"
+    assert_line "TAC_INACTIVE=carol"
+    assert_line "TAC_INACTIVE_UIDS=carol:80000"
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only --remove-home
+    assert_success
+    assert_output --partial "[INFO] 'alice' is now 'carol' (renamed; UID 80000; home kept at ${TACCTL_CLIENT_HOME_ROOT}/alice)"
+    refute_output --partial "Deleted account"
+    refute_output --partial "Created account"
+    refute_output --partial "disabled): account expired"
+    run grep -cE "^(useradd|userdel) " "$CALLS_LOG"
+    assert_output "0"
+    # Expiry is not touched: not set again, not cleared.
+    run grep -cE "^usermod -e" "$CALLS_LOG"
+    assert_output "0"
+    run grep -E "^(alice|carol):" "$FAKE_DB/passwd"
+    assert_output "carol:x:80000:80000:carol (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/alice:/bin/bash"
+    [[ -f "$TACCTL_CLIENT_HOME_ROOT/alice/note" ]]
+    run cat "$TACCTL_CLIENT_STATE/created"
+    assert_output $'carol\nbob'
+    run cat "$TACCTL_CLIENT_STATE/expired"
+    assert_output "carol"
+    # Enabled again: carol is active.
+    "$TACCTL_BIN_SCRIPT" user enable carol > /dev/null
+    _gen > /dev/null
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "Re-activated account 'carol'."
+}
+
+@test "client install: a disabled user renamed before its account was ever expired is renamed, then expired" {
+    _synced_host
+    "$TACCTL_BIN_SCRIPT" user disable alice > /dev/null
+    "$TACCTL_BIN_SCRIPT" user rename alice carol > /dev/null
+    _gen > /dev/null
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] 'alice' is now 'carol' (renamed; UID 80000;"
+    assert_output --partial "[INFO] 'carol' has no TACACS+ login here now (disabled): account expired, files kept."
+    refute_output --partial "Deleted account"
+    stub_called "usermod -e 1 carol"
+    run cat "$TACCTL_CLIENT_STATE/expired"
+    assert_output "carol"
+}
+
+@test "client install: a header without TAC_INACTIVE_UIDS still syncs" {
+    _synced_host
+    "$TACCTL_BIN_SCRIPT" user disable bob > /dev/null
+    _gen > /dev/null
+    sed -i '0,/^# --- tacctl/{/^TAC_INACTIVE_UIDS=/d}' "$OUT"
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] 'bob' has no TACACS+ login here now (disabled): account expired, files kept."
+    refute_output --partial "renamed"
+    refute_output --partial "Deleted account"
+}
+
+@test "client install: an unlisted account whose UID is a listed user's is never deleted" {
+    _synced_host
+    echo "ghost:x:80000:80000:ghost (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/ghost:/bin/bash" >> "$FAKE_DB/passwd"
+    echo ghost >> "$TACCTL_CLIENT_STATE/created"
+    mkdir -p "$TACCTL_CLIENT_HOME_ROOT/ghost"
+    # alice (listed, 80000) and ghost both hold 80000 in the database; the
+    # sync removes nothing it cannot tell from a pending rename.
+    run bash "$OUT" --accounts-only --remove-home
+    assert_success
+    assert_output --partial "[WARN] 'ghost' keeps its account: its UID 80000 is assigned to 'alice' by the server; it is not removed here."
+    refute_output --partial "Deleted account 'ghost'"
+    run grep -c "^userdel ghost" "$CALLS_LOG"
+    assert_output "0"
+    [[ -d "$TACCTL_CLIENT_HOME_ROOT/ghost" ]]
+}
+
+@test "client install: a swap of two names renames nothing; the UID check reports the mismatches" {
+    _synced_host
+    printf '%s\n' '# range 80000-89999' 'alice:80001' 'bob:80000' > "${TACCTL_STATE_DIR}/linux-uids"
+    _gen > /dev/null
+    run bash "$OUT" --accounts-only
+    assert_success
+    refute_output --partial "renamed"
+    assert_output --partial "alice: UID 80000 on this host, 80001 assigned by tacctl"
+    assert_output --partial "bob: UID 80001 on this host, 80000 assigned by tacctl"
+    run grep -cE "^(useradd|userdel|usermod -l) " "$CALLS_LOG"
+    assert_output "0"
+    run cat "$TACCTL_CLIENT_STATE/created"
+    assert_output $'alice\nbob'
+}
+
+@test "client install: a host still on the previous range renames the account at the old number, then renumbers it" {
+    _gen > /dev/null
+    _client_env
+    # A host as an earlier release left it: alice at 20001, created.
+    mkdir -p "$TACCTL_CLIENT_STATE"
+    echo alice > "$TACCTL_CLIENT_STATE/created"
+    echo "alice:x:20001:20001:alice (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/alice:/bin/bash" >> "$FAKE_DB/passwd"
+    echo "alice:x:20001:" >> "$FAKE_DB/group"
+    mkdir -p "$TACCTL_CLIENT_HOME_ROOT/alice"
+    echo note > "$TACCTL_CLIENT_HOME_ROOT/alice/note"
+    # The server numbered carol (once alice) 80001 and knows the range it
+    # used before.
+    sed -i "s/^TAC_USERS=.*/TAC_USERS=\$'carol:superuser:80001'/; s/^TAC_UID_PREVIOUS=.*/TAC_UID_PREVIOUS=20000-29999/" "$OUT"
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] 'alice' is now 'carol' (renamed; UID 80001; home kept at ${TACCTL_CLIENT_HOME_ROOT}/alice)"
+    assert_output --partial "'carol': renumbered 20001 -> 80001"
+    refute_output --partial "Created account"
+    refute_output --partial "Deleted account"
+    run grep -cE "^(useradd|userdel) " "$CALLS_LOG"
+    assert_output "0"
+    run grep -E "^(alice|carol):" "$FAKE_DB/passwd"
+    assert_output --partial "carol:x:80001:"
+    [[ -f "$TACCTL_CLIENT_HOME_ROOT/alice/note" ]]
+    run cat "$TACCTL_CLIENT_STATE/created"
+    assert_output "carol"
+}
+
+@test "client install: state files that cannot be rewritten leave the account unrenamed" {
+    _synced_host
+    "$TACCTL_BIN_SCRIPT" user rename alice carol > /dev/null
+    _gen > /dev/null
+    # created cannot be written: a directory in its place is a read error too.
+    chmod 400 "$TACCTL_CLIENT_STATE/created"
+    if [[ -w "$TACCTL_CLIENT_STATE/created" ]]; then skip "writes through file modes (running as root)"; fi
+    run bash "$OUT" --accounts-only
+    chmod 600 "$TACCTL_CLIENT_STATE/created"
+    assert_output --partial "[WARN] 'alice': not renamed to 'carol': tacctl's state files"
+    run grep -c "^usermod -l" "$CALLS_LOG"
+    assert_output "0"
+    run grep -E "^(alice|carol):" "$FAKE_DB/passwd"
+    assert_line --partial "alice:x:80000:80000:"
+    run cat "$TACCTL_CLIENT_STATE/created"
+    assert_output $'alice\nbob'
+}
+
+@test "client install: when usermod -l fails the lists keep the old name" {
+    _synced_host
+    "$TACCTL_BIN_SCRIPT" user rename alice carol > /dev/null
+    _gen > /dev/null
+    USERMOD_L_FAILS=1 run bash "$OUT" --accounts-only
+    assert_success
+    run cat "$TACCTL_CLIENT_STATE/created"
+    assert_output $'alice\nbob'
+    run cat "$TACCTL_CLIENT_STATE/expired"
+    assert_output ""
 }
 
 @test "client install: refuses when no local admin exists outside TACACS+" {

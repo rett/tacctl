@@ -85,6 +85,64 @@ func TestRemovedSkipsTheAccountOfARenamedUser(t *testing.T) {
 	}
 }
 
+// A disabled (inactive) user is current too: the account that holds its
+// number under another name is the one the script renames, so it is not
+// asked about either (the caller puts req.Inactive in current).
+func TestRemovedSkipsTheAccountOfARenamedDisabledUser(t *testing.T) {
+	t.Parallel()
+	e, _ := accountsEnv(t)
+	accts := ParsePasswd(hostPasswd + "ann:x:80010:80010:ann (TACACS+):/home/ann:/bin/bash\n")
+	writeFile(t, e.Paths.UIDs, "# range 80000-89999\ndave:80001\ncarol:80010\nerin:80002\nann:80010\n")
+	for _, tc := range []struct {
+		current map[string]bool
+		want    string
+	}{
+		{map[string]bool{"carol": true}, "dave,erin"},
+		{map[string]bool{}, "dave,erin,ann"},
+	} {
+		got, err := Removed(accts, e.UIDs(), tc.current)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, a := range got {
+			names = append(names, a.Name)
+		}
+		if strings.Join(names, ",") != tc.want {
+			t.Errorf("current %v: removed %q, want %q", tc.current, names, tc.want)
+		}
+	}
+}
+
+// TAC_INACTIVE_UIDS names the inactive users that have a number, without
+// giving any a new one, and is left out when there is none.
+func TestWriteScriptInactiveUIDs(t *testing.T) {
+	e, _, _ := testEnv(t)
+	out := t.TempDir() + "/x.sh"
+	writeFile(t, e.Paths.UIDs, "# range 80000-89999\nalice:80000\nbob:80007\nlow:500\n")
+	req := ScriptRequest{Scope: "lab", Server: "192.0.2.10", Method: Radius, Output: out, Temp: true,
+		Secret: "0123456789abcdef0123456789abcdef", Rows: []string{"alice|15"},
+		Inactive: []string{"bob", "newbie", "low", "Bad", "bob"}}
+	if _, err := e.WriteScript(req); err != nil {
+		t.Fatal(err)
+	}
+	head := strings.SplitN(readFile(t, out), "# --- tacctl", 2)[0]
+	if !strings.Contains(head, "TAC_INACTIVE=$'bob\\nnewbie\\nlow'\nTAC_INACTIVE_UIDS=bob:80007\nTAC_REMOVE_HOMES=") {
+		t.Errorf("header\n%s", head)
+	}
+	if got := readFile(t, e.Paths.UIDs); strings.Contains(got, "newbie") {
+		t.Errorf("a disabled user was given a number:\n%s", got)
+	}
+	// None with a number: no variable.
+	req.Inactive = []string{"newbie"}
+	if _, err := e.WriteScript(req); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.SplitN(readFile(t, out), "# --- tacctl", 2)[0], "TAC_INACTIVE_UIDS") {
+		t.Error("TAC_INACTIVE_UIDS with no number")
+	}
+}
+
 func TestHomesToDelete(t *testing.T) {
 	e, f := accountsEnv(t)
 	current := map[string]bool{"fred": true}

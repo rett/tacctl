@@ -3,7 +3,8 @@
 # a header that sets TAC_METHOD, TAC_SERVER, TAC_PORT, TAC_SECRET, TAC_SCOPE,
 # TAC_USERS (name:tier:uid lines; name:tier:uid:shell for the tacctl server
 # itself, whose tacctl users get the login console), TAC_INACTIVE (users of the scope with no
-# login now: disabled, the accounting sink), TAC_REMOVE_HOMES (the removed
+# login now: disabled, the accounting sink), TAC_INACTIVE_UIDS (name:uid lines
+# for those of them that have a number; optional), TAC_REMOVE_HOMES (the removed
 # users whose home directories go too, or "*" for all), TAC_UID_FIRST and
 # TAC_UID_LAST (the server's UID range), TAC_UID_PREVIOUS (ranges it used
 # before, "<min>-<max> ..."), TAC_LOCAL (1 in the tacctl server's own
@@ -245,21 +246,26 @@ free_id_in_range() {
 # --- Renamed users -------------------------------------------------------------
 # 'tacctl user rename' moves the user's UID to the new name on the server and
 # nothing else: the account here still has the old name. The UID is the
-# link. A listed user with no account here whose UID belongs to an account
-# tacctl created, under a name that is no longer listed, is that account
-# renamed: usermod -l changes the login name only (the home directory keeps
-# its path and the password stays locked), the full name follows, and the
+# link. A listed or disabled user (TAC_INACTIVE_UIDS) with no account here
+# whose UID belongs to an account tacctl created, under a name that is no
+# longer listed or disabled, is that account renamed: usermod -l changes the
+# login name only (the home directory keeps its path, the password stays
+# locked, a disabled account stays expired), the full name follows, and the
 # 'created' and 'expired' lists with it. This runs before check_ids, so the
 # new name is never taken for a UID conflict, and from the UID alone, so a
 # host that missed a rename, or saw two in a row (a -> b -> c), ends the
-# same. Left alone for this run, both names in DEFERRED so nothing else
-# creates or deletes either:
+# same. A host still on an earlier UID range (renumber_previous runs later)
+# has the account at the number the user had in that range: that one is
+# renamed, and renumbered afterwards as any account of the old range. Left
+# alone for this run, both names in DEFERRED so nothing else creates or
+# deletes either:
 #   - the user has processes (logged in): usermod -l would refuse;
 #   - a local account of the new name exists here that tacctl did not create.
 # An account of the new name that tacctl created with another UID is not a
 # rename: the old account goes as a removed user and check_ids reports the
 # difference. Files elsewhere (mail, cron) stay under the old name.
 DEFERRED=" "
+TAC_INACTIVE_UIDS="${TAC_INACTIVE_UIDS:-}"
 
 # uid_has_processes <uid>: a process runs as the UID (or it cannot be told).
 # pgrep matches the user only (never a command line); without pgrep, the
@@ -278,24 +284,50 @@ uid_has_processes() {
     return 1
 }
 
-# rename_state <old> <new>: the name in tacctl's state files.
+# assigned_holder <uid>: a listed or disabled user the server gave the number
+# to ("" when none).
+assigned_holder() {
+    local n _t u _r
+    while IFS=: read -r n _t u _r; do
+        if [[ -n "$n" && "$u" == "$1" ]]; then echo "$n"; return 0; fi
+    done <<< "$TAC_USERS"
+    while IFS=: read -r n u; do
+        if [[ -n "$n" && "$u" == "$1" ]]; then echo "$n"; return 0; fi
+    done <<< "$TAC_INACTIVE_UIDS"
+    return 0
+}
+
+# rename_state <old> <new>: the name in tacctl's state files. Fails (and
+# leaves the files as they were or as far as it got; the caller renames
+# back) when one cannot be rewritten. No temporary file: nothing to fail
+# before the rewrite.
 rename_state() {
-    local f tmp
+    local f content
     for f in created expired; do
-        tmp=$(mktemp "$STATE_DIR/.${f}.XXXXXX")
-        o="$1" n="$2" awk '$0 == ENVIRON["o"] { print ENVIRON["n"]; next } { print }' "$STATE_DIR/$f" > "$tmp"
-        cat "$tmp" > "$STATE_DIR/$f"
-        rm -f "$tmp"
+        content=$(o="$1" n="$2" awk '$0 == ENVIRON["o"] { print ENVIRON["n"]; next } { print }' "$STATE_DIR/$f") || return 1
+        if [[ -n "$content" ]]; then
+            printf '%s\n' "$content" > "$STATE_DIR/$f" || return 1
+        else
+            : > "$STATE_DIR/$f" || return 1
+        fi
     done
 }
 
 # rename_account <old> <new> <uid>: the account of <old> is <new> from now
-# on. Fails (nothing renamed) when usermod -l does.
+# on. Fails (nothing renamed) when the state files cannot follow or
+# usermod -l fails. The state is renamed first and back if usermod fails, so
+# a renamed account is always in 'created' under its new name.
 rename_account() {
     local old="$1" new="$2" uid="$3" home gid group
     home=$(getent passwd "$old" | cut -d: -f6)
     gid=$(getent passwd "$old" | cut -d: -f4)
+    if ! rename_state "$old" "$new"; then
+        rename_state "$new" "$old" || true
+        warn "'${old}': not renamed to '${new}': tacctl's state files in ${STATE_DIR} could not be rewritten. Tried again at the next sync."
+        return 1
+    fi
     if ! usermod -l "$new" "$old"; then
+        rename_state "$new" "$old" || warn "'${old}': the lists in ${STATE_DIR} (created, expired) name it '${new}' although it is not renamed; change that line back to '${old}' by hand."
         warn "'${old}': not renamed to '${new}': usermod -l failed. Tried again at the next sync."
         return 1
     fi
@@ -305,37 +337,69 @@ rename_account() {
         groupmod -n "$new" "$old" || warn "'${new}': its own group '${old}' (GID ${gid}) could not be renamed; rename it by hand: groupmod -n ${new} ${old}"
     fi
     usermod -c "${new} (${PROTO})" "$new" || warn "'${new}': its full name could not be changed."
-    rename_state "$old" "$new"
     info "'${old}' is now '${new}' (renamed; UID ${uid}; home kept at ${home:-none})"
 }
 
+# rename_holder <name> <uid>: the holder of <uid> here (or of the number it
+# had in a previous range, which no listed or disabled user holds), for <name>.
+rename_holder() {
+    local holder="" cand="" prev r lo hi
+    holder=$(getent passwd "$2" | cut -d: -f1 || true)
+    if [[ -z "$holder" ]]; then
+        # Not renumbered yet (renumber_previous runs later): the same offset
+        # in each earlier range.
+        for r in $TAC_UID_PREVIOUS; do
+            lo="${r%-*}" hi="${r#*-}"
+            if ! { uid_number "$lo" && uid_number "$hi"; }; then continue; fi
+            prev=$(($2 - TAC_UID_FIRST + lo))
+            if (( prev < lo || prev > hi )); then continue; fi
+            holder=$(getent passwd "$prev" | cut -d: -f1 || true)
+            if [[ -n "$holder" ]]; then cand="$prev"; break; fi
+        done
+    else
+        cand="$2"
+    fi
+    [[ -n "$holder" && "$holder" != "$1" && "$RENAME_KNOWN" != *" ${holder} "* ]] || return 0
+    is_created "$holder" || return 0
+    case "$(account_state "$1")" in
+        none) ;;
+        foreign)
+            warn "'${holder}' keeps its account: '${1}' is a local account here"
+            DEFERRED+="${holder} "
+            return 0 ;;
+        *) return 0 ;;
+    esac
+    if uid_has_processes "$cand"; then
+        warn "'${holder}': not renamed to '${1}': processes run as UID ${cand} (logged in?); tried again at the next sync"
+        DEFERRED+="${holder} ${1} "
+        return 0
+    fi
+    if ! rename_account "$holder" "$1" "$2"; then
+        DEFERRED+="${holder} ${1} "
+    fi
+}
+
 rename_accounts() {
-    local name _tier uid _shell holder listed=" "
-    for name in $(tac_user_names); do listed+="${name} "; done
+    local name _tier uid _shell
+    # Everyone the server names: a holder among them is not a renamed account.
+    RENAME_KNOWN=" "
+    for name in $(tac_user_names); do RENAME_KNOWN+="${name} "; done
+    while IFS= read -r name; do
+        if [[ -n "$name" ]]; then RENAME_KNOWN+="${name} "; fi
+    done <<< "$TAC_INACTIVE"
     while IFS=: read -r name _tier uid _shell; do
         [[ -n "$name" ]] || continue
         uid_in_range "$uid" || continue
         [[ "$DEFERRED" != *" ${name} "* ]] || continue
-        holder=$(getent passwd "$uid" | cut -d: -f1 || true)
-        [[ -n "$holder" && "$holder" != "$name" && "$listed" != *" ${holder} "* ]] || continue
-        is_created "$holder" || continue
-        case "$(account_state "$name")" in
-            none) ;;
-            foreign)
-                warn "'${holder}' keeps its account: '${name}' is a local account here"
-                DEFERRED+="${holder} "
-                continue ;;
-            *) continue ;;
-        esac
-        if uid_has_processes "$uid"; then
-            warn "'${holder}': not renamed to '${name}': processes run as UID ${uid} (logged in?); tried again at the next sync"
-            DEFERRED+="${holder} ${name} "
-            continue
-        fi
-        if ! rename_account "$holder" "$name" "$uid"; then
-            DEFERRED+="${holder} ${name} "
-        fi
+        rename_holder "$name" "$uid"
     done <<< "$TAC_USERS"
+    # A disabled user keeps an expired account, renamed as well.
+    while IFS=: read -r name uid; do
+        [[ -n "$name" ]] || continue
+        uid_in_range "$uid" || continue
+        [[ "$DEFERRED" != *" ${name} "* ]] || continue
+        rename_holder "$name" "$uid"
+    done <<< "$TAC_INACTIVE_UIDS"
 }
 
 # --- UID consistency -----------------------------------------------------------
@@ -1187,7 +1251,7 @@ set_shell() {
 }
 
 sync_accounts() {
-    local g name tier uid shell id listed=" " inactive=" " managed=" " refused="" member legacy groups console=0 want revoked
+    local g name tier uid shell id listed=" " inactive=" " managed=" " refused="" member legacy groups console=0 want revoked holder
 
     # Earlier releases took pre-existing accounts over ('adopted'). They are
     # not tacctl's: reported once and no longer tracked; the group cleanup
@@ -1329,6 +1393,14 @@ sync_accounts() {
         uid=$(account_uid "$name")
         if ! uid_in_range "$uid"; then
             warn "'${name}' has UID ${uid}, outside ${TAC_UID_RANGE}: tacctl changes nothing on it but its membership in tacctl's groups, although it created it."
+            continue
+        fi
+        # The number is another user's, listed or disabled (a rename this
+        # run did not make): the account is that user's, never removed.
+        holder=$(assigned_holder "$uid")
+        if [[ -n "$holder" && "$holder" != "$name" ]]; then
+            warn "'${name}' keeps its account: its UID ${uid} is assigned to '${holder}' by the server; it is not removed here."
+            DEFERRED+="${name} "
             continue
         fi
         for g in $TAC_GROUPS; do
