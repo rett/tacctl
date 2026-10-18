@@ -593,7 +593,9 @@ Rename a user. The new name is lower case; changing only the spelling
 is how a name from before is fixed. A device matches the typed login name
 exactly, so the rename changes what the person types at the device. The Linux
 UID ledger is keyed by name and is left alone: the new name gets a number at
-its first sync and the old name keeps its own.
+its first sync and the old name keeps its own; on every enrolled host that
+sync removes the account of the old name (its home by the usual rules) and
+creates the new one with a new UID, and the old number cannot be given to it.
 .\" BEGIN GENERATED: command user rename
 .RS
 .PP

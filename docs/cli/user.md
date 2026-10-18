@@ -54,7 +54,9 @@ user rename <old> <new>
     Rename a user; the new name is lower case. Changing only the spelling (`user rename Alice
     alice`) fixes a name from before. Devices match the typed login name exactly, so the rename
     changes what the person types at the device. The Linux UID ledger is keyed by name and is left
-    alone: the new name gets a number at the next host sync and the old one keeps its own
+    alone: the new name gets a number at the next host sync and the old one keeps its own.
+    On every enrolled host that sync removes the account of the old name (its home by the usual
+    rules) and creates the new one with a new UID; the old number cannot be given to it
 
 user move <name> <group>
 

@@ -363,6 +363,13 @@ func lowerDerived(reg *hosts.Registry, name string) string {
 	if _, ok := reg.Find(name); ok {
 		return name
 	}
+	// A host enrolled in another spelling keeps that spelling: a legacy
+	// Web7 stays Web7 when it is enrolled again by its lower-case DNS name.
+	for _, e := range reg.Entries() {
+		if strings.EqualFold(e.Name, name) {
+			return e.Name
+		}
+	}
 	return strings.ToLower(name)
 }
 

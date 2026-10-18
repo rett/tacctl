@@ -73,7 +73,7 @@ func (inv *invocation) caseFindings() []hostFinding {
 			all        []string
 			note       string
 		}{
-			{"user", "user", users, "; devices match the typed login name exactly, so the rename changes what the person types at the device"},
+			{"user", "user", users, "; devices match the typed login name exactly, so the rename changes what the person types at the device; on enrolled hosts the next sync removes the old account and creates the new one with a new UID"},
 			{"scope", "scope", scopes, ""},
 		} {
 			lowers := map[string]int{}

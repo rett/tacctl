@@ -220,11 +220,10 @@ current behaviour; this file is where history lives.
    to rename) refuse a name with an upper-case letter: `Names are lower
    case: use 'alice'. Nothing was changed.` For a device or a host, a name
    taken in another case or a generic one is refused for that reason first.
-   A host name worked out from the host name
-   (`host enroll admin@Web1.example.net`, `--local`) is lowercased without a
-   word, because host names are not case-sensitive, unless a host is already
-   enrolled under exactly that spelling; a name given with `--name` is not
-   changed. The name a device reports to `device onboard` and `device collect
+   The name derived from the target's host name (`host enroll
+   admin@Web1.example.net`, `--local`) is lowercased silently, because host
+   names are not case-sensitive; a host already enrolled in another spelling
+   keeps that spelling; a name given with `--name` is not changed. The name a device reports to `device onboard` and `device collect
    --register`, and the name `device discover` suggests, are lowercased the
    same way. A name that exists with upper case keeps working as it is:
    nothing is migrated or folded, no login changes, and the verbs that read
@@ -234,7 +233,10 @@ current behaviour; this file is where history lives.
    fixed; what follows the name (the users' scope lists, the keys and files
    of a scope or device, the registration of a host) follows it as in any
    rename. The Linux UID ledger is keyed by name and a user rename leaves it:
-   `alice` has no number until a host is synced and `Alice` keeps its own.
+   `alice` has no number until a host is synced and `Alice` keeps its own, so on
+   every enrolled host the next sync removes the account `Alice` (its home by
+   the usual rules) and creates `alice` with a new UID; the old number
+   cannot be given to `alice`.
    `device import` of a registry file and `store import` load names with
    upper case as they are and say in one line how many. `config validate`
    warns of each such device, host, user and scope with the verb that

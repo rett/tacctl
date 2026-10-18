@@ -234,7 +234,7 @@ func TestConfigValidateListsNamesWithUpperCase(t *testing.T) {
 	out := plain(hs.run(nil, "config", "validate") + hs.err.String())
 	for _, want := range []string{
 		"Names:",
-		"the user 'Bob' has upper case in its name; new names are lower case; devices match the typed login name exactly, so the rename changes what the person types at the device (tacctl user rename Bob bob)",
+		"the user 'Bob' has upper case in its name; new names are lower case; devices match the typed login name exactly, so the rename changes what the person types at the device; on enrolled hosts the next sync removes the old account and creates the new one with a new UID (tacctl user rename Bob bob)",
 		"the scope 'Prod-Inner' has upper case in its name; new names are lower case (tacctl scope rename Prod-Inner prod-inner)",
 		"the device 'Core-SW1' has upper case in its name; new names are lower case (tacctl device rename Core-SW1 core-sw1)",
 		"the host 'Web1' has upper case in its name; new names are lower case (tacctl host rename Web1 web1)",
@@ -284,6 +284,8 @@ func TestHostEnrollNamesAreLowerCase(t *testing.T) {
 	// spelling, derived from the host name or given.
 	hs.write("state/linux-hosts", "Web7|root@Web7.example.net||lab|192.0.2.1|\n", 0o600)
 	hs.run(nil, "host", "enroll", "Web7.example.net", "--scope", "lab")
+	hs.expect(0, "Host 'Web7' enrolled.", "")
+	hs.run(nil, "host", "enroll", "web7.example.net", "--scope", "lab")
 	hs.expect(0, "Host 'Web7' enrolled.", "")
 	hs.run(nil, "host", "enroll", "web7.example.net", "--name", "Web7", "--scope", "lab")
 	hs.expect(0, "Host 'Web7' enrolled.", "")
