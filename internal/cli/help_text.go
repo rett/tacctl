@@ -508,11 +508,11 @@ server's own tacctl users comes with 'host enroll --local' and 'host sync'.
 
 Usage: tacctl host <subcommand> [arguments]
 
-  list                                 Show enrolled hosts
+  list [--json]                        Show enrolled hosts, with the address recorded for each
   show <name> [--all] [--json]         One enrolled host in full: connection, scope, address, host keys, sightings,
                                        notices, accounts, last sync and host facts
       --all                            (show) The acknowledged notices too
-      --json                           (show) Print JSON: every field, and --check's findings under 'check'
+      --json                           (list and show) Print JSON (show: every field, and --check's findings under 'check')
       --check                          (show) Log in read-only and compare the host with what tacctl would make it:
                                        one line per difference with the command that fixes it; exit 1 when there is one (superuser only)
   enroll <[user@]host> [options]       Install TACACS+ or RADIUS login on a host over SSH and register it

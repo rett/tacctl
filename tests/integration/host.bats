@@ -314,7 +314,7 @@ on_tty() {
     "$TACCTL_BIN_SCRIPT" user add bob readonly --hash "$HASH" --scopes lab > /dev/null
     "$TACCTL_BIN_SCRIPT" user disable bob > /dev/null
     run "$TACCTL_BIN_SCRIPT" host list
-    assert_line --regexp "web1 +web1 +lab +192\.0\.2\.1 +tacplus +1$"
+    assert_line --regexp "web1 +web1 +[^ ]+ +lab +192\.0\.2\.1 +tacplus +1$"
 }
 
 @test "host sync: unknown host is an error" {
@@ -561,7 +561,28 @@ on_tty() {
     "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab > /dev/null
     run "$TACCTL_BIN_SCRIPT" host list
     assert_success
-    assert_line --regexp "web1 +web1 +lab +192\.0\.2\.1 +tacplus +1"
+    assert_line --regexp "web1 +web1 +[^ ]+ +lab +192\.0\.2\.1 +tacplus +1"
+}
+
+@test "host list --json: a JSON array of the hosts, with the recorded address; [] for none" {
+    run "$TACCTL_BIN_SCRIPT" host list --json
+    assert_success
+    assert_output "[]"
+    "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab > /dev/null
+    echo "old1|admin@old1||lab|192.0.2.1|" >> "${TACCTL_STATE_DIR}/linux-hosts"
+    run "$TACCTL_BIN_SCRIPT" host list --json
+    assert_success
+    run jq -r 'map(.name) | join(",")' <<< "$output"
+    assert_output "web1,old1"
+    run "$TACCTL_BIN_SCRIPT" host list --json
+    run jq -r '.[0] | [.target, .port, .scope, .server, .method, (.address | length > 0), .users, (.findings | length), has("breakglass")] | map(tostring) | join(" ")' <<< "$output"
+    assert_output "web1 22 lab 192.0.2.1 tacplus true 1 0 false"
+    run "$TACCTL_BIN_SCRIPT" host list --json
+    run jq -r '.[1] | [.name, .address, .method] | join(" ")' <<< "$output"
+    assert_output "old1  tacplus"
+    run "$TACCTL_BIN_SCRIPT" host list --bogus
+    assert_failure
+    assert_output --partial "Usage: tacctl host list [--json]"
 }
 
 @test "host: is superuser-only" {
@@ -890,8 +911,8 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     assert_line "TAC_PORT=49"
 
     run "$TACCTL_BIN_SCRIPT" host list
-    assert_line --regexp "web1 +web1 +lab +192\.0\.2\.1 +radius +1$"
-    assert_line --regexp "web2 +web2 +lab +192\.0\.2\.1 +tacplus +1$"
+    assert_line --regexp "web1 +web1 +[^ ]+ +lab +192\.0\.2\.1 +radius +1$"
+    assert_line --regexp "web2 +web2 +[^ ]+ +lab +192\.0\.2\.1 +tacplus +1$"
 
     run "$TACCTL_BIN_SCRIPT" host unenroll web1
     assert_success
@@ -904,7 +925,7 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
 @test "host: a six-field registry line is a tacplus host" {
     echo "old1|admin@old1||lab|192.0.2.1|" > "${TACCTL_STATE_DIR}/linux-hosts"
     run "$TACCTL_BIN_SCRIPT" host list
-    assert_line --regexp "old1 +admin@old1 +lab +192\.0\.2\.1 +tacplus +1$"
+    assert_line --regexp "old1 +admin@old1 +- +lab +192\.0\.2\.1 +tacplus +1$"
     run "$TACCTL_BIN_SCRIPT" host sync old1
     assert_success
     run cat "$PUSHED"
@@ -1171,11 +1192,11 @@ _container_ssh() {
     [[ ! -e "${TACCTL_STATE_DIR}/hosts/web1.json" ]]
 }
 
-@test "host show: a host enrolled before the record shows it as not recorded" {
+@test "host show: a host with no record shows that" {
     echo "web1|admin@web1.example.net||lab|192.0.2.1|" > "${TACCTL_STATE_DIR}/linux-hosts"
     run "$TACCTL_BIN_SCRIPT" host show web1
     assert_success
-    assert_line "  Recorded:     not recorded (before 0.2.2)"
+    assert_line "  Recorded:     no record under this name"
 }
 
 @test "host show --check: read-only, one line per difference with its fix, exit 1" {

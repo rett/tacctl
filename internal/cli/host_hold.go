@@ -96,6 +96,11 @@ func (inv *invocation) hostHoldJSON(e hosts.Entry) *deviceHoldJSON {
 	if !ok {
 		return nil
 	}
+	return holdJSONOfHold(h)
+}
+
+// holdJSONOfHold is the hold record h as JSON.
+func holdJSONOfHold(h conf.Hold) *deviceHoldJSON {
 	return &deviceHoldJSON{Held: true, Address: h.Address, Since: h.Since, By: h.By, Reason: h.Reason}
 }
 

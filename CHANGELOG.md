@@ -179,6 +179,26 @@ current behaviour; this file is where history lives.
    keeps its name; a record that cannot be moved stays under the old name,
    which `host forget` drops.
 
+7. **`host list --json`, an ADDRESS column, and `host show` words a missing
+   record neutrally.** `tacctl host list --json` prints a JSON array, `[]`
+   when there is no host, with no table, footer or warning. Each host has
+   `name`, `local`, `target`, `port` (22 unless the registry gives one; 0 for
+   this server's own host), `scope`, `server`, `method`, `identity` (the path
+   only), `address` (the address recorded at the last enroll or sync, empty
+   when unknown), `users`, `drift` (the scope warning the table prints,
+   empty when none), `breakglass` (the hold, as in `host show --json`, only
+   while the host is held) and `findings` (the `config validate` findings
+   that name the host, each with `text` and `fix`; always empty for an
+   engineer). An engineer lists the hosts of their own scopes in both forms;
+   the engineer sudoers rule gains `host list --json` (`tacctl upgrade`
+   rewrites the drop-in). The table has an ADDRESS column
+   after TARGET: the recorded address, or `-` when none. `host list` takes
+   no other argument (it ignored them before). The model is read once for
+   all rows. `host show` prints `no record under this name` where it printed
+   `not recorded (before 0.2.2)` for the last sync and the host facts of
+   a host with no record under its name: nothing tells a host enrolled
+   before the records from one whose record was lost or forgotten.
+
 ## 0.2.13 (2026-10-16)
 
 1. **The `test` workflow no longer runs on a push to `master`.** After a

@@ -1809,8 +1809,9 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config metrics show
 .TP
-.B "host list"
-Show enrolled Linux hosts with their SSH target, scope, server address,
+.B "host list [ \-\-json ]"
+Show enrolled Linux hosts with their SSH target, the address recorded for the
+host at its last enroll or sync (a dash when none is), scope, server address,
 method and user count. A host with a break\-glass hold is marked
 .B BREAK\-GLASS
 in a
@@ -1822,10 +1823,34 @@ says that the registrations have findings
 .RB ( "config validate" ;
 see
 .BR "host forget" ).
+.B \-\-json
+prints a JSON array instead, empty (\fB[]\fR) when there is no host: for each
+host its
+.BR name ", " local ", " target ", " port " (22 unless the registry gives one; 0 for this server's own host), " scope ", " server ", " method ", " identity " (the path only), " address
+(the recorded one, empty when unknown),
+.B users
+and
+.B drift
+(the scope warning the table prints, empty when none), a
+.B breakglass
+object while the host is held (as
+.B "host show \-\-json"
+has it) and
+.BR findings ,
+the findings of
+.B "config validate"
+that name the host (an array, always empty for an engineer). It prints no
+table, footer or warning. An engineer lists the hosts of their own scopes in
+both forms.
 .\" BEGIN GENERATED: command host list
 .RS
 .PP
 Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-\-json\fR
+(list and show) Print JSON (show: every field, and \-\-check's findings under 'check').
 .RE
 .\" END GENERATED: command host list
 .TP
@@ -1872,7 +1897,7 @@ and
 (a failed sync too) and removed by
 .BR "host unenroll" ;
 a host with no such record shows
-.BR "not recorded (before 0.2.2)" .
+.BR "no record under this name" .
 They are only shown, never used to decide anything. A host with a break\-glass
 hold has a
 .B Break\-glass
@@ -1908,7 +1933,7 @@ Options:
 (show) The acknowledged notices too.
 .TP
 \fB\-\-json\fR
-(show) Print JSON: every field, and \-\-check's findings under 'check'.
+(list and show) Print JSON (show: every field, and \-\-check's findings under 'check').
 .TP
 \fB\-\-check\fR
 (show) Log in read\-only and compare the host with what tacctl would make it: one line per difference with the command that fixes it; exit 1 when there is one (superuser only).

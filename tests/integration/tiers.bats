@@ -582,6 +582,10 @@ _upgrade() {
     assert_success
     assert_output --partial "web1"
     refute_output --partial "db1"
+    as_user en yes -- host list --json
+    assert_success
+    run jq -r 'map(.name) | join(",")' <<< "$output"
+    assert_output "web1,authsrv"
     as_user en yes -- host show web1
     assert_success
     as_user en yes -- host show db1

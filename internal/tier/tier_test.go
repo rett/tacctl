@@ -232,7 +232,7 @@ func TestEngineerSudoersRowsAreExact(t *testing.T) {
 	en := aliasItems(t, Sudoers(), "TACCTL_EN")
 	has := func(item string) bool { return slices.Contains(en, item) }
 	for _, item := range []string{"device import -", "device import - *", "scope staging", "scope staging list",
-		"host list", "host show *", "scope secret *", "scope show *", "scope snmp *", "device location *"} {
+		"host list", "host list --json", "host show *", "scope secret *", "scope show *", "scope snmp *", "device location *"} {
 		if !has(item) {
 			t.Errorf("engineer alias lacks %q", item)
 		}

@@ -574,6 +574,17 @@ func TestRollbackSudoersCases(t *testing.T) {
 		t.Errorf("the 0.2.8 drop-ins were not put back as 0.2.3's:\n%s\n%s", got[s.p.TierSudoersFile], got[s.p.SudoersFile])
 	}
 
+	// The text 0.2.9 to 0.2.13 wrote (no engineer 'host list --json').
+	s = newRBSandbox(t)
+	s.write(s.p.TierSudoersFile, tier.Sudoers0213(), 0o640)
+	p, _ = PlanRollback(s.in)
+	if _, err := ApplyRollback(p); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.snapshotOf(); got[s.p.TierSudoersFile] != tier.Sudoers023() {
+		t.Errorf("the 0.2.13 drop-in was not put back as 0.2.3's:\n%s", got[s.p.TierSudoersFile])
+	}
+
 	// The current text (the new env_keep line) is put back as 0.2.3's too.
 	s = newRBSandbox(t)
 	p, _ = PlanRollback(s.in)

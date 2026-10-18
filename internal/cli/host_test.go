@@ -166,7 +166,7 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 	}
 
 	out := hs.run(nil, "host", "list")
-	if !strings.Contains(plain(out), "  web1  admin@web1.example.net  lab    192.0.2.1  tacplus  3\n") {
+	if !strings.Contains(plain(out), "  web1  admin@web1.example.net  192.0.2.50  lab    192.0.2.1  tacplus  3\n") {
 		t.Errorf("list %q", plain(out))
 	}
 	// A disabled user is inactive (expired on the host, never deleted).

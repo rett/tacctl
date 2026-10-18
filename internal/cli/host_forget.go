@@ -305,7 +305,12 @@ func (inv *invocation) hostForgetFind(reg *hosts.Registry, f *devreg.File, arg s
 // hostFinding is one thing the registrations of the hosts get wrong, with
 // the verb that puts it right. Findings are read-only: nothing is repaired
 // where they are reported.
-type hostFinding struct{ Text, Fix string }
+type hostFinding struct {
+	Text, Fix string
+	// Hosts are the registry names the finding is about (none for a
+	// finding about state no registry line has).
+	Hosts []string
+}
 
 // String is the finding on one line.
 func (f hostFinding) String() string { return f.Text + " (" + f.Fix + ")" }
@@ -347,8 +352,9 @@ func (inv *invocation) hostFindings() []hostFinding {
 	for _, k := range order {
 		if names := byFold[k]; len(names) > 1 {
 			out = append(out, hostFinding{
-				Text: "the hosts " + quoteJoin(names) + " are one name ignoring case and share one record of pinned keys",
-				Fix:  "tacctl host forget <name> drops the stray registration; tacctl host rename <name> <new> gives it a name of its own",
+				Text:  "the hosts " + quoteJoin(names) + " are one name ignoring case and share one record of pinned keys",
+				Fix:   "tacctl host forget <name> drops the stray registration; tacctl host rename <name> <new> gives it a name of its own",
+				Hosts: names,
 			})
 		}
 	}
@@ -358,8 +364,9 @@ func (inv *invocation) hostFindings() []hostFinding {
 		for _, e := range entries {
 			if d := f.Find(e.Name); d != nil {
 				out = append(out, hostFinding{
-					Text: "the host '" + e.Name + "' has the name of the device '" + d.Name + "' (" + d.Address + ")",
-					Fix:  "tacctl host rename " + e.Name + " <new>",
+					Text:  "the host '" + e.Name + "' has the name of the device '" + d.Name + "' (" + d.Address + ")",
+					Fix:   "tacctl host rename " + e.Name + " <new>",
+					Hosts: []string{e.Name},
 				})
 			}
 		}
@@ -384,8 +391,9 @@ func (inv *invocation) hostFindings() []hostFinding {
 		for _, a := range addrs {
 			if names := byAddr[a]; len(names) > 1 {
 				out = append(out, hostFinding{
-					Text: "the hosts " + quoteJoin(names) + " have the same recorded address, " + a,
-					Fix:  "tacctl host forget <name> drops a registration made twice",
+					Text:  "the hosts " + quoteJoin(names) + " have the same recorded address, " + a,
+					Fix:   "tacctl host forget <name> drops a registration made twice",
+					Hosts: names,
 				})
 			}
 		}

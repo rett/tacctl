@@ -22,6 +22,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/hosts"
@@ -38,7 +39,7 @@ var (
 // hostSpecs are the arguments of each verb, for completion (args.go). Host
 // names complete from the registry (KindHosts).
 var hostSpecs = map[string]Spec{
-	"list": {},
+	"list": {Flags: []Flag{flagJSON}},
 	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{
 		{Names: []string{"--all"}}, flagJSON, {Names: []string{"--check"}}}},
 	"enroll": {MaxArgs: 1, Args: []string{""}, Flags: []Flag{
@@ -75,7 +76,7 @@ var hostSpecs = map[string]Spec{
 
 // hostVerbs are the verbs ({Use, Short}), in usage order.
 var hostVerbs = [][2]string{
-	{"list", "Show enrolled hosts"},
+	{"list [--json]", "Show enrolled hosts"},
 	{"show <name> [--all] [--json] [--check]", "One enrolled host in full; --check compares it with what tacctl would make it"},
 	{"enroll <[user@]host> | --local [options]", "Install TACACS+ or RADIUS login on a host over SSH and register it"},
 	{"sync <name> | --all [options]", "Push account adds, deletions and tier changes"},
@@ -115,7 +116,7 @@ func (inv *invocation) host(args []string) error {
 	}
 	switch sub := arg(args, 0); sub {
 	case "list":
-		return inv.hostList()
+		return inv.hostList(rest)
 	case "show":
 		return inv.hostShow(rest)
 	case "enroll":
@@ -153,14 +154,61 @@ func (inv *invocation) registry() (*hosts.Registry, error) {
 
 // --- list ------------------------------------------------------------------------
 
+// hostListUsage is the usage line of 'host list'.
+const hostListUsage = "Usage: tacctl host list [--json]"
+
+// hostListJSON is one host of 'host list --json'.
+type hostListJSON struct {
+	Name   string `json:"name"`
+	Local  bool   `json:"local"`
+	Target string `json:"target"`
+	// Port is the ssh port (22 unless the registry gives one; 0 for this
+	// server's own host).
+	Port     int    `json:"port"`
+	Scope    string `json:"scope"`
+	Server   string `json:"server"`
+	Method   string `json:"method"`
+	Identity string `json:"identity"`
+	// Address is the address recorded at the host's last enroll or sync
+	// (the device registry's), "" when none is.
+	Address string `json:"address"`
+	Users   int    `json:"users"`
+	// Drift is the warning the table prints under it (a scope that no
+	// longer answers the host, or a scope that is gone), "" when none.
+	Drift      string            `json:"drift"`
+	Breakglass *deviceHoldJSON   `json:"breakglass,omitempty"`
+	Findings   []hostFindingJSON `json:"findings"`
+}
+
+// hostFindingJSON is a finding that names the host (the superuser's view:
+// a restricted caller has none).
+type hostFindingJSON struct {
+	Text string `json:"text"`
+	Fix  string `json:"fix"`
+}
+
 // hostList is cmd_host_list.
-func (inv *invocation) hostList() error {
+func (inv *invocation) hostList(args []string) error {
+	p, err := Parse(hostSpecs["list"], args)
+	if err != nil {
+		msg := err.Error()
+		if uf, ok := err.(*UnknownFlagError); ok {
+			msg = "Unknown option: '" + uf.Flag + "'"
+		}
+		return inv.usageErr(msg, hostListUsage)
+	}
+	asJSON := p.Has("--json")
 	reg, err := inv.registry()
 	if err != nil {
 		return err
 	}
-	inv.echo("")
+	if !asJSON {
+		inv.echo("")
+	}
 	if reg.Empty() {
+		if asJSON {
+			return inv.printJSON([]hostListJSON{})
+		}
 		inv.echoE(ui.Bold + "Enrolled Linux hosts" + ui.NC)
 		inv.echo(ui.Rule("Enrolled Linux hosts"))
 		inv.echo("  None. Enroll one with: tacctl host enroll <[user@]host>")
@@ -170,38 +218,48 @@ func (inv *invocation) hostList() error {
 	}
 	// An engineer lists the hosts of their own scopes (D47).
 	f := inv.callerScopes()
-	// A host the server has been told not to answer is marked in a STATE
-	// column, which is there only while one is held in the caller's scopes.
-	held := map[string]bool{}
-	devs, _ := inv.hostDevices()
+	var shown []hosts.Entry
 	for _, e := range reg.Entries() {
 		if f.allows(e.Scope) {
-			if _, ok := inv.hostHoldIn(devs, e); ok {
-				held[e.Name] = true
-			}
+			shown = append(shown, e)
 		}
 	}
-	cols := []ui.Col{ui.Left("NAME"), ui.Left("TARGET"), ui.Left("SCOPE"), ui.Left("SERVER"), ui.Left("METHOD"), ui.Left("USERS")}
-	if len(held) > 0 {
+	// The model and the device registry are read once for every row.
+	m, merr := inv.model()
+	devs, _ := inv.hostDevices()
+	users := func(e hosts.Entry) int {
+		if merr != nil {
+			return 0
+		}
+		return hosts.UserCount(m.LinuxUsers(e.Scope))
+	}
+	recorded := func(e hosts.Entry) string {
+		if devs == nil {
+			return ""
+		}
+		return devs.HostAddressOf(e.Name)
+	}
+	// A host the server has been told not to answer is marked in a STATE
+	// column, which is there only while one is held in the caller's scopes.
+	holds := map[string]conf.Hold{}
+	for _, e := range shown {
+		if h, ok := inv.hostHoldIn(devs, e); ok {
+			holds[e.Name] = h
+		}
+	}
+	if asJSON {
+		return inv.hostListJSONOut(reg, shown, devs, holds, users)
+	}
+	cols := []ui.Col{ui.Left("NAME"), ui.Left("TARGET"), ui.Left("ADDRESS"), ui.Left("SCOPE"), ui.Left("SERVER"), ui.Left("METHOD"), ui.Left("USERS")}
+	if len(holds) > 0 {
 		cols = append(cols, ui.Left("STATE"))
 	}
 	t := ui.NewTable("Enrolled Linux hosts", cols...)
-	for _, e := range reg.Entries() {
-		if !f.allows(e.Scope) {
-			continue
-		}
-		target := e.Target
-		if e.Port != "" {
-			target += ":" + e.Port
-		}
-		users := 0
-		if m, err := inv.model(); err == nil {
-			users = hosts.UserCount(m.LinuxUsers(e.Scope))
-		}
-		row := []any{e.Name, target, e.Scope, e.Server, reg.Method(e.Name), strconv.Itoa(users)}
-		if len(held) > 0 {
+	for _, e := range shown {
+		row := []any{e.Name, hostTargetPort(e), dash(recorded(e)), e.Scope, e.Server, reg.Method(e.Name), strconv.Itoa(users(e))}
+		if len(holds) > 0 {
 			state := any("")
-			if held[e.Name] {
+			if _, ok := holds[e.Name]; ok {
 				state = ui.Styled(ui.Red, "BREAK-GLASS")
 			}
 			row = append(row, state)
@@ -218,20 +276,62 @@ func (inv *invocation) hostList() error {
 	}
 	inv.write(t.String())
 	inv.echo("")
-	if len(held) > 0 {
-		inv.echoE(fmt.Sprintf("  %s%d host(s) held for break-glass%s: tacctl breakglass list", ui.Red, len(held), ui.NC))
+	if len(holds) > 0 {
+		inv.echoE(fmt.Sprintf("  %s%d host(s) held for break-glass%s: tacctl breakglass list", ui.Red, len(holds), ui.NC))
 		inv.echo("")
 	}
-	for _, e := range reg.Entries() {
-		if !f.allows(e.Scope) {
-			continue
-		}
+	for _, e := range shown {
 		if msg := inv.hostScopeDrift(e, inv.hostAddress(e)); msg != "" {
 			inv.app.Out.WarnE(msg)
 		}
 	}
 	inv.hostFindingsFooter()
 	return nil
+}
+
+// hostTargetPort is the target of e as the table shows it: with its ssh
+// port when the registry gives one.
+func hostTargetPort(e hosts.Entry) string {
+	if e.Port != "" {
+		return e.Target + ":" + e.Port
+	}
+	return e.Target
+}
+
+// hostListJSONOut prints 'host list --json': one object for each of shown (the
+// caller's hosts), holds being the ones held. The findings are the
+// superuser's view, so a restricted caller's are empty.
+func (inv *invocation) hostListJSONOut(reg *hosts.Registry, shown []hosts.Entry, devs *devreg.File, holds map[string]conf.Hold, users func(hosts.Entry) int) error {
+	byHost := map[string][]hostFindingJSON{}
+	for _, fd := range inv.hostFindings() {
+		for _, n := range fd.Hosts {
+			byHost[n] = append(byHost[n], hostFindingJSON{Text: fd.Text, Fix: fd.Fix})
+		}
+	}
+	out := []hostListJSON{}
+	for _, e := range shown {
+		local := e.Target == hosts.Local
+		v := hostListJSON{Name: e.Name, Local: local, Target: e.Target, Scope: e.Scope, Server: e.Server,
+			Method: reg.Method(e.Name), Identity: e.Identity, Users: users(e),
+			Drift: inv.hostScopeDrift(e, inv.hostAddress(e)), Findings: []hostFindingJSON{}}
+		if !local {
+			v.Port = 22
+			if n, err := strconv.Atoi(e.Port); err == nil && n > 0 {
+				v.Port = n
+			}
+		}
+		if devs != nil {
+			v.Address = devs.HostAddressOf(e.Name)
+		}
+		if h, ok := holds[e.Name]; ok {
+			v.Breakglass = holdJSONOfHold(h)
+		}
+		if fs := byHost[e.Name]; fs != nil {
+			v.Findings = fs
+		}
+		out = append(out, v)
+	}
+	return inv.printJSON(out)
 }
 
 // hostFindingsFooter is the one line 'host list' ends with when the

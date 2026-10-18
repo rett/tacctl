@@ -3,11 +3,15 @@
 [Documentation](../README.md) › [CLI reference](README.md)
 
 ```
-host list
+host list [--json]
 
-    Show enrolled Linux hosts (target, scope, server, METHOD, users); a host with a break-glass
-    hold is marked BREAK-GLASS in a STATE column; when the registrations have findings (below), a
-    last line says how many and points to `config validate`
+    Show enrolled Linux hosts (target, ADDRESS, scope, server, METHOD, users); a host with a
+    break-glass hold is marked BREAK-GLASS in a STATE column; when the registrations have
+    findings (below), a last line says how many and points to `config validate`
+
+    --json
+        Print a JSON array (`[]` for no host) and no table: name, local, target, port, scope,
+        server, method, identity, address, users, drift, breakglass (while held) and findings
 
 host show <name> [--all] [--json] [--check]
 
@@ -164,6 +168,18 @@ scan result). A host with a [break-glass hold](breakglass.md) is refused:
 that a hold is recorded under. A running `host provisioner rotate` of the host
 refuses it. `host unenroll --force` is not the repair for a duplicate: it runs
 the removal script on the machine that the surviving registration shares.
+
+**Listing.** ADDRESS is the address recorded at the host's last `host enroll`
+or `host sync` (the one a break-glass hold carves out), `-` when none is. In
+`host list --json` each host has `name`, `local`, `target`, `port` (22 unless
+the registry gives one; 0 for this server's own host), `scope`, `server`,
+`method`, `identity` (the path only), `address` (empty when unknown), `users`,
+`drift` (the warning the table prints when the scope no longer answers the
+host, empty when none), `breakglass` (the hold, as in `host show --json`,
+only while the host is held) and `findings` (those of the next paragraph that
+name the host, each `text` and `fix`; always empty for an engineer, who is
+told no findings). An engineer lists the hosts of their own scopes. The
+table's footer and warnings are not printed with `--json`.
 
 **Findings.** `config validate` (under `Linux hosts:`, warnings that change no
 exit status) and `host list` (one last line, `N finding(s): see tacctl config

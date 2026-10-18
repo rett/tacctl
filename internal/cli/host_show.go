@@ -550,7 +550,7 @@ func (inv *invocation) hostShowText(v *hostShowJSON, all bool) {
 	// Last sync.
 	section("Last sync")
 	if ls := v.LastSync; ls == nil {
-		row("Recorded", "not recorded (before 0.2.2)")
+		row("Recorded", "no record under this name")
 	} else {
 		row("When", recordTime(ls.At)+" by "+ls.By+" (host "+ls.Command+")")
 		if ls.OK {
@@ -574,7 +574,7 @@ func (inv *invocation) hostShowText(v *hostShowJSON, all bool) {
 	// Host facts.
 	section("Host facts")
 	if fr := v.Facts; fr == nil {
-		row("Recorded", "not recorded (before 0.2.2)")
+		row("Recorded", "no record under this name")
 	} else {
 		f := fr.Facts()
 		row("Read", recordTime(fr.At))
