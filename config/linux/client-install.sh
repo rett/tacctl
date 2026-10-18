@@ -1399,7 +1399,7 @@ sync_accounts() {
         # run did not make): the account is that user's, never removed.
         holder=$(assigned_holder "$uid")
         if [[ -n "$holder" && "$holder" != "$name" ]]; then
-            warn "'${name}' keeps its account: its UID ${uid} is assigned to '${holder}' by the server; it is not removed here."
+            warn "'${name}' keeps its account: its UID ${uid} is assigned to '${holder}' by the server; it is not removed here. Remove the stale account (userdel ${name}), move it onto its assigned number, or tell the server its real number (tacctl config linux uid)."
             DEFERRED+="${name} "
             continue
         fi

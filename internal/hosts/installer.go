@@ -349,7 +349,10 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 	if err != nil {
 		return ScriptResult{}, err
 	}
-	inactiveUIDs, err := e.inactiveUIDs(req.Inactive)
+	// A kept user (no priv-lvl, or a UID out of the range) has an expired
+	// account on the hosts like a disabled one, so its number goes too.
+	expired := append(append([]string(nil), req.Inactive...), keep...)
+	inactiveUIDs, err := e.inactiveUIDs(expired)
 	if err != nil {
 		return ScriptResult{}, err
 	}
@@ -360,7 +363,7 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 	s := Script{
 		Scope: req.Scope, Method: method, Server: req.Server, Port: port, AcctPort: acctPort,
 		Secret: req.Secret, Users: users, Generated: e.now(), Range: e.rng(), Previous: previous,
-		Inactive: strings.Join(linuxNames(append(append([]string(nil), req.Inactive...), keep...)), "\n"), RemoveHomes: homes,
+		Inactive: strings.Join(linuxNames(expired), "\n"), RemoveHomes: homes,
 		Local: req.Local, EngineerSudo: req.EngineerSudo, RevokeEngineer: req.RevokeEngineer,
 		InactiveUIDs: inactiveUIDs,
 	}

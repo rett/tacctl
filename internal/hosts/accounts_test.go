@@ -143,6 +143,37 @@ func TestWriteScriptInactiveUIDs(t *testing.T) {
 	}
 }
 
+// A kept user (its group has no priv-lvl) has an expired account on the
+// hosts like a disabled one: its number is sent too, and the account that
+// holds it under the old name is the one the script renames. The user is a
+// row of the linux-users view, so the caller's current set has it.
+func TestWriteScriptInactiveUIDsOfAKeptUser(t *testing.T) {
+	e, _, _ := testEnv(t)
+	out := t.TempDir() + "/x.sh"
+	writeFile(t, e.Paths.UIDs, "# range 80000-89999\nalice:80000\nbob:80007\nnopriv:80009\nlow:500\n")
+	req := ScriptRequest{Scope: "lab", Server: "192.0.2.10", Method: Radius, Output: out, Temp: true,
+		Secret: "0123456789abcdef0123456789abcdef", Rows: []string{"alice|15", "nopriv|", "low|1"},
+		Inactive: []string{"bob"}}
+	if _, err := e.WriteScript(req); err != nil {
+		t.Fatal(err)
+	}
+	head := strings.SplitN(readFile(t, out), "# --- tacctl", 2)[0]
+	if !strings.Contains(head, "TAC_INACTIVE=$'bob\\nnopriv\\nlow'\nTAC_INACTIVE_UIDS=$'bob:80007\\nnopriv:80009'\nTAC_REMOVE_HOMES=") {
+		t.Errorf("header\n%s", head)
+	}
+
+	accts := ParsePasswd(hostPasswd + "ann:x:80009:80009:ann (TACACS+):/home/ann:/bin/bash\n")
+	got, err := Removed(accts, e.UIDs(), map[string]bool{"alice": true, "nopriv": true, "low": true, "bob": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range got {
+		if a.Name == "ann" {
+			t.Errorf("the account of a renamed kept user is removed: %+v", got)
+		}
+	}
+}
+
 func TestHomesToDelete(t *testing.T) {
 	e, f := accountsEnv(t)
 	current := map[string]bool{"fred": true}

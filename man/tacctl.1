@@ -2296,8 +2296,8 @@ host, is left as it is and named as refused until a later sync.
 .IP
 An account of a renamed user
 .RB ( "user rename" )
-is renamed by its UID alone, before anything else is checked: a listed or
-disabled user with no account on the host whose UID belongs to an account
+is renamed by its UID alone, before anything else is checked: a listed,
+disabled or kept user (its group has no priv-lvl) with no account on the host whose UID belongs to an account
 tacctl created under a name that is no longer listed is that account renamed
 .RB ( "usermod \-l" ,
 the login name only; the home directory keeps its path, the full name follows,
@@ -2315,8 +2315,14 @@ created or deleted, until a later sync; a local account of the new name that
 tacctl did not create keeps the old account in place; a new name tacctl already
 created with another UID is no rename, two users that swapped names are none
 either, and an account whose UID the server has given to a listed or disabled
-user is never removed (it is kept and named in a warning; the UID check
-reports the difference). If tacctl's lists of created and expired accounts
+user is never removed (it is kept and named in a warning that says how to
+settle it: remove the stale account by hand, move it onto its assigned number,
+or tell the server its real number with
+.BR "config linux uid" ;
+the UID check reports the difference). A number the server never reuses, but
+one an operator hand-assigns to another user after its holder was removed, is
+a rename to a host that still has the removed user's account: the new user
+inherits its home. If tacctl's lists of created and expired accounts
 cannot be rewritten, nothing is renamed. After a rename, the old name must not
 be given to a new user until every host has synced the rename: the UID check
 of a host that has not refuses its sync. A script written by

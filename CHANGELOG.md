@@ -274,11 +274,12 @@ current behaviour; this file is where history lives.
     host that was offline, synced later, or saw the user renamed twice or
     back ends the same, and so does a host still on an earlier UID range
     (the account is found at the number the user had there, renamed, then
-    renumbered). A disabled user is renamed too: the server writes the
-    numbers of the scope's disabled users that have one in a new header
-    line, `TAC_INACTIVE_UIDS` (`name:uid` lines, left out when there is
-    none; a header without it still works), and the account stays expired
-    under its new name. A user who is logged in (processes under the UID)
+    renumbered). A disabled user, or one kept without a login (its group
+    has no priv-lvl), is renamed too: the server writes the numbers of the
+    scope's disabled and kept users that have one in a new header line,
+    `TAC_INACTIVE_UIDS` (`name:uid` lines, left out when there is none; a
+    header without it still works), and the account stays expired under
+    its new name. A user who is logged in (processes under the UID)
     defers the rename to the next sync, with both names left untouched; a
     local account of the new name keeps the old account and says so; two
     users that swapped names are no rename, and the UID check reports the

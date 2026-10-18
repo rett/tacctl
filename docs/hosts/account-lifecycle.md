@@ -30,7 +30,9 @@ tacctl manages an account on a host only when it created it (the host's `/var/li
   as it is (`'Alice' keeps its account: 'alice' is a local account here`).
   If `alice` was already created by tacctl with another UID, nothing is
   renamed and neither account is removed (`'Alice' keeps its account: its
-  UID 80001 is assigned to 'alice' by the server; it is not removed here.`);
+  UID 80001 is assigned to 'alice' by the server; it is not removed here.
+  Remove the stale account (userdel Alice), move it onto its assigned
+  number, or tell the server its real number (tacctl config linux uid).`);
   the UID check reports the difference. Two users that swap names are not
   renamed either. After a rename, do not give the old name to a new user
   (`user add Alice`) before every host has synced the rename: the host's
@@ -40,6 +42,10 @@ tacctl manages an account on a host only when it created it (the host's `/var/li
   check (the number belongs to `Alice`) until it is written again; do not
   pass `--allow-uid-mismatch` to it, which would create `alice` at a free
   number and delete `Alice`.
+  The server never reuses a number, but if an operator hand-assigns a
+  removed user's number to another user (`tacctl config linux uid`), a
+  host that still holds the removed user's account treats it as a rename
+  of that account: the new user inherits its home.
 - **Local accounts and tacctl's UID range:** local `useradd` on a host must not give out UIDs of the server's range, or a local account could take a number tacctl has given out. `host enroll` and `host sync` read the host's `/etc/login.defs` and warn when its `UID_MIN`-`UID_MAX` overlaps the range (the default `UID_MAX` 60000 does not overlap 80000-89999); keep it clear of the range there. tacctl never edits the file.
 - **Accounts an earlier release adopted:** reported once (`Accounts an earlier tacctl adopted are no longer tracked`), taken out of tacctl's groups in that run, and not tracked after that.
 

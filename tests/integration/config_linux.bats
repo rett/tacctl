@@ -1684,6 +1684,39 @@ _synced_host() {
     assert_output --partial "Re-activated account 'carol'."
 }
 
+@test "client install: a kept user (group without priv-lvl) renamed keeps one account, still expired, nothing deleted" {
+    _synced_host
+    echo note > "$TACCTL_CLIENT_HOME_ROOT/bob/note"
+    # bob's group loses its priv-lvl: bob is kept, not listed, as a disabled user.
+    sed -i 's/^\(  readonly: {\)priv_lvl: 1/\1priv_lvl: null/' "${TACCTL_STATE_DIR}/store.yaml"
+    grep -q 'priv_lvl: null' "${TACCTL_STATE_DIR}/store.yaml"
+    _gen > /dev/null
+    bash "$OUT" --accounts-only > /dev/null
+    run cat "$TACCTL_CLIENT_STATE/expired"
+    assert_output "bob"
+    # The store refuses a group with no priv-lvl through the verbs: rename
+    # with it restored, then break it again.
+    sed -i 's/^\(  readonly: {\)priv_lvl: null/\1priv_lvl: 1/' "${TACCTL_STATE_DIR}/store.yaml"
+    "$TACCTL_BIN_SCRIPT" user rename bob dave > /dev/null
+    sed -i 's/^\(  readonly: {\)priv_lvl: 1/\1priv_lvl: null/' "${TACCTL_STATE_DIR}/store.yaml"
+    _gen > /dev/null
+    run sed '/^__TARBALL__$/,$d' "$OUT"
+    assert_line "TAC_INACTIVE=dave"
+    assert_line "TAC_INACTIVE_UIDS=dave:80001"
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only --remove-home
+    assert_success
+    assert_output --partial "[INFO] 'bob' is now 'dave' (renamed; UID 80001; home kept at ${TACCTL_CLIENT_HOME_ROOT}/bob)"
+    refute_output --partial "Deleted account"
+    run grep -cE "^(useradd|userdel) " "$CALLS_LOG"
+    assert_output "0"
+    run grep -E "^(bob|dave):" "$FAKE_DB/passwd"
+    assert_output "dave:x:80001:80000:dave (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/bob:/bin/bash"
+    [[ -f "$TACCTL_CLIENT_HOME_ROOT/bob/note" ]]
+    run cat "$TACCTL_CLIENT_STATE/expired"
+    assert_output "dave"
+}
+
 @test "client install: a disabled user renamed before its account was ever expired is renamed, then expired" {
     _synced_host
     "$TACCTL_BIN_SCRIPT" user disable alice > /dev/null
