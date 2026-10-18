@@ -98,7 +98,18 @@ current behaviour; this file is where history lives.
    changes, since a host may already hold that number. `backup diff` adds
    `linux-hosts`, `staging`, `linux-uids` and each host record where either
    side has one; `backup list` is unchanged. The state format does not
-   change and 0.2.13 ignores the new entries.
+   change and 0.2.13 ignores the new entries. `host move --all` takes one
+   snapshot before the first move and none per host, so a batch of more than
+   30 hosts does not push the state before it out of the 30 snapshots kept.
+   The restore takes the host registry's lock before it changes anything: a
+   registry another command holds for 30 seconds stops it with nothing
+   changed. If putting the host files back fails after the render, the
+   backends are still restarted and the failure is a warning that names the
+   snapshot of the state from before the restore. A host file that cannot be
+   read is named in a red line before the question (`could not compare the
+   host files`), and the restore still puts the files back. When the snapshot
+   fails after `host unenroll` ran the removal, the message says to add
+   `--force` if the removal cannot run again.
 
 5. **`host rename <old> <new>` gives an enrolled host another name, and
    `host enroll` can no longer register a name twice.** The rename is the

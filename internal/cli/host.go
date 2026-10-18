@@ -985,11 +985,23 @@ func (inv *invocation) hostMove(args []string) error {
 		return err
 	}
 	if all {
-		failed, moved := 0, 0
+		var drifted []hosts.Entry
 		for _, e := range reg.Entries() {
-			if inv.hostScopeDrift(e, inv.hostAddress(e)) == "" {
-				continue
+			if inv.hostScopeDrift(e, inv.hostAddress(e)) != "" {
+				drifted = append(drifted, e)
 			}
+		}
+		// One snapshot for the batch, the state before the first move, and
+		// none per host: Retention keeps 30, so a snapshot per host would
+		// push the state before the batch out of the list.
+		if len(drifted) > 0 {
+			if err := inv.snapshotFirst(); err != nil {
+				return err
+			}
+			defer a.Snapshots().Hold()()
+		}
+		failed, moved := 0, 0
+		for _, e := range drifted {
 			if err := inv.hostMoveOne(reg, e, "", pass); err != nil {
 				if !isExit(err) {
 					return err
@@ -1438,7 +1450,7 @@ func (inv *invocation) hostUnenroll(args []string) error {
 	// The state before the host is forgotten (D191): the registry line, the
 	// pins and the record go together.
 	if err := inv.snapshotFirst(); err != nil {
-		a.Out.WarnE("The removal ran on " + name + " but the host is still registered; run the same command again.")
+		a.Out.WarnE("The removal ran on " + name + " but the host is still registered; run the same command again (the removal runs again on the host; if it fails on the host as it is now, add --force, which forgets the host even when the removal fails).")
 		return err
 	}
 	if err := reg.Forget(name); err != nil {

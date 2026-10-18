@@ -35,7 +35,8 @@ func TestHostUnenrollThatCannotSnapshotLeavesTheHost(t *testing.T) {
 	if hs.code == 0 || hs.registry() != before || before == "" {
 		t.Errorf("unenroll: %d, registry %q (was %q)", hs.code, hs.registry(), before)
 	}
-	if !strings.Contains(plain(hs.out.String()), "the host is still registered; run the same command again") {
+	if out := plain(hs.out.String()); !strings.Contains(out, "the host is still registered; run the same command again") ||
+		!strings.Contains(out, "add --force, which forgets the host even when the removal fails") {
 		t.Errorf("stdout %q", hs.out.String())
 	}
 }

@@ -103,10 +103,15 @@ func (r *Registry) lock() (unlock func(), err error) {
 	}
 }
 
-// WithLock runs fn holding the registry's lock, the one its writes take
-// (and the records'), waiting for it as they do. fn must not call a write of
-// the registry or of the records: the lock is not reentrant. 'backup
-// restore' puts the registry and the records back under it.
+// Lock takes the lock the registry's writes take (and the records'), waiting
+// for it as they do, and returns the function that lets go. While it is held,
+// a write of the registry or of the records (which take it too) waits, and
+// this process must not call one: the lock is not reentrant. 'backup restore'
+// holds it from before it changes anything until the host files are back.
+func (r *Registry) Lock() (unlock func(), err error) { return r.lock() }
+
+// WithLock runs fn holding the registry's lock (see Lock). fn must not call a
+// write of the registry or of the records.
 func (r *Registry) WithLock(fn func() error) error {
 	unlock, err := r.lock()
 	if err != nil {
@@ -114,4 +119,13 @@ func (r *Registry) WithLock(fn func() error) error {
 	}
 	defer unlock()
 	return fn()
+}
+
+// SetLockWait changes how long the registry's lock is waited for and returns
+// the function that puts it back. It is the seam of the tests that hold the
+// lock; no command calls it.
+func SetLockWait(d time.Duration) (restore func()) {
+	old := registryLockWait
+	registryLockWait = d
+	return func() { registryLockWait = old }
 }

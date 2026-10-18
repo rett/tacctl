@@ -2132,6 +2132,10 @@ or, without one, the scope that answers its address. As an enroll that names
 a scope does, it names the users whose accounts the move deletes and asks
 first (without a terminal it stops unless given
 .BR \-\-yes ).
+With
+.B \-\-all
+one snapshot is taken before the first move and none per host, so a long batch
+does not push the state before it out of the 30 snapshots kept.
 .\" BEGIN GENERATED: command host move
 .RS
 .PP
@@ -4469,7 +4473,17 @@ again, or
 .B "host unenroll \-\-force"
 after that, for one that goes). The restored ledger can forget a number a host
 already holds, so the note also names every user whose UID it drops or
-changes. The snapshot of the current state taken first holds the live host files.
+changes; a host file that cannot be read is named in a red line,
+.BR "could not compare the host files" ,
+and the restore still puts the files back. The snapshot of the current state taken first holds the live host files.
+.PP
+The restore holds the host registry's lock from before it changes anything: when
+another tacctl command keeps it for 30 seconds the restore stops with the
+registry busy and nothing changed (a snapshot that does not know the hosts does
+not take the lock). The host files are put back last. If that step fails the
+rest of the restore stands and the backends are restarted, and two warnings name
+the error, the snapshot of the state from before the restore and the commands
+that undo the restore or try the host files again.
 .PP
 A snapshot is the directory
 .I /etc/tacctl/backups/<timestamp>/

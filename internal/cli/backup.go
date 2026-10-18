@@ -445,11 +445,19 @@ func (inv *invocation) confirmRestore() bool {
 // snapshotFirst is 'backup_snapshot || { error "Could not snapshot the
 // current state. Nothing was changed."; return 1; }'.
 func (inv *invocation) snapshotFirst() error {
-	if _, err := inv.app.Snapshots().Take(); err != nil {
+	_, err := inv.snapshotFirstID()
+	return err
+}
+
+// snapshotFirstID is snapshotFirst, returning the id of the snapshot it took
+// ("" when it took none: held, or the live state equals the newest one).
+func (inv *invocation) snapshotFirstID() (string, error) {
+	id, err := inv.app.Snapshots().Take()
+	if err != nil {
 		inv.app.Out.Error(err.Error())
-		return inv.usageErr("Could not snapshot the current state. Nothing was changed.")
+		return "", inv.usageErr("Could not snapshot the current state. Nothing was changed.")
 	}
-	return nil
+	return id, nil
 }
 
 // snapshotEnabled is _backup_snapshot_enabled: the backends the tacctl.yaml
@@ -559,10 +567,23 @@ func (inv *invocation) restoreSnapshot(id string) error {
 		return err
 	}
 	defer unlock()
+	// The host registry's lock too, from before anything changes until the
+	// host files are back: a registry another command holds stops the
+	// restore here, with nothing changed, and not half way (the lock is
+	// taken once; restoreHosts relies on it). A snapshot that does not know
+	// the hosts leaves them alone and needs no lock.
+	if snapshot.KnowsHosts(dir) {
+		unlockHosts, err := (&hosts.Registry{Path: a.Paths.LinuxHosts}).Lock()
+		if err != nil {
+			return inv.usageErr("Snapshot " + id + " was not restored: " + err.Error() + ". Nothing was changed.")
+		}
+		defer unlockHosts()
+	}
 	// The current state first, so the restore can be undone with another
 	// one. Retention must not take the snapshot being read.
 	a.Snapshots().KeepID = id
-	if err := inv.snapshotFirst(); err != nil {
+	preID, err := inv.snapshotFirstID()
+	if err != nil {
 		return err
 	}
 	if _, err := set.ApplyForced(inv.ctx, func() error { return inv.installSnapshot(dir) }); err != nil {
@@ -605,11 +626,11 @@ func (inv *invocation) restoreSnapshot(id string) error {
 		return err
 	}
 	// And the host state, last: nothing above depends on it, and the hosts
-	// themselves are not touched (D194).
-	if err := inv.restoreHosts(dir); err != nil {
-		inv.stderrLine(err.Error())
-		return err
-	}
+	// themselves are not touched (D194). The render and the files above are
+	// in place by now, so a failure here does not end the restore: the
+	// backends are reconciled and restarted as for any restore, and the
+	// failure is a warning that names the way back.
+	hostErr := inv.restoreHosts(dir)
 	inv.reconcileBackends(before)
 	if err := set.RestartAll(inv.ctx); err != nil {
 		return err
@@ -618,8 +639,14 @@ func (inv *invocation) restoreSnapshot(id string) error {
 	if holdNote != "" {
 		a.Out.WarnE(holdNote)
 	}
-	for _, l := range hostsNote {
-		a.Out.WarnE(l)
+	if hostErr != nil {
+		a.Out.WarnE("The host state was not fully put back: " + hostErr.Error() + ". Everything else was restored.")
+		pre := inv.preRestoreID(preID)
+		a.Out.WarnE("The state from before the restore is in snapshot " + pre + ". To undo the restore: tacctl backup restore " + pre + ". To try the host files again: tacctl backup restore " + id + ".")
+	} else {
+		for _, l := range hostsNote {
+			a.Out.WarnE(l)
+		}
 	}
 	inv.echo("")
 	inv.warnServerSync("Users whose tier is lower now keep their old groups")
@@ -662,19 +689,25 @@ func (inv *invocation) restoreHoldNote(dir string) string {
 // users whose number the restore drops or changes are named.
 func (inv *invocation) restoreHostsNote(dir string) []string {
 	p := inv.app.Paths
-	live, err := hosts.LoadRegistry(p.LinuxHosts)
-	if err != nil {
-		return nil
-	}
+	live, liveErr := hosts.LoadRegistry(p.LinuxHosts)
 	if !snapshot.KnowsHosts(dir) {
-		if live.Empty() {
+		if liveErr != nil || live.Empty() {
 			return nil
 		}
 		return []string{"This snapshot does not know the hosts (taken by 0.2.13 or older): the host registry, records, staging addresses and UID ledger stay as they are."}
 	}
+	// A file that cannot be read cannot be compared; the restore does not
+	// depend on the comparison, and says so (D192: the warning of a dropped
+	// number must not go missing without a word).
+	unreadable := func(err error) string {
+		return "could not compare the host files: " + err.Error() + "; the restore still puts them back"
+	}
+	if liveErr != nil {
+		return []string{unreadable(liveErr)}
+	}
 	snap, err := hosts.LoadRegistry(filepath.Join(dir, snapshot.HostsName))
 	if err != nil {
-		return nil
+		return []string{unreadable(err)}
 	}
 	var back, gone, differ []string
 	for _, e := range snap.Entries() {
@@ -704,7 +737,10 @@ func (inv *invocation) restoreHostsNote(dir string) []string {
 		out = append(out, "Enrolled hosts change (tacctl host list): "+strings.Join(parts, "; ")+".")
 		out = append(out, "The hosts themselves are not touched. For a host that comes back after 'host unenroll': 'tacctl host sync <name>', 'tacctl host show <name> --check', or 'tacctl host unenroll <name>' again. For one that goes: 'tacctl host enroll' it again, or 'tacctl host unenroll <name> --force' after that.")
 	}
-	if l := restoreLedgerNote(hosts.UIDs{Path: p.LinuxUIDs}, hosts.UIDs{Path: filepath.Join(dir, snapshot.UIDsName)}); l != "" {
+	switch l, err := restoreLedgerNote(hosts.UIDs{Path: p.LinuxUIDs}, hosts.UIDs{Path: filepath.Join(dir, snapshot.UIDsName)}); {
+	case err != nil:
+		out = append(out, unreadable(err))
+	case l != "":
 		out = append(out, l)
 	}
 	return out
@@ -712,13 +748,16 @@ func (inv *invocation) restoreHostsNote(dir string) []string {
 
 // restoreLedgerNote names the users whose UID the snapshot's ledger drops or
 // changes against the live one, and a change of the range it records; "" when
-// the restore changes neither. A host that already holds one of these
-// accounts keeps the number it has.
-func restoreLedgerNote(live, snap hosts.UIDs) string {
-	now, err1 := live.Numbers()
-	after, err2 := snap.Numbers()
-	if err1 != nil || err2 != nil {
-		return ""
+// the restore changes neither; an error when either ledger cannot be read.
+// A host that already holds one of these accounts keeps the number it has.
+func restoreLedgerNote(live, snap hosts.UIDs) (string, error) {
+	now, err := live.Numbers()
+	if err != nil {
+		return "", err
+	}
+	after, err := snap.Numbers()
+	if err != nil {
+		return "", err
 	}
 	numbers := map[string]string{}
 	for _, n := range after {
@@ -739,12 +778,18 @@ func restoreLedgerNote(live, snap hosts.UIDs) string {
 		text = "The UID ledger (linux-uids) is put back as it was and forgets or changes the number of: " + strings.Join(lost, ", ") +
 			". A host that already holds such an account keeps its number, and the next 'host sync' there may stop on a UID mismatch."
 	}
-	cur, _, _ := live.Recorded()
-	was, _, _ := snap.Recorded()
+	cur, _, err := live.Recorded()
+	if err != nil {
+		return "", err
+	}
+	was, _, err := snap.Recorded()
+	if err != nil {
+		return "", err
+	}
 	if cur != was {
 		text += " The range the ledger is numbered for changes from " + rangeText(cur) + " to " + rangeText(was) + "."
 	}
-	return strings.TrimSpace(text)
+	return strings.TrimSpace(text), nil
 }
 
 // rangeText is a recorded range, "none" when the ledger records none.
@@ -759,28 +804,27 @@ func rangeText(r hosts.Range) string {
 // registry whole, the records made to match (a record the snapshot lacks
 // goes), staging back or removed, the UID ledger back as it was. A snapshot
 // that does not know the hosts (no linux-hosts in it) leaves all of it alone.
-// The registry and the records go back under the registry's lock, so a
-// command that writes them is not interleaved with the restore.
+// The caller holds the registry's lock (restoreSnapshot takes it before it
+// changes anything), so a command that writes the registry or the records is
+// not interleaved with the restore; the lock is not reentrant, and nothing
+// here may take it.
 func (inv *invocation) restoreHosts(dir string) error {
 	if !snapshot.KnowsHosts(dir) {
 		return nil
 	}
 	p := inv.app.Paths
-	reg := &hosts.Registry{Path: p.LinuxHosts}
-	if err := reg.WithLock(func() error {
-		snapReg := filepath.Join(dir, snapshot.HostsName)
-		switch st, err := os.Stat(snapReg); {
-		case err != nil:
+	snapReg := filepath.Join(dir, snapshot.HostsName)
+	switch st, err := os.Stat(snapReg); {
+	case err != nil:
+		return err
+	case st.Size() > 0 || cfgIsFile(p.LinuxHosts):
+		// An empty one is written over a live one (the last host is gone
+		// from the snapshot); with no live file there is nothing to empty.
+		if err := backupPut(snapReg, p.LinuxHosts, 0o600); err != nil {
 			return err
-		case st.Size() > 0 || cfgIsFile(p.LinuxHosts):
-			// An empty one is written over a live one (the last host is gone
-			// from the snapshot); with no live file there is nothing to empty.
-			if err := backupPut(snapReg, p.LinuxHosts, 0o600); err != nil {
-				return err
-			}
 		}
-		return inv.restoreHostRecords(dir)
-	}); err != nil {
+	}
+	if err := inv.restoreHostRecords(dir); err != nil {
 		return err
 	}
 	for _, f := range [][2]string{{snapshot.StagingName, inv.stagingPath()}, {snapshot.UIDsName, p.LinuxUIDs}} {
@@ -793,6 +837,19 @@ func (inv *invocation) restoreHosts(dir string) error {
 		}
 	}
 	return nil
+}
+
+// preRestoreID is the snapshot that holds the state from before the restore:
+// the one just taken, or, when none was needed because the live state equals
+// the newest, that one.
+func (inv *invocation) preRestoreID(taken string) string {
+	if taken != "" {
+		return taken
+	}
+	if ids := snapshot.IDs(inv.app.Paths.BackupDir); len(ids) > 0 {
+		return ids[0]
+	}
+	return "(none)"
 }
 
 // restoreHostRecords makes hosts/ match the snapshot's (the records 0600, the
