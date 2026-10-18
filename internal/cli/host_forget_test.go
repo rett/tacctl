@@ -101,6 +101,20 @@ func TestHostForgetConfirms(t *testing.T) {
 	}
 }
 
+// -y is --yes, and the question has the shape of the device questions.
+func TestHostForgetShortYesAndPromptShape(t *testing.T) {
+	sb := renameLab(t)
+	holdTTY(t, sb, "n\n")
+	sb.run("", []string{"host", "forget", "web1"})
+	sb.tty = nil
+	sb.expect(1, "Nothing was changed.", "  Forget it? [y/N]: ")
+	sb.run("", []string{"host", "forget", "web1", "-y"})
+	sb.expect(0, "Host 'web1' forgotten.", "")
+	if strings.Contains(sb.registryText(), "web1|") {
+		t.Errorf("registry %q", sb.registryText())
+	}
+}
+
 func TestHostForgetUsageAndUnknown(t *testing.T) {
 	sb := renameLab(t)
 	before := sb.renameState()
@@ -108,7 +122,7 @@ func TestHostForgetUsageAndUnknown(t *testing.T) {
 		args []string
 		err  string
 	}{
-		{nil, "Usage: tacctl host forget <name> [--yes]"},
+		{nil, "Usage: tacctl host forget <name> [-y]"},
 		{[]string{"a", "b"}, "Usage: tacctl host forget"},
 		{[]string{"web1", "--force"}, "Unknown option: '--force'"},
 		{[]string{"ghost", "--yes"}, "No enrolled host or leftover named 'ghost'"},

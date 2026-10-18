@@ -210,11 +210,11 @@ func TestHostRenameRefusals(t *testing.T) {
 		args []string
 		err  string
 	}{
-		{nil, "Usage: tacctl host rename <old> <new> [--yes]"},
+		{nil, "Usage: tacctl host rename <old> <new> [-y]"},
 		{[]string{"web1"}, "Usage: tacctl host rename"},
 		{[]string{"web1", "a", "b"}, "Usage: tacctl host rename"},
 		{[]string{"web1", "web7", "--bogus"}, "Unknown option: '--bogus'"},
-		{[]string{"-y", "web1", "web7"}, "Unknown option: '-y'"},
+		{[]string{"-z", "web1", "web7"}, "Unknown option: '-z'"},
 		{[]string{"ghost", "web7"}, "No enrolled host named 'ghost'"},
 		{[]string{"web1", "web1"}, "'web1' already has that name."},
 		{[]string{"web1", "7web"}, "Invalid host name '7web'"},
@@ -277,6 +277,16 @@ func TestHostRenameLeftovers(t *testing.T) {
 	if got, want := sb.read("state/staging"), "192.0.2.9/32|lab|host|web7|2026-01-01\n192.0.2.8/32|lab|device|web1|2026-01-01\n192.0.2.7/32|lab|host|web2|2026-01-01\n"; got != want {
 		t.Errorf("staging %q, want %q", got, want)
 	}
+
+	// -y is --yes, and a question has the shape of the device questions.
+	sb3 := renameLab(t)
+	sb3.write("state/hosts/web7.json", "stale\n", 0o600)
+	holdTTY(t, sb3, "n\n")
+	sb3.run("", []string{"host", "rename", "web1", "web7"})
+	sb3.tty = nil
+	sb3.expect(1, "Nothing was changed.", "  Replace it? [y/N]: ")
+	sb3.run("", []string{"host", "rename", "web1", "web7", "-y"})
+	sb3.expect(0, "renamed to 'web7'", "")
 
 	// --yes asks nothing; the old host has no record, so the stray one goes.
 	sb2 := renameLab(t)

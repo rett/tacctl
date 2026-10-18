@@ -23,7 +23,7 @@ import (
 )
 
 // hostForgetUsage is the usage line of 'host forget'.
-const hostForgetUsage = "Usage: tacctl host forget <name> [--yes]"
+const hostForgetUsage = "Usage: tacctl host forget <name> [-y]"
 
 // hostPieces is what the state of one host name holds besides its registry
 // line.
@@ -55,14 +55,14 @@ func (inv *invocation) hostPiecesOf(f *devreg.File, name string) hostPieces {
 	return p
 }
 
-// hostForget is 'host forget <name> [--yes]'.
+// hostForget is 'host forget <name> [-y]'.
 func (inv *invocation) hostForget(args []string) error {
 	a := inv.app
 	yes := false
 	var pos []string
 	for _, w := range args {
 		switch {
-		case w == "--yes":
+		case w == "-y" || w == "--yes":
 			yes = true
 		case strings.HasPrefix(w, "-"):
 			return inv.usageErr("Unknown option: '"+w+"'", hostForgetUsage)
@@ -167,7 +167,7 @@ func (inv *invocation) hostForget(args []string) error {
 	} else {
 		a.Out.InfoE("The host itself is not touched: nothing is sent to it, and its accounts, secrets and PAM setup stay as they are. 'tacctl host unenroll' cleans a host that can be reached.")
 	}
-	if !yes && !a.Prompter().Confirm("Forget it? [y/N] ") {
+	if !yes && !a.Prompter().Confirm("  Forget it? [y/N]: ") {
 		a.Out.InfoE("Nothing was changed.")
 		return exit(1)
 	}

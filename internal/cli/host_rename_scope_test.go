@@ -37,7 +37,7 @@ func TestHostRenameOffersTheHostsOwnScope(t *testing.T) {
 	holdTTY(t, sb, "y\n")
 	sb.run("", []string{"host", "rename", "web1", "web9"})
 	sb.tty = nil
-	sb.expect(0, "Scope renamed: linux-web1 -> linux-web9", "Scope 'linux-web1' is this host's own (no other host uses it). Rename it to 'linux-web9' too? [y/N]")
+	sb.expect(0, "Scope renamed: linux-web1 -> linux-web9", "  Scope 'linux-web1' is this host's own (no other host uses it). Rename it to 'linux-web9' too? [y/N]: ")
 	// The host first, the scope second: both written, the registry's and the
 	// staging file's scope fields follow, the host that was just renamed too.
 	if got, want := sb.registryText(), "web9|root@198.51.100.10||linux-web9|192.0.2.1|\nweb2|root@192.168.1.12||lab|192.0.2.1|\n"; got != want {
@@ -120,7 +120,7 @@ func TestHostRenameScopeStays(t *testing.T) {
 		c.setup(sb)
 		before := sb.registryText()
 		sb.run("y\ny\n", []string{"host", "rename", "web1", "web9", "--yes"})
-		if sb.code != 0 || !strings.Contains(sb.printed(), c.why) {
+		if sb.code != 0 || !strings.Contains(sb.printed(), "[WARN] "+c.why) {
 			t.Errorf("%s: %d\n%s", c.name, sb.code, sb.printed())
 			continue
 		}

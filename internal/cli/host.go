@@ -52,15 +52,15 @@ var hostSpecs = map[string]Spec{
 		{Names: []string{"--identity"}, Value: true, Kind: KindFile},
 		{Names: []string{"--method"}, Value: true, Kind: methodWords},
 		{Names: []string{"--build-on-host"}},
-		{Names: []string{"--yes"}},
+		flagYes,
 		{Names: []string{"--staging"}},
 		flagAllowUIDMismatch, flagRemoveHome}},
 	"sync": {MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome}},
 	"move": {MaxArgs: 2, Args: []string{KindHosts, KindScopes}, Flags: []Flag{{Names: []string{"--all"}, Alone: true},
-		{Names: []string{"--yes"}}, flagAllowUIDMismatch, flagRemoveHome}},
+		flagYes, flagAllowUIDMismatch, flagRemoveHome}},
 	"unenroll": {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--force"}}}},
-	"rename":   {MinArgs: 2, MaxArgs: 2, Args: []string{KindHosts, ""}, Flags: []Flag{{Names: []string{"--yes"}}}},
-	"forget":   {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--yes"}}}},
+	"rename":   {MinArgs: 2, MaxArgs: 2, Args: []string{KindHosts, ""}, Flags: []Flag{flagYes}},
+	"forget":   {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{flagYes}},
 	"target": {MinArgs: 1, MaxArgs: 2, Args: []string{KindHosts, ""}, Flags: []Flag{
 		{Names: []string{"--port"}, Value: true},
 		{Names: []string{"--identity"}, Value: true, Kind: KindFile},
@@ -84,8 +84,8 @@ var hostVerbs = [][2]string{
 	{"move <name> [<scope>] | --all [options]", "Move an enrolled host to another scope (default: the scope answering its address)"},
 	{"target <name> [<[user@]host>] [options]", "Show or change how tacctl reaches an enrolled host over ssh"},
 	{"provisioner <name> rotate <user> [options]", "Switch the account tacctl logs in to the host with, proving the new one before the registry changes"},
-	{"rename <old> <new> [--yes]", "Give an enrolled host another name; its own linux-<name> scope can follow"},
-	{"forget <name> [--yes]", "Drop a host's registration from this server without contacting the host"},
+	{"rename <old> <new> [-y]", "Give an enrolled host another name; its own linux-<name> scope can follow"},
+	{"forget <name> [-y]", "Drop a host's registration from this server without contacting the host"},
 	{"unenroll <name> [--force]", "Remove the login method from the host (accounts and homes are kept)"},
 	{"default-method [tacplus|radius]", "Show or set the method for hosts enrolled without --method"},
 }
@@ -421,7 +421,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 		case "--remove-home":
 			removeHome = true
 			i++
-		case "--yes":
+		case "-y", "--yes":
 			yes = true
 			i++
 		case "--staging":
@@ -1109,20 +1109,20 @@ func (inv *invocation) hostMove(args []string) error {
 		switch {
 		case w == "--all":
 			all = true
-		case w == "--yes" || w == "--remove-home" || w == "--allow-uid-mismatch":
+		case w == "-y" || w == "--yes" || w == "--remove-home" || w == "--allow-uid-mismatch":
 			pass = append(pass, w)
 		case strings.HasPrefix(w, "-"):
-			return inv.usageErr("Unknown option: '"+w+"'", "Usage: tacctl host move <name> [<scope>] | --all  [--yes] [--remove-home] [--allow-uid-mismatch]")
+			return inv.usageErr("Unknown option: '"+w+"'", "Usage: tacctl host move <name> [<scope>] | --all  [-y] [--remove-home] [--allow-uid-mismatch]")
 		case name == "":
 			name = w
 		case scope == "":
 			scope = w
 		default:
-			return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [--yes] [--remove-home] [--allow-uid-mismatch]")
+			return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [-y] [--remove-home] [--allow-uid-mismatch]")
 		}
 	}
 	if all == (name != "") {
-		return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [--yes] [--remove-home] [--allow-uid-mismatch]")
+		return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [-y] [--remove-home] [--allow-uid-mismatch]")
 	}
 	reg, err := inv.registry()
 	if err != nil {
@@ -1256,7 +1256,7 @@ func (inv *invocation) confirmScopeMove(name, from, to string, yes bool) error {
 		return nil
 	}
 	if p := a.Prompter(); p.Interactive() {
-		if p.Confirm("Move " + name + " to '" + to + "' and delete those accounts? [y/N] ") {
+		if p.Confirm("  Move " + name + " to '" + to + "' and delete those accounts? [y/N]: ") {
 			return nil
 		}
 		a.Out.InfoE("Nothing was changed.")

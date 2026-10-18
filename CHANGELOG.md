@@ -118,8 +118,8 @@ current behaviour; this file is where history lives.
    of the host refuses it. The new name follows the rules of a new host name
    with no way round them: no tacctl word, no generic name, no other host or
    registered device equal to it in any case; changing only the spelling
-   (`web1` to `Web1`) is allowed and the same name says `already has that
-   name`. What an earlier host of the new name left (a pin, a record,
+   to lower case (`Web1` to `web1`) is allowed and the same name says
+   `already has that name`. What an earlier host of the new name left (a pin, a record,
    staging addresses) is listed and replaced after a confirmation (`--yes`
    skips it); a break-glass hold under the new name is always refused. After
    a snapshot the registry line is renamed where it is, one write of the
@@ -213,9 +213,8 @@ current behaviour; this file is where history lives.
    a host with no record under its name: nothing tells a host enrolled
    before the records from one whose record was lost or forgotten.
 
-8. **New device, host, user and scope names are lower case.** `device add`,
-   `rename` and `import` (a CSV row for a device the registry does not have),
-   `host enroll` and `host rename`, `user add` and `user rename`, and
+8. **New device, host, user and scope names are lower case.** `device add`
+   and `rename`, `host enroll` and `host rename`, `user add` and `user rename`, and
    `scope add` and `scope rename` (also the scope that `host rename` offers
    to rename) refuse a name with an upper-case letter: `Names are lower
    case: use 'alice'. Nothing was changed.` For a device or a host, a name
@@ -237,12 +236,26 @@ current behaviour; this file is where history lives.
    every enrolled host the next sync removes the account `Alice` (its home by
    the usual rules) and creates `alice` with a new UID; the old number
    cannot be given to `alice`.
-   `device import` of a registry file and `store import` load names with
-   upper case as they are and say in one line how many. `config validate`
+   `device import` (a registry file or a CSV, so a server can be rebuilt
+   from `device export --csv`) and `store import` load names with upper case
+   as they are and say in one line how many. `config validate`
    warns of each such device, host, user and scope with the verb that
    renames it (`Names:`); the warning for a user says that devices match the
    typed login name exactly, so the rename changes what the person types at
    the device. The superuser sees the warnings; an engineer none.
+
+9. **Host verbs: `-y`, one prompt shape, and the scope line of `host
+   rename`.** `host enroll`, `host move`, `host rename` and `host forget`
+   take `-y` as well as `--yes`, as the `device` verbs do. Their questions
+   have the shape of the device questions, an indented `  <Question>?
+   [y/N]: `; the words of the questions and the answers that count (`y` or
+   `Y` alone) do not change. When `host rename` does not rename the
+   scope `linux-<old>` (it is not offered, or another host has taken it
+   since the question), the line `Scope 'linux-<old>' keeps its name: ...`
+   is a warning, so `--yes` does not hide it. `host unenroll` removes the
+   login method from the host and the registration, `host unenroll --force`
+   removes the registration even when the host cannot be cleaned, and `host
+   forget` only drops this server's record of the host.
 
 ## 0.2.13 (2026-10-16)
 

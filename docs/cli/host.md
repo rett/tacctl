@@ -37,7 +37,7 @@ host enroll <[user@]host>|--local [opts]
         SSH port and key
     --build-on-host
         (tacplus) compile pam_tacplus on the host instead of in a container here
-    --yes
+    -y, --yes
         (enroll and move) Move a registered host to another scope even when that deletes accounts
     --staging
         (with --scope) Provisioned off-site: the bench address joins the scope as a /32 until the
@@ -66,13 +66,13 @@ host provisioner <name> rotate <user> (--key <file>|--password) [--remove-old [-
     a new connection (sudo id -u gives 0), then change the registry; --remove-old removes the old
     account last, over the new one
 
-host rename <old> <new> [--yes]
+host rename <old> <new> [-y]
 
     Give an enrolled host another name (lower case; `host rename Web1 web1` fixes a name from
     before); nothing is sent to the host. Its pinned host keys, record, staging addresses and
     break-glass hold follow; asks about its own linux-<name> scope
 
-host forget <name> [--yes]
+host forget <name> [-y]
 
     Drop a host's registration from this server (registry line, pinned keys, record, staging
     addresses, host-key scan result) and send nothing to the host; also what a registry line no
@@ -111,8 +111,8 @@ enrolled, and `host forget <old>` removes them.
 
 What an earlier host of the new name left (a pinned key and address in the
 device registry, a record, staging addresses) is listed and replaced after a
-confirmation; `--yes` skips it and declining changes nothing. A break-glass
-hold recorded under the new name is refused whatever `--yes` says: only
+confirmation; `-y` skips it and declining changes nothing. A break-glass
+hold recorded under the new name is refused whatever `-y` says: only
 `breakglass release` removes a hold.
 
 A snapshot is taken, then the registry line is renamed where it is and one
@@ -128,11 +128,12 @@ that puts it right. The log line is `host rename old= new= by=`.
 When the host's scope is `linux-<old>` (the scope earlier releases made for
 it), no other host uses it, the store has it, `linux-<new>` does not exist and
 `scope rename` would accept the name, both questions come before the first
-write:
+write (the prompt is one line, shown wrapped):
 ```
-Scope 'linux-web1' is this host's own (no other host uses it). Rename it to 'linux-web9' too? [y/N]
+  Scope 'linux-web1' is this host's own (no other host uses it).
+  Rename it to 'linux-web9' too? [y/N]:
 ```
-`--yes` answers both yes. The host is renamed whole first; then the scope is
+`-y` answers both yes. The host is renamed whole first; then the scope is
 renamed as `scope rename` does it, with a snapshot of its own (two points to
 undo to), and the host's registry line and its staging addresses follow the
 scope. Answering no keeps the scope and ends with
@@ -145,13 +146,20 @@ linux-web1 linux-web9.` and exit status 1. Without the question, enrolling
 the renamed host again without `--scope` would default to `linux-<new>` and
 move it.
 
+**Unenroll or forget.** `host unenroll` cleans the host (its tacctl login
+method: the PAM setup and the secret; local accounts and homes stay) and then
+removes the registration. `host unenroll --force` removes the registration
+even when the host cannot be cleaned. `host forget` only drops this server's
+record of a host (registry line, pinned keys, record, staging addresses) and
+touches nothing on the host.
+
 **Forgetting a host.** `tacctl host forget <name>` is the superuser's and
 local: it sends nothing to the host and runs no ssh. After a snapshot it
 drops, for the name, the registry line, the pinned keys, recorded address and
 history in the device registry (the generated `known_hosts` follows), the
 record (`/etc/tacctl/hosts/<name>.json`), the host's staging addresses from
 the `staging` file and the host-key scan result of the seen cache. It lists
-what it would drop and asks (`--yes` skips the question). The host itself is
+what it would drop and asks (`-y` skips the question). The host itself is
 not touched: its accounts, secrets and PAM setup stay, so the command is for a
 registration that is wrong, not for taking a host out of service (`host
 unenroll` does that on a host that can be reached, and drops the host's

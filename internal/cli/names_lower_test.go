@@ -179,8 +179,6 @@ func TestNewDeviceNamesAreLowerCase(t *testing.T) {
 	before := sb.devices()
 	sb.dev("", "add", "Core-SW1", "10.99.0.1", "--no-host-key", "--no-lookup")
 	sb.expect(1, "", "Names are lower case: use 'core-sw1'. Nothing was changed.")
-	sb.dev("Edge-FW,10.99.0.2,cisco\n", "import", "-")
-	sb.expect(1, "", "Names are lower case: use 'edge-fw'.")
 	if sb.devices() != before {
 		t.Errorf("a refused name changed the registry:\n%s", sb.devices())
 	}
@@ -191,6 +189,18 @@ func TestNewDeviceNamesAreLowerCase(t *testing.T) {
 	}
 	sb.dev("", "add", "core-sw1", "10.99.0.1", "--no-host-key", "--no-lookup")
 	sb.expect(0, "", "")
+}
+
+// The CSV of 'device export --csv' loads on a server that has none of the
+// devices, names with upper case as they are, so a server can be rebuilt.
+func TestDeviceImportOfACSVWithUpperCaseLoadsItAsItIs(t *testing.T) {
+	sb := newSandbox(t, true)
+	sb.dev("Edge-FW,10.99.0.2,cisco\nlab-sw,10.99.0.3,cisco\n", "import", "-")
+	sb.expect(0, "Imported: 2 added", "")
+	sb.expect(0, "1 device name(s) have upper case and are loaded as they are", "")
+	if !strings.Contains(sb.devices(), "  Edge-FW: ") {
+		t.Errorf("the name was changed:\n%s", sb.devices())
+	}
 }
 
 // A registry file is existing data: a device with upper case in it loads as
@@ -210,7 +220,7 @@ func TestDeviceImportOfAFileWithUpperCaseLoadsItAsItIs(t *testing.T) {
 	// It is found by name, in any case, and shown as registered.
 	sb.dev("", "show", "core-sw1")
 	sb.expect(0, "Core-SW1", "")
-	// A CSV row for it updates it; a CSV row for a new name is lower case.
+	// A CSV row for it updates it.
 	sb.dev("Core-SW1,10.99.0.1,cisco,,core\n", "import", "-")
 	sb.expect(0, "1 updated", "")
 	sb.expect(0, "1 device name(s) have upper case", "")

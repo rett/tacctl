@@ -178,9 +178,9 @@ device notices [<name>] [--all]
 
 device import [--check] [--replace] [--allow-generic] [-y] <file|->
 
-    CSV (name,address[,vendor[,port[,description]]]) or the registry's YAML; a CSV row for a
-    device the registry does not have must have a lower-case name, a registry file is existing
-    data and loads its names as they are (a line says how many have upper case); merges by default,
+    CSV (name,address[,vendor[,port[,description]]]) or the registry's YAML; a file is existing
+    data (so is the CSV of `device export --csv`) and loads its names as they are (a line says how
+    many have upper case); merges by default,
     `--replace` removes the devices the file does not name together with their configuration records
     and SNMP credentials, as `remove` does; a CSV row, and a YAML file with no `config_syntax`,
     leave a device's registered configuration syntax alone (an engineer imports from standard input
@@ -453,11 +453,13 @@ device config forget <name>[,<name>...] | --all
     administrators
 ```
 
-New device names are lower case: `device add`, `rename`, `import` (a CSV row)
-and the registrations of `device onboard` and `device collect --register`
-refuse a name with upper case (`Names are lower case: use 'core-sw1'. Nothing
-was changed.`); a name a device reports, or `device discover` suggests, is
-lowercased. A name that exists with upper case keeps working, is found in any
+New device names are lower case: `device add`, `rename` and the
+registrations of `device onboard` and `device collect --register` refuse a
+name with upper case (`Names are lower case: use 'core-sw1'. Nothing was
+changed.`); a name a device reports, or `device discover` suggests, is
+lowercased. `device import` loads the names of a file (a CSV from
+`device export --csv` too) as they are, so a server can be rebuilt from its
+export. A name that exists with upper case keeps working, is found in any
 case, and is listed by `tacctl config validate` with the `device rename` that
 fixes it.
 

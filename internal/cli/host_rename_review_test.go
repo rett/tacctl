@@ -155,7 +155,7 @@ func TestHostRenameScopeQuestionPremiseHolds(t *testing.T) {
 	}
 	sb.run("", []string{"host", "rename", "web1", "web9", "--yes"})
 	sb.expect(0, "To rename the scope as well: tacctl scope rename linux-web1 linux-web9", "")
-	if !strings.Contains(sb.printed(), "Scope 'linux-web1' keeps its name: other enrolled hosts use it.") {
+	if !strings.Contains(sb.printed(), "[WARN] Scope 'linux-web1' keeps its name: other enrolled hosts use it.") {
 		t.Errorf("printed:\n%s", sb.printed())
 	}
 	if !sb.hasScope("linux-web1") || sb.hasScope("linux-web9") {

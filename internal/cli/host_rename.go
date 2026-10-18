@@ -21,7 +21,7 @@ import (
 )
 
 // hostRenameUsage is the usage line of 'host rename'.
-const hostRenameUsage = "Usage: tacctl host rename <old> <new> [--yes]"
+const hostRenameUsage = "Usage: tacctl host rename <old> <new> [-y]"
 
 // hostRenamePlan is what a rename has found out before it writes anything.
 type hostRenamePlan struct {
@@ -42,14 +42,14 @@ type hostRenamePlan struct {
 	stays string
 }
 
-// hostRename is 'host rename <old> <new> [--yes]'.
+// hostRename is 'host rename <old> <new> [-y]'.
 func (inv *invocation) hostRename(args []string) error {
 	a := inv.app
 	yes := false
 	var pos []string
 	for _, w := range args {
 		switch {
-		case w == "--yes":
+		case w == "-y" || w == "--yes":
 			yes = true
 		case strings.HasPrefix(w, "-"):
 			return inv.usageErr("Unknown option: '"+w+"'", hostRenameUsage)
@@ -84,21 +84,21 @@ func (inv *invocation) hostRename(args []string) error {
 	}
 	defer unlock()
 	if p.stays != "" {
-		a.Out.InfoE("Scope 'linux-" + oldName + "' keeps its name: " + p.stays + ".")
+		a.Out.WarnE("Scope 'linux-" + oldName + "' keeps its name: " + p.stays + ".")
 	}
 
 	// The questions, all before the first write (D184, D200). --yes answers
 	// them yes; a question that gets no answer is a no.
 	if len(p.leftover) > 0 {
 		a.Out.WarnE("The name '" + newName + "' has what an earlier host of that name left, which the rename replaces: " + strings.Join(p.leftover, "; ") + ".")
-		if !yes && !a.Prompter().Confirm("Replace it? [y/N] ") {
+		if !yes && !a.Prompter().Confirm("  Replace it? [y/N]: ") {
 			a.Out.InfoE("Nothing was changed.")
 			return exit(1)
 		}
 	}
 	renameScope := false
 	if p.offer {
-		renameScope = yes || a.Prompter().Confirm("Scope '"+p.oldScope+"' is this host's own (no other host uses it). Rename it to '"+p.newScope+"' too? [y/N] ")
+		renameScope = yes || a.Prompter().Confirm("  Scope '"+p.oldScope+"' is this host's own (no other host uses it). Rename it to '"+p.newScope+"' too? [y/N]: ")
 	}
 
 	// The state before anything changes (D191).
@@ -157,7 +157,7 @@ func (inv *invocation) hostRename(args []string) error {
 		// The question's premise was that no other host uses the scope; a
 		// host enrolled into it since is read from the registry again.
 		if now, rerr := inv.registry(); rerr == nil && now.OtherHostsUse(p.oldScope, newName) {
-			a.Out.InfoE("Scope '" + p.oldScope + "' keeps its name: other enrolled hosts use it.")
+			a.Out.WarnE("Scope '" + p.oldScope + "' keeps its name: other enrolled hosts use it.")
 			inv.echo("")
 			inv.echo("  To rename the scope as well: tacctl scope rename " + p.oldScope + " " + p.newScope)
 			inv.echo("")

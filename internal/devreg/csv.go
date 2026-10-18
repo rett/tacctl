@@ -120,8 +120,8 @@ func ParseImport(data []byte) ([]Row, error) {
 type ImportResult struct {
 	Added, Updated, Unchanged, Removed []string
 	// Mixed are the names in the rows with upper case that the import
-	// loaded as they are: a registry file is existing data, and so is a CSV
-	// row for a device that is registered under such a name.
+	// loaded as they are: a file of devices (a registry or a CSV) is
+	// existing data.
 	Mixed []string
 }
 
@@ -169,19 +169,14 @@ func (f *File) Import(rows []Row, replace, allowGeneric bool, hostEntries []Entr
 			continue
 		}
 		old := next.Find(d.Name)
-		// A CSV row creates a device: a new name is lower case. A registry
-		// file (the export of another server, or this one) is existing data
-		// and loads as it is; so does a device that is registered under a
-		// name with upper case.
+		// A file of devices (a CSV from 'device export --csv', or a registry)
+		// is existing data and loads as it is, a name with upper case too;
+		// the new-name rule belongs to 'device add'.
 		stored := d.Name
 		if old != nil {
 			stored = old.Name
 		}
 		if names.HasUpper(stored) {
-			if row.CSV && old == nil {
-				say(row, names.LowerLine(d.Name))
-				continue
-			}
 			res.Mixed = append(res.Mixed, stored)
 		}
 		if old == nil && !allowGeneric && IsGeneric(d.Name, next.GenericNames) {

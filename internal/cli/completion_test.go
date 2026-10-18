@@ -176,11 +176,11 @@ func TestCompleteScenarios(t *testing.T) {
 		// name (nothing to complete), then the one flag.
 		{[]string{"host", "rename", ""}, []string{"web1", "web2"}},
 		{[]string{"host", "rename", "web1", ""}, nil},
-		{[]string{"host", "rename", "web1", "web9", ""}, []string{"--yes"}},
+		{[]string{"host", "rename", "web1", "web9", ""}, []string{"-y", "--yes"}},
 		{[]string{"host", "rename", "web1", "web9", "--yes", ""}, nil},
 		// host forget: an enrolled host, then the one flag.
 		{[]string{"host", "forget", ""}, []string{"web1", "web2"}},
-		{[]string{"host", "forget", "web1", ""}, []string{"--yes"}},
+		{[]string{"host", "forget", "web1", ""}, []string{"-y", "--yes"}},
 		{[]string{"host", ""}, []string{"default-method", "enroll", "forget", "list", "move", "provisioner", "rename", "show", "sync", "target", "unenroll"}},
 		{[]string{"install", ""}, []string{"--branch", "-y", "--yes"}},
 		{[]string{"upgrade", ""}, []string{"--branch"}},

@@ -2007,7 +2007,7 @@ address to a scope or give the host a scope of its own
 Naming another scope for a registered host moves it: enroll names the users
 whose accounts the move deletes and asks on a terminal; without one it stops
 unless given
-.BR \-\-yes .
+.BR \-y .
 tacctl never moves a host itself:
 .BR "host sync" ,
 .B "host list"
@@ -2178,7 +2178,7 @@ pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth package a
 \fB\-\-build\-on\-host\fR
 (tacplus) Compile pam_tacplus on the host instead of in a container here.
 .TP
-\fB\-\-yes\fR
+\fB\-y\fR, \fB\-\-yes\fR
 (enroll and move) Move a registered host to another scope even when that deletes accounts.
 .TP
 \fB\-\-staging\fR
@@ -2192,14 +2192,14 @@ pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth package a
 .RE
 .\" END GENERATED: command host enroll
 .TP
-.B "host move " "{ " name " [ " scope " ] | \-\-all } [ \-\-yes ] [ \-\-remove\-home ] [ \-\-allow\-uid\-mismatch ]"
+.B "host move " "{ " name " [ " scope " ] | \-\-all } [ \-y ] [ \-\-remove\-home ] [ \-\-allow\-uid\-mismatch ]"
 Move an enrolled host to another scope: an enroll with its registered
 target, port, identity, server and method, into
 .I scope
 or, without one, the scope that answers its address. As an enroll that names
 a scope does, it names the users whose accounts the move deletes and asks
 first (without a terminal it stops unless given
-.BR \-\-yes ).
+.BR \-y ).
 With
 .B \-\-all
 one snapshot is taken before the first move and none per host, so a long batch
@@ -2214,7 +2214,7 @@ Options:
 \fB\-\-all\fR
 (move) Every host that another scope answers; asks before deleting accounts.
 .TP
-\fB\-\-yes\fR
+\fB\-y\fR, \fB\-\-yes\fR
 (enroll and move) Move a registered host to another scope even when that deletes accounts.
 .TP
 \fB\-\-allow\-uid\-mismatch\fR
@@ -2588,7 +2588,7 @@ Options:
 .RE
 .\" END GENERATED: command host provisioner
 .TP
-.B "host rename " old " " new " [ \-\-yes ]"
+.B "host rename " old " " new " [ \-y ]"
 Give the enrolled host
 .I old
 the name
@@ -2621,7 +2621,7 @@ removes a hold.
 What an earlier host of the new name left (a pin and address in
 .IR devices.yaml ,
 a record, staging addresses) is listed and replaced after a confirmation
-.RB ( \-\-yes
+.RB ( \-y
 skips it); declining changes nothing.
 .IP
 After every refusal and the questions, a snapshot is taken
@@ -2661,7 +2661,7 @@ exists and
 would accept the new name, both questions come first and
 .RI "\(lqScope 'linux\-" old "' is this host's own (no other host uses it). Rename it to 'linux\-" new "' too? [y/N]\(rq"
 is asked.
-.B \-\-yes
+.B \-y
 answers both questions yes. The host rename runs whole; then the scope is
 renamed as
 .B "scope rename"
@@ -2683,12 +2683,12 @@ Requires: \fBsuperuser\fR.
 .PP
 Options:
 .TP
-\fB\-\-yes\fR
+\fB\-y\fR, \fB\-\-yes\fR
 (rename) Answer both questions yes: replace what an earlier host of the new name left, and rename the host's own linux\-<name> scope.
 .RE
 .\" END GENERATED: command host rename
 .TP
-.B "host forget " name " [ \-\-yes ]"
+.B "host forget " name " [ \-y ]"
 Drop the registration of the host
 .I name
 from this server, and nothing else. It is local: nothing is sent to the host and
@@ -2701,7 +2701,7 @@ the host's entries in the
 .I staging
 file and the host\-key scan result of the seen cache. It lists what it would drop
 and asks; the question is skipped with
-.BR \-\-yes .
+.BR \-y .
 The host itself is not touched: its accounts, secrets and PAM setup stay
 .RB ( "host unenroll"
 cleans a host that can be reached, and drops its staging entries and record
@@ -2751,20 +2751,22 @@ Requires: \fBsuperuser\fR.
 .PP
 Options:
 .TP
-\fB\-\-yes\fR
+\fB\-y\fR, \fB\-\-yes\fR
 (forget) Forget the host without asking.
 .RE
 .\" END GENERATED: command host forget
 .TP
 .B "host unenroll " name " [ \-\-force ]"
-Run the removal script on the host and drop it from the registry, with its
+Clean the host and remove its registration: run the removal script on the host and drop it from the registry, with its
 pinned host keys, its record and its staging entries (the staging /32 stays a
 prefix of its scope; the
 .B "scope prefixes"
 line that drops it is printed). Local accounts and home directories stay. If the removal
 fails the host stays registered unless
 .B \-\-force
-is given. A snapshot is taken just before the registry changes, so
+is given, which removes the registration even when the host cannot be cleaned.
+.B "host forget"
+only drops this server's record of a host and touches nothing on it. A snapshot is taken just before the registry changes, so
 .B "backup restore"
 can bring the host back into the registry. A host with a break\-glass hold is
 refused, with or without
@@ -7676,9 +7678,12 @@ are skipped) or from the registry's own YAML, from a file or from stdin
 .RB ( \- ;
 an engineer's import is from stdin only, with the options after the
 .BR \- ).
-A CSV row for a device the registry does not have must have a lower\-case name; a
-registry file is existing data and its names are loaded as they are, with one line
-saying how many have upper case. Devices of the file are added, or update the registered device of the same name
+A file of devices is existing data (so is the CSV of
+.BR "device export \-\-csv" ):
+its names are loaded as they are, with one line saying how many have upper case;
+the lower\-case rule is for new devices, through
+.BR "device add" .
+Devices of the file are added, or update the registered device of the same name
 (a CSV row leaves the hostname and the legacy-ssh setting alone, and a file that
 carries no
 .B config_syntax

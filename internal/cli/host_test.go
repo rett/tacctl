@@ -259,7 +259,7 @@ func TestHostEnrollScopeChoice(t *testing.T) {
 	if !strings.Contains(hs.out.String(), "their accounts on web1 are deleted: alice, bob") || hs.pushed != "" {
 		t.Errorf("move: %q pushed %d", hs.out.String(), len(hs.pushed))
 	}
-	hs.run(nil, "host", "enroll", "web1", "--scope", "linux-web1", "--yes", "--build-on-host")
+	hs.run(nil, "host", "enroll", "web1", "--scope", "linux-web1", "-y", "--build-on-host")
 	hs.expect(0, "Host 'web1' enrolled", "")
 	if hs.registry() != "web1|web1||linux-web1|198.51.100.7|\n" {
 		t.Errorf("registry %q", hs.registry())
