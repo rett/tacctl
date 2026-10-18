@@ -3,7 +3,7 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.14
+## 0.2.14 (2026-10-17)
 
 1. **`device address` moves a break-glass hold with its device.** On a
    device that is held, changing the address used to be refused until the
