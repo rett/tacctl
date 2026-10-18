@@ -242,6 +242,102 @@ free_id_in_range() {
     return 1
 }
 
+# --- Renamed users -------------------------------------------------------------
+# 'tacctl user rename' moves the user's UID to the new name on the server and
+# nothing else: the account here still has the old name. The UID is the
+# link. A listed user with no account here whose UID belongs to an account
+# tacctl created, under a name that is no longer listed, is that account
+# renamed: usermod -l changes the login name only (the home directory keeps
+# its path and the password stays locked), the full name follows, and the
+# 'created' and 'expired' lists with it. This runs before check_ids, so the
+# new name is never taken for a UID conflict, and from the UID alone, so a
+# host that missed a rename, or saw two in a row (a -> b -> c), ends the
+# same. Left alone for this run, both names in DEFERRED so nothing else
+# creates or deletes either:
+#   - the user has processes (logged in): usermod -l would refuse;
+#   - a local account of the new name exists here that tacctl did not create.
+# An account of the new name that tacctl created with another UID is not a
+# rename: the old account goes as a removed user and check_ids reports the
+# difference. Files elsewhere (mail, cron) stay under the old name.
+DEFERRED=" "
+
+# uid_has_processes <uid>: a process runs as the UID (or it cannot be told).
+# pgrep matches the user only (never a command line); without pgrep, the
+# real and effective UIDs of /proc/<pid>/status are read.
+uid_has_processes() {
+    local uid="$1" rc=0 f ids
+    if command -v pgrep >/dev/null 2>&1; then
+        pgrep -u "$uid" >/dev/null 2>&1 || rc=$?
+        [[ "$rc" != "1" ]]
+        return
+    fi
+    for f in /proc/[0-9]*/status; do
+        ids=$(awk '$1 == "Uid:" { print " " $2 " " $3 " "; exit }' "$f" 2>/dev/null) || continue
+        if [[ "$ids" == *" ${uid} "* ]]; then return 0; fi
+    done
+    return 1
+}
+
+# rename_state <old> <new>: the name in tacctl's state files.
+rename_state() {
+    local f tmp
+    for f in created expired; do
+        tmp=$(mktemp "$STATE_DIR/.${f}.XXXXXX")
+        o="$1" n="$2" awk '$0 == ENVIRON["o"] { print ENVIRON["n"]; next } { print }' "$STATE_DIR/$f" > "$tmp"
+        cat "$tmp" > "$STATE_DIR/$f"
+        rm -f "$tmp"
+    done
+}
+
+# rename_account <old> <new> <uid>: the account of <old> is <new> from now
+# on. Fails (nothing renamed) when usermod -l does.
+rename_account() {
+    local old="$1" new="$2" uid="$3" home gid group
+    home=$(getent passwd "$old" | cut -d: -f6)
+    gid=$(getent passwd "$old" | cut -d: -f4)
+    if ! usermod -l "$new" "$old"; then
+        warn "'${old}': not renamed to '${new}': usermod -l failed. Tried again at the next sync."
+        return 1
+    fi
+    # An account of an earlier release has a group of its own, named like it.
+    group=$(getent group "$old" || true)
+    if [[ -n "$group" && "$(cut -d: -f3 <<< "$group")" == "$gid" ]] && ! getent group "$new" >/dev/null; then
+        groupmod -n "$new" "$old" || warn "'${new}': its own group '${old}' (GID ${gid}) could not be renamed; rename it by hand: groupmod -n ${new} ${old}"
+    fi
+    usermod -c "${new} (${PROTO})" "$new" || warn "'${new}': its full name could not be changed."
+    rename_state "$old" "$new"
+    info "'${old}' is now '${new}' (renamed; UID ${uid}; home kept at ${home:-none})"
+}
+
+rename_accounts() {
+    local name _tier uid _shell holder listed=" "
+    for name in $(tac_user_names); do listed+="${name} "; done
+    while IFS=: read -r name _tier uid _shell; do
+        [[ -n "$name" ]] || continue
+        uid_in_range "$uid" || continue
+        [[ "$DEFERRED" != *" ${name} "* ]] || continue
+        holder=$(getent passwd "$uid" | cut -d: -f1 || true)
+        [[ -n "$holder" && "$holder" != "$name" && "$listed" != *" ${holder} "* ]] || continue
+        is_created "$holder" || continue
+        case "$(account_state "$name")" in
+            none) ;;
+            foreign)
+                warn "'${holder}' keeps its account: '${name}' is a local account here"
+                DEFERRED+="${holder} "
+                continue ;;
+            *) continue ;;
+        esac
+        if uid_has_processes "$uid"; then
+            warn "'${holder}': not renamed to '${name}': processes run as UID ${uid} (logged in?); tried again at the next sync"
+            DEFERRED+="${holder} ${name} "
+            continue
+        fi
+        if ! rename_account "$holder" "$name" "$uid"; then
+            DEFERRED+="${holder} ${name} "
+        fi
+    done <<< "$TAC_USERS"
+}
+
 # --- UID consistency -----------------------------------------------------------
 # tacctl gives each user one number, its UID on every host; its primary
 # group is tac-users (see "tacctl's groups"). Nothing is created or changed
@@ -252,6 +348,8 @@ check_ids() {
     while IFS=: read -r name _tier uid _shell; do
         [[ -n "$name" ]] || continue
         uid_in_range "$uid" || continue
+        # Waiting for a rename (see "Renamed users"): not created, not a conflict.
+        [[ "$DEFERRED" != *" ${name} "* ]] || continue
         case "$(account_state "$name")" in
             managed)
                 cur=$(account_uid "$name")
@@ -303,6 +401,7 @@ TXT
     exit 1
 }
 
+rename_accounts
 check_ids
 
 # --- PAM module ----------------------------------------------------------------
@@ -783,24 +882,6 @@ if [[ "$CLIENT_TEST" == "1" ]]; then
     RENUMBER_SCAN_ROOTS="${TACCTL_CLIENT_SCAN_ROOTS:-$HOME_ROOT}"
 fi
 RENUMBERED=0
-DEFERRED=" "
-
-# uid_has_processes <uid>: a process runs as the UID (or it cannot be told).
-# pgrep matches the user only (never a command line); without pgrep, the
-# real and effective UIDs of /proc/<pid>/status are read.
-uid_has_processes() {
-    local uid="$1" rc=0 f ids
-    if command -v pgrep >/dev/null 2>&1; then
-        pgrep -u "$uid" >/dev/null 2>&1 || rc=$?
-        [[ "$rc" != "1" ]]
-        return
-    fi
-    for f in /proc/[0-9]*/status; do
-        ids=$(awk '$1 == "Uid:" { print " " $2 " " $3 " "; exit }' "$f" 2>/dev/null) || continue
-        if [[ "$ids" == *" ${uid} "* ]]; then return 0; fi
-    done
-    return 1
-}
 
 # renumber_account <name> <old> <new>: fails (account untouched) when it
 # cannot be renumbered now.

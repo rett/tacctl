@@ -264,6 +264,52 @@ func (u UIDs) Assign(name, uid string) error {
 	return replaceFile(u.Path, []byte(b.String()), 0o600)
 }
 
+// Rename is the ledger half of 'user rename': every line of old becomes
+// "new:<uid>" in place, so the user keeps its number and the comment and
+// range lines and the order of the file stay as they are (written with
+// writeAtomic, mode 0600). moved is false, with the file untouched, when
+// old has no line, and when new already has one (the caller warns: the
+// numbers of two users are never merged). The file has no lock of its own:
+// the caller holds the apply lock, and a concurrent 'host sync' reads the
+// file once, before or after the move.
+func (u UIDs) Rename(old, new string) (moved bool, err error) {
+	data, err := os.ReadFile(u.Path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	lines := awkRecords(string(data))
+	var hasOld bool
+	for _, l := range lines {
+		if strings.HasPrefix(l, "#") {
+			continue
+		}
+		switch name := awkField(awkFields(l, ":"), 1); {
+		case awkEqual(name, new):
+			return false, nil
+		case awkEqual(name, old):
+			hasOld = true
+		}
+	}
+	if !hasOld {
+		return false, nil
+	}
+	// Line by line, so the '#' lines and the order stay where they are.
+	var b strings.Builder
+	for _, l := range lines {
+		if f := awkFields(l, ":"); !strings.HasPrefix(l, "#") && awkEqual(awkField(f, 1), old) {
+			l = new + ":" + awkField(f, 2)
+		}
+		b.WriteString(l + "\n")
+	}
+	if err := writeAtomic(u.Path, []byte(b.String()), 0o600); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // Listing is the body of 'config linux uid' with no user:
 // "sort -t: -k2 -n | awk -F: '{ printf "  %-24s %s\n", $1, $2 }'", an
 // entry outside the range marked as not used on hosts.

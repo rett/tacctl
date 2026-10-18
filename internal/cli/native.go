@@ -155,10 +155,24 @@ func (inv *invocation) model() (*model.Model, error) {
 // backend renders and restarts as it needs. The error is StoreApply's
 // (printed: exit 1 or 3) or fn's (unprinted: exit.go reports it).
 func (inv *invocation) storeApply(fn func(*store.Store) error) error {
+	return inv.storeApplyThen(fn, nil)
+}
+
+// storeApplyThen is storeApply with after run once fn's store write has
+// succeeded, still in the writer: under the apply lock, after the
+// pre-change snapshot and before the render. after reports its own
+// failures (it has no error to return: the store write stays and is
+// rendered, as the caller says what is left undone).
+func (inv *invocation) storeApplyThen(fn func(*store.Store) error, after func()) error {
 	a := inv.app
 	_, err := a.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, func() error {
-		_, err := store.Mutate(a.Paths.StoreFile, a.MutateOptions(), fn)
-		return err
+		if _, err := store.Mutate(a.Paths.StoreFile, a.MutateOptions(), fn); err != nil {
+			return err
+		}
+		if after != nil {
+			after()
+		}
+		return nil
 	})
 	return err
 }

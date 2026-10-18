@@ -62,6 +62,29 @@ func TestParsePasswdAndRemoved(t *testing.T) {
 	}
 }
 
+// A renamed user's account is not a removed one: its number is a current
+// user's on the ledger (the script renames it), so the home is not asked
+// about. A number the ledger gives to nobody current still is.
+func TestRemovedSkipsTheAccountOfARenamedUser(t *testing.T) {
+	t.Parallel()
+	e, _ := accountsEnv(t)
+	accts := ParsePasswd(hostPasswd + "ann:x:80010:80010:ann (TACACS+):/home/ann:/bin/bash\n")
+	// ann was renamed to fred2 before the host saw it; dave's number is
+	// held by a user that is no longer current.
+	writeFile(t, e.Paths.UIDs, "# range 80000-89999\ndave:80001\nfred2:80010\nerin:80002\nann:80010\n")
+	got, err := Removed(accts, e.UIDs(), map[string]bool{"fred2": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, a := range got {
+		names = append(names, a.Name)
+	}
+	if strings.Join(names, ",") != "dave,erin" {
+		t.Errorf("removed %q", names)
+	}
+}
+
 func TestHomesToDelete(t *testing.T) {
 	e, f := accountsEnv(t)
 	current := map[string]bool{"fred": true}
@@ -200,6 +223,24 @@ func TestScriptRangeAndProtocol(t *testing.T) {
 	}
 	if strings.Contains(Script{}.Header(), "TAC_LOCAL") {
 		t.Error("TAC_LOCAL in a host's header")
+	}
+}
+
+// The line of a renamed account lists the new name under Updated, and
+// neither name as created or removed.
+func TestAccountChangesTakeARename(t *testing.T) {
+	t.Parallel()
+	var c AccountChanges
+	for _, l := range []string{
+		"[INFO] 'Alice' is now 'alice' (renamed; UID 80000; home kept at /home/Alice)",
+		"[INFO] 'alice': primary group is now tac-users (was GID 80000).",
+		"[INFO] 'bob' is now 'bobby' (renamed; UID 80001; home kept at none)",
+		"[INFO] Accounts: 2 managed by tacctl here.",
+	} {
+		c.take(l)
+	}
+	if got := c; len(got.Created) != 0 || len(got.Removed) != 0 || len(got.Updated) != 2 || got.Updated[0] != "alice" || got.Updated[1] != "bobby" {
+		t.Errorf("changes %+v", got)
 	}
 }
 

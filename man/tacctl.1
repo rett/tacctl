@@ -591,11 +591,22 @@ Requires: \fBsuperuser\fR.
 Rename a user. The new name is lower case; changing only the spelling
 .RB ( "user rename Alice alice" )
 is how a name from before is fixed. A device matches the typed login name
-exactly, so the rename changes what the person types at the device. The Linux
-UID ledger is keyed by name and is left alone: the new name gets a number at
-its first sync and the old name keeps its own; on every enrolled host that
-sync removes the account of the old name (its home by the usual rules) and
-creates the new one with a new UID, and the old number cannot be given to it.
+exactly, so the rename changes what the person types at the device. The user
+keeps the Linux UID: the line of the old name in
+.I linux\-uids
+becomes the new name's, in place, under the apply lock after the pre\-change
+snapshot, and the command says so
+.RB ( "UID <uid> follows the rename" ).
+With enrolled hosts that list the user it also says that the next
+.B "host sync"
+renames the account on each of them, by its UID, keeping the home directory
+where it is. A user with no line is renamed as before. A new name that already
+has a line keeps its own number, the ledger is left alone, and a warning says
+that hosts then remove the old account and create the new one. If the ledger
+cannot be written after the rename the command says so, names the snapshot to
+restore and exits 1. The ledger has no lock of its own: a
+.B "host sync"
+reading it at the moment of the rename sees the file before or after.
 .\" BEGIN GENERATED: command user rename
 .RS
 .PP
@@ -2282,6 +2293,28 @@ Files under
 that still carry the old number are listed (at most 20), never changed. An
 account whose user is logged in, or whose new UID is taken on the
 host, is left as it is and named as refused until a later sync.
+.IP
+An account of a renamed user
+.RB ( "user rename" )
+is renamed by its UID alone, before anything else is checked: a listed user
+with no account on the host whose UID belongs to an account tacctl created
+under a name that is no longer listed is that account renamed
+.RB ( "usermod \-l" ,
+the login name only; the home directory keeps its path, the full name follows,
+and so do tacctl's lists of the accounts it created and expired)
+.RI "(\(lq'" old "' is now '" new "' (renamed; UID " uid "; home kept at " home )\(rq).
+A host that missed a rename, or saw two, ends the same. No question is asked
+about the home of the old name, and
+.B "host show"
+lists the account as updated. Mail and cron spools under the old name are
+left. An account whose user is logged in is not renamed, and neither name is
+created or deleted, until a later sync; a local account of the new name that
+tacctl did not create keeps the old account in place; a new name tacctl already
+created with another UID is no rename (the old account is removed as a removed
+user and the difference is reported). A script written by
+.B "config linux script"
+before 0.2.14 has no rename and stops at its UID check until it is written
+again.
 .IP
 A removed user's home directory is deleted only when asked for. From a
 terminal, enroll and sync read the host's

@@ -7,6 +7,7 @@ package cli
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -749,12 +750,96 @@ func (inv *invocation) userRename(args []string) error {
 	// server (and its tac-superuser) goes at the sync that follows; the new
 	// name gets its account there.
 	watch := inv.watchServerTiers()
-	if err := inv.storeApply(func(s *store.Store) error { return s.UserRename(oldname, newname) }); err != nil {
+	hostCount := inv.enrolledHostsWith(oldname)
+	var mv uidMove
+	if err := inv.storeApplyThen(func(s *store.Store) error { return s.UserRename(oldname, newname) }, func() {
+		mv = inv.moveUID(oldname, newname)
+	}); err != nil {
 		return err
 	}
-	inv.app.Out.Info("User renamed: " + oldname + " -> " + newname)
+	out := inv.app.Out
+	out.Info("User renamed: " + oldname + " -> " + newname)
+	switch {
+	case mv.err != nil:
+		id := "<id>"
+		if ids := inv.snapshotIDs(); len(ids) > 0 {
+			id = ids[0]
+		}
+		out.Error("User renamed, but linux-uids could not be rewritten: " + msgsJoin(mv.err) +
+			". Restore snapshot " + id + " (tacctl backup restore " + id + ") and rename again once the file can be written.")
+		return exit(1)
+	case mv.moved:
+		out.Info("UID " + mv.uid + " follows the rename (linux-uids).")
+		if hostCount > 0 {
+			out.Info(hostsText(hostCount) + ": the account '" + oldname + "' is renamed to '" + newname +
+				"' at each host's next sync, home kept at /home/" + oldname + ": tacctl host sync --all")
+		}
+	case mv.heldBy != "":
+		out.Warn("'" + newname + "' already has UID " + mv.heldBy + " in linux-uids; the account '" + oldname + "' (UID " + mv.uid +
+			") is removed on hosts and '" + newname + "' created with " + mv.heldBy)
+	}
 	inv.echo("")
 	return watch.lowered("'"+oldname+"'", "'"+oldname+"' keeps the groups of the old tier")
+}
+
+// uidMove is what a rename did to the UID ledger: moved (the line of the
+// old name is now the new name's, uid its number), heldBy (the new name
+// already had a line, with that number, and the ledger is as it was; uid
+// is the old name's), or err.
+type uidMove struct {
+	moved  bool
+	uid    string
+	heldBy string
+	err    error
+}
+
+// moveUID is the ledger half of 'user rename', run by the writer under the
+// apply lock (the snapshot holds linux-uids). The ledger has no lock of its
+// own: a 'host sync' running meanwhile reads it once, and sees the file
+// before or after the move.
+func (inv *invocation) moveUID(oldname, newname string) uidMove {
+	uids := hosts.UIDs{Path: inv.app.Paths.LinuxUIDs}
+	uid, err := uids.Lookup(oldname)
+	if err != nil || uid == "" {
+		return uidMove{err: err}
+	}
+	moved, err := uids.Rename(oldname, newname)
+	if err != nil {
+		return uidMove{uid: uid, err: err}
+	}
+	if moved {
+		return uidMove{moved: true, uid: uid}
+	}
+	held, err := uids.Lookup(newname)
+	return uidMove{uid: uid, heldBy: held, err: err}
+}
+
+// enrolledHostsWith is how many enrolled hosts have the user in their scope (an
+// active one: a disabled user's account is expired there, not renamed).
+func (inv *invocation) enrolledHostsWith(user string) int {
+	reg, err := inv.registry()
+	m, merr := inv.model()
+	if err != nil || merr != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range reg.Entries() {
+		for _, r := range m.LinuxUsers(e.Scope) {
+			if name, _, _ := strings.Cut(r, "|"); name == user {
+				n++
+				break
+			}
+		}
+	}
+	return n
+}
+
+// hostsText is "1 enrolled host" or "3 enrolled hosts".
+func hostsText(n int) string {
+	if n == 1 {
+		return "1 enrolled host"
+	}
+	return strconv.Itoa(n) + " enrolled hosts"
 }
 
 func (inv *invocation) userMove(args []string) error {

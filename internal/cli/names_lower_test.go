@@ -81,8 +81,7 @@ func TestNewUserAndScopeNamesAreLowerCase(t *testing.T) {
 
 // A user from before keeps working with its name as it is, and the rename
 // that changes only the spelling fixes it: the scope lists, the password and
-// the group follow. The Linux UID is kept by name: the renamed user has none
-// until a host is synced, and the old number stays reserved.
+// the group follow, and so does the Linux UID (the ledger line moves).
 func TestUserWithUpperCaseKeepsWorkingAndIsRenamedToLowerCase(t *testing.T) {
 	sb := newSandbox(t, true)
 	h, err := hash.Generate("CorrectHorse99", 4)
@@ -106,18 +105,18 @@ func TestUserWithUpperCaseKeepsWorkingAndIsRenamedToLowerCase(t *testing.T) {
 	sb.expect(0, "", "")
 
 	sb.run("", []string{"user", "rename", "Alice", "alice"})
-	sb.expect(0, "User renamed: Alice -> alice", "")
+	sb.expect(0, "User renamed: Alice -> alice\n[INFO] UID 80001 follows the rename (linux-uids).", "")
 	st := sb.store()
 	if strings.Contains(st, "Alice") || !strings.Contains(st, "  alice:\n    group: superuser\n    scopes: [prod, lab]\n") || !strings.Contains(st, "hash: "+h) {
 		t.Errorf("the store after the rename:\n%s", st)
 	}
 	sb.run("CorrectHorse99\n", []string{"user", "verify", "alice"})
 	sb.expect(0, "Password is correct.", "")
-	// The ledger is keyed by name and left alone.
+	// The ledger line moved with the name: the user keeps its number.
 	sb.run("", []string{"config", "linux", "uid", "alice"})
-	sb.expect(1, "", "No UID assigned to 'alice' yet.")
-	if !strings.Contains(sb.read("state/linux-uids"), "Alice:80001\n") || strings.Contains(sb.read("state/linux-uids"), "alice:") {
-		t.Errorf("the ledger: %q", sb.read("state/linux-uids"))
+	sb.expect(0, "80001", "")
+	if l := sb.read("state/linux-uids"); !strings.Contains(l, "alice:80001\n") || strings.Contains(l, "Alice:") {
+		t.Errorf("the ledger: %q", l)
 	}
 	// Renaming it to a name that exists in another case is refused by the
 	// existing-name check.
@@ -244,7 +243,7 @@ func TestConfigValidateListsNamesWithUpperCase(t *testing.T) {
 	out := plain(hs.run(nil, "config", "validate") + hs.err.String())
 	for _, want := range []string{
 		"Names:",
-		"the user 'Bob' has upper case in its name; new names are lower case; devices match the typed login name exactly, so the rename changes what the person types at the device; on enrolled hosts the next sync removes the old account and creates the new one with a new UID (tacctl user rename Bob bob)",
+		"the user 'Bob' has upper case in its name; new names are lower case; devices match the typed login name exactly, so the rename changes what the person types at the device; on enrolled hosts the next sync renames the account and keeps its UID and home (tacctl user rename Bob bob)",
 		"the scope 'Prod-Inner' has upper case in its name; new names are lower case (tacctl scope rename Prod-Inner prod-inner)",
 		"the device 'Core-SW1' has upper case in its name; new names are lower case (tacctl device rename Core-SW1 core-sw1)",
 		"the host 'Web1' has upper case in its name; new names are lower case (tacctl host rename Web1 web1)",

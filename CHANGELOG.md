@@ -231,11 +231,9 @@ current behaviour; this file is where history lives.
    `scope rename Lab lab`, `host rename Web1 web1`) is how an old name is
    fixed; what follows the name (the users' scope lists, the keys and files
    of a scope or device, the registration of a host) follows it as in any
-   rename. The Linux UID ledger is keyed by name and a user rename leaves it:
-   `alice` has no number until a host is synced and `Alice` keeps its own, so on
-   every enrolled host the next sync removes the account `Alice` (its home by
-   the usual rules) and creates `alice` with a new UID; the old number
-   cannot be given to `alice`.
+   rename. A user rename carries the Linux UID (item 10): on an enrolled
+   host the next sync renames the account `Alice` to `alice`, with its UID
+   and home.
    `device import` (a registry file or a CSV, so a server can be rebuilt
    from `device export --csv`) and `store import` load names with upper case
    as they are and say in one line how many. `config validate`
@@ -256,6 +254,35 @@ current behaviour; this file is where history lives.
    login method from the host and the registration, `host unenroll --force`
    removes the registration even when the host cannot be cleaned, and `host
    forget` only drops this server's record of the host.
+
+10. **`user rename` carries the user's Linux UID.** The line of the old name
+    in `linux-uids` becomes the new name's, in place (comments, the range
+    lines and the order stay), inside the apply lock after the pre-change
+    snapshot, which holds the ledger. The command says `UID <uid> follows
+    the rename (linux-uids).` and, with enrolled hosts whose scope lists the
+    user, how many hosts rename the account at their next sync (`tacctl
+    host sync --all`). A user with no line is renamed as before. A new name
+    that already has a line keeps its number, the ledger is left alone, and
+    a warning says that hosts remove the old account and create the new one
+    with that number. If the ledger cannot be written after the rename, the
+    command says so, names the snapshot to restore and exits 1. The client
+    script, run by `host sync`, renames the account: a listed user with no
+    account here whose UID belongs to an account tacctl created under
+    another name, no longer listed, is that account renamed (`usermod -l`:
+    the login name only; the home keeps its path, the full name and the
+    `created` and `expired` lists follow). It works from the UID alone, so a
+    host that was offline, synced later, or saw the user renamed twice or
+    back ends the same. A user who is logged in (processes under the UID)
+    defers the rename to the next sync, with both names left untouched; a
+    local account of the new name keeps the old account and says so; a new
+    name that tacctl already created with another UID is no rename. `host
+    sync` no longer asks whether to delete the home of the renamed user's old
+    name, and `host show` lists the account under Updated. The script
+    protocol stays 6; a script written by an earlier release with `config
+    linux script` has no rename and stops at the UID check until it is
+    written again. The ledger has no lock of its own: a `host sync` that
+    reads it at the moment of the rename sees the file before or after it.
+    `config validate` says that the next sync renames the account.
 
 ## 0.2.13 (2026-10-16)
 
