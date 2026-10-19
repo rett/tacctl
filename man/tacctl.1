@@ -2242,7 +2242,7 @@ Options:
 .RE
 .\" END GENERATED: command host move
 .TP
-.B "host sync " "{ " name " | \-\-all } [ \-\-allow\-uid\-mismatch ] [ \-\-remove\-home ]"
+.B "host sync " "{ " name "... | \-\-all } [ \-\-allow\-uid\-mismatch ] [ \-\-remove\-home ]"
 Push the scope's current user list to the host: new users get accounts, a
 renamed user's account is renamed (its UID and home are kept), tier changes
 move group membership, disabled users' accounts are expired
@@ -2253,6 +2253,15 @@ and with their own group when it is empty. Their UIDs stay
 reserved on the server. Run after
 .BR "user add" ", " "user remove" ", " "user move" ", " "user disable" " or " "user scope"
 changes.
+.IP
+Several names run in one command, in the order typed, each as
+.B \-\-all
+would run it. Every name is checked before the first host is touched: an
+unknown name refuses the run (nothing is synced), a name given twice counts
+once, and names with
+.B \-\-all
+are a usage error. A host that fails does not stop the others; the exit status
+is 1 when any failed.
 .IP
 tacctl's groups have fixed GIDs, the first numbers of the range:
 .B tac\-users
@@ -2397,7 +2406,9 @@ A host with a break\-glass hold
 .RB ( "breakglass hold" )
 is not logged in to: a named host is refused, the hold's time, user and reason
 and the release command are printed, and nothing is attempted over ssh (nor
-when the device registry that records the host's address cannot be read);
+when the device registry that records the host's address cannot be read); a
+held host among several names refuses the whole run before any host is
+reached;
 .B \-\-all
 skips it and says so. The same refusal covers
 .B "host enroll"
@@ -4731,8 +4742,16 @@ and
 .I linux\-hosts
 is always there, empty when there is no registry). One is taken
 automatically before every change, unless the files already equal the
-newest snapshot. The newest 30 are retained. Without a store, list, diff
-and restore work on old-style backups only.
+newest snapshot. For the host records the comparison ignores what
+.B host enroll
+and
+.B host sync
+write on every run (the last run and the facts it read) and looks at the
+provisioner entry only, so a sync alone does not make the next command take
+a snapshot; the snapshot that
+.B backup restore
+takes first compares everything. The newest 30 are retained. Without a store,
+list, diff and restore work on old-style backups only.
 .\" BEGIN GENERATED: command backup restore
 .RS
 .PP

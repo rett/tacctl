@@ -181,6 +181,10 @@ func TestCompleteScenarios(t *testing.T) {
 		// host forget: an enrolled host, then the one flag.
 		{[]string{"host", "forget", ""}, []string{"web1", "web2"}},
 		{[]string{"host", "forget", "web1", ""}, []string{"-y", "--yes"}},
+		// host sync: hosts at every position, then the flags.
+		{[]string{"host", "sync", ""}, []string{"web1", "web2", "--all", "--allow-uid-mismatch", "--remove-home"}},
+		{[]string{"host", "sync", "web1", ""}, []string{"web1", "web2", "--all", "--allow-uid-mismatch", "--remove-home"}},
+		{[]string{"host", "sync", "web1", "web2", "w"}, []string{"web1", "web2"}},
 		{[]string{"host", ""}, []string{"default-method", "enroll", "forget", "list", "move", "provisioner", "rename", "show", "sync", "target", "unenroll"}},
 		{[]string{"install", ""}, []string{"--branch", "-y", "--yes"}},
 		{[]string{"upgrade", ""}, []string{"--branch"}},

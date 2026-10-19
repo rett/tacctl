@@ -16,6 +16,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -55,7 +56,7 @@ var hostSpecs = map[string]Spec{
 		flagYes,
 		{Names: []string{"--staging"}},
 		flagAllowUIDMismatch, flagRemoveHome}},
-	"sync": {MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome}},
+	"sync": {MaxArgs: -1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome}},
 	"move": {MaxArgs: 2, Args: []string{KindHosts, KindScopes}, Flags: []Flag{{Names: []string{"--all"}, Alone: true},
 		flagYes, flagAllowUIDMismatch, flagRemoveHome}},
 	"unenroll": {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--force"}}}},
@@ -80,7 +81,7 @@ var hostVerbs = [][2]string{
 	{"list [--json]", "Show enrolled hosts"},
 	{"show <name> [--all] [--json] [--check]", "One enrolled host in full; --check compares it with what tacctl would make it"},
 	{"enroll <[user@]host> | --local [options]", "Install TACACS+ or RADIUS login on a host over SSH and register it"},
-	{"sync <name> | --all [options]", "Push account adds, renames, deletions, expiries and tier changes"},
+	{"sync <name>... | --all [options]", "Push account adds, renames, deletions, expiries and tier changes"},
 	{"move <name> [<scope>] | --all [options]", "Move an enrolled host to another scope (default: the scope answering its address)"},
 	{"target <name> [<[user@]host>] [options]", "Show or change how tacctl reaches an enrolled host over ssh"},
 	{"provisioner <name> rotate <user> [options]", "Switch the account tacctl logs in to the host with, proving the new one before the registry changes"},
@@ -1309,10 +1310,12 @@ func isRegularFile(path string) bool {
 
 // --- sync --------------------------------------------------------------------------
 
-// hostSync is cmd_host_sync.
+// hostSync is cmd_host_sync: the hosts named, in the order typed, or every
+// enrolled host with --all (D214).
 func (inv *invocation) hostSync(args []string) error {
 	a := inv.app
-	which, removeHome := "", false
+	var typed []string
+	all, removeHome := false, false
 	scriptArgs := []string{"--accounts-only"}
 	for i := 0; i < len(args); {
 		switch w := args[i]; {
@@ -1323,17 +1326,22 @@ func (inv *invocation) hostSync(args []string) error {
 			removeHome = true
 			i++
 		case w == "--all":
-			which = "--all"
+			all = true
 			i++
 		case strings.HasPrefix(w, "-"):
 			return inv.usageErr("Unknown option: '" + w + "'")
 		default:
-			which = w
+			if !slices.Contains(typed, w) {
+				typed = append(typed, w)
+			}
 			i++
 		}
 	}
-	if which == "" {
-		return inv.usageErr("Usage: tacctl host sync <name> | --all  [--allow-uid-mismatch] [--remove-home]")
+	if !all && len(typed) == 0 {
+		return inv.usageErr("Usage: tacctl host sync <name>... | --all  [--allow-uid-mismatch] [--remove-home]")
+	}
+	if all && len(typed) > 0 {
+		return inv.usageErr("Give names or --all, not both.")
 	}
 	if err := inv.confReadable(); err != nil {
 		return err
@@ -1343,7 +1351,7 @@ func (inv *invocation) hostSync(args []string) error {
 		return err
 	}
 	var names []string
-	if which == "--all" {
+	if all {
 		if reg.Exists() {
 			names = reg.Names()
 		}
@@ -1351,20 +1359,6 @@ func (inv *invocation) hostSync(args []string) error {
 			a.Out.Info("No hosts enrolled.")
 			return nil
 		}
-	} else {
-		e, ok := reg.Find(which)
-		if !ok || e.Line == "" {
-			return inv.usageErr("No enrolled host named '" + which + "'. See 'tacctl host list'.")
-		}
-		// A held host is not logged in to: refused before anything is
-		// attempted (D179).
-		if err := inv.hostHeldErr(e, "tacctl host sync "+which); err != nil {
-			return err
-		}
-		names = []string{which}
-	}
-	if which == "--all" {
-		var err error
 		if names, err = inv.hostSkipHeld(reg, names, "sync"); err != nil {
 			return err
 		}
@@ -1372,6 +1366,23 @@ func (inv *invocation) hostSync(args []string) error {
 			a.Out.Info("No hosts to sync.")
 			return nil
 		}
+	} else {
+		// Every name is checked before the first host is touched: an
+		// unknown name or a held host refuses the whole run (D214, D215).
+		for _, name := range typed {
+			if e, ok := reg.Find(name); !ok || e.Line == "" {
+				return inv.usageErr("No enrolled host named '" + name + "'. See 'tacctl host list'.")
+			}
+		}
+		// A held host is not logged in to: refused before anything is
+		// attempted (D179).
+		for _, name := range typed {
+			e, _ := reg.Find(name)
+			if err := inv.hostHeldErr(e, "tacctl host sync "+strings.Join(typed, " ")); err != nil {
+				return err
+			}
+		}
+		names = typed
 	}
 
 	if err := inv.renumberUIDs(true); err != nil {

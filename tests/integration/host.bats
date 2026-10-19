@@ -197,6 +197,29 @@ _own_scope() {
     assert_output --partial "web1: sync failed"
 }
 
+@test "host sync <name> <name>: runs each host once, in the order typed, and checks the names first" {
+    "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab > /dev/null
+    "$TACCTL_BIN_SCRIPT" host enroll web2 --scope lab > /dev/null
+    : > "$CALLS_LOG"
+    run "$TACCTL_BIN_SCRIPT" host sync web2 web1 web2
+    assert_success
+    assert_output --partial "web1: synced"
+    assert_output --partial "web2: synced"
+    [[ "$(grep -c 'rm -f /tmp/tacctl.AbCd1234' "$CALLS_LOG")" -eq 2 ]]
+    SSH_RUN_FAILS=1 run "$TACCTL_BIN_SCRIPT" host sync web1 web2
+    assert_failure
+    assert_output --partial "web1: sync failed"
+    assert_output --partial "web2: sync failed"
+    : > "$CALLS_LOG"
+    run "$TACCTL_BIN_SCRIPT" host sync web1 ghost
+    assert_failure
+    assert_output --partial "No enrolled host named 'ghost'"
+    run "$TACCTL_BIN_SCRIPT" host sync web1 --all
+    assert_failure
+    assert_output --partial "Give names or --all, not both."
+    if stub_called '^ssh '; then stub_calls; return 1; fi
+}
+
 @test "host enroll/sync: --allow-uid-mismatch is passed through to the host" {
     run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --allow-uid-mismatch
     assert_success
@@ -1387,6 +1410,8 @@ YAML
     assert_output --partial "Nothing was changed."
     [ -f "${TACCTL_STATE_DIR}/hosts/ghost.json" ]
 
+    local before calls
+    before=$(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l)
     run "$TACCTL_BIN_SCRIPT" host forget ghost --yes
     assert_success
     assert_output --partial "Host 'ghost' forgotten."
@@ -1394,8 +1419,9 @@ YAML
     run "$TACCTL_BIN_SCRIPT" host list
     refute_output --partial "finding(s)"
 
-    local before calls
-    before=$(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l)
+    # The snapshot before the forget of ghost holds web1 as it is now; one
+    # taken again for web1 would equal it (a record with no provisioner entry
+    # on one side only does not count), so the count has risen since 'before'.
     calls=$(wc -l < "${CALLS_LOG}")
     run "$TACCTL_BIN_SCRIPT" host forget web1 --yes
     assert_success

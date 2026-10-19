@@ -19,12 +19,14 @@ package snapshot
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/user"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -182,6 +184,11 @@ type Snapshotter struct {
 	// KeepID is a snapshot retention must not delete (_BACKUP_KEEP_ID: the
 	// one a restore reads from).
 	KeepID string
+	// Exact makes the comparison with the newest snapshot byte for byte,
+	// host records included; without it the records are compared on their
+	// provisioner entry only (D210). A restore sets it for the snapshot it
+	// takes first, which is what undoes the restore (D211).
+	Exact bool
 
 	held int
 }
@@ -335,7 +342,8 @@ func (s *Snapshotter) Take() (string, error) {
 
 // current is _backup_snapshot_current: the live store.yaml and tacctl.yaml
 // are byte-identical to the ones in dir (tacctl.yaml absent on both sides
-// counts).
+// counts), and so is the rest of the state; but for the host records, which
+// are compared on their meaningful part unless Exact is set.
 func (s *Snapshotter) current(dir string) bool {
 	if !sameBytes(s.StoreFile, filepath.Join(dir, "store.yaml")) {
 		return false
@@ -397,9 +405,10 @@ func KnowsHosts(dir string) bool { return isRegular(filepath.Join(dir, HostsName
 // sameHosts is whether the live host files equal the ones in snapshot
 // directory dir: the registry (a missing one equals an empty one, as the
 // snapshot writes it), the records, staging and the ledger (each present on
-// both sides with the same bytes, or on neither). A snapshot that does not
-// know the hosts is not the live state, whatever the files are, so the next
-// one is taken. Nothing to compare when the host files are not configured.
+// both sides with the same bytes, or on neither; the records as sameRecords
+// says). A snapshot that does not know the hosts is not the live state,
+// whatever the files are, so the next one is taken. Nothing to compare when
+// the host files are not configured.
 func (s *Snapshotter) sameHosts(dir string) bool {
 	if s.LinuxHosts == "" {
 		return true
@@ -426,7 +435,7 @@ func (s *Snapshotter) sameHosts(dir string) bool {
 			return false
 		}
 	}
-	return sameRecordsDir(s.HostRecords, filepath.Join(dir, HostRecordsName))
+	return sameRecords(s.HostRecords, filepath.Join(dir, HostRecordsName), s.Exact)
 }
 
 // HostRecordFiles are the host records of dir (the regular <name>.json files;
@@ -451,19 +460,71 @@ func HostRecordFiles(dir string) []string {
 	return out
 }
 
-// sameRecordsDir is whether the live records directory and the snapshot's
-// hold the same records with the same bytes (neither having any counts).
-func sameRecordsDir(live, snap string) bool {
+// sameRecords is whether the live records directory and the snapshot's
+// hold the same host records (neither having any counts). With exact, the
+// same bytes. Without it (D210) the same meaningful part: a record is equal
+// when both sides have the same provisioner entry (both none, or equal),
+// whatever last_sync and facts say, and a record on one side only is equal
+// when it holds no provisioner entry. A record that cannot be read is
+// compared by its bytes, or differs when it is on one side only.
+func sameRecords(live, snap string, exact bool) bool {
 	a, b := HostRecordFiles(live), HostRecordFiles(snap)
-	if !slices.Equal(a, b) {
-		return false
-	}
-	for _, n := range a {
-		if !sameBytes(filepath.Join(live, n), filepath.Join(snap, n)) {
+	if exact {
+		if !slices.Equal(a, b) {
 			return false
+		}
+		for _, n := range a {
+			if !sameBytes(filepath.Join(live, n), filepath.Join(snap, n)) {
+				return false
+			}
+		}
+		return true
+	}
+	all := slices.Concat(a, b)
+	slices.Sort(all)
+	for _, n := range slices.Compact(all) {
+		inLive, inSnap := slices.Contains(a, n), slices.Contains(b, n)
+		switch {
+		case inLive && inSnap:
+			x, okX := recordProvisioner(filepath.Join(live, n))
+			y, okY := recordProvisioner(filepath.Join(snap, n))
+			if !okX || !okY {
+				if !sameBytes(filepath.Join(live, n), filepath.Join(snap, n)) {
+					return false
+				}
+			} else if !reflect.DeepEqual(x, y) {
+				return false
+			}
+		case inLive:
+			if p, ok := recordProvisioner(filepath.Join(live, n)); !ok || p != nil {
+				return false
+			}
+		default:
+			if p, ok := recordProvisioner(filepath.Join(snap, n)); !ok || p != nil {
+				return false
+			}
 		}
 	}
 	return true
+}
+
+// recordProvisioner is the provisioner entry of the host record at path (nil
+// when it has none), decoded generically so that two entries compare field
+// by field; false when the record cannot be read. The package reads the one
+// entry itself: internal/hosts, which owns the record type, depends on this
+// package through the backends.
+func recordProvisioner(path string) (any, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	var r struct {
+		Provisioner any `json:"provisioner"`
+	}
+	if err := json.Unmarshal(data, &r); err != nil {
+		return nil, false
+	}
+	return r.Provisioner, true
 }
 
 // copyRecordsDir copies the records of src into a new directory dst (0700,

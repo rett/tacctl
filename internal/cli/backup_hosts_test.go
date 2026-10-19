@@ -381,3 +381,40 @@ func TestHostVerbsSnapshotBeforeTheRegistryChanges(t *testing.T) {
 		t.Errorf("the record did not come back: %v", err)
 	}
 }
+
+// D210, D211: the dedupe ignores what a sync writes into a record, but the
+// snapshot a restore takes first compares everything, so that the undo puts
+// the records back as they were.
+func TestBackupRestoreSnapshotsFirstOnAnyChangeOfTheRecords(t *testing.T) {
+	sb := hostsSandbox(t)
+	record := func(at string) string {
+		return `{"last_sync":{"at":"` + at + `","by":"admin","command":"sync","ok":true,"protocol":"3",` +
+			`"created":[],"updated":[],"removed":[]}}` + "\n"
+	}
+	sb.write("state/hosts/web1.json", record("2026-01-01T00:00:00Z"), 0o600)
+	restore := func() {
+		sb.t.Helper()
+		sb.run("y\n", []string{"backup", "restore", "20200101_000000_001"})
+		sb.expect(0, "Restored snapshot 20200101_000000_001.", "")
+	}
+	// The first restore snapshots the state it replaces, the second the one
+	// the first made; from then on the live state equals the newest snapshot.
+	restore()
+	restore()
+	n := len(sb.snapshotDirs())
+	restore()
+	if got := len(sb.snapshotDirs()); got != n {
+		t.Fatalf("a restore of an unchanged state took a snapshot (%d before, %d after)", n, got)
+	}
+
+	// A sync since: only last_sync differs. The restore snapshots all the same.
+	sb.write("state/hosts/web1.json", record("2026-02-02T00:00:00Z"), 0o600)
+	restore()
+	dirs := sb.snapshotDirs()
+	if len(dirs) != n+1 {
+		t.Fatalf("the restore took no snapshot of records that differ in last_sync (%d before, %d after)", n, len(dirs))
+	}
+	if got := readIn(t, filepath.Join(dirs[len(dirs)-1], "hosts"), "web1.json"); got != record("2026-02-02T00:00:00Z") {
+		t.Errorf("the snapshot holds %q", got)
+	}
+}

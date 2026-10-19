@@ -593,8 +593,12 @@ func (inv *invocation) restoreSnapshot(id string) error {
 	}
 	// The current state first, so the restore can be undone with another
 	// one. Retention must not take the snapshot being read.
+	// It compares everything, the host records byte for byte too (D211): the
+	// undo must not put back an older last_sync.
 	a.Snapshots().KeepID = id
+	a.Snapshots().Exact = true
 	preID, err := inv.snapshotFirstID()
+	a.Snapshots().Exact = false
 	if err != nil {
 		return err
 	}

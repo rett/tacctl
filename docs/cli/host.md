@@ -43,11 +43,16 @@ host enroll <[user@]host>|--local [opts]
         (with --scope) Provisioned off-site: the bench address joins the scope as a /32 until the
         host is seen in place
 
-host sync <name>|--all
+host sync <name>... | --all
 
     Push account adds, renames, deletions, expiries and tier changes (a renamed user's account is
-    renamed, keeping its UID and home); pins the host's ssh keys if none are (enroll pins them too)
+    renamed, keeping its UID and home); pins the host's ssh keys if none are (enroll pins them too).
+    Several names run in the order typed, each as --all would run it. Every name is checked first
+    (an unknown one refuses the run, one given twice counts once); a host that fails does not stop
+    the rest, and the exit status is 1. Names and --all are not given together
 
+    --all
+        Every enrolled host
     --allow-uid-mismatch
         (enroll and sync) accept a UID conflict on the host instead of stopping
     --remove-home
@@ -237,6 +242,7 @@ registered host (and so `host move`), `host target <name> <target>`,
 `tacctl breakglass release <name>`; nothing is attempted over ssh and nothing
 is changed. The same refusal stands when the device registry, which records
 the host's address, cannot be read. `host sync --all` skips a held host and
-says so.
+says so; a held host among the names typed to `host sync` refuses the whole
+run before any host is reached.
 `host target <name>` without a change, `host list` and `host show` only read,
 and `tacctl ssh` warns and connects.

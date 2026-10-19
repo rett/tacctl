@@ -36,6 +36,27 @@ current behaviour; this file is where history lives.
    rename, forget or restore of it is running); nothing was changed. Run
    this again when it has finished.`
 
+4. **A `host sync` no longer makes the next snapshot new.** When tacctl
+   decides whether the state equals the newest snapshot, it now ignores what
+   `host enroll` and `host sync` write into each host record on every run
+   (`last_sync` and `facts`) and compares only the `provisioner` entry, so a
+   command that changes nothing else no longer uses up one of the 30 kept
+   snapshots after a sync. A record present on one side only counts as equal
+   when it has no `provisioner` entry; a snapshot that is taken still holds
+   the records whole. The snapshot that `backup restore` takes first still
+   compares everything, records included, so the undo puts back the sync
+   information as it was.
+
+5. **`host sync` takes several names.** `tacctl host sync <name>...` syncs the
+   hosts named in one run, in the order typed, each as `--all` would sync it;
+   the UID numbering is done once, a host that fails does not stop the others,
+   and the exit status is 1 when any failed. Every name is checked before the
+   first host is touched: an unknown name refuses the run, a name given twice
+   counts once, a host with a break-glass hold among the names refuses the
+   whole run (nothing is attempted over ssh; `--all` still skips a held host
+   and says so), and names together with `--all` are a usage error. The names
+   complete at every position.
+
 ## 0.2.14 (2026-10-18)
 
 1. **`device address` moves a break-glass hold with its device.** On a

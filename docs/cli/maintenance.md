@@ -91,6 +91,15 @@ push the state before it out of the newest 30. `host sync` takes none. A
 snapshot made by tacctl 0.2.13 or older has no `linux-hosts`, and tacctl
 0.2.13 ignores the host entries of a newer one.
 
+"Equal to the newest snapshot" compares the files byte for byte, but for the
+host records: `host enroll` and `host sync` rewrite `last_sync` and `facts`
+in a record on every run, so those two are ignored, and a record counts as
+equal when its `provisioner` entry is (a record on one side only counts when
+it has none). A sync alone therefore does not make the next command take a
+snapshot; a rotation of the provisioner does. A snapshot that is taken holds
+the records whole. The snapshot `backup restore` takes first compares
+everything, records included, since it is what undoes the restore.
+
 `backup restore <ts>` puts back both files, re-renders every enabled backend's config (a hand-edited file is kept under `backups/legacy/` first), and restarts the backends. It snapshots the current state first, so a restore can be undone with another restore, and it changes nothing if the snapshot is invalid or the render fails. The snapshot's `backends.enabled` comes back with the rest of `tacctl.yaml`: a backend it enables must already be installed (otherwise nothing changes and the message says to run `backend enable`) and is started; one it leaves out is stopped and disabled.
 
 A snapshot that knows the hosts also puts the host files back: `linux-hosts`
