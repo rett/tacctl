@@ -1,6 +1,6 @@
 .\" Manual page for tacctl, the management CLI for pluggable network-device AAA.
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-10-18" "tacctl 0.2.14" "tacctl Manual"
+.TH TACCTL 1 "2026-10-19" "tacctl 0.2.15" "tacctl Manual"
 .SH NAME
 tacctl \- manage pluggable network-device AAA: users, groups, scopes and devices
 .SH SYNOPSIS
@@ -1542,7 +1542,7 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config get-list
 .TP
-.B config validate
+.B "config validate [ \-\-json | \-\-fix\-names [ \-y ] ]"
 Validate the store
 .RI ( store.yaml :
 names, every user's group and scopes exist, each prefix owned by one scope),
@@ -1631,10 +1631,127 @@ more than one backend enabled each gets a labelled block; files left behind by
 a disabled backend are not checked. With RADIUS enabled it warns about a scope
 RADIUS serves that sends no vendor attribute and is not a Linux-host scope.
 Exits 1 when it finds errors.
+.IP
+.B \-\-json
+prints one JSON object instead, and nothing else on standard output (what the
+report writes around itself, such as the complaint of a store that cannot be
+read, goes to standard error). The exit status is the same: 1 when
+.B errors
+is not 0, the object printed either way. The object has
+.B valid
+(true when there is no error),
+.BR errors " and " warnings
+(how many findings have each level),
+.B mode
+.RB ( store
+or
+.BR legacy ,
+without a store),
+.B counts
+(the
+.BR users ", " groups " and " scopes
+the store defines, null when the model cannot be read),
+.B backends
+(the enabled ones, empty when the list cannot be read) and
+.BR findings ,
+in the order the text report lists them, empty when there is none. A finding
+has a
+.B section
+(a fixed token for each label of the text report:
+.BR store ", " yaml ", " overrides ", " command_rules ", " structure ", "
+.BR scope_default ", " linux_hosts ", " names ", " breakglass ", " breakglass_hold ", "
+.BR config_blocks ", " operator_policy ", " group_settings ", " orphan_settings ", "
+.BR orphan_files ", " leftovers ", " backends ", " rendered ", " drift " and "
+.BR vendor_attrs ),
+a
+.B level
+.RB ( error ,
+which counts toward the exit status, or
+.BR warning ),
+the
+.B text
+(what is wrong, without the command that puts it right) and the
+.B fix
+(that command, empty when there is none; for a drifted file the advice the
+text report prints under its
+.B DRIFT:
+line), and, where they apply, the
+.B backend
+(rendered config, drift and vendor attributes) and the
+.B hosts
+(registered hosts, for
+.B linux_hosts
+and
+.BR names ).
+A finding the text report colours red but does not count (a break\-glass hold
+with no registered device) is a warning, so that
+.B valid
+and the exit status agree with
+.BR errors .
+The text report counts the drifted files of one backend as one error; the
+object counts each file. A caller who sees only some scopes gets no
+.BR linux_hosts ,
+.B names
+or hold\-defect findings, as in the text report.
+.IP
+.B \-\-fix\-names
+prints the report, then offers each
+.B Names:
+finding whose lower\-case spelling is free, one at a time: devices, hosts,
+users, then scopes, each kind in alphabetical order. The question is
+.BR "Rename \fIkind\fR 'Old' to 'old'? [y/N]:" ;
+only
+.B y
+or
+.B Y
+renames, a piped
+.B y
+works and no terminal is required, and
+.B \-y
+answers yes to every question. On yes the verb that renames that kind of name
+runs as when typed
+.RB ( "device rename" ,
+.BR "host rename" ,
+.B "user rename"
+and
+.BR "scope rename" ),
+prints what it prints and takes its own snapshot, one undo point per rename.
+.B \-y
+is passed on to
+.B "host rename"
+only when it was given here; without it that verb asks its own questions
+after this one. The findings are read again after each rename, so a scope
+that a host rename carried is not offered twice. A name whose lower\-case
+spelling is another name's is not offered: a line says
+.B "pick a name: tacctl \fIkind\fR rename \fIOld\fR <new>"
+(for two hosts equal ignoring case also
+.BR "tacctl host forget" ,
+which drops the stray registration). A rename its verb refuses prints the
+refusal and does not stop the rest. The run ends with
+.B "Names: renamed N, declined N, not offered N, failed N."
+and, when a user was renamed and hosts are enrolled, the
+.B "tacctl host sync \-\-all"
+that renames their accounts. The exit status is 1 when the report had errors,
+a rename failed or a name was not offered; a decline does not fail the run.
+.B \-\-fix\-names
+is the superuser's (an operator or an engineer is refused), needs the store
+and does not go with
+.BR \-\-json .
 .\" BEGIN GENERATED: command config validate
 .RS
 .PP
 Requires: \fBoperator\fR.
+.PP
+Options:
+.TP
+\fB\-\-json\fR
+Print the findings as one JSON object and nothing else on standard output; exit 1 when one is an error.
+.TP
+\fB\-\-fix\-names\fR
+After the report, offer to rename each device, host, user and scope that has upper case in its name to its lower\-case spelling (superuser; needs the store).
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+With \-\-fix\-names: answer yes to every rename.
 .RE
 .\" END GENERATED: command config validate
 .TP
@@ -1693,7 +1810,7 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config diff
 .TP
-.BI "config restore " "timestamp " [ \-\-legacy ]
+.BI "config restore " "timestamp " [ \-\-legacy " | " \-\-keep\-uids ]
 Alias of
 .BR "backup restore" .
 .\" BEGIN GENERATED: command config restore
@@ -1705,6 +1822,9 @@ Options:
 .TP
 \fB\-\-legacy\fR
 The timestamp names an old\-style backup (backups/legacy).
+.TP
+\fB\-\-keep\-uids\fR
+Leave the UID ledger (linux\-uids) as it is; the registry, records and staging come back.
 .RE
 .\" END GENERATED: command config restore
 .TP
@@ -1853,7 +1973,11 @@ counts them. For the superuser a last line,
 says that the registrations have findings
 .RB ( "config validate" ;
 see
-.BR "host forget" ).
+.BR "host forget" ),
+among them the names with upper case that
+.B "config validate"
+lists under
+.BR "Names:" .
 .B \-\-json
 prints a JSON array instead, empty (\fB[]\fR) when there is no host: for each
 host its
@@ -1870,7 +1994,9 @@ has it) and
 .BR findings ,
 the findings of
 .B "config validate"
-that name the host (an array, always empty for an engineer). It prints no
+that name the host, the
+.B "Names:"
+ones included (an array, always empty for an engineer). It prints no
 table, footer or warning. An engineer lists the hosts of their own scopes in
 both forms.
 .\" BEGIN GENERATED: command host list
@@ -2236,9 +2362,10 @@ Options:
 .RE
 .\" END GENERATED: command host move
 .TP
-.B "host sync " "{ " name " | \-\-all } [ \-\-allow\-uid\-mismatch ] [ \-\-remove\-home ]"
-Push the scope's current user list to the host: new users get accounts,
-tier changes move group membership, disabled users' accounts are expired
+.B "host sync " "{ " name "... | \-\-all } [ \-\-allow\-uid\-mismatch ] [ \-\-remove\-home ]"
+Push the scope's current user list to the host: new users get accounts, a
+renamed user's account is renamed (its UID and home are kept), tier changes
+move group membership, disabled users' accounts are expired
 (files kept; enabling the user restores the account), and the accounts of
 users no longer in the scope (or no longer tacctl users) are deleted with
 .BR userdel (8),
@@ -2246,6 +2373,15 @@ and with their own group when it is empty. Their UIDs stay
 reserved on the server. Run after
 .BR "user add" ", " "user remove" ", " "user move" ", " "user disable" " or " "user scope"
 changes.
+.IP
+Several names run in one command, in the order typed, each as
+.B \-\-all
+would run it. Every name is checked before the first host is touched: an
+unknown name refuses the run (nothing is synced), a name given twice counts
+once, and names with
+.B \-\-all
+are a usage error. A host that fails does not stop the others; the exit status
+is 1 when any failed.
 .IP
 tacctl's groups have fixed GIDs, the first numbers of the range:
 .B tac\-users
@@ -2306,7 +2442,8 @@ user's account stays expired)
 .RI "(\(lq'" old "' is now '" new "' (renamed; UID " uid "; home kept at " home )\(rq).
 A host that missed a rename, or saw two, ends the same, and so does a host
 still on an earlier UID range (the account is found at the number the user had
-there and renumbered by the same run). No question is asked
+there and renumbered by the same run; the line then shows that number and adds
+.RI ", to be renumbered to " uid " later in this run"). No question is asked
 about the home of the old name, and
 .B "host show"
 lists the account as updated. Mail and cron spools under the old name are
@@ -2389,7 +2526,9 @@ A host with a break\-glass hold
 .RB ( "breakglass hold" )
 is not logged in to: a named host is refused, the hold's time, user and reason
 and the release command are printed, and nothing is attempted over ssh (nor
-when the device registry that records the host's address cannot be read);
+when the device registry that records the host's address cannot be read); a
+held host among several names refuses the whole run before any host is
+reached;
 .B \-\-all
 skips it and says so. The same refusal covers
 .B "host enroll"
@@ -2419,6 +2558,65 @@ Options:
 (enroll and sync) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
 .RE
 .\" END GENERATED: command host sync
+.TP
+.B "host check " "{ " name "... | \-\-all } [ \-\-json ]"
+Compare each host named, or every enrolled host with
+.BR \-\-all ,
+with what tacctl would make it, read\-only: for each, what
+.B "host show \-\-check"
+does (the same login as the invoking user, the same comparison), with nothing
+written here and nothing changed on a host. Every name is checked before the
+first host is touched: an unknown name refuses the run, a name given twice
+counts once, and names with
+.B \-\-all
+are a usage error. Each host gets a line on standard output: its name and
+.B "as tacctl would make it"
+(any notes follow, indented), or its differences, one line each with the
+command that fixes it, or
+.B skipped
+for a host with a break\-glass hold (typed or not: a check only reads, so
+there is nothing to refuse), or
+.B "could not be checked"
+with the reason. What a host prints besides the check goes to standard error.
+With more than one host a last line counts the hosts in each state. The exit
+status is 1 when a host has a difference or could not be checked, else 0 (a
+skipped host is not a failure); an interrupt ends the run after the host in
+progress. With
+.B \-\-json
+standard output is a JSON array (empty for no host) with, for each host,
+.BR name ,
+.BR target ,
+.B state
+.RB ( ok ,
+.BR differences ,
+.B failed
+or
+.BR held ),
+.B differences
+(each
+.B text
+and
+.BR fix ),
+.BR notes ,
+.B error
+(why a host could not be checked, else empty) and
+.B breakglass
+(the hold, only for
+.BR held ).
+.\" BEGIN GENERATED: command host check
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+(check) Every enrolled host.
+.TP
+\fB\-\-json\fR
+(check) Print a JSON array (one object per host) and nothing else on standard output.
+.RE
+.\" END GENERATED: command host check
 .TP
 .B "host target " name " [ " "\fR[\fPuser@\fR]\fPhost" " ] [ \-\-port " n " ] [ \-\-identity " file " | \-\-no\-identity ]"
 With only a name, show how tacctl reaches the enrolled host: its ssh target,
@@ -2465,8 +2663,13 @@ without locking tacctl out of it.
 is the only subcommand. One rotation of a host runs at a time on the tacctl
 server (a lock under
 .IR /etc/tacctl/locks ):
-a second one fails at once with
-"another rotation of <name> is running" and changes nothing.
+the lock is the host's, shared with
+.BR "host rename" ,
+.B host forget
+and
+.BR "backup restore" ,
+and a command that finds it held fails at once with
+"<name> is locked by another tacctl command" and changes nothing.
 .IP
 Nothing is changed until these checks pass: the host is enrolled and not the
 server's own
@@ -4629,7 +4832,7 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command backup diff
 .TP
-.BI "backup restore " timestamp " " [ \-\-legacy ]
+.BI "backup restore " timestamp " " [ \-\-legacy " | " \-\-keep\-uids ]
 Restore both files from a snapshot after confirmation, re-render every
 enabled backend's config (all or none), and restart the backends. The current
 state is snapshotted first, so a restore can itself be undone. Nothing changes
@@ -4680,13 +4883,47 @@ changes; a host file that cannot be read is named in a red line,
 .BR "could not compare the host files" ,
 and the restore still puts the files back. The snapshot of the current state taken first holds the live host files.
 .PP
+With
+.B \-\-keep\-uids
+the ledger
+.RI ( linux\-uids )
+is left as it is, and the registry, the records and
+.I staging
+still come back. Use it when the snapshot is wanted for its users, groups,
+scopes or devices and the hosts have synced since: the live ledger is the one
+the hosts agree with, and the restore does not make them disagree. In place of
+the comparison the note, before the confirmation and again after the restore,
+is one line saying that the ledger is kept and the restored users keep the
+numbers they have now. A user the snapshot brings back who has no line in the
+live ledger is numbered at the next
+.B "host sync"
+as any new user is, and the line of a user the snapshot lacks stays, as after
+.BR "user remove" .
+The snapshot of the current state taken first is made as always. A snapshot
+that does not know the hosts never touches the ledger: the flag is accepted
+and a line says the ledger stays either way.
+.B \-\-keep\-uids
+with
+.B \-\-legacy
+or without a store is a usage error, since an old-style restore never touches
+.IR linux\-uids .
+.PP
 The restore holds the host registry's lock from before it changes anything: when
 another tacctl command keeps it for 30 seconds the restore stops with the
-registry busy and nothing changed (a snapshot that does not know the hosts does
-not take the lock). The host files are put back last. If that step fails the
-rest of the restore stands and the backends are restarted, and two warnings name
-the error, the snapshot of the state from before the restore and the commands
-that undo the restore or try the host files again.
+registry busy and nothing changed. It also tries the lock of each host, the one
+.BR "host provisioner rotate" ,
+.B host rename
+and
+.B host forget
+hold while they run, for every name in the live registry and in the snapshot's,
+without waiting: when another command holds one the restore stops before it
+takes the snapshot of the current state, with nothing changed, and names the host
+.RB ( "'<name>' is locked by another tacctl command" ).
+The locks are released when the host files are back. A snapshot that does not
+know the hosts takes neither lock. The host files are put back last. If that
+step fails the rest of the restore stands and the backends are restarted, and
+two warnings name the error, the snapshot of the state from before the restore
+and the commands that undo the restore or try the host files again.
 .PP
 A snapshot is the directory
 .I /etc/tacctl/backups/<timestamp>/
@@ -4709,8 +4946,16 @@ and
 .I linux\-hosts
 is always there, empty when there is no registry). One is taken
 automatically before every change, unless the files already equal the
-newest snapshot. The newest 30 are retained. Without a store, list, diff
-and restore work on old-style backups only.
+newest snapshot. For the host records the comparison ignores what
+.B host enroll
+and
+.B host sync
+write on every run (the last run and the facts it read) and looks at the
+provisioner entry only, so a sync alone does not make the next command take
+a snapshot; the snapshot that
+.B backup restore
+takes first compares everything. The newest 30 are retained. Without a store,
+list, diff and restore work on old-style backups only.
 .\" BEGIN GENERATED: command backup restore
 .RS
 .PP
@@ -4720,6 +4965,9 @@ Options:
 .TP
 \fB\-\-legacy\fR
 The timestamp names an old\-style backup (backups/legacy).
+.TP
+\fB\-\-keep\-uids\fR
+Leave the UID ledger (linux\-uids) as it is; the registry, records and staging come back.
 .RE
 .\" END GENERATED: command backup restore
 .SS Hash generation \fB(tacctl hash)\fR
@@ -9447,7 +9695,9 @@ keeps the change only when, after the fresh login, you log in with one
 account of each class and type
 .BR OK ;
 anything else, or no answer while a minute of the window is left, rolls it
-back, and a line typed before a device's question is not its answer. It needs
+back. A line typed before the question of a device, after the device before it
+was answered or timed out, is not its answer; one typed ahead of the first
+question is. It needs
 a terminal and is refused with
 .B \-\-json
 (exit 2).
@@ -10022,7 +10272,9 @@ and
 .B "host forget"
 are refused with the hold named, before anything is attempted over ssh;
 .B "host sync \-\-all"
-skips the host;
+and
+.B "host check"
+skip the host;
 .B "host list"
 marks it,
 .B "host show"
@@ -11846,7 +12098,8 @@ does not fit, a name that does not exist or exists already, a store or
 .I tacctl.yaml
 that cannot be read or written, a caller whose tier does not allow the
 command, a check that found a problem
-.RB ( "config validate" ", " "console check" ", " "device check" ),
+.RB ( "config validate" " (with " "\-\-json" ", after it has printed its object)" ", "
+.BR "console check" ", " "device check" ),
 a device that could not be read, compared or planned
 .RB ( "device config pull" ", " "device config diff" ", " "device config plan" ),
 a device

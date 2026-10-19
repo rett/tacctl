@@ -325,9 +325,9 @@ complete_words() {
     complete_words tacctl config linux builds ""
     assert_output "$(printf 'list\nclear')"
     complete_words tacctl backup restore 20260101-000000 ""
-    assert_output -- "--legacy"
+    assert_output "$(printf -- '--legacy\n--keep-uids')"
     complete_words tacctl config restore 20260101-000000 ""
-    assert_output -- "--legacy"
+    assert_output "$(printf -- '--legacy\n--keep-uids')"
     complete_words tacctl host default-method ""
     assert_output "$(printf 'tacplus\nradius')"
 }

@@ -100,6 +100,13 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
     assert_success
     as_user op yes -- config validate
     refute_output --partial "not permitted"
+    as_user op yes -- config validate --json
+    refute_output --partial "not permitted"
+    assert_output --partial '"findings"'
+    # sudo matches the two spellings exactly: no other argument is let through.
+    run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
+    assert_output --partial "/usr/local/bin/tacctl config validate, /usr/local/bin/tacctl config validate --json, /usr/local/bin/tacctl backup list"
+    refute_output --partial "config validate *"
 }
 
 @test "tier: operator may not change users, read secrets, or diff backups" {

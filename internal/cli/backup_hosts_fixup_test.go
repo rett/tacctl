@@ -66,10 +66,20 @@ func TestHostMoveAllTakesOneSnapshot(t *testing.T) {
 	}
 }
 
+// shortLockWait makes the host registry's lock give up after 100 ms for the
+// rest of the test. The wait is one variable of the process, so the test must
+// be serial.
+func shortLockWait(t *testing.T) {
+	t.Helper()
+	mustBeSerial(t)
+	t.Cleanup(hosts.SetLockWait(100 * time.Millisecond))
+}
+
 // A busy host registry stops 'backup restore' before anything changes.
 func TestBackupRestoreWithABusyRegistryChangesNothing(t *testing.T) {
+	serial(t)
 	sb := hostsSandbox(t)
-	defer hosts.SetLockWait(100 * time.Millisecond)()
+	shortLockWait(t)
 	unlock, err := (&hosts.Registry{Path: sb.path("state/linux-hosts")}).Lock()
 	if err != nil {
 		t.Fatal(err)
@@ -97,8 +107,9 @@ func TestBackupRestoreWithABusyRegistryChangesNothing(t *testing.T) {
 
 // A snapshot that does not know the hosts needs no lock on the registry.
 func TestBackupRestoreWithoutHostsIgnoresABusyRegistry(t *testing.T) {
+	serial(t)
 	sb := hostsSandbox(t)
-	defer hosts.SetLockWait(100 * time.Millisecond)()
+	shortLockWait(t)
 	unlock, err := (&hosts.Registry{Path: sb.path("state/linux-hosts")}).Lock()
 	if err != nil {
 		t.Fatal(err)
@@ -181,5 +192,97 @@ func TestBackupRestoreWithAFailingHostStepStillRestarts(t *testing.T) {
 	// The registry went back before the ledger failed.
 	if got := sb.read("state/linux-hosts"); got != snapRegistry {
 		t.Errorf("registry %q", got)
+	}
+}
+
+// 0.2.15 WP15.3 (D207): 'backup restore' tries the provisioner lock of every
+// host of the live registry and of the snapshot's, without waiting, and
+// refuses the whole restore when another command holds one.
+
+// A host locked by a rotation, rename or forget stops the restore before
+// anything changes, whether the live registry or only the snapshot's holds
+// the name; the pre-restore snapshot is not taken.
+func TestBackupRestoreRefusesWhileAHostIsLocked(t *testing.T) {
+	// web2 is only in the live registry, web3 only in the snapshot's, web1
+	// in both.
+	for _, name := range []string{"web2", "web3", "web1"} {
+		sb := hostsSandbox(t)
+		unlock, err := hosts.LockHost(sb.path("state", "locks"), name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before := sb.hostState()
+		snaps := len(sb.snapshotDirs())
+		live := sb.read("state/store.yaml")
+
+		sb.run("y\n", []string{"backup", "restore", "20200101_000000_002"})
+		want := "Snapshot 20200101_000000_002 was not restored: '" + name + "' is locked by another tacctl command (a rotation, rename or forget of it is running). Nothing was changed."
+		if sb.code != 1 || !strings.Contains(sb.stderr(), want) || !strings.Contains(sb.stderr(), "Run this again when it has finished.") {
+			t.Errorf("%s: exit %d, stderr %q", name, sb.code, sb.stderr())
+		}
+		if !mapsEqual(sb.hostState(), before) {
+			t.Errorf("%s: the host files changed", name)
+		}
+		if len(sb.snapshotDirs()) != snaps {
+			t.Errorf("%s: a snapshot was taken", name)
+		}
+		if sb.read("state/store.yaml") != live {
+			t.Errorf("%s: the store changed", name)
+		}
+
+		// The refusal let go of the other locks.
+		for _, other := range []string{"web1", "web2", "web3"} {
+			if other == name {
+				continue
+			}
+			u, err := hosts.LockHost(sb.path("state", "locks"), other)
+			if err != nil {
+				t.Errorf("%s: %s is still locked: %v", name, other, err)
+				continue
+			}
+			u()
+		}
+
+		// Run again when it has finished.
+		unlock()
+		sb.run("y\n", []string{"backup", "restore", "20200101_000000_002"})
+		sb.expect(0, "Restored snapshot 20200101_000000_002.", "")
+		if got := sb.read("state/linux-hosts"); got != snapRegistry {
+			t.Errorf("%s: registry %q", name, got)
+		}
+	}
+}
+
+// A snapshot that does not know the hosts touches no host file and takes no
+// host lock.
+func TestBackupRestoreWithoutHostsIgnoresALockedHost(t *testing.T) {
+	sb := hostsSandbox(t)
+	unlock, err := hosts.LockHost(sb.path("state", "locks"), "web1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	before := sb.hostState()
+	sb.run("y\n", []string{"backup", "restore", "20200101_000000_001"})
+	sb.expect(0, "Restored snapshot 20200101_000000_001.", "")
+	if !mapsEqual(sb.hostState(), before) {
+		t.Error("the host files changed")
+	}
+}
+
+// The host locks are taken after the question and let go with the command.
+func TestBackupRestoreReleasesTheHostLocks(t *testing.T) {
+	for _, answer := range []string{"y\n", "n\n"} {
+		sb := hostsSandbox(t)
+		sb.run(answer, []string{"backup", "restore", "20200101_000000_002"})
+		sb.expect(0, "", "")
+		for _, name := range []string{"web1", "web2", "web3"} {
+			u, err := hosts.LockHost(sb.path("state", "locks"), name)
+			if err != nil {
+				t.Errorf("answer %q: %s is still locked: %v", answer, name, err)
+				continue
+			}
+			u()
+		}
 	}
 }

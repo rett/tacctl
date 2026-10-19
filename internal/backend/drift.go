@@ -69,14 +69,16 @@ func (s *Set) CheckDrift(sel DriftSelection) []rendered.Entry {
 	return out
 }
 
-// DriftLines is print_drift_lines: the red DRIFT lines 'status' and
-// 'config validate' print, two per drifted artifact of sel (none when
-// nothing drifted), each ending in a newline. The hint depends on whose
-// artifact it is: only a backend whose Description has an ImportCmd can
-// adopt a hand edit.
-func (s *Set) DriftLines(sel DriftSelection) []string {
-	var lines []string
-	const indent = "                        "
+// DriftReport is one drifted artifact: what is wrong with it and what to do
+// about it.
+type DriftReport struct {
+	Path, What, Advice string
+}
+
+// DriftReports are the artifacts CheckDrift reports for sel, each with the
+// words DriftLines prints for it.
+func (s *Set) DriftReports(sel DriftSelection) []DriftReport {
+	var reports []DriftReport
 	for _, e := range s.CheckDrift(sel) {
 		var what string
 		switch e.Status {
@@ -87,7 +89,6 @@ func (s *Set) DriftLines(sel DriftSelection) []string {
 		default:
 			what = "render records cannot be read"
 		}
-		lines = append(lines, "  "+ui.Red+"DRIFT:"+ui.NC+"                "+e.Path+" — "+what+"\n")
 		owner, importCmd := "", ""
 		if e.Path != s.Env.Paths.Rendered {
 			owner = s.Owner(e.Path)
@@ -95,20 +96,45 @@ func (s *Set) DriftLines(sel DriftSelection) []string {
 		if owner != "" {
 			importCmd = s.must(owner).Describe().ImportCmd
 		}
+		var advice string
 		switch {
 		case strings.HasSuffix(e.Path, "/tacctl.conf"):
 			// A unit drop-in a backend renders (always under this name)
 			// holds nothing tacctl.yaml does not: there is nothing to
 			// import, and a render replaces it without --force.
-			lines = append(lines, indent+"'tacctl config render' rewrites it from tacctl.yaml (a copy is kept); unit settings of your own belong in another .conf file of that directory\n")
+			advice = "'tacctl config render' rewrites it from tacctl.yaml (a copy is kept); unit settings of your own belong in another .conf file of that directory"
 		case importCmd != "" || owner == "":
 			if importCmd == "" {
 				importCmd = "tacctl store import --replace"
 			}
-			lines = append(lines, indent+"keep the edits: '"+importCmd+"' then 'tacctl config render --force'; discard them: 'tacctl config render --force'\n")
+			advice = "keep the edits: '" + importCmd + "' then 'tacctl config render --force'; discard them: 'tacctl config render --force'"
 		default:
-			lines = append(lines, indent+"discard the edits: 'tacctl config render --force' (a copy is kept); there is no way to adopt them into the store\n")
+			advice = "discard the edits: 'tacctl config render --force' (a copy is kept); there is no way to adopt them into the store"
 		}
+		reports = append(reports, DriftReport{Path: e.Path, What: what, Advice: advice})
+	}
+	return reports
+}
+
+// Lines are the two lines DriftLines prints for the artifact: the red DRIFT
+// line and the advice under it, each ending in a newline.
+func (r DriftReport) Lines() []string {
+	const indent = "                        "
+	return []string{
+		"  " + ui.Red + "DRIFT:" + ui.NC + "                " + r.Path + " — " + r.What + "\n",
+		indent + r.Advice + "\n",
+	}
+}
+
+// DriftLines is print_drift_lines: the red DRIFT lines 'status' and
+// 'config validate' print, two per drifted artifact of sel (none when
+// nothing drifted), each ending in a newline. The hint depends on whose
+// artifact it is: only a backend whose Description has an ImportCmd can
+// adopt a hand edit.
+func (s *Set) DriftLines(sel DriftSelection) []string {
+	var lines []string
+	for _, r := range s.DriftReports(sel) {
+		lines = append(lines, r.Lines()...)
 	}
 	return lines
 }

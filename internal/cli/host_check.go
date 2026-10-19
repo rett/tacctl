@@ -39,6 +39,20 @@ func reenrollCommand(e hosts.Entry) string {
 // the check (a banner, ssh's messages) goes to stderr, so stdout is the
 // JSON alone.
 func (inv *invocation) hostCheck(e hosts.Entry, v *hostShowJSON, toStderr bool) (*hostCheckJSON, error) {
+	c, failed, err := inv.hostCheckRun(e, v, toStderr)
+	if err != nil {
+		return nil, err
+	}
+	if failed != "" {
+		return nil, inv.usageErr("Could not check " + e.Name + ": " + failed)
+	}
+	return c, nil
+}
+
+// hostCheckRun is hostCheck's run: failed says why the read-only run did
+// not complete ("" when it did; nothing was compared then), err is what
+// ends the command (an interrupt, a registry that cannot be read).
+func (inv *invocation) hostCheckRun(e hosts.Entry, v *hostShowJSON, toStderr bool) (c *hostCheckJSON, failed string, err error) {
 	a := inv.app
 	local := e.Target == hosts.Local
 	he := inv.hostsEnv()
@@ -55,20 +69,20 @@ func (inv *invocation) hostCheck(e hosts.Entry, v *hostShowJSON, toStderr bool) 
 	}
 	st, code, err := he.Check(inv.ctx, e.Target, e.Port, e.Identity, names)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if inv.ctx.Err() != nil {
-		return nil, ui.ErrInterrupted
+		return nil, "", ui.ErrInterrupted
 	}
 	if code != 0 {
 		where := "this server"
 		if !local {
 			where = targetText(e)
 		}
-		return nil, inv.usageErr("Could not check " + e.Name + ": the read-only run as root on " + where + " failed (see above); nothing was compared.")
+		return nil, "the read-only run as root on " + where + " failed (see above); nothing was compared.", nil
 	}
 
-	c := &hostCheckJSON{Differences: []hostDiffJSON{}, Notes: []string{}}
+	c = &hostCheckJSON{Differences: []hostDiffJSON{}, Notes: []string{}}
 	sync := "tacctl host sync " + e.Name
 	diff := func(text, fix string) { c.Differences = append(c.Differences, hostDiffJSON{Text: text, Fix: fix}) }
 
@@ -139,7 +153,7 @@ func (inv *invocation) hostCheck(e hosts.Entry, v *hostShowJSON, toStderr bool) 
 	if !local {
 		f, err := devreg.Load(a.Paths.DevicesFile)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		pinned := f.HostKeysOf(e.Name)
 		own := devreg.ParsePubKeys(st.Keys)
@@ -161,7 +175,7 @@ func (inv *invocation) hostCheck(e hosts.Entry, v *hostShowJSON, toStderr bool) 
 			}
 		}
 	}
-	return c, nil
+	return c, "", nil
 }
 
 // hostCheckText prints the findings of --check.

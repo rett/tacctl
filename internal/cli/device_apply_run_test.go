@@ -370,6 +370,43 @@ func TestApplyHoldOneReaderAcrossDevices(t *testing.T) {
 	}
 }
 
+// An answer typed before the first question is the first device's answer: it
+// sits in the terminal with the review's, and is read with it (D224). The
+// word is OK, so the change is kept.
+func TestApplyHoldAnswerTypedAheadIsTaken(t *testing.T) {
+	b := newApplyBox(t)
+	b.register("example-sw1")
+	b.sb.hooks.applyHoldWait = func(until, now time.Time) time.Duration { return 30 * time.Second }
+	master, slave := terminal(t)
+	out, errb := &lockedBuf{}, &lockedBuf{}
+	code := b.start(slave, out, errb, "example-sw1", "--hold", "--no-canary", "--pause", "0", "--concurrency", "1")
+	waitLong(t, "the review's question", func() bool { return strings.Contains(errb.String(), "Type the device name to go on:") })
+	_, _ = master.WriteString("example-sw1\nOK\n")
+	status, o, e := b.wait(code, out, errb)
+	if status != 0 || !strings.Contains(o, "example-sw1  applied ") {
+		t.Errorf("exit %d\n%s\n%s", status, o, e)
+	}
+}
+
+// An answer that comes after the first device's window is not the second
+// device's: it is dropped, and the second question waits for its own.
+func TestApplyHoldLateAnswerIsDropped(t *testing.T) {
+	b := newApplyBox(t)
+	b.register("example-sw1", "example-sw2")
+	b.sb.hooks.applyHoldWait = func(until, now time.Time) time.Duration { return 300 * time.Millisecond }
+	master, slave := terminal(t)
+	out, errb := &lockedBuf{}, &lockedBuf{}
+	code := b.start(slave, out, errb, "example-sw1,example-sw2", "--hold", "--no-canary", "--max-failures", "2", "--pause", "0", "--concurrency", "1")
+	waitLong(t, "the review's question", func() bool { return strings.Contains(errb.String(), "Type 2 to go on:") })
+	_, _ = master.WriteString("2\n")
+	waitLong(t, "the first device to be rolled back", func() bool { return strings.Contains(plain(out.String()), "example-sw1  rolled back") })
+	_, _ = master.WriteString("OK\n")
+	status, o, e := b.wait(code, out, errb)
+	if status != 1 || !strings.Contains(o, "example-sw2  rolled back: verification failed (the hold: the window ran short)") || strings.Contains(o, "example-sw2  applied ") {
+		t.Errorf("exit %d\n%s\n%s", status, o, e)
+	}
+}
+
 // waitLong is waitUntil with the time a whole transaction on the fake device
 // may take (it types each statement and waits for the echo).
 func waitLong(t *testing.T, what string, cond func() bool) {

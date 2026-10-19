@@ -73,8 +73,9 @@ TACACS+ authentication lines read `accepting user [<user>] from [<address>] usin
 backup list                    Show snapshots (newest first), then old-style backups
 backup diff [timestamp]        Diff store.yaml and tacctl.yaml against a snapshot (default: most
                                recent)
-backup restore <ts> [--legacy] Restore a snapshot (with confirmation); --legacy for an old-style
-      backup
+backup restore <ts> [--legacy|--keep-uids]
+                               Restore a snapshot (with confirmation); --legacy for an old-style
+                               backup; --keep-uids leaves the UID ledger as it is
 ```
 
 A backup is a snapshot of the canonical files, `/etc/tacctl/backups/<timestamp>/{store.yaml,tacctl.yaml,manifest}`, taken automatically before every change that would alter them (nothing is added when they already equal the newest snapshot). The manifest records `rendered.json` and the tacctl version. The newest 30 snapshots are kept. Snapshots hold shared secrets and password hashes: the directory is `0700`, the files `0600`, and `backup diff` and `backup restore` are superuser-only.
@@ -90,6 +91,15 @@ takes one before the first move and none per host, so a long batch does not
 push the state before it out of the newest 30. `host sync` takes none. A
 snapshot made by tacctl 0.2.13 or older has no `linux-hosts`, and tacctl
 0.2.13 ignores the host entries of a newer one.
+
+"Equal to the newest snapshot" compares the files byte for byte, but for the
+host records: `host enroll` and `host sync` rewrite `last_sync` and `facts`
+in a record on every run, so those two are ignored, and a record counts as
+equal when its `provisioner` entry is (a record on one side only counts when
+it has none). A sync alone therefore does not make the next command take a
+snapshot; a rotation of the provisioner does. A snapshot that is taken holds
+the records whole. The snapshot `backup restore` takes first compares
+everything, records included, since it is what undoes the restore.
 
 `backup restore <ts>` puts back both files, re-renders every enabled backend's config (a hand-edited file is kept under `backups/legacy/` first), and restarts the backends. It snapshots the current state first, so a restore can be undone with another restore, and it changes nothing if the snapshot is invalid or the render fails. The snapshot's `backends.enabled` comes back with the rest of `tacctl.yaml`: a backend it enables must already be installed (otherwise nothing changes and the message says to run `backend enable`) and is started; one it leaves out is stopped and disabled.
 
@@ -111,12 +121,37 @@ this one.
 
 The restore holds the host registry's lock from before it changes anything.
 When another tacctl command keeps the lock for 30 seconds, the restore stops
-with the registry busy and nothing changed. A snapshot that does not know the
-hosts does not take the lock. The host files are put back last: if that step
-fails, the rest of the restore stands and the backends are restarted, and two
-warnings name the error, the snapshot of the state from before the restore
+with the registry busy and nothing changed. It also tries the lock of each
+host (the one `host provisioner rotate`, `host rename` and `host forget` hold
+while they run) for every name in the live registry and in the snapshot's,
+without waiting. If another command holds one, the restore stops before it
+takes the snapshot of the current state, with nothing changed:
+
+    Snapshot <ts> was not restored: 'web1' is locked by another tacctl command
+    (a rotation, rename or forget of it is running). Nothing was changed. Run
+    this again when it has finished.
+
+The locks are released when the host files are back. A snapshot that does not
+know the hosts takes neither lock. The host files are put back last: if that
+step fails, the rest of the restore stands and the backends are restarted, and
+two warnings name the error, the snapshot of the state from before the restore
 and the commands that undo the restore (`backup restore` of that snapshot) or
 try the host files again (`backup restore` of this one).
+
+`backup restore <ts> --keep-uids` leaves the UID ledger (`linux-uids`) as it
+is; the registry, the records and `staging` come back as above. Use it when
+the snapshot is wanted for its users, groups, scopes or devices and the hosts
+have synced since: the live ledger is the one the hosts agree with. In place
+of the list of users whose number the restore would drop or change, the note
+before the question, and again after the restore, is one line: the ledger is
+kept, and the restored users keep the numbers they have now. A user the
+snapshot brings back who has no line in the live ledger is numbered afresh at
+the next `host sync`, as any new user is; the line of a user the snapshot
+lacks stays, as after `user remove`. The snapshot of the current state taken
+first is made as always and holds the live ledger. A snapshot that does not
+know the hosts never touches the ledger: the flag is accepted and one line
+says so. `--keep-uids` with `--legacy`, or without a store, is a usage error:
+an old-style restore never touches `linux-uids`.
 
 `backup diff` adds `linux-hosts`, `staging`, `linux-uids` and each host
 record, each only where either side has one. A snapshot that does not know the

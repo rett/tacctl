@@ -230,7 +230,7 @@ on_tty() {
     run "$TACCTL_BIN_SCRIPT" host provisioner web1 rotate deploy2 --key "$KEY" --yes
     kill "$holder" 2> /dev/null || true
     assert_failure 1
-    assert_output --partial "Another rotation of 'web1' is running; nothing was changed."
+    assert_output --partial "'web1' is locked by another tacctl command (a rotation, rename, forget or restore of it is running); nothing was changed."
     [[ "$(_pushes)" == 0 ]]
     run _hosts
     assert_output "web1|${OLD}||lab|192.0.2.1|"

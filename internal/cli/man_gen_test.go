@@ -199,6 +199,8 @@ func manCommandBlocks(t *testing.T) []manBlock {
 // ("<command words> <flag>": the text for that command alone).
 var manFlagOverrides = map[string]string{
 	"host sync --all":                    "(sync) Every enrolled host.",
+	"host check --all":                   "(check) Every enrolled host.",
+	"host check --json":                  "(check) Print a JSON array (one object per host) and nothing else on standard output.",
 	"host move --all":                    "(move) Every host that another scope answers; asks before deleting accounts.",
 	"host enroll --local":                "Enroll this machine itself instead of a remote host (its tacctl users get the login console).",
 	"host enroll --port":                 "The ssh port of the host.",

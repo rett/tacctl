@@ -103,7 +103,7 @@ func TestRotateOneAtATimePerHost(t *testing.T) {
 	}
 	n0 := hs.snapshots()
 	hs.rotRun(rh, "web1", "rotate", "deploy2", "--key", rh.keyPath, "--yes")
-	if hs.code != 1 || !strings.Contains(plain(hs.err.String()), "Another rotation of 'web1' is running; nothing was changed.") {
+	if hs.code != 1 || !strings.Contains(plain(hs.err.String()), "'web1' is locked by another tacctl command (a rotation, rename, forget or restore of it is running); nothing was changed.") {
 		t.Errorf("busy: %d %q", hs.code, hs.err.String())
 	}
 	if len(rh.pushes) != 0 || rh.has("run:") || rh.has("proof") || hs.registry() != rotRegBefore || hs.snapshots() != n0 {
@@ -292,7 +292,7 @@ func TestRotateDocsSayWhatIsTrue(t *testing.T) {
 			}
 		}
 	}
-	for _, want := range []string{"/var/lib/tacctl-provisioner", "UserKnownHostsFile", "another rotation", "GECOS", "sudoers line last"} {
+	for _, want := range []string{"/var/lib/tacctl-provisioner", "UserKnownHostsFile", "is locked by another tacctl command", "GECOS", "sudoers line last"} {
 		if !strings.Contains(string(man), want) {
 			t.Errorf("the manual page does not say %q", want)
 		}

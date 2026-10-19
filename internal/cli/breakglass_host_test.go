@@ -456,6 +456,37 @@ func TestBreakglassHeldHostRefusesWhatLogsIn(t *testing.T) {
 	}
 }
 
+// A held host among the names typed to 'host sync' refuses the whole run
+// before any host is reached (D215); the hosts that are not held are not
+// synced either, and an unknown name is refused first.
+func TestBreakglassSyncNamesRefusesAHeldHost(t *testing.T) {
+	sb := hostLab(t)
+	holdHost(t, sb, "web1", "x")
+	before := sb.read("state/linux-hosts")
+	for _, args := range [][]string{{"web2", "web1"}, {"web1", "web2"}, {"db1", "web2", "web1"}} {
+		sb.run("", append([]string{"host", "sync"}, args...))
+		errs := sb.stderr()
+		cmd := "tacctl host sync " + strings.Join(args, " ")
+		if sb.code != 1 || !strings.Contains(errs, "Break-glass is held on host 'web1' (192.168.1.10) since ") ||
+			!strings.Contains(errs, "'"+cmd+"' is refused for a held host: nothing was attempted over ssh and nothing was changed. Release it first: tacctl breakglass release web1") {
+			t.Errorf("%v: exit %d %q", args, sb.code, errs)
+		}
+		if n := sb.sshCalls(); n != 0 {
+			t.Errorf("%v: %d ssh calls: %v", args, n, sb.runner.Argvs())
+		}
+		if sb.out.String() != "" {
+			t.Errorf("%v printed %q", args, sb.out.String())
+		}
+	}
+	sb.run("", []string{"host", "sync", "web1", "ghost"})
+	if sb.code != 1 || !strings.Contains(sb.stderr(), "No enrolled host named 'ghost'. See 'tacctl host list'.") || sb.sshCalls() != 0 {
+		t.Errorf("unknown among a held: %d %q (%d ssh calls)", sb.code, sb.stderr(), sb.sshCalls())
+	}
+	if sb.read("state/linux-hosts") != before {
+		t.Error("a refusal changed the registry")
+	}
+}
+
 // A host sync of the hosts that are not held goes on.
 func TestBreakglassSyncAllSkipsOnlyTheHeldHost(t *testing.T) {
 	sb := hostLab(t)

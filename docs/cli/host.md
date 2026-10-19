@@ -43,16 +43,38 @@ host enroll <[user@]host>|--local [opts]
         (with --scope) Provisioned off-site: the bench address joins the scope as a /32 until the
         host is seen in place
 
-host sync <name>|--all
+host sync <name>... | --all
 
-    Push account adds, deletions, expiries and tier changes; pins the host's ssh keys if none are
-    (enroll pins them too)
+    Push account adds, renames, deletions, expiries and tier changes (a renamed user's account is
+    renamed, keeping its UID and home); pins the host's ssh keys if none are (enroll pins them too).
+    Several names run in the order typed, each as --all would run it. Every name is checked first
+    (an unknown one refuses the run, one given twice counts once); a host that fails does not stop
+    the rest, and the exit status is 1. Names and --all are not given together
 
+    --all
+        Every enrolled host
     --allow-uid-mismatch
         (enroll and sync) accept a UID conflict on the host instead of stopping
     --remove-home
         (enroll and sync) delete removed users' home directories without asking (on a terminal each
         is asked; without one they are kept)
+
+host check <name>... | --all [--json]
+
+    Compare each host with what tacctl would make it, read-only, as `host show <name> --check`
+    does (superuser only: it logs in); nothing is changed on a host or here. Every name is checked
+    first (an unknown one refuses the run, one given twice counts once); names and --all are not
+    given together. One result per host on standard output: as tacctl would make it, the
+    differences with the command that fixes each, skipped (a held host), or could not be checked.
+    More than one host ends with a count of each. Exit 1 when a host differs or could not be
+    checked
+
+    --all
+        Every enrolled host
+    --json
+        Print a JSON array (`[]` for no host) and nothing else on standard output: name, target,
+        state (ok, differences, failed or held), differences (text and fix), notes, error and
+        breakglass (while held)
 
 host move <name> [<scope>]|--all
 
@@ -98,8 +120,9 @@ to another host or a registered device. A name with upper case is refused
 (`Names are lower case: use 'web1'.`). Changing only the spelling to lower
 case (`Web1` to `web1`) is allowed and is how a name from before is fixed;
 the same name is refused (`'web1' already has that name.`). A
-running `host provisioner rotate` of the host refuses the rename. Everything
-is checked before anything is written, and a refusal changes nothing. The
+running rotation, rename, forget or restore of the host refuses the rename
+(`'web1' is locked by another tacctl command`). Everything is checked before
+anything is written, and a refusal changes nothing. The
 device registry is checked once more under its lock when it is written: a
 device registered under the new name since the checks (another command, at
 the same moment) puts the registry line back and changes nothing, and
@@ -183,9 +206,10 @@ pins and the scan result are shared by names equal ignoring case, so they stay
 while another enrolled host has such a name (a device of that name keeps the
 scan result). A host with a [break-glass hold](breakglass.md) is refused:
 `tacctl breakglass release <name>` first, and so is the leftover of a name
-that a hold is recorded under. A running `host provisioner rotate` of the host
-refuses it. `host unenroll --force` is not the repair for a duplicate: it runs
-the removal script on the machine that the surviving registration shares.
+that a hold is recorded under. A running rotation, rename, forget or restore
+of the host refuses it. `host unenroll --force` is not the repair for a
+duplicate: it runs the removal script on the machine that the surviving
+registration shares.
 
 **Listing.** ADDRESS is the address recorded at the host's last `host enroll`
 or `host sync` (the one a break-glass hold carves out), `-` when none is. In
@@ -195,14 +219,16 @@ the registry gives one; 0 for this server's own host), `scope`, `server`,
 `drift` (the warning the table prints when the scope no longer answers the
 host, empty when none), `breakglass` (the hold, as in `host show --json`,
 only while the host is held) and `findings` (those of the next paragraph that
-name the host, each `text` and `fix`; always empty for an engineer, who is
-told no findings). An engineer lists the hosts of their own scopes. The
+name the host, with the `Names:` findings of `config validate` about the host,
+each `text` and `fix`; always empty for an engineer, who is told no findings). An engineer lists the hosts of their own scopes. The
 table's footer and warnings are not printed with `--json`.
 
 **Findings.** `config validate` (under `Linux hosts:`, warnings that change no
 exit status) and `host list` (one last line, `N finding(s): see tacctl config
-validate`) report, for the superuser, registrations that cannot all be right.
-Nothing is repaired where they are reported; each names the verb that does.
+validate`) report, for the superuser, registrations that cannot all be right
+(`config validate` prints the last row under `Names:`; the `host list` count
+includes it). Nothing is repaired where they are reported; each names the
+verb that does.
 
 | Finding | Fix |
 |---|---|
@@ -210,6 +236,7 @@ Nothing is repaired where they are reported; each names the verb that does.
 | a host named like a registered device | `host rename <name> <new>` |
 | two hosts with the same recorded address and ssh port (the address `enroll` or `sync` recorded; nothing is resolved; one address on another port is another machine) | `host forget <name>` for a registration made twice |
 | a pin, a record or a staging entry with no registry line | `host forget <name>` |
+| a name with upper case (a `Names:` finding in `config validate`) | `host rename <name> <lower-case name>` |
 
 A break-glass hold with no host is the hold's own orphan line in
 `config validate` and `breakglass list`: `tacctl breakglass release <name>`.
@@ -232,6 +259,8 @@ registered host (and so `host move`), `host target <name> <target>`,
 `tacctl breakglass release <name>`; nothing is attempted over ssh and nothing
 is changed. The same refusal stands when the device registry, which records
 the host's address, cannot be read. `host sync --all` skips a held host and
-says so.
+says so; a held host among the names typed to `host sync` refuses the whole
+run before any host is reached. `host check` skips a held host, typed or not
+(it only reads, so there is nothing to refuse), and the skip is not a failure.
 `host target <name>` without a change, `host list` and `host show` only read,
 and `tacctl ssh` warns and connects.

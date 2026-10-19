@@ -64,7 +64,7 @@ config render --dry-run --out <dir>
     Render every enabled backend into a new, empty directory at the live paths; nothing live is
     written, no restart
 
-config validate
+config validate [--json | --fix-names [-y]]
 
     Validate the store, tacctl.yaml (schema walk, incl. commands.<group> / privileges.<group> /
     mgmt_acl.* / listeners) and the server-config structure (orphan scope refs, scope.default
@@ -86,13 +86,15 @@ config validate
     names of new ones are lower case) gets a `Names:` warning that names the rename which fixes it
     (`tacctl user rename Alice alice`; for a user it adds that devices match the typed login name
     exactly, so the rename changes what the person types); the superuser's view only. Exits 1 on
-    errors
+    errors. `--json` prints the findings as one JSON object and nothing else on standard output
+    (the schema is below); the exit status is the same. `--fix-names` follows the report with the
+    offer to rename each such name to its lower-case spelling (below); the superuser's
 
 config diff [timestamp]
 
     Alias of `backup diff`
 
-config restore <timestamp> [--legacy]
+config restore <timestamp> [--legacy|--keep-uids]
 
     Alias of `backup restore`
 
@@ -257,3 +259,124 @@ config branch [name]
 
     Show or change the tacctl repo branch
 ```
+
+## `config validate --fix-names`
+
+`config validate --fix-names [-y]` prints the usual report, then offers
+every `Names:` finding whose lower-case spelling is free, one at a time:
+devices first, then hosts, users and scopes, each kind in alphabetical
+order.
+
+```
+Rename device 'Core-SW1' to 'core-sw1'? [y/N]:
+```
+
+Only `y` or `Y` renames; anything else, and a closed standard input, is a
+no. A piped `y` works as for every other question, and no terminal is
+required. `-y` (`--yes`) answers yes to every question.
+
+On yes the verb that renames that kind of name runs as when typed
+(`device rename`, `host rename`, `user rename`, `scope rename`) and prints
+what it prints. Each rename takes its own snapshot, so each has its own undo
+point, and carries what its verb carries (a host's pins, record, staging and
+hold and the offer of its own `linux-<name>` scope; a user's UID line; a
+scope's keys, hosts and staging). `-y` is passed on to `host rename` only
+when it was given here: without it the verb asks its own questions (a
+leftover under the new name, the scope) after this one. The findings are
+read again after each rename, so a scope that a host rename carried is not
+offered twice.
+
+A name whose lower-case spelling is another name's (`Alice` beside `alice`,
+two hosts equal ignoring case, a device and a host that are one name) is not
+offered. One line says so:
+
+```
+'Alice' is not offered: 'alice' is taken; pick a name: tacctl user rename Alice <new>
+```
+
+For two hosts equal ignoring case the line adds `, or tacctl host forget
+<name> drops the stray registration`. A rename its verb refuses (a name
+taken since the report, a scope whose new name already has SNMP
+credentials) prints the verb's refusal and does not stop the rest.
+
+The run ends with a count, and, when a user was renamed and hosts are
+enrolled, with the `tacctl host sync --all` that renames their accounts:
+
+```
+Names: renamed 3, declined 1, not offered 1, failed 0.
+```
+
+The exit status is 1 when the report had errors, a rename failed or a name
+was not offered, so that a script with `-y` learns that names remain; a
+decline does not fail the run. `--fix-names` renames, so it is the
+superuser's: an operator or an engineer is refused. It needs the store and
+does not go with `--json`.
+
+## `config validate --json`
+
+`config validate --json` runs the same checks and prints the result as one
+JSON object on standard output, and nothing else there. What the report
+writes around itself (the complaint of a store that cannot be read, a
+backend's own message) goes to standard error. The exit status is the text
+report's: 1 when `errors` is not 0, otherwise 0 (warnings alone exit 0); the
+object is printed either way. The verb is the operator's, with or without
+`--json`.
+
+```
+{
+  "valid": false,
+  "errors": 1,
+  "warnings": 2,
+  "mode": "store",
+  "counts": {"users": 12, "groups": 3, "scopes": 4},
+  "backends": ["tacacs", "radius"],
+  "findings": [
+    {"section": "scope_default", "level": "error", "fix": "",
+     "text": "Default scope override points at 'x' which is not a defined scope"},
+    {"section": "linux_hosts", "level": "warning",
+     "text": "the hosts 'Web1', 'web1' are one name ignoring case and share one record ...",
+     "fix": "tacctl host forget <name> drops the stray registration; ...",
+     "hosts": ["Web1", "web1"]},
+    {"section": "rendered", "level": "warning", "backend": "tacacs",
+     "text": "tacquito.yaml was not rendered by tacctl yet ...",
+     "fix": "tacctl config render --force"}
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `valid` | `true` when `errors` is 0 |
+| `errors`, `warnings` | how many findings have each level |
+| `mode` | `store`, or `legacy` when there is no store yet (read-only mode) |
+| `counts` | the users, groups and scopes the model defines; `null` when it cannot be read |
+| `backends` | the enabled backends; `[]` when the list cannot be read |
+| `findings` | what the text report lists as a problem, in its order; `[]` when there is none |
+
+A finding has:
+
+| Field | Meaning |
+|---|---|
+| `section` | the label of the text report as a fixed token (below) |
+| `level` | `error` (counts toward the exit status) or `warning` |
+| `text` | what is wrong, as the text report words it, without the command that puts it right |
+| `fix` | that command, when the finding carries one apart from its text; else `""`. For a drifted file it is the advice the text report prints under the `DRIFT:` line |
+| `backend` | the backend a rendered-config, drift or vendor-attribute finding belongs to; absent otherwise |
+| `hosts` | the registered hosts a `linux_hosts` or `names` finding names; absent otherwise |
+
+The sections are `store`, `yaml` (without a store: `tacquito.yaml` does not
+parse), `overrides` (`tacctl.yaml`), `command_rules`, `structure` (users,
+groups and scopes), `scope_default`, `linux_hosts`, `names`, `breakglass`,
+`breakglass_hold`, `config_blocks`, `operator_policy`, `group_settings`,
+`orphan_settings`, `orphan_files`, `leftovers`, `backends` (the enabled list
+cannot be read), `rendered`, `drift` and `vendor_attrs`. A line of the text
+report that says all is well (`valid`, `up to date`, `no overrides`) has no
+finding.
+
+The level is the one that counts. A finding the text report colours red but
+does not count (a break-glass hold with no registered device, or a hold
+record the `tacctl.yaml` check already reports) is a `warning` here, so
+`valid` and the exit status agree with `errors`. The text report counts the
+files of one backend that drifted as a single error; the object counts each
+file. A caller who sees only some scopes (an engineer) gets no `linux_hosts`,
+`names` or hold-defect findings, as in the text report.

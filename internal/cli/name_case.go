@@ -56,6 +56,7 @@ func (inv *invocation) caseFindings() []hostFinding {
 		out = append(out, hostFinding{
 			Text: "the device '" + n + "' has upper case in its name; new names are lower case",
 			Fix:  "tacctl device rename " + n + " " + target(n, taken),
+			Kind: "device", Name: n, To: target(n, taken), Verb: "device rename",
 		})
 	}
 	for _, n := range hs {
@@ -63,6 +64,7 @@ func (inv *invocation) caseFindings() []hostFinding {
 			Text:  "the host '" + n + "' has upper case in its name; new names are lower case",
 			Fix:   "tacctl host rename " + n + " " + target(n, taken),
 			Hosts: []string{n},
+			Kind:  "host", Name: n, To: target(n, taken), Verb: "host rename",
 		})
 	}
 
@@ -85,6 +87,7 @@ func (inv *invocation) caseFindings() []hostFinding {
 					out = append(out, hostFinding{
 						Text: "the " + set.kind + " '" + n + "' has upper case in its name; new names are lower case" + set.note,
 						Fix:  "tacctl " + set.verb + " rename " + n + " " + target(n, lowers),
+						Kind: set.kind, Name: n, To: target(n, lowers), Verb: set.verb + " rename",
 					})
 				}
 			}
