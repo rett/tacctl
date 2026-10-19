@@ -14,10 +14,12 @@ backup diff {TS}
 backup diff 19990101_000000
 backup diff 20260101_000000_000
 backup diff ../store.yaml
+@known 0.2.15 item 6: the usage of backup restore and config restore names --keep-uids
 backup restore
 backup restore 19990101_000000
 backup restore 19990101_000000 --legacy
 backup restore a b
+@known 0.2.15 item 6: the usage of backup restore and config restore names --keep-uids
 backup restore a --frob
 backup restore --legacy pre-store.20250101_000000
 backup restore {TS} <<< y
@@ -61,12 +63,16 @@ backup list ;; backup restore 20200101_000000_001 <<< y
 # more argument handling, and the config aliases
 backup list extra
 backup diff a b
+@known 0.2.15 item 6: the usage of backup restore and config restore names --keep-uids
 backup restore --legacy
+@known 0.2.15 item 6: the usage of backup restore and config restore names --keep-uids
 backup restore -x
 backup restore {TS} {TS}
 config diff
 config diff 19990101_000000
+@known 0.2.15 item 6: the usage of backup restore and config restore names --keep-uids
 config restore
+@known 0.2.15 item 6: the usage of backup restore and config restore names --keep-uids
 config restore a --frob
 config restore 19990101_000000 --legacy
 

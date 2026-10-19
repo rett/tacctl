@@ -171,6 +171,7 @@ config bcrypt-cost 10 ;; config render ;; config validate
 # diff / restore aliases of the backup verbs
 config diff
 config diff {TS}
+@known 0.2.15 item 6: the usage of backup restore and config restore names --keep-uids
 config restore
 config restore {TS}
 
@@ -242,6 +243,7 @@ config sudoers remove extra
 config sudoers tiers remove extra
 @known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax; 0.2.9 item 2: the cache's alias gains device config apply, device onboard and device collect; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config sudoers tiers show extra
+@known 0.2.15 item 6: the usage of backup restore and config restore names --keep-uids
 config restore {TS} --bogus
 config diff {TS} extra
 
