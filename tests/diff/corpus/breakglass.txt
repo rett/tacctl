@@ -7,31 +7,34 @@
 # Run: tests/diff/run.sh breakglass
 @fixture tacquito.multiscope.yaml
 
-@known 0.2.12 item 6: breakglass hold and release take a device list; their usage lines say so
+@known 0.2.14 item 2: breakglass names devices and hosts alike; its usage lines and messages say so; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 breakglass
-@known 0.2.12 item 6: breakglass hold and release take a device list; their usage lines say so
+@known 0.2.14 item 2: breakglass names devices and hosts alike; its usage lines and messages say so; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 breakglass help
-@known 0.2.12 item 6: breakglass hold and release take a device list; their usage lines say so
+@known 0.2.14 item 2: breakglass names devices and hosts alike; its usage lines and messages say so; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 breakglass bogus
+@known 0.2.14 item 2: breakglass names devices and hosts alike; its usage lines and messages say so; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 breakglass list
 breakglass list --json
 breakglass list --bogus
-@known 0.2.12 item 6: breakglass hold and release take a device list; their usage lines say so
+@known 0.2.14 item 2: breakglass names devices and hosts alike; its usage lines and messages say so; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 breakglass hold
-@known 0.2.12 item 6: breakglass hold and release take a device list; their usage lines say so
+@known 0.2.14 item 2: breakglass names devices and hosts alike; its usage lines and messages say so; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 breakglass hold nosuch
-@known 0.2.12 item 6: breakglass hold takes a device list, so a second word is one more device, not too many arguments
+@known 0.2.14 item 2: breakglass names devices and hosts alike; its usage lines and messages say so; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 breakglass hold nosuch --reason console recovery
-@known 0.2.12 item 6: breakglass hold and release take a device list; their usage lines say so
+@known 0.2.14 item 2: breakglass names devices and hosts alike; its usage lines and messages say so; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 breakglass hold nosuch --reason
-@known 0.2.12 item 6: breakglass hold and release take a device list; their usage lines say so
+@known 0.2.14 item 2: breakglass names devices and hosts alike; its usage lines and messages say so; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 breakglass release
 breakglass release nosuch
 
 # a device that is registered and covered: no terminal to confirm on
-@known 0.2.12 item 6: breakglass hold and release take a device list; their usage lines say so
+@known 0.2.14 item 2: breakglass names devices and hosts alike; its usage lines and messages say so; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 device add lab-sw 192.168.1.1 --vendor cisco --no-host-key ;; breakglass hold lab-sw
-@known 0.2.12 item 6: breakglass hold takes a device list, so a second word is one more device, not too many arguments
+@known 0.2.14 item 2: breakglass names devices and hosts alike; its usage lines and messages say so; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 device add lab-sw 192.168.1.1 --vendor cisco --no-host-key ;; breakglass hold lab-sw --reason console recovery
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 device add core-rtr 100.64.0.9 --vendor cisco --no-host-key ;; breakglass hold core-rtr --reason x
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 device add self 127.0.0.1 --no-host-key ;; breakglass hold self --reason x

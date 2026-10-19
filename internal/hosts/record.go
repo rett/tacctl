@@ -15,6 +15,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 )
 
 // Record is one host's record.
@@ -164,10 +166,43 @@ func (rs Records) Forget(name string) error {
 	return nil
 }
 
-// Rename moves the record of old to new (none is no error).
+// Has reports whether there is a record of name.
+func (rs Records) Has(name string) bool {
+	_, err := os.Lstat(rs.path(name))
+	return err == nil
+}
+
+// Rename moves the record of old to new (none is no error), over a record
+// of new there is, under the records' lock so that a sync or a rotation
+// writing the record is not interleaved with the move.
 func (rs Records) Rename(old, new string) error {
+	unlock, err := rs.lockRecords()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := os.Rename(rs.path(old), rs.path(new)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	return nil
+}
+
+// Names are the hosts that have a record, sorted (the names of the files of
+// the directory, without their .json; a temporary file of a write is not a
+// record). A missing directory has none.
+func (rs Records) Names() []string {
+	ents, err := os.ReadDir(rs.Dir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range ents {
+		n, ok := strings.CutSuffix(e.Name(), ".json")
+		if !ok || n == "" || strings.HasPrefix(e.Name(), ".") || e.IsDir() {
+			continue
+		}
+		out = append(out, n)
+	}
+	slices.Sort(out)
+	return out
 }

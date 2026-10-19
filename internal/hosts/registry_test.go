@@ -2,11 +2,14 @@ package hosts
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func writeFile(t *testing.T, path, text string) {
@@ -453,5 +456,125 @@ func TestScopeUsersAndCounts(t *testing.T) {
 	}
 	if Machine() == "" {
 		t.Error("Machine")
+	}
+}
+
+// Two writers at once, on different names: each reads the file under the
+// lock, so neither write is lost.
+func TestRegistryWritesSerialise(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "linux-hosts")
+	const n = 24
+	var wg sync.WaitGroup
+	errs := make(chan error, n)
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Each writer has its own Registry, as two commands have.
+			r := &Registry{Path: p}
+			errs <- r.Remember(Entry{Name: fmt.Sprintf("web%02d", i), Target: "root@h", Scope: "lab", Server: "192.0.2.1"})
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	r, err := LoadRegistry(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(r.Entries()); got != n {
+		t.Fatalf("%d of %d hosts landed:\n%s", got, n, readFile(t, p))
+	}
+	// A Replace and a Forget through a registry loaded before the others'
+	// writes act on the file as it is.
+	stale := &Registry{Path: p}
+	if err := stale.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&Registry{Path: p}).Remember(Entry{Name: "late", Target: "root@l", Scope: "lab", Server: "192.0.2.1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := stale.Replace(Entry{Name: "web00", Target: "root@new", Scope: "lab", Server: "192.0.2.1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := stale.Forget("web01"); err != nil {
+		t.Fatal(err)
+	}
+	r, _ = LoadRegistry(p)
+	if _, ok := r.Find("late"); !ok || len(r.Entries()) != n {
+		t.Errorf("a stale registry wrote over another's change:\n%s", readFile(t, p))
+	}
+	if e, _ := r.Find("web00"); e.Target != "root@new" {
+		t.Errorf("Replace: %+v", e)
+	}
+	if _, ok := r.Find("web01"); ok {
+		t.Error("Forget left web01")
+	}
+	if st, err := os.Stat(p); err != nil || st.Mode().Perm() != 0o600 {
+		t.Errorf("mode %v %v", st, err)
+	}
+}
+
+// A write waits for the lock, goes on when it is let go, and gives up with
+// a clear error when it is not.
+func TestRegistryWriteWaitsForTheLock(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "linux-hosts")
+	holder := &Registry{Path: p}
+	unlock, err := holder.lock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- (&Registry{Path: p}).Remember(Entry{Name: "web1", Target: "root@h", Scope: "lab", Server: "192.0.2.1"})
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("Remember did not wait for the lock: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Error("the registry was written while the lock was held")
+	}
+	unlock()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Remember did not go on when the lock was let go")
+	}
+	if got := readFile(t, p); got != "web1|root@h||lab|192.0.2.1|\n" {
+		t.Errorf("registry %q", got)
+	}
+}
+
+func TestRegistryLockTimesOut(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "linux-hosts")
+	unlock, err := (&Registry{Path: p}).lock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	old := registryLockWait
+	registryLockWait = 100 * time.Millisecond
+	defer func() { registryLockWait = old }()
+	for name, fn := range map[string]func(*Registry) error{
+		"Remember": func(r *Registry) error { return r.Remember(Entry{Name: "web1"}) },
+		"Replace":  func(r *Registry) error { return r.Replace(Entry{Name: "web1"}) },
+		"Forget":   func(r *Registry) error { return r.Forget("web1") },
+	} {
+		err := fn(&Registry{Path: p})
+		if !errors.Is(err, ErrRegistryBusy) || !strings.Contains(err.Error(), "locked by another tacctl command") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Error("a write got through")
 	}
 }

@@ -276,6 +276,24 @@ func TestCheckHostName(t *testing.T) {
 	}
 }
 
+func TestCheckNewHostName(t *testing.T) {
+	reg := hostRegistry(t, "web1|root@w||lab|1.1.1.1|\nDB2|root@d||lab|1.1.1.1|\n")
+	for _, c := range []struct{ name, want string }{
+		{"web3", ""},
+		{"web1", ""}, // 'host enroll' asks only for a name no host has exactly
+		{"Web1", "'web1' is enrolled; names are not case-sensitive. Nothing was changed."},
+		{"db2", "'DB2' is enrolled; names are not case-sensitive"},
+		{"all", "'all' is a tacctl word and cannot name a host"},
+		{"Local", "'Local' is a tacctl word and cannot name a host"},
+		{"scope", "tacctl word"},
+	} {
+		err := CheckNewHostName(reg, c.name)
+		if (c.want == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), c.want)) {
+			t.Errorf("%s: %v, want %q", c.name, err, c.want)
+		}
+	}
+}
+
 func TestNotices(t *testing.T) {
 	f := Empty()
 	f.Devices = []*Device{

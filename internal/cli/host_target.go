@@ -69,6 +69,9 @@ func (inv *invocation) hostTarget(args []string) error {
 	if e.Target == hosts.Local {
 		return inv.usageErr("'" + name + "' is this server (enrolled with --local); it is not reached over ssh, so it has no target to change.")
 	}
+	if err := inv.hostHeldErr(e, "tacctl host target "+name); err != nil {
+		return err
+	}
 	if setIdentity && noIdentity {
 		return inv.usageErr("Give --identity or --no-identity, not both.")
 	}

@@ -120,6 +120,25 @@ _own_scope() {
     assert_output --regexp "^ssh .*-O exit admin@web1.example.net$"
 }
 
+@test "host enroll: a new name passes the device name rules; a missing option value is named" {
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --name all
+    assert_failure 1
+    assert_output --partial "'all' is a tacctl word and cannot name a host"
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --name Web1
+    assert_failure 1
+    assert_output --partial "'web1' is enrolled; names are not case-sensitive. Nothing was changed."
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --name web1
+    assert_success
+    run _hosts
+    assert_output --partial "web1|"
+    refute_output --partial "Web1|"
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope
+    assert_failure 1
+    assert_output --partial "--scope needs a value."
+}
+
 @test "host enroll: rejects option-like and malformed targets" {
     run "$TACCTL_BIN_SCRIPT" host enroll "web1;reboot" --scope lab
     assert_failure
@@ -265,6 +284,18 @@ on_tty() {
     assert_line --index 2 --partial "mktemp"
 }
 
+@test "host sync: a renamed disabled user's account is renamed there: no home question, its number in the header" {
+    _removed_users
+    "$TACCTL_BIN_SCRIPT" user rename fred freddy > /dev/null
+    on_tty 'n\nn\n' host sync web1
+    assert_success
+    assert_output --partial "Delete /home/dave of removed user 'dave'? [y/N]"
+    refute_output --partial "/home/fred"
+    run sed '/^__TARBALL__$/,$d' "$PUSHED"
+    assert_line "TAC_INACTIVE=freddy"
+    assert_line "TAC_INACTIVE_UIDS=freddy:80003"
+}
+
 @test "host sync: without a terminal nothing is asked and every home is kept; --remove-home deletes them all" {
     _removed_users
     run "$TACCTL_BIN_SCRIPT" host sync web1
@@ -295,7 +326,7 @@ on_tty() {
     "$TACCTL_BIN_SCRIPT" user add bob readonly --hash "$HASH" --scopes lab > /dev/null
     "$TACCTL_BIN_SCRIPT" user disable bob > /dev/null
     run "$TACCTL_BIN_SCRIPT" host list
-    assert_line --regexp "web1 +web1 +lab +192\.0\.2\.1 +tacplus +1$"
+    assert_line --regexp "web1 +web1 +[^ ]+ +lab +192\.0\.2\.1 +tacplus +1$"
 }
 
 @test "host sync: unknown host is an error" {
@@ -542,7 +573,28 @@ on_tty() {
     "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab > /dev/null
     run "$TACCTL_BIN_SCRIPT" host list
     assert_success
-    assert_line --regexp "web1 +web1 +lab +192\.0\.2\.1 +tacplus +1"
+    assert_line --regexp "web1 +web1 +[^ ]+ +lab +192\.0\.2\.1 +tacplus +1"
+}
+
+@test "host list --json: a JSON array of the hosts, with the recorded address; [] for none" {
+    run "$TACCTL_BIN_SCRIPT" host list --json
+    assert_success
+    assert_output "[]"
+    "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab > /dev/null
+    echo "old1|admin@old1||lab|192.0.2.1|" >> "${TACCTL_STATE_DIR}/linux-hosts"
+    run "$TACCTL_BIN_SCRIPT" host list --json
+    assert_success
+    run jq -r 'map(.name) | join(",")' <<< "$output"
+    assert_output "web1,old1"
+    run "$TACCTL_BIN_SCRIPT" host list --json
+    run jq -r '.[0] | [.target, .port, .scope, .server, .method, (.address | length > 0), .users, (.findings | length), has("breakglass")] | map(tostring) | join(" ")' <<< "$output"
+    assert_output "web1 22 lab 192.0.2.1 tacplus true 1 0 false"
+    run "$TACCTL_BIN_SCRIPT" host list --json
+    run jq -r '.[1] | [.name, .address, .method] | join(" ")' <<< "$output"
+    assert_output "old1  tacplus"
+    run "$TACCTL_BIN_SCRIPT" host list --bogus
+    assert_failure
+    assert_output --partial "Usage: tacctl host list [--json]"
 }
 
 @test "host: is superuser-only" {
@@ -871,8 +923,8 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     assert_line "TAC_PORT=49"
 
     run "$TACCTL_BIN_SCRIPT" host list
-    assert_line --regexp "web1 +web1 +lab +192\.0\.2\.1 +radius +1$"
-    assert_line --regexp "web2 +web2 +lab +192\.0\.2\.1 +tacplus +1$"
+    assert_line --regexp "web1 +web1 +[^ ]+ +lab +192\.0\.2\.1 +radius +1$"
+    assert_line --regexp "web2 +web2 +[^ ]+ +lab +192\.0\.2\.1 +tacplus +1$"
 
     run "$TACCTL_BIN_SCRIPT" host unenroll web1
     assert_success
@@ -885,7 +937,7 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
 @test "host: a six-field registry line is a tacplus host" {
     echo "old1|admin@old1||lab|192.0.2.1|" > "${TACCTL_STATE_DIR}/linux-hosts"
     run "$TACCTL_BIN_SCRIPT" host list
-    assert_line --regexp "old1 +admin@old1 +lab +192\.0\.2\.1 +tacplus +1$"
+    assert_line --regexp "old1 +admin@old1 +- +lab +192\.0\.2\.1 +tacplus +1$"
     run "$TACCTL_BIN_SCRIPT" host sync old1
     assert_success
     run cat "$PUSHED"
@@ -1152,11 +1204,11 @@ _container_ssh() {
     [[ ! -e "${TACCTL_STATE_DIR}/hosts/web1.json" ]]
 }
 
-@test "host show: a host enrolled before the record shows it as not recorded" {
+@test "host show: a host with no record shows that" {
     echo "web1|admin@web1.example.net||lab|192.0.2.1|" > "${TACCTL_STATE_DIR}/linux-hosts"
     run "$TACCTL_BIN_SCRIPT" host show web1
     assert_success
-    assert_line "  Recorded:     not recorded (before 0.2.2)"
+    assert_line "  Recorded:     no record under this name"
 }
 
 @test "host show --check: read-only, one line per difference with its fix, exit 1" {
@@ -1210,4 +1262,154 @@ _container_ssh() {
     refute_output --partial "alice is an engineer"
     refute_output --partial "tac-engineer is missing"
     assert_line "  3 differences."
+}
+
+@test "backup restore: a snapshot taken by host unenroll brings the host, its record and the ledger back" {
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab > /dev/null
+    run _hosts
+    assert_output "web1|admin@web1.example.net||lab|192.0.2.1|"
+    cp "${TACCTL_STATE_DIR}/linux-uids" "${BATS_TEST_TMPDIR}/uids.before"
+    local before
+    before=$(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l)
+
+    "$TACCTL_BIN_SCRIPT" host unenroll web1 > /dev/null
+    run _hosts
+    assert_output ""
+    [ ! -e "${TACCTL_STATE_DIR}/hosts/web1.json" ]
+    local snap
+    snap=$(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | tail -n 1)
+    [[ $(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l) -gt $before ]]
+    # The snapshot has the registry line, the record and the ledger, 0600.
+    grep -q '^web1|' "${TACCTL_STATE_DIR}/backups/${snap}/linux-hosts"
+    [ -f "${TACCTL_STATE_DIR}/backups/${snap}/hosts/web1.json" ]
+    [ "$(stat -c %a "${TACCTL_STATE_DIR}/backups/${snap}/linux-hosts")" = 600 ]
+    [ "$(stat -c %a "${TACCTL_STATE_DIR}/backups/${snap}/hosts")" = 700 ]
+    cmp "${TACCTL_STATE_DIR}/backups/${snap}/linux-uids" "${BATS_TEST_TMPDIR}/uids.before"
+
+    run "$TACCTL_BIN_SCRIPT" backup diff "$snap"
+    assert_success
+    assert_output --partial "linux-hosts"
+    assert_output --partial "hosts/web1.json"
+
+    run "$TACCTL_BIN_SCRIPT" backup restore "$snap" <<< "y"
+    assert_success
+    assert_output --partial "come back: web1"
+    assert_output --partial "The hosts themselves are not touched."
+    assert_output --partial "Restored snapshot ${snap}"
+    run _hosts
+    assert_output "web1|admin@web1.example.net||lab|192.0.2.1|"
+    [ -f "${TACCTL_STATE_DIR}/hosts/web1.json" ]
+    cmp "${TACCTL_STATE_DIR}/linux-uids" "${BATS_TEST_TMPDIR}/uids.before"
+}
+
+@test "host rename: the registry line, the pin and the record follow the name; the next sync has no pin warning" {
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab > /dev/null
+    # A pin and a recorded address under the old name, as an enrolment on a
+    # real host leaves them.
+    cat > "${TACCTL_STATE_DIR}/devices.yaml" << 'YAML'
+# tacctl device registry: names for the devices and hosts that authenticate here.
+version: 1
+settings: {stale_days: 30}
+devices: {}
+hosts:
+  web1:
+    address: 192.0.2.50
+    host_keys: [ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl]
+YAML
+    chmod 600 "${TACCTL_STATE_DIR}/devices.yaml"
+    [ -f "${TACCTL_STATE_DIR}/hosts/web1.json" ]
+    local before
+    before=$(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l)
+
+    run "$TACCTL_BIN_SCRIPT" host rename web1 web7
+    assert_success
+    assert_output --partial "Host 'web1' renamed to 'web7'."
+    run _hosts
+    assert_output "web7|admin@web1.example.net||lab|192.0.2.1|"
+    [ -f "${TACCTL_STATE_DIR}/hosts/web7.json" ]
+    [ ! -e "${TACCTL_STATE_DIR}/hosts/web1.json" ]
+    grep -q '^  web7:' "${TACCTL_STATE_DIR}/devices.yaml"
+    ! grep -q '^  web1:' "${TACCTL_STATE_DIR}/devices.yaml"
+    [[ $(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l) -gt $before ]]
+    stub_called "logger .*host rename old=web1 new=web7 by="
+
+    run "$TACCTL_BIN_SCRIPT" host sync web7
+    assert_success
+    assert_output --partial "web7: synced"
+    refute_output --partial "no host key is pinned"
+    # The pin made under the old name is the one the sync finds (the stubbed
+    # session reports no keys, so it neither adds nor changes one).
+    grep -q 'AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' "${TACCTL_STATE_DIR}/devices.yaml"
+    run "$TACCTL_BIN_SCRIPT" host show web7
+    assert_success
+    assert_output --partial "192.0.2.50"
+    run "$TACCTL_BIN_SCRIPT" host show web1
+    assert_failure
+
+    # Refusals: the same name, a name that is a tacctl word, an unknown host.
+    run "$TACCTL_BIN_SCRIPT" host rename web7 web7
+    assert_failure
+    assert_output --partial "'web7' already has that name."
+    run "$TACCTL_BIN_SCRIPT" host rename web7 all
+    assert_failure
+    assert_output --partial "'all' is a tacctl word and cannot name a host"
+    run "$TACCTL_BIN_SCRIPT" host rename ghost web8
+    assert_failure
+    run _hosts
+    assert_output "web7|admin@web1.example.net||lab|192.0.2.1|"
+}
+
+@test "host forget: a registration is dropped locally; orphans are reported and forgotten" {
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab > /dev/null
+    cat > "${TACCTL_STATE_DIR}/devices.yaml" << 'YAML'
+# tacctl device registry: names for the devices and hosts that authenticate here.
+version: 1
+settings: {stale_days: 30}
+devices: {}
+hosts:
+  web1:
+    address: 192.0.2.50
+    host_keys: [ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl]
+YAML
+    chmod 600 "${TACCTL_STATE_DIR}/devices.yaml"
+    # The leftover of a host that has no registry line.
+    cp "${TACCTL_STATE_DIR}/hosts/web1.json" "${TACCTL_STATE_DIR}/hosts/ghost.json"
+
+    run "$TACCTL_BIN_SCRIPT" host list
+    assert_success
+    assert_output --partial "1 finding(s): see tacctl config validate"
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_output --partial "'ghost' is not an enrolled host but has a record (tacctl host forget ghost)"
+
+    # Without --yes and without an answer nothing is changed.
+    run "$TACCTL_BIN_SCRIPT" host forget ghost < /dev/null
+    assert_failure
+    assert_output --partial "Nothing was changed."
+    [ -f "${TACCTL_STATE_DIR}/hosts/ghost.json" ]
+
+    run "$TACCTL_BIN_SCRIPT" host forget ghost --yes
+    assert_success
+    assert_output --partial "Host 'ghost' forgotten."
+    [ ! -e "${TACCTL_STATE_DIR}/hosts/ghost.json" ]
+    run "$TACCTL_BIN_SCRIPT" host list
+    refute_output --partial "finding(s)"
+
+    local before calls
+    before=$(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l)
+    calls=$(wc -l < "${CALLS_LOG}")
+    run "$TACCTL_BIN_SCRIPT" host forget web1 --yes
+    assert_success
+    assert_output --partial "The host itself is not touched"
+    run _hosts
+    assert_output ""
+    [ ! -e "${TACCTL_STATE_DIR}/hosts/web1.json" ]
+    ! grep -q '^  web1:' "${TACCTL_STATE_DIR}/devices.yaml"
+    [[ $(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l) -gt $before ]]
+    stub_called "logger .*host forget name=web1 by="
+    # Nothing was run on the host.
+    ! tail -n +$((calls + 1)) "${CALLS_LOG}" | grep -qE '^(ssh|scp)'
+
+    run "$TACCTL_BIN_SCRIPT" host forget web1 --yes
+    assert_failure
+    assert_output --partial "No enrolled host or leftover named 'web1'"
 }

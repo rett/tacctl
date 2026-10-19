@@ -44,6 +44,11 @@ type Script struct {
 	// accounting sink, a group without priv-lvl, a UID outside the range),
 	// joined by newlines: a host expires their accounts, never deletes them.
 	Inactive string
+	// InactiveUIDs are "name:uid" lines (TAC_INACTIVE_UIDS) for the
+	// inactive users that have a number in the UID file, so a host can
+	// tell the account of a renamed disabled user from a removed one. Not
+	// written when empty.
+	InactiveUIDs string
 	// RemoveHomes names the removed users whose home directory the host
 	// deletes with the account, space-separated; "*" is every one of them
 	// (--remove-home). Any other removed user's home is kept.
@@ -89,7 +94,9 @@ type Script struct {
 // first+5, on every host; a host's engineers move from tac-superuser to
 // it) and TAC_ENGINEER_SUDO, its line in the host's sudoers drop-in
 // (written on hosts other than the tacctl server only, and at a sync as
-// well as at an install). The body refuses a header of another protocol,
+// well as at an install); 0.2.14 added TAC_INACTIVE_UIDS (optional, written
+// only when there is one: the body tolerates its absence). The body refuses
+// a header of another protocol,
 // and a body of an earlier release has no TAC_PROTOCOL check but never
 // sees this header (both are written into one file by one tacctl).
 const ScriptProtocol = "6"
@@ -164,6 +171,9 @@ func (s Script) Header() string {
 	}
 	q("TAC_USERS", s.Users)
 	q("TAC_INACTIVE", s.Inactive)
+	if s.InactiveUIDs != "" {
+		q("TAC_INACTIVE_UIDS", s.InactiveUIDs)
+	}
 	q("TAC_REMOVE_HOMES", s.RemoveHomes)
 	r := s.Range
 	if r.IsZero() {
@@ -339,6 +349,13 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 	if err != nil {
 		return ScriptResult{}, err
 	}
+	// A kept user (no priv-lvl, or a UID out of the range) has an expired
+	// account on the hosts like a disabled one, so its number goes too.
+	expired := append(append([]string(nil), req.Inactive...), keep...)
+	inactiveUIDs, err := e.inactiveUIDs(expired)
+	if err != nil {
+		return ScriptResult{}, err
+	}
 	homes := strings.Join(req.RemoveHomes, " ")
 	if req.RemoveAllHomes {
 		homes = "*"
@@ -346,8 +363,9 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 	s := Script{
 		Scope: req.Scope, Method: method, Server: req.Server, Port: port, AcctPort: acctPort,
 		Secret: req.Secret, Users: users, Generated: e.now(), Range: e.rng(), Previous: previous,
-		Inactive: strings.Join(linuxNames(append(append([]string(nil), req.Inactive...), keep...)), "\n"), RemoveHomes: homes,
+		Inactive: strings.Join(linuxNames(expired), "\n"), RemoveHomes: homes,
 		Local: req.Local, EngineerSudo: req.EngineerSudo, RevokeEngineer: req.RevokeEngineer,
+		InactiveUIDs: inactiveUIDs,
 	}
 	if embed {
 		s.Tarball = tarball
@@ -367,6 +385,26 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 		return res, ErrFailed
 	}
 	return res, nil
+}
+
+// inactiveUIDs are the "name:uid" lines of the inactive users that already
+// have a number of the range in the UID file, in order. None is assigned: a
+// disabled user with no number gets none (and no host has an account to
+// rename for it).
+func (e *Env) inactiveUIDs(names []string) (string, error) {
+	uids := e.UIDs()
+	rng := uids.rng()
+	var out []string
+	for _, n := range linuxNames(names) {
+		uid, err := uids.Lookup(n)
+		if err != nil {
+			return "", err
+		}
+		if uid != "" && rng.Contains(uid) {
+			out = append(out, n+":"+uid)
+		}
+	}
+	return strings.Join(out, "\n"), nil
 }
 
 // linuxNames are the names of names that can be Linux accounts, in order,

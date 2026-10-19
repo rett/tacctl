@@ -30,7 +30,7 @@ device show <name|address> [--all] [--json]
 device add [<name>] <address>
 
     Register a device (writes devices.yaml: superusers, and engineers for their own scopes); no
-    name: the SNMP sysName is offered at a terminal
+    name: the SNMP sysName is offered at a terminal, lowercased
 
     --vendor cisco|juniper|wti|other
         Default other; drives the ssh profile, never tags the address in the scope
@@ -104,7 +104,8 @@ device remove <name>[,<name>...] | --all [-y]
 device rename <old> <new> [--allow-generic]
 
     Rename a device; the device's own host name is unchanged and not planned by tacctl, and the verb
-    says so
+    says so. The new name is lower case; changing only the spelling to lower case
+    (`device rename Core-SW1 core-sw1`) is how a name from before is fixed
 
 device address|hostname|vendor|port|description|location <name> [<value>|clear]
 
@@ -117,6 +118,17 @@ device address|description|location <name> <value> --apply
     same review, answered by typing the device's name back, and the confirmed commit; superusers,
     Junos devices, at a terminal (anything else is refused before the registry changes); a value
     that is already set applies nothing; the exit status is the apply's
+
+device address <name> <address> [-y]
+
+    On a device with a break-glass hold the hold moves with the address (superuser; an engineer
+    is refused). The new address must pass what a new hold passes: not a loopback address, not
+    one a listener of either backend binds, not an enrolled host's, not held by another record,
+    covered by a scope. One line names both addresses and asks to confirm (`-y` skips it); the
+    registry and the record are written together, rendered once, and each backend whose file
+    changed is restarted once (a restart that fails is reported as `NOT restarted`, exit 1; both
+    stay on the new address). A refused address changes nothing. `--apply` is refused for a held
+    device. `device remove` and `device import` of a held device are still refused
 
 device location <name> --from-device [-y]
 
@@ -166,7 +178,9 @@ device notices [<name>] [--all]
 
 device import [--check] [--replace] [--allow-generic] [-y] <file|->
 
-    CSV (name,address[,vendor[,port[,description]]]) or the registry's YAML; merges by default,
+    CSV (name,address[,vendor[,port[,description]]]) or the registry's YAML; a file is existing
+    data (so is the CSV of `device export --csv`) and loads its names as they are (a line says how
+    many have upper case); merges by default,
     `--replace` removes the devices the file does not name together with their configuration records
     and SNMP credentials, as `remove` does; a CSV row, and a YAML file with no `config_syntax`,
     leave a device's registered configuration syntax alone (an engineer imports from standard input
@@ -438,6 +452,16 @@ device config forget <name>[,<name>...] | --all
     Delete the pull records and stored sections (derived data: a pull makes them again);
     administrators
 ```
+
+New device names are lower case: `device add`, `rename` and the
+registrations of `device onboard` and `device collect --register` refuse a
+name with upper case (`Names are lower case: use 'core-sw1'. Nothing was
+changed.`); a name a device reports, or `device discover` suggests, is
+lowercased. `device import` loads the names of a file (a CSV from
+`device export --csv` too) as they are, so a server can be rebuilt from its
+export. A name that exists with upper case keeps working, is found in any
+case, and is listed by `tacctl config validate` with the `device rename` that
+fixes it.
 
 A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. A device name is letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 253 characters with each dotted part at most 63, so a fully qualified host name (`sw1.site-a.example`) is one. An enrolled host's name has no dot and at most 26 characters, because it also names the host's scope (`linux-<name>`); its fully qualified name is its hostname. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list`, `show`, `notices`, `ssh-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way.
 

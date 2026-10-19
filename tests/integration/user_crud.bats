@@ -62,6 +62,24 @@ print(",".join(v) if isinstance(v, list) else "" if v is None else v)' "${TACCTL
     assert_output --partial 'authenticator: *bcrypt_alice'
 }
 
+@test "user add and rename: a new name is lower case; changing the spelling to lower case is a rename" {
+    run "$TACCTL_BIN_SCRIPT" user add Alice superuser --hash "$TEST_HASH" --scopes lab
+    assert_failure 1
+    assert_output --partial "Names are lower case: use 'alice'. Nothing was changed."
+    run "$TACCTL_BIN_SCRIPT" user add alice superuser --hash "$TEST_HASH" --scopes lab
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" user rename alice Alice
+    assert_failure 1
+    assert_output --partial "Names are lower case: use 'alice'. Nothing was changed."
+    # A user from before, with upper case, keeps working and is renamed.
+    sed -i 's/^  alice:$/  Alice:/' "${TACCTL_STATE_DIR}/store.yaml"
+    [[ "$(store_user Alice group)" == "superuser" ]]
+    run "$TACCTL_BIN_SCRIPT" user rename Alice alice
+    assert_success
+    assert_output --partial "User renamed: Alice -> alice"
+    [[ "$(store_user alice hash)" == "$TEST_HASH" ]]
+}
+
 @test "user add: restarts the service after mutation" {
     run "$TACCTL_BIN_SCRIPT" user add alice superuser --hash "$TEST_HASH" --scopes lab
     assert_success

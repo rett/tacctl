@@ -169,3 +169,48 @@ func TestExports(t *testing.T) {
 		t.Errorf("empty json = %q", js)
 	}
 }
+
+// A file of devices is existing data: a CSV row (the export of a server) and
+// a registry file load a name with upper case as it is, and count it; a
+// device registered under such a name is updated by a row that names it.
+func TestImportNamesWithUpperCase(t *testing.T) {
+	f := base()
+	rows, _ := ParseImport([]byte("Edge-FW,10.99.0.30,cisco\nnew-sw,10.99.0.20,cisco\n"))
+	res, err := f.Import(rows, false, false, nil)
+	if err != nil || len(res.Added) != 2 || !reflect.DeepEqual(res.Mixed, []string{"Edge-FW"}) || f.Find("edge-fw").Name != "Edge-FW" {
+		t.Errorf("a CSV row with upper case: %+v, %v", res, err)
+	}
+	f = base()
+	// An existing device with upper case in its name.
+	f.Devices[0].Name = "Core-SW1"
+	rows, _ = ParseImport([]byte("core-sw1,10.99.0.1,cisco,,core\n"))
+	res, err = f.Import(rows, false, false, nil)
+	if err != nil || len(res.Updated) != 1 || !reflect.DeepEqual(res.Mixed, []string{"Core-SW1"}) || f.Devices[0].Name != "Core-SW1" {
+		t.Errorf("%+v, %v, %q", res, err, f.Devices[0].Name)
+	}
+	// A registry file loads a new name with upper case as it is.
+	rows, _ = ParseImport([]byte("version: 1\ndevices:\n  Edge-FW: {address: 10.99.0.30, vendor: cisco}\n  lab-sw: {address: 10.99.0.31, vendor: cisco}\n"))
+	res, err = f.Import(rows, false, false, nil)
+	if err != nil || len(res.Added) != 2 || !reflect.DeepEqual(res.Mixed, []string{"Edge-FW"}) || f.Find("edge-fw").Name != "Edge-FW" {
+		t.Errorf("%+v, %v", res, err)
+	}
+}
+
+func TestValidateNewName(t *testing.T) {
+	if err := ValidateNewName("core-sw1"); err != nil {
+		t.Error(err)
+	}
+	for name, want := range map[string]string{
+		"Core-SW1": "Names are lower case: use 'core-sw1'. Nothing was changed.",
+		"bad name": "Invalid device name",
+		"ALL":      "'ALL' is a tacctl word",
+	} {
+		if err := ValidateNewName(name); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("ValidateNewName(%q) = %v, want %q", name, err, want)
+		}
+	}
+	// A name read from a file keeps loading.
+	if err := ValidateName("Core-SW1"); err != nil {
+		t.Error(err)
+	}
+}

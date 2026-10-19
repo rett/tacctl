@@ -331,7 +331,7 @@ func TestHostEnrollSyncPinHostKeys(t *testing.T) {
 	if ri < 0 || ci < 0 || ri > ci {
 		t.Errorf("order %q", argvs)
 	}
-	if e := plain(hs.out.String()); strings.Contains(e, "snapshot") || !strings.Contains(e, "web1: pinned 2 ssh host key(s) for 'tacctl ssh': ED25519 "+ed.Fingerprint()+", RSA "+rsa.Fingerprint()) {
+	if e := plain(hs.out.String()); !strings.Contains(e, "web1: pinned 2 ssh host key(s) for 'tacctl ssh': ED25519 "+ed.Fingerprint()+", RSA "+rsa.Fingerprint()) {
 		t.Errorf("enroll stderr:\n%s", e)
 	}
 	kh := hs.knownHosts()

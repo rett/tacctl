@@ -46,6 +46,7 @@ var liveNames = map[string]string{
 	"breakglass-users lab": "lab-admin\nlab-ops\n",
 	// the device registry's and the hosts' names (kind devices)
 	"devices": "js1\nsw1\n",
+	"hosts":   "web1\nweb2\n",
 }
 
 // The scenarios of the hand-written completion's tests, now answered by the
@@ -171,6 +172,16 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"host", "default-method", ""}, []string{"tacplus", "radius"}},
 		{[]string{"host", "enroll", "--method", ""}, []string{"tacplus", "radius"}},
 		{[]string{"host", "show", "web1", ""}, []string{"--all", "--json", "--check"}},
+		// host rename: the first word is an enrolled host, the second a new
+		// name (nothing to complete), then the one flag.
+		{[]string{"host", "rename", ""}, []string{"web1", "web2"}},
+		{[]string{"host", "rename", "web1", ""}, nil},
+		{[]string{"host", "rename", "web1", "web9", ""}, []string{"-y", "--yes"}},
+		{[]string{"host", "rename", "web1", "web9", "--yes", ""}, nil},
+		// host forget: an enrolled host, then the one flag.
+		{[]string{"host", "forget", ""}, []string{"web1", "web2"}},
+		{[]string{"host", "forget", "web1", ""}, []string{"-y", "--yes"}},
+		{[]string{"host", ""}, []string{"default-method", "enroll", "forget", "list", "move", "provisioner", "rename", "show", "sync", "target", "unenroll"}},
 		{[]string{"install", ""}, []string{"--branch", "-y", "--yes"}},
 		{[]string{"upgrade", ""}, []string{"--branch"}},
 		{[]string{"uninstall", ""}, []string{"-y", "--yes"}},

@@ -26,6 +26,7 @@ import (
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/shellquote"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -106,7 +107,7 @@ var deviceSpecs = map[string]Spec{
 		flagApply, {Names: []string{"--overwrite"}}, flagYes, flagJSON}},
 	"remove":      {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagYes}},
 	"rename":      {MinArgs: 2, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagAllowGeneric}},
-	"address":     {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagApply}},
+	"address":     {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagApply, flagYes}},
 	"hostname":    {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
 	"vendor":      {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, KindVendors + "|clear"}},
 	"port":        {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
@@ -155,7 +156,7 @@ var deviceVerbs = [][2]string{
 	{"sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite] [--json] [-y]", "Superusers: fill the registry's empty hostname, location and description from what each device's last pull record says of itself (no login; the preview first, --apply writes after one question)"},
 	{"remove <name>[,<name>...] | --all [-y]", "Remove devices from the registry (confirms)"},
 	{"rename <old> <new> [--allow-generic]", "Rename a device"},
-	{"address <name> [<address>]", "Show or set the address (--apply: then run 'device config apply' for the device)"},
+	{"address <name> [<address>] [-y]", "Show or set the address (--apply: then run 'device config apply' for the device); on a device with a break-glass hold, the hold moves with it after one question (-y: no question)"},
 	{"hostname <name> [<dns>|clear]", "Show, set or clear the DNS name"},
 	{"vendor <name> [cisco|juniper|wti|other]", "Show or set the vendor"},
 	{"port <name> [<n>|clear]", "Show, set or clear the ssh port"},
@@ -231,7 +232,7 @@ var deviceOptions = map[string][][2]string{
 	},
 	"remove": {
 		{"--all", "(remove, check) Every device; (show, notices) the acknowledged notices too"},
-		{"-y, --yes", "(remove, import, hostkey, location) Answer yes to the confirmation"},
+		{"-y, --yes", "(remove, import, hostkey, location, address) Answer yes to the confirmation"},
 	},
 	"location": {
 		{"--from-device", "Read the location from the device (SNMP sysLocation) and store it"},
@@ -590,9 +591,25 @@ func (inv *invocation) deviceWrite(fn func(*devreg.File, *devreg.Resolver) error
 	if _, err := trial.Text(); err != nil {
 		return nil, err
 	}
-	_, err = devreg.Mutate(inv.app.Paths.DevicesFile, inv.app.Paths.KnownHosts, inv.snapshotFirst, func(live *devreg.File) error {
-		before := resolver(live.Clone())
-		r := resolver(live)
+	_, err = devreg.Mutate(inv.app.Paths.DevicesFile, inv.app.Paths.KnownHosts, func() error {
+		inv.hooks.deviceStep()
+		return inv.snapshotFirst()
+	}, func(live *devreg.File) error {
+		// The enrolled hosts are read again under the registry's lock: a
+		// host enrolled or renamed since the trial run takes a name from
+		// the device (a rename checks the devices under the same lock, so
+		// one of the two sees the other).
+		cur, err := inv.registry()
+		if err != nil {
+			return err
+		}
+		fresh := func(f *devreg.File) *devreg.Resolver {
+			r := resolver(f)
+			r.Hosts = cur.Entries()
+			return r
+		}
+		before := fresh(live.Clone())
+		r := fresh(live)
 		if err := fn(live, r); err != nil {
 			return err
 		}
@@ -1293,6 +1310,11 @@ func (inv *invocation) deviceAddWith(args []string, trusted []devreg.HostKey) er
 		if err := r.CheckName(d.Name, d.Vendor, p.Has("--allow-generic"), keep); err != nil {
 			return err
 		}
+		// A name taken in another case is that refusal; a free name is
+		// lower case (0.2.14).
+		if err := names.RequireLower(d.Name); err != nil {
+			return err
+		}
 		return r.CheckAddress(d.Address, "")
 	}
 	// The refusals that need no device come before the scan.
@@ -1503,6 +1525,11 @@ func (inv *invocation) deviceRename(args []string) error {
 		} else if oldName == newName {
 			return inv.usageErr("'" + oldName + "' already has that name.")
 		}
+		// A new name is lower case; changing only the spelling to lower case
+		// is how an old name is fixed.
+		if err := names.RequireLower(newName); err != nil {
+			return err
+		}
 		d.Name = newName
 		return nil
 	}); err != nil {
@@ -1558,13 +1585,6 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 			return err
 		}
 		name := d.Name
-		// The hold is on the address the server sees: moving the device
-		// would leave the old address silenced and the new one answered.
-		if field == "address" {
-			if inv.isHeld(name, d.Address) {
-				return inv.usageErr("break-glass is held on " + name + ": release it first (tacctl breakglass release " + name + "). Nothing was changed.")
-			}
-		}
 		value := strings.Join(p.Args[1:], " ")
 		if field != "description" && field != "location" && len(p.Args) > 2 {
 			return inv.usageErr("Usage: tacctl device " + field + " <name> [<value>|clear]")
@@ -1575,6 +1595,19 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		probe := d.Clone()
 		if err := set(&probe); err != nil {
 			return err
+		}
+		// The hold is on the address the server sees: a held device that
+		// moves takes the hold with it (D175).
+		if field == "address" && probe.Address != d.Address && inv.isHeld(name, d.Address) {
+			if applyReq {
+				return inv.usageErr("--apply does not go with a held device: the device does not authenticate your login until the hold is released (tacctl breakglass release " + name + "). Nothing was changed.")
+			}
+			if err := inv.holdMove(f, res, d, probe.Address, p.Has("-y")); err != nil {
+				return err
+			}
+			// No configuration nudge: pull, plan and apply refuse a held
+			// device, and the move's report says what to do next.
+			return nil
 		}
 		// A configuration syntax setting is a Cisco setting: it goes with
 		// the vendor, and the message says which one went.
@@ -1959,7 +1992,8 @@ func (inv *invocation) deviceImport(args []string) error {
 		return err
 	}
 	// An import that removes a held device or moves it to another address
-	// is refused, as 'remove' and 'address' are.
+	// is refused, as 'remove' is: 'device address' moves a hold, an import
+	// does not.
 	for _, h := range inv.holds() {
 		// A record holds the device only while the device is registered at
 		// the record's address; an orphan is not the import's to refuse.
@@ -1967,13 +2001,14 @@ func (inv *invocation) deviceImport(args []string) error {
 			continue
 		}
 		if d := trial.Find(h.Device); d == nil || !sameAddress(d.Address, h.Address) {
-			return inv.usageErr("break-glass is held on " + h.Device + ": release it first (tacctl breakglass release " + h.Device + "). Nothing was changed.")
+			return inv.usageErr("break-glass is held on " + h.Device + ": an import neither removes it nor moves it to another address; move the hold with 'tacctl device address " + h.Device + " <address>', or release it first (tacctl breakglass release " + h.Device + "). Nothing was changed.")
 		}
 	}
 	a := inv.app
 	summary := fmt.Sprintf("%d added, %d updated, %d unchanged, %d removed.", len(plan.Added), len(plan.Updated), len(plan.Unchanged), len(plan.Removed))
 	if p.Has("--check") {
 		a.Out.Info("Check passed; nothing written. Would import: " + summary)
+		inv.deviceImportMixedNote(plan.Mixed)
 		return nil
 	}
 	if len(plan.Removed) > 0 {
@@ -2006,12 +2041,22 @@ func (inv *invocation) deviceImport(args []string) error {
 		inv.blocksDeviceCarry(n, "")
 	}
 	a.Out.Info("Imported: " + summary)
+	inv.deviceImportMixedNote(plan.Mixed)
 	for _, n := range plan.Added {
 		if devreg.IsGeneric(n, f.GenericNames) {
 			a.Out.Warn("'" + n + "' is a generic name: 'tacctl device notices'.")
 		}
 	}
 	return nil
+}
+
+// deviceImportMixedNote is the one line an import says when the file has
+// device names with upper case: they are loaded as they are (existing data),
+// and 'config validate' lists them with the verb that renames each.
+func (inv *invocation) deviceImportMixedNote(mixed []string) {
+	if len(mixed) > 0 {
+		inv.app.Out.Info(fmt.Sprintf("%d device name(s) have upper case and are loaded as they are; new names are lower case (tacctl config validate lists them).", len(mixed)))
+	}
 }
 
 func (inv *invocation) deviceExport(args []string) error {

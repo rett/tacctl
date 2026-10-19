@@ -67,7 +67,7 @@ tacctl device <subcommand>
 
 tacctl breakglass <subcommand>
 
-    Break-glass hold: make the server stop answering one device (hold, release, list); see
+    Break-glass hold: make the server stop answering one device or host (hold, release, list); see
     devices/break-glass.md, "Holding break-glass"
 
 tacctl ssh <name|address> [-p port] [-X|-Y] [-g] [-L|-R|-D spec]... [-- ssh args]

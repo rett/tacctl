@@ -45,4 +45,6 @@ for client in ubuntu-noble almalinux-9; do
 done
 # The engineer tier: the server's own checks.
 run ubuntu-noble server
+# One host's life: rename, break-glass hold and release, user rename, forget.
+run ubuntu-noble lifecycle
 exit "$failed"

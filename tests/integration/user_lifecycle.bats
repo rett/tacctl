@@ -203,32 +203,32 @@ PY
 # --- user rename -------------------------------------------------------------
 
 @test "user rename: updates both anchor name and user entry in one pass" {
-    run "$TACCTL_BIN_SCRIPT" user rename alice aliceA
+    run "$TACCTL_BIN_SCRIPT" user rename alice alicea
     assert_success
 
     run grep -c '^bcrypt_alice: &bcrypt_alice$' "$TACCTL_CONFIG"
     assert_output "0"
-    run grep -c '^bcrypt_aliceA: &bcrypt_aliceA$' "$TACCTL_CONFIG"
+    run grep -c '^bcrypt_alicea: &bcrypt_alicea$' "$TACCTL_CONFIG"
     assert_output "1"
     run grep -c '^  - name: alice$' "$TACCTL_CONFIG"
     assert_output "0"
-    run grep -c '^  - name: aliceA$' "$TACCTL_CONFIG"
+    run grep -c '^  - name: alicea$' "$TACCTL_CONFIG"
     assert_output "1"
-    run grep -F '*bcrypt_aliceA' "$TACCTL_CONFIG"
+    run grep -F '*bcrypt_alicea' "$TACCTL_CONFIG"
     assert_success
 }
 
 @test "user rename: the password date, the hash and the disabled flag move with the user" {
     sed -i "s/password_changed: .*/password_changed: '2021-03-04'/" "${TACCTL_STATE_DIR}/store.yaml"
     "$TACCTL_BIN_SCRIPT" user disable alice > /dev/null
-    run "$TACCTL_BIN_SCRIPT" user rename alice aliceA
+    run "$TACCTL_BIN_SCRIPT" user rename alice alicea
     assert_success
     run store_user alice group
     assert_failure
-    [[ "$(store_user aliceA password_changed)" == "2021-03-04" ]]
-    [[ "$(store_user aliceA hash)" == "$HASH_A" ]]
-    [[ "$(store_user aliceA disabled)" == "true" ]]
-    [[ "$(store_user aliceA group)" == "superuser" ]]
+    [[ "$(store_user alicea password_changed)" == "2021-03-04" ]]
+    [[ "$(store_user alicea hash)" == "$HASH_A" ]]
+    [[ "$(store_user alicea disabled)" == "true" ]]
+    [[ "$(store_user alicea group)" == "superuser" ]]
 }
 
 @test "user rename: rejects reserved new names" {
@@ -249,7 +249,7 @@ PY
 }
 
 @test "user rename: rejects unknown old-name" {
-    run "$TACCTL_BIN_SCRIPT" user rename ghost aliceA
+    run "$TACCTL_BIN_SCRIPT" user rename ghost alicea
     assert_failure
     assert_output --partial "does not exist"
 }

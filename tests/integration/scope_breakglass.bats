@@ -218,14 +218,17 @@ walk() {
 @test "user add, user scope add|replace and user rename: refuse a name that is a break-glass account of the scope" {
     "$TACCTL_BIN_SCRIPT" scope breakglass lab add ghost > /dev/null
     "$TACCTL_BIN_SCRIPT" scope breakglass dmz add bob > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope breakglass lab add Phantom > /dev/null
     local hash=24326224313024616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161
 
     run plain user add ghost readonly --hash "$hash" --scopes lab
     assert_failure
     assert_output --partial "'ghost' is a break-glass local user of scope 'lab' (admin)"
     assert_output --partial "tacctl scope breakglass lab remove ghost"
-    run plain user add GHOST readonly --hash "$hash" --scopes prod,lab
+    # Account names compare without regard to case.
+    run plain user add phantom readonly --hash "$hash" --scopes prod,lab
     assert_failure
+    assert_output --partial "break-glass local user of scope 'lab'"
     # Another scope: no collision.
     run plain user add ghost readonly --hash "$hash" --scopes prod
     assert_success
@@ -243,8 +246,9 @@ walk() {
     run plain user rename bob newname
     assert_failure
     assert_output --partial "'newname' is a break-glass local user of scope 'lab' (admin)"
-    run plain user rename bob Newname
+    run plain user rename bob phantom
     assert_failure
+    assert_output --partial "break-glass local user of scope 'lab'"
 
     # The way out the message names.
     "$TACCTL_BIN_SCRIPT" scope breakglass lab remove newname > /dev/null

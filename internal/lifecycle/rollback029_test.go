@@ -119,7 +119,7 @@ func TestPlanRollback029ListsEveryStep(t *testing.T) {
 			t.Errorf("steps lack %q:\n%s", w, st)
 		}
 	}
-	// Not 0.2.3's steps and no sudoers step: 0.2.10 changed no drop-in.
+	// Not 0.2.3's steps and no sudoers step: the drop-ins are left.
 	for _, not := range []string{"console.yaml: write it the way", "remove the snmp map", "0.2.3", "sudoers drop-ins 0.2.9 writes"} {
 		if strings.Contains(st, not) {
 			t.Errorf("steps name %q:\n%s", not, st)

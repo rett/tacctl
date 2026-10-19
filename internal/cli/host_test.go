@@ -166,7 +166,7 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 	}
 
 	out := hs.run(nil, "host", "list")
-	if !strings.Contains(plain(out), "  web1  admin@web1.example.net  lab    192.0.2.1  tacplus  3\n") {
+	if !strings.Contains(plain(out), "  web1  admin@web1.example.net  192.0.2.50  lab    192.0.2.1  tacplus  3\n") {
 		t.Errorf("list %q", plain(out))
 	}
 	// A disabled user is inactive (expired on the host, never deleted).
@@ -178,7 +178,7 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 	if !strings.HasSuffix(hs.pushed, "exit 0\n") {
 		t.Error("sync pushed the tarball")
 	}
-	if !strings.Contains(hs.pushed, "TAC_USERS=$'alice:superuser:80000\\nbob:operator:80001'\nTAC_INACTIVE=carol\nTAC_REMOVE_HOMES=''\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_ENGINEER_SUDO=ALL\nTAC_PROTOCOL=6\n") {
+	if !strings.Contains(hs.pushed, "TAC_USERS=$'alice:superuser:80000\\nbob:operator:80001'\nTAC_INACTIVE=carol\nTAC_INACTIVE_UIDS=carol:80002\nTAC_REMOVE_HOMES=''\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_ENGINEER_SUDO=ALL\nTAC_PROTOCOL=6\n") {
 		t.Errorf("sync header:\n%s", strings.SplitN(hs.pushed, "# --- tacctl", 2)[0])
 	}
 	if r.CalledRegexp(`getent passwd`) {
@@ -259,7 +259,7 @@ func TestHostEnrollScopeChoice(t *testing.T) {
 	if !strings.Contains(hs.out.String(), "their accounts on web1 are deleted: alice, bob") || hs.pushed != "" {
 		t.Errorf("move: %q pushed %d", hs.out.String(), len(hs.pushed))
 	}
-	hs.run(nil, "host", "enroll", "web1", "--scope", "linux-web1", "--yes", "--build-on-host")
+	hs.run(nil, "host", "enroll", "web1", "--scope", "linux-web1", "-y", "--build-on-host")
 	hs.expect(0, "Host 'web1' enrolled", "")
 	if hs.registry() != "web1|web1||linux-web1|198.51.100.7|\n" {
 		t.Errorf("registry %q", hs.registry())
@@ -288,7 +288,7 @@ func TestHostEnrollRefusals(t *testing.T) {
 		// The provisioning account is local and never a tacctl user.
 		{[]string{"carol@web1", "--scope", "lab"}, 1, "", "The provisioning account 'carol' (the ssh login for carol@web1) is a tacctl user."},
 		// A value flag at the end of the line: 0.1.16 never returned.
-		{[]string{"web1", "--scope"}, 1, "", ""},
+		{[]string{"web1", "--scope"}, 1, "", "--scope needs a value."},
 	} {
 		r := hs.runner()
 		hs.run(r, append([]string{"host", "enroll"}, c.args...)...)

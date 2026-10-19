@@ -154,8 +154,8 @@ func TestHostShowNotRecordedAndLocal(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := plain(hs.run(nil, "host", "show", "web1"))
-	if hs.code != 0 || !strings.Contains(out, "Last sync\n  Recorded:     not recorded (before 0.2.2)\n") ||
-		!strings.Contains(out, "Host facts\n  Recorded:     not recorded (before 0.2.2)\n") ||
+	if hs.code != 0 || !strings.Contains(out, "Last sync\n  Recorded:     no record under this name\n") ||
+		!strings.Contains(out, "Host facts\n  Recorded:     no record under this name\n") ||
 		!strings.Contains(out, "  Pinned:       none (the next 'tacctl host sync web1' pins them)\n") ||
 		!strings.Contains(out, "  Recorded:     none (the next enroll or sync records it)\n") {
 		t.Errorf("not recorded: %d\n%s", hs.code, out)

@@ -166,9 +166,11 @@ func TestBreakglassHoldRoundTrip(t *testing.T) {
 		}
 	}
 
-	// The held device cannot be moved or removed; a rename follows.
-	sb.run("", []string{"device", "address", "lab-sw", "192.168.1.9"})
-	sb.expect(1, "", "break-glass is held on lab-sw: release it first (tacctl breakglass release lab-sw)")
+	// The held device cannot be removed, nor moved to an address a hold
+	// would be refused at (its move is breakglass_move_test.go); a rename
+	// follows.
+	sb.run("", []string{"device", "address", "lab-sw", "127.0.0.9", "-y"})
+	sb.expect(1, "", "127.0.0.9 is a loopback address")
 	sb.run("", []string{"device", "remove", "lab-sw", "-y"})
 	sb.expect(1, "", "break-glass is held on lab-sw: release it first")
 	sb.run("", []string{"device", "remove", "--all", "-y"})
@@ -234,7 +236,6 @@ func TestBreakglassHoldRefusals(t *testing.T) {
 	sb.run("", []string{"config", "render"})
 	for _, c := range []struct{ device, want string }{
 		{"nosuch", "Device 'nosuch' not found"},
-		{"web1", "is an enrolled host, not a registered device"},
 		{"nowhere", "'nowhere' is already unanswered: no scope covers 100.64.0.9 (tacctl scope lookup 100.64.0.9)"},
 		{"loop", "127.0.0.1 is a loopback address"},
 		{"same-as-host", "is the address of the enrolled host 'web1'"},
@@ -322,9 +323,9 @@ func TestBreakglassEngineerTier(t *testing.T) {
 	if got := sb.asEngineer("", "scope", "show", "prod"); sb.code != 1 || strings.Contains(got, "prod-sw") {
 		t.Errorf("scope show prod: %d %q", sb.code, got)
 	}
-	// The engineer's own device changes are refused while held.
+	// Moving a held device moves the hold, which is not the engineer's.
 	sb.asEngineer("", "device", "address", "lab-sw", "192.168.1.3")
-	if sb.code != 1 || !strings.Contains(sb.stderr(), "break-glass is held on lab-sw: release it first") {
+	if sb.code != 1 || !strings.Contains(sb.stderr(), "break-glass is held on lab-sw: moving its address moves the hold, which is the superuser's") {
 		t.Errorf("engineer address: %d %q", sb.code, sb.stderr())
 	}
 	// A superuser's list shows both.
@@ -626,7 +627,7 @@ func TestBreakglassOrphanRecords(t *testing.T) {
 
 	list := plain(sb.run("", []string{"breakglass", "list"}))
 	for _, want := range []string{"lab-sw (orphan)", "192.168.1.1", "recovery",
-		"lab-sw is an orphan record: lab-sw is registered at 192.168.1.9, not at 192.168.1.1, so it holds no registered device, and it still silences 192.168.1.1; 'tacctl breakglass release lab-sw' removes it."} {
+		"lab-sw is an orphan record: lab-sw is registered at 192.168.1.9, not at 192.168.1.1, so it holds no registered device or enrolled host, and it still silences 192.168.1.1; 'tacctl breakglass release lab-sw' removes it."} {
 		if !strings.Contains(list, want) {
 			t.Errorf("list lacks %q:\n%s", want, list)
 		}
@@ -671,7 +672,7 @@ func TestBreakglassOrphanRecords(t *testing.T) {
 	// Gone from the registry altogether.
 	sb.write("state/devices.yaml", "version: 1\ndevices: {}\n", 0o600)
 	list = plain(sb.run("", []string{"breakglass", "list"}))
-	if !strings.Contains(list, "lab-sw (orphan)") || !strings.Contains(list, "no device of that name is registered") {
+	if !strings.Contains(list, "lab-sw (orphan)") || !strings.Contains(list, "no device or host of that name is registered") {
 		t.Errorf("list of an unregistered device:\n%s", list)
 	}
 	out := plain(sb.run("", []string{"breakglass", "release", "lab-sw"}))
@@ -917,8 +918,8 @@ func TestBreakglassHoldListUsageErrors(t *testing.T) {
 		{[]string{"lab-sw=x,lab-rtr", "--reason", "  "}, "--reason must not be empty."},
 		{[]string{"lab-sw=,lab-rtr", "--reason", "x"}, "The reason of 'lab-sw' must not be empty."},
 		{[]string{"lab-sw,LAB-SW", "--reason", "x"}, "'LAB-SW' is named twice."},
-		{[]string{"lab-sw,,lab-rtr", "--reason", "x"}, "A device name is missing in 'lab-sw,,lab-rtr'."},
-		{[]string{"=x", "--reason", "x"}, "A device name is missing in '=x'."},
+		{[]string{"lab-sw,,lab-rtr", "--reason", "x"}, "A name is missing in 'lab-sw,,lab-rtr'."},
+		{[]string{"=x", "--reason", "x"}, "A name is missing in '=x'."},
 		// the same device by name and by address
 		{[]string{"lab-sw,192.168.1.1", "--reason", "x"}, "'192.168.1.1' is the device 'lab-sw', which is in the list already."},
 		// an unquoted --reason: its words are an argument too many
@@ -926,7 +927,7 @@ func TestBreakglassHoldListUsageErrors(t *testing.T) {
 	} {
 		sb.run("", append([]string{"breakglass", "hold"}, c.args...))
 		sb.expect(1, "", c.want)
-		if !strings.Contains(sb.stderr(), "Usage: tacctl breakglass hold <device>[=<reason>][,<device>[=<reason>]...]") {
+		if !strings.Contains(sb.stderr(), "Usage: tacctl breakglass hold <name>[=<reason>][,<name>[=<reason>]...]") {
 			t.Errorf("%v: no usage in %q", c.args, sb.stderr())
 		}
 	}
@@ -934,7 +935,7 @@ func TestBreakglassHoldListUsageErrors(t *testing.T) {
 	// error then); a single device with none keeps its message; one list is
 	// one argument.
 	sb.run("", []string{"breakglass", "hold", "lab-sw"})
-	sb.expect(1, "", "--reason is required: a hold is for one device in exceptional circumstances")
+	sb.expect(1, "", "--reason is required: a hold is for one device or host in exceptional circumstances")
 	sb.run("", []string{"breakglass", "hold", "lab-sw=x,lab-rtr=y", "--reason", "  "})
 	sb.expect(1, "", "No terminal to confirm on")
 	sb.run("", []string{"breakglass", "hold", "lab-sw=x", "lab-rtr=y"})

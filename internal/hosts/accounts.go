@@ -87,7 +87,8 @@ var reHomeDir = regexp.MustCompile(`^/home/[^/]+$`)
 // the range on the host (or of a range the UID file was numbered for
 // before: the script renumbers such an account before it deletes it), a
 // full name the script writes, and a user that is not current (current: the
-// scope's users, active or not). Only those whose home is a directory
+// scope's users, active or not) whose number no current user holds (that
+// account is the one the script renames). Only those whose home is a directory
 // directly under /home are returned: any other home is kept by the script
 // whatever the answer.
 func Removed(accts []Account, uids UIDs, current map[string]bool) ([]Account, error) {
@@ -103,9 +104,22 @@ func Removed(accts []Account, uids UIDs, current map[string]bool) ([]Account, er
 		}
 		return false
 	}
+	// A current user's number is on the ledger. An account of another name
+	// with that number is the user's account before a rename: the script
+	// renames it (by the UID alone), it does not delete it.
+	held := map[string]bool{}
+	nums, err := uids.Numbers()
+	if err != nil {
+		return nil, err
+	}
+	for _, n := range nums {
+		if current[n[0]] {
+			held[n[1]] = true
+		}
+	}
 	var out []Account
 	for _, a := range accts {
-		if current[a.Name] || !ours(a.UID) || !tacctlGECOS(a.Name, a.GECOS) || !reHomeDir.MatchString(a.Home) {
+		if current[a.Name] || held[a.UID] || !ours(a.UID) || !tacctlGECOS(a.Name, a.GECOS) || !reHomeDir.MatchString(a.Home) {
 			continue
 		}
 		uid, err := uids.Lookup(a.Name)
@@ -242,7 +256,7 @@ type AccountChanges struct {
 var (
 	reAccountCreated = regexp.MustCompile(`^\[INFO\] Created account '([^']+)'`)
 	reAccountDeleted = regexp.MustCompile(`^\[INFO\] Deleted account '([^']+)'`)
-	reAccountUpdated = regexp.MustCompile(`^\[INFO\] (?:Re-activated account '([^']+)'|'([^']+)' has no \S+ login here now|'([^']+)': (?:renumbered|primary group is now|home .* is now|login shell is now|no longer listed in))`)
+	reAccountUpdated = regexp.MustCompile(`^\[INFO\] (?:Re-activated account '([^']+)'|'([^']+)' has no \S+ login here now|'[^']+' is now '([^']+)' \(renamed;|'([^']+)': (?:renumbered|primary group is now|home .* is now|login shell is now|no longer listed in))`)
 )
 
 // take adds what one line of the script's output says changed.
@@ -265,7 +279,7 @@ func (c *AccountChanges) take(line string) {
 		add(&c.Removed, m[1])
 		drop(m[1])
 	} else if m := reAccountUpdated.FindStringSubmatch(line); m != nil {
-		name := m[1] + m[2] + m[3]
+		name := m[1] + m[2] + m[3] + m[4]
 		for _, n := range append(append([]string(nil), c.Created...), c.Removed...) {
 			if n == name {
 				return

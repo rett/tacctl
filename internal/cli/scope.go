@@ -894,6 +894,9 @@ func (inv *invocation) scopeAdd(args []string) error {
 	if err := names.ValidateScopeName(name); err != nil {
 		return inv.validated(err)
 	}
+	if err := names.RequireLower(name); err != nil {
+		return inv.validated(err)
+	}
 	if exists, err := inv.scopeExists(name); err != nil {
 		return err
 	} else if exists {
@@ -1120,7 +1123,6 @@ func (inv *invocation) scopeRemove(args []string) error {
 }
 
 func (inv *invocation) scopeRename(args []string) error {
-	a := inv.app
 	old, newName := arg(args, 0), arg(args, 1)
 	if old == "" || newName == "" {
 		return inv.usageErr("Usage: tacctl scope rename <old> <new>")
@@ -1128,32 +1130,87 @@ func (inv *invocation) scopeRename(args []string) error {
 	if err := inv.requireStore(); err != nil {
 		return err
 	}
+	if err := inv.scopeRenameCheck(old, newName); err != nil {
+		return inv.scopeRefused(err)
+	}
+	return inv.scopeRenameRun(old, newName)
+}
+
+// scopeRefusal is a refusal of 'scope rename' made before anything is
+// written: the lines it says. It is returned, not printed, so that 'host
+// rename' can ask whether the scope can be renamed without saying anything.
+type scopeRefusal []string
+
+func (r scopeRefusal) Error() string { return strings.Join(r, " ") }
+
+// Lines are the refusal's lines (msgs reads them).
+func (r scopeRefusal) Lines() []string { return r }
+
+// scopeRefused prints a scopeRefusal, one line each, and is exit status 1;
+// any other error is returned as it is.
+func (inv *invocation) scopeRefused(err error) error {
+	var r scopeRefusal
+	if errors.As(err, &r) {
+		return inv.usageErr(r...)
+	}
+	return err
+}
+
+// refusalOf is a names.Error as a scopeRefusal; any other error as it is.
+func refusalOf(err error) error {
+	var ne *names.Error
+	if errors.As(err, &ne) {
+		return scopeRefusal(ne.Lines())
+	}
+	return err
+}
+
+// scopeRenameCheck is what 'scope rename' asks before it writes anything
+// (the store is there; the caller has checked): the old scope exists, the new
+// name is free and valid, and the new name does not collide with the SNMP
+// credentials file or the configuration blocks of a scope. nil means the
+// rename can go ahead. A refusal is a scopeRefusal and prints nothing.
+func (inv *invocation) scopeRenameCheck(old, newName string) error {
+	a := inv.app
 	m, err := inv.model()
 	if err != nil {
 		return err
 	}
 	if !m.Exists("scopes", old) {
-		return inv.usageErr("Scope '" + old + "' does not exist.")
+		return scopeRefusal{"Scope '" + old + "' does not exist."}
 	}
 	if m.Exists("scopes", newName) {
-		return inv.usageErr("Scope '" + newName + "' already exists.")
+		return scopeRefusal{"Scope '" + newName + "' already exists."}
 	}
 	if !names.MatchScope(newName) {
-		return inv.usageErr("Invalid new name '" + newName + "'.")
+		return scopeRefusal{"Invalid new name '" + newName + "'."}
+	}
+	if err := names.RequireLower(newName); err != nil {
+		return refusalOf(err)
 	}
 	// The rename moves the scope's SNMP credentials file: one already named
 	// like the new scope is not overwritten, nor taken over.
 	if _, err := os.Lstat(filepath.Join(a.Paths.SNMPDir, old+".yaml")); err == nil {
 		if err := snmpcred.CheckNoScopeFile(a.Paths.SNMPDir, newName); err != nil {
-			return inv.validated(err)
+			return refusalOf(err)
 		}
 	}
 	// And its configuration blocks, the same way.
 	if blocks.ValidateScope(old) == nil && blocks.NewStore(a.Paths.BlocksDir).HasScope(old) {
 		if err := inv.scopeBlocksCheckNoScope(newName); err != nil {
-			return inv.validated(err)
+			return refusalOf(err)
 		}
 	}
+	return nil
+}
+
+// scopeRenameRun is the rename itself, after scopeRenameCheck: the store, the
+// keys of tacctl.yaml and the default-scope marker in one apply (its own
+// snapshot), then the enrolled hosts and staging addresses that name the
+// scope. 'scope rename' and 'host rename' (for the host's own scope) share
+// it.
+func (inv *invocation) scopeRenameRun(old, newName string) error {
+	a := inv.app
 	if err := inv.applyWith(func() error {
 		if err := inv.mutate(func(s *store.Store) error { return s.ScopeRename(old, newName) }); err != nil {
 			return err
@@ -1177,7 +1234,7 @@ func (inv *invocation) scopeRename(args []string) error {
 	if err != nil {
 		return err
 	}
-	m, err = inv.model()
+	m, err := inv.model()
 	if err != nil {
 		return err
 	}

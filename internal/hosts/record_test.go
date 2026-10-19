@@ -67,6 +67,21 @@ func TestRecords(t *testing.T) {
 	if got, _ := rs.Load("web3"); got.Facts == nil {
 		t.Error("not renamed")
 	}
+	if !rs.Has("web3") || rs.Has("web1") {
+		t.Error("Has after a rename")
+	}
+	if err := rs.Save("web5", Record{LastSync: &SyncRecord{Command: "sync"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.Rename("web3", "web5"); err != nil {
+		t.Errorf("renaming over a record: %v", err)
+	}
+	if got, _ := rs.Load("web5"); got.Facts == nil {
+		t.Error("the record of the new name was not replaced")
+	}
+	if err := rs.Rename("web5", "web3"); err != nil {
+		t.Fatal(err)
+	}
 	if err := rs.Rename("ghost", "web4"); err != nil {
 		t.Errorf("renaming nothing: %v", err)
 	}
@@ -200,5 +215,32 @@ func TestParseCheck(t *testing.T) {
 	if GroupGID("tac-superuser", DefaultRange) != 80002 || GroupGID("tac-engineer", DefaultRange) != 80005 || GroupGID("wheel", DefaultRange) != 0 ||
 		!reflect.DeepEqual(HostGroups(false), []string{"tac-users", "tac-superuser", "tac-engineer"}) || len(HostGroups(true)) != 6 || len(HostGroups(true)) != len(TacGroups) {
 		t.Error("groups")
+	}
+}
+
+// The names of the records are the files of the directory without their
+// extension; a temporary file of a write, a directory and another file are
+// none.
+func TestRecordNames(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "hosts")
+	rs := Records{Dir: dir}
+	if n := rs.Names(); len(n) != 0 {
+		t.Fatalf("missing directory: %q", n)
+	}
+	for _, n := range []string{"web2", "Web1"} {
+		if err := rs.Save(n, Record{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []string{".web3.12345", ".hidden.json", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, f), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "dir.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := rs.Names(), []string{"Web1", "web2"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("names %q, want %q", got, want)
 	}
 }

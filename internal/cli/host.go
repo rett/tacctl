@@ -22,9 +22,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/hosts"
+	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -38,7 +40,7 @@ var (
 // hostSpecs are the arguments of each verb, for completion (args.go). Host
 // names complete from the registry (KindHosts).
 var hostSpecs = map[string]Spec{
-	"list": {},
+	"list": {Flags: []Flag{flagJSON}},
 	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{
 		{Names: []string{"--all"}}, flagJSON, {Names: []string{"--check"}}}},
 	"enroll": {MaxArgs: 1, Args: []string{""}, Flags: []Flag{
@@ -50,13 +52,15 @@ var hostSpecs = map[string]Spec{
 		{Names: []string{"--identity"}, Value: true, Kind: KindFile},
 		{Names: []string{"--method"}, Value: true, Kind: methodWords},
 		{Names: []string{"--build-on-host"}},
-		{Names: []string{"--yes"}},
+		flagYes,
 		{Names: []string{"--staging"}},
 		flagAllowUIDMismatch, flagRemoveHome}},
 	"sync": {MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome}},
 	"move": {MaxArgs: 2, Args: []string{KindHosts, KindScopes}, Flags: []Flag{{Names: []string{"--all"}, Alone: true},
-		{Names: []string{"--yes"}}, flagAllowUIDMismatch, flagRemoveHome}},
+		flagYes, flagAllowUIDMismatch, flagRemoveHome}},
 	"unenroll": {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--force"}}}},
+	"rename":   {MinArgs: 2, MaxArgs: 2, Args: []string{KindHosts, ""}, Flags: []Flag{flagYes}},
+	"forget":   {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{flagYes}},
 	"target": {MinArgs: 1, MaxArgs: 2, Args: []string{KindHosts, ""}, Flags: []Flag{
 		{Names: []string{"--port"}, Value: true},
 		{Names: []string{"--identity"}, Value: true, Kind: KindFile},
@@ -73,13 +77,15 @@ var hostSpecs = map[string]Spec{
 
 // hostVerbs are the verbs ({Use, Short}), in usage order.
 var hostVerbs = [][2]string{
-	{"list", "Show enrolled hosts"},
+	{"list [--json]", "Show enrolled hosts"},
 	{"show <name> [--all] [--json] [--check]", "One enrolled host in full; --check compares it with what tacctl would make it"},
 	{"enroll <[user@]host> | --local [options]", "Install TACACS+ or RADIUS login on a host over SSH and register it"},
 	{"sync <name> | --all [options]", "Push account adds, deletions and tier changes"},
 	{"move <name> [<scope>] | --all [options]", "Move an enrolled host to another scope (default: the scope answering its address)"},
 	{"target <name> [<[user@]host>] [options]", "Show or change how tacctl reaches an enrolled host over ssh"},
 	{"provisioner <name> rotate <user> [options]", "Switch the account tacctl logs in to the host with, proving the new one before the registry changes"},
+	{"rename <old> <new> [-y]", "Give an enrolled host another name; its own linux-<name> scope can follow"},
+	{"forget <name> [-y]", "Drop a host's registration from this server without contacting the host"},
 	{"unenroll <name> [--force]", "Remove the login method from the host (accounts and homes are kept)"},
 	{"default-method [tacplus|radius]", "Show or set the method for hosts enrolled without --method"},
 }
@@ -111,7 +117,7 @@ func (inv *invocation) host(args []string) error {
 	}
 	switch sub := arg(args, 0); sub {
 	case "list":
-		return inv.hostList()
+		return inv.hostList(rest)
 	case "show":
 		return inv.hostShow(rest)
 	case "enroll":
@@ -124,6 +130,10 @@ func (inv *invocation) host(args []string) error {
 		return inv.hostTarget(rest)
 	case "provisioner":
 		return inv.hostProvisioner(rest)
+	case "rename":
+		return inv.hostRename(rest)
+	case "forget":
+		return inv.hostForget(rest)
 	case "unenroll":
 		return inv.hostUnenroll(rest)
 	case "default-method":
@@ -145,55 +155,195 @@ func (inv *invocation) registry() (*hosts.Registry, error) {
 
 // --- list ------------------------------------------------------------------------
 
+// hostListUsage is the usage line of 'host list'.
+const hostListUsage = "Usage: tacctl host list [--json]"
+
+// hostListJSON is one host of 'host list --json'.
+type hostListJSON struct {
+	Name   string `json:"name"`
+	Local  bool   `json:"local"`
+	Target string `json:"target"`
+	// Port is the ssh port (22 unless the registry gives one; 0 for this
+	// server's own host).
+	Port     int    `json:"port"`
+	Scope    string `json:"scope"`
+	Server   string `json:"server"`
+	Method   string `json:"method"`
+	Identity string `json:"identity"`
+	// Address is the address recorded at the host's last enroll or sync
+	// (the device registry's), "" when none is.
+	Address string `json:"address"`
+	Users   int    `json:"users"`
+	// Drift is the warning the table prints under it (a scope that no
+	// longer answers the host, or a scope that is gone), "" when none.
+	Drift      string            `json:"drift"`
+	Breakglass *deviceHoldJSON   `json:"breakglass,omitempty"`
+	Findings   []hostFindingJSON `json:"findings"`
+}
+
+// hostFindingJSON is a finding that names the host (the superuser's view:
+// a restricted caller has none).
+type hostFindingJSON struct {
+	Text string `json:"text"`
+	Fix  string `json:"fix"`
+}
+
 // hostList is cmd_host_list.
-func (inv *invocation) hostList() error {
+func (inv *invocation) hostList(args []string) error {
+	p, err := Parse(hostSpecs["list"], args)
+	if err != nil {
+		msg := err.Error()
+		if uf, ok := err.(*UnknownFlagError); ok {
+			msg = "Unknown option: '" + uf.Flag + "'"
+		}
+		return inv.usageErr(msg, hostListUsage)
+	}
+	asJSON := p.Has("--json")
 	reg, err := inv.registry()
 	if err != nil {
 		return err
 	}
-	inv.echo("")
+	if !asJSON {
+		inv.echo("")
+	}
 	if reg.Empty() {
+		if asJSON {
+			return inv.printJSON([]hostListJSON{})
+		}
 		inv.echoE(ui.Bold + "Enrolled Linux hosts" + ui.NC)
 		inv.echo(ui.Rule("Enrolled Linux hosts"))
 		inv.echo("  None. Enroll one with: tacctl host enroll <[user@]host>")
 		inv.echo("")
+		inv.hostFindingsFooter()
 		return nil
 	}
 	// An engineer lists the hosts of their own scopes (D47).
 	f := inv.callerScopes()
-	t := ui.NewTable("Enrolled Linux hosts", ui.Left("NAME"), ui.Left("TARGET"), ui.Left("SCOPE"), ui.Left("SERVER"), ui.Left("METHOD"), ui.Left("USERS"))
+	var shown []hosts.Entry
 	for _, e := range reg.Entries() {
-		if !f.allows(e.Scope) {
-			continue
+		if f.allows(e.Scope) {
+			shown = append(shown, e)
 		}
-		target := e.Target
-		if e.Port != "" {
-			target += ":" + e.Port
+	}
+	// The model and the device registry are read once here; hostAddress, which
+	// the drift check of each row calls, loads the registry again for its row.
+	m, merr := inv.model()
+	devs, _ := inv.hostDevices()
+	users := func(e hosts.Entry) int {
+		if merr != nil {
+			return 0
 		}
-		users := 0
-		if m, err := inv.model(); err == nil {
-			users = hosts.UserCount(m.LinuxUsers(e.Scope))
+		return hosts.UserCount(m.LinuxUsers(e.Scope))
+	}
+	recorded := func(e hosts.Entry) string {
+		if devs == nil {
+			return ""
 		}
-		t.Add(e.Name, target, e.Scope, e.Server, reg.Method(e.Name), strconv.Itoa(users))
+		return devs.HostAddressOf(e.Name)
+	}
+	// A host the server has been told not to answer is marked in a STATE
+	// column, which is there only while one is held in the caller's scopes.
+	holds := map[string]conf.Hold{}
+	for _, e := range shown {
+		if h, ok := inv.hostHoldIn(devs, e); ok {
+			holds[e.Name] = h
+		}
+	}
+	if asJSON {
+		return inv.hostListJSONOut(reg, shown, devs, holds, users)
+	}
+	cols := []ui.Col{ui.Left("NAME"), ui.Left("TARGET"), ui.Left("ADDRESS"), ui.Left("SCOPE"), ui.Left("SERVER"), ui.Left("METHOD"), ui.Left("USERS")}
+	if len(holds) > 0 {
+		cols = append(cols, ui.Left("STATE"))
+	}
+	t := ui.NewTable("Enrolled Linux hosts", cols...)
+	for _, e := range shown {
+		row := []any{e.Name, hostTargetPort(e), dash(recorded(e)), e.Scope, e.Server, reg.Method(e.Name), strconv.Itoa(users(e))}
+		if len(holds) > 0 {
+			state := any("")
+			if _, ok := holds[e.Name]; ok {
+				state = ui.Styled(ui.Red, "BREAK-GLASS")
+			}
+			row = append(row, state)
+		}
+		t.Add(row...)
 	}
 	if t.Len() == 0 {
 		inv.echoE(ui.Bold + "Enrolled Linux hosts" + ui.NC)
 		inv.echo(ui.Rule("Enrolled Linux hosts"))
 		inv.echo("  None in your scopes.")
 		inv.echo("")
+		inv.hostFindingsFooter()
 		return nil
 	}
 	inv.write(t.String())
 	inv.echo("")
-	for _, e := range reg.Entries() {
-		if !f.allows(e.Scope) {
-			continue
-		}
+	if len(holds) > 0 {
+		inv.echoE(fmt.Sprintf("  %s%d host(s) held for break-glass%s: tacctl breakglass list", ui.Red, len(holds), ui.NC))
+		inv.echo("")
+	}
+	for _, e := range shown {
 		if msg := inv.hostScopeDrift(e, inv.hostAddress(e)); msg != "" {
 			inv.app.Out.WarnE(msg)
 		}
 	}
+	inv.hostFindingsFooter()
 	return nil
+}
+
+// hostTargetPort is the target of e as the table shows it: with its ssh
+// port when the registry gives one.
+func hostTargetPort(e hosts.Entry) string {
+	if e.Port != "" {
+		return e.Target + ":" + e.Port
+	}
+	return e.Target
+}
+
+// hostListJSONOut prints 'host list --json': one object for each of shown (the
+// caller's hosts), holds being the ones held. The findings are the
+// superuser's view, so a restricted caller's are empty.
+func (inv *invocation) hostListJSONOut(reg *hosts.Registry, shown []hosts.Entry, devs *devreg.File, holds map[string]conf.Hold, users func(hosts.Entry) int) error {
+	byHost := map[string][]hostFindingJSON{}
+	for _, fd := range inv.hostFindings() {
+		for _, n := range fd.Hosts {
+			byHost[n] = append(byHost[n], hostFindingJSON{Text: fd.Text, Fix: fd.Fix})
+		}
+	}
+	out := []hostListJSON{}
+	for _, e := range shown {
+		local := e.Target == hosts.Local
+		v := hostListJSON{Name: e.Name, Local: local, Target: e.Target, Scope: e.Scope, Server: e.Server,
+			Method: reg.Method(e.Name), Identity: e.Identity, Users: users(e),
+			Drift: inv.hostScopeDrift(e, inv.hostAddress(e)), Findings: []hostFindingJSON{}}
+		if !local {
+			v.Port = 22
+			if n, err := strconv.Atoi(e.Port); err == nil && n > 0 {
+				v.Port = n
+			}
+		}
+		if devs != nil {
+			v.Address = devs.HostAddressOf(e.Name)
+		}
+		if h, ok := holds[e.Name]; ok {
+			v.Breakglass = holdJSONOfHold(h)
+		}
+		if fs := byHost[e.Name]; fs != nil {
+			v.Findings = fs
+		}
+		out = append(out, v)
+	}
+	return inv.printJSON(out)
+}
+
+// hostFindingsFooter is the one line 'host list' ends with when the
+// registrations have findings (the superuser's view; 'config validate' lists
+// them).
+func (inv *invocation) hostFindingsFooter() {
+	if n := len(inv.hostFindings()); n > 0 {
+		inv.echoE(fmt.Sprintf("  %s%d finding(s)%s: see tacctl config validate", ui.Yellow, n, ui.NC))
+		inv.echo("")
+	}
 }
 
 // --- enroll ----------------------------------------------------------------------
@@ -205,6 +355,23 @@ var (
 	reHostLetter = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*$`)
 	rePort       = regexp.MustCompile(`^[0-9]{1,5}$`)
 )
+
+// lowerDerived is a host name worked out from a host name: DNS names are not
+// case-sensitive, so it is lowercased (0.2.14) unless a host is enrolled
+// under exactly that spelling (a name from before, which a re-enrolment keeps).
+func lowerDerived(reg *hosts.Registry, name string) string {
+	if _, ok := reg.Find(name); ok {
+		return name
+	}
+	// A host enrolled in another spelling keeps that spelling: a legacy
+	// Web7 stays Web7 when it is enrolled again by its lower-case DNS name.
+	for _, e := range reg.Entries() {
+		if strings.EqualFold(e.Name, name) {
+			return e.Name
+		}
+	}
+	return strings.ToLower(name)
+}
 
 // cutField is "cut -d'|' -f<n>" of one line: the whole line when it has
 // no '|', "" when it has fewer fields.
@@ -230,6 +397,9 @@ func shortHostname() string {
 // the command's end would, and goes on ('... || warn ...').
 func (inv *invocation) reportOnly(err error) { _ = exitCode(err, inv.app.Out) }
 
+// hostEnrollUsage is the usage line of 'host enroll'.
+const hostEnrollUsage = "Usage: tacctl host enroll <[user@]host> | --local  [options]"
+
 // hostEnroll is cmd_host_enroll.
 func (inv *invocation) hostEnroll(args []string) error {
 	a := inv.app
@@ -251,16 +421,17 @@ func (inv *invocation) hostEnroll(args []string) error {
 		case "--remove-home":
 			removeHome = true
 			i++
-		case "--yes":
+		case "-y", "--yes":
 			yes = true
 			i++
 		case "--staging":
 			staging = true
 			i++
 		case "--scope", "--server", "--name", "--port", "--identity":
-			if i+1 >= len(args) {
-				// 0.1.16 spins forever here ('shift 2 || true' cannot shift).
-				return exit(1)
+			// 0.1.16 spins forever here ('shift 2 || true' cannot shift); a
+			// missing or empty value is a usage error naming the option.
+			if arg(args, i+1) == "" {
+				return inv.usageErr(w+" needs a value.", hostEnrollUsage)
 			}
 			*map[string]*string{"--scope": &scope, "--server": &server, "--name": &name, "--port": &port, "--identity": &identity}[w] = args[i+1]
 			i += 2
@@ -291,6 +462,15 @@ func (inv *invocation) hostEnroll(args []string) error {
 	if err != nil {
 		return err
 	}
+	// Enrolling a registered host again (and 'host move') logs in to it: a
+	// held host is refused before anything is resolved.
+	if name != "" {
+		if cur, ok := reg.Find(name); ok {
+			if err := inv.hostHeldErr(cur, "tacctl host enroll "+name); err != nil {
+				return err
+			}
+		}
+	}
 	var hostPart, hostIP string
 	if isLocal {
 		if target != "" {
@@ -298,14 +478,14 @@ func (inv *invocation) hostEnroll(args []string) error {
 		}
 		target, hostIP = hosts.Local, "127.0.0.1"
 		if name == "" {
-			name = shortHostname()
+			name = lowerDerived(reg, shortHostname())
 		}
 		if server == "" {
 			server = "127.0.0.1"
 		}
 	} else {
 		if !reTarget.MatchString(target) {
-			return inv.usageErr("Usage: tacctl host enroll <[user@]host> | --local  [options]")
+			return inv.usageErr(hostEnrollUsage)
 		}
 		hostPart = target
 		if _, after, ok := strings.Cut(target, "@"); ok {
@@ -348,6 +528,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 				name = "h" + strings.ReplaceAll(hostPart, ".", "-")
 			} else {
 				name, _, _ = strings.Cut(hostPart, ".")
+				name = lowerDerived(reg, name)
 			}
 		}
 		// Re-enrolling a registered host keeps the server address it has.
@@ -372,9 +553,30 @@ func (inv *invocation) hostEnroll(args []string) error {
 	if !reHostName.MatchString(name) {
 		return inv.usageErr("Invalid host name '" + name + "'. Pass --name <letters, digits, _ or -, starting with a letter, max 26>.")
 	}
-	_, enrolled := reg.Find(name)
+	cur, enrolled := reg.Find(name)
+	if enrolled {
+		// The name was worked out from the target: the same refusal.
+		if err := inv.hostHeldErr(cur, "tacctl host enroll "+name); err != nil {
+			return err
+		}
+	}
+	// A name no host has with exactly that spelling is a new one: the
+	// device name rules apply to it (a re-enrolment under the registered
+	// name is how a host is moved).
+	if !enrolled {
+		if err := devreg.CheckNewHostName(reg, name); err != nil {
+			return err
+		}
+	}
 	if err := inv.hostNameCheck(name, enrolled); err != nil {
 		return err
+	}
+	// A name given with --name is not folded: a new one is lower case. (One
+	// worked out from the target was lowercased above.)
+	if !enrolled {
+		if err := names.RequireLower(name); err != nil {
+			return err
+		}
 	}
 	if port != "" && !rePort.MatchString(port) {
 		return inv.usageErr("Invalid --port '" + port + "'.")
@@ -637,7 +839,27 @@ func (inv *invocation) hostEnroll(args []string) error {
 		}
 		return exit(1)
 	}
-	if err := reg.Remember(hosts.Entry{Name: name, Target: target, Port: port, Scope: scope, Server: server, Identity: identity, Method: method}); err != nil {
+	// The state before the registry changes (D191): an enrolment, a move
+	// and a re-enrolment all end here.
+	if err := inv.snapshotFirst(); err != nil {
+		a.Out.WarnE("The client script succeeded on " + name + " but the registry was not changed; run the same command again.")
+		return err
+	}
+	entry := hosts.Entry{Name: name, Target: target, Port: port, Scope: scope, Server: server, Identity: identity, Method: method}
+	if enrolled {
+		err = reg.Remember(entry)
+	} else {
+		// A new name is held to the one-name rule again under the registry's
+		// lock: another enrolment of the same name in any case that finished
+		// since the check above wins, and this one does not write.
+		err = reg.RememberNew(entry)
+	}
+	if err != nil {
+		var taken *hosts.NameTakenError
+		if errors.As(err, &taken) {
+			a.Out.ErrorE(taken.Error() + " The client script already ran on the host; the registry was not changed.")
+			return exit(1)
+		}
 		return err
 	}
 	if narrowScope {
@@ -887,31 +1109,43 @@ func (inv *invocation) hostMove(args []string) error {
 		switch {
 		case w == "--all":
 			all = true
-		case w == "--yes" || w == "--remove-home" || w == "--allow-uid-mismatch":
+		case w == "-y" || w == "--yes" || w == "--remove-home" || w == "--allow-uid-mismatch":
 			pass = append(pass, w)
 		case strings.HasPrefix(w, "-"):
-			return inv.usageErr("Unknown option: '"+w+"'", "Usage: tacctl host move <name> [<scope>] | --all  [--yes] [--remove-home] [--allow-uid-mismatch]")
+			return inv.usageErr("Unknown option: '"+w+"'", "Usage: tacctl host move <name> [<scope>] | --all  [-y] [--remove-home] [--allow-uid-mismatch]")
 		case name == "":
 			name = w
 		case scope == "":
 			scope = w
 		default:
-			return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [--yes] [--remove-home] [--allow-uid-mismatch]")
+			return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [-y] [--remove-home] [--allow-uid-mismatch]")
 		}
 	}
 	if all == (name != "") {
-		return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [--yes] [--remove-home] [--allow-uid-mismatch]")
+		return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [-y] [--remove-home] [--allow-uid-mismatch]")
 	}
 	reg, err := inv.registry()
 	if err != nil {
 		return err
 	}
 	if all {
-		failed, moved := 0, 0
+		var drifted []hosts.Entry
 		for _, e := range reg.Entries() {
-			if inv.hostScopeDrift(e, inv.hostAddress(e)) == "" {
-				continue
+			if inv.hostScopeDrift(e, inv.hostAddress(e)) != "" {
+				drifted = append(drifted, e)
 			}
+		}
+		// One snapshot for the batch, the state before the first move, and
+		// none per host: Retention keeps 30, so a snapshot per host would
+		// push the state before the batch out of the list.
+		if len(drifted) > 0 {
+			if err := inv.snapshotFirst(); err != nil {
+				return err
+			}
+			defer a.Snapshots().Hold()()
+		}
+		failed, moved := 0, 0
+		for _, e := range drifted {
 			if err := inv.hostMoveOne(reg, e, "", pass); err != nil {
 				if !isExit(err) {
 					return err
@@ -1022,7 +1256,7 @@ func (inv *invocation) confirmScopeMove(name, from, to string, yes bool) error {
 		return nil
 	}
 	if p := a.Prompter(); p.Interactive() {
-		if p.Confirm("Move " + name + " to '" + to + "' and delete those accounts? [y/N] ") {
+		if p.Confirm("  Move " + name + " to '" + to + "' and delete those accounts? [y/N]: ") {
 			return nil
 		}
 		a.Out.InfoE("Nothing was changed.")
@@ -1104,10 +1338,26 @@ func (inv *invocation) hostSync(args []string) error {
 			return nil
 		}
 	} else {
-		if e, ok := reg.Find(which); !ok || e.Line == "" {
+		e, ok := reg.Find(which)
+		if !ok || e.Line == "" {
 			return inv.usageErr("No enrolled host named '" + which + "'. See 'tacctl host list'.")
 		}
+		// A held host is not logged in to: refused before anything is
+		// attempted (D179).
+		if err := inv.hostHeldErr(e, "tacctl host sync "+which); err != nil {
+			return err
+		}
 		names = []string{which}
+	}
+	if which == "--all" {
+		var err error
+		if names, err = inv.hostSkipHeld(reg, names, "sync"); err != nil {
+			return err
+		}
+		if len(names) == 0 {
+			a.Out.Info("No hosts to sync.")
+			return nil
+		}
 	}
 
 	if err := inv.renumberUIDs(true); err != nil {
@@ -1311,6 +1561,15 @@ func (inv *invocation) hostUnenroll(args []string) error {
 	if !ok || e.Line == "" {
 		return inv.usageErr("No enrolled host named '" + name + "'. See 'tacctl host list'.")
 	}
+	// A held host is neither logged in to nor forgotten: release it first.
+	h, held, err := inv.hostHold(e)
+	if err != nil {
+		return err
+	}
+	if held {
+		return inv.hostRefuse(inv.hostHoldLine(e, h),
+			"Break-glass is held on '"+name+"': release it first (tacctl breakglass release "+name+"). Nothing was attempted over ssh and nothing was changed.")
+	}
 	label := hosts.MethodLabel(reg.Method(name))
 	a.Out.InfoE("Removing " + label + " authentication from " + name + " (" + e.Target + ")...")
 
@@ -1332,12 +1591,32 @@ func (inv *invocation) hostUnenroll(args []string) error {
 		}
 		a.Out.WarnE("Removal on " + name + " failed; forgetting the host anyway (--force).")
 	}
+	// The state before the host is forgotten (D191): the registry line, the
+	// pins and the record go together.
+	if err := inv.snapshotFirst(); err != nil {
+		a.Out.WarnE("The removal ran on " + name + " but the host is still registered; run the same command again (the removal runs again on the host; if it fails on the host as it is now, add --force, which forgets the host even when the removal fails).")
+		return err
+	}
 	if err := reg.Forget(name); err != nil {
 		return err
 	}
 	inv.forgetHostKeys(name)
 	if err := inv.hostRecords().Forget(name); err != nil {
 		a.Out.WarnE(name + ": its record (" + inv.app.Paths.HostRecords + "/" + name + ".json) could not be removed: " + strings.Join(msgs(err), " "))
+	}
+	// The host's staging entries go with it; the /32 each added stays a
+	// prefix of its scope (said below), as 'host forget' leaves it.
+	var staged []stagingEntry
+	for _, s := range inv.stagingLoad() {
+		if s.Kind == "host" && s.Name == name {
+			staged = append(staged, s)
+		}
+	}
+	if len(staged) > 0 {
+		if err := inv.hostStagingDrop(name); err != nil {
+			a.Out.WarnE(name + ": its staging addresses could not be dropped from " + inv.stagingPath() + ": " + strings.Join(msgs(err), " ") + ". Run: tacctl host forget " + name)
+			staged = nil
+		}
 	}
 	if e.Target == hosts.Local {
 		// The remove script gave tacctl's accounts /bin/bash back; the
@@ -1347,10 +1626,16 @@ func (inv *invocation) hostUnenroll(args []string) error {
 	}
 	a.Logger(inv.ctx, "auth.info", "host unenroll name="+name+" target="+e.Target+" by="+inv.sudoUser())
 	a.Out.InfoE("Host '" + name + "' unenrolled. Local accounts and home directories were left in place.")
+	if len(staged) > 0 {
+		inv.echo("")
+		inv.hostStagingHints(staged)
+	}
 	if !reg.ScopeInUse(e.Scope) {
 		inv.echo("")
 		inv.echo("  No enrolled host uses scope '" + e.Scope + "' any more. To stop its secret being accepted:")
 		inv.echo("    tacctl scope remove " + e.Scope)
+		inv.echo("")
+	} else if len(staged) > 0 {
 		inv.echo("")
 	}
 	return nil

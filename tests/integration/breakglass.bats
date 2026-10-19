@@ -145,12 +145,24 @@ restarts() { grep -c 'systemctl restart' "$CALLS_LOG" || true; }
     assert_output --partial "None held"
 }
 
-@test "hold: a held device is not moved or removed, and a rename follows" {
+@test "hold: a held device's address moves the hold; it is not removed, and a rename follows" {
     run hold lab-sw "console recovery"
     assert_success
-    run plain device address lab-sw 192.168.1.9
+    base=$(restarts)
+    run plain device address lab-sw 192.168.1.9 -y
+    assert_success
+    assert_output --partial "Break-glass hold MOVED on lab-sw from 192.168.1.1 to 192.168.1.9"
+    [[ "$(restarts)" == "$((base + 1))" ]]
+    run plain scope lookup 192.168.1.9
+    assert_output --partial "NOT ANSWERED: break-glass held on lab-sw"
+    run plain scope lookup 192.168.1.1
+    refute_output --partial "NOT ANSWERED"
+    run plain breakglass list
+    assert_output --partial "192.168.1.9"
+    run plain device address lab-sw 127.0.0.1 -y
     assert_failure 1
-    assert_output --partial "break-glass is held on lab-sw: release it first (tacctl breakglass release lab-sw)"
+    assert_output --partial "loopback"
+    assert_output --partial "Nothing was changed."
     run plain device remove lab-sw -y
     assert_failure 1
     assert_output --partial "break-glass is held on lab-sw: release it first"
@@ -237,6 +249,90 @@ restarts() { grep -c 'systemctl restart' "$CALLS_LOG" || true; }
     assert_output --partial "Still held: none"
     [[ "$(restarts)" == "$((base + 2))" ]]
     [[ "$(rendered)" == "$before" ]]
+    run grep -c breakglass_hold "$OVERRIDES"
+    assert_output "0"
+}
+
+# Enrolled Linux hosts (docs/plans/0.2.14-plan.md D176, D179-D181): held at
+# the address of their ssh target (or the one a sync recorded); nothing
+# logs in to a held host over ssh.
+enrol_host() {
+    printf 'web1|root@192.168.1.10||lab|192.0.2.1|\n' > "${TACCTL_STATE_DIR}/linux-hosts"
+    chmod 0600 "${TACCTL_STATE_DIR}/linux-hosts"
+    stub_cmd ssh 'exit 0'
+}
+
+@test "hold: an enrolled Linux host is held, shown, refused every ssh login of tacctl, and released" {
+    local before base
+    enrol_host
+    before=$(rendered)
+    base=$(restarts)
+    run hold web1 "locked out of sudo"
+    assert_success
+    assert_output --partial "Hold break-glass on web1 (192.168.1.10, scope lab, linux)?"
+    assert_output --partial "This is for one host in exceptional circumstances."
+    assert_output --partial "Break-glass HELD on web1 (192.168.1.10) since "
+    assert_output --partial "Carved:   only 192.168.1.10, the address recorded for the host web1."
+    assert_output --partial "ssh or console: log in as the host's local administrator"
+    [[ "$(restarts)" == "$((base + 1))" ]]
+    stub_called 'logger -t tacctl -p auth.info breakglass hold host=web1 addr=192.168.1.10 reason="locked out of sudo" by=root'
+    run grep -F '# break-glass held: 192.168.1.10 (device web1)' "$TACCTL_CONFIG"
+    assert_success
+    run grep -c '"192.168.0.0/16"' "$TACCTL_CONFIG"
+    assert_output "0"
+
+    run plain breakglass list
+    assert_output --partial "web1"
+    assert_output --partial "host"
+    assert_output --partial "locked out of sudo"
+    run plain host list
+    assert_output --partial "BREAK-GLASS"
+    assert_output --partial "1 host(s) held for break-glass: tacctl breakglass list"
+    run plain host show web1
+    assert_output --partial "the server does not answer 192.168.1.10"
+    run plain status
+    assert_output --partial "Break-glass:        HELD on web1 (192.168.1.10)"
+
+    # Nothing is attempted over ssh, and the host stays registered.
+    run plain host sync web1
+    assert_failure 1
+    assert_output --partial "Break-glass is held on host 'web1' (192.168.1.10) since "
+    assert_output --partial "Release it first: tacctl breakglass release web1"
+    run plain host show web1 --check
+    assert_failure 1
+    assert_output --partial "refused for a held host"
+    run plain host unenroll web1 --force
+    assert_failure 1
+    assert_output --partial "release it first (tacctl breakglass release web1)"
+    run grep -c '^web1|' "${TACCTL_STATE_DIR}/linux-hosts"
+    assert_output "1"
+    run stub_called '^ssh '
+    assert_failure
+
+    run plain breakglass release web1
+    assert_success
+    assert_output --partial "Break-glass RELEASED on web1 (192.168.1.10): held "
+    [[ "$(restarts)" == "$((base + 2))" ]]
+    [[ "$(rendered)" == "$before" ]]
+    run grep -c breakglass_hold "$OVERRIDES"
+    assert_output "0"
+    stub_called 'logger -t tacctl -p auth.info breakglass release host=web1 addr=192.168.1.10 held='
+}
+
+@test "hold: this server's own host, a host with no address and a name of both kinds are refused" {
+    printf 'here|local||lab|127.0.0.1|\nnoaddr|root@web9.example.net||lab|192.0.2.1|\n' > "${TACCTL_STATE_DIR}/linux-hosts"
+    chmod 0600 "${TACCTL_STATE_DIR}/linux-hosts"
+    run hold here "x"
+    assert_failure 1
+    assert_output --partial "'here' is this server (enrolled with --local)"
+    run hold noaddr "x"
+    assert_failure 1
+    assert_output --partial "Host 'noaddr' has no address: none is recorded and its ssh target is not an address. Record it: tacctl host sync noaddr."
+    "$TACCTL_BIN_SCRIPT" device add dup 192.168.1.30 --vendor cisco --no-host-key --allow-generic > /dev/null
+    printf 'dup|root@192.168.1.31||lab|192.0.2.1|\n' > "${TACCTL_STATE_DIR}/linux-hosts"
+    run hold dup "x"
+    assert_failure 1
+    assert_output --partial "'dup' is ambiguous: it is the device 'dup' and the host 'dup'."
     run grep -c breakglass_hold "$OVERRIDES"
     assert_output "0"
 }
