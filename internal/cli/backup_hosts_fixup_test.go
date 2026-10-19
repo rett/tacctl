@@ -68,6 +68,7 @@ func TestHostMoveAllTakesOneSnapshot(t *testing.T) {
 
 // A busy host registry stops 'backup restore' before anything changes.
 func TestBackupRestoreWithABusyRegistryChangesNothing(t *testing.T) {
+	serial(t)
 	sb := hostsSandbox(t)
 	defer hosts.SetLockWait(100 * time.Millisecond)()
 	unlock, err := (&hosts.Registry{Path: sb.path("state/linux-hosts")}).Lock()
@@ -97,6 +98,7 @@ func TestBackupRestoreWithABusyRegistryChangesNothing(t *testing.T) {
 
 // A snapshot that does not know the hosts needs no lock on the registry.
 func TestBackupRestoreWithoutHostsIgnoresABusyRegistry(t *testing.T) {
+	serial(t)
 	sb := hostsSandbox(t)
 	defer hosts.SetLockWait(100 * time.Millisecond)()
 	unlock, err := (&hosts.Registry{Path: sb.path("state/linux-hosts")}).Lock()
