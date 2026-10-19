@@ -9,7 +9,7 @@ current behaviour; this file is where history lives.
    changed.` when an account may have been renamed earlier in the same run: it
    says `No account was created or removed (an account renamed above keeps its
    new name).` The line for a renamed account shows the account's own UID, and
-   on a host still on an earlier UID range adds `, renumbered to <uid> later
+   on a host still on an earlier UID range adds `, to be renumbered to <uid> later
    in this run`. The `host sync` help line and the documentation now say that
    a sync pushes renames as well (a renamed user's account is renamed, keeping
    its UID and home). `host list` counts the `Names:` findings about hosts in

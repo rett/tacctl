@@ -315,8 +315,8 @@ rename_state() {
 
 # rename_account <old> <new> <uid>: the account of <old> is <new> from now
 # on; <uid> is the number the server assigned, and the line says the
-# account's own when it still has an earlier range's. Fails (nothing renamed) when the state files cannot follow or
-# usermod -l fails. The state is renamed first and back if usermod fails, so
+# account's own when it still has an earlier range's. Fails (nothing renamed)
+# when the state files cannot follow or usermod -l fails. The state is renamed first and back if usermod fails, so
 # a renamed account is always in 'created' under its new name.
 rename_account() {
     local old="$1" new="$2" uid="$3" home gid group now later=""
@@ -339,7 +339,7 @@ rename_account() {
     fi
     usermod -c "${new} (${PROTO})" "$new" || warn "'${new}': its full name could not be changed."
     now=$(getent passwd "$new" | cut -d: -f3 || true)
-    if [[ -n "$now" && "$now" != "$uid" ]]; then later=", renumbered to ${uid} later in this run"; fi
+    if [[ -n "$now" && "$now" != "$uid" ]]; then later=", to be renumbered to ${uid} later in this run"; fi
     info "'${old}' is now '${new}' (renamed; UID ${now:-$uid}${later}; home kept at ${home:-none})"
 }
 

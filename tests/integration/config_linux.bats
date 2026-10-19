@@ -1791,7 +1791,7 @@ _synced_host() {
     sed -i "s/^TAC_USERS=.*/TAC_USERS=\$'carol:superuser:80001'/; s/^TAC_UID_PREVIOUS=.*/TAC_UID_PREVIOUS=20000-29999/" "$OUT"
     run bash "$OUT" --accounts-only
     assert_success
-    assert_output --partial "[INFO] 'alice' is now 'carol' (renamed; UID 20001, renumbered to 80001 later in this run; home kept at ${TACCTL_CLIENT_HOME_ROOT}/alice)"
+    assert_output --partial "[INFO] 'alice' is now 'carol' (renamed; UID 20001, to be renumbered to 80001 later in this run; home kept at ${TACCTL_CLIENT_HOME_ROOT}/alice)"
     assert_output --partial "'carol': renumbered 20001 -> 80001"
     refute_output --partial "Created account"
     refute_output --partial "Deleted account"
