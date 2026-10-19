@@ -66,11 +66,20 @@ func TestHostMoveAllTakesOneSnapshot(t *testing.T) {
 	}
 }
 
+// shortLockWait makes the host registry's lock give up after 100 ms for the
+// rest of the test. The wait is one variable of the process, so the test must
+// be serial.
+func shortLockWait(t *testing.T) {
+	t.Helper()
+	mustBeSerial(t)
+	t.Cleanup(hosts.SetLockWait(100 * time.Millisecond))
+}
+
 // A busy host registry stops 'backup restore' before anything changes.
 func TestBackupRestoreWithABusyRegistryChangesNothing(t *testing.T) {
 	serial(t)
 	sb := hostsSandbox(t)
-	defer hosts.SetLockWait(100 * time.Millisecond)()
+	shortLockWait(t)
 	unlock, err := (&hosts.Registry{Path: sb.path("state/linux-hosts")}).Lock()
 	if err != nil {
 		t.Fatal(err)
@@ -100,7 +109,7 @@ func TestBackupRestoreWithABusyRegistryChangesNothing(t *testing.T) {
 func TestBackupRestoreWithoutHostsIgnoresABusyRegistry(t *testing.T) {
 	serial(t)
 	sb := hostsSandbox(t)
-	defer hosts.SetLockWait(100 * time.Millisecond)()
+	shortLockWait(t)
 	unlock, err := (&hosts.Registry{Path: sb.path("state/linux-hosts")}).Lock()
 	if err != nil {
 		t.Fatal(err)
