@@ -17,12 +17,19 @@ import "strings"
 // Sudoers023 is the per-tier drop-in 0.2.3 wrote.
 func Sudoers023() string { return sudoers023 }
 
-// Sudoers0213 is the per-tier drop-in 0.2.9 to 0.2.13 wrote: this release's
-// rules without the engineer's 'host list --json' item (0.2.14). The rollback
+// Sudoers0214 is the per-tier drop-in 0.2.14 wrote: this release's rules
+// without the operator's 'config validate --json' item (0.2.15). The rollback
 // to 0.2.3 recognises it as an older text; it is derived (a rule that moves
 // on again makes its own frozen copy).
+func Sudoers0214() string {
+	return strings.Replace(Sudoers(), ", "+Binary+" config validate --json", "", 1)
+}
+
+// Sudoers0213 is the per-tier drop-in 0.2.9 to 0.2.13 wrote: 0.2.14's rules
+// without the engineer's 'host list --json' item (0.2.14). The rollback to
+// 0.2.3 recognises it as an older text; it is derived like Sudoers0214.
 func Sudoers0213() string {
-	return strings.Replace(Sudoers(), ", "+Binary+" host list --json", "", 1)
+	return strings.Replace(Sudoers0214(), ", "+Binary+" host list --json", "", 1)
 }
 
 // Sudoers028 is the per-tier drop-in 0.2.8 wrote: 0.2.13's rules with

@@ -339,6 +339,12 @@ type hostFinding struct {
 	// Hosts are the registry names the finding is about (none for a
 	// finding about state no registry line has).
 	Hosts []string
+	// Kind, Name, To and Verb are set on the findings of a name with upper
+	// case (caseFindings): what is named (device, host, user or scope), the
+	// name, the lower-case spelling it can be renamed to ("<new>" when
+	// another name has it) and the verb that renames it. 'config validate
+	// --fix-names' reads them.
+	Kind, Name, To, Verb string
 }
 
 // String is the finding on one line.

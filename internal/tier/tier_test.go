@@ -246,6 +246,28 @@ func TestEngineerSudoersRowsAreExact(t *testing.T) {
 	}
 }
 
+// 'config validate' and 'config validate --json' are the operator's, exact
+// matches: no other option or argument is allowed through sudo.
+func TestOperatorSudoersConfigValidate(t *testing.T) {
+	text := Sudoers()
+	op := aliasItems(t, text, "TACCTL_OP")
+	for _, item := range []string{"config validate", "config validate --json"} {
+		if !slices.Contains(op, item) {
+			t.Errorf("operator alias lacks %q", item)
+		}
+	}
+	for _, name := range []string{"TACCTL_RO", "TACCTL_EN"} {
+		for _, item := range aliasItems(t, text, name) {
+			if strings.HasPrefix(item, "config validate") {
+				t.Errorf("%s has %q, which is the operator's", name, item)
+			}
+		}
+	}
+	if slices.Contains(op, "config validate *") {
+		t.Error("operator alias lets config validate take any argument")
+	}
+}
+
 type gateRun struct {
 	run      *fake.Runner
 	out, err bytes.Buffer

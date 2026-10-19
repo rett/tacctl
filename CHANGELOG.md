@@ -84,6 +84,23 @@ current behaviour; this file is where history lives.
    `notes`, `error` and `breakglass`. It is the superuser's, like `host show
    --check`.
 
+8. **`config validate --json` prints the findings as one JSON object.** The
+   object has `valid`, `errors`, `warnings`, `mode` (`store` or `legacy`),
+   `counts` (users, groups and scopes; `null` when the model cannot be read),
+   `backends`, and `findings` in the order the text report lists them. Each
+   finding has `section` (a fixed token for each label of the text report),
+   `level` (`error` or `warning`), `text`, `fix` (the command that puts it
+   right, `""` when none), and `backend` or `hosts` where they apply. Nothing
+   else is printed on standard output (the complaint of an unreadable store
+   goes to standard error), and the exit status is the text report's: 1 when
+   `errors` is not 0, with the object printed either way. An option other
+   than `--json` is now refused with the usage line. The verb stays the
+   operator's: the per-tier sudoers rules gain the exact `config validate
+   --json` row, `tacctl upgrade` rewrites an installed drop-in, and `tacctl
+   rollback` recognises the 0.2.14 text. A finding the text report colours
+   red but does not count (a break-glass hold with no registered device) is a
+   `warning` in the object.
+
 ## 0.2.14 (2026-10-18)
 
 1. **`device address` moves a break-glass hold with its device.** On a

@@ -385,7 +385,8 @@ Subcommands:
   <b>defaults</b>                             Print canonical tacctl defaults (shipped)
   <b>get</b> <o><path></o> [fallback]                Read a dotted-path value from the merged config
   <b>get-list</b> <o><path></o>                      Read a list value (one item per line)
-  <b>validate</b>                             Validate config syntax and structure
+  <b>validate</b> [<o>--json</o>]                    Validate config syntax and structure
+      <o>--json</o>                           Print the findings as one JSON object and nothing else on standard output; exit 1 when one is an error
   <b>render</b> [<o>--force</o>]                     Regenerate every enabled backend's config from the store (<o>--force</o> overwrites hand edits)
       <o>--force</o>                          Overwrite a generated file that was edited by hand
   <b>render</b> <o>--dry-run</o> <o>--out <dir></o>         Render into a new, empty directory at the live paths; nothing live is written

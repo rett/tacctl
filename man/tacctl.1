@@ -1542,7 +1542,7 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config get-list
 .TP
-.B config validate
+.B "config validate [ \-\-json ]"
 Validate the store
 .RI ( store.yaml :
 names, every user's group and scopes exist, each prefix owned by one scope),
@@ -1631,10 +1631,77 @@ more than one backend enabled each gets a labelled block; files left behind by
 a disabled backend are not checked. With RADIUS enabled it warns about a scope
 RADIUS serves that sends no vendor attribute and is not a Linux-host scope.
 Exits 1 when it finds errors.
+.IP
+.B \-\-json
+prints one JSON object instead, and nothing else on standard output (what the
+report writes around itself, such as the complaint of a store that cannot be
+read, goes to standard error). The exit status is the same: 1 when
+.B errors
+is not 0, the object printed either way. The object has
+.B valid
+(true when there is no error),
+.BR errors " and " warnings
+(how many findings have each level),
+.B mode
+.RB ( store
+or
+.BR legacy ,
+without a store),
+.B counts
+(the
+.BR users ", " groups " and " scopes
+the store defines, null when the model cannot be read),
+.B backends
+(the enabled ones, empty when the list cannot be read) and
+.BR findings ,
+in the order the text report lists them, empty when there is none. A finding
+has a
+.B section
+(a fixed token for each label of the text report:
+.BR store ", " yaml ", " overrides ", " command_rules ", " structure ", "
+.BR scope_default ", " linux_hosts ", " names ", " breakglass ", " breakglass_hold ", "
+.BR config_blocks ", " operator_policy ", " group_settings ", " orphan_settings ", "
+.BR orphan_files ", " leftovers ", " backends ", " rendered ", " drift " and "
+.BR vendor_attrs ),
+a
+.B level
+.RB ( error ,
+which counts toward the exit status, or
+.BR warning ),
+the
+.B text
+(what is wrong, without the command that puts it right) and the
+.B fix
+(that command, empty when there is none; for a drifted file the advice the
+text report prints under its
+.B DRIFT:
+line), and, where they apply, the
+.B backend
+(rendered config, drift and vendor attributes) and the
+.B hosts
+(registered hosts, for
+.B linux_hosts
+and
+.BR names ).
+A finding the text report colours red but does not count (a break\-glass hold
+with no registered device) is a warning, so that
+.B valid
+and the exit status agree with
+.BR errors .
+The text report counts the drifted files of one backend as one error; the
+object counts each file. A caller who sees only some scopes gets no
+.BR linux_hosts ,
+.B names
+or hold\-defect findings, as in the text report.
 .\" BEGIN GENERATED: command config validate
 .RS
 .PP
 Requires: \fBoperator\fR.
+.PP
+Options:
+.TP
+\fB\-\-json\fR
+Print the findings as one JSON object and nothing else on standard output; exit 1 when one is an error.
 .RE
 .\" END GENERATED: command config validate
 .TP
@@ -11981,7 +12048,8 @@ does not fit, a name that does not exist or exists already, a store or
 .I tacctl.yaml
 that cannot be read or written, a caller whose tier does not allow the
 command, a check that found a problem
-.RB ( "config validate" ", " "console check" ", " "device check" ),
+.RB ( "config validate" " (with " "\-\-json" ", after it has printed its object)" ", "
+.BR "console check" ", " "device check" ),
 a device that could not be read, compared or planned
 .RB ( "device config pull" ", " "device config diff" ", " "device config plan" ),
 a device

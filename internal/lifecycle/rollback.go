@@ -61,13 +61,15 @@ package lifecycle
 //	                       install <group>' wrote carry the password cache's
 //	                       Cmnd_Alias and env_keep line, and the tiers one
 //	                       the rows of 'device config', 'device snmp',
-//	                       'console forget' and 'host list --json'. Sudo
+//	                       'console forget', 'host list --json' and
+//	                       'config validate --json'. Sudo
 //	                       accepts both, but 0.2.3's upgrade compares the
 //	                       tiers file with its own text and its group
 //	                       drop-in is never refreshed: a file
 //	                       that is exactly this release's text, or the one
-//	                       0.2.4 to 0.2.13 wrote (tier.Sudoers0213, Sudoers028,
-//	                       Sudoers027, GroupSudoers026, GroupSudoers027,
+//	                       0.2.4 to 0.2.14 wrote (tier.Sudoers0214,
+//	                       Sudoers0213, Sudoers028, Sudoers027,
+//	                       GroupSudoers026, GroupSudoers027,
 //	                       GroupSudoers028), is rewritten with 0.2.3's
 //	                       (tier.Sudoers023, GroupSudoers023, through
 //	                       'visudo -cf'); any other file is left.
@@ -612,7 +614,7 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 	tiers := sudoersPlan{label: "the per-tier drop-in", file: pt.TierSudoersFile, state: "absent"}
 	if b, err := os.ReadFile(pt.TierSudoersFile); err == nil {
 		switch got := string(b); {
-		case got == tier.Sudoers(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
+		case got == tier.Sudoers(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
 			tiers.state, tiers.body = "rewrite", tier.Sudoers023()
 		case got == tier.Sudoers023():
 			tiers.state = "done"
@@ -652,7 +654,7 @@ func (p *RollbackPlan) sudoersStep() RollbackStep {
 		switch d.state {
 		case "rewrite":
 			s.Lines = append(s.Lines, "rewrite "+d.file+" ("+d.label+": 0.2.3's text, after 'visudo -cf'; it loses the TACCTL_ASKPASS alias and env_keep line"+
-				map[bool]string{true: " and the rows of 'device config', 'device snmp', 'console forget' and 'host list --json'", false: ""}[d.label == "the per-tier drop-in"]+")")
+				map[bool]string{true: " and the rows of 'device config', 'device snmp', 'console forget', 'host list --json' and 'config validate --json'", false: ""}[d.label == "the per-tier drop-in"]+")")
 			if p.in.InstallSudoers == nil {
 				s.Lines[len(s.Lines)-1] += " [not rewritten: no installer]"
 			}

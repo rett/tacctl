@@ -200,7 +200,7 @@ var Rules = []Rule{
 	{Tier: Operator, Cmd: "log", Sub: "search", Sudoers: []string{"log search *"}, Wrap: true},
 	{Tier: Operator, Cmd: "log", Sub: "failures", Sudoers: []string{"log failures"}},
 	{Tier: Operator, Cmd: "log", Sub: "accounting", Sudoers: []string{"log accounting", "log accounting *"}, Wrap: true},
-	{Tier: Operator, Cmd: "config", Sub: "validate", Sudoers: []string{"config validate"}},
+	{Tier: Operator, Cmd: "config", Sub: "validate", Sudoers: []string{"config validate", "config validate --json"}},
 	{Tier: Operator, Cmd: "backup", Sub: "list", Sudoers: []string{"backup list"}, Wrap: true},
 	{Tier: Operator, Cmd: "device", Sub: "check", Sudoers: []string{"device check *"}},
 	{Tier: Operator, Cmd: "device", Sub: "scan", Sudoers: []string{"device scan", "device scan *"}},

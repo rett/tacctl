@@ -393,6 +393,30 @@ _normalize() {
     assert_output --partial "Configuration is valid."
 }
 
+@test "config validate --json: one object on standard output, exit 0 when valid, exit 1 with an error" {
+    bats_require_minimum_version 1.5.0
+    cp "${TACCTL_SRC}/config/backends/tacacs/tacquito.yaml" "$TACCTL_CONFIG"
+    sed -i 's/REPLACE_WITH_SHARED_SECRET/lab-secret-0123456789abcdef/' "$TACCTL_CONFIG"
+    rm -f "${TACCTL_STATE_DIR}/store.yaml"
+    run "$TACCTL_BIN_SCRIPT" store import
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" user add alice superuser --hash "24326224313024616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161"
+    assert_success
+    run --separate-stderr "$TACCTL_BIN_SCRIPT" config validate --json
+    assert_success
+    run jq -r '[.valid, .errors, .mode, .counts.users, (.backends | join(",")), (.findings | map(.level) | unique | join(","))] | map(tostring) | join(" ")' <<< "$output"
+    assert_output --regexp '^true 0 store 1 tacacs( warning)?$'
+    # A hand-edited artifact is an error: the object is printed, the exit is 1.
+    printf '# edited\n' >> "$TACCTL_CONFIG"
+    run --separate-stderr "$TACCTL_BIN_SCRIPT" config validate --json
+    assert_failure 1
+    run jq -r '[.valid, .errors, (.findings | map(select(.section == "drift")) | .[0] | .backend, .level)] | map(tostring) | join(" ")' <<< "$output"
+    assert_output "false 1 tacacs error"
+    run "$TACCTL_BIN_SCRIPT" config validate --bogus
+    assert_failure
+    assert_output --partial "Unknown option: '--bogus'"
+}
+
 # --- per-scope aaa-order: render flip ----------------------------------------
 # Goldens above cover the tacacs-first default. These assert the
 # local-first shape when a specific scope overrides via

@@ -225,20 +225,44 @@ func (inv *invocation) listenerProbe(network, address string) string {
 // artifact that render?) and drift, and RADIUS's vendor-attribute gaps.
 // Without one (legacy read-only mode): tacquito.yaml must parse, and the
 // model read from it gets the full reference checks. Exit 1 when anything
-// is an error.
-func (inv *invocation) configValidate([]string) error {
+// is an error. With --json the findings are printed as one JSON object and
+// nothing else goes to standard output (D220).
+func (inv *invocation) configValidate(args []string) error {
+	p, err := Parse(configSpecs["validate"], args)
+	if err != nil {
+		msg := err.Error()
+		if uf, ok := err.(*UnknownFlagError); ok {
+			msg = "Unknown option: '" + uf.Flag + "'"
+		}
+		return inv.usageErr(msg, "Usage: tacctl config validate [--json]")
+	}
+	if p.Has("--json") {
+		return inv.configValidateJSON()
+	}
+	r := &validateReport{sink: inv.printValidateText}
+	inv.collectValidate(r)
+	inv.printValidateTextEnd(r)
+	if r.textErrors() > 0 {
+		return exit(1)
+	}
+	return nil
+}
+
+// collectValidate runs the checks of 'config validate' and adds what they
+// print, and the findings that are, to r in the order the text report has
+// them (D219).
+func (inv *invocation) collectValidate(r *validateReport) {
 	a := inv.app
-	out := a.Out
 	G, R, Y, B, NC := ui.Green, ui.Red, ui.Yellow, ui.Bold, ui.NC
 	storeMode := model.Mode(a.Paths.StoreFile) == "store"
-	inv.echo("")
+	r.storeMode = storeMode
+	r.line(howEcho, "")
 	if storeMode {
-		inv.echoE(B + "Validating " + a.Paths.StoreFile + "..." + NC)
+		r.line(howEchoE, B+"Validating "+a.Paths.StoreFile+"..."+NC)
 	} else {
-		inv.echoE(B + "Validating " + a.Paths.Config + "..." + NC)
+		r.line(howEchoE, B+"Validating "+a.Paths.Config+"..."+NC)
 	}
-	inv.echo("")
-	errs := 0
+	r.line(howEcho, "")
 
 	if storeMode {
 		// store_validate: one 'tacctl store: <problem>' line per error.
@@ -247,31 +271,31 @@ func (inv *invocation) configValidate([]string) error {
 			problems = strings.Split(store.Report(err), "\n")
 		}
 		if len(problems) == 0 {
-			inv.echoE("  " + G + "Store:" + NC + "                valid")
+			r.line(howEchoE, "  "+G+"Store:"+NC+"                valid")
 		}
 		for _, p := range problems {
 			p = strings.TrimPrefix(p, "tacctl store: ")
 			if p == "" {
 				continue
 			}
-			inv.echoE("  " + R + "Store:" + NC + "                " + p)
-			errs++
+			r.found(howEchoE, "  "+R+"Store:"+NC+"                "+p, validateFinding{Section: "store", Level: levelError, Text: p})
 		}
 	} else {
 		if problem := cfgYAMLProblem(a.Paths.Config); problem == nil {
-			inv.echoE("  " + G + "YAML syntax:" + NC + "          valid")
+			r.line(howEchoE, "  "+G+"YAML syntax:"+NC+"          valid")
 		} else {
-			inv.echoE("  " + R + "YAML syntax:" + NC + "          INVALID")
 			// 0.1.16 printed the first three lines of the Python traceback
 			// here; this prints the first three lines of the YAML error.
 			lines := strings.Split(problem.Error(), "\n")
 			if len(lines) > 3 {
 				lines = lines[:3]
 			}
-			inv.write(strings.Join(lines, "\n") + "\n")
-			errs++
+			r.found(howEchoE, "  "+R+"YAML syntax:"+NC+"          INVALID", validateFinding{
+				Section: "yaml", Level: levelError, Text: "the YAML is not valid: " + strings.Join(lines, " ")})
+			r.line(howRaw, strings.Join(lines, "\n")+"\n")
 		}
-		inv.echoE("  " + Y + "Store:" + NC + "                not initialised — read-only until 'tacctl store import' ('tacctl store import --check' reports what it would do)")
+		r.found(howEchoE, "  "+Y+"Store:"+NC+"                not initialised — read-only until 'tacctl store import' ('tacctl store import --check' reports what it would do)",
+			validateFinding{Section: "store", Level: levelWarning, Text: "not initialised: tacctl is read-only until the legacy file is imported", Fix: "tacctl store import"})
 	}
 
 	// tacctl.yaml: does it parse (yaml.safe_load), then the schema walk of
@@ -280,36 +304,39 @@ func (inv *invocation) configValidate([]string) error {
 	cfg := a.Conf()
 	switch {
 	case !cfgIsFile(ovr):
-		inv.echoE("  " + G + "tacctl.yaml:" + NC + "          no overrides")
+		r.line(howEchoE, "  "+G+"tacctl.yaml:"+NC+"          no overrides")
 	case cfgYAMLProblem(ovr) == nil:
-		inv.echoE("  " + G + "tacctl.yaml:" + NC + "          valid")
+		r.line(howEchoE, "  "+G+"tacctl.yaml:"+NC+"          valid")
 		for _, l := range cfg.Schema.ValidateFile(ovr) {
 			if l == "" {
 				continue
 			}
-			inv.echoE("  " + R + "tacctl.yaml:" + NC + "          " + l)
-			errs++
+			r.found(howEchoE, "  "+R+"tacctl.yaml:"+NC+"          "+l, validateFinding{Section: "overrides", Level: levelError, Text: l})
 		}
 	default:
 		first := ""
 		if lines := cfg.Schema.ValidateFile(ovr); len(lines) > 0 {
 			first = lines[0]
 		}
-		inv.echoE("  " + R + "tacctl.yaml:" + NC + "          INVALID — " + first)
-		errs++
+		why := "the YAML is not valid"
+		if first != "" {
+			why += ": " + first
+		}
+		r.found(howEchoE, "  "+R+"tacctl.yaml:"+NC+"          INVALID — "+first, validateFinding{Section: "overrides", Level: levelError, Text: why})
 	}
 
 	// Command rules that cannot work as written (an empty or invalid match,
 	// a prefix form that matches the exact arguments only, a rule an
 	// earlier one makes unreachable): warnings, the file is still valid.
 	for _, l := range inv.commandRuleWarnings() {
-		inv.echo("  " + Y + "Command rules:" + NC + "        " + l)
+		r.found(howEcho, "  "+Y+"Command rules:"+NC+"        "+l, validateFinding{Section: "command_rules", Level: levelWarning, Text: l})
 	}
 
 	// What the model says: is there anything to serve, are the secrets
 	// real. A store has had its references checked above; a legacy model
 	// gets the full set here.
-	counts := map[string]string{"users": "?", "groups": "?", "scopes": "?"}
+	r.counts = map[string]string{"users": "?", "groups": "?", "scopes": "?"}
+	counts := r.counts
 	structure := 0
 	var scopeNames []string
 	m, merr := inv.model()
@@ -320,28 +347,29 @@ func (inv *invocation) configValidate([]string) error {
 				k, v, _ := strings.Cut(strings.TrimPrefix(l, "COUNT:"), "=")
 				counts[k] = v
 			case strings.HasPrefix(l, "ERROR:"):
-				inv.echoE("  " + R + "Error:" + NC + "                " + strings.TrimPrefix(l, "ERROR:"))
+				text := strings.TrimPrefix(l, "ERROR:")
+				r.found(howEchoE, "  "+R+"Error:"+NC+"                "+text, validateFinding{Section: "structure", Level: levelError, Text: text})
 				structure++
 			}
 		}
 		scopeNames = m.ScopeNames()
 	} else {
 		// The model's own complaint, once, then the line that points at it.
-		inv.reportModelError(merr)
-		inv.echoE("  " + R + "Error:" + NC + "                users, groups and scopes could not be read (see above)")
+		r.modelErr(merr)
+		r.found(howEchoE, "  "+R+"Error:"+NC+"                users, groups and scopes could not be read (see above)",
+			validateFinding{Section: "structure", Level: levelError, Text: "users, groups and scopes could not be read (see standard error)"})
 		structure = 1
 	}
 	if structure == 0 {
-		inv.echoE("  " + G + "Config structure:" + NC + "     valid")
+		r.line(howEchoE, "  "+G+"Config structure:"+NC+"     valid")
 	}
-	errs += structure
 
 	// scope.default in tacctl.yaml must name an existing scope.
 	if def, _ := cfg.Get("scope.default", ""); merr == nil && def != "" && !contains(scopeNames, def) {
-		inv.echoE("  " + R + "Error:" + NC + "                Default scope override points at '" + def + "' which is not a defined scope")
-		errs++
+		text := "Default scope override points at '" + def + "' which is not a defined scope"
+		r.found(howEchoE, "  "+R+"Error:"+NC+"                "+text, validateFinding{Section: "scope_default", Level: levelError, Text: text})
 	} else {
-		inv.echoE("  " + G + "Scopes integrity:" + NC + "     valid")
+		r.line(howEchoE, "  "+G+"Scopes integrity:"+NC+"     valid")
 	}
 
 	// Enrolled Linux hosts: is each one's registered scope the one that
@@ -350,25 +378,29 @@ func (inv *invocation) configValidate([]string) error {
 		drift := 0
 		for _, e := range reg.Entries() {
 			if msg := inv.hostScopeDrift(e, inv.hostAddress(e)); msg != "" {
-				inv.echoE("  " + Y + "Linux hosts:" + NC + "          " + msg)
+				r.found(howEchoE, "  "+Y+"Linux hosts:"+NC+"          "+msg, validateFinding{
+					Section: "linux_hosts", Level: levelWarning, Text: msg, Hosts: []string{e.Name}})
 				drift++
 			}
 		}
 		if drift == 0 {
-			inv.echoE("  " + G + "Linux hosts:" + NC + "          each answered by its scope")
+			r.line(howEchoE, "  "+G+"Linux hosts:"+NC+"          each answered by its scope")
 		}
 	}
 	// Hosts registered twice under one name, a host named like a device, two
 	// hosts at one address, and what a registry line no longer has: warnings
 	// that name the verb that puts each right (D187).
 	for _, fnd := range inv.hostFindings() {
-		inv.echoE("  " + Y + "Linux hosts:" + NC + "          " + fnd.String())
+		r.found(howEchoE, "  "+Y+"Linux hosts:"+NC+"          "+fnd.String(), validateFinding{
+			Section: "linux_hosts", Level: levelWarning, Text: fnd.Text, Fix: fnd.Fix, Hosts: fnd.Hosts})
 	}
 
 	// Names with upper case: they keep working, and each is listed with the
 	// verb that renames it (D204).
 	for _, fnd := range inv.caseFindings() {
-		inv.echoE("  " + Y + "Names:" + NC + "                " + fnd.String())
+		r.found(howEchoE, "  "+Y+"Names:"+NC+"                "+fnd.String(), validateFinding{
+			Section: "names", Level: levelWarning, Text: fnd.Text, Fix: fnd.Fix, Hosts: fnd.Hosts,
+			Kind: fnd.Kind, Name: fnd.Name, To: fnd.To, Verb: fnd.Verb})
 	}
 
 	// Break-glass local users (D55): a scope without one is a lockout risk
@@ -383,7 +415,8 @@ func (inv *invocation) configValidate([]string) error {
 			}
 			for _, u := range users {
 				if containsFold(m.Members(s), u.Name) {
-					inv.echoE("  " + Y + "Break-glass:" + NC + "          '" + u.Name + "' in scope '" + s + "' is also a tacctl user of the scope; a local account of that name shadows the server's")
+					text := "'" + u.Name + "' in scope '" + s + "' is also a tacctl user of the scope; a local account of that name shadows the server's"
+					r.found(howEchoE, "  "+Y+"Break-glass:"+NC+"          "+text, validateFinding{Section: "breakglass", Level: levelWarning, Text: text})
 				}
 			}
 		}
@@ -392,7 +425,9 @@ func (inv *invocation) configValidate([]string) error {
 			if len(bare) > 1 {
 				word = "scopes"
 			}
-			inv.echoE("  " + Y + "Break-glass:" + NC + "          " + word + " " + quoteJoin(bare) + " without a break-glass local user — a lockout risk with the server unreachable (tacctl scope breakglass <scope> add <name>)")
+			text := word + " " + quoteJoin(bare) + " without a break-glass local user — a lockout risk with the server unreachable"
+			fix := "tacctl scope breakglass <scope> add <name>"
+			r.found(howEchoE, "  "+Y+"Break-glass:"+NC+"          "+text+" ("+fix+")", validateFinding{Section: "breakglass", Level: levelWarning, Text: text, Fix: fix})
 		}
 	}
 
@@ -402,32 +437,38 @@ func (inv *invocation) configValidate([]string) error {
 	// silences its address, and 'breakglass release' removes it), and red
 	// for an entry the file holds that is not a usable hold (no address, an
 	// address that is not one, a key with a dot in it), so none is invisible.
+	// An orphan does not count toward the exit status: its finding is a
+	// warning.
 	if hs := inv.holdSeenBy(); len(hs) > 0 {
 		orphans := inv.holdOrphans(hs)
 		now := a.Knobs.Now()
 		for _, h := range hs {
+			fix := "tacctl breakglass release " + h.Device
 			if why, ok := orphans[h.Device]; ok {
-				inv.echoE("  " + R + "Break-glass hold:" + NC + "    " + h.Device + " is an orphan record: " + why + "; it still silences " + h.Address + " (tacctl breakglass release " + h.Device + ")")
+				text := h.Device + " is an orphan record: " + why + "; it still silences " + h.Address
+				r.found(howEchoE, "  "+R+"Break-glass hold:"+NC+"    "+text+" ("+fix+")", validateFinding{Section: "breakglass_hold", Level: levelWarning, Text: text, Fix: fix})
 				continue
 			}
-			inv.echoE("  " + Y + "Break-glass hold:" + NC + "    " + h.Device + " (" + h.Address + ") held since " + holdTime(h) + " by " + h.By +
-				" (" + holdAge(h, now) + "): the server does not answer it (tacctl breakglass release " + h.Device + ")")
+			text := h.Device + " (" + h.Address + ") held since " + holdTime(h) + " by " + h.By +
+				" (" + holdAge(h, now) + "): the server does not answer it"
+			r.found(howEchoE, "  "+Y+"Break-glass hold:"+NC+"    "+text+" ("+fix+")", validateFinding{Section: "breakglass_hold", Level: levelWarning, Text: text, Fix: fix})
 		}
 	}
 	if !inv.callerScopes().restricted {
 		for _, d := range cfg.HoldDefects() {
 			fix := "tacctl breakglass release " + d.Device
+			note := "'" + fix + "' releases it, and the hold can then be made again"
 			if !d.Usable {
-				fix += " removes it"
-			} else {
-				fix = "'" + fix + "' releases it, and the hold can then be made again"
+				note = fix + " removes it"
 			}
-			inv.echoE("  " + R + "Break-glass hold:" + NC + "    breakglass_hold." + d.Key + " (device " + d.Device + ") " + d.Defect + " (" + fix + ")")
+			text := "breakglass_hold." + d.Key + " (device " + d.Device + ") " + d.Defect
 			// The schema walk above names a wrong address and a key it
 			// does not know; a record without its address it accepts.
+			level := levelWarning
 			if d.Address == "" {
-				errs++
+				level = levelError
 			}
+			r.found(howEchoE, "  "+R+"Break-glass hold:"+NC+"    "+text+" ("+note+")", validateFinding{Section: "breakglass_hold", Level: level, Text: text, Fix: fix})
 		}
 	}
 
@@ -439,14 +480,13 @@ func (inv *invocation) configValidate([]string) error {
 	if inv.blocksExist() {
 		bErrs, bWarns := inv.blockValidation()
 		for _, l := range bErrs {
-			inv.echoE("  " + R + "Config blocks:" + NC + "        " + l)
-			errs++
+			r.found(howEchoE, "  "+R+"Config blocks:"+NC+"        "+l, validateFinding{Section: "config_blocks", Level: levelError, Text: l})
 		}
 		for _, l := range bWarns {
-			inv.echoE("  " + Y + "Config blocks:" + NC + "        " + l)
+			r.found(howEchoE, "  "+Y+"Config blocks:"+NC+"        "+l, validateFinding{Section: "config_blocks", Level: levelWarning, Text: l})
 		}
 		if len(bErrs)+len(bWarns) == 0 {
-			inv.echoE("  " + G + "Config blocks:" + NC + "        valid")
+			r.line(howEchoE, "  "+G+"Config blocks:"+NC+"        valid")
 		}
 	}
 
@@ -454,7 +494,9 @@ func (inv *invocation) configValidate([]string) error {
 	// 0.2.5 removed (a clear, a capture, a flood form of ping): a warning
 	// naming each with the command that takes the shipped value.
 	for _, s := range policy.StaleOperatorPolicy(cfg) {
-		inv.echoE("  " + Y + "Operator policy:" + NC + "      " + s.String() + " still gives the operator or the viewer a command that can interrupt service; '" + s.Fix() + "' puts back " + s.Restores())
+		text := s.String() + " still gives the operator or the viewer a command that can interrupt service"
+		r.found(howEchoE, "  "+Y+"Operator policy:"+NC+"      "+text+"; '"+s.Fix()+"' puts back "+s.Restores(),
+			validateFinding{Section: "operator_policy", Level: levelWarning, Text: text + "; the fix puts back " + s.Restores(), Fix: s.Fix()})
 	}
 
 	// Tier, WTI-level and Junos settings of a group the store does not have
@@ -462,7 +504,7 @@ func (inv *invocation) configValidate([]string) error {
 	// name would take them over. A warning.
 	if merr == nil && storeMode {
 		for _, l := range inv.staleGroupLines(m) {
-			inv.echoE("  " + Y + "Group settings:" + NC + "       " + l)
+			r.found(howEchoE, "  "+Y+"Group settings:"+NC+"       "+l, validateFinding{Section: "group_settings", Level: levelWarning, Text: l})
 		}
 	}
 
@@ -472,10 +514,10 @@ func (inv *invocation) configValidate([]string) error {
 	// so these come from an import, a restore or a hand edit.
 	if merr == nil && storeMode {
 		for _, l := range inv.orphanKeyLines(m) {
-			inv.echoE("  " + Y + "Orphan settings:" + NC + "      " + l)
+			r.found(howEchoE, "  "+Y+"Orphan settings:"+NC+"      "+l, validateFinding{Section: "orphan_settings", Level: levelWarning, Text: l})
 		}
 		for _, l := range inv.orphanFileLines(m) {
-			inv.echoE("  " + Y + "Orphan files:" + NC + "         " + l)
+			r.found(howEchoE, "  "+Y+"Orphan files:"+NC+"         "+l, validateFinding{Section: "orphan_files", Level: levelWarning, Text: l})
 		}
 	}
 
@@ -487,8 +529,9 @@ func (inv *invocation) configValidate([]string) error {
 		if len(def) != 1 {
 			n = strconv.Itoa(len(def)) + " mappings"
 		}
-		inv.echoE("  " + Y + "Group settings:" + NC + "       privileges." + g + " is an empty list in tacctl.yaml: it hides the shipped default (" +
-			n + ": " + strings.Join(def, ", ") + "); 'tacctl group privilege reset " + g + "' removes it")
+		text := "privileges." + g + " is an empty list in tacctl.yaml: it hides the shipped default (" + n + ": " + strings.Join(def, ", ") + ")"
+		fix := "tacctl group privilege reset " + g
+		r.found(howEchoE, "  "+Y+"Group settings:"+NC+"       "+text+"; '"+fix+"' removes it", validateFinding{Section: "group_settings", Level: levelWarning, Text: text, Fix: fix})
 	}
 
 	// What an interrupted command left in the state directory: the private
@@ -497,7 +540,7 @@ func (inv *invocation) configValidate([]string) error {
 	// apply lock and its directory is young; an old one is a leftover (a
 	// kill), and it holds secrets. A warning.
 	for _, l := range inv.leftoverLines() {
-		inv.echoE("  " + Y + "Leftovers:" + NC + "           " + l)
+		r.found(howEchoE, "  "+Y+"Leftovers:"+NC+"           "+l, validateFinding{Section: "leftovers", Level: levelWarning, Text: l})
 	}
 
 	// Rendered artifacts: can the store be rendered, and are the live files
@@ -509,29 +552,34 @@ func (inv *invocation) configValidate([]string) error {
 	enabled, err := set.Enabled()
 	if err != nil {
 		if storeMode {
-			out.ErrorE(err.Error())
-			errs++
+			r.found(howErrorE, err.Error(), validateFinding{Section: "backends", Level: levelError, Text: err.Error()})
 		}
 		enabled = nil
 	}
+	r.backends = enabled
 	multi := len(enabled) > 1
 	targets := enabled
 	if len(targets) == 0 {
 		targets = []string{""}
 	}
-	if multi && len(set.CheckDrift(backend.DriftUnowned)) > 0 {
-		inv.write(strings.Join(set.DriftLines(backend.DriftUnowned), ""))
-		errs++
+	drifted := func(sel backend.DriftSelection, id string) {
+		for i, d := range set.DriftReports(sel) {
+			r.found(howRaw, strings.Join(d.Lines(), ""),
+				validateFinding{Section: "drift", Level: levelError, Backend: id, Text: d.Path + " — " + d.What, Fix: d.Advice, repeat: i > 0})
+		}
+	}
+	if multi {
+		drifted(backend.DriftUnowned, "")
 	}
 	ind := ""
 	for _, id := range targets {
 		sel := backend.DriftAll
 		if multi {
-			inv.echoE("  " + B + "Backend " + id + ":" + NC)
+			r.line(howEchoE, "  "+B+"Backend "+id+":"+NC)
 			ind = "  "
 			sel = backend.DriftOf(id)
 		}
-		drifted := len(set.CheckDrift(sel)) > 0
+		hasDrift := len(set.CheckDrift(sel)) > 0
 		if storeMode && id != "" {
 			label, lerr := set.ArtifactNames(id)
 			if lerr != nil {
@@ -544,48 +592,45 @@ func (inv *invocation) configValidate([]string) error {
 			}
 			switch {
 			case gerr != nil:
-				inv.echoE(ind + "  " + R + "Rendered config:" + NC + "      the store cannot be rendered (see above)")
-				errs++
-			case drifted:
+				r.found(howEchoE, ind+"  "+R+"Rendered config:"+NC+"      the store cannot be rendered (see above)",
+					validateFinding{Section: "rendered", Level: levelError, Backend: id, Text: "the store cannot be rendered (see standard error)"})
+			case hasDrift:
 			case state == "current" || state == "same":
-				inv.echoE(ind + "  " + G + "Rendered config:" + NC + "      up to date")
+				r.line(howEchoE, ind+"  "+G+"Rendered config:"+NC+"      up to date")
 			case state == "missing":
-				inv.echoE(ind + "  " + R + "Rendered config:" + NC + "      " + label + " is missing — run 'tacctl config render'")
-				errs++
+				r.found(howEchoE, ind+"  "+R+"Rendered config:"+NC+"      "+label+" is missing — run 'tacctl config render'",
+					validateFinding{Section: "rendered", Level: levelError, Backend: id, Text: label + " is missing", Fix: "tacctl config render"})
 			case state == "unrecorded":
-				inv.echoE(ind + "  " + Y + "Rendered config:" + NC + "      " + label + " was not rendered by tacctl yet — the next change replaces it if it says what the store says; otherwise run 'tacctl config render --force'")
+				text := label + " was not rendered by tacctl yet — the next change replaces it if it says what the store says"
+				r.found(howEchoE, ind+"  "+Y+"Rendered config:"+NC+"      "+text+"; otherwise run 'tacctl config render --force'",
+					validateFinding{Section: "rendered", Level: levelWarning, Backend: id, Text: text, Fix: "tacctl config render --force"})
 			default:
-				inv.echoE(ind + "  " + R + "Rendered config:" + NC + "      " + label + " is out of date with the store — run 'tacctl config render'")
-				errs++
+				r.found(howEchoE, ind+"  "+R+"Rendered config:"+NC+"      "+label+" is out of date with the store — run 'tacctl config render'",
+					validateFinding{Section: "rendered", Level: levelError, Backend: id, Text: label + " is out of date with the store", Fix: "tacctl config render"})
 			}
 		}
-		if drifted {
-			inv.write(strings.Join(set.DriftLines(sel), ""))
-			errs++
+		if hasDrift {
+			drifted(sel, id)
 		}
 		// RADIUS sends a vendor's privilege attribute only where a scope
 		// opts in: a warning for the scopes of devices that opt into none
 		// (Linux-host scopes, told apart by the host registry, need none).
 		if storeMode && id == backend.RADIUS && merr == nil {
 			if gaps := m.VendorGaps(cfgHostCounts(a.Paths.LinuxHosts)); len(gaps) > 0 {
-				inv.echoE(ind + "  " + Y + "Vendor attributes:" + NC + "    not sent to the devices of scope(s) " + strings.Join(gaps, ", ") +
-					" over RADIUS: Cisco, Juniper and WTI devices there get Service-Type only")
-				inv.echoE(ind + "                        (Linux hosts need none). Enable what they need: tacctl scope vendor-attrs <scope> enable cisco|juniper|wti")
+				text := "not sent to the devices of scope(s) " + strings.Join(gaps, ", ") +
+					" over RADIUS: Cisco, Juniper and WTI devices there get Service-Type only (Linux hosts need none)"
+				fix := "tacctl scope vendor-attrs <scope> enable cisco|juniper|wti"
+				r.found(howEchoE, ind+"  "+Y+"Vendor attributes:"+NC+"    not sent to the devices of scope(s) "+strings.Join(gaps, ", ")+
+					" over RADIUS: Cisco, Juniper and WTI devices there get Service-Type only",
+					validateFinding{Section: "vendor_attrs", Level: levelWarning, Backend: id, Text: text, Fix: fix})
+				r.line(howEchoE, ind+"                        (Linux hosts need none). Enable what they need: "+fix)
 			}
 		}
 	}
 
-	inv.echoE("  " + G + "Groups defined:" + NC + "       " + counts["groups"])
-	inv.echoE("  " + G + "Scopes defined:" + NC + "       " + counts["scopes"])
-	inv.echoE("  " + G + "Users defined:" + NC + "        " + counts["users"])
-	inv.echo("")
-	if errs > 0 {
-		out.Error("Validation failed with " + strconv.Itoa(errs) + " error(s).")
-		return exit(1)
-	}
-	out.Info("Configuration is valid.")
-	inv.echo("")
-	return nil
+	r.line(howEchoE, "  "+G+"Groups defined:"+NC+"       "+counts["groups"])
+	r.line(howEchoE, "  "+G+"Scopes defined:"+NC+"       "+counts["scopes"])
+	r.line(howEchoE, "  "+G+"Users defined:"+NC+"        "+counts["users"])
 }
 
 // cfgYAMLProblem is 'python3 -c "import yaml; yaml.safe_load(open(f))"'

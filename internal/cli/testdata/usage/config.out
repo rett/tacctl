@@ -9,7 +9,8 @@ Subcommands:
   defaults                             Print canonical tacctl defaults (shipped)
   get <path> [fallback]                Read a dotted-path value from the merged config
   get-list <path>                      Read a list value (one item per line)
-  validate                             Validate config syntax and structure
+  validate [--json]                    Validate config syntax and structure
+      --json                           Print the findings as one JSON object and nothing else on standard output; exit 1 when one is an error
   render [--force]                     Regenerate every enabled backend's config from the store (--force overwrites hand edits)
       --force                          Overwrite a generated file that was edited by hand
   render --dry-run --out <dir>         Render into a new, empty directory at the live paths; nothing live is written
