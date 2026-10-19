@@ -49,7 +49,7 @@ const KindBackups = "backups"
 var backupSpecs = map[string]Spec{
 	"list":    {},
 	"diff":    {MaxArgs: 1, Args: []string{KindBackups}},
-	"restore": {MinArgs: 1, MaxArgs: 1, Args: []string{KindBackups}, Flags: []Flag{{Names: []string{"--legacy"}}}},
+	"restore": {MinArgs: 1, MaxArgs: 1, Args: []string{KindBackups}, Flags: []Flag{{Names: []string{"--legacy"}}, {Names: []string{"--keep-uids"}}}},
 }
 
 // 'config diff' and 'config restore' are cmd_backup diff|restore.
@@ -59,7 +59,7 @@ func init() {
 			inv.native(withPreflight, inv.backupDiff))
 	})
 	registerConfigVerb("restore", backupSpecs["restore"], func(inv *invocation) *cobra.Command {
-		return withRun(verb("restore <timestamp> [--legacy]", "Restore a snapshot (prompts for confirmation)"),
+		return withRun(verb("restore <timestamp> [--legacy|--keep-uids]", "Restore a snapshot (prompts for confirmation)"),
 			inv.native(withPreflight, inv.backupRestore))
 	})
 }
@@ -71,7 +71,7 @@ func backupCmd(inv *invocation) *cobra.Command {
 	c := verb("backup <subcommand>", "Backup management (list, diff, restore)",
 		withRun(verb("list", "Show snapshots, then old-style backups"), n(inv.backupList)),
 		withRun(verb("diff [timestamp]", "Diff store.yaml and tacctl.yaml against a snapshot"), n(inv.backupDiff)),
-		withRun(verb("restore <timestamp> [--legacy]", "Restore a snapshot (with confirmation)"), n(inv.backupRestore)),
+		withRun(verb("restore <timestamp> [--legacy|--keep-uids]", "Restore a snapshot (with confirmation)"), n(inv.backupRestore)),
 	)
 	// No sub-command or an unknown one: the usage, exit 1.
 	c.RunE = n(func([]string) error {
@@ -395,17 +395,19 @@ func (inv *invocation) backupDiff(args []string) error {
 
 // --- restore ----------------------------------------------------------------------
 
-const backupRestoreUsage = "Usage: tacctl backup restore <timestamp> [--legacy]"
+const backupRestoreUsage = "Usage: tacctl backup restore <timestamp> [--legacy|--keep-uids]"
 
 // backupRestore is _backup_restore: its argument loop, then the restore of
 // a snapshot, of an old-style backup (--legacy), or without a store the
-// old-style copy-back.
+// old-style copy-back. --keep-uids leaves the UID ledger as it is (D212).
 func (inv *invocation) backupRestore(args []string) error {
-	id, legacy := "", false
+	id, legacy, keepUIDs := "", false, false
 	for _, a := range args {
 		switch {
 		case a == "--legacy":
 			legacy = true
+		case a == "--keep-uids":
+			keepUIDs = true
 		case strings.HasPrefix(a, "-"):
 			return inv.usageErr("Unknown option '" + a + "'. " + backupRestoreUsage)
 		default:
@@ -418,13 +420,17 @@ func (inv *invocation) backupRestore(args []string) error {
 	if id == "" {
 		return inv.usageErr(backupRestoreUsage, "Run 'tacctl backup list' to see available backups.")
 	}
+	// Only a snapshot restore has a ledger to keep.
+	if keepUIDs && (legacy || !inv.storeMode()) {
+		return inv.usageErr("--keep-uids is for a snapshot restore: an old-style restore never touches linux-uids.")
+	}
 	switch {
 	case !inv.storeMode():
 		return inv.restoreUnflipped(id)
 	case legacy:
 		return inv.restoreLegacy(id)
 	case inv.isSnapshot(id):
-		return inv.restoreSnapshot(id)
+		return inv.restoreSnapshot(id, keepUIDs)
 	}
 	if _, ok := inv.legacyPath(id); ok {
 		return inv.usageErr(id + " is an old-style backup. Restore it with: tacctl backup restore " + id + " --legacy")
@@ -481,7 +487,8 @@ func (inv *invocation) snapshotEnabled(dir string) []string {
 // retention), then the snapshot's files installed and every enabled
 // backend rendered from them with force, or everything put back. The
 // backends then follow the restored backends.enabled and are restarted.
-func (inv *invocation) restoreSnapshot(id string) error {
+// keepUIDs leaves the UID ledger as it is (D212).
+func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	a := inv.app
 	dir := filepath.Join(a.Paths.BackupDir, id)
 	snapStore := filepath.Join(dir, "store.yaml")
@@ -541,7 +548,7 @@ func (inv *invocation) restoreSnapshot(id string) error {
 	}
 	// So are the hosts: the registry, the UID ledger and the rest come back
 	// with a snapshot that knows them (D192-D195).
-	hostsNote := inv.restoreHostsNote(dir)
+	hostsNote := inv.restoreHostsNote(dir, keepUIDs)
 	if len(hostsNote) > 0 {
 		inv.echo("")
 		for _, l := range hostsNote {
@@ -578,11 +585,27 @@ func (inv *invocation) restoreSnapshot(id string) error {
 			return inv.usageErr("Snapshot " + id + " was not restored: " + err.Error() + ". Nothing was changed.")
 		}
 		defer unlockHosts()
+		// And the lock of each host, tried without waiting (D207): a rotation,
+		// rename or forget of a host runs on its own lock, and one still
+		// running when the files come back would write over them.
+		unlockNames, busy, err := inv.lockHostNames(dir)
+		switch {
+		case busy != "":
+			return inv.usageErr("Snapshot "+id+" was not restored: '"+busy+"' is locked by another tacctl command (a rotation, rename or forget of it is running). Nothing was changed.",
+				"Run this again when it has finished.")
+		case err != nil:
+			return inv.usageErr("Snapshot " + id + " was not restored: " + err.Error() + ". Nothing was changed.")
+		}
+		defer unlockNames()
 	}
 	// The current state first, so the restore can be undone with another
 	// one. Retention must not take the snapshot being read.
+	// It compares everything, the host records byte for byte too (D211): the
+	// undo must not put back an older last_sync.
 	a.Snapshots().KeepID = id
+	a.Snapshots().Exact = true
 	preID, err := inv.snapshotFirstID()
+	a.Snapshots().Exact = false
 	if err != nil {
 		return err
 	}
@@ -630,7 +653,7 @@ func (inv *invocation) restoreSnapshot(id string) error {
 	// in place by now, so a failure here does not end the restore: the
 	// backends are reconciled and restarted as for any restore, and the
 	// failure is a warning that names the way back.
-	hostErr := inv.restoreHosts(dir)
+	hostErr := inv.restoreHosts(dir, keepUIDs)
 	inv.reconcileBackends(before)
 	if err := set.RestartAll(inv.ctx); err != nil {
 		return err
@@ -651,6 +674,51 @@ func (inv *invocation) restoreSnapshot(id string) error {
 	inv.echo("")
 	inv.warnServerSync("Users whose tier is lower now keep their old groups")
 	return nil
+}
+
+// lockHostNames tries the provisioner lock of every host name of the union
+// of the live registry and the snapshot's in dir, without waiting, and
+// returns the function that releases them all. When one is held by another
+// command it releases the ones it took and returns that name in busy. The
+// caller holds the registry's lock. A name the snapshot's registry holds
+// that no command would lock (the host is gone) is locked all the same, and
+// a registry that cannot be read names nothing: the restore says so before
+// the question (restoreHostsNote) and puts the file back all the same.
+func (inv *invocation) lockHostNames(dir string) (unlock func(), busy string, err error) {
+	var names []string
+	for _, path := range []string{inv.app.Paths.LinuxHosts, filepath.Join(dir, snapshot.HostsName)} {
+		reg, err := hosts.LoadRegistry(path)
+		if err != nil {
+			continue
+		}
+		for _, e := range reg.Entries() {
+			// A name is a file name of the lock directory.
+			if !slices.Contains(names, e.Name) && !strings.ContainsAny(e.Name, "/\x00") {
+				names = append(names, e.Name)
+			}
+		}
+	}
+	slices.Sort(names)
+	var unlocks []func()
+	release := func() {
+		for _, u := range unlocks {
+			u()
+		}
+	}
+	locks := filepath.Join(inv.app.Paths.StateDir, "locks")
+	for _, n := range names {
+		u, err := hosts.LockHost(locks, n)
+		if errors.Is(err, hosts.ErrRotationBusy) {
+			release()
+			return nil, n, nil
+		}
+		if err != nil {
+			release()
+			return nil, "", err
+		}
+		unlocks = append(unlocks, u)
+	}
+	return release, "", nil
 }
 
 // restoreHoldNote says how the set of break-glass holds changes when the
@@ -686,28 +754,40 @@ func (inv *invocation) restoreHoldNote(dir string) string {
 // hosts it lacks go, the ones it has come back, and the hosts themselves are
 // not touched, so the note names what to do about the drift. The UID ledger
 // is put back as it was, which can forget a number a host already holds: the
-// users whose number the restore drops or changes are named.
-func (inv *invocation) restoreHostsNote(dir string) []string {
+// users whose number the restore drops or changes are named. With keepUIDs
+// (D212) the ledger stays as it is, and one line says so in place of that
+// comparison.
+func (inv *invocation) restoreHostsNote(dir string, keepUIDs bool) []string {
 	p := inv.app.Paths
 	live, liveErr := hosts.LoadRegistry(p.LinuxHosts)
 	if !snapshot.KnowsHosts(dir) {
-		if liveErr != nil || live.Empty() {
-			return nil
+		var out []string
+		if liveErr == nil && !live.Empty() {
+			out = append(out, "This snapshot does not know the hosts (taken by 0.2.13 or older): the host registry, records, staging addresses and UID ledger stay as they are.")
 		}
-		return []string{"This snapshot does not know the hosts (taken by 0.2.13 or older): the host registry, records, staging addresses and UID ledger stay as they are."}
+		if keepUIDs {
+			out = append(out, "This snapshot does not know the hosts: the ledger stays either way.")
+		}
+		return out
 	}
+	// The line that stands for the ledger's note with --keep-uids.
+	keptNote := "The UID ledger (linux-uids) is kept as it is (--keep-uids): the restored users keep the numbers they have now; a restored user with no line gets one at the next sync."
 	// A file that cannot be read cannot be compared; the restore does not
 	// depend on the comparison, and says so (D192: the warning of a dropped
 	// number must not go missing without a word).
 	unreadable := func(err error) string {
 		return "could not compare the host files: " + err.Error() + "; the restore still puts them back"
 	}
+	var kept []string
+	if keepUIDs {
+		kept = []string{keptNote}
+	}
 	if liveErr != nil {
-		return []string{unreadable(liveErr)}
+		return append([]string{unreadable(liveErr)}, kept...)
 	}
 	snap, err := hosts.LoadRegistry(filepath.Join(dir, snapshot.HostsName))
 	if err != nil {
-		return []string{unreadable(err)}
+		return append([]string{unreadable(err)}, kept...)
 	}
 	var back, gone, differ []string
 	for _, e := range snap.Entries() {
@@ -736,6 +816,9 @@ func (inv *invocation) restoreHostsNote(dir string) []string {
 		}
 		out = append(out, "Enrolled hosts change (tacctl host list): "+strings.Join(parts, "; ")+".")
 		out = append(out, "The hosts themselves are not touched. For a host that comes back after 'host unenroll': 'tacctl host sync <name>', 'tacctl host show <name> --check', or 'tacctl host unenroll <name>' again. For one that goes: 'tacctl host enroll' it again, or 'tacctl host unenroll <name> --force' after that.")
+	}
+	if keepUIDs {
+		return append(out, keptNote)
 	}
 	switch l, err := restoreLedgerNote(hosts.UIDs{Path: p.LinuxUIDs}, hosts.UIDs{Path: filepath.Join(dir, snapshot.UIDsName)}); {
 	case err != nil:
@@ -807,8 +890,9 @@ func rangeText(r hosts.Range) string {
 // The caller holds the registry's lock (restoreSnapshot takes it before it
 // changes anything), so a command that writes the registry or the records is
 // not interleaved with the restore; the lock is not reentrant, and nothing
-// here may take it.
-func (inv *invocation) restoreHosts(dir string) error {
+// here may take it. With keepUIDs the ledger is left as it is, present or not
+// (D212).
+func (inv *invocation) restoreHosts(dir string, keepUIDs bool) error {
 	if !snapshot.KnowsHosts(dir) {
 		return nil
 	}
@@ -827,7 +911,11 @@ func (inv *invocation) restoreHosts(dir string) error {
 	if err := inv.restoreHostRecords(dir); err != nil {
 		return err
 	}
-	for _, f := range [][2]string{{snapshot.StagingName, inv.stagingPath()}, {snapshot.UIDsName, p.LinuxUIDs}} {
+	files := [][2]string{{snapshot.StagingName, inv.stagingPath()}, {snapshot.UIDsName, p.LinuxUIDs}}
+	if keepUIDs {
+		files = files[:1]
+	}
+	for _, f := range files {
 		if snap := filepath.Join(dir, f[0]); cfgIsFile(snap) {
 			if err := backupPut(snap, f[1], 0o600); err != nil {
 				return err

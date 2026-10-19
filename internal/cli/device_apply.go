@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rett/tacctl/internal/askpass"
@@ -268,9 +269,11 @@ type applyRun struct {
 	// holdLines are the lines the person types while --hold waits, read by
 	// one goroutine the run owns (holdLine) and stopped by holdDone, so no
 	// second reader of standard input outlives one device's question.
+	// holdAsked counts the questions opened; a line is stamped with it.
 	holdOnce  sync.Once
-	holdLines chan string
+	holdLines chan holdAnswer
 	holdDone  chan struct{}
+	holdAsked atomic.Int32
 
 	acceptOnce, rejectOnce sync.Once
 }
@@ -871,13 +874,21 @@ func realHoldWait(until, now time.Time) time.Duration {
 	return max(until.Sub(now)-devapply.DefaultMinWindow, time.Second)
 }
 
+// holdAnswer is a line the person typed while --hold waits, with the number
+// of questions that were open when it was read.
+type holdAnswer struct {
+	line  string
+	asked int32
+}
+
 // holdLine is the run's one reader of the person's lines for --hold: a
 // goroutine started at the first question that reads standard input line by
-// line and hands each line over, until the input ends (the channel closes)
-// or the run ends (holdDone).
-func (r *applyRun) holdLine() <-chan string {
+// line and hands each line over, stamped with the question it was read
+// under, until the input ends (the channel closes) or the run ends
+// (holdDone).
+func (r *applyRun) holdLine() <-chan holdAnswer {
 	r.holdOnce.Do(func() {
-		lines := make(chan string)
+		lines := make(chan holdAnswer)
 		r.holdLines = lines
 		pr, done := r.inv.app.Prompter(), r.holdDone
 		go func() {
@@ -888,7 +899,7 @@ func (r *applyRun) holdLine() <-chan string {
 					return
 				}
 				select {
-				case lines <- line:
+				case lines <- holdAnswer{line, r.holdAsked.Load()}:
 				case <-done:
 					return
 				}
@@ -899,39 +910,35 @@ func (r *applyRun) holdLine() <-chan string {
 }
 
 // holdFunc is --hold (D134, Q2): after the verification the change is kept
-// only on the typed word, with the window as the limit. A line typed before
-// the question (an answer that came too late for the device before) is
-// dropped, not taken as this device's answer.
+// only on the typed word, with the window as the limit. A line read under an
+// earlier question (an answer that came too late for the device before) is
+// dropped, not taken as this device's answer; one read under this question
+// is the answer, also when it was typed ahead of the first question (D224).
 func (r *applyRun) holdFunc(name string) func(context.Context, time.Time) (bool, error) {
 	return func(ctx context.Context, until time.Time) (bool, error) {
 		inv := r.inv
+		asked := r.holdAsked.Add(1)
 		lines := r.holdLine()
-	drain:
-		for {
-			select {
-			case _, ok := <-lines:
-				if !ok {
-					break drain
-				}
-			default:
-				break drain
-			}
-		}
 		inv.echo("  " + name + "  verified; the change is held until you answer. Log in with one account of each class in another terminal.")
 		inv.echo("  " + name + "  it rolls back by itself at " + until.Format("15:04:05") + " unless you answer before then.")
 		_, _ = io.WriteString(inv.app.Out.Stderr, "  Type OK to keep the change, anything else rolls it back: ")
 		t := time.NewTimer(inv.hooks.holdWait(until, inv.app.Knobs.Now()))
 		defer t.Stop()
-		select {
-		case a, ok := <-lines:
-			if !ok {
-				return false, errors.New("no answer: the input ended")
+		for {
+			select {
+			case a, ok := <-lines:
+				if !ok {
+					return false, errors.New("no answer: the input ended")
+				}
+				if a.asked < asked {
+					continue
+				}
+				return a.line == "OK", nil
+			case <-ctx.Done():
+				return false, errors.New("interrupted")
+			case <-t.C:
+				return false, errors.New("the window ran short")
 			}
-			return a == "OK", nil
-		case <-ctx.Done():
-			return false, errors.New("interrupted")
-		case <-t.C:
-			return false, errors.New("the window ran short")
 		}
 	}
 }

@@ -289,6 +289,8 @@ func (inv *invocation) completeSpec(spec Spec, args []string, toComplete string)
 	kind := ""
 	if pos < len(spec.Args) {
 		kind = spec.Args[pos]
+	} else if spec.MaxArgs < 0 && len(spec.Args) == 1 {
+		kind = spec.Args[0] // a list of one kind goes on past the end
 	}
 	if rest, ok := strings.CutPrefix(kind, "@"); ok {
 		word, k, _ := strings.Cut(rest, ":")

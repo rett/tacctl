@@ -334,7 +334,7 @@ func TestHostEnrollRefusals(t *testing.T) {
 		args  []string
 		errIs string
 	}{
-		{[]string{"sync"}, "Usage: tacctl host sync <name> | --all  [--allow-uid-mismatch] [--remove-home]"},
+		{[]string{"sync"}, "Usage: tacctl host sync <name>... | --all  [--allow-uid-mismatch] [--remove-home]"},
 		{[]string{"sync", "web1", "--adopt", "bob"}, "Unknown option: '--adopt'"},
 		{[]string{"sync", "--bogus"}, "Unknown option: '--bogus'"},
 		{[]string{"sync", "ghost"}, "No enrolled host named 'ghost'. See 'tacctl host list'."},
@@ -622,6 +622,64 @@ func TestHostSyncReportsTheHostsSummary(t *testing.T) {
 	summary = ""
 	hs.run(r(), "host", "enroll", "web1", "--scope", "lab", "--build-on-host")
 	hs.expect(0, "Host 'web1' enrolled.\n", "")
+}
+
+// 'host sync' takes several names (D214): each runs in the order typed, the
+// others still run when one fails (exit 1), a name given twice runs once,
+// and every name is checked before the first host is touched.
+func TestHostSyncSeveralNames(t *testing.T) {
+	hs := newHostSandbox(t)
+	hs.write("state/linux-hosts", "web1|admin@web1.example.net||lab|192.0.2.1|\n"+
+		"web2|admin@web2.example.net||lab|192.0.2.1|\n", 0o600)
+	// web2's client script fails on the host.
+	r := func() *fake.Runner {
+		r := hs.runner()
+		r.Func(func(c execx.Cmd) bool {
+			j := strings.Join(c.Args, " ")
+			return c.Name == "ssh" && strings.Contains(j, "web2.example.net") && strings.Contains(j, "rm -f")
+		}, func(execx.Cmd) (execx.Result, error) { return execx.Result{Code: 1}, nil })
+		return r
+	}
+	scripts := func(r *fake.Runner) []string {
+		var out []string
+		for _, a := range r.Argvs() {
+			if strings.HasPrefix(a, "ssh ") && strings.Contains(a, "rm -f") {
+				out = append(out, a)
+			}
+		}
+		return out
+	}
+	rr := r()
+	hs.run(rr, "host", "sync", "web2", "web1")
+	hs.expect(1, "web1: synced", "web2: sync failed")
+	if got := scripts(rr); len(got) != 2 || !strings.Contains(got[0], "web2.example.net") || !strings.Contains(got[1], "web1.example.net") {
+		t.Errorf("not run in the order typed: %q", got)
+	}
+	// A name given twice counts once.
+	rr = hs.runner()
+	hs.run(rr, "host", "sync", "web1", "web1")
+	hs.expect(0, "web1: synced", "")
+	if got := scripts(rr); len(got) != 1 {
+		t.Errorf("web1 given twice ran %d times: %q", len(got), got)
+	}
+	// An unknown name syncs nothing, whatever its place.
+	for _, args := range [][]string{{"web1", "ghost"}, {"ghost", "web1"}} {
+		rr = hs.runner()
+		hs.run(rr, append([]string{"host", "sync"}, args...)...)
+		hs.expect(1, "", "No enrolled host named 'ghost'. See 'tacctl host list'.")
+		if n := rr.Count("ssh") + rr.Count("ssh-keyscan"); n != 0 {
+			t.Errorf("%v: %d ssh calls: %q", args, n, rr.Argvs())
+		}
+	}
+	// Names and --all together are a usage error, with no ssh.
+	for _, args := range [][]string{{"web1", "--all"}, {"--all", "web1"}} {
+		rr = hs.runner()
+		hs.run(rr, append([]string{"host", "sync"}, args...)...)
+		hs.expect(1, "", "Give names or --all, not both.")
+		if n := rr.Count("ssh") + rr.Count("ssh-keyscan"); n != 0 {
+			t.Errorf("%v: %d ssh calls: %q", args, n, rr.Argvs())
+		}
+	}
 }
 
 // The scope must answer the host's requests: for this server (127.0.0.1)

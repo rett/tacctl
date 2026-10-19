@@ -314,11 +314,12 @@ rename_state() {
 }
 
 # rename_account <old> <new> <uid>: the account of <old> is <new> from now
-# on. Fails (nothing renamed) when the state files cannot follow or
-# usermod -l fails. The state is renamed first and back if usermod fails, so
+# on; <uid> is the number the server assigned, and the line says the
+# account's own when it still has an earlier range's. Fails (nothing renamed)
+# when the state files cannot follow or usermod -l fails. The state is renamed first and back if usermod fails, so
 # a renamed account is always in 'created' under its new name.
 rename_account() {
-    local old="$1" new="$2" uid="$3" home gid group
+    local old="$1" new="$2" uid="$3" home gid group now later=""
     home=$(getent passwd "$old" | cut -d: -f6)
     gid=$(getent passwd "$old" | cut -d: -f4)
     if ! rename_state "$old" "$new"; then
@@ -337,7 +338,9 @@ rename_account() {
         groupmod -n "$new" "$old" || warn "'${new}': its own group '${old}' (GID ${gid}) could not be renamed; rename it by hand: groupmod -n ${new} ${old}"
     fi
     usermod -c "${new} (${PROTO})" "$new" || warn "'${new}': its full name could not be changed."
-    info "'${old}' is now '${new}' (renamed; UID ${uid}; home kept at ${home:-none})"
+    now=$(getent passwd "$new" | cut -d: -f3 || true)
+    if [[ -n "$now" && "$now" != "$uid" ]]; then later=", to be renumbered to ${uid} later in this run"; fi
+    info "'${old}' is now '${new}' (renamed; UID ${now:-$uid}${later}; home kept at ${home:-none})"
 }
 
 # rename_holder <name> <uid>: the holder of <uid> here (or of the number it
@@ -451,7 +454,8 @@ TXT
     echo "[ERROR] Cannot give these users their assigned UID on this host:" >&2
     printf '%s' "$conflicts" >&2
     cat >&2 <<'TXT'
-  Nothing was changed. Options:
+  No account was created or removed (an account renamed above keeps its new
+  name). Options:
     1. Free the number on this host by renumbering the account that holds it:
          usermod -u <new-uid> <other-user>
          find / -xdev -uid <old> -exec chown -h <other-user> {} +

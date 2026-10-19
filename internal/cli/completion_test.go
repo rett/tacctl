@@ -167,8 +167,8 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"config", "linux", "builds", ""}, []string{"list", "clear"}},
 		{[]string{"config", "linux", "uid", ""}, []string{"alice", "bob"}},
 		{[]string{"backup", "restore", ""}, []string{"20260101-000000"}},
-		{[]string{"backup", "restore", "20260101-000000", ""}, []string{"--legacy"}},
-		{[]string{"config", "restore", "20260101-000000", ""}, []string{"--legacy"}},
+		{[]string{"backup", "restore", "20260101-000000", ""}, []string{"--legacy", "--keep-uids"}},
+		{[]string{"config", "restore", "20260101-000000", ""}, []string{"--legacy", "--keep-uids"}},
 		{[]string{"host", "default-method", ""}, []string{"tacplus", "radius"}},
 		{[]string{"host", "enroll", "--method", ""}, []string{"tacplus", "radius"}},
 		{[]string{"host", "show", "web1", ""}, []string{"--all", "--json", "--check"}},
@@ -181,7 +181,14 @@ func TestCompleteScenarios(t *testing.T) {
 		// host forget: an enrolled host, then the one flag.
 		{[]string{"host", "forget", ""}, []string{"web1", "web2"}},
 		{[]string{"host", "forget", "web1", ""}, []string{"-y", "--yes"}},
-		{[]string{"host", ""}, []string{"default-method", "enroll", "forget", "list", "move", "provisioner", "rename", "show", "sync", "target", "unenroll"}},
+		// host sync: hosts at every position, then the flags.
+		{[]string{"host", "sync", ""}, []string{"web1", "web2", "--all", "--allow-uid-mismatch", "--remove-home"}},
+		{[]string{"host", "sync", "web1", ""}, []string{"web1", "web2", "--all", "--allow-uid-mismatch", "--remove-home"}},
+		{[]string{"host", "sync", "web1", "web2", "w"}, []string{"web1", "web2"}},
+		// host check: hosts at every position, then the flags.
+		{[]string{"host", "check", ""}, []string{"web1", "web2", "--all", "--json"}},
+		{[]string{"host", "check", "web1", ""}, []string{"web1", "web2", "--all", "--json"}},
+		{[]string{"host", ""}, []string{"check", "default-method", "enroll", "forget", "list", "move", "provisioner", "rename", "show", "sync", "target", "unenroll"}},
 		{[]string{"install", ""}, []string{"--branch", "-y", "--yes"}},
 		{[]string{"upgrade", ""}, []string{"--branch"}},
 		{[]string{"uninstall", ""}, []string{"-y", "--yes"}},

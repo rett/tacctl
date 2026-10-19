@@ -187,10 +187,14 @@ func TestHostListJSONFindings(t *testing.T) {
 	}
 	for _, n := range []string{"web1", "Web1"} {
 		fs := js[n].Findings
-		if len(fs) != 1 || !strings.Contains(fs[0].Text, "the hosts 'web1', 'Web1' are one name ignoring case") ||
+		if len(fs) == 0 || !strings.Contains(fs[0].Text, "the hosts 'web1', 'Web1' are one name ignoring case") ||
 			!strings.HasPrefix(fs[0].Fix, "tacctl host forget <name>") {
 			t.Errorf("%s findings %+v", n, fs)
 		}
+	}
+	// Web1 also has upper case in its name (a Names finding); web1 has not.
+	if len(js["web1"].Findings) != 1 || len(js["Web1"].Findings) != 2 {
+		t.Errorf("findings of web1 %+v and Web1 %+v", js["web1"].Findings, js["Web1"].Findings)
 	}
 	if fs := js["lab-sw"].Findings; len(fs) != 1 || !strings.Contains(fs[0].Text, "has the name of the device 'lab-sw'") || fs[0].Fix != "tacctl host rename lab-sw <new>" {
 		t.Errorf("lab-sw findings %+v", fs)
@@ -205,6 +209,32 @@ func TestHostListJSONFindings(t *testing.T) {
 	}
 	for n, h := range ej {
 		if h.Findings == nil || len(h.Findings) != 0 {
+			t.Errorf("engineer sees findings on %s: %+v", n, h.Findings)
+		}
+	}
+}
+
+// A host with upper case in its name has a Names finding: the footer counts
+// it and --json lists it under the host; an engineer is told neither.
+func TestHostListNamesFinding(t *testing.T) {
+	sb := hostLab(t)
+	sb.write("state/linux-hosts", hostLines+"Cache1|root@192.168.1.20||lab|192.0.2.1|\n", 0o600)
+	if out := plain(sb.run("", []string{"host", "list"})); !strings.Contains(out, "1 finding(s): see tacctl config validate") {
+		t.Errorf("footer:\n%s", out)
+	}
+	js := hostListJSONOf(t, sb.run("", []string{"host", "list", "--json"}))
+	fs := js["Cache1"].Findings
+	if len(fs) != 1 || !strings.Contains(fs[0].Text, "the host 'Cache1' has upper case in its name") || fs[0].Fix != "tacctl host rename Cache1 cache1" {
+		t.Errorf("Cache1 findings %+v", fs)
+	}
+	if len(js["web1"].Findings) != 0 {
+		t.Errorf("web1 findings %+v", js["web1"].Findings)
+	}
+	if out := plain(sb.asEngineer("", "host", "list")); strings.Contains(out, "finding(s)") {
+		t.Errorf("engineer footer:\n%s", out)
+	}
+	for n, h := range hostListJSONOf(t, sb.asEngineer("", "host", "list", "--json")) {
+		if len(h.Findings) != 0 {
 			t.Errorf("engineer sees findings on %s: %+v", n, h.Findings)
 		}
 	}

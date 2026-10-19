@@ -8,7 +8,7 @@ Cmnd_Alias TACCTL_RO = /usr/local/bin/tacctl "", /usr/local/bin/tacctl passwd, /
     /usr/local/bin/tacctl _completion-names *, /usr/local/bin/tacctl _console-policy
 Cmnd_Alias TACCTL_OP = /usr/local/bin/tacctl log tail, /usr/local/bin/tacctl log tail *, /usr/local/bin/tacctl log search *, \
     /usr/local/bin/tacctl log failures, /usr/local/bin/tacctl log accounting, /usr/local/bin/tacctl log accounting *, \
-    /usr/local/bin/tacctl config validate, /usr/local/bin/tacctl backup list, \
+    /usr/local/bin/tacctl config validate, /usr/local/bin/tacctl config validate --json, /usr/local/bin/tacctl backup list, \
     /usr/local/bin/tacctl device check *, /usr/local/bin/tacctl device scan, /usr/local/bin/tacctl device scan *, /usr/local/bin/tacctl device discover, /usr/local/bin/tacctl device discover *, /usr/local/bin/tacctl device export, /usr/local/bin/tacctl device export *, \
     /usr/local/bin/tacctl device config, /usr/local/bin/tacctl device config list, /usr/local/bin/tacctl device config list *, \
     /usr/local/bin/tacctl console show, /usr/local/bin/tacctl console check, /usr/local/bin/tacctl console forget

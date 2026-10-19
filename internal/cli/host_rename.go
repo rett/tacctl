@@ -73,12 +73,11 @@ func (inv *invocation) hostRename(args []string) error {
 	}
 	oldName, newName := p.oldName, p.newName
 
-	// A rotation of the host is running: its lock is not waited for (D185).
+	// Another command holds the host's lock: it is not waited for (D185).
 	unlock, err := hosts.LockHost(filepath.Join(a.Paths.StateDir, "locks"), oldName)
 	switch {
 	case errors.Is(err, hosts.ErrRotationBusy):
-		return inv.usageErr("Another rotation of '"+oldName+"' is running; nothing was changed.",
-			"Run this again when it has finished.")
+		return inv.hostLockBusyErr(oldName)
 	case err != nil:
 		return err
 	}

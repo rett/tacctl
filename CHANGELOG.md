@@ -3,6 +3,118 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.15
+
+1. **Small fixes.** The client script's UID check no longer says `Nothing was
+   changed.` when an account may have been renamed earlier in the same run: it
+   says `No account was created or removed (an account renamed above keeps its
+   new name).` The line for a renamed account shows the account's own UID, and
+   on a host still on an earlier UID range adds `, to be renumbered to <uid> later
+   in this run`. The `host sync` help line and the documentation now say that
+   a sync pushes renames as well (a renamed user's account is renamed, keeping
+   its UID and home). `host list` counts the `Names:` findings about hosts in
+   its footer, and `host list --json` lists them under the host's `findings`.
+
+2. **`device config apply --hold` takes an answer typed ahead.** An answer
+   typed before the first question is now taken as that device's answer, and
+   an answer that comes after a device's window is still dropped, not given to
+   the next device. Each line is matched to the question it was read under.
+   This also closes an occasional wrong rollback when the review's answer and
+   the hold's answer were typed together (a pasted `name`/`OK`).
+
+3. **`backup restore` refuses while a host is locked.** The restore now tries
+   the per-host lock that `host provisioner rotate`, `host rename` and `host
+   forget` hold, for every host in the live registry and in the snapshot's,
+   without waiting. If another command holds one, it stops before the
+   snapshot of the current state with nothing changed, names the host and
+   says to run it again when that command has finished; the locks are
+   released when the host files are back, and a snapshot that does not know
+   the hosts takes none. The restore can no longer interleave with a running
+   rotation, which removes the known limit of 0.2.14. The three refusals for
+   a busy host lock (`host provisioner rotate`, `host rename`, `host forget`)
+   now read `'<name>' is locked by another tacctl command (a rotation,
+   rename, forget or restore of it is running); nothing was changed. Run
+   this again when it has finished.`
+
+4. **A `host sync` no longer makes the next snapshot new.** When tacctl
+   decides whether the state equals the newest snapshot, it now ignores what
+   `host enroll` and `host sync` write into each host record on every run
+   (`last_sync` and `facts`) and compares only the `provisioner` entry, so a
+   command that changes nothing else no longer uses up one of the 30 kept
+   snapshots after a sync. A record present on one side only counts as equal
+   when it has no `provisioner` entry; a snapshot that is taken still holds
+   the records whole. The snapshot that `backup restore` takes first still
+   compares everything, records included, so the undo puts back the sync
+   information as it was.
+
+5. **`host sync` takes several names.** `tacctl host sync <name>...` syncs the
+   hosts named in one run, in the order typed, each as `--all` would sync it;
+   the UID numbering is done once, a host that fails does not stop the others,
+   and the exit status is 1 when any failed. Every name is checked before the
+   first host is touched: an unknown name refuses the run, a name given twice
+   counts once, a host with a break-glass hold among the names refuses the
+   whole run (nothing is attempted over ssh; `--all` still skips a held host
+   and says so), and names together with `--all` are a usage error. The names
+   complete at every position.
+
+6. **`backup restore <timestamp> --keep-uids` leaves the UID ledger as it
+   is.** The flag (also on `config restore`) restores a snapshot's registry,
+   host records and staging but not `linux-uids`. Use it when the snapshot is
+   wanted for its users, groups, scopes or devices and the hosts have synced
+   since: the live ledger is the one the hosts agree with. In place of the
+   list of users whose number would be dropped or changed, the note before
+   the question and after the restore is one line saying the ledger is kept.
+   A restored user with no line gets one at the next `host sync`. A snapshot
+   that does not know the hosts never touches the ledger, and the flag says
+   so. `--keep-uids` with `--legacy`, or without a store, is a usage error.
+
+7. **`host check <name>... | --all [--json]` compares hosts and changes
+   nothing.** It runs, for each host named or for every enrolled host with
+   `--all`, the read-only comparison that `host show <name> --check` makes,
+   and changes nothing here or on any host. Every name is checked first: an
+   unknown name refuses the run, a name given twice counts once, and names
+   with `--all` are a usage error. Each host gets one result: `as tacctl
+   would make it`, its differences with the command that fixes each,
+   `skipped` for a host with a break-glass hold (typed or not), or `could not
+   be checked` with the reason. With more than one host a last line counts
+   them by state. The exit status is 1 when a host has a difference or could
+   not be checked, and a skipped host is not a failure. `--json` prints an
+   array (`[]` for no host) and nothing else on standard output, with `name`,
+   `target`, `state` (`ok`, `differences`, `failed`, `held`), `differences`,
+   `notes`, `error` and `breakglass`. It is the superuser's, like `host show
+   --check`.
+
+8. **`config validate --json` prints the findings as one JSON object.** The
+   object has `valid`, `errors`, `warnings`, `mode` (`store` or `legacy`),
+   `counts` (users, groups and scopes; `null` when the model cannot be read),
+   `backends`, and `findings` in the order the text report lists them. Each
+   finding has `section` (a fixed token for each label of the text report),
+   `level` (`error` or `warning`), `text`, `fix` (the command that puts it
+   right, `""` when none), and `backend` or `hosts` where they apply. Nothing
+   else is printed on standard output (the complaint of an unreadable store
+   goes to standard error), and the exit status is the text report's: 1 when
+   `errors` is not 0, with the object printed either way. An option other
+   than `--json` is now refused with the usage line. The verb stays the
+   operator's: the per-tier sudoers rules gain the exact `config validate
+   --json` row, `tacctl upgrade` rewrites an installed drop-in, and `tacctl
+   rollback` recognises the 0.2.14 text. A finding the text report colours
+   red but does not count (a break-glass hold with no registered device) is a
+   `warning` in the object.
+
+9. **`config validate --fix-names [-y]` renames the names the report flags.**
+   After the report it offers each device, host, user and scope with upper
+   case in its name, one question each (`Rename user 'Alice' to 'alice'?
+   [y/N]:`; a piped `y` answers, and `-y` answers yes to all). Each rename is
+   the existing verb (`device rename`, `host rename`, `user rename`, `scope
+   rename`) with its own snapshot, and the findings are read again after each
+   one, so a scope that a host rename carried is not offered twice. A name
+   whose lower-case spelling is taken is not offered, and its line names the
+   verb that picks another name. A rename the verb refuses is printed and
+   counted, and the rest go on. The run ends with `Names: renamed N, declined
+   N, not offered N, failed N.` and exits 1 when the report had errors, a
+   rename failed or a name was not offered; a decline does not fail it. It is
+   the superuser's, needs the store, and is a usage error with `--json`.
+
 ## 0.2.14 (2026-10-18)
 
 1. **`device address` moves a break-glass hold with its device.** On a

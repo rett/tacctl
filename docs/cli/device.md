@@ -414,7 +414,9 @@ device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <ven
         first alone
     --hold
         After the fresh login keep the change only when you log in with one account of each class
-        and type `OK` (needs a terminal; not with `--json`)
+        and type `OK` (needs a terminal; not with `--json`). A line typed after the device before
+        was answered or timed out, and before the question for this one, is dropped; one typed
+        ahead of the first question is its answer
     --section <list>
         Only aaa, roles, mgmt-acl, snmp, system, netconf
     --concurrency <n>, --timeout <seconds>, --max-failures <n>, --server <address|name>,

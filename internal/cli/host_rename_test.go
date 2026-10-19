@@ -392,7 +392,7 @@ func TestHostRenameRefusedWhileARotationRuns(t *testing.T) {
 	}
 	before := sb.renameState()
 	sb.run("", []string{"host", "rename", "web1", "web7"})
-	sb.expect(1, "", "Another rotation of 'web1' is running; nothing was changed.")
+	sb.expect(1, "", "'web1' is locked by another tacctl command (a rotation, rename, forget or restore of it is running); nothing was changed.")
 	if sb.renameState() != before {
 		t.Error("a refusal changed something")
 	}
