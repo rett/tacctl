@@ -310,7 +310,7 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
     # staging addresses. Linux host deployment is the superuser's: an engineer
     # reads hosts (list, show) and nothing else of 'host'.
     for r in 'device import \*' 'device import /' 'scope staging \*' 'scope staging remove' 'host enroll' 'host sync' 'host move' \
-        'host target' 'host provisioner' 'host unenroll' 'host default-method' \
+        'host target' 'host provisioner' 'host rename' 'host forget' 'host unenroll' 'host default-method' \
         'scope prefixes' 'device stale-days' 'config linux' 'user ' 'backend enable' 'config snmp' 'console '; do
         if grep -q -- "$r" <<<"$en"; then echo "engineer alias has $r"; return 1; fi
     done
@@ -582,6 +582,10 @@ _upgrade() {
     assert_success
     assert_output --partial "web1"
     refute_output --partial "db1"
+    as_user en yes -- host list --json
+    assert_success
+    run jq -r 'map(.name) | join(",")' <<< "$output"
+    assert_output "web1,authsrv"
     as_user en yes -- host show web1
     assert_success
     as_user en yes -- host show db1

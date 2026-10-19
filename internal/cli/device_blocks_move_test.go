@@ -45,8 +45,10 @@ func TestDeviceBlocksFollowRenameRemoveAndRestore(t *testing.T) {
 	oldDir := "state/blocks/_devices/" + devBlocksOld + "/juniper/"
 	newDir := "state/blocks/_devices/" + devBlocksNew + "/juniper/"
 
-	// A change of spelling keeps everything where it is.
-	sb.dev("", "rename", devBlocksOld, "JS1.lab.example.net")
+	// A change of spelling keeps everything where it is: a name from before,
+	// with upper case, is fixed by renaming it to lower case.
+	sb.write("state/devices.yaml", strings.Replace(sb.devices(), "  "+devBlocksOld+":", "  JS1.lab.example.net:", 1), 0o600)
+	sb.dev("", "rename", "JS1.lab.example.net", devBlocksOld)
 	sb.expect(0, "renamed to", "")
 	if got := sb.read(oldDir + "snmp"); !strings.Contains(got, "js1-extra") {
 		t.Errorf("a respelling lost the block: %q", got)
@@ -55,7 +57,7 @@ func TestDeviceBlocksFollowRenameRemoveAndRestore(t *testing.T) {
 		t.Errorf("a respelling changed the keys:\n%s", sb.overrides())
 	}
 
-	sb.dev("", "rename", "JS1.lab.example.net", devBlocksNew)
+	sb.dev("", "rename", devBlocksOld, devBlocksNew)
 	sb.expect(0, "renamed to", "")
 	if got := sb.read(newDir + "snmp"); !strings.Contains(got, "js1-extra") {
 		t.Errorf("the block did not follow the rename: %q", got)
@@ -151,12 +153,12 @@ func TestLeftoverDeviceBlocksAreNotTakenOver(t *testing.T) {
 	}
 	sb.write("state/blocks/_devices/js5.lab.example.net/juniper/snmp", "set snmp community x authorization read-only\n", 0o600)
 	before := sb.devices()
-	sb.dev("", "add", "JS5.lab.example.net", "192.168.1.50", "--vendor", "juniper", "--no-host-key", "--no-lookup")
-	sb.expect(1, "", "Configuration blocks for a device named 'JS5.lab.example.net' are already on disk: "+sb.path("state/blocks/_devices/js5.lab.example.net"))
+	sb.dev("", "add", "js5.lab.example.net", "192.168.1.50", "--vendor", "juniper", "--no-host-key", "--no-lookup")
+	sb.expect(1, "", "Configuration blocks for a device named 'js5.lab.example.net' are already on disk: "+sb.path("state/blocks/_devices/js5.lab.example.net"))
 	if sb.devices() != before {
 		t.Errorf("the refused device was added:\n%s", sb.devices())
 	}
-	sb.run("JS5.lab.example.net,192.168.1.50,juniper\n", []string{"device", "import", "-", "--no-host-key"})
+	sb.run("js5.lab.example.net,192.168.1.50,juniper\n", []string{"device", "import", "-", "--no-host-key"})
 	if sb.code == 0 || sb.devices() != before {
 		t.Errorf("import over a leftover: %d %q\n%s", sb.code, sb.stderr(), sb.devices())
 	}

@@ -302,18 +302,24 @@ func TestDeviceSNMPFileFollowsTheDevice(t *testing.T) {
 	if out := sb.devSNMP("", "core-1", "show", "--reveal"); !strings.Contains(out, "community:  c-one  (device)") {
 		t.Errorf("after rename:\n%s", out)
 	}
-	// A spelling change keeps it.
-	sb.dev("", "rename", "core-1", "CORE-1")
+	// A spelling change keeps it: a name from before, with upper case, is
+	// found as it was, and renamed to lower case it is the same device.
+	sb.write("state/devices.yaml", strings.Replace(sb.devices(), "  core-1:", "  CORE-1:", 1), 0o600)
 	if out := sb.devSNMP("", "CORE-1", "show", "--reveal"); !strings.Contains(out, "community:  c-one  (device)") {
+		t.Errorf("a name with upper case:\n%s", out)
+	}
+	sb.dev("", "rename", "CORE-1", "core-1")
+	sb.expect(0, "renamed to 'core-1'", "")
+	if out := sb.devSNMP("", "core-1", "show", "--reveal"); !strings.Contains(out, "community:  c-one  (device)") {
 		t.Errorf("after a spelling change:\n%s", out)
 	}
 	// A rename onto a leftover is refused and changes nothing.
 	sb.write("state/snmp/devices/other.yaml", "version: 1\ncommunity: stranger\n", 0o600)
-	sb.dev("", "rename", "CORE-1", "other")
+	sb.dev("", "rename", "core-1", "other")
 	if sb.code == 0 || !strings.Contains(sb.stderr(), "SNMP credentials for a device named 'other' are already on disk") {
 		t.Errorf("rename onto a leftover: %d %q", sb.code, sb.stderr())
 	}
-	if !strings.Contains(sb.devices(), "CORE-1") || strings.Contains(sb.devices(), "other") {
+	if !strings.Contains(sb.devices(), "core-1") || strings.Contains(sb.devices(), "other") {
 		t.Errorf("the refused rename changed the registry:\n%s", sb.devices())
 	}
 	// A new device of that name is refused too.
@@ -326,7 +332,7 @@ func TestDeviceSNMPFileFollowsTheDevice(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Removal drops the file (and the directories with the last).
-	sb.dev("y\n", "remove", "CORE-1", "-y")
+	sb.dev("y\n", "remove", "core-1", "-y")
 	if _, err := os.Stat(to); !os.IsNotExist(err) {
 		t.Errorf("file left after remove: %v", err)
 	}

@@ -146,8 +146,25 @@ type Snapshotter struct {
 	// kept in (0600, the directories 0700). The list of blocks in force is
 	// in tacctl.yaml, which a snapshot holds already.
 	BlocksDir string
-	Rendered  string // RENDERED_FILE, copied into the manifest
-	BackupDir string // BACKUP_DIR
+	// LinuxHosts is the registry of enrolled Linux hosts (linux-hosts),
+	// HostRecords the directory of the per-host records (hosts/<name>.json),
+	// StagingFile the staging addresses (staging) and LinuxUIDs the UID
+	// ledger (linux-uids), all in the state directory (0.2.14, D188). A
+	// snapshot holds them in the modes they are kept in (0600, the directory
+	// 0700). linux-hosts is written to every snapshot, empty when there is no
+	// registry, so that its presence says the snapshot knows the hosts: one
+	// without it (0.2.13 and older) leaves all four alone on a restore. An
+	// empty LinuxHosts leaves the host files out of snapshots altogether.
+	// 0.2.13 ignores these entries: it reads a snapshot by the names it
+	// knows (store.yaml, tacctl.yaml, devices.yaml, console.yaml, snmp*,
+	// blocks, manifest), and the only directory listing it makes under
+	// backups/ is of the snapshot ids and the old-style files.
+	LinuxHosts  string
+	HostRecords string
+	StagingFile string
+	LinuxUIDs   string
+	Rendered    string // RENDERED_FILE, copied into the manifest
+	BackupDir   string // BACKUP_DIR
 	// Version is the tacctl version the manifest records ("unknown" when
 	// empty, as get_version prints when it cannot tell).
 	Version string
@@ -180,6 +197,10 @@ func New(p paths.Paths, version string, now func() time.Time, out ui.Output) *Sn
 		SNMPFile:    p.SNMPFile,
 		SNMPDir:     p.SNMPDir,
 		BlocksDir:   p.BlocksDir,
+		LinuxHosts:  p.LinuxHosts,
+		HostRecords: p.HostRecords,
+		StagingFile: filepath.Join(p.StateDir, StagingName),
+		LinuxUIDs:   p.LinuxUIDs,
 		Rendered:    p.Rendered,
 		BackupDir:   p.BackupDir,
 		Version:     version,
@@ -238,8 +259,8 @@ func (s *Snapshotter) now() time.Time {
 	return time.Now()
 }
 
-// Take is backup_snapshot: snapshot store.yaml and tacctl.yaml before a
-// change. It returns the id of the snapshot it made, or "" when it made
+// Take is backup_snapshot: snapshot store.yaml and tacctl.yaml (and the
+// registry files beside them) before a change. It returns the id of the snapshot it made, or "" when it made
 // none:
 //   - while a Hold is in effect;
 //   - when there is no store;
@@ -346,10 +367,144 @@ func (s *Snapshotter) current(dir string) bool {
 	if !sameBlocksDir(s.BlocksDir, filepath.Join(dir, BlocksName)) {
 		return false
 	}
+	if !s.sameHosts(dir) {
+		return false
+	}
 	if isRegular(s.Overrides) {
 		return sameBytes(s.Overrides, filepath.Join(dir, "tacctl.yaml"))
 	}
 	return !lexists(filepath.Join(dir, "tacctl.yaml"))
+}
+
+// The names of the host entries inside a snapshot (D188).
+const (
+	// HostsName is the registry; its presence says that the snapshot knows
+	// the hosts.
+	HostsName = "linux-hosts"
+	// HostRecordsName is the directory of the per-host records.
+	HostRecordsName = "hosts"
+	// StagingName is the staging addresses.
+	StagingName = "staging"
+	// UIDsName is the UID ledger.
+	UIDsName = "linux-uids"
+)
+
+// KnowsHosts reports whether the snapshot in dir holds the host state
+// (linux-hosts is there, empty or not): a snapshot of 0.2.13 or older does
+// not, and a restore of it leaves the live host files alone.
+func KnowsHosts(dir string) bool { return isRegular(filepath.Join(dir, HostsName)) }
+
+// sameHosts is whether the live host files equal the ones in snapshot
+// directory dir: the registry (a missing one equals an empty one, as the
+// snapshot writes it), the records, staging and the ledger (each present on
+// both sides with the same bytes, or on neither). A snapshot that does not
+// know the hosts is not the live state, whatever the files are, so the next
+// one is taken. Nothing to compare when the host files are not configured.
+func (s *Snapshotter) sameHosts(dir string) bool {
+	if s.LinuxHosts == "" {
+		return true
+	}
+	if !KnowsHosts(dir) {
+		return false
+	}
+	live, _ := os.ReadFile(s.LinuxHosts)
+	if !isRegular(s.LinuxHosts) {
+		live = nil
+	}
+	if snap, err := os.ReadFile(filepath.Join(dir, HostsName)); err != nil || !bytes.Equal(live, snap) {
+		return false
+	}
+	for _, f := range [][2]string{{s.StagingFile, StagingName}, {s.LinuxUIDs, UIDsName}} {
+		if f[0] == "" {
+			continue
+		}
+		if isRegular(f[0]) {
+			if !sameBytes(f[0], filepath.Join(dir, f[1])) {
+				return false
+			}
+		} else if lexists(filepath.Join(dir, f[1])) {
+			return false
+		}
+	}
+	return sameRecordsDir(s.HostRecords, filepath.Join(dir, HostRecordsName))
+}
+
+// HostRecordFiles are the host records of dir (the regular <name>.json files;
+// a name that starts with a dot is a record being written, a symbolic link
+// or anything else is not one), sorted by name. A directory that cannot be
+// read has none.
+func HostRecordFiles(dir string) []string {
+	if dir == "" {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		n := e.Name()
+		if e.Type().IsRegular() && strings.HasSuffix(n, ".json") && !strings.HasPrefix(n, ".") {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// sameRecordsDir is whether the live records directory and the snapshot's
+// hold the same records with the same bytes (neither having any counts).
+func sameRecordsDir(live, snap string) bool {
+	a, b := HostRecordFiles(live), HostRecordFiles(snap)
+	if !slices.Equal(a, b) {
+		return false
+	}
+	for _, n := range a {
+		if !sameBytes(filepath.Join(live, n), filepath.Join(snap, n)) {
+			return false
+		}
+	}
+	return true
+}
+
+// copyRecordsDir copies the records of src into a new directory dst (0700,
+// the files 0600); nothing when src has none.
+func copyRecordsDir(src, dst string) error {
+	files := HostRecordFiles(src)
+	if len(files) == 0 {
+		return nil
+	}
+	if err := os.Mkdir(dst, 0o700); err != nil {
+		return err
+	}
+	for _, n := range files {
+		if err := copyFile(filepath.Join(src, n), filepath.Join(dst, n)); err != nil {
+			return err
+		}
+	}
+	return os.Chmod(dst, 0o700)
+}
+
+// fillHosts writes the host entries of a snapshot into dir: linux-hosts
+// always (empty when there is no registry), the others when they exist.
+func (s *Snapshotter) fillHosts(dir string) error {
+	if s.LinuxHosts == "" {
+		return nil
+	}
+	if isRegular(s.LinuxHosts) {
+		if err := copyFile(s.LinuxHosts, filepath.Join(dir, HostsName)); err != nil {
+			return err
+		}
+	} else if err := os.WriteFile(filepath.Join(dir, HostsName), nil, 0o600); err != nil {
+		return err
+	}
+	for _, f := range [][2]string{{s.StagingFile, StagingName}, {s.LinuxUIDs, UIDsName}} {
+		if f[0] != "" && isRegular(f[0]) {
+			if err := copyFile(f[0], filepath.Join(dir, f[1])); err != nil {
+				return err
+			}
+		}
+	}
+	return copyRecordsDir(s.HostRecords, filepath.Join(dir, HostRecordsName))
 }
 
 // SNMPFiles are the per-scope credential files of dir (the regular
@@ -568,6 +723,9 @@ func (s *Snapshotter) fill(dir string, now time.Time) error {
 		return err
 	}
 	if err := copyBlocksDir(s.BlocksDir, filepath.Join(dir, BlocksName)); err != nil {
+		return err
+	}
+	if err := s.fillHosts(dir); err != nil {
 		return err
 	}
 	version := s.Version

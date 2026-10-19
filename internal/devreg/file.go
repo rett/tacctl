@@ -128,6 +128,33 @@ func (f *File) ForgetHost(name string) {
 	f.Hosts = slices.DeleteFunc(f.Hosts, func(h HostPin) bool { return strings.EqualFold(h.Name, name) })
 }
 
+// RenameHost gives the enrolled host old's record (its pinned keys, address
+// and address history, acknowledgements) the name new, and drops any other
+// record equal to new ignoring case (a leftover of an earlier host of that
+// name). A record of old is the one that moves, whatever the case of its
+// name; it reports whether there was one.
+func (f *File) RenameHost(oldName, newName string) (moved bool) {
+	var carried HostPin
+	var rest []HostPin
+	for _, h := range f.Hosts {
+		switch {
+		case !moved && strings.EqualFold(h.Name, oldName):
+			carried, moved = h.clone(), true
+		case strings.EqualFold(h.Name, newName) && !strings.EqualFold(oldName, newName):
+			// A leftover under the new name.
+		default:
+			rest = append(rest, h)
+		}
+	}
+	f.Hosts = rest
+	if moved {
+		carried.Name = newName
+		f.Hosts = append(f.Hosts, carried)
+		slices.SortFunc(f.Hosts, func(a, b HostPin) int { return strings.Compare(a.Name, b.Name) })
+	}
+	return moved
+}
+
 // Empty is a registry with no device.
 func Empty() *File { return &File{StaleDays: DefaultStaleDays} }
 

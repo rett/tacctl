@@ -257,7 +257,7 @@ var Rules = []Rule{
 	// Engineers read the Linux hosts of their scopes and change nothing on
 	// them: enrolling, syncing and the rest of host deployment are the
 	// superuser's.
-	{Tier: Engineer, Cmd: "host", Sub: "list", Sudoers: []string{"host list"}},
+	{Tier: Engineer, Cmd: "host", Sub: "list", Sudoers: []string{"host list", "host list --json"}},
 	{Tier: Engineer, Cmd: "host", Sub: "show", Sudoers: []string{"host show *"}, Wrap: true,
 		Note: "host show: an engineer reads what tacctl recorded of a host; --check logs in to it and needs the superuser tier."},
 	{Tier: Engineer, Cmd: "scope", Sub: "staging", Sudoers: []string{"scope staging", "scope staging list"},

@@ -26,6 +26,7 @@ import (
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/shellquote"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -590,9 +591,25 @@ func (inv *invocation) deviceWrite(fn func(*devreg.File, *devreg.Resolver) error
 	if _, err := trial.Text(); err != nil {
 		return nil, err
 	}
-	_, err = devreg.Mutate(inv.app.Paths.DevicesFile, inv.app.Paths.KnownHosts, inv.snapshotFirst, func(live *devreg.File) error {
-		before := resolver(live.Clone())
-		r := resolver(live)
+	_, err = devreg.Mutate(inv.app.Paths.DevicesFile, inv.app.Paths.KnownHosts, func() error {
+		inv.hooks.deviceStep()
+		return inv.snapshotFirst()
+	}, func(live *devreg.File) error {
+		// The enrolled hosts are read again under the registry's lock: a
+		// host enrolled or renamed since the trial run takes a name from
+		// the device (a rename checks the devices under the same lock, so
+		// one of the two sees the other).
+		cur, err := inv.registry()
+		if err != nil {
+			return err
+		}
+		fresh := func(f *devreg.File) *devreg.Resolver {
+			r := resolver(f)
+			r.Hosts = cur.Entries()
+			return r
+		}
+		before := fresh(live.Clone())
+		r := fresh(live)
 		if err := fn(live, r); err != nil {
 			return err
 		}
@@ -1293,6 +1310,11 @@ func (inv *invocation) deviceAddWith(args []string, trusted []devreg.HostKey) er
 		if err := r.CheckName(d.Name, d.Vendor, p.Has("--allow-generic"), keep); err != nil {
 			return err
 		}
+		// A name taken in another case is that refusal; a free name is
+		// lower case (0.2.14).
+		if err := names.RequireLower(d.Name); err != nil {
+			return err
+		}
 		return r.CheckAddress(d.Address, "")
 	}
 	// The refusals that need no device come before the scan.
@@ -1502,6 +1524,11 @@ func (inv *invocation) deviceRename(args []string) error {
 			}
 		} else if oldName == newName {
 			return inv.usageErr("'" + oldName + "' already has that name.")
+		}
+		// A new name is lower case; changing only the spelling to lower case
+		// is how an old name is fixed.
+		if err := names.RequireLower(newName); err != nil {
+			return err
 		}
 		d.Name = newName
 		return nil
@@ -1981,6 +2008,7 @@ func (inv *invocation) deviceImport(args []string) error {
 	summary := fmt.Sprintf("%d added, %d updated, %d unchanged, %d removed.", len(plan.Added), len(plan.Updated), len(plan.Unchanged), len(plan.Removed))
 	if p.Has("--check") {
 		a.Out.Info("Check passed; nothing written. Would import: " + summary)
+		inv.deviceImportMixedNote(plan.Mixed)
 		return nil
 	}
 	if len(plan.Removed) > 0 {
@@ -2013,12 +2041,22 @@ func (inv *invocation) deviceImport(args []string) error {
 		inv.blocksDeviceCarry(n, "")
 	}
 	a.Out.Info("Imported: " + summary)
+	inv.deviceImportMixedNote(plan.Mixed)
 	for _, n := range plan.Added {
 		if devreg.IsGeneric(n, f.GenericNames) {
 			a.Out.Warn("'" + n + "' is a generic name: 'tacctl device notices'.")
 		}
 	}
 	return nil
+}
+
+// deviceImportMixedNote is the one line an import says when the file has
+// device names with upper case: they are loaded as they are (existing data),
+// and 'config validate' lists them with the verb that renames each.
+func (inv *invocation) deviceImportMixedNote(mixed []string) {
+	if len(mixed) > 0 {
+		inv.app.Out.Info(fmt.Sprintf("%d device name(s) have upper case and are loaded as they are; new names are lower case (tacctl config validate lists them).", len(mixed)))
+	}
 }
 
 func (inv *invocation) deviceExport(args []string) error {

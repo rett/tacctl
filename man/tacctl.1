@@ -487,7 +487,12 @@ Requires: \fBreadonly\fR.
 .\" END GENERATED: command user show
 .TP
 .BI "user add " "name group " [ "--hash " hash ] [ "--scopes " name[,name...] ]
-Add a user. Prompts for the password with confirmation. If
+Add a user. The name is lower case (lower\-case letters, digits,
+.BR _ " and " \- ):
+a name with upper case is refused with the lower\-case spelling to use, and a
+user that exists with upper case keeps working as it is
+.RB ( "tacctl config validate"
+lists it). Prompts for the password with confirmation. If
 .BI --hash " hash"
 is given, the bcrypt hash is used directly and no password is prompted
 (use this when users self-generate a hash; see
@@ -583,7 +588,25 @@ Requires: \fBsuperuser\fR.
 .\" END GENERATED: command user enable
 .TP
 .BI "user rename " "old new"
-Rename a user.
+Rename a user. The new name is lower case; changing only the spelling
+.RB ( "user rename Alice alice" )
+is how a name from before is fixed. A device matches the typed login name
+exactly, so the rename changes what the person types at the device. The user
+keeps the Linux UID: the line of the old name in
+.I linux\-uids
+becomes the new name's, in place, under the apply lock after the pre\-change
+snapshot, and the command says so
+.RB ( "UID <uid> follows the rename" ).
+With enrolled hosts that list the user it also says that the next
+.B "host sync"
+renames the account on each of them, by its UID, keeping the home directory
+where it is. A user with no line is renamed as before. A new name that already
+has a line keeps its own number, the ledger is left alone, and a warning says
+that hosts then remove the old account and create the new one. If the ledger
+cannot be written after the rename the command says so, names the snapshot to
+restore and exits 1. The ledger has no lock of its own: a
+.B "host sync"
+reading it at the moment of the rename sees the file before or after.
 .\" BEGIN GENERATED: command user rename
 .RS
 .PP
@@ -1582,7 +1605,25 @@ or
 older than ten minutes, with no command holding the apply lock) is a warning
 as well, a
 .B Leftovers:
-line naming it.
+line naming it. Registrations of Linux hosts that cannot all be right are
+warnings under
+.BR "Linux hosts:" ,
+each naming its fix: two enrolled names equal ignoring case
+.RB ( "host forget" " or " "host rename" ),
+a host named like a registered device
+.RB ( "host rename" ),
+two hosts with the same recorded address and ssh port
+.RB ( "host forget" )
+and a pin, record or staging entry with no registry line
+.RB ( "host forget" ).
+A device, host, user or scope whose name has upper case (new names are lower
+case) is a warning under
+.BR "Names:" ,
+naming the rename that fixes it
+.RB ( "tacctl user rename Alice alice" ,
+and the like); the one for a user adds that devices match the typed login name
+exactly, so the rename changes what the person types at the device. Only the
+superuser's view has these warnings.
 .IP
 Then, for every enabled backend, whether its rendered config is up to date
 with the store and whether any of its files was edited by hand (drift). With
@@ -1799,18 +1840,48 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config metrics show
 .TP
-.B "host list"
-Show enrolled Linux hosts with their SSH target, scope, server address,
+.B "host list [ \-\-json ]"
+Show enrolled Linux hosts with their SSH target, the address recorded for the
+host at its last enroll or sync (a dash when none is), scope, server address,
 method and user count. A host with a break\-glass hold is marked
 .B BREAK\-GLASS
 in a
 .B STATE
 column, which is there while one is held in the caller's scopes, and a footer
-counts them.
+counts them. For the superuser a last line,
+.BR "N finding(s): see tacctl config validate" ,
+says that the registrations have findings
+.RB ( "config validate" ;
+see
+.BR "host forget" ).
+.B \-\-json
+prints a JSON array instead, empty (\fB[]\fR) when there is no host: for each
+host its
+.BR name ", " local ", " target ", " port " (22 unless the registry gives one; 0 for this server's own host), " scope ", " server ", " method ", " identity " (the path only), " address
+(the recorded one, empty when unknown),
+.B users
+and
+.B drift
+(the scope warning the table prints, empty when none), a
+.B breakglass
+object while the host is held (as
+.B "host show \-\-json"
+has it) and
+.BR findings ,
+the findings of
+.B "config validate"
+that name the host (an array, always empty for an engineer). It prints no
+table, footer or warning. An engineer lists the hosts of their own scopes in
+both forms.
 .\" BEGIN GENERATED: command host list
 .RS
 .PP
 Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-\-json\fR
+(list and show) Print JSON (show: every field, and \-\-check's findings under 'check').
 .RE
 .\" END GENERATED: command host list
 .TP
@@ -1857,7 +1928,7 @@ and
 (a failed sync too) and removed by
 .BR "host unenroll" ;
 a host with no such record shows
-.BR "not recorded (before 0.2.2)" .
+.BR "no record under this name" .
 They are only shown, never used to decide anything. A host with a break\-glass
 hold has a
 .B Break\-glass
@@ -1893,7 +1964,7 @@ Options:
 (show) The acknowledged notices too.
 .TP
 \fB\-\-json\fR
-(show) Print JSON: every field, and \-\-check's findings under 'check'.
+(list and show) Print JSON (show: every field, and \-\-check's findings under 'check').
 .TP
 \fB\-\-check\fR
 (show) Log in read\-only and compare the host with what tacctl would make it: one line per difference with the command that fixes it; exit 1 when there is one (superuser only).
@@ -1947,7 +2018,7 @@ address to a scope or give the host a scope of its own
 Naming another scope for a registered host moves it: enroll names the users
 whose accounts the move deletes and asks on a terminal; without one it stops
 unless given
-.BR \-\-yes .
+.BR \-y .
 tacctl never moves a host itself:
 .BR "host sync" ,
 .B "host list"
@@ -1981,6 +2052,44 @@ refuses a user of tacctl, and
 warns about an existing enrolment that uses one.
 .B "tacctl ssh"
 never uses it.
+.IP
+The registry name is
+.B \-\-name
+or the host's short name, lowercased (host names are not case\-sensitive; a host
+already enrolled under exactly that spelling keeps it). A name no enrolled host
+has with exactly that spelling is a new one: it is lower\-case letters, digits,
+.B _
+or
+.B \-
+starting with a letter (26 at most), is not a tacctl word (the words a device
+cannot be called either, such as
+.BR all ,
+.B scope
+or
+.BR local ),
+and is not the name of an enrolled host or a registered device in any case:
+names are not case\-sensitive, so
+.B web1
+and
+.B Web1
+are one name. A
+.B \-\-name
+with upper case is refused with the lower\-case spelling to use. A host enrolled
+before with upper case keeps working, is listed by
+.BR "tacctl config validate" ,
+and is renamed with
+.BR "host rename Web1 web1" .
+Enrolling a registered host again under its registered
+spelling is allowed (that is how it is enrolled again or moved). A refused
+name changes nothing and nothing is attempted over ssh. An option that takes
+a value
+.RB ( \-\-method ,
+.BR \-\-scope ,
+.BR \-\-server ,
+.BR \-\-name ,
+.BR \-\-port ,
+.BR \-\-identity )
+given without one is a usage error that names the option.
 .IP
 After a successful run the host's public key files are read over the same
 ssh connection
@@ -2039,6 +2148,16 @@ Session accounting over RADIUS is sent only when the RADIUS
 .B acct
 listener is on the authentication port plus one, and never from Ubuntu
 24.04 (malformed records).
+.IP
+Once the script has succeeded on the host, a snapshot is taken just before the
+registry changes (so also for
+.BR "host move" ),
+holding the registry, the host records,
+.I staging
+and the UID ledger
+.RB ( "backup restore"
+puts them back); if it cannot be taken the registry is left as it was and the
+command says so.
 .\" BEGIN GENERATED: command host enroll
 .RS
 .PP
@@ -2056,7 +2175,7 @@ The host's scope (default: its registered one, else the scope covering its addre
 Address the host should use for this server (default: detected).
 .TP
 \fB\-\-name\fR \fI<name>\fR
-Registry name (default: short hostname).
+Registry name (default: short hostname, lowercased; lower case, not a tacctl word).
 .TP
 \fB\-\-port\fR \fI<n>\fR
 The ssh port of the host.
@@ -2070,7 +2189,7 @@ pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth package a
 \fB\-\-build\-on\-host\fR
 (tacplus) Compile pam_tacplus on the host instead of in a container here.
 .TP
-\fB\-\-yes\fR
+\fB\-y\fR, \fB\-\-yes\fR
 (enroll and move) Move a registered host to another scope even when that deletes accounts.
 .TP
 \fB\-\-staging\fR
@@ -2084,14 +2203,18 @@ pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth package a
 .RE
 .\" END GENERATED: command host enroll
 .TP
-.B "host move " "{ " name " [ " scope " ] | \-\-all } [ \-\-yes ] [ \-\-remove\-home ] [ \-\-allow\-uid\-mismatch ]"
+.B "host move " "{ " name " [ " scope " ] | \-\-all } [ \-y ] [ \-\-remove\-home ] [ \-\-allow\-uid\-mismatch ]"
 Move an enrolled host to another scope: an enroll with its registered
 target, port, identity, server and method, into
 .I scope
 or, without one, the scope that answers its address. As an enroll that names
 a scope does, it names the users whose accounts the move deletes and asks
 first (without a terminal it stops unless given
-.BR \-\-yes ).
+.BR \-y ).
+With
+.B \-\-all
+one snapshot is taken before the first move and none per host, so a long batch
+does not push the state before it out of the 30 snapshots kept.
 .\" BEGIN GENERATED: command host move
 .RS
 .PP
@@ -2102,7 +2225,7 @@ Options:
 \fB\-\-all\fR
 (move) Every host that another scope answers; asks before deleting accounts.
 .TP
-\fB\-\-yes\fR
+\fB\-y\fR, \fB\-\-yes\fR
 (enroll and move) Move a registered host to another scope even when that deletes accounts.
 .TP
 \fB\-\-allow\-uid\-mismatch\fR
@@ -2170,6 +2293,44 @@ Files under
 that still carry the old number are listed (at most 20), never changed. An
 account whose user is logged in, or whose new UID is taken on the
 host, is left as it is and named as refused until a later sync.
+.IP
+An account of a renamed user
+.RB ( "user rename" )
+is renamed by its UID alone, before anything else is checked: a listed,
+disabled or kept user (its group has no priv-lvl) with no account on the host whose UID belongs to an account
+tacctl created under a name that is no longer listed is that account renamed
+.RB ( "usermod \-l" ,
+the login name only; the home directory keeps its path, the full name follows,
+and so do tacctl's lists of the accounts it created and expired; a disabled
+user's account stays expired)
+.RI "(\(lq'" old "' is now '" new "' (renamed; UID " uid "; home kept at " home )\(rq).
+A host that missed a rename, or saw two, ends the same, and so does a host
+still on an earlier UID range (the account is found at the number the user had
+there and renumbered by the same run). No question is asked
+about the home of the old name, and
+.B "host show"
+lists the account as updated. Mail and cron spools under the old name are
+left. An account whose user is logged in is not renamed, and neither name is
+created or deleted, until a later sync; a local account of the new name that
+tacctl did not create keeps the old account in place; a new name tacctl already
+created with another UID is no rename, two users that swapped names are none
+either, and an account whose UID the server has given to a listed or disabled
+user is never removed (it is kept and named in a warning that says how to
+settle it: remove the stale account by hand, move it onto its assigned number,
+or tell the server its real number with
+.BR "config linux uid" ;
+the UID check reports the difference). A number the server never reuses, but
+one an operator hand-assigns to another user after its holder was removed, is
+a rename to a host that still has the removed user's account: the new user
+inherits its home. If tacctl's lists of created and expired accounts
+cannot be rewritten, nothing is renamed. After a rename, the old name must not
+be given to a new user until every host has synced the rename: the UID check
+of a host that has not refuses its sync. A script written by
+.B "config linux script"
+before 0.2.14 has no rename and stops at its UID check until it is written
+again; it must not be run with
+.BR \-\-allow\-uid\-mismatch ,
+which would create the new name at a free number and delete the old account.
 .IP
 A removed user's home directory is deleted only when asked for. From a
 terminal, enroll and sync read the host's
@@ -2476,12 +2637,188 @@ Options:
 .RE
 .\" END GENERATED: command host provisioner
 .TP
+.B "host rename " old " " new " [ \-y ]"
+Give the enrolled host
+.I old
+the name
+.IR new .
+It is local: the remote host records no registry name, so nothing is sent
+over ssh, and a host with a break\-glass hold may be renamed. The new name
+follows the rules of a new host name: lower\-case letters, digits,
+.B _
+and
+.BR \- ,
+starting with a letter, at most 26 characters; no tacctl word
+.RB ( all ,
+.BR scope ,
+.BR local ,
+and the like) and no generic name; and no other enrolled host and no
+registered device is equal to it ignoring case. A name with upper case is
+refused. A rename that changes only the spelling to lower case
+.RB ( Web1
+to
+.BR web1 )
+is allowed and fixes a name from before. Giving the host the name it has is refused
+.RB ( "already has that name" ),
+and so is a rename while a
+.B "host provisioner rotate"
+of the host is running. A break\-glass hold recorded under the new name is
+always refused: only
+.B "breakglass release"
+removes a hold.
+.IP
+What an earlier host of the new name left (a pin and address in
+.IR devices.yaml ,
+a record, staging addresses) is listed and replaced after a confirmation
+.RB ( \-y
+skips it); declining changes nothing.
+.IP
+After every refusal and the questions, a snapshot is taken
+.RB ( "backup restore"
+undoes the rename). Then the registry line is renamed where it is, and one
+write of
+.I devices.yaml
+renames the pinned host keys, the address and its history and the
+acknowledged notices (the generated known_hosts follows); the write also finds
+a device registered under the new name since the checks (another command at the
+same moment), and when it fails or finds one the registry line is renamed back
+and nothing was changed.
+.B "device add"
+and
+.B "device rename"
+likewise refuse a name that an enrolled host has taken meanwhile. A
+.B "host sync"
+running on the host at the moment of the rename can write its record and its pin
+under the old name; they are reported as leftovers of a host that is not
+enrolled and
+.B "host forget"
+removes them. Then the record
+.RI ( /etc/tacctl/hosts/ name .json),
+the staging addresses, the break\-glass hold (it stays on the same address
+and follows the name) and the host\-key scan result of the seen cache follow;
+each that fails is a warning that names what stayed and the command that puts
+it right. The rename is logged
+.RB ( "host rename old= new= by=" ).
+.IP
+When the host is registered in scope
+.BI linux\- old
+(the scope earlier releases made for it), no other host uses that scope, the
+store has it, no scope
+.BI linux\- new
+exists and
+.B "scope rename"
+would accept the new name, both questions come first and
+.RI "\(lqScope 'linux\-" old "' is this host's own (no other host uses it). Rename it to 'linux\-" new "' too? [y/N]\(rq"
+is asked.
+.B \-y
+answers both questions yes. The host rename runs whole; then the scope is
+renamed as
+.B "scope rename"
+does, with a snapshot of its own (two points to undo to). If the scope step
+fails the host stays renamed in its old scope and the command says
+.RI "\(lqHost renamed. Scope 'linux\-" old "' was NOT renamed: ... Retry: tacctl scope rename linux\-" old " linux\-" new "\(rq"
+and exits 1. When the scope is not renamed with the host, one line says why,
+and a declined offer ends with the
+.B "scope rename"
+line to run. If another host has been enrolled in the scope since the question,
+the scope keeps its name and the line is printed as for a declined offer. Re\-enrolling the renamed host without
+.B \-\-scope
+would otherwise put it in
+.BI linux\- new \fR.
+.\" BEGIN GENERATED: command host rename
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+(rename) Answer both questions yes: replace what an earlier host of the new name left, and rename the host's own linux\-<name> scope.
+.RE
+.\" END GENERATED: command host rename
+.TP
+.B "host forget " name " [ \-y ]"
+Drop the registration of the host
+.I name
+from this server, and nothing else. It is local: nothing is sent to the host and
+no ssh runs, so it works for a host that no longer answers. After a snapshot it
+removes, for the name, the registry line, the pinned keys, address and history in
+.I devices.yaml
+(the generated known_hosts follows), the record
+.RI ( /etc/tacctl/hosts/ name .json),
+the host's entries in the
+.I staging
+file and the host\-key scan result of the seen cache. It lists what it would drop
+and asks; the question is skipped with
+.BR \-y .
+The host itself is not touched: its accounts, secrets and PAM setup stay
+.RB ( "host unenroll"
+cleans a host that can be reached, and drops its staging entries and record
+the same way). A staging /32 stays a prefix of its scope; the
+.B "scope prefixes"
+line that drops it is printed, by both commands. The log line is
+.BR "host forget name= by=" .
+.IP
+This server's own host
+.RB ( "host enroll \-\-local" )
+is the exception. Forgetting it runs nothing here, so this server's PAM setup
+and console accounts keep using its scope: the command says so before it asks
+and does not suggest removing the scope.
+.BI "host unenroll " name
+takes this server's own host out of service; forgetting it is for a stray
+duplicate line only.
+.IP
+.I name
+is the registered spelling. What no registry line has (an orphan: a pin, a
+record or a staging entry) is named by exactly its spelling and forgotten the
+same way. A name that matches no registered spelling exactly but one enrolled
+host ignoring case is that host (a stray
+.B Web1
+is forgotten by
+.BR web1 );
+several such hosts are refused, naming them. The pinned keys and the scan result
+are shared by names equal ignoring case, so they stay while another enrolled
+host has such a name. A host with a break\-glass hold is refused, and so is a
+name a hold is recorded under:
+.B "breakglass release"
+first. A running
+.B "host provisioner rotate"
+of the host refuses it. This is the repair for the findings of
+.B "config validate"
+and
+.BR "host list" :
+two names equal ignoring case, a host named like a device, two hosts with the
+same recorded address and ssh port (one address on another port is another
+machine), and a pin, record or staging entry with no registry line.
+.B "host unenroll \-\-force"
+is not the repair for a duplicate, as it runs the removal script on the machine
+the surviving registration shares.
+.\" BEGIN GENERATED: command host forget
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+(forget) Forget the host without asking.
+.RE
+.\" END GENERATED: command host forget
+.TP
 .B "host unenroll " name " [ \-\-force ]"
-Run the removal script on the host and drop it from the registry, with its
-pinned host keys. Local accounts and home directories stay. If the removal
+Clean the host and remove its registration: run the removal script on the host and drop it from the registry, with its
+pinned host keys, its record and its staging entries (the staging /32 stays a
+prefix of its scope; the
+.B "scope prefixes"
+line that drops it is printed). Local accounts and home directories stay. If the removal
 fails the host stays registered unless
 .B \-\-force
-is given. A host with a break\-glass hold is refused, with or without
+is given, which removes the registration even when the host cannot be cleaned.
+.B "host forget"
+only drops this server's record of a host and touches nothing on it. A snapshot is taken just before the registry changes, so
+.B "backup restore"
+can bring the host back into the registry. A host with a break\-glass hold is
+refused, with or without
 .BR \-\-force :
 release it first
 .RB ( "breakglass release" ).
@@ -3119,7 +3456,7 @@ Each read of a secret by an engineer is logged to syslog as
 scopes, a secret's change, backends, backups, upgrades, the default host
 method and the console's settings stay the superuser's, and so does the
 deployment of Linux hosts
-.RB ( "host enroll" ", " sync ", " move ", " target ", " provisioner ", " unenroll
+.RB ( "host enroll" ", " sync ", " move ", " target ", " provisioner ", " rename ", " forget ", " unenroll
 and
 .BR default\-method ):
 an engineer changes no setting that makes a host sync necessary, and a host is
@@ -4269,8 +4606,22 @@ Diff
 .I store.yaml
 and
 .I tacctl.yaml
-against a snapshot (default: most recent). The output shows shared secrets and
-password hashes.
+against a snapshot (default: most recent), then, each only where either side has
+one,
+.IR devices.yaml ,
+.IR console.yaml ,
+.IR linux\-hosts ,
+each record of
+.IR hosts/ ,
+.I staging
+and
+.IR linux\-uids .
+A snapshot taken by 0.2.13 or older does not know the hosts and a restore of it
+leaves the live host files alone, so they are not listed as only in the current
+state: one line,
+.BR "host files: not in this snapshot (it predates 0.2.14)" ,
+stands in their place when the server has host files.
+The output shows shared secrets and password hashes.
 .\" BEGIN GENERATED: command backup diff
 .RS
 .PP
@@ -4299,6 +4650,44 @@ before it is imported. When the tacctl server is enrolled a red line says that
 users whose tier fell keep their old groups until
 .BR "host sync" .
 .PP
+A snapshot that knows the hosts (it holds
+.IR linux\-hosts ,
+which every snapshot of this release does) also puts the host files back:
+.I linux\-hosts
+whole,
+.I hosts/
+made to match (a record the snapshot lacks is removed),
+.I staging
+back or removed, and
+.I linux\-uids
+as it was. A snapshot without
+.I linux\-hosts
+(tacctl 0.2.13 and older) leaves all four as they are. No host is touched and
+nothing is reconciled. Before the confirmation, and again after the restore, a
+note names the hosts that come back, those that go and those registered
+differently, and what to do about a host that no longer matches
+.RB ( "host sync" ,
+.BR "host show \-\-check" ,
+.B "host unenroll"
+again for one that comes back after
+.BR "host unenroll" ;
+.B "host enroll"
+again, or
+.B "host unenroll \-\-force"
+after that, for one that goes). The restored ledger can forget a number a host
+already holds, so the note also names every user whose UID it drops or
+changes; a host file that cannot be read is named in a red line,
+.BR "could not compare the host files" ,
+and the restore still puts the files back. The snapshot of the current state taken first holds the live host files.
+.PP
+The restore holds the host registry's lock from before it changes anything: when
+another tacctl command keeps it for 30 seconds the restore stops with the
+registry busy and nothing changed (a snapshot that does not know the hosts does
+not take the lock). The host files are put back last. If that step fails the
+rest of the restore stands and the backends are restarted, and two warnings name
+the error, the snapshot of the state from before the restore and the commands
+that undo the restore or try the host files again.
+.PP
 A snapshot is the directory
 .I /etc/tacctl/backups/<timestamp>/
 holding
@@ -4306,7 +4695,19 @@ holding
 .I tacctl.yaml
 and a manifest (the
 .I rendered.json
-of that moment and the tacctl version), root-only. One is taken
+of that moment and the tacctl version), root-only, and the files of the
+registries and hosts when they exist
+.RI ( devices.yaml ,
+.IR console.yaml ,
+.IR snmp* ,
+.IR blocks/ ,
+.IR linux\-hosts ,
+.IR hosts/ ,
+.I staging
+and
+.IR linux\-uids ;
+.I linux\-hosts
+is always there, empty when there is no registry). One is taken
 automatically before every change, unless the files already equal the
 newest snapshot. The newest 30 are retained. Without a store, list, diff
 and restore work on old-style backups only.
@@ -4708,7 +5109,11 @@ Requires: \fBengineer\fR.
 .\" END GENERATED: command scope show
 .TP
 .B "scope add " \fIname\fR " --prefixes " \fIcidr\fR[,cidr...] " [ --secret \fIvalue\fR | --secret generate ] [ --protocols \fIcsv\fR ] [ --vendor-attrs \fIcsv\fR ] [ --default ]
-Create a new scope. Prefixes are required; each must not already
+Create a new scope. The name is lower case: a letter, then up to 31 lower\-case
+letters, digits,
+.BR _ " or " \- ;
+a name with upper case is refused with the lower\-case spelling to use.
+Prefixes are required; each must not already
 belong to another scope (overlap with a broader scope's supernet is
 fine: the new scope's narrower prefix wins first-match).
 .B --secret generate
@@ -4782,7 +5187,9 @@ Options:
 .\" END GENERATED: command scope remove
 .TP
 .BI "scope rename " "old new"
-Rename a scope. Rewrites the scope in the store (protocols, vendor
+Rename a scope. The new name is lower case; changing only the spelling
+.RB ( "scope rename Lab lab" )
+is how a name from before is fixed. Rewrites the scope in the store (protocols, vendor
 attributes and tagged addresses included), every user's
 .B scopes
 reference, and
@@ -4793,7 +5200,12 @@ in
 .IR old ),
 and moves every
 .I tacctl.yaml
-setting stored under the old name to the new one.
+setting stored under the old name to the new one. The enrolled hosts that are
+registered in the scope and the staging addresses of it name the new scope
+afterwards.
+.B "host rename"
+offers this rename for a host's own scope
+.BI linux\- name \fR.
 .\" BEGIN GENERATED: command scope rename
 .RS
 .PP
@@ -6246,7 +6658,11 @@ The acknowledged notices too.
 .\" END GENERATED: command device show
 .TP
 .BI "device add " "[ name ] address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-snmp\-location " text " ] [ \-\-legacy\-ssh ] [ \-\-config\-syntax auto|ios12|modern ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-no\-lookup ] [ \-\-pull ] [ \-\-allow\-generic ]"
-Register a device. A name is letters, digits,
+Register a device. A new name is lower case: a name with upper case is refused with
+the lower\-case spelling to use (the name a device reports, or its SNMP sysName, is
+lowercased); a device that exists with upper case keeps working and is listed by
+.BR "tacctl config validate" .
+A name is letters, digits,
 .RB ` . ` ,
 .RB ` _ `
 and
@@ -6741,7 +7157,10 @@ Remove every device (an engineer: those of their own scopes).
 .\" END GENERATED: command device remove
 .TP
 .BI "device rename " "old new " [ \-\-allow\-generic ]
-Rename a device; acknowledgements stay with it. The device's own host name is
+Rename a device; acknowledgements stay with it. The new name is lower case;
+changing only the spelling to lower case
+.RB ( "device rename Core\-SW1 core\-sw1" )
+is how a name from before is fixed. The device's own host name is
 unchanged and not planned by tacctl: the verb says so.
 .\" BEGIN GENERATED: command device rename
 .RS
@@ -7308,6 +7727,11 @@ are skipped) or from the registry's own YAML, from a file or from stdin
 .RB ( \- ;
 an engineer's import is from stdin only, with the options after the
 .BR \- ).
+A file of devices is existing data (so is the CSV of
+.BR "device export \-\-csv" ):
+its names are loaded as they are, with one line saying how many have upper case;
+the lower\-case rule is for new devices, through
+.BR "device add" .
 Devices of the file are added, or update the registered device of the same name
 (a CSV row leaves the hostname and the legacy-ssh setting alone, and a file that
 carries no
@@ -9592,9 +10016,10 @@ of the registered host
 .RB ( "host move" ),
 .B "host target"
 with a change,
-.B "host provisioner rotate"
-and
+.BR "host provisioner rotate" ,
 .B "host unenroll"
+and
+.B "host forget"
 are refused with the hold named, before anything is attempted over ssh;
 .B "host sync \-\-all"
 skips the host;
@@ -9649,7 +10074,9 @@ the checks a new hold passes, and one question names both addresses unless
 .B \-y
 is given),
 .B "device rename"
-moves the record,
+and
+.B "host rename"
+move the record,
 .BR "device config pull" ,
 .B "diff \-\-pull"
 and
@@ -11969,7 +12396,9 @@ tacctl shipped, according to the git history of
 .TP
 .IR /etc/tacctl/linux\-hosts ", " /etc/tacctl/linux\-uids
 The registry of enrolled Linux hosts (with each host's method) and the
-UID each user gets on every host.
+UID each user gets on every host. Snapshots include both, and
+.B backup restore
+puts them back.
 .TP
 .I /etc/tacctl/hosts/
 One
@@ -11987,6 +12416,7 @@ Printed by
 .BR "host show" .
 Mode 0600 in a 0700 directory, root only; renamed with the host and removed by
 .BR "host unenroll" .
+Snapshots include them.
 .TP
 .I /var/lib/tacctl/linux/
 The pam_tacplus source tarball and the modules built in containers.

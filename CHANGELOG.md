@@ -53,6 +53,254 @@ current behaviour; this file is where history lives.
    are `breakglass hold|release host=<name> addr=<ip>`. The state format is
    unchanged.
 
+3. **`host enroll` holds a new host name to the device name rules, and a
+   missing option value is a usage error.** A name no enrolled host has with
+   exactly that spelling (`--name`, or the one worked out from the target)
+   must now be no tacctl word, as for a device: a host can no longer be
+   called `all`, `scope`, `local` and the like. Names are not
+   case-sensitive: `Web1` is refused while `web1` is enrolled (`'web1' is
+   enrolled; names are not case-sensitive.`), where both could be enrolled
+   before and shared one pin record in the device registry; a registered
+   device of that name, in any case, is refused as before and now says
+   `Nothing was changed.` A refusal changes nothing and attempts nothing over
+   ssh. Enrolling a registered host again under its registered spelling is
+   allowed, as before, so a host already named with a reserved word or
+   enrolled twice in two cases keeps working. `host enroll --scope`,
+   `--server`, `--name`, `--port` or `--identity` with no value (or an empty
+   one) used to exit 1 without a word; it now prints `<option> needs a
+   value.` and the usage line, as `--method` does. No other `host` verb
+   exited silently on a missing value.
+
+4. **Snapshots hold the host state, and a restore puts it back.** A
+   snapshot now also holds `linux-hosts` (the registry of enrolled Linux
+   hosts), `hosts/` (the per-host records), `staging` (the staging addresses)
+   and `linux-uids` (the UID ledger), 0600 in a 0700 directory. `linux-hosts`
+   is in every new snapshot, empty when there is no registry, so a snapshot
+   that has it is one that knows the hosts; the provisioner's lock files and
+   the caches are not kept. A snapshot is skipped only when all of it equals
+   the newest one, so a change of the registry alone makes a new snapshot,
+   and the first one after the upgrade is taken once even when nothing else
+   changed. `host enroll` (so `host move`) and `host unenroll` take a
+   snapshot just before the registry changes, after the script on the host
+   has succeeded; if the snapshot cannot be taken the registry is left and
+   the command says so. `host sync` takes none. `backup restore` of a
+   snapshot that knows the hosts puts `linux-hosts` back whole, makes
+   `hosts/` match (a record the snapshot lacks goes), puts `staging` back or
+   removes it and puts `linux-uids` back as it was, after the render and the
+   other files, under the apply lock; the snapshot of the current state it
+   takes first holds the live host files, so the restore can be undone. A
+   snapshot without `linux-hosts` (0.2.13 and older) leaves all four alone.
+   No host is touched and nothing is reconciled: before the question, and
+   again after the restore, a note names the hosts that come back, go or are
+   registered differently, what to do about a host whose state no longer
+   matches (`host sync`, `host show --check`, `host unenroll` again, `host
+   enroll` again), and every user whose UID the restored ledger drops or
+   changes, since a host may already hold that number. `backup diff` adds
+   `linux-hosts`, `staging`, `linux-uids` and each host record where either
+   side has one; `backup list` is unchanged. The state format does not
+   change and 0.2.13 ignores the new entries. `host move --all` takes one
+   snapshot before the first move and none per host, so a batch of more than
+   30 hosts does not push the state before it out of the 30 snapshots kept.
+   The restore takes the host registry's lock before it changes anything: a
+   registry another command holds for 30 seconds stops it with nothing
+   changed. If putting the host files back fails after the render, the
+   backends are still restarted and the failure is a warning that names the
+   snapshot of the state from before the restore. A host file that cannot be
+   read is named in a red line before the question (`could not compare the
+   host files`), and the restore still puts the files back. When the snapshot
+   fails after `host unenroll` ran the removal, the message says to add
+   `--force` if the removal cannot run again.
+
+5. **`host rename <old> <new>` gives an enrolled host another name, and
+   `host enroll` can no longer register a name twice.** The rename is the
+   superuser's and local: nothing is sent to the host, so a host with a
+   break-glass hold may be renamed, and a running `host provisioner rotate`
+   of the host refuses it. The new name follows the rules of a new host name
+   with no way round them: no tacctl word, no generic name, no other host or
+   registered device equal to it in any case; changing only the spelling
+   to lower case (`Web1` to `web1`) is allowed and the same name says
+   `already has that name`. What an earlier host of the new name left (a pin, a record,
+   staging addresses) is listed and replaced after a confirmation (`--yes`
+   skips it); a break-glass hold under the new name is always refused. After
+   a snapshot the registry line is renamed where it is, one write of the
+   device registry renames the pinned keys, the address, its history and the
+   acknowledged notices (`known_hosts` follows; if that write fails the
+   registry line is renamed back and nothing is changed), then the record,
+   the staging addresses, the hold (same address) and the host-key scan
+   result follow, each a warning with the fix when it cannot. The log line
+   is `host rename old= new= by=`. When the host's scope is `linux-<old>`,
+   no other host uses it and `scope rename` would accept `linux-<new>`, the
+   command also asks `Scope 'linux-<old>' is this host's own (no other host
+   uses it). Rename it to 'linux-<new>' too? [y/N]` (`--yes` answers yes);
+   the scope is then renamed after the host, with its own snapshot, and the
+   host's registry line and staging addresses follow it. A scope left alone
+   gets one line saying why, or the `tacctl scope rename` line to run; if the
+   scope step fails the host stays renamed in its old scope and the command
+   says `Host renamed. Scope 'linux-<old>' was NOT renamed` with the retry
+   and exits 1. `scope rename` itself is unchanged. The registry write of
+   `host enroll` for a new name is now checked again under the registry's
+   lock: two enrolments of `Web1` and `web1` started together can no longer
+   both be written, the second says the name is taken and writes nothing
+   (the client script has already run on its host). `backup diff` against a
+   snapshot of 0.2.13 or older no longer lists the live host files as only in
+   the current state, which a restore of it would not change; it prints
+   `host files: not in this snapshot (it predates 0.2.14)` when the server
+   has host files.
+
+6. **`host forget <name>` repairs duplicate and orphaned hosts, and
+   `config validate` and `host list` report them.** `config validate`
+   (under `Linux hosts:`, warnings only) and `host list` (one last line,
+   `N finding(s): see tacctl config validate`) now name, for the superuser,
+   two enrolled names equal ignoring case, a host named like a registered
+   device, two hosts with the same recorded address and ssh port (one
+   address on another port is another machine, as `host enroll` judges it),
+   and a pin, record or staging entry that no registry line has, each with
+   the verb that fixes it (a break-glass hold with no host is the hold's own
+   orphan line). Nothing is repaired where it is reported. `tacctl host
+   forget <name> [--yes]` is the repair: superuser only, local, with no ssh
+   and nothing sent to the host. After a snapshot it drops the registry
+   line, the pinned keys, address and history (the generated `known_hosts`
+   follows), the record, the host's staging entries and the host-key scan
+   result, after listing what it would drop and asking (`--yes` skips the
+   question). The host itself is not touched: its accounts, secrets and PAM
+   setup stay (`host unenroll` cleans a host that can be reached). For this
+   server's own host (`--local`) it says before it asks that this server's
+   PAM setup and console accounts still use the scope, points to `host
+   unenroll <name>`, and does not suggest `scope remove`. It is refused for
+   a held host (release it first), a name a hold is recorded under, and
+   while a rotation of the host runs. The name is the registered spelling;
+   the leftovers of a name with no registry line are named by their spelling
+   and forgotten the same way (when a pin cannot be removed, the retry
+   hint names the pin's own spelling); a name that matches one enrolled host
+   ignoring case is that host, several are refused; pins shared by names
+   equal ignoring case stay while another host has such a name. `host
+   unenroll` now also drops the host's staging entries, so a routine
+   unenroll of a host enrolled with `--staging` leaves no orphan; the /32
+   stays a prefix of the scope, and both commands print the `scope prefixes
+   <scope> remove` line for it. The log line is `host forget name= by=`. The
+   state format does not change. Also, in `host rename`: the device
+   registry is checked for the new name under its lock when the pins are
+   written, so a device registered at that moment can no longer share a name
+   with the renamed host (the registry line goes back and nothing is
+   changed), and `device add|rename` refuse a name an enrolled host has
+   taken since their checks. That closes the window between `host rename`
+   and `device add|rename` only: `host enroll` checks the device name before
+   its script runs on the host, which can take minutes, and does not check
+   again, so a host and a device can still end up with one name that way;
+   the new findings report it. The messages for an undo that cannot restore
+   the pins, or that replaced a leftover pin, say what was left; a scope
+   another host was enrolled into since the question keeps its name; a
+   record that cannot be moved stays under the old name, which `host
+   forget` drops.
+
+7. **`host list --json`, an ADDRESS column, and `host show` words a missing
+   record neutrally.** `tacctl host list --json` prints a JSON array, `[]`
+   when there is no host, with no table, footer or warning. Each host has
+   `name`, `local`, `target`, `port` (22 unless the registry gives one; 0 for
+   this server's own host), `scope`, `server`, `method`, `identity` (the path
+   only), `address` (the address recorded at the last enroll or sync, empty
+   when unknown), `users`, `drift` (the scope warning the table prints,
+   empty when none), `breakglass` (the hold, as in `host show --json`, only
+   while the host is held) and `findings` (the `config validate` findings
+   that name the host, each with `text` and `fix`; always empty for an
+   engineer). An engineer lists the hosts of their own scopes in both forms;
+   the engineer sudoers rule gains `host list --json` (`tacctl upgrade`
+   rewrites the drop-in). The table has an ADDRESS column
+   after TARGET: the recorded address, or `-` when none. `host list` takes
+   no other argument (it ignored them before). The model is read once for
+   all rows. `host show` prints `no record under this name` where it printed
+   `not recorded (before 0.2.2)` for the last sync and the host facts of
+   a host with no record under its name: nothing tells a host enrolled
+   before the records from one whose record was lost or forgotten.
+
+8. **New device, host, user and scope names are lower case.** `device add`
+   and `rename`, `host enroll` and `host rename`, `user add` and `user rename`, and
+   `scope add` and `scope rename` (also the scope that `host rename` offers
+   to rename) refuse a name with an upper-case letter: `Names are lower
+   case: use 'alice'. Nothing was changed.` For a device or a host, a name
+   taken in another case or a generic one is refused for that reason first.
+   The name derived from the target's host name (`host enroll
+   admin@Web1.example.net`, `--local`) is lowercased silently, because host
+   names are not case-sensitive; a host already enrolled in another spelling
+   keeps that spelling; a name given with `--name` is not changed. The name a device reports to `device onboard` and `device collect
+   --register`, and the name `device discover` suggests, are lowercased the
+   same way. A name that exists with upper case keeps working as it is:
+   nothing is migrated or folded, no login changes, and the verbs that read
+   names match them as before. A rename that changes only the spelling to
+   lower case (`user rename Alice alice`, `device rename Core-SW1 core-sw1`,
+   `scope rename Lab lab`, `host rename Web1 web1`) is how an old name is
+   fixed; what follows the name (the users' scope lists, the keys and files
+   of a scope or device, the registration of a host) follows it as in any
+   rename. A user rename carries the Linux UID (item 10): on an enrolled
+   host the next sync renames the account `Alice` to `alice`, with its UID
+   and home.
+   `device import` (a registry file or a CSV, so a server can be rebuilt
+   from `device export --csv`) and `store import` load names with upper case
+   as they are and say in one line how many. `config validate`
+   warns of each such device, host, user and scope with the verb that
+   renames it (`Names:`); the warning for a user says that devices match the
+   typed login name exactly, so the rename changes what the person types at
+   the device. The superuser sees the warnings; an engineer none.
+
+9. **Host verbs: `-y`, one prompt shape, and the scope line of `host
+   rename`.** `host enroll`, `host move`, `host rename` and `host forget`
+   take `-y` as well as `--yes`, as the `device` verbs do. Their questions
+   have the shape of the device questions, an indented `  <Question>?
+   [y/N]: `; the words of the questions and the answers that count (`y` or
+   `Y` alone) do not change. When `host rename` does not rename the
+   scope `linux-<old>` (it is not offered, or another host has taken it
+   since the question), the line `Scope 'linux-<old>' keeps its name: ...`
+   is a warning, so `--yes` does not hide it. `host unenroll` removes the
+   login method from the host and the registration, `host unenroll --force`
+   removes the registration even when the host cannot be cleaned, and `host
+   forget` only drops this server's record of the host.
+
+10. **`user rename` carries the user's Linux UID.** The line of the old name
+    in `linux-uids` becomes the new name's, in place (comments, the range
+    lines and the order stay), inside the apply lock after the pre-change
+    snapshot, which holds the ledger. The command says `UID <uid> follows
+    the rename (linux-uids).` and, with enrolled hosts whose scope lists the
+    user, how many hosts rename the account at their next sync (`tacctl
+    host sync --all`). A user with no line is renamed as before. A new name
+    that already has a line keeps its number, the ledger is left alone, and
+    a warning says that hosts remove the old account and create the new one
+    with that number. If the ledger cannot be written after the rename, the
+    command says so, names the snapshot to restore and exits 1. The client
+    script, run by `host sync`, renames the account: a listed user with no
+    account here whose UID belongs to an account tacctl created under
+    another name, no longer listed, is that account renamed (`usermod -l`:
+    the login name only; the home keeps its path, the full name and the
+    `created` and `expired` lists follow). It works from the UID alone, so a
+    host that was offline, synced later, or saw the user renamed twice or
+    back ends the same, and so does a host still on an earlier UID range
+    (the account is found at the number the user had there, renamed, then
+    renumbered). A disabled user, or one kept without a login (its group
+    has no priv-lvl), is renamed too: the server writes the numbers of the
+    scope's disabled and kept users that have one in a new header line,
+    `TAC_INACTIVE_UIDS` (`name:uid` lines, left out when there is none; a
+    header without it still works), and the account stays expired under
+    its new name. A user who is logged in (processes under the UID)
+    defers the rename to the next sync, with both names left untouched; a
+    local account of the new name keeps the old account and says so; two
+    users that swapped names are no rename, and the UID check reports the
+    differences. The script never removes an account of tacctl's whose UID
+    the server has given to a listed or disabled user: it keeps it and says
+    so, which includes a new name that tacctl already created with another
+    UID (no rename: both accounts stay and the UID check reports the
+    difference). If the lists of created and expired accounts cannot be
+    rewritten, nothing is renamed. `host sync` no longer asks whether to
+    delete the home of the renamed user's old name, and `host show` lists
+    the account under Updated. The script protocol stays 6; a script written
+    by an earlier release with `config linux script` has no rename and
+    stops at the UID check until it is written again (do not pass
+    `--allow-uid-mismatch` to such a script: it would create the new name
+    at a free number and delete the old account). Until every host has
+    synced the rename, do not give the old name to a new user: that host's
+    UID check refuses the sync. The ledger has no lock of its own: a `host
+    sync` that reads it at the moment of the rename sees the file before or
+    after it. `config validate` says that the next sync renames the
+    account.
+
 ## 0.2.13 (2026-10-16)
 
 1. **The `test` workflow no longer runs on a push to `master`.** After a

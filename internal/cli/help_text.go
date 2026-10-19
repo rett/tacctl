@@ -508,11 +508,11 @@ server's own tacctl users comes with 'host enroll --local' and 'host sync'.
 
 Usage: tacctl host <subcommand> [arguments]
 
-  list                                 Show enrolled hosts
+  list [--json]                        Show enrolled hosts, with the address recorded for each
   show <name> [--all] [--json]         One enrolled host in full: connection, scope, address, host keys, sightings,
                                        notices, accounts, last sync and host facts
       --all                            (show) The acknowledged notices too
-      --json                           (show) Print JSON: every field, and --check's findings under 'check'
+      --json                           (list and show) Print JSON (show: every field, and --check's findings under 'check')
       --check                          (show) Log in read-only and compare the host with what tacctl would make it:
                                        one line per difference with the command that fixes it; exit 1 when there is one (superuser only)
   enroll <[user@]host> [options]       Install TACACS+ or RADIUS login on a host over SSH and register it
@@ -524,10 +524,10 @@ Usage: tacctl host <subcommand> [arguments]
                                        Re-enroll with the other to switch
       --scope <name>                   The host's scope (default: its registered one, else the scope covering its address)
       --server <address>               Address the host should use for this server (default: detected)
-      --name <name>                    Registry name (default: short hostname)
+      --name <name>                    Registry name (default: short hostname, lowercased; lower case, not a tacctl word)
       --port <n>, --identity <file>    SSH port and key
       --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here
-      --yes                            (enroll and move) Move a registered host to another scope even when that deletes accounts
+      -y, --yes                        (enroll and move) Move a registered host to another scope even when that deletes accounts
       --staging                        (enroll, with --scope) Provisioned off-site: the host's bench address joins the scope as a
                                        /32 (its secret and users) until the host is seen in place (tacctl scope staging)
   sync <name> | --all                  Push account adds, deletions and tier changes
@@ -550,6 +550,14 @@ Usage: tacctl host <subcommand> [arguments]
       --remove-old                     (provisioner) Last, over the new account, remove the old one; its home is moved
                                        out of reach unless --remove-home. Needs a registry target with an explicit user@
       --dry-run                        (provisioner) Print the plan and test the current login; change nothing
+  rename <old> <new>                   Give an enrolled host another name: registry line, pinned keys, record, staging
+                                       addresses and break-glass hold follow; nothing is sent to the host. When the host
+                                       is the only user of scope linux-<old>, asks whether to rename that scope too
+      -y, --yes                        (rename) Replace what an earlier host of the new name left, and rename the scope
+  forget <name>                        Drop the host's registration from this server (registry line, pinned keys,
+                                       record, staging addresses) and run nothing on the host; also what a registry
+                                       line no longer has. Refused for a held host
+      -y, --yes                        (forget) Forget the host without asking
   unenroll <name> [--force]            Remove the login method from the host (accounts and homes are kept)
       --force                          Forget the host even when the removal there failed
   default-method [tacplus|radius]      Show or set the method for hosts enrolled without --method

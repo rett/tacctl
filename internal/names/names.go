@@ -59,6 +59,35 @@ var (
 // passed the shell check and was then refused by the store; here it is refused
 // at once.
 
+// HasUpper reports whether s has an upper-case letter (ASCII; the name
+// patterns admit no other letters).
+func HasUpper(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 'A' && s[i] <= 'Z' {
+			return true
+		}
+	}
+	return false
+}
+
+// LowerLine is the refusal of a name with upper case: new device, host, user
+// and scope names are lower case (0.2.14).
+func LowerLine(name string) string {
+	return "Names are lower case: use '" + strings.ToLower(name) + "'."
+}
+
+// RequireLower is the check every path that creates or renames a device,
+// host, user or scope adds to the shape check of its name: nil for a name
+// with no upper case, else the refusal, "Names are lower case: use
+// '<lowercased>'. Nothing was changed.". The Match functions below do not
+// call it: a name that exists with upper case keeps loading and matching.
+func RequireLower(name string) error {
+	if HasUpper(name) {
+		return fail(LowerLine(name) + " Nothing was changed.")
+	}
+	return nil
+}
+
 // MatchUser reports whether s has the shape of a username: letters, digits,
 // '_' and '-'. This is the store's RE_USER; reserved names are separate.
 func MatchUser(s string) bool { return reUser.MatchString(s) }

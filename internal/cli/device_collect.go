@@ -586,7 +586,7 @@ func (c *collect) names() {
 		if r.Result != collectOK {
 			continue
 		}
-		name := r.id.Hostname
+		name := strings.ToLower(r.id.Hostname) // a new name is lower case
 		var why string
 		switch {
 		case name == "":

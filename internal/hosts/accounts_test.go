@@ -62,6 +62,118 @@ func TestParsePasswdAndRemoved(t *testing.T) {
 	}
 }
 
+// A renamed user's account is not a removed one: its number is a current
+// user's on the ledger (the script renames it), so the home is not asked
+// about. A number the ledger gives to nobody current still is.
+func TestRemovedSkipsTheAccountOfARenamedUser(t *testing.T) {
+	t.Parallel()
+	e, _ := accountsEnv(t)
+	accts := ParsePasswd(hostPasswd + "ann:x:80010:80010:ann (TACACS+):/home/ann:/bin/bash\n")
+	// ann was renamed to fred2 before the host saw it; dave's number is
+	// held by a user that is no longer current.
+	writeFile(t, e.Paths.UIDs, "# range 80000-89999\ndave:80001\nfred2:80010\nerin:80002\nann:80010\n")
+	got, err := Removed(accts, e.UIDs(), map[string]bool{"fred2": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, a := range got {
+		names = append(names, a.Name)
+	}
+	if strings.Join(names, ",") != "dave,erin" {
+		t.Errorf("removed %q", names)
+	}
+}
+
+// A disabled (inactive) user is current too: the account that holds its
+// number under another name is the one the script renames, so it is not
+// asked about either (the caller puts req.Inactive in current).
+func TestRemovedSkipsTheAccountOfARenamedDisabledUser(t *testing.T) {
+	t.Parallel()
+	e, _ := accountsEnv(t)
+	accts := ParsePasswd(hostPasswd + "ann:x:80010:80010:ann (TACACS+):/home/ann:/bin/bash\n")
+	writeFile(t, e.Paths.UIDs, "# range 80000-89999\ndave:80001\ncarol:80010\nerin:80002\nann:80010\n")
+	for _, tc := range []struct {
+		current map[string]bool
+		want    string
+	}{
+		{map[string]bool{"carol": true}, "dave,erin"},
+		{map[string]bool{}, "dave,erin,ann"},
+	} {
+		got, err := Removed(accts, e.UIDs(), tc.current)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, a := range got {
+			names = append(names, a.Name)
+		}
+		if strings.Join(names, ",") != tc.want {
+			t.Errorf("current %v: removed %q, want %q", tc.current, names, tc.want)
+		}
+	}
+}
+
+// TAC_INACTIVE_UIDS names the inactive users that have a number, without
+// giving any a new one, and is left out when there is none.
+func TestWriteScriptInactiveUIDs(t *testing.T) {
+	e, _, _ := testEnv(t)
+	out := t.TempDir() + "/x.sh"
+	writeFile(t, e.Paths.UIDs, "# range 80000-89999\nalice:80000\nbob:80007\nlow:500\n")
+	req := ScriptRequest{Scope: "lab", Server: "192.0.2.10", Method: Radius, Output: out, Temp: true,
+		Secret: "0123456789abcdef0123456789abcdef", Rows: []string{"alice|15"},
+		Inactive: []string{"bob", "newbie", "low", "Bad", "bob"}}
+	if _, err := e.WriteScript(req); err != nil {
+		t.Fatal(err)
+	}
+	head := strings.SplitN(readFile(t, out), "# --- tacctl", 2)[0]
+	if !strings.Contains(head, "TAC_INACTIVE=$'bob\\nnewbie\\nlow'\nTAC_INACTIVE_UIDS=bob:80007\nTAC_REMOVE_HOMES=") {
+		t.Errorf("header\n%s", head)
+	}
+	if got := readFile(t, e.Paths.UIDs); strings.Contains(got, "newbie") {
+		t.Errorf("a disabled user was given a number:\n%s", got)
+	}
+	// None with a number: no variable.
+	req.Inactive = []string{"newbie"}
+	if _, err := e.WriteScript(req); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.SplitN(readFile(t, out), "# --- tacctl", 2)[0], "TAC_INACTIVE_UIDS") {
+		t.Error("TAC_INACTIVE_UIDS with no number")
+	}
+}
+
+// A kept user (its group has no priv-lvl) has an expired account on the
+// hosts like a disabled one: its number is sent too, and the account that
+// holds it under the old name is the one the script renames. The user is a
+// row of the linux-users view, so the caller's current set has it.
+func TestWriteScriptInactiveUIDsOfAKeptUser(t *testing.T) {
+	e, _, _ := testEnv(t)
+	out := t.TempDir() + "/x.sh"
+	writeFile(t, e.Paths.UIDs, "# range 80000-89999\nalice:80000\nbob:80007\nnopriv:80009\nlow:500\n")
+	req := ScriptRequest{Scope: "lab", Server: "192.0.2.10", Method: Radius, Output: out, Temp: true,
+		Secret: "0123456789abcdef0123456789abcdef", Rows: []string{"alice|15", "nopriv|", "low|1"},
+		Inactive: []string{"bob"}}
+	if _, err := e.WriteScript(req); err != nil {
+		t.Fatal(err)
+	}
+	head := strings.SplitN(readFile(t, out), "# --- tacctl", 2)[0]
+	if !strings.Contains(head, "TAC_INACTIVE=$'bob\\nnopriv\\nlow'\nTAC_INACTIVE_UIDS=$'bob:80007\\nnopriv:80009'\nTAC_REMOVE_HOMES=") {
+		t.Errorf("header\n%s", head)
+	}
+
+	accts := ParsePasswd(hostPasswd + "ann:x:80009:80009:ann (TACACS+):/home/ann:/bin/bash\n")
+	got, err := Removed(accts, e.UIDs(), map[string]bool{"alice": true, "nopriv": true, "low": true, "bob": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range got {
+		if a.Name == "ann" {
+			t.Errorf("the account of a renamed kept user is removed: %+v", got)
+		}
+	}
+}
+
 func TestHomesToDelete(t *testing.T) {
 	e, f := accountsEnv(t)
 	current := map[string]bool{"fred": true}
@@ -200,6 +312,24 @@ func TestScriptRangeAndProtocol(t *testing.T) {
 	}
 	if strings.Contains(Script{}.Header(), "TAC_LOCAL") {
 		t.Error("TAC_LOCAL in a host's header")
+	}
+}
+
+// The line of a renamed account lists the new name under Updated, and
+// neither name as created or removed.
+func TestAccountChangesTakeARename(t *testing.T) {
+	t.Parallel()
+	var c AccountChanges
+	for _, l := range []string{
+		"[INFO] 'Alice' is now 'alice' (renamed; UID 80000; home kept at /home/Alice)",
+		"[INFO] 'alice': primary group is now tac-users (was GID 80000).",
+		"[INFO] 'bob' is now 'bobby' (renamed; UID 80001; home kept at none)",
+		"[INFO] Accounts: 2 managed by tacctl here.",
+	} {
+		c.take(l)
+	}
+	if got := c; len(got.Created) != 0 || len(got.Removed) != 0 || len(got.Updated) != 2 || got.Updated[0] != "alice" || got.Updated[1] != "bobby" {
+		t.Errorf("changes %+v", got)
 	}
 }
 

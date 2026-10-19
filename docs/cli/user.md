@@ -13,8 +13,9 @@ user show <name>
 
 user add <name> <group>
 
-    Add a new user; lands in default scope. Reserved names `root` and `tacquito` are rejected (they
-    collide with OS accounts tacquito resolves locally).
+    Add a new user; lands in default scope. The name is lower case (`Names are lower case: use
+    'alice'.`): lower-case letters, digits, `_` and `-`. Reserved names `root` and `tacquito` are
+    rejected (they collide with OS accounts tacquito resolves locally).
 
 user add <name> <group> --scopes <name>[,name...]
 
@@ -50,7 +51,17 @@ user enable <name>
 
 user rename <old> <new>
 
-    Rename a user
+    Rename a user; the new name is lower case. Changing only the spelling (`user rename Alice
+    alice`) fixes a name from before. Devices match the typed login name exactly, so the rename
+    changes what the person types at the device. The user keeps the Linux UID: the line of the old
+    name in `linux-uids` becomes the new name's, in place, and the command says `UID <uid> follows
+    the rename (linux-uids).` With enrolled hosts that list the user it also says that the next
+    `host sync` renames the account there by its UID, home kept where it is. A user with no line is
+    renamed as before. A new name that already has a line keeps its own number, the ledger is left
+    alone and a warning says that hosts remove the old account and create the new one. If the
+    ledger cannot be written after the rename, the command names the snapshot to restore and
+    exits 1. The ledger has no lock of its own: a `host sync` reading it at that moment sees the
+    file before or after the rename
 
 user move <name> <group>
 

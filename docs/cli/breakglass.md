@@ -50,8 +50,13 @@ is both an enrolled host and a registered device is refused as ambiguous, and
 so are this server's own host (`host enroll --local`), a loopback address, a
 listener's address, a host with no recorded address (its ssh target is not an
 address either; `host sync` records it), a host at the address of a
-registered device and a host no scope covers. `host sync`, `host show --check`, the
-other `host` verbs that log in over ssh and `host unenroll` are refused for a
-held host until it is released; see [`host`](host.md).
+registered device and a host no scope covers. `host sync`, `host show
+--check`, the other `host` verbs that log in over ssh, `host unenroll` and
+`host forget` are refused for a held host until it is released; see
+[`host`](host.md). A hold follows
+`host rename`: the record moves to the host's new name and stays on the same
+address, and the rendered files, which name the host in a comment, are
+rendered again (no backend is restarted). A hold recorded under the new name
+refuses the rename.
 
 See [Holding break-glass](../devices/break-glass.md#holding-break-glass) for what a hold does and when to use it. `scope breakglass <scope>` records the *names* of a scope's local accounts, which a hold makes usable.

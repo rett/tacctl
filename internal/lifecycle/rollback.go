@@ -60,15 +60,17 @@ package lifecycle
 //	sudoers drop-ins       the per-tier drop-in and the one 'config sudoers
 //	                       install <group>' wrote carry the password cache's
 //	                       Cmnd_Alias and env_keep line, and the tiers one
-//	                       the rows of 'device config', 'device snmp' and
-//	                       'console forget'. Sudo accepts both, but 0.2.3's
-//	                       upgrade compares the tiers file with its own text
-//	                       and its group drop-in is never refreshed: a file
+//	                       the rows of 'device config', 'device snmp',
+//	                       'console forget' and 'host list --json'. Sudo
+//	                       accepts both, but 0.2.3's upgrade compares the
+//	                       tiers file with its own text and its group
+//	                       drop-in is never refreshed: a file
 //	                       that is exactly this release's text, or the one
-//	                       0.2.4 to 0.2.8 wrote (tier.Sudoers028, Sudoers027,
-//	                       GroupSudoers026, GroupSudoers027, GroupSudoers028), is rewritten
-//	                       with 0.2.3's (tier.Sudoers023, GroupSudoers023,
-//	                       through 'visudo -cf'); any other file is left.
+//	                       0.2.4 to 0.2.13 wrote (tier.Sudoers0213, Sudoers028,
+//	                       Sudoers027, GroupSudoers026, GroupSudoers027,
+//	                       GroupSudoers028), is rewritten with 0.2.3's
+//	                       (tier.Sudoers023, GroupSudoers023, through
+//	                       'visudo -cf'); any other file is left.
 //	hosts                  0.2.4 changed nothing on the enrolled Linux hosts;
 //	                       '--hosts' is accepted and says so.
 //
@@ -83,7 +85,7 @@ package lifecycle
 //
 // The rollback to 0.2.9 (0.2.10 changed no format 0.2.9 reads strictly except
 // one family of settings, the NETCONF service setting of a scope, and one
-// per-device key; it changed no sudoers text):
+// per-device key):
 //
 //	tacctl.yaml            0.2.9's schema lacks device.apply.transport and
 //	                       the netconf_scope.<scope>.* keys (conf.Added0210):
@@ -95,8 +97,8 @@ package lifecycle
 //	                       (the transport an apply wrote through): 0.2.9
 //	                       decodes the file without it (unknown JSON fields
 //	                       are ignored); left, listed.
-//	sudoers drop-ins       0.2.10 changed none: the drop-ins are the text
-//	                       0.2.9 writes and are left.
+//	sudoers drop-ins       no step: sudo accepts them as they are; the tiers
+//	                       file is left, and 0.2.9's upgrade rewrites it.
 //
 // console.yaml, the SNMP credentials, the blocks, the apply state directory
 // and the hosts need no conversion (0.2.10 changed none of them).
@@ -610,7 +612,7 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 	tiers := sudoersPlan{label: "the per-tier drop-in", file: pt.TierSudoersFile, state: "absent"}
 	if b, err := os.ReadFile(pt.TierSudoersFile); err == nil {
 		switch got := string(b); {
-		case got == tier.Sudoers(), got == tier.Sudoers028(), got == tier.Sudoers027():
+		case got == tier.Sudoers(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
 			tiers.state, tiers.body = "rewrite", tier.Sudoers023()
 		case got == tier.Sudoers023():
 			tiers.state = "done"
@@ -650,7 +652,7 @@ func (p *RollbackPlan) sudoersStep() RollbackStep {
 		switch d.state {
 		case "rewrite":
 			s.Lines = append(s.Lines, "rewrite "+d.file+" ("+d.label+": 0.2.3's text, after 'visudo -cf'; it loses the TACCTL_ASKPASS alias and env_keep line"+
-				map[bool]string{true: " and the rows of 'device config', 'device snmp' and 'console forget'", false: ""}[d.label == "the per-tier drop-in"]+")")
+				map[bool]string{true: " and the rows of 'device config', 'device snmp', 'console forget' and 'host list --json'", false: ""}[d.label == "the per-tier drop-in"]+")")
 			if p.in.InstallSudoers == nil {
 				s.Lines[len(s.Lines)-1] += " [not rewritten: no installer]"
 			}

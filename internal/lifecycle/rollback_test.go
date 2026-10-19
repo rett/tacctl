@@ -323,7 +323,7 @@ func TestPlanRollbackFull(t *testing.T) {
 		"remove the config_syntax key of core-sw1 (modern)",
 		"unknown key 'config_syntax'",
 		"put back the sudoers drop-ins 0.2.3 writes",
-		"rewrite " + s.p.TierSudoersFile + " (the per-tier drop-in: 0.2.3's text, after 'visudo -cf'; it loses the TACCTL_ASKPASS alias and env_keep line and the rows of 'device config', 'device snmp' and 'console forget')",
+		"rewrite " + s.p.TierSudoersFile + " (the per-tier drop-in: 0.2.3's text, after 'visudo -cf'; it loses the TACCTL_ASKPASS alias and env_keep line and the rows of 'device config', 'device snmp', 'console forget' and 'host list --json')",
 		"rewrite " + s.p.SudoersFile + " (the drop-in of group ops: 0.2.3's text",
 		"leave " + filepath.Join(s.p.SNMPDir, "devices"),
 		"1 file (mode 0600, kept): core-sw1",
@@ -572,6 +572,17 @@ func TestRollbackSudoersCases(t *testing.T) {
 	}
 	if got := s.snapshotOf(); got[s.p.TierSudoersFile] != tier.Sudoers023() || got[s.p.SudoersFile] != tier.GroupSudoers023("ops") {
 		t.Errorf("the 0.2.8 drop-ins were not put back as 0.2.3's:\n%s\n%s", got[s.p.TierSudoersFile], got[s.p.SudoersFile])
+	}
+
+	// The text 0.2.9 to 0.2.13 wrote (no engineer 'host list --json').
+	s = newRBSandbox(t)
+	s.write(s.p.TierSudoersFile, tier.Sudoers0213(), 0o640)
+	p, _ = PlanRollback(s.in)
+	if _, err := ApplyRollback(p); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.snapshotOf(); got[s.p.TierSudoersFile] != tier.Sudoers023() {
+		t.Errorf("the 0.2.13 drop-in was not put back as 0.2.3's:\n%s", got[s.p.TierSudoersFile])
 	}
 
 	// The current text (the new env_keep line) is put back as 0.2.3's too.

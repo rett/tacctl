@@ -349,6 +349,52 @@ func (s *Seen) KeyScanOf(name string) (*KeyScan, bool) {
 	return k, ok
 }
 
+// HasKeyScanFor reports whether the cache keeps a key re-scan under name or
+// under newName (the two a rename touches).
+func (s *Seen) HasKeyScanFor(names ...string) bool {
+	if s == nil {
+		return false
+	}
+	for _, n := range names {
+		if _, ok := s.HostKeys[strings.ToLower(n)]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// RenameKeyScan moves the key re-scan of the entry oldName to newName, over
+// one the cache keeps for newName; a cache with none for oldName loses the
+// one of newName (a result for another entry of that name). The keys are
+// lower case, so a change of spelling moves nothing. It reports whether the
+// cache changed.
+func (s *Seen) RenameKeyScan(oldName, newName string) bool {
+	from, to := strings.ToLower(oldName), strings.ToLower(newName)
+	if from == to {
+		return false
+	}
+	k, hadOld := s.HostKeys[from]
+	_, hadNew := s.HostKeys[to]
+	delete(s.HostKeys, from)
+	delete(s.HostKeys, to)
+	if hadOld {
+		s.HostKeys[to] = k
+	}
+	return hadOld || hadNew
+}
+
+// ForgetKeyScan drops the key re-scan kept for the entry called name (the
+// keys are lower case); it reports whether the cache changed.
+func (s *Seen) ForgetKeyScan(name string) bool {
+	if s == nil {
+		return false
+	}
+	k := strings.ToLower(name)
+	_, had := s.HostKeys[k]
+	delete(s.HostKeys, k)
+	return had
+}
+
 // RecordKeyScan keeps the result of a host-key re-scan of an entry: the
 // keys offered, or none (unreachable). Nothing is pinned here: a scan never
 // changes devices.yaml.

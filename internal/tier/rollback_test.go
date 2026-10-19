@@ -110,7 +110,7 @@ func TestSudoers028(t *testing.T) {
 		}
 	}
 	// nothing but the cache's alias differs
-	if strings.Replace(cur, AskpassKeep(AskpassAlias), askpassKeep028(AskpassAlias), 1) != old {
+	if strings.Replace(Sudoers0213(), AskpassKeep(AskpassAlias), askpassKeep028(AskpassAlias), 1) != old {
 		t.Errorf("Sudoers028 differs from the current text in more than the cache's alias:\n%s", old)
 	}
 	text := GroupSudoers028("tac-admins")
@@ -134,5 +134,31 @@ func TestSudoers028(t *testing.T) {
 	}
 	if string(res.Stdout) != old {
 		t.Error("Sudoers028 differs from the golden file of the 0.2.8 tag")
+	}
+}
+
+// The texts 0.2.9 to 0.2.13 wrote are the current one without the engineer's
+// 'host list --json' item (0.2.14); the rollback knows them as an older one.
+func TestSudoers0213(t *testing.T) {
+	old, cur := Sudoers0213(), Sudoers()
+	if old == cur || strings.Contains(old, "host list --json") || !strings.Contains(cur, "host list --json") {
+		t.Fatalf("Sudoers0213 is not the current text without 'host list --json':\n%s", old)
+	}
+	if !strings.Contains(old, Binary+" host list,") || !strings.Contains(cur, Binary+" host list, "+Binary+" host list --json,") {
+		t.Error("the engineer's 'host list' item is not what is added to")
+	}
+	r := execx.Real{}
+	if _, err := r.LookPath("git"); err != nil {
+		t.Skip("git is not installed, so the 0.2.13 tag cannot be read")
+	}
+	if res, err := r.Run(context.Background(), execx.Cmd{Name: "git", Args: []string{"rev-parse", "-q", "--verify", "0.2.13^{commit}"}}); err != nil || res.Code != 0 {
+		t.Skip("the 0.2.13 tag is not in this repository (CI must fetch tags: git fetch --tags)")
+	}
+	res, err := r.Run(context.Background(), execx.Cmd{Name: "git", Args: []string{"show", "0.2.13:internal/tier/testdata/sudoers.tiers"}})
+	if err != nil || res.Code != 0 {
+		t.Fatalf("cannot read the 0.2.13 tag's golden file: %v %s", err, res.Stderr)
+	}
+	if string(res.Stdout) != old {
+		t.Error("Sudoers0213 differs from the golden file of the 0.2.13 tag")
 	}
 }

@@ -23,6 +23,13 @@
 #                       as a host itself ('host enroll --local'): the engineer
 #                       tier's group, no %tac-engineer sudoers line here, and
 #                       sshd's drop-ins under 'sshd -T'
+#              lifecycle enroll with --method tacplus, then one host's life on the
+#                       real tacquito and pam_tacplus: 'host rename' (with its own
+#                       scope), 'host sync', a break-glass hold (TACACS+ logins
+#                       and sudo denied, the local administrator and 'host sync'
+#                       as the hold leaves them), release, 'user rename' (the
+#                       account keeps its UID), 'host forget' (the client is left
+#                       as it was), enroll again, unenroll
 #   --server   ubuntu-noble (default; FreeRADIUS 3.2.x and tacquito) or
 #              almalinux-9 (FreeRADIUS 3.0.27; radius and probe only)
 #   --keep     leave both containers (thc-server, thc-client-<client>)
@@ -36,8 +43,8 @@
 # (bin/tacctl.sh installs Go, verified, and builds /usr/local/bin/tacctl).
 # shellcheck disable=SC2016  # the single-quoted scripts run inside the containers
 set -uo pipefail
-CLIENT="${1:?usage: run.sh <client> <radius|tacplus|switch|probe|rotate|server> [--server <distro>] [--keep]}"
-CYCLE="${2:?usage: run.sh <client> <radius|tacplus|switch|probe|rotate|server> [--server <distro>] [--keep]}"
+CLIENT="${1:?usage: run.sh <client> <radius|tacplus|switch|probe|rotate|server|lifecycle> [--server <distro>] [--keep]}"
+CYCLE="${2:?usage: run.sh <client> <radius|tacplus|switch|probe|rotate|server|lifecycle> [--server <distro>] [--keep]}"
 shift 2
 SERVER="ubuntu-noble"; KEEP=""
 while [[ $# -gt 0 ]]; do
@@ -64,7 +71,7 @@ case "$CLIENT" in
 esac
 case "$CYCLE" in
     radius|probe|rotate) WANT=radius ;;
-    tacplus|server) WANT=tacplus ;;
+    tacplus|server|lifecycle) WANT=tacplus ;;
     switch) WANT=both ;;
     *) echo "unknown cycle: ${CYCLE}" >&2; exit 2 ;;
 esac
@@ -444,7 +451,7 @@ where_secret() {
         check "[$m] no pam_radius_auth line and no RADIUS server file" c bash -c '! grep -rq pam_radius /etc/pam.d && [[ ! -e /etc/tacctl-pam_radius.conf ]]'
     fi
     check "[$m] the host records its method" c grep -qx "$m" /var/lib/tacctl-client/method
-    expect "[$m] the registry and 'host list' show the method" "c1 +root@${CIP} +linux-c1 +${SIP} +${m} " "$(tacctl host list)"
+    expect "[$m] the registry and 'host list' show the method" "c1 +root@${CIP} +${CIP} +linux-c1 +${SIP} +${m} " "$(tacctl host list)"
     expect "[$m] the host's scope serves the method's protocol only" "protocols: $([[ $m == radius ]] && echo radius || echo tacacs)\$" "$(tacctl scope protocols linux-c1)"
 }
 
@@ -455,7 +462,7 @@ enroll() { # <method> [extra args]
     return $rc
 }
 
-FIRST="$CYCLE"; [[ "$CYCLE" == "switch" ]] && FIRST="tacplus"; [[ "$CYCLE" == "rotate" ]] && FIRST="radius"
+FIRST="$CYCLE"; [[ "$CYCLE" == "switch" || "$CYCLE" == "lifecycle" ]] && FIRST="tacplus"; [[ "$CYCLE" == "rotate" ]] && FIRST="radius"
 
 section "before: snapshot, then enroll with --method ${FIRST}"
 snapshot > "${WORK}/before"
@@ -556,6 +563,140 @@ if [[ "$CYCLE" == "rotate" ]]; then
     else
         bad "the host differs from before the enroll:"; cat "${WORK}/diff"
     fi
+    echo
+    echo "${CLIENT} ${CYCLE} (server ${SERVER}): ${pass} passed, ${fail} failed"
+    [[ $fail -eq 0 ]]
+    exit $?
+fi
+
+# --- lifecycle: one host's life on the real tacquito ------------------------------
+# The host enrolled above as c1 (--method tacplus, its own scope linux-c1) is
+# renamed (and its scope with it), held for break-glass and released, its user
+# renamed (the account keeps its UID), forgotten (the client is not touched),
+# enrolled again and unenrolled. Passwords are the network ones; ladm is the
+# client's local administrator.
+if [[ "$CYCLE" == "lifecycle" ]]; then
+    LC_PW='Lcuser-Net-Pw-1'; HN="c2"
+    # 'breakglass hold' asks for the name typed back, at a terminal: script
+    # gives tacctl one. The output goes to ${WORK}/hold.out.
+    hold_tty() { # <typed> <args...> -> the command's status
+        local typed="$1"; shift
+        printf '%s\n' "$typed" | podman exec -i "$S" script -qec "tacctl $*" /dev/null 2>&1 | sed 's/\x1b\[[0-9;]*m//g; s/\r$//' > "${WORK}/hold.out"
+        return "${PIPESTATUS[1]}"
+    }
+    accepted() { podman logs "$C" 2>&1 | grep -c 'Accepted publickey for root'; }
+
+    section "lifecycle 1: a user in the host's scope; login and sudo through TACACS+"
+    lchash=$(s python3 -c 'import bcrypt; print(bcrypt.hashpw(b"Lcuser-Net-Pw-1", bcrypt.gensalt(rounds=10)).decode())')
+    tacctl user add lcuser superuser --hash "$lchash" --scopes linux-c1 > /dev/null; check "user add lcuser in scope linux-c1 exits 0" test $? -eq 0
+    tacctl config render > /dev/null 2>&1
+    tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
+    check "host sync c1 creates lcuser's account" bash -c "[[ $rc == 0 ]] && podman exec '$C' id lcuser"
+    LC_UID=$(c id -u lcuser)
+    check "lcuser's UID ${LC_UID} is in 80000-89999" test "${LC_UID:-0}" -ge 80000 -a "${LC_UID:-0}" -le 89999
+    expect "lcuser logs in over SSH with the network password" '^lcuser$' "$(login lcuser "$LC_PW" 'id -un')"
+    expect "lcuser: sudo with the network password gives root" '^0$' "$(login lcuser "$LC_PW" "printf '%s\n' '$LC_PW' | sudo -S -k -p '' id -u")"
+    expect "the sudo PAM service authenticates lcuser" '^auth +rc=0 ' "$(c "$PY" /check/pamprobe.py sudo lcuser "$LC_PW" auth)"
+    expect "ladm (local administrator) logs in with the local password" '^ladm$' "$(login ladm "$L_PW" 'id -un')"
+
+    section "lifecycle 2: host rename c1 -> ${HN}, with its own scope"
+    tacctl host rename c1 "$HN" --yes > "${WORK}/rename.out"; rc=$?
+    sed 's/^/    | /' "${WORK}/rename.out" | grep -E 'INFO|WARN|ERROR'
+    check "host rename c1 ${HN} --yes exits 0" test $rc -eq 0
+    expect "host list names the host ${HN} in scope linux-${HN}" "${HN} +root@${CIP} +${CIP} +linux-${HN} " "$(tacctl host list)"
+    check "host list has no c1 any more" bash -c "! podman exec '$S' tacctl host list 2>&1 | grep -qE '(^| )c1 '"
+    expect "scope linux-${HN} exists" "linux-${HN}" "$(tacctl scope list)"
+    check "scope linux-c1 is gone" bash -c "! podman exec '$S' tacctl scope list 2>&1 | grep -q 'linux-c1'"
+    expect "the pin follows the name in the device registry" "^  ${HN}:" "$(s cat /etc/tacctl/devices.yaml)"
+    check "no pin is left under c1" bash -c "! podman exec '$S' grep -q '^  c1:' /etc/tacctl/devices.yaml"
+    expect "after the rename lcuser still logs in (scope and secret moved together)" '^lcuser$' "$(login lcuser "$LC_PW" 'id -un')"
+    expect "after the rename lcuser: sudo still gives root" '^0$' "$(login lcuser "$LC_PW" "printf '%s\n' '$LC_PW' | sudo -S -k -p '' id -u")"
+    tacctl host sync "$HN" > "${WORK}/sync.out"; rc=$?
+    check "host sync ${HN} exits 0" test $rc -eq 0
+    check "host sync ${HN} has no 'no host key is pinned' warning (the pin followed the name)" bash -c "! grep -qi 'no host key is pinned' '${WORK}/sync.out'"
+    expect "host sync ${HN} says it synced" "${HN}: synced" "$(cat "${WORK}/sync.out")"
+    expect "lcuser logs in after the sync" '^lcuser$' "$(login lcuser "$LC_PW" 'id -un')"
+
+    section "lifecycle 3: break-glass hold on ${HN}: TACACS+ logins and sudo denied, local administrator works"
+    hold_tty "$HN" breakglass hold "$HN" --reason lifecycle; rc=$?
+    sed 's/^/    | /' "${WORK}/hold.out" | grep -vE '^\s+\| *$' | tail -8
+    check "breakglass hold ${HN} --reason lifecycle exits 0" test $rc -eq 0
+    expect "breakglass list names the hold and its reason" "${HN}.*lifecycle" "$(tacctl breakglass list)"
+    expect "host list shows BREAK-GLASS for ${HN}" 'BREAK-GLASS' "$(tacctl host list)"
+    sleep 2
+    out=$(login lcuser "$LC_PW" 'id -un'); t=$(secs "$out")
+    expect "held: lcuser is denied over SSH (no answer for the address)" 'rc=255' "$out"
+    note "held: lcuser's refusal took ${t}s"
+    out=$(c "$PY" /check/pamprobe.py sudo lcuser "$LC_PW" auth)
+    if grep -q '^auth +rc=0 ' <<< "$out"; then bad "held: the sudo PAM service authenticated lcuser: $(tr '\n' ' ' <<< "$out")"; else ok "held: the sudo PAM service does not authenticate lcuser ($(tr '\n' ' ' <<< "$out" | cut -c1-60))"; fi
+    out=$(login lcuser "$LC_PW" "printf '%s\n' '$LC_PW' | sudo -S -k -p '' id -u")
+    if grep -q '^0$' <<< "$out"; then bad "held: lcuser got root through sudo"; else ok "held: lcuser gets no sudo"; fi
+    out=$(login ladm "$L_PW" 'id -un'); t=$(secs "$out")
+    expect "held: ladm (the local administrator) still logs in locally" '^ladm$' "$out"
+    check "held: ladm is not delayed (${t}s)" test "${t:-99}" -le 5
+    expect "held: ladm can sudo with the local password" '^0$' "$(login ladm "$L_PW" "printf '%s\n' '$L_PW' | sudo -S -k -p '' id -u")"
+    expect "held: carl (a local account) logs in locally" '^carl$' "$(login carl "$CL_PW" 'id -un')"
+    acc0=$(accepted)
+    tacctl host sync "$HN" > "${WORK}/sync.out"; rc=$?
+    sed 's/^/    | /' "${WORK}/sync.out" | head -4
+    check "held: host sync ${HN} is refused (exit non-zero)" test $rc -ne 0
+    expect "held: the refusal names the hold" 'break-glass|held' "$(cat "${WORK}/sync.out")"
+    expect "held: and the release command" "tacctl breakglass release ${HN}" "$(cat "${WORK}/sync.out")"
+    check "held: no ssh login was made for the sync (the client's sshd saw none)" test "$(accepted)" -eq "$acc0"
+
+    tacctl breakglass release "$HN" > "${WORK}/release.out"; rc=$?
+    sed 's/^/    | /' "${WORK}/release.out" | grep -E 'INFO|WARN|ERROR' | head -4
+    check "breakglass release ${HN} exits 0" test $rc -eq 0
+    check "host list no longer shows BREAK-GLASS" bash -c "! podman exec '$S' tacctl host list 2>&1 | grep -q BREAK-GLASS"
+    sleep 2
+    expect "released: lcuser logs in again" '^lcuser$' "$(login lcuser "$LC_PW" 'id -un')"
+    expect "released: lcuser: sudo gives root again" '^0$' "$(login lcuser "$LC_PW" "printf '%s\n' '$LC_PW' | sudo -S -k -p '' id -u")"
+    tacctl host sync "$HN" > "${WORK}/sync.out"; rc=$?
+    check "released: host sync ${HN} works again" test $rc -eq 0
+
+    section "lifecycle 4: user rename lcuser -> lcuser2 carries the UID"
+    tacctl user rename lcuser lcuser2 > "${WORK}/urename.out"; rc=$?
+    sed 's/^/    | /' "${WORK}/urename.out" | grep -E 'INFO|WARN|ERROR' | head -6
+    check "user rename lcuser lcuser2 exits 0" test $rc -eq 0
+    expect "the ledger line moved: lcuser2 has the number lcuser had" "^lcuser2:${LC_UID}\$" "$(s cat /etc/tacctl/linux-uids)"
+    check "and no ledger line is left for lcuser" bash -c "! podman exec '$S' grep -q '^lcuser:' /etc/tacctl/linux-uids"
+    tacctl host sync "$HN" > "${WORK}/sync.out"; rc=$?
+    sed 's/^/    | /' "${WORK}/sync.out" | grep -E 'INFO|WARN|ERROR' | head -8
+    check "host sync ${HN} exits 0" test $rc -eq 0
+    expect "the sync says the account is now lcuser2" "'lcuser' is now 'lcuser2'" "$(cat "${WORK}/sync.out")"
+    check "the account lcuser is gone and lcuser2 has the same UID ${LC_UID}" bash -c "! podman exec '$C' getent passwd lcuser > /dev/null && [[ \$(podman exec '$C' id -u lcuser2) == '${LC_UID}' ]]"
+    check "lcuser2's home is still /home/lcuser, owned by lcuser2" c bash -c "[[ \$(getent passwd lcuser2 | cut -d: -f6) == /home/lcuser && \$(stat -c %U /home/lcuser) == lcuser2 ]]"
+    expect "lcuser2 logs in over SSH with the user's network password" '^lcuser2$' "$(login lcuser2 "$LC_PW" 'id -un')"
+    expect "lcuser2: sudo gives root" '^0$' "$(login lcuser2 "$LC_PW" "printf '%s\n' '$LC_PW' | sudo -S -k -p '' id -u")"
+    expect "the old name lcuser is refused" 'rc=255' "$(login lcuser "$LC_PW" true)"
+
+    section "lifecycle 5: host forget ${HN} (local only), enroll again, unenroll"
+    tacctl host forget "$HN" --yes > "${WORK}/forget.out"; rc=$?
+    sed 's/^/    | /' "${WORK}/forget.out" | grep -E 'INFO|WARN|ERROR' | head -8
+    check "host forget ${HN} --yes exits 0" test $rc -eq 0
+    check "the registry has no host left" bash -c "[[ -z \"\$(podman exec '$S' cat /etc/tacctl/linux-hosts)\" ]]"
+    check "host list shows no ${HN}" bash -c "! podman exec '$S' tacctl host list 2>&1 | grep -q '${HN}'"
+    check "no pin and no record of ${HN} on the server" bash -c "! podman exec '$S' grep -q '^  ${HN}:' /etc/tacctl/devices.yaml && ! podman exec '$S' test -e /etc/tacctl/hosts/${HN}.json"
+    check "the client is untouched: its PAM files, method file and the account are still there" c bash -c 'test -f /etc/pam.d/tacctl-auth && test -f /var/lib/tacctl-client/method && getent passwd lcuser2 > /dev/null'
+    expect "the client still answers lcuser2's login through the server" '^lcuser2$' "$(login lcuser2 "$LC_PW" 'id -un')"
+    tacctl host enroll "root@${CIP}" --name "$HN" --method tacplus > "${WORK}/reenroll.out"; rc=$?
+    sed 's/^/    | /' "${WORK}/reenroll.out" | grep -E 'INFO|WARN|ERROR' | head -8
+    check "host enroll at the same address again exits 0" test $rc -eq 0
+    check "and it is no duplicate" bash -c "! grep -qiE 'duplicate|already (belongs|enrolled)' '${WORK}/reenroll.out'"
+    expect "host list has ${HN} again" "${HN} +root@${CIP} " "$(tacctl host list)"
+    expect "lcuser2 still logs in" '^lcuser2$' "$(login lcuser2 "$LC_PW" 'id -un')"
+    tacctl host unenroll "$HN" > "${WORK}/unenroll.out"; rc=$?
+    sed 's/^/    | /' "${WORK}/unenroll.out" | grep -E 'INFO|WARN|ERROR' | head -6
+    check "host unenroll ${HN} exits 0" test $rc -eq 0
+    snapshot > "${WORK}/after"
+    if diff "${WORK}/before" "${WORK}/after" > "${WORK}/diff"; then
+        ok "PAM files, sudoers and module directory are as before the enroll"
+    else
+        bad "the host differs from before the enroll:"; cat "${WORK}/diff"
+    fi
+    check "the registry is empty again" bash -c "[[ -z \"\$(podman exec '$S' cat /etc/tacctl/linux-hosts)\" ]]"
+    expect "lcuser2 can no longer log in" 'rc=255' "$(login lcuser2 "$LC_PW" true)"
+    expect "ladm still logs in" '^ladm$' "$(login ladm "$L_PW" 'id -un')"
     echo
     echo "${CLIENT} ${CYCLE} (server ${SERVER}): ${pass} passed, ${fail} failed"
     [[ $fail -eq 0 ]]
