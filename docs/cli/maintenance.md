@@ -73,8 +73,9 @@ TACACS+ authentication lines read `accepting user [<user>] from [<address>] usin
 backup list                    Show snapshots (newest first), then old-style backups
 backup diff [timestamp]        Diff store.yaml and tacctl.yaml against a snapshot (default: most
                                recent)
-backup restore <ts> [--legacy] Restore a snapshot (with confirmation); --legacy for an old-style
-      backup
+backup restore <ts> [--legacy|--keep-uids]
+                               Restore a snapshot (with confirmation); --legacy for an old-style
+                               backup; --keep-uids leaves the UID ledger as it is
 ```
 
 A backup is a snapshot of the canonical files, `/etc/tacctl/backups/<timestamp>/{store.yaml,tacctl.yaml,manifest}`, taken automatically before every change that would alter them (nothing is added when they already equal the newest snapshot). The manifest records `rendered.json` and the tacctl version. The newest 30 snapshots are kept. Snapshots hold shared secrets and password hashes: the directory is `0700`, the files `0600`, and `backup diff` and `backup restore` are superuser-only.
@@ -136,6 +137,21 @@ step fails, the rest of the restore stands and the backends are restarted, and
 two warnings name the error, the snapshot of the state from before the restore
 and the commands that undo the restore (`backup restore` of that snapshot) or
 try the host files again (`backup restore` of this one).
+
+`backup restore <ts> --keep-uids` leaves the UID ledger (`linux-uids`) as it
+is; the registry, the records and `staging` come back as above. Use it when
+the snapshot is wanted for its users, groups, scopes or devices and the hosts
+have synced since: the live ledger is the one the hosts agree with. In place
+of the list of users whose number the restore would drop or change, the note
+before the question, and again after the restore, is one line: the ledger is
+kept, and the restored users keep the numbers they have now. A user the
+snapshot brings back who has no line in the live ledger is numbered afresh at
+the next `host sync`, as any new user is; the line of a user the snapshot
+lacks stays, as after `user remove`. The snapshot of the current state taken
+first is made as always and holds the live ledger. A snapshot that does not
+know the hosts never touches the ledger: the flag is accepted and one line
+says so. `--keep-uids` with `--legacy`, or without a store, is a usage error:
+an old-style restore never touches `linux-uids`.
 
 `backup diff` adds `linux-hosts`, `staging`, `linux-uids` and each host
 record, each only where either side has one. A snapshot that does not know the

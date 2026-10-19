@@ -92,7 +92,7 @@ config diff [timestamp]
 
     Alias of `backup diff`
 
-config restore <timestamp> [--legacy]
+config restore <timestamp> [--legacy|--keep-uids]
 
     Alias of `backup restore`
 

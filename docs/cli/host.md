@@ -59,6 +59,23 @@ host sync <name>... | --all
         (enroll and sync) delete removed users' home directories without asking (on a terminal each
         is asked; without one they are kept)
 
+host check <name>... | --all [--json]
+
+    Compare each host with what tacctl would make it, read-only, as `host show <name> --check`
+    does (superuser only: it logs in); nothing is changed on a host or here. Every name is checked
+    first (an unknown one refuses the run, one given twice counts once); names and --all are not
+    given together. One result per host on standard output: as tacctl would make it, the
+    differences with the command that fixes each, skipped (a held host), or could not be checked.
+    More than one host ends with a count of each. Exit 1 when a host differs or could not be
+    checked
+
+    --all
+        Every enrolled host
+    --json
+        Print a JSON array (`[]` for no host) and nothing else on standard output: name, target,
+        state (ok, differences, failed or held), differences (text and fix), notes, error and
+        breakglass (while held)
+
 host move <name> [<scope>]|--all
 
     Move an enrolled host to another scope (default: the one answering its address; --all: every
@@ -243,6 +260,7 @@ registered host (and so `host move`), `host target <name> <target>`,
 is changed. The same refusal stands when the device registry, which records
 the host's address, cannot be read. `host sync --all` skips a held host and
 says so; a held host among the names typed to `host sync` refuses the whole
-run before any host is reached.
+run before any host is reached. `host check` skips a held host, typed or not
+(it only reads, so there is nothing to refuse), and the skip is not a failure.
 `host target <name>` without a change, `host list` and `host show` only read,
 and `tacctl ssh` warns and connects.

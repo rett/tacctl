@@ -57,6 +57,33 @@ current behaviour; this file is where history lives.
    and says so), and names together with `--all` are a usage error. The names
    complete at every position.
 
+6. **`backup restore <timestamp> --keep-uids` leaves the UID ledger as it
+   is.** The flag (also on `config restore`) restores a snapshot's registry,
+   host records and staging but not `linux-uids`. Use it when the snapshot is
+   wanted for its users, groups, scopes or devices and the hosts have synced
+   since: the live ledger is the one the hosts agree with. In place of the
+   list of users whose number would be dropped or changed, the note before
+   the question and after the restore is one line saying the ledger is kept.
+   A restored user with no line gets one at the next `host sync`. A snapshot
+   that does not know the hosts never touches the ledger, and the flag says
+   so. `--keep-uids` with `--legacy`, or without a store, is a usage error.
+
+7. **`host check <name>... | --all [--json]` compares hosts and changes
+   nothing.** It runs, for each host named or for every enrolled host with
+   `--all`, the read-only comparison that `host show <name> --check` makes,
+   and changes nothing here or on any host. Every name is checked first: an
+   unknown name refuses the run, a name given twice counts once, and names
+   with `--all` are a usage error. Each host gets one result: `as tacctl
+   would make it`, its differences with the command that fixes each,
+   `skipped` for a host with a break-glass hold (typed or not), or `could not
+   be checked` with the reason. With more than one host a last line counts
+   them by state. The exit status is 1 when a host has a difference or could
+   not be checked, and a skipped host is not a failure. `--json` prints an
+   array (`[]` for no host) and nothing else on standard output, with `name`,
+   `target`, `state` (`ok`, `differences`, `failed`, `held`), `differences`,
+   `notes`, `error` and `breakglass`. It is the superuser's, like `host show
+   --check`.
+
 ## 0.2.14 (2026-10-18)
 
 1. **`device address` moves a break-glass hold with its device.** On a

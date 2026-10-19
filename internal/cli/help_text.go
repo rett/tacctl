@@ -390,8 +390,9 @@ Subcommands:
       <o>--force</o>                          Overwrite a generated file that was edited by hand
   <b>render</b> <o>--dry-run</o> <o>--out <dir></o>         Render into a new, empty directory at the live paths; nothing live is written
   <b>diff</b> [timestamp]                     Diff store.yaml and tacctl.yaml vs the last snapshot (or named one)
-  <b>restore</b> <o><timestamp></o> [<o>--legacy</o>]       Restore a snapshot (prompts for confirmation); <o>--legacy</o> for an old-style backup
+  <b>restore</b> <o><timestamp></o> [<o>--legacy</o>|<o>--keep-uids</o>]  Restore a snapshot (prompts for confirmation); <o>--legacy</o> for an old-style backup
       <o>--legacy</o>                         The timestamp names an old-style backup (backups/legacy)
+      <o>--keep-uids</o>                      Leave the UID ledger (linux-uids) as it is; the registry, records and staging come back
   <b>loglevel</b> [debug|info|error]          Show or change log level
   <b>listen</b> [show|tcp|tcp6|reset] [addr]  Show, change, or reset a listen address (default: tacacs, listener 'default')
       <o>--listener <name></o>                ...of another listener (its own tacquito@<name> unit; reset removes it)
@@ -535,6 +536,11 @@ Usage: tacctl host <subcommand> [arguments]
       --allow-uid-mismatch             (enroll and sync) accept a UID conflict on the host instead of stopping
       --remove-home                    (enroll and sync) delete removed users' home directories without asking
                                        (on a terminal each one is asked; without one they are kept)
+  check <name>... | --all [--json]     Compare hosts with what tacctl would make them, read-only: one line per
+                                       difference with the command that fixes it; exit 1 when any differs or
+                                       cannot be checked. A held host is skipped (superuser only)
+      --all                            Every enrolled host
+      --json                           Print a JSON array (check: one object per host) and nothing else on standard output
   move <name> [<scope>] | --all        Move an enrolled host to another scope (default: the one answering its address);
                                        --all: every host another scope answers. Asks before deleting accounts
   target <name> [<[user@]host>]        Show, or change and test, how tacctl reaches an enrolled host over ssh
@@ -626,10 +632,11 @@ section of its own; --backend <id> shows only that backend's.
 Usage: tacctl backup <subcommand> [arguments]
 
 Subcommands:
-  <b>list</b>                           Show snapshots, then old-style backups
-  <b>diff</b> [timestamp]               Diff store.yaml and tacctl.yaml against a snapshot (default: most recent)
-  <b>restore</b> <o><timestamp></o> [<o>--legacy</o>] Restore a snapshot (with confirmation); <o>--legacy</o> for an old-style backup
-      <o>--legacy</o>                   The timestamp names an old-style backup (backups/legacy)
+  <b>list</b>                                       Show snapshots, then old-style backups
+  <b>diff</b> [timestamp]                           Diff store.yaml and tacctl.yaml against a snapshot (default: most recent)
+  <b>restore</b> <o><timestamp></o> [<o>--legacy</o>|<o>--keep-uids</o>] Restore a snapshot (with confirmation); <o>--legacy</o> for an old-style backup
+      <o>--legacy</o>                               The timestamp names an old-style backup (backups/legacy)
+      <o>--keep-uids</o>                            Leave the UID ledger (linux-uids) as it is; the registry, records and staging come back
 
 `,
 	// lib/users.sh cmd_hash_usage

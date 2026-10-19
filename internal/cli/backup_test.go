@@ -217,9 +217,9 @@ func TestBackupRestoreArguments(t *testing.T) {
 		args []string
 		err  string
 	}{
-		{[]string{"backup", "restore"}, "Usage: tacctl backup restore <timestamp> [--legacy]"},
+		{[]string{"backup", "restore"}, "Usage: tacctl backup restore <timestamp> [--legacy|--keep-uids]"},
 		{[]string{"backup", "restore", "a", "b"}, "Only one timestamp may be given."},
-		{[]string{"backup", "restore", "a", "--frob"}, "Unknown option '--frob'. Usage: tacctl backup restore <timestamp> [--legacy]"},
+		{[]string{"backup", "restore", "a", "--frob"}, "Unknown option '--frob'. Usage: tacctl backup restore <timestamp> [--legacy|--keep-uids]"},
 		{[]string{"config", "restore", "19990101_000000"}, "Backup not found: 19990101_000000"},
 		{[]string{"backup", "restore", "../store.yaml", "--legacy"}, "Old-style backup not found: ../store.yaml"},
 		{[]string{"backup", "diff", "../store.yaml"}, "Backup not found: ../store.yaml"},

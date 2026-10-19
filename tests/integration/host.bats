@@ -10,6 +10,8 @@ load ../helpers/tmpenv
 load ../helpers/mocks
 load ../helpers/fixtures
 
+bats_require_minimum_version 1.5.0
+
 HASH="24326224313024616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161"
 
 setup() {
@@ -1262,6 +1264,40 @@ _container_ssh() {
     assert_output --partial "sudo on this host needs a password"
     assert_output --partial "Could not check web1: the read-only run as root on admin@web1.example.net failed (see above); nothing was compared."
     refute_line "Connection"
+}
+
+@test "host check --all: read-only, one result per host, a summary, exit 1; --json is the array alone" {
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab > /dev/null
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web2.example.net --scope lab > /dev/null
+    : > "$CALLS_LOG"
+    # web1 differs; the run on web2 fails (sudo needs a password).
+    stub_cmd ssh 'case "$*" in
+        *web2.example.net*tacctl-check*) echo "sudo needs a password" >&2; false ;;
+        *tacctl-check*) printf "tacctl-check %s\n" "group tac-users 80000" "group tac-superuser 1002" "group tac-engineer 80005" \
+            "account alice 80000 80000 700 /home/alice" "pam tacctl-auth a" "pam tacctl-account b" "pam tacctl-session c" \
+            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 6" ;;
+        *) true ;;
+    esac'
+    run --separate-stderr "$TACCTL_BIN_SCRIPT" host check --all
+    assert_failure 1
+    assert_line "web1: 2 differences:"
+    assert_line "  - group tac-superuser has GID 1002, not 80002. Fix: tacctl host sync web1"
+    assert_line "web2: could not be checked: the read-only run as root on admin@web2.example.net failed (see above); nothing was compared."
+    assert_line "2 hosts: 1 with differences, 1 not checked."
+    refute_output --partial "sudo needs a password"
+    refute_output --partial "tacctl-check"
+    # Nothing is copied to a host and nothing is recorded: the check only reads.
+    if stub_called 'mktemp'; then stub_calls; return 1; fi
+    run --separate-stderr "$TACCTL_BIN_SCRIPT" host check web2 web1 --json
+    assert_failure 1
+    run jq -r '[.[] | .name + ":" + .state] | join(" ")' <<< "$output"
+    assert_output "web2:failed web1:differences"
+    run "$TACCTL_BIN_SCRIPT" host check web1 --all
+    assert_failure 1
+    assert_output --partial "Give names or --all, not both."
+    run "$TACCTL_BIN_SCRIPT" host check web1 ghost
+    assert_failure 1
+    assert_output --partial "No enrolled host named 'ghost'"
 }
 
 @test "host show --check: an engineer left in tac-superuser, the tac-engineer group, protocol 5" {

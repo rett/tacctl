@@ -1693,7 +1693,7 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config diff
 .TP
-.BI "config restore " "timestamp " [ \-\-legacy ]
+.BI "config restore " "timestamp " [ \-\-legacy " | " \-\-keep\-uids ]
 Alias of
 .BR "backup restore" .
 .\" BEGIN GENERATED: command config restore
@@ -1705,6 +1705,9 @@ Options:
 .TP
 \fB\-\-legacy\fR
 The timestamp names an old\-style backup (backups/legacy).
+.TP
+\fB\-\-keep\-uids\fR
+Leave the UID ledger (linux\-uids) as it is; the registry, records and staging come back.
 .RE
 .\" END GENERATED: command config restore
 .TP
@@ -2438,6 +2441,65 @@ Options:
 (enroll and sync) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
 .RE
 .\" END GENERATED: command host sync
+.TP
+.B "host check " "{ " name "... | \-\-all } [ \-\-json ]"
+Compare each host named, or every enrolled host with
+.BR \-\-all ,
+with what tacctl would make it, read\-only: for each, what
+.B "host show \-\-check"
+does (the same login as the invoking user, the same comparison), with nothing
+written here and nothing changed on a host. Every name is checked before the
+first host is touched: an unknown name refuses the run, a name given twice
+counts once, and names with
+.B \-\-all
+are a usage error. Each host gets a line on standard output: its name and
+.B "as tacctl would make it"
+(any notes follow, indented), or its differences, one line each with the
+command that fixes it, or
+.B skipped
+for a host with a break\-glass hold (typed or not: a check only reads, so
+there is nothing to refuse), or
+.B "could not be checked"
+with the reason. What a host prints besides the check goes to standard error.
+With more than one host a last line counts the hosts in each state. The exit
+status is 1 when a host has a difference or could not be checked, else 0 (a
+skipped host is not a failure); an interrupt ends the run after the host in
+progress. With
+.B \-\-json
+standard output is a JSON array (empty for no host) with, for each host,
+.BR name ,
+.BR target ,
+.B state
+.RB ( ok ,
+.BR differences ,
+.B failed
+or
+.BR held ),
+.B differences
+(each
+.B text
+and
+.BR fix ),
+.BR notes ,
+.B error
+(why a host could not be checked, else empty) and
+.B breakglass
+(the hold, only for
+.BR held ).
+.\" BEGIN GENERATED: command host check
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+(check) Every enrolled host.
+.TP
+\fB\-\-json\fR
+(check) Print a JSON array (one object per host) and nothing else on standard output.
+.RE
+.\" END GENERATED: command host check
 .TP
 .B "host target " name " [ " "\fR[\fPuser@\fR]\fPhost" " ] [ \-\-port " n " ] [ \-\-identity " file " | \-\-no\-identity ]"
 With only a name, show how tacctl reaches the enrolled host: its ssh target,
@@ -4653,7 +4715,7 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command backup diff
 .TP
-.BI "backup restore " timestamp " " [ \-\-legacy ]
+.BI "backup restore " timestamp " " [ \-\-legacy " | " \-\-keep\-uids ]
 Restore both files from a snapshot after confirmation, re-render every
 enabled backend's config (all or none), and restart the backends. The current
 state is snapshotted first, so a restore can itself be undone. Nothing changes
@@ -4703,6 +4765,31 @@ already holds, so the note also names every user whose UID it drops or
 changes; a host file that cannot be read is named in a red line,
 .BR "could not compare the host files" ,
 and the restore still puts the files back. The snapshot of the current state taken first holds the live host files.
+.PP
+With
+.B \-\-keep\-uids
+the ledger
+.RI ( linux\-uids )
+is left as it is, and the registry, the records and
+.I staging
+still come back. Use it when the snapshot is wanted for its users, groups,
+scopes or devices and the hosts have synced since: the live ledger is the one
+the hosts agree with, and the restore does not make them disagree. In place of
+the comparison the note, before the confirmation and again after the restore,
+is one line saying that the ledger is kept and the restored users keep the
+numbers they have now. A user the snapshot brings back who has no line in the
+live ledger is numbered at the next
+.B "host sync"
+as any new user is, and the line of a user the snapshot lacks stays, as after
+.BR "user remove" .
+The snapshot of the current state taken first is made as always. A snapshot
+that does not know the hosts never touches the ledger: the flag is accepted
+and a line says the ledger stays either way.
+.B \-\-keep\-uids
+with
+.B \-\-legacy
+or without a store is a usage error, since an old-style restore never touches
+.IR linux\-uids .
 .PP
 The restore holds the host registry's lock from before it changes anything: when
 another tacctl command keeps it for 30 seconds the restore stops with the
@@ -4761,6 +4848,9 @@ Options:
 .TP
 \fB\-\-legacy\fR
 The timestamp names an old\-style backup (backups/legacy).
+.TP
+\fB\-\-keep\-uids\fR
+Leave the UID ledger (linux\-uids) as it is; the registry, records and staging come back.
 .RE
 .\" END GENERATED: command backup restore
 .SS Hash generation \fB(tacctl hash)\fR
@@ -10065,7 +10155,9 @@ and
 .B "host forget"
 are refused with the hold named, before anything is attempted over ssh;
 .B "host sync \-\-all"
-skips the host;
+and
+.B "host check"
+skip the host;
 .B "host list"
 marks it,
 .B "host show"

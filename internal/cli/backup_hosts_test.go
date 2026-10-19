@@ -418,3 +418,137 @@ func TestBackupRestoreSnapshotsFirstOnAnyChangeOfTheRecords(t *testing.T) {
 		t.Errorf("the snapshot holds %q", got)
 	}
 }
+
+// 0.2.15 WP15.5 (D212, D213): --keep-uids puts the registry, the records and
+// staging back but leaves the UID ledger as it is, and the note before the
+// question and the warning after it say so in place of the ledger comparison.
+func TestBackupRestoreKeepUIDsLeavesTheLedger(t *testing.T) {
+	const kept = "The UID ledger (linux-uids) is kept as it is (--keep-uids): the restored users keep the numbers they have now; a restored user with no line gets one at the next sync."
+	sb := hostsSandbox(t)
+	snapsBefore := len(sb.snapshotDirs())
+
+	// Declined: the line is there instead of the ledger's note, nothing changed.
+	before := sb.hostState()
+	out := plain(sb.run("n\n", []string{"backup", "restore", "20200101_000000_002", "--keep-uids"}))
+	sb.expect(0, "Cancelled.", "")
+	if !mapsEqual(sb.hostState(), before) || len(sb.snapshotDirs()) != snapsBefore {
+		t.Error("a declined restore changed something")
+	}
+	if !strings.Contains(out, kept) || strings.Contains(out, "forgets or changes") || strings.Contains(out, "UID mismatch") {
+		t.Errorf("the note:\n%s", out)
+	}
+	if !strings.Contains(out, "Enrolled hosts change (tacctl host list): come back: web3; go: web2; registered differently: web1.") {
+		t.Errorf("the registry's note is gone:\n%s", out)
+	}
+	if i, j := strings.Index(out, kept), strings.Index(out, "Cancelled."); i < 0 || j < i {
+		t.Errorf("the line is not before the question:\n%s", out)
+	}
+
+	// The flag may come first; the registry, records and staging come back,
+	// the ledger stays, and the line is said again after the restore.
+	out = plain(sb.run("y\n", []string{"backup", "restore", "--keep-uids", "20200101_000000_002"}))
+	sb.expect(0, "Restored snapshot 20200101_000000_002.", "")
+	got := sb.hostState()
+	for k, v := range map[string]string{
+		"linux-hosts":     snapRegistry,
+		"staging":         "<absent>",
+		"linux-uids":      liveLedger,
+		"hosts/web1.json": "{\"snap\":1}\n",
+		"hosts/web2.json": "<absent>",
+	} {
+		if got[k] != v {
+			t.Errorf("%s = %q, want %q", k, got[k], v)
+		}
+	}
+	if strings.Count(out, kept) != 2 {
+		t.Errorf("the line is not repeated after the restore:\n%s", out)
+	}
+	// The pre-restore snapshot holds the live ledger, which is still there.
+	dirs := sb.snapshotDirs()
+	if len(dirs) != snapsBefore+1 {
+		t.Fatalf("%d snapshots, want %d", len(dirs), snapsBefore+1)
+	}
+	if readIn(t, dirs[len(dirs)-1], "linux-uids") != liveLedger {
+		t.Error("the pre-restore snapshot lacks the live ledger")
+	}
+
+	// A ledger the snapshot lacks does not remove the live one, and a live
+	// ledger absent stays absent whatever the snapshot holds.
+	sb = hostsSandbox(t)
+	_ = os.Remove(sb.path("state/backups/20200101_000000_002/linux-uids"))
+	sb.run("y\n", []string{"backup", "restore", "20200101_000000_002", "--keep-uids"})
+	sb.expect(0, "Restored snapshot", "")
+	if got := sb.hostState()["linux-uids"]; got != liveLedger {
+		t.Errorf("linux-uids = %q after a snapshot without one", got)
+	}
+	sb = hostsSandbox(t)
+	_ = os.Remove(sb.path("state/linux-uids"))
+	sb.run("y\n", []string{"backup", "restore", "20200101_000000_002", "--keep-uids"})
+	sb.expect(0, "Restored snapshot", "")
+	if got := sb.hostState()["linux-uids"]; got != "<absent>" {
+		t.Errorf("linux-uids = %q, the snapshot's ledger was put back", got)
+	}
+}
+
+// Without the flag the ledger still comes back (D192 is unchanged).
+func TestBackupRestoreWithoutKeepUIDsPutsTheLedgerBack(t *testing.T) {
+	sb := hostsSandbox(t)
+	out := plain(sb.run("y\n", []string{"backup", "restore", "20200101_000000_002"}))
+	sb.expect(0, "Restored snapshot", "")
+	if strings.Contains(out, "--keep-uids") || sb.hostState()["linux-uids"] != snapLedger {
+		t.Errorf("ledger %q; output:\n%s", sb.hostState()["linux-uids"], out)
+	}
+}
+
+// A snapshot that does not know the hosts never touches the ledger: the flag
+// is accepted and one line says it makes no difference.
+func TestBackupRestoreKeepUIDsOfASnapshotWithoutLinuxHosts(t *testing.T) {
+	sb := hostsSandbox(t)
+	before := sb.hostState()
+	out := plain(sb.run("y\n", []string{"backup", "restore", "20200101_000000_001", "--keep-uids"}))
+	sb.expect(0, "Restored snapshot 20200101_000000_001.", "")
+	if !strings.Contains(out, "This snapshot does not know the hosts: the ledger stays either way.") {
+		t.Errorf("no line:\n%s", out)
+	}
+	if strings.Contains(out, "is kept as it is") {
+		t.Errorf("the kept-ledger line for a snapshot with no ledger to keep:\n%s", out)
+	}
+	if got := sb.hostState(); !mapsEqual(got, before) {
+		t.Errorf("the host files changed:\n%v\nwant\n%v", got, before)
+	}
+	// With no hosts enrolled, the old note is absent and the new line is not.
+	sb = hostsSandbox(t)
+	_ = os.Remove(sb.path("state/linux-hosts"))
+	out = plain(sb.run("n\n", []string{"backup", "restore", "20200101_000000_001", "--keep-uids"}))
+	if strings.Contains(out, "taken by 0.2.13 or older") || !strings.Contains(out, "the ledger stays either way") {
+		t.Errorf("note:\n%s", out)
+	}
+}
+
+// --keep-uids is for a snapshot restore: with --legacy, or without a store,
+// it is a usage error and nothing is changed.
+func TestBackupRestoreKeepUIDsUsageErrors(t *testing.T) {
+	const want = "--keep-uids is for a snapshot restore: an old-style restore never touches linux-uids."
+	sb := hostsSandbox(t)
+	before := sb.liveState()
+	for _, args := range [][]string{
+		{"backup", "restore", "20200101_000000_002", "--legacy", "--keep-uids"},
+		{"backup", "restore", "--keep-uids", "--legacy", "20200101_000000_002"},
+		{"config", "restore", "20200101_000000_002", "--keep-uids", "--legacy"},
+	} {
+		sb.run("y\n", args)
+		sb.expect(1, "", want)
+	}
+	if sb.liveState() != before {
+		t.Error("a refused restore changed the state")
+	}
+
+	nb := newSandbox(t, false)
+	sandboxRADIUS(nb)
+	nb.write("etc/tacquito.yaml", fixture(t, "tacquito.minimal.yaml"), 0o640)
+	nb.write("state/backups/tacquito.yaml.20250101_000000", "# older config\n", 0o600)
+	nb.run("y\n", []string{"backup", "restore", "20250101_000000", "--keep-uids"})
+	nb.expect(1, "", want)
+	nb.run("y\n", []string{"config", "restore", "20250101_000000", "--keep-uids"})
+	nb.expect(1, "", want)
+}

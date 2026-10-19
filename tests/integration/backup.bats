@@ -475,6 +475,34 @@ drift.20250301_000000
     [[ "$(snapshots | wc -l)" -eq "$count" ]]
 }
 
+@test "backup restore --keep-uids: the registry comes back and the ledger stays as it is" {
+    add_user alice
+    local first
+    first=$(oldest_snapshot)
+    printf '%s\n' 'web1|web1||lab|192.0.2.1|' > "${BACKUPS}/${first}/linux-hosts"
+    printf '# range 80000-89999\nalice:80009\n' > "${BACKUPS}/${first}/linux-uids"
+    printf '# range 80000-89999\nalice:80000\nbob:80001\n' > "${TACCTL_STATE_DIR}/linux-uids"
+
+    # The question says what is kept, and the ledger is not compared.
+    run "$TACCTL_BIN_SCRIPT" backup restore "$first" --keep-uids <<< "n"
+    assert_success
+    assert_output --partial "The UID ledger (linux-uids) is kept as it is (--keep-uids)"
+    refute_output --partial "forgets or changes the number of"
+    [[ ! -e "${TACCTL_STATE_DIR}/linux-hosts" ]]
+
+    run "$TACCTL_BIN_SCRIPT" backup restore "$first" --keep-uids <<< "y"
+    assert_success
+    assert_output --partial "Restored snapshot ${first}."
+    [[ "$(cat "${TACCTL_STATE_DIR}/linux-hosts")" == 'web1|web1||lab|192.0.2.1|' ]]
+    run cat "${TACCTL_STATE_DIR}/linux-uids"
+    assert_output "$(printf '# range 80000-89999\nalice:80000\nbob:80001')"
+
+    # An old-style restore never touches the ledger: the flag is refused.
+    run "$TACCTL_BIN_SCRIPT" backup restore "$first" --legacy --keep-uids
+    assert_failure 1
+    assert_output --partial "--keep-uids is for a snapshot restore"
+}
+
 @test "backup restore: a hand-edited tacquito.yaml is overwritten, and kept under legacy/" {
     add_user alice
     local first

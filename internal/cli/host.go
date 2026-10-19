@@ -56,7 +56,8 @@ var hostSpecs = map[string]Spec{
 		flagYes,
 		{Names: []string{"--staging"}},
 		flagAllowUIDMismatch, flagRemoveHome}},
-	"sync": {MaxArgs: -1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome}},
+	"sync":  {MaxArgs: -1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome}},
+	"check": {MaxArgs: -1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagJSON}},
 	"move": {MaxArgs: 2, Args: []string{KindHosts, KindScopes}, Flags: []Flag{{Names: []string{"--all"}, Alone: true},
 		flagYes, flagAllowUIDMismatch, flagRemoveHome}},
 	"unenroll": {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--force"}}}},
@@ -82,6 +83,7 @@ var hostVerbs = [][2]string{
 	{"show <name> [--all] [--json] [--check]", "One enrolled host in full; --check compares it with what tacctl would make it"},
 	{"enroll <[user@]host> | --local [options]", "Install TACACS+ or RADIUS login on a host over SSH and register it"},
 	{"sync <name>... | --all [options]", "Push account adds, renames, deletions, expiries and tier changes"},
+	{"check <name>... | --all [--json]", "Compare hosts with what tacctl would make them, read-only (exit 1 when any differs)"},
 	{"move <name> [<scope>] | --all [options]", "Move an enrolled host to another scope (default: the scope answering its address)"},
 	{"target <name> [<[user@]host>] [options]", "Show or change how tacctl reaches an enrolled host over ssh"},
 	{"provisioner <name> rotate <user> [options]", "Switch the account tacctl logs in to the host with, proving the new one before the registry changes"},
@@ -127,6 +129,8 @@ func (inv *invocation) host(args []string) error {
 		return inv.hostMove(rest)
 	case "sync":
 		return inv.hostSync(rest)
+	case "check":
+		return inv.hostCheckAll(rest)
 	case "target":
 		return inv.hostTarget(rest)
 	case "provisioner":

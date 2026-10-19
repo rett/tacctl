@@ -62,7 +62,8 @@ The local accounts of [Break-glass local users](#break-glass-local-users) reach 
   `host forget` are refused, naming the hold (since, by whom, why) and
   `tacctl breakglass release <name>`, before anything is attempted over ssh
   (also when the device registry, which records the address, cannot be read);
-  `host sync --all` skips it and says so, and `tacctl ssh` warns and connects.
+  `host sync --all` and `host check` skip it and say so, and `tacctl ssh` warns
+  and connects.
   `host list` marks the host (`BREAK-GLASS` in a STATE column and a footer),
   `host show` has a Break-glass section (`breakglass` in `--json`), and
   `status`, `scope show|list|routing|lookup` and `config validate` name the
