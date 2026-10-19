@@ -91,13 +91,19 @@ func (inv *invocation) hostCheckAll(args []string) error {
 		return nil
 	}
 	f, lerr := inv.hostDevices()
+	if lerr != nil {
+		// A host that is not this server needs the device registry to tell
+		// whether it is held; none is touched before that is known.
+		for _, e := range entries {
+			if e.Target != hosts.Local {
+				return inv.hostHoldUnreadable(e, lerr)
+			}
+		}
+	}
 
 	results := make([]hostCheckAllJSON, 0, len(entries))
 	for _, e := range entries {
 		r := hostCheckAllJSON{Name: e.Name, Target: e.Target, Differences: []hostDiffJSON{}, Notes: []string{}}
-		if lerr != nil && e.Target != hosts.Local {
-			return inv.hostHoldUnreadable(e, lerr)
-		}
 		if h, held := inv.hostHoldIn(f, e); held {
 			r.State = checkHeld
 			r.Breakglass = holdJSONOfHold(h)

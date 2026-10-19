@@ -96,7 +96,7 @@ host prints besides the check goes to standard error:
 
 ```
 web1: as tacctl would make it.
-web2: 2 difference(s):
+web2: 2 differences:
   - alice has no account. Fix: tacctl host sync web2
   - /etc/pam.d/tacctl-auth is not the text tacctl wrote there. Fix:
     tacctl host enroll admin@web2.example.net --name web2
