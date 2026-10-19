@@ -64,7 +64,7 @@ config render --dry-run --out <dir>
     Render every enabled backend into a new, empty directory at the live paths; nothing live is
     written, no restart
 
-config validate [--json]
+config validate [--json | --fix-names [-y]]
 
     Validate the store, tacctl.yaml (schema walk, incl. commands.<group> / privileges.<group> /
     mgmt_acl.* / listeners) and the server-config structure (orphan scope refs, scope.default
@@ -87,7 +87,8 @@ config validate [--json]
     (`tacctl user rename Alice alice`; for a user it adds that devices match the typed login name
     exactly, so the rename changes what the person types); the superuser's view only. Exits 1 on
     errors. `--json` prints the findings as one JSON object and nothing else on standard output
-    (the schema is below); the exit status is the same
+    (the schema is below); the exit status is the same. `--fix-names` follows the report with the
+    offer to rename each such name to its lower-case spelling (below); the superuser's
 
 config diff [timestamp]
 
@@ -258,6 +259,58 @@ config branch [name]
 
     Show or change the tacctl repo branch
 ```
+
+## `config validate --fix-names`
+
+`config validate --fix-names [-y]` prints the usual report, then offers
+every `Names:` finding whose lower-case spelling is free, one at a time:
+devices first, then hosts, users and scopes, each kind in alphabetical
+order.
+
+```
+Rename device 'Core-SW1' to 'core-sw1'? [y/N]:
+```
+
+Only `y` or `Y` renames; anything else, and a closed standard input, is a
+no. A piped `y` works as for every other question, and no terminal is
+required. `-y` (`--yes`) answers yes to every question.
+
+On yes the verb that renames that kind of name runs as when typed
+(`device rename`, `host rename`, `user rename`, `scope rename`) and prints
+what it prints. Each rename takes its own snapshot, so each has its own undo
+point, and carries what its verb carries (a host's pins, record, staging and
+hold and the offer of its own `linux-<name>` scope; a user's UID line; a
+scope's keys, hosts and staging). `-y` is passed on to `host rename` only
+when it was given here: without it the verb asks its own questions (a
+leftover under the new name, the scope) after this one. The findings are
+read again after each rename, so a scope that a host rename carried is not
+offered twice.
+
+A name whose lower-case spelling is another name's (`Alice` beside `alice`,
+two hosts equal ignoring case, a device and a host that are one name) is not
+offered. One line says so:
+
+```
+'Alice' is not offered: 'alice' is taken; pick a name: tacctl user rename Alice <new>
+```
+
+For two hosts equal ignoring case the line adds `, or tacctl host forget
+<name> drops the stray registration`. A rename its verb refuses (a generic
+device name, a name taken since the report) prints the verb's refusal and
+does not stop the rest.
+
+The run ends with a count, and, when a user was renamed and hosts are
+enrolled, with the `tacctl host sync --all` that renames their accounts:
+
+```
+Names: renamed 3, declined 1, not offered 1, failed 0.
+```
+
+The exit status is 1 when the report had errors, a rename failed or a name
+was not offered, so that a script with `-y` learns that names remain; a
+decline does not fail the run. `--fix-names` renames, so it is the
+superuser's: an operator or an engineer is refused. It needs the store and
+does not go with `--json`.
 
 ## `config validate --json`
 

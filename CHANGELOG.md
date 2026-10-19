@@ -101,6 +101,20 @@ current behaviour; this file is where history lives.
    red but does not count (a break-glass hold with no registered device) is a
    `warning` in the object.
 
+9. **`config validate --fix-names [-y]` renames the names the report flags.**
+   After the report it offers each device, host, user and scope with upper
+   case in its name, one question each (`Rename user 'Alice' to 'alice'?
+   [y/N]:`; a piped `y` answers, and `-y` answers yes to all). Each rename is
+   the existing verb (`device rename`, `host rename`, `user rename`, `scope
+   rename`) with its own snapshot, and the findings are read again after each
+   one, so a scope that a host rename carried is not offered twice. A name
+   whose lower-case spelling is taken is not offered, and its line names the
+   verb that picks another name. A rename the verb refuses is printed and
+   counted, and the rest go on. The run ends with `Names: renamed N, declined
+   N, not offered N, failed N.` and exits 1 when the report had errors, a
+   rename failed or a name was not offered; a decline does not fail it. It is
+   the superuser's, needs the store, and is a usage error with `--json`.
+
 ## 0.2.14 (2026-10-18)
 
 1. **`device address` moves a break-glass hold with its device.** On a

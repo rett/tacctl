@@ -1542,7 +1542,7 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config get-list
 .TP
-.B "config validate [ \-\-json ]"
+.B "config validate [ \-\-json | \-\-fix\-names [ \-y ] ]"
 Validate the store
 .RI ( store.yaml :
 names, every user's group and scopes exist, each prefix owned by one scope),
@@ -1693,6 +1693,50 @@ object counts each file. A caller who sees only some scopes gets no
 .BR linux_hosts ,
 .B names
 or hold\-defect findings, as in the text report.
+.IP
+.B \-\-fix\-names
+prints the report, then offers each
+.B Names:
+finding whose lower\-case spelling is free, one at a time: devices, hosts,
+users, then scopes, each kind in alphabetical order. The question is
+.BR "Rename \fIkind\fR 'Old' to 'old'? [y/N]:" ;
+only
+.B y
+or
+.B Y
+renames, a piped
+.B y
+works and no terminal is required, and
+.B \-y
+answers yes to every question. On yes the verb that renames that kind of name
+runs as when typed
+.RB ( "device rename" ,
+.BR "host rename" ,
+.B "user rename"
+and
+.BR "scope rename" ),
+prints what it prints and takes its own snapshot, one undo point per rename.
+.B \-y
+is passed on to
+.B "host rename"
+only when it was given here; without it that verb asks its own questions
+after this one. The findings are read again after each rename, so a scope
+that a host rename carried is not offered twice. A name whose lower\-case
+spelling is another name's is not offered: a line says
+.B "pick a name: tacctl \fIkind\fR rename \fIOld\fR <new>"
+(for two hosts equal ignoring case also
+.BR "tacctl host forget" ,
+which drops the stray registration). A rename its verb refuses prints the
+refusal and does not stop the rest. The run ends with
+.B "Names: renamed N, declined N, not offered N, failed N."
+and, when a user was renamed and hosts are enrolled, the
+.B "tacctl host sync \-\-all"
+that renames their accounts. The exit status is 1 when the report had errors,
+a rename failed or a name was not offered; a decline does not fail the run.
+.B \-\-fix\-names
+is the superuser's (an operator or an engineer is refused), needs the store
+and does not go with
+.BR \-\-json .
 .\" BEGIN GENERATED: command config validate
 .RS
 .PP
@@ -1702,6 +1746,12 @@ Options:
 .TP
 \fB\-\-json\fR
 Print the findings as one JSON object and nothing else on standard output; exit 1 when one is an error.
+.TP
+\fB\-\-fix\-names\fR
+After the report, offer to rename each device, host, user and scope that has upper case in its name to its lower\-case spelling (superuser; needs the store).
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+With \-\-fix\-names: answer yes to every rename.
 .RE
 .\" END GENERATED: command config validate
 .TP

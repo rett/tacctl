@@ -52,7 +52,7 @@ func registerConfigVerb(name string, spec Spec, mk func(inv *invocation) *cobra.
 // completed.
 var configSpecs = map[string]Spec{
 	"show":     {MaxArgs: -1},
-	"validate": {MaxArgs: -1, Flags: []Flag{flagJSON}},
+	"validate": {MaxArgs: -1, Flags: []Flag{flagJSON, {Names: []string{"--fix-names"}}, flagYes}},
 	"render": {MaxArgs: 0, Flags: []Flag{
 		{Names: []string{"--force"}}, {Names: []string{"--dry-run"}}, {Names: []string{"--out"}, Value: true, Kind: KindFile}}},
 	"dump":     {MaxArgs: -1},
@@ -102,7 +102,7 @@ func configCmd(inv *invocation) *cobra.Command {
 		})),
 		withRun(verb("get <path> [fallback]", "Read a dotted-path value from the merged config"), n(inv.configGet)),
 		withRun(verb("get-list <path>", "Read a list value (one item per line)"), n(inv.configGetList)),
-		withRun(verb("validate [--json]", "Validate config syntax and structure"), n(inv.configValidate)),
+		withRun(verb("validate [--json | --fix-names [-y]]", "Validate config syntax and structure"), n(inv.configValidate)),
 		// 'config render' rebuilds the artifacts from the store: with a
 		// store it runs no preflight, which would warn that the file it is
 		// about to write is missing (bin/tacctl.sh).

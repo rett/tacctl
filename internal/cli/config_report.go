@@ -226,7 +226,8 @@ func (inv *invocation) listenerProbe(network, address string) string {
 // Without one (legacy read-only mode): tacquito.yaml must parse, and the
 // model read from it gets the full reference checks. Exit 1 when anything
 // is an error. With --json the findings are printed as one JSON object and
-// nothing else goes to standard output (D220).
+// nothing else goes to standard output (D220). With --fix-names the report
+// is followed by the offer to rename each name with upper case (D226).
 func (inv *invocation) configValidate(args []string) error {
 	p, err := Parse(configSpecs["validate"], args)
 	if err != nil {
@@ -234,7 +235,22 @@ func (inv *invocation) configValidate(args []string) error {
 		if uf, ok := err.(*UnknownFlagError); ok {
 			msg = "Unknown option: '" + uf.Flag + "'"
 		}
-		return inv.usageErr(msg, "Usage: tacctl config validate [--json]")
+		return inv.usageErr(msg, configValidateUsage)
+	}
+	fix := p.Has("--fix-names")
+	switch {
+	case fix && p.Has("--json"):
+		return inv.usageErr("--fix-names asks questions and renames; it does not go with --json.", configValidateUsage)
+	case p.Has("-y") && !fix:
+		return inv.usageErr("-y goes with --fix-names.", configValidateUsage)
+	}
+	if fix {
+		if err := inv.fixNamesAllowed(); err != nil {
+			return err
+		}
+		if err := inv.requireStore(); err != nil {
+			return err
+		}
 	}
 	if p.Has("--json") {
 		return inv.configValidateJSON()
@@ -242,11 +258,22 @@ func (inv *invocation) configValidate(args []string) error {
 	r := &validateReport{sink: inv.printValidateText}
 	inv.collectValidate(r)
 	inv.printValidateTextEnd(r)
-	if r.textErrors() > 0 {
+	failed := r.textErrors() > 0
+	if fix {
+		left, err := inv.fixNames(p.Has("-y"))
+		if err != nil {
+			return err
+		}
+		failed = failed || left
+	}
+	if failed {
 		return exit(1)
 	}
 	return nil
 }
+
+// configValidateUsage is the usage line of 'config validate'.
+const configValidateUsage = "Usage: tacctl config validate [--json | --fix-names [-y]]"
 
 // collectValidate runs the checks of 'config validate' and adds what they
 // print, and the findings that are, to r in the order the text report has
