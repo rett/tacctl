@@ -295,8 +295,8 @@ offered. One line says so:
 ```
 
 For two hosts equal ignoring case the line adds `, or tacctl host forget
-<name> drops the stray registration`. A rename its verb refuses (a generic
-device name, a name taken since the report) prints the verb's refusal and
+<name> drops the stray registration`. A rename its verb refuses (a name taken
+since the report, a scope whose new name already has SNMP credentials) prints the verb's refusal and
 does not stop the rest.
 
 The run ends with a count, and, when a user was renamed and hosts are
