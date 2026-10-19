@@ -80,7 +80,7 @@ var hostVerbs = [][2]string{
 	{"list [--json]", "Show enrolled hosts"},
 	{"show <name> [--all] [--json] [--check]", "One enrolled host in full; --check compares it with what tacctl would make it"},
 	{"enroll <[user@]host> | --local [options]", "Install TACACS+ or RADIUS login on a host over SSH and register it"},
-	{"sync <name> | --all [options]", "Push account adds, deletions and tier changes"},
+	{"sync <name> | --all [options]", "Push account adds, renames, deletions, expiries and tier changes"},
 	{"move <name> [<scope>] | --all [options]", "Move an enrolled host to another scope (default: the scope answering its address)"},
 	{"target <name> [<[user@]host>] [options]", "Show or change how tacctl reaches an enrolled host over ssh"},
 	{"provisioner <name> rotate <user> [options]", "Switch the account tacctl logs in to the host with, proving the new one before the registry changes"},
@@ -305,7 +305,7 @@ func hostTargetPort(e hosts.Entry) string {
 // superuser's view, so a restricted caller's are empty.
 func (inv *invocation) hostListJSONOut(reg *hosts.Registry, shown []hosts.Entry, devs *devreg.File, holds map[string]conf.Hold, users func(hosts.Entry) int) error {
 	byHost := map[string][]hostFindingJSON{}
-	for _, fd := range inv.hostFindings() {
+	for _, fd := range inv.hostListFindings() {
 		for _, n := range fd.Hosts {
 			byHost[n] = append(byHost[n], hostFindingJSON{Text: fd.Text, Fix: fd.Fix})
 		}
@@ -336,11 +336,25 @@ func (inv *invocation) hostListJSONOut(reg *hosts.Registry, shown []hosts.Entry,
 	return inv.printJSON(out)
 }
 
+// hostListFindings are the findings 'host list' counts and lists for a host:
+// those of hostFindings and the Names findings about hosts (caseFindings
+// with Hosts set), in that order. 'config validate' prints the two kinds
+// under their own labels.
+func (inv *invocation) hostListFindings() []hostFinding {
+	out := inv.hostFindings()
+	for _, f := range inv.caseFindings() {
+		if len(f.Hosts) > 0 {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 // hostFindingsFooter is the one line 'host list' ends with when the
 // registrations have findings (the superuser's view; 'config validate' lists
 // them).
 func (inv *invocation) hostFindingsFooter() {
-	if n := len(inv.hostFindings()); n > 0 {
+	if n := len(inv.hostListFindings()); n > 0 {
 		inv.echoE(fmt.Sprintf("  %s%d finding(s)%s: see tacctl config validate", ui.Yellow, n, ui.NC))
 		inv.echo("")
 	}

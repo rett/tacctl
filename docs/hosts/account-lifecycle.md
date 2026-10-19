@@ -17,8 +17,10 @@ tacctl manages an account on a host only when it created it (the host's `/var/li
   path (`/home/Alice` stays), the full name becomes `alice (TACACS+)`, and
   the `created` and `expired` lists follow; a disabled user's account stays
   expired. The host prints `'Alice' is now 'alice' (renamed; UID 80001; home
-  kept at /home/Alice)`, `host show` lists the account under Updated, and
-  `host sync` does not ask whether to delete the home of `Alice`. A host
+  kept at /home/Alice)`; on a host still on an earlier range the line shows
+  the account's number and adds `, renumbered to 80001 later in this run`.
+  `host show` lists the account under Updated, and `host sync` does not
+  ask whether to delete the home of `Alice`. A host
   that was offline, synced later or saw two renames ends the same, and so
   does a host still on an earlier UID range (renamed at the number the user
   had there, renumbered by the same run). Files elsewhere (`/var/mail/Alice`,

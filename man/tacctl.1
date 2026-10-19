@@ -1853,7 +1853,11 @@ counts them. For the superuser a last line,
 says that the registrations have findings
 .RB ( "config validate" ;
 see
-.BR "host forget" ).
+.BR "host forget" ),
+among them the names with upper case that
+.B "config validate"
+lists under
+.BR "Names:" .
 .B \-\-json
 prints a JSON array instead, empty (\fB[]\fR) when there is no host: for each
 host its
@@ -1870,7 +1874,9 @@ has it) and
 .BR findings ,
 the findings of
 .B "config validate"
-that name the host (an array, always empty for an engineer). It prints no
+that name the host, the
+.B "Names:"
+ones included (an array, always empty for an engineer). It prints no
 table, footer or warning. An engineer lists the hosts of their own scopes in
 both forms.
 .\" BEGIN GENERATED: command host list
@@ -2237,8 +2243,9 @@ Options:
 .\" END GENERATED: command host move
 .TP
 .B "host sync " "{ " name " | \-\-all } [ \-\-allow\-uid\-mismatch ] [ \-\-remove\-home ]"
-Push the scope's current user list to the host: new users get accounts,
-tier changes move group membership, disabled users' accounts are expired
+Push the scope's current user list to the host: new users get accounts, a
+renamed user's account is renamed (its UID and home are kept), tier changes
+move group membership, disabled users' accounts are expired
 (files kept; enabling the user restores the account), and the accounts of
 users no longer in the scope (or no longer tacctl users) are deleted with
 .BR userdel (8),
@@ -2306,7 +2313,8 @@ user's account stays expired)
 .RI "(\(lq'" old "' is now '" new "' (renamed; UID " uid "; home kept at " home )\(rq).
 A host that missed a rename, or saw two, ends the same, and so does a host
 still on an earlier UID range (the account is found at the number the user had
-there and renumbered by the same run). No question is asked
+there and renumbered by the same run; the line then shows that number and adds
+.RI ", renumbered to " uid " later in this run"). No question is asked
 about the home of the old name, and
 .B "host show"
 lists the account as updated. Mail and cron spools under the old name are
@@ -9447,7 +9455,9 @@ keeps the change only when, after the fresh login, you log in with one
 account of each class and type
 .BR OK ;
 anything else, or no answer while a minute of the window is left, rolls it
-back, and a line typed before a device's question is not its answer. It needs
+back. A line typed before the question of a device, after the device before it
+was answered or timed out, is not its answer; one typed ahead of the first
+question is. It needs
 a terminal and is refused with
 .B \-\-json
 (exit 2).

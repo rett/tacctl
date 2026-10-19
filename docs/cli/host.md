@@ -45,8 +45,8 @@ host enroll <[user@]host>|--local [opts]
 
 host sync <name>|--all
 
-    Push account adds, deletions, expiries and tier changes; pins the host's ssh keys if none are
-    (enroll pins them too)
+    Push account adds, renames, deletions, expiries and tier changes (a renamed user's account is
+    renamed, keeping its UID and home); pins the host's ssh keys if none are (enroll pins them too)
 
     --allow-uid-mismatch
         (enroll and sync) accept a UID conflict on the host instead of stopping
@@ -195,14 +195,16 @@ the registry gives one; 0 for this server's own host), `scope`, `server`,
 `drift` (the warning the table prints when the scope no longer answers the
 host, empty when none), `breakglass` (the hold, as in `host show --json`,
 only while the host is held) and `findings` (those of the next paragraph that
-name the host, each `text` and `fix`; always empty for an engineer, who is
-told no findings). An engineer lists the hosts of their own scopes. The
+name the host, with the `Names:` findings of `config validate` about the host,
+each `text` and `fix`; always empty for an engineer, who is told no findings). An engineer lists the hosts of their own scopes. The
 table's footer and warnings are not printed with `--json`.
 
 **Findings.** `config validate` (under `Linux hosts:`, warnings that change no
 exit status) and `host list` (one last line, `N finding(s): see tacctl config
-validate`) report, for the superuser, registrations that cannot all be right.
-Nothing is repaired where they are reported; each names the verb that does.
+validate`) report, for the superuser, registrations that cannot all be right
+(`config validate` prints the last row under `Names:`; the `host list` count
+includes it). Nothing is repaired where they are reported; each names the
+verb that does.
 
 | Finding | Fix |
 |---|---|
@@ -210,6 +212,7 @@ Nothing is repaired where they are reported; each names the verb that does.
 | a host named like a registered device | `host rename <name> <new>` |
 | two hosts with the same recorded address and ssh port (the address `enroll` or `sync` recorded; nothing is resolved; one address on another port is another machine) | `host forget <name>` for a registration made twice |
 | a pin, a record or a staging entry with no registry line | `host forget <name>` |
+| a name with upper case (a `Names:` finding in `config validate`) | `host rename <name> <lower-case name>` |
 
 A break-glass hold with no host is the hold's own orphan line in
 `config validate` and `breakglass list`: `tacctl breakglass release <name>`.

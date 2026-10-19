@@ -452,7 +452,8 @@ func TestHostFindingsDuplicateNames(t *testing.T) {
 			t.Errorf("validate lacks %q:\n%s", want, v)
 		}
 	}
-	if !strings.Contains(l, "1 finding(s): see tacctl config validate") {
+	// The mixed-case spelling is a Names finding as well, counted with it.
+	if !strings.Contains(l, "2 finding(s): see tacctl config validate") {
 		t.Errorf("host list:\n%s", l)
 	}
 	// The shared pin is not also two hosts at one address.

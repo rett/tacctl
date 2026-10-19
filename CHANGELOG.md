@@ -3,6 +3,25 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.15
+
+1. **Small fixes.** The client script's UID check no longer says `Nothing was
+   changed.` when an account may have been renamed earlier in the same run: it
+   says `No account was created or removed (an account renamed above keeps its
+   new name).` The line for a renamed account shows the account's own UID, and
+   on a host still on an earlier UID range adds `, renumbered to <uid> later
+   in this run`. The `host sync` help line and the documentation now say that
+   a sync pushes renames as well (a renamed user's account is renamed, keeping
+   its UID and home). `host list` counts the `Names:` findings about hosts in
+   its footer, and `host list --json` lists them under the host's `findings`.
+
+2. **`device config apply --hold` takes an answer typed ahead.** An answer
+   typed before the first question is now taken as that device's answer, and
+   an answer that comes after a device's window is still dropped, not given to
+   the next device. Each line is matched to the question it was read under.
+   This also closes an occasional wrong rollback when the review's answer and
+   the hold's answer were typed together (a pasted `name`/`OK`).
+
 ## 0.2.14 (2026-10-18)
 
 1. **`device address` moves a break-glass hold with its device.** On a

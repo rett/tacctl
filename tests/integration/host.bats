@@ -1413,3 +1413,16 @@ YAML
     assert_failure
     assert_output --partial "No enrolled host or leftover named 'web1'"
 }
+
+@test "host list: a host with upper case in its name is a finding of the footer and of --json" {
+    echo "Web1|admin@web1.example.net||lab|192.0.2.1|" > "${TACCTL_STATE_DIR}/linux-hosts"
+    run "$TACCTL_BIN_SCRIPT" host list
+    assert_success
+    assert_output --partial "1 finding(s): see tacctl config validate"
+    run "$TACCTL_BIN_SCRIPT" host list --json
+    assert_success
+    assert_output --partial "the host 'Web1' has upper case in its name"
+    assert_output --partial "tacctl host rename Web1 web1"
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_output --partial "Names:"
+}
