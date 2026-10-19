@@ -578,6 +578,18 @@ func (inv *invocation) restoreSnapshot(id string) error {
 			return inv.usageErr("Snapshot " + id + " was not restored: " + err.Error() + ". Nothing was changed.")
 		}
 		defer unlockHosts()
+		// And the lock of each host, tried without waiting (D207): a rotation,
+		// rename or forget of a host runs on its own lock, and one still
+		// running when the files come back would write over them.
+		unlockNames, busy, err := inv.lockHostNames(dir)
+		switch {
+		case busy != "":
+			return inv.usageErr("Snapshot "+id+" was not restored: '"+busy+"' is locked by another tacctl command (a rotation, rename or forget of it is running). Nothing was changed.",
+				"Run this again when it has finished.")
+		case err != nil:
+			return inv.usageErr("Snapshot " + id + " was not restored: " + err.Error() + ". Nothing was changed.")
+		}
+		defer unlockNames()
 	}
 	// The current state first, so the restore can be undone with another
 	// one. Retention must not take the snapshot being read.
@@ -651,6 +663,51 @@ func (inv *invocation) restoreSnapshot(id string) error {
 	inv.echo("")
 	inv.warnServerSync("Users whose tier is lower now keep their old groups")
 	return nil
+}
+
+// lockHostNames tries the provisioner lock of every host name of the union
+// of the live registry and the snapshot's in dir, without waiting, and
+// returns the function that releases them all. When one is held by another
+// command it releases the ones it took and returns that name in busy. The
+// caller holds the registry's lock. A name the snapshot's registry holds
+// that no command would lock (the host is gone) is locked all the same, and
+// a registry that cannot be read names nothing: the restore says so before
+// the question (restoreHostsNote) and puts the file back all the same.
+func (inv *invocation) lockHostNames(dir string) (unlock func(), busy string, err error) {
+	var names []string
+	for _, path := range []string{inv.app.Paths.LinuxHosts, filepath.Join(dir, snapshot.HostsName)} {
+		reg, err := hosts.LoadRegistry(path)
+		if err != nil {
+			continue
+		}
+		for _, e := range reg.Entries() {
+			// A name is a file name of the lock directory.
+			if !slices.Contains(names, e.Name) && !strings.ContainsAny(e.Name, "/\x00") {
+				names = append(names, e.Name)
+			}
+		}
+	}
+	slices.Sort(names)
+	var unlocks []func()
+	release := func() {
+		for _, u := range unlocks {
+			u()
+		}
+	}
+	locks := filepath.Join(inv.app.Paths.StateDir, "locks")
+	for _, n := range names {
+		u, err := hosts.LockHost(locks, n)
+		if errors.Is(err, hosts.ErrRotationBusy) {
+			release()
+			return nil, n, nil
+		}
+		if err != nil {
+			release()
+			return nil, "", err
+		}
+		unlocks = append(unlocks, u)
+	}
+	return release, "", nil
 }
 
 // restoreHoldNote says how the set of break-glass holds changes when the

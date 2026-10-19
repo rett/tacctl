@@ -122,6 +122,14 @@ func (r *rotation) authText() string {
 	return "password login"
 }
 
+// hostLockBusyErr is the refusal of a command that finds the lock of host
+// name (hosts.LockHost) held by another: a rotation, rename, forget or
+// restore of it (D208).
+func (inv *invocation) hostLockBusyErr(name string) error {
+	return inv.usageErr("'"+name+"' is locked by another tacctl command (a rotation, rename, forget or restore of it is running); nothing was changed.",
+		"Run this again when it has finished.")
+}
+
 // hostRotate is 'host provisioner <name> rotate <user> ...'.
 func (inv *invocation) hostRotate(o rotateOpts) error {
 	a := inv.app
@@ -134,8 +142,7 @@ func (inv *invocation) hostRotate(o rotateOpts) error {
 			unlock, err := hosts.LockHost(filepath.Join(a.Paths.StateDir, "locks"), o.name)
 			switch {
 			case errors.Is(err, hosts.ErrRotationBusy):
-				return inv.usageErr("Another rotation of '"+o.name+"' is running; nothing was changed.",
-					"Run this again when it has finished.")
+				return inv.hostLockBusyErr(o.name)
 			case err != nil:
 				return err
 			}

@@ -98,8 +98,9 @@ to another host or a registered device. A name with upper case is refused
 (`Names are lower case: use 'web1'.`). Changing only the spelling to lower
 case (`Web1` to `web1`) is allowed and is how a name from before is fixed;
 the same name is refused (`'web1' already has that name.`). A
-running `host provisioner rotate` of the host refuses the rename. Everything
-is checked before anything is written, and a refusal changes nothing. The
+running rotation, rename, forget or restore of the host refuses the rename
+(`'web1' is locked by another tacctl command`). Everything is checked before
+anything is written, and a refusal changes nothing. The
 device registry is checked once more under its lock when it is written: a
 device registered under the new name since the checks (another command, at
 the same moment) puts the registry line back and changes nothing, and
@@ -183,9 +184,10 @@ pins and the scan result are shared by names equal ignoring case, so they stay
 while another enrolled host has such a name (a device of that name keeps the
 scan result). A host with a [break-glass hold](breakglass.md) is refused:
 `tacctl breakglass release <name>` first, and so is the leftover of a name
-that a hold is recorded under. A running `host provisioner rotate` of the host
-refuses it. `host unenroll --force` is not the repair for a duplicate: it runs
-the removal script on the machine that the surviving registration shares.
+that a hold is recorded under. A running rotation, rename, forget or restore
+of the host refuses it. `host unenroll --force` is not the repair for a
+duplicate: it runs the removal script on the machine that the surviving
+registration shares.
 
 **Listing.** ADDRESS is the address recorded at the host's last `host enroll`
 or `host sync` (the one a break-glass hold carves out), `-` when none is. In

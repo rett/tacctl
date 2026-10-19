@@ -111,10 +111,20 @@ this one.
 
 The restore holds the host registry's lock from before it changes anything.
 When another tacctl command keeps the lock for 30 seconds, the restore stops
-with the registry busy and nothing changed. A snapshot that does not know the
-hosts does not take the lock. The host files are put back last: if that step
-fails, the rest of the restore stands and the backends are restarted, and two
-warnings name the error, the snapshot of the state from before the restore
+with the registry busy and nothing changed. It also tries the lock of each
+host (the one `host provisioner rotate`, `host rename` and `host forget` hold
+while they run) for every name in the live registry and in the snapshot's,
+without waiting. If another command holds one, the restore stops before it
+takes the snapshot of the current state, with nothing changed:
+
+    Snapshot <ts> was not restored: 'web1' is locked by another tacctl command
+    (a rotation, rename or forget of it is running). Nothing was changed. Run
+    this again when it has finished.
+
+The locks are released when the host files are back. A snapshot that does not
+know the hosts takes neither lock. The host files are put back last: if that
+step fails, the rest of the restore stands and the backends are restarted, and
+two warnings name the error, the snapshot of the state from before the restore
 and the commands that undo the restore (`backup restore` of that snapshot) or
 try the host files again (`backup restore` of this one).
 

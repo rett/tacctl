@@ -173,7 +173,7 @@ func TestHostRenameScopeStaysLineFollowsTheLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	sb.run("", []string{"host", "rename", "web1", "web9"})
-	sb.expect(1, "", "Another rotation of 'web1' is running")
+	sb.expect(1, "", "'web1' is locked by another tacctl command")
 	if strings.Contains(sb.printed(), "keeps its name") {
 		t.Errorf("printed before the lock:\n%s", sb.printed())
 	}

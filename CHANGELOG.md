@@ -22,6 +22,20 @@ current behaviour; this file is where history lives.
    This also closes an occasional wrong rollback when the review's answer and
    the hold's answer were typed together (a pasted `name`/`OK`).
 
+3. **`backup restore` refuses while a host is locked.** The restore now tries
+   the per-host lock that `host provisioner rotate`, `host rename` and `host
+   forget` hold, for every host in the live registry and in the snapshot's,
+   without waiting. If another command holds one, it stops before the
+   snapshot of the current state with nothing changed, names the host and
+   says to run it again when that command has finished; the locks are
+   released when the host files are back, and a snapshot that does not know
+   the hosts takes none. The restore can no longer interleave with a running
+   rotation, which removes the known limit of 0.2.14. The three refusals for
+   a busy host lock (`host provisioner rotate`, `host rename`, `host forget`)
+   now read `'<name>' is locked by another tacctl command (a rotation,
+   rename, forget or restore of it is running); nothing was changed. Run
+   this again when it has finished.`
+
 ## 0.2.14 (2026-10-18)
 
 1. **`device address` moves a break-glass hold with its device.** On a

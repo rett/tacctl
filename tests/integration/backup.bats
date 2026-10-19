@@ -455,6 +455,26 @@ drift.20250301_000000
     [[ "$(state_files)" == "$before" ]]
 }
 
+@test "backup restore: refuses while a host is locked by another command, nothing changed" {
+    add_user alice
+    local first before count
+    first=$(oldest_snapshot)
+    printf '%s\n' 'web1|web1||lab|192.0.2.1|' > "${BACKUPS}/${first}/linux-hosts"
+    mkdir -p "${TACCTL_STATE_DIR}/locks"
+    flock -x "${TACCTL_STATE_DIR}/locks/host-provisioner-web1.lock" sleep 30 &
+    local holder=$!
+    sleep 0.5
+    before=$(state_files)
+    count=$(snapshots | wc -l)
+    run "$TACCTL_BIN_SCRIPT" backup restore "$first" <<< "y"
+    kill "$holder" 2> /dev/null || true
+    assert_failure 1
+    assert_output --partial "was not restored: 'web1' is locked by another tacctl command"
+    assert_output --partial "Nothing was changed."
+    [[ "$(state_files)" == "$before" ]]
+    [[ "$(snapshots | wc -l)" -eq "$count" ]]
+}
+
 @test "backup restore: a hand-edited tacquito.yaml is overwritten, and kept under legacy/" {
     add_user alice
     local first

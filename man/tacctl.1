@@ -2314,7 +2314,7 @@ user's account stays expired)
 A host that missed a rename, or saw two, ends the same, and so does a host
 still on an earlier UID range (the account is found at the number the user had
 there and renumbered by the same run; the line then shows that number and adds
-.RI ", renumbered to " uid " later in this run"). No question is asked
+.RI ", to be renumbered to " uid " later in this run"). No question is asked
 about the home of the old name, and
 .B "host show"
 lists the account as updated. Mail and cron spools under the old name are
@@ -2473,8 +2473,13 @@ without locking tacctl out of it.
 is the only subcommand. One rotation of a host runs at a time on the tacctl
 server (a lock under
 .IR /etc/tacctl/locks ):
-a second one fails at once with
-"another rotation of <name> is running" and changes nothing.
+the lock is the host's, shared with
+.BR "host rename" ,
+.B host forget
+and
+.BR "backup restore" ,
+and a command that finds it held fails at once with
+"<name> is locked by another tacctl command" and changes nothing.
 .IP
 Nothing is changed until these checks pass: the host is enrolled and not the
 server's own
@@ -4690,11 +4695,20 @@ and the restore still puts the files back. The snapshot of the current state tak
 .PP
 The restore holds the host registry's lock from before it changes anything: when
 another tacctl command keeps it for 30 seconds the restore stops with the
-registry busy and nothing changed (a snapshot that does not know the hosts does
-not take the lock). The host files are put back last. If that step fails the
-rest of the restore stands and the backends are restarted, and two warnings name
-the error, the snapshot of the state from before the restore and the commands
-that undo the restore or try the host files again.
+registry busy and nothing changed. It also tries the lock of each host, the one
+.BR "host provisioner rotate" ,
+.B host rename
+and
+.B host forget
+hold while they run, for every name in the live registry and in the snapshot's,
+without waiting: when another command holds one the restore stops before it
+takes the snapshot of the current state, with nothing changed, and names the host
+.RB ( "'<name>' is locked by another tacctl command" ).
+The locks are released when the host files are back. A snapshot that does not
+know the hosts takes neither lock. The host files are put back last. If that
+step fails the rest of the restore stands and the backends are restarted, and
+two warnings name the error, the snapshot of the state from before the restore
+and the commands that undo the restore or try the host files again.
 .PP
 A snapshot is the directory
 .I /etc/tacctl/backups/<timestamp>/

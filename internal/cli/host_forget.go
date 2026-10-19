@@ -107,12 +107,11 @@ func (inv *invocation) hostForget(args []string) error {
 			"Release it first: tacctl breakglass release "+h.Device+". Nothing was changed.")
 	}
 
-	// A rotation of the host is running: its lock is not waited for.
+	// Another command holds the host's lock: it is not waited for.
 	unlock, err := hosts.LockHost(filepath.Join(a.Paths.StateDir, "locks"), name)
 	switch {
 	case errors.Is(err, hosts.ErrRotationBusy):
-		return inv.usageErr("Another rotation of '"+name+"' is running; nothing was changed.",
-			"Run this again when it has finished.")
+		return inv.hostLockBusyErr(name)
 	case err != nil:
 		return err
 	}
