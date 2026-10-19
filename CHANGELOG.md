@@ -3,7 +3,7 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.15
+## 0.2.15 (2026-10-19)
 
 1. **Small fixes.** The client script's UID check no longer says `Nothing was
    changed.` when an account may have been renamed earlier in the same run: it
