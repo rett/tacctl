@@ -47,7 +47,7 @@ func TestRenderLeavesNoTempFileAndReplacesAtomically(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "rendered.yaml")
 	writeFile(t, out, "previous content\n")
-	if _, err := RenderToFile(loadStore(t, "store.multiscope.yaml"), defaultView(t), out, DefaultLoader, nil); err != nil {
+	if _, err := RenderToFile(loadStore(t, "store.multiscope.yaml"), defaultView(t), nil, out, DefaultLoader, nil); err != nil {
 		t.Fatal(err)
 	}
 	if m, _ := filepath.Glob(filepath.Join(dir, ".tacquito.*")); len(m) > 0 {
@@ -346,7 +346,7 @@ func TestRenderUnparsableTacctlYAMLIsRefused(t *testing.T) {
 
 func TestRenderUnknownActionIsRefused(t *testing.T) {
 	c := viewOf(t, "commands:\n  operator:\n  - {name: show, action: allow}\n")
-	_, err := Render(loadStore(t, "store.multiscope.yaml"), c.Merged())
+	_, err := Render(loadStore(t, "store.multiscope.yaml"), c.Merged(), nil)
 	if err == nil || !strings.Contains(err.Error(), "neither permit nor deny") {
 		t.Fatalf("got %v", err)
 	}
@@ -355,7 +355,7 @@ func TestRenderUnknownActionIsRefused(t *testing.T) {
 func TestRenderCommandsNotAMappingIsRefused(t *testing.T) {
 	// 0.1.16 died with a traceback here; 0.2.0 says what is wrong.
 	c := viewOf(t, "commands: [1]\n")
-	_, err := Render(loadStore(t, "store.multiscope.yaml"), c.Merged())
+	_, err := Render(loadStore(t, "store.multiscope.yaml"), c.Merged(), nil)
 	if err == nil || rendered.Report(err) != "tacctl render: tacctl.yaml: commands is not a mapping of groups" {
 		t.Fatalf("got %v", err)
 	}
@@ -402,7 +402,7 @@ func TestRenderToFileWritesNothingWhenTheReadbackFails(t *testing.T) {
 		r.Dropped = []string{"unknown top-level key 'x'"}
 		return r, nil
 	}
-	_, err := RenderToFile(loadStore(t, "store.multiscope.yaml"), defaultView(t), out, lying, nil)
+	_, err := RenderToFile(loadStore(t, "store.multiscope.yaml"), defaultView(t), nil, out, lying, nil)
 	want := "tacctl render: internal error: the rendered config does not read back as the model (" +
 		"importer reports: users[0]: not a mapping; importer reports: unknown top-level key 'x'). Nothing was written."
 	if err == nil || rendered.Report(err) != want {
@@ -415,12 +415,12 @@ func TestRenderToFileWritesNothingWhenTheReadbackFails(t *testing.T) {
 	refusing := func(string) (*LegacyResult, error) {
 		return nil, &store.Error{Msg: "x.yaml: top level is not a YAML mapping"}
 	}
-	if _, err := RenderToFile(loadStore(t, "store.multiscope.yaml"), defaultView(t), out, refusing, nil); err == nil ||
+	if _, err := RenderToFile(loadStore(t, "store.multiscope.yaml"), defaultView(t), nil, out, refusing, nil); err == nil ||
 		rendered.Report(err) != "tacctl render: x.yaml: top level is not a YAML mapping" {
 		t.Fatalf("got %v", err)
 	}
 	// No loader at all is an internal error, never an unchecked file.
-	if _, err := RenderToFile(loadStore(t, "store.multiscope.yaml"), defaultView(t), out, nil, nil); err == nil {
+	if _, err := RenderToFile(loadStore(t, "store.multiscope.yaml"), defaultView(t), nil, out, nil, nil); err == nil {
 		t.Fatal("rendered without a read-back")
 	}
 	if _, err := os.Stat(out); !errors.Is(err, os.ErrNotExist) {

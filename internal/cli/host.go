@@ -881,6 +881,12 @@ func (inv *invocation) hostEnroll(args []string) error {
 		}
 		return err
 	}
+	if !enrolled {
+		// The device namespace again, now that the line is written (D235).
+		if err := inv.hostEnrollDeviceConflict(reg, name, target, scope); err != nil {
+			return err
+		}
+	}
 	if narrowScope {
 		// Not when the scope's auth-method is the other protocol: narrowing
 		// would leave that setting pointing at a backend that ignores the scope.
@@ -912,6 +918,52 @@ func (inv *invocation) hostEnroll(args []string) error {
 		inv.echo("")
 	}
 	return nil
+}
+
+// hostEnrollDeviceConflict is the second check of a new host's name against
+// the device registry (D235, D236), made once the registry line is written.
+// The first check ran before the client script, which can take minutes; a
+// 'device add' that finished meanwhile left a host and a device of one name.
+// The check is a read under the lock of devices.yaml, which a command that
+// registers a device holds while it reads the enrolled hosts and writes: the
+// device was registered before and is found here, or its command starts
+// after the line is written and finds the host. A conflict removes the line
+// again; nothing else of the enrolment was written.
+func (inv *invocation) hostEnrollDeviceConflict(reg *hosts.Registry, name, target, scope string) error {
+	a := inv.app
+	var found *devreg.Device
+	_, err := devreg.Mutate(a.Paths.DevicesFile, a.Paths.KnownHosts, nil, func(f *devreg.File) error {
+		if d := f.Find(name); d != nil {
+			dev := *d
+			found = &dev
+			return errors.New("registered")
+		}
+		return nil
+	})
+	if err == nil {
+		return nil
+	}
+	if back := reg.Forget(name); back != nil {
+		if found != nil {
+			a.Out.ErrorE("A device named '" + found.Name + "' (" + found.Address + ") was registered while the client script ran; a host and a device cannot share a name.")
+		} else {
+			a.Out.ErrorE("The device registry could not be read to check the name '" + name + "' (" + strings.Join(msgs(err), " ") + ").")
+		}
+		a.Out.ErrorE("The registry line of '" + name + "' could not be removed again (" + strings.Join(msgs(back), " ") + "); remove it: tacctl host forget " + name)
+		return exit(1)
+	}
+	if found == nil {
+		a.Out.ErrorE("The device registry could not be read to check the name '" + name + "' (" + strings.Join(msgs(err), " ") + "). The client script already ran on the host; the registry was not changed.")
+		return exit(1)
+	}
+	how := target
+	if target == hosts.Local {
+		how = "--local"
+	}
+	a.Out.ErrorE("A device named '" + found.Name + "' (" + found.Address + ") was registered while the client script ran; a host and a device cannot share a name. " +
+		"The script already ran on the host; the registry was not changed. Enroll it under a name of its own: tacctl host enroll " +
+		how + " --scope " + scope + " --name <other>")
+	return exit(1)
 }
 
 // hostScopeCovers checks that scope answers the requests of a host whose

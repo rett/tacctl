@@ -1631,6 +1631,8 @@ more than one backend enabled each gets a labelled block; files left behind by
 a disabled backend are not checked. With RADIUS enabled it warns about a scope
 RADIUS serves that sends no vendor attribute and is not a Linux-host scope.
 Exits 1 when it finds errors.
+The verb takes no argument: a word other than its options is refused
+("Unknown argument") and the report is not run.
 .IP
 .B \-\-json
 prints one JSON object instead, and nothing else on standard output (what the
@@ -1727,7 +1729,15 @@ spelling is another name's is not offered: a line says
 (for two hosts equal ignoring case also
 .BR "tacctl host forget" ,
 which drops the stray registration). A rename its verb refuses prints the
-refusal and does not stop the rest. The run ends with
+refusal and does not stop the rest. A host renamed whose own scope is then
+refused
+.RB ( "Host renamed. Scope 'linux\-Web1' was NOT renamed" )
+counts as renamed, not failed: the host keeps the scope, which the same
+refusal would meet again if it were offered. One line
+.RB ( "'linux\-Web1' is not offered: its rename was refused with the host's (\fIreason\fR); retry: tacctl scope rename linux\-Web1 linux\-web1" )
+is printed in place of the question and the scope counts under
+.BR "not offered" ;
+the next run offers it again. The run ends with
 .B "Names: renamed N, declined N, not offered N, failed N."
 and, when a user was renamed and hosts are enrolled, the
 .B "tacctl host sync \-\-all"
@@ -2207,7 +2217,15 @@ and is renamed with
 .BR "host rename Web1 web1" .
 Enrolling a registered host again under its registered
 spelling is allowed (that is how it is enrolled again or moved). A refused
-name changes nothing and nothing is attempted over ssh. An option that takes
+name changes nothing and nothing is attempted over ssh. The device registry is
+read again once the client script has run, when the registry line is written:
+a device registered meanwhile makes the command take the line back, print
+.B "A device named 'web1' (192.0.2.60) was registered while the client script ran"
+with the command to enroll again under another
+.BR \-\-name ,
+and exit 1. The script has already run on the host, which authenticates
+through this server as long as its scope covers its address; no record, pin
+or audit line is written. An option that takes
 a value
 .RB ( \-\-method ,
 .BR \-\-scope ,
@@ -10300,8 +10318,9 @@ is never changed.
 .B tacquito.yaml
 and
 .B clients.conf
-carry a comment that names the address, the device and the prefixes it was
-carved from, never the reason. Each backend whose file changed restarts once,
+carry a comment that names the address, the device or host (worded
+\fB(device \fIname\fB)\fR or \fB(host \fIname\fB)\fR) and the prefixes it
+was carved from, never the reason. Each backend whose file changed restarts once,
 at the hold and at the release; a release that changes nothing restarts nothing.
 Only the address the device is registered at is carved: a device that sends its
 AAA from another address (a source interface, a NAT) is still answered. A record holds a device only while the device is

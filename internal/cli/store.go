@@ -17,6 +17,7 @@ import (
 
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/backend/tacacs"
+	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/model"
 	rtacacs "github.com/rett/tacctl/internal/render/tacacs"
 	"github.com/rett/tacctl/internal/rendered"
@@ -234,7 +235,7 @@ func (inv *invocation) importRender(s *store.Store) ([]byte, error) {
 		return fail(err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	text, err := rtacacs.RenderToFile(s, cfg.Merged(), filepath.Join(dir, "tacquito.yaml"), rtacacs.DefaultLoader, nil)
+	text, err := rtacacs.RenderToFile(s, cfg.Merged(), hosts.EnrolledNames(inv.app.Paths.LinuxHosts), filepath.Join(dir, "tacquito.yaml"), rtacacs.DefaultLoader, nil)
 	if err != nil {
 		return fail(err)
 	}

@@ -121,6 +121,39 @@ func TestRenderHoldCarvesEveryPrefixThatHoldsTheAddress(t *testing.T) {
 	}
 }
 
+// A hold whose name is an enrolled host reads (host ...) in the comment
+// block and a device keeps (device ...) (D237); only the word changes, and a
+// registry that names nobody is the plain rendering.
+func TestRenderHoldCommentNamesAHostAsAHost(t *testing.T) {
+	st := loadStore(t, "store.hold.yaml")
+	view := holdView(t)
+	plain := string(render(t, st, view))
+	got, err := Render(st, view, map[string]bool{"sw-lab-1": true, "unrelated": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(got)
+	for _, want := range []string{
+		"# break-glass held: 10.0.1.5 (device sw-core-1) is answered by no entry;",
+		"# break-glass held: 192.0.2.21 (host sw-lab-1) is answered by no entry;",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("no comment %q", want)
+		}
+	}
+	if strings.Contains(text, "(device sw-lab-1)") {
+		t.Error("the held host is still worded as a device")
+	}
+	// Nothing but that word differs from the rendering without hosts, and
+	// that rendering is the golden's.
+	if want := strings.Replace(plain, "(device sw-lab-1)", "(host sw-lab-1)", 1); text != want {
+		t.Error("the host set changed more than the word of the comment")
+	}
+	if empty, err := Render(st, view, map[string]bool{}); err != nil || string(empty) != plain {
+		t.Errorf("an empty host set renders differently from none (err %v)", err)
+	}
+}
+
 // With a hold standing the same scope answers every address that is not
 // held, for addresses all over the prefixes and their neighbours.
 func TestRenderHoldKeepsTheScopeOfEveryOtherAddress(t *testing.T) {

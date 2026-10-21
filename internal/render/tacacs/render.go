@@ -347,9 +347,11 @@ func privText(g *model.Group) string {
 // Render is render_tacacs: the store and the merged tacctl.yaml view ->
 // the text of tacquito.yaml. A store that does not validate is refused
 // with every problem ('cannot render an invalid model: ...'), and so is a
-// command rule of tacctl.yaml that is not one. The output depends only on
-// the inputs, so an unchanged model renders byte-identically.
-func Render(st *store.Store, view *yamlpy.Map) ([]byte, error) {
+// command rule of tacctl.yaml that is not one. hostNames are the enrolled
+// hosts (hosts.EnrolledNames): a hold on one is worded as a host in the
+// comment block. The output depends only on the inputs, so an unchanged
+// model renders byte-identically.
+func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool) ([]byte, error) {
 	if errs := store.Validate(st.Doc()); len(errs) > 0 {
 		return nil, &rendered.Error{Msg: "cannot render an invalid model:\n  - " + strings.Join(errs, "\n  - ")}
 	}
@@ -504,7 +506,7 @@ func Render(st *store.Store, view *yamlpy.Map) ([]byte, error) {
 	w.WriteString("\n# --- Secret Providers (Scopes) ---\n" +
 		"# One entry per (scope, prefix), most specific prefix first: tacquito\n" +
 		"# answers a client with the first entry whose prefix contains it.\n")
-	w.WriteString(holdComment(whole, holds))
+	w.WriteString(holdComment(whole, holds, hostNames))
 	type entry struct {
 		cidr, scope string
 		key         cidr.Key
@@ -590,11 +592,11 @@ func Carved(m *model.Model, view *yamlpy.Map) *model.Model {
 }
 
 // holdComment is the comment block of the secret providers naming each
-// held address, its device and the prefixes it was carved out of (the
-// stored ones of the scopes this backend serves), "" when no hold carves
-// anything out of this file. Never the reason: free text does not go into a
-// backend file.
-func holdComment(m *model.Model, holds []conf.Hold) string {
+// held address, its device or host (a name in hostNames is a host) and the
+// prefixes it was carved out of (the stored ones of the scopes this backend
+// serves), "" when no hold carves anything out of this file. Never the
+// reason: free text does not go into a backend file.
+func holdComment(m *model.Model, holds []conf.Hold, hostNames map[string]bool) string {
 	var b strings.Builder
 	for _, h := range holds {
 		from := m.CarvedFrom(h.Address, Protocol, false)
@@ -605,8 +607,8 @@ func holdComment(m *model.Model, holds []conf.Hold) string {
 		for i, c := range from {
 			parts[i] = c.CIDR + " (" + c.Scope + ")"
 		}
-		fmt.Fprintf(&b, "# break-glass held: %s (device %s) is answered by no entry; carved out of %s\n",
-			h.Address, h.Device, strings.Join(parts, ", "))
+		fmt.Fprintf(&b, "# break-glass held: %s (%s %s) is answered by no entry; carved out of %s\n",
+			h.Address, conf.HoldKind(h.Device, hostNames), h.Device, strings.Join(parts, ", "))
 	}
 	if b.Len() == 0 {
 		return ""

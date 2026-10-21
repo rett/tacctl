@@ -179,10 +179,34 @@ func (inv *invocation) hostRename(args []string) error {
 	return nil
 }
 
+// hostScopeKeptError is the end of a 'host rename' whose carried scope was
+// refused (D201, D234): the host is renamed, the scope keeps its name. It
+// unwraps to the exit status 1 the verb ends with, so a caller that only
+// reads the status sees what it always saw; 'config validate --fix-names'
+// asks for the type to count the host as renamed.
+type hostScopeKeptError struct {
+	Old, New string
+	Reason   error
+}
+
+func (e *hostScopeKeptError) Error() string {
+	return "scope '" + e.Old + "' was not renamed: " + e.reason()
+}
+
+// Unwrap is the exit status 1 the messages were written for.
+func (e *hostScopeKeptError) Unwrap() error { return exit(1) }
+
+// reason is why the scope was refused, without the closing full stop.
+func (e *hostScopeKeptError) reason() string {
+	return strings.TrimRight(strings.Join(msgs(e.Reason), " "), ".")
+}
+
 // hostRenameScopeFailed is D201: the host is renamed and keeps its scope.
 func (inv *invocation) hostRenameScopeFailed(p *hostRenamePlan, err error) error {
-	return inv.usageErr("Host renamed. Scope '" + p.oldScope + "' was NOT renamed: " + strings.TrimRight(strings.Join(msgs(err), " "), ".") +
+	kept := &hostScopeKeptError{Old: p.oldScope, New: p.newScope, Reason: err}
+	_ = inv.usageErr("Host renamed. Scope '" + p.oldScope + "' was NOT renamed: " + kept.reason() +
 		"; the host keeps it. Retry: tacctl scope rename " + p.oldScope + " " + p.newScope + ".")
+	return kept
 }
 
 // hostRenameChecks is every refusal of a rename and the facts the rest of it

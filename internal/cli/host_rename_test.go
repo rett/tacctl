@@ -136,7 +136,7 @@ func TestHostRenameCarriesEverythingTheHostHas(t *testing.T) {
 	if o := sb.overrides(); !strings.Contains(o, "breakglass_hold:\n  web7:\n    address: 192.168.1.10\n") || strings.Contains(o, "web1") {
 		t.Errorf("tacctl.yaml:\n%s", o)
 	}
-	if cfg := sb.renderedConfig(); !strings.Contains(cfg, "# break-glass held: 192.168.1.10 (device web7)") || strings.Contains(cfg, "device web1") {
+	if cfg := sb.renderedConfig(); !strings.Contains(cfg, "# break-glass held: 192.168.1.10 (host web7)") || strings.Contains(cfg, "device web1") {
 		t.Errorf("the rendered file:\n%s", cfg)
 	}
 	// The key scan result moved with the name.

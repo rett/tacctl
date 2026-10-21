@@ -65,6 +65,10 @@ type Params struct {
 	PIDFile    string
 	LibDir     string
 	SystemDict string // the package's main dictionary, included by tacctl's
+	// Hosts are the enrolled hosts' names (hosts.EnrolledNames): a hold on
+	// one is worded as a host in clients.conf's comment. Not the layout's;
+	// the caller sets it.
+	Hosts map[string]bool
 }
 
 // ParamsFor is _radius_params for a layout.

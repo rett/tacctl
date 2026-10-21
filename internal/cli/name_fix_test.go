@@ -223,6 +223,89 @@ func TestFixNamesRefusedRenameCountsAndGoesOn(t *testing.T) {
 	}
 }
 
+// refuseHostScope makes the check of the scope a host rename carries pass at
+// the offer and fail by the time the step runs (the credentials file of the
+// new name appears once the host is renamed), which is the refusal D233 is
+// about; at the offer the same file only makes the host keep its scope.
+func refuseHostScope(sb *sandbox) {
+	sb.hooks.hostRenameStep = func(step string) {
+		if step == "pins" {
+			sb.write("state/snmp/linux-Web1.yaml", "community: a\n", 0o600)
+			sb.write("state/snmp/linux-web1.yaml", "community: b\n", 0o600)
+		}
+	}
+}
+
+// A host renamed whose carried scope is refused counts as renamed (D233): the
+// scope is not offered again in the run, one line gives the command, and the
+// run exits 1 with the scope under 'not offered'. The host verb typed on its
+// own ends as it always did (TestHostRenameScopeStepFails).
+func TestFixNamesHostScopeRefusedCountsAsRenamed(t *testing.T) {
+	const line = "'linux-Web1' is not offered: its rename was refused with the host's (SNMP credentials for a scope named 'linux-web1' are already on disk: "
+	const retry = "); retry: tacctl scope rename linux-Web1 linux-web1\n"
+	sb := nameFixLab(t)
+	refuseHostScope(sb)
+	// Core-SW1 n, Web1 y, the host's own question about its scope y, Alice n,
+	// Dmz n, Prod-Inner n.
+	sb.run("n\ny\ny\nn\nn\nn\n", []string{"config", "validate", "--fix-names"})
+	out := plain(sb.out.String())
+	sb.expect(1, "Names: renamed 1, declined 4, not offered 1, failed 0.", "Host renamed. Scope 'linux-Web1' was NOT renamed: ")
+	if !strings.Contains(out, "Host 'Web1' renamed to 'web1'.") {
+		t.Errorf("the host was not renamed:\n%s", out)
+	}
+	if n := strings.Count(out, line); n != 1 || !strings.Contains(out, retry) {
+		t.Errorf("the line for the scope (%d):\n%s", n, out)
+	}
+	if strings.Contains(out, "Rename scope 'linux-Web1'") {
+		t.Errorf("the scope was offered:\n%s", out)
+	}
+	if got := sb.registryText(); got != "web1|root@198.51.100.10||linux-Web1|192.0.2.1|\n" {
+		t.Errorf("registry %q", got)
+	}
+	if !strings.Contains(sb.store(), "linux-Web1") {
+		t.Errorf("the scope was renamed:\n%s", sb.store())
+	}
+
+	// With -y the same line once, the other renames made.
+	sb = nameFixLab(t)
+	refuseHostScope(sb)
+	sb.run("", []string{"config", "validate", "--fix-names", "-y"})
+	out = plain(sb.out.String())
+	sb.expect(1, "Names: renamed 5, declined 0, not offered 1, failed 0.", "")
+	if n := strings.Count(out, line); n != 1 || !strings.Contains(out, retry) {
+		t.Errorf("the line for the scope (%d):\n%s", n, out)
+	}
+	// Left out of this run only: the next run offers the scope again, and
+	// once the file is gone it is renamed.
+	sb.hooks.hostRenameStep = nil
+	sb.run("", []string{"config", "validate", "--fix-names", "-y"})
+	sb.expect(1, "Names: renamed 0, declined 0, not offered 0, failed 1.", "are already on disk")
+	if err := os.Remove(sb.path("state", "snmp", "linux-web1.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	sb.run("", []string{"config", "validate", "--fix-names", "-y"})
+	sb.expect(0, "Names: renamed 1, declined 0, not offered 0, failed 0.", "")
+	if st := sb.store(); strings.Contains(st, "linux-Web1") {
+		t.Errorf("the scope was not renamed:\n%s", st)
+	}
+}
+
+// A scope a host rename leaves because other hosts use it is offered on its
+// own and renamed (D234): the host counts as renamed and nothing is refused.
+func TestFixNamesSharedScopeIsOfferedOnItsOwn(t *testing.T) {
+	sb := nameFixLab(t)
+	sb.write("state/linux-hosts", "Web1|root@198.51.100.10||linux-Web1|192.0.2.1|\nweb2|root@198.51.100.11||linux-Web1|192.0.2.1|\n", 0o600)
+	sb.run("", []string{"config", "validate", "--fix-names", "-y"})
+	out := plain(sb.out.String())
+	sb.expect(0, "Names: renamed 6, declined 0, not offered 0, failed 0.", "")
+	if strings.Contains(out, "is not offered") {
+		t.Errorf("a name was not offered:\n%s", out)
+	}
+	if n := strings.Count(out, "Scope renamed: linux-Web1 -> linux-web1"); n != 1 {
+		t.Errorf("the scope was renamed %d times:\n%s", n, out)
+	}
+}
+
 // An engineer and an operator are refused before the report, and nothing is
 // changed; a missing store is refused as everywhere else.
 func TestFixNamesIsTheSuperusers(t *testing.T) {

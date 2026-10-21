@@ -9,6 +9,7 @@ import (
 
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/execx/fake"
 )
 
 // withDevice registers a device in the sandbox's devices file.
@@ -136,5 +137,85 @@ func TestHostEnrollOfAFoldEqualNameFinishedMeanwhileIsRefused(t *testing.T) {
 	}
 	if strings.Contains(hs.out.String(), "enrolled.") {
 		t.Errorf("stdout %q", hs.out.String())
+	}
+}
+
+// lateDevice is a runner whose first ssh call after the script was pushed
+// registers a device called name at addr, the way a 'device add' that
+// finishes while the client script runs does. It reports the devices file
+// the device left.
+func (hs *hostSandbox) lateDevice(name, addr string) (*fake.Runner, *string) {
+	r := hs.runner()
+	devices := new(string)
+	done := false
+	r.Func(func(c execx.Cmd) bool { return c.Name == "ssh" || c.Name == "bash" }, func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(strings.Join(c.Args, " "), "mktemp") {
+			_, _ = io.ReadAll(c.Stdin)
+			return execx.Result{Stdout: []byte("/tmp/tacctl.AbCd1234\n")}, nil
+		}
+		if !done {
+			done = true
+			hs.withDevice(name, addr)
+			*devices = hs.read("state/devices.yaml")
+		}
+		return execx.Result{}, nil
+	})
+	return r, devices
+}
+
+// A device registered while the client script ran (D235, D236): the name is
+// checked against the device registry again once the registry line is
+// written, and the line is taken back. Nothing else of the enrolment is
+// written: no record, no pins, no audit line.
+func TestHostEnrollOfANameADeviceTookMeanwhileIsRefused(t *testing.T) {
+	hs := newHostSandbox(t)
+	r, devices := hs.lateDevice("web1", "192.0.2.60")
+	hs.run(r, "host", "enroll", "admin@web1.example.net", "--name", "web1", "--scope", "lab", "--allow-uid-mismatch", "--remove-home", "--build-on-host")
+	hs.expect(1, "", "A device named 'web1' (192.0.2.60) was registered while the client script ran; a host and a device cannot share a name. "+
+		"The script already ran on the host; the registry was not changed. Enroll it under a name of its own: "+
+		"tacctl host enroll admin@web1.example.net --scope lab --name <other>")
+	if !r.CalledRegexp(`sudo -n bash /tmp/tacctl.AbCd1234`) {
+		t.Errorf("the script did not run: %q", r.Argvs())
+	}
+	if hs.registry() != "" {
+		t.Errorf("registry %q", hs.registry())
+	}
+	if rec := hs.record("web1"); rec != "" {
+		t.Errorf("a record was written: %s", rec)
+	}
+	if got := hs.read("state/devices.yaml"); got != *devices || strings.Contains(got, "hostkeys") {
+		t.Errorf("the device registry changed:\n%s\nwas\n%s", got, *devices)
+	}
+	if r.CalledRegexp(`host enroll name=`) || strings.Contains(hs.out.String(), "enrolled") {
+		t.Errorf("enrolled: %q\n%s", r.Argvs(), hs.out.String())
+	}
+	if r.Called("ssh-keyscan") {
+		t.Errorf("keys were scanned: %q", r.Argvs())
+	}
+
+	// --local names its own flag in the way on, and a name equal ignoring
+	// case is the same name.
+	hs = newHostSandbox(t)
+	hs.loopback()
+	r, _ = hs.lateDevice("Web2", "192.0.2.61")
+	hs.run(r, "host", "enroll", "--local", "--name", "web2", "--scope", "lab")
+	hs.expect(1, "", "A device named 'Web2' (192.0.2.61) was registered while the client script ran")
+	if !strings.Contains(hs.err.String(), "tacctl host enroll --local --scope lab --name <other>") || hs.registry() != "" {
+		t.Errorf("stderr %q registry %q", hs.err.String(), hs.registry())
+	}
+}
+
+// A host that is enrolled already keeps its own name: a re-enrolment is not
+// held to the device namespace a second time (the first check refuses a
+// device that is there before the script).
+func TestHostReEnrollSkipsTheLateDeviceCheck(t *testing.T) {
+	hs := newHostSandbox(t)
+	hs.run(nil, "host", "enroll", "admin@web1.example.net", "--name", "web1", "--scope", "lab")
+	hs.expect(0, "Host 'web1' enrolled.", "")
+	r, _ := hs.lateDevice("web1", "192.0.2.62")
+	hs.run(r, "host", "enroll", "admin@web1.example.net", "--name", "web1", "--scope", "lab")
+	hs.expect(0, "Host 'web1' enrolled.", "")
+	if !strings.HasPrefix(hs.registry(), "web1|") {
+		t.Errorf("registry %q", hs.registry())
 	}
 }

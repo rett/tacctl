@@ -3,6 +3,42 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.16
+
+1. **`config validate` takes no argument.** `config validate extra` ran the
+   report and ignored the word. It now refuses it like the other verbs with a
+   fixed number of arguments: `Unknown argument: 'extra'`, the usage, exit
+   status 1, and no report. `--json`, `--fix-names` and `-y` are unchanged.
+
+2. **`config validate --fix-names`: a host renamed whose own scope is refused
+   counts as renamed.** `--fix-names` counted the host as failed and then
+   offered its `linux-<name>` scope on its own, where the same refusal came
+   again. The host now counts as renamed, and the scope is not offered in that
+   run. One line takes the place of the question: `'linux-Web1' is not
+   offered: its rename was refused with the host's (<reason>); retry: tacctl
+   scope rename linux-Web1 linux-web1`. The scope counts under `not offered`
+   and the run exits 1. The next `--fix-names` offers the scope again. `host
+   rename` typed directly prints and exits as before.
+
+3. **`host enroll` checks the device namespace again after the script has
+   run.** The check of a new host name against the device registry ran only
+   before the client script, which can take minutes. A `device add` that
+   finished meanwhile left a host and a device with one name. The check is now
+   repeated under the device registry's lock, right after the registry line is
+   written. A conflict takes the line back, writes no record, pins or audit
+   line, and exits 1 with `A device named '<name>' (<address>) was registered
+   while the client script ran; a host and a device cannot share a name.` and
+   the `host enroll ... --name <other>` command to run next. The script has
+   already run on the host. A re-enrolment or move of an enrolled host is not
+   checked again.
+
+4. **The comment of the rendered backend files names a held host as a host.**
+   The comment block of `tacquito.yaml` and the RADIUS `clients.conf` now
+   reads `(host <name>)` for a break-glass hold on an enrolled host instead of
+   `(device <name>)`; a held device reads as before. The word comes from the
+   host registry when the files are rendered, so `config validate` still reads
+   them as up to date.
+
 ## 0.2.15 (2026-10-19)
 
 1. **Small fixes.** The client script's UID check no longer says `Nothing was

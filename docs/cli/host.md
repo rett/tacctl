@@ -110,6 +110,16 @@ host default-method [tacplus|radius]
     Show or set the method for hosts enrolled without --method (host.default_method)
 ```
 
+**Enrolling a host and the device registry.** A new host name is checked
+against the device registry before the client script runs and again when the
+registry line is written, after it. A device registered meanwhile puts the
+line back, writes no record, pin or audit line and exits 1 with `A device
+named 'web1' (192.0.2.60) was registered while the client script ran; a host
+and a device cannot share a name.` and the `host enroll` command to run again
+with another `--name`. The script has already run on the host, which
+authenticates through this server while the scope covers its address. A host
+that is enrolled already keeps its own name and is not checked again.
+
 **Renaming a host.** `tacctl host rename <old> <new>` is the superuser's. It
 runs nothing on the host (the machine records no registry name), so a host
 with a break-glass hold may be renamed. The new name follows the rules of a
