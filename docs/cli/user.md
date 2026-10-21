@@ -60,8 +60,11 @@ user rename <old> <new>
     renamed as before. A new name that already has a line keeps its own number, the ledger is left
     alone and a warning says that hosts remove the old account and create the new one. If the
     ledger cannot be written after the rename, the command names the snapshot to restore and
-    exits 1. The ledger has no lock of its own: a `host sync` reading it at that moment sees the
-    file before or after the rename
+    exits 1. The move is made under the ledger's lock: a `host sync` builds its script from the
+    ledger under the same lock, so it sends the names as they were before the rename or after
+    it, never a mix; an account created under the old name is renamed at that host's next sync.
+    If the ledger is locked by another command for 30 seconds, the rename stops at the snapshot
+    with nothing changed (see [Consistent UIDs and GIDs](../hosts/ids-and-groups.md))
 
 user move <name> <group>
 

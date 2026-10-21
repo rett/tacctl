@@ -39,6 +39,35 @@ current behaviour; this file is where history lives.
    host registry when the files are rendered, so `config validate` still reads
    them as up to date.
 
+5. **The UID ledger has a lock; two concurrent `host sync` could give one UID
+   to two users.** `linux-uids` was read and written by several commands with
+   nothing between them. Two `host sync` runs that met a new user each took the
+   same next number, so the user got two lines or two users shared a number.
+   `config linux uid <user> <uid>` checked the holder and wrote in two steps,
+   and `user rename`'s move ran beside a sync with no order. Every command that
+   writes the ledger or decides from it now holds `/etc/tacctl/.linux-uids.lock`
+   (0600) for its read-and-write window and nothing longer:
+
+   - `host enroll`, `host sync` and `config linux script` hold it while they
+     work out the users and their numbers, never while the script runs on a
+     host.
+   - `config linux uid <user> <uid>` holds it from the holder check to the
+     write.
+   - `config linux uid-range` and the renumbering of an old file, `user
+     rename`'s move, and `backup restore`'s put of the ledger hold it for
+     their own writes.
+   - Every snapshot copies the ledger under it.
+
+   `--keep-uids` takes none. The commands that only show the ledger (`config
+   linux uid` with no number, `user list`, `user show`, `host show`, `host
+   check`, `backup diff`) take no lock; every write replaces the file whole,
+   so they see it before or after a change. A command that finds the lock held
+   waits up to 30 seconds, then stops with nothing changed: `the UID ledger
+   (linux-uids) is locked by another tacctl command; try again in a moment
+   (waited 30s)`. A `host sync` building its script now sends the names as they
+   were before a concurrent `user rename` or after it, never a mix. No state
+   format changes.
+
 ## 0.2.15 (2026-10-19)
 
 1. **Small fixes.** The client script's UID check no longer says `Nothing was

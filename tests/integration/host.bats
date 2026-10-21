@@ -1498,3 +1498,28 @@ YAML
     run "$TACCTL_BIN_SCRIPT" config validate
     assert_output --partial "Names:"
 }
+
+@test "config linux uid: a UID ledger another command holds refuses the change after the wait; listing and lookup take no lock" {
+    printf '# range 80000-89999\nalice:80000\nbob:80001\n' > "${TACCTL_STATE_DIR}/linux-uids"
+    # The lock is held from this shell, as another tacctl command would.
+    exec 9> "${TACCTL_STATE_DIR}/.linux-uids.lock"
+    flock -x 9
+
+    run "$TACCTL_BIN_SCRIPT" config linux uid
+    assert_success
+    assert_output --partial "alice"
+    run "$TACCTL_BIN_SCRIPT" config linux uid bob
+    assert_success
+    assert_output "80001"
+
+    run "$TACCTL_BIN_SCRIPT" config linux uid alice 80005
+    assert_failure 1
+    assert_output --partial "the UID ledger (linux-uids) is locked by another tacctl command; try again in a moment (waited 30s)"
+    [[ "$(cat "${TACCTL_STATE_DIR}/linux-uids")" == $'# range 80000-89999\nalice:80000\nbob:80001' ]]
+
+    exec 9>&-
+    run "$TACCTL_BIN_SCRIPT" config linux uid alice 80005
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" config linux uid alice
+    assert_output "80005"
+}

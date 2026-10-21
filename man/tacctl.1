@@ -604,9 +604,15 @@ where it is. A user with no line is renamed as before. A new name that already
 has a line keeps its own number, the ledger is left alone, and a warning says
 that hosts then remove the old account and create the new one. If the ledger
 cannot be written after the rename the command says so, names the snapshot to
-restore and exits 1. The ledger has no lock of its own: a
+restore and exits 1. The move is made under the ledger's lock
+.RI ( /etc/tacctl/.linux\-uids.lock ),
+and a
 .B "host sync"
-reading it at the moment of the rename sees the file before or after.
+builds its script from the ledger under the same lock, so it sends the names as
+they were before the rename or after it, never a mix; an account created under
+the old name is renamed at that host's next sync. When another command keeps
+the lock for 30 seconds the rename stops at the pre\-change snapshot, which
+copies the ledger under it, with nothing changed.
 .\" BEGIN GENERATED: command user rename
 .RS
 .PP
@@ -2390,7 +2396,11 @@ users no longer in the scope (or no longer tacctl users) are deleted with
 and with their own group when it is empty. Their UIDs stay
 reserved on the server. Run after
 .BR "user add" ", " "user remove" ", " "user move" ", " "user disable" " or " "user scope"
-changes.
+changes. The numbers of new users are given out under the lock of the UID ledger
+.RI ( /etc/tacctl/.linux\-uids.lock ),
+held while the script is built and never while it runs on the host, so two syncs
+at once give a user one number; when another command keeps the lock for 30
+seconds the sync stops with nothing changed.
 .IP
 Several names run in one command, in the order typed, each as
 .B \-\-all
@@ -3165,6 +3175,14 @@ of the range on that host with
 .BR \-\-allow\-uid\-mismatch .
 Changing a UID does not renumber accounts that already exist on hosts; a
 difference from the assigned one is reported on every sync.
+Every command that writes the file or decides from it holds its lock,
+.IR /etc/tacctl/.linux\-uids.lock ,
+for the time it reads and writes (waiting up to 30 seconds for another
+command, then stopping with
+.BR "the UID ledger (linux-uids) is locked by another tacctl command" ),
+so two commands never give one number to two users; a listing, a lookup and
+the commands that only show the file take none, since every write replaces it
+whole.
 .\" BEGIN GENERATED: command config linux uid
 .RS
 .PP
@@ -4928,7 +4946,15 @@ or without a store is a usage error, since an old-style restore never touches
 .PP
 The restore holds the host registry's lock from before it changes anything: when
 another tacctl command keeps it for 30 seconds the restore stops with the
-registry busy and nothing changed. It also tries the lock of each host, the one
+registry busy and nothing changed. It puts the UID ledger back under the
+ledger's lock
+.RI ( /etc/tacctl/.linux\-uids.lock ),
+which
+.B \-\-keep\-uids
+does not take, and every snapshot copies the ledger under that lock, so a ledger
+another command keeps for 30 seconds stops the snapshot of the current state
+and the restore with it, before anything changes. The note after the restore
+compares the ledger as that snapshot holds it with the one put back. It also tries the lock of each host, the one
 .BR "host provisioner rotate" ,
 .B host rename
 and
@@ -12671,6 +12697,13 @@ The registry of enrolled Linux hosts (with each host's method) and the
 UID each user gets on every host. Snapshots include both, and
 .B backup restore
 puts them back.
+.TP
+.I /etc/tacctl/.linux\-uids.lock
+The lock of the UID ledger: mode 0600, created when first needed and left in
+place. Held, for the milliseconds of a read and write and never across a run on
+a host, by the commands that write
+.I linux\-uids
+or decide from it. Not snapshotted.
 .TP
 .I /etc/tacctl/hosts/
 One

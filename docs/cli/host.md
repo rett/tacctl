@@ -49,7 +49,10 @@ host sync <name>... | --all
     renamed, keeping its UID and home); pins the host's ssh keys if none are (enroll pins them too).
     Several names run in the order typed, each as --all would run it. Every name is checked first
     (an unknown one refuses the run, one given twice counts once); a host that fails does not stop
-    the rest, and the exit status is 1. Names and --all are not given together
+    the rest, and the exit status is 1. Names and --all are not given together. The numbers of
+    new users are given out under the UID ledger's lock, held while the script is built and never
+    while it runs on the host, so two syncs at once give a user one number; a ledger another
+    command keeps for 30 seconds stops the sync (see Consistent UIDs and GIDs)
 
     --all
         Every enrolled host

@@ -189,6 +189,14 @@ type Snapshotter struct {
 	// provisioner entry only (D210). A restore sets it for the snapshot it
 	// takes first, which is what undoes the restore (D211).
 	Exact bool
+	// LedgerLock takes the lock of the UID ledger (linux-uids) and returns
+	// the function that lets go (hosts.UIDs.Lock; nil: no lock, for a
+	// Snapshotter that has no other command beside it). The copy of the
+	// ledger into a snapshot is made under it, so a snapshot holds the ledger
+	// as it was at one moment (D239); this package cannot import hosts, so
+	// the App sets it. A caller of Take holds the ledger lock itself never:
+	// the lock is not reentrant.
+	LedgerLock func() (unlock func(), err error)
 
 	held int
 }
@@ -307,6 +315,12 @@ func (s *Snapshotter) Take() (string, error) {
 	now := s.now()
 	if err := s.fill(tmp, now); err != nil {
 		_ = os.RemoveAll(tmp)
+		// A ledger lock that stayed taken is said as it is, not as a
+		// directory that cannot be written.
+		var lk *ledgerLockError
+		if errors.As(err, &lk) {
+			return "", lk.err
+		}
 		return "", errors.New("Cannot write a snapshot in " + s.BackupDir + ".")
 	}
 
@@ -558,14 +572,39 @@ func (s *Snapshotter) fillHosts(dir string) error {
 	} else if err := os.WriteFile(filepath.Join(dir, HostsName), nil, 0o600); err != nil {
 		return err
 	}
-	for _, f := range [][2]string{{s.StagingFile, StagingName}, {s.LinuxUIDs, UIDsName}} {
-		if f[0] != "" && isRegular(f[0]) {
-			if err := copyFile(f[0], filepath.Join(dir, f[1])); err != nil {
-				return err
-			}
+	if s.StagingFile != "" && isRegular(s.StagingFile) {
+		if err := copyFile(s.StagingFile, filepath.Join(dir, StagingName)); err != nil {
+			return err
 		}
 	}
+	if err := s.copyLedger(filepath.Join(dir, UIDsName)); err != nil {
+		return err
+	}
 	return copyRecordsDir(s.HostRecords, filepath.Join(dir, HostRecordsName))
+}
+
+// ledgerLockError is the error of Snapshotter.LedgerLock, carried through
+// fill to Take.
+type ledgerLockError struct{ err error }
+
+func (e *ledgerLockError) Error() string { return e.err.Error() }
+
+// copyLedger copies the UID ledger to dst under the ledger's lock (when
+// there is a ledger; the lock is not taken, and no lock file made, for a
+// snapshot that has none). An error taking the lock fails the snapshot, as
+// any error of its files does.
+func (s *Snapshotter) copyLedger(dst string) error {
+	if s.LinuxUIDs == "" || !isRegular(s.LinuxUIDs) {
+		return nil
+	}
+	if s.LedgerLock != nil {
+		unlock, err := s.LedgerLock()
+		if err != nil {
+			return &ledgerLockError{err}
+		}
+		defer unlock()
+	}
+	return copyFile(s.LinuxUIDs, dst)
 }
 
 // SNMPFiles are the per-scope credential files of dir (the regular

@@ -182,6 +182,42 @@ func (u UIDs) Holder(uid string) (string, error) {
 	return "", nil
 }
 
+// ErrLedgerBusy is returned by Lock when another command kept the ledger's
+// lock for longer than the wait (SetLockWait).
+var ErrLedgerBusy = errors.New("the UID ledger (linux-uids) is locked by another tacctl command; try again in a moment")
+
+// LockName is the lock file of the ledger, beside it (D238).
+const LockName = ".linux-uids.lock"
+
+// Lock takes the exclusive lock of the ledger (<dir of the file>/
+// .linux-uids.lock, 0600, made when missing), waiting for it as the
+// registry's lock is waited for (30 s, polled every 20 ms), and returns the
+// function that lets go. The lock goes with the process, so a command that
+// dies leaves none behind; a wait that ends is ErrLedgerBusy.
+//
+// It is held by every writer of the ledger and every reader that decides
+// something from it, for its read-modify-write window and nothing longer
+// (D239). It is the innermost lock of tacctl (D240): the holder takes no
+// other lock while it holds this one, and does not wait on a host, a person
+// or a command (never across a run on a host). It is not reentrant (a
+// second Lock in the process waits for the first), so a holder calls no
+// other holder either. A reader that only displays the ledger takes none:
+// every write replaces the file whole (D241).
+func (u UIDs) Lock() (unlock func(), err error) {
+	return waitLock(filepath.Join(filepath.Dir(u.Path), LockName), ErrLedgerBusy)
+}
+
+// WithLock runs fn holding the ledger's lock (see Lock). fn must not take
+// the lock again, or any other.
+func (u UIDs) WithLock(fn func() error) error {
+	unlock, err := u.Lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return fn()
+}
+
 // ErrUIDRangeFull is an allocation past the range's end: every number of
 // the range has been given out (numbers are never reused).
 var ErrUIDRangeFull = errors.New("hosts: the UID range is used up")
@@ -211,8 +247,13 @@ func (u UIDs) next() (string, error) {
 	return strconv.Itoa(m + 1), nil
 }
 
-// For is linux_uid_for: the user's number, allocated (and appended to the
-// file) the first time; ErrUIDRangeFull when there is none left.
+// For is linux_uid_for: the user's number, allocated (and added to the
+// file) the first time; ErrUIDRangeFull when there is none left. The
+// allocation is a read, a scan and a write of the whole file (replaced by a
+// rename, as every other write of it is), so the caller holds the ledger's
+// lock (Lock, WithLock) from before the call until it has used the number:
+// two commands that allocate at once would otherwise give the same number
+// to two users (D238).
 func (u UIDs) For(name string) (string, error) {
 	if err := u.Touch(); err != nil {
 		return "", err
@@ -224,20 +265,21 @@ func (u UIDs) For(name string) (string, error) {
 	if uid, err = u.next(); err != nil {
 		return "", err
 	}
-	line := name + ":" + uid + "\n"
-	if st, err := os.Stat(u.Path); err == nil && st.Size() == 0 {
+	data, err := os.ReadFile(u.Path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", err
+	}
+	if len(data) == 0 {
 		// A new file records its range first.
-		line = strings.Join(recordLines(u.rng(), nil), "\n") + "\n" + line
+		data = []byte(strings.Join(recordLines(u.rng(), nil), "\n") + "\n")
+	} else if data[len(data)-1] != '\n' {
+		data = append(data, '\n')
 	}
-	f, err := os.OpenFile(u.Path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
-	if err != nil {
+	data = append(data, name+":"+uid+"\n"...)
+	if err := writeAtomic(u.Path, data, 0o600); err != nil {
 		return "", err
 	}
-	if _, err := f.WriteString(line); err != nil {
-		_ = f.Close()
-		return "", err
-	}
-	return uid, f.Close()
+	return uid, nil
 }
 
 // Assign is the write of 'config linux uid <name> <uid>': every line of
@@ -269,9 +311,9 @@ func (u UIDs) Assign(name, uid string) error {
 // range lines and the order of the file stay as they are (written with
 // writeAtomic, mode 0600). moved is false, with the file untouched, when
 // old has no line, and when new already has one (the caller warns: the
-// numbers of two users are never merged). The file has no lock of its own:
-// the caller holds the apply lock, and a concurrent 'host sync' reads the
-// file once, before or after the move.
+// numbers of two users are never merged). The caller holds the ledger's lock
+// (Lock) from its Lookup of old to the end of the move (D239), inside the
+// apply lock it holds already.
 func (u UIDs) Rename(old, new string) (moved bool, err error) {
 	data, err := os.ReadFile(u.Path)
 	if errors.Is(err, fs.ErrNotExist) {

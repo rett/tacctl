@@ -799,11 +799,18 @@ type uidMove struct {
 }
 
 // moveUID is the ledger half of 'user rename', run by the writer under the
-// apply lock (the snapshot holds linux-uids). The ledger has no lock of its
-// own: a 'host sync' running meanwhile reads it once, and sees the file
-// before or after the move.
+// apply lock (the snapshot holds linux-uids). The move is one window of the
+// ledger's lock, taken inside the apply lock (D239, D240): a 'host sync'
+// building its script meanwhile waits for it, and so sends the names as they
+// were before the move or after it. A lock held for the whole wait is the
+// move's err.
 func (inv *invocation) moveUID(oldname, newname string) uidMove {
 	uids := hosts.UIDs{Path: inv.app.Paths.LinuxUIDs}
+	unlock, err := uids.Lock()
+	if err != nil {
+		return uidMove{err: err}
+	}
+	defer unlock()
 	uid, err := uids.Lookup(oldname)
 	if err != nil || uid == "" {
 		return uidMove{err: err}
