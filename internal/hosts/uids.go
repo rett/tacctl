@@ -204,6 +204,9 @@ const LockName = ".linux-uids.lock"
 // other holder either. A reader that only displays the ledger takes none:
 // every write replaces the file whole (D241).
 func (u UIDs) Lock() (unlock func(), err error) {
+	if u.Path == "" {
+		return nil, errors.New("the UID ledger has no path")
+	}
 	return waitLock(filepath.Join(filepath.Dir(u.Path), LockName), ErrLedgerBusy)
 }
 

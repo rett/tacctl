@@ -120,8 +120,15 @@ line back, writes no record, pin or audit line and exits 1 with `A device
 named 'web1' (192.0.2.60) was registered while the client script ran; a host
 and a device cannot share a name.` and the `host enroll` command to run again
 with another `--name`. The script has already run on the host, which
-authenticates through this server while the scope covers its address. A host
-that is enrolled already keeps its own name and is not checked again.
+authenticates through this server while the scope covers its address. What
+the command did before the script stays, and is warned of: a scope opened to
+both protocols for the host (`Scope 'linux-web1' is still open to tacacs,
+radius; see 'tacctl scope protocols linux-web1'.`) and a `--staging` bench
+address (`tacctl scope staging remove <address>/32` removes it). The same
+holds when another enrolment of the name finishes first. A host that is
+enrolled already keeps its own name and is not checked again. A break-glass
+hold recorded under a new name is refused before anything is done, as for
+`host rename`: only `breakglass release` removes a hold.
 
 **Renaming a host.** `tacctl host rename <old> <new>` is the superuser's. It
 runs nothing on the host (the machine records no registry name), so a host

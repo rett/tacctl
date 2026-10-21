@@ -70,7 +70,10 @@ and not the name of an enrolled host or a registered device in any case. A
 `--name` with upper case is refused (`Names are lower case: use 'web1'.
 Nothing was changed.`). Names are not case-sensitive, so `Web1` is refused
 while `web1` is enrolled (`'web1' is enrolled; names are not case-sensitive.`)
-and a device `core-sw1` keeps `Core-SW1` from being a host. A host enrolled
+and a device `core-sw1` keeps `Core-SW1` from being a host. A break-glass
+hold recorded under the new name is refused (`A break-glass hold is recorded
+under the name 'web9' ...`): only `tacctl breakglass release web9` removes a
+hold. A host enrolled
 before with upper case keeps working and is enrolled again under its
 registered spelling; `tacctl host rename Web1 web1` fixes it, and `tacctl
 config validate` lists it. Nothing is changed and nothing is attempted over
@@ -82,11 +85,16 @@ client script ran; a host and a device cannot share a name.` and the command
 to enroll again under another `--name`. The script has already run on the
 host, which authenticates through this server as long as its scope covers
 its address; no record, pin or audit line is written until it is enrolled
-under a name of its own. Enrolling a registered host again under its
-registered spelling is allowed: that is how it is enrolled again or moved. An
-option that takes a value (`--method`, `--scope`, `--server`, `--name`,
-`--port`, `--identity`) given without one is a usage error that names the
-option.
+under a name of its own. What the command did before the script stays and is
+warned of: a scope opened to both protocols for the host (`Scope 'linux-web1'
+is still open to tacacs, radius; see 'tacctl scope protocols linux-web1'.`)
+and a `--staging` bench address (`Staging address 192.0.2.50/32 stays in
+scope 'lab' ...; remove it: tacctl scope staging remove 192.0.2.50/32`).
+The same holds when another enrolment of the name finishes first. Enrolling a
+registered host again under its registered spelling is allowed: that is how it
+is enrolled again or moved. An option that takes a value (`--method`,
+`--scope`, `--server`, `--name`, `--port`, `--identity`) given without one is
+a usage error that names the option.
 
 **One host in full.** `tacctl host show <name>` prints, in sections: Connection (target, port, identity, server, method), Scope (the registered one, the scope and prefix that answer the host's address today, the drift warning of `host list` with its `host move` fix, a pending staging /32), Address (recorded, previous and when it changed), Host keys (the pinned fingerprints and the command that shows them on the host), Sightings, Notices (`--all`: the acknowledged ones too), Accounts (the tacctl users the next sync makes there, with tier, UID and groups; disabled users counted), Last sync (when, by whom, the result or why it failed, the client script protocol, the accounts created, updated and removed) and Host facts (OS, sshd version, the PAM module and its version, `useradd`'s UID range from `login.defs`, as that run read them). The last two are kept in `/etc/tacctl/hosts/<name>.json`, written by each `host enroll` and `host sync` (a failed sync too) and removed by `host unenroll`; they are only shown, never used to decide anything, and a host with no such record shows `no record under this name`. `--json` prints every field. `--check` logs in read-only (as `host sync` does: your ssh, sudo with a terminal for its password) and compares the host with what tacctl would make it: tacctl's groups and their GIDs, each account's UID, primary group and home mode, the PAM files tacctl writes (present, and the text the client script recorded writing), the client script protocol and the host's ssh keys against the pins; each difference is one line with the command that fixes it, and the exit status is 1 when there is one:
 ```

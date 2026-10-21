@@ -2231,7 +2231,20 @@ with the command to enroll again under another
 .BR \-\-name ,
 and exit 1. The script has already run on the host, which authenticates
 through this server as long as its scope covers its address; no record, pin
-or audit line is written. An option that takes
+or audit line is written. What the command did before the script stays and is
+warned of: a scope opened to both protocols for the host
+.RB ( "Scope 'linux\-web1' is still open to tacacs, radius" )
+and a
+.B \-\-staging
+bench address, which
+.B "scope staging remove"
+takes out. The same holds when another enrolment of the name finishes first. A
+break\-glass hold recorded under a new name is refused before anything is done,
+as for
+.BR "host rename" :
+only
+.B "breakglass release"
+removes a hold. An option that takes
 a value
 .RB ( \-\-method ,
 .BR \-\-scope ,
@@ -4918,6 +4931,13 @@ already holds, so the note also names every user whose UID it drops or
 changes; a host file that cannot be read is named in a red line,
 .BR "could not compare the host files" ,
 and the restore still puts the files back. The snapshot of the current state taken first holds the live host files.
+A break\-glass hold on a name that the restore enrolls or forgets is worded as a
+host's or a device's in the backend files, so when the enrolled names change
+the files are rendered again once the registry is back (no more than the one
+restart the restore makes); if that render fails the restore stands, a warning
+says so, and
+.B "config render"
+does it.
 .PP
 With
 .B \-\-keep\-uids

@@ -219,3 +219,90 @@ func TestHostReEnrollSkipsTheLateDeviceCheck(t *testing.T) {
 		t.Errorf("registry %q", hs.registry())
 	}
 }
+
+// The late refusals leave two things of the enrolment in place: the host's
+// own scope opened to both protocols and the bench address added to the
+// scope. Both are warned of, with the way to undo them.
+func TestHostEnrollLateDeviceConflictWarnsOfAnOpenedScope(t *testing.T) {
+	hs := newHostSandbox(t)
+	hs.run(nil, "scope", "add", "linux-web1", "--prefixes", "192.0.2.50/32", "--secret", "generate")
+	hs.expect(0, "", "")
+	hs.run(nil, "scope", "protocols", "linux-web1", "set", "radius")
+	if hs.code != 0 {
+		t.Fatalf("protocols: %d %q", hs.code, hs.err.String())
+	}
+	r, _ := hs.lateDevice("web1", "192.0.2.60")
+	hs.run(r, "host", "enroll", "admin@web1.example.net", "--name", "web1", "--method", "tacplus", "--build-on-host")
+	hs.expect(1, "opening it to tacacs for this host.", "was registered while the client script ran")
+	if !strings.Contains(hs.out.String(), "Scope 'linux-web1' is still open to tacacs, radius; see 'tacctl scope protocols linux-web1'.") {
+		t.Errorf("no warning of the open scope: %q", hs.out.String())
+	}
+	if hs.registry() != "" {
+		t.Errorf("registry %q", hs.registry())
+	}
+}
+
+func TestHostEnrollLateConflictsWarnOfTheStagingAddress(t *testing.T) {
+	const staged = "Staging address 192.0.2.50/32 stays in scope 'lab' for the host 'web1', which is not enrolled; remove it: tacctl scope staging remove 192.0.2.50/32"
+
+	// A device registered while the script ran.
+	hs := newHostSandbox(t)
+	r, _ := hs.lateDevice("web1", "192.0.2.60")
+	hs.run(r, "host", "enroll", "admin@web1.example.net", "--name", "web1", "--scope", "lab", "--staging", "--build-on-host")
+	hs.expect(1, "", "was registered while the client script ran")
+	if !strings.Contains(hs.out.String(), staged) {
+		t.Errorf("device: no warning of the staging address: %q", hs.out.String())
+	}
+	if !strings.HasPrefix(hs.read("state/staging"), "192.0.2.50/32|lab|host|web1|") {
+		t.Errorf("staging %q", hs.read("state/staging"))
+	}
+
+	// A host of the same name, in another case, enrolled meanwhile.
+	hs = newHostSandbox(t)
+	r = hs.runner()
+	written := false
+	r.Func(func(c execx.Cmd) bool { return c.Name == "ssh" }, func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(strings.Join(c.Args, " "), "mktemp") {
+			_, _ = io.ReadAll(c.Stdin)
+			return execx.Result{Stdout: []byte("/tmp/tacctl.AbCd1234\n")}, nil
+		}
+		if !written {
+			written = true
+			hs.write("state/linux-hosts", "Web1|root@other.example.net||lab|192.0.2.1|\n", 0o600)
+		}
+		return execx.Result{}, nil
+	})
+	hs.run(r, "host", "enroll", "admin@web1.example.net", "--name", "web1", "--scope", "lab", "--staging", "--build-on-host")
+	hs.expect(1, "", "'Web1' is enrolled; names are not case-sensitive.")
+	if !strings.Contains(hs.out.String(), staged) {
+		t.Errorf("taken: no warning of the staging address: %q", hs.out.String())
+	}
+
+	// Nothing staged, nothing said: the scope answers the address.
+	hs = newHostSandbox(t)
+	hs.run(nil, "scope", "prefixes", "lab", "add", "192.0.2.0/24")
+	r, _ = hs.lateDevice("web1", "192.0.2.60")
+	hs.run(r, "host", "enroll", "admin@web1.example.net", "--name", "web1", "--scope", "lab", "--staging", "--build-on-host")
+	hs.expect(1, "", "was registered while the client script ran")
+	if strings.Contains(hs.out.String(), "Staging address") || strings.Contains(hs.out.String(), "still open") {
+		t.Errorf("a warning with nothing left: %q", hs.out.String())
+	}
+}
+
+// A new name an orphaned break-glass hold is recorded under is refused like
+// 'host rename' refuses it: the files word that hold as a device's until it is
+// released, and an enrolment does not render. A host that is enrolled keeps
+// its own hold.
+func TestHostEnrollRefusesTheNameOfAnOrphanHold(t *testing.T) {
+	hs := newHostSandbox(t)
+	hs.write("state/tacctl.yaml", "breakglass_hold:\n  web9:\n    address: 192.0.2.99\n    reason: console recovery\n    since: 2026-10-01 10:00\n    by: root\n", 0o600)
+	r := hs.runner()
+	hs.run(r, "host", "enroll", "admin@web1.example.net", "--name", "web9", "--scope", "lab", "--build-on-host")
+	hs.expect(1, "", "A break-glass hold is recorded under the name 'web9' (192.0.2.99)")
+	if !strings.Contains(hs.err.String(), "A hold is removed only by 'tacctl breakglass release web9'. Nothing was changed.") {
+		t.Errorf("stderr %q", hs.err.String())
+	}
+	if r.Called("ssh") || hs.registry() != "" {
+		t.Errorf("ssh %v registry %q", r.Called("ssh"), hs.registry())
+	}
+}

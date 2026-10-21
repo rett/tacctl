@@ -586,6 +586,14 @@ func (inv *invocation) hostEnroll(args []string) error {
 		if err := devreg.CheckNewHostName(reg, name); err != nil {
 			return err
 		}
+		// A hold under a new name is another host's or device's, as for
+		// 'host rename': the render words it as a device's until it is
+		// released, and enrolling does not render.
+		if h, held := inv.holdNamed(name); held {
+			return inv.hostRefuse(
+				"A break-glass hold is recorded under the name '"+h.Device+"' ("+h.Address+") "+inv.holdSummary(h)+": "+h.Reason+".",
+				"A hold is removed only by 'tacctl breakglass release "+h.Device+"'. Nothing was changed.")
+		}
 	}
 	if err := inv.hostNameCheck(name, enrolled); err != nil {
 		return err
@@ -877,6 +885,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 		var taken *hosts.NameTakenError
 		if errors.As(err, &taken) {
 			a.Out.ErrorE(taken.Error() + " The client script already ran on the host; the registry was not changed.")
+			inv.hostEnrollLeftovers(scope, hostIP, name, narrowScope)
 			return exit(1)
 		}
 		return err
@@ -884,6 +893,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 	if !enrolled {
 		// The device namespace again, now that the line is written (D235).
 		if err := inv.hostEnrollDeviceConflict(reg, name, target, scope); err != nil {
+			inv.hostEnrollLeftovers(scope, hostIP, name, narrowScope)
 			return err
 		}
 	}
@@ -920,6 +930,28 @@ func (inv *invocation) hostEnroll(args []string) error {
 	return nil
 }
 
+// hostEnrollLeftovers warns of what an enrolment that ended after the scope
+// was opened and the bench address added leaves in place when the registry is
+// not written: the host's own scope, still open to both protocols
+// (narrowed is true when this command opened it), and the staging /32 of a
+// host that is not enrolled.
+func (inv *invocation) hostEnrollLeftovers(scope, hostIP, name string, narrowed bool) {
+	a := inv.app
+	if narrowed {
+		a.Out.WarnE("Scope '" + scope + "' is still open to " + strings.Join(scopeProtocols, ", ") + "; see 'tacctl scope protocols " + scope + "'.")
+	}
+	if hostIP == "" {
+		return
+	}
+	cidr := hostIP + "/32"
+	for _, e := range inv.stagingLoad() {
+		if e.CIDR == cidr && e.Scope == scope && e.Kind == "host" && e.Name == name {
+			a.Out.WarnE("Staging address " + cidr + " stays in scope '" + scope + "' for the host '" + name + "', which is not enrolled; remove it: tacctl scope staging remove " + cidr)
+			return
+		}
+	}
+}
+
 // hostEnrollDeviceConflict is the second check of a new host's name against
 // the device registry (D235, D236), made once the registry line is written.
 // The first check ran before the client script, which can take minutes; a
@@ -928,7 +960,8 @@ func (inv *invocation) hostEnroll(args []string) error {
 // registers a device holds while it reads the enrolled hosts and writes: the
 // device was registered before and is found here, or its command starts
 // after the line is written and finds the host. A conflict removes the line
-// again; nothing else of the enrolment was written.
+// again; nothing else of the enrolment was written but what came before the
+// script (the opened scope and the bench address, which the caller warns of).
 func (inv *invocation) hostEnrollDeviceConflict(reg *hosts.Registry, name, target, scope string) error {
 	a := inv.app
 	var found *devreg.Device

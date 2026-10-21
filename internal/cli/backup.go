@@ -16,6 +16,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -622,6 +623,11 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	if err != nil {
 		return err
 	}
+	// The registry the render reads (a hold is worded as a host's or a
+	// device's by it): the host files come back only after the render, which
+	// the rollback of a failed one does not cover, so the names are kept to
+	// see whether the registry put back differs.
+	renderedHosts := hosts.EnrolledNames(a.Paths.LinuxHosts)
 	if _, err := set.ApplyForced(inv.ctx, func() error { return inv.installSnapshot(dir) }); err != nil {
 		if err == backend.ErrNotStarted {
 			return err
@@ -667,6 +673,17 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	// backends are reconciled and restarted as for any restore, and the
 	// failure is a warning that names the way back.
 	hostErr := inv.restoreHosts(dir, keepUIDs)
+	// The files were rendered against the registry that was live: a break-glass
+	// hold on a name the restore enrolled or forgot is worded the other way
+	// (D237), so the render is done again against the registry now in place.
+	// It changes nothing when the words agree, and the restart below is the
+	// one the restore makes anyway.
+	var renderErr error
+	if snapshot.KnowsHosts(dir) && !maps.Equal(renderedHosts, hosts.EnrolledNames(a.Paths.LinuxHosts)) {
+		if _, err := set.RenderAll(inv.ctx, backend.RenderOptions{ForceAll: true}); err != nil {
+			renderErr = err
+		}
+	}
 	inv.reconcileBackends(before)
 	if err := set.RestartAll(inv.ctx); err != nil {
 		return err
@@ -674,6 +691,9 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	a.Out.InfoE("Restored snapshot " + id + ".")
 	if holdNote != "" {
 		a.Out.WarnE(holdNote)
+	}
+	if renderErr != nil {
+		a.Out.WarnE("The files were not rendered again for the restored hosts: 'tacctl config validate' may say they are out of date. Run 'tacctl config render' to fix it.")
 	}
 	if hostErr != nil {
 		a.Out.WarnE("The host state was not fully put back: " + hostErr.Error() + ". Everything else was restored.")

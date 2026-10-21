@@ -324,8 +324,9 @@ func (inv *invocation) configLinuxUIDRange(args []string) error {
 	}
 	uids.Range = r
 	backup := uids.Path + ".pre-renumber-" + a.Knobs.Now().UTC().Format("20060102-150405")
-	// The check and the renumbering are each one window of the ledger's
-	// lock (D239); tacctl.yaml is written between them, outside it.
+	// The check and the renumbering are two windows of the ledger's lock
+	// (D239); tacctl.yaml is written between them, outside it, so a command
+	// that locks in between sees the new range.
 	var res hosts.Renumbering
 	err := uids.WithLock(func() (e error) {
 		res, e = uids.RenumberTo(backup, true)

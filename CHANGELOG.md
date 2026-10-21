@@ -29,15 +29,27 @@ current behaviour; this file is where history lives.
    line, and exits 1 with `A device named '<name>' (<address>) was registered
    while the client script ran; a host and a device cannot share a name.` and
    the `host enroll ... --name <other>` command to run next. The script has
-   already run on the host. A re-enrolment or move of an enrolled host is not
-   checked again.
+   already run on the host, and what the command did before it stays: if it
+   opened the host's own `linux-<name>` scope to both protocols, or added the
+   `--staging` bench address, a warning says so and names the command that
+   undoes it (`Scope 'linux-web1' is still open to tacacs, radius; see
+   'tacctl scope protocols linux-web1'.`, `Staging address 192.0.2.50/32
+   stays in scope 'lab' for the host 'web1', which is not enrolled; remove
+   it: tacctl scope staging remove 192.0.2.50/32`). The same warnings follow
+   when another enrolment of the name finishes first. A re-enrolment or move
+   of an enrolled host is not checked again.
 
 4. **The comment of the rendered backend files names a held host as a host.**
    The comment block of `tacquito.yaml` and the RADIUS `clients.conf` now
    reads `(host <name>)` for a break-glass hold on an enrolled host instead of
    `(device <name>)`; a held device reads as before. The word comes from the
    host registry when the files are rendered, so `config validate` still reads
-   them as up to date.
+   them as up to date. `backup restore` words a hold by the registry it puts
+   back: when the restore changes the enrolled names, the files are rendered
+   again after the host files are in place, so a hold on a host the snapshot
+   enrolls or forgets reads `(host <name>)` or `(device <name>)` to match.
+   This adds no restart. If that second render fails, the restore stands and a
+   warning says to run `tacctl config render`.
 
 5. **The UID ledger has a lock; two concurrent `host sync` could give one UID
    to two users.** `linux-uids` was read and written by several commands with
@@ -67,6 +79,15 @@ current behaviour; this file is where history lives.
    (waited 30s)`. A `host sync` building its script now sends the names as they
    were before a concurrent `user rename` or after it, never a mix. No state
    format changes.
+
+6. **`host enroll` refuses a new name that a break-glass hold is recorded
+   under.** `host rename` already did. `host enroll --name web9` for a name
+   that a hold (without a host) is recorded under was accepted, and the files
+   kept saying `(device web9)` until the hold was released. It now exits 1
+   before any ssh with `A break-glass hold is recorded under the name 'web9'
+   (<address>) ...` and `A hold is removed only by 'tacctl breakglass release
+   web9'. Nothing was changed.` An enrolled host's own hold does not stop a
+   re-enrolment of it.
 
 ## 0.2.15 (2026-10-19)
 
