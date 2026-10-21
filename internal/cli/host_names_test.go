@@ -291,8 +291,7 @@ func TestHostEnrollLateConflictsWarnOfTheStagingAddress(t *testing.T) {
 
 // A new name an orphaned break-glass hold is recorded under is refused like
 // 'host rename' refuses it: the files word that hold as a device's until it is
-// released, and an enrolment does not render. A host that is enrolled keeps
-// its own hold.
+// released, and an enrolment does not render.
 func TestHostEnrollRefusesTheNameOfAnOrphanHold(t *testing.T) {
 	hs := newHostSandbox(t)
 	hs.write("state/tacctl.yaml", "breakglass_hold:\n  web9:\n    address: 192.0.2.99\n    reason: console recovery\n    since: 2026-10-01 10:00\n    by: root\n", 0o600)

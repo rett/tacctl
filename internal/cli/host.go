@@ -885,7 +885,11 @@ func (inv *invocation) hostEnroll(args []string) error {
 		var taken *hosts.NameTakenError
 		if errors.As(err, &taken) {
 			a.Out.ErrorE(taken.Error() + " The client script already ran on the host; the registry was not changed.")
-			inv.hostEnrollLeftovers(scope, hostIP, name, narrowScope)
+			// An enrolment of the same spelling that finished first owns the
+			// scope and the staging entry: they are not this run's leftovers.
+			if taken.Holder != name {
+				inv.hostEnrollLeftovers(scope, hostIP, name, narrowScope)
+			}
 			return exit(1)
 		}
 		return err

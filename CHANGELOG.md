@@ -86,8 +86,8 @@ current behaviour; this file is where history lives.
    kept saying `(device web9)` until the hold was released. It now exits 1
    before any ssh with `A break-glass hold is recorded under the name 'web9'
    (<address>) ...` and `A hold is removed only by 'tacctl breakglass release
-   web9'. Nothing was changed.` An enrolled host's own hold does not stop a
-   re-enrolment of it.
+   web9'. Nothing was changed.` The check applies to a name no host has;
+   a host that is enrolled is not affected by it.
 
 ## 0.2.15 (2026-10-19)
 
