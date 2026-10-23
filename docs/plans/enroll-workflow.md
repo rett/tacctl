@@ -52,17 +52,19 @@ chain choose the path from the device.
   offers the apply review (Junos), and answering no leaves the device
   registered and pulled with the plan printed.
 - **Each device is verified on its own.** `device enroll` asks its
-  questions per device, never once for a batch: the host key (the
-  fingerprint and algorithm are shown and the person types the
-  fingerprint's confirmation for that device), then the registration
-  with the name and vendor found. Accepting a host key is accountable and
-  cannot be skipped: there is no `-y`, no accept-all and no trust on
-  first use. Without a terminal the only way in is `--host-key
-  SHA256:<fp>` for one address, a key read on the device's console. Each
-  acceptance is an audit line with the person, the device, the algorithm
-  and the fingerprint (the `sid=` of the 0.2.17 release ties it to the
-  run). This differs from `device collect`, which asks one question for
-  the keys of all its addresses; whether `collect` follows is open.
+  questions per device, never once for a batch: the host key (the key
+  to be pinned is shown with its algorithm and fingerprint, the person
+  compares it with the device's console and types the device's name to
+  accept it; nothing is typed or pasted from a fingerprint), then the
+  registration with the name and vendor found. Accepting a host key is
+  accountable and cannot be skipped: there is no `-y`, no accept-all and
+  no trust on first use. Without a terminal the only way in is
+  `--host-key SHA256:<fp>` for one address, a key read on the device's
+  console. Each acceptance is an audit line with the person, the device,
+  the algorithm and the fingerprint (the `sid=` of the 0.2.17 release
+  ties it to the run). `device collect`, which asked one question for
+  the keys of all its addresses, and `device onboard` follow the same
+  form (decided 2026-10-23; the 0.2.17 plan's D270, WP17.15).
 - **The apply review is per device.** `device config apply` now asks
   one question for the run (the device's name, or the number of devices,
   typed back). In a run started by the chain below, and in the change to
