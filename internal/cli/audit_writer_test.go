@@ -25,8 +25,10 @@ func TestAuditLinesOfARunShareTheSessionID(t *testing.T) {
 	if !strings.HasPrefix(auditLine(sb.runner, "ssh "), "ssh user=alice device=core-sw1 addr=10.99.0.1") || auditLine(sb.runner, "ssh end ") == "" {
 		t.Errorf("lines %q", auditLines(sb.runner))
 	}
-	if n := len(auditLines(sb.runner)); n != 2 {
-		t.Errorf("lines %q, want the start and the end of the session", auditLines(sb.runner))
+	// The start and the end of the session, inside the central pair of the
+	// command.
+	if n := len(auditLines(sb.runner)); n != 4 || len(centralLines(sb.runner)) != 2 {
+		t.Errorf("lines %q, want the start and the end of the session and the central pair", auditLines(sb.runner))
 	}
 	for _, c := range sb.runner.Calls() {
 		if c.Name == "logger" && !strings.HasSuffix(c.Args[len(c.Args)-1], " sid="+sid) {

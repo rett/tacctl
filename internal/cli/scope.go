@@ -41,7 +41,7 @@ var scopeSpecs = map[string]Spec{
 	"routing": {},
 	"show":    {MinArgs: 1, MaxArgs: 1, Args: []string{KindScopes}},
 	"add": {MinArgs: 1, MaxArgs: 1, Args: []string{""}, Flags: []Flag{
-		{Names: []string{"--prefixes"}, Value: true}, {Names: []string{"--secret"}, Value: true},
+		{Names: []string{"--prefixes"}, Value: true}, {Names: []string{"--secret"}, Value: true, Secret: true},
 		{Names: []string{"--protocols"}, Value: true, Kind: "tacacs|radius" + KindList},
 		{Names: []string{"--vendor-attrs"}, Value: true, Kind: "cisco|juniper|wti" + KindList},
 		{Names: []string{"--default"}}}},
@@ -165,6 +165,7 @@ const (
 // it needs, and the model is read again afterwards (store_apply's
 // _model_invalidate).
 func (inv *invocation) applyWith(fn func() error) error {
+	inv.app.Audit().Touch()
 	_, err := inv.app.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, fn)
 	inv.loaded = false
 	return err
@@ -1664,7 +1665,7 @@ func (inv *invocation) scopeSecret(args []string) error {
 			return err
 		}
 		if sub != "show" {
-			return inv.usageErr("The engineer tier reads a scope's secret: tacctl scope secret " + scope + " show. Changing it is the superuser's. Nothing was changed.")
+			return inv.deniedUsage(reasonSuperuser, "The engineer tier reads a scope's secret: tacctl scope secret "+scope+" show. Changing it is the superuser's. Nothing was changed.")
 		}
 	}
 	if sub == "set" || sub == "generate" {
@@ -2059,7 +2060,7 @@ func (inv *invocation) scopeDevices(args []string) error {
 	// that holds an enrolled host's address is the superuser's to tag, as
 	// the host is theirs to deploy.
 	if inv.callerScopes().restricted && inv.hostWithin(c) {
-		return inv.usageErr(c + " is not available for tagging. Nothing was changed.")
+		return inv.deniedUsage(reasonSuperuser, c+" is not available for tagging. Nothing was changed.")
 	}
 	had := ""
 	var newMap []string

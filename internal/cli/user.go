@@ -26,9 +26,9 @@ var userSpecs = map[string]Spec{
 	"list": {},
 	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
 	"add": {MinArgs: 2, MaxArgs: 2, Args: []string{"", KindGroups}, Flags: []Flag{
-		{Names: []string{"--hash"}, Value: true}, {Names: []string{"--scopes"}, Value: true, Kind: KindScopes + KindList}}},
+		{Names: []string{"--hash"}, Value: true, Secret: true}, {Names: []string{"--scopes"}, Value: true, Kind: KindScopes + KindList}}},
 	"remove":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
-	"passwd":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}, Flags: []Flag{{Names: []string{"--hash"}, Value: true}}},
+	"passwd":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}, Flags: []Flag{{Names: []string{"--hash"}, Value: true, Secret: true}}},
 	"disable": {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
 	"enable":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
 	"rename":  {MinArgs: 2, MaxArgs: 2, Args: []string{KindUsers, ""}},

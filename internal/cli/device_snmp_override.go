@@ -462,7 +462,7 @@ func (inv *invocation) deviceSNMP(args []string) error {
 	// An engineer reads and changes nothing (D45, D48; the gate sees
 	// 'device snmp' only): the devices of their own scopes are all they see.
 	if inv.callerScopes().restricted && !scopeSNMPRead(sub, p) {
-		return inv.usageErr("The engineer tier reads a device's SNMP settings: tacctl device snmp " + shellquote.Q(e.Name) +
+		return inv.deniedUsage(reasonSuperuser, "The engineer tier reads a device's SNMP settings: tacctl device snmp "+shellquote.Q(e.Name)+
 			" show [--reveal]. Changing them is the superuser's. Nothing was changed.")
 	}
 	switch sub {
@@ -877,6 +877,7 @@ func (inv *invocation) deviceSNMPCommunity(e devreg.Entry, p Parsed) error {
 		return err
 	}
 	cr.Community = s
+	inv.app.Audit().Touch()
 	if err := snmpcred.SaveDevice(dir, e.Name, cr); err != nil {
 		return err
 	}
@@ -921,6 +922,7 @@ func (inv *invocation) deviceSNMPV3User(e devreg.Entry, p Parsed) error {
 		return err
 	}
 	cr.User, cr.AuthPass, cr.PrivPass = user, ap, pp
+	inv.app.Audit().Touch()
 	if err := snmpcred.SaveDevice(dir, e.Name, cr); err != nil {
 		return err
 	}
@@ -958,6 +960,7 @@ func (inv *invocation) deviceSNMPClear(e devreg.Entry) error {
 		return err
 	}
 	if hasFile {
+		a.Audit().Touch()
 		if err := snmpcred.RemoveDevice(a.Paths.SNMPDir, e.Name); err != nil {
 			return err
 		}

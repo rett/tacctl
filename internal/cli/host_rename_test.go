@@ -239,7 +239,7 @@ func TestHostRenameRefusals(t *testing.T) {
 			t.Errorf("%q changed something:\n%s\n%s", c.args, before, after)
 		}
 	}
-	if sb.sshCalls() != 0 || wroteAudit(sb.runner) && sb.runner.CalledRegexp(`host rename`) {
+	if sb.sshCalls() != 0 || hasAuditPrefix(sb.runner, "", "host rename ") {
 		t.Error("a refusal went on")
 	}
 }
@@ -328,7 +328,7 @@ func TestHostRenameDeviceRegistryFailureRestoresTheRegistry(t *testing.T) {
 	if sb.pin("web1") == nil || !sb.fileExists("state/hosts/web1.json") || sb.read("state/staging") != staging {
 		t.Error("something moved")
 	}
-	if sb.runner.CalledRegexp(`host rename`) {
+	if hasAuditPrefix(sb.runner, "", "host rename ") {
 		t.Error("a failed rename was logged")
 	}
 }

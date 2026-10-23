@@ -591,6 +591,7 @@ func (inv *invocation) deviceWrite(fn func(*devreg.File, *devreg.Resolver) error
 	if _, err := trial.Text(); err != nil {
 		return nil, err
 	}
+	inv.app.Audit().Touch()
 	_, err = devreg.Mutate(inv.app.Paths.DevicesFile, inv.app.Paths.KnownHosts, func() error {
 		inv.hooks.deviceStep()
 		return inv.snapshotFirst()
@@ -636,12 +637,12 @@ func (inv *invocation) deviceChangeScopes(f scopeFilter, before, after *devreg.R
 	}
 	bf, af := before.File, after.File
 	if bf.StaleDays != af.StaleDays || !slices.Equal(bf.GenericNames, af.GenericNames) {
-		return inv.usageErr("The registry's settings are not the engineer tier's to change. Nothing was changed.")
+		return inv.deniedUsage(reasonSuperuser, "The registry's settings are not the engineer tier's to change. Nothing was changed.")
 	}
 	in := func(r *devreg.Resolver, name string) error {
 		e, _ := r.Lookup(name, devreg.ScopeFilter{})
 		if e.Scope == "" {
-			return inv.usageErr("'" + name + "' is at an address no scope answers: the engineer tier registers devices at the addresses of its own scopes only. Nothing was changed.")
+			return inv.deniedUsage(reasonScope, "'"+name+"' is at an address no scope answers: the engineer tier registers devices at the addresses of its own scopes only. Nothing was changed.")
 		}
 		return inv.ownScope(f, e.Scope)
 	}
@@ -676,10 +677,10 @@ func (inv *invocation) deviceChangeScopes(f scopeFilter, before, after *devreg.R
 					return o.Address == is.Address && reflect.DeepEqual(o.SNMP, is.SNMP)
 				}):
 				default:
-					return inv.usageErr("A device's SNMP settings are not the engineer tier's to change (tacctl device snmp is the superuser's); '" + d.Name + "' was not changed. Nothing was changed.")
+					return inv.deniedUsage(reasonSuperuser, "A device's SNMP settings are not the engineer tier's to change (tacctl device snmp is the superuser's); '"+d.Name+"' was not changed. Nothing was changed.")
 				}
 			} else if is != nil && was != nil && !was.SNMP.Empty() {
-				return inv.usageErr("A device's SNMP settings are not the engineer tier's to change (tacctl device snmp is the superuser's); '" + d.Name + "' was not changed. Nothing was changed.")
+				return inv.deniedUsage(reasonSuperuser, "A device's SNMP settings are not the engineer tier's to change (tacctl device snmp is the superuser's); '"+d.Name+"' was not changed. Nothing was changed.")
 			}
 			if err := changed(d.Name, was, is, was != nil, is != nil); err != nil {
 				return err
@@ -703,9 +704,23 @@ func (inv *invocation) deviceChangeScopes(f scopeFilter, before, after *devreg.R
 func (inv *invocation) deviceFind(res *devreg.Resolver, key string) (devreg.Entry, error) {
 	e, ok := res.Lookup(key, inv.deviceFilter())
 	if !ok {
-		return e, inv.usageErr("Device '" + key + "' not found. List them with: tacctl device list")
+		return e, inv.deviceNotFound(res, key)
 	}
 	return e, nil
+}
+
+// deviceNotFound is the refusal for a device that is not among what the
+// caller may see. A name the caller's scopes hide (it exists, in another
+// scope) is the typed scope denial (audit.go); the message is the same as
+// for a name that is not there.
+func (inv *invocation) deviceNotFound(res *devreg.Resolver, key string) error {
+	err := inv.usageErr("Device '" + key + "' not found. List them with: tacctl device list")
+	if inv.deviceFilter().Restricted {
+		if _, exists := res.Lookup(key, devreg.ScopeFilter{}); exists {
+			return inv.denied(reasonScope, err)
+		}
+	}
+	return err
 }
 
 // deviceEditable is the registry device a write names: an enrolled host
@@ -720,7 +735,7 @@ func (inv *invocation) deviceEditable(res *devreg.Resolver, f *devreg.File, key 
 		if _, ok := res.Lookup(d.Name, inv.deviceFilter()); ok {
 			return d, nil
 		}
-		return nil, inv.usageErr("Device '" + key + "' not found. List them with: tacctl device list")
+		return nil, inv.deviceNotFound(res, key)
 	}
 	// A host is not a device: an engineer, who reads hosts and deploys none
 	// (host deployment is the superuser's), is told it is not found.
@@ -1400,7 +1415,7 @@ func (inv *invocation) deviceAddPullCheck(p Parsed) error {
 		return nil
 	}
 	if t, ok := inv.deviceConfigPermits("pull"); !ok {
-		return inv.usageErr("--pull runs 'tacctl device config pull', which is not permitted for the " + string(t) + " tier.")
+		return inv.deniedUsage(reasonSuperuser, "--pull runs 'tacctl device config pull', which is not permitted for the "+string(t)+" tier.")
 	}
 	if _, err := inv.configLogin("device add --pull"); err != nil {
 		return err
@@ -1961,7 +1976,7 @@ func (inv *invocation) deviceImport(args []string) error {
 	// this is the same rule where sudoers does not run (root's tacctl, the
 	// tests).
 	if inv.callerScopes().restricted && arg(args, 0) != "-" {
-		return inv.usageErr("The engineer tier imports from standard input only: tacctl device import - [--check|--replace] < file")
+		return inv.deniedUsage(reasonSuperuser, "The engineer tier imports from standard input only: tacctl device import - [--check|--replace] < file")
 	}
 	var data []byte
 	if p.Args[0] == "-" {

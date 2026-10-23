@@ -53,6 +53,7 @@ func (a *App) SetContext(ctx context.Context) { a.ctx = ctx }
 func (a *App) ApplyLock() *applylock.Lock {
 	if a.svc.lock == nil {
 		a.svc.lock = applylock.New(a.Paths.StateDir)
+		a.svc.lock.Touch = a.Audit().Touch
 	}
 	return a.svc.lock
 }
@@ -115,6 +116,7 @@ func (a *App) Snapshots() *snapshot.Snapshotter {
 		s := snapshot.New(a.Paths, a.Version, a.Knobs.Now, a.Out)
 		s.Fault = a.Knobs.Fault
 		s.LedgerLock = hosts.UIDs{Path: a.Paths.LinuxUIDs}.Lock
+		s.Touch, s.Taken = a.Audit().Touch, a.Audit().NoteSnapshot
 		a.svc.snaps = s
 	}
 	return a.svc.snaps

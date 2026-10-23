@@ -25,7 +25,7 @@ func (inv *invocation) fixNamesAllowed() error {
 		return nil
 	}
 	inv.app.Audit().Raw("auth.warning", "tier DENY user="+inv.sudoUser()+" tier="+string(t)+" cmd=config validate --fix-names")
-	return inv.usageErr(fixNamesDenied)
+	return inv.deniedUsage(reasonSuperuser, fixNamesDenied)
 }
 
 // nameFixCounts are the outcomes the summary line states.

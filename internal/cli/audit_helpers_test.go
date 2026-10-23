@@ -119,3 +119,14 @@ func auditSID(r *fake.Runner) (sid string, ok bool) {
 	}
 	return sid, true
 }
+
+// nonAuditArgvs are the commands the run started other than logger.
+func nonAuditArgvs(r *fake.Runner) []string {
+	var out []string
+	for _, c := range r.Calls() {
+		if c.Name != "logger" {
+			out = append(out, c.Name+" "+strings.Join(c.Args, " "))
+		}
+	}
+	return out
+}

@@ -11273,6 +11273,289 @@ An engineer's verbs reach only the devices, hosts and secrets of the scopes
 the engineer is a member of; another scope's device is not found, and a change
 that would touch one is refused. Each read of a secret by an engineer is
 logged to syslog (never the value).
+.SH AUDIT LOG
+Every line tacctl writes to the log goes to syslog through
+.BR logger (1),
+facility
+.BR auth ,
+tag
+.B tacctl
+(the login console's own lines: tag
+.BR tacctl\-console ).
+tacctl keeps no log of its own; where the lines go from there is the site's
+concern.
+.PP
+A command that changes state, or logs in somewhere every time it runs, writes
+two central lines, whatever else it logs:
+.PP
+.nf
+.RS
+cmd start v=1 user=alice uid=1001 origin=sudo tier=superuser tty=pts/3 console=\- cmd="user add" args="dave ops \-\-hash <redacted>" sid=k3x9a0bq
+cmd end v=1 user=alice cmd="user add" result=ok status=0 duration=0.312s snapshot=20261021_093015_412 sid=k3x9a0bq
+.RE
+.fi
+.PP
+so that
+.B "grep 'cmd end'"
+lists every transaction. Every command has a class in a table in the code:
+.TP
+.B action
+It changes state or logs in somewhere every time it runs. The start line is
+written before the command does anything, after the tier gate and the
+preflight; the end line where the exit status is decided.
+.TP
+.B mixed
+It is a read or a write by its later arguments
+.RB ( "scope secret" " shows or sets, " "device port" " <name> shows and"
+.B "device port"
+<name> 2222 sets). The start line is written just before the first thing the
+command changes, so a mixed command that only read writes nothing.
+.TP
+.B read
+No central line: lists, shows, checks, scans, the completion helpers,
+.B hash
+and
+.BR shell ,
+which runs each line as its own tacctl process.
+.PP
+A command that is not in the table is treated as an action, and the test suite
+fails until its row is added. The lines a verb writes of its own
+.RB ( "ssh start" ", " "ssh end" ", the console session, " "breakglass hold" ", "
+.BR "host enroll" ", " "device config apply" ", ...)"
+are kept; the pair is written for those verbs too. The commands of each class
+are:
+.\" BEGIN GENERATED: audit-classes
+.TP
+.B "action"
+_phase, backend disable, backend enable, breakglass hold,
+breakglass release, console install, console remove, device add,
+device notice, device remove, device rename, device ssh, group add,
+group edit, group remove, host enroll, host forget, host move,
+host rename, host sync, host unenroll, passwd, scope add,
+scope remove, scope rename, ssh, user add, user disable, user enable,
+user move, user passwd, user remove, user rename
+.TP
+.B "action, auth.notice"
+backup restore, config restore,
+group edit (the field is tier or priv\-lvl), install, log clear,
+store rollback, uninstall, upgrade
+.TP
+.B "mixed"
+config allow, config bcrypt\-cost, config branch, config cisco,
+config deny, config devices, config juniper, config linux,
+config listen, config loglevel, config metrics, config mgmt\-acl,
+config password\-age, config password\-min\-length, config render,
+config secret\-min\-length, config snmp, config validate, config wti,
+console agent\-forwarding, console forwarding, console idle\-timeout,
+console password\-cache, console space\-completion,
+console ssh\-escape, device address, device block, device collect,
+device config, device config\-syntax, device description,
+device hostkey, device hostname, device import, device legacy\-ssh,
+device location, device netconf, device onboard, device port,
+device snmp, device stale\-days, device sync, device vendor,
+group commands, group junos, group preset, group privilege,
+group reset, host default\-method, host provisioner, host target,
+scope aaa\-order, scope auth\-method, scope block, scope breakglass,
+scope default, scope devices, scope exec\-timeout, scope mgmt\-acl,
+scope netconf, scope prefixes, scope protocols, scope radius\-group,
+scope secret, scope snmp, scope staging, scope tacacs\-group,
+scope vendor\-attrs, user scope
+.TP
+.B "mixed, auth.notice"
+config sudoers, console system\-shell, console tiers, console user,
+rollback, store import
+.\" END GENERATED: audit-classes
+.PP
+The fields, in the order written:
+.TP
+.B v
+The format version of the central lines
+.RB ( 1 ).
+A collector pins itself to it. The older per\-verb lines carry no
+.BR v .
+.TP
+.BR user ", " uid ", " origin
+Who ran the command:
+.B SUDO_USER
+and
+.BR SUDO_UID ,
+checked against the passwd database before any command runs, with
+.BR origin=sudo .
+A process with no
+.B SUDO_USER
+(a root shell, a script run as root) is
+.BR "user=root uid=0 origin=root" :
+the one case where the log holds no login identity, as sudo's own log holds
+none.
+.TP
+.B tier
+The tier the gate held the caller to
+.RB ( unrestricted
+for root and for a local administrator who is no tacctl user).
+.TP
+.BR tty ", " console
+The terminal the command runs on, and the login\-console session it was typed
+in;
+.B \-
+for none.
+.TP
+.BR cmd ", " args
+The command's words as the tier gate sees them
+.RB ( "user add" ", " "scope secret" ", " "device config" ),
+and the arguments after them, each word quoted and cut at 64 bytes, the whole
+at 512.
+.TP
+.BR result ", " status
+How the command ended and its exit status:
+.B ok
+(0);
+.B failed
+(any status that is not one of the next three);
+.B denied
+(a verb refused the caller);
+.B interrupted
+(130: Ctrl\-C, SIGTERM or a hangup);
+.B aborted
+(status 2, written when tacctl's own code panicked).
+.TP
+.B duration
+Seconds with millisecond precision, from the start line to the end line.
+.TP
+.B snapshot
+The id of the pre\-change snapshot or snapshots the command took
+.RB ( \- 
+when none was taken or the newest was current).
+.TP
+.B reason
+On a
+.B "cmd DENY"
+line:
+.B superuser
+or
+.BR scope .
+.TP
+.B sid
+The session id, last on every line.
+.TP
+.B class
+.B class=unexpected
+on a start line means a command classified as a read reached a write: a fault
+in the class table, never expected.
+.PP
+A value is written as it is when it holds only letters, digits and
+.BR ". _ : / @ + \-" ;
+otherwise it is double\-quoted with Go's escapes, so a line is always one line
+and a collector can split on spaces outside quotes. An empty value is
+.BR \- .
+.PP
+Priorities:
+.B auth.info
+for an action;
+.B auth.notice
+for the weighty ones (marked in the list above);
+.B auth.warning
+for every refusal and for an end line whose result is not
+.BR ok .
+.SS Refusals
+The tier gate's refusals keep their words and carry the session id
+.RB ( "tier DENY user=carol tier=readonly cmd=user remove sid=k3x9a0bq" ).
+A verb the gate lets through can still refuse: an engineer naming a scope's
+secret to change, or another scope's device. That is the third central line, at
+.BR auth.warning :
+.PP
+.nf
+.RS
+cmd DENY v=1 user=bob uid=1002 tier=engineer cmd="scope secret" args="lab set <redacted>" reason=superuser sid=k3x9a0bq
+.RE
+.fi
+.PP
+with
+.B reason=superuser
+(the verb is the superuser's) or
+.B reason=scope
+(the thing named is not in the caller's scopes). The message and the exit
+status are the verb's own. If the command had written its start line,
+.B "cmd end"
+follows with
+.BR result=denied .
+A collector matches
+.B DENY
+for both kinds. The gate's own refusal ends the command before it starts, so it
+has no end line.
+.SS Secrets on the command line
+.B args=
+writes
+.B <redacted>
+for the value of a flag that carries a secret or a password hash
+.RB ( \-\-hash
+of
+.B "user add"
+and
+.BR "user passwd" ,
+.B \-\-secret
+of
+.BR "scope add" )
+and for the value in
+.BR "scope secret <scope> set <value>" .
+Nothing else is redacted: free text such as
+.B "breakglass hold \-\-reason"
+is why a device was taken out of AAA, and it is logged as typed. Whatever is
+typed on a command line is also in sudo's own log, which records the whole
+line.
+.SS Correlating
+Every line of one command, the detail lines of the verb and the tier gate's
+included, ends in the same
+.BI sid= id
+(8 characters of a\-z and 0\-9, made for each run). The
+.B snapshot=
+of the end line names the snapshot taken before the change
+.RB ( "backup diff" " shows it against the live state). " "tacctl ssh"
+and the login console keep their own
+.B session=
+beside it. The id is for searching, not a key: two commands may share one, and
+the timestamps tell them apart.
+.PP
+A start line with no end line means the command did not finish: SIGKILL, a
+power loss, a crash of the process. The snapshot named by the command's lines
+holds the state before it, and
+.B "config validate"
+says what the files are now. An
+.B upgrade
+that replaces tacctl with the new version and runs again ends its first pair at
+the hand-over; the second run writes its own pair, with its own
+.BR sid .
+.SS When logger fails
+A signal that ends a command (Ctrl\-C, SIGTERM, a hangup) does not drop its
+lines. When
+.B logger
+cannot be started (it is in
+.IR util\-linux ;
+.B install
+and
+.B upgrade
+warn when it is missing) or exits with an error (the syslog socket refused),
+the command prints once on standard error
+.B "[WARN] The audit line was not written (logger: reason); the command continues."
+and goes on with its own status; the lines it could not write are lost.
+.SS Forwarding
+The facility is
+.BR auth ;
+the program names are
+.B tacctl
+and
+.BR tacctl\-console .
+A collector matches the program name. With rsyslog, in
+.IR /etc/rsyslog.d/tacctl.conf :
+.PP
+.nf
+.RS
+if $programname == 'tacctl' or $programname == 'tacctl\-console' then @@loghost.example.net:514
+.RE
+.fi
+.PP
+With journald,
+.B "journalctl \-t tacctl \-t tacctl\-console"
+reads them. Keep the log where an operator who runs tacctl cannot rewrite it.
 .SH CONVENTIONS
 The following patterns apply uniformly across subcommand families.
 .TP
@@ -11486,23 +11769,10 @@ and
 take none. Required positional arguments come before flags.
 .TP
 .B Audit lines
-The lines tacctl logs go to syslog (facility
-.BR auth ,
-tag
-.BR tacctl ;
-the login console's own lines have the tag
-.BR tacctl\-console )
-through
-.BR logger (1).
-Every line of one command ends in the same
+Every state\-changing command writes lines to syslog, ending in a session id
 .BI sid= id
-(8 characters of a\-z and 0\-9, made for each run), which ties the lines of a
-run together. A signal that ends a command (Ctrl\-C, a hangup) does not drop a
-line. When
-.B logger
-is missing or exits with an error, the command prints
-.B "[WARN] The audit line was not written (logger: reason); the command continues."
-once on standard error and goes on with its own status.
+that ties the lines of a run together; see
+.BR "AUDIT LOG" .
 .SH BACKENDS
 .TP
 .B tacacs
@@ -12256,6 +12526,25 @@ and
 end with the status of the ssh they run, and
 .B "tacctl shell \-c"
 with the status of the line it ran.
+.PP
+A command that changes state writes its status to the audit log as the
+.B status=
+of its
+.B "cmd end"
+line, with a
+.B result=
+word (see
+.BR "AUDIT LOG" ):
+.B ok
+for 0,
+.B interrupted
+for 130,
+.B denied
+when a verb refused the caller (the status is the verb's own, 1),
+.B aborted
+(status 2) when tacctl itself panicked, and
+.B failed
+for any other status.
 .SH ENVIRONMENT
 tacctl reads the variables below. Everything else it needs is a fixed path
 (see

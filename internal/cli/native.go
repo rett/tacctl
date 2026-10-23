@@ -12,6 +12,7 @@ package cli
 //  3. the tier gate, enforce_tier "$COMMAND" "${1:-}" (internal/tier), on
 //     the first two words of the command line as typed;
 //  4. preflight, for the families bin/tacctl.sh runs it for (App.Preflight);
+//  4a. the central audit lines: an action's 'cmd start' (audit.go);
 //  5. the command, which returns an error that exit.go maps to the exit
 //     status (printing what has not been printed).
 //
@@ -67,8 +68,11 @@ func (inv *invocation) prelude(o nativeOpts) error {
 		return err
 	}
 	if o.Preflight {
-		return a.Preflight()
+		if err := a.Preflight(); err != nil {
+			return err
+		}
 	}
+	inv.auditBegin()
 	return nil
 }
 
@@ -82,7 +86,9 @@ func (inv *invocation) gate() error {
 	if len(a.Args) > 1 {
 		sub = a.Args[1]
 	}
-	return inv.tierGate().Enforce(inv.ctx, cmd, sub)
+	t, err := inv.tierGate().Check(inv.ctx, cmd, sub)
+	inv.callerTier = t
+	return err
 }
 
 // tierGate is the gate of this invocation: the caller is SUDO_USER, which
@@ -166,6 +172,7 @@ func (inv *invocation) storeApply(fn func(*store.Store) error) error {
 // rendered, as the caller says what is left undone).
 func (inv *invocation) storeApplyThen(fn func(*store.Store) error, after func()) error {
 	a := inv.app
+	a.Audit().Touch()
 	_, err := a.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, func() error {
 		if _, err := store.Mutate(a.Paths.StoreFile, a.MutateOptions(), fn); err != nil {
 			return err

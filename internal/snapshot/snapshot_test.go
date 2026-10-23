@@ -559,3 +559,23 @@ func TestSnapshotHoldsConsoleYAMLWhenItExists(t *testing.T) {
 		t.Fatal("a removed console.yaml made no snapshot")
 	}
 }
+
+// Take calls Touch before anything is written, also when it takes nothing,
+// and Taken with the id of a snapshot it made.
+func TestTakeTouchesAndReportsTheSnapshot(t *testing.T) {
+	e := newEnv(t)
+	var touched int
+	var taken []string
+	e.s.Touch = func() { touched++ }
+	e.s.Taken = func(id string) { taken = append(taken, id) }
+	id, err := e.s.Take()
+	if err != nil || id == "" {
+		t.Fatalf("Take: %q %v", id, err)
+	}
+	if again, err := e.s.Take(); err != nil || again != "" {
+		t.Fatalf("a second Take of the same state: %q %v", again, err)
+	}
+	if touched != 2 || len(taken) != 1 || taken[0] != id {
+		t.Errorf("touched %d, taken %q, want 2 and [%s]", touched, taken, id)
+	}
+}

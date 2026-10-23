@@ -29,8 +29,8 @@ func TestLifecycleVerbsThroughTheCLI(t *testing.T) {
 	sb.expect(0, "  tacctl Installer", "")
 	deploy, command := filepath.Join(sb.dir, "opt", "tacctl"), filepath.Join(sb.dir, "usr", "local", "bin", "tacctl")
 	if !strings.Contains(out, "Install tacctl ("+deploy+", "+command+") and its state directory ("+sb.path("state")+")") ||
-		!strings.HasSuffix(plain(out), "[INFO] Cancelled.\n") || len(sb.runner.Calls()) != 0 {
-		t.Errorf("install: %q calls %q", out, sb.runner.Argvs())
+		!strings.HasSuffix(plain(out), "[INFO] Cancelled.\n") || len(nonAuditArgvs(sb.runner)) != 0 {
+		t.Errorf("install: %q calls %q", out, nonAuditArgvs(sb.runner))
 	}
 	for _, c := range []struct {
 		args       []string
@@ -47,8 +47,8 @@ func TestLifecycleVerbsThroughTheCLI(t *testing.T) {
 	} {
 		sb.run("", c.args)
 		want := "[ERROR] Unknown argument: '" + c.bad + "'\n[ERROR] " + c.usage + "\n"
-		if sb.code != 1 || sb.out.Len() != 0 || plain(sb.err.String()) != want || len(sb.runner.Calls()) != 0 {
-			t.Errorf("%q: exit %d %q %q %q", c.args, sb.code, sb.out.String(), sb.err.String(), sb.runner.Argvs())
+		if sb.code != 1 || sb.out.Len() != 0 || plain(sb.err.String()) != want || len(nonAuditArgvs(sb.runner)) != 0 {
+			t.Errorf("%q: exit %d %q %q %q", c.args, sb.code, sb.out.String(), sb.err.String(), nonAuditArgvs(sb.runner))
 		}
 	}
 	out = sb.run("n\n", []string{"uninstall"})

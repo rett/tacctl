@@ -140,6 +140,7 @@ func (inv *invocation) hostsEnv() *hosts.Env {
 		Now:      a.Knobs.Now,
 		// host enroll and host sync pin the host's ssh keys in the registry.
 		PinHostKeys: inv.pinHostKeys,
+		Touch:       a.Audit().Touch,
 	}
 	if a.HostsTTY != nil {
 		env.TTY, env.StdinTTY = a.HostsTTY, a.HostsTTY

@@ -49,6 +49,18 @@ type Host struct {
 	// (tacctl completion bash); install and upgrade write it to
 	// paths.Completion. Nil: no completion is installed.
 	Completion func() ([]byte, error)
+	// BeforeExec, when set, is called just before the process image is
+	// replaced (the self-update's re-run of 'upgrade', the hand-over to a
+	// bash release): the command's audit pair ends there, and the re-run
+	// writes its own.
+	BeforeExec func()
+}
+
+// beforeExec calls BeforeExec.
+func (h *Host) beforeExec() {
+	if h.BeforeExec != nil {
+		h.BeforeExec()
+	}
 }
 
 // Handover is a backend that carries something across the self-update

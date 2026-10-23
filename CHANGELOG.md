@@ -23,6 +23,33 @@ current behaviour; this file is where history lives.
    silently. `tacctl install` and `tacctl upgrade` warn when `logger` (package
    `util-linux`) is not installed.
 
+2. **Audit log: every state-changing command writes `cmd start` and `cmd end`,
+   a refusal inside a verb writes `cmd DENY`.** A command that changes state
+   or logs in somewhere every time it runs (`user add`, `host sync`, `ssh`,
+   `log clear`, ...) writes `cmd start v=1 user= uid= origin= tier= tty=
+   console= cmd= args=` before it does anything and `cmd end v=1 user= cmd=
+   result= status= duration= snapshot=` where its exit status is decided, at
+   `auth.info` (`auth.notice` for `install`, `upgrade`, `uninstall`,
+   `rollback`, `log clear`, the whole-state replacements, `group edit <group>
+   tier|priv-lvl`, `config sudoers` and the console's reach; `auth.warning`
+   for an end line whose result is not `ok`). `result` is `ok`, `failed`,
+   `denied`, `interrupted` (130) or `aborted` (a panic of tacctl's own code,
+   status 2); `snapshot` names the snapshot the command took. A command that
+   is a read or a write by its later arguments (`scope secret show|set`,
+   `device port <name> [<n>]`, `config loglevel [<level>]`, ...) writes the
+   pair only when it writes, from the first thing it changes; the commands
+   that only read write none. `args=` shows the command line with the value of
+   `--hash`, of `--secret` of `scope add` and of `scope secret <scope> set`
+   as `<redacted>`. A refusal inside a verb (an engineer naming a scope's
+   secret to change, or another scope's device; the superuser's verbs) writes
+   `cmd DENY v=1 user= uid= tier= cmd= args= reason=superuser|scope` at
+   `auth.warning`; its message and exit status are unchanged. A start line
+   with no end line means the command did not finish. The new page
+   `docs/security/audit.md` and the manual page's AUDIT LOG section describe
+   the lines, their fields and forwarding; the manual page lists the commands
+   by class. A person who runs tacctl as root with no `SUDO_USER` is
+   `user=root origin=root`. The lines that existed keep their words.
+
 ## 0.2.16 (2026-10-23)
 
 1. **`config validate` takes no argument.** `config validate extra` ran the

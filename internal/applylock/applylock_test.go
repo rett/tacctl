@@ -250,3 +250,19 @@ func TestBusyProbesWithoutKeepingTheLock(t *testing.T) {
 	// The probe gave the lock back.
 	acquire(t, New(dir))()
 }
+
+// Touch is called by every Acquire, a nested one and one that waits included,
+// before the lock is waited for (the audit writer's mark that the command is
+// about to change something).
+func TestAcquireTouches(t *testing.T) {
+	l := New(t.TempDir())
+	n := 0
+	l.Touch = func() { n++ }
+	rel1 := acquire(t, l)
+	rel2 := acquire(t, l)
+	rel2()
+	rel1()
+	if n != 2 {
+		t.Errorf("Touch called %d times, want 2", n)
+	}
+}

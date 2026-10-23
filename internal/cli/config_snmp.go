@@ -190,7 +190,7 @@ func (inv *invocation) snmpShow(args []string) error {
 	// the gate does not run, not a reachable one: a restricted caller's
 	// reads of SNMP are 'scope snmp' of its own scopes.
 	if reveal && inv.callerScopes().restricted {
-		return inv.usageErr("The default SNMP credentials are the superuser's to read. Nothing was printed.")
+		return inv.deniedUsage(reasonSuperuser, "The default SNMP credentials are the superuser's to read. Nothing was printed.")
 	}
 	c, err := inv.snmpCreds()
 	if err != nil {
@@ -321,6 +321,7 @@ func (inv *invocation) snmpCommunity(args []string) error {
 		return err
 	}
 	c.Community = s
+	inv.app.Audit().Touch()
 	if err := snmpcred.Save(inv.app.Paths.SNMPFile, c); err != nil {
 		return err
 	}
@@ -368,6 +369,7 @@ func (inv *invocation) snmpV3User(args []string) error {
 		return err
 	}
 	c.User, c.AuthPass, c.PrivPass = user, ap, pp
+	inv.app.Audit().Touch()
 	if err := snmpcred.Save(inv.app.Paths.SNMPFile, c); err != nil {
 		return err
 	}
@@ -414,6 +416,7 @@ func (inv *invocation) snmpClear([]string) error {
 		return err
 	}
 	had := !c.Empty() || a.Conf().HasOverride("snmp.version")
+	a.Audit().Touch()
 	if err := snmpcred.Save(a.Paths.SNMPFile, snmpcred.Creds{}); err != nil {
 		return err
 	}

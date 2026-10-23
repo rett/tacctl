@@ -94,7 +94,7 @@ func (inv *invocation) configCiscoSourceInterface(args []string) error {
 		return nil
 	}
 	if f.restricted {
-		return inv.usageErr("The engineer tier reads the source interface: tacctl config cisco source-interface [" + scope +
+		return inv.deniedUsage(reasonSuperuser, "The engineer tier reads the source interface: tacctl config cisco source-interface ["+scope+
 			"]. Setting it is the superuser's. Nothing was changed.")
 	}
 	if value == "none" {

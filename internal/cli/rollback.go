@@ -60,7 +60,7 @@ func (inv *invocation) rollback(args []string) error {
 	// The gate lets only the superuser through; a restricted caller that got
 	// here anyway (a changed table) changes nothing.
 	if f := inv.callerScopes(); f.restricted {
-		return inv.usageErr("'tacctl rollback' is the superuser's. Nothing was changed.")
+		return inv.deniedUsage(reasonSuperuser, "'tacctl rollback' is the superuser's. Nothing was changed.")
 	}
 
 	in := lifecycle.RollbackInput{Paths: a.Paths, Conf: a.Conf(), HasStore: isRegularFile(a.Paths.StoreFile), WithHosts: withHosts, Target: version,

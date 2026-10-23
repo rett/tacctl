@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/rett/tacctl/internal/execx"
@@ -220,5 +221,60 @@ func TestNewSID(t *testing.T) {
 	// A source that fails still gives an id.
 	if s := NewSID(bytes.NewReader(nil)); len(s) != 8 {
 		t.Errorf("fallback sid %q", s)
+	}
+}
+
+// Touch runs the registered start function once, however many callers reach
+// it (and from several goroutines); without one it does nothing.
+func TestTouchRunsTheStartOnce(t *testing.T) {
+	w := New(Options{Runner: &fake.Runner{}, SID: "k3x9a0bq"})
+	w.Touch() // no start registered
+	if w.Touched() {
+		t.Fatal("touched with no start function")
+	}
+	n := 0
+	w.SetStart(func() { n++; w.Line(Info, "cmd start") })
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); w.Touch() }()
+	}
+	wg.Wait()
+	w.Touch()
+	if n != 1 || !w.Touched() {
+		t.Errorf("start ran %d times, touched %v", n, w.Touched())
+	}
+	var nilWriter *Writer
+	nilWriter.Touch() // a nil writer is a no-op
+}
+
+func TestSnapshotsAreRemembered(t *testing.T) {
+	w := New(Options{Runner: &fake.Runner{}})
+	w.NoteSnapshot("")
+	w.NoteSnapshot("20261021_093015_412")
+	w.NoteSnapshot("20261021_093016_001")
+	if got := strings.Join(w.Snapshots(), " "); got != "20261021_093015_412 20261021_093016_001" {
+		t.Errorf("snapshots %q", got)
+	}
+}
+
+// Wide keeps 512 bytes of a value instead of 64, and quotes as Value does.
+func TestWideKeepsMore(t *testing.T) {
+	r := &fake.Runner{}
+	w := New(Options{Runner: r})
+	long := strings.Repeat("ab ", 100)
+	w.Line(Info, "cmd start", Wide("args", long), Pair("x", long))
+	line := r.Calls()[0].Args[4]
+	if !strings.Contains(line, `args="`+strings.Repeat("ab ", 100)+`"`) {
+		t.Errorf("wide value cut: %s", line)
+	}
+	if !strings.Contains(line, ` x="`+strings.Repeat("ab ", 21)+`a..."`) {
+		t.Errorf("narrow value not cut at 64: %s", line)
+	}
+	huge := strings.Repeat("z", 600)
+	r2 := &fake.Runner{}
+	New(Options{Runner: r2}).Line(Info, "e", Wide("args", huge))
+	if got := r2.Calls()[0].Args[4]; got != "e args="+strings.Repeat("z", 512)+"..." {
+		t.Errorf("huge wide value: %s", got)
 	}
 }

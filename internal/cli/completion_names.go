@@ -157,7 +157,7 @@ func (inv *invocation) ownScope(f scopeFilter, scope string) error {
 	if len(f.scopes) > 0 {
 		yours = strings.Join(f.scopes, ", ")
 	}
-	return inv.usageErr("Scope '" + scope + "' is not one of yours: the engineer tier changes the devices of its own scopes only (yours: " + yours + "). Nothing was changed.")
+	return inv.scopeRefusal(scope, "Scope '"+scope+"' is not one of yours: the engineer tier changes the devices of its own scopes only (yours: "+yours+"). Nothing was changed.")
 }
 
 // scopeNotFound is nil when the caller may read scope (an administrator any
@@ -171,7 +171,18 @@ func (inv *invocation) scopeNotFound(f scopeFilter, scope string) error {
 	if f.allows(scope) {
 		return nil
 	}
-	return inv.usageErr("Scope '" + scope + "' does not exist.")
+	return inv.scopeRefusal(scope, "Scope '"+scope+"' does not exist.")
+}
+
+// scopeRefusal prints msg and returns the refusal: the typed scope denial
+// when the scope exists (it is outside the caller's own), a plain refusal
+// for a name that is no scope (a typo is not a denial).
+func (inv *invocation) scopeRefusal(scope, msg string) error {
+	err := inv.usageErr(msg)
+	if s, serr := inv.scopeOf(scope); serr == nil && s != nil {
+		return inv.denied(reasonScope, err)
+	}
+	return err
 }
 
 // secretRead logs a restricted caller's reveal of a secret (kind scope):

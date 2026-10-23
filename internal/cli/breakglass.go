@@ -765,7 +765,7 @@ func (inv *invocation) breakglassHold(args []string) error {
 		return inv.usageErr(err.Error(), breakglassUsageHold)
 	}
 	if f := inv.callerScopes(); f.restricted {
-		return inv.usageErr("'tacctl breakglass hold' is the superuser's. Nothing was changed.")
+		return inv.deniedUsage(reasonSuperuser, "'tacctl breakglass hold' is the superuser's. Nothing was changed.")
 	}
 	reqs, problem := splitDeviceArgs(p.Args, true)
 	if problem != "" {
@@ -1212,7 +1212,7 @@ func (inv *invocation) breakglassRelease(args []string) error {
 		return inv.usageErr(err.Error(), breakglassUsageRelease)
 	}
 	if f := inv.callerScopes(); f.restricted {
-		return inv.usageErr("'tacctl breakglass release' is the superuser's. Nothing was changed.")
+		return inv.deniedUsage(reasonSuperuser, "'tacctl breakglass release' is the superuser's. Nothing was changed.")
 	}
 	reqs, problem := splitDeviceArgs(p.Args, false)
 	if problem != "" {
@@ -1666,7 +1666,7 @@ func (inv *invocation) holdMove(f *devreg.File, res *devreg.Resolver, d *devreg.
 		return inv.usageErr("Break-glass is not held on '" + name + "'. Nothing was changed.")
 	}
 	if inv.callerScopes().restricted {
-		return inv.usageErr("break-glass is held on " + name + ": moving its address moves the hold, which is the superuser's. Nothing was changed.")
+		return inv.deniedUsage(reasonSuperuser, "break-glass is held on "+name+": moving its address moves the hold, which is the superuser's. Nothing was changed.")
 	}
 	// What a new hold at newAddr would be refused for.
 	if _, msg := inv.holdAddressBlock(newAddr, f, res.Hosts, ""); msg != "" {

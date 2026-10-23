@@ -45,11 +45,23 @@ const writeTimeout = 10 * time.Second
 // maxValue is how many bytes of a value a line keeps (Value).
 const maxValue = 64
 
-// KV is one key=value field of a line. Build it with Pair.
-type KV struct{ Key, Value string }
+// MaxWide is how many bytes of a value Wide keeps.
+const MaxWide = 512
+
+// KV is one key=value field of a line. Build it with Pair or Wide.
+type KV struct {
+	Key, Value string
+	// Max is how many bytes of the value the line keeps (0: maxValue).
+	Max int
+}
 
 // Pair is the field key=value.
 func Pair(key, value string) KV { return KV{Key: key, Value: value} }
+
+// Wide is the field key=value for a value that is itself a list of words
+// the caller has capped (the command line of a central line): quoted as
+// Value quotes, kept up to MaxWide bytes instead of 64.
+func Wide(key, value string) KV { return KV{Key: key, Value: value, Max: MaxWide} }
 
 // Value is v as one field value of a line: written as it is when it is
 // non-empty and holds only [A-Za-z0-9._:/@+-], else Go-quoted
@@ -57,12 +69,15 @@ func Pair(key, value string) KV { return KV{Key: key, Value: value} }
 // UTF-8 are escaped, so a line is always one line and a collector can split
 // on spaces outside quotes); '-' when empty. A value longer than 64 bytes
 // is cut there (on a character boundary) and ends in '...'.
-func Value(v string) string {
+func Value(v string) string { return valueMax(v, maxValue) }
+
+// valueMax is Value with a cut at max bytes.
+func valueMax(v string, max int) string {
 	if v == "" {
 		return "-"
 	}
-	if len(v) > maxValue {
-		n := maxValue
+	if len(v) > max {
+		n := max
 		for n > 0 && !utf8.RuneStart(v[n]) {
 			n--
 		}
@@ -166,6 +181,13 @@ type state struct {
 	actor Actor
 	// failure is why the last line was not written, "" when it was.
 	failure string
+
+	// start writes the central 'cmd start' line (SetStart); Touch runs it
+	// once, before the first write of the command.
+	start     func()
+	touch     sync.Once
+	touched   bool
+	snapshots []string
 }
 
 // Writer writes audit lines. It is safe for concurrent use (the device
@@ -209,6 +231,62 @@ func (w *Writer) SetTerminal(tty, console string) {
 	w.actor.TTY, w.actor.Console = tty, console
 }
 
+// SetStart registers the function that writes the command's central start
+// line. Touch runs it, once, the first time anything is about to be written;
+// without one (the console process) Touch does nothing.
+func (w *Writer) SetStart(fn func()) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.start = fn
+}
+
+// Touch says that the command is about to change something: the start line
+// is written now, before anything is, if it has not been written yet. It is
+// idempotent and safe for concurrent use; a caller that arrives while the
+// line is being written waits for it.
+func (w *Writer) Touch() {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	fn := w.start
+	w.mu.Unlock()
+	if fn == nil {
+		return
+	}
+	w.touch.Do(func() {
+		w.mu.Lock()
+		w.touched = true
+		w.mu.Unlock()
+		fn()
+	})
+}
+
+// Touched reports whether the start line was written (Touch ran).
+func (w *Writer) Touched() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.touched
+}
+
+// NoteSnapshot records the id of a snapshot the command took, for the end
+// line (Snapshots).
+func (w *Writer) NoteSnapshot(id string) {
+	if id == "" {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.snapshots = append(w.snapshots, id)
+}
+
+// Snapshots are the ids of the snapshots the command took, in order.
+func (w *Writer) Snapshots() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]string(nil), w.snapshots...)
+}
+
 // Failure is why the last line could not be written, "" when it was (or
 // none was tried).
 func (w *Writer) Failure() string {
@@ -226,7 +304,11 @@ func (w *Writer) Line(priority, event string, kv ...KV) {
 		b.WriteByte(' ')
 		b.WriteString(f.Key)
 		b.WriteByte('=')
-		b.WriteString(Value(f.Value))
+		max := f.Max
+		if max <= 0 {
+			max = maxValue
+		}
+		b.WriteString(valueMax(f.Value, max))
 	}
 	w.Raw(priority, b.String())
 }

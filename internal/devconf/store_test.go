@@ -732,3 +732,22 @@ func TestStoreNamesListsRecordsAndFiles(t *testing.T) {
 		t.Errorf("Names = %v %v, want %v", got, err, want)
 	}
 }
+
+// Every writer holds the store's lock, so Touch (the audit writer's mark that
+// the command changes state) is called when it is taken.
+func TestLockTouches(t *testing.T) {
+	s := newStore(t)
+	n := 0
+	s.Touch = func() { n++ }
+	unlock, err := s.Lock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+	if err := s.SaveBackout("sw1", StoredBackout{Pulled: at, Address: "192.0.2.10", Vendor: "juniper", Sections: []string{SectionAAA}, Text: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Errorf("Touch called %d times, want 2 (Lock, SaveBackout)", n)
+	}
+}

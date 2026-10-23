@@ -404,6 +404,7 @@ func (h *Host) selfUpdate(ctx context.Context, ids []string, start string) error
 	// No --branch: the clone is on that branch now, so the new process
 	// finds nothing more to pull.
 	env := withEnv(h.Environ.Environ(), append([]string{ReexecEnv + "=1"}, h.handover(ids)...))
+	h.beforeExec()
 	if err := h.Runner.Exec(p.Command, []string{p.Command, "upgrade"}, env); err != nil {
 		out.Error("Cannot run " + p.Command + ": " + err.Error())
 		return &backend.Error{Code: 126, Reason: "exec"}
@@ -478,6 +479,7 @@ func (h *Host) handOverToBash(ids []string) error {
 		return h.failed("ln: failed to create symbolic link '" + p.Command + "': " + errno(err))
 	}
 	env := withEnv(h.Environ.Environ(), h.handover(ids), ReexecEnv)
+	h.beforeExec()
 	if err := h.Runner.Exec(entry, []string{entry, "upgrade"}, env); err != nil {
 		out.Error("Cannot run " + entry + ": " + err.Error())
 		return &backend.Error{Code: 126, Reason: "exec"}

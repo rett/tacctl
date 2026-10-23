@@ -163,7 +163,7 @@ func (c *blockCtx) requireSuperuser(sub string) error {
 	if !c.restricted {
 		return nil
 	}
-	return c.inv.usageErr("The engineer tier reads the configuration blocks of " + c.what() + " (list, show, check); " + sub +
+	return c.inv.deniedUsage(reasonSuperuser, "The engineer tier reads the configuration blocks of "+c.what()+" (list, show, check); "+sub+
 		" is the superuser's. Nothing was changed.")
 }
 

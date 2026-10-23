@@ -648,6 +648,14 @@ func (g Gate) caller(ctx context.Context) Tier {
 // with the uid ('tier DENY user=<SUDO_USER> uid=<SUDO_UID>
 // reason=sudo-user-mismatch').
 func (g Gate) Enforce(ctx context.Context, cmd, sub string) error {
+	_, err := g.Check(ctx, cmd, sub)
+	return err
+}
+
+// Check is Enforce, also answering the tier the gate held the caller to (the
+// cap applied; None for a SUDO_USER that VerifyCaller refuses): the central
+// audit lines name it.
+func (g Gate) Check(ctx context.Context, cmd, sub string) (Tier, error) {
 	user := g.SudoUser
 	if user == "" {
 		user = "root"
@@ -655,11 +663,11 @@ func (g Gate) Enforce(ctx context.Context, cmd, sub string) error {
 	if g.verify(ctx) != nil {
 		g.Audit.Raw(audit.Warning, "tier DENY user="+user+" uid="+g.SudoUID+" reason=sudo-user-mismatch cmd="+cmd+" "+sub)
 		g.Out.ErrorE("SUDO_USER '" + g.SudoUser + "' is not the account of SUDO_UID " + g.SudoUID + ", so tacctl access is denied.")
-		return ErrDenied
+		return None, ErrDenied
 	}
 	t, uncapped, why := g.capped(ctx)
 	if Permits(t, cmd, sub) {
-		return nil
+		return t, nil
 	}
 	// The cap is the reason only when the tier without it would have run
 	// the command.
@@ -682,7 +690,7 @@ func (g Gate) Enforce(ctx context.Context, cmd, sub string) error {
 	} else {
 		g.Out.ErrorE("'tacctl " + cmd + " " + sub + "' is not permitted for the " + string(t) + " tier.")
 	}
-	return ErrDenied
+	return t, ErrDenied
 }
 
 // Notes are the Note of every row, keyed "<Cmd> <Sub>".

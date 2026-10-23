@@ -119,6 +119,10 @@ type Env struct {
 	// PinHostKeys pins an enrolled host's ssh keys (pin.go); nil pins
 	// nothing.
 	PinHostKeys KeyPinner
+	// Touch, when set, is called before anything is written (WriteScript,
+	// the UID ledger): the audit writer's mark that the command changes
+	// state.
+	Touch func()
 	// ReadKeys makes RunScript read the host's public keys and its facts
 	// over its connection after a successful run (ReadKeysCommand,
 	// FactsCommand), for PinKeys and Facts: 'host enroll' and 'host sync'

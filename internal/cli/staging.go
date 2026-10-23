@@ -55,6 +55,7 @@ func (inv *invocation) stagingLoad() []stagingEntry {
 }
 
 func (inv *invocation) stagingSave(entries []stagingEntry) error {
+	inv.app.Audit().Touch()
 	path := inv.stagingPath()
 	if len(entries) == 0 {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -283,7 +284,7 @@ func (inv *invocation) scopeStaging(args []string) error {
 	// changes nothing: the sweep, which edits scopes, is the administrators'.
 	f := inv.callerScopes()
 	if sub := arg(args, 0); f.restricted && sub != "" && sub != "list" {
-		return inv.usageErr("The engineer tier lists the staging addresses of its scopes: tacctl scope staging list. Removing one is the superuser's. Nothing was changed.")
+		return inv.deniedUsage(reasonSuperuser, "The engineer tier lists the staging addresses of its scopes: tacctl scope staging list. Removing one is the superuser's. Nothing was changed.")
 	}
 	switch sub := arg(args, 0); sub {
 	case "", "list":

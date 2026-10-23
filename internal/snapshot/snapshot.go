@@ -198,6 +198,12 @@ type Snapshotter struct {
 	// the lock is not reentrant.
 	LedgerLock func() (unlock func(), err error)
 
+	// Touch is called when Take starts, before anything is written (the
+	// audit writer's mark that the command changes state); Taken with the id
+	// of every snapshot Take made. Both may be nil.
+	Touch func()
+	Taken func(id string)
+
 	held int
 }
 
@@ -291,6 +297,18 @@ func (s *Snapshotter) now() time.Time {
 // made is an error (printed by nobody here: the caller prints it as an
 // [ERROR] line) and leaves no temporary directory behind.
 func (s *Snapshotter) Take() (string, error) {
+	if s.Touch != nil {
+		s.Touch()
+	}
+	id, err := s.take()
+	if id != "" && s.Taken != nil {
+		s.Taken(id)
+	}
+	return id, err
+}
+
+// take is Take.
+func (s *Snapshotter) take() (string, error) {
 	if s.held > 0 || !isRegular(s.StoreFile) {
 		return "", nil
 	}

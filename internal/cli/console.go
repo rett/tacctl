@@ -206,6 +206,7 @@ func (inv *invocation) consoleWrite(fn func(*console.File) error) error {
 	if _, err := trial.Text(); err != nil {
 		return err
 	}
+	inv.app.Audit().Touch()
 	_, err = console.Mutate(p, inv.snapshotFirst, fn)
 	return err
 }

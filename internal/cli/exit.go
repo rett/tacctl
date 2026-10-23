@@ -41,6 +41,7 @@ func exit(code int) error { return &ExitError{Code: code} }
 //
 //	nil                                   0
 //	*ExitError                            its Code ([ERROR] Err first, when set)
+//	*deniedError                          what it wraps (a refusal inside a verb, audit.go)
 //	ui.ErrInterrupted                     130, silently (Ctrl-C at a password prompt)
 //	ui.ErrReported, tier.ErrDenied        1, silently (already printed)
 //	backend.Reported (*backend.Error)     its Code, silently (1 failed, 3 refused, ...)

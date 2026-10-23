@@ -155,7 +155,7 @@ func (inv *invocation) scopeSNMP(args []string) error {
 	// An engineer reads and changes nothing (D45; the gate sees 'scope snmp'
 	// only).
 	if f.restricted && !scopeSNMPRead(sub, p) {
-		return inv.usageErr("The engineer tier reads a scope's SNMP settings: tacctl scope snmp " + scope +
+		return inv.deniedUsage(reasonSuperuser, "The engineer tier reads a scope's SNMP settings: tacctl scope snmp "+scope+
 			" show [--reveal]. Changing them is the superuser's. Nothing was changed.")
 	}
 	switch sub {
@@ -346,6 +346,7 @@ func (inv *invocation) scopeSNMPCommunity(scope string, p Parsed) error {
 		return err
 	}
 	cr.Community = s
+	a.Audit().Touch()
 	if err := snmpcred.SaveScope(a.Paths.SNMPDir, scope, cr); err != nil {
 		return err
 	}
@@ -389,6 +390,7 @@ func (inv *invocation) scopeSNMPV3User(scope string, p Parsed) error {
 		return err
 	}
 	cr.User, cr.AuthPass, cr.PrivPass = user, ap, pp
+	a.Audit().Touch()
 	if err := snmpcred.SaveScope(a.Paths.SNMPDir, scope, cr); err != nil {
 		return err
 	}
@@ -593,6 +595,7 @@ func (inv *invocation) scopeSNMPClear(scope string) error {
 // scopeSNMPDrop removes everything the scope has: its keys in tacctl.yaml
 // and its credentials file.
 func (inv *invocation) scopeSNMPDrop(scope string) error {
+	inv.app.Audit().Touch()
 	if err := snmpcred.RemoveScope(inv.app.Paths.SNMPDir, scope); err != nil {
 		return err
 	}

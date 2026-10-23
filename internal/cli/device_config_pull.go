@@ -1075,7 +1075,7 @@ func (r *pullRun) recordSuccess(o *pullOutcome, e devreg.Entry, ext devconf.Extr
 
 // configStore is the records store of this invocation.
 func (inv *invocation) configStore() devconf.Store {
-	return devconf.Store{Records: inv.app.Paths.ConfigRecords, Dir: inv.app.Paths.ConfigDir}
+	return devconf.Store{Records: inv.app.Paths.ConfigRecords, Dir: inv.app.Paths.ConfigDir, Touch: inv.app.Audit().Touch}
 }
 
 // batchInterrupts wires the operator's Ctrl-C to the runner: the first

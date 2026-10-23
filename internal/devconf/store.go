@@ -332,6 +332,10 @@ type Store struct {
 	Records string
 	// Dir is the directory of the sections files (device-config).
 	Dir string
+	// Touch, when set, is called whenever the store's lock is taken: every
+	// writer holds it (the audit writer's mark that the command changes
+	// state).
+	Touch func()
 }
 
 func fail(lines ...string) error { return &names.Error{Msgs: lines} }
@@ -387,6 +391,9 @@ func (s Store) Save(r *Records) error {
 // hold it across Load and Save; the sections files are written under it
 // too.
 func (s Store) Lock() (unlock func(), err error) {
+	if s.Touch != nil {
+		s.Touch()
+	}
 	d := filepath.Dir(s.Records)
 	if err := paths.MkVarLib(d); err != nil {
 		return nil, fail("Cannot create " + d + ": " + errText(err))

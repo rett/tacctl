@@ -10,6 +10,7 @@ package cli
 // TestManGeneratedBlocksAreCurrent:
 //
 //	tiers              the TIERS table (tier.Rules) and the notes of the verbs the code splits (tierNotes)
+//	audit-classes      the action and mixed commands of AUDIT LOG with their weight (auditTable)
 //	config-keys        the tacctl.yaml keys (conf.Schema), with type and default
 //	console-keys       the console.yaml settings (console.Defaults), with type and default
 //	command <words>    for each command: its tier ('Requires:') and its flags, described as the usage describes them
@@ -120,6 +121,40 @@ func manTiersBlock() manBlock {
 		l = append(l, ".TP", ".B "+roff(k), roff(upperFirst(note)))
 	}
 	return manBlock{name: "tiers", lines: l}
+}
+
+// manAuditBlock is the AUDIT LOG list of the commands that write the central
+// lines: the action commands, then the mixed ones, each at its weight.
+func manAuditBlock() manBlock {
+	var l []string
+	for _, class := range []auditClass{classAction, classMixed} {
+		for _, notice := range []bool{false, true} {
+			var rows []string
+			for _, k := range slices.Sorted(maps.Keys(auditTable)) {
+				e := auditTable[k]
+				if e.Class != class {
+					continue
+				}
+				switch {
+				case !notice && e.Notice && e.NoticeWhen == nil:
+					// always at auth.notice: in the other list
+				case !notice:
+					rows = append(rows, k)
+				case e.Notice && e.NoticeNote != "":
+					rows = append(rows, k+" ("+e.NoticeNote+")")
+				case e.Notice:
+					rows = append(rows, k)
+				}
+			}
+			title := string(class)
+			if notice {
+				title += ", auth.notice"
+			}
+			l = append(l, ".TP", `.B "`+roff(title)+`"`)
+			l = append(l, roffWrap(rows, ", ")...)
+		}
+	}
+	return manBlock{name: "audit-classes", lines: l}
 }
 
 // manCommandBlocks are the 'command <words>' blocks: the tier line and the
@@ -895,7 +930,7 @@ func manMarkerLine(kind, name string) string { return `.\" ` + kind + " GENERATE
 // manBlocks are all the generated blocks, in page order where it matters.
 func manBlocks(t *testing.T) []manBlock {
 	t.Helper()
-	blocks := []manBlock{manTiersBlock(), manKeysBlock("config-keys", manConfigKeyRows(t)), manKeysBlock("console-keys", manConsoleKeyRows(t))}
+	blocks := []manBlock{manTiersBlock(), manAuditBlock(), manKeysBlock("config-keys", manConfigKeyRows(t)), manKeysBlock("console-keys", manConsoleKeyRows(t))}
 	return append(blocks, manCommandBlocks(t)...)
 }
 

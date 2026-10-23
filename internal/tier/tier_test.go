@@ -798,3 +798,26 @@ func TestNotesAreOnePerCommandAndSub(t *testing.T) {
 		t.Errorf("notes: %d rows, Notes() %d", len(seen), len(Notes()))
 	}
 }
+
+// Check answers the tier the gate held the caller to, with the refusal when
+// there is one (the central audit lines name it).
+func TestCheckAnswersTheTier(t *testing.T) {
+	ctx := context.Background()
+	g := newGate("ro", "ro tac-users", map[string]string{"ro": "1"})
+	if got, err := g.gate.Check(ctx, "user", "list"); got != Readonly || err != nil {
+		t.Errorf("readonly user list: %q %v", got, err)
+	}
+	if got, err := g.gate.Check(ctx, "user", "remove"); got != Readonly || err != ErrDenied {
+		t.Errorf("readonly user remove: %q %v", got, err)
+	}
+	g = newGate("root", "root", nil)
+	if got, err := g.gate.Check(ctx, "user", "remove"); got != Unrestricted || err != nil {
+		t.Errorf("root: %q %v", got, err)
+	}
+	g = newGate("ro", "ro tac-users", map[string]string{"ro": "1"})
+	g.gate.SudoUID = "1234"
+	g.run.On([]string{"getent", "passwd", "1234"}, execx.Result{Stdout: []byte("other:x:1234:1234::/home/other:/bin/bash\n")})
+	if got, err := g.gate.Check(ctx, "user", "list"); got != None || err != ErrDenied {
+		t.Errorf("mismatch: %q %v", got, err)
+	}
+}
