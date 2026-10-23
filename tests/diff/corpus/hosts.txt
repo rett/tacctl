@@ -11,6 +11,7 @@
 
 # --- without the pam_tacplus tarball -------------------------------------------
 host enroll web1 --scope lab
+@known 0.2.16 item 5: a script that reads the UID ledger creates its lock file, state/.linux-uids.lock (0600, empty)
 config linux script --scope lab --server 192.0.2.10
 config linux build
 
@@ -191,6 +192,7 @@ config linux script --scope dmz --server 192.0.2.10
 @known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config linux script --server 192.0.2.10
 config linux script --scope nope
+@known 0.2.16 item 5: a script that reads the UID ledger creates its lock file, state/.linux-uids.lock (0600, empty)
 config linux script --scope lab --server 'x;reboot'
 config linux script --scope lab --method radius
 config linux script --scope lab --method ldap
