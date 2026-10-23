@@ -50,6 +50,22 @@ current behaviour; this file is where history lives.
    by class. A person who runs tacctl as root with no `SUDO_USER` is
    `user=root origin=root`. The lines that existed keep their words.
 
+3. **Audit log: no secret in `args=`, and the console's refusal names only a
+   verb.** `args=` of the `cmd` lines now hides every place a secret can be
+   typed: the value of `--hash` and of `scope add --secret`, the value of
+   `scope secret <scope> set`, every word of `hash` and `passwd`, and a word
+   typed in the place of a prompt, where the command refuses the line after
+   its start line is written (`user passwd bob <password>`, `user add bob
+   operator <password>`, `scope snmp <scope> community <value>` and the
+   `v3-user` and `device snmp` and `config snmp` forms). A refused `-c` string
+   of the login console logs `first=<word>` only when the word is a verb of
+   tacctl or one of the console's words (`help`, `history`, `exit`, `quit`,
+   `system-shell`); any other word, a program or a password typed at the
+   prompt, reads `console DENY ... reason=command first=- len=<n>`, `n` the
+   length of the string (the line used to carry any first word). Free text
+   such as `breakglass hold --reason` and the arguments of `ssh` after `--`
+   are logged as typed, as before; the docs say so.
+
 ## 0.2.16 (2026-10-23)
 
 1. **`config validate` takes no argument.** `config validate extra` ran the

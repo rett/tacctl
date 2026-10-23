@@ -239,7 +239,7 @@ func TestConsolePtyCommandRefusedOnATerminal(t *testing.T) {
 	p := startConsole(t, ptyPolicyRO, "carol,tac-users,tac-readonly", "c=scp -t .")
 	p.expect(regexp.QuoteMeta(console.RefusedText) + `\r\n`)
 	log := p.ends(126)
-	if len(log) != 3 || !strings.HasSuffix(log[0], "mode=command") || !strings.HasSuffix(log[1], "reason=command first=scp") {
+	if len(log) != 3 || !strings.HasSuffix(log[0], "mode=command") || !strings.HasSuffix(log[1], "reason=command first=- len=8") {
 		t.Errorf("log %q", log)
 	}
 	// One tacctl line runs, with the terminal.

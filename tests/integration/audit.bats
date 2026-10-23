@@ -110,6 +110,15 @@ audit_calls() { grep -E '^logger -t tacctl ' "$CALLS_LOG" || true; }
     ! grep -q "$SECRET" "$CALLS_LOG"
 }
 
+@test "audit: a password typed in the place of the prompt is redacted" {
+    as_user ops no no -- user passwd dave "$SECRET"
+    assert_failure
+    run audit_calls
+    assert_line --regexp 'cmd start .* cmd="user passwd" args="dave <redacted>" sid='
+    refute_output --partial "$SECRET"
+    ! grep -q "$SECRET" "$CALLS_LOG"
+}
+
 @test "audit: a refusal inside a verb writes cmd DENY and no start line" {
     as_user op yes yes -- scope secret lab set "$SECRET"
     assert_failure

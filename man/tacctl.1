@@ -11058,8 +11058,14 @@ Syslog (tag
 .BR tacctl\-console ):
 .BI "console start session=" id " user=" user " from=" address " tty=" tty " mode=" interactive|command|batch\fR,
 .BI "console end session=" id " user=" user " reason=" exit|eof|idle|hangup|signal|command|failed " lines=" n " status=" n\fR,
-.BI "console DENY session=" id " user=" user " reason=command first=" word
-(auth.warning),
+.BI "console DENY session=" id " user=" user " reason=command first=" verb|\- " [len=" n ]
+(auth.warning; the word is the first word of the refused string when it is a
+verb of tacctl or one of the console's own words, else
+.B first=\-
+and
+.B len=
+is the length of the string, so a password typed at the prompt is never in the
+log),
 .BI "console system\-shell start" \fR,
 .B end
 .RB ( status= ", " duration= )
@@ -11497,11 +11503,55 @@ of
 .BR "scope add" )
 and for the value in
 .BR "scope secret <scope> set <value>" .
-Nothing else is redacted: free text such as
+A word typed where the command asks for a secret at a prompt or on standard
+input is redacted too (a switch given a value, such as
+.BR \-\-stdin=x ,
+and a word that starts with
+.B \-
+and is no flag of the command included). The actions
+.BR "user add" ,
+.BR "user passwd" ,
+.B "scope add"
+and
+.B passwd
+write the start line before they refuse such a line; the SNMP verbs and
+.B "scope secret"
+are mixed and refuse it without a line, but an engineer's refusal inside the
+verb writes
+.B "cmd DENY"
+with the same
+.BR args= .
+Every word after the arguments of
+.B "user add"
+and
+.BR "user passwd" ,
+of
+.B "scope add"
+and of
+.BR "scope snmp" ", " "device snmp"
+and
+.B "config snmp"
+.RB ( community " and " v3\-user ),
+every word of
+.B passwd
+and
+.BR hash ,
+and every word of
+.B "scope secret"
+but the scope and the sub-command, and a lone word after it that is no
+sub-command. A secret typed in the place of a name
+.RB ( "user passwd <password>" )
+is logged as the name. Nothing else is redacted: free text such as
 .B "breakglass hold \-\-reason"
-is why a device was taken out of AAA, and it is logged as typed. Whatever is
-typed on a command line is also in sudo's own log, which records the whole
-line.
+is why a device was taken out of AAA, and it is logged as typed, as are the
+arguments after
+.B \-\-
+of
+.BR ssh .
+Whatever is typed on a command line is also in sudo's own log, which records the
+whole line. Communities, SNMPv3 keys and passwords are read from a prompt or
+standard input and are never written to a log; the login console's refusal logs
+the first word of a string only when it is a verb.
 .SS Correlating
 Every line of one command, the detail lines of the verb and the tier gate's
 included, ends in the same

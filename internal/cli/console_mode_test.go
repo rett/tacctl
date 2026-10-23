@@ -124,7 +124,7 @@ func TestConsoleGuardRefusals(t *testing.T) {
 	}
 	h, run := consoleHarness(t, "", "", consoleTestPolicy, "-c", "scp -t .")
 	_ = run()
-	if log := consoleLog(h.runner); len(log) < 2 || !strings.HasSuffix(log[1], "reason=command first=scp") {
+	if log := consoleLog(h.runner); len(log) < 2 || !strings.HasSuffix(log[1], "reason=command first=- len=8") {
 		t.Errorf("first word: %q", log)
 	}
 }

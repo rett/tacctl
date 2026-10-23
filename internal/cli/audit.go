@@ -88,23 +88,104 @@ func (e auditEntry) isNotice(rest []string) bool {
 	return e.NoticeWhen == nil || e.NoticeWhen(rest)
 }
 
-// secretAfterSet marks the words that follow a "set" at the second place
-// ('scope secret <scope> set <value>').
-func secretAfterSet(rest []string) []int {
+// secretScopeSecret marks the words of 'scope secret <scope> ...' that can
+// be the secret: every word after the scope but a sub-command ('show', 'set',
+// 'generate', help), so the value of 'set', and the word that stands where a
+// sub-command goes when the scope was left out or the value typed in the
+// sub-command's place.
+func secretScopeSecret(rest []string) []int {
 	var out []int
-	if len(rest) >= 3 && rest[1] == "set" {
-		for i := 2; i < len(rest); i++ {
-			out = append(out, i)
+	if len(rest) == 1 && !isSecretSub(rest[0]) {
+		// 'scope secret <word>' alone: the scope was left out, or the secret
+		// typed in its place; the word is redacted either way.
+		return []int{0}
+	}
+	for i := 1; i < len(rest); i++ {
+		if i == 1 && isSecretSub(rest[1]) {
+			continue
 		}
+		out = append(out, i)
 	}
 	return out
 }
 
-// secretAll marks every word ('hash <password>').
+// isSecretSub: w is a sub-command of 'scope secret' (or its help).
+func isSecretSub(w string) bool {
+	switch w {
+	case "show", "set", "generate", "help", "-h", "--help":
+		return true
+	}
+	return false
+}
+
+// secretAll marks every word ('hash <password>'; 'passwd', which takes no
+// argument and asks for the password: a word typed there is a password).
 func secretAll(rest []string) []int {
 	out := make([]int, len(rest))
 	for i := range rest {
 		out[i] = i
+	}
+	return out
+}
+
+// secretSurplus marks the words that no flag and no positional of the verb's
+// spec takes: the secret that was typed on the command line in the place of
+// the prompt the verb offers ('user passwd bob <password>', 'user add bob
+// operator <password>'). The verb refuses such a line with a usage error, and
+// the audit line is written before it does.
+func secretSurplus(spec func() Spec) func(rest []string) []int {
+	return func(rest []string) []int { return surplusWords(spec(), rest, 0) }
+}
+
+// secretSNMPSurplus is secretSurplus for the SNMP verbs that read the
+// community or the v3 keys from a prompt or standard input: the words after
+// 'community' or 'v3-user <user>', where the verb word is rest[at].
+func secretSNMPSurplus(at int, specs func() map[string]Spec) func(rest []string) []int {
+	return func(rest []string) []int {
+		if len(rest) <= at+1 || (rest[at] != "community" && rest[at] != "v3-user") {
+			return nil
+		}
+		return surplusWords(specs()[rest[at]], rest[at+1:], at+1)
+	}
+}
+
+// surplusWords are the indices (base + position in words) of the words of an
+// argument list that spec takes neither as a flag, a flag's value nor one of
+// its positionals. A word that looks like a flag but is none of the spec's is
+// surplus too: a password can start with '-'. A spec with no upper bound on
+// the positionals takes them all.
+func surplusWords(spec Spec, words []string, base int) []int {
+	byName := map[string]Flag{}
+	for _, f := range spec.Flags {
+		for _, n := range f.Names {
+			byName[n] = f
+		}
+	}
+	var out []int
+	pos, ended := 0, false
+	for i := 0; i < len(words); i++ {
+		w := words[i]
+		if !ended && w == "--" {
+			ended = true
+			continue
+		}
+		if !ended && len(w) >= 2 && w[0] == '-' {
+			name, _, hasVal := strings.Cut(w, "=")
+			f, ok := byName[name]
+			switch {
+			case !ok, !f.Value && hasVal:
+				// Not a flag of the verb, or a switch given a value ('--stdin=x'):
+				// the verb refuses it, and the value can be a password.
+				out = append(out, base+i)
+			case f.Value && !hasVal && !f.Optional:
+				i++
+			}
+			continue
+		}
+		if spec.MaxArgs >= 0 && pos >= spec.MaxArgs {
+			out = append(out, base+i)
+		}
+		pos++
 	}
 	return out
 }
@@ -119,7 +200,7 @@ var auditTable = map[string]auditEntry{
 	"upgrade":           action().weighty(),
 	"uninstall":         action().weighty(),
 	"rollback":          mixed().weighty(),
-	"passwd":            action(),
+	"passwd":            withSecret(action(), secretAll),
 	"status":            read(),
 	"version":           read(),
 	"hash":              withSecret(read(), secretAll),
@@ -133,9 +214,9 @@ var auditTable = map[string]auditEntry{
 
 	"user list":    read(),
 	"user show":    read(),
-	"user add":     action(),
+	"user add":     withSecret(action(), secretSurplus(func() Spec { return userSpecs["add"] })),
 	"user remove":  action(),
-	"user passwd":  action(),
+	"user passwd":  withSecret(action(), secretSurplus(func() Spec { return userSpecs["passwd"] })),
 	"user disable": action(),
 	"user enable":  action(),
 	"user rename":  action(),
@@ -158,14 +239,14 @@ var auditTable = map[string]auditEntry{
 	"scope list":         read(),
 	"scope routing":      read(),
 	"scope show":         read(),
-	"scope add":          action(),
+	"scope add":          withSecret(action(), secretSurplus(func() Spec { return scopeSpecs["add"] })),
 	"scope remove":       action(),
 	"scope rename":       action(),
 	"scope default":      mixed(),
 	"scope lookup":       read(),
 	"scope prefixes":     mixed(),
 	"scope staging":      mixed(),
-	"scope secret":       withSecret(mixed(), secretAfterSet),
+	"scope secret":       withSecret(mixed(), secretScopeSecret),
 	"scope protocols":    mixed(),
 	"scope devices":      mixed(),
 	"scope aaa-order":    mixed(),
@@ -178,7 +259,7 @@ var auditTable = map[string]auditEntry{
 	"scope breakglass":   mixed(),
 	"scope block":        mixed(),
 	"scope netconf":      mixed(),
-	"scope snmp":         mixed(),
+	"scope snmp":         withSecret(mixed(), secretSNMPSurplus(1, func() map[string]Spec { return scopeSNMPSpecs })),
 
 	"host list":           read(),
 	"host show":           read(),
@@ -221,7 +302,7 @@ var auditTable = map[string]auditEntry{
 	"device stale-days":    mixed(),
 	"device import":        mixed(),
 	"device hostkey":       mixed(),
-	"device snmp":          mixed(),
+	"device snmp":          withSecret(mixed(), secretSNMPSurplus(1, func() map[string]Spec { return deviceSNMPSpecs })),
 	"device block":         mixed(),
 	"device config":        mixed(),
 
@@ -249,7 +330,7 @@ var auditTable = map[string]auditEntry{
 	"config secret-min-length":   mixed(),
 	"config render":              mixed(),
 	"config restore":             action().weighty(),
-	"config snmp":                mixed(),
+	"config snmp":                withSecret(mixed(), secretSNMPSurplus(0, func() map[string]Spec { return configSNMPSpecs })),
 	"config sudoers":             mixed().weighty(),
 	"config validate":            mixed(),
 

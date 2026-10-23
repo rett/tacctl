@@ -130,7 +130,7 @@ func (inv *invocation) runConsoleSession(args []string) error {
 		first, ok := console.Guard(line, consoleRootCommand(root))
 		if !ok {
 			_, _ = io.WriteString(a.Out.Stderr, console.RefusedText+"\n")
-			cs.log("auth.warning", cs.sess.DenyLine(first))
+			cs.log("auth.warning", cs.sess.DenyLine(first, len(line)))
 			cs.log("auth.info", cs.sess.EndLine(console.ReasonCommand, 0, console.RefusedStatus))
 			return exit(console.RefusedStatus)
 		}
@@ -219,7 +219,7 @@ func (cs *consoleSession) systemShell(ctx context.Context, interactive bool) int
 	a := cs.inv.app
 	if !interactive {
 		_, _ = io.WriteString(a.Out.Stderr, console.RefusedText+"\n")
-		cs.log("auth.warning", cs.sess.DenyLine(console.SystemShellWord))
+		cs.log("auth.warning", cs.sess.DenyLine(console.SystemShellWord, 0))
 		return console.RefusedStatus
 	}
 	if !cs.pol.SystemShell && cs.tier == tier.Engineer {
