@@ -44,6 +44,24 @@ chain choose the path from the device.
   is missing is the selection ("the devices that differ") and the chain
   in front of it.
 
+## Decisions (2026-10-23)
+
+- The verb is `device enroll`. It asks at the end: after the plan it
+  offers the apply review (Junos), and answering no leaves the device
+  registered and pulled with the plan printed.
+- The selectors of the config verbs grow. `device config
+  pull|diff|plan|apply` take, besides names, `--all`, `--scope`,
+  `--vendor` and `--stale`: `--differs` (the devices whose last pull
+  record differs from today's rendering, as `device config list
+  --differs` computes it, with no login), `--name <text>` and `--ip
+  <addr|cidr|text>` (as `device list` takes them, comma lists included).
+  All of the filters combine; names and `--all` still stand alone. The
+  apply re-checks every selected device on the device itself, so a stale
+  record can only select too many, never apply a change nobody reviewed.
+  `device config list` takes the same filters.
+- `--differs` with `--pull` (or the chain below) pulls the selected
+  devices first, so the selection is made on fresh records.
+
 ## Candidates
 
 1. **`device enroll`** (working name): addresses from the arguments or
@@ -51,22 +69,19 @@ chain choose the path from the device.
    and name from the device (D260) with a question for what cannot be
    read, register, pull, and print the plan (Junos: and offer the apply
    review). Replaces the remembered chain for the common case.
-2. **A remediation selection** for `device config apply` and a chain
-   `pull, diff, plan, apply` for the devices that differ: a `--differs`
-   selector, or one verb that pulls the selected devices, lists those
-   that differ and hands them to the apply review. The apply's own
-   review, canary and proof stay as they are.
+2. **A remediation selection** for the config verbs: `--differs`,
+   `--name` and `--ip` beside the existing selectors (see Decisions),
+   and a chain that pulls the selected devices, lists those that differ
+   and hands them to the apply review. The apply's own review, canary
+   and proof stay as they are.
 3. **Consistency for several operators:** the same prompts and defaults
    for every person; the audit lines of the 0.2.17 release record who
    ran the chain (`sid=` ties the steps together).
 
 ## Open
 
-- Does `device enroll` stop at the plan by default and apply only with a
-  flag, or ask at the end?
-- The name of the verb, and whether it lives under `device` or as a
-  top-level workflow.
-- Whether remediation selection is a selector of `apply` or a verb of
-  its own.
+- Whether the chain that pulls, selects the devices that differ and
+  hands them to the apply review is `--differs --pull` on `apply` or a
+  verb of its own.
 - Which questions a run asks once for many addresses (host keys) and
   which it asks per device.
