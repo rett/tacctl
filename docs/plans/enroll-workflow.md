@@ -1,6 +1,8 @@
-# Enrolling and remediating with one attended command (0.2.18 candidate)
+# Enrolling and remediating with one attended command (in the 0.2.17 plan)
 
-Filed 2026-10-23. Status: direction only, nothing designed or built.
+Filed 2026-10-23. Status: the decisions below are the maintainer's and
+are planned in `0.2.17-plan.md` as D261-D272 and WP17.11 to WP17.15 (the
+same day; there is no 0.2.18 release for this). Nothing built.
 
 ## Goal
 
@@ -112,4 +114,5 @@ chain choose the path from the device.
 
 ## Open
 
-None left; the verb names and flags are settled in the 0.2.18 plan.
+None left; the verb names and flags are settled in the 0.2.17 plan
+(D261-D272).
