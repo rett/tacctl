@@ -1,4 +1,4 @@
-# Vendor detection (filed 2026-10-23; 0.2.18 candidate)
+# Vendor detection (filed 2026-10-23; in the 0.2.17 plan as D260)
 
 Status: design only, nothing built. `device add` defaults the vendor to
 `other`, and nothing reads it from the device. A device left at `other` has
