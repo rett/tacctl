@@ -59,8 +59,11 @@ chain choose the path from the device.
   apply re-checks every selected device on the device itself, so a stale
   record can only select too many, never apply a change nobody reviewed.
   `device config list` takes the same filters.
-- `--differs` with `--pull` (or the chain below) pulls the selected
-  devices first, so the selection is made on fresh records.
+- `--differs` with `--pull` pulls the selected devices first, so the
+  selection is made on fresh records. The chain that pulls, selects the
+  devices that differ and hands them to the apply review is these flags
+  on `device config apply`, with every filter above; there is no verb of
+  its own.
 
 ## Candidates
 
@@ -71,17 +74,14 @@ chain choose the path from the device.
    review). Replaces the remembered chain for the common case.
 2. **A remediation selection** for the config verbs: `--differs`,
    `--name` and `--ip` beside the existing selectors (see Decisions),
-   and a chain that pulls the selected devices, lists those that differ
-   and hands them to the apply review. The apply's own review, canary
-   and proof stay as they are.
+   and `--pull` on `apply`, which pulls the selected devices first and
+   hands those that differ to the apply review. The apply's own review,
+   canary and proof stay as they are.
 3. **Consistency for several operators:** the same prompts and defaults
    for every person; the audit lines of the 0.2.17 release record who
    ran the chain (`sid=` ties the steps together).
 
 ## Open
 
-- Whether the chain that pulls, selects the devices that differ and
-  hands them to the apply review is `--differs --pull` on `apply` or a
-  verb of its own.
 - Which questions a run asks once for many addresses (host keys) and
   which it asks per device.
