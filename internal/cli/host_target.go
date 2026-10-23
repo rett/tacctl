@@ -158,7 +158,7 @@ func (inv *invocation) hostTarget(args []string) error {
 	if err := reg.Replace(next); err != nil {
 		return err
 	}
-	a.Logger(inv.ctx, "auth.info", "host target name="+name+" target="+next.Target+" port="+dash(next.Port)+" by="+inv.sudoUser())
+	a.Audit().Raw("auth.info", "host target name="+name+" target="+next.Target+" port="+dash(next.Port)+" by="+inv.sudoUser())
 	a.Out.InfoE("Host '" + name + "' is now reached at " + targetText(next) + " (scope, server and method unchanged).")
 	inv.hostFacts(he, name, next.Target, resolved)
 	// A host that cannot hold the UID range: 'host sync' will refuse it.
@@ -204,7 +204,7 @@ func (inv *invocation) comparePinnedKeys(cmd, name string, pinned []string, keys
 	case len(own) == 0:
 		return keysUnread, nil
 	case devreg.Compare(pinned, own).Changed:
-		inv.app.Logger(inv.ctx, "auth.warning", cmd+" hostkey-mismatch name="+name)
+		inv.app.Audit().Raw("auth.warning", cmd+" hostkey-mismatch name="+name)
 		return keysDiffer, []string{
 			"  Pinned:      " + devreg.Displays(devreg.ParseHostKeys(pinned)),
 			"  On the host: " + devreg.Displays(own),

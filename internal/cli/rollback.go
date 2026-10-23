@@ -127,7 +127,7 @@ func (inv *invocation) rollback(args []string) error {
 	a.Conf().Reload()
 
 	inv.rollbackNextSteps(version)
-	a.Logger(inv.ctx, "auth.info", "rollback target="+version+" keys="+strconv.Itoa(len(plan.Keys()))+" by="+inv.sudoUser())
+	a.Audit().Raw("auth.info", "rollback target="+version+" keys="+strconv.Itoa(len(plan.Keys()))+" by="+inv.sudoUser())
 	return nil
 }
 

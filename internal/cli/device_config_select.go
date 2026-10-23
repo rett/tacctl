@@ -230,7 +230,7 @@ func (inv *invocation) chooseDevices(sel selection, user string, login bool, ver
 					"Add them with: tacctl scope prefixes <scope> add <cidr>")
 			}
 			if msg := loginProblem(m, user, e.Scope); login && msg != "" {
-				inv.app.Logger(inv.ctx, "auth.warning", "device config "+verb+" DENY user="+user+" device="+e.Name+" scope="+dash(e.Scope)+" reason=scope")
+				inv.app.Audit().Raw("auth.warning", "device config "+verb+" DENY user="+user+" device="+e.Name+" scope="+dash(e.Scope)+" reason=scope")
 				return nil, inv.usageErr(msg + " (device " + e.Name + ")")
 			}
 			// A held device does not accept the login; refused before any

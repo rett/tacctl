@@ -256,7 +256,7 @@ func (inv *invocation) deviceHostkey(args []string) error {
 	}); err != nil {
 		return err
 	}
-	a.Logger(inv.ctx, "auth.info", "device hostkey "+action+" name="+name+" keys="+strconv.Itoa(len(want))+" by="+inv.sudoUser())
+	a.Audit().Raw("auth.info", "device hostkey "+action+" name="+name+" keys="+strconv.Itoa(len(want))+" by="+inv.sudoUser())
 	a.Out.Info("Pinned " + strconv.Itoa(len(want)) + " host key(s) for '" + name + "'.")
 	return nil
 }
@@ -326,7 +326,7 @@ func (inv *invocation) pinHostKeys(ctx context.Context, name, host string, port 
 	}
 	c := devreg.CrossCheckKeys(own, scan)
 	if c.Conflict {
-		a.Logger(ctx, "auth.warning", "host hostkey-mismatch name="+name+" host="+host+" port="+strconv.Itoa(port))
+		a.Audit().Raw("auth.warning", "host hostkey-mismatch name="+name+" host="+host+" port="+strconv.Itoa(port))
 		a.Out.WarnE(name + ": the keys the host holds and the keys offered at " + host + " port " + strconv.Itoa(port) +
 			" differ; nothing was pinned.")
 		a.Out.WarnE("  Read over the enrolment session: " + devreg.Displays(own))

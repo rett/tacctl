@@ -342,6 +342,23 @@ func TestDepsMissingLinuxHostPackagesOnlyWarn(t *testing.T) {
 	}
 }
 
+// logger writes the audit lines: a machine without it is told so, once, and
+// the install goes on.
+func TestDepsWarnsWhenLoggerIsMissing(t *testing.T) {
+	o := newOhost(t)
+	o.dpkg(append(slices.Clone(lifecycle.DepsCore), lifecycle.DepsLinuxHosts...)...)
+	o.run.Missing("logger")
+	if code := deps(o); code != 0 || strings.Count(o.text(), "[WARN] logger (package util-linux) is not installed") != 1 ||
+		!strings.Contains(o.text(), "Required packages: all present.") {
+		t.Errorf("exit %d out %q", code, o.text())
+	}
+	o = newOhost(t)
+	o.dpkg(append(slices.Clone(lifecycle.DepsCore), lifecycle.DepsLinuxHosts...)...)
+	if deps(o) != 0 || strings.Contains(o.text(), "util-linux") {
+		t.Errorf("logger present, out %q", o.text())
+	}
+}
+
 func TestDepsNotDebianWarnsWithTheList(t *testing.T) {
 	o := newOhost(t)
 	o.run.Missing("apt-get")

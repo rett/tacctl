@@ -253,7 +253,7 @@ func TestApplyReviewGroupsByWhatItShows(t *testing.T) {
 		if noCanary {
 			canary = "none"
 		}
-		if line := "device config apply user=alice approved=4 shapes=" + h + "," + oe.Out.Shape + " canary=" + canary; !r.Called("logger", "-t", "tacctl", "-p", "auth.notice", line) {
+		if line := "device config apply user=alice approved=4 shapes=" + h + "," + oe.Out.Shape + " canary=" + canary; !hasAudit(r, "auth.notice", line) {
 			t.Errorf("no audit line %q: %q", line, r.Argvs())
 		}
 	}
@@ -309,7 +309,7 @@ func TestShapesListAndSeed(t *testing.T) {
 	if e := m[hash]; len(e.Confirmed) != 1 || !e.Confirmed[0].Seeded || e.Confirmed[0].Device != "sw-j" || e.Confirmed[0].By != "alice" {
 		t.Errorf("entry %+v", e)
 	}
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.notice", "device config shapes seed user=alice device=sw-j shape="+hash) {
+	if !hasAudit(sb.runner, "auth.notice", "device config shapes seed user=alice device=sw-j shape="+hash) {
 		t.Errorf("no audit line: %q", sb.runner.Argvs())
 	}
 	// again: already confirmed, nothing asked

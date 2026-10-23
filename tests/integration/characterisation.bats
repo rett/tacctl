@@ -457,8 +457,8 @@ EOF
     stub_cmd getent 'case "$*" in "passwd 1234") echo "ops:x:1234:1234::/home/ops:/bin/sh" ;; *) exit 2 ;; esac'
     SUDO_USER=ops SUDO_UID=1234 "$TACCTL_BIN_SCRIPT" user verify alice > /dev/null 2>&1 <<< 'CorrectHorse99'
     SUDO_USER=ops SUDO_UID=1234 "$TACCTL_BIN_SCRIPT" user verify alice > /dev/null 2>&1 <<< 'wrong'
-    grep -qxF 'logger -t tacctl -p auth.info verify OK user=alice by=ops(uid=1234)' "$CALLS_LOG"
-    grep -qxF 'logger -t tacctl -p auth.warning verify FAIL user=alice result=NO_MATCH by=ops(uid=1234)' "$CALLS_LOG"
+    grep -qE '^logger -t tacctl -p auth\.info verify OK user=alice by=ops\(uid=1234\) sid=[a-z0-9]{8}$' "$CALLS_LOG"
+    grep -qE '^logger -t tacctl -p auth\.warning verify FAIL user=alice result=NO_MATCH by=ops\(uid=1234\) sid=[a-z0-9]{8}$' "$CALLS_LOG"
 }
 
 # bats test_tags=cutover:wp2-4a
@@ -467,7 +467,7 @@ EOF
     make_user alice 'CorrectHorse99'
     : > "$CALLS_LOG"
     env -u SUDO_USER -u SUDO_UID "$TACCTL_BIN_SCRIPT" user verify alice > /dev/null 2>&1 <<< 'CorrectHorse99'
-    grep -qxF "logger -t tacctl -p auth.info verify OK user=alice by=root(uid=$(id -u))" "$CALLS_LOG"
+    grep -qE "^logger -t tacctl -p auth\.info verify OK user=alice by=root\(uid=$(id -u)\) sid=[a-z0-9]{8}$" "$CALLS_LOG"
 }
 
 # bats test_tags=cutover:wp2-4a

@@ -141,7 +141,7 @@ func TestBreakglassHostHoldRoundTrip(t *testing.T) {
 	if n := sb.restarts(); n != 1 {
 		t.Errorf("%d restarts for the hold, want 1", n)
 	}
-	if !sb.runner.CalledRegexp(`logger.* -p auth\.info breakglass hold host=web1 addr=192\.168\.1\.10 reason="locked out of sudo" by=root`) {
+	if !hasAuditMatch(sb.runner, "auth.info", `breakglass hold host=web1 addr=192\.168\.1\.10 reason="locked out of sudo" by=root`) {
 		t.Errorf("no audit line: %v", sb.runner.Argvs())
 	}
 	if o := sb.overrides(); !strings.Contains(o, "breakglass_hold:\n  web1:\n    address: 192.168.1.10\n") || !strings.Contains(o, "reason: locked out of sudo\n") {
@@ -275,7 +275,7 @@ func TestBreakglassHostHoldRoundTrip(t *testing.T) {
 	if o := sb.overrides(); strings.Contains(o, "breakglass_hold") {
 		t.Errorf("the record is left:\n%s", o)
 	}
-	if !sb.runner.CalledRegexp(`logger.* -p auth\.info breakglass release host=web1 addr=192\.168\.1\.10 held=\S+ by=root`) {
+	if !hasAuditMatch(sb.runner, "auth.info", `breakglass release host=web1 addr=192\.168\.1\.10 held=\S+ by=root`) {
 		t.Errorf("no release audit line: %v", sb.runner.Argvs())
 	}
 	if got := plain(sb.run("", []string{"host", "list"})); strings.Contains(got, "BREAK-GLASS") || strings.Contains(got, "STATE") {
@@ -411,7 +411,7 @@ func TestBreakglassHostAndDeviceInOneList(t *testing.T) {
 	if n := sb.restarts(); n != 1 {
 		t.Errorf("%d restarts, want 1", n)
 	}
-	if !sb.runner.CalledRegexp(`logger.* -p auth\.info breakglass hold host=web1 `) || !sb.runner.CalledRegexp(`logger.* -p auth\.info breakglass hold device=lab-sw `) {
+	if !hasAuditMatch(sb.runner, "auth.info", `breakglass hold host=web1 `) || !hasAuditMatch(sb.runner, "auth.info", `breakglass hold device=lab-sw `) {
 		t.Errorf("audit lines: %v", sb.runner.Argvs())
 	}
 	out = plain(sb.run("", []string{"breakglass", "release", "web1,lab-sw"}))
@@ -419,7 +419,7 @@ func TestBreakglassHostAndDeviceInOneList(t *testing.T) {
 		!strings.Contains(out, "Check:    tacctl device config pull lab-sw --diff") || !strings.Contains(out, "Hosts: tacctl host show web1 --check.") {
 		t.Errorf("release: %d %q %q", sb.code, out, sb.stderr())
 	}
-	if !sb.runner.CalledRegexp(`logger.* -p auth\.info breakglass release host=web1 `) || !sb.runner.CalledRegexp(`logger.* -p auth\.info breakglass release device=lab-sw `) {
+	if !hasAuditMatch(sb.runner, "auth.info", `breakglass release host=web1 `) || !hasAuditMatch(sb.runner, "auth.info", `breakglass release device=lab-sw `) {
 		t.Errorf("release audit lines: %v", sb.runner.Argvs())
 	}
 }

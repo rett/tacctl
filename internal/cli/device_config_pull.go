@@ -1148,7 +1148,7 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 			return batch.Summary{}, nil, err
 		}
 		b.local.secret = pw
-		inv.app.Logger(inv.auditContext(), "auth.info", fmt.Sprintf("device config pull user=%s device=%s login=%s%s",
+		inv.app.Audit().Raw("auth.info", fmt.Sprintf("device config pull user=%s device=%s login=%s%s",
 			b.user, b.entries[0].Name, devconf.LocalLoginPrefix, b.local.account))
 	} else {
 		run.passwd = inv.hooks.newDevicePasswords(inv)

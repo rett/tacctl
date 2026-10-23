@@ -24,7 +24,7 @@ func (inv *invocation) fixNamesAllowed() error {
 	if t == tier.Unrestricted || t == tier.Superuser {
 		return nil
 	}
-	inv.app.Logger(inv.ctx, "auth.warning", "tier DENY user="+inv.sudoUser()+" tier="+string(t)+" cmd=config validate --fix-names")
+	inv.app.Audit().Raw("auth.warning", "tier DENY user="+inv.sudoUser()+" tier="+string(t)+" cmd=config validate --fix-names")
 	return inv.usageErr(fixNamesDenied)
 }
 

@@ -183,7 +183,7 @@ func TestEngineerWalkthroughLogsTheSystemBlockRead(t *testing.T) {
 	sb.dev("", "add", "lab-j", "192.168.1.7", "--vendor", "juniper", "--no-host-key", "--no-lookup")
 	head := "tier:\n  operator: engineer\n"
 	logged := func() int {
-		return sb.runner.Count("logger", "-t", "tacctl", "-p", "auth.info", "secret-read kind=block name=lab/juniper/system by=bob")
+		return auditCount(sb.runner, "auth.info", "secret-read kind=block name=lab/juniper/system by=bob")
 	}
 
 	sb.putBlockSet(head, "lab", map[string]string{"system": "set system domain-name lab.example.net\nset system name-server 192.0.2.53\n"})
@@ -210,7 +210,7 @@ func TestEngineerWalkthroughLogsTheSystemBlockRead(t *testing.T) {
 	}
 	// a superuser's is not logged as a restricted reveal
 	sb.cfgRun("", []string{"config", "juniper", "--scope", "lab"}, nil)
-	if sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "secret-read") {
+	if hasAuditPrefix(sb.runner, "auth.info", "secret-read") {
 		t.Errorf("the superuser's read was logged: %q", sb.runner.Argvs())
 	}
 }

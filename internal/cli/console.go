@@ -712,7 +712,7 @@ func (inv *invocation) consolePolicyLine([]string) error {
 	path, perr := pol.SystemShellPath()
 	if perr != nil {
 		if sys {
-			a.Logger(inv.ctx, "auth.warning", "console policy system_shell "+path+" unusable: "+strings.Join(msgs(perr), " "))
+			a.Audit().Raw("auth.warning", "console policy system_shell "+path+" unusable: "+strings.Join(msgs(perr), " "))
 		}
 		sys = false
 	}
@@ -730,9 +730,9 @@ func (inv *invocation) consolePolicyLine([]string) error {
 		if !console.ValidSessionID(session) {
 			session = "-"
 		}
-		a.Logger(inv.ctx, "auth.info", "console policy user="+who+" tier="+string(t)+" system_shell="+yesNo(sys)+" session="+session)
+		a.Audit().Raw("auth.info", "console policy user="+who+" tier="+string(t)+" system_shell="+yesNo(sys)+" session="+session)
 	} else {
-		a.Logger(inv.ctx, "auth.info", "shell policy user="+who+" tier="+string(t))
+		a.Audit().Raw("auth.info", "shell policy user="+who+" tier="+string(t))
 	}
 	// tier= is the console's own view of the caller; the shell lists only
 	// the verbs the gate lets the caller run (D56), so when the gate's tier

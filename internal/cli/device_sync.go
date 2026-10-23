@@ -386,7 +386,7 @@ func (s *deviceSyncRun) run(asJSON bool) error {
 	if err := s.write(); err != nil {
 		return err
 	}
-	inv.app.Logger(inv.auditContext(), "auth.info", fmt.Sprintf("device sync user=%s devices=%d fields=%d", s.user, s.appliedDevs, s.applied))
+	inv.app.Audit().Raw("auth.info", fmt.Sprintf("device sync user=%s devices=%d fields=%d", s.user, s.appliedDevs, s.applied))
 	return s.finish(asJSON, devs, fields)
 }
 

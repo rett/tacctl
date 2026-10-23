@@ -79,7 +79,7 @@ func TestBreakglassDeviceAddressMovesTheHold(t *testing.T) {
 	if n := sb.restarts(); n != 1 {
 		t.Errorf("%d restarts for the move, want 1", n)
 	}
-	if !sb.runner.CalledRegexp(`logger.* -p auth\.info breakglass hold-move device=lab-sw from=192\.168\.1\.1 to=192\.168\.1\.9 by=root`) {
+	if !hasAuditMatch(sb.runner, "auth.info", `breakglass hold-move device=lab-sw from=192\.168\.1\.1 to=192\.168\.1\.9 by=root`) {
 		t.Errorf("no audit line: %v", sb.runner.Argvs())
 	}
 	// The registry and the record are on the new address; the record keeps

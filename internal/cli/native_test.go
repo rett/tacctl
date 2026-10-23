@@ -42,6 +42,17 @@ type sandbox struct {
 	// hooks are what this sandbox's runs replace (hooks.go); a test sets
 	// the ones it needs before it runs.
 	hooks *hooks
+	// ctx, when set, is the context of the sandbox's runs (a test cancels it
+	// as a signal would); nil is context.Background.
+	ctx context.Context
+}
+
+// runCtx is the context of a run.
+func (sb *sandbox) runCtx() context.Context {
+	if sb.ctx != nil {
+		return sb.ctx
+	}
+	return context.Background()
 }
 
 func newSandbox(t *testing.T, withStore bool) *sandbox {
@@ -107,7 +118,7 @@ func (sb *sandbox) run(stdin string, args []string, extraEnv ...string) string {
 	// tacctl's fixed host locations (the installed command, /root, ...)
 	// stay in the sandbox too.
 	a.Paths = a.Paths.Reroot(sb.dir)
-	sb.code = exitCode(runWith(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}, sb.hooks), a.Out)
+	sb.code = exitCode(runWith(sb.runCtx(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}, sb.hooks), a.Out)
 	if n := len(sb.runner.Execs()); n != 0 {
 		sb.t.Errorf("%q: exec'd (%d execs)", args, n)
 	}
@@ -262,18 +273,18 @@ func TestUserVerifyAndPasswdSelf(t *testing.T) {
 	sb.expect(0, "[INFO] Password changed for 'alice'.", "")
 	sb.run("CorrectHorse99\n", []string{"user", "verify", "alice"}, "SUDO_USER=ops", "SUDO_UID=7")
 	sb.expect(0, "[INFO] Password is correct.", "  Enter password to verify: **************")
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "verify OK user=alice by=ops(uid=7)") {
+	if !hasAudit(sb.runner, "auth.info", "verify OK user=alice by=ops(uid=7)") {
 		t.Errorf("audit: %q", sb.runner.Argvs())
 	}
 	sb.run("nope\n", []string{"user", "verify", "alice"})
 	sb.expect(0, "User:", "[ERROR] Password does not match.")
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "verify FAIL user=alice result=NO_MATCH by=root(uid=1000)") {
+	if !hasAudit(sb.runner, "auth.warning", "verify FAIL user=alice result=NO_MATCH by=root(uid=1000)") {
 		t.Errorf("audit: %q", sb.runner.Argvs())
 	}
 
 	sb.run("CorrectHorse99\nNewHorse123456\nNewHorse123456\n", []string{"passwd"}, "SUDO_USER=alice")
 	sb.expect(0, "[INFO] Password changed for 'alice'.", "  Current password: **************")
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "passwd OK user=alice (self-service)") {
+	if !hasAudit(sb.runner, "auth.info", "passwd OK user=alice (self-service)") {
 		t.Errorf("audit: %q", sb.runner.Argvs())
 	}
 	sb.run("CorrectHorse99\n", []string{"passwd"}, "SUDO_USER=alice")
@@ -353,7 +364,7 @@ func TestNativePrelude(t *testing.T) {
 	sb.expect(0, "carol", "")
 	ro("user", "remove", "bob")
 	sb.expect(1, "", "[ERROR] 'tacctl user remove' is not permitted for the readonly tier.")
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=carol tier=readonly cmd=user remove") {
+	if !hasAudit(sb.runner, "auth.warning", "tier DENY user=carol tier=readonly cmd=user remove") {
 		t.Errorf("denial not logged: %q", sb.runner.Argvs())
 	}
 	ro("_completion-names", "groups")
@@ -477,7 +488,7 @@ func TestSpoofedSudoUserRefused(t *testing.T) {
 			if sb.code != 1 || !strings.Contains(sb.stderr(), "SUDO_USER '"+claimed+"' is not the account of SUDO_UID 1003, so tacctl access is denied.") {
 				t.Errorf("%v as %q: exit %d %q", args, claimed, sb.code, sb.stderr())
 			}
-			if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning") || sb.runner.Called("ssh") {
+			if !hasAuditPrefix(sb.runner, "auth.warning", "") || sb.runner.Called("ssh") {
 				t.Errorf("%v as %q: %q", args, claimed, sb.runner.Argvs())
 			}
 		}

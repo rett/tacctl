@@ -85,13 +85,14 @@ func (b *pullBox) editRecord(name string, fn func(*devconf.Record)) {
 	}
 }
 
-// auditLines are the audit lines the run logged for the verb.
+// auditLines are the audit lines the run logged for the verb, as logger got
+// them ("-t tacctl -p <priority> <line>") without the session id.
 func (b *pullBox) auditLines(verb string) []string {
 	b.t.Helper()
 	var out []string
 	for _, c := range b.sb.runner.Calls() {
 		if c.Name == "logger" {
-			if l := strings.Join(c.Args, " "); strings.Contains(l, verb) {
+			if l, _ := cutAuditSID(strings.Join(c.Args, " ")); strings.Contains(l, verb) {
 				out = append(out, l)
 			}
 		}

@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -477,6 +478,9 @@ func Sudoers() string {
 type Gate struct {
 	Runner execx.Runner
 	Out    ui.Output
+	// Audit writes the gate's DENY lines (the invocation's writer, which
+	// has the session id).
+	Audit *audit.Writer
 	// SudoUser is SUDO_USER: the person behind sudo ("" or "root": none).
 	SudoUser string
 	// SudoUID is SUDO_UID: when set, SudoUser must name its account
@@ -637,8 +641,8 @@ func (g Gate) caller(ctx context.Context) Tier {
 }
 
 // Enforce is enforce_tier <cmd> <sub>: nil when the caller's tier permits
-// the command; otherwise the denial is logged ('logger -t tacctl -p
-// auth.warning'), printed, and ErrDenied returned.
+// the command; otherwise the denial is logged (Audit, at auth.warning),
+// printed, and ErrDenied returned.
 //
 // A SUDO_USER that VerifyCaller refuses is denied every command, logged
 // with the uid ('tier DENY user=<SUDO_USER> uid=<SUDO_UID>
@@ -649,8 +653,7 @@ func (g Gate) Enforce(ctx context.Context, cmd, sub string) error {
 		user = "root"
 	}
 	if g.verify(ctx) != nil {
-		_, _ = g.Runner.Run(ctx, execx.Cmd{Name: "logger", Args: []string{"-t", "tacctl", "-p", "auth.warning",
-			"tier DENY user=" + user + " uid=" + g.SudoUID + " reason=sudo-user-mismatch cmd=" + cmd + " " + sub}})
+		g.Audit.Raw(audit.Warning, "tier DENY user="+user+" uid="+g.SudoUID+" reason=sudo-user-mismatch cmd="+cmd+" "+sub)
 		g.Out.ErrorE("SUDO_USER '" + g.SudoUser + "' is not the account of SUDO_UID " + g.SudoUID + ", so tacctl access is denied.")
 		return ErrDenied
 	}
@@ -665,8 +668,7 @@ func (g Gate) Enforce(ctx context.Context, cmd, sub string) error {
 	if byCap {
 		reason = " reason=" + why
 	}
-	_, _ = g.Runner.Run(ctx, execx.Cmd{Name: "logger", Args: []string{"-t", "tacctl", "-p", "auth.warning",
-		"tier DENY user=" + user + " tier=" + string(t) + reason + " cmd=" + cmd + " " + sub}})
+	g.Audit.Raw(audit.Warning, "tier DENY user="+user+" tier="+string(t)+reason+" cmd="+cmd+" "+sub)
 	if byCap && why == capAmbiguous {
 		grp := g.AmbiguousGroup(g.SudoUser)
 		g.Out.ErrorE("'tacctl " + cmd + " " + sub + "' is not permitted: your group '" + grp + "' is at priv-lvl 15 or more and has no tier setting in " +

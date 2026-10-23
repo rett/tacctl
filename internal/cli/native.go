@@ -95,6 +95,7 @@ func (inv *invocation) tierGate() tier.Gate {
 	return tier.Gate{
 		Runner:   a.Runner,
 		Out:      a.Out,
+		Audit:    a.Audit(),
 		SudoUser: a.Env.Get("SUDO_USER"),
 		SudoUID:  a.Env.Get("SUDO_UID"),
 		PrivLvl: func(user string) string {

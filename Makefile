@@ -1,5 +1,5 @@
 .PHONY: test test-go test-bats test-integration test-e2e test-diff test-pyyaml build \
-	coverage lint lint-sh lint-go lint-man lint-private man hooks clean bootstrap release-assets release-verify release-reproduce
+	coverage lint lint-sh lint-go lint-man lint-private lint-logger man hooks clean bootstrap release-assets release-verify release-reproduce
 
 BATS := tests/bats/bats-core/bin/bats
 BATS_FLAGS ?= --print-output-on-failure
@@ -139,8 +139,9 @@ coverage:
 # client scripts, the test helpers and tools), then all Go, then the manual
 # page (complete and current against the code, and clean under groff), then
 # no private names (the repo is public; see tests/tools/no-private.sh), then
-# no read of the process's temporary directory (tests/tools/no-os-tempdir.sh).
-lint: lint-sh lint-go lint-man lint-private lint-tempdir lint-docs
+# no read of the process's temporary directory (tests/tools/no-os-tempdir.sh),
+# no logger started outside internal/audit (tests/tools/no-logger.sh).
+lint: lint-sh lint-go lint-man lint-private lint-tempdir lint-logger lint-docs
 
 # man/tacctl.1 against the code (docs/plans/0.2.3-plan.md D57): the Man tests
 # of internal/cli (every command, flag, configuration key, path, environment
@@ -166,6 +167,10 @@ lint-private:
 # The temporary directory of an invocation is paths.Paths.TempDir.
 lint-tempdir:
 	tests/tools/no-os-tempdir.sh
+
+# Every audit line is written by internal/audit (App.Audit).
+lint-logger:
+	tests/tools/no-logger.sh
 
 # No line of a fenced code block of the user documentation is wider than
 # GitHub shows (tests/tools/doc-width.sh).

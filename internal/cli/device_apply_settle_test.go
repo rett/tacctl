@@ -41,7 +41,7 @@ func TestApplySettlePrintedAndAudited(t *testing.T) {
 	if code != 0 || i < 0 || j < 0 || i > j {
 		t.Errorf("exit %d\n%s\n%s", code, out, errs)
 	}
-	if !b.runner.Called("logger", "-t", "tacctl", "-p", "auth.notice", "device config apply settle user=alice device=example-sw1 id="+pend.ID+" result=rolled-back") {
+	if !hasAudit(b.runner, "auth.notice", "device config apply settle user=alice device=example-sw1 id="+pend.ID+" result=rolled-back") {
 		t.Errorf("no settle audit line: %v", b.runner.Calls())
 	}
 	// the run's own record follows the settle's

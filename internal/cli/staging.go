@@ -139,7 +139,7 @@ func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
 	if name != "" {
 		who += " '" + name + "'"
 	}
-	a.Logger(inv.ctx, "auth.info", "scope staging add cidr="+cidr+" scope="+scope+" "+kind+"="+name+" by="+inv.sudoUser())
+	a.Audit().Raw("auth.info", "scope staging add cidr="+cidr+" scope="+scope+" "+kind+"="+name+" by="+inv.sudoUser())
 	how := "removed once it is seen at an address '" + scope + "' covers"
 	if name == "" {
 		how = "remove it once the device is installed: tacctl scope staging remove " + cidr
@@ -251,7 +251,7 @@ func (inv *invocation) stagingSweep() {
 			continue
 		}
 		changed = true
-		a.Logger(inv.ctx, "auth.info", "scope staging done cidr="+e.CIDR+" scope="+e.Scope+" "+e.Kind+"="+e.Name+" seen="+seen)
+		a.Audit().Raw("auth.info", "scope staging done cidr="+e.CIDR+" scope="+e.Scope+" "+e.Kind+"="+e.Name+" seen="+seen)
 		a.Out.InfoE("Staging address " + e.CIDR + " removed from scope '" + e.Scope + "': " + e.Name + " is now seen at " + seen + " (prefix " + info.Prefix + ").")
 		if m, err = inv.model(); err != nil {
 			return
@@ -356,7 +356,7 @@ func (inv *invocation) scopeStaging(args []string) error {
 		if err := inv.stagingSave(kept); err != nil {
 			return err
 		}
-		a.Logger(inv.ctx, "auth.info", "scope staging remove cidr="+cidr+" scope="+hit.Scope+" by="+inv.sudoUser())
+		a.Audit().Raw("auth.info", "scope staging remove cidr="+cidr+" scope="+hit.Scope+" by="+inv.sudoUser())
 		a.Out.Info("Staging address " + cidr + " removed from scope '" + hit.Scope + "'.")
 		return nil
 	default:

@@ -150,7 +150,7 @@ func TestHostRenameCarriesEverythingTheHostHas(t *testing.T) {
 	} else if first := sb.snapshotDirs()[snaps]; readIn(t, first, "linux-hosts") != hostLines {
 		t.Errorf("the snapshot does not hold the registry from before: %q", readIn(t, first, "linux-hosts"))
 	}
-	if !sb.runner.CalledRegexp(`logger.* -p auth\.info host rename old=web1 new=web7 by=root`) {
+	if !hasAuditMatch(sb.runner, "auth.info", `host rename old=web1 new=web7 by=root`) {
 		t.Errorf("no audit line: %v", sb.runner.Argvs())
 	}
 	if sb.sshCalls() != 0 {
@@ -239,7 +239,7 @@ func TestHostRenameRefusals(t *testing.T) {
 			t.Errorf("%q changed something:\n%s\n%s", c.args, before, after)
 		}
 	}
-	if sb.sshCalls() != 0 || sb.runner.Called("logger") && sb.runner.CalledRegexp(`host rename`) {
+	if sb.sshCalls() != 0 || wroteAudit(sb.runner) && sb.runner.CalledRegexp(`host rename`) {
 		t.Error("a refusal went on")
 	}
 }

@@ -787,11 +787,11 @@ func (c *collect) audit() {
 		case r.Registered:
 			res, extra = "registered", " device="+r.Name
 		}
-		inv.app.Logger(inv.auditContext(), "auth.info", fmt.Sprintf("device collect user=%s addr=%s login=%s result=%s%s",
+		inv.app.Audit().Raw("auth.info", fmt.Sprintf("device collect user=%s addr=%s login=%s result=%s%s",
 			c.user, r.Address, c.loginWord(), res, extra))
 	}
 	if len(c.rows) == 0 {
-		inv.app.Logger(inv.auditContext(), "auth.info", fmt.Sprintf("device collect user=%s addr=- login=%s result=refused", c.user, c.loginWord()))
+		inv.app.Audit().Raw("auth.info", fmt.Sprintf("device collect user=%s addr=- login=%s result=refused", c.user, c.loginWord()))
 	}
 }
 

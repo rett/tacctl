@@ -117,7 +117,7 @@ func (inv *invocation) groupSectionReset(section string, args []string) error {
 	if err := inv.applyWith(func() error { return inv.applyReset(plan) }); err != nil {
 		return err
 	}
-	a.Logger(inv.ctx, "auth.info", r.verb+" name="+group+" by="+inv.sudoUser())
+	a.Audit().Raw("auth.info", r.verb+" name="+group+" by="+inv.sudoUser())
 	if len(nonBlankLines(shippedLines(section, canon))) > 0 {
 		a.Out.Info("Group '" + group + "': the " + r.noun + " are back to the shipped default.")
 	} else {

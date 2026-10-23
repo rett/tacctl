@@ -11484,6 +11484,25 @@ take a single argument;
 and
 .I -y
 take none. Required positional arguments come before flags.
+.TP
+.B Audit lines
+The lines tacctl logs go to syslog (facility
+.BR auth ,
+tag
+.BR tacctl ;
+the login console's own lines have the tag
+.BR tacctl\-console )
+through
+.BR logger (1).
+Every line of one command ends in the same
+.BI sid= id
+(8 characters of a\-z and 0\-9, made for each run), which ties the lines of a
+run together. A signal that ends a command (Ctrl\-C, a hangup) does not drop a
+line. When
+.B logger
+is missing or exits with an error, the command prints
+.B "[WARN] The audit line was not written (logger: reason); the command continues."
+once on standard error and goes on with its own status.
 .SH BACKENDS
 .TP
 .B tacacs

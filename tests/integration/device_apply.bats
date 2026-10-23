@@ -218,7 +218,7 @@ print("fine")' <<< "$output"
     refute_output --partial "- set"
     # the audit lines carry no value
     stub_called "logger -t tacctl -p auth.notice device config apply user=alice approved=1 shapes="
-    run grep -E "approved=1 shapes=[0-9a-f]{12} canary=example-sw1$" "$CALLS_LOG"
+    run grep -E "approved=1 shapes=[0-9a-f]{12} canary=example-sw1 sid=[a-z0-9]{8}$" "$CALLS_LOG"
     assert_success
     stub_called "logger -t tacctl -p auth.notice device config apply user=alice device=example-sw1 id=${id} shape="
     run grep -F "result=applied" "$CALLS_LOG"

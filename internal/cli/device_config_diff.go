@@ -271,7 +271,7 @@ func (inv *invocation) deviceConfigDiff(args []string) error {
 				Lines: diffLinesJSON(visibleLines(r)), Notes: r.Notes, Unmanaged: r.Unmanaged})
 		}
 		js = append(js, d)
-		inv.app.Logger(inv.auditContext(), "auth.info", "device config diff user="+inv.sudoUser()+" device="+e.Name+
+		inv.app.Audit().Raw("auth.info", "device config diff user="+inv.sudoUser()+" device="+e.Name+
 			" sections="+dash(strings.Join(differs, ",")))
 		if !asJSON {
 			inv.printDeviceDiff(e.Name, e.Scope, e.Vendor, results, only, secrets, meta)

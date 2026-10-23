@@ -60,7 +60,7 @@ func (inv *invocation) consoleProvision(pol *console.Policy) error {
 		return exit(1)
 	}
 	a.Out.InfoE("  " + ch.String() + ": sshd drop-in " + p.SSHDDropIn)
-	a.Logger(inv.ctx, "auth.info", "console provision shells="+strings.ToLower(shells.String())+" dropin="+strings.ToLower(ch.String())+" by="+inv.sudoUser())
+	a.Audit().Raw("auth.info", "console provision shells="+strings.ToLower(shells.String())+" dropin="+strings.ToLower(ch.String())+" by="+inv.sudoUser())
 	return nil
 }
 
@@ -88,7 +88,7 @@ func (inv *invocation) engineerSSHDProvision(pol *console.Policy) error {
 		inv.consoleErr(err)
 	}
 	if err == nil && ch != console.Unchanged {
-		a.Logger(inv.ctx, "auth.info", "console provision engineer-dropin="+strings.ToLower(ch.String())+" by="+inv.sudoUser())
+		a.Audit().Raw("auth.info", "console provision engineer-dropin="+strings.ToLower(ch.String())+" by="+inv.sudoUser())
 	}
 	if err == nil {
 		// The file lived under a name that sorts after the console's (S1):
@@ -183,7 +183,7 @@ func (inv *invocation) consoleDeprovision() error {
 		return exit(1)
 	}
 	a.Out.InfoE("  " + sch.String() + ": " + p.ConsoleCommand + " in " + p.ShellsFile)
-	a.Logger(inv.ctx, "auth.info", "console deprovision by="+inv.sudoUser())
+	a.Audit().Raw("auth.info", "console deprovision by="+inv.sudoUser())
 	if err != nil {
 		return exit(1)
 	}

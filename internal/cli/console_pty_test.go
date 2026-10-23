@@ -160,7 +160,8 @@ func (p *consolePty) send(s string) {
 	}
 }
 
-// ends waits for the console to end with code and gives its log lines.
+// ends waits for the console to end with code and gives its log lines
+// ("<priority> <line>", the session id cut).
 func (p *consolePty) ends(code int) []string {
 	p.t.Helper()
 	p.expect(`CONSOLE-EXIT ` + strconv.Itoa(code) + `\r\n`)
@@ -168,7 +169,11 @@ func (p *consolePty) ends(code int) []string {
 		p.t.Fatal(err)
 	}
 	b, _ := os.ReadFile(p.log)
-	return strings.Split(strings.TrimSpace(string(b)), "\n")
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	for i, l := range lines {
+		lines[i], _ = cutAuditSID(l)
+	}
+	return lines
 }
 
 const ptyPolicyRO = "shell=console,idle=30,system_shell=no,system_shell_path=/bin/bash,tier=readonly,list_max=40"

@@ -39,7 +39,7 @@ func TestUIDFileRenumberedOnce(t *testing.T) {
 	if data, _ := os.ReadFile(backups[0]); string(data) != "alice:20000\nbob:20001\ngone:20002\nodd:1500\n" {
 		t.Errorf("backup %q", data)
 	}
-	if !r.Called("logger", "-t", "tacctl", "-p", "auth.info", "uid-map renumbered 3 entries from=20000-29999 to=80000-89999 backup="+backups[0]) {
+	if !hasAudit(r, "auth.info", "uid-map renumbered 3 entries from=20000-29999 to=80000-89999 backup="+backups[0]) {
 		t.Errorf("not logged: %q", r.Argvs())
 	}
 
@@ -149,7 +149,7 @@ func TestConfigLinuxUIDRange(t *testing.T) {
 	if !strings.Contains(hs.out.String(), "Renumbered 3 entries of "+uids+" from 80000-89999 to 100000-109999") {
 		t.Errorf("out %q", hs.out.String())
 	}
-	if !r.Called("logger", "-t", "tacctl", "-p", "auth.info", "uid-range set from=80000-89999 to=100000-109999") {
+	if !hasAudit(r, "auth.info", "uid-range set from=80000-89999 to=100000-109999") {
 		t.Errorf("not logged: %q", r.Argvs())
 	}
 	if data, _ := os.ReadFile(uids); string(data) != "# range 100000-109999\n# previous 80000-89999\nalice:100000\nbob:100001\ncarol:100002\n" {

@@ -373,7 +373,7 @@ func (inv *invocation) deviceConfigSeed(p Parsed, rest []string) error {
 			if err := st.Confirm(h, it.lines, devapply.Confirmation{Device: it.e.Name, At: now, By: user, Seeded: true}); err != nil {
 				return err
 			}
-			inv.app.Logger(inv.auditContext(), "auth.notice", "device config shapes seed user="+user+" device="+it.e.Name+" shape="+h)
+			inv.app.Audit().Raw("auth.notice", "device config shapes seed user="+user+" device="+it.e.Name+" shape="+h)
 			inv.app.Out.Info("Shape " + h + " is confirmed on " + it.e.Name + ".")
 		}
 	}

@@ -177,7 +177,7 @@ func (inv *invocation) scopeNotFound(f scopeFilter, scope string) error {
 // secretRead logs a restricted caller's reveal of a secret (kind scope):
 // who read which scope's, never the value (docs/plans/0.2.3-plan.md D45).
 func (inv *invocation) secretRead(kind, name string) {
-	inv.app.Logger(inv.ctx, "auth.info", "secret-read kind="+kind+" name="+name+" by="+inv.sudoUser())
+	inv.app.Audit().Raw("auth.info", "secret-read kind="+kind+" name="+name+" by="+inv.sudoUser())
 }
 
 // callerScopes is the filter of the caller (SUDO_USER); a lower-tier caller

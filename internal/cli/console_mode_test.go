@@ -46,12 +46,13 @@ func consoleHarness(t *testing.T, stdin, groups, policy string, args ...string) 
 	}
 }
 
-// consoleLog are the console's own log lines (logger -t tacctl-console).
+// consoleLog are the console's own log lines (logger -t tacctl-console), as
+// "<priority> <line>" without the session id.
 func consoleLog(r *fake.Runner) []string {
 	var out []string
-	for _, c := range r.Calls() {
-		if c.Name == "logger" && len(c.Args) == 5 && c.Args[1] == console.LogTag {
-			out = append(out, c.Args[3]+" "+c.Args[4])
+	for _, c := range auditCalls(r) {
+		if c.Tag == console.LogTag {
+			out = append(out, c.Priority+" "+c.Line)
 		}
 	}
 	return out

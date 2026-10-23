@@ -43,7 +43,7 @@ exec \"\$@\""
 # sudo_lines: the sudo calls of the run, one per line.
 sudo_lines() { grep '^sudo ' "$CALLS_LOG" || true; }
 # console_log: the console's own log lines.
-console_log() { grep '^logger -t tacctl-console ' "$CALLS_LOG" | sed 's/^logger -t tacctl-console //' || true; }
+console_log() { grep '^logger -t tacctl-console ' "$CALLS_LOG" | sed 's/^logger -t tacctl-console //; s/ sid=[a-z0-9]\{8\}$//' || true; }
 
 @test "console -c: one tacctl line runs as 'sudo -n TACCTL_CONSOLE=<session> <exe> <words>', logged" {
     run "$CONSOLE_BIN" -c "user list"

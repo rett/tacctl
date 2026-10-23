@@ -3,6 +3,26 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.17
+
+1. **Audit lines: one writer, a session id, no line lost to a signal, a
+   warning when `logger` fails.** Every line tacctl writes to syslog now goes
+   through one writer. Each line of a run ends in the same `sid=<id>` (8
+   characters of `a-z0-9`, made for each run; the tier gate's `DENY` lines and
+   the login console's `tacctl-console` lines included), so `grep sid=k3x9a0bq`
+   finds every line of one command. The words and keys of the lines are
+   unchanged and `sid=` is the last key, so a filter that matches the start of
+   a line, or `by=` and `user=`, still matches; a filter that anchors the end
+   of a line (`$`) must allow the id. A line is no longer dropped when Ctrl-C,
+   SIGTERM or a hangup is ending the command: `ssh end` and `console end` were
+   lost on a hangup, because `logger` was not started on a cancelled context.
+   When `logger` cannot be started or exits non-zero (not installed, the
+   syslog socket refused, no answer in 10 seconds), the command prints once on standard error `[WARN]
+   The audit line was not written (logger: <reason>); the command continues.`
+   and goes on with its own status; before, every such line was lost
+   silently. `tacctl install` and `tacctl upgrade` warn when `logger` (package
+   `util-linux`) is not installed.
+
 ## 0.2.16 (2026-10-23)
 
 1. **`config validate` takes no argument.** `config validate extra` ran the

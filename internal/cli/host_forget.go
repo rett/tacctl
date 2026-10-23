@@ -208,7 +208,7 @@ func (inv *invocation) hostForget(args []string) error {
 	}
 	inv.hostForgetSeen(reg, f, name)
 
-	a.Logger(inv.ctx, "auth.info", "host forget name="+name+" by="+inv.sudoUser())
+	a.Audit().Raw("auth.info", "host forget name="+name+" by="+inv.sudoUser())
 	a.Out.InfoE("Host '" + name + "' forgotten. Nothing was sent to the host.")
 	inv.echo("")
 	inv.hostStagingHints(pieces.staging)

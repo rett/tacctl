@@ -85,7 +85,8 @@ func scriptKind(s string) string {
 // script adds the rotation's answers to r.
 func (rh *rotHost) script(r *fake.Runner) {
 	r.Func(func(c execx.Cmd) bool { return c.Name == "logger" }, func(c execx.Cmd) (execx.Result, error) {
-		rh.events = append(rh.events, "logger:"+c.Args[len(c.Args)-1])
+		line, _ := cutAuditSID(c.Args[len(c.Args)-1])
+		rh.events = append(rh.events, "logger:"+line)
 		return execx.Result{}, nil
 	})
 	r.Func(func(c execx.Cmd) bool {
@@ -436,7 +437,7 @@ func TestRotateWithPasswordNeverSeesIt(t *testing.T) {
 	if cs := rh.pushes[0]; !strings.Contains(cs, "AUTH=password\n") || strings.Contains(cs, "PUBKEY=ssh-") || !strings.Contains(cs, "SUDOERS_LINE=deploy2\\ ALL=\\(ALL:ALL\\)\\ ALL\n") {
 		t.Errorf("password script header:\n%s", cs[:min(len(cs), 900)])
 	}
-	if !r.Called("logger", "-t", "tacctl", "-p", "auth.info", "host provisioner rotate name=web1 old=admin new=deploy2 auth=password by=root") {
+	if !hasAudit(r, "auth.info", "host provisioner rotate name=web1 old=admin new=deploy2 auth=password by=root") {
 		t.Errorf("audit line: %q", r.Argvs())
 	}
 	// The secret: only a terminal-carrying ssh (-t) ever gets the stream it

@@ -1185,7 +1185,7 @@ func (c *blockCtx) install(block string, text []byte, bc *blockCheck, cur blockF
 		}
 		return inv.usageErr("tacctl.yaml could not be written: "+strings.Join(msgs(err), " "), "The block was not set.")
 	}
-	a.Logger(inv.ctx, "auth.info", "block-"+event+" name="+c.logName(block)+" bytes="+strconv.Itoa(len(text))+
+	a.Audit().Raw("auth.info", "block-"+event+" name="+c.logName(block)+" bytes="+strconv.Itoa(len(text))+
 		" objects="+strconv.Quote(blockCounts(bc.doc))+" by="+inv.sudoUser())
 	a.Out.Info("The " + block + " block of " + c.what() + " is set (" + strconv.Itoa(len(text)) + " bytes) and in force.")
 	inv.echo("  What the devices need: " + c.pullHint())
@@ -1234,7 +1234,7 @@ func (c *blockCtx) remove(block string, p Parsed) error {
 	if err := c.store().Remove(c.level, c.vendor, block); err != nil && err != blocks.ErrNotFound {
 		return err
 	}
-	a.Logger(inv.ctx, "auth.info", "block-remove name="+c.logName(block)+" by="+inv.sudoUser())
+	a.Audit().Raw("auth.info", "block-remove name="+c.logName(block)+" by="+inv.sudoUser())
 	a.Out.Info("The " + block + " block of " + c.what() + " is removed.")
 	return nil
 }

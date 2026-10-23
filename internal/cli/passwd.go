@@ -60,7 +60,7 @@ func (inv *invocation) passwdSelf(args []string) error {
 	if hash.Verify(current, stored) != hash.Match {
 		// Same rate limit as 'user verify': not a local bcrypt oracle.
 		inv.pause(failDelay)
-		a.Logger(inv.ctx, "auth.warning", "passwd FAIL user="+username+" reason=bad-current-password")
+		a.Audit().Raw("auth.warning", "passwd FAIL user="+username+" reason=bad-current-password")
 		return inv.usageErr("Current password does not match.")
 	}
 	t := a.Tunables()
@@ -80,7 +80,7 @@ func (inv *invocation) passwdSelf(args []string) error {
 	}); err != nil {
 		return err
 	}
-	a.Logger(inv.ctx, "auth.info", "passwd OK user="+username+" (self-service)")
+	a.Audit().Raw("auth.info", "passwd OK user="+username+" (self-service)")
 	a.Out.Info("Password changed for '" + username + "'.")
 	inv.echo("")
 	return nil

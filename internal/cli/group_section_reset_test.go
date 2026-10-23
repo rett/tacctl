@@ -159,7 +159,7 @@ func TestSectionResetRefusals(t *testing.T) {
 			t.Errorf("%s no terminal: %d\n%s\n%s", c.family, sb.code, out, sb.stderr())
 		}
 	}
-	if sb.state() != state || sb.snapshots() != snaps || sb.runner.Called("logger") {
+	if sb.state() != state || sb.snapshots() != snaps || wroteAudit(sb.runner) {
 		t.Error("a refusal changed something")
 	}
 }
@@ -202,7 +202,7 @@ func TestSectionResetDryRunWritesNothing(t *testing.T) {
 			if sb.store() != storeBefore || sb.overrides() != yamlBefore {
 				t.Errorf("%v wrote the store or tacctl.yaml", args)
 			}
-			if sb.liveState() != live || sb.snapshots() != snaps || sb.runner.Called("logger") || sb.runner.Called("systemctl") {
+			if sb.liveState() != live || sb.snapshots() != snaps || wroteAudit(sb.runner) || sb.runner.Called("systemctl") {
 				t.Errorf("%v wrote, took a snapshot or restarted something: %q", args, sb.runner.Argvs())
 			}
 		}
@@ -226,7 +226,7 @@ func TestSectionResetYesAppliesAndLogs(t *testing.T) {
 			if sb.snapshots() != snaps+1 {
 				t.Errorf("snapshots %d -> %d: the pre-change snapshot", snaps, sb.snapshots())
 			}
-			if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", strings.Replace(c.audit, "%s", "operator", 1)) {
+			if !hasAudit(sb.runner, "auth.info", strings.Replace(c.audit, "%s", "operator", 1)) {
 				t.Errorf("no audit line: %q", sb.runner.Argvs())
 			}
 			// Idempotent: nothing to change, no snapshot, no log line.
@@ -234,7 +234,7 @@ func TestSectionResetYesAppliesAndLogs(t *testing.T) {
 			snaps = sb.snapshots()
 			out = sb.plainRun("", "group", c.family, "reset", "operator", "--yes")
 			if sb.code != 0 || !strings.Contains(out, "Group 'operator' is already canonical ("+c.section+"); nothing to change.") ||
-				sb.snapshots() != snaps || sb.runner.Called("logger") {
+				sb.snapshots() != snaps || wroteAudit(sb.runner) {
 				t.Errorf("again: %d %q", sb.code, out)
 			}
 			// The other section of operator is left as it was.
@@ -257,14 +257,14 @@ func TestSectionResetYesAppliesAndLogs(t *testing.T) {
 			if c.section == "privileges" && strings.Contains(o, "show clock") || c.section == "commands" && strings.Contains(o, "helpdesk:") && strings.Contains(o, "name: show") {
 				t.Errorf("the override is still there:\n%s", o)
 			}
-			if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", strings.Replace(c.audit, "%s", "helpdesk", 1)) {
+			if !hasAudit(sb.runner, "auth.info", strings.Replace(c.audit, "%s", "helpdesk", 1)) {
 				t.Errorf("no audit line for helpdesk: %q", sb.runner.Argvs())
 			}
 			// SUDO_USER names the user.
 			sb.must("group", c.family, "reset", "operator", "--yes")
 			sb.modify("readonly")
 			sb.cfgRun("", []string{"group", c.family, "reset", "readonly", "--yes"}, nil, "SUDO_USER=carol")
-			if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", strings.Replace(strings.Replace(c.audit, "%s", "readonly", 1), "by=root", "by=carol", 1)) {
+			if !hasAudit(sb.runner, "auth.info", strings.Replace(strings.Replace(c.audit, "%s", "readonly", 1), "by=root", "by=carol", 1)) {
 				t.Errorf("audit line: %q", sb.runner.Argvs())
 			}
 		})
@@ -336,7 +336,7 @@ func TestSectionResetPrompt(t *testing.T) {
 					!strings.Contains(plain(sb.err.String()), strings.Replace(c.prompt, "%s", "operator", 1)) {
 					t.Errorf("answer %q: %d\n%s\n%s", answer, sb.code, out, sb.err.String())
 				}
-				if sb.state() != state || sb.snapshots() != snaps || sb.runner.Called("logger") {
+				if sb.state() != state || sb.snapshots() != snaps || wroteAudit(sb.runner) {
 					t.Errorf("answer %q changed something", answer)
 				}
 			}

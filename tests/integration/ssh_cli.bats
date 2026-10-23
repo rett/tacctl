@@ -67,7 +67,8 @@ setup() {
 
 # called <line>: the calls log has exactly this line (no regular expression:
 # the options carry '+' and '.').
-called() { grep -qxF -- "$1" "$CALLS_LOG" || { echo "not called: $1"; cat "$CALLS_LOG"; return 1; }; }
+# (the audit lines end in the session id, which the match leaves out)
+called() { sed -E 's/ sid=[a-z0-9]{8}$//' "$CALLS_LOG" | grep -qxF -- "$1" || { echo "not called: $1"; cat "$CALLS_LOG"; return 1; }; }
 
 # on_tty <args...>: tacctl with a pseudo-terminal on stdin; output holds
 # stdout and stderr, without the terminal's carriage returns.
@@ -139,7 +140,7 @@ on_tty() {
     SUDO_USER=alice on_tty ssh lab-rtr2
     assert_success
     called "logger -t tacctl -p auth.info ssh user=alice device=lab-rtr2 addr=192.0.2.7 from=198.51.100.7"
-    run stub_called "^logger -t tacctl -p auth\.info ssh end user=alice device=lab-rtr2 status=0 duration=[0-9]+ from=198\.51\.100\.7$"
+    run stub_called "^logger -t tacctl -p auth\.info ssh end user=alice device=lab-rtr2 status=0 duration=[0-9]+ from=198\.51\.100\.7 sid=[a-z0-9]{8}$"
     assert_success
     SSH_EXIT=3 SUDO_USER=alice on_tty ssh lab-rtr2
     assert_failure 3
@@ -304,7 +305,7 @@ Host web1"
     assert_success
     called "ssh -F /dev/null -o PermitLocalCommand=no -o ControlMaster=no -o ClearAllForwardings=yes -o ForwardAgent=no -o EscapeChar=none ${CT} ${PIN_RTR} -l alice -- 192.0.2.7 show version"
     called "logger -t tacctl -p auth.info ssh user=alice device=lab-rtr2 addr=192.0.2.7 from=198.51.100.7 console=0123456789ab"
-    run stub_called "^logger -t tacctl -p auth\.info ssh end user=alice device=lab-rtr2 status=0 duration=[0-9]+ from=198\.51\.100\.7 console=0123456789ab$"
+    run stub_called "^logger -t tacctl -p auth\.info ssh end user=alice device=lab-rtr2 status=0 duration=[0-9]+ from=198\.51\.100\.7 console=0123456789ab sid=[a-z0-9]{8}$"
     assert_success
     # console ssh-escape enable keeps the escape character.
     "$TACCTL_BIN_SCRIPT" console ssh-escape enable > /dev/null

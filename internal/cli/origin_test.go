@@ -39,7 +39,7 @@ func TestSSHAuditNamesWhereTheCallerLoggedInFrom(t *testing.T) {
 	// From the environment, as a caller without sudo's env_reset has it.
 	sb, _, _ := sshSandbox(t)
 	sb.sshAuditFrom("SSH_CONNECTION=198.51.100.7 50000 192.0.2.1 22")
-	if !sb.runner.CalledRegexp(`ssh user=alice device=core-sw1 addr=10\.99\.0\.1 from=198\.51\.100\.7$`) {
+	if !hasAudit(sb.runner, "auth.info", "ssh user=alice device=core-sw1 addr=10.99.0.1 from=198.51.100.7") {
 		t.Errorf("env: %q", sb.runner.Argvs())
 	}
 
@@ -48,7 +48,7 @@ func TestSSHAuditNamesWhereTheCallerLoggedInFrom(t *testing.T) {
 	sb.hooks.terminalLine = func() string { return "pts/4" }
 	sb.hooks.utmpFile = utmpFile(t, "pts/4", "203.0.113.20")
 	sb.sshAuditFrom()
-	if !sb.runner.CalledRegexp(`ssh user=alice device=core-sw1 addr=10\.99\.0\.1 from=203\.0\.113\.20$`) {
+	if !hasAudit(sb.runner, "auth.info", "ssh user=alice device=core-sw1 addr=10.99.0.1 from=203.0.113.20") {
 		t.Errorf("utmp: %q", sb.runner.Argvs())
 	}
 
@@ -57,7 +57,7 @@ func TestSSHAuditNamesWhereTheCallerLoggedInFrom(t *testing.T) {
 	sb.hooks.terminalLine = func() string { return "pts/4" }
 	sb.hooks.utmpFile = utmpFile(t, "pts/4", "evil host=x")
 	sb.sshAuditFrom()
-	if !sb.runner.CalledRegexp(`ssh user=alice device=core-sw1 addr=10\.99\.0\.1$`) {
+	if !hasAudit(sb.runner, "auth.info", "ssh user=alice device=core-sw1 addr=10.99.0.1") {
 		t.Errorf("hostile: %q", sb.runner.Argvs())
 	}
 }

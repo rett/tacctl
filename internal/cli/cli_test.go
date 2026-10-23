@@ -127,7 +127,7 @@ func TestVersionTierCaller(t *testing.T) {
 		t.Errorf("tier member without a user: exit %d, %q, %d execs", code, h.out.String(), len(h.runner.Execs()))
 	}
 	if !strings.Contains(h.err.String(), "'bob' has no active tacctl user") ||
-		!h.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=bob tier=none cmd=version ") {
+		!hasAudit(h.runner, "auth.warning", "tier DENY user=bob tier=none cmd=version") {
 		t.Errorf("denial: %q %q", h.err.String(), h.runner.Argvs())
 	}
 

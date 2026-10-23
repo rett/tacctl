@@ -193,7 +193,7 @@ func (inv *invocation) groupReset(args []string) error {
 		return err
 	}
 	done := plan.changedNames()
-	a.Logger(inv.ctx, "auth.info", "group reset name="+group+" sections="+strings.Join(done, ",")+" by="+inv.sudoUser())
+	a.Audit().Raw("auth.info", "group reset name="+group+" sections="+strings.Join(done, ",")+" by="+inv.sudoUser())
 	a.Out.Info("Group '" + group + "' reset (" + strings.Join(done, ", ") + ").")
 	if len(plan.guard) > 0 {
 		a.Out.Info("Auto-seeded permit-* catchall on sibling groups at priv-lvl " + plan.guardLevel + ": " + strings.Join(plan.guard, " "))

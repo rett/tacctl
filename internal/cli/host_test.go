@@ -154,7 +154,7 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 		!r.CalledRegexp(`^ssh .*-O exit admin@web1.example.net$`) {
 		t.Errorf("ssh calls %q", r.Argvs())
 	}
-	if !r.Called("logger", "-t", "tacctl", "-p", "auth.info", "host enroll name=web1 target=admin@web1.example.net scope=lab method=tacplus by=root") {
+	if !hasAudit(r, "auth.info", "host enroll name=web1 target=admin@web1.example.net scope=lab method=tacplus by=root") {
 		t.Errorf("no audit line: %q", r.Argvs())
 	}
 	if r.Called("getent") && r.CalledRegexp(`TACCTL_ARCH`) {

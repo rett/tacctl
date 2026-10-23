@@ -338,7 +338,7 @@ func TestBrokenConfCapsTheTierAndRefusesSync(t *testing.T) {
 		!strings.Contains(sb.stderr(), "so no tacctl user is trusted above the operator tier until it is fixed (tacctl config validate).") {
 		t.Errorf("host sync as a band-15 caller: %d %q", sb.code, sb.stderr())
 	}
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=alice tier=operator reason=conf-problem cmd=host sync") {
+	if !hasAudit(sb.runner, "auth.warning", "tier DENY user=alice tier=operator reason=conf-problem cmd=host sync") {
 		t.Errorf("not logged: %q", sb.runner.Argvs())
 	}
 	// The shell lists what the gate lets the caller run: an engineer the cap
@@ -444,7 +444,7 @@ func TestEngineerReadsOwnScopeSecret(t *testing.T) {
 	if sb.code != 0 || !strings.Contains(out, "lab-secret-0123456789abcdef") {
 		t.Fatalf("own scope: %d %q %q", sb.code, out, sb.stderr())
 	}
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "secret-read kind=scope name=lab by=bob") {
+	if !hasAudit(sb.runner, "auth.info", "secret-read kind=scope name=lab by=bob") {
 		t.Errorf("not logged: %q", sb.runner.Argvs())
 	}
 	for _, c := range sb.runner.Records() {
@@ -479,12 +479,12 @@ func TestEngineerReadsOwnScopeSecret(t *testing.T) {
 	}
 	// The walkthrough of a scope of their own prints it as well: logged.
 	sb.asEngineer("", "config", "cisco", "--scope", "lab")
-	if n := sb.runner.Count("logger", "-t", "tacctl", "-p", "auth.info", "secret-read kind=scope name=lab by=bob"); n != 1 {
+	if n := auditCount(sb.runner, "auth.info", "secret-read kind=scope name=lab by=bob"); n != 1 {
 		t.Errorf("walkthrough: %d secret-read lines", n)
 	}
 	// A superuser (root here) is not logged as a restricted reveal.
 	sb.cfgRun("", []string{"scope", "secret", "prod", "show"}, nil)
-	if sb.code != 0 || sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "secret-read") {
+	if sb.code != 0 || hasAuditPrefix(sb.runner, "auth.info", "secret-read") {
 		t.Errorf("superuser: %d %q", sb.code, sb.runner.Argvs())
 	}
 }

@@ -216,7 +216,7 @@ func TestDeviceHostkeyVerb(t *testing.T) {
 	if sb.code != 0 || !strings.Contains(out, "Pinned 2 host key(s) for 'core-sw1'.") {
 		t.Errorf("accept, yes: %d\n%s\n%s", sb.code, out, sb.stderr())
 	}
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "device hostkey accept name=core-sw1 keys=2 by=root") {
+	if !hasAudit(sb.runner, "auth.info", "device hostkey accept name=core-sw1 keys=2 by=root") {
 		t.Errorf("no audit line: %q", sb.runner.Argvs())
 	}
 	if kh := sb.knownHosts(); !strings.Contains(kh, "core-sw1 "+ed.String()+"\ncore-sw1 "+rsa.String()+"\n") {
@@ -248,7 +248,7 @@ func TestDeviceHostkeyVerb(t *testing.T) {
 	if sb.code != 0 || !strings.Contains(out, "Pinned 1 host key(s) for 'core-sw1'.") || sb.knownHosts() != devreg.KnownHostsHeader+"core-sw1 "+rsa.String()+"\n" {
 		t.Errorf("set: %d\n%s\n%s", sb.code, out, sb.knownHosts())
 	}
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "device hostkey set name=core-sw1 keys=1 by=root") {
+	if !hasAudit(sb.runner, "auth.info", "device hostkey set name=core-sw1 keys=1 by=root") {
 		t.Errorf("no audit line: %q", sb.runner.Argvs())
 	}
 	before, khBefore := sb.devices(), sb.knownHosts()
@@ -410,7 +410,7 @@ func TestHostEnrollSyncPinHostKeys(t *testing.T) {
 		!strings.Contains(e, "tacctl device hostkey web1 accept") || strings.Contains(hs.devices(), "host_keys") {
 		t.Errorf("mismatch:\n%s\n%s", e, hs.devices())
 	}
-	if !r.Called("logger", "-t", "tacctl", "-p", "auth.warning", "host hostkey-mismatch name=web1 host=web1.example.net port=22") {
+	if !hasAudit(r, "auth.warning", "host hostkey-mismatch name=web1 host=web1.example.net port=22") {
 		t.Errorf("mismatch not logged: %q", r.Argvs())
 	}
 	hs.run(nil, "host", "unenroll", "web1")

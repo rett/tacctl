@@ -46,7 +46,7 @@ func TestGateAmbiguousGroup(t *testing.T) {
 			t.Errorf("denial lacks %q: %q", want, g.err.String())
 		}
 	}
-	if !g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=dave tier=operator reason=group-ambiguous cmd=group edit") {
+	if !g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=dave tier=operator reason=group-ambiguous cmd=group edit sid="+testSID) {
 		t.Errorf("not logged %q", g.run.Argvs())
 	}
 	// A global conf problem wins: its message and reason.

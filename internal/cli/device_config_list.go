@@ -565,7 +565,7 @@ func (inv *invocation) deviceConfigForget(args []string) error {
 			return err
 		}
 		inv.app.Out.Info("Forgot the configuration records of " + howMany(n, "device") + ".")
-		inv.app.Logger(inv.ctx, "auth.info", "device config forget user="+inv.sudoUser()+" device=* count="+strconv.Itoa(n))
+		inv.app.Audit().Raw("auth.info", "device config forget user="+inv.sudoUser()+" device=* count="+strconv.Itoa(n))
 		return nil
 	case len(names) == 0:
 		return inv.argErr("Name the devices to forget, or give --all.", usage)
@@ -580,7 +580,7 @@ func (inv *invocation) deviceConfigForget(args []string) error {
 			continue
 		}
 		inv.app.Out.Info("Forgot the configuration record of '" + n + "'.")
-		inv.app.Logger(inv.ctx, "auth.info", "device config forget user="+inv.sudoUser()+" device="+n)
+		inv.app.Audit().Raw("auth.info", "device config forget user="+inv.sudoUser()+" device="+n)
 	}
 	return nil
 }

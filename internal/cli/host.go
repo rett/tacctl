@@ -912,7 +912,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 			a.Out.WarnE("Could not limit scope '" + scope + "' to " + be + "; see 'tacctl scope protocols " + scope + "'.")
 		}
 	}
-	a.Logger(inv.ctx, "auth.info", "host enroll name="+name+" target="+target+" scope="+scope+" method="+method+" by="+inv.sudoUser())
+	a.Audit().Raw("auth.info", "host enroll name="+name+" target="+target+" scope="+scope+" method="+method+" by="+inv.sudoUser())
 	if he.Summary != nil {
 		a.Out.InfoE("Host '" + name + "' enrolled (" + he.Summary.Counts() + ").")
 	} else {
@@ -1742,7 +1742,7 @@ func (inv *invocation) hostUnenroll(args []string) error {
 		// still has the console).
 		_ = inv.consoleDeprovision()
 	}
-	a.Logger(inv.ctx, "auth.info", "host unenroll name="+name+" target="+e.Target+" by="+inv.sudoUser())
+	a.Audit().Raw("auth.info", "host unenroll name="+name+" target="+e.Target+" by="+inv.sudoUser())
 	a.Out.InfoE("Host '" + name + "' unenrolled. Local accounts and home directories were left in place.")
 	if len(staged) > 0 {
 		inv.echo("")

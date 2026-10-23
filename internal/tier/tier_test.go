@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
 	"github.com/rett/tacctl/internal/ui"
@@ -268,6 +269,10 @@ func TestOperatorSudoersConfigValidate(t *testing.T) {
 	}
 }
 
+// testSID is the session id of the gate's audit writer: every line it writes
+// ends in it.
+const testSID = "k3x9a0bq"
+
 type gateRun struct {
 	run      *fake.Runner
 	out, err bytes.Buffer
@@ -283,6 +288,7 @@ func newGate(sudoUser, groups string, privlvl map[string]string, set ...map[stri
 	}
 	g.run.On([]string{"logger"}, execx.Result{})
 	g.gate = Gate{Runner: g.run, Out: ui.Output{Stdout: &g.out, Stderr: &g.err}, SudoUser: sudoUser,
+		Audit:   audit.New(audit.Options{Runner: g.run, SID: testSID}),
 		PrivLvl: func(u string) string { return privlvl[u] }}
 	if len(set) > 0 {
 		g.gate.GroupTier = func(u string) string { return set[0][u] }
@@ -382,7 +388,7 @@ func TestGateConfProblem(t *testing.T) {
 	if g.err.String() != want {
 		t.Errorf("denial %q", g.err.String())
 	}
-	if !g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=bob tier=operator reason=conf-problem cmd=device add") {
+	if !g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=bob tier=operator reason=conf-problem cmd=device add sid="+testSID) {
 		t.Errorf("not logged %q", g.run.Argvs())
 	}
 	// A command the operator tier never had is the ordinary denial.
@@ -444,14 +450,14 @@ func TestEnforce(t *testing.T) {
 	if g.err.String() != "\033[0;31m[ERROR]\033[0m 'tacctl user remove' is not permitted for the readonly tier.\n" || g.out.Len() != 0 {
 		t.Errorf("denial: %q", g.err.String())
 	}
-	if !g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=ro tier=readonly cmd=user remove") {
+	if !g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=ro tier=readonly cmd=user remove sid="+testSID) {
 		t.Errorf("not logged: %q", g.run.Argvs())
 	}
 	// No sub: the bash's trailing blank stays.
 	g = newGate("op", "tac-users", lv)
 	_ = g.gate.Enforce(context.Background(), "bogus", "")
 	if !strings.Contains(g.err.String(), "'tacctl bogus ' is not permitted for the operator tier.") ||
-		!g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=op tier=operator cmd=bogus ") {
+		!g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=op tier=operator cmd=bogus sid="+testSID) {
 		t.Errorf("bogus: %q %q", g.err.String(), g.run.Argvs())
 	}
 	// The usage is open to both lower tiers; a word after it is not.
@@ -621,7 +627,7 @@ func TestGateRefusesSpoofedSudoUser(t *testing.T) {
 		if g.err.String() != want {
 			t.Errorf("%s: %q", claimed, g.err.String())
 		}
-		if !g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user="+claimed+" uid=1001 reason=sudo-user-mismatch cmd=version ") {
+		if !g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user="+claimed+" uid=1001 reason=sudo-user-mismatch cmd=version sid="+testSID) {
 			t.Errorf("%s: not logged %q", claimed, g.run.Argvs())
 		}
 		if g.run.Called("id") {

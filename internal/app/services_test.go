@@ -6,9 +6,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/execx/fake"
 	"github.com/rett/tacctl/internal/model"
@@ -147,12 +149,76 @@ func TestLoadModelAndPaths(t *testing.T) {
 	}
 }
 
-func TestLogger(t *testing.T) {
-	a, _, _, r := newServiceApp(t, "")
-	r.Fail([]string{"logger"}, 1, "no journal")
-	a.Logger(context.Background(), "auth.info", "hello world")
-	if !r.Called("logger", "-t", "tacctl", "-p", "auth.info", "hello world") {
+func TestAuditWritesLoggerLinesWithTheSessionID(t *testing.T) {
+	a, _, errb, r := newServiceApp(t, "", "SUDO_USER=alice", "SUDO_UID=1001")
+	w := a.Audit()
+	if w != a.Audit() {
+		t.Fatal("the writer was made twice")
+	}
+	sid := w.SID()
+	if !regexp.MustCompile(`^[a-z0-9]{8}$`).MatchString(sid) {
+		t.Fatalf("sid %q", sid)
+	}
+	w.Raw("auth.info", "hello world")
+	w.Line("auth.notice", "user add", audit.Pair("name", "bob"))
+	if !r.Called("logger", "-t", "tacctl", "-p", "auth.info", "hello world sid="+sid) ||
+		!r.Called("logger", "-t", "tacctl", "-p", "auth.notice", "user add name=bob sid="+sid) {
 		t.Errorf("calls %q", r.Argvs())
+	}
+	if ac := w.Actor(); ac.User != "alice" || ac.UID != "1001" || ac.Origin != audit.OriginSudo {
+		t.Errorf("actor %+v", ac)
+	}
+	if errb.Len() != 0 {
+		t.Errorf("stderr %q", errb)
+	}
+}
+
+func TestAuditSessionIDFollowsTheRandomKnob(t *testing.T) {
+	if !TestKnobs {
+		t.Skip("the random knob is read by a -tags testknobs build only")
+	}
+	a, _, _, _ := newServiceApp(t, "", "TACCTL_TEST_RANDOM=000102030405060708")
+	b, _, _, _ := newServiceApp(t, "", "TACCTL_TEST_RANDOM=000102030405060708")
+	if a.Audit().SID() != "abcdefgh" || b.Audit().SID() != "abcdefgh" {
+		t.Errorf("sids %q, %q", a.Audit().SID(), b.Audit().SID())
+	}
+}
+
+func TestAuditRootWithoutSudoUser(t *testing.T) {
+	a, _, _, _ := newServiceApp(t, "")
+	if ac := a.Audit().Actor(); ac.User != "root" || ac.UID != "0" || ac.Origin != audit.OriginRoot {
+		t.Errorf("actor %+v", ac)
+	}
+}
+
+// The invocation's context is done (SIGHUP ended the session): the line is
+// written all the same.
+func TestAuditIgnoresACancelledContext(t *testing.T) {
+	a, _, _, r := newServiceApp(t, "")
+	ctx, cancel := context.WithCancel(context.Background())
+	a.SetContext(ctx)
+	cancel()
+	a.Audit().Raw("auth.info", "ssh end user=alice status=129")
+	if len(r.Calls()) != 1 || r.Count("logger", "-t", "tacctl", "-p", "auth.info") != 1 {
+		t.Errorf("calls %q", r.Argvs())
+	}
+}
+
+func TestAuditWarnsOnceWhenLoggerFails(t *testing.T) {
+	a, _, errb, r := newServiceApp(t, "", "TACCTL_COLOR=never")
+	r.Fail([]string{"logger"}, 1, "no journal")
+	a.Audit().Raw("auth.info", "one")
+	a.Audit().Raw("auth.info", "two")
+	want := "[WARN] The audit line was not written (logger: exit status 1: no journal); the command continues.\n"
+	if errb.String() != want {
+		t.Errorf("stderr %q, want %q", errb.String(), want)
+	}
+	a2, _, errb2, r2 := newServiceApp(t, "", "TACCTL_COLOR=never")
+	r2.Missing("logger")
+	a2.Audit().Raw("auth.info", "one")
+	want = "[WARN] The audit line was not written (logger: not found); the command continues.\n"
+	if errb2.String() != want {
+		t.Errorf("stderr %q, want %q", errb2.String(), want)
 	}
 }
 

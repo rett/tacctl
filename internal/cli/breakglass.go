@@ -998,7 +998,7 @@ func (inv *invocation) breakglassHold(args []string) error {
 	for i, c := range done {
 		h := written[slices.IndexFunc(written, func(h conf.Hold) bool { return h.Device == c.e.Name })]
 		addrs[i], doneNames[i] = c.e.Address, c.e.Name
-		inv.app.Logger(inv.ctx, "auth.info", "breakglass hold "+c.logKey()+"="+c.e.Name+" addr="+c.e.Address+" reason="+strconv.Quote(c.req.Reason)+" by="+h.By)
+		inv.app.Audit().Raw("auth.info", "breakglass hold "+c.logKey()+"="+c.e.Name+" addr="+c.e.Address+" reason="+strconv.Quote(c.req.Reason)+" by="+h.By)
 	}
 	releaseCmd := "tacctl breakglass release " + strings.Join(doneNames, ",")
 
@@ -1293,14 +1293,14 @@ func (inv *invocation) breakglassRelease(args []string) error {
 			key = "host"
 			heldHosts = append(heldHosts, h.Device)
 		}
-		inv.app.Logger(inv.ctx, "auth.info", "breakglass release "+key+"="+h.Device+" addr="+h.Address+" held="+held+" by="+inv.sudoUser())
+		inv.app.Audit().Raw("auth.info", "breakglass release "+key+"="+h.Device+" addr="+h.Address+" held="+held+" by="+inv.sudoUser())
 		inv.echo(ui.Green + "Break-glass RELEASED" + ui.NC + " on " + h.Device + " (" + h.Address + "): held " + ages[i] + " by " + h.By + " (" + h.Reason + ").")
 		if v := inv.registeredVendor(h.Device, h.Address); v == "cisco" || v == "juniper" || v == "wti" {
 			known = append(known, h.Device)
 		}
 	}
 	for _, d := range unusable {
-		inv.app.Logger(inv.ctx, "auth.info", "breakglass remove-record device="+d.Device+" by="+inv.sudoUser())
+		inv.app.Audit().Raw("auth.info", "breakglass remove-record device="+d.Device+" by="+inv.sudoUser())
 		inv.echo(ui.Green + "Break-glass record REMOVED" + ui.NC + " for " + d.Device + ": the entry " + d.Defect + "; the rendering did not change.")
 	}
 	relNouns := "devices"
@@ -1382,7 +1382,7 @@ func (inv *invocation) breakglassReleaseOne(name string) error {
 	if isHost {
 		key = "host"
 	}
-	inv.app.Logger(inv.ctx, "auth.info", "breakglass release "+key+"="+h.Device+" addr="+h.Address+" held="+held+" by="+inv.sudoUser())
+	inv.app.Audit().Raw("auth.info", "breakglass release "+key+"="+h.Device+" addr="+h.Address+" held="+held+" by="+inv.sudoUser())
 
 	inv.echo("")
 	// echo, not echoE: the reason is free text and a backslash in it is a
@@ -1415,7 +1415,7 @@ func (inv *invocation) releaseUnusable(d conf.HoldRecord) error {
 		return err
 	}
 	inv.loaded = false
-	inv.app.Logger(inv.ctx, "auth.info", "breakglass remove-record device="+d.Device+" by="+inv.sudoUser())
+	inv.app.Audit().Raw("auth.info", "breakglass remove-record device="+d.Device+" by="+inv.sudoUser())
 	inv.echo("")
 	inv.echo(ui.Green + "Break-glass record REMOVED" + ui.NC + " for " + d.Device + ": the entry " + d.Defect + "; the rendering did not change.")
 	inv.echo("  " + inv.heldNow("Still held: "))
@@ -1759,7 +1759,7 @@ func (inv *invocation) holdMove(f *devreg.File, res *devreg.Resolver, d *devreg.
 		}
 		return err
 	}
-	a.Logger(inv.ctx, "auth.info", "breakglass hold-move device="+name+" from="+oldAddr+" to="+newAddr+" by="+inv.sudoUser())
+	a.Audit().Raw("auth.info", "breakglass hold-move device="+name+" from="+oldAddr+" to="+newAddr+" by="+inv.sudoUser())
 
 	a.Out.Info("Device '" + name + "' address set to " + newAddr + ".")
 	if len(oldKeys) > 0 {

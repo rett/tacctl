@@ -106,7 +106,7 @@ func (inv *invocation) scopeBreakGlass(args []string) error {
 		if err := policy.WriteBreakGlassUsers(c, scope, kept); err != nil {
 			return err
 		}
-		inv.app.Logger(inv.ctx, "auth.info", "scope breakglass remove scope="+scope+" name="+name+" by="+inv.sudoUser())
+		inv.app.Audit().Raw("auth.info", "scope breakglass remove scope="+scope+" name="+name+" by="+inv.sudoUser())
 		inv.app.Out.Info("Break-glass user '" + name + "' removed from scope '" + scope + "'.")
 		inv.echo("")
 		inv.echo("  The devices keep the account until it is deleted there; tacctl only stops listing it.")
@@ -169,7 +169,7 @@ func (inv *invocation) scopeBreakGlassAdd(scope, name, role string, roleGiven bo
 	if err := policy.WriteBreakGlassUsers(inv.app.Conf(), scope, append(users, policy.BreakGlassUser{Name: name, Role: role})); err != nil {
 		return err
 	}
-	inv.app.Logger(inv.ctx, "auth.info", "scope breakglass add scope="+scope+" name="+name+" role="+role+" by="+inv.sudoUser())
+	inv.app.Audit().Raw("auth.info", "scope breakglass add scope="+scope+" name="+name+" role="+role+" by="+inv.sudoUser())
 	inv.app.Out.Info("Break-glass user '" + name + "' (" + role + ") recorded for scope '" + scope + "'.")
 	inv.echo("")
 	inv.echo("  tacctl stores no password or hash. 'tacctl config cisco|juniper|wti --scope " + scope + "' now renders the")

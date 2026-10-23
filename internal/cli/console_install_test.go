@@ -98,7 +98,7 @@ func TestConsoleInstallRemoveCheck(t *testing.T) {
 	if data, _ := os.ReadFile(sb.path("shells")); string(data) != "# /etc/shells\n/bin/sh\n/bin/bash\n"+link+"\n" {
 		t.Errorf("shells %q", data)
 	}
-	if !sb.runner.Called("systemctl", "reload", "ssh.service") || !sb.runner.CalledRegexp("^logger .*console provision shells=installed dropin=installed") {
+	if !sb.runner.Called("systemctl", "reload", "ssh.service") || !hasAuditMatch(sb.runner, "auth.info", `^console provision shells=installed dropin=installed`) {
 		t.Errorf("calls %q", sb.runner.Argvs())
 	}
 	// Again: nothing changes, sshd is not reloaded.

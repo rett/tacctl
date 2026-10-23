@@ -176,7 +176,7 @@ func (inv *invocation) deviceVerbAllowed(family, sub string, need tier.Tier) err
 		return nil
 	}
 	user := inv.sudoUser()
-	inv.app.Logger(inv.ctx, "auth.warning", "tier DENY user="+user+" tier="+string(t)+" cmd="+family+" "+sub)
+	inv.app.Audit().Raw("auth.warning", "tier DENY user="+user+" tier="+string(t)+" cmd="+family+" "+sub)
 	if t == tier.None {
 		inv.app.Out.ErrorE("'" + g.SudoUser + "' has no active tacctl user, so tacctl access is denied.")
 	} else {

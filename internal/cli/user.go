@@ -698,11 +698,11 @@ func (inv *invocation) userVerify(args []string) error {
 	}
 	by := " by=" + caller + "(uid=" + callerUID + ")"
 	if result == hash.Match {
-		a.Logger(inv.ctx, "auth.info", "verify OK user="+username+by)
+		a.Audit().Raw("auth.info", "verify OK user="+username+by)
 		a.Out.Info("Password is correct.")
 	} else {
 		inv.pause(failDelay)
-		a.Logger(inv.ctx, "auth.warning", "verify FAIL user="+username+" result="+string(result)+by)
+		a.Audit().Raw("auth.warning", "verify FAIL user="+username+" result="+string(result)+by)
 		a.Out.Error("Password does not match.")
 	}
 	inv.echo("")

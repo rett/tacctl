@@ -6,7 +6,6 @@ package cli
 // workers never write anywhere.
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -178,7 +177,7 @@ func (v *pullView) Update(e batch.Event) {
 		return
 	}
 	if o, ok := e.Result.Value.(*pullOutcome); ok && o != nil && v.audit && e.Phase == batch.PhaseDone {
-		v.inv.app.Logger(v.inv.auditContext(), "auth.info", pullAuditLine(v.user, o, e.Result))
+		v.inv.app.Audit().Raw("auth.info", pullAuditLine(v.user, o, e.Result))
 	}
 	switch {
 	case v.quiet:
@@ -319,7 +318,3 @@ func (v *pullView) printSummaryJSON(s batch.Summary, c *chosenDevices, code int)
 	}
 	_ = v.enc.Encode(map[string]any{"summary": sum})
 }
-
-// auditContext is the context of an audit line: the invocation's, not
-// cancelled by the Ctrl-C that is ending the run.
-func (inv *invocation) auditContext() context.Context { return context.WithoutCancel(inv.ctx) }

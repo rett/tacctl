@@ -94,7 +94,7 @@ func (v *applyView) auditSettled(o *applyOutcome) {
 	if o.Settled == nil {
 		return
 	}
-	v.inv.app.Logger(v.inv.auditContext(), "auth.notice", fmt.Sprintf("device config apply settle user=%s device=%s id=%s result=%s",
+	v.inv.app.Audit().Raw("auth.notice", fmt.Sprintf("device config apply settle user=%s device=%s id=%s result=%s",
 		v.user, o.Name, o.Settled.ID, o.Settled.Result))
 }
 
@@ -112,7 +112,7 @@ func (v *applyView) audit(o *applyOutcome) {
 		id, shape = dash(o.Out.ID), dash(o.Out.Shape)
 	}
 	if v.phase == "check" {
-		v.inv.app.Logger(v.inv.auditContext(), "auth.info", fmt.Sprintf("device config apply user=%s device=%s id=%s shape=%s result=%s duration=%s",
+		v.inv.app.Audit().Raw("auth.info", fmt.Sprintf("device config apply user=%s device=%s id=%s shape=%s result=%s duration=%s",
 			v.user, o.Name, id, shape, o.word(), seconds(dur)))
 		return
 	}
@@ -128,7 +128,7 @@ func (v *applyView) audit(o *applyOutcome) {
 			until = o.Out.Until.UTC().Format(time.RFC3339)
 		}
 	}
-	v.inv.app.Logger(v.inv.auditContext(), "auth.notice", fmt.Sprintf("device config apply user=%s device=%s id=%s shape=%s sections=%s result=%s commit=%s until=%s",
+	v.inv.app.Audit().Raw("auth.notice", fmt.Sprintf("device config apply user=%s device=%s id=%s shape=%s sections=%s result=%s commit=%s until=%s",
 		v.user, o.Name, id, shape, sections, o.word(), commit, until))
 }
 
@@ -625,7 +625,7 @@ func (c *applyCtl) audit(apply []*applyOutcome) {
 	if len(canaries) > 0 && !c.aa.noCanary {
 		canary = strings.Join(canaries, ",")
 	}
-	c.inv.app.Logger(c.inv.auditContext(), "auth.notice", fmt.Sprintf("device config apply user=%s approved=%d shapes=%s canary=%s",
+	c.inv.app.Audit().Raw("auth.notice", fmt.Sprintf("device config apply user=%s approved=%d shapes=%s canary=%s",
 		c.user, len(apply), list, canary))
 }
 

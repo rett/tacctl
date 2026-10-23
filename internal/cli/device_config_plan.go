@@ -1215,7 +1215,7 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 				sections = strings.Join(ps, ",")
 			}
 		}
-		inv.app.Logger(inv.auditContext(), "auth.info", "device config plan user="+inv.sudoUser()+" device="+r.e.Name+
+		inv.app.Audit().Raw("auth.info", "device config plan user="+inv.sudoUser()+" device="+r.e.Name+
 			" status="+status+" sections="+sections+" converge="+yesNo(opt.converge)+" secrets="+r.secretsWord()+" out="+out)
 		// a secret by value is said on standard error too, so that a
 		// redirected output still carries the warning (D98)

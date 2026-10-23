@@ -252,7 +252,7 @@ func (inv *invocation) renumbered(path string, res hosts.Renumbering, to hosts.R
 		entries = "1 entry"
 	}
 	inv.app.Out.InfoE("Renumbered " + entries + " of " + path + " from " + res.From.String() + " to " + to.String() + " (the same offset; the old file is kept as " + backup + "). Hosts renumber the accounts tacctl created at their next enroll or sync.")
-	inv.app.Logger(inv.ctx, "auth.info", "uid-map renumbered "+strconv.Itoa(res.N)+" entries from="+res.From.String()+" to="+to.String()+" backup="+backup)
+	inv.app.Audit().Raw("auth.info", "uid-map renumbered "+strconv.Itoa(res.N)+" entries from="+res.From.String()+" to="+to.String()+" backup="+backup)
 }
 
 // renumberProblem is what to print for a renumbering hosts.UIDs.RenumberTo
@@ -354,7 +354,7 @@ func (inv *invocation) configLinuxUIDRange(args []string) error {
 		inv.renumbered(uids.Path, res, r, backup)
 	}
 	a.Out.InfoE("Linux UID range set to " + r.String() + " (was " + cur.String() + "). Hosts renumber the accounts tacctl created at their next enroll or sync.")
-	a.Logger(inv.ctx, "auth.info", "uid-range set from="+cur.String()+" to="+r.String())
+	a.Audit().Raw("auth.info", "uid-range set from="+cur.String()+" to="+r.String())
 	return nil
 }
 
@@ -428,7 +428,7 @@ func (inv *invocation) configLinuxEngineerSudo(args []string) error {
 		}
 	}
 	a.Out.InfoE("Engineers may run " + what + " through sudo on enrolled hosts (" + line + "). Each host gets it at its next sync: tacctl host sync --all")
-	a.Logger(inv.ctx, "auth.info", "linux engineer-sudo set to="+strings.Join(cmds, ",")+" by="+inv.sudoUser())
+	a.Audit().Raw("auth.info", "linux engineer-sudo set to="+strings.Join(cmds, ",")+" by="+inv.sudoUser())
 	return nil
 }
 

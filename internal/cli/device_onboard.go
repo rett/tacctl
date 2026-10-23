@@ -908,7 +908,7 @@ func (ob *onboard) review(o *applyOutcome) bool {
 	if shape == "" {
 		shape = "-"
 	}
-	inv.app.Logger(inv.auditContext(), "auth.notice", fmt.Sprintf("device onboard user=%s device=%s approved=1 shape=%s login=%s",
+	inv.app.Audit().Raw("auth.notice", fmt.Sprintf("device onboard user=%s device=%s approved=1 shape=%s login=%s",
 		ob.user, o.Name, shape, localLoginText(ob.local.account)))
 	return true
 }
@@ -1024,7 +1024,7 @@ func (ob *onboard) audit(result string) {
 	if ob.local != nil {
 		acct = localLoginText(ob.local.account)
 	}
-	inv.app.Logger(inv.auditContext(), "auth.info", fmt.Sprintf("device onboard user=%s device=%s addr=%s login=%s result=%s",
+	inv.app.Audit().Raw("auth.info", fmt.Sprintf("device onboard user=%s device=%s addr=%s login=%s result=%s",
 		ob.user, dash(name), dash(ob.addr), acct, result))
 }
 

@@ -92,7 +92,7 @@ func TestHostTarget(t *testing.T) {
 	if !r.CalledRegexp(`^ssh .* -p 2222 -T admin@web1-new\.example\.net if \[`) || !r.CalledRegexp(`-O exit admin@web1-new\.example\.net$`) {
 		t.Errorf("test connection %q", r.Argvs())
 	}
-	if !r.Called("logger", "-t", "tacctl", "-p", "auth.info", "host target name=web1 target=admin@web1-new.example.net port=2222 by=root") {
+	if !hasAudit(r, "auth.info", "host target name=web1 target=admin@web1-new.example.net port=2222 by=root") {
 		t.Errorf("not logged: %q", r.Argvs())
 	}
 	if got := hs.registry(); got != "web1|admin@web1-new.example.net|2222|lab|192.0.2.1|\n" || snaps() != n0+1 {

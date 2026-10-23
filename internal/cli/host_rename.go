@@ -149,7 +149,7 @@ func (inv *invocation) hostRename(args []string) error {
 	}
 	inv.hostRenameSeen(p)
 
-	a.Logger(inv.ctx, "auth.info", "host rename old="+oldName+" new="+newName+" by="+inv.sudoUser())
+	a.Audit().Raw("auth.info", "host rename old="+oldName+" new="+newName+" by="+inv.sudoUser())
 	a.Out.InfoE("Host '" + oldName + "' renamed to '" + newName + "'. Nothing was sent to the host.")
 
 	if renameScope {
