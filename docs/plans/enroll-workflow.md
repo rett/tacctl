@@ -61,6 +61,14 @@ chain choose the path from the device.
   and the fingerprint (the `sid=` of the 0.2.17 release ties it to the
   run). This differs from `device collect`, which asks one question for
   the keys of all its addresses; whether `collect` follows is open.
+- **The apply review is per device.** `device config apply` now asks
+  one question for the run (the device's name, or the number of devices,
+  typed back). In a run started by the chain below, and in the change to
+  `apply` it needs, each device is confirmed on its own, by typing its
+  name, after its plan is shown. The grouping by shape stays as the
+  display, so identical changes are read once, but the answer is given
+  device by device. The canary, `--max` and the fresh-login proof are as
+  they are.
 - The selectors of the config verbs grow. `device config
   pull|diff|plan|apply` take, besides names, `--all`, `--scope`,
   `--vendor` and `--stale`: `--differs` (the devices whose last pull
@@ -95,7 +103,7 @@ chain choose the path from the device.
 
 ## Open
 
-- `device config apply` asks one question for all the devices of a run
-  (the device's name, or the number of devices, typed back). Whether the
-  chain keeps that review or asks per device, as `device enroll` does, is
-  not decided.
+- `--confirmed -y` lets a script answer the apply review without a
+  terminal, for shapes an earlier apply confirmed. Whether that form
+  stays once the review is per device, or is removed to keep every run
+  attended, is not decided.
