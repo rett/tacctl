@@ -96,6 +96,37 @@ func TestHoldGolden(t *testing.T) {
 	}
 }
 
+// A hold whose name is an enrolled host reads (host ...) in the comment
+// block and a device keeps (device ...) (D237); only the word changes.
+func TestHoldCommentNamesAHostAsAHost(t *testing.T) {
+	p := params("debian")
+	p.Hosts = map[string]bool{"sw-lab-1": true, "unrelated": true}
+	out, err := radius.Render(loadModel(t, fixtures+"store.hold.yaml"),
+		holdConf(t, read(t, fixtures+"tacctl.hold.yaml")).Merged(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"\t# break-glass held: 10.0.1.5 (device sw-core-1) is answered by no client;",
+		"\t# break-glass held: 192.0.2.21 (host sw-lab-1) is answered by no client;",
+	} {
+		if !strings.Contains(out.Conf, want) {
+			t.Errorf("no comment %q", want)
+		}
+	}
+	if strings.Contains(out.Conf, "(device sw-lab-1)") {
+		t.Error("the held host is still worded as a device")
+	}
+	// The render id covers the comment, so it differs too; with each id
+	// taken out the files differ in that one word.
+	plainOut := holdRender(t, true)
+	norm := func(text, id string) string { return strings.ReplaceAll(text, id, "ID") }
+	want := strings.Replace(norm(plainOut.Conf, plainOut.RenderID), "(device sw-lab-1)", "(host sw-lab-1)", 1)
+	if got := norm(out.Conf, out.RenderID); got != want {
+		t.Error("the host set changed more than the word of the comment")
+	}
+}
+
 func TestHoldCarvesPrefixesAndTaggedAddresses(t *testing.T) {
 	cs := clientsOf(holdRender(t, true))
 	for _, h := range []string{"10.0.1.5", "192.0.2.21", "198.51.100.7", "198.51.100.200", "2001:db8:0:1::5", "203.0.113.9"} {

@@ -16,6 +16,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -548,7 +549,11 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	}
 	// So are the hosts: the registry, the UID ledger and the rest come back
 	// with a snapshot that knows them (D192-D195).
-	hostsNote := inv.restoreHostsNote(dir, keepUIDs)
+	hostsHead, hostsLedger := inv.restoreHostsNote(dir, keepUIDs)
+	hostsNote := hostsHead
+	if hostsLedger != "" {
+		hostsNote = append(append([]string(nil), hostsHead...), hostsLedger)
+	}
 	if len(hostsNote) > 0 {
 		inv.echo("")
 		for _, l := range hostsNote {
@@ -604,11 +609,25 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	// undo must not put back an older last_sync.
 	a.Snapshots().KeepID = id
 	a.Snapshots().Exact = true
+	// With --keep-uids the restore does not touch the ledger, so its copy
+	// into the snapshot is made without the ledger's lock (a whole file
+	// either way: every write replaces it); a ledger another command holds
+	// does not refuse the restore (D242).
+	ledgerLock := a.Snapshots().LedgerLock
+	if keepUIDs {
+		a.Snapshots().LedgerLock = nil
+	}
 	preID, err := inv.snapshotFirstID()
+	a.Snapshots().LedgerLock = ledgerLock
 	a.Snapshots().Exact = false
 	if err != nil {
 		return err
 	}
+	// The registry the render reads (a hold is worded as a host's or a
+	// device's by it): the host files come back only after the render, which
+	// the rollback of a failed one does not cover, so the names are kept to
+	// see whether the registry put back differs.
+	renderedHosts := hosts.EnrolledNames(a.Paths.LinuxHosts)
 	if _, err := set.ApplyForced(inv.ctx, func() error { return inv.installSnapshot(dir) }); err != nil {
 		if err == backend.ErrNotStarted {
 			return err
@@ -654,6 +673,17 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	// backends are reconciled and restarted as for any restore, and the
 	// failure is a warning that names the way back.
 	hostErr := inv.restoreHosts(dir, keepUIDs)
+	// The files were rendered against the registry that was live: a break-glass
+	// hold on a name the restore enrolled or forgot is worded the other way
+	// (D237), so the render is done again against the registry now in place.
+	// It changes nothing when the words agree, and the restart below is the
+	// one the restore makes anyway.
+	var renderErr error
+	if snapshot.KnowsHosts(dir) && !maps.Equal(renderedHosts, hosts.EnrolledNames(a.Paths.LinuxHosts)) {
+		if _, err := set.RenderAll(inv.ctx, backend.RenderOptions{ForceAll: true}); err != nil {
+			renderErr = err
+		}
+	}
 	inv.reconcileBackends(before)
 	if err := set.RestartAll(inv.ctx); err != nil {
 		return err
@@ -662,11 +692,19 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	if holdNote != "" {
 		a.Out.WarnE(holdNote)
 	}
+	if renderErr != nil {
+		a.Out.WarnE("The files were not rendered again for the restored hosts: 'tacctl config validate' may say they are out of date. Run 'tacctl config render' to fix it.")
+	}
 	if hostErr != nil {
 		a.Out.WarnE("The host state was not fully put back: " + hostErr.Error() + ". Everything else was restored.")
 		pre := inv.preRestoreID(preID)
 		a.Out.WarnE("The state from before the restore is in snapshot " + pre + ". To undo the restore: tacctl backup restore " + pre + ". To try the host files again: tacctl backup restore " + id + ".")
 	} else {
+		// The ledger line is computed again, from the pre-restore snapshot's
+		// copy of the ledger against what was put back (D242).
+		if !keepUIDs && snapshot.KnowsHosts(dir) {
+			hostsNote = inv.restoreHostsNoteAfter(hostsHead, hostsLedger, dir, inv.preRestoreID(preID))
+		}
 		for _, l := range hostsNote {
 			a.Out.WarnE(l)
 		}
@@ -757,7 +795,13 @@ func (inv *invocation) restoreHoldNote(dir string) string {
 // users whose number the restore drops or changes are named. With keepUIDs
 // (D212) the ledger stays as it is, and one line says so in place of that
 // comparison.
-func (inv *invocation) restoreHostsNote(dir string, keepUIDs bool) []string {
+//
+// The note comes in two parts: head, the lines about the registry (and the
+// reasons a comparison could not be made, and the line of --keep-uids), and
+// ledger, the line about the UID ledger ("" when there is none), which
+// restoreSnapshot says again after the restore from the ledger as the
+// pre-restore snapshot holds it (D242).
+func (inv *invocation) restoreHostsNote(dir string, keepUIDs bool) (head []string, ledger string) {
 	p := inv.app.Paths
 	live, liveErr := hosts.LoadRegistry(p.LinuxHosts)
 	if !snapshot.KnowsHosts(dir) {
@@ -768,7 +812,7 @@ func (inv *invocation) restoreHostsNote(dir string, keepUIDs bool) []string {
 		if keepUIDs {
 			out = append(out, "This snapshot does not know the hosts: the ledger stays either way.")
 		}
-		return out
+		return out, ""
 	}
 	// The line that stands for the ledger's note with --keep-uids.
 	keptNote := "The UID ledger (linux-uids) is kept as it is (--keep-uids): the restored users keep the numbers they have now; a restored user with no line gets one at the next sync."
@@ -783,11 +827,11 @@ func (inv *invocation) restoreHostsNote(dir string, keepUIDs bool) []string {
 		kept = []string{keptNote}
 	}
 	if liveErr != nil {
-		return append([]string{unreadable(liveErr)}, kept...)
+		return append([]string{unreadable(liveErr)}, kept...), ""
 	}
 	snap, err := hosts.LoadRegistry(filepath.Join(dir, snapshot.HostsName))
 	if err != nil {
-		return append([]string{unreadable(err)}, kept...)
+		return append([]string{unreadable(err)}, kept...), ""
 	}
 	var back, gone, differ []string
 	for _, e := range snap.Entries() {
@@ -818,15 +862,36 @@ func (inv *invocation) restoreHostsNote(dir string, keepUIDs bool) []string {
 		out = append(out, "The hosts themselves are not touched. For a host that comes back after 'host unenroll': 'tacctl host sync <name>', 'tacctl host show <name> --check', or 'tacctl host unenroll <name>' again. For one that goes: 'tacctl host enroll' it again, or 'tacctl host unenroll <name> --force' after that.")
 	}
 	if keepUIDs {
-		return append(out, keptNote)
+		return append(out, keptNote), ""
 	}
 	switch l, err := restoreLedgerNote(hosts.UIDs{Path: p.LinuxUIDs}, hosts.UIDs{Path: filepath.Join(dir, snapshot.UIDsName)}); {
 	case err != nil:
-		out = append(out, unreadable(err))
+		ledger = unreadable(err)
 	case l != "":
-		out = append(out, l)
+		ledger = l
 	}
-	return out
+	return out, ledger
+}
+
+// restoreHostsNoteAfter is the note said after a restore that put the host
+// state back: head as it was before the question, and the ledger line
+// recomputed from the ledger the pre-restore snapshot (pre) holds against the
+// one that was put back, so that what the person is told is exact even when a
+// command allocated a number while the question was open (D242). Without a
+// pre-restore copy to read, the line of the question stands.
+func (inv *invocation) restoreHostsNoteAfter(head []string, ledger, dir, pre string) []string {
+	preDir := filepath.Join(inv.app.Paths.BackupDir, pre)
+	if snapshot.KnowsHosts(preDir) {
+		l, err := restoreLedgerNote(hosts.UIDs{Path: filepath.Join(preDir, snapshot.UIDsName)}, hosts.UIDs{Path: filepath.Join(dir, snapshot.UIDsName)})
+		ledger = l
+		if err != nil {
+			ledger = "could not compare the host files: " + err.Error() + "; the restore still put them back"
+		}
+	}
+	if ledger != "" {
+		head = append(append([]string(nil), head...), ledger)
+	}
+	return head
 }
 
 // restoreLedgerNote names the users whose UID the snapshot's ledger drops or
@@ -890,13 +955,27 @@ func rangeText(r hosts.Range) string {
 // The caller holds the registry's lock (restoreSnapshot takes it before it
 // changes anything), so a command that writes the registry or the records is
 // not interleaved with the restore; the lock is not reentrant, and nothing
-// here may take it. With keepUIDs the ledger is left as it is, present or not
-// (D212).
+// here may take it. The ledger's lock (the innermost, D240) is taken here for
+// the whole put, unless keepUIDs: then the ledger is left as it is, present or
+// not (D212), and no lock of it is taken.
 func (inv *invocation) restoreHosts(dir string, keepUIDs bool) error {
 	if !snapshot.KnowsHosts(dir) {
 		return nil
 	}
 	p := inv.app.Paths
+	if !keepUIDs {
+		// The ledger comes back under its lock (D242), taken first so that a
+		// ledger another command holds stops the restore of the host files
+		// before any of them is changed. It is the innermost lock (D240): the
+		// registry's and the hosts' are held by the caller, and nothing below
+		// takes another. With keepUIDs the ledger is not touched and no lock
+		// is taken.
+		unlock, err := (hosts.UIDs{Path: p.LinuxUIDs}).Lock()
+		if err != nil {
+			return err
+		}
+		defer unlock()
+	}
 	snapReg := filepath.Join(dir, snapshot.HostsName)
 	switch st, err := os.Stat(snapReg); {
 	case err != nil:

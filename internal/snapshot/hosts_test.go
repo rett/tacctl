@@ -1,6 +1,7 @@
 package snapshot
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -283,5 +284,56 @@ func TestSnapshotExactSeesWhatASyncWrites(t *testing.T) {
 	e.writeRecord("web1", synced("2026-03-03T00:00:00Z"))
 	if again := e.take(); again != "" {
 		t.Errorf("the comparison stayed exact: %s", again)
+	}
+}
+
+// D239: the copy of the UID ledger into a snapshot is made under the ledger's
+// lock, and the lock is let go when the copy is done. A snapshot without a
+// ledger takes none. A lock that cannot be taken fails the snapshot with the
+// lock's own error, and leaves no snapshot.
+func TestSnapshotCopiesTheLedgerUnderItsLock(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	e.write("linux-uids", "# range 80000-89999\nalice:80000\n")
+	held := false
+	locks := 0
+	e.s.LedgerLock = func() (func(), error) {
+		locks++
+		held = true
+		return func() { held = false }, nil
+	}
+
+	id := e.take()
+	if locks != 1 || held {
+		t.Errorf("%d locks taken, held after: %v", locks, held)
+	}
+	if data, err := os.ReadFile(filepath.Join(e.backups(), id, "linux-uids")); err != nil || string(data) != "# range 80000-89999\nalice:80000\n" {
+		t.Errorf("copy %q %v", data, err)
+	}
+
+	// No ledger: no lock.
+	e2 := newEnv(t)
+	n := 0
+	e2.s.LedgerLock = func() (func(), error) { n++; return func() {}, nil }
+	e2.take()
+	if n != 0 {
+		t.Errorf("%d locks for a snapshot without a ledger", n)
+	}
+}
+
+func TestSnapshotFailsWithTheLedgerLocksOwnError(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	e.write("linux-uids", "alice:80000\n")
+	busy := errors.New("the UID ledger (linux-uids) is locked by another tacctl command")
+	e.s.LedgerLock = func() (func(), error) { return nil, busy }
+	if id, err := e.s.Take(); err != busy || id != "" {
+		t.Errorf("Take: %q, %v", id, err)
+	}
+	if ids := IDs(e.backups()); len(ids) != 0 {
+		t.Errorf("snapshots %q", ids)
+	}
+	if left, _ := filepath.Glob(filepath.Join(e.backups(), ".snap.*")); len(left) != 0 {
+		t.Errorf("left behind: %q", left)
 	}
 }

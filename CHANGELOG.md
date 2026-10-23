@@ -3,6 +3,92 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.16 (2026-10-23)
+
+1. **`config validate` takes no argument.** `config validate extra` ran the
+   report and ignored the word. It now refuses it like the other verbs with a
+   fixed number of arguments: `Unknown argument: 'extra'`, the usage, exit
+   status 1, and no report. `--json`, `--fix-names` and `-y` are unchanged.
+
+2. **`config validate --fix-names`: a host renamed whose own scope is refused
+   counts as renamed.** `--fix-names` counted the host as failed and then
+   offered its `linux-<name>` scope on its own, where the same refusal came
+   again. The host now counts as renamed, and the scope is not offered in that
+   run. One line takes the place of the question: `'linux-Web1' is not
+   offered: its rename was refused with the host's (<reason>); retry: tacctl
+   scope rename linux-Web1 linux-web1`. The scope counts under `not offered`
+   and the run exits 1. The next `--fix-names` offers the scope again. `host
+   rename` typed directly prints and exits as before.
+
+3. **`host enroll` checks the device namespace again after the script has
+   run.** The check of a new host name against the device registry ran only
+   before the client script, which can take minutes. A `device add` that
+   finished meanwhile left a host and a device with one name. The check is now
+   repeated under the device registry's lock, right after the registry line is
+   written. A conflict takes the line back, writes no record, pins or audit
+   line, and exits 1 with `A device named '<name>' (<address>) was registered
+   while the client script ran; a host and a device cannot share a name.` and
+   the `host enroll ... --name <other>` command to run next. The script has
+   already run on the host, and what the command did before it stays: if it
+   opened the host's own `linux-<name>` scope to both protocols, or added the
+   `--staging` bench address, a warning says so and names the command that
+   undoes it (`Scope 'linux-web1' is still open to tacacs, radius; see
+   'tacctl scope protocols linux-web1'.`, `Staging address 192.0.2.50/32
+   stays in scope 'lab' for the host 'web1', which is not enrolled; remove
+   it: tacctl scope staging remove 192.0.2.50/32`). The same warnings follow
+   when another enrolment of the name finishes first. A re-enrolment or move
+   of an enrolled host is not checked again.
+
+4. **The comment of the rendered backend files names a held host as a host.**
+   The comment block of `tacquito.yaml` and the RADIUS `clients.conf` now
+   reads `(host <name>)` for a break-glass hold on an enrolled host instead of
+   `(device <name>)`; a held device reads as before. The word comes from the
+   host registry when the files are rendered, so `config validate` still reads
+   them as up to date. `backup restore` words a hold by the registry it puts
+   back: when the restore changes the enrolled names, the files are rendered
+   again after the host files are in place, so a hold on a host the snapshot
+   enrolls or forgets reads `(host <name>)` or `(device <name>)` to match.
+   This adds no restart. If that second render fails, the restore stands and a
+   warning says to run `tacctl config render`.
+
+5. **The UID ledger has a lock; two concurrent `host sync` could give one UID
+   to two users.** `linux-uids` was read and written by several commands with
+   nothing between them. Two `host sync` runs that met a new user each took the
+   same next number, so the user got two lines or two users shared a number.
+   `config linux uid <user> <uid>` checked the holder and wrote in two steps,
+   and `user rename`'s move ran beside a sync with no order. Every command that
+   writes the ledger or decides from it now holds `/etc/tacctl/.linux-uids.lock`
+   (0600) for its read-and-write window and nothing longer:
+
+   - `host enroll`, `host sync` and `config linux script` hold it while they
+     work out the users and their numbers, never while the script runs on a
+     host.
+   - `config linux uid <user> <uid>` holds it from the holder check to the
+     write.
+   - `config linux uid-range` and the renumbering of an old file, `user
+     rename`'s move, and `backup restore`'s put of the ledger hold it for
+     their own writes.
+   - Every snapshot copies the ledger under it.
+
+   `--keep-uids` takes none. The commands that only show the ledger (`config
+   linux uid` with no number, `user list`, `user show`, `host show`, `host
+   check`, `backup diff`) take no lock; every write replaces the file whole,
+   so they see it before or after a change. A command that finds the lock held
+   waits up to 30 seconds, then stops with nothing changed: `the UID ledger
+   (linux-uids) is locked by another tacctl command; try again in a moment
+   (waited 30s)`. A `host sync` building its script now sends the names as they
+   were before a concurrent `user rename` or after it, never a mix. No state
+   format changes.
+
+6. **`host enroll` refuses a new name that a break-glass hold is recorded
+   under.** `host rename` already did. `host enroll --name web9` for a name
+   that a hold (without a host) is recorded under was accepted, and the files
+   kept saying `(device web9)` until the hold was released. It now exits 1
+   before any ssh with `A break-glass hold is recorded under the name 'web9'
+   (<address>) ...` and `A hold is removed only by 'tacctl breakglass release
+   web9'. Nothing was changed.` The check applies to a name no host has;
+   a host that is enrolled is not affected by it.
+
 ## 0.2.15 (2026-10-19)
 
 1. **Small fixes.** The client script's UID check no longer says `Nothing was

@@ -194,6 +194,17 @@ func (c *Config) HoldRecordsNamed(device string) []HoldRecord {
 	return out
 }
 
+// HoldKind is the word the rendered backend files use for a hold's name:
+// "host" for an enrolled host (a name in hostNames), "device" for any
+// other, an orphan included. The record carries no kind: the host registry
+// decides at render time.
+func HoldKind(name string, hostNames map[string]bool) string {
+	if hostNames[name] {
+		return "host"
+	}
+	return "device"
+}
+
 // HoldsOf reads the records of a merged view.
 func HoldsOf(view *yamlpy.Map) []Hold {
 	if view == nil {

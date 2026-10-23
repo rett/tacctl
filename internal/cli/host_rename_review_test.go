@@ -210,7 +210,7 @@ func TestHostRenameSpellingOnlyOfAHeldHost(t *testing.T) {
 	sb.legacyHostCase("web1", "WEB1")
 	sb.run("", []string{"host", "rename", "WEB1", "web1"})
 	sb.expect(0, "Host 'WEB1' renamed to 'web1'.", "")
-	if cfg := sb.renderedConfig(); !strings.Contains(cfg, "# break-glass held: 192.168.1.10 (device web1)") || strings.Contains(cfg, "device WEB1") {
+	if cfg := sb.renderedConfig(); !strings.Contains(cfg, "# break-glass held: 192.168.1.10 (host web1)") || strings.Contains(cfg, "device WEB1") {
 		t.Errorf("the rendered file:\n%s", cfg)
 	}
 	if got := plain(sb.run("", []string{"breakglass", "list"})); !strings.Contains(got, "web1") || strings.Contains(got, "WEB1") || strings.Contains(got, "ORPHAN") {

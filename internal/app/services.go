@@ -12,6 +12,7 @@ import (
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/snapshot"
 	"github.com/rett/tacctl/internal/store"
@@ -108,6 +109,7 @@ func (a *App) Snapshots() *snapshot.Snapshotter {
 	if a.svc.snaps == nil {
 		s := snapshot.New(a.Paths, a.Version, a.Knobs.Now, a.Out)
 		s.Fault = a.Knobs.Fault
+		s.LedgerLock = hosts.UIDs{Path: a.Paths.LinuxUIDs}.Lock
 		a.svc.snaps = s
 	}
 	return a.svc.snaps

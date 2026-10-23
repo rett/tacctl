@@ -1446,7 +1446,7 @@ YAML
     assert_output --partial "Nothing was changed."
     [ -f "${TACCTL_STATE_DIR}/hosts/ghost.json" ]
 
-    local before calls
+    local before calls newest
     before=$(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l)
     run "$TACCTL_BIN_SCRIPT" host forget ghost --yes
     assert_success
@@ -1455,9 +1455,13 @@ YAML
     run "$TACCTL_BIN_SCRIPT" host list
     refute_output --partial "finding(s)"
 
-    # The snapshot before the forget of ghost holds web1 as it is now; one
-    # taken again for web1 would equal it (a record with no provisioner entry
-    # on one side only does not count), so the count has risen since 'before'.
+    # One snapshot for the forget of ghost: the newest holds the leftover
+    # (the undo of the forget) and the registry with web1.
+    [[ $(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l) -eq $((before + 1)) ]]
+    newest=$(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | sort | tail -n 1)
+    [ -f "${TACCTL_STATE_DIR}/backups/${newest}/hosts/ghost.json" ]
+    grep -q '^web1|' "${TACCTL_STATE_DIR}/backups/${newest}/linux-hosts"
+
     calls=$(wc -l < "${CALLS_LOG}")
     run "$TACCTL_BIN_SCRIPT" host forget web1 --yes
     assert_success
@@ -1466,7 +1470,13 @@ YAML
     assert_output ""
     [ ! -e "${TACCTL_STATE_DIR}/hosts/web1.json" ]
     ! grep -q '^  web1:' "${TACCTL_STATE_DIR}/devices.yaml"
-    [[ $(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l) -gt $before ]]
+    # The forget of web1 takes no snapshot of its own (D210): the live state
+    # differs from the newest one only by web1's record, which differs in
+    # volatile content alone and counts as equal. That snapshot still holds the
+    # web1 line, so it is the undo of this forget too.
+    [[ $(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | wc -l) -eq $((before + 1)) ]]
+    [ "$(ls "${TACCTL_STATE_DIR}/backups" | grep -E '^[0-9]{8}_' | sort | tail -n 1)" = "$newest" ]
+    grep -q '^web1|' "${TACCTL_STATE_DIR}/backups/${newest}/linux-hosts"
     stub_called "logger .*host forget name=web1 by="
     # Nothing was run on the host.
     ! tail -n +$((calls + 1)) "${CALLS_LOG}" | grep -qE '^(ssh|scp)'
@@ -1487,4 +1497,29 @@ YAML
     assert_output --partial "tacctl host rename Web1 web1"
     run "$TACCTL_BIN_SCRIPT" config validate
     assert_output --partial "Names:"
+}
+
+@test "config linux uid: a UID ledger another command holds refuses the change after the wait; listing and lookup take no lock" {
+    printf '# range 80000-89999\nalice:80000\nbob:80001\n' > "${TACCTL_STATE_DIR}/linux-uids"
+    # The lock is held from this shell, as another tacctl command would.
+    exec 9> "${TACCTL_STATE_DIR}/.linux-uids.lock"
+    flock -x 9
+
+    run "$TACCTL_BIN_SCRIPT" config linux uid
+    assert_success
+    assert_output --partial "alice"
+    run "$TACCTL_BIN_SCRIPT" config linux uid bob
+    assert_success
+    assert_output "80001"
+
+    run "$TACCTL_BIN_SCRIPT" config linux uid alice 80005
+    assert_failure 1
+    assert_output --partial "the UID ledger (linux-uids) is locked by another tacctl command; try again in a moment (waited 30s)"
+    [[ "$(cat "${TACCTL_STATE_DIR}/linux-uids")" == $'# range 80000-89999\nalice:80000\nbob:80001' ]]
+
+    exec 9>&-
+    run "$TACCTL_BIN_SCRIPT" config linux uid alice 80005
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" config linux uid alice
+    assert_output "80005"
 }

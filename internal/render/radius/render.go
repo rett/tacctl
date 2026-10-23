@@ -522,7 +522,7 @@ func renderConf(m, whole *model.Model, merged *yamlpy.Map, p Params) (string, er
 		"\t# prefix (the more specific scope, the tagged address), as with TACACS+.\n" +
 		"\t# tacctl_device is 'generic' or the vendor an address is tagged with; tacctl_send_<vendor>\n" +
 		"\t# says whether post-auth adds that vendor's attribute for this client.\n")
-	w.WriteString(holdComment(whole, conf.HoldsOf(merged)))
+	w.WriteString(holdComment(whole, conf.HoldsOf(merged), p.Hosts))
 	secrets := map[string]string{}
 	for _, s := range scopes {
 		secrets[s.Name] = s.Secret

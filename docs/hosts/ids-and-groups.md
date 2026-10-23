@@ -26,6 +26,12 @@ If the number is already taken on a host by another account, the install or sync
 
 An account tacctl created whose UID on a host differs from the assignment (but is in the range) is kept as it is; every sync reports the difference and how to fix it. Changing an assignment does not renumber accounts already created on hosts. Two tacctl servers assign independently, so copy `linux-uids` between them if their hosts must agree.
 
+**Commands that run at once.** Every command that writes `linux-uids` or decides from it holds the ledger's lock, `/etc/tacctl/.linux-uids.lock` (0600, made when first needed), for the few milliseconds it reads and writes the file, and for nothing longer: `host enroll`, `host sync` and `config linux script` while they work out the users and their numbers (never while the script runs on a host), `config linux uid <user> <uid>` from its check that the number is free to the write, `config linux uid-range` and the renumbering of an old file, `user rename` while it moves the line, and `backup restore` while it puts the ledger back (not with `--keep-uids`). Two `host sync` runs that meet the same new user therefore give it one number, and a number is never given to two users. The commands that only show the ledger (`config linux uid` with no number, `user list`, `user show`, `host show`, `host check`, `backup diff`) take no lock: the file is always replaced whole, so they see it before or after a change. A command that finds the lock held waits for it, up to 30 seconds, and then stops with nothing changed:
+
+    [ERROR] the UID ledger (linux-uids) is locked by another tacctl command; try again in a moment (waited 30s)
+
+The lock goes with the process, so a command that dies leaves none behind.
+
 ## tacctl's groups
 Each of tacctl's groups has a fixed GID, the same on every host: the first numbers of the UID range (80000-89999 by default; they follow `config linux uid-range`). A host has only the groups it uses:
 

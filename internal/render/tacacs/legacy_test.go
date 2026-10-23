@@ -44,7 +44,7 @@ func TestARenderedFileImportsBackAndReRendersByteIdentically(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			text, err := RenderToFile(s, defaultView(t), filepath.Join(w, "out.yaml"), DefaultLoader, nil)
+			text, err := RenderToFile(s, defaultView(t), nil, filepath.Join(w, "out.yaml"), DefaultLoader, nil)
 			if err != nil {
 				t.Fatal(rendered.Report(err))
 			}

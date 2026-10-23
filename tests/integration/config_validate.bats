@@ -82,3 +82,15 @@ plain() { output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output"); }
     plain
     assert_output --partial "does not go with --json"
 }
+
+@test "config validate: takes no argument" {
+    run "$TACCTL_BIN_SCRIPT" config validate extra
+    assert_failure 1
+    plain
+    assert_output --partial "Unknown argument: 'extra'"
+    refute_output --partial "Validating"
+    run "$TACCTL_BIN_SCRIPT" config validate --json extra
+    assert_failure 1
+    plain
+    assert_output --partial "Unknown argument: 'extra'"
+}

@@ -64,9 +64,10 @@ func (rs Records) lockRecords() (unlock func(), err error) {
 // kept the registry's lock for longer than registryLockWait.
 var ErrRegistryBusy = errors.New("the host registry is locked by another tacctl command; try again in a moment")
 
-// registryLockWait is how long a write of the registry waits for the lock
-// (the commands that hold it write one file and let go); a variable for the
-// tests.
+// registryLockWait is how long a write of the registry, and the lock of the
+// UID ledger (UIDs.Lock), waits for its lock (the commands that hold them
+// write a file or two and let go); a variable for the tests, set by
+// SetLockWait.
 var registryLockWait = 30 * time.Second
 
 // registryLockPoll is the pause between two tries of the lock.
@@ -77,11 +78,18 @@ const registryLockPoll = 20 * time.Millisecond
 // registry are never changed at once. It waits up to registryLockWait for
 // it, and the lock goes with the process.
 func (r *Registry) lock() (unlock func(), err error) {
-	dir := filepath.Dir(r.Path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	return waitLock(filepath.Join(filepath.Dir(r.Path), ".hosts.lock"), ErrRegistryBusy)
+}
+
+// waitLock takes the exclusive flock on path (0600; the directory is made
+// 0700 when missing), trying again every registryLockPoll for up to
+// registryLockWait. A lock still held after that is busy, wrapped with the
+// wait. The lock goes with the process; unlock lets go and closes the file.
+func waitLock(path string, busy error) (unlock func(), err error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Join(dir, ".hosts.lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +105,7 @@ func (r *Registry) lock() (unlock func(), err error) {
 		}
 		if time.Now().After(deadline) {
 			_ = f.Close()
-			return nil, fmt.Errorf("%w (waited %s)", ErrRegistryBusy, registryLockWait)
+			return nil, fmt.Errorf("%w (waited %s)", busy, registryLockWait)
 		}
 		time.Sleep(registryLockPoll)
 	}
@@ -121,9 +129,10 @@ func (r *Registry) WithLock(fn func() error) error {
 	return fn()
 }
 
-// SetLockWait changes how long the registry's lock is waited for and returns
-// the function that puts it back. It is the seam of the tests that hold the
-// lock; no command calls it.
+// SetLockWait changes how long the registry's lock and the UID ledger's
+// (UIDs.Lock) are waited for, one wait for both, and returns the function
+// that puts it back. It is the seam of the tests that hold a lock; no
+// command calls it.
 func SetLockWait(d time.Duration) (restore func()) {
 	old := registryLockWait
 	registryLockWait = d

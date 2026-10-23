@@ -27,7 +27,7 @@ func TestRenderDevauthGolden(t *testing.T) {
 func TestRenderRefusesAnOversizedJunosSet(t *testing.T) {
 	// Written by hand past the schema: the render is the last guard.
 	view := "junos:\n  operator:\n    deny_commands: ['" + strings.Repeat("x", 240) + "']\n"
-	_, err := Render(loadStore(t, "store.devauth.yaml"), viewOf(t, view).Merged())
+	_, err := Render(loadStore(t, "store.devauth.yaml"), viewOf(t, view).Merged(), nil)
 	if err == nil {
 		t.Fatal("rendered")
 	}

@@ -1,6 +1,6 @@
 .\" Manual page for tacctl, the management CLI for pluggable network-device AAA.
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-10-19" "tacctl 0.2.15" "tacctl Manual"
+.TH TACCTL 1 "2026-10-23" "tacctl 0.2.16" "tacctl Manual"
 .SH NAME
 tacctl \- manage pluggable network-device AAA: users, groups, scopes and devices
 .SH SYNOPSIS
@@ -604,9 +604,15 @@ where it is. A user with no line is renamed as before. A new name that already
 has a line keeps its own number, the ledger is left alone, and a warning says
 that hosts then remove the old account and create the new one. If the ledger
 cannot be written after the rename the command says so, names the snapshot to
-restore and exits 1. The ledger has no lock of its own: a
+restore and exits 1. The move is made under the ledger's lock
+.RI ( /etc/tacctl/.linux\-uids.lock ),
+and a
 .B "host sync"
-reading it at the moment of the rename sees the file before or after.
+builds its script from the ledger under the same lock, so it sends the names as
+they were before the rename or after it, never a mix; an account created under
+the old name is renamed at that host's next sync. When another command keeps
+the lock for 30 seconds the rename stops at the pre\-change snapshot, which
+copies the ledger under it, with nothing changed.
 .\" BEGIN GENERATED: command user rename
 .RS
 .PP
@@ -1631,6 +1637,8 @@ more than one backend enabled each gets a labelled block; files left behind by
 a disabled backend are not checked. With RADIUS enabled it warns about a scope
 RADIUS serves that sends no vendor attribute and is not a Linux-host scope.
 Exits 1 when it finds errors.
+The verb takes no argument: a word other than its options is refused
+("Unknown argument") and the report is not run.
 .IP
 .B \-\-json
 prints one JSON object instead, and nothing else on standard output (what the
@@ -1727,7 +1735,15 @@ spelling is another name's is not offered: a line says
 (for two hosts equal ignoring case also
 .BR "tacctl host forget" ,
 which drops the stray registration). A rename its verb refuses prints the
-refusal and does not stop the rest. The run ends with
+refusal and does not stop the rest. A host renamed whose own scope is then
+refused
+.RB ( "Host renamed. Scope 'linux\-Web1' was NOT renamed" )
+counts as renamed, not failed: the host keeps the scope, which the same
+refusal would meet again if it were offered. One line
+.RB ( "'linux\-Web1' is not offered: its rename was refused with the host's (\fIreason\fR); retry: tacctl scope rename linux\-Web1 linux\-web1" )
+is printed in place of the question and the scope counts under
+.BR "not offered" ;
+the next run offers it again. The run ends with
 .B "Names: renamed N, declined N, not offered N, failed N."
 and, when a user was renamed and hosts are enrolled, the
 .B "tacctl host sync \-\-all"
@@ -2207,7 +2223,28 @@ and is renamed with
 .BR "host rename Web1 web1" .
 Enrolling a registered host again under its registered
 spelling is allowed (that is how it is enrolled again or moved). A refused
-name changes nothing and nothing is attempted over ssh. An option that takes
+name changes nothing and nothing is attempted over ssh. The device registry is
+read again once the client script has run, when the registry line is written:
+a device registered meanwhile makes the command take the line back, print
+.B "A device named 'web1' (192.0.2.60) was registered while the client script ran"
+with the command to enroll again under another
+.BR \-\-name ,
+and exit 1. The script has already run on the host, which authenticates
+through this server as long as its scope covers its address; no record, pin
+or audit line is written. What the command did before the script stays and is
+warned of: a scope opened to both protocols for the host
+.RB ( "Scope 'linux\-web1' is still open to tacacs, radius" )
+and a
+.B \-\-staging
+bench address, which
+.B "scope staging remove"
+takes out. The same holds when another enrolment of the name finishes first. A
+break\-glass hold recorded under a new name is refused before anything is done,
+as for
+.BR "host rename" :
+only
+.B "breakglass release"
+removes a hold. An option that takes
 a value
 .RB ( \-\-method ,
 .BR \-\-scope ,
@@ -2372,7 +2409,11 @@ users no longer in the scope (or no longer tacctl users) are deleted with
 and with their own group when it is empty. Their UIDs stay
 reserved on the server. Run after
 .BR "user add" ", " "user remove" ", " "user move" ", " "user disable" " or " "user scope"
-changes.
+changes. The numbers of new users are given out under the lock of the UID ledger
+.RI ( /etc/tacctl/.linux\-uids.lock ),
+held while the script is built and never while it runs on the host, so two syncs
+at once give a user one number; when another command keeps the lock for 30
+seconds the sync stops with nothing changed.
 .IP
 Several names run in one command, in the order typed, each as
 .B \-\-all
@@ -3147,6 +3188,14 @@ of the range on that host with
 .BR \-\-allow\-uid\-mismatch .
 Changing a UID does not renumber accounts that already exist on hosts; a
 difference from the assigned one is reported on every sync.
+Every command that writes the file or decides from it holds its lock,
+.IR /etc/tacctl/.linux\-uids.lock ,
+for the time it reads and writes (waiting up to 30 seconds for another
+command, then stopping with
+.BR "the UID ledger (linux-uids) is locked by another tacctl command" ),
+so two commands never give one number to two users; a listing, a lookup and
+the commands that only show the file take none, since every write replaces it
+whole.
 .\" BEGIN GENERATED: command config linux uid
 .RS
 .PP
@@ -4882,6 +4931,13 @@ already holds, so the note also names every user whose UID it drops or
 changes; a host file that cannot be read is named in a red line,
 .BR "could not compare the host files" ,
 and the restore still puts the files back. The snapshot of the current state taken first holds the live host files.
+A break\-glass hold on a name that the restore enrolls or forgets is worded as a
+host's or a device's in the backend files, so when the enrolled names change
+the files are rendered again once the registry is back (no more than the one
+restart the restore makes); if that render fails the restore stands, a warning
+says so, and
+.B "config render"
+does it.
 .PP
 With
 .B \-\-keep\-uids
@@ -4910,7 +4966,15 @@ or without a store is a usage error, since an old-style restore never touches
 .PP
 The restore holds the host registry's lock from before it changes anything: when
 another tacctl command keeps it for 30 seconds the restore stops with the
-registry busy and nothing changed. It also tries the lock of each host, the one
+registry busy and nothing changed. It puts the UID ledger back under the
+ledger's lock
+.RI ( /etc/tacctl/.linux\-uids.lock ),
+which
+.B \-\-keep\-uids
+does not take, and every snapshot copies the ledger under that lock, so a ledger
+another command keeps for 30 seconds stops the snapshot of the current state
+and the restore with it, before anything changes. The note after the restore
+compares the ledger as that snapshot holds it with the one put back. It also tries the lock of each host, the one
 .BR "host provisioner rotate" ,
 .B host rename
 and
@@ -10300,8 +10364,9 @@ is never changed.
 .B tacquito.yaml
 and
 .B clients.conf
-carry a comment that names the address, the device and the prefixes it was
-carved from, never the reason. Each backend whose file changed restarts once,
+carry a comment that names the address, the device or host (worded
+\fB(device \fIname\fB)\fR or \fB(host \fIname\fB)\fR) and the prefixes it
+was carved from, never the reason. Each backend whose file changed restarts once,
 at the hold and at the release; a release that changes nothing restarts nothing.
 Only the address the device is registered at is carved: a device that sends its
 AAA from another address (a source interface, a NAT) is still answered. A record holds a device only while the device is
@@ -12652,6 +12717,13 @@ The registry of enrolled Linux hosts (with each host's method) and the
 UID each user gets on every host. Snapshots include both, and
 .B backup restore
 puts them back.
+.TP
+.I /etc/tacctl/.linux\-uids.lock
+The lock of the UID ledger: mode 0600, created when first needed and left in
+place. Held, for the milliseconds of a read and write and never across a run on
+a host, by the commands that write
+.I linux\-uids
+or decide from it. Not snapshotted.
 .TP
 .I /etc/tacctl/hosts/
 One

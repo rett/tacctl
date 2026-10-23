@@ -64,6 +64,23 @@ func (inv *invocation) fixNames(yes bool) (bool, error) {
 		if errors.Is(err, ui.ErrInterrupted) {
 			return true, err
 		}
+		// A host renamed whose carried scope was refused (D233): the host
+		// counts as renamed, and the scope, which the same check would
+		// refuse again, is not offered in this run.
+		var kept *hostScopeKeptError
+		if errors.As(err, &kept) {
+			n.renamed++
+			seen["scope/"+kept.Old] = true
+			inv.loaded = false
+			for _, f := range inv.caseFindings() {
+				if f.Kind == "scope" && f.Name == kept.Old && f.To != "<new>" {
+					n.notOffered++
+					inv.echo(fixNamesScopeKept(kept))
+					break
+				}
+			}
+			continue
+		}
 		if exitCode(err, a.Out) != 0 {
 			n.failed++
 			continue
@@ -109,6 +126,13 @@ func (inv *invocation) fixRename(f hostFinding, yes bool) error {
 		return inv.userRename(args)
 	}
 	return inv.scopeRename(args)
+}
+
+// fixNamesScopeKept is the line for a scope that was to be renamed with its
+// host and was refused: the question is not asked, the command is given.
+func fixNamesScopeKept(k *hostScopeKeptError) string {
+	return "'" + k.Old + "' is not offered: its rename was refused with the host's (" + k.reason() +
+		"); retry: tacctl scope rename " + k.Old + " " + k.New
 }
 
 // fixNamesTaken is the line for a name that is not offered: its lower-case

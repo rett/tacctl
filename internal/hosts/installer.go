@@ -341,18 +341,11 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 	}
 	port := afterLastColon(listen)
 
-	users, keep, err := e.ScopeUsers(req.Rows, req.ConsoleShell, req.GroupTier)
-	if err != nil {
-		return ScriptResult{}, err
-	}
-	_, previous, err := e.UIDs().Recorded()
-	if err != nil {
-		return ScriptResult{}, err
-	}
-	// A kept user (no priv-lvl, or a UID out of the range) has an expired
-	// account on the hosts like a disabled one, so its number goes too.
-	expired := append(append([]string(nil), req.Inactive...), keep...)
-	inactiveUIDs, err := e.inactiveUIDs(expired)
+	// The ledger's lock covers the whole build of the numbers (a number is
+	// allocated for a user that has none, the ranges and the inactive users'
+	// numbers are read) and is let go before the script file is written, and
+	// so before any run on a host (D239, D240).
+	users, previous, inactiveUIDs, expired, err := e.scriptUsers(req)
 	if err != nil {
 		return ScriptResult{}, err
 	}
@@ -385,6 +378,35 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 		return res, ErrFailed
 	}
 	return res, nil
+}
+
+// scriptUsers is the part of WriteScript that reads and writes the UID
+// ledger, under its lock: the users with their numbers (ScopeUsers), the
+// ranges the ledger was numbered for before, the "name:uid" lines of the
+// inactive users, and the users that are expired on the hosts (the inactive
+// ones and the kept ones). The lock is let go on return.
+func (e *Env) scriptUsers(req ScriptRequest) (users string, previous []Range, inactiveUIDs string, expired []string, err error) {
+	unlock, err := e.UIDs().Lock()
+	if err != nil {
+		return "", nil, "", nil, err
+	}
+	defer unlock()
+	users, keep, err := e.ScopeUsers(req.Rows, req.ConsoleShell, req.GroupTier)
+	if err != nil {
+		return "", nil, "", nil, err
+	}
+	_, previous, err = e.UIDs().Recorded()
+	if err != nil {
+		return "", nil, "", nil, err
+	}
+	// A kept user (no priv-lvl, or a UID out of the range) has an expired
+	// account on the hosts like a disabled one, so its number goes too.
+	expired = append(append([]string(nil), req.Inactive...), keep...)
+	inactiveUIDs, err = e.inactiveUIDs(expired)
+	if err != nil {
+		return "", nil, "", nil, err
+	}
+	return users, previous, inactiveUIDs, expired, nil
 }
 
 // inactiveUIDs are the "name:uid" lines of the inactive users that already
