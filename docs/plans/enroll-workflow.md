@@ -69,6 +69,15 @@ chain choose the path from the device.
   display, so identical changes are read once, but the answer is given
   device by device. The canary, `--max` and the fresh-login proof are as
   they are.
+- **The scripted form stays, for superusers only.** `--confirmed -y`
+  answers the per-device review without a terminal, only for shapes an
+  earlier apply confirmed, as today. `apply` is a superuser verb already,
+  so no other tier gains it. The run is still started by a person and
+  signed in as them; the audit lines mark the run as scripted
+  (`mode=scripted` on the apply's lines, with the `sid=` of the 0.2.17
+  release), so a reader can tell it from an attended one. A host key is
+  never accepted this way: the scripted form applies to the review of
+  `apply` only, not to `device enroll`.
 - The selectors of the config verbs grow. `device config
   pull|diff|plan|apply` take, besides names, `--all`, `--scope`,
   `--vendor` and `--stale`: `--differs` (the devices whose last pull
@@ -103,7 +112,4 @@ chain choose the path from the device.
 
 ## Open
 
-- `--confirmed -y` lets a script answer the apply review without a
-  terminal, for shapes an earlier apply confirmed. Whether that form
-  stays once the review is per device, or is removed to keep every run
-  attended, is not decided.
+None left; the verb names and flags are settled in the 0.2.18 plan.
