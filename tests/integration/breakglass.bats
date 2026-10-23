@@ -276,7 +276,7 @@ enrol_host() {
     assert_output --partial "ssh or console: log in as the host's local administrator"
     [[ "$(restarts)" == "$((base + 1))" ]]
     stub_called 'logger -t tacctl -p auth.info breakglass hold host=web1 addr=192.168.1.10 reason="locked out of sudo" by=root'
-    run grep -F '# break-glass held: 192.168.1.10 (device web1)' "$TACCTL_CONFIG"
+    run grep -F '# break-glass held: 192.168.1.10 (host web1)' "$TACCTL_CONFIG"
     assert_success
     run grep -c '"192.168.0.0/16"' "$TACCTL_CONFIG"
     assert_output "0"

@@ -142,7 +142,9 @@ func TestStatusConfigAndAccounting(t *testing.T) {
 		t.Fatalf("%q", got)
 	}
 	writeFile(t, e.p.AcctLog, "")
-	if got := e.status(backend.StatusAccounting); got != "  "+ui.Bold+"Accounting log:"+ui.NC+"       0 (0 entries)\n" {
+	// An empty file takes no block on some file systems and one on others
+	// (512 on ZFS and some overlay mounts): the size is whatever du says.
+	if got := e.status(backend.StatusAccounting); got != "  "+ui.Bold+"Accounting log:"+ui.NC+"       "+duSize(e.p.AcctLog)+" (0 entries)\n" {
 		t.Fatalf("%q", got)
 	}
 }

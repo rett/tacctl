@@ -110,14 +110,22 @@ whole, `hosts/` made to match (a record the snapshot lacks is removed),
 reconciled. Before the question, and again after the restore, a note names the
 hosts that come back, those that go and those registered differently. The
 restored ledger can forget a number that a host already holds, so the note
-also names every user whose UID it drops or changes. If a host file cannot be
+also names every user whose UID it drops or changes. The note after the
+restore compares the ledger as the snapshot of the current state holds it
+with the one that was put back, so it covers a number given out while the
+question was open. A number given out in the seconds between that snapshot
+and the put is in neither the note nor the undo. If a host file cannot be
 read, the note says `could not compare the host files` with the error, and the
 restore still puts them back. A host that comes back after `host unenroll` is
 still cleaned up: `host sync`, `host show <name> --check`, or
 `host unenroll <name>` again. A host that goes stays set up: `host enroll` it
 again, or `host unenroll <name> --force` after that. The snapshot of the
 current state taken first holds the live host files, so another restore undoes
-this one.
+this one. A break-glass hold on a name that the restore enrolls or forgets is
+worded as a host's or a device's in the backend files, so when the enrolled
+names change the files are rendered again once the registry is back (no more
+than the one restart the restore makes); if that render fails the restore
+stands, a warning says so, and `tacctl config render` does it.
 
 The restore holds the host registry's lock from before it changes anything.
 When another tacctl command keeps the lock for 30 seconds, the restore stops
@@ -130,6 +138,17 @@ takes the snapshot of the current state, with nothing changed:
     Snapshot <ts> was not restored: 'web1' is locked by another tacctl command
     (a rotation, rename or forget of it is running). Nothing was changed. Run
     this again when it has finished.
+
+The restore also takes the lock of the UID ledger
+(`/etc/tacctl/.linux-uids.lock`) for the time it puts the host files back,
+waiting up to 30 seconds as for the registry's; with `--keep-uids` it takes
+none and a held ledger does not stop it. Every snapshot copies the ledger
+under that lock, so a ledger another command keeps for 30 seconds stops the
+snapshot of the current state, and the restore with it, before anything
+changes:
+
+    [ERROR] the UID ledger (linux-uids) is locked by another tacctl command;
+    try again in a moment (waited 30s)
 
 The locks are released when the host files are back. A snapshot that does not
 know the hosts takes neither lock. The host files are put back last: if that

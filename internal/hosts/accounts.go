@@ -91,7 +91,15 @@ var reHomeDir = regexp.MustCompile(`^/home/[^/]+$`)
 // account is the one the script renames). Only those whose home is a directory
 // directly under /home are returned: any other home is kept by the script
 // whatever the answer.
+//
+// The ledger is read under its lock (D239), let go on return; the caller
+// holds no lock of it.
 func Removed(accts []Account, uids UIDs, current map[string]bool) ([]Account, error) {
+	unlock, err := uids.Lock()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	_, prev, err := uids.Recorded()
 	if err != nil {
 		return nil, err

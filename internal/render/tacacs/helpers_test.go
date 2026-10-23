@@ -75,7 +75,7 @@ func defaultView(t *testing.T) *yamlpy.Map { return viewOf(t, "").Merged() }
 // render is Render that must succeed.
 func render(t *testing.T, st *store.Store, view *yamlpy.Map) []byte {
 	t.Helper()
-	out, err := Render(st, view)
+	out, err := Render(st, view, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func render(t *testing.T, st *store.Store, view *yamlpy.Map) []byte {
 func renderFile(t *testing.T, st *store.Store, view *yamlpy.Map) (string, error) {
 	t.Helper()
 	out := filepath.Join(t.TempDir(), "rendered.yaml")
-	_, err := RenderToFile(st, view, out, DefaultLoader, func(string) {})
+	_, err := RenderToFile(st, view, nil, out, DefaultLoader, func(string) {})
 	return out, err
 }
 

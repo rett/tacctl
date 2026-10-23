@@ -92,6 +92,22 @@ func LoadRegistry(path string) (*Registry, error) {
 	return r, r.Load()
 }
 
+// EnrolledNames is the set of the names in the registry at path. A missing
+// or unreadable registry is the empty set, never an error: the caller uses
+// it for wording (the hold comment of the rendered backend files), which
+// decides nothing.
+func EnrolledNames(path string) map[string]bool {
+	names := map[string]bool{}
+	r, err := LoadRegistry(path)
+	if err != nil {
+		return names
+	}
+	for _, e := range r.Entries() {
+		names[e.Name] = true
+	}
+	return names
+}
+
 // Exists reports whether the file exists ('[[ -f ]]').
 func (r *Registry) Exists() bool { return r.found }
 

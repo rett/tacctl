@@ -530,6 +530,27 @@ func TestConfigShowAndValidate(t *testing.T) {
 	}
 }
 
+// D232: config validate takes no positional argument; a word is refused
+// the way every bounded verb refuses one, and the report does not run.
+func TestConfigValidateRefusesArgument(t *testing.T) {
+	sb := newSandbox(t, true)
+	for _, args := range [][]string{
+		{"config", "validate", "extra"},
+		{"config", "validate", "--json", "extra"},
+		{"config", "validate", "extra", "--json"},
+	} {
+		sb.run("", args)
+		sb.expect(1, "", "Unknown argument: 'extra'")
+		if out := sb.out.String(); strings.TrimSpace(out) != "" {
+			t.Errorf("%v: the report ran:\n%s", args, out)
+		}
+	}
+	// The flags still parse.
+	sb.run("", []string{"config", "render"})
+	sb.run("", []string{"config", "validate", "--json"})
+	sb.expect(0, `"valid": true`, "")
+}
+
 func TestCfgHelpers(t *testing.T) {
 	if got := indentLines("a\nb"); got != "    a\n    b" {
 		t.Errorf("indentLines: %q", got)

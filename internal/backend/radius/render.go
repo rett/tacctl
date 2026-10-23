@@ -11,6 +11,7 @@ import (
 
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/paths"
 	rr "github.com/rett/tacctl/internal/render/radius"
 	"github.com/rett/tacctl/internal/rendered"
@@ -52,7 +53,9 @@ func (m *Module) renderLive(dir string) ([3]string, error) {
 	if err != nil {
 		return states, err
 	}
-	out, err := rr.RenderStore(s, merged, rr.ParamsFor(m.L))
+	params := rr.ParamsFor(m.L)
+	params.Hosts = hosts.EnrolledNames(m.env.Paths.LinuxHosts)
+	out, err := rr.RenderStore(s, merged, params)
 	if err != nil {
 		return states, err
 	}

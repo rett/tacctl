@@ -86,9 +86,11 @@ config validate [--json | --fix-names [-y]]
     names of new ones are lower case) gets a `Names:` warning that names the rename which fixes it
     (`tacctl user rename Alice alice`; for a user it adds that devices match the typed login name
     exactly, so the rename changes what the person types); the superuser's view only. Exits 1 on
-    errors. `--json` prints the findings as one JSON object and nothing else on standard output
-    (the schema is below); the exit status is the same. `--fix-names` follows the report with the
-    offer to rename each such name to its lower-case spelling (below); the superuser's
+    errors. The verb takes no argument: a word other than its options is refused (`Unknown
+    argument`) and no report is printed. `--json` prints the findings as one JSON object and
+    nothing else on standard output (the schema is below); the exit status is the same.
+    `--fix-names` follows the report with the offer to rename each such name to its lower-case
+    spelling (below); the superuser's
 
 config diff [timestamp]
 
@@ -298,6 +300,20 @@ For two hosts equal ignoring case the line adds `, or tacctl host forget
 <name> drops the stray registration`. A rename its verb refuses (a name
 taken since the report, a scope whose new name already has SNMP
 credentials) prints the verb's refusal and does not stop the rest.
+
+A host renamed whose own scope is then refused (`Host renamed. Scope
+'linux-Web1' was NOT renamed: ...`) counts as renamed, not failed: the host
+keeps the scope, which the same refusal would meet again if it were offered.
+One line gives the command instead of the question, and the scope counts
+under `not offered`:
+
+```
+'linux-Web1' is not offered: its rename was refused with the host's (<reason>);
+retry: tacctl scope rename linux-Web1 linux-web1
+```
+
+The scope is left out of that run only; the next `--fix-names` offers it
+again.
 
 The run ends with a count, and, when a user was renamed and hosts are
 enrolled, with the `tacctl host sync --all` that renames their accounts:

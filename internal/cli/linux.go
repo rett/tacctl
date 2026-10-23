@@ -189,6 +189,12 @@ func (inv *invocation) uidRange() (hosts.Range, error) {
 // file was numbered for) changes nothing: printed as errors and exit 1
 // when refuse is set, as warnings (and the command goes on) when not, so
 // 'config linux uid' can still give a name another number.
+//
+// The file is rewritten under the ledger's lock (D239). The commands that
+// go on to allocate numbers (refuse set: enroll, sync, script) take it even
+// when there is nothing to rewrite, so that a ledger another command holds
+// stops them here, before they reach a host; 'config linux uid' takes it
+// only for a rewrite.
 func (inv *invocation) renumberUIDs(refuse bool) error {
 	a := inv.app
 	r, err := inv.uidRange()
@@ -197,7 +203,14 @@ func (inv *invocation) renumberUIDs(refuse bool) error {
 	}
 	uids := hosts.UIDs{Path: a.Paths.LinuxUIDs, Range: r}
 	backup := uids.Path + ".pre-renumber-" + a.Knobs.Now().UTC().Format("20060102-150405")
-	res, err := uids.RenumberTo(backup, false)
+	if !refuse {
+		// 'config linux uid' lists and looks up without the ledger's lock
+		// (D241): it takes it only when the file has to be rewritten.
+		if res, err := uids.RenumberTo(backup, true); err == nil && !res.Changed {
+			return nil
+		}
+	}
+	res, err := inv.renumberLocked(uids, backup)
 	if msgs := inv.renumberProblem(uids.Path, res.From, r, err); msgs != nil {
 		say := a.Out.WarnE
 		if refuse {
@@ -218,6 +231,18 @@ func (inv *invocation) renumberUIDs(refuse bool) error {
 		inv.renumbered(uids.Path, res, r, backup)
 	}
 	return nil
+}
+
+// renumberLocked is uids.RenumberTo(backup, false) under the ledger's lock
+// (D239); an error that is the lock's (hosts.ErrLedgerBusy) is the caller's
+// to return, as it is not a renumbering problem. The lock is let go before
+// anything is said.
+func (inv *invocation) renumberLocked(uids hosts.UIDs, backup string) (res hosts.Renumbering, err error) {
+	err = uids.WithLock(func() (e error) {
+		res, e = uids.RenumberTo(backup, false)
+		return e
+	})
+	return res, err
 }
 
 // renumbered says and logs that n entries moved.
@@ -299,7 +324,14 @@ func (inv *invocation) configLinuxUIDRange(args []string) error {
 	}
 	uids.Range = r
 	backup := uids.Path + ".pre-renumber-" + a.Knobs.Now().UTC().Format("20060102-150405")
-	res, err := uids.RenumberTo(backup, true)
+	// The check and the renumbering are two windows of the ledger's lock
+	// (D239); tacctl.yaml is written between them, outside it, so a command
+	// that locks in between sees the new range.
+	var res hosts.Renumbering
+	err := uids.WithLock(func() (e error) {
+		res, e = uids.RenumberTo(backup, true)
+		return e
+	})
 	if msgs := inv.renumberProblem(uids.Path, res.From, r, err); msgs != nil {
 		for _, m := range msgs {
 			a.Out.ErrorE(m)
@@ -315,7 +347,7 @@ func (inv *invocation) configLinuxUIDRange(args []string) error {
 	if err := a.Conf().Set("linux.uid_max", strconv.Itoa(r.Max)); err != nil {
 		return err
 	}
-	if res, err = uids.RenumberTo(backup, false); err != nil {
+	if res, err = inv.renumberLocked(uids, backup); err != nil {
 		return err
 	}
 	if res.N > 0 {
@@ -932,6 +964,28 @@ func (inv *invocation) configLinuxUID(args []string) error {
 	if !rng.Contains(uid) {
 		return inv.usageErr("UID must be a number from " + strconv.Itoa(rng.Min) + " to " + strconv.Itoa(rng.Max) + ": tacctl gives out UIDs in that range only.")
 	}
+	// The holder check and the write are one window of the ledger's lock
+	// (D239); what is said is said after it.
+	if err := inv.assignUID(uids, username, uid); err != nil {
+		return err
+	}
+	a.Out.InfoE("'" + username + "' is now assigned UID " + uid + ".")
+	a.Out.Warn("Hosts that already have the account keep its old number until it is renumbered there:")
+	inv.echo("    usermod -u " + uid + " " + username)
+	inv.echo("    find / -xdev -uid <old> -exec chown -h " + username + " {} +")
+	inv.echo("  'tacctl host sync' lists the hosts where the number still differs.")
+	return nil
+}
+
+// assignUID is the change of 'config linux uid <user> <uid>': refused when
+// another user holds the number, else the number written, all under the
+// ledger's lock so that a holder check is still true at the write.
+func (inv *invocation) assignUID(uids hosts.UIDs, username, uid string) error {
+	unlock, err := uids.Lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	holder, err := uids.Holder(uid)
 	if err != nil {
 		return err
@@ -943,15 +997,7 @@ func (inv *invocation) configLinuxUID(args []string) error {
 		inv.stderrLine("touch: cannot touch '" + uids.Path + "': " + errnoText(err))
 		return exit(1)
 	}
-	if err := uids.Assign(username, uid); err != nil {
-		return err
-	}
-	a.Out.InfoE("'" + username + "' is now assigned UID " + uid + ".")
-	a.Out.Warn("Hosts that already have the account keep its old number until it is renumbered there:")
-	inv.echo("    usermod -u " + uid + " " + username)
-	inv.echo("    find / -xdev -uid <old> -exec chown -h " + username + " {} +")
-	inv.echo("  'tacctl host sync' lists the hosts where the number still differs.")
-	return nil
+	return uids.Assign(username, uid)
 }
 
 // errnoText is the C library's text of err's errno ("No such file or

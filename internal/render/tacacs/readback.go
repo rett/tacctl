@@ -296,8 +296,8 @@ type Chowner func(path string)
 // it to tacquito:tacquito (chown, best effort) and rename it to out. On
 // any failure nothing is left behind and out is untouched. It returns the
 // rendered text.
-func RenderToFile(st *store.Store, view *yamlpy.Map, out string, load LegacyLoader, chown Chowner) ([]byte, error) {
-	text, err := Render(st, view)
+func RenderToFile(st *store.Store, view *yamlpy.Map, hostNames map[string]bool, out string, load LegacyLoader, chown Chowner) ([]byte, error) {
+	text, err := Render(st, view, hostNames)
 	if err != nil {
 		return nil, err
 	}

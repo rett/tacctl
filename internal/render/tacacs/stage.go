@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rett/tacctl/internal/conf"
+	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/rendered"
@@ -32,6 +33,7 @@ type Paths struct {
 	OverrideDir string // OVERRIDE_DIR: tacquito.service's drop-in directory
 	UnitDir     string // TACACS_UNIT_DIR: unit files and the instances' drop-in directories
 	TempDir     string // paths.TempDir: where Check stages its trial render
+	LinuxHosts  string // LINUX_HOSTS_FILE: the enrolled-host registry (the word of a hold's comment)
 }
 
 // PathsFrom takes the render paths from the resolved TACCTL_* paths.
@@ -46,6 +48,7 @@ func PathsFrom(p paths.Paths) Paths {
 		OverrideDir: p.OverrideDir,
 		UnitDir:     p.TacacsUnitDir,
 		TempDir:     p.TempDir,
+		LinuxHosts:  p.LinuxHosts,
 	}
 }
 
@@ -175,7 +178,7 @@ func (r *Renderer) RenderLive(out, unitsDir string) (string, error) {
 		return "", err
 	}
 	view := r.Conf.Merged()
-	text, err := RenderToFile(st, view, out, r.Load, r.chown())
+	text, err := RenderToFile(st, view, hosts.EnrolledNames(r.Paths.LinuxHosts), out, r.Load, r.chown())
 	if err != nil {
 		return "", err
 	}

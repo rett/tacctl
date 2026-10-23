@@ -52,7 +52,7 @@ func registerConfigVerb(name string, spec Spec, mk func(inv *invocation) *cobra.
 // completed.
 var configSpecs = map[string]Spec{
 	"show":     {MaxArgs: -1},
-	"validate": {MaxArgs: -1, Flags: []Flag{flagJSON, {Names: []string{"--fix-names"}}, flagYes}},
+	"validate": {MaxArgs: 0, Flags: []Flag{flagJSON, {Names: []string{"--fix-names"}}, flagYes}},
 	"render": {MaxArgs: 0, Flags: []Flag{
 		{Names: []string{"--force"}}, {Names: []string{"--dry-run"}}, {Names: []string{"--out"}, Value: true, Kind: KindFile}}},
 	"dump":     {MaxArgs: -1},

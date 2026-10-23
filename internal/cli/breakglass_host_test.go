@@ -57,6 +57,44 @@ func holdHost(t *testing.T, sb *sandbox, name, reason string) string {
 	return out
 }
 
+// A held enrolled host is named a host in the comment block of both backend
+// files and a held device a device (D237), and the files are what a fresh
+// render writes: 'config validate' reads them as up to date.
+func TestBreakglassHoldCommentNamesAHostAsAHost(t *testing.T) {
+	sb := engineerSandbox(t)
+	sandboxRADIUS(sb)
+	sb.write("state/tacctl.yaml", "tier:\n  operator: engineer\nbackends:\n  enabled:\n  - tacacs\n  - radius\n", 0o600)
+	sb.write("state/linux-hosts", hostLines, 0o600)
+	sb.recordHostAddress("web2", "192.168.1.12")
+	sb.run("", []string{"config", "render"})
+	if sb.code != 0 {
+		t.Fatalf("render: %d %q", sb.code, sb.stderr())
+	}
+	holdHost(t, sb, "web1", "locked out of sudo")
+	if out := sb.hold(t, "lab-sw", "console recovery", "lab-sw"); sb.code != 0 {
+		t.Fatalf("hold lab-sw: %d %q %q", sb.code, out, sb.stderr())
+	}
+	tac, rad := sb.renderedConfig(), sb.read("raddb/tacctl-radius.conf")
+	for _, c := range []struct{ file, text string }{
+		{"tacquito.yaml", tac}, {"clients.conf", rad},
+	} {
+		for _, want := range []string{"(host web1)", "(device lab-sw)"} {
+			if !strings.Contains(c.text, want) {
+				t.Errorf("%s lacks %q:\n%s", c.file, want, c.text)
+			}
+		}
+		for _, bad := range []string{"(device web1)", "(host lab-sw)"} {
+			if strings.Contains(c.text, bad) {
+				t.Errorf("%s has %q", c.file, bad)
+			}
+		}
+	}
+	if out := plain(sb.run("", []string{"config", "validate"})); !strings.Contains(out, "up to date") ||
+		strings.Contains(out, "out of date") {
+		t.Errorf("validate after the holds (exit %d):\n%s", sb.code, out)
+	}
+}
+
 func TestBreakglassHostHoldRoundTrip(t *testing.T) {
 	sb := hostLab(t)
 	original := sb.renderedConfig()
@@ -110,7 +148,7 @@ func TestBreakglassHostHoldRoundTrip(t *testing.T) {
 		t.Errorf("tacctl.yaml:\n%s", o)
 	}
 	cfg := sb.renderedConfig()
-	if strings.Contains(cfg, `"192.168.0.0/16"`) || !strings.Contains(cfg, "# break-glass held: 192.168.1.10 (device web1)") {
+	if strings.Contains(cfg, `"192.168.0.0/16"`) || !strings.Contains(cfg, "# break-glass held: 192.168.1.10 (host web1)") {
 		t.Errorf("the rendered file:\n%s", cfg)
 	}
 	for _, p := range carvedPrefixes("192.168.1.10") {

@@ -49,7 +49,10 @@ host sync <name>... | --all
     renamed, keeping its UID and home); pins the host's ssh keys if none are (enroll pins them too).
     Several names run in the order typed, each as --all would run it. Every name is checked first
     (an unknown one refuses the run, one given twice counts once); a host that fails does not stop
-    the rest, and the exit status is 1. Names and --all are not given together
+    the rest, and the exit status is 1. Names and --all are not given together. The numbers of
+    new users are given out under the UID ledger's lock, held while the script is built and never
+    while it runs on the host, so two syncs at once give a user one number; a ledger another
+    command keeps for 30 seconds stops the sync (see Consistent UIDs and GIDs)
 
     --all
         Every enrolled host
@@ -109,6 +112,23 @@ host default-method [tacplus|radius]
 
     Show or set the method for hosts enrolled without --method (host.default_method)
 ```
+
+**Enrolling a host and the device registry.** A new host name is checked
+against the device registry before the client script runs and again when the
+registry line is written, after it. A device registered meanwhile puts the
+line back, writes no record, pin or audit line and exits 1 with `A device
+named 'web1' (192.0.2.60) was registered while the client script ran; a host
+and a device cannot share a name.` and the `host enroll` command to run again
+with another `--name`. The script has already run on the host, which
+authenticates through this server while the scope covers its address. What
+the command did before the script stays, and is warned of: a scope opened to
+both protocols for the host (`Scope 'linux-web1' is still open to tacacs,
+radius; see 'tacctl scope protocols linux-web1'.`) and a `--staging` bench
+address (`tacctl scope staging remove <address>/32` removes it). The same
+holds when another enrolment of the name finishes first. A host that is
+enrolled already keeps its own name and is not checked again. A break-glass
+hold recorded under a new name is refused before anything is done, as for
+`host rename`: only `breakglass release` removes a hold.
 
 **Renaming a host.** `tacctl host rename <old> <new>` is the superuser's. It
 runs nothing on the host (the machine records no registry name), so a host

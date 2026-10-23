@@ -237,12 +237,7 @@ func TestTierNotesCoverTheNarrowRows(t *testing.T) {
 			want = append(want, r.Cmd+" "+r.Sub)
 		}
 	}
-	// Verbs whose spec only skips parsing (MaxArgs -1) and that take none.
-	noArgs := []string{"config validate"}
 	for _, key := range want {
-		if slices.Contains(noArgs, key) {
-			continue
-		}
 		if _, ok := tierNotes[key]; !ok {
 			t.Errorf("%q has sudoers rows narrower than '%s *' but no entry in tierNotes", key, key)
 		}
