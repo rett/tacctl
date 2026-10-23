@@ -49,6 +49,18 @@ chain choose the path from the device.
 - The verb is `device enroll`. It asks at the end: after the plan it
   offers the apply review (Junos), and answering no leaves the device
   registered and pulled with the plan printed.
+- **Each device is verified on its own.** `device enroll` asks its
+  questions per device, never once for a batch: the host key (the
+  fingerprint and algorithm are shown and the person types the
+  fingerprint's confirmation for that device), then the registration
+  with the name and vendor found. Accepting a host key is accountable and
+  cannot be skipped: there is no `-y`, no accept-all and no trust on
+  first use. Without a terminal the only way in is `--host-key
+  SHA256:<fp>` for one address, a key read on the device's console. Each
+  acceptance is an audit line with the person, the device, the algorithm
+  and the fingerprint (the `sid=` of the 0.2.17 release ties it to the
+  run). This differs from `device collect`, which asks one question for
+  the keys of all its addresses; whether `collect` follows is open.
 - The selectors of the config verbs grow. `device config
   pull|diff|plan|apply` take, besides names, `--all`, `--scope`,
   `--vendor` and `--stale`: `--differs` (the devices whose last pull
@@ -67,8 +79,8 @@ chain choose the path from the device.
 
 ## Candidates
 
-1. **`device enroll`** (working name): addresses from the arguments or
-   from `device discover`; scan, one host-key question for all, vendor
+1. **`device enroll`**: addresses from the arguments or from `device
+   discover`; scan, a host-key question for each device, vendor
    and name from the device (D260) with a question for what cannot be
    read, register, pull, and print the plan (Junos: and offer the apply
    review). Replaces the remembered chain for the common case.
@@ -83,5 +95,7 @@ chain choose the path from the device.
 
 ## Open
 
-- Which questions a run asks once for many addresses (host keys) and
-  which it asks per device.
+- `device config apply` asks one question for all the devices of a run
+  (the device's name, or the number of devices, typed back). Whether the
+  chain keeps that review or asks per device, as `device enroll` does, is
+  not decided.
