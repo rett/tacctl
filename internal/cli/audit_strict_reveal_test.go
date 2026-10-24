@@ -467,6 +467,7 @@ func TestStrictRefusesARestoreDiffWhoseLineCannotBeWritten(t *testing.T) {
 // line that cannot be written refuses the script before it is written.
 func TestStrictRefusesALinuxScriptWhoseLineCannotBeWritten(t *testing.T) {
 	sb := newSandbox(t, true)
+	sandboxTarball(t, sb)
 	script := sb.path("client.sh")
 	args := []string{"config", "linux", "script", "--scope", "lab", "--server", "192.0.2.1", "-o", script}
 	sb.cfgRun("", args, nil, "SUDO_USER=alice")

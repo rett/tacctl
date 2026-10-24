@@ -149,6 +149,7 @@ func TestNoSecretReachesTheAuditLog(t *testing.T) {
 // satisfied by a run that logged nothing.
 func TestNoSecretInTheDetailLines(t *testing.T) {
 	sb := newSandbox(t, true)
+	sandboxTarball(t, sb)
 	markerHash, err := hash.Generate(markerSecret, 4)
 	if err != nil {
 		t.Fatal(err)
