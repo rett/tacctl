@@ -180,7 +180,7 @@ func (inv *invocation) hostShow(args []string) error {
 	// --check opens an ssh session as the invoker; an engineer reads what
 	// tacctl recorded of the host and does not log in to it.
 	if p.Has("--check") && inv.callerScopes().restricted {
-		return inv.usageErr("'host show --check' logs in to the host over ssh, which is the superuser's; 'tacctl host show " + name + "' shows what tacctl recorded of it.")
+		return inv.deniedUsage(reasonSuperuser, "'host show --check' logs in to the host over ssh, which is the superuser's; 'tacctl host show "+name+"' shows what tacctl recorded of it.")
 	}
 	// --check logs in to the host: a held host is not (D179).
 	if p.Has("--check") {

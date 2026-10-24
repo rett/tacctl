@@ -53,7 +53,7 @@ scope prefixes <name> remove --all [--force]
 
 scope secret
 
-    <name> show|set <value>|generate          Per-scope shared secret (show prints the raw value +
+    <name> show|set [<value>|--stdin]|generate  Per-scope shared secret (show prints the raw value +
     length/posture)
 
 scope protocols <name> list|set <csv>|clear
@@ -217,7 +217,9 @@ scope block <name> {juniper|cisco} edit <block> [-y]
     else `vi`), run as you, never as root, on a private 0600 copy in a 0700 directory under
     `/var/tmp` that is removed afterwards; then check, show the diff, ask (`-y` answers) and install
     as `set` does. A new block opens as its grammar in `#` lines. A text that fails the check is
-    offered back with the errors at the top as `# tacctl:` lines
+    offered back with the errors at the top as `# tacctl:` lines. Opening a block in force (or, on a
+    device, the scope's objects as comments) is logged before the editor starts: `secret-read
+    kind=block`
 
 scope block <name> {juniper|cisco} adopt <device> <block> [-y]
 
@@ -247,8 +249,22 @@ scope breakglass <name> list|add <user> [--role <r>]|remove <user>
     show`.
 ```
 
+**A secret kept off the command line.** `scope secret <name> set` with no
+value asks for the secret twice at a terminal, without echo, and
+`scope secret <name> set --stdin` reads one line from standard input (a
+script; typed without echo when standard input is a terminal). The line is
+taken as it is, less its line end, and a secret with a control character is
+refused from every source. The length and character-class checks apply to the
+value read. The
+value given on the command line (`set <value>`) works as well, but sudo's log
+records the whole command line and `ps` shows it while the command runs; use
+the quiet forms where that matters. The same holds for `tacctl shell`, which
+runs every line through sudo.
+
 **Connection filters:** `deny` takes precedence over `allow`. Both empty = all connections accepted.
 
 **Settings stored under a scope's name** in `tacctl.yaml` (`aaa.order`, `exec_timeout`, `tacacs_group`, `radius_group`, `scope_auth_method`, `scope_mgmt_acl.names.cisco|juniper`, `scope_mgmt_acl.permits`, `breakglass_scope.<scope>.users`, `snmp_scope.<scope>.*`, `netconf_scope.<scope>.*`, and the scope's credentials file `snmp/<scope>.yaml`) follow the scope on `scope rename` and are removed with it by `scope remove` (and `scope prefixes remove --all`), so a new scope of the same name starts from the defaults. Its `protocols`, `vendor-attrs` and `devices` are part of its entry in `store.yaml` and do the same.
 
 **After a change to what the devices are rendered from** (`prefixes`, `secret`, `mgmt-acl`, `snmp`, `netconf`, `block`, and the protocol, AAA order, timeout and group settings), the verb says, in one line, when at least one device of the scope has a stored pull that `device config plan` would now change: `tacctl device config apply --scope <name> --check` (`device config plan --scope <name>` for a caller who is not a superuser). It reads the stored pulls only: no login, no network.
+
+Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `scope add`, `scope remove`, `scope rename`, `scope default`, `scope prefixes op= scope= cidr=`, `scope protocols|vendor-attrs|auth-method|aaa-order|exec-timeout|tacacs-group|radius-group|netconf scope= from= to=`, `scope mgmt-acl`, `scope secret set scope= source=`, `snmp set kind= scope=` and the lines of `config allow|deny` and `config mgmt-acl`, never a secret or a community; a shown secret is `secret-read kind= name=` for every caller ([Audit log](../security/audit.md#detail-lines)).

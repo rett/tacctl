@@ -42,6 +42,17 @@ type sandbox struct {
 	// hooks are what this sandbox's runs replace (hooks.go); a test sets
 	// the ones it needs before it runs.
 	hooks *hooks
+	// ctx, when set, is the context of the sandbox's runs (a test cancels it
+	// as a signal would); nil is context.Background.
+	ctx context.Context
+}
+
+// runCtx is the context of a run.
+func (sb *sandbox) runCtx() context.Context {
+	if sb.ctx != nil {
+		return sb.ctx
+	}
+	return context.Background()
 }
 
 func newSandbox(t *testing.T, withStore bool) *sandbox {
@@ -107,7 +118,7 @@ func (sb *sandbox) run(stdin string, args []string, extraEnv ...string) string {
 	// tacctl's fixed host locations (the installed command, /root, ...)
 	// stay in the sandbox too.
 	a.Paths = a.Paths.Reroot(sb.dir)
-	sb.code = exitCode(runWith(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}, sb.hooks), a.Out)
+	sb.code = exitCode(runWith(sb.runCtx(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}, sb.hooks), a.Out)
 	if n := len(sb.runner.Execs()); n != 0 {
 		sb.t.Errorf("%q: exec'd (%d execs)", args, n)
 	}
@@ -252,6 +263,82 @@ func TestUserAddPromptsAndGenerates(t *testing.T) {
 	}
 }
 
+// '--hash -' reads the hash from one line of standard input, so it is not on
+// the command line; the line meets the checks of the hash typed there.
+func TestUserHashFromStdin(t *testing.T) {
+	sb := newSandbox(t, true)
+	raw, err := hash.Generate("FakeHashPassword99", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sb.run(raw+"\n", []string{"user", "add", "dave", "operator", "--hash", "-", "--scopes", "lab"})
+	sb.expect(0, "User 'dave' added (operator) with scopes: lab", "")
+	sb.run("FakeHashPassword99\n", []string{"user", "verify", "dave"})
+	sb.expect(0, "[INFO] Password is correct.", "")
+
+	other, err := hash.Generate("OtherFakePassword77", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sb.run(other+"\n", []string{"user", "passwd", "dave", "--hash", "-"})
+	sb.expect(0, "[INFO] Password changed for 'dave'.", "")
+	sb.run("OtherFakePassword77\n", []string{"user", "verify", "dave"})
+	sb.expect(0, "[INFO] Password is correct.", "")
+	// The hex form of 'tacctl hash' is read as well.
+	sb.run(testHash+"\n", []string{"user", "passwd", "dave", "--hash", "-"})
+	sb.expect(0, "[INFO] Password changed for 'dave'.", "")
+
+	// Nothing on standard input, or something that is no hash: refused, the
+	// stored hash kept.
+	sb.run("", []string{"user", "passwd", "dave", "--hash", "-"})
+	sb.expect(1, "", "No hash on standard input")
+	sb.run("not-a-hash\n", []string{"user", "passwd", "dave", "--hash", "-"})
+	sb.expect(1, "", "Invalid bcrypt hash.")
+	sb.run("", []string{"user", "add", "erin", "operator", "--hash", "-", "--scopes", "lab"})
+	sb.expect(1, "", "No hash on standard input")
+	sb.run("not-a-hash\n", []string{"user", "add", "erin", "operator", "--hash", "-"})
+	sb.expect(1, "", "Invalid bcrypt hash.")
+	if out := plain(sb.run("", []string{"user", "list"})); strings.Contains(out, "erin") {
+		t.Errorf("erin was added:\n%s", out)
+	}
+}
+
+// A CR LF line ends like any other; a control character in the hash is
+// refused; and at a terminal the hash is read without echo.
+func TestUserHashFromStdinLineEnds(t *testing.T) {
+	sb := newSandbox(t, true)
+	raw, err := hash.Generate("FakeHashPassword99", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sb.run(raw+"\r\n", []string{"user", "passwd", "alice", "--hash", "-"})
+	sb.expect(0, "[INFO] Password changed for 'alice'.", "")
+	sb.run("FakeHashPassword99\n", []string{"user", "verify", "alice"})
+	sb.expect(0, "[INFO] Password is correct.", "")
+	for _, in := range []string{raw + "\t\n", raw[:20] + "\x07" + raw[20:] + "\n", raw + "\r\r\n"} {
+		sb.run(in, []string{"user", "passwd", "alice", "--hash", "-"})
+		sb.expect(1, "", "The hash cannot hold a control character")
+		sb.run(in, []string{"user", "add", "erin", "operator", "--hash", "-"})
+		sb.expect(1, "", "Nothing was changed.")
+	}
+	sb.run("FakeHashPassword99\n", []string{"user", "verify", "alice"})
+	sb.expect(0, "[INFO] Password is correct.", "")
+
+	other, err := hash.Generate("OtherFakePassword77", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	holdTTY(t, sb, other+"\n")
+	sb.run("", []string{"user", "passwd", "alice", "--hash", "-"})
+	sb.tty = nil
+	sb.expect(0, "[INFO] Password changed for 'alice'.", "")
+	if strings.Contains(sb.stderr(), other[:20]) {
+		t.Errorf("the hash was echoed at a terminal:\n%s", sb.stderr())
+	}
+	sb.run("OtherFakePassword77\n", []string{"user", "verify", "alice"})
+	sb.expect(0, "[INFO] Password is correct.", "")
+}
+
 func TestUserVerifyAndPasswdSelf(t *testing.T) {
 	sb := newSandbox(t, true)
 	h, err := hash.Generate("CorrectHorse99", 4)
@@ -262,18 +349,18 @@ func TestUserVerifyAndPasswdSelf(t *testing.T) {
 	sb.expect(0, "[INFO] Password changed for 'alice'.", "")
 	sb.run("CorrectHorse99\n", []string{"user", "verify", "alice"}, "SUDO_USER=ops", "SUDO_UID=7")
 	sb.expect(0, "[INFO] Password is correct.", "  Enter password to verify: **************")
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "verify OK user=alice by=ops(uid=7)") {
+	if !hasAudit(sb.runner, "auth.info", "verify OK user=alice by=ops(uid=7)") {
 		t.Errorf("audit: %q", sb.runner.Argvs())
 	}
 	sb.run("nope\n", []string{"user", "verify", "alice"})
 	sb.expect(0, "User:", "[ERROR] Password does not match.")
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "verify FAIL user=alice result=NO_MATCH by=root(uid=1000)") {
+	if !hasAudit(sb.runner, "auth.warning", "verify FAIL user=alice result=NO_MATCH by=root(uid=1000)") {
 		t.Errorf("audit: %q", sb.runner.Argvs())
 	}
 
 	sb.run("CorrectHorse99\nNewHorse123456\nNewHorse123456\n", []string{"passwd"}, "SUDO_USER=alice")
 	sb.expect(0, "[INFO] Password changed for 'alice'.", "  Current password: **************")
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "passwd OK user=alice (self-service)") {
+	if !hasAudit(sb.runner, "auth.info", "passwd OK user=alice source=self") {
 		t.Errorf("audit: %q", sb.runner.Argvs())
 	}
 	sb.run("CorrectHorse99\n", []string{"passwd"}, "SUDO_USER=alice")
@@ -353,7 +440,7 @@ func TestNativePrelude(t *testing.T) {
 	sb.expect(0, "carol", "")
 	ro("user", "remove", "bob")
 	sb.expect(1, "", "[ERROR] 'tacctl user remove' is not permitted for the readonly tier.")
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=carol tier=readonly cmd=user remove") {
+	if !hasAudit(sb.runner, "auth.warning", "tier DENY user=carol tier=readonly cmd=user remove") {
 		t.Errorf("denial not logged: %q", sb.runner.Argvs())
 	}
 	ro("_completion-names", "groups")
@@ -477,7 +564,7 @@ func TestSpoofedSudoUserRefused(t *testing.T) {
 			if sb.code != 1 || !strings.Contains(sb.stderr(), "SUDO_USER '"+claimed+"' is not the account of SUDO_UID 1003, so tacctl access is denied.") {
 				t.Errorf("%v as %q: exit %d %q", args, claimed, sb.code, sb.stderr())
 			}
-			if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning") || sb.runner.Called("ssh") {
+			if !hasAuditPrefix(sb.runner, "auth.warning", "") || sb.runner.Called("ssh") {
 				t.Errorf("%v as %q: %q", args, claimed, sb.runner.Argvs())
 			}
 		}

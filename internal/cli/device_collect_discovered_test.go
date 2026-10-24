@@ -7,7 +7,7 @@ import (
 
 // --discovered takes the unregistered addresses that authenticated, from the
 // seen cache, and no others (a registered one, one only refused); with a
-// terminal one question names them.
+// terminal each one's key is accepted by its address typed back.
 func TestCollectDiscovered(t *testing.T) {
 	b := newCollectBox(t)
 	b.devices([3]string{"sw-known", "192.168.1.40", "juniper"})
@@ -19,10 +19,10 @@ func TestCollectDiscovered(t *testing.T) {
 		`"192.168.1.31":{"tacacs":`+seen(ok)+`},"192.168.1.40":{"tacacs":`+seen(ok)+`},"192.168.1.41":{"tacacs":`+seen("")+`}}}`, 0o600)
 	// no terminal: refused (--host-key names one address's key only)
 	b.collect("-", "--discovered")
-	if b.sb.code != 2 || !strings.Contains(b.sb.stderr(), "No terminal to answer the identity question on") {
+	if b.sb.code != 2 || !strings.Contains(b.sb.stderr(), "No terminal to answer the host-key question on") {
 		t.Fatalf("no terminal: %d %q", b.sb.code, b.sb.stderr())
 	}
-	out := b.collect("y\n", "--discovered")
+	out := b.collect(onboardAddr+"\n", "--discovered")
 	if b.sb.code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
 	}
@@ -32,7 +32,7 @@ func TestCollectDiscovered(t *testing.T) {
 	if tableRow(out, "192.168.1.40") != nil || tableRow(out, "192.168.1.41") != nil {
 		t.Errorf("a registered or refused address was collected:\n%s", out)
 	}
-	if !strings.Contains(b.sb.stderr(), "send the password of 'alice' (your tacctl password) to "+onboardAddr+"? [y/N]") {
+	if !strings.Contains(b.sb.stderr(), "Type the address ("+onboardAddr+") to accept it and send it the password of 'alice' (your tacctl password)") {
 		t.Errorf("the question: %q", b.sb.stderr())
 	}
 }

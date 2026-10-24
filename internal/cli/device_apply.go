@@ -3,15 +3,15 @@ package cli
 // 'device config apply' (docs/plans/0.2.9-rollout-plan.md D129-D135,
 // D138-D141): the plan of 0.2.5 typed into Junos devices by tacctl instead of
 // pasted by a person. One run is two phases over the same transaction
-// driver (internal/devapply):
+// driver (internal/devapply), after an optional pull (--pull, 0.2.17 D268):
 //
 //   - Phase A checks every selected device in the 0.2.4 pool: the device
 //     loads the plan in an exclusive session, 'commit check' runs and the
 //     candidate is discarded. What it saw is the shape of each device's change.
 //   - The review groups the devices by shape, prints each group's statements
-//     with every secret elided and asks ONE question, answered by typing the
-//     device's name or the number of devices back (D134); --check stops
-//     before it.
+//     with every secret elided and asks one question per device, answered by
+//     typing that device's name back (D134, 0.2.17 D265); --confirmed --yes
+//     answers them in the scripted form (D266); --check stops before it.
 //   - Phase B applies the reviewed devices: serial by default, the first
 //     device of every shape alone (the canary), each under a confirmed commit,
 //     proven by a fresh login and by what landed, then confirmed.
@@ -60,9 +60,15 @@ type applyArgs struct {
 	// check stops after the device's own commit check; confirmed gates the
 	// run on shapes another run confirmed (D135); hold is the opt-in human
 	// proof of every login class (D134); noCanary starts every device of a
-	// shape at once; yes answers the review (only with confirmed).
-	check, confirmed, hold, noCanary, yes, exitCode bool
-	max                                             int
+	// shape at once; yes answers the review (only with confirmed);
+	// pullFirst is --pull (0.2.17 D268): the devices are pulled before the
+	// check and --stale and --differs select from the fresh records.
+	check, confirmed, hold, noCanary, yes, exitCode, pullFirst bool
+	max                                                        int
+	// mode is how the review is answered, for the audit lines (0.2.17
+	// D266): "attended" (each device's name typed back) or "scripted"
+	// (--confirmed --yes).
+	mode string
 	// pause is the wait between devices (device.apply.pause, or --pause).
 	pause    time.Duration
 	pauseSet bool
@@ -70,6 +76,18 @@ type applyArgs struct {
 	// transport is how the run writes: --transport over
 	// device.apply.transport (auto, cli or netconf, D150).
 	transport devapply.Setting
+}
+
+// reviewMode is how the review is answered (mode, or for arguments made
+// without applyArgsOf the form --yes gives).
+func (a applyArgs) reviewMode() string {
+	switch {
+	case a.mode != "":
+		return a.mode
+	case a.yes:
+		return "scripted"
+	}
+	return "attended"
 }
 
 // applyArgsOf reads and checks the options that need no device (exit 2).
@@ -83,6 +101,11 @@ func (inv *invocation) applyArgsOf(p Parsed) (applyArgs, error) {
 	a.pull = pa
 	a.check, a.confirmed, a.hold = p.Has("--check"), p.Has("--confirmed"), p.Has("--hold")
 	a.noCanary, a.yes, a.exitCode = p.Has("--no-canary"), p.Has("-y"), p.Has("--exit-code")
+	a.pullFirst = p.Has("--pull")
+	a.mode = "attended"
+	if a.yes {
+		a.mode = "scripted"
+	}
 	a.max = applyMaxDefault
 	_, a.pause = inv.applySettings()
 	a.transport = devapply.Setting(inv.applyTransport())
@@ -482,7 +505,9 @@ func (r *applyRun) writeApplied(e devreg.Entry, a devconf.Applied) error {
 	if old, ok := recs.Of(e.Name); ok {
 		rec = *old
 	}
-	rec.Address, rec.Vendor = e.Address, e.Vendor
+	rec.Address = e.Address
+	// The stored sections keep the vendor of their pull (D260).
+	rec.SetVendorUnlessPulled(e.Vendor)
 	rec.Applied = &a
 	recs.Put(e.Name, rec)
 	recs.Updated = r.inv.app.Knobs.Now()
@@ -970,12 +995,18 @@ func (inv *invocation) deviceConfigApply(args []string) error {
 	pr := inv.app.Prompter()
 	switch {
 	case !aa.check && !aa.yes && !pr.Interactive():
-		return inv.argErr("No terminal to confirm on: the review of an apply is answered by typing the device's name (or the number of devices) back. "+
+		return inv.argErr("No terminal to confirm on: the review of an apply is answered by typing each device's name back. "+
 			"Without a terminal use --confirmed --yes, which applies only shapes another device confirmed. Nothing was changed.", usage)
 	case aa.hold && !pr.Interactive():
 		return inv.argErr("--hold asks a person to log in and type OK: it needs a terminal. Nothing was changed.", usage)
 	}
-	chosen, err := inv.chooseDevices(sel, user, true, "apply", aa.pull.render)
+	// --pull (D268): the selection is made without --stale and --differs,
+	// which are applied to the records the pull makes (pullFirst).
+	pre := sel
+	if aa.pullFirst {
+		pre.stale, pre.differs = false, false
+	}
+	chosen, err := inv.chooseDevices(pre, user, true, "apply", aa.pull.render)
 	if err != nil {
 		return err
 	}
@@ -1007,14 +1038,9 @@ func (inv *invocation) deviceConfigApply(args []string) error {
 	if len(others) > 0 {
 		chosen.skipped.notJunos = append(chosen.skipped.notJunos, others...)
 	}
-	st := inv.deviceConfigSettings()
-	confirm, _ := inv.applySettings()
-	run := &applyRun{inv: inv, user: user, render: chosen.render, store: inv.configStore(),
-		shapes: devapply.OpenShapes(inv.app.Paths.ApplyDir), stateDir: inv.app.Paths.ApplyDir,
-		passwd: inv.hooks.newDevicePasswords(inv), sections: aa.sections, minutes: confirm, holdOn: aa.hold, holdDone: make(chan struct{}),
-		transport: aa.transport}
+	ctl := inv.newApplyCtl(user, aa, chosen, inv.hooks.newDevicePasswords(inv), usage)
+	run := ctl.run
 	defer close(run.holdDone)
-	ctl := &applyCtl{inv: inv, user: user, aa: aa, run: run, settings: st, chosen: chosen, usage: usage}
 	for _, o := range refused {
 		ctl.rows = append(ctl.rows, o)
 		if aa.pull.json {
@@ -1039,7 +1065,116 @@ func (inv *invocation) deviceConfigApply(args []string) error {
 			d.Done()
 		}
 	}()
+	if aa.pullFirst {
+		left, done, err := ctl.pullFirst(junos, sel)
+		if done || err != nil {
+			return err
+		}
+		junos = left
+	}
 	return ctl.run2(junos)
+}
+
+// newApplyCtl is the state of one apply over chosen as user, its password
+// from passwd (asked by the caller, once, into run.password). The caller
+// closes run.holdDone when the run ends.
+func (inv *invocation) newApplyCtl(user string, aa applyArgs, chosen *chosenDevices, passwd devicePasswords, usage string) *applyCtl {
+	confirm, _ := inv.applySettings()
+	run := &applyRun{inv: inv, user: user, render: chosen.render, store: inv.configStore(),
+		shapes: devapply.OpenShapes(inv.app.Paths.ApplyDir), stateDir: inv.app.Paths.ApplyDir,
+		passwd: passwd, sections: aa.sections, minutes: confirm, holdOn: aa.hold, holdDone: make(chan struct{}),
+		transport: aa.transport}
+	return &applyCtl{inv: inv, user: user, aa: aa, run: run, settings: inv.deviceConfigSettings(), chosen: chosen, usage: usage}
+}
+
+// pullFirst is --pull (0.2.17 D268): the Junos devices are read first as
+// 'device config pull' reads them (its view, its audit lines and records,
+// the transport of the settings, since --transport is how an apply writes)
+// with the run's one password, so it is asked once for the pull, the check
+// and the apply. A device whose pull failed is a failed row and is not
+// checked: nothing is applied from a record the pull could not renew. Then
+// --stale and --differs keep, of the devices read, the ones their fresh
+// records select; the others are left out and counted. A pull that stopped
+// (interrupted, an authentication failure, --max-failures) ends the run with
+// nothing checked. It returns the devices that go on to the check, or done
+// with the run's end.
+func (c *applyCtl) pullFirst(junos []devreg.Entry, sel selection) ([]devreg.Entry, bool, error) {
+	inv, aa, run := c.inv, c.aa, c.run
+	view := inv.newPullView(junos, aa.pull.json, c.user, false)
+	view.phase = "pull"
+	sum, outs, err := inv.runPull(pullBatch{entries: junos, render: c.chosen.render, args: aa.pull, user: c.user, view: view,
+		pass: &runPassword{src: run.passwd, password: run.password}})
+	if err != nil {
+		return nil, true, err
+	}
+	inv.hooks.pullDone()
+	var pulled []devreg.Entry
+	for i, e := range junos {
+		res := sum.Entries[i].Result
+		if res.Status == batch.StatusOK {
+			pulled = append(pulled, e)
+			continue
+		}
+		o := &applyOutcome{Name: e.Name, Scope: e.Scope, Vendor: e.Vendor, Phase: "pull"}
+		switch {
+		case res.Status == batch.StatusNotStarted || res.Status == batch.StatusSkipped:
+			o.Status, o.Reason = "not-started", "the pull did not start: "+res.Text()
+		case outs[i] != nil && outs[i].Reason != "":
+			o.Reason, o.Hint = "the pull failed: "+outs[i].Reason, outs[i].Hint
+		default:
+			o.Reason = "the pull failed: " + res.Text()
+		}
+		c.rows = append(c.rows, o)
+	}
+	if !aa.pull.json {
+		inv.echo("")
+		inv.echo("  pull: " + sum.Line())
+	}
+	// A Ctrl-C that cancelled the invocation once the pool had ended (the
+	// pool's own context does not carry it) is an interrupted pull too.
+	if inv.ctx.Err() != nil {
+		sum.Interrupted = true
+	}
+	if sum.Interrupted || sum.Stop != batch.StopNone {
+		return nil, true, c.finish(sum, false)
+	}
+	// the selection's last step, on the records the pull has just written
+	fresh := &chosenDevices{entries: pulled, render: c.chosen.render}
+	inv.applyStaleFilters(sel, fresh)
+	c.leftAfterPull(pulled, fresh.entries)
+	if inv.ctx.Err() != nil {
+		return nil, true, c.finish(batch.Summary{Interrupted: true}, false)
+	}
+	if len(fresh.entries) == 0 {
+		return nil, true, c.finish(batch.Summary{}, false)
+	}
+	if !aa.pull.json {
+		inv.echo("")
+	}
+	return fresh.entries, false, nil
+}
+
+// leftAfterPull counts the devices pulled that --stale or --differs left
+// out: those whose fresh record agrees with what tacctl renders, and apart
+// from them those that could not be compared (the expected configuration
+// cannot be rendered, the stored sections cannot be read, the state is not
+// known). Neither is checked.
+func (c *applyCtl) leftAfterPull(pulled, kept []devreg.Entry) {
+	inv := c.inv
+	store := inv.configStore()
+	recs, _ := store.Load()
+	render := c.chosen.render
+	for _, e := range pulled {
+		if slices.ContainsFunc(kept, func(x devreg.Entry) bool { return x.Name == e.Name }) {
+			continue
+		}
+		st, err := inv.staleness(store, recs, render, e)
+		if _, rerr := render.Expected(e); err == nil && rerr == nil && st == devconf.StaleOK {
+			c.chosen.skipped.afterPull = append(c.chosen.skipped.afterPull, e.Name)
+		} else {
+			c.chosen.skipped.notCompared = append(c.chosen.skipped.notCompared, e.Name)
+		}
+	}
 }
 
 // applyCtl is one run's state between the two phases.
@@ -1058,6 +1193,10 @@ type applyCtl struct {
 // run2 is Phase A, the review and Phase B over the Junos devices.
 func (c *applyCtl) run2(junos []devreg.Entry) error {
 	inv, aa, run := c.inv, c.aa, c.run
+	// The start line of the audit is written here, on the command's own
+	// goroutine: the workers write the records, and audit.strict refuses by
+	// a panic that only this goroutine recovers (audit.Writer.Touch).
+	inv.app.Audit().Touch()
 	// Phase A: the check of every device, in the 0.2.4 pool.
 	jobs := make([]batch.Job, len(junos))
 	for i, e := range junos {
@@ -1089,18 +1228,25 @@ func (c *applyCtl) run2(junos []devreg.Entry) error {
 	// The review: the devices that need a change, grouped by shape.
 	groups := c.groupByShape(junos, byName)
 	apply := c.selectApply(groups, byName)
-	approved := c.review(groups, apply, aa.pull.json)
+	rv := c.review(groups, apply, aa.pull.json)
 	if len(apply) == 0 {
 		return c.finish(sumA, false)
 	}
-	if !approved {
+	if rv.interrupted {
+		// Ctrl-C at a question: nothing is applied, approved or not
+		sumA.Interrupted = true
+		return c.finish(sumA, rv.declined)
+	}
+	if len(rv.approved) == 0 {
 		return c.finish(sumA, true)
 	}
+	inv.hooks.reviewed()
 
-	// Phase B: the reviewed devices, one shape's first device at a time.
-	entries := make([]devreg.Entry, 0, len(apply))
-	jobsB := make([]batch.Job, 0, len(apply))
-	for _, o := range apply {
+	// Phase B: the approved devices, one shape's first device at a time; a
+	// declined device stays a skipped row (D265).
+	entries := make([]devreg.Entry, 0, len(rv.approved))
+	jobsB := make([]batch.Job, 0, len(rv.approved))
+	for _, o := range rv.approved {
 		var e devreg.Entry
 		for _, x := range junos {
 			if x.Name == o.Name {
@@ -1119,8 +1265,21 @@ func (c *applyCtl) run2(junos []devreg.Entry) error {
 	if maxFail == 0 {
 		maxFail = 1
 	}
+	// Phase B's interrupts are taken first, then the invocation's context is
+	// looked at: a Ctrl-C after the last answer and before they were taken
+	// cancelled only that context (Phase B's is not cancelled by it), so it
+	// ends the run here with nothing applied and no approval line. One that
+	// comes later is Phase B's first Ctrl-C.
 	ctxB, interruptsB, stopB := inv.batchInterrupts()
+	if inv.ctx.Err() != nil {
+		stopB()
+		c.reviewInterrupted(rv.approved)
+		sumA.Interrupted = true
+		return c.finish(sumA, rv.declined)
+	}
+	c.audit(rv.approved)
 	viewB := inv.newApplyView(entries, "apply", aa.pull.json, c.user)
+	viewB.mode = aa.reviewMode()
 	sumB := batch.Run(ctxB, batch.Options{
 		Concurrency: concurrency, Cap: c.settings.maxConcurrency, Timeout: time.Duration(run.minutes+2) * time.Minute,
 		MaxFailures: maxFail, StopOnAuthFailure: true, Interrupts: interruptsB, Clock: inv.app.Knobs.Now,
@@ -1151,5 +1310,5 @@ func (c *applyCtl) run2(junos []devreg.Entry) error {
 			}
 		}
 	}
-	return c.finish(sumB, false)
+	return c.finish(sumB, rv.declined)
 }

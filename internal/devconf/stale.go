@@ -22,12 +22,36 @@ const (
 	// 'auto' and whose record has none (a record of 0.2.4, or a pull that
 	// read no version line) cannot be compared: it is neither guessed
 	// modern nor IOS 12.x, and one pull makes it known. The CONFIG column
-	// says 'pull'; the detail is NeedsPullText.
+	// says 'pull'; the detail is NeedsPullText. A device whose vendor
+	// changed since its last pull (0.2.17 D260) is StalePull too: its
+	// stored sections are of the old vendor's shape (NeedsPullVendorText).
 	StalePull Staleness = "pull"
 )
 
 // NeedsPullText is the words of the StalePull state.
 const NeedsPullText = "needs pull (syntax unknown)"
+
+// NeedsPullVendorText is the words of the StalePull state of a device whose
+// vendor changed since its last pull.
+const NeedsPullVendorText = "needs pull (vendor changed)"
+
+// VendorChanged reports whether the record was pulled for another vendor
+// than vendor, the device's registered one: every pull and apply keeps the
+// vendor it read for, and the stored sections are of that vendor's shape, so
+// they are not compared in another's.
+func VendorChanged(rec *Record, vendor string) bool {
+	return rec != nil && !rec.Pulled.IsZero() && rec.Vendor != "" && rec.Vendor != vendor
+}
+
+// SetVendorUnlessPulled is the vendor a write that is not a good pull (a
+// failed attempt, an apply's or a settle's record) leaves on the record: the
+// stored sections' vendor stays, and vendor is taken only by a record with
+// no good pull or no vendor yet, so VendorChanged still sees a change.
+func (r *Record) SetVendorUnlessPulled(vendor string) {
+	if r.Pulled.IsZero() || r.Vendor == "" {
+		r.Vendor = vendor
+	}
+}
 
 // NeedsSyntax reports whether the record is a good pull of a Cisco device
 // that cannot be compared because its syntax is unknown (D113): the

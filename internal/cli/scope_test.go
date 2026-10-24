@@ -113,6 +113,155 @@ func TestScopeSecretLengthInRunes(t *testing.T) {
 	sb.expect(1, "", "Secret is single-character-class (low entropy).")
 }
 
+// 'scope secret <scope> set' without a value reads it from one line of
+// standard input (--stdin), so it is not on the command line; the value read
+// meets the same checks as the one typed there.
+func TestScopeSecretSetFromStdin(t *testing.T) {
+	sb := newSandbox(t, true)
+	const fake = "fake-stdin-secret-0123456789"
+	for _, args := range [][]string{
+		{"scope", "secret", "lab", "set", "--stdin"},
+		{"scope", "secret", "lab", "--stdin", "set"},
+	} {
+		sb.run(fake+"\n", args)
+		sb.expect(0, "Scope 'lab' secret updated.", "")
+		sb.run("", []string{"scope", "secret", "lab", "show"})
+		sb.expect(0, "Value:  "+fake, "")
+		sb.run("", []string{"scope", "secret", "lab", "set", "argv-secret-0123456789ab"})
+		sb.expect(0, "Scope 'lab' secret updated.", "")
+	}
+	// The argv form is unchanged.
+	sb.run("", []string{"scope", "secret", "lab", "show"})
+	sb.expect(0, "Value:  argv-secret-0123456789ab", "")
+
+	// The checks apply to the value read.
+	for _, c := range []struct{ in, want string }{
+		{"Short1\n", "Secret is 6 characters; minimum is 16."},
+		{strings.Repeat("a", 20) + "\n", "Secret is single-character-class (low entropy)."},
+		{"\n", "No shared secret on stdin"},
+		{"", "No shared secret on stdin"},
+	} {
+		sb.run(c.in, []string{"scope", "secret", "lab", "set", "--stdin"})
+		sb.expect(1, "", c.want)
+	}
+	// Nothing was changed by the refusals.
+	sb.run("", []string{"scope", "secret", "lab", "show"})
+	sb.expect(0, "Value:  argv-secret-0123456789ab", "")
+
+	// No value and no terminal: asked for, and told how to pipe it.
+	sb.run("", []string{"scope", "secret", "lab", "set"})
+	sb.expect(1, "", "No terminal to ask for the shared secret on; pipe it in with --stdin.")
+	// A value and --stdin are two sources; --stdin is for 'set'.
+	sb.run(fake+"\n", []string{"scope", "secret", "lab", "set", "--stdin", "argv-secret-0123456789ab"})
+	sb.expect(1, "", "The secret is given twice")
+	sb.run(fake+"\n", []string{"scope", "secret", "lab", "show", "--stdin"})
+	sb.expect(1, "", "--stdin is for 'set'")
+	sb.run(fake+"\n", []string{"scope", "secret", "lab", "generate", "--stdin"})
+	sb.expect(1, "", "--stdin is for 'set'")
+	sb.run("", []string{"scope", "secret", "lab", "show"})
+	sb.expect(0, "Value:  argv-secret-0123456789ab", "")
+}
+
+// The line read from standard input is taken as it is, less its terminator
+// (a CR LF included): the blanks of a secret stay, as they do on the command
+// line, and a control character is refused whatever the source.
+func TestScopeSecretStdinTakesTheLineAsItIs(t *testing.T) {
+	sb := newSandbox(t, true)
+	shows := func() string {
+		sb.run("", []string{"scope", "secret", "lab", "show"})
+		return plain(sb.out.String())
+	}
+	sb.run("crlf-secret-0123456789\r\n", []string{"scope", "secret", "lab", "set", "--stdin"})
+	sb.expect(0, "Scope 'lab' secret updated.", "")
+	if out := shows(); !strings.Contains(out, "Value:  crlf-secret-0123456789\n") || !strings.Contains(out, "Length: 22 chars") {
+		t.Errorf("a CR LF line stored with the CR:\n%q", out)
+	}
+	sb.run("  blanks kept 0123456789  \n", []string{"scope", "secret", "lab", "set", "--stdin"})
+	sb.expect(0, "Scope 'lab' secret updated.", "")
+	if out := shows(); !strings.Contains(out, "Length: 26 chars") {
+		t.Errorf("the blanks were trimmed:\n%q", out)
+	}
+	sb.run("", []string{"scope", "secret", "lab", "set", "  blanks kept 0123456789  "})
+	if out := shows(); !strings.Contains(out, "Length: 26 chars") {
+		t.Errorf("the argv form changed:\n%q", out)
+	}
+	for _, c := range []struct {
+		stdin string
+		args  []string
+	}{
+		{"tab\there-secret-0123456789\n", []string{"scope", "secret", "lab", "set", "--stdin"}},
+		{"bell\x07-secret-0123456789\n", []string{"scope", "secret", "lab", "set", "--stdin"}},
+		{"cr\rinside-secret-0123456789\n", []string{"scope", "secret", "lab", "set", "--stdin"}},
+		{"", []string{"scope", "secret", "lab", "set", "tab\there-secret-0123456789"}},
+		{"", []string{"scope", "secret", "lab", "set", "nul\x00-secret-0123456789"}},
+	} {
+		sb.run(c.stdin, c.args)
+		sb.expect(1, "", "The secret cannot hold a control character")
+		if !strings.Contains(sb.stderr(), "Nothing was changed.") {
+			t.Errorf("%q: %q", c.args, sb.stderr())
+		}
+	}
+	if out := shows(); !strings.Contains(out, "Length: 26 chars") {
+		t.Errorf("a refusal changed the secret:\n%q", out)
+	}
+	// An empty line, or none, is a refusal that changes nothing.
+	for _, in := range []string{"\n", "\r\n", ""} {
+		sb.run(in, []string{"scope", "secret", "lab", "set", "--stdin"})
+		sb.expect(1, "", "No shared secret on stdin (one line).")
+		if !strings.Contains(sb.stderr(), "Nothing was changed.") {
+			t.Errorf("%q: %q", in, sb.stderr())
+		}
+	}
+}
+
+// The prompted paths, on a terminal: the secret asked twice and not echoed,
+// and --stdin typed at a terminal is not echoed either.
+func TestScopeSecretAtATerminal(t *testing.T) {
+	sb := newSandbox(t, true)
+	const typed = "fake-typed-secret-0123456789"
+	run := func(input string, args ...string) {
+		sb.t.Helper()
+		sb.tty = nil
+		holdTTY(sb.t, sb, input)
+		sb.run("", args)
+		sb.tty = nil
+	}
+	value := func() string {
+		sb.run("", []string{"scope", "secret", "lab", "show"})
+		return plain(sb.out.String())
+	}
+	run(typed+"\n"+typed+"\n", "scope", "secret", "lab", "set")
+	sb.expect(0, "Scope 'lab' secret updated.", "")
+	if strings.Contains(sb.stderr(), typed) {
+		t.Errorf("the typed secret was echoed:\n%s", sb.stderr())
+	}
+	if out := value(); !strings.Contains(out, "Value:  "+typed+"\n") {
+		t.Errorf("not stored:\n%s", out)
+	}
+	// Two that differ, an empty one and a short one change nothing.
+	run(typed+"\nother-typed-secret-0123456789\n", "scope", "secret", "lab", "set")
+	sb.expect(1, "", "The two did not match; nothing was changed.")
+	run("\n", "scope", "secret", "lab", "set")
+	sb.expect(1, "", "An empty shared secret; nothing was changed.")
+	run("Short1\nShort1\n", "scope", "secret", "lab", "set")
+	sb.expect(1, "", "Secret is 6 characters; minimum is 16.")
+	run(strings.Repeat("a", 20)+"\n"+strings.Repeat("a", 20)+"\n", "scope", "secret", "lab", "set")
+	sb.expect(1, "", "single-character-class")
+	if out := value(); !strings.Contains(out, "Value:  "+typed+"\n") {
+		t.Errorf("a refusal changed the secret:\n%s", out)
+	}
+	// --stdin at a terminal: one hidden read, no confirmation.
+	const hidden = "fake-hidden-secret-0123456789"
+	run(hidden+"\n", "scope", "secret", "lab", "set", "--stdin")
+	sb.expect(0, "Scope 'lab' secret updated.", "")
+	if strings.Contains(sb.stderr(), hidden) {
+		t.Errorf("--stdin echoed the secret at a terminal:\n%s", sb.stderr())
+	}
+	if out := value(); !strings.Contains(out, "Value:  "+hidden+"\n") {
+		t.Errorf("not stored:\n%s", out)
+	}
+}
+
 func TestScopeLookupExitCodes(t *testing.T) {
 	sb := newSandbox(t, true)
 	for _, c := range []struct {

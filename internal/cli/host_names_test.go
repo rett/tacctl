@@ -186,8 +186,11 @@ func TestHostEnrollOfANameADeviceTookMeanwhileIsRefused(t *testing.T) {
 	if got := hs.read("state/devices.yaml"); got != *devices || strings.Contains(got, "hostkeys") {
 		t.Errorf("the device registry changed:\n%s\nwas\n%s", got, *devices)
 	}
-	if r.CalledRegexp(`host enroll name=`) || strings.Contains(hs.out.String(), "enrolled") {
+	if r.CalledRegexp(`host enroll name=\S+ .*result=ok`) || strings.Contains(hs.out.String(), "enrolled") {
 		t.Errorf("enrolled: %q\n%s", r.Argvs(), hs.out.String())
+	}
+	if !r.CalledRegexp(`host enroll name=web1 .* result=failed reason=race`) {
+		t.Errorf("no failed line: %q", auditLines(r))
 	}
 	if r.Called("ssh-keyscan") {
 		t.Errorf("keys were scanned: %q", r.Argvs())

@@ -78,7 +78,7 @@ backup restore <ts> [--legacy|--keep-uids]
                                backup; --keep-uids leaves the UID ledger as it is
 ```
 
-A backup is a snapshot of the canonical files, `/etc/tacctl/backups/<timestamp>/{store.yaml,tacctl.yaml,manifest}`, taken automatically before every change that would alter them (nothing is added when they already equal the newest snapshot). The manifest records `rendered.json` and the tacctl version. The newest 30 snapshots are kept. Snapshots hold shared secrets and password hashes: the directory is `0700`, the files `0600`, and `backup diff` and `backup restore` are superuser-only.
+A backup is a snapshot of the canonical files, `/etc/tacctl/backups/<timestamp>/{store.yaml,tacctl.yaml,manifest}`, taken automatically before every change that would alter them (nothing is added when they already equal the newest snapshot). The manifest records `rendered.json`, the tacctl version and who took the snapshot: `sid` (the session id of the audit lines), `user` and `command` (the command's words, without arguments). The newest 30 snapshots are kept. Snapshots hold shared secrets and password hashes: the directory is `0700`, the files `0600`, and `backup diff` and `backup restore` are superuser-only.
 
 A snapshot also holds the files of the enrolled Linux hosts: `linux-hosts`
 (the registry), `hosts/` (one record per host), `staging` (the staging
@@ -181,3 +181,5 @@ place, and only when the server has host files. `backup list` is unchanged,
 and `restore --legacy` leaves the host files alone.
 
 Old-style `tacquito.yaml.<timestamp>` files (made before the store existed, or kept in `backups/legacy/`) are listed after the snapshots. `backup restore <timestamp> --legacy` runs `store import --check` on one, then imports it. Without a store (legacy read-only mode) `list`, `diff` and `restore` work on those files.
+
+`backup restore`, `store import`, `store rollback`, `install`, `upgrade`, `uninstall` and `rollback` each write a line of their own beside the `cmd start` and `cmd end` pair, at `auth.notice`: `backup restore id= pre= keep-uids= legacy=`, `upgrade from= to= branch=` and so on, and `store show`, `config dump` and `backup diff` log the secrets they print as `secret-read` for every caller ([Audit log](../security/audit.md#detail-lines)).

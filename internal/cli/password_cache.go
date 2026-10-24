@@ -225,6 +225,10 @@ func askpassWords(words []string) bool {
 	// password, which never comes from the cache, so the line leaves it shut
 	case words[0] == "device" && len(words) > 1 && words[1] == "collect":
 		return !localLoginLine(words[2:])
+	// 'device enroll' pulls the devices it registered, and may apply them,
+	// as the caller (0.2.17 D269)
+	case words[0] == "device" && len(words) > 1 && words[1] == "enroll":
+		return true
 	// 'device config apply' (with or without --check) logs in to the
 	// devices as the caller (0.2.9, D141); 'shapes' reads and writes the
 	// shape store and logs in to nothing, so its lines leave the cache shut

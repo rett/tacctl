@@ -313,3 +313,25 @@ func TestJunosHostName(t *testing.T) {
 		t.Errorf("ExtractWith: %q %v", ext.Hostname, err)
 	}
 }
+
+// IOSHostName is the top-level 'hostname' line of a running configuration
+// (0.2.17 D263): the first one, not an indented line of a submode, with no
+// domain appended; the extraction keeps it on the record as Junos's.
+func TestIOSHostName(t *testing.T) {
+	for _, c := range []struct{ name, in, want string }{
+		{"plain", "!\nhostname Core-SW1\nip domain name lab.example.net\n", "Core-SW1"},
+		{"crlf", "hostname sw2\r\n", "sw2"},
+		{"none", "!\nip domain name lab.example.net\n", ""},
+		{"indented is not the device's", " hostname evil\nhostname sw3\n", "sw3"},
+		{"the first wins", "hostname a\nhostname b\n", "a"},
+		{"control characters", "hostname a\x1bb\n", "a?b"},
+	} {
+		if got := IOSHostName(c.in); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
+	}
+	ext, err := ExtractWith("cisco", "Building configuration...\n!\nhostname rtr1\n!\nend\n", Options{})
+	if err != nil || ext.Hostname != "rtr1" {
+		t.Errorf("ExtractWith: %q %v", ext.Hostname, err)
+	}
+}

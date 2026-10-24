@@ -3,6 +3,7 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/lifecycle"
 )
 
@@ -39,5 +40,9 @@ func (inv *invocation) lifecycleHost() *lifecycle.Host {
 		Environ:    a.Env,
 		Commit:     inv.build.Commit,
 		Completion: BashCompletion,
+		// The self-update re-runs 'upgrade' in place of this process: the
+		// pair of audit lines ends here, the re-run writes its own.
+		BeforeExec: func() { inv.auditEnd(nil, false) },
+		Audit:      func(event string, kv ...audit.KV) { inv.detail(event, kv...) },
 	}
 }

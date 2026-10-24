@@ -198,6 +198,28 @@ setup() {
     assert_output --partial "Invalid subcommand"
 }
 
+# --- audit-strict --------------------------------------------------------------
+
+@test "config audit-strict: shows, turns on, turns off (the key removed), refuses another word" {
+    run "$TACCTL_BIN_SCRIPT" config audit-strict
+    assert_success
+    assert_output --partial "Audit strict: off   (default)"
+    run "$TACCTL_BIN_SCRIPT" config audit-strict on
+    assert_success
+    assert_output --partial "audit.strict is on"
+    [[ "$(conf_get audit.strict)" == "true" ]]
+    run "$TACCTL_BIN_SCRIPT" config audit-strict
+    assert_output --partial "Audit strict: on   (tacctl.yaml)"
+    run "$TACCTL_BIN_SCRIPT" config audit-strict off
+    assert_success
+    run grep -c audit "${TACCTL_STATE_DIR}/tacctl.yaml"
+    refute_output --regexp '^[1-9]'
+    run "$TACCTL_BIN_SCRIPT" config audit-strict yes
+    assert_failure 1
+    assert_output --partial "Usage: tacctl config audit-strict [on|off]"
+}
+
+
 # --- a tacctl.yaml that does not parse ---------------------------------------
 
 # A tacctl.yaml with settings in it and a syntax error after them.

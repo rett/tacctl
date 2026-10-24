@@ -8,7 +8,8 @@ package cli
 // lookup over UDP on 127.0.0.1 (internal/snmp's Agent). A production
 // binary has no such command.
 //
-//	tacctl _snmp-agent --port-file <file> --sysname <name> [--syslocation <text>] [--community <c>]
+//	tacctl _snmp-agent --port-file <file> --sysname <name> [--syslocation <text>]
+//	    [--sysobjectid <oid> --sysdescr <text>] [--community <c>]
 //	    [--user <u> --auth-pass <p> --priv-pass <p> [--auth sha|sha256]]
 //	    [--seconds <n>]
 //
@@ -45,13 +46,16 @@ func (inv *invocation) snmpAgent(args []string) error {
 	seconds := fs.Int("seconds", 120, "")
 	fs.StringVar(&a.SysName, "sysname", "", "")
 	fs.StringVar(&a.SysLocation, "syslocation", "", "")
+	fs.StringVar(&a.SysObjectID, "sysobjectid", "", "")
+	fs.StringVar(&a.SysDescr, "sysdescr", "", "")
 	fs.StringVar(&a.Community, "community", "", "")
 	fs.StringVar(&a.User, "user", "", "")
 	fs.StringVar(&a.AuthPass, "auth-pass", "", "")
 	fs.StringVar(&a.PrivPass, "priv-pass", "", "")
 	fs.StringVar(&a.Auth, "auth", snmp.AuthSHA, "")
 	if err := fs.Parse(args); err != nil || *portFile == "" {
-		return inv.usageErr("Usage: tacctl _snmp-agent --port-file <file> --sysname <name> [--syslocation <text>] [--community <c>] " +
+		return inv.usageErr("Usage: tacctl _snmp-agent --port-file <file> --sysname <name> [--syslocation <text>] " +
+			"[--sysobjectid <oid> --sysdescr <text>] [--community <c>] " +
 			"[--user <u> --auth-pass <p> --priv-pass <p> [--auth sha|sha256]] [--seconds <n>]")
 	}
 	conn, err := a.Listen("127.0.0.1:0")

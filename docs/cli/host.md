@@ -284,3 +284,5 @@ run before any host is reached. `host check` skips a held host, typed or not
 (it only reads, so there is nothing to refuse), and the skip is not a failure.
 `host target <name>` without a change, `host list` and `host show` only read,
 and `tacctl ssh` warns and connects.
+
+Each `host sync` writes a line of its own for every host (`host sync name= target= created= updated= renamed= removed= remove-home= result=`, with `reason=` when it failed), a batch `host move` one summary (`host move scope= moved= failed=`), and the lines of `host enroll`, `host unenroll`, `host rename`, `host forget` and `host target` end in `result=ok`, or are written with `result=failed reason=` when the change failed ([Audit log](../security/audit.md#detail-lines)).

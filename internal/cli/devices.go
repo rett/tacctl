@@ -211,9 +211,7 @@ func (inv *invocation) configDeviceNote(vendor string, args []string, sink func(
 			return "", inv.usageErr("Device '" + stagingName + "' not found.")
 		}
 	}
-	if ownScopes.restricted {
-		inv.secretRead("scope", scope)
-	}
+	inv.secretRead("scope", scope)
 	// No --protocol: the scope's auth-method, else its only protocol, else
 	// TACACS+.
 	choice, choiceSource := inv.scopeProtocolChoice(scope)

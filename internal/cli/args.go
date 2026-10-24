@@ -37,6 +37,9 @@ type Flag struct {
 	// (KindUsers, ...), KindList for a comma list of one, or "" for free
 	// text.
 	Kind string
+	// Secret: the value is a secret or a password hash. The audit lines
+	// write it as <redacted> (audit.go).
+	Secret bool
 }
 
 // The value kinds of Flag.Kind and Spec.Args: completion offers the live

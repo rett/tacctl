@@ -104,6 +104,21 @@ func JunosHostName(config string) string {
 	return cleanFact(host)
 }
 
+// IOSHostName is the name an IOS or IOS-XE running configuration gives the
+// device: the value of its top-level 'hostname' line (the first one; the
+// domain is not appended, IOS keeps it apart); "" when it states none. The
+// text is as the record keeps a fact. 'device enroll' (0.2.17 D263) is the
+// reader.
+func IOSHostName(config string) string {
+	for _, l := range strings.Split(config, "\n") {
+		l = strings.TrimRight(l, "\r")
+		if v, ok := strings.CutPrefix(l, "hostname "); ok {
+			return cleanFact(firstWord(v))
+		}
+	}
+	return ""
+}
+
 // firstWord is the first word of a statement's value: a quoted string
 // whole, else up to the first blank.
 func firstWord(v string) string {

@@ -443,14 +443,14 @@ func TestConsolePolicyLinePerTier(t *testing.T) {
 	}
 	// The logged line (auth.info) carries the session marker.
 	policy("alice", "superuser", "TACCTL_CONSOLE=0123456789ab")
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "console policy user=alice tier=superuser system_shell=yes session=0123456789ab") {
+	if !hasAudit(sb.runner, "auth.info", "console policy user=alice tier=superuser system_shell=yes session=0123456789ab") {
 		t.Errorf("calls: %q", sb.runner.Argvs())
 	}
 	// A marker that is no session id (the caller sets the variable through
 	// sudo's env_keep) is logged as '-', never as it is.
 	for _, bad := range []string{"x\ninjected line", "../etc", "0123456789AB", "0123456789abc", "evil user=root"} {
 		policy("alice", "superuser", "TACCTL_CONSOLE="+bad)
-		if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "console policy user=alice tier=superuser system_shell=yes session=-") {
+		if !hasAudit(sb.runner, "auth.info", "console policy user=alice tier=superuser system_shell=yes session=-") {
 			t.Errorf("marker %q: calls %q", bad, sb.runner.Argvs())
 		}
 		for _, a := range sb.runner.Argvs() {
@@ -481,7 +481,7 @@ func TestConsolePolicyLinePerTier(t *testing.T) {
 	if got := policy("carol", "readonly"); !strings.Contains(got, "system_shell=no") {
 		t.Errorf("unlisted shell: %q", got)
 	}
-	if !sb.runner.CalledRegexp(`^logger -t tacctl -p auth.warning console policy system_shell /bin/bash unusable: `) {
+	if !hasAuditMatch(sb.runner, "auth.warning", `console policy system_shell /bin/bash unusable: `) {
 		t.Errorf("calls: %q", sb.runner.Argvs())
 	}
 }
@@ -494,7 +494,7 @@ func TestConsolePolicyRoot(t *testing.T) {
 	if got := strings.TrimSpace(plain(sb.out.String())); !strings.Contains(got, "tier=unrestricted") || !strings.Contains(got, "system_shell=yes") {
 		t.Errorf("root: %q", got)
 	}
-	if !sb.runner.CalledRegexp(`^logger -t tacctl -p auth.info shell policy user=root tier=unrestricted`) {
+	if !hasAuditMatch(sb.runner, "auth.info", `shell policy user=root tier=unrestricted`) {
 		t.Errorf("calls: %q", sb.runner.Argvs())
 	}
 }

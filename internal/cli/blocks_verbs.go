@@ -24,6 +24,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/blocks"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devconf/plan"
@@ -163,7 +164,7 @@ func (c *blockCtx) requireSuperuser(sub string) error {
 	if !c.restricted {
 		return nil
 	}
-	return c.inv.usageErr("The engineer tier reads the configuration blocks of " + c.what() + " (list, show, check); " + sub +
+	return c.inv.deniedUsage(reasonSuperuser, "The engineer tier reads the configuration blocks of "+c.what()+" (list, show, check); "+sub+
 		" is the superuser's. Nothing was changed.")
 }
 
@@ -1168,14 +1169,19 @@ func (c *blockCtx) review(block string, bc *blockCheck, yes bool) bool {
 func (c *blockCtx) install(block string, text []byte, bc *blockCheck, cur blockFile, event string) error {
 	inv := c.inv
 	a := inv.app
+	base := "block-" + event + " name=" + c.logName(block) + " bytes=" + strconv.Itoa(len(text)) +
+		" objects=" + strconv.Quote(blockCounts(bc.doc)) + " by=" + inv.sudoUser()
 	if err := inv.snapshotFirst(); err != nil {
+		inv.verbResult(audit.Info, base, "store")
 		return err
 	}
 	st := c.store()
 	if err := st.Write(c.level, c.vendor, block, text); err != nil {
+		inv.verbResult(audit.Info, base, "store")
 		return err
 	}
 	if err := c.setListed(block, true); err != nil {
+		inv.verbResult(audit.Info, base, "store")
 		// put the file back as it was: a block that tacctl.yaml does not name
 		// is a block nobody sees
 		if cur.exists {
@@ -1185,8 +1191,7 @@ func (c *blockCtx) install(block string, text []byte, bc *blockCheck, cur blockF
 		}
 		return inv.usageErr("tacctl.yaml could not be written: "+strings.Join(msgs(err), " "), "The block was not set.")
 	}
-	a.Logger(inv.ctx, "auth.info", "block-"+event+" name="+c.logName(block)+" bytes="+strconv.Itoa(len(text))+
-		" objects="+strconv.Quote(blockCounts(bc.doc))+" by="+inv.sudoUser())
+	inv.verbResult(audit.Info, base, "")
 	a.Out.Info("The " + block + " block of " + c.what() + " is set (" + strconv.Itoa(len(text)) + " bytes) and in force.")
 	inv.echo("  What the devices need: " + c.pullHint())
 	return nil
@@ -1225,16 +1230,20 @@ func (c *blockCtx) remove(block string, p Parsed) error {
 		a.Out.Info("Aborted.")
 		return nil
 	}
+	removeBase := "block-remove name=" + c.logName(block) + " by=" + inv.sudoUser()
 	if err := inv.snapshotFirst(); err != nil {
+		inv.verbResult(audit.Info, removeBase, "store")
 		return err
 	}
 	if err := c.setListed(block, false); err != nil {
+		inv.verbResult(audit.Info, removeBase, "store")
 		return inv.usageErr("tacctl.yaml could not be written: "+strings.Join(msgs(err), " "), "Nothing was changed.")
 	}
 	if err := c.store().Remove(c.level, c.vendor, block); err != nil && err != blocks.ErrNotFound {
+		inv.verbResult(audit.Info, removeBase, "store")
 		return err
 	}
-	a.Logger(inv.ctx, "auth.info", "block-remove name="+c.logName(block)+" by="+inv.sudoUser())
+	inv.verbResult(audit.Info, removeBase, "")
 	a.Out.Info("The " + block + " block of " + c.what() + " is removed.")
 	return nil
 }

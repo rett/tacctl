@@ -551,6 +551,7 @@ if [[ "$CYCLE" == "rotate" ]]; then
     check "the rotation fails at the proof and says the account was removed" bash -c "[[ $rc != 0 ]] && grep -q 'The proof failed' '${WORK}/rot4.out' && grep -q \"The new account 'deploy4' and its sudoers line were removed from c1\" '${WORK}/rot4.out'"
     check "no deploy4 account, home, record or sudoers line; the registry is unchanged" bash -c "! podman exec '$C' getent passwd deploy4 && ! podman exec '$C' test -e /home/deploy4 && ! podman exec '$C' test -e /var/lib/tacctl-provisioner/deploy4 && ! podman exec '$C' grep -q '^deploy4 ' /etc/sudoers.d/tacctl-provisioner && [[ \"\$(podman exec '$S' cat /etc/tacctl/linux-hosts)\" == '${reg_now}' ]]"
     check "the audit line of the failed step is in the server's log" bash -c "podman exec '$S' journalctl -t tacctl --no-pager | grep -q 'host provisioner rotate name=c1 old=deploy3 new=deploy4 auth=key step=prove'"
+    check "that step's detail line, the cmd start and the cmd end share one sid in the server's log" bash -c "j=\$(podman exec '$S' journalctl -t tacctl --no-pager); sid=\$(grep 'step=prove' <<< \"\$j\" | tail -1 | sed -n 's/.* sid=\\([a-z0-9]*\\)\$/\\1/p'); [[ -n \$sid ]] && grep \"sid=\$sid\" <<< \"\$j\" | grep -q 'cmd start' && grep \"sid=\$sid\" <<< \"\$j\" | grep -q 'cmd end'"
     c bash -c 'sed -i "/^Match User deploy4$/,\$d" /etc/ssh/sshd_config; kill -HUP 1; sleep 1'
 
     section "unenroll through deploy3"

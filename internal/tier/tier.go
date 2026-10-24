@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -383,13 +384,16 @@ const (
 // it goes before EnvKeep in a drop-in. 'block adopt' (0.2.7) reads one device
 // with the caller's login as a pull does, so it is among them, and so are
 // 'device config apply', 'device onboard' and 'device collect' (0.2.9,
-// D141): they log in to the devices as the caller, as a pull does. 0.2.8's text is askpassKeep028 (rollback.go).
+// D141): they log in to the devices as the caller, as a pull does, and
+// 'device enroll' (0.2.17, D269), which pulls and may apply. 0.2.8's text is
+// askpassKeep028, 0.2.9 to 0.2.16's askpassKeep0216 (rollback.go).
 func AskpassKeep(alias string) string {
 	return "Cmnd_Alias " + alias + " = " +
 		Binary + " device config pull *, " + Binary + " device config diff *, " + Binary + " device config plan *, \\\n" +
 		"    " + Binary + " ssh *, " + Binary + " device ssh *, \\\n" +
 		"    " + Binary + " scope block * adopt *, " + Binary + " device block * adopt *, \\\n" +
-		"    " + Binary + " device config apply *, " + Binary + " device onboard *, " + Binary + " device collect *\n" +
+		"    " + Binary + " device config apply *, " + Binary + " device onboard *, " + Binary + " device collect *, \\\n" +
+		"    " + Binary + " device enroll *\n" +
 		"Defaults!" + alias + " env_keep += \"" + AskpassVar + "\"\n"
 }
 
@@ -477,6 +481,9 @@ func Sudoers() string {
 type Gate struct {
 	Runner execx.Runner
 	Out    ui.Output
+	// Audit writes the gate's DENY lines (the invocation's writer, which
+	// has the session id).
+	Audit *audit.Writer
 	// SudoUser is SUDO_USER: the person behind sudo ("" or "root": none).
 	SudoUser string
 	// SudoUID is SUDO_UID: when set, SudoUser must name its account
@@ -637,26 +644,33 @@ func (g Gate) caller(ctx context.Context) Tier {
 }
 
 // Enforce is enforce_tier <cmd> <sub>: nil when the caller's tier permits
-// the command; otherwise the denial is logged ('logger -t tacctl -p
-// auth.warning'), printed, and ErrDenied returned.
+// the command; otherwise the denial is logged (Audit, at auth.warning),
+// printed, and ErrDenied returned.
 //
 // A SUDO_USER that VerifyCaller refuses is denied every command, logged
 // with the uid ('tier DENY user=<SUDO_USER> uid=<SUDO_UID>
 // reason=sudo-user-mismatch').
 func (g Gate) Enforce(ctx context.Context, cmd, sub string) error {
+	_, err := g.Check(ctx, cmd, sub)
+	return err
+}
+
+// Check is Enforce, also answering the tier the gate held the caller to (the
+// cap applied; None for a SUDO_USER that VerifyCaller refuses): the central
+// audit lines name it.
+func (g Gate) Check(ctx context.Context, cmd, sub string) (Tier, error) {
 	user := g.SudoUser
 	if user == "" {
 		user = "root"
 	}
 	if g.verify(ctx) != nil {
-		_, _ = g.Runner.Run(ctx, execx.Cmd{Name: "logger", Args: []string{"-t", "tacctl", "-p", "auth.warning",
-			"tier DENY user=" + user + " uid=" + g.SudoUID + " reason=sudo-user-mismatch cmd=" + cmd + " " + sub}})
+		g.Audit.Raw(audit.Warning, "tier DENY user="+user+" uid="+g.SudoUID+" reason=sudo-user-mismatch cmd="+cmd+" "+sub)
 		g.Out.ErrorE("SUDO_USER '" + g.SudoUser + "' is not the account of SUDO_UID " + g.SudoUID + ", so tacctl access is denied.")
-		return ErrDenied
+		return None, ErrDenied
 	}
 	t, uncapped, why := g.capped(ctx)
 	if Permits(t, cmd, sub) {
-		return nil
+		return t, nil
 	}
 	// The cap is the reason only when the tier without it would have run
 	// the command.
@@ -665,8 +679,7 @@ func (g Gate) Enforce(ctx context.Context, cmd, sub string) error {
 	if byCap {
 		reason = " reason=" + why
 	}
-	_, _ = g.Runner.Run(ctx, execx.Cmd{Name: "logger", Args: []string{"-t", "tacctl", "-p", "auth.warning",
-		"tier DENY user=" + user + " tier=" + string(t) + reason + " cmd=" + cmd + " " + sub}})
+	g.Audit.Raw(audit.Warning, "tier DENY user="+user+" tier="+string(t)+reason+" cmd="+cmd+" "+sub)
 	if byCap && why == capAmbiguous {
 		grp := g.AmbiguousGroup(g.SudoUser)
 		g.Out.ErrorE("'tacctl " + cmd + " " + sub + "' is not permitted: your group '" + grp + "' is at priv-lvl 15 or more and has no tier setting in " +
@@ -680,7 +693,7 @@ func (g Gate) Enforce(ctx context.Context, cmd, sub string) error {
 	} else {
 		g.Out.ErrorE("'tacctl " + cmd + " " + sub + "' is not permitted for the " + string(t) + " tier.")
 	}
-	return ErrDenied
+	return t, ErrDenied
 }
 
 // Notes are the Note of every row, keyed "<Cmd> <Sub>".

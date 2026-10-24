@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/tier"
@@ -253,6 +254,7 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	if head == "" {
 		head = "Upgrade Complete"
 	}
+	h.auditLine("upgrade", audit.Pair("from", h.upgradeFrom()), audit.Pair("to", h.shortCommit(ctx)), audit.Pair("branch", h.cloneBranch(ctx)))
 	h.echo("")
 	h.echo(rule)
 	h.echo("  " + head)
@@ -267,6 +269,47 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	h.wtiPlainNotice()
 	h.rootMembersNotice(ctx)
 	return nil
+}
+
+// upgradeFrom is the commit the upgrade started from, shortened: the one a
+// self-update handed over, else the commit this binary was built from.
+func (h *Host) upgradeFrom() string {
+	if c := h.Environ.Get(FromCommitEnv); c != "" {
+		return shortHash(c)
+	}
+	return shortHash(h.Commit)
+}
+
+// shortHash is the first 12 characters of a commit ("" when unknown).
+func shortHash(c string) string {
+	if c == "unknown" {
+		return ""
+	}
+	return c[:min(len(c), 12)]
+}
+
+// shortCommit is the deploy clone's HEAD, shortened.
+func (h *Host) shortCommit(ctx context.Context) string {
+	if !isDir(filepath.Join(h.Paths.Deploy, ".git")) {
+		return shortHash(h.Commit)
+	}
+	c, code := h.gitOut(ctx, h.Paths.Deploy, "rev-parse", "HEAD")
+	if code != 0 {
+		return shortHash(h.Commit)
+	}
+	return shortHash(c)
+}
+
+// cloneBranch is the branch the deploy clone is on ("" when detached).
+func (h *Host) cloneBranch(ctx context.Context) string {
+	if !isDir(filepath.Join(h.Paths.Deploy, ".git")) {
+		return ""
+	}
+	b, code := h.gitOut(ctx, h.Paths.Deploy, "symbolic-ref", "-q", "--short", "HEAD")
+	if code != 0 {
+		return ""
+	}
+	return b
 }
 
 // summarizer is the backend id as a backend.Summarizer.
@@ -403,7 +446,8 @@ func (h *Host) selfUpdate(ctx context.Context, ids []string, start string) error
 	out.Info("tacctl updated — restarting upgrade with new version...")
 	// No --branch: the clone is on that branch now, so the new process
 	// finds nothing more to pull.
-	env := withEnv(h.Environ.Environ(), append([]string{ReexecEnv + "=1"}, h.handover(ids)...))
+	env := withEnv(h.Environ.Environ(), append([]string{ReexecEnv + "=1", FromCommitEnv + "=" + h.upgradeFrom()}, h.handover(ids)...))
+	h.beforeExec()
 	if err := h.Runner.Exec(p.Command, []string{p.Command, "upgrade"}, env); err != nil {
 		out.Error("Cannot run " + p.Command + ": " + err.Error())
 		return &backend.Error{Code: 126, Reason: "exec"}
@@ -478,6 +522,7 @@ func (h *Host) handOverToBash(ids []string) error {
 		return h.failed("ln: failed to create symbolic link '" + p.Command + "': " + errno(err))
 	}
 	env := withEnv(h.Environ.Environ(), h.handover(ids), ReexecEnv)
+	h.beforeExec()
 	if err := h.Runner.Exec(entry, []string{entry, "upgrade"}, env); err != nil {
 		out.Error("Cannot run " + entry + ": " + err.Error())
 		return &backend.Error{Code: 126, Reason: "exec"}

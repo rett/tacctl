@@ -3,6 +3,340 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.17 (2026-10-24)
+
+1. **Audit lines: one writer, a session id, no line lost to a signal, a
+   warning when `logger` fails.** Every line tacctl writes to syslog now goes
+   through one writer. Each line of a run ends in the same `sid=<id>` (8
+   characters of `a-z0-9`, made for each run; the tier gate's `DENY` lines and
+   the login console's `tacctl-console` lines included), so `grep sid=k3x9a0bq`
+   finds every line of one command. The words and keys of the lines are
+   unchanged and `sid=` is the last key, so a filter that matches the start of
+   a line, or `by=` and `user=`, still matches; a filter that anchors the end
+   of a line (`$`) must allow the id. A line is no longer dropped when Ctrl-C,
+   SIGTERM or a hangup is ending the command: `ssh end` and `console end` were
+   lost on a hangup, because `logger` was not started on a cancelled context.
+   When `logger` cannot be started or exits non-zero (not installed, the
+   syslog socket refused, no answer in 10 seconds), the command prints once on standard error `[WARN]
+   The audit line was not written (logger: <reason>); the command continues.`
+   and goes on with its own status; before, every such line was lost
+   silently. `tacctl install` and `tacctl upgrade` warn when `logger` (package
+   `util-linux`) is not installed.
+
+2. **Audit log: every state-changing command writes `cmd start` and `cmd end`,
+   a refusal inside a verb writes `cmd DENY`.** A command that changes state
+   or logs in somewhere every time it runs (`user add`, `host sync`, `ssh`,
+   `log clear`, ...) writes `cmd start v=1 user= uid= origin= tier= tty=
+   console= cmd= args=` before it does anything and `cmd end v=1 user= cmd=
+   result= status= duration= snapshot=` where its exit status is decided, at
+   `auth.info` (`auth.notice` for `install`, `upgrade`, `uninstall`,
+   `rollback`, `log clear`, the whole-state replacements, `group edit <group>
+   tier|priv-lvl`, `config sudoers` and the console's reach; `auth.warning`
+   for an end line whose result is not `ok`). `result` is `ok`, `failed`,
+   `denied`, `interrupted` (130) or `aborted` (a panic of tacctl's own code,
+   status 2); `snapshot` names the snapshot the command took. A command that
+   is a read or a write by its later arguments (`scope secret show|set`,
+   `device port <name> [<n>]`, `config loglevel [<level>]`, ...) writes the
+   pair only when it writes, from the first thing it changes; the commands
+   that only read write none. `args=` shows the command line with the value of
+   `--hash`, of `--secret` of `scope add` and of `scope secret <scope> set`
+   as `<redacted>`. A refusal inside a verb (an engineer naming a scope's
+   secret to change, or another scope's device; the superuser's verbs) writes
+   `cmd DENY v=1 user= uid= tier= cmd= args= reason=superuser|scope` at
+   `auth.warning`; its message and exit status are unchanged. A start line
+   with no end line means the command did not finish. The new page
+   `docs/security/audit.md` and the manual page's AUDIT LOG section describe
+   the lines, their fields and forwarding; the manual page lists the commands
+   by class. A person who runs tacctl as root with no `SUDO_USER` is
+   `user=root origin=root`. The lines that existed keep their words.
+
+3. **Audit log: no secret in `args=`, and the console's refusal names only a
+   verb.** `args=` of the `cmd` lines now hides every place a secret can be
+   typed: the value of `--hash` and of `scope add --secret`, the value of
+   `scope secret <scope> set`, every word of `hash` and `passwd`, and a word
+   typed in the place of a prompt, where the command refuses the line after
+   its start line is written (`user passwd bob <password>`, `user add bob
+   operator <password>`, `scope snmp <scope> community <value>` and the
+   `v3-user` and `device snmp` and `config snmp` forms). A refused `-c` string
+   of the login console logs `first=<word>` only when the word is a verb of
+   tacctl or one of the console's words (`help`, `history`, `exit`, `quit`,
+   `system-shell`); any other word, a program or a password typed at the
+   prompt, reads `console DENY ... reason=command first=- len=<n>`, `n` the
+   length of the string (the line used to carry any first word). Free text
+   such as `breakglass hold --reason` and the arguments of `ssh` after `--`
+   are logged as typed, as before; the docs say so.
+
+4. **Audit log: detail lines for every change, `result=` on the lines that
+   existed, a list is one word.** A command that changes something now says
+   what it changed in a line of its own beside the `cmd start`/`cmd end` pair,
+   at the priority of its class and ending in `by=<user>` and the `sid`: `user
+   add name= group= scopes=`, `user passwd name= source=prompt|hash|generated`,
+   `user rename from= to= uid=`, `user scope name= op= scopes=`, `group add`,
+   `group edit name= key= from= to=` (one line for each setting changed),
+   `group commands`, `group privilege`, `group preset`, `config sudoers op=
+   file=`, `console set key= item= from= to=`, `backup restore id= pre=
+   keep-uids= legacy=`, `store import`, `store rollback`, `install`, `upgrade
+   from= to= branch=`, `uninstall`, `scope add|remove|rename|default`, `scope
+   prefixes op= scope= cidr=`, `scope protocols|vendor-attrs|auth-method|
+   aaa-order|exec-timeout|tacacs-group|radius-group|netconf scope= from= to=`,
+   `scope devices`, `scope mgmt-acl`, `scope secret set scope= source=`, `snmp
+   set kind=` (with `scope=` or `device=`), `config allow|deny|mgmt-acl op=
+   value=`, `config <tunable> from= to=` (`password-age`, `bcrypt-cost`,
+   `password-min-length`, `secret-min-length`, `loglevel`, `metrics`,
+   `listen`, `branch`, `devices`, `cisco source-interface`), `config render
+   backends=`, `config linux uid`, `backend enable|disable id=`, `host sync`
+   for each host (`created= updated= renamed= removed= remove-home= result=`),
+   `host move`, `device add|remove|rename|import` with counts and `device set
+   name= field= from= to=` for every setter. A value is a name or a count,
+   never a secret, a hash or a password. Every `show` that prints a secret is
+   now `secret-read kind= name=` for every caller (before, only for the
+   restricted tiers), and so are `store show`, `config dump` and `backup
+   diff`; `config linux script` writes `secret-export scope= file=`. The lines
+   that existed keep their words and gain `result=ok` when the change was made;
+   a change that failed is written too, at `auth.warning`, as `result=failed
+   reason=<word>` (`script`, `store`, `race`, `lock`, `write`, `ssh`, `sshd`,
+   `interrupted`; never the text of an error): `host enroll|unenroll|rename|
+   forget|target`, `breakglass hold|release|remove-record|hold-move`,
+   `rollback`, `device sync`, `block-set|edit|adopt|remove`, `scope
+   breakglass`, `scope staging`, `group reset` and its sections, `device
+   hostkey`, `device config forget`, `linux engineer-sudo` and `console
+   provision|deprovision`. `host unenroll` says `force=yes|no`, `device sync`
+   `names=` (the first 20 devices) and `passwd` `source=self` where it said
+   `(self-service)`; `uid-map renumbered`, `uid-range set`, the two
+   `hostkey-mismatch` lines and `console policy ... unusable` end in
+   `by=<user>`. A comma is now written as it is in a value, so a list reads
+   `scopes=core,lab` and the `snapshot=` of a `cmd end` line that took two
+   snapshots `snapshot=<id>,<id>`; a space, a quote or a control character is
+   still quoted. The `secret-read` line of the walkthroughs and of `scope
+   snmp|device snmp show --reveal` is also written for a superuser, and the
+   `Reveal logged:` line of those two verbs is printed for every caller; a
+   verb that shows no secret (`device config list`, the note after a setter)
+   writes none. The
+   page `docs/security/audit.md` and the manual page's AUDIT LOG section list
+   the lines and their keys.
+
+5. **A snapshot's manifest records who took it.** The `manifest` file of a
+   snapshot gains `sid` (the session id of the audit lines), `user` (the
+   person who ran the command) and `command` (its words, without arguments),
+   so the `snapshot=` id of a `cmd end` line and the snapshot lead to each
+   other. Snapshots of earlier releases have none of them; `backup restore`
+   and `backup diff` do not read the manifest, and 0.2.16 ignores the new
+   keys.
+
+6. **`audit.strict`: refuse a command whose audit line cannot be written.** A
+   new key of `tacctl.yaml`, `audit: {strict: false}` by default, valid values
+   `true` and `false` (anything else is a `config validate` error). With
+   `strict: true`, a command that changes state (an action command, or a mixed
+   command at the first thing it would change) whose `cmd start` line `logger`
+   did not write is refused before it changes anything: `[ERROR] The audit line
+   cannot be written (logger: <reason>) and audit.strict is set; nothing was
+   changed.`, status 1, with no snapshot taken and no `[WARN]` beside it; a
+   command that only reads runs. An end line that cannot be written is still
+   the warning of item 1. Edit the file to set it; it is listed under
+   CONFIGURATION KEYS in the manual page and in `docs/cli/tunables.md`, and
+   `docs/security/audit.md` describes it. `tacctl rollback 0.2.16` is a new
+   target for the release before this one: it removes `audit.strict`, which a
+   0.2.16 binary refuses as an unknown key (its `config validate` reports it
+   and its `backup restore` refuses a snapshot that has it), and asks for
+   `--yes` when the value was `true`; the rollbacks to 0.2.9 and 0.2.3 remove
+   the key too.
+
+7. **A shared secret and a password hash without the secret on the command
+   line.** `tacctl scope secret <scope> set` with no value asks for the secret
+   twice at a terminal, without echo, and `set --stdin` reads one line of
+   standard input (a script); the minimum length and the single-class check
+   apply to the value read, which is taken as it is (less its line end, a CR LF
+   included) and refused when it holds a control character, whichever way it
+   is given; `--stdin` at a terminal is typed without echo. `tacctl user add`
+   and `tacctl user passwd` take `--hash -` to read the hash from one line of
+   standard input (a control character in it is refused). The forms with
+   the value on the command line (`set <value>`, `--hash <hash>`) work as
+   before; sudo's log records the whole command line and `ps` shows it while
+   the command runs, which the new forms avoid. The `args=` of the audit lines
+   shows `--stdin` as typed and still writes `<redacted>` for the `-` of
+   `--hash -` and for any value typed beside `--stdin`.
+
+8. **The vendor from the device by SNMP.** `tacctl device add` reads the
+   device's `sysObjectID.0` and `sysDescr.0` (the two in one request of their
+   own, beside the name and location reads, with the credentials of the name
+   hint) and says which vendor they name: `cisco` for an enterprise 9 answer
+   whose sysDescr starts `Cisco IOS Software` or `Cisco IOS XE Software`,
+   `juniper` for an enterprise 2636 answer whose sysDescr names Junos, and
+   `wti` for an enterprise 2634 answer (its sysDescr is generic Linux text);
+   any other enterprise 9 sysDescr, an unknown enterprise, and a missing
+   value name none. A `--vendor` that disagrees is a warning with the
+   `device vendor` command; without `--vendor` a terminal is asked
+   one `y/N` to register with the vendor named (`device add <address>` folds
+   it into its question), and `--pull` without `--vendor` uses it. `device
+   add <address>` asks a terminal for the name when the device gives none
+   that can be offered, instead of refusing. `device check` has a `Vendor`
+   row (`vendor_detected` in `--json`) and `--all` ends with the devices
+   registered as `other` that name a vendor; `device vendor <name>
+   --from-device [-y]` sets it from the device; `device discover --snmp`
+   puts each address's sysName and vendor in its `device add` line. The
+   vendor read last is kept in the seen cache, and one that is not the
+   registered vendor is the notice `vendor-differs` (not acknowledgeable). A
+   vendor change marks the last pull `needs pull (vendor changed)`, so
+   `device config diff`, `plan` and `sync` no longer read a record in the
+   new vendor's shape. Nothing is written to a device.
+
+9. **`--differs`, `--name` and `--ip` select devices for `device config pull`,
+   `diff`, `plan` and `apply`.** Beside names, `--all`, `--scope`, `--vendor`
+   and `--stale`, `--differs` keeps the devices whose last pull differs from
+   what tacctl renders now (the state `device config list --differs` shows,
+   decided from the records with no login; a device that needs a pull, was
+   never read or failed is `--stale`, not `--differs`), `--name <text>` the
+   devices whose name contains the text, and `--ip <addr|cidr|text>` those
+   whose address equals the address, lies in the prefix or contains the text.
+   `--name` and `--ip` take comma lists, as in `device list`. The filters
+   combine; names and `--all` still stand alone, and the three refusals
+   (exit 2) now name the new flags. `device config list` takes `--name` and
+   `--ip` too, and says `None: no device matches.` when they leave nothing.
+   `--login` still takes one named device. An `apply` still checks every
+   selected device on the device itself. `--name` and `--ip` match text, so
+   select the devices of an `apply` by exact names, a full address or a CIDR.
+   A selector given with no value (`--scope=`, `--name ""`) is refused with
+   exit 2 instead of selecting every device.
+
+10. **`device config apply --pull` pulls the devices before the check.** The
+    selected Junos devices are read first, as `device config pull` reads
+    them (its lines, records and audit lines, over
+    `device.config.transport`), with the one password of the run, asked
+    once for the pull, the check and the apply. A device whose pull fails
+    is a failed row and is not checked; a pull that stops (interrupted, a
+    refused password, `--max-failures`) ends the run with nothing checked.
+    `--stale` and `--differs` are then applied to the fresh records, so
+    `apply --pull --differs` reviews the devices that differ now; a device
+    that no longer does is named in the summary (`pulled, and the fresh
+    pull matches what tacctl renders`, JSON `left_out.match_after_pull`),
+    and one that cannot be compared is named apart (`could not be
+    compared`, JSON `left_out.not_compared_after_pull`) and not checked
+    either. With no other selector `--pull --differs` pulls every Junos
+    device you can see; the apply stays capped by `--max`. The review,
+    `--check`, `--confirmed -y`, `--hold` and every refusal are unchanged
+    and come before any login. With `--json` each pull object carries
+    `"phase":"pull"`; a device whose pull failed has only that object and
+    is counted failed in the summary. No new write path: the pull only
+    reads.
+
+11. **`device config apply` asks for each device by its name, and the audit
+    lines say how the review was answered.** The review still shows the
+    devices grouped by shape, then asks for each device to apply in turn:
+    its line (shape and counts), then `Type the device name to apply to
+    <name>:`. The name typed back approves that device (spaces and tabs
+    around it are ignored); anything else (a number, another case, a
+    carriage return or any other character, Enter) declines it with no
+    second try, and the end of input declines it and every device after it. The single answer for
+    several devices (the number of devices) is gone, and there is no
+    default. All the questions are answered before the first commit, so the
+    canary, `--pause`, `--concurrency` and `--hold` are unchanged. A declined
+    device is a skipped row (`skipped: not approved (the answer typed is not
+    its name)`) and nothing is sent to it; the approved ones are still
+    applied, and the run exits 1 (`--json`: `"stop":"not-approved"`, and one
+    object per answer with `"phase":"review"`, `"status":"approved"` or
+    `"declined"` and `"mode"`; a declined device has only that object, no
+    `"phase":"apply"` one). A Ctrl-C at a question, or after the last answer
+    and before the first commit, applies nothing and exits 130; the answers
+    already given stay logged and one line `device config apply review user=
+    result=interrupted applied=0 mode=` (with `--json` an object
+    `"phase":"review","status":"interrupted"`) says the review was cut
+    short. `--confirmed -y` works as before for superusers. Each answer
+    is a line `device config apply review user= device= shape=
+    answer=approved|declined mode=`, and the approval line and each device's
+    apply line carry `mode=attended` (names typed back) or `mode=scripted`
+    (`--confirmed -y`); `device onboard`'s approval line
+    says `mode=attended`. A script that typed the count must type each
+    device's name, or use `--confirmed -y`.
+
+12. **`config audit-strict [on|off]`, and `audit.strict` refuses a reveal
+    whose line cannot be written.** `tacctl config audit-strict` (superuser)
+    shows `audit.strict` and where it comes from; `on` writes `audit:
+    {strict: true}` to `tacctl.yaml` and `off` removes the key. The change is
+    the central pair and a detail line `config audit-strict from= to=` at
+    `auth.notice`. The command is never refused by the setting, so `off` works
+    while `logger` is down and every other change is refused. With the
+    setting on, a command that shows a secret (`scope secret <scope> show`,
+    `config cisco|juniper|wti`, `device config show`, `device config plan`
+    unless `--no-secrets`, `--reveal` of `scope snmp`, `device snmp`,
+    `config snmp show`, `scope block` and `device block`, their `edit` and
+    `adopt`, `store show`, `config dump`, `backup diff`, the diff of `backup
+    restore` and `config restore`) is now refused, for every tier, when its
+    `secret-read` line cannot be written: `The audit line cannot be written
+    (logger: <reason>) and audit.strict is set; nothing was shown.`, exit 1,
+    before any secret is printed. `block edit` and the two restores now write
+    that line (the editor and the diff show the secrets). `config linux
+    script` writes its `secret-export` line before the script, not after, and
+    is refused the same way before the file is written; `scope secret
+    generate` writes its start line before it prints the value. The `device
+    config` verbs that only compare a rendered configuration or elide its
+    secrets (`list`, `diff`, `plan --no-secrets`, and the render of `pull`,
+    `apply`, `device collect` and `onboard`) keep their `secret-read` lines
+    without this refusal. Without the setting a line that cannot be written
+    is still the warning, and the secret is shown.
+
+13. **`tacctl device enroll <address>... | --discovered`: one attended
+    command from a new address to its plan.** Superusers. Per address, in
+    the order given: what is refused before any question (registered
+    already, no scope, a scope you are not a member of, break-glass held, no
+    ssh host key) is a row and the run goes on; the one host key that will
+    be pinned (ed25519 first, then ECDSA, then RSA) is shown with the
+    console command that shows it, and is accepted by typing the device's
+    name (its SNMP sysName, or, when SNMP gives none, the name to register
+    it as, checked as every new name); Enter skips the device and any other
+    answer refuses it. There is no `-y`, no answer for several devices and
+    no trust on first use; without a terminal the one form is `--host-key
+    SHA256:<fp>` for one address, with `--vendor` and `--name` where SNMP
+    reads none. The vendor the device names by SNMP is taken, else asked
+    (`other` registers the device and ends its chain). After one y/N the
+    device is registered at once through `device add` with that key alone
+    pinned; the run takes one snapshot. Then your password once, the pull of
+    every device registered with a vendor tacctl reads, the registry rename
+    to the name the device is configured with when a name was typed or given
+    (Junos `host-name`, IOS `hostname`, which the pull record now keeps, a
+    WTI Site ID; kept, with the reason and the `device rename` line, when it
+    is taken, generic, invalid or the device is held; nothing is written to
+    the device), the plan, printed as `device config plan --no-secrets`
+    prints it (`device config plan <name>` prints the region to paste), and
+    for Junos devices whose plan has a change one question that runs the
+    apply review; a device with nothing to apply says so in its row. `--json` ends at the plan. A device
+    registered stays registered when a later stage fails; the table
+    (`ADDRESS NAME VENDOR KEY PULL PLAN RESULT`) gives each one's next step.
+    Exit 0 every address went as far as its vendor allows, 1 one was
+    refused, skipped or failed, 2 wrong arguments or no terminal, 130
+    interrupted. Every answer to a key is `device enroll hostkey user= addr=
+    device= alg= fp= result=accepted|skipped|refused source=confirmed|flag`
+    at `auth.notice`, written before the key is pinned (with `audit.strict`
+    an unwritten line refuses that device), and each address ends with
+    `device enroll user= addr= device= vendor= source= result=`; a rename is
+    `device rename ... reason=device-name`. The sudoers drop-ins keep the
+    password cache's variable for `device enroll` too: `tacctl upgrade`
+    rewrites the tiers drop-in and a group drop-in that is exactly 0.2.16's
+    text.
+
+14. **`device collect` and `device onboard` accept a host key per device,
+    as `device enroll` does.** The one `Trust these keys ...? [y/N]` for
+    every key of a run is gone. Before any login, the one key that will be
+    pinned (ed25519 first, then ECDSA, then RSA) is shown with the Junos
+    console command that shows it, the others as offered and not pinned,
+    and the key is accepted by typing back: for `collect`, the address, or
+    with `--register` the device's SNMP sysName when it gives one a new
+    device may take (valid, not taken, not generic; else the address; the
+    device is still registered under the name it reports to `show
+    version`), address by address; for `onboard`, `--name`, else its SNMP
+    sysName, else the name to register it as (checked as every new name),
+    which is then the name it is registered under. Enter skips the address
+    (`onboard`: stops), any other answer refuses it, nothing is sent to it,
+    and a `collect` row says `skipped` or `refused` (exit 1). Only the key
+    accepted is pinned at registration (`device hostkey <name> accept` pins
+    the others after a check), and `collect --json` lists under `host_keys`
+    only that key (none for a skipped or refused address). `--host-key SHA256:<fp>` is unchanged and
+    remains the form without a terminal; `collect --register -y` answers
+    only the registration question, never a key's. Every answer is
+    `device collect hostkey` or `device onboard hostkey` at `auth.notice`
+    with the keys of `device enroll hostkey`, written before the key is
+    used; with `audit.strict` an unwritten line refuses that address
+    (`onboard`: the run) before anything is sent.
+
 ## 0.2.16 (2026-10-23)
 
 1. **`config validate` takes no argument.** `config validate extra` ran the

@@ -81,7 +81,11 @@ Shape 3f2a1b9c0d4e, 2 devices (sw-lab-1, sw-lab-2), not confirmed yet:
 Apply to 2 devices (sw-lab-1, sw-lab-2), one shape's first device at a time, each under commit
   confirmed 10 and kept only after a fresh login as alice works and what landed is what the check
   showed?
-  Type 2 to go on: 2
+  Each device is applied only when its name is typed back.
+  sw-lab-1  shape 3f2a1b9c0d4e (new), 5 set, 1 delete
+  Type the device name to apply to sw-lab-1: sw-lab-1
+  sw-lab-2  shape 3f2a1b9c0d4e (new), 5 set, 1 delete
+  Type the device name to apply to sw-lab-2: sw-lab-2
   sw-lab-1  committed, verifying ...
   sw-lab-1  confirming ...
   sw-lab-1  applied (aaa,snmp: 5 set, 1 delete) [tacctl-20261013T141201Z-3f2a]
@@ -90,15 +94,174 @@ Apply to 2 devices (sw-lab-1, sw-lab-2), one shape's first device at a time, eac
   2 applied, 1 no change
 ```
 
-- **Two phases, one question.** Every selected device is checked first, in the pool of `pull`: tacctl reads it, plans from that read, loads the statements in an exclusive configure session (`configure exclusive`: a private session does not take `commit confirmed` on the devices of the lab, so there is no other mode), runs the device's own `commit check` and discards the candidate. `--check` ends there: nothing is committed, the device's shape and result are recorded. The devices that need a change are then shown grouped by shape and by what the review shows of each (two devices of one shape whose warnings, sections left out, kept statements or not-found deletes differ are two headings), every secret elided, a statement whose per-device value differs printed for each device after its name, with what the plan keeps and what it leaves out, and ONE question is asked: type the device's name (one device) or the number of devices back. A device whose plan refuses a section (what makes `device config plan` exit 1) is not applied: its row is `failed: the plan refuses <section> (<why>)`. A terminal is needed; without one the only way through is `--confirmed --yes`. `--yes` without `--confirmed` is a usage error: a batch of shapes nobody reviewed is not run blind.
+- **Two phases, a question per device.** Every selected device is checked
+  first, in the pool of `pull`: tacctl reads it, plans from that read, loads
+  the statements in an exclusive configure session (`configure exclusive`: a
+  private session does not take `commit confirmed` on the devices of the lab,
+  so there is no other mode), runs the device's own `commit check` and
+  discards the candidate. `--check` ends there: nothing is committed, the
+  device's shape and result are recorded. The devices that need a change are
+  then shown grouped by shape and by what the review shows of each (two
+  devices of one shape whose warnings, sections left out, kept statements or
+  not-found deletes differ are two headings), every secret elided, a statement
+  whose per-device value differs printed for each device after its name, with
+  what the plan keeps and what it leaves out. Then each device to apply is
+  asked for in turn, in the order of the apply (registry order, at most
+  `--max`): its line (shape and counts), then `Type the device name to apply
+  to <name>:`. The name typed back approves the device (spaces and tabs around it are
+  ignored); anything else (another name, another case, a number, a carriage
+  return or any other character, Enter) declines it with no second try, and
+  the end of input declines it and every device after it. There is no answer for
+  several devices and no default. Every question is answered before the first
+  commit, so the canary, `--pause`, `--concurrency` and `--hold` run over the
+  approved devices as before (with `--hold` a device has two answers, its name
+  before and `OK` after). A declined device is a skipped row (`skipped: not
+  approved (the answer typed is not its name)`), nothing is sent to it, the
+  approved ones are still applied, and the run exits 1 (JSON
+  `"stop":"not-approved"`); with `--json` each answer is an object with
+  `"phase":"review"`, `"status":"approved"` or `"declined"` and `"mode"`, and
+  a declined device has only that object, no `"phase":"apply"` one. A Ctrl-C
+  at a question, or after the last answer and before the first commit,
+  applies nothing and exits 130; the answers already given stay logged, and
+  one line `device config apply review user= result=interrupted applied=0
+  mode=` (with `--json` an object `"phase":"review","status":"interrupted"`)
+  says the review was cut short. A device whose plan
+  refuses a section (what makes `device config plan` exit 1) is not applied:
+  its row is `failed: the plan refuses <section> (<why>)`. A terminal is
+  needed; without one the only way through is `--confirmed --yes`, which
+  answers every device's question and applies only shapes an earlier apply
+  confirmed. `--yes` without `--confirmed` is a usage error: a batch of shapes
+  nobody reviewed is not run blind. The audit lines say which form it was:
+  `device config apply review user= device= shape= answer=approved|declined
+  mode=` per device, `device config apply user= approved=<n> shapes= canary=
+  mode=` for the approval and the per-device apply line `device config apply
+  user= device= id= shape= sections= result= commit= until= mode=`, with
+  `mode=attended` for the typed names and `mode=scripted` for `--confirmed
+  --yes`.
+- **Pulling first.** `--pull` reads the selected devices before the check,
+  as `tacctl device config pull` does (its lines, records and audit lines,
+  over `device.config.transport`; `--transport` is how the apply writes),
+  with the same password, asked once for the pull, the check and the apply.
+  A device whose pull fails is a failed row and is not checked, and a pull
+  that stops (interrupted, a refused password, `--max-failures`) ends the
+  run with nothing checked. `--stale` and `--differs` are then applied to
+  the records the pull has just written, so `tacctl device config apply
+  --scope lab --pull --differs` reviews the devices that differ now; a
+  device that no longer does is `skipped ...: pulled, and the fresh pull
+  matches what tacctl renders`. Without those two, every device pulled is
+  checked. `--pull` goes with `--check`, `--confirmed -y` and `--hold`, and
+  writes nothing to a device that the apply would not.
 - **What an apply proves.** The device is committed under `commit confirmed N` (`config devices apply-confirm-timeout`, default 10), then a second connection logs in as you through the device's own login path, `show system commit` must show tacctl's commit and the device's banner must say a confirmed commit is pending, `show configuration | compare rollback 1` must be the change the check showed, and a read of the planned sections must lack nothing. Only then, with a minute of the window left, the confirming `commit` is typed in the session that committed (no other session ever confirms for it). A proof that fails cancels the commit (`rollback 1` and `commit` in the held session) and the device is `rolled back`; a window that ran short is left to the device's own expiry. `--hold` adds the one proof a machine cannot make: after the fresh login you log in with one account of each class in another terminal and type `OK`; anything else, or no answer while a minute of the window is left, rolls the change back. A line typed before a device's question is not its answer. `--hold` needs a terminal and is refused with `--json` (exit 2).
 - **Pending.** Over the command line and over NETCONF alike a device undoes a confirmed commit only when its window ends (10 minutes by default), not when tacctl's session closes or dies, and any `commit` or `commit check` typed on it confirms the change. A device whose state could not be read after the confirmed commit is therefore reported `PENDING until <time>` (and said in red on standard error): type nothing on it before then. The record says `pending` with the identifier and the window's end from the moment the confirmed commit is typed, so a tacctl killed during the verification leaves a record the next run settles (a record that cannot be written then is said at once in red on standard error, and the transaction goes on); `device config list` and `device show` say it, and the next `apply` or `--check` of that device first reads its commit history, records what happened (`applied`, `rolled-back`) and only then goes on; while the window stands it sends nothing. Where the history alone does not say (the commit after tacctl's is `by root via other`, the device's own rollback or a commit of the system, or someone else's), the device's rollbacks do: with tacctl's commit at history entry N, `show configuration | compare rollback N` empty is `applied` and `compare rollback N+1` empty is `rolled-back`, both read in one operational session; anything else is `unknown`, never applied, whatever the rendering is now. The settled result is printed above the device's line (`the earlier apply <id> by <user> was rolled back by the device at <time>`; JSON `settled`) and logged (`device config apply settle user= device= id= result=`). If the history can no longer say, the refusal names `device config forget <name>` for after the device was looked at by hand.
 - **Shapes and the batch.** Two devices that need the same change have one shape: a hash of the statements with every secret elided and every per-device value (a location, a contact, a name) masked, so it is known before any device is dialled. The first device of each shape goes alone and the others of its shape follow only when it applied (`--no-canary`: together); `--concurrency` applies several at a time (default one), `--pause <seconds>` (default `config devices apply-pause`, 60) waits between devices, `--max <n>` (default 5) caps the devices of every apply run, and `--max-failures` defaults to 1. At the start of each device's apply the break-glass hold, the registry entry (name, address, vendor, hostname, port, host keys) and the scope that covers it are read again: a device held, changed or no longer yours since the review fails with the reason, and nothing is sent to it. `--confirmed` runs only the devices whose shape an earlier apply confirmed and skips the rest (`unknown shape <hash>: review and apply it by hand first`). `tacctl device config shapes` lists the shapes seen and which are confirmed, `--show <hash>` prints one; `shapes seed <name>` files the shape of a device's last check or apply as confirmed on your word, for a device that was applied and verified by hand (one question, `-y` answers it). One reviewed apply per shape confirms it for the rest.
 - **The transport.** A device is reached over the Junos command line or over NETCONF, as `--transport` of the run (or `config devices apply-transport`, default `cli`) says. NETCONF is opt-in: `auto` uses NETCONF for a device whose last read found the service answering and whose login may commit, and otherwise the command line; the line says why when it fell back (`[via cli: NETCONF port closed at the last read]`; a device never read says nothing, the JSON has `via` and `via_reason` always). `cli`, the default, is what 0.2.9 did. `netconf` never falls back: a device that does not answer, or cannot confirm, is `failed`. Over NETCONF the change is loaded under the candidate's lock (a Junos device refuses a confirmed commit in a private session), checked, committed under a confirmed commit and confirmed by the session that made it; a session that ends without confirming leaves the commit pending until its window ends, as over the command line (a failed verification is cancelled at once, `rollback 1` and a commit, while tacctl runs), and the same fresh login proves the device. A candidate that holds another editor's staged change is refused, never committed with the change. A change to the NETCONF service itself (`scope netconf`, `device netconf`) is always made over the command line, because its verification depends on the service; `--transport netconf` refuses it. Its proof, before the confirming commit, is a NETCONF probe on a fresh login: enabling the service must be answered by a hello as you, disabling it must find the hello no longer answered (`port closed` or `no hello`); a probe that cannot tell fails the proof and rolls the change back. The line says `[NETCONF verified: hello ok]` or `[NETCONF verified: not answering]` (the JSON's `service_proof`), and the record's NETCONF probe becomes what was proved; a rolled-back change leaves it as it was. The record's `applied.via` and the JSON's `via` say which transport.
 - **What it never writes.** `breakglass` (a walkthrough step), `system root-authentication`, `system services` (but for the exact statements of the NETCONF setting), `netconf` otherwise, `interfaces`, groups and `apply-groups`, any local user's credentials, the root user, the account that is running it, the login class that account belongs to, and the deletion of a whole hierarchy tacctl renders. The statements are held against the planner's own ownership tables before the first is typed, whatever the flags: a statement outside them stops the device with nothing sent. A statement that a group supplies is never changed; the section that would have to is left out and the review says so. `--section` limits the sections (`aaa`, `roles`, `mgmt-acl`, `snmp`, `system`, `netconf`); `--converge` is not offered: the cleanup is a second reviewed run after the first is verified.
 - **Refusals before any login.** A caller below the superuser; root (the login is the invoking user's); a device held for break-glass (the server does not answer it); a device no scope covers or whose scope is not yours; a Cisco device or a WTI unit (a selector leaves them out and counts them; a named one is a failed row). A device that reports another name than the registry's name or hostname is `failed: calls itself '<x>'`, one with another editor's staged or open configuration is `failed: other editors or staged changes`, and an exclusive session someone else holds names the holder.
-- **Interrupts, exit and audit.** The first Ctrl-C starts no more devices and lets the running one finish (a transaction is never cut by it); the second cancels: before the commit the candidate is discarded, after it the commit is cancelled where the window allows and otherwise left `PENDING`. Exit status: 0 every device applied, was checked or had no change; 1 a device failed, was rolled back or is pending, the review was not answered, or devices were selected and none was applied or found already applied (`--confirmed --yes` that skipped them all: `Nothing was applied: every device was skipped.`, JSON `"stop":"nothing-applied"`); 2 wrong arguments (`--check --exit-code`: a device needs a change); 130 interrupted. `--json` prints one object per device and phase, then the summary; the review goes to standard error. The audit lines are `device config apply user= device= id= shape= result= duration=` (each check), `user= approved=<n> shapes= canary=` (the review's answer; `canary=` names the first device of each shape, or `none` with `--no-canary`), `user= device= id= shape= sections= result= commit= until=` (each apply), `device config apply settle user= device= id= result=` (an earlier apply's pending record settled) and `device config shapes seed user= device= shape=`; none holds a value.
+- **Interrupts, exit and audit.** The first Ctrl-C starts no more devices and lets the running one finish (a transaction is never cut by it); the second cancels: before the commit the candidate is discarded, after it the commit is cancelled where the window allows and otherwise left `PENDING`. Exit status: 0 every device applied, was checked or had no change; 1 a device failed, was rolled back or is pending, the review was not answered, or devices were selected and none was applied or found already applied (`--confirmed --yes` that skipped them all: `Nothing was applied: every device was skipped.`, JSON `"stop":"nothing-applied"`); 2 wrong arguments (`--check --exit-code`: a device needs a change); 130 interrupted. `--json` prints one object per device and phase, then the summary; the review goes to standard error. The audit lines are `device config apply user= device= id= shape= result= duration=` (each check), `device config apply review user= device= shape= answer= mode=` (each device's answer), `user= approved=<n> shapes= canary= mode=` (the approval; `canary=` names the first device of each shape, or `none` with `--no-canary`), `user= device= id= shape= sections= result= commit= until= mode=` (each apply), `device config apply settle user= device= id= result=` (an earlier apply's pending record settled) and `device config shapes seed user= device= shape=`; none holds a value.
 - **The records.** `/var/lib/tacctl/device-apply/shapes.json` (0600) holds each shape's elided lines and who confirmed it, `locks/` a lock per device (`another apply is running on <name>`); the `applied` part of the device's record is described under *Records* in [Device configuration](configuration.md). No raw device output and no password is kept anywhere.
+
+## Enrolling a device
+
+`tacctl device enroll <address>... | --discovered` runs the chain from a new
+address to its plan in one attended command: the host key, the vendor and the
+name, the registration, the pull, the device's own name, the plan and, for a
+Junos device, the apply review. It is the superuser's, logs in as you, and
+asks its questions device by device. `--discovered` takes the addresses
+`device discover` lists.
+
+```
+$ tacctl device enroll 192.0.2.10
+  192.0.2.10 offers:
+    Will pin:  ED25519  SHA256:...
+    Also offered, not pinned (unverified):
+      RSA      SHA256:...
+    On the device: Junos: 'file show /etc/ssh/ssh_host_ed25519_key.pub' (...)
+  Compare the key with the console of 192.0.2.10. Type the device name (sw1)
+  to accept it and register it, or press Enter to skip the device: sw1
+  Register 192.0.2.10 as 'sw1' (juniper, the device says so)? [y/N] y
+[INFO] Device 'sw1' registered: 192.0.2.10, juniper.
+  Host key pinned (the key you accepted):
+    ED25519  SHA256:...
+  ...
+Password for alice (device login):
+  sw1  ok, differs in aaa via netconf
+  ...
+Run the apply review for sw1 now (the plan is checked on each device, then
+each is confirmed on its own)? [y/N] n
+
+Enrolled 1 address(es)
+-------------------------------------------------------------
+  ADDRESS     NAME  VENDOR   KEY       PULL  PLAN     RESULT
+  -----------------------------------------------------------
+  192.0.2.10  sw1   juniper  accepted  ok    differs  planned
+
+  192.0.2.10: next: tacctl device config apply sw1
+```
+
+- **Refused before any question.** An address registered already (it is
+  reached by `device config pull`), one no scope covers, one in a scope you
+  are not a member of, one on which break-glass is held, and one that offers
+  no ssh host key (a device that answers only the legacy algorithms is found
+  and registered `--legacy-ssh`). Each is a row of its own and the run goes
+  on.
+- **The host key, accepted by its device's name.** Of the keys the address
+  offers, the one that will be pinned is the first of ed25519, ECDSA, RSA; it
+  is shown with the command that shows it on the device's console (every
+  vendor's when the vendor is not known yet), the others as offered and not
+  pinned. Compare it with the console and type the device's name: the name
+  the device gives itself by SNMP, or, when SNMP gives none, the name to
+  register it as (checked as every new name is: lower case, not taken, not
+  generic). Enter skips the device; any other answer refuses it, with no
+  second try. There is no `-y`, no answer for several devices and no trust on
+  first use. Without a terminal the one way in is `--host-key SHA256:<fp>` for
+  one address, the fingerprint read on the console; it pins that key. The
+  other keys are pinned after a check of their own with `device hostkey
+  <name> accept`.
+- **The vendor and the registration.** The vendor the device names by SNMP
+  (as `device add` reads it) is taken; when it names none, you are asked
+  (`cisco`, `juniper`, `wti` or `other`; Enter skips the device). `other`
+  registers the device and ends its chain there: set the vendor with `device
+  vendor <name> <vendor>` (or `--from-device`), then pull. One y/N, then the
+  device is registered at once through `device add`. The first registration
+  takes one snapshot for the whole run. Without a terminal, `--vendor` and
+  `--name` give what SNMP does not read (one address); a device left without
+  them is skipped with the `device add` line to run.
+- **The pull and the device's own name.** After every question, your
+  password is asked once and the devices registered with a vendor tacctl
+  reads are pulled together. When the name registered was typed or given
+  (not read by SNMP), the name the device is configured with replaces it in
+  the registry: Junos `system host-name`, IOS `hostname`, a WTI unit's Site
+  ID (not a generic one), the first label in lower case. It is a rename of
+  tacctl's registry entry only; nothing is written to the device. The name
+  registered is kept, and the row says why with the `device rename` line to
+  run, when the device's name is taken by a device or an enrolled host, is
+  generic, is not a valid name, or a break-glass hold stands on the device.
+- **The plan and the apply review.** Each device pulled is planned as
+  `device config plan --no-secrets` plans it: the report and the change,
+  with each secret a marked line, so the run prints no secret; `device
+  config plan <name>` prints the region to paste. For the Junos devices
+  whose plan has a change, one question offers the apply review; `y` runs
+  `device config apply` for them with the same password, and the review
+  asks for each device's name as it always does. A device whose plan has
+  no change says `nothing to apply` (`nothing to paste` for another vendor)
+  in its row, and no review is offered for it. With `--json`, or without a
+  terminal, the run ends at the plan and names the apply to run.
+- **What a run leaves.** A device registered stays registered when a later
+  stage fails or the run is interrupted; the table's rows say how far each
+  went and the line under it each one's next step. Exit status: 0 every
+  address went as far as its vendor allows (a declined offer and an `other`
+  device included), 1 one was refused, skipped or failed at any stage, 2
+  wrong arguments or no terminal, 130 interrupted.
+- **Audit.** The command's `cmd start` and `cmd end` (the end line names the
+  run's one snapshot), `device enroll hostkey user= addr= device= alg= fp=
+  result=accepted|skipped|refused source=confirmed|flag` at `auth.notice` for
+  every answer to a key, before the key is pinned, the `device add` line of
+  each registration, the pull's and the plan's lines, `device rename from=
+  to= reason=device-name` for a name taken over, the apply's lines with
+  `mode=attended` when the review runs, and one `device enroll user= addr=
+  device= vendor= source=snmp|given|asked result=` per address. With
+  `audit.strict`, an acceptance whose line cannot be written refuses that
+  device before anything is pinned.
 
 ## Onboarding a blank device
 
@@ -107,14 +270,17 @@ Apply to 2 devices (sw-lab-1, sw-lab-2), one shape's first device at a time, eac
 ```
 $ tacctl device onboard 192.0.2.31 --login admin --name sw-lab-5
   192.0.2.31 offers:
-    ED25519  SHA256:...
-  A blank device has no other proof: compare one with its console (...).
-Trust these keys and send the local password of 'admin' to 192.0.2.31? [y/N] y
+    Will pin:  ED25519  SHA256:...
+    On the device: Junos: 'file show /etc/ssh/ssh_host_ed25519_key.pub' (...)
+  Compare the key with the console of 192.0.2.31. Type the device name
+  (sw-lab-5) to accept it and send it the local password of 'admin', or press
+  Enter to stop: sw-lab-5
 Password of admin on 192.0.2.31 (a local account; asked once, never kept):
   192.0.2.31  Junos 25.4R1  ex4300-48mp  device reports host name sw-lab-5; no TACACS+ or RADIUS
                                          server
 [INFO] Device 'sw-lab-5' registered: 192.0.2.31, juniper.
-  ...
+  Host key pinned (the key you accepted):
+    ED25519  SHA256:...
   From the device: location "Lab rack 2"
   sw-lab-5  read as local:admin: aaa, roles differ from what tacctl renders
   sw-lab-5  checked: shape ee791d20ded1 (new) (roles, aaa: 17 set, 0 delete); check ok
@@ -130,16 +296,50 @@ Password for alice (device login):
   The local account 'admin' was not probed: a login would send its password to the TACACS+ server.
 ```
 
-- **Identity first.** The host keys the address offers are shown, and one question is asked before any login. `--host-key SHA256:<fp>` (the fingerprint read on the device's console) answers it instead and pins that key alone. Without a terminal and without `--host-key` the run is refused, and without a terminal only `--check` runs.
+- **The host key, accepted by the device's name, first.** Of the keys the
+  address offers, the one that will be pinned is the first of ed25519,
+  ECDSA, RSA; it is shown with the Junos console command that shows it, the
+  others as offered and not pinned. Compare it with the console and type the
+  device's name before any login: `--name`, else the name the device gives
+  itself by SNMP, else the name to register it as (checked as every new
+  name is: lower case, not taken, not generic), which is then the name it is
+  registered under. Enter, the end of input or any other answer sends
+  nothing, with no second try. There is no `-y` and no trust on first use.
+  A device an earlier onboard registered is asked for its registered name
+  and nothing new is pinned: its pinned keys are listed, the key is shown
+  under `Key to check`, and a key that is not among them refuses the run
+  (re-pin it after a check: `device hostkey <name> set <fp>`).
+  `--host-key SHA256:<fp>` (the fingerprint read on the device's console)
+  answers instead and pins that key. Without a terminal and without
+  `--host-key` the run is refused, and without a terminal only `--check`
+  runs.
 - **Pre-flight as the local account.** Its password is asked once on the terminal and never kept or cached. `show version`, no pending confirmed commit, a login class that may commit, no TACACS+ or RADIUS server (`system tacplus-server`, `radius-server` or `accounting destination tacplus|radius server`, also in a group: a device that has one is reached by the normal flow, `device add`, `device config pull`), and no local account of your own name (a login as you could be that account's, not TACACS+). `--login` may not name your own login, and `--section` must include `aaa`. What the device reports is shown with its control characters replaced.
-- **Registration.** The name is `--name`, else the host name the device reports, else asked for at the terminal (a generic or taken one). The device is registered through `device add` with the keys of the first step; its own `snmp location` and `snmp description` fill the registry's empty location and description. Its host name is only shown (`device reports host name`): it never fills the registry's hostname, which ssh would dial instead of the address. A device an earlier onboard registered, and that was never read as your own login, is taken again under its name and pinned keys.
+- **Registration.** The name is the one the key was accepted under; with
+  `--host-key` it is `--name`, else the host name the device reports, else
+  asked for at the terminal (a generic or taken one). The device is registered
+  through `device add` with the key of the first step pinned (the others are
+  pinned after a check of their own with `device hostkey <name> accept`); its
+  own `snmp location` and `snmp description` fill the registry's empty
+  location and description. Its host name is only shown (`device reports host
+  name`): it never fills the registry's hostname, which ssh would dial instead
+  of the address. A device an earlier onboard registered, and that was never
+  read as your own login, is taken again under its name and pinned keys.
 - **Read, plan, check.** The read is recorded as a pull made as the local account (`login=local:<account>`); the plan is the ordinary planner's first-time plan, checked on the device with its own `commit check` as `device config apply --check` does. `--check` stops here: the device is registered and nothing is committed. The plan never holds the break-glass accounts, root, the local account, system services or interfaces.
 - **Commit as the local account, proven by your login.** After the review (the device's name typed back) your own password is asked (the password cache may answer it). The change is committed as the local account under `commit confirmed`; every session after the commit is your own TACACS+ login: the fresh login, the landed change and the reads of the planned sections. Its `show cli authorization` must name, as the current user, the template user your group's Juniper class renders, with that class; a local account is not a proof. The confirm is typed in the held local session. A fresh login that is refused or is not that template user rolls the change back and leaves the local account as it was. The local account is never tried again after the commit, `root` included: with `authentication-order tacplus` Junos sends a local account's password to the TACACS+ server, so the run says `was not probed` (`--json` has `"probe": "not-probed"`).
-- **Audit.** `device onboard user= device= approved=1 shape= login=` at the answer and `device onboard user= device= addr= login=local:<account> result=` at the end; never a password.
+- **Audit.** `device onboard hostkey user= addr= device= alg= fp=
+  result=accepted|skipped|refused source=confirmed|flag` at `auth.notice`
+  for the answer to the key, before the key is used (`device=` is the name
+  shown in the question, on a refusal too, or the name typed when it was
+  accepted, never a refused text; `-` on a skip; with `audit.strict`, an
+  acceptance whose line cannot be written refuses the run before anything is
+  sent); `device onboard user= device= approved=1 shape= login=
+  mode=attended` at the answer to the review and `device onboard user=
+  device= addr= login=local:<account> result=` at the end; never a
+  password.
 
 ### One read as a local account
 
-`device config pull <name> --login <local-user>` (and `diff --pull`, `plan --pull`) logs in to one registered Junos device with a pinned host key as one of its local accounts instead of you, for a device the server does not answer yet. It is the superuser's (an engineer is refused by the tier gate), takes one device by name (a list, `--all`, `--scope`, `--vendor` or `--stale` is a usage error) and needs a scope that answers the address; a device on which break-glass is held is refused (release it first), as for every pull. Any local account may be named, a break-glass account included; only `root` is handled apart. The password travels as above: asked on the terminal, sent to the one connection, never stored in or asked of the password cache. `root` is accepted only for a device never read as your own login; its csh is left at once by the remote command `sh -c 'PATH=$PATH:/usr/sbin:/usr/bin:/sbin:/bin; exec cli'`, and it reads over the ssh command line only. The audit line is `device config pull user= device= login=local:<account>`.
+`device config pull <name> --login <local-user>` (and `diff --pull`, `plan --pull`) logs in to one registered Junos device with a pinned host key as one of its local accounts instead of you, for a device the server does not answer yet. It is the superuser's (an engineer is refused by the tier gate), takes one device by name (a list, `--all` or any selector is a usage error) and needs a scope that answers the address; a device on which break-glass is held is refused (release it first), as for every pull. Any local account may be named, a break-glass account included; only `root` is handled apart. The password travels as above: asked on the terminal, sent to the one connection, never stored in or asked of the password cache. `root` is accepted only for a device never read as your own login; its csh is left at once by the remote command `sh -c 'PATH=$PATH:/usr/sbin:/usr/bin:/sbin:/bin; exec cli'`, and it reads over the ssh command line only. The audit line is `device config pull user= device= login=local:<account>`.
 
 ## Collecting from addresses nobody registered
 
@@ -147,14 +347,20 @@ Password for alice (device login):
 
 ```
 $ tacctl device collect 192.0.2.31 192.0.2.32 --register
+
   192.0.2.31 offers:
-    ED25519  SHA256:...
+    Will pin:  ED25519  SHA256:...
+    On the device: Junos: 'file show /etc/ssh/ssh_host_ed25519_key.pub' (...)
+  Compare the key with the console of 192.0.2.31. Type the device name (sw-lab-5) to accept it
+  and send it the password of 'alice' (your tacctl password), or press Enter to skip the
+  address: sw-lab-5
+
   192.0.2.32 offers:
-    ED25519  SHA256:...
-  Nobody registered these 2 addresses, one attempt at each: compare the keys with each device's
-  console (...).
-Trust these keys and send the password of 'alice' (your tacctl password) to these 2 addresses,
-  one attempt at each? [y/N] y
+    Will pin:  ED25519  SHA256:...
+    On the device: Junos: 'file show /etc/ssh/ssh_host_ed25519_key.pub' (...)
+  Compare the key with the console of 192.0.2.32. Type the address (192.0.2.32) to accept it
+  and send it the password of 'alice' (your tacctl password), or press Enter to skip the
+  address: 192.0.2.32
 Password for alice (device login):
 
 Collected from 2 address(es)
@@ -170,16 +376,43 @@ Collected from 2 address(es)
   192.0.2.32: not a Junos device (...); the session was closed
   tacctl device add sw-lab-5 192.0.2.31 --vendor juniper
 
-Register 1 device(s), pinning the host keys shown: sw-lab-5 (192.0.2.31)? [y/N] y
+Register 1 device(s), pinning the host key accepted for each: sw-lab-5 (192.0.2.31)? [y/N] y
 ```
 
 - **Admitted first.** Before anything is scanned or sent, an address a registry entry holds (it is reached by the normal flow, `device config pull`), an address no scope answers, one on which break-glass is held and, for your own login, a caller who is not an active member of the scope are refused, and the run stops: nothing was sent.
-- **Identity.** The host keys are read (nothing is authenticated) and shown with fingerprints, and one question is asked before any login. `--host-key SHA256:<fp>` (read on the device's console) answers it for one address and pins that key alone; without a terminal and without `--host-key` the run is refused. A device that offers only the legacy algorithms is found by the scan and registered `--legacy-ssh`.
+- **The host key, accepted address by address.** The host keys are read
+  (nothing is authenticated); then, for each address in turn and before any
+  login, the one key that will be pinned (the first of ed25519, ECDSA, RSA)
+  is shown with the Junos console command that shows it, the others as
+  offered and not pinned. Compare it with the console and type the address
+  back; with `--register`, the device's name when it gives one by SNMP (its
+  sysName in lower case, when it is a name a new device may take: valid,
+  not taken by a device or an enrolled host, not generic; else the address
+  is asked for, with a line that says why; the name is only the answer, the
+  device is registered under the name it reports to `show version`). Enter skips the address and
+  any other answer refuses it, with no second try; nothing is sent to it,
+  and its row says `skipped` or `refused`. The end of input ends the
+  questions (the addresses after it are `not-tried`). There is no `-y`, no
+  answer for several addresses and no trust on first use. `--host-key
+  SHA256:<fp>` (read on the device's console) answers for one address and
+  pins that key; without a terminal and without `--host-key` the run is
+  refused. A device that offers only the legacy algorithms is found by the
+  scan and registered `--legacy-ssh`.
 - **One login, once per address.** Your own login (your tacctl password; the password cache may answer it) or, with `--login <local-user>`, one local account of the devices for the whole run: its password is asked once on the terminal, never kept or cached, and goes to each address once; `root` is reached through its csh wrapper. The first refusal of the password ends the run (`auth-failed`; the addresses after it are `not-tried`), so a wrong password reaches one address only. A device whose authentication order is `tacplus` only refuses local accounts while the server answers.
 - **Nothing else.** In that session `show version` and the pull's read command are typed, and nothing more. An address whose `show version` is not a Junos answer is listed `not-junos`, its session closed and never registered.
-- **The table.** One table with the device's own host name, model and release, its `authentication-order`, the number of TACACS+ and RADIUS servers, whether tacctl's engineer class `EN-CLASS` is configured, NETCONF over ssh and the filter applied on `lo0`; `--json` prints one object (the progress goes to standard error). Each collected device is followed by the `device add` line it would run; one that reports no name the registry accepts (generic, taken, or the same as another address of the run) says so.
-- **`--register`.** After the table, one question; then each device is registered through `device add`, the same code as every registration, with `--vendor juniper`, every key shown pinned (the login was made against exactly those keys) and `--legacy-ssh` when the handshake needed it. The read is kept as the device's first pull record, as a pull makes it (`login=local:<account>` for a local login), so `device sync` and `device config plan` have one at once; no plain view was read, so a plan says the groups' inheritance was not checked until a pull reads it. `-y` answers the question (without a terminal it is needed). Without `--register` nothing is kept.
-- **Audit and exit.** `device collect user= addr= login=own|local:<account> result=` per address, never a password or a device's text. Exit status: 0 every address collected, 1 one was refused, failed or not Junos, 2 wrong arguments, 130 interrupted.
+- **The table.** One table with the device's own host name, model and release, its `authentication-order`, the number of TACACS+ and RADIUS servers, whether tacctl's engineer class `EN-CLASS` is configured, NETCONF over ssh and the filter applied on `lo0`; `--json` prints one object (the progress goes to standard error; `host_keys` lists only the key accepted, none for a skipped or refused address). Each collected device is followed by the `device add` line it would run; one that reports no name the registry accepts (generic, taken, or the same as another address of the run) says so.
+- **`--register`.** After the table, one question; then each device is registered through `device add`, the same code as every registration, with `--vendor juniper`, the key accepted pinned (the login was made against exactly that key; the others offered are shown, not pinned) and `--legacy-ssh` when the handshake needed it. The read is kept as the device's first pull record, as a pull makes it (`login=local:<account>` for a local login), so `device sync` and `device config plan` have one at once; no plain view was read, so a plan says the groups' inheritance was not checked until a pull reads it. `-y` answers that question (without a terminal it is needed), never a key's. Without `--register` nothing is kept.
+- **Audit and exit.** `device collect hostkey user= addr= device= alg= fp=
+  result=accepted|skipped|refused source=confirmed|flag` at `auth.notice`
+  for every answer to a key, before the key is used (`device=` is the name
+  shown in the question, on a refusal too, never the text typed; `-` when
+  the answer is the address or the address was skipped), and `device
+  collect user= addr=
+  login=own|local:<account> result=` per address, never a password or a
+  device's text. With `audit.strict`, an acceptance whose line cannot be
+  written refuses that address before anything is sent. Exit status: 0
+  every address collected, 1 one was skipped, refused, failed or not Junos,
+  2 wrong arguments, 130 interrupted.
 
 ## Filling the registry from the records
 

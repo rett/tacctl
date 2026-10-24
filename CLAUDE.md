@@ -11,6 +11,7 @@ Start with `docs/plans/0.2.14-handoff.md` (state, scope, working rules), then
 - Build: `make build` (binary in `dist/tacctl`)
 - Go tests: `LANG=C.UTF-8 go test ./internal/...`
   Two tests need the 0.2.2 tag (the rollback build, the 0.2.2 schema); without it they skip and say so, so CI must fetch the tags.
+- Gate run of the Go tests: `make gate-go` (`tests/tools/gate-go.sh`). Start it with Bash `run_in_background`, never with a trailing `&`, never wait for it with `pgrep -f`; only its final `GATE-GO PASS` line counts as a pass.
 - Lint: `make lint GOLANGCI_LINT=<path to golangci-lint>` (includes `tests/tools/no-private.sh`)
 - Bats: `make build`, then as user `tester`: `tests/bats/bats-core/bin/bats tests/integration/<file>.bats`
 - Diff corpus: `tests/diff/run.sh --all --against <previous release tag>`

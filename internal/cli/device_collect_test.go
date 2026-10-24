@@ -9,6 +9,7 @@ import (
 
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
 )
 
@@ -49,10 +50,22 @@ func newCollectBox(t *testing.T) *pullBox {
 // is no terminal at all.
 func (b *pullBox) collect(typed string, args ...string) string {
 	b.t.Helper()
+	return b.collectWith(nil, typed, args...)
+}
+
+// collectWith is collect with more rules for the runner (after the scan's),
+// and ssh-keyscan answering the fake device's key at every address.
+func (b *pullBox) collectWith(more func(*fake.Runner), typed string, args ...string) string {
+	b.t.Helper()
 	key := b.key()
 	b.sb.script = func(r *fake.Runner) {
 		route(r)
-		scan(onboardAddr, key)(r)
+		r.OnFunc([]string{"ssh-keyscan"}, func(c execx.Cmd) (execx.Result, error) {
+			return execx.Result{Stdout: keyscanOut(c.Args[len(c.Args)-1], key)}, nil
+		})
+		if more != nil {
+			more(r)
+		}
 	}
 	defer func() { b.sb.script, b.sb.tty = nil, nil }()
 	b.sb.tty = nil
@@ -109,7 +122,9 @@ func TestCollectTable(t *testing.T) {
 	}
 	noSecrets(t, "the output", out+b.sb.stderr(), localPassword, testPassword)
 	al := b.auditLines("device collect")
-	if len(al) != 1 || !strings.Contains(al[0], "device collect user=alice addr=192.168.1.31 login=own result=collected") {
+	if len(al) != 2 || !strings.Contains(al[0], "-p auth.notice device collect hostkey user=alice addr=192.168.1.31 device=- alg=ssh-ed25519 fp="+
+		b.key().Fingerprint()+" result=accepted source=flag") ||
+		!strings.Contains(al[1], "device collect user=alice addr=192.168.1.31 login=own result=collected") {
 		t.Errorf("audit %q", al)
 	}
 }
@@ -140,19 +155,26 @@ func TestCollectJSON(t *testing.T) {
 	}
 }
 
-// --register runs the registration of 'device add' with the key shown, keeps
-// the read as the first pull record and is answered by one question; the
+// --register reads the device's SNMP sysName for the key's question, runs the
+// registration of 'device add' with the key accepted, keeps the read as the
+// first pull record and is answered by one registration question; the
+// acceptance's line is written before the login and the registration; the
 // address is the normal flow's afterwards.
 func TestCollectRegister(t *testing.T) {
 	b := newCollectBox(t)
-	out := b.collect("y\ny\n", onboardAddr, "--register")
+	b.sb.snmp = &stubSNMP{names: map[string]string{onboardAddr: "SW-Lab-5"}}
+	out := b.collect("sw-lab-5\ny\n", onboardAddr, "--register")
 	if b.sb.code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
 	}
 	errText := b.sb.stderr()
-	if !strings.Contains(errText, "Trust these keys and send the password of 'alice' (your tacctl password) to "+onboardAddr+"? [y/N]") ||
-		!strings.Contains(errText, "Register 1 device(s), pinning the host keys shown: sw-lab-5 ("+onboardAddr+")? [y/N]") {
+	if !strings.Contains(errText, "Compare the key with the console of "+onboardAddr+". Type the device name (sw-lab-5) to accept it and "+
+		"send it the password of 'alice' (your tacctl password), or press Enter to skip the address: ") ||
+		!strings.Contains(errText, "Register 1 device(s), pinning the host key accepted for each: sw-lab-5 ("+onboardAddr+")? [y/N]") {
 		t.Errorf("the questions: %q", errText)
+	}
+	if !strings.Contains(out, "Will pin:  ED25519  "+b.key().Fingerprint()) || !strings.Contains(out, "Host key pinned (the key you accepted):") {
+		t.Errorf("the key shown:\n%s", out)
 	}
 	for _, want := range []string{"Device 'sw-lab-5' registered: " + onboardAddr + ", juniper.", "its first pull record"} {
 		if !strings.Contains(out, want) {
@@ -176,8 +198,14 @@ func TestCollectRegister(t *testing.T) {
 		t.Errorf("sections %+v", secs)
 	}
 	al := b.auditLines("device collect")
-	if len(al) != 1 || !strings.Contains(al[0], "device collect user=alice addr=192.168.1.31 login=own result=registered device=sw-lab-5") {
+	if len(al) != 2 || !strings.Contains(al[0], "device collect hostkey user=alice addr=192.168.1.31 device=sw-lab-5 alg=ssh-ed25519 fp="+
+		b.key().Fingerprint()+" result=accepted source=confirmed") ||
+		!strings.Contains(al[1], "device collect user=alice addr=192.168.1.31 login=own result=registered device=sw-lab-5") {
 		t.Errorf("audit %q", al)
+	}
+	all := auditLines(b.sb.runner)
+	if i, j := indexPrefix(all, "device collect hostkey "), indexPrefix(all, "device add name=sw-lab-5 "); i < 0 || j < 0 || i > j {
+		t.Errorf("the acceptance's line is not before the registration's:\n%s", strings.Join(all, "\n"))
 	}
 	// the address is registered: refused, nothing sent
 	n := b.srv.Attempts()
@@ -191,11 +219,11 @@ func TestCollectRegister(t *testing.T) {
 // says login=local; the first refusal ends the run.
 func TestCollectLocalLogin(t *testing.T) {
 	b := newCollectBox(t)
-	out := b.collect("y\ny\n", onboardAddr, "--login", localAccount, "--register")
+	out := b.collect(onboardAddr+"\ny\n", onboardAddr, "--login", localAccount, "--register")
 	if b.sb.code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
 	}
-	if !strings.Contains(b.sb.stderr(), "send the local password of 'admin' to "+onboardAddr+"? [y/N]") {
+	if !strings.Contains(b.sb.stderr(), "Type the address ("+onboardAddr+") to accept it and send it the local password of 'admin', or press Enter to skip the address: ") {
 		t.Errorf("the question: %q", b.sb.stderr())
 	}
 	if b.pw.asked != 0 || b.pw.accepted != 0 || b.pw.rejected != 0 {
@@ -207,7 +235,8 @@ func TestCollectLocalLogin(t *testing.T) {
 	}
 	noSecrets(t, "the output", out+b.sb.stderr(), localPassword, testPassword)
 	al := b.auditLines("device collect")
-	if len(al) != 1 || !strings.Contains(al[0], "login=local:admin result=registered device=sw-lab-5") {
+	if len(al) != 2 || !strings.Contains(al[0], "device collect hostkey user=alice addr=192.168.1.31 device=- ") ||
+		!strings.Contains(al[1], "login=local:admin result=registered device=sw-lab-5") {
 		t.Errorf("audit %q", al)
 	}
 	for _, l := range al {
@@ -236,8 +265,8 @@ func TestCollectRefusedPassword(t *testing.T) {
 }
 
 // Without a terminal the identity is --host-key's (one address) or nothing;
-// a declined question and a wrong key send nothing; a registered address, an
-// address no scope answers and the registration without -y are refused.
+// a wrong key sends nothing; a registered address, an address no scope
+// answers and the registration without -y are refused.
 func TestCollectRefusalsSendNothing(t *testing.T) {
 	b := newCollectBox(t)
 	fp := b.key().Fingerprint()
@@ -249,7 +278,7 @@ func TestCollectRefusalsSendNothing(t *testing.T) {
 		code  int
 		want  string
 	}{
-		{"-", []string{onboardAddr}, 2, "No terminal to answer the identity question on"},
+		{"-", []string{onboardAddr}, 2, "No terminal to answer the host-key question on"},
 		{"-", []string{onboardAddr, "192.168.1.32", "--host-key", fp}, 2, "--host-key names the key of ONE device"},
 		{"-", []string{"--discovered", "--host-key", fp}, 2, "--host-key names the key of ONE device"},
 		{"-", []string{onboardAddr, "--host-key", fp, "--register"}, 2, "--register without one needs -y"},
@@ -258,7 +287,6 @@ func TestCollectRefusalsSendNothing(t *testing.T) {
 		{"-", []string{"bad name", "--host-key", fp}, 2, ""},
 		{"-", []string{onboardAddr, "--host-key", "SHA256:nope"}, 2, "Invalid --host-key"},
 		{"-", []string{onboardAddr, "--host-key", fp, "--login", "bad name"}, 2, "--login takes the name of one of the device's local accounts"},
-		{"n\n", []string{onboardAddr}, 1, "Not trusted. Nothing was sent."},
 		{"", []string{onboardAddr, "--host-key", "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}, 1, "No host key 192.168.1.31 offers matches"},
 		{"", []string{"198.51.100.9", "--host-key", fp}, 1, "No scope answers 198.51.100.9"},
 		{"", []string{"192.168.1.40", "--host-key", fp}, 1, "192.168.1.40 is registered as 'sw-known'"},
@@ -318,5 +346,136 @@ func TestCollectSanitisesDeviceText(t *testing.T) {
 	}
 	if got := devText("a\nb\x1b[2Jc"); got != "a?b?[2Jc" {
 		t.Errorf("devText: %q", got)
+	}
+}
+
+// indexPrefix is the index of the first of lines that starts with prefix, -1
+// for none.
+func indexPrefix(lines []string, prefix string) int {
+	for i, l := range lines {
+		if strings.HasPrefix(l, prefix) {
+			return i
+		}
+	}
+	return -1
+}
+
+// The answers to the key's question, address by address (0.2.17 D270): the
+// address typed back accepts it (no --register: no name is known before the
+// login); another answer refuses that address and Enter skips it, with
+// nothing sent to it; each answer is a line; the end of input ends the
+// questions. A device that names itself by SNMP is accepted by that name
+// with --register.
+func TestCollectKeyAnswers(t *testing.T) {
+	const addr2 = "192.168.1.32"
+	b := newCollectBox(t)
+	fp := b.key().Fingerprint()
+	hostkeyLines := func() []string {
+		var out []string
+		for _, l := range auditLines(b.sb.runner) {
+			if strings.HasPrefix(l, "device collect hostkey ") {
+				out = append(out, l)
+			}
+		}
+		return out
+	}
+	// a wrong answer at the first address, the address typed at the second:
+	// one login, at the second only
+	out := b.collect("192.168.1.3\n"+addr2+"\n", onboardAddr, addr2)
+	if b.sb.code != 1 || b.srv.Attempts() != 1 || b.pw.asked != 1 {
+		t.Fatalf("exit %d, %d attempts\n%s\n%s", b.sb.code, b.srv.Attempts(), out, b.sb.stderr())
+	}
+	if row := tableRow(out, onboardAddr); len(row) == 0 || row[len(row)-1] != "refused" {
+		t.Errorf("row %q\n%s", row, out)
+	}
+	if row := tableRow(out, addr2); len(row) == 0 || row[len(row)-1] != "collected" {
+		t.Errorf("row %q\n%s", row, out)
+	}
+	if !strings.Contains(out, onboardAddr+": the answer typed is not the device's address; nothing was sent") {
+		t.Errorf("the reason:\n%s", out)
+	}
+	if n := strings.Count(b.sb.stderr(), "Compare the key with the console of "); n != 2 {
+		t.Errorf("%d questions: %q", n, b.sb.stderr())
+	}
+	hl := hostkeyLines()
+	if len(hl) != 2 || !strings.HasPrefix(hl[0], "device collect hostkey user=alice addr="+onboardAddr+" device=- alg=ssh-ed25519 fp="+fp+" result=refused source=confirmed") ||
+		!strings.HasPrefix(hl[1], "device collect hostkey user=alice addr="+addr2+" device=- alg=ssh-ed25519 fp="+fp+" result=accepted source=confirmed") {
+		t.Errorf("lines %q", hl)
+	}
+	// Enter at the first, the end of input at the second, the third not
+	// asked: nothing is sent anywhere
+	n := b.srv.Attempts()
+	out = b.collect("\n\x04", onboardAddr, addr2, "192.168.1.33")
+	if b.sb.code != 1 || b.srv.Attempts() != n {
+		t.Fatalf("exit %d, %d attempts\n%s\n%s", b.sb.code, b.srv.Attempts()-n, out, b.sb.stderr())
+	}
+	for _, want := range []string{
+		onboardAddr + ": not accepted; nothing was sent",
+		addr2 + ": not accepted (no answer: the input ended); nothing was sent",
+		"192.168.1.33: the input ended at an earlier question; nothing was sent here",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in\n%s", want, out)
+		}
+	}
+	if n := strings.Count(b.sb.stderr(), "Compare the key with the console of "); n != 2 {
+		t.Errorf("%d questions: %q", n, b.sb.stderr())
+	}
+	hl = hostkeyLines()
+	if len(hl) != 2 || !strings.Contains(hl[0], "addr="+onboardAddr+" device=- alg=ssh-ed25519 fp="+fp+" result=skipped source=confirmed") ||
+		!strings.Contains(hl[1], "addr="+addr2+" device=- alg=ssh-ed25519 fp="+fp+" result=skipped source=confirmed") {
+		t.Errorf("lines %q", hl)
+	}
+	// with --register, the name SNMP gives is the answer; the address is not
+	b.sb.snmp = &stubSNMP{names: map[string]string{onboardAddr: "sw-lab-5"}}
+	n = b.srv.Attempts()
+	out = b.collect(onboardAddr+"\n", onboardAddr, "--register")
+	if b.sb.code != 1 || b.srv.Attempts() != n || !strings.Contains(out, onboardAddr+": the answer typed is not the device's name; nothing was sent") {
+		t.Errorf("exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+	}
+	if hl = hostkeyLines(); len(hl) != 1 || !strings.Contains(hl[0], "device=sw-lab-5 alg=ssh-ed25519 fp="+fp+" result=refused") {
+		t.Errorf("lines %q", hl)
+	}
+	if strings.Contains(b.sb.devices(), onboardAddr) {
+		t.Errorf("registered:\n%s", b.sb.devices())
+	}
+	// a sysName the registry has already is never the answer (it would read
+	// as an acceptance for that device): the address is asked for
+	b.devices([3]string{"sw-lab-5", "192.168.1.40", "juniper"})
+	out = b.collect("\n", onboardAddr, "--register")
+	if !strings.Contains(out, onboardAddr+" calls itself 'sw-lab-5' (SNMP sysName), which is not taken as its name (the name is already registered") ||
+		!strings.Contains(b.sb.stderr(), "Type the address ("+onboardAddr+") to accept it") || strings.Contains(b.sb.stderr(), "(sw-lab-5)") {
+		t.Errorf("a taken sysName:\n%s\n%s", out, b.sb.stderr())
+	}
+	if hl = hostkeyLines(); len(hl) != 1 || !strings.Contains(hl[0], "device=- alg=ssh-ed25519 fp="+fp+" result=skipped") {
+		t.Errorf("lines %q", hl)
+	}
+}
+
+// audit.strict: an acceptance whose line logger did not write refuses the
+// address before anything is sent or pinned.
+func TestCollectStrictAcceptanceLine(t *testing.T) {
+	b := newCollectBox(t)
+	b.sb.strictOn()
+	failHostkey := func(r *fake.Runner) {
+		r.When(func(c execx.Cmd) bool {
+			return c.Name == "logger" && len(c.Args) == 5 && strings.HasPrefix(c.Args[4], "device collect hostkey ")
+		}, execx.Result{Code: 1, Stderr: []byte("busy\n")}, nil)
+	}
+	out := b.collectWith(failHostkey, onboardAddr+"\ny\n", onboardAddr, "--register")
+	if b.sb.code != 1 || b.srv.Attempts() != 0 || b.pw.asked != 0 ||
+		!strings.Contains(out, onboardAddr+": the acceptance's audit line was not written (logger: ") {
+		t.Errorf("exit %d, %d attempts\n%s\n%s", b.sb.code, b.srv.Attempts(), out, b.sb.stderr())
+	}
+	if row := tableRow(out, onboardAddr); len(row) == 0 || row[len(row)-1] != "refused" {
+		t.Errorf("row %q\n%s", row, out)
+	}
+	// --host-key too
+	out = b.collectWith(failHostkey, "-", onboardAddr, "--host-key", b.key().Fingerprint())
+	if b.sb.code != 1 || b.srv.Attempts() != 0 || !strings.Contains(out, "audit.strict is set; nothing was sent") {
+		t.Errorf("--host-key: exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+	}
+	if strings.Contains(b.sb.devices(), onboardAddr) {
+		t.Errorf("registered:\n%s", b.sb.devices())
 	}
 }

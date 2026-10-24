@@ -54,6 +54,27 @@ alice() {
     assert_line --regexp '^ *lab-j .* never '
 }
 
+@test "list: --name and --ip narrow the list, beside the state words" {
+    alice device config list --name lab-j
+    assert_success
+    assert_output --partial "lab-j"
+    refute_output --partial "lab-k"
+    alice device config list --ip 192.168.1.21
+    assert_success
+    assert_output --partial "lab-k"
+    refute_output --partial "lab-j"
+    alice device config list --never --name lab --ip 192.168.1.0/24
+    assert_success
+    assert_output --partial "lab-j"
+    assert_output --partial "lab-k"
+    alice device config list --name nothing-like-it
+    assert_success
+    assert_output --partial "None: no device matches."
+    alice device config list --ip ,
+    assert_failure 2
+    assert_output --partial "--ip takes a text"
+}
+
 @test "list: a WTI unit is read over its menus and listed like any device" {
     # The fake unit is a menu device: the captured screens of the lab unit,
     # with the login's level and one other session open.

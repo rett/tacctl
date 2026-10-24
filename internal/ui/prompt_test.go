@@ -40,6 +40,22 @@ func TestReadLineEndsAtEOF(t *testing.T) {
 	}
 }
 
+// AskLine tells an empty answer (Enter) from the end of input.
+func TestAskLineTellsEnterFromEOF(t *testing.T) {
+	p, _, errb := newPrompter(" sw1 \n\n")
+	for _, want := range []string{"sw1", ""} {
+		if got, ok := p.AskLine("  name: "); !ok || got != want {
+			t.Errorf("AskLine = %q %v, want %q", got, ok, want)
+		}
+	}
+	if got, ok := p.AskLine("  name: "); ok || got != "" {
+		t.Errorf("at EOF: %q %v", got, ok)
+	}
+	if errb.Len() != 0 {
+		t.Errorf("a prompt was shown for piped input: %q", errb.String())
+	}
+}
+
 func TestAskReadsALineAndTrimsBlanks(t *testing.T) {
 	for in, want := range map[string]string{
 		"y\n": "y", "  y \n": "y", "\ty\t\n": "y", "y": "y", "yes please\n": "yes please",

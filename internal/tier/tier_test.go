@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
 	"github.com/rett/tacctl/internal/ui"
@@ -268,6 +269,10 @@ func TestOperatorSudoersConfigValidate(t *testing.T) {
 	}
 }
 
+// testSID is the session id of the gate's audit writer: every line it writes
+// ends in it.
+const testSID = "k3x9a0bq"
+
 type gateRun struct {
 	run      *fake.Runner
 	out, err bytes.Buffer
@@ -283,6 +288,7 @@ func newGate(sudoUser, groups string, privlvl map[string]string, set ...map[stri
 	}
 	g.run.On([]string{"logger"}, execx.Result{})
 	g.gate = Gate{Runner: g.run, Out: ui.Output{Stdout: &g.out, Stderr: &g.err}, SudoUser: sudoUser,
+		Audit:   audit.New(audit.Options{Runner: g.run, SID: testSID}),
 		PrivLvl: func(u string) string { return privlvl[u] }}
 	if len(set) > 0 {
 		g.gate.GroupTier = func(u string) string { return set[0][u] }
@@ -382,7 +388,7 @@ func TestGateConfProblem(t *testing.T) {
 	if g.err.String() != want {
 		t.Errorf("denial %q", g.err.String())
 	}
-	if !g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=bob tier=operator reason=conf-problem cmd=device add") {
+	if !g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=bob tier=operator reason=conf-problem cmd=device add sid="+testSID) {
 		t.Errorf("not logged %q", g.run.Argvs())
 	}
 	// A command the operator tier never had is the ordinary denial.
@@ -444,14 +450,14 @@ func TestEnforce(t *testing.T) {
 	if g.err.String() != "\033[0;31m[ERROR]\033[0m 'tacctl user remove' is not permitted for the readonly tier.\n" || g.out.Len() != 0 {
 		t.Errorf("denial: %q", g.err.String())
 	}
-	if !g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=ro tier=readonly cmd=user remove") {
+	if !g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=ro tier=readonly cmd=user remove sid="+testSID) {
 		t.Errorf("not logged: %q", g.run.Argvs())
 	}
 	// No sub: the bash's trailing blank stays.
 	g = newGate("op", "tac-users", lv)
 	_ = g.gate.Enforce(context.Background(), "bogus", "")
 	if !strings.Contains(g.err.String(), "'tacctl bogus ' is not permitted for the operator tier.") ||
-		!g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=op tier=operator cmd=bogus ") {
+		!g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=op tier=operator cmd=bogus sid="+testSID) {
 		t.Errorf("bogus: %q %q", g.err.String(), g.run.Argvs())
 	}
 	// The usage is open to both lower tiers; a word after it is not.
@@ -499,8 +505,9 @@ func TestSudoersNoSetenv(t *testing.T) {
 // TACCTL_ASKPASS (D70) is kept for the command lines that use the password
 // cache ('device config pull', 'diff' and, from 0.2.5, 'plan', all three
 // when they read the devices, 'ssh', 'block adopt' and, from 0.2.9, the
-// 'device config apply', 'device onboard' and 'device collect'; not 'device
-// config shapes seed', which logs in to nothing) and
+// 'device config apply', 'device onboard' and 'device collect', and from
+// 0.2.17 'device enroll'; not 'device config shapes seed', which logs in to
+// nothing) and
 // nowhere else: not on the general env_keep line, and
 // the two drop-ins name their aliases differently (sudoers refuses an alias
 // defined twice, and a host may carry both).
@@ -512,7 +519,7 @@ func TestAskpassKeepIsScoped(t *testing.T) {
 		k := AskpassKeep(alias)
 		items := aliasItems(t, k, alias)
 		want := []string{"device config pull *", "device config diff *", "device config plan *", "ssh *", "device ssh *",
-			"scope block * adopt *", "device block * adopt *", "device config apply *", "device onboard *", "device collect *"}
+			"scope block * adopt *", "device block * adopt *", "device config apply *", "device onboard *", "device collect *", "device enroll *"}
 		if !slices.Equal(items, want) {
 			t.Errorf("%s commands %q, want %q", alias, items, want)
 		}
@@ -621,7 +628,7 @@ func TestGateRefusesSpoofedSudoUser(t *testing.T) {
 		if g.err.String() != want {
 			t.Errorf("%s: %q", claimed, g.err.String())
 		}
-		if !g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user="+claimed+" uid=1001 reason=sudo-user-mismatch cmd=version ") {
+		if !g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user="+claimed+" uid=1001 reason=sudo-user-mismatch cmd=version sid="+testSID) {
 			t.Errorf("%s: not logged %q", claimed, g.run.Argvs())
 		}
 		if g.run.Called("id") {
@@ -737,11 +744,19 @@ func TestClassifyGroupSudoers(t *testing.T) {
 	editor027 := "Cmnd_Alias TACCTL_EDITOR_GROUP_CMDS = /usr/local/bin/tacctl scope block * edit *, /usr/local/bin/tacctl scope block * adopt *, \\\n" +
 		"    /usr/local/bin/tacctl device block * edit *, /usr/local/bin/tacctl device block * adopt *\n" +
 		"Defaults!TACCTL_EDITOR_GROUP_CMDS env_keep += \"VISUAL EDITOR\"\n"
-	// what 0.2.9 writes: the lines of the apply verbs among the cache's lines
+	// what 0.2.9 to 0.2.16 wrote: the lines of the apply verbs among the
+	// cache's lines
 	askpass029 := "Cmnd_Alias TACCTL_ASKPASS_GROUP_CMDS = /usr/local/bin/tacctl device config pull *, /usr/local/bin/tacctl device config diff *, /usr/local/bin/tacctl device config plan *, \\\n" +
 		"    /usr/local/bin/tacctl ssh *, /usr/local/bin/tacctl device ssh *, \\\n" +
 		"    /usr/local/bin/tacctl scope block * adopt *, /usr/local/bin/tacctl device block * adopt *, \\\n" +
 		"    /usr/local/bin/tacctl device config apply *, /usr/local/bin/tacctl device onboard *, /usr/local/bin/tacctl device collect *\n" +
+		"Defaults!TACCTL_ASKPASS_GROUP_CMDS env_keep += \"TACCTL_ASKPASS\"\n"
+	// what 0.2.17 writes: 'device enroll' too
+	askpass0217 := "Cmnd_Alias TACCTL_ASKPASS_GROUP_CMDS = /usr/local/bin/tacctl device config pull *, /usr/local/bin/tacctl device config diff *, /usr/local/bin/tacctl device config plan *, \\\n" +
+		"    /usr/local/bin/tacctl ssh *, /usr/local/bin/tacctl device ssh *, \\\n" +
+		"    /usr/local/bin/tacctl scope block * adopt *, /usr/local/bin/tacctl device block * adopt *, \\\n" +
+		"    /usr/local/bin/tacctl device config apply *, /usr/local/bin/tacctl device onboard *, /usr/local/bin/tacctl device collect *, \\\n" +
+		"    /usr/local/bin/tacctl device enroll *\n" +
 		"Defaults!TACCTL_ASKPASS_GROUP_CMDS env_keep += \"TACCTL_ASKPASS\"\n"
 	for name, c := range map[string]struct {
 		text  string
@@ -753,7 +768,8 @@ func TestClassifyGroupSudoers(t *testing.T) {
 		"0.2.6":               {head + askpass026 + envKeep + rule, "adm", GroupOlder},
 		"0.2.7":               {head + askpass027 + editor027 + envKeep + rule, "adm", GroupOlder},
 		"0.2.8":               {head + askpass027 + editor027 + EnvKeep + rule, "adm", GroupOlder},
-		"current spelled out": {head + askpass029 + editor027 + EnvKeep + rule, "adm", GroupCurrent},
+		"0.2.16":              {head + askpass029 + editor027 + EnvKeep + rule, "adm", GroupOlder},
+		"current spelled out": {head + askpass0217 + editor027 + EnvKeep + rule, "adm", GroupCurrent},
 		"0.2.7 edited":        {head + askpass027 + editor027 + envKeep + rule + "# note\n", "adm", GroupCustomised},
 		"0.2.0":               {head + rule, "adm", GroupOlder},
 		"edited rule":         {head + envKeep + "%adm ALL=(ALL) PASSWD: /usr/local/bin/tacctl\n", "adm", GroupCustomised},
@@ -790,5 +806,28 @@ func TestNotesAreOnePerCommandAndSub(t *testing.T) {
 	}
 	if len(seen) != len(Notes()) || len(seen) < 13 {
 		t.Errorf("notes: %d rows, Notes() %d", len(seen), len(Notes()))
+	}
+}
+
+// Check answers the tier the gate held the caller to, with the refusal when
+// there is one (the central audit lines name it).
+func TestCheckAnswersTheTier(t *testing.T) {
+	ctx := context.Background()
+	g := newGate("ro", "ro tac-users", map[string]string{"ro": "1"})
+	if got, err := g.gate.Check(ctx, "user", "list"); got != Readonly || err != nil {
+		t.Errorf("readonly user list: %q %v", got, err)
+	}
+	if got, err := g.gate.Check(ctx, "user", "remove"); got != Readonly || err != ErrDenied {
+		t.Errorf("readonly user remove: %q %v", got, err)
+	}
+	g = newGate("root", "root", nil)
+	if got, err := g.gate.Check(ctx, "user", "remove"); got != Unrestricted || err != nil {
+		t.Errorf("root: %q %v", got, err)
+	}
+	g = newGate("ro", "ro tac-users", map[string]string{"ro": "1"})
+	g.gate.SudoUID = "1234"
+	g.run.On([]string{"getent", "passwd", "1234"}, execx.Result{Stdout: []byte("other:x:1234:1234::/home/other:/bin/bash\n")})
+	if got, err := g.gate.Check(ctx, "user", "list"); got != None || err != ErrDenied {
+		t.Errorf("mismatch: %q %v", got, err)
 	}
 }

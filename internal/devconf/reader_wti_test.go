@@ -64,7 +64,7 @@ func rwOpenWith(t *testing.T, srv *fakedev.Server, rewrite func(string) string) 
 		Host: host, Port: p, User: fakedev.DefaultUser,
 		HostKeys:       []string{srv.HostKey()},
 		ConnectTimeout: 5 * time.Second,
-		Quiet:          60 * time.Millisecond,
+		Quiet:          250 * time.Millisecond,
 		Password:       func() (string, error) { return fakedev.DefaultPassword, nil },
 	}
 	return func(ctx context.Context) (WTITerminal, error) {

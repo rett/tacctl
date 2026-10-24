@@ -31,7 +31,22 @@ type stubSNMP struct {
 	// locErrs are the errors of the location read.
 	locs    map[string]string
 	locErrs map[string]error
-	calls   atomic.Int64
+	// ids answers sysObjectID and sysDescr by address (an address not in it
+	// is no answer).
+	ids    map[string]snmp.Identity
+	idErrs map[string]error
+	calls  atomic.Int64
+}
+
+func (s *stubSNMP) SysIdentity(_ context.Context, addr string) (snmp.Identity, error) {
+	s.calls.Add(1)
+	if err := s.idErrs[addr]; err != nil {
+		return snmp.Identity{}, err
+	}
+	if id, ok := s.ids[addr]; ok {
+		return id, nil
+	}
+	return snmp.Identity{}, &snmp.TimeoutError{Timeout: 2 * time.Second, Tries: 2}
 }
 
 func (s *stubSNMP) SysLocation(_ context.Context, addr string) (string, error) {

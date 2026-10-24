@@ -30,7 +30,11 @@ device show <name|address> [--all] [--json]
 device add [<name>] <address>
 
     Register a device (writes devices.yaml: superusers, and engineers for their own scopes); no
-    name: the SNMP sysName is offered at a terminal, lowercased
+    name: the SNMP sysName is offered at a terminal, lowercased, and a terminal is asked for the
+    name when the device gives none that can be offered (without a terminal: refused). The vendor
+    the device names by SNMP (sysObjectID and sysDescr) is printed; a `--vendor` that disagrees
+    is warned about, never refused; without `--vendor` a terminal is asked one y/N to register
+    with it (see The SNMP name hint (devices/snmp-name-hint.md))
 
     --vendor cisco|juniper|wti|other
         Default other; drives the ssh profile, never tags the address in the scope
@@ -49,12 +53,13 @@ device add [<name>] <address>
     --no-host-key
         Register without scanning: unpinned, with a hostkey-unpinned notice
     --no-lookup
-        Do not read the device's own name and location by SNMP (sysName, sysLocation)
+        Do not read the device's own name, location and vendor by SNMP (sysName, sysLocation,
+        sysObjectID, sysDescr)
     --pull
         After registering, read its configuration as `device config pull` does, for this device, as
-        you; needs `--vendor cisco|juniper|wti` and a scope that covers the address (else it is
-        registered and not pulled, with the commands that fix it); a failed pull leaves it
-        registered
+        you; needs a vendor cisco, juniper or wti (`--vendor`, or the one the device names and
+        the question takes) and a scope that covers the address (else it is registered and not
+        pulled, with the commands that fix it); a failed pull leaves it registered
     --allow-generic
         Register a generic name (switch, router, cisco, ubuntu, ...) anyway
 
@@ -62,29 +67,83 @@ device onboard <address> --login <local-user> [--name <name>] [--host-key SHA256
                [--legacy-ssh] [--check] [--section <list>] [--json]
 
     Superusers, Junos devices: bring a blank device reached with one of its local accounts under
-    tacctl in one run: the host keys shown and ONE question before any login (`--host-key` names the
-    key instead; without a terminal only `--host-key --check` runs), the pre-flight as the local
-    account (no pending commit, no TACACS+ or RADIUS server already, no local account of your own
-    name), the registration through `device add` (the device's own location and description fill the
-    empty fields; never the hostname), the pull and the device's own check of the first-time plan as
-    the local account (`--check` stops there), the review (the device's name typed back), then your
-    own password and the commit as the local account, proven by your own fresh TACACS+ login (the
-    template user of your group's class) and confirmed; see Onboarding a blank device
-    (devices/planning.md, "Onboarding a blank device")
+    tacctl in one run: the one host key that would be pinned (ed25519 first, then ECDSA, then RSA)
+    shown with the Junos console command that shows it and accepted before any login by typing the
+    device's name (`--name`, else its SNMP sysName, else the name to register it as, checked by the
+    name rules; Enter or any other answer sends nothing; `--host-key` names the key instead;
+    without a terminal only `--host-key --check` runs), the pre-flight as the local account (no
+    pending commit, no TACACS+ or RADIUS server already, no local account of your own name), the
+    registration through `device add` with that key pinned (the others offered are shown, not
+    pinned; the device's own location and description fill the empty fields; never the hostname),
+    the pull and the device's own check of the first-time plan as the local account (`--check`
+    stops there), the review (the device's name typed back), then your own password and the commit
+    as the local account, proven by your own fresh TACACS+ login (the template user of your group's
+    class) and confirmed; see Onboarding a blank device (devices/planning.md, "Onboarding a blank
+    device")
 
 device collect <address>... | --discovered [--login <local-user>] [--host-key SHA256:<fp>]
                [--register [-y]] [--json]
 
     Superusers, Junos devices: log in once to each address nobody registered and read what it is:
-    the host keys shown and ONE question before any login (`--host-key` names the key of one address
-    instead; without a terminal it is needed), then `show version` and the pull's read command in
-    one session, nothing else, as one table (address, host name, model, release, authentication
-    order, servers, EN-CLASS, NETCONF, lo0 filter, legacy ssh); your own password, or with `--login`
-    a local account's, asked once and never kept or cached; the first refusal ends the run;
-    `--register` registers each through `device add` with the keys shown pinned (one question, `-y`
-    without a terminal) and keeps the read as its first pull record; a registered address is
-    refused; see Collecting from addresses nobody registered (devices/planning.md, "Collecting from
-    addresses nobody registered")
+    address by address and before any login, the one host key that would be pinned (ed25519 first,
+    then ECDSA, then RSA) shown with the Junos console command that shows it and accepted by typing
+    the address back (with `--register`, the device's SNMP sysName when it gives one that is not
+    taken, not generic and valid; else the address, with a line that says why); Enter skips the
+    address, any other answer refuses it, and nothing is sent to either (`--host-key` names the key
+    of one address instead; without a terminal it is needed); then `show version` and the pull's
+    read command in one session, nothing else, as one table (address, host name, model, release,
+    authentication order, servers, EN-CLASS, NETCONF, lo0 filter, legacy ssh); your own password,
+    or with `--login` a local account's, asked once and never kept or cached; the first refusal
+    ends the run; `--register` registers each through `device add` under the name it reports, with
+    the key accepted pinned (one question, `-y` without a terminal; `-y` answers only that
+    question, never a key's) and keeps the read as its first pull record; `--json` lists under
+    `host_keys` only the key accepted (none for a skipped or refused address); a registered address
+    is refused; see Collecting from addresses nobody registered (devices/planning.md, "Collecting
+    from addresses nobody registered")
+
+device enroll <address>... | --discovered [--host-key SHA256:<fp>]
+              [--vendor cisco|juniper|wti|other] [--name <name>] [--legacy-ssh] [--json]
+
+    Superusers: the chain from an address to a plan, per address and in the order given
+    (`--discovered`: the addresses `device discover` lists). Refused before any question: an
+    address registered already, one no scope covers, one in a scope you are not a member of, a
+    held one, one that offers no host key. The one key that would be pinned (ed25519 first, then
+    ECDSA, then RSA) is shown with the console command that shows it; compare them and type the
+    device's name (its SNMP sysName, or the name to register it as when SNMP gives none) to
+    accept it; Enter skips the device, any other answer refuses it. The vendor the device names
+    by SNMP is taken, else asked (`other` registers the device and ends its chain, exit 0); one
+    y/N; the device is registered at once through `device add` with that key pinned (the others
+    are shown as offered, not pinned); one snapshot for the run. Then your password, once, the
+    pull of every device registered with a vendor tacctl reads, the registry rename to the name
+    the device is configured with when a name was typed or given (Junos `host-name`, IOS
+    `hostname`, a WTI unit's Site ID; kept, with the reason and the `device rename` line, when
+    that name is taken, generic, not a valid name or the device is held; nothing is written to
+    the device), the plan, printed as `device config plan --no-secrets` prints it (each secret a
+    marked line; `device config plan <name>` prints the region to paste), and for Junos devices
+    whose plan has a change one question that runs the apply review (each device's name typed
+    back; a device whose plan has none says `nothing to apply`). Without a terminal:
+    `--host-key` for one address, with `--vendor` and `--name` where SNMP reads none; `--json`
+    and no terminal end at the plan. A device registered stays registered when a later stage
+    fails; the table under the run (ADDRESS NAME VENDOR KEY PULL PLAN RESULT) gives each one's
+    next step. Exit 0 every address went as far as its vendor allows, 1 one was refused, skipped
+    or failed, 2 wrong arguments or no terminal, 130 interrupted; see Enrolling a device
+    (devices/planning.md, "Enrolling a device")
+    --discovered
+        The unregistered addresses that authenticated (the seen cache); no address with it
+    --host-key SHA256:<fp>
+        Pin this key of ONE address, read on its console: no question (the only form without a
+        terminal)
+    --vendor cisco|juniper|wti|other
+        The vendor of ONE address (default: the one it names by SNMP, else asked); a vendor the
+        device names otherwise is a warning
+    --name <name>
+        The name of ONE address (default: its SNMP sysName, else typed at the key's question)
+    --legacy-ssh
+        Scan and register every device of the run with the legacy ssh algorithms (a device that
+        answers only those is found so without it)
+    --json
+        The pull's lines and the plan's objects, then one object of the run, on standard output;
+        the questions, the progress and the table on standard error
 
 device sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite]
             [--json] [-y]
@@ -110,7 +169,14 @@ device rename <old> <new> [--allow-generic]
 device address|hostname|vendor|port|description|location <name> [<value>|clear]
 
     Show, set or clear one field (`location`: the SNMP location of the walkthroughs; an empty text
-    clears it too)
+    clears it too). A vendor change marks the last pull `needs pull (vendor changed)`: `config
+    diff`, `plan` and `sync` say to pull again instead of reading it in the new vendor's shape
+
+device vendor <name> --from-device [-y]
+
+    Read the vendor the device names by SNMP now (as `device add` does), show it beside the
+    registered one and set it after a `y` at a terminal, or with `-y`; a read that names no
+    vendor, no answer and SNMP not set up are refused with the reason and change nothing
 
 device address|description|location <name> <value> --apply
 
@@ -215,19 +281,24 @@ device scan [--full] [--since <dur>] [--backend <id>]
     Read the backends' logs into the seen cache from where the last scan stopped; re-scan pinned
     host keys (never re-pins); print each log's window and the notices
 
-device discover [--all] [--backend <id>]
+device discover [--all] [--snmp] [--backend <id>]
 
     Scan, then list the addresses that authenticated unregistered, each with a ready 'tacctl device
-    add' line; --all adds those only refused
+    add' line; --all adds those only refused; --snmp reads each address's sysName and vendor by
+    SNMP (its scope's credentials) and puts them in the line (`--vendor` when the device names
+    one; what was not used as a `# SNMP:` comment). Without --snmp it contacts nothing
 
 device check <name>|--all [--json]
 
     Checklist: scope, vendor tag, last seen, reachable (TCP connect, 3 s), host key against the pin,
     SNMP (the settings the device is read with and where each comes from; a credential only as set
     or not), SNMP name (sysName, match or differs), Location (sysLocation against the registry's:
-    match, differs, registry only, device only; writes nothing), NETCONF (a Junos device: what the
-    last pull's probe found, `hello ok`, `port closed`, `no hello`, or `not probed`; a check logs in
-    to nothing), notices; --json: the rows, with sysname, syslocation and netconf
+    match, differs, registry only, device only; writes nothing), Vendor (the vendor the device
+    names by SNMP against the registered one: match, differs, or unknown with what was read),
+    NETCONF (a Junos device: what the last pull's probe found, `hello ok`, `port closed`, `no
+    hello`, or `not probed`; a check logs in to nothing), notices; --all ends with the devices
+    registered as other that name a vendor; --json: the rows, with sysname, syslocation,
+    vendor_detected (vendor_reason, vendor_error) and netconf
 
 device snmp <name> [show [--reveal]]
 
@@ -309,14 +380,17 @@ device config show <name> [--protocol tacacs|radius] [--legacy] [--server <addre
     enrolled host or a device no scope covers is refused with the command that fixes it)
 
 device config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale
+                   | --differs | --name <text> | --ip <addr|cidr|text>
 
     Log in to the devices as you and read each one's configuration: the managed sections (`aaa`,
     `roles`, `mgmt-acl`, `snmp`, `netconf`, `breakglass`; a WTI unit's are `aaa`, `mgmt-acl`,
     `snmp`, `breakglass`) are extracted, compared with what tacctl renders for that device and
     recorded; one line per device, a summary, exit 0 (differences are not failures), 1 (a device
-    failed), 2 (wrong arguments), 130 (interrupted); names and `--all` stand alone, `--scope`,
-    `--vendor` and `--stale` combine
+    failed), 2 (wrong arguments), 130 (interrupted); names and `--all` stand alone, the filters
+    combine (see Selecting devices, below)
 
+    --stale --differs --name <text> --ip <addr|cidr|text>
+        Filters of the selection, each below; they also select for `diff`, `plan` and `apply`
     --transport auto|netconf|ssh
         NETCONF where the device answers and the vendor reads over it (Junos; `auto`, the default),
         NETCONF only, or the ssh command line only
@@ -337,6 +411,7 @@ device config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
         (see Onboarding a blank device (devices/planning.md, "Onboarding a blank device"))
 
 device config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale
+                   | --differs | --name <text> | --ip <addr|cidr|text>
 
     The last pull against what tacctl renders now, per section: `-` a statement the device lacks,
     `+` one it has in a managed hierarchy that tacctl does not render, `!` a reordering, `?` a
@@ -350,6 +425,7 @@ device config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
         Only those sections; JSON; exit 2 when a device differs (none failed)
 
 device config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale
+                   | --differs | --name <text> | --ip <addr|cidr|text>
 
     What to paste to make each device match what tacctl renders, from the last pull: the report in
     plain words (each irregularity, its severity, what the paste does about it), one region between
@@ -390,24 +466,33 @@ device config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
         marks these lines as not checked on a device; not with `--plain` or `--backout`)
 
 device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale
+                    | --differs | --name <text> | --ip <addr|cidr|text> [--pull]
 
     Superusers, Junos devices: check each device's plan on the device (exclusive configure session,
     the device's own `commit check`, the candidate discarded), show the devices that need a change
-    grouped by shape with every secret elided, ask ONE question (the device's name, or the number of
-    devices, typed back), then commit each under `commit confirmed`, prove it with a fresh login as
-    you, the landed change and a read of the planned sections, and confirm it; a failed proof rolls
-    it back, a device whose state could not be read is `PENDING until <time>`; `--transport
-    auto|cli|netconf` (default `config devices apply-transport`, `cli`) chooses the command line or
-    NETCONF per device, and a change to the NETCONF service is always made over the command line.
+    grouped by shape with every secret elided, ask for each device in turn (its line, then its name
+    typed back, spaces and tabs around it ignored: anything else, another case, a carriage return,
+    Enter or the end of input declines it, with no second try and no answer for several devices;
+    all are asked before the first commit), then commit each approved
+    device under `commit confirmed`, prove it with a fresh login as you, the landed change and a
+    read of the planned sections, and confirm it; a failed proof rolls it back, a device whose state
+    could not be read is `PENDING until <time>`; `--transport auto|cli|netconf` (default `config
+    devices apply-transport`, `cli`) chooses the command line or NETCONF per device, and a change to
+    the NETCONF service is always made over the command line.
     Exit 0 every device applied, was checked or had no change, 1 a device failed, was rolled back or
-    is pending (or none was applied: every one skipped), 2 wrong arguments, 130 interrupted
+    is pending, a device was declined at the review (the others approved are still applied; JSON
+    `"stop":"not-approved"`) or none was applied (every one skipped), 2 wrong arguments, 130
+    interrupted (a Ctrl-C at a question of the review, or before the first commit, applies
+    nothing). The audit lines of the
+    review, the approval and each device's apply carry `mode=attended`, or `mode=scripted` for
+    `--confirmed -y`
 
     --check
         Stop after the device's own commit check: nothing is committed, the shape is recorded
         (`--exit-code`: exit 2 when a device needs a change)
     --confirmed
         Apply only shapes an earlier apply confirmed and skip the others; the one form `-y` answers
-        the review of, so a script needs no terminal
+        the review of (every device's question, no terminal needed; the lines say `mode=scripted`)
     --max <n>, --pause <seconds>, --no-canary
         At most n devices of a run (default 5); wait between devices after each shape's first
         (0-3600, default `device.apply.pause`); start a shape's devices together instead of its
@@ -419,12 +504,33 @@ device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <ven
         ahead of the first question is its answer
     --section <list>
         Only aaa, roles, mgmt-acl, snmp, system, netconf
+    --pull
+        Read the selected Junos devices first, as `pull` does (its lines,
+        records and audit lines, over `device.config.transport`: `--transport`
+        is how the apply writes), with the run's one password. A device whose
+        pull fails is a failed row and is not checked; a pull that stops
+        (interrupted, a refused password, `--max-failures`) ends the run with
+        nothing checked. `--stale` and `--differs` then select from the fresh
+        records (the others are `skipped ...: pulled, and the fresh pull
+        matches what tacctl renders`, JSON `left_out.match_after_pull`, or,
+        when a device cannot be compared, `could not be compared ...`, JSON
+        `left_out.not_compared_after_pull`; neither is checked), so `--pull
+        --differs` applies to the devices that differ now; without them every
+        device pulled is checked. `--pull --differs` with no other selector
+        pulls every Junos device you can see; the apply is still capped by
+        `--max` and reviewed as any apply. With `--json` each pull object
+        carries `"phase":"pull"`; a named Cisco device or WTI unit's refused
+        row comes before them, and a device whose pull failed has only its
+        pull object (the summary counts it failed)
     --concurrency <n>, --timeout <seconds>, --max-failures <n>, --server <address|name>,
                   --source <address>
         As for `pull` (an apply runs one device at a time unless `--concurrency`; `--max-failures`
         defaults to 1)
     --json -y
-        One object per device and phase, then the summary (the review goes to standard error);
+        One object per device and phase, then the summary (the review goes to standard error; each
+        device's answer is an object with `"phase":"review"`, `"status":"approved"|"declined"` and
+        `"mode":"attended"|"scripted"`; a declined device has only that object, no `"phase":"apply"`
+        one; a review cut short by Ctrl-C ends with `"phase":"review","status":"interrupted"`);
         answer the review (with `--confirmed`)
 
 device config shapes [list [--show <hash>] [--json] | seed <name>[,<name>...] [-y]]
@@ -435,19 +541,24 @@ device config shapes [list [--show <hash>] [--json] | seed <name>[,<name>...] [-
     device's last check or apply as confirmed on your word, for a device applied and verified by
     hand (one question; `-y` answers it). Contacts no device
 
-device config list [--stale] [--never] [--failed] [--differs] [--transport netconf|ssh|none]
+device config list [--stale] [--never] [--failed] [--differs] [--name <text>]
+                   [--ip <addr|cidr|text>] [--transport netconf|ssh|none]
                    [--scope <scope>] [--vendor <vendor>] [--json]
 
     Each device's state (`ok`, `differs`, `never`, `failed`, and `pull`: a Cisco device whose syntax
-    is unknown, `needs pull (syntax unknown)`; a failed pull's DETAIL is its result: `denied` and
+    is unknown, `needs pull (syntax unknown)`, or a device whose vendor changed since its last
+    pull, `needs pull (vendor changed)`; a failed pull's DETAIL is its result: `denied` and
     `unsupported` for a WTI unit among the others), computed against today's rendering, with the
     release the last good pull read (`RELEASE`, `release` in `--json`; `-` when none), when it was
     read, by whom, over what, the NETCONF probe and the sections that differ (an `ok` device that
     holds statements of its own, which the plan keeps by rule, shows `snmp +N unmanaged`, and
     `--json` has the `unmanaged` map of section to count; a WTI unit's DETAIL and `--json` `unit`
     add its command menu version, Site ID and how many other sessions it had at the last pull);
-    `--stale` is never, failed, differs and pull together; the DETAIL of a device whose
-    `config-syntax` contradicts its pulled image says so (`syntax_conflict` in `--json`)
+    `--stale` is never, failed, differs and pull together; `--name` and `--ip` narrow the list as
+    they do for the other verbs. The state words (`--stale`, `--never`, `--failed`, `--differs`)
+    are alternatives here, but `pull`, `diff`, `plan` and `apply` require both when given both,
+    so `list --stale --differs` shows more devices than they would select; the DETAIL of a device
+    whose `config-syntax` contradicts its pulled image says so (`syntax_conflict` in `--json`)
 
 device config forget <name>[,<name>...] | --all
 
@@ -470,3 +581,33 @@ A device is found by name (any case) or by its registered address; an unregister
 A name that is a factory or image default is refused with the command that names the device on the device itself (`hostname`, `set system host-name`, ...); a host already enrolled under such a name is not refused and carries a `generic-name` notice. `host enroll --name` follows the same rules. Add your own patterns with `generic_names:` (regular expressions, whole-name, case-insensitive) in `devices.yaml`.
 
 **Seen data.** `device scan` reads what the daemons logged about each device into `/var/lib/tacctl/devices-seen.json` (0600, a cache: never snapshotted, `--full` rebuilds it): the tacquito journal (`journalctl -u tacquito … -o json`, resuming at its cursor; the `accepting user [u] from [address]` / `failed to validate the user [u] from [address]` lines, `bad secret detected for ip [address:port]`, `remote [address:port] has no secret providers` (no scope covers the address), and at log level 30 `prefix secret provider matches remote [address]`) and FreeRADIUS's `tacctl-auth.log` with its rotations (`client=`, `nas=`, `user=`, resuming by inode and offset). The first scan reads the last `stale-days` days; `--full` everything the logs hold, `--since 7d` that stretch. Per address it keeps the first and last sighting, the count, the last user, outcome and backend and the NAS-Identifier; records unseen for twice `stale-days` are dropped. `list` and `show` read the cache only (`seen data as of <time>`). An interactive session of the console or of `tacctl shell` (operator tier and up) starts `device scan --if-stale --quiet` in the background as it opens, so the logins are in by the time the list is looked at and nothing waits for it: it does nothing when the cache is younger than five minutes or another scan holds it (sessions that start together run one), reads a device's host keys again only when that device's last scan is a day old, goes on after the session ends, and prints nothing. Seen data an hour old or more is said so, with the command to run, in the footer of `list` and in the `Last seen` line of `show` (a read-only caller is told that an operator can run it); LAST SEEN is `rejected <time> (bad secret)` when the last exchange was refused. `check` and `list --probe` connect to the ssh port: the server often has no route to management ports, so a timeout may be a false alarm. `scan`, `discover` and `check` are operator-level.
+
+**Selecting devices.** `device config pull`, `diff`, `plan` and `apply`
+take device names, or `--all`, or filters that combine (a device must pass
+every one given): `--scope`, `--vendor`, `--stale` (never read, last read in
+failure, differing, or needs a pull), `--differs`, `--name <text>` and
+`--ip <addr|cidr|text>`. Names and `--all` stand alone: naming a device and
+a filter, or `--all` and a filter, is a usage error (exit 2), and so is a
+filter given with no value (`--scope=`, `--name ""`). `--differs` keeps the
+devices whose last good pull differs from what tacctl renders today, as
+`device config list --differs` shows them; it is decided from the records and
+the rendering, so no device is contacted and no password is asked. A device
+that needs a pull, never was read, failed its last pull or whose stored
+sections cannot be read is `--stale` but not `--differs`. With both, a device
+must be both. `--name` keeps the devices whose name contains the text, in any
+case; `--ip` keeps those whose address equals the address, lies inside the
+prefix, or contains the text (`10.20.`); each takes a comma list, and any
+item may match, as in `device list`. Because both match text, select the
+devices of an `apply` by exact names, a full address or a CIDR: `--ip 10.1.1`
+also matches 172.10.1.x and 10.1.10-19.x, and `--name sw1` also matches
+`sw10`. A filter simply drops the devices that do not pass it. A device the
+selection picks but cannot read (vendor `other`, no scope, a scope that is not
+yours, a break-glass hold) is counted and named in the note that follows the
+run; that note is made before `--stale` and `--differs` are applied, so it can
+name a device those two would have left out anyway. An `apply` checks every
+selected device on the device itself first, so a stale record can select a
+device that then has no change, never a change nobody reviewed. `apply
+--pull` pulls the devices the other selectors pick first and applies
+`--stale` and `--differs` to the records that pull wrote.
+
+Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `device add`, `device remove`, `device rename`, `device import`, `device set name= field= from= to=` for the setters and `device sync` with the devices written; a shown SNMP secret is `secret-read kind= name=` for every caller, and `device config show|plan` and the walkthroughs log the secret they read the same way ([Audit log](../security/audit.md#detail-lines)).

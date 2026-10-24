@@ -43,8 +43,31 @@ func IsConsole(argv0 string) bool {
 // dropped as the shell does (a line that is only that is the usage, first
 // 'tacctl'). The shell's own words (history, exit, quit,
 // system-shell), an empty string and anything else are refused. first is
-// the first word (for the log; "" when there is none).
+// the first word for the log when it is a verb (a visible command of
+// tacctl, help or one of the shell's own words), else "": the log never
+// carries a word the user typed that is not a verb, which could be a
+// password typed at the prompt (VerbWord).
 func Guard(line string, isCommand func(string) bool) (first string, ok bool) {
+	first, ok = guard(line, isCommand)
+	return VerbWord(first, isCommand), ok
+}
+
+// VerbWord is w when it is a word the console logs by name: help, a word of
+// the shell (history, exit, quit, system-shell) or a command for which
+// isCommand holds; else "". The audit log carries no other word that was
+// typed.
+func VerbWord(w string, isCommand func(string) bool) string {
+	switch w {
+	case "help", "history", "exit", "quit", SystemShellWord:
+		return w
+	}
+	if w != "" && isCommand != nil && isCommand(w) {
+		return w
+	}
+	return ""
+}
+
+func guard(line string, isCommand func(string) bool) (first string, ok bool) {
 	if len(line) > shell.LineMax || strings.ContainsAny(line, "\n\r\x00") {
 		return firstWord(line), false
 	}
@@ -106,7 +129,7 @@ func Forced(argv, environ []string, command string) []string {
 const SystemShellWord = shell.SystemShellWord
 
 // firstWord is the first blank-separated field of s (a refused line that
-// does not tokenize still names something in the log).
+// does not tokenize; Guard logs it only when it is a verb).
 func firstWord(s string) string {
 	f := strings.Fields(s)
 	if len(f) == 0 {

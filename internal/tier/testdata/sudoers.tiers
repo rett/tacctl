@@ -23,7 +23,8 @@ Cmnd_Alias TACCTL_EN = /usr/local/bin/tacctl device add *, /usr/local/bin/tacctl
 Cmnd_Alias TACCTL_ASKPASS_CMDS = /usr/local/bin/tacctl device config pull *, /usr/local/bin/tacctl device config diff *, /usr/local/bin/tacctl device config plan *, \
     /usr/local/bin/tacctl ssh *, /usr/local/bin/tacctl device ssh *, \
     /usr/local/bin/tacctl scope block * adopt *, /usr/local/bin/tacctl device block * adopt *, \
-    /usr/local/bin/tacctl device config apply *, /usr/local/bin/tacctl device onboard *, /usr/local/bin/tacctl device collect *
+    /usr/local/bin/tacctl device config apply *, /usr/local/bin/tacctl device onboard *, /usr/local/bin/tacctl device collect *, \
+    /usr/local/bin/tacctl device enroll *
 Defaults!TACCTL_ASKPASS_CMDS env_keep += "TACCTL_ASKPASS"
 Cmnd_Alias TACCTL_EDITOR_CMDS = /usr/local/bin/tacctl scope block * edit *, /usr/local/bin/tacctl scope block * adopt *, \
     /usr/local/bin/tacctl device block * edit *, /usr/local/bin/tacctl device block * adopt *

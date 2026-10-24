@@ -157,6 +157,23 @@ func TestBackupRestoreSnapshotRoundTripAndKeepsWhatItReads(t *testing.T) {
 	}
 }
 
+// A snapshot of an earlier release has a manifest without sid, user and
+// command (D256); a restore reads none of it.
+func TestBackupRestoreSnapshotWithAnOlderManifest(t *testing.T) {
+	sb := renderedSandbox(t)
+	minimal := fixture(t, "store.minimal.yaml")
+	sb.mkSnapshot("20200101_000000_001", minimal, "")
+	old := "{\n  \"created\": \"2020-01-01T00:00:00Z\",\n  \"rendered\": {},\n  \"tacctl_version\": \"0.2.16\"\n}\n"
+	if err := os.WriteFile(sb.path("state/backups/20200101_000000_001/manifest"), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sb.run("y\n", []string{"backup", "restore", "20200101_000000_001"})
+	sb.expect(0, "Restored snapshot 20200101_000000_001.", "")
+	if sb.read("state/store.yaml") != minimal {
+		t.Error("store is not the snapshot's")
+	}
+}
+
 // A writer that fails half way (the live store cannot be replaced) puts
 // store.yaml and tacctl.yaml back; no artifact changed.
 func TestBackupRestoreAWriterThatFailsPutsEveryFileBack(t *testing.T) {

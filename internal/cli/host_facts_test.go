@@ -61,7 +61,7 @@ func TestHostAddressRecordedAndChanged(t *testing.T) {
 		!strings.Contains(all, "web1: its address changed from 192.0.2.50 to 192.0.2.51; recorded 192.0.2.51 (notice address-changed: tacctl device show web1).") {
 		t.Errorf("changed: %d\n%s", hs.code, all)
 	}
-	if !r.Called("logger", "-t", "tacctl", "-p", "auth.warning", "host address-changed name=web1 old=192.0.2.50 new=192.0.2.51 by=root") {
+	if !hasAudit(r, "auth.warning", "host address-changed name=web1 old=192.0.2.50 new=192.0.2.51 by=root") {
 		t.Errorf("not logged: %q", r.Argvs())
 	}
 	if d := hs.devices(); !strings.Contains(d, "address: 192.0.2.51") || !strings.Contains(d, "previous_address: 192.0.2.50") || !strings.Contains(d, "address_changed:") {

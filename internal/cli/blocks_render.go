@@ -149,8 +149,9 @@ func (inv *invocation) resolveIOSBlocks(scope, device string, text func(blocks.L
 // logBlockReads logs a restricted caller's read of the strings of the
 // blocks a render carries: the block's name, never a value. The scope's
 // blocks are named scope/<vendor>/<block>, a device's own
-// _devices/<device>/<vendor>/<block>.
-func (inv *invocation) logBlockReads(b devices.Blocks, layers [2]policy.BlockLayers, scope, device string) {
+// _devices/<device>/<vendor>/<block>. logRead is secretRead for a render
+// that is shown, secretUse for one that is only compared or planned.
+func (inv *invocation) logBlockReads(logRead func(kind, name string), b devices.Blocks, layers [2]policy.BlockLayers, scope, device string) {
 	vendor := blocks.VendorJuniper
 	if b.CiscoSNMP != nil || b.CiscoSystem != nil {
 		vendor = blocks.VendorCisco
@@ -162,10 +163,10 @@ func (inv *invocation) logBlockReads(b devices.Blocks, layers [2]policy.BlockLay
 			continue
 		}
 		if layers[i].Scope {
-			inv.secretRead("block", scope+"/"+vendor+"/"+block)
+			logRead("block", scope+"/"+vendor+"/"+block)
 		}
 		if layers[i].Device {
-			inv.secretRead("block", blocks.DevicesDir+"/"+strings.ToLower(device)+"/"+vendor+"/"+block)
+			logRead("block", blocks.DevicesDir+"/"+strings.ToLower(device)+"/"+vendor+"/"+block)
 		}
 	}
 }

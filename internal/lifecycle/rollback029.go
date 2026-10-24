@@ -10,6 +10,7 @@ package lifecycle
 import (
 	"strconv"
 
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
 )
@@ -41,7 +42,7 @@ func planRollback029(p *RollbackPlan) (*RollbackPlan, error) {
 func (p *RollbackPlan) confStep029() RollbackStep {
 	s := RollbackStep{Title: p.in.Paths.Overrides + ": remove the keys " + RollbackTarget029 + " does not know", Todo: len(p.keys) > 0}
 	if len(p.keys) == 0 {
-		s.Lines = []string{"nothing to remove (device.apply.transport and the netconf_scope settings are not set)"}
+		s.Lines = []string{"nothing to remove (device.apply.transport, the netconf_scope settings and audit.strict are not set)"}
 		return s
 	}
 	for _, k := range p.keys {
@@ -111,6 +112,9 @@ func (p *RollbackPlan) warnings029() []RollbackWarning {
 	in := p.in
 	var tr, nc []string
 	for _, k := range p.keys {
+		if conf.Added0217Key(k) {
+			continue
+		}
 		v, _ := in.Conf.Get(k, "")
 		if k == "device.apply.transport" {
 			tr = append(tr, k+"="+v)
@@ -135,6 +139,7 @@ func (p *RollbackPlan) warnings029() []RollbackWarning {
 		lines = append(lines, "What is removed from tacctl.yaml and devices.yaml stays in the snapshot --apply takes first (tacctl backup list); 'tacctl backup restore' of it, with 0.2.10, brings it back.")
 		out = append(out, RollbackWarning{Title: "Settings " + RollbackTarget029 + " cannot use are dropped", Lines: lines})
 	}
+	out = append(out, p.auditStrictWarning(RollbackTarget029)...)
 	if !in.HasStore && p.PendingFiles() {
 		out = append(out, RollbackWarning{
 			Title: "No snapshot can be taken",

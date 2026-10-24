@@ -160,6 +160,10 @@ func (inv *invocation) hostRotate(o rotateOpts) error {
 	if err := inv.rotateConfirm(r); err != nil {
 		return err
 	}
+	// The first change is next (a key file, the account on the host): the
+	// start line comes before it, so a run that fails at the proof still has
+	// its pair beside its step line.
+	a.Audit().Touch()
 	he := r.he
 	e := r.entry
 	by := inv.sudoUser()
@@ -273,7 +277,7 @@ func (inv *invocation) hostRotate(o rotateOpts) error {
 	}); err != nil {
 		a.Out.WarnE(o.name + ": the record could not be written: " + strings.Join(msgs(err), " "))
 	}
-	a.Logger(inv.ctx, "auth.info", audit(""))
+	a.Audit().Raw("auth.info", audit(""))
 	a.Out.InfoE("Host '" + o.name + "' is now reached at " + targetText(next) + " (scope, server and method unchanged).")
 	closeSession()
 	he.KeepOpen = false
@@ -602,7 +606,7 @@ func (inv *invocation) proofProblem(r *rotation, p hosts.Proof) string {
 func (inv *invocation) rotateProofFailed(r *rotation, st hosts.RotateStatus, problem, line string) error {
 	a := inv.app
 	o, e := r.o, r.entry
-	a.Logger(inv.ctx, "auth.warning", line)
+	a.Audit().Raw("auth.warning", line)
 	a.Out.ErrorE("The proof failed: " + problem + ".")
 	file := hosts.RotateSudoersFile
 	switch st.Origin {
@@ -681,7 +685,7 @@ func (inv *invocation) rotateRemoveOld(r *rotation) error {
 	}); err != nil {
 		a.Out.WarnE(o.name + ": the record could not be written: " + strings.Join(msgs(err), " "))
 	}
-	a.Logger(inv.ctx, "auth.info", "host provisioner remove-old name="+o.name+" old="+old+" new="+o.user+" by="+inv.sudoUser())
+	a.Audit().Raw("auth.info", "host provisioner remove-old name="+o.name+" old="+old+" new="+o.user+" by="+inv.sudoUser())
 	a.Out.InfoE("The old account '" + old + "' is removed from " + o.name + ".")
 	return nil
 }

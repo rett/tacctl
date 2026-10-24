@@ -1,6 +1,7 @@
 package snmp
 
-// Agent is a minimal SNMP agent that answers sysName.0 and sysLocation.0, for the tests and
+// Agent is a minimal SNMP agent that answers sysName.0, sysLocation.0 and,
+// when set, sysObjectID.0 and sysDescr.0, for the tests and
 // for the bats suite's stub (the '_snmp-agent' command of a -tags
 // testknobs build): v2c with one community (any other is dropped without
 // an answer, as real agents do), and v3 with one authPriv user, with the
@@ -20,7 +21,10 @@ type Agent struct {
 	SysName string
 	// SysLocation answers sysLocation.0 (empty: an empty string).
 	SysLocation string
-	Community   string
+	// SysObjectID and SysDescr answer sysObjectID.0 and sysDescr.0 (empty:
+	// noSuchObject, as an agent that has neither).
+	SysObjectID, SysDescr string
+	Community             string
 	// The v3 user (empty: v3 requests get unknownUserName reports).
 	User, AuthPass, PrivPass, Auth string
 	EngineID                       []byte
@@ -96,6 +100,16 @@ func (a *Agent) response(req pdu) pdu {
 			v = tlv{tag: tagOctetString, val: []byte(a.SysName)}
 		case SysLocationOID:
 			v = tlv{tag: tagOctetString, val: []byte(a.SysLocation)}
+		case SysDescrOID:
+			if a.SysDescr != "" {
+				v = tlv{tag: tagOctetString, val: []byte(a.SysDescr)}
+			}
+		case SysObjectIDOID:
+			if b, err := encOID(a.SysObjectID); a.SysObjectID != "" && err == nil {
+				if t, _, err := next(b); err == nil {
+					v = t
+				}
+			}
 		}
 		out.varbinds = append(out.varbinds, varbind{oid: vb.oid, value: v})
 	}

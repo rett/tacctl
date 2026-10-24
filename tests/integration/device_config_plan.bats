@@ -115,7 +115,7 @@ print("fine")' <<< "$output"
     assert_output --partial "--transport is for --pull"
     alice device config plan
     assert_failure 2
-    assert_output --partial "Name the devices to plan, or select them with --all, --scope <name>, --vendor <vendor> or --stale."
+    assert_output --partial "Name the devices to plan, or select them with --all, --scope <name>, --vendor <vendor>, --stale, --differs, --name <text> or --ip <addr|cidr|text>."
     alice device config plan nope
     assert_failure 1
     assert_output --partial "Device 'nope' not found."

@@ -10,6 +10,8 @@ import (
 	"runtime/debug"
 	"syscall"
 
+	"github.com/spf13/cobra"
+
 	"github.com/rett/tacctl/internal/app"
 	// The shipped backend modules register themselves.
 	_ "github.com/rett/tacctl/internal/backend/all"
@@ -17,6 +19,7 @@ import (
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/tier"
 )
 
 // invocation is one run of the CLI.
@@ -46,6 +49,18 @@ type invocation struct {
 	// resolved: what each host name resolved to in this invocation
 	// (host_facts.go: resolveV4).
 	resolved map[string]string
+
+	// root is the command tree of this run (runWith), ar the central audit
+	// lines of the command (audit.go), callerTier the tier the gate held
+	// the caller to.
+	root       *cobra.Command
+	ar         *auditRun
+	callerTier tier.Tier
+
+	// keyAccepted: the key 'device add' is about to pin is the one a person
+	// accepted by typing the device's name ('device enroll'), not one named
+	// by --host-key on the command line: deviceAddReport says so.
+	keyAccepted bool
 
 	// snmpUserSeen: whether the caller may be told an SNMPv3 user's name
 	// (device_snmp_override.go: snmpUserVisible), asked once.
@@ -95,7 +110,7 @@ func Run(ctx context.Context, a *app.App, build BuildInfo) error {
 }
 
 // runWith is Run with the hooks a test replaces (nil: the real ones).
-func runWith(ctx context.Context, a *app.App, build BuildInfo, hk *hooks) error {
+func runWith(ctx context.Context, a *app.App, build BuildInfo, hk *hooks) (err error) {
 	if needsSudo(a) {
 		return reexec(a)
 	}
@@ -105,9 +120,19 @@ func runWith(ctx context.Context, a *app.App, build BuildInfo, hk *hooks) error 
 	a.SetContext(ctx)
 	inv := &invocation{ctx: ctx, app: a, build: build, hooks: hk}
 	root := newRoot(inv)
+	inv.root = root
 	if isComplete(a.Args) {
 		return complete(ctx, a, root)
 	}
-	cmd, rest := resolve(root, a.Args)
-	return cmd.RunE(cmd, rest)
+	return inv.dispatch(func() error {
+		cmd, rest := resolve(root, a.Args)
+		return cmd.RunE(cmd, rest)
+	})
+}
+
+// dispatch runs the command and writes the end line of its central audit
+// lines (audit.go) where its exit status is decided, also when it panics.
+func (inv *invocation) dispatch(run func() error) (err error) {
+	defer inv.auditFinish(&err)
+	return run()
 }

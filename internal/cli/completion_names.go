@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/model"
@@ -157,7 +158,7 @@ func (inv *invocation) ownScope(f scopeFilter, scope string) error {
 	if len(f.scopes) > 0 {
 		yours = strings.Join(f.scopes, ", ")
 	}
-	return inv.usageErr("Scope '" + scope + "' is not one of yours: the engineer tier changes the devices of its own scopes only (yours: " + yours + "). Nothing was changed.")
+	return inv.scopeRefusal(scope, "Scope '"+scope+"' is not one of yours: the engineer tier changes the devices of its own scopes only (yours: "+yours+"). Nothing was changed.")
 }
 
 // scopeNotFound is nil when the caller may read scope (an administrator any
@@ -171,13 +172,37 @@ func (inv *invocation) scopeNotFound(f scopeFilter, scope string) error {
 	if f.allows(scope) {
 		return nil
 	}
-	return inv.usageErr("Scope '" + scope + "' does not exist.")
+	return inv.scopeRefusal(scope, "Scope '"+scope+"' does not exist.")
 }
 
-// secretRead logs a restricted caller's reveal of a secret (kind scope):
-// who read which scope's, never the value (docs/plans/0.2.3-plan.md D45).
+// scopeRefusal prints msg and returns the refusal: the typed scope denial
+// when the scope exists (it is outside the caller's own), a plain refusal
+// for a name that is no scope (a typo is not a denial).
+func (inv *invocation) scopeRefusal(scope, msg string) error {
+	err := inv.usageErr(msg)
+	if s, serr := inv.scopeOf(scope); serr == nil && s != nil {
+		return inv.denied(reasonScope, err)
+	}
+	return err
+}
+
+// secretRead logs a reveal of a secret, whoever makes it (kind scope): who
+// read which scope's, never the value (docs/plans/0.2.3-plan.md D45, 0.2.17
+// D253). It is the one way a verb logs a reveal, and it is called before the
+// secret is printed: under audit.strict a line that cannot be written
+// refuses the reveal here (audit.Writer.Reveal panics with the refusal, which
+// the dispatcher makes the command's exit 1), so nothing is shown. It runs on
+// the command's own goroutine, never on a worker.
 func (inv *invocation) secretRead(kind, name string) {
-	inv.app.Logger(inv.ctx, "auth.info", "secret-read kind="+kind+" name="+name+" by="+inv.sudoUser())
+	inv.app.Audit().Reveal(audit.Info, "secret-read", kvp("kind", kind), kvp("name", name), audit.Pair("by", inv.sudoUser()))
+}
+
+// secretUse logs a secret read to build something that is not printed as it
+// is (the managed renders that 'device config' compares, plans and applies):
+// the same secret-read line as secretRead, but audit.strict does not refuse
+// it; a line that cannot be written is the D248 warning.
+func (inv *invocation) secretUse(kind, name string) {
+	inv.detailAt(audit.Info, "secret-read", kvp("kind", kind), kvp("name", name))
 }
 
 // callerScopes is the filter of the caller (SUDO_USER); a lower-tier caller

@@ -85,7 +85,8 @@ func scriptKind(s string) string {
 // script adds the rotation's answers to r.
 func (rh *rotHost) script(r *fake.Runner) {
 	r.Func(func(c execx.Cmd) bool { return c.Name == "logger" }, func(c execx.Cmd) (execx.Result, error) {
-		rh.events = append(rh.events, "logger:"+c.Args[len(c.Args)-1])
+		line, _ := cutAuditSID(c.Args[len(c.Args)-1])
+		rh.events = append(rh.events, "logger:"+line)
 		return execx.Result{}, nil
 	})
 	r.Func(func(c execx.Cmd) bool {
@@ -436,7 +437,7 @@ func TestRotateWithPasswordNeverSeesIt(t *testing.T) {
 	if cs := rh.pushes[0]; !strings.Contains(cs, "AUTH=password\n") || strings.Contains(cs, "PUBKEY=ssh-") || !strings.Contains(cs, "SUDOERS_LINE=deploy2\\ ALL=\\(ALL:ALL\\)\\ ALL\n") {
 		t.Errorf("password script header:\n%s", cs[:min(len(cs), 900)])
 	}
-	if !r.Called("logger", "-t", "tacctl", "-p", "auth.info", "host provisioner rotate name=web1 old=admin new=deploy2 auth=password by=root") {
+	if !hasAudit(r, "auth.info", "host provisioner rotate name=web1 old=admin new=deploy2 auth=password by=root") {
 		t.Errorf("audit line: %q", r.Argvs())
 	}
 	// The secret: only a terminal-carrying ssh (-t) ever gets the stream it
@@ -509,6 +510,10 @@ func TestRotateFailedProofRemovesTheAccount(t *testing.T) {
 			if rh.has("logger:host provisioner rotate name=web1 old=admin new=deploy2 auth=key by=root") {
 				t.Errorf("the rotation was logged as done")
 			}
+			// The step line lies between the command's pair.
+			if a, b, c := rh.eventIndex("logger:cmd start"), rh.eventIndex("logger:host provisioner rotate name=web1 old=admin new=deploy2 auth=key step=prove"), rh.eventIndex("logger:cmd end"); a < 0 || b < a || c < b {
+				t.Errorf("the pair does not enclose the step line: %q", rh.events)
+			}
 			if hs.registry() != rotRegBefore || hs.snapshots() != n0 || strings.Contains(hs.record("web1"), "provisioner") {
 				t.Errorf("changed: %q %d", hs.registry(), hs.snapshots()-n0)
 			}
@@ -527,7 +532,8 @@ func TestRotateFailedProofRemovesTheAccount(t *testing.T) {
 }
 
 // A creation that fails changes nothing: no proof, no removal, no registry
-// change.
+// change. The attempt on the host is audited as the command's pair, with no
+// step line.
 func TestRotateCreationFails(t *testing.T) {
 	hs, rh := rotSandbox(t)
 	rh.createCode = 1
@@ -536,7 +542,7 @@ func TestRotateCreationFails(t *testing.T) {
 	if hs.code != 1 || !strings.Contains(plain(hs.err.String()), "The account 'deploy2' could not be created on web1 (see above); the registry was not changed.") {
 		t.Errorf("exit %d %q", hs.code, hs.err.String())
 	}
-	if rh.has("proof") || rh.has("push:remove") || rh.has("logger") || hs.registry() != rotRegBefore || hs.snapshots() != n0 {
+	if rh.has("proof") || rh.has("push:remove") || !rh.has("logger:cmd start") || !rh.has("logger:cmd end") || rh.has("logger:host provisioner") || hs.registry() != rotRegBefore || hs.snapshots() != n0 {
 		t.Errorf("events %q registry %q", rh.events, hs.registry())
 	}
 }

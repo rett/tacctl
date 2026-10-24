@@ -95,7 +95,7 @@ func TestBreakglassHoldRoundTrip(t *testing.T) {
 	if n := sb.restarts(); n != 1 {
 		t.Errorf("%d restarts for the hold, want 1", n)
 	}
-	if !sb.runner.CalledRegexp(`logger.* -p auth\.info breakglass hold device=lab-sw addr=192\.168\.1\.1 reason="console recovery after a failed paste" by=root`) {
+	if !hasAuditMatch(sb.runner, "auth.info", `breakglass hold device=lab-sw addr=192\.168\.1\.1 reason="console recovery after a failed paste" by=root`) {
 		t.Errorf("no audit line: %v", sb.runner.Argvs())
 	}
 	o := sb.overrides()
@@ -214,7 +214,7 @@ func TestBreakglassHoldRoundTrip(t *testing.T) {
 	if o := sb.overrides(); strings.Contains(o, "breakglass_hold") {
 		t.Errorf("the record is left:\n%s", o)
 	}
-	if !sb.runner.CalledRegexp(`logger.* -p auth\.info breakglass release device=lab-core addr=192\.168\.1\.1 held=\S+ by=root`) {
+	if !hasAuditMatch(sb.runner, "auth.info", `breakglass release device=lab-core addr=192\.168\.1\.1 held=\S+ by=root`) {
 		t.Errorf("no release audit line: %v", sb.runner.Argvs())
 	}
 	if out := plain(sb.run("", []string{"breakglass", "list"})); !strings.Contains(out, "None held") {
@@ -481,7 +481,7 @@ func TestBreakglassHoldAndReleaseSayWhenTheRestartFailed(t *testing.T) {
 	if !strings.Contains(sb.overrides(), "address: 192.168.1.1") || !strings.Contains(sb.renderedConfig(), "# break-glass held: 192.168.1.1") {
 		t.Errorf("the record or the files were not kept:\n%s", sb.overrides())
 	}
-	if !sb.runner.CalledRegexp(`logger.* -p auth\.info breakglass hold device=lab-sw `) {
+	if !hasAuditMatch(sb.runner, "auth.info", `breakglass hold device=lab-sw `) {
 		t.Error("the hold was not logged")
 	}
 
@@ -745,7 +745,7 @@ func TestBreakglassHoldListRoundTrip(t *testing.T) {
 		`breakglass hold device=lab-sw addr=192\.168\.1\.1 reason="console recovery" by=root`,
 		`breakglass hold device=lab-rtr addr=192\.168\.1\.2 reason="paste cut the session" by=root`,
 	} {
-		if !sb.runner.CalledRegexp(`logger.* -p auth\.info ` + line) {
+		if !hasAuditMatch(sb.runner, "auth.info", line) {
 			t.Errorf("no audit line %q: %v", line, sb.runner.Argvs())
 		}
 	}
@@ -789,7 +789,7 @@ func TestBreakglassHoldListRoundTrip(t *testing.T) {
 		t.Errorf("a record is left:\n%s", sb.overrides())
 	}
 	for _, dev := range []string{"lab-rtr", "lab-sw"} {
-		if !sb.runner.CalledRegexp(`logger.* -p auth\.info breakglass release device=` + dev + ` addr=\S+ held=\S+ by=root`) {
+		if !hasAuditMatch(sb.runner, "auth.info", `breakglass release device=`+dev+` addr=\S+ held=\S+ by=root`) {
 			t.Errorf("no release audit line for %s: %v", dev, sb.runner.Argvs())
 		}
 	}
@@ -899,7 +899,7 @@ func TestBreakglassHoldListSkipsTheOneMadeMeanwhile(t *testing.T) {
 	if n := sb.restarts(); n != 1 {
 		t.Errorf("%d restarts, want 1", n)
 	}
-	if sb.runner.CalledRegexp(`logger.* -p auth\.info breakglass hold device=lab-sw `) {
+	if hasAuditMatch(sb.runner, "auth.info", `breakglass hold device=lab-sw `) {
 		t.Error("the skipped device was logged as held")
 	}
 }

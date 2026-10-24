@@ -10,6 +10,7 @@ package cli
 // TestManGeneratedBlocksAreCurrent:
 //
 //	tiers              the TIERS table (tier.Rules) and the notes of the verbs the code splits (tierNotes)
+//	audit-classes      the action and mixed commands of AUDIT LOG with their weight (auditTable)
 //	config-keys        the tacctl.yaml keys (conf.Schema), with type and default
 //	console-keys       the console.yaml settings (console.Defaults), with type and default
 //	command <words>    for each command: its tier ('Requires:') and its flags, described as the usage describes them
@@ -122,6 +123,40 @@ func manTiersBlock() manBlock {
 	return manBlock{name: "tiers", lines: l}
 }
 
+// manAuditBlock is the AUDIT LOG list of the commands that write the central
+// lines: the action commands, then the mixed ones, each at its weight.
+func manAuditBlock() manBlock {
+	var l []string
+	for _, class := range []auditClass{classAction, classMixed} {
+		for _, notice := range []bool{false, true} {
+			var rows []string
+			for _, k := range slices.Sorted(maps.Keys(auditTable)) {
+				e := auditTable[k]
+				if e.Class != class {
+					continue
+				}
+				switch {
+				case !notice && e.Notice && e.NoticeWhen == nil:
+					// always at auth.notice: in the other list
+				case !notice:
+					rows = append(rows, k)
+				case e.Notice && e.NoticeNote != "":
+					rows = append(rows, k+" ("+e.NoticeNote+")")
+				case e.Notice:
+					rows = append(rows, k)
+				}
+			}
+			title := string(class)
+			if notice {
+				title += ", auth.notice"
+			}
+			l = append(l, ".TP", `.B "`+roff(title)+`"`)
+			l = append(l, roffWrap(rows, ", ")...)
+		}
+	}
+	return manBlock{name: "audit-classes", lines: l}
+}
+
 // manCommandBlocks are the 'command <words>' blocks: the tier line and the
 // flags of each visible leaf command.
 func manCommandBlocks(t *testing.T) []manBlock {
@@ -163,6 +198,9 @@ func manCommandBlocks(t *testing.T) []manBlock {
 				if o, ok := manFlagOverrides[words+" "+f.Names[0]]; ok {
 					desc = o
 				}
+				if v, ok := manValueOverrides[words+" "+f.Names[0]]; ok {
+					value = v
+				}
 				if desc == "" {
 					t.Errorf("tacctl %s: flag %s has no description in the usage (the generated option list of man/tacctl.1 needs one)", words, f.Names[0])
 				}
@@ -194,6 +232,12 @@ func manCommandBlocks(t *testing.T) []manBlock {
 	return out
 }
 
+// manValueOverrides are the value texts of flags whose first line in the
+// family's usage block is another verb's flag of the same name.
+var manValueOverrides = map[string]string{
+	"device enroll --name": "<name>",
+}
+
 // manFlagOverrides are the descriptions of flags that a command shares with
 // others in one usage block, where the block's line is about another verb
 // ("<command words> <flag>": the text for that command alone).
@@ -219,17 +263,23 @@ var manFlagOverrides = map[string]string{
 	"store show --json":                  "Print JSON instead of YAML.",
 	"scope prefixes --all":               "(remove) Remove every prefix of the scope, which removes the scope.",
 	"device onboard --login":             "The device's local account to log in as (any, a break-glass one included; root through its CLI wrapper): its password is asked once on the terminal and never kept or cached.",
-	"device onboard --name":              "The registry name (default: the name the device reports; a generic or taken one is asked for).",
-	"device onboard --host-key":          "Trust only this key, read on the device's console (no question; needed without a terminal); pin it alone.",
+	"device onboard --name":              "The registry name, typed back at the key's question (default: its SNMP sysName, else the name typed there; with --host-key, the name the device reports, a generic or taken one asked for).",
+	"device onboard --host-key":          "Accept only this key, read on the device's console (no question; needed without a terminal); pin it alone.",
 	"device onboard --legacy-ssh":        "SHA-1 key exchange, CBC ciphers and ssh-rsa (also chosen by itself when the handshake needs them); registered so.",
 	"device onboard --section":           "Only these sections of the first-time plan: aaa, roles, mgmt-acl, snmp, system; aaa among them (the proof is a TACACS+ login).",
 	"device onboard --json":              "One object at the end (the progress goes to standard error).",
 	"device collect --discovered":        "The addresses 'device discover' lists (the seen cache: unregistered, authenticated); no address is named with it.",
 	"device collect --login":             "The device's local account to log in as (any, a break-glass one included; root through its CLI wrapper) instead of you: its password is asked once on the terminal, never kept or cached, and goes to each address once; one account for the run.",
-	"device collect --host-key":          "Trust only this key, read on the device's console (no question; needed without a terminal; one address); pin it alone.",
-	"device collect --register":          "After the table, register each collected device through 'device add' with the keys shown pinned (one question) and keep the read as its first pull record.",
-	"device collect --yes":               "Answer yes to the registration question of --register (needed without a terminal).",
+	"device collect --host-key":          "Accept only this key, read on the device's console (no question; needed without a terminal; one address); pin it alone.",
+	"device collect --register":          "After the table, register each collected device through 'device add' with the key accepted pinned (one question) and keep the read as its first pull record; the key's question takes the device's SNMP sysName when it gives one that is not taken.",
+	"device collect -y":                  "Answer yes to the registration question of --register (needed without a terminal); never a host key's question.",
 	"device collect --json":              "One object at the end (the progress goes to standard error).",
+	"device enroll --discovered":         "The addresses 'device discover' lists (the seen cache: unregistered, authenticated); no address is named with it.",
+	"device enroll --host-key":           "Pin this key of ONE address, read on its console: no question (the only form without a terminal).",
+	"device enroll --vendor":             "The vendor of ONE address (default: the one it names by SNMP, else asked; other ends its chain at the registration).",
+	"device enroll --name":               "The name of ONE address (default: its SNMP sysName, else the name typed at the key's question).",
+	"device enroll --legacy-ssh":         "Scan and register every device of the run with the legacy algorithms (a device that answers only those is found so without it).",
+	"device enroll --json":               "The pull's lines and the plan's objects, then one object of the run; the questions, the progress and the table on standard error.",
 	"device sync --all":                  "Every device of the registry.",
 	"device sync --scope":                "Only the devices of that scope.",
 	"device sync --vendor":               "Only that vendor's devices (only Junos records are read).",
@@ -257,6 +307,9 @@ var manFlagOverrides = map[string]string{
 	"device config apply --scope":        "Only the devices of that scope.",
 	"device config apply --vendor":       "Only that vendor's devices (apply writes to Junos devices only).",
 	"device config apply --stale":        "Only the devices never read, last read in failure, or differing.",
+	"device config apply --differs":      "Only the devices whose last pull differs from what tacctl renders now (from the records; no login).",
+	"device config apply --name":         "Only the devices whose name contains the text (a comma list: any of them).",
+	"device config apply --ip":           "Only the devices whose address is that address, lies in that prefix or contains the text (a comma list: any of them).",
 	"device config apply --concurrency":  "Check or apply at most n devices at once (never above device.config.max_concurrency; an apply runs one at a time unless given).",
 	"device config apply --transport":    "How the check and the apply reach a device: auto (NETCONF where the last read found it answering and the login may commit, else the command line, with the reason), cli, or netconf (never falls back); default device.apply.transport. A change to the NETCONF service is made over the command line.",
 	"device config apply --timeout":      "Per device check, connect included (10-600; default device.config.timeout); an apply may take its window and two minutes more.",
@@ -266,6 +319,7 @@ var manFlagOverrides = map[string]string{
 	"device config apply --section":      "Only these sections: aaa, roles, mgmt-acl, snmp, system.",
 	"device config apply --json":         "One object per device and phase, then the summary; the review goes to standard error.",
 	"device config apply --exit-code":    "With --check: exit 2 when a device needs a change (and none failed).",
+	"device config apply --pull":         "Read the devices first, as 'device config pull' does (over device.config.transport), with the same password; a device whose pull fails is not checked, and --stale and --differs select from the fresh records.",
 	"device config apply -y":             "Answer the review (only with --confirmed: every shape is one an earlier apply confirmed; no terminal needed).",
 	"device config shapes -y":            "(seed) Answer the question: file the shapes as confirmed on your word.",
 	"device config shapes --json":        "(list) One object per shape: its state, devices, confirmations and the nearest confirmed shape.",
@@ -389,6 +443,7 @@ func setWith(cmds ...string) string {
 // and defaults are the code's. A key without an entry here (or an entry
 // without a key) fails TestManKeyDocsAreComplete.
 var manKeyDocs = map[string]struct{ verb, desc string }{
+	"audit.strict":                           {setWith("config audit-strict"), "Whether a command that changes state, or shows a secret, is refused when its audit line cannot be written: with true, an action or mixed command whose cmd start line logger did not write exits 1 before it changes anything, and a command whose secret-read line logger did not write exits 1 before it shows the secret (the AUDIT LOG section has the messages); any other read runs, and an end line that cannot be written is the warning. config audit-strict is never refused by it."},
 	"password.max_age_days":                  {setWith("config password-age"), "Days after which a password counts as old: tacctl status warns."},
 	"password.min_length":                    {setWith("config password-min-length"), "Shortest password typed at a prompt."},
 	"secret.min_length":                      {setWith("config secret-min-length"), "Shortest shared secret an operator may type."},
@@ -480,6 +535,8 @@ func manTypeText(r conf.Rule) string {
 		return "integer"
 	case conf.TypeNullableString:
 		return "scope name (a letter, then up to 31 letters, digits, _ or -) or null"
+	case conf.TypeBool:
+		return "true or false"
 	case conf.TypeEnum:
 		return "one of " + strings.Join(r.Values, ", ")
 	case conf.TypeACLName:
@@ -895,7 +952,7 @@ func manMarkerLine(kind, name string) string { return `.\" ` + kind + " GENERATE
 // manBlocks are all the generated blocks, in page order where it matters.
 func manBlocks(t *testing.T) []manBlock {
 	t.Helper()
-	blocks := []manBlock{manTiersBlock(), manKeysBlock("config-keys", manConfigKeyRows(t)), manKeysBlock("console-keys", manConsoleKeyRows(t))}
+	blocks := []manBlock{manTiersBlock(), manAuditBlock(), manKeysBlock("config-keys", manConfigKeyRows(t)), manKeysBlock("console-keys", manConsoleKeyRows(t))}
 	return append(blocks, manCommandBlocks(t)...)
 }
 

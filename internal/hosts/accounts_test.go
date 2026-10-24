@@ -331,6 +331,10 @@ func TestAccountChangesTakeARename(t *testing.T) {
 	if got := c; len(got.Created) != 0 || len(got.Removed) != 0 || len(got.Updated) != 2 || got.Updated[0] != "alice" || got.Updated[1] != "bobby" {
 		t.Errorf("changes %+v", got)
 	}
+	// ... and under Renamed, by the new name (the audit line counts them).
+	if len(c.Renamed) != 2 || c.Renamed[0] != "alice" || c.Renamed[1] != "bobby" {
+		t.Errorf("renamed %v", c.Renamed)
+	}
 }
 
 func TestAccountSummary(t *testing.T) {

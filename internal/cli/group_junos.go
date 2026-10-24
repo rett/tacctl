@@ -182,9 +182,14 @@ func (inv *invocation) groupEditWTILevel(g *model.Group, value string) error {
 	if value != "auto" && !slices.Contains(conf.WTILevels, value) {
 		return inv.usageErr("Unknown WTI level '" + value + "'. Use: auto, " + strings.Join(conf.WTILevels, ", "))
 	}
+	was := "auto"
+	if level, over := policy.WTILevel(a.Conf(), g.Name, 0); over {
+		was = level
+	}
 	if err := inv.applyWith(func() error { return policy.WriteWTILevel(a.Conf(), g.Name, value) }); err != nil {
 		return err
 	}
+	inv.detail("group edit", kvp("name", g.Name), kvp("key", "wti-level"), kvp("from", was), kvp("to", value))
 	if value == "auto" {
 		auto := policy.WTILevelOf(privOf(g))
 		a.Out.Info(fmt.Sprintf("Group '%s' WTI level is automatic again (priv-lvl %d → %s).", g.Name, privOf(g), wtiLabel(auto)))
@@ -217,9 +222,11 @@ func (inv *invocation) groupEditTier(g *model.Group, value string) error {
 		value, recorded = "superuser", true
 	}
 	watch := inv.watchServerTiers()
+	was := settingWord(policy.GroupTier(a.Conf(), g.Name))
 	if err := inv.applyWith(func() error { return policy.WriteGroupTier(a.Conf(), g.Name, value) }); err != nil {
 		return err
 	}
+	inv.detail("group edit", kvp("name", g.Name), kvp("key", "tier"), kvp("from", was), kvp("to", value))
 	if recorded {
 		a.Out.Info("Group '" + g.Name + "' tacctl tier set to superuser (priv-lvl " + strconv.Itoa(privOf(g)) +
 			" is the superuser band, and a group in it always has an explicit tier).")
@@ -262,6 +269,14 @@ func (inv *invocation) syncServerAfterLowering(what, left string) error {
 		return exit(1)
 	}
 	return nil
+}
+
+// settingWord is a tier setting as the audit line writes it: "auto" for none.
+func settingWord(v string) string {
+	if v == "" {
+		return "auto"
+	}
+	return v
 }
 
 // privOf is the group's priv-lvl (0 for a hand-edited store without one).

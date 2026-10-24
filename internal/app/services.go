@@ -7,11 +7,12 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/rett/tacctl/internal/applylock"
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/conf"
-	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/snapshot"
@@ -28,6 +29,10 @@ type services struct {
 	env      *backend.Env
 	set      *backend.Set
 	lock     *applylock.Lock
+	// audit is made once, under auditOnce: the device pulls log from their
+	// pool, so the first call may come from several goroutines.
+	audit     *audit.Writer
+	auditOnce sync.Once
 }
 
 // nothingChanged is a wait for the apply lock that the invocation's context
@@ -48,6 +53,7 @@ func (a *App) SetContext(ctx context.Context) { a.ctx = ctx }
 func (a *App) ApplyLock() *applylock.Lock {
 	if a.svc.lock == nil {
 		a.svc.lock = applylock.New(a.Paths.StateDir)
+		a.svc.lock.Touch = a.Audit().Touch
 	}
 	return a.svc.lock
 }
@@ -110,6 +116,11 @@ func (a *App) Snapshots() *snapshot.Snapshotter {
 		s := snapshot.New(a.Paths, a.Version, a.Knobs.Now, a.Out)
 		s.Fault = a.Knobs.Fault
 		s.LedgerLock = hosts.UIDs{Path: a.Paths.LinuxUIDs}.Lock
+		s.Touch, s.Taken = a.Audit().Touch, a.Audit().NoteSnapshot
+		s.Who = func() snapshot.Who {
+			w := a.Audit()
+			return snapshot.Who{SID: w.SID(), User: w.Actor().User, Command: w.Command()}
+		}
 		a.svc.snaps = s
 	}
 	return a.svc.snaps
@@ -187,11 +198,24 @@ func (a *App) Preflight() error {
 	return nil
 }
 
-// Logger writes an audit line through 'logger -t tacctl -p <priority>'
-// (an external command on purpose, docs/plans/go-rewrite.md 3.6); like the
-// bash's '2>/dev/null || true', a failure is ignored.
-func (a *App) Logger(ctx context.Context, priority, msg string) {
-	_, _ = a.Runner.Run(ctx, execx.Cmd{Name: "logger", Args: []string{"-t", "tacctl", "-p", priority, msg}})
+// Audit is the invocation's audit writer (internal/audit): 'logger -t
+// tacctl -p <priority>' on the process's context with the cancellation
+// taken off, so that no line is lost because a signal is ending the
+// command, the session id (sid=) appended to every line, the actor of
+// SUDO_USER and SUDO_UID, and the one warning on standard error when
+// logger could not write. The session id is made on the first call, which
+// the tier gate makes before it decides anything.
+func (a *App) Audit() *audit.Writer {
+	a.svc.auditOnce.Do(func() {
+		a.svc.audit = audit.New(audit.Options{
+			Runner: a.Runner,
+			Ctx:    a.ctx,
+			SID:    audit.NewSID(a.Knobs.Rand()),
+			Actor:  audit.ActorOf(a.Env.Get("SUDO_USER"), a.Env.Get("SUDO_UID")),
+			Warn:   func(msg string) { ui.Output{Stdout: a.Out.Stderr}.Warn(msg) },
+		})
+	})
+	return a.svc.audit
 }
 
 func isFile(path string) bool {
