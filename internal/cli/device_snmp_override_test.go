@@ -419,7 +419,7 @@ func TestDeviceSNMPEngineer(t *testing.T) {
 	sb.devSNMP("", "lab-sw", "port", "2161")
 	sb.devSNMP("prod-dev-comm-1\n", "prod-sw", "community", "--stdin")
 	logged := func(dev string) int {
-		return sb.runner.Count("logger", "-t", "tacctl", "-p", "auth.info", "secret-read kind=snmp-device name="+dev+" by=bob")
+		return auditCount(sb.runner, "auth.info", "secret-read kind=snmp-device name="+dev+" by=bob")
 	}
 	out := sb.asEngineer("", "device", "snmp", "lab-sw")
 	if sb.code != 0 || strings.Contains(out, "lab-dev-comm-1") || !strings.Contains(out, "community:  set  (device)") || logged("lab-sw") != 0 {
@@ -593,7 +593,7 @@ func TestWalkthroughUsesTheDevicesOwnSNMP(t *testing.T) {
 	if strings.Contains(out, "198.51.100.0") || strings.Contains(out, "def-comm-1") {
 		t.Errorf("the scope's clients or the default's community reached a device that sets its own:\n%s", out)
 	}
-	if n := sb.runner.Count("logger", "-t", "tacctl", "-p", "auth.info", "secret-read kind=snmp-device name=lab-sw by=bob"); n != 1 {
+	if n := auditCount(sb.runner, "auth.info", "secret-read kind=snmp-device name=lab-sw by=bob"); n != 1 {
 		t.Errorf("device reveal logged %d times", n)
 	}
 	// Without a registered device named, the scope's settings render.

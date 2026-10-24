@@ -41,7 +41,7 @@ func (sb *sandbox) cfgRun(stdin string, args []string, script func(*fake.Runner)
 	a.Resolve = sb.resolve
 	a.Paths.ConsoleCommand = sb.consoleCommand()
 	a.Paths.EditDir = sb.editDir()
-	sb.code = exitCode(runWith(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}, sb.hooks), a.Out)
+	sb.code = exitCode(runWith(sb.runCtx(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}, sb.hooks), a.Out)
 	if n := len(sb.runner.Execs()); n != 0 {
 		sb.t.Errorf("%q: exec'd (%d execs)", args, n)
 	}

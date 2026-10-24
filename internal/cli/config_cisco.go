@@ -94,13 +94,15 @@ func (inv *invocation) configCiscoSourceInterface(args []string) error {
 		return nil
 	}
 	if f.restricted {
-		return inv.usageErr("The engineer tier reads the source interface: tacctl config cisco source-interface [" + scope +
+		return inv.deniedUsage(reasonSuperuser, "The engineer tier reads the source interface: tacctl config cisco source-interface ["+scope+
 			"]. Setting it is the superuser's. Nothing was changed.")
 	}
+	was := inv.confGet(path, "")
 	if value == "none" {
 		if err := inv.app.Conf().Unset(path); err != nil {
 			return err
 		}
+		inv.detail("config cisco source-interface", kvp("scope", scope), kvp("from", was), kvp("to", ""))
 		inv.app.Out.InfoE("Scope '" + scope + "' Cisco source interface cleared.")
 		inv.echo("")
 		inv.echo("  The configuration of the scope renders no source-interface line any more; a device")
@@ -111,6 +113,7 @@ func (inv *invocation) configCiscoSourceInterface(args []string) error {
 	if err := inv.app.Conf().Set(path, value); err != nil {
 		return err
 	}
+	inv.detail("config cisco source-interface", kvp("scope", scope), kvp("from", was), kvp("to", value))
 	inv.app.Out.InfoE("Scope '" + scope + "' Cisco source interface set to " + value + ".")
 	inv.echo("")
 	inv.echo("  Re-run 'tacctl config cisco --scope " + scope + "' (or 'tacctl device config show <device>') to see")

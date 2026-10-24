@@ -271,7 +271,7 @@ func (inv *invocation) deviceConfigDiff(args []string) error {
 				Lines: diffLinesJSON(visibleLines(r)), Notes: r.Notes, Unmanaged: r.Unmanaged})
 		}
 		js = append(js, d)
-		inv.app.Logger(inv.auditContext(), "auth.info", "device config diff user="+inv.sudoUser()+" device="+e.Name+
+		inv.app.Audit().Raw("auth.info", "device config diff user="+inv.sudoUser()+" device="+e.Name+
 			" sections="+dash(strings.Join(differs, ",")))
 		if !asJSON {
 			inv.printDeviceDiff(e.Name, e.Scope, e.Vendor, results, only, secrets, meta)
@@ -331,6 +331,10 @@ func (inv *invocation) storedDiff(store devconf.Store, recs *devconf.Records, re
 	rec, ok := recs.Of(e.Name)
 	if !ok || rec.Pulled.IsZero() {
 		return nil, false, meta, "no configuration has been pulled"
+	}
+	if devconf.VendorChanged(rec, e.Vendor) {
+		return nil, false, meta, devconf.NeedsPullVendorText + ": the last pull read it as " + rec.Vendor +
+			"; pull it again: tacctl device config pull " + e.Name
 	}
 	stored := render.stored(store, e)
 	if len(stored) == 0 {

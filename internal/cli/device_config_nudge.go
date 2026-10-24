@@ -12,6 +12,7 @@ package cli
 // cannot plan says nothing.
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/rett/tacctl/internal/devconf"
@@ -153,6 +154,10 @@ func (inv *invocation) scopeNudge(scope string) {
 // writing one and has what it writes). It is read from the command line: a
 // refused or unchanged write may still say so, which is true of the plan.
 func scopeWrites(verb string, args []string) bool {
+	if verb == "secret" {
+		// '--stdin' may stand before the sub-command.
+		args = slices.DeleteFunc(slices.Clone(args), func(w string) bool { return w == "--stdin" })
+	}
 	sub, n := arg(args, 1), len(args)
 	switch verb {
 	case "prefixes":

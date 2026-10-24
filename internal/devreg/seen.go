@@ -84,12 +84,22 @@ type Seen struct {
 	Addrs   map[string]map[string]*SourceSeen `json:"addresses"`
 	// HostKeys are keyed by the entry's name in lower case.
 	HostKeys map[string]*KeyScan `json:"hostkeys"`
+	// Detected are the vendors the devices named by SNMP (0.2.17 D260), by
+	// address: what the vendor-differs notice compares with the registry.
+	Detected map[string]*Detection `json:"detected,omitempty"`
+}
+
+// Detection is the vendor an address named by SNMP (sysObjectID and
+// sysDescr), and when it was read.
+type Detection struct {
+	Vendor string    `json:"vendor"`
+	At     time.Time `json:"at"`
 }
 
 // NewSeen is an empty cache.
 func NewSeen() *Seen {
 	return &Seen{Version: SeenVersion, Sources: map[string]*SourceState{},
-		Addrs: map[string]map[string]*SourceSeen{}, HostKeys: map[string]*KeyScan{}}
+		Addrs: map[string]map[string]*SourceSeen{}, HostKeys: map[string]*KeyScan{}, Detected: map[string]*Detection{}}
 }
 
 // HasData reports whether any scan has filled the cache.
@@ -117,6 +127,9 @@ func LoadSeen(path string) (*Seen, error) {
 	}
 	if s.HostKeys == nil {
 		s.HostKeys = map[string]*KeyScan{}
+	}
+	if s.Detected == nil {
+		s.Detected = map[string]*Detection{}
 	}
 	return s, nil
 }
@@ -264,6 +277,37 @@ func (s *Seen) Prune(now time.Time, staleDays int, names []string) {
 			delete(s.HostKeys, n)
 		}
 	}
+	for a, d := range s.Detected {
+		if d.At.Before(cut) {
+			delete(s.Detected, a)
+		}
+	}
+}
+
+// RecordDetection keeps the vendor address named by SNMP at at; an empty
+// vendor (an answer that names none) drops what was kept. A read with no
+// answer is not recorded: the last detection stands.
+func (s *Seen) RecordDetection(address, vendor string, at time.Time) {
+	if s.Detected == nil {
+		s.Detected = map[string]*Detection{}
+	}
+	if vendor == "" {
+		delete(s.Detected, address)
+		return
+	}
+	s.Detected[address] = &Detection{Vendor: vendor, At: at}
+}
+
+// DetectionOf is the vendor address last named by SNMP.
+func (s *Seen) DetectionOf(address string) (Detection, bool) {
+	if s == nil || address == "" {
+		return Detection{}, false
+	}
+	d, ok := s.Detected[address]
+	if !ok || d == nil {
+		return Detection{}, false
+	}
+	return *d, true
 }
 
 // Sighted is what the cache knows of an address, every source merged: the

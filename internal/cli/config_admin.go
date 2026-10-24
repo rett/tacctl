@@ -93,7 +93,7 @@ func (inv *invocation) configSudoers(args []string) error {
 		return nil
 	case "install":
 	case "remove":
-		return inv.removeFile(file)
+		return inv.removeFile("config sudoers", file)
 	default:
 		return inv.usageErr("Invalid subcommand: '" + sub + "'. Use: show, install, or remove")
 	}
@@ -112,9 +112,11 @@ func (inv *invocation) configSudoers(args []string) error {
 		return nil
 	}
 	body := tier.GroupSudoers(group)
+	a.Audit().Touch()
 	if err := inv.installSudoers(body, file); err != nil {
 		return err
 	}
+	inv.detail("config sudoers", kvp("op", "install"), kvp("file", file), kvp("group", group))
 	a.Out.InfoE("Installed " + file + " for group '%" + group + "'.")
 	inv.echo("")
 	return nil
@@ -149,30 +151,34 @@ func (inv *invocation) configSudoersTiers(args []string) error {
 		inv.echo("")
 		return nil
 	case "install":
+		a.Audit().Touch()
 		if err := inv.installSudoers(tier.Sudoers(), file); err != nil {
 			return err
 		}
+		inv.detail("config sudoers tiers", kvp("op", "install"), kvp("file", file))
 		a.Out.Info("Installed " + file + ".")
 		a.Out.Info("Tiers apply to members of " + tier.ReadonlyGroup + ", " + tier.OperatorGroup + ", " + tier.EngineerGroup + " and " + tier.SuperuserGroup + ".")
 		inv.echo("")
 		return nil
 	case "remove":
-		return inv.removeFile(file)
+		return inv.removeFile("config sudoers tiers", file)
 	}
 	return inv.usageErr("Invalid subcommand: '" + sub + "'. Use: tiers show, tiers install, or tiers remove")
 }
 
 // removeFile is the 'remove' of both drop-ins.
-func (inv *invocation) removeFile(file string) error {
+func (inv *invocation) removeFile(event, file string) error {
 	a := inv.app
 	if !cfgIsFile(file) {
 		a.Out.Info("Not installed. Nothing to remove.")
 		return nil
 	}
+	a.Audit().Touch()
 	if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
 		inv.stderrLine("rm: cannot remove '" + file + "': " + cfgErrno(err))
 		return exit(1)
 	}
+	inv.detail(event, kvp("op", "remove"), kvp("file", file))
 	a.Out.Info("Removed " + file + ".")
 	return nil
 }
@@ -296,6 +302,7 @@ func (inv *invocation) configBranch(args []string) error {
 		a.Out.InfoE("Already on branch '" + want + "'.")
 		return nil
 	}
+	a.Audit().Touch()
 	git(true, "fetch", "--quiet")
 	if git(false, "rev-parse", "--verify", "origin/"+want).Code != 0 {
 		a.Out.ErrorE("Branch '" + want + "' does not exist on remote.")
@@ -316,6 +323,7 @@ func (inv *invocation) configBranch(args []string) error {
 		inv.stderrLine("chmod: cannot access '" + script + "': " + cfgErrno(err))
 		return exit(1)
 	}
+	inv.detail("config branch", kvp("from", current), kvp("to", want))
 	a.Out.InfoE("Switched to branch '" + want + "'.")
 	a.Out.Info("Run 'tacctl upgrade' to apply any changes.")
 	inv.echo("")

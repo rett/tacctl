@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/rett/tacctl/internal/applylock"
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/backend/faketest"
 	"github.com/rett/tacctl/internal/conf"
@@ -115,6 +116,9 @@ type ohost struct {
 	// Conf's hook); heldAt is its depth at each phase.
 	lock   *applylock.Lock
 	heldAt map[string]int
+	// audit are the detail lines the command wrote (Host.Audit), as 'event
+	// k=v ...'.
+	audit []string
 }
 
 func newOhost(t *testing.T) *ohost {
@@ -214,7 +218,15 @@ func (o *ohost) host() *lifecycle.Host {
 	o.be.Prompter = ui.NewPrompter(strings.NewReader(o.stdin), o.out)
 	env := lifecycle.NewEnv(o.be, bytes.NewReader(bytes.Repeat([]byte{0xab}, 64)), false)
 	env.Chown = func(string) {}
-	return &lifecycle.Host{Env: env, Environ: paths.NewEnv(o.environ), Commit: o.commit, Completion: testCompletion}
+	return &lifecycle.Host{Env: env, Environ: paths.NewEnv(o.environ), Commit: o.commit, Completion: testCompletion,
+		Audit: func(event string, kv ...audit.KV) {
+			var b strings.Builder
+			b.WriteString(event)
+			for _, f := range kv {
+				b.WriteString(" " + f.Key + "=" + audit.Value(f.Value))
+			}
+			o.audit = append(o.audit, b.String())
+		}}
 }
 
 // do runs one command; the exit status.
@@ -223,7 +235,7 @@ func (o *ohost) do(f func(context.Context, *lifecycle.Host, []string) error, arg
 	o.stdout.Reset()
 	o.stderr.Reset()
 	o.run.Reset()
-	o.phases = nil
+	o.phases, o.audit = nil, nil
 	err := f(context.Background(), o.host(), args)
 	return backend.ExitCode(err)
 }
@@ -339,6 +351,23 @@ func TestDepsMissingLinuxHostPackagesOnlyWarn(t *testing.T) {
 	o.run.On([]string{"apt-get", "install"}, execx.Result{Code: 100})
 	if code := deps(o); code != 0 || !strings.Contains(o.text(), "everything else works") {
 		t.Errorf("exit %d out %q", code, o.text())
+	}
+}
+
+// logger writes the audit lines: a machine without it is told so, once, and
+// the install goes on.
+func TestDepsWarnsWhenLoggerIsMissing(t *testing.T) {
+	o := newOhost(t)
+	o.dpkg(append(slices.Clone(lifecycle.DepsCore), lifecycle.DepsLinuxHosts...)...)
+	o.run.Missing("logger")
+	if code := deps(o); code != 0 || strings.Count(o.text(), "[WARN] logger (package util-linux) is not installed") != 1 ||
+		!strings.Contains(o.text(), "Required packages: all present.") {
+		t.Errorf("exit %d out %q", code, o.text())
+	}
+	o = newOhost(t)
+	o.dpkg(append(slices.Clone(lifecycle.DepsCore), lifecycle.DepsLinuxHosts...)...)
+	if deps(o) != 0 || strings.Contains(o.text(), "util-linux") {
+		t.Errorf("logger present, out %q", o.text())
 	}
 }
 
@@ -1476,6 +1505,7 @@ func TestUpgradeRefreshesTheGroupSudoersItWrote(t *testing.T) {
 	for name, text := range map[string]string{
 		"0.2.1-0.2.3": v023, "0.2.0": v020,
 		"0.2.4-0.2.6": tier.GroupSudoers026("wheel"), "0.2.7": tier.GroupSudoers027("wheel"), "0.2.8": tier.GroupSudoers028("wheel"),
+		"0.2.9-0.2.16": tier.GroupSudoers0216("wheel"),
 	} {
 		o.write(file, text)
 		if code := upgrade(o); code != 0 {
@@ -1502,5 +1532,46 @@ func TestUpgradeRefreshesTheGroupSudoersItWrote(t *testing.T) {
 	}
 	if !strings.Contains(o.text(), "[WARN]   Not updated: sudoers for group wheel (visudo validation failed; "+file+" is unchanged)") || readFile(t, file) != v023 {
 		t.Errorf("refused rewrite: %q\n%s", readFile(t, file), o.text())
+	}
+}
+
+// install, upgrade and uninstall write their detail line when they succeed
+// (D253): the branch, the commits the upgrade went from and to (the first one
+// carried across the self-update), and what the uninstall kept.
+func TestLifecycleDetailLines(t *testing.T) {
+	o := newOhost(t)
+	o.commit = "something-else"
+	if code := install(o, "-y", "--branch", "feature/x"); code != 0 {
+		t.Fatalf("install: exit %d", code)
+	}
+	if want := []string{"install branch=feature/x"}; !slices.Equal(o.audit, want) {
+		t.Errorf("install: %q", o.audit)
+	}
+	o.cloned()
+	o.commit = "0123456789abcdef0123"
+	o.head = "0123456789abcdef0123"
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("upgrade: exit %d", code)
+	}
+	if want := []string{"upgrade from=0123456789ab to=0123456789ab branch=-"}; !slices.Equal(o.audit, want) {
+		t.Errorf("upgrade: %q", o.audit)
+	}
+	// The run the self-update re-executed: the commit the first run started
+	// from is in its environment.
+	o.environ = append(o.environ, lifecycle.ReexecEnv+"=1", lifecycle.FromCommitEnv+"=aaaaaaaaaaaaffff")
+	o.head = "bbbbbbbbbbbb0000"
+	o.commit = o.head
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("re-executed upgrade: exit %d", code)
+	}
+	if want := []string{"upgrade from=aaaaaaaaaaaa to=bbbbbbbbbbbb branch=-"}; !slices.Equal(o.audit, want) {
+		t.Errorf("re-executed upgrade: %q", o.audit)
+	}
+	o.installed()
+	if code := uninstall(o, "-y"); code != 0 {
+		t.Fatalf("uninstall: exit %d", code)
+	}
+	if want := []string{"uninstall backups=removed logs=removed"}; !slices.Equal(o.audit, want) {
+		t.Errorf("uninstall: %q", o.audit)
 	}
 }

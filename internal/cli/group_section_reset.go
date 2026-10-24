@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/policy"
 )
@@ -115,9 +116,10 @@ func (inv *invocation) groupSectionReset(section string, args []string) error {
 	}
 
 	if err := inv.applyWith(func() error { return inv.applyReset(plan) }); err != nil {
+		inv.verbResult(audit.Info, r.verb+" name="+group+" by="+inv.sudoUser(), failReason(err, "store"))
 		return err
 	}
-	a.Logger(inv.ctx, "auth.info", r.verb+" name="+group+" by="+inv.sudoUser())
+	inv.verbResult(audit.Info, r.verb+" name="+group+" by="+inv.sudoUser(), "")
 	if len(nonBlankLines(shippedLines(section, canon))) > 0 {
 		a.Out.Info("Group '" + group + "': the " + r.noun + " are back to the shipped default.")
 	} else {

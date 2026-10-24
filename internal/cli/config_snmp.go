@@ -16,6 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/snmp"
 	"github.com/rett/tacctl/internal/snmpcred"
@@ -190,7 +191,10 @@ func (inv *invocation) snmpShow(args []string) error {
 	// the gate does not run, not a reachable one: a restricted caller's
 	// reads of SNMP are 'scope snmp' of its own scopes.
 	if reveal && inv.callerScopes().restricted {
-		return inv.usageErr("The default SNMP credentials are the superuser's to read. Nothing was printed.")
+		return inv.deniedUsage(reasonSuperuser, "The default SNMP credentials are the superuser's to read. Nothing was printed.")
+	}
+	if reveal {
+		inv.secretRead("snmp-default", "default")
 	}
 	c, err := inv.snmpCreds()
 	if err != nil {
@@ -321,12 +325,14 @@ func (inv *invocation) snmpCommunity(args []string) error {
 		return err
 	}
 	c.Community = s
+	inv.app.Audit().Touch()
 	if err := snmpcred.Save(inv.app.Paths.SNMPFile, c); err != nil {
 		return err
 	}
 	if err := inv.app.Conf().Set("snmp.version", snmp.V2c); err != nil {
 		return err
 	}
+	inv.detail("snmp set", kvp("kind", "community"))
 	inv.app.Out.InfoE("SNMP community set (" + inv.app.Paths.SNMPFile + "); version v2c. Try it: tacctl config snmp test <address>")
 	return nil
 }
@@ -368,6 +374,7 @@ func (inv *invocation) snmpV3User(args []string) error {
 		return err
 	}
 	c.User, c.AuthPass, c.PrivPass = user, ap, pp
+	inv.app.Audit().Touch()
 	if err := snmpcred.Save(inv.app.Paths.SNMPFile, c); err != nil {
 		return err
 	}
@@ -385,6 +392,7 @@ func (inv *invocation) snmpV3User(args []string) error {
 			return err
 		}
 	}
+	inv.detail("snmp set", kvp("kind", "v3-user"))
 	inv.app.Out.InfoE("SNMPv3 user and passphrases set (" + inv.app.Paths.SNMPFile + "); version v3, auth " +
 		inv.confGet("snmp.v3.auth", snmp.AuthSHA) + ", priv " + inv.confGet("snmp.v3.priv", snmp.PrivAES128) +
 		". Try it: tacctl config snmp test <address>")
@@ -392,7 +400,7 @@ func (inv *invocation) snmpV3User(args []string) error {
 }
 
 func (inv *invocation) snmpPort(args []string) error {
-	return inv.configTunable(args, "snmp.port", []string{
+	return inv.configTunable("snmp set", []audit.KV{kvp("kind", "port")}, args, "snmp.port", inv.confGet("snmp.port", strconv.Itoa(snmp.DefaultPort)), []string{
 		"  SNMP port: " + inv.confGet("snmp.port", strconv.Itoa(snmp.DefaultPort)),
 		"",
 		"  Usage: tacctl config snmp port <1-65535>",
@@ -400,7 +408,7 @@ func (inv *invocation) snmpPort(args []string) error {
 }
 
 func (inv *invocation) snmpTimeout(args []string) error {
-	return inv.configTunable(args, "snmp.timeout", []string{
+	return inv.configTunable("snmp set", []audit.KV{kvp("kind", "timeout")}, args, "snmp.timeout", inv.confGet("snmp.timeout", strconv.Itoa(snmp.DefaultTimeout)), []string{
 		"  SNMP timeout: " + inv.confGet("snmp.timeout", strconv.Itoa(snmp.DefaultTimeout)) + " s (one retry)",
 		"",
 		"  Usage: tacctl config snmp timeout <1-10>",
@@ -414,6 +422,7 @@ func (inv *invocation) snmpClear([]string) error {
 		return err
 	}
 	had := !c.Empty() || a.Conf().HasOverride("snmp.version")
+	a.Audit().Touch()
 	if err := snmpcred.Save(a.Paths.SNMPFile, snmpcred.Creds{}); err != nil {
 		return err
 	}
@@ -426,6 +435,7 @@ func (inv *invocation) snmpClear([]string) error {
 		a.Out.Info("No SNMP credentials were set; nothing was changed.")
 		return nil
 	}
+	inv.detail("snmp set", kvp("kind", "clear"))
 	a.Out.Info("SNMP credentials removed and snmp.version unset: 'device add' reads no sysName.")
 	return nil
 }

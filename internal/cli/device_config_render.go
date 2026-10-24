@@ -45,6 +45,11 @@ type renderParams struct {
 	// Override is a block text laid in place of the file in force
 	// ('block check --against'); nil for none.
 	Override *blockOverride
+	// Internal: the render is compared or planned, not printed as it is (the
+	// managed renders of 'device config'): its secret reads are logged with
+	// secretUse, which audit.strict does not refuse. Otherwise the render
+	// is shown (a walkthrough) and they are reveals (secretRead).
+	Internal bool
 }
 
 // deviceRenderInput builds the Request and the Data of one device config:
@@ -87,12 +92,16 @@ func (inv *invocation) deviceRenderInput(p renderParams) (devices.Request, devic
 		d.SNMP = p.Device
 		d.SNMP.Scope = p.Scope
 	}
-	if p.Restricted && d.SNMP.Version != "" {
-		inv.secretRead("snmp", p.Scope)
+	logRead := inv.secretRead
+	if p.Internal {
+		logRead = inv.secretUse
+	}
+	if d.SNMP.Version != "" {
+		logRead("snmp", p.Scope)
 	}
 	// A device's own credentials (D72) are a read of their own.
-	if p.Restricted && d.SNMP.CredFrom == snmpcred.FromDevice && p.Device.DeviceName != "" {
-		inv.secretRead("snmp-device", p.Device.DeviceName)
+	if d.SNMP.CredFrom == snmpcred.FromDevice && p.Device.DeviceName != "" {
+		logRead("snmp-device", p.Device.DeviceName)
 	}
 	// The permit list is read for every vendor (WTI's IP Tables list, D42,
 	// is built from it too); a WTI unit has no ACL name.
@@ -118,9 +127,7 @@ func (inv *invocation) deviceRenderInput(p renderParams) (devices.Request, devic
 		// An engineer's walkthrough shows the block's community strings as it
 		// shows the scope's, and the system block's NTP key: a read of its
 		// own, logged.
-		if p.Restricted {
-			inv.logBlockReads(blk, layers, p.Scope, p.BlockDevice)
-		}
+		inv.logBlockReads(logRead, blk, layers, p.Scope, p.BlockDevice)
 	}
 	return req, d, nil
 }
@@ -130,6 +137,12 @@ func (inv *invocation) deviceRenderInput(p renderParams) (devices.Request, devic
 // takes them.
 type managedOptions struct {
 	AuthServer, AuthName, SourceIP string
+	// Reveal: the verb prints the secrets the render carries ('device
+	// config plan' without --no-secrets), so its reads are reveals
+	// (secretRead), which audit.strict refuses when their line cannot be
+	// written. Otherwise the render is only compared or elided and its reads
+	// are uses (secretUse).
+	Reveal bool
 }
 
 // managedKey is what a rendering shares: devices of one vendor and scope
@@ -156,9 +169,9 @@ type managedRender struct {
 	inv  *invocation
 	opts managedOptions
 	// logReads: the render reads a scope's secret and SNMP credentials for
-	// a caller the scope filter restricts (an engineer): the reads are
-	// logged, never the values, as the walkthrough logs them (D45). A
-	// caller who only lists states logs none.
+	// a verb that shows them (show, plan, pull, diff, the walkthroughs): the
+	// reads are logged, never the values, for every caller (D253). A verb
+	// that only lists states, keeps a record or follows a change logs none.
 	logReads bool
 	base     map[managedKey]*managedBase
 	// recs are the configuration records as prepare read them: the pull's
@@ -196,6 +209,16 @@ func (inv *invocation) newManagedRender(opts managedOptions, logReads bool) *man
 	return &managedRender{inv: inv, opts: opts, logReads: logReads,
 		base: map[managedKey]*managedBase{}, logged: map[string]bool{},
 		snmp: map[string]devices.SNMPInput{}, snmpProblem: map[string]string{}, devBlocks: map[string]*deviceBlocks{}}
+}
+
+// logRead logs a secret the render reads: a reveal for a verb that prints
+// it (managedOptions.Reveal), else a use.
+func (r *managedRender) logRead(kind, name string) {
+	if r.opts.Reveal {
+		r.inv.secretRead(kind, name)
+		return
+	}
+	r.inv.secretUse(kind, name)
 }
 
 // keyOf is the sharing key of a registered device. A device whose syntax is
@@ -284,20 +307,24 @@ func (r *managedRender) prepareKey(e devreg.Entry, k managedKey) {
 	b := &managedBase{}
 	r.base[k] = b
 	// An engineer's pull reads the scope's secret as the walkthrough
-	// does: logged once per scope, never the value.
+	// does: logged once per scope, never the value (a reveal for a plan
+	// that prints the values, else a use: logRead).
 	if r.logReads && !r.logged[k.scope] {
 		r.logged[k.scope] = true
-		inv.secretRead("scope", k.scope)
+		r.logRead("scope", k.scope)
 	}
 	choice, source := inv.scopeProtocolChoice(k.scope)
 	protocol, psource := devices.ResolveProtocol("", choice, source)
 	var errBuf bytes.Buffer
 	realErr := inv.app.Out.Stderr
 	inv.app.Out.Stderr = &errBuf
+	// A plan's reveal refused under audit.strict panics out of the build:
+	// the refusal is printed on the real stderr.
+	defer func() { inv.app.Out.Stderr = realErr }()
 	req, d, err := inv.deviceRenderInput(renderParams{
 		Vendor: k.vendor, Scope: k.scope, Legacy: k.legacy, Protocol: protocol, Source: psource,
 		AuthServer: r.opts.AuthServer, AuthName: r.opts.AuthName, SourceIP: r.opts.SourceIP,
-		Override: r.override,
+		Override: r.override, Internal: !r.opts.Reveal,
 	})
 	inv.app.Out.Stderr = realErr
 	// What the build said on stderr: its warnings are the operator's to
@@ -321,13 +348,13 @@ func (r *managedRender) prepareKey(e devreg.Entry, k managedKey) {
 		b.req, b.d = req, d
 		if r.logReads && d.SNMP.Version != "" && !r.logged["snmp "+k.scope] {
 			r.logged["snmp "+k.scope] = true
-			inv.secretRead("snmp", k.scope)
+			r.logRead("snmp", k.scope)
 		}
 		// the scope's blocks carry community strings and NTP keys: a read of
 		// their own, once per scope
 		if r.logReads && (d.Blocks.SNMP != nil || d.Blocks.CiscoSNMP != nil || d.Blocks.System != nil || d.Blocks.CiscoSystem != nil) && !r.logged["blocks "+k.scope+" "+k.vendor] {
 			r.logged["blocks "+k.scope+" "+k.vendor] = true
-			inv.logBlockReads(d.Blocks, [2]policy.BlockLayers{{Scope: d.Blocks.SNMP != nil || d.Blocks.CiscoSNMP != nil}, {Scope: d.Blocks.System != nil || d.Blocks.CiscoSystem != nil}}, k.scope, "")
+			inv.logBlockReads(r.logRead, d.Blocks, [2]policy.BlockLayers{{Scope: d.Blocks.SNMP != nil || d.Blocks.CiscoSNMP != nil}, {Scope: d.Blocks.System != nil || d.Blocks.CiscoSystem != nil}}, k.scope, "")
 		}
 	}
 }
@@ -361,7 +388,7 @@ func (r *managedRender) prepareDeviceBlocks(e devreg.Entry, k managedKey) {
 		for i := range layers {
 			layers[i].Scope = false // the scope's own were logged with its base
 		}
-		inv.logBlockReads(blk, layers, e.Scope, e.Name)
+		inv.logBlockReads(r.logRead, blk, layers, e.Scope, e.Name)
 	}
 }
 
@@ -393,7 +420,7 @@ func (r *managedRender) prepareOwn(e devreg.Entry, k managedKey) {
 	r.snmp[lc] = in
 	if r.logReads && !own.Creds.Empty() && !r.logged["snmp-device "+lc] {
 		r.logged["snmp-device "+lc] = true
-		inv.secretRead("snmp-device", e.Name)
+		r.logRead("snmp-device", e.Name)
 	}
 }
 

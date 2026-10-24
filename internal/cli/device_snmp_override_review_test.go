@@ -295,7 +295,7 @@ func TestSNMPUserNameIsTheEngineersToRead(t *testing.T) {
 func TestDeviceSNMPRevealIsLoggedPerLevel(t *testing.T) {
 	sb := engineerSandbox(t)
 	count := func(kind, name string) int {
-		return sb.runner.Count("logger", "-t", "tacctl", "-p", "auth.info", "secret-read kind="+kind+" name="+name+" by=bob")
+		return auditCount(sb.runner, "auth.info", "secret-read kind="+kind+" name="+name+" by=bob")
 	}
 	reveal := func() string {
 		out := sb.asEngineer("", "device", "snmp", "lab-sw", "show", "--reveal")

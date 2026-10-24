@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devices"
 	"github.com/rett/tacctl/internal/model"
@@ -103,10 +104,12 @@ func (inv *invocation) scopeBreakGlass(args []string) error {
 		if len(kept) == len(users) {
 			return inv.usageErr("Scope '" + scope + "' has no break-glass user '" + name + "'.")
 		}
+		removeBase := "scope breakglass remove scope=" + scope + " name=" + name + " by=" + inv.sudoUser()
 		if err := policy.WriteBreakGlassUsers(c, scope, kept); err != nil {
+			inv.verbResult(audit.Info, removeBase, "write")
 			return err
 		}
-		inv.app.Logger(inv.ctx, "auth.info", "scope breakglass remove scope="+scope+" name="+name+" by="+inv.sudoUser())
+		inv.verbResult(audit.Info, removeBase, "")
 		inv.app.Out.Info("Break-glass user '" + name + "' removed from scope '" + scope + "'.")
 		inv.echo("")
 		inv.echo("  The devices keep the account until it is deleted there; tacctl only stops listing it.")
@@ -166,10 +169,12 @@ func (inv *invocation) scopeBreakGlassAdd(scope, name, role string, roleGiven bo
 	if len(users) >= conf.MaxBreakGlassUsers {
 		return inv.usageErr("Scope '" + scope + "' already has the most break-glass users it may record (" + strconv.Itoa(conf.MaxBreakGlassUsers) + ").")
 	}
+	addBase := "scope breakglass add scope=" + scope + " name=" + name + " role=" + role + " by=" + inv.sudoUser()
 	if err := policy.WriteBreakGlassUsers(inv.app.Conf(), scope, append(users, policy.BreakGlassUser{Name: name, Role: role})); err != nil {
+		inv.verbResult(audit.Info, addBase, "write")
 		return err
 	}
-	inv.app.Logger(inv.ctx, "auth.info", "scope breakglass add scope="+scope+" name="+name+" role="+role+" by="+inv.sudoUser())
+	inv.verbResult(audit.Info, addBase, "")
 	inv.app.Out.Info("Break-glass user '" + name + "' (" + role + ") recorded for scope '" + scope + "'.")
 	inv.echo("")
 	inv.echo("  tacctl stores no password or hash. 'tacctl config cisco|juniper|wti --scope " + scope + "' now renders the")

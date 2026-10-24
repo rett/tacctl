@@ -1,8 +1,9 @@
 package cli
 
-// The device selection of 'device config pull' and 'diff' (D66, D67, D69):
-// names, --all, --scope, --vendor and --stale, limited to what the caller
-// may read and what the device login can reach.
+// The device selection of 'device config pull', 'diff', 'plan' and 'apply'
+// (D66, D67, D69, D267): names, --all, --scope, --vendor, --stale, --differs,
+// --name and --ip, limited to what the caller may read and what the device
+// login can reach.
 
 import (
 	"encoding/json"
@@ -34,11 +35,56 @@ type selection struct {
 	names         []string
 	all, stale    bool
 	scope, vendor string
+	// differs keeps the devices whose last good pull differs from today's
+	// rendering. nameFilter and addrFilter are the lower-cased items of
+	// --name (a text the device's name contains) and --ip (an address, a
+	// CIDR or a text the address contains), any of which matches (D267).
+	differs                bool
+	nameFilter, addrFilter []string
 }
 
-// parseSelection reads the selectors of a pull or a diff. One of names,
-// --all, --scope, --vendor or --stale is required; names stand alone; the
-// filters combine.
+// anyFilter says whether a filter was given: the selectors that combine.
+func (s selection) anyFilter() bool {
+	return s.stale || s.differs || s.scope != "" || s.vendor != "" || len(s.nameFilter) > 0 || len(s.addrFilter) > 0
+}
+
+// matchesText says whether e passes --name and --ip: the helpers of
+// 'device list', so a device is picked by the same words in both.
+func (s selection) matchesText(e devreg.Entry) bool {
+	return textFiltersMatch(e, s.nameFilter, s.addrFilter)
+}
+
+// textFiltersMatch is the --name and --ip test shared by the selection and
+// 'device config list': an empty list passes everything, otherwise any item
+// of it must match.
+func textFiltersMatch(e devreg.Entry, names, addrs []string) bool {
+	if len(names) > 0 && !anyContains(e.Name, names) {
+		return false
+	}
+	if len(addrs) > 0 && !slices.ContainsFunc(addrs, func(a string) bool { return addrMatches(e.Address, a) }) {
+		return false
+	}
+	return true
+}
+
+// textFilters reads --name and --ip. A flag given with no text (an empty
+// value or only commas) selects nothing sensible, so it is refused.
+func (inv *invocation) textFilters(p Parsed, usage string) (names, addrs []string, err error) {
+	names, addrs = splitList(p.Values("--name")), splitList(p.Values("--ip"))
+	for _, f := range []struct {
+		flag string
+		got  []string
+	}{{"--name", names}, {"--ip", addrs}} {
+		if p.Has(f.flag) && len(f.got) == 0 {
+			return nil, nil, inv.argErr(f.flag+" takes a text, or a comma-separated list of them.", usage)
+		}
+	}
+	return names, addrs, nil
+}
+
+// parseSelection reads the selectors of a pull, diff, plan or apply. One of
+// names, --all, --scope, --vendor, --stale, --differs, --name or --ip is
+// required; names and --all stand alone; the filters combine.
 func (inv *invocation) parseSelection(p Parsed, verb string) (selection, error) {
 	usage := "Usage: tacctl device config " + deviceConfigUse(verb)
 	var s selection
@@ -52,16 +98,23 @@ func (inv *invocation) parseSelection(p Parsed, verb string) (selection, error) 
 			}
 		}
 	}
-	s.all, s.stale = p.Has("--all"), p.Has("--stale")
+	s.all, s.stale, s.differs = p.Has("--all"), p.Has("--stale"), p.Has("--differs")
 	s.scope, s.vendor = p.Value("--scope"), p.Value("--vendor")
-	filters := s.stale || p.Has("--scope") || p.Has("--vendor")
+	if p.Has("--scope") && s.scope == "" {
+		return s, inv.argErr("--scope takes a scope name.", usage)
+	}
+	var err error
+	if s.nameFilter, s.addrFilter, err = inv.textFilters(p, usage); err != nil {
+		return s, err
+	}
+	filters := s.anyFilter() || p.Has("--scope") || p.Has("--vendor")
 	switch {
 	case len(s.names) > 0 && (s.all || filters):
-		return s, inv.argErr("Name the devices, or select them with --all, --scope, --vendor or --stale, not both.", usage)
+		return s, inv.argErr("Name the devices, or select them with --all, --scope, --vendor, --stale, --differs, --name or --ip, not both.", usage)
 	case s.all && filters:
-		return s, inv.argErr("--all is every device; drop it to select with --scope, --vendor or --stale.", usage)
+		return s, inv.argErr("--all is every device; drop it to select with --scope, --vendor, --stale, --differs, --name or --ip.", usage)
 	case len(s.names) == 0 && !s.all && !filters:
-		return s, inv.argErr("Name the devices to "+verb+", or select them with --all, --scope <name>, --vendor <vendor> or --stale.", usage)
+		return s, inv.argErr("Name the devices to "+verb+", or select them with --all, --scope <name>, --vendor <vendor>, --stale, --differs, --name <text> or --ip <addr|cidr|text>.", usage)
 	}
 	if p.Has("--vendor") && !slices.Contains([]string{"cisco", "juniper", "wti"}, s.vendor) {
 		return s, inv.argErr("--vendor takes cisco, juniper or wti: '"+s.vendor+"'", usage)
@@ -91,10 +144,18 @@ type skippedDevices struct {
 	// held are the devices a break-glass hold stands on: the server does
 	// not answer them, so no login of the caller is accepted there (D126).
 	held []string
+	// afterPull are the devices 'device config apply --pull' read and then
+	// left out: their fresh record is not one --stale or --differs keeps
+	// (0.2.17 D268).
+	afterPull []string
+	// notCompared are the devices 'apply --pull' read and could not compare
+	// with what tacctl renders: --differs leaves them out, and they are not
+	// applied.
+	notCompared []string
 }
 
 func (s skippedDevices) any() bool {
-	return len(s.noScope)+len(s.other)+len(s.notYours)+len(s.held)+len(s.notJunos) > 0
+	return len(s.noScope)+len(s.other)+len(s.notYours)+len(s.held)+len(s.notJunos)+len(s.afterPull)+len(s.notCompared) > 0
 }
 
 // linesFor are the notes about what was left out, with the names.
@@ -115,6 +176,8 @@ func (s skippedDevices) linesFor(string) []string {
 	add(s.other, "the vendor is 'other'; set it with: tacctl device vendor <name> cisco|juniper|wti")
 	add(s.notYours, "in a scope you are not a member of: the device login is your own account")
 	add(s.notJunos, "apply writes to Junos devices only in this release")
+	add(s.afterPull, "pulled, and the fresh pull matches what tacctl renders (not --stale or --differs)")
+	add(s.notCompared, "pulled, and could not be compared with what tacctl renders after the pull (not applied; see: tacctl device config diff <name>)")
 	for _, n := range s.held {
 		out = append(out, "skipped "+n+": "+holdRefusal(n))
 	}
@@ -171,7 +234,8 @@ func holdRefusal(name string) string {
 
 func (s skippedDevices) jsonMap() map[string][]string {
 	m := map[string][]string{}
-	for k, v := range map[string][]string{"no_scope": s.noScope, "vendor_other": s.other, "not_your_scope": s.notYours, "break_glass_held": s.held, "not_junos": s.notJunos} {
+	for k, v := range map[string][]string{"no_scope": s.noScope, "vendor_other": s.other, "not_your_scope": s.notYours, "break_glass_held": s.held, "not_junos": s.notJunos,
+		"match_after_pull": s.afterPull, "not_compared_after_pull": s.notCompared} {
 		if len(v) > 0 {
 			m[k] = v
 		}
@@ -210,7 +274,7 @@ func (inv *invocation) chooseDevices(sel selection, user string, login bool, ver
 	if msg := loginProblem(m, user, ""); login && msg != "" {
 		return nil, inv.usageErr(msg)
 	}
-	out := &chosenDevices{render: inv.newManagedRender(ro, inv.callerScopes().restricted)}
+	out := &chosenDevices{render: inv.newManagedRender(ro, true)}
 	visible := res.Visible(inv.deviceFilter())
 
 	if len(sel.names) > 0 {
@@ -230,7 +294,7 @@ func (inv *invocation) chooseDevices(sel selection, user string, login bool, ver
 					"Add them with: tacctl scope prefixes <scope> add <cidr>")
 			}
 			if msg := loginProblem(m, user, e.Scope); login && msg != "" {
-				inv.app.Logger(inv.ctx, "auth.warning", "device config "+verb+" DENY user="+user+" device="+e.Name+" scope="+dash(e.Scope)+" reason=scope")
+				inv.app.Audit().Raw("auth.warning", "device config "+verb+" DENY user="+user+" device="+e.Name+" scope="+dash(e.Scope)+" reason=scope")
 				return nil, inv.usageErr(msg + " (device " + e.Name + ")")
 			}
 			// A held device does not accept the login; refused before any
@@ -263,6 +327,9 @@ func (inv *invocation) chooseDevices(sel selection, user string, login bool, ver
 		if sel.vendor != "" && e.Vendor != sel.vendor {
 			continue
 		}
+		if !sel.matchesText(e) {
+			continue
+		}
 		switch {
 		case !slices.Contains(sortedVendors(), e.Vendor):
 			out.skipped.other = append(out.skipped.other, e.Name)
@@ -277,23 +344,39 @@ func (inv *invocation) chooseDevices(sel selection, user string, login bool, ver
 		}
 	}
 	out.render.prepare(out.entries)
-	if sel.stale {
-		store := inv.configStore()
-		recs, _ := store.Load()
-		var keep []devreg.Entry
-		for _, e := range out.entries {
-			st, err := inv.staleness(store, recs, out.render, e)
-			if err != nil || st.IsStale() {
-				keep = append(keep, e)
-			}
-		}
-		out.entries = keep
-	}
+	inv.applyStaleFilters(sel, out)
 	return out, nil
 }
 
+// applyStaleFilters keeps, of c.entries, the devices --stale and --differs
+// select, from the records and today's rendering: no login is made (D267).
+// --stale is never, failed, differs and pull (a record that cannot be
+// compared is kept); --differs is the state differs alone. Both together
+// are both tests. It is a step of its own so that a run that pulls first
+// can apply it to the fresh records.
+func (inv *invocation) applyStaleFilters(sel selection, c *chosenDevices) {
+	if !sel.stale && !sel.differs {
+		return
+	}
+	store := inv.configStore()
+	recs, _ := store.Load()
+	var keep []devreg.Entry
+	for _, e := range c.entries {
+		st, err := inv.staleness(store, recs, c.render, e)
+		if sel.stale && err == nil && !st.IsStale() {
+			continue
+		}
+		if sel.differs && (err != nil || st != devconf.StaleDiffers) {
+			continue
+		}
+		keep = append(keep, e)
+	}
+	c.entries = keep
+}
+
 // staleness is the state of a device's configuration against today's
-// rendering (D66): never, failed, differs or ok.
+// rendering (D66): never, failed, differs or ok; pull for a syntax nothing
+// says (D113) and for a vendor changed since the pull (D260).
 func (inv *invocation) staleness(store devconf.Store, recs *devconf.Records, render *managedRender, e devreg.Entry) (devconf.Staleness, error) {
 	rec, _ := recs.Of(e.Name)
 	switch {
@@ -301,6 +384,9 @@ func (inv *invocation) staleness(store devconf.Store, recs *devconf.Records, ren
 		return devconf.StaleNever, nil
 	case rec.Result != devconf.ResultOK:
 		return devconf.StaleFailed, nil
+	case devconf.VendorChanged(rec, e.Vendor):
+		// The stored sections are of the old vendor's shape (D260).
+		return devconf.StalePull, nil
 	}
 	stored := render.stored(store, e)
 	if stored == nil {

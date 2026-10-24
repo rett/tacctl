@@ -82,7 +82,7 @@ func (inv *invocation) readHierarchy(e devreg.Entry, user, hierarchy string) (ad
 		if errors.Is(err, devssh.ErrAuth) {
 			pw.Rejected()
 		}
-		inv.app.Logger(inv.ctx, "auth.warning", "block adopt-read user="+user+" device="+e.Name+" result="+result)
+		inv.app.Audit().Raw("auth.warning", "block adopt-read user="+user+" device="+e.Name+" result="+result)
 		msg := "Cannot read " + e.Name + ": " + reason + "."
 		if hint != "" {
 			msg += " Run: " + hint
@@ -100,7 +100,7 @@ func (inv *invocation) readHierarchy(e devreg.Entry, user, hierarchy string) (ad
 	if err != nil {
 		return fail(err)
 	}
-	inv.app.Logger(inv.ctx, "auth.info", "block adopt-read user="+user+" device="+e.Name+" transport="+transport+" result=ok")
+	inv.app.Audit().Raw("auth.info", "block adopt-read user="+user+" device="+e.Name+" transport="+transport+" result=ok")
 	return adoptRead{raw: text, transport: transport}, nil
 }
 

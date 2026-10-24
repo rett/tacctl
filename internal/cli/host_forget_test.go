@@ -69,7 +69,7 @@ func TestHostForgetDropsEverythingTheHostHas(t *testing.T) {
 	} else if first := sb.snapshotDirs()[snaps]; readIn(t, first, "linux-hosts") != hostLines || !strings.Contains(readIn(t, first, "hosts/web1.json"), "last_sync") {
 		t.Errorf("the snapshot does not hold the host from before: %q", readIn(t, first, "linux-hosts"))
 	}
-	if !sb.runner.CalledRegexp(`logger.* -p auth\.info host forget name=web1 by=root`) {
+	if !hasAuditMatch(sb.runner, "auth.info", `host forget name=web1 by=root`) {
 		t.Errorf("no audit line: %v", sb.runner.Argvs())
 	}
 	if sb.sshCalls() != 0 {

@@ -112,9 +112,16 @@ func (s Session) EndLine(reason string, lines, status int) string {
 		" lines=" + strconv.Itoa(lines) + " status=" + strconv.Itoa(status)
 }
 
-// DenyLine is the log line of a refused -c string.
-func (s Session) DenyLine(first string) string {
-	return "console DENY session=" + s.ID + " user=" + LogValue(s.User) + " reason=command first=" + LogValue(first)
+// DenyLine is the log line of a refused -c string. first is a verb (Guard,
+// VerbWord) or "": then the line reads "first=- len=<n>", n the length of
+// the string, and no word of it is logged, because a refused string can be a
+// password typed at the prompt.
+func (s Session) DenyLine(first string, n int) string {
+	l := "console DENY session=" + s.ID + " user=" + LogValue(s.User) + " reason=command first=" + LogValue(first)
+	if first == "" {
+		l += " len=" + strconv.Itoa(n)
+	}
+	return l
 }
 
 // SystemShellDenyLine is the log line of a refused system-shell.

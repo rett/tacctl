@@ -130,7 +130,7 @@ func TestSSHAuditKnownHostsAndNotices(t *testing.T) {
 		t.Fatal(err)
 	}
 	sb.sshRun("alice", nil, "ssh", "core-sw1")
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "ssh user=alice device=core-sw1 addr=10.99.0.1") {
+	if !hasAudit(sb.runner, "auth.info", "ssh user=alice device=core-sw1 addr=10.99.0.1") {
 		t.Errorf("no audit line: %q", sb.runner.Argvs())
 	}
 	// The audit line comes before ssh starts.
@@ -203,14 +203,14 @@ func TestSSHRefusals(t *testing.T) {
 	}
 	// The scope refusal is logged.
 	sb.sshRun("carol", carol, "ssh", "core-sw1")
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "ssh DENY user=carol device=core-sw1 scope=prod reason=scope") {
+	if !hasAudit(sb.runner, "auth.warning", "ssh DENY user=carol device=core-sw1 scope=prod reason=scope") {
 		t.Errorf("no deny line: %q", sb.runner.Argvs())
 	}
 	// A device no scope covers is refused to everyone, superusers included.
 	sb.devScan("", scan("x"), "add", "stray", "100.64.0.9", "--no-host-key")
 	sb.sshRun("alice", nil, "ssh", "stray")
 	if sb.code != 1 || !strings.Contains(sb.stderr(), "'stray' is in no configured scope, so no one may open a session to it.") ||
-		!sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "ssh DENY user=alice device=stray scope=- reason=unconfigured") {
+		!hasAudit(sb.runner, "auth.warning", "ssh DENY user=alice device=stray scope=- reason=unconfigured") {
 		t.Errorf("unconfigured: %d %q %q", sb.code, sb.stderr(), sb.runner.Argvs())
 	}
 	// A disabled tacctl user is refused (the tier gate has no tier for one
@@ -219,7 +219,7 @@ func TestSSHRefusals(t *testing.T) {
 	sb.run("", []string{"user", "disable", "bob"})
 	sb.sshRun("bob", nil, "ssh", "lab-rtr2")
 	if sb.code != 1 || !strings.Contains(sb.stderr(), "tacctl user 'bob' is disabled") ||
-		!sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "ssh DENY user=bob device=lab-rtr2 scope=lab reason=disabled") || sb.sshArgv() != "" {
+		!hasAudit(sb.runner, "auth.warning", "ssh DENY user=bob device=lab-rtr2 scope=lab reason=disabled") || sb.sshArgv() != "" {
 		t.Errorf("disabled: %d %q %q", sb.code, sb.stderr(), sb.runner.Argvs())
 	}
 	// No terminal.
@@ -274,7 +274,7 @@ func TestSSHExitStatusAndHostKeyDiagnosis(t *testing.T) {
 	if sb.code != 255 || !sb.runner.Called("ssh-keyscan", "-T", "5", "-p", "2200") {
 		t.Errorf("255 changed: %d %q", sb.code, sb.runner.Argvs())
 	}
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "ssh hostkey-mismatch user=alice device=lab-rtr2 addr=192.168.5.1") {
+	if !hasAudit(sb.runner, "auth.warning", "ssh hostkey-mismatch user=alice device=lab-rtr2 addr=192.168.5.1") {
 		t.Errorf("no mismatch line: %q", sb.runner.Argvs())
 	}
 	// 255 on an unpinned device: nothing to compare.
@@ -399,8 +399,8 @@ func TestSSHConsoleSession(t *testing.T) {
 	if sb.code != 0 || sb.sshArgv() != want {
 		t.Errorf("console argv (%d %q):\n got %s\nwant %s", sb.code, sb.stderr(), sb.sshArgv(), want)
 	}
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "ssh user=alice device=lab-rtr2 addr=192.168.5.1 console=0123456789ab") ||
-		!sb.runner.CalledRegexp(`^logger -t tacctl -p auth\.info ssh end user=alice device=lab-rtr2 status=0 duration=\d+ console=0123456789ab$`) {
+	if !hasAudit(sb.runner, "auth.info", "ssh user=alice device=lab-rtr2 addr=192.168.5.1 console=0123456789ab") ||
+		!hasAuditMatch(sb.runner, "auth.info", `ssh end user=alice device=lab-rtr2 status=0 duration=\d+ console=0123456789ab$`) {
 		t.Errorf("log: %q", sb.runner.Argvs())
 	}
 	// ssh_escape keeps the escape character.
@@ -416,7 +416,7 @@ func TestSSHConsoleSession(t *testing.T) {
 			"'"+name+"' has no pinned host key, so the console does not connect to it; an administrator pins it: tacctl device hostkey "+name+" accept") {
 			t.Errorf("%s: %d %q %q", name, sb.code, sb.stderr(), sb.sshArgv())
 		}
-		if !sb.runner.CalledRegexp(`^logger -t tacctl -p auth\.warning ssh DENY user=alice device=` + name + ` scope=\S+ reason=unpinned console=0123456789ab$`) {
+		if !hasAuditMatch(sb.runner, "auth.warning", `ssh DENY user=alice device=`+name+` scope=\S+ reason=unpinned console=0123456789ab$`) {
 			t.Errorf("%s: no deny line: %q", name, sb.runner.Argvs())
 		}
 	}
@@ -427,19 +427,19 @@ func TestSSHConsoleSession(t *testing.T) {
 	}
 	// A refusal of admission carries the session too.
 	sb.cfgRun("", []string{"ssh", "edge-fw"}, nil, "SUDO_USER=alice", session)
-	if !sb.runner.CalledRegexp(`ssh DENY user=alice device=edge-fw scope=dmz reason=scope console=0123456789ab$`) {
+	if !hasAudit(sb.runner, "auth.warning", "ssh DENY user=alice device=edge-fw scope=dmz reason=scope console=0123456789ab") {
 		t.Errorf("deny: %q", sb.runner.Argvs())
 	}
 	// A marker that is not a session id is logged as '?', and still hardens.
 	sb.cfgRun("", []string{"ssh", "lab-rtr2"}, nil, "SUDO_USER=alice", "TACCTL_CONSOLE=x y")
 	if !strings.HasPrefix(sb.sshArgv(), "sudo -u alice -H ssh -F /dev/null") ||
-		!sb.runner.CalledRegexp(`ssh user=alice device=lab-rtr2 addr=192\.168\.5\.1 console=\?$`) {
+		!hasAudit(sb.runner, "auth.info", "ssh user=alice device=lab-rtr2 addr=192.168.5.1 console=?") {
 		t.Errorf("bad marker: %q", sb.runner.Argvs())
 	}
 	// Outside the console: the end line too, no console field, no hardening.
 	sb.sshRun("alice", func(r *fake.Runner) { r.On([]string{"sudo", "-u", "alice"}, execx.Result{Code: 4}) }, "ssh", "lab-rtr2")
 	if sb.code != 4 || strings.Contains(sb.sshArgv(), "/dev/null") ||
-		!sb.runner.CalledRegexp(`^logger -t tacctl -p auth\.info ssh end user=alice device=lab-rtr2 status=4 duration=\d+$`) {
+		!hasAuditMatch(sb.runner, "auth.info", `ssh end user=alice device=lab-rtr2 status=4 duration=\d+$`) {
 		t.Errorf("plain: %d %q", sb.code, sb.runner.Argvs())
 	}
 }
@@ -469,7 +469,7 @@ func TestSSHForwarding(t *testing.T) {
 	if sb.code != 0 || !strings.HasSuffix(sb.sshArgv(), " -L 8443:localhost:443 -L 127.0.0.1:2222:[2001:db8::1]:22 -D 1080 -l alice 192.168.5.1") {
 		t.Errorf("ports (%d %q): %s", sb.code, sb.stderr(), sb.sshArgv())
 	}
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "ssh user=alice device=lab-rtr2 addr=192.168.5.1 forward=local,dynamic") {
+	if !hasAudit(sb.runner, "auth.info", "ssh user=alice device=lab-rtr2 addr=192.168.5.1 forward=local,dynamic") {
 		t.Errorf("log: %q", sb.runner.Argvs())
 	}
 	// A spec ssh could read as something else is refused.
@@ -497,14 +497,14 @@ func TestSSHForwarding(t *testing.T) {
 		strings.Contains(argv, "ClearAllForwardings") || !strings.HasSuffix(argv, " -X -L 8443:localhost:443 -l alice -- 192.168.5.1") {
 		t.Errorf("console superuser (%d %q): %s", sb.code, sb.stderr(), argv)
 	}
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "ssh user=alice device=lab-rtr2 addr=192.168.5.1 forward=x11,local console=0123456789ab") {
+	if !hasAudit(sb.runner, "auth.info", "ssh user=alice device=lab-rtr2 addr=192.168.5.1 forward=x11,local console=0123456789ab") {
 		t.Errorf("console log: %q", sb.runner.Argvs())
 	}
 	// A readonly user is refused, with the fix, and logged.
 	sb.cfgRun("", []string{"ssh", "lab-rtr2", "-L", "8443:localhost:443"}, groups, env("carol", session)...)
 	if sb.code != 1 || sb.sshArgv() != "" ||
 		!strings.Contains(sb.stderr(), "Forwarding (-X, -Y, -L, -R, -D) is not available to the readonly tier in the console") ||
-		!sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "ssh DENY user=carol reason=forward tier=readonly console=0123456789ab") {
+		!hasAudit(sb.runner, "auth.warning", "ssh DENY user=carol reason=forward tier=readonly console=0123456789ab") {
 		t.Errorf("console readonly: %d %q %q", sb.code, sb.stderr(), sb.runner.Argvs())
 	}
 	// Opened to readonly by console forwarding tiers.
@@ -524,7 +524,7 @@ func TestSSHForwarding(t *testing.T) {
 		sb.cfgRun("", append([]string{"ssh", "lab-rtr2"}, words...), groups, env("alice", session)...)
 		if sb.code != 1 || sb.sshArgv() != "" || !strings.Contains(sb.stderr(), "forwarded ports listen on loopback only") ||
 			!strings.Contains(sb.stderr(), "tacctl console forwarding gateway-ports enable") ||
-			!sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "ssh DENY user=alice reason=gateway tier=superuser console=0123456789ab") {
+			!hasAudit(sb.runner, "auth.warning", "ssh DENY user=alice reason=gateway tier=superuser console=0123456789ab") {
 			t.Errorf("gateway %q off: %d %q", words, sb.code, sb.stderr())
 		}
 	}

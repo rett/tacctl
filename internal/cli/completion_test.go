@@ -66,6 +66,7 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"backend", "list", ""}, nil},
 		{[]string{"store", ""}, []string{"import", "rollback", "show"}},
 		{[]string{"store", "show", "-"}, []string{"--json"}},
+		{[]string{"device", "config", "apply", "--pu"}, []string{"--pull"}},
 		{[]string{"store", "import", "--"}, []string{"--check", "--force", "--replace"}},
 		{[]string{"config", "ren"}, []string{"render"}},
 		{[]string{"config", "render", ""}, []string{"--force", "--dry-run", "--out"}},
@@ -401,6 +402,50 @@ func TestConfigFamiliesCoverSchema(t *testing.T) {
 	for p := range configFamilies {
 		if !slices.Contains(conf.NewSchema(nil).Wildcards(), p) {
 			t.Errorf("configFamilies names %q, which is not a family of the schema", p)
+		}
+	}
+}
+
+// The words this release (0.2.17) added, as completion offers them: the
+// new verb and its flags, the selectors of the config verbs, apply --pull,
+// vendor --from-device, discover --snmp, config audit-strict, audit.strict,
+// the secret read from standard input, --hash and the rollback targets. A
+// flag list is checked for what it contains, so later flags do not break it.
+func TestCompleteThisReleasesWords(t *testing.T) {
+	cases := []struct {
+		words []string
+		want  []string
+		exact bool
+	}{
+		{[]string{"device", "enroll", ""}, []string{"--discovered", "--host-key", "--vendor", "--name", "--legacy-ssh", "--json"}, false},
+		{[]string{"device", "enroll", "--"}, []string{"--discovered", "--host-key", "--vendor", "--name", "--legacy-ssh", "--json"}, false},
+		{[]string{"device", "enroll", "--vendor", ""}, []string{"cisco", "juniper", "wti", "other"}, true},
+		{[]string{"device", "config", "pull", "--"}, []string{"--differs", "--name", "--ip"}, false},
+		{[]string{"device", "config", "diff", "--"}, []string{"--differs", "--name", "--ip"}, false},
+		{[]string{"device", "config", "plan", "--"}, []string{"--differs", "--name", "--ip"}, false},
+		{[]string{"device", "config", "apply", "--"}, []string{"--differs", "--name", "--ip", "--pull"}, false},
+		{[]string{"device", "config", "list", "--"}, []string{"--differs", "--name", "--ip"}, false},
+		{[]string{"device", "vendor", "x", "--"}, []string{"--from-device", "--yes"}, false},
+		{[]string{"device", "discover", "--"}, []string{"--snmp"}, false},
+		{[]string{"config", "audit-strict", ""}, []string{"on", "off"}, true},
+		{[]string{"config", "get", "audit."}, []string{"audit.strict"}, false},
+		{[]string{"scope", "secret", "lab", "set", "--"}, []string{"--stdin"}, false},
+		{[]string{"user", "add", "x", "--"}, []string{"--hash"}, false},
+		{[]string{"user", "passwd", "x", "--"}, []string{"--hash"}, false},
+		{[]string{"rollback", ""}, []string{"0.2.16", "0.2.9", "0.2.3"}, true},
+	}
+	for _, c := range cases {
+		got, _ := completeWords(t, liveNames, c.words...)
+		if c.exact {
+			if !slices.Equal(got, c.want) {
+				t.Errorf("%q: %q, want %q", c.words, got, c.want)
+			}
+			continue
+		}
+		for _, w := range c.want {
+			if !slices.Contains(got, w) {
+				t.Errorf("%q: %q lacks %q", c.words, got, w)
+			}
 		}
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/tier"
@@ -33,9 +34,14 @@ func configState(e devreg.Entry, rec *devconf.Record) string {
 }
 
 // configStateOf is configState with D113's state laid over it: a Cisco
-// device of a TACACS+ scope whose syntax is unknown says 'pull'.
+// device of a TACACS+ scope whose syntax is unknown says 'pull', and so does
+// a device whose vendor changed since its last pull (D260).
 func (inv *invocation) configStateOf(e devreg.Entry, rec *devconf.Record) string {
 	st := configState(e, rec)
+	if (st == string(devconf.StaleOK) || st == string(devconf.StaleDiffers)) && devconf.VendorChanged(rec, e.Vendor) {
+		// The record is of another vendor's shape (D260).
+		return string(devconf.StalePull)
+	}
 	if st == string(devconf.StaleOK) || st == string(devconf.StaleDiffers) {
 		if inv.syntaxMatters(e) {
 			return string(devconf.WithSyntax(devconf.Staleness(st), rec, e.ConfigSyntax, true))
@@ -296,6 +302,9 @@ func (inv *invocation) deviceConfigList(args []string) error {
 	if p.Has("--transport") && !slices.Contains([]string{"netconf", "ssh", "none"}, p.Value("--transport")) {
 		return inv.argErr("--transport takes netconf, ssh or none: '"+p.Value("--transport")+"'", usage)
 	}
+	if p.Has("--scope") && p.Value("--scope") == "" {
+		return inv.argErr("--scope takes a scope name.", usage)
+	}
 	if p.Has("--scope") {
 		if err := inv.scopeRequire(p.Value("--scope")); err != nil {
 			return err
@@ -303,6 +312,10 @@ func (inv *invocation) deviceConfigList(args []string) error {
 		if err := inv.scopeNotFound(inv.callerScopes(), p.Value("--scope")); err != nil {
 			return err
 		}
+	}
+	nameFilter, addrFilter, err := inv.textFilters(p, usage)
+	if err != nil {
+		return err
 	}
 	_, res, err := inv.deviceLoad()
 	if err != nil {
@@ -314,6 +327,9 @@ func (inv *invocation) deviceConfigList(args []string) error {
 			continue
 		}
 		if (p.Has("--scope") && e.Scope != p.Value("--scope")) || (p.Has("--vendor") && e.Vendor != p.Value("--vendor")) {
+			continue
+		}
+		if !textFiltersMatch(e, nameFilter, addrFilter) {
 			continue
 		}
 		entries = append(entries, e)
@@ -416,7 +432,9 @@ func (inv *invocation) deviceConfigList(args []string) error {
 		inv.echo("")
 		inv.echoE(ui.Bold + head + ui.NC)
 		inv.echo(ui.Rule(head))
-		if filtered {
+		if len(nameFilter)+len(addrFilter) > 0 {
+			inv.echo("  None: no device matches.")
+		} else if filtered {
 			inv.echo("  None: every device read so far matches what tacctl renders.")
 		} else {
 			inv.echo("  None. Read one with: tacctl device config pull <name>")
@@ -463,6 +481,9 @@ func (inv *invocation) deviceConfigList(args []string) error {
 		}
 		if r.state == string(devconf.StalePull) {
 			detail = devconf.NeedsPullText
+			if devconf.VendorChanged(r.rec, r.e.Vendor) {
+				detail = devconf.NeedsPullVendorText
+			}
 		}
 		// A WTI unit: who else was logged in at the last good pull.
 		if r.rec != nil && r.e.Vendor == "wti" && r.rec.Result == devconf.ResultOK && r.rec.Unit != nil && r.rec.Unit.OtherSessions > 0 {
@@ -517,7 +538,7 @@ func unmanagedSections(rs []devconf.SectionResult) map[string]int {
 // comparedNow is the comparison of a device's stored pull with today's
 // rendering (nil when there is none to make).
 func (inv *invocation) comparedNow(store devconf.Store, rec *devconf.Record, render *managedRender, e devreg.Entry) []devconf.SectionResult {
-	if rec == nil {
+	if rec == nil || devconf.VendorChanged(rec, e.Vendor) {
 		return nil
 	}
 	stored := render.stored(store, e)
@@ -562,10 +583,11 @@ func (inv *invocation) deviceConfigForget(args []string) error {
 	case p.Has("--all"):
 		n, err := store.ForgetAll()
 		if err != nil {
+			inv.verbResult(audit.Info, "device config forget user="+inv.sudoUser()+" device=*", failReason(err, "write"))
 			return err
 		}
 		inv.app.Out.Info("Forgot the configuration records of " + howMany(n, "device") + ".")
-		inv.app.Logger(inv.ctx, "auth.info", "device config forget user="+inv.sudoUser()+" device=* count="+strconv.Itoa(n))
+		inv.verbResult(audit.Info, "device config forget user="+inv.sudoUser()+" device=* count="+strconv.Itoa(n), "")
 		return nil
 	case len(names) == 0:
 		return inv.argErr("Name the devices to forget, or give --all.", usage)
@@ -573,6 +595,7 @@ func (inv *invocation) deviceConfigForget(args []string) error {
 	for _, n := range names {
 		had, err := store.Forget(n)
 		if err != nil {
+			inv.verbResult(audit.Info, "device config forget user="+inv.sudoUser()+" device="+n, failReason(err, "write"))
 			return err
 		}
 		if !had {
@@ -580,7 +603,7 @@ func (inv *invocation) deviceConfigForget(args []string) error {
 			continue
 		}
 		inv.app.Out.Info("Forgot the configuration record of '" + n + "'.")
-		inv.app.Logger(inv.ctx, "auth.info", "device config forget user="+inv.sudoUser()+" device="+n)
+		inv.verbResult(audit.Info, "device config forget user="+inv.sudoUser()+" device="+n, "")
 	}
 	return nil
 }

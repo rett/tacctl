@@ -10,6 +10,9 @@ cite them by number and file name.
 | File | What it is |
 |---|---|
 | `backlog.md` | The roadmap (section 0) and the open items |
+| `0.2.17-handoff.md` | State, scope and working rules for 0.2.17 |
+| `0.2.17-plan.md` | Audit log, vendor detection, attended enroll (D244-D272) |
+| `0.2.17-lab.md` | One walk of `device enroll` on a lab Junos device: run sheet |
 | `0.2.14-handoff.md` | State, scope and working rules for 0.2.14 |
 | `0.2.14-plan.md` | Holds: follow `device address`, Linux hosts; action pins (D175-D181) |
 | `0.2.13-handoff.md` | State, scope and working rules for 0.2.13 |

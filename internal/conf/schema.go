@@ -43,6 +43,8 @@ const (
 	// TypeBlockList is blocks.<scope>.<vendor> and
 	// blocks_device.<device>.<vendor> (blocks.go).
 	TypeBlockList = "block_list"
+	// TypeBool is audit.strict: the YAML booleans true and false.
+	TypeBool = "bool"
 )
 
 // listTypes take list input (conf_set_list / a JSON list).
@@ -152,6 +154,10 @@ func NewSchema(backends []string) *Schema {
 			// confirms, else the Junos command line. A 0.2.9 binary does
 			// not know the key (Added0210, rollback.go).
 			"device.apply.transport": {Type: TypeEnum, Values: []string{"auto", "cli", "netconf"}, Default: "cli", HasDefault: true},
+			// Whether a command that changes state is refused when its
+			// audit line cannot be written (0.2.17, D257). A 0.2.16 binary
+			// does not know the key (Added0217, rollback.go).
+			"audit.strict": {Type: TypeBool, Default: false, HasDefault: true},
 		},
 		wildcards: append([]wildcard{
 			{"privileges.", Rule{Type: TypeCiscoCmdList}},
@@ -342,6 +348,11 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 		}
 		if !pyMatch(reScopeDefault, str) {
 			return fmt.Sprintf("does not match required pattern %s", py.ReprString(rule.Pattern))
+		}
+		return ""
+	case TypeBool:
+		if _, isBool := value.(bool); !isBool {
+			return "must be true or false"
 		}
 		return ""
 	case TypeEnum:

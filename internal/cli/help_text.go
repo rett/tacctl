@@ -24,7 +24,7 @@ Commands:
       <o>-y</o>, <o>--yes</o>                         Answer yes to the confirmations
   <b>upgrade</b> [<o>--branch <name></o>]             Pull latest source, rebuild, update scripts and every enabled backend
   <b>uninstall</b> [<o>-y</o>|<o>--yes</o>]                  Remove tacctl, its backends' services and all associated files
-  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.9) or for 0.2.3: a dry run unless <o>--apply</o>
+  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.16), for 0.2.9 or for 0.2.3: a dry run unless <o>--apply</o>
       <o>--apply</o>                           Take a snapshot, then convert the files the target cannot read (tacctl.yaml, sudoers; for 0.2.3 also console.yaml, devices.yaml)
       <o>--yes</o>                             Acknowledge the warnings that <o>--apply</o> refuses to go on without
       <o>--hosts</o>                           Accepted; the hosts need nothing for this target (no host is synced)
@@ -34,7 +34,7 @@ Commands:
   <b>group</b> <o><subcommand></o>                    Group management (list, add, edit, remove)
   <b>scope</b> <o><subcommand></o>                    Scope management (named CIDR + shared-secret bundles)
   <b>host</b> <o><subcommand></o>                     Linux hosts: enroll, sync, unenroll TACACS+ or RADIUS login over SSH
-  <b>device</b> <o><subcommand></o>                   Device registry: list, add, scan, discover, check, host keys (ssh-config)
+  <b>device</b> <o><subcommand></o>                   Device registry: list, add, enroll, scan, discover, check, host keys (ssh-config)
   <b>breakglass</b> <o><subcommand></o>               Break-glass hold: make the server stop answering one device or host (hold, release, list)
   <b>ssh</b> <o><name|address></o> [<o>-p <port></o>]        Open an ssh session to a registered device or enrolled host, as you
       <o>-p <port></o>                         Connect to this port instead of the registered one
@@ -82,10 +82,10 @@ Subcommands:
   <b>show</b> <o><username></o>                             Show user details incl. scope membership
   <b>add</b> <o><username></o> <o><group></o>                      Add a new user; lands in default scope
   <b>add</b> <o><username></o> <o><group></o> <o>--scopes <s></o>[,s...]  Grant specific scopes at creation
-  <b>add</b> <o><username></o> <o><group></o> <o>--hash <hash></o>        Add with pre-generated bcrypt hash
+  <b>add</b> <o><username></o> <o><group></o> <o>--hash <hash></o>        Add with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
   <b>remove</b> <o><username></o>                           Remove a user
   <b>passwd</b> <o><username></o>                           Change a user's password
-  <b>passwd</b> <o><username></o> <o>--hash <hash></o>             Change with pre-generated bcrypt hash
+  <b>passwd</b> <o><username></o> <o>--hash <hash></o>             Change with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
   <b>disable</b> <o><username></o>                          Disable a user (preserves hash)
   <b>enable</b> <o><username></o>                           Re-enable a disabled user
   <b>rename</b> <o><old></o> <o><new></o>                          Rename a user
@@ -346,8 +346,9 @@ Usage:
 
 Usage:
   <b>tacctl scope secret</b> {{scope}} show                Print raw value + length/posture
-  <b>tacctl scope secret</b> {{scope}} set <o><value></o>         Set to <o><value></o> (validated)
+  <b>tacctl scope secret</b> {{scope}} set [<o><value></o>]       Set to <o><value></o> (validated); without it, asked twice, not echoed
   <b>tacctl scope secret</b> {{scope}} generate            Auto-generate + apply
+      <o>--stdin</o>                                 (set) Read the value from one line of standard input, so it is not on the command line
 
 {{current}}
 
@@ -407,6 +408,7 @@ Subcommands:
   <b>bcrypt-cost</b> [10-14]                  Show or set bcrypt cost factor (default 12)
   <b>password-min-length</b> [8-64]           Show or set minimum interactive password length (default 12)
   <b>secret-min-length</b> [16-128]           Show or set minimum shared-secret length (default 16)
+  <b>audit-strict</b> [on|off]                Show or set whether a change or a reveal is refused when its audit line cannot be written (default off)
   <b>allow</b> list|add|remove|clear          Manage connection allow list (IP ACL; add/remove accept comma-lists)
   <b>deny</b> list|add|remove|clear           Manage connection deny list (IP ACL; add/remove accept comma-lists)
   <b>mgmt-acl</b> list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/paths"
@@ -29,6 +30,10 @@ const (
 	// bash release handed over to reads it too). The TACACS+ module sets
 	// and reads it (Handover).
 	UpgradeFromEnv = "TACCTL_UPGRADE_TACQUITO_FROM"
+	// FromCommitEnv carries the commit the running tacctl was built from
+	// across the self-update re-exec, for the 'upgrade from= to=' line of
+	// the re-executed run.
+	FromCommitEnv = "TACCTL_UPGRADE_FROM_COMMIT"
 )
 
 // Host is one run of install, upgrade or uninstall: the invocation's
@@ -49,6 +54,28 @@ type Host struct {
 	// (tacctl completion bash); install and upgrade write it to
 	// paths.Completion. Nil: no completion is installed.
 	Completion func() ([]byte, error)
+	// BeforeExec, when set, is called just before the process image is
+	// replaced (the self-update's re-run of 'upgrade', the hand-over to a
+	// bash release): the command's audit pair ends there, and the re-run
+	// writes its own.
+	BeforeExec func()
+	// Audit, when set, writes the command's own line beside the central
+	// pair (D253): 'install', 'upgrade' and 'uninstall' with what they did.
+	Audit func(event string, kv ...audit.KV)
+}
+
+// auditLine writes a line of the command when the host has a writer.
+func (h *Host) auditLine(event string, kv ...audit.KV) {
+	if h.Audit != nil {
+		h.Audit(event, kv...)
+	}
+}
+
+// beforeExec calls BeforeExec.
+func (h *Host) beforeExec() {
+	if h.BeforeExec != nil {
+		h.BeforeExec()
+	}
 }
 
 // Handover is a backend that carries something across the self-update

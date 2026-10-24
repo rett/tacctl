@@ -59,6 +59,16 @@ func (p *Prompter) Ask(prompt string) string {
 	return strings.Trim(line, " \t")
 }
 
+// AskLine is Ask that also says whether anything was read: ok is false at
+// the end of input when nothing was read, so a question can tell an empty
+// answer from no answer.
+func (p *Prompter) AskLine(prompt string) (line string, ok bool) {
+	if p.tty {
+		_, _ = io.WriteString(p.out.Stderr, prompt)
+	}
+	return p.ReadLine()
+}
+
 // ReadLine reads one line as Ask does, with no prompt; ok is false at the end
 // of input when nothing was read, so a caller that reads in a loop stops.
 func (p *Prompter) ReadLine() (line string, ok bool) {
@@ -67,6 +77,19 @@ func (p *Prompter) ReadLine() (line string, ok bool) {
 		return "", false
 	}
 	return strings.Trim(strings.TrimSuffix(line, "\n"), " \t"), true
+}
+
+// ReadLineExact reads one line with nothing removed but its terminator: the
+// newline and a carriage return before it (a file that came from a Windows
+// editor). Blanks stay, for a value that is taken as typed. ok is false at
+// the end of input when nothing was read.
+func (p *Prompter) ReadLineExact() (line string, ok bool) {
+	line, err := p.in.ReadString('\n')
+	if err != nil && line == "" {
+		return "", false
+	}
+	line = strings.TrimSuffix(line, "\n")
+	return strings.TrimSuffix(line, "\r"), true
 }
 
 // Confirm asks and is true only for exactly "y" or "Y": the
@@ -177,29 +200,36 @@ func (p *Prompter) readChar() ([]byte, error) {
 // here, exactly as the bash prints it, and ErrReported is returned: the
 // caller just exits 1. Prompts and notices go to stderr.
 func (p *Prompter) PromptPassword(username string, minLength int, rng io.Reader) (string, error) {
-	password, err := p.Password("  Enter password (leave blank to auto-generate): ")
+	password, _, err := p.PromptPasswordSource(username, minLength, rng)
+	return password, err
+}
+
+// PromptPasswordSource is PromptPassword that also says whether the password
+// was generated (blank input) rather than typed, for the audit line.
+func (p *Prompter) PromptPasswordSource(username string, minLength int, rng io.Reader) (password string, generated bool, err error) {
+	password, err = p.Password("  Enter password (leave blank to auto-generate): ")
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if password == "" {
 		password, err = GeneratePassword(rng)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 		_, _ = fmt.Fprintf(p.out.Stderr, "  Generated password: %s%s%s\n", Bold, password, NC)
-		return password, nil
+		return password, true, nil
 	}
 	if err := PasswordStrength(password, username, minLength); err != nil {
 		p.out.ErrorLines(err)
-		return "", ErrReported
+		return "", false, ErrReported
 	}
 	confirm, err := p.Password("  Confirm password: ")
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if password != confirm {
 		_, _ = fmt.Fprintf(p.out.Stderr, "  %sPasswords do not match.%s\n", Red, NC)
-		return "", ErrReported
+		return "", false, ErrReported
 	}
-	return password, nil
+	return password, false, nil
 }

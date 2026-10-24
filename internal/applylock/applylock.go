@@ -46,6 +46,12 @@ var ErrCancelled = errors.New("cancelled while waiting for the apply lock")
 type Lock struct {
 	path string
 
+	// Touch, when set, is called at the start of every Acquire, before the
+	// lock is waited for: the audit writer's mark that the command is about
+	// to change something (audit.Writer.Touch). Set it before the lock is
+	// used.
+	Touch func()
+
 	mu        sync.Mutex
 	depth     int
 	f         *os.File
@@ -87,6 +93,9 @@ func (l *Lock) Held() int {
 func (l *Lock) Acquire(ctx context.Context, onWait func()) (release func(), err error) {
 	if l == nil {
 		return func() {}, nil
+	}
+	if l.Touch != nil {
+		l.Touch()
 	}
 	l.mu.Lock()
 	if l.depth == 0 {

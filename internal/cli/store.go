@@ -116,6 +116,7 @@ func (inv *invocation) storeShow(args []string) error {
 		inv.app.Out.Error(storeShowUsage)
 		return exit(2)
 	}
+	inv.secretRead("store", "model")
 	return model.Show(inv.app.Out, inv.app.ModelPaths(), asJSON)
 }
 
@@ -172,6 +173,7 @@ func (inv *invocation) storeImport(args []string) error {
 		return err
 	}
 	if !p.check {
+		inv.detail("store import", kvp("source", p.src), kvp("replace", yesNo(p.replace)), kvp("force", yesNo(p.force)))
 		// The groups that came from elsewhere (not in the store before):
 		// each one at priv-lvl 15 gets the tier setting 0.2.2 gave it by its
 		// band. A group the store had keeps what tacctl.yaml says of it.

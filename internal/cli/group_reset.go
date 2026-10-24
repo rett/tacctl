@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/policy"
@@ -189,11 +190,13 @@ func (inv *invocation) groupReset(args []string) error {
 	}
 
 	watch := inv.watchServerTiers()
+	done := plan.changedNames()
+	resetBase := "group reset name=" + group + " sections=" + strings.Join(done, ",") + " by=" + inv.sudoUser()
 	if err := inv.applyWith(func() error { return inv.applyReset(plan) }); err != nil {
+		inv.verbResult(audit.Info, resetBase, failReason(err, "store"))
 		return err
 	}
-	done := plan.changedNames()
-	a.Logger(inv.ctx, "auth.info", "group reset name="+group+" sections="+strings.Join(done, ",")+" by="+inv.sudoUser())
+	inv.verbResult(audit.Info, resetBase, "")
 	a.Out.Info("Group '" + group + "' reset (" + strings.Join(done, ", ") + ").")
 	if len(plan.guard) > 0 {
 		a.Out.Info("Auto-seeded permit-* catchall on sibling groups at priv-lvl " + plan.guardLevel + ": " + strings.Join(plan.guard, " "))

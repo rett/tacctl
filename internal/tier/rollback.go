@@ -17,12 +17,21 @@ import "strings"
 // Sudoers023 is the per-tier drop-in 0.2.3 wrote.
 func Sudoers023() string { return sudoers023 }
 
-// Sudoers0214 is the per-tier drop-in 0.2.14 wrote: this release's rules
+// Sudoers0216 is the per-tier drop-in 0.2.15 and 0.2.16 wrote: this
+// release's rules with the password cache's alias as 0.2.9 to 0.2.16 had it
+// (before 'device enroll' joined its lines, 0.2.17 D269). The rollback to
+// 0.2.3 recognises it as an older text; it is derived from the rules, with the
+// alias frozen (askpassKeep0216).
+func Sudoers0216() string {
+	return strings.Replace(Sudoers(), AskpassKeep(AskpassAlias), askpassKeep0216(AskpassAlias), 1)
+}
+
+// Sudoers0214 is the per-tier drop-in 0.2.14 wrote: 0.2.16's rules
 // without the operator's 'config validate --json' item (0.2.15). The rollback
 // to 0.2.3 recognises it as an older text; it is derived (a rule that moves
 // on again makes its own frozen copy).
 func Sudoers0214() string {
-	return strings.Replace(Sudoers(), ", "+Binary+" config validate --json", "", 1)
+	return strings.Replace(Sudoers0216(), ", "+Binary+" config validate --json", "", 1)
 }
 
 // Sudoers0213 is the per-tier drop-in 0.2.9 to 0.2.13 wrote: 0.2.14's rules
@@ -43,7 +52,7 @@ func Sudoers0213() string {
 // frozen below, and a test reads the 0.2.8 tag's golden file where the tag
 // is available.
 func Sudoers028() string {
-	t := strings.Replace(Sudoers0213(), AskpassKeep(AskpassAlias), askpassKeep028(AskpassAlias), 1)
+	t := strings.Replace(Sudoers0213(), askpassKeep0216(AskpassAlias), askpassKeep028(AskpassAlias), 1)
 	return strings.Replace(t, EnvKeep, envKeep028, 1)
 }
 
@@ -60,6 +69,19 @@ func GroupSudoers028(group string) string {
 // envKeep028 is the env_keep line of the drop-ins of 0.2.8, frozen: the
 // line that release wrote, not EnvKeep, which moves on.
 const envKeep028 = "Defaults!" + Binary + " env_keep += \"" + envKeepNames027 + " NO_COLOR TACCTL_COLOR\"\n"
+
+// askpassKeep0216 is the password cache's alias and its 'Defaults!' line as
+// the drop-ins of 0.2.9 to 0.2.16 carry them (with the 'device config apply',
+// 'device onboard' and 'device collect' lines), before 0.2.17 added 'device
+// enroll'. Frozen: not AskpassKeep.
+func askpassKeep0216(alias string) string {
+	return "Cmnd_Alias " + alias + " = " +
+		Binary + " device config pull *, " + Binary + " device config diff *, " + Binary + " device config plan *, \\\n" +
+		"    " + Binary + " ssh *, " + Binary + " device ssh *, \\\n" +
+		"    " + Binary + " scope block * adopt *, " + Binary + " device block * adopt *, \\\n" +
+		"    " + Binary + " device config apply *, " + Binary + " device onboard *, " + Binary + " device collect *\n" +
+		"Defaults!" + alias + " env_keep += \"" + AskpassVar + "\"\n"
+}
 
 // askpassKeep028 is the password cache's alias and its 'Defaults!' line as
 // the per-tier drop-in of 0.2.7 and 0.2.8 carries them (the lines of 'device

@@ -42,6 +42,7 @@ type staticPasswords struct {
 	accepted int
 	rejected int
 	asked    int
+	done     int
 }
 
 func (s *staticPasswords) Password(context.Context, string) ([]byte, error) {
@@ -53,6 +54,9 @@ func (s *staticPasswords) Password(context.Context, string) ([]byte, error) {
 }
 func (s *staticPasswords) Accepted() { s.accepted++ }
 func (s *staticPasswords) Rejected() { s.rejected++ }
+
+// Done counts the ends of the source: the run drops what it holds once.
+func (s *staticPasswords) Done() { s.done++ }
 
 // pullBox is a sandbox with a fake device, a login, and registered devices.
 type pullBox struct {

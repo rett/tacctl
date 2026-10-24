@@ -384,7 +384,7 @@ LIST
     run "$TACCTL_BIN_SCRIPT" _console-policy
     assert_success
     assert_output "shell=system idle=30 system_shell=yes system_shell_path=/bin/bash ssh_escape=no agent=no forward=yes tier=unrestricted list_max=40 space_completion=yes"
-    stub_called '^logger -t tacctl -p auth.info shell policy user=root tier=unrestricted$'
+    stub_called '^logger -t tacctl -p auth.info shell policy user=root tier=unrestricted sid=[a-z0-9]{8}$'
 
     # A tier user: the id stub puts the caller in tac-users and its tier group.
     stub_cmd id 'echo "$3 tac-users"'
@@ -392,7 +392,7 @@ LIST
     assert_output "shell=console idle=30 system_shell=yes system_shell_path=/bin/bash ssh_escape=no agent=no forward=yes tier=superuser list_max=40 space_completion=yes"
     SUDO_USER=bob TACCTL_CONSOLE=0123456789ab run "$TACCTL_BIN_SCRIPT" _console-policy
     assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=operator list_max=40 space_completion=yes"
-    stub_called '^logger -t tacctl -p auth.info console policy user=bob tier=operator system_shell=no session=0123456789ab$'
+    stub_called '^logger -t tacctl -p auth.info console policy user=bob tier=operator system_shell=no session=0123456789ab sid=[a-z0-9]{8}$'
     SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" _console-policy
     assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=readonly list_max=40 space_completion=yes"
 

@@ -21,9 +21,9 @@ user add <name> <group> --scopes <name>[,name...]
 
     Grant specific scopes at creation
 
-user add <name> <group> --hash <hash>
+user add <name> <group> --hash <hash>|-
 
-    Add user with pre-generated bcrypt hash
+    Add user with pre-generated bcrypt hash (`-`: read it from standard input)
 
 user remove <name>
 
@@ -37,9 +37,10 @@ passwd
 
     Change your own password (asks for the current one; all tiers)
 
-user passwd <name> --hash <hash>
+user passwd <name> --hash <hash>|-
 
-    Change password with pre-generated bcrypt hash
+    Change password with pre-generated bcrypt hash (`-`: read it from standard
+    input)
 
 user disable <name>
 
@@ -94,3 +95,10 @@ user scope <name> remove --all
 
     Revoke every scope (with confirmation)
 ```
+
+**A hash kept off the command line.** `--hash -` reads the hash from one line
+of standard input (typed without echo at a terminal; a control character in
+it is refused), so it is not on the command line: sudo's log records the whole command line and `ps` shows it
+while the command runs. `--hash <hash>` works as well.
+
+Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `user add name= group= scopes=`, `user passwd name= source=prompt|hash|generated`, `user rename from= to= uid=`, `user scope name= op= scopes=` and the like, never a password or a hash ([Audit log](../security/audit.md#detail-lines)).

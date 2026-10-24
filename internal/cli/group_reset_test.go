@@ -223,8 +223,8 @@ func TestGroupResetCanonicalAndIdempotent(t *testing.T) {
 					if sb.code != 0 || !strings.Contains(out, "Group '"+g+"' is already canonical; nothing to change.") || strings.Contains(out, "Reset of group") {
 						t.Errorf("%v again: %d %q", extra, sb.code, out)
 					}
-					if sb.state() != state || sb.snapshots() != snaps || sb.runner.Called("logger") {
-						t.Errorf("%v again changed something (snapshots %d -> %d, logger %v)", extra, snaps, sb.snapshots(), sb.runner.Called("logger"))
+					if sb.state() != state || sb.snapshots() != snaps || wroteAudit(sb.runner) {
+						t.Errorf("%v again changed something (snapshots %d -> %d, logger %v)", extra, snaps, sb.snapshots(), wroteAudit(sb.runner))
 					}
 				}
 			})
@@ -307,7 +307,7 @@ func TestGroupResetRefusals(t *testing.T) {
 		if sb.code != 1 || !strings.Contains(plain(sb.err.String()), c.err) {
 			t.Errorf("%s: exit %d, stderr %q", c.name, sb.code, plain(sb.err.String()))
 		}
-		if sb.state() != state || sb.snapshots() != snaps || sb.runner.Called("logger") {
+		if sb.state() != state || sb.snapshots() != snaps || wroteAudit(sb.runner) {
 			t.Errorf("%s changed something", c.name)
 		}
 	}
@@ -321,7 +321,7 @@ func TestGroupResetRefusals(t *testing.T) {
 		!strings.Contains(plain(sb.err.String()), "No terminal to confirm on; nothing was changed. Review with --dry-run, then run again with --yes.") {
 		t.Errorf("no terminal: %d\n%s\n%s", sb.code, out, sb.err.String())
 	}
-	if sb.state() != state || sb.snapshots() != snaps || sb.runner.Called("logger") {
+	if sb.state() != state || sb.snapshots() != snaps || wroteAudit(sb.runner) {
 		t.Error("no terminal: something changed")
 	}
 }
@@ -345,7 +345,7 @@ func TestGroupResetDryRunWritesNothing(t *testing.T) {
 		if sb.store() != storeBefore || sb.overrides() != yamlBefore {
 			t.Errorf("%v wrote the store or tacctl.yaml", args)
 		}
-		if sb.liveState() != live || sb.snapshots() != snaps || sb.runner.Called("logger") || sb.runner.Called("systemctl") {
+		if sb.liveState() != live || sb.snapshots() != snaps || wroteAudit(sb.runner) || sb.runner.Called("systemctl") {
 			t.Errorf("%v wrote, took a snapshot or restarted something: %q", args, sb.runner.Argvs())
 		}
 	}
@@ -363,7 +363,7 @@ func TestGroupResetYesAppliesAndLogs(t *testing.T) {
 	if sb.snapshots() != snaps+1 {
 		t.Errorf("snapshots %d -> %d: the pre-change snapshot", snaps, sb.snapshots())
 	}
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "group reset name=operator sections=settings,commands,privileges,junos by=root") {
+	if !hasAudit(sb.runner, "auth.info", "group reset name=operator sections=settings,commands,privileges,junos by=root result=ok") {
 		t.Errorf("no audit line: %q", sb.runner.Argvs())
 	}
 	// The group, its users and its builtin flag are what they were.
@@ -377,7 +377,7 @@ func TestGroupResetYesAppliesAndLogs(t *testing.T) {
 	// SUDO_USER names the user in the audit line.
 	sb.modify("readonly")
 	sb.cfgRun("", []string{"group", "reset", "readonly", "--yes", "--only", "commands"}, nil, "SUDO_USER=carol")
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "group reset name=readonly sections=commands by=carol") {
+	if !hasAudit(sb.runner, "auth.info", "group reset name=readonly sections=commands by=carol result=ok") {
 		t.Errorf("audit line: %q", sb.runner.Argvs())
 	}
 }
@@ -402,7 +402,7 @@ func TestGroupResetOnlySections(t *testing.T) {
 			}
 			sb.must("group", "reset", "operator", "--only", strings.Join(only, ","), "--yes")
 			want := slices.DeleteFunc(slices.Clone(all), func(s string) bool { return !slices.Contains(only, s) })
-			if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "group reset name=operator sections="+strings.Join(want, ",")+" by=root") {
+			if !hasAudit(sb.runner, "auth.info", "group reset name=operator sections="+strings.Join(want, ",")+" by=root result=ok") {
 				t.Errorf("audit line: %q", sb.runner.Argvs())
 			}
 			rest := sb.plainRun("", "group", "reset", "operator", "--dry-run")
@@ -442,7 +442,7 @@ func TestGroupResetPrompt(t *testing.T) {
 			!strings.Contains(plain(sb.err.String()), "Apply these changes to group 'operator'? [y/N]: ") {
 			t.Errorf("answer %q: %d\n%s\n%s", answer, sb.code, out, sb.err.String())
 		}
-		if sb.state() != state || sb.snapshots() != snaps || sb.runner.Called("logger") {
+		if sb.state() != state || sb.snapshots() != snaps || wroteAudit(sb.runner) {
 			t.Errorf("answer %q changed something", answer)
 		}
 	}

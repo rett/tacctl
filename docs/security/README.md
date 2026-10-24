@@ -14,5 +14,6 @@ Access control for the server, its users and the devices it serves.
 - [Tiered access](tiers.md): Operator, engineer and superuser tiers for tacctl itself.
 - [Login console](login-console.md): The restricted login console and its sshd configuration.
 - [Passwordless sudo for operators](operator-sudo.md): Letting operator accounts run tacctl without a sudo password.
+- [Audit log](audit.md): The lines tacctl writes to syslog for every change: who, what, how it ended.
 - [Host-key pinning](host-key-pinning.md): Pinning and verifying the host keys of devices and hosts.
 - [Password generation](password-generation.md): Generated passwords and the self-service flow.

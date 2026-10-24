@@ -130,7 +130,7 @@ func (inv *invocation) runConsoleSession(args []string) error {
 		first, ok := console.Guard(line, consoleRootCommand(root))
 		if !ok {
 			_, _ = io.WriteString(a.Out.Stderr, console.RefusedText+"\n")
-			cs.log("auth.warning", cs.sess.DenyLine(first))
+			cs.log("auth.warning", cs.sess.DenyLine(first, len(line)))
 			cs.log("auth.info", cs.sess.EndLine(console.ReasonCommand, 0, console.RefusedStatus))
 			return exit(console.RefusedStatus)
 		}
@@ -206,10 +206,9 @@ func (inv *invocation) consoleRemotePolicy(exe, marker string) console.Remote {
 	return pol
 }
 
-// log writes a line of the console's own to syslog.
+// log writes a line of the console's own to syslog, under the console's tag.
 func (cs *consoleSession) log(priority, msg string) {
-	inv := cs.inv
-	_, _ = inv.app.Runner.Run(inv.ctx, execx.Cmd{Name: "logger", Args: []string{"-t", console.LogTag, "-p", priority, msg}})
+	cs.inv.app.Audit().WithTag(console.LogTag).Raw(priority, msg)
 }
 
 // systemShell is the console's system-shell: the user's system shell, as
@@ -220,7 +219,7 @@ func (cs *consoleSession) systemShell(ctx context.Context, interactive bool) int
 	a := cs.inv.app
 	if !interactive {
 		_, _ = io.WriteString(a.Out.Stderr, console.RefusedText+"\n")
-		cs.log("auth.warning", cs.sess.DenyLine(console.SystemShellWord))
+		cs.log("auth.warning", cs.sess.DenyLine(console.SystemShellWord, 0))
 		return console.RefusedStatus
 	}
 	if !cs.pol.SystemShell && cs.tier == tier.Engineer {

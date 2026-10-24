@@ -229,6 +229,8 @@ complete_words() {
     assert_output "$(printf 'apply\ndiff\nforget\nlist\nplan\npull\nshapes\nshow')"
     complete_words tacctl device config apply --che
     assert_output "--check"
+    complete_words tacctl device config apply --pu
+    assert_output "--pull"
     complete_words tacctl device config apply --section ""
     assert_output "$(printf 'aaa\nroles\nmgmt-acl\nsnmp\nsystem\nnetconf')"
     complete_words tacctl device config shapes ""

@@ -288,14 +288,14 @@ func TestV3NotInTimeWindowIsRetried(t *testing.T) {
 	alg, _ := authOf(AuthSHA)
 	ak, _ := LocalizedKey(AuthSHA, "auth-passphrase", eng.id)
 	pk, _ := LocalizedKey(AuthSHA, "priv-passphrase", eng.id)
-	_, fresh, err := c.getAuthPriv(context.Background(), conn, SysNameOID, alg, ak, pk, eng)
+	_, fresh, err := c.getAuthPriv(context.Background(), conn, []string{SysNameOID}, alg, ak, pk, eng)
 	var re *ReportError
 	if !errors.As(err, &re) || re.Name != "notInTimeWindow" || fresh == nil || fresh.boots != 2 {
 		t.Fatalf("notInTimeWindow: %v %+v", err, fresh)
 	}
-	v, _, err := c.getAuthPriv(context.Background(), conn, SysNameOID, alg, ak, pk, *fresh)
-	if err != nil || string(v.val) != "sw2" {
-		t.Errorf("after the window was corrected: %q %v", v.val, err)
+	v, _, err := c.getAuthPriv(context.Background(), conn, []string{SysNameOID}, alg, ak, pk, *fresh)
+	if err != nil || len(v) != 1 || string(v[0].val) != "sw2" {
+		t.Errorf("after the window was corrected: %v %v", v, err)
 	}
 }
 

@@ -112,7 +112,7 @@ nothing_secret() {
 @test "onboard: without a terminal it needs --host-key, and then only --check" {
     onboard "$ADDR" --login admin
     assert_failure 2
-    assert_output --partial "No terminal to answer the identity question on"
+    assert_output --partial "No terminal to answer the host-key question on"
     onboard "$ADDR" --login admin --host-key "$FP"
     assert_failure 2
     assert_output --partial "No terminal to review the change on"
@@ -132,7 +132,7 @@ nothing_secret() {
     onboard "$ADDR" --login admin --host-key "$FP" --check
     assert_success
     assert_output --partial "$FP matches --host-key."
-    refute_output --partial "Trust these keys"
+    refute_output --partial "Compare the key"
     assert_output --partial "${ADDR}  Junos 25.4R1-S2.3"
     assert_output --partial "device reports host name example-sw5; no TACACS+ or RADIUS server"
     assert_output --partial "Device 'example-sw5' registered: ${ADDR}, juniper."
@@ -153,11 +153,17 @@ nothing_secret() {
     nothing_secret
 }
 
-@test "onboard: the trust question, the review, the two passwords, the TACACS+ sessions after the commit" {
-    tonboard 'y\nexample-sw5\n' "$ADDR" --login admin
+@test "onboard: the key accepted by the name typed, the review, the two passwords, the TACACS+ sessions after the commit" {
+    tonboard 'example-sw5\nexample-sw5\n' "$ADDR" --login admin
     [[ "$status" -eq 0 ]]
     assert_output --partial "${ADDR} offers:"
-    assert_output --partial "Trust these keys and send the local password of 'admin' to ${ADDR}? [y/N]"
+    assert_output --partial "Will pin:  "
+    assert_output --partial "Compare the key with the console of ${ADDR}. Type the name to register it as to accept it and send it the local password of 'admin', or press Enter to stop:"
+    assert_output --partial "Host key pinned (the key you accepted):"
+    grep -qF "device onboard hostkey user=alice addr=${ADDR} device=example-sw5 alg=" "$CALLS_LOG"
+    grep -qF "fp=${FP} result=accepted source=confirmed sid=" "$CALLS_LOG"
+    # the acceptance's line is written before the registration's
+    [[ $(grep -nF "device onboard hostkey " "$CALLS_LOG" | head -1 | cut -d: -f1) -lt $(grep -nF "device add name=example-sw5 " "$CALLS_LOG" | head -1 | cut -d: -f1) ]]
     assert_output --partial "first-time plan:"
     assert_output --partial "set system tacplus-server 10.0.0.42 secret <secret>"
     refute_output --partial "lab-secret"
@@ -181,6 +187,8 @@ nothing_secret() {
     [[ "$(record example-sw5 applied.result)" == applied ]]
     [[ "$(record example-sw5 applied.kind)" == onboard ]]
     stub_called "logger -t tacctl -p auth.notice device onboard user=alice device=example-sw5 approved=1 shape="
+    run grep -E "device onboard user=alice device=example-sw5 approved=1 shape=[0-9a-f-]+ login=local:admin mode=attended sid=" "$CALLS_LOG"
+    assert_success
     stub_called "logger -t tacctl -p auth.info device onboard user=alice device=example-sw5 addr=${ADDR} login=local:admin result=applied"
     nothing_secret
     # the device is the normal flow's now
@@ -191,7 +199,7 @@ nothing_secret() {
 
 @test "onboard: a refused fresh login rolls the change back and leaves the local account as it was" {
     : > "${JDIR}/verify.fail"
-    tonboard 'y\nexample-sw5\n' "$ADDR" --login admin
+    tonboard 'example-sw5\nexample-sw5\n' "$ADDR" --login admin
     [[ "$status" -eq 1 ]]
     assert_output --regexp "example-sw5  rolled back: verification failed \(the fresh login was refused\)"
     assert_output --partial "the change was rolled back and the local account 'admin' is as it was"
@@ -203,11 +211,19 @@ nothing_secret() {
     stub_called "device onboard user=alice device=example-sw5 addr=${ADDR} login=local:admin result=rolled-back"
 }
 
-@test "onboard: a declined question sends nothing; a device with a server is refused" {
-    tonboard 'n\n' "$ADDR" --login admin
+@test "onboard: Enter or a wrong name at the key's question sends nothing; a device with a server is refused" {
+    tonboard '\n' "$ADDR" --login admin
     [[ "$status" -eq 1 ]]
-    assert_output --partial "Not trusted. Nothing was sent."
+    assert_output --partial "The host key of ${ADDR} was not accepted. Nothing was sent."
+    run grep -F "device onboard hostkey user=alice addr=${ADDR} device=- alg=" "$CALLS_LOG"
+    assert_success
+    tonboard 'Example-SW5\n' "$ADDR" --login admin
+    [[ "$status" -eq 1 ]]
+    assert_output --partial "The host key of ${ADDR} was refused: the name has upper case: names are lower case. Nothing was sent."
+    run grep -F "result=refused source=confirmed" "$CALLS_LOG"
+    assert_success
     [[ ! -e "${TACCTL_STATE_DIR}/devices.yaml" ]] || ! grep -q "$ADDR" "${TACCTL_STATE_DIR}/devices.yaml"
+    nothing_secret
     printf 'set system tacplus-server 192.0.2.10 secret "$9$fakeSecretValue1"\n' >> "${JDIR}/config.set"
     onboard "$ADDR" --login admin --host-key "$FP" --check
     assert_failure 1
@@ -218,7 +234,7 @@ nothing_secret() {
 @test "onboard: a fresh login that is not the template user rolls back; a proof that could be local is refused" {
     # alice's login lands on no template user (a local account of her name)
     rm -f "${JDIR}/template"
-    tonboard 'y\nexample-sw5\n' "$ADDR" --login admin
+    tonboard 'example-sw5\nexample-sw5\n' "$ADDR" --login admin
     [[ "$status" -eq 1 ]]
     assert_output --regexp "example-sw5  rolled back: verification failed \(the fresh login: the current user is 'alice', a local account"
     unchanged
@@ -241,7 +257,7 @@ nothing_secret() {
 }
 
 @test "onboard --login root: committed, and root is not probed afterwards" {
-    LOCAL_PW=root-fakedev-pw tonboard 'y\nsw-root\n' "$ADDR" --login root --name sw-root
+    LOCAL_PW=root-fakedev-pw tonboard 'sw-root\nsw-root\n' "$ADDR" --login root --name sw-root
     [[ "$status" -eq 0 ]]
     assert_output --regexp "sw-root  applied \("
     assert_output --partial "The local account 'root' was not probed: a login would send its password to the TACACS+ server."

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
@@ -163,6 +164,7 @@ func Uninstall(ctx context.Context, h *Host, args []string) error {
 		return err
 	}
 
+	h.auditLine("uninstall", audit.Pair("backups", keptWord(keepBackups)), audit.Pair("logs", keptWord(len(keepLogs) > 0)))
 	h.echo("")
 	h.echo(rule)
 	h.echo("  Uninstall Complete")
@@ -191,6 +193,14 @@ func Uninstall(ctx context.Context, h *Host, args []string) error {
 	h.echo("    - Go build cache (/root/.cache/go-build)")
 	h.echo("")
 	return nil
+}
+
+// keptWord is how the uninstall line says whether something was kept.
+func keptWord(kept bool) string {
+	if kept {
+		return "kept"
+	}
+	return "removed"
 }
 
 // removeAccess is uninstall_remove_access: what grants or serves access

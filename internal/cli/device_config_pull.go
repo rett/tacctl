@@ -981,7 +981,10 @@ func (r *pullRun) record(o *pullOutcome, e devreg.Entry) {
 	if old, ok := recs.Of(e.Name); ok {
 		rec = *old
 	}
-	rec.Address, rec.Vendor, rec.Result = e.Address, e.Vendor, o.Result
+	rec.Address, rec.Result = e.Address, o.Result
+	// The vendor is the one the stored sections were read for: a failed
+	// attempt keeps the last good pull's (0.2.17 D260, VendorChanged).
+	rec.SetVendorUnlessPulled(e.Vendor)
 	if o.Netconf != "" && o.Netconf != netconfNotProbed {
 		rec.Netconf, rec.NetconfAt = o.Netconf, r.now()
 	}
@@ -1075,7 +1078,7 @@ func (r *pullRun) recordSuccess(o *pullOutcome, e devreg.Entry, ext devconf.Extr
 
 // configStore is the records store of this invocation.
 func (inv *invocation) configStore() devconf.Store {
-	return devconf.Store{Records: inv.app.Paths.ConfigRecords, Dir: inv.app.Paths.ConfigDir}
+	return devconf.Store{Records: inv.app.Paths.ConfigRecords, Dir: inv.app.Paths.ConfigDir, Touch: inv.app.Audit().Touch}
 }
 
 // batchInterrupts wires the operator's Ctrl-C to the runner: the first
@@ -1125,6 +1128,19 @@ type pullBatch struct {
 	// local is the one-shot local login of '--login' (D136): one device,
 	// its password from the terminal only and never from or into the cache.
 	local *localLogin
+	// pass is the password of a run that does more than the pull ('device
+	// config apply --pull', 0.2.17 D268): the source and the password its
+	// owner resolved once, so the pull asks nothing and the owner zeroes it
+	// and drops the source when its run ends. nil: the pull asks for its own.
+	pass *runPassword
+}
+
+// runPassword is a password resolved once for a whole run and lent to the
+// pull of it: the source the pull tells of an accepted or rejected login, and
+// the password as ssh takes it.
+type runPassword struct {
+	src      devicePasswords
+	password string
 }
 
 // runPull resolves the password, runs the pool over the entries and
@@ -1148,8 +1164,12 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 			return batch.Summary{}, nil, err
 		}
 		b.local.secret = pw
-		inv.app.Logger(inv.auditContext(), "auth.info", fmt.Sprintf("device config pull user=%s device=%s login=%s%s",
+		inv.app.Audit().Raw("auth.info", fmt.Sprintf("device config pull user=%s device=%s login=%s%s",
 			b.user, b.entries[0].Name, devconf.LocalLoginPrefix, b.local.account))
+	} else if b.pass != nil {
+		// the run's password: asked once by the owner, for the pull and
+		// what follows it
+		run.passwd, run.password = b.pass.src, b.pass.password
 	} else {
 		run.passwd = inv.hooks.newDevicePasswords(inv)
 		// The password, once, before any connection.
@@ -1172,6 +1192,10 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 	for i, e := range b.entries {
 		jobs[i] = run.pullJob(e)
 	}
+	// The start line of the audit is written here, on the command's own
+	// goroutine: the workers write the records, and audit.strict refuses by
+	// a panic that only this goroutine recovers (audit.Writer.Touch).
+	inv.app.Audit().Touch()
 	ctx, interrupts, stop := inv.batchInterrupts()
 	defer stop()
 	sum := batch.Run(ctx, batch.Options{
@@ -1179,7 +1203,7 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 		MaxFailures: b.args.maxFailures, StopOnAuthFailure: true, Interrupts: interrupts, Clock: inv.app.Knobs.Now,
 	}, jobs, b.view)
 	run.password = ""
-	if d, ok := run.passwd.(interface{ Done() }); ok {
+	if d, ok := run.passwd.(interface{ Done() }); ok && b.pass == nil {
 		d.Done()
 	}
 	if b.local != nil {

@@ -212,8 +212,10 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
+.B 0.2.16
+(the release before this one),
 .B 0.2.9
-(the release before this one) and
+and
 .BR 0.2.3 ;
 .BR 0.2.4 " to " 0.2.8
 and
@@ -221,7 +223,8 @@ and
 and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
-then the rollback of that release), and so is any other word. Either target is
+then the rollback of that release), and so is any other word (0.2.10 to
+0.2.15 included: the refusal names the three targets). Every target is
 refused while a device's record says a confirmed commit of
 .B "device config apply"
 is
@@ -234,12 +237,43 @@ or
 .B "device config forget <name>"
 settles it).
 .IP
+.B "rollback 0.2.16"
+.B \-\-apply
+takes a snapshot, then removes from
+.I tacctl.yaml
+the one key a 0.2.16 binary refuses,
+.B audit.strict
+(its schema reports it as an unknown key, and its
+.B "backup restore"
+refuses a snapshot that has it; the key is checked against that release). When
+the key is
+.B true
+the dry run warns that 0.2.16 runs a command whose audit line cannot be
+written, and
+.B \-\-apply
+refuses without
+.BR \-\-yes ;
+a
+.B false
+value is removed without a warning. Nothing else is converted:
+.IR console.yaml ,
+.IR devices.yaml ,
+.IR store.yaml ,
+the apply state directory, the sudoers drop-ins and the hosts are in formats
+0.2.16 reads, and the snapshot manifests gained keys that nothing reads.
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.16" ,
+and the audit line
+.BR "rollback target=0.2.16" .
+.IP
 .B "rollback 0.2.9"
 .B \-\-apply
 takes a snapshot, then removes from
 .I tacctl.yaml
 the keys a 0.2.9 binary refuses
-.RB ( device.apply.transport
+.RB ( device.apply.transport ,
+.BR audit.strict ,
 and the
 .B netconf_scope
 settings of
@@ -248,7 +282,13 @@ the dry run warns, and
 .B \-\-apply
 refuses without
 .B \-\-yes
-while one is set) and from
+while one of those is set, or
+.B audit.strict
+is
+.BR true ;
+a
+.B false
+audit.strict is removed without a warning) and from
 .I devices.yaml
 the
 .B netconf
@@ -284,6 +324,7 @@ the keys 0.2.5 added
 .BR device.apply.pause ,
 .BR device.apply.transport ,
 .BR netconf_scope.<scope> ,
+.BR audit.strict ,
 .BR cisco.source_interface.<scope> ,
 .BR breakglass_hold.<device> )
 and any other key a 0.2.3 binary does not know; removes
@@ -336,8 +377,8 @@ while any applies: the settings that are dropped (a device's own SNMP
 settings, a device's configuration syntax, a scope's Cisco source interface,
 the
 .B device.config
-values, the password cache's tiers and lifetimes; they stay in the snapshot,
-which only 0.2.5 restores). A break-glass hold that stands stops the
+values, the password cache's tiers and lifetimes, and audit.strict when it is
+true; they stay in the snapshot, which only 0.2.5 restores). A break-glass hold that stands stops the
 rollback, the dry run too, and names each held device with the way to release
 it
 .RB ( "breakglass release" ).
@@ -497,6 +538,12 @@ lists it). Prompts for the password with confirmation. If
 is given, the bcrypt hash is used directly and no password is prompted
 (use this when users self-generate a hash; see
 .BR "tacctl hash commands" ).
+A lone
+.B \-
+as the hash reads it from one line of standard input (typed without echo at a
+terminal), so it is not on the command line, where sudo's log records it and
+.BR ps (1)
+shows it while the command runs.
 .BI --scopes " name"[,name...]
 grants the user access to those scopes (see
 .B SCOPE MANAGEMENT ).
@@ -520,7 +567,7 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-hash\fR \fI<hash>\fR
-Add with pre\-generated bcrypt hash.
+Add with pre\-generated bcrypt hash (\- reads it from stdin).
 .TP
 \fB\-\-scopes\fR \fI<s>[,s...]\fR
 Grant specific scopes at creation.
@@ -554,7 +601,10 @@ Requires: \fBreadonly\fR.
 Change a user's password. Prompts for the new password with
 confirmation. If
 .BI --hash " hash"
-is given, the bcrypt hash is used directly and no password is prompted.
+is given, the bcrypt hash is used directly and no password is prompted. A lone
+.B \-
+as the hash reads it from one line of standard input, as for
+.BR "user add" .
 .\" BEGIN GENERATED: command user passwd
 .RS
 .PP
@@ -563,7 +613,7 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-hash\fR \fI<hash>\fR
-Change with pre\-generated bcrypt hash.
+Change with pre\-generated bcrypt hash (\- reads it from stdin).
 .RE
 .\" END GENERATED: command user passwd
 .TP
@@ -3702,8 +3752,8 @@ of a scope of theirs and of the devices there
 and
 .B adopt
 are the superuser's).
-Each read of a secret by an engineer is logged to syslog as
-\fBsecret\-read kind=scope|snmp|snmp\-device|snmp\-default|block name=\fR\fIname\fR\fB by=\fR\fIuser\fR
+Each read of a secret, the superuser's too, is logged to syslog as
+\fBsecret\-read kind=scope|snmp|snmp\-device|snmp\-default|block|block\-adopt|store|config|snapshot|backup name=\fR\fIname\fR\fB by=\fR\fIuser\fR
 (never the value). Engineers change no global setting: users, groups,
 scopes, a secret's change, backends, backups, upgrades, the default host
 method and the console's settings stay the superuser's, and so does the
@@ -3772,7 +3822,7 @@ file. Both sudoers files carry
 the login console's session marker, the X11 display
 .B "tacctl ssh \-X"
 hands on, and the caller's choice of colour), for the command lines that use the password cache
-.RB ( "device config pull" ", " "device config diff" ", " "device config plan" ", " ssh ", " "device ssh" ", " "block ... adopt" ", " "device config apply" ", " "device onboard" " and " "device collect" ),
+.RB ( "device config pull" ", " "device config diff" ", " "device config plan" ", " ssh ", " "device ssh" ", " "block ... adopt" ", " "device config apply" ", " "device onboard" ", " "device collect" " and " "device enroll" ),
 .BR TACCTL_ASKPASS ,
 for the four command lines that open an editor
 .RB ( "scope block ... edit|adopt" ", " "device block ... edit|adopt" ),
@@ -3849,6 +3899,39 @@ bypass this check.
 Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config secret-min-length
+.TP
+.BI "config audit-strict " [ "on|off" ]
+Show
+.B audit.strict
+and where it comes from (the default or
+.IR tacctl.yaml ),
+or set it:
+.B on
+writes
+.B "audit: {strict: true}"
+to
+.IR tacctl.yaml ,
+.B off
+removes the key (the default, off). With it on, a command that changes state,
+or shows a secret, is refused when its audit line cannot be written (see
+.BR "AUDIT LOG" ).
+This command is never refused by
+.BR audit.strict :
+with
+.B logger
+down and every other change refused,
+.B "config audit\-strict off"
+still runs (with the warning that its own lines were not written). Its lines
+are written at
+.BR auth.notice ;
+the detail line is
+.BR "config audit-strict from=off to=on" .
+.\" BEGIN GENERATED: command config audit-strict
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config audit-strict
 .TP
 .B "config allow " "{ list | add | remove | clear } " [ cidr[,cidr...] ]
 Manage the connection allow list (IP ACL).
@@ -4996,7 +5079,8 @@ holding
 .I tacctl.yaml
 and a manifest (the
 .I rendered.json
-of that moment and the tacctl version), root-only, and the files of the
+of that moment, the tacctl version, and the session id, user and command
+that took it), root-only, and the files of the
 registries and hosts when they exist
 .RI ( devices.yaml ,
 .IR console.yaml ,
@@ -5656,13 +5740,28 @@ read is logged), and may not set or generate one.
 .RS
 .PP
 Requires: \fBengineer\fR. An engineer may run show for a scope of their own; set and generate need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-stdin\fR
+(set) Read the value from one line of standard input, so it is not on the command line.
 .RE
 .\" END GENERATED: command scope secret
 .TP
-.BI "scope secret " "scope " "set " value
+.BI "scope secret " "scope " "set [" value " | \-\-stdin]"
 Set the scope's key after validation (at least
 .B config secret-min-length
-chars, mixed character classes). With RADIUS enabled, a secret FreeRADIUS
+chars, mixed character classes). Without a value the key is asked for twice at
+a terminal, without echo;
+.B \-\-stdin
+reads it from one line of standard input (for a script; typed without echo at
+a terminal). The line is taken as it is, less its line end, and a secret with a
+control character is refused from every source. The checks apply to the value
+read. A value on the command line works as well, but sudo's log
+records the whole command line and
+.BR ps (1)
+shows it while the command runs; the other forms keep it off both. With
+RADIUS enabled, a secret FreeRADIUS
 cannot carry (a backslash together with a
 .BR $ )
 is refused;
@@ -6084,10 +6183,10 @@ and
 and
 .B ip domain\-list
 are read as these);
-.B "clock timezone <zone> <hours> [<minutes>]";
-.B "ip name\-server [vrf <name>] <address> [<address> ...]";
-.B "ntp server [vrf <name>] <address\-or\-name> [prefer] [version <1\-4>] [key <n>] [source <interface>]";
-.B "ntp authentication\-key <n> md5 <string>";
+.BR "clock timezone <zone> <hours> [<minutes>]" ;
+.BR "ip name\-server [vrf <name>] <address> [<address> ...]" ;
+.BR "ntp server [vrf <name>] <address\-or\-name> [prefer] [version <1\-4>] [key <n>] [source <interface>]" ;
+.BR "ntp authentication\-key <n> md5 <string>" ;
 .B "ntp trusted\-key <n>"
 and
 .BR "ntp authenticate" .
@@ -6349,7 +6448,10 @@ editor needs its wait option, such as
 or
 .BR "gvim \-f" ;
 one that returns at once leaves tacctl an unchanged text). Logged as
-.BR "block\-edit name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR .
+.BR "block\-edit name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR ;
+opening a block in force, or a device's new block with the scope's objects,
+is logged before the editor starts as
+.BR "secret\-read kind=block" .
 .TP
 .BI "scope block " scope " {juniper|cisco} adopt " device " " block " [ \-y ]"
 Superuser only, at a terminal, with the rules of
@@ -6792,6 +6894,16 @@ clears it),
 (a new key type, the pins unchanged) and
 .B hostkey-unreachable
 (no key could be read; with the last good scan). A scan never changes a pin.
+.B vendor\-differs
+is raised when the vendor a device last named by SNMP (read by
+.BR "device add" ,
+.BR "device check" ,
+.B "device vendor \-\-from\-device"
+or
+.BR "device discover \-\-snmp" ,
+and kept in the seen cache) is not its registered vendor; it cannot be
+acknowledged: setting the vendor, or a later read that names none, clears
+it.
 Notices appear in the scan output,
 .BR "tacctl status" ,
 .BR "device list" ,
@@ -7038,11 +7150,56 @@ skips the lookup. With no
 .IR name ,
 the lowercased sysName is offered as the name and taken only after a
 .B y
-at a terminal; without a terminal or an answer, or when the sysName is
-not a valid device name or is a generic one (a WTI unit's Site ID
+at a terminal. When there is no name to offer (no answer, no SNMP set up, or a
+sysName that is not a valid device name or is a generic one, such as a WTI
+unit's Site ID
 .BR WTI ),
-the add is refused with the usage line. The offered name goes through every
-other check of the add.
+a terminal is asked for the name (Enter registers nothing); without a
+terminal the add is refused with the usage line. The offered or typed name
+goes through every other check of the add (lower case, a valid name, a
+generic name only with
+.BR \-\-allow\-generic ).
+.IP
+With the name,
+.B add
+reads the device's
+.B sysObjectID.0
+and
+.B sysDescr.0
+in one request and says which vendor they name
+.RI ( "The device says it is Cisco IOS Software, vendor cisco (SNMP sysObjectID" " ...)" ).
+An enterprise 9 sysObjectID with a sysDescr that starts
+.B "Cisco IOS Software"
+or
+.B "Cisco IOS XE Software"
+is
+.BR cisco ;
+an enterprise 2636 sysObjectID with a sysDescr that names Junos is
+.BR juniper ;
+an enterprise 2634 sysObjectID is
+.B wti
+(a WTI unit's sysDescr is generic Linux text, so the enterprise is the only
+evidence).
+Any other enterprise 9 sysDescr (ASA, NX\-OS, IOS XR, or an older IOS image
+that describes itself otherwise), an enterprise 2636 sysDescr that does not
+name Junos, an unknown enterprise, and a missing sysObjectID or sysDescr name
+no vendor, and the line says what was read. When
+.B \-\-vendor
+is given and the device names another vendor, a warning gives
+.BI "tacctl device vendor " "name vendor" ;
+the add goes ahead as given. Without
+.BR \-\-vendor ,
+a terminal is asked one
+.B y/N
+(default no) to register with the vendor the device names, folded into the
+question of the offered name when there is one
+.RI ( "Register 192.0.2.10 as 'sw1' (cisco)? [y/N]" );
+without a terminal the vendor is only printed, with the command that sets it.
+The vendor named is kept in the seen cache for the
+.B vendor\-differs
+notice.
+.B \-\-no\-lookup
+reads none of it.
 .IP
 Unless
 .B \-\-snmp\-location
@@ -7069,7 +7226,10 @@ after the add's own output). Nothing is pulled unless
 .B \-\-pull
 is given. It is refused before anything is registered when the tier may not run
 .BR "device config pull" ,
-when the add is run as root, or when the vendor is not cisco, juniper or wti. A
+when the add is run as root, or when the vendor is not cisco, juniper or wti
+(without
+.B \-\-vendor
+the vendor the device names and the answer to its question count). A
 device no scope's prefixes cover is registered and not pulled: one line gives
 .B scope prefixes
 .IR scope " add " cidr
@@ -7110,7 +7270,7 @@ Register only if the device offers this key; pin it alone.
 Register without a pinned key (a hostkey\-unpinned notice).
 .TP
 \fB\-\-no\-lookup\fR
-Do not read the device's own name and location by SNMP.
+Do not read the device's own name, location and vendor by SNMP.
 .TP
 \fB\-\-pull\fR
 After registering, read its configuration as 'device config pull' does (as you; needs a vendor and a scope).
@@ -7128,12 +7288,34 @@ break-glass account included; only
 is handled apart (its csh wrapper). In order:
 .RS
 .IP 1. 4
-Identity: the host keys the address offers are read and shown with their
-fingerprints, and one question is asked before any login,
-.RI "Trust these keys and send the local password of '" user "' to " address "? [y/N]" ;
+The host key, before any login. Of the keys the address offers, the one that
+will be pinned is the first of ed25519, ECDSA and RSA; it is shown under
+.I "Will pin"
+with the Junos console command that shows it, the others as offered and not
+pinned. One question:
+.RI "Compare the key with the console of " address ". Type the device name (" name ") to accept it and send it the local password of '" user "', or press Enter to stop:"
+where
+.I name
+is
+.BR \-\-name ,
+else the device's SNMP sysName (lower case); when there is neither, the
+question asks for the name to register it as, checked as every new name
+(lower case, not taken, not generic), and the name typed is the name it is
+registered under. Enter, the end of input or any other answer sends nothing,
+with no second try (exit 1). There is no
+.B \-y
+and no trust on first use. A device an earlier onboard registered is asked
+for its registered name; nothing new is pinned: its pinned keys are listed and
+the key is shown under
+.IR "Key to check" ,
+and a key that is not among them refuses the run (re-pin it after a check:
+.B "device hostkey"
+.I name
+.B set
+.IR fingerprint ).
 .BI "\-\-host\-key SHA256:" fingerprint
-answers it with the key read on the device's console. Without a terminal and
-without
+answers it instead with the key read on the device's console. Without a
+terminal and without
 .B \-\-host\-key
 the run is refused (exit 2), and without a terminal only
 .B \-\-check
@@ -7153,12 +7335,17 @@ also in a group):
 and no local account of your own name (a login as you could be that
 account's, not TACACS+).
 .IP 3. 4
-The name
-.RB ( \-\-name ,
+The name (the one the key was accepted under; with
+.BR \-\-host\-key :
+.BR \-\-name ,
 else the host name the device reports, else asked at the terminal when that
 one is generic or taken) and the registration, through
 .B "device add"
-with the keys of step 1 pinned; the device's own
+with the key of step 1 pinned (the others offered are shown, not pinned:
+.B "device hostkey"
+.I name
+.B accept
+pins them after a check of their own); the device's own
 .B "snmp location"
 and
 .B "snmp description"
@@ -7231,8 +7418,17 @@ Juniper class. What the device reports is shown with its control characters
 replaced.
 .B \-\-json
 prints one object at the end (the progress goes to standard error). Logged:
+.B "auth.notice device onboard hostkey user= addr= device= alg= fp= result=accepted|skipped|refused source=confirmed|flag"
+for the answer to the key, before it is used
+.RB ( device=
+is the name shown, on a refusal too, or the name typed when it was accepted,
+never a refused text;
+.B \-
+on a skip; with
+.BR audit.strict ,
+a line that cannot be written refuses the run before anything is sent),
 .B "auth.notice device onboard user= device= approved=1 shape= login="
-at the answer and
+at the answer to the review and
 .B "auth.info device onboard user= device= addr= login=local:<account> result="
 at the end, never a password. Exit status: 0 applied, checked or no change; 1
 refused, failed, rolled back or pending; 2 wrong arguments; 130 interrupted.
@@ -7247,10 +7443,10 @@ Options:
 The device's local account to log in as (any, a break\-glass one included; root through its CLI wrapper): its password is asked once on the terminal and never kept or cached.
 .TP
 \fB\-\-name\fR \fI<text>\fR
-The registry name (default: the name the device reports; a generic or taken one is asked for).
+The registry name, typed back at the key's question (default: its SNMP sysName, else the name typed there; with \-\-host\-key, the name the device reports, a generic or taken one asked for).
 .TP
 \fB\-\-host\-key\fR \fISHA256:<fp>\fR
-Trust only this key, read on the device's console (no question; needed without a terminal); pin it alone.
+Accept only this key, read on the device's console (no question; needed without a terminal); pin it alone.
 .TP
 \fB\-\-legacy\-ssh\fR
 SHA\-1 key exchange, CBC ciphers and ssh\-rsa (also chosen by itself when the handshake needs them); registered so.
@@ -7274,9 +7470,30 @@ no scope answers, one with break-glass held, and a caller who is not an active
 member of the scope):
 .RS
 .IP 1. 4
-The host keys it offers are read (nothing is authenticated) and shown with
-their fingerprints, and one question is asked before any login,
-.RI "Trust these keys and send " "the password of 'user'" " to " address "? [y/N]" ;
+The host keys it offers are read (nothing is authenticated). Then, address by
+address and before any login, the one that will be pinned (the first of
+ed25519, ECDSA and RSA) is shown under
+.I "Will pin"
+with the Junos console command that shows it, the others as offered and not
+pinned, and one question:
+.RI "Compare the key with the console of " address ". Type the address (" address ") to accept it and send it " "the password of 'user'" ", or press Enter to skip the address:"
+With
+.BR \-\-register ,
+a device that gives its name by SNMP (its sysName, lower case), when that is a
+name a new device may take (valid, not taken by a device or an enrolled host,
+not generic), is asked for that name instead,
+.RI "Type the device name (" name ")" ;
+the answer only accepts the key, and the device is registered under the name
+it reports to
+.BR "show version" .
+Enter skips the address and any other answer refuses it, with no second try:
+nothing is sent to it, and its row says
+.I skipped
+or
+.IR refused .
+The end of input ends the questions (the addresses after it are
+.IR not-tried ).
+There is no answer for several addresses and no trust on first use.
 .BI "\-\-host\-key SHA256:" fingerprint
 answers it for one address with the key read on the device's console. Without
 a terminal and without
@@ -7309,11 +7526,15 @@ line each collected device would run (a device that reports no name the
 registry accepts says so). Nothing is kept without
 .BR \-\-register :
 the read is discarded.
+.B \-\-json
+lists under
+.B host_keys
+only the key accepted (none for a skipped or refused address).
 .B \-\-register
 asks one question after the table and then registers each device through
 .BR "device add" ,
-the registry's own code, with every key shown pinned (the login was made
-against exactly those keys),
+the registry's own code, with the key accepted pinned (the login was made
+against exactly that key; the others offered are shown, not pinned),
 .B \-\-vendor juniper
 and, when the handshake needed the legacy algorithms,
 .BR \-\-legacy\-ssh ;
@@ -7328,15 +7549,24 @@ inheritance was not checked until a pull reads it.
 .B \-y
 answers the question of
 .BR \-\-register ,
-which without a terminal it needs.
+which without a terminal it needs, and never a key's question.
 .B \-\-discovered
 takes the addresses
 .B "device discover"
 lists (the seen cache; run it first to refresh it). Logged:
+.B "auth.notice device collect hostkey user= addr= device= alg= fp= result=accepted|skipped|refused source=confirmed|flag"
+for every answer to a key, before it is used
+.RB ( device=
+is the name shown in the question, on a refusal too, never the text typed;
+.B \-
+when the answer is the address or the address was skipped; with
+.BR audit.strict ,
+a line that cannot be written refuses that address before anything is sent
+to it), and
 .B "auth.info device collect user= addr= login=own|local:<account> result="
 per address, never a password or a device's text. Exit status: 0 every address
-collected, 1 one was refused, failed or not Junos, 2 wrong arguments, 130
-interrupted.
+collected, 1 one was skipped, refused, failed or not Junos, 2 wrong arguments,
+130 interrupted.
 .\" BEGIN GENERATED: command device collect
 .RS
 .PP
@@ -7351,18 +7581,153 @@ The addresses 'device discover' lists (the seen cache: unregistered, authenticat
 The device's local account to log in as (any, a break\-glass one included; root through its CLI wrapper) instead of you: its password is asked once on the terminal, never kept or cached, and goes to each address once; one account for the run.
 .TP
 \fB\-\-host\-key\fR \fISHA256:<fp>\fR
-Trust only this key, read on the device's console (no question; needed without a terminal; one address); pin it alone.
+Accept only this key, read on the device's console (no question; needed without a terminal; one address); pin it alone.
 .TP
 \fB\-\-register\fR
-After the table, register each collected device through 'device add' with the keys shown pinned (one question) and keep the read as its first pull record.
+After the table, register each collected device through 'device add' with the key accepted pinned (one question) and keep the read as its first pull record; the key's question takes the device's SNMP sysName when it gives one that is not taken.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location, address) Answer yes to the confirmation.
+Answer yes to the registration question of \-\-register (needed without a terminal); never a host key's question.
 .TP
 \fB\-\-json\fR
 One object at the end (the progress goes to standard error).
 .RE
 .\" END GENERATED: command device collect
+.TP
+.BI "device enroll " "address... | \-\-discovered " "[ \-\-host\-key SHA256:" fingerprint " ] [ \-\-vendor cisco|juniper|wti|other ] [ \-\-name " name " ] [ \-\-legacy\-ssh ] [ \-\-json ]"
+Superusers: the chain from a new address to its plan, run per address and
+attended.
+.B \-\-discovered
+takes the addresses
+.B "device discover"
+lists. Refused before any question, each in a row of its own while the run
+goes on: an address registered already (with the
+.B "device config pull"
+line), one no scope covers, one in a scope the caller is not a member of, one
+with break\-glass held, and one that offers no ssh host key (a device that
+answers only the legacy algorithms is found and registered
+.BR \-\-legacy\-ssh ).
+.RS
+.IP 1. 4
+The host key. Of the keys the address offers, the one that will be pinned is
+the first of ed25519, ECDSA and RSA; it is shown under
+.I "Will pin"
+with the command that shows it on the device's console (every vendor's when
+the vendor is not known), the others as offered and not pinned. One question:
+.RI "Compare the key with the console of " address ". Type the device name (" name ") to accept it and register it, or press Enter to skip the device:"
+where
+.I name
+is the device's SNMP sysName (lower case); when SNMP gives none, the name
+typed is the name the device is registered as, checked as every new name
+(lower case, not taken, not generic). Enter, or the end of input, skips the
+device; any other answer refuses it, with no second try. There is no
+.BR \-y ,
+no answer for several devices and no trust on first use.
+.BI "\-\-host\-key SHA256:" fingerprint
+(one address; the fingerprint read on the console) answers it instead and is
+the only form without a terminal (without a terminal and without it: exit 2,
+nothing scanned).
+.IP 2. 4
+The vendor the device names by SNMP (as
+.B "device add"
+reads it), else
+.BR \-\-vendor ,
+else one question
+.RI ( "cisco, juniper, wti or other; Enter skips the device" ).
+.B other
+registers the device and ends its chain (no pull, no plan; exit 0). Then one
+.RI "Register " address " as '" name "' (" vendor ", ...)? [y/N]"
+and the registration at once through
+.BR "device add" ,
+the accepted key pinned alone; the first registration takes the run's one
+snapshot. Without a terminal,
+.B \-\-vendor
+and
+.B \-\-name
+(one address) give what SNMP does not read; a device left without them is
+skipped with the
+.B "device add"
+line to run.
+.IP 3. 4
+The caller's password, asked once (the password cache may answer it), and
+the pull of every device registered with a vendor tacctl reads. When the name
+registered was typed or given (not read by SNMP), the name the device is
+configured with (Junos
+.BR "system host\-name" ,
+IOS
+.BR hostname ,
+a WTI unit's Site ID that is not generic; the first label, lower case)
+replaces it in the registry, as
+.B "device rename"
+does; nothing is written to the device. The name is kept, with the reason and
+the
+.B "device rename"
+line, when the device's name is taken by a device or an enrolled host, is
+generic, is not a valid name, or a break\-glass hold stands on the device.
+.IP 4. 4
+The plan of each device pulled, as
+.B "device config plan \-\-no\-secrets"
+prints it: each secret is a marked line, and
+.BI "device config plan " name
+prints the region to paste. For the Junos devices whose plan has a change one
+question runs
+.B "device config apply"
+for them with the same password; its review asks each device's name. A
+device whose plan has no change says
+.I "nothing to apply"
+in its row. With
+.BR \-\-json ,
+or without a terminal, the run ends at the plan and names the apply to run.
+.RE
+.IP
+A device registered stays registered when a later stage fails or the run is
+interrupted. The table under the run
+.RB ( ADDRESS ", " NAME ", " VENDOR ", " KEY ", " PULL ", " PLAN ", " RESULT )
+is followed by each device's next step.
+.B \-\-json
+prints the pull's lines and the plan's objects, then one object of the run
+.RB ( login ", " devices ", " apply ", " exit );
+the questions, the progress and the table go to standard error. Logged:
+.B "auth.notice device enroll hostkey user= addr= device= alg= fp= result=accepted|skipped|refused source=confirmed|flag"
+for every answer to a key, before it is pinned (with
+.BR audit.strict ,
+a line that cannot be written refuses that device), the
+.B "device add"
+line of each registration,
+.B "device rename from= to= reason=device\-name"
+for a name taken over, the pull's, plan's and apply's lines
+.RB ( mode=attended ),
+and
+.B "auth.info device enroll user= addr= device= vendor= source=snmp|given|asked result="
+per address. Exit status: 0 every address went as far as its vendor allows, 1
+one was refused, skipped or failed, 2 wrong arguments or no terminal, 130
+interrupted.
+.\" BEGIN GENERATED: command device enroll
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-discovered\fR
+The addresses 'device discover' lists (the seen cache: unregistered, authenticated); no address is named with it.
+.TP
+\fB\-\-host\-key\fR \fISHA256:<fp>\fR
+Pin this key of ONE address, read on its console: no question (the only form without a terminal).
+.TP
+\fB\-\-vendor\fR \fIcisco|juniper|wti|other\fR
+The vendor of ONE address (default: the one it names by SNMP, else asked; other ends its chain at the registration).
+.TP
+\fB\-\-name\fR \fI<name>\fR
+The name of ONE address (default: its SNMP sysName, else the name typed at the key's question).
+.TP
+\fB\-\-legacy\-ssh\fR
+Scan and register every device of the run with the legacy algorithms (a device that answers only those is found so without it).
+.TP
+\fB\-\-json\fR
+The pull's lines and the plan's objects, then one object of the run; the questions, the progress and the table on standard error.
+.RE
+.\" END GENERATED: command device enroll
 .TP
 .BI "device sync " "name[,name...] | \-\-all | \-\-scope " "scope " "| \-\-vendor " "vendor " "[ \-\-apply ] [ \-\-overwrite ] [ \-\-json ] [ \-y ]"
 Superusers: fill the registry's empty
@@ -7441,7 +7806,7 @@ Write the fields, in one registry write, after one question.
 Also replace a field that is set, showing the old value.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location, address) Answer yes to the confirmation.
+(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .TP
 \fB\-\-json\fR
 One object: each device's fields, actions and facts.
@@ -7464,7 +7829,7 @@ Options:
 Remove every device (an engineer: those of their own scopes).
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location, address) Answer yes to the confirmation.
+(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device remove
 .TP
@@ -7536,7 +7901,7 @@ Options:
 (address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location, address) Answer yes to the confirmation.
+(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device address
 .TP
@@ -7549,15 +7914,47 @@ Requires: \fBengineer\fR.
 .RE
 .\" END GENERATED: command device hostname
 .TP
-.BI "device vendor " "name " [ cisco | juniper | wti | other ]
+.BI "device vendor " "name " [ cisco | juniper | wti | other " | " "\-\-from\-device " [ \-y ] ]
 Show or set the vendor;
 .B clear
 sets
 .BR other .
+.B \-\-from\-device
+reads the vendor the device names now (SNMP
+.B sysObjectID.0
+and
+.BR sysDescr.0 ,
+with the credentials of its scope, as
+.B "device add"
+does), shows it beside the registered one and sets it after a
+.B y
+at a terminal, or with
+.BR \-y ", " \-\-yes ;
+without either it is refused. A read that names no vendor, no answer and SNMP
+not set up are refused with the reason and change nothing. The set is the
+setter's: a device that stops being Cisco loses its configuration syntax, one
+that stops being Junos its NETCONF setting. The name is the only argument.
+A vendor change makes the device's last pull record
+.B "needs pull (vendor changed)"
+(the CONFIG state
+.BR pull ):
+.BR "device config diff" ,
+.B plan
+and
+.B sync
+say to pull again instead of reading the record in the new vendor's shape.
 .\" BEGIN GENERATED: command device vendor
 .RS
 .PP
 Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-\-from\-device\fR
+(location, vendor) Read the location (SNMP sysLocation) or the vendor (sysObjectID and sysDescr) from the device and store it.
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device vendor
 .TP
@@ -7637,10 +8034,10 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-from\-device\fR
-Read the location from the device (SNMP sysLocation) and store it.
+(location, vendor) Read the location (SNMP sysLocation) or the vendor (sysObjectID and sysDescr) from the device and store it.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location, address) Answer yes to the confirmation.
+(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .TP
 \fB\-\-apply\fR
 (address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
@@ -8079,7 +8476,7 @@ Replace the registry instead of merging into it.
 (add, rename, import) Allow a generic name such as 'switch'.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location, address) Answer yes to the confirmation.
+(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device import
 .TP
@@ -8127,7 +8524,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location, address) Answer yes to the confirmation.
+(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device hostkey
 .TP
@@ -8262,7 +8659,7 @@ Print nothing (with \-\-if\-stale: what a session start runs).
 .RE
 .\" END GENERATED: command device scan
 .TP
-.BI "device discover " "[ \-\-all ] [ \-\-backend " id " ]"
+.BI "device discover " "[ \-\-all ] [ \-\-snmp ] [ \-\-backend " id " ]"
 Scan, then list the addresses that authenticated but are not registered, with
 the scope and vendor tag that answer them, first and last sighting, count,
 last user, outcome, backend and NAS-Identifier, and a ready
@@ -8272,6 +8669,15 @@ non-generic one, else
 .BR <name> ).
 .B \-\-all
 includes the addresses that were only ever refused.
+.B \-\-snmp
+reads each listed address's sysName, sysObjectID and sysDescr by SNMP (the
+credentials of the scope that answers it, at most 16 at once) and fills its
+line: the lowercased sysName as the name when it is a valid, non-generic one,
+and
+.BI \-\-vendor " vendor"
+when the device names one; what was not used follows as a
+.B "# SNMP:"
+comment. Without it discover reads the logs only and contacts nothing.
 .\" BEGIN GENERATED: command device discover
 .RS
 .PP
@@ -8281,6 +8687,9 @@ Options:
 .TP
 \fB\-\-all\fR
 Also list the addresses that were only refused.
+.TP
+\fB\-\-snmp\fR
+Read each listed address's name and vendor by SNMP and put them in its 'device add' line.
 .TP
 \fB\-\-backend\fR \fI<id>\fR
 (scan, discover) Only that backend's log.
@@ -8306,18 +8715,38 @@ with both values,
 .B registry only
 or
 .BR "device only" ;
-nothing is written), and its notices.
+nothing is written), its Vendor (the vendor the device names by SNMP against
+the registered one:
+.BR match ,
+.BI "differs: device says " vendor
+with the
+.B "device vendor \-\-from\-device"
+command, or
+.B unknown
+with what was read; see
+.BR "device add" ),
+and its notices.
+.B \-\-all
+ends with the devices registered as
+.B other
+that name a vendor tacctl reads.
 .B \-\-json
 prints the rows for scripts, the sysName as
 .B sysname
 (null when none was read) with
 .BR sysname_match ,
-and the location as
+the location as
 .B syslocation
 with
 .B syslocation_match
 (null when the registry has none) and
-.BR syslocation_error .
+.BR syslocation_error ,
+and the vendor as
+.B vendor_detected
+(null when none is named) with
+.B vendor_reason
+and
+.BR vendor_error .
 A juniper device also has a NETCONF row: what the probe of its last pull found
 .RB ( "hello ok" ,
 .BR "port closed" ,
@@ -8393,7 +8822,7 @@ The address this server reaches the device from.
 .RE
 .\" END GENERATED: command device config show
 .TP
-.BI "device config pull " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-transport auto|netconf|ssh ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-diff ] [ \-\-json ] [ \-\-server " "address|name" " ] [ \-\-source " address " ] [ \-\-login " local-user " ]"
+.BI "device config pull " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale | \-\-differs | \-\-name " text " | \-\-ip " addr|cidr|text " [ \-\-transport auto|netconf|ssh ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-diff ] [ \-\-json ] [ \-\-server " "address|name" " ] [ \-\-source " address " ] [ \-\-login " local-user " ]"
 Log in to the devices as the user who invoked tacctl and read what each runs
 (nothing is written to a device). The login is that user's: with
 .B sudo
@@ -8409,13 +8838,42 @@ and raises the hostkey notice. The devices are
 named (comma lists too), or selected with
 .B \-\-all
 (every device of yours),
-.B \-\-scope
-and
-.B \-\-vendor
-(together), or
+.BR \-\-scope ,
+.BR \-\-vendor ,
 .B \-\-stale
-(never read, last read in failure, or differing from what tacctl renders now);
-a vendor
+(never read, last read in failure, or differing from what tacctl renders now),
+.B \-\-differs
+(the last pull differs from what tacctl renders now; decided from the records,
+with no login),
+.B \-\-name
+(the name contains the text) and
+.B \-\-ip
+(an address, a prefix it lies in, or a text it contains); those filters
+combine, a filter given with no value is refused (exit 2), and
+.B \-\-name
+and
+.B \-\-ip
+take a comma list (any item matches). The same selectors serve
+.BR diff ,
+.BR plan ,
+.B apply
+and, for
+.B \-\-name
+and
+.BR \-\-ip ,
+.BR "device config list" .
+Because
+.B \-\-name
+and
+.B \-\-ip
+match text, select the devices of an
+.B apply
+by exact names, a full address or a CIDR:
+.B "\-\-ip 10.1.1"
+also matches 172.10.1.x and 10.1.10\-19.x, and
+.B "\-\-name sw1"
+also matches sw10.
+A vendor
 .BR other ,
 and a device in no scope are left out and said so.
 .PP
@@ -8714,10 +9172,13 @@ and
 logs in to one device as one of its local accounts instead of you: the
 device is named (no list,
 .BR \-\-all ,
-.BR \-\-scope ,
-.B \-\-vendor
-or
-.BR \-\-stale :
+or any selector
+.RB ( \-\-scope ,
+.BR \-\-vendor ,
+.BR \-\-stale ,
+.BR \-\-differs ,
+.BR \-\-name ,
+.BR \-\-ip ):
 exit 2), registered as a Junos device with a pinned host key, and a scope
 answers its address; anything else is refused before a password is asked, and so is a device on
 which break-glass is held (release it first). Any local account of the
@@ -8750,13 +9211,22 @@ Options:
 (pull, diff, plan, forget) Every device of yours that a scope covers.
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
-(pull, diff, plan, list) Only the devices of that scope.
+(pull, diff, plan, apply, list) Only the devices of that scope.
 .TP
 \fB\-\-vendor\fR \fIcisco|juniper|wti\fR
-(pull, diff, plan, list) Only that vendor's devices.
+(pull, diff, plan, apply, list) Only that vendor's devices.
 .TP
 \fB\-\-stale\fR
-(pull, diff, plan, list) Only the devices never read, last read in failure, or differing.
+(pull, diff, plan, apply, list) Only the devices never read, last read in failure, or differing.
+.TP
+\fB\-\-differs\fR
+(pull, diff, plan, apply, list) Only the devices whose last pull differs from what tacctl renders now (from the records; no login).
+.TP
+\fB\-\-name\fR \fI<text>\fR
+(pull, diff, plan, apply, list) Only the devices whose name contains the text (comma list: any of them).
+.TP
+\fB\-\-ip\fR \fI<addr|cidr|text>\fR
+(pull, diff, plan, apply, list) Only the devices whose address is that address, lies in that prefix or contains the text (comma list: any of them).
 .TP
 \fB\-\-transport\fR \fIauto|netconf|ssh\fR
 (pull, diff, plan) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
@@ -8787,7 +9257,7 @@ Print the differences after the summary.
 .RE
 .\" END GENERATED: command device config pull
 .TP
-.BI "device config diff " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-pull [ \-\-login " local-user " ] ] [ \-\-section " list " ] [ \-\-exit\-code ] [ \-\-json ]"
+.BI "device config diff " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale | \-\-differs | \-\-name " text " | \-\-ip " addr|cidr|text " [ \-\-pull [ \-\-login " local-user " ] ] [ \-\-section " list " ] [ \-\-exit\-code ] [ \-\-json ]"
 Compare the managed sections of the last pull of each device with the
 statements tacctl renders for it now. The sections are
 .BR aaa ,
@@ -8950,13 +9420,22 @@ Options:
 (pull, diff, plan, forget) Every device of yours that a scope covers.
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
-(pull, diff, plan, list) Only the devices of that scope.
+(pull, diff, plan, apply, list) Only the devices of that scope.
 .TP
 \fB\-\-vendor\fR \fIcisco|juniper|wti\fR
-(pull, diff, plan, list) Only that vendor's devices.
+(pull, diff, plan, apply, list) Only that vendor's devices.
 .TP
 \fB\-\-stale\fR
-(pull, diff, plan, list) Only the devices never read, last read in failure, or differing.
+(pull, diff, plan, apply, list) Only the devices never read, last read in failure, or differing.
+.TP
+\fB\-\-differs\fR
+(pull, diff, plan, apply, list) Only the devices whose last pull differs from what tacctl renders now (from the records; no login).
+.TP
+\fB\-\-name\fR \fI<text>\fR
+(pull, diff, plan, apply, list) Only the devices whose name contains the text (comma list: any of them).
+.TP
+\fB\-\-ip\fR \fI<addr|cidr|text>\fR
+(pull, diff, plan, apply, list) Only the devices whose address is that address, lies in that prefix or contains the text (comma list: any of them).
 .TP
 \fB\-\-transport\fR \fIauto|netconf|ssh\fR
 (pull, diff, plan) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
@@ -8993,7 +9472,7 @@ Exit 2 when a device differs (and none failed).
 .RE
 .\" END GENERATED: command device config diff
 .TP
-.BI "device config plan " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-pull [ \-\-login " local-user " ] ] [ \-\-section " list " ] [ \-\-converge ] [ \-\-secrets | \-\-no\-secrets ] [ \-\-plain | \-\-json | \-\-backout ] [ \-\-out " file " | \-\-out\-dir " dir " ] [ \-\-force ] [ \-\-from " address " ] [ \-\-restore\-point[=" fs "] ] [ \-\-exit\-code ]"
+.BI "device config plan " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale | \-\-differs | \-\-name " text " | \-\-ip " addr|cidr|text " [ \-\-pull [ \-\-login " local-user " ] ] [ \-\-section " list " ] [ \-\-converge ] [ \-\-secrets | \-\-no\-secrets ] [ \-\-plain | \-\-json | \-\-backout ] [ \-\-out " file " | \-\-out\-dir " dir " ] [ \-\-force ] [ \-\-from " address " ] [ \-\-restore\-point[=" fs "] ] [ \-\-exit\-code ]"
 Print, for each device, what to paste to make it match what tacctl renders,
 from its last pull. It reads no device unless
 .B \-\-pull
@@ -9527,13 +10006,22 @@ Options:
 (pull, diff, plan, forget) Every device of yours that a scope covers.
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
-(pull, diff, plan, list) Only the devices of that scope.
+(pull, diff, plan, apply, list) Only the devices of that scope.
 .TP
 \fB\-\-vendor\fR \fIcisco|juniper|wti\fR
-(pull, diff, plan, list) Only that vendor's devices.
+(pull, diff, plan, apply, list) Only that vendor's devices.
 .TP
 \fB\-\-stale\fR
-(pull, diff, plan, list) Only the devices never read, last read in failure, or differing.
+(pull, diff, plan, apply, list) Only the devices never read, last read in failure, or differing.
+.TP
+\fB\-\-differs\fR
+(pull, diff, plan, apply, list) Only the devices whose last pull differs from what tacctl renders now (from the records; no login).
+.TP
+\fB\-\-name\fR \fI<text>\fR
+(pull, diff, plan, apply, list) Only the devices whose name contains the text (comma list: any of them).
+.TP
+\fB\-\-ip\fR \fI<addr|cidr|text>\fR
+(pull, diff, plan, apply, list) Only the devices whose address is that address, lies in that prefix or contains the text (comma list: any of them).
 .TP
 \fB\-\-transport\fR \fIauto|netconf|ssh\fR
 (pull, diff, plan) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
@@ -9600,7 +10088,7 @@ Exit 2 when a device needs a change (and none could not be planned).
 .RE
 .\" END GENERATED: command device config plan
 .TP
-.BI "device config apply " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor juniper | \-\-stale [ \-\-check ] [ \-\-confirmed ] [ \-\-max " n " ] [ \-\-pause " seconds " ] [ \-\-hold ] [ \-\-no\-canary ] [ \-\-section " list " ] [ \-\-transport " auto | cli | netconf " ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-server " address " ] [ \-\-source " address " ] [ \-\-exit\-code ] [ \-\-json ] [ \-y ]"
+.BI "device config apply " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor juniper | \-\-stale | \-\-differs | \-\-name " text " | \-\-ip " addr|cidr|text " [ \-\-check ] [ \-\-confirmed ] [ \-\-max " n " ] [ \-\-pause " seconds " ] [ \-\-hold ] [ \-\-no\-canary ] [ \-\-section " list " ] [ \-\-pull ] [ \-\-transport " auto | cli | netconf " ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-server " address " ] [ \-\-source " address " ] [ \-\-exit\-code ] [ \-\-json ] [ \-y ]"
 Write the plan to Junos devices: what
 .B "device config plan"
 would have a person paste, typed by tacctl, under a confirmed commit and
@@ -9620,14 +10108,53 @@ and by what the review shows of each (the same change under one heading,
 every secret elided, a statement whose per\-device value differs printed for
 each device after its name, with what the plan keeps and what it leaves out;
 two devices of one shape whose warnings, sections left out, kept statements
-or not\-found deletes differ are two headings) and ONE question is asked,
-answered by typing the device's name back (one device) or the number of
-devices (several). A device whose plan refuses a section (what makes
+or not\-found deletes differ are two headings). Then each device to apply is
+asked for in turn, in the order of the apply (registry order, at most
+.BR \-\-max ):
+its line (shape and counts), then
+.BR "Type the device name to apply to <name>:" .
+The name typed back approves the device (spaces and tabs around it are
+ignored); anything else (another name, another case, a number, a carriage
+return or any other character, Enter) declines it with no second try, and the
+end of input declines it and every device after it. There is no answer for several devices
+and no default. Every question is answered before the first commit; the
+canary,
+.BR \-\-pause ,
+.B \-\-concurrency
+and
+.B \-\-hold
+run over the approved devices. A declined device is a skipped row
+.RB ( "skipped: not approved (the answer typed is not its name)" ),
+nothing is sent to it, the approved ones are still applied and the run exits
+1; with
+.B \-\-json
+each answer is an object with
+.BR "\(dqphase\(dq:\(dqreview\(dq" ,
+.B "\(dqstatus\(dq"
+.B approved
+or
+.B declined
+and
+.BR "\(dqmode\(dq" ,
+a declined device has only that object (no
+.B "\(dqphase\(dq:\(dqapply\(dq"
+one), and the summary says
+.BR "\(dqstop\(dq:\(dqnot\-approved\(dq" .
+A Ctrl\-C at a question, or after the last answer and before the first
+commit, applies nothing (exit 130): the answers already given stay logged and
+one line,
+.BR "device config apply review user= result=interrupted applied=0 mode=" ,
+with
+.B \-\-json
+an object
+.BR "\(dqphase\(dq:\(dqreview\(dq,\(dqstatus\(dq:\(dqinterrupted\(dq" ,
+says the review was cut short. A device whose plan
+refuses a section (what makes
 .B "device config plan"
 exit 1) is not applied: its row is
-.BR "failed: the plan refuses <section> (<why>)" . It
-needs a terminal; with none the only way through is
-.B "\-\-confirmed \-\-yes".
+.BR "failed: the plan refuses <section> (<why>)" .
+It needs a terminal; with none the only way through is
+.BR "\-\-confirmed \-\-yes" .
 The
 .BR apply :
 each device is committed under
@@ -9734,7 +10261,7 @@ applies only shapes an earlier apply confirmed and skips the others
 .RB ( "unknown shape <hash>: review and apply it by hand first" ),
 and is the one form
 .B \-y
-answers the review for;
+answers the review for (every device's question, with no terminal);
 .B \-y
 without it is refused (exit 2).
 .B \-\-max
@@ -9772,6 +10299,46 @@ limits the sections
 .BR mgmt\-acl ,
 .BR snmp ,
 .BR system ).
+.B \-\-pull
+reads the selected Junos devices first, as
+.B "device config pull"
+does (its lines, records and audit lines; over
+.BR device.config.transport ,
+since
+.B \-\-transport
+is how the apply writes), with the one password of the run; a device whose
+pull fails is a failed row and is not checked, and a pull that stops
+(interrupted, a refused password,
+.BR \-\-max\-failures )
+ends the run with nothing checked. Then
+.B \-\-stale
+and
+.B \-\-differs
+select from the records the pull has just written
+.RB ( "skipped <n> (<names>): pulled, and the fresh pull matches what tacctl renders" ;
+JSON
+.BR left_out.match_after_pull ;
+a device that cannot be compared is
+.BR "could not be compared" ,
+JSON
+.BR left_out.not_compared_after_pull ,
+and is not checked either),
+and the devices left go on to the check:
+.B "\-\-pull \-\-differs"
+applies to the devices that differ now, and with no other selector pulls every
+Junos device you can see (the apply is still capped by
+.B \-\-max
+and reviewed). Without them every device pulled is checked. With
+.B \-\-json
+each pull object carries
+.BR "\(dqphase\(dq:\(dqpull\(dq" ;
+a named Cisco device or WTI unit's refused row comes before them, and a device
+whose pull failed has only its pull object (the summary counts it failed).
+Select the devices of an apply by exact names, a full address or a CIDR:
+.B \-\-name
+and
+.B \-\-ip
+match text.
 .B \-\-json
 prints one object per device and phase, then the summary, and sends the review
 to standard error.
@@ -9804,7 +10371,7 @@ The first Ctrl\-C starts no more devices and lets the running one finish, the
 second cancels: before the commit the candidate is discarded, after it the
 commit is cancelled where the window allows and otherwise left PENDING. Exit
 status: 0 every device applied, was checked or had no change; 1 a device
-failed, was rolled back or is pending, the review was not answered, or devices
+failed, was rolled back or is pending, a device was declined at the review, or devices
 were selected and none was applied or found already applied
 .RB ( "\-\-confirmed \-\-yes"
 that skipped them all:
@@ -9823,14 +10390,21 @@ and their JSON as
 .BR applied .
 Every device is logged
 .RB ( "auth.info device config apply user= device= id= shape= result= duration=" ,
-.B "auth.notice device config apply user= approved= shapes= canary="
-for the answer, the canary being the first device of each shape or
+.B "auth.notice device config apply review user= device= shape= answer=approved|declined mode="
+for each device's answer,
+.B "auth.notice device config apply user= approved= shapes= canary= mode="
+for the approval, the canary being the first device of each shape or
 .B none
 with
 .BR \-\-no\-canary ,
+.B "auth.notice device config apply user= device= id= shape= sections= result= commit= until= mode="
+for each apply
+.RB ( mode=attended
+for the names typed back,
+.B mode=scripted
+for
+.BR "\-\-confirmed \-\-yes" ),
 and
-.B "auth.notice device config apply user= device= id= shape= sections= result= commit= until="
-for each apply and
 .B "auth.notice device config apply settle user= device= id= result="
 for an earlier apply's pending record settled, never a value).
 .\" BEGIN GENERATED: command device config apply
@@ -9851,6 +10425,15 @@ Only that vendor's devices (apply writes to Junos devices only).
 .TP
 \fB\-\-stale\fR
 Only the devices never read, last read in failure, or differing.
+.TP
+\fB\-\-differs\fR
+Only the devices whose last pull differs from what tacctl renders now (from the records; no login).
+.TP
+\fB\-\-name\fR \fI<text>\fR
+Only the devices whose name contains the text (a comma list: any of them).
+.TP
+\fB\-\-ip\fR \fI<addr|cidr|text>\fR
+Only the devices whose address is that address, lies in that prefix or contains the text (a comma list: any of them).
 .TP
 \fB\-\-transport\fR \fIauto|netconf|ssh\fR
 How the check and the apply reach a device: auto (NETCONF where the last read found it answering and the login may commit, else the command line, with the reason), cli, or netconf (never falls back); default device.apply.transport. A change to the NETCONF service is made over the command line.
@@ -9890,6 +10473,9 @@ Start every device of a shape at once, not the first alone.
 .TP
 \fB\-\-section\fR \fI<list>\fR
 Only these sections: aaa, roles, mgmt\-acl, snmp, system.
+.TP
+\fB\-\-pull\fR
+Read the devices first, as 'device config pull' does (over device.config.transport), with the same password; a device whose pull fails is not checked, and \-\-stale and \-\-differs select from the fresh records.
 .TP
 \fB\-\-json\fR
 One object per device and phase, then the summary; the review goes to standard error.
@@ -9945,7 +10531,7 @@ Options:
 .RE
 .\" END GENERATED: command device config shapes
 .TP
-.BI "device config list " "[ \-\-stale ] [ \-\-never ] [ \-\-failed ] [ \-\-differs ] [ \-\-transport netconf|ssh|none ] [ \-\-scope " scope " ] [ \-\-vendor " vendor " ] [ \-\-json ]"
+.BI "device config list " "[ \-\-stale ] [ \-\-never ] [ \-\-failed ] [ \-\-differs ] [ \-\-name " text " ] [ \-\-ip " addr|cidr|text " ] [ \-\-transport netconf|ssh|none ] [ \-\-scope " scope " ] [ \-\-vendor " vendor " ] [ \-\-json ]"
 One row per device (the caller's own scopes below the administrator tier):
 the state
 .RB ( ok ,
@@ -10023,10 +10609,25 @@ and
 .B pull
 together; the state filters add up, and
 .BR \-\-transport ,
-.B \-\-scope
+.BR \-\-scope ,
+.BR \-\-vendor ,
+.B \-\-name
+(the name contains the text) and
+.B \-\-ip
+(an address, a prefix it lies in, or a text it contains; both take a comma
+list) narrow them. The state filters are alternatives here, but
+.BR pull ,
+.BR diff ,
+.B plan
 and
-.B \-\-vendor
-narrow them. A WTI pull that was
+.B apply
+require both
+.B \-\-stale
+and
+.B \-\-differs
+when both are given, so
+.B "list \-\-stale \-\-differs"
+shows more devices than they select. A WTI pull that was
 .B denied
 (its login's WTI level cannot configure it) or
 .B unsupported
@@ -10041,7 +10642,7 @@ Requires: \fBoperator\fR.
 Options:
 .TP
 \fB\-\-stale\fR
-(pull, diff, plan, list) Only the devices never read, last read in failure, or differing.
+(pull, diff, plan, apply, list) Only the devices never read, last read in failure, or differing.
 .TP
 \fB\-\-never\fR
 Only the devices not pulled yet.
@@ -10050,16 +10651,22 @@ Only the devices not pulled yet.
 Only the devices whose last pull failed.
 .TP
 \fB\-\-differs\fR
-Only the devices that differ from what tacctl renders now.
+(pull, diff, plan, apply, list) Only the devices whose last pull differs from what tacctl renders now (from the records; no login).
 .TP
 \fB\-\-transport\fR \fIauto|netconf|ssh\fR
 (pull, diff, plan) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
 .TP
+\fB\-\-name\fR \fI<text>\fR
+(pull, diff, plan, apply, list) Only the devices whose name contains the text (comma list: any of them).
+.TP
+\fB\-\-ip\fR \fI<addr|cidr|text>\fR
+(pull, diff, plan, apply, list) Only the devices whose address is that address, lies in that prefix or contains the text (comma list: any of them).
+.TP
 \fB\-\-scope\fR \fI<scope>\fR
-(pull, diff, plan, list) Only the devices of that scope.
+(pull, diff, plan, apply, list) Only the devices of that scope.
 .TP
 \fB\-\-vendor\fR \fIcisco|juniper|wti\fR
-(pull, diff, plan, list) Only that vendor's devices.
+(pull, diff, plan, apply, list) Only that vendor's devices.
 .TP
 \fB\-\-json\fR
 (pull, diff, plan, list) Print JSON (a pull: one line per device, then the summary).
@@ -11058,8 +11665,14 @@ Syslog (tag
 .BR tacctl\-console ):
 .BI "console start session=" id " user=" user " from=" address " tty=" tty " mode=" interactive|command|batch\fR,
 .BI "console end session=" id " user=" user " reason=" exit|eof|idle|hangup|signal|command|failed " lines=" n " status=" n\fR,
-.BI "console DENY session=" id " user=" user " reason=command first=" word
-(auth.warning),
+.BI "console DENY session=" id " user=" user " reason=command first=" verb|\- " [len=" n ]
+(auth.warning; the word is the first word of the refused string when it is a
+verb of tacctl or one of the console's own words, else
+.B first=\-
+and
+.B len=
+is the length of the string, so a password typed at the prompt is never in the
+log),
 .BI "console system\-shell start" \fR,
 .B end
 .RB ( status= ", " duration= )
@@ -11273,6 +11886,775 @@ An engineer's verbs reach only the devices, hosts and secrets of the scopes
 the engineer is a member of; another scope's device is not found, and a change
 that would touch one is refused. Each read of a secret by an engineer is
 logged to syslog (never the value).
+.SH AUDIT LOG
+Every line tacctl writes to the log goes to syslog through
+.BR logger (1),
+facility
+.BR auth ,
+tag
+.B tacctl
+(the login console's own lines: tag
+.BR tacctl\-console ).
+tacctl keeps no log of its own; where the lines go from there is the site's
+concern.
+.PP
+A command that changes state, or logs in somewhere every time it runs, writes
+two central lines, whatever else it logs:
+.PP
+.nf
+.RS
+cmd start v=1 user=alice uid=1001 origin=sudo tier=superuser tty=pts/3 console=\- cmd="user add" args="dave ops \-\-hash <redacted>" sid=k3x9a0bq
+cmd end v=1 user=alice cmd="user add" result=ok status=0 duration=0.312s snapshot=20261021_093015_412 sid=k3x9a0bq
+.RE
+.fi
+.PP
+so that
+.B "grep 'cmd end'"
+lists every transaction. Every command has a class in a table in the code:
+.TP
+.B action
+It changes state or logs in somewhere every time it runs. The start line is
+written before the command does anything, after the tier gate and the
+preflight; the end line where the exit status is decided.
+.TP
+.B mixed
+It is a read or a write by its later arguments
+.RB ( "scope secret" " shows or sets, " "device port" " <name> shows and"
+.B "device port"
+<name> 2222 sets). The start line is written just before the first thing the
+command changes, so a mixed command that only read writes nothing.
+.TP
+.B read
+No central line: lists, shows, checks, scans, the completion helpers,
+.B hash
+and
+.BR shell ,
+which runs each line as its own tacctl process.
+.PP
+A command that is not in the table is treated as an action, and the test suite
+fails until its row is added. The lines a verb writes of its own
+.RB ( "ssh start" ", " "ssh end" ", the console session, " "breakglass hold" ", "
+.BR "host enroll" ", " "device config apply" ", ...)"
+are kept; the pair is written for those verbs too. The commands of each class
+are:
+.\" BEGIN GENERATED: audit-classes
+.TP
+.B "action"
+_phase, backend disable, backend enable, breakglass hold,
+breakglass release, console install, console remove, device add,
+device enroll, device notice, device remove, device rename,
+device ssh, group add, group edit, group remove, host enroll,
+host forget, host move, host rename, host sync, host unenroll, passwd,
+scope add, scope remove, scope rename, ssh, user add, user disable,
+user enable, user move, user passwd, user remove, user rename
+.TP
+.B "action, auth.notice"
+backup restore, config restore,
+group edit (the field is tier or priv\-lvl), install, log clear,
+store rollback, uninstall, upgrade
+.TP
+.B "mixed"
+config allow, config bcrypt\-cost, config branch, config cisco,
+config deny, config devices, config juniper, config linux,
+config listen, config loglevel, config metrics, config mgmt\-acl,
+config password\-age, config password\-min\-length, config render,
+config secret\-min\-length, config snmp, config validate, config wti,
+console agent\-forwarding, console forwarding, console idle\-timeout,
+console password\-cache, console space\-completion,
+console ssh\-escape, device address, device block, device collect,
+device config, device config\-syntax, device description,
+device hostkey, device hostname, device import, device legacy\-ssh,
+device location, device netconf, device onboard, device port,
+device snmp, device stale\-days, device sync, device vendor,
+group commands, group junos, group preset, group privilege,
+group reset, host default\-method, host provisioner, host target,
+scope aaa\-order, scope auth\-method, scope block, scope breakglass,
+scope default, scope devices, scope exec\-timeout, scope mgmt\-acl,
+scope netconf, scope prefixes, scope protocols, scope radius\-group,
+scope secret, scope snmp, scope staging, scope tacacs\-group,
+scope vendor\-attrs, user scope
+.TP
+.B "mixed, auth.notice"
+config audit\-strict, config sudoers, console system\-shell,
+console tiers, console user, rollback, store import
+.\" END GENERATED: audit-classes
+.PP
+The fields, in the order written:
+.TP
+.B v
+The format version of the central lines
+.RB ( 1 ).
+A collector pins itself to it. The older per\-verb lines carry no
+.BR v .
+.TP
+.BR user ", " uid ", " origin
+Who ran the command:
+.B SUDO_USER
+and
+.BR SUDO_UID ,
+checked against the passwd database before any command runs, with
+.BR origin=sudo .
+A process with no
+.B SUDO_USER
+(a root shell, a script run as root) is
+.BR "user=root uid=0 origin=root" :
+the one case where the log holds no login identity, as sudo's own log holds
+none.
+.TP
+.B tier
+The tier the gate held the caller to
+.RB ( unrestricted
+for root and for a local administrator who is no tacctl user).
+.TP
+.BR tty ", " console
+The terminal the command runs on, and the login\-console session it was typed
+in;
+.B \-
+for none.
+.TP
+.BR cmd ", " args
+The command's words as the tier gate sees them
+.RB ( "user add" ", " "scope secret" ", " "device config" ),
+and the arguments after them, each word quoted and cut at 64 bytes, the whole
+at 512.
+.TP
+.BR result ", " status
+How the command ended and its exit status:
+.B ok
+(0);
+.B failed
+(any status that is not one of the next three);
+.B denied
+(a verb refused the caller);
+.B interrupted
+(130: Ctrl\-C, SIGTERM or a hangup);
+.B aborted
+(status 2, written when tacctl's own code panicked).
+.TP
+.B duration
+Seconds with millisecond precision, from the start line to the end line.
+.TP
+.B snapshot
+The id of the pre\-change snapshot or snapshots the command took, comma\-separated
+when it took more than one
+.RB ( \- 
+when none was taken or the newest was current).
+.TP
+.B reason
+On a
+.B "cmd DENY"
+line:
+.B superuser
+or
+.BR scope .
+.TP
+.B sid
+The session id, last on every line.
+.TP
+.B class
+.B class=unexpected
+on a start line means a command classified as a read reached a write: a fault
+in the class table, never expected.
+.TP
+.B mode
+On the review, approval and apply lines of
+.B "device config apply"
+and on the approval line of
+.BR "device onboard" :
+.B attended
+when the device's name was typed back,
+.B scripted
+when
+.B "\-\-confirmed \-\-yes"
+answered the review.
+.PP
+A value is written as it is when it holds only letters, digits and
+.BR ". _ : / @ + , \-"
+(a comma, so that a list of scopes or snapshot ids stays one word);
+otherwise it is double\-quoted with Go's escapes, so a line is always one line
+and a collector can split on spaces outside quotes. An empty value is
+.BR \- .
+.PP
+Priorities:
+.B auth.info
+for an action;
+.B auth.notice
+for the weighty ones (marked in the list above);
+.B auth.warning
+for every refusal and for an end line whose result is not
+.BR ok .
+.SS Detail lines
+The central pair says who ran which command and how it ended. A verb that
+changes something also writes a line of its own beside it, saying what it
+changed: the object and, for a setting, the value before and after
+.RB ( from= " and " to= ,
+.B \-
+for none, a list comma\-separated). It is written once the change is made, so it
+sits between
+.B "cmd start"
+and
+.BR "cmd end" ;
+except for the verbs named after the list, a change that failed has no detail
+line and the end line says
+.BR result=failed .
+It has the priority of the command's class, ends in
+.BI by= user
+and the
+.BR sid ,
+and holds a name or a count, never a secret, a hash or a password. The events
+and their keys, in the order written:
+.TP
+.B "user add"
+name, group, scopes.
+.TP
+.B "user remove, user disable, user enable"
+name.
+.TP
+.B "user passwd"
+name, source (prompt, hash or generated).
+.TP
+.B "user rename"
+from, to, uid (carried or \-).
+.TP
+.B "user move"
+name, from, to (the groups).
+.TP
+.B "user scope"
+name, op (add, remove or replace), scopes.
+.TP
+.B "group add"
+name, priv\-lvl, tier.
+.TP
+.B "group remove"
+name.
+.TP
+.B "group edit"
+name, key (priv\-lvl, tier, wti\-level or junos\-class), from, to. One line for each setting changed, so a priv\-lvl change that also records or drops the tier writes a tier line too; priv\-lvl and tier at auth.notice.
+.TP
+.B "group commands"
+name, op (default, add, remove or seed), rule, action, count.
+.TP
+.B "group privilege"
+name, op (add, remove or seed), count.
+.TP
+.B "group preset"
+name, preset (roles), changes; one line for each group changed.
+.TP
+.B "config sudoers, config sudoers tiers"
+op (install or remove), file, and group for the first.
+.IP "\fBconsole set\fR"
+key, item, from, to. key is the setting (tiers, user, system\-shell, forwarding, agent\-forwarding, ssh\-escape, password\-cache, idle\-timeout, space\-completion) and item the tier, user or part of it; auth.notice for tiers, user and system\-shell.
+.TP
+.B "backup restore"
+id, pre (the snapshot taken first), keep\-uids, legacy; auth.notice.
+.TP
+.B "store import"
+source, replace, force; auth.notice.
+.TP
+.B "store rollback"
+pre; auth.notice.
+.TP
+.B "install"
+branch; auth.notice.
+.TP
+.B "upgrade"
+from, to (commits), branch; auth.notice.
+.TP
+.B "uninstall"
+backups and logs (kept or removed); auth.notice.
+.TP
+.B "scope add"
+name, prefixes, default.
+.TP
+.B "scope remove"
+name, users.
+.TP
+.B "scope rename"
+from, to, users, hosts.
+.TP
+.B "scope default"
+from, to.
+.TP
+.B "scope prefixes"
+op (add, remove, move or remove\-all), scope, cidr, and to for a move.
+.TP
+.B "scope protocols, scope vendor\-attrs, scope auth\-method, scope aaa\-order, scope exec\-timeout, scope tacacs\-group, scope radius\-group, scope netconf"
+scope, from, to.
+.TP
+.B "scope devices"
+scope, cidr, from, to (the vendor tag).
+.TP
+.B "scope mgmt\-acl"
+scope, op (add, remove, clear, cisco\-name or juniper\-name), value.
+.TP
+.B "scope secret set"
+scope, source (set or generate).
+.TP
+.B "snmp set"
+kind (community, v3\-user, clear, version, port, timeout, clients or contact), and scope or device; from and to for config snmp port and timeout.
+.TP
+.B "secret\-read"
+kind, name. A secret was shown (kind scope, snmp, snmp\-device, snmp\-default, block, block\-adopt, store, config, snapshot or backup); written for every caller, a superuser's too.
+.TP
+.B "secret\-export"
+scope, file. config linux script wrote a file that holds the scope's secret.
+.TP
+.B "config allow, config deny, config mgmt\-acl"
+op (add, remove, clear, cisco\-name or juniper\-name), value.
+.TP
+.B "config password\-age, config bcrypt\-cost, config password\-min\-length, config secret\-min\-length, config loglevel, config metrics, config branch"
+from, to.
+.TP
+.B "config listen"
+backend, listener, from, to.
+.TP
+.B "config devices"
+key, from, to.
+.TP
+.B "config audit\-strict"
+from, to (on or off); auth.notice.
+.TP
+.B "config cisco source\-interface"
+scope, from, to.
+.TP
+.B "config render"
+backends, force.
+.TP
+.B "config linux uid"
+user, uid.
+.TP
+.B "backend enable, backend disable"
+id.
+.TP
+.B "host sync"
+name, target, created, updated, renamed, removed, remove\-home, result, and reason when it failed; one line for each host.
+.TP
+.B "host move"
+scope, moved, failed (a move of every drifted host).
+.TP
+.B "device add"
+name, address, vendor, count.
+.TP
+.B "device remove"
+names (the first 20, then +n), count.
+.TP
+.B "device rename"
+from, to, count, and reason=device\-name when
+.B "device enroll"
+took over the name the device is configured with.
+.TP
+.B "device enroll hostkey, device collect hostkey, device onboard hostkey"
+user (the person, in place of by=), addr, device, alg, fp, result (accepted,
+skipped or refused), source (confirmed or flag); every answer to a host key's question, before the key is
+pinned or used; auth.notice.
+.TP
+.B "device enroll"
+user (in place of by=), addr, device, vendor, source (snmp, given or asked),
+result; one line for each address at the end of the run.
+.TP
+.B "device import"
+source, added, updated, removed, count.
+.IP "\fBdevice set\fR"
+name, field, from, to. field is address, hostname, vendor, port, description, location, legacy\-ssh, config\-syntax, netconf, stale\-days (no name) or notice:<kind>.
+.PP
+The verbs that logged before 0.2.17 keep their lines
+.RB ( "host enroll" ", " "host unenroll" ", " "host rename" ", " "host forget" ", " "host target" ", "
+.BR "breakglass hold" ", " release ", " remove\-record
+and
+.BR hold\-move ", " rollback ", " "device sync" ", " block\-set ", " block\-edit ", " block\-adopt
+and
+.BR block\-remove ", " "scope breakglass" ", " "scope staging" ", " "group reset" ", "
+.BR "device hostkey" ", " "device config forget" ", " "linux engineer\-sudo" ", "
+.B "console provision"
+and
+.BR deprovision )
+and gain
+.B result=ok
+at the end of a change that was made. A change that failed is written too, at
+.BR auth.warning ,
+with
+.B "result=failed reason=word"
+in its place; the word is the class of the error, never its text:
+.B script
+(the client script failed on the host),
+.B store
+(the snapshot or the write of the store, the registry or tacctl.yaml failed),
+.B race
+(another command changed the name or the record meanwhile),
+.B lock
+(another command holds the host),
+.B write
+(a file could not be written),
+.BR ssh " and " sshd
+(the connection or sshd's check failed) and
+.BR interrupted .
+.B "host unenroll"
+also says
+.BR force=yes|no .
+The failed
+.B "breakglass hold"
+line does not repeat the text typed after
+.BR \-\-reason :
+.B reason=
+there is the word.
+.B "device sync"
+gains
+.B names
+(the first 20 devices written, then +n) and
+.BR result .
+.B passwd
+says
+.BR source=self ,
+and the lines that had no actor
+.RB ( "uid\-map renumbered" ", " "uid\-range set" ,
+the two
+.B hostkey\-mismatch
+lines, and
+.BR "console policy ... unusable" )
+end in
+.BI by= user \fR;\fP
+.B "scope staging done"
+stays without an actor, as the sweep that writes it has none.
+.PP
+.B "device config apply"
+writes a review line for each device asked,
+.BR "device config apply review user= device= shape= answer=approved|declined mode=" ,
+then, when any device was approved, the approval line
+.BR "device config apply user= approved=<n> shapes= canary= mode=" ,
+and each applied device's line
+.BR "device config apply user= device= id= shape= sections= result= commit= until= mode=" ,
+at
+.BR auth.notice .
+.B mode
+is
+.B attended
+for the names typed back and
+.B scripted
+for
+.BR "\-\-confirmed \-\-yes" ;
+nothing typed at the review is written. A review cut short by Ctrl\-C writes
+no approval line but
+.BR "device config apply review user= result=interrupted applied=0 mode=" .
+.B "device onboard"
+says
+.B mode=attended
+on its approval line.
+.PP
+.B "device enroll"
+writes a
+.B "device enroll hostkey"
+line for every answer to a host key's question, before the key is pinned or
+used:
+.B result=accepted
+(the name typed back, or
+.BR \-\-host\-key ),
+.B skipped
+(Enter, or the end of input) or
+.B refused
+(an answer that is not the device's name, a name the rules refuse, a
+.B \-\-host\-key
+the device does not offer);
+.B source=confirmed
+for the name typed at the terminal,
+.B flag
+for
+.BR \-\-host\-key .
+.B device=
+is the name shown or given,
+.B \-
+before one is known; what was typed is never written, and a fingerprint is a
+public value. At the end it writes one
+.B "device enroll"
+line per address, whose
+.B source=
+is where the vendor came from and whose
+.B result=
+is how far the address went
+.RB ( refused ", " skipped ", " failed ", " not\-tried ", " registered ,
+.BR registered\-other ", " pull\-failed ", " planned ", " applied
+or
+.BR declined ).
+Between them come the
+.B "device add"
+line of each registration, the pull's and the plan's lines, a
+.B "device rename"
+line with
+.B reason=device\-name
+and the apply's lines with
+.B mode=attended
+when the review is run.
+.B "device collect"
+and
+.B "device onboard"
+ask the same question before their login and write the same line as
+.B "device collect hostkey"
+and
+.BR "device onboard hostkey" ;
+for
+.BR collect ,
+.B device=
+is the SNMP name when it is the answer
+.RB ( \-\-register ),
+on a refusal too, and
+.B \-
+when the answer is the address or the address was skipped.
+.SS Refusals
+The tier gate's refusals keep their words and carry the session id
+.RB ( "tier DENY user=carol tier=readonly cmd=user remove sid=k3x9a0bq" ).
+A verb the gate lets through can still refuse: an engineer naming a scope's
+secret to change, or another scope's device. That is the third central line, at
+.BR auth.warning :
+.PP
+.nf
+.RS
+cmd DENY v=1 user=bob uid=1002 tier=engineer cmd="scope secret" args="lab set <redacted>" reason=superuser sid=k3x9a0bq
+.RE
+.fi
+.PP
+with
+.B reason=superuser
+(the verb is the superuser's) or
+.B reason=scope
+(the thing named is not in the caller's scopes). The message and the exit
+status are the verb's own. If the command had written its start line,
+.B "cmd end"
+follows with
+.BR result=denied .
+A collector matches
+.B DENY
+for both kinds. The gate's own refusal ends the command before it starts, so it
+has no end line.
+.SS Secrets on the command line
+.B args=
+writes
+.B <redacted>
+for the value of a flag that carries a secret or a password hash
+.RB ( \-\-hash
+of
+.B "user add"
+and
+.BR "user passwd" ,
+.B \-\-secret
+of
+.BR "scope add" )
+and for the value in
+.BR "scope secret <scope> set <value>" ;
+the flag
+.B \-\-stdin
+of
+.B "scope secret"
+is not redacted, and the
+.B \-
+of
+.B "\-\-hash \-"
+is.
+A word typed where the command asks for a secret at a prompt or on standard
+input is redacted too (a switch given a value, such as
+.BR \-\-stdin=x ,
+and a word that starts with
+.B \-
+and is no flag of the command included). The actions
+.BR "user add" ,
+.BR "user passwd" ,
+.B "scope add"
+and
+.B passwd
+write the start line before they refuse such a line; the SNMP verbs and
+.B "scope secret"
+are mixed and refuse it without a line, but an engineer's refusal inside the
+verb writes
+.B "cmd DENY"
+with the same
+.BR args= .
+Every word after the arguments of
+.B "user add"
+and
+.BR "user passwd" ,
+of
+.B "scope add"
+and of
+.BR "scope snmp" ", " "device snmp"
+and
+.B "config snmp"
+.RB ( community " and " v3\-user ),
+every word of
+.B passwd
+and
+.BR hash ,
+and every word of
+.B "scope secret"
+but the scope, the sub-command and
+.BR \-\-stdin ,
+and a lone word after it that is no sub-command. A secret typed in the place
+of a name
+.RB ( "user passwd <password>" )
+is logged as the name. Nothing else is redacted: free text such as
+.B "breakglass hold \-\-reason"
+is why a device was taken out of AAA, and it is logged as typed, as are the
+arguments after
+.B \-\-
+of
+.BR ssh .
+Whatever is typed on a command line is also in sudo's own log, which records the
+whole line, and
+.BR ps (1)
+shows it while the command runs; the forms that keep a value off the command
+line are
+.B "scope secret <scope> set"
+(a prompt, or
+.BR \-\-stdin ),
+.B "user add"
+and
+.B "user passwd"
+with
+.B "\-\-hash \-"
+(the hash on standard input), and the SNMP verbs. Communities, SNMPv3 keys and
+passwords are read from a prompt or
+standard input and are never written to a log; the login console's refusal logs
+the first word of a string only when it is a verb.
+.SS Correlating
+Every line of one command, the detail lines of the verb and the tier gate's
+included, ends in the same
+.BI sid= id
+(8 characters of a\-z and 0\-9, made for each run). The
+.B snapshot=
+of the end line names the snapshot taken before the change (snapshots, comma\-separated,
+when the command took more than one)
+.RB ( "backup diff" " shows it against the live state). " "tacctl ssh"
+and the login console keep their own
+.B session=
+beside it. The id is for searching, not a key: two commands may share one, and
+the timestamps tell them apart.
+.PP
+A start line with no end line means the command did not finish: SIGKILL, a
+power loss, a crash of the process. The snapshot named by the command's lines
+holds the state before it, and
+.B "config validate"
+says what the files are now. One
+.B sid=
+holds a whole
+.BR "device enroll" :
+the acceptance of each key, the registration, the pull, the rename, the plan
+and, when the review was run, the apply of each device; the end line names the
+run's one snapshot. An
+.B upgrade
+that replaces tacctl with the new version and runs again ends its first pair at
+the hand-over; the second run writes its own pair, with its own
+.BR sid .
+.SS When logger fails
+A signal that ends a command (Ctrl\-C, SIGTERM, a hangup) does not drop its
+lines. When
+.B logger
+cannot be started (it is in
+.IR util\-linux ;
+.B install
+and
+.B upgrade
+warn when it is missing) or exits with an error (the syslog socket refused),
+the command prints once on standard error
+.B "[WARN] The audit line was not written (logger: reason); the command continues."
+and goes on with its own status; the lines it could not write are lost.
+.SS audit.strict
+With
+.B "audit.strict: true"
+in
+.I tacctl.yaml
+(default
+.BR false ;
+set with
+.BR "config audit-strict on|off" ;
+see
+.BR "CONFIGURATION KEYS" )
+a command that changes state is refused when its
+.B "cmd start"
+line cannot be written, before it changes anything:
+.PP
+.nf
+.RS
+[ERROR] The audit line cannot be written (logger: reason) and audit.strict is set; nothing was changed.
+.RE
+.fi
+.PP
+and the status is 1. This holds for an action command and for a mixed command
+at the first thing it would change; a command that only reads runs as before.
+The warning above is not printed beside the refusal. An end line that cannot be
+written is that warning and nothing more: the command has already run. The
+refusal comes before the first write, which for a few commands is after a
+prompt or a read (\fBdevice collect\fR: after its first login;
+\fBdevice config apply\fR: after the choice of devices and the password
+prompt); \fBdevice config apply \-\-check\fR writes the central pair too.
+The acceptance of a host key (\fBdevice enroll\fR, \fBdevice collect\fR,
+\fBdevice onboard\fR) writes its \fBhostkey\fR line before the key is
+used; a line that cannot be written refuses that device (\fBonboard\fR: the
+run) before its key is pinned or anything is sent to it.
+.PP
+A command that shows a secret writes its
+.B secret-read
+line before it prints anything; when that line cannot be written the command
+is refused, whatever the caller's tier, before any secret is printed:
+.PP
+.nf
+.RS
+[ERROR] The audit line cannot be written (logger: reason) and audit.strict is set; nothing was shown.
+.RE
+.fi
+.PP
+and the status is 1. These are the commands that show a secret
+(\fBscope secret show\fR, \fBconfig cisco\fR, \fBjuniper\fR and \fBwti\fR,
+\fBdevice config show\fR, \fBdevice config plan\fR unless
+\fB\-\-no\-secrets\fR, the \fB\-\-reveal\fR of \fBscope snmp\fR,
+\fBdevice snmp\fR and \fBconfig snmp show\fR, \fBscope block\fR and
+\fBdevice block show \-\-reveal\fR, their \fBedit\fR and \fBadopt\fR,
+\fBstore show\fR, \fBconfig dump\fR, \fBbackup diff\fR, and the diff of
+\fBbackup restore\fR and \fBconfig restore\fR).
+.B "config linux script"
+writes its
+.B secret-export
+line before the script, which holds the scope's secret, and is refused the
+same way before the file is written. The \fBdevice config\fR verbs that build
+a device's expected configuration only to compare it or with the secrets
+elided (\fBpull\fR, \fBdiff\fR, \fBapply\fR, \fBlist\fR,
+\fBplan \-\-no\-secrets\fR; \fBdevice collect\fR and \fBonboard\fR too)
+write a
+.B secret-read
+line for the secrets it carries but are not refused for it: a line that
+cannot be written is the warning. Those that change something are refused by
+their
+.B "cmd start"
+line as above;
+.B "scope secret generate"
+writes its start line before it prints the value it generated.
+.PP
+.B "config audit\-strict"
+is never refused by
+.BR audit.strict :
+when
+.B logger
+is down and every change is refused,
+.B "tacctl config audit\-strict off"
+turns the setting off (with the warning that its own lines were not written).
+.B "rollback 0.2.16 \-\-apply"
+removes the key, which 0.2.16 refuses, and its dry run warns when it is on:
+0.2.16 runs a command whose audit line cannot be written.
+.SS Forwarding
+The facility is
+.BR auth ;
+the program names are
+.B tacctl
+and
+.BR tacctl\-console .
+A collector matches the program name. With rsyslog, in
+.IR /etc/rsyslog.d/tacctl.conf :
+.PP
+.nf
+.RS
+if $programname == 'tacctl' or $programname == 'tacctl\-console' then @@loghost.example.net:514
+.RE
+.fi
+.PP
+With journald,
+.B "journalctl \-t tacctl \-t tacctl\-console"
+reads them. Keep the log where an operator who runs tacctl cannot rewrite it.
 .SH CONVENTIONS
 The following patterns apply uniformly across subcommand families.
 .TP
@@ -11309,6 +12691,7 @@ Scalar getter/setters
 .BR "config bcrypt-cost" ,
 .BR "config password-min-length" ,
 .BR "config secret-min-length" ,
+.BR "config audit-strict" ,
 .BR "config branch" ,
 .BR "scope default" )
 print the current value when called with no arguments.
@@ -11484,6 +12867,12 @@ take a single argument;
 and
 .I -y
 take none. Required positional arguments come before flags.
+.TP
+.B Audit lines
+Every state\-changing command writes lines to syslog, ending in a session id
+.BI sid= id
+that ties the lines of a run together; see
+.BR "AUDIT LOG" .
 .SH BACKENDS
 .TP
 .B tacacs
@@ -11777,6 +13166,21 @@ privilege 15 with their own password. A device with no enable secret has no
 .B enable
 once the list is gone: set one first (Step 0).
 .PP
+Going back to 0.2.16 is
+.B "tacctl rollback 0.2.16"
+(a dry run), then
+.B "tacctl rollback 0.2.16 \-\-apply"
+and
+.BR "tacctl upgrade \-\-branch 0.2.16" ;
+it removes
+.BR audit.strict ,
+which a 0.2.16 binary refuses. Until 0.2.16 is installed, do not add the
+.B audit
+setting to
+.I tacctl.yaml
+again; run the rollback again if it was. The snapshot it takes holds the 0.2.17
+form and is restored with 0.2.17.
+.PP
 Going back to 0.2.9 is
 .B "tacctl rollback 0.2.9"
 (a dry run), then
@@ -11839,6 +13243,10 @@ and check a hand-edited file with
 A name in angle brackets stands for a group, a scope, a backend or a listener;
 the keys of a family exist once for each.
 .\" BEGIN GENERATED: config-keys
+.TP
+.B audit.strict
+true or false. Default: false.
+Whether a command that changes state, or shows a secret, is refused when its audit line cannot be written: with true, an action or mixed command whose cmd start line logger did not write exits 1 before it changes anything, and a command whose secret-read line logger did not write exits 1 before it shows the secret (the AUDIT LOG section has the messages); any other read runs, and an end line that cannot be written is the warning. config audit-strict is never refused by it. Set with \fBtacctl config audit\-strict\fR.
 .TP
 .B backends.enabled
 non\-empty list of backends (tacacs, radius). Default: [tacacs].
@@ -12237,6 +13645,25 @@ and
 end with the status of the ssh they run, and
 .B "tacctl shell \-c"
 with the status of the line it ran.
+.PP
+A command that changes state writes its status to the audit log as the
+.B status=
+of its
+.B "cmd end"
+line, with a
+.B result=
+word (see
+.BR "AUDIT LOG" ):
+.B ok
+for 0,
+.B interrupted
+for 130,
+.B denied
+when a verb refused the caller (the status is the verb's own, 1),
+.B aborted
+(status 2) when tacctl itself panicked, and
+.B failed
+for any other status.
 .SH ENVIRONMENT
 tacctl reads the variables below. Everything else it needs is a fixed path
 (see

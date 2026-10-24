@@ -732,3 +732,42 @@ func TestStoreNamesListsRecordsAndFiles(t *testing.T) {
 		t.Errorf("Names = %v %v, want %v", got, err, want)
 	}
 }
+
+// Every writer holds the store's lock, so Touch (the audit writer's mark that
+// the command changes state) is called when it is taken.
+func TestLockTouches(t *testing.T) {
+	s := newStore(t)
+	n := 0
+	s.Touch = func() { n++ }
+	unlock, err := s.Lock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+	if err := s.SaveBackout("sw1", StoredBackout{Pulled: at, Address: "192.0.2.10", Vendor: "juniper", Sections: []string{SectionAAA}, Text: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Errorf("Touch called %d times, want 2 (Lock, SaveBackout)", n)
+	}
+}
+
+// A write that is not a good pull keeps the stored sections' vendor (D260).
+func TestSetVendorUnlessPulled(t *testing.T) {
+	at := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	rec := Record{Vendor: "juniper", Pulled: at}
+	rec.SetVendorUnlessPulled("cisco")
+	if rec.Vendor != "juniper" || !VendorChanged(&rec, "cisco") || VendorChanged(&rec, "juniper") {
+		t.Errorf("pulled record: %+v", rec)
+	}
+	fresh := Record{}
+	fresh.SetVendorUnlessPulled("cisco")
+	if fresh.Vendor != "cisco" || VendorChanged(&fresh, "juniper") {
+		t.Errorf("record without a pull: %+v", fresh)
+	}
+	old := Record{Pulled: at}
+	old.SetVendorUnlessPulled("cisco")
+	if old.Vendor != "cisco" {
+		t.Errorf("record without a vendor: %+v", old)
+	}
+}

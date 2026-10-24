@@ -32,6 +32,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/cidr"
 	"github.com/rett/tacctl/internal/conf"
@@ -765,7 +766,7 @@ func (inv *invocation) breakglassHold(args []string) error {
 		return inv.usageErr(err.Error(), breakglassUsageHold)
 	}
 	if f := inv.callerScopes(); f.restricted {
-		return inv.usageErr("'tacctl breakglass hold' is the superuser's. Nothing was changed.")
+		return inv.deniedUsage(reasonSuperuser, "'tacctl breakglass hold' is the superuser's. Nothing was changed.")
 	}
 	reqs, problem := splitDeviceArgs(p.Args, true)
 	if problem != "" {
@@ -960,6 +961,9 @@ func (inv *invocation) breakglassHold(args []string) error {
 	})
 	inv.loaded = false
 	if err != nil {
+		for _, c := range cands {
+			inv.holdFailed(c, failReason(err, "store"))
+		}
 		return err
 	}
 	var notHeld []string
@@ -969,6 +973,11 @@ func (inv *invocation) breakglassHold(args []string) error {
 	for _, sk := range skipped {
 		var hn *heldNowError
 		if errors.As(sk.Err, &hn) {
+			for _, c := range cands {
+				if c.e.Name == sk.Hold.Device {
+					inv.holdFailed(c, "race")
+				}
+			}
 			notHeld = append(notHeld, sk.Hold.Device+": break-glass is already held on '"+hn.hold.Device+"' ("+hn.hold.Address+") "+inv.holdSummary(hn.hold)+": another hold was made while the name was typed")
 		}
 	}
@@ -998,7 +1007,7 @@ func (inv *invocation) breakglassHold(args []string) error {
 	for i, c := range done {
 		h := written[slices.IndexFunc(written, func(h conf.Hold) bool { return h.Device == c.e.Name })]
 		addrs[i], doneNames[i] = c.e.Address, c.e.Name
-		inv.app.Logger(inv.ctx, "auth.info", "breakglass hold "+c.logKey()+"="+c.e.Name+" addr="+c.e.Address+" reason="+strconv.Quote(c.req.Reason)+" by="+h.By)
+		inv.app.Audit().Raw("auth.info", "breakglass hold "+c.logKey()+"="+c.e.Name+" addr="+c.e.Address+" reason="+strconv.Quote(c.req.Reason)+" by="+h.By+" result=ok")
 	}
 	releaseCmd := "tacctl breakglass release " + strings.Join(doneNames, ",")
 
@@ -1212,7 +1221,7 @@ func (inv *invocation) breakglassRelease(args []string) error {
 		return inv.usageErr(err.Error(), breakglassUsageRelease)
 	}
 	if f := inv.callerScopes(); f.restricted {
-		return inv.usageErr("'tacctl breakglass release' is the superuser's. Nothing was changed.")
+		return inv.deniedUsage(reasonSuperuser, "'tacctl breakglass release' is the superuser's. Nothing was changed.")
 	}
 	reqs, problem := splitDeviceArgs(p.Args, false)
 	if problem != "" {
@@ -1279,6 +1288,12 @@ func (inv *invocation) breakglassRelease(args []string) error {
 	})
 	inv.loaded = false
 	if err != nil {
+		for _, h := range holds {
+			inv.releaseFailed("breakglass release "+holdKey(isHostHold(h))+"="+h.Device+" addr="+h.Address, failReason(err, "store"))
+		}
+		for _, d := range unusable {
+			inv.releaseFailed("breakglass remove-record device="+d.Device, failReason(err, "store"))
+		}
 		return err
 	}
 	inv.echo("")
@@ -1293,14 +1308,14 @@ func (inv *invocation) breakglassRelease(args []string) error {
 			key = "host"
 			heldHosts = append(heldHosts, h.Device)
 		}
-		inv.app.Logger(inv.ctx, "auth.info", "breakglass release "+key+"="+h.Device+" addr="+h.Address+" held="+held+" by="+inv.sudoUser())
+		inv.app.Audit().Raw("auth.info", "breakglass release "+key+"="+h.Device+" addr="+h.Address+" held="+held+" by="+inv.sudoUser()+" result=ok")
 		inv.echo(ui.Green + "Break-glass RELEASED" + ui.NC + " on " + h.Device + " (" + h.Address + "): held " + ages[i] + " by " + h.By + " (" + h.Reason + ").")
 		if v := inv.registeredVendor(h.Device, h.Address); v == "cisco" || v == "juniper" || v == "wti" {
 			known = append(known, h.Device)
 		}
 	}
 	for _, d := range unusable {
-		inv.app.Logger(inv.ctx, "auth.info", "breakglass remove-record device="+d.Device+" by="+inv.sudoUser())
+		inv.app.Audit().Raw("auth.info", "breakglass remove-record device="+d.Device+" by="+inv.sudoUser()+" result=ok")
 		inv.echo(ui.Green + "Break-glass record REMOVED" + ui.NC + " for " + d.Device + ": the entry " + d.Defect + "; the rendering did not change.")
 	}
 	relNouns := "devices"
@@ -1342,6 +1357,26 @@ func (inv *invocation) breakglassRelease(args []string) error {
 	return nil
 }
 
+// holdKey is the key a release line names its subject by.
+func holdKey(isHost bool) string {
+	if isHost {
+		return "host"
+	}
+	return "device"
+}
+
+// releaseFailed writes the failed line of a release or a record removal:
+// subject is the line up to its addr=, as the success line has it.
+func (inv *invocation) releaseFailed(subject, reason string) {
+	inv.verbResult(audit.Info, subject+" by="+inv.sudoUser(), reason)
+}
+
+// holdFailed writes the failed line of a hold that was not made. The reason
+// the operator typed is not repeated: reason= carries the word.
+func (inv *invocation) holdFailed(c holdCandidate, reason string) {
+	inv.verbResult(audit.Info, "breakglass hold "+c.logKey()+"="+c.e.Name+" addr="+c.e.Address+" by="+inv.sudoUser(), reason)
+}
+
 // breakglassReleaseOne is the release of one name.
 func (inv *invocation) breakglassReleaseOne(name string) error {
 	h, ok := inv.holdNamed(name)
@@ -1372,6 +1407,7 @@ func (inv *invocation) breakglassReleaseOne(name string) error {
 	})
 	inv.loaded = false
 	if err != nil {
+		inv.releaseFailed("breakglass release "+holdKey(isHost)+"="+h.Device+" addr="+h.Address, failReason(err, "store"))
 		return err
 	}
 	held := age
@@ -1382,7 +1418,7 @@ func (inv *invocation) breakglassReleaseOne(name string) error {
 	if isHost {
 		key = "host"
 	}
-	inv.app.Logger(inv.ctx, "auth.info", "breakglass release "+key+"="+h.Device+" addr="+h.Address+" held="+held+" by="+inv.sudoUser())
+	inv.app.Audit().Raw("auth.info", "breakglass release "+key+"="+h.Device+" addr="+h.Address+" held="+held+" by="+inv.sudoUser()+" result=ok")
 
 	inv.echo("")
 	// echo, not echoE: the reason is free text and a backslash in it is a
@@ -1412,10 +1448,11 @@ func (inv *invocation) releaseUnusable(d conf.HoldRecord) error {
 	if _, err := inv.app.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, func() error {
 		return inv.app.Conf().UnsetHold(d.Device)
 	}); err != nil {
+		inv.releaseFailed("breakglass remove-record device="+d.Device, failReason(err, "store"))
 		return err
 	}
 	inv.loaded = false
-	inv.app.Logger(inv.ctx, "auth.info", "breakglass remove-record device="+d.Device+" by="+inv.sudoUser())
+	inv.app.Audit().Raw("auth.info", "breakglass remove-record device="+d.Device+" by="+inv.sudoUser()+" result=ok")
 	inv.echo("")
 	inv.echo(ui.Green + "Break-glass record REMOVED" + ui.NC + " for " + d.Device + ": the entry " + d.Defect + "; the rendering did not change.")
 	inv.echo("  " + inv.heldNow("Still held: "))
@@ -1666,7 +1703,7 @@ func (inv *invocation) holdMove(f *devreg.File, res *devreg.Resolver, d *devreg.
 		return inv.usageErr("Break-glass is not held on '" + name + "'. Nothing was changed.")
 	}
 	if inv.callerScopes().restricted {
-		return inv.usageErr("break-glass is held on " + name + ": moving its address moves the hold, which is the superuser's. Nothing was changed.")
+		return inv.deniedUsage(reasonSuperuser, "break-glass is held on "+name+": moving its address moves the hold, which is the superuser's. Nothing was changed.")
 	}
 	// What a new hold at newAddr would be refused for.
 	if _, msg := inv.holdAddressBlock(newAddr, f, res.Hosts, ""); msg != "" {
@@ -1757,9 +1794,10 @@ func (inv *invocation) holdMove(f *devreg.File, res *devreg.Resolver, d *devreg.
 				a.Out.Error("The device registry could not be put back: '" + name + "' is registered at " + newAddr + " and the hold is at " + oldAddr + "; put them together with: tacctl device address " + name + " " + oldAddr)
 			}
 		}
+		inv.verbResult(audit.Info, "breakglass hold-move device="+name+" from="+oldAddr+" to="+newAddr+" by="+inv.sudoUser(), failReason(err, "store"))
 		return err
 	}
-	a.Logger(inv.ctx, "auth.info", "breakglass hold-move device="+name+" from="+oldAddr+" to="+newAddr+" by="+inv.sudoUser())
+	inv.verbResult(audit.Info, "breakglass hold-move device="+name+" from="+oldAddr+" to="+newAddr+" by="+inv.sudoUser(), "")
 
 	a.Out.Info("Device '" + name + "' address set to " + newAddr + ".")
 	if len(oldKeys) > 0 {

@@ -177,6 +177,10 @@ func TestScopeWrites(t *testing.T) {
 		{"secret", []string{"lab", "set", "x"}, true},
 		{"secret", []string{"lab", "generate"}, true},
 		{"secret", []string{"lab", "show"}, false},
+		{"secret", []string{"lab", "set", "--stdin"}, true},
+		{"secret", []string{"lab", "--stdin", "set"}, true},
+		{"secret", []string{"lab", "--stdin"}, false},
+		{"secret", []string{"lab", "--stdin", "show"}, false},
 		{"mgmt-acl", []string{"lab", "add", "10.0.0.0/8"}, true},
 		{"mgmt-acl", []string{"lab", "list"}, false},
 		{"mgmt-acl", []string{"lab", "cisco-name"}, false},
@@ -221,5 +225,25 @@ func TestScopeChangeNudgesWhenAStoredPullWouldChange(t *testing.T) {
 	out = b.run("scope", "mgmt-acl", scope, "list")
 	if b.sb.code != 0 || strings.Contains(out, "would change") {
 		t.Errorf("read: %d %q", b.sb.code, out)
+	}
+}
+
+// 'scope secret set --stdin' says so as 'set <value>' does, whichever side of
+// the sub-command the flag stands on.
+func TestScopeSecretStdinNudges(t *testing.T) {
+	b := planBoxJunos(t)
+	want := "The configuration of devices in scope lab would change: tacctl device config apply --scope lab --check"
+	if out := b.run("device", "config", "pull", "lab-j"); b.sb.code != 0 {
+		t.Fatalf("pull: %d %s %s", b.sb.code, out, b.sb.stderr())
+	}
+	for i, args := range [][]string{
+		{"scope", "secret", "lab", "set", "--stdin"},
+		{"scope", "secret", "lab", "--stdin", "set"},
+	} {
+		in := "fake-nudge-secret-" + strings.Repeat("x", i+1) + "-0123456789\n"
+		out := plain(b.sb.cfgRun(in, args, route, "SUDO_USER=alice"))
+		if b.sb.code != 0 || strings.Count(out, "would change") != 1 || !strings.Contains(out, want+"\n") {
+			t.Errorf("%v: %d %q", args, b.sb.code, out)
+		}
 	}
 }

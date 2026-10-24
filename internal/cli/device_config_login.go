@@ -124,7 +124,7 @@ func (inv *invocation) localLoginOf(p Parsed, verb string, sel selection, pull b
 	case !pull:
 		return nil, inv.argErr("--login is the account a read logs in as: give --pull with it.", usage)
 	case sel.all || sel.stale || sel.scope != "" || sel.vendor != "" || len(sel.names) != 1:
-		return nil, inv.argErr("--login logs in to one device as its local account: name one device (not --all, --scope, --vendor, --stale or a list).", usage)
+		return nil, inv.argErr("--login logs in to one device as its local account: name one device (not --all, a selector such as --scope, --vendor, --stale, --differs, --name or --ip, or a list).", usage)
 	case acct == "root" && p.Value("--transport") == transportNetconf:
 		return nil, inv.argErr("--login root reads over the ssh command line (root's shell is a csh and the CLI is started by a wrapper): not with --transport netconf.", usage)
 	}

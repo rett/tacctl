@@ -104,7 +104,7 @@ nothing_secret() {
 @test "collect: without a terminal it needs --host-key, one address, and -y for --register" {
     collect "$ADDR"
     assert_failure 2
-    assert_output --partial "No terminal to answer the identity question on"
+    assert_output --partial "No terminal to answer the host-key question on"
     collect "$ADDR" 192.168.1.32 --host-key "$FP"
     assert_failure 2
     assert_output --partial "--host-key names the key of ONE device"
@@ -134,6 +134,8 @@ nothing_secret() {
     unregistered
     [[ ! -e "${TACCTL_VAR_LIB}/devices-config.json" ]] || [[ -z "$(record example-sw5 result)" ]]
     stub_called "logger -t tacctl -p auth.info device collect user=alice addr=${ADDR} login=own result=collected"
+    grep -qF "logger -t tacctl -p auth.notice device collect hostkey user=alice addr=${ADDR} device=- alg=" "$CALLS_LOG"
+    grep -qF "fp=${FP} result=accepted source=flag sid=" "$CALLS_LOG"
     nothing_secret
 }
 
@@ -173,23 +175,38 @@ assert d["add"].startswith("tacctl device add example-sw5 "), d
     nothing_secret
 }
 
-@test "collect --login: a local account's one-shot password; the record says local" {
-    tcollect 'y\ny\n' "$ADDR" --login admin --register
+@test "collect --login: the key accepted by the address typed; a local account's one-shot password; the record says local" {
+    tcollect "${ADDR}\ny\n" "$ADDR" --login admin --register
     [[ "$status" -eq 0 ]]
-    assert_output --partial "Trust these keys and send the local password of 'admin' to ${ADDR}? [y/N]"
-    assert_output --partial "Register 1 device(s), pinning the host keys shown: example-sw5 (${ADDR})? [y/N]"
+    assert_output --partial "Will pin:  "
+    assert_output --partial "Compare the key with the console of ${ADDR}. Type the address (${ADDR}) to accept it and send it the local password of 'admin', or press Enter to skip the address:"
+    assert_output --partial "Register 1 device(s), pinning the host key accepted for each: example-sw5 (${ADDR})? [y/N]"
     assert_output --partial "Device 'example-sw5' registered: ${ADDR}, juniper."
+    assert_output --partial "Host key pinned (the key you accepted):"
+    grep -qF "device collect hostkey user=alice addr=${ADDR} device=- alg=" "$CALLS_LOG"
+    grep -qF "fp=${FP} result=accepted source=confirmed sid=" "$CALLS_LOG"
+    # the acceptance's line is written before the registration's
+    [[ $(grep -nF "device collect hostkey " "$CALLS_LOG" | head -1 | cut -d: -f1) -lt $(grep -nF "device add name=example-sw5 " "$CALLS_LOG" | head -1 | cut -d: -f1) ]]
     [[ "$(record example-sw5 login)" == local:admin ]]
     [[ "$(record example-sw5 user_pulled)" == "" || "$(record example-sw5 user_pulled)" == False ]]
     stub_called "device collect user=alice addr=${ADDR} login=local:admin result=registered device=example-sw5"
     nothing_secret
 }
 
-@test "collect: a declined question sends nothing" {
-    tcollect 'n\n' "$ADDR"
+@test "collect: Enter or a wrong answer at the key's question sends nothing" {
+    tcollect '\n' "$ADDR"
     [[ "$status" -eq 1 ]]
-    assert_output --partial "Not trusted. Nothing was sent."
+    assert_output --regexp "${ADDR} +- +- +- +- +- +- +- +- +- +skipped"
+    assert_output --partial "${ADDR}: not accepted; nothing was sent"
+    grep -qF "device collect hostkey user=alice addr=${ADDR} device=- alg=" "$CALLS_LOG"
+    grep -qF "result=skipped source=confirmed" "$CALLS_LOG"
+    tcollect 'y\n' "$ADDR"
+    [[ "$status" -eq 1 ]]
+    assert_output --regexp "${ADDR} +- +- +- +- +- +- +- +- +- +refused"
+    assert_output --partial "${ADDR}: the answer typed is not the device's address; nothing was sent"
+    grep -qF "result=refused source=confirmed" "$CALLS_LOG"
     unregistered
+    nothing_secret
 }
 
 @test "collect: a refused password is the one attempt and nothing is registered" {
@@ -251,8 +268,8 @@ assert d["add"].startswith("tacctl device add example-sw5 "), d
     chmod 600 "${TACCTL_VAR_LIB}/devices-seen.json"
     collect --discovered
     assert_failure 2
-    assert_output --partial "No terminal to answer the identity question on"
-    tcollect 'y\n' --discovered
+    assert_output --partial "No terminal to answer the host-key question on"
+    tcollect "${ADDR}\n" --discovered
     [[ "$status" -eq 0 ]]
     assert_output --regexp "${ADDR} +example-sw5 +ex4300-48mp"
     unregistered

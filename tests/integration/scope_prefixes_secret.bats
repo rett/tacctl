@@ -259,6 +259,37 @@ setup() {
     assert_failure
 }
 
+@test "scopes secret set --stdin: reads the secret from standard input" {
+    run "$TACCTL_BIN_SCRIPT" scope secret prod set --stdin <<< "STDIN-prod-secret-0123456789"
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" scope secret prod show
+    assert_output --partial "STDIN-prod-secret-0123456789"
+}
+
+@test "scopes secret set --stdin: a CR LF line end is not part of the secret" {
+    run "$TACCTL_BIN_SCRIPT" scope secret prod set --stdin <<< $'CRLF-prod-secret-0123456789\r'
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" scope secret prod show
+    assert_output --partial "Length: 27 chars"
+}
+
+@test "scopes secret set --stdin: the checks apply to the value read" {
+    run "$TACCTL_BIN_SCRIPT" scope secret prod set --stdin <<< "short"
+    assert_failure
+    assert_output --partial "minimum is"
+    run "$TACCTL_BIN_SCRIPT" scope secret prod set --stdin <<< "aaaaaaaaaaaaaaaaaaaa"
+    assert_failure
+    assert_output --partial "single-character-class"
+}
+
+@test "scopes secret set: no value and no terminal is a usage error that changes nothing" {
+    run "$TACCTL_BIN_SCRIPT" scope secret prod set < /dev/null
+    assert_failure
+    assert_output --partial "No terminal to ask for the shared secret on"
+    run "$TACCTL_BIN_SCRIPT" scope secret prod show
+    assert_output --partial "prod-secret-1234567890abcdef"
+}
+
 # --- scopes secret generate --------------------------------------------------
 
 # 24 random bytes: a fresh 32-character base64 value, printed once and

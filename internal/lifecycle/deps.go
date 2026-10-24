@@ -36,6 +36,12 @@ var (
 // error (printed; ErrFailed): the command stops.
 func (h *Host) EnsureDependencies(ctx context.Context) error {
 	out := h.Out
+	// logger writes every audit line (internal/audit); util-linux provides
+	// it on every supported distribution, so a machine without it is a
+	// packaging fault, told here and not refused.
+	if !h.has("logger") {
+		out.Warn("logger (package util-linux) is not installed: tacctl's audit lines cannot be written until it is.")
+	}
 	if !h.has("apt-get") || !h.has("dpkg-query") {
 		out.Warn("Not a Debian/Ubuntu system; make sure the equivalents of these are installed:")
 		out.Warn("  " + strings.Join(DepsCore, " ") + " " + strings.Join(DepsLinuxHosts, " "))

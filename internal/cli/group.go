@@ -254,6 +254,7 @@ func (inv *invocation) groupAdd(args []string) error {
 		a.Out.Warn("tacctl.yaml still held " + strings.Join(leftover, ", ") + " settings of an earlier group '" + group +
 			"'; they were cleared, so the new group starts from its priv-lvl band" + clearedFlags(tierV, wtiV) + ".")
 	}
+	inv.detail("group add", kvp("name", group), kvp("priv-lvl", privlvl), kvp("tier", tierV))
 	a.Out.Info("Group '" + group + "' added (Cisco priv-lvl " + privlvl + ", Juniper " + class + ").")
 	if recorded {
 		a.Out.Info("tacctl tier: superuser (recorded, as every group at priv-lvl 15 has one; change it with: tacctl group edit " + group + " tier <tier>).")
@@ -444,6 +445,7 @@ func (inv *invocation) groupRemove(args []string) error {
 	if err != nil {
 		return err
 	}
+	inv.detail("group remove", kvp("name", group))
 	a.Out.Info("Group '" + group + "' removed.")
 	inv.echo("")
 	// Only a group without members can be removed, so no tier falls; the
@@ -486,13 +488,16 @@ func (inv *invocation) groupEdit(args []string) error {
 			return err
 		}
 		lvl, _ := strconv.Atoi(value)
-		var tierNote string
+		var tierNote, tierTo string
 		var tierWrite func() error
-		switch cur := policy.GroupTier(a.Conf(), group); {
+		curTier := policy.GroupTier(a.Conf(), group)
+		switch cur := curTier; {
 		case cur == "" && policy.NeedsTier(group, &lvl):
+			tierTo = "superuser"
 			tierNote = "tacctl tier: superuser (recorded, as every group at priv-lvl 15 has one; change it with: tacctl group edit " + group + " tier <tier>)."
 			tierWrite = func() error { return policy.WriteGroupTier(a.Conf(), group, "superuser") }
 		case cur == "superuser" && lvl < policy.SuperuserBand && group != "superuser" && privOf(m.Group(group)) >= policy.SuperuserBand:
+			tierTo = "auto"
 			tierNote = "tacctl tier: automatic again (the superuser setting recorded the priv-lvl band; priv-lvl " + value + " → " + string(tier.ForPrivLvl(value)) + ")."
 			tierWrite = func() error { return policy.WriteGroupTier(a.Conf(), group, "auto") }
 		}
@@ -509,6 +514,10 @@ func (inv *invocation) groupEdit(args []string) error {
 		if err != nil {
 			return err
 		}
+		inv.detail("group edit", kvp("name", group), kvp("key", "priv-lvl"), kvp("from", strconv.Itoa(privOf(m.Group(group)))), kvp("to", value))
+		if tierWrite != nil {
+			inv.detail("group edit", kvp("name", group), kvp("key", "tier"), kvp("from", settingWord(curTier)), kvp("to", tierTo))
+		}
 		a.Out.Info("Group '" + group + "' Cisco priv-lvl changed to " + value + ".")
 		if tierNote != "" {
 			a.Out.Info(tierNote)
@@ -522,9 +531,16 @@ func (inv *invocation) groupEdit(args []string) error {
 		if err := names.ValidateClassName(value); err != nil {
 			return inv.validated(err)
 		}
+		oldClass := ""
+		if m, err := inv.model(); err == nil {
+			if g := m.Group(group); g != nil {
+				oldClass = g.JuniperClass
+			}
+		}
 		if err := inv.applyStore(func(s *store.Store) error { return s.GroupSet(group, "juniper_class="+value) }); err != nil {
 			return err
 		}
+		inv.detail("group edit", kvp("name", group), kvp("key", "junos-class"), kvp("from", oldClass), kvp("to", value))
 		a.Out.Info("Group '" + group + "' Juniper class changed to " + value + ".")
 		a.Out.Warn("On Juniper devices: set system login user " + value + " class <junos-class>")
 	case "wti-level", "tier":
@@ -656,6 +672,7 @@ func (inv *invocation) groupCommands(args []string) error {
 		}); err != nil {
 			return err
 		}
+		inv.detail("group commands", kvp("name", group), kvp("op", "default"), kvp("action", action), kvp("count", "1"))
 		a.Out.Info("Group '" + group + "' default action set to " + action + ".")
 		inv.echo("")
 	case "add":
@@ -754,6 +771,7 @@ func (inv *invocation) groupCommandsRemove(group string, args []string) error {
 	}); err != nil {
 		return err
 	}
+	inv.detail("group commands", kvp("name", group), kvp("op", "remove"), kvp("rule", name), kvp("count", strconv.Itoa(len(gone))))
 	for _, r := range gone {
 		// Info, not InfoE: a match such as a\x2cb is printed as given.
 		a.Out.Info("Removed rule #" + strconv.Itoa(r.Pos) + " '" + name + "' (" + policy.Field(r.Line, 2) +
@@ -855,6 +873,7 @@ func (inv *invocation) groupCommandsAdd(group string, args []string) error {
 	}); err != nil {
 		return err
 	}
+	inv.detail("group commands", kvp("name", group), kvp("op", "add"), kvp("rule", name), kvp("count", "1"))
 	a.Out.InfoE("Added rule '" + name + "' (action=" + action + ", match=[" + matches + "]) to group '" + group + "'.")
 	// The mistakes tacquito does not report: a prefix form that matches the
 	// exact arguments only, a rule an earlier one makes unreachable.
@@ -932,6 +951,9 @@ func (inv *invocation) groupCommandsSeed(args []string) error {
 		return nil
 	}); err != nil {
 		return err
+	}
+	for _, g := range touched {
+		inv.detail("group commands", kvp("name", g), kvp("op", "seed"), kvp("count", strconv.Itoa(len(policy.Lines(a.Conf(), g)))))
 	}
 	if len(touched) > 0 {
 		a.Out.Info("Seeded default command rules for: " + strings.Join(touched, " "))
@@ -1104,6 +1126,7 @@ func (inv *invocation) groupPrivilege(args []string) error {
 		if err := policy.WritePrivileges(c, group, current); err != nil {
 			return err
 		}
+		inv.detail("group privilege", kvp("name", group), kvp("op", sub), kvp("count", strconv.Itoa(len(changed))))
 		if sub == "add" {
 			a.Out.Info(fmt.Sprintf("Added %d priv-exec mapping(s) for group '%s' (level %s):", len(changed), group, privlvl))
 		} else {
@@ -1180,6 +1203,9 @@ func (inv *invocation) groupPrivilegeSeed(args []string) error {
 			return err
 		}
 		touched = append(touched, g)
+	}
+	for _, g := range touched {
+		inv.detail("group privilege", kvp("name", g), kvp("op", "seed"), kvp("count", strconv.Itoa(len(policy.DefaultPrivileges(g)))))
 	}
 	if len(touched) > 0 {
 		a.Out.Info("Seeded default priv-exec mappings for: " + strings.Join(touched, " "))

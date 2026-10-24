@@ -6,7 +6,8 @@ package lifecycle
 // one. The command (internal/cli/rollback.go) adds what needs the
 // invocation: the snapshot and the sudoers installer.
 //
-// The targets are 0.2.9 (the release before this one: RollbackTarget029,
+// The targets are 0.2.16 (the release before this one: RollbackTarget0216,
+// docs/plans/0.2.17-plan.md D257; rollback0216.go), 0.2.9 (RollbackTarget029,
 // docs/plans/0.2.10-plan.md) and 0.2.3 (RollbackTarget). A release's tool
 // converts what that release changed and prepares the state for the one
 // before it, so 0.2.8 is not a target: the way is this tool for 0.2.9, the
@@ -67,10 +68,11 @@ package lifecycle
 //	                       tiers file with its own text and its group
 //	                       drop-in is never refreshed: a file
 //	                       that is exactly this release's text, or the one
-//	                       0.2.4 to 0.2.14 wrote (tier.Sudoers0214,
-//	                       Sudoers0213, Sudoers028, Sudoers027,
-//	                       GroupSudoers026, GroupSudoers027,
-//	                       GroupSudoers028), is rewritten with 0.2.3's
+//	                       0.2.4 to 0.2.16 wrote (tier.Sudoers0216,
+//	                       Sudoers0214, Sudoers0213, Sudoers028,
+//	                       Sudoers027, GroupSudoers026, GroupSudoers027,
+//	                       GroupSudoers028, GroupSudoers0216), is
+//	                       rewritten with 0.2.3's
 //	                       (tier.Sudoers023, GroupSudoers023, through
 //	                       'visudo -cf'); any other file is left.
 //	hosts                  0.2.4 changed nothing on the enrolled Linux hosts;
@@ -80,7 +82,7 @@ package lifecycle
 // changed reaches them), the sshd drop-ins, the tier-pin marker and the host
 // records (all as 0.2.3 has them).
 //
-// Both targets are refused while a record of devices-config.json says an
+// Every target is refused while a record of devices-config.json says an
 // apply of 'device config apply' is pending or unknown (PendingRefusal): the
 // confirmed commit on the device is a state of the device that no file
 // conversion settles, and a rollback must not hide a window that is open.
@@ -125,10 +127,13 @@ import (
 )
 
 // RollbackTarget is the oldest release 'tacctl rollback' prepares for;
-// RollbackTarget029 is the release before this one.
+// RollbackTarget029 is the one before the NETCONF service setting and
+// RollbackTarget0216 the release before this one (0.2.10 to 0.2.16 changed
+// no format 0.2.9 reads strictly, so 0.2.9 stays a target).
 const (
-	RollbackTarget    = "0.2.3"
-	RollbackTarget029 = "0.2.9"
+	RollbackTarget     = "0.2.3"
+	RollbackTarget029  = "0.2.9"
+	RollbackTarget0216 = "0.2.16"
 )
 
 // RollbackRefusal is a version the command does not take: Lines say why.
@@ -190,13 +195,14 @@ func pluralWord(n int, one, many string) string {
 
 var reVersion = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 
-const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
+const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget0216 + "|" + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
 
-// CheckRollbackVersion is the version a rollback is asked for ("0.2.9",
-// "0.2.3" or either with a "v"), or a *RollbackRefusal: 0.2.4 to 0.2.8 and
-// older than 0.2.3 (a release's tool prepares the state for the one release
-// it knows, so the way back is one release at a time), this release or a
-// newer one, or something that is not a release.
+// CheckRollbackVersion is the version a rollback is asked for ("0.2.16",
+// "0.2.9", "0.2.3" or any with a "v"), or a *RollbackRefusal: 0.2.4 to 0.2.8
+// and older than 0.2.3 (a release's tool prepares the state for the releases
+// it knows, so the way back is one release at a time), 0.2.10 to 0.2.15, this
+// release or a newer one, or something that is not a release (the refusal of
+// the last three names the targets and promises no way there).
 func CheckRollbackVersion(arg string) (string, error) {
 	m := reVersion.FindStringSubmatch(arg)
 	if m == nil {
@@ -205,11 +211,11 @@ func CheckRollbackVersion(arg string) (string, error) {
 			rollbackUsage}}
 	}
 	v := strings.TrimPrefix(arg, "v")
-	if v == RollbackTarget || v == RollbackTarget029 {
+	if v == RollbackTarget || v == RollbackTarget029 || v == RollbackTarget0216 {
 		return v, nil
 	}
 	n := func(i int) int { x, _ := strconv.Atoi(m[i]); return x }
-	both := "'tacctl rollback' prepares the state for " + RollbackTarget029 + " (the release before this one) and " + RollbackTarget + " only"
+	both := "'tacctl rollback' prepares the state for " + RollbackTarget0216 + " (the release before this one), " + RollbackTarget029 + " and " + RollbackTarget + " only"
 	fallback := "The fallback that needs no tool is 'tacctl backup restore' of a snapshot of the time (see 'tacctl backup list')."
 	switch {
 	case n(1) == 0 && n(2) == 2 && n(3) > 3 && n(3) < 9:
@@ -306,8 +312,9 @@ type RollbackInput struct {
 	HasStore bool
 	// WithHosts: the command was given --hosts.
 	WithHosts bool
-	// Target is the release rolled back to: RollbackTarget029 or
-	// RollbackTarget (the zero value is 0.2.3, as before 0.2.9).
+	// Target is the release rolled back to: RollbackTarget0216,
+	// RollbackTarget029 or RollbackTarget (the zero value is 0.2.3, as
+	// before 0.2.9).
 	Target string
 	// InstallSudoers writes a sudoers drop-in the way the commands do
 	// ('visudo -cf', then install); nil: the drop-ins are listed and left.
@@ -447,6 +454,9 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	if in.Target == RollbackTarget029 {
 		return planRollback029(p)
 	}
+	if in.Target == RollbackTarget0216 {
+		return planRollback0216(p)
+	}
 	// A break-glass hold is refused, in the dry run and --apply alike: the
 	// release being left has the record (docs/plans/0.2.5-plan.md D122), and
 	// the older one does not, so a device held would stay unanswered until
@@ -548,7 +558,7 @@ func (p *RollbackPlan) confStep() RollbackStep {
 	}
 	var added, other []string
 	for _, k := range p.keys {
-		if conf.Added024Key(k) || conf.Added025Key(k) || conf.Added027Key(k) || conf.Added029Key(k) || conf.Added0210Key(k) {
+		if conf.Added024Key(k) || conf.Added025Key(k) || conf.Added027Key(k) || conf.Added029Key(k) || conf.Added0210Key(k) || conf.Added0217Key(k) {
 			added = append(added, k)
 		} else {
 			other = append(other, k)
@@ -560,7 +570,7 @@ func (p *RollbackPlan) confStep() RollbackStep {
 	for _, k := range other {
 		s.Lines = append(s.Lines, "remove "+k+"  (no release knows this key; 0.2.3 refuses a file that has it)")
 	}
-	s.Lines = append(s.Lines, "(the settings of 'device config pull' and 'plan', the Cisco source interface, the break-glass records and the list of configuration blocks in force are these; every other key is one 0.2.3 has and stays)")
+	s.Lines = append(s.Lines, "(the settings of 'device config pull' and 'plan', the Cisco source interface, the break-glass records, the list of configuration blocks in force and audit.strict are these; every other key is one 0.2.3 has and stays)")
 	return s
 }
 
@@ -614,7 +624,7 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 	tiers := sudoersPlan{label: "the per-tier drop-in", file: pt.TierSudoersFile, state: "absent"}
 	if b, err := os.ReadFile(pt.TierSudoersFile); err == nil {
 		switch got := string(b); {
-		case got == tier.Sudoers(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
+		case got == tier.Sudoers(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
 			tiers.state, tiers.body = "rewrite", tier.Sudoers023()
 		case got == tier.Sudoers023():
 			tiers.state = "done"
@@ -635,7 +645,8 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 			group.label = "the drop-in of group " + name
 			// the texts 0.2.4 to 0.2.7 wrote are put back as 0.2.3's; any
 			// other older text is 0.2.3's or older already
-			if got := string(b); got == tier.GroupSudoers026(name) || got == tier.GroupSudoers027(name) || got == tier.GroupSudoers028(name) {
+			if got := string(b); got == tier.GroupSudoers026(name) || got == tier.GroupSudoers027(name) || got == tier.GroupSudoers028(name) ||
+				got == tier.GroupSudoers0216(name) {
 				group.state, group.body = "rewrite", tier.GroupSudoers023(name)
 			} else {
 				group.state = "done"
@@ -831,6 +842,7 @@ func (p *RollbackPlan) warnings() []RollbackWarning {
 		lines = append(lines, "Everything removed from tacctl.yaml, console.yaml and devices.yaml stays in the snapshot --apply takes first (tacctl backup list); 'tacctl backup restore' of it, with 0.2.5, brings it back.")
 		out = append(out, RollbackWarning{Title: "Settings 0.2.3 cannot use are dropped", Lines: lines})
 	}
+	out = append(out, p.auditStrictWarning(RollbackTarget)...)
 	if !in.HasStore && p.PendingFiles() {
 		out = append(out, RollbackWarning{
 			Title: "No snapshot can be taken",

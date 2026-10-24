@@ -76,8 +76,8 @@ func TestPhaseRadiusUpgradeFilesGolden(t *testing.T) {
 		if got := sb.listing(); got != strings.Join(sortedLines(want), "\n") {
 			t.Errorf("%s: files\n%s\nwant\n%s", family, got, want)
 		}
-		if len(sb.runner.Calls()) != 0 {
-			t.Errorf("%s: ran %v", family, sb.runner.Argvs())
+		if len(nonAuditArgvs(sb.runner)) != 0 {
+			t.Errorf("%s: ran %v", family, nonAuditArgvs(sb.runner))
 		}
 	}
 	// Not set up by tacctl (no drop-in, no rendered config): nothing.

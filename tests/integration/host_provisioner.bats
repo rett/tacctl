@@ -341,8 +341,8 @@ on_tty() {
 @test "host provisioner rotate: the audit lines hold the names and the method, no secret" {
     run "$TACCTL_BIN_SCRIPT" host provisioner web1 rotate deploy2 --key "$KEY" --remove-old --yes
     assert_success
-    run grep -E "^logger " "$CALLS_LOG"
-    assert_line --index 0 --regexp "^logger -t tacctl -p auth.info host provisioner rotate name=web1 old=admin new=deploy2 auth=key by=[a-z0-9_-]+$"
-    assert_line --index 1 --regexp "^logger -t tacctl -p auth.info host provisioner remove-old name=web1 old=admin new=deploy2 by=[a-z0-9_-]+$"
+    run grep -E "^logger -t tacctl -p auth\.[a-z]+ host provisioner " "$CALLS_LOG"
+    assert_line --index 0 --regexp "^logger -t tacctl -p auth.info host provisioner rotate name=web1 old=admin new=deploy2 auth=key by=[a-z0-9_-]+ sid=[a-z0-9]{8}$"
+    assert_line --index 1 --regexp "^logger -t tacctl -p auth.info host provisioner remove-old name=web1 old=admin new=deploy2 by=[a-z0-9_-]+ sid=[a-z0-9]{8}$"
     refute_output --partial "0123456789abcdef"
 }

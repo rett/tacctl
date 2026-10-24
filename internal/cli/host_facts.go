@@ -109,7 +109,7 @@ func (inv *invocation) hostFacts(he *hosts.Env, name, target, resolved string) {
 		return
 	}
 	if previous != "" {
-		a.Logger(inv.ctx, "auth.warning", "host address-changed name="+name+" old="+previous+" new="+norm+" by="+inv.sudoUser())
+		a.Audit().Raw("auth.warning", "host address-changed name="+name+" old="+previous+" new="+norm+" by="+inv.sudoUser())
 		a.Out.WarnE(name + ": its address changed from " + previous + " to " + norm + "; recorded " + norm +
 			" (notice " + devreg.NoticeAddressChanged + ": tacctl device show " + name + ").")
 	}

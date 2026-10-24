@@ -48,8 +48,8 @@ func TestDeviceAddReadsTheLocation(t *testing.T) {
 	if sb.code != 0 || strings.Contains(out, "read from the device") || !strings.Contains(sb.devices(), "location: Mine") {
 		t.Errorf("--snmp-location: %d %q", sb.code, out)
 	}
-	if got := stub.calls.Load() - before; got != 1 {
-		t.Errorf("--snmp-location: %d reads, want 1 (the name)", got)
+	if got := stub.calls.Load() - before; got != 2 {
+		t.Errorf("--snmp-location: %d reads, want 2 (the name and the vendor)", got)
 	}
 	before = stub.calls.Load()
 	sb.dev("", "add", "sw6", "10.99.0.6", "--no-host-key", "--no-lookup")

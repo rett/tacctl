@@ -298,6 +298,9 @@ var (
 // complaint and is not a failure: 0.1.16 returned the status of the
 // 'rm -f' after its 'install'.
 func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
+	if e.Touch != nil {
+		e.Touch()
+	}
 	method := req.Method
 	if method == "" {
 		method = Tacplus

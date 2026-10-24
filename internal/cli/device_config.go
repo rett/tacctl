@@ -31,6 +31,12 @@ var deviceConfigSpecs = func() map[string]Spec {
 		{Names: []string{"--scope"}, Value: true, Kind: KindScopes},
 		{Names: []string{"--vendor"}, Value: true, Kind: "cisco|juniper|wti"},
 		{Names: []string{"--stale"}},
+		// D267: filters of the same kind, read from the records and the
+		// registry (no login); --name and --ip take comma lists as 'device
+		// list' does.
+		{Names: []string{"--differs"}},
+		{Names: []string{"--name"}, Value: true},
+		{Names: []string{"--ip"}, Value: true},
 	}
 	read := []Flag{
 		{Names: []string{"--transport"}, Value: true, Kind: "auto|netconf|ssh"},
@@ -71,6 +77,7 @@ var deviceConfigSpecs = func() map[string]Spec {
 				{Names: []string{"--restore-point"}, Value: true, Optional: true, Kind: "flash:|bootflash:|disk0:|usbflash0:|harddisk:"}})},
 		"list": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--never"}}, {Names: []string{"--failed"}},
 			{Names: []string{"--differs"}}, {Names: []string{"--transport"}, Value: true, Kind: "netconf|ssh|none"},
+			{Names: []string{"--name"}, Value: true}, {Names: []string{"--ip"}, Value: true},
 			{Names: []string{"--scope"}, Value: true, Kind: KindScopes}, {Names: []string{"--vendor"}, Value: true, Kind: "cisco|juniper|wti"},
 			flagJSON}},
 		"forget": {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}}},
@@ -87,6 +94,9 @@ var deviceConfigSpecs = func() map[string]Spec {
 				{Names: []string{"--max"}, Value: true}, {Names: []string{"--pause"}, Value: true},
 				{Names: []string{"--hold"}}, {Names: []string{"--no-canary"}},
 				{Names: []string{"--section"}, Value: true, Kind: strings.Join(planSections, "|") + KindList},
+				// 0.2.17 D268: pull the devices first (the pull's --diff is
+				// not offered)
+				{Names: []string{"--pull"}},
 				flagJSON, {Names: []string{"--exit-code"}}, flagYes})},
 		// 'shapes' (0.2.9, D135): 'list' (the default) and 'seed'.
 		"shapes": {MaxArgs: -1, Args: []string{"list|seed", KindDevices + KindList}, Flags: []Flag{
@@ -176,7 +186,7 @@ func (inv *invocation) deviceVerbAllowed(family, sub string, need tier.Tier) err
 		return nil
 	}
 	user := inv.sudoUser()
-	inv.app.Logger(inv.ctx, "auth.warning", "tier DENY user="+user+" tier="+string(t)+" cmd="+family+" "+sub)
+	inv.app.Audit().Raw("auth.warning", "tier DENY user="+user+" tier="+string(t)+" cmd="+family+" "+sub)
 	if t == tier.None {
 		inv.app.Out.ErrorE("'" + g.SudoUser + "' has no active tacctl user, so tacctl access is denied.")
 	} else {
@@ -241,6 +251,14 @@ must be version 8.10 and its pages (never a prompt, never a save) give aaa,
 mgmt-acl, snmp and breakglass. A login whose WTI level cannot configure the
 unit is 'denied' and a menu of another version 'unsupported'; both are failed
 pulls, and the line of a unit says how many other sessions it has.
+
+The devices of 'pull', 'diff', 'plan' and 'apply' are named, or selected with
+--all or filters that combine: --scope, --vendor, --stale, --differs (the last
+pull differs from what tacctl renders now, decided from the records: no login),
+--name <text> and --ip <addr|cidr|text> (a comma list: any item matches). Names
+and --all stand alone. 'list' takes --name and --ip too. --name and --ip match
+by text, so for 'apply' give exact names, a full address or a CIDR: --ip 10.1.1
+also matches 172.10.1.x and 10.1.10-19.x, and --name sw1 also matches sw10.
 
 'diff' compares the last pull with what tacctl renders now, section by
 section: '-' is a statement tacctl renders that the device lacks, '+' one the
@@ -309,8 +327,11 @@ checked first: tacctl reads it, loads the plan in an exclusive configure
 session, runs the device's own 'commit check' and discards the candidate;
 --check stops there and commits nothing. The devices that need a change are
 then shown grouped by shape (the same change under one heading, every secret
-elided) and ONE question is asked: the device's name (one device) or the
-number of devices, typed back. Each is committed under 'commit confirmed N'
+elided), and each device is asked for in turn: its line (shape and counts),
+then its name typed back. The name approves it; anything else, Enter or the
+end of input declines it (no second try, no answer for several devices), and
+a declined device is skipped and makes the run exit 1. All the answers come
+before the first commit. Each is committed under 'commit confirmed N'
 (config devices apply-confirm-timeout), proven by a fresh login as you, by what
 landed being the change the check showed and by a read of the planned sections,
 and then confirmed; the first device of every shape goes alone, and the rest of
@@ -318,11 +339,18 @@ its shape only when it applied. A device that fails a proof is rolled back; one
 whose state could not be read is PENDING until the time shown, and nothing
 may be typed on it before then (a 'commit check' confirms a pending commit).
 --confirmed applies only shapes an earlier apply confirmed (the rest are
-skipped) and is the only form --yes answers the question for, so a script runs
-it without a terminal; --max (default 5) caps the devices of a run, --pause the
+skipped) and is the only form --yes answers the questions for, so a script runs
+it without a terminal (its audit lines say mode=scripted, a typed review's
+mode=attended); --max (default 5) caps the devices of a run, --pause the
 seconds between them (config devices apply-pause), --hold asks you to log in
 with one account of each class and type OK before the change is kept,
---section limits the sections. Never written: the break-glass section, the
+--section limits the sections. --pull reads the devices first, as 'pull'
+does (over device.config.transport: --transport is how the apply writes),
+with the one password; a device whose pull fails is not checked, and --stale
+and --differs then select from the fresh records (--pull --differs: the
+devices that differ now). Select the devices of an apply
+by exact names, a full address or a CIDR: --name and --ip match text (--name sw1
+also matches sw10). Never written: the break-glass section, the
 NETCONF section unless the scope's or the device's NETCONF setting enables or
 disables the service (then only its own statements), the root and your own
 account, system services, interfaces, groups. Exit status: 0 every device applied, was checked or had no change, 1 a
@@ -355,6 +383,7 @@ Examples:
   tacctl device config apply core-sw1 --check
   tacctl device config apply --scope lab
   tacctl device config apply --scope lab --confirmed --yes
+  tacctl device config apply --scope lab --pull --differs
   tacctl device config shapes
   tacctl device config list --stale
 

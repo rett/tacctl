@@ -170,6 +170,9 @@ type Snapshotter struct {
 	// Version is the tacctl version the manifest records ("unknown" when
 	// empty, as get_version prints when it cannot tell).
 	Version string
+	// Who says which session, user and command take the snapshot, for the
+	// manifest (nil: none is recorded).
+	Who func() Who
 	// Now is the clock of the id and of the manifest's "created" (nil:
 	// time.Now). The id is in the clock's local time, as date(1) prints it.
 	Now func() time.Time
@@ -197,6 +200,12 @@ type Snapshotter struct {
 	// the App sets it. A caller of Take holds the ledger lock itself never:
 	// the lock is not reentrant.
 	LedgerLock func() (unlock func(), err error)
+
+	// Touch is called when Take starts, before anything is written (the
+	// audit writer's mark that the command changes state); Taken with the id
+	// of every snapshot Take made. Both may be nil.
+	Touch func()
+	Taken func(id string)
 
 	held int
 }
@@ -291,6 +300,18 @@ func (s *Snapshotter) now() time.Time {
 // made is an error (printed by nobody here: the caller prints it as an
 // [ERROR] line) and leaves no temporary directory behind.
 func (s *Snapshotter) Take() (string, error) {
+	if s.Touch != nil {
+		s.Touch()
+	}
+	id, err := s.take()
+	if id != "" && s.Taken != nil {
+		s.Taken(id)
+	}
+	return id, err
+}
+
+// take is Take.
+func (s *Snapshotter) take() (string, error) {
 	if s.held > 0 || !isRegular(s.StoreFile) {
 		return "", nil
 	}
@@ -788,6 +809,14 @@ func copyBlocksDir(src, dst string) error {
 	return nil
 }
 
+// who is the manifest's actor: empty without a Who.
+func (s *Snapshotter) who() Who {
+	if s.Who == nil {
+		return Who{}
+	}
+	return s.Who()
+}
+
 // fill is _backup_snapshot_fill: the files of a snapshot in dir, 0600, the
 // directory 0700.
 func (s *Snapshotter) fill(dir string, now time.Time) error {
@@ -832,7 +861,7 @@ func (s *Snapshotter) fill(dir string, now time.Time) error {
 	if version == "" {
 		version = "unknown"
 	}
-	if err := os.WriteFile(filepath.Join(dir, "manifest"), Manifest(s.Rendered, version, now), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "manifest"), Manifest(s.Rendered, version, now, s.who()), 0o600); err != nil {
 		return err
 	}
 	// MkdirTemp made the directory 0700 already; stated so the mode does

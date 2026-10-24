@@ -232,6 +232,9 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 	if r.stale > 0 && r.now.Sub(rec.Pulled) > time.Duration(r.stale)*24*time.Hour {
 		return cannot("stale pull (" + strconv.Itoa(days) + " days old, stale-days is " + strconv.Itoa(r.stale) + "): " + pullHint)
 	}
+	if devconf.VendorChanged(rec, e.Vendor) {
+		return cannot("needs pull (the vendor changed: the last pull read it as " + rec.Vendor + "): " + pullHint)
+	}
 	expected, err := r.render.Expected(e)
 	switch {
 	case errors.Is(err, errSyntaxUnknown):
@@ -919,7 +922,12 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 			return err
 		}
 	}
-	chosen, err := inv.chooseDevices(sel, user, opt.pull && local == nil, "plan", pa.render)
+	// A plan prints the secrets of the region unless --no-secrets: its reads
+	// are then reveals, refused under audit.strict before anything is shown
+	// when their line cannot be written.
+	ro := pa.render
+	ro.Reveal = !opt.noSecrets
+	chosen, err := inv.chooseDevices(sel, user, opt.pull && local == nil, "plan", ro)
 	if err != nil {
 		return err
 	}
@@ -1014,6 +1022,26 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 		chosen.render.prepare(chosen.entries)
 	}
 
+	_, code, err := inv.planEntries(chosen, opt, user, failed, usage)
+	switch {
+	case err != nil:
+		return err
+	case interrupted:
+		return exit(batch.ExitInterrupted)
+	case code != 0:
+		return exit(code)
+	}
+	return nil
+}
+
+// planEntries plans the devices of chosen from their records and prints the
+// plans as 'device config plan' prints them (the files, the audit lines, the
+// notes on standard error), after the selection and any pull: the part of the
+// verb that 'device enroll' calls with the devices it pulled (0.2.17 D264).
+// failed are the devices whose pull failed, by lower-cased name. It returns
+// each device's result and the exit status the plans make (1 when one cannot
+// be planned, ExitDiffers for --exit-code and a needed change, else 0).
+func (inv *invocation) planEntries(chosen *chosenDevices, opt planOptions, user string, failed map[string]string, usage string) ([]planDevice, int, error) {
 	store := inv.configStore()
 	// A bare --restore-point takes the file system from the pull's record (the
 	// device's archive path): where it has none, the flag must name one.
@@ -1026,7 +1054,7 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 			}
 		}
 		if len(lacking) > 0 {
-			return inv.argErr("--restore-point with no file system: the last pull of "+strings.Join(lacking, ", ")+
+			return nil, 0, inv.argErr("--restore-point with no file system: the last pull of "+strings.Join(lacking, ", ")+
 				" read no 'archive' with a 'path' (a pull made before tacctl kept it did not either: pull again), so tacctl does not know where the file goes. "+
 				"Name one: --restore-point=flash: (bootflash:, disk0:), or configure 'archive' with a 'path' on the device and pull again.", usage)
 		}
@@ -1057,7 +1085,7 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 			results[i].status = plan.CannotPlan(r.h, results[i].cannot)
 			t = cannotText(results[i])
 		case err != nil:
-			return err
+			return nil, 0, err
 		}
 		texts[i] = outText{t, c}
 		if !results[i].planned() {
@@ -1079,7 +1107,7 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 	case opt.out != "":
 		path, aerr := filepath.Abs(opt.out)
 		if aerr != nil {
-			return aerr
+			return nil, 0, aerr
 		}
 		switch {
 		case opt.plain && !results[0].planned():
@@ -1099,7 +1127,7 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 	case opt.outDir != "":
 		dir, aerr := filepath.Abs(opt.outDir)
 		if aerr != nil {
-			return aerr
+			return nil, 0, aerr
 		}
 		// the cover is a file of the run only when there is more than one
 		// device: a device named COVER is then fine for a single one
@@ -1116,7 +1144,7 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 			}
 			name := opt.fileName(r.e.Name)
 			if seen[name] || filepath.Base(name) != name {
-				return inv.argErr("the file name '"+name+"' of device '"+r.e.Name+"' is taken or is not a plain file name.", usage)
+				return nil, 0, inv.argErr("the file name '"+name+"' of device '"+r.e.Name+"' is taken or is not a plain file name.", usage)
 			}
 			seen[name] = true
 			files = append(files, planFile{filepath.Join(dir, name), texts[i].text})
@@ -1133,7 +1161,7 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 				// plain file of a device called x.cleanup is the same file
 				cn := cleanupName(name)
 				if seen[cn] {
-					return inv.argErr("the file name '"+cn+"' of the cleanup of device '"+r.e.Name+"' is taken.", usage)
+					return nil, 0, inv.argErr("the file name '"+cn+"' of the cleanup of device '"+r.e.Name+"' is taken.", usage)
 				}
 				seen[cn] = true
 				files = append(files, planFile{filepath.Join(dir, cn), texts[i].cleanup})
@@ -1144,7 +1172,7 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 				if bo, berr := plan.Backout(r.d, r.h, run.wrap); berr == nil {
 					bn := r.e.Name + ".backout.txt"
 					if seen[bn] {
-						return inv.argErr("the file name '"+bn+"' is taken.", usage)
+						return nil, 0, inv.argErr("the file name '"+bn+"' is taken.", usage)
 					}
 					seen[bn] = true
 					files = append(files, planFile{filepath.Join(dir, bn), bo})
@@ -1174,7 +1202,7 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 		removed, err := inv.writePlanFiles(dir, files, stale, opt.force)
 		if err != nil {
 			inv.app.Out.ErrorE(err.Error())
-			return exit(1)
+			return nil, 0, exit(1)
 		}
 		for _, f := range removed {
 			inv.stderrLine("Removed " + f + " (a file of an earlier plan that this plan does not make).")
@@ -1215,7 +1243,7 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 				sections = strings.Join(ps, ",")
 			}
 		}
-		inv.app.Logger(inv.auditContext(), "auth.info", "device config plan user="+inv.sudoUser()+" device="+r.e.Name+
+		inv.app.Audit().Raw("auth.info", "device config plan user="+inv.sudoUser()+" device="+r.e.Name+
 			" status="+status+" sections="+sections+" converge="+yesNo(opt.converge)+" secrets="+r.secretsWord()+" out="+out)
 		// a secret by value is said on standard error too, so that a
 		// redirected output still carries the warning (D98)
@@ -1253,7 +1281,7 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 			objs = append(objs, json.RawMessage(strings.TrimSuffix(t.text, "\n")))
 		}
 		if err := inv.printJSON(objs); err != nil {
-			return err
+			return nil, 0, err
 		}
 	default:
 		if len(results) > 1 {
@@ -1276,14 +1304,12 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 		inv.stderrLine("  " + l)
 	}
 	switch {
-	case interrupted:
-		return exit(batch.ExitInterrupted)
 	case cannot > 0:
-		return exit(1)
+		return results, 1, nil
 	case opt.exitOn && needs > 0:
-		return exit(batch.ExitDiffers)
+		return results, batch.ExitDiffers, nil
 	}
-	return nil
+	return results, 0, nil
 }
 
 // auditValue is a value of the audit line: as it stands, or quoted when it

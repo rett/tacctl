@@ -1,8 +1,9 @@
-// Package snmp reads one value from a device by SNMP: a GetRequest of one
-// object, over UDP, as v2c (a community) or as v3 with the User-based
+// Package snmp reads values from a device by SNMP: a GetRequest of one
+// object (or of sysObjectID.0 with sysDescr.0), over UDP, as v2c (a community) or as v3 with the User-based
 // Security Model at authPriv (HMAC-SHA-96 or HMAC-SHA-256-192, AES-128),
 // with the engine discovery v3 needs. 'device add' and 'device check' read
-// sysName.0 with it for a name hint (docs/plans/0.2.2-plan.md 5.10); it is
+// sysName.0 with it for a name hint (docs/plans/0.2.2-plan.md 5.10) and
+// the identity for the vendor (vendor.go, 0.2.17 D260); it is
 // the standard library only, so tacctl needs neither a module nor
 // net-snmp for it. The settings are in tacctl.yaml (snmp.*), the
 // community and the v3 passphrases in StateDir/snmp.yaml (secrets.go).
@@ -25,6 +26,14 @@ const SysNameOID = "1.3.6.1.2.1.1.5.0"
 // SysLocationOID is sysLocation.0 (RFC 3418): where the device says it is.
 const SysLocationOID = "1.3.6.1.2.1.1.6.0"
 
+// SysDescrOID is sysDescr.0 (RFC 3418): the device's description of its
+// hardware and software.
+const SysDescrOID = "1.3.6.1.2.1.1.1.0"
+
+// SysObjectIDOID is sysObjectID.0 (RFC 3418): the vendor's identification
+// of the device, under the vendor's enterprise number.
+const SysObjectIDOID = "1.3.6.1.2.1.1.2.0"
+
 // The versions tacctl.yaml's snmp.version takes.
 const (
 	V2c = "v2c"
@@ -42,11 +51,20 @@ const (
 	MaxTimeout     = 10
 )
 
-// Getter reads a device's sysName.0 and sysLocation.0. Config is the real
-// one; the CLI's tests put a stub in its place (app.App's SNMP).
+// Getter reads a device's sysName.0 and sysLocation.0, and its sysObjectID.0
+// with its sysDescr.0. Config is the real one; the CLI's tests put a stub in
+// its place (app.App's SNMP).
 type Getter interface {
 	SysName(ctx context.Context, address string) (string, error)
 	SysLocation(ctx context.Context, address string) (string, error)
+	SysIdentity(ctx context.Context, address string) (Identity, error)
+}
+
+// Identity is what a device says it is: its sysObjectID.0 (dotted) and its
+// sysDescr.0 text, either empty when the agent has none.
+type Identity struct {
+	ObjectID string
+	Descr    string
 }
 
 // Config is how to ask: the version and its credentials, the port and the
@@ -73,6 +91,13 @@ type TimeoutError struct {
 func (e *TimeoutError) Error() string {
 	return "no answer (" + strconv.Itoa(e.Tries) + " tries, " + e.Timeout.String() + " each)"
 }
+
+// AnswerError is an answer that came and could not be read: an error-status,
+// another object than asked for, or a value of the wrong type. The device
+// answered; what it said is not used.
+type AnswerError struct{ Why string }
+
+func (e *AnswerError) Error() string { return e.Why }
 
 // ReportError is a v3 Report: the agent refused the request, and says why
 // in the name of the usmStats counter it raised (unknownUserName,
@@ -150,34 +175,76 @@ func (c Config) SysLocation(ctx context.Context, address string) (string, error)
 	return string(v.val), nil
 }
 
+// SysIdentity reads sysObjectID.0 and sysDescr.0 from address in one
+// request. An object the agent does not have is empty, not an error: the
+// vendor detection says what is missing.
+func (c Config) SysIdentity(ctx context.Context, address string) (Identity, error) {
+	vs, err := c.getAll(ctx, address, []string{SysObjectIDOID, SysDescrOID})
+	if err != nil {
+		return Identity{}, err
+	}
+	var id Identity
+	switch v := vs[0]; v.tag {
+	case tagOID:
+		if id.ObjectID, err = decOID(v.val); err != nil {
+			return Identity{}, &AnswerError{Why: "sysObjectID.0 is not an object identifier"}
+		}
+	case tagNoSuchObject, tagNoSuchInstance, tagEndOfMibView:
+	default:
+		return Identity{}, &AnswerError{Why: fmt.Sprintf("sysObjectID.0 is not an object identifier (tag 0x%02x)", v.tag)}
+	}
+	switch v := vs[1]; v.tag {
+	case tagOctetString:
+		id.Descr = string(v.val)
+	case tagNoSuchObject, tagNoSuchInstance, tagEndOfMibView:
+	default:
+		return Identity{}, &AnswerError{Why: fmt.Sprintf("sysDescr.0 is not text (tag 0x%02x)", v.tag)}
+	}
+	return id, nil
+}
+
 // Get reads one object from address.
 func (c Config) Get(ctx context.Context, address, oid string) (tlv, error) {
+	vs, err := c.getAll(ctx, address, []string{oid})
+	if err != nil {
+		return tlv{}, err
+	}
+	switch v := vs[0]; v.tag {
+	case tagNoSuchObject, tagNoSuchInstance, tagEndOfMibView:
+		return tlv{}, errors.New("the agent has no " + oid)
+	}
+	return vs[0], nil
+}
+
+// getAll reads the objects oids from address in one GetRequest: their
+// values in that order, a varbind exception (noSuchObject and the like)
+// among them as it came.
+func (c Config) getAll(ctx context.Context, address string, oids []string) ([]tlv, error) {
 	port := c.Port
 	if port == 0 {
 		port = DefaultPort
 	}
 	conn, err := (&net.Dialer{}).DialContext(ctx, "udp", net.JoinHostPort(address, strconv.Itoa(port)))
 	if err != nil {
-		return tlv{}, err
+		return nil, err
 	}
 	defer func() { _ = conn.Close() }()
-	var v tlv
 	switch c.Version {
 	case V2c:
-		v, err = c.getV2c(ctx, conn, oid)
+		return c.getV2c(ctx, conn, oids)
 	case V3:
-		v, err = c.getV3(ctx, conn, oid)
-	default:
-		return tlv{}, errors.New("unknown SNMP version '" + c.Version + "' (v2c or v3)")
+		return c.getV3(ctx, conn, oids)
 	}
-	if err != nil {
-		return tlv{}, err
+	return nil, errors.New("unknown SNMP version '" + c.Version + "' (v2c or v3)")
+}
+
+// varbindsOf are the request's varbinds: each oid with no value.
+func varbindsOf(oids []string) []varbind {
+	vbs := make([]varbind, len(oids))
+	for i, o := range oids {
+		vbs[i] = varbind{oid: o}
 	}
-	switch v.tag {
-	case tagNoSuchObject, tagNoSuchInstance, tagEndOfMibView:
-		return tlv{}, errors.New("the agent has no " + oid)
-	}
-	return v, nil
+	return vbs
 }
 
 // exchange sends req and reads answers until match takes one (true), for
@@ -235,34 +302,41 @@ func (c Config) exchange(ctx context.Context, conn net.Conn, req []byte, match f
 }
 
 // getV2c is one community-based GetRequest.
-func (c Config) getV2c(ctx context.Context, conn net.Conn, oid string) (tlv, error) {
+func (c Config) getV2c(ctx context.Context, conn net.Conn, oids []string) ([]tlv, error) {
 	id := randID()
 	req, err := v2cMsg{community: []byte(c.Community), pdu: pdu{tag: tagGetRequest, requestID: id,
-		varbinds: []varbind{{oid: oid}}}}.encode()
+		varbinds: varbindsOf(oids)}}.encode()
 	if err != nil {
-		return tlv{}, err
+		return nil, err
 	}
-	var got tlv
+	var got []tlv
 	err = c.exchange(ctx, conn, req, func(b []byte) (bool, error) {
 		m, err := decodeV2c(b)
 		if err != nil || m.pdu.requestID != id || m.pdu.tag != tagGetResponse {
 			return false, nil
 		}
-		got, err = answer(m.pdu, oid)
+		got, err = answer(m.pdu, oids)
 		return true, err
 	})
 	return got, err
 }
 
-// answer is the value of oid in a GetResponse.
-func answer(p pdu, oid string) (tlv, error) {
+// answer is the values of oids in a GetResponse, in that order.
+func answer(p pdu, oids []string) ([]tlv, error) {
 	if p.errorStatus != 0 {
-		return tlv{}, fmt.Errorf("the agent answered with error-status %d", p.errorStatus)
+		return nil, &AnswerError{Why: fmt.Sprintf("the agent answered with error-status %d", p.errorStatus)}
 	}
-	if len(p.varbinds) != 1 || p.varbinds[0].oid != oid {
-		return tlv{}, errors.New("the agent answered for another object")
+	if len(p.varbinds) != len(oids) {
+		return nil, &AnswerError{Why: "the agent answered for other objects"}
 	}
-	return p.varbinds[0].value, nil
+	out := make([]tlv, len(oids))
+	for i, o := range oids {
+		if p.varbinds[i].oid != o {
+			return nil, &AnswerError{Why: "the agent answered for another object"}
+		}
+		out[i] = p.varbinds[i].value
+	}
+	return out, nil
 }
 
 // engine is what discovery learns of the agent: its engine ID, its boots
@@ -279,28 +353,28 @@ func (e engine) now() int64 { return e.time + int64(time.Since(e.at)/time.Second
 // getV3 discovers the engine, then sends one authPriv GetRequest; a
 // notInTimeWindow report (the agent's clock, from discovery, was stale)
 // gives the right time and the request is sent once more.
-func (c Config) getV3(ctx context.Context, conn net.Conn, oid string) (tlv, error) {
+func (c Config) getV3(ctx context.Context, conn net.Conn, oids []string) ([]tlv, error) {
 	alg, err := authOf(c.Auth)
 	if err != nil {
-		return tlv{}, err
+		return nil, err
 	}
 	if c.Priv != "" && c.Priv != PrivAES128 {
-		return tlv{}, errors.New("unknown SNMPv3 privacy protocol '" + c.Priv + "' (aes128)")
+		return nil, errors.New("unknown SNMPv3 privacy protocol '" + c.Priv + "' (aes128)")
 	}
 	eng, err := c.discover(ctx, conn)
 	if err != nil {
-		return tlv{}, err
+		return nil, err
 	}
 	authKey, err := LocalizedKey(c.Auth, c.AuthPass, eng.id)
 	if err != nil {
-		return tlv{}, errors.New("the v3 authentication passphrase is not set")
+		return nil, errors.New("the v3 authentication passphrase is not set")
 	}
 	privKey, err := LocalizedKey(c.Auth, c.PrivPass, eng.id)
 	if err != nil {
-		return tlv{}, errors.New("the v3 privacy passphrase is not set")
+		return nil, errors.New("the v3 privacy passphrase is not set")
 	}
 	for attempt := 0; ; attempt++ {
-		v, fresh, err := c.getAuthPriv(ctx, conn, oid, alg, authKey, privKey, eng)
+		v, fresh, err := c.getAuthPriv(ctx, conn, oids, alg, authKey, privKey, eng)
 		var rep *ReportError
 		if attempt == 0 && errors.As(err, &rep) && rep.Name == "notInTimeWindow" && fresh != nil {
 			eng = *fresh
@@ -338,24 +412,24 @@ func (c Config) discover(ctx context.Context, conn net.Conn) (engine, error) {
 
 // getAuthPriv is one authPriv GetRequest. A report that came authenticated
 // also returns the engine's boots and time it carries (fresh).
-func (c Config) getAuthPriv(ctx context.Context, conn net.Conn, oid string, alg authAlg, authKey, privKey []byte,
-	eng engine) (got tlv, fresh *engine, err error) {
+func (c Config) getAuthPriv(ctx context.Context, conn net.Conn, oids []string, alg authAlg, authKey, privKey []byte,
+	eng engine) (got []tlv, fresh *engine, err error) {
 	salt := make([]byte, 8)
 	if _, err := randRead(salt); err != nil {
-		return tlv{}, nil, err
+		return nil, nil, err
 	}
 	id, reqID := randID(), randID()
 	m := v3Msg{msgID: id, maxSize: maxMsgSize, flags: flagAuth | flagPriv | flagReportable,
 		engineID: eng.id, boots: eng.boots, time: eng.now(), user: []byte(c.User),
 		authParams: make([]byte, alg.macLen), privParams: salt,
-		contextEngineID: eng.id, pdu: pdu{tag: tagGetRequest, requestID: reqID, varbinds: []varbind{{oid: oid}}}}
+		contextEngineID: eng.id, pdu: pdu{tag: tagGetRequest, requestID: reqID, varbinds: varbindsOf(oids)}}
 	scoped, err := m.scopedPDU()
 	if err != nil {
-		return tlv{}, nil, err
+		return nil, nil, err
 	}
 	ct, err := aesCFB(true, privKey, m.boots, m.time, salt, scoped)
 	if err != nil {
-		return tlv{}, nil, err
+		return nil, nil, err
 	}
 	req, authAt := m.encode(encString(ct))
 	copy(req[authAt:], mac(alg, authKey, req))
@@ -385,7 +459,7 @@ func (c Config) getAuthPriv(ctx context.Context, conn net.Conn, oid string, alg 
 		if !authed || r.flags&flagPriv == 0 {
 			return true, errors.New("the agent answered without authentication and privacy")
 		}
-		got, err = answer(r.pdu, oid)
+		got, err = answer(r.pdu, oids)
 		return true, err
 	})
 	return got, fresh, err

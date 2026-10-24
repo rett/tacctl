@@ -52,8 +52,8 @@ func TestHostRenameFindsADeviceRegisteredMeanwhile(t *testing.T) {
 		if sb.registryText() != regBefore {
 			t.Errorf("pinned %v: registry %q, want %q", pinned, sb.registryText(), regBefore)
 		}
-		if sb.runner.CalledRegexp(`host rename`) {
-			t.Errorf("pinned %v: a refused rename was logged", pinned)
+		if hasAuditMatch(sb.runner, "", `^host rename .* result=ok$`) {
+			t.Errorf("pinned %v: a refused rename was logged as done", pinned)
 		}
 	}
 }
