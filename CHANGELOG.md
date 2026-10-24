@@ -115,6 +115,14 @@ current behaviour; this file is where history lives.
    page `docs/security/audit.md` and the manual page's AUDIT LOG section list
    the lines and their keys.
 
+5. **A snapshot's manifest records who took it.** The `manifest` file of a
+   snapshot gains `sid` (the session id of the audit lines), `user` (the
+   person who ran the command) and `command` (its words, without arguments),
+   so the `snapshot=` id of a `cmd end` line and the snapshot lead to each
+   other. Snapshots of earlier releases have none of them; `backup restore`
+   and `backup diff` do not read the manifest, and 0.2.16 ignores the new
+   keys.
+
 ## 0.2.16 (2026-10-23)
 
 1. **`config validate` takes no argument.** `config validate extra` ran the

@@ -117,6 +117,10 @@ func (a *App) Snapshots() *snapshot.Snapshotter {
 		s.Fault = a.Knobs.Fault
 		s.LedgerLock = hosts.UIDs{Path: a.Paths.LinuxUIDs}.Lock
 		s.Touch, s.Taken = a.Audit().Touch, a.Audit().NoteSnapshot
+		s.Who = func() snapshot.Who {
+			w := a.Audit()
+			return snapshot.Who{SID: w.SID(), User: w.Actor().User, Command: w.Command()}
+		}
 		a.svc.snaps = s
 	}
 	return a.svc.snaps

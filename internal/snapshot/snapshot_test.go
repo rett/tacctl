@@ -466,12 +466,12 @@ func TestManifestMatchesPythonJSONDumps(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if got := string(Manifest(p, "v1", now)); got != c.want {
+		if got := string(Manifest(p, "v1", now, Who{})); got != c.want {
 			t.Errorf("%s:\ngot  %q\nwant %q", c.name, got, c.want)
 		}
 	}
 	// A directory where the file should be is an OSError: null.
-	if got := string(Manifest(dir, "v1", now)); !strings.Contains(got, `"rendered": null`) {
+	if got := string(Manifest(dir, "v1", now, Who{})); !strings.Contains(got, `"rendered": null`) {
 		t.Errorf("directory: %q", got)
 	}
 }

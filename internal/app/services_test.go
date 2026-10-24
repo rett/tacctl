@@ -228,3 +228,26 @@ func TestKnobsAreLoaded(t *testing.T) {
 		t.Errorf("TestKnobs %v, KnobsErr %v", TestKnobs, a.KnobsErr)
 	}
 }
+
+// D256: the snapshot's manifest names the session, the person and the
+// command of the invocation that took it.
+func TestSnapshotManifestNamesTheAuditSession(t *testing.T) {
+	a, _, _, _ := newServiceApp(t, "", "SUDO_USER=alice", "SUDO_UID=1001")
+	write(t, a.Paths.StoreFile, "version: 1\n")
+	a.Audit().SetCommand("group edit")
+	s := a.Snapshots()
+	s.Chown = nil
+	id, err := s.Take()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(a.Paths.BackupDir, id, "manifest"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"sid": "` + a.Audit().SID() + `"`, `"user": "alice"`, `"command": "group edit"`} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("manifest lacks %s:\n%s", want, data)
+		}
+	}
+}

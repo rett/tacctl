@@ -185,6 +185,7 @@ type state struct {
 	// start writes the central 'cmd start' line (SetStart); Touch runs it
 	// once, before the first write of the command.
 	start     func()
+	command   string
 	touch     sync.Once
 	touched   bool
 	snapshots []string
@@ -229,6 +230,21 @@ func (w *Writer) SetTerminal(tty, console string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.actor.TTY, w.actor.Console = tty, console
+}
+
+// SetCommand says which command runs: the words of the start line's cmd=,
+// without arguments. The snapshot manifest records it (D256).
+func (w *Writer) SetCommand(words string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.command = words
+}
+
+// Command is the command's words ("" before SetCommand).
+func (w *Writer) Command() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.command
 }
 
 // SetStart registers the function that writes the command's central start

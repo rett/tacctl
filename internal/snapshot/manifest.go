@@ -13,6 +13,9 @@ import (
 	"github.com/rett/tacctl/internal/yamlpy"
 )
 
+// Who is who took a snapshot and with which command (D256).
+type Who struct{ SID, User, Command string }
+
 // Manifest is the manifest file of a snapshot, as _backup_snapshot_fill's
 // Python writes it:
 //
@@ -22,8 +25,17 @@ import (
 // "rendered" is the content of renderedPath as json.load reads it: {} when
 // the file does not exist, null when it exists but cannot be read or is not
 // JSON (say so rather than guess).
-func Manifest(renderedPath, version string, now time.Time) []byte {
+//
+// who adds "sid", "user" and "command" (D256) for each field that is set:
+// the session id of the audit lines, the person, and the command's words
+// without arguments.
+func Manifest(renderedPath, version string, now time.Time, who Who) []byte {
 	m := yamlpy.NewMap()
+	for _, kv := range [...]struct{ k, v string }{{"sid", who.SID}, {"user", who.User}, {"command", who.Command}} {
+		if kv.v != "" {
+			m.Set(kv.k, kv.v)
+		}
+	}
 	m.Set("tacctl_version", version)
 	m.Set("created", now.UTC().Format("2006-01-02T15:04:05Z"))
 	m.Set("rendered", loadRendered(renderedPath))

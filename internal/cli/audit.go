@@ -501,6 +501,7 @@ func (inv *invocation) auditBegin() {
 		}
 	}
 	w.SetTerminal(tty, marker)
+	w.SetCommand(strings.Join(ar.words, " "))
 	w.SetStart(inv.auditStart)
 	if ar.class == classAction {
 		w.Touch()
