@@ -18,8 +18,8 @@ nothing is offered.
   `Cisco IOS Software` or `Cisco IOS XE Software`.
 - juniper: sysObjectID under 1.3.6.1.4.1.2636. and a sysDescr that names
   JUNOS.
-- wti: sysObjectID under 1.3.6.1.4.1.2634., offered only after a lab capture
-  is a fixture.
+- wti: sysObjectID under 1.3.6.1.4.1.2634. A WTI unit's sysDescr is
+  generic Linux text, so the enterprise is the only evidence.
 
 Enterprise 9 also covers ASA, NX-OS and IOS XR, which `cisco` does not
 support: an enterprise-9 answer without the IOS sysDescr is reported
@@ -80,8 +80,8 @@ discover`, the notice kind; `docs/cli/device.md`,
 `docs/devices/snmp-name-hint.md`, `man/tacctl.1`, CHANGELOG; unit tests and
 one bats case. No fakedev or container work.
 
-## Before it ships
+## Fixtures
 
-One lab capture of `sysObjectID` and `sysDescr` from a WTI unit and from a
-Junos and an IOS device, kept as fixtures, before `wti` and `juniper` are
-offered.
+Lab captures of `sysObjectID` and `sysDescr` from a WTI unit, a Junos switch
+and three Cisco images (IOS 12.4, IOS 15.6, IOS-XE 16.7) are rows of
+`TestDetectVendor`; `juniper` and `wti` are offered.

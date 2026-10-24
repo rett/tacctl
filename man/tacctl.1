@@ -7132,18 +7132,22 @@ and
 .B sysDescr.0
 in one request and says which vendor they name
 .RI ( "The device says it is Cisco IOS Software, vendor cisco (SNMP sysObjectID" " ...)" ).
-A vendor is named only when the two agree: an enterprise 9 sysObjectID with a
-sysDescr that starts
+An enterprise 9 sysObjectID with a sysDescr that starts
 .B "Cisco IOS Software"
 or
 .B "Cisco IOS XE Software"
 is
 .BR cisco ;
-any other enterprise 9 sysDescr (ASA, NX\-OS, IOS XR, or an older IOS image
-that describes itself otherwise), an unknown
-enterprise, and a missing sysObjectID or sysDescr name no vendor, and the line
-says what was read. Junos (enterprise 2636) and WTI (enterprise 2634) are
-recognised but not named yet: their vendor is set by hand. When
+an enterprise 2636 sysObjectID with a sysDescr that names Junos is
+.BR juniper ;
+an enterprise 2634 sysObjectID is
+.B wti
+(a WTI unit's sysDescr is generic Linux text, so the enterprise is the only
+evidence).
+Any other enterprise 9 sysDescr (ASA, NX\-OS, IOS XR, or an older IOS image
+that describes itself otherwise), an enterprise 2636 sysDescr that does not
+name Junos, an unknown enterprise, and a missing sysObjectID or sysDescr name
+no vendor, and the line says what was read. When
 .B \-\-vendor
 is given and the device names another vendor, a warning gives
 .BI "tacctl device vendor " "name vendor" ;

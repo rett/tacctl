@@ -29,17 +29,18 @@ $ tacctl device add sw1 192.0.2.10
   ! It is registered as other: tacctl device vendor sw1 cisco
 ```
 
-A vendor is named only when both agree: a sysObjectID under enterprise 9
-(`1.3.6.1.4.1.9.`) with a sysDescr that starts `Cisco IOS Software` or
-`Cisco IOS XE Software` is `cisco`. Enterprise 9 also covers ASA, NX-OS and
-IOS XR, which tacctl does not read as `cisco`: any other enterprise 9
-sysDescr (an older IOS image that describes itself otherwise included), an
-unknown enterprise, and a missing sysObjectID or sysDescr name no vendor, and
-the line says what was read (`The device names no vendor tacctl reads: Cisco
-device, sysDescr not recognised as IOS or IOS-XE (...)`). Junos (enterprise
-2636) and WTI (enterprise 2634) are recognised and not named yet: set their
-vendor by hand. A `--vendor` that disagrees is a warning with the `device
-vendor` command, never a refusal. Without `--vendor`, a terminal is asked one
+A sysObjectID under enterprise 9 (`1.3.6.1.4.1.9.`) with a sysDescr that
+starts `Cisco IOS Software` or `Cisco IOS XE Software` is `cisco`; one under
+enterprise 2636 with a sysDescr that names Junos is `juniper`; one under
+enterprise 2634 is `wti` (a WTI unit's sysDescr is generic Linux text, so the
+enterprise is the only evidence). Enterprise 9 also covers ASA, NX-OS and IOS
+XR, which tacctl does not read as `cisco`: any other enterprise 9 sysDescr, an
+enterprise 2636 sysDescr that does not name Junos, an unknown enterprise, and
+a missing sysObjectID (or, for Cisco and Juniper, sysDescr) name no vendor,
+and the line says what was read (`The device names no vendor tacctl reads:
+Cisco device, sysDescr not recognised as IOS or IOS-XE (...)`). A `--vendor`
+that disagrees is a warning with the `device vendor` command, never a
+refusal. Without `--vendor`, a terminal is asked one
 `y/N` (default no) to register with the vendor named, folded into the
 question of `device add <address>` (`Register 192.0.2.10 as 'sw1' (cisco)?
 [y/N]`); without a terminal it is only printed. `--pull` without `--vendor` uses the vendor the answer takes.

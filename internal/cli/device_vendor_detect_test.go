@@ -14,12 +14,13 @@ import (
 // The vendor from the device by SNMP (0.2.17 D260): 'device add', 'device
 // check', 'device vendor --from-device' and 'device discover --snmp' with a
 // stub getter. The sysDescr texts are synthetic (see internal/snmp's
-// TestDetectVendor), not captures of a device.
+// TestDetectVendor), except idWTI, which is a capture of a lab device.
 
 var (
 	idIOS     = snmp.Identity{ObjectID: "1.3.6.1.4.1.9.1.9999", Descr: "Cisco IOS Software, SYNTHETIC test platform, Version 0.0(0)"}
 	idCisco9  = snmp.Identity{ObjectID: "1.3.6.1.4.1.9.1.9997", Descr: "Cisco SYNTHETIC security appliance, Version 0.0"}
 	idJunos   = snmp.Identity{ObjectID: "1.3.6.1.4.1.2636.1.1.1.9999", Descr: "SYNTHETIC router, kernel JUNOS 0.0"}
+	idWTI     = snmp.Identity{ObjectID: "1.3.6.1.4.1.2634.1.8", Descr: "Linux localhost 5.4.0 #1 Tue Mar 24 13:05:15 PDT 2026 armv7l"}
 	idUnknown = snmp.Identity{ObjectID: "1.3.6.1.4.1.99999.1", Descr: "SYNTHETIC appliance"}
 )
 
@@ -44,8 +45,10 @@ func ttyBox(t *testing.T, sb *sandbox) func(string) {
 func TestDeviceAddVendorDetection(t *testing.T) {
 	sb := newSandbox(t, true)
 	sb.snmp = &stubSNMP{
-		names: map[string]string{"192.0.2.1": "sw1", "192.0.2.2": "sw2", "192.0.2.3": "sw3", "192.0.2.4": "fw4", "192.0.2.5": "rtr5"},
-		ids:   map[string]snmp.Identity{"192.0.2.1": idIOS, "192.0.2.2": idIOS, "192.0.2.3": idIOS, "192.0.2.4": idCisco9, "192.0.2.5": idJunos},
+		names: map[string]string{"192.0.2.1": "sw1", "192.0.2.2": "sw2", "192.0.2.3": "sw3", "192.0.2.4": "fw4", "192.0.2.5": "rtr5",
+			"192.0.2.7": "rtr7", "192.0.2.8": "pdu8"},
+		ids: map[string]snmp.Identity{"192.0.2.1": idIOS, "192.0.2.2": idIOS, "192.0.2.3": idIOS, "192.0.2.4": idCisco9, "192.0.2.5": idJunos,
+			"192.0.2.7": idJunos, "192.0.2.8": idWTI},
 	}
 	says := "  The device says it is Cisco IOS Software, vendor cisco (SNMP sysObjectID 1.3.6.1.4.1.9.1.9999, " +
 		"sysDescr 'Cisco IOS Software, SYNTHETIC test platform, Version 0.0(0)').\n"
@@ -65,29 +68,41 @@ func TestDeviceAddVendorDetection(t *testing.T) {
 	if sb.code != 0 || !strings.Contains(out, "registered: 192.0.2.3, other.") || !strings.Contains(out, says+"  ! It is registered as other: tacctl device vendor sw3 cisco\n") {
 		t.Errorf("absent --vendor: %d %q", sb.code, out)
 	}
-	// An enterprise-9 answer that is not IOS names no vendor; neither does
-	// Junos yet.
+	// An enterprise-9 answer that is not IOS names no vendor.
 	out = sb.dev("", "add", "fw4", "192.0.2.4", "--no-host-key")
 	if !strings.Contains(out, "  The device names no vendor tacctl reads: Cisco device, sysDescr not recognised as IOS or IOS-XE (SNMP sysObjectID 1.3.6.1.4.1.9.1.9997, ") ||
 		strings.Contains(out, "!") {
 		t.Errorf("enterprise 9, not IOS: %q", out)
 	}
+	// Junos is named: agreeing, the line only.
 	out = sb.dev("", "add", "rtr5", "192.0.2.5", "--no-host-key", "--vendor", "juniper")
-	if !strings.Contains(out, "  The device names no vendor tacctl reads: Junos, which detection does not name yet (juniper is set by hand)") ||
-		strings.Contains(out, "!") {
-		t.Errorf("Junos: %q", out)
+	if sb.code != 0 || !strings.Contains(out, "  The device says it is Junos, vendor juniper (SNMP sysObjectID 1.3.6.1.4.1.2636.1.1.1.9999, "+
+		"sysDescr 'SYNTHETIC router, kernel JUNOS 0.0').\n") || strings.Contains(out, "!") {
+		t.Errorf("Junos agreeing: %d %q", sb.code, out)
+	}
+	// Junos and WTI left at other: the warning with the fix, and the notice.
+	out = sb.dev("", "add", "rtr7", "192.0.2.7", "--no-host-key")
+	if sb.code != 0 || !strings.Contains(out, "registered: 192.0.2.7, other.") || !strings.Contains(out, "  The device says it is Junos, vendor juniper (") ||
+		!strings.Contains(out, "  ! It is registered as other: tacctl device vendor rtr7 juniper\n") {
+		t.Errorf("Junos left at other: %d %q", sb.code, out)
+	}
+	out = sb.dev("", "add", "pdu8", "192.0.2.8", "--no-host-key")
+	if sb.code != 0 || !strings.Contains(out, "  The device says it is WTI, vendor wti (SNMP sysObjectID 1.3.6.1.4.1.2634.1.8, sysDescr 'Linux localhost 5.4.0 ") ||
+		!strings.Contains(out, "  ! It is registered as other: tacctl device vendor pdu8 wti\n") {
+		t.Errorf("WTI left at other: %d %q", sb.code, out)
 	}
 	// The vendor named is kept: sw2 and sw3 have the notice, sw1 not.
 	out = sb.dev("", "notices")
 	for _, want := range []string{
 		"vendor-differs: 192.0.2.2 says it is cisco (SNMP, read ", "registered juniper; set it from the device: 'tacctl device vendor sw2 --from-device'",
 		"vendor-differs: 192.0.2.3 says it is cisco",
+		"vendor-differs: 192.0.2.7 says it is juniper", "vendor-differs: 192.0.2.8 says it is wti",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("notices lack %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "192.0.2.1 says") {
+	if strings.Contains(out, "192.0.2.1 says") || strings.Contains(out, "192.0.2.5 says") {
 		t.Errorf("a matching vendor raised a notice:\n%s", out)
 	}
 	// It cannot be acknowledged.
@@ -252,7 +267,10 @@ func TestDeviceVendorFromDevice(t *testing.T) {
 	sb.dev("", "add", "fw2", "192.0.2.2", "--no-host-key", "--no-lookup")
 	sb.dev("", "add", "sw3", "192.0.2.3", "--no-host-key", "--no-lookup", "--vendor", "cisco")
 	sb.dev("", "add", "sw4", "192.0.2.4", "--no-host-key", "--no-lookup")
-	sb.snmp = &stubSNMP{ids: map[string]snmp.Identity{"192.0.2.1": idIOS, "192.0.2.2": idCisco9, "192.0.2.3": idIOS}}
+	sb.dev("", "add", "rtr5", "192.0.2.5", "--no-host-key", "--no-lookup")
+	sb.dev("", "add", "pdu6", "192.0.2.6", "--no-host-key", "--no-lookup")
+	sb.snmp = &stubSNMP{ids: map[string]snmp.Identity{"192.0.2.1": idIOS, "192.0.2.2": idCisco9, "192.0.2.3": idIOS,
+		"192.0.2.5": idJunos, "192.0.2.6": idWTI}}
 	vendorOf := func(name string) string {
 		t.Helper()
 		sb.dev("", "vendor", name)
@@ -284,6 +302,15 @@ func TestDeviceVendorFromDevice(t *testing.T) {
 	}
 	if out := sb.dev("", "notices"); strings.Contains(out, "192.0.2.1 says") {
 		t.Errorf("notice after the set:\n%s", out)
+	}
+	// Junos and WTI are set the same way.
+	out = sb.dev("", "vendor", "rtr5", "--from-device", "-y")
+	if sb.code != 0 || !strings.Contains(out, "Device 'rtr5' vendor set to juniper.") || vendorOf("rtr5") != "juniper" {
+		t.Errorf("Junos: %d %q", sb.code, out)
+	}
+	out = sb.dev("", "vendor", "pdu6", "--from-device", "-y")
+	if sb.code != 0 || !strings.Contains(out, "Device 'pdu6' vendor set to wti.") || vendorOf("pdu6") != "wti" {
+		t.Errorf("WTI: %d %q", sb.code, out)
 	}
 	// The usage of the flag.
 	sb.dev("", "vendor", "sw1", "-y")

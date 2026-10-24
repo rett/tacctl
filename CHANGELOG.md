@@ -159,12 +159,13 @@ current behaviour; this file is where history lives.
 8. **The vendor from the device by SNMP.** `tacctl device add` reads the
    device's `sysObjectID.0` and `sysDescr.0` (the two in one request of their
    own, beside the name and location reads, with the credentials of the name
-   hint) and says which vendor they name: `cisco` for
-   an enterprise 9 answer whose sysDescr starts `Cisco IOS Software` or
-   `Cisco IOS XE Software`; any other enterprise 9 sysDescr, an unknown
-   enterprise, and a missing value name none, and Junos and WTI are
-   recognised but not named yet. A `--vendor` that disagrees is a warning
-   with the `device vendor` command; without `--vendor` a terminal is asked
+   hint) and says which vendor they name: `cisco` for an enterprise 9 answer
+   whose sysDescr starts `Cisco IOS Software` or `Cisco IOS XE Software`,
+   `juniper` for an enterprise 2636 answer whose sysDescr names Junos, and
+   `wti` for an enterprise 2634 answer (its sysDescr is generic Linux text);
+   any other enterprise 9 sysDescr, an unknown enterprise, and a missing
+   value name none. A `--vendor` that disagrees is a warning with the
+   `device vendor` command; without `--vendor` a terminal is asked
    one `y/N` to register with the vendor named (`device add <address>` folds
    it into its question), and `--pull` without `--vendor` uses it. `device
    add <address>` asks a terminal for the name when the device gives none

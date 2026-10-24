@@ -32,7 +32,7 @@ plain() {
 # snmp_agent <sysname> [<syslocation>]: the stub agent on 127.0.0.1 answering
 # v2c with the community 'c0mm' for a minute, and tacctl set up to ask it
 # (timeout 1 s). SNMP_OBJECTID and SNMP_DESCR, when set, are its sysObjectID
-# and sysDescr (synthetic texts, not captures of a device).
+# and sysDescr (synthetic texts, except where a test says it uses a capture).
 snmp_agent() {
     local pf="${BATS_TEST_TMPDIR}/snmp-agent.port"
     rm -f "$pf"
@@ -282,4 +282,26 @@ EOF
     assert_output --partial "The device names no vendor tacctl reads: Cisco device, sysDescr not recognised as IOS or IOS-XE (SNMP sysObjectID 1.3.6.1.4.1.9.1.9997, sysDescr 'Cisco SYNTHETIC security appliance'). Nothing was changed."
     run grep -c "fw1: {address: 127.0.0.1, vendor: other}" "$DEVICES"
     assert_output "1"
+}
+
+@test "device vendor --from-device: a Junos and a WTI answer (lab captures) set juniper and wti" {
+    SNMP_OBJECTID=1.3.6.1.4.1.2636.1.1.1.4.63.9 \
+        SNMP_DESCR="Juniper Networks, Inc. ex4300-48mp Ethernet Switch, kernel JUNOS 25.4R1-S3.3, Build date: 2026-09-11 01:36:47 UTC Copyright (c) 1996-2026 Juniper Networks, Inc." \
+        snmp_agent sw1
+    run "$TACCTL_BIN_SCRIPT" device add sw1 127.0.0.1 --no-host-key
+    assert_success
+    plain
+    assert_line "  ! It is registered as other: tacctl device vendor sw1 juniper"
+    run "$TACCTL_BIN_SCRIPT" device vendor sw1 --from-device -y
+    assert_success
+    assert_output --partial "Device 'sw1' vendor set to juniper."
+    run grep -c "sw1: {address: 127.0.0.1, vendor: juniper}" "$DEVICES"
+    assert_output "1"
+    "$TACCTL_BIN_SCRIPT" device remove sw1 -y > /dev/null
+    kill "$SNMP_PID" 2> /dev/null || true
+    SNMP_OBJECTID=1.3.6.1.4.1.2634.1.8 SNMP_DESCR="Linux localhost 5.4.0 #1 Tue Mar 24 13:05:15 PDT 2026 armv7l" snmp_agent WTI
+    "$TACCTL_BIN_SCRIPT" device add pdu1 127.0.0.1 --no-host-key --no-lookup > /dev/null
+    run "$TACCTL_BIN_SCRIPT" device vendor pdu1 --from-device -y
+    assert_success
+    assert_output --partial "Device 'pdu1' vendor set to wti."
 }

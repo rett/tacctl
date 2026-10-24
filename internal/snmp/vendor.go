@@ -2,8 +2,8 @@ package snmp
 
 // The vendor a device says it is (0.2.17 D260, docs/plans/vendor-detection.md):
 // its sysObjectID.0 names the enterprise, its sysDescr.0 the operating
-// system. A vendor is named only when both agree on one tacctl reads;
-// anything else is a reason and no vendor.
+// system. A vendor is named only when they agree on one tacctl reads (WTI
+// by its enterprise alone); anything else is a reason and no vendor.
 
 import (
 	"strings"
@@ -22,23 +22,22 @@ const enterprisesPrefix = "1.3.6.1.4.1."
 // The sysDescr starts that make an enterprise-9 answer cisco: IOS and
 // IOS-XE. ASA, NX-OS and IOS XR answer under enterprise 9 too, and tacctl
 // does not read them as cisco; nor any other sysDescr (an older IOS image
-// that describes itself otherwise waits for a capture).
+// that describes itself otherwise is not read as cisco).
 var ciscoDescrs = []string{"Cisco IOS Software", "Cisco IOS XE Software"}
 
-// offered are the vendors a detection names. juniper and wti are
-// recognised, but offered only once a lab capture of each device's
-// sysObjectID.0 and sysDescr.0 is a fixture of this package's tests.
-var offered = map[string]bool{"cisco": true}
+// offered are the vendors a detection names. Each has a lab capture of a
+// device's sysObjectID.0 and sysDescr.0 among this package's test fixtures.
+var offered = map[string]bool{"cisco": true, "juniper": true, "wti": true}
 
-// Offered reports whether detection names vendor (the vendors a lab capture
-// backs).
+// Offered reports whether detection names vendor.
 func Offered(vendor string) bool { return offered[vendor] }
 
 // DetectVendor is the vendor objectID (sysObjectID.0, dotted) and descr
 // (sysDescr.0) name together, with the reason: what was recognised. An
 // empty vendor is no answer, and reason says why: an enterprise-9 answer
-// without the IOS or IOS-XE sysDescr, a vendor not offered yet, an unknown
-// enterprise, a missing sysObjectID or sysDescr.
+// without the IOS or IOS-XE sysDescr, an enterprise-2636 answer without
+// Junos, an unknown enterprise, a missing sysObjectID or sysDescr. A WTI
+// unit's sysDescr is generic Linux text, so enterprise 2634 alone names wti.
 func DetectVendor(objectID, descr string) (vendor, reason string) {
 	oid := strings.TrimPrefix(strings.TrimSpace(objectID), ".")
 	d := strings.TrimSpace(descr)
@@ -75,10 +74,10 @@ func DetectVendor(objectID, descr string) (vendor, reason string) {
 }
 
 // offer is vendor with what named it, or no vendor when detection does not
-// name it yet.
+// name it.
 func offer(vendor, what string) (string, string) {
 	if !offered[vendor] {
-		return "", what + ", which detection does not name yet (" + vendor + " is set by hand)"
+		return "", what + ", which detection does not name (" + vendor + " is set by hand)"
 	}
 	return vendor, what
 }

@@ -7,15 +7,35 @@ import (
 	"testing"
 )
 
-// The sysDescr texts below are synthetic: each holds only the words the
-// detection rule looks at (docs/plans/vendor-detection.md), and none is a
-// capture of a device. The captures of a WTI unit, a Junos and an IOS device
-// are still to be added as fixtures before juniper and wti are offered.
+// The rows named "capture" are real captures of lab devices: the
+// sysObjectID.0 and sysDescr.0 each device answered. The other rows are
+// synthetic: each holds only the words the detection rule looks at
+// (docs/plans/vendor-detection.md), and none is a capture of a device.
 func TestDetectVendor(t *testing.T) {
 	for _, c := range []struct {
 		name, oid, descr string
 		vendor, reason   string
 	}{
+		{"capture: Junos EX4300-48MP", "1.3.6.1.4.1.2636.1.1.1.4.63.9",
+			"Juniper Networks, Inc. ex4300-48mp Ethernet Switch, kernel JUNOS 25.4R1-S3.3, Build date: 2026-09-11 01:36:47 UTC Copyright (c) 1996-2026 Juniper Networks, Inc.",
+			"juniper", "Junos"},
+		{"capture: IOS 12.4 (7200 emulator)", "1.3.6.1.4.1.9.1.222",
+			"Cisco IOS Software, 7200 Software (C7200-ITPK9-M), Version 12.4(15)SW, RELEASE SOFTWARE (fc2)\r\n" +
+				"Technical Support: http://www.cisco.com/techsupport\r\n" +
+				"Copyright (c) 1986-2007 by Cisco Systems, Inc.\r\n" +
+				"Compiled Wed 24-Oct-07 17:17 by prod_rel_team",
+			"cisco", "Cisco IOS Software"},
+		{"capture: IOS 15.6 (IOSv)", "1.3.6.1.4.1.9.1.1041",
+			"Cisco IOS Software, IOSv Software (VIOS-ADVENTERPRISEK9-M), Version 15.6(2)T, RELEASE SOFTWARE (fc2)",
+			"cisco", "Cisco IOS Software"},
+		// This image's sysDescr starts "Cisco IOS Software", not "Cisco IOS XE
+		// Software"; the XE prefix is for newer images.
+		{"capture: IOS-XE 16.7 (CSR1000v)", "1.3.6.1.4.1.9.1.1537",
+			"Cisco IOS Software [Fuji], Virtual XE Software (X86_64_LINUX_IOSD-UNIVERSALK9-M), Version 16.7.1, RELEASE SOFTWARE (fc6)",
+			"cisco", "Cisco IOS Software"},
+		// The sysDescr is generic Linux text: the enterprise is the only evidence.
+		{"capture: WTI", "1.3.6.1.4.1.2634.1.8", "Linux localhost 5.4.0 #1 Tue Mar 24 13:05:15 PDT 2026 armv7l",
+			"wti", "WTI"},
 		{"IOS", "1.3.6.1.4.1.9.1.9999", "Cisco IOS Software, SYNTHETIC test platform, Version 0.0(0)",
 			"cisco", "Cisco IOS Software"},
 		{"IOS-XE", ".1.3.6.1.4.1.9.1.9998", "  Cisco IOS XE Software, SYNTHETIC test platform\r\nmore lines",
@@ -25,12 +45,13 @@ func TestDetectVendor(t *testing.T) {
 		{"enterprise 9, IOS XR is not IOS", "1.3.6.1.4.1.9.1.9996", "Cisco IOS XR Software (SYNTHETIC)",
 			"", "Cisco device, sysDescr not recognised as IOS or IOS-XE"},
 		{"enterprise 9, no sysDescr", "1.3.6.1.4.1.9.1.9999", "", "", "Cisco (enterprise 9) with no sysDescr"},
-		{"Junos, not offered yet", "1.3.6.1.4.1.2636.1.1.1.9999", "SYNTHETIC router, kernel JUNOS 0.0",
-			"", "Junos, which detection does not name yet (juniper is set by hand)"},
+		{"Junos, lower case in the sysDescr", "1.3.6.1.4.1.2636.1.1.1.9999", "SYNTHETIC router, kernel junos 0.0",
+			"juniper", "Junos"},
 		{"enterprise 2636 without Junos", "1.3.6.1.4.1.2636.1.1.1.9999", "SYNTHETIC appliance", "", "Juniper device, sysDescr does not name Junos"},
-		{"WTI, not offered yet", "1.3.6.1.4.1.2634.9999", "SYNTHETIC unit",
-			"", "WTI, which detection does not name yet (wti is set by hand)"},
+		{"enterprise 2636, no sysDescr", "1.3.6.1.4.1.2636.1.1.1.9999", "", "", "Juniper (enterprise 2636) with no sysDescr"},
+		{"WTI, no sysDescr", "1.3.6.1.4.1.2634.9999", "", "wti", "WTI"},
 		{"an unknown enterprise", "1.3.6.1.4.1.99999.1", "Cisco IOS Software, SYNTHETIC", "", "an unknown enterprise (99999)"},
+		{"a longer enterprise number is not WTI", "1.3.6.1.4.1.26340.1", "Linux SYNTHETIC", "", "an unknown enterprise (26340)"},
 		{"outside the enterprises", "1.3.6.1.2.1.1", "Cisco IOS Software", "", "a sysObjectID outside the enterprises (1.3.6.1.2.1.1)"},
 		{"no sysObjectID", "", "Cisco IOS Software, SYNTHETIC", "", "no sysObjectID"},
 		{"empty sysDescr, unknown enterprise", "1.3.6.1.4.1.99999.1", "", "", "an unknown enterprise (99999)"},
@@ -40,8 +61,8 @@ func TestDetectVendor(t *testing.T) {
 			t.Errorf("%s: DetectVendor(%q, %q) = %q, %q; want %q, %q", c.name, c.oid, c.descr, v, r, c.vendor, c.reason)
 		}
 	}
-	if !Offered("cisco") || Offered("juniper") || Offered("wti") || Offered("other") {
-		t.Error("Offered: only cisco has a fixture")
+	if !Offered("cisco") || !Offered("juniper") || !Offered("wti") || Offered("other") || Offered("") {
+		t.Error("Offered: cisco, juniper and wti only")
 	}
 }
 

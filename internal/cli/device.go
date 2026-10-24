@@ -420,13 +420,14 @@ when there is none to offer. --no-lookup skips the hint. SNMP is set up with
 
 Vendor: 'add' also reads the device's sysObjectID.0 and sysDescr.0 and says
 which vendor they name: cisco for enterprise 9 with a sysDescr that starts
-'Cisco IOS Software' or 'Cisco IOS XE Software'; any other enterprise 9
-sysDescr, an unknown enterprise or a missing value names none (Junos and WTI are
-recognised, not named yet). A --vendor that disagrees is a warning; without
---vendor a terminal is asked one y/N to take the vendor named. 'check' shows
-it in a Vendor row, 'vendor <name> --from-device' sets it, 'discover --snmp'
-puts it in the add lines, and one that is not the registered vendor is a
-vendor-differs notice. A vendor change marks the last pull 'needs pull'.
+'Cisco IOS Software' or 'Cisco IOS XE Software'; juniper for enterprise 2636
+with a sysDescr that names Junos; wti for enterprise 2634. Any other
+enterprise 9 sysDescr, an unknown enterprise or a missing value names none.
+A --vendor that disagrees is a warning; without --vendor a terminal is asked
+one y/N to take the vendor named. 'check' shows it in a Vendor row, 'vendor
+<name> --from-device' sets it, 'discover --snmp' puts it in the add lines, and
+one that is not the registered vendor is a vendor-differs notice. A vendor
+change marks the last pull 'needs pull'.
 
 Location: when no --snmp-location is given, 'add' also reads the device's own
 location (SNMP sysLocation.0) and stores it, saying so. A device that reports
