@@ -276,3 +276,35 @@ func TestScanNoticesWithoutCache(t *testing.T) {
 		t.Errorf("%q", got)
 	}
 }
+
+// vendor-differs (0.2.17 D260): the vendor an address last named by SNMP
+// against the registered one; a read that names none drops it, and Prune
+// drops an old one. It cannot be acknowledged.
+func TestVendorDiffersNotice(t *testing.T) {
+	at := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	f := Empty()
+	f.Devices = []*Device{{Name: "sw1", Address: "192.0.2.1", Vendor: "other", HostKeys: nil},
+		{Name: "sw2", Address: "192.0.2.2", Vendor: "cisco"}}
+	s := NewSeen()
+	s.RecordDetection("192.0.2.1", "cisco", at)
+	s.RecordDetection("192.0.2.2", "cisco", at)
+	r := NewResolver(f, nil, nil)
+	r.Seen = s
+	if got := noticeKinds(r, "sw1"); !slices.Contains(got, NoticeVendorDiffers) {
+		t.Errorf("sw1: %q", got)
+	}
+	if got := noticeKinds(r, "sw2"); slices.Contains(got, NoticeVendorDiffers) {
+		t.Errorf("sw2 (matching): %q", got)
+	}
+	if slices.Contains(AckableKinds, NoticeVendorDiffers) {
+		t.Error("vendor-differs is acknowledgeable")
+	}
+	s.RecordDetection("192.0.2.1", "", at)
+	if _, ok := s.DetectionOf("192.0.2.1"); ok {
+		t.Error("an answer that names no vendor kept the old one")
+	}
+	s.Prune(at.AddDate(0, 0, 61), 30, nil)
+	if _, ok := s.DetectionOf("192.0.2.2"); ok {
+		t.Error("Prune kept a detection older than twice stale-days")
+	}
+}

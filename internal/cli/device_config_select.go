@@ -293,7 +293,8 @@ func (inv *invocation) chooseDevices(sel selection, user string, login bool, ver
 }
 
 // staleness is the state of a device's configuration against today's
-// rendering (D66): never, failed, differs or ok.
+// rendering (D66): never, failed, differs or ok; pull for a syntax nothing
+// says (D113) and for a vendor changed since the pull (D260).
 func (inv *invocation) staleness(store devconf.Store, recs *devconf.Records, render *managedRender, e devreg.Entry) (devconf.Staleness, error) {
 	rec, _ := recs.Of(e.Name)
 	switch {
@@ -301,6 +302,9 @@ func (inv *invocation) staleness(store devconf.Store, recs *devconf.Records, ren
 		return devconf.StaleNever, nil
 	case rec.Result != devconf.ResultOK:
 		return devconf.StaleFailed, nil
+	case devconf.VendorChanged(rec, e.Vendor):
+		// The stored sections are of the old vendor's shape (D260).
+		return devconf.StalePull, nil
 	}
 	stored := render.stored(store, e)
 	if stored == nil {

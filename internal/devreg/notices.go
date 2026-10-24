@@ -20,10 +20,12 @@ const (
 	NoticeDuplicateAddress = "duplicate-address"
 	NoticeIdentityChanged  = "identity-changed"
 	NoticeAddressChanged   = "address-changed"
+	NoticeVendorDiffers    = "vendor-differs"
 )
 
 // AckableKinds are the notices an operator may acknowledge per device.
-// hostkey-changed is not among them: only re-pinning clears it.
+// hostkey-changed is not among them: only re-pinning clears it; nor is
+// vendor-differs: setting the vendor, or a later read, clears it.
 var AckableKinds = []string{
 	NoticeGenericName, NoticeHostKeyUnpinned, NoticeHostKeyAdded, NoticeHostKeyUnreach,
 	NoticeAmbiguousNASID, NoticeGenericNASID, NoticeNameMismatch, NoticeDuplicateAddress, NoticeIdentityChanged,

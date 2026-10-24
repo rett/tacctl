@@ -36,6 +36,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/rett/tacctl/internal/audit"
+	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
@@ -200,6 +201,9 @@ func (s *deviceSyncRun) collect(sel selection) error {
 			continue
 		case !ok || rec.Pulled.IsZero():
 			d.Skipped = "no pull record: tacctl device config pull " + e.Name + " (or device collect --register)"
+			continue
+		case devconf.VendorChanged(rec, e.Vendor):
+			d.Skipped = "the last pull read it as " + rec.Vendor + ": tacctl device config pull " + e.Name
 			continue
 		}
 		d.Pulled = rec.Pulled.UTC().Format("2006-01-02 15:04")

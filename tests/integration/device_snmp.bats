@@ -31,11 +31,13 @@ plain() {
 
 # snmp_agent <sysname> [<syslocation>]: the stub agent on 127.0.0.1 answering
 # v2c with the community 'c0mm' for a minute, and tacctl set up to ask it
-# (timeout 1 s).
+# (timeout 1 s). SNMP_OBJECTID and SNMP_DESCR, when set, are its sysObjectID
+# and sysDescr (synthetic texts, not captures of a device).
 snmp_agent() {
     local pf="${BATS_TEST_TMPDIR}/snmp-agent.port"
     rm -f "$pf"
-    "$TACCTL_BIN_SCRIPT" _snmp-agent --port-file "$pf" --seconds 60 --sysname "$1" --syslocation "${2:-}" --community c0mm > /dev/null 2>&1 3>&- &
+    "$TACCTL_BIN_SCRIPT" _snmp-agent --port-file "$pf" --seconds 60 --sysname "$1" --syslocation "${2:-}" \
+        --sysobjectid "${SNMP_OBJECTID:-}" --sysdescr "${SNMP_DESCR:-}" --community c0mm > /dev/null 2>&1 3>&- &
     SNMP_PID=$!
     local _
     for _ in $(seq 50); do
@@ -244,4 +246,40 @@ EOF
     plain
     assert_output --partial "reports no location (its sysLocation is empty). Nothing was changed."
     assert_output --partial "Set one with: tacctl device location sw1 '<text>'"
+}
+
+@test "device add, check and vendor --from-device: the vendor the agent names (sysObjectID, sysDescr)" {
+    SNMP_OBJECTID=1.3.6.1.4.1.9.1.9999 SNMP_DESCR="Cisco IOS Software, SYNTHETIC test platform" snmp_agent sw1
+    run "$TACCTL_BIN_SCRIPT" device add sw1 127.0.0.1 --no-host-key
+    assert_success
+    plain
+    assert_line "[INFO] Device 'sw1' registered: 127.0.0.1, other."
+    assert_line "  The device says it is Cisco IOS Software, vendor cisco (SNMP sysObjectID 1.3.6.1.4.1.9.1.9999, sysDescr 'Cisco IOS Software, SYNTHETIC test platform')."
+    assert_line "  ! It is registered as other: tacctl device vendor sw1 cisco"
+    run "$TACCTL_BIN_SCRIPT" device check sw1
+    plain
+    assert_output --partial "Vendor:      differs: device says cisco (Cisco IOS Software), registered other (tacctl device vendor sw1 --from-device)"
+    assert_output --partial "vendor-differs: 127.0.0.1 says it is cisco"
+    # Without a terminal or -y nothing changes; with -y it is set.
+    run "$TACCTL_BIN_SCRIPT" device vendor sw1 --from-device
+    assert_failure
+    run grep -c "sw1: {address: 127.0.0.1, vendor: other}" "$DEVICES"
+    assert_output "1"
+    run "$TACCTL_BIN_SCRIPT" device vendor sw1 --from-device -y
+    assert_success
+    plain
+    assert_output --partial "Device 'sw1' vendor set to cisco."
+    run grep -c "sw1: {address: 127.0.0.1, vendor: cisco}" "$DEVICES"
+    assert_output "1"
+}
+
+@test "device vendor --from-device: an enterprise-9 answer that is not IOS is refused with what was read" {
+    SNMP_OBJECTID=1.3.6.1.4.1.9.1.9997 SNMP_DESCR="Cisco SYNTHETIC security appliance" snmp_agent fw1
+    "$TACCTL_BIN_SCRIPT" device add fw1 127.0.0.1 --no-host-key --no-lookup > /dev/null
+    run "$TACCTL_BIN_SCRIPT" device vendor fw1 --from-device -y
+    assert_failure
+    plain
+    assert_output --partial "The device names no vendor tacctl reads: Cisco device, sysDescr not recognised as IOS or IOS-XE (SNMP sysObjectID 1.3.6.1.4.1.9.1.9997, sysDescr 'Cisco SYNTHETIC security appliance'). Nothing was changed."
+    run grep -c "fw1: {address: 127.0.0.1, vendor: other}" "$DEVICES"
+    assert_output "1"
 }

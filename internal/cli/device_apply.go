@@ -482,7 +482,9 @@ func (r *applyRun) writeApplied(e devreg.Entry, a devconf.Applied) error {
 	if old, ok := recs.Of(e.Name); ok {
 		rec = *old
 	}
-	rec.Address, rec.Vendor = e.Address, e.Vendor
+	rec.Address = e.Address
+	// The stored sections keep the vendor of their pull (D260).
+	rec.SetVendorUnlessPulled(e.Vendor)
 	rec.Applied = &a
 	recs.Put(e.Name, rec)
 	recs.Updated = r.inv.app.Knobs.Now()

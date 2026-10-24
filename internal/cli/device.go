@@ -110,7 +110,7 @@ var deviceSpecs = map[string]Spec{
 	"rename":      {MinArgs: 2, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagAllowGeneric}},
 	"address":     {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagApply, flagYes}},
 	"hostname":    {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
-	"vendor":      {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, KindVendors + "|clear"}},
+	"vendor":      {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, KindVendors + "|clear"}, Flags: []Flag{{Names: []string{"--from-device"}}, flagYes}},
 	"port":        {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
 	"description": {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}, Flags: []Flag{flagApply}},
 	"location":    {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}, Flags: []Flag{{Names: []string{"--from-device"}}, flagYes, flagApply}},
@@ -137,7 +137,7 @@ var deviceSpecs = map[string]Spec{
 	"scan": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--full"}}, {Names: []string{"--since"}, Value: true},
 		{Names: []string{"--if-stale"}}, {Names: []string{"--quiet"}},
 		{Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
-	"discover": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--all"}}, {Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
+	"discover": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--all"}}, {Names: []string{"--snmp"}}, {Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
 	"check":    {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagJSON}},
 	// 'device config show <name>' is device_config.go.
 	"config": {MinArgs: 1, MaxArgs: 2, Args: []string{"show", KindDevices}, Flags: []Flag{
@@ -151,7 +151,7 @@ var deviceSpecs = map[string]Spec{
 var deviceVerbs = [][2]string{
 	{"list [word] [--name <text>] [--ip <addr|cidr|text>] [--vendor <vendor>] [--scope <scope>] [--stale] [--unconfigured] [--scan] [--probe] [--json]", "Registered devices and enrolled hosts, by name: scope, state, last seen, notices; the options narrow the list"},
 	{"show <name|address> [--all] [--json]", "One device or host in full (--all: the acknowledged notices too)"},
-	{"add [<name>] <address> [options]", "Register a device (no name: offer the one it gives itself by SNMP)"},
+	{"add [<name>] <address> [options]", "Register a device (no name: offer the one it gives itself by SNMP); the vendor the device names by SNMP is shown, and offered at a terminal"},
 	{"onboard <address> --login <local-user> [--name <name>] [--host-key SHA256:<fp>] [--legacy-ssh] [--check] [--section <list>] [--json]", "Superusers, Junos devices: register a blank device reached with one of its local accounts and commit its first configuration as that account, kept only after your own TACACS+ login proves it"},
 	{"collect <address>... | --discovered [--login <local-user>] [--host-key SHA256:<fp>] [--register [-y]] [--json]", "Superusers, Junos devices: log in once to each address nobody registered and read what it is (host keys shown and trusted by one question first; show version and the configuration, nothing else), as one table; --register registers them through 'device add' and keeps the read as their first record"},
 	{"sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite] [--json] [-y]", "Superusers: fill the registry's empty hostname, location and description from what each device's last pull record says of itself (no login; the preview first, --apply writes after one question)"},
@@ -159,7 +159,7 @@ var deviceVerbs = [][2]string{
 	{"rename <old> <new> [--allow-generic]", "Rename a device"},
 	{"address <name> [<address>] [-y]", "Show or set the address (--apply: then run 'device config apply' for the device); on a device with a break-glass hold, the hold moves with it after one question (-y: no question)"},
 	{"hostname <name> [<dns>|clear]", "Show, set or clear the DNS name"},
-	{"vendor <name> [cisco|juniper|wti|other]", "Show or set the vendor"},
+	{"vendor <name> [cisco|juniper|wti|other|--from-device [-y]]", "Show or set the vendor (--from-device: read it from the device by SNMP)"},
 	{"port <name> [<n>|clear]", "Show, set or clear the ssh port"},
 	{"description <name> [<text>|clear]", "Show, set or clear the description (--apply: then run 'device config apply' for the device)"},
 	{"location <name> [<text>|clear|--from-device [-y]]", "Show, set or clear the place, for the SNMP location in the walkthroughs (--from-device: read it from the device; --apply: then run 'device config apply' for the device)"},
@@ -177,8 +177,8 @@ var deviceVerbs = [][2]string{
 	{"ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
 	{"ssh-config", "Print an ssh_config Include for your devices (Host blocks, pinned keys)"},
 	{"scan [--full] [--since <dur>] [--backend <id>]", "Read the logs for the devices seen; re-scan pinned host keys"},
-	{"discover [--all] [--backend <id>]", "Scan, then list the addresses that authenticated unregistered"},
-	{"check <name>|--all [--json]", "Checklist: scope, tag, seen, reachable, host key, SNMP name and location"},
+	{"discover [--all] [--snmp] [--backend <id>]", "Scan, then list the addresses that authenticated unregistered (--snmp: read each one's name and vendor by SNMP for the add lines)"},
+	{"check <name>|--all [--json]", "Checklist: scope, tag, seen, reachable, host key, SNMP name, location and vendor"},
 	{"config show <name> [--protocol tacacs|radius] [--legacy] [--server <address|name>] [--source <address>]", "The device's data, then its vendor walkthrough for its scope"},
 	{"config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [options]", "Read the devices' configuration as you and compare the managed sections with what tacctl renders"},
 	{"config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [--pull] [--section <list>] [--exit-code] [--json]", "The last pull against what tacctl renders now, section by section"},
@@ -214,7 +214,7 @@ var deviceOptions = map[string][][2]string{
 		{"--config-syntax <syntax>", "(cisco) auto, ios12 or modern: the configuration syntax (default auto: the pull's version line says)"},
 		{"--host-key SHA256:<fp>", "Register only if the device offers this key; pin it alone"},
 		{"--no-host-key", "Register without a pinned key (a hostkey-unpinned notice)"},
-		{"--no-lookup", "Do not read the device's own name and location by SNMP"},
+		{"--no-lookup", "Do not read the device's own name, location and vendor by SNMP"},
 		{"--pull", "After registering, read its configuration as 'device config pull' does (as you; needs a vendor and a scope)"},
 		{"--allow-generic", "(add, rename, import) Allow a generic name such as 'switch'"},
 	},
@@ -233,10 +233,10 @@ var deviceOptions = map[string][][2]string{
 	},
 	"remove": {
 		{"--all", "(remove, check) Every device; (show, notices) the acknowledged notices too"},
-		{"-y, --yes", "(remove, import, hostkey, location, address) Answer yes to the confirmation"},
+		{"-y, --yes", "(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation"},
 	},
 	"location": {
-		{"--from-device", "Read the location from the device (SNMP sysLocation) and store it"},
+		{"--from-device", "(location, vendor) Read the location (SNMP sysLocation) or the vendor (sysObjectID and sysDescr) from the device and store it"},
 		{"--apply", "(address, description, location, config-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question"},
 	},
 	"import": {
@@ -272,6 +272,7 @@ var deviceOptions = map[string][][2]string{
 	},
 	"discover": {
 		{"--all", "Also list the addresses that were only refused"},
+		{"--snmp", "Read each listed address's name and vendor by SNMP and put them in its 'device add' line"},
 	},
 	"config show": {
 		{"--protocol tacacs|radius", "The protocol (default: the scope's auth-method, else its only protocol, else tacacs)"},
@@ -411,8 +412,19 @@ compares it with the name given or its --hostname; a different one is a
 warning, and the add goes ahead. A device that does not answer is added as
 before; the NAS-Identifier a scan recorded for the address is shown instead
 when there is one. 'add <address>' with no name offers the sysName,
-lowercased, at a terminal ('y' to take it). --no-lookup skips the hint.
-SNMP is set up with 'tacctl config snmp'; 'check' shows the sysName too.
+lowercased, at a terminal ('y' to take it), and asks a terminal for the name
+when there is none to offer. --no-lookup skips the hint. SNMP is set up with
+'tacctl config snmp'; 'check' shows the sysName too.
+
+Vendor: 'add' also reads the device's sysObjectID.0 and sysDescr.0 and says
+which vendor they name: cisco for enterprise 9 with a sysDescr that starts
+'Cisco IOS Software' or 'Cisco IOS XE Software'; any other enterprise 9
+sysDescr, an unknown enterprise or a missing value names none (Junos and WTI are
+recognised, not named yet). A --vendor that disagrees is a warning; without
+--vendor a terminal is asked one y/N to take the vendor named. 'check' shows
+it in a Vendor row, 'vendor <name> --from-device' sets it, 'discover --snmp'
+puts it in the add lines, and one that is not the registered vendor is a
+vendor-differs notice. A vendor change marks the last pull 'needs pull'.
 
 Location: when no --snmp-location is given, 'add' also reads the device's own
 location (SNMP sysLocation.0) and stores it, saying so. A device that reports
@@ -424,9 +436,10 @@ now and stores it: an empty answer is refused, and a different registered
 location is shown beside the new one and asked about (-y answers yes).
 
 Pulling: 'add --pull' registers the device and then runs 'config pull' for it,
-as you (the pull's own output follows the add's). It needs --vendor cisco,
-juniper or wti and the tier of 'config pull', and is refused before anything
-is registered when they are missing. A device no scope covers is registered
+as you (the pull's own output follows the add's). It needs the vendor cisco,
+juniper or wti (--vendor, or the one the device names and the question takes)
+and the tier of 'config pull', and is refused before anything is registered
+when they are missing. A device no scope covers is registered
 and not pulled (the line says which commands to run); a failed pull leaves it
 registered and the command returns the pull's status.
 
@@ -454,7 +467,7 @@ scans first, and an interactive session of the console or of 'tacctl shell'
 starts 'scan --if-stale --quiet' in the background (operator tier and up). --full re-reads everything the logs still hold, --since <dur>
 (7d, 12h, 2w) that stretch. 'discover' lists the addresses that authenticated
 without being registered, each with its 'device add' line (--all: those only
-refused too). 'check' and 'list --probe' connect to each ssh port (3 s): this
+refused too; --snmp: the name and vendor read by SNMP in each line). 'check' and 'list --probe' connect to each ssh port (3 s): this
 server often has no path to management ports, so a timeout may be a false
 alarm. Scans, discover and check are for the operator tier and up.
 
@@ -1269,14 +1282,18 @@ func (inv *invocation) deviceAddWith(args []string, trusted []devreg.HostKey) er
 		return err
 	}
 	hint := make(chan nameHint, 1)
+	// The vendor the device names (D260), read with the name.
+	vend := make(chan vendorRead, 1)
+	var off addOffer
 	if len(p.Args) == 1 {
-		name, h, err := inv.deviceAddOffered(p, "Usage: tacctl device add [<name>] <address> [options]")
-		if err != nil || name == "" {
+		off, err = inv.deviceAddOffered(p, "Usage: tacctl device add [<name>] <address> [options]")
+		if err != nil || off.name == "" {
 			return err
 		}
-		p.Args = []string{name, p.Args[0]}
-		args = append([]string{name}, args...)
-		hint <- h
+		p.Args = []string{off.name, p.Args[0]}
+		args = append([]string{off.name}, args...)
+		hint <- off.hint
+		vend <- off.vend
 	}
 	d := devreg.Device{Name: p.Args[0], Vendor: devreg.VendorOther, LegacySSH: p.Has("--legacy-ssh")}
 	checks := []error{devreg.ValidateName(d.Name)}
@@ -1344,10 +1361,18 @@ func (inv *invocation) deviceAddWith(args []string, trusted []devreg.HostKey) er
 	lookup := !p.Has("--no-lookup")
 	if lookup && len(hint) == 0 {
 		go func() { hint <- inv.lookupNameHint(d.Address) }()
+		go func() { vend <- inv.readVendor(d.Address) }()
 	}
 	// The device's own location, read alongside, unless one was given.
 	var locCh chan locRead
-	if lookup && !p.Has("--snmp-location") {
+	switch {
+	case !lookup || p.Has("--snmp-location"):
+	case off.nameFailed:
+		// The name was typed after the device did not answer it: it is not
+		// asked again (a second timeout); the name hint says so.
+		locCh = make(chan locRead, 1)
+		locCh <- locRead{problem: off.vend.problem, err: off.vend.err}
+	default:
 		locCh = make(chan locRead, 1)
 		go func() { locCh <- inv.readLocation(d.Address) }()
 	}
@@ -1357,6 +1382,29 @@ func (inv *invocation) deviceAddWith(args []string, trusted []devreg.HostKey) er
 		return err
 	}
 	d.HostKeys = devreg.KeyStrings(pin)
+	// The vendor: offered at a terminal when --vendor is not given (one y/N,
+	// default no; folded into the name's question when there was one).
+	var vr vendorRead
+	shown := off.vendorAsked
+	if lookup {
+		vr = <-vend
+		if off.vendorTaken {
+			d.Vendor = vr.vendor
+		}
+		if pr := inv.app.Prompter(); !p.Has("--vendor") && !off.vendorAsked && vr.vendor != "" && vr.vendor != d.Vendor && pr.Interactive() {
+			inv.echo("  " + vr.says() + ".")
+			shown = true
+			if pr.Confirm("  Register it as " + vr.vendor + "? [y/N]: ") {
+				d.Vendor = vr.vendor
+			}
+		}
+	}
+	// --pull without --vendor needs the vendor the device named.
+	if p.Has("--pull") {
+		if err := inv.deviceAddPullVendor(d.Vendor); err != nil {
+			return err
+		}
+	}
 	var loc locRead
 	stored := false
 	if locCh != nil {
@@ -1381,6 +1429,8 @@ func (inv *invocation) deviceAddWith(args []string, trusted []devreg.HostKey) er
 	a.Out.Info("Device '" + d.Name + "' registered: " + d.Address + ", " + d.Vendor + ".")
 	if lookup {
 		inv.printNameHint(d, <-hint)
+		inv.printVendor(d, vr, shown)
+		inv.keepDetections(map[string]vendorRead{d.Address: vr})
 	}
 	inv.deviceAddReport(d, p, pin, offered)
 	e, _ := after.Lookup(d.Name, devreg.ScopeFilter{})
@@ -1410,8 +1460,10 @@ func (inv *invocation) deviceAddWith(args []string, trusted []devreg.HostKey) er
 }
 
 // deviceAddPullCheck is the refusal of --pull that needs no device, made
-// before anything is registered: the caller's tier, the account the pull
-// logs in as, and a vendor the pull reads.
+// before anything is read: the caller's tier, the account the pull logs in
+// as, and a vendor the pull reads when --vendor (or --no-lookup) leaves the
+// device nothing to say; otherwise the vendor is checked once the device
+// was read (deviceAddPullVendor), still before anything is registered.
 func (inv *invocation) deviceAddPullCheck(p Parsed) error {
 	if !p.Has("--pull") {
 		return nil
@@ -1422,7 +1474,16 @@ func (inv *invocation) deviceAddPullCheck(p Parsed) error {
 	if _, err := inv.configLogin("device add --pull"); err != nil {
 		return err
 	}
-	if !slices.Contains(sortedVendors(), strings.ToLower(p.Value("--vendor"))) {
+	if p.Has("--vendor") || p.Has("--no-lookup") {
+		return inv.deviceAddPullVendor(strings.ToLower(p.Value("--vendor")))
+	}
+	return nil
+}
+
+// deviceAddPullVendor is the refusal of --pull for a vendor the pull does not
+// read.
+func (inv *invocation) deviceAddPullVendor(vendor string) error {
+	if !slices.Contains(sortedVendors(), vendor) {
 		return inv.usageErr("--pull reads the configuration, which needs --vendor cisco, juniper or wti.")
 	}
 	return nil
@@ -1587,6 +1648,9 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		}
 		if field == "location" && (p.Has("--from-device") || p.Has("-y")) {
 			return inv.deviceLocationFromDevice(p, f, res)
+		}
+		if field == "vendor" && (p.Has("--from-device") || p.Has("-y")) {
+			return inv.deviceVendorFromDevice(p, f, res)
 		}
 		if len(p.Args) == 1 {
 			e, err := inv.deviceFind(res, p.Args[0])

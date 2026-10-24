@@ -16,6 +16,8 @@ package devreg
 //	generic-nas-id       the NAS-Identifier is a generic name
 //	name-mismatch        the NAS-Identifier is not the entry's name
 //	ambiguous-nas-id     one NAS-Identifier is sent from several addresses
+//	vendor-differs       the vendor the device last named by SNMP is not
+//	                     the registered one (cannot be acknowledged)
 
 import (
 	"github.com/rett/tacctl/internal/hosts"
@@ -112,6 +114,10 @@ func (r *Resolver) scanNotices(e Entry) []Notice {
 				"'; give each its own: 'tacctl device address <name> <address>'"+ackTail(e, NoticeDuplicateAddress))
 			break
 		}
+	}
+	if d, ok := r.Seen.DetectionOf(e.Address); ok && e.Source == SourceDevice && d.Vendor != e.Vendor {
+		add(NoticeVendorDiffers, e.Address+" says it is "+d.Vendor+" (SNMP, read "+whenText(d.At)+"), registered "+e.Vendor+
+			"; set it from the device: 'tacctl device vendor "+e.Name+" --from-device'")
 	}
 	s, ok := r.Seen.Of(e.Address)
 	if !ok || s.LastNASID == "" {

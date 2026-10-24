@@ -6858,6 +6858,16 @@ clears it),
 (a new key type, the pins unchanged) and
 .B hostkey-unreachable
 (no key could be read; with the last good scan). A scan never changes a pin.
+.B vendor\-differs
+is raised when the vendor a device last named by SNMP (read by
+.BR "device add" ,
+.BR "device check" ,
+.B "device vendor \-\-from\-device"
+or
+.BR "device discover \-\-snmp" ,
+and kept in the seen cache) is not its registered vendor; it cannot be
+acknowledged: setting the vendor, or a later read that names none, clears
+it.
 Notices appear in the scan output,
 .BR "tacctl status" ,
 .BR "device list" ,
@@ -7104,11 +7114,52 @@ skips the lookup. With no
 .IR name ,
 the lowercased sysName is offered as the name and taken only after a
 .B y
-at a terminal; without a terminal or an answer, or when the sysName is
-not a valid device name or is a generic one (a WTI unit's Site ID
+at a terminal. When there is no name to offer (no answer, no SNMP set up, or a
+sysName that is not a valid device name or is a generic one, such as a WTI
+unit's Site ID
 .BR WTI ),
-the add is refused with the usage line. The offered name goes through every
-other check of the add.
+a terminal is asked for the name (Enter registers nothing); without a
+terminal the add is refused with the usage line. The offered or typed name
+goes through every other check of the add (lower case, a valid name, a
+generic name only with
+.BR \-\-allow\-generic ).
+.IP
+With the name,
+.B add
+reads the device's
+.B sysObjectID.0
+and
+.B sysDescr.0
+in one request and says which vendor they name
+.RI ( "The device says it is Cisco IOS Software, vendor cisco (SNMP sysObjectID" " ...)" ).
+A vendor is named only when the two agree: an enterprise 9 sysObjectID with a
+sysDescr that starts
+.B "Cisco IOS Software"
+or
+.B "Cisco IOS XE Software"
+is
+.BR cisco ;
+any other enterprise 9 sysDescr (ASA, NX\-OS, IOS XR, or an older IOS image
+that describes itself otherwise), an unknown
+enterprise, and a missing sysObjectID or sysDescr name no vendor, and the line
+says what was read. Junos (enterprise 2636) and WTI (enterprise 2634) are
+recognised but not named yet: their vendor is set by hand. When
+.B \-\-vendor
+is given and the device names another vendor, a warning gives
+.BI "tacctl device vendor " "name vendor" ;
+the add goes ahead as given. Without
+.BR \-\-vendor ,
+a terminal is asked one
+.B y/N
+(default no) to register with the vendor the device names, folded into the
+question of the offered name when there is one
+.RI ( "Register 192.0.2.10 as 'sw1' (cisco)? [y/N]" );
+without a terminal the vendor is only printed, with the command that sets it.
+The vendor named is kept in the seen cache for the
+.B vendor\-differs
+notice.
+.B \-\-no\-lookup
+reads none of it.
 .IP
 Unless
 .B \-\-snmp\-location
@@ -7135,7 +7186,10 @@ after the add's own output). Nothing is pulled unless
 .B \-\-pull
 is given. It is refused before anything is registered when the tier may not run
 .BR "device config pull" ,
-when the add is run as root, or when the vendor is not cisco, juniper or wti. A
+when the add is run as root, or when the vendor is not cisco, juniper or wti
+(without
+.B \-\-vendor
+the vendor the device names and the answer to its question count). A
 device no scope's prefixes cover is registered and not pulled: one line gives
 .B scope prefixes
 .IR scope " add " cidr
@@ -7176,7 +7230,7 @@ Register only if the device offers this key; pin it alone.
 Register without a pinned key (a hostkey\-unpinned notice).
 .TP
 \fB\-\-no\-lookup\fR
-Do not read the device's own name and location by SNMP.
+Do not read the device's own name, location and vendor by SNMP.
 .TP
 \fB\-\-pull\fR
 After registering, read its configuration as 'device config pull' does (as you; needs a vendor and a scope).
@@ -7423,7 +7477,7 @@ Trust only this key, read on the device's console (no question; needed without a
 After the table, register each collected device through 'device add' with the keys shown pinned (one question) and keep the read as its first pull record.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location, address) Answer yes to the confirmation.
+(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .TP
 \fB\-\-json\fR
 One object at the end (the progress goes to standard error).
@@ -7507,7 +7561,7 @@ Write the fields, in one registry write, after one question.
 Also replace a field that is set, showing the old value.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location, address) Answer yes to the confirmation.
+(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .TP
 \fB\-\-json\fR
 One object: each device's fields, actions and facts.
@@ -7530,7 +7584,7 @@ Options:
 Remove every device (an engineer: those of their own scopes).
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location, address) Answer yes to the confirmation.
+(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device remove
 .TP
@@ -7602,7 +7656,7 @@ Options:
 (address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location, address) Answer yes to the confirmation.
+(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device address
 .TP
@@ -7615,15 +7669,47 @@ Requires: \fBengineer\fR.
 .RE
 .\" END GENERATED: command device hostname
 .TP
-.BI "device vendor " "name " [ cisco | juniper | wti | other ]
+.BI "device vendor " "name " [ cisco | juniper | wti | other " | " "\-\-from\-device " [ \-y ] ]
 Show or set the vendor;
 .B clear
 sets
 .BR other .
+.B \-\-from\-device
+reads the vendor the device names now (SNMP
+.B sysObjectID.0
+and
+.BR sysDescr.0 ,
+with the credentials of its scope, as
+.B "device add"
+does), shows it beside the registered one and sets it after a
+.B y
+at a terminal, or with
+.BR \-y ", " \-\-yes ;
+without either it is refused. A read that names no vendor, no answer and SNMP
+not set up are refused with the reason and change nothing. The set is the
+setter's: a device that stops being Cisco loses its configuration syntax, one
+that stops being Junos its NETCONF setting. The name is the only argument.
+A vendor change makes the device's last pull record
+.B "needs pull (vendor changed)"
+(the CONFIG state
+.BR pull ):
+.BR "device config diff" ,
+.B plan
+and
+.B sync
+say to pull again instead of reading the record in the new vendor's shape.
 .\" BEGIN GENERATED: command device vendor
 .RS
 .PP
 Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-\-from\-device\fR
+(location, vendor) Read the location (SNMP sysLocation) or the vendor (sysObjectID and sysDescr) from the device and store it.
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device vendor
 .TP
@@ -7703,10 +7789,10 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-from\-device\fR
-Read the location from the device (SNMP sysLocation) and store it.
+(location, vendor) Read the location (SNMP sysLocation) or the vendor (sysObjectID and sysDescr) from the device and store it.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location, address) Answer yes to the confirmation.
+(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .TP
 \fB\-\-apply\fR
 (address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
@@ -8145,7 +8231,7 @@ Replace the registry instead of merging into it.
 (add, rename, import) Allow a generic name such as 'switch'.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location, address) Answer yes to the confirmation.
+(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device import
 .TP
@@ -8193,7 +8279,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location, address) Answer yes to the confirmation.
+(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device hostkey
 .TP
@@ -8328,7 +8414,7 @@ Print nothing (with \-\-if\-stale: what a session start runs).
 .RE
 .\" END GENERATED: command device scan
 .TP
-.BI "device discover " "[ \-\-all ] [ \-\-backend " id " ]"
+.BI "device discover " "[ \-\-all ] [ \-\-snmp ] [ \-\-backend " id " ]"
 Scan, then list the addresses that authenticated but are not registered, with
 the scope and vendor tag that answer them, first and last sighting, count,
 last user, outcome, backend and NAS-Identifier, and a ready
@@ -8338,6 +8424,15 @@ non-generic one, else
 .BR <name> ).
 .B \-\-all
 includes the addresses that were only ever refused.
+.B \-\-snmp
+reads each listed address's sysName, sysObjectID and sysDescr by SNMP (the
+credentials of the scope that answers it, at most 16 at once) and fills its
+line: the lowercased sysName as the name when it is a valid, non-generic one,
+and
+.BI \-\-vendor " vendor"
+when the device names one; what was not used follows as a
+.B "# SNMP:"
+comment. Without it discover reads the logs only and contacts nothing.
 .\" BEGIN GENERATED: command device discover
 .RS
 .PP
@@ -8347,6 +8442,9 @@ Options:
 .TP
 \fB\-\-all\fR
 Also list the addresses that were only refused.
+.TP
+\fB\-\-snmp\fR
+Read each listed address's name and vendor by SNMP and put them in its 'device add' line.
 .TP
 \fB\-\-backend\fR \fI<id>\fR
 (scan, discover) Only that backend's log.
@@ -8372,18 +8470,38 @@ with both values,
 .B registry only
 or
 .BR "device only" ;
-nothing is written), and its notices.
+nothing is written), its Vendor (the vendor the device names by SNMP against
+the registered one:
+.BR match ,
+.BI "differs: device says " vendor
+with the
+.B "device vendor \-\-from\-device"
+command, or
+.B unknown
+with what was read; see
+.BR "device add" ),
+and its notices.
+.B \-\-all
+ends with the devices registered as
+.B other
+that name a vendor tacctl reads.
 .B \-\-json
 prints the rows for scripts, the sysName as
 .B sysname
 (null when none was read) with
 .BR sysname_match ,
-and the location as
+the location as
 .B syslocation
 with
 .B syslocation_match
 (null when the registry has none) and
-.BR syslocation_error .
+.BR syslocation_error ,
+and the vendor as
+.B vendor_detected
+(null when none is named) with
+.B vendor_reason
+and
+.BR vendor_error .
 A juniper device also has a NETCONF row: what the probe of its last pull found
 .RB ( "hello ok" ,
 .BR "port closed" ,

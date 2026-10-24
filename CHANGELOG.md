@@ -156,6 +156,29 @@ current behaviour; this file is where history lives.
    shows `--stdin` as typed and still writes `<redacted>` for the `-` of
    `--hash -` and for any value typed beside `--stdin`.
 
+8. **The vendor from the device by SNMP.** `tacctl device add` reads the
+   device's `sysObjectID.0` and `sysDescr.0` (the two in one request of their
+   own, beside the name and location reads, with the credentials of the name
+   hint) and says which vendor they name: `cisco` for
+   an enterprise 9 answer whose sysDescr starts `Cisco IOS Software` or
+   `Cisco IOS XE Software`; any other enterprise 9 sysDescr, an unknown
+   enterprise, and a missing value name none, and Junos and WTI are
+   recognised but not named yet. A `--vendor` that disagrees is a warning
+   with the `device vendor` command; without `--vendor` a terminal is asked
+   one `y/N` to register with the vendor named (`device add <address>` folds
+   it into its question), and `--pull` without `--vendor` uses it. `device
+   add <address>` asks a terminal for the name when the device gives none
+   that can be offered, instead of refusing. `device check` has a `Vendor`
+   row (`vendor_detected` in `--json`) and `--all` ends with the devices
+   registered as `other` that name a vendor; `device vendor <name>
+   --from-device [-y]` sets it from the device; `device discover --snmp`
+   puts each address's sysName and vendor in its `device add` line. The
+   vendor read last is kept in the seen cache, and one that is not the
+   registered vendor is the notice `vendor-differs` (not acknowledgeable). A
+   vendor change marks the last pull `needs pull (vendor changed)`, so
+   `device config diff`, `plan` and `sync` no longer read a record in the
+   new vendor's shape. Nothing is written to a device.
+
 ## 0.2.16 (2026-10-23)
 
 1. **`config validate` takes no argument.** `config validate extra` ran the

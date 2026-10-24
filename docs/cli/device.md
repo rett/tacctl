@@ -30,7 +30,11 @@ device show <name|address> [--all] [--json]
 device add [<name>] <address>
 
     Register a device (writes devices.yaml: superusers, and engineers for their own scopes); no
-    name: the SNMP sysName is offered at a terminal, lowercased
+    name: the SNMP sysName is offered at a terminal, lowercased, and a terminal is asked for the
+    name when the device gives none that can be offered (without a terminal: refused). The vendor
+    the device names by SNMP (sysObjectID and sysDescr) is printed; a `--vendor` that disagrees
+    is warned about, never refused; without `--vendor` a terminal is asked one y/N to register
+    with it (see The SNMP name hint (devices/snmp-name-hint.md))
 
     --vendor cisco|juniper|wti|other
         Default other; drives the ssh profile, never tags the address in the scope
@@ -49,12 +53,13 @@ device add [<name>] <address>
     --no-host-key
         Register without scanning: unpinned, with a hostkey-unpinned notice
     --no-lookup
-        Do not read the device's own name and location by SNMP (sysName, sysLocation)
+        Do not read the device's own name, location and vendor by SNMP (sysName, sysLocation,
+        sysObjectID, sysDescr)
     --pull
         After registering, read its configuration as `device config pull` does, for this device, as
-        you; needs `--vendor cisco|juniper|wti` and a scope that covers the address (else it is
-        registered and not pulled, with the commands that fix it); a failed pull leaves it
-        registered
+        you; needs a vendor cisco, juniper or wti (`--vendor`, or the one the device names and
+        the question takes) and a scope that covers the address (else it is registered and not
+        pulled, with the commands that fix it); a failed pull leaves it registered
     --allow-generic
         Register a generic name (switch, router, cisco, ubuntu, ...) anyway
 
@@ -110,7 +115,14 @@ device rename <old> <new> [--allow-generic]
 device address|hostname|vendor|port|description|location <name> [<value>|clear]
 
     Show, set or clear one field (`location`: the SNMP location of the walkthroughs; an empty text
-    clears it too)
+    clears it too). A vendor change marks the last pull `needs pull (vendor changed)`: `config
+    diff`, `plan` and `sync` say to pull again instead of reading it in the new vendor's shape
+
+device vendor <name> --from-device [-y]
+
+    Read the vendor the device names by SNMP now (as `device add` does), show it beside the
+    registered one and set it after a `y` at a terminal, or with `-y`; a read that names no
+    vendor, no answer and SNMP not set up are refused with the reason and change nothing
 
 device address|description|location <name> <value> --apply
 
@@ -215,19 +227,24 @@ device scan [--full] [--since <dur>] [--backend <id>]
     Read the backends' logs into the seen cache from where the last scan stopped; re-scan pinned
     host keys (never re-pins); print each log's window and the notices
 
-device discover [--all] [--backend <id>]
+device discover [--all] [--snmp] [--backend <id>]
 
     Scan, then list the addresses that authenticated unregistered, each with a ready 'tacctl device
-    add' line; --all adds those only refused
+    add' line; --all adds those only refused; --snmp reads each address's sysName and vendor by
+    SNMP (its scope's credentials) and puts them in the line (`--vendor` when the device names
+    one; what was not used as a `# SNMP:` comment). Without --snmp it contacts nothing
 
 device check <name>|--all [--json]
 
     Checklist: scope, vendor tag, last seen, reachable (TCP connect, 3 s), host key against the pin,
     SNMP (the settings the device is read with and where each comes from; a credential only as set
     or not), SNMP name (sysName, match or differs), Location (sysLocation against the registry's:
-    match, differs, registry only, device only; writes nothing), NETCONF (a Junos device: what the
-    last pull's probe found, `hello ok`, `port closed`, `no hello`, or `not probed`; a check logs in
-    to nothing), notices; --json: the rows, with sysname, syslocation and netconf
+    match, differs, registry only, device only; writes nothing), Vendor (the vendor the device
+    names by SNMP against the registered one: match, differs, or unknown with what was read),
+    NETCONF (a Junos device: what the last pull's probe found, `hello ok`, `port closed`, `no
+    hello`, or `not probed`; a check logs in to nothing), notices; --all ends with the devices
+    registered as other that name a vendor; --json: the rows, with sysname, syslocation,
+    vendor_detected (vendor_reason, vendor_error) and netconf
 
 device snmp <name> [show [--reveal]]
 
@@ -439,7 +456,8 @@ device config list [--stale] [--never] [--failed] [--differs] [--transport netco
                    [--scope <scope>] [--vendor <vendor>] [--json]
 
     Each device's state (`ok`, `differs`, `never`, `failed`, and `pull`: a Cisco device whose syntax
-    is unknown, `needs pull (syntax unknown)`; a failed pull's DETAIL is its result: `denied` and
+    is unknown, `needs pull (syntax unknown)`, or a device whose vendor changed since its last
+    pull, `needs pull (vendor changed)`; a failed pull's DETAIL is its result: `denied` and
     `unsupported` for a WTI unit among the others), computed against today's rendering, with the
     release the last good pull read (`RELEASE`, `release` in `--json`; `-` when none), when it was
     read, by whom, over what, the NETCONF probe and the sections that differ (an `ok` device that

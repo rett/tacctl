@@ -981,7 +981,10 @@ func (r *pullRun) record(o *pullOutcome, e devreg.Entry) {
 	if old, ok := recs.Of(e.Name); ok {
 		rec = *old
 	}
-	rec.Address, rec.Vendor, rec.Result = e.Address, e.Vendor, o.Result
+	rec.Address, rec.Result = e.Address, o.Result
+	// The vendor is the one the stored sections were read for: a failed
+	// attempt keeps the last good pull's (0.2.17 D260, VendorChanged).
+	rec.SetVendorUnlessPulled(e.Vendor)
 	if o.Netconf != "" && o.Netconf != netconfNotProbed {
 		rec.Netconf, rec.NetconfAt = o.Netconf, r.now()
 	}

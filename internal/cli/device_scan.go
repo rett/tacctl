@@ -15,12 +15,14 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/shellquote"
+	"github.com/rett/tacctl/internal/snmp"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -476,14 +478,114 @@ func (inv *invocation) deviceDiscover(args []string) error {
 		}
 		inv.write(t.String())
 		inv.echo("")
+		var reads []discoverRead
+		if p.Has("--snmp") {
+			reads = inv.discoverSNMP(us)
+		}
 		inv.echo("  Register them with:")
-		for _, u := range us {
-			inv.echo("    tacctl device add " + u.Suggest + " " + u.Address)
+		for i, u := range us {
+			line := "    tacctl device add " + u.Suggest + " " + u.Address
+			if reads != nil {
+				line = reads[i].addLine(u)
+			}
+			inv.echo(line)
 		}
 	}
 	inv.printNotices(sr.res)
 	inv.echo("")
 	return nil
+}
+
+// discoverRead is what 'device discover --snmp' read of one listed address
+// (D260): its sysName and the vendor it names; problem is a lookup that
+// cannot run (SNMP not set up for the address's scope).
+type discoverRead struct {
+	name    string
+	nameErr error
+	vend    vendorRead
+	problem string
+}
+
+// discoverSNMP reads the sysName and the vendor of each address, with the
+// credentials of the scope that answers it (the default's for none), at most
+// 16 at once, and keeps the vendors in the seen cache for the notices. An
+// address that does not answer the name is not asked for the vendor.
+func (inv *invocation) discoverSNMP(us []devreg.Unregistered) []discoverRead {
+	out := make([]discoverRead, len(us))
+	getters := make([]snmp.Getter, len(us))
+	for i, u := range us {
+		getters[i], out[i].problem = inv.snmpGetterForAddr(u.Address)
+	}
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, 16)
+	for i, u := range us {
+		g := getters[i]
+		if g == nil {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			name, err := g.SysName(inv.ctx, u.Address)
+			r := discoverRead{name: strings.TrimSpace(name), nameErr: err}
+			if err != nil {
+				r.vend = vendorRead{err: err}
+			} else {
+				r.vend = vendorReadOf(g.SysIdentity(inv.ctx, u.Address))
+			}
+			out[i] = r
+		}()
+	}
+	wg.Wait()
+	reads := map[string]vendorRead{}
+	for i, u := range us {
+		if out[i].problem == "" {
+			reads[u.Address] = out[i].vend
+		}
+	}
+	inv.keepDetections(reads)
+	return out
+}
+
+// addLine is the suggested 'device add' line of u with what SNMP read: the
+// sysName, lowercased, as the name when it may be offered, and --vendor when
+// the device names one; what was not used follows as a comment.
+func (r discoverRead) addLine(u devreg.Unregistered) string {
+	name, vendor := u.Suggest, ""
+	var notes []string
+	switch {
+	case r.problem != "":
+		notes = append(notes, r.problem)
+	case r.nameErr != nil:
+		notes = append(notes, r.vend.readFailure())
+	default:
+		switch lower := strings.ToLower(r.name); {
+		case r.name == "":
+			notes = append(notes, "an empty sysName")
+		case offerable(lower):
+			name = lower
+		default:
+			notes = append(notes, "sysName '"+cleanLine(r.name)+"' is no name to offer")
+		}
+		switch {
+		case r.vend.err != nil:
+			notes = append(notes, "vendor: "+r.vend.readFailure())
+		case r.vend.vendor != "":
+			vendor = r.vend.vendor
+		default:
+			notes = append(notes, "vendor: "+r.vend.reason)
+		}
+	}
+	line := "    tacctl device add " + name + " " + u.Address
+	if vendor != "" {
+		line += " --vendor " + vendor
+	}
+	if len(notes) > 0 {
+		line += "    # SNMP: " + strings.Join(notes, "; ")
+	}
+	return line
 }
 
 // --- check ---------------------------------------------------------------------------
@@ -550,7 +652,15 @@ func (inv *invocation) deviceCheck(args []string) error {
 	}
 	seen := inv.seenLoad()
 	keyErr := seen.RecordKeyResults(keys, inv.app.Knobs.Now())
-	if seen.HasData() || len(keys) > 0 {
+	// The vendors the devices named, for the vendor-differs notice (D260).
+	reads := map[string]vendorRead{}
+	for i, e := range entries {
+		if e.Source == devreg.SourceDevice && e.Address != "" && sys[i].problem == "" {
+			reads[e.Address] = sys[i].vend
+		}
+	}
+	recordDetections(seen, reads, inv.app.Knobs.Now())
+	if seen.HasData() || len(keys) > 0 || len(seen.Detected) > 0 {
 		err = seen.Save(path)
 	}
 	unlock()
@@ -594,8 +704,34 @@ func (inv *invocation) deviceCheck(args []string) error {
 	if p.Has("--json") {
 		return inv.printJSON(js)
 	}
+	if p.Has("--all") {
+		inv.printVendorReport(entries, sys)
+	}
 	inv.echo("")
 	return nil
+}
+
+// printVendorReport is the end of 'device check --all' (D260): the devices
+// registered as other that name a vendor tacctl reads, each with the command
+// that sets it from the device. It writes nothing.
+func (inv *invocation) printVendorReport(entries []devreg.Entry, sys []checkSysName) {
+	var lines []string
+	for i, e := range entries {
+		if e.Source == devreg.SourceDevice && e.Vendor == devreg.VendorOther && sys[i].problem == "" && sys[i].vend.vendor != "" {
+			lines = append(lines, "  "+e.Name+"  "+sys[i].vend.vendor+" ("+sys[i].vend.reason+"): tacctl device vendor "+
+				shellquote.Q(e.Name)+" --from-device")
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+	head := "Registered as other, the device names a vendor (" + strconv.Itoa(len(lines)) + ")"
+	inv.echo("")
+	inv.echoE(ui.Bold + head + ui.NC)
+	inv.echo(ui.Rule(head))
+	for _, l := range lines {
+		inv.echo(l)
+	}
 }
 
 // deviceCheckJSON is one entry of 'device check --json': the rows as the
@@ -621,6 +757,12 @@ type deviceCheckJSON struct {
 	SysLocation      *string `json:"syslocation"`
 	SysLocationMatch *bool   `json:"syslocation_match"`
 	SysLocationError string  `json:"syslocation_error,omitempty"`
+	// VendorDetected is the vendor the device names by SNMP (null: none),
+	// VendorReason what was recognised or why none is named, VendorError
+	// why nothing was read (D260).
+	VendorDetected *string `json:"vendor_detected"`
+	VendorReason   string  `json:"vendor_reason,omitempty"`
+	VendorError    string  `json:"vendor_error,omitempty"`
 	// Netconf is the NETCONF probe of the device's last pull: hello ok,
 	// port closed, no hello or not probed (none for a host and for a
 	// vendor that is not read).
@@ -677,6 +819,18 @@ func checkJSONOf(res *devreg.Resolver, e devreg.Entry, reach string, rows []chec
 			if reg := strings.TrimSpace(e.Location); reg != "" {
 				match := strings.EqualFold(reg, loc)
 				j.SysLocationMatch = &match
+			}
+		}
+		switch v := sys.vend; {
+		case sys.problem != "":
+			j.VendorError = sys.problem
+		case v.err != nil:
+			j.VendorError = v.readFailure()
+		default:
+			j.VendorReason = v.reason
+			if v.vendor != "" {
+				name := v.vendor
+				j.VendorDetected = &name
 			}
 		}
 	}
@@ -821,6 +975,9 @@ func (inv *invocation) checkRows(res *devreg.Resolver, e devreg.Entry, reach str
 	}
 	if v := sys.locationRow(e); v != "" {
 		row("Location", v)
+	}
+	if v := sys.vendorRow(e); v != "" {
+		row("Vendor", v)
 	}
 	ns := devreg.Open(res.NoticesFor(e))
 	if len(ns) == 0 {

@@ -23,7 +23,7 @@ nothing is offered.
 
 Enterprise 9 also covers ASA, NX-OS and IOS XR, which `cisco` does not
 support: an enterprise-9 answer without the IOS sysDescr is reported
-(`Cisco, not IOS or IOS-XE`) and never offered. Anything ambiguous (a known
+(`Cisco device, sysDescr not recognised as IOS or IOS-XE`) and never offered. Anything ambiguous (a known
 enterprise without the OS string, an unknown enterprise, no sysDescr)
 prints what was read and offers nothing. Not used: the ssh banner, host-key
 algorithms, the NAS-Identifier and the TACACS+/RADIUS attributes (none

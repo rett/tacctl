@@ -332,6 +332,10 @@ func (inv *invocation) storedDiff(store devconf.Store, recs *devconf.Records, re
 	if !ok || rec.Pulled.IsZero() {
 		return nil, false, meta, "no configuration has been pulled"
 	}
+	if devconf.VendorChanged(rec, e.Vendor) {
+		return nil, false, meta, devconf.NeedsPullVendorText + ": the last pull read it as " + rec.Vendor +
+			"; pull it again: tacctl device config pull " + e.Name
+	}
 	stored := render.stored(store, e)
 	if len(stored) == 0 {
 		return nil, false, meta, "the stored sections of the last pull cannot be read"

@@ -12,9 +12,46 @@ $ tacctl device add core-sw1 192.0.2.10 --vendor juniper
     it as sw1.site-a.example.
 ```
 
-A match (the name, the `--hostname`, or the first label of either, in any case) prints the first line only; a mismatch is a warning, never a refusal. A device that does not answer within the timeout (`snmp.timeout`, 2 s by default, one retry), an empty sysName, or no SNMP set up is one info line (`No SNMP answer from 192.0.2.10; no name hint.`), and the add goes ahead; when a scan recorded a NAS-Identifier for the address, that is shown instead, labelled `(NAS-Identifier seen by a scan)`. `--no-lookup` skips it. `device add <address>` with no name offers the sysName, lowercased, and takes it only after a `y` at a terminal; without a terminal, without an answer, or when the sysName is no valid device name or a generic one (a WTI unit's Site ID `WTI`), it is refused with the usage line. `device check` shows the sysName in a `SNMP name` row (`match` or `differs`), and `--json` as `sysname`. Nothing of it is stored.
+A match (the name, the `--hostname`, or the first label of either, in any case) prints the first line only; a mismatch is a warning, never a refusal. A device that does not answer within the timeout (`snmp.timeout`, 2 s by default, one retry), an empty sysName, or no SNMP set up is one info line (`No SNMP answer from 192.0.2.10; no name hint.`), and the add goes ahead; when a scan recorded a NAS-Identifier for the address, that is shown instead, labelled `(NAS-Identifier seen by a scan)`. `--no-lookup` skips it. `device add <address>` with no name offers the sysName, lowercased, and takes it only after a `y` at a terminal; without an answer, with no SNMP set up, or when the sysName is no valid device name or a generic one (a WTI unit's Site ID `WTI`), a terminal is asked for the name (Enter registers nothing; the typed name passes the add's name rules), and without a terminal it is refused with the usage line. `device check` shows the sysName in a `SNMP name` row (`match` or `differs`), and `--json` as `sysname`. Nothing of it is stored.
 
 **The device's own location.** Unless `--snmp-location` or `--no-lookup` is given, `device add` also reads `sysLocation.0` next to the name and, when the device reports one, stores it as the device's location and says so (`  Location: Site A, rack 4 (read from the device)`); a value the registry does not accept (`?`, control characters, more than 120 characters) is shown and not stored. A device that reports none gets one line, `  Location not set: tacctl device location core-sw1 '<text>'`; at a terminal the add offers instead to enter one (blank skips). No answer is not mentioned again: the name hint has said so. The add never fails because of the location. `device check` shows the device's reading next to the registry's in a `Location` row (`match`, `differs: device '...', registry '...'`, `registry only`, `device only`) and writes nothing. `device location <name> --from-device` reads it now and stores it: an empty answer is refused with the reason, and a different registered location is shown beside the device's and replaced after a `y` at a terminal, or with `-y`.
+
+**The device's vendor.** Beside the name, `device add` reads `sysObjectID.0`
+and `sysDescr.0` in one request of their own (the same credentials, timeout
+and retry) and says which vendor they name:
+
+```
+$ tacctl device add sw1 192.0.2.10
+[INFO] Device 'sw1' registered: 192.0.2.10, other.
+  The device calls itself 'sw1' (SNMP sysName).
+  The device says it is Cisco IOS Software, vendor cisco (SNMP sysObjectID
+    1.3.6.1.4.1.9.1.1, sysDescr 'Cisco IOS Software, ...').
+  ! It is registered as other: tacctl device vendor sw1 cisco
+```
+
+A vendor is named only when both agree: a sysObjectID under enterprise 9
+(`1.3.6.1.4.1.9.`) with a sysDescr that starts `Cisco IOS Software` or
+`Cisco IOS XE Software` is `cisco`. Enterprise 9 also covers ASA, NX-OS and
+IOS XR, which tacctl does not read as `cisco`: any other enterprise 9
+sysDescr (an older IOS image that describes itself otherwise included), an
+unknown enterprise, and a missing sysObjectID or sysDescr name no vendor, and
+the line says what was read (`The device names no vendor tacctl reads: Cisco
+device, sysDescr not recognised as IOS or IOS-XE (...)`). Junos (enterprise
+2636) and WTI (enterprise 2634) are recognised and not named yet: set their
+vendor by hand. A `--vendor` that disagrees is a warning with the `device
+vendor` command, never a refusal. Without `--vendor`, a terminal is asked one
+`y/N` (default no) to register with the vendor named, folded into the
+question of `device add <address>` (`Register 192.0.2.10 as 'sw1' (cisco)?
+[y/N]`); without a terminal it is only printed. `--pull` without `--vendor` uses the vendor the answer takes.
+`device check` shows a `Vendor` row (`match`, `differs: device says ...`, or
+`unknown: ...` with what was read; `vendor_detected` in `--json`), and
+`device check --all` ends with the devices registered as `other` that name a
+vendor. `device vendor <name> --from-device` reads it now and sets it after a
+`y` at a terminal, or with `-y`; a read that names no vendor is refused with
+the reason. `device discover --snmp` reads the sysName and the vendor of each
+listed address and puts them in its `device add` line. The vendor read last
+for an address is kept in the seen cache, and one that is not the registered
+vendor is the notice `vendor-differs`. Nothing is written to a device.
 
 SNMP is v2c (a community) or v3 at authPriv (HMAC-SHA-96 or HMAC-SHA-256-192, AES-128), read by tacctl itself (no net-snmp): `tacctl config snmp community` or `tacctl config snmp v3-user <user> [--auth sha256]` asks for the secrets twice without echo (`--stdin` reads them, one per line), stores them in `/etc/tacctl/snmp.yaml` (0600, never printed) and sets `snmp.version`; `config snmp test <address>` tries one device (`no answer` is also what a wrong community, or a wrong v3 privacy passphrase, looks like; v3 names `unknownUserName` and `wrongDigest`). `config snmp` is for administrators only: the credentials reach every device. These settings are the **default**: a scope sets its own with `tacctl scope snmp <scope> ...` (version, community, v3-user, port, timeout), and what it does not set comes from the default, then the built-in; `scope snmp <scope> show` says which one each value is. The scope's secrets are the file `/etc/tacctl/snmp/<scope>.yaml` (0600, in a 0700 directory, the format of `snmp.yaml`), its other settings `snmp_scope.<scope>.*` in `tacctl.yaml`, both written only when set. The name lookup of `device add` and `device check` uses the credentials of the device's scope, the one that answers its address (a device in no scope uses the default); `scope snmp <scope> test <address>` tries the scope's; `config snmp test` follows a registered device (its own settings, else its scope's, else the default's, and the answer says which it tried) and is the default's for an address that is no device.
 

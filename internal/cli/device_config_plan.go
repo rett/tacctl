@@ -232,6 +232,9 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 	if r.stale > 0 && r.now.Sub(rec.Pulled) > time.Duration(r.stale)*24*time.Hour {
 		return cannot("stale pull (" + strconv.Itoa(days) + " days old, stale-days is " + strconv.Itoa(r.stale) + "): " + pullHint)
 	}
+	if devconf.VendorChanged(rec, e.Vendor) {
+		return cannot("needs pull (the vendor changed: the last pull read it as " + rec.Vendor + "): " + pullHint)
+	}
 	expected, err := r.render.Expected(e)
 	switch {
 	case errors.Is(err, errSyntaxUnknown):

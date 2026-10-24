@@ -34,9 +34,14 @@ func configState(e devreg.Entry, rec *devconf.Record) string {
 }
 
 // configStateOf is configState with D113's state laid over it: a Cisco
-// device of a TACACS+ scope whose syntax is unknown says 'pull'.
+// device of a TACACS+ scope whose syntax is unknown says 'pull', and so does
+// a device whose vendor changed since its last pull (D260).
 func (inv *invocation) configStateOf(e devreg.Entry, rec *devconf.Record) string {
 	st := configState(e, rec)
+	if (st == string(devconf.StaleOK) || st == string(devconf.StaleDiffers)) && devconf.VendorChanged(rec, e.Vendor) {
+		// The record is of another vendor's shape (D260).
+		return string(devconf.StalePull)
+	}
 	if st == string(devconf.StaleOK) || st == string(devconf.StaleDiffers) {
 		if inv.syntaxMatters(e) {
 			return string(devconf.WithSyntax(devconf.Staleness(st), rec, e.ConfigSyntax, true))
@@ -464,6 +469,9 @@ func (inv *invocation) deviceConfigList(args []string) error {
 		}
 		if r.state == string(devconf.StalePull) {
 			detail = devconf.NeedsPullText
+			if devconf.VendorChanged(r.rec, r.e.Vendor) {
+				detail = devconf.NeedsPullVendorText
+			}
 		}
 		// A WTI unit: who else was logged in at the last good pull.
 		if r.rec != nil && r.e.Vendor == "wti" && r.rec.Result == devconf.ResultOK && r.rec.Unit != nil && r.rec.Unit.OtherSessions > 0 {
@@ -518,7 +526,7 @@ func unmanagedSections(rs []devconf.SectionResult) map[string]int {
 // comparedNow is the comparison of a device's stored pull with today's
 // rendering (nil when there is none to make).
 func (inv *invocation) comparedNow(store devconf.Store, rec *devconf.Record, render *managedRender, e devreg.Entry) []devconf.SectionResult {
-	if rec == nil {
+	if rec == nil || devconf.VendorChanged(rec, e.Vendor) {
 		return nil
 	}
 	stored := render.stored(store, e)
