@@ -31,6 +31,12 @@ var deviceConfigSpecs = func() map[string]Spec {
 		{Names: []string{"--scope"}, Value: true, Kind: KindScopes},
 		{Names: []string{"--vendor"}, Value: true, Kind: "cisco|juniper|wti"},
 		{Names: []string{"--stale"}},
+		// D267: filters of the same kind, read from the records and the
+		// registry (no login); --name and --ip take comma lists as 'device
+		// list' does.
+		{Names: []string{"--differs"}},
+		{Names: []string{"--name"}, Value: true},
+		{Names: []string{"--ip"}, Value: true},
 	}
 	read := []Flag{
 		{Names: []string{"--transport"}, Value: true, Kind: "auto|netconf|ssh"},
@@ -71,6 +77,7 @@ var deviceConfigSpecs = func() map[string]Spec {
 				{Names: []string{"--restore-point"}, Value: true, Optional: true, Kind: "flash:|bootflash:|disk0:|usbflash0:|harddisk:"}})},
 		"list": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--never"}}, {Names: []string{"--failed"}},
 			{Names: []string{"--differs"}}, {Names: []string{"--transport"}, Value: true, Kind: "netconf|ssh|none"},
+			{Names: []string{"--name"}, Value: true}, {Names: []string{"--ip"}, Value: true},
 			{Names: []string{"--scope"}, Value: true, Kind: KindScopes}, {Names: []string{"--vendor"}, Value: true, Kind: "cisco|juniper|wti"},
 			flagJSON}},
 		"forget": {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}}},
@@ -242,6 +249,14 @@ mgmt-acl, snmp and breakglass. A login whose WTI level cannot configure the
 unit is 'denied' and a menu of another version 'unsupported'; both are failed
 pulls, and the line of a unit says how many other sessions it has.
 
+The devices of 'pull', 'diff', 'plan' and 'apply' are named, or selected with
+--all or filters that combine: --scope, --vendor, --stale, --differs (the last
+pull differs from what tacctl renders now, decided from the records: no login),
+--name <text> and --ip <addr|cidr|text> (a comma list: any item matches). Names
+and --all stand alone. 'list' takes --name and --ip too. --name and --ip match
+by text, so for 'apply' give exact names, a full address or a CIDR: --ip 10.1.1
+also matches 172.10.1.x and 10.1.10-19.x, and --name sw1 also matches sw10.
+
 'diff' compares the last pull with what tacctl renders now, section by
 section: '-' is a statement tacctl renders that the device lacks, '+' one the
 device has in a managed hierarchy that tacctl does not render, '!' a
@@ -322,7 +337,9 @@ skipped) and is the only form --yes answers the question for, so a script runs
 it without a terminal; --max (default 5) caps the devices of a run, --pause the
 seconds between them (config devices apply-pause), --hold asks you to log in
 with one account of each class and type OK before the change is kept,
---section limits the sections. Never written: the break-glass section, the
+--section limits the sections. Select the devices of an apply
+by exact names, a full address or a CIDR: --name and --ip match text (--name sw1
+also matches sw10). Never written: the break-glass section, the
 NETCONF section unless the scope's or the device's NETCONF setting enables or
 disables the service (then only its own statements), the root and your own
 account, system services, interfaces, groups. Exit status: 0 every device applied, was checked or had no change, 1 a

@@ -85,6 +85,34 @@ print("fine")' <<< "$output"
     assert_output "fine"
 }
 
+@test "diff: --differs, --name and --ip select devices from the records, with no login" {
+    alice device config pull lab-j
+    assert_success
+    # Nothing differs yet: nothing is selected, and no password is needed.
+    TACCTL_TEST_DEVICE_PASSWORD="not-the-password-77" alice device config diff --differs --json
+    assert_success
+    assert_output "[]"
+    grep -v '^set system accounting destination' "$JCMD" > "${JCMD}.new"
+    mv "${JCMD}.new" "$JCMD"
+    alice device config pull lab-j
+    assert_success
+    alice device config diff --differs
+    assert_success
+    assert_output --partial "Device lab-j (lab, juniper)"
+    alice device config diff --name lab --ip 192.168.1.0/24
+    assert_success
+    assert_output --partial "Device lab-j (lab, juniper)"
+    alice device config diff --name nothing-like-it --json
+    assert_success
+    assert_output "[]"
+    alice device config diff lab-j --differs
+    assert_failure 2
+    assert_output --partial "not both"
+    alice device config diff --all --ip 192.168.1.20
+    assert_failure 2
+    assert_output --partial "--all is every device"
+}
+
 @test "diff: a device never pulled is not compared; the verb says how to read it" {
     alice device config diff lab-j
     assert_failure 1
@@ -118,7 +146,7 @@ print("fine")' <<< "$output"
 @test "diff: usage, and options that need --pull" {
     alice device config diff
     assert_failure 2
-    assert_output --partial "Name the devices to diff, or select them with --all, --scope <name>, --vendor <vendor> or --stale."
+    assert_output --partial "Name the devices to diff, or select them with --all, --scope <name>, --vendor <vendor>, --stale, --differs, --name <text> or --ip <addr|cidr|text>."
     alice device config diff lab-j --transport ssh
     assert_failure 2
     assert_output --partial "--transport is for --pull: the diff alone reads no device."

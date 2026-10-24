@@ -302,6 +302,9 @@ func (inv *invocation) deviceConfigList(args []string) error {
 	if p.Has("--transport") && !slices.Contains([]string{"netconf", "ssh", "none"}, p.Value("--transport")) {
 		return inv.argErr("--transport takes netconf, ssh or none: '"+p.Value("--transport")+"'", usage)
 	}
+	if p.Has("--scope") && p.Value("--scope") == "" {
+		return inv.argErr("--scope takes a scope name.", usage)
+	}
 	if p.Has("--scope") {
 		if err := inv.scopeRequire(p.Value("--scope")); err != nil {
 			return err
@@ -309,6 +312,10 @@ func (inv *invocation) deviceConfigList(args []string) error {
 		if err := inv.scopeNotFound(inv.callerScopes(), p.Value("--scope")); err != nil {
 			return err
 		}
+	}
+	nameFilter, addrFilter, err := inv.textFilters(p, usage)
+	if err != nil {
+		return err
 	}
 	_, res, err := inv.deviceLoad()
 	if err != nil {
@@ -320,6 +327,9 @@ func (inv *invocation) deviceConfigList(args []string) error {
 			continue
 		}
 		if (p.Has("--scope") && e.Scope != p.Value("--scope")) || (p.Has("--vendor") && e.Vendor != p.Value("--vendor")) {
+			continue
+		}
+		if !textFiltersMatch(e, nameFilter, addrFilter) {
 			continue
 		}
 		entries = append(entries, e)
@@ -422,7 +432,9 @@ func (inv *invocation) deviceConfigList(args []string) error {
 		inv.echo("")
 		inv.echoE(ui.Bold + head + ui.NC)
 		inv.echo(ui.Rule(head))
-		if filtered {
+		if len(nameFilter)+len(addrFilter) > 0 {
+			inv.echo("  None: no device matches.")
+		} else if filtered {
 			inv.echo("  None: every device read so far matches what tacctl renders.")
 		} else {
 			inv.echo("  None. Read one with: tacctl device config pull <name>")

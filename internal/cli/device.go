@@ -180,12 +180,12 @@ var deviceVerbs = [][2]string{
 	{"discover [--all] [--snmp] [--backend <id>]", "Scan, then list the addresses that authenticated unregistered (--snmp: read each one's name and vendor by SNMP for the add lines)"},
 	{"check <name>|--all [--json]", "Checklist: scope, tag, seen, reachable, host key, SNMP name, location and vendor"},
 	{"config show <name> [--protocol tacacs|radius] [--legacy] [--server <address|name>] [--source <address>]", "The device's data, then its vendor walkthrough for its scope"},
-	{"config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [options]", "Read the devices' configuration as you and compare the managed sections with what tacctl renders"},
-	{"config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [--pull] [--section <list>] [--exit-code] [--json]", "The last pull against what tacctl renders now, section by section"},
-	{"config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [--pull] [--section <list>] [--converge] [--secrets|--no-secrets] [--plain|--json|--backout] [--out <file>|--out-dir <dir>] [--force] [--from <address>] [--restore-point[=<fs>]] [--exit-code]", "What to paste (a WTI unit: what to type) to make each device match what tacctl renders: the report, the region or the steps, the check and the back-out"},
-	{"config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [--check] [--confirmed] [--max <n>] [--pause <seconds>] [--hold] [--no-canary] [--section <list>] [--json] [-y]", "Superusers, Junos devices: check each device's plan on the device (--check stops there), then, after one review answered by typing the device's name or the number of devices back, commit it under a confirmed commit, prove it with a fresh login and the landed change, and confirm it"},
+	{"config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale | --differs | --name <text> | --ip <addr|cidr|text> [options]", "Read the devices' configuration as you and compare the managed sections with what tacctl renders"},
+	{"config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale | --differs | --name <text> | --ip <addr|cidr|text> [--pull] [--section <list>] [--exit-code] [--json]", "The last pull against what tacctl renders now, section by section"},
+	{"config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale | --differs | --name <text> | --ip <addr|cidr|text> [--pull] [--section <list>] [--converge] [--secrets|--no-secrets] [--plain|--json|--backout] [--out <file>|--out-dir <dir>] [--force] [--from <address>] [--restore-point[=<fs>]] [--exit-code]", "What to paste (a WTI unit: what to type) to make each device match what tacctl renders: the report, the region or the steps, the check and the back-out"},
+	{"config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale | --differs | --name <text> | --ip <addr|cidr|text> [--check] [--confirmed] [--max <n>] [--pause <seconds>] [--hold] [--no-canary] [--section <list>] [--json] [-y]", "Superusers, Junos devices: check each device's plan on the device (--check stops there), then, after one review answered by typing the device's name or the number of devices back, commit it under a confirmed commit, prove it with a fresh login and the landed change, and confirm it"},
 	{"config shapes [list [--show <hash>] [--json] | seed <name>[,<name>...] [-y]]", "Superusers: the shapes of the changes 'apply' has seen and which a verified apply confirmed; 'seed' files a device's shape as confirmed on your word"},
-	{"config list [--stale] [--never] [--failed] [--differs] [--transport netconf|ssh|none] [--scope <scope>] [--vendor <vendor>] [--json]", "Each device's configuration state, when it was read, by whom and over what"},
+	{"config list [--stale] [--never] [--failed] [--differs] [--name <text>] [--ip <addr|cidr|text>] [--transport netconf|ssh|none] [--scope <scope>] [--vendor <vendor>] [--json]", "Each device's configuration state, when it was read, by whom and over what"},
 	{"config forget <name>[,<name>...] | --all", "Delete the pull records (a pull makes them again)"},
 }
 
@@ -282,9 +282,12 @@ var deviceOptions = map[string][][2]string{
 	},
 	"config pull": {
 		{"--all", "(pull, diff, plan, forget) Every device of yours that a scope covers"},
-		{"--scope <scope>", "(pull, diff, plan, list) Only the devices of that scope"},
-		{"--vendor cisco|juniper|wti", "(pull, diff, plan, list) Only that vendor's devices"},
-		{"--stale", "(pull, diff, plan, list) Only the devices never read, last read in failure, or differing"},
+		{"--scope <scope>", "(pull, diff, plan, apply, list) Only the devices of that scope"},
+		{"--vendor cisco|juniper|wti", "(pull, diff, plan, apply, list) Only that vendor's devices"},
+		{"--stale", "(pull, diff, plan, apply, list) Only the devices never read, last read in failure, or differing"},
+		{"--differs", "(pull, diff, plan, apply, list) Only the devices whose last pull differs from what tacctl renders now (from the records; no login)"},
+		{"--name <text>", "(pull, diff, plan, apply, list) Only the devices whose name contains the text (comma list: any of them)"},
+		{"--ip <addr|cidr|text>", "(pull, diff, plan, apply, list) Only the devices whose address is that address, lies in that prefix or contains the text (comma list: any of them)"},
 		{"--transport auto|netconf|ssh", "(pull, diff, plan) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read)"},
 		{"--concurrency <n>", "Read at most n devices at once (never above device.config.max_concurrency)"},
 		{"--timeout <seconds>", "Per device, connect included (10-600; default device.config.timeout)"},
@@ -336,7 +339,6 @@ var deviceOptions = map[string][][2]string{
 	"config list": {
 		{"--never", "Only the devices not pulled yet"},
 		{"--failed", "Only the devices whose last pull failed"},
-		{"--differs", "Only the devices that differ from what tacctl renders now"},
 		{"--transport netconf|ssh|none", "Only the devices last read over that transport (none: never read)"},
 	},
 }

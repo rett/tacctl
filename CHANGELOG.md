@@ -179,6 +179,24 @@ current behaviour; this file is where history lives.
    `device config diff`, `plan` and `sync` no longer read a record in the
    new vendor's shape. Nothing is written to a device.
 
+9. **`--differs`, `--name` and `--ip` select devices for `device config pull`,
+   `diff`, `plan` and `apply`.** Beside names, `--all`, `--scope`, `--vendor`
+   and `--stale`, `--differs` keeps the devices whose last pull differs from
+   what tacctl renders now (the state `device config list --differs` shows,
+   decided from the records with no login; a device that needs a pull, was
+   never read or failed is `--stale`, not `--differs`), `--name <text>` the
+   devices whose name contains the text, and `--ip <addr|cidr|text>` those
+   whose address equals the address, lies in the prefix or contains the text.
+   `--name` and `--ip` take comma lists, as in `device list`. The filters
+   combine; names and `--all` still stand alone, and the three refusals
+   (exit 2) now name the new flags. `device config list` takes `--name` and
+   `--ip` too, and says `None: no device matches.` when they leave nothing.
+   `--login` still takes one named device. An `apply` still checks every
+   selected device on the device itself. `--name` and `--ip` match text, so
+   select the devices of an `apply` by exact names, a full address or a CIDR.
+   A selector given with no value (`--scope=`, `--name ""`) is refused with
+   exit 2 instead of selecting every device.
+
 ## 0.2.16 (2026-10-23)
 
 1. **`config validate` takes no argument.** `config validate extra` ran the

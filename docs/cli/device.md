@@ -326,14 +326,17 @@ device config show <name> [--protocol tacacs|radius] [--legacy] [--server <addre
     enrolled host or a device no scope covers is refused with the command that fixes it)
 
 device config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale
+                   | --differs | --name <text> | --ip <addr|cidr|text>
 
     Log in to the devices as you and read each one's configuration: the managed sections (`aaa`,
     `roles`, `mgmt-acl`, `snmp`, `netconf`, `breakglass`; a WTI unit's are `aaa`, `mgmt-acl`,
     `snmp`, `breakglass`) are extracted, compared with what tacctl renders for that device and
     recorded; one line per device, a summary, exit 0 (differences are not failures), 1 (a device
-    failed), 2 (wrong arguments), 130 (interrupted); names and `--all` stand alone, `--scope`,
-    `--vendor` and `--stale` combine
+    failed), 2 (wrong arguments), 130 (interrupted); names and `--all` stand alone, the filters
+    combine (see Selecting devices, below)
 
+    --stale --differs --name <text> --ip <addr|cidr|text>
+        Filters of the selection, each below; they also select for `diff`, `plan` and `apply`
     --transport auto|netconf|ssh
         NETCONF where the device answers and the vendor reads over it (Junos; `auto`, the default),
         NETCONF only, or the ssh command line only
@@ -354,6 +357,7 @@ device config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
         (see Onboarding a blank device (devices/planning.md, "Onboarding a blank device"))
 
 device config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale
+                   | --differs | --name <text> | --ip <addr|cidr|text>
 
     The last pull against what tacctl renders now, per section: `-` a statement the device lacks,
     `+` one it has in a managed hierarchy that tacctl does not render, `!` a reordering, `?` a
@@ -367,6 +371,7 @@ device config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
         Only those sections; JSON; exit 2 when a device differs (none failed)
 
 device config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale
+                   | --differs | --name <text> | --ip <addr|cidr|text>
 
     What to paste to make each device match what tacctl renders, from the last pull: the report in
     plain words (each irregularity, its severity, what the paste does about it), one region between
@@ -407,6 +412,7 @@ device config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
         marks these lines as not checked on a device; not with `--plain` or `--backout`)
 
 device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale
+                    | --differs | --name <text> | --ip <addr|cidr|text>
 
     Superusers, Junos devices: check each device's plan on the device (exclusive configure session,
     the device's own `commit check`, the candidate discarded), show the devices that need a change
@@ -452,7 +458,8 @@ device config shapes [list [--show <hash>] [--json] | seed <name>[,<name>...] [-
     device's last check or apply as confirmed on your word, for a device applied and verified by
     hand (one question; `-y` answers it). Contacts no device
 
-device config list [--stale] [--never] [--failed] [--differs] [--transport netconf|ssh|none]
+device config list [--stale] [--never] [--failed] [--differs] [--name <text>]
+                   [--ip <addr|cidr|text>] [--transport netconf|ssh|none]
                    [--scope <scope>] [--vendor <vendor>] [--json]
 
     Each device's state (`ok`, `differs`, `never`, `failed`, and `pull`: a Cisco device whose syntax
@@ -464,8 +471,11 @@ device config list [--stale] [--never] [--failed] [--differs] [--transport netco
     holds statements of its own, which the plan keeps by rule, shows `snmp +N unmanaged`, and
     `--json` has the `unmanaged` map of section to count; a WTI unit's DETAIL and `--json` `unit`
     add its command menu version, Site ID and how many other sessions it had at the last pull);
-    `--stale` is never, failed, differs and pull together; the DETAIL of a device whose
-    `config-syntax` contradicts its pulled image says so (`syntax_conflict` in `--json`)
+    `--stale` is never, failed, differs and pull together; `--name` and `--ip` narrow the list as
+    they do for the other verbs. The state words (`--stale`, `--never`, `--failed`, `--differs`)
+    are alternatives here, but `pull`, `diff`, `plan` and `apply` require both when given both,
+    so `list --stale --differs` shows more devices than they would select; the DETAIL of a device
+    whose `config-syntax` contradicts its pulled image says so (`syntax_conflict` in `--json`)
 
 device config forget <name>[,<name>...] | --all
 
@@ -488,5 +498,31 @@ A device is found by name (any case) or by its registered address; an unregister
 A name that is a factory or image default is refused with the command that names the device on the device itself (`hostname`, `set system host-name`, ...); a host already enrolled under such a name is not refused and carries a `generic-name` notice. `host enroll --name` follows the same rules. Add your own patterns with `generic_names:` (regular expressions, whole-name, case-insensitive) in `devices.yaml`.
 
 **Seen data.** `device scan` reads what the daemons logged about each device into `/var/lib/tacctl/devices-seen.json` (0600, a cache: never snapshotted, `--full` rebuilds it): the tacquito journal (`journalctl -u tacquito … -o json`, resuming at its cursor; the `accepting user [u] from [address]` / `failed to validate the user [u] from [address]` lines, `bad secret detected for ip [address:port]`, `remote [address:port] has no secret providers` (no scope covers the address), and at log level 30 `prefix secret provider matches remote [address]`) and FreeRADIUS's `tacctl-auth.log` with its rotations (`client=`, `nas=`, `user=`, resuming by inode and offset). The first scan reads the last `stale-days` days; `--full` everything the logs hold, `--since 7d` that stretch. Per address it keeps the first and last sighting, the count, the last user, outcome and backend and the NAS-Identifier; records unseen for twice `stale-days` are dropped. `list` and `show` read the cache only (`seen data as of <time>`). An interactive session of the console or of `tacctl shell` (operator tier and up) starts `device scan --if-stale --quiet` in the background as it opens, so the logins are in by the time the list is looked at and nothing waits for it: it does nothing when the cache is younger than five minutes or another scan holds it (sessions that start together run one), reads a device's host keys again only when that device's last scan is a day old, goes on after the session ends, and prints nothing. Seen data an hour old or more is said so, with the command to run, in the footer of `list` and in the `Last seen` line of `show` (a read-only caller is told that an operator can run it); LAST SEEN is `rejected <time> (bad secret)` when the last exchange was refused. `check` and `list --probe` connect to the ssh port: the server often has no route to management ports, so a timeout may be a false alarm. `scan`, `discover` and `check` are operator-level.
+
+**Selecting devices.** `device config pull`, `diff`, `plan` and `apply`
+take device names, or `--all`, or filters that combine (a device must pass
+every one given): `--scope`, `--vendor`, `--stale` (never read, last read in
+failure, differing, or needs a pull), `--differs`, `--name <text>` and
+`--ip <addr|cidr|text>`. Names and `--all` stand alone: naming a device and
+a filter, or `--all` and a filter, is a usage error (exit 2), and so is a
+filter given with no value (`--scope=`, `--name ""`). `--differs` keeps the
+devices whose last good pull differs from what tacctl renders today, as
+`device config list --differs` shows them; it is decided from the records and
+the rendering, so no device is contacted and no password is asked. A device
+that needs a pull, never was read, failed its last pull or whose stored
+sections cannot be read is `--stale` but not `--differs`. With both, a device
+must be both. `--name` keeps the devices whose name contains the text, in any
+case; `--ip` keeps those whose address equals the address, lies inside the
+prefix, or contains the text (`10.20.`); each takes a comma list, and any
+item may match, as in `device list`. Because both match text, select the
+devices of an `apply` by exact names, a full address or a CIDR: `--ip 10.1.1`
+also matches 172.10.1.x and 10.1.10-19.x, and `--name sw1` also matches
+`sw10`. A filter simply drops the devices that do not pass it. A device the
+selection picks but cannot read (vendor `other`, no scope, a scope that is not
+yours, a break-glass hold) is counted and named in the note that follows the
+run; that note is made before `--stale` and `--differs` are applied, so it can
+name a device those two would have left out anyway. An `apply` checks every
+selected device on the device itself first, so a stale record can select a
+device that then has no change, never a change nobody reviewed.
 
 Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `device add`, `device remove`, `device rename`, `device import`, `device set name= field= from= to=` for the setters and `device sync` with the devices written; a shown SNMP secret is `secret-read kind= name=` for every caller, and `device config show|plan` and the walkthroughs log the secret they read the same way ([Audit log](../security/audit.md#detail-lines)).

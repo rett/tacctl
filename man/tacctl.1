@@ -8577,7 +8577,7 @@ The address this server reaches the device from.
 .RE
 .\" END GENERATED: command device config show
 .TP
-.BI "device config pull " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-transport auto|netconf|ssh ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-diff ] [ \-\-json ] [ \-\-server " "address|name" " ] [ \-\-source " address " ] [ \-\-login " local-user " ]"
+.BI "device config pull " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale | \-\-differs | \-\-name " text " | \-\-ip " addr|cidr|text " [ \-\-transport auto|netconf|ssh ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-diff ] [ \-\-json ] [ \-\-server " "address|name" " ] [ \-\-source " address " ] [ \-\-login " local-user " ]"
 Log in to the devices as the user who invoked tacctl and read what each runs
 (nothing is written to a device). The login is that user's: with
 .B sudo
@@ -8593,13 +8593,42 @@ and raises the hostkey notice. The devices are
 named (comma lists too), or selected with
 .B \-\-all
 (every device of yours),
-.B \-\-scope
-and
-.B \-\-vendor
-(together), or
+.BR \-\-scope ,
+.BR \-\-vendor ,
 .B \-\-stale
-(never read, last read in failure, or differing from what tacctl renders now);
-a vendor
+(never read, last read in failure, or differing from what tacctl renders now),
+.B \-\-differs
+(the last pull differs from what tacctl renders now; decided from the records,
+with no login),
+.B \-\-name
+(the name contains the text) and
+.B \-\-ip
+(an address, a prefix it lies in, or a text it contains); those filters
+combine, a filter given with no value is refused (exit 2), and
+.B \-\-name
+and
+.B \-\-ip
+take a comma list (any item matches). The same selectors serve
+.BR diff ,
+.BR plan ,
+.B apply
+and, for
+.B \-\-name
+and
+.BR \-\-ip ,
+.BR "device config list" .
+Because
+.B \-\-name
+and
+.B \-\-ip
+match text, select the devices of an
+.B apply
+by exact names, a full address or a CIDR:
+.B "\-\-ip 10.1.1"
+also matches 172.10.1.x and 10.1.10\-19.x, and
+.B "\-\-name sw1"
+also matches sw10.
+A vendor
 .BR other ,
 and a device in no scope are left out and said so.
 .PP
@@ -8898,10 +8927,13 @@ and
 logs in to one device as one of its local accounts instead of you: the
 device is named (no list,
 .BR \-\-all ,
-.BR \-\-scope ,
-.B \-\-vendor
-or
-.BR \-\-stale :
+or any selector
+.RB ( \-\-scope ,
+.BR \-\-vendor ,
+.BR \-\-stale ,
+.BR \-\-differs ,
+.BR \-\-name ,
+.BR \-\-ip ):
 exit 2), registered as a Junos device with a pinned host key, and a scope
 answers its address; anything else is refused before a password is asked, and so is a device on
 which break-glass is held (release it first). Any local account of the
@@ -8934,13 +8966,22 @@ Options:
 (pull, diff, plan, forget) Every device of yours that a scope covers.
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
-(pull, diff, plan, list) Only the devices of that scope.
+(pull, diff, plan, apply, list) Only the devices of that scope.
 .TP
 \fB\-\-vendor\fR \fIcisco|juniper|wti\fR
-(pull, diff, plan, list) Only that vendor's devices.
+(pull, diff, plan, apply, list) Only that vendor's devices.
 .TP
 \fB\-\-stale\fR
-(pull, diff, plan, list) Only the devices never read, last read in failure, or differing.
+(pull, diff, plan, apply, list) Only the devices never read, last read in failure, or differing.
+.TP
+\fB\-\-differs\fR
+(pull, diff, plan, apply, list) Only the devices whose last pull differs from what tacctl renders now (from the records; no login).
+.TP
+\fB\-\-name\fR \fI<text>\fR
+(pull, diff, plan, apply, list) Only the devices whose name contains the text (comma list: any of them).
+.TP
+\fB\-\-ip\fR \fI<addr|cidr|text>\fR
+(pull, diff, plan, apply, list) Only the devices whose address is that address, lies in that prefix or contains the text (comma list: any of them).
 .TP
 \fB\-\-transport\fR \fIauto|netconf|ssh\fR
 (pull, diff, plan) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
@@ -8971,7 +9012,7 @@ Print the differences after the summary.
 .RE
 .\" END GENERATED: command device config pull
 .TP
-.BI "device config diff " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-pull [ \-\-login " local-user " ] ] [ \-\-section " list " ] [ \-\-exit\-code ] [ \-\-json ]"
+.BI "device config diff " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale | \-\-differs | \-\-name " text " | \-\-ip " addr|cidr|text " [ \-\-pull [ \-\-login " local-user " ] ] [ \-\-section " list " ] [ \-\-exit\-code ] [ \-\-json ]"
 Compare the managed sections of the last pull of each device with the
 statements tacctl renders for it now. The sections are
 .BR aaa ,
@@ -9134,13 +9175,22 @@ Options:
 (pull, diff, plan, forget) Every device of yours that a scope covers.
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
-(pull, diff, plan, list) Only the devices of that scope.
+(pull, diff, plan, apply, list) Only the devices of that scope.
 .TP
 \fB\-\-vendor\fR \fIcisco|juniper|wti\fR
-(pull, diff, plan, list) Only that vendor's devices.
+(pull, diff, plan, apply, list) Only that vendor's devices.
 .TP
 \fB\-\-stale\fR
-(pull, diff, plan, list) Only the devices never read, last read in failure, or differing.
+(pull, diff, plan, apply, list) Only the devices never read, last read in failure, or differing.
+.TP
+\fB\-\-differs\fR
+(pull, diff, plan, apply, list) Only the devices whose last pull differs from what tacctl renders now (from the records; no login).
+.TP
+\fB\-\-name\fR \fI<text>\fR
+(pull, diff, plan, apply, list) Only the devices whose name contains the text (comma list: any of them).
+.TP
+\fB\-\-ip\fR \fI<addr|cidr|text>\fR
+(pull, diff, plan, apply, list) Only the devices whose address is that address, lies in that prefix or contains the text (comma list: any of them).
 .TP
 \fB\-\-transport\fR \fIauto|netconf|ssh\fR
 (pull, diff, plan) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
@@ -9177,7 +9227,7 @@ Exit 2 when a device differs (and none failed).
 .RE
 .\" END GENERATED: command device config diff
 .TP
-.BI "device config plan " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-pull [ \-\-login " local-user " ] ] [ \-\-section " list " ] [ \-\-converge ] [ \-\-secrets | \-\-no\-secrets ] [ \-\-plain | \-\-json | \-\-backout ] [ \-\-out " file " | \-\-out\-dir " dir " ] [ \-\-force ] [ \-\-from " address " ] [ \-\-restore\-point[=" fs "] ] [ \-\-exit\-code ]"
+.BI "device config plan " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale | \-\-differs | \-\-name " text " | \-\-ip " addr|cidr|text " [ \-\-pull [ \-\-login " local-user " ] ] [ \-\-section " list " ] [ \-\-converge ] [ \-\-secrets | \-\-no\-secrets ] [ \-\-plain | \-\-json | \-\-backout ] [ \-\-out " file " | \-\-out\-dir " dir " ] [ \-\-force ] [ \-\-from " address " ] [ \-\-restore\-point[=" fs "] ] [ \-\-exit\-code ]"
 Print, for each device, what to paste to make it match what tacctl renders,
 from its last pull. It reads no device unless
 .B \-\-pull
@@ -9711,13 +9761,22 @@ Options:
 (pull, diff, plan, forget) Every device of yours that a scope covers.
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
-(pull, diff, plan, list) Only the devices of that scope.
+(pull, diff, plan, apply, list) Only the devices of that scope.
 .TP
 \fB\-\-vendor\fR \fIcisco|juniper|wti\fR
-(pull, diff, plan, list) Only that vendor's devices.
+(pull, diff, plan, apply, list) Only that vendor's devices.
 .TP
 \fB\-\-stale\fR
-(pull, diff, plan, list) Only the devices never read, last read in failure, or differing.
+(pull, diff, plan, apply, list) Only the devices never read, last read in failure, or differing.
+.TP
+\fB\-\-differs\fR
+(pull, diff, plan, apply, list) Only the devices whose last pull differs from what tacctl renders now (from the records; no login).
+.TP
+\fB\-\-name\fR \fI<text>\fR
+(pull, diff, plan, apply, list) Only the devices whose name contains the text (comma list: any of them).
+.TP
+\fB\-\-ip\fR \fI<addr|cidr|text>\fR
+(pull, diff, plan, apply, list) Only the devices whose address is that address, lies in that prefix or contains the text (comma list: any of them).
 .TP
 \fB\-\-transport\fR \fIauto|netconf|ssh\fR
 (pull, diff, plan) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
@@ -9784,7 +9843,7 @@ Exit 2 when a device needs a change (and none could not be planned).
 .RE
 .\" END GENERATED: command device config plan
 .TP
-.BI "device config apply " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor juniper | \-\-stale [ \-\-check ] [ \-\-confirmed ] [ \-\-max " n " ] [ \-\-pause " seconds " ] [ \-\-hold ] [ \-\-no\-canary ] [ \-\-section " list " ] [ \-\-transport " auto | cli | netconf " ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-server " address " ] [ \-\-source " address " ] [ \-\-exit\-code ] [ \-\-json ] [ \-y ]"
+.BI "device config apply " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor juniper | \-\-stale | \-\-differs | \-\-name " text " | \-\-ip " addr|cidr|text " [ \-\-check ] [ \-\-confirmed ] [ \-\-max " n " ] [ \-\-pause " seconds " ] [ \-\-hold ] [ \-\-no\-canary ] [ \-\-section " list " ] [ \-\-transport " auto | cli | netconf " ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-server " address " ] [ \-\-source " address " ] [ \-\-exit\-code ] [ \-\-json ] [ \-y ]"
 Write the plan to Junos devices: what
 .B "device config plan"
 would have a person paste, typed by tacctl, under a confirmed commit and
@@ -9956,6 +10015,11 @@ limits the sections
 .BR mgmt\-acl ,
 .BR snmp ,
 .BR system ).
+Select the devices of an apply by exact names, a full address or a CIDR:
+.B \-\-name
+and
+.B \-\-ip
+match text.
 .B \-\-json
 prints one object per device and phase, then the summary, and sends the review
 to standard error.
@@ -10035,6 +10099,15 @@ Only that vendor's devices (apply writes to Junos devices only).
 .TP
 \fB\-\-stale\fR
 Only the devices never read, last read in failure, or differing.
+.TP
+\fB\-\-differs\fR
+Only the devices whose last pull differs from what tacctl renders now (from the records; no login).
+.TP
+\fB\-\-name\fR \fI<text>\fR
+Only the devices whose name contains the text (a comma list: any of them).
+.TP
+\fB\-\-ip\fR \fI<addr|cidr|text>\fR
+Only the devices whose address is that address, lies in that prefix or contains the text (a comma list: any of them).
 .TP
 \fB\-\-transport\fR \fIauto|netconf|ssh\fR
 How the check and the apply reach a device: auto (NETCONF where the last read found it answering and the login may commit, else the command line, with the reason), cli, or netconf (never falls back); default device.apply.transport. A change to the NETCONF service is made over the command line.
@@ -10129,7 +10202,7 @@ Options:
 .RE
 .\" END GENERATED: command device config shapes
 .TP
-.BI "device config list " "[ \-\-stale ] [ \-\-never ] [ \-\-failed ] [ \-\-differs ] [ \-\-transport netconf|ssh|none ] [ \-\-scope " scope " ] [ \-\-vendor " vendor " ] [ \-\-json ]"
+.BI "device config list " "[ \-\-stale ] [ \-\-never ] [ \-\-failed ] [ \-\-differs ] [ \-\-name " text " ] [ \-\-ip " addr|cidr|text " ] [ \-\-transport netconf|ssh|none ] [ \-\-scope " scope " ] [ \-\-vendor " vendor " ] [ \-\-json ]"
 One row per device (the caller's own scopes below the administrator tier):
 the state
 .RB ( ok ,
@@ -10207,10 +10280,25 @@ and
 .B pull
 together; the state filters add up, and
 .BR \-\-transport ,
-.B \-\-scope
+.BR \-\-scope ,
+.BR \-\-vendor ,
+.B \-\-name
+(the name contains the text) and
+.B \-\-ip
+(an address, a prefix it lies in, or a text it contains; both take a comma
+list) narrow them. The state filters are alternatives here, but
+.BR pull ,
+.BR diff ,
+.B plan
 and
-.B \-\-vendor
-narrow them. A WTI pull that was
+.B apply
+require both
+.B \-\-stale
+and
+.B \-\-differs
+when both are given, so
+.B "list \-\-stale \-\-differs"
+shows more devices than they select. A WTI pull that was
 .B denied
 (its login's WTI level cannot configure it) or
 .B unsupported
@@ -10225,7 +10313,7 @@ Requires: \fBoperator\fR.
 Options:
 .TP
 \fB\-\-stale\fR
-(pull, diff, plan, list) Only the devices never read, last read in failure, or differing.
+(pull, diff, plan, apply, list) Only the devices never read, last read in failure, or differing.
 .TP
 \fB\-\-never\fR
 Only the devices not pulled yet.
@@ -10234,16 +10322,22 @@ Only the devices not pulled yet.
 Only the devices whose last pull failed.
 .TP
 \fB\-\-differs\fR
-Only the devices that differ from what tacctl renders now.
+(pull, diff, plan, apply, list) Only the devices whose last pull differs from what tacctl renders now (from the records; no login).
 .TP
 \fB\-\-transport\fR \fIauto|netconf|ssh\fR
 (pull, diff, plan) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
 .TP
+\fB\-\-name\fR \fI<text>\fR
+(pull, diff, plan, apply, list) Only the devices whose name contains the text (comma list: any of them).
+.TP
+\fB\-\-ip\fR \fI<addr|cidr|text>\fR
+(pull, diff, plan, apply, list) Only the devices whose address is that address, lies in that prefix or contains the text (comma list: any of them).
+.TP
 \fB\-\-scope\fR \fI<scope>\fR
-(pull, diff, plan, list) Only the devices of that scope.
+(pull, diff, plan, apply, list) Only the devices of that scope.
 .TP
 \fB\-\-vendor\fR \fIcisco|juniper|wti\fR
-(pull, diff, plan, list) Only that vendor's devices.
+(pull, diff, plan, apply, list) Only that vendor's devices.
 .TP
 \fB\-\-json\fR
 (pull, diff, plan, list) Print JSON (a pull: one line per device, then the summary).
