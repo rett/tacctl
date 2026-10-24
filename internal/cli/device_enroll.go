@@ -431,10 +431,14 @@ func (r *enrollRow) awaitRead() enrollRead {
 }
 
 // checkName is the name rules of a name a device is about to be registered
-// under: the registry's (valid, lower case, not taken by a device or an
-// enrolled host, not generic: enroll has no --allow-generic). Its error
-// names the rule, never the name, which may be what a person typed.
-func (e *enroll) checkName(vendor string) func(string) error {
+// under (newNameRules: enroll has no --allow-generic).
+func (e *enroll) checkName(vendor string) func(string) error { return e.inv.newNameRules(vendor) }
+
+// newNameRules is the name rules of a name a device is about to be registered
+// under by a person's answer (enroll, onboard): valid, lower case, not taken
+// by a device or an enrolled host, not generic. Its error names the rule,
+// never the name, which may be what a person typed.
+func (inv *invocation) newNameRules(vendor string) func(string) error {
 	return func(n string) error {
 		if devreg.ValidateName(n) != nil {
 			return errors.New("the name is not a valid device name (letters, digits, '.', '_' and '-')")
@@ -442,7 +446,7 @@ func (e *enroll) checkName(vendor string) func(string) error {
 		if names.RequireLower(n) != nil {
 			return errors.New("the name has upper case: names are lower case")
 		}
-		_, res, err := e.inv.deviceLoad()
+		_, res, err := inv.deviceLoad()
 		if err != nil {
 			return err
 		}

@@ -268,14 +268,17 @@ Enrolled 1 address(es)
 ```
 $ tacctl device onboard 192.0.2.31 --login admin --name sw-lab-5
   192.0.2.31 offers:
-    ED25519  SHA256:...
-  A blank device has no other proof: compare one with its console (...).
-Trust these keys and send the local password of 'admin' to 192.0.2.31? [y/N] y
+    Will pin:  ED25519  SHA256:...
+    On the device: Junos: 'file show /etc/ssh/ssh_host_ed25519_key.pub' (...)
+  Compare the key with the console of 192.0.2.31. Type the device name
+  (sw-lab-5) to accept it and send it the local password of 'admin', or press
+  Enter to stop: sw-lab-5
 Password of admin on 192.0.2.31 (a local account; asked once, never kept):
   192.0.2.31  Junos 25.4R1  ex4300-48mp  device reports host name sw-lab-5; no TACACS+ or RADIUS
                                          server
 [INFO] Device 'sw-lab-5' registered: 192.0.2.31, juniper.
-  ...
+  Host key pinned (the key you accepted):
+    ED25519  SHA256:...
   From the device: location "Lab rack 2"
   sw-lab-5  read as local:admin: aaa, roles differ from what tacctl renders
   sw-lab-5  checked: shape ee791d20ded1 (new) (roles, aaa: 17 set, 0 delete); check ok
@@ -291,12 +294,46 @@ Password for alice (device login):
   The local account 'admin' was not probed: a login would send its password to the TACACS+ server.
 ```
 
-- **Identity first.** The host keys the address offers are shown, and one question is asked before any login. `--host-key SHA256:<fp>` (the fingerprint read on the device's console) answers it instead and pins that key alone. Without a terminal and without `--host-key` the run is refused, and without a terminal only `--check` runs.
+- **The host key, accepted by the device's name, first.** Of the keys the
+  address offers, the one that will be pinned is the first of ed25519,
+  ECDSA, RSA; it is shown with the Junos console command that shows it, the
+  others as offered and not pinned. Compare it with the console and type the
+  device's name before any login: `--name`, else the name the device gives
+  itself by SNMP, else the name to register it as (checked as every new
+  name is: lower case, not taken, not generic), which is then the name it is
+  registered under. Enter, the end of input or any other answer sends
+  nothing, with no second try. There is no `-y` and no trust on first use.
+  A device an earlier onboard registered is asked for its registered name
+  and nothing new is pinned: its pinned keys are listed, the key is shown
+  under `Key to check`, and a key that is not among them refuses the run
+  (re-pin it after a check: `device hostkey <name> set <fp>`).
+  `--host-key SHA256:<fp>` (the fingerprint read on the device's console)
+  answers instead and pins that key. Without a terminal and without
+  `--host-key` the run is refused, and without a terminal only `--check`
+  runs.
 - **Pre-flight as the local account.** Its password is asked once on the terminal and never kept or cached. `show version`, no pending confirmed commit, a login class that may commit, no TACACS+ or RADIUS server (`system tacplus-server`, `radius-server` or `accounting destination tacplus|radius server`, also in a group: a device that has one is reached by the normal flow, `device add`, `device config pull`), and no local account of your own name (a login as you could be that account's, not TACACS+). `--login` may not name your own login, and `--section` must include `aaa`. What the device reports is shown with its control characters replaced.
-- **Registration.** The name is `--name`, else the host name the device reports, else asked for at the terminal (a generic or taken one). The device is registered through `device add` with the keys of the first step; its own `snmp location` and `snmp description` fill the registry's empty location and description. Its host name is only shown (`device reports host name`): it never fills the registry's hostname, which ssh would dial instead of the address. A device an earlier onboard registered, and that was never read as your own login, is taken again under its name and pinned keys.
+- **Registration.** The name is the one the key was accepted under; with
+  `--host-key` it is `--name`, else the host name the device reports, else
+  asked for at the terminal (a generic or taken one). The device is registered
+  through `device add` with the key of the first step pinned (the others are
+  pinned after a check of their own with `device hostkey <name> accept`); its
+  own `snmp location` and `snmp description` fill the registry's empty
+  location and description. Its host name is only shown (`device reports host
+  name`): it never fills the registry's hostname, which ssh would dial instead
+  of the address. A device an earlier onboard registered, and that was never
+  read as your own login, is taken again under its name and pinned keys.
 - **Read, plan, check.** The read is recorded as a pull made as the local account (`login=local:<account>`); the plan is the ordinary planner's first-time plan, checked on the device with its own `commit check` as `device config apply --check` does. `--check` stops here: the device is registered and nothing is committed. The plan never holds the break-glass accounts, root, the local account, system services or interfaces.
 - **Commit as the local account, proven by your login.** After the review (the device's name typed back) your own password is asked (the password cache may answer it). The change is committed as the local account under `commit confirmed`; every session after the commit is your own TACACS+ login: the fresh login, the landed change and the reads of the planned sections. Its `show cli authorization` must name, as the current user, the template user your group's Juniper class renders, with that class; a local account is not a proof. The confirm is typed in the held local session. A fresh login that is refused or is not that template user rolls the change back and leaves the local account as it was. The local account is never tried again after the commit, `root` included: with `authentication-order tacplus` Junos sends a local account's password to the TACACS+ server, so the run says `was not probed` (`--json` has `"probe": "not-probed"`).
-- **Audit.** `device onboard user= device= approved=1 shape= login= mode=attended` at the answer and `device onboard user= device= addr= login=local:<account> result=` at the end; never a password.
+- **Audit.** `device onboard hostkey user= addr= device= alg= fp=
+  result=accepted|skipped|refused source=confirmed|flag` at `auth.notice`
+  for the answer to the key, before the key is used (`device=` is the name
+  shown in the question, on a refusal too, or the name typed when it was
+  accepted, never a refused text; `-` on a skip; with `audit.strict`, an
+  acceptance whose line cannot be written refuses the run before anything is
+  sent); `device onboard user= device= approved=1 shape= login=
+  mode=attended` at the answer to the review and `device onboard user=
+  device= addr= login=local:<account> result=` at the end; never a
+  password.
 
 ### One read as a local account
 
@@ -308,14 +345,20 @@ Password for alice (device login):
 
 ```
 $ tacctl device collect 192.0.2.31 192.0.2.32 --register
+
   192.0.2.31 offers:
-    ED25519  SHA256:...
+    Will pin:  ED25519  SHA256:...
+    On the device: Junos: 'file show /etc/ssh/ssh_host_ed25519_key.pub' (...)
+  Compare the key with the console of 192.0.2.31. Type the device name (sw-lab-5) to accept it
+  and send it the password of 'alice' (your tacctl password), or press Enter to skip the
+  address: sw-lab-5
+
   192.0.2.32 offers:
-    ED25519  SHA256:...
-  Nobody registered these 2 addresses, one attempt at each: compare the keys with each device's
-  console (...).
-Trust these keys and send the password of 'alice' (your tacctl password) to these 2 addresses,
-  one attempt at each? [y/N] y
+    Will pin:  ED25519  SHA256:...
+    On the device: Junos: 'file show /etc/ssh/ssh_host_ed25519_key.pub' (...)
+  Compare the key with the console of 192.0.2.32. Type the address (192.0.2.32) to accept it
+  and send it the password of 'alice' (your tacctl password), or press Enter to skip the
+  address: 192.0.2.32
 Password for alice (device login):
 
 Collected from 2 address(es)
@@ -331,16 +374,43 @@ Collected from 2 address(es)
   192.0.2.32: not a Junos device (...); the session was closed
   tacctl device add sw-lab-5 192.0.2.31 --vendor juniper
 
-Register 1 device(s), pinning the host keys shown: sw-lab-5 (192.0.2.31)? [y/N] y
+Register 1 device(s), pinning the host key accepted for each: sw-lab-5 (192.0.2.31)? [y/N] y
 ```
 
 - **Admitted first.** Before anything is scanned or sent, an address a registry entry holds (it is reached by the normal flow, `device config pull`), an address no scope answers, one on which break-glass is held and, for your own login, a caller who is not an active member of the scope are refused, and the run stops: nothing was sent.
-- **Identity.** The host keys are read (nothing is authenticated) and shown with fingerprints, and one question is asked before any login. `--host-key SHA256:<fp>` (read on the device's console) answers it for one address and pins that key alone; without a terminal and without `--host-key` the run is refused. A device that offers only the legacy algorithms is found by the scan and registered `--legacy-ssh`.
+- **The host key, accepted address by address.** The host keys are read
+  (nothing is authenticated); then, for each address in turn and before any
+  login, the one key that will be pinned (the first of ed25519, ECDSA, RSA)
+  is shown with the Junos console command that shows it, the others as
+  offered and not pinned. Compare it with the console and type the address
+  back; with `--register`, the device's name when it gives one by SNMP (its
+  sysName in lower case, when it is a name a new device may take: valid,
+  not taken by a device or an enrolled host, not generic; else the address
+  is asked for, with a line that says why; the name is only the answer, the
+  device is registered under the name it reports to `show version`). Enter skips the address and
+  any other answer refuses it, with no second try; nothing is sent to it,
+  and its row says `skipped` or `refused`. The end of input ends the
+  questions (the addresses after it are `not-tried`). There is no `-y`, no
+  answer for several addresses and no trust on first use. `--host-key
+  SHA256:<fp>` (read on the device's console) answers for one address and
+  pins that key; without a terminal and without `--host-key` the run is
+  refused. A device that offers only the legacy algorithms is found by the
+  scan and registered `--legacy-ssh`.
 - **One login, once per address.** Your own login (your tacctl password; the password cache may answer it) or, with `--login <local-user>`, one local account of the devices for the whole run: its password is asked once on the terminal, never kept or cached, and goes to each address once; `root` is reached through its csh wrapper. The first refusal of the password ends the run (`auth-failed`; the addresses after it are `not-tried`), so a wrong password reaches one address only. A device whose authentication order is `tacplus` only refuses local accounts while the server answers.
 - **Nothing else.** In that session `show version` and the pull's read command are typed, and nothing more. An address whose `show version` is not a Junos answer is listed `not-junos`, its session closed and never registered.
-- **The table.** One table with the device's own host name, model and release, its `authentication-order`, the number of TACACS+ and RADIUS servers, whether tacctl's engineer class `EN-CLASS` is configured, NETCONF over ssh and the filter applied on `lo0`; `--json` prints one object (the progress goes to standard error). Each collected device is followed by the `device add` line it would run; one that reports no name the registry accepts (generic, taken, or the same as another address of the run) says so.
-- **`--register`.** After the table, one question; then each device is registered through `device add`, the same code as every registration, with `--vendor juniper`, every key shown pinned (the login was made against exactly those keys) and `--legacy-ssh` when the handshake needed it. The read is kept as the device's first pull record, as a pull makes it (`login=local:<account>` for a local login), so `device sync` and `device config plan` have one at once; no plain view was read, so a plan says the groups' inheritance was not checked until a pull reads it. `-y` answers the question (without a terminal it is needed). Without `--register` nothing is kept.
-- **Audit and exit.** `device collect user= addr= login=own|local:<account> result=` per address, never a password or a device's text. Exit status: 0 every address collected, 1 one was refused, failed or not Junos, 2 wrong arguments, 130 interrupted.
+- **The table.** One table with the device's own host name, model and release, its `authentication-order`, the number of TACACS+ and RADIUS servers, whether tacctl's engineer class `EN-CLASS` is configured, NETCONF over ssh and the filter applied on `lo0`; `--json` prints one object (the progress goes to standard error; `host_keys` lists only the key accepted, none for a skipped or refused address). Each collected device is followed by the `device add` line it would run; one that reports no name the registry accepts (generic, taken, or the same as another address of the run) says so.
+- **`--register`.** After the table, one question; then each device is registered through `device add`, the same code as every registration, with `--vendor juniper`, the key accepted pinned (the login was made against exactly that key; the others offered are shown, not pinned) and `--legacy-ssh` when the handshake needed it. The read is kept as the device's first pull record, as a pull makes it (`login=local:<account>` for a local login), so `device sync` and `device config plan` have one at once; no plain view was read, so a plan says the groups' inheritance was not checked until a pull reads it. `-y` answers that question (without a terminal it is needed), never a key's. Without `--register` nothing is kept.
+- **Audit and exit.** `device collect hostkey user= addr= device= alg= fp=
+  result=accepted|skipped|refused source=confirmed|flag` at `auth.notice`
+  for every answer to a key, before the key is used (`device=` is the name
+  shown in the question, on a refusal too, never the text typed; `-` when
+  the answer is the address or the address was skipped), and `device
+  collect user= addr=
+  login=own|local:<account> result=` per address, never a password or a
+  device's text. With `audit.strict`, an acceptance whose line cannot be
+  written refuses that address before anything is sent. Exit status: 0
+  every address collected, 1 one was skipped, refused, failed or not Junos,
+  2 wrong arguments, 130 interrupted.
 
 ## Filling the registry from the records
 

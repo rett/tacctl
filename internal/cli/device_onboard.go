@@ -8,11 +8,13 @@ package cli
 // invoking user's own TACACS+ login, which proves the change before it is
 // confirmed in the held local session. The steps, in order:
 //
-//  1. identity: the host keys are scanned and shown, and ONE question is
-//     asked before any login (or --host-key names the key);
+//  1. identity: the host keys are scanned and the one key that would be
+//     pinned is shown and accepted before any login by typing the device's
+//     name (--name, its SNMP sysName, else the name to register it as), or
+//     --host-key names the key (0.2.17 D262, D270);
 //  2. pre-flight as the local account: show version, no pending commit, no
 //     TACACS+ or RADIUS server already, a class that may commit;
-//  3. the name and the registration ('device add', the keys of step 1), the
+//  3. the name and the registration ('device add', the key of step 1), the
 //     device's own location and description in the empty fields (never its
 //     host name: the registry's hostname is what ssh dials);
 //  4. the pull as the local account (the record says login=local:<account>);
@@ -80,9 +82,12 @@ type onboard struct {
 	// the user's own login), nil for a new one.
 	reuse *devreg.Entry
 	port  int
-	// keys are the host keys the local login dials with: the trusted scan
-	// (a new device) or the pinned ones (reuse).
-	keys []devreg.HostKey
+	// keys are the host keys the local login dials with: the key accepted (a
+	// new device) or the pinned ones (reuse); offered is what the scan read,
+	// and accepted whether the key was typed for (not --host-key).
+	keys     []devreg.HostKey
+	offered  []devreg.HostKey
+	accepted bool
 
 	entry devreg.Entry
 	// out is the final row; probe is the machine word of the local account's
@@ -182,12 +187,12 @@ func (ob *onboard) args(p Parsed) error {
 			return inv.argErr("--section must include aaa: onboard proves the change by a TACACS+ login, which only the aaa section sets up. Nothing was sent.", onboardUse)
 		}
 	}
-	// The identity question and the review are a person's: without a
+	// The host key's acceptance and the review are a person's: without a
 	// terminal --host-key names the key, and only --check (which commits
 	// nothing) runs.
 	switch {
 	case !ob.pr.Interactive() && ob.hostKey == "":
-		return inv.argErr("No terminal to answer the identity question on: a blank device's keys are trusted by a person. "+
+		return inv.argErr("No terminal to answer the host-key question on: a blank device's key is accepted by a person, by typing its name. "+
 			"Give --host-key SHA256:<fp> (the fingerprint read on the device's console). Nothing was sent.", onboardUse)
 	case !ob.pr.Interactive() && !ob.check:
 		return inv.argErr("No terminal to review the change on: it is answered by typing the device's name back. "+
@@ -439,46 +444,136 @@ func (ob *onboard) admissible() error {
 	return nil
 }
 
-// identity is step 1: the keys the device offers, shown; one question
-// before any login, or the key --host-key names. A device registered by an
-// earlier onboard is dialled with the keys pinned then.
+// identity is step 1 (0.2.17 D262, D270): the one key that would be pinned
+// (ssh-ed25519 first) is shown and accepted before any login by typing the
+// device's name: --name, else its SNMP sysName, else the name to register it
+// as, typed in the same answer; or --host-key names the key. Enter, the end
+// of input or any other answer sends nothing. Every answer is an audit line,
+// written before the key is used. A device registered by an earlier onboard
+// is dialled with the keys pinned then, and the key accepted must be one of
+// them.
 func (ob *onboard) identity() error {
 	inv := ob.inv
+	var read chan collectRead
+	if ob.hostKey == "" && ob.name == "" {
+		read = ob.startRead()
+	}
 	offered, err := inv.scanKeys(ob.addr, ob.port, ob.legacy, "Nothing was sent.")
 	if err != nil {
 		return err
 	}
-	inv.echo("  " + ob.addr + " offers:")
-	inv.echoKeys("    ", offered)
+	ob.offered = offered
 	pinned := offered
 	if ob.reuse != nil {
 		pinned = devreg.ParseHostKeys(ob.reuse.HostKeys)
-		inv.echo("  Pinned for '" + ob.reuse.Name + "' by an earlier onboard:")
-		inv.echoKeys("    ", pinned)
 	}
 	if ob.hostKey != "" {
+		inv.echo("  " + ob.addr + " offers:")
+		inv.echoKeys("    ", offered)
+		if ob.reuse != nil {
+			inv.echo("  Pinned keys of '" + ob.reuse.Name + "' (an earlier onboard; nothing new is pinned):")
+			inv.echoKeys("    ", pinned)
+		}
 		k, ok := devreg.MatchFingerprint(offered, ob.hostKey)
 		if !ok {
+			inv.hostKeyLine("device onboard", ob.user, ob.addr, ob.name, devreg.HostKey{}, keyRefused, "flag")
 			return inv.usageErr("No host key "+ob.addr+" offers matches "+ob.hostKey+". Nothing was sent.",
 				"Check the fingerprint on the device console: "+devreg.VerifyHint(devssh.VendorJuniper)+".")
 		}
 		if ob.reuse != nil {
 			if _, ok := devreg.MatchFingerprint(pinned, ob.hostKey); !ok {
+				inv.hostKeyLine("device onboard", ob.user, ob.addr, ob.name, k, keyRefused, "flag")
 				return inv.usageErr("The key "+ob.hostKey+" is not the one pinned for '"+ob.reuse.Name+"'. Nothing was sent.",
 					"Verify the device, then re-pin it: tacctl device hostkey "+ob.reuse.Name+" set "+ob.hostKey)
 			}
-			ob.keys = pinned
-		} else {
-			ob.keys = []devreg.HostKey{k}
 		}
 		inv.echo("  " + ob.hostKey + " matches --host-key.")
+		if err := ob.keyLogged(ob.name, k, "flag"); err != nil {
+			return err
+		}
+		ob.keys = []devreg.HostKey{k}
+		if ob.reuse != nil {
+			ob.keys = pinned
+		}
 		return nil
 	}
-	inv.echo("  A blank device has no other proof: compare one with its console (" + devreg.VerifyHint(devssh.VendorJuniper) + ").")
-	if !ob.pr.Confirm("Trust these keys and send the local password of '" + ob.local.account + "' to " + ob.addr + "? [y/N] ") {
-		return inv.usageErr("Not trusted. Nothing was sent.")
+	if ob.reuse != nil {
+		inv.echo("  Pinned keys of '" + ob.reuse.Name + "' (an earlier onboard; nothing new is pinned):")
+		inv.echoKeys("    ", pinned)
 	}
-	ob.keys = pinned
+	name := ob.name
+	if read != nil {
+		rd := <-read
+		if rd.note != "" {
+			inv.echo("  " + rd.note)
+		}
+		name = rd.name
+	}
+	ans := inv.askHostKey(keyQuestion{addr: ob.addr, port: ob.port, vendor: devssh.VendorJuniper, name: name, offered: offered,
+		check: inv.newNameRules(devssh.VendorJuniper), then: "send it the local password of '" + ob.local.account + "'",
+		thenNew: " and send it the local password of '" + ob.local.account + "'", skip: "stop", pinned: ob.reuse != nil})
+	switch ans.answer {
+	case keyInterrupted:
+		return exit(batch.ExitInterrupted)
+	case keyAccepted:
+	default:
+		device := "-"
+		if ans.answer == keyRefused {
+			device = name
+		}
+		inv.hostKeyLine("device onboard", ob.user, ob.addr, device, ans.key, ans.answer, "confirmed")
+		if ans.answer == keySkipped {
+			return inv.usageErr("The host key of " + ob.addr + " was " + ans.reason + ". Nothing was sent.")
+		}
+		return inv.usageErr("The host key of " + ob.addr + " was refused: " + ans.reason + ". Nothing was sent.")
+	}
+	if ob.reuse != nil {
+		if _, ok := devreg.MatchFingerprint(pinned, ans.key.Fingerprint()); !ok {
+			inv.hostKeyLine("device onboard", ob.user, ob.addr, ans.name, ans.key, keyRefused, "confirmed")
+			return inv.usageErr("The key accepted is not the one pinned for '"+ob.reuse.Name+"'. Nothing was sent.",
+				"Verify the device, then re-pin it: tacctl device hostkey "+ob.reuse.Name+" set "+ans.key.Fingerprint())
+		}
+	}
+	if err := ob.keyLogged(ans.name, ans.key, "confirmed"); err != nil {
+		return err
+	}
+	ob.name, ob.accepted = ans.name, true
+	ob.keys = []devreg.HostKey{ans.key}
+	if ob.reuse != nil {
+		ob.keys = pinned
+	}
+	return nil
+}
+
+// startRead reads the device's SNMP sysName beside the scan, for the name the
+// key's question shows: lower-cased, none when there is none or it is not a
+// name the registry would take for a new device (with a note that says why).
+func (ob *onboard) startRead() chan collectRead {
+	inv := ob.inv
+	ch := make(chan collectRead, 1)
+	go func() {
+		var rd collectRead
+		sys, problem, err := inv.sysName(ob.addr)
+		if problem == "" && err == nil {
+			n := strings.ToLower(sys)
+			if err := inv.newNameRules(devssh.VendorJuniper)(n); err != nil {
+				rd.note = ob.addr + " calls itself '" + devText(sys) + "' (SNMP sysName), which is not taken as its name: " + devText(strings.Join(msgs(err), " "))
+			} else {
+				rd.name = n
+			}
+		}
+		ch <- rd
+	}()
+	return ch
+}
+
+// keyLogged writes the acceptance's line before anything uses the key; under
+// audit.strict a line that was not written refuses the run: nothing is sent.
+func (ob *onboard) keyLogged(device string, k devreg.HostKey, source string) error {
+	why := ob.inv.hostKeyLine("device onboard", ob.user, ob.addr, device, k, keyAccepted, source)
+	if why != "" && ob.inv.auditStrict() {
+		return ob.inv.usageErr("The acceptance's audit line was not written (logger: " + why + ") and audit.strict is set. Nothing was sent.")
+	}
 	return nil
 }
 
@@ -665,10 +760,11 @@ func readSummary(missing []string) string {
 	return strings.Join(missing, ", ") + " differ from what tacctl renders"
 }
 
-// register is step 3: the name (--name, the reported host name, else asked),
-// 'device add' (the keys of step 1 pinned: the same code as every
-// registration), and the device's own location and description in the
-// registry's empty fields.
+// register is step 3: the name (the one the key was accepted under, else
+// --name, the reported host name, else asked), 'device add' (the key of step
+// 1 pinned, the others offered shown: the same code as every registration),
+// and the device's own location and description in the registry's empty
+// fields.
 func (ob *onboard) register(id devapply.Identity, raw string) error {
 	inv := ob.inv
 	if ob.reuse == nil {
@@ -676,11 +772,14 @@ func (ob *onboard) register(id devapply.Identity, raw string) error {
 		if err != nil {
 			return err
 		}
-		args := []string{name, ob.addr, "--vendor", devssh.VendorJuniper, "--no-lookup"}
+		args := []string{name, ob.addr, "--vendor", devssh.VendorJuniper, "--no-lookup", "--host-key", ob.keys[0].Fingerprint()}
 		if ob.legacy {
 			args = append(args, "--legacy-ssh")
 		}
-		if err := inv.deviceAddWith(args, ob.keys); err != nil {
+		inv.keyAccepted = ob.accepted
+		err = inv.deviceAddWith(args, ob.offered)
+		inv.keyAccepted = false
+		if err != nil {
 			return err
 		}
 		ob.name = name

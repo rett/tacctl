@@ -4,11 +4,12 @@ package cli
 // [--register]' (docs/plans/0.2.9-rollout-plan.md D137, D141): the login
 // before the registration. For each address no registry entry holds, one
 // login (the invoking user's own, or the device's local account of --login:
-// the one-shot password of D136, never cached), the host keys scanned and
-// shown with their fingerprints and trusted by ONE question (or --host-key),
-// 'show version' and the pull's read command in one session, and nothing
-// else. The result is one table; --register runs the 'device add' of each
-// (the registry's own registration code, with every key shown pinned) and
+// the one-shot password of D136, never cached), the host keys scanned and the
+// one key shown accepted by a person, address by address (0.2.17 D262, D270:
+// the device's name typed back, or its address; or --host-key), 'show
+// version' and the pull's read command in one session, and nothing else. The
+// result is one table; --register runs the 'device add' of each (the
+// registry's own registration code, with the key accepted pinned) and
 // keeps the read as that device's first pull record, so 'device sync' and
 // 'device config plan' have a record at once. A device that is not Junos is
 // listed and its session closed; the first refusal of the password ends the
@@ -45,6 +46,10 @@ const (
 	collectNoKey      = "no-key"
 	collectFailed     = "failed"
 	collectNotTried   = "not-tried"
+	// the acceptance of the key: Enter, or an answer that is not the name or
+	// the address shown (or a line audit.strict needs that was not written)
+	collectSkipped = "skipped"
+	collectRefused = "refused"
 )
 
 // collectRow is one address of the run.
@@ -70,9 +75,22 @@ type collectRow struct {
 	Name       string
 	Registered bool
 
-	keys []devreg.HostKey
+	// offered are the keys the scan read; keys the one accepted, the key the
+	// login dials with and the registration pins.
+	offered []devreg.HostKey
+	keys    []devreg.HostKey
+	// source is how it was accepted: confirmed (typed) or flag (--host-key).
+	source string
+	// read is the SNMP sysName read for the question (--register only).
+	read chan collectRead
 	id   devapply.Identity
 	raw  string
+}
+
+// collectRead is the name SNMP gave for the question ("" for none) and, for a
+// name that cannot be one, why.
+type collectRead struct {
+	name, note string
 }
 
 // collect is one run.
@@ -90,6 +108,9 @@ type collect struct {
 	tp                    devicePasswords
 	rows                  []*collectRow
 	stopped               bool
+	// interrupted: a Ctrl-C at a key's question; ended: the input ended at
+	// one. Either way nothing is sent.
+	interrupted, ended bool
 	collectOnce
 }
 
@@ -170,13 +191,13 @@ func (c *collect) args(p Parsed) error {
 		case !devreg.ValidFingerprint(c.hostKey):
 			return inv.argErr("Invalid --host-key '"+c.hostKey+"': expected SHA256:<fingerprint> as ssh prints it.", collectUse)
 		case c.discovered || len(c.addrs) != 1:
-			return inv.argErr("--host-key names the key of ONE device: give one address (a list is trusted at the terminal, key by key shown).", collectUse)
+			return inv.argErr("--host-key names the key of ONE device: give one address (a list is answered at the terminal, device by device).", collectUse)
 		}
 	}
 	switch {
 	case !c.pr.Interactive() && c.hostKey == "":
-		return inv.argErr("No terminal to answer the identity question on: the keys of an address nobody registered are trusted by a person. "+
-			"Give --host-key SHA256:<fp> with one address (the fingerprint read on the device's console). Nothing was sent.", collectUse)
+		return inv.argErr("No terminal to answer the host-key question on: the key of an address nobody registered is accepted by a person, "+
+			"device by device, by typing its name or address. Give --host-key SHA256:<fp> with one address (the fingerprint read on the device's console). Nothing was sent.", collectUse)
 	case c.register && !c.pr.Interactive() && !c.yes:
 		return inv.argErr("No terminal to answer the registration question on: --register without one needs -y. Nothing was sent.", collectUse)
 	}
@@ -217,7 +238,8 @@ func (c *collect) run() (int, error) {
 		inv.app.Out.Info("No unregistered address has authenticated: nothing to collect from. 'tacctl device discover' reads the logs for them.")
 		return batch.ExitOK, nil
 	}
-	// 1. Identity: every address's keys, scanned and shown; nothing is sent.
+	// 1. Identity: every address's keys scanned, then each one's key
+	// accepted on its own; nothing is sent.
 	c.scan()
 	keyed := c.keyed()
 	if len(keyed) == 0 {
@@ -227,6 +249,15 @@ func (c *collect) run() (int, error) {
 	}
 	if err := c.identity(keyed); err != nil {
 		return 0, err
+	}
+	keyed = c.accepted()
+	if c.interrupted || len(keyed) == 0 {
+		c.names()
+		c.print()
+		if c.interrupted {
+			return batch.ExitInterrupted, nil
+		}
+		return batch.ExitFailed, nil
 	}
 	// 2. The password, once; then one address at a time.
 	if err := c.password(); err != nil {
@@ -335,6 +366,11 @@ func (c *collect) admissible() error {
 // authenticated and nothing is sent.
 func (c *collect) scan() {
 	inv := c.inv
+	if c.register && c.hostKey == "" {
+		for _, r := range c.rows {
+			c.startRead(r)
+		}
+	}
 	for _, r := range c.rows {
 		keys, err := inv.scanDevice(r.Address, devssh.DefaultPort, false)
 		if errors.Is(err, devreg.ErrNoAnswer) && inv.ctx.Err() == nil {
@@ -352,13 +388,50 @@ func (c *collect) scan() {
 		case len(keys) == 0:
 			r.Result, r.Reason = collectNoKey, "no ssh host key could be read"
 		default:
-			r.keys = keys
+			r.offered = keys
 		}
 	}
 }
 
+// startRead reads the address's SNMP sysName beside the scans, for the
+// question of --register: the name the person types back, when the name rules
+// of a new device take it (valid, lower case, not taken, not generic), else
+// the address with a note. It is the prompt's only: the device is registered under the name it reports to 'show
+// version', as without it.
+func (c *collect) startRead(r *collectRow) {
+	inv := c.inv
+	r.read = make(chan collectRead, 1)
+	go func() {
+		var rd collectRead
+		sys, problem, err := inv.sysName(r.Address)
+		if problem == "" && err == nil {
+			// never a name the registry has: the answer would read as an
+			// acceptance for that device
+			n := strings.ToLower(sys)
+			if err := inv.newNameRules(devssh.VendorJuniper)(n); err != nil {
+				rd.note = r.Address + " calls itself '" + devText(sys) + "' (SNMP sysName), which is not taken as its name (" +
+					devText(strings.Join(msgs(err), " ")) + "): type its address instead."
+			} else {
+				rd.name = n
+			}
+		}
+		r.read <- rd
+	}()
+}
+
 // keyed are the rows whose keys were read.
 func (c *collect) keyed() []*collectRow {
+	var out []*collectRow
+	for _, r := range c.rows {
+		if r.Result == "" && len(r.offered) > 0 {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// accepted are the rows whose key a person accepted (or --host-key named).
+func (c *collect) accepted() []*collectRow {
 	var out []*collectRow
 	for _, r := range c.rows {
 		if r.Result == "" && len(r.keys) > 0 {
@@ -368,51 +441,106 @@ func (c *collect) keyed() []*collectRow {
 	return out
 }
 
-// identity shows every key and trusts them: --host-key names the one key
-// of the one address (no question), otherwise ONE question before any
-// login.
+// identity is the acceptance of each address's key (0.2.17 D262, D270), one
+// address at a time and before any login: --host-key names the one key of
+// the one address (no question); otherwise the one key that would be pinned
+// (ssh-ed25519 first) is shown and accepted by typing the device's name back
+// (with --register, its SNMP sysName when it gives one) or its address. Enter
+// skips the address, any other answer refuses it, with no second try; the
+// end of input ends the questions. Every answer is an audit line, written
+// before the key is used.
 func (c *collect) identity(rows []*collectRow) error {
 	inv := c.inv
-	for _, r := range rows {
+	if c.hostKey != "" {
+		r := rows[0]
 		inv.echo("  " + r.Address + " offers:")
-		inv.echoKeys("    ", r.keys)
+		inv.echoKeys("    ", r.offered)
 		if r.Legacy {
 			inv.echo("    (it needs the legacy algorithms; registered --legacy-ssh)")
 		}
-	}
-	if c.hostKey != "" {
-		r := rows[0]
-		k, ok := devreg.MatchFingerprint(r.keys, c.hostKey)
+		k, ok := devreg.MatchFingerprint(r.offered, c.hostKey)
 		if !ok {
+			inv.hostKeyLine("device collect", c.user, r.Address, "-", devreg.HostKey{}, keyRefused, "flag")
 			return inv.usageErr("No host key "+r.Address+" offers matches "+c.hostKey+". Nothing was sent.",
 				"Check the fingerprint on the device console: "+devreg.VerifyHint(devssh.VendorJuniper)+".")
 		}
-		r.keys = []devreg.HostKey{k}
 		inv.echo("  " + c.hostKey + " matches --host-key.")
+		c.keyLogged(r, "-", k, "flag")
 		return nil
 	}
 	who := "the password of '" + c.user + "' (your tacctl password)"
 	if c.local != nil {
 		who = "the local password of '" + c.local.account + "'"
 	}
-	where := rows[0].Address
-	if len(rows) > 1 {
-		where = fmt.Sprintf("these %d addresses, one attempt at each", len(rows))
-	}
-	inv.echo("  Nobody registered " + where + ": compare the keys with each device's console (" + devreg.VerifyHint(devssh.VendorJuniper) + ").")
-	if !c.pr.Confirm("Trust these keys and send " + who + " to " + where + "? [y/N] ") {
-		return inv.usageErr("Not trusted. Nothing was sent.")
+	for _, r := range rows {
+		switch {
+		case c.interrupted || inv.ctx.Err() != nil:
+			c.interrupted = true
+			r.Result, r.Reason = collectNotTried, "interrupted"
+			continue
+		case c.ended:
+			r.Result, r.Reason = collectNotTried, "the input ended at an earlier question; nothing was sent here"
+			continue
+		}
+		inv.echo("")
+		name, byAddress := "", false
+		if r.read != nil {
+			rd := <-r.read
+			if rd.note != "" {
+				inv.echo("  " + rd.note)
+			}
+			name = rd.name
+		}
+		if name == "" {
+			name, byAddress = r.Address, true
+		}
+		if r.Legacy {
+			inv.echo("  (" + r.Address + " needs the legacy algorithms; registered --legacy-ssh)")
+		}
+		ans := inv.askHostKey(keyQuestion{addr: r.Address, port: devssh.DefaultPort, vendor: devssh.VendorJuniper, name: name,
+			offered: r.offered, then: "send it " + who, skip: "skip the address", byAddress: byAddress})
+		device := name
+		if byAddress {
+			device = "-"
+		}
+		switch ans.answer {
+		case keyInterrupted:
+			c.interrupted = true
+			r.Result, r.Reason = collectNotTried, "interrupted"
+		case keyAccepted:
+			c.keyLogged(r, device, ans.key, "confirmed")
+		default:
+			if ans.answer == keySkipped {
+				device = "-"
+			}
+			inv.hostKeyLine("device collect", c.user, r.Address, device, ans.key, ans.answer, "confirmed")
+			r.Result, r.Reason = string(ans.answer), ans.reason+"; nothing was sent"
+			c.ended = ans.eof
+		}
 	}
 	return nil
+}
+
+// keyLogged writes the acceptance's line before anything uses the key, then
+// takes the key as the one the login dials with; under audit.strict a line
+// that was not written refuses the address: nothing is sent or pinned.
+func (c *collect) keyLogged(r *collectRow, device string, k devreg.HostKey, source string) {
+	why := c.inv.hostKeyLine("device collect", c.user, r.Address, device, k, keyAccepted, source)
+	if why != "" && c.inv.auditStrict() {
+		r.Result = collectRefused
+		r.Reason = "the acceptance's audit line was not written (logger: " + why + ") and audit.strict is set; nothing was sent"
+		return
+	}
+	r.keys, r.source = []devreg.HostKey{k}, source
 }
 
 // password resolves the one password of the run before any connection.
 func (c *collect) password() error {
 	inv := c.inv
 	if c.local != nil {
-		c.src = inv.hooks.newLocalPasswords(inv, c.local.account, fmt.Sprintf("%d address(es) nobody registered", len(c.keyed())))
-		if len(c.keyed()) == 1 {
-			c.src.where = c.keyed()[0].Address
+		c.src = inv.hooks.newLocalPasswords(inv, c.local.account, fmt.Sprintf("%d address(es) nobody registered", len(c.accepted())))
+		if len(c.accepted()) == 1 {
+			c.src.where = c.accepted()[0].Address
 		}
 		pw, err := c.src.Password(inv.ctx, c.local.account)
 		if err != nil {
@@ -679,9 +807,10 @@ func (r *collectRow) serversText() string {
 }
 
 // registerAll is --register: one question, then 'device add' of each
-// collected device through the registry's own registration code, every key
-// shown pinned (the login itself was made against exactly those keys), and
-// the read kept as the device's first pull record.
+// collected device through the registry's own registration code, the key
+// accepted pinned (the login itself was made against exactly that key; the
+// others offered are shown, not pinned), and the read kept as the device's
+// first pull record.
 func (c *collect) registerAll(ctx context.Context) int {
 	inv := c.inv
 	var todo []*collectRow
@@ -698,7 +827,7 @@ func (c *collect) registerAll(ctx context.Context) int {
 	for i, r := range todo {
 		names[i] = r.Name + " (" + r.Address + ")"
 	}
-	q := fmt.Sprintf("Register %d device(s), pinning the host keys shown: %s? [y/N] ", len(todo), strings.Join(names, ", "))
+	q := fmt.Sprintf("Register %d device(s), pinning the host key accepted for each: %s? [y/N] ", len(todo), strings.Join(names, ", "))
 	if !c.yes && !c.pr.Confirm(q) {
 		inv.app.Out.Info("Not registered.")
 		return batch.ExitOK
@@ -708,11 +837,14 @@ func (c *collect) registerAll(ctx context.Context) int {
 		if ctx.Err() != nil {
 			return batch.ExitInterrupted
 		}
-		args := []string{r.Name, r.Address, "--vendor", devssh.VendorJuniper, "--no-lookup"}
+		args := []string{r.Name, r.Address, "--vendor", devssh.VendorJuniper, "--no-lookup", "--host-key", r.keys[0].Fingerprint()}
 		if r.Legacy {
 			args = append(args, "--legacy-ssh")
 		}
-		if err := inv.deviceAddWith(args, r.keys); err != nil {
+		inv.keyAccepted = r.source == "confirmed"
+		err := inv.deviceAddWith(args, r.offered)
+		inv.keyAccepted = false
+		if err != nil {
 			var ee *ExitError
 			if !errors.As(err, &ee) || ee.Err != nil {
 				inv.app.Out.ErrorE(strings.Join(msgs(err), " "))

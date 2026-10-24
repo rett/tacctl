@@ -124,7 +124,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `device add` | `name` `address` `vendor` `count` |
 | `device remove` | `names` (the first 20, then `+n`) `count` |
 | `device rename` | `from` `to` `count`, and `reason=device-name` when `device enroll` took over the name the device is configured with |
-| `device enroll hostkey` | `user` `addr` `device` `alg` `fp` `result=accepted\|skipped\|refused` `source=confirmed\|flag`; every answer to a host key's question, before the key is pinned; `auth.notice` |
+| `device enroll hostkey`, `device collect hostkey`, `device onboard hostkey` | `user` `addr` `device` `alg` `fp` `result=accepted\|skipped\|refused` `source=confirmed\|flag`; every answer to a host key's question, before the key is pinned or used; `auth.notice` |
 | `device enroll` | `user` `addr` `device` `vendor` `source=snmp\|given\|asked` `result`; one line per address at the end of the run |
 | `device import` | `source` `added` `updated` `removed` `count` |
 | `device set` | `name` `field` `from` `to`: `address`, `hostname`, `vendor`, `port`, `description`, `location`, `legacy-ssh`, `config-syntax`, `netconf`, `stale-days` (no `name`) and `notice:<kind>` |
@@ -203,6 +203,14 @@ came from (`snmp`, `given` by `--vendor`, `asked` at the terminal) and its
 of each registration, the pull's and the plan's lines, a `device rename`
 line with `reason=device-name`, and the apply's lines with `mode=attended`
 when the review is run.
+
+`device collect` and `device onboard` ask the same question before their
+login and write the same line, as `device collect hostkey` and `device
+onboard hostkey`, with the same keys. For `collect`, `device=` is the name
+the device gives by SNMP when it is the answer (`--register`), on a refusal
+too, and `-` when the answer is the address or the address was skipped; for
+`onboard`, the name given or read, or the name typed when it was accepted,
+and `-` on a skip. What was typed is never written.
 
 ## Refusals
 
@@ -289,7 +297,9 @@ config apply` after the choice of devices and the password prompt. `device
 config apply --check` writes the central pair too. `device enroll` is an
 action, refused before anything is scanned; an acceptance whose `device
 enroll hostkey` line cannot be written refuses that device before its key is
-pinned, and the run goes on to the next address.
+pinned, and the run goes on to the next address; so does a `device collect
+hostkey` line, before anything is sent to that address, and a `device onboard
+hostkey` line refuses the run before anything is sent.
 
 A command that shows a secret writes its `secret-read` line before it prints
 anything. When that line cannot be written the command is refused, whatever

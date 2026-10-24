@@ -7288,12 +7288,34 @@ break-glass account included; only
 is handled apart (its csh wrapper). In order:
 .RS
 .IP 1. 4
-Identity: the host keys the address offers are read and shown with their
-fingerprints, and one question is asked before any login,
-.RI "Trust these keys and send the local password of '" user "' to " address "? [y/N]" ;
+The host key, before any login. Of the keys the address offers, the one that
+will be pinned is the first of ed25519, ECDSA and RSA; it is shown under
+.I "Will pin"
+with the Junos console command that shows it, the others as offered and not
+pinned. One question:
+.RI "Compare the key with the console of " address ". Type the device name (" name ") to accept it and send it the local password of '" user "', or press Enter to stop:"
+where
+.I name
+is
+.BR \-\-name ,
+else the device's SNMP sysName (lower case); when there is neither, the
+question asks for the name to register it as, checked as every new name
+(lower case, not taken, not generic), and the name typed is the name it is
+registered under. Enter, the end of input or any other answer sends nothing,
+with no second try (exit 1). There is no
+.B \-y
+and no trust on first use. A device an earlier onboard registered is asked
+for its registered name; nothing new is pinned: its pinned keys are listed and
+the key is shown under
+.IR "Key to check" ,
+and a key that is not among them refuses the run (re-pin it after a check:
+.B "device hostkey"
+.I name
+.B set
+.IR fingerprint ).
 .BI "\-\-host\-key SHA256:" fingerprint
-answers it with the key read on the device's console. Without a terminal and
-without
+answers it instead with the key read on the device's console. Without a
+terminal and without
 .B \-\-host\-key
 the run is refused (exit 2), and without a terminal only
 .B \-\-check
@@ -7313,12 +7335,17 @@ also in a group):
 and no local account of your own name (a login as you could be that
 account's, not TACACS+).
 .IP 3. 4
-The name
-.RB ( \-\-name ,
+The name (the one the key was accepted under; with
+.BR \-\-host\-key :
+.BR \-\-name ,
 else the host name the device reports, else asked at the terminal when that
 one is generic or taken) and the registration, through
 .B "device add"
-with the keys of step 1 pinned; the device's own
+with the key of step 1 pinned (the others offered are shown, not pinned:
+.B "device hostkey"
+.I name
+.B accept
+pins them after a check of their own); the device's own
 .B "snmp location"
 and
 .B "snmp description"
@@ -7391,8 +7418,17 @@ Juniper class. What the device reports is shown with its control characters
 replaced.
 .B \-\-json
 prints one object at the end (the progress goes to standard error). Logged:
+.B "auth.notice device onboard hostkey user= addr= device= alg= fp= result=accepted|skipped|refused source=confirmed|flag"
+for the answer to the key, before it is used
+.RB ( device=
+is the name shown, on a refusal too, or the name typed when it was accepted,
+never a refused text;
+.B \-
+on a skip; with
+.BR audit.strict ,
+a line that cannot be written refuses the run before anything is sent),
 .B "auth.notice device onboard user= device= approved=1 shape= login="
-at the answer and
+at the answer to the review and
 .B "auth.info device onboard user= device= addr= login=local:<account> result="
 at the end, never a password. Exit status: 0 applied, checked or no change; 1
 refused, failed, rolled back or pending; 2 wrong arguments; 130 interrupted.
@@ -7407,10 +7443,10 @@ Options:
 The device's local account to log in as (any, a break\-glass one included; root through its CLI wrapper): its password is asked once on the terminal and never kept or cached.
 .TP
 \fB\-\-name\fR \fI<text>\fR
-The registry name (default: the name the device reports; a generic or taken one is asked for).
+The registry name, typed back at the key's question (default: its SNMP sysName, else the name typed there; with \-\-host\-key, the name the device reports, a generic or taken one asked for).
 .TP
 \fB\-\-host\-key\fR \fISHA256:<fp>\fR
-Trust only this key, read on the device's console (no question; needed without a terminal); pin it alone.
+Accept only this key, read on the device's console (no question; needed without a terminal); pin it alone.
 .TP
 \fB\-\-legacy\-ssh\fR
 SHA\-1 key exchange, CBC ciphers and ssh\-rsa (also chosen by itself when the handshake needs them); registered so.
@@ -7434,9 +7470,30 @@ no scope answers, one with break-glass held, and a caller who is not an active
 member of the scope):
 .RS
 .IP 1. 4
-The host keys it offers are read (nothing is authenticated) and shown with
-their fingerprints, and one question is asked before any login,
-.RI "Trust these keys and send " "the password of 'user'" " to " address "? [y/N]" ;
+The host keys it offers are read (nothing is authenticated). Then, address by
+address and before any login, the one that will be pinned (the first of
+ed25519, ECDSA and RSA) is shown under
+.I "Will pin"
+with the Junos console command that shows it, the others as offered and not
+pinned, and one question:
+.RI "Compare the key with the console of " address ". Type the address (" address ") to accept it and send it " "the password of 'user'" ", or press Enter to skip the address:"
+With
+.BR \-\-register ,
+a device that gives its name by SNMP (its sysName, lower case), when that is a
+name a new device may take (valid, not taken by a device or an enrolled host,
+not generic), is asked for that name instead,
+.RI "Type the device name (" name ")" ;
+the answer only accepts the key, and the device is registered under the name
+it reports to
+.BR "show version" .
+Enter skips the address and any other answer refuses it, with no second try:
+nothing is sent to it, and its row says
+.I skipped
+or
+.IR refused .
+The end of input ends the questions (the addresses after it are
+.IR not-tried ).
+There is no answer for several addresses and no trust on first use.
 .BI "\-\-host\-key SHA256:" fingerprint
 answers it for one address with the key read on the device's console. Without
 a terminal and without
@@ -7469,11 +7526,15 @@ line each collected device would run (a device that reports no name the
 registry accepts says so). Nothing is kept without
 .BR \-\-register :
 the read is discarded.
+.B \-\-json
+lists under
+.B host_keys
+only the key accepted (none for a skipped or refused address).
 .B \-\-register
 asks one question after the table and then registers each device through
 .BR "device add" ,
-the registry's own code, with every key shown pinned (the login was made
-against exactly those keys),
+the registry's own code, with the key accepted pinned (the login was made
+against exactly that key; the others offered are shown, not pinned),
 .B \-\-vendor juniper
 and, when the handshake needed the legacy algorithms,
 .BR \-\-legacy\-ssh ;
@@ -7488,15 +7549,24 @@ inheritance was not checked until a pull reads it.
 .B \-y
 answers the question of
 .BR \-\-register ,
-which without a terminal it needs.
+which without a terminal it needs, and never a key's question.
 .B \-\-discovered
 takes the addresses
 .B "device discover"
 lists (the seen cache; run it first to refresh it). Logged:
+.B "auth.notice device collect hostkey user= addr= device= alg= fp= result=accepted|skipped|refused source=confirmed|flag"
+for every answer to a key, before it is used
+.RB ( device=
+is the name shown in the question, on a refusal too, never the text typed;
+.B \-
+when the answer is the address or the address was skipped; with
+.BR audit.strict ,
+a line that cannot be written refuses that address before anything is sent
+to it), and
 .B "auth.info device collect user= addr= login=own|local:<account> result="
 per address, never a password or a device's text. Exit status: 0 every address
-collected, 1 one was refused, failed or not Junos, 2 wrong arguments, 130
-interrupted.
+collected, 1 one was skipped, refused, failed or not Junos, 2 wrong arguments,
+130 interrupted.
 .\" BEGIN GENERATED: command device collect
 .RS
 .PP
@@ -7511,13 +7581,13 @@ The addresses 'device discover' lists (the seen cache: unregistered, authenticat
 The device's local account to log in as (any, a break\-glass one included; root through its CLI wrapper) instead of you: its password is asked once on the terminal, never kept or cached, and goes to each address once; one account for the run.
 .TP
 \fB\-\-host\-key\fR \fISHA256:<fp>\fR
-Trust only this key, read on the device's console (no question; needed without a terminal; one address); pin it alone.
+Accept only this key, read on the device's console (no question; needed without a terminal; one address); pin it alone.
 .TP
 \fB\-\-register\fR
-After the table, register each collected device through 'device add' with the keys shown pinned (one question) and keep the read as its first pull record.
+After the table, register each collected device through 'device add' with the key accepted pinned (one question) and keep the read as its first pull record; the key's question takes the device's SNMP sysName when it gives one that is not taken.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
+Answer yes to the registration question of \-\-register (needed without a terminal); never a host key's question.
 .TP
 \fB\-\-json\fR
 One object at the end (the progress goes to standard error).
@@ -12427,6 +12497,10 @@ refusal comes before the first write, which for a few commands is after a
 prompt or a read (\fBdevice collect\fR: after its first login;
 \fBdevice config apply\fR: after the choice of devices and the password
 prompt); \fBdevice config apply \-\-check\fR writes the central pair too.
+The acceptance of a host key (\fBdevice enroll\fR, \fBdevice collect\fR,
+\fBdevice onboard\fR) writes its \fBhostkey\fR line before the key is
+used; a line that cannot be written refuses that device (\fBonboard\fR: the
+run) before its key is pinned or anything is sent to it.
 .PP
 A command that shows a secret writes its
 .B secret-read

@@ -67,29 +67,39 @@ device onboard <address> --login <local-user> [--name <name>] [--host-key SHA256
                [--legacy-ssh] [--check] [--section <list>] [--json]
 
     Superusers, Junos devices: bring a blank device reached with one of its local accounts under
-    tacctl in one run: the host keys shown and ONE question before any login (`--host-key` names the
-    key instead; without a terminal only `--host-key --check` runs), the pre-flight as the local
-    account (no pending commit, no TACACS+ or RADIUS server already, no local account of your own
-    name), the registration through `device add` (the device's own location and description fill the
-    empty fields; never the hostname), the pull and the device's own check of the first-time plan as
-    the local account (`--check` stops there), the review (the device's name typed back), then your
-    own password and the commit as the local account, proven by your own fresh TACACS+ login (the
-    template user of your group's class) and confirmed; see Onboarding a blank device
-    (devices/planning.md, "Onboarding a blank device")
+    tacctl in one run: the one host key that would be pinned (ed25519 first, then ECDSA, then RSA)
+    shown with the Junos console command that shows it and accepted before any login by typing the
+    device's name (`--name`, else its SNMP sysName, else the name to register it as, checked by the
+    name rules; Enter or any other answer sends nothing; `--host-key` names the key instead;
+    without a terminal only `--host-key --check` runs), the pre-flight as the local account (no
+    pending commit, no TACACS+ or RADIUS server already, no local account of your own name), the
+    registration through `device add` with that key pinned (the others offered are shown, not
+    pinned; the device's own location and description fill the empty fields; never the hostname),
+    the pull and the device's own check of the first-time plan as the local account (`--check`
+    stops there), the review (the device's name typed back), then your own password and the commit
+    as the local account, proven by your own fresh TACACS+ login (the template user of your group's
+    class) and confirmed; see Onboarding a blank device (devices/planning.md, "Onboarding a blank
+    device")
 
 device collect <address>... | --discovered [--login <local-user>] [--host-key SHA256:<fp>]
                [--register [-y]] [--json]
 
     Superusers, Junos devices: log in once to each address nobody registered and read what it is:
-    the host keys shown and ONE question before any login (`--host-key` names the key of one address
-    instead; without a terminal it is needed), then `show version` and the pull's read command in
-    one session, nothing else, as one table (address, host name, model, release, authentication
-    order, servers, EN-CLASS, NETCONF, lo0 filter, legacy ssh); your own password, or with `--login`
-    a local account's, asked once and never kept or cached; the first refusal ends the run;
-    `--register` registers each through `device add` with the keys shown pinned (one question, `-y`
-    without a terminal) and keeps the read as its first pull record; a registered address is
-    refused; see Collecting from addresses nobody registered (devices/planning.md, "Collecting from
-    addresses nobody registered")
+    address by address and before any login, the one host key that would be pinned (ed25519 first,
+    then ECDSA, then RSA) shown with the Junos console command that shows it and accepted by typing
+    the address back (with `--register`, the device's SNMP sysName when it gives one that is not
+    taken, not generic and valid; else the address, with a line that says why); Enter skips the
+    address, any other answer refuses it, and nothing is sent to either (`--host-key` names the key
+    of one address instead; without a terminal it is needed); then `show version` and the pull's
+    read command in one session, nothing else, as one table (address, host name, model, release,
+    authentication order, servers, EN-CLASS, NETCONF, lo0 filter, legacy ssh); your own password,
+    or with `--login` a local account's, asked once and never kept or cached; the first refusal
+    ends the run; `--register` registers each through `device add` under the name it reports, with
+    the key accepted pinned (one question, `-y` without a terminal; `-y` answers only that
+    question, never a key's) and keeps the read as its first pull record; `--json` lists under
+    `host_keys` only the key accepted (none for a skipped or refused address); a registered address
+    is refused; see Collecting from addresses nobody registered (devices/planning.md, "Collecting
+    from addresses nobody registered")
 
 device enroll <address>... | --discovered [--host-key SHA256:<fp>]
               [--vendor cisco|juniper|wti|other] [--name <name>] [--legacy-ssh] [--json]

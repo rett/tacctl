@@ -13,6 +13,7 @@ import (
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/devssh/fakedev"
+	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
 	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/testpty"
@@ -93,10 +94,19 @@ func (b *pullBox) knob(name, text string) {
 // is no terminal at all.
 func (b *pullBox) onboard(typed string, args ...string) string {
 	b.t.Helper()
+	return b.onboardWith(nil, typed, args...)
+}
+
+// onboardWith is onboard with more rules for the runner, after the scan's.
+func (b *pullBox) onboardWith(more func(*fake.Runner), typed string, args ...string) string {
+	b.t.Helper()
 	key := b.key()
 	b.sb.script = func(r *fake.Runner) {
 		route(r)
 		scan(onboardAddr, key)(r)
+		if more != nil {
+			more(r)
+		}
 	}
 	defer func() { b.sb.script, b.sb.tty = nil, nil }()
 	if typed != "-" {
@@ -126,7 +136,7 @@ func (b *pullBox) committed() string {
 
 func TestOnboardEndToEnd(t *testing.T) {
 	b := newOnboardBox(t)
-	out := b.onboard("y\nsw-lab-5\n", onboardAddr, "--login", localAccount)
+	out := b.onboard("sw-lab-5\nsw-lab-5\n", onboardAddr, "--login", localAccount)
 	if b.sb.code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
 	}
@@ -140,7 +150,8 @@ func TestOnboardEndToEnd(t *testing.T) {
 			t.Errorf("missing %q in\n%s", want, out)
 		}
 	}
-	if err := b.sb.stderr(); !strings.Contains(err, "Trust these keys and send the local password of 'admin' to 192.168.1.31? [y/N]") ||
+	if err := b.sb.stderr(); !strings.Contains(err, "Compare the key with the console of 192.168.1.31. Type the name to register it as to accept it "+
+		"and send it the local password of 'admin', or press Enter to stop: ") ||
 		!strings.Contains(err, "Type the device name to go on:") {
 		t.Errorf("the questions: %q", err)
 	}
@@ -190,8 +201,10 @@ func TestOnboardEndToEnd(t *testing.T) {
 	}
 	noSecrets(t, "the output", out+b.sb.stderr(), localPassword, testPassword)
 	al := b.auditLines("device onboard")
-	if len(al) != 2 || !strings.Contains(al[0], "device onboard user=alice device=sw-lab-5 approved=1 shape=") || !strings.Contains(al[0], " mode=attended") ||
-		!strings.Contains(al[1], "device onboard user=alice device=sw-lab-5 addr=192.168.1.31 login=local:admin result=applied") {
+	if len(al) != 3 || !strings.Contains(al[0], "-p auth.notice device onboard hostkey user=alice addr=192.168.1.31 device=sw-lab-5 alg=ssh-ed25519 fp="+
+		b.key().Fingerprint()+" result=accepted source=confirmed") ||
+		!strings.Contains(al[1], "device onboard user=alice device=sw-lab-5 approved=1 shape=") || !strings.Contains(al[1], " mode=attended") ||
+		!strings.Contains(al[2], "device onboard user=alice device=sw-lab-5 addr=192.168.1.31 login=local:admin result=applied") {
 		t.Errorf("audit %q", al)
 	}
 	for _, l := range al {
@@ -213,7 +226,7 @@ func TestOnboardCheckWithHostKey(t *testing.T) {
 		!strings.Contains(out, "nothing was committed: --check ends") {
 		t.Fatalf("exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
 	}
-	if strings.Contains(b.sb.stderr(), "Trust these keys") || b.pw.asked != 0 {
+	if strings.Contains(b.sb.stderr(), "Compare the key") || b.pw.asked != 0 {
 		t.Errorf("asked: %q, tacacs password asked %d", b.sb.stderr(), b.pw.asked)
 	}
 	if got := b.committed(); strings.Contains(got, "tacplus-server") {
@@ -246,12 +259,12 @@ func TestOnboardRefusalsSendNothing(t *testing.T) {
 		code  int
 		want  string
 	}{
-		{"-", []string{onboardAddr, "--login", localAccount}, 2, "No terminal to answer the identity question on"},
+		{"-", []string{onboardAddr, "--login", localAccount}, 2, "No terminal to answer the host-key question on"},
 		{"-", []string{onboardAddr, "--login", localAccount, "--host-key", b.key().Fingerprint()}, 2, "No terminal to review the change on"},
 		{"-", []string{onboardAddr}, 2, "--login <local-user> names the device's local account"},
 		{"-", []string{onboardAddr, "--login", "bad name"}, 2, "--login takes the name of one of the device's local accounts"},
 		{"-", []string{onboardAddr, "--login", localAccount, "--check", "--section", "breakglass"}, 2, "--section takes sections of"},
-		{"n\n", []string{onboardAddr, "--login", localAccount}, 1, "Not trusted. Nothing was sent."},
+		{"\n", []string{onboardAddr, "--login", localAccount}, 1, "The host key of 192.168.1.31 was not accepted. Nothing was sent."},
 		{"", []string{onboardAddr, "--login", localAccount, "--check", "--host-key", "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}, 1, "No host key 192.168.1.31 offers matches"},
 		{"", []string{"198.51.100.9", "--login", localAccount, "--check", "--host-key", b.key().Fingerprint()}, 1, "No scope answers 198.51.100.9"},
 	} {
@@ -278,7 +291,8 @@ func TestOnboardRefusesADeviceWithAServer(t *testing.T) {
 		t.Error("registered")
 	}
 	al := b.auditLines("device onboard")
-	if len(al) != 1 || !strings.Contains(al[0], "login=local:admin result=refused") {
+	if len(al) != 2 || !strings.Contains(al[0], "device onboard hostkey user=alice addr=192.168.1.31 device=- alg=ssh-ed25519 fp="+
+		b.key().Fingerprint()+" result=accepted source=flag") || !strings.Contains(al[1], "login=local:admin result=refused") {
 		t.Errorf("audit %q", al)
 	}
 }
@@ -289,7 +303,7 @@ func TestOnboardRefusesADeviceWithAServer(t *testing.T) {
 func TestOnboardRefusedFreshLoginRollsBack(t *testing.T) {
 	b := newOnboardBox(t)
 	b.knob("verify.fail", "deny\n")
-	out := b.onboard("y\nsw-lab-5\n", onboardAddr, "--login", localAccount)
+	out := b.onboard("sw-lab-5\nsw-lab-5\n", onboardAddr, "--login", localAccount)
 	if b.sb.code != 1 || !strings.Contains(out, "sw-lab-5  rolled back") || !strings.Contains(out, "the change was rolled back and the local account 'admin' is as it was") {
 		t.Fatalf("exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
 	}
@@ -592,7 +606,7 @@ func TestOnboardProofNeedsTheTemplateUser(t *testing.T) {
 	} {
 		b := newOnboardBox(t)
 		b.knob("template", c.template)
-		out := b.onboard("y\nsw-lab-5\n", onboardAddr, "--login", localAccount)
+		out := b.onboard("sw-lab-5\nsw-lab-5\n", onboardAddr, "--login", localAccount)
 		if b.sb.code != 1 || !strings.Contains(out, "sw-lab-5  rolled back: verification failed (the fresh login: ") {
 			t.Errorf("%s: exit %d\n%s\n%s", c.name, b.sb.code, out, b.sb.stderr())
 		}
@@ -619,7 +633,7 @@ func TestOnboardRefusesAProofThatCouldBeLocal(t *testing.T) {
 		t.Errorf("a refusal sent a password (%d)", b.srv.Attempts())
 	}
 	b.knob("config.set", blankDevice+"set system login user alice class super-user\n")
-	b.onboard("y\nsw-lab-5\n", onboardAddr, "--login", localAccount)
+	b.onboard("sw-lab-5\nsw-lab-5\n", onboardAddr, "--login", localAccount)
 	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "the device has a local account named 'alice', your own login") {
 		t.Errorf("local alice: %d %q", b.sb.code, b.sb.stderr())
 	}
@@ -635,7 +649,7 @@ func TestOnboardRefusesAProofThatCouldBeLocal(t *testing.T) {
 func TestOnboardNeverProbes(t *testing.T) {
 	for _, acct := range []string{"root", localAccount} {
 		b := newOnboardBox(t)
-		out := b.onboard("y\nsw-lab-5\n", onboardAddr, "--login", acct, "--json")
+		out := b.onboard("sw-lab-5\nsw-lab-5\n", onboardAddr, "--login", acct, "--json")
 		if b.sb.code != 0 || !strings.Contains(out, `"status":"applied"`) {
 			t.Fatalf("%s: exit %d\n%s\n%s", acct, b.sb.code, out, b.sb.stderr())
 		}
@@ -659,7 +673,7 @@ func TestOnboardNeverProbes(t *testing.T) {
 		}
 		// the text run says the same
 		b2 := newOnboardBox(t)
-		out = b2.onboard("y\nsw-lab-5\n", onboardAddr, "--login", acct)
+		out = b2.onboard("sw-lab-5\nsw-lab-5\n", onboardAddr, "--login", acct)
 		want := "The local account '" + acct + "' was not probed: a login would send its password to the TACACS+ server."
 		if !strings.Contains(out, want) {
 			t.Errorf("%s: missing %q in\n%s", acct, want, out)
@@ -741,5 +755,113 @@ func TestHasAAAServerForms(t *testing.T) {
 	}
 	if !hasLocalUser("set groups g system login user Alice class x\n", "alice") || hasLocalUser("set system login user alicex class x\n", "alice") {
 		t.Error("hasLocalUser")
+	}
+}
+
+// The answers to the key's question (0.2.17 D262, D270): the one key shown is
+// accepted by the device's name typed back: --name, else its SNMP sysName,
+// else the name to register it as, typed in the same answer and checked by
+// the rules. Enter, the end of input and another answer send nothing; every
+// answer is a line, written before the login and the registration.
+func TestOnboardKeyAnswers(t *testing.T) {
+	b := newOnboardBox(t)
+	fp := b.key().Fingerprint()
+	b.devices([3]string{"taken-sw", "192.168.1.20", "juniper"})
+	hostkeyLine := func() string { return auditLine(b.sb.runner, "device onboard hostkey ") }
+	b.sb.snmp = &stubSNMP{names: map[string]string{onboardAddr: "SW-Lab-5"}}
+	for _, c := range []struct {
+		name, typed string
+		args        []string
+		want, line  string
+	}{
+		{"enter", "\n", nil, "was not accepted. Nothing was sent.", "device=- alg=ssh-ed25519 fp=" + fp + " result=skipped source=confirmed"},
+		{"end of input", "\x04", nil, "was not accepted (no answer: the input ended). Nothing was sent.",
+			"device=- alg=ssh-ed25519 fp=" + fp + " result=skipped source=confirmed"},
+		{"not the name", "sw-lab-6\n", nil, "was refused: the answer typed is not the device's name. Nothing was sent.",
+			"device=sw-lab-5 alg=ssh-ed25519 fp=" + fp + " result=refused source=confirmed"},
+		{"not --name", "sw-lab-5\n", []string{"--name", "lab-x"}, "was refused: the answer typed is not the device's name.",
+			"device=lab-x alg=ssh-ed25519 fp=" + fp + " result=refused source=confirmed"},
+	} {
+		b.onboard(c.typed, append([]string{onboardAddr, "--login", localAccount, "--check"}, c.args...)...)
+		if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), c.want) {
+			t.Errorf("%s: exit %d %q", c.name, b.sb.code, b.sb.stderr())
+		}
+		if l := hostkeyLine(); l != "device onboard hostkey user=alice addr="+onboardAddr+" "+c.line {
+			t.Errorf("%s: line %q", c.name, l)
+		}
+	}
+	// SNMP gives none: the name is typed, checked by the rules
+	b.sb.snmp = &stubSNMP{}
+	for typed, why := range map[string]string{
+		"Lab-Sw9\n":  "the name has upper case: names are lower case",
+		"switch\n":   "the name is a generic name",
+		"taken-sw\n": "the name is already registered",
+	} {
+		b.onboard(typed, onboardAddr, "--login", localAccount, "--check")
+		if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "was refused: "+why) {
+			t.Errorf("%q: exit %d %q", typed, b.sb.code, b.sb.stderr())
+		}
+		if !strings.Contains(b.sb.stderr(), "Type the name to register it as to accept it and send it the local password of 'admin', or press Enter to stop: ") {
+			t.Errorf("%q: question %q", typed, b.sb.stderr())
+		}
+	}
+	if b.srv.Attempts() != 0 || strings.Contains(b.sb.devices(), onboardAddr) {
+		t.Fatalf("a refusal sent a password (%d) or registered:\n%s", b.srv.Attempts(), b.sb.devices())
+	}
+	// the name typed is the name registered, not the one the device reports
+	out := b.onboard("lab-sw9\n", onboardAddr, "--login", localAccount, "--check")
+	if b.sb.code != 0 || !strings.Contains(out, "Device 'lab-sw9' registered: "+onboardAddr+", juniper.") ||
+		!strings.Contains(out, "Host key pinned (the key you accepted):") || !strings.Contains(out, "Will pin:  ED25519  "+fp) {
+		t.Fatalf("exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+	}
+	if l := hostkeyLine(); l != "device onboard hostkey user=alice addr="+onboardAddr+" device=lab-sw9 alg=ssh-ed25519 fp="+fp+" result=accepted source=confirmed" {
+		t.Errorf("line %q", l)
+	}
+	all := auditLines(b.sb.runner)
+	if i, j := indexPrefix(all, "device onboard hostkey "), indexPrefix(all, "device add name=lab-sw9 "); i < 0 || j < 0 || i > j {
+		t.Errorf("the acceptance's line is not before the registration's:\n%s", strings.Join(all, "\n"))
+	}
+	// onboarded again (registered, never read as alice): its own name is the
+	// answer, and the key shown is one to check, nothing new is pinned
+	out = b.onboard("lab-sw9\n", onboardAddr, "--login", localAccount, "--check")
+	if b.sb.code != 0 || !strings.Contains(out, "Pinned keys of 'lab-sw9' (an earlier onboard; nothing new is pinned):") ||
+		!strings.Contains(out, "Key to check:  ED25519  "+fp) || strings.Contains(out, "Will pin:") ||
+		!strings.Contains(b.sb.stderr(), "Type the device name (lab-sw9) to accept it") {
+		t.Errorf("again: exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+	}
+	// the device SNMP names is accepted by that name, and registered under it
+	b2 := newOnboardBox(t)
+	b2.sb.snmp = &stubSNMP{names: map[string]string{onboardAddr: "SW-Lab-5"}}
+	out = b2.onboard("sw-lab-5\n", onboardAddr, "--login", localAccount, "--check")
+	if b2.sb.code != 0 || !strings.Contains(out, "Device 'sw-lab-5' registered: "+onboardAddr+", juniper.") ||
+		!strings.Contains(b2.sb.stderr(), "Type the device name (sw-lab-5) to accept it and send it the local password of 'admin', or press Enter to stop: ") {
+		t.Errorf("snmp name: exit %d\n%s\n%s", b2.sb.code, out, b2.sb.stderr())
+	}
+}
+
+// audit.strict: an acceptance whose line logger did not write refuses the run
+// before anything is sent.
+func TestOnboardStrictAcceptanceLine(t *testing.T) {
+	b := newOnboardBox(t)
+	b.sb.strictOn()
+	failHostkey := func(r *fake.Runner) {
+		r.When(func(c execx.Cmd) bool {
+			return c.Name == "logger" && len(c.Args) == 5 && strings.HasPrefix(c.Args[4], "device onboard hostkey ")
+		}, execx.Result{Code: 1, Stderr: []byte("busy\n")}, nil)
+	}
+	for _, c := range []struct {
+		typed string
+		args  []string
+	}{
+		{"lab-sw9\n", nil},
+		{"", []string{"--host-key", b.key().Fingerprint()}},
+	} {
+		b.onboardWith(failHostkey, c.typed, append([]string{onboardAddr, "--login", localAccount, "--check"}, c.args...)...)
+		if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "The acceptance's audit line was not written (logger: ") {
+			t.Errorf("%v: exit %d %q", c.args, b.sb.code, b.sb.stderr())
+		}
+	}
+	if b.srv.Attempts() != 0 || strings.Contains(b.sb.devices(), onboardAddr) {
+		t.Errorf("sent (%d) or registered:\n%s", b.srv.Attempts(), b.sb.devices())
 	}
 }

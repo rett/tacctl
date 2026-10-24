@@ -161,8 +161,8 @@ var deviceVerbs = [][2]string{
 	{"list [word] [--name <text>] [--ip <addr|cidr|text>] [--vendor <vendor>] [--scope <scope>] [--stale] [--unconfigured] [--scan] [--probe] [--json]", "Registered devices and enrolled hosts, by name: scope, state, last seen, notices; the options narrow the list"},
 	{"show <name|address> [--all] [--json]", "One device or host in full (--all: the acknowledged notices too)"},
 	{"add [<name>] <address> [options]", "Register a device (no name: offer the one it gives itself by SNMP); the vendor the device names by SNMP is shown, and offered at a terminal"},
-	{"onboard <address> --login <local-user> [--name <name>] [--host-key SHA256:<fp>] [--legacy-ssh] [--check] [--section <list>] [--json]", "Superusers, Junos devices: register a blank device reached with one of its local accounts and commit its first configuration as that account, kept only after your own TACACS+ login proves it"},
-	{"collect <address>... | --discovered [--login <local-user>] [--host-key SHA256:<fp>] [--register [-y]] [--json]", "Superusers, Junos devices: log in once to each address nobody registered and read what it is (host keys shown and trusted by one question first; show version and the configuration, nothing else), as one table; --register registers them through 'device add' and keeps the read as their first record"},
+	{"onboard <address> --login <local-user> [--name <name>] [--host-key SHA256:<fp>] [--legacy-ssh] [--check] [--section <list>] [--json]", "Superusers, Junos devices: register a blank device reached with one of its local accounts (its host key accepted first by typing its name) and commit its first configuration as that account, kept only after your own TACACS+ login proves it"},
+	{"collect <address>... | --discovered [--login <local-user>] [--host-key SHA256:<fp>] [--register [-y]] [--json]", "Superusers, Junos devices: log in once to each address nobody registered and read what it is (each one's host key shown and accepted first by typing its name or address; show version and the configuration, nothing else), as one table; --register registers them through 'device add' and keeps the read as their first record"},
 	{"enroll <address>... | --discovered [--host-key SHA256:<fp>] [--vendor cisco|juniper|wti|other] [--name <name>] [--legacy-ssh] [--json]", "Superusers: per address, accept the one host key shown by typing the device's name, read its name and vendor by SNMP (asking for what cannot be read), register it, pull it as you, take the name it is configured with, plan it and, for Junos devices, offer the apply review"},
 	{"sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite] [--json] [-y]", "Superusers: fill the registry's empty hostname, location and description from what each device's last pull record says of itself (no login; the preview first, --apply writes after one question)"},
 	{"remove <name>[,<name>...] | --all [-y]", "Remove devices from the registry (confirms)"},
@@ -230,13 +230,13 @@ var deviceOptions = map[string][][2]string{
 	},
 	"onboard": {
 		{"--login <local-user>", "(onboard, collect; config pull, diff --pull, plan --pull) The device's local account to log in as (any, a break-glass one included; root through its csh wrapper): its password is asked once on the terminal and never kept"},
-		{"--name <name>", "The registry name (default: the name the device reports; a generic one is asked for)"},
+		{"--name <name>", "The registry name, typed back at the key's question (default: its SNMP sysName, else the name typed there; with --host-key, the name the device reports, a generic one asked for)"},
 		{"--check", "(onboard) Register, read and check the first-time plan on the device; commit nothing"},
 	},
 	"collect": {
 		{"--discovered", "The addresses of 'device discover' (the seen cache: unregistered, authenticated) that no registry entry holds"},
-		{"--host-key SHA256:<fp>", "Trust only this key, read on the device's console (no question; needed without a terminal, with one address)"},
-		{"--register", "(collect) Register each device collected through 'device add', its shown keys pinned, and keep the read as its first pull record (one question)"},
+		{"--host-key SHA256:<fp>", "Accept only this key, read on the device's console (no question; needed without a terminal, with one address)"},
+		{"--register", "(collect) Register each device collected through 'device add', the key accepted pinned, and keep the read as its first pull record (one question; the key's question takes its SNMP sysName)"},
 	},
 	"enroll": {
 		{"--host-key SHA256:<fp>", "(enroll) Pin this key of ONE address, read on its console: no question (the only form without a terminal)"},
@@ -1303,9 +1303,10 @@ func sortedVendors() []string { return []string{"cisco", "juniper", "wti"} }
 func (inv *invocation) deviceAdd(args []string) error { return inv.deviceAddWith(args, nil) }
 
 // deviceAddWith is 'device add'. trusted, when not nil, are host keys the
-// caller already scanned and the person trusted ('device onboard', D136):
-// they are pinned instead of a new scan, so that what is pinned is exactly
-// what was shown. Every registration goes through here.
+// caller already scanned ('device enroll', 'collect', 'onboard'): they stand
+// for a new scan, so that what is pinned is exactly what was shown (the key
+// the person accepted, named by --host-key). Every registration goes
+// through here.
 func (inv *invocation) deviceAddWith(args []string, trusted []devreg.HostKey) error {
 	p, err := inv.deviceParse("add", args)
 	if err != nil {

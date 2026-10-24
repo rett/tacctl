@@ -313,6 +313,30 @@ current behaviour; this file is where history lives.
     rewrites the tiers drop-in and a group drop-in that is exactly 0.2.16's
     text.
 
+14. **`device collect` and `device onboard` accept a host key per device,
+    as `device enroll` does.** The one `Trust these keys ...? [y/N]` for
+    every key of a run is gone. Before any login, the one key that will be
+    pinned (ed25519 first, then ECDSA, then RSA) is shown with the Junos
+    console command that shows it, the others as offered and not pinned,
+    and the key is accepted by typing back: for `collect`, the address, or
+    with `--register` the device's SNMP sysName when it gives one a new
+    device may take (valid, not taken, not generic; else the address; the
+    device is still registered under the name it reports to `show
+    version`), address by address; for `onboard`, `--name`, else its SNMP
+    sysName, else the name to register it as (checked as every new name),
+    which is then the name it is registered under. Enter skips the address
+    (`onboard`: stops), any other answer refuses it, nothing is sent to it,
+    and a `collect` row says `skipped` or `refused` (exit 1). Only the key
+    accepted is pinned at registration (`device hostkey <name> accept` pins
+    the others after a check), and `collect --json` lists under `host_keys`
+    only that key (none for a skipped or refused address). `--host-key SHA256:<fp>` is unchanged and
+    remains the form without a terminal; `collect --register -y` answers
+    only the registration question, never a key's. Every answer is
+    `device collect hostkey` or `device onboard hostkey` at `auth.notice`
+    with the keys of `device enroll hostkey`, written before the key is
+    used; with `audit.strict` an unwritten line refuses that address
+    (`onboard`: the run) before anything is sent.
+
 ## 0.2.16 (2026-10-23)
 
 1. **`config validate` takes no argument.** `config validate extra` ran the

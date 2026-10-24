@@ -91,8 +91,9 @@ func (inv *invocation) echoKeys(indent string, keys []devreg.HostKey) {
 // deviceAddKeys scans the device add registers and picks the keys to pin:
 // every key it offers, or with --host-key only the key of that
 // fingerprint (the others were not verified). nil keys with a nil error is
-// --no-host-key. trusted are keys the caller scanned and the person trusted
-// already ('device onboard'): they stand for the scan.
+// --no-host-key. trusted are keys the caller scanned already ('device
+// enroll', 'collect', 'onboard', which pass the key accepted as --host-key):
+// they stand for the scan.
 func (inv *invocation) deviceAddKeys(d devreg.Device, p Parsed, retry string, trusted []devreg.HostKey) (pin, offered []devreg.HostKey, err error) {
 	if p.Has("--no-host-key") {
 		return nil, nil, nil
@@ -195,21 +196,31 @@ func pinnedKey(offered []devreg.HostKey) (devreg.HostKey, bool) {
 
 // showHostKey prints the one key that will be pinned, the others offered,
 // and how to see the key on the device's console: the vendor's command, or
-// every vendor's when the vendor is not known yet.
-func (inv *invocation) showHostKey(addr string, port int, vendor string, pin devreg.HostKey, offered []devreg.HostKey) {
+// every vendor's when the vendor is not known yet. pinned: the device has
+// pinned keys already and nothing new is pinned ('device onboard' of a device
+// an earlier onboard registered): the key is the one to check.
+func (inv *invocation) showHostKey(addr string, port int, vendor string, pin devreg.HostKey, offered []devreg.HostKey, pinned bool) {
 	where := addr
 	if port != 0 && port != devssh.DefaultPort {
 		where += " port " + strconv.Itoa(port)
 	}
 	inv.echo("  " + where + " offers:")
-	inv.echo("    Will pin:  " + pin.Display())
+	if pinned {
+		inv.echo("    Key to check:  " + pin.Display())
+	} else {
+		inv.echo("    Will pin:  " + pin.Display())
+	}
 	var rest []devreg.HostKey
 	for _, k := range devreg.SortKeys(offered) {
 		if k != pin {
 			rest = append(rest, k)
 		}
 	}
-	if len(rest) > 0 {
+	switch {
+	case len(rest) > 0 && pinned:
+		inv.echo("    Also offered:")
+		inv.echoKeys("      ", rest)
+	case len(rest) > 0:
 		inv.echo("    Also offered, not pinned (unverified):")
 		inv.echoKeys("      ", rest)
 	}
@@ -234,15 +245,51 @@ func (inv *invocation) showHostKey(addr string, port int, vendor string, pin dev
 // devices. It writes no line: the caller writes hostKeyLine for every
 // answer but an interrupted one.
 func (inv *invocation) acceptHostKey(addr string, port int, vendor, name string, offered []devreg.HostKey, check func(string) error) hostKeyResult {
-	pin, ok := pinnedKey(offered)
+	return inv.askHostKey(keyQuestion{addr: addr, port: port, vendor: vendor, name: name, offered: offered, check: check,
+		then: "register it", skip: "skip the device"})
+}
+
+// keyQuestion is one acceptance's question (0.2.17 D262, D270): the device,
+// the keys it offers, the answer that accepts the key (name, or with none
+// the name check accepts), and the question's words: what accepting leads to
+// (then; thenNew when the name typed is a new one: enroll says nothing more,
+// the name registers it), what Enter does (skip), and, when the answer is
+// the device's address rather than a name ('device collect' of a device
+// that gives no name), byAddress; pinned when the device has pinned keys
+// already and nothing new is pinned (showHostKey).
+type keyQuestion struct {
+	addr      string
+	port      int
+	vendor    string
+	name      string
+	offered   []devreg.HostKey
+	check     func(string) error
+	then      string
+	thenNew   string
+	skip      string
+	byAddress bool
+	pinned    bool
+}
+
+// askHostKey is acceptHostKey with the question's words of the verb that asks
+// it: 'device enroll', 'device collect' and 'device onboard' ask the same
+// question, accepted by the same answer.
+func (inv *invocation) askHostKey(kq keyQuestion) hostKeyResult {
+	addr, name := kq.addr, kq.name
+	pin, ok := pinnedKey(kq.offered)
 	if !ok {
 		return hostKeyResult{answer: keyRefused, reason: "no ssh host key could be read"}
 	}
-	inv.showHostKey(addr, port, vendor, pin, offered)
-	q := "  Compare the key with the console of " + addr + ". Type the device name (" + name + ") to accept it and register it, or press Enter to skip the device: "
-	if name == "" {
-		q = "  Compare the key with the console of " + addr + ". Type the name to register it as to accept it, or press Enter to skip the device: "
+	inv.showHostKey(addr, kq.port, kq.vendor, pin, kq.offered, kq.pinned)
+	what, wrong := "the device name ("+name+")", "the answer typed is not the device's name"
+	if kq.byAddress {
+		what, wrong = "the address ("+name+")", "the answer typed is not the device's address"
 	}
+	q := "  Compare the key with the console of " + addr + ". Type " + what + " to accept it and " + kq.then + ", or press Enter to " + kq.skip + ": "
+	if name == "" {
+		q = "  Compare the key with the console of " + addr + ". Type the name to register it as to accept it" + kq.thenNew + ", or press Enter to " + kq.skip + ": "
+	}
+	check := kq.check
 	got, ok, interrupted := inv.askLine(q)
 	r := hostKeyResult{key: pin}
 	switch {
@@ -253,7 +300,7 @@ func (inv *invocation) acceptHostKey(addr string, port int, vendor, name string,
 	case got == "":
 		r.answer, r.reason = keySkipped, "not accepted"
 	case name != "" && got != name:
-		r.answer, r.reason = keyRefused, "the answer typed is not the device's name"
+		r.answer, r.reason = keyRefused, wrong
 	case name != "":
 		r.answer, r.name = keyAccepted, name
 	default:
