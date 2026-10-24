@@ -503,6 +503,14 @@ func (inv *invocation) auditBegin() {
 	w.SetTerminal(tty, marker)
 	w.SetCommand(strings.Join(ar.words, " "))
 	w.SetStart(inv.auditStart)
+	// audit.strict (D257): a start line that cannot be written refuses the
+	// command before it writes anything. A read command never touches.
+	// Only a real boolean turns it on, as the schema accepts only one: a
+	// quoted "true" is a validation error and leaves it off, and so does a
+	// tacctl.yaml that cannot be parsed (the merged view is then the defaults).
+	v, _ := a.Conf().Value(confAuditStrict)
+	on, _ := v.(bool)
+	w.SetStrict(on)
 	if ar.class == classAction {
 		w.Touch()
 	}
@@ -546,10 +554,10 @@ func (inv *invocation) auditPriority() string {
 }
 
 // auditStart writes the start line (the writer calls it once, from Touch).
-func (inv *invocation) auditStart() {
+func (inv *invocation) auditStart() string {
 	ar := inv.ar
 	if ar == nil {
-		return
+		return ""
 	}
 	a := inv.app
 	w := a.Audit()
@@ -570,10 +578,11 @@ func (inv *invocation) auditStart() {
 		kv = append(kv, audit.Pair("class", "unexpected"))
 		prio = audit.Warning
 	}
-	w.Line(prio, "cmd start", kv...)
+	reason := w.Line(prio, "cmd start", kv...)
 	if ar.class == classRead && auditPanics {
 		panic("audit: '" + ar.key + "' is classified read and reached a write (internal/cli/audit.go)")
 	}
+	return reason
 }
 
 // detail writes a verb's own line beside the central pair (D253): the object
@@ -694,6 +703,10 @@ func (inv *invocation) auditEnd(err error, aborted bool) {
 	}
 	a := inv.app
 	w := a.Audit()
+	// A warning audit.strict held back for a command that was not refused
+	// (a read that wrote a line, a denial) is shown last, after the lines
+	// below, whose own failure it may be.
+	defer w.FlushWarning()
 	status := exitStatus(err)
 	var de *deniedError
 	isDenied := errors.As(err, &de)
@@ -752,10 +765,22 @@ type discard struct{}
 
 func (discard) Write(p []byte) (int, error) { return len(p), nil }
 
+// confAuditStrict is the key of tacctl.yaml that makes a command whose start
+// line cannot be written refuse to run (D257).
+const confAuditStrict = "audit.strict"
+
 // auditFinish is runWith's deferred end of the command: the end line, also
 // when the command panicked (status 2, result=aborted; the panic goes on).
+// The one panic it does not pass on is the refusal of audit.strict
+// (audit.Refusal, from Writer.Touch before the command wrote anything): that
+// is the command's error, exit 1, and its end line says result=failed.
 func (inv *invocation) auditFinish(errp *error) {
 	if r := recover(); r != nil {
+		if ref, ok := r.(*audit.Refusal); ok {
+			*errp = &ExitError{Code: 1, Err: ref}
+			inv.auditEnd(*errp, false)
+			return
+		}
 		inv.auditEnd(nil, true)
 		panic(r)
 	}

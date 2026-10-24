@@ -613,3 +613,49 @@ func TestScopeAuthMethodOnlyTacacsOrRadiusAScopeNameIsRequired(t *testing.T) {
 	refused(t, c.Set("scope_auth_method.lab", ""), "scope_auth_method.lab:")
 	refused(t, c.Set("scope_auth_method", "radius"), "unknown config key")
 }
+
+// --- audit.strict (0.2.17, D257) ---
+
+func TestAuditStrictIsABooleanLeafOffByDefault(t *testing.T) {
+	c := tempConf(t)
+	if got, _ := c.Get("audit.strict", "false"); got != "false" {
+		t.Fatalf("unset audit.strict reads %q, want false", got)
+	}
+	must(t, c.Set("audit.strict", "true"))
+	if got := get(t, c, "audit.strict"); got != "true" {
+		t.Fatalf("audit.strict reads %q after set true", got)
+	}
+	if text := readFile(t, c.Path); !strings.Contains(text, "audit:") || !strings.Contains(text, "strict: true") {
+		t.Fatalf("file:\n%s", text)
+	}
+	// Back to the default removes the key and, with it, the file.
+	must(t, c.Set("audit.strict", "false"))
+	noFile(t, c)
+}
+
+func TestAuditStrictWrongTypeIsAValidationError(t *testing.T) {
+	for _, v := range []string{"maybe", "1", "0", "yes-please"} {
+		refused(t, tempConf(t).Set("audit.strict", v), "audit.strict: must be true or false")
+	}
+	// A hand-written file is held to the same rule by config validate.
+	s := NewSchema(DefaultBackends)
+	dir := t.TempDir()
+	for text, want := range map[string]string{
+		"audit:\n  strict: false\n":    "",
+		"audit:\n  strict: true\n":     "",
+		"audit:\n  strict: 1\n":        "audit.strict: must be true or false",
+		"audit:\n  strict: \"true\"\n": "audit.strict: must be true or false",
+		"audit:\n  strict: [true]\n":   "audit.strict: bool does not accept list input",
+		"audit:\n  loud: true\n":       "audit.loud: unknown config key",
+		"audit: true\n":                "audit: unknown config key",
+	} {
+		path := dir + "/tacctl.yaml"
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got := strings.Join(s.ValidateFile(path), "\n")
+		if (want == "" && got != "") || (want != "" && !strings.Contains(got, want)) {
+			t.Errorf("%q: problems %q, want %q", text, got, want)
+		}
+	}
+}

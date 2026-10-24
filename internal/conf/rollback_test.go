@@ -32,24 +32,24 @@ func TestRollbackTablesMatchTheSchema(t *testing.T) {
 		}
 	}
 	for _, f := range schema {
-		in022, in023, in024, in025, in027, in029, in0210 := slices.Contains(Known022, f), slices.Contains(Added023, f), slices.Contains(Added024, f), slices.Contains(Added025, f), slices.Contains(Added027, f), slices.Contains(Added029, f), slices.Contains(Added0210, f)
+		in022, in023, in024, in025, in027, in029, in0210, in0217 := slices.Contains(Known022, f), slices.Contains(Added023, f), slices.Contains(Added024, f), slices.Contains(Added025, f), slices.Contains(Added027, f), slices.Contains(Added029, f), slices.Contains(Added0210, f), slices.Contains(Added0217, f)
 		n := 0
-		for _, in := range []bool{in022, in023, in024, in025, in027, in029, in0210} {
+		for _, in := range []bool{in022, in023, in024, in025, in027, in029, in0210, in0217} {
 			if in {
 				n++
 			}
 		}
 		switch {
 		case n > 1:
-			t.Errorf("%+v is in more than one of Known022, Added023, Added024, Added025, Added027, Added029 and Added0210", f)
+			t.Errorf("%+v is in more than one of Known022, Added023, Added024, Added025, Added027, Added029, Added0210 and Added0217", f)
 		case n == 0:
-			t.Errorf("schema.go has the key family %+v, which rollback.go lists in none of Known022 (0.2.2 has it), Added023 (0.2.3 added it), Added024 (0.2.4 added it), Added025 (0.2.5 added it), Added027 (0.2.7 added it), Added029 (0.2.9 added it) and Added0210 (0.2.10 added it): decide, so a rollback knows what to remove", f)
+			t.Errorf("schema.go has the key family %+v, which rollback.go lists in none of Known022 (0.2.2 has it), Added023 (0.2.3 added it), Added024 (0.2.4 added it), Added025 (0.2.5 added it), Added027 (0.2.7 added it), Added029 (0.2.9 added it) and Added0210 (0.2.10 added it) and Added0217 (0.2.17 added it): decide, so a rollback knows what to remove", f)
 		}
 	}
 	for _, tbl := range []struct {
 		name string
 		list []Family
-	}{{"Known022", Known022}, {"Added023", Added023}, {"Added024", Added024}, {"Added025", Added025}, {"Added027", Added027}, {"Added029", Added029}, {"Added0210", Added0210}} {
+	}{{"Known022", Known022}, {"Added023", Added023}, {"Added024", Added024}, {"Added025", Added025}, {"Added027", Added027}, {"Added029", Added029}, {"Added0210", Added0210}, {"Added0217", Added0217}} {
 		for _, f := range tbl.list {
 			if !slices.Contains(schema, f) {
 				t.Errorf("%s lists %+v, which schema.go no longer has", tbl.name, f)
@@ -169,6 +169,21 @@ func TestAdded0210IsNotInTheSchemaOfTheTag(t *testing.T) {
 	if !Added0210Key(NetconfPath("lab", NetconfKeyState)) || !Added0210Key(NetconfPath("lab", NetconfKeyRateLimit)) ||
 		Added0210Key("snmp_scope.lab.version") || Added0210Key("netconf_scopex.lab.state") {
 		t.Error("Added0210Key is not the netconf_scope keys")
+	}
+}
+
+// Where the 0.2.16 tag is here, Added0217 holds nothing its schema has, so a
+// 0.2.16 binary refuses audit.strict, and the rollback to 0.2.16 removes
+// exactly it.
+func TestAdded0217IsNotInTheSchemaOfTheTag(t *testing.T) {
+	want := tagSchemaKeys(t, "0.2.16")
+	for _, f := range Added0217 {
+		if slices.Contains(want, f.Path) {
+			t.Errorf("Added0217 lists %q, which the schema of 0.2.16 has", f.Path)
+		}
+	}
+	if !Added0217Key("audit.strict") || Added0217Key("audit.strict.x") || Added0217Key("audit") || Added0217Key("auditx.strict") {
+		t.Error("Added0217Key is not the key audit.strict")
 	}
 }
 
@@ -358,5 +373,43 @@ func TestRollbackKeysAndUnsetMany(t *testing.T) {
 	c3 := Load(odd, DefaultBackends)
 	if k := c3.RollbackKeys022(); !reflect.DeepEqual(k, []string{"frobnicate.level"}) {
 		t.Errorf("odd keys %q", k)
+	}
+}
+
+// audit.strict is what the rollback to 0.2.16 removes, and one of the keys the
+// rollbacks to 0.2.9 and 0.2.3 remove with the others; an empty 'audit:' map
+// holds no key. Removing it prunes the mapping it leaves empty.
+func TestRollbackKeysOfAuditStrict(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tacctl.yaml")
+	text := "bcrypt:\n  cost: 11\naudit:\n  strict: true\ndevice:\n  apply:\n    transport: netconf\n"
+	if err := os.WriteFile(path, []byte(text), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	c := Load(path, DefaultBackends)
+	if got, want := c.RollbackKeys0216(), []string{"audit.strict"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("0.2.16 keys %q, want %q", got, want)
+	}
+	if got, want := c.RollbackKeys029(), []string{"audit.strict", "device.apply.transport"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("0.2.9 keys %q, want %q", got, want)
+	}
+	if got := c.RollbackKeys023(); !slices.Contains(got, "audit.strict") {
+		t.Errorf("0.2.3 keys %q lack audit.strict", got)
+	}
+	if err := c.UnsetMany(c.RollbackKeys0216()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(path)
+	if strings.Contains(string(got), "audit") || !strings.Contains(string(got), "transport: netconf") {
+		t.Errorf("after:\n%s", got)
+	}
+	if left := c.RollbackKeys0216(); len(left) != 0 {
+		t.Errorf("keys left: %q", left)
+	}
+	if err := os.WriteFile(path, []byte("audit: {}\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if keys := Load(path, DefaultBackends).RollbackKeys0216(); len(keys) != 0 {
+		t.Errorf("an empty audit mapping yields %q", keys)
 	}
 }

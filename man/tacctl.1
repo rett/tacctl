@@ -212,8 +212,10 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
+.B 0.2.16
+(the release before this one),
 .B 0.2.9
-(the release before this one) and
+and
 .BR 0.2.3 ;
 .BR 0.2.4 " to " 0.2.8
 and
@@ -221,7 +223,8 @@ and
 and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
-then the rollback of that release), and so is any other word. Either target is
+then the rollback of that release), and so is any other word (0.2.10 to
+0.2.15 included: the refusal names the three targets). Every target is
 refused while a device's record says a confirmed commit of
 .B "device config apply"
 is
@@ -234,12 +237,43 @@ or
 .B "device config forget <name>"
 settles it).
 .IP
+.B "rollback 0.2.16"
+.B \-\-apply
+takes a snapshot, then removes from
+.I tacctl.yaml
+the one key a 0.2.16 binary refuses,
+.B audit.strict
+(its schema reports it as an unknown key, and its
+.B "backup restore"
+refuses a snapshot that has it; the key is checked against that release). When
+the key is
+.B true
+the dry run warns that 0.2.16 runs a command whose audit line cannot be
+written, and
+.B \-\-apply
+refuses without
+.BR \-\-yes ;
+a
+.B false
+value is removed without a warning. Nothing else is converted:
+.IR console.yaml ,
+.IR devices.yaml ,
+.IR store.yaml ,
+the apply state directory, the sudoers drop-ins and the hosts are in formats
+0.2.16 reads, and the snapshot manifests gained keys that nothing reads.
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.16" ,
+and the audit line
+.BR "rollback target=0.2.16" .
+.IP
 .B "rollback 0.2.9"
 .B \-\-apply
 takes a snapshot, then removes from
 .I tacctl.yaml
 the keys a 0.2.9 binary refuses
-.RB ( device.apply.transport
+.RB ( device.apply.transport ,
+.BR audit.strict ,
 and the
 .B netconf_scope
 settings of
@@ -248,7 +282,13 @@ the dry run warns, and
 .B \-\-apply
 refuses without
 .B \-\-yes
-while one is set) and from
+while one of those is set, or
+.B audit.strict
+is
+.BR true ;
+a
+.B false
+audit.strict is removed without a warning) and from
 .I devices.yaml
 the
 .B netconf
@@ -284,6 +324,7 @@ the keys 0.2.5 added
 .BR device.apply.pause ,
 .BR device.apply.transport ,
 .BR netconf_scope.<scope> ,
+.BR audit.strict ,
 .BR cisco.source_interface.<scope> ,
 .BR breakglass_hold.<device> )
 and any other key a 0.2.3 binary does not know; removes
@@ -336,8 +377,8 @@ while any applies: the settings that are dropped (a device's own SNMP
 settings, a device's configuration syntax, a scope's Cisco source interface,
 the
 .B device.config
-values, the password cache's tiers and lifetimes; they stay in the snapshot,
-which only 0.2.5 restores). A break-glass hold that stands stops the
+values, the password cache's tiers and lifetimes, and audit.strict when it is
+true; they stay in the snapshot, which only 0.2.5 restores). A break-glass hold that stands stops the
 rollback, the dry run too, and names each held device with the way to release
 it
 .RB ( "breakglass release" ).
@@ -11809,6 +11850,33 @@ warn when it is missing) or exits with an error (the syslog socket refused),
 the command prints once on standard error
 .B "[WARN] The audit line was not written (logger: reason); the command continues."
 and goes on with its own status; the lines it could not write are lost.
+.SS audit.strict
+With
+.B "audit.strict: true"
+in
+.I tacctl.yaml
+(default
+.BR false ;
+see
+.BR "CONFIGURATION KEYS" )
+a command that changes state is refused when its
+.B "cmd start"
+line cannot be written, before it changes anything:
+.PP
+.nf
+.RS
+[ERROR] The audit line cannot be written (logger: reason) and audit.strict is set; nothing was changed.
+.RE
+.fi
+.PP
+and the status is 1. This holds for an action command and for a mixed command
+at the first thing it would change; a command that only reads runs as before.
+The warning above is not printed beside the refusal. An end line that cannot be
+written is that warning and nothing more: the command has already run. The
+refusal comes before the first write, which for a few commands is after a
+prompt or a read (\fBdevice collect\fR: after its first login;
+\fBdevice config apply\fR: after the choice of devices and the password
+prompt); \fBdevice config apply \-\-check\fR writes the central pair too.
 .SS Forwarding
 The facility is
 .BR auth ;
@@ -12338,6 +12406,21 @@ privilege 15 with their own password. A device with no enable secret has no
 .B enable
 once the list is gone: set one first (Step 0).
 .PP
+Going back to 0.2.16 is
+.B "tacctl rollback 0.2.16"
+(a dry run), then
+.B "tacctl rollback 0.2.16 \-\-apply"
+and
+.BR "tacctl upgrade \-\-branch 0.2.16" ;
+it removes
+.BR audit.strict ,
+which a 0.2.16 binary refuses. Until 0.2.16 is installed, do not add the
+.B audit
+setting to
+.I tacctl.yaml
+again; run the rollback again if it was. The snapshot it takes holds the 0.2.17
+form and is restored with 0.2.17.
+.PP
 Going back to 0.2.9 is
 .B "tacctl rollback 0.2.9"
 (a dry run), then
@@ -12400,6 +12483,10 @@ and check a hand-edited file with
 A name in angle brackets stands for a group, a scope, a backend or a listener;
 the keys of a family exist once for each.
 .\" BEGIN GENERATED: config-keys
+.TP
+.B audit.strict
+true or false. Default: false.
+Whether a command that changes state is refused when its audit line cannot be written: with true, an action or mixed command whose cmd start line logger did not write exits 1 before it changes anything (the AUDIT LOG section has the message); a command that only reads runs, and an end line that cannot be written is the warning. Edit the file to change it.
 .TP
 .B backends.enabled
 non\-empty list of backends (tacacs, radius). Default: [tacacs].

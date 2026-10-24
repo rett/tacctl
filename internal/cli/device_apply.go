@@ -1058,6 +1058,10 @@ type applyCtl struct {
 // run2 is Phase A, the review and Phase B over the Junos devices.
 func (c *applyCtl) run2(junos []devreg.Entry) error {
 	inv, aa, run := c.inv, c.aa, c.run
+	// The start line of the audit is written here, on the command's own
+	// goroutine: the workers write the records, and audit.strict refuses by
+	// a panic that only this goroutine recovers (audit.Writer.Touch).
+	inv.app.Audit().Touch()
 	// Phase A: the check of every device, in the 0.2.4 pool.
 	jobs := make([]batch.Job, len(junos))
 	for i, e := range junos {

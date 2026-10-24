@@ -123,6 +123,24 @@ current behaviour; this file is where history lives.
    and `backup diff` do not read the manifest, and 0.2.16 ignores the new
    keys.
 
+6. **`audit.strict`: refuse a command whose audit line cannot be written.** A
+   new key of `tacctl.yaml`, `audit: {strict: false}` by default, valid values
+   `true` and `false` (anything else is a `config validate` error). With
+   `strict: true`, a command that changes state (an action command, or a mixed
+   command at the first thing it would change) whose `cmd start` line `logger`
+   did not write is refused before it changes anything: `[ERROR] The audit line
+   cannot be written (logger: <reason>) and audit.strict is set; nothing was
+   changed.`, status 1, with no snapshot taken and no `[WARN]` beside it; a
+   command that only reads runs. An end line that cannot be written is still
+   the warning of item 1. Edit the file to set it; it is listed under
+   CONFIGURATION KEYS in the manual page and in `docs/cli/tunables.md`, and
+   `docs/security/audit.md` describes it. `tacctl rollback 0.2.16` is a new
+   target for the release before this one: it removes `audit.strict`, which a
+   0.2.16 binary refuses as an unknown key (its `config validate` reports it
+   and its `backup restore` refuses a snapshot that has it), and asks for
+   `--yes` when the value was `true`; the rollbacks to 0.2.9 and 0.2.3 remove
+   the key too.
+
 ## 0.2.16 (2026-10-23)
 
 1. **`config validate` takes no argument.** `config validate extra` ran the

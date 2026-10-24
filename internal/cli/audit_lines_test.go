@@ -3,6 +3,9 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -119,53 +122,69 @@ func TestCentralEndOfAFailedAction(t *testing.T) {
 	}
 }
 
+// mixedCase is a command that is a read or a write by its arguments: the
+// read form writes no central line, the write form writes the pair.
+type mixedCase struct {
+	name  string
+	read  []string
+	write []string
+}
+
+// mixedCases are the mixed commands of the class table with one read form and
+// one write form each. The sandbox they run in has the devices lab-sw and
+// lab-sw2 (mixedSandbox).
+var mixedCases = []mixedCase{
+	{"scope default", []string{"scope", "default"}, []string{"scope", "default", "lab"}},
+	{"scope prefixes", []string{"scope", "prefixes", "lab", "list"}, []string{"scope", "prefixes", "lab", "add", "10.200.0.0/16"}},
+	{"scope protocols", []string{"scope", "protocols", "lab"}, []string{"scope", "protocols", "lab", "set", "tacacs"}},
+	{"scope aaa-order", []string{"scope", "aaa-order", "lab"}, []string{"scope", "aaa-order", "lab", "local-first"}},
+	{"scope secret", []string{"scope", "secret", "lab", "show"}, []string{"scope", "secret", "lab", "generate"}},
+	{"user scope", []string{"user", "scope", "alice", "list"}, []string{"user", "scope", "alice", "add", "dmz"}},
+	{"config loglevel", []string{"config", "loglevel"}, []string{"config", "loglevel", "debug"}},
+	{"console idle-timeout", []string{"console", "idle-timeout"}, []string{"console", "idle-timeout", "30"}},
+	{"device port", []string{"device", "port", "lab-sw"}, []string{"device", "port", "lab-sw", "2222"}},
+	{"device description", []string{"device", "description", "lab-sw"}, []string{"device", "description", "lab-sw", "the", "lab", "switch"}},
+	{"device legacy-ssh", []string{"device", "legacy-ssh", "lab-sw"}, []string{"device", "legacy-ssh", "lab-sw", "enable"}},
+	{"device vendor", []string{"device", "vendor", "lab-sw"}, []string{"device", "vendor", "lab-sw", "juniper"}},
+	{"device stale-days", []string{"device", "stale-days"}, []string{"device", "stale-days", "9"}},
+	{"scope snmp", []string{"scope", "snmp", "lab", "show"}, []string{"scope", "snmp", "lab", "port", "1161"}},
+	{"config allow", []string{"config", "allow", "list"}, []string{"config", "allow", "add", "10.9.0.0/16"}},
+	{"config mgmt-acl", []string{"config", "mgmt-acl", "list"}, []string{"config", "mgmt-acl", "add", "10.7.0.0/16"}},
+	{"config password-age", []string{"config", "password-age"}, []string{"config", "password-age", "100"}},
+	{"config metrics", []string{"config", "metrics", "show"}, []string{"config", "metrics", "address", "127.0.0.1:9100"}},
+	{"config snmp", []string{"config", "snmp", "show"}, []string{"config", "snmp", "port", "1161"}},
+	{"config cisco", []string{"config", "cisco", "--scope", "lab"}, []string{"config", "cisco", "source-interface", "lab", "Loopback0"}},
+	{"console tiers", []string{"console", "tiers"}, []string{"console", "tiers", "operator", "enable"}},
+	{"console user", []string{"console", "user", "bob"}, []string{"console", "user", "bob", "enable"}},
+	{"console system-shell", []string{"console", "system-shell", "tiers"}, []string{"console", "system-shell", "tiers", "superuser"}},
+	{"group commands", []string{"group", "commands", "list", "operator"}, []string{"group", "commands", "default", "operator", "deny"}},
+	{"group privilege", []string{"group", "privilege", "list", "operator"}, []string{"group", "privilege", "add", "operator", "exec: show"}},
+	{"group reset", []string{"group", "reset", "operator", "--preset", "--dry-run"}, []string{"group", "reset", "operator", "--preset", "--yes"}},
+	{"scope netconf", []string{"scope", "netconf", "lab"}, []string{"scope", "netconf", "lab", "enable"}},
+	{"scope breakglass", []string{"scope", "breakglass", "lab", "list"}, []string{"scope", "breakglass", "lab", "add", "labadmin"}},
+	{"scope mgmt-acl", []string{"scope", "mgmt-acl", "lab", "list"}, []string{"scope", "mgmt-acl", "lab", "add", "10.1.1.1/32"}},
+	{"device hostname", []string{"device", "hostname", "lab-sw"}, []string{"device", "hostname", "lab-sw", "lab-sw.example.net"}},
+	{"device location", []string{"device", "location", "lab-sw"}, []string{"device", "location", "lab-sw", "rack 9"}},
+	{"device config-syntax", []string{"device", "config-syntax", "lab-sw2"}, []string{"device", "config-syntax", "lab-sw2", "ios12"}},
+	{"device snmp", []string{"device", "snmp", "lab-sw", "show"}, []string{"device", "snmp", "lab-sw", "port", "1161"}},
+	{"host default-method", []string{"host", "default-method"}, []string{"host", "default-method", "tacplus"}},
+}
+
+// mixedSandbox is a sandbox with the two devices the mixed cases name.
+func mixedSandbox(t *testing.T) *sandbox {
+	t.Helper()
+	sb := newSandbox(t, true)
+	sb.dev("", "add", "lab-sw", "192.168.1.1", "--vendor", "cisco", "--no-host-key")
+	sb.dev("", "add", "lab-sw2", "192.168.1.2", "--vendor", "cisco", "--no-host-key")
+	return sb
+}
+
 // The commands that read write no central line, and a mixed command that
 // only read writes none either; the same command with a value writes the
 // pair (the first write choke point it reaches writes the start line).
 func TestMixedCommandWritesTheLinesOnlyWhenItWrites(t *testing.T) {
-	sb := newSandbox(t, true)
-	sb.dev("", "add", "lab-sw", "192.168.1.1", "--vendor", "cisco", "--no-host-key")
-	sb.dev("", "add", "lab-sw2", "192.168.1.2", "--vendor", "cisco", "--no-host-key")
-	for _, c := range []struct {
-		name  string
-		read  []string
-		write []string
-	}{
-		{"scope default", []string{"scope", "default"}, []string{"scope", "default", "lab"}},
-		{"scope prefixes", []string{"scope", "prefixes", "lab", "list"}, []string{"scope", "prefixes", "lab", "add", "10.200.0.0/16"}},
-		{"scope protocols", []string{"scope", "protocols", "lab"}, []string{"scope", "protocols", "lab", "set", "tacacs"}},
-		{"scope aaa-order", []string{"scope", "aaa-order", "lab"}, []string{"scope", "aaa-order", "lab", "local-first"}},
-		{"scope secret", []string{"scope", "secret", "lab", "show"}, []string{"scope", "secret", "lab", "generate"}},
-		{"user scope", []string{"user", "scope", "alice", "list"}, []string{"user", "scope", "alice", "add", "dmz"}},
-		{"config loglevel", []string{"config", "loglevel"}, []string{"config", "loglevel", "debug"}},
-		{"console idle-timeout", []string{"console", "idle-timeout"}, []string{"console", "idle-timeout", "30"}},
-		{"device port", []string{"device", "port", "lab-sw"}, []string{"device", "port", "lab-sw", "2222"}},
-		{"device description", []string{"device", "description", "lab-sw"}, []string{"device", "description", "lab-sw", "the", "lab", "switch"}},
-		{"device legacy-ssh", []string{"device", "legacy-ssh", "lab-sw"}, []string{"device", "legacy-ssh", "lab-sw", "enable"}},
-		{"device vendor", []string{"device", "vendor", "lab-sw"}, []string{"device", "vendor", "lab-sw", "juniper"}},
-		{"device stale-days", []string{"device", "stale-days"}, []string{"device", "stale-days", "9"}},
-		{"scope snmp", []string{"scope", "snmp", "lab", "show"}, []string{"scope", "snmp", "lab", "port", "1161"}},
-		{"config allow", []string{"config", "allow", "list"}, []string{"config", "allow", "add", "10.9.0.0/16"}},
-		{"config mgmt-acl", []string{"config", "mgmt-acl", "list"}, []string{"config", "mgmt-acl", "add", "10.7.0.0/16"}},
-		{"config password-age", []string{"config", "password-age"}, []string{"config", "password-age", "100"}},
-		{"config metrics", []string{"config", "metrics", "show"}, []string{"config", "metrics", "address", "127.0.0.1:9100"}},
-		{"config snmp", []string{"config", "snmp", "show"}, []string{"config", "snmp", "port", "1161"}},
-		{"config cisco", []string{"config", "cisco", "--scope", "lab"}, []string{"config", "cisco", "source-interface", "lab", "Loopback0"}},
-		{"console tiers", []string{"console", "tiers"}, []string{"console", "tiers", "operator", "enable"}},
-		{"console user", []string{"console", "user", "bob"}, []string{"console", "user", "bob", "enable"}},
-		{"console system-shell", []string{"console", "system-shell", "tiers"}, []string{"console", "system-shell", "tiers", "superuser"}},
-		{"group commands", []string{"group", "commands", "list", "operator"}, []string{"group", "commands", "default", "operator", "deny"}},
-		{"group privilege", []string{"group", "privilege", "list", "operator"}, []string{"group", "privilege", "add", "operator", "exec: show"}},
-		{"group reset", []string{"group", "reset", "operator", "--preset", "--dry-run"}, []string{"group", "reset", "operator", "--preset", "--yes"}},
-		{"scope netconf", []string{"scope", "netconf", "lab"}, []string{"scope", "netconf", "lab", "enable"}},
-		{"scope breakglass", []string{"scope", "breakglass", "lab", "list"}, []string{"scope", "breakglass", "lab", "add", "labadmin"}},
-		{"scope mgmt-acl", []string{"scope", "mgmt-acl", "lab", "list"}, []string{"scope", "mgmt-acl", "lab", "add", "10.1.1.1/32"}},
-		{"device hostname", []string{"device", "hostname", "lab-sw"}, []string{"device", "hostname", "lab-sw", "lab-sw.example.net"}},
-		{"device location", []string{"device", "location", "lab-sw"}, []string{"device", "location", "lab-sw", "rack 9"}},
-		{"device config-syntax", []string{"device", "config-syntax", "lab-sw2"}, []string{"device", "config-syntax", "lab-sw2", "ios12"}},
-		{"device snmp", []string{"device", "snmp", "lab-sw", "show"}, []string{"device", "snmp", "lab-sw", "port", "1161"}},
-		{"host default-method", []string{"host", "default-method"}, []string{"host", "default-method", "tacplus"}},
-	} {
+	sb := mixedSandbox(t)
+	for _, c := range mixedCases {
 		t.Run(c.name, func(t *testing.T) {
 			sb.asAlice("", c.read...)
 			if sb.code != 0 || len(centralLines(sb.runner)) != 0 {
@@ -487,5 +506,207 @@ func TestScopeRefusalIsADenialOnlyForAScopeThatExists(t *testing.T) {
 	sb.asEngineer("", "scope", "snmp", "nosuchscope", "show")
 	if sb.code != 1 || !strings.Contains(sb.stderr(), "Scope 'nosuchscope' does not exist.") || hasAuditPrefix(sb.runner, "", "cmd DENY") {
 		t.Errorf("typo: exit %d %q, lines %q", sb.code, sb.stderr(), auditLines(sb.runner))
+	}
+}
+
+// --- audit.strict (docs/plans/0.2.17-plan.md D257) ---
+
+const strictRefusal = "The audit line cannot be written (logger: %s) and audit.strict is set; nothing was changed."
+
+// strictOn sets audit.strict in the sandbox's tacctl.yaml.
+func (sb *sandbox) strictOn() {
+	sb.t.Helper()
+	sb.write("state/tacctl.yaml", "audit:\n  strict: true\n", 0o640)
+}
+
+// With audit.strict an action whose start line cannot be written is refused
+// before it changes anything: exit 1 with the one message, no snapshot, no
+// file touched, no D248 warning beside the refusal. A logger that exits
+// non-zero is refused with its reason.
+func TestStrictRefusesAnActionWhenTheStartLineCannotBeWritten(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		script func(*fake.Runner)
+		reason string
+	}{
+		{"missing", func(r *fake.Runner) { r.Missing("logger") }, "not found"},
+		{"refused", func(r *fake.Runner) {
+			r.Fail([]string{"logger"}, 1, "logger: socket /dev/log: Connection refused")
+		}, "exit status 1: logger: socket /dev/log: Connection refused"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			sb := newSandbox(t, true)
+			sb.strictOn()
+			sb.script = c.script
+			before := tree(t, sb.dir)
+			sb.asAlice("", "user", "disable", "bob")
+			if sb.code != 1 {
+				t.Fatalf("exit %d %q", sb.code, sb.stderr())
+			}
+			want := fmt.Sprintf(strictRefusal, c.reason)
+			// (preflight's own warning about the missing tacquito.yaml aside) the
+			// refusal is the whole of what the audit says.
+			got := plain(sb.stderr())
+			if !strings.HasSuffix(got, "[ERROR] "+want+"\n") || strings.Count(got, "audit") != 2 {
+				t.Errorf("stderr %q, want the one refusal line %q", got, want)
+			}
+			if strings.TrimSpace(plain(sb.out.String())) != "" {
+				t.Errorf("stdout %q", sb.out.String())
+			}
+			if after := tree(t, sb.dir); !reflect.DeepEqual(before, after) {
+				t.Errorf("the refused command changed %q", changedFiles(before, after))
+			}
+			if _, err := os.Stat(sb.path("state", "backups")); err == nil {
+				t.Error("a snapshot was taken")
+			}
+		})
+	}
+}
+
+// Every mixed command is a read or a write: with audit.strict and no logger the
+// read form runs and the write form is refused before it writes (the first
+// write choke point it reaches refuses), whichever choke point that is.
+func TestStrictRefusesEveryMixedWriteAndRunsTheReads(t *testing.T) {
+	sb := mixedSandbox(t)
+	sb.strictOn()
+	sb.script = func(r *fake.Runner) { r.Missing("logger") }
+	for _, c := range mixedCases {
+		t.Run(c.name, func(t *testing.T) {
+			// (a read that shows a secret writes its secret-read line: that line
+			// failing is the D248 warning, not a refusal)
+			sb.asAlice("", c.read...)
+			if sb.code != 0 || strings.Contains(sb.stderr(), "audit.strict") {
+				t.Errorf("read %v: exit %d %q", c.read, sb.code, sb.stderr())
+			}
+			before := tree(t, sb.dir)
+			sb.asAlice("", c.write...)
+			if sb.code != 1 || !strings.Contains(plain(sb.stderr()), fmt.Sprintf(strictRefusal, "not found")) {
+				t.Errorf("write %v: exit %d %q", c.write, sb.code, sb.stderr())
+			}
+			if strings.Contains(sb.stderr(), "the command continues") {
+				t.Errorf("write %v: the D248 warning beside the refusal: %q", c.write, sb.stderr())
+			}
+			if after := tree(t, sb.dir); !reflect.DeepEqual(before, after) {
+				t.Errorf("write %v changed %q", c.write, changedFiles(before, after))
+			}
+		})
+	}
+}
+
+// A read command runs with no logger under audit.strict.
+func TestStrictLetsAReadRun(t *testing.T) {
+	sb := newSandbox(t, true)
+	sb.strictOn()
+	sb.script = func(r *fake.Runner) { r.Missing("logger") }
+	out := sb.asAlice("", "user", "list")
+	if sb.code != 0 || !strings.Contains(out, "alice") || strings.Contains(sb.stderr(), "audit") {
+		t.Errorf("exit %d %q %q", sb.code, out, sb.stderr())
+	}
+}
+
+// With audit.strict and a logger that works, nothing changes; when only the
+// end line fails the command has run, so the failure is the D248 warning and
+// the exit status is the command's.
+func TestStrictEndLineFailureIsTheWarning(t *testing.T) {
+	sb := newSandbox(t, true)
+	sb.strictOn()
+	sb.asAlice("", "user", "disable", "bob")
+	if sb.code != 0 || len(centralLines(sb.runner)) != 2 || strings.Contains(sb.stderr(), "audit") {
+		t.Fatalf("working logger: exit %d %q lines %q", sb.code, sb.stderr(), centralLines(sb.runner))
+	}
+	calls := 0
+	sb.script = func(r *fake.Runner) {
+		// The start line (the first logger call) is written, the later ones are not.
+		r.Func(func(c execx.Cmd) bool { return c.Name == "logger" }, func(execx.Cmd) (execx.Result, error) {
+			calls++
+			if calls == 1 {
+				return execx.Result{}, nil
+			}
+			return execx.Result{Code: 1, Stderr: []byte("socket gone")}, nil
+		})
+	}
+	sb.asAlice("", "user", "enable", "bob")
+	if sb.code != 0 {
+		t.Fatalf("exit %d %q", sb.code, sb.stderr())
+	}
+	e := plain(sb.stderr())
+	if strings.Count(e, "The audit line was not written (logger: exit status 1: socket gone); the command continues.") != 1 || strings.Contains(e, "audit.strict") {
+		t.Errorf("stderr %q", e)
+	}
+}
+
+// Without the key a missing logger is the warning and the command runs.
+func TestStrictOffByDefault(t *testing.T) {
+	sb := newSandbox(t, true)
+	sb.script = func(r *fake.Runner) { r.Missing("logger") }
+	sb.asAlice("", "user", "disable", "bob")
+	if sb.code != 0 || strings.Contains(sb.stderr(), "audit.strict") {
+		t.Errorf("exit %d %q", sb.code, sb.stderr())
+	}
+	sb.write("state/tacctl.yaml", "audit:\n  strict: false\n", 0o640)
+	sb.asAlice("", "user", "enable", "bob")
+	if sb.code != 0 || strings.Contains(sb.stderr(), "audit.strict") {
+		t.Errorf("strict false: exit %d %q", sb.code, sb.stderr())
+	}
+}
+
+// A refused command still writes an end line when logger takes one again
+// (result=failed, status=1), and the DENY line of the gate is not affected.
+func TestStrictRefusalEndLine(t *testing.T) {
+	sb := newSandbox(t, true)
+	sb.strictOn()
+	calls := 0
+	sb.script = func(r *fake.Runner) {
+		r.Func(func(c execx.Cmd) bool { return c.Name == "logger" }, func(execx.Cmd) (execx.Result, error) {
+			calls++
+			if calls == 1 {
+				return execx.Result{Code: 1, Stderr: []byte("busy")}, nil
+			}
+			return execx.Result{}, nil
+		})
+	}
+	sb.asAlice("", "user", "disable", "bob")
+	if sb.code != 1 {
+		t.Fatalf("exit %d", sb.code)
+	}
+	if !strings.Contains(plain(sb.stderr()), fmt.Sprintf(strictRefusal, "exit status 1: busy")) {
+		t.Errorf("stderr %q", sb.stderr())
+	}
+	lines := centralLines(sb.runner)
+	if len(lines) != 2 || !regexp.MustCompile(`^cmd end v=1 user=alice cmd="user disable" result=failed status=1 `).MatchString(lines[1]) {
+		t.Errorf("lines %q", lines)
+	}
+}
+
+// Only a real boolean turns audit.strict on: a quoted "true" is a validation
+// error and leaves it off, so the command runs with the warning.
+func TestStrictNeedsARealBoolean(t *testing.T) {
+	for _, text := range []string{"audit:\n  strict: \"true\"\n", "audit:\n  strict: 1\n", "audit:\n  strict: yes-please\n"} {
+		sb := newSandbox(t, true)
+		sb.write("state/tacctl.yaml", text, 0o640)
+		sb.script = func(r *fake.Runner) { r.Missing("logger") }
+		sb.asAlice("", "user", "disable", "bob")
+		if sb.code != 0 || strings.Contains(sb.stderr(), "audit.strict") ||
+			strings.Count(sb.stderr(), "The audit line was not written") != 1 {
+			t.Errorf("%q: exit %d %q", text, sb.code, sb.stderr())
+		}
+	}
+}
+
+// Under audit.strict a denial of a command that never touched (the DENY line
+// is the only line it writes) is warned about exactly once, after the DENY
+// line: the warning that waited for the outcome is the last thing the command
+// does.
+func TestStrictWarnsOnceAboutALostDenyLine(t *testing.T) {
+	sb := engineerSandbox(t)
+	sb.write("state/tacctl.yaml", "tier:\n  operator: engineer\naudit:\n  strict: true\n", 0o600)
+	sb.cfgRun("", []string{"scope", "secret", "lab", "set", "marker-secret-0123456789abcdef"}, func(r *fake.Runner) {
+		r.On([]string{"id", "-nG", "--", "bob"}, execx.Result{Stdout: []byte("bob tac-users tac-engineer\n")})
+		r.Missing("logger")
+	}, "SUDO_USER=bob")
+	e := plain(sb.stderr())
+	if sb.code != 1 || !strings.Contains(e, "The engineer tier reads a scope's secret") ||
+		strings.Count(e, "The audit line was not written (logger: not found)") != 1 || strings.Contains(e, "audit.strict is set") {
+		t.Errorf("exit %d %q", sb.code, e)
 	}
 }

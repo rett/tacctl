@@ -196,6 +196,40 @@ If `logger` cannot be started (not installed) or exits with an error (the syslog
 
 and goes on with its own status; the lines it could not write are lost. `logger` is in `util-linux`; `tacctl install` and `tacctl upgrade` warn when it is missing. A signal that ends a command does not drop its lines: they are written after Ctrl-C, SIGTERM and a hangup too.
 
+## Refusing a command whose line cannot be written
+
+By default a failed `logger` is the warning above and the command goes on.
+With
+
+```yaml
+audit:
+  strict: true
+```
+
+in `/etc/tacctl/tacctl.yaml` (default `false`; edit the file, `tacctl config
+validate` checks it) a command that changes state is refused when its `cmd
+start` line cannot be written, before it changes anything:
+
+```
+[ERROR] The audit line cannot be written (logger: <reason>) and audit.strict
+    is set; nothing was changed.
+```
+
+The status is 1. This holds for an action command and, for a mixed command, at
+the first thing it would change; a command that only reads runs as before. The
+warning of the previous section is not printed beside the refusal. An end line
+that cannot be written is that warning and nothing more: the command has
+already run.
+
+The refusal comes before the first write, which for a few commands is after a
+prompt or a read: `device collect` refuses after its first login, and `device
+config apply` after the choice of devices and the password prompt. `device
+config apply --check` writes the central pair too.
+
+Leave the key off where a server whose `journald` is restarting must still be
+able to run the command that fixes it; turn it on where "every transaction is
+recorded" must hold.
+
 ## Forwarding
 
 The facility is `auth`; the program names are `tacctl` and `tacctl-console`. A collector matches the program name. With rsyslog, in `/etc/rsyslog.d/tacctl.conf`:

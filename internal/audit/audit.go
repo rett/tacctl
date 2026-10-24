@@ -184,11 +184,36 @@ type state struct {
 
 	// start writes the central 'cmd start' line (SetStart); Touch runs it
 	// once, before the first write of the command.
-	start     func()
+	start     func() string
 	command   string
 	touch     sync.Once
 	touched   bool
 	snapshots []string
+	// strict: a start line that could not be written refuses the command
+	// (SetStrict). refused is the refusal once it has happened; every later
+	// Touch repeats it, so nothing deferred on the way out writes.
+	strict  bool
+	refused *Refusal
+	// startDone: the start line was written (or strict is off): from then on a
+	// failed line is warned about at once. Before it, under strict, the D248
+	// warning of a failed line waits in pending for the outcome: dropped if
+	// the command is refused (the refusal says it), shown by FlushWarning
+	// otherwise.
+	startDone bool
+	pending   string
+}
+
+// Refusal is a command refused because its start line could not be written
+// and audit.strict is set (D257). Touch panics with it before anything is
+// written; the dispatcher recovers it as the command's error.
+type Refusal struct {
+	// Reason is why logger did not write (Failure).
+	Reason string
+}
+
+// Error is the message the operator reads.
+func (r *Refusal) Error() string {
+	return "The audit line cannot be written (logger: " + r.Reason + ") and audit.strict is set; nothing was changed."
 }
 
 // Writer writes audit lines. It is safe for concurrent use (the device
@@ -249,24 +274,46 @@ func (w *Writer) Command() string {
 
 // SetStart registers the function that writes the command's central start
 // line. Touch runs it, once, the first time anything is about to be written;
-// without one (the console process) Touch does nothing.
-func (w *Writer) SetStart(fn func()) {
+// without one (the console process) Touch does nothing. fn returns why that
+// line was not written ("" when it was: what Line returns), so that audit.strict
+// decides on the start line itself and not on whichever line another
+// goroutine wrote last.
+func (w *Writer) SetStart(fn func() string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.start = fn
+}
+
+// SetStrict says that a start line that could not be written refuses the
+// command (audit.strict, D257): Touch then panics with a *Refusal.
+func (w *Writer) SetStrict(on bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.strict = on
 }
 
 // Touch says that the command is about to change something: the start line
 // is written now, before anything is, if it has not been written yet. It is
 // idempotent and safe for concurrent use; a caller that arrives while the
 // line is being written waits for it.
+//
+// With SetStrict, a start line that logger did not write makes Touch panic
+// with a *Refusal, here and in every later call, so the write that follows
+// never happens; the caller of the command recovers it (cli.auditFinish). The
+// panic must reach the goroutine that runs the command: a verb that can first
+// reach a write choke point on a worker goroutine touches before it starts
+// the workers.
 func (w *Writer) Touch() {
 	if w == nil {
 		return
 	}
 	w.mu.Lock()
 	fn := w.start
+	r := w.refused
 	w.mu.Unlock()
+	if r != nil {
+		panic(r)
+	}
 	if fn == nil {
 		return
 	}
@@ -274,8 +321,28 @@ func (w *Writer) Touch() {
 		w.mu.Lock()
 		w.touched = true
 		w.mu.Unlock()
-		fn()
+		reason := fn()
+		w.mu.Lock()
+		if w.strict && reason != "" {
+			w.refused = &Refusal{Reason: reason}
+			w.pending = ""
+		} else {
+			w.startDone = true
+		}
+		r := w.refused
+		w.mu.Unlock()
+		if r != nil {
+			panic(r)
+		}
+		w.FlushWarning()
 	})
+	// A caller that waited for the line while another wrote it.
+	w.mu.Lock()
+	r = w.refused
+	w.mu.Unlock()
+	if r != nil {
+		panic(r)
+	}
 }
 
 // Touched reports whether the start line was written (Touch ran).
@@ -312,8 +379,10 @@ func (w *Writer) Failure() string {
 }
 
 // Line writes '<event> <key>=<value>...' with the fields in the order given
-// (each value as Value writes it) and the process's sid last.
-func (w *Writer) Line(priority, event string, kv ...KV) {
+// (each value as Value writes it) and the process's sid last. It returns why
+// the line was not written, "" when it was (Failure says the same of the
+// last line of the process; this is of this one).
+func (w *Writer) Line(priority, event string, kv ...KV) string {
 	var b strings.Builder
 	b.WriteString(event)
 	for _, f := range kv {
@@ -326,35 +395,69 @@ func (w *Writer) Line(priority, event string, kv ...KV) {
 		}
 		b.WriteString(valueMax(f.Value, max))
 	}
-	w.Raw(priority, b.String())
+	return w.Raw(priority, b.String())
 }
 
 // Raw writes msg as it is, with the sid appended. It is for the lines that
 // were written before Line existed and keep their words; a trailing space
-// is dropped before the sid so the key follows a single space.
-func (w *Writer) Raw(priority, msg string) {
+// is dropped before the sid so the key follows a single space. It returns what
+// Line returns.
+func (w *Writer) Raw(priority, msg string) string {
 	if w.sid != "" {
 		msg = strings.TrimRight(msg, " ") + " sid=" + w.sid
 	}
-	w.write(priority, msg)
+	return w.write(priority, msg)
 }
 
 // write runs logger. A failure is not the command's: it is remembered
-// (Failure) and the operator is told once per process (D248).
-func (w *Writer) write(priority, msg string) {
+// (Failure) and the operator is told once per process (D248). It returns the
+// reason this line was not written, "" when it was.
+func (w *Writer) write(priority, msg string) string {
 	ctx, cancel := context.WithTimeout(w.ctx, writeTimeout)
 	defer cancel()
 	res, err := w.run.Run(ctx, execx.Cmd{Name: "logger", Args: []string{"-t", w.tag, "-p", priority, msg}})
 	reason := failureReason(res, err)
 	w.mu.Lock()
 	w.failure = reason
-	w.mu.Unlock()
 	if reason == "" || w.warn == nil {
+		w.mu.Unlock()
+		return reason
+	}
+	warning := fmt.Sprintf("The audit line was not written (logger: %s); the command continues.", reason)
+	// Decided in one critical section with FlushWarning's and Touch's: under
+	// audit.strict the outcome of the start line is not known yet (hold), is a
+	// refusal that says it all (drop), or is known (warn).
+	hold, drop := false, false
+	if w.strict && w.start != nil {
+		drop = w.refused != nil
+		hold = !drop && !w.startDone
+		if hold && w.pending == "" {
+			w.pending = warning
+		}
+	}
+	w.mu.Unlock()
+	if !hold && !drop {
+		w.once.Do(func() { w.warn(warning) })
+	}
+	return reason
+}
+
+// FlushWarning prints the D248 warning that audit.strict held back, when the
+// command was not refused. The dispatcher calls it as the last thing the
+// command does (after its DENY and end lines), and Touch calls it when the
+// start line was written.
+func (w *Writer) FlushWarning() {
+	if w == nil {
 		return
 	}
-	w.once.Do(func() {
-		w.warn(fmt.Sprintf("The audit line was not written (logger: %s); the command continues.", reason))
-	})
+	w.mu.Lock()
+	msg, refused := w.pending, w.refused != nil
+	w.pending = ""
+	w.mu.Unlock()
+	if msg == "" || refused || w.warn == nil {
+		return
+	}
+	w.once.Do(func() { w.warn(msg) })
 }
 
 // failureReason says why logger did not write: "" when it did.

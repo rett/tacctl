@@ -1172,6 +1172,10 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 	for i, e := range b.entries {
 		jobs[i] = run.pullJob(e)
 	}
+	// The start line of the audit is written here, on the command's own
+	// goroutine: the workers write the records, and audit.strict refuses by
+	// a panic that only this goroutine recovers (audit.Writer.Touch).
+	inv.app.Audit().Touch()
 	ctx, interrupts, stop := inv.batchInterrupts()
 	defer stop()
 	sum := batch.Run(ctx, batch.Options{

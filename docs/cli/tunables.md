@@ -62,6 +62,7 @@ Keys without a shipped default (`backends.*`, `listeners.*`, `snmp.*`, `device.c
 
 | Key | Value (default) | Set with |
 |---|---|---|
+| `audit.strict` | `true` or `false` (`false`) | edit `tacctl.yaml` |
 | `backends.enabled` | non-empty list of `tacacs`, `radius` (`[tacacs]`) | `backend enable`, `backend disable` |
 | `backends.tacacs.level` | 0 to 100 (20) | `config loglevel` |
 | `backends.tacacs.metrics_address` | host:port (127.0.0.1:8080) | `config metrics address` |
@@ -96,6 +97,14 @@ Keys without a shipped default (`backends.*`, `listeners.*`, `snmp.*`, `device.c
 | `breakglass_hold.<device>.address`, `.since`, `.by`, `.reason` | the record of a [break-glass hold](../devices/break-glass.md#holding-break-glass): the address the server does not answer, when and by whom, and why (1 to 256 characters; never rendered into a backend file); no expiry. A device name's dots are written `~` in the key | `breakglass hold`, `breakglass release` |
 | `snmp_scope.<scope>.version`, `snmp_scope.<scope>.port`, `snmp_scope.<scope>.timeout`, `snmp_scope.<scope>.v3.auth`, `snmp_scope.<scope>.v3.priv`, `snmp_scope.<scope>.contact`, `snmp_scope.<scope>.clients` | the scope's own SNMP settings, in place of `snmp.*`; `contact` up to 120 characters; `clients` at most 32 IPv4 CIDRs | `scope snmp` |
 | `netconf_scope.<scope>.state`, `netconf_scope.<scope>.connection_limit`, `netconf_scope.<scope>.rate_limit` | the scope's NETCONF service setting: `state` is `enable` or `disable` (no key is `leave`, the default); the limits 1 to 250, with `enable` only | `scope netconf` |
+
+`audit.strict` is the one key without a command that sets it: edit
+`/etc/tacctl/tacctl.yaml` (`audit:` with `strict: true` under it) and check it
+with `tacctl config validate`. A value that is not `true` or `false` is a
+validation error. With `true`, a command that changes state is refused (status
+1, `The audit line cannot be written (logger: <reason>) and audit.strict is
+set; nothing was changed.`) when its `cmd start` line cannot be written;
+commands that only read run. See [Audit log](../security/audit.md).
 
 Merge semantics:
 - Maps deep-merge (overriding `password.max_age_days` keeps the default `password.min_length`).

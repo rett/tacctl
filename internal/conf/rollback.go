@@ -136,6 +136,18 @@ var Added0210 = []Family{
 	{"device.apply.transport", false},
 }
 
+// Added0217 are the key families 0.2.17 added: audit.strict, whether a command
+// that changes state is refused when its audit line cannot be written. A
+// 0.2.16 or older binary does not know it (its schema refuses the key, so its
+// 'config validate' reports it and its 'backup restore' refuses a snapshot
+// that has it), so a rollback removes it.
+var Added0217 = []Family{
+	{"audit.strict", false},
+}
+
+// Added0217Key reports whether path is a key 0.2.17 added.
+func Added0217Key(path string) bool { return inFamilies(Added0217, path) }
+
 // Added0210Key reports whether path is a key 0.2.10 added.
 func Added0210Key(path string) bool { return inFamilies(Added0210, path) }
 
@@ -220,14 +232,32 @@ func (c *Config) unknown023(path string) bool {
 
 // RollbackKeys029 are the leaf keys of the overrides that a 0.2.9 binary
 // does not know, in file order: the dotted path of each. 0.2.10 added
-// device.apply.transport and the netconf_scope keys (Added0210) and nothing
-// else, so these are the leaves of those families; a key neither release
-// knows is not listed (0.2.9 refuses it as 0.2.10 does, and 'config
-// validate' says so).
+// device.apply.transport and the netconf_scope keys (Added0210) and 0.2.17
+// audit.strict (Added0217), and no release between them added a key, so
+// these are the leaves of those families; a key no release knows is not
+// listed (0.2.9 refuses it as this release does, and 'config validate' says
+// so).
 func (c *Config) RollbackKeys029() []string {
 	var out []string
 	walkLeaves(c.Overrides(), "", func(p string, _ any) {
-		if Added0210Key(p) {
+		if Added0210Key(p) || Added0217Key(p) {
+			out = append(out, p)
+		}
+	})
+	return out
+}
+
+// RollbackKeys0216 are the leaf keys of the overrides that a 0.2.16 binary
+// does not know, in file order: the dotted path of each. 0.2.17 added
+// audit.strict (Added0217) and nothing else to the schema, so these are the
+// leaves of that family; a key no release knows is not listed (0.2.16
+// refuses it as this release does, and 'config validate' says so). A mapping
+// 'audit:' that holds nothing yields no key and 0.2.16 reads it as it reads
+// an empty one.
+func (c *Config) RollbackKeys0216() []string {
+	var out []string
+	walkLeaves(c.Overrides(), "", func(p string, _ any) {
+		if Added0217Key(p) {
 			out = append(out, p)
 		}
 	})

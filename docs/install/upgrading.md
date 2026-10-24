@@ -39,7 +39,44 @@ After an upgrade: `tacctl status`, `tacctl config validate` (store, rendered con
 
 ## Rolling back
 
-`tacctl rollback` takes two targets: `0.2.9`, the release before this one, and `0.2.3`. Both are the dry run described below until `--apply` is given, both refuse while an apply is not settled, and each release's tool prepares the state for the one release it knows: `0.2.4` to `0.2.8` and `0.2.2` and older are refused with the way there (one release at a time, or `tacctl backup restore` of a snapshot of the time).
+`tacctl rollback` takes three targets: `0.2.16`, the release before this
+one, `0.2.9` and `0.2.3`. All are the dry run described below until `--apply`
+is given, all refuse while an apply is not settled, and each release's tool
+prepares the state for the releases it knows. `0.2.4` to `0.2.8` and `0.2.2`
+and older are refused with the way there (one release at a time, or `tacctl
+backup restore` of a snapshot of the time); `0.2.10` to `0.2.15`, this release
+and any other word are refused with the three targets named.
+
+### To 0.2.16
+
+This release adds one setting that a 0.2.16 binary refuses, `audit.strict`
+(its `config validate` reports `audit.strict: unknown config key` and its
+`backup restore` refuses a snapshot that has it). Everything else it writes, a
+0.2.16 binary reads or ignores. Run the rollback on this release first, then
+install the tag:
+
+```bash
+tacctl rollback 0.2.16          # the dry run: steps, warnings, writes nothing
+tacctl rollback 0.2.16 --apply  # convert (after a snapshot)
+tacctl upgrade --branch 0.2.16  # install 0.2.16: switches the clone to the
+                                # tag, builds it, re-executes it
+```
+
+`--apply` takes a snapshot first (`tacctl backup list`), then removes
+`audit.strict` from `tacctl.yaml` when it is set, and the `audit:` mapping
+with it. When the value is `true` the dry run warns that 0.2.16 runs a command
+whose audit line cannot be written, and `--apply` refuses without `--yes`; a
+`false` value is removed without a warning. Nothing
+else is converted: `console.yaml`, `devices.yaml`, `store.yaml`, the sudoers
+drop-ins, the SNMP credentials, the blocks, `/var/lib/tacctl/device-apply/`
+and the rendered backend files are in formats 0.2.16 reads, nothing is
+re-rendered or restarted and no device is contacted. `--hosts` is accepted and
+does nothing.
+
+Until 0.2.16 is installed, do not add the `audit` setting to `tacctl.yaml`
+again; if it was added, run `tacctl rollback 0.2.16 --apply` again. The
+snapshot the rollback takes holds this release's form: restore it with this
+release, not with 0.2.16.
 
 ### To 0.2.9
 
@@ -54,7 +91,7 @@ tacctl upgrade --branch 0.2.9          # install 0.2.9: switches the clone to th
 
 `--apply` takes a snapshot first (`tacctl backup list`), then, in this order:
 
-1. **`tacctl.yaml`**: removes `device.apply.transport` and every `netconf_scope.<scope>` key when set (the dry run warns with their values, and `--apply` refuses without `--yes` while one is set; the snapshot keeps them, and `tacctl backup restore` of it, **with this release**, brings them back). Every other key stays, `device.apply.confirm_timeout` and `device.apply.pause` included.
+1. **`tacctl.yaml`**: removes `audit.strict`, `device.apply.transport` and every `netconf_scope.<scope>` key when set (the dry run warns with their values, and `--apply` refuses without `--yes` while a `device.apply.transport` or `netconf_scope` key is set, or `audit.strict` is `true`; the snapshot keeps them, and `tacctl backup restore` of it, **with this release**, brings them back). Every other key stays, `device.apply.confirm_timeout` and `device.apply.pause` included.
 2. **`devices.yaml`**: removes the `netconf:` map of every device that has one. The devices then follow their scope's setting, which is gone too: 0.2.9 neither plans nor compares the NETCONF service, and a service a device runs, or has had deleted, stays as it is.
 3. **Leaves, and lists**, what this release wrote that 0.2.9 ignores; nothing is deleted. In `/var/lib/tacctl/devices-config.json` (version 1, as 0.2.9 reads it) this is the `via` field of the `applied` part of the records (the transport the apply wrote through): 0.2.9 reads the file without the field and does not write it back.
 4. **Everything else** is in a format 0.2.9 reads: the sudoers drop-ins (this release changed none), `console.yaml`, `store.yaml`, the SNMP credentials, the blocks, `/var/lib/tacctl/device-apply/` and the rendered backend files are not touched, nothing is re-rendered or restarted and no device is contacted. `--hosts` is accepted and does nothing.
@@ -76,7 +113,7 @@ tacctl upgrade --branch 0.2.3          # install 0.2.3: switches the clone to th
 
 `--apply` takes a snapshot first (`tacctl backup list`), then, in this order:
 
-1. **`tacctl.yaml`**: removes `device.config.max_concurrency`, `device.config.transport`, `device.config.timeout`, `device.config.confirm_timeout`, `device.apply.confirm_timeout`, `device.apply.pause` and `device.apply.transport`, every `netconf_scope.<scope>`, `cisco.source_interface.<scope>` and `breakglass_hold.<device>` key (the keys 0.2.5 added, and any other key 0.2.3 does not know). Every other key stays. A break-glass hold that stands stops the rollback instead, so no hold is ever dropped by it.
+1. **`tacctl.yaml`**: removes `device.config.max_concurrency`, `device.config.transport`, `device.config.timeout`, `device.config.confirm_timeout`, `device.apply.confirm_timeout`, `device.apply.pause`, `device.apply.transport` and `audit.strict`, every `netconf_scope.<scope>`, `cisco.source_interface.<scope>` and `breakglass_hold.<device>` key (the keys 0.2.5 added, and any other key 0.2.3 does not know). Every other key stays. A break-glass hold that stands stops the rollback instead, so no hold is ever dropped by it.
 2. **`console.yaml`**: removes `settings.password_cache` (the password cache's tiers and lifetimes: 0.2.3's parser rejects the key, the console would fall back to the defaults and its writes would fail), so the cache is off again; every other setting stays, `tiers.engineer` and `settings.space_completion` included (they are 0.2.3's own).
 3. **`devices.yaml`**: removes the `snmp:` map of every device (a device's own SNMP version, port, timeout and allowed clients: 0.2.3's parser answers `unknown key 'snmp'` and cannot read the registry) the `config_syntax` key of every Cisco device that has one (`device 'x': unknown key 'config_syntax'`) and the `netconf:` map of every Junos device that has one (`unknown key 'netconf'`). The devices are then read with their scope's or the default's settings, and the dry run warns that 0.2.3 compares a `legacy-ssh` Cisco device as IOS 12.x again; the locations and everything else stay.
 4. **The sudoers drop-ins**: a per-tier drop-in (`/etc/sudoers.d/tacctl-tiers`) or a group drop-in (`config sudoers install <group>`) that is exactly the text this release writes (or the one 0.2.4 to 0.2.8 wrote) is rewritten with the text 0.2.3 writes, after `visudo -cf` (it loses the `TACCTL_ASKPASS` alias and `env_keep` line, and, in the per-tier file, the rows of `device config`, `device snmp`, `device config-syntax`, `breakglass list` and `console forget`). A file an administrator edited is left as it is; a drop-in that `visudo` refuses is left and named, and the rollback goes on (0.2.3's upgrade rewrites the per-tier file with its own text).

@@ -236,7 +236,7 @@ func TestTouchRunsTheStartOnce(t *testing.T) {
 		t.Fatal("touched with no start function")
 	}
 	n := 0
-	w.SetStart(func() { n++; w.Line(Info, "cmd start") })
+	w.SetStart(func() string { n++; return w.Line(Info, "cmd start") })
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
@@ -279,5 +279,231 @@ func TestWideKeepsMore(t *testing.T) {
 	New(Options{Runner: r2}).Line(Info, "e", Wide("args", huge))
 	if got := r2.Calls()[0].Args[4]; got != "e args="+strings.Repeat("z", 512)+"..." {
 		t.Errorf("huge wide value: %s", got)
+	}
+}
+
+// recovered runs fn and returns the *Refusal it panicked with, nil when it
+// did not panic.
+func recovered(t *testing.T, fn func()) (ref *Refusal) {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			var ok bool
+			if ref, ok = r.(*Refusal); !ok {
+				panic(r)
+			}
+		}
+	}()
+	fn()
+	return nil
+}
+
+// With SetStrict, a start line that logger did not write refuses the command:
+// Touch panics with the refusal, again on every later call (so nothing
+// deferred writes), and the D248 warning is not printed beside it.
+func TestStrictTouchRefusesWhenTheStartLineIsNotWritten(t *testing.T) {
+	r := &fake.Runner{}
+	r.Fail([]string{"logger"}, 1, "logger: socket /dev/log: Connection refused")
+	var warned []string
+	w := New(Options{Runner: r, Warn: func(m string) { warned = append(warned, m) }})
+	w.SetStrict(true)
+	w.SetStart(func() string { return w.Line(Info, "cmd start") })
+	ref := recovered(t, w.Touch)
+	if ref == nil {
+		t.Fatal("Touch did not refuse")
+	}
+	want := "The audit line cannot be written (logger: exit status 1: logger: socket /dev/log: Connection refused) and audit.strict is set; nothing was changed."
+	if ref.Error() != want {
+		t.Errorf("message\n got %s\nwant %s", ref.Error(), want)
+	}
+	if again := recovered(t, w.Touch); again == nil || again != ref {
+		t.Errorf("a later Touch returned %v, want the same refusal", again)
+	}
+	w.Line(Info, "cmd end") // the end line of a refused command
+	if len(warned) != 0 {
+		t.Errorf("warnings beside a refusal: %q", warned)
+	}
+}
+
+// A start line that is written does not refuse; the failure of a later line
+// (the end line) is the D248 warning and nothing else.
+func TestStrictTouchPassesWhenTheStartLineIsWritten(t *testing.T) {
+	r := &fake.Runner{}
+	var warned []string
+	w := New(Options{Runner: r, Warn: func(m string) { warned = append(warned, m) }})
+	w.SetStrict(true)
+	w.SetStart(func() string { return w.Line(Info, "cmd start") })
+	if ref := recovered(t, w.Touch); ref != nil {
+		t.Fatalf("refused: %v", ref)
+	}
+	r.Fail([]string{"logger"}, 1, "gone")
+	w.Line(Info, "cmd end")
+	if len(warned) != 1 || !strings.Contains(warned[0], "The audit line was not written (logger: exit status 1: gone); the command continues.") {
+		t.Errorf("warnings %q", warned)
+	}
+	if ref := recovered(t, w.Touch); ref != nil {
+		t.Errorf("a later Touch refused after the end line failed: %v", ref)
+	}
+}
+
+// Without SetStrict a failed start line is the D248 warning, as before.
+func TestNotStrictTouchWarnsAndGoesOn(t *testing.T) {
+	r := &fake.Runner{}
+	r.Missing("logger")
+	var warned []string
+	w := New(Options{Runner: r, Warn: func(m string) { warned = append(warned, m) }})
+	w.SetStart(func() string { return w.Line(Info, "cmd start") })
+	if ref := recovered(t, w.Touch); ref != nil {
+		t.Fatalf("refused without audit.strict: %v", ref)
+	}
+	if len(warned) != 1 {
+		t.Errorf("warnings %q", warned)
+	}
+}
+
+// Callers that wait while another goroutine writes the start line are refused
+// with it.
+func TestStrictTouchRefusesTheWaitingCallersToo(t *testing.T) {
+	r := &fake.Runner{}
+	r.Missing("logger")
+	w := New(Options{Runner: r})
+	w.SetStrict(true)
+	w.SetStart(func() string { return w.Line(Info, "cmd start") })
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	refused := 0
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if recovered(t, w.Touch) != nil {
+				mu.Lock()
+				refused++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	if refused != 8 {
+		t.Errorf("%d of 8 callers refused", refused)
+	}
+}
+
+// The refusal is decided on the start line's own write: a line another
+// goroutine writes successfully after it does not hide that it failed.
+func TestStrictTouchDecidesOnTheStartLineItself(t *testing.T) {
+	r := &fake.Runner{}
+	r.Func(func(c execx.Cmd) bool { return c.Name == "logger" }, func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(strings.Join(c.Args, " "), "cmd start") {
+			return execx.Result{Code: 1, Stderr: []byte("busy")}, nil
+		}
+		return execx.Result{}, nil
+	})
+	w := New(Options{Runner: r})
+	w.SetStrict(true)
+	w.SetStart(func() string {
+		reason := w.Line(Info, "cmd start")
+		w.Line(Info, "from another goroutine") // succeeds, and clears Failure
+		return reason
+	})
+	if ref := recovered(t, w.Touch); ref == nil || !strings.Contains(ref.Error(), "exit status 1: busy") {
+		t.Errorf("refusal %v", ref)
+	}
+}
+
+// Under audit.strict the warning of a line written before the start line
+// waits for the outcome: dropped when the command is refused, shown once when
+// the start line is written or when the command ends without one.
+func TestStrictHoldsTheWarningOfAnEarlierLine(t *testing.T) {
+	r := &fake.Runner{}
+	r.Missing("logger")
+	var warned []string
+	w := New(Options{Runner: r, Warn: func(m string) { warned = append(warned, m) }})
+	w.SetStrict(true)
+	w.SetStart(func() string { return w.Line(Info, "cmd start") })
+	w.Line(Info, "earlier") // fails, warning held
+	if len(warned) != 0 {
+		t.Fatalf("warned early: %q", warned)
+	}
+	if recovered(t, w.Touch) == nil {
+		t.Fatal("not refused")
+	}
+	w.FlushWarning()
+	if len(warned) != 0 {
+		t.Errorf("warnings beside a refusal: %q", warned)
+	}
+
+	// A command that never touches (a read) gets its warning at the end.
+	warned = nil
+	w2 := New(Options{Runner: r, Warn: func(m string) { warned = append(warned, m) }})
+	w2.SetStrict(true)
+	w2.SetStart(func() string { return w2.Line(Info, "cmd start") })
+	w2.Line(Info, "secret-read")
+	w2.FlushWarning()
+	w2.FlushWarning()
+	if len(warned) != 1 || !strings.Contains(warned[0], "logger: not found") {
+		t.Errorf("read: warnings %q", warned)
+	}
+
+	// A start line that is written releases the held warning.
+	warned = nil
+	r3 := &fake.Runner{}
+	n := 0
+	r3.Func(func(c execx.Cmd) bool { return c.Name == "logger" }, func(execx.Cmd) (execx.Result, error) {
+		n++
+		if n == 1 {
+			return execx.Result{Code: 1, Stderr: []byte("busy")}, nil
+		}
+		return execx.Result{}, nil
+	})
+	w3 := New(Options{Runner: r3, Warn: func(m string) { warned = append(warned, m) }})
+	w3.SetStrict(true)
+	w3.SetStart(func() string { return w3.Line(Info, "cmd start") })
+	w3.Line(Info, "earlier")
+	if recovered(t, w3.Touch) != nil {
+		t.Fatal("refused with a start line that was written")
+	}
+	if len(warned) != 1 || !strings.Contains(warned[0], "exit status 1: busy") {
+		t.Errorf("warnings %q", warned)
+	}
+}
+
+// Concurrent failing lines while a strict start line is written: the start
+// line written, one warning in all; the start line not written, a refusal and
+// none. (Run with -race.)
+func TestStrictWarningsUnderConcurrentWrites(t *testing.T) {
+	for _, startFails := range []bool{false, true} {
+		r := &fake.Runner{}
+		r.Func(func(c execx.Cmd) bool { return c.Name == "logger" }, func(c execx.Cmd) (execx.Result, error) {
+			if strings.Contains(strings.Join(c.Args, " "), "cmd start") && !startFails {
+				return execx.Result{}, nil
+			}
+			return execx.Result{Code: 1, Stderr: []byte("busy")}, nil
+		})
+		var mu sync.Mutex
+		var warned []string
+		w := New(Options{Runner: r, Warn: func(m string) { mu.Lock(); warned = append(warned, m); mu.Unlock() }})
+		w.SetStrict(true)
+		w.SetStart(func() string { return w.Line(Info, "cmd start") })
+		var wg sync.WaitGroup
+		for i := 0; i < 16; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				w.Line(Info, "other")
+				if i%4 == 0 {
+					_ = recovered(t, w.Touch)
+				}
+			}()
+		}
+		wg.Wait()
+		w.FlushWarning()
+		want := 1
+		if startFails {
+			want = 0
+		}
+		if len(warned) != want {
+			t.Errorf("start line failing %v: %d warnings %q, want %d", startFails, len(warned), warned, want)
+		}
 	}
 }

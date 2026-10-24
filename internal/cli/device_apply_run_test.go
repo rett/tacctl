@@ -29,6 +29,8 @@ import (
 type applyBox struct {
 	*pullBox
 	runner *fake.Runner
+	// script, when set, adjusts the fake runner of a run (after route).
+	script func(*fake.Runner)
 }
 
 func newApplyBox(t *testing.T) *applyBox {
@@ -90,6 +92,9 @@ func (b *applyBox) start(in io.Reader, out, errb *lockedBuf, args ...string) cha
 	r.On([]string{"id"}, execx.Result{Stdout: []byte("users\n")})
 	fakePasswd(r)
 	route(r)
+	if b.script != nil {
+		b.script(r)
+	}
 	b.runner = r
 	if in == nil {
 		in = strings.NewReader("")
