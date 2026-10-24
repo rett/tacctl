@@ -615,6 +615,8 @@ func TestAskpassWords(t *testing.T) {
 		"device collect 192.0.2.1": true, "device collect --discovered --register": true,
 		"device collect 192.0.2.1 --login admin": false, "device collect --discovered --login=root": false,
 		"device sync x": false, "device sync --all --apply": false,
+		// 'enroll' pulls and may apply as the caller (0.2.17)
+		"device enroll 192.0.2.1": true, "device enroll --discovered": true,
 		"ssh": true, "device": false, "device config": false, "ssh core-sw1 -- show version": true, "device ssh core-sw1 -- -v": true,
 	} {
 		if got := askpassWords(strings.Fields(words)); got != want {

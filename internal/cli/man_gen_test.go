@@ -198,6 +198,9 @@ func manCommandBlocks(t *testing.T) []manBlock {
 				if o, ok := manFlagOverrides[words+" "+f.Names[0]]; ok {
 					desc = o
 				}
+				if v, ok := manValueOverrides[words+" "+f.Names[0]]; ok {
+					value = v
+				}
 				if desc == "" {
 					t.Errorf("tacctl %s: flag %s has no description in the usage (the generated option list of man/tacctl.1 needs one)", words, f.Names[0])
 				}
@@ -227,6 +230,12 @@ func manCommandBlocks(t *testing.T) []manBlock {
 		out = append(out, manBlock{name: "command " + words, lines: l})
 	}
 	return out
+}
+
+// manValueOverrides are the value texts of flags whose first line in the
+// family's usage block is another verb's flag of the same name.
+var manValueOverrides = map[string]string{
+	"device enroll --name": "<name>",
 }
 
 // manFlagOverrides are the descriptions of flags that a command shares with
@@ -265,6 +274,12 @@ var manFlagOverrides = map[string]string{
 	"device collect --register":          "After the table, register each collected device through 'device add' with the keys shown pinned (one question) and keep the read as its first pull record.",
 	"device collect --yes":               "Answer yes to the registration question of --register (needed without a terminal).",
 	"device collect --json":              "One object at the end (the progress goes to standard error).",
+	"device enroll --discovered":         "The addresses 'device discover' lists (the seen cache: unregistered, authenticated); no address is named with it.",
+	"device enroll --host-key":           "Pin this key of ONE address, read on its console: no question (the only form without a terminal).",
+	"device enroll --vendor":             "The vendor of ONE address (default: the one it names by SNMP, else asked; other ends its chain at the registration).",
+	"device enroll --name":               "The name of ONE address (default: its SNMP sysName, else the name typed at the key's question).",
+	"device enroll --legacy-ssh":         "Scan and register every device of the run with the legacy algorithms (a device that answers only those is found so without it).",
+	"device enroll --json":               "The pull's lines and the plan's objects, then one object of the run; the questions, the progress and the table on standard error.",
 	"device sync --all":                  "Every device of the registry.",
 	"device sync --scope":                "Only the devices of that scope.",
 	"device sync --vendor":               "Only that vendor's devices (only Junos records are read).",

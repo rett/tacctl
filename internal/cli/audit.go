@@ -302,6 +302,7 @@ var auditTable = map[string]auditEntry{
 	"device ssh":           action(),
 	"device onboard":       mixed(),
 	"device collect":       mixed(),
+	"device enroll":        action(),
 	"device sync":          mixed(),
 	"device address":       mixed(),
 	"device hostname":      mixed(),

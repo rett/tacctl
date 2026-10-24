@@ -384,13 +384,16 @@ const (
 // it goes before EnvKeep in a drop-in. 'block adopt' (0.2.7) reads one device
 // with the caller's login as a pull does, so it is among them, and so are
 // 'device config apply', 'device onboard' and 'device collect' (0.2.9,
-// D141): they log in to the devices as the caller, as a pull does. 0.2.8's text is askpassKeep028 (rollback.go).
+// D141): they log in to the devices as the caller, as a pull does, and
+// 'device enroll' (0.2.17, D269), which pulls and may apply. 0.2.8's text is
+// askpassKeep028, 0.2.9 to 0.2.16's askpassKeep0216 (rollback.go).
 func AskpassKeep(alias string) string {
 	return "Cmnd_Alias " + alias + " = " +
 		Binary + " device config pull *, " + Binary + " device config diff *, " + Binary + " device config plan *, \\\n" +
 		"    " + Binary + " ssh *, " + Binary + " device ssh *, \\\n" +
 		"    " + Binary + " scope block * adopt *, " + Binary + " device block * adopt *, \\\n" +
-		"    " + Binary + " device config apply *, " + Binary + " device onboard *, " + Binary + " device collect *\n" +
+		"    " + Binary + " device config apply *, " + Binary + " device onboard *, " + Binary + " device collect *, \\\n" +
+		"    " + Binary + " device enroll *\n" +
 		"Defaults!" + alias + " env_keep += \"" + AskpassVar + "\"\n"
 }
 

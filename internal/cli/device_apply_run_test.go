@@ -89,6 +89,12 @@ func (b *applyBox) committed() string { return b.srv.Committed() }
 // buffers.
 func (b *applyBox) start(in io.Reader, out, errb *lockedBuf, args ...string) chan int {
 	b.t.Helper()
+	return b.startCmd(in, out, errb, append([]string{"device", "config", "apply"}, args...)...)
+}
+
+// startCmd runs 'tacctl args' as alice in the background, as start does.
+func (b *applyBox) startCmd(in io.Reader, out, errb *lockedBuf, args ...string) chan int {
+	b.t.Helper()
 	r := &fake.Runner{}
 	r.On([]string{"systemctl"}, execx.Result{})
 	r.On([]string{"logger"}, execx.Result{})
@@ -102,7 +108,7 @@ func (b *applyBox) start(in io.Reader, out, errb *lockedBuf, args ...string) cha
 	if in == nil {
 		in = strings.NewReader("")
 	}
-	a := app.New(append([]string{"device", "config", "apply"}, args...), paths.NewEnv(append(append([]string(nil), b.sb.env...), "SUDO_USER=alice")),
+	a := app.New(args, paths.NewEnv(append(append([]string(nil), b.sb.env...), "SUDO_USER=alice")),
 		"/opt/x/dist/tacctl", 1000, app.Stdio{Stdin: in, Stdout: out, Stderr: errb}, r)
 	a.SNMP = b.sb.snmp
 	a.Resolve = b.sb.resolve

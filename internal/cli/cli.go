@@ -57,6 +57,11 @@ type invocation struct {
 	ar         *auditRun
 	callerTier tier.Tier
 
+	// keyAccepted: the key 'device add' is about to pin is the one a person
+	// accepted by typing the device's name ('device enroll'), not one named
+	// by --host-key on the command line: deviceAddReport says so.
+	keyAccepted bool
+
 	// snmpUserSeen: whether the caller may be told an SNMPv3 user's name
 	// (device_snmp_override.go: snmpUserVisible), asked once.
 	snmpUserSeen *bool

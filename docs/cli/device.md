@@ -91,6 +91,50 @@ device collect <address>... | --discovered [--login <local-user>] [--host-key SH
     refused; see Collecting from addresses nobody registered (devices/planning.md, "Collecting from
     addresses nobody registered")
 
+device enroll <address>... | --discovered [--host-key SHA256:<fp>]
+              [--vendor cisco|juniper|wti|other] [--name <name>] [--legacy-ssh] [--json]
+
+    Superusers: the chain from an address to a plan, per address and in the order given
+    (`--discovered`: the addresses `device discover` lists). Refused before any question: an
+    address registered already, one no scope covers, one in a scope you are not a member of, a
+    held one, one that offers no host key. The one key that would be pinned (ed25519 first, then
+    ECDSA, then RSA) is shown with the console command that shows it; compare them and type the
+    device's name (its SNMP sysName, or the name to register it as when SNMP gives none) to
+    accept it; Enter skips the device, any other answer refuses it. The vendor the device names
+    by SNMP is taken, else asked (`other` registers the device and ends its chain, exit 0); one
+    y/N; the device is registered at once through `device add` with that key pinned (the others
+    are shown as offered, not pinned); one snapshot for the run. Then your password, once, the
+    pull of every device registered with a vendor tacctl reads, the registry rename to the name
+    the device is configured with when a name was typed or given (Junos `host-name`, IOS
+    `hostname`, a WTI unit's Site ID; kept, with the reason and the `device rename` line, when
+    that name is taken, generic, not a valid name or the device is held; nothing is written to
+    the device), the plan, printed as `device config plan --no-secrets` prints it (each secret a
+    marked line; `device config plan <name>` prints the region to paste), and for Junos devices
+    whose plan has a change one question that runs the apply review (each device's name typed
+    back; a device whose plan has none says `nothing to apply`). Without a terminal:
+    `--host-key` for one address, with `--vendor` and `--name` where SNMP reads none; `--json`
+    and no terminal end at the plan. A device registered stays registered when a later stage
+    fails; the table under the run (ADDRESS NAME VENDOR KEY PULL PLAN RESULT) gives each one's
+    next step. Exit 0 every address went as far as its vendor allows, 1 one was refused, skipped
+    or failed, 2 wrong arguments or no terminal, 130 interrupted; see Enrolling a device
+    (devices/planning.md, "Enrolling a device")
+    --discovered
+        The unregistered addresses that authenticated (the seen cache); no address with it
+    --host-key SHA256:<fp>
+        Pin this key of ONE address, read on its console: no question (the only form without a
+        terminal)
+    --vendor cisco|juniper|wti|other
+        The vendor of ONE address (default: the one it names by SNMP, else asked); a vendor the
+        device names otherwise is a warning
+    --name <name>
+        The name of ONE address (default: its SNMP sysName, else typed at the key's question)
+    --legacy-ssh
+        Scan and register every device of the run with the legacy ssh algorithms (a device that
+        answers only those is found so without it)
+    --json
+        The pull's lines and the plan's objects, then one object of the run, on standard output;
+        the questions, the progress and the table on standard error
+
 device sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite]
             [--json] [-y]
 

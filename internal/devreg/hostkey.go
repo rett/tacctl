@@ -123,6 +123,11 @@ func KeyStrings(keys []HostKey) []string {
 	return out
 }
 
+// SortKeys is keys in the type order tacctl keeps and shows them in
+// (ssh-ed25519, the ECDSA curves, ssh-rsa), without duplicates; keys is not
+// changed.
+func SortKeys(keys []HostKey) []HostKey { return sortKeys(keys) }
+
 // sortKeys orders keys by type preference and drops duplicates.
 func sortKeys(keys []HostKey) []HostKey {
 	out := slices.Clone(keys)

@@ -49,9 +49,9 @@ type hooks struct {
 	// hostRenameStep is called by 'host rename' after each step that changed
 	// something ("registry", "pins"); a test changes the world at that point.
 	hostRenameStep func(step string)
-	// applyPullDone is called by 'device config apply --pull' when the pull
-	// has ended and before its outcome is read; a test interrupts the run at
-	// that point.
+	// applyPullDone is called by 'device config apply --pull' and 'device
+	// enroll' when the pull has ended and before its outcome is read; a test
+	// interrupts the run, or changes the world, at that point.
 	applyPullDone func()
 	// applyReviewed is called by 'device config apply' when the review has
 	// been answered and before Phase B's interrupts are taken; a test

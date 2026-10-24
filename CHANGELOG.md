@@ -274,6 +274,45 @@ current behaviour; this file is where history lives.
     without this refusal. Without the setting a line that cannot be written
     is still the warning, and the secret is shown.
 
+13. **`tacctl device enroll <address>... | --discovered`: one attended
+    command from a new address to its plan.** Superusers. Per address, in
+    the order given: what is refused before any question (registered
+    already, no scope, a scope you are not a member of, break-glass held, no
+    ssh host key) is a row and the run goes on; the one host key that will
+    be pinned (ed25519 first, then ECDSA, then RSA) is shown with the
+    console command that shows it, and is accepted by typing the device's
+    name (its SNMP sysName, or, when SNMP gives none, the name to register
+    it as, checked as every new name); Enter skips the device and any other
+    answer refuses it. There is no `-y`, no answer for several devices and
+    no trust on first use; without a terminal the one form is `--host-key
+    SHA256:<fp>` for one address, with `--vendor` and `--name` where SNMP
+    reads none. The vendor the device names by SNMP is taken, else asked
+    (`other` registers the device and ends its chain). After one y/N the
+    device is registered at once through `device add` with that key alone
+    pinned; the run takes one snapshot. Then your password once, the pull of
+    every device registered with a vendor tacctl reads, the registry rename
+    to the name the device is configured with when a name was typed or given
+    (Junos `host-name`, IOS `hostname`, which the pull record now keeps, a
+    WTI Site ID; kept, with the reason and the `device rename` line, when it
+    is taken, generic, invalid or the device is held; nothing is written to
+    the device), the plan, printed as `device config plan --no-secrets`
+    prints it (`device config plan <name>` prints the region to paste), and
+    for Junos devices whose plan has a change one question that runs the
+    apply review; a device with nothing to apply says so in its row. `--json` ends at the plan. A device
+    registered stays registered when a later stage fails; the table
+    (`ADDRESS NAME VENDOR KEY PULL PLAN RESULT`) gives each one's next step.
+    Exit 0 every address went as far as its vendor allows, 1 one was
+    refused, skipped or failed, 2 wrong arguments or no terminal, 130
+    interrupted. Every answer to a key is `device enroll hostkey user= addr=
+    device= alg= fp= result=accepted|skipped|refused source=confirmed|flag`
+    at `auth.notice`, written before the key is pinned (with `audit.strict`
+    an unwritten line refuses that device), and each address ends with
+    `device enroll user= addr= device= vendor= source= result=`; a rename is
+    `device rename ... reason=device-name`. The sudoers drop-ins keep the
+    password cache's variable for `device enroll` too: `tacctl upgrade`
+    rewrites the tiers drop-in and a group drop-in that is exactly 0.2.16's
+    text.
+
 ## 0.2.16 (2026-10-23)
 
 1. **`config validate` takes no argument.** `config validate extra` ran the

@@ -1505,6 +1505,7 @@ func TestUpgradeRefreshesTheGroupSudoersItWrote(t *testing.T) {
 	for name, text := range map[string]string{
 		"0.2.1-0.2.3": v023, "0.2.0": v020,
 		"0.2.4-0.2.6": tier.GroupSudoers026("wheel"), "0.2.7": tier.GroupSudoers027("wheel"), "0.2.8": tier.GroupSudoers028("wheel"),
+		"0.2.9-0.2.16": tier.GroupSudoers0216("wheel"),
 	} {
 		o.write(file, text)
 		if code := upgrade(o); code != 0 {

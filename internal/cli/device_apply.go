@@ -1038,14 +1038,9 @@ func (inv *invocation) deviceConfigApply(args []string) error {
 	if len(others) > 0 {
 		chosen.skipped.notJunos = append(chosen.skipped.notJunos, others...)
 	}
-	st := inv.deviceConfigSettings()
-	confirm, _ := inv.applySettings()
-	run := &applyRun{inv: inv, user: user, render: chosen.render, store: inv.configStore(),
-		shapes: devapply.OpenShapes(inv.app.Paths.ApplyDir), stateDir: inv.app.Paths.ApplyDir,
-		passwd: inv.hooks.newDevicePasswords(inv), sections: aa.sections, minutes: confirm, holdOn: aa.hold, holdDone: make(chan struct{}),
-		transport: aa.transport}
+	ctl := inv.newApplyCtl(user, aa, chosen, inv.hooks.newDevicePasswords(inv), usage)
+	run := ctl.run
 	defer close(run.holdDone)
-	ctl := &applyCtl{inv: inv, user: user, aa: aa, run: run, settings: st, chosen: chosen, usage: usage}
 	for _, o := range refused {
 		ctl.rows = append(ctl.rows, o)
 		if aa.pull.json {
@@ -1078,6 +1073,18 @@ func (inv *invocation) deviceConfigApply(args []string) error {
 		junos = left
 	}
 	return ctl.run2(junos)
+}
+
+// newApplyCtl is the state of one apply over chosen as user, its password
+// from passwd (asked by the caller, once, into run.password). The caller
+// closes run.holdDone when the run ends.
+func (inv *invocation) newApplyCtl(user string, aa applyArgs, chosen *chosenDevices, passwd devicePasswords, usage string) *applyCtl {
+	confirm, _ := inv.applySettings()
+	run := &applyRun{inv: inv, user: user, render: chosen.render, store: inv.configStore(),
+		shapes: devapply.OpenShapes(inv.app.Paths.ApplyDir), stateDir: inv.app.Paths.ApplyDir,
+		passwd: passwd, sections: aa.sections, minutes: confirm, holdOn: aa.hold, holdDone: make(chan struct{}),
+		transport: aa.transport}
+	return &applyCtl{inv: inv, user: user, aa: aa, run: run, settings: inv.deviceConfigSettings(), chosen: chosen, usage: usage}
 }
 
 // pullFirst is --pull (0.2.17 D268): the Junos devices are read first as

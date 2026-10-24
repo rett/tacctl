@@ -3822,7 +3822,7 @@ file. Both sudoers files carry
 the login console's session marker, the X11 display
 .B "tacctl ssh \-X"
 hands on, and the caller's choice of colour), for the command lines that use the password cache
-.RB ( "device config pull" ", " "device config diff" ", " "device config plan" ", " ssh ", " "device ssh" ", " "block ... adopt" ", " "device config apply" ", " "device onboard" " and " "device collect" ),
+.RB ( "device config pull" ", " "device config diff" ", " "device config plan" ", " ssh ", " "device ssh" ", " "block ... adopt" ", " "device config apply" ", " "device onboard" ", " "device collect" " and " "device enroll" ),
 .BR TACCTL_ASKPASS ,
 for the four command lines that open an editor
 .RB ( "scope block ... edit|adopt" ", " "device block ... edit|adopt" ),
@@ -7523,6 +7523,141 @@ After the table, register each collected device through 'device add' with the ke
 One object at the end (the progress goes to standard error).
 .RE
 .\" END GENERATED: command device collect
+.TP
+.BI "device enroll " "address... | \-\-discovered " "[ \-\-host\-key SHA256:" fingerprint " ] [ \-\-vendor cisco|juniper|wti|other ] [ \-\-name " name " ] [ \-\-legacy\-ssh ] [ \-\-json ]"
+Superusers: the chain from a new address to its plan, run per address and
+attended.
+.B \-\-discovered
+takes the addresses
+.B "device discover"
+lists. Refused before any question, each in a row of its own while the run
+goes on: an address registered already (with the
+.B "device config pull"
+line), one no scope covers, one in a scope the caller is not a member of, one
+with break\-glass held, and one that offers no ssh host key (a device that
+answers only the legacy algorithms is found and registered
+.BR \-\-legacy\-ssh ).
+.RS
+.IP 1. 4
+The host key. Of the keys the address offers, the one that will be pinned is
+the first of ed25519, ECDSA and RSA; it is shown under
+.I "Will pin"
+with the command that shows it on the device's console (every vendor's when
+the vendor is not known), the others as offered and not pinned. One question:
+.RI "Compare the key with the console of " address ". Type the device name (" name ") to accept it and register it, or press Enter to skip the device:"
+where
+.I name
+is the device's SNMP sysName (lower case); when SNMP gives none, the name
+typed is the name the device is registered as, checked as every new name
+(lower case, not taken, not generic). Enter, or the end of input, skips the
+device; any other answer refuses it, with no second try. There is no
+.BR \-y ,
+no answer for several devices and no trust on first use.
+.BI "\-\-host\-key SHA256:" fingerprint
+(one address; the fingerprint read on the console) answers it instead and is
+the only form without a terminal (without a terminal and without it: exit 2,
+nothing scanned).
+.IP 2. 4
+The vendor the device names by SNMP (as
+.B "device add"
+reads it), else
+.BR \-\-vendor ,
+else one question
+.RI ( "cisco, juniper, wti or other; Enter skips the device" ).
+.B other
+registers the device and ends its chain (no pull, no plan; exit 0). Then one
+.RI "Register " address " as '" name "' (" vendor ", ...)? [y/N]"
+and the registration at once through
+.BR "device add" ,
+the accepted key pinned alone; the first registration takes the run's one
+snapshot. Without a terminal,
+.B \-\-vendor
+and
+.B \-\-name
+(one address) give what SNMP does not read; a device left without them is
+skipped with the
+.B "device add"
+line to run.
+.IP 3. 4
+The caller's password, asked once (the password cache may answer it), and
+the pull of every device registered with a vendor tacctl reads. When the name
+registered was typed or given (not read by SNMP), the name the device is
+configured with (Junos
+.BR "system host\-name" ,
+IOS
+.BR hostname ,
+a WTI unit's Site ID that is not generic; the first label, lower case)
+replaces it in the registry, as
+.B "device rename"
+does; nothing is written to the device. The name is kept, with the reason and
+the
+.B "device rename"
+line, when the device's name is taken by a device or an enrolled host, is
+generic, is not a valid name, or a break\-glass hold stands on the device.
+.IP 4. 4
+The plan of each device pulled, as
+.B "device config plan \-\-no\-secrets"
+prints it: each secret is a marked line, and
+.BI "device config plan " name
+prints the region to paste. For the Junos devices whose plan has a change one
+question runs
+.B "device config apply"
+for them with the same password; its review asks each device's name. A
+device whose plan has no change says
+.I "nothing to apply"
+in its row. With
+.BR \-\-json ,
+or without a terminal, the run ends at the plan and names the apply to run.
+.RE
+.IP
+A device registered stays registered when a later stage fails or the run is
+interrupted. The table under the run
+.RB ( ADDRESS ", " NAME ", " VENDOR ", " KEY ", " PULL ", " PLAN ", " RESULT )
+is followed by each device's next step.
+.B \-\-json
+prints the pull's lines and the plan's objects, then one object of the run
+.RB ( login ", " devices ", " apply ", " exit );
+the questions, the progress and the table go to standard error. Logged:
+.B "auth.notice device enroll hostkey user= addr= device= alg= fp= result=accepted|skipped|refused source=confirmed|flag"
+for every answer to a key, before it is pinned (with
+.BR audit.strict ,
+a line that cannot be written refuses that device), the
+.B "device add"
+line of each registration,
+.B "device rename from= to= reason=device\-name"
+for a name taken over, the pull's, plan's and apply's lines
+.RB ( mode=attended ),
+and
+.B "auth.info device enroll user= addr= device= vendor= source=snmp|given|asked result="
+per address. Exit status: 0 every address went as far as its vendor allows, 1
+one was refused, skipped or failed, 2 wrong arguments or no terminal, 130
+interrupted.
+.\" BEGIN GENERATED: command device enroll
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-discovered\fR
+The addresses 'device discover' lists (the seen cache: unregistered, authenticated); no address is named with it.
+.TP
+\fB\-\-host\-key\fR \fISHA256:<fp>\fR
+Pin this key of ONE address, read on its console: no question (the only form without a terminal).
+.TP
+\fB\-\-vendor\fR \fIcisco|juniper|wti|other\fR
+The vendor of ONE address (default: the one it names by SNMP, else asked; other ends its chain at the registration).
+.TP
+\fB\-\-name\fR \fI<name>\fR
+The name of ONE address (default: its SNMP sysName, else the name typed at the key's question).
+.TP
+\fB\-\-legacy\-ssh\fR
+Scan and register every device of the run with the legacy algorithms (a device that answers only those is found so without it).
+.TP
+\fB\-\-json\fR
+The pull's lines and the plan's objects, then one object of the run; the questions, the progress and the table on standard error.
+.RE
+.\" END GENERATED: command device enroll
 .TP
 .BI "device sync " "name[,name...] | \-\-all | \-\-scope " "scope " "| \-\-vendor " "vendor " "[ \-\-apply ] [ \-\-overwrite ] [ \-\-json ] [ \-y ]"
 Superusers: fill the registry's empty
@@ -11730,11 +11865,11 @@ are:
 .B "action"
 _phase, backend disable, backend enable, breakglass hold,
 breakglass release, console install, console remove, device add,
-device notice, device remove, device rename, device ssh, group add,
-group edit, group remove, host enroll, host forget, host move,
-host rename, host sync, host unenroll, passwd, scope add,
-scope remove, scope rename, ssh, user add, user disable, user enable,
-user move, user passwd, user remove, user rename
+device enroll, device notice, device remove, device rename,
+device ssh, group add, group edit, group remove, host enroll,
+host forget, host move, host rename, host sync, host unenroll, passwd,
+scope add, scope remove, scope rename, ssh, user add, user disable,
+user enable, user move, user passwd, user remove, user rename
 .TP
 .B "action, auth.notice"
 backup restore, config restore,

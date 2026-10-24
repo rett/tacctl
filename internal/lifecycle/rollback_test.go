@@ -580,6 +580,19 @@ func TestRollbackSudoersCases(t *testing.T) {
 		t.Errorf("the 0.2.8 drop-ins were not put back as 0.2.3's:\n%s\n%s", got[s.p.TierSudoersFile], got[s.p.SudoersFile])
 	}
 
+	// The texts 0.2.15 and 0.2.16 wrote (the cache's alias without 'device
+	// enroll'; the group's of 0.2.9 to 0.2.16).
+	s = newRBSandbox(t)
+	s.write(s.p.TierSudoersFile, tier.Sudoers0216(), 0o640)
+	s.write(s.p.SudoersFile, tier.GroupSudoers0216("ops"), 0o640)
+	p, _ = PlanRollback(s.in)
+	if _, err := ApplyRollback(p); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.snapshotOf(); got[s.p.TierSudoersFile] != tier.Sudoers023() || got[s.p.SudoersFile] != tier.GroupSudoers023("ops") {
+		t.Errorf("the 0.2.16 drop-ins were not put back as 0.2.3's:\n%s\n%s", got[s.p.TierSudoersFile], got[s.p.SudoersFile])
+	}
+
 	// The text 0.2.14 wrote (no operator 'config validate --json').
 	s = newRBSandbox(t)
 	s.write(s.p.TierSudoersFile, tier.Sudoers0214(), 0o640)

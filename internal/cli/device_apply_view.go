@@ -662,7 +662,14 @@ func (o *applyOutcome) reviewLine() string {
 // interrupted is true when a Ctrl-C (the invocation's context) came while it
 // waited: the read is left behind, and the run ends without reading again.
 func (c *applyCtl) askName(prompt string) (line string, ok, interrupted bool) {
-	ctx := c.inv.ctx
+	return c.inv.askLine(prompt)
+}
+
+// askLine asks one question at the terminal: the line typed (spaces and tabs
+// around it dropped), ok false at the end of input, interrupted true when a
+// Ctrl-C (the invocation's context) came while it waited, or before.
+func (inv *invocation) askLine(prompt string) (line string, ok, interrupted bool) {
+	ctx := inv.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -674,7 +681,7 @@ func (c *applyCtl) askName(prompt string) (line string, ok, interrupted bool) {
 		ok   bool
 	}
 	ch := make(chan answer, 1)
-	pr := c.inv.app.Prompter()
+	pr := inv.app.Prompter()
 	go func() {
 		l, ok := pr.AskLine(prompt)
 		ch <- answer{l, ok}

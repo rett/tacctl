@@ -38,11 +38,12 @@ type Extracted struct {
 	// ever kept); empty when the text has none. The plan's restore point
 	// (0.2.7) is the one reader. It is no section and never compared.
 	ArchiveFS string
-	// Hostname is, for Junos, the device's own name as its configuration
-	// states it ('system host-name', with 'system domain-name' appended
-	// when the name has no dot): "" for a text that has none and for every
-	// other vendor. It is no section and never compared; 'device sync'
-	// (0.2.9) is the reader.
+	// Hostname is the device's own name as its configuration states it: for
+	// Junos 'system host-name', with 'system domain-name' appended when the
+	// name has no dot; for IOS and IOS-XE the 'hostname' line (0.2.17);
+	// "" for a text that has none and for a WTI unit. It is no section and
+	// never compared; 'device sync' (0.2.9, Junos only) and 'device enroll'
+	// (0.2.17) are the readers.
 	Hostname string
 }
 
@@ -102,7 +103,11 @@ func ExtractWith(vendor, raw string, opt Options) (Extracted, error) {
 	case FamilyWTI:
 		return wtiExtract(raw, opt.Expected, opt.SecretsVisible)
 	}
-	return ciscoExtract(raw, opt.Expected, opt.SecretsVisible)
+	ext, err := ciscoExtract(raw, opt.Expected, opt.SecretsVisible)
+	if err == nil {
+		ext.Hostname = IOSHostName(raw)
+	}
+	return ext, err
 }
 
 // Normalise puts a section, rendered or extracted, in the form Compare

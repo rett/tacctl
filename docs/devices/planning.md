@@ -160,6 +160,107 @@ Apply to 2 devices (sw-lab-1, sw-lab-2), one shape's first device at a time, eac
 - **Interrupts, exit and audit.** The first Ctrl-C starts no more devices and lets the running one finish (a transaction is never cut by it); the second cancels: before the commit the candidate is discarded, after it the commit is cancelled where the window allows and otherwise left `PENDING`. Exit status: 0 every device applied, was checked or had no change; 1 a device failed, was rolled back or is pending, the review was not answered, or devices were selected and none was applied or found already applied (`--confirmed --yes` that skipped them all: `Nothing was applied: every device was skipped.`, JSON `"stop":"nothing-applied"`); 2 wrong arguments (`--check --exit-code`: a device needs a change); 130 interrupted. `--json` prints one object per device and phase, then the summary; the review goes to standard error. The audit lines are `device config apply user= device= id= shape= result= duration=` (each check), `user= approved=<n> shapes= canary=` (the review's answer; `canary=` names the first device of each shape, or `none` with `--no-canary`), `user= device= id= shape= sections= result= commit= until=` (each apply), `device config apply settle user= device= id= result=` (an earlier apply's pending record settled) and `device config shapes seed user= device= shape=`; none holds a value.
 - **The records.** `/var/lib/tacctl/device-apply/shapes.json` (0600) holds each shape's elided lines and who confirmed it, `locks/` a lock per device (`another apply is running on <name>`); the `applied` part of the device's record is described under *Records* in [Device configuration](configuration.md). No raw device output and no password is kept anywhere.
 
+## Enrolling a device
+
+`tacctl device enroll <address>... | --discovered` runs the chain from a new
+address to its plan in one attended command: the host key, the vendor and the
+name, the registration, the pull, the device's own name, the plan and, for a
+Junos device, the apply review. It is the superuser's, logs in as you, and
+asks its questions device by device. `--discovered` takes the addresses
+`device discover` lists.
+
+```
+$ tacctl device enroll 192.0.2.10
+  192.0.2.10 offers:
+    Will pin:  ED25519  SHA256:...
+    Also offered, not pinned (unverified):
+      RSA      SHA256:...
+    On the device: Junos: 'file show /etc/ssh/ssh_host_ed25519_key.pub' (...)
+  Compare the key with the console of 192.0.2.10. Type the device name (sw1)
+  to accept it and register it, or press Enter to skip the device: sw1
+  Register 192.0.2.10 as 'sw1' (juniper, the device says so)? [y/N] y
+[INFO] Device 'sw1' registered: 192.0.2.10, juniper.
+  Host key pinned (the key you accepted):
+    ED25519  SHA256:...
+  ...
+Password for alice (device login):
+  sw1  ok, differs in aaa via netconf
+  ...
+Run the apply review for sw1 now (the plan is checked on each device, then
+each is confirmed on its own)? [y/N] n
+
+Enrolled 1 address(es)
+  ADDRESS     NAME  VENDOR   KEY       PULL  PLAN     RESULT
+  192.0.2.10  sw1   juniper  accepted  ok    differs  planned
+
+  192.0.2.10: next: tacctl device config apply sw1
+```
+
+- **Refused before any question.** An address registered already (it is
+  reached by `device config pull`), one no scope covers, one in a scope you
+  are not a member of, one on which break-glass is held, and one that offers
+  no ssh host key (a device that answers only the legacy algorithms is found
+  and registered `--legacy-ssh`). Each is a row of its own and the run goes
+  on.
+- **The host key, accepted by its device's name.** Of the keys the address
+  offers, the one that will be pinned is the first of ed25519, ECDSA, RSA; it
+  is shown with the command that shows it on the device's console (every
+  vendor's when the vendor is not known yet), the others as offered and not
+  pinned. Compare it with the console and type the device's name: the name
+  the device gives itself by SNMP, or, when SNMP gives none, the name to
+  register it as (checked as every new name is: lower case, not taken, not
+  generic). Enter skips the device; any other answer refuses it, with no
+  second try. There is no `-y`, no answer for several devices and no trust on
+  first use. Without a terminal the one way in is `--host-key SHA256:<fp>` for
+  one address, the fingerprint read on the console; it pins that key. The
+  other keys are pinned after a check of their own with `device hostkey
+  <name> accept`.
+- **The vendor and the registration.** The vendor the device names by SNMP
+  (as `device add` reads it) is taken; when it names none, you are asked
+  (`cisco`, `juniper`, `wti` or `other`; Enter skips the device). `other`
+  registers the device and ends its chain there: set the vendor with `device
+  vendor <name> <vendor>` (or `--from-device`), then pull. One y/N, then the
+  device is registered at once through `device add`. The first registration
+  takes one snapshot for the whole run. Without a terminal, `--vendor` and
+  `--name` give what SNMP does not read (one address); a device left without
+  them is skipped with the `device add` line to run.
+- **The pull and the device's own name.** After every question, your
+  password is asked once and the devices registered with a vendor tacctl
+  reads are pulled together. When the name registered was typed or given
+  (not read by SNMP), the name the device is configured with replaces it in
+  the registry: Junos `system host-name`, IOS `hostname`, a WTI unit's Site
+  ID (not a generic one), the first label in lower case. It is a rename of
+  tacctl's registry entry only; nothing is written to the device. The name
+  registered is kept, and the row says why with the `device rename` line to
+  run, when the device's name is taken by a device or an enrolled host, is
+  generic, is not a valid name, or a break-glass hold stands on the device.
+- **The plan and the apply review.** Each device pulled is planned as
+  `device config plan --no-secrets` plans it: the report and the change,
+  with each secret a marked line, so the run prints no secret; `device
+  config plan <name>` prints the region to paste. For the Junos devices
+  whose plan has a change, one question offers the apply review; `y` runs
+  `device config apply` for them with the same password, and the review
+  asks for each device's name as it always does. A device whose plan has
+  no change says `nothing to apply` (`nothing to paste` for another vendor)
+  in its row, and no review is offered for it. With `--json`, or without a
+  terminal, the run ends at the plan and names the apply to run.
+- **What a run leaves.** A device registered stays registered when a later
+  stage fails or the run is interrupted; the table's rows say how far each
+  went and the line under it each one's next step. Exit status: 0 every
+  address went as far as its vendor allows (a declined offer and an `other`
+  device included), 1 one was refused, skipped or failed at any stage, 2
+  wrong arguments or no terminal, 130 interrupted.
+- **Audit.** The command's `cmd start` and `cmd end` (the end line names the
+  run's one snapshot), `device enroll hostkey user= addr= device= alg= fp=
+  result=accepted|skipped|refused source=confirmed|flag` at `auth.notice` for
+  every answer to a key, before the key is pinned, the `device add` line of
+  each registration, the pull's and the plan's lines, `device rename from=
+  to= reason=device-name` for a name taken over, the apply's lines with
+  `mode=attended` when the review runs, and one `device enroll user= addr=
+  device= vendor= source=snmp|given|asked result=` per address. With
+  `audit.strict`, an acceptance whose line cannot be written refuses that
+  device before anything is pinned.
+
 ## Onboarding a blank device
 
 `tacctl device onboard <address> --login <local-user>` brings a Junos device that has no TACACS+ or RADIUS server yet, reached with one of its local accounts, under tacctl in one run. It is the superuser's. Any local account may be named, a break-glass account included; only `root` is handled apart (its csh wrapper, below).

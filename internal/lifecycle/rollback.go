@@ -68,10 +68,11 @@ package lifecycle
 //	                       tiers file with its own text and its group
 //	                       drop-in is never refreshed: a file
 //	                       that is exactly this release's text, or the one
-//	                       0.2.4 to 0.2.14 wrote (tier.Sudoers0214,
-//	                       Sudoers0213, Sudoers028, Sudoers027,
-//	                       GroupSudoers026, GroupSudoers027,
-//	                       GroupSudoers028), is rewritten with 0.2.3's
+//	                       0.2.4 to 0.2.16 wrote (tier.Sudoers0216,
+//	                       Sudoers0214, Sudoers0213, Sudoers028,
+//	                       Sudoers027, GroupSudoers026, GroupSudoers027,
+//	                       GroupSudoers028, GroupSudoers0216), is
+//	                       rewritten with 0.2.3's
 //	                       (tier.Sudoers023, GroupSudoers023, through
 //	                       'visudo -cf'); any other file is left.
 //	hosts                  0.2.4 changed nothing on the enrolled Linux hosts;
@@ -623,7 +624,7 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 	tiers := sudoersPlan{label: "the per-tier drop-in", file: pt.TierSudoersFile, state: "absent"}
 	if b, err := os.ReadFile(pt.TierSudoersFile); err == nil {
 		switch got := string(b); {
-		case got == tier.Sudoers(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
+		case got == tier.Sudoers(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
 			tiers.state, tiers.body = "rewrite", tier.Sudoers023()
 		case got == tier.Sudoers023():
 			tiers.state = "done"
@@ -644,7 +645,8 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 			group.label = "the drop-in of group " + name
 			// the texts 0.2.4 to 0.2.7 wrote are put back as 0.2.3's; any
 			// other older text is 0.2.3's or older already
-			if got := string(b); got == tier.GroupSudoers026(name) || got == tier.GroupSudoers027(name) || got == tier.GroupSudoers028(name) {
+			if got := string(b); got == tier.GroupSudoers026(name) || got == tier.GroupSudoers027(name) || got == tier.GroupSudoers028(name) ||
+				got == tier.GroupSudoers0216(name) {
 				group.state, group.body = "rewrite", tier.GroupSudoers023(name)
 			} else {
 				group.state = "done"

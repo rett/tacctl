@@ -41,10 +41,11 @@ func GroupOfSudoers(text string) (string, bool) {
 // the env_keep line for the agent socket, the console's marker and the
 // display), the 0.2.4 to 0.2.6 one (with the password cache's alias too)
 // the 0.2.7 one (with the editor's alias, before the colour variables
-// joined the env_keep line) and the 0.2.8 one (with them, before the cache's
+// joined the env_keep line), the 0.2.8 one (with them, before the cache's
 // alias took the lines of 'device config apply', 'device config shapes
-// seed', 'device onboard' and 'device collect'). Only a file that is exactly one of these (or
-// the current text) is a file tacctl wrote and nobody has touched.
+// seed', 'device onboard' and 'device collect') and the 0.2.9 to 0.2.16 one
+// (before 'device enroll' joined them). Only a file that is exactly one of
+// these (or the current text) is a file tacctl wrote and nobody has touched.
 func groupSudoersEarlier(group string) []string {
 	head := "# Managed by tacctl. Grants passwordless sudo on " + Binary + "\n" +
 		"# to members of group '" + group + "'. Remove with: tacctl config sudoers remove\n"
@@ -55,7 +56,16 @@ func groupSudoersEarlier(group string) []string {
 		GroupSudoers026(group),
 		GroupSudoers027(group),
 		GroupSudoers028(group),
+		GroupSudoers0216(group),
 	}
+}
+
+// GroupSudoers0216 is the drop-in 'config sudoers install <group>' wrote in
+// 0.2.9 to 0.2.16: this release's, with the password cache's alias before
+// 'device enroll' joined its lines (0.2.17). 'tacctl rollback' puts 0.2.3's
+// text back over it; the upgrade replaces it.
+func GroupSudoers0216(group string) string {
+	return strings.Replace(GroupSudoers(group), AskpassKeep(AskpassGroupAlias), askpassKeep0216(AskpassGroupAlias), 1)
 }
 
 // GroupSudoers026 is the drop-in 'config sudoers install <group>' wrote in

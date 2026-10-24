@@ -101,6 +101,15 @@ var deviceSpecs = map[string]Spec{
 		{Names: []string{"--host-key"}, Value: true},
 		{Names: []string{"--register"}},
 		flagYes, flagJSON}},
+	// 'enroll' (0.2.17, D261): scan, the key accepted by the device's name,
+	// register, pull, the device's own name, plan, and the apply review.
+	"enroll": {MaxArgs: -1, Args: []string{""}, Flags: []Flag{
+		{Names: []string{"--discovered"}, Alone: true},
+		{Names: []string{"--host-key"}, Value: true},
+		{Names: []string{"--vendor"}, Value: true, Kind: KindVendors},
+		{Names: []string{"--name"}, Value: true},
+		{Names: []string{"--legacy-ssh"}},
+		flagJSON}},
 	"sync": {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{
 		{Names: []string{"--all"}, Alone: true},
 		{Names: []string{"--scope"}, Value: true, Kind: KindScopes},
@@ -154,6 +163,7 @@ var deviceVerbs = [][2]string{
 	{"add [<name>] <address> [options]", "Register a device (no name: offer the one it gives itself by SNMP); the vendor the device names by SNMP is shown, and offered at a terminal"},
 	{"onboard <address> --login <local-user> [--name <name>] [--host-key SHA256:<fp>] [--legacy-ssh] [--check] [--section <list>] [--json]", "Superusers, Junos devices: register a blank device reached with one of its local accounts and commit its first configuration as that account, kept only after your own TACACS+ login proves it"},
 	{"collect <address>... | --discovered [--login <local-user>] [--host-key SHA256:<fp>] [--register [-y]] [--json]", "Superusers, Junos devices: log in once to each address nobody registered and read what it is (host keys shown and trusted by one question first; show version and the configuration, nothing else), as one table; --register registers them through 'device add' and keeps the read as their first record"},
+	{"enroll <address>... | --discovered [--host-key SHA256:<fp>] [--vendor cisco|juniper|wti|other] [--name <name>] [--legacy-ssh] [--json]", "Superusers: per address, accept the one host key shown by typing the device's name, read its name and vendor by SNMP (asking for what cannot be read), register it, pull it as you, take the name it is configured with, plan it and, for Junos devices, offer the apply review"},
 	{"sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite] [--json] [-y]", "Superusers: fill the registry's empty hostname, location and description from what each device's last pull record says of itself (no login; the preview first, --apply writes after one question)"},
 	{"remove <name>[,<name>...] | --all [-y]", "Remove devices from the registry (confirms)"},
 	{"rename <old> <new> [--allow-generic]", "Rename a device"},
@@ -227,6 +237,12 @@ var deviceOptions = map[string][][2]string{
 		{"--discovered", "The addresses of 'device discover' (the seen cache: unregistered, authenticated) that no registry entry holds"},
 		{"--host-key SHA256:<fp>", "Trust only this key, read on the device's console (no question; needed without a terminal, with one address)"},
 		{"--register", "(collect) Register each device collected through 'device add', its shown keys pinned, and keep the read as its first pull record (one question)"},
+	},
+	"enroll": {
+		{"--host-key SHA256:<fp>", "(enroll) Pin this key of ONE address, read on its console: no question (the only form without a terminal)"},
+		{"--name <name>", "(enroll) The name of ONE address (default: its SNMP sysName, else the name typed at the key's question)"},
+		{"--vendor cisco|juniper|wti|other", "(enroll) The vendor of ONE address (default: the one it names by SNMP, else asked)"},
+		{"--legacy-ssh", "(enroll) Scan and register every device of the run with the legacy algorithms"},
 	},
 	"sync": {
 		{"--overwrite", "Also replace a field that is set, showing the old value"},
@@ -447,6 +463,21 @@ when they are missing. A device no scope covers is registered
 and not pulled (the line says which commands to run); a failed pull leaves it
 registered and the command returns the pull's status.
 
+Enrolling: 'enroll <address>...' (or --discovered: the addresses 'discover'
+lists) runs the chain per address, at a terminal: the host keys are scanned
+and the one that would be pinned (ed25519 first) is shown; compare it with the
+device's console and type the device's name (the SNMP sysName, else the name
+to register it as) to accept it; Enter skips the device, any other answer
+refuses it. The vendor the device names by SNMP is taken, else asked (other
+registers the device and ends its chain). After one y/N the device is
+registered at once (one snapshot for the run), then pulled as you (one
+password), renamed in the registry to the name it is configured with when
+that name is free (nothing is written to the device), and planned; for Junos
+devices whose plan has a change the apply review is offered. Without a
+terminal: --host-key with one address, and --vendor and --name where SNMP
+reads none; --json ends at the plan. A device registered stays registered
+if a later stage fails; the summary says each one's next step.
+
 Configuration: 'config show <name>' prints the device's data (name, address,
 hostname, vendor, the scope that covers it, description, location), then the
 walkthrough 'tacctl config <vendor> --scope <its scope> --name <name>' prints,
@@ -507,7 +538,7 @@ func (inv *invocation) device(args []string) error {
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
 		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "config-syntax": inv.deviceConfigSyntax, "netconf": inv.deviceNetconf, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "notices": inv.deviceNotices, "import": inv.deviceImport, "export": inv.deviceExport,
-		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "collect": inv.deviceCollect, "sync": inv.deviceSync, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig, "config": inv.deviceConfig,
+		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "collect": inv.deviceCollect, "enroll": inv.deviceEnroll, "sync": inv.deviceSync, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig, "config": inv.deviceConfig,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
 		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
 		"port": inv.deviceSetter("port"), "description": inv.deviceSetter("description"), "location": inv.deviceSetter("location"),
@@ -1591,6 +1622,23 @@ func (inv *invocation) deviceRename(args []string) error {
 		return err
 	}
 	oldName, newName := old.Name, p.Args[1]
+	if err := inv.renameDevice(oldName, newName, old.Address, p.Has("--allow-generic")); err != nil {
+		return err
+	}
+	inv.app.Out.Info("Device '" + oldName + "' renamed to '" + newName + "'.")
+	inv.app.Out.Info("The device's own host name is unchanged: tacctl does not plan it.")
+	inv.echo("")
+	return nil
+}
+
+// renameDevice renames the registry entry oldName (at address) to newName:
+// the name rules, the names taken (devices and enrolled hosts) and the
+// generic-name refusal unless allowGeneric, then the write and what follows
+// the name (the pull record and sections, the SNMP credentials, the blocks,
+// a break-glass hold) and the D253 line, with extra keys after count=. It
+// prints nothing on success; a refusal is printed as the write prints it.
+// Nothing is written to the device.
+func (inv *invocation) renameDevice(oldName, newName, address string, allowGeneric bool, extra ...audit.KV) error {
 	if err := devreg.ValidateName(newName); err != nil {
 		return err
 	}
@@ -1602,7 +1650,7 @@ func (inv *invocation) deviceRename(args []string) error {
 		}
 		// Changing only the spelling of a name is a rename too.
 		if !strings.EqualFold(oldName, newName) {
-			if err := r.CheckName(newName, d.Vendor, p.Has("--allow-generic"), keep); err != nil {
+			if err := r.CheckName(newName, d.Vendor, allowGeneric, keep); err != nil {
 				return err
 			}
 		} else if oldName == newName {
@@ -1621,11 +1669,8 @@ func (inv *invocation) deviceRename(args []string) error {
 	inv.configCarry(oldName, newName)
 	inv.snmpDeviceCarry(oldName, newName)
 	inv.blocksDeviceCarry(oldName, newName)
-	inv.holdCarry(oldName, newName, old.Address)
-	inv.detail("device rename", kvp("from", oldName), kvp("to", newName), kvp("count", "1"))
-	inv.app.Out.Info("Device '" + oldName + "' renamed to '" + newName + "'.")
-	inv.app.Out.Info("The device's own host name is unchanged: tacctl does not plan it.")
-	inv.echo("")
+	inv.holdCarry(oldName, newName, address)
+	inv.detail("device rename", append([]audit.KV{kvp("from", oldName), kvp("to", newName), kvp("count", "1")}, extra...)...)
 	return nil
 }
 

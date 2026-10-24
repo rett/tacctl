@@ -123,7 +123,9 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `host move` | `scope` `moved` `failed` (for a move of every drifted host) |
 | `device add` | `name` `address` `vendor` `count` |
 | `device remove` | `names` (the first 20, then `+n`) `count` |
-| `device rename` | `from` `to` `count` |
+| `device rename` | `from` `to` `count`, and `reason=device-name` when `device enroll` took over the name the device is configured with |
+| `device enroll hostkey` | `user` `addr` `device` `alg` `fp` `result=accepted\|skipped\|refused` `source=confirmed\|flag`; every answer to a host key's question, before the key is pinned; `auth.notice` |
+| `device enroll` | `user` `addr` `device` `vendor` `source=snmp\|given\|asked` `result`; one line per address at the end of the run |
 | `device import` | `source` `added` `updated` `removed` `count` |
 | `device set` | `name` `field` `from` `to`: `address`, `hostname`, `vendor`, `port`, `description`, `location`, `legacy-ssh`, `config-syntax`, `netconf`, `stale-days` (no `name`) and `notice:<kind>` |
 
@@ -177,6 +179,31 @@ device config apply review user=alice result=interrupted applied=0
  `device onboard` says `mode=attended`
 on its approval line.
 
+`device enroll` writes, at `auth.notice`, a line for every answer to a host
+key's question, before the key is pinned or used, and at the end one line per
+address at `auth.info`:
+
+```
+device enroll hostkey user=alice addr=192.0.2.10 device=sw1 alg=ssh-ed25519
+    fp=SHA256:... result=accepted source=confirmed sid=k3x9a0bq
+device enroll user=alice addr=192.0.2.10 device=sw1 vendor=juniper
+    source=snmp result=planned sid=k3x9a0bq
+```
+
+`result=` of the key is `accepted`, `skipped` (Enter, or the end of input) or
+`refused` (an answer that is not the device's name, a name the rules refuse,
+a `--host-key` the device does not offer); `source=confirmed` for the name
+typed at the terminal, `flag` for `--host-key`. `device=` is the name shown
+or given, `-` before one is known; what was typed is never written. A
+fingerprint is a public value. The address's `source=` is where the vendor
+came from (`snmp`, `given` by `--vendor`, `asked` at the terminal) and its
+`result=` how far the address went: `refused`, `skipped`, `failed`,
+`not-tried`, `registered`, `registered-other`, `pull-failed`, `planned`,
+`applied` or `declined`. Between them the run writes the `device add` line
+of each registration, the pull's and the plan's lines, a `device rename`
+line with `reason=device-name`, and the apply's lines with `mode=attended`
+when the review is run.
+
 ## Refusals
 
 The tier gate's refusals keep their words and carry the session id:
@@ -213,6 +240,10 @@ The test suite runs every verb that takes a secret with a marker in each positio
 Every line of one command, the detail lines of the verb and the tier gate's included, ends in the same `sid=<8 characters of a-z0-9>`, made for each run. `grep sid=k3x9a0bq` finds a command's lines; `tacctl ssh` and the login console keep their own `session=` beside it. The `snapshot=` of the end line names the snapshot taken before the change (`tacctl backup diff <id>` shows it against the live state). The id is for searching, not a key: two commands may share one, and the timestamps and process ids tell them apart.
 
 A start line with no end line means the command did not finish: SIGKILL, a power loss, a crash of the process. The snapshot named by the command's lines holds the state before it, and `tacctl config validate` says what the files are now.
+
+One `sid=` holds a whole `device enroll`: the acceptance of each key, the
+registration, the pull, the rename, the plan and, when the review was run,
+the apply of each device; the end line names the run's one snapshot.
 
 An `upgrade` that replaces tacctl with the new version and runs again ends its first pair at the hand-over; the second run writes its own pair, with its own `sid`.
 
@@ -255,7 +286,10 @@ already run.
 The refusal comes before the first write, which for a few commands is after a
 prompt or a read: `device collect` refuses after its first login, and `device
 config apply` after the choice of devices and the password prompt. `device
-config apply --check` writes the central pair too.
+config apply --check` writes the central pair too. `device enroll` is an
+action, refused before anything is scanned; an acceptance whose `device
+enroll hostkey` line cannot be written refuses that device before its key is
+pinned, and the run goes on to the next address.
 
 A command that shows a secret writes its `secret-read` line before it prints
 anything. When that line cannot be written the command is refused, whatever
