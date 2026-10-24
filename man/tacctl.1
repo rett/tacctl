@@ -6183,10 +6183,10 @@ and
 and
 .B ip domain\-list
 are read as these);
-.B "clock timezone <zone> <hours> [<minutes>]";
-.B "ip name\-server [vrf <name>] <address> [<address> ...]";
-.B "ntp server [vrf <name>] <address\-or\-name> [prefer] [version <1\-4>] [key <n>] [source <interface>]";
-.B "ntp authentication\-key <n> md5 <string>";
+.BR "clock timezone <zone> <hours> [<minutes>]" ;
+.BR "ip name\-server [vrf <name>] <address> [<address> ...]" ;
+.BR "ntp server [vrf <name>] <address\-or\-name> [prefer] [version <1\-4>] [key <n>] [source <interface>]" ;
+.BR "ntp authentication\-key <n> md5 <string>" ;
 .B "ntp trusted\-key <n>"
 and
 .BR "ntp authenticate" .
@@ -10152,9 +10152,9 @@ says the review was cut short. A device whose plan
 refuses a section (what makes
 .B "device config plan"
 exit 1) is not applied: its row is
-.BR "failed: the plan refuses <section> (<why>)" . It
-needs a terminal; with none the only way through is
-.B "\-\-confirmed \-\-yes".
+.BR "failed: the plan refuses <section> (<why>)" .
+It needs a terminal; with none the only way through is
+.BR "\-\-confirmed \-\-yes" .
 The
 .BR apply :
 each device is committed under
@@ -10390,14 +10390,21 @@ and their JSON as
 .BR applied .
 Every device is logged
 .RB ( "auth.info device config apply user= device= id= shape= result= duration=" ,
-.B "auth.notice device config apply user= approved= shapes= canary="
-for the answer, the canary being the first device of each shape or
+.B "auth.notice device config apply review user= device= shape= answer=approved|declined mode="
+for each device's answer,
+.B "auth.notice device config apply user= approved= shapes= canary= mode="
+for the approval, the canary being the first device of each shape or
 .B none
 with
 .BR \-\-no\-canary ,
+.B "auth.notice device config apply user= device= id= shape= sections= result= commit= until= mode="
+for each apply
+.RB ( mode=attended
+for the names typed back,
+.B mode=scripted
+for
+.BR "\-\-confirmed \-\-yes" ),
 and
-.B "auth.notice device config apply user= device= id= shape= sections= result= commit= until="
-for each apply and
 .B "auth.notice device config apply settle user= device= id= result="
 for an earlier apply's pending record settled, never a value).
 .\" BEGIN GENERATED: command device config apply
@@ -12050,9 +12057,9 @@ on a start line means a command classified as a read reached a write: a fault
 in the class table, never expected.
 .TP
 .B mode
-On the lines of
-.BR "device config apply" 's
-review and on the approval line of
+On the review, approval and apply lines of
+.B "device config apply"
+and on the approval line of
 .BR "device onboard" :
 .B attended
 when the device's name was typed back,
@@ -12204,6 +12211,9 @@ backend, listener, from, to.
 .B "config devices"
 key, from, to.
 .TP
+.B "config audit\-strict"
+from, to (on or off); auth.notice.
+.TP
 .B "config cisco source\-interface"
 scope, from, to.
 .TP
@@ -12229,7 +12239,18 @@ name, address, vendor, count.
 names (the first 20, then +n), count.
 .TP
 .B "device rename"
-from, to, count.
+from, to, count, and reason=device\-name when
+.B "device enroll"
+took over the name the device is configured with.
+.TP
+.B "device enroll hostkey, device collect hostkey, device onboard hostkey"
+user (the person, in place of by=), addr, device, alg, fp, result (accepted,
+skipped or refused), source (confirmed or flag); every answer to a host key's question, before the key is
+pinned or used; auth.notice.
+.TP
+.B "device enroll"
+user (in place of by=), addr, device, vendor, source (snmp, given or asked),
+result; one line for each address at the end of the run.
 .TP
 .B "device import"
 source, added, updated, removed, count.
@@ -12318,6 +12339,65 @@ no approval line but
 says
 .B mode=attended
 on its approval line.
+.PP
+.B "device enroll"
+writes a
+.B "device enroll hostkey"
+line for every answer to a host key's question, before the key is pinned or
+used:
+.B result=accepted
+(the name typed back, or
+.BR \-\-host\-key ),
+.B skipped
+(Enter, or the end of input) or
+.B refused
+(an answer that is not the device's name, a name the rules refuse, a
+.B \-\-host\-key
+the device does not offer);
+.B source=confirmed
+for the name typed at the terminal,
+.B flag
+for
+.BR \-\-host\-key .
+.B device=
+is the name shown or given,
+.B \-
+before one is known; what was typed is never written, and a fingerprint is a
+public value. At the end it writes one
+.B "device enroll"
+line per address, whose
+.B source=
+is where the vendor came from and whose
+.B result=
+is how far the address went
+.RB ( refused ", " skipped ", " failed ", " not\-tried ", " registered ,
+.BR registered\-other ", " pull\-failed ", " planned ", " applied
+or
+.BR declined ).
+Between them come the
+.B "device add"
+line of each registration, the pull's and the plan's lines, a
+.B "device rename"
+line with
+.B reason=device\-name
+and the apply's lines with
+.B mode=attended
+when the review is run.
+.B "device collect"
+and
+.B "device onboard"
+ask the same question before their login and write the same line as
+.B "device collect hostkey"
+and
+.BR "device onboard hostkey" ;
+for
+.BR collect ,
+.B device=
+is the SNMP name when it is the answer
+.RB ( \-\-register ),
+on a refusal too, and
+.B \-
+when the answer is the address or the address was skipped.
 .SS Refusals
 The tier gate's refusals keep their words and carry the session id
 .RB ( "tier DENY user=carol tier=readonly cmd=user remove sid=k3x9a0bq" ).
@@ -12450,7 +12530,13 @@ A start line with no end line means the command did not finish: SIGKILL, a
 power loss, a crash of the process. The snapshot named by the command's lines
 holds the state before it, and
 .B "config validate"
-says what the files are now. An
+says what the files are now. One
+.B sid=
+holds a whole
+.BR "device enroll" :
+the acceptance of each key, the registration, the pull, the rename, the plan
+and, when the review was run, the apply of each device; the end line names the
+run's one snapshot. An
 .B upgrade
 that replaces tacctl with the new version and runs again ends its first pair at
 the hand-over; the second run writes its own pair, with its own
@@ -12547,6 +12633,9 @@ when
 is down and every change is refused,
 .B "tacctl config audit\-strict off"
 turns the setting off (with the warning that its own lines were not written).
+.B "rollback 0.2.16 \-\-apply"
+removes the key, which 0.2.16 refuses, and its dry run warns when it is on:
+0.2.16 runs a command whose audit line cannot be written.
 .SS Forwarding
 The facility is
 .BR auth ;

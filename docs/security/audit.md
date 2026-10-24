@@ -65,10 +65,12 @@ changes something also writes a line of its own beside it, saying what it
 changed: the object, and for a setting the value before and after. A detail
 line is written once the change is made, so it sits between `cmd start` and
 `cmd end`; except for the verbs named after the table, a change that failed
-has no detail line and the end line says `result=failed`. It is written at the priority of the command's class
-(`auth.notice` for the weighty ones, `auth.info` otherwise), ends in
-`by=<user>` and the `sid`, and holds a name or a count, never a secret, a hash
-or a password. `from=` and `to=` are the value before and after (`-` for
+has no detail line and the end line says `result=failed`. It is written at
+the priority of the command's class (`auth.notice` for the weighty ones,
+`auth.info` otherwise), ends in `by=<user>` and the `sid` (the `device
+enroll`, `collect` and `onboard` lines name the person as `user=` after the
+event instead), and holds a name or a count, never a secret, a hash or a
+password. `from=` and `to=` are the value before and after (`-` for
 none); a list is comma-separated.
 
 ```
@@ -176,8 +178,8 @@ was cut short:
 device config apply review user=alice result=interrupted applied=0
     mode=attended sid=k3x9a0bq
 ```
- `device onboard` says `mode=attended`
-on its approval line.
+
+`device onboard` says `mode=attended` on its approval line.
 
 `device enroll` writes, at `auth.notice`, a line for every answer to a host
 key's question, before the key is pinned or used, and at the end one line per
@@ -331,6 +333,10 @@ the value it generated.
 is down and every change is refused, `tacctl config audit-strict off` still
 turns it off; it prints the warning of the previous section, as its own lines
 are lost.
+
+`tacctl rollback 0.2.16 --apply` removes the key from `tacctl.yaml`, because
+0.2.16 refuses it; when it is on, the dry run warns that 0.2.16 runs a
+command whose audit line cannot be written.
 
 Leave the key off where a server whose `journald` is restarting must still be
 able to run the command that fixes it; turn it on where "every transaction is
