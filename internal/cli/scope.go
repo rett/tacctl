@@ -1036,6 +1036,7 @@ func (inv *invocation) scopeAdd(args []string) error {
 	}); err != nil {
 		return err
 	}
+	inv.detail("scope add", kvp("name", name), kvp("prefixes", csv), kvp("default", yesNo(makeDefault)))
 	if makeDefault {
 		a.Out.Info("Scope '" + name + "' added and set as default.")
 	} else {
@@ -1118,6 +1119,7 @@ func (inv *invocation) scopeRemove(args []string) error {
 	if err := inv.applyWith(inv.scopeRemoveWrite(name)); err != nil {
 		return err
 	}
+	inv.detail("scope remove", kvp("name", name), kvp("users", strconv.Itoa(len(members))))
 	a.Out.Info("Scope '" + name + "' removed.")
 	inv.echo("")
 	return nil
@@ -1239,6 +1241,7 @@ func (inv *invocation) scopeRenameRun(old, newName string) error {
 	if err != nil {
 		return err
 	}
+	inv.detail("scope rename", kvp("from", old), kvp("to", newName), kvp("users", strconv.Itoa(len(m.Members(newName)))), kvp("hosts", strconv.Itoa(hostsMoved)))
 	a.Out.Info(fmt.Sprintf("Scope renamed: %s -> %s (%d user(s) updated).", old, newName, len(m.Members(newName))))
 	if hostsMoved > 0 {
 		a.Out.Info(fmt.Sprintf("Enrolled hosts registered in '%s' now name '%s': %d.", old, newName, hostsMoved))
@@ -1273,9 +1276,11 @@ func (inv *invocation) scopeDefault(args []string) error {
 	} else if !exists {
 		return inv.usageErr("Scope '" + name + "' does not exist.")
 	}
+	was := inv.confGet("scope.default", "")
 	if err := inv.app.Conf().Set("scope.default", name); err != nil {
 		return err
 	}
+	inv.detail("scope default", kvp("from", was), kvp("to", name))
 	inv.app.Out.Info("Default scope set to '" + name + "'.")
 	inv.echo("")
 	return nil
@@ -1463,6 +1468,7 @@ func (inv *invocation) scopePrefixes(args []string) error {
 	if sub == "remove" {
 		v = "Removed"
 	}
+	inv.detail("scope prefixes", kvp("op", sub), kvp("scope", scope), kvp("cidr", strings.Join(changed, ",")))
 	a.Out.Info(fmt.Sprintf("%s %d prefix(es) for scope '%s': %s", v, len(changed), scope, strings.Join(changed, " ")))
 	if len(skipped) > 0 {
 		a.Out.Info("(Skipped: " + strings.Join(skipped, " ") + ")")
@@ -1533,6 +1539,7 @@ func (inv *invocation) scopePrefixesMove(m *model.Model, from, list, to string) 
 	}); err != nil {
 		return err
 	}
+	inv.detail("scope prefixes", kvp("op", "move"), kvp("scope", from), kvp("cidr", strings.Join(requested, ",")), kvp("to", to))
 	a.Out.Info(fmt.Sprintf("Moved %d prefix(es) from scope '%s' to '%s': %s", len(requested), from, to, strings.Join(requested, " ")))
 	inv.hostDriftReport()
 	inv.echo("")
@@ -1638,6 +1645,7 @@ func (inv *invocation) scopePrefixesRemoveAll(scope string, current []string, fo
 	if err := inv.applyWith(inv.scopeRemoveWrite(scope)); err != nil {
 		return err
 	}
+	inv.detail("scope prefixes", kvp("op", "remove-all"), kvp("scope", scope), kvp("cidr", strings.Join(current, ",")))
 	a.Out.Info("Removed all prefixes from scope '" + scope + "' (the scope is removed).")
 	inv.echo("")
 	return nil
@@ -1688,9 +1696,7 @@ func (inv *invocation) scopeSecret(args []string) error {
 	case "", "-h", "--help", "help":
 		inv.write(scopeSecretUsage(scope, n, minLen))
 	case "show":
-		if f.restricted {
-			inv.secretRead("scope", scope)
-		}
+		inv.secretRead("scope", scope)
 		inv.echo("")
 		inv.echoE(b + "Scope '" + scope + "' — shared secret" + nc)
 		inv.echo(ui.Rule("Scope '" + scope + "' — shared secret"))
@@ -1721,6 +1727,7 @@ func (inv *invocation) scopeSecret(args []string) error {
 		if err := inv.applyStore(func(st *store.Store) error { return st.ScopeSet(scope, "secret="+value) }); err != nil {
 			return err
 		}
+		inv.detail("scope secret set", kvp("scope", scope), kvp("source", "set"))
 		a.Out.Info("Scope '" + scope + "' secret updated.")
 		a.Out.WarnE("Update ALL devices in scope '" + scope + "' with the new secret: " + value)
 		inv.echo("")
@@ -1733,6 +1740,7 @@ func (inv *invocation) scopeSecret(args []string) error {
 		if err := inv.applyStore(func(st *store.Store) error { return st.ScopeSet(scope, "secret="+v) }); err != nil {
 			return err
 		}
+		inv.detail("scope secret set", kvp("scope", scope), kvp("source", "generate"))
 		a.Out.Info("Scope '" + scope + "' secret updated.")
 		a.Out.Warn("Update ALL devices in scope '" + scope + "' with the new secret above.")
 		inv.echo("")
@@ -1820,6 +1828,7 @@ func (inv *invocation) scopeProtocols(args []string) error {
 		if err := inv.applyStore(func(st *store.Store) error { return st.ScopeSet(scope, "protocols="+newList) }); err != nil {
 			return err
 		}
+		inv.detail("scope protocols", kvp("scope", scope), kvp("from", orWord(current, "all")), kvp("to", newList))
 		a.Out.Info("Scope '" + scope + "' protocols set to " + newList + ".")
 		if !contains(list, "tacacs") {
 			a.Out.Warn("Scope '" + scope + "' is no longer served over TACACS+: its devices and its users' grant of it are left out of tacquito.yaml.")
@@ -1834,6 +1843,7 @@ func (inv *invocation) scopeProtocols(args []string) error {
 		if err := inv.applyStore(func(st *store.Store) error { return st.ScopeSet(scope, "protocols=null") }); err != nil {
 			return err
 		}
+		inv.detail("scope protocols", kvp("scope", scope), kvp("from", current), kvp("to", "all"))
 		a.Out.Info("Scope '" + scope + "' protocols filter cleared (every enabled backend serves it).")
 		inv.echo("")
 	default:
@@ -1960,6 +1970,7 @@ func (inv *invocation) scopeVendorAttrs(args []string) error {
 		return err
 	}
 	ch := strings.Join(changed, ", ")
+	inv.detail("scope vendor-attrs", kvp("scope", scope), kvp("from", current), kvp("to", newCSV))
 	if sub == "enable" {
 		a.Out.Info("Scope '" + scope + "': vendor attributes enabled: " + ch + ". Now sent: " + strings.ReplaceAll(newCSV, ",", ", ") + ".")
 	} else {
@@ -2089,6 +2100,7 @@ func (inv *invocation) scopeDevices(args []string) error {
 		if err := inv.applyStore(func(st *store.Store) error { return st.ScopeSet(scope, "devices="+stored) }); err != nil {
 			return err
 		}
+		inv.detail("scope devices", kvp("scope", scope), kvp("cidr", c), kvp("from", had), kvp("to", ""))
 		a.Out.Info("Scope '" + scope + "': " + c + " is no longer tagged (it was " + had + "); it gets what the scope enables (tacctl scope vendor-attrs " + scope + ").")
 		inv.echo("")
 		return nil
@@ -2118,6 +2130,7 @@ func (inv *invocation) scopeDevices(args []string) error {
 	if err := inv.applyStore(func(st *store.Store) error { return st.ScopeSet(scope, "devices="+strings.Join(entries, ",")) }); err != nil {
 		return err
 	}
+	inv.detail("scope devices", kvp("scope", scope), kvp("cidr", c), kvp("from", had), kvp("to", vendor))
 	if had != "" {
 		a.Out.Info("Scope '" + scope + "': " + c + " is now tagged " + vendor + " (it was " + had + ").")
 	} else {
@@ -2170,6 +2183,7 @@ func (inv *invocation) scopeKnob(k scopeKnob, args []string) error {
 	if err := inv.app.Conf().Set(path, value); err != nil {
 		return err
 	}
+	inv.detail("scope "+k.verb, kvp("scope", scope), kvp("from", current), kvp("to", value))
 	k.set(inv, scope, value)
 	return nil
 }
@@ -2312,9 +2326,11 @@ func (inv *invocation) scopeAuthMethodCmd(args []string) error {
 			inv.echo("")
 			return nil
 		}
+		was := inv.confGet("scope_auth_method."+scope, "")
 		if err := a.Conf().Unset("scope_auth_method." + scope); err != nil {
 			return err
 		}
+		inv.detail("scope auth-method", kvp("scope", scope), kvp("from", was), kvp("to", ""))
 		a.Out.Info("Scope '" + scope + "' auth-method cleared (in effect: " + inv.scopeProtocolInEffect(scope) + ").")
 		inv.echo("")
 		return nil
@@ -2339,6 +2355,7 @@ func (inv *invocation) scopeAuthMethodCmd(args []string) error {
 	if err := a.Conf().Set("scope_auth_method."+scope, method); err != nil {
 		return err
 	}
+	inv.detail("scope auth-method", kvp("scope", scope), kvp("from", current), kvp("to", method))
 	a.Out.Info("Scope '" + scope + "' auth-method set to " + method + ".")
 	if ids, err := a.Backends().Enabled(); err == nil && !contains(ids, method) {
 		a.Out.Warn("The " + method + " backend is not enabled on this server: tacctl backend enable " + method)
@@ -2406,6 +2423,7 @@ func (inv *invocation) scopeMgmtACL(args []string) error {
 		if err := inv.writeMgmtACLCIDRs(current, scope); err != nil {
 			return err
 		}
+		inv.detail("scope mgmt-acl", kvp("scope", scope), kvp("op", "add"), kvp("value", strings.Join(added, ",")))
 		a.Out.Info(fmt.Sprintf("Added %d to scope '%s' mgmt-acl: %s", len(added), scope, strings.Join(added, " ")))
 		if len(skipped) > 0 {
 			a.Out.Info("(Already present, unchanged: " + strings.Join(skipped, " ") + ")")
@@ -2436,6 +2454,7 @@ func (inv *invocation) scopeMgmtACL(args []string) error {
 		if err := inv.writeMgmtACLCIDRs(current, scope); err != nil {
 			return err
 		}
+		inv.detail("scope mgmt-acl", kvp("scope", scope), kvp("op", "remove"), kvp("value", strings.Join(removed, ",")))
 		a.Out.Info(fmt.Sprintf("Removed %d from scope '%s' mgmt-acl: %s", len(removed), scope, strings.Join(removed, " ")))
 		for _, n := range notes {
 			a.Out.Info("(" + n + ")")
@@ -2457,6 +2476,7 @@ func (inv *invocation) scopeMgmtACL(args []string) error {
 		if err := c.Unset(path); err != nil {
 			return err
 		}
+		inv.detail("scope mgmt-acl", kvp("scope", scope), kvp("op", "clear"), kvp("value", ""))
 		a.Out.Info("Per-scope mgmt-acl cleared for '" + scope + "'.")
 		inv.echo("")
 	case "cisco-name", "juniper-name":
@@ -2493,6 +2513,7 @@ func (inv *invocation) scopeMgmtACL(args []string) error {
 		if err := c.Set(key, value); err != nil {
 			return err
 		}
+		inv.detail("scope mgmt-acl", kvp("scope", scope), kvp("op", sub), kvp("value", value))
 		a.Out.InfoE("Scope '" + scope + "' " + vendor + " mgmt-acl name set to " + value + ".")
 		inv.echo("")
 		inv.echo("  Re-run 'tacctl config " + vendor + " --scope " + scope + "' and push the updated")

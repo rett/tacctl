@@ -129,6 +129,7 @@ func (inv *invocation) storeRollback(args []string) error {
 	if b, err := a.Backends().Get(backend.TACACS); err == nil {
 		_, _ = b.Service(inv.ctx, backend.ServiceRestart, "")
 	}
+	inv.detail("store rollback", kvp("pre", filepath.Base(pre)))
 	out.InfoE("Rolled back: " + p.Config + " is the pre-store file again and the store is gone (legacy read-only mode).")
 	out.InfoE("To move to the store again: 'tacctl store import --check', then 'tacctl upgrade' (or 'tacctl store import' and 'tacctl config render --force').")
 	inv.echo("")

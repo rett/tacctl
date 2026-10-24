@@ -363,7 +363,7 @@ func TestGroupResetYesAppliesAndLogs(t *testing.T) {
 	if sb.snapshots() != snaps+1 {
 		t.Errorf("snapshots %d -> %d: the pre-change snapshot", snaps, sb.snapshots())
 	}
-	if !hasAudit(sb.runner, "auth.info", "group reset name=operator sections=settings,commands,privileges,junos by=root") {
+	if !hasAudit(sb.runner, "auth.info", "group reset name=operator sections=settings,commands,privileges,junos by=root result=ok") {
 		t.Errorf("no audit line: %q", sb.runner.Argvs())
 	}
 	// The group, its users and its builtin flag are what they were.
@@ -377,7 +377,7 @@ func TestGroupResetYesAppliesAndLogs(t *testing.T) {
 	// SUDO_USER names the user in the audit line.
 	sb.modify("readonly")
 	sb.cfgRun("", []string{"group", "reset", "readonly", "--yes", "--only", "commands"}, nil, "SUDO_USER=carol")
-	if !hasAudit(sb.runner, "auth.info", "group reset name=readonly sections=commands by=carol") {
+	if !hasAudit(sb.runner, "auth.info", "group reset name=readonly sections=commands by=carol result=ok") {
 		t.Errorf("audit line: %q", sb.runner.Argvs())
 	}
 }
@@ -402,7 +402,7 @@ func TestGroupResetOnlySections(t *testing.T) {
 			}
 			sb.must("group", "reset", "operator", "--only", strings.Join(only, ","), "--yes")
 			want := slices.DeleteFunc(slices.Clone(all), func(s string) bool { return !slices.Contains(only, s) })
-			if !hasAudit(sb.runner, "auth.info", "group reset name=operator sections="+strings.Join(want, ",")+" by=root") {
+			if !hasAudit(sb.runner, "auth.info", "group reset name=operator sections="+strings.Join(want, ",")+" by=root result=ok") {
 				t.Errorf("audit line: %q", sb.runner.Argvs())
 			}
 			rest := sb.plainRun("", "group", "reset", "operator", "--dry-run")

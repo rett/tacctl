@@ -328,8 +328,8 @@ func TestHostRenameDeviceRegistryFailureRestoresTheRegistry(t *testing.T) {
 	if sb.pin("web1") == nil || !sb.fileExists("state/hosts/web1.json") || sb.read("state/staging") != staging {
 		t.Error("something moved")
 	}
-	if hasAuditPrefix(sb.runner, "", "host rename ") {
-		t.Error("a failed rename was logged")
+	if hasAuditMatch(sb.runner, "", `^host rename .* result=ok$`) || !hasAuditMatch(sb.runner, "auth.warning", `^host rename .* by=\S+ result=failed reason=race$`) {
+		t.Errorf("a failed rename: %q", auditLines(sb.runner))
 	}
 }
 

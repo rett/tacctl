@@ -177,29 +177,36 @@ func (p *Prompter) readChar() ([]byte, error) {
 // here, exactly as the bash prints it, and ErrReported is returned: the
 // caller just exits 1. Prompts and notices go to stderr.
 func (p *Prompter) PromptPassword(username string, minLength int, rng io.Reader) (string, error) {
-	password, err := p.Password("  Enter password (leave blank to auto-generate): ")
+	password, _, err := p.PromptPasswordSource(username, minLength, rng)
+	return password, err
+}
+
+// PromptPasswordSource is PromptPassword that also says whether the password
+// was generated (blank input) rather than typed, for the audit line.
+func (p *Prompter) PromptPasswordSource(username string, minLength int, rng io.Reader) (password string, generated bool, err error) {
+	password, err = p.Password("  Enter password (leave blank to auto-generate): ")
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if password == "" {
 		password, err = GeneratePassword(rng)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 		_, _ = fmt.Fprintf(p.out.Stderr, "  Generated password: %s%s%s\n", Bold, password, NC)
-		return password, nil
+		return password, true, nil
 	}
 	if err := PasswordStrength(password, username, minLength); err != nil {
 		p.out.ErrorLines(err)
-		return "", ErrReported
+		return "", false, ErrReported
 	}
 	confirm, err := p.Password("  Confirm password: ")
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if password != confirm {
 		_, _ = fmt.Fprintf(p.out.Stderr, "  %sPasswords do not match.%s\n", Red, NC)
-		return "", ErrReported
+		return "", false, ErrReported
 	}
-	return password, nil
+	return password, false, nil
 }

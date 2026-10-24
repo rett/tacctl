@@ -87,11 +87,11 @@ func (inv *invocation) deviceRenderInput(p renderParams) (devices.Request, devic
 		d.SNMP = p.Device
 		d.SNMP.Scope = p.Scope
 	}
-	if p.Restricted && d.SNMP.Version != "" {
+	if d.SNMP.Version != "" {
 		inv.secretRead("snmp", p.Scope)
 	}
 	// A device's own credentials (D72) are a read of their own.
-	if p.Restricted && d.SNMP.CredFrom == snmpcred.FromDevice && p.Device.DeviceName != "" {
+	if d.SNMP.CredFrom == snmpcred.FromDevice && p.Device.DeviceName != "" {
 		inv.secretRead("snmp-device", p.Device.DeviceName)
 	}
 	// The permit list is read for every vendor (WTI's IP Tables list, D42,
@@ -118,9 +118,7 @@ func (inv *invocation) deviceRenderInput(p renderParams) (devices.Request, devic
 		// An engineer's walkthrough shows the block's community strings as it
 		// shows the scope's, and the system block's NTP key: a read of its
 		// own, logged.
-		if p.Restricted {
-			inv.logBlockReads(blk, layers, p.Scope, p.BlockDevice)
-		}
+		inv.logBlockReads(blk, layers, p.Scope, p.BlockDevice)
 	}
 	return req, d, nil
 }
@@ -156,9 +154,9 @@ type managedRender struct {
 	inv  *invocation
 	opts managedOptions
 	// logReads: the render reads a scope's secret and SNMP credentials for
-	// a caller the scope filter restricts (an engineer): the reads are
-	// logged, never the values, as the walkthrough logs them (D45). A
-	// caller who only lists states logs none.
+	// a verb that shows them (show, plan, pull, diff, the walkthroughs): the
+	// reads are logged, never the values, for every caller (D253). A verb
+	// that only lists states, keeps a record or follows a change logs none.
 	logReads bool
 	base     map[managedKey]*managedBase
 	// recs are the configuration records as prepare read them: the pull's

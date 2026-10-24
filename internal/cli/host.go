@@ -23,6 +23,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
@@ -850,11 +851,14 @@ func (inv *invocation) hostEnroll(args []string) error {
 		a.Out.InfoE("Switching " + name + " from " + prevMethod + " to " + method + ".")
 	}
 	a.Out.InfoE("Enrolling " + name + " (" + target + ") in scope '" + scope + "', server " + server + how + "...")
+	enrollBase := "host enroll name=" + name + " target=" + target + " scope=" + scope + " method=" + method + " by=" + inv.sudoUser()
 	code, err := he.RunScript(inv.ctx, target, port, identity, script, scriptArgs)
 	if err != nil {
+		inv.verbResult(audit.Info, enrollBase, failReason(err, "script"))
 		return err
 	}
 	if code != 0 {
+		inv.verbResult(audit.Info, enrollBase, "script")
 		if prevMethod != "" {
 			inv.recordRun(name, "enroll", "the client script failed on the host (exit status "+strconv.Itoa(code)+")", he)
 			a.Out.ErrorE("Enrollment of " + name + " failed; its registration (method " + prevMethod + ") was left as it was.")
@@ -869,6 +873,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 	// The state before the registry changes (D191): an enrolment, a move
 	// and a re-enrolment all end here.
 	if err := inv.snapshotFirst(); err != nil {
+		inv.verbResult(audit.Info, enrollBase, "store")
 		a.Out.WarnE("The client script succeeded on " + name + " but the registry was not changed; run the same command again.")
 		return err
 	}
@@ -884,6 +889,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 	if err != nil {
 		var taken *hosts.NameTakenError
 		if errors.As(err, &taken) {
+			inv.verbResult(audit.Info, enrollBase, "race")
 			a.Out.ErrorE(taken.Error() + " The client script already ran on the host; the registry was not changed.")
 			// An enrolment of the same spelling that finished first owns the
 			// scope and the staging entry: they are not this run's leftovers.
@@ -892,11 +898,13 @@ func (inv *invocation) hostEnroll(args []string) error {
 			}
 			return exit(1)
 		}
+		inv.verbResult(audit.Info, enrollBase, "store")
 		return err
 	}
 	if !enrolled {
 		// The device namespace again, now that the line is written (D235).
 		if err := inv.hostEnrollDeviceConflict(reg, name, target, scope); err != nil {
+			inv.verbResult(audit.Info, enrollBase, "race")
 			inv.hostEnrollLeftovers(scope, hostIP, name, narrowScope)
 			return err
 		}
@@ -912,7 +920,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 			a.Out.WarnE("Could not limit scope '" + scope + "' to " + be + "; see 'tacctl scope protocols " + scope + "'.")
 		}
 	}
-	a.Audit().Raw("auth.info", "host enroll name="+name+" target="+target+" scope="+scope+" method="+method+" by="+inv.sudoUser())
+	inv.verbResult(audit.Info, enrollBase, "")
 	if he.Summary != nil {
 		a.Out.InfoE("Host '" + name + "' enrolled (" + he.Summary.Counts() + ").")
 	} else {
@@ -1267,6 +1275,7 @@ func (inv *invocation) hostMove(args []string) error {
 			a.Out.InfoE("Every enrolled host is answered by its scope; nothing to move.")
 			return nil
 		}
+		inv.detail("host move", kvp("scope", ""), kvp("moved", strconv.Itoa(moved)), kvp("failed", strconv.Itoa(failed)))
 		if failed > 0 {
 			a.Out.ErrorE(fmt.Sprintf("%d host(s) moved, %d not.", moved, failed))
 			return exit(1)
@@ -1494,6 +1503,7 @@ func (inv *invocation) hostSync(args []string) error {
 		if !exists {
 			a.Out.ErrorE(name + ": scope '" + e.Scope + "' no longer exists; skipped.")
 			inv.recordRun(name, "sync", "its scope '"+e.Scope+"' no longer exists", nil)
+			inv.hostSyncLine(e, nil, removeHome, "its scope '"+e.Scope+"' no longer exists")
 			failed = true
 			continue
 		}
@@ -1553,7 +1563,45 @@ func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scri
 		run = he
 	}
 	inv.recordRun(e.Name, "sync", reason, run)
+	inv.hostSyncLine(e, run, removeHome, reason)
 	return ok, err
+}
+
+// hostSyncLine is the audit line of one host's sync, failed or not: the
+// accounts the client script reported and, when it failed, a word for why
+// (the class, never the text).
+func (inv *invocation) hostSyncLine(e hosts.Entry, he *hosts.Env, removeHome bool, reason string) {
+	var c hosts.AccountChanges
+	if he != nil && he.Changes != nil {
+		c = *he.Changes
+	}
+	kv := []audit.KV{kvp("name", e.Name), kvp("target", e.Target),
+		kvp("created", strconv.Itoa(len(c.Created))), kvp("updated", strconv.Itoa(len(c.Updated))),
+		kvp("renamed", strconv.Itoa(len(c.Renamed))), kvp("removed", strconv.Itoa(len(c.Removed))),
+		kvp("remove-home", yesNo(removeHome))}
+	if reason == "" {
+		inv.detail("host sync", append(kv, kvp("result", "ok"))...)
+		return
+	}
+	inv.detailAt(audit.Warning, "host sync", append(kv, kvp("result", "failed"), kvp("reason", runReasonWord(reason)))...)
+}
+
+// runReasonWord is the class of a failed run's reason text, for the audit
+// line (never the text).
+func runReasonWord(reason string) string {
+	switch {
+	case reason == "interrupted":
+		return "interrupted"
+	case strings.Contains(reason, "client script failed"):
+		return "script"
+	case strings.Contains(reason, "could not be written"):
+		return "script-write"
+	case strings.Contains(reason, "UID range"):
+		return "uid-range"
+	case strings.Contains(reason, "no longer exists"):
+		return "scope"
+	}
+	return "error"
 }
 
 // syncRun is syncOne's run: reason says why it failed, ran whether the
@@ -1699,12 +1747,15 @@ func (inv *invocation) hostUnenroll(args []string) error {
 	if err := hosts.WriteRemoveScriptTo(script); err != nil {
 		return err
 	}
+	unenrollBase := "host unenroll name=" + name + " target=" + e.Target + " by=" + inv.sudoUser() + " force=" + yesNo(force)
 	code, err := inv.hostsEnv().RunScript(inv.ctx, e.Target, e.Port, e.Identity, script, nil)
 	if err != nil {
+		inv.verbResult(audit.Info, unenrollBase, failReason(err, "script"))
 		return err
 	}
 	if code != 0 {
 		if !force {
+			inv.verbResult(audit.Info, unenrollBase, "script")
 			return inv.usageErr("Removal on " + name + " failed; it is still registered. Fix the cause, or pass --force to forget the host anyway.")
 		}
 		a.Out.WarnE("Removal on " + name + " failed; forgetting the host anyway (--force).")
@@ -1712,10 +1763,12 @@ func (inv *invocation) hostUnenroll(args []string) error {
 	// The state before the host is forgotten (D191): the registry line, the
 	// pins and the record go together.
 	if err := inv.snapshotFirst(); err != nil {
+		inv.verbResult(audit.Info, unenrollBase, "store")
 		a.Out.WarnE("The removal ran on " + name + " but the host is still registered; run the same command again (the removal runs again on the host; if it fails on the host as it is now, add --force, which forgets the host even when the removal fails).")
 		return err
 	}
 	if err := reg.Forget(name); err != nil {
+		inv.verbResult(audit.Info, unenrollBase, "store")
 		return err
 	}
 	inv.forgetHostKeys(name)
@@ -1742,7 +1795,7 @@ func (inv *invocation) hostUnenroll(args []string) error {
 		// still has the console).
 		_ = inv.consoleDeprovision()
 	}
-	a.Audit().Raw("auth.info", "host unenroll name="+name+" target="+e.Target+" by="+inv.sudoUser())
+	inv.verbResult(audit.Info, unenrollBase, "")
 	a.Out.InfoE("Host '" + name + "' unenrolled. Local accounts and home directories were left in place.")
 	if len(staged) > 0 {
 		inv.echo("")

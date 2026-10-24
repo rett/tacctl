@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/names"
@@ -72,13 +73,16 @@ func (inv *invocation) hostRename(args []string) error {
 		return err
 	}
 	oldName, newName := p.oldName, p.newName
+	renameBase := "host rename old=" + oldName + " new=" + newName + " by=" + inv.sudoUser()
 
 	// Another command holds the host's lock: it is not waited for (D185).
 	unlock, err := hosts.LockHost(filepath.Join(a.Paths.StateDir, "locks"), oldName)
 	switch {
 	case errors.Is(err, hosts.ErrRotationBusy):
+		inv.verbResult(audit.Info, renameBase, "lock")
 		return inv.hostLockBusyErr(oldName)
 	case err != nil:
+		inv.verbResult(audit.Info, renameBase, "lock")
 		return err
 	}
 	defer unlock()
@@ -102,6 +106,7 @@ func (inv *invocation) hostRename(args []string) error {
 
 	// The state before anything changes (D191).
 	if err := inv.snapshotFirst(); err != nil {
+		inv.verbResult(audit.Info, renameBase, "store")
 		return err
 	}
 
@@ -111,10 +116,13 @@ func (inv *invocation) hostRename(args []string) error {
 		var taken *hosts.NameTakenError
 		switch {
 		case errors.As(err, &taken):
+			inv.verbResult(audit.Info, renameBase, "race")
 			return inv.usageErr(taken.Error() + " Nothing was changed.")
 		case errors.Is(err, hosts.ErrNotEnrolled):
+			inv.verbResult(audit.Info, renameBase, "race")
 			return inv.usageErr("No enrolled host named '" + oldName + "' any more. Nothing was changed.")
 		}
+		inv.verbResult(audit.Info, renameBase, "store")
 		return inv.usageErr(strings.Join(msgs(err), " ") + " Nothing was changed.")
 	}
 	inv.hooks.renameStep("registry")
@@ -134,6 +142,7 @@ func (inv *invocation) hostRename(args []string) error {
 		return nil
 	})
 	if err != nil {
+		inv.verbResult(audit.Info, renameBase, "race")
 		return inv.hostRenameUndo(reg, p, changed, err)
 	}
 	inv.hooks.renameStep("pins")
@@ -149,7 +158,7 @@ func (inv *invocation) hostRename(args []string) error {
 	}
 	inv.hostRenameSeen(p)
 
-	a.Audit().Raw("auth.info", "host rename old="+oldName+" new="+newName+" by="+inv.sudoUser())
+	inv.verbResult(audit.Info, renameBase, "")
 	a.Out.InfoE("Host '" + oldName + "' renamed to '" + newName + "'. Nothing was sent to the host.")
 
 	if renameScope {

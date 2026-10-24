@@ -30,10 +30,12 @@ import (
 	"fmt"
 	"net"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
@@ -90,6 +92,8 @@ type deviceSyncRun struct {
 	devices                          []*syncDevice
 	skippedVendor                    []string
 	applied, appliedDevs, concurrent int
+	// appliedNames are the devices written, for the audit line.
+	appliedNames []string
 }
 
 // deviceSync is 'device sync'.
@@ -384,9 +388,12 @@ func (s *deviceSyncRun) run(asJSON bool) error {
 		return nil
 	}
 	if err := s.write(); err != nil {
+		inv.app.Audit().Line(audit.Warning, "device sync", audit.Pair("user", s.user), audit.Pair("devices", "0"), audit.Pair("fields", "0"),
+			audit.Pair("names", ""), audit.Pair("result", "failed"), audit.Pair("reason", failReason(err, "store")))
 		return err
 	}
-	inv.app.Audit().Raw("auth.info", fmt.Sprintf("device sync user=%s devices=%d fields=%d", s.user, s.appliedDevs, s.applied))
+	inv.app.Audit().Line(audit.Info, "device sync", audit.Pair("user", s.user), audit.Pair("devices", strconv.Itoa(s.appliedDevs)),
+		audit.Pair("fields", strconv.Itoa(s.applied)), audit.Wide("names", namesList(s.appliedNames, 20)), audit.Pair("result", "ok"))
 	return s.finish(asJSON, devs, fields)
 }
 
@@ -397,6 +404,7 @@ func (s *deviceSyncRun) write() error {
 	inv := s.inv
 	_, err := inv.deviceWrite(func(f *devreg.File, _ *devreg.Resolver) error {
 		s.applied, s.appliedDevs, s.concurrent = 0, 0, 0
+		s.appliedNames = nil
 		for _, sd := range s.devices {
 			dev := f.Find(sd.Name)
 			n := 0
@@ -423,6 +431,7 @@ func (s *deviceSyncRun) write() error {
 			if n > 0 {
 				s.applied += n
 				s.appliedDevs++
+				s.appliedNames = append(s.appliedNames, sd.Name)
 			}
 		}
 		if s.applied == 0 {

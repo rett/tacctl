@@ -66,6 +66,7 @@ func (inv *invocation) scopeNetconf(args []string) error {
 		if _, err := policy.MoveNetconfScope(c, scope, ""); err != nil {
 			return err
 		}
+		inv.detail("scope netconf", kvp("scope", scope), kvp("from", inv.scopeNetconfText(cur)), kvp("to", "leave"))
 		inv.app.Out.Info("Scope '" + scope + "' NETCONF service: leave. tacctl plans and compares nothing of it again.")
 		return nil
 	case "disable":
@@ -80,6 +81,7 @@ func (inv *invocation) scopeNetconf(args []string) error {
 		if err := policy.SetNetconfState(c, scope, conf.NetconfDisable); err != nil {
 			return err
 		}
+		inv.detail("scope netconf", kvp("scope", scope), kvp("from", inv.scopeNetconfText(cur)), kvp("to", "disable"))
 		inv.app.Out.Info("Scope '" + scope + "' NETCONF service: disable.")
 		inv.app.Out.Warn("Applying it deletes 'system services netconf' on the Junos devices of the scope: every NETCONF client of them loses the service, tacctl's own reads fall back to ssh. A device's own setting wins ('tacctl device netconf').")
 		return nil
@@ -115,6 +117,7 @@ func (inv *invocation) scopeNetconf(args []string) error {
 			return err
 		}
 	}
+	inv.detail("scope netconf", kvp("scope", scope), kvp("from", inv.scopeNetconfText(cur)), kvp("to", inv.scopeNetconfText(next)))
 	inv.app.Out.Info("Scope '" + scope + "' NETCONF service: " + inv.scopeNetconfText(next) + ".")
 	return nil
 }

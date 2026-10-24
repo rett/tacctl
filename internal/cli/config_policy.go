@@ -10,6 +10,7 @@ package cli
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -178,6 +179,7 @@ func (inv *invocation) configFilter(label string, args []string) error {
 		if err := inv.applyStore(func(s *store.Store) error { return s.FiltersSet(label, csv) }); err != nil {
 			return err
 		}
+		inv.detail("config "+label, kvp("op", sub), kvp("value", strings.Join(changed, ",")))
 		if sub == "add" {
 			a.Out.Info(fmt.Sprintf("Added %d to %s list: %s", len(changed), label, strings.Join(changed, " ")))
 			if len(skipped) > 0 {
@@ -213,6 +215,7 @@ func (inv *invocation) configFilter(label string, args []string) error {
 		if err := inv.applyStore(func(s *store.Store) error { return s.FiltersSet(label, "") }); err != nil {
 			return err
 		}
+		inv.detail("config "+label, kvp("op", "clear"), kvp("value", strconv.Itoa(n)))
 		a.Out.Info(fmt.Sprintf("Cleared %s list (%d %s removed).", label, n, entries))
 		inv.echo("")
 	default:
@@ -277,6 +280,7 @@ func (inv *invocation) configMgmtACL(args []string) error {
 		if err := inv.writeMgmtACLCIDRs(current, ""); err != nil {
 			return err
 		}
+		inv.detail("config mgmt-acl", kvp("op", sub), kvp("value", strings.Join(changed, ",")))
 		if sub == "add" {
 			a.Out.Info(fmt.Sprintf("Added %d to mgmt-acl: %s", len(changed), strings.Join(changed, " ")))
 			if len(skipped) > 0 {
@@ -306,6 +310,7 @@ func (inv *invocation) configMgmtACL(args []string) error {
 		if err := a.Conf().Unset("mgmt_acl.permits"); err != nil {
 			return err
 		}
+		inv.detail("config mgmt-acl", kvp("op", "clear"), kvp("value", ""))
 		a.Out.Info("mgmt-acl cleared.")
 		inv.echo("")
 	case "cisco-name", "juniper-name":
@@ -337,6 +342,7 @@ func (inv *invocation) configMgmtACL(args []string) error {
 		if err := a.Conf().Set("mgmt_acl.names."+which, value); err != nil {
 			return err
 		}
+		inv.detail("config mgmt-acl", kvp("op", sub), kvp("value", value))
 		a.Out.Info("Set " + which + "-name = '" + value + "'.")
 		a.Out.Info("Re-run 'tacctl config " + which + "' to see the new name in the output.")
 		inv.echo("")

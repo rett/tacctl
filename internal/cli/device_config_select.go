@@ -210,7 +210,7 @@ func (inv *invocation) chooseDevices(sel selection, user string, login bool, ver
 	if msg := loginProblem(m, user, ""); login && msg != "" {
 		return nil, inv.usageErr(msg)
 	}
-	out := &chosenDevices{render: inv.newManagedRender(ro, inv.callerScopes().restricted)}
+	out := &chosenDevices{render: inv.newManagedRender(ro, true)}
 	visible := res.Visible(inv.deviceFilter())
 
 	if len(sel.names) > 0 {

@@ -146,6 +146,17 @@ func (inv *invocation) groupPreset(args []string) error {
 	}); err != nil {
 		return err
 	}
+	for _, r := range roles {
+		n := 0
+		for _, s := range steps[r.Group] {
+			if s.writes() {
+				n++
+			}
+		}
+		if n > 0 {
+			inv.detail("group preset", kvp("name", r.Group), kvp("preset", "roles"), kvp("changes", strconv.Itoa(n)))
+		}
+	}
 	a.Out.Info(fmt.Sprintf("Role preset applied: %d setting(s) changed.", changes))
 	if err := watch.lowered("users of the role groups", "Members of the role groups keep their old groups"); err != nil {
 		return err

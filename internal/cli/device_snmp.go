@@ -462,6 +462,7 @@ func (inv *invocation) deviceLocationFromDevice(p Parsed, f *devreg.File, res *d
 	}); err != nil {
 		return err
 	}
+	inv.detail("device set", kvp("name", name), kvp("field", "location"), kvp("from", d.Location), kvp("to", text))
 	inv.app.Out.Info("Device '" + name + "' location set to " + text + " (read from the device).")
 	return nil
 }

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/tier"
@@ -562,10 +563,11 @@ func (inv *invocation) deviceConfigForget(args []string) error {
 	case p.Has("--all"):
 		n, err := store.ForgetAll()
 		if err != nil {
+			inv.verbResult(audit.Info, "device config forget user="+inv.sudoUser()+" device=*", failReason(err, "write"))
 			return err
 		}
 		inv.app.Out.Info("Forgot the configuration records of " + howMany(n, "device") + ".")
-		inv.app.Audit().Raw("auth.info", "device config forget user="+inv.sudoUser()+" device=* count="+strconv.Itoa(n))
+		inv.verbResult(audit.Info, "device config forget user="+inv.sudoUser()+" device=* count="+strconv.Itoa(n), "")
 		return nil
 	case len(names) == 0:
 		return inv.argErr("Name the devices to forget, or give --all.", usage)
@@ -573,6 +575,7 @@ func (inv *invocation) deviceConfigForget(args []string) error {
 	for _, n := range names {
 		had, err := store.Forget(n)
 		if err != nil {
+			inv.verbResult(audit.Info, "device config forget user="+inv.sudoUser()+" device="+n, failReason(err, "write"))
 			return err
 		}
 		if !had {
@@ -580,7 +583,7 @@ func (inv *invocation) deviceConfigForget(args []string) error {
 			continue
 		}
 		inv.app.Out.Info("Forgot the configuration record of '" + n + "'.")
-		inv.app.Audit().Raw("auth.info", "device config forget user="+inv.sudoUser()+" device="+n)
+		inv.verbResult(audit.Info, "device config forget user="+inv.sudoUser()+" device="+n, "")
 	}
 	return nil
 }

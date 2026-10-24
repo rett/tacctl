@@ -158,28 +158,33 @@ func (inv *invocation) scopeSNMP(args []string) error {
 		return inv.deniedUsage(reasonSuperuser, "The engineer tier reads a scope's SNMP settings: tacctl scope snmp "+scope+
 			" show [--reveal]. Changing them is the superuser's. Nothing was changed.")
 	}
-	switch sub {
-	case "show":
-		return inv.scopeSNMPShow(scope, p.Has("--reveal"), f.restricted)
-	case "version":
-		return inv.scopeSNMPVersion(scope, p)
-	case "community":
-		return inv.scopeSNMPCommunity(scope, p)
-	case "v3-user":
-		return inv.scopeSNMPV3User(scope, p)
-	case "clients":
-		return inv.scopeSNMPClients(scope, p)
-	case "contact":
-		return inv.scopeSNMPContact(scope, p)
-	case "port":
-		return inv.scopeSNMPNumber(scope, p, conf.SNMPKeyPort, "port", "UDP port", "1-65535", 1, 65535)
-	case "timeout":
-		return inv.scopeSNMPNumber(scope, p, conf.SNMPKeyTimeout, "timeout", "timeout", "1-10", snmp.MinTimeout, snmp.MaxTimeout)
-	case "clear":
-		return inv.scopeSNMPClear(scope)
-	default:
-		return inv.scopeSNMPTest(scope, p)
+	if sub == "show" {
+		return inv.scopeSNMPShow(scope, p.Has("--reveal"))
 	}
+	// A verb that wrote something is one change of the scope's SNMP settings
+	// (D253): the pair's start line has been written by then.
+	return inv.snmpChange(func() error {
+		switch sub {
+		case "version":
+			return inv.scopeSNMPVersion(scope, p)
+		case "community":
+			return inv.scopeSNMPCommunity(scope, p)
+		case "v3-user":
+			return inv.scopeSNMPV3User(scope, p)
+		case "clients":
+			return inv.scopeSNMPClients(scope, p)
+		case "contact":
+			return inv.scopeSNMPContact(scope, p)
+		case "port":
+			return inv.scopeSNMPNumber(scope, p, conf.SNMPKeyPort, "port", "UDP port", "1-65535", 1, 65535)
+		case "timeout":
+			return inv.scopeSNMPNumber(scope, p, conf.SNMPKeyTimeout, "timeout", "timeout", "1-10", snmp.MinTimeout, snmp.MaxTimeout)
+		case "clear":
+			return inv.scopeSNMPClear(scope)
+		default:
+			return inv.scopeSNMPTest(scope, p)
+		}
+	}, sub, kvp("scope", scope))
 }
 
 // scopeSNMPRead reports whether the verb as given only reads: what an
@@ -217,15 +222,15 @@ func (inv *invocation) scopeSNMPUsageErr(scope, verbName string, err error) erro
 func from(src string) string { return "(" + src + ")" }
 
 // scopeSNMPShow is 'show': the effective settings with their sources, the
-// allowed clients and, with --reveal, the credentials. An engineer's reveal
+// allowed clients and, with --reveal, the credentials. A reveal
 // is logged (never the value).
-func (inv *invocation) scopeSNMPShow(scope string, reveal, restricted bool) error {
+func (inv *invocation) scopeSNMPShow(scope string, reveal bool) error {
 	e, err := inv.snmpEffective(scope)
 	if err != nil {
 		return err
 	}
 	own := policy.SNMPSettings(inv.app.Conf(), scope)
-	if reveal && restricted {
+	if reveal {
 		inv.secretRead("snmp", scope)
 	}
 	title := "SNMP for scope '" + scope + "'"
@@ -285,7 +290,7 @@ func (inv *invocation) scopeSNMPShow(scope string, reveal, restricted bool) erro
 		inv.echo("  devices with settings of their own: " + strings.Join(devs, ", ") + " (tacctl device snmp <name> show)")
 	}
 	switch {
-	case reveal && restricted:
+	case reveal:
 		inv.echo("  Reveal logged: the secrets above are the scope's own or the default's, as labelled.")
 	case !reveal:
 		inv.echo("  Credentials: " + inv.app.Paths.SNMPDir + "/" + scope + ".yaml (0600; 'show --reveal' prints them)")

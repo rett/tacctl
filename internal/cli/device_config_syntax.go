@@ -164,6 +164,7 @@ func (inv *invocation) deviceConfigSyntax(args []string) error {
 	if word == "" {
 		word = devreg.SyntaxAuto
 	}
+	inv.detail("device set", kvp("name", name), kvp("field", "config-syntax"), kvp("from", orWord(d.ConfigSyntax, devreg.SyntaxAuto)), kvp("to", word))
 	inv.app.Out.Info("Device '" + name + "' config-syntax " + word + ".")
 	// A setting that the last pull's image contradicts is said at once, not
 	// at the next walkthrough: the setting wins, and it is the lock-out

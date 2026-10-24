@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/paths"
@@ -169,6 +170,7 @@ func Install(ctx context.Context, h *Host, args []string) error {
 	if err := h.install(ctx, ids, backend.PhaseStart, tree); err != nil {
 		return err
 	}
+	h.auditLine("install", audit.Pair("branch", branch))
 	h.installSummary(seed)
 	return nil
 }

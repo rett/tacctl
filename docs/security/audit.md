@@ -38,12 +38,12 @@ A command that is not in the table is treated as an action, and the test suite f
 | `cmd`, `args` | The command's words as the tier gate sees them (`user add`, `scope secret`, `device config`), and the arguments after them, each word quoted and cut at 64 bytes, the whole at 512 |
 | `result`, `status` | How the command ended and its exit status (see below) |
 | `duration` | Seconds with millisecond precision, from the start line to the end line |
-| `snapshot` | The id of the pre-change snapshot or snapshots the command took (`-` when none was taken or the newest was current) |
+| `snapshot` | The id of the pre-change snapshot or snapshots the command took, comma-separated when it took more than one (`-` when none was taken or the newest was current) |
 | `reason` | On a `cmd DENY` line: `superuser` or `scope` |
 | `sid` | The session id, last on every line (see [Correlating](#correlating)) |
 | `class` | `class=unexpected` on a start line means a command classified as a read reached a write: a fault in the class table, never expected |
 
-A value is written as it is when it holds only letters, digits and `. _ : / @ + -`; otherwise it is double-quoted with Go's escapes, so a line is always one line and a collector can split on spaces outside quotes. An empty value is `-`.
+A value is written as it is when it holds only letters, digits and `. _ : / @ + , -` (a comma, so that a list of scopes or snapshot ids stays one word); otherwise it is double-quoted with Go's escapes, so a line is always one line and a collector can split on spaces outside quotes. An empty value is `-`.
 
 `result` is one of:
 
@@ -56,6 +56,96 @@ A value is written as it is when it holds only letters, digits and `. _ : / @ + 
 | `aborted` | 2, written when tacctl's own code panicked |
 
 Priorities: `auth.info` for an action, `auth.notice` for the weighty ones (`install`, `upgrade`, `uninstall`, `rollback`, `log clear`, the whole-state replacements `store import`, `store rollback`, `backup restore` and `config restore`, `group edit <group> tier|priv-lvl`, `config sudoers`, `console system-shell|tiers|user`), `auth.warning` for every refusal and for an end line whose result is not `ok`.
+
+## Detail lines
+
+The central pair says who ran which command and how it ended. A verb that
+changes something also writes a line of its own beside it, saying what it
+changed: the object, and for a setting the value before and after. A detail
+line is written once the change is made, so it sits between `cmd start` and
+`cmd end`; except for the verbs named after the table, a change that failed
+has no detail line and the end line says `result=failed`. It is written at the priority of the command's class
+(`auth.notice` for the weighty ones, `auth.info` otherwise), ends in
+`by=<user>` and the `sid`, and holds a name or a count, never a secret, a hash
+or a password. `from=` and `to=` are the value before and after (`-` for
+none); a list is comma-separated.
+
+```
+user add name=dave group=ops scopes=core,lab by=alice sid=k3x9a0bq
+config loglevel from=info to=debug by=alice sid=k3x9a0bq
+```
+
+| Event | Keys after the event words |
+|---|---|
+| `user add` | `name` `group` `scopes` |
+| `user remove`, `user disable`, `user enable` | `name` |
+| `user passwd` | `name` `source=prompt\|hash\|generated` |
+| `user rename` | `from` `to` `uid=carried\|-` |
+| `user move` | `name` `from` `to` (groups) |
+| `user scope` | `name` `op=add\|remove\|replace` `scopes` |
+| `group add` | `name` `priv-lvl` `tier` |
+| `group remove` | `name` |
+| `group edit` | `name` `key=priv-lvl\|tier\|wti-level\|junos-class` `from` `to`; one line per setting changed, so a `priv-lvl` change that also records or drops the tier writes a `tier` line too; `priv-lvl` and `tier` at `auth.notice` |
+| `group commands` | `name` `op=default\|add\|remove\|seed` `rule` `action` `count` |
+| `group privilege` | `name` `op=add\|remove\|seed` `count` |
+| `group preset` | `name` `preset=roles` `changes`; one line per group changed |
+| `config sudoers`, `config sudoers tiers` | `op=install\|remove` `file`, and `group` for the first |
+| `console set` | `key` `item` `from` `to`: `key` is the setting (`tiers`, `user`, `system-shell`, `forwarding`, `agent-forwarding`, `ssh-escape`, `password-cache`, `idle-timeout`, `space-completion`) and `item` the tier, user or part of it; `auth.notice` for `tiers`, `user` and `system-shell` |
+| `backup restore` | `id` `pre` (the snapshot taken first) `keep-uids` `legacy`; `auth.notice` |
+| `store import` | `source` `replace` `force`; `auth.notice` |
+| `store rollback` | `pre`; `auth.notice` |
+| `install` | `branch`; `auth.notice` |
+| `upgrade` | `from` `to` (commits) `branch`; `auth.notice` |
+| `uninstall` | `backups=kept\|removed` `logs=kept\|removed`; `auth.notice` |
+| `scope add` | `name` `prefixes` `default` |
+| `scope remove` | `name` `users` |
+| `scope rename` | `from` `to` `users` `hosts` |
+| `scope default` | `from` `to` |
+| `scope prefixes` | `op=add\|remove\|move\|remove-all` `scope` `cidr`, and `to` for a move |
+| `scope protocols`, `scope vendor-attrs`, `scope auth-method`, `scope aaa-order`, `scope exec-timeout`, `scope tacacs-group`, `scope radius-group`, `scope netconf` | `scope` `from` `to` |
+| `scope devices` | `scope` `cidr` `from` `to` (the vendor tag) |
+| `scope mgmt-acl` | `scope` `op=add\|remove\|clear\|cisco-name\|juniper-name` `value` |
+| `scope secret set` | `scope` `source=set\|generate` |
+| `snmp set` | `kind=community\|v3-user\|clear\|version\|port\|timeout\|clients\|contact`, and `scope` or `device`; `from` `to` for `config snmp port\|timeout` |
+| `secret-read` | `kind` `name`: a secret shown (`scope`, `snmp`, `snmp-device`, `snmp-default`, `block`, `block-adopt`, `store`, `config`, `snapshot`, `backup`); written for every caller, a superuser's too |
+| `secret-export` | `scope` `file`: `config linux script` wrote a file that holds the scope's secret |
+| `config allow`, `config deny`, `config mgmt-acl` | `op=add\|remove\|clear\|cisco-name\|juniper-name` `value` |
+| `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config loglevel`, `config metrics`, `config branch` | `from` `to` |
+| `config listen` | `backend` `listener` `from` `to` |
+| `config devices` | `key` `from` `to` |
+| `config cisco source-interface` | `scope` `from` `to` |
+| `config render` | `backends` `force` |
+| `config linux uid` | `user` `uid` |
+| `backend enable`, `backend disable` | `id` |
+| `host sync` | `name` `target` `created` `updated` `renamed` `removed` `remove-home` `result`, and `reason` when it failed; one line per host |
+| `host move` | `scope` `moved` `failed` (for a move of every drifted host) |
+| `device add` | `name` `address` `vendor` `count` |
+| `device remove` | `names` (the first 20, then `+n`) `count` |
+| `device rename` | `from` `to` `count` |
+| `device import` | `source` `added` `updated` `removed` `count` |
+| `device set` | `name` `field` `from` `to`: `address`, `hostname`, `vendor`, `port`, `description`, `location`, `legacy-ssh`, `config-syntax`, `netconf`, `stale-days` (no `name`) and `notice:<kind>` |
+
+The verbs that logged before 0.2.17 keep their lines (`host enroll`, `host
+unenroll`, `host rename`, `host forget`, `host target`, `breakglass hold`,
+`release`, `remove-record` and `hold-move`, `rollback`, `device sync`,
+`block-set`, `block-edit`, `block-adopt` and `block-remove`, `scope breakglass`, `scope staging`, `group
+reset`, `device hostkey`, `device config forget`, `linux engineer-sudo`,
+`console provision` and `deprovision`) and gain `result=ok` at the end of a
+change that was made. A change that failed is written too, at
+`auth.warning`, with `result=failed reason=<word>` in place: the word is the
+class of the error, never its text (`script`: the client script failed on the
+host; `store`: the snapshot or the write of the store, the registry or
+`tacctl.yaml` failed; `race`: another command changed the name or the record
+meanwhile; `lock`: another command holds the host; `write`: a file could not
+be written; `ssh` and `sshd`: the connection or sshd's check failed;
+`interrupted`). `host unenroll` also says `force=yes|no`. The failed
+`breakglass hold` line does not repeat the text typed after `--reason`:
+`reason=` there is the word. `device sync` gains `names` (the first 20
+devices written, then `+n`) and `result`. `passwd` says `source=self`, and
+the lines that had no actor (`uid-map renumbered`, `uid-range set`, the two
+`hostkey-mismatch` lines, `console policy ... unusable`) end in `by=<user>`;
+`scope staging done` stays without an actor, as the sweep that writes it has
+none.
 
 ## Refusals
 

@@ -21,6 +21,9 @@ func TestValue(t *testing.T) {
 		{"pts/3", "pts/3"},
 		{"admin@web1.example.net", "admin@web1.example.net"},
 		{"a+b", "a+b"},
+		{"core,lab", "core,lab"},
+		{"20261021_093015_412,20261021_093016_001", "20261021_093015_412,20261021_093016_001"},
+		{"a, b", `"a, b"`},
 		{"two words", `"two words"`},
 		{`say "hi"`, `"say \"hi\""`},
 		{"a=b c", `"a=b c"`},
@@ -53,8 +56,8 @@ func TestLine(t *testing.T) {
 	r := &fake.Runner{}
 	w := New(Options{Runner: r, SID: "k3x9a0bq"})
 	w.Line(Notice, "user add", Pair("name", "alice"), Pair("scopes", "core,lab"), Pair("reason", "new hire"), Pair("tty", ""))
-	// A comma is outside the plain alphabet of D245, so a list is quoted.
-	want := `user add name=alice scopes="core,lab" reason="new hire" tty=- sid=k3x9a0bq`
+	// A comma is in the plain alphabet, so a list is written as it is.
+	want := `user add name=alice scopes=core,lab reason="new hire" tty=- sid=k3x9a0bq`
 	if !r.Called("logger", "-t", "tacctl", "-p", "auth.notice", want) {
 		t.Errorf("calls %q, want the line %s", r.Argvs(), want)
 	}

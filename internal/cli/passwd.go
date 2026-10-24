@@ -80,7 +80,7 @@ func (inv *invocation) passwdSelf(args []string) error {
 	}); err != nil {
 		return err
 	}
-	a.Audit().Raw("auth.info", "passwd OK user="+username+" (self-service)")
+	a.Audit().Raw("auth.info", "passwd OK user="+username+" source=self")
 	a.Out.Info("Password changed for '" + username + "'.")
 	inv.echo("")
 	return nil

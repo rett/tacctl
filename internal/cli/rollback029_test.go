@@ -118,7 +118,7 @@ func TestRollback029ApplyRoundTrip(t *testing.T) {
 			t.Errorf("--apply output lacks %q:\n%s", want, out)
 		}
 	}
-	if !hasAudit(r, "auth.info", "rollback target=0.2.9 keys=4 by=root") {
+	if !hasAudit(r, "auth.info", "rollback target=0.2.9 keys=4 by=root result=ok") {
 		t.Errorf("the audit line: %q", r.Argvs())
 	}
 	if r.Called("systemctl") || r.Called("ssh") || r.Called("install") || r.Called("visudo") || len(r.Execs()) != 0 {

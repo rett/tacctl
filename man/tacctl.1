@@ -3702,8 +3702,8 @@ of a scope of theirs and of the devices there
 and
 .B adopt
 are the superuser's).
-Each read of a secret by an engineer is logged to syslog as
-\fBsecret\-read kind=scope|snmp|snmp\-device|snmp\-default|block name=\fR\fIname\fR\fB by=\fR\fIuser\fR
+Each read of a secret, the superuser's too, is logged to syslog as
+\fBsecret\-read kind=scope|snmp|snmp\-device|snmp\-default|block|block\-adopt|store|config|snapshot|backup name=\fR\fIname\fR\fB by=\fR\fIuser\fR
 (never the value). Engineers change no global setting: users, groups,
 scopes, a secret's change, backends, backups, upgrades, the default host
 method and the console's settings stay the superuser's, and so does the
@@ -11428,7 +11428,8 @@ How the command ended and its exit status:
 Seconds with millisecond precision, from the start line to the end line.
 .TP
 .B snapshot
-The id of the pre\-change snapshot or snapshots the command took
+The id of the pre\-change snapshot or snapshots the command took, comma\-separated
+when it took more than one
 .RB ( \- 
 when none was taken or the newest was current).
 .TP
@@ -11449,7 +11450,8 @@ on a start line means a command classified as a read reached a write: a fault
 in the class table, never expected.
 .PP
 A value is written as it is when it holds only letters, digits and
-.BR ". _ : / @ + \-" ;
+.BR ". _ : / @ + , \-"
+(a comma, so that a list of scopes or snapshot ids stays one word);
 otherwise it is double\-quoted with Go's escapes, so a line is always one line
 and a collector can split on spaces outside quotes. An empty value is
 .BR \- .
@@ -11462,6 +11464,224 @@ for the weighty ones (marked in the list above);
 .B auth.warning
 for every refusal and for an end line whose result is not
 .BR ok .
+.SS Detail lines
+The central pair says who ran which command and how it ended. A verb that
+changes something also writes a line of its own beside it, saying what it
+changed: the object and, for a setting, the value before and after
+.RB ( from= " and " to= ,
+.B \-
+for none, a list comma\-separated). It is written once the change is made, so it
+sits between
+.B "cmd start"
+and
+.BR "cmd end" ;
+except for the verbs named after the list, a change that failed has no detail
+line and the end line says
+.BR result=failed .
+It has the priority of the command's class, ends in
+.BI by= user
+and the
+.BR sid ,
+and holds a name or a count, never a secret, a hash or a password. The events
+and their keys, in the order written:
+.TP
+.B "user add"
+name, group, scopes.
+.TP
+.B "user remove, user disable, user enable"
+name.
+.TP
+.B "user passwd"
+name, source (prompt, hash or generated).
+.TP
+.B "user rename"
+from, to, uid (carried or \-).
+.TP
+.B "user move"
+name, from, to (the groups).
+.TP
+.B "user scope"
+name, op (add, remove or replace), scopes.
+.TP
+.B "group add"
+name, priv\-lvl, tier.
+.TP
+.B "group remove"
+name.
+.TP
+.B "group edit"
+name, key (priv\-lvl, tier, wti\-level or junos\-class), from, to. One line for each setting changed, so a priv\-lvl change that also records or drops the tier writes a tier line too; priv\-lvl and tier at auth.notice.
+.TP
+.B "group commands"
+name, op (default, add, remove or seed), rule, action, count.
+.TP
+.B "group privilege"
+name, op (add, remove or seed), count.
+.TP
+.B "group preset"
+name, preset (roles), changes; one line for each group changed.
+.TP
+.B "config sudoers, config sudoers tiers"
+op (install or remove), file, and group for the first.
+.IP "\fBconsole set\fR"
+key, item, from, to. key is the setting (tiers, user, system\-shell, forwarding, agent\-forwarding, ssh\-escape, password\-cache, idle\-timeout, space\-completion) and item the tier, user or part of it; auth.notice for tiers, user and system\-shell.
+.TP
+.B "backup restore"
+id, pre (the snapshot taken first), keep\-uids, legacy; auth.notice.
+.TP
+.B "store import"
+source, replace, force; auth.notice.
+.TP
+.B "store rollback"
+pre; auth.notice.
+.TP
+.B "install"
+branch; auth.notice.
+.TP
+.B "upgrade"
+from, to (commits), branch; auth.notice.
+.TP
+.B "uninstall"
+backups and logs (kept or removed); auth.notice.
+.TP
+.B "scope add"
+name, prefixes, default.
+.TP
+.B "scope remove"
+name, users.
+.TP
+.B "scope rename"
+from, to, users, hosts.
+.TP
+.B "scope default"
+from, to.
+.TP
+.B "scope prefixes"
+op (add, remove, move or remove\-all), scope, cidr, and to for a move.
+.TP
+.B "scope protocols, scope vendor\-attrs, scope auth\-method, scope aaa\-order, scope exec\-timeout, scope tacacs\-group, scope radius\-group, scope netconf"
+scope, from, to.
+.TP
+.B "scope devices"
+scope, cidr, from, to (the vendor tag).
+.TP
+.B "scope mgmt\-acl"
+scope, op (add, remove, clear, cisco\-name or juniper\-name), value.
+.TP
+.B "scope secret set"
+scope, source (set or generate).
+.TP
+.B "snmp set"
+kind (community, v3\-user, clear, version, port, timeout, clients or contact), and scope or device; from and to for config snmp port and timeout.
+.TP
+.B "secret\-read"
+kind, name. A secret was shown (kind scope, snmp, snmp\-device, snmp\-default, block, block\-adopt, store, config, snapshot or backup); written for every caller, a superuser's too.
+.TP
+.B "secret\-export"
+scope, file. config linux script wrote a file that holds the scope's secret.
+.TP
+.B "config allow, config deny, config mgmt\-acl"
+op (add, remove, clear, cisco\-name or juniper\-name), value.
+.TP
+.B "config password\-age, config bcrypt\-cost, config password\-min\-length, config secret\-min\-length, config loglevel, config metrics, config branch"
+from, to.
+.TP
+.B "config listen"
+backend, listener, from, to.
+.TP
+.B "config devices"
+key, from, to.
+.TP
+.B "config cisco source\-interface"
+scope, from, to.
+.TP
+.B "config render"
+backends, force.
+.TP
+.B "config linux uid"
+user, uid.
+.TP
+.B "backend enable, backend disable"
+id.
+.TP
+.B "host sync"
+name, target, created, updated, renamed, removed, remove\-home, result, and reason when it failed; one line for each host.
+.TP
+.B "host move"
+scope, moved, failed (a move of every drifted host).
+.TP
+.B "device add"
+name, address, vendor, count.
+.TP
+.B "device remove"
+names (the first 20, then +n), count.
+.TP
+.B "device rename"
+from, to, count.
+.TP
+.B "device import"
+source, added, updated, removed, count.
+.IP "\fBdevice set\fR"
+name, field, from, to. field is address, hostname, vendor, port, description, location, legacy\-ssh, config\-syntax, netconf, stale\-days (no name) or notice:<kind>.
+.PP
+The verbs that logged before 0.2.17 keep their lines
+.RB ( "host enroll" ", " "host unenroll" ", " "host rename" ", " "host forget" ", " "host target" ", "
+.BR "breakglass hold" ", " release ", " remove\-record
+and
+.BR hold\-move ", " rollback ", " "device sync" ", " block\-set ", " block\-edit ", " block\-adopt
+and
+.BR block\-remove ", " "scope breakglass" ", " "scope staging" ", " "group reset" ", "
+.BR "device hostkey" ", " "device config forget" ", " "linux engineer\-sudo" ", "
+.B "console provision"
+and
+.BR deprovision )
+and gain
+.B result=ok
+at the end of a change that was made. A change that failed is written too, at
+.BR auth.warning ,
+with
+.B "result=failed reason=word"
+in its place; the word is the class of the error, never its text:
+.B script
+(the client script failed on the host),
+.B store
+(the snapshot or the write of the store, the registry or tacctl.yaml failed),
+.B race
+(another command changed the name or the record meanwhile),
+.B lock
+(another command holds the host),
+.B write
+(a file could not be written),
+.BR ssh " and " sshd
+(the connection or sshd's check failed) and
+.BR interrupted .
+.B "host unenroll"
+also says
+.BR force=yes|no .
+The failed
+.B "breakglass hold"
+line does not repeat the text typed after
+.BR \-\-reason :
+.B reason=
+there is the word.
+.B "device sync"
+gains
+.B names
+(the first 20 devices written, then +n) and
+.BR result .
+.B passwd
+says
+.BR source=self ,
+and the lines that had no actor
+.RB ( "uid\-map renumbered" ", " "uid\-range set" ,
+the two
+.B hostkey\-mismatch
+lines, and
+.BR "console policy ... unusable" )
+end in
+.BI by= user \fR;\fP
+.B "scope staging done"
+stays without an actor, as the sweep that writes it has none.
 .SS Refusals
 The tier gate's refusals keep their words and carry the session id
 .RB ( "tier DENY user=carol tier=readonly cmd=user remove sid=k3x9a0bq" ).
@@ -11558,7 +11778,8 @@ included, ends in the same
 .BI sid= id
 (8 characters of a\-z and 0\-9, made for each run). The
 .B snapshot=
-of the end line names the snapshot taken before the change
+of the end line names the snapshot taken before the change (snapshots, comma\-separated,
+when the command took more than one)
 .RB ( "backup diff" " shows it against the live state). " "tacctl ssh"
 and the login console keep their own
 .B session=

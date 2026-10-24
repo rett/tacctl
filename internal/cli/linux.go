@@ -19,6 +19,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/execx"
@@ -253,7 +254,7 @@ func (inv *invocation) renumbered(path string, res hosts.Renumbering, to hosts.R
 		entries = "1 entry"
 	}
 	inv.app.Out.InfoE("Renumbered " + entries + " of " + path + " from " + res.From.String() + " to " + to.String() + " (the same offset; the old file is kept as " + backup + "). Hosts renumber the accounts tacctl created at their next enroll or sync.")
-	inv.app.Audit().Raw("auth.info", "uid-map renumbered "+strconv.Itoa(res.N)+" entries from="+res.From.String()+" to="+to.String()+" backup="+backup)
+	inv.app.Audit().Raw("auth.info", "uid-map renumbered "+strconv.Itoa(res.N)+" entries from="+res.From.String()+" to="+to.String()+" backup="+backup+" by="+inv.sudoUser())
 }
 
 // renumberProblem is what to print for a renumbering hosts.UIDs.RenumberTo
@@ -355,7 +356,7 @@ func (inv *invocation) configLinuxUIDRange(args []string) error {
 		inv.renumbered(uids.Path, res, r, backup)
 	}
 	a.Out.InfoE("Linux UID range set to " + r.String() + " (was " + cur.String() + "). Hosts renumber the accounts tacctl created at their next enroll or sync.")
-	a.Audit().Raw("auth.info", "uid-range set from="+cur.String()+" to="+r.String())
+	a.Audit().Raw("auth.info", "uid-range set from="+cur.String()+" to="+r.String()+" by="+inv.sudoUser())
 	return nil
 }
 
@@ -420,7 +421,9 @@ func (inv *invocation) configLinuxEngineerSudo(args []string) error {
 		what = strings.Join(cmds, ", ")
 		err = a.Conf().SetList(engineerSudoKey, cmds)
 	}
+	sudoBase := "linux engineer-sudo set to=" + strings.Join(cmds, ",") + " by=" + inv.sudoUser()
 	if err != nil {
+		inv.verbResult(audit.Info, sudoBase, failReason(err, "write"))
 		return err
 	}
 	for _, c := range cmds {
@@ -429,7 +432,7 @@ func (inv *invocation) configLinuxEngineerSudo(args []string) error {
 		}
 	}
 	a.Out.InfoE("Engineers may run " + what + " through sudo on enrolled hosts (" + line + "). Each host gets it at its next sync: tacctl host sync --all")
-	a.Audit().Raw("auth.info", "linux engineer-sudo set to="+strings.Join(cmds, ",")+" by="+inv.sudoUser())
+	inv.verbResult(audit.Info, sudoBase, "")
 	return nil
 }
 
@@ -836,6 +839,7 @@ func (inv *invocation) configLinuxScript(args []string) error {
 	}
 	// Under sudo the file would otherwise be root's; hand it to the caller.
 	inv.chownToCaller(output)
+	inv.detailAt(audit.Info, "secret-export", kvp("scope", scope), kvp("file", output))
 
 	a.Out.InfoE("Wrote " + output + " (mode 0600; contains the shared secret for scope '" + scope + "').")
 	inv.echo("")
@@ -970,6 +974,7 @@ func (inv *invocation) configLinuxUID(args []string) error {
 	if err := inv.assignUID(uids, username, uid); err != nil {
 		return err
 	}
+	inv.detail("config linux uid", kvp("user", username), kvp("uid", uid))
 	a.Out.InfoE("'" + username + "' is now assigned UID " + uid + ".")
 	a.Out.Warn("Hosts that already have the account keep its old number until it is renumbered there:")
 	inv.echo("    usermod -u " + uid + " " + username)

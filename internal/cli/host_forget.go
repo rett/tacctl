@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/hosts"
 )
@@ -108,11 +109,14 @@ func (inv *invocation) hostForget(args []string) error {
 	}
 
 	// Another command holds the host's lock: it is not waited for.
+	forgetBase := "host forget name=" + name + " by=" + inv.sudoUser()
 	unlock, err := hosts.LockHost(filepath.Join(a.Paths.StateDir, "locks"), name)
 	switch {
 	case errors.Is(err, hosts.ErrRotationBusy):
+		inv.verbResult(audit.Info, forgetBase, "lock")
 		return inv.hostLockBusyErr(name)
 	case err != nil:
+		inv.verbResult(audit.Info, forgetBase, "lock")
 		return err
 	}
 	defer unlock()
@@ -173,12 +177,14 @@ func (inv *invocation) hostForget(args []string) error {
 
 	// The state before (D191).
 	if err := inv.snapshotFirst(); err != nil {
+		inv.verbResult(audit.Info, forgetBase, "store")
 		return err
 	}
 	if registered {
 		// Under the registry's lock, the line is read again: a host that
 		// changed meanwhile is not forgotten from stale facts.
 		if err := reg.Forget(name); err != nil {
+			inv.verbResult(audit.Info, forgetBase, "race")
 			return err
 		}
 	}
@@ -208,7 +214,7 @@ func (inv *invocation) hostForget(args []string) error {
 	}
 	inv.hostForgetSeen(reg, f, name)
 
-	a.Audit().Raw("auth.info", "host forget name="+name+" by="+inv.sudoUser())
+	inv.verbResult(audit.Info, forgetBase, "")
 	a.Out.InfoE("Host '" + name + "' forgotten. Nothing was sent to the host.")
 	inv.echo("")
 	inv.hostStagingHints(pieces.staging)

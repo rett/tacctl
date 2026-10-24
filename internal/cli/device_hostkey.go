@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/devssh"
 	"github.com/rett/tacctl/internal/hosts"
@@ -242,6 +243,7 @@ func (inv *invocation) deviceHostkey(args []string) error {
 		return nil
 	}
 	name, src := e.Name, e.Source
+	hostkeyBase := "device hostkey " + action + " name=" + name + " keys=" + strconv.Itoa(len(want)) + " by=" + inv.sudoUser()
 	if _, err := inv.deviceWrite(func(f *devreg.File, _ *devreg.Resolver) error {
 		if src == devreg.SourceHost {
 			f.SetHostKeys(name, devreg.KeyStrings(want))
@@ -254,9 +256,10 @@ func (inv *invocation) deviceHostkey(args []string) error {
 		d.HostKeys = devreg.KeyStrings(want)
 		return nil
 	}); err != nil {
+		inv.verbResult(audit.Info, hostkeyBase, failReason(err, "store"))
 		return err
 	}
-	a.Audit().Raw("auth.info", "device hostkey "+action+" name="+name+" keys="+strconv.Itoa(len(want))+" by="+inv.sudoUser())
+	inv.verbResult(audit.Info, hostkeyBase, "")
 	a.Out.Info("Pinned " + strconv.Itoa(len(want)) + " host key(s) for '" + name + "'.")
 	return nil
 }
@@ -326,7 +329,7 @@ func (inv *invocation) pinHostKeys(ctx context.Context, name, host string, port 
 	}
 	c := devreg.CrossCheckKeys(own, scan)
 	if c.Conflict {
-		a.Audit().Raw("auth.warning", "host hostkey-mismatch name="+name+" host="+host+" port="+strconv.Itoa(port))
+		a.Audit().Raw("auth.warning", "host hostkey-mismatch name="+name+" host="+host+" port="+strconv.Itoa(port)+" by="+inv.sudoUser())
 		a.Out.WarnE(name + ": the keys the host holds and the keys offered at " + host + " port " + strconv.Itoa(port) +
 			" differ; nothing was pinned.")
 		a.Out.WarnE("  Read over the enrolment session: " + devreg.Displays(own))

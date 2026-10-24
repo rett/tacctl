@@ -9,6 +9,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/hosts"
@@ -36,8 +38,13 @@ func (inv *invocation) consoleProvision(pol *console.Policy) error {
 		a.Out.ErrorE(p.ConsoleCommand + " is missing: the console is installed with tacctl itself. Run: tacctl upgrade")
 		return exit(1)
 	}
+	provisionBase := "console provision shells=%s dropin=%s by=" + inv.sudoUser()
+	failed := func(shells, dropin, reason string) {
+		inv.verbResult(audit.Info, fmt.Sprintf(provisionBase, shells, dropin), reason)
+	}
 	shells, err := console.EnsureShells(p.ShellsFile, p.ConsoleCommand)
 	if err != nil {
+		failed("-", "-", "write")
 		inv.consoleErr(err)
 		return exit(1)
 	}
@@ -46,21 +53,24 @@ func (inv *invocation) consoleProvision(pol *console.Policy) error {
 	ch, err := d.Install(inv.ctx, console.DropIn(p.ConsoleCommand, pol.AgentForwarding(), pol.GatewayPorts(), pol.ForwardingTiers()))
 	switch {
 	case errors.Is(err, console.ErrSSHD):
+		failed(strings.ToLower(shells.String()), "-", "sshd")
 		a.Out.ErrorE("sshd refused the console's drop-in; " + p.SSHDDropIn + " was put back as it was:")
 		for _, l := range msgs(err) {
 			a.Out.ErrorE("  " + strings.TrimSpace(l))
 		}
 		return exit(1)
 	case err != nil && ch == console.Unchanged:
+		failed(strings.ToLower(shells.String()), "-", "write")
 		inv.consoleErr(err)
 		return exit(1)
 	case err != nil:
+		failed(strings.ToLower(shells.String()), strings.ToLower(ch.String()), "write")
 		a.Out.InfoE("  " + ch.String() + ": sshd drop-in " + p.SSHDDropIn)
 		inv.consoleErr(err)
 		return exit(1)
 	}
 	a.Out.InfoE("  " + ch.String() + ": sshd drop-in " + p.SSHDDropIn)
-	a.Audit().Raw("auth.info", "console provision shells="+strings.ToLower(shells.String())+" dropin="+strings.ToLower(ch.String())+" by="+inv.sudoUser())
+	inv.verbResult(audit.Info, fmt.Sprintf(provisionBase, strings.ToLower(shells.String()), strings.ToLower(ch.String())), "")
 	return nil
 }
 
@@ -88,7 +98,13 @@ func (inv *invocation) engineerSSHDProvision(pol *console.Policy) error {
 		inv.consoleErr(err)
 	}
 	if err == nil && ch != console.Unchanged {
-		a.Audit().Raw("auth.info", "console provision engineer-dropin="+strings.ToLower(ch.String())+" by="+inv.sudoUser())
+		inv.verbResult(audit.Info, "console provision engineer-dropin="+strings.ToLower(ch.String())+" by="+inv.sudoUser(), "")
+	} else if err != nil {
+		reason := "write"
+		if errors.Is(err, console.ErrSSHD) {
+			reason = "sshd"
+		}
+		inv.verbResult(audit.Info, "console provision engineer-dropin="+strings.ToLower(ch.String())+" by="+inv.sudoUser(), reason)
 	}
 	if err == nil {
 		// The file lived under a name that sorts after the console's (S1):
@@ -167,6 +183,7 @@ func (inv *invocation) consoleDeprovision() error {
 	d := console.DropInFile{Runner: a.Runner, Path: p.SSHDDropIn}
 	ch, err := d.Remove(inv.ctx)
 	if err != nil && ch == console.Unchanged {
+		inv.verbResult(audit.Info, "console deprovision by="+inv.sudoUser(), "write")
 		a.Out.ErrorE("sshd drop-in " + p.SSHDDropIn + " was not removed:")
 		for _, l := range msgs(err) {
 			a.Out.ErrorE("  " + strings.TrimSpace(l))
@@ -179,14 +196,16 @@ func (inv *invocation) consoleDeprovision() error {
 	}
 	sch, serr := console.RemoveShells(p.ShellsFile, p.ConsoleCommand)
 	if serr != nil {
+		inv.verbResult(audit.Info, "console deprovision by="+inv.sudoUser(), "write")
 		inv.consoleErr(serr)
 		return exit(1)
 	}
 	a.Out.InfoE("  " + sch.String() + ": " + p.ConsoleCommand + " in " + p.ShellsFile)
-	a.Audit().Raw("auth.info", "console deprovision by="+inv.sudoUser())
 	if err != nil {
+		inv.verbResult(audit.Info, "console deprovision by="+inv.sudoUser(), "write")
 		return exit(1)
 	}
+	inv.verbResult(audit.Info, "console deprovision by="+inv.sudoUser(), "")
 	return nil
 }
 

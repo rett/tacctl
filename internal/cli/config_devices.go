@@ -243,9 +243,11 @@ func (inv *invocation) configDevicesSet(rest []string, path, label, usage, done 
 		inv.echo("")
 		return nil
 	}
+	was := inv.confGet(path, def)
 	if err := inv.app.Conf().Set(path, rest[0]); err != nil {
 		return err
 	}
+	inv.detail("config devices", kvp("key", strings.TrimPrefix(path, "device.")), kvp("from", was), kvp("to", rest[0]))
 	inv.app.Out.InfoE(strings.ReplaceAll(done, "%v", rest[0]))
 	inv.echo("")
 	return nil

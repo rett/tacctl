@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/model"
@@ -185,10 +186,11 @@ func (inv *invocation) scopeRefusal(scope, msg string) error {
 	return err
 }
 
-// secretRead logs a restricted caller's reveal of a secret (kind scope):
-// who read which scope's, never the value (docs/plans/0.2.3-plan.md D45).
+// secretRead logs a reveal of a secret, whoever makes it (kind scope): who
+// read which scope's, never the value (docs/plans/0.2.3-plan.md D45, 0.2.17
+// D253).
 func (inv *invocation) secretRead(kind, name string) {
-	inv.app.Audit().Raw("auth.info", "secret-read kind="+kind+" name="+name+" by="+inv.sudoUser())
+	inv.detailAt(audit.Info, "secret-read", kvp("kind", kind), kvp("name", name))
 }
 
 // callerScopes is the filter of the caller (SUDO_USER); a lower-tier caller

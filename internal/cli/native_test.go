@@ -284,7 +284,7 @@ func TestUserVerifyAndPasswdSelf(t *testing.T) {
 
 	sb.run("CorrectHorse99\nNewHorse123456\nNewHorse123456\n", []string{"passwd"}, "SUDO_USER=alice")
 	sb.expect(0, "[INFO] Password changed for 'alice'.", "  Current password: **************")
-	if !hasAudit(sb.runner, "auth.info", "passwd OK user=alice (self-service)") {
+	if !hasAudit(sb.runner, "auth.info", "passwd OK user=alice source=self") {
 		t.Errorf("audit: %q", sb.runner.Argvs())
 	}
 	sb.run("CorrectHorse99\n", []string{"passwd"}, "SUDO_USER=alice")

@@ -45,4 +45,8 @@ func TestCentralEndOfAnApplyThatFailsAfterItsSnapshot(t *testing.T) {
 	if len(lines) != 2 || !end.MatchString(lines[1]) {
 		t.Errorf("lines %q (exit %d, stderr %q)", lines, sb.code, sb.stderr())
 	}
+	// The change did not happen: no detail line says it did (D253).
+	if hasAuditPrefix(sb.runner, "", "user disable") {
+		t.Errorf("a detail line for a change that failed: %q", auditLines(sb.runner))
+	}
 }

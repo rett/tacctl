@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/store"
@@ -122,7 +123,9 @@ func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
 	if info, found := m.LookupAddr(addr); found {
 		a.Out.WarnE("--staging: " + addr + " is answered by scope '" + info.Scope + "' (prefix " + info.Prefix + ") until now; the staging /32 answers it from '" + scope + "' instead.")
 	}
+	addBase := "scope staging add cidr=" + cidr + " scope=" + scope + " " + kind + "=" + name + " by=" + inv.sudoUser()
 	if err := inv.applyStore(func(s *store.Store) error { return s.ScopeSet(scope, "prefixes="+csv) }); err != nil {
+		inv.verbResult(audit.Info, addBase, failReason(err, "store"))
 		return err
 	}
 	entries := inv.stagingLoad()
@@ -134,13 +137,14 @@ func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
 	}
 	kept = append(kept, stagingEntry{cidr, scope, kind, name, a.Knobs.Now().Format("2006-01-02 15:04")})
 	if err := inv.stagingSave(kept); err != nil {
+		inv.verbResult(audit.Info, addBase, "write")
 		return err
 	}
 	who := kind
 	if name != "" {
 		who += " '" + name + "'"
 	}
-	a.Audit().Raw("auth.info", "scope staging add cidr="+cidr+" scope="+scope+" "+kind+"="+name+" by="+inv.sudoUser())
+	inv.verbResult(audit.Info, addBase, "")
 	how := "removed once it is seen at an address '" + scope + "' covers"
 	if name == "" {
 		how = "remove it once the device is installed: tacctl scope staging remove " + cidr
@@ -246,13 +250,14 @@ func (inv *invocation) stagingSweep() {
 		}
 		rest := joinNonEmpty(without(m.ScopePrefixes(e.Scope), e.CIDR), ",")
 		if err := inv.applyStore(func(s *store.Store) error { return s.ScopeSet(e.Scope, "prefixes="+rest) }); err != nil {
+			inv.verbResult(audit.Info, "scope staging done cidr="+e.CIDR+" scope="+e.Scope+" "+e.Kind+"="+e.Name+" seen="+seen, failReason(err, "store"))
 			inv.reportOnly(err)
 			a.Out.WarnE("Could not remove staging address " + e.CIDR + " from scope '" + e.Scope + "'; remove it by hand: tacctl scope staging remove " + e.CIDR)
 			kept = append(kept, e)
 			continue
 		}
 		changed = true
-		a.Audit().Raw("auth.info", "scope staging done cidr="+e.CIDR+" scope="+e.Scope+" "+e.Kind+"="+e.Name+" seen="+seen)
+		inv.verbResult(audit.Info, "scope staging done cidr="+e.CIDR+" scope="+e.Scope+" "+e.Kind+"="+e.Name+" seen="+seen, "")
 		a.Out.InfoE("Staging address " + e.CIDR + " removed from scope '" + e.Scope + "': " + e.Name + " is now seen at " + seen + " (prefix " + info.Prefix + ").")
 		if m, err = inv.model(); err != nil {
 			return
@@ -345,19 +350,22 @@ func (inv *invocation) scopeStaging(args []string) error {
 		if err != nil {
 			return err
 		}
+		removeBase := "scope staging remove cidr=" + cidr + " scope=" + hit.Scope + " by=" + inv.sudoUser()
 		if m.Exists("scopes", hit.Scope) && contains(m.ScopePrefixes(hit.Scope), cidr) {
 			rest := without(m.ScopePrefixes(hit.Scope), cidr)
 			if joinNonEmpty(rest, "") == "" {
 				return inv.usageErr("Staging address " + cidr + " is the only prefix of scope '" + hit.Scope + "'; add its real prefixes first.")
 			}
 			if err := inv.applyStore(func(s *store.Store) error { return s.ScopeSet(hit.Scope, "prefixes="+joinNonEmpty(rest, ",")) }); err != nil {
+				inv.verbResult(audit.Info, removeBase, failReason(err, "store"))
 				return err
 			}
 		}
 		if err := inv.stagingSave(kept); err != nil {
+			inv.verbResult(audit.Info, removeBase, "write")
 			return err
 		}
-		a.Audit().Raw("auth.info", "scope staging remove cidr="+cidr+" scope="+hit.Scope+" by="+inv.sudoUser())
+		inv.verbResult(audit.Info, removeBase, "")
 		a.Out.Info("Staging address " + cidr + " removed from scope '" + hit.Scope + "'.")
 		return nil
 	default:

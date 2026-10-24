@@ -466,10 +466,10 @@ func TestEngineerWalkthroughShowsSNMP(t *testing.T) {
 	if n := auditCount(sb.runner, "auth.info", "secret-read kind=snmp name=lab by=bob"); n != 1 {
 		t.Errorf("snmp reveal logged %d times in the last run", n)
 	}
-	// A superuser's walkthrough logs nothing.
+	// A superuser's walkthrough is logged too (D253).
 	sb.cfgRun("", []string{"config", "cisco", "--scope", "lab"}, route)
-	if hasAuditPrefix(sb.runner, "auth.info", "secret-read kind=snmp") {
-		t.Error("a superuser's walkthrough was logged")
+	if !hasAuditPrefix(sb.runner, "auth.info", "secret-read kind=snmp") {
+		t.Errorf("a superuser's walkthrough was not logged: %q", auditLines(sb.runner))
 	}
 }
 

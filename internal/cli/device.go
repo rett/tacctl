@@ -23,6 +23,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
@@ -1376,6 +1377,7 @@ func (inv *invocation) deviceAddWith(args []string, trusted []devreg.HostKey) er
 		return err
 	}
 	a := inv.app
+	inv.detail("device add", kvp("name", d.Name), kvp("address", d.Address), kvp("vendor", d.Vendor), kvp("count", "1"))
 	a.Out.Info("Device '" + d.Name + "' registered: " + d.Address + ", " + d.Vendor + ".")
 	if lookup {
 		inv.printNameHint(d, <-hint)
@@ -1504,6 +1506,7 @@ func (inv *invocation) deviceRemove(args []string) error {
 		inv.snmpDeviceCarry(n, "")
 		inv.blocksDeviceCarry(n, "")
 	}
+	inv.app.Audit().Line(inv.auditPriority(), "device remove", audit.Wide("names", namesList(targets, 20)), kvp("count", strconv.Itoa(len(targets))), kvp("by", inv.sudoUser()))
 	a.Out.Info(fmt.Sprintf("Removed %d device(s).", len(targets)))
 	inv.echo("")
 	return nil
@@ -1554,6 +1557,7 @@ func (inv *invocation) deviceRename(args []string) error {
 	inv.snmpDeviceCarry(oldName, newName)
 	inv.blocksDeviceCarry(oldName, newName)
 	inv.holdCarry(oldName, newName, old.Address)
+	inv.detail("device rename", kvp("from", oldName), kvp("to", newName), kvp("count", "1"))
 	inv.app.Out.Info("Device '" + oldName + "' renamed to '" + newName + "'.")
 	inv.app.Out.Info("The device's own host name is unchanged: tacctl does not plan it.")
 	inv.echo("")
@@ -1663,6 +1667,7 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		}); err != nil {
 			return err
 		}
+		inv.detail("device set", kvp("name", name), kvp("field", field), kvp("from", setterText(d, field)), kvp("to", setterText(&probe, field)))
 		verbText := "set to " + value
 		if clearing {
 			verbText = "cleared"
@@ -1679,6 +1684,16 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		}
 		return inv.afterSetter(name, field, changed, applyReq)
 	}
+}
+
+// setterText is fieldValue as the audit line writes it: the ssh port that is
+// not set is 22.
+func setterText(d *devreg.Device, field string) string {
+	v := fieldValue(d, field)
+	if field == "port" && v == "0" {
+		return "22"
+	}
+	return v
 }
 
 // fieldValue is the value a setter's field holds, to tell whether a set
@@ -1811,6 +1826,7 @@ func (inv *invocation) deviceLegacySSH(args []string) error {
 	}); err != nil {
 		return err
 	}
+	inv.detail("device set", kvp("name", name), kvp("field", "legacy-ssh"), kvp("from", onOff(d.LegacySSH)), kvp("to", onOff(on)))
 	inv.app.Out.Info("Device '" + name + "' legacy-ssh " + p.Args[1] + "d.")
 	return nil
 }
@@ -1832,9 +1848,11 @@ func (inv *invocation) deviceStaleDays(args []string) error {
 	if err != nil || n < 1 || n > devreg.MaxStaleDays || strconv.Itoa(n) != p.Args[0] {
 		return inv.usageErr("Invalid number of days '" + p.Args[0] + "': expected 1-" + strconv.Itoa(devreg.MaxStaleDays) + ".")
 	}
+	was := f.StaleDays
 	if _, err := inv.deviceWrite(func(f *devreg.File, _ *devreg.Resolver) error { f.StaleDays = n; return nil }); err != nil {
 		return err
 	}
+	inv.detail("device set", kvp("name", ""), kvp("field", "stale-days"), kvp("from", strconv.Itoa(was)), kvp("to", strconv.Itoa(n)))
 	inv.app.Out.Info("Devices count as stale after " + p.Args[0] + " day(s) without a sighting.")
 	return nil
 }
@@ -1884,8 +1902,17 @@ func (inv *invocation) deviceNotice(args []string) error {
 	}); err != nil {
 		return err
 	}
+	inv.detail("device set", kvp("name", name), kvp("field", "notice:"+kind), kvp("from", noticeState(had)), kvp("to", noticeState(action == "ack")))
 	inv.app.Out.Info("Notice '" + kind + "' of '" + name + "' " + map[string]string{"ack": "acknowledged", "unack": "reopened"}[action] + ".")
 	return nil
+}
+
+// noticeState is how a notice's acknowledgement reads in the audit line.
+func noticeState(acked bool) string {
+	if acked {
+		return "acknowledged"
+	}
+	return "open"
 }
 
 // hostNotice acknowledges or reopens a notice of the enrolled host e: only
@@ -1919,6 +1946,7 @@ func (inv *invocation) hostNotice(e devreg.Entry, action, kind string) error {
 	}); err != nil {
 		return err
 	}
+	inv.detail("device set", kvp("name", name), kvp("field", "notice:"+kind), kvp("from", noticeState(had)), kvp("to", noticeState(action == "ack")))
 	inv.app.Out.Info("Notice '" + kind + "' of '" + name + "' " + map[string]string{"ack": "acknowledged", "unack": "reopened"}[action] + ".")
 	return nil
 }
@@ -2055,6 +2083,8 @@ func (inv *invocation) deviceImport(args []string) error {
 		inv.snmpDeviceCarry(n, "")
 		inv.blocksDeviceCarry(n, "")
 	}
+	inv.detail("device import", kvp("source", p.Args[0]), kvp("added", strconv.Itoa(len(plan.Added))), kvp("updated", strconv.Itoa(len(plan.Updated))),
+		kvp("removed", strconv.Itoa(len(plan.Removed))), kvp("count", strconv.Itoa(len(plan.Added)+len(plan.Updated)+len(plan.Removed))))
 	a.Out.Info("Imported: " + summary)
 	inv.deviceImportMixedNote(plan.Mixed)
 	for _, n := range plan.Added {

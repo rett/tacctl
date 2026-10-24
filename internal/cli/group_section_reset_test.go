@@ -226,7 +226,7 @@ func TestSectionResetYesAppliesAndLogs(t *testing.T) {
 			if sb.snapshots() != snaps+1 {
 				t.Errorf("snapshots %d -> %d: the pre-change snapshot", snaps, sb.snapshots())
 			}
-			if !hasAudit(sb.runner, "auth.info", strings.Replace(c.audit, "%s", "operator", 1)) {
+			if !hasAudit(sb.runner, "auth.info", strings.Replace(c.audit, "%s", "operator", 1)+" result=ok") {
 				t.Errorf("no audit line: %q", sb.runner.Argvs())
 			}
 			// Idempotent: nothing to change, no snapshot, no log line.
@@ -257,14 +257,14 @@ func TestSectionResetYesAppliesAndLogs(t *testing.T) {
 			if c.section == "privileges" && strings.Contains(o, "show clock") || c.section == "commands" && strings.Contains(o, "helpdesk:") && strings.Contains(o, "name: show") {
 				t.Errorf("the override is still there:\n%s", o)
 			}
-			if !hasAudit(sb.runner, "auth.info", strings.Replace(c.audit, "%s", "helpdesk", 1)) {
+			if !hasAudit(sb.runner, "auth.info", strings.Replace(c.audit, "%s", "helpdesk", 1)+" result=ok") {
 				t.Errorf("no audit line for helpdesk: %q", sb.runner.Argvs())
 			}
 			// SUDO_USER names the user.
 			sb.must("group", c.family, "reset", "operator", "--yes")
 			sb.modify("readonly")
 			sb.cfgRun("", []string{"group", c.family, "reset", "readonly", "--yes"}, nil, "SUDO_USER=carol")
-			if !hasAudit(sb.runner, "auth.info", strings.Replace(strings.Replace(c.audit, "%s", "readonly", 1), "by=root", "by=carol", 1)) {
+			if !hasAudit(sb.runner, "auth.info", strings.Replace(strings.Replace(c.audit, "%s", "readonly", 1), "by=root", "by=carol", 1)+" result=ok") {
 				t.Errorf("audit line: %q", sb.runner.Argvs())
 			}
 		})

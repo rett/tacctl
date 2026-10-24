@@ -196,14 +196,15 @@ func (inv *invocation) hashArg(v string) (string, error) {
 // promptHash is 'password=$(prompt_password <user>); hash=$(generate_hash
 // "$password")': the password asked (or generated) and hashed at the
 // configured cost, the salt from the knobs' random source.
-func (inv *invocation) promptHash(username string) (string, error) {
+func (inv *invocation) promptHash(username string) (h string, generated bool, err error) {
 	a := inv.app
 	t := a.Tunables()
-	pw, err := a.Prompter().PromptPassword(username, t.PasswordMinLength, a.Knobs.Rand())
+	pw, generated, err := a.Prompter().PromptPasswordSource(username, t.PasswordMinLength, a.Knobs.Rand())
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	return hash.GenerateWith(pw, t.BcryptCost, a.Knobs.Rand())
+	h, err = hash.GenerateWith(pw, t.BcryptCost, a.Knobs.Rand())
+	return h, generated, err
 }
 
 // scopeList is the --scopes / 'user scope' parsing: split on commas (the
@@ -445,7 +446,7 @@ func (inv *invocation) userAdd(args []string) error {
 	inv.echo("")
 	inv.echoE("  Adding user: " + ui.Bold + username + ui.NC + " (" + group + ")")
 	if hexHash == "" {
-		h, err := inv.promptHash(username)
+		h, _, err := inv.promptHash(username)
 		if err != nil {
 			return err
 		}
@@ -458,6 +459,7 @@ func (inv *invocation) userAdd(args []string) error {
 	}); err != nil {
 		return err
 	}
+	inv.detail("user add", kvp("name", username), kvp("group", group), kvp("scopes", display))
 	a.Out.InfoE("User '" + username + "' added (" + group + ") with scopes: " + display)
 	inv.echo("")
 	return nil
@@ -508,6 +510,7 @@ func (inv *invocation) userRemove(args []string) error {
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserDel(username) }); err != nil {
 		return err
 	}
+	inv.detail("user remove", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' removed.")
 	inv.echo("")
 	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
@@ -536,7 +539,7 @@ func (inv *invocation) userPasswd(args []string) error {
 	}
 	// Only '--hash <h>' right after the name counts; anything else is
 	// ignored, as in bash.
-	hexHash := ""
+	hexHash, source := "", "prompt"
 	if arg(args, 1) == "--hash" {
 		v := arg(args, 2)
 		if v == "" {
@@ -546,16 +549,19 @@ func (inv *invocation) userPasswd(args []string) error {
 		if err != nil {
 			return err
 		}
-		hexHash = h
+		hexHash, source = h, "hash"
 	}
 	inv.echo("")
 	inv.echoE("  Changing password for: " + ui.Bold + username + ui.NC)
 	if hexHash == "" {
-		h, err := inv.promptHash(username)
+		h, generated, err := inv.promptHash(username)
 		if err != nil {
 			return err
 		}
 		hexHash = h
+		if generated {
+			source = "generated"
+		}
 	} else {
 		inv.app.Out.Info("Using pre-generated bcrypt hash.")
 	}
@@ -566,6 +572,7 @@ func (inv *invocation) userPasswd(args []string) error {
 	}); err != nil {
 		return err
 	}
+	inv.detail("user passwd", kvp("name", username), kvp("source", source))
 	inv.app.Out.Info("Password changed for '" + username + "'.")
 	inv.echo("")
 	return nil
@@ -612,6 +619,7 @@ func (inv *invocation) userDisable(args []string) error {
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "disabled=true") }); err != nil {
 		return err
 	}
+	inv.detail("user disable", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' disabled. Use 'enable' to restore access.")
 	inv.echo("")
 	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
@@ -635,6 +643,7 @@ func (inv *invocation) userEnable(args []string) error {
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "disabled=false") }); err != nil {
 		return err
 	}
+	inv.detail("user enable", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' re-enabled with previous password.")
 	inv.echo("")
 	return nil
@@ -757,6 +766,11 @@ func (inv *invocation) userRename(args []string) error {
 	}); err != nil {
 		return err
 	}
+	uidWord := "-"
+	if mv.moved {
+		uidWord = "carried"
+	}
+	inv.detail("user rename", kvp("from", oldname), kvp("to", newname), kvp("uid", uidWord))
 	out := inv.app.Out
 	out.Info("User renamed: " + oldname + " -> " + newname)
 	switch {
@@ -898,6 +912,7 @@ func (inv *invocation) userMove(args []string) error {
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "group="+newgroup) }); err != nil {
 		return err
 	}
+	inv.detail("user move", kvp("name", username), kvp("from", oldgroup), kvp("to", newgroup))
 	inv.app.Out.Info("User '" + username + "' moved: " + oldgroup + " -> " + newgroup)
 	inv.echo("")
 	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
@@ -1068,6 +1083,7 @@ func (inv *invocation) userScope(args []string) error {
 	default:
 		v = "Replaced scopes on"
 	}
+	inv.detail("user scope", kvp("name", username), kvp("op", sub), kvp("scopes", strings.Join(changed, ",")))
 	a.Out.InfoE(v + " user '" + username + "': " + strings.Join(changed, " "))
 	if len(noop) > 0 {
 		a.Out.InfoE("(Skipped: " + strings.Join(noop, " ") + ")")
@@ -1099,6 +1115,7 @@ func (inv *invocation) userScopeRemoveAll(username string, current []string) err
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "scopes=") }); err != nil {
 		return err
 	}
+	inv.detail("user scope", kvp("name", username), kvp("op", "remove"), kvp("scopes", strings.Join(current, ",")))
 	a.Out.Info("Removed all scopes from user '" + username + "'.")
 	inv.echo("")
 	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")

@@ -137,3 +137,44 @@ audit_calls() { grep -E '^logger -t tacctl ' "$CALLS_LOG" || true; }
     assert_line --regexp '^logger -t tacctl -p auth.warning tier DENY user=ro tier=readonly cmd=user remove sid=[a-z0-9]{8}$'
     refute_output --partial "cmd "
 }
+
+@test "audit: a write verb writes its detail line between the start and the end" {
+    as_user ops no no -- user add dave operator --hash "$TEST_HASH" --scopes lab
+    assert_success
+    run audit_calls
+    assert_line --regexp '^logger -t tacctl -p auth.info user add name=dave group=operator scopes=lab by=ops sid=[a-z0-9]{8}$'
+    [[ "$(audit_calls | sed -n 1p)" == *"cmd start "* ]]
+    [[ "$(audit_calls | sed -n 2p)" == *"user add name=dave "* ]]
+    [[ "$(audit_calls | sed -n 3p)" == *"cmd end "* ]]
+    refute_output --partial "$TEST_HASH"
+}
+
+@test "audit: a list in a value is one unquoted word" {
+    as_user ops no no -- scope add x1 --prefixes 10.5.0.0/16,10.6.0.0/16
+    assert_success
+    run audit_calls
+    assert_line --regexp 'scope add name=x1 prefixes=10\.5\.0\.0/16,10\.6\.0\.0/16 default=no by=ops sid='
+    refute_output --partial 'prefixes="'
+}
+
+@test "audit: a setting's detail line has the value before and after" {
+    as_user ops no no -- config password-age 77
+    assert_success
+    run audit_calls
+    assert_line --regexp 'config password-age from=[0-9]+ to=77 by=ops sid='
+}
+
+@test "audit: a secret shown is a secret-read line for the superuser too, and no pair" {
+    as_user ops no no -- scope secret lab show
+    assert_success
+    run audit_calls
+    assert_line --regexp '^logger -t tacctl -p auth.info secret-read kind=scope name=lab by=ops sid=[a-z0-9]{8}$'
+    refute_output --partial "cmd "
+}
+
+@test "audit: a line that existed keeps its words and ends in result=ok" {
+    as_user ops no no -- scope breakglass lab add labadmin
+    assert_success
+    run audit_calls
+    assert_line --regexp 'scope breakglass add scope=lab name=labadmin role=[a-z]+ by=ops result=ok sid='
+}

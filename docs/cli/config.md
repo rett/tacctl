@@ -396,3 +396,5 @@ record the `tacctl.yaml` check already reports) is a `warning` here, so
 files of one backend that drifted as a single error; the object counts each
 file. A caller who sees only some scopes (an engineer) gets no `linux_hosts`,
 `names` or hold-defect findings, as in the text report.
+
+Each setting changed also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `config <setting> from= to=` for the tunables, `config allow|deny|mgmt-acl op= value=`, `config sudoers op= file=`, `config render backends=`, `config linux uid user= uid=`, `snmp set kind=` for `config snmp`, and `secret-export scope= file=` when `config linux script` writes a file that holds a scope's secret ([Audit log](../security/audit.md#detail-lines)).

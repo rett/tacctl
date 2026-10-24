@@ -192,8 +192,10 @@ func (inv *invocation) consolePolicy() (*console.Policy, error) {
 
 // consoleWrite changes console.yaml: fn runs first on a copy, so every
 // refusal comes before the snapshot; then, under the lock and after a
-// snapshot of the current state, on the file itself.
-func (inv *invocation) consoleWrite(fn func(*console.File) error) error {
+// snapshot of the current state, on the file itself. The change is logged as
+// 'console set key= [item=] from= to=', show saying how the setting reads
+// in a file (D253); item names the part of the setting ("" for none).
+func (inv *invocation) consoleWrite(key, item string, show func(*console.File) string, fn func(*console.File) error) error {
 	p := inv.app.Paths.ConsoleFile
 	f, err := console.Load(p)
 	if err != nil {
@@ -207,8 +209,20 @@ func (inv *invocation) consoleWrite(fn func(*console.File) error) error {
 		return err
 	}
 	inv.app.Audit().Touch()
-	_, err = console.Mutate(p, inv.snapshotFirst, fn)
-	return err
+	if _, err = console.Mutate(p, inv.snapshotFirst, fn); err != nil {
+		return err
+	}
+	inv.detail("console set", kvp("key", key), kvp("item", item), kvp("from", show(f)), kvp("to", show(trial)))
+	return nil
+}
+
+// consoleUserState is how a user's override reads in the file.
+func consoleUserState(f *console.File, name string) string {
+	on, ok := f.Users[name]
+	if !ok {
+		return "none"
+	}
+	return onOff(on)
 }
 
 // localHost is the entry of this server in the host registry (enrolled with
@@ -273,7 +287,8 @@ func (inv *invocation) consoleTiers(args []string) error {
 	if t == tier.Engineer && !on {
 		return inv.usageErr(engineerConsoleText)
 	}
-	if err := inv.consoleWrite(func(f *console.File) error { f.TierOn[t] = on; return nil }); err != nil {
+	if err := inv.consoleWrite("tiers", string(t), func(f *console.File) string { return onOff(f.TierOn[t]) },
+		func(f *console.File) error { f.TierOn[t] = on; return nil }); err != nil {
 		return err
 	}
 	inv.app.Out.Info("The console is " + p.Args[1] + "d for the " + string(t) + " tier.")
@@ -341,7 +356,8 @@ func (inv *invocation) consoleUser(args []string) error {
 			inv.app.Out.Info("'" + name + "' has no override.")
 			return nil
 		}
-		if err := inv.consoleWrite(func(f *console.File) error { delete(f.Users, name); return nil }); err != nil {
+		if err := inv.consoleWrite("user", name, func(f *console.File) string { return consoleUserState(f, name) },
+			func(f *console.File) error { delete(f.Users, name); return nil }); err != nil {
 			return err
 		}
 		inv.app.Out.Info("The override of '" + name + "' is cleared: the tier decides.")
@@ -361,7 +377,8 @@ func (inv *invocation) consoleUser(args []string) error {
 	if !on && inv.userTier(name, m.UserPrivLvl(name)) == tier.Engineer {
 		return inv.usageErr(engineerConsoleText)
 	}
-	if err := inv.consoleWrite(func(f *console.File) error { f.Users[name] = on; return nil }); err != nil {
+	if err := inv.consoleWrite("user", name, func(f *console.File) string { return consoleUserState(f, name) },
+		func(f *console.File) error { f.Users[name] = on; return nil }); err != nil {
 		return err
 	}
 	inv.app.Out.Info("The console is " + p.Args[1] + "d for '" + name + "' (a user override).")
@@ -387,7 +404,8 @@ func (inv *invocation) consoleIdle(args []string) error {
 	if err != nil || n < 0 || n > console.MaxIdle || strconv.Itoa(n) != p.Args[0] {
 		return inv.usageErr("Invalid number of minutes '" + p.Args[0] + "': expected 0-" + strconv.Itoa(console.MaxIdle) + " (0: never).")
 	}
-	if err := inv.consoleWrite(func(f *console.File) error { f.Idle = n; return nil }); err != nil {
+	if err := inv.consoleWrite("idle-timeout", "", func(f *console.File) string { return strconv.Itoa(f.Idle) },
+		func(f *console.File) error { f.Idle = n; return nil }); err != nil {
 		return err
 	}
 	if n == 0 {
@@ -421,7 +439,13 @@ func (inv *invocation) consoleSwitch(verbName string) func([]string) error {
 		if err != nil {
 			return err
 		}
-		if err := inv.consoleWrite(func(f *console.File) error {
+		show := func(f *console.File) string {
+			if verbName == "agent-forwarding" {
+				return onOff(f.AgentForwarding)
+			}
+			return onOff(f.SSHEscape)
+		}
+		if err := inv.consoleWrite(verbName, "", show, func(f *console.File) error {
 			if verbName == "agent-forwarding" {
 				f.AgentForwarding = on
 			} else {
@@ -464,7 +488,8 @@ func (inv *invocation) consoleSpace(args []string) error {
 	default:
 		return inv.usageErr("Usage: tacctl console " + consoleUse("space-completion"))
 	}
-	if err := inv.consoleWrite(func(f *console.File) error { f.SpaceCompletion = on; return nil }); err != nil {
+	if err := inv.consoleWrite("space-completion", "", func(f *console.File) string { return spaceWord(f.SpaceCompletion) },
+		func(f *console.File) error { f.SpaceCompletion = on; return nil }); err != nil {
 		return err
 	}
 	if on {
@@ -502,7 +527,8 @@ func (inv *invocation) consoleSystemShell(args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := inv.consoleWrite(func(f *console.File) error { f.SystemShellTiers = l; return nil }); err != nil {
+		if err := inv.consoleWrite("system-shell", "tiers", func(f *console.File) string { return tierCSV(f.SystemShellTiers) },
+			func(f *console.File) error { f.SystemShellTiers = l; return nil }); err != nil {
 			return err
 		}
 		inv.app.Out.Info("system-shell is open to: " + tierCSV(l) + ". It applies from the next console login.")
@@ -515,7 +541,8 @@ func (inv *invocation) consoleSystemShell(args []string) error {
 		if err := console.CheckShell(p.Args[1], inv.app.Paths.ShellsFile); err != nil {
 			return err
 		}
-		if err := inv.consoleWrite(func(f *console.File) error { f.SystemShell = p.Args[1]; return nil }); err != nil {
+		if err := inv.consoleWrite("system-shell", "path", func(f *console.File) string { return f.SystemShell },
+			func(f *console.File) error { f.SystemShell = p.Args[1]; return nil }); err != nil {
 			return err
 		}
 		inv.app.Out.Info("system-shell starts " + p.Args[1] + ". It applies from the next console login.")
@@ -550,7 +577,8 @@ func (inv *invocation) consoleForwarding(args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := inv.consoleWrite(func(f *console.File) error { f.GatewayPorts = on; return nil }); err != nil {
+		if err := inv.consoleWrite("forwarding", "gateway-ports", func(f *console.File) string { return onOff(f.GatewayPorts) },
+			func(f *console.File) error { f.GatewayPorts = on; return nil }); err != nil {
 			return err
 		}
 		if on {
@@ -570,7 +598,8 @@ func (inv *invocation) consoleForwarding(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := inv.consoleWrite(func(f *console.File) error { f.ForwardingTiers = l; return nil }); err != nil {
+	if err := inv.consoleWrite("forwarding", "tiers", func(f *console.File) string { return tierCSV(f.ForwardingTiers) },
+		func(f *console.File) error { f.ForwardingTiers = l; return nil }); err != nil {
 		return err
 	}
 	inv.app.Out.Info("X11 and TCP forwarding is open to: " + tierCSV(l) + ". The sshd drop-in follows it at the next sync.")
@@ -618,7 +647,8 @@ func (inv *invocation) consolePasswordCache(args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := inv.consoleWrite(func(f *console.File) error { f.PasswordCacheTiers = l; return nil }); err != nil {
+		if err := inv.consoleWrite("password-cache", "tiers", func(f *console.File) string { return tierCSV(f.PasswordCacheTiers) },
+			func(f *console.File) error { f.PasswordCacheTiers = l; return nil }); err != nil {
 			return err
 		}
 		inv.app.Out.Info("The password cache is open to: " + tierCSV(l) + ". It applies from the next console login or 'tacctl shell --password-cache'.")
@@ -638,7 +668,13 @@ func (inv *invocation) consolePasswordCache(args []string) error {
 		if err != nil || n < lo || n > hi || strconv.Itoa(n) != p.Args[1] {
 			return inv.usageErr("Invalid number of "+unit+" '"+p.Args[1]+"': expected "+strconv.Itoa(lo)+"-"+strconv.Itoa(hi)+".", usage)
 		}
-		if err := inv.consoleWrite(func(f *console.File) error {
+		show := func(f *console.File) string {
+			if isIdle {
+				return strconv.Itoa(f.PasswordCacheIdle)
+			}
+			return strconv.Itoa(f.PasswordCacheMax)
+		}
+		if err := inv.consoleWrite("password-cache", p.Args[0], show, func(f *console.File) error {
 			if isIdle {
 				f.PasswordCacheIdle = n
 			} else {
@@ -713,7 +749,7 @@ func (inv *invocation) consolePolicyLine([]string) error {
 	path, perr := pol.SystemShellPath()
 	if perr != nil {
 		if sys {
-			a.Audit().Raw("auth.warning", "console policy system_shell "+path+" unusable: "+strings.Join(msgs(perr), " "))
+			a.Audit().Raw("auth.warning", "console policy system_shell "+path+" unusable: "+strings.Join(msgs(perr), " ")+" by="+inv.sudoUser())
 		}
 		sys = false
 	}

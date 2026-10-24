@@ -208,9 +208,9 @@ func TestEngineerWalkthroughLogsTheSystemBlockRead(t *testing.T) {
 			t.Errorf("the key is in a log line: %q", c.Cmd.Args)
 		}
 	}
-	// a superuser's is not logged as a restricted reveal
+	// a superuser's reveal is logged as well (D253)
 	sb.cfgRun("", []string{"config", "juniper", "--scope", "lab"}, nil)
-	if hasAuditPrefix(sb.runner, "auth.info", "secret-read") {
-		t.Errorf("the superuser's read was logged: %q", sb.runner.Argvs())
+	if !hasAudit(sb.runner, "auth.info", "secret-read kind=block name=lab/juniper/system by=root") {
+		t.Errorf("the superuser's read was not logged: %q", auditLines(sb.runner))
 	}
 }

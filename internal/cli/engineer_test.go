@@ -482,10 +482,10 @@ func TestEngineerReadsOwnScopeSecret(t *testing.T) {
 	if n := auditCount(sb.runner, "auth.info", "secret-read kind=scope name=lab by=bob"); n != 1 {
 		t.Errorf("walkthrough: %d secret-read lines", n)
 	}
-	// A superuser (root here) is not logged as a restricted reveal.
+	// A superuser's (root here) is logged as well (D253).
 	sb.cfgRun("", []string{"scope", "secret", "prod", "show"}, nil)
-	if sb.code != 0 || hasAuditPrefix(sb.runner, "auth.info", "secret-read") {
-		t.Errorf("superuser: %d %q", sb.code, sb.runner.Argvs())
+	if sb.code != 0 || !hasAudit(sb.runner, "auth.info", "secret-read kind=scope name=prod by=root") {
+		t.Errorf("superuser: %d %q", sb.code, auditLines(sb.runner))
 	}
 }
 

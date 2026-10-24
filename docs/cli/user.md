@@ -94,3 +94,5 @@ user scope <name> remove --all
 
     Revoke every scope (with confirmation)
 ```
+
+Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `user add name= group= scopes=`, `user passwd name= source=prompt|hash|generated`, `user rename from= to= uid=`, `user scope name= op= scopes=` and the like, never a password or a hash ([Audit log](../security/audit.md#detail-lines)).

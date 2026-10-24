@@ -259,11 +259,15 @@ func ParseAccountSummary(line string) (AccountSummary, bool) {
 // reported; what 'host show' prints of the last sync.
 type AccountChanges struct {
 	Created, Updated, Removed []string
+	// Renamed are the accounts renamed (they are in Updated too), by their
+	// new names.
+	Renamed []string
 }
 
 var (
 	reAccountCreated = regexp.MustCompile(`^\[INFO\] Created account '([^']+)'`)
 	reAccountDeleted = regexp.MustCompile(`^\[INFO\] Deleted account '([^']+)'`)
+	reAccountRenamed = regexp.MustCompile(`^\[INFO\] '[^']+' is now '([^']+)' \(renamed;`)
 	reAccountUpdated = regexp.MustCompile(`^\[INFO\] (?:Re-activated account '([^']+)'|'([^']+)' has no \S+ login here now|'[^']+' is now '([^']+)' \(renamed;|'([^']+)': (?:renumbered|primary group is now|home .* is now|login shell is now|no longer listed in))`)
 )
 
@@ -287,6 +291,9 @@ func (c *AccountChanges) take(line string) {
 		add(&c.Removed, m[1])
 		drop(m[1])
 	} else if m := reAccountUpdated.FindStringSubmatch(line); m != nil {
+		if r := reAccountRenamed.FindStringSubmatch(line); r != nil {
+			add(&c.Renamed, r[1])
+		}
 		name := m[1] + m[2] + m[3] + m[4]
 		for _, n := range append(append([]string(nil), c.Created...), c.Removed...) {
 			if n == name {

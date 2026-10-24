@@ -8,6 +8,8 @@ package cli
 // devices.yaml (internal/devreg), written only when set.
 
 import (
+	"strconv"
+
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devreg"
 )
@@ -145,6 +147,7 @@ func (inv *invocation) deviceNetconf(args []string) error {
 	}); err != nil {
 		return err
 	}
+	inv.detail("device set", kvp("name", name), kvp("field", "netconf"), kvp("from", netconfWord(d.Netconf)), kvp("to", netconfWord(next)))
 	if !changed {
 		inv.app.Out.Info("Device '" + name + "' NETCONF service setting is " + word + " already; nothing was changed.")
 	} else {
@@ -159,4 +162,20 @@ func (inv *invocation) deviceNetconf(args []string) error {
 		}
 	}
 	return inv.afterSetter(name, "netconf", changed, applyReq)
+}
+
+// netconfWord is a device's NETCONF service setting as the audit line writes
+// it: the state, with the limits when it has some.
+func netconfWord(n devreg.Netconf) string {
+	if n.State == "" {
+		return "follows-scope"
+	}
+	w := n.State
+	if n.ConnectionLimit > 0 {
+		w += ",connection-limit=" + strconv.Itoa(n.ConnectionLimit)
+	}
+	if n.RateLimit > 0 {
+		w += ",rate-limit=" + strconv.Itoa(n.RateLimit)
+	}
+	return w
 }

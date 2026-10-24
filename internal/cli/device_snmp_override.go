@@ -465,24 +465,27 @@ func (inv *invocation) deviceSNMP(args []string) error {
 		return inv.deniedUsage(reasonSuperuser, "The engineer tier reads a device's SNMP settings: tacctl device snmp "+shellquote.Q(e.Name)+
 			" show [--reveal]. Changing them is the superuser's. Nothing was changed.")
 	}
-	switch sub {
-	case "show":
+	if sub == "show" {
 		return inv.deviceSNMPShow(e, p.Has("--reveal"))
-	case "version":
-		return inv.deviceSNMPVersion(e, p)
-	case "port":
-		return inv.deviceSNMPNumber(e, p, "port", "UDP port", "1-65535", 1, 65535)
-	case "timeout":
-		return inv.deviceSNMPNumber(e, p, "timeout", "timeout", "1-10", snmp.MinTimeout, snmp.MaxTimeout)
-	case "clients":
-		return inv.deviceSNMPClients(e, p)
-	case "community":
-		return inv.deviceSNMPCommunity(e, p)
-	case "v3-user":
-		return inv.deviceSNMPV3User(e, p)
-	default:
-		return inv.deviceSNMPClear(e)
 	}
+	return inv.snmpChange(func() error {
+		switch sub {
+		case "version":
+			return inv.deviceSNMPVersion(e, p)
+		case "port":
+			return inv.deviceSNMPNumber(e, p, "port", "UDP port", "1-65535", 1, 65535)
+		case "timeout":
+			return inv.deviceSNMPNumber(e, p, "timeout", "timeout", "1-10", snmp.MinTimeout, snmp.MaxTimeout)
+		case "clients":
+			return inv.deviceSNMPClients(e, p)
+		case "community":
+			return inv.deviceSNMPCommunity(e, p)
+		case "v3-user":
+			return inv.deviceSNMPV3User(e, p)
+		default:
+			return inv.deviceSNMPClear(e)
+		}
+	}, sub, kvp("device", e.Name))
 }
 
 // fromLabel is a value's source as the verbs print it.
@@ -497,7 +500,7 @@ func (inv *invocation) deviceSNMPShow(e devreg.Entry, reveal bool) error {
 		return err
 	}
 	eff := info.Eff
-	if reveal && inv.callerScopes().restricted {
+	if reveal {
 		inv.logRevealed(e, info)
 	}
 	title := "SNMP for device '" + e.Name + "'"
@@ -548,7 +551,7 @@ func (inv *invocation) deviceSNMPShow(e devreg.Entry, reveal bool) error {
 	}
 	inv.echo("  order:      the device's own setting, then its scope's, then the default's, then the built-in")
 	switch {
-	case reveal && inv.callerScopes().restricted:
+	case reveal:
 		inv.echo("  Reveal logged: the secrets above are the device's own, its scope's or the default's, as labelled.")
 	case !reveal && !info.Own.Creds.Empty():
 		p, _ := snmpcred.DeviceFile(inv.app.Paths.SNMPDir, e.Name)
@@ -561,7 +564,7 @@ func (inv *invocation) deviceSNMPShow(e devreg.Entry, reveal bool) error {
 	return nil
 }
 
-// logRevealed logs an engineer's reveal, one line for each level a secret
+// logRevealed logs a reveal, one line for each level a secret
 // that is printed comes from: the device's own, its scope's, the default's
 // (never a value). A secret the device inherits is the scope's or the
 // default's read, and is logged as that.

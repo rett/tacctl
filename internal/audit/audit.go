@@ -64,7 +64,7 @@ func Pair(key, value string) KV { return KV{Key: key, Value: value} }
 func Wide(key, value string) KV { return KV{Key: key, Value: value, Max: MaxWide} }
 
 // Value is v as one field value of a line: written as it is when it is
-// non-empty and holds only [A-Za-z0-9._:/@+-], else Go-quoted
+// non-empty and holds only [A-Za-z0-9._:/@+,-], else Go-quoted
 // (strconv.Quote: spaces, quotes, control characters and bytes that are not
 // UTF-8 are escaped, so a line is always one line and a collector can split
 // on spaces outside quotes); '-' when empty. A value longer than 64 bytes
@@ -94,7 +94,7 @@ func plain(v string) bool {
 	for i := 0; i < len(v); i++ {
 		switch c := v[i]; {
 		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
-		case strings.IndexByte("._:/@+-", c) >= 0:
+		case strings.IndexByte("._:/@+,-", c) >= 0:
 		default:
 			return false
 		}

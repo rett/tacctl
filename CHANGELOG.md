@@ -66,6 +66,55 @@ current behaviour; this file is where history lives.
    such as `breakglass hold --reason` and the arguments of `ssh` after `--`
    are logged as typed, as before; the docs say so.
 
+4. **Audit log: detail lines for every change, `result=` on the lines that
+   existed, a list is one word.** A command that changes something now says
+   what it changed in a line of its own beside the `cmd start`/`cmd end` pair,
+   at the priority of its class and ending in `by=<user>` and the `sid`: `user
+   add name= group= scopes=`, `user passwd name= source=prompt|hash|generated`,
+   `user rename from= to= uid=`, `user scope name= op= scopes=`, `group add`,
+   `group edit name= key= from= to=` (one line for each setting changed),
+   `group commands`, `group privilege`, `group preset`, `config sudoers op=
+   file=`, `console set key= item= from= to=`, `backup restore id= pre=
+   keep-uids= legacy=`, `store import`, `store rollback`, `install`, `upgrade
+   from= to= branch=`, `uninstall`, `scope add|remove|rename|default`, `scope
+   prefixes op= scope= cidr=`, `scope protocols|vendor-attrs|auth-method|
+   aaa-order|exec-timeout|tacacs-group|radius-group|netconf scope= from= to=`,
+   `scope devices`, `scope mgmt-acl`, `scope secret set scope= source=`, `snmp
+   set kind=` (with `scope=` or `device=`), `config allow|deny|mgmt-acl op=
+   value=`, `config <tunable> from= to=` (`password-age`, `bcrypt-cost`,
+   `password-min-length`, `secret-min-length`, `loglevel`, `metrics`,
+   `listen`, `branch`, `devices`, `cisco source-interface`), `config render
+   backends=`, `config linux uid`, `backend enable|disable id=`, `host sync`
+   for each host (`created= updated= renamed= removed= remove-home= result=`),
+   `host move`, `device add|remove|rename|import` with counts and `device set
+   name= field= from= to=` for every setter. A value is a name or a count,
+   never a secret, a hash or a password. Every `show` that prints a secret is
+   now `secret-read kind= name=` for every caller (before, only for the
+   restricted tiers), and so are `store show`, `config dump` and `backup
+   diff`; `config linux script` writes `secret-export scope= file=`. The lines
+   that existed keep their words and gain `result=ok` when the change was made;
+   a change that failed is written too, at `auth.warning`, as `result=failed
+   reason=<word>` (`script`, `store`, `race`, `lock`, `write`, `ssh`, `sshd`,
+   `interrupted`; never the text of an error): `host enroll|unenroll|rename|
+   forget|target`, `breakglass hold|release|remove-record|hold-move`,
+   `rollback`, `device sync`, `block-set|edit|adopt|remove`, `scope
+   breakglass`, `scope staging`, `group reset` and its sections, `device
+   hostkey`, `device config forget`, `linux engineer-sudo` and `console
+   provision|deprovision`. `host unenroll` says `force=yes|no`, `device sync`
+   `names=` (the first 20 devices) and `passwd` `source=self` where it said
+   `(self-service)`; `uid-map renumbered`, `uid-range set`, the two
+   `hostkey-mismatch` lines and `console policy ... unusable` end in
+   `by=<user>`. A comma is now written as it is in a value, so a list reads
+   `scopes=core,lab` and the `snapshot=` of a `cmd end` line that took two
+   snapshots `snapshot=<id>,<id>`; a space, a quote or a control character is
+   still quoted. The `secret-read` line of the walkthroughs and of `scope
+   snmp|device snmp show --reveal` is also written for a superuser, and the
+   `Reveal logged:` line of those two verbs is printed for every caller; a
+   verb that shows no secret (`device config list`, the note after a setter)
+   writes none. The
+   page `docs/security/audit.md` and the manual page's AUDIT LOG section list
+   the lines and their keys.
+
 ## 0.2.16 (2026-10-23)
 
 1. **`config validate` takes no argument.** `config validate extra` ran the

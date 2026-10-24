@@ -57,11 +57,22 @@ type switcher struct {
 	tree string
 	// wait sleeps for d, or until the command is cancelled.
 	wait func(d time.Duration)
+	// done, when set, is told that the backend id was enabled or disabled
+	// (op), for the audit line.
+	done func(op, id string)
 }
 
 func (inv *invocation) switcher() *switcher {
 	a := inv.app
-	return &switcher{ctx: inv.ctx, set: a.Backends(), out: a.Out, prompt: a.Prompter(), tree: a.Paths.Tree, wait: inv.pause}
+	return &switcher{ctx: inv.ctx, set: a.Backends(), out: a.Out, prompt: a.Prompter(), tree: a.Paths.Tree, wait: inv.pause,
+		done: func(op, id string) { inv.detail("backend "+op, kvp("id", id)) }}
+}
+
+// told reports to s.done.
+func (s *switcher) told(op, id string) {
+	if s.done != nil {
+		s.done(op, id)
+	}
 }
 
 func (s *switcher) echo(line string) { _, _ = io.WriteString(s.out.Stdout, line+"\n") }
@@ -291,6 +302,7 @@ func (s *switcher) enable(args []string) error {
 		s.undo(b, keptConf, kept, res.Changed)
 		return s.fail("Backend '" + id + "' was not enabled. tacctl.yaml and every rendered file are back as they were, the service is stopped and disabled" + keptNote + ".")
 	}
+	s.told("enable", id)
 	s.out.InfoE("Backend '" + id + "' is enabled and running.")
 	s.echo("")
 	return nil
@@ -395,6 +407,7 @@ func (s *switcher) disable(args []string) error {
 		return exit(code)
 	}
 
+	s.told("disable", id)
 	ok := true
 	if _, err := b.Service(s.ctx, backend.ServiceStop, ""); err != nil {
 		ok = false

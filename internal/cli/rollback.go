@@ -17,6 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/lifecycle"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
@@ -101,9 +102,11 @@ func (inv *invocation) rollback(args []string) error {
 
 	inv.echo("")
 	inv.echo(ui.Bold + "Applying." + ui.NC)
+	rollbackBase := "rollback target=" + version + " keys=" + strconv.Itoa(len(plan.Keys())) + " by=" + inv.sudoUser()
 	// The snapshot is of the files the rollback converts.
 	if plan.PendingFiles() {
 		if err := inv.snapshotFirst(); err != nil {
+			inv.verbResult(audit.Notice, rollbackBase, "store")
 			return err
 		}
 	}
@@ -115,6 +118,7 @@ func (inv *invocation) rollback(args []string) error {
 		for _, m := range msgs(err) {
 			a.Out.ErrorE(m)
 		}
+		inv.verbResult(audit.Notice, rollbackBase, "write")
 		return inv.usageErr("The rollback stopped. The files listed above are converted, the others are as they were (the snapshot holds the state before); run the same command again to finish: a file that is converted is not touched again.")
 	}
 	for _, n := range plan.NotWritten() {
@@ -127,7 +131,7 @@ func (inv *invocation) rollback(args []string) error {
 	a.Conf().Reload()
 
 	inv.rollbackNextSteps(version)
-	a.Audit().Raw("auth.info", "rollback target="+version+" keys="+strconv.Itoa(len(plan.Keys()))+" by="+inv.sudoUser())
+	inv.verbResult(audit.Info, rollbackBase, "")
 	return nil
 }
 

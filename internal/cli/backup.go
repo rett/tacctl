@@ -384,8 +384,10 @@ func (inv *invocation) backupDiff(args []string) error {
 		if !inv.storeMode() {
 			return inv.usageErr("Snapshot " + id + " holds the store, which is not initialised here. " + store.NotInitialisedMsg)
 		}
+		inv.secretRead("snapshot", id)
 		inv.diffSnapshot(id)
 	} else if path, ok := inv.legacyPath(id); ok {
+		inv.secretRead("backup", id)
 		inv.diffLegacy(id, path)
 	} else {
 		return inv.usageErr("Backup not found: "+id, "Run 'tacctl backup list' to see available backups.")
@@ -688,6 +690,7 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	if err := set.RestartAll(inv.ctx); err != nil {
 		return err
 	}
+	inv.detail("backup restore", kvp("id", id), kvp("pre", preID), kvp("keep-uids", yesNo(keepUIDs)), kvp("legacy", "no"))
 	a.Out.InfoE("Restored snapshot " + id + ".")
 	if holdNote != "" {
 		a.Out.WarnE(holdNote)
@@ -1315,7 +1318,8 @@ func (inv *invocation) restoreLegacy(id string) error {
 	}
 	defer unlock()
 	before := inv.storeGroups()
-	if err := inv.snapshotFirst(); err != nil {
+	preID, err := inv.snapshotFirstID()
+	if err != nil {
 		return err
 	}
 	set := a.Backends()
@@ -1331,6 +1335,7 @@ func (inv *invocation) restoreLegacy(id string) error {
 	if err := set.RestartAll(inv.ctx); err != nil {
 		return err
 	}
+	inv.detail("backup restore", kvp("id", id), kvp("pre", preID), kvp("keep-uids", "no"), kvp("legacy", "yes"))
 	a.Out.InfoE("Restored old-style backup " + id + ".")
 	inv.echo("")
 	inv.pinGroupTiers(before)
@@ -1380,6 +1385,7 @@ func (inv *invocation) restoreUnflipped(id string) error {
 	if b, err := a.Backends().Get(backend.TACACS); err == nil {
 		_, _ = b.Service(inv.ctx, backend.ServiceRestart, "")
 	}
+	inv.detail("backup restore", kvp("id", id), kvp("pre", ""), kvp("keep-uids", "no"), kvp("legacy", "yes"))
 	a.Out.InfoE("Config restored from backup " + id + ".")
 	inv.echo("")
 	return nil

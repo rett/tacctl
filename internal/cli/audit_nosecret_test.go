@@ -132,6 +132,61 @@ func TestNoSecretReachesTheAuditLog(t *testing.T) {
 	noLoggerHas(t, "user verify", sb.runner, markers...)
 }
 
+// The detail lines (D253) name objects and counts, never a value: the verbs
+// that write them are run with markers as the shared secret, the community
+// and the hash they handle, and the verbs that reveal a secret are run after
+// them. Every case says the line it must have written, so the scan is not
+// satisfied by a run that logged nothing.
+func TestNoSecretInTheDetailLines(t *testing.T) {
+	sb := newSandbox(t, true)
+	markerHash, err := hash.Generate(markerSecret, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	markers := []string{markerSecret, markerSecret2, markerHash[:40], hex.EncodeToString([]byte(markerHash))[:40]}
+	alice := []string{"SUDO_USER=alice", "SUDO_UID=1001"}
+	sb.dev("", "add", "lab-sw1", "192.168.1.1", "--vendor", "cisco", "--no-host-key", "--no-lookup")
+	script := sb.path("client.sh")
+	for _, c := range []struct {
+		stdin string
+		args  []string
+		want  string
+	}{
+		{"", []string{"scope", "secret", "lab", "set", markerSecret}, "scope secret set scope=lab source=set by=alice"},
+		{markerSecret2 + "\n", []string{"config", "snmp", "community", "--stdin"}, "snmp set kind=community by=alice"},
+		{markerSecret2 + "\n", []string{"scope", "snmp", "lab", "community", "--stdin"}, "snmp set kind=community scope=lab by=alice"},
+		{markerSecret2 + "\n", []string{"device", "snmp", "lab-sw1", "community", "--stdin"}, "snmp set kind=community device=lab-sw1 by=alice"},
+		{markerSecret + "\n" + markerSecret2 + "\n", []string{"config", "snmp", "v3-user", "monitor", "--auth", "sha256", "--stdin"}, "snmp set kind=v3-user by=alice"},
+		{"", []string{"user", "add", "dave", "operator", "--hash", markerHash, "--scopes", "lab"}, "user add name=dave group=operator scopes=lab by=alice"},
+		{"", []string{"user", "passwd", "dave", "--hash", markerHash}, "user passwd name=dave source=hash by=alice"},
+		{markerSecret + "\n" + markerSecret + "\n", []string{"user", "passwd", "dave"}, "user passwd name=dave source=prompt by=alice"},
+		{"", []string{"scope", "secret", "lab", "show"}, "secret-read kind=scope name=lab by=alice"},
+		{"", []string{"scope", "snmp", "lab", "show", "--reveal"}, "secret-read kind=snmp name=lab by=alice"},
+		{"", []string{"config", "snmp", "show", "--reveal"}, "secret-read kind=snmp-default name=default by=alice"},
+		{"", []string{"device", "snmp", "lab-sw1", "show", "--reveal"}, "secret-read kind=snmp-device name=lab-sw1 by=alice"},
+		{"", []string{"store", "show"}, "secret-read kind=store name=model by=alice"},
+		{"", []string{"config", "dump"}, "secret-read kind=config name=dump by=alice"},
+		{"", []string{"config", "linux", "script", "--scope", "lab", "--server", "192.0.2.1", "-o", script}, "secret-export scope=lab file=" + script + " by=alice"},
+	} {
+		sb.cfgRun(c.stdin, c.args, nil, alice...)
+		name := strings.Join(c.args[:min(3, len(c.args))], " ")
+		if sb.code != 0 {
+			t.Errorf("%s: exit %d %q", name, sb.code, sb.stderr())
+		}
+		noLoggerHas(t, name, sb.runner, markers...)
+		if !hasAudit(sb.runner, "auth.info", c.want) {
+			t.Errorf("%s: no %q in %q", name, c.want, auditLines(sb.runner))
+		}
+	}
+	// A diff of a snapshot, which holds the secrets.
+	id := sb.snapshotID()
+	sb.cfgRun("", []string{"backup", "diff", id}, nil, alice...)
+	noLoggerHas(t, "backup diff", sb.runner, markers...)
+	if !hasAudit(sb.runner, "auth.info", "secret-read kind=snapshot name="+id+" by=alice") {
+		t.Errorf("backup diff: %q", auditLines(sb.runner))
+	}
+}
+
 // The denial line of a refused verb carries no secret: an engineer naming a
 // scope's secret to change, or the community of a scope or a device that is
 // not theirs, with the secret typed where the verb asks for a prompt. Each

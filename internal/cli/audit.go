@@ -575,6 +575,23 @@ func (inv *invocation) auditStart() {
 	}
 }
 
+// detail writes a verb's own line beside the central pair (D253): the object
+// and what changed, at the priority of the verb's class, with the actor
+// last (by=, as the older per-verb lines have it). A value is a name or a
+// count, never a secret, a hash or a password.
+func (inv *invocation) detail(event string, kv ...audit.KV) {
+	inv.detailAt(inv.auditPriority(), event, kv...)
+}
+
+// detailAt is detail at a priority of its own (auth.notice for a weighty
+// change inside a verb of a lighter class, auth.warning for a failure).
+func (inv *invocation) detailAt(priority, event string, kv ...audit.KV) {
+	inv.app.Audit().Line(priority, event, append(kv, audit.Pair("by", inv.sudoUser()))...)
+}
+
+// kvp is audit.Pair, short for the many detail lines.
+func kvp(key, value string) audit.KV { return audit.Pair(key, value) }
+
 // redacted is what a secret is written as.
 const redacted = "<redacted>"
 
@@ -742,4 +759,55 @@ func (inv *invocation) auditFinish(errp *error) {
 		panic(r)
 	}
 	inv.auditEnd(*errp, false)
+}
+
+// orWord is v, or word when v is empty.
+func orWord(v, word string) string {
+	if v == "" {
+		return word
+	}
+	return v
+}
+
+// snmpChange runs one SNMP setting verb and, when it succeeded and wrote
+// something (the command's start line was written by it), writes 'snmp set
+// kind= <who>' (D253). kind is the verb; who is scope= or device=.
+func (inv *invocation) snmpChange(run func() error, kind string, who audit.KV) error {
+	w := inv.app.Audit()
+	before := w.Touched()
+	err := run()
+	if err == nil && !before && w.Touched() {
+		inv.detail("snmp set", kvp("kind", kind), who)
+	}
+	return err
+}
+
+// verbResult writes a per-verb line that existed before 0.2.17 with its
+// result (D254): base is the line as it was, up to and including by=<user>.
+// An empty reason is result=ok at priority; a reason is result=failed
+// reason=<word> at auth.warning. The reason is the class of the error (script,
+// store, race, lock, interrupted, ...), never its text.
+func (inv *invocation) verbResult(priority, base, reason string) {
+	if reason == "" {
+		inv.app.Audit().Raw(priority, base+" result=ok")
+		return
+	}
+	inv.app.Audit().Raw(audit.Warning, base+" result=failed reason="+reason)
+}
+
+// failReason is the reason word of err: interrupted for a Ctrl-C, else
+// fallback.
+func failReason(err error, fallback string) string {
+	if errors.Is(err, ui.ErrInterrupted) {
+		return "interrupted"
+	}
+	return fallback
+}
+
+// namesList is the first max names comma-joined, then '+<n>' for the rest.
+func namesList(names []string, max int) string {
+	if len(names) <= max {
+		return strings.Join(names, ",")
+	}
+	return strings.Join(names[:max], ",") + ",+" + strconv.Itoa(len(names)-max)
 }
