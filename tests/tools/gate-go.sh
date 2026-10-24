@@ -20,13 +20,17 @@
 # trailing '&' inside another command, and never wait for it with pgrep -f
 # (the pattern matches the waiting command itself).
 #
-# GO names the go command (default: go); GOCACHE defaults to a cache under
-# $TMPDIR; LANG is C.UTF-8. The default log is a new file under $TMPDIR.
+# GO names the go command (default: go on the PATH, else
+# /usr/local/go/bin/go); GOCACHE defaults to a cache under $TMPDIR; LANG is
+# C.UTF-8. The default log is a new file under $TMPDIR.
 # Exit status: 0 PASS, 1 FAIL, 2 usage.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 2
 
-GO="${GO:-go}"
+if [[ -z "${GO:-}" ]]; then
+    # As the Makefile has it: go from the PATH, else the toolchain's usual home.
+    GO="$(command -v go || echo /usr/local/go/bin/go)"
+fi
 export LANG=C.UTF-8
 export GOCACHE="${GOCACHE:-${TMPDIR:-/tmp}/tacctl-gate-go-cache-$(id -u)}"
 
