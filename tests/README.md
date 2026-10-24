@@ -45,7 +45,12 @@ process environment, signal the process, or write a package-level registry
 round-robin; `--check <count>` fails unless every test is in exactly one
 shard), the ones without tags with the race detector, beside one job for
 every other package and a static job (gofmt, `go vet`). Both tag sets run,
-as `make test-go` does; the bats suite, the diff corpus and the container
+as `make test-go` does; `make gate-go` (`tests/tools/gate-go.sh`, which
+`tests/integration/gate_go.bats` pins) runs the packages as one tracked run
+that ends with a single `GATE-GO PASS|FAIL` line, a FAIL for a run that was
+killed or lost a package: start it with a tool that notices the process
+ending (an agent: Bash `run_in_background`), never with a trailing `&` and
+never wait for it with `pgrep -f`; the bats suite, the diff corpus and the container
 matrix stay on the maintainer's machine. The temporary directory is
 `Paths.TempDir`, the `TMPDIR` of the environment a test gives the
 invocation, and the code never reads the process's
@@ -92,7 +97,7 @@ tests/
 ├── integration/         # the command line against real files in the test's tmpdir
 ├── e2e/                 # whole command flows with stubbed system commands
 ├── diff/                # the differential runner, its corpora, stubs and state roots
-├── tools/               # no-private.sh and no-os-tempdir.sh (lint), pyyaml-corpus.py, usage-goldens.sh, permcheck.py and permcheck-baseline.txt (the lab permission check, below), pre-push, release-preflight.sh, release-stamps.sh and release-reproduce.sh (the release checks, docs/releasing.md)
+├── tools/               # no-private.sh and no-os-tempdir.sh (lint), gate-go.sh (the Go tests as one run with a verdict line), pyyaml-corpus.py, usage-goldens.sh, permcheck.py and permcheck-baseline.txt (the lab permission check, below), pre-push, release-preflight.sh, release-stamps.sh and release-reproduce.sh (the release checks, docs/releasing.md)
 ├── containers/radius/   # real FreeRADIUS in podman
 ├── containers/hosts/    # 'host enroll|sync|unenroll' for real, server and client containers
 ├── containers/crossover/ # the upgrade from the bash release to the Go binary, and back

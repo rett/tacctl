@@ -1,5 +1,5 @@
 .PHONY: test test-go test-bats test-integration test-e2e test-diff test-pyyaml build \
-	coverage lint lint-sh lint-go lint-man lint-private lint-logger man hooks clean bootstrap release-assets release-verify release-reproduce
+	coverage gate-go lint lint-sh lint-go lint-man lint-private lint-logger man hooks clean bootstrap release-assets release-verify release-reproduce
 
 BATS := tests/bats/bats-core/bin/bats
 BATS_FLAGS ?= --print-output-on-failure
@@ -63,6 +63,12 @@ test-e2e: build
 test-go:
 	CGO_ENABLED=1 $(GO) test -race ./...
 	CGO_ENABLED=1 $(GO) test -race -tags testknobs ./...
+
+# The Go tests of ./internal/... (or PKGS) as one tracked run that ends with a
+# single GATE-GO PASS|FAIL line (tests/tools/gate-go.sh); LOG names the log,
+# TAGS the build tags: make gate-go TAGS=testknobs
+gate-go:
+	GO=$(GO) tests/tools/gate-go.sh $(if $(LOG),-o $(LOG)) $(if $(TAGS),--tags $(TAGS)) $(PKGS)
 
 # internal/yamlpy's PyYAML corpus (docs/plans/go-rewrite.md 3.3): regenerate
 # the expected files with PyYAML and compare with the committed ones. Without
