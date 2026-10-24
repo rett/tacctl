@@ -45,9 +45,9 @@ func userCmd(inv *invocation) *cobra.Command {
 	c := verb("user <subcommand>", "User management (list, add, remove, passwd, scope, ...)",
 		withRun(verb("list", "List all users (name, group, status, pw age, scopes)"), n(inv.userList)),
 		withRun(verb("show <username>", "Show user details incl. scope membership"), n(inv.userShow)),
-		withRun(verb("add <username> <group> [--hash <hash>] [--scopes <s>[,s...]]", "Add a new user; lands in default scope"), n(inv.userAdd)),
+		withRun(verb("add <username> <group> [--hash <hash>|-] [--scopes <s>[,s...]]", "Add a new user; lands in default scope"), n(inv.userAdd)),
 		withRun(verb("remove <username>", "Remove a user"), n(inv.userRemove)),
-		withRun(verb("passwd <username> [--hash <hash>]", "Change a user's password"), n(inv.userPasswd)),
+		withRun(verb("passwd <username> [--hash <hash>|-]", "Change a user's password"), n(inv.userPasswd)),
 		withRun(verb("disable <username>", "Disable a user (preserves hash)"), n(inv.userDisable)),
 		withRun(verb("enable <username>", "Re-enable a disabled user"), n(inv.userEnable)),
 		withRun(verb("rename <old> <new>", "Rename a user"), n(inv.userRename)),
@@ -182,8 +182,28 @@ func (inv *invocation) groupCheck(group string, extra ...string) error {
 }
 
 // hashArg is _user_hash_arg: the --hash value as canonical hex, or the
-// four error lines and exit 1.
+// four error lines and exit 1. A lone '-' is the hash on standard input (one
+// line; typed without echo at a terminal), so it is not on the command line,
+// in sudo's log or in ps.
 func (inv *invocation) hashArg(v string) (string, error) {
+	if v == "-" {
+		pr := inv.app.Prompter()
+		var err error
+		if pr.Interactive() {
+			v, err = pr.Password("  Hash: ")
+		} else {
+			v, _ = pr.ReadLineExact()
+		}
+		if err != nil {
+			return "", err
+		}
+		if v == "" {
+			return "", inv.usageErr("No hash on standard input (one line).", "Nothing was changed.")
+		}
+		if hasControl(v) {
+			return "", inv.usageErr("The hash cannot hold a control character (a line break, a tab, a NUL).", "Nothing was changed.")
+		}
+	}
 	h, ok := hash.Normalize(v)
 	if !ok {
 		return "", inv.usageErr("Invalid bcrypt hash.", "Accepted forms:",
@@ -363,7 +383,7 @@ func (inv *invocation) userShow(args []string) error {
 
 // --- add --------------------------------------------------------------------
 
-const userAddUsage = "Usage: tacctl user add <username> <group> [--hash <bcrypt-hash>] [--scopes <name>[,<name>...]]"
+const userAddUsage = "Usage: tacctl user add <username> <group> [--hash <bcrypt-hash>|-] [--scopes <name>[,<name>...]]"
 
 func (inv *invocation) userAdd(args []string) error {
 	a := inv.app
@@ -399,7 +419,7 @@ func (inv *invocation) userAdd(args []string) error {
 		case "--hash":
 			v := arg(rest, 1)
 			if v == "" {
-				return inv.usageErr("Usage: tacctl user add <username> <group> --hash <bcrypt-hash>")
+				return inv.usageErr("Usage: tacctl user add <username> <group> --hash <bcrypt-hash>|-")
 			}
 			h, err := inv.hashArg(v)
 			if err != nil {
@@ -521,7 +541,7 @@ func (inv *invocation) userRemove(args []string) error {
 func (inv *invocation) userPasswd(args []string) error {
 	username := arg(args, 0)
 	if username == "" {
-		return inv.usageErr("Usage: tacctl user passwd <username> [--hash <bcrypt-hash>]")
+		return inv.usageErr("Usage: tacctl user passwd <username> [--hash <bcrypt-hash>|-]")
 	}
 	if err := inv.requireStore(); err != nil {
 		return err
@@ -543,7 +563,7 @@ func (inv *invocation) userPasswd(args []string) error {
 	if arg(args, 1) == "--hash" {
 		v := arg(args, 2)
 		if v == "" {
-			return inv.usageErr("Usage: tacctl user passwd <username> --hash <bcrypt-hash>")
+			return inv.usageErr("Usage: tacctl user passwd <username> --hash <bcrypt-hash>|-")
 		}
 		h, err := inv.hashArg(v)
 		if err != nil {

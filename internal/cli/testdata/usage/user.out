@@ -8,10 +8,10 @@ Subcommands:
   show <username>                             Show user details incl. scope membership
   add <username> <group>                      Add a new user; lands in default scope
   add <username> <group> --scopes <s>[,s...]  Grant specific scopes at creation
-  add <username> <group> --hash <hash>        Add with pre-generated bcrypt hash
+  add <username> <group> --hash <hash>        Add with pre-generated bcrypt hash (- reads it from stdin)
   remove <username>                           Remove a user
   passwd <username>                           Change a user's password
-  passwd <username> --hash <hash>             Change with pre-generated bcrypt hash
+  passwd <username> --hash <hash>             Change with pre-generated bcrypt hash (- reads it from stdin)
   disable <username>                          Disable a user (preserves hash)
   enable <username>                           Re-enable a disabled user
   rename <old> <new>                          Rename a user

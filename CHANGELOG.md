@@ -141,6 +141,21 @@ current behaviour; this file is where history lives.
    `--yes` when the value was `true`; the rollbacks to 0.2.9 and 0.2.3 remove
    the key too.
 
+7. **A shared secret and a password hash without the secret on the command
+   line.** `tacctl scope secret <scope> set` with no value asks for the secret
+   twice at a terminal, without echo, and `set --stdin` reads one line of
+   standard input (a script); the minimum length and the single-class check
+   apply to the value read, which is taken as it is (less its line end, a CR LF
+   included) and refused when it holds a control character, whichever way it
+   is given; `--stdin` at a terminal is typed without echo. `tacctl user add`
+   and `tacctl user passwd` take `--hash -` to read the hash from one line of
+   standard input (a control character in it is refused). The forms with
+   the value on the command line (`set <value>`, `--hash <hash>`) work as
+   before; sudo's log records the whole command line and `ps` shows it while
+   the command runs, which the new forms avoid. The `args=` of the audit lines
+   shows `--stdin` as typed and still writes `<redacted>` for the `-` of
+   `--hash -` and for any value typed beside `--stdin`.
+
 ## 0.2.16 (2026-10-23)
 
 1. **`config validate` takes no argument.** `config validate extra` ran the

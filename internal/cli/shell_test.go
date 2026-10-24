@@ -560,7 +560,7 @@ func TestShellHelp(t *testing.T) {
 		has   []string
 	}{
 		{[]string{"scope"}, []string{"tacctl scope list", "tacctl scope add"}},
-		{[]string{"scope", "secret", "lab"}, []string{"tacctl scope secret <scope> set <value>"}},
+		{[]string{"scope", "secret", "lab"}, []string{"tacctl scope secret <scope> set [<value>]", "--stdin  "}},
 		{[]string{"backend"}, []string{"Backends: tacacs"}},
 		{[]string{"config", "deny"}, []string{"tacctl config deny list"}},
 		{[]string{"shell"}, []string{"Usage: tacctl shell [--no-history] [--idle <min>] [--space-completion on|off] [--password-cache] [-c <line>]"}},
@@ -707,7 +707,7 @@ func TestShellExplain(t *testing.T) {
 			"Usage:\n  add <username> <group>  ",
 			"\n  add <username> <group> --hash <hash>  ",
 			"Options:\n",
-			"\n  --hash <hash>  ", "Add with pre-generated bcrypt hash\n",
+			"\n  --hash <hash>  ", "Add with pre-generated bcrypt hash (- reads it from stdin)\n",
 			"Next: <username> <group>\n",
 		}},
 		{[]string{"user", "add", "bob"}, []string{"Next: <group>\n"}},

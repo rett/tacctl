@@ -53,7 +53,7 @@ scope prefixes <name> remove --all [--force]
 
 scope secret
 
-    <name> show|set <value>|generate          Per-scope shared secret (show prints the raw value +
+    <name> show|set [<value>|--stdin]|generate  Per-scope shared secret (show prints the raw value +
     length/posture)
 
 scope protocols <name> list|set <csv>|clear
@@ -246,6 +246,18 @@ scope breakglass <name> list|add <user> [--role <r>]|remove <user>
     makes usable (devices/break-glass.md, "Holding break-glass"). Superuser only. Shown by `scope
     show`.
 ```
+
+**A secret kept off the command line.** `scope secret <name> set` with no
+value asks for the secret twice at a terminal, without echo, and
+`scope secret <name> set --stdin` reads one line from standard input (a
+script; typed without echo when standard input is a terminal). The line is
+taken as it is, less its line end, and a secret with a control character is
+refused from every source. The length and character-class checks apply to the
+value read. The
+value given on the command line (`set <value>`) works as well, but sudo's log
+records the whole command line and `ps` shows it while the command runs; use
+the quiet forms where that matters. The same holds for `tacctl shell`, which
+runs every line through sudo.
 
 **Connection filters:** `deny` takes precedence over `allow`. Both empty = all connections accepted.
 

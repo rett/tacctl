@@ -82,10 +82,10 @@ Subcommands:
   <b>show</b> <o><username></o>                             Show user details incl. scope membership
   <b>add</b> <o><username></o> <o><group></o>                      Add a new user; lands in default scope
   <b>add</b> <o><username></o> <o><group></o> <o>--scopes <s></o>[,s...]  Grant specific scopes at creation
-  <b>add</b> <o><username></o> <o><group></o> <o>--hash <hash></o>        Add with pre-generated bcrypt hash
+  <b>add</b> <o><username></o> <o><group></o> <o>--hash <hash></o>        Add with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
   <b>remove</b> <o><username></o>                           Remove a user
   <b>passwd</b> <o><username></o>                           Change a user's password
-  <b>passwd</b> <o><username></o> <o>--hash <hash></o>             Change with pre-generated bcrypt hash
+  <b>passwd</b> <o><username></o> <o>--hash <hash></o>             Change with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
   <b>disable</b> <o><username></o>                          Disable a user (preserves hash)
   <b>enable</b> <o><username></o>                           Re-enable a disabled user
   <b>rename</b> <o><old></o> <o><new></o>                          Rename a user
@@ -346,8 +346,9 @@ Usage:
 
 Usage:
   <b>tacctl scope secret</b> {{scope}} show                Print raw value + length/posture
-  <b>tacctl scope secret</b> {{scope}} set <o><value></o>         Set to <o><value></o> (validated)
+  <b>tacctl scope secret</b> {{scope}} set [<o><value></o>]       Set to <o><value></o> (validated); without it, asked twice, not echoed
   <b>tacctl scope secret</b> {{scope}} generate            Auto-generate + apply
+      <o>--stdin</o>                                 (set) Read the value from one line of standard input, so it is not on the command line
 
 {{current}}
 

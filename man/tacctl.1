@@ -538,6 +538,12 @@ lists it). Prompts for the password with confirmation. If
 is given, the bcrypt hash is used directly and no password is prompted
 (use this when users self-generate a hash; see
 .BR "tacctl hash commands" ).
+A lone
+.B \-
+as the hash reads it from one line of standard input (typed without echo at a
+terminal), so it is not on the command line, where sudo's log records it and
+.BR ps (1)
+shows it while the command runs.
 .BI --scopes " name"[,name...]
 grants the user access to those scopes (see
 .B SCOPE MANAGEMENT ).
@@ -561,7 +567,7 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-hash\fR \fI<hash>\fR
-Add with pre\-generated bcrypt hash.
+Add with pre\-generated bcrypt hash (\- reads it from stdin).
 .TP
 \fB\-\-scopes\fR \fI<s>[,s...]\fR
 Grant specific scopes at creation.
@@ -595,7 +601,10 @@ Requires: \fBreadonly\fR.
 Change a user's password. Prompts for the new password with
 confirmation. If
 .BI --hash " hash"
-is given, the bcrypt hash is used directly and no password is prompted.
+is given, the bcrypt hash is used directly and no password is prompted. A lone
+.B \-
+as the hash reads it from one line of standard input, as for
+.BR "user add" .
 .\" BEGIN GENERATED: command user passwd
 .RS
 .PP
@@ -604,7 +613,7 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-hash\fR \fI<hash>\fR
-Change with pre\-generated bcrypt hash.
+Change with pre\-generated bcrypt hash (\- reads it from stdin).
 .RE
 .\" END GENERATED: command user passwd
 .TP
@@ -5698,13 +5707,28 @@ read is logged), and may not set or generate one.
 .RS
 .PP
 Requires: \fBengineer\fR. An engineer may run show for a scope of their own; set and generate need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-stdin\fR
+(set) Read the value from one line of standard input, so it is not on the command line.
 .RE
 .\" END GENERATED: command scope secret
 .TP
-.BI "scope secret " "scope " "set " value
+.BI "scope secret " "scope " "set [" value " | \-\-stdin]"
 Set the scope's key after validation (at least
 .B config secret-min-length
-chars, mixed character classes). With RADIUS enabled, a secret FreeRADIUS
+chars, mixed character classes). Without a value the key is asked for twice at
+a terminal, without echo;
+.B \-\-stdin
+reads it from one line of standard input (for a script; typed without echo at
+a terminal). The line is taken as it is, less its line end, and a secret with a
+control character is refused from every source. The checks apply to the value
+read. A value on the command line works as well, but sudo's log
+records the whole command line and
+.BR ps (1)
+shows it while the command runs; the other forms keep it off both. With
+RADIUS enabled, a secret FreeRADIUS
 cannot carry (a backslash together with a
 .BR $ )
 is refused;
@@ -11764,7 +11788,16 @@ and
 of
 .BR "scope add" )
 and for the value in
-.BR "scope secret <scope> set <value>" .
+.BR "scope secret <scope> set <value>" ;
+the flag
+.B \-\-stdin
+of
+.B "scope secret"
+is not redacted, and the
+.B \-
+of
+.B "\-\-hash \-"
+is.
 A word typed where the command asks for a secret at a prompt or on standard
 input is redacted too (a switch given a value, such as
 .BR \-\-stdin=x ,
@@ -11800,8 +11833,10 @@ and
 .BR hash ,
 and every word of
 .B "scope secret"
-but the scope and the sub-command, and a lone word after it that is no
-sub-command. A secret typed in the place of a name
+but the scope, the sub-command and
+.BR \-\-stdin ,
+and a lone word after it that is no sub-command. A secret typed in the place
+of a name
 .RB ( "user passwd <password>" )
 is logged as the name. Nothing else is redacted: free text such as
 .B "breakglass hold \-\-reason"
@@ -11811,7 +11846,20 @@ arguments after
 of
 .BR ssh .
 Whatever is typed on a command line is also in sudo's own log, which records the
-whole line. Communities, SNMPv3 keys and passwords are read from a prompt or
+whole line, and
+.BR ps (1)
+shows it while the command runs; the forms that keep a value off the command
+line are
+.B "scope secret <scope> set"
+(a prompt, or
+.BR \-\-stdin ),
+.B "user add"
+and
+.B "user passwd"
+with
+.B "\-\-hash \-"
+(the hash on standard input), and the SNMP verbs. Communities, SNMPv3 keys and
+passwords are read from a prompt or
 standard input and are never written to a log; the login console's refusal logs
 the first word of a string only when it is a verb.
 .SS Correlating

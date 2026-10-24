@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/spf13/cobra"
@@ -51,7 +52,7 @@ var scopeSpecs = map[string]Spec{
 	"lookup":       {MinArgs: 1, MaxArgs: 1, Args: []string{""}},
 	"prefixes":     {MinArgs: 1, MaxArgs: 4, Args: []string{KindScopes, "list|add|remove|move", "", KindScopes}, Flags: []Flag{{Names: []string{"--all"}, Only: "remove", Alone: true}, {Names: []string{"--force"}, Only: "remove"}}},
 	"staging":      {MaxArgs: 2, Args: []string{"list|remove", ""}},
-	"secret":       {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "show|set|generate", ""}},
+	"secret":       {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "show|set|generate", ""}, Flags: []Flag{{Names: []string{"--stdin"}, Only: "set"}}},
 	"protocols":    {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "list|set|clear", "tacacs|radius" + KindList}},
 	"vendor-attrs": {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "show|enable|disable", "cisco|juniper|wti" + KindList}},
 	"devices":      {MinArgs: 1, MaxArgs: 4, Args: []string{KindScopes, "list|set|unset", "", After("set", "cisco|juniper|wti")}},
@@ -97,7 +98,7 @@ func scopeCmd(inv *invocation) *cobra.Command {
 		withRun(verb("lookup <ip|cidr>", "Show which scope owns an address"), n(inv.scopeLookup)),
 		withRun(verb("prefixes <scope> {list|add|remove} [<cidr>[,<cidr>...]] | remove --all [--force] | move <cidrs> <scope>", "Manage a scope's CIDR list"), nn("prefixes", inv.scopePrefixes)),
 		withRun(verb("staging [list | remove <address>]", "Bench addresses of devices provisioned off-site for a scope"), n(inv.scopeStaging)),
-		withRun(verb("secret <scope> {show|set <value>|generate}", "Manage a scope's shared secret"), nn("secret", inv.scopeSecret)),
+		withRun(verb("secret <scope> {show|set [<value>|--stdin]|generate}", "Manage a scope's shared secret"), nn("secret", inv.scopeSecret)),
 		withRun(verb("protocols <scope> [list|set <protocol>[,<protocol>...]|clear]",
 			"Limit a scope to some protocols (tacacs, radius); default: all"), nn("protocols", inv.scopeProtocols)),
 		withRun(verb("vendor-attrs <scope> [enable|disable <vendor>[,<vendor>...]]",
@@ -1659,11 +1660,61 @@ var (
 	reDigitOnly = regexp.MustCompile(`^[0-9]+$`)
 )
 
+// scopeSecretInput is the secret of 'scope secret <scope> set' when it is not
+// on the command line: from one line of standard input (--stdin: typed
+// without echo when that is a terminal; otherwise the line as it is, less its
+// terminator, blanks kept like the other sources), else asked twice at a
+// terminal without echo.
+func (inv *invocation) scopeSecretInput(stdin bool) (string, error) {
+	if !stdin {
+		return inv.readSecret(false, "shared secret")
+	}
+	pr := inv.app.Prompter()
+	var s string
+	if pr.Interactive() {
+		var err error
+		if s, err = pr.Password("  Shared secret: "); err != nil {
+			return "", err
+		}
+	} else {
+		s, _ = pr.ReadLineExact()
+	}
+	if s == "" {
+		return "", inv.usageErr("No shared secret on stdin (one line).", "Nothing was changed.")
+	}
+	return s, nil
+}
+
+// hasControl: s holds a control character (a line break, a tab, a NUL, DEL).
+func hasControl(s string) bool {
+	return strings.ContainsFunc(s, func(r rune) bool { return unicode.IsControl(r) })
+}
+
+const scopeSecretUsageLine = "Usage: tacctl scope secret <scope> {show|set [<value>|--stdin]|generate}"
+
 func (inv *invocation) scopeSecret(args []string) error {
 	a := inv.app
+	// --stdin: 'set' reads the secret from one line of standard input. It is
+	// taken out of the words wherever it stands after the scope, so the
+	// scope, the sub-command and the value keep their places.
+	stdin := false
+	if len(args) > 1 {
+		rest := []string{args[0]}
+		for _, w := range args[1:] {
+			if w == "--stdin" {
+				stdin = true
+				continue
+			}
+			rest = append(rest, w)
+		}
+		args = rest
+	}
 	scope, sub, value := arg(args, 0), arg(args, 1), arg(args, 2)
 	if scope == "" {
-		return inv.usageErr("Usage: tacctl scope secret <scope> {show|set <value>|generate}")
+		return inv.usageErr(scopeSecretUsageLine)
+	}
+	if stdin && sub != "set" {
+		return inv.usageErr("--stdin is for 'set': the secret is read from standard input.", scopeSecretUsageLine)
 	}
 	// An engineer reads the secret of a scope of their own and changes
 	// nothing (D45): the gate sees 'scope secret' only.
@@ -1715,8 +1766,20 @@ func (inv *invocation) scopeSecret(args []string) error {
 		}
 		inv.echo("")
 	case "set":
-		if value == "" {
-			return inv.usageErr("Usage: tacctl scope secret " + scope + " set <value>")
+		// No value on the command line: ask for it, or read it from standard
+		// input, so it is not in sudo's log nor in ps.
+		switch {
+		case stdin && value != "":
+			return inv.usageErr("The secret is given twice: on the command line and with --stdin.", scopeSecretUsageLine)
+		case value == "":
+			v, err := inv.scopeSecretInput(stdin)
+			if err != nil {
+				return err
+			}
+			value = v
+		}
+		if hasControl(value) {
+			return inv.usageErr("The secret cannot hold a control character (a line break, a tab, a NUL). Nothing was changed.")
 		}
 		if l := runes(value); l < minLen {
 			return inv.usageErr(fmt.Sprintf("Secret is %d characters; minimum is %d.", l, minLen))

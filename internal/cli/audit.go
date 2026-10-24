@@ -92,19 +92,29 @@ func (e auditEntry) isNotice(rest []string) bool {
 // be the secret: every word after the scope but a sub-command ('show', 'set',
 // 'generate', help), so the value of 'set', and the word that stands where a
 // sub-command goes when the scope was left out or the value typed in the
-// sub-command's place.
+// sub-command's place. The flag '--stdin' is not a secret: it says that the
+// value is not on the command line.
 func secretScopeSecret(rest []string) []int {
-	var out []int
-	if len(rest) == 1 && !isSecretSub(rest[0]) {
+	// The words that are not the flag: the scope, the sub-command, the value.
+	var at []int
+	for i, w := range rest {
+		if w != "--stdin" {
+			at = append(at, i)
+		}
+	}
+	if len(at) == 1 && !isSecretSub(rest[at[0]]) {
 		// 'scope secret <word>' alone: the scope was left out, or the secret
 		// typed in its place; the word is redacted either way.
-		return []int{0}
+		return at
 	}
-	for i := 1; i < len(rest); i++ {
-		if i == 1 && isSecretSub(rest[1]) {
+	var out []int
+	for k := 1; k < len(at); k++ {
+		// The word after the scope stands where the sub-command goes: a
+		// sub-command is no secret, any other word is.
+		if k == 1 && isSecretSub(rest[at[k]]) {
 			continue
 		}
-		out = append(out, i)
+		out = append(out, at[k])
 	}
 	return out
 }

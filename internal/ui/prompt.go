@@ -69,6 +69,19 @@ func (p *Prompter) ReadLine() (line string, ok bool) {
 	return strings.Trim(strings.TrimSuffix(line, "\n"), " \t"), true
 }
 
+// ReadLineExact reads one line with nothing removed but its terminator: the
+// newline and a carriage return before it (a file that came from a Windows
+// editor). Blanks stay, for a value that is taken as typed. ok is false at
+// the end of input when nothing was read.
+func (p *Prompter) ReadLineExact() (line string, ok bool) {
+	line, err := p.in.ReadString('\n')
+	if err != nil && line == "" {
+		return "", false
+	}
+	line = strings.TrimSuffix(line, "\n")
+	return strings.TrimSuffix(line, "\r"), true
+}
+
 // Confirm asks and is true only for exactly "y" or "Y": the
 // '[[ "$c" != "y" && "$c" != "Y" ]]' sites (install, uninstall, group
 // remove, user remove, backend and RADIUS prompts, restore, rollback).

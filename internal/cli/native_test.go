@@ -263,6 +263,82 @@ func TestUserAddPromptsAndGenerates(t *testing.T) {
 	}
 }
 
+// '--hash -' reads the hash from one line of standard input, so it is not on
+// the command line; the line meets the checks of the hash typed there.
+func TestUserHashFromStdin(t *testing.T) {
+	sb := newSandbox(t, true)
+	raw, err := hash.Generate("FakeHashPassword99", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sb.run(raw+"\n", []string{"user", "add", "dave", "operator", "--hash", "-", "--scopes", "lab"})
+	sb.expect(0, "User 'dave' added (operator) with scopes: lab", "")
+	sb.run("FakeHashPassword99\n", []string{"user", "verify", "dave"})
+	sb.expect(0, "[INFO] Password is correct.", "")
+
+	other, err := hash.Generate("OtherFakePassword77", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sb.run(other+"\n", []string{"user", "passwd", "dave", "--hash", "-"})
+	sb.expect(0, "[INFO] Password changed for 'dave'.", "")
+	sb.run("OtherFakePassword77\n", []string{"user", "verify", "dave"})
+	sb.expect(0, "[INFO] Password is correct.", "")
+	// The hex form of 'tacctl hash' is read as well.
+	sb.run(testHash+"\n", []string{"user", "passwd", "dave", "--hash", "-"})
+	sb.expect(0, "[INFO] Password changed for 'dave'.", "")
+
+	// Nothing on standard input, or something that is no hash: refused, the
+	// stored hash kept.
+	sb.run("", []string{"user", "passwd", "dave", "--hash", "-"})
+	sb.expect(1, "", "No hash on standard input")
+	sb.run("not-a-hash\n", []string{"user", "passwd", "dave", "--hash", "-"})
+	sb.expect(1, "", "Invalid bcrypt hash.")
+	sb.run("", []string{"user", "add", "erin", "operator", "--hash", "-", "--scopes", "lab"})
+	sb.expect(1, "", "No hash on standard input")
+	sb.run("not-a-hash\n", []string{"user", "add", "erin", "operator", "--hash", "-"})
+	sb.expect(1, "", "Invalid bcrypt hash.")
+	if out := plain(sb.run("", []string{"user", "list"})); strings.Contains(out, "erin") {
+		t.Errorf("erin was added:\n%s", out)
+	}
+}
+
+// A CR LF line ends like any other; a control character in the hash is
+// refused; and at a terminal the hash is read without echo.
+func TestUserHashFromStdinLineEnds(t *testing.T) {
+	sb := newSandbox(t, true)
+	raw, err := hash.Generate("FakeHashPassword99", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sb.run(raw+"\r\n", []string{"user", "passwd", "alice", "--hash", "-"})
+	sb.expect(0, "[INFO] Password changed for 'alice'.", "")
+	sb.run("FakeHashPassword99\n", []string{"user", "verify", "alice"})
+	sb.expect(0, "[INFO] Password is correct.", "")
+	for _, in := range []string{raw + "\t\n", raw[:20] + "\x07" + raw[20:] + "\n", raw + "\r\r\n"} {
+		sb.run(in, []string{"user", "passwd", "alice", "--hash", "-"})
+		sb.expect(1, "", "The hash cannot hold a control character")
+		sb.run(in, []string{"user", "add", "erin", "operator", "--hash", "-"})
+		sb.expect(1, "", "Nothing was changed.")
+	}
+	sb.run("FakeHashPassword99\n", []string{"user", "verify", "alice"})
+	sb.expect(0, "[INFO] Password is correct.", "")
+
+	other, err := hash.Generate("OtherFakePassword77", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	holdTTY(t, sb, other+"\n")
+	sb.run("", []string{"user", "passwd", "alice", "--hash", "-"})
+	sb.tty = nil
+	sb.expect(0, "[INFO] Password changed for 'alice'.", "")
+	if strings.Contains(sb.stderr(), other[:20]) {
+		t.Errorf("the hash was echoed at a terminal:\n%s", sb.stderr())
+	}
+	sb.run("OtherFakePassword77\n", []string{"user", "verify", "alice"})
+	sb.expect(0, "[INFO] Password is correct.", "")
+}
+
 func TestUserVerifyAndPasswdSelf(t *testing.T) {
 	sb := newSandbox(t, true)
 	h, err := hash.Generate("CorrectHorse99", 4)

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/hex"
+	"slices"
 	"strings"
 	"testing"
 
@@ -72,6 +73,9 @@ func TestNoSecretReachesTheAuditLog(t *testing.T) {
 			`args="frank operator --scopes lab"`},
 		{"user add positional", "", []string{"user", "add", "gina", "operator", markerSecret}, `args="gina operator <redacted>"`},
 		{"user add dash positional", "", []string{"user", "add", "gina", "operator", "-" + markerSecret}, `args="gina operator <redacted>"`},
+		{"user add --hash -", markerHash + "\n", []string{"user", "add", "ivan", "operator", "--hash", "-", "--scopes", "lab"},
+			`args="ivan operator --hash <redacted> --scopes lab"`},
+		{"user passwd --hash -", markerHash + "\n", []string{"user", "passwd", "dave", "--hash", "-"}, `args="dave --hash <redacted>"`},
 		{"user passwd --hash", "", []string{"user", "passwd", "dave", "--hash", markerHash}, `args="dave --hash <redacted>"`},
 		{"user passwd positional", "", []string{"user", "passwd", "dave", markerSecret}, `args="dave <redacted>"`},
 		{"user passwd prompt", markerSecret2 + "\n" + markerSecret2 + "\n", []string{"user", "passwd", "dave"}, `args=dave`},
@@ -80,6 +84,12 @@ func TestNoSecretReachesTheAuditLog(t *testing.T) {
 		{"scope add --secret=", "", []string{"scope", "add", "x2", "--prefixes", "10.78.0.0/16", "--secret=" + markerSecret},
 			`args="x2 --prefixes 10.78.0.0/16 --secret=<redacted>"`},
 		{"scope secret set", "", []string{"scope", "secret", "lab", "set", markerSecret}, `args="lab set <redacted>"`},
+		{"scope secret set --stdin", markerSecret + "\n", []string{"scope", "secret", "lab", "set", "--stdin"}, `args="lab set --stdin"`},
+		{"scope secret --stdin set", markerSecret + "\n", []string{"scope", "secret", "lab", "--stdin", "set"}, `args="lab --stdin set"`},
+		{"scope secret set --stdin and a value", markerSecret + "\n", []string{"scope", "secret", "lab", "set", "--stdin", markerSecret2},
+			"-"},
+		{"scope secret value as scope, --stdin", markerSecret + "\n", []string{"scope", "secret", markerSecret2, "--stdin"}, ""},
+		{"scope secret --stdin, value as scope", markerSecret + "\n", []string{"scope", "secret", "--stdin", markerSecret2}, ""},
 		{"scope secret set, two words", "", []string{"scope", "secret", "lab", "set", markerSecret, markerSecret2}, `args="lab set <redacted> <redacted>"`},
 		{"scope secret value as sub-command", "", []string{"scope", "secret", "lab", markerSecret}, ""},
 		{"scope secret without scope", "", []string{"scope", "secret", "set", markerSecret}, ""},
@@ -153,12 +163,14 @@ func TestNoSecretInTheDetailLines(t *testing.T) {
 		want  string
 	}{
 		{"", []string{"scope", "secret", "lab", "set", markerSecret}, "scope secret set scope=lab source=set by=alice"},
+		{markerSecret2 + "\n", []string{"scope", "secret", "lab", "set", "--stdin"}, "scope secret set scope=lab source=set by=alice"},
 		{markerSecret2 + "\n", []string{"config", "snmp", "community", "--stdin"}, "snmp set kind=community by=alice"},
 		{markerSecret2 + "\n", []string{"scope", "snmp", "lab", "community", "--stdin"}, "snmp set kind=community scope=lab by=alice"},
 		{markerSecret2 + "\n", []string{"device", "snmp", "lab-sw1", "community", "--stdin"}, "snmp set kind=community device=lab-sw1 by=alice"},
 		{markerSecret + "\n" + markerSecret2 + "\n", []string{"config", "snmp", "v3-user", "monitor", "--auth", "sha256", "--stdin"}, "snmp set kind=v3-user by=alice"},
 		{"", []string{"user", "add", "dave", "operator", "--hash", markerHash, "--scopes", "lab"}, "user add name=dave group=operator scopes=lab by=alice"},
 		{"", []string{"user", "passwd", "dave", "--hash", markerHash}, "user passwd name=dave source=hash by=alice"},
+		{markerHash + "\n", []string{"user", "passwd", "dave", "--hash", "-"}, "user passwd name=dave source=hash by=alice"},
 		{markerSecret + "\n" + markerSecret + "\n", []string{"user", "passwd", "dave"}, "user passwd name=dave source=prompt by=alice"},
 		{"", []string{"scope", "secret", "lab", "show"}, "secret-read kind=scope name=lab by=alice"},
 		{"", []string{"scope", "snmp", "lab", "show", "--reveal"}, "secret-read kind=snmp name=lab by=alice"},
@@ -310,6 +322,32 @@ func TestAuditRedactionRules(t *testing.T) {
 			if got[i] != c.want[i] {
 				t.Errorf("%s %q: redacts %v, want %v", c.key, c.rest, got, c.want)
 			}
+		}
+	}
+}
+
+// The words of 'scope secret' that are redacted, with the flag anywhere.
+func TestSecretScopeSecretWords(t *testing.T) {
+	for _, c := range []struct {
+		rest []string
+		want []int
+	}{
+		{[]string{"lab", "set", "x"}, []int{2}},
+		{[]string{"lab", "set", "--stdin"}, nil},
+		{[]string{"lab", "--stdin", "set"}, nil},
+		{[]string{"lab", "--stdin", "set", "x"}, []int{3}},
+		{[]string{"--stdin", "lab", "set", "x"}, []int{3}},
+		{[]string{"lab", "x"}, []int{1}},
+		{[]string{"x"}, []int{0}},
+		{[]string{"x", "--stdin"}, []int{0}},
+		{[]string{"--stdin", "x"}, []int{1}},
+		{[]string{"--stdin"}, nil},
+		{[]string{"lab", "show", "x"}, []int{2}},
+		{[]string{"set"}, nil},
+	} {
+		got := secretScopeSecret(c.rest)
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%q: %v, want %v", c.rest, got, c.want)
 		}
 	}
 }

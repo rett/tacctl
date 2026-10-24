@@ -85,6 +85,22 @@ no_sidecars() {
     [[ "$(store_user alice hash)" == "$HASH_B" ]]
 }
 
+@test "user passwd --hash -: reads the hash from standard input" {
+    run "$TACCTL_BIN_SCRIPT" user passwd alice --hash - <<< "$HASH_B"
+    assert_success
+    [[ "$(_alice_hash)" == "$HASH_B" ]]
+    run "$TACCTL_BIN_SCRIPT" user passwd alice --hash - < /dev/null
+    assert_failure
+    assert_output --partial "No hash on standard input"
+    [[ "$(_alice_hash)" == "$HASH_B" ]]
+}
+
+@test "user add --hash -: reads the hash from standard input" {
+    run "$TACCTL_BIN_SCRIPT" user add bob readonly --hash - --scopes lab <<< "$HASH_B"
+    assert_success
+    [[ "$(store_user bob hash)" == "$HASH_B" ]]
+}
+
 @test "user passwd: records the password date in the store, not in a sidecar" {
     # Start from a known-old date so the change is visible.
     sed -i "s/password_changed: .*/password_changed: '2020-01-01'/" "${TACCTL_STATE_DIR}/store.yaml"
