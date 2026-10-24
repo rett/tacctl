@@ -9867,9 +9867,48 @@ and by what the review shows of each (the same change under one heading,
 every secret elided, a statement whose per\-device value differs printed for
 each device after its name, with what the plan keeps and what it leaves out;
 two devices of one shape whose warnings, sections left out, kept statements
-or not\-found deletes differ are two headings) and ONE question is asked,
-answered by typing the device's name back (one device) or the number of
-devices (several). A device whose plan refuses a section (what makes
+or not\-found deletes differ are two headings). Then each device to apply is
+asked for in turn, in the order of the apply (registry order, at most
+.BR \-\-max ):
+its line (shape and counts), then
+.BR "Type the device name to apply to <name>:" .
+The name typed back approves the device (spaces and tabs around it are
+ignored); anything else (another name, another case, a number, a carriage
+return or any other character, Enter) declines it with no second try, and the
+end of input declines it and every device after it. There is no answer for several devices
+and no default. Every question is answered before the first commit; the
+canary,
+.BR \-\-pause ,
+.B \-\-concurrency
+and
+.B \-\-hold
+run over the approved devices. A declined device is a skipped row
+.RB ( "skipped: not approved (the answer typed is not its name)" ),
+nothing is sent to it, the approved ones are still applied and the run exits
+1; with
+.B \-\-json
+each answer is an object with
+.BR "\(dqphase\(dq:\(dqreview\(dq" ,
+.B "\(dqstatus\(dq"
+.B approved
+or
+.B declined
+and
+.BR "\(dqmode\(dq" ,
+a declined device has only that object (no
+.B "\(dqphase\(dq:\(dqapply\(dq"
+one), and the summary says
+.BR "\(dqstop\(dq:\(dqnot\-approved\(dq" .
+A Ctrl\-C at a question, or after the last answer and before the first
+commit, applies nothing (exit 130): the answers already given stay logged and
+one line,
+.BR "device config apply review user= result=interrupted applied=0 mode=" ,
+with
+.B \-\-json
+an object
+.BR "\(dqphase\(dq:\(dqreview\(dq,\(dqstatus\(dq:\(dqinterrupted\(dq" ,
+says the review was cut short. A device whose plan
+refuses a section (what makes
 .B "device config plan"
 exit 1) is not applied: its row is
 .BR "failed: the plan refuses <section> (<why>)" . It
@@ -9981,7 +10020,7 @@ applies only shapes an earlier apply confirmed and skips the others
 .RB ( "unknown shape <hash>: review and apply it by hand first" ),
 and is the one form
 .B \-y
-answers the review for;
+answers the review for (every device's question, with no terminal);
 .B \-y
 without it is refused (exit 2).
 .B \-\-max
@@ -10091,7 +10130,7 @@ The first Ctrl\-C starts no more devices and lets the running one finish, the
 second cancels: before the commit the candidate is discarded, after it the
 commit is cancelled where the window allows and otherwise left PENDING. Exit
 status: 0 every device applied, was checked or had no change; 1 a device
-failed, was rolled back or is pending, the review was not answered, or devices
+failed, was rolled back or is pending, a device was declined at the review, or devices
 were selected and none was applied or found already applied
 .RB ( "\-\-confirmed \-\-yes"
 that skipped them all:
@@ -11768,6 +11807,18 @@ The session id, last on every line.
 .B class=unexpected
 on a start line means a command classified as a read reached a write: a fault
 in the class table, never expected.
+.TP
+.B mode
+On the lines of
+.BR "device config apply" 's
+review and on the approval line of
+.BR "device onboard" :
+.B attended
+when the device's name was typed back,
+.B scripted
+when
+.B "\-\-confirmed \-\-yes"
+answered the review.
 .PP
 A value is written as it is when it holds only letters, digits and
 .BR ". _ : / @ + , \-"
@@ -12002,6 +12053,30 @@ end in
 .BI by= user \fR;\fP
 .B "scope staging done"
 stays without an actor, as the sweep that writes it has none.
+.PP
+.B "device config apply"
+writes a review line for each device asked,
+.BR "device config apply review user= device= shape= answer=approved|declined mode=" ,
+then, when any device was approved, the approval line
+.BR "device config apply user= approved=<n> shapes= canary= mode=" ,
+and each applied device's line
+.BR "device config apply user= device= id= shape= sections= result= commit= until= mode=" ,
+at
+.BR auth.notice .
+.B mode
+is
+.B attended
+for the names typed back and
+.B scripted
+for
+.BR "\-\-confirmed \-\-yes" ;
+nothing typed at the review is written. A review cut short by Ctrl\-C writes
+no approval line but
+.BR "device config apply review user= result=interrupted applied=0 mode=" .
+.B "device onboard"
+says
+.B mode=attended
+on its approval line.
 .SS Refusals
 The tier gate's refusals keep their words and carry the session id
 .RB ( "tier DENY user=carol tier=readonly cmd=user remove sid=k3x9a0bq" ).

@@ -908,7 +908,7 @@ func (ob *onboard) review(o *applyOutcome) bool {
 	if shape == "" {
 		shape = "-"
 	}
-	inv.app.Audit().Raw("auth.notice", fmt.Sprintf("device onboard user=%s device=%s approved=1 shape=%s login=%s",
+	inv.app.Audit().Raw("auth.notice", fmt.Sprintf("device onboard user=%s device=%s approved=1 shape=%s login=%s mode=attended",
 		ob.user, o.Name, shape, localLoginText(ob.local.account)))
 	return true
 }

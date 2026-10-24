@@ -1,11 +1,13 @@
 package cli
 
 // The output of 'device config apply': one line per device and phase, the
-// review (grouped by shape, secrets elided, one typed answer), the summary
-// and the exit status (docs/plans/0.2.9-rollout-plan.md section 3.3, D134).
+// review (grouped by shape, secrets elided, each device's name typed back:
+// 0.2.17 D265), the summary and the exit status
+// (docs/plans/0.2.9-rollout-plan.md section 3.3, D134).
 // The batch runner calls the view from one goroutine only.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,6 +35,9 @@ type applyView struct {
 	scopes []string
 	vendor []string
 	width  int
+	// mode is how the review of the apply phase was answered (attended or
+	// scripted, 0.2.17 D266), on each device's apply line.
+	mode string
 }
 
 // newApplyView is the view of a phase over entries.
@@ -128,8 +133,8 @@ func (v *applyView) audit(o *applyOutcome) {
 			until = o.Out.Until.UTC().Format(time.RFC3339)
 		}
 	}
-	v.inv.app.Audit().Raw("auth.notice", fmt.Sprintf("device config apply user=%s device=%s id=%s shape=%s sections=%s result=%s commit=%s until=%s",
-		v.user, o.Name, id, shape, sections, o.word(), commit, until))
+	v.inv.app.Audit().Raw("auth.notice", fmt.Sprintf("device config apply user=%s device=%s id=%s shape=%s sections=%s result=%s commit=%s until=%s mode=%s",
+		v.user, o.Name, id, shape, sections, o.word(), commit, until, dash(v.mode)))
 }
 
 // line is the device's line of its phase.
@@ -248,6 +253,9 @@ type applyJSON struct {
 	// Lines are the statements of the change, a secret's value elided.
 	Lines      []string `json:"lines,omitempty"`
 	DurationMS int64    `json:"duration_ms"`
+	// Mode is how a review object's answer was given: attended or
+	// scripted (0.2.17 D266).
+	Mode string `json:"mode,omitempty"`
 	// Settled is the settle of an earlier apply's pending record.
 	Settled *applySettledJSON `json:"settled,omitempty"`
 }
@@ -448,10 +456,33 @@ func (c *applyCtl) selectApply(groups []*shapeGroup, byName map[string]*applyOut
 	return eligible
 }
 
-// review prints the groups and asks the one question (D134); it reports
-// whether the apply goes on. Nothing is asked of a run that was given
-// --yes (it needs --confirmed: every shape is one that was confirmed).
-func (c *applyCtl) review(groups []*shapeGroup, apply []*applyOutcome, asJSON bool) bool {
+// reviewResult is what the review decided: the devices approved, in the
+// order asked (Phase B's), whether any device was declined, and whether a
+// Ctrl-C ended the questions (then nothing is applied).
+type reviewResult struct {
+	approved    []*applyOutcome
+	declined    bool
+	interrupted bool
+}
+
+// Why a device of the review was not approved (its skipped row).
+const (
+	notApprovedWrong      = "not approved (the answer typed is not its name)"
+	notApprovedEOF        = "not approved (no answer: the input ended)"
+	notAppliedInterrupted = "not applied (the review was interrupted)"
+)
+
+// review prints the groups and asks one question per device to apply, in the
+// order of Phase B (0.2.17 D265): the device's line, then its name typed
+// back (spaces and tabs around it are ignored). The name approves the
+// device; anything else declines it, with no second try, and the end of
+// input declines it and every device not yet asked. There is no answer for
+// several devices and no default. Every question is answered before Phase B
+// starts. A run given --yes (it needs --confirmed: every shape is one that
+// was confirmed) is asked nothing and approves every device in the scripted
+// form (D266). The approval line is the caller's (run2), written once
+// Phase B's interrupts are taken.
+func (c *applyCtl) review(groups []*shapeGroup, apply []*applyOutcome, asJSON bool) reviewResult {
 	inv := c.inv
 	w := inv.app.Out.Stdout
 	if asJSON {
@@ -514,8 +545,9 @@ func (c *applyCtl) review(groups []*shapeGroup, apply []*applyOutcome, asJSON bo
 			}
 		}
 	}
+	var rv reviewResult
 	if len(apply) == 0 {
-		return false
+		return rv
 	}
 	// A shape has one first device that runs alone (the canary) unless
 	// --no-canary asks for the rest at once.
@@ -542,22 +574,145 @@ func (c *applyCtl) review(groups []*shapeGroup, apply []*applyOutcome, asJSON bo
 		target, how, c.run.minutes, c.user, hold)
 	if c.aa.yes {
 		pf("%s\n  --yes: every shape is one another device confirmed; going on.\n", q)
-		c.audit(apply)
-		return true
-	}
-	want := strconv.Itoa(len(apply))
-	ask := "Type " + want + " to go on: "
-	if len(apply) == 1 {
-		want = apply[0].Name
-		ask = "Type the device name to go on: "
+		for _, o := range apply {
+			c.answered(o, true, "")
+		}
+		rv.approved = apply
+		return rv
 	}
 	pf("%s\n", q)
-	if got := inv.app.Prompter().Ask("  " + ask); got != want {
-		inv.app.Out.ErrorE("The answer typed is not '" + want + "'. Nothing was changed.")
-		return false
+	if len(apply) > 1 {
+		pf("  Each device is applied only when its name is typed back.\n")
 	}
-	c.audit(apply)
-	return true
+	aw := 0
+	for _, o := range apply {
+		aw = max(aw, len(o.Name))
+	}
+	decline := func(o *applyOutcome, why string) {
+		o.Skipped = why
+		rv.declined = true
+		c.answered(o, false, why)
+		if !asJSON {
+			pf("  %-*s  %s\n", aw, o.Name, cleanLine(o.line()))
+		}
+	}
+	ended := false
+	for i, o := range apply {
+		if ended {
+			decline(o, notApprovedEOF)
+			continue
+		}
+		pf("  %-*s  %s\n", aw, o.Name, o.reviewLine())
+		got, ok, interrupted := c.askName("  Type the device name to apply to " + o.Name + ": ")
+		switch {
+		case interrupted:
+			// no line for a device not answered; one line says the review
+			// ended and nothing was applied
+			rv.interrupted = true
+			for _, x := range apply[i:] {
+				x.Skipped = notAppliedInterrupted
+			}
+			c.reviewInterrupted(rv.approved)
+			rv.approved = nil
+			return rv
+		case !ok:
+			ended = true
+			decline(o, notApprovedEOF)
+		case got != o.Name:
+			decline(o, notApprovedWrong)
+		default:
+			rv.approved = append(rv.approved, o)
+			c.answered(o, true, "")
+		}
+	}
+	return rv
+}
+
+// reviewInterrupted ends a review that a Ctrl-C cut short: no device is
+// applied, those already approved included (each a skipped row), and one
+// line, with --json one object, says so beside the answers already logged.
+func (c *applyCtl) reviewInterrupted(approved []*applyOutcome) {
+	for _, o := range approved {
+		o.Skipped = notAppliedInterrupted
+	}
+	c.inv.app.Audit().Raw("auth.notice", fmt.Sprintf("device config apply review user=%s result=interrupted applied=0 mode=%s",
+		c.user, c.aa.reviewMode()))
+	if c.aa.pull.json {
+		_ = json.NewEncoder(c.inv.app.Out.Stdout).Encode(map[string]any{"phase": "review", "status": "interrupted",
+			"reason": "the review was interrupted: nothing was applied", "mode": c.aa.reviewMode()})
+	}
+}
+
+// reviewLine is a device's line before its question: its shape and the size
+// of its change.
+func (o *applyOutcome) reviewLine() string {
+	shape := "no shape"
+	if o.Out.Shape != "" {
+		shape = "shape " + o.Out.Shape
+		if o.ConfirmedOn != "" {
+			shape += " (confirmed on " + o.ConfirmedOn + ")"
+		} else {
+			shape += " (new)"
+		}
+	}
+	return shape + ", " + o.counts()
+}
+
+// askName asks one device's question. ok is false at the end of input;
+// interrupted is true when a Ctrl-C (the invocation's context) came while it
+// waited: the read is left behind, and the run ends without reading again.
+func (c *applyCtl) askName(prompt string) (line string, ok, interrupted bool) {
+	ctx := c.inv.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return "", false, true
+	}
+	type answer struct {
+		line string
+		ok   bool
+	}
+	ch := make(chan answer, 1)
+	pr := c.inv.app.Prompter()
+	go func() {
+		l, ok := pr.AskLine(prompt)
+		ch <- answer{l, ok}
+	}()
+	select {
+	case a := <-ch:
+		if ctx.Err() != nil {
+			return "", false, true
+		}
+		return a.line, a.ok, false
+	case <-ctx.Done():
+		return "", false, true
+	}
+}
+
+// answered logs one device's answer to the review (0.2.17 D265, D266) and,
+// with --json, prints its review object: never a value, never what was
+// typed.
+func (c *applyCtl) answered(o *applyOutcome, approved bool, why string) {
+	word := "declined"
+	if approved {
+		word = "approved"
+	}
+	shape := "-"
+	if o.Out != nil && o.Out.Shape != "" {
+		shape = o.Out.Shape
+	}
+	c.inv.app.Audit().Raw("auth.notice", fmt.Sprintf("device config apply review user=%s device=%s shape=%s answer=%s mode=%s",
+		c.user, o.Name, shape, word, c.aa.reviewMode()))
+	if !c.aa.pull.json {
+		return
+	}
+	j := applyJSON{Name: o.Name, Scope: o.Scope, Vendor: o.Vendor, Phase: "review", Status: word, Mode: c.aa.reviewMode(),
+		Confirmed: o.ConfirmedOn, Reason: why}
+	if shape != "-" {
+		j.Shape = shape
+	}
+	_ = json.NewEncoder(c.inv.app.Out.Stdout).Encode(j)
 }
 
 // reviewStatements prints a group's statements under their sections, each
@@ -608,8 +763,9 @@ func (c *applyCtl) reviewStatements(pf func(string, ...any), g *shapeGroup) {
 }
 
 // audit logs the approval: how many, which shapes, and the canary of each
-// shape (the first device of the shape in the order of the apply, which
-// the runner starts alone), or none with --no-canary.
+// shape (the first approved device of the shape in the order of the apply,
+// which the runner starts alone), or none with --no-canary, and how the
+// review was answered (mode=attended|scripted, 0.2.17 D266).
 func (c *applyCtl) audit(apply []*applyOutcome) {
 	var shapes, canaries []string
 	for _, o := range apply {
@@ -625,8 +781,8 @@ func (c *applyCtl) audit(apply []*applyOutcome) {
 	if len(canaries) > 0 && !c.aa.noCanary {
 		canary = strings.Join(canaries, ",")
 	}
-	c.inv.app.Audit().Raw("auth.notice", fmt.Sprintf("device config apply user=%s approved=%d shapes=%s canary=%s",
-		c.user, len(apply), list, canary))
+	c.inv.app.Audit().Raw("auth.notice", fmt.Sprintf("device config apply user=%s approved=%d shapes=%s canary=%s mode=%s",
+		c.user, len(apply), list, canary, c.aa.reviewMode()))
 }
 
 // --- the summary -----------------------------------------------------------------
@@ -661,10 +817,10 @@ func summaryLine(m map[string]int) string {
 
 // finish prints the summary and the notes and returns the exit status
 // (D130): 0 every device applied, checked or had no change, 1 a device
-// failed, rolled back or is pending (or the review was not answered, or an
-// apply that had devices applied none and found none already applied: every
-// one skipped), 2 with --exit-code a check that found a change, 130
-// interrupted.
+// failed, rolled back or is pending (or a device of the review was declined,
+// 0.2.17 D265, or an apply that had devices applied none and found none
+// already applied: every one skipped), 2 with --exit-code a check that found
+// a change, 130 interrupted (also at a question of the review).
 func (c *applyCtl) finish(sum batch.Summary, declined bool) error {
 	inv, aa := c.inv, c.aa
 	m := c.tally()
@@ -694,7 +850,7 @@ func (c *applyCtl) finish(sum batch.Summary, declined bool) error {
 			s["stop"] = "auth-failed"
 		}
 		switch {
-		case declined:
+		case declined && !sum.Interrupted:
 			s["stop"] = "not-approved"
 		case nothing && s["stop"] == nil:
 			s["stop"] = "nothing-applied"
@@ -722,6 +878,9 @@ func (c *applyCtl) finish(sum batch.Summary, declined bool) error {
 		}
 		if nothing && !declined && !sum.Interrupted && bad == 0 {
 			inv.echo("  Nothing was applied: every device was skipped.")
+		}
+		if declined && !sum.Interrupted {
+			inv.echo("  Nothing was sent to a device whose name was not typed back.")
 		}
 	}
 	// a device that may be running the change under its timer is said on

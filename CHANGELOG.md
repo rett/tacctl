@@ -219,6 +219,35 @@ current behaviour; this file is where history lives.
     is counted failed in the summary. No new write path: the pull only
     reads.
 
+11. **`device config apply` asks for each device by its name, and the audit
+    lines say how the review was answered.** The review still shows the
+    devices grouped by shape, then asks for each device to apply in turn:
+    its line (shape and counts), then `Type the device name to apply to
+    <name>:`. The name typed back approves that device (spaces and tabs
+    around it are ignored); anything else (a number, another case, a
+    carriage return or any other character, Enter) declines it with no
+    second try, and the end of input declines it and every device after it. The single answer for
+    several devices (the number of devices) is gone, and there is no
+    default. All the questions are answered before the first commit, so the
+    canary, `--pause`, `--concurrency` and `--hold` are unchanged. A declined
+    device is a skipped row (`skipped: not approved (the answer typed is not
+    its name)`) and nothing is sent to it; the approved ones are still
+    applied, and the run exits 1 (`--json`: `"stop":"not-approved"`, and one
+    object per answer with `"phase":"review"`, `"status":"approved"` or
+    `"declined"` and `"mode"`; a declined device has only that object, no
+    `"phase":"apply"` one). A Ctrl-C at a question, or after the last answer
+    and before the first commit, applies nothing and exits 130; the answers
+    already given stay logged and one line `device config apply review user=
+    result=interrupted applied=0 mode=` (with `--json` an object
+    `"phase":"review","status":"interrupted"`) says the review was cut
+    short. `--confirmed -y` works as before for superusers. Each answer
+    is a line `device config apply review user= device= shape=
+    answer=approved|declined mode=`, and the approval line and each device's
+    apply line carry `mode=attended` (names typed back) or `mode=scripted`
+    (`--confirmed -y`); `device onboard`'s approval line
+    says `mode=attended`. A script that typed the count must type each
+    device's name, or use `--confirmed -y`.
+
 ## 0.2.16 (2026-10-23)
 
 1. **`config validate` takes no argument.** `config validate extra` ran the

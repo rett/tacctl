@@ -42,6 +42,7 @@ A command that is not in the table is treated as an action, and the test suite f
 | `reason` | On a `cmd DENY` line: `superuser` or `scope` |
 | `sid` | The session id, last on every line (see [Correlating](#correlating)) |
 | `class` | `class=unexpected` on a start line means a command classified as a read reached a write: a fault in the class table, never expected |
+| `mode` | On the review, approval and apply lines of `device config apply` and the approval line of `device onboard`: `attended` when the device's name was typed back, `scripted` when `--confirmed --yes` answered the review |
 
 A value is written as it is when it holds only letters, digits and `. _ : / @ + , -` (a comma, so that a list of scopes or snapshot ids stays one word); otherwise it is double-quoted with Go's escapes, so a line is always one line and a collector can split on spaces outside quotes. An empty value is `-`.
 
@@ -146,6 +147,34 @@ the lines that had no actor (`uid-map renumbered`, `uid-range set`, the two
 `hostkey-mismatch` lines, `console policy ... unusable`) end in `by=<user>`;
 `scope staging done` stays without an actor, as the sweep that writes it has
 none.
+
+`device config apply` writes, at `auth.notice`, a review line for each device
+asked, then, when any device was approved, the approval line, and each applied
+device's line:
+
+```
+device config apply review user=alice device=sw-lab-1 shape=3f2a1b9c0d4e
+    answer=approved mode=attended sid=k3x9a0bq
+device config apply user=alice approved=1 shapes=3f2a1b9c0d4e
+    canary=sw-lab-1 mode=attended sid=k3x9a0bq
+device config apply user=alice device=sw-lab-1 id=tacctl-20261013T141201Z-3f2a
+    shape=3f2a1b9c0d4e sections=aaa,snmp result=applied commit=0 until=-
+    mode=attended sid=k3x9a0bq
+```
+
+`answer=declined` for a device whose name was not typed back. `mode` is
+`attended` for the names typed back and `scripted` for `--confirmed --yes`;
+nothing typed at the review is written. A Ctrl-C at a question, or after the
+last answer and before the first commit, applies nothing: the answers already
+given keep their lines, no approval line follows, and one line says the review
+was cut short:
+
+```
+device config apply review user=alice result=interrupted applied=0
+    mode=attended sid=k3x9a0bq
+```
+ `device onboard` says `mode=attended`
+on its approval line.
 
 ## Refusals
 

@@ -327,8 +327,11 @@ checked first: tacctl reads it, loads the plan in an exclusive configure
 session, runs the device's own 'commit check' and discards the candidate;
 --check stops there and commits nothing. The devices that need a change are
 then shown grouped by shape (the same change under one heading, every secret
-elided) and ONE question is asked: the device's name (one device) or the
-number of devices, typed back. Each is committed under 'commit confirmed N'
+elided), and each device is asked for in turn: its line (shape and counts),
+then its name typed back. The name approves it; anything else, Enter or the
+end of input declines it (no second try, no answer for several devices), and
+a declined device is skipped and makes the run exit 1. All the answers come
+before the first commit. Each is committed under 'commit confirmed N'
 (config devices apply-confirm-timeout), proven by a fresh login as you, by what
 landed being the change the check showed and by a read of the planned sections,
 and then confirmed; the first device of every shape goes alone, and the rest of
@@ -336,8 +339,9 @@ its shape only when it applied. A device that fails a proof is rolled back; one
 whose state could not be read is PENDING until the time shown, and nothing
 may be typed on it before then (a 'commit check' confirms a pending commit).
 --confirmed applies only shapes an earlier apply confirmed (the rest are
-skipped) and is the only form --yes answers the question for, so a script runs
-it without a terminal; --max (default 5) caps the devices of a run, --pause the
+skipped) and is the only form --yes answers the questions for, so a script runs
+it without a terminal (its audit lines say mode=scripted, a typed review's
+mode=attended); --max (default 5) caps the devices of a run, --pause the
 seconds between them (config devices apply-pause), --hold asks you to log in
 with one account of each class and type OK before the change is kept,
 --section limits the sections. --pull reads the devices first, as 'pull'

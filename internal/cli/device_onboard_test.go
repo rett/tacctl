@@ -190,7 +190,7 @@ func TestOnboardEndToEnd(t *testing.T) {
 	}
 	noSecrets(t, "the output", out+b.sb.stderr(), localPassword, testPassword)
 	al := b.auditLines("device onboard")
-	if len(al) != 2 || !strings.Contains(al[0], "device onboard user=alice device=sw-lab-5 approved=1 shape=") ||
+	if len(al) != 2 || !strings.Contains(al[0], "device onboard user=alice device=sw-lab-5 approved=1 shape=") || !strings.Contains(al[0], " mode=attended") ||
 		!strings.Contains(al[1], "device onboard user=alice device=sw-lab-5 addr=192.168.1.31 login=local:admin result=applied") {
 		t.Errorf("audit %q", al)
 	}

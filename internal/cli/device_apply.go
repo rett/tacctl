@@ -9,9 +9,9 @@ package cli
 //     loads the plan in an exclusive session, 'commit check' runs and the
 //     candidate is discarded. What it saw is the shape of each device's change.
 //   - The review groups the devices by shape, prints each group's statements
-//     with every secret elided and asks ONE question, answered by typing the
-//     device's name or the number of devices back (D134); --check stops
-//     before it.
+//     with every secret elided and asks one question per device, answered by
+//     typing that device's name back (D134, 0.2.17 D265); --confirmed --yes
+//     answers them in the scripted form (D266); --check stops before it.
 //   - Phase B applies the reviewed devices: serial by default, the first
 //     device of every shape alone (the canary), each under a confirmed commit,
 //     proven by a fresh login and by what landed, then confirmed.
@@ -65,6 +65,10 @@ type applyArgs struct {
 	// check and --stale and --differs select from the fresh records.
 	check, confirmed, hold, noCanary, yes, exitCode, pullFirst bool
 	max                                                        int
+	// mode is how the review is answered, for the audit lines (0.2.17
+	// D266): "attended" (each device's name typed back) or "scripted"
+	// (--confirmed --yes).
+	mode string
 	// pause is the wait between devices (device.apply.pause, or --pause).
 	pause    time.Duration
 	pauseSet bool
@@ -72,6 +76,18 @@ type applyArgs struct {
 	// transport is how the run writes: --transport over
 	// device.apply.transport (auto, cli or netconf, D150).
 	transport devapply.Setting
+}
+
+// reviewMode is how the review is answered (mode, or for arguments made
+// without applyArgsOf the form --yes gives).
+func (a applyArgs) reviewMode() string {
+	switch {
+	case a.mode != "":
+		return a.mode
+	case a.yes:
+		return "scripted"
+	}
+	return "attended"
 }
 
 // applyArgsOf reads and checks the options that need no device (exit 2).
@@ -86,6 +102,10 @@ func (inv *invocation) applyArgsOf(p Parsed) (applyArgs, error) {
 	a.check, a.confirmed, a.hold = p.Has("--check"), p.Has("--confirmed"), p.Has("--hold")
 	a.noCanary, a.yes, a.exitCode = p.Has("--no-canary"), p.Has("-y"), p.Has("--exit-code")
 	a.pullFirst = p.Has("--pull")
+	a.mode = "attended"
+	if a.yes {
+		a.mode = "scripted"
+	}
 	a.max = applyMaxDefault
 	_, a.pause = inv.applySettings()
 	a.transport = devapply.Setting(inv.applyTransport())
@@ -975,7 +995,7 @@ func (inv *invocation) deviceConfigApply(args []string) error {
 	pr := inv.app.Prompter()
 	switch {
 	case !aa.check && !aa.yes && !pr.Interactive():
-		return inv.argErr("No terminal to confirm on: the review of an apply is answered by typing the device's name (or the number of devices) back. "+
+		return inv.argErr("No terminal to confirm on: the review of an apply is answered by typing each device's name back. "+
 			"Without a terminal use --confirmed --yes, which applies only shapes another device confirmed. Nothing was changed.", usage)
 	case aa.hold && !pr.Interactive():
 		return inv.argErr("--hold asks a person to log in and type OK: it needs a terminal. Nothing was changed.", usage)
@@ -1201,18 +1221,25 @@ func (c *applyCtl) run2(junos []devreg.Entry) error {
 	// The review: the devices that need a change, grouped by shape.
 	groups := c.groupByShape(junos, byName)
 	apply := c.selectApply(groups, byName)
-	approved := c.review(groups, apply, aa.pull.json)
+	rv := c.review(groups, apply, aa.pull.json)
 	if len(apply) == 0 {
 		return c.finish(sumA, false)
 	}
-	if !approved {
+	if rv.interrupted {
+		// Ctrl-C at a question: nothing is applied, approved or not
+		sumA.Interrupted = true
+		return c.finish(sumA, rv.declined)
+	}
+	if len(rv.approved) == 0 {
 		return c.finish(sumA, true)
 	}
+	inv.hooks.reviewed()
 
-	// Phase B: the reviewed devices, one shape's first device at a time.
-	entries := make([]devreg.Entry, 0, len(apply))
-	jobsB := make([]batch.Job, 0, len(apply))
-	for _, o := range apply {
+	// Phase B: the approved devices, one shape's first device at a time; a
+	// declined device stays a skipped row (D265).
+	entries := make([]devreg.Entry, 0, len(rv.approved))
+	jobsB := make([]batch.Job, 0, len(rv.approved))
+	for _, o := range rv.approved {
 		var e devreg.Entry
 		for _, x := range junos {
 			if x.Name == o.Name {
@@ -1231,8 +1258,21 @@ func (c *applyCtl) run2(junos []devreg.Entry) error {
 	if maxFail == 0 {
 		maxFail = 1
 	}
+	// Phase B's interrupts are taken first, then the invocation's context is
+	// looked at: a Ctrl-C after the last answer and before they were taken
+	// cancelled only that context (Phase B's is not cancelled by it), so it
+	// ends the run here with nothing applied and no approval line. One that
+	// comes later is Phase B's first Ctrl-C.
 	ctxB, interruptsB, stopB := inv.batchInterrupts()
+	if inv.ctx.Err() != nil {
+		stopB()
+		c.reviewInterrupted(rv.approved)
+		sumA.Interrupted = true
+		return c.finish(sumA, rv.declined)
+	}
+	c.audit(rv.approved)
 	viewB := inv.newApplyView(entries, "apply", aa.pull.json, c.user)
+	viewB.mode = aa.reviewMode()
 	sumB := batch.Run(ctxB, batch.Options{
 		Concurrency: concurrency, Cap: c.settings.maxConcurrency, Timeout: time.Duration(run.minutes+2) * time.Minute,
 		MaxFailures: maxFail, StopOnAuthFailure: true, Interrupts: interruptsB, Clock: inv.app.Knobs.Now,
@@ -1263,5 +1303,5 @@ func (c *applyCtl) run2(junos []devreg.Entry) error {
 			}
 		}
 	}
-	return c.finish(sumB, false)
+	return c.finish(sumB, rv.declined)
 }

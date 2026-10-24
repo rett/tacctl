@@ -59,6 +59,16 @@ func (p *Prompter) Ask(prompt string) string {
 	return strings.Trim(line, " \t")
 }
 
+// AskLine is Ask that also says whether anything was read: ok is false at
+// the end of input when nothing was read, so a question can tell an empty
+// answer from no answer.
+func (p *Prompter) AskLine(prompt string) (line string, ok bool) {
+	if p.tty {
+		_, _ = io.WriteString(p.out.Stderr, prompt)
+	}
+	return p.ReadLine()
+}
+
 // ReadLine reads one line as Ask does, with no prompt; ok is false at the end
 // of input when nothing was read, so a caller that reads in a loop stops.
 func (p *Prompter) ReadLine() (line string, ok bool) {

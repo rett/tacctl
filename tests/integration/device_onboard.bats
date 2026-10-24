@@ -181,6 +181,8 @@ nothing_secret() {
     [[ "$(record example-sw5 applied.result)" == applied ]]
     [[ "$(record example-sw5 applied.kind)" == onboard ]]
     stub_called "logger -t tacctl -p auth.notice device onboard user=alice device=example-sw5 approved=1 shape="
+    run grep -E "device onboard user=alice device=example-sw5 approved=1 shape=[0-9a-f-]+ login=local:admin mode=attended sid=" "$CALLS_LOG"
+    assert_success
     stub_called "logger -t tacctl -p auth.info device onboard user=alice device=example-sw5 addr=${ADDR} login=local:admin result=applied"
     nothing_secret
     # the device is the normal flow's now

@@ -81,7 +81,11 @@ Shape 3f2a1b9c0d4e, 2 devices (sw-lab-1, sw-lab-2), not confirmed yet:
 Apply to 2 devices (sw-lab-1, sw-lab-2), one shape's first device at a time, each under commit
   confirmed 10 and kept only after a fresh login as alice works and what landed is what the check
   showed?
-  Type 2 to go on: 2
+  Each device is applied only when its name is typed back.
+  sw-lab-1  shape 3f2a1b9c0d4e (new), 5 set, 1 delete
+  Type the device name to apply to sw-lab-1: sw-lab-1
+  sw-lab-2  shape 3f2a1b9c0d4e (new), 5 set, 1 delete
+  Type the device name to apply to sw-lab-2: sw-lab-2
   sw-lab-1  committed, verifying ...
   sw-lab-1  confirming ...
   sw-lab-1  applied (aaa,snmp: 5 set, 1 delete) [tacctl-20261013T141201Z-3f2a]
@@ -90,7 +94,50 @@ Apply to 2 devices (sw-lab-1, sw-lab-2), one shape's first device at a time, eac
   2 applied, 1 no change
 ```
 
-- **Two phases, one question.** Every selected device is checked first, in the pool of `pull`: tacctl reads it, plans from that read, loads the statements in an exclusive configure session (`configure exclusive`: a private session does not take `commit confirmed` on the devices of the lab, so there is no other mode), runs the device's own `commit check` and discards the candidate. `--check` ends there: nothing is committed, the device's shape and result are recorded. The devices that need a change are then shown grouped by shape and by what the review shows of each (two devices of one shape whose warnings, sections left out, kept statements or not-found deletes differ are two headings), every secret elided, a statement whose per-device value differs printed for each device after its name, with what the plan keeps and what it leaves out, and ONE question is asked: type the device's name (one device) or the number of devices back. A device whose plan refuses a section (what makes `device config plan` exit 1) is not applied: its row is `failed: the plan refuses <section> (<why>)`. A terminal is needed; without one the only way through is `--confirmed --yes`. `--yes` without `--confirmed` is a usage error: a batch of shapes nobody reviewed is not run blind.
+- **Two phases, a question per device.** Every selected device is checked
+  first, in the pool of `pull`: tacctl reads it, plans from that read, loads
+  the statements in an exclusive configure session (`configure exclusive`: a
+  private session does not take `commit confirmed` on the devices of the lab,
+  so there is no other mode), runs the device's own `commit check` and
+  discards the candidate. `--check` ends there: nothing is committed, the
+  device's shape and result are recorded. The devices that need a change are
+  then shown grouped by shape and by what the review shows of each (two
+  devices of one shape whose warnings, sections left out, kept statements or
+  not-found deletes differ are two headings), every secret elided, a statement
+  whose per-device value differs printed for each device after its name, with
+  what the plan keeps and what it leaves out. Then each device to apply is
+  asked for in turn, in the order of the apply (registry order, at most
+  `--max`): its line (shape and counts), then `Type the device name to apply
+  to <name>:`. The name typed back approves the device (spaces and tabs around it are
+  ignored); anything else (another name, another case, a number, a carriage
+  return or any other character, Enter) declines it with no second try, and
+  the end of input declines it and every device after it. There is no answer for
+  several devices and no default. Every question is answered before the first
+  commit, so the canary, `--pause`, `--concurrency` and `--hold` run over the
+  approved devices as before (with `--hold` a device has two answers, its name
+  before and `OK` after). A declined device is a skipped row (`skipped: not
+  approved (the answer typed is not its name)`), nothing is sent to it, the
+  approved ones are still applied, and the run exits 1 (JSON
+  `"stop":"not-approved"`); with `--json` each answer is an object with
+  `"phase":"review"`, `"status":"approved"` or `"declined"` and `"mode"`, and
+  a declined device has only that object, no `"phase":"apply"` one. A Ctrl-C
+  at a question, or after the last answer and before the first commit,
+  applies nothing and exits 130; the answers already given stay logged, and
+  one line `device config apply review user= result=interrupted applied=0
+  mode=` (with `--json` an object `"phase":"review","status":"interrupted"`)
+  says the review was cut short. A device whose plan
+  refuses a section (what makes `device config plan` exit 1) is not applied:
+  its row is `failed: the plan refuses <section> (<why>)`. A terminal is
+  needed; without one the only way through is `--confirmed --yes`, which
+  answers every device's question and applies only shapes an earlier apply
+  confirmed. `--yes` without `--confirmed` is a usage error: a batch of shapes
+  nobody reviewed is not run blind. The audit lines say which form it was:
+  `device config apply review user= device= shape= answer=approved|declined
+  mode=` per device, `device config apply user= approved=<n> shapes= canary=
+  mode=` for the approval and the per-device apply line `device config apply
+  user= device= id= shape= sections= result= commit= until= mode=`, with
+  `mode=attended` for the typed names and `mode=scripted` for `--confirmed
+  --yes`.
 - **Pulling first.** `--pull` reads the selected devices before the check,
   as `tacctl device config pull` does (its lines, records and audit lines,
   over `device.config.transport`; `--transport` is how the apply writes),
@@ -148,7 +195,7 @@ Password for alice (device login):
 - **Registration.** The name is `--name`, else the host name the device reports, else asked for at the terminal (a generic or taken one). The device is registered through `device add` with the keys of the first step; its own `snmp location` and `snmp description` fill the registry's empty location and description. Its host name is only shown (`device reports host name`): it never fills the registry's hostname, which ssh would dial instead of the address. A device an earlier onboard registered, and that was never read as your own login, is taken again under its name and pinned keys.
 - **Read, plan, check.** The read is recorded as a pull made as the local account (`login=local:<account>`); the plan is the ordinary planner's first-time plan, checked on the device with its own `commit check` as `device config apply --check` does. `--check` stops here: the device is registered and nothing is committed. The plan never holds the break-glass accounts, root, the local account, system services or interfaces.
 - **Commit as the local account, proven by your login.** After the review (the device's name typed back) your own password is asked (the password cache may answer it). The change is committed as the local account under `commit confirmed`; every session after the commit is your own TACACS+ login: the fresh login, the landed change and the reads of the planned sections. Its `show cli authorization` must name, as the current user, the template user your group's Juniper class renders, with that class; a local account is not a proof. The confirm is typed in the held local session. A fresh login that is refused or is not that template user rolls the change back and leaves the local account as it was. The local account is never tried again after the commit, `root` included: with `authentication-order tacplus` Junos sends a local account's password to the TACACS+ server, so the run says `was not probed` (`--json` has `"probe": "not-probed"`).
-- **Audit.** `device onboard user= device= approved=1 shape= login=` at the answer and `device onboard user= device= addr= login=local:<account> result=` at the end; never a password.
+- **Audit.** `device onboard user= device= approved=1 shape= login= mode=attended` at the answer and `device onboard user= device= addr= login=local:<account> result=` at the end; never a password.
 
 ### One read as a local account
 

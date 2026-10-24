@@ -416,21 +416,29 @@ device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <ven
 
     Superusers, Junos devices: check each device's plan on the device (exclusive configure session,
     the device's own `commit check`, the candidate discarded), show the devices that need a change
-    grouped by shape with every secret elided, ask ONE question (the device's name, or the number of
-    devices, typed back), then commit each under `commit confirmed`, prove it with a fresh login as
-    you, the landed change and a read of the planned sections, and confirm it; a failed proof rolls
-    it back, a device whose state could not be read is `PENDING until <time>`; `--transport
-    auto|cli|netconf` (default `config devices apply-transport`, `cli`) chooses the command line or
-    NETCONF per device, and a change to the NETCONF service is always made over the command line.
+    grouped by shape with every secret elided, ask for each device in turn (its line, then its name
+    typed back, spaces and tabs around it ignored: anything else, another case, a carriage return,
+    Enter or the end of input declines it, with no second try and no answer for several devices;
+    all are asked before the first commit), then commit each approved
+    device under `commit confirmed`, prove it with a fresh login as you, the landed change and a
+    read of the planned sections, and confirm it; a failed proof rolls it back, a device whose state
+    could not be read is `PENDING until <time>`; `--transport auto|cli|netconf` (default `config
+    devices apply-transport`, `cli`) chooses the command line or NETCONF per device, and a change to
+    the NETCONF service is always made over the command line.
     Exit 0 every device applied, was checked or had no change, 1 a device failed, was rolled back or
-    is pending (or none was applied: every one skipped), 2 wrong arguments, 130 interrupted
+    is pending, a device was declined at the review (the others approved are still applied; JSON
+    `"stop":"not-approved"`) or none was applied (every one skipped), 2 wrong arguments, 130
+    interrupted (a Ctrl-C at a question of the review, or before the first commit, applies
+    nothing). The audit lines of the
+    review, the approval and each device's apply carry `mode=attended`, or `mode=scripted` for
+    `--confirmed -y`
 
     --check
         Stop after the device's own commit check: nothing is committed, the shape is recorded
         (`--exit-code`: exit 2 when a device needs a change)
     --confirmed
         Apply only shapes an earlier apply confirmed and skip the others; the one form `-y` answers
-        the review of, so a script needs no terminal
+        the review of (every device's question, no terminal needed; the lines say `mode=scripted`)
     --max <n>, --pause <seconds>, --no-canary
         At most n devices of a run (default 5); wait between devices after each shape's first
         (0-3600, default `device.apply.pause`); start a shape's devices together instead of its
@@ -465,7 +473,10 @@ device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <ven
         As for `pull` (an apply runs one device at a time unless `--concurrency`; `--max-failures`
         defaults to 1)
     --json -y
-        One object per device and phase, then the summary (the review goes to standard error);
+        One object per device and phase, then the summary (the review goes to standard error; each
+        device's answer is an object with `"phase":"review"`, `"status":"approved"|"declined"` and
+        `"mode":"attended"|"scripted"`; a declined device has only that object, no `"phase":"apply"`
+        one; a review cut short by Ctrl-C ends with `"phase":"review","status":"interrupted"`);
         answer the review (with `--confirmed`)
 
 device config shapes [list [--show <hash>] [--json] | seed <name>[,<name>...] [-y]]

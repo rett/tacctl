@@ -183,7 +183,8 @@ print("fine")' <<< "$output"
     refute_output --partial "$SECRET"
     assert_output --partial "kept: 2 statements of the managed sections that the plan leaves alone"
     assert_output --partial "Apply to example-sw1 under commit confirmed 10 and kept only after a fresh login as alice works and what landed is what the check showed?"
-    assert_output --partial "Type the device name to go on:"
+    assert_output --regexp "  example-sw1  shape [0-9a-f]{12} \(new\), 17 set, 1 delete"
+    assert_output --partial "Type the device name to apply to example-sw1:"
     assert_output --regexp "example-sw1  committed, verifying \.\.\."
     assert_output --regexp "example-sw1  applied \(roles,aaa: 17 set, 1 delete\) \[tacctl-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4}\]"
     assert_output --partial "1 applied"
@@ -218,10 +219,12 @@ print("fine")' <<< "$output"
     refute_output --partial "- set"
     # the audit lines carry no value
     stub_called "logger -t tacctl -p auth.notice device config apply user=alice approved=1 shapes="
-    run grep -E "approved=1 shapes=[0-9a-f]{12} canary=example-sw1 sid=[a-z0-9]{8}$" "$CALLS_LOG"
+    run grep -E "approved=1 shapes=[0-9a-f]{12} canary=example-sw1 mode=attended sid=[a-z0-9]{8}$" "$CALLS_LOG"
+    assert_success
+    run grep -E "device config apply review user=alice device=example-sw1 shape=[0-9a-f]{12} answer=approved mode=attended sid=[a-z0-9]{8}$" "$CALLS_LOG"
     assert_success
     stub_called "logger -t tacctl -p auth.notice device config apply user=alice device=example-sw1 id=${id} shape="
-    run grep -F "result=applied" "$CALLS_LOG"
+    run grep -E "device=example-sw1 id=${id} .* result=applied commit=[0-9]+ until=- mode=attended sid=" "$CALLS_LOG"
     assert_success
     nothing_secret
     # the shape is confirmed on the device that proved it
@@ -240,12 +243,53 @@ print("fine")' <<< "$output"
     before=$(committed)
     tapply 'yes\n' example-sw1
     [[ "$status" -eq 1 ]]
-    assert_output --partial "The answer typed is not 'example-sw1'. Nothing was changed."
+    assert_output --partial "example-sw1  skipped: not approved (the answer typed is not its name)"
+    assert_output --partial "Nothing was sent to a device whose name was not typed back."
     [[ "$(committed)" == "$before" ]]
     # only the check was recorded: no commit, no approval line
     [[ "$(applied result)" == checked ]]
     run grep -F "approved=" "$CALLS_LOG"
     assert_failure
+    run grep -E "device config apply review user=alice device=example-sw1 shape=[0-9a-f]{12} answer=declined mode=attended sid=" "$CALLS_LOG"
+    assert_success
+    # a count is no answer, and Enter or the end of input declines too
+    tapply '1\n' example-sw1
+    [[ "$status" -eq 1 ]]
+    assert_output --partial "skipped: not approved (the answer typed is not its name)"
+    tapply '\n' example-sw1
+    [[ "$status" -eq 1 ]]
+    assert_output --partial "skipped: not approved (the answer typed is not its name)"
+    tapply '' example-sw1
+    [[ "$status" -eq 1 ]]
+    assert_output --partial "skipped: not approved (no answer: the input ended)"
+    [[ "$(committed)" == "$before" ]]
+}
+
+@test "apply: each device is asked by its name; a declined one is skipped and the run exits 1" {
+    start
+    cat >> "${TACCTL_STATE_DIR}/devices.yaml" <<EOF
+  example-sw2:
+    address: 192.168.1.21
+    vendor: juniper
+    hostname: example-sw1
+    host_keys:
+    - ${FAKEDEV_KEY}
+EOF
+    tapply 'no\nexample-sw2\n' example-sw1,example-sw2 --concurrency 1 --pause 0
+    [[ "$status" -eq 1 ]]
+    assert_output --partial "Each device is applied only when its name is typed back."
+    assert_output --partial "Type the device name to apply to example-sw1:"
+    assert_output --partial "Type the device name to apply to example-sw2:"
+    assert_output --partial "example-sw1  skipped: not approved (the answer typed is not its name)"
+    assert_output --regexp "example-sw2  applied "
+    assert_output --partial "1 applied, 1 skipped"
+    run grep -E "device=example-sw1 shape=[0-9a-f]{12} answer=declined mode=attended sid=" "$CALLS_LOG"
+    assert_success
+    run grep -E "approved=1 shapes=[0-9a-f]{12} canary=example-sw2 mode=attended sid=" "$CALLS_LOG"
+    assert_success
+    run grep -E "device config apply user=alice device=example-sw1 id=.* commit=" "$CALLS_LOG"
+    assert_failure
+    nothing_secret
 }
 
 @test "apply: with no terminal it needs --confirmed --yes; --yes alone is a usage error" {
@@ -291,12 +335,20 @@ print("fine")' <<< "$output"
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes
     plain
     assert_line --regexp '^  [0-9a-f]{12} +seeded +1 device +example-sw1 '
-    # now the shape is known: the batch applies it, still one review, here
-    # answered by --yes, which says so
+    # now the shape is known: the batch applies it, --yes answering the
+    # review for every device, which says so
     apply example-sw1 --confirmed --yes
     assert_success
     assert_output --partial "--yes: every shape is one another device confirmed; going on."
+    refute_output --partial "Type "
     assert_line --regexp '^  example-sw1  applied \(roles,aaa: 17 set, 1 delete\) \[tacctl-'
+    run grep -E "device config apply review user=alice device=example-sw1 shape=[0-9a-f]{12} answer=approved mode=scripted sid=" "$CALLS_LOG"
+    assert_success
+    run grep -E "approved=1 shapes=[0-9a-f]{12} canary=example-sw1 mode=scripted sid=" "$CALLS_LOG"
+    assert_success
+    run grep -E "device config apply user=alice device=example-sw1 id=.* result=applied .* mode=scripted sid=" "$CALLS_LOG"
+    assert_success
+    nothing_secret
     run committed
     assert_output --partial "set system tacplus-server 10.0.0.42 single-connection"
 }
@@ -611,8 +663,8 @@ tdevice() {
     tdevice 'no\n' location example-sw1 "Row 3" --apply
     [[ "$status" -eq 1 ]]
     assert_output --partial "Device 'example-sw1' location set to Row 3."
-    assert_output --partial "Type the device name to go on:"
-    assert_output --partial "Nothing was changed."
+    assert_output --partial "Type the device name to apply to example-sw1:"
+    assert_output --partial "Nothing was sent to a device whose name was not typed back."
     [[ "$(committed)" == "$before" ]]
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device location example-sw1
     assert_output "Row 3"

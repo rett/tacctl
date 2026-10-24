@@ -335,7 +335,7 @@ func TestApplyRechecksBetweenThePhases(t *testing.T) {
 			master, slave := terminal(t)
 			out, errb := &lockedBuf{}, &lockedBuf{}
 			code := b.start(slave, out, errb, "example-sw1")
-			waitLong(t, "the review's question", func() bool { return strings.Contains(errb.String(), "Type the device name to go on:") })
+			waitLong(t, "the review's question", func() bool { return strings.Contains(errb.String(), "Type the device name to apply to example-sw1:") })
 			logins := b.srv.Logins()
 			c.change(b)
 			_, _ = master.WriteString("example-sw1\n")
@@ -369,8 +369,10 @@ func TestApplyHoldOneReaderAcrossDevices(t *testing.T) {
 	master, slave := terminal(t)
 	out, errb := &lockedBuf{}, &lockedBuf{}
 	code := b.start(slave, out, errb, "example-sw1,example-sw2", "--hold", "--no-canary", "--max-failures", "2", "--pause", "0", "--concurrency", "1")
-	waitLong(t, "the review's question", func() bool { return strings.Contains(errb.String(), "Type 2 to go on:") })
-	_, _ = master.WriteString("2\n")
+	askedFor(t, errb, "example-sw1")
+	_, _ = master.WriteString("example-sw1\n")
+	askedFor(t, errb, "example-sw2")
+	_, _ = master.WriteString("example-sw2\n")
 	waitLong(t, "the first device to be rolled back", func() bool { return strings.Contains(plain(out.String()), "example-sw1  rolled back") })
 	waitLong(t, "the second device's question", func() bool {
 		return strings.Count(errb.String(), "Type OK to keep the change") == 2
@@ -392,7 +394,7 @@ func TestApplyHoldAnswerTypedAheadIsTaken(t *testing.T) {
 	master, slave := terminal(t)
 	out, errb := &lockedBuf{}, &lockedBuf{}
 	code := b.start(slave, out, errb, "example-sw1", "--hold", "--no-canary", "--pause", "0", "--concurrency", "1")
-	waitLong(t, "the review's question", func() bool { return strings.Contains(errb.String(), "Type the device name to go on:") })
+	askedFor(t, errb, "example-sw1")
 	_, _ = master.WriteString("example-sw1\nOK\n")
 	status, o, e := b.wait(code, out, errb)
 	if status != 0 || !strings.Contains(o, "example-sw1  applied ") {
@@ -409,14 +411,206 @@ func TestApplyHoldLateAnswerIsDropped(t *testing.T) {
 	master, slave := terminal(t)
 	out, errb := &lockedBuf{}, &lockedBuf{}
 	code := b.start(slave, out, errb, "example-sw1,example-sw2", "--hold", "--no-canary", "--max-failures", "2", "--pause", "0", "--concurrency", "1")
-	waitLong(t, "the review's question", func() bool { return strings.Contains(errb.String(), "Type 2 to go on:") })
-	_, _ = master.WriteString("2\n")
+	askedFor(t, errb, "example-sw1")
+	_, _ = master.WriteString("example-sw1\n")
+	askedFor(t, errb, "example-sw2")
+	_, _ = master.WriteString("example-sw2\n")
 	waitLong(t, "the first device to be rolled back", func() bool { return strings.Contains(plain(out.String()), "example-sw1  rolled back") })
 	_, _ = master.WriteString("OK\n")
 	status, o, e := b.wait(code, out, errb)
 	if status != 1 || !strings.Contains(o, "example-sw2  rolled back: verification failed (the hold: the window ran short)") || strings.Contains(o, "example-sw2  applied ") {
 		t.Errorf("exit %d\n%s\n%s", status, o, e)
 	}
+}
+
+// --- the per-device review (0.2.17 D265, D266) ----------------------------------------
+
+// askedFor waits for the review's question of one device.
+func askedFor(t *testing.T, errb *lockedBuf, name string) {
+	t.Helper()
+	waitLong(t, "the review's question of "+name, func() bool {
+		return strings.Contains(errb.String(), "Type the device name to apply to "+name+": ")
+	})
+}
+
+// applyLineOf is the device's apply line of Phase B, "" if none.
+func applyLineOf(b *applyBox, name string) string {
+	for _, l := range auditLines(b.runner) {
+		if strings.HasPrefix(l, "device config apply user=alice device="+name+" ") && strings.Contains(l, " commit=") {
+			return l
+		}
+	}
+	return ""
+}
+
+// One device of two declined: the other is applied, the declined one is a
+// skipped row and is never written to, and the run exits 1. Each answer is a
+// review line, the approval and the apply lines say mode=attended, and no
+// line holds a password. With --json the answers are review objects and the
+// summary's stop is not-approved.
+func TestApplyReviewOneDeclinedOfTwo(t *testing.T) {
+	for _, asJSON := range []bool{false, true} {
+		t.Run(map[bool]string{false: "text", true: "json"}[asJSON], func(t *testing.T) {
+			b := newApplyBox(t)
+			b.register("example-sw1", "example-sw2")
+			master, slave := terminal(t)
+			out, errb := &lockedBuf{}, &lockedBuf{}
+			args := []string{"example-sw1,example-sw2", "--concurrency", "1", "--pause", "0"}
+			if asJSON {
+				args = append(args, "--json")
+			}
+			code := b.start(slave, out, errb, args...)
+			askedFor(t, errb, "example-sw1")
+			_, _ = master.WriteString("example-sw1\n")
+			askedFor(t, errb, "example-sw2")
+			_, _ = master.WriteString("2\n")
+			status, o, e := b.wait(code, out, errb)
+			if status != 1 {
+				t.Errorf("exit %d\n%s\n%s", status, o, e)
+			}
+			if asJSON {
+				if !strings.Contains(o, `"name":"example-sw1","scope":"lab","vendor":"juniper","phase":"review","status":"approved"`) ||
+					!strings.Contains(o, `"name":"example-sw2","scope":"lab","vendor":"juniper","phase":"review","status":"declined","reason":"not approved (the answer typed is not its name)"`) ||
+					strings.Count(o, `"mode":"attended"`) != 2 || !strings.Contains(o, `"stop":"not-approved"`) || !strings.Contains(o, `"exit":1`) ||
+					!strings.Contains(o, `"phase":"apply","status":"applied"`) {
+					t.Errorf("json:\n%s\n%s", o, e)
+				}
+			} else if !strings.Contains(o, "  example-sw1  shape ") || !strings.Contains(o, "example-sw1  applied ") ||
+				!strings.Contains(o, "example-sw2  skipped: not approved (the answer typed is not its name)") || !strings.Contains(o, "1 applied, 1 skipped") {
+				t.Errorf("text:\n%s\n%s", o, e)
+			}
+			for _, want := range []string{
+				"device config apply review user=alice device=example-sw1 shape=",
+				"device config apply review user=alice device=example-sw2 shape=",
+				"device config apply user=alice approved=1 shapes=",
+			} {
+				if l := auditLine(b.runner, want); l == "" || !strings.HasSuffix(l, " mode=attended") {
+					t.Errorf("no %q ... mode=attended in %q", want, auditLines(b.runner))
+				}
+			}
+			if !strings.Contains(auditLine(b.runner, "device config apply review user=alice device=example-sw2 "), " answer=declined ") ||
+				!strings.Contains(auditLine(b.runner, "device config apply user=alice approved=1 "), " canary=example-sw1 ") {
+				t.Errorf("lines %q", auditLines(b.runner))
+			}
+			if l := applyLineOf(b, "example-sw1"); !strings.Contains(l, " result=applied ") || !strings.HasSuffix(l, " mode=attended") {
+				t.Errorf("apply line %q", l)
+			}
+			if l := applyLineOf(b, "example-sw2"); l != "" {
+				t.Errorf("the declined device was applied: %q", l)
+			}
+			if a := b.applied("example-sw2"); a == nil || a.Kind != devconf.AppliedKindCheck {
+				t.Errorf("the declined device's record: %+v", a)
+			}
+			noLoggerHas(t, "the review", b.runner, testPassword)
+		})
+	}
+}
+
+// The end of input at the first question declines every device: nothing is
+// applied, no approval line, exit 1.
+func TestApplyReviewEndOfInput(t *testing.T) {
+	b := newApplyBox(t)
+	b.register("example-sw1")
+	before := b.committed()
+	master, slave := terminal(t)
+	out, errb := &lockedBuf{}, &lockedBuf{}
+	code := b.start(slave, out, errb, "example-sw1")
+	askedFor(t, errb, "example-sw1")
+	_, _ = master.WriteString("\x04") // Ctrl-D: the end of input
+	status, o, e := b.wait(code, out, errb)
+	if status != 1 || !strings.Contains(o, "example-sw1  skipped: not approved (no answer: the input ended)") {
+		t.Errorf("exit %d\n%s\n%s", status, o, e)
+	}
+	if b.committed() != before || auditLine(b.runner, "device config apply user=alice approved=") != "" ||
+		!strings.Contains(auditLine(b.runner, "device config apply review user=alice device=example-sw1 "), " answer=declined mode=attended") {
+		t.Errorf("committed changed or lines %q", auditLines(b.runner))
+	}
+}
+
+// A Ctrl-C at a question ends the run with nothing applied, exit 130.
+func TestApplyReviewCtrlC(t *testing.T) {
+	b := newApplyBox(t)
+	b.register("example-sw1")
+	before := b.committed()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b.ctx = ctx
+	_, slave := terminal(t)
+	out, errb := &lockedBuf{}, &lockedBuf{}
+	code := b.start(slave, out, errb, "example-sw1")
+	askedFor(t, errb, "example-sw1")
+	logins := b.srv.Logins()
+	cancel()
+	status, o, e := b.wait(code, out, errb)
+	if status != 130 || !strings.Contains(o, "example-sw1  ") {
+		t.Errorf("exit %d\n%s\n%s", status, o, e)
+	}
+	if b.committed() != before || b.srv.Logins() != logins || auditLine(b.runner, "device config apply user=alice approved=") != "" ||
+		auditLine(b.runner, "device config apply review user=alice result=interrupted applied=0 mode=attended") == "" {
+		t.Errorf("applied after a Ctrl-C: %q", auditLines(b.runner))
+	}
+}
+
+// A Ctrl-C that comes after the last answer and before Phase B takes its
+// interrupts ends the run with nothing applied (exit 130): no approval line,
+// one line and, with --json, one object that say the review was
+// interrupted.
+func TestApplyReviewCtrlCAfterTheLastAnswer(t *testing.T) {
+	b := newApplyBox(t)
+	b.register("example-sw1")
+	before := b.committed()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b.ctx = ctx
+	b.sb.hooks.applyReviewed = cancel
+	master, slave := terminal(t)
+	out, errb := &lockedBuf{}, &lockedBuf{}
+	code := b.start(slave, out, errb, "example-sw1", "--json")
+	askedFor(t, errb, "example-sw1")
+	logins := b.srv.Logins()
+	_, _ = master.WriteString("example-sw1\n")
+	status, o, e := b.wait(code, out, errb)
+	if status != 130 || !strings.Contains(o, `"phase":"review","status":"approved"`) ||
+		!strings.Contains(o, `"phase":"review","reason":"the review was interrupted: nothing was applied","status":"interrupted"`) ||
+		!strings.Contains(o, `"stop":"interrupted"`) || strings.Contains(o, `"phase":"apply"`) {
+		t.Errorf("exit %d\n%s\n%s", status, o, e)
+	}
+	if b.committed() != before || b.srv.Logins() != logins || auditLine(b.runner, "device config apply user=alice approved=") != "" ||
+		!strings.HasPrefix(auditLine(b.runner, "device config apply review user=alice result=interrupted "), "device config apply review user=alice result=interrupted applied=0 mode=attended") {
+		t.Errorf("applied after a Ctrl-C, or lines %q", auditLines(b.runner))
+	}
+}
+
+// --check asks nothing and writes no review line; --confirmed --yes answers
+// for every device in the scripted form, said on the review, approval and
+// apply lines, with no password in any.
+func TestApplyReviewCheckAndScripted(t *testing.T) {
+	b := newApplyBox(t)
+	b.register("example-sw1")
+	master, slave := terminal(t)
+	out, errb := &lockedBuf{}, &lockedBuf{}
+	_ = master
+	status, o, e := b.wait(b.start(slave, out, errb, "example-sw1", "--check"), out, errb)
+	if status != 0 || strings.Contains(o+e, "Type the device name") || auditLine(b.runner, "device config apply review ") != "" {
+		t.Errorf("--check: exit %d\n%s\n%s\n%q", status, o, e, auditLines(b.runner))
+	}
+	b.seed("example-sw1")
+	code, o, e := b.apply("example-sw1", "--confirmed", "--yes")
+	if code != 0 || !strings.Contains(o, "--yes: every shape is one another device confirmed; going on.") || strings.Contains(o+e, "Type the device name") {
+		t.Fatalf("exit %d\n%s\n%s", code, o, e)
+	}
+	for _, want := range []string{
+		"device config apply review user=alice device=example-sw1 shape=",
+		"device config apply user=alice approved=1 shapes=",
+	} {
+		if l := auditLine(b.runner, want); !strings.HasSuffix(l, " mode=scripted") {
+			t.Errorf("no %q ... mode=scripted in %q", want, auditLines(b.runner))
+		}
+	}
+	if l := applyLineOf(b, "example-sw1"); !strings.Contains(l, " result=applied ") || !strings.HasSuffix(l, " mode=scripted") {
+		t.Errorf("apply line %q", l)
+	}
+	noLoggerHas(t, "the scripted apply", b.runner, testPassword)
 }
 
 // waitLong is waitUntil with the time a whole transaction on the fake device
