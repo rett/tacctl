@@ -412,7 +412,7 @@ device config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
         marks these lines as not checked on a device; not with `--plain` or `--backout`)
 
 device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale
-                    | --differs | --name <text> | --ip <addr|cidr|text>
+                    | --differs | --name <text> | --ip <addr|cidr|text> [--pull]
 
     Superusers, Junos devices: check each device's plan on the device (exclusive configure session,
     the device's own `commit check`, the candidate discarded), show the devices that need a change
@@ -442,6 +442,24 @@ device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <ven
         ahead of the first question is its answer
     --section <list>
         Only aaa, roles, mgmt-acl, snmp, system, netconf
+    --pull
+        Read the selected Junos devices first, as `pull` does (its lines,
+        records and audit lines, over `device.config.transport`: `--transport`
+        is how the apply writes), with the run's one password. A device whose
+        pull fails is a failed row and is not checked; a pull that stops
+        (interrupted, a refused password, `--max-failures`) ends the run with
+        nothing checked. `--stale` and `--differs` then select from the fresh
+        records (the others are `skipped ...: pulled, and the fresh pull
+        matches what tacctl renders`, JSON `left_out.match_after_pull`, or,
+        when a device cannot be compared, `could not be compared ...`, JSON
+        `left_out.not_compared_after_pull`; neither is checked), so `--pull
+        --differs` applies to the devices that differ now; without them every
+        device pulled is checked. `--pull --differs` with no other selector
+        pulls every Junos device you can see; the apply is still capped by
+        `--max` and reviewed as any apply. With `--json` each pull object
+        carries `"phase":"pull"`; a named Cisco device or WTI unit's refused
+        row comes before them, and a device whose pull failed has only its
+        pull object (the summary counts it failed)
     --concurrency <n>, --timeout <seconds>, --max-failures <n>, --server <address|name>,
                   --source <address>
         As for `pull` (an apply runs one device at a time unless `--concurrency`; `--max-failures`
@@ -523,6 +541,8 @@ yours, a break-glass hold) is counted and named in the note that follows the
 run; that note is made before `--stale` and `--differs` are applied, so it can
 name a device those two would have left out anyway. An `apply` checks every
 selected device on the device itself first, so a stale record can select a
-device that then has no change, never a change nobody reviewed.
+device that then has no change, never a change nobody reviewed. `apply
+--pull` pulls the devices the other selectors pick first and applies
+`--stale` and `--differs` to the records that pull wrote.
 
 Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `device add`, `device remove`, `device rename`, `device import`, `device set name= field= from= to=` for the setters and `device sync` with the devices written; a shown SNMP secret is `secret-read kind= name=` for every caller, and `device config show|plan` and the walkthroughs log the secret they read the same way ([Audit log](../security/audit.md#detail-lines)).

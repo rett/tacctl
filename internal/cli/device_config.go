@@ -94,6 +94,9 @@ var deviceConfigSpecs = func() map[string]Spec {
 				{Names: []string{"--max"}, Value: true}, {Names: []string{"--pause"}, Value: true},
 				{Names: []string{"--hold"}}, {Names: []string{"--no-canary"}},
 				{Names: []string{"--section"}, Value: true, Kind: strings.Join(planSections, "|") + KindList},
+				// 0.2.17 D268: pull the devices first (the pull's --diff is
+				// not offered)
+				{Names: []string{"--pull"}},
 				flagJSON, {Names: []string{"--exit-code"}}, flagYes})},
 		// 'shapes' (0.2.9, D135): 'list' (the default) and 'seed'.
 		"shapes": {MaxArgs: -1, Args: []string{"list|seed", KindDevices + KindList}, Flags: []Flag{
@@ -337,7 +340,11 @@ skipped) and is the only form --yes answers the question for, so a script runs
 it without a terminal; --max (default 5) caps the devices of a run, --pause the
 seconds between them (config devices apply-pause), --hold asks you to log in
 with one account of each class and type OK before the change is kept,
---section limits the sections. Select the devices of an apply
+--section limits the sections. --pull reads the devices first, as 'pull'
+does (over device.config.transport: --transport is how the apply writes),
+with the one password; a device whose pull fails is not checked, and --stale
+and --differs then select from the fresh records (--pull --differs: the
+devices that differ now). Select the devices of an apply
 by exact names, a full address or a CIDR: --name and --ip match text (--name sw1
 also matches sw10). Never written: the break-glass section, the
 NETCONF section unless the scope's or the device's NETCONF setting enables or
@@ -372,6 +379,7 @@ Examples:
   tacctl device config apply core-sw1 --check
   tacctl device config apply --scope lab
   tacctl device config apply --scope lab --confirmed --yes
+  tacctl device config apply --scope lab --pull --differs
   tacctl device config shapes
   tacctl device config list --stale
 

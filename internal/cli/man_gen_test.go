@@ -304,6 +304,7 @@ var manFlagOverrides = map[string]string{
 	"device config apply --section":      "Only these sections: aaa, roles, mgmt-acl, snmp, system.",
 	"device config apply --json":         "One object per device and phase, then the summary; the review goes to standard error.",
 	"device config apply --exit-code":    "With --check: exit 2 when a device needs a change (and none failed).",
+	"device config apply --pull":         "Read the devices first, as 'device config pull' does (over device.config.transport), with the same password; a device whose pull fails is not checked, and --stale and --differs select from the fresh records.",
 	"device config apply -y":             "Answer the review (only with --confirmed: every shape is one an earlier apply confirmed; no terminal needed).",
 	"device config shapes -y":            "(seed) Answer the question: file the shapes as confirmed on your word.",
 	"device config shapes --json":        "(list) One object per shape: its state, devices, confirmations and the nearest confirmed shape.",

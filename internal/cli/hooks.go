@@ -49,6 +49,10 @@ type hooks struct {
 	// hostRenameStep is called by 'host rename' after each step that changed
 	// something ("registry", "pins"); a test changes the world at that point.
 	hostRenameStep func(step string)
+	// applyPullDone is called by 'device config apply --pull' when the pull
+	// has ended and before its outcome is read; a test interrupts the run at
+	// that point.
+	applyPullDone func()
 	// deviceWriteStep is called by every write of the device registry after
 	// it was checked on a copy and before the lock is taken; a test changes
 	// the world at that point.
@@ -87,6 +91,13 @@ func (h *hooks) interrupts() func() <-chan struct{} {
 		return nil
 	}
 	return h.interruptSource
+}
+
+// pullDone is the test's call at the end of the pull of 'apply --pull'.
+func (h *hooks) pullDone() {
+	if h != nil && h.applyPullDone != nil {
+		h.applyPullDone()
+	}
 }
 
 // dialer is the test's device dial, or nil.

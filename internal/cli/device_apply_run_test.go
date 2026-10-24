@@ -31,6 +31,9 @@ type applyBox struct {
 	runner *fake.Runner
 	// script, when set, adjusts the fake runner of a run (after route).
 	script func(*fake.Runner)
+	// ctx, when set, is the invocation's context (its cancellation is the
+	// first Ctrl-C of a real run).
+	ctx context.Context
 }
 
 func newApplyBox(t *testing.T) *applyBox {
@@ -110,9 +113,13 @@ func (b *applyBox) start(in io.Reader, out, errb *lockedBuf, args ...string) cha
 			t.Logf("stdout:\n%s\nstderr:\n%s", out.String(), errb.String())
 		}
 	})
+	ctx := b.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	code := make(chan int, 1)
 	go func() {
-		code <- exitCode(runWith(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}, b.sb.hooks), a.Out)
+		code <- exitCode(runWith(ctx, a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}, b.sb.hooks), a.Out)
 	}()
 	return code
 }

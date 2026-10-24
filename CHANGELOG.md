@@ -198,6 +198,27 @@ current behaviour; this file is where history lives.
    A selector given with no value (`--scope=`, `--name ""`) is refused with
    exit 2 instead of selecting every device.
 
+10. **`device config apply --pull` pulls the devices before the check.** The
+    selected Junos devices are read first, as `device config pull` reads
+    them (its lines, records and audit lines, over
+    `device.config.transport`), with the one password of the run, asked
+    once for the pull, the check and the apply. A device whose pull fails
+    is a failed row and is not checked; a pull that stops (interrupted, a
+    refused password, `--max-failures`) ends the run with nothing checked.
+    `--stale` and `--differs` are then applied to the fresh records, so
+    `apply --pull --differs` reviews the devices that differ now; a device
+    that no longer does is named in the summary (`pulled, and the fresh
+    pull matches what tacctl renders`, JSON `left_out.match_after_pull`),
+    and one that cannot be compared is named apart (`could not be
+    compared`, JSON `left_out.not_compared_after_pull`) and not checked
+    either. With no other selector `--pull --differs` pulls every Junos
+    device you can see; the apply stays capped by `--max`. The review,
+    `--check`, `--confirmed -y`, `--hold` and every refusal are unchanged
+    and come before any login. With `--json` each pull object carries
+    `"phase":"pull"`; a device whose pull failed has only that object and
+    is counted failed in the summary. No new write path: the pull only
+    reads.
+
 ## 0.2.16 (2026-10-23)
 
 1. **`config validate` takes no argument.** `config validate extra` ran the

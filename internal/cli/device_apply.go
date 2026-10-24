@@ -3,7 +3,7 @@ package cli
 // 'device config apply' (docs/plans/0.2.9-rollout-plan.md D129-D135,
 // D138-D141): the plan of 0.2.5 typed into Junos devices by tacctl instead of
 // pasted by a person. One run is two phases over the same transaction
-// driver (internal/devapply):
+// driver (internal/devapply), after an optional pull (--pull, 0.2.17 D268):
 //
 //   - Phase A checks every selected device in the 0.2.4 pool: the device
 //     loads the plan in an exclusive session, 'commit check' runs and the
@@ -60,9 +60,11 @@ type applyArgs struct {
 	// check stops after the device's own commit check; confirmed gates the
 	// run on shapes another run confirmed (D135); hold is the opt-in human
 	// proof of every login class (D134); noCanary starts every device of a
-	// shape at once; yes answers the review (only with confirmed).
-	check, confirmed, hold, noCanary, yes, exitCode bool
-	max                                             int
+	// shape at once; yes answers the review (only with confirmed);
+	// pullFirst is --pull (0.2.17 D268): the devices are pulled before the
+	// check and --stale and --differs select from the fresh records.
+	check, confirmed, hold, noCanary, yes, exitCode, pullFirst bool
+	max                                                        int
 	// pause is the wait between devices (device.apply.pause, or --pause).
 	pause    time.Duration
 	pauseSet bool
@@ -83,6 +85,7 @@ func (inv *invocation) applyArgsOf(p Parsed) (applyArgs, error) {
 	a.pull = pa
 	a.check, a.confirmed, a.hold = p.Has("--check"), p.Has("--confirmed"), p.Has("--hold")
 	a.noCanary, a.yes, a.exitCode = p.Has("--no-canary"), p.Has("-y"), p.Has("--exit-code")
+	a.pullFirst = p.Has("--pull")
 	a.max = applyMaxDefault
 	_, a.pause = inv.applySettings()
 	a.transport = devapply.Setting(inv.applyTransport())
@@ -977,7 +980,13 @@ func (inv *invocation) deviceConfigApply(args []string) error {
 	case aa.hold && !pr.Interactive():
 		return inv.argErr("--hold asks a person to log in and type OK: it needs a terminal. Nothing was changed.", usage)
 	}
-	chosen, err := inv.chooseDevices(sel, user, true, "apply", aa.pull.render)
+	// --pull (D268): the selection is made without --stale and --differs,
+	// which are applied to the records the pull makes (pullFirst).
+	pre := sel
+	if aa.pullFirst {
+		pre.stale, pre.differs = false, false
+	}
+	chosen, err := inv.chooseDevices(pre, user, true, "apply", aa.pull.render)
 	if err != nil {
 		return err
 	}
@@ -1041,7 +1050,104 @@ func (inv *invocation) deviceConfigApply(args []string) error {
 			d.Done()
 		}
 	}()
+	if aa.pullFirst {
+		left, done, err := ctl.pullFirst(junos, sel)
+		if done || err != nil {
+			return err
+		}
+		junos = left
+	}
 	return ctl.run2(junos)
+}
+
+// pullFirst is --pull (0.2.17 D268): the Junos devices are read first as
+// 'device config pull' reads them (its view, its audit lines and records,
+// the transport of the settings, since --transport is how an apply writes)
+// with the run's one password, so it is asked once for the pull, the check
+// and the apply. A device whose pull failed is a failed row and is not
+// checked: nothing is applied from a record the pull could not renew. Then
+// --stale and --differs keep, of the devices read, the ones their fresh
+// records select; the others are left out and counted. A pull that stopped
+// (interrupted, an authentication failure, --max-failures) ends the run with
+// nothing checked. It returns the devices that go on to the check, or done
+// with the run's end.
+func (c *applyCtl) pullFirst(junos []devreg.Entry, sel selection) ([]devreg.Entry, bool, error) {
+	inv, aa, run := c.inv, c.aa, c.run
+	view := inv.newPullView(junos, aa.pull.json, c.user, false)
+	view.phase = "pull"
+	sum, outs, err := inv.runPull(pullBatch{entries: junos, render: c.chosen.render, args: aa.pull, user: c.user, view: view,
+		pass: &runPassword{src: run.passwd, password: run.password}})
+	if err != nil {
+		return nil, true, err
+	}
+	inv.hooks.pullDone()
+	var pulled []devreg.Entry
+	for i, e := range junos {
+		res := sum.Entries[i].Result
+		if res.Status == batch.StatusOK {
+			pulled = append(pulled, e)
+			continue
+		}
+		o := &applyOutcome{Name: e.Name, Scope: e.Scope, Vendor: e.Vendor, Phase: "pull"}
+		switch {
+		case res.Status == batch.StatusNotStarted || res.Status == batch.StatusSkipped:
+			o.Status, o.Reason = "not-started", "the pull did not start: "+res.Text()
+		case outs[i] != nil && outs[i].Reason != "":
+			o.Reason, o.Hint = "the pull failed: "+outs[i].Reason, outs[i].Hint
+		default:
+			o.Reason = "the pull failed: " + res.Text()
+		}
+		c.rows = append(c.rows, o)
+	}
+	if !aa.pull.json {
+		inv.echo("")
+		inv.echo("  pull: " + sum.Line())
+	}
+	// A Ctrl-C that cancelled the invocation once the pool had ended (the
+	// pool's own context does not carry it) is an interrupted pull too.
+	if inv.ctx.Err() != nil {
+		sum.Interrupted = true
+	}
+	if sum.Interrupted || sum.Stop != batch.StopNone {
+		return nil, true, c.finish(sum, false)
+	}
+	// the selection's last step, on the records the pull has just written
+	fresh := &chosenDevices{entries: pulled, render: c.chosen.render}
+	inv.applyStaleFilters(sel, fresh)
+	c.leftAfterPull(pulled, fresh.entries)
+	if inv.ctx.Err() != nil {
+		return nil, true, c.finish(batch.Summary{Interrupted: true}, false)
+	}
+	if len(fresh.entries) == 0 {
+		return nil, true, c.finish(batch.Summary{}, false)
+	}
+	if !aa.pull.json {
+		inv.echo("")
+	}
+	return fresh.entries, false, nil
+}
+
+// leftAfterPull counts the devices pulled that --stale or --differs left
+// out: those whose fresh record agrees with what tacctl renders, and apart
+// from them those that could not be compared (the expected configuration
+// cannot be rendered, the stored sections cannot be read, the state is not
+// known). Neither is checked.
+func (c *applyCtl) leftAfterPull(pulled, kept []devreg.Entry) {
+	inv := c.inv
+	store := inv.configStore()
+	recs, _ := store.Load()
+	render := c.chosen.render
+	for _, e := range pulled {
+		if slices.ContainsFunc(kept, func(x devreg.Entry) bool { return x.Name == e.Name }) {
+			continue
+		}
+		st, err := inv.staleness(store, recs, render, e)
+		if _, rerr := render.Expected(e); err == nil && rerr == nil && st == devconf.StaleOK {
+			c.chosen.skipped.afterPull = append(c.chosen.skipped.afterPull, e.Name)
+		} else {
+			c.chosen.skipped.notCompared = append(c.chosen.skipped.notCompared, e.Name)
+		}
+	}
 }
 
 // applyCtl is one run's state between the two phases.

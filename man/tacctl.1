@@ -9847,7 +9847,7 @@ Exit 2 when a device needs a change (and none could not be planned).
 .RE
 .\" END GENERATED: command device config plan
 .TP
-.BI "device config apply " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor juniper | \-\-stale | \-\-differs | \-\-name " text " | \-\-ip " addr|cidr|text " [ \-\-check ] [ \-\-confirmed ] [ \-\-max " n " ] [ \-\-pause " seconds " ] [ \-\-hold ] [ \-\-no\-canary ] [ \-\-section " list " ] [ \-\-transport " auto | cli | netconf " ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-server " address " ] [ \-\-source " address " ] [ \-\-exit\-code ] [ \-\-json ] [ \-y ]"
+.BI "device config apply " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor juniper | \-\-stale | \-\-differs | \-\-name " text " | \-\-ip " addr|cidr|text " [ \-\-check ] [ \-\-confirmed ] [ \-\-max " n " ] [ \-\-pause " seconds " ] [ \-\-hold ] [ \-\-no\-canary ] [ \-\-section " list " ] [ \-\-pull ] [ \-\-transport " auto | cli | netconf " ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-server " address " ] [ \-\-source " address " ] [ \-\-exit\-code ] [ \-\-json ] [ \-y ]"
 Write the plan to Junos devices: what
 .B "device config plan"
 would have a person paste, typed by tacctl, under a confirmed commit and
@@ -10019,6 +10019,41 @@ limits the sections
 .BR mgmt\-acl ,
 .BR snmp ,
 .BR system ).
+.B \-\-pull
+reads the selected Junos devices first, as
+.B "device config pull"
+does (its lines, records and audit lines; over
+.BR device.config.transport ,
+since
+.B \-\-transport
+is how the apply writes), with the one password of the run; a device whose
+pull fails is a failed row and is not checked, and a pull that stops
+(interrupted, a refused password,
+.BR \-\-max\-failures )
+ends the run with nothing checked. Then
+.B \-\-stale
+and
+.B \-\-differs
+select from the records the pull has just written
+.RB ( "skipped <n> (<names>): pulled, and the fresh pull matches what tacctl renders" ;
+JSON
+.BR left_out.match_after_pull ;
+a device that cannot be compared is
+.BR "could not be compared" ,
+JSON
+.BR left_out.not_compared_after_pull ,
+and is not checked either),
+and the devices left go on to the check:
+.B "\-\-pull \-\-differs"
+applies to the devices that differ now, and with no other selector pulls every
+Junos device you can see (the apply is still capped by
+.B \-\-max
+and reviewed). Without them every device pulled is checked. With
+.B \-\-json
+each pull object carries
+.BR "\(dqphase\(dq:\(dqpull\(dq" ;
+a named Cisco device or WTI unit's refused row comes before them, and a device
+whose pull failed has only its pull object (the summary counts it failed).
 Select the devices of an apply by exact names, a full address or a CIDR:
 .B \-\-name
 and
@@ -10151,6 +10186,9 @@ Start every device of a shape at once, not the first alone.
 .TP
 \fB\-\-section\fR \fI<list>\fR
 Only these sections: aaa, roles, mgmt\-acl, snmp, system.
+.TP
+\fB\-\-pull\fR
+Read the devices first, as 'device config pull' does (over device.config.transport), with the same password; a device whose pull fails is not checked, and \-\-stale and \-\-differs select from the fresh records.
 .TP
 \fB\-\-json\fR
 One object per device and phase, then the summary; the review goes to standard error.

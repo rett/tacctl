@@ -66,6 +66,7 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"backend", "list", ""}, nil},
 		{[]string{"store", ""}, []string{"import", "rollback", "show"}},
 		{[]string{"store", "show", "-"}, []string{"--json"}},
+		{[]string{"device", "config", "apply", "--pu"}, []string{"--pull"}},
 		{[]string{"store", "import", "--"}, []string{"--check", "--force", "--replace"}},
 		{[]string{"config", "ren"}, []string{"render"}},
 		{[]string{"config", "render", ""}, []string{"--force", "--dry-run", "--out"}},

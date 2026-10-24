@@ -144,10 +144,18 @@ type skippedDevices struct {
 	// held are the devices a break-glass hold stands on: the server does
 	// not answer them, so no login of the caller is accepted there (D126).
 	held []string
+	// afterPull are the devices 'device config apply --pull' read and then
+	// left out: their fresh record is not one --stale or --differs keeps
+	// (0.2.17 D268).
+	afterPull []string
+	// notCompared are the devices 'apply --pull' read and could not compare
+	// with what tacctl renders: --differs leaves them out, and they are not
+	// applied.
+	notCompared []string
 }
 
 func (s skippedDevices) any() bool {
-	return len(s.noScope)+len(s.other)+len(s.notYours)+len(s.held)+len(s.notJunos) > 0
+	return len(s.noScope)+len(s.other)+len(s.notYours)+len(s.held)+len(s.notJunos)+len(s.afterPull)+len(s.notCompared) > 0
 }
 
 // linesFor are the notes about what was left out, with the names.
@@ -168,6 +176,8 @@ func (s skippedDevices) linesFor(string) []string {
 	add(s.other, "the vendor is 'other'; set it with: tacctl device vendor <name> cisco|juniper|wti")
 	add(s.notYours, "in a scope you are not a member of: the device login is your own account")
 	add(s.notJunos, "apply writes to Junos devices only in this release")
+	add(s.afterPull, "pulled, and the fresh pull matches what tacctl renders (not --stale or --differs)")
+	add(s.notCompared, "pulled, and could not be compared with what tacctl renders after the pull (not applied; see: tacctl device config diff <name>)")
 	for _, n := range s.held {
 		out = append(out, "skipped "+n+": "+holdRefusal(n))
 	}
@@ -224,7 +234,8 @@ func holdRefusal(name string) string {
 
 func (s skippedDevices) jsonMap() map[string][]string {
 	m := map[string][]string{}
-	for k, v := range map[string][]string{"no_scope": s.noScope, "vendor_other": s.other, "not_your_scope": s.notYours, "break_glass_held": s.held, "not_junos": s.notJunos} {
+	for k, v := range map[string][]string{"no_scope": s.noScope, "vendor_other": s.other, "not_your_scope": s.notYours, "break_glass_held": s.held, "not_junos": s.notJunos,
+		"match_after_pull": s.afterPull, "not_compared_after_pull": s.notCompared} {
 		if len(v) > 0 {
 			m[k] = v
 		}

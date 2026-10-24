@@ -1128,6 +1128,19 @@ type pullBatch struct {
 	// local is the one-shot local login of '--login' (D136): one device,
 	// its password from the terminal only and never from or into the cache.
 	local *localLogin
+	// pass is the password of a run that does more than the pull ('device
+	// config apply --pull', 0.2.17 D268): the source and the password its
+	// owner resolved once, so the pull asks nothing and the owner zeroes it
+	// and drops the source when its run ends. nil: the pull asks for its own.
+	pass *runPassword
+}
+
+// runPassword is a password resolved once for a whole run and lent to the
+// pull of it: the source the pull tells of an accepted or rejected login, and
+// the password as ssh takes it.
+type runPassword struct {
+	src      devicePasswords
+	password string
 }
 
 // runPull resolves the password, runs the pool over the entries and
@@ -1153,6 +1166,10 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 		b.local.secret = pw
 		inv.app.Audit().Raw("auth.info", fmt.Sprintf("device config pull user=%s device=%s login=%s%s",
 			b.user, b.entries[0].Name, devconf.LocalLoginPrefix, b.local.account))
+	} else if b.pass != nil {
+		// the run's password: asked once by the owner, for the pull and
+		// what follows it
+		run.passwd, run.password = b.pass.src, b.pass.password
 	} else {
 		run.passwd = inv.hooks.newDevicePasswords(inv)
 		// The password, once, before any connection.
@@ -1186,7 +1203,7 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 		MaxFailures: b.args.maxFailures, StopOnAuthFailure: true, Interrupts: interrupts, Clock: inv.app.Knobs.Now,
 	}, jobs, b.view)
 	run.password = ""
-	if d, ok := run.passwd.(interface{ Done() }); ok {
+	if d, ok := run.passwd.(interface{ Done() }); ok && b.pass == nil {
 		d.Done()
 	}
 	if b.local != nil {

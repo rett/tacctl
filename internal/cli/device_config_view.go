@@ -61,6 +61,9 @@ type pullView struct {
 	audit bool
 	// jsonMode lines.
 	enc *json.Encoder
+	// phase is the "phase" of each JSON object ("" none): "pull" for the
+	// pull that 'device config apply --pull' makes first (0.2.17 D268).
+	phase string
 }
 
 // newPullView is the view of a pull of entries. quiet leaves the progress
@@ -221,9 +224,11 @@ func diffLinesJSON(ls []devconf.DiffLine) []diffLineJSON {
 
 // pullJSON is one device of a pull in --json: a line per device.
 type pullJSON struct {
-	Name      string `json:"name"`
-	Scope     string `json:"scope"`
-	Vendor    string `json:"vendor"`
+	Name   string `json:"name"`
+	Scope  string `json:"scope"`
+	Vendor string `json:"vendor"`
+	// Phase is "pull" in the output of 'device config apply --pull'.
+	Phase     string `json:"phase,omitempty"`
 	Status    string `json:"status"`
 	Result    string `json:"result,omitempty"`
 	Reason    string `json:"reason,omitempty"`
@@ -261,7 +266,7 @@ type pullUnitJSON struct {
 
 func (v *pullView) deviceJSON(i int, withLines bool) pullJSON {
 	r := v.Row(i)
-	j := pullJSON{Name: v.names[i], Scope: v.scopes[i], Vendor: v.vendors[i], Status: r.Result.Status.String()}
+	j := pullJSON{Name: v.names[i], Scope: v.scopes[i], Vendor: v.vendors[i], Phase: v.phase, Status: r.Result.Status.String()}
 	if r.Result.Status == batch.StatusNotStarted {
 		j.Reason = r.Result.Reason
 	}
