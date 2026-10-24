@@ -830,6 +830,13 @@ func (inv *invocation) configLinuxScript(args []string) error {
 	if err := inv.renumberUIDs(true); err != nil {
 		return err
 	}
+	// The script holds the scope's secret and goes to the caller (a file, or
+	// the terminal with --output /dev/stdout): the line is written before
+	// it, and under audit.strict a line that cannot be written refuses the
+	// script before it is written. The start line first: the export line is
+	// a detail line of the command, between its start and its end.
+	inv.app.Audit().Touch()
+	inv.app.Audit().Reveal(audit.Info, "secret-export", kvp("scope", scope), kvp("file", output), kvp("by", inv.sudoUser()))
 	res, err := inv.hostsEnv().WriteScript(req)
 	if err != nil {
 		return inv.hostsDone(err)
@@ -839,7 +846,6 @@ func (inv *invocation) configLinuxScript(args []string) error {
 	}
 	// Under sudo the file would otherwise be root's; hand it to the caller.
 	inv.chownToCaller(output)
-	inv.detailAt(audit.Info, "secret-export", kvp("scope", scope), kvp("file", output))
 
 	a.Out.InfoE("Wrote " + output + " (mode 0600; contains the shared secret for scope '" + scope + "').")
 	inv.echo("")

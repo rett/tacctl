@@ -56,7 +56,7 @@ A value is written as it is when it holds only letters, digits and `. _ : / @ + 
 | `interrupted` | 130: Ctrl-C, SIGTERM or a hangup ended it |
 | `aborted` | 2, written when tacctl's own code panicked |
 
-Priorities: `auth.info` for an action, `auth.notice` for the weighty ones (`install`, `upgrade`, `uninstall`, `rollback`, `log clear`, the whole-state replacements `store import`, `store rollback`, `backup restore` and `config restore`, `group edit <group> tier|priv-lvl`, `config sudoers`, `console system-shell|tiers|user`), `auth.warning` for every refusal and for an end line whose result is not `ok`.
+Priorities: `auth.info` for an action, `auth.notice` for the weighty ones (`install`, `upgrade`, `uninstall`, `rollback`, `log clear`, the whole-state replacements `store import`, `store rollback`, `backup restore` and `config restore`, `group edit <group> tier|priv-lvl`, `config sudoers`, `config audit-strict`, `console system-shell|tiers|user`), `auth.warning` for every refusal and for an end line whose result is not `ok`.
 
 ## Detail lines
 
@@ -109,11 +109,12 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `scope secret set` | `scope` `source=set\|generate` |
 | `snmp set` | `kind=community\|v3-user\|clear\|version\|port\|timeout\|clients\|contact`, and `scope` or `device`; `from` `to` for `config snmp port\|timeout` |
 | `secret-read` | `kind` `name`: a secret shown (`scope`, `snmp`, `snmp-device`, `snmp-default`, `block`, `block-adopt`, `store`, `config`, `snapshot`, `backup`); written for every caller, a superuser's too |
-| `secret-export` | `scope` `file`: `config linux script` wrote a file that holds the scope's secret |
+| `secret-export` | `scope` `file`: `config linux script` writes a file that holds the scope's secret (the line comes before the file) |
 | `config allow`, `config deny`, `config mgmt-acl` | `op=add\|remove\|clear\|cisco-name\|juniper-name` `value` |
 | `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config loglevel`, `config metrics`, `config branch` | `from` `to` |
 | `config listen` | `backend` `listener` `from` `to` |
 | `config devices` | `key` `from` `to` |
+| `config audit-strict` | `from` `to` (`on` or `off`); `auth.notice` |
 | `config cisco source-interface` | `scope` `from` `to` |
 | `config render` | `backends` `force` |
 | `config linux uid` | `user` `uid` |
@@ -235,8 +236,9 @@ audit:
   strict: true
 ```
 
-in `/etc/tacctl/tacctl.yaml` (default `false`; edit the file, `tacctl config
-validate` checks it) a command that changes state is refused when its `cmd
+in `/etc/tacctl/tacctl.yaml` (default `false`; `tacctl config audit-strict
+on` writes it, `off` removes it, and with no argument it shows the value and
+where it comes from) a command that changes state is refused when its `cmd
 start` line cannot be written, before it changes anything:
 
 ```
@@ -254,6 +256,37 @@ The refusal comes before the first write, which for a few commands is after a
 prompt or a read: `device collect` refuses after its first login, and `device
 config apply` after the choice of devices and the password prompt. `device
 config apply --check` writes the central pair too.
+
+A command that shows a secret writes its `secret-read` line before it prints
+anything. When that line cannot be written the command is refused, whatever
+the caller's tier, before any secret is printed:
+
+```
+[ERROR] The audit line cannot be written (logger: <reason>) and audit.strict
+    is set; nothing was shown.
+```
+
+The status is 1. These are the commands that show a secret: `scope secret
+<scope> show`, `config cisco`, `juniper` and `wti`, `device config show`,
+`device config plan` (unless `--no-secrets`), `scope snmp`, `device snmp` and
+`config snmp show --reveal`, `scope block` and `device block show --reveal`,
+their `edit` (the editor opens on the block in force) and `adopt`, `store
+show`, `config dump`, `backup diff`, and the diff of `backup restore` and
+`config restore`. `config linux script`, which writes the scope's secret into
+the script it hands over, writes its `secret-export` line before the file and
+is refused the same way before the file is written. The `device config` verbs
+that build a device's expected configuration only to compare it or with the
+secrets elided (`pull`, `diff`, `apply`, `list`, `plan --no-secrets`; `device
+collect` and `onboard` too) write a `secret-read` line for the secrets it
+carries, but are not refused for it: a line that cannot be written is the
+warning. Those that change something are refused by their `cmd start` line as
+above; `scope secret <scope> generate` writes its start line before it prints
+the value it generated.
+
+`config audit-strict` itself is never refused by the setting. When `logger`
+is down and every change is refused, `tacctl config audit-strict off` still
+turns it off; it prints the warning of the previous section, as its own lines
+are lost.
 
 Leave the key off where a server whose `journald` is restarting must still be
 able to run the command that fixes it; turn it on where "every transaction is

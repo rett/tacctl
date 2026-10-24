@@ -570,12 +570,18 @@ func TestStrictRefusesEveryMixedWriteAndRunsTheReads(t *testing.T) {
 	sb := mixedSandbox(t)
 	sb.strictOn()
 	sb.script = func(r *fake.Runner) { r.Missing("logger") }
+	// The reads that show a secret: their secret-read line cannot be written,
+	// so they are refused too (audit_strict_reveal_test.go).
+	reveals := map[string]bool{"scope secret": true, "config cisco": true}
 	for _, c := range mixedCases {
 		t.Run(c.name, func(t *testing.T) {
-			// (a read that shows a secret writes its secret-read line: that line
-			// failing is the D248 warning, not a refusal)
 			sb.asAlice("", c.read...)
-			if sb.code != 0 || strings.Contains(sb.stderr(), "audit.strict") {
+			switch {
+			case reveals[c.name]:
+				if sb.code != 1 || !strings.Contains(plain(sb.stderr()), fmt.Sprintf(strictRevealRefusal, "not found")) {
+					t.Errorf("reveal %v: exit %d %q", c.read, sb.code, sb.stderr())
+				}
+			case sb.code != 0 || strings.Contains(sb.stderr(), "audit.strict"):
 				t.Errorf("read %v: exit %d %q", c.read, sb.code, sb.stderr())
 			}
 			before := tree(t, sb.dir)

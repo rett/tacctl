@@ -64,6 +64,9 @@ type auditEntry struct {
 	// Secret names the words after the command's own that are a secret on the
 	// command line, by index into them (redacted in args=).
 	Secret func(rest []string) []int
+	// NotStrict: audit.strict never refuses the command. It is 'config
+	// audit-strict', the way out of a strict setting while logger is down.
+	NotStrict bool
 }
 
 func read() auditEntry   { return auditEntry{Class: classRead} }
@@ -342,6 +345,7 @@ var auditTable = map[string]auditEntry{
 	"config restore":             action().weighty(),
 	"config snmp":                withSecret(mixed(), secretSNMPSurplus(0, func() map[string]Spec { return configSNMPSpecs })),
 	"config sudoers":             mixed().weighty(),
+	"config audit-strict":        notStrict(mixed().weighty()),
 	"config validate":            mixed(),
 
 	"console show":             read(),
@@ -381,6 +385,12 @@ var auditTable = map[string]auditEntry{
 	"breakglass list":    read(),
 	"breakglass hold":    action(),
 	"breakglass release": action(),
+}
+
+// notStrict is e exempt from audit.strict (auditEntry.NotStrict).
+func notStrict(e auditEntry) auditEntry {
+	e.NotStrict = true
+	return e
 }
 
 // withSecret is e with the words that are a secret on the command line.
@@ -514,13 +524,15 @@ func (inv *invocation) auditBegin() {
 	w.SetCommand(strings.Join(ar.words, " "))
 	w.SetStart(inv.auditStart)
 	// audit.strict (D257): a start line that cannot be written refuses the
-	// command before it writes anything. A read command never touches.
+	// command before it writes anything, and a secret-read line that cannot
+	// be written refuses the reveal before the secret is shown (secretRead).
+	// A read command never touches.
 	// Only a real boolean turns it on, as the schema accepts only one: a
 	// quoted "true" is a validation error and leaves it off, and so does a
 	// tacctl.yaml that cannot be parsed (the merged view is then the defaults).
-	v, _ := a.Conf().Value(confAuditStrict)
-	on, _ := v.(bool)
-	w.SetStrict(on)
+	// 'config audit-strict' is never refused: it is how strict is turned off
+	// when logger is down and every other change is refused.
+	w.SetStrict(inv.auditStrict() && !ar.entry.NotStrict)
 	if ar.class == classAction {
 		w.Touch()
 	}
@@ -779,11 +791,21 @@ func (discard) Write(p []byte) (int, error) { return len(p), nil }
 // line cannot be written refuse to run (D257).
 const confAuditStrict = "audit.strict"
 
+// auditStrict reports whether audit.strict is on: only a real boolean true
+// is (the schema accepts no other value; a file that cannot be parsed reads
+// as the defaults).
+func (inv *invocation) auditStrict() bool {
+	v, _ := inv.app.Conf().Value(confAuditStrict)
+	on, _ := v.(bool)
+	return on
+}
+
 // auditFinish is runWith's deferred end of the command: the end line, also
 // when the command panicked (status 2, result=aborted; the panic goes on).
 // The one panic it does not pass on is the refusal of audit.strict
-// (audit.Refusal, from Writer.Touch before the command wrote anything): that
-// is the command's error, exit 1, and its end line says result=failed.
+// (audit.Refusal, from Writer.Touch before the command wrote anything, or
+// from Writer.Reveal before a secret was shown): that is the command's error,
+// exit 1, and its end line, if it wrote a start line, says result=failed.
 func (inv *invocation) auditFinish(errp *error) {
 	if r := recover(); r != nil {
 		if ref, ok := r.(*audit.Refusal); ok {

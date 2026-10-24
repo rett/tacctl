@@ -235,6 +235,12 @@ config secret-min-length [16-128]
 
     Show or set minimum shared-secret length (default 16)
 
+config audit-strict [on|off]
+
+    Show or set audit.strict (default off): with on, a command that changes state, or shows a
+    secret, is refused when its audit line cannot be written; this command is never refused, so
+    `off` works while logger is down
+
 config allow list|add|remove|clear
 
     Manage connection allow list (IP ACL; add/remove accept comma-lists)

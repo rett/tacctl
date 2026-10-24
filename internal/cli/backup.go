@@ -538,6 +538,9 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 		return err
 	}
 
+	// The diff shows the snapshot's store, secrets included, as 'backup
+	// diff' does: a reveal, logged before anything is printed.
+	inv.secretRead("snapshot", id)
 	inv.echo("")
 	inv.echo("  Restoring snapshot: " + id)
 	inv.diffSnapshot(id)
@@ -1304,6 +1307,8 @@ func (inv *invocation) restoreLegacy(id string) error {
 			"To import it anyway: 'tacctl store import --replace "+file+"', then 'tacctl config render --force'.")
 	}
 
+	// The diff shows the backup, secrets included: a reveal, as above.
+	inv.secretRead("backup", id)
 	inv.echo("")
 	inv.echo("  Restoring old-style backup: " + id)
 	inv.diffLegacy(id, file)

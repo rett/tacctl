@@ -922,7 +922,12 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 			return err
 		}
 	}
-	chosen, err := inv.chooseDevices(sel, user, opt.pull && local == nil, "plan", pa.render)
+	// A plan prints the secrets of the region unless --no-secrets: its reads
+	// are then reveals, refused under audit.strict before anything is shown
+	// when their line cannot be written.
+	ro := pa.render
+	ro.Reveal = !opt.noSecrets
+	chosen, err := inv.chooseDevices(sel, user, opt.pull && local == nil, "plan", ro)
 	if err != nil {
 		return err
 	}

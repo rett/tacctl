@@ -1799,6 +1799,10 @@ func (inv *invocation) scopeSecret(args []string) error {
 		if err != nil {
 			return err
 		}
+		// The start line before the value is shown: under audit.strict a
+		// line that cannot be written refuses here, before the value is
+		// printed (the store write would refuse after it).
+		a.Audit().Touch()
 		inv.echoE("  Generated: " + b + v + nc)
 		if err := inv.applyStore(func(st *store.Store) error { return st.ScopeSet(scope, "secret="+v) }); err != nil {
 			return err

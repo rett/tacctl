@@ -511,37 +511,49 @@ func (c *blockCtx) edit(block string, p Parsed) error {
 	if cur.err != nil {
 		return cur.err
 	}
-	return c.editFlow(block, c.editSeed(block, cur), cur, "edit", "the edited text", p.Has("-y"))
+	seed, scopeShown := c.editSeed(block, cur)
+	// The editor shows the block in force (its communities, its NTP keys),
+	// or for a device without one the scope's objects as comments: a
+	// reveal, logged before the editor opens (refused under audit.strict
+	// when the line cannot be written).
+	switch {
+	case cur.exists:
+		c.logReveal(block)
+	case scopeShown:
+		inv.secretRead("block", c.scope+"/"+c.vendor+"/"+block)
+	}
+	return c.editFlow(block, seed, cur, "edit", "the edited text", p.Has("-y"))
 }
 
 // editSeed is the text the editor opens: the file in force; for a block
 // that does not exist, the commented template and, for a device, the scope's
-// objects as comments the person may uncomment to override.
-func (c *blockCtx) editSeed(block string, cur blockFile) string {
+// objects as comments the person may uncomment to override. scopeShown
+// says that the scope's objects are in it.
+func (c *blockCtx) editSeed(block string, cur blockFile) (seed string, scopeShown bool) {
 	if cur.exists {
 		s := string(cur.text)
 		if s != "" && !strings.HasSuffix(s, "\n") {
 			s += "\n"
 		}
-		return s
+		return s, false
 	}
 	s := blocks.TemplateFor(c.vendor, block, c.layer())
 	if !c.isDevice() {
-		return s
+		return s, false
 	}
 	text, err := policy.LayerTextFor(c.store(), c.inv.app.Conf(), c.vendor, blocks.ScopeLevel(c.scope), block)
 	if err != nil || text == nil {
-		return s
+		return s, false
 	}
 	doc, fs, err := blocks.LintFor(c.vendor, block, string(text), blocks.LayerScope)
 	if err != nil || blocks.HasErrors(fs) || doc.Empty() {
-		return s
+		return s, false
 	}
 	return s + "#\n" +
 		"# The objects of scope '" + c.scope + "' are below, as comments. A device's object replaces the\n" +
 		"# scope's object of the same key whole: to override one, remove the '# ' of its statements\n" +
 		"# and change them; one you leave as a comment stays as the scope states it.\n" +
-		"#\n" + blocks.CommentOut(doc.String(false))
+		"#\n" + blocks.CommentOut(doc.String(false)), true
 }
 
 // editFlow runs the editor on seed until the text passes its check or the

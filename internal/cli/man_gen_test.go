@@ -428,7 +428,7 @@ func setWith(cmds ...string) string {
 // and defaults are the code's. A key without an entry here (or an entry
 // without a key) fails TestManKeyDocsAreComplete.
 var manKeyDocs = map[string]struct{ verb, desc string }{
-	"audit.strict":                           {"", "Whether a command that changes state is refused when its audit line cannot be written: with true, an action or mixed command whose cmd start line logger did not write exits 1 before it changes anything (the AUDIT LOG section has the message); a command that only reads runs, and an end line that cannot be written is the warning. Edit the file to change it."},
+	"audit.strict":                           {setWith("config audit-strict"), "Whether a command that changes state, or shows a secret, is refused when its audit line cannot be written: with true, an action or mixed command whose cmd start line logger did not write exits 1 before it changes anything, and a command whose secret-read line logger did not write exits 1 before it shows the secret (the AUDIT LOG section has the messages); any other read runs, and an end line that cannot be written is the warning. config audit-strict is never refused by it."},
 	"password.max_age_days":                  {setWith("config password-age"), "Days after which a password counts as old: tacctl status warns."},
 	"password.min_length":                    {setWith("config password-min-length"), "Shortest password typed at a prompt."},
 	"secret.min_length":                      {setWith("config secret-min-length"), "Shortest shared secret an operator may type."},

@@ -178,3 +178,23 @@ audit_calls() { grep -E '^logger -t tacctl ' "$CALLS_LOG" || true; }
     run audit_calls
     assert_line --regexp 'scope breakglass add scope=lab name=labadmin role=[a-z]+ by=ops result=ok sid='
 }
+
+@test "audit: audit.strict refuses a change and a reveal when logger fails; config audit-strict off is the way out" {
+    "$TACCTL_BIN_SCRIPT" scope secret lab set "$SECRET" > /dev/null
+    "$TACCTL_BIN_SCRIPT" config audit-strict on > /dev/null
+    stub_cmd logger 'echo "logger: socket refused" >&2; exit 1'
+    as_user ops no no -- user disable ro
+    assert_failure 1
+    assert_output --partial "audit.strict is set; nothing was changed."
+    as_user ops no no -- scope secret lab show
+    assert_failure 1
+    assert_output --partial "The audit line cannot be written (logger: exit status 1: logger: socket refused) and audit.strict is set; nothing was shown."
+    refute_output --partial "$SECRET"
+    as_user ops no no -- config audit-strict off
+    assert_success
+    assert_output --partial "The audit line was not written"
+    refute_output --partial "audit.strict is set"
+    as_user ops no no -- scope secret lab show
+    assert_success
+    assert_output --partial "$SECRET"
+}

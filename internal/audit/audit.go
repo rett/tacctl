@@ -205,15 +205,23 @@ type state struct {
 
 // Refusal is a command refused because its start line could not be written
 // and audit.strict is set (D257). Touch panics with it before anything is
-// written; the dispatcher recovers it as the command's error.
+// written; the dispatcher recovers it as the command's error. Reveal panics
+// with one (Reveal set) when the line of a secret about to be shown could
+// not be written.
 type Refusal struct {
 	// Reason is why logger did not write (Failure).
 	Reason string
+	// Reveal: the refused thing is the showing of a secret, not a change.
+	Reveal bool
 }
 
 // Error is the message the operator reads.
 func (r *Refusal) Error() string {
-	return "The audit line cannot be written (logger: " + r.Reason + ") and audit.strict is set; nothing was changed."
+	what := "nothing was changed."
+	if r.Reveal {
+		what = "nothing was shown."
+	}
+	return "The audit line cannot be written (logger: " + r.Reason + ") and audit.strict is set; " + what
 }
 
 // Writer writes audit lines. It is safe for concurrent use (the device
@@ -383,6 +391,45 @@ func (w *Writer) Failure() string {
 // the line was not written, "" when it was (Failure says the same of the
 // last line of the process; this is of this one).
 func (w *Writer) Line(priority, event string, kv ...KV) string {
+	return w.write(priority, w.withSID(format(event, kv)))
+}
+
+// Reveal writes the line of a secret that is about to be shown (Line's
+// format), before it is shown. Without audit.strict it is Line: a failure is
+// the D248 warning and the secret is shown. With audit.strict a line that
+// logger did not write refuses the showing: Reveal panics with a *Refusal
+// (Reveal set), here and in every later Touch and Reveal, and the D248
+// warning is not printed beside it; the dispatcher recovers it as the
+// command's error, exit 1, before any secret is printed. Like Touch, it must
+// be called on the goroutine that runs the command.
+func (w *Writer) Reveal(priority, event string, kv ...KV) {
+	w.mu.Lock()
+	strict, r := w.strict, w.refused
+	w.mu.Unlock()
+	if r != nil {
+		panic(r)
+	}
+	msg := w.withSID(format(event, kv))
+	if !strict {
+		w.write(priority, msg)
+		return
+	}
+	reason := w.send(priority, msg)
+	if reason == "" {
+		return
+	}
+	w.mu.Lock()
+	if w.refused == nil {
+		w.refused = &Refusal{Reason: reason, Reveal: true}
+	}
+	w.pending = ""
+	r = w.refused
+	w.mu.Unlock()
+	panic(r)
+}
+
+// format is the text of a Line without the sid.
+func format(event string, kv []KV) string {
 	var b strings.Builder
 	b.WriteString(event)
 	for _, f := range kv {
@@ -395,7 +442,7 @@ func (w *Writer) Line(priority, event string, kv ...KV) string {
 		}
 		b.WriteString(valueMax(f.Value, max))
 	}
-	return w.Raw(priority, b.String())
+	return b.String()
 }
 
 // Raw writes msg as it is, with the sid appended. It is for the lines that
@@ -403,22 +450,36 @@ func (w *Writer) Line(priority, event string, kv ...KV) string {
 // is dropped before the sid so the key follows a single space. It returns what
 // Line returns.
 func (w *Writer) Raw(priority, msg string) string {
+	return w.write(priority, w.withSID(msg))
+}
+
+// withSID is msg with the process's sid appended.
+func (w *Writer) withSID(msg string) string {
 	if w.sid != "" {
 		msg = strings.TrimRight(msg, " ") + " sid=" + w.sid
 	}
-	return w.write(priority, msg)
+	return msg
 }
 
-// write runs logger. A failure is not the command's: it is remembered
-// (Failure) and the operator is told once per process (D248). It returns the
-// reason this line was not written, "" when it was.
-func (w *Writer) write(priority, msg string) string {
+// send runs logger and remembers the outcome (Failure). It returns the reason
+// this line was not written, "" when it was; it tells the operator nothing.
+func (w *Writer) send(priority, msg string) string {
 	ctx, cancel := context.WithTimeout(w.ctx, writeTimeout)
 	defer cancel()
 	res, err := w.run.Run(ctx, execx.Cmd{Name: "logger", Args: []string{"-t", w.tag, "-p", priority, msg}})
 	reason := failureReason(res, err)
 	w.mu.Lock()
 	w.failure = reason
+	w.mu.Unlock()
+	return reason
+}
+
+// write runs logger. A failure is not the command's: it is remembered
+// (Failure) and the operator is told once per process (D248). It returns the
+// reason this line was not written, "" when it was.
+func (w *Writer) write(priority, msg string) string {
+	reason := w.send(priority, msg)
+	w.mu.Lock()
 	if reason == "" || w.warn == nil {
 		w.mu.Unlock()
 		return reason

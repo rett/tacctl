@@ -4,8 +4,9 @@ package cli
 // WP2.4c: show, validate, render (and the new 'render --dry-run --out',
 // docs/plans/go-rewrite.md 3.9 item 8), dump, defaults, get, get-list,
 // loglevel, listen, metrics, sudoers [tiers], password-age, bcrypt-cost,
-// password-min-length, secret-min-length and branch (config_report.go:
-// show and validate; config_admin.go: sudoers, branch, render --dry-run).
+// password-min-length, secret-min-length, audit-strict and branch
+// (config_report.go: show and validate; config_admin.go: sudoers, branch,
+// render --dry-run).
 //
 // Registered from other files with registerConfigVerb (below), which
 // replaces the declared word of the same name: diff and restore
@@ -70,6 +71,7 @@ var configSpecs = map[string]Spec{
 	"bcrypt-cost":         {MaxArgs: 1, Args: []string{"10|11|12|13|14"}},
 	"password-min-length": {MaxArgs: 1},
 	"secret-min-length":   {MaxArgs: 1},
+	"audit-strict":        {MaxArgs: 1, Args: []string{"on|off"}},
 	"branch":              {MaxArgs: 1},
 }
 
@@ -144,6 +146,8 @@ func configCmd(inv *invocation) *cobra.Command {
 			n(inv.configPasswordMinLength)),
 		withRun(verb("secret-min-length [16-128]", "Show or set minimum shared-secret length (default 16)"),
 			n(inv.configSecretMinLength)),
+		withRun(verb("audit-strict [on|off]", "Show or set whether a change or a reveal is refused when its audit line cannot be written (default off)"),
+			n(inv.configAuditStrict)),
 		filter("allow", "Manage connection allow list"),
 		filter("deny", "Manage connection deny list"),
 		verb("mgmt-acl", "Manage Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits",
@@ -286,6 +290,72 @@ func (inv *invocation) configSecretMinLength(args []string) error {
 		"  Usage: tacctl config secret-min-length <16-128>",
 		"  Guidance: Cisco TACACS+ best practice is ≥16.",
 	}, "Shared-secret minimum length set to %v. Applies to new secrets.")
+}
+
+// --- audit-strict (audit.strict, docs/plans/0.2.17-plan.md D257) -------------
+
+// strictWord is audit.strict as the verb says it: on or off.
+func strictWord(on bool) string {
+	if on {
+		return "on"
+	}
+	return "off"
+}
+
+// isBool reports whether v is a YAML boolean.
+func isBool(v any) bool {
+	_, ok := v.(bool)
+	return ok
+}
+
+// configAuditStrict shows audit.strict and where it comes from, or sets it:
+// on writes 'audit: {strict: true}' to tacctl.yaml, off removes the key (the
+// default). audit.strict never refuses this verb (auditEntry.NotStrict): it
+// is the way out of a strict setting while logger cannot write.
+func (inv *invocation) configAuditStrict(args []string) error {
+	const usage = "Usage: tacctl config audit-strict [on|off]"
+	if len(args) > 1 {
+		return inv.usageErr("Unknown argument: '"+args[1]+"'", usage)
+	}
+	c := inv.app.Conf()
+	was := strictWord(inv.auditStrict())
+	v := arg(args, 0)
+	if v == "" {
+		src := "default"
+		if c.HasOverride(confAuditStrict) {
+			src = "tacctl.yaml"
+			if raw, _ := c.Value(confAuditStrict); !isBool(raw) {
+				src = "tacctl.yaml holds a value that is not true or false, read as off; 'tacctl config validate' says more"
+			}
+		}
+		inv.echo("")
+		inv.echo("  Audit strict: " + was + "   (" + src + ")")
+		inv.echo("  (on: a command that changes state, or shows a secret, is refused when its")
+		inv.echo("  audit line cannot be written; this command is never refused)")
+		inv.echo("")
+		inv.echo("  " + usage)
+		inv.echo("")
+		return nil
+	}
+	var on bool
+	switch v {
+	case "on":
+		on = true
+	case "off":
+	default:
+		return inv.usageErr("Invalid value: '"+v+"'. Use: on or off", usage)
+	}
+	if err := c.SetValue(confAuditStrict, on); err != nil {
+		return err
+	}
+	inv.detail("config audit-strict", kvp("from", was), kvp("to", v))
+	if on {
+		inv.app.Out.Info("audit.strict is on: a command that changes state, or shows a secret, is refused when its audit line cannot be written.")
+	} else {
+		inv.app.Out.Info("audit.strict is off: an audit line that cannot be written is a warning, and the command runs.")
+	}
+	inv.echo("")
+	return nil
 }
 
 // --- loglevel and metrics (the TACACS+ backend's settings) ------------------

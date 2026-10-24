@@ -507,3 +507,58 @@ func TestStrictWarningsUnderConcurrentWrites(t *testing.T) {
 		}
 	}
 }
+
+// Reveal writes the line of a secret about to be shown. Without strict it is
+// Line: a failure is the warning and nothing is refused.
+func TestRevealWithoutStrictIsLine(t *testing.T) {
+	r := &fake.Runner{}
+	r.Missing("logger")
+	var warned []string
+	w := New(Options{Runner: r, SID: "k3x9a0bq", Warn: func(m string) { warned = append(warned, m) }})
+	w.SetStart(func() string { return w.Line(Info, "cmd start") })
+	if ref := recovered(t, func() { w.Reveal(Info, "secret-read", Pair("kind", "scope"), Pair("name", "lab")) }); ref != nil {
+		t.Fatalf("refused without strict: %v", ref)
+	}
+	if len(warned) != 1 || !strings.Contains(warned[0], "the command continues") {
+		t.Errorf("warnings %q", warned)
+	}
+	if got := r.Calls()[0].Args[4]; got != "secret-read kind=scope name=lab sid=k3x9a0bq" {
+		t.Errorf("line %q", got)
+	}
+}
+
+// With strict, a reveal whose line is written passes; one whose line is not
+// written panics with the reveal's refusal (and every later Touch and Reveal
+// repeats it), with no D248 warning beside it.
+func TestStrictRevealRefusesWhenTheLineIsNotWritten(t *testing.T) {
+	r := &fake.Runner{}
+	w := New(Options{Runner: r, Warn: func(string) { t.Error("warned") }})
+	w.SetStrict(true)
+	w.SetStart(func() string { return w.Line(Info, "cmd start") })
+	if ref := recovered(t, func() { w.Reveal(Info, "secret-read") }); ref != nil {
+		t.Fatalf("refused with a working logger: %v", ref)
+	}
+	r2 := &fake.Runner{}
+	r2.Fail([]string{"logger"}, 1, "busy")
+	var warned []string
+	w = New(Options{Runner: r2, Warn: func(m string) { warned = append(warned, m) }})
+	w.SetStrict(true)
+	w.SetStart(func() string { return w.Line(Info, "cmd start") })
+	ref := recovered(t, func() { w.Reveal(Info, "secret-read") })
+	if ref == nil || !ref.Reveal {
+		t.Fatalf("refusal %+v", ref)
+	}
+	if want := "The audit line cannot be written (logger: exit status 1: busy) and audit.strict is set; nothing was shown."; ref.Error() != want {
+		t.Errorf("message %q", ref.Error())
+	}
+	if again := recovered(t, w.Touch); again != ref {
+		t.Errorf("a later Touch: %v", again)
+	}
+	if again := recovered(t, func() { w.Reveal(Info, "secret-read") }); again != ref {
+		t.Errorf("a later Reveal: %v", again)
+	}
+	w.FlushWarning()
+	if len(warned) != 0 {
+		t.Errorf("warnings beside the refusal: %q", warned)
+	}
+}

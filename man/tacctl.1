@@ -3900,6 +3900,39 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config secret-min-length
 .TP
+.BI "config audit-strict " [ "on|off" ]
+Show
+.B audit.strict
+and where it comes from (the default or
+.IR tacctl.yaml ),
+or set it:
+.B on
+writes
+.B "audit: {strict: true}"
+to
+.IR tacctl.yaml ,
+.B off
+removes the key (the default, off). With it on, a command that changes state,
+or shows a secret, is refused when its audit line cannot be written (see
+.BR "AUDIT LOG" ).
+This command is never refused by
+.BR audit.strict :
+with
+.B logger
+down and every other change refused,
+.B "config audit\-strict off"
+still runs (with the warning that its own lines were not written). Its lines
+are written at
+.BR auth.notice ;
+the detail line is
+.BR "config audit-strict from=off to=on" .
+.\" BEGIN GENERATED: command config audit-strict
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config audit-strict
+.TP
 .B "config allow " "{ list | add | remove | clear } " [ cidr[,cidr...] ]
 Manage the connection allow list (IP ACL).
 .B add
@@ -6415,7 +6448,10 @@ editor needs its wait option, such as
 or
 .BR "gvim \-f" ;
 one that returns at once leaves tacctl an unchanged text). Logged as
-.BR "block\-edit name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR .
+.BR "block\-edit name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR ;
+opening a block in force, or a device's new block with the scope's objects,
+is logged before the editor starts as
+.BR "secret\-read kind=block" .
 .TP
 .BI "scope block " scope " {juniper|cisco} adopt " device " " block " [ \-y ]"
 Superuser only, at a terminal, with the rules of
@@ -11727,8 +11763,8 @@ scope secret, scope snmp, scope staging, scope tacacs\-group,
 scope vendor\-attrs, user scope
 .TP
 .B "mixed, auth.notice"
-config sudoers, console system\-shell, console tiers, console user,
-rollback, store import
+config audit\-strict, config sudoers, console system\-shell,
+console tiers, console user, rollback, store import
 .\" END GENERATED: audit-classes
 .PP
 The fields, in the order written:
@@ -12234,6 +12270,8 @@ in
 .I tacctl.yaml
 (default
 .BR false ;
+set with
+.BR "config audit-strict on|off" ;
 see
 .BR "CONFIGURATION KEYS" )
 a command that changes state is refused when its
@@ -12254,6 +12292,52 @@ refusal comes before the first write, which for a few commands is after a
 prompt or a read (\fBdevice collect\fR: after its first login;
 \fBdevice config apply\fR: after the choice of devices and the password
 prompt); \fBdevice config apply \-\-check\fR writes the central pair too.
+.PP
+A command that shows a secret writes its
+.B secret-read
+line before it prints anything; when that line cannot be written the command
+is refused, whatever the caller's tier, before any secret is printed:
+.PP
+.nf
+.RS
+[ERROR] The audit line cannot be written (logger: reason) and audit.strict is set; nothing was shown.
+.RE
+.fi
+.PP
+and the status is 1. These are the commands that show a secret
+(\fBscope secret show\fR, \fBconfig cisco\fR, \fBjuniper\fR and \fBwti\fR,
+\fBdevice config show\fR, \fBdevice config plan\fR unless
+\fB\-\-no\-secrets\fR, the \fB\-\-reveal\fR of \fBscope snmp\fR,
+\fBdevice snmp\fR and \fBconfig snmp show\fR, \fBscope block\fR and
+\fBdevice block show \-\-reveal\fR, their \fBedit\fR and \fBadopt\fR,
+\fBstore show\fR, \fBconfig dump\fR, \fBbackup diff\fR, and the diff of
+\fBbackup restore\fR and \fBconfig restore\fR).
+.B "config linux script"
+writes its
+.B secret-export
+line before the script, which holds the scope's secret, and is refused the
+same way before the file is written. The \fBdevice config\fR verbs that build
+a device's expected configuration only to compare it or with the secrets
+elided (\fBpull\fR, \fBdiff\fR, \fBapply\fR, \fBlist\fR,
+\fBplan \-\-no\-secrets\fR; \fBdevice collect\fR and \fBonboard\fR too)
+write a
+.B secret-read
+line for the secrets it carries but are not refused for it: a line that
+cannot be written is the warning. Those that change something are refused by
+their
+.B "cmd start"
+line as above;
+.B "scope secret generate"
+writes its start line before it prints the value it generated.
+.PP
+.B "config audit\-strict"
+is never refused by
+.BR audit.strict :
+when
+.B logger
+is down and every change is refused,
+.B "tacctl config audit\-strict off"
+turns the setting off (with the warning that its own lines were not written).
 .SS Forwarding
 The facility is
 .BR auth ;
@@ -12309,6 +12393,7 @@ Scalar getter/setters
 .BR "config bcrypt-cost" ,
 .BR "config password-min-length" ,
 .BR "config secret-min-length" ,
+.BR "config audit-strict" ,
 .BR "config branch" ,
 .BR "scope default" )
 print the current value when called with no arguments.
@@ -12863,7 +12948,7 @@ the keys of a family exist once for each.
 .TP
 .B audit.strict
 true or false. Default: false.
-Whether a command that changes state is refused when its audit line cannot be written: with true, an action or mixed command whose cmd start line logger did not write exits 1 before it changes anything (the AUDIT LOG section has the message); a command that only reads runs, and an end line that cannot be written is the warning. Edit the file to change it.
+Whether a command that changes state, or shows a secret, is refused when its audit line cannot be written: with true, an action or mixed command whose cmd start line logger did not write exits 1 before it changes anything, and a command whose secret-read line logger did not write exits 1 before it shows the secret (the AUDIT LOG section has the messages); any other read runs, and an end line that cannot be written is the warning. config audit-strict is never refused by it. Set with \fBtacctl config audit\-strict\fR.
 .TP
 .B backends.enabled
 non\-empty list of backends (tacacs, radius). Default: [tacacs].

@@ -188,8 +188,20 @@ func (inv *invocation) scopeRefusal(scope, msg string) error {
 
 // secretRead logs a reveal of a secret, whoever makes it (kind scope): who
 // read which scope's, never the value (docs/plans/0.2.3-plan.md D45, 0.2.17
-// D253).
+// D253). It is the one way a verb logs a reveal, and it is called before the
+// secret is printed: under audit.strict a line that cannot be written
+// refuses the reveal here (audit.Writer.Reveal panics with the refusal, which
+// the dispatcher makes the command's exit 1), so nothing is shown. It runs on
+// the command's own goroutine, never on a worker.
 func (inv *invocation) secretRead(kind, name string) {
+	inv.app.Audit().Reveal(audit.Info, "secret-read", kvp("kind", kind), kvp("name", name), audit.Pair("by", inv.sudoUser()))
+}
+
+// secretUse logs a secret read to build something that is not printed as it
+// is (the managed renders that 'device config' compares, plans and applies):
+// the same secret-read line as secretRead, but audit.strict does not refuse
+// it; a line that cannot be written is the D248 warning.
+func (inv *invocation) secretUse(kind, name string) {
 	inv.detailAt(audit.Info, "secret-read", kvp("kind", kind), kvp("name", name))
 }
 

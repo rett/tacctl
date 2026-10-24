@@ -217,7 +217,9 @@ scope block <name> {juniper|cisco} edit <block> [-y]
     else `vi`), run as you, never as root, on a private 0600 copy in a 0700 directory under
     `/var/tmp` that is removed afterwards; then check, show the diff, ask (`-y` answers) and install
     as `set` does. A new block opens as its grammar in `#` lines. A text that fails the check is
-    offered back with the errors at the top as `# tacctl:` lines
+    offered back with the errors at the top as `# tacctl:` lines. Opening a block in force (or, on a
+    device, the scope's objects as comments) is logged before the editor starts: `secret-read
+    kind=block`
 
 scope block <name> {juniper|cisco} adopt <device> <block> [-y]
 

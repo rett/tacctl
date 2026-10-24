@@ -248,6 +248,32 @@ current behaviour; this file is where history lives.
     says `mode=attended`. A script that typed the count must type each
     device's name, or use `--confirmed -y`.
 
+12. **`config audit-strict [on|off]`, and `audit.strict` refuses a reveal
+    whose line cannot be written.** `tacctl config audit-strict` (superuser)
+    shows `audit.strict` and where it comes from; `on` writes `audit:
+    {strict: true}` to `tacctl.yaml` and `off` removes the key. The change is
+    the central pair and a detail line `config audit-strict from= to=` at
+    `auth.notice`. The command is never refused by the setting, so `off` works
+    while `logger` is down and every other change is refused. With the
+    setting on, a command that shows a secret (`scope secret <scope> show`,
+    `config cisco|juniper|wti`, `device config show`, `device config plan`
+    unless `--no-secrets`, `--reveal` of `scope snmp`, `device snmp`,
+    `config snmp show`, `scope block` and `device block`, their `edit` and
+    `adopt`, `store show`, `config dump`, `backup diff`, the diff of `backup
+    restore` and `config restore`) is now refused, for every tier, when its
+    `secret-read` line cannot be written: `The audit line cannot be written
+    (logger: <reason>) and audit.strict is set; nothing was shown.`, exit 1,
+    before any secret is printed. `block edit` and the two restores now write
+    that line (the editor and the diff show the secrets). `config linux
+    script` writes its `secret-export` line before the script, not after, and
+    is refused the same way before the file is written; `scope secret
+    generate` writes its start line before it prints the value. The `device
+    config` verbs that only compare a rendered configuration or elide its
+    secrets (`list`, `diff`, `plan --no-secrets`, and the render of `pull`,
+    `apply`, `device collect` and `onboard`) keep their `secret-read` lines
+    without this refusal. Without the setting a line that cannot be written
+    is still the warning, and the secret is shown.
+
 ## 0.2.16 (2026-10-23)
 
 1. **`config validate` takes no argument.** `config validate extra` ran the

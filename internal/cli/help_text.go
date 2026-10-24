@@ -408,6 +408,7 @@ Subcommands:
   <b>bcrypt-cost</b> [10-14]                  Show or set bcrypt cost factor (default 12)
   <b>password-min-length</b> [8-64]           Show or set minimum interactive password length (default 12)
   <b>secret-min-length</b> [16-128]           Show or set minimum shared-secret length (default 16)
+  <b>audit-strict</b> [on|off]                Show or set whether a change or a reveal is refused when its audit line cannot be written (default off)
   <b>allow</b> list|add|remove|clear          Manage connection allow list (IP ACL; add/remove accept comma-lists)
   <b>deny</b> list|add|remove|clear           Manage connection deny list (IP ACL; add/remove accept comma-lists)
   <b>mgmt-acl</b> list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits
