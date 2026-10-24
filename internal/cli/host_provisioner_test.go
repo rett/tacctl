@@ -510,6 +510,10 @@ func TestRotateFailedProofRemovesTheAccount(t *testing.T) {
 			if rh.has("logger:host provisioner rotate name=web1 old=admin new=deploy2 auth=key by=root") {
 				t.Errorf("the rotation was logged as done")
 			}
+			// The step line lies between the command's pair.
+			if a, b, c := rh.eventIndex("logger:cmd start"), rh.eventIndex("logger:host provisioner rotate name=web1 old=admin new=deploy2 auth=key step=prove"), rh.eventIndex("logger:cmd end"); a < 0 || b < a || c < b {
+				t.Errorf("the pair does not enclose the step line: %q", rh.events)
+			}
 			if hs.registry() != rotRegBefore || hs.snapshots() != n0 || strings.Contains(hs.record("web1"), "provisioner") {
 				t.Errorf("changed: %q %d", hs.registry(), hs.snapshots()-n0)
 			}
@@ -528,7 +532,8 @@ func TestRotateFailedProofRemovesTheAccount(t *testing.T) {
 }
 
 // A creation that fails changes nothing: no proof, no removal, no registry
-// change.
+// change. The attempt on the host is audited as the command's pair, with no
+// step line.
 func TestRotateCreationFails(t *testing.T) {
 	hs, rh := rotSandbox(t)
 	rh.createCode = 1
@@ -537,7 +542,7 @@ func TestRotateCreationFails(t *testing.T) {
 	if hs.code != 1 || !strings.Contains(plain(hs.err.String()), "The account 'deploy2' could not be created on web1 (see above); the registry was not changed.") {
 		t.Errorf("exit %d %q", hs.code, hs.err.String())
 	}
-	if rh.has("proof") || rh.has("push:remove") || rh.has("logger") || hs.registry() != rotRegBefore || hs.snapshots() != n0 {
+	if rh.has("proof") || rh.has("push:remove") || !rh.has("logger:cmd start") || !rh.has("logger:cmd end") || rh.has("logger:host provisioner") || hs.registry() != rotRegBefore || hs.snapshots() != n0 {
 		t.Errorf("events %q registry %q", rh.events, hs.registry())
 	}
 }

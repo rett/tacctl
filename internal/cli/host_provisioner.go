@@ -160,6 +160,10 @@ func (inv *invocation) hostRotate(o rotateOpts) error {
 	if err := inv.rotateConfirm(r); err != nil {
 		return err
 	}
+	// The first change is next (a key file, the account on the host): the
+	// start line comes before it, so a run that fails at the proof still has
+	// its pair beside its step line.
+	a.Audit().Touch()
 	he := r.he
 	e := r.entry
 	by := inv.sudoUser()
