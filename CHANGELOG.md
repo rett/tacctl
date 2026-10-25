@@ -1310,7 +1310,7 @@ current behaviour; this file is where history lives.
    knobs) come after a blank line with their values aligned; no line is wider
    than 62 columns, where the old copyright line wrapped on an 80-column
    terminal. The build date is the commit's date shown as `2026-10-14 15:34
-   AKDT` in the local time zone. The field labels (`commit:`) and the short
+   UTC` in the local time zone. The field labels (`commit:`) and the short
    `tacctl version` are as before.
 
 ## 0.2.9 (2026-10-14)
@@ -2507,7 +2507,7 @@ current behaviour; this file is where history lives.
     IOS 15.6(2)T router a block with a banner (typed with the `^` delimiter),
     `ip domain name`, `ip domain list`, `clock timezone`, `ip name-server`
     and `ntp server ... prefer` was pasted and read back as `ok` (the device
-    stores the time zone as `AKST -9 0`, which compares equal to `-9`); a
+    stores the time zone as `CET 1 0`, which compares equal to `1`); a
     changed banner, an added list entry and name server, and `ntp server`
     typed again without `prefer` came out as the planned lines and replaced
     the server line in place; `adopt` drafted the block from the device and

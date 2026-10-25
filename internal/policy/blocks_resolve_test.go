@@ -168,7 +168,7 @@ func TestResolveSystemBlock(t *testing.T) {
 func TestResolveWithTheDevicesOwnBlock(t *testing.T) {
 	c, _ := newConf(t, "")
 	store := blocks.NewStore(t.TempDir())
-	scope, dev := blocks.ScopeLevel("lab"), blocks.DeviceLevel("JS1.lab.example.net")
+	scope, dev := blocks.ScopeLevel("lab"), blocks.DeviceLevel("JSW1.lab.example.net")
 	scopeText := "set snmp community nms-ro authorization read-only\nset snmp community nms-ro clients 192.0.2.50/32\n" +
 		"set snmp community poller-two authorization read-only\nset snmp community poller-two clients 192.0.2.60/32\n"
 	devText := "set snmp community nms-ro authorization read-write\nset snmp community nms-ro clients 198.51.100.0/24\n" +
@@ -182,23 +182,23 @@ func TestResolveWithTheDevicesOwnBlock(t *testing.T) {
 		}
 	}
 	// nothing is in force: no layer
-	if b, l, err := ResolveSNMPBlock(store, c, "lab", "js1.lab.example.net"); b != nil || l != (BlockLayers{}) || err != nil {
+	if b, l, err := ResolveSNMPBlock(store, c, "lab", "jsw1.lab.example.net"); b != nil || l != (BlockLayers{}) || err != nil {
 		t.Fatalf("nothing in force: %v %v %v", b, l, err)
 	}
 	if err := SetBlockInForce(c, "lab", blocks.VendorJuniper, blocks.BlockSNMP, true); err != nil {
 		t.Fatal(err)
 	}
 	// the scope's alone, for a device with none of its own and for the scope
-	for _, device := range []string{"", "js1.lab.example.net"} {
+	for _, device := range []string{"", "jsw1.lab.example.net"} {
 		b, l, err := ResolveSNMPBlock(store, c, "lab", device)
 		if err != nil || b == nil || l != (BlockLayers{Scope: true}) || len(b.Communities) != 2 || b.Communities[0].Authorization != "read-only" {
 			t.Fatalf("scope only (%q): %v %v %v", device, b, l, err)
 		}
 	}
-	if err := SetDeviceBlockInForce(c, "JS1.lab.example.net", blocks.VendorJuniper, blocks.BlockSNMP, true); err != nil {
+	if err := SetDeviceBlockInForce(c, "JSW1.lab.example.net", blocks.VendorJuniper, blocks.BlockSNMP, true); err != nil {
 		t.Fatal(err)
 	}
-	b, l, err := ResolveSNMPBlock(store, c, "lab", "JS1.lab.example.net")
+	b, l, err := ResolveSNMPBlock(store, c, "lab", "JSW1.lab.example.net")
 	if err != nil || b == nil || l != (BlockLayers{Scope: true, Device: true}) {
 		t.Fatalf("both: %v %v %v", b, l, err)
 	}
@@ -220,7 +220,7 @@ func TestResolveWithTheDevicesOwnBlock(t *testing.T) {
 	if err := SetBlockInForce(c, "lab", blocks.VendorJuniper, blocks.BlockSNMP, false); err != nil {
 		t.Fatal(err)
 	}
-	b, l, err = ResolveSNMPBlock(store, c, "lab", "js1.lab.example.net")
+	b, l, err = ResolveSNMPBlock(store, c, "lab", "jsw1.lab.example.net")
 	if err != nil || b == nil || l != (BlockLayers{Device: true}) || len(b.Communities) != 2 {
 		t.Errorf("device only: %v %v %v", b, l, err)
 	}
@@ -228,12 +228,12 @@ func TestResolveWithTheDevicesOwnBlock(t *testing.T) {
 	if err := store.Write(dev, blocks.VendorJuniper, blocks.BlockSNMP, []byte(devText+"set snmp community short authorization read-only\n")); err != nil {
 		t.Fatal(err)
 	}
-	b, _, err = ResolveSNMPBlock(store, c, "lab", "js1.lab.example.net")
+	b, _, err = ResolveSNMPBlock(store, c, "lab", "jsw1.lab.example.net")
 	if b != nil || err == nil {
 		t.Fatalf("a device block with errors: %v %v", b, err)
 	}
 	first, _, _ := strings.Cut(err.Error(), "\n")
-	for _, want := range []string{"The snmp block of device 'js1.lab.example.net' has errors", "tacctl device block js1.lab.example.net check snmp"} {
+	for _, want := range []string{"The snmp block of device 'jsw1.lab.example.net' has errors", "tacctl device block jsw1.lab.example.net check snmp"} {
 		if !strings.Contains(first, want) {
 			t.Errorf("the first line lacks %q: %q", want, first)
 		}

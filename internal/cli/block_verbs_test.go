@@ -16,7 +16,7 @@ import (
 const (
 	verbSNMPFile = "# the NMS\nset snmp community nms-ro-secret authorization read-only\nset snmp community nms-ro-secret clients 192.0.2.50/32\n" +
 		"set snmp trap-group nms-traps-secret version v2\nset snmp trap-group nms-traps-secret targets 198.51.100.7\n"
-	verbSystemFile = "set system login message <<'EOF'\nAuthorized use of js1.lab.example.net only.\n  *** keep out ***\nEOF\n" +
+	verbSystemFile = "set system login message <<'EOF'\nAuthorized use of jsw1.lab.example.net only.\n  *** keep out ***\nEOF\n" +
 		"set system domain-name lab.example.net\nset system name-server 192.0.2.53\n" +
 		"set system ntp server 192.0.2.123 prefer\nset system ntp authentication-key 1 type md5 value ntp-key-0123456789\n"
 )
@@ -225,7 +225,7 @@ func TestScopeBlockSystemIsElidedAndRevealed(t *testing.T) {
 			t.Errorf("show lacks %q:\n%s", want, out)
 		}
 	}
-	noneOf(t, "show", out, "Authorized", "keep out", "ntp-key-0123456789", "js1.lab")
+	noneOf(t, "show", out, "Authorized", "keep out", "ntp-key-0123456789", "jsw1.lab")
 	out = sb.blk("", "lab", "juniper", "show", "system", "--reveal")
 	if !strings.Contains(out, verbSystemFile) {
 		t.Errorf("show --reveal:\n%s", out)
@@ -492,14 +492,14 @@ func TestConfigValidateReportsBlocks(t *testing.T) {
 		t.Errorf("valid: %d\n%s", sb.code, out)
 	}
 	// a name with no file; a file no list names; a block with errors
-	sb.write("state/tacctl.yaml", sb.overrides()+"blocks_device:\n  js1~lab~example~net:\n    juniper:\n    - system\n", 0o640)
+	sb.write("state/tacctl.yaml", sb.overrides()+"blocks_device:\n  jsw1~lab~example~net:\n    juniper:\n    - system\n", 0o640)
 	sb.write("state/blocks/lab/juniper/system", verbSystemFile, 0o600)
 	sb.write("state/blocks/lab/juniper/snmp", "set snmp community short authorization read-only\n", 0o600)
 	out = plain(sb.run("", []string{"config", "validate"}))
 	for _, want := range []string{
 		"Config blocks:        scope lab juniper: the file of block 'system' is not in tacctl.yaml (blocks); it is ignored",
 		"Config blocks:        the snmp block of scope lab has 1 error and is not rendered, so every Junos device it reaches is refused: tacctl scope block lab juniper check snmp",
-		"Config blocks:        device js1.lab.example.net: the device is not in the registry; its configuration blocks and their tacctl.yaml (blocks_device) entries are ignored",
+		"Config blocks:        device jsw1.lab.example.net: the device is not in the registry; its configuration blocks and their tacctl.yaml (blocks_device) entries are ignored",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("validate lacks %q:\n%s", want, out)

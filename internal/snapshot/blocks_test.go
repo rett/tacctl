@@ -41,26 +41,26 @@ func TestSnapshotHoldsTheBlocks(t *testing.T) {
 	}
 
 	e.writeBlock("lab/juniper/snmp", "set snmp community lab-ro authorization read-only\n")
-	e.writeBlock("_devices/js1.lab.example.net/juniper/system", "set system time-zone UTC\n")
+	e.writeBlock("_devices/jsw1.lab.example.net/juniper/system", "set system time-zone UTC\n")
 	second := e.take()
 	if second == "" || second == first {
 		t.Fatalf("blocks did not make a snapshot: %q", second)
 	}
 	snap := filepath.Join(e.backups(), second, "blocks")
-	for _, d := range []string{"", "lab", "lab/juniper", "_devices", "_devices/js1.lab.example.net", "_devices/js1.lab.example.net/juniper"} {
+	for _, d := range []string{"", "lab", "lab/juniper", "_devices", "_devices/jsw1.lab.example.net", "_devices/jsw1.lab.example.net/juniper"} {
 		st, err := os.Stat(filepath.Join(snap, filepath.FromSlash(d)))
 		if err != nil || !st.IsDir() || st.Mode().Perm() != 0o700 {
 			t.Errorf("directory %q: %v %v", d, st, err)
 		}
 	}
-	for _, f := range []string{"lab/juniper/snmp", "_devices/js1.lab.example.net/juniper/system"} {
+	for _, f := range []string{"lab/juniper/snmp", "_devices/jsw1.lab.example.net/juniper/system"} {
 		st, err := os.Stat(filepath.Join(snap, filepath.FromSlash(f)))
 		if err != nil || st.Mode().Perm() != 0o600 {
 			t.Errorf("file %q: %v %v", f, st, err)
 		}
 	}
 	got := BlockFiles(snap)
-	if want := []string{"_devices/js1.lab.example.net/juniper/system", "lab/juniper/snmp"}; !slices.Equal(got, want) {
+	if want := []string{"_devices/jsw1.lab.example.net/juniper/system", "lab/juniper/snmp"}; !slices.Equal(got, want) {
 		t.Errorf("BlockFiles = %q, want %q", got, want)
 	}
 	data, err := os.ReadFile(filepath.Join(snap, "lab", "juniper", "snmp"))

@@ -53,9 +53,9 @@ func TestDeviceNoticeCompletion(t *testing.T) {
 	for _, c := range []struct {
 		words, want, not []string
 	}{
-		{[]string{"device", "notice", ""}, []string{"list", "js1", "sw1"}, []string{"--all"}},
-		{[]string{"device", "notice", "list", ""}, []string{"js1", "sw1", "--all"}, []string{"ack"}},
-		{[]string{"device", "notice", "sw1", ""}, []string{"ack", "unack"}, []string{"--all", "js1"}},
+		{[]string{"device", "notice", ""}, []string{"list", "jsw1", "sw1"}, []string{"--all"}},
+		{[]string{"device", "notice", "list", ""}, []string{"jsw1", "sw1", "--all"}, []string{"ack"}},
+		{[]string{"device", "notice", "sw1", ""}, []string{"ack", "unack"}, []string{"--all", "jsw1"}},
 		{[]string{"device", "notice", "sw1", "ack", ""}, []string{"generic-name"}, []string{"--all"}},
 		{[]string{"device", ""}, []string{"notice", "client-config"}, []string{"notices", "ssh-config"}},
 	} {

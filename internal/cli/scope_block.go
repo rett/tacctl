@@ -132,11 +132,11 @@ ciphertext is left out with a line that says so.
 
 Examples:
   tacctl scope block ` + scope + ` juniper list
-  tacctl scope block ` + scope + ` juniper check snmp --file snmp.txt --against js1.lab.example.net
+  tacctl scope block ` + scope + ` juniper check snmp --file snmp.txt --against jsw1.lab.example.net
   tacctl scope block ` + scope + ` juniper set snmp --file snmp.txt
   tacctl scope block ` + scope + ` juniper show system
   tacctl scope block ` + scope + ` juniper edit snmp
-  tacctl scope block ` + scope + ` juniper adopt js1.lab.example.net snmp
+  tacctl scope block ` + scope + ` juniper adopt jsw1.lab.example.net snmp
   tacctl scope block ` + scope + ` cisco check snmp --file snmp.txt --against rt1.lab.example.net
 
 `)

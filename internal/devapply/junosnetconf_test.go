@@ -408,17 +408,17 @@ func TestNetconfLockModeRefusesAStagedCandidate(t *testing.T) {
 // never the label, which rounds down to 0mins for a one-minute window; the
 // 'rollback in' label of a command-line commit still parses as before.
 func TestNetconfPendingIsTheDevicesLineNotTheLabel(t *testing.T) {
-	h, err := parseHistory("0   2026-10-15 04:09:56 AKDT by admin via netconf commit confirmed, rollback in 0mins\n" +
+	h, err := parseHistory("0   2026-10-15 04:09:56 UTC by admin via netconf commit confirmed, rollback in 0mins\n" +
 		"    tacctl lab N1\n    rollback pending\n" +
-		"1   2026-10-15 00:41:23 AKDT by admin via junoscript\n")
+		"1   2026-10-15 00:41:23 UTC by admin via junoscript\n")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !h[0].Pending || h[0].RollbackIn != 0 || h[0].Comment != "tacctl lab N1" || h[1].Pending {
 		t.Errorf("entries %+v", h)
 	}
-	h2, err := parseHistory("0   2026-10-15 04:10:45 AKDT by admin via netconf\n    tacctl lab N2 confirm\n" +
-		"1   2026-10-15 04:10:43 AKDT by admin via netconf commit confirmed, rollback in 0mins\n    tacctl lab N1\n")
+	h2, err := parseHistory("0   2026-10-15 04:10:45 UTC by admin via netconf\n    tacctl lab N2 confirm\n" +
+		"1   2026-10-15 04:10:43 UTC by admin via netconf commit confirmed, rollback in 0mins\n    tacctl lab N1\n")
 	if err != nil {
 		t.Fatal(err)
 	}

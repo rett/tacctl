@@ -5,7 +5,7 @@
 # What is irregular on dev-juniper-synthetic-communities (9 items; the paste fixes 1, leaves 8):
 #  1. aaa      ACCESS     extra: a TACACS+ server 192.0.2.99 (set system tacplus-server 192.0.2.99
 #                         secret <secret>). Removed by the cleanup region, line 3.
-#  2. snmp     MONITORING extra: SNMP: name js1.lab.example.net (set snmp name js1.lab.example.net).
+#  2. snmp     MONITORING extra: SNMP: name jsw1.lab.example.net (set snmp name jsw1.lab.example.net).
 #                         Left alone (the device's own identity: never removed).
 #  3. snmp     MONITORING extra: an SNMP community: 4 statements (e.g. set snmp community <other:1>
 #                         authorization read-only). Left alone (its name is the secret and is not

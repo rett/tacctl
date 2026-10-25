@@ -15,8 +15,8 @@
 #  4. snmp     MONITORING extra: SNMP: trap-group <other:2> targets 192.0.2.50 (set snmp trap-group
 #                         <other:2> targets 192.0.2.50). Left alone (its name is the secret and is not
 #                         known to tacctl).
-#  5. system   COSMETIC   missing: the login message of 4 lines, 120 characters (set system login
-#                         message "<message: 4 lines, 120 characters, id 7e734f51>"). Fixed by region
+#  5. system   COSMETIC   missing: the login message of 4 lines, 121 characters (set system login
+#                         message "<message: 4 lines, 121 characters, id 3e17098b>"). Fixed by region
 #                         line 5.
 #  6. system   COSMETIC   missing: the domain name is lab.example.net (set system domain-name
 #                         lab.example.net). Fixed by region line 6.
@@ -57,7 +57,7 @@ configure exclusive
 # snmp: the description tacctl renders
 set snmp description "Core switch"
 # system: the statements of the system block of scope 'lab'
-set system login message "Authorized use only.\n  *** js1.lab.example.net ***\nDisconnect now if you are not authorized.\n  \"quoted\" and a back\\slash"
+set system login message "Authorized use only.\n  *** jsw1.lab.example.net ***\nDisconnect now if you are not authorized.\n  \"quoted\" and a back\\slash"
 set system domain-name lab.example.net
 set system domain-search lab.example.net
 set system time-zone UTC

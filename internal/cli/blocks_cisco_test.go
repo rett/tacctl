@@ -348,7 +348,7 @@ func TestAdoptCiscoDraftFlow(t *testing.T) {
 		}
 	}
 	// a Junos device is not read by an IOS block's adopt
-	a.runAs("", ed, "scope", "block", "lab", "cisco", "adopt", "js1.lab.example.net", "snmp")
+	a.runAs("", ed, "scope", "block", "lab", "cisco", "adopt", "jsw1.lab.example.net", "snmp")
 	if a.sb.code != 1 || !strings.Contains(a.sb.stderr(), "is not an IOS or IOS-XE device") {
 		t.Errorf("a Junos device: %d %q", a.sb.code, a.sb.stderr())
 	}

@@ -16,7 +16,7 @@ import (
 const systemBlockText = `# the lab's system settings
 set system login message <<'EOF'
 Authorized use only.
-  *** js1.lab.example.net ***
+  *** jsw1.lab.example.net ***
 Say "hello" and back\slash
 EOF
 set system domain-name lab.example.net
@@ -104,7 +104,7 @@ func TestSystemBlockInTheWalkthroughAndManaged(t *testing.T) {
 				t.Errorf("%s: %q: Secret is %v", v.name, l, sys.Secret[i])
 			}
 		}
-		if got := sys.Lines[0]; got != `set system login message "Authorized use only.\n  *** js1.lab.example.net ***\nSay \"hello\" and back\\slash"` {
+		if got := sys.Lines[0]; got != `set system login message "Authorized use only.\n  *** jsw1.lab.example.net ***\nSay \"hello\" and back\\slash"` {
 			t.Errorf("%s: the message statement %q", v.name, got)
 		}
 
@@ -122,7 +122,7 @@ func TestSystemBlockInTheWalkthroughAndManaged(t *testing.T) {
 			t.Errorf("%s: no comment names the block", v.name)
 		}
 		for c := range commented {
-			for _, bad := range []string{"Authorized", "js1.lab", "Say \"", "back\\slash", "ntp-key-0123456789"} {
+			for _, bad := range []string{"Authorized", "jsw1.lab", "Say \"", "back\\slash", "ntp-key-0123456789"} {
 				if strings.Contains(c, bad) {
 					t.Errorf("%s: a comment holds %q: %q", v.name, bad, c)
 				}

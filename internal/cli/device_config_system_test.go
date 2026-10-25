@@ -16,7 +16,7 @@ import (
 	"github.com/rett/tacctl/internal/devreg"
 )
 
-const cliSystemBlockFile = "set system login message <<'EOF'\nAuthorized use only.\n  *** js1.lab.example.net ***\nEOF\n" +
+const cliSystemBlockFile = "set system login message <<'EOF'\nAuthorized use only.\n  *** jsw1.lab.example.net ***\nEOF\n" +
 	"set system domain-name lab.example.net\n" +
 	"set system name-server 192.0.2.53\n" +
 	"set system ntp server 192.0.2.123 prefer\n" +
@@ -56,7 +56,7 @@ func TestWalkthroughCarriesTheSystemBlock(t *testing.T) {
 	sb.expect(0, "Juniper Junos Configuration", "")
 	for _, want := range []string{
 		"# The system block of scope 'lab' (tacctl scope block lab juniper show system): the login message, domain, time zone, name servers and NTP.\n" +
-			`set system login message "Authorized use only.\n  *** js1.lab.example.net ***"` + "\n" +
+			`set system login message "Authorized use only.\n  *** jsw1.lab.example.net ***"` + "\n" +
 			"set system domain-name lab.example.net\nset system name-server 192.0.2.53\nset system ntp server 192.0.2.123 prefer\n" +
 			"set system ntp authentication-key 1 type md5 value ntp-key-0123456789\n",
 		"show configuration system ntp",
@@ -90,7 +90,7 @@ func TestWalkthroughCarriesTheSystemBlock(t *testing.T) {
 			t.Errorf("the refusal lacks %q:\n%s", want, sb.stderr())
 		}
 	}
-	for _, bad := range []string{"Authorized", "js1.lab", "ntp-key-0123456789"} {
+	for _, bad := range []string{"Authorized", "jsw1.lab", "ntp-key-0123456789"} {
 		if strings.Contains(sb.stderr(), bad) {
 			t.Errorf("the refusal holds %q:\n%s", bad, sb.stderr())
 		}
@@ -134,7 +134,7 @@ func TestBatchRenderCarriesTheSystemBlock(t *testing.T) {
 		t.Fatalf("no system section: %v", lab)
 	}
 	want := []string{
-		`set system login message "Authorized use only.\n  *** js1.lab.example.net ***"`,
+		`set system login message "Authorized use only.\n  *** jsw1.lab.example.net ***"`,
 		"set system domain-name lab.example.net",
 		"set system name-server 192.0.2.53",
 		"set system ntp server 192.0.2.123 prefer",

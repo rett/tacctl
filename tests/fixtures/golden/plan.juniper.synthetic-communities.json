@@ -27,8 +27,8 @@
       "kind": "extra",
       "severity": "MONITORING",
       "section": "snmp",
-      "what": "SNMP: name js1.lab.example.net",
-      "statement": "set snmp name js1.lab.example.net",
+      "what": "SNMP: name jsw1.lab.example.net",
+      "statement": "set snmp name jsw1.lab.example.net",
       "action": "Left alone (the device's own identity: never removed).",
       "fixed": false
     },
@@ -121,7 +121,7 @@
     },
     {
       "section": "snmp",
-      "text": "set snmp name js1.lab.example.net",
+      "text": "set snmp name jsw1.lab.example.net",
       "guard": "the device's own identity: never removed"
     },
     {

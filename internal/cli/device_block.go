@@ -104,11 +104,11 @@ comments, to uncomment where this device differs; adopt reads this device's
 statements with your login and leaves out what the scope's block states.
 
 Examples:
-  tacctl device block js1.lab.example.net list
-  tacctl device block js1.lab.example.net show snmp --effective
-  tacctl device block js1.lab.example.net set snmp --file snmp.txt
-  tacctl device block js1.lab.example.net edit snmp
-  tacctl device block js1.lab.example.net adopt system
+  tacctl device block jsw1.lab.example.net list
+  tacctl device block jsw1.lab.example.net show snmp --effective
+  tacctl device block jsw1.lab.example.net set snmp --file snmp.txt
+  tacctl device block jsw1.lab.example.net edit snmp
+  tacctl device block jsw1.lab.example.net adopt system
 
 `)
 	return b.String()

@@ -31,17 +31,17 @@ func (sb *sandbox) devb(stdin string, args ...string) string {
 
 func TestDeviceBlockSetShowListRemove(t *testing.T) {
 	sb := newSandbox(t, true)
-	sb.dev("", "add", "js1.lab.example.net", "192.168.1.20", "--vendor", "juniper", "--no-host-key", "--no-lookup")
+	sb.dev("", "add", "jsw1.lab.example.net", "192.168.1.20", "--vendor", "juniper", "--no-host-key", "--no-lookup")
 	f := sb.blockFile("snmp.txt", verbSNMPFile)
-	dir := "state/blocks/_devices/js1.lab.example.net/juniper/"
+	dir := "state/blocks/_devices/jsw1.lab.example.net/juniper/"
 
-	out := sb.devb("", "js1.lab.example.net", "list")
-	if sb.code != 0 || !strings.Contains(out, "none: device 'js1.lab.example.net' has no juniper block.") {
+	out := sb.devb("", "jsw1.lab.example.net", "list")
+	if sb.code != 0 || !strings.Contains(out, "none: device 'jsw1.lab.example.net' has no juniper block.") {
 		t.Errorf("list: %d\n%s", sb.code, out)
 	}
 	n := sb.snapshots()
-	out = sb.devb("", "JS1.lab.example.net", "set", "snmp", "--file", f, "-y")
-	if sb.code != 0 || !strings.Contains(out, "The snmp block of device 'js1.lab.example.net' is set (") {
+	out = sb.devb("", "JSW1.lab.example.net", "set", "snmp", "--file", f, "-y")
+	if sb.code != 0 || !strings.Contains(out, "The snmp block of device 'jsw1.lab.example.net' is set (") {
 		t.Fatalf("set: %d\n%s%s", sb.code, out, sb.stderr())
 	}
 	noneOf(t, "set", out+sb.stderr(), "nms-ro-secret", "nms-traps-secret")
@@ -54,45 +54,45 @@ func TestDeviceBlockSetShowListRemove(t *testing.T) {
 	if st, err := os.Stat(sb.path(dir + "snmp")); err != nil || st.Mode().Perm() != 0o600 {
 		t.Errorf("mode: %v %v", st, err)
 	}
-	if o := sb.overrides(); !strings.Contains(o, "blocks_device:\n  js1~lab~example~net:\n    juniper:\n    - snmp\n") {
+	if o := sb.overrides(); !strings.Contains(o, "blocks_device:\n  jsw1~lab~example~net:\n    juniper:\n    - snmp\n") {
 		t.Errorf("manifest:\n%s", o)
 	}
-	if sb.logged("block-set name=_devices/js1.lab.example.net/juniper/snmp bytes=") != 1 {
+	if sb.logged("block-set name=_devices/jsw1.lab.example.net/juniper/snmp bytes=") != 1 {
 		t.Errorf("log: %q", sb.runner.Argvs())
 	}
-	if !strings.Contains(out, "tacctl device config pull js1.lab.example.net, then tacctl device config plan js1.lab.example.net.") {
+	if !strings.Contains(out, "tacctl device config pull jsw1.lab.example.net, then tacctl device config plan jsw1.lab.example.net.") {
 		t.Errorf("hint:\n%s", out)
 	}
-	out = sb.devb("", "js1.lab.example.net", "show", "snmp")
+	out = sb.devb("", "jsw1.lab.example.net", "show", "snmp")
 	if sb.code != 0 || !strings.Contains(out, "set snmp community <secret:1> authorization read-only") {
 		t.Errorf("show: %d\n%s", sb.code, out)
 	}
 	noneOf(t, "show", out, "nms-ro-secret", "nms-traps-secret")
-	out = sb.devb("", "js1.lab.example.net", "show", "snmp", "--reveal")
+	out = sb.devb("", "jsw1.lab.example.net", "show", "snmp", "--reveal")
 	if !strings.Contains(out, verbSNMPFile) {
 		t.Errorf("show --reveal:\n%s", out)
 	}
-	out = sb.devb("", "js1.lab.example.net", "list")
-	for _, want := range []string{"Configuration blocks of device 'js1.lab.example.net' (juniper)", "snmp     in force", "1 community, 1 trap group"} {
+	out = sb.devb("", "jsw1.lab.example.net", "list")
+	for _, want := range []string{"Configuration blocks of device 'jsw1.lab.example.net' (juniper)", "snmp     in force", "1 community, 1 trap group"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("list lacks %q:\n%s", want, out)
 		}
 	}
 	// the vendor orphan is a finding of the device's list, and no one else's
-	if err := os.MkdirAll(sb.path("state/blocks/_devices/js1.lab.example.net/cisco"), 0o700); err != nil {
+	if err := os.MkdirAll(sb.path("state/blocks/_devices/jsw1.lab.example.net/cisco"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	sb.write("state/blocks/_devices/js1.lab.example.net/cisco/snmp", "x\n", 0o600)
-	out = sb.devb("", "js1.lab.example.net", "list")
+	sb.write("state/blocks/_devices/jsw1.lab.example.net/cisco/snmp", "x\n", 0o600)
+	out = sb.devb("", "jsw1.lab.example.net", "list")
 	if !strings.Contains(out, "the device's vendor is not cisco (it is juniper in the registry), so these blocks are ignored") {
 		t.Errorf("orphan vendor:\n%s", out)
 	}
-	if err := os.RemoveAll(sb.path("state/blocks/_devices/js1.lab.example.net/cisco")); err != nil {
+	if err := os.RemoveAll(sb.path("state/blocks/_devices/jsw1.lab.example.net/cisco")); err != nil {
 		t.Fatal(err)
 	}
 
-	out = sb.devb("y\n", "js1.lab.example.net", "remove", "snmp")
-	if sb.code != 0 || !strings.Contains(out, "The snmp block of device 'js1.lab.example.net' is removed.") {
+	out = sb.devb("y\n", "jsw1.lab.example.net", "remove", "snmp")
+	if sb.code != 0 || !strings.Contains(out, "The snmp block of device 'jsw1.lab.example.net' is removed.") {
 		t.Errorf("remove: %d\n%s", sb.code, out)
 	}
 	if _, err := os.Stat(sb.path("state/blocks")); !os.IsNotExist(err) {
@@ -101,7 +101,7 @@ func TestDeviceBlockSetShowListRemove(t *testing.T) {
 	if strings.Contains(sb.overrides(), "blocks_device") {
 		t.Errorf("manifest left:\n%s", sb.overrides())
 	}
-	if sb.logged("block-remove name=_devices/js1.lab.example.net/juniper/snmp by=") != 1 {
+	if sb.logged("block-remove name=_devices/jsw1.lab.example.net/juniper/snmp by=") != 1 {
 		t.Errorf("log: %q", sb.runner.Argvs())
 	}
 }
@@ -521,7 +521,7 @@ func TestDeviceBlockEffectiveSystem(t *testing.T) {
 	sb.putBlockSet(sb.overrides(), "lab", map[string]string{"system": verbSystemFile})
 	sb.putDeviceBlock("sw-j", "system", "set system domain-name sw-j.lab.example.net\nset system name-server 192.0.2.54\ndelete system ntp\n")
 	out := sb.devb("", "sw-j", "show", "system", "--effective")
-	want := "# from scope 'lab'\nset system login message <<'EOF'\n<message: 2 lines, 62 characters>\nEOF\n" +
+	want := "# from scope 'lab'\nset system login message <<'EOF'\n<message: 2 lines, 63 characters>\nEOF\n" +
 		"# from device 'sw-j'\nset system domain-name sw-j.lab.example.net\n" +
 		"# from scope 'lab'\nset system name-server 192.0.2.53\n" +
 		"# from device 'sw-j'\nset system name-server 192.0.2.54\n"
@@ -534,7 +534,7 @@ func TestDeviceBlockEffectiveSystem(t *testing.T) {
 		t.Errorf("the delete line is not shown with its layer:\n%s", out)
 	}
 	out = sb.devb("", "sw-j", "show", "system", "--effective", "--reveal")
-	if !strings.Contains(out, "# from scope 'lab'\nset system login message <<'EOF'\nAuthorized use of js1.lab.example.net only.\n  *** keep out ***\nEOF\n") {
+	if !strings.Contains(out, "# from scope 'lab'\nset system login message <<'EOF'\nAuthorized use of jsw1.lab.example.net only.\n  *** keep out ***\nEOF\n") {
 		t.Errorf("effective --reveal:\n%s", out)
 	}
 }

@@ -43,7 +43,7 @@ func TestCommentOut(t *testing.T) {
 	}
 }
 
-const adoptSNMPRaw = `set snmp name js1.lab.example.net
+const adoptSNMPRaw = `set snmp name jsw1.lab.example.net
 set snmp engine-id local 0123456789
 set snmp location "Rack 4"
 set snmp contact noc@example.net
@@ -96,12 +96,12 @@ func TestAdoptSNMPDraft(t *testing.T) {
 		t.Errorf("counts: %d statements, %d objects", res.Statements, res.Objects)
 	}
 	all := strings.Join(append(append([]string{res.Text}, res.Notes...), res.Left...), "\n")
-	for _, secret := range []string{"scope-own-string", "abcdefghij", "zyxwvutsrq", "js1.lab.example.net", "0123456789"} {
+	for _, secret := range []string{"scope-own-string", "abcdefghij", "zyxwvutsrq", "jsw1.lab.example.net", "0123456789"} {
 		if strings.Contains(strings.Join(append(append([]string{}, res.Notes...), res.Left...), "\n"), secret) {
 			t.Errorf("the report holds %q:\n%s", secret, all)
 		}
 	}
-	for _, secret := range []string{"scope-own-string", "abcdefghij", "TACCTL-SNMP", "name js1", "engine-id"} {
+	for _, secret := range []string{"scope-own-string", "abcdefghij", "TACCTL-SNMP", "name jsw1", "engine-id"} {
 		if strings.Contains(res.Text, secret) {
 			t.Errorf("the draft holds %q:\n%s", secret, res.Text)
 		}
@@ -166,7 +166,7 @@ func TestAdoptSNMPOfNothingAndOfGarbage(t *testing.T) {
 	}
 }
 
-const adoptSystemRaw = `set system host-name js1
+const adoptSystemRaw = `set system host-name jsw1
 set system domain-name Lab.Example.NET
 set system domain-search lab.example.net
 set system time-zone UTC
@@ -179,7 +179,7 @@ set system ntp boot-server 192.0.2.125
 set system ntp authentication-key 1 type md5 value "$9$abcdefghij"
 set system ntp authentication-key 2 type sha1 value "$9$klmnopqrst"
 set system ntp trusted-key 1
-set system login message "Authorized use only.\n  *** keep out ***\nsite \"js1\""
+set system login message "Authorized use only.\n  *** keep out ***\nsite \"jsw1\""
 set system login user alice class super-user
 set system login user alice authentication encrypted-password "$6$zzzzzzzzzzzz"
 set system services ssh root-login deny
@@ -187,7 +187,7 @@ set system services ssh root-login deny
 
 func TestAdoptSystemDraft(t *testing.T) {
 	res := AdoptSystem(adoptSystemRaw, nil, nil)
-	want := "set system login message <<'EOF'\nAuthorized use only.\n  *** keep out ***\nsite \"js1\"\nEOF\n" +
+	want := "set system login message <<'EOF'\nAuthorized use only.\n  *** keep out ***\nsite \"jsw1\"\nEOF\n" +
 		"set system domain-name Lab.Example.NET\n" +
 		"set system domain-search lab.example.net\n" +
 		"set system time-zone UTC\n" +
@@ -220,7 +220,7 @@ func TestAdoptSystemDraft(t *testing.T) {
 }
 
 func TestAdoptSystemSubtractsWhatTheLevelsState(t *testing.T) {
-	scope, _ := ParseSystem("set system login message <<'EOF'\nAuthorized use only.\n  *** keep out ***\nsite \"js1\"\nEOF\n" +
+	scope, _ := ParseSystem("set system login message <<'EOF'\nAuthorized use only.\n  *** keep out ***\nsite \"jsw1\"\nEOF\n" +
 		"set system domain-name lab.example.net\nset system time-zone Europe/Oslo\nset system name-server 192.0.2.53\n" +
 		"set system ntp server 192.0.2.123 prefer\nset system ntp server 192.0.2.124\n")
 	res := AdoptSystem(adoptSystemRaw, nil, scope)
