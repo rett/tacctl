@@ -669,7 +669,7 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 	o.kept = kept
 	for _, row := range rows {
 		if row.fired {
-			if w := strings.ReplaceAll(row.Why, "<scope>", p.blockScope()); !slices.Contains(o.why, w) {
+			if w := p.whyOf(row.OwnedRow); !slices.Contains(o.why, w) {
 				o.why = append(o.why, w)
 			}
 		}

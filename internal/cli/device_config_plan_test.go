@@ -688,3 +688,99 @@ func TestPullKeepsThePlainViewAndForgetsIt(t *testing.T) {
 		t.Error("forget left the plain view")
 	}
 }
+
+// A statement that comes from a block says which one: the scope's, or the
+// device's own over it, in the words of the verb that edits the block.
+func TestPlanNamesTheBlockEachStatementComesFrom(t *testing.T) {
+	b := newPullBox(t)
+	b.devices([3]string{"lab-j", "192.168.1.20", "juniper"})
+	base := b.expected("lab-j")
+	b.serve("juniper", base)
+	b.servePlain(base)
+	b.sb.blk("set system time-zone UTC\nset system domain-name lab.example.net\nset system name-server 192.0.2.53\n", "lab", "juniper", "set", "system", "-", "-y")
+	b.sb.expect(0, "", "")
+	b.sb.devb("set system domain-name sw.example.net\nset system name-server 192.0.2.54\n", "lab-j", "set", "system", "-", "-y")
+	b.sb.expect(0, "", "")
+	if out := b.run("device", "config", "pull", "lab-j"); b.sb.code != 0 {
+		t.Fatalf("pull: %d %s %s", b.sb.code, out, b.sb.stderr())
+	}
+	out := b.run("device", "config", "plan", "lab-j")
+	if b.sb.code != 0 {
+		t.Fatalf("plan: %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+	}
+	// the device's domain name replaces the scope's, its time zone is the
+	// scope's, the name servers of both are kept: the statements are in the
+	// block's order, and the comment changes with the layer
+	want := "# from device block lab-j system\nset system domain-name sw.example.net\n" +
+		"# from scope block lab juniper system\nset system time-zone UTC\nset system name-server 192.0.2.53\n" +
+		"# from device block lab-j system\nset system name-server 192.0.2.54\n"
+	if !strings.Contains(out, want) {
+		t.Errorf("no %q in\n%s", want, out)
+	}
+	if strings.Contains(out, "from tacctl") || strings.Contains(out, "lab.example.net\n") && strings.Contains(out, "set system domain-name lab.example.net") {
+		t.Errorf("the plan names a layer that was replaced or says tacctl:\n%s", out)
+	}
+	// the section's reason names both layers, the scope's alone when the
+	// device has no block of its own
+	if !strings.Contains(out, "# system: the statements of the system block of scope 'lab' with the block of device 'lab-j' over it\n") {
+		t.Errorf("the section header does not name both layers:\n%s", out)
+	}
+	// --plain stays statements only, to load
+	plain := b.run("device", "config", "plan", "lab-j", "--plain")
+	if strings.Contains(plain, "# from") || !strings.Contains(plain, "set system time-zone UTC\n") {
+		t.Errorf("plain:\n%s", plain)
+	}
+}
+
+// The findings name the layer of each block object, not only the scope.
+func TestPlanFindingsNameTheLayerOfEachBlockObject(t *testing.T) {
+	b := newPullBox(t)
+	b.devices([3]string{"lab-j", "192.168.1.20", "juniper"})
+	base := b.expected("lab-j")
+	b.serve("juniper", base)
+	b.servePlain(base)
+	b.sb.blk("set snmp community scope-ro-string authorization read-only\nset snmp community scope-ro-string clients 192.0.2.0/24\n", "lab", "juniper", "set", "snmp", "-", "-y")
+	b.sb.expect(0, "", "")
+	b.sb.devb("set snmp community device-ro-string authorization read-only\nset snmp community device-ro-string clients 192.0.2.8/32\n", "lab-j", "set", "snmp", "-", "-y")
+	b.sb.expect(0, "", "")
+	if out := b.run("device", "config", "pull", "lab-j"); b.sb.code != 0 {
+		t.Fatalf("pull: %d %s %s", b.sb.code, out, b.sb.stderr())
+	}
+	out := unwrapPlan(b.run("device", "config", "plan", "lab-j"))
+	for _, want := range []string{"a community of the SNMP block of scope 'lab':", "a community of the SNMP block of device 'lab-j':",
+		"snmp: the communities of the SNMP block of scope 'lab' with the block of device 'lab-j' over it"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("no %q in\n%s", want, out)
+		}
+	}
+	// two findings: the scope's community and the device's, not one for both
+	if n := strings.Count(out, "missing: a community of the SNMP block of"); n != 2 {
+		t.Errorf("%d findings for the block communities, want 2:\n%s", n, out)
+	}
+}
+
+// IOS: the same comments, led by '!'.
+func TestPlanNamesTheBlockOfAnIOSStatement(t *testing.T) {
+	b := planCiscoBox(t, "", ciscoVersionModern)
+	b.sb.blk("clock timezone UTC 0\nip domain name lab.example.net\nip name-server 192.0.2.53\n", "lab", "cisco", "set", "system", "-", "-y")
+	b.sb.expect(0, "", "")
+	b.sb.devb("ip domain name sw.example.net\nip name-server 192.0.2.54\n", "lab-c", "set", "system", "-", "-y")
+	b.sb.expect(0, "", "")
+	b.run("device", "config", "pull", "lab-c")
+	if b.sb.code != 0 {
+		t.Fatalf("pull: %d %s", b.sb.code, b.sb.stderr())
+	}
+	out := b.run("device", "config", "plan", "lab-c")
+	if b.sb.code != 0 {
+		t.Fatalf("plan: %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+	}
+	for _, want := range []string{"! from device block lab-c system\nip domain name sw.example.net\n", "! from scope block lab cisco system\n",
+		"! system: the statements"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("no %q in\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "ip domain name lab.example.net") {
+		t.Errorf("the scope's domain name is typed beside the device's:\n%s", out)
+	}
+}

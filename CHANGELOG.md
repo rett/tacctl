@@ -86,6 +86,22 @@ current behaviour; this file is where history lives.
    check <block>` names it); `adopt` into a scope leaves such lines out and
    lists them.
 
+9. **A plan and a walkthrough say which block a statement comes from.** In
+   the region of `device config plan` and in the walkthrough of `config
+   juniper|cisco` and `device config show`, a statement that a configuration
+   block states has a comment before it that names the block in the words of
+   the verb that edits it: `# from scope block lab juniper system` (edit it with
+   `tacctl scope block lab juniper edit system`) or `# from device block sw1
+   system` (`tacctl device block sw1 edit system`); on IOS the comment starts
+   with `!`. The comment changes where the layer does, so a device's own block
+   laid over the scope's shows both. The reason above a section and the plan's
+   findings name the layers the block is made of, too (`scope 'lab' with the
+   block of device 'sw1' over it`; a community or trap group is named for the
+   layer that wrote it), where they said only `scope 'lab'`. The walkthrough
+   carries the per-statement comments where the two layers are laid together
+   (its heading names a block of one layer already). `--plain` stays
+   statements only, to load.
+
 ## 0.2.18 (2026-10-24)
 
 1. **`device config-syntax` is now `device ios-syntax`, and `device add

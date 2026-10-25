@@ -176,15 +176,19 @@ func junosRegion(d Delta, h Header, w Wrapper) []RegionLine {
 // 'plan' for the plan's region, 'cleanup' for the --converge region.
 func junosRegionWord(d Delta, h Header, w Wrapper, word string) []RegionLine {
 	out := []RegionLine{{Text: ApplyConfigureExclusive, Wrapper: true, Line: -1}}
-	cur := ""
+	cur, from := "", ""
 	for i, l := range d.Lines {
 		if l.Section != cur {
-			cur = l.Section
+			cur, from = l.Section, ""
 			why, _, _ := strings.Cut(d.Of(cur).Why, "; ")
 			if why == "" {
 				why = "the statements tacctl renders"
 			}
 			out = append(out, RegionLine{Text: "# " + cur + ": " + why, Comment: true, Line: -1})
+		}
+		if o := d.originOf(l); o != "" && o != from {
+			from = o
+			out = append(out, RegionLine{Text: "# from " + o, Comment: true, Line: -1})
 		}
 		if l.Secret && !l.HasValue && strings.Contains(l.Text, "<SECRET>") {
 			out = append(out, RegionLine{Text: "# " + secretLinePrefix + l.Text, Comment: true, Line: i})

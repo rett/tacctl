@@ -46,6 +46,11 @@ type Section struct {
 	// block's; else Block[i] belongs to Lines[i]. Every line of the system
 	// section is a block's.
 	Block []bool
+	// Origin names, per line, the block a statement of a block was written in
+	// ("scope block lab juniper system", "device block sw1 system"; "" for a
+	// line no layer states, and for a line that is not a block's). Nil when
+	// the layers as written are not known. Origin[i] belongs to Lines[i].
+	Origin []string
 	// Absent says the section's hierarchy is expected to hold nothing (0.2.10,
 	// D146: the NETCONF service of a scope that disables it). Lines is empty;
 	// a statement the device has under the section is a difference, and the
@@ -138,6 +143,27 @@ func (s *sections) addFrom(name string, lines []string, block map[string]bool) {
 	s.out = append(s.out, sec)
 }
 
+// origins sets the Origin of the block's lines of the named section (the last
+// one added) from the map of statements to blocks.
+func (s *sections) origins(name string, from map[string]string) {
+	if len(from) == 0 || len(s.out) == 0 {
+		return
+	}
+	sec := &s.out[len(s.out)-1]
+	if sec.Name != name || sec.Block == nil {
+		return
+	}
+	sec.Origin = make([]string, len(sec.Lines))
+	for i, l := range sec.Lines {
+		if sec.Block[i] {
+			sec.Origin[i] = from[strings.TrimRight(l, " ")]
+			if sec.Origin[i] == "" {
+				sec.Origin[i] = from[l]
+			}
+		}
+	}
+}
+
 // addTail is add for a section whose last n lines come from a block: the
 // marks are by position, because an access list entry of a block can be the
 // same text as one of the structured settings'.
@@ -207,11 +233,13 @@ func managedJuniper(req Request, d Data) []Section {
 	// in the same step: its statements are the live lines of the same
 	// block, marked as the block's.
 	s.addFrom(sectionSNMP, junosStatements(v["SNMP_STEP"]), d.blockSNMPSet())
+	s.origins(sectionSNMP, d.Blocks.snmpOrigins())
 	// The scope's system block follows in the same step: a section of its
 	// own, present only when a block is in force (so the device's own login
 	// message, domain and NTP are no business of a scope without one).
 	sys := junosStatements(v["SYSTEM_BLOCK"])
 	s.addFrom(sectionSystem, sys, setOf(sys))
+	s.origins(sectionSystem, d.Blocks.systemOrigins())
 	switch d.Netconf.State {
 	case NetconfEnable:
 		s.add(sectionNetconf, junosStatements(v["NETCONF_BLOCK"]))
@@ -368,12 +396,14 @@ func managedCisco(req Request, d Data) []Section {
 	// block's.
 	snmp := ciscoStatements(v["SNMP_STEP"])
 	s.addTail(sectionSNMP, snmp, len(d.Blocks.ciscoSNMPStatements()))
+	s.origins(sectionSNMP, d.Blocks.ciscoSNMPOrigins())
 	// The scope's system block follows in the same step: a section of its
 	// own, present only when a block is in force (so the device's own banner,
 	// domain and NTP are no business of a scope without one). Every line is
 	// the block's; a banner's lines are the lines typed, its text no
 	// statement and never a secret.
 	s.addSystem(sectionSystem, ciscoSystemStatements(v["SYSTEM_BLOCK"]))
+	s.origins(sectionSystem, d.Blocks.ciscoSystemOrigins(dialectOf(req.Legacy)))
 	s.add(sectionNetconf, ciscoStatements(v["NETCONF_BLOCK"]))
 	s.add(sectionBreakGlass, uncommented(ciscoBreakGlass(BreakGlassFor(req, d)), "! ", "! username "))
 	return s.out

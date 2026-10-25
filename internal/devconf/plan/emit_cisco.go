@@ -164,7 +164,7 @@ func sameLine(a, b Line) bool {
 // the change is live at 'end' and 'write memory' is typed afterwards.
 func iosRegion(d Delta) []RegionLine {
 	out := []RegionLine{{Text: "configure terminal", Wrapper: true, Line: -1}}
-	cur := ""
+	cur, from := "", ""
 	var c iosCursor
 	for i, l := range d.Lines {
 		sec := l.Section
@@ -191,6 +191,11 @@ func iosRegion(d Delta) []RegionLine {
 				label = "! " + l.Section + ": " + why
 			}
 			out = append(out, RegionLine{Text: label, Comment: true, Line: -1})
+			from = ""
+		}
+		if o := d.originOf(l); o != "" && o != from {
+			from = o
+			out = append(out, RegionLine{Text: "! from " + o, Comment: true, Line: -1})
 		}
 		emitIOSLine(&out, &c, l, i)
 	}

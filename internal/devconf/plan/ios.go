@@ -963,9 +963,9 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 					if p.blk != nil && p.blk.trapSource {
 						what = "(its communities, access lists, trap hosts, trap source and 'enable traps' lines)"
 					}
-					o.why = append(o.why, "the SNMP block of scope "+p.blockScope()+" "+what)
+					o.why = append(o.why, "the SNMP block of "+p.blocksWords(name)+" "+what)
 				}
-				if w := strings.ReplaceAll(row.Why, "<scope>", p.blockScope()); !slices.Contains(o.why, w) {
+				if w := p.whyOf(row); !slices.Contains(o.why, w) {
 					o.why = append(o.why, w)
 				}
 				break

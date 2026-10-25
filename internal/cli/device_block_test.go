@@ -538,3 +538,27 @@ func TestDeviceBlockEffectiveSystem(t *testing.T) {
 		t.Errorf("effective --reveal:\n%s", out)
 	}
 }
+
+// Where the scope's system block and the device's own are laid together, the
+// walkthrough names the block of each run of statements, in the words of the
+// verb that edits it; a block of one layer is named by its heading alone.
+func TestWalkthroughNamesTheBlockOfEachStatementWhenLayersMix(t *testing.T) {
+	sb := newSandbox(t, true)
+	sb.dev("", "add", "sw-j", "192.168.1.6", "--vendor", "juniper", "--no-host-key", "--no-lookup")
+	sb.putBlockSet(sb.overrides(), "lab", map[string]string{"system": "set system time-zone UTC\nset system domain-name lab.example.net\nset system name-server 192.0.2.53\n"})
+	one := plain(sb.cfgRun("", []string{"config", "juniper", "--scope", "lab", "--name", "sw-j"}, route))
+	if strings.Contains(one, "# from ") {
+		t.Errorf("a block of one layer carries origin comments:\n%s", one)
+	}
+	sb.putDeviceBlock("sw-j", "system", "set system domain-name sw-j.lab.example.net\nset system name-server 192.0.2.54\n")
+	both := plain(sb.cfgRun("", []string{"config", "juniper", "--scope", "lab", "--name", "sw-j"}, route))
+	want := "# from device block sw-j system\nset system domain-name sw-j.lab.example.net\n" +
+		"# from scope block lab juniper system\nset system time-zone UTC\nset system name-server 192.0.2.53\n" +
+		"# from device block sw-j system\nset system name-server 192.0.2.54\n"
+	if !strings.Contains(both, want) {
+		t.Errorf("lacks %q:\n%s", want, both)
+	}
+	if strings.Contains(both, "tacctl scope block lab juniper show system): the") && !strings.Contains(both, "with the block of device 'sw-j' over it") {
+		t.Errorf("the heading does not name both layers:\n%s", both)
+	}
+}
