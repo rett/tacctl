@@ -28,7 +28,7 @@ import (
 // name is not either.
 func rendersField(field string) bool {
 	switch field {
-	case "location", "description", "address", "vendor", "config-syntax", "netconf":
+	case "location", "description", "address", "vendor", "ios-syntax", "netconf":
 		return true
 	}
 	return false

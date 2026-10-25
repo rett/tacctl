@@ -10,10 +10,12 @@ package lifecycle
 // user's 'sudo tacctl device notices' (and the other two) until 0.2.17's
 // upgrade rewrites the file. A file that is exactly this release's text is rewritten
 // with 0.2.17's (tier.Sudoers0217, through 'visudo -cf'); any other is left.
-// No other file changed: the registry key stays config_syntax, and
-// tacctl.yaml, console.yaml, devices.yaml, store.yaml, the SNMP credentials,
-// the blocks, the apply state, the group drop-in, the hosts and the rendered
-// backend files are in formats 0.2.17 reads.
+// 0.2.18 also renamed devices.yaml's key of the configuration syntax setting
+// (config_syntax is ios_syntax), which 0.2.17 refuses: it is written back
+// under the old key (syntaxKeyStep). No other file changed: tacctl.yaml,
+// console.yaml, store.yaml, the SNMP credentials, the blocks, the apply
+// state, the group drop-in, the hosts and the rendered backend files are in
+// formats 0.2.17 reads.
 
 import (
 	"os"
@@ -51,8 +53,11 @@ func planRollback0217(p *RollbackPlan) (*RollbackPlan, error) {
 	default:
 		s.Lines = []string{"no per-tier drop-in is installed (" + tiers.file + ")"}
 	}
-	p.Steps = append(p.Steps, s, RollbackStep{Title: "leave every other file untouched",
-		Lines: []string{pt.Overrides + ", " + pt.ConsoleFile + ", " + pt.DevicesFile + ", " + pt.StoreFile + ", the group sudoers drop-in, the SNMP credentials, the blocks, the apply state directory and the rendered backend files are in formats " + RollbackTarget0217 + " reads (0.2.18 changed none of them);",
+	if err := p.planSyntaxKey(); err != nil {
+		return nil, err
+	}
+	p.Steps = append(p.Steps, p.syntaxKeyStep(), s, RollbackStep{Title: "leave every other file untouched",
+		Lines: []string{pt.Overrides + ", " + pt.ConsoleFile + ", " + pt.StoreFile + ", the group sudoers drop-in, the SNMP credentials, the blocks, the apply state directory and the rendered backend files are in formats " + RollbackTarget0217 + " reads (0.2.18 changed none of them);",
 			"nothing is re-rendered or restarted, and no device is contacted"}})
 	if p.in.WithHosts {
 		p.Steps = append(p.Steps, RollbackStep{Title: "the enrolled Linux hosts (--hosts)",

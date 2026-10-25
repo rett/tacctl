@@ -883,7 +883,7 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 		if r.render.recs != nil {
 			old, _ = r.render.recs.Of(e.Name)
 		}
-		syn := devconf.SyntaxFromRead(e.ConfigSyntax, rd.Version, old)
+		syn := devconf.SyntaxFromRead(e.IOSSyntax, rd.Version, old)
 		if syn == "" {
 			// Nothing is recorded: the pull's own output is the only place
 			// that says why (the list keeps showing 'needs pull').
@@ -898,7 +898,7 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 		}
 		o.Syntax = syn
 		// An explicit setting that the line contradicts wins; the pull says so.
-		if img, conflict := devconf.ConflictOf(e.ConfigSyntax, rd.Version); conflict {
+		if img, conflict := devconf.ConflictOf(e.IOSSyntax, rd.Version); conflict {
 			o.ImageSyntax = img
 		}
 		expected, err = r.render.ExpectedAs(e, syn == devconf.SyntaxIOS12)
@@ -1033,7 +1033,7 @@ func (r *pullRun) recordSuccess(o *pullOutcome, e devreg.Entry, ext devconf.Extr
 		case o.OS != "":
 			rec.OS = o.OS
 			rec.Syntax = devconf.DeriveSyntax(o.OS)
-		case e.ConfigSyntax != "":
+		case e.IOSSyntax != "":
 			rec.OS, rec.Syntax = "", ""
 		}
 	}

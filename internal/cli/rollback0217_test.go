@@ -26,9 +26,9 @@ func TestRollback0217PutsBackTheTiersDropIn(t *testing.T) {
 	}
 	out := hs.all()
 	for _, want := range []string{"Roll back to 0.2.17 (dry run)",
-		"1. put back the per-tier sudoers drop-in 0.2.17 writes   [does]",
+		"2. put back the per-tier sudoers drop-in 0.2.17 writes   [does]",
 		"the rules of 'device ios-syntax', 'device notice list' and 'device client-config' become 0.2.17's 'device config-syntax', 'device notices' and 'device ssh-config'",
-		"2. leave every other file untouched   [leaves]",
+		"3. leave every other file untouched   [leaves]",
 		"To convert the state: tacctl rollback 0.2.17 --apply"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the dry run lacks %q:\n%s", want, out)
@@ -64,4 +64,55 @@ func TestRollback0217PutsBackTheTiersDropIn(t *testing.T) {
 	}
 	hs.run(nil, "rollback", "0.2.17", "--apply")
 	hs.expect(0, "Nothing to convert: every file is one 0.2.17 can read.", "")
+}
+
+// A registry with a configuration syntax setting: the rollback to 0.2.17
+// takes a snapshot and writes the setting under config_syntax; this release
+// still reads it, and its next change stores ios_syntax again.
+func TestRollback0217WritesTheSyntaxKeyBack(t *testing.T) {
+	hs := rollbackState(t)
+	hs.step("", "device", "ios-syntax", "sw1", "modern")
+	if dv := hs.read("state/devices.yaml"); !strings.Contains(dv, "    ios_syntax: modern") {
+		t.Fatalf("devices.yaml:\n%s", dv)
+	}
+	snaps := hs.snapshots()
+	hs.run(nil, "rollback", "0.2.17")
+	if out := hs.all(); !strings.Contains(out, "1. "+hs.path("state")+"/devices.yaml: write the configuration syntax setting under the key 0.2.17 reads (config_syntax)   [does]") ||
+		!strings.Contains(out, "write ios_syntax of sw1 (modern) as config_syntax") {
+		t.Errorf("the dry run:\n%s", out)
+	}
+	r := hs.runner()
+	sudoersInstall(r)
+	hs.run(r, "rollback", "0.2.17", "--apply")
+	hs.expect(0, "Applying.", "")
+	if out := hs.all(); !strings.Contains(out, "devices.yaml: wrote the configuration syntax of 1 device under config_syntax") ||
+		!strings.Contains(out, "do not run a command that changes the device registry") {
+		t.Errorf("--apply:\n%s", out)
+	}
+	if hs.snapshots() != snaps+1 {
+		t.Errorf("snapshots %d -> %d", snaps, hs.snapshots())
+	}
+	dv := hs.read("state/devices.yaml")
+	if strings.Contains(dv, "ios_syntax") || !strings.Contains(dv, "    config_syntax: modern") {
+		t.Errorf("devices.yaml after:\n%s", dv)
+	}
+	if out := plain(hs.run(nil, "device", "ios-syntax", "sw1")); strings.TrimSpace(out) != "modern" {
+		t.Errorf("read back: %q %q", out, hs.all())
+	}
+	hs.step("", "device", "ios-syntax", "sw1", "ios12")
+	if dv := hs.read("state/devices.yaml"); strings.Contains(dv, "config_syntax") || !strings.Contains(dv, "    ios_syntax: ios12") {
+		t.Errorf("devices.yaml after a change:\n%s", dv)
+	}
+}
+
+// A registry that holds both keys with different values: ios_syntax is
+// used, and the device commands say so once.
+func TestRegistryWithBothSyntaxKeysSaysSo(t *testing.T) {
+	sb := newSandbox(t, true)
+	sb.write("state/devices.yaml", "version: 1\ndevices:\n  sw1: {address: 10.99.0.1, vendor: cisco, ios_syntax: ios12, config_syntax: modern}\n", 0o600)
+	out := sb.dev("", "ios-syntax", "sw1")
+	if sb.code != 0 || !strings.HasSuffix(out, "\nios12\n") ||
+		strings.Count(out+sb.stderr(), "device 'sw1' has ios_syntax ios12 and config_syntax modern; ios_syntax is used") != 1 {
+		t.Errorf("%d %q %q", sb.code, out, sb.stderr())
+	}
 }

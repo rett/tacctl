@@ -294,6 +294,33 @@ func (inv *invocation) diffFile(label, snap, live, id string) {
 	}
 }
 
+// reOldSyntaxKey is the key of a device's configuration syntax setting as
+// releases before 0.2.18 wrote it (devreg.OldSyntaxKey), at the indent of a
+// device's keys.
+var reOldSyntaxKey = regexp.MustCompile(`(?m)^(    )` + devreg.OldSyntaxKey + `:`)
+
+// syntaxKeyView is the snapshot's devices.yaml as the diff compares it: a
+// registry written before 0.2.18 holds the configuration syntax under
+// config_syntax, which this release reads as ios_syntax and writes so, at
+// the same place; the copy has the new key, so the rename is no difference.
+// done removes the copy. A file without the old key is compared as it is.
+func (inv *invocation) syntaxKeyView(snap string) (path string, done func()) {
+	data, err := os.ReadFile(snap)
+	if err != nil || !reOldSyntaxKey.Match(data) {
+		return snap, func() {}
+	}
+	tf, err := os.CreateTemp(inv.app.Paths.TempDir, "devices.yaml.*")
+	if err != nil {
+		return snap, func() {}
+	}
+	_, werr := tf.Write(reOldSyntaxKey.ReplaceAll(data, []byte("${1}ios_syntax:")))
+	if cerr := tf.Close(); werr != nil || cerr != nil {
+		_ = os.Remove(tf.Name())
+		return snap, func() {}
+	}
+	return tf.Name(), func() { _ = os.Remove(tf.Name()) }
+}
+
 // diffSnapshot is _backup_diff_snapshot: the live canonical files against
 // snapshot id.
 func (inv *invocation) diffSnapshot(id string) {
@@ -306,7 +333,9 @@ func (inv *invocation) diffSnapshot(id string) {
 	inv.diffFile("tacctl.yaml", filepath.Join(dir, "tacctl.yaml"), p.Overrides, id)
 	// The device registry joins the diff only where there is one to compare.
 	if snap := filepath.Join(dir, "devices.yaml"); cfgIsFile(snap) || cfgIsFile(p.DevicesFile) {
-		inv.diffFile("devices.yaml", snap, p.DevicesFile, id)
+		view, done := inv.syntaxKeyView(snap)
+		inv.diffFile("devices.yaml", view, p.DevicesFile, id)
+		done()
 	}
 	// The same for the login console's settings.
 	if snap := filepath.Join(dir, "console.yaml"); cfgIsFile(snap) || cfgIsFile(p.ConsoleFile) {

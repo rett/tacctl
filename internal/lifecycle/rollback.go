@@ -46,9 +46,9 @@ package lifecycle
 //	                       removed (console.Rollback). 'tiers.engineer' and
 //	                       'settings.space_completion' are 0.2.3's own.
 //	devices.yaml           0.2.3's parser rejects the per-device 'snmp:' map
-//	                       and the keys 'config_syntax' and 'netconf';
+//	                       and the keys 'ios_syntax' and 'netconf';
 //	                       removed (devreg.RollbackSNMP,
-//	                       RollbackConfigSyntax, RollbackNetconf).
+//	                       RollbackIOSSyntax, RollbackNetconf).
 //	snmp/devices/*.yaml    the per-device credentials: 0.2.3 opens
 //	                       snmp/<scope>.yaml by name and never lists the
 //	                       directory, so it ignores the subdirectory; left.
@@ -364,7 +364,11 @@ type RollbackPlan struct {
 	// netconfDev are the devices with a NETCONF service setting of their
 	// own (0.2.10, D145): removed like the syntax setting is.
 	netconfDev []devNetconf
-	sudoers    []sudoersPlan
+	// syntaxKeyDev are the devices whose configuration syntax setting is
+	// written back under the key 0.2.5 to 0.2.17 read, config_syntax
+	// (0.2.18, D273; the targets 0.2.17, 0.2.16 and 0.2.9).
+	syntaxKeyDev []devSyntax
+	sudoers      []sudoersPlan
 	// notWritten says, after ApplyRollback, which drop-ins could not be
 	// rewritten and why (the apply goes on: 0.2.3's upgrade rewrites the
 	// tiers one itself).
@@ -403,7 +407,7 @@ func (p *RollbackPlan) Pending() bool {
 // PendingFiles: there is a file of tacctl's own to convert (the snapshot
 // holds those; the sudoers drop-ins are not in it).
 func (p *RollbackPlan) PendingFiles() bool {
-	return len(p.keys) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0
+	return len(p.keys) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0
 }
 
 func (p *RollbackPlan) todoSudoers() []sudoersPlan {
@@ -500,8 +504,8 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 		if !d.SNMP.Empty() {
 			p.snmpDev = append(p.snmpDev, devSNMP{d.Name, describeSNMP(d.SNMP)})
 		}
-		if d.ConfigSyntax != "" {
-			p.syntaxDev = append(p.syntaxDev, devSyntax{d.Name, d.ConfigSyntax})
+		if d.IOSSyntax != "" {
+			p.syntaxDev = append(p.syntaxDev, devSyntax{d.Name, d.IOSSyntax})
 		}
 		if !d.Netconf.Empty() {
 			p.netconfDev = append(p.netconfDev, devNetconf{d.Name, describeNetconf(d.Netconf)})
@@ -616,12 +620,12 @@ func (p *RollbackPlan) devicesStep() RollbackStep {
 		s.Lines = append(s.Lines, "remove the snmp map of "+d.name+" ("+d.what+")")
 	}
 	for _, d := range p.syntaxDev {
-		s.Lines = append(s.Lines, "remove the config_syntax key of "+d.name+" ("+d.syntax+")")
+		s.Lines = append(s.Lines, "remove the ios_syntax key of "+d.name+" ("+d.syntax+")")
 	}
 	for _, d := range p.netconfDev {
 		s.Lines = append(s.Lines, "remove the netconf map of "+d.name+" ("+d.what+")")
 	}
-	s.Lines = append(s.Lines, "(0.2.3's parser refuses a device with a key it does not know: \"unknown key 'snmp'\", \"unknown key 'config_syntax'\", \"unknown key 'netconf'\")")
+	s.Lines = append(s.Lines, "(0.2.3's parser refuses a device with a key it does not know: \"unknown key 'snmp'\", \"unknown key 'ios_syntax'\", \"unknown key 'netconf'\")")
 	return s
 }
 
@@ -907,7 +911,7 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 		}
 	}
 	if len(p.syntaxDev) > 0 {
-		cleared, err := devreg.RollbackConfigSyntax(pt.DevicesFile, nil)
+		cleared, err := devreg.RollbackIOSSyntax(pt.DevicesFile, nil)
 		if err != nil {
 			return done, err
 		}
@@ -924,6 +928,17 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 			done = append(done, fmt.Sprintf("%s: removed the NETCONF service setting of %d %s", pt.DevicesFile, len(cleared), plural(len(cleared), "device", "devices")))
 		}
 	}
+	// Last of the writes of devices.yaml: every other one writes the key
+	// this release reads.
+	if len(p.syntaxKeyDev) > 0 {
+		names, err := devreg.RollbackIOSSyntaxKey(pt.DevicesFile, nil)
+		if err != nil {
+			return done, err
+		}
+		if len(names) > 0 {
+			done = append(done, fmt.Sprintf("%s: wrote the configuration syntax of %d %s under %s", pt.DevicesFile, len(names), plural(len(names), "device", "devices"), devreg.OldSyntaxKey))
+		}
+	}
 	p.notWritten = nil
 	for _, d := range p.todoSudoers() {
 		if p.in.InstallSudoers == nil {
@@ -937,4 +952,34 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 		done = append(done, d.file+": rewritten with the text "+p.target()+" writes")
 	}
 	return done, nil
+}
+
+// planSyntaxKey fills syntaxKeyDev for a target that reads the setting
+// under config_syntax only (0.2.5 to 0.2.17).
+func (p *RollbackPlan) planSyntaxKey() error {
+	devs, err := devreg.SyntaxKeyed(p.in.Paths.DevicesFile)
+	if err != nil {
+		return err
+	}
+	for _, d := range devs {
+		p.syntaxKeyDev = append(p.syntaxKeyDev, devSyntax{d.Name, d.IOSSyntax})
+	}
+	return nil
+}
+
+// syntaxKeyStep is the step of devices.yaml for the targets 0.2.17, 0.2.16
+// and 0.2.9: the configuration syntax setting under the key they read.
+func (p *RollbackPlan) syntaxKeyStep() RollbackStep {
+	t := p.target()
+	s := RollbackStep{Title: p.in.Paths.DevicesFile + ": write the configuration syntax setting under the key " + t + " reads (" + devreg.OldSyntaxKey + ")",
+		Todo: len(p.syntaxKeyDev) > 0}
+	if len(p.syntaxKeyDev) == 0 {
+		s.Lines = []string{"no device has a configuration syntax setting under ios_syntax"}
+		return s
+	}
+	for _, d := range p.syntaxKeyDev {
+		s.Lines = append(s.Lines, "write ios_syntax of "+d.name+" ("+d.syntax+") as "+devreg.OldSyntaxKey)
+	}
+	s.Lines = append(s.Lines, "("+t+"'s parser refuses a device with a key it does not know: \"unknown key 'ios_syntax'\"; the value and every other key stay)")
+	return s
 }

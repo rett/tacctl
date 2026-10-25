@@ -29,9 +29,9 @@ func (b *pullBox) expectedSyntax(name string, legacy bool) string {
 		b.t.Fatalf("no device %s", name)
 	}
 	// An explicit setting makes the render prepare that syntax.
-	e.ConfigSyntax = devconf.SyntaxModern
+	e.IOSSyntax = devconf.SyntaxModern
 	if legacy {
-		e.ConfigSyntax = devconf.SyntaxIOS12
+		e.IOSSyntax = devconf.SyntaxIOS12
 	}
 	r := inv.newManagedRender(managedOptions{}, false)
 	r.prepare([]devreg.Entry{e})
@@ -54,7 +54,7 @@ func (b *pullBox) cisco(name string, legacySSH bool) {
 	}
 }
 
-func TestConfigSyntaxVerbAndRows(t *testing.T) {
+func TestIOSSyntaxVerbAndRows(t *testing.T) {
 	b := newPullBox(t)
 	b.devices([3]string{"lab-c", "192.168.1.30", "cisco"}, [3]string{"lab-j", "192.168.1.20", "juniper"})
 	sb := b.sb
@@ -64,12 +64,12 @@ func TestConfigSyntaxVerbAndRows(t *testing.T) {
 	if sb.code != 0 || !strings.Contains(out, "auto (unknown until the device is pulled: tacctl device config pull lab-c)") {
 		t.Errorf("show: %d %q", sb.code, out)
 	}
-	if strings.Contains(sb.devices(), "config_syntax") {
+	if strings.Contains(sb.devices(), "ios_syntax") {
 		t.Errorf("a setting appeared by itself:\n%s", sb.devices())
 	}
 	// Set, read, show, JSON, clear.
 	sb.dev("", "ios-syntax", "lab-c", "ios12")
-	if sb.code != 0 || !strings.Contains(sb.devices(), "config_syntax: ios12") {
+	if sb.code != 0 || !strings.Contains(sb.devices(), "ios_syntax: ios12") {
 		t.Fatalf("set: %d\n%s", sb.code, sb.devices())
 	}
 	if out := strings.TrimSpace(sb.dev("", "ios-syntax", "lab-c")); out != "ios12" {
@@ -79,21 +79,21 @@ func TestConfigSyntaxVerbAndRows(t *testing.T) {
 		t.Errorf("show:\n%s", show)
 	}
 	var j struct {
-		ConfigSyntax string `json:"config_syntax"`
+		IOSSyntax    string `json:"ios_syntax"`
 		Syntax       string `json:"syntax"`
 		SyntaxSource string `json:"syntax_source"`
 		LegacySSH    bool   `json:"legacy_ssh"`
 	}
 	if err := json.Unmarshal([]byte(sb.dev("", "show", "lab-c", "--json")), &j); err != nil ||
-		j.ConfigSyntax != "ios12" || j.Syntax != "ios12" || j.SyntaxSource != "setting" || j.LegacySSH {
+		j.IOSSyntax != "ios12" || j.Syntax != "ios12" || j.SyntaxSource != "setting" || j.LegacySSH {
 		t.Errorf("show --json: %+v %v", j, err)
 	}
 	sb.dev("", "ios-syntax", "lab-c", "modern")
-	if !strings.Contains(sb.devices(), "config_syntax: modern") {
+	if !strings.Contains(sb.devices(), "ios_syntax: modern") {
 		t.Errorf("modern:\n%s", sb.devices())
 	}
 	sb.dev("", "ios-syntax", "lab-c", "auto")
-	if strings.Contains(sb.devices(), "config_syntax") {
+	if strings.Contains(sb.devices(), "ios_syntax") {
 		t.Errorf("auto left the key:\n%s", sb.devices())
 	}
 	// A bad word, an unknown device, a vendor with no such setting.
@@ -111,19 +111,19 @@ func TestConfigSyntaxVerbAndRows(t *testing.T) {
 	}
 	// --legacy-ssh is the ssh algorithms and sets no syntax.
 	sb.dev("", "legacy-ssh", "lab-c", "enable")
-	if strings.Contains(sb.devices(), "config_syntax") {
+	if strings.Contains(sb.devices(), "ios_syntax") {
 		t.Errorf("legacy-ssh set a syntax:\n%s", sb.devices())
 	}
 }
 
-func TestDeviceAddConfigSyntax(t *testing.T) {
+func TestDeviceAddIOSSyntax(t *testing.T) {
 	sb := newSandbox(t, true)
 	sb.dev("", "add", "lab-c", "192.168.1.30", "--vendor", "cisco", "--ios-syntax", "modern", "--legacy-ssh", "--no-host-key")
-	if sb.code != 0 || !strings.Contains(sb.devices(), "config_syntax: modern") || !strings.Contains(sb.devices(), "legacy_ssh: true") {
+	if sb.code != 0 || !strings.Contains(sb.devices(), "ios_syntax: modern") || !strings.Contains(sb.devices(), "legacy_ssh: true") {
 		t.Fatalf("add: %d\n%s\n%s", sb.code, sb.devices(), sb.stderr())
 	}
 	sb.dev("", "add", "lab-d", "192.168.1.31", "--vendor", "cisco", "--ios-syntax", "auto", "--no-host-key")
-	if sb.code != 0 || strings.Count(sb.devices(), "config_syntax") != 1 {
+	if sb.code != 0 || strings.Count(sb.devices(), "ios_syntax") != 1 {
 		t.Errorf("auto is written:\n%s", sb.devices())
 	}
 	sb.dev("", "add", "lab-e", "192.168.1.32", "--vendor", "cisco", "--ios-syntax", "ios15", "--no-host-key")
@@ -143,7 +143,7 @@ func TestIOSSyntaxOldNamesAreGone(t *testing.T) {
 	sb.expect(1, "", "Unknown subcommand: 'config-syntax'")
 	sb.dev("", "add", "lab-d", "192.168.1.31", "--vendor", "cisco", "--config-syntax", "modern", "--no-host-key")
 	sb.expect(1, "", "Unknown option: '--config-syntax'")
-	if strings.Contains(sb.devices(), "config_syntax") || strings.Contains(sb.devices(), "lab-d") {
+	if strings.Contains(sb.devices(), "ios_syntax") || strings.Contains(sb.devices(), "lab-d") {
 		t.Errorf("a refused line wrote the registry:\n%s", sb.devices())
 	}
 	if u := sb.dev("", "--help"); strings.Contains(u, "config-syntax") || !strings.Contains(u, "ios-syntax <name>") {

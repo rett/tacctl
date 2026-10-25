@@ -16,7 +16,7 @@ import (
 	"unicode/utf8"
 )
 
-// The values of the registry's config_syntax setting (SyntaxAuto is the
+// The values of the registry's ios_syntax setting (SyntaxAuto is the
 // default, and is never written to the registry) and of Record.Syntax
 // (SyntaxIOS12 or SyntaxModern, or empty).
 const (

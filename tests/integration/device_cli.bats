@@ -219,7 +219,7 @@ devices:
     assert_success
     run "$TACCTL_BIN_SCRIPT" device ios-syntax old-ios
     assert_output "ios12"
-    run grep -c 'config_syntax: ios12' "${TACCTL_STATE_DIR}/devices.yaml"
+    run grep -c 'ios_syntax: ios12' "${TACCTL_STATE_DIR}/devices.yaml"
     assert_output "1"
     run "$TACCTL_BIN_SCRIPT" device show old-ios
     assert_success
@@ -228,10 +228,10 @@ devices:
     assert_line "  Config syntax: ios12"
     run "$TACCTL_BIN_SCRIPT" device export
     assert_success
-    assert_output --partial "config_syntax: ios12"
+    assert_output --partial "ios_syntax: ios12"
     run "$TACCTL_BIN_SCRIPT" device ios-syntax old-ios auto
     assert_success
-    run grep -c config_syntax "${TACCTL_STATE_DIR}/devices.yaml"
+    run grep -c ios_syntax "${TACCTL_STATE_DIR}/devices.yaml"
     assert_output "0"
     run "$TACCTL_BIN_SCRIPT" device ios-syntax old-ios ios15
     assert_failure 1
@@ -247,11 +247,11 @@ devices:
     run "$TACCTL_BIN_SCRIPT" device vendor old-ios juniper
     assert_success
     assert_output --partial "The configuration syntax setting (ios12) was removed: it is a Cisco setting."
-    run grep -c config_syntax "${TACCTL_STATE_DIR}/devices.yaml"
+    run grep -c ios_syntax "${TACCTL_STATE_DIR}/devices.yaml"
     assert_output "0"
     # The registry file is checked on load, whatever the order of its keys.
     printf '%s\n' '# tacctl device registry' 'version: 1' 'devices:' \
-        '  jun-1: {address: 10.99.0.9, config_syntax: modern, vendor: juniper}' > "${BATS_TEST_TMPDIR}/bad.yaml"
+        '  jun-1: {address: 10.99.0.9, ios_syntax: modern, vendor: juniper}' > "${BATS_TEST_TMPDIR}/bad.yaml"
     run "$TACCTL_BIN_SCRIPT" device import --check "${BATS_TEST_TMPDIR}/bad.yaml"
     assert_failure
     assert_output --partial "is a Cisco setting"
@@ -264,7 +264,7 @@ devices:
     assert_output "modern"
     run "$TACCTL_BIN_SCRIPT" device add lab-d 10.99.0.4 --vendor cisco --ios-syntax auto --no-host-key
     assert_success
-    run grep -c config_syntax "${TACCTL_STATE_DIR}/devices.yaml"
+    run grep -c ios_syntax "${TACCTL_STATE_DIR}/devices.yaml"
     assert_output "1"
     run "$TACCTL_BIN_SCRIPT" device add lab-e 10.99.0.5 --ios-syntax ios12 --no-host-key
     assert_failure 1

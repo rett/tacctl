@@ -396,7 +396,7 @@ func (inv *invocation) staleness(store devconf.Store, recs *devconf.Records, ren
 	// A Cisco device whose syntax nothing says (D113: the setting is auto
 	// and the record has none, as every record of 0.2.4) is compared
 	// neither as IOS 12.x nor as the modern syntax: one pull makes it known.
-	if inv.syntaxMatters(e) && devconf.NeedsSyntax(rec, e.ConfigSyntax) {
+	if inv.syntaxMatters(e) && devconf.NeedsSyntax(rec, e.IOSSyntax) {
 		return devconf.StalePull, nil
 	}
 	expected, err := render.Expected(e)

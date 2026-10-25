@@ -41,21 +41,21 @@ func conflictText(rec *devconf.Record, r devconf.SyntaxResolution) string {
 	return fmt.Sprintf("%s read %s, which is %s syntax, not %s", pullDate(rec), imageText(rec.OS), r.ImageSyntax, r.Syntax)
 }
 
-// configSyntaxText is how 'device show' and 'device ios-syntax <name>'
+// iosSyntaxText is how 'device show' and 'device ios-syntax <name>'
 // say a device's setting: the word, and for auto what it resolves to and
 // from where (the resolution is part of the configuration state, which the
 // read-only tier is not shown). An explicit setting that the last pull's
 // version line contradicts says so (the setting still wins).
-func (inv *invocation) configSyntaxText(e devreg.Entry) string {
-	if e.ConfigSyntax != "" {
+func (inv *invocation) iosSyntaxText(e devreg.Entry) string {
+	if e.IOSSyntax != "" {
 		if e.Vendor == "cisco" && inv.configVisible() {
 			if rec, _ := inv.configRecords().Of(e.Name); rec != nil {
 				if r := syntaxOf(e, rec); r.Conflict {
-					return fmt.Sprintf("%s (%s: check the setting)", e.ConfigSyntax, conflictText(rec, r))
+					return fmt.Sprintf("%s (%s: check the setting)", e.IOSSyntax, conflictText(rec, r))
 				}
 			}
 		}
-		return e.ConfigSyntax
+		return e.IOSSyntax
 	}
 	if e.Vendor != "cisco" || !inv.configVisible() {
 		return devreg.SyntaxAuto
@@ -129,10 +129,10 @@ func (inv *invocation) deviceIOSSyntax(args []string) error {
 		if e.Source == devreg.SourceHost {
 			return inv.usageErr("'" + e.Name + "' is an enrolled Linux host; it has no configuration syntax.")
 		}
-		inv.echo(inv.configSyntaxText(e))
+		inv.echo(inv.iosSyntaxText(e))
 		return nil
 	}
-	set, serr := devreg.ValidateConfigSyntax(p.Args[1])
+	set, serr := devreg.ValidateIOSSyntax(p.Args[1])
 	if serr != nil {
 		return inv.usageErr(append(msgs(serr), "Usage: tacctl device ios-syntax <name> [auto|ios12|modern]")...)
 	}
@@ -144,7 +144,7 @@ func (inv *invocation) deviceIOSSyntax(args []string) error {
 		return inv.usageErr("Device '" + d.Name + "' has vendor '" + d.Vendor + "'; the configuration syntax is a Cisco setting.")
 	}
 	name := d.Name
-	applyReq, changed := p.Has("--apply"), d.ConfigSyntax != set
+	applyReq, changed := p.Has("--apply"), d.IOSSyntax != set
 	if applyReq && changed {
 		e, err := inv.deviceFind(res, name)
 		if err != nil {
@@ -155,7 +155,7 @@ func (inv *invocation) deviceIOSSyntax(args []string) error {
 		}
 	}
 	if _, err := inv.deviceWrite(func(f *devreg.File, _ *devreg.Resolver) error {
-		f.Find(name).ConfigSyntax = set
+		f.Find(name).IOSSyntax = set
 		return nil
 	}); err != nil {
 		return err
@@ -164,7 +164,7 @@ func (inv *invocation) deviceIOSSyntax(args []string) error {
 	if word == "" {
 		word = devreg.SyntaxAuto
 	}
-	inv.detail("device set", kvp("name", name), kvp("field", "config-syntax"), kvp("from", orWord(d.ConfigSyntax, devreg.SyntaxAuto)), kvp("to", word))
+	inv.detail("device set", kvp("name", name), kvp("field", "ios-syntax"), kvp("from", orWord(d.IOSSyntax, devreg.SyntaxAuto)), kvp("to", word))
 	inv.app.Out.Info("Device '" + name + "' ios-syntax " + word + ".")
 	// A setting that the last pull's image contradicts is said at once, not
 	// at the next walkthrough: the setting wins, and it is the lock-out
@@ -179,5 +179,5 @@ func (inv *invocation) deviceIOSSyntax(args []string) error {
 	if set == "" && strings.EqualFold(d.Vendor, "cisco") {
 		inv.echo("  The syntax now comes from the last pull's version line: tacctl device config pull " + name)
 	}
-	return inv.afterSetter(name, "config-syntax", changed, applyReq)
+	return inv.afterSetter(name, "ios-syntax", changed, applyReq)
 }

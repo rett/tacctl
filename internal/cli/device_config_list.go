@@ -44,7 +44,7 @@ func (inv *invocation) configStateOf(e devreg.Entry, rec *devconf.Record) string
 	}
 	if st == string(devconf.StaleOK) || st == string(devconf.StaleDiffers) {
 		if inv.syntaxMatters(e) {
-			return string(devconf.WithSyntax(devconf.Staleness(st), rec, e.ConfigSyntax, true))
+			return string(devconf.WithSyntax(devconf.Staleness(st), rec, e.IOSSyntax, true))
 		}
 	}
 	return st
@@ -495,7 +495,7 @@ func (inv *invocation) deviceConfigList(args []string) error {
 		}
 		if r.conflict != "" {
 			// The setting wins; the pull's image says another syntax.
-			note := "ios-syntax " + r.e.ConfigSyntax + ", the pull read " + r.conflict
+			note := "ios-syntax " + r.e.IOSSyntax + ", the pull read " + r.conflict
 			if detail == "-" {
 				detail = note
 			} else {

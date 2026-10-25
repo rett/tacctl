@@ -347,7 +347,7 @@ config devices apply-pause 3601
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device list
 @known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.4 item 14: device show has the SNMP rows; 0.2.5 item 25: a Cisco device's show has a Config syntax row; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device show core-sw1
-@known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.5 item 25: a Cisco device has config_syntax in the JSON; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.5 item 25: a Cisco device has config_syntax in the JSON; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 4: the setting is stored and printed as ios_syntax
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device list --json
 @known 0.2.4 item 6: config devices is new; 0.2.9 item 1: config devices lists apply-confirm-timeout and apply-pause
 config devices
@@ -409,11 +409,11 @@ device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device
 # --- the Cisco configuration syntax (0.2.5, D113) --------------------------------
 @known 0.2.5 item 25: device config-syntax is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 1: the verb is ios-syntax
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device ios-syntax core-sw1
-@known 0.2.5 item 25: device config-syntax is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 1: the verb is ios-syntax
+@known 0.2.5 item 25: device config-syntax is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 1: the verb is ios-syntax; 0.2.18 item 4: the setting is stored and printed as ios_syntax
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device ios-syntax core-sw1 ios12 ;; device export
 @known 0.2.5 item 25: device config-syntax is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 1: the verb is ios-syntax
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device ios-syntax core-sw1 ios15
-@known 0.2.5 item 25: device add --config-syntax is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 1: the flag is --ios-syntax
+@known 0.2.5 item 25: device add --config-syntax is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 1: the flag is --ios-syntax; 0.2.18 item 4: the setting is stored and printed as ios_syntax
 device add core-sw1 10.99.0.1 --vendor cisco --ios-syntax modern --no-host-key --no-lookup ;; device export
 
 # --- config cisco source-interface (0.2.5 item 33) --------------------------------

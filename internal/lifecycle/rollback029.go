@@ -3,8 +3,9 @@ package lifecycle
 // The rollback to 0.2.9 (docs/plans/0.2.10-plan.md): the part of
 // PlanRollback that runs when RollbackInput.Target is RollbackTarget029. The
 // file header of rollback.go has the table of what it does and why;
-// ApplyRollback is shared (tacctl.yaml's keys and the NETCONF setting of the
-// devices are all it converts for this target; there is no drop-in step: the
+// ApplyRollback is shared (tacctl.yaml's keys, the NETCONF setting of the
+// devices and the key of their configuration syntax setting, config_syntax
+// in 0.2.9, are all it converts for this target; there is no drop-in step: the
 // tiers file is left, and 0.2.9's upgrade rewrites it).
 
 import (
@@ -29,7 +30,10 @@ func planRollback029(p *RollbackPlan) (*RollbackPlan, error) {
 			p.netconfDev = append(p.netconfDev, devNetconf{d.Name, describeNetconf(d.Netconf)})
 		}
 	}
-	p.Steps = append(p.Steps, p.confStep029(), p.devicesStep029(), p.recordsStep029(), p.otherStep029())
+	if err := p.planSyntaxKey(); err != nil {
+		return nil, err
+	}
+	p.Steps = append(p.Steps, p.confStep029(), p.devicesStep029(), p.syntaxKeyStep(), p.recordsStep029(), p.otherStep029())
 	if in.WithHosts {
 		p.Steps = append(p.Steps, RollbackStep{Title: "the enrolled Linux hosts (--hosts)",
 			Lines: []string{"nothing to do for " + RollbackTarget029 + ": 0.2.10 changed nothing on the hosts; no host is synced"}})

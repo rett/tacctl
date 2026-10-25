@@ -1,5 +1,10 @@
 package devreg
 
+import (
+	"github.com/rett/tacctl/internal/pyyaml"
+	"github.com/rett/tacctl/internal/yamlpy"
+)
+
 // The optional per-device location of 0.2.3 (D41, 'tacctl device location')
 // and the rollback to 0.2.2 (D50, the tool of the 0.2.3 release; 0.2.4's
 // tool targets 0.2.3, which reads the location, and uses RollbackSNMP
@@ -106,36 +111,36 @@ func RollbackSNMP(path string, before func() error) ([]string, error) {
 // The per-device configuration syntax of 0.2.5 (D113 of docs/plans/0.2.5-
 // plan.md, 'tacctl device ios-syntax'): 0.2.4's parser (and 0.2.3's, and
 // 0.2.2's) refuses a device with a key it does not know (device 'x':
-// unknown key 'config_syntax'), so the key goes before an older release is
+// unknown key 'ios_syntax'), so the key goes before an older release is
 // installed, as the location and the SNMP map do: a rollback plans with
-// ConfigSyntaxSet and applies with RollbackConfigSyntax. An older binary
+// IOSSyntaxSet and applies with RollbackIOSSyntax. An older binary
 // compares a legacy-ssh Cisco device as IOS 12.x again, which is what the
 // rollback's notes say.
 
-// ConfigSyntaxSet are the names of the devices that have a configuration
+// IOSSyntaxSet are the names of the devices that have a configuration
 // syntax setting, in file order, of the registry at path (none when the file
 // is missing).
-func ConfigSyntaxSet(path string) ([]string, error) {
+func IOSSyntaxSet(path string) ([]string, error) {
 	f, err := Load(path)
 	if err != nil {
 		return nil, err
 	}
 	var out []string
 	for _, d := range f.Devices {
-		if d.ConfigSyntax != "" {
+		if d.IOSSyntax != "" {
 			out = append(out, d.Name)
 		}
 	}
 	return out, nil
 }
 
-// RollbackConfigSyntax removes the configuration syntax setting of every
+// RollbackIOSSyntax removes the configuration syntax setting of every
 // device, under the registry's lock, in one write; before runs first (a
 // snapshot). It returns the names it cleared, in file order. A registry
 // without any is not written (before does not run), and a missing file is
 // not created.
-func RollbackConfigSyntax(path string, before func() error) ([]string, error) {
-	names, err := ConfigSyntaxSet(path)
+func RollbackIOSSyntax(path string, before func() error) ([]string, error) {
+	names, err := IOSSyntaxSet(path)
 	if err != nil || len(names) == 0 {
 		return nil, err
 	}
@@ -143,9 +148,9 @@ func RollbackConfigSyntax(path string, before func() error) ([]string, error) {
 	_, err = Mutate(path, "", before, func(f *File) error {
 		cleared = cleared[:0]
 		for _, d := range f.Devices {
-			if d.ConfigSyntax != "" {
+			if d.IOSSyntax != "" {
 				cleared = append(cleared, d.Name)
-				d.ConfigSyntax = ""
+				d.IOSSyntax = ""
 			}
 		}
 		return nil
@@ -154,6 +159,85 @@ func RollbackConfigSyntax(path string, before func() error) ([]string, error) {
 		return nil, err
 	}
 	return cleared, nil
+}
+
+// The key of the configuration syntax setting (0.2.18, D273): ios_syntax,
+// where 0.2.5 to 0.2.17 read and write config_syntax (OldSyntaxKey) and
+// refuse a device with a key they do not know ("unknown key 'ios_syntax'").
+// This release reads either; 'tacctl rollback 0.2.17|0.2.16|0.2.9' writes
+// the setting back under the old key with RollbackIOSSyntaxKey, after
+// planning with SyntaxKeyed. A release that reads the old key and is run
+// again later reads it again (Load), and its next change stores ios_syntax.
+
+// SyntaxKeyed are the devices with a configuration syntax setting of the
+// registry at path when a device of the file holds it under ios_syntax:
+// what RollbackIOSSyntaxKey writes (none when the file is missing, or holds
+// the setting under the old key only).
+func SyntaxKeyed(path string) ([]Device, error) {
+	f, err := Load(path)
+	if err != nil || !f.syntaxKeyed {
+		return nil, err
+	}
+	var out []Device
+	for _, d := range f.Devices {
+		if d.IOSSyntax != "" {
+			out = append(out, d.Clone())
+		}
+	}
+	return out, nil
+}
+
+// oldKeyText is Text with the setting under OldSyntaxKey.
+func (f *File) oldKeyText() ([]byte, error) {
+	if err := f.validate(); err != nil {
+		return nil, err
+	}
+	out, err := yamlpy.EmitChecked(f.docWith(OldSyntaxKey), yamlpy.StoreOptions, Header, pyyaml.LoadBytes)
+	if err != nil {
+		return nil, fail("cannot write the device registry (" + firstLine(err.Error()) + "); nothing was written")
+	}
+	return out, nil
+}
+
+// RollbackIOSSyntaxKey writes the registry at path with every device's
+// configuration syntax under OldSyntaxKey, under the registry's lock, in one
+// write; before runs first (a snapshot). Every other key is written as this
+// release writes it. It returns the names of the devices whose setting it
+// wrote, in file order. A registry that needs no write is not written
+// (before does not run), and a missing file is not created.
+func RollbackIOSSyntaxKey(path string, before func() error) ([]string, error) {
+	devs, err := SyntaxKeyed(path)
+	if err != nil || len(devs) == 0 {
+		return nil, err
+	}
+	if before != nil {
+		if err := before(); err != nil {
+			return nil, err
+		}
+	}
+	unlock, err := Lock(path)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	f, err := Load(path)
+	if err != nil || !f.syntaxKeyed {
+		return nil, err
+	}
+	text, err := f.oldKeyText()
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, d := range f.Devices {
+		if d.IOSSyntax != "" {
+			names = append(names, d.Name)
+		}
+	}
+	if err := atomicWrite(path, text, 0o600); err != nil {
+		return nil, err
+	}
+	return names, nil
 }
 
 // The per-device NETCONF service setting of 0.2.10 (D145 of docs/plans/

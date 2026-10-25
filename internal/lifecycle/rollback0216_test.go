@@ -60,7 +60,7 @@ func TestPlanRollback0216ListsTheKey(t *testing.T) {
 	if w := warnText(p); !strings.Contains(w, "audit.strict is set and is dropped") || !strings.Contains(w, "0.2.16 has no such setting") {
 		t.Errorf("warnings:\n%s", w)
 	}
-	if n := strings.Join(p.Notes, "\n"); !strings.Contains(n, "restore it with 0.2.17") {
+	if n := strings.Join(p.Notes, "\n"); !strings.Contains(n, "restore it with 0.2.18") {
 		t.Errorf("notes:\n%s", n)
 	}
 	if !reflect.DeepEqual(before, s.snapshotOf()) {
@@ -81,6 +81,7 @@ func TestPlanRollback0216ListsTheKey(t *testing.T) {
 // A state without the key has nothing to do.
 func TestPlanRollback0216NothingToRemove(t *testing.T) {
 	s := newRBSandbox(t)
+	s.oldSyntaxKey()
 	s.in.Target = RollbackTarget0216
 	p := plan0216(t, s)
 	if p.PendingFiles() || p.NeedsYes() || len(p.Keys()) != 0 {
@@ -101,12 +102,17 @@ func TestApplyRollback0216RemovesTheKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(done) != 1 || !strings.Contains(done[0], "removed 1 key") || len(s.ins) != 0 {
+	if len(done) != 2 || !strings.Contains(done[0], "removed 1 key") || !strings.Contains(done[1], "wrote the configuration syntax of 1 device under config_syntax") || len(s.ins) != 0 {
 		t.Errorf("done %q installed %q", done, s.ins)
 	}
 	after := s.snapshotOf()
+	// devices.yaml: the syntax setting under config_syntax; its devices
+	// read as they were.
+	if dv := after[s.p.DevicesFile]; strings.Contains(dv, "ios_syntax") || !strings.Contains(dv, "    config_syntax: modern") {
+		t.Errorf("devices.yaml:\n%s", dv)
+	}
 	for path, was := range before {
-		if path == s.p.Overrides {
+		if path == s.p.Overrides || path == s.p.DevicesFile {
 			continue
 		}
 		if after[path] != was {

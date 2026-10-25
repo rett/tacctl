@@ -249,7 +249,7 @@ device import [--check] [--replace] [--allow-generic] [-y] <file|->
     data (so is the CSV of `device export --csv`) and loads its names as they are (a line says how
     many have upper case); merges by default,
     `--replace` removes the devices the file does not name together with their configuration records
-    and SNMP credentials, as `remove` does; a CSV row, and a YAML file with no `config_syntax`,
+    and SNMP credentials, as `remove` does; a CSV row, and a YAML file with no `ios_syntax`,
     leave a device's registered configuration syntax alone (an engineer imports from standard input
     only, `-` first)
 

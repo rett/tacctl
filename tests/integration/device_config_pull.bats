@@ -247,7 +247,7 @@ print(r.get("syntax", "-"), "|", r.get("os", "-"))' "${TACCTL_VAR_LIB}/devices-c
     assert_line --regexp '^  Model: +IOSv$'
     assert_line --regexp '^  Serial: +FXYZ0000001$'
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device show lab-c --json
-    run python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); print(d["config_syntax"], d["syntax"], d["syntax_source"], d["legacy_ssh"])' <<< "$output"
+    run python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); print(d["ios_syntax"], d["syntax"], d["syntax_source"], d["legacy_ssh"])' <<< "$output"
     assert_output "auto modern pull True"
 }
 

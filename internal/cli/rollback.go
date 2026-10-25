@@ -210,6 +210,16 @@ func (inv *invocation) rollbackNextSteps0217(version string) {
 	inv.echo("  1. Install " + version + " with the upgrade (see Upgrading in the README), which switches the clone in " + inv.app.Paths.Deploy + " to the tag, builds it and re-executes it:")
 	inv.echo("       tacctl upgrade --branch " + version)
 	inv.echo("  2. Check it: tacctl status; tacctl config validate")
+	inv.rollbackSyntaxKeyNote(version)
+}
+
+// rollbackSyntaxKeyNote says, after the rollback to a release that reads
+// the configuration syntax under config_syntax only (0.2.17, 0.2.16, 0.2.9),
+// that a change of devices.yaml before the upgrade writes ios_syntax again.
+func (inv *invocation) rollbackSyntaxKeyNote(version string) {
+	inv.echo("")
+	inv.echo("Until the upgrade, do not run a command that changes the device registry (" + inv.app.Paths.DevicesFile + "): it writes the configuration syntax under ios_syntax again,")
+	inv.echo("which " + version + " refuses. If one did, run 'tacctl rollback " + version + " --apply' again (it converts what is left).")
 }
 
 // rollbackNextSteps0216 is the next steps of the rollback to 0.2.16: the
@@ -226,8 +236,9 @@ func (inv *invocation) rollbackNextSteps0216(version string) {
 	inv.echo("Until the upgrade, do not add the 'audit' setting (audit.strict) to " + inv.app.Paths.Overrides + " again: " + version + " does not know the key, and its 'config validate' reports it.")
 	inv.echo("If it was, run 'tacctl rollback " + version + " --apply' again (it converts what is left).")
 	inv.echo("")
-	inv.echo("The snapshot taken first (the newest entry of 'tacctl backup list') holds the 0.2.17 state. Restore it with 0.2.17 only: 'tacctl backup restore <id>' of this release brings that")
+	inv.echo("The snapshot taken first (the newest entry of 'tacctl backup list') holds the 0.2.18 state. Restore it with 0.2.18 only: 'tacctl backup restore <id>' of this release brings that")
 	inv.echo("state back and loses what changed since; " + version + "'s restore refuses a tacctl.yaml with a key it does not know.")
+	inv.rollbackSyntaxKeyNote(version)
 }
 
 // rollbackNextSteps029 is the next steps of the rollback to 0.2.9: the
@@ -244,4 +255,5 @@ func (inv *invocation) rollbackNextSteps029(version string) {
 	inv.echo("")
 	inv.echo("The snapshot taken first (the newest entry of 'tacctl backup list') holds the 0.2.10 state. Restore it with 0.2.10 only: 'tacctl backup restore <id>' of this release brings that")
 	inv.echo("state back and loses what changed since; " + version + "'s restore refuses a tacctl.yaml with a key it does not know.")
+	inv.rollbackSyntaxKeyNote(version)
 }

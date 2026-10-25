@@ -41,14 +41,14 @@ func TestSettingContradictingThePullIsShown(t *testing.T) {
 		t.Errorf("show:\n%s", show)
 	}
 	var sj struct {
-		ConfigSyntax   string `json:"config_syntax"`
+		IOSSyntax      string `json:"ios_syntax"`
 		Syntax         string `json:"syntax"`
 		SyntaxConflict bool   `json:"syntax_conflict"`
 		ImageSyntax    string `json:"image_syntax"`
 		OS             string `json:"os"`
 	}
 	if err := json.Unmarshal([]byte(b.run("device", "show", "lab-c", "--json")), &sj); err != nil ||
-		sj.ConfigSyntax != "modern" || sj.Syntax != "modern" || !sj.SyntaxConflict || sj.ImageSyntax != "ios12" || sj.OS != ciscoVersion12 {
+		sj.IOSSyntax != "modern" || sj.Syntax != "modern" || !sj.SyntaxConflict || sj.ImageSyntax != "ios12" || sj.OS != ciscoVersion12 {
 		t.Errorf("show --json: %+v %v", sj, err)
 	}
 	// The verb with no word says it too.
@@ -99,7 +99,7 @@ func TestSettingContradictingThePullIsShown(t *testing.T) {
 }
 
 // The verb says at once when the new setting contradicts the pulled image.
-func TestConfigSyntaxVerbWarnsOnConflict(t *testing.T) {
+func TestIOSSyntaxVerbWarnsOnConflict(t *testing.T) {
 	b := newPullBox(t)
 	b.cisco("lab-c", false)
 	b.putRecord("lab-c", devconf.Record{Vendor: "cisco", Result: devconf.ResultOK, OS: ciscoVersion12, Syntax: devconf.SyntaxIOS12,
@@ -224,17 +224,17 @@ func TestDeviceVendorChangeDropsTheSyntax(t *testing.T) {
 	b := newPullBox(t)
 	b.cisco("lab-c", false)
 	b.sb.dev("", "ios-syntax", "lab-c", "ios12")
-	if !strings.Contains(b.sb.devices(), "config_syntax: ios12") {
+	if !strings.Contains(b.sb.devices(), "ios_syntax: ios12") {
 		t.Fatalf("not set:\n%s", b.sb.devices())
 	}
 	out := b.sb.dev("", "vendor", "lab-c", "juniper")
-	if b.sb.code != 0 || strings.Contains(b.sb.devices(), "config_syntax") ||
+	if b.sb.code != 0 || strings.Contains(b.sb.devices(), "ios_syntax") ||
 		!strings.Contains(out, "The configuration syntax setting (ios12) was removed: it is a Cisco setting.") {
 		t.Errorf("vendor juniper: %d\n%s\n%s", b.sb.code, b.sb.devices(), out)
 	}
 	// The registry is still readable, and going back to Cisco starts at auto.
 	b.sb.dev("", "vendor", "lab-c", "cisco")
-	if b.sb.code != 0 || strings.Contains(b.sb.devices(), "config_syntax") {
+	if b.sb.code != 0 || strings.Contains(b.sb.devices(), "ios_syntax") {
 		t.Errorf("vendor cisco: %d\n%s", b.sb.code, b.sb.devices())
 	}
 	// A device with no setting says nothing.
@@ -246,7 +246,7 @@ func TestDeviceVendorChangeDropsTheSyntax(t *testing.T) {
 	b.sb.dev("", "vendor", "lab-c", "cisco")
 	b.sb.dev("", "ios-syntax", "lab-c", "modern")
 	b.sb.dev("", "vendor", "lab-c", "clear")
-	if b.sb.code != 0 || strings.Contains(b.sb.devices(), "config_syntax") {
+	if b.sb.code != 0 || strings.Contains(b.sb.devices(), "ios_syntax") {
 		t.Errorf("vendor clear: %d\n%s", b.sb.code, b.sb.devices())
 	}
 }

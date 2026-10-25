@@ -27,6 +27,7 @@ func TestPlanRollback0217PutsBackTheTiersDropIn(t *testing.T) {
 	s := newRBSandbox(t)
 	s.write(s.p.Overrides, rbConf+"audit:\n  strict: true\n", 0o640)
 	s.write(s.p.TierSudoersFile, tier.Sudoers(), 0o640)
+	s.oldSyntaxKey()
 	s.reload()
 	before := s.snapshotOf()
 	p := plan0217(t, s)
@@ -76,10 +77,12 @@ func TestPlanRollback0217PutsBackTheTiersDropIn(t *testing.T) {
 func TestPlanRollback0217LeavesAnEditedDropIn(t *testing.T) {
 	s := newRBSandbox(t)
 	s.write(s.p.TierSudoersFile, tier.Sudoers()+"# local\n", 0o640)
+	s.oldSyntaxKey()
 	if p := plan0217(t, s); p.Pending() || !strings.Contains(stepText(p), "leaves "+s.p.TierSudoersFile) {
 		t.Errorf("edited:\n%s", stepText(p))
 	}
 	s = newRBSandbox(t)
+	s.oldSyntaxKey()
 	if err := os.Remove(s.p.TierSudoersFile); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}

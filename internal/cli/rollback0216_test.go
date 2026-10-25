@@ -40,7 +40,7 @@ func TestRollback0216DryRunListsTheKeyAndWritesNothing(t *testing.T) {
 		"Roll back to 0.2.16 (dry run)",
 		"1. " + hs.path("state") + "/tacctl.yaml: remove the keys 0.2.16 does not know   [does]",
 		"remove audit.strict",
-		"2. leave every other file untouched   [leaves]",
+		"3. leave every other file untouched   [leaves]",
 		"audit.strict is set and is dropped",
 		"To convert the state: tacctl rollback 0.2.16 --apply --yes",
 	} {
@@ -67,7 +67,7 @@ func TestRollback0216ApplyRoundTrip(t *testing.T) {
 	hs.expect(0, "Applying.", "")
 	out := hs.all()
 	for _, want := range []string{"removed 1 key", "Next steps", "tacctl upgrade --branch 0.2.16",
-		"do not add the 'audit' setting (audit.strict)", "holds the 0.2.17 state"} {
+		"do not add the 'audit' setting (audit.strict)", "holds the 0.2.18 state"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--apply output lacks %q:\n%s", want, out)
 		}

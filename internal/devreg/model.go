@@ -35,11 +35,11 @@ type Device struct {
 	// LegacySSH opts in to the legacy ssh algorithms (SHA-1 key exchange,
 	// CBC ciphers, ssh-rsa), and nothing else (D113).
 	LegacySSH bool
-	// ConfigSyntax is the Cisco configuration syntax the device is
+	// IOSSyntax is the Cisco configuration syntax the device is
 	// rendered and compared in (D113, 'tacctl device ios-syntax'):
 	// SyntaxIOS12 or SyntaxModern; empty is auto (the last pull's version
 	// line says), and is the only value never written to the file.
-	ConfigSyntax string
+	IOSSyntax string
 	// Ack are the acknowledged notice kinds.
 	Ack []string
 	// HostKeys are the pinned host keys ('<type> <base64>', hostkey.go),
@@ -191,9 +191,9 @@ const (
 // SyntaxWords are the words 'device ios-syntax' takes.
 var SyntaxWords = []string{SyntaxAuto, SyntaxIOS12, SyntaxModern}
 
-// ValidateConfigSyntax checks the word of a configuration syntax setting
+// ValidateIOSSyntax checks the word of a configuration syntax setting
 // (auto, ios12 or modern) and returns the stored form: "" for auto.
-func ValidateConfigSyntax(s string) (string, error) {
+func ValidateIOSSyntax(s string) (string, error) {
 	switch s {
 	case SyntaxAuto, "":
 		return "", nil
@@ -395,15 +395,15 @@ func (d Device) validate() error {
 	if err := ValidateDescription(d.Description); err != nil {
 		return err
 	}
-	if d.ConfigSyntax != "" {
-		if s, err := ValidateConfigSyntax(d.ConfigSyntax); err != nil || s == "" {
-			return fail("Invalid configuration syntax '" + d.ConfigSyntax + "'. Use: ios12 or modern.")
+	if d.IOSSyntax != "" {
+		if s, err := ValidateIOSSyntax(d.IOSSyntax); err != nil || s == "" {
+			return fail("Invalid configuration syntax '" + d.IOSSyntax + "'. Use: ios12 or modern.")
 		}
 		// A Cisco setting only: a device of another vendor has no syntax
 		// to set (the verb and 'device add' refuse it; a file is checked
 		// here, on load, import and save alike).
 		if d.Vendor != "cisco" {
-			return fail("config_syntax '" + d.ConfigSyntax + "' is a Cisco setting; the vendor is '" + d.Vendor + "'.")
+			return fail("ios_syntax '" + d.IOSSyntax + "' is a Cisco setting; the vendor is '" + d.Vendor + "'.")
 		}
 	}
 	if d.Location != "" {

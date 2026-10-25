@@ -616,6 +616,12 @@ func (inv *invocation) deviceLoad() (*devreg.File, *devreg.Resolver, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	if !inv.registryNoted {
+		inv.registryNoted = true
+		for _, n := range f.Notes {
+			inv.app.Out.Warn(inv.app.Paths.DevicesFile + ": " + n)
+		}
+	}
 	reg, err := inv.registry()
 	if err != nil {
 		return nil, nil, err
@@ -848,7 +854,7 @@ type deviceJSON struct {
 	Vendor    string `json:"vendor"`
 	Port      int    `json:"port"`
 	LegacySSH bool   `json:"legacy_ssh"`
-	// ConfigSyntax is the Cisco configuration syntax setting (auto, ios12
+	// IOSSyntax is the Cisco configuration syntax setting (auto, ios12
 	// or modern; Cisco devices and devices that have one set only), Syntax
 	// what it resolves to (ios12 or modern, from the setting or the last
 	// pull; absent while unknown) and SyntaxSource where that comes from
@@ -857,7 +863,7 @@ type deviceJSON struct {
 	// SyntaxConflict is set when the explicit setting is not the syntax the
 	// last pull's version line (OS) derives to: the setting wins, and
 	// ImageSyntax is what the line says.
-	ConfigSyntax string `json:"config_syntax,omitempty"`
+	IOSSyntax string `json:"ios_syntax,omitempty"`
 	// Netconf is a Junos device's NETCONF service setting (0.2.10), only
 	// when it is not the default.
 	Netconf *netconfJSON `json:"netconf,omitempty"`
@@ -952,15 +958,15 @@ func deviceJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry, recs *d
 			j.Netconf = eff.json()
 		}
 	}
-	if e.Source == devreg.SourceDevice && (e.Vendor == "cisco" || e.ConfigSyntax != "") {
-		j.ConfigSyntax = devreg.SyntaxAuto
-		if e.ConfigSyntax != "" {
-			j.ConfigSyntax = e.ConfigSyntax
+	if e.Source == devreg.SourceDevice && (e.Vendor == "cisco" || e.IOSSyntax != "") {
+		j.IOSSyntax = devreg.SyntaxAuto
+		if e.IOSSyntax != "" {
+			j.IOSSyntax = e.IOSSyntax
 		}
 	}
 	if recs != nil {
 		rec, _ := recs.Of(e.Name)
-		if j.ConfigSyntax != "" {
+		if j.IOSSyntax != "" {
 			r := syntaxOf(e, rec)
 			j.Syntax, j.SyntaxSource = r.Syntax, r.Source
 			if rec != nil && e.Vendor == "cisco" {
@@ -1182,8 +1188,8 @@ func (inv *invocation) deviceShow(args []string) error {
 		row("Identity", dash(e.Identity))
 	} else {
 		row("Legacy ssh", map[bool]string{true: "enabled", false: "disabled"}[e.LegacySSH])
-		if e.Vendor == "cisco" || e.ConfigSyntax != "" {
-			row("Config syntax", inv.configSyntaxText(e))
+		if e.Vendor == "cisco" || e.IOSSyntax != "" {
+			row("Config syntax", inv.iosSyntaxText(e))
 		}
 		// a Junos device's NETCONF service setting, when it is not the
 		// default (0.2.10)
@@ -1358,7 +1364,7 @@ func (inv *invocation) deviceAddWith(args []string, trusted []devreg.HostKey) er
 	checks := []error{devreg.ValidateName(d.Name)}
 	if p.Has("--ios-syntax") {
 		var serr error
-		d.ConfigSyntax, serr = devreg.ValidateConfigSyntax(p.Value("--ios-syntax"))
+		d.IOSSyntax, serr = devreg.ValidateIOSSyntax(p.Value("--ios-syntax"))
 		checks = append(checks, serr)
 	}
 	if d.Address, err = devreg.NormalizeAddress(p.Args[1]); err != nil {
@@ -1388,7 +1394,7 @@ func (inv *invocation) deviceAddWith(args []string, trusted []devreg.HostKey) er
 			return e
 		}
 	}
-	if d.ConfigSyntax != "" && d.Vendor != "cisco" {
+	if d.IOSSyntax != "" && d.Vendor != "cisco" {
 		return inv.usageErr("--ios-syntax is the Cisco configuration syntax; give --vendor cisco.")
 	}
 	if p.Has("--host-key") && p.Has("--no-host-key") {
@@ -1767,7 +1773,7 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		}
 		// A configuration syntax setting is a Cisco setting: it goes with
 		// the vendor, and the message says which one went.
-		droppedSyntax := d.ConfigSyntax != "" && probe.ConfigSyntax == ""
+		droppedSyntax := d.IOSSyntax != "" && probe.IOSSyntax == ""
 		droppedNetconf := !d.Netconf.Empty() && probe.Netconf.Empty()
 		changed := fieldValue(d, field) != fieldValue(&probe, field)
 		if applyReq && changed {
@@ -1814,7 +1820,7 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 			inv.app.Out.Warn("The pinned host keys belonged to the old address and were dropped.")
 		}
 		if droppedSyntax {
-			inv.app.Out.Warn("The configuration syntax setting (" + d.ConfigSyntax + ") was removed: it is a Cisco setting.")
+			inv.app.Out.Warn("The configuration syntax setting (" + d.IOSSyntax + ") was removed: it is a Cisco setting.")
 		}
 		if droppedNetconf {
 			inv.app.Out.Warn("The NETCONF service setting (" + d.Netconf.State + ") was removed: it is a Junos setting.")
@@ -1849,8 +1855,8 @@ func fieldValue(d *devreg.Device, field string) string {
 		return d.Description
 	case "location":
 		return d.Location
-	case "config-syntax":
-		return d.ConfigSyntax
+	case "ios-syntax":
+		return d.IOSSyntax
 	}
 	return ""
 }
@@ -1900,7 +1906,7 @@ func setField(d *devreg.Device, field, value string, clearing bool) error {
 		// The configuration syntax is a Cisco setting: a device that stops
 		// being one does not keep it (the registry refuses the pair).
 		if d.Vendor != "cisco" {
-			d.ConfigSyntax = ""
+			d.IOSSyntax = ""
 		}
 		// And the NETCONF service setting is a Junos one.
 		if d.Vendor != "juniper" {

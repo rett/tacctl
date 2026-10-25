@@ -253,10 +253,16 @@ become 0.2.17's
 .B "device notices"
 and
 .BR "device ssh\-config" . An edited drop\-in is left (0.2.17's upgrade rewrites
-it). Nothing else is converted, so no snapshot is taken:
+it). When a device of
+.I devices.yaml
+has a configuration syntax setting
+.RB ( ios_syntax ),
+the command takes a snapshot first and writes the setting under
+.BR config_syntax ,
+the key 0.2.5 to 0.2.17 read (they refuse a key they do not know); the value
+and every other key stay. Nothing else is converted:
 .IR tacctl.yaml ,
 .IR console.yaml ,
-.IR devices.yaml ,
 .IR store.yaml ,
 the group drop\-in and the hosts are in formats 0.2.17 reads.
 .B \-\-hosts
@@ -281,9 +287,12 @@ refuses without
 .BR \-\-yes ;
 a
 .B false
-value is removed without a warning. Nothing else is converted:
+value is removed without a warning. The configuration syntax setting of
+.I devices.yaml
+is written under
+.BR config_syntax ,
+as for 0.2.17. Nothing else is converted:
 .IR console.yaml ,
-.IR devices.yaml ,
 .IR store.yaml ,
 the apply state directory, the sudoers drop-ins and the hosts are in formats
 0.2.16 reads, and the snapshot manifests gained keys that nothing reads.
@@ -319,7 +328,10 @@ audit.strict is removed without a warning) and from
 the
 .B netconf
 map of each device that has one
-.RB ( "device netconf" ).
+.RB ( "device netconf" ),
+and writes the configuration syntax setting under
+.BR config_syntax ,
+as for 0.2.17.
 It leaves and lists, and never deletes, what 0.2.9 ignores: the
 .B via
 field of the
@@ -360,7 +372,7 @@ from
 and writes it the way 0.2.3 reads it (the cache is off); removes the
 .B snmp
 map, the
-.B config_syntax
+.B ios_syntax
 key and the
 .B netconf
 map of every device from
@@ -8468,7 +8480,7 @@ the lower\-case rule is for new devices, through
 Devices of the file are added, or update the registered device of the same name
 (a CSV row leaves the hostname and the legacy-ssh setting alone, and a file that
 carries no
-.B config_syntax
+.B ios_syntax
 leaves the registered configuration syntax alone; a changed address
 drops the pinned host keys); the rest stay. With
 .B \-\-replace
@@ -12282,7 +12294,7 @@ result; one line for each address at the end of the run.
 .B "device import"
 source, added, updated, removed, count.
 .IP "\fBdevice set\fR"
-name, field, from, to. field is address, hostname, vendor, port, description, location, legacy\-ssh, config\-syntax, netconf, stale\-days (no name) or notice:<kind>.
+name, field, from, to. field is address, hostname, vendor, port, description, location, legacy\-ssh, ios\-syntax, netconf, stale\-days (no name) or notice:<kind>.
 .PP
 The verbs that logged before 0.2.17 keep their lines
 .RB ( "host enroll" ", " "host unenroll" ", " "host rename" ", " "host forget" ", " "host target" ", "

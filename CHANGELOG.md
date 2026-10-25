@@ -11,9 +11,8 @@ current behaviour; this file is where history lives.
    usage line, walkthrough comment, help text, Tab completion and the manual
    page name the new verb and flag. The old names are gone: `device
    config-syntax` is an unknown subcommand and `--config-syntax` an unknown
-   option, so a script that uses them must change. The registry key
-   (`config_syntax` in `devices.yaml`) and the audit line (`device set ...
-   field=config-syntax`) are unchanged. The tiers sudoers drop-in grants the
+   option, so a script that uses them must change. The stored setting is
+   renamed too (item 4). The tiers sudoers drop-in grants the
    engineer tier `device ios-syntax *` in place of `device config-syntax *`;
    `tacctl upgrade` rewrites an installed drop-in. `tacctl rollback` takes
    `0.2.17` (the release before this one): its `--apply` puts back the tiers
@@ -38,6 +37,20 @@ current behaviour; this file is where history lives.
    ssh-config` is an unknown subcommand. The tiers sudoers drop-in grants
    `device client-config` in place of `device ssh-config`; `tacctl rollback
    0.2.17` puts back the rules of items 1 to 3 as 0.2.17 has them.
+
+4. **The configuration syntax setting is stored as `ios_syntax`.** The key of
+   a device in `devices.yaml`, `device export` (YAML and `--json`), `device
+   list --json` and `device show --json` is `ios_syntax` (it was
+   `config_syntax`), and the audit line of a change is `device set ...
+   field=ios-syntax`; the values (`ios12`, `modern`, `auto`) are unchanged. A
+   script that reads `config_syntax` from the JSON must change. A registry, a
+   snapshot or an imported file that holds `config_syntax` is read as before,
+   and the next change of the registry writes `ios_syntax`; a device with both
+   keys and different values uses `ios_syntax`, and the device commands say
+   so. `tacctl backup diff` does not report the key's new name as a change.
+   `tacctl rollback 0.2.17`, `0.2.16` and `0.2.9` write the setting back under
+   `config_syntax` (after a snapshot), and `rollback 0.2.3` removes it under
+   either key.
 
 ## 0.2.17 (2026-10-24)
 

@@ -123,7 +123,7 @@ devices:
     vendor: cisco
     description: DC1 core
     location: Rack 4, DC1
-    config_syntax: modern
+    ios_syntax: modern
     snmp:
       version: v3
       port: 2161
@@ -187,6 +187,18 @@ func newRBSandbox(t *testing.T) *rbSandbox {
 		return os.WriteFile(dst, []byte(body), 0o640)
 	}
 	return s
+}
+
+// oldSyntaxKey writes the sandbox's devices.yaml with the configuration
+// syntax under config_syntax, as 0.2.5 to 0.2.17 write it: a registry the
+// targets 0.2.17, 0.2.16 and 0.2.9 read as it is.
+func (s *rbSandbox) oldSyntaxKey() {
+	s.t.Helper()
+	b, err := os.ReadFile(s.p.DevicesFile)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	s.write(s.p.DevicesFile, strings.Replace(string(b), "    ios_syntax:", "    config_syntax:", 1), 0o600)
 }
 
 // reload reads tacctl.yaml again, as a new run would.
@@ -326,8 +338,8 @@ func TestPlanRollbackFull(t *testing.T) {
 		s.p.DevicesFile + ": remove the per-device SNMP settings and configuration syntax",
 		"remove the snmp map of core-sw1 (version v3, port 2161, timeout 4 s, 2 client ranges)",
 		"remove the snmp map of oob-con1 (port 1161)",
-		"remove the config_syntax key of core-sw1 (modern)",
-		"unknown key 'config_syntax'",
+		"remove the ios_syntax key of core-sw1 (modern)",
+		"unknown key 'ios_syntax'",
 		"put back the sudoers drop-ins 0.2.3 writes",
 		"rewrite " + s.p.TierSudoersFile + " (the per-tier drop-in: 0.2.3's text, after 'visudo -cf'; it loses the TACCTL_ASKPASS alias and env_keep line and the rows of 'device config', 'device snmp', 'console forget', 'host list --json' and 'config validate --json')",
 		"rewrite " + s.p.SudoersFile + " (the drop-in of group ops: 0.2.3's text",
@@ -466,7 +478,7 @@ func TestApplyRollbackConvertsAndIsIdempotent(t *testing.T) {
 			t.Errorf("devices.yaml lost %q:\n%s", keep, dv)
 		}
 	}
-	if strings.Contains(dv, "snmp") || strings.Contains(dv, "2161") || strings.Contains(dv, "config_syntax") {
+	if strings.Contains(dv, "snmp") || strings.Contains(dv, "2161") || strings.Contains(dv, "ios_syntax") || strings.Contains(dv, "config_syntax") {
 		t.Errorf("devices.yaml:\n%s", dv)
 	}
 	if after[s.p.TierSudoersFile] != tier.Sudoers023() || after[s.p.SudoersFile] != tier.GroupSudoers023("ops") {
