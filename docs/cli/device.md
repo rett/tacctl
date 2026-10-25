@@ -41,7 +41,7 @@ device add [<name>] <address>
     --hostname <dns>, --port <n>, --description <text>
     --legacy-ssh
         SHA-1 key exchange, CBC ciphers and ssh-rsa for the ssh login (the ssh algorithms only)
-    --config-syntax auto|ios12|modern
+    --ios-syntax auto|ios12|modern
         The Cisco configuration syntax (default auto: the pull's version line says); `--vendor
         cisco` only
     --snmp-location <text>
@@ -205,9 +205,9 @@ device location <name> --from-device [-y]
 device legacy-ssh <name> [enable|disable]
 
     Opt in to the legacy ssh algorithms (SHA-1 key exchange, CBC ciphers, ssh-rsa); the
-    configuration syntax is `config-syntax`
+    configuration syntax is `ios-syntax`
 
-device config-syntax <name> [auto|ios12|modern [--apply]]
+device ios-syntax <name> [auto|ios12|modern [--apply]]
 
     Show or set the Cisco configuration syntax the walkthrough and the comparison use: `ios12`,
     `modern`, or `auto` (the last pull's version line says; no pull yet: modern in the walkthrough,
@@ -558,7 +558,7 @@ device config list [--stale] [--never] [--failed] [--differs] [--name <text>]
     they do for the other verbs. The state words (`--stale`, `--never`, `--failed`, `--differs`)
     are alternatives here, but `pull`, `diff`, `plan` and `apply` require both when given both,
     so `list --stale --differs` shows more devices than they would select; the DETAIL of a device
-    whose `config-syntax` contradicts its pulled image says so (`syntax_conflict` in `--json`)
+    whose `ios-syntax` contradicts its pulled image says so (`syntax_conflict` in `--json`)
 
 device config forget <name>[,<name>...] | --all
 

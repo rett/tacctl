@@ -78,7 +78,7 @@ var deviceSpecs = map[string]Spec{
 		{Names: []string{"--description"}, Value: true},
 		{Names: []string{"--snmp-location"}, Value: true},
 		{Names: []string{"--legacy-ssh"}},
-		{Names: []string{"--config-syntax"}, Value: true, Kind: "auto|ios12|modern"},
+		{Names: []string{"--ios-syntax"}, Value: true, Kind: "auto|ios12|modern"},
 		{Names: []string{"--host-key"}, Value: true},
 		{Names: []string{"--no-host-key"}},
 		{Names: []string{"--no-lookup"}},
@@ -125,7 +125,7 @@ var deviceSpecs = map[string]Spec{
 	"location":    {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}, Flags: []Flag{{Names: []string{"--from-device"}}, flagYes, flagApply}},
 	"legacy-ssh":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "enable|disable"}},
 	// The Cisco configuration syntax (D113).
-	"config-syntax": {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "auto|ios12|modern"}, Flags: []Flag{flagApply}},
+	"ios-syntax": {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "auto|ios12|modern"}, Flags: []Flag{flagApply}},
 	// The NETCONF service of a Junos device (0.2.10, D145).
 	"netconf":    {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "show|enable|disable|leave|clear"}, Flags: deviceNetconfFlags},
 	"stale-days": {MaxArgs: 1, Args: []string{""}},
@@ -174,7 +174,7 @@ var deviceVerbs = [][2]string{
 	{"description <name> [<text>|clear]", "Show, set or clear the description (--apply: then run 'device config apply' for the device)"},
 	{"location <name> [<text>|clear|--from-device [-y]]", "Show, set or clear the place, for the SNMP location in the walkthroughs (--from-device: read it from the device; --apply: then run 'device config apply' for the device)"},
 	{"legacy-ssh <name> [enable|disable]", "Opt in to the legacy ssh algorithms (SHA-1 key exchange, CBC ciphers, ssh-rsa)"},
-	{"config-syntax <name> [auto|ios12|modern]", "Show or set the Cisco configuration syntax (IOS 12.x or modern) of the walkthrough and the comparison (--apply: then run 'device config apply' for the device)"},
+	{"ios-syntax <name> [auto|ios12|modern]", "Show or set the Cisco configuration syntax (IOS 12.x or modern) of the walkthrough and the comparison (--apply: then run 'device config apply' for the device)"},
 	{"stale-days [<n>]", "Show or set the days after which a device counts as stale"},
 	{"notice <name> ack|unack <kind>", "Acknowledge or reopen a notice"},
 	{"notices [<name>] [--all]", "The open notices, with what to do about each (--all: the acknowledged ones too)"},
@@ -220,8 +220,8 @@ var deviceOptions = map[string][][2]string{
 		{"--port <n>", "Its ssh port (default 22)"},
 		{"--description <text>", "A description"},
 		{"--snmp-location <text>", "Its place (the SNMP location the walkthroughs render)"},
-		{"--legacy-ssh", "SHA-1 key exchange, CBC ciphers and ssh-rsa; the configuration syntax is --config-syntax"},
-		{"--config-syntax <syntax>", "(cisco) auto, ios12 or modern: the configuration syntax (default auto: the pull's version line says)"},
+		{"--legacy-ssh", "SHA-1 key exchange, CBC ciphers and ssh-rsa; the configuration syntax is --ios-syntax"},
+		{"--ios-syntax <syntax>", "(cisco) auto, ios12 or modern: the configuration syntax (default auto: the pull's version line says)"},
 		{"--host-key SHA256:<fp>", "Register only if the device offers this key; pin it alone"},
 		{"--no-host-key", "Register without a pinned key (a hostkey-unpinned notice)"},
 		{"--no-lookup", "Do not read the device's own name, location and vendor by SNMP"},
@@ -253,7 +253,7 @@ var deviceOptions = map[string][][2]string{
 	},
 	"location": {
 		{"--from-device", "(location, vendor) Read the location (SNMP sysLocation) or the vendor (sysObjectID and sysDescr) from the device and store it"},
-		{"--apply", "(address, description, location, config-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question"},
+		{"--apply", "(address, description, location, ios-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question"},
 	},
 	"import": {
 		{"--check", "Write nothing; say what the import would do"},
@@ -292,7 +292,7 @@ var deviceOptions = map[string][][2]string{
 	},
 	"config show": {
 		{"--protocol tacacs|radius", "The protocol (default: the scope's auth-method, else its only protocol, else tacacs)"},
-		{"--legacy", "(Cisco) The IOS 12.x syntax, whatever the device's config-syntax is; TACACS+ only"},
+		{"--legacy", "(Cisco) The IOS 12.x syntax, whatever the device's ios-syntax is; TACACS+ only"},
 		{"--server <address|name>", "The address the device is told to authenticate against"},
 		{"--source <address>", "The address this server reaches the device from"},
 	},
@@ -536,7 +536,7 @@ func (inv *invocation) device(args []string) error {
 	}
 	run := map[string]func([]string) error{
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
-		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "config-syntax": inv.deviceConfigSyntax, "netconf": inv.deviceNetconf, "stale-days": inv.deviceStaleDays,
+		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "ios-syntax": inv.deviceIOSSyntax, "netconf": inv.deviceNetconf, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "notices": inv.deviceNotices, "import": inv.deviceImport, "export": inv.deviceExport,
 		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "collect": inv.deviceCollect, "enroll": inv.deviceEnroll, "sync": inv.deviceSync, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig, "config": inv.deviceConfig,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
@@ -1333,9 +1333,9 @@ func (inv *invocation) deviceAddWith(args []string, trusted []devreg.HostKey) er
 	}
 	d := devreg.Device{Name: p.Args[0], Vendor: devreg.VendorOther, LegacySSH: p.Has("--legacy-ssh")}
 	checks := []error{devreg.ValidateName(d.Name)}
-	if p.Has("--config-syntax") {
+	if p.Has("--ios-syntax") {
 		var serr error
-		d.ConfigSyntax, serr = devreg.ValidateConfigSyntax(p.Value("--config-syntax"))
+		d.ConfigSyntax, serr = devreg.ValidateConfigSyntax(p.Value("--ios-syntax"))
 		checks = append(checks, serr)
 	}
 	if d.Address, err = devreg.NormalizeAddress(p.Args[1]); err != nil {
@@ -1366,7 +1366,7 @@ func (inv *invocation) deviceAddWith(args []string, trusted []devreg.HostKey) er
 		}
 	}
 	if d.ConfigSyntax != "" && d.Vendor != "cisco" {
-		return inv.usageErr("--config-syntax is the Cisco configuration syntax; give --vendor cisco.")
+		return inv.usageErr("--ios-syntax is the Cisco configuration syntax; give --vendor cisco.")
 	}
 	if p.Has("--host-key") && p.Has("--no-host-key") {
 		return inv.usageErr("Give --host-key or --no-host-key, not both.")

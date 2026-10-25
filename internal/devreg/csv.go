@@ -201,7 +201,7 @@ func (f *File) Import(rows []Row, replace, allowGeneric bool, hostEntries []Entr
 		}
 		// Nor does it drop a device's configuration syntax setting (D113): a
 		// file that says nothing of it (a registry exported by an earlier
-		// tacctl) leaves the registered one; 'device config-syntax <name>
+		// tacctl) leaves the registered one; 'device ios-syntax <name>
 		// auto' clears it.
 		// A registered setting does not outlive a vendor that is not Cisco
 		// (the file moved the device to another vendor).

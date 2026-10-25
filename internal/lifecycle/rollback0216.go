@@ -14,7 +14,7 @@ package lifecycle
 // snapshot manifests gained keys that nothing reads.
 
 // planRollback0216 completes p (a plan whose tacctl.yaml was read and whose
-// records hold no unsettled apply) for the release before this one.
+// records hold no unsettled apply) for 0.2.16.
 func planRollback0216(p *RollbackPlan) (*RollbackPlan, error) {
 	in := p.in
 	p.keys = in.Conf.RollbackKeys0216()

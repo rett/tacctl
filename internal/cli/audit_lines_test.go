@@ -165,7 +165,7 @@ var mixedCases = []mixedCase{
 	{"scope mgmt-acl", []string{"scope", "mgmt-acl", "lab", "list"}, []string{"scope", "mgmt-acl", "lab", "add", "10.1.1.1/32"}},
 	{"device hostname", []string{"device", "hostname", "lab-sw"}, []string{"device", "hostname", "lab-sw", "lab-sw.example.net"}},
 	{"device location", []string{"device", "location", "lab-sw"}, []string{"device", "location", "lab-sw", "rack 9"}},
-	{"device config-syntax", []string{"device", "config-syntax", "lab-sw2"}, []string{"device", "config-syntax", "lab-sw2", "ios12"}},
+	{"device ios-syntax", []string{"device", "ios-syntax", "lab-sw2"}, []string{"device", "ios-syntax", "lab-sw2", "ios12"}},
 	{"device snmp", []string{"device", "snmp", "lab-sw", "show"}, []string{"device", "snmp", "lab-sw", "port", "1161"}},
 	{"host default-method", []string{"host", "default-method"}, []string{"host", "default-method", "tacplus"}},
 }

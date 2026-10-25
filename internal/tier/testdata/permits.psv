@@ -128,7 +128,8 @@ device|port|0|0|1|1|1|0
 device|description|0|0|1|1|1|0
 device|location|0|0|1|1|1|0
 device|legacy-ssh|0|0|1|1|1|0
-device|config-syntax|0|0|1|1|1|0
+device|config-syntax|0|0|0|1|1|0
+device|ios-syntax|0|0|1|1|1|0
 device|hostkey|0|0|1|1|1|0
 scope|devices|0|0|1|1|1|0
 scope|staging|0|0|1|1|1|0

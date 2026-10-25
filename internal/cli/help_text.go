@@ -24,7 +24,7 @@ Commands:
       <o>-y</o>, <o>--yes</o>                         Answer yes to the confirmations
   <b>upgrade</b> [<o>--branch <name></o>]             Pull latest source, rebuild, update scripts and every enabled backend
   <b>uninstall</b> [<o>-y</o>|<o>--yes</o>]                  Remove tacctl, its backends' services and all associated files
-  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.16), for 0.2.9 or for 0.2.3: a dry run unless <o>--apply</o>
+  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.17), for 0.2.16, 0.2.9 or 0.2.3: a dry run unless <o>--apply</o>
       <o>--apply</o>                           Take a snapshot, then convert the files the target cannot read (tacctl.yaml, sudoers; for 0.2.3 also console.yaml, devices.yaml)
       <o>--yes</o>                             Acknowledge the warnings that <o>--apply</o> refuses to go on without
       <o>--hosts</o>                           Accepted; the hosts need nothing for this target (no host is synced)
@@ -420,7 +420,7 @@ Subcommands:
   <b>wti</b>     [<o>--scope <name></o>] [<o>--protocol</o> tacacs|radius]             Show step-by-step WTI console-server (v8.x serial menu) setup for a scope (RADIUS: not verified on a unit)
       <o>--scope <name></o>                   (cisco, juniper, wti) The scope whose server address and secret go in (default: the default scope)
       <o>--protocol</o> tacacs|radius         (cisco, juniper, wti) The backend the device uses (default: the scope's auth-method, else its only protocol, else tacacs)
-      <o>--legacy</o>                         (cisco) The IOS 12.x syntax, whatever the <o>--name</o> device's config-syntax says
+      <o>--legacy</o>                         (cisco) The IOS 12.x syntax, whatever the <o>--name</o> device's ios-syntax says
       <o>--staging <bench-ip></o>             (cisco, juniper, wti, with <o>--scope</o>) Provisioned off-site: the bench address joins the scope as a
                                        /32 (its secret and users) until the device is seen in place (tacctl scope staging)
       <o>--name <device></o>                  (cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step;

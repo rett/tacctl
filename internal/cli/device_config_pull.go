@@ -890,11 +890,11 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 			if strings.TrimSpace(rd.Version) != "" {
 				return fail(batch.StatusFailed, "the device's version line \""+cleanLine(rd.Version)+
 					"\" is not an image tacctl maps to a configuration syntax (IOS 12.x, 15.2 and later, 16.x, 17.x, IOS-XE), so its configuration syntax is unknown",
-					"tacctl device config-syntax "+e.Name+" ios12|modern")
+					"tacctl device ios-syntax "+e.Name+" ios12|modern")
 			}
 			return fail(batch.StatusFailed, "the device's IOS version was not read ('"+devconf.VersionCommand+
 				"' answered no image line), so its configuration syntax is unknown",
-				"tacctl device config-syntax "+e.Name+" ios12|modern")
+				"tacctl device ios-syntax "+e.Name+" ios12|modern")
 		}
 		o.Syntax = syn
 		// An explicit setting that the line contradicts wins; the pull says so.

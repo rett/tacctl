@@ -104,7 +104,7 @@ func RollbackSNMP(path string, before func() error) ([]string, error) {
 }
 
 // The per-device configuration syntax of 0.2.5 (D113 of docs/plans/0.2.5-
-// plan.md, 'tacctl device config-syntax'): 0.2.4's parser (and 0.2.3's, and
+// plan.md, 'tacctl device ios-syntax'): 0.2.4's parser (and 0.2.3's, and
 // 0.2.2's) refuses a device with a key it does not know (device 'x':
 // unknown key 'config_syntax'), so the key goes before an older release is
 // installed, as the location and the SNMP map do: a rollback plans with

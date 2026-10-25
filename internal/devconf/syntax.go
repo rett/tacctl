@@ -55,7 +55,7 @@ type SyntaxRow struct {
 // [A] 'Version 15.0' and 'Version 15.1' are unknown on purpose: the 'tacacs
 // server NAME' syntax is believed to start at IOS 15.2 (IOS-XE 3.2), but
 // that is not verified for 15.0 and 15.1, and the wrong dialect on a device
-// is a half-applied AAA block. Those images need 'device config-syntax
+// is a half-applied AAA block. Those images need 'device ios-syntax
 // <name> ios12|modern'. Confirm in the package that ships the 15.0/15.1
 // lab image (docs/plans/0.2.5-plan.md D113).
 var SyntaxRows = []SyntaxRow{

@@ -267,7 +267,7 @@ type listJSON struct {
 	// Unmanaged counts, per section that is ok, the device's own
 	// statements it holds beside what tacctl renders.
 	Unmanaged map[string]int `json:"unmanaged,omitempty"`
-	// SyntaxConflict is set when the device's explicit config-syntax is not
+	// SyntaxConflict is set when the device's explicit ios-syntax is not
 	// the syntax its last pull's version line derives to (the setting wins);
 	// ImageSyntax is what the line says.
 	SyntaxConflict bool   `json:"syntax_conflict,omitempty"`
@@ -495,7 +495,7 @@ func (inv *invocation) deviceConfigList(args []string) error {
 		}
 		if r.conflict != "" {
 			// The setting wins; the pull's image says another syntax.
-			note := "config-syntax " + r.e.ConfigSyntax + ", the pull read " + r.conflict
+			note := "ios-syntax " + r.e.ConfigSyntax + ", the pull read " + r.conflict
 			if detail == "-" {
 				detail = note
 			} else {

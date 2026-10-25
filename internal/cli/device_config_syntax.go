@@ -1,6 +1,6 @@
 package cli
 
-// 'device config-syntax' (docs/plans/0.2.5-plan.md D113): the Cisco
+// 'device ios-syntax' (docs/plans/0.2.5-plan.md D113): the Cisco
 // configuration syntax of a device as a fact of its own. 'auto' (the
 // default) takes it from the version line the last pull read; 'ios12' and
 // 'modern' say it. The comparison (pull, diff, list), the walkthrough
@@ -41,7 +41,7 @@ func conflictText(rec *devconf.Record, r devconf.SyntaxResolution) string {
 	return fmt.Sprintf("%s read %s, which is %s syntax, not %s", pullDate(rec), imageText(rec.OS), r.ImageSyntax, r.Syntax)
 }
 
-// configSyntaxText is how 'device show' and 'device config-syntax <name>'
+// configSyntaxText is how 'device show' and 'device ios-syntax <name>'
 // say a device's setting: the word, and for auto what it resolves to and
 // from where (the resolution is part of the configuration state, which the
 // read-only tier is not shown). An explicit setting that the last pull's
@@ -64,7 +64,7 @@ func (inv *invocation) configSyntaxText(e devreg.Entry) string {
 	r := syntaxOf(e, rec)
 	if r.Syntax == "" {
 		if rec != nil && strings.TrimSpace(rec.OS) != "" {
-			return fmt.Sprintf("%s (unknown: %s read \"%s\", which tacctl does not map to a syntax; set one: tacctl device config-syntax %s ios12|modern)",
+			return fmt.Sprintf("%s (unknown: %s read \"%s\", which tacctl does not map to a syntax; set one: tacctl device ios-syntax %s ios12|modern)",
 				devreg.SyntaxAuto, pullDate(rec), cleanLine(rec.OS), e.Name)
 		}
 		return devreg.SyntaxAuto + " (unknown until the device is pulled: tacctl device config pull " + e.Name + ")"
@@ -89,8 +89,8 @@ func (inv *invocation) walkthroughSyntax(e devreg.Entry) (legacy bool, note stri
 	case devconf.SyntaxIOS12, devconf.SyntaxModern:
 		legacy = r.Syntax == devconf.SyntaxIOS12
 		if r.Conflict {
-			note = "# warning: config-syntax of " + e.Name + " is " + r.Syntax + " but " + conflictText(rec, r) +
-				"; this follows the setting (tacctl device config-syntax " + e.Name + " auto follows the pull)"
+			note = "# warning: ios-syntax of " + e.Name + " is " + r.Syntax + " but " + conflictText(rec, r) +
+				"; this follows the setting (tacctl device ios-syntax " + e.Name + " auto follows the pull)"
 		}
 		return legacy, note
 	}
@@ -98,19 +98,19 @@ func (inv *invocation) walkthroughSyntax(e devreg.Entry) (legacy bool, note stri
 	switch {
 	case pulled && strings.TrimSpace(rec.OS) != "":
 		return false, "# syntax: modern (" + pullDate(rec) + " read \"" + cleanLine(rec.OS) +
-			"\", which tacctl does not map to a syntax; set 'tacctl device config-syntax " + e.Name + " ios12' for IOS 12.x)"
+			"\", which tacctl does not map to a syntax; set 'tacctl device ios-syntax " + e.Name + " ios12' for IOS 12.x)"
 	case pulled:
 		return false, "# syntax: modern (the last pull holds no image line: run device config pull " + e.Name +
-			", or set 'tacctl device config-syntax " + e.Name + " ios12' for IOS 12.x)"
+			", or set 'tacctl device ios-syntax " + e.Name + " ios12' for IOS 12.x)"
 	}
-	return false, "# syntax: modern (no pull yet; set 'tacctl device config-syntax " + e.Name +
+	return false, "# syntax: modern (no pull yet; set 'tacctl device ios-syntax " + e.Name +
 		" ios12' for IOS 12.x, or pull the device once)"
 }
 
-// deviceConfigSyntax is 'device config-syntax <name> [auto|ios12|modern]':
+// deviceIOSSyntax is 'device ios-syntax <name> [auto|ios12|modern]':
 // no word prints the setting (and what it resolves to).
-func (inv *invocation) deviceConfigSyntax(args []string) error {
-	p, err := inv.deviceParse("config-syntax", args)
+func (inv *invocation) deviceIOSSyntax(args []string) error {
+	p, err := inv.deviceParse("ios-syntax", args)
 	if err != nil {
 		return err
 	}
@@ -120,7 +120,7 @@ func (inv *invocation) deviceConfigSyntax(args []string) error {
 	}
 	if len(p.Args) == 1 {
 		if p.Has("--apply") {
-			return inv.usageErr("--apply goes with a value to set: tacctl device config-syntax <name> auto|ios12|modern --apply")
+			return inv.usageErr("--apply goes with a value to set: tacctl device ios-syntax <name> auto|ios12|modern --apply")
 		}
 		e, err := inv.deviceFind(res, p.Args[0])
 		if err != nil {
@@ -134,7 +134,7 @@ func (inv *invocation) deviceConfigSyntax(args []string) error {
 	}
 	set, serr := devreg.ValidateConfigSyntax(p.Args[1])
 	if serr != nil {
-		return inv.usageErr(append(msgs(serr), "Usage: tacctl device config-syntax <name> [auto|ios12|modern]")...)
+		return inv.usageErr(append(msgs(serr), "Usage: tacctl device ios-syntax <name> [auto|ios12|modern]")...)
 	}
 	d, err := inv.deviceEditable(res, f, p.Args[0])
 	if err != nil {
@@ -165,7 +165,7 @@ func (inv *invocation) deviceConfigSyntax(args []string) error {
 		word = devreg.SyntaxAuto
 	}
 	inv.detail("device set", kvp("name", name), kvp("field", "config-syntax"), kvp("from", orWord(d.ConfigSyntax, devreg.SyntaxAuto)), kvp("to", word))
-	inv.app.Out.Info("Device '" + name + "' config-syntax " + word + ".")
+	inv.app.Out.Info("Device '" + name + "' ios-syntax " + word + ".")
 	// A setting that the last pull's image contradicts is said at once, not
 	// at the next walkthrough: the setting wins, and it is the lock-out
 	// direction when a 12.x image is rendered in the modern syntax.

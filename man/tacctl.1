@@ -212,8 +212,9 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.16
+.B 0.2.17
 (the release before this one),
+.BR 0.2.16 ,
 .B 0.2.9
 and
 .BR 0.2.3 ;
@@ -224,7 +225,7 @@ and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word (0.2.10 to
-0.2.15 included: the refusal names the three targets). Every target is
+0.2.15 included: the refusal names the four targets). Every target is
 refused while a device's record says a confirmed commit of
 .B "device config apply"
 is
@@ -236,6 +237,26 @@ or
 or
 .B "device config forget <name>"
 settles it).
+.IP
+.B "rollback 0.2.17"
+.B \-\-apply
+rewrites the per\-tier sudoers drop\-in, when it is exactly the text this
+release writes, with the one 0.2.17 writes (after
+.BR "visudo \-cf" ):
+the engineer's
+.B "device ios\-syntax"
+rule becomes
+.BR "device config\-syntax" ,
+the name 0.2.17 runs. An edited drop\-in is left (0.2.17's upgrade rewrites
+it). Nothing else is converted, so no snapshot is taken:
+.IR tacctl.yaml ,
+.IR console.yaml ,
+.IR devices.yaml ,
+.IR store.yaml ,
+the group drop\-in and the hosts are in formats 0.2.17 reads.
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.17" .
 .IP
 .B "rollback 0.2.16"
 .B \-\-apply
@@ -354,7 +375,7 @@ alias and
 line and, in the per-tier file, the rows of
 .BR "device config" ,
 .BR "device snmp" ,
-.BR "device config\-syntax" ,
+.BR "device ios\-syntax" ,
 .B "breakglass list"
 and
 .BR "console forget" .
@@ -3720,7 +3741,7 @@ Members of
 .B tac-engineer
 may additionally run, for the devices, hosts and scopes of their own scopes only,
 .BR "device add" ", " remove ", " rename ", " address ", " hostname ", " vendor ", "
-.BR port ", " description ", " location ", " legacy\-ssh ", " config\-syntax ", " hostkey " and " "import " "\-"
+.BR port ", " description ", " location ", " legacy\-ssh ", " ios\-syntax ", " hostkey " and " "import " "\-"
 (standard input only: sudoers matches the first argument),
 .BR "scope devices" ", " "config cisco" "|" juniper "|" wti ,
 .BR "host list" " and " "host show"
@@ -4202,7 +4223,7 @@ whatever the configuration syntax of the device named by
 is. With
 .B --name
 naming a registered Cisco device of the scope the syntax is that device's
-.RB ( "device config\-syntax" ,
+.RB ( "device ios\-syntax" ,
 else what its last pull read from its version line, else the modern syntax and
 one line on standard error that says so);
 .B --legacy
@@ -7081,7 +7102,7 @@ The acknowledged notices too.
 .RE
 .\" END GENERATED: command device show
 .TP
-.BI "device add " "[ name ] address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-snmp\-location " text " ] [ \-\-legacy\-ssh ] [ \-\-config\-syntax auto|ios12|modern ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-no\-lookup ] [ \-\-pull ] [ \-\-allow\-generic ]"
+.BI "device add " "[ name ] address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-snmp\-location " text " ] [ \-\-legacy\-ssh ] [ \-\-ios\-syntax auto|ios12|modern ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-no\-lookup ] [ \-\-pull ] [ \-\-allow\-generic ]"
 Register a device. A new name is lower case: a name with upper case is refused with
 the lower\-case spelling to use (the name a device reports, or its SNMP sysName, is
 lowercased); a device that exists with upper case keeps working and is listed by
@@ -7258,9 +7279,9 @@ A description of the device.
 Its place (the SNMP location the walkthroughs render).
 .TP
 \fB\-\-legacy\-ssh\fR
-SHA\-1 key exchange, CBC ciphers and ssh\-rsa; the configuration syntax is \-\-config\-syntax.
+SHA\-1 key exchange, CBC ciphers and ssh\-rsa; the configuration syntax is \-\-ios\-syntax.
 .TP
-\fB\-\-config\-syntax\fR \fI<syntax>\fR
+\fB\-\-ios\-syntax\fR \fI<syntax>\fR
 (cisco) auto, ios12 or modern: the configuration syntax (default auto: the pull's version line says).
 .TP
 \fB\-\-host\-key\fR \fISHA256:<fp>\fR
@@ -7873,7 +7894,7 @@ is refused for a held device.
 A setter that changes what is rendered for the device (this one, the
 .BR description ", " location ", " address ", " vendor
 and
-.B config\-syntax
+.B ios\-syntax
 verbs) says, in one line, when the device has a stored pull that
 .B "device config plan"
 would now change:
@@ -7898,7 +7919,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
@@ -7988,7 +8009,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device description
 .TP
@@ -8040,7 +8061,7 @@ Options:
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device location
 .TP
@@ -8049,7 +8070,7 @@ Show or set the opt-in (off by default) for the legacy key-exchange, cipher and
 host-key algorithms (SHA-1 key exchange, CBC ciphers, ssh-rsa) that a device
 offering only those needs. It changes the ssh algorithms only; the
 configuration syntax is
-.BR "device config\-syntax" .
+.BR "device ios\-syntax" .
 .\" BEGIN GENERATED: command device legacy-ssh
 .RS
 .PP
@@ -8057,7 +8078,7 @@ Requires: \fBengineer\fR.
 .RE
 .\" END GENERATED: command device legacy-ssh
 .TP
-.BI "device config\-syntax " "name " "[ auto | ios12 | modern [ \-\-apply ] ]"
+.BI "device ios\-syntax " "name " "[ auto | ios12 | modern [ \-\-apply ] ]"
 Show or set the configuration syntax of a Cisco device: the syntax its
 walkthrough
 .RB ( "device config show" ", " "config cisco \-\-name" )
@@ -8120,7 +8141,7 @@ and
 and the walkthrough (one
 .B # warning:
 line), and
-.B "device config\-syntax"
+.B "device ios\-syntax"
 says it when the setting is made.
 With no word the setting is shown. The setting is for Cisco devices (a registry file
 or an import that gives one to another vendor is refused, and
@@ -8135,7 +8156,7 @@ runs
 .B "device config apply"
 for the device afterwards; the apply writes to Junos devices only in this
 release, so on a Cisco device the flag is refused before the setting changes.
-.\" BEGIN GENERATED: command device config-syntax
+.\" BEGIN GENERATED: command device ios-syntax
 .RS
 .PP
 Requires: \fBengineer\fR.
@@ -8143,9 +8164,9 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
-.\" END GENERATED: command device config-syntax
+.\" END GENERATED: command device ios-syntax
 .TP
 .BI "device netconf " name " [ show | enable | disable | leave | clear ] [ \-\-connection\-limit " n " | none ] [ \-\-rate\-limit " n " | none ] [ \-\-apply ]"
 The NETCONF service setting of one Junos device, over its scope's
@@ -8194,7 +8215,7 @@ Options:
 (enable) The rate limit of the service, 1 to 250; none takes the scope's.
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device netconf
 .TP
@@ -8785,7 +8806,7 @@ and name in the SNMP step. The options are those of
 .BR "config cisco|juniper|wti" ;
 .B \-\-legacy
 is for a Cisco device and is the IOS 12.x syntax whatever the device's
-.B config\-syntax
+.B ios\-syntax
 says; without it a Cisco device is walked through in its syntax (the setting,
 else the last pull's, else the modern syntax with one line,
 .BR "# syntax: modern (no pull yet; ...)" ,
@@ -8812,7 +8833,7 @@ Options:
 The protocol (default: the scope's auth\-method, else its only protocol, else tacacs).
 .TP
 \fB\-\-legacy\fR
-(Cisco) The IOS 12.x syntax, whatever the device's config\-syntax is; TACACS+ only.
+(Cisco) The IOS 12.x syntax, whatever the device's ios\-syntax is; TACACS+ only.
 .TP
 \fB\-\-server\fR \fI<address|name>\fR
 The address the device is told to authenticate against.
@@ -8937,7 +8958,7 @@ never fall back. IOS and IOS\-XE are read over the ssh command line, with
 paging off, after
 .BR "show version | include Version" ,
 whose line is kept on the record with the configuration syntax it says (see
-.BR "device config\-syntax" );
+.BR "device ios\-syntax" );
 a device that answers no image line (the boot loader's
 .B ROM:
 and
@@ -9760,7 +9781,7 @@ with the steps by hand below the region, because nothing proves that the
 pasting session is a TACACS+ user. The old entry is removed by the region only
 when the plan types the standard block's address or key. The syntax is the
 setting of
-.B "device config\-syntax"
+.B "device ios\-syntax"
 or the pull's version line, never the ssh flag; a device that needs a pull is
 not planned. A Junos statement that a group applies is never changed: its
 section is refused.
@@ -11830,7 +11851,7 @@ console forget
 .B engineer
 device add, device remove, device rename, device address,
 device hostname, device vendor, device port, device description,
-device location, device legacy\-ssh, device config\-syntax,
+device location, device legacy\-ssh, device ios\-syntax,
 device hostkey, device import, scope devices, device config,
 config cisco, config juniper, config wti, host list, host show,
 scope staging, scope secret, scope snmp, device snmp, scope block,
@@ -11962,8 +11983,8 @@ config secret\-min\-length, config snmp, config validate, config wti,
 console agent\-forwarding, console forwarding, console idle\-timeout,
 console password\-cache, console space\-completion,
 console ssh\-escape, device address, device block, device collect,
-device config, device config\-syntax, device description,
-device hostkey, device hostname, device import, device legacy\-ssh,
+device config, device description, device hostkey, device hostname,
+device import, device ios\-syntax, device legacy\-ssh,
 device location, device netconf, device onboard, device port,
 device snmp, device stale\-days, device sync, device vendor,
 group commands, group junos, group preset, group privilege,

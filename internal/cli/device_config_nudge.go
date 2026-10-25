@@ -3,7 +3,7 @@ package cli
 // The nudge and --apply of the registry setters (0.2.9, D130): a setter
 // that changes what is rendered for a device says, in one line, that the
 // device's configuration would now change, and 'location', 'description',
-// 'address' and 'config-syntax' take --apply to run 'device config apply'
+// 'address' and 'ios-syntax' take --apply to run 'device config apply'
 // for that one device in the same process.
 //
 // The nudge reads the stored pull only: no login, no network, nothing kept

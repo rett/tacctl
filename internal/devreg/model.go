@@ -36,7 +36,7 @@ type Device struct {
 	// CBC ciphers, ssh-rsa), and nothing else (D113).
 	LegacySSH bool
 	// ConfigSyntax is the Cisco configuration syntax the device is
-	// rendered and compared in (D113, 'tacctl device config-syntax'):
+	// rendered and compared in (D113, 'tacctl device ios-syntax'):
 	// SyntaxIOS12 or SyntaxModern; empty is auto (the last pull's version
 	// line says), and is the only value never written to the file.
 	ConfigSyntax string
@@ -188,7 +188,7 @@ const (
 	SyntaxModern = "modern"
 )
 
-// SyntaxWords are the words 'device config-syntax' takes.
+// SyntaxWords are the words 'device ios-syntax' takes.
 var SyntaxWords = []string{SyntaxAuto, SyntaxIOS12, SyntaxModern}
 
 // ValidateConfigSyntax checks the word of a configuration syntax setting

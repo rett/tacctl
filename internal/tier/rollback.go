@@ -17,13 +17,24 @@ import "strings"
 // Sudoers023 is the per-tier drop-in 0.2.3 wrote.
 func Sudoers023() string { return sudoers023 }
 
-// Sudoers0216 is the per-tier drop-in 0.2.15 and 0.2.16 wrote: this
-// release's rules with the password cache's alias as 0.2.9 to 0.2.16 had it
-// (before 'device enroll' joined its lines, 0.2.17 D269). The rollback to
-// 0.2.3 recognises it as an older text; it is derived from the rules, with the
+// Sudoers0217 is the per-tier drop-in 0.2.17 wrote: this release's rules
+// with the engineer's 'device config-syntax *' where this release has
+// 'device ios-syntax *' (0.2.18 D273 renamed the verb and dropped the old
+// name). 'tacctl rollback 0.2.17' puts it back, so an engineer's 'device
+// config-syntax' runs through sudo again under 0.2.17; the rollback to 0.2.3
+// recognises it as an older text. It is derived (a rule that moves on again
+// makes its own frozen copy).
+func Sudoers0217() string {
+	return strings.Replace(Sudoers(), Binary+" device ios-syntax *, ", Binary+" device config-syntax *, ", 1)
+}
+
+// Sudoers0216 is the per-tier drop-in 0.2.15 and 0.2.16 wrote: 0.2.17's
+// rules with the password cache's alias as 0.2.9 to 0.2.16 had it (before
+// 'device enroll' joined its lines, 0.2.17 D269). The rollback to 0.2.3
+// recognises it as an older text; it is derived from the rules, with the
 // alias frozen (askpassKeep0216).
 func Sudoers0216() string {
-	return strings.Replace(Sudoers(), AskpassKeep(AskpassAlias), askpassKeep0216(AskpassAlias), 1)
+	return strings.Replace(Sudoers0217(), AskpassKeep(AskpassAlias), askpassKeep0216(AskpassAlias), 1)
 }
 
 // Sudoers0214 is the per-tier drop-in 0.2.14 wrote: 0.2.16's rules

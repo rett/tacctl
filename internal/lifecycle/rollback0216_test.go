@@ -174,14 +174,14 @@ func filterAudit(keys []string) []string {
 }
 
 // CheckRollbackVersion takes 0.2.16 with or without a "v", and 0.2.10 to
-// 0.2.15 are still not targets.
+// 0.2.15 and 0.2.18 (this release) are still not targets.
 func TestCheckRollbackVersion0216(t *testing.T) {
 	for _, ok := range []string{"0.2.16", "v0.2.16"} {
 		if v, err := CheckRollbackVersion(ok); err != nil || v != "0.2.16" {
 			t.Errorf("%s: %q %v", ok, v, err)
 		}
 	}
-	for _, bad := range []string{"0.2.15", "0.2.10", "0.2.17", "0.2.160"} {
+	for _, bad := range []string{"0.2.15", "0.2.10", "0.2.18", "0.2.160", "0.2.170"} {
 		if _, err := CheckRollbackVersion(bad); err == nil {
 			t.Errorf("%s was accepted", bad)
 		}

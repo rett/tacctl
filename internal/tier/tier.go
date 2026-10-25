@@ -142,7 +142,7 @@ type Rule struct {
 // config dump, store show) is superuser-only, and so is everything that
 // changes anything, but for the Engineer rows (0.2.2, D18; 0.2.3, D45, D47
 // and D53): the device registry (add, remove, rename, address, hostname,
-// vendor, port, description, location, legacy-ssh, config-syntax (0.2.5), hostkey, and import from
+// vendor, port, description, location, legacy-ssh, ios-syntax (0.2.5, named config-syntax until 0.2.18), hostkey, and import from
 // standard input only), the scope's devices, vendor tags and staging
 // addresses ('scope devices', 'scope staging' to list), the device
 // configurations 'config cisco|juniper|wti' and 'device config show' of their
@@ -233,7 +233,7 @@ var Rules = []Rule{
 	{Tier: Engineer, Cmd: "device", Sub: "legacy-ssh", Sudoers: []string{"device legacy-ssh *"}},
 	// The Cisco configuration syntax of a device (0.2.5, D113): a registry
 	// setting like legacy-ssh, the engineer's for devices of their scopes.
-	{Tier: Engineer, Cmd: "device", Sub: "config-syntax", Sudoers: []string{"device config-syntax *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "ios-syntax", Sudoers: []string{"device ios-syntax *"}},
 	{Tier: Engineer, Cmd: "device", Sub: "hostkey", Sudoers: []string{"device hostkey *"}},
 	// An engineer imports from standard input only: sudoers matches the
 	// first argument, so 'device import /etc/shadow' never reaches tacctl.

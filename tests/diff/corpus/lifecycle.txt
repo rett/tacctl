@@ -98,15 +98,15 @@ uninstall <<< n
 rollback
 rollback --bogus
 rollback 0.2.3 extra
-@known 0.2.4 item 16: the target is 0.2.3; 0.2.2 and older are refused with the way there
+@known 0.2.4 item 16: the target is 0.2.3; 0.2.2 and older are refused with the way there; 0.2.18 item 1: the refusal names 0.2.17 as the release before this one
 rollback 0.2.2
-@known 0.2.4 item 16: the target is 0.2.3; 0.2.2 and older are refused with the way there
+@known 0.2.4 item 16: the target is 0.2.3; 0.2.2 and older are refused with the way there; 0.2.18 item 1: the refusal names 0.2.17 as the release before this one
 rollback 0.2.1
-@known 0.2.4 item 16: the target is 0.2.3; 0.2.2 and older are refused with the way there
+@known 0.2.4 item 16: the target is 0.2.3; 0.2.2 and older are refused with the way there; 0.2.18 item 1: the refusal names 0.2.17 as the release before this one
 rollback 0.2.2 --apply --yes
-@known 0.2.4 item 16: the usage and the refusal name 0.2.3 as the one target
+@known 0.2.4 item 16: the usage and the refusal name 0.2.3 as the one target; 0.2.18 item 1: the refusal names 0.2.17 as the release before this one
 rollback 0.2.4
-@known 0.2.4 item 16: the usage and the refusal name 0.2.3 as the one target
+@known 0.2.4 item 16: the usage and the refusal name 0.2.3 as the one target; 0.2.18 item 1: the refusal names 0.2.17 as the release before this one
 rollback main
 @known 0.2.4 item 16: the target is 0.2.3, and its dry run lists the 0.2.4 conversions
 rollback 0.2.3

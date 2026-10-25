@@ -3,6 +3,23 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.18
+
+1. **`device config-syntax` is now `device ios-syntax`, and `device add
+   --config-syntax` is `--ios-syntax`.** The verb sets the Cisco IOS
+   configuration syntax (`auto`, `ios12`, `modern`) as before; every message,
+   usage line, walkthrough comment, help text, Tab completion and the manual
+   page name the new verb and flag. The old names are gone: `device
+   config-syntax` is an unknown subcommand and `--config-syntax` an unknown
+   option, so a script that uses them must change. The registry key
+   (`config_syntax` in `devices.yaml`) and the audit line (`device set ...
+   field=config-syntax`) are unchanged. The tiers sudoers drop-in grants the
+   engineer tier `device ios-syntax *` in place of `device config-syntax *`;
+   `tacctl upgrade` rewrites an installed drop-in. `tacctl rollback` takes
+   `0.2.17` (the release before this one): its `--apply` puts back the tiers
+   drop-in 0.2.17 writes and converts nothing else. `0.2.16`, `0.2.9` and
+   `0.2.3` stay targets.
+
 ## 0.2.17 (2026-10-24)
 
 1. **Audit lines: one writer, a session id, no line lost to a signal, a

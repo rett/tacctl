@@ -6,8 +6,10 @@ package lifecycle
 // one. The command (internal/cli/rollback.go) adds what needs the
 // invocation: the snapshot and the sudoers installer.
 //
-// The targets are 0.2.16 (the release before this one: RollbackTarget0216,
-// docs/plans/0.2.17-plan.md D257; rollback0216.go), 0.2.9 (RollbackTarget029,
+// The targets are 0.2.17 (the release before this one: RollbackTarget0217,
+// docs/plans/0.2.18-plan.md D273; rollback0217.go: the tiers drop-in),
+// 0.2.16 (RollbackTarget0216, docs/plans/0.2.17-plan.md D257;
+// rollback0216.go), 0.2.9 (RollbackTarget029,
 // docs/plans/0.2.10-plan.md) and 0.2.3 (RollbackTarget). A release's tool
 // converts what that release changed and prepares the state for the one
 // before it, so 0.2.8 is not a target: the way is this tool for 0.2.9, the
@@ -127,13 +129,16 @@ import (
 )
 
 // RollbackTarget is the oldest release 'tacctl rollback' prepares for;
-// RollbackTarget029 is the one before the NETCONF service setting and
-// RollbackTarget0216 the release before this one (0.2.10 to 0.2.16 changed
-// no format 0.2.9 reads strictly, so 0.2.9 stays a target).
+// RollbackTarget029 is the one before the NETCONF service setting,
+// RollbackTarget0216 the one before audit.strict and RollbackTarget0217 the
+// release before this one (0.2.10 to 0.2.16 changed no format 0.2.9 reads
+// strictly, so 0.2.9 stays a target; 0.2.18 changed none 0.2.16 or 0.2.17
+// reads, so 0.2.16 stays one too).
 const (
 	RollbackTarget     = "0.2.3"
 	RollbackTarget029  = "0.2.9"
 	RollbackTarget0216 = "0.2.16"
+	RollbackTarget0217 = "0.2.17"
 )
 
 // RollbackRefusal is a version the command does not take: Lines say why.
@@ -195,12 +200,13 @@ func pluralWord(n int, one, many string) string {
 
 var reVersion = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 
-const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget0216 + "|" + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
+const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget0217 + "|" + RollbackTarget0216 + "|" + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
 
-// CheckRollbackVersion is the version a rollback is asked for ("0.2.16",
-// "0.2.9", "0.2.3" or any with a "v"), or a *RollbackRefusal: 0.2.4 to 0.2.8
-// and older than 0.2.3 (a release's tool prepares the state for the releases
-// it knows, so the way back is one release at a time), 0.2.10 to 0.2.15, this
+// CheckRollbackVersion is the version a rollback is asked for ("0.2.17",
+// "0.2.16", "0.2.9", "0.2.3" or any with a "v"), or a *RollbackRefusal: 0.2.4
+// to 0.2.8 and older than 0.2.3 (a release's tool prepares the state for the
+// releases it knows, so the way back is one release at a time), 0.2.10 to
+// 0.2.15, this
 // release or a newer one, or something that is not a release (the refusal of
 // the last three names the targets and promises no way there).
 func CheckRollbackVersion(arg string) (string, error) {
@@ -211,11 +217,11 @@ func CheckRollbackVersion(arg string) (string, error) {
 			rollbackUsage}}
 	}
 	v := strings.TrimPrefix(arg, "v")
-	if v == RollbackTarget || v == RollbackTarget029 || v == RollbackTarget0216 {
+	if v == RollbackTarget || v == RollbackTarget029 || v == RollbackTarget0216 || v == RollbackTarget0217 {
 		return v, nil
 	}
 	n := func(i int) int { x, _ := strconv.Atoi(m[i]); return x }
-	both := "'tacctl rollback' prepares the state for " + RollbackTarget0216 + " (the release before this one), " + RollbackTarget029 + " and " + RollbackTarget + " only"
+	both := "'tacctl rollback' prepares the state for " + RollbackTarget0217 + " (the release before this one), " + RollbackTarget0216 + ", " + RollbackTarget029 + " and " + RollbackTarget + " only"
 	fallback := "The fallback that needs no tool is 'tacctl backup restore' of a snapshot of the time (see 'tacctl backup list')."
 	switch {
 	case n(1) == 0 && n(2) == 2 && n(3) > 3 && n(3) < 9:
@@ -312,8 +318,8 @@ type RollbackInput struct {
 	HasStore bool
 	// WithHosts: the command was given --hosts.
 	WithHosts bool
-	// Target is the release rolled back to: RollbackTarget0216,
-	// RollbackTarget029 or RollbackTarget (the zero value is 0.2.3, as
+	// Target is the release rolled back to: RollbackTarget0217,
+	// RollbackTarget0216, RollbackTarget029 or RollbackTarget (the zero value is 0.2.3, as
 	// before 0.2.9).
 	Target string
 	// InstallSudoers writes a sudoers drop-in the way the commands do
@@ -456,6 +462,9 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	}
 	if in.Target == RollbackTarget0216 {
 		return planRollback0216(p)
+	}
+	if in.Target == RollbackTarget0217 {
+		return planRollback0217(p)
 	}
 	// A break-glass hold is refused, in the dry run and --apply alike: the
 	// release being left has the record (docs/plans/0.2.5-plan.md D122), and
@@ -624,7 +633,7 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 	tiers := sudoersPlan{label: "the per-tier drop-in", file: pt.TierSudoersFile, state: "absent"}
 	if b, err := os.ReadFile(pt.TierSudoersFile); err == nil {
 		switch got := string(b); {
-		case got == tier.Sudoers(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
+		case got == tier.Sudoers(), got == tier.Sudoers0217(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
 			tiers.state, tiers.body = "rewrite", tier.Sudoers023()
 		case got == tier.Sudoers023():
 			tiers.state = "done"
@@ -814,7 +823,7 @@ func (p *RollbackPlan) warnings() []RollbackWarning {
 		lines = append(lines, "The settings of 'device config apply' ("+strings.Join(ro, ", ")+") are removed from tacctl.yaml; 0.2.3 has no such verb.")
 	}
 	if len(p.syntaxDev) > 0 {
-		lines = append(lines, "The configuration syntax setting of a Cisco device (device config-syntax) is removed: a release without it compares a legacy-ssh device as IOS 12.x again, and renders its walkthrough in the syntax of --legacy only:")
+		lines = append(lines, "The configuration syntax setting of a Cisco device (device ios-syntax) is removed: a release without it compares a legacy-ssh device as IOS 12.x again, and renders its walkthrough in the syntax of --legacy only:")
 		for _, d := range p.syntaxDev {
 			lines = append(lines, "  "+d.name+": "+d.syntax)
 		}
