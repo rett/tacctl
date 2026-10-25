@@ -3,20 +3,20 @@
 # Run: tests/diff/run.sh store
 @fixture tacquito.minimal.yaml
 
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 store
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 store bogus
 store show
 store show --json
 store show --bogus
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 store frobnicate
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 store help
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 store -h
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 store --help
 store show --json extra
 store show "" --json

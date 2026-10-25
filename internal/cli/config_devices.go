@@ -86,7 +86,7 @@ func configDevicesCmd(inv *invocation) *cobra.Command {
 // configDevicesUsage is the usage of 'config devices'.
 func configDevicesUsage() string {
 	var b strings.Builder
-	b.WriteString("\n" + ui.Bold + "Device reads" + ui.NC + "\n\nUsage: tacctl config devices [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport] [value]\n\n")
+	b.WriteString("\n" + ui.Bold + "Device reads" + ui.NC + "\n\nUsage: tacctl config devices [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport] [<value>]\n\n")
 	for _, v := range configDevicesVerbs {
 		fmt.Fprintf(&b, "  %-38s  %s\n", v[0], v[1])
 	}
@@ -172,7 +172,7 @@ func (inv *invocation) configDevices(args []string) error {
 // configDevicesShow prints the settings.
 func (inv *invocation) configDevicesShow(rest []string) error {
 	if len(rest) > 0 {
-		return inv.usageErr("Unknown argument: '"+rest[0]+"'", "Usage: tacctl config devices [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport] [value]")
+		return inv.usageErr("Unknown argument: '"+rest[0]+"'", "Usage: tacctl config devices [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport] [<value>]")
 	}
 	s := inv.deviceConfigSettings()
 	src := func(path string) string {

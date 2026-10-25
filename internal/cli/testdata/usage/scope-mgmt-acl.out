@@ -6,8 +6,8 @@ Usage:
   tacctl scope mgmt-acl lab add    <entry>[,<entry>...]   Add one or more entries to the per-scope list
   tacctl scope mgmt-acl lab remove <entry>[,<entry>...]   Remove entries (a bare <cidr> removes every entry of that CIDR)
   tacctl scope mgmt-acl lab clear                         Wipe the per-scope list (confirms; render falls back to global)
-  tacctl scope mgmt-acl lab cisco-name   [label]          Per-scope Cisco VTY-ACL name
-  tacctl scope mgmt-acl lab juniper-name [label]          Per-scope Junos filter name
+  tacctl scope mgmt-acl lab cisco-name   [<label>]        Per-scope Cisco VTY-ACL name
+  tacctl scope mgmt-acl lab juniper-name [<label>]        Per-scope Junos filter name
 
 An <entry> is a <cidr>, or a <cidr> with the services it permits:
   <cidr>[:<service>[,<service>...]]    e.g. 172.16.100.0/23:tcp/22,udp/161,udp/162

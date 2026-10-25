@@ -5,9 +5,9 @@
 # Run: tests/diff/run.sh config
 @fixture tacquito.minimal.yaml
 
-@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface; 0.2.18 item 1: --legacy names the device's ios-syntax
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface; 0.2.18 item 1: --legacy names the device's ios-syntax; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 config
-@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface; 0.2.18 item 1: --legacy names the device's ios-syntax
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface; 0.2.18 item 1: --legacy names the device's ios-syntax; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 config bogus
 config show
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user
@@ -20,6 +20,7 @@ config defaults
 config defaults extra
 
 # get / get-list
+@known 0.2.18 item 7: the usage line writes the placeholder as <name> (an optional one [<name>], a choice of words without <>)
 config get
 config get bcrypt.cost
 config get bcrypt.cost 99
@@ -122,7 +123,7 @@ config deny add 10.66.0.9/16 ;; config deny list
 config deny add 10.66.0.0/16 ;; config allow add 10.0.0.0/8 ;; config validate
 config deny add notacidr
 config deny remove 10.66.0.0/16
-@known 0.2.3 item 74: the config mgmt-acl usage names the WTI IP Tables
+@known 0.2.3 item 74: the config mgmt-acl usage names the WTI IP Tables; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 config mgmt-acl
 @known 0.2.7 item 20: the mgmt-acl usage and its "Add with" hint name the optional :<services>
 config mgmt-acl list
@@ -176,6 +177,7 @@ config restore
 config restore {TS}
 
 # more error paths: bad values and missing arguments after a good state
+@known 0.2.18 item 7: the usage line writes the placeholder as <name> (an optional one [<name>], a choice of words without <>)
 config get ''
 config get-list ''
 config bcrypt-cost 10 11
@@ -218,9 +220,9 @@ config diff ../../etc/passwd
 config restore nosuchid
 config restore ../../etc/passwd
 config restore a b
-@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface; 0.2.18 item 1: --legacy names the device's ios-syntax
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface; 0.2.18 item 1: --legacy names the device's ios-syntax; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 config frobnicate
-@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface; 0.2.18 item 1: --legacy names the device's ios-syntax
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface; 0.2.18 item 1: --legacy names the device's ios-syntax; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 config frobnicate extra
 config loglevel bogus
 config password-age abc

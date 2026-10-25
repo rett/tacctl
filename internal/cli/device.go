@@ -162,7 +162,7 @@ var deviceSpecs = map[string]Spec{
 
 // deviceVerbs are the verbs ({Use, Short}), in usage order.
 var deviceVerbs = [][2]string{
-	{"list [word] [--name <text>] [--ip <addr|cidr|text>] [--vendor <vendor>] [--scope <scope>] [--stale] [--unconfigured] [--scan] [--probe] [--json]", "Registered devices and enrolled hosts, by name: scope, state, last seen, notices; the options narrow the list"},
+	{"list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <vendor>] [--scope <scope>] [--stale] [--unconfigured] [--scan] [--probe] [--json]", "Registered devices and enrolled hosts, by name: scope, state, last seen, notices; the options narrow the list"},
 	{"show <name|address> [--all] [--json]", "One device or host in full (--all: the acknowledged notices too)"},
 	{"add [<name>] <address> [options]", "Register a device (no name: offer the one it gives itself by SNMP); the vendor the device names by SNMP is shown, and offered at a terminal"},
 	{"onboard <address> --login <local-user> [--name <name>] [--host-key SHA256:<fp>] [--legacy-ssh] [--check] [--section <list>] [--json]", "Superusers, Junos devices: register a blank device reached with one of its local accounts (its host key accepted first by typing its name) and commit its first configuration as that account, kept only after your own TACACS+ login proves it"},
@@ -211,9 +211,8 @@ var deviceOptions = map[string][][2]string{
 		{"--unconfigured", "Only the devices no scope's prefixes cover"},
 		{"--name <text>", "Only names containing the text (a comma list: any of them)"},
 		{"--ip <addr|cidr|text>", "Only an address equal to, inside, or containing it (a comma list)"},
-		// --vendor and --scope are described in the usage row: the shell's
-		// help finds a flag's text by its name across the family, and 'add'
-		// has its own --vendor line.
+		{"--vendor <vendor>", "Only that vendor: cisco, juniper, wti, other or linux (a comma list)"},
+		{"--scope <scope>", "Only the devices that scope answers (a comma list)"},
 		{"--scan", "Scan the logs first (as 'device scan')"},
 		{"--probe", "Add REACH: a TCP connect to each ssh port (3 s)"},
 		{"--json", "(list, show, export, check) Print JSON"},
@@ -225,7 +224,7 @@ var deviceOptions = map[string][][2]string{
 		{"--description <text>", "A description"},
 		{"--snmp-location <text>", "Its place (the SNMP location the walkthroughs render)"},
 		{"--legacy-ssh", "SHA-1 key exchange, CBC ciphers and ssh-rsa; the configuration syntax is --ios-syntax"},
-		{"--ios-syntax <syntax>", "(cisco) auto, ios12 or modern: the configuration syntax (default auto: the pull's version line says)"},
+		{"--ios-syntax <syntax>", "(cisco) The configuration syntax: auto, ios12 or modern (default auto: the pull's version line says)"},
 		{"--host-key SHA256:<fp>", "Register only if the device offers this key; pin it alone"},
 		{"--no-host-key", "Register without a pinned key (a hostkey-unpinned notice)"},
 		{"--no-lookup", "Do not read the device's own name, location and vendor by SNMP"},
@@ -241,6 +240,7 @@ var deviceOptions = map[string][][2]string{
 		{"--discovered", "The addresses of 'device discover' (the seen cache: unregistered, authenticated) that no registry entry holds"},
 		{"--host-key SHA256:<fp>", "Accept only this key, read on the device's console (no question; needed without a terminal, with one address)"},
 		{"--register", "(collect) Register each device collected through 'device add', the key accepted pinned, and keep the read as its first pull record (one question; the key's question takes its SNMP sysName)"},
+		{"-y, --yes", "(collect) Answer yes to the registration question of --register (needed without a terminal); never a host key's question"},
 	},
 	"enroll": {
 		{"--host-key SHA256:<fp>", "(enroll) Pin this key of ONE address, read on its console: no question (the only form without a terminal)"},
@@ -249,7 +249,9 @@ var deviceOptions = map[string][][2]string{
 		{"--legacy-ssh", "(enroll) Scan and register every device of the run with the legacy algorithms"},
 	},
 	"sync": {
+		{"--apply", "(sync) Write the fields, in one registry write, after one question"},
 		{"--overwrite", "Also replace a field that is set, showing the old value"},
+		{"-y, --yes", "(sync) Answer yes to the question of --apply (needed without a terminal)"},
 	},
 	"remove": {
 		{"--all", "(remove, check) Every device; (show, notice list) the acknowledged notices too"},
@@ -276,7 +278,7 @@ var deviceOptions = map[string][][2]string{
 		{"--against", "(block check) Plan the device with the text in force and print its section's statements"},
 	},
 	"ssh": {
-		{"-p <port>", "Connect to this port instead of the registered one"},
+		{"-p <port>", "Connect to this port (default: the device's port, else 22)"},
 		{"-X, -Y", "Forward X11 (untrusted, trusted) to this server's display"},
 		{"-L <spec>", "Forward a local port, as ssh -L (repeatable)"},
 		{"-R <spec>", "Forward a remote port, as ssh -R (repeatable)"},
@@ -347,6 +349,7 @@ var deviceOptions = map[string][][2]string{
 		{"--pause <seconds>", "Wait between the devices after each shape's first, 0-3600 (default device.apply.pause)"},
 		{"--hold", "After the fresh login keep the change only when you log in with one account of each class and type OK (needs a terminal)"},
 		{"--no-canary", "Start every device of a shape at once, not the first alone"},
+		{"--transport auto|cli|netconf", "(apply) How the check and the apply reach a device: auto (NETCONF where the last read found it answering and the login may commit, else the command line), cli or netconf (default device.apply.transport)"},
 		{"--pull", "(apply) Read the devices first, as 'config pull' does (over device.config.transport), with the same password; a device whose pull fails is not checked, and --stale and --differs select from the fresh records"},
 		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, system, netconf"},
 		{"--json", "(apply) One object per device and phase, then the summary; the review goes to standard error"},

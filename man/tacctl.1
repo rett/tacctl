@@ -446,7 +446,7 @@ Options:
 Take a snapshot, then convert the files the target cannot read (tacctl.yaml, sudoers; for 0.2.3 also console.yaml, devices.yaml).
 .TP
 \fB\-\-yes\fR
-Answer yes to the confirmations.
+Acknowledge the warnings that \-\-apply refuses to go on without.
 .TP
 \fB\-\-hosts\fR
 Accepted; the hosts need nothing for this target (no host is synced).
@@ -1118,7 +1118,7 @@ Options:
 (reset) Show the difference; write nothing.
 .TP
 \fB\-\-yes\fR
-(reset) Do not ask.
+(reset) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command group commands reset
 .TP
@@ -1286,7 +1286,7 @@ Options:
 (reset) Show the difference; write nothing.
 .TP
 \fB\-\-yes\fR
-(reset) Do not ask.
+(reset) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command group privilege reset
 .TP
@@ -1563,7 +1563,7 @@ Options:
 (preset, reset) Show what would change; write nothing.
 .TP
 \fB\-\-yes\fR
-(reset) Do not ask.
+(reset) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command group reset
 .SS Server configuration \fB(tacctl config)\fR
@@ -4472,7 +4472,7 @@ Options:
 (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location).
 .TP
 \fB\-\-legacy\fR
-(cisco) IOS 12.x syntax.
+(cisco) The IOS 12.x syntax, whatever the \-\-name device's ios\-syntax says.
 .RE
 .\" END GENERATED: command config cisco
 .TP
@@ -5286,9 +5286,14 @@ and names (users, groups, scopes, hosts, devices, ..., asked of
 .B sudo \-n tacctl _completion-names
 and kept for 5 seconds); a second Tab lists the matching words alone. ?
 inserts nothing and shows help for the cursor's position: the words that can
-come (\(lqPossible completions:\(rq), or after a command that takes arguments
-its usage lines, its options and what comes next
-(\(lqNext: <username> <group>\(rq, \(lqNext: <Enter> to run\(rq). Inside
+come (\(lqPossible completions:\(rq; a fixed word such as priv\-lvl after
+.B group edit
+<name> with the description of the usage line that has it), or after a
+command that takes arguments the usage lines of the forms the words typed so
+far fit, its options and what comes next (\(lqNext: <username> <group>\(rq;
+where the forms part, the choice:
+\(lqNext: <name> priv\-lvl|juniper\-class|wti\-level|tier ...\(rq;
+\(lqNext: <Enter> to run\(rq). Inside
 quotes, or after a backslash, ? is typed as a character. A list of more than
 40 entries asks first (\(lqShow all 45 devices? [y/N]\(rq): y shows it, any
 other key (or Ctrl-C) prints how to narrow it and gives the line back. Help taller than the terminal is
@@ -6783,7 +6788,7 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-role\fR \fI<role>\fR
-(add) Admin (default), operator or readonly.
+(add) The role: admin (default), operator or readonly.
 .RE
 .\" END GENERATED: command scope breakglass
 .SH DEVICE REGISTRY
@@ -7063,7 +7068,7 @@ Only names that contain the text (a comma list: any of them).
 \fB\-\-ip\fR \fI<addr|cidr|text>\fR
 Only addresses equal to, inside, or containing it (an address, a CIDR or a text; a comma list).
 .TP
-\fB\-\-vendor\fR \fIcisco|juniper|wti|other\fR
+\fB\-\-vendor\fR \fI<vendor>\fR
 Only that vendor: cisco, juniper, wti, other or linux (a comma list).
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
@@ -7299,7 +7304,7 @@ Its place (the SNMP location the walkthroughs render).
 SHA\-1 key exchange, CBC ciphers and ssh\-rsa; the configuration syntax is \-\-ios\-syntax.
 .TP
 \fB\-\-ios\-syntax\fR \fI<syntax>\fR
-(cisco) auto, ios12 or modern: the configuration syntax (default auto: the pull's version line says).
+(cisco) The configuration syntax: auto, ios12 or modern (default auto: the pull's version line says).
 .TP
 \fB\-\-host\-key\fR \fISHA256:<fp>\fR
 Register only if the device offers this key; pin it alone.
@@ -7480,7 +7485,7 @@ Options:
 \fB\-\-login\fR \fI<local\-user>\fR
 The device's local account to log in as (any, a break\-glass one included; root through its CLI wrapper): its password is asked once on the terminal and never kept or cached.
 .TP
-\fB\-\-name\fR \fI<text>\fR
+\fB\-\-name\fR \fI<name>\fR
 The registry name, typed back at the key's question (default: its SNMP sysName, else the name typed there; with \-\-host\-key, the name the device reports, a generic or taken one asked for).
 .TP
 \fB\-\-host\-key\fR \fISHA256:<fp>\fR
@@ -7625,7 +7630,7 @@ Accept only this key, read on the device's console (no question; needed without 
 After the table, register each collected device through 'device add' with the key accepted pinned (one question) and keep the read as its first pull record; the key's question takes the device's SNMP sysName when it gives one that is not taken.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-Answer yes to the registration question of \-\-register (needed without a terminal); never a host key's question.
+(collect) Answer yes to the registration question of \-\-register (needed without a terminal); never a host key's question.
 .TP
 \fB\-\-json\fR
 One object at the end (the progress goes to standard error).
@@ -7834,17 +7839,17 @@ Every device of the registry.
 \fB\-\-scope\fR \fI<scope>\fR
 Only the devices of that scope.
 .TP
-\fB\-\-vendor\fR \fIcisco|juniper|wti|other\fR
+\fB\-\-vendor\fR \fI<vendor>\fR
 Only that vendor's devices (only Junos records are read).
 .TP
 \fB\-\-apply\fR
-Write the fields, in one registry write, after one question.
+(sync) Write the fields, in one registry write, after one question.
 .TP
 \fB\-\-overwrite\fR
 Also replace a field that is set, showing the old value.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
+(sync) Answer yes to the question of \-\-apply (needed without a terminal).
 .TP
 \fB\-\-json\fR
 One object: each device's fields, actions and facts.
@@ -8505,7 +8510,7 @@ Requires: \fBengineer\fR. An engineer imports from standard input only (device i
 Options:
 .TP
 \fB\-\-check\fR
-(onboard) Register, read and check the first\-time plan on the device; commit nothing.
+Write nothing; say what the import would do.
 .TP
 \fB\-\-replace\fR
 Replace the registry instead of merging into it.
@@ -8578,7 +8583,7 @@ Requires: \fBreadonly\fR.
 Options:
 .TP
 \fB\-p\fR \fI<port>\fR
-Connect to this port instead of the registered one.
+Connect to this port (default: the device's port, else 22).
 .TP
 \fB\-X\fR
 Forward X11 to this server's display (untrusted, as ssh \-X).
@@ -10473,7 +10478,7 @@ Only the devices whose name contains the text (a comma list: any of them).
 \fB\-\-ip\fR \fI<addr|cidr|text>\fR
 Only the devices whose address is that address, lies in that prefix or contains the text (a comma list: any of them).
 .TP
-\fB\-\-transport\fR \fIauto|netconf|ssh\fR
+\fB\-\-transport\fR \fIauto|cli|netconf\fR
 How the check and the apply reach a device: auto (NETCONF where the last read found it answering and the login may commit, else the command line, with the reason), cli, or netconf (never falls back); default device.apply.transport. A change to the NETCONF service is made over the command line.
 .TP
 \fB\-\-concurrency\fR \fI<n>\fR
@@ -10691,8 +10696,8 @@ Only the devices whose last pull failed.
 \fB\-\-differs\fR
 (pull, diff, plan, apply, list) Only the devices whose last pull differs from what tacctl renders now (from the records; no login).
 .TP
-\fB\-\-transport\fR \fIauto|netconf|ssh\fR
-(pull, diff, plan) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
+\fB\-\-transport\fR \fInetconf|ssh|none\fR
+Only the devices last read over that transport (none: never read).
 .TP
 \fB\-\-name\fR \fI<text>\fR
 (pull, diff, plan, apply, list) Only the devices whose name contains the text (comma list: any of them).
@@ -10896,7 +10901,7 @@ Requires: \fBreadonly\fR.
 Options:
 .TP
 \fB\-p\fR \fI<port>\fR
-Connect to <port> (default: the device's port, else 22).
+Connect to this port (default: the device's port, else 22).
 .TP
 \fB\-X\fR
 Forward X11 to this server's display (untrusted, as ssh \-X).

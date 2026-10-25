@@ -3,7 +3,7 @@
 
 Usage:
   tacctl group commands list <group>                              Show rules + default action
-  tacctl group commands default <group> <permit|deny>             Set default action (catchall)
+  tacctl group commands default <group> permit|deny               Set default action (catchall)
   tacctl group commands add <group> <name> [--match <regex>]...   Add a rule
                                             [--action permit|deny]
                                             [--before <name>|--first]
@@ -16,7 +16,7 @@ Usage:
       --all                                                       (remove) Drop every rule named <name>
   tacctl group commands reset <group> [--dry-run] [--yes]         Revert the rules to the shipped defaults (diff, confirms; superuser only)
       --dry-run                                                   (reset) Show the difference; write nothing
-      --yes                                                       (reset) Do not ask
+      --yes                                                       (reset) Answer yes to the confirmation
   tacctl group commands seed [<group>] [--force]                  Re-apply the shipped rules (recovery tool)
       --force                                                     (seed) Overwrite a group that already has rules
 

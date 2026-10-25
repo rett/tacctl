@@ -83,7 +83,7 @@ scope aaa-order <name> [tacacs-first|local-first]
     is still reachable — any local name that collides with a server user wins locally, so scope
     local accounts to emergency credentials only.
 
-scope exec-timeout <name> [minutes]
+scope exec-timeout <name> [<minutes>]
 
     Per-scope idle-session timeout for this scope's generated device configs. Cisco renders
     `exec-timeout <n> 0` on `line con 0` / `line vty 0 15`; Junos renders `set system login
@@ -91,13 +91,13 @@ scope exec-timeout <name> [minutes]
     16.1, which has no such statement). Range 0..60 (Junos's max); `0` disables idle expiry on both
     vendors. Default 60.
 
-scope tacacs-group <name> [label]
+scope tacacs-group <name> [<label>]
 
     Per-scope Cisco `aaa group server tacacs+ <LABEL>` name. Rendered into every AAA group +
     method-list line for that scope. Must conform to Cisco ACL naming rules (letter-start,
     letters/digits/_/-). Default `TACACS-GROUP`. Junos has no equivalent.
 
-scope radius-group <name> [label]
+scope radius-group <name> [<label>]
 
     The RADIUS twin of `tacacs-group`: the Cisco `aaa group server radius <LABEL>` name rendered by
     `config cisco --protocol radius`. Same naming rules. Default `RADIUS-GROUP`.
@@ -232,7 +232,7 @@ scope block <name> {juniper|cisco} adopt <device> <block> [-y]
     each access list a community names, `show running-config | section ip access-list standard
     <NAME>`. Logged `secret-read kind=block-adopt`
 
-scope mgmt-acl <name> cisco-name|juniper-name [label]
+scope mgmt-acl <name> cisco-name|juniper-name [<label>]
 
     Per-scope mgmt-acl / filter name. Mirrors the global `tacctl config mgmt-acl
     cisco-name|juniper-name`. Cisco renders `ip access-list standard <LABEL>` + `access-class

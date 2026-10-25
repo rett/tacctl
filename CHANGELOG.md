@@ -71,6 +71,32 @@ current behaviour; this file is where history lives.
    the same lines. `tacctl`, `tacctl help`, `-h` and `--help` print the
    top-level usage as before.
 
+7. **Tab completion and `?` list every command, flag and fixed word with
+   its own description, in one style.** In `tacctl shell` and the login
+   console, `?` takes a flag's description from the lines of its own verb
+   (`config cisco --legacy` no longer shows `backup restore`'s, `rollback
+   --yes` no longer `install`'s), with the whole sentence where the usage
+   goes on over several lines; shows the usage line and description of
+   `install`, `upgrade`, `uninstall`, `rollback`, `shell`, `version` and the
+   `console` verbs; shows the usage of the `config allow|deny|mgmt-acl`,
+   `group commands|privilege` and `scope prefixes|secret|mgmt-acl` verbs,
+   which it left out; lists only the forms of a verb that the words typed so
+   far fit, and `Next:` names the choice where they part (`group edit` →
+   `Next: <name> priv-lvl|juniper-class|wti-level|tier ...`); describes a
+   fixed word by the usage line that has it (`priv-lvl`, `scope snmp <scope>
+   show`); and keeps the vendor, address and scope beside the names of a
+   comma list (`breakglass hold`, `device config pull`). A row whose argument
+   column was split wrongly (`backup restore`, `config validate`, `config
+   cisco`, `scope aaa-order`) is whole again. The usage text writes every
+   placeholder `<name>` (optional `[<name>]`; `[timestamp]`, `[n]`, `[name]`
+   and `<CLASS>` are gone), begins every description with a capital and ends
+   none with a full stop; `tacctl device` describes `list --vendor`, `list
+   --scope`, `sync --apply`, `sync -y`, `collect -y` and `config apply
+   --transport`, and `tacctl host` the `provisioner` `--remove-home` and
+   `-y`. `help console` in the shell prints the console's usage. The manual
+   page's option lists follow the usage. No command, flag or exit status
+   changes.
+
 ## 0.2.17 (2026-10-24)
 
 1. **Audit lines: one writer, a session id, no line lost to a signal, a

@@ -103,7 +103,7 @@ func configCmd(inv *invocation) *cobra.Command {
 			inv.write(conf.DefaultsText)
 			return nil
 		})),
-		withRun(verb("get <path> [fallback]", "Read a dotted-path value from the merged config"), n(inv.configGet)),
+		withRun(verb("get <path> [<fallback>]", "Read a dotted-path value from the merged config"), n(inv.configGet)),
 		withRun(verb("get-list <path>", "Read a list value (one item per line)"), n(inv.configGetList)),
 		withRun(verb("validate [--json | --fix-names [-y]]", "Validate config syntax and structure"), n(inv.configValidate)),
 		// 'config render' rebuilds the artifacts from the store: with a
@@ -123,7 +123,7 @@ func configCmd(inv *invocation) *cobra.Command {
 		withRun(verb("loglevel [debug|info|error]", "Show or change log level"), n(inv.configLoglevel)),
 		withRun(verb("listen [--backend <id>] [--listener <name>] [show|reset|<network> <address>]",
 			"Show, change, or reset a listen address"), n(inv.configListen)),
-		withRun(verb("metrics [show|enable|disable|address <host:port>|reset]", "Prometheus exporter control",
+		withRun(verb("metrics [show|enable|disable|reset|address <host:port>]", "Prometheus exporter control",
 			sub("show", "Show the exporter's state", metrics),
 			sub("enable", "Enable the exporter", metrics),
 			sub("disable", "Disable the exporter", metrics),
@@ -140,7 +140,7 @@ func configCmd(inv *invocation) *cobra.Command {
 				sub("remove", "Remove the tier rules", tiers),
 			),
 		), n(inv.configSudoers)),
-		withRun(verb("password-age [days]", "Show or set password age warning threshold"), n(inv.configPasswordAge)),
+		withRun(verb("password-age [<days>]", "Show or set password age warning threshold"), n(inv.configPasswordAge)),
 		withRun(verb("bcrypt-cost [10-14]", "Show or set bcrypt cost factor (default 12)"), n(inv.configBcryptCost)),
 		withRun(verb("password-min-length [8-64]", "Show or set minimum interactive password length (default 12)"),
 			n(inv.configPasswordMinLength)),
@@ -170,7 +170,7 @@ func configCmd(inv *invocation) *cobra.Command {
 			verb("engineer-sudo", "Show or limit what engineers may run through sudo on enrolled hosts"),
 			verb("builds", "Show or drop the modules 'host enroll' built in containers"),
 		),
-		withRun(verb("branch [name]", "Show or change the tacctl repo branch"), n(inv.configBranch)),
+		withRun(verb("branch [<name>]", "Show or change the tacctl repo branch"), n(inv.configBranch)),
 	)
 	// The verbs other files register replace the declared words.
 	names := make([]string, 0, len(configVerbs))
@@ -207,7 +207,7 @@ func (inv *invocation) configDump([]string) error {
 // fallback) and a newline, nothing for a list or a mapping.
 func (inv *invocation) configGet(args []string) error {
 	if arg(args, 0) == "" {
-		return inv.usageErr("Usage: tacctl config get <dotted.path> [fallback]")
+		return inv.usageErr("Usage: tacctl config get <dotted.path> [<fallback>]")
 	}
 	if text, printed := inv.app.Conf().Get(args[0], arg(args, 1)); printed {
 		inv.write(text + "\n")

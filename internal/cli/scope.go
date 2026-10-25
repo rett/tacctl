@@ -107,10 +107,10 @@ func scopeCmd(inv *invocation) *cobra.Command {
 			"RADIUS: tag an address of the scope with its vendor"), n(inv.scopeDevices)),
 		withRun(verb("aaa-order <scope> [tacacs-first|local-first]",
 			"AAA method-list order in this scope's rendered device configs"), nn("aaa-order", inv.scopeAAAOrder)),
-		withRun(verb("exec-timeout <scope> [minutes]",
+		withRun(verb("exec-timeout <scope> [<minutes>]",
 			"Per-scope idle-session timeout in rendered device configs"), nn("exec-timeout", inv.scopeExecTimeout)),
-		withRun(verb("tacacs-group <scope> [name]", "Per-scope Cisco aaa-group-server label"), nn("tacacs-group", inv.scopeTacacsGroup)),
-		withRun(verb("radius-group <scope> [name]", "Per-scope Cisco aaa-group-server label for RADIUS"), nn("radius-group", inv.scopeRadiusGroup)),
+		withRun(verb("tacacs-group <scope> [<name>]", "Per-scope Cisco aaa-group-server label"), nn("tacacs-group", inv.scopeTacacsGroup)),
+		withRun(verb("radius-group <scope> [<name>]", "Per-scope Cisco aaa-group-server label for RADIUS"), nn("radius-group", inv.scopeRadiusGroup)),
 		withRun(verb("auth-method <scope> [tacacs|radius|clear]",
 			"Protocol this scope's device configs and host enrollments use"), nn("auth-method", inv.scopeAuthMethodCmd)),
 		withRun(verb("mgmt-acl <scope> {list|add|remove|clear|cisco-name|juniper-name} [args]",
@@ -2281,7 +2281,7 @@ func (inv *invocation) scopeAAAOrder(args []string) error {
 
 func (inv *invocation) scopeExecTimeout(args []string) error {
 	return inv.scopeKnob(scopeKnob{
-		verb: "exec-timeout", usage: "Usage: tacctl scope exec-timeout <scope> [minutes]", key: "exec_timeout", def: "60",
+		verb: "exec-timeout", usage: "Usage: tacctl scope exec-timeout <scope> [<minutes>]", key: "exec_timeout", def: "60",
 		shown:    func(v string) string { return "exec-timeout: " + v + " minute(s)" },
 		help:     []string{"    0..60 minutes. 0 = never expire (both Cisco and Junos)."},
 		setUsage: "<minutes>",
@@ -2301,7 +2301,7 @@ func (inv *invocation) scopeExecTimeout(args []string) error {
 
 func (inv *invocation) scopeTacacsGroup(args []string) error {
 	return inv.scopeKnob(scopeKnob{
-		verb: "tacacs-group", usage: "Usage: tacctl scope tacacs-group <scope> [name]", key: "tacacs_group", def: "TACACS-GROUP",
+		verb: "tacacs-group", usage: "Usage: tacctl scope tacacs-group <scope> [<name>]", key: "tacacs_group", def: "TACACS-GROUP",
 		shown: func(v string) string { return "Cisco aaa-group-server name: " + v },
 		help: []string{
 			"    Rendered into every 'aaa group server tacacs+ <NAME>' and the method-list",
@@ -2323,7 +2323,7 @@ func (inv *invocation) scopeTacacsGroup(args []string) error {
 
 func (inv *invocation) scopeRadiusGroup(args []string) error {
 	return inv.scopeKnob(scopeKnob{
-		verb: "radius-group", usage: "Usage: tacctl scope radius-group <scope> [name]", key: "radius_group", def: "RADIUS-GROUP",
+		verb: "radius-group", usage: "Usage: tacctl scope radius-group <scope> [<name>]", key: "radius_group", def: "RADIUS-GROUP",
 		shown: func(v string) string { return "Cisco RADIUS aaa-group-server name: " + v },
 		help: []string{
 			"    Rendered into every 'aaa group server radius <NAME>' and the method-list",

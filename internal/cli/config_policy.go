@@ -61,8 +61,8 @@ func configMgmtACLCmd(inv *invocation) *cobra.Command {
 		{"add <entry>[,<entry>...]", "Add one or more entries: a CIDR, or a CIDR with services (10.0.0.0/8:tcp/22,udp/161,icmp)"},
 		{"remove <entry>[,<entry>...]", "Remove entries (a bare CIDR removes every entry of that CIDR)"},
 		{"clear", "Wipe all permits (confirms)"},
-		{"cisco-name [name]", "Show or set the Cisco ACL name"},
-		{"juniper-name [name]", "Show or set the Juniper filter name"},
+		{"cisco-name [<name>]", "Show or set the Cisco ACL name"},
+		{"juniper-name [<name>]", "Show or set the Juniper filter name"},
 	})
 }
 

@@ -56,7 +56,7 @@ var backupSpecs = map[string]Spec{
 // 'config diff' and 'config restore' are cmd_backup diff|restore.
 func init() {
 	registerConfigVerb("diff", backupSpecs["diff"], func(inv *invocation) *cobra.Command {
-		return withRun(verb("diff [timestamp]", "Diff store.yaml and tacctl.yaml vs the last snapshot (or named one)"),
+		return withRun(verb("diff [<timestamp>]", "Diff store.yaml and tacctl.yaml vs the last snapshot (or named one)"),
 			inv.native(withPreflight, inv.backupDiff))
 	})
 	registerConfigVerb("restore", backupSpecs["restore"], func(inv *invocation) *cobra.Command {
@@ -71,7 +71,7 @@ func backupCmd(inv *invocation) *cobra.Command {
 	}
 	c := verb("backup <subcommand>", "Backup management (list, diff, restore)",
 		withRun(verb("list", "Show snapshots, then old-style backups"), n(inv.backupList)),
-		withRun(verb("diff [timestamp]", "Diff store.yaml and tacctl.yaml against a snapshot"), n(inv.backupDiff)),
+		withRun(verb("diff [<timestamp>]", "Diff store.yaml and tacctl.yaml against a snapshot"), n(inv.backupDiff)),
 		withRun(verb("restore <timestamp> [--legacy|--keep-uids]", "Restore a snapshot (with confirmation)"), n(inv.backupRestore)),
 	)
 	// No sub-command or an unknown one: the usage, exit 1.

@@ -5,7 +5,7 @@
 The device registry gives names to the network devices that authenticate here. It lives in `/etc/tacctl/devices.yaml` and never touches `store.yaml`: a device's scope and vendor tag are looked up from the store when shown, so registering a device renders nothing and restarts nothing. Every write takes a snapshot first.
 
 ```
-device list [word] [--name <text>] [--ip <addr|cidr|text>] [--vendor <v>] [--scope <s>] [--stale]
+device list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <v>] [--scope <s>] [--stale]
             [--unconfigured] [--scan] [--probe] [--json]
 
     Registered devices, then enrolled hosts, sorted by name; `--name` (names containing the text),

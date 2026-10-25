@@ -3,9 +3,9 @@
 # Run: tests/diff/run.sh scopes
 @fixture tacquito.minimal.yaml
 
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 scope
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 scope bogus
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope list
@@ -171,6 +171,7 @@ scope aaa-order lab
 @known 0.2.1 item 58: the scope on a line of its own
 scope aaa-order lab local-first ;; scope aaa-order lab
 scope aaa-order lab sideways
+@known 0.2.18 item 7: the usage line writes the placeholder as <name> (an optional one [<name>], a choice of words without <>)
 scope exec-timeout
 scope exec-timeout nosuch
 @known 0.2.1 item 58: the scope on a line of its own
@@ -181,6 +182,7 @@ scope exec-timeout lab 15 ;; scope exec-timeout lab
 scope exec-timeout lab 0 ;; scope exec-timeout lab
 scope exec-timeout lab 90
 scope exec-timeout lab forever
+@known 0.2.18 item 7: the usage line writes the placeholder as <name> (an optional one [<name>], a choice of words without <>)
 scope tacacs-group
 scope tacacs-group nosuch
 @known 0.2.1 item 58: the scope on a line of its own
@@ -189,6 +191,7 @@ scope tacacs-group lab
 scope tacacs-group lab TACACS_PROD ;; scope tacacs-group lab
 scope tacacs-group lab 9-digit-start
 scope tacacs-group lab 'has spaces'
+@known 0.2.18 item 7: the usage line writes the placeholder as <name> (an optional one [<name>], a choice of words without <>)
 scope radius-group
 scope radius-group nosuch
 @known 0.2.1 item 58: the scope on a line of its own
@@ -206,7 +209,7 @@ scope auth-method lab bogus
 
 # per-scope management ACL
 scope mgmt-acl
-@known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables
+@known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 scope mgmt-acl lab
 scope mgmt-acl nosuch list
 @known 0.2.7 item 20: the mgmt-acl usage and its "Add with" hint name the optional :<services>
@@ -230,11 +233,11 @@ scope mgmt-acl nosuch cisco-name
 scope mgmt-acl lab ios-name
 
 # WP2.4b: more of the usage, flag and value handling
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 scope -h
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 scope --help
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 scope help
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope list extra
@@ -408,12 +411,12 @@ scope mgmt-acl lab remove 10.1.0.0/16
 scope mgmt-acl lab add 10.1.0.0/16 ;; scope mgmt-acl lab remove 10.2.0.0/16
 scope mgmt-acl lab add 10.1.0.0/16 ;; scope mgmt-acl lab add 10.1.0.9/16,10.3.0.0/16
 scope mgmt-acl lab clear
-@known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables
+@known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 config mgmt-acl add 10.0.0.0/8 ;; scope mgmt-acl lab list ;; scope mgmt-acl lab
 @known 0.2.3 item 78: scope show has a Break-glass line
 config mgmt-acl cisco-name GLOBAL-ACL ;; scope mgmt-acl lab cisco-name ;; scope show lab
 scope mgmt-acl lab cisco-name 'has space'
-@known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables
+@known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 scope mgmt-acl lab add 10.1.0.0/16 ;; scope mgmt-acl lab clear <<< yes ;; scope mgmt-acl lab
 scope mgmt-acl lab bogus extra
 
