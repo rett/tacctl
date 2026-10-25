@@ -33,7 +33,8 @@ delete system domain-search old.example.net
 `
 
 func TestSystemParseGood(t *testing.T) {
-	b, fs := LintSystem(goodSystem, LayerScope)
+	// the device-local ntp source-address makes it a device's block
+	b, fs := LintSystem(goodSystem, LayerDevice)
 	if HasErrors(fs) {
 		t.Fatalf("errors:\n%s", dump(fs))
 	}

@@ -815,8 +815,10 @@ func Check(b *SNMPBlock, layer Layer) []Finding {
 		switch {
 		case o.Leaf == trapSourceLeaf && layer == LayerDefault:
 			add(first(o.Lines), SevError, "trap-options source-address: the default block names no address (a scope or a device does)")
+		case o.Leaf == trapSourceLeaf && layer != LayerDevice && len(o.Args) == 1 && o.Args[0] != "lo0":
+			add(first(o.Lines), SevError, "%s", deviceLocalProblem(layer, "trap-options source-address", false))
 		case o.Leaf == trapSourceLeaf && layer == LayerScope:
-			add(first(o.Lines), SevNote, "trap-options source-address is the same source address for every device of the scope: a device that does not hold it cannot take it (a device's own block can state another)")
+			add(first(o.Lines), SevNote, "trap-options source-address lo0 is the loopback every device of the scope is expected to have: a device without it cannot take it (a device's own block can state another)")
 		}
 		add(first(o.Lines), SevNote, "trap-options %s becomes owned by tacctl: the plan sets that leaf", o.Leaf)
 	}

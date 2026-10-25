@@ -75,6 +75,17 @@ current behaviour; this file is where history lives.
    and is never rendered in part. No behavior changed; one test now covers
    all four block grammars.
 
+8. **A scope's block states only what is the same for every device.** The
+   statements that name the device itself (Junos `trap-options source-address`
+   and `ntp source-address`, IOS `snmp-server trap-source` and the `source
+   <interface>` of an `ntp server`) are an error in the default and in a
+   scope's block, where they were a note: the device's own block states them.
+   The loopback by its convention name (`lo0`, `Loopback0`) stays allowed in a
+   scope's block, with a note. A scope block that holds one stops rendering
+   until the line moves to the devices' blocks (`scope block <scope> <vendor>
+   check <block>` names it); `adopt` into a scope leaves such lines out and
+   lists them.
+
 ## 0.2.18 (2026-10-24)
 
 1. **`device config-syntax` is now `device ios-syntax`, and `device add

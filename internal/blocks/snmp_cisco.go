@@ -937,7 +937,11 @@ func CheckIOSSNMP(b *IOSSNMPBlock, layer Layer) []Finding {
 		case LayerDefault:
 			add(ts.Line, SevError, "the default block names no trap source (a scope or a device does)")
 		case LayerScope:
-			add(ts.Line, SevNote, "snmp-server trap-source is the same source interface for every device of the scope: a device that has no such interface cannot take it (a device's own block can state another)")
+			if why := deviceLocalProblem(layer, "snmp-server trap-source", isLoopbackName(ts.Text)); why != "" {
+				add(ts.Line, SevError, "%s", why)
+			} else {
+				add(ts.Line, SevNote, "snmp-server trap-source is the loopback every device of the scope is expected to have: a device without it cannot take it (a device's own block can state another)")
+			}
 		}
 		add(ts.Line, SevNote, "the trap source is set when the device's differs (replaced in place, nothing removed); the device's own is kept while the block states none")
 	}

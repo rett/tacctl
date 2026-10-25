@@ -803,13 +803,14 @@ func charProblem(s string) string {
 // CheckSystem is what a parsed block has to answer for. Errors: a login
 // message that is empty, that holds a tab, a control character, a character
 // that is not ASCII, a line that is the terminator, a placeholder, or more
-// than MaxMessageChars characters. Notes: the length of the rendered message
-// statement beyond MessageNoteChars, the statements that carry a secret, a
-// key a server or the trusted list names that the block does not define, and
-// the delete lines. The layer is not consulted: the system grammar has no
-// rule that differs by layer, and the parameter keeps the dispatch the same as
-// the snmp block's. Findings never hold the message or a key's value.
-func CheckSystem(b *SystemBlock, _ Layer) []Finding {
+// than MaxMessageChars characters, and (0.2.19) a statement that names the
+// device itself, ntp source-address, in the default or a scope's block: only
+// the device's own block states one (deviceLocalProblem). Notes: the length of
+// the rendered message statement beyond MessageNoteChars, the statements that
+// carry a secret, a key a server or the trusted list names that the block does
+// not define, and the delete lines. Findings never hold the message or a
+// key's value.
+func CheckSystem(b *SystemBlock, layer Layer) []Finding {
 	var out []Finding
 	add := func(line int, sev Severity, format string, a ...any) {
 		out = append(out, Finding{line, sev, fmt.Sprintf(format, a...)})
@@ -844,6 +845,11 @@ func CheckSystem(b *SystemBlock, _ Layer) []Finding {
 				add(m.Line, SevNote, "the login message is %d lines and %d characters, a statement of %d: a person pasting the one line into an interactive terminal has it truncated at 1,023 characters; plan --plain (the statements for 'load set', through a file) is the form for it",
 					m.Lines(), len(m.Body), stmt)
 			}
+		}
+	}
+	if v := b.NTPSourceAddress; v != nil {
+		if why := deviceLocalProblem(layer, "ntp source-address", false); why != "" {
+			add(v.Line, SevError, "%s", why)
 		}
 	}
 	defined := map[int]bool{}

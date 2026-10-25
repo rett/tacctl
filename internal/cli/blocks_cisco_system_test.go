@@ -391,13 +391,16 @@ func TestAdoptCiscoSystemDraftFlow(t *testing.T) {
 func TestTrapSourceThroughTheVerbs(t *testing.T) {
 	sb := newSandbox(t, true)
 	out := sb.blk("snmp-server trap-source Loopback0\n", "lab", "cisco", "check", "snmp", "-")
-	if sb.code != 0 || !strings.Contains(out, "the same source interface for every device of the scope") || !strings.Contains(out, "ok.") {
+	if sb.code != 0 || !strings.Contains(out, "loopback every device of the scope is expected to have") || !strings.Contains(out, "ok.") {
 		t.Errorf("check ios: %d\n%s", sb.code, out)
 	}
 	sb.blk("snmp-server trap-source Lo0\n", "lab", "cisco", "check", "snmp", "-")
 	sb.expect(1, "has its type abbreviated", "")
-	out = sb.blk("set snmp trap-options source-address 192.0.2.7\n", "lab", "juniper", "check", "snmp", "-")
-	if sb.code != 0 || !strings.Contains(out, "the same source address for every device of the scope") || !strings.Contains(out, "ok.") {
+	// an address is one device's own: a scope's block states lo0 only
+	sb.blk("set snmp trap-options source-address 192.0.2.7\n", "lab", "juniper", "check", "snmp", "-")
+	sb.expect(1, "names an address or an interface of one device", "")
+	out = sb.blk("set snmp trap-options source-address lo0\n", "lab", "juniper", "check", "snmp", "-")
+	if sb.code != 0 || !strings.Contains(out, "loopback every device of the scope is expected to have") || !strings.Contains(out, "ok.") {
 		t.Errorf("check junos: %d\n%s", sb.code, out)
 	}
 	sb.blk("set snmp trap-options source-address nms.example.net\n", "lab", "juniper", "check", "snmp", "-")

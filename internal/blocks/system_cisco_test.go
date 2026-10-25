@@ -669,7 +669,7 @@ func TestAdoptIOSSystem(t *testing.T) {
 		"^C",
 		"",
 	}, "\n")
-	res := AdoptIOSSystem(raw, nil, nil)
+	res := AdoptIOSSystem(raw, nil, nil, LayerDevice)
 	for _, want := range []string{
 		"banner login <<'EOF'\n" + iosBanner + "\n! looks like a comment\nEOF\n",
 		"ip domain name lab.example.net\n",
@@ -722,7 +722,7 @@ func TestAdoptIOSSystem(t *testing.T) {
 		"ip name-server vrf MGMT 192.0.2.99\nip domain name vrf OTHER other.example.net\n")
 	up, _ := ParseIOSSystem("ip domain list example.net\nntp server 192.0.2.123 version 4 key 5 prefer\nntp trusted-key 5\n" +
 		"ntp server 192.0.2.77\nip domain list vrf MGMT mgmt.example.net\n")
-	res = AdoptIOSSystem(raw, same, up)
+	res = AdoptIOSSystem(raw, same, up, LayerDevice)
 	for _, not := range []string{"ip domain name lab", "clock timezone", "ip name-server 192.0.2.53", "ip domain list example.net", "ntp server 192.0.2.123", "ntp trusted-key",
 		"ip name-server vrf MGMT 192.0.2.99", "ip domain list vrf MGMT"} {
 		if strings.Contains(res.Text, not) {
@@ -743,7 +743,7 @@ func TestAdoptIOSSystem(t *testing.T) {
 		t.Errorf("notes:\n%s", n)
 	}
 	// nothing to adopt is no text
-	if r := AdoptIOSSystem("ip domain lookup\n", nil, nil); r.Text != "" || r.Statements != 0 {
+	if r := AdoptIOSSystem("ip domain lookup\n", nil, nil, LayerDevice); r.Text != "" || r.Statements != 0 {
 		t.Errorf("%+v", r)
 	}
 }
@@ -763,8 +763,15 @@ func TestTrapSourceIOS(t *testing.T) {
 	}
 	// the note at the scope level says the interface is shared; the device
 	// level does not; the default layer refuses it
-	if !hasFinding(fs, SevNote, 1, "the same source interface for every device of the scope") {
+	if !hasFinding(fs, SevNote, 1, "loopback every device of the scope is expected to have") {
 		t.Errorf("scope note:\n%s", dump(fs))
+	}
+	// another interface is one device's own
+	if _, fs := LintIOSSNMP("snmp-server trap-source Vlan10\n", LayerScope); !hasFinding(fs, SevError, 1, "names an address or an interface of one device") {
+		t.Errorf("scope Vlan10:\n%s", dump(fs))
+	}
+	if _, fs := LintIOSSNMP("snmp-server trap-source Vlan10\n", LayerDevice); HasErrors(fs) {
+		t.Errorf("device Vlan10:\n%s", dump(fs))
 	}
 	_, fs = LintIOSSNMP("snmp-server trap-source Loopback0\n", LayerDevice)
 	if HasErrors(fs) || hasFinding(fs, SevNote, 1, "every device of the scope") {
@@ -800,15 +807,15 @@ func TestTrapSourceIOS(t *testing.T) {
 		t.Error("the trap source is no secret")
 	}
 	// adopt: a device's own, or what the block holds already
-	res := AdoptIOSSNMP("snmp-server trap-source Loopback0\n", AdoptOwn{}, nil, nil)
+	res := AdoptIOSSNMP("snmp-server trap-source Loopback0\n", AdoptOwn{}, nil, nil, LayerDevice)
 	if res.Text != "snmp-server trap-source Loopback0\n" {
 		t.Errorf("adopt: %q", res.Text)
 	}
-	res = AdoptIOSSNMP("snmp-server trap-source loopback0\n", AdoptOwn{}, scope, nil)
+	res = AdoptIOSSNMP("snmp-server trap-source loopback0\n", AdoptOwn{}, scope, nil, LayerDevice)
 	if res.Text != "" {
 		t.Errorf("adopt a repeat: %q", res.Text)
 	}
-	res = AdoptIOSSNMP("snmp-server trap-source Loopback1\n", AdoptOwn{}, scope, nil)
+	res = AdoptIOSSNMP("snmp-server trap-source Loopback1\n", AdoptOwn{}, scope, nil, LayerDevice)
 	if res.Text != "" || !strings.Contains(strings.Join(res.Notes, "\n"), "differing") && !strings.Contains(strings.Join(res.Notes, "\n"), "already with other statements") {
 		t.Errorf("adopt a conflict: %q %v", res.Text, res.Notes)
 	}
@@ -832,15 +839,19 @@ func TestInterfaceProblem(t *testing.T) {
 }
 
 func TestTrapSourceJunos(t *testing.T) {
-	b, fs := Lint("set snmp trap-options source-address 192.0.2.7\nset snmp trap-options agent-address outgoing-interface\n", LayerScope)
+	b, fs := Lint("set snmp trap-options source-address 192.0.2.7\nset snmp trap-options agent-address outgoing-interface\n", LayerDevice)
 	if HasErrors(fs) || len(b.TrapOptions) != 2 || b.TrapOptions[0].Leaf != "source-address" || b.TrapOptions[0].Args[0] != "192.0.2.7" {
 		t.Fatalf("%+v %v", b, fs)
 	}
 	if st := Statements(b); st[0] != "set snmp trap-options source-address 192.0.2.7" {
 		t.Errorf("%q", st)
 	}
-	if !hasFinding(fs, SevNote, 1, "the same source address for every device of the scope") {
-		t.Errorf("scope note:\n%s", dump(fs))
+	// an address is one device's own: a scope's block states only lo0
+	if _, fs := Lint("set snmp trap-options source-address 192.0.2.7\n", LayerScope); !hasFinding(fs, SevError, 1, "names an address or an interface of one device") {
+		t.Errorf("scope literal:\n%s", dump(fs))
+	}
+	if _, fs := Lint("set snmp trap-options source-address lo0\n", LayerScope); HasErrors(fs) || !hasFinding(fs, SevNote, 1, "loopback every device of the scope is expected to have") {
+		t.Errorf("scope lo0:\n%s", dump(fs))
 	}
 	for _, ok := range []string{"lo0", "2001:db8::7"} {
 		b, fs := Lint("set snmp trap-options source-address "+ok+"\n", LayerDevice)
@@ -852,7 +863,7 @@ func TestTrapSourceJunos(t *testing.T) {
 		t.Errorf("default layer:\n%s", dump(fs))
 	}
 	// resolution replaces the leaf whole; a delete line takes it out
-	scope, _ := Parse("set snmp trap-options source-address 192.0.2.7\n")
+	scope, _ := Parse("set snmp trap-options source-address 192.0.2.7\n") // layers are not checked by Parse
 	dev, _ := Parse("set snmp trap-options source-address lo0\n")
 	if r := Resolve(nil, scope, dev); len(r.TrapOptions) != 1 || r.TrapOptions[0].Args[0] != "lo0" {
 		t.Errorf("device over scope: %+v", r.TrapOptions)

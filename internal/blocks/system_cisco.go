@@ -987,9 +987,12 @@ func (p *iosSysParser) no(t []string) {
 // delimiter candidate. Notes: the statements that carry a secret, a key a
 // server or the trusted list names that the block does not define, keys with
 // no 'ntp authenticate', and the no lines. The layer is not consulted: the
-// system grammar has no rule that differs by layer. Findings never hold the
+// system grammar has one rule that differs by layer (0.2.19): an 'ntp server
+// ... source <interface>' in the default or a scope's block is an error unless
+// the interface is a loopback by its convention name (a note), since an
+// interface is one device's own (deviceLocalProblem). Findings never hold the
 // banner or a key's value.
-func CheckIOSSystem(b *IOSSystemBlock, _ Layer) []Finding {
+func CheckIOSSystem(b *IOSSystemBlock, layer Layer) []Finding {
 	var out []Finding
 	add := func(line int, sev Severity, format string, a ...any) {
 		out = append(out, Finding{line, sev, fmt.Sprintf(format, a...)})
@@ -1036,6 +1039,13 @@ func CheckIOSSystem(b *IOSSystemBlock, _ Layer) []Finding {
 	for _, s := range b.NTPServers {
 		if s.Key != 0 && !defined[s.Key] {
 			add(s.Line, SevNote, "ntp server uses key %d, which this block does not define: the device must already hold it", s.Key)
+		}
+		if s.Source != "" {
+			if why := deviceLocalProblem(layer, "ntp server ... source "+s.Source, isLoopbackName(s.Source)); why != "" {
+				add(s.Line, SevError, "%s", why)
+			} else if layer != LayerDevice {
+				add(s.Line, SevNote, "ntp server source %s is the loopback every device of the scope is expected to have: a device without it cannot take it (a device's own block can state another)", s.Source)
+			}
 		}
 	}
 	for _, k := range b.NTPTrustedKeys {

@@ -34,7 +34,7 @@ set system ntp trusted-key 1
 
 func parsedSystemBlock(t *testing.T, text string) *blocks.SystemBlock {
 	t.Helper()
-	b, fs := blocks.LintSystem(text, blocks.LayerScope)
+	b, fs := blocks.LintSystem(text, blocks.LayerDevice)
 	if blocks.HasErrors(fs) {
 		t.Fatalf("the block: %v", fs)
 	}

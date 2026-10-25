@@ -18,7 +18,7 @@ import (
 // systemRendering is the section a block's text renders, as Managed has it.
 func systemRendering(t *testing.T, text string) devices.Section {
 	t.Helper()
-	b, fs := blocks.LintSystem(text, blocks.LayerScope)
+	b, fs := blocks.LintSystem(text, blocks.LayerDevice)
 	if blocks.HasErrors(fs) {
 		t.Fatalf("the block: %v", fs)
 	}

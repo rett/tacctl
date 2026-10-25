@@ -173,8 +173,9 @@ var snmpLeaves = []string{"authorization", "clients", "client-list-name", "versi
 // AdoptSNMP is the draft of an snmp block from raw, the text of 'show
 // configuration snmp | display set'. same is the block in force at the level
 // the draft is for and up the block of the layer beneath it (a device's
-// draft: the scope's); either may be nil.
-func AdoptSNMP(raw string, own AdoptOwn, same, up *SNMPBlock) AdoptResult {
+// draft: the scope's); either may be nil. layer is the level of the draft: a
+// scope's draft leaves out what names the device itself.
+func AdoptSNMP(raw string, own AdoptOwn, same, up *SNMPBlock, layer Layer) AdoptResult {
 	var res AdoptResult
 	var accepted []string
 	var identity, ours, outside int
@@ -316,6 +317,8 @@ func AdoptSNMP(raw string, own AdoptOwn, same, up *SNMPBlock) AdoptResult {
 			}
 		case pick(up) != nil && sameSet(st, Statements(&SNMPBlock{TrapOptions: []*TrapOption{pick(up)}})):
 			already++
+		case o.Leaf == trapSourceLeaf && layer != LayerDevice && len(o.Args) == 1 && o.Args[0] != "lo0":
+			res.Left = append(res.Left, "trap-options source-address names an address of this device, which a scope's block does not state: it is left out (state it in the device's own block)")
 		default:
 			incl.TrapOptions = append(incl.TrapOptions, o)
 		}
@@ -357,7 +360,7 @@ func wordsOf(w []dword) []string {
 // AdoptSystem is the draft of a system block from raw, the text of 'show
 // configuration system | display set', with the same meaning of same and up
 // as AdoptSNMP.
-func AdoptSystem(raw string, same, up *SystemBlock) AdoptResult {
+func AdoptSystem(raw string, same, up *SystemBlock, layer Layer) AdoptResult {
 	var res AdoptResult
 	var accepted []string
 	var msg *LoginMessage
@@ -457,7 +460,13 @@ func AdoptSystem(raw string, same, up *SystemBlock) AdoptResult {
 	single(dev.NTPBootServer, valueOf(same, func(b *SystemBlock) *Value { return b.NTPBootServer }),
 		valueOf(up, func(b *SystemBlock) *Value { return b.NTPBootServer }), func(v *Value) { incl.NTPBootServer = v })
 	single(dev.NTPSourceAddress, valueOf(same, func(b *SystemBlock) *Value { return b.NTPSourceAddress }),
-		valueOf(up, func(b *SystemBlock) *Value { return b.NTPSourceAddress }), func(v *Value) { incl.NTPSourceAddress = v })
+		valueOf(up, func(b *SystemBlock) *Value { return b.NTPSourceAddress }), func(v *Value) {
+			if layer != LayerDevice {
+				res.Left = append(res.Left, "ntp source-address names an address of this device, which a scope's block does not state: it is left out (state it in the device's own block)")
+				return
+			}
+			incl.NTPSourceAddress = v
+		})
 	if dev.Message != nil {
 		var sm, um *Value
 		if same != nil && same.Message != nil {

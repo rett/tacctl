@@ -27,7 +27,7 @@ import (
 // the two reads); same is the block in force at the level the draft is for and
 // up the block of the layer beneath it (a device's draft: the scope's);
 // either may be nil.
-func AdoptIOSSystem(raw string, same, up *IOSSystemBlock) AdoptResult {
+func AdoptIOSSystem(raw string, same, up *IOSSystemBlock, layer Layer) AdoptResult {
 	var res AdoptResult
 	var accepted []string
 	var banner *LoginMessage
@@ -247,6 +247,10 @@ func AdoptIOSSystem(raw string, same, up *IOSSystemBlock) AdoptResult {
 			if u := find(up); u != nil && eq(u) {
 				already++
 			} else {
+				if s.Source != "" && layer != LayerDevice && !isLoopbackName(s.Source) {
+					res.Left = append(res.Left, "ntp server "+s.Host+" source "+s.Source+" names an interface of this device, which a scope's block does not state: the server is adopted without it (state it in the device's own block)")
+					s.Source = ""
+				}
 				incl.NTPServers = append(incl.NTPServers, s)
 			}
 		}
