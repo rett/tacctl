@@ -331,7 +331,7 @@ func (c *collect) admissible() error {
 	}
 	var refuse []string
 	for _, addr := range c.addrs {
-		if e, ok := res.Lookup(addr, devreg.ScopeFilter{}); ok && e.Address == addr {
+		if e, ok := res.Lookup(addr, inv.deviceFilter()); ok && e.Address == addr {
 			kind := "a device"
 			if e.Source == devreg.SourceHost {
 				kind = "an enrolled Linux host"

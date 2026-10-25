@@ -12,7 +12,10 @@ as another vendor for this run only, and saves nothing.
 
 ## What is collected
 
-Read-only commands, fixed per vendor. None prints the configuration.
+Read-only commands, fixed per vendor. None prints the configuration: the Junos
+`compare rollback 0` shows only the difference of a candidate to the committed
+configuration (empty when nobody has a change open), and the IOS lines are the
+ones that name the device.
 
 | Vendor | Commands |
 | --- | --- |

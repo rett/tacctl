@@ -40,7 +40,7 @@ current behaviour; this file is where history lives.
 
 5. **Engineers enroll, collect, onboard, sync and apply.** `device enroll`,
    `device collect`, `device onboard`, `device sync` and `device config
-   apply` (with `--login <local-user>` on it and on `pull|diff|plan`) were the
+   apply` (and `--login <local-user>` on `pull|diff|plan`) were the
    superuser's; they are the engineer tier's now, for the devices of their own
    scopes. An address that a scope of another team answers is refused by
    `enroll`, `collect` and `onboard` (`--discovered` leaves such addresses
@@ -58,7 +58,9 @@ current behaviour; this file is where history lives.
    versions of every member, the chassis hardware, the virtual chassis and
    cluster, the login's permissions, the commit history; IOS: the version,
    inventory, stack, privilege; a WTI unit: its screens without the user
-   directory) and the SNMP system group, never the configuration. The text is
+   directory) and the SNMP system group, not the configuration itself (Junos:
+   only the difference of a candidate to the committed one; IOS: only the lines
+   that name the device). The text is
    written to a directory after it is scrubbed: names, users, classes,
    addresses, serial numbers, locations, contacts and time zones become the
    standard example values, secrets are removed, and what was replaced is in

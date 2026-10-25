@@ -47,7 +47,7 @@ type Pair struct {
 const Removed = "<removed>"
 
 // kept are names that say nothing about anyone: never replaced.
-var kept = map[string]bool{"root": true, "admin": true, "operator": true, "tacctl": true, "none": true, "all": true}
+var kept = map[string]bool{"root": true, "remote": true, "admin": true, "operator": true, "tacctl": true, "none": true, "all": true}
 
 // Scrubber holds what one bundle learned.
 type Scrubber struct {
@@ -179,6 +179,16 @@ func (s *Scrubber) Learn(k Kind, real string) string {
 	return ex
 }
 
+// learnByName is Learn for a value that the shape of its label gives away,
+// replaced wherever it appears (a serial number of digits only).
+func (s *Scrubber) learnByName(k Kind, real string) {
+	ex := s.Learn(k, real)
+	if ex != real {
+		s.learned[strings.ToLower(real)] = ex
+		s.dirty = true
+	}
+}
+
 func (s *Scrubber) record(k Kind, real, ex, key string, byName bool) {
 	s.byKey[key] = ex
 	s.made[strings.ToLower(ex)] = true
@@ -190,11 +200,13 @@ func (s *Scrubber) record(k Kind, real, ex, key string, byName bool) {
 }
 
 var (
-	reSecretKeyword = regexp.MustCompile(`(?i)\b(secret|password|passphrase|community|token|key-string|key-hash|authentication-key|encrypted-password|shared-secret|auth-key|priv-key|key)\b((?:\s+(?i:word|string))?(?:\s+\d)?(?:\s*[:=]\s*|\s+))("[^"]*"|\S+)`)
+	reSecretKeyword = regexp.MustCompile(`(?i)\b(secret|password|passphrase|community|token|key-string|key-hash|authentication-key|encrypted-password|shared-secret|auth-key|priv-key|key)\b((?:[ \t]+(?:word|string))?(?:[ \t]+(?:ascii-text|hexadecimal|encrypted-password|encrypted|simple-text|plain-text|cleartext|clear|md5|sha256|sha1|sha|\d+))*(?:[ \t]*[:=][ \t]*|[ \t]+))("[^"]*"|(?:[^\s-]|-[^\s-])\S*)`)
+	// a Junos permission row ('name -- what it allows') holds words, not values
+	rePermissionRow = regexp.MustCompile(`^\s*[\w.-]+\s*-- `)
 	reHash          = regexp.MustCompile(`\$\d[a-z]?\$[^\s"';]+`)
 	reLongToken     = regexp.MustCompile(`\b(?:[0-9a-fA-F]{32,}|[A-Za-z0-9+/=_-]{40,})\b`)
-	reHistComment   = regexp.MustCompile(`(?m)^(\d+\s+\d{4}-\d{2}-\d{2} .*(?:\n    \S.*)+)`)
-	reTZTime        = regexp.MustCompile(`(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(\s+)(AKDT|AKST|HDT|HST|PDT|PST|MDT|MST|CDT|CST|EDT|EST|ADT|AST|GMT|BST|IST|CEST|CET|EEST|EET|WEST|WET|MSK|JST|KST|AEST|AEDT|ACST|ACDT|AWST|NZST|NZDT)\b`)
+	reHistComment   = regexp.MustCompile(`(?m)^(\d+\s+\d{4}-\d{2}-\d{2} .*(?:\n[ \t]+\S.*)+)`)
+	reTZTime        = regexp.MustCompile(`(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)([ \t]+)([A-Z]{3,5})\b`)
 	reTZName        = regexp.MustCompile(`\b(?:Africa|America|Asia|Atlantic|Australia|Europe|Pacific|Indian|Antarctica|Arctic)/[A-Za-z0-9_+/-]+`)
 	reClockTZ       = regexp.MustCompile(`(?m)^(\s*clock timezone )\S+(?:\s+-?\d+(?:\s+\d+)?)?`)
 
@@ -203,6 +215,9 @@ var (
 	reLearnJunosHN  = regexp.MustCompile(`(?m)^Hostname:\s*(\S+)\s*$`)
 	reLearnBy       = regexp.MustCompile(`\bby (\S+) via\b`)
 	reLearnCurrent  = regexp.MustCompile(`Current user: '([^']*)' login: '([^']*)' class '([^']*)'`)
+	reLearnUptime   = regexp.MustCompile(`(?m)^(\S+) uptime is `)
+	reLearnLastBy   = regexp.MustCompile(`(?m)(?:last configuration change|nvram config last updated).* by (\S+)[ \t]*$`)
+	reLearnSerial   = regexp.MustCompile(`(?mi)\bserial(?: number| no\.?)?[ \t]*[:=][ \t]*([A-Za-z0-9]{4,32})\b`)
 	reLearnDomain   = regexp.MustCompile(`(?mi)^\s*ip domain[- ]name\s+(?:vrf \S+\s+)?(\S+)`)
 	reLearnLocation = regexp.MustCompile(`(?mi)^\s*(?:snmp-server location|location|sysLocation(?:\.0)?\s*[:=])\s*(.+?)\s*$`)
 	reLearnContact  = regexp.MustCompile(`(?mi)^\s*(?:snmp-server contact|contact|sysContact(?:\.0)?\s*[:=])\s*(.+?)\s*$`)
@@ -213,7 +228,7 @@ var (
 	reV4      = `\b\d{1,3}(?:\.\d{1,3}){3}\b`
 	reV6Cand  = `\b[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{0,4}){2,7}(?:\.\d{1,3}){0,3}|::[0-9A-Fa-f:]*`
 	reSerial  = `\b[A-Z0-9]{8,14}\b`
-	reFQDN    = `\b(?:[A-Za-z0-9-]+\.)+(?:net|com|org|edu|gov|mil|io|local|lan|corp|home|int)\b`
+	reFQDN    = `\b(?:[A-Za-z0-9-]+\.)+(?:(?:co|com|org|net|ac|gov|edu)\.[a-z]{2}|net|com|org|edu|gov|mil|io|local|lan|corp|home|int|uk|de|fr|nl|se|no|ch|jp|cn|ca|au|ru|br|it|es|eu|us|in|pl|be|at|dk|fi|ie|nz|za|kr|sg|hk|mx)\b`
 	reExample = regexp.MustCompile(`(?i)(?:^|\.)example\.(?:net|org|com)$`)
 )
 
@@ -227,11 +242,20 @@ func (s *Scrubber) LearnFrom(text string) {
 	for _, m := range reLearnHostname.FindAllStringSubmatch(text, -1) {
 		s.Learn(Host, m[1])
 	}
+	for _, m := range reLearnUptime.FindAllStringSubmatch(text, -1) {
+		s.Learn(Host, m[1])
+	}
+	for _, m := range reLearnLastBy.FindAllStringSubmatch(strings.ToLower(text), -1) {
+		s.Learn(User, m[1])
+	}
+	for _, m := range reLearnSerial.FindAllStringSubmatch(text, -1) {
+		s.learnByName(Serial, m[1])
+	}
 	for _, m := range reLearnBy.FindAllStringSubmatch(text, -1) {
 		s.Learn(User, m[1])
 	}
 	for _, m := range reLearnCurrent.FindAllStringSubmatch(text, -1) {
-		s.Learn(Class, m[1])
+		s.Learn(User, m[1])
 		s.Learn(User, m[2])
 		s.Learn(Class, m[3])
 	}
@@ -278,7 +302,13 @@ func isAlnum(b byte) bool {
 // Apply returns text with the secrets removed and every learned or
 // recognised value replaced.
 func (s *Scrubber) Apply(text string) string {
-	text = reSecretKeyword.ReplaceAllString(text, "$1$2"+Removed)
+	lines := strings.Split(text, "\n")
+	for i, l := range lines {
+		if !rePermissionRow.MatchString(l) {
+			lines[i] = reSecretKeyword.ReplaceAllString(l, "$1$2"+Removed)
+		}
+	}
+	text = strings.Join(lines, "\n")
 	text = reHash.ReplaceAllString(text, Removed)
 	text = reLongToken.ReplaceAllString(text, Removed)
 	text = reHistComment.ReplaceAllStringFunc(text, dropComments)

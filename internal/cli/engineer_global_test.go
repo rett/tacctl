@@ -523,6 +523,13 @@ func TestEngineerEnrollRefusesAnotherScopesAddress(t *testing.T) {
 	if sb.code == 0 || !strings.Contains(out, "not one of yours") {
 		t.Errorf("exit %d, stdout %q, stderr %q", sb.code, out, sb.stderr())
 	}
+	// the address of another scope's registered device does not give its name
+	for _, line := range []string{"device enroll 10.99.0.1", "device collect 10.99.0.1 --login admin"} {
+		out := sb.asEngineer("", strings.Fields(line+" --host-key SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")...)
+		if strings.Contains(out+sb.stderr(), "prod-sw") || !strings.Contains(out+sb.stderr(), "not one of yours") {
+			t.Errorf("%s: exit %d, stdout %q, stderr %q", line, sb.code, out, sb.stderr())
+		}
+	}
 	if !maps.Equal(regs, registries(t, sb)) {
 		t.Error("a refused address changed the registries")
 	}

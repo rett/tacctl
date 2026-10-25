@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/rett/tacctl/internal/askpass"
@@ -205,22 +206,26 @@ func loginKind(l *localLogin) string {
 }
 
 // bundleDir is the directory the bundle is written to: --out, else a new one
-// in the current directory named by the time. It must not exist (or be
-// empty).
+// in the current directory named by the time, made absolute. Nothing may be at
+// that path or at its private map's (<dir>.map): the bundle is written as the
+// caller and never replaces anything.
 func (inv *invocation) bundleDir(out string) (string, error) {
 	if out == "" {
 		out = "support-bundle-" + inv.app.Knobs.Now().UTC().Format("20060102-150405")
 	}
-	out = filepath.Clean(out)
-	if fi, err := os.Stat(out); err == nil {
-		if !fi.IsDir() {
-			return "", inv.usageErr("'" + out + "' exists and is not a directory.")
-		}
-		if ents, _ := os.ReadDir(out); len(ents) > 0 {
-			return "", inv.usageErr("'" + out + "' is not empty: name a directory that does not exist yet (--out).")
+	abs, err := filepath.Abs(out)
+	if err != nil {
+		return "", inv.usageErr("Cannot resolve '" + out + "': " + err.Error())
+	}
+	if abs == "/" {
+		return "", inv.usageErr("--out names a directory to create, not '/'.")
+	}
+	for _, p := range []string{abs, abs + ".map"} {
+		if _, err := os.Lstat(p); err == nil {
+			return "", inv.usageErr("'" + p + "' exists: name a directory (--out) that does not exist yet, whose '.map' file does not exist either.")
 		}
 	}
-	return out, nil
+	return abs, nil
 }
 
 // collectBundle logs in and runs the vendor's commands. A command that fails
@@ -346,7 +351,7 @@ func (inv *invocation) writeBundle(dir string, e devreg.Entry, vendor, user, acc
 	}
 	readme := fmt.Sprintf("tacctl support bundle\n\nCollected with tacctl %s on %s by an attended login.\nVendor: %s\n\n"+
 		"Every name, user, class, address, serial number, location, contact and time zone in these files is an example value, and secrets are removed.\n"+
-		"Read the files before you share them.\n\nCommands run (read only, no configuration is collected):\n",
+		"Read the files before you share them.\n\nCommands run (read only; the configuration itself is not collected):\n",
 		inv.build.Version, inv.app.Knobs.Now().UTC().Format("2006-01-02 15:04 UTC"), vendor)
 	if vendor == "wti" {
 		readme += "  the screens of the unit's pull (without the user directory)\n"
@@ -361,33 +366,54 @@ func (inv *invocation) writeBundle(dir string, e devreg.Entry, vendor, user, acc
 			readme += "  " + sc.Apply(n) + "\n"
 		}
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return 0, inv.usageErr("Cannot create " + dir + ": " + err.Error())
-	}
-	inv.chownToCaller(dir)
-	write := func(path, text string, mode os.FileMode) error {
-		if err := os.WriteFile(path, []byte(text), mode); err != nil {
-			return inv.usageErr("Cannot write " + path + ": " + err.Error())
-		}
-		inv.chownToCaller(path)
-		return nil
-	}
-	if err := write(filepath.Join(dir, "README.txt"), readme, 0o644); err != nil {
-		return 0, err
-	}
-	for i, f := range files {
-		if err := write(filepath.Join(dir, f.name+".txt"), clean[i], 0o644); err != nil {
-			return 0, err
-		}
-	}
-	mapPath := strings.TrimRight(dir, "/") + ".map"
+	mapPath := dir + ".map"
 	var mb strings.Builder
 	mb.WriteString("# What was replaced in " + filepath.Base(dir) + ": kind, real value, example. PRIVATE: keep this file out of the bundle and out of every repository.\n")
 	for _, pr := range sc.Pairs() {
 		mb.WriteString(string(pr.Kind) + "\t" + pr.Real + "\t" + pr.Example + "\n")
 	}
-	if err := write(mapPath, mb.String(), 0o600); err != nil {
-		return 0, err
+	// Everything is created as the caller (what a lower tier names is never
+	// written with root's rights), new files only, a symbolic link never
+	// followed; a failure takes back what was made.
+	var made []string
+	err := inv.asCaller(func() error {
+		if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+			return err
+		}
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			return err
+		}
+		made = append(made, dir)
+		create := func(path, text string, mode os.FileMode) error {
+			f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, mode)
+			if err != nil {
+				return err
+			}
+			made = append(made, path)
+			_, err = f.WriteString(text)
+			if cerr := f.Close(); err == nil {
+				err = cerr
+			}
+			return err
+		}
+		if err := create(filepath.Join(dir, "README.txt"), readme, 0o644); err != nil {
+			return err
+		}
+		for i, f := range files {
+			if err := create(filepath.Join(dir, f.name+".txt"), clean[i], 0o644); err != nil {
+				return err
+			}
+		}
+		return create(mapPath, mb.String(), 0o600)
+	})
+	if err != nil {
+		_ = inv.asCaller(func() error {
+			for i := len(made) - 1; i >= 0; i-- {
+				_ = os.Remove(made[i])
+			}
+			return nil
+		})
+		return 0, inv.usageErr("Cannot write the bundle: " + err.Error() + ". Nothing was kept.")
 	}
 	inv.echo(fmt.Sprintf("Wrote %d files to %s (names, users, addresses, serial numbers and time zones are examples; secrets are removed).", len(files)+1, dir))
 	inv.echo("Read them before you share them. What was replaced is in " + mapPath + " (private: it holds the real values).")

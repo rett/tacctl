@@ -141,3 +141,78 @@ func TestMapHoldsTheRealValues(t *testing.T) {
 		}
 	}
 }
+
+// A Junos permission row is 'name -- what it allows': the words of the
+// description are not values, and the separator the parser cuts at stays.
+func TestPermissionRowsKeepTheirShape(t *testing.T) {
+	in := "    secret      -- Can view secret statements\n    secret-control-- Can modify secret statements\n    view-configuration-- Can view all configuration (not including secrets)\n"
+	if out := New().ApplyAll([]string{in})[0]; out != in {
+		t.Errorf("changed:\n%s", out)
+	}
+}
+
+func TestASecretAfterAQualifierOrOnTheNextLineIsRemoved(t *testing.T) {
+	s := New()
+	in := "key 1\n  key-string 7 0822455D0A16\nset security ike policy x pre-shared-key ascii-text \"abc123verylongsecret\"\nauthentication-key 5 md5 s3cr3tvalue\n"
+	out := s.ApplyAll([]string{in})[0]
+	for _, secret := range []string{"0822455D0A16", "abc123verylongsecret", "s3cr3tvalue"} {
+		if strings.Contains(out, secret) {
+			t.Errorf("%q survived:\n%s", secret, out)
+		}
+	}
+	for _, p := range s.Pairs() {
+		if strings.Contains(p.Real, "0822455D0A16") {
+			t.Errorf("a secret is in the map: %+v", p)
+		}
+	}
+}
+
+func TestHistoryCommentsOfAnyIndentationAreRemoved(t *testing.T) {
+	in := "0   2026-10-14 12:12:17 UTC by root via cli\n     five spaces: call bob.jones\n\ttab: Sam wrote this\n    tacctl plan sw1\n1   2026-10-14 12:00:00 UTC by root via cli\n"
+	out := New().ApplyAll([]string{in})[0]
+	for _, gone := range []string{"bob.jones", "Sam wrote"} {
+		if strings.Contains(out, gone) {
+			t.Errorf("%q survived:\n%s", gone, out)
+		}
+	}
+	if !strings.Contains(out, "tacctl plan sw1") {
+		t.Errorf("tacctl's own comment is gone:\n%s", out)
+	}
+}
+
+func TestACiscoHostnameIsLearnedFromTheUptimeLine(t *testing.T) {
+	in := "Cisco IOS Software, Version 15.0\nCORE-SW1 uptime is 3 weeks, 2 days\nLast configuration change at 12:00:00 UTC Mon Mar 1 2021 by jsmith\n"
+	s := New()
+	out := s.ApplyAll([]string{in})[0]
+	if strings.Contains(out, "CORE-SW1") || strings.Contains(out, "jsmith") {
+		t.Errorf("a name survived:\n%s", out)
+	}
+	if got := s.Leaks(out); len(got) > 0 {
+		t.Errorf("leaks %v", got)
+	}
+}
+
+func TestMoreZonesDigitSerialsAndCountryDomains(t *testing.T) {
+	in := "*12:34:56.789 SGT Thu Mar 7 2024\nSystem serial number : 1234567890\nntp server ntp1.corp.co.uk\nlog loghost.corp.de\n"
+	out := New().ApplyAll([]string{in})[0]
+	for _, gone := range []string{"SGT", "1234567890", "corp", ".uk", ".de"} {
+		if strings.Contains(out, gone) {
+			t.Errorf("%q survived:\n%s", gone, out)
+		}
+	}
+}
+
+func TestTheTemplateUserOfTheLoginLineIsAUserNotAClass(t *testing.T) {
+	s := New()
+	out := s.ApplyAll([]string{"Current user: 'remote' login: 'jsmith' class 'netops'\n"})[0]
+	if !strings.Contains(out, "'remote'") || strings.Contains(out, "jsmith") || strings.Contains(out, "netops") {
+		t.Errorf("%q", out)
+	}
+	kinds := map[string]bool{}
+	for _, p := range s.Pairs() {
+		kinds[string(p.Kind)+":"+p.Real] = true
+	}
+	if !kinds["user:jsmith"] || !kinds["class:netops"] || kinds["class:remote"] {
+		t.Errorf("%v", kinds)
+	}
+}

@@ -368,7 +368,9 @@ func (e *enroll) admissible() error {
 	for _, addr := range e.addrs {
 		r := &enrollRow{Address: addr, Pull: "not-tried", Plan: "not-tried"}
 		e.rows = append(e.rows, r)
-		if ent, ok := res.Lookup(addr, devreg.ScopeFilter{}); ok && ent.Address == addr {
+		// a registered device of another scope is not found (and then refused
+		// as an address that is not the engineer's)
+		if ent, ok := res.Lookup(addr, inv.deviceFilter()); ok && ent.Address == addr {
 			r.Result = enrollRefused
 			if ent.Source == devreg.SourceHost {
 				r.Reason = "registered already as '" + ent.Name + "' (an enrolled Linux host)"

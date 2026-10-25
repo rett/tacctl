@@ -7860,7 +7860,7 @@ One object: each device's fields, actions and facts.
 .BI "device support\-bundle " "name " "[ \-\-vendor cisco|juniper|wti ] [ \-\-login " "local\-user " "] [ \-\-out " "dir " "]"
 Logs in once to a registered device and collects what a developer needs to make tacctl read that kind of device correctly, as a directory of text files that is safe to share. The commands are fixed and read only, per vendor: Junos, the version of every member and routing engine, the chassis hardware, the virtual chassis, the cluster status, the routing engine, the uptime, the login's permissions (\c
 .B "show cli authorization"\c
-), the commit history and the difference to rollback 0; IOS, the version, the inventory, the switch stack, the modules, the clock, the privilege level and the lines of the running configuration that name the device; a WTI unit, the screens its pull reads, without the user directory. For all three, the SNMP system group is added when SNMP is set up. No configuration is collected.
+), the commit history and the difference to rollback 0; IOS, the version, the inventory, the switch stack, the modules, the clock, the privilege level and the lines of the running configuration that name the device; a WTI unit, the screens its pull reads, without the user directory. For all three, the SNMP system group is added when SNMP is set up. The configuration itself is not collected: the Junos difference to rollback 0 is the candidate's changes only, and the IOS lines are those that name the device.
 .IP
 The text is scrubbed before it is written: host names, domains, users, classes, addresses, MAC addresses, serial numbers, locations, contacts and time zones become the standard example values (the same real value always the same example), the free text of a commit comment is removed (tacctl's own comments stay), and anything that looks like a secret, a hash or a key is removed. A text that still holds a value the scrubber learned to replace is not written. What was replaced is kept in a private file beside the directory, \fIdir\fR\fB.map\fR (mode 0600, the real values), never in it; read the files before sharing them.
 .IP
@@ -7889,7 +7889,7 @@ Options:
 (support\-bundle) Read the device as this vendor for this run (the registered vendor otherwise; nothing is saved).
 .TP
 \fB\-\-login\fR \fI<local\-user>\fR
-(onboard, collect; config pull, diff \-\-pull, plan \-\-pull) The device's local account to log in as (any, a break\-glass one included; root through its csh wrapper): its password is asked once on the terminal and never kept.
+(support\-bundle) A Junos device's local account to log in as instead of you, as for a pull (the device needs a pinned host key): its password is asked once on the terminal and never kept or cached.
 .TP
 \fB\-\-out\fR \fI<dir>\fR
 (support\-bundle) The directory to write (default: support\-bundle\-<UTC time> in the current directory; it must not exist). The map of what was replaced is <dir>.map, private.

@@ -105,13 +105,20 @@ func TestSupportBundleRefusals(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "x"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// a map file (or a link) already beside the directory is never written over
+	mapTaken := filepath.Join(t.TempDir(), "taken")
+	if err := os.Symlink("/nonexistent-target", mapTaken+".map"); err != nil {
+		t.Fatal(err)
+	}
 	for _, c := range []struct {
 		args []string
 		want string
 	}{
-		{[]string{"device", "support-bundle", "lab-edge-77", "--out", dir}, "is not empty"},
+		{[]string{"device", "support-bundle", "lab-edge-77", "--out", dir}, "exists"},
 		{[]string{"device", "support-bundle", "lab-edge-77", "--vendor", "other"}, "--vendor takes cisco, juniper or wti"},
 		{[]string{"device", "support-bundle", "lab-edge-77", "--vendor", "cisco", "--login", "admin"}, "--login is for Junos devices"},
+		{[]string{"device", "support-bundle", "lab-edge-77", "--out", "."}, "exists"},
+		{[]string{"device", "support-bundle", "lab-edge-77", "--out", mapTaken}, "exists"},
 		{[]string{"device", "support-bundle", "nope"}, "not found"},
 		{[]string{"device", "support-bundle"}, "Usage: tacctl device support-bundle"},
 	} {
