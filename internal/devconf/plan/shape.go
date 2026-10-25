@@ -54,6 +54,7 @@ var shapeMasks = []MaskRule{
 	{devconf.FamilyJunos, "snmp description", "the device's description"},
 	{devconf.FamilyJunos, "system host-name", "the device's name"},
 	{devconf.FamilyJunos, "system login message", "the login message (device names and places)"},
+	{devconf.FamilyJunos, "system login announcement", "the login announcement (device names and places)"},
 	{devconf.FamilyJunos, "system tacplus-server ? source-address", "the device's own management address"},
 	{devconf.FamilyJunos, "system radius-server ? source-address", "the device's own management address"},
 	{devconf.FamilyIOS, "snmp-server location", "the device's location"},

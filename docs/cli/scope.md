@@ -191,8 +191,9 @@ scope block <name> cisco|juniper list
 scope block <name> cisco|juniper show <block> [--reveal]
 
     The block as it is in force, elided: `<secret:N>` for a community string, `<group:N>` for a trap
-    group's name, `<secret>` for an NTP key, `<message: N lines, M characters>` for the login
-    message; comments are never shown. `--reveal` prints the file as stored (every reveal is logged,
+    group's name, `<secret>` for an NTP key; the login message, the announcement and an IOS banner
+    are printed as they are (a device shows them before the login), and comments are never shown.
+    `--reveal` prints the file as stored (every reveal is logged,
     the superuser's too: `secret-read kind=block name=<scope>/<vendor>/<block>`; an engineer: their
     own scopes only)
 

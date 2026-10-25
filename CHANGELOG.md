@@ -102,6 +102,32 @@ current behaviour; this file is where history lives.
    (its heading names a block of one layer already). `--plain` stays
    statements only, to load.
 
+10. **The login message is printed by `block show`.** `scope block ... show`
+    and `device block ... show` printed the Junos login message and the IOS
+    banner as a mark of their size (`<message: 2 lines, 82 characters>`) unless
+    `--reveal` was given, as a secret is. A device shows them to anyone before
+    the login, so they are no secret: they are printed as they are, with the
+    Junos announcement, and `--reveal` is for the NTP keys and the SNMP
+    community strings. The check's diff still prints a banner's size, the
+    stored pull record still holds the message as its size and a digest (the
+    way two forms of the text compare equal), and no finding or error holds a
+    word of the text.
+
+11. **The Junos `system` block takes syslog, the login announcement, the
+    retry options and the password policy.** `set system syslog host <h>
+    <facility> <level>` (and `facility-override`, `log-prefix`,
+    `explicit-priority` of a host, `time-format`, and in a device's block
+    `source-address`), `set system login retry-options <leaf> <n>`, `set system
+    login password <leaf> <value>` and `set system login announcement
+    <<'EOF'` are statements of the block, each checked against a closed table
+    (the facilities, the levels and the ranges Junos takes); anything else under
+    `syslog` or `login` is an error. They are compared, planned (a differing
+    value is replaced in place, nothing is deleted, the device's syslog files and
+    users are kept and listed), admitted by the apply allow-list (the confirmed
+    commit types them as it types the others), adopted from a device (`adopt`)
+    and named in the read-back commands of the plan. The plan prints an
+    announcement as its text and not as the mark the comparison holds.
+
 ## 0.2.18 (2026-10-24)
 
 1. **`device config-syntax` is now `device ios-syntax`, and `device add

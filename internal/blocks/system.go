@@ -60,11 +60,16 @@ const (
 	MessageStart = "set system login message <<'EOF'"
 	// MessageStatement is the head of the rendered one-line statement.
 	MessageStatement = "set system login message "
+	// AnnouncementStart and AnnouncementStatement are the same for the text
+	// shown before the login prompt.
+	AnnouncementStart     = "set system login announcement <<'EOF'"
+	AnnouncementStatement = "set system login announcement "
 )
 
 // Kinds of a delete line of the system block (SystemNotManaged.Kind).
 const (
 	SysMessage       = "message"
+	SysAnnouncement  = "announcement"
 	SysDomainName    = "domain-name"
 	SysDomainSearch  = "domain-search"
 	SysTimeZone      = "time-zone"
@@ -164,14 +169,20 @@ type SystemBlock struct {
 	NTPSourceAddress *Value
 	NTPKeys          []NTPKey
 	NTPTrustedKeys   []KeyRef
-	NotManaged       []SystemNotManaged
+	// Announcement is 'set system login announcement', the text shown before
+	// the login prompt (0.2.19); Message is the one shown after it.
+	Announcement *LoginMessage
+	// Rules are the statements of the closed table (system_rules.go): syslog,
+	// the login retry options and the password policy.
+	Rules      []RuleStmt
+	NotManaged []SystemNotManaged
 }
 
 // Empty reports a block with no statement and no delete line.
 func (b *SystemBlock) Empty() bool {
 	return b == nil || (b.Message == nil && b.DomainName == nil && len(b.DomainSearch) == 0 && b.TimeZone == nil &&
 		len(b.NameServers) == 0 && len(b.NTPServers) == 0 && b.NTPBootServer == nil && b.NTPSourceAddress == nil &&
-		len(b.NTPKeys) == 0 && len(b.NTPTrustedKeys) == 0 && len(b.NotManaged) == 0)
+		len(b.NTPKeys) == 0 && len(b.NTPTrustedKeys) == 0 && b.Announcement == nil && len(b.Rules) == 0 && len(b.NotManaged) == 0)
 }
 
 // --- the login message on the wire ------------------------------------------
@@ -341,7 +352,10 @@ func (p *sysParser) parseLine(lines []string, i int) int {
 	switch f[0] {
 	case "set":
 		if len(f) >= 4 && f[1] == "system" && f[2] == "login" && f[3] == "message" {
-			return p.message(f[4:], lines, i)
+			return p.message(f[4:], lines, i, false)
+		}
+		if len(f) >= 4 && f[1] == "system" && f[2] == "login" && f[3] == "announcement" {
+			return p.message(f[4:], lines, i, true)
 		}
 		if strings.Contains(raw, `"`) {
 			p.errf("a quote is not accepted in a system statement (only the login message holds one, as a heredoc)")
@@ -361,15 +375,20 @@ func (p *sysParser) parseLine(lines []string, i int) int {
 }
 
 // message reads the heredoc whose opening is at lines[i]; rest are the words
-// after 'set system login message'.
-func (p *sysParser) message(rest []string, lines []string, i int) int {
+// after 'set system login message' (or 'announcement', the text before the
+// login prompt).
+func (p *sysParser) message(rest []string, lines []string, i int, announcement bool) int {
+	name, start := "login message", MessageStart
+	if announcement {
+		name, start = "login announcement", AnnouncementStart
+	}
 	switch {
 	case len(rest) == 1 && rest[0] == "<<'EOF'":
 	case len(rest) >= 1 && strings.HasPrefix(rest[0], "<<"):
 		p.errf("the heredoc marker is written <<'EOF' exactly: quoted, so that no expansion happens, with nothing after it")
 		return 1
 	default:
-		p.errf("the login message is a heredoc: %s, its lines, then %s alone on a line", MessageStart, MessageTerminator)
+		p.errf("the %s is a heredoc: %s, its lines, then %s alone on a line", name, start, MessageTerminator)
 		return 1
 	}
 	end := -1
@@ -380,13 +399,17 @@ func (p *sysParser) message(rest []string, lines []string, i int) int {
 		}
 	}
 	if end < 0 {
-		p.errf("the heredoc of the login message is never closed (%s alone on a line ends it)", MessageTerminator)
+		p.errf("the heredoc of the %s is never closed (%s alone on a line ends it)", name, MessageTerminator)
 		return len(lines) - i
 	}
-	if p.b.Message != nil {
-		p.errf("the login message is stated twice")
+	dst := &p.b.Message
+	if announcement {
+		dst = &p.b.Announcement
+	}
+	if *dst != nil {
+		p.errf("the %s is stated twice", name)
 	} else {
-		p.b.Message = &LoginMessage{Body: strings.Join(lines[i+1:end], "\n"), Line: i + 1}
+		*dst = &LoginMessage{Body: strings.Join(lines[i+1:end], "\n"), Line: i + 1}
 	}
 	return end - i + 1
 }
@@ -466,13 +489,16 @@ func (p *sysParser) set(t []string) {
 		return
 	}
 	if len(t) < 2 {
-		p.errf("'set system' needs login, domain-name, domain-search, time-zone, name-server or ntp (word 3)")
+		p.errf("'set system' needs login, syslog, domain-name, domain-search, time-zone, name-server or ntp (word 3)")
+		return
+	}
+	if p.rule(t[1:]) {
 		return
 	}
 	args := t[2:]
 	switch t[1] {
 	case "login":
-		p.errf("only 'set system login message' is accepted under login (word 4)")
+		p.errf("only 'set system login message' and 'announcement', 'retry-options ...' and 'password ...' are accepted under login (word 4)")
 	case "domain-name":
 		p.single(&p.b.DomainName, "domain-name", args, hostProblem)
 	case "domain-search":
@@ -484,7 +510,7 @@ func (p *sysParser) set(t []string) {
 	case "ntp":
 		p.ntp(args)
 	default:
-		p.errf("word 3 is not one of login, domain-name, domain-search, time-zone, name-server, ntp")
+		p.errf("word 3 is not one of login, syslog, domain-name, domain-search, time-zone, name-server, ntp")
 	}
 }
 
@@ -738,12 +764,19 @@ func (p *sysParser) del(t []string) {
 		}
 		return ""
 	}
+	if p.ruleDelete(t[1:]) {
+		return
+	}
 	var ok bool
 	switch t[1] {
 	case "login":
-		if len(t) != 3 || t[2] != "message" {
-			p.errf("only 'delete system login message' is accepted under login")
+		if len(t) != 3 || (t[2] != "message" && t[2] != "announcement") {
+			p.errf("under login only 'delete system login message', 'announcement' and the retry-options and password statements of the block are accepted")
 			return
+		}
+		if t[2] == "announcement" {
+			ok = bare(SysAnnouncement, nil)
+			break
 		}
 		ok = bare(SysMessage, nil)
 	case "domain-name":
@@ -775,7 +808,7 @@ func (p *sysParser) del(t []string) {
 			p.errf("word 4 is not one of server, boot-server, source-address, authentication-key, trusted-key")
 		}
 	default:
-		p.errf("word 3 is not one of login, domain-name, domain-search, time-zone, name-server, ntp")
+		p.errf("word 3 is not one of login, syslog, domain-name, domain-search, time-zone, name-server, ntp")
 	}
 	if ok {
 		p.b.NotManaged = append(p.b.NotManaged, nm)
@@ -815,7 +848,10 @@ func CheckSystem(b *SystemBlock, layer Layer) []Finding {
 	add := func(line int, sev Severity, format string, a ...any) {
 		out = append(out, Finding{line, sev, fmt.Sprintf(format, a...)})
 	}
-	if m := b.Message; m != nil {
+	checkText := func(name string, m *LoginMessage, stmtHead string) {
+		if m == nil {
+			return
+		}
 		lines := strings.Split(m.Body, "\n")
 		fileLine := func(idx int) int {
 			if m.Line == 0 {
@@ -825,28 +861,31 @@ func CheckSystem(b *SystemBlock, layer Layer) []Finding {
 		}
 		switch {
 		case strings.TrimSpace(m.Body) == "":
-			add(m.Line, SevError, "the login message is empty")
+			add(m.Line, SevError, "the %s is empty", name)
 		case len(lines) == 1 && strings.HasPrefix(lines[0], "<message:") && strings.HasSuffix(lines[0], ">"):
-			add(fileLine(0), SevError, "the login message is a placeholder (a block holds the text; <message: ...> is only what an engineer is shown)")
+			add(fileLine(0), SevError, "the %s is a placeholder (a block holds the text; <message: ...> is only what an engineer is shown)", name)
 		default:
 			for i, l := range lines {
 				if l == MessageTerminator {
-					add(fileLine(i), SevError, "line %d of the login message is %s alone, which would end the heredoc", i+1, MessageTerminator)
+					add(fileLine(i), SevError, "line %d of the %s is %s alone, which would end the heredoc", i+1, name, MessageTerminator)
 				}
 				if why := charProblem(l); why != "" {
-					add(fileLine(i), SevError, "line %d of the login message holds %s", i+1, why)
+					add(fileLine(i), SevError, "line %d of the %s holds %s", i+1, name, why)
 				}
 			}
-			stmt := len(MessageStatement) + len(DeviceMessage(m.Body))
+			stmt := len(stmtHead) + len(DeviceMessage(m.Body))
 			switch {
 			case len(m.Body) > MaxMessageChars:
-				add(m.Line, SevError, "the login message is %d characters: at most %d", len(m.Body), MaxMessageChars)
+				add(m.Line, SevError, "the %s is %d characters: at most %d", name, len(m.Body), MaxMessageChars)
 			case stmt > MessageNoteChars:
-				add(m.Line, SevNote, "the login message is %d lines and %d characters, a statement of %d: a person pasting the one line into an interactive terminal has it truncated at 1,023 characters; plan --plain (the statements for 'load set', through a file) is the form for it",
-					m.Lines(), len(m.Body), stmt)
+				add(m.Line, SevNote, "the %s is %d lines and %d characters, a statement of %d: a person pasting the one line into an interactive terminal has it truncated at 1,023 characters; plan --plain (the statements for 'load set', through a file) is the form for it",
+					name, m.Lines(), len(m.Body), stmt)
 			}
 		}
 	}
+	checkText("login message", b.Message, MessageStatement)
+	checkText("login announcement", b.Announcement, AnnouncementStatement)
+	checkRules(b.Rules, layer, add)
 	if v := b.NTPSourceAddress; v != nil {
 		if why := deviceLocalProblem(layer, "ntp source-address", false); why != "" {
 			add(v.Line, SevError, "%s", why)
@@ -920,6 +959,14 @@ func ResolveSystem(def, scope, dev *SystemBlock) *SystemBlock {
 			m := *l.Message
 			out.Message = &m
 		}
+		if l.Announcement != nil {
+			m := *l.Announcement
+			out.Announcement = &m
+		}
+		for _, r := range l.Rules {
+			r.Args = slices.Clone(r.Args)
+			out.Rules = upsert(out.Rules, r, func(o RuleStmt) bool { return o.Rule == r.Rule && o.Head == r.Head })
+		}
 		if l.DomainName != nil {
 			v := *l.DomainName
 			out.DomainName = &v
@@ -964,6 +1011,8 @@ func (b *SystemBlock) apply(d SystemNotManaged) {
 	switch d.Kind {
 	case SysMessage:
 		b.Message = nil
+	case SysAnnouncement:
+		b.Announcement = nil
 	case SysDomainName:
 		b.DomainName = nil
 	case SysTimeZone:
@@ -984,6 +1033,10 @@ func (b *SystemBlock) apply(d SystemNotManaged) {
 		b.NTPTrustedKeys = slices.DeleteFunc(b.NTPTrustedKeys, func(k KeyRef) bool { return num(k.Number) })
 	case SysNTP:
 		b.NTPServers, b.NTPBootServer, b.NTPSourceAddress, b.NTPKeys, b.NTPTrustedKeys = nil, nil, nil, nil, nil
+	default:
+		if strings.HasPrefix(d.Kind, "rule:") {
+			b.Rules = applyRuleDelete(b.Rules, d)
+		}
 	}
 }
 
@@ -1001,6 +1054,9 @@ func SystemStatements(b *SystemBlock) []string {
 	var out []string
 	if b.Message != nil {
 		out = append(out, MessageStatement+DeviceMessage(b.Message.Body))
+	}
+	if b.Announcement != nil {
+		out = append(out, AnnouncementStatement+DeviceMessage(b.Announcement.Body))
 	}
 	return append(out, b.statementsBesidesMessage()...)
 }
@@ -1047,7 +1103,7 @@ func (b *SystemBlock) statementsBesidesMessage() []string {
 	for _, k := range b.NTPTrustedKeys {
 		out = append(out, fmt.Sprintf("set system ntp trusted-key %d", k.Number))
 	}
-	return out
+	return append(out, ruleStatements(b.Rules)...)
 }
 
 func (d SystemNotManaged) text() string {
@@ -1055,6 +1111,8 @@ func (d SystemNotManaged) text() string {
 	switch d.Kind {
 	case SysMessage:
 		s = "delete system login message"
+	case SysAnnouncement:
+		s = "delete system login announcement"
 	case SysDomainName, SysDomainSearch, SysTimeZone, SysNameServer:
 		s = "delete system " + d.Kind
 	case SysNTP:
@@ -1062,18 +1120,43 @@ func (d SystemNotManaged) text() string {
 	case SysNTPServer:
 		s = "delete system ntp server"
 	default:
+		if strings.HasPrefix(d.Kind, "rule:") {
+			s = "delete system " + d.Value
+			break
+		}
 		s = "delete system ntp " + d.Kind
 	}
-	if d.Value != "" {
+	if d.Value != "" && !strings.HasPrefix(d.Kind, "rule:") {
 		s += " " + d.Value
 	}
 	return s
 }
 
-// ElideSystem is a copy of the block in which the login message is replaced
-// by a mark of its size (<message: N lines, M characters>) and every NTP key
-// value by <secret>, for the engineers' reads. The marks are refused when an
-// elided text is read back as a block.
+// SizeMark is a login message's size as a mark (<message: N lines, M
+// characters>), for a summary line that does not print the text.
+func SizeMark(m *LoginMessage) string { return messageMark(m) }
+
+// Shown is the block as a read prints it (`block show`): every NTP key value
+// is <secret>, and the login message and the announcement are printed as they
+// are, since a device shows them to anyone before the login. A text of it is
+// refused when read back as a block (its key marks are).
+func (b *SystemBlock) Shown() string {
+	if b == nil {
+		return ""
+	}
+	out := *b
+	out.NTPKeys = slices.Clone(b.NTPKeys)
+	for i := range out.NTPKeys {
+		out.NTPKeys[i].Value = secretMark
+	}
+	return out.String(false)
+}
+
+// ElideSystem is a copy of the block in which the login message and the
+// announcement are replaced by a mark of their size (<message: N lines, M
+// characters>) and every NTP key value by <secret>: the form of a summary (the
+// diff of a check or a set) that prints no text. The marks are refused when an
+// elided text is read back as a block. Shown is the form of a read.
 func ElideSystem(b *SystemBlock) *SystemBlock {
 	if b == nil {
 		return nil
@@ -1084,6 +1167,12 @@ func ElideSystem(b *SystemBlock) *SystemBlock {
 		m.Body = messageMark(b.Message)
 		out.Message = &m
 	}
+	if b.Announcement != nil {
+		m := *b.Announcement
+		m.Body = messageMark(b.Announcement)
+		out.Announcement = &m
+	}
+	out.Rules = slices.Clone(b.Rules)
 	out.NTPKeys = slices.Clone(b.NTPKeys)
 	for i := range out.NTPKeys {
 		out.NTPKeys[i].Value = secretMark
@@ -1118,6 +1207,11 @@ func (b *SystemBlock) String(elided bool) string {
 		lines = append(lines, strings.Split(b.Message.Body, "\n")...)
 		lines = append(lines, MessageTerminator)
 	}
+	if b.Announcement != nil {
+		lines = append(lines, AnnouncementStart)
+		lines = append(lines, strings.Split(b.Announcement.Body, "\n")...)
+		lines = append(lines, MessageTerminator)
+	}
 	lines = append(lines, b.statementsBesidesMessage()...)
 	for _, d := range b.NotManaged {
 		lines = append(lines, d.text())
@@ -1135,6 +1229,9 @@ func (b *SystemBlock) String(elided bool) string {
 type Doc interface {
 	Empty() bool
 	String(elided bool) string
+	// Shown is the block as a read (`block show`) prints it: secrets
+	// elided, the text a device shows before the login as it is.
+	Shown() string
 }
 
 // LintBlock is Lint or LintSystem by the name of the block (BlockSNMP,

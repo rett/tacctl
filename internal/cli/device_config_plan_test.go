@@ -784,3 +784,49 @@ func TestPlanNamesTheBlockOfAnIOSStatement(t *testing.T) {
 		t.Errorf("the scope's domain name is typed beside the device's:\n%s", out)
 	}
 }
+
+// The closed table of the system block (syslog, the login retry options, the
+// password policy, the announcement): a device that lacks them is planned
+// with them, the one that has another level of a host's facility is given the
+// block's, and a syslog file of its own is left alone.
+func TestPlanSyslogAndLoginPolicyFromTheBlock(t *testing.T) {
+	b := newPullBox(t)
+	b.devices([3]string{"lab-j", "192.168.1.20", "juniper"})
+	base := b.expected("lab-j") + "set system syslog file messages any notice\nset system syslog host 192.0.2.50 any error\n"
+	b.serve("juniper", base)
+	b.servePlain(base)
+	b.sb.blk("set system syslog host 192.0.2.50 any warning\nset system syslog host 192.0.2.51 authorization info\n"+
+		"set system login retry-options tries-before-disconnect 4\nset system login password minimum-length 12\n"+
+		"set system login announcement <<'EOF'\nNotice.\nEOF\n", "lab", "juniper", "set", "system", "-", "-y")
+	b.sb.expect(0, "", "")
+	if out := b.run("device", "config", "pull", "lab-j"); b.sb.code != 0 {
+		t.Fatalf("pull: %d %s %s", b.sb.code, out, b.sb.stderr())
+	}
+	out := b.run("device", "config", "plan", "lab-j")
+	if b.sb.code != 0 {
+		t.Fatalf("plan: %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+	}
+	for _, want := range []string{
+		"set system syslog host 192.0.2.50 any warning\n", "set system syslog host 192.0.2.51 authorization info\n",
+		"set system login retry-options tries-before-disconnect 4\n", "set system login password minimum-length 12\n",
+		"set system login announcement \"Notice.\"\n", "# from scope block lab juniper system\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("no %q in\n%s", want, out)
+		}
+	}
+	// the device's own syslog file is listed as left alone, and nothing of it is
+	// in the region
+	region := out[strings.Index(out, "##### PASTE FROM HERE"):strings.Index(out, "##### PASTE TO HERE")]
+	if strings.Contains(region, "syslog file") || strings.Contains(region, "delete ") {
+		t.Errorf("the region touches the device's own syslog statements:\n%s", region)
+	}
+	if !strings.Contains(out, "extra: system syslog file messages any notice") {
+		t.Errorf("the device's syslog file is not listed as left alone:\n%s", out)
+	}
+	// planned and pasted, the section reads ok on the next pull
+	plain := b.run("device", "config", "plan", "lab-j", "--plain")
+	if !strings.Contains(plain, "set system syslog host 192.0.2.50 any warning\n") {
+		t.Errorf("plain:\n%s", plain)
+	}
+}

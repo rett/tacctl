@@ -134,6 +134,42 @@ var allowedRowCases = map[string]allowedCase{
 		ok:  []string{`set system ntp server 192.0.2.123 routing-instance mgmt`},
 		bad: []string{`delete system ntp server 192.0.2.123 routing-instance`},
 	},
+	"junos.system.announcement": {
+		ok:  []string{`set system login announcement "Authorized use only."`},
+		bad: []string{`delete system login announcement`},
+	},
+	"junos.system.syslog-facility-override": {
+		ok:  []string{`set system syslog host 192.0.2.50 facility-override local7`},
+		bad: []string{`delete system syslog host 192.0.2.50 facility-override`},
+	},
+	"junos.system.syslog-log-prefix": {
+		ok:  []string{`set system syslog host 192.0.2.50 log-prefix lab`},
+		bad: []string{`delete system syslog host 192.0.2.50 log-prefix`},
+	},
+	"junos.system.syslog-explicit-priority": {
+		ok:  []string{`set system syslog host 192.0.2.50 explicit-priority`},
+		bad: []string{`delete system syslog host 192.0.2.50 explicit-priority`},
+	},
+	"junos.system.syslog-host": {
+		ok:  []string{`set system syslog host 192.0.2.50 any warning`},
+		bad: []string{`delete system syslog host 192.0.2.50 any`},
+	},
+	"junos.system.syslog-time-format": {
+		ok:  []string{`set system syslog time-format year`},
+		bad: []string{`delete system syslog time-format year`},
+	},
+	"junos.system.syslog-source-address": {
+		ok:  []string{`set system syslog source-address 192.0.2.9`},
+		bad: []string{`delete system syslog source-address`},
+	},
+	"junos.system.retry-option": {
+		ok:  []string{`set system login retry-options tries-before-disconnect 4`},
+		bad: []string{`delete system login retry-options tries-before-disconnect`},
+	},
+	"junos.system.password-policy": {
+		ok:  []string{`set system login password minimum-length 12`},
+		bad: []string{`delete system login password minimum-length`},
+	},
 	"junos.system.domain-search": {
 		ok:  []string{`set system domain-search example.net`},
 		bad: []string{`delete system domain-search example.net`},

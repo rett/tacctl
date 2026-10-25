@@ -15,6 +15,7 @@ package devices
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/rett/tacctl/internal/blocks"
@@ -308,11 +309,28 @@ func systemHierarchies(b *blocks.SystemBlock) []string {
 		}
 	}
 	add(b.Message != nil, "system login message")
+	add(b.Announcement != nil, "system login announcement")
 	add(b.DomainName != nil, "system domain-name")
 	add(len(b.DomainSearch) > 0, "system domain-search")
 	add(b.TimeZone != nil, "system time-zone")
 	add(len(b.NameServers) > 0, "system name-server")
 	add(len(b.NTPServers) > 0 || b.NTPBootServer != nil || b.NTPSourceAddress != nil || len(b.NTPKeys) > 0 || len(b.NTPTrustedKeys) > 0, "system ntp")
+	for _, r := range b.Rules {
+		switch {
+		case strings.HasPrefix(r.Rule, "syslog-"):
+			if !slices.Contains(out, "system syslog") {
+				out = append(out, "system syslog")
+			}
+		case strings.HasPrefix(r.Rule, "retry-"):
+			if !slices.Contains(out, "system login retry-options") {
+				out = append(out, "system login retry-options")
+			}
+		case strings.HasPrefix(r.Rule, "password-"):
+			if !slices.Contains(out, "system login password") {
+				out = append(out, "system login password")
+			}
+		}
+	}
 	return out
 }
 

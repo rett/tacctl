@@ -1230,6 +1230,9 @@ func ElideIOSSNMP(b *IOSSNMPBlock) *IOSSNMPBlock {
 // kept. A block read back from it is the same block, and its own String is
 // the same text. With elided, community strings are the marks of
 // ElideIOSSNMP.
+// Shown is the block as a read prints it: the community strings elided.
+func (b *IOSSNMPBlock) Shown() string { return b.String(true) }
+
 func (b *IOSSNMPBlock) String(elided bool) string {
 	if b == nil {
 		return ""

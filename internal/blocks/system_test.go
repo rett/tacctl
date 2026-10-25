@@ -82,7 +82,7 @@ func TestSystemParseRefusals(t *testing.T) {
 		{"commit", "commit\n", 1, "'set' and 'delete' statements only"},
 		{"other hierarchy", "set snmp location rack-4\n", 1, "only 'set system"},
 		{"set alone", "set\n", 1, "only 'set system"},
-		{"system alone", "set system\n", 1, "needs login, domain-name"},
+		{"system alone", "set system\n", 1, "needs login, syslog, domain-name"},
 		{"unknown leaf", "set system host-name x\n", 1, "word 3 is not one of login"},
 		{"services", "set system services ssh\n", 1, "word 3 is not one of login"},
 		{"login class", "set system login class x\n", 1, "only 'set system login message'"},
@@ -461,6 +461,11 @@ func TestSystemElide(t *testing.T) {
 		if strings.Contains(el, s) {
 			t.Errorf("elided text holds %q:\n%s", s, el)
 		}
+	}
+	// the read (`block show`) prints the message, which a device shows before
+	// the login, and elides the key
+	if sh := b.Shown(); !strings.Contains(sh, "Authorized use only") || strings.Contains(sh, sysKey) || !strings.Contains(sh, "value <secret>") {
+		t.Errorf("shown:\n%s", sh)
 	}
 	for _, w := range []string{
 		"set system login message <<'EOF'\n<message: 2 lines, 82 characters>\nEOF\n",

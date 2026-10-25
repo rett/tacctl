@@ -216,6 +216,15 @@ var keptExamples = map[string]struct {
 	// beside the block's statements is its own (the stems of the compared
 	// form: the message is its mark)
 	"junos.system.login-message":               {stmt: `set system login message "` + devconf.MessageMark("Another banner") + `"`, unmanaged: true, unrender: "set system login message"},
+	"junos.system.announcement":                {stmt: `set system login announcement "` + devconf.MessageMark("Another announcement") + `"`, unmanaged: true, unrender: "set system login announcement"},
+	"junos.system.syslog-facility-override":    {stmt: "set system syslog host 198.51.100.7 facility-override local7", unmanaged: true},
+	"junos.system.syslog-log-prefix":           {stmt: "set system syslog host 198.51.100.7 log-prefix other", unmanaged: true},
+	"junos.system.syslog-explicit-priority":    {stmt: "set system syslog host 198.51.100.7 explicit-priority", unmanaged: true},
+	"junos.system.syslog-host":                 {stmt: "set system syslog host 198.51.100.7 any warning", unmanaged: true},
+	"junos.system.syslog-time-format":          {stmt: "set system syslog time-format year", unmanaged: true},
+	"junos.system.syslog-source-address":       {stmt: "set system syslog source-address 198.51.100.9", unmanaged: true, unrender: "set system syslog source-address"},
+	"junos.system.retry-option":                {stmt: "set system login retry-options tries-before-disconnect 3", unmanaged: true},
+	"junos.system.password-policy":             {stmt: "set system login password minimum-length 8", unmanaged: true},
 	"junos.system.domain-name":                 {stmt: "set system domain-name other.example.net", unmanaged: true, unrender: "set system domain-name"},
 	"junos.system.time-zone":                   {stmt: "set system time-zone America/New_York", unmanaged: true, unrender: "set system time-zone"},
 	"junos.system.ntp-boot-server":             {stmt: "set system ntp boot-server 192.0.2.99", unmanaged: true, unrender: "set system ntp boot-server"},

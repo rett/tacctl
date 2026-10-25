@@ -37,6 +37,10 @@ var reMessageMark = regexp.MustCompile(`^<message: [0-9]+ lines, [0-9]+ characte
 
 const messageStatement = "system login message "
 
+// announcementStatement is the text shown before the login prompt (0.2.19),
+// compared as the message is: by its mark.
+const announcementStatement = "system login announcement "
+
 // MessageMark is the compared form of a login message body: its size and a
 // digest, never a word of the text.
 func MessageMark(body string) string {
@@ -51,7 +55,12 @@ func isMessageMark(w string) bool { return reMessageMark.MatchString(w) }
 // after its 'set' or 'deactivate': value is the device's quoted, \n-escaped
 // string, a stored mark (a stem read again) or a bare word.
 func messageStmt(head, rest string) (stmt, bool) {
+	word := "message"
 	value, ok := strings.CutPrefix(rest, messageStatement)
+	if !ok {
+		value, ok = strings.CutPrefix(rest, announcementStatement)
+		word = "announcement"
+	}
 	if !ok {
 		return stmt{}, false
 	}
@@ -69,10 +78,10 @@ func messageStmt(head, rest string) (stmt, bool) {
 		}
 		mark = MessageMark(body)
 	}
-	ts := []token{{s: "system"}, {s: "login"}, {s: "message"}, {s: mark, quoted: true}}
+	ts := []token{{s: "system"}, {s: "login"}, {s: word}, {s: mark, quoted: true}}
 	x := stmt{text: head + " " + renderTokens(ts)}
 	x.stem = x.text
-	x.path = []string{"system", "login", "message", mark}
+	x.path = []string{"system", "login", word, mark}
 	return x, true
 }
 
@@ -108,6 +117,32 @@ func systemParts(s []token) ([]sysPart, bool) {
 			return nil, false
 		}
 		return one(s)
+	case "syslog":
+		// 'syslog host <h> <facility> <level>' and the options of a host: the
+		// host is a name, so lower case; 'time-format' and 'source-address'
+		// as they are. The rest of syslog (files, console, users) is the
+		// device's own and goes the generic way.
+		switch s[2].s {
+		case "host":
+			if len(s) < 5 {
+				return nil, false
+			}
+			out := append([]token(nil), s...)
+			out[3] = lowered(s[3])
+			return one(out)
+		case "time-format", "source-address":
+			if len(s) != 4 {
+				return nil, false
+			}
+			return one(s)
+		}
+		return nil, false
+	case "login":
+		// the retry options and the password policy: a leaf and its value
+		if len(s) == 5 && (s[2].s == "retry-options" || s[2].s == "password") {
+			return one(s)
+		}
+		return nil, false
 	case "ntp":
 	default:
 		return nil, false

@@ -500,6 +500,12 @@ func TestIOSSystemElide(t *testing.T) {
 			t.Errorf("the elided text lacks %q:\n%s", want, el)
 		}
 	}
+	// the read (`block show`) prints the banner, which a device shows before the
+	// login, and elides the key
+	sh := b.Shown()
+	if !strings.Contains(sh, "banner login <<'EOF'\n"+iosBanner+"\nsecond line\nEOF\n") || strings.Contains(sh, iosKey) || !strings.Contains(sh, "ntp authentication-key 5 md5 <secret>") {
+		t.Errorf("shown:\n%s", sh)
+	}
 	// an elided text is refused when it is read back
 	if _, fs := ParseIOSSystem(el); !HasErrors(fs) {
 		t.Errorf("the elided text parses:\n%s", el)

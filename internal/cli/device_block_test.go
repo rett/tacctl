@@ -157,7 +157,7 @@ func TestDeviceBlockEffective(t *testing.T) {
 	sb.putBlock("lab", scopeLevelSNMP)
 	// nothing of the device's: the scope's
 	out := sb.devb("", "sw-j", "show", "snmp", "--effective")
-	if sb.code != 0 || strings.Count(out, "# from scope 'lab'") != 3 || strings.Contains(out, "# from device") {
+	if sb.code != 0 || strings.Count(out, "# from scope block lab juniper snmp") != 3 || strings.Contains(out, "# from device") {
 		t.Errorf("scope only: %d\n%s", sb.code, out)
 	}
 	noneOf(t, "effective", out, "nms-ro", "poller-two", "nms-traps")
@@ -168,16 +168,16 @@ func TestDeviceBlockEffective(t *testing.T) {
 	sb.devb("", "sw-j", "set", "snmp", "--file", f, "-y")
 	sb.expect(0, "is set", "")
 	out = sb.devb("", "sw-j", "show", "snmp", "--effective")
-	want := "# from device 'sw-j'\nset snmp community <secret:1> authorization read-write\nset snmp community <secret:1> clients 198.51.100.0/24\n" +
-		"# from scope 'lab'\nset snmp community <secret:2> authorization read-only\nset snmp community <secret:2> clients 192.0.2.60/32\n" +
-		"# from device 'sw-j'\nset snmp community <secret:3> authorization read-only\nset snmp community <secret:3> clients 203.0.113.9/32\n" +
-		"# from scope 'lab'\nset snmp trap-group <group:1> targets 198.51.100.7\n"
+	want := "# from device block sw-j snmp\nset snmp community <secret:1> authorization read-write\nset snmp community <secret:1> clients 198.51.100.0/24\n" +
+		"# from scope block lab juniper snmp\nset snmp community <secret:2> authorization read-only\nset snmp community <secret:2> clients 192.0.2.60/32\n" +
+		"# from device block sw-j snmp\nset snmp community <secret:3> authorization read-only\nset snmp community <secret:3> clients 203.0.113.9/32\n" +
+		"# from scope block lab juniper snmp\nset snmp trap-group <group:1> targets 198.51.100.7\n"
 	if sb.code != 0 || !strings.Contains(out, want) {
 		t.Errorf("effective:\n%s", out)
 	}
 	noneOf(t, "effective", out, "nms-ro", "poller-two", "dev-extra", "nms-traps", "192.0.2.50")
 	out = sb.devb("", "sw-j", "show", "snmp", "--effective", "--reveal")
-	for _, w := range []string{"# from device 'sw-j'\nset snmp community nms-ro authorization read-write\n", "# from scope 'lab'\nset snmp community poller-two authorization read-only\n"} {
+	for _, w := range []string{"# from device block sw-j snmp\nset snmp community nms-ro authorization read-write\n", "# from scope block lab juniper snmp\nset snmp community poller-two authorization read-only\n"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("effective --reveal lacks %q:\n%s", w, out)
 		}
@@ -521,20 +521,20 @@ func TestDeviceBlockEffectiveSystem(t *testing.T) {
 	sb.putBlockSet(sb.overrides(), "lab", map[string]string{"system": verbSystemFile})
 	sb.putDeviceBlock("sw-j", "system", "set system domain-name sw-j.lab.example.net\nset system name-server 192.0.2.54\ndelete system ntp\n")
 	out := sb.devb("", "sw-j", "show", "system", "--effective")
-	want := "# from scope 'lab'\nset system login message <<'EOF'\n<message: 2 lines, 63 characters>\nEOF\n" +
-		"# from device 'sw-j'\nset system domain-name sw-j.lab.example.net\n" +
-		"# from scope 'lab'\nset system name-server 192.0.2.53\n" +
-		"# from device 'sw-j'\nset system name-server 192.0.2.54\n"
+	want := "# from scope block lab juniper system\nset system login message <<'EOF'\nAuthorized use of jsw1.lab.example.net only.\n  *** keep out ***\nEOF\n" +
+		"# from device block sw-j system\nset system domain-name sw-j.lab.example.net\n" +
+		"# from scope block lab juniper system\nset system name-server 192.0.2.53\n" +
+		"# from device block sw-j system\nset system name-server 192.0.2.54\n"
 	if sb.code != 0 || !strings.Contains(out, want) {
 		t.Errorf("effective:\n%s", out)
 	}
 	// 'delete system ntp' of the device takes the scope's ntp statements out
-	noneOf(t, "effective", out, "ntp server", "authentication-key", "Authorized", "keep out")
-	if !strings.Contains(out, "# from device 'sw-j'\ndelete system ntp\n") {
+	noneOf(t, "effective", out, "ntp server", "authentication-key")
+	if !strings.Contains(out, "# from device block sw-j system\ndelete system ntp\n") {
 		t.Errorf("the delete line is not shown with its layer:\n%s", out)
 	}
 	out = sb.devb("", "sw-j", "show", "system", "--effective", "--reveal")
-	if !strings.Contains(out, "# from scope 'lab'\nset system login message <<'EOF'\nAuthorized use of jsw1.lab.example.net only.\n  *** keep out ***\nEOF\n") {
+	if !strings.Contains(out, "# from scope block lab juniper system\nset system login message <<'EOF'\nAuthorized use of jsw1.lab.example.net only.\n  *** keep out ***\nEOF\n") {
 		t.Errorf("effective --reveal:\n%s", out)
 	}
 }

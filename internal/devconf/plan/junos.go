@@ -700,9 +700,10 @@ func missingOptionOf(ls []jl, server []string) bool {
 }
 
 // isMessagePath reports the path of the login message statement ('system
-// login message <mark>').
+// login message <mark>') or of the announcement ('system login announcement
+// <mark>'), the two texts a device shows around the login.
 func isMessagePath(path []string) bool {
-	return len(path) == 4 && path[0] == "system" && path[1] == "login" && path[2] == "message"
+	return len(path) == 4 && path[0] == "system" && path[1] == "login" && (path[2] == "message" || path[2] == "announcement")
 }
 
 // longMessageWarning is the warning of a login message statement that a

@@ -1056,6 +1056,10 @@ func Elide(b *SNMPBlock) *SNMPBlock {
 // block read back from it is the same block, and its own String is the same
 // text. With elided, community strings and trap group names are the marks
 // of Elide.
+// Shown is the block as a read prints it: the community strings and the trap
+// group names (the strings traps are sent with) elided.
+func (b *SNMPBlock) Shown() string { return b.String(true) }
+
 func (b *SNMPBlock) String(elided bool) string {
 	if b == nil {
 		return ""

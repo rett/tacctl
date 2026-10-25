@@ -56,7 +56,9 @@ func dropPrefix(prefixes ...string) func(c *JunosConfig) {
 // systemSectionOf is the system section a block's text renders.
 func systemSectionOf(t testing.TB, text string) devices.Section {
 	t.Helper()
-	b, fs := blocks.LintSystem(text, blocks.LayerScope)
+	// linted as a device's block: the fixture states device-local values (a
+	// source address) that a scope's block may not
+	b, fs := blocks.LintSystem(text, blocks.LayerDevice)
 	if blocks.HasErrors(fs) {
 		t.Fatalf("the block: %v", fs)
 	}

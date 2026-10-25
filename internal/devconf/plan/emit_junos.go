@@ -149,8 +149,8 @@ func junosVerifyHierarchy(text string) string {
 	switch {
 	case len(t) == 0:
 		return ""
-	case t[0] == "system" && len(t) >= 3 && t[1] == "login" && t[2] == "message":
-		return "system login message"
+	case t[0] == "system" && len(t) >= 3 && t[1] == "login" && (t[2] == "message" || t[2] == "announcement"):
+		return "system login " + t[2]
 	case t[0] == "system" && len(t) >= 2:
 		return "system " + t[1]
 	case t[0] == "snmp":

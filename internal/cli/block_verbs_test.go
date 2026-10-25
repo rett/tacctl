@@ -219,13 +219,13 @@ func TestScopeBlockSystemIsElidedAndRevealed(t *testing.T) {
 		t.Errorf("set:\n%s", out)
 	}
 	out = sb.blk("", "lab", "juniper", "show", "system")
-	for _, want := range []string{"set system login message <<'EOF'\n<message: 2 lines, ", " characters>\nEOF\n",
+	for _, want := range []string{"set system login message <<'EOF'\nAuthorized use of jsw1.lab.example.net only.\n  *** keep out ***\nEOF\n",
 		"set system domain-name lab.example.net", "set system ntp authentication-key 1 type md5 value <secret>"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("show lacks %q:\n%s", want, out)
 		}
 	}
-	noneOf(t, "show", out, "Authorized", "keep out", "ntp-key-0123456789", "jsw1.lab")
+	noneOf(t, "show", out, "ntp-key-0123456789")
 	out = sb.blk("", "lab", "juniper", "show", "system", "--reveal")
 	if !strings.Contains(out, verbSystemFile) {
 		t.Errorf("show --reveal:\n%s", out)

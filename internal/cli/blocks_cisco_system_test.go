@@ -47,9 +47,10 @@ func TestScopeBlockCiscoSystemVerbs(t *testing.T) {
 		t.Errorf("block-set not logged once: %q", sb.runner.Argvs())
 	}
 
-	// show: the banner and the key are marks, comments never
+	// show: the banner is printed (a device shows it before the login), the
+	// key is a mark, comments never
 	out = sb.blk("", "lab", "cisco", "show", "system")
-	for _, want := range []string{"banner login <<'EOF'\n<message: 3 lines, 49 characters>\nEOF\n", "ip domain name lab.example.net\n",
+	for _, want := range []string{"banner login <<'EOF'\n" + banner + "\n\n! Activity is logged.\nEOF\n", "ip domain name lab.example.net\n",
 		"clock timezone CET 1\n", "ip name-server 192.0.2.53\nip name-server 192.0.2.54\n", "ntp authentication-key 5 md5 <secret>\n",
 		"ntp trusted-key 5\n", "ntp server 192.0.2.123 version"} {
 		if want == "ntp server 192.0.2.123 version" {
@@ -59,7 +60,7 @@ func TestScopeBlockCiscoSystemVerbs(t *testing.T) {
 			t.Errorf("show lacks %q (exit %d):\n%s", want, sb.code, out)
 		}
 	}
-	noneOf(t, "show", out, banner, key, "Activity is logged", "the lab's system")
+	noneOf(t, "show", out, key, "the lab's system")
 	if sb.logged("secret-read") != 0 {
 		t.Errorf("an elided read was logged")
 	}
@@ -171,7 +172,7 @@ func TestDeviceBlockCiscoSystem(t *testing.T) {
 	sb.dev(dev, "block", "rt1", "set", "system", "-", "-y")
 	sb.expect(0, "The system block of device 'rt1' is set", "")
 	out = plain(sb.cfgRun("", []string{"device", "block", "rt1", "show", "system", "--effective", "--reveal"}, route))
-	for _, want := range []string{"# from scope 'lab'", "# from device 'rt1'", "The device's own.", "ntp server 192.0.2.77", "ip domain name lab.example.net"} {
+	for _, want := range []string{"# from scope block lab cisco system", "# from device block rt1 system", "The device's own.", "ntp server 192.0.2.77", "ip domain name lab.example.net"} {
 		if sb.code != 0 || !strings.Contains(out, want) {
 			t.Errorf("effective lacks %q (exit %d):\n%s", want, sb.code, out)
 		}

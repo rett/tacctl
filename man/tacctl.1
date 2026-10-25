@@ -6157,13 +6157,15 @@ The Junos
 block is the SNMP that the scope's settings do not hold: communities, their
 client lists and trap groups. The Junos
 .B system
-block is the login message, domain name and search list, time zone, name
-servers and NTP. A Junos block is
+block is the login message and announcement, domain name and search list, time
+zone, name servers, NTP, syslog hosts, the login retry options and the password
+policy. A Junos block is
 .B set
 statements and nothing else, one per line, with
 .B #
 comment lines and blank lines; the login message is the one statement that is
-a heredoc,
+a heredoc (the
+announcement, shown before the login, is the other),
 .BR "set system login message <<'EOF'" ,
 its lines, and
 .BR EOF .
@@ -6175,9 +6177,47 @@ that device. A Junos block may also state
 .B "set snmp trap\-options source\-address <address>|lo0"
 (one; an IPv4 or IPv6 address or the keyword
 .BR lo0 ):
-a value of the device's kind, set over the device's own value and never
-deleted, which the check notes as the same address for every device of the
-scope.
+set over the device's own value and never deleted. An address is one device's
+own, so only a device's block states one; a scope's block states
+.B lo0
+only (with a note that a device without it cannot take it), and the check
+refuses an address there. The same rule holds for
+.B "set system ntp source\-address"
+and
+.BR "set system syslog source\-address" ,
+and for the IOS
+.B "snmp\-server trap\-source"
+(a scope's block states a loopback by its name only) and the
+.B source
+of an
+.BR "ntp server" .
+.PP
+The Junos system block also takes the statements of a closed table, each
+checked: syslog
+.B "set system syslog host <address|name> <facility> <level>"
+(the facility and level Junos names),
+.BR "... host <h> facility\-override <facility>" ,
+.BR "... host <h> log\-prefix <word>" ,
+.BR "... host <h> explicit\-priority" ,
+.BR "set system syslog time\-format year|millisecond"
+and, in a device's block only,
+.BR "set system syslog source\-address <address>" ;
+the login retry options
+.B "set system login retry\-options"
+.BR tries\-before\-disconnect " (1 to 10), " backoff\-threshold " (1 to 3), " backoff\-factor " (5 to 10), "
+.BR minimum\-time " (20 to 60), " maximum\-time " (20 to 300) and " lockout\-period " (1 to 43200 minutes);"
+and the password policy
+.B "set system login password"
+.BR minimum\-length " (6 to 20), " minimum\-changes " (1 to 128), " change\-type " (character\-sets or set\-transitions) and " format " (md5, sha1, sha256 or sha512)."
+A statement is identified by its words through the host and facility (or the
+leaf), a more specific layer's replaces the less specific one's, and a
+.B delete
+line names the same words. Anything else under
+.B syslog
+or
+.B login
+(a file, the console, users, classes) is refused: the block only states what is
+the same for every device of the scope.
 .PP
 The IOS
 .B snmp
@@ -6330,11 +6370,21 @@ shows marks instead:
 .B <secret:N>
 for a community string,
 .B <group:N>
-for a trap group's name,
+for a trap group's name and
 .B <secret>
-for an NTP key,
-.B "<message: N lines, M characters>"
-for the login message or banner, and a comment line is never shown.
+for an NTP key, and a comment line is never shown. The login message, the
+announcement and an IOS banner are no secrets (a device shows them before the
+login): they are printed as they are, by
+.B show
+and
+.BR "show \-\-effective" ;
+the diff of
+.B check
+and
+.B set
+prints their size,
+.BR "<message: N lines, M characters>" ,
+instead.
 .PP
 A device's own block is laid over its scope's per object: a community (by its
 string), a trap group (by its name) or a trap\-options leaf of the device
@@ -8402,8 +8452,9 @@ that is neither a Junos nor an IOS device have no blocks; a device that has left
 every scope can still have its blocks removed.
 .B "show \-\-effective"
 prints the block as it is rendered for the device, the scope's with the
-device's laid over it, with a comment for each object saying which layer it is
-from (\fB\-\-reveal\fR prints the strings; every reveal is logged as
+device's laid over it, with a comment for each object saying which block it is
+from, in the words of the verb that edits it (\fBscope block\fR \fIscope vendor block\fR or
+\fBdevice block\fR \fIname block\fR; \fB\-\-reveal\fR prints the strings; every reveal is logged as
 .BR "secret\-read kind=block name=_devices/" \fIname\fR/\fIvendor\fR/\fIblock\fR ).
 A rename of the device moves its blocks and its removal deletes them.
 .B edit

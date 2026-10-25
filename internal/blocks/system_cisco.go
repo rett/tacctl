@@ -1328,8 +1328,9 @@ func (d SystemNotManaged) iosText() string {
 
 // ElideIOSSystem is a copy of the block in which the banner is replaced by a
 // mark of its size (<message: N lines, M characters>) and every NTP key
-// string by <secret>, for the engineers' reads. The marks are refused when an
-// elided text is read back as a block.
+// string by <secret>: the form of a summary that prints no text. The marks are
+// refused when an elided text is read back as a block. Shown is the form of a
+// read.
 func ElideIOSSystem(b *IOSSystemBlock) *IOSSystemBlock {
 	if b == nil {
 		return nil
@@ -1397,4 +1398,19 @@ func IOSSystemNotManagedLines(b *IOSSystemBlock) []string {
 		out = append(out, d.iosText())
 	}
 	return out
+}
+
+// Shown is the block as a read prints it (`block show`): every NTP key string
+// is <secret>, and the banner is printed as it is, since a device shows it to
+// anyone before the login.
+func (b *IOSSystemBlock) Shown() string {
+	if b == nil {
+		return ""
+	}
+	out := *b
+	out.NTPKeys = slices.Clone(b.NTPKeys)
+	for i := range out.NTPKeys {
+		out.NTPKeys[i].Value = secretMark
+	}
+	return out.String(false)
 }

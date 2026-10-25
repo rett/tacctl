@@ -417,7 +417,7 @@ func (c *junosCtx) section(x stmt) string {
 			if len(p) >= 3 && p[2] == "netconf" {
 				return SectionNetconf
 			}
-		case "domain-name", "domain-search", "time-zone", "name-server", "ntp":
+		case "domain-name", "domain-search", "time-zone", "name-server", "ntp", "syslog":
 			if c.system {
 				return SectionSystem
 			}
@@ -445,7 +445,7 @@ func (c *junosCtx) login(p []string) string {
 		return ""
 	}
 	switch p[2] {
-	case "message":
+	case "message", "announcement", "retry-options", "password":
 		if c.system {
 			return SectionSystem
 		}

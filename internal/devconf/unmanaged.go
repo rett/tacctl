@@ -124,6 +124,21 @@ var keptShapes = map[string][]keptShape{
 		// where the rendering says nothing of the same object. The options of
 		// an NTP server come before the server itself.
 		{Row: "junos.system.login-message", Pattern: "system login message", keep: notRendered},
+		{Row: "junos.system.announcement", Pattern: "system login announcement", keep: notRendered},
+		// 0.2.19: syslog, the login retry options and the password policy. The
+		// options of a host come before the host's facility lines, which
+		// would match them; the device's other syslog statements (files,
+		// console, users) are its own, and so are the other leaves of the
+		// retry options and the password policy.
+		{Row: "junos.system.syslog-facility-override", Pattern: "system syslog host $ facility-override", keep: notRendered},
+		{Row: "junos.system.syslog-log-prefix", Pattern: "system syslog host $ log-prefix", keep: notRendered},
+		{Row: "junos.system.syslog-explicit-priority", Pattern: "system syslog host $ explicit-priority", keep: notRendered},
+		{Row: "junos.system.syslog-host", Pattern: "system syslog host $ $", keep: notRendered},
+		{Row: "junos.system.syslog-time-format", Pattern: "system syslog time-format $", keep: notRendered},
+		{Row: "junos.system.syslog-source-address", Pattern: "system syslog source-address", keep: notRendered},
+		{Pattern: "system syslog", keep: always},
+		{Row: "junos.system.retry-option", Pattern: "system login retry-options $", keep: notRendered},
+		{Row: "junos.system.password-policy", Pattern: "system login password $", keep: notRendered},
 		{Row: "junos.system.domain-name", Pattern: "system domain-name", keep: notRendered},
 		{Row: "junos.system.time-zone", Pattern: "system time-zone", keep: notRendered},
 		{Row: "junos.system.domain-search", Pattern: "system domain-search $", keep: notRendered},
