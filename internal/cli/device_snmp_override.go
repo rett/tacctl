@@ -36,9 +36,6 @@ import (
 	"github.com/rett/tacctl/internal/ui"
 )
 
-// deviceSNMPUse is the row of 'device snmp' in the usage of 'device'.
-const deviceSNMPUse = "snmp <name> [show [--reveal]|version v2c|v3|port <n>|timeout <s>|clients list|add|remove <cidr>|community|v3-user <user>|clear]"
-
 // deviceSNMPSpecs are the arguments of each verb after the device's name.
 var deviceSNMPSpecs = map[string]Spec{
 	"show":      {MaxArgs: 0, Flags: []Flag{{Names: []string{"--reveal"}}}},
@@ -431,9 +428,9 @@ func (inv *invocation) deviceSNMPUsageErr(name, sub string, err error) error {
 // deviceSNMP dispatches 'device snmp <name> [<verb>] [args]': no verb is
 // 'show'.
 func (inv *invocation) deviceSNMP(args []string) error {
-	const usage = "Usage: tacctl device " + deviceSNMPUse
+	usage := deviceUsageLines("snmp")
 	if len(args) == 0 {
-		return inv.usageErr(usage)
+		return inv.usageErr(usage...)
 	}
 	key, sub := args[0], "show"
 	rest := args[1:]
@@ -442,7 +439,7 @@ func (inv *invocation) deviceSNMP(args []string) error {
 	}
 	spec, ok := deviceSNMPSpecs[sub]
 	if !ok {
-		return inv.usageErr("Unknown subcommand: '"+sub+"'", usage)
+		return inv.usageErr(withUsage("Unknown subcommand: '"+sub+"'", usage)...)
 	}
 	p, err := Parse(spec, rest)
 	if err != nil {

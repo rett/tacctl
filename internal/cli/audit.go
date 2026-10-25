@@ -64,6 +64,10 @@ type auditEntry struct {
 	// Secret names the words after the command's own that are a secret on the
 	// command line, by index into them (redacted in args=).
 	Secret func(rest []string) []int
+	// ReadWhen: the command lines it holds for (the words after the
+	// command's own) are reads ('device notice list', D274), the others are
+	// Class.
+	ReadWhen func(rest []string) bool
 	// NotStrict: audit.strict never refuses the command. It is 'config
 	// audit-strict', the way out of a strict setting while logger is down.
 	NotStrict bool
@@ -74,6 +78,12 @@ func action() auditEntry { return auditEntry{Class: classAction} }
 func mixed() auditEntry  { return auditEntry{Class: classMixed} }
 
 func (e auditEntry) weighty() auditEntry { e.Notice = true; return e }
+
+// readWhen is e with the command lines that satisfy pred classified read.
+func (e auditEntry) readWhen(pred func(rest []string) bool) auditEntry {
+	e.ReadWhen = pred
+	return e
+}
 
 // when is e with its notice weight limited to the command lines that
 // satisfy pred; note says in words which.
@@ -289,16 +299,15 @@ var auditTable = map[string]auditEntry{
 
 	"device list":          read(),
 	"device show":          read(),
-	"device notices":       read(),
 	"device export":        read(),
-	"device ssh-config":    read(),
+	"device client-config": read(),
 	"device scan":          read(),
 	"device discover":      read(),
 	"device check":         read(),
 	"device add":           action(),
 	"device remove":        action(),
 	"device rename":        action(),
-	"device notice":        action(),
+	"device notice":        action().readWhen(noticeListForm),
 	"device ssh":           action(),
 	"device onboard":       mixed(),
 	"device collect":       mixed(),
@@ -311,7 +320,7 @@ var auditTable = map[string]auditEntry{
 	"device description":   mixed(),
 	"device location":      mixed(),
 	"device legacy-ssh":    mixed(),
-	"device config-syntax": mixed(),
+	"device ios-syntax":    mixed(),
 	"device netconf":       mixed(),
 	"device stale-days":    mixed(),
 	"device import":        mixed(),
@@ -512,6 +521,9 @@ func (inv *invocation) auditBegin() {
 	ar.words = strings.Fields(ar.key)
 	if n := len(ar.words); n <= len(a.Args) {
 		ar.rest = a.Args[n:]
+	}
+	if ar.known && entry.ReadWhen != nil && entry.ReadWhen(ar.rest) {
+		ar.class = classRead
 	}
 	tty, marker := inv.hooks.line(), ""
 	if m := a.Env.Get(console.EnvMarker); m != "" {

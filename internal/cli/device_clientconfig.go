@@ -1,6 +1,6 @@
 package cli
 
-// 'device ssh-config' (docs/plans/operator-console.md 5.4): the ssh_config
+// 'device client-config' (docs/plans/operator-console.md 5.4): the ssh_config
 // fragment of the devices and hosts the caller may see, on stdout, with
 // the install hint on stderr. Print-only: the user saves it in their own
 // home and Includes it, so a plain 'ssh <name>' gets the profile and the pin
@@ -13,8 +13,8 @@ import (
 	"github.com/rett/tacctl/internal/devreg"
 )
 
-func (inv *invocation) deviceSSHConfig(args []string) error {
-	if _, err := inv.deviceParse("ssh-config", args); err != nil {
+func (inv *invocation) deviceClientConfig(args []string) error {
+	if _, err := inv.deviceParse("client-config", args); err != nil {
 		return err
 	}
 	a := inv.app

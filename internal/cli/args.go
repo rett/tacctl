@@ -53,6 +53,10 @@ const (
 	// the device registry's (registerDeviceNames).
 	KindHosts   = "hosts"
 	KindDevices = "devices"
+	// KindCiscoDevices and KindJuniperDevices are the registry devices of
+	// one vendor (no host): 'device ios-syntax' and 'device netconf'.
+	KindCiscoDevices   = KindDevices + ".cisco"
+	KindJuniperDevices = KindDevices + ".juniper"
 	// KindBreakGlass are the break-glass users recorded for the scope typed
 	// before (the first positional of 'scope breakglass').
 	KindBreakGlass = "breakglass-users"
@@ -79,6 +83,10 @@ func After(word, kind string) string { return "@" + word + ":" + kind }
 // is not ('scope block <scope> juniper adopt <device> <block>' names a device
 // where the other verbs name a block).
 func Cond(word, a, b string) string { return "?" + word + ":" + a + ":" + b }
+
+// Either is the kind of a positional that completion takes from each of
+// kinds, in order ('notice list|<device>' offers the word and the names).
+func Either(kinds ...string) string { return strings.Join(kinds, "+") }
 
 // offeredAfter reports whether completion offers the flag, given the
 // positional words typed so far.

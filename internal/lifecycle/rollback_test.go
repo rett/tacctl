@@ -17,13 +17,13 @@ import (
 )
 
 func TestCheckRollbackVersion(t *testing.T) {
-	for in, want := range map[string]string{"0.2.3": "0.2.3", "v0.2.3": "0.2.3", "0.2.9": "0.2.9", "v0.2.9": "0.2.9", "0.2.16": "0.2.16", "v0.2.16": "0.2.16"} {
+	for in, want := range map[string]string{"0.2.3": "0.2.3", "v0.2.3": "0.2.3", "0.2.9": "0.2.9", "v0.2.9": "0.2.9", "0.2.16": "0.2.16", "v0.2.16": "0.2.16", "0.2.17": "0.2.17", "v0.2.17": "0.2.17"} {
 		if v, err := CheckRollbackVersion(in); err != nil || v != want {
 			t.Errorf("%q: %q %v", in, v, err)
 		}
 	}
 	for _, c := range []struct{ in, want string }{
-		{"0.2.2", "'tacctl rollback' prepares the state for 0.2.16 (the release before this one), 0.2.9 and 0.2.3 only (0.2.2 is older)"},
+		{"0.2.2", "'tacctl rollback' prepares the state for 0.2.17 (the release before this one), 0.2.16, 0.2.9 and 0.2.3 only (0.2.2 is older)"},
 		{"v0.2.2", "is older"},
 		{"0.2.1", "is older"},
 		{"0.1.16", "is older"},
@@ -31,7 +31,7 @@ func TestCheckRollbackVersion(t *testing.T) {
 		{"0.2.7", "and 0.2.3 only (0.2.7 is further back)"},
 		{"v0.2.7", "and 0.2.3 only (0.2.7 is further back)"},
 		{"0.2.8", "and 0.2.3 only (0.2.8 is further back)"},
-		{"0.2.10", "'0.2.10' is not a release to roll back to: 'tacctl rollback' prepares the state for 0.2.16 (the release before this one), 0.2.9 and 0.2.3 only"},
+		{"0.2.10", "'0.2.10' is not a release to roll back to: 'tacctl rollback' prepares the state for 0.2.17 (the release before this one), 0.2.16, 0.2.9 and 0.2.3 only"},
 		{"0.2.15", "'0.2.15' is not a release to roll back to"},
 		{"0.3.0", "and 0.2.3 only"},
 		{"1.0.0", "and 0.2.3 only"},
@@ -56,7 +56,7 @@ func TestCheckRollbackVersion(t *testing.T) {
 	}
 	// The refusal of 0.2.12 names the targets and promises no route there.
 	_, err212 := CheckRollbackVersion("0.2.12")
-	if !strings.Contains(err212.Error(), "Usage: tacctl rollback 0.2.16|0.2.9|0.2.3") || strings.Contains(err212.Error(), "one release at a time") || strings.Contains(err212.Error(), "rollback 0.2.16 --apply") {
+	if !strings.Contains(err212.Error(), "Usage: tacctl rollback 0.2.17|0.2.16|0.2.9|0.2.3") || strings.Contains(err212.Error(), "one release at a time") || strings.Contains(err212.Error(), "rollback 0.2.16 --apply") {
 		t.Errorf("0.2.12 refusal: %v", err212)
 	}
 	// The refusal of 0.2.2 names the two steps and the fallback.
@@ -123,7 +123,7 @@ devices:
     vendor: cisco
     description: DC1 core
     location: Rack 4, DC1
-    config_syntax: modern
+    ios_syntax: modern
     snmp:
       version: v3
       port: 2161
@@ -187,6 +187,18 @@ func newRBSandbox(t *testing.T) *rbSandbox {
 		return os.WriteFile(dst, []byte(body), 0o640)
 	}
 	return s
+}
+
+// oldSyntaxKey writes the sandbox's devices.yaml with the configuration
+// syntax under config_syntax, as 0.2.5 to 0.2.17 write it: a registry the
+// targets 0.2.17, 0.2.16 and 0.2.9 read as it is.
+func (s *rbSandbox) oldSyntaxKey() {
+	s.t.Helper()
+	b, err := os.ReadFile(s.p.DevicesFile)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	s.write(s.p.DevicesFile, strings.Replace(string(b), "    ios_syntax:", "    config_syntax:", 1), 0o600)
 }
 
 // reload reads tacctl.yaml again, as a new run would.
@@ -326,8 +338,8 @@ func TestPlanRollbackFull(t *testing.T) {
 		s.p.DevicesFile + ": remove the per-device SNMP settings and configuration syntax",
 		"remove the snmp map of core-sw1 (version v3, port 2161, timeout 4 s, 2 client ranges)",
 		"remove the snmp map of oob-con1 (port 1161)",
-		"remove the config_syntax key of core-sw1 (modern)",
-		"unknown key 'config_syntax'",
+		"remove the ios_syntax key of core-sw1 (modern)",
+		"unknown key 'ios_syntax'",
 		"put back the sudoers drop-ins 0.2.3 writes",
 		"rewrite " + s.p.TierSudoersFile + " (the per-tier drop-in: 0.2.3's text, after 'visudo -cf'; it loses the TACCTL_ASKPASS alias and env_keep line and the rows of 'device config', 'device snmp', 'console forget', 'host list --json' and 'config validate --json')",
 		"rewrite " + s.p.SudoersFile + " (the drop-in of group ops: 0.2.3's text",
@@ -362,7 +374,7 @@ func TestPlanRollbackFull(t *testing.T) {
 		"Settings 0.2.3 cannot use are dropped",
 		"core-sw1: version v3, port 2161, timeout 4 s, 2 client ranges",
 		"oob-con1: port 1161",
-		"The configuration syntax setting of a Cisco device (device config-syntax) is removed",
+		"The configuration syntax setting of a Cisco device (device ios-syntax) is removed",
 		"  core-sw1: modern",
 		"The devices' own credentials (1 file in " + filepath.Join(s.p.SNMPDir, "devices") + ") stay, unused by 0.2.3.",
 		"device.config.max_concurrency=16, device.config.transport=ssh, device.config.timeout=120",
@@ -466,7 +478,7 @@ func TestApplyRollbackConvertsAndIsIdempotent(t *testing.T) {
 			t.Errorf("devices.yaml lost %q:\n%s", keep, dv)
 		}
 	}
-	if strings.Contains(dv, "snmp") || strings.Contains(dv, "2161") || strings.Contains(dv, "config_syntax") {
+	if strings.Contains(dv, "snmp") || strings.Contains(dv, "2161") || strings.Contains(dv, "ios_syntax") || strings.Contains(dv, "config_syntax") {
 		t.Errorf("devices.yaml:\n%s", dv)
 	}
 	if after[s.p.TierSudoersFile] != tier.Sudoers023() || after[s.p.SudoersFile] != tier.GroupSudoers023("ops") {
@@ -578,6 +590,18 @@ func TestRollbackSudoersCases(t *testing.T) {
 	}
 	if got := s.snapshotOf(); got[s.p.TierSudoersFile] != tier.Sudoers023() || got[s.p.SudoersFile] != tier.GroupSudoers023("ops") {
 		t.Errorf("the 0.2.8 drop-ins were not put back as 0.2.3's:\n%s\n%s", got[s.p.TierSudoersFile], got[s.p.SudoersFile])
+	}
+
+	// The text 0.2.17 wrote (the verb names before 0.2.18: device config-syntax,
+	// device notices, device ssh-config).
+	s = newRBSandbox(t)
+	s.write(s.p.TierSudoersFile, tier.Sudoers0217(), 0o640)
+	p, _ = PlanRollback(s.in)
+	if _, err := ApplyRollback(p); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.snapshotOf(); got[s.p.TierSudoersFile] != tier.Sudoers023() {
+		t.Errorf("the 0.2.17 drop-in was not put back as 0.2.3's:\n%s", got[s.p.TierSudoersFile])
 	}
 
 	// The texts 0.2.15 and 0.2.16 wrote (the cache's alias without 'device

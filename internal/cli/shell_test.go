@@ -713,13 +713,13 @@ func TestShellExplain(t *testing.T) {
 		{[]string{"user", "add", "bob"}, []string{"Next: <group>\n"}},
 		{[]string{"user", "add", "bob", "ops"}, []string{"Next: <Enter> to run\n"}},
 		{[]string{"ssh", "core1"}, []string{
-			"Usage:\n  ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]\n",
-			"\n  -p <port>  ", "Connect to <port>",
+			"Usage:\n  ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]  Open an ssh session",
+			"\n  -p <port>  ", "Connect to this port",
 			"Next: <Enter> to run\n",
 		}},
 		{[]string{"device", "add", "x"}, []string{"Usage:\n  add [<name>] <address> [options]", "  --vendor cisco|juniper|wti|other", "  --port <n>                        Its ssh port (default 22)\n", "  --host-key SHA256:<fp>            Register only if the device offers this key; pin it alone\n", "Next: <address>, or <Enter> to run\n"}},
 		{[]string{"device", "address", "x"}, []string{"Next: [<address>], or <Enter> to run\n"}},
-		{[]string{"version"}, []string{"Usage:\n  version [--long]\n", "Next: <Enter> to run\n"}},
+		{[]string{"version"}, []string{"Usage:\n  version [--long]  Print tacctl version", "Options:\n  --long  Also the commit", "Next: <Enter> to run\n"}},
 	}
 	for _, c := range cases {
 		got, ok := explain(c.words)

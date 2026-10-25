@@ -61,8 +61,8 @@ func configMgmtACLCmd(inv *invocation) *cobra.Command {
 		{"add <entry>[,<entry>...]", "Add one or more entries: a CIDR, or a CIDR with services (10.0.0.0/8:tcp/22,udp/161,icmp)"},
 		{"remove <entry>[,<entry>...]", "Remove entries (a bare CIDR removes every entry of that CIDR)"},
 		{"clear", "Wipe all permits (confirms)"},
-		{"cisco-name [name]", "Show or set the Cisco ACL name"},
-		{"juniper-name [name]", "Show or set the Juniper filter name"},
+		{"cisco-name [<name>]", "Show or set the Cisco ACL name"},
+		{"juniper-name [<name>]", "Show or set the Juniper filter name"},
 	})
 }
 
@@ -220,7 +220,7 @@ func (inv *invocation) configFilter(label string, args []string) error {
 		inv.echo("")
 	default:
 		inv.echo("")
-		inv.echo("Usage: tacctl config " + label + " <list|add|remove|clear> [cidr[,cidr...]]")
+		inv.echo("Usage: tacctl config " + label + " list|add|remove|clear [<cidr>[,<cidr>...]]")
 		inv.echo("")
 		return exit(1)
 	}
@@ -253,7 +253,7 @@ func (inv *invocation) configMgmtACL(args []string) error {
 		inv.echo("")
 	case "add", "remove":
 		if value == "" {
-			return inv.usageErr("Usage: tacctl config mgmt-acl " + sub + " <cidr>[:<services>][,<cidr>[:<services>]...]")
+			return inv.usageErr(append(usageLinesOf("config mgmt-acl", sub+" <entry>[,<entry>...]"), mgmtACLEntryLine)...)
 		}
 		requested, err := inv.parseACLEntries(value)
 		if err != nil {

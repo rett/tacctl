@@ -22,27 +22,35 @@ Usage:
   tacctl scope lookup <ip|cidr>                            Show which scope owns an address
 
   tacctl scope prefixes <scope> list|add|remove|move       Manage a scope's CIDR list
-  tacctl scope staging [list | remove <address>]           Bench addresses of devices provisioned off-site (--staging), until seen in place
+  tacctl scope staging list                                Bench addresses of devices provisioned off-site (--staging), until seen in place
+  tacctl scope staging remove <address>                    Take a bench address out of its scope by hand
   tacctl scope secret   <scope> show|set|generate          Manage a scope's shared secret
-  tacctl scope protocols <scope> list|set <csv>|clear      Limit a scope to some protocols (tacacs, radius); default: all
-  tacctl scope vendor-attrs <scope> [enable|disable <csv>] RADIUS: vendor privilege attributes sent to the scope's devices (cisco, juniper, wti); default: not sent
-  tacctl scope devices <scope> [set <ip|cidr> <vendor>|unset <ip|cidr>]  RADIUS: tag an address of the scope with its vendor (it gets that vendor's attribute only)
-  tacctl scope aaa-order <scope> [tacacs-first|local-first] AAA method-list order in this scope's rendered device configs (default tacacs-first)
-  tacctl scope exec-timeout <scope> [minutes]              Per-scope idle-session timeout in rendered device configs (0..60 min; default 60; 0 = never expire)
-  tacctl scope tacacs-group <scope> [name]                 Per-scope Cisco aaa-group-server label (default TACACS-GROUP)
-  tacctl scope radius-group <scope> [name]                 Per-scope Cisco aaa-group-server label for RADIUS (default RADIUS-GROUP)
+  tacctl scope protocols <scope> list                      Show the protocols that serve a scope (default: all)
+  tacctl scope protocols <scope> set <protocol>[,<protocol>...]  Limit a scope to some protocols (tacacs, radius)
+  tacctl scope protocols <scope> clear                     Remove the limit: every enabled backend serves the scope
+  tacctl scope vendor-attrs <scope> show                   RADIUS: the vendor privilege attributes sent to the scope's devices (default: not sent)
+  tacctl scope vendor-attrs <scope> enable|disable <vendor>[,<vendor>...]  RADIUS: send or stop sending vendors' attributes (cisco, juniper, wti)
+  tacctl scope devices <scope> list                        RADIUS: the scope's addresses tagged with a vendor
+  tacctl scope devices <scope> set <ip|cidr> <vendor>      RADIUS: tag an address of the scope with its vendor (it gets that vendor's attribute only)
+  tacctl scope devices <scope> unset <ip|cidr>             RADIUS: remove a tag
+  tacctl scope aaa-order <scope> [tacacs-first|local-first]  AAA method-list order in this scope's rendered device configs (default tacacs-first)
+  tacctl scope exec-timeout <scope> [<minutes>]            Per-scope idle-session timeout in rendered device configs (0..60 min; default 60; 0 = never expire)
+  tacctl scope tacacs-group <scope> [<name>]               Per-scope Cisco aaa-group-server label (default TACACS-GROUP)
+  tacctl scope radius-group <scope> [<name>]               Per-scope Cisco aaa-group-server label for RADIUS (default RADIUS-GROUP)
   tacctl scope auth-method <scope> [tacacs|radius|clear]   Protocol this scope's device configs and host enrollments use when the command names none
   tacctl scope mgmt-acl <scope> list|add|remove|clear      Per-scope permit list (fallback: global mgmt_acl.permits)
-  tacctl scope mgmt-acl <scope> cisco-name|juniper-name [name]  Per-scope ACL / filter name (defaults VTY-ACL / MGMT-ACL)
-  tacctl scope breakglass <scope> list|add <name>|remove <name>  Per-scope break-glass local users in the device walkthroughs (names and roles only; no credential is stored): the accounts 'tacctl breakglass hold' makes usable
-      --role <role>                                        (add) admin (default), operator or readonly
+  tacctl scope mgmt-acl <scope> cisco-name|juniper-name [<name>]  Per-scope ACL / filter name (defaults VTY-ACL / MGMT-ACL)
+  tacctl scope breakglass <scope> list                     Per-scope break-glass local users in the device walkthroughs (names and roles only; no credential is stored)
+  tacctl scope breakglass <scope> add <name> [--role admin|operator|readonly]  Record a break-glass user: one of the accounts 'tacctl breakglass hold' makes usable
+      --role <role>                                        (add) The role: admin (default), operator or readonly
+  tacctl scope breakglass <scope> remove <name>            Drop a break-glass user
   tacctl scope snmp <scope> show|version|community|v3-user|clients|contact|port|timeout|clear|test
                                                            SNMP of a scope: credentials, allowed clients, contact (default beneath: tacctl config snmp)
   tacctl scope netconf <scope> [show|enable|disable|leave]
                                                            NETCONF service of the scope's Junos devices (default leave: nothing is planned or compared; a device's own setting wins)
       --connection-limit <n>|none                          (enable) The connection limit of the service, 1 to 250; none removes it
       --rate-limit <n>|none                                (enable) The rate limit of the service, 1 to 250; none removes it
-  tacctl scope block <scope> {juniper|cisco} list|show|check|set|remove|edit|adopt [<block>]
+  tacctl scope block <scope> cisco|juniper list|show|check|set|remove|edit|adopt [<block>]
                                                            Configuration blocks of a scope (Junos snmp and system, IOS snmp): community strings, trap groups and hosts, access lists, login message, domain, time zone, name servers, NTP
 
 Current scopes: 1

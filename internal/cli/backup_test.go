@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/execx/fake"
 )
 
 // 'backup', its 'config diff|restore' aliases, 'status', 'log', 'backend
@@ -462,5 +466,35 @@ func TestBackupDiffAndRestoreHandleDevicesYAML(t *testing.T) {
 	}
 	if st, err := os.Stat(sb.path("state/devices.yaml")); err != nil || st.Mode().Perm() != 0o600 {
 		t.Errorf("devices.yaml mode: %v %v", st, err)
+	}
+}
+
+// A snapshot's devices.yaml written before 0.2.18 holds the configuration
+// syntax under config_syntax: the diff compares a copy with the key this
+// release writes, so the rename is no difference (the copy is removed).
+func TestBackupDiffReadsTheOldSyntaxKey(t *testing.T) {
+	sb := newSandbox(t, true)
+	live := "version: 1\nsettings: {stale_days: 30}\ndevices:\n  sw1:\n    address: 10.99.0.1\n    vendor: cisco\n    ios_syntax: modern\n"
+	sb.write("state/devices.yaml", live, 0o600)
+	id := "20200101_000000_001"
+	sb.write("state/backups/"+id+"/store.yaml", "", 0o600)
+	sb.write("state/backups/"+id+"/devices.yaml", strings.Replace(live, "    ios_syntax:", "    config_syntax:", 1), 0o600)
+	var compared, copyPath string
+	sb.script = func(r *fake.Runner) {
+		r.OnFunc([]string{"diff"}, func(c execx.Cmd) (execx.Result, error) {
+			if slices.Contains(c.Args, "current/devices.yaml") {
+				copyPath = c.Args[len(c.Args)-2]
+				b, _ := os.ReadFile(copyPath)
+				compared = string(b)
+			}
+			return execx.Result{}, nil
+		})
+	}
+	sb.run("", []string{"backup", "diff", id})
+	if compared != live || copyPath == sb.path("state/backups/"+id+"/devices.yaml") {
+		t.Errorf("the snapshot side of the diff (%s):\n%s", copyPath, compared)
+	}
+	if _, err := os.Stat(copyPath); !os.IsNotExist(err) {
+		t.Errorf("the copy was left: %s", copyPath)
 	}
 }

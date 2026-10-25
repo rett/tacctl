@@ -26,7 +26,7 @@ group edit <name> priv-lvl <0-15>
 
     Change Cisco privilege level
 
-group edit <name> juniper-class <CLASS>
+group edit <name> juniper-class <class>
 
     Change Juniper class name
 
@@ -42,7 +42,7 @@ group commands list <group>
 
     Show per-command rules + default action
 
-group commands default <group> <permit|deny>
+group commands default <group> permit|deny
 
     Set default action (catchall)
 

@@ -7,7 +7,7 @@ Usage:
   tacctl group privilege remove <group> '<cmd>'[,'<cmd>'...]       Remove mapping(s)
   tacctl group privilege reset <group> [--dry-run] [--yes]         Reset the mappings to the shipped default (diff, confirms; superuser only)
       --dry-run                                                    (reset) Show the difference; write nothing
-      --yes                                                        (reset) Do not ask
+      --yes                                                        (reset) Answer yes to the confirmation
   tacctl group privilege seed [<group>] [--force]                  Populate built-ins with safe defaults
       --force                                                      (seed) Overwrite a group that already has mappings
 

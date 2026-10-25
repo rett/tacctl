@@ -5,7 +5,7 @@
 The device registry gives names to the network devices that authenticate here. It lives in `/etc/tacctl/devices.yaml` and never touches `store.yaml`: a device's scope and vendor tag are looked up from the store when shown, so registering a device renders nothing and restarts nothing. Every write takes a snapshot first.
 
 ```
-device list [word] [--name <text>] [--ip <addr|cidr|text>] [--vendor <v>] [--scope <s>] [--stale]
+device list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <v>] [--scope <s>] [--stale]
             [--unconfigured] [--scan] [--probe] [--json]
 
     Registered devices, then enrolled hosts, sorted by name; `--name` (names containing the text),
@@ -41,7 +41,7 @@ device add [<name>] <address>
     --hostname <dns>, --port <n>, --description <text>
     --legacy-ssh
         SHA-1 key exchange, CBC ciphers and ssh-rsa for the ssh login (the ssh algorithms only)
-    --config-syntax auto|ios12|modern
+    --ios-syntax auto|ios12|modern
         The Cisco configuration syntax (default auto: the pull's version line says); `--vendor
         cisco` only
     --snmp-location <text>
@@ -205,9 +205,9 @@ device location <name> --from-device [-y]
 device legacy-ssh <name> [enable|disable]
 
     Opt in to the legacy ssh algorithms (SHA-1 key exchange, CBC ciphers, ssh-rsa); the
-    configuration syntax is `config-syntax`
+    configuration syntax is `ios-syntax`
 
-device config-syntax <name> [auto|ios12|modern [--apply]]
+device ios-syntax <name> [auto|ios12|modern [--apply]]
 
     Show or set the Cisco configuration syntax the walkthrough and the comparison use: `ios12`,
     `modern`, or `auto` (the last pull's version line says; no pull yet: modern in the walkthrough,
@@ -215,7 +215,7 @@ device config-syntax <name> [auto|ios12|modern [--apply]]
     devices only (a device that stops being Cisco through `device vendor` loses the setting, and the
     verb says so); one that the last pull's image contradicts is shown as such; `--apply` as for the
     fields above (the apply writes to Junos devices only in this release, so it is refused here
-    before the setting changes)
+    before the setting changes); Tab offers the Cisco devices
 
 device netconf <name> [show|enable|disable|leave|clear] [--connection-limit <n>|none]
                [--rate-limit <n>|none] [--apply]
@@ -227,20 +227,21 @@ device netconf <name> [show|enable|disable|leave|clear] [--connection-limit <n>|
     `device show` has a `NETCONF` row, and `--json` a `netconf` object, when a Junos device's
     setting is not the default. A device that stops being Junos through `device vendor` loses the
     setting, and a registry file or an import that gives one to another vendor is refused; `--apply`
-    as for the fields above
+    as for the fields above; Tab offers the Junos devices
 
 device stale-days [<n>]
 
     Days without a sighting after which a device is stale (default 30)
 
-device notice <name> ack|unack <kind>
-
-    Acknowledge or reopen a notice
-
-device notices [<name>] [--all]
+device notice list [<name>] [--all]
 
     The open notices, each with the command that fixes or acknowledges it (--all: the acknowledged
-    ones too, marked)
+    ones too, marked); every tier, filtered to the caller's scopes
+
+device notice <name> ack|unack <kind>
+
+    Acknowledge or reopen a notice; the superuser's (three words are this form, so a device named
+    `list` takes it too)
 
 device import [--check] [--replace] [--allow-generic] [-y] <file|->
 
@@ -248,7 +249,7 @@ device import [--check] [--replace] [--allow-generic] [-y] <file|->
     data (so is the CSV of `device export --csv`) and loads its names as they are (a line says how
     many have upper case); merges by default,
     `--replace` removes the devices the file does not name together with their configuration records
-    and SNMP credentials, as `remove` does; a CSV row, and a YAML file with no `config_syntax`,
+    and SNMP credentials, as `remove` does; a CSV row, and a YAML file with no `ios_syntax`,
     leave a device's registered configuration syntax alone (an engineer imports from standard input
     only, `-` first)
 
@@ -272,7 +273,7 @@ device ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh
 
     Same as tacctl ssh
 
-device ssh-config
+device client-config
 
     Print an ssh_config Include for your devices (Host blocks with the vendor options and the pin)
 
@@ -308,13 +309,17 @@ device snmp <name> [show [--reveal]]
     `(device)`, `(scope <scope>)`, `(default)` or `(built-in)`. A setting the device does not set
     comes from its scope, then the default, then the built-in
 
-device snmp <name> version v2c|v3
+device snmp <name> version [v2c|v3]
 
     Show or set the device's own SNMP version (superusers); `community` and `v3-user` set it too
 
-device snmp <name> port <n> | timeout <seconds>
+device snmp <name> port [<n>]
 
-    Show or set the device's own agent port and wait for an answer (1-65535, 1-10)
+    Show or set the device's own agent port (1-65535)
+
+device snmp <name> timeout [<seconds>]
+
+    Show or set the device's own wait for an answer (1-10 seconds)
 
 device snmp <name> clients list|add|remove [<cidr>[,<cidr>...]]
 
@@ -558,7 +563,7 @@ device config list [--stale] [--never] [--failed] [--differs] [--name <text>]
     they do for the other verbs. The state words (`--stale`, `--never`, `--failed`, `--differs`)
     are alternatives here, but `pull`, `diff`, `plan` and `apply` require both when given both,
     so `list --stale --differs` shows more devices than they would select; the DETAIL of a device
-    whose `config-syntax` contradicts its pulled image says so (`syntax_conflict` in `--json`)
+    whose `ios-syntax` contradicts its pulled image says so (`syntax_conflict` in `--json`)
 
 device config forget <name>[,<name>...] | --all
 
@@ -576,7 +581,7 @@ export. A name that exists with upper case keeps working, is found in any
 case, and is listed by `tacctl config validate` with the `device rename` that
 fixes it.
 
-A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. A device name is letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 253 characters with each dotted part at most 63, so a fully qualified host name (`sw1.site-a.example`) is one. An enrolled host's name has no dot and at most 26 characters, because it also names the host's scope (`linux-<name>`); its fully qualified name is its hostname. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list`, `show`, `notices`, `ssh-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way.
+A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. A device name is letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 253 characters with each dotted part at most 63, so a fully qualified host name (`sw1.site-a.example`) is one. An enrolled host's name has no dot and at most 26 characters, because it also names the host's scope (`linux-<name>`); its fully qualified name is its hostname. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list`, `show`, `notice list`, `client-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way.
 
 A name that is a factory or image default is refused with the command that names the device on the device itself (`hostname`, `set system host-name`, ...); a host already enrolled under such a name is not refused and carries a `generic-name` notice. `host enroll --name` follows the same rules. Add your own patterns with `generic_names:` (regular expressions, whole-name, case-insensitive) in `devices.yaml`.
 

@@ -107,7 +107,7 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"scope", "breakglass", "lab", "remove", ""}, []string{"lab-admin", "lab-ops"}},
 		{[]string{"scope", "breakglass", "lab", "remove", "lab-a"}, []string{"lab-admin"}},
 		{[]string{"scope", "block", ""}, []string{"lab", "prod"}},
-		{[]string{"scope", "block", "lab", ""}, []string{"juniper", "cisco"}},
+		{[]string{"scope", "block", "lab", ""}, []string{"cisco", "juniper"}},
 		{[]string{"scope", "block", "lab", "juniper", ""}, []string{"list", "show", "check", "set", "remove", "edit", "adopt"}},
 		{[]string{"scope", "block", "lab", "juniper", "s"}, []string{"show", "set"}},
 		{[]string{"scope", "block", "lab", "juniper", "e"}, []string{"edit"}},
@@ -432,7 +432,7 @@ func TestCompleteThisReleasesWords(t *testing.T) {
 		{[]string{"scope", "secret", "lab", "set", "--"}, []string{"--stdin"}, false},
 		{[]string{"user", "add", "x", "--"}, []string{"--hash"}, false},
 		{[]string{"user", "passwd", "x", "--"}, []string{"--hash"}, false},
-		{[]string{"rollback", ""}, []string{"0.2.16", "0.2.9", "0.2.3"}, true},
+		{[]string{"rollback", ""}, []string{"0.2.17", "0.2.16", "0.2.9", "0.2.3"}, true},
 	}
 	for _, c := range cases {
 		got, _ := completeWords(t, liveNames, c.words...)

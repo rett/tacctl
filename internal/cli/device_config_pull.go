@@ -883,22 +883,22 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 		if r.render.recs != nil {
 			old, _ = r.render.recs.Of(e.Name)
 		}
-		syn := devconf.SyntaxFromRead(e.ConfigSyntax, rd.Version, old)
+		syn := devconf.SyntaxFromRead(e.IOSSyntax, rd.Version, old)
 		if syn == "" {
 			// Nothing is recorded: the pull's own output is the only place
 			// that says why (the list keeps showing 'needs pull').
 			if strings.TrimSpace(rd.Version) != "" {
 				return fail(batch.StatusFailed, "the device's version line \""+cleanLine(rd.Version)+
 					"\" is not an image tacctl maps to a configuration syntax (IOS 12.x, 15.2 and later, 16.x, 17.x, IOS-XE), so its configuration syntax is unknown",
-					"tacctl device config-syntax "+e.Name+" ios12|modern")
+					"tacctl device ios-syntax "+e.Name+" ios12|modern")
 			}
 			return fail(batch.StatusFailed, "the device's IOS version was not read ('"+devconf.VersionCommand+
 				"' answered no image line), so its configuration syntax is unknown",
-				"tacctl device config-syntax "+e.Name+" ios12|modern")
+				"tacctl device ios-syntax "+e.Name+" ios12|modern")
 		}
 		o.Syntax = syn
 		// An explicit setting that the line contradicts wins; the pull says so.
-		if img, conflict := devconf.ConflictOf(e.ConfigSyntax, rd.Version); conflict {
+		if img, conflict := devconf.ConflictOf(e.IOSSyntax, rd.Version); conflict {
 			o.ImageSyntax = img
 		}
 		expected, err = r.render.ExpectedAs(e, syn == devconf.SyntaxIOS12)
@@ -1033,7 +1033,7 @@ func (r *pullRun) recordSuccess(o *pullOutcome, e devreg.Entry, ext devconf.Extr
 		case o.OS != "":
 			rec.OS = o.OS
 			rec.Syntax = devconf.DeriveSyntax(o.OS)
-		case e.ConfigSyntax != "":
+		case e.IOSSyntax != "":
 			rec.OS, rec.Syntax = "", ""
 		}
 	}
@@ -1221,7 +1221,7 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 
 // noteHostKeys records the host key a device offered that is not the pinned
 // one in the seen cache, as a host-key scan does, so the hostkey notice
-// comes up ('device notices'; 'device hostkey <name> accept' re-pins after
+// comes up ('device notice list'; 'device hostkey <name> accept' re-pins after
 // verifying). Nothing is pinned here and nothing is prompted.
 func (inv *invocation) noteHostKeys(entries []devreg.Entry, outs []*pullOutcome) {
 	type offer struct {

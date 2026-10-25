@@ -40,9 +40,9 @@ store rollback                               Restore the pre-store tacquito.yaml
 ## Log Commands — `tacctl log`
 
 ```
-log tail [-f|--follow] [n] [--backend <id>]
+log tail [-f|--follow] [<n>] [--backend <id>]
 
-    Last N entries (default 20): TACACS+ journal; RADIUS auth log and daemon log; -f/--follow
+    Last <n> entries (default 20): TACACS+ journal; RADIUS auth log and daemon log; -f/--follow
     follows new ones until Ctrl-C
 
 log search <term> [--backend <id>]
@@ -53,9 +53,9 @@ log failures [--backend <id>]
 
     Auth failures from the last 24 hours
 
-log accounting [n] [--backend <id>]
+log accounting [<n>] [--backend <id>]
 
-    Last N accounting records
+    Last <n> accounting records
 
 log clear [--force|-y] [--backend <id>]
 
@@ -71,7 +71,7 @@ TACACS+ authentication lines read `accepting user [<user>] from [<address>] usin
 
 ```
 backup list                    Show snapshots (newest first), then old-style backups
-backup diff [timestamp]        Diff store.yaml and tacctl.yaml against a snapshot (default: most
+backup diff [<timestamp>]      Diff store.yaml and tacctl.yaml against a snapshot (default: most
                                recent)
 backup restore <ts> [--legacy|--keep-uids]
                                Restore a snapshot (with confirmation); --legacy for an old-style

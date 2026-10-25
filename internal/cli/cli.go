@@ -29,6 +29,9 @@ type invocation struct {
 	build BuildInfo
 	// hooks are what a test replaces (hooks.go); nil in tacctl.
 	hooks *hooks
+	// registryNoted: the device registry's load notes (devreg.File.Notes)
+	// were printed in this run.
+	registryNoted bool
 
 	// shellMode: completion is for the tacctl shell's lists (live names
 	// with descriptions; flags only after a '-').

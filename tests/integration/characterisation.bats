@@ -122,14 +122,32 @@ usage_case() {
 }
 
 # bats test_tags=cutover:wp0-1
-@test "usage: help, -h, --help and an unknown word print the same usage, exit 1" {
+@test "usage: help, -h and --help print the same usage, exit 1" {
     local want
     want=$("$TACCTL_BIN_SCRIPT" < /dev/null || true)
-    for word in help -h --help bogus 'user-add'; do
+    for word in help -h --help; do
         runs "$TACCTL_BIN_SCRIPT" "$word" < /dev/null
         assert_equal "$status" 1
         assert_equal "$stderr" ""
         assert_equal "$output" "$want"
+    done
+}
+
+@test "usage: an unknown command is one error line, a suggestion and a pointer, exit 1" {
+    local err="${ESC}[0;31m[ERROR]${ESC}[0m" tail="Run 'tacctl' for the commands."
+    runs "$TACCTL_BIN_SCRIPT" enroll < /dev/null
+    assert_equal "$status" 1
+    assert_equal "$output" ""
+    assert_equal "$stderr" "$err Unknown command: 'enroll'"$'\n'"Did you mean: tacctl device enroll, tacctl host enroll?"$'\n'"$tail"
+    runs "$TACCTL_BIN_SCRIPT" devce list < /dev/null
+    assert_equal "$status" 1
+    assert_equal "$output" ""
+    assert_equal "$stderr" "$err Unknown command: 'devce'"$'\n'"Did you mean: tacctl device?"$'\n'"$tail"
+    for word in bogus user-add; do
+        runs "$TACCTL_BIN_SCRIPT" "$word" < /dev/null
+        assert_equal "$status" 1
+        assert_equal "$output" ""
+        assert_equal "$stderr" "$err Unknown command: '$word'"$'\n'"$tail"
     done
 }
 

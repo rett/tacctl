@@ -1,7 +1,7 @@
 package devreg
 
 // The ssh profile of an entry (docs/plans/operator-console.md 5.2 and 3.7):
-// the options 'tacctl ssh' gives ssh for it and the lines 'device ssh-config'
+// the options 'tacctl ssh' gives ssh for it and the lines 'device client-config'
 // writes into its Host block. One table serves both, so a plain 'ssh <name>'
 // through the generated Include behaves as 'tacctl ssh <name>' does. No
 // free-form option is ever stored: that is ~/.ssh/config's job.

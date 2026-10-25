@@ -142,7 +142,7 @@ type Rule struct {
 // config dump, store show) is superuser-only, and so is everything that
 // changes anything, but for the Engineer rows (0.2.2, D18; 0.2.3, D45, D47
 // and D53): the device registry (add, remove, rename, address, hostname,
-// vendor, port, description, location, legacy-ssh, config-syntax (0.2.5), hostkey, and import from
+// vendor, port, description, location, legacy-ssh, ios-syntax (0.2.5, named config-syntax until 0.2.18), hostkey, and import from
 // standard input only), the scope's devices, vendor tags and staging
 // addresses ('scope devices', 'scope staging' to list), the device
 // configurations 'config cisco|juniper|wti' and 'device config show' of their
@@ -187,9 +187,12 @@ var Rules = []Rule{
 		Note: "device list: the CONFIG column (and config, release, model and serial of --json) is the operator tier's; a read-only user's list has none."},
 	{Tier: Readonly, Cmd: "device", Sub: "show", Sudoers: []string{"device show *"},
 		Note: "device show: the Configuration, Release, Model and Serial rows (and config, release, model and serial of --json) are the operator tier's; a read-only user's output has none."},
-	{Tier: Readonly, Cmd: "device", Sub: "notices", Sudoers: []string{"device notices", "device notices *"}},
+	// 'device notice list' (0.2.18, D274) is every tier's; the gate sees
+	// 'device notice', and the verb keeps 'ack' and 'unack' the superuser's.
+	{Tier: Readonly, Cmd: "device", Sub: "notice", Sudoers: []string{"device notice list", "device notice list *"},
+		Note: "device notice: every tier may run list; ack and unack need the superuser tier."},
 	{Tier: Readonly, Cmd: "device", Sub: "ssh", Sudoers: []string{"device ssh *"}},
-	{Tier: Readonly, Cmd: "device", Sub: "ssh-config", Sudoers: []string{"device ssh-config"}, Wrap: true},
+	{Tier: Readonly, Cmd: "device", Sub: "client-config", Sudoers: []string{"device client-config"}, Wrap: true},
 	{Tier: Readonly, Cmd: "_completion-names", AnySub: true, Sudoers: []string{"_completion-names *"}},
 	// The login console asks for its settings once per session (console.go).
 	{Tier: Readonly, Cmd: "_console-policy", AnySub: true, Sudoers: []string{"_console-policy"}},
@@ -233,7 +236,7 @@ var Rules = []Rule{
 	{Tier: Engineer, Cmd: "device", Sub: "legacy-ssh", Sudoers: []string{"device legacy-ssh *"}},
 	// The Cisco configuration syntax of a device (0.2.5, D113): a registry
 	// setting like legacy-ssh, the engineer's for devices of their scopes.
-	{Tier: Engineer, Cmd: "device", Sub: "config-syntax", Sudoers: []string{"device config-syntax *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "ios-syntax", Sudoers: []string{"device ios-syntax *"}},
 	{Tier: Engineer, Cmd: "device", Sub: "hostkey", Sudoers: []string{"device hostkey *"}},
 	// An engineer imports from standard input only: sudoers matches the
 	// first argument, so 'device import /etc/shadow' never reaches tacctl.

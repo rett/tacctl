@@ -249,7 +249,7 @@ func (inv *invocation) syntaxMatters(e devreg.Entry) bool {
 // walkthrough and the planner all take it from here; the ssh flag has no
 // part in it.
 func syntaxOf(e devreg.Entry, rec *devconf.Record) devconf.SyntaxResolution {
-	return devconf.ResolveSyntax(e.ConfigSyntax, rec)
+	return devconf.ResolveSyntax(e.IOSSyntax, rec)
 }
 
 // syntaxFor is the rendering syntax of a registered device: legacy is the
@@ -288,7 +288,7 @@ func (r *managedRender) prepare(entries []devreg.Entry) {
 		// it reads then (unknown before the first pull, and an upgraded
 		// device says another one than its record): both bases are made
 		// before the workers start.
-		if r.inv.syntaxMatters(e) && e.ConfigSyntax == "" {
+		if r.inv.syntaxMatters(e) && e.IOSSyntax == "" {
 			k2 := k
 			k2.legacy = !k.legacy
 			r.prepareKey(e, k2)

@@ -1126,7 +1126,7 @@ func TestConfigStatesRendered(t *testing.T) {
 		"  d-ok: {address: 192.168.1.1, vendor: cisco}\n"+
 		"  d-diff: {address: 192.168.1.2, vendor: cisco}\n"+
 		"  d-old: {address: 192.168.1.8, vendor: cisco}\n"+
-		"  d-set: {address: 192.168.1.9, vendor: cisco, config_syntax: ios12}\n"+
+		"  d-set: {address: 192.168.1.9, vendor: cisco, ios_syntax: ios12}\n"+
 		"  d-never: {address: 192.168.1.3, vendor: juniper}\n"+
 		"  d-failed: {address: 192.168.1.4, vendor: juniper}\n"+
 		"  d-wti: {address: 192.168.1.5, vendor: wti}\n"+

@@ -1,6 +1,6 @@
 package cli
 
-// 'tacctl breakglass hold <name>[=<reason>][,...] [--reason "<text>"] |
+// 'tacctl breakglass hold <name>[=<reason>][,...] [--reason <text>] |
 // release <name>[,...] | list [--json]' (docs/plans/0.2.5-plan.md
 // D121-D126, docs/plans/0.2.14-plan.md D176 and D179-D181): make the server
 // stop answering managed devices and enrolled Linux hosts, so their local
@@ -48,9 +48,13 @@ import (
 const KindHeld = "held"
 
 const (
-	breakglassUsageHold    = `Usage: tacctl breakglass hold <name>[=<reason>][,<name>[=<reason>]...] [--reason "<text>"]`
-	breakglassUsageRelease = "Usage: tacctl breakglass release <name>[,<name>...]"
-	breakglassUsageList    = "Usage: tacctl breakglass list [--json]"
+	breakglassUsageHold    = "Usage: tacctl breakglass " + breakglassUseHold
+	breakglassUsageRelease = "Usage: tacctl breakglass " + breakglassUseRelease
+	breakglassUsageList    = "Usage: tacctl breakglass " + breakglassUseList
+
+	breakglassUseHold    = "hold <name>[=<reason>][,<name>[=<reason>]...] [--reason <text>]"
+	breakglassUseRelease = "release <name>[,<name>...]"
+	breakglassUseList    = "list [--json]"
 )
 
 // breakglassSpecs are the arguments of each verb (completion and parsing).
@@ -63,9 +67,9 @@ var breakglassSpecs = map[string]Spec{
 
 // breakglassVerbs are the family's rows: usage and one-line description.
 var breakglassVerbs = [][2]string{
-	{`hold <name>[=<reason>][,...] [--reason "<text>"]`, "Make the server stop answering the devices and hosts named, so their local accounts are usable (the superuser's)"},
-	{"release <name>[,<name>...]", "Make the server answer the devices and hosts again (the superuser's)"},
-	{"list [--json]", "The devices and hosts held now: since when, by whom and why; an engineer sees those of their own scopes"},
+	{breakglassUseHold, "Make the server stop answering the devices and hosts named, so their local accounts are usable (the superuser's)"},
+	{breakglassUseRelease, "Make the server answer the devices and hosts again (the superuser's)"},
+	{breakglassUseList, "The devices and hosts held now: since when, by whom and why; an engineer sees those of their own scopes"},
 }
 
 func init() {
@@ -97,7 +101,7 @@ func breakglassUsage() string {
 			fmt.Fprintf(&b, "  %-36s  %s\n", v[0], v[1])
 		}
 	}
-	b.WriteString(`      --reason "<text>"                 (hold) Why, 1 to 256 characters; kept with the record and in the log
+	b.WriteString(`      --reason <text>                   (hold) Why, 1 to 256 characters; kept with the record and in the log
                                         (the reason of every name that has no <name>=<reason>)
       --json                            (list) Print the holds as a JSON array
 

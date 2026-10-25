@@ -34,7 +34,7 @@ devices:
     vendor: cisco
     description: DC1 core
     location: Rack 4, DC1
-    config_syntax: modern
+    ios_syntax: modern
     snmp:
       version: v3
       port: 2161
@@ -158,7 +158,7 @@ func TestApplyRollback029WritesKeysAndDevices(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(done) != 2 || len(p.NotWritten()) != 0 || len(s.ins) != 0 {
+	if len(done) != 3 || !strings.Contains(done[2], "wrote the configuration syntax of 1 device under config_syntax") || len(p.NotWritten()) != 0 || len(s.ins) != 0 {
 		t.Errorf("done %q not written %q installed %q", done, p.NotWritten(), s.ins)
 	}
 	after := s.snapshotOf()
@@ -181,7 +181,7 @@ func TestApplyRollback029WritesKeysAndDevices(t *testing.T) {
 	if strings.Contains(dv, "netconf") || strings.Contains(dv, "connection_limit") {
 		t.Errorf("devices.yaml still has the netconf map:\n%s", dv)
 	}
-	for _, kept := range []string{"lab-rtr2", "config_syntax: modern", "Rack 4, DC1", "port: 2161", "oob-con1"} {
+	for _, kept := range []string{"lab-rtr2", "    config_syntax: modern", "Rack 4, DC1", "port: 2161", "oob-con1"} {
 		if !strings.Contains(dv, kept) {
 			t.Errorf("devices.yaml lost %q:\n%s", kept, dv)
 		}
@@ -220,6 +220,7 @@ func TestApplyRollback029WritesKeysAndDevices(t *testing.T) {
 // the drop-ins say.
 func TestRollback029NothingToConvert(t *testing.T) {
 	s := newRBSandbox(t)
+	s.oldSyntaxKey()
 	s.in.Target = RollbackTarget029
 	p := plan029(t, s)
 	if p.Pending() || p.NeedsYes() || len(p.Keys()) != 0 {

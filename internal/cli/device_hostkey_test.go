@@ -222,7 +222,7 @@ func TestDeviceHostkeyVerb(t *testing.T) {
 	if kh := sb.knownHosts(); !strings.Contains(kh, "core-sw1 "+ed.String()+"\ncore-sw1 "+rsa.String()+"\n") {
 		t.Errorf("known_hosts:\n%s", kh)
 	}
-	if out = sb.dev("", "notices", "core-sw1"); strings.Contains(out, "hostkey-unpinned") {
+	if out = sb.dev("", "notice", "list", "core-sw1"); strings.Contains(out, "hostkey-unpinned") {
 		t.Errorf("pinned, still unpinned:\n%s", out)
 	}
 	// The same keys again: nothing to do.

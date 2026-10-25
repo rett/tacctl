@@ -38,7 +38,6 @@ import (
 	"github.com/rett/tacctl/internal/pyyaml"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/yamlpy"
-	"github.com/spf13/cobra"
 )
 
 var updateMan = flag.Bool("update-man", false, "rewrite the generated blocks of man/tacctl.1 (make man)")
@@ -192,9 +191,6 @@ func manCommandBlocks(t *testing.T) []manBlock {
 			l = append(l, ".PP", "Options:")
 			for _, f := range spec.Flags {
 				value, desc := helps[f.Names[0]][0], helps[f.Names[0]][1]
-				// The usage describes a flag on one line and may continue it
-				// on the lines below; the page keeps the whole sentence.
-				desc = inv.manFlagDesc(cmds[i], p, f, desc)
 				if o, ok := manFlagOverrides[words+" "+f.Names[0]]; ok {
 					desc = o
 				}
@@ -253,14 +249,10 @@ var manFlagOverrides = map[string]string{
 	"host target --identity":             "The ssh key file; tested first, and the host's ssh keys must match the pin.",
 	"config render --dry-run":            "Render into the directory named by --out; nothing live is written.",
 	"config render --out":                "The new, empty directory a --dry-run render writes to, at the live paths.",
-	"config cisco --legacy":              "(cisco) IOS 12.x syntax.",
-	"config listen --listener":           "Act on another listener than 'default' (its own tacquito@<name> unit; reset removes it).",
-	"config listen --backend":            "Act on another backend (see 'tacctl backend list'); radius: --listener auth|acct <udp|udp6> <addr>.",
 	"config snmp v3-user --priv":         "The privacy protocol: AES-128 (the only one).",
 	"scope snmp --priv":                  "The privacy protocol: AES-128 (the only one).",
 	"config snmp v3-user --auth":         "The authentication protocol: sha (HMAC-SHA-96) or sha256 (HMAC-SHA-256-192) (default sha).",
 	"scope snmp --auth":                  "The authentication protocol: sha (HMAC-SHA-96) or sha256 (HMAC-SHA-256-192) (default: the default's, else sha).",
-	"store show --json":                  "Print JSON instead of YAML.",
 	"scope prefixes --all":               "(remove) Remove every prefix of the scope, which removes the scope.",
 	"device onboard --login":             "The device's local account to log in as (any, a break-glass one included; root through its CLI wrapper): its password is asked once on the terminal and never kept or cached.",
 	"device onboard --name":              "The registry name, typed back at the key's question (default: its SNMP sysName, else the name typed there; with --host-key, the name the device reports, a generic or taken one asked for).",
@@ -272,7 +264,6 @@ var manFlagOverrides = map[string]string{
 	"device collect --login":             "The device's local account to log in as (any, a break-glass one included; root through its CLI wrapper) instead of you: its password is asked once on the terminal, never kept or cached, and goes to each address once; one account for the run.",
 	"device collect --host-key":          "Accept only this key, read on the device's console (no question; needed without a terminal; one address); pin it alone.",
 	"device collect --register":          "After the table, register each collected device through 'device add' with the key accepted pinned (one question) and keep the read as its first pull record; the key's question takes the device's SNMP sysName when it gives one that is not taken.",
-	"device collect -y":                  "Answer yes to the registration question of --register (needed without a terminal); never a host key's question.",
 	"device collect --json":              "One object at the end (the progress goes to standard error).",
 	"device enroll --discovered":         "The addresses 'device discover' lists (the seen cache: unregistered, authenticated); no address is named with it.",
 	"device enroll --host-key":           "Pin this key of ONE address, read on its console: no question (the only form without a terminal).",
@@ -283,12 +274,10 @@ var manFlagOverrides = map[string]string{
 	"device sync --all":                  "Every device of the registry.",
 	"device sync --scope":                "Only the devices of that scope.",
 	"device sync --vendor":               "Only that vendor's devices (only Junos records are read).",
-	"device sync --apply":                "Write the fields, in one registry write, after one question.",
 	"device sync --overwrite":            "Also replace a field that is set, showing the old value.",
-	"device sync --yes":                  "Answer yes to the question of --apply (needed without a terminal).",
 	"device sync --json":                 "One object: each device's fields, actions and facts.",
 	"device show --all":                  "The acknowledged notices too.",
-	"device notices --all":               "The acknowledged notices too.",
+	"device notice --all":                "The acknowledged notices too.",
 	"device remove --all":                "Remove every device (an engineer: those of their own scopes).",
 	"device check --all":                 "Check every device.",
 	"device discover --all":              "Also list the addresses that were only refused.",
@@ -325,16 +314,12 @@ var manFlagOverrides = map[string]string{
 	"device config shapes --json":        "(list) One object per shape: its state, devices, confirmations and the nearest confirmed shape.",
 	"device list --name":                 "Only names that contain the text (a comma list: any of them).",
 	"device list --ip":                   "Only addresses equal to, inside, or containing it (an address, a CIDR or a text; a comma list).",
-	"device list --vendor":               "Only that vendor: cisco, juniper, wti, other or linux (a comma list).",
-	"device list --scope":                "Only the devices that scope answers (a comma list).",
 	"device add --hostname":              "The device's DNS name.",
 	"device add --description":           "A description of the device.",
 	"device ssh -X":                      "Forward X11 to this server's display (untrusted, as ssh -X).",
 	"device ssh -Y":                      "Forward X11 to this server's display (trusted, as ssh -Y).",
 	"ssh -X":                             "Forward X11 to this server's display (untrusted, as ssh -X).",
 	"ssh -Y":                             "Forward X11 to this server's display (trusted, as ssh -Y).",
-	"host provisioner --remove-home":     "(provisioner) With --remove-old: also delete the old account's home directory, without asking (otherwise it is moved out of reach, made root's)",
-	"host provisioner --yes":             "(provisioner) Rotate without asking, and continue with the host keys shown when none is pinned",
 	"host forget -y":                     "(forget) Forget the host without asking.",
 	"host rename -y":                     "(rename) Answer both questions yes: replace what an earlier host of the new name left, and rename the host's own linux-<name> scope.",
 }
@@ -359,56 +344,6 @@ func capitalizeDesc(s string) string {
 		}
 	}
 	return prefix + strings.ToUpper(rest[:1]) + rest[1:]
-}
-
-// manFlagDesc is the description of flag f in the usage block of the
-// command at path with the lines that continue it joined to it: the block
-// continues a description on the lines below, indented to its column.
-// first is the one-line description flagHelps found; it is returned when
-// no line of the block gives it.
-func (inv *invocation) manFlagDesc(cmd *cobra.Command, path []string, f Flag, first string) string {
-	if first == "" {
-		return first
-	}
-	_, block := inv.shellUsage(cmd, path)
-	blocks := []string{block}
-	if len(path) == 1 {
-		blocks = append(blocks, Usage("top", UsageVars{"version": inv.build.Version}))
-	}
-	for _, b := range blocks {
-		lines := blockBody(b)
-		for i, line := range lines {
-			line = strings.TrimRight(line, " ")
-			if !strings.HasPrefix(line, "  ") {
-				continue
-			}
-			left, d, ok := splitRow(line)
-			if !ok || d != first {
-				continue
-			}
-			named := false
-			for _, w := range strings.Fields(strings.ReplaceAll(left, ",", " ")) {
-				if slices.Contains(f.Names, w) {
-					named = true
-				}
-			}
-			if !named {
-				continue
-			}
-			col := len(line) - len(d)
-			pad := strings.Repeat(" ", col)
-			full := d
-			for _, next := range lines[i+1:] {
-				next = strings.TrimRight(next, " ")
-				if !strings.HasPrefix(next, pad) || len(next) <= col || next[col] == ' ' {
-					break
-				}
-				full += " " + strings.TrimSpace(next)
-			}
-			return full
-		}
-	}
-	return first
 }
 
 // Configuration keys.
@@ -492,8 +427,8 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"breakglass_hold.<device>.since":         {setWith("breakglass hold"), "When the hold was made (RFC 3339)."},
 	"breakglass_hold.<device>.by":            {setWith("breakglass hold"), "The user who held it."},
 	"breakglass_hold.<device>.reason":        {setWith("breakglass hold"), "Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the hold by tacctl breakglass release."},
-	"blocks.<scope>.<vendor>":                {setWith("scope block"), "The configuration blocks in force for the scope and vendor (juniper or cisco), a list of snmp and system; a file under the blocks directory that this list does not name is ignored."},
-	"blocks_device.<device>.<vendor>":        {setWith("device block"), "The configuration blocks in force for one device and vendor (juniper or cisco), a list of snmp and system; the device's lower case name is written with every '.' as '~' (js1~lab~example~net), and a file under the blocks directory that this list does not name is ignored."},
+	"blocks.<scope>.<vendor>":                {setWith("scope block"), "The configuration blocks in force for the scope and vendor (cisco or juniper), a list of snmp and system; a file under the blocks directory that this list does not name is ignored."},
+	"blocks_device.<device>.<vendor>":        {setWith("device block"), "The configuration blocks in force for one device and vendor (cisco or juniper), a list of snmp and system; the device's lower case name is written with every '.' as '~' (js1~lab~example~net), and a file under the blocks directory that this list does not name is ignored."},
 	"snmp_scope.<scope>.version":             {setWith("scope snmp"), "The scope's SNMP version; unset: snmp.version."},
 	"snmp_scope.<scope>.port":                {setWith("scope snmp"), "The scope's agent port; unset: snmp.port."},
 	"snmp_scope.<scope>.timeout":             {setWith("scope snmp"), "The scope's timeout in seconds; unset: snmp.timeout."},

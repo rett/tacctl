@@ -6,8 +6,10 @@ package lifecycle
 // one. The command (internal/cli/rollback.go) adds what needs the
 // invocation: the snapshot and the sudoers installer.
 //
-// The targets are 0.2.16 (the release before this one: RollbackTarget0216,
-// docs/plans/0.2.17-plan.md D257; rollback0216.go), 0.2.9 (RollbackTarget029,
+// The targets are 0.2.17 (the release before this one: RollbackTarget0217,
+// docs/plans/0.2.18-plan.md D273; rollback0217.go: the tiers drop-in),
+// 0.2.16 (RollbackTarget0216, docs/plans/0.2.17-plan.md D257;
+// rollback0216.go), 0.2.9 (RollbackTarget029,
 // docs/plans/0.2.10-plan.md) and 0.2.3 (RollbackTarget). A release's tool
 // converts what that release changed and prepares the state for the one
 // before it, so 0.2.8 is not a target: the way is this tool for 0.2.9, the
@@ -44,9 +46,9 @@ package lifecycle
 //	                       removed (console.Rollback). 'tiers.engineer' and
 //	                       'settings.space_completion' are 0.2.3's own.
 //	devices.yaml           0.2.3's parser rejects the per-device 'snmp:' map
-//	                       and the keys 'config_syntax' and 'netconf';
+//	                       and the keys 'ios_syntax' and 'netconf';
 //	                       removed (devreg.RollbackSNMP,
-//	                       RollbackConfigSyntax, RollbackNetconf).
+//	                       RollbackIOSSyntax, RollbackNetconf).
 //	snmp/devices/*.yaml    the per-device credentials: 0.2.3 opens
 //	                       snmp/<scope>.yaml by name and never lists the
 //	                       directory, so it ignores the subdirectory; left.
@@ -127,13 +129,16 @@ import (
 )
 
 // RollbackTarget is the oldest release 'tacctl rollback' prepares for;
-// RollbackTarget029 is the one before the NETCONF service setting and
-// RollbackTarget0216 the release before this one (0.2.10 to 0.2.16 changed
-// no format 0.2.9 reads strictly, so 0.2.9 stays a target).
+// RollbackTarget029 is the one before the NETCONF service setting,
+// RollbackTarget0216 the one before audit.strict and RollbackTarget0217 the
+// release before this one (0.2.10 to 0.2.16 changed no format 0.2.9 reads
+// strictly, so 0.2.9 stays a target; 0.2.18 changed none 0.2.16 or 0.2.17
+// reads, so 0.2.16 stays one too).
 const (
 	RollbackTarget     = "0.2.3"
 	RollbackTarget029  = "0.2.9"
 	RollbackTarget0216 = "0.2.16"
+	RollbackTarget0217 = "0.2.17"
 )
 
 // RollbackRefusal is a version the command does not take: Lines say why.
@@ -195,12 +200,13 @@ func pluralWord(n int, one, many string) string {
 
 var reVersion = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 
-const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget0216 + "|" + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
+const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget0217 + "|" + RollbackTarget0216 + "|" + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
 
-// CheckRollbackVersion is the version a rollback is asked for ("0.2.16",
-// "0.2.9", "0.2.3" or any with a "v"), or a *RollbackRefusal: 0.2.4 to 0.2.8
-// and older than 0.2.3 (a release's tool prepares the state for the releases
-// it knows, so the way back is one release at a time), 0.2.10 to 0.2.15, this
+// CheckRollbackVersion is the version a rollback is asked for ("0.2.17",
+// "0.2.16", "0.2.9", "0.2.3" or any with a "v"), or a *RollbackRefusal: 0.2.4
+// to 0.2.8 and older than 0.2.3 (a release's tool prepares the state for the
+// releases it knows, so the way back is one release at a time), 0.2.10 to
+// 0.2.15, this
 // release or a newer one, or something that is not a release (the refusal of
 // the last three names the targets and promises no way there).
 func CheckRollbackVersion(arg string) (string, error) {
@@ -211,11 +217,11 @@ func CheckRollbackVersion(arg string) (string, error) {
 			rollbackUsage}}
 	}
 	v := strings.TrimPrefix(arg, "v")
-	if v == RollbackTarget || v == RollbackTarget029 || v == RollbackTarget0216 {
+	if v == RollbackTarget || v == RollbackTarget029 || v == RollbackTarget0216 || v == RollbackTarget0217 {
 		return v, nil
 	}
 	n := func(i int) int { x, _ := strconv.Atoi(m[i]); return x }
-	both := "'tacctl rollback' prepares the state for " + RollbackTarget0216 + " (the release before this one), " + RollbackTarget029 + " and " + RollbackTarget + " only"
+	both := "'tacctl rollback' prepares the state for " + RollbackTarget0217 + " (the release before this one), " + RollbackTarget0216 + ", " + RollbackTarget029 + " and " + RollbackTarget + " only"
 	fallback := "The fallback that needs no tool is 'tacctl backup restore' of a snapshot of the time (see 'tacctl backup list')."
 	switch {
 	case n(1) == 0 && n(2) == 2 && n(3) > 3 && n(3) < 9:
@@ -312,8 +318,8 @@ type RollbackInput struct {
 	HasStore bool
 	// WithHosts: the command was given --hosts.
 	WithHosts bool
-	// Target is the release rolled back to: RollbackTarget0216,
-	// RollbackTarget029 or RollbackTarget (the zero value is 0.2.3, as
+	// Target is the release rolled back to: RollbackTarget0217,
+	// RollbackTarget0216, RollbackTarget029 or RollbackTarget (the zero value is 0.2.3, as
 	// before 0.2.9).
 	Target string
 	// InstallSudoers writes a sudoers drop-in the way the commands do
@@ -358,7 +364,11 @@ type RollbackPlan struct {
 	// netconfDev are the devices with a NETCONF service setting of their
 	// own (0.2.10, D145): removed like the syntax setting is.
 	netconfDev []devNetconf
-	sudoers    []sudoersPlan
+	// syntaxKeyDev are the devices whose configuration syntax setting is
+	// written back under the key 0.2.5 to 0.2.17 read, config_syntax
+	// (0.2.18, D273; the targets 0.2.17, 0.2.16 and 0.2.9).
+	syntaxKeyDev []devSyntax
+	sudoers      []sudoersPlan
 	// notWritten says, after ApplyRollback, which drop-ins could not be
 	// rewritten and why (the apply goes on: 0.2.3's upgrade rewrites the
 	// tiers one itself).
@@ -397,7 +407,7 @@ func (p *RollbackPlan) Pending() bool {
 // PendingFiles: there is a file of tacctl's own to convert (the snapshot
 // holds those; the sudoers drop-ins are not in it).
 func (p *RollbackPlan) PendingFiles() bool {
-	return len(p.keys) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0
+	return len(p.keys) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0
 }
 
 func (p *RollbackPlan) todoSudoers() []sudoersPlan {
@@ -457,6 +467,9 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	if in.Target == RollbackTarget0216 {
 		return planRollback0216(p)
 	}
+	if in.Target == RollbackTarget0217 {
+		return planRollback0217(p)
+	}
 	// A break-glass hold is refused, in the dry run and --apply alike: the
 	// release being left has the record (docs/plans/0.2.5-plan.md D122), and
 	// the older one does not, so a device held would stay unanswered until
@@ -491,8 +504,8 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 		if !d.SNMP.Empty() {
 			p.snmpDev = append(p.snmpDev, devSNMP{d.Name, describeSNMP(d.SNMP)})
 		}
-		if d.ConfigSyntax != "" {
-			p.syntaxDev = append(p.syntaxDev, devSyntax{d.Name, d.ConfigSyntax})
+		if d.IOSSyntax != "" {
+			p.syntaxDev = append(p.syntaxDev, devSyntax{d.Name, d.IOSSyntax})
 		}
 		if !d.Netconf.Empty() {
 			p.netconfDev = append(p.netconfDev, devNetconf{d.Name, describeNetconf(d.Netconf)})
@@ -607,12 +620,12 @@ func (p *RollbackPlan) devicesStep() RollbackStep {
 		s.Lines = append(s.Lines, "remove the snmp map of "+d.name+" ("+d.what+")")
 	}
 	for _, d := range p.syntaxDev {
-		s.Lines = append(s.Lines, "remove the config_syntax key of "+d.name+" ("+d.syntax+")")
+		s.Lines = append(s.Lines, "remove the ios_syntax key of "+d.name+" ("+d.syntax+")")
 	}
 	for _, d := range p.netconfDev {
 		s.Lines = append(s.Lines, "remove the netconf map of "+d.name+" ("+d.what+")")
 	}
-	s.Lines = append(s.Lines, "(0.2.3's parser refuses a device with a key it does not know: \"unknown key 'snmp'\", \"unknown key 'config_syntax'\", \"unknown key 'netconf'\")")
+	s.Lines = append(s.Lines, "(0.2.3's parser refuses a device with a key it does not know: \"unknown key 'snmp'\", \"unknown key 'ios_syntax'\", \"unknown key 'netconf'\")")
 	return s
 }
 
@@ -624,7 +637,7 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 	tiers := sudoersPlan{label: "the per-tier drop-in", file: pt.TierSudoersFile, state: "absent"}
 	if b, err := os.ReadFile(pt.TierSudoersFile); err == nil {
 		switch got := string(b); {
-		case got == tier.Sudoers(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
+		case got == tier.Sudoers(), got == tier.Sudoers0217(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
 			tiers.state, tiers.body = "rewrite", tier.Sudoers023()
 		case got == tier.Sudoers023():
 			tiers.state = "done"
@@ -814,7 +827,7 @@ func (p *RollbackPlan) warnings() []RollbackWarning {
 		lines = append(lines, "The settings of 'device config apply' ("+strings.Join(ro, ", ")+") are removed from tacctl.yaml; 0.2.3 has no such verb.")
 	}
 	if len(p.syntaxDev) > 0 {
-		lines = append(lines, "The configuration syntax setting of a Cisco device (device config-syntax) is removed: a release without it compares a legacy-ssh device as IOS 12.x again, and renders its walkthrough in the syntax of --legacy only:")
+		lines = append(lines, "The configuration syntax setting of a Cisco device (device ios-syntax) is removed: a release without it compares a legacy-ssh device as IOS 12.x again, and renders its walkthrough in the syntax of --legacy only:")
 		for _, d := range p.syntaxDev {
 			lines = append(lines, "  "+d.name+": "+d.syntax)
 		}
@@ -898,7 +911,7 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 		}
 	}
 	if len(p.syntaxDev) > 0 {
-		cleared, err := devreg.RollbackConfigSyntax(pt.DevicesFile, nil)
+		cleared, err := devreg.RollbackIOSSyntax(pt.DevicesFile, nil)
 		if err != nil {
 			return done, err
 		}
@@ -915,6 +928,17 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 			done = append(done, fmt.Sprintf("%s: removed the NETCONF service setting of %d %s", pt.DevicesFile, len(cleared), plural(len(cleared), "device", "devices")))
 		}
 	}
+	// Last of the writes of devices.yaml: every other one writes the key
+	// this release reads.
+	if len(p.syntaxKeyDev) > 0 {
+		names, err := devreg.RollbackIOSSyntaxKey(pt.DevicesFile, nil)
+		if err != nil {
+			return done, err
+		}
+		if len(names) > 0 {
+			done = append(done, fmt.Sprintf("%s: wrote the configuration syntax of %d %s under %s", pt.DevicesFile, len(names), plural(len(names), "device", "devices"), devreg.OldSyntaxKey))
+		}
+	}
 	p.notWritten = nil
 	for _, d := range p.todoSudoers() {
 		if p.in.InstallSudoers == nil {
@@ -928,4 +952,34 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 		done = append(done, d.file+": rewritten with the text "+p.target()+" writes")
 	}
 	return done, nil
+}
+
+// planSyntaxKey fills syntaxKeyDev for a target that reads the setting
+// under config_syntax only (0.2.5 to 0.2.17).
+func (p *RollbackPlan) planSyntaxKey() error {
+	devs, err := devreg.SyntaxKeyed(p.in.Paths.DevicesFile)
+	if err != nil {
+		return err
+	}
+	for _, d := range devs {
+		p.syntaxKeyDev = append(p.syntaxKeyDev, devSyntax{d.Name, d.IOSSyntax})
+	}
+	return nil
+}
+
+// syntaxKeyStep is the step of devices.yaml for the targets 0.2.17, 0.2.16
+// and 0.2.9: the configuration syntax setting under the key they read.
+func (p *RollbackPlan) syntaxKeyStep() RollbackStep {
+	t := p.target()
+	s := RollbackStep{Title: p.in.Paths.DevicesFile + ": write the configuration syntax setting under the key " + t + " reads (" + devreg.OldSyntaxKey + ")",
+		Todo: len(p.syntaxKeyDev) > 0}
+	if len(p.syntaxKeyDev) == 0 {
+		s.Lines = []string{"no device has a configuration syntax setting under ios_syntax"}
+		return s
+	}
+	for _, d := range p.syntaxKeyDev {
+		s.Lines = append(s.Lines, "write ios_syntax of "+d.name+" ("+d.syntax+") as "+devreg.OldSyntaxKey)
+	}
+	s.Lines = append(s.Lines, "("+t+"'s parser refuses a device with a key it does not know: \"unknown key 'ios_syntax'\"; the value and every other key stay)")
+	return s
 }

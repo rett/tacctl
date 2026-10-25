@@ -18,13 +18,13 @@ config linux build
 @root tests/diff/roots/hosts
 
 # --- the families ----------------------------------------------------------------
-@known 0.2.1 items 37, 39 and 45: the host usage names --remove-home, not --adopt, and lists target; 0.2.2 item 7: and show; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.1 items 37, 39 and 45: the host usage names --remove-home, not --adopt, and lists target; 0.2.2 item 7: and show; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 host
-@known 0.2.1 items 37, 39 and 45: the host usage names --remove-home, not --adopt, and lists target; 0.2.2 item 7: and show; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.1 items 37, 39 and 45: the host usage names --remove-home, not --adopt, and lists target; 0.2.2 item 7: and show; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 host bogus
-@known 0.2.1 items 37, 39 and 45: the host usage names --remove-home, not --adopt, and lists target; 0.2.2 item 7: and show; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.1 items 37, 39 and 45: the host usage names --remove-home, not --adopt, and lists target; 0.2.2 item 7: and show; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 host help
-@known 0.2.1 items 37, 39 and 45: the host usage names --remove-home, not --adopt, and lists target; 0.2.2 item 7: and show; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.1 items 37, 39 and 45: the host usage names --remove-home, not --adopt, and lists target; 0.2.2 item 7: and show; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 host -h
 host list
 @known 0.2.1 items 53, 55 and 56: config linux usage has uid-range, the console note and one line per option
@@ -89,13 +89,13 @@ host default-method radius ;; host enroll web1 --scope lab --method tacplus ;; h
 # enroll refused
 host enroll
 host enroll 'web1;reboot' --scope lab
-@known 0.2.1 items 37, 39 and 45: the host usage names --remove-home, not --adopt, and lists target; 0.2.2 item 7: and show; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.1 items 37, 39 and 45: the host usage names --remove-home, not --adopt, and lists target; 0.2.2 item 7: and show; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 host enroll -oProxyCommand=x --scope lab
 host enroll web1 web2
 host enroll --local web1
-@known 0.2.1 item 37: --adopt is gone (Unknown option); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.1 item 37: --adopt is gone (Unknown option); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 host enroll web1 --adopt alice
-@known 0.2.1 item 37: --adopt is gone (Unknown option); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.1 item 37: --adopt is gone (Unknown option); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 host enroll web1 --adopt
 host enroll web1 --method
 host enroll web1 --method ldap

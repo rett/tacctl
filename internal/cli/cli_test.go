@@ -76,15 +76,13 @@ func TestEveryCommandHasAHandler(t *testing.T) {
 	}
 }
 
-// The top-level dispatch of bin/tacctl.sh ('*) usage; exit 1'): no
-// command, help, -h, --help and any word that is no command print the
-// top-level usage on stdout and exit 1; cobra's defaults (help command,
-// -h/--help, suggestions, completion) never intercept.
+// No command, help, -h and --help print the top-level usage on stdout and
+// exit 1; cobra's defaults (help command, -h/--help, suggestions,
+// completion) never intercept.
 func TestTopLevelUsage(t *testing.T) {
 	want := Usage("top", UsageVars{"version": "0.2.0-test"})
 	for _, args := range [][]string{
-		{}, {""}, {"help"}, {"-h"}, {"--help"}, {"bogus"}, {"-x", "user", "list"},
-		{"--x=1", "user", "list"}, {"--", "version"}, {"Version"}, {"help", "version"}, {"User", "list"}, {"Hash"},
+		{}, {""}, {"help"}, {"-h"}, {"--help"}, {"help", "version"}, {"-h", "user"},
 	} {
 		h := newHarness(t, args)
 		if code := exitCode(h.run(), h.app.Out); code != 1 || h.out.String() != want || h.err.Len() != 0 ||
@@ -409,7 +407,7 @@ func TestMain(t *testing.T) {
 	}
 	out.Reset()
 	// (A word that runs nothing: Main runs programs for real.)
-	code = Main([]string{"tacctl", "bogus"}, []string{"TACCTL_SKIP_SUDO=1"}, app.Stdio{Stdout: &out, Stderr: &errb}, BuildInfo{Version: "9.9.9"})
+	code = Main([]string{"tacctl", "help"}, []string{"TACCTL_SKIP_SUDO=1"}, app.Stdio{Stdout: &out, Stderr: &errb}, BuildInfo{Version: "9.9.9"})
 	if code != 1 || out.String() != Usage("top", UsageVars{"version": "9.9.9"}) || errb.Len() != 0 {
 		t.Errorf("Main usage: %d %q", code, errb.String())
 	}

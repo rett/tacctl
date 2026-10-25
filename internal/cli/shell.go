@@ -469,6 +469,7 @@ func (inv *invocation) completer(root *cobra.Command, fixedOnly bool) shell.Comp
 		comps, dir := inv.completeSpec(cspec, rest, partial)
 		noSpace := dir&cobra.ShellCompDirectiveNoSpace != 0
 		descs := inv.flagDescs(cmd, path, spec, comps)
+		wdescs := inv.wordDescs(cmd, path, spec, rest)
 		kind := listKindName(spec, rest)
 		// Fixed words complete on a typed space: the flags' names and the
 		// words of a fixed kind, never live names, files or comma lists.
@@ -482,6 +483,9 @@ func (inv *invocation) completer(root *cobra.Command, fixedOnly bool) shell.Comp
 				if d == "" {
 					d = fd
 				}
+			}
+			if d == "" && !isFlag {
+				d = wdescs[w]
 			}
 			out = append(out, shell.Candidate{Word: w, Desc: d, NoSpace: noSpace, Kind: k, Fixed: isFlag || fixed})
 		}
@@ -527,6 +531,7 @@ var shellHelpBlocks = map[string]func(inv *invocation) string{
 	"hash":            func(*invocation) string { return hashUsage() },
 	"device":          func(*invocation) string { return deviceRegUsage() },
 	"ssh":             func(*invocation) string { return sshUsage() },
+	"console":         func(*invocation) string { return consoleUsage() },
 }
 
 // usageNoCurrent is a usage block with its {{current}} line left out.

@@ -206,5 +206,5 @@ teardown() { rm -rf "${XDG_RUNTIME_DIR:-/nonexistent}"; }
     # Without the marker one argument is an unknown command, as ever.
     run "$TACCTL_BIN_SCRIPT" "Password: "
     assert_failure 1
-    assert_output --partial "Usage:"
+    assert_output --partial "Unknown command: 'Password: '"
 }

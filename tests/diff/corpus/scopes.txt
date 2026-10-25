@@ -3,9 +3,9 @@
 # Run: tests/diff/run.sh scopes
 @fixture tacquito.minimal.yaml
 
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 scope
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 scope bogus
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope list
@@ -132,6 +132,7 @@ scope secret lab generate ;; scope secret lab show
 scope secret lab generate ;; scope show lab
 
 # protocols, vendor-attrs, devices
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 scope protocols
 scope protocols lab
 scope protocols nosuch list
@@ -143,16 +144,20 @@ scope protocols lab set tacacs ;; scope protocols lab list
 scope protocols lab set tacacs,radius ;; scope protocols lab list
 scope protocols lab set bogus
 scope protocols lab clear ;; scope protocols lab list
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 scope vendor-attrs
 scope vendor-attrs lab
 scope vendor-attrs nosuch
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 scope vendor-attrs lab enable cisco ;; scope vendor-attrs lab
 scope vendor-attrs lab enable bogus
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 scope vendor-attrs lab enable
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 scope vendor-attrs lab enable cisco,juniper ;; scope vendor-attrs lab disable cisco ;; scope vendor-attrs lab
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 scope vendor-attrs lab bogus
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 scope devices
 scope devices lab
 scope devices nosuch
@@ -171,6 +176,7 @@ scope aaa-order lab
 @known 0.2.1 item 58: the scope on a line of its own
 scope aaa-order lab local-first ;; scope aaa-order lab
 scope aaa-order lab sideways
+@known 0.2.18 item 7: the usage line writes the placeholder as <name> (an optional one [<name>], a choice of words without <>)
 scope exec-timeout
 scope exec-timeout nosuch
 @known 0.2.1 item 58: the scope on a line of its own
@@ -181,6 +187,7 @@ scope exec-timeout lab 15 ;; scope exec-timeout lab
 scope exec-timeout lab 0 ;; scope exec-timeout lab
 scope exec-timeout lab 90
 scope exec-timeout lab forever
+@known 0.2.18 item 7: the usage line writes the placeholder as <name> (an optional one [<name>], a choice of words without <>)
 scope tacacs-group
 scope tacacs-group nosuch
 @known 0.2.1 item 58: the scope on a line of its own
@@ -189,6 +196,7 @@ scope tacacs-group lab
 scope tacacs-group lab TACACS_PROD ;; scope tacacs-group lab
 scope tacacs-group lab 9-digit-start
 scope tacacs-group lab 'has spaces'
+@known 0.2.18 item 7: the usage line writes the placeholder as <name> (an optional one [<name>], a choice of words without <>)
 scope radius-group
 scope radius-group nosuch
 @known 0.2.1 item 58: the scope on a line of its own
@@ -199,14 +207,18 @@ scope radius-group lab 9-digit-start
 scope radius-group lab 'has spaces'
 scope auth-method
 scope auth-method nosuch
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 scope auth-method lab
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 scope auth-method lab radius ;; scope auth-method lab
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 scope auth-method lab tacacs ;; scope auth-method lab clear ;; scope auth-method lab
 scope auth-method lab bogus
 
 # per-scope management ACL
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 scope mgmt-acl
-@known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables
+@known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 scope mgmt-acl lab
 scope mgmt-acl nosuch list
 @known 0.2.7 item 20: the mgmt-acl usage and its "Add with" hint name the optional :<services>
@@ -230,11 +242,11 @@ scope mgmt-acl nosuch cisco-name
 scope mgmt-acl lab ios-name
 
 # WP2.4b: more of the usage, flag and value handling
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 scope -h
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 scope --help
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 scope help
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope list extra
@@ -360,6 +372,7 @@ scope protocols lab clear
 @known 0.2.3 item 78: scope show has a Break-glass line
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 scope protocols lab set radius ;; scope auth-method lab ;; scope show lab
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 scope auth-method lab tacacs ;; scope protocols lab set radius
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 scope protocols lab set tacacs ;; scope auth-method lab radius
@@ -377,6 +390,7 @@ scope vendor-attrs lab show
 scope vendor-attrs lab enable 'cisco juniper'
 scope devices lab set notanip bogus
 scope devices lab unset 192.168.7.7 cisco
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 scope devices lab set 192.168.7.7
 scope devices lab set 8.8.8.8 cisco
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
@@ -385,6 +399,7 @@ scope devices lab set 192.168.7.7 cisco ;; scope devices lab set 192.168.7.7 cis
 scope devices lab set 192.168.7.7 cisco ;; scope devices lab set 192.168.7.7/32 juniper ;; scope devices lab ;; scope show lab
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 scope devices lab set 192.168.7.0/24 wti ;; scope devices lab set 192.168.7.7 cisco ;; scope devices lab ;; scope lookup 192.168.7.7
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 scope devices lab bogus
 
 # aaa-order, exec-timeout, groups, auth-method: back to the default, edges
@@ -397,9 +412,11 @@ scope exec-timeout lab -1
 scope exec-timeout lab 60 ;; scope exec-timeout lab
 @known 0.2.1 item 58: the scope on a line of its own
 scope tacacs-group lab TACACS-GROUP ;; scope tacacs-group lab
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 scope auth-method lab tacplus ;; scope auth-method lab
 scope auth-method lab default
 scope auth-method lab radius ;; scope auth-method lab radius
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 scope auth-method lab radius ;; scope auth-method lab default ;; scope auth-method lab
 scope auth-method lab clear extra
 
@@ -408,12 +425,12 @@ scope mgmt-acl lab remove 10.1.0.0/16
 scope mgmt-acl lab add 10.1.0.0/16 ;; scope mgmt-acl lab remove 10.2.0.0/16
 scope mgmt-acl lab add 10.1.0.0/16 ;; scope mgmt-acl lab add 10.1.0.9/16,10.3.0.0/16
 scope mgmt-acl lab clear
-@known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables
+@known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 config mgmt-acl add 10.0.0.0/8 ;; scope mgmt-acl lab list ;; scope mgmt-acl lab
 @known 0.2.3 item 78: scope show has a Break-glass line
 config mgmt-acl cisco-name GLOBAL-ACL ;; scope mgmt-acl lab cisco-name ;; scope show lab
 scope mgmt-acl lab cisco-name 'has space'
-@known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables
+@known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 scope mgmt-acl lab add 10.1.0.0/16 ;; scope mgmt-acl lab clear <<< yes ;; scope mgmt-acl lab
 scope mgmt-acl lab bogus extra
 
@@ -425,6 +442,7 @@ scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --pro
 scope prefixes '' list
 scope secret lab set ''
 scope protocols lab set ''
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 scope devices lab set '' cisco
 @known 0.2.7 item 20: the mgmt-acl usage and its "Add with" hint name the optional :<services>
 scope mgmt-acl lab add ''

@@ -100,7 +100,7 @@ func TestSetterApplyRefusesBeforeChanging(t *testing.T) {
 		{[]string{"device", "address", "lab-j", "192.168.1.99", "--apply"}, "no terminal to confirm on"},
 		{[]string{"device", "location", "lab-j", "--apply"}, "--apply goes with a value to set"},
 		{[]string{"device", "location", "lab-j", "--from-device", "--apply"}, "nothing to apply"},
-		{[]string{"device", "config-syntax", "lab-j", "--apply"}, "--apply goes with a value to set"},
+		{[]string{"device", "ios-syntax", "lab-j", "--apply"}, "--apply goes with a value to set"},
 	} {
 		b.run(c.args...)
 		if b.sb.code == 0 || !strings.Contains(b.sb.stderr(), c.want) {
@@ -137,7 +137,7 @@ func TestSetterApplyRefusesNonJunosAndLowerTiers(t *testing.T) {
 	}{
 		{[]string{"device", "location", "sw-c", "Row 3", "--apply"}, "apply writes to Junos devices only in this release"},
 		{[]string{"device", "location", "pdu-w", "Row 3", "--apply"}, "apply is not available for WTI units"},
-		{[]string{"device", "config-syntax", "sw-c", "ios12", "--apply"}, "apply writes to Junos devices only in this release"},
+		{[]string{"device", "ios-syntax", "sw-c", "ios12", "--apply"}, "apply writes to Junos devices only in this release"},
 	} {
 		asAlice(sb, c.args...)
 		if sb.code == 0 || !strings.Contains(sb.stderr(), c.want) || !strings.Contains(sb.stderr(), "Nothing was changed.") {

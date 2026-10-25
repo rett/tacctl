@@ -18,17 +18,25 @@ import (
 )
 
 // usageRow is one row of a usage block: the left column (the command with
-// its arguments), its first word and the description.
-type usageRow struct{ Left, Name, Desc string }
+// its arguments), its first word and the description; for the rows of one
+// command, the line of the block it is on (At) and whether it is a 'Usage:'
+// line of the command's own block (Own).
+type usageRow struct {
+	Left, Name, Desc string
+	At               int
+	Own              bool
+}
 
 // reProg is the program prefix some blocks put before each row's verb.
 var reProg = regexp.MustCompile(`^tacctl [a-z-]+ `)
 
-// splitRow splits a usage line at its widest run of blanks (the last one
-// of equal width): the argument column from the description.
+// splitRow splits a usage line at its last run of two or more blanks: the
+// argument column from the description. The argument column may itself be
+// padded to line up with its neighbours ('cisco   [--scope <name>] ...');
+// the description never holds two blanks in a row.
 func splitRow(line string) (left, desc string, ok bool) {
 	body := strings.TrimPrefix(plainBlock(line), "  ")
-	bestAt, bestLen := -1, 1
+	bestAt, bestLen := -1, 0
 	for i := 0; i < len(body); {
 		if body[i] != ' ' {
 			i++
@@ -38,7 +46,7 @@ func splitRow(line string) (left, desc string, ok bool) {
 		for j < len(body) && body[j] == ' ' {
 			j++
 		}
-		if j-i >= 2 && j-i >= bestLen && j < len(body) {
+		if j-i >= 2 && j < len(body) {
 			bestAt, bestLen = i, j-i
 		}
 		i = j
@@ -73,8 +81,9 @@ func usageRows(block, heading string) []usageRow {
 		if !ok {
 			continue
 		}
+		left = oneBlank(left)
 		name, _, _ := strings.Cut(reProg.ReplaceAllString(left, ""), " ")
-		rows = append(rows, usageRow{Left: left, Name: name, Desc: desc})
+		rows = append(rows, usageRow{Left: left, Name: name, Desc: joinContinued(desc, line, lines[i+1:])})
 	}
 	return rows
 }

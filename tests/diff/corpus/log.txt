@@ -10,17 +10,17 @@
 @fixture tacquito.minimal.yaml
 
 # log: usage and argument errors
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 log
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 log bogus
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 log help
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 log -h
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 log --backend tacacs tail
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 log --backend=radius tail
 log search
 log search --backend radius
@@ -105,7 +105,7 @@ backend status TACACS
 @known 0.2.1 item 56: the usage has one line per option
 backend Status
 log tail --backend TACACS
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 log Tail
 log failures --backend ldap
 log search --backend=nope term

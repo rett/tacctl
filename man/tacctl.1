@@ -1,6 +1,6 @@
 .\" Manual page for tacctl, the management CLI for pluggable network-device AAA.
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-10-24" "tacctl 0.2.17" "tacctl Manual"
+.TH TACCTL 1 "2026-10-24" "tacctl 0.2.18" "tacctl Manual"
 .SH NAME
 tacctl \- manage pluggable network-device AAA: users, groups, scopes and devices
 .SH SYNOPSIS
@@ -212,8 +212,9 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.16
+.B 0.2.17
 (the release before this one),
+.BR 0.2.16 ,
 .B 0.2.9
 and
 .BR 0.2.3 ;
@@ -224,7 +225,7 @@ and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word (0.2.10 to
-0.2.15 included: the refusal names the three targets). Every target is
+0.2.15 included: the refusal names the four targets). Every target is
 refused while a device's record says a confirmed commit of
 .B "device config apply"
 is
@@ -236,6 +237,37 @@ or
 or
 .B "device config forget <name>"
 settles it).
+.IP
+.B "rollback 0.2.17"
+.B \-\-apply
+rewrites the per\-tier sudoers drop\-in, when it is exactly the text this
+release writes, with the one 0.2.17 writes (after
+.BR "visudo \-cf" ):
+the rules of
+.BR "device ios\-syntax" ,
+.B "device notice list"
+and
+.B "device client\-config"
+become 0.2.17's
+.BR "device config\-syntax" ,
+.B "device notices"
+and
+.BR "device ssh\-config" . An edited drop\-in is left (0.2.17's upgrade rewrites
+it). When a device of
+.I devices.yaml
+has a configuration syntax setting
+.RB ( ios_syntax ),
+the command takes a snapshot first and writes the setting under
+.BR config_syntax ,
+the key 0.2.5 to 0.2.17 read (they refuse a key they do not know); the value
+and every other key stay. Nothing else is converted:
+.IR tacctl.yaml ,
+.IR console.yaml ,
+.IR store.yaml ,
+the group drop\-in and the hosts are in formats 0.2.17 reads.
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.17" .
 .IP
 .B "rollback 0.2.16"
 .B \-\-apply
@@ -255,9 +287,12 @@ refuses without
 .BR \-\-yes ;
 a
 .B false
-value is removed without a warning. Nothing else is converted:
+value is removed without a warning. The configuration syntax setting of
+.I devices.yaml
+is written under
+.BR config_syntax ,
+as for 0.2.17. Nothing else is converted:
 .IR console.yaml ,
-.IR devices.yaml ,
 .IR store.yaml ,
 the apply state directory, the sudoers drop-ins and the hosts are in formats
 0.2.16 reads, and the snapshot manifests gained keys that nothing reads.
@@ -293,7 +328,10 @@ audit.strict is removed without a warning) and from
 the
 .B netconf
 map of each device that has one
-.RB ( "device netconf" ).
+.RB ( "device netconf" ),
+and writes the configuration syntax setting under
+.BR config_syntax ,
+as for 0.2.17.
 It leaves and lists, and never deletes, what 0.2.9 ignores: the
 .B via
 field of the
@@ -334,7 +372,7 @@ from
 and writes it the way 0.2.3 reads it (the cache is off); removes the
 .B snmp
 map, the
-.B config_syntax
+.B ios_syntax
 key and the
 .B netconf
 map of every device from
@@ -354,7 +392,7 @@ alias and
 line and, in the per-tier file, the rows of
 .BR "device config" ,
 .BR "device snmp" ,
-.BR "device config\-syntax" ,
+.BR "device ios\-syntax" ,
 .B "breakglass list"
 and
 .BR "console forget" .
@@ -408,7 +446,7 @@ Options:
 Take a snapshot, then convert the files the target cannot read (tacctl.yaml, sudoers; for 0.2.3 also console.yaml, devices.yaml).
 .TP
 \fB\-\-yes\fR
-Answer yes to the confirmations.
+Acknowledge the warnings that \-\-apply refuses to go on without.
 .TP
 \fB\-\-hosts\fR
 Accepted; the hosts need nothing for this target (no host is synced).
@@ -1080,7 +1118,7 @@ Options:
 (reset) Show the difference; write nothing.
 .TP
 \fB\-\-yes\fR
-(reset) Do not ask.
+(reset) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command group commands reset
 .TP
@@ -1248,7 +1286,7 @@ Options:
 (reset) Show the difference; write nothing.
 .TP
 \fB\-\-yes\fR
-(reset) Do not ask.
+(reset) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command group privilege reset
 .TP
@@ -1525,7 +1563,7 @@ Options:
 (preset, reset) Show what would change; write nothing.
 .TP
 \fB\-\-yes\fR
-(reset) Do not ask.
+(reset) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command group reset
 .SS Server configuration \fB(tacctl config)\fR
@@ -1966,7 +2004,7 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-backend\fR \fI<id>\fR
-Act on another backend (see 'tacctl backend list'); radius: \-\-listener auth|acct <udp|udp6> <addr>.
+Act on another backend (see 'tacctl backend list'); radius: \-\-listener auth|acct udp|udp6 <addr>.
 .TP
 \fB\-\-listener\fR \fI<name>\fR
 Act on another listener than 'default' (its own tacquito@<name> unit; reset removes it).
@@ -2409,10 +2447,10 @@ pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth package a
 (enroll, with \-\-scope) Provisioned off\-site: the host's bench address joins the scope as a /32 (its secret and users) until the host is seen in place (tacctl scope staging).
 .TP
 \fB\-\-allow\-uid\-mismatch\fR
-(enroll and sync) Accept a UID conflict on the host instead of stopping.
+(enroll, sync and move) Accept a UID conflict on the host instead of stopping.
 .TP
 \fB\-\-remove\-home\fR
-(enroll and sync) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
+(enroll, sync and move) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
 .RE
 .\" END GENERATED: command host enroll
 .TP
@@ -2442,10 +2480,10 @@ Options:
 (enroll and move) Move a registered host to another scope even when that deletes accounts.
 .TP
 \fB\-\-allow\-uid\-mismatch\fR
-(enroll and sync) Accept a UID conflict on the host instead of stopping.
+(enroll, sync and move) Accept a UID conflict on the host instead of stopping.
 .TP
 \fB\-\-remove\-home\fR
-(enroll and sync) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
+(enroll, sync and move) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
 .RE
 .\" END GENERATED: command host move
 .TP
@@ -2643,10 +2681,10 @@ Options:
 (sync) Every enrolled host.
 .TP
 \fB\-\-allow\-uid\-mismatch\fR
-(enroll and sync) Accept a UID conflict on the host instead of stopping.
+(enroll, sync and move) Accept a UID conflict on the host instead of stopping.
 .TP
 \fB\-\-remove\-home\fR
-(enroll and sync) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
+(enroll, sync and move) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
 .RE
 .\" END GENERATED: command host sync
 .TP
@@ -3706,7 +3744,7 @@ Members of
 may run
 .BR passwd ", " status ", " version ", " help " (also " \-h ", " \-\-help "), " "user list" ", " "user show" ", "
 .BR "group list" ", " "group show" ", " "scope list" ", " "backend list" ", " "backend status" ", "
-.BR "device list" ", " "device show" ", " "device notices" ", " "device ssh\-config" ", "
+.BR "device list" ", " "device show" ", " "device notice list" ", " "device client\-config" ", "
 .BR "ssh " \fIname\fR " and " "device ssh " \fIname\fR
 (the devices of their own scopes only), and the console's own
 .BR _console\-policy .
@@ -3720,7 +3758,7 @@ Members of
 .B tac-engineer
 may additionally run, for the devices, hosts and scopes of their own scopes only,
 .BR "device add" ", " remove ", " rename ", " address ", " hostname ", " vendor ", "
-.BR port ", " description ", " location ", " legacy\-ssh ", " config\-syntax ", " hostkey " and " "import " "\-"
+.BR port ", " description ", " location ", " legacy\-ssh ", " ios\-syntax ", " hostkey " and " "import " "\-"
 (standard input only: sudoers matches the first argument),
 .BR "scope devices" ", " "config cisco" "|" juniper "|" wti ,
 .BR "host list" " and " "host show"
@@ -3744,7 +3782,7 @@ are the superuser's, and an engineer's
 .B "device import"
 neither sets nor drops a device's own settings), and the configuration blocks
 of a scope of theirs and of the devices there
-.RB ( "scope block " \fIscope\fR " {juniper|cisco} list|show|check" ,
+.RB ( "scope block " \fIscope\fR " cisco|juniper list|show|check" ,
 .BR "device block " \fIname\fR " list|show|check" ;
 .BR set ,
 .BR remove ,
@@ -4202,7 +4240,7 @@ whatever the configuration syntax of the device named by
 is. With
 .B --name
 naming a registered Cisco device of the scope the syntax is that device's
-.RB ( "device config\-syntax" ,
+.RB ( "device ios\-syntax" ,
 else what its last pull read from its version line, else the modern syntax and
 one line on standard error that says so);
 .B --legacy
@@ -4434,7 +4472,7 @@ Options:
 (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location).
 .TP
 \fB\-\-legacy\fR
-(cisco) IOS 12.x syntax.
+(cisco) The IOS 12.x syntax, whatever the \-\-name device's ios\-syntax says.
 .RE
 .\" END GENERATED: command config cisco
 .TP
@@ -5248,9 +5286,14 @@ and names (users, groups, scopes, hosts, devices, ..., asked of
 .B sudo \-n tacctl _completion-names
 and kept for 5 seconds); a second Tab lists the matching words alone. ?
 inserts nothing and shows help for the cursor's position: the words that can
-come (\(lqPossible completions:\(rq), or after a command that takes arguments
-its usage lines, its options and what comes next
-(\(lqNext: <username> <group>\(rq, \(lqNext: <Enter> to run\(rq). Inside
+come (\(lqPossible completions:\(rq; a fixed word such as priv\-lvl after
+.B group edit
+<name> with the description of the usage line that has it), or after a
+command that takes arguments the usage lines of the forms the words typed so
+far fit, its options and what comes next (\(lqNext: <username> <group>\(rq;
+where the forms part, the choice:
+\(lqNext: <name> priv\-lvl|juniper\-class|wti\-level|tier ...\(rq;
+\(lqNext: <Enter> to run\(rq). Inside
 quotes, or after a backslash, ? is typed as a character. A list of more than
 40 entries asks first (\(lqShow all 45 devices? [y/N]\(rq): y shows it, any
 other key (or Ctrl-C) prints how to narrow it and gives the line back. Help taller than the terminal is
@@ -5886,8 +5929,9 @@ Requires: \fBsuperuser\fR.
 .\" END GENERATED: command scope exec-timeout
 .SS Per-scope mgmt-acl \fB(tacctl scope mgmt-acl)\fR
 .TP
-.BI "scope mgmt-acl " scope " " \
-"<list|add|remove|clear|cisco-name|juniper-name>" " [" args "]"
+.BI "scope mgmt-acl " scope " list|add|remove|clear [ " entry\fR[,\fIentry\fR...] " ]"
+.TQ
+.BI "scope mgmt-acl " scope " cisco-name|juniper-name [ " label " ]"
 Per-scope management ACL, with the subcommands of the global
 .BR "tacctl config mgmt-acl" .
 The effective permit list of a
@@ -6301,7 +6345,7 @@ management filter's
 .B permit\-snmp
 term permits the resolved block's unrestricted IPv4 clients.
 .TP
-.BI "scope block " scope " {juniper|cisco} list"
+.BI "scope block " scope " cisco|juniper list"
 The blocks of the scope: for each, whether it is in force, has no file, or is a
 file that
 .I tacctl.yaml
@@ -6330,7 +6374,7 @@ Plan the device of this scope with this text in force and print the statements o
 .RE
 .\" END GENERATED: command scope block
 .TP
-.BI "scope block " scope " {juniper|cisco} show " block " [ \-\-reveal ]"
+.BI "scope block " scope " cisco|juniper show " block " [ \-\-reveal ]"
 The block as it is in force, with its secrets shown as marks (a comment is never
 shown, and a block with errors is refused: run
 .BR check ).
@@ -6339,7 +6383,7 @@ prints the file as stored; an engineer may reveal the scopes of their own, and
 every reveal is logged, the superuser's too, as
 .BR "secret\-read kind=block name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR .
 .TP
-.BI "scope block " scope " {juniper|cisco} check " block " [ \-\-file " path " | \- ] [ \-\-against " device " ]"
+.BI "scope block " scope " cisco|juniper check " block " [ \-\-file " path " | \- ] [ \-\-against " device " ]"
 Lint the file in force, the file
 .I path
 (a regular file of at most 256 KiB, read as the caller) or standard input
@@ -6356,7 +6400,7 @@ pull: nothing is written, no back\-out is kept and no device is reached. A
 device that has not been pulled is told to be pulled first, and a system block
 that was not in force at the last pull is told to be set and pulled.
 .TP
-.BI "scope block " scope " {juniper|cisco} set " block " { \-\-file " path " | \- } [ \-y ]"
+.BI "scope block " scope " cisco|juniper set " block " { \-\-file " path " | \- } [ \-y ]"
 Superuser only. Check the text as
 .B check
 does (an error refuses it and nothing is written), show the owned objects and
@@ -6373,7 +6417,7 @@ as the file in force is no change. A change that cannot be made because
 cannot be read or written is refused before anything is. Logged as
 .BR "block\-set name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR .
 .TP
-.BI "scope block " scope " {juniper|cisco} remove " block " [ \-y ]"
+.BI "scope block " scope " cisco|juniper remove " block " [ \-y ]"
 Superuser only. Take the block out of force and delete its file (a file no list
 names is removable too), after a question (\fB\-y\fR answers it) and a
 snapshot. Nothing is deleted from a device: what the block set is no longer
@@ -6381,7 +6425,7 @@ rendered, and the next compare lists those statements as the device's own,
 kept. Logged as
 .BR block\-remove .
 .TP
-.BI "scope block " scope " {juniper|cisco} edit " block " [ \-y ]"
+.BI "scope block " scope " cisco|juniper edit " block " [ \-y ]"
 Superuser only, and only at a terminal (a refusal without one changes nothing).
 Open the block in the editor of the invoking user, as
 .BR visudo (8)
@@ -6453,7 +6497,7 @@ opening a block in force, or a device's new block with the scope's objects,
 is logged before the editor starts as
 .BR "secret\-read kind=block" .
 .TP
-.BI "scope block " scope " {juniper|cisco} adopt " device " " block " [ \-y ]"
+.BI "scope block " scope " cisco|juniper adopt " device " " block " [ \-y ]"
 Superuser only, at a terminal, with the rules of
 .BR edit .
 Read the registered
@@ -6745,7 +6789,7 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-role\fR \fI<role>\fR
-(add) Admin (default), operator or readonly.
+(add) The role: admin (default), operator or readonly.
 .RE
 .\" END GENERATED: command scope breakglass
 .SH DEVICE REGISTRY
@@ -6907,7 +6951,7 @@ it.
 Notices appear in the scan output,
 .BR "tacctl status" ,
 .BR "device list" ,
-.B "device notices"
+.B "device notice list"
 and
 .B "device show"
 (which counts the acknowledged ones;
@@ -6917,8 +6961,8 @@ on either lists them, marked).
 Reading verbs
 .RB ( list ,
 .BR show ,
-.BR notices ,
-.BR ssh\-config )
+.BR "notice list" ,
+.BR client\-config )
 and
 .B "tacctl ssh"
 are open to the read-only and operator tiers, which see only the devices and
@@ -7025,7 +7069,7 @@ Only names that contain the text (a comma list: any of them).
 \fB\-\-ip\fR \fI<addr|cidr|text>\fR
 Only addresses equal to, inside, or containing it (an address, a CIDR or a text; a comma list).
 .TP
-\fB\-\-vendor\fR \fIcisco|juniper|wti|other\fR
+\fB\-\-vendor\fR \fI<vendor>\fR
 Only that vendor: cisco, juniper, wti, other or linux (a comma list).
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
@@ -7081,7 +7125,7 @@ The acknowledged notices too.
 .RE
 .\" END GENERATED: command device show
 .TP
-.BI "device add " "[ name ] address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-snmp\-location " text " ] [ \-\-legacy\-ssh ] [ \-\-config\-syntax auto|ios12|modern ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-no\-lookup ] [ \-\-pull ] [ \-\-allow\-generic ]"
+.BI "device add " "[ name ] address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-snmp\-location " text " ] [ \-\-legacy\-ssh ] [ \-\-ios\-syntax auto|ios12|modern ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-no\-lookup ] [ \-\-pull ] [ \-\-allow\-generic ]"
 Register a device. A new name is lower case: a name with upper case is refused with
 the lower\-case spelling to use (the name a device reports, or its SNMP sysName, is
 lowercased); a device that exists with upper case keeps working and is listed by
@@ -7258,10 +7302,10 @@ A description of the device.
 Its place (the SNMP location the walkthroughs render).
 .TP
 \fB\-\-legacy\-ssh\fR
-SHA\-1 key exchange, CBC ciphers and ssh\-rsa; the configuration syntax is \-\-config\-syntax.
+SHA\-1 key exchange, CBC ciphers and ssh\-rsa; the configuration syntax is \-\-ios\-syntax.
 .TP
-\fB\-\-config\-syntax\fR \fI<syntax>\fR
-(cisco) auto, ios12 or modern: the configuration syntax (default auto: the pull's version line says).
+\fB\-\-ios\-syntax\fR \fI<syntax>\fR
+(cisco) The configuration syntax: auto, ios12 or modern (default auto: the pull's version line says).
 .TP
 \fB\-\-host\-key\fR \fISHA256:<fp>\fR
 Register only if the device offers this key; pin it alone.
@@ -7442,7 +7486,7 @@ Options:
 \fB\-\-login\fR \fI<local\-user>\fR
 The device's local account to log in as (any, a break\-glass one included; root through its CLI wrapper): its password is asked once on the terminal and never kept or cached.
 .TP
-\fB\-\-name\fR \fI<text>\fR
+\fB\-\-name\fR \fI<name>\fR
 The registry name, typed back at the key's question (default: its SNMP sysName, else the name typed there; with \-\-host\-key, the name the device reports, a generic or taken one asked for).
 .TP
 \fB\-\-host\-key\fR \fISHA256:<fp>\fR
@@ -7587,7 +7631,7 @@ Accept only this key, read on the device's console (no question; needed without 
 After the table, register each collected device through 'device add' with the key accepted pinned (one question) and keep the read as its first pull record; the key's question takes the device's SNMP sysName when it gives one that is not taken.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-Answer yes to the registration question of \-\-register (needed without a terminal); never a host key's question.
+(collect) Answer yes to the registration question of \-\-register (needed without a terminal); never a host key's question.
 .TP
 \fB\-\-json\fR
 One object at the end (the progress goes to standard error).
@@ -7796,17 +7840,17 @@ Every device of the registry.
 \fB\-\-scope\fR \fI<scope>\fR
 Only the devices of that scope.
 .TP
-\fB\-\-vendor\fR \fIcisco|juniper|wti|other\fR
+\fB\-\-vendor\fR \fI<vendor>\fR
 Only that vendor's devices (only Junos records are read).
 .TP
 \fB\-\-apply\fR
-Write the fields, in one registry write, after one question.
+(sync) Write the fields, in one registry write, after one question.
 .TP
 \fB\-\-overwrite\fR
 Also replace a field that is set, showing the old value.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
+(sync) Answer yes to the question of \-\-apply (needed without a terminal).
 .TP
 \fB\-\-json\fR
 One object: each device's fields, actions and facts.
@@ -7873,7 +7917,7 @@ is refused for a held device.
 A setter that changes what is rendered for the device (this one, the
 .BR description ", " location ", " address ", " vendor
 and
-.B config\-syntax
+.B ios\-syntax
 verbs) says, in one line, when the device has a stored pull that
 .B "device config plan"
 would now change:
@@ -7898,7 +7942,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
@@ -7988,7 +8032,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device description
 .TP
@@ -8040,7 +8084,7 @@ Options:
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device location
 .TP
@@ -8049,7 +8093,7 @@ Show or set the opt-in (off by default) for the legacy key-exchange, cipher and
 host-key algorithms (SHA-1 key exchange, CBC ciphers, ssh-rsa) that a device
 offering only those needs. It changes the ssh algorithms only; the
 configuration syntax is
-.BR "device config\-syntax" .
+.BR "device ios\-syntax" .
 .\" BEGIN GENERATED: command device legacy-ssh
 .RS
 .PP
@@ -8057,7 +8101,7 @@ Requires: \fBengineer\fR.
 .RE
 .\" END GENERATED: command device legacy-ssh
 .TP
-.BI "device config\-syntax " "name " "[ auto | ios12 | modern [ \-\-apply ] ]"
+.BI "device ios\-syntax " "name " "[ auto | ios12 | modern [ \-\-apply ] ]"
 Show or set the configuration syntax of a Cisco device: the syntax its
 walkthrough
 .RB ( "device config show" ", " "config cisco \-\-name" )
@@ -8120,12 +8164,13 @@ and
 and the walkthrough (one
 .B # warning:
 line), and
-.B "device config\-syntax"
+.B "device ios\-syntax"
 says it when the setting is made.
 With no word the setting is shown. The setting is for Cisco devices (a registry file
 or an import that gives one to another vendor is refused, and
 .B "device vendor"
 takes it away from a device that stops being Cisco, saying so).
+Tab completion offers the Cisco devices of the caller's scopes.
 A change of the setting says, in one line, when the stored pull would now be
 planned differently
 .RB ( "device config plan" ),
@@ -8135,7 +8180,7 @@ runs
 .B "device config apply"
 for the device afterwards; the apply writes to Junos devices only in this
 release, so on a Cisco device the flag is refused before the setting changes.
-.\" BEGIN GENERATED: command device config-syntax
+.\" BEGIN GENERATED: command device ios-syntax
 .RS
 .PP
 Requires: \fBengineer\fR.
@@ -8143,9 +8188,9 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
-.\" END GENERATED: command device config-syntax
+.\" END GENERATED: command device ios-syntax
 .TP
 .BI "device netconf " name " [ show | enable | disable | leave | clear ] [ \-\-connection\-limit " n " | none ] [ \-\-rate\-limit " n " | none ] [ \-\-apply ]"
 The NETCONF service setting of one Junos device, over its scope's
@@ -8175,6 +8220,7 @@ map in
 a file or an import that gives one to a device of another vendor is refused, and
 .B "device vendor"
 takes it away from a device that stops being Junos, saying so.
+Tab completion offers the Junos devices of the caller's scopes.
 .B \-\-apply
 runs
 .B "device config apply"
@@ -8194,7 +8240,7 @@ Options:
 (enable) The rate limit of the service, 1 to 250; none takes the scope's.
 .TP
 \fB\-\-apply\fR
-(address, description, location, config\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device netconf
 .TP
@@ -8372,14 +8418,34 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command device stale-days
 .TP
+.BI "device notice list " "" [ name ] " " [ \-\-all ]
+The open notices (all devices, or one), each with the command that fixes or
+acknowledges it;
+.B \-\-all
+lists the acknowledged ones too, marked. Every tier may run it, for the
+devices of its own scopes. The notice
+.B generic-name
+(a device or host whose name is a generic one) gives the per-vendor command
+that sets a name on the device and the
+.B device rename
+that follows;
+.B hostkey-unpinned
+(a device with no pinned host key) gives the console command that shows its
+fingerprint and the
+.B device hostkey accept
+that pins it.
+.TP
 .BI "device notice " "name " "{ ack | unack } " kind
-Acknowledge an accepted notice, or reopen it. Acknowledgements are kept per
+Acknowledge an accepted notice, or reopen it (the superuser's). Three words
+are this form, so a device named
+.B list
+takes it too. Acknowledgements are kept per
 device and per kind in
 .IR devices.yaml ;
 acknowledged notices leave
 .B list
 and
-.B notices
+.B "notice list"
 and stay in
 .B show
 marked as acknowledged. The kinds are
@@ -8394,36 +8460,14 @@ cannot be acknowledged, and an enrolled host acknowledges only
 .\" BEGIN GENERATED: command device notice
 .RS
 .PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command device notice
-.TP
-.BI "device notices " "" [ name ] " " [ \-\-all ]
-The open notices (all devices, or one), each with the command that fixes or
-acknowledges it;
-.B \-\-all
-lists the acknowledged ones too, marked. The notice
-.B generic-name
-(a device or host whose name is a generic one) gives the per-vendor command
-that sets a name on the device and the
-.B device rename
-that follows;
-.B hostkey-unpinned
-(a device with no pinned host key) gives the console command that shows its
-fingerprint and the
-.B device hostkey accept
-that pins it.
-.\" BEGIN GENERATED: command device notices
-.RS
-.PP
-Requires: \fBreadonly\fR.
+Requires: \fBreadonly\fR. Every tier may run list; ack and unack need the superuser tier.
 .PP
 Options:
 .TP
 \fB\-\-all\fR
 The acknowledged notices too.
 .RE
-.\" END GENERATED: command device notices
+.\" END GENERATED: command device notice
 .TP
 .BI "device import " "[ \-\-check ] [ \-\-replace ] [ \-\-allow\-generic ] [ \-y ] " "file|\-"
 Import devices from CSV
@@ -8444,7 +8488,7 @@ the lower\-case rule is for new devices, through
 Devices of the file are added, or update the registered device of the same name
 (a CSV row leaves the hostname and the legacy-ssh setting alone, and a file that
 carries no
-.B config_syntax
+.B ios_syntax
 leaves the registered configuration syntax alone; a changed address
 drops the pinned host keys); the rest stay. With
 .B \-\-replace
@@ -8467,7 +8511,7 @@ Requires: \fBengineer\fR. An engineer imports from standard input only (device i
 Options:
 .TP
 \fB\-\-check\fR
-(onboard) Register, read and check the first\-time plan on the device; commit nothing.
+Write nothing; say what the import would do.
 .TP
 \fB\-\-replace\fR
 Replace the registry instead of merging into it.
@@ -8540,7 +8584,7 @@ Requires: \fBreadonly\fR.
 Options:
 .TP
 \fB\-p\fR \fI<port>\fR
-Connect to this port instead of the registered one.
+Connect to this port (default: the device's port, else 22).
 .TP
 \fB\-X\fR
 Forward X11 to this server's display (untrusted, as ssh \-X).
@@ -8562,7 +8606,7 @@ Open a SOCKS proxy, as ssh \-D (repeatable).
 .RE
 .\" END GENERATED: command device ssh
 .TP
-.B device ssh\-config
+.B device client\-config
 Print an
 .BR ssh_config (5)
 fragment with one
@@ -8586,7 +8630,7 @@ and
 .BR "UpdateHostKeys no" .
 An unpinned entry gets a comment instead, and checks against the user's own
 known_hosts. The install hint goes to stderr: save the output with
-.B "tacctl device ssh\-config > ~/.ssh/tacctl.conf"
+.B "tacctl device client\-config > ~/.ssh/tacctl.conf"
 and put
 .B "Include ~/.ssh/tacctl.conf"
 at the top of
@@ -8604,12 +8648,12 @@ then reaches the device the way
 .B "tacctl ssh"
 does. Nothing is written into a home directory. Re-run the command after
 registry changes.
-.\" BEGIN GENERATED: command device ssh-config
+.\" BEGIN GENERATED: command device client-config
 .RS
 .PP
 Requires: \fBreadonly\fR.
 .RE
-.\" END GENERATED: command device ssh-config
+.\" END GENERATED: command device client-config
 .TP
 .BI "device scan " "[ \-\-full ] [ \-\-since " duration " ] [ \-\-backend " id " ]"
 Read each enabled backend's log (or only
@@ -8785,7 +8829,7 @@ and name in the SNMP step. The options are those of
 .BR "config cisco|juniper|wti" ;
 .B \-\-legacy
 is for a Cisco device and is the IOS 12.x syntax whatever the device's
-.B config\-syntax
+.B ios\-syntax
 says; without it a Cisco device is walked through in its syntax (the setting,
 else the last pull's, else the modern syntax with one line,
 .BR "# syntax: modern (no pull yet; ...)" ,
@@ -8812,7 +8856,7 @@ Options:
 The protocol (default: the scope's auth\-method, else its only protocol, else tacacs).
 .TP
 \fB\-\-legacy\fR
-(Cisco) The IOS 12.x syntax, whatever the device's config\-syntax is; TACACS+ only.
+(Cisco) The IOS 12.x syntax, whatever the device's ios\-syntax is; TACACS+ only.
 .TP
 \fB\-\-server\fR \fI<address|name>\fR
 The address the device is told to authenticate against.
@@ -8937,7 +8981,7 @@ never fall back. IOS and IOS\-XE are read over the ssh command line, with
 paging off, after
 .BR "show version | include Version" ,
 whose line is kept on the record with the configuration syntax it says (see
-.BR "device config\-syntax" );
+.BR "device ios\-syntax" );
 a device that answers no image line (the boot loader's
 .B ROM:
 and
@@ -9760,7 +9804,7 @@ with the steps by hand below the region, because nothing proves that the
 pasting session is a TACACS+ user. The old entry is removed by the region only
 when the plan types the standard block's address or key. The syntax is the
 setting of
-.B "device config\-syntax"
+.B "device ios\-syntax"
 or the pull's version line, never the ssh flag; a device that needs a pull is
 not planned. A Junos statement that a group applies is never changed: its
 section is refused.
@@ -10435,7 +10479,7 @@ Only the devices whose name contains the text (a comma list: any of them).
 \fB\-\-ip\fR \fI<addr|cidr|text>\fR
 Only the devices whose address is that address, lies in that prefix or contains the text (a comma list: any of them).
 .TP
-\fB\-\-transport\fR \fIauto|netconf|ssh\fR
+\fB\-\-transport\fR \fIauto|cli|netconf\fR
 How the check and the apply reach a device: auto (NETCONF where the last read found it answering and the login may commit, else the command line, with the reason), cli, or netconf (never falls back); default device.apply.transport. A change to the NETCONF service is made over the command line.
 .TP
 \fB\-\-concurrency\fR \fI<n>\fR
@@ -10653,8 +10697,8 @@ Only the devices whose last pull failed.
 \fB\-\-differs\fR
 (pull, diff, plan, apply, list) Only the devices whose last pull differs from what tacctl renders now (from the records; no login).
 .TP
-\fB\-\-transport\fR \fIauto|netconf|ssh\fR
-(pull, diff, plan) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
+\fB\-\-transport\fR \fInetconf|ssh|none\fR
+Only the devices last read over that transport (none: never read).
 .TP
 \fB\-\-name\fR \fI<text>\fR
 (pull, diff, plan, apply, list) Only the devices whose name contains the text (comma list: any of them).
@@ -10858,7 +10902,7 @@ Requires: \fBreadonly\fR.
 Options:
 .TP
 \fB\-p\fR \fI<port>\fR
-Connect to <port> (default: the device's port, else 22).
+Connect to this port (default: the device's port, else 22).
 .TP
 \fB\-X\fR
 Forward X11 to this server's display (untrusted, as ssh \-X).
@@ -11101,7 +11145,7 @@ Requires: \fBsuperuser\fR.
 .PP
 Options:
 .TP
-\fB\-\-reason\fR \fI<value>\fR
+\fB\-\-reason\fR \fI<text>\fR
 (hold) Why, 1 to 256 characters; kept with the record and in the log (the reason of every name that has no <name>=<reason>).
 .RE
 .\" END GENERATED: command breakglass hold
@@ -11818,7 +11862,7 @@ line.
 (no arguments), passwd, status, version, help, \-h, \-\-help,
 user list, user show, group list, group show, scope list,
 backend list, backend status, ssh, device list, device show,
-device notices, device ssh, device ssh\-config, _completion\-names,
+device notice, device ssh, device client\-config, _completion\-names,
 _console\-policy, \-\-version, \-v, hash
 .TP
 .B operator
@@ -11830,7 +11874,7 @@ console forget
 .B engineer
 device add, device remove, device rename, device address,
 device hostname, device vendor, device port, device description,
-device location, device legacy\-ssh, device config\-syntax,
+device location, device legacy\-ssh, device ios\-syntax,
 device hostkey, device import, scope devices, device config,
 config cisco, config juniper, config wti, host list, host show,
 scope staging, scope secret, scope snmp, device snmp, scope block,
@@ -11859,6 +11903,9 @@ An engineer imports from standard input only (device import \-).
 .TP
 .B device list
 The CONFIG column (and config, release, model and serial of \-\-json) is the operator tier's; a read\-only user's list has none.
+.TP
+.B device notice
+Every tier may run list; ack and unack need the superuser tier.
 .TP
 .B device show
 The Configuration, Release, Model and Serial rows (and config, release, model and serial of \-\-json) are the operator tier's; a read\-only user's output has none.
@@ -11962,8 +12009,8 @@ config secret\-min\-length, config snmp, config validate, config wti,
 console agent\-forwarding, console forwarding, console idle\-timeout,
 console password\-cache, console space\-completion,
 console ssh\-escape, device address, device block, device collect,
-device config, device config\-syntax, device description,
-device hostkey, device hostname, device import, device legacy\-ssh,
+device config, device description, device hostkey, device hostname,
+device import, device ios\-syntax, device legacy\-ssh,
 device location, device netconf, device onboard, device port,
 device snmp, device stale\-days, device sync, device vendor,
 group commands, group junos, group preset, group privilege,
@@ -12255,7 +12302,7 @@ result; one line for each address at the end of the run.
 .B "device import"
 source, added, updated, removed, count.
 .IP "\fBdevice set\fR"
-name, field, from, to. field is address, hostname, vendor, port, description, location, legacy\-ssh, config\-syntax, netconf, stale\-days (no name) or notice:<kind>.
+name, field, from, to. field is address, hostname, vendor, port, description, location, legacy\-ssh, ios\-syntax, netconf, stale\-days (no name) or notice:<kind>.
 .PP
 The verbs that logged before 0.2.17 keep their lines
 .RB ( "host enroll" ", " "host unenroll" ", " "host rename" ", " "host forget" ", " "host target" ", "
@@ -13426,11 +13473,11 @@ The break-glass local users the scope's device configurations create. Only the n
 .TP
 .B blocks.<scope>.<vendor>
 non\-empty list of block names (snmp, system). Default: none (unset).
-The configuration blocks in force for the scope and vendor (juniper or cisco), a list of snmp and system; a file under the blocks directory that this list does not name is ignored. Set with \fBtacctl scope block\fR.
+The configuration blocks in force for the scope and vendor (cisco or juniper), a list of snmp and system; a file under the blocks directory that this list does not name is ignored. Set with \fBtacctl scope block\fR.
 .TP
 .B blocks_device.<device>.<vendor>
 non\-empty list of block names (snmp, system). Default: none (unset).
-The configuration blocks in force for one device and vendor (juniper or cisco), a list of snmp and system; the device's lower case name is written with every '.' as '~' (js1~lab~example~net), and a file under the blocks directory that this list does not name is ignored. Set with \fBtacctl device block\fR.
+The configuration blocks in force for one device and vendor (cisco or juniper), a list of snmp and system; the device's lower case name is written with every '.' as '~' (js1~lab~example~net), and a file under the blocks directory that this list does not name is ignored. Set with \fBtacctl device block\fR.
 .TP
 .B snmp_scope.<scope>.version
 one of v2c, v3. Default: none (unset).
@@ -13582,7 +13629,20 @@ an apply that applied none of its devices and found none already applied:
 .B "\-\-confirmed \-\-yes"
 that skipped them all), a step of a lifecycle phase that failed. An unknown
 sub-command prints the
-usage of its family and ends with 1 as well. Nothing was changed unless the
+usage of its family and ends with 1 as well. An unknown command
+.RB ( "tacctl enroll" )
+prints on standard error one error line that names it, the commands it
+may have meant (the verbs of that name,
+.BR "device enroll" " and " "host enroll" ,
+or a command within two letters of it) and a pointer to
+.B tacctl
+for the list, and ends with 1;
+.BR tacctl ,
+.BR "tacctl help" ,
+.B \-h
+and
+.B \-\-help
+print the usage and end with 1. Nothing was changed unless the
 message says what was.
 .TP
 .B 2

@@ -682,7 +682,7 @@ func TestCiscoSyntaxIsRequired(t *testing.T) {
 		if s.State != StateSkipped || s.Kind != KindNotPlannable {
 			t.Errorf("section %s: %s/%s, want skipped/not-plannable", s.Name, s.State, s.Kind)
 		}
-		want := "the configuration syntax of this device is not known: run `tacctl device config pull rtr-lab-1` or `tacctl device config-syntax rtr-lab-1 ios12|modern`"
+		want := "the configuration syntax of this device is not known: run `tacctl device config pull rtr-lab-1` or `tacctl device ios-syntax rtr-lab-1 ios12|modern`"
 		if s.Why != want {
 			t.Errorf("section %s: %q", s.Name, s.Why)
 		}

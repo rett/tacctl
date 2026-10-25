@@ -4,9 +4,9 @@
 # Run: tests/diff/run.sh backup
 @fixture tacquito.minimal.yaml
 
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 backup
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 backup bogus
 backup list
 backup diff

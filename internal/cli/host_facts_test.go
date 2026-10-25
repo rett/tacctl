@@ -67,7 +67,7 @@ func TestHostAddressRecordedAndChanged(t *testing.T) {
 	if d := hs.devices(); !strings.Contains(d, "address: 192.0.2.51") || !strings.Contains(d, "previous_address: 192.0.2.50") || !strings.Contains(d, "address_changed:") {
 		t.Errorf("devices.yaml:\n%s", d)
 	}
-	out = plain(hs.run(nil, "device", "notices"))
+	out = plain(hs.run(nil, "device", "notice", "list"))
 	if !strings.Contains(out, "web1  address-changed: the address of 'web1' changed from 192.0.2.50 to 192.0.2.51") ||
 		!strings.Contains(out, "'tacctl device notice web1 ack address-changed'") {
 		t.Errorf("notices:\n%s", out)
@@ -78,14 +78,14 @@ func TestHostAddressRecordedAndChanged(t *testing.T) {
 	// Acknowledged by the host; other kinds are not.
 	hs.run(nil, "device", "notice", "web1", "ack", "address-changed")
 	hs.expect(0, "Notice 'address-changed' of 'web1' acknowledged.", "")
-	if out := plain(hs.run(nil, "device", "notices")); strings.Contains(out, "address-changed") {
+	if out := plain(hs.run(nil, "device", "notice", "list")); strings.Contains(out, "address-changed") {
 		t.Errorf("acknowledged notice still open:\n%s", out)
 	}
 	hs.run(nil, "device", "notice", "web1", "ack", "name-mismatch")
 	hs.expect(1, "", "'web1' is an enrolled host; its 'name-mismatch' notice is cleared on the host, not acknowledged.")
 	// A further change reopens it.
 	hs.run(hs.factsRunner(conn("192.0.2.52")), "host", "sync", "web1")
-	if out := plain(hs.run(nil, "device", "notices")); !strings.Contains(out, "changed from 192.0.2.51 to 192.0.2.52") {
+	if out := plain(hs.run(nil, "device", "notice", "list")); !strings.Contains(out, "changed from 192.0.2.51 to 192.0.2.52") {
 		t.Errorf("not reopened:\n%s", out)
 	}
 	// Unenroll forgets the record.

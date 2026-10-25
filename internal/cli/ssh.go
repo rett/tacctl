@@ -97,7 +97,7 @@ keys and the agent are not used). The device's vendor profile applies
 with pinned host keys is held to them: a key that changed is refused, with the
 fingerprints to compare and the command that re-pins it.
 
-  -p <port>        Connect to <port> (default: the device's port, else 22)
+  -p <port>        Connect to this port (default: the device's port, else 22)
   -X, -Y           Forward X11 (untrusted, trusted) to this server's display
   -L <spec>        Forward a local port, as ssh -L (repeatable)
   -R <spec>        Forward a remote port, as ssh -R (repeatable)

@@ -6,8 +6,8 @@ Usage:
   tacctl config mgmt-acl add    <entry>[,<entry>...]   Add one or more entries
   tacctl config mgmt-acl remove <entry>[,<entry>...]   Remove entries (a bare <cidr> removes every entry of that CIDR)
   tacctl config mgmt-acl clear                         Wipe all permits (confirms)
-  tacctl config mgmt-acl cisco-name [name]             Show or set the Cisco ACL name (default VTY-ACL)
-  tacctl config mgmt-acl juniper-name [name]           Show or set the Juniper filter name (default MGMT-ACL)
+  tacctl config mgmt-acl cisco-name [<name>]           Show or set the Cisco ACL name (default VTY-ACL)
+  tacctl config mgmt-acl juniper-name [<name>]         Show or set the Juniper filter name (default MGMT-ACL)
 
 An <entry> is a <cidr>, or a <cidr> with the services it permits:
   <cidr>[:<service>[,<service>...]]    e.g. 172.16.100.0/23:tcp/22,udp/161,udp/162

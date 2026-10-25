@@ -4,7 +4,7 @@ Cmnd_Alias TACCTL_RO = /usr/local/bin/tacctl "", /usr/local/bin/tacctl passwd, /
     /usr/local/bin/tacctl help, /usr/local/bin/tacctl -h, /usr/local/bin/tacctl --help, \
     /usr/local/bin/tacctl user list, /usr/local/bin/tacctl user show *, /usr/local/bin/tacctl group list, /usr/local/bin/tacctl group show *, /usr/local/bin/tacctl scope list, \
     /usr/local/bin/tacctl backend list, /usr/local/bin/tacctl backend status, /usr/local/bin/tacctl backend status *, \
-    /usr/local/bin/tacctl ssh *, /usr/local/bin/tacctl device list, /usr/local/bin/tacctl device list *, /usr/local/bin/tacctl device show *, /usr/local/bin/tacctl device notices, /usr/local/bin/tacctl device notices *, /usr/local/bin/tacctl device ssh *, /usr/local/bin/tacctl device ssh-config, \
+    /usr/local/bin/tacctl ssh *, /usr/local/bin/tacctl device list, /usr/local/bin/tacctl device list *, /usr/local/bin/tacctl device show *, /usr/local/bin/tacctl device notice list, /usr/local/bin/tacctl device notice list *, /usr/local/bin/tacctl device ssh *, /usr/local/bin/tacctl device client-config, \
     /usr/local/bin/tacctl _completion-names *, /usr/local/bin/tacctl _console-policy
 Cmnd_Alias TACCTL_OP = /usr/local/bin/tacctl log tail, /usr/local/bin/tacctl log tail *, /usr/local/bin/tacctl log search *, \
     /usr/local/bin/tacctl log failures, /usr/local/bin/tacctl log accounting, /usr/local/bin/tacctl log accounting *, \
@@ -14,7 +14,7 @@ Cmnd_Alias TACCTL_OP = /usr/local/bin/tacctl log tail, /usr/local/bin/tacctl log
     /usr/local/bin/tacctl console show, /usr/local/bin/tacctl console check, /usr/local/bin/tacctl console forget
 Cmnd_Alias TACCTL_EN = /usr/local/bin/tacctl device add *, /usr/local/bin/tacctl device remove *, /usr/local/bin/tacctl device rename *, \
     /usr/local/bin/tacctl device address *, /usr/local/bin/tacctl device hostname *, /usr/local/bin/tacctl device vendor *, /usr/local/bin/tacctl device port *, \
-    /usr/local/bin/tacctl device description *, /usr/local/bin/tacctl device location *, /usr/local/bin/tacctl device legacy-ssh *, /usr/local/bin/tacctl device config-syntax *, /usr/local/bin/tacctl device hostkey *, /usr/local/bin/tacctl device import -, /usr/local/bin/tacctl device import - *, \
+    /usr/local/bin/tacctl device description *, /usr/local/bin/tacctl device location *, /usr/local/bin/tacctl device legacy-ssh *, /usr/local/bin/tacctl device ios-syntax *, /usr/local/bin/tacctl device hostkey *, /usr/local/bin/tacctl device import -, /usr/local/bin/tacctl device import - *, \
     /usr/local/bin/tacctl scope devices *, \
     /usr/local/bin/tacctl device config show *, /usr/local/bin/tacctl device config pull *, /usr/local/bin/tacctl device config diff *, /usr/local/bin/tacctl device config plan *, /usr/local/bin/tacctl config cisco, /usr/local/bin/tacctl config cisco *, /usr/local/bin/tacctl config juniper, /usr/local/bin/tacctl config juniper *, /usr/local/bin/tacctl config wti, /usr/local/bin/tacctl config wti *, \
     /usr/local/bin/tacctl host list, /usr/local/bin/tacctl host list --json, /usr/local/bin/tacctl host show *, \

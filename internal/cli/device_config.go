@@ -222,7 +222,7 @@ as 'tacctl config <vendor> --scope <scope> --name <name>' prints it, with the
 device's location, description and name filling the SNMP step. A device whose
 vendor is 'other', an enrolled Linux host and a device no scope's prefixes
 cover have none. A Cisco device is walked through in its configuration syntax:
-the setting of 'tacctl device config-syntax' (ios12 or modern), else the one
+the setting of 'tacctl device ios-syntax' (ios12 or modern), else the one
 the last pull read from its version line, else the modern syntax with a line
 that says so; --legacy is the IOS 12.x syntax whatever that is.
 
@@ -244,7 +244,7 @@ image's version line is kept on the record with the configuration syntax it
 says (12.x is ios12; 15.2 to 15.9, 16.x, 17.x and IOS-XE are modern; any other
 image, such as 11.x, 15.0, 15.1, an ASA or IOS XR, is unknown and is not guessed:
 the pull is refused and nothing is recorded), and the device is compared in that
-syntax unless 'device config-syntax' says otherwise; a setting that the image
+syntax unless 'device ios-syntax' says otherwise; a setting that the image
 contradicts wins and is shown.
 A WTI console server is read as its menus show it, over ssh: its command menu
 must be version 8.10 and its pages (never a prompt, never a save) give aaa,
@@ -364,7 +364,7 @@ the device's last check or apply as confirmed on your word (one question,
 
 'list' shows each device's state: ok (every managed section agrees), differs,
 never (not pulled), failed (the last pull failed) or pull (a Cisco device whose
-syntax is unknown: its record has no version line and its config-syntax is
+syntax is unknown: its record has no version line and its ios-syntax is
 auto: every record made by an earlier tacctl), computed against today's rendering,
 so a change in tacctl makes a device differ without a new pull. --stale is
 never, failed, differs and pull together. Once a device was checked or applied

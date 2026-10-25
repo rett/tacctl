@@ -10,7 +10,7 @@ Subcommands:
       --tier <tier>                                   (add) Its tacctl tier instead of the priv-lvl's (at 15: superuser if omitted)
       --wti-level <level>                             (add) Its WTI level instead of the priv-lvl's
   edit <name> priv-lvl <0-15>                         Change Cisco privilege level
-  edit <name> juniper-class <CLASS>                   Change Juniper class name
+  edit <name> juniper-class <class>                   Change Juniper class name
   edit <name> wti-level auto|<level>                  WTI access level (viewonly, user, superuser, administrator)
   edit <name> tier auto|<tier>                        tacctl tier (readonly, operator, engineer, superuser)
   remove <name>                                       Remove a custom group
@@ -23,7 +23,7 @@ Subcommands:
   reset <name>                                        Put readonly, operator, superuser or engineer back to its canonical state (diff, confirms; superuser only)
       --preset                                        (reset) The role preset's values instead of the shipped ones
       --only <sections>                               (reset) Only settings, commands, privileges or junos (comma list)
-      --yes                                           (reset) Do not ask
+      --yes                                           (reset) Answer yes to the confirmation
 
 'auto' (the default) takes the WTI level and the tier from the priv-lvl:
 below 7 readonly, 7-14 operator, 15 superuser. A group at priv-lvl 15 other

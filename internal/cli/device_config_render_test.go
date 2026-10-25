@@ -102,7 +102,7 @@ func TestManagedRenderIsPureAndSharedPerScope(t *testing.T) {
 		t.Errorf("legacy-ssh changed the rendering: %v\n%s", err, flat(ls))
 	}
 	// The setting wins over the record: ios12 is the IOS 12.x syntax.
-	c.ConfigSyntax = devconf.SyntaxIOS12
+	c.IOSSyntax = devconf.SyntaxIOS12
 	rl = inv.newManagedRender(managedOptions{}, false)
 	rl.prepare([]devreg.Entry{c})
 	if ls, err = rl.Expected(c); err != nil || !strings.Contains(flat(ls), "tacacs-server host") {
@@ -210,12 +210,12 @@ func TestSyntaxResolutionOfARegisteredDevice(t *testing.T) {
 	expect("no record, auto", e, "", false)
 	e.LegacySSH = true
 	expect("no record, auto, legacy-ssh is no syntax", e, "", false)
-	e.ConfigSyntax = devconf.SyntaxIOS12
+	e.IOSSyntax = devconf.SyntaxIOS12
 	expect("ios12 set", e, devconf.SyntaxIOS12, true)
-	e.ConfigSyntax = devconf.SyntaxModern
+	e.IOSSyntax = devconf.SyntaxModern
 	expect("modern set", e, devconf.SyntaxModern, true)
 
-	e.ConfigSyntax = ""
+	e.IOSSyntax = ""
 	e.LegacySSH = false
 	rec := devconf.Record{Vendor: "cisco", Result: devconf.ResultOK, Sections: map[string]devconf.SectionRecord{"aaa": {State: "ok"}}}
 	b.putRecord("lab-c1", rec)
@@ -223,12 +223,12 @@ func TestSyntaxResolutionOfARegisteredDevice(t *testing.T) {
 	rec.OS, rec.Syntax = ciscoVersion12, devconf.SyntaxIOS12
 	b.putRecord("lab-c1", rec)
 	expect("record says ios12", e, devconf.SyntaxIOS12, true)
-	e.ConfigSyntax = devconf.SyntaxModern
+	e.IOSSyntax = devconf.SyntaxModern
 	expect("the setting wins over the record", e, devconf.SyntaxModern, true)
 
 	// A RADIUS scope has one syntax: known, and the same for both words.
 	b.sb.cfgRun("", []string{"scope", "auth-method", "lab", "radius"}, route)
-	e.ConfigSyntax = ""
+	e.IOSSyntax = ""
 	b.putRecord("lab-c1", devconf.Record{Vendor: "cisco", Result: devconf.ResultOK, Sections: rec.Sections})
 	inv = b.invoke()
 	r := inv.newManagedRender(managedOptions{}, false)

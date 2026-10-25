@@ -325,7 +325,7 @@ func (inv *invocation) scopeStaging(args []string) error {
 	case "remove":
 		cidr := arg(args, 1)
 		if cidr == "" {
-			return inv.usageErr("Usage: tacctl scope staging remove <address>/32")
+			return inv.usageErr(usageLinesOf("scope staging", scopeStagingRows[1])...)
 		}
 		if !strings.Contains(cidr, "/") {
 			cidr += "/32"
@@ -369,6 +369,6 @@ func (inv *invocation) scopeStaging(args []string) error {
 		a.Out.Info("Staging address " + cidr + " removed from scope '" + hit.Scope + "'.")
 		return nil
 	default:
-		return inv.usageErr("Usage: tacctl scope staging [list | remove <address>/32]")
+		return inv.usageErr(usageLinesOf("scope staging", scopeStagingRows...)...)
 	}
 }
