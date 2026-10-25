@@ -7479,7 +7479,7 @@ refused, failed, rolled back or pending; 2 wrong arguments; 130 interrupted.
 .\" BEGIN GENERATED: command device onboard
 .RS
 .PP
-Requires: \fBsuperuser\fR.
+Requires: \fBengineer\fR.
 .PP
 Options:
 .TP
@@ -7614,7 +7614,7 @@ collected, 1 one was skipped, refused, failed or not Junos, 2 wrong arguments,
 .\" BEGIN GENERATED: command device collect
 .RS
 .PP
-Requires: \fBsuperuser\fR.
+Requires: \fBengineer\fR.
 .PP
 Options:
 .TP
@@ -7749,7 +7749,7 @@ interrupted.
 .\" BEGIN GENERATED: command device enroll
 .RS
 .PP
-Requires: \fBsuperuser\fR.
+Requires: \fBengineer\fR.
 .PP
 Options:
 .TP
@@ -7830,7 +7830,7 @@ when fields were written. Exit status: 0, 1 refused, 2 wrong arguments.
 .\" BEGIN GENERATED: command device sync
 .RS
 .PP
-Requires: \fBsuperuser\fR.
+Requires: \fBengineer\fR.
 .PP
 Options:
 .TP
@@ -7942,7 +7942,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; engineers, Junos devices; (sync) write the fields, after one question.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
@@ -8032,7 +8032,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; engineers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device description
 .TP
@@ -8084,7 +8084,7 @@ Options:
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .TP
 \fB\-\-apply\fR
-(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; engineers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device location
 .TP
@@ -8188,7 +8188,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; engineers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device ios-syntax
 .TP
@@ -8240,7 +8240,7 @@ Options:
 (enable) The rate limit of the service, 1 to 250; none takes the scope's.
 .TP
 \fB\-\-apply\fR
-(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; engineers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device netconf
 .TP
@@ -9293,7 +9293,7 @@ The address the devices are told to authenticate against, for devices behind a t
 The address this server reaches the devices from (not stored).
 .TP
 \fB\-\-login\fR \fI<local\-user>\fR
-(pull, diff \-\-pull, plan \-\-pull) Superusers, one registered Junos device with a pinned key: log in as that local account of the device instead of you (any local account, a break\-glass one included; only root is handled apart: a device never read as you, through its csh wrapper); its password is asked once on the terminal and never kept or cached.
+(pull, diff \-\-pull, plan \-\-pull) Engineers, one registered Junos device with a pinned key: log in as that local account of the device instead of you (any local account, a break\-glass one included; only root is handled apart: a device never read as you, through its csh wrapper); its password is asked once on the terminal and never kept or cached.
 .TP
 \fB\-\-diff\fR
 Print the differences after the summary.
@@ -9502,7 +9502,7 @@ The address the devices are told to authenticate against (with \-\-pull; not sto
 The address this server reaches the devices from (with \-\-pull; not stored).
 .TP
 \fB\-\-login\fR \fI<local\-user>\fR
-(pull, diff \-\-pull, plan \-\-pull) Superusers, one registered Junos device with a pinned key: log in as that local account of the device instead of you (any local account, a break\-glass one included; only root is handled apart: a device never read as you, through its csh wrapper); its password is asked once on the terminal and never kept or cached.
+(pull, diff \-\-pull, plan \-\-pull) Engineers, one registered Junos device with a pinned key: log in as that local account of the device instead of you (any local account, a break\-glass one included; only root is handled apart: a device never read as you, through its csh wrapper); its password is asked once on the terminal and never kept or cached.
 .TP
 \fB\-\-pull\fR
 Read the devices first (takes the pull options).
@@ -10088,7 +10088,7 @@ The address the devices are told to authenticate against, for devices behind a t
 The address this server reaches the devices from (not stored).
 .TP
 \fB\-\-login\fR \fI<local\-user>\fR
-(pull, diff \-\-pull, plan \-\-pull) Superusers, one registered Junos device with a pinned key: log in as that local account of the device instead of you (any local account, a break\-glass one included; only root is handled apart: a device never read as you, through its csh wrapper); its password is asked once on the terminal and never kept or cached.
+(pull, diff \-\-pull, plan \-\-pull) Engineers, one registered Junos device with a pinned key: log in as that local account of the device instead of you (any local account, a break\-glass one included; only root is handled apart: a device never read as you, through its csh wrapper); its password is asked once on the terminal and never kept or cached.
 .TP
 \fB\-\-pull\fR
 Read the devices first (takes the pull options); the plan is made from that pull.
@@ -10456,7 +10456,7 @@ for an earlier apply's pending record settled, never a value).
 .\" BEGIN GENERATED: command device config apply
 .RS
 .PP
-Requires: \fBsuperuser\fR.
+Requires: \fBengineer\fR. An engineer gets the devices of their own scopes only.
 .PP
 Options:
 .TP
@@ -11878,6 +11878,7 @@ device add, device remove, device rename, device address,
 device hostname, device vendor, device port, device description,
 device location, device legacy\-ssh, device ios\-syntax,
 device hostkey, device import, scope devices, device config,
+device enroll, device collect, device onboard, device sync,
 config cisco, config juniper, config wti, host list, host show,
 scope staging, scope secret, scope snmp, device snmp, scope block,
 device block, scope show, breakglass list
@@ -11898,7 +11899,7 @@ An engineer may print the walkthrough and read source\-interface for a scope of 
 An engineer may read the configuration blocks of a device of their own scope (list, show [\-\-effective] [\-\-reveal], check); set, remove, edit and adopt need the superuser tier.
 .TP
 .B device config
-An operator may run list; show, pull, diff and plan need the engineer tier (a device's walkthrough carries its scope's secret, a plan can type it, and a pull logs in to the device as you), and an engineer gets the devices of their own scopes only; forget, apply and shapes (a check or an apply writes to the device; shapes files what an apply confirmed) need the superuser tier.
+An operator may run list; show, pull, diff, plan and apply need the engineer tier (a device's walkthrough carries its scope's secret, a plan can type it, a pull logs in to the device as you, and a check or an apply writes to it as you), and an engineer gets the devices of their own scopes only; forget and shapes (shapes files what an apply confirmed) need the superuser tier.
 .TP
 .B device import
 An engineer imports from standard input only (device import \-).

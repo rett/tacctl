@@ -108,7 +108,7 @@ func (inv *invocation) deviceSync(args []string) error {
 		}
 		return inv.argErr(msg, syncUse)
 	}
-	if err := inv.deviceVerbAllowed("device", "sync", tier.Superuser); err != nil {
+	if err := inv.deviceVerbAllowed("device", "sync", tier.Engineer); err != nil {
 		return err
 	}
 	s := &deviceSyncRun{inv: inv, user: inv.sudoUser(), apply: p.Has("--apply"), overwrite: p.Has("--overwrite"),

@@ -50,14 +50,13 @@ r = json.load(open(sys.argv[1]))["devices"].get(sys.argv[2], {})
 print(r.get(sys.argv[3], ""))' "${TACCTL_VAR_LIB}/devices-config.json" "$1" "$2"
 }
 
-@test "--login: the superuser's only; an engineer is the tier denial" {
+@test "--login: engineers and above; an operator is the tier denial" {
     stub_cmd id 'echo "users tac-users tac-operator"'
-    printf 'tier:\n  operator: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
     SUDO_USER=bob TACCTL_TEST_LOCAL_PASSWORD="$LOCAL_PW" run "$TACCTL_BIN_SCRIPT" device config pull example-sw5 --login admin
     plain
     assert_failure 1
-    assert_output --partial "'tacctl device config pull --login' is not permitted for the engineer tier."
-    stub_called "tier DENY user=bob tier=engineer cmd=device config pull --login"
+    assert_output --partial "is not permitted for the operator tier."
+    stub_called "tier DENY user=bob tier=operator cmd=device config pull"
     [[ ! -e "${TACCTL_VAR_LIB}/devices-config.json" ]]
 }
 

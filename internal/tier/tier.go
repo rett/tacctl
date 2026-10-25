@@ -215,7 +215,7 @@ var Rules = []Rule{
 	// 'list' (show, pull and diff are the engineer's, forget the
 	// superuser's), and sudoers grants the operator nothing else of it.
 	{Tier: Operator, Cmd: "device", Sub: "config", Sudoers: []string{"device config", "device config list", "device config list *"}, Wrap: true,
-		Note: "device config: an operator may run list; show, pull, diff and plan need the engineer tier (a device's walkthrough carries its scope's secret, a plan can type it, and a pull logs in to the device as you), and an engineer gets the devices of their own scopes only; forget, apply and shapes (a check or an apply writes to the device; shapes files what an apply confirmed) need the superuser tier."},
+		Note: "device config: an operator may run list; show, pull, diff, plan and apply need the engineer tier (a device's walkthrough carries its scope's secret, a plan can type it, a pull logs in to the device as you, and a check or an apply writes to it as you), and an engineer gets the devices of their own scopes only; forget and shapes (shapes files what an apply confirmed) need the superuser tier."},
 	{Tier: Operator, Cmd: "console", Sub: "show", Sudoers: []string{"console show"}},
 	{Tier: Operator, Cmd: "console", Sub: "check", Sudoers: []string{"console check"}},
 	// 'console forget' (0.2.4, D70) is a word of the shell and the console,
@@ -253,7 +253,17 @@ var Rules = []Rule{
 	// to the devices as the caller, as 'pull' does): the engineer's own
 	// scopes' devices, and the output holds the scope's key where the
 	// device lacks it, as 'device config show' does.
-	{Tier: Engineer, Cmd: "device", Sub: "config", Sudoers: []string{"device config show *", "device config pull *", "device config diff *", "device config plan *"}},
+	//
+	// Enrolling, collecting, onboarding, syncing and applying (0.2.19) are
+	// the engineer's work on the devices of their own scopes too: the verbs
+	// refuse an address or a device of another scope, and an apply is a
+	// change the device's own authorization still decides. 'device config
+	// forget' and 'shapes' stay the superuser's.
+	{Tier: Engineer, Cmd: "device", Sub: "config", Sudoers: []string{"device config show *", "device config pull *", "device config diff *", "device config plan *", "device config apply *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "enroll", Sudoers: []string{"device enroll *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "collect", Sudoers: []string{"device collect *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "onboard", Sudoers: []string{"device onboard *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "sync", Sudoers: []string{"device sync *"}},
 	{Tier: Engineer, Cmd: "config", Sub: "cisco", Sudoers: []string{"config cisco", "config cisco *"},
 		Note: "config cisco: an engineer may print the walkthrough and read source-interface for a scope of their own; setting or unsetting source-interface needs the superuser tier."},
 	{Tier: Engineer, Cmd: "config", Sub: "juniper", Sudoers: []string{"config juniper", "config juniper *"}},
@@ -428,7 +438,11 @@ func EditorKeep(alias string) string {
 }
 
 // Sudoers is emit_tier_sudoers: the per-tier drop-in, byte for byte.
-func Sudoers() string {
+func Sudoers() string { return sudoersFrom(Rules) }
+
+// sudoersFrom is the drop-in for a table of rules (Sudoers0218 frozen copies
+// build one from the current table less what a release added).
+func sudoersFrom(rules []Rule) string {
 	var b strings.Builder
 	b.WriteString("# Managed by tacctl. Per-tier access for tacctl users with local accounts.\n")
 	b.WriteString("# Remove with: tacctl config sudoers tiers remove\n")
@@ -438,7 +452,7 @@ func Sudoers() string {
 	}{{"TACCTL_RO", Readonly}, {"TACCTL_OP", Operator}, {"TACCTL_EN", Engineer}} {
 		var lines [][]string
 		var cur []string
-		for _, r := range Rules {
+		for _, r := range rules {
 			if r.Tier != a.tier || len(r.Sudoers) == 0 {
 				continue
 			}

@@ -30,7 +30,7 @@ func planRollback0217(p *RollbackPlan) (*RollbackPlan, error) {
 	tiers := sudoersPlan{label: "the per-tier drop-in", file: pt.TierSudoersFile, state: "absent"}
 	if b, err := os.ReadFile(pt.TierSudoersFile); err == nil {
 		switch string(b) {
-		case tier.Sudoers():
+		case tier.Sudoers(), tier.Sudoers0218():
 			tiers.state, tiers.body = "rewrite", tier.Sudoers0217()
 		case tier.Sudoers0217():
 			tiers.state = "done"

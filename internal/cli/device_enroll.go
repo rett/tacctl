@@ -137,7 +137,7 @@ func (inv *invocation) deviceEnroll(args []string) error {
 		}
 		return inv.argErr(msg, enrollUse)
 	}
-	if err := inv.deviceVerbAllowed("device", "enroll", tier.Superuser); err != nil {
+	if err := inv.deviceVerbAllowed("device", "enroll", tier.Engineer); err != nil {
 		return err
 	}
 	user, err := inv.configLogin("device enroll")
@@ -358,6 +358,10 @@ func (e *enroll) admissible() error {
 	}
 	if e.discovered {
 		for _, u := range res.Unregistered(false) {
+			// the addresses of other scopes are not an engineer's to enroll
+			if info, covered := m.LookupAddr(u.Address); covered && inv.scopeAddrProblem(info.Scope) != "" {
+				continue
+			}
 			e.addrs = append(e.addrs, u.Address)
 		}
 	}
@@ -378,6 +382,10 @@ func (e *enroll) admissible() error {
 		if !covered {
 			r.Result, r.Reason = enrollRefused, "no scope's prefixes cover it"
 			r.next = "tacctl scope prefixes <scope> add <cidr>"
+			continue
+		}
+		if msg := inv.scopeAddrProblem(info.Scope); msg != "" {
+			r.Result, r.Reason = enrollRefused, msg
 			continue
 		}
 		if msg := loginProblem(m, e.user, info.Scope); msg != "" {

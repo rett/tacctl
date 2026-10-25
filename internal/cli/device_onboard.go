@@ -107,7 +107,7 @@ func (inv *invocation) deviceOnboard(args []string) error {
 		}
 		return inv.argErr(msg, onboardUse)
 	}
-	if err := inv.deviceVerbAllowed("device", "onboard", tier.Superuser); err != nil {
+	if err := inv.deviceVerbAllowed("device", "onboard", tier.Engineer); err != nil {
 		return err
 	}
 	user, err := inv.configLogin("device onboard")
@@ -379,6 +379,9 @@ func (ob *onboard) admissible() error {
 	if !covered {
 		return inv.usageErr("No scope answers "+ob.addr+": no scope's prefixes cover it, so there is nothing to render for it. Nothing was sent.",
 			"Add them first: tacctl scope prefixes <scope> add <cidr>")
+	}
+	if msg := inv.scopeAddrProblem(info.Scope); msg != "" {
+		return inv.usageErr(ob.addr + ": " + msg + ". Nothing was sent.")
 	}
 	ob.scope = info.Scope
 	if !ob.check {

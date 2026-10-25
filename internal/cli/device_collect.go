@@ -125,7 +125,7 @@ func (inv *invocation) deviceCollect(args []string) error {
 		}
 		return inv.argErr(msg, collectUse)
 	}
-	if err := inv.deviceVerbAllowed("device", "collect", tier.Superuser); err != nil {
+	if err := inv.deviceVerbAllowed("device", "collect", tier.Engineer); err != nil {
 		return err
 	}
 	user, err := inv.configLogin("device collect")
@@ -322,6 +322,10 @@ func (c *collect) admissible() error {
 	}
 	if c.discovered {
 		for _, u := range res.Unregistered(false) {
+			// the addresses of other scopes are not an engineer's to collect
+			if info, covered := m.LookupAddr(u.Address); covered && inv.scopeAddrProblem(info.Scope) != "" {
+				continue
+			}
 			c.addrs = append(c.addrs, u.Address)
 		}
 	}
@@ -339,6 +343,9 @@ func (c *collect) admissible() error {
 		switch {
 		case !covered:
 			refuse = append(refuse, "No scope answers "+addr+": no scope's prefixes cover it. Add them first: tacctl scope prefixes <scope> add <cidr>")
+			continue
+		case inv.scopeAddrProblem(info.Scope) != "":
+			refuse = append(refuse, addr+": "+inv.scopeAddrProblem(info.Scope))
 			continue
 		case c.local == nil:
 			if msg := loginProblem(m, c.user, info.Scope); msg != "" {

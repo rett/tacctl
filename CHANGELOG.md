@@ -38,6 +38,18 @@ current behaviour; this file is where history lives.
    status 1. Every other word still goes through `sudo`, whose rules stay
    the authority.
 
+5. **Engineers enroll, collect, onboard, sync and apply.** `device enroll`,
+   `device collect`, `device onboard`, `device sync` and `device config
+   apply` (with `--login <local-user>` on it and on `pull|diff|plan`) were the
+   superuser's; they are the engineer tier's now, for the devices of their own
+   scopes. An address that a scope of another team answers is refused by
+   `enroll`, `collect` and `onboard` (`--discovered` leaves such addresses
+   out), a device of another scope is not found by `sync` and `apply`, and a
+   registration outside the engineer's scopes is refused as `device add` does.
+   `device config forget` and `device config shapes` stay the superuser's. The
+   per-tier sudoers drop-in gains the five rows (`tacctl upgrade` rewrites an
+   installed one, and `tacctl rollback` recognises 0.2.18's text).
+
 ## 0.2.18 (2026-10-24)
 
 1. **`device config-syntax` is now `device ios-syntax`, and `device add
