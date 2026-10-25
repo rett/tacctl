@@ -107,7 +107,7 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"scope", "breakglass", "lab", "remove", ""}, []string{"lab-admin", "lab-ops"}},
 		{[]string{"scope", "breakglass", "lab", "remove", "lab-a"}, []string{"lab-admin"}},
 		{[]string{"scope", "block", ""}, []string{"lab", "prod"}},
-		{[]string{"scope", "block", "lab", ""}, []string{"juniper", "cisco"}},
+		{[]string{"scope", "block", "lab", ""}, []string{"cisco", "juniper"}},
 		{[]string{"scope", "block", "lab", "juniper", ""}, []string{"list", "show", "check", "set", "remove", "edit", "adopt"}},
 		{[]string{"scope", "block", "lab", "juniper", "s"}, []string{"show", "set"}},
 		{[]string{"scope", "block", "lab", "juniper", "e"}, []string{"edit"}},
