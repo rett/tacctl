@@ -82,7 +82,7 @@ func (inv *invocation) configSudoers(args []string) error {
 			inv.echo("  Status: not installed")
 		}
 		inv.write(`
-  Usage: tacctl config sudoers <show|install|remove> [group]
+  Usage: tacctl config sudoers [show|install|remove] [<group>]
   Examples:
     tacctl config sudoers install          # grant to group 'adm'
     tacctl config sudoers install wheel    # grant to group 'wheel'

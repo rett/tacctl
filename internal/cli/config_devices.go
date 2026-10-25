@@ -146,7 +146,7 @@ func (inv *invocation) configDevices(args []string) error {
 			"  Usage: tacctl config devices max-concurrency <1-64>", "The most devices read at once set to %v.")
 	case "transport":
 		return inv.configDevicesSet(rest, "device.config.transport", "Transport",
-			"  Usage: tacctl config devices transport <auto|netconf|ssh>", "The default transport set to %v.")
+			"  Usage: tacctl config devices transport auto|netconf|ssh", "The default transport set to %v.")
 	case "timeout":
 		return inv.configDevicesSet(rest, "device.config.timeout", "Time per device",
 			"  Usage: tacctl config devices timeout <10-600>", "The time one device may take set to %v s.")
@@ -161,7 +161,7 @@ func (inv *invocation) configDevices(args []string) error {
 			"  Usage: tacctl config devices apply-pause <0-3600>", "The pause between the devices of an apply set to %v s.")
 	case "apply-transport":
 		return inv.configDevicesSet(rest, "device.apply.transport", "Apply transport",
-			"  Usage: tacctl config devices apply-transport <auto|cli|netconf>", "The transport of an apply set to %v.")
+			"  Usage: tacctl config devices apply-transport cli|auto|netconf", "The transport of an apply set to %v.")
 	default:
 		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
 		inv.write(configDevicesUsage())

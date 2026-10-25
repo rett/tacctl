@@ -118,7 +118,7 @@ stored() { "$TACCTL_BIN_SCRIPT" config get "scope_auth_method.$1"; }
     [[ -z "$(stored lab)" ]]
     # Not advertised: the usage names clear only.
     run "$TACCTL_BIN_SCRIPT" scope auth-method lab
-    assert_output --partial "<tacacs|radius|clear>"
+    assert_output --partial "tacctl scope auth-method lab tacacs|radius|clear"
     refute_output --partial "|default"
 }
 
@@ -179,7 +179,7 @@ stored() { "$TACCTL_BIN_SCRIPT" config get "scope_auth_method.$1"; }
     run "$TACCTL_BIN_SCRIPT" scope protocols lab set tacacs
     assert_failure
     assert_output --partial "Scope 'lab' has auth-method radius, which protocols 'tacacs' would leave unserved. Nothing was changed."
-    assert_output --partial "tacctl scope auth-method lab <tacacs|radius|clear>"
+    assert_output --partial "tacctl scope auth-method lab tacacs|radius|clear"
     cmp "${TACCTL_STATE_DIR}/store.yaml" "${BATS_TEST_TMPDIR}/before.yaml"
 
     # A list that keeps it, another scope, and the same list once the setting is gone.

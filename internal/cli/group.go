@@ -457,7 +457,9 @@ func (inv *invocation) groupEdit(args []string) error {
 	a := inv.app
 	group, field, value := arg(args, 0), arg(args, 1), arg(args, 2)
 	if group == "" || field == "" || value == "" {
-		a.Out.Error("Usage: tacctl group edit <name> <priv-lvl|juniper-class|wti-level|tier> <value>")
+		for _, l := range usageLinesOf("group edit <name>", "priv-lvl <0-15>", "juniper-class <class>", "wti-level auto|<level>", "tier auto|<tier>") {
+			a.Out.Error(l)
+		}
 		inv.stderrLine("  Example: tacctl group edit operator priv-lvl 10")
 		inv.stderrLine("  Example: tacctl group edit operator juniper-class NEW-CLASS")
 		inv.stderrLine("  Example: tacctl group edit engineer wti-level superuser")

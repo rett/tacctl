@@ -27,6 +27,7 @@ config get bcrypt.cost 99
 config get no.such.key
 config get no.such.key fallback
 config get scope.default
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config get-list
 config get-list commands
 config get-list prefix_allow
@@ -65,16 +66,20 @@ config loglevel
 config loglevel debug ;; config loglevel
 config loglevel info ;; config loglevel
 config loglevel trace
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config listen
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config listen show
 config listen tcp
 @known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config listen tcp 10.1.0.1:49 ;; config listen show
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config listen tcp6 [::]:49 ;; config listen show
 @known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config listen tcp 10.1.0.1:49 ;; config listen reset ;; config listen show
 config listen bogus
 config listen tcp notanaddress
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config listen tcp 10.1.0.1:49 --listener mgmt ;; config listen show
 config listen show --listener nosuch
 config listen --backend nosuch
@@ -96,6 +101,7 @@ config metrics bogus
 # connection and management ACLs
 config allow
 config allow list
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config allow bogus
 config allow add
 config allow add notacidr
@@ -149,7 +155,9 @@ config mgmt-acl juniper-name
 config mgmt-acl juniper-name CUSTOM-MGMT-ACL ;; config mgmt-acl juniper-name
 
 # sudoers (show and remove only: install writes root-owned files, which a non-root run cannot)
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config sudoers
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config sudoers show
 config sudoers bogus
 config sudoers remove
@@ -179,6 +187,7 @@ config restore {TS}
 # more error paths: bad values and missing arguments after a good state
 @known 0.2.18 item 7: the usage line writes the placeholder as <name> (an optional one [<name>], a choice of words without <>)
 config get ''
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config get-list ''
 config bcrypt-cost 10 11
 config bcrypt-cost -1
@@ -232,7 +241,9 @@ config password-min-length 1
 config password-min-length 0
 config secret-min-length 1
 config secret-min-length 500
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config deny bogus
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config allow bogus x
 config mgmt-acl bogus x
 config metrics address bad
@@ -240,6 +251,7 @@ config metrics address ''
 config listen tcp 1.2.3.4
 config listen tcp6 1.2.3.4:49
 config get-list a b c
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config sudoers show extra
 config sudoers remove extra
 config sudoers tiers remove extra
@@ -271,9 +283,11 @@ config listen --listener=Bad_Name show
 config listen --listener=
 config listen --backend=ldap
 config listen --bogus
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config listen show extra
 config listen --listener mgmt show
 config listen --listener mgmt reset
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config listen tcp 10.1.0.1:49 --listener mgmt ;; config listen --listener=mgmt show ;; config listen --listener mgmt reset ;; config listen show
 
 # values with backslash escapes reach info/warn/error through echo -e
@@ -338,6 +352,7 @@ config show
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config validate
 config render
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config listen
 @fixture legacy.unrepresentable.yaml
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user

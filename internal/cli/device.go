@@ -186,7 +186,15 @@ var deviceVerbs = [][2]string{
 	{"export [--csv|--json]", "Print the registry (YAML by default)"},
 	{"hostkey <name> [show|accept [-y]|set SHA256:<fp>]", "Show the pinned ssh host keys, or re-pin them after a verified change"},
 	{deviceNetconfUse, deviceNetconfShort},
-	{deviceSNMPUse, "A device's own SNMP settings over its scope's: version, port, timeout, allowed clients and credentials, and where each comes from"},
+	// 'device snmp': one row for each verb.
+	{"snmp <name> show [--reveal]", "A device's own SNMP settings over its scope's: version, port, timeout, allowed clients and credentials, and where each comes from"},
+	{"snmp <name> version [v2c|v3]", "Show or set the device's own SNMP version"},
+	{"snmp <name> port [<n>]", "Show or set the device's own agent port (1-65535)"},
+	{"snmp <name> timeout [<seconds>]", "Show or set the device's own wait for an answer (1-10 seconds)"},
+	{"snmp <name> clients list|add|remove [<cidr>[,<cidr>...]]", "The ranges allowed to query the device: its own list replaces its scope's"},
+	{"snmp <name> community [--stdin]", "Set the device's own v2c community (asked twice, not echoed)"},
+	{"snmp <name> v3-user <user> [--stdin]", "Set the device's own v3 user and passphrases"},
+	{"snmp <name> clear", "Remove everything the device sets of its own: its scope's settings apply again"},
 	{deviceBlockUse, "A device's own configuration blocks (Junos snmp and system, IOS snmp) over its scope's: list, show, check, set, remove, edit, adopt"},
 	{"ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
 	{"client-config", "Print an ssh_config Include for your devices (Host blocks, pinned keys)"},
@@ -415,12 +423,16 @@ func deviceOptKey(use string) string {
 func deviceRegUsage() string {
 	var b strings.Builder
 	b.WriteString("\n" + ui.Bold + "Device Registry" + ui.NC + "\n\nUsage: tacctl device <subcommand> [arguments]\n\nSubcommands:\n")
-	for _, v := range deviceVerbs {
+	for i, v := range deviceVerbs {
 		use, short := v[0], v[1]
 		if len(use) > 56 {
 			b.WriteString("  " + use + "\n  " + strings.Repeat(" ", 56) + "  " + short + "\n")
 		} else {
 			fmt.Fprintf(&b, "  %-56s  %s\n", use, short)
+		}
+		// A verb of several rows ('snmp') has its options under the last.
+		if i+1 < len(deviceVerbs) && deviceOptKey(deviceVerbs[i+1][0]) == deviceOptKey(use) {
+			continue
 		}
 		for _, o := range deviceOptions[deviceOptKey(use)] {
 			fmt.Fprintf(&b, "      %-52s  %s\n", o[0], o[1])

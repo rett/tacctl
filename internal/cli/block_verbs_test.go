@@ -268,7 +268,7 @@ func TestScopeBlockSetRefusals(t *testing.T) {
 		{"cisco takes IOS syntax only", "", []string{"lab", "cisco", "set", "snmp", "--file", good, "-y"}, "a block holds 'snmp-server', 'ip access-list standard' and 'no' statements only"},
 		{"cisco takes IOS system syntax only", "", []string{"lab", "cisco", "set", "system", "--file", good, "-y"}, "Nothing was written."},
 		{"wti has no blocks", "", []string{"lab", "wti", "set", "snmp", "--file", good, "-y"}, "A WTI unit has no configuration blocks"},
-		{"another vendor", "", []string{"lab", "arista", "list"}, "Unknown vendor 'arista' for a block: juniper or cisco."},
+		{"another vendor", "", []string{"lab", "arista", "list"}, "Unknown vendor 'arista' for a block: cisco or juniper."},
 		{"vendor missing", "", []string{"lab", "set", "snmp", "--file", good}, "The vendor comes before the verb"},
 		{"unknown block", "", []string{"lab", "juniper", "set", "banner", "--file", good, "-y"}, "Unknown block 'banner'"},
 		{"bad block name", "", []string{"lab", "juniper", "set", "../x", "--file", good, "-y"}, "Invalid block name"},

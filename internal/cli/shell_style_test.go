@@ -8,6 +8,8 @@ package cli
 // option lists follow the same rules.
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -44,11 +46,17 @@ func styleFault(desc string) string {
 		return "ends with " + desc[len(desc)-1:]
 	case strings.Contains(desc, "TODO") || strings.Contains(desc, "FIXME"):
 		return "a placeholder text"
+	case reLetterPlaceholder.MatchString(desc):
+		return "names a value by a letter, not its placeholder"
 	case first != "" && unicode.IsLower(rune(first[0])) && !slices.Contains(styleNames, strings.TrimRight(first, ",:;")):
 		return "begins in lower case"
 	}
 	return ""
 }
+
+// reLetterPlaceholder is a value a description names by a capital letter
+// ('the last N entries') where the row has its placeholder ('<n>').
+var reLetterPlaceholder = regexp.MustCompile(`(^|\s)[NMK](\s|$)`)
 
 func TestStyleFault(t *testing.T) {
 	for _, ok := range []string{"Show the list", "(add) Put the rule first", "tacctl tier (readonly, operator)", "Remove one or more ...", "(add, remove) A regex"} {
@@ -56,7 +64,7 @@ func TestStyleFault(t *testing.T) {
 			t.Errorf("%q: %s", ok, f)
 		}
 	}
-	for _, bad := range []string{"", "Show the list.", "show the list", "(add) put it first", "Show  the list", "Show the list ", "Show;", "Show\tit"} {
+	for _, bad := range []string{"", "Show the list.", "show the list", "(add) put it first", "Show  the list", "Show the list ", "Show;", "Show\tit", "Show the last N entries"} {
 		if styleFault(bad) == "" {
 			t.Errorf("%q passes", bad)
 		}
@@ -299,6 +307,9 @@ func TestShellFlagHelpIsTheVerbs(t *testing.T) {
 		{[]string{"device", "config", "apply"}, "--all", "(pull, diff, plan, apply, forget)"},
 		{[]string{"host", "provisioner"}, "--yes", "(provisioner) Rotate without asking"},
 		{[]string{"backend", "disable"}, "--yes", "Answer yes to the confirmation"},
+		{[]string{"host", "move"}, "--remove-home", "(enroll, sync and move) Delete removed users' home directories"},
+		{[]string{"host", "move"}, "--allow-uid-mismatch", "(enroll, sync and move) Accept a UID conflict"},
+		{[]string{"breakglass", "hold"}, "--reason", "(hold) Why"},
 	} {
 		cmd, _ := resolve(root, c.path)
 		spec, _ := specFor(c.path)
@@ -312,5 +323,180 @@ func TestShellFlagHelpIsTheVerbs(t *testing.T) {
 	rows, _ := inv.shellUsage(cmd, []string{"host", "forget"})
 	if len(rows) != 1 || !strings.HasSuffix(rows[0].Desc, "Refused for a held host") {
 		t.Errorf("host forget rows %+v", rows)
+	}
+}
+
+// styleLefts are the argument columns the lists and the usage show, by
+// where they come from: every usage block's rows and every command's Use
+// (the hidden ones too).
+func styleLefts(t *testing.T) map[string][]string {
+	inv, root, _ := shellTestInv(t)
+	out := map[string][]string{}
+	blocks := map[string]string{"top": Usage("top", UsageVars{"version": "v"})}
+	for k, f := range shellHelpBlocks {
+		blocks[k] = f(inv)
+	}
+	// The blocks of the usage files, their slots filled as help fills
+	// them ('lab' for the scope).
+	for _, c := range goldenCases {
+		blocks["usage "+c.id] = strings.ReplaceAll(Usage(c.id, c.vars), " lab ", " <scope> ")
+	}
+	for k, b := range blocks {
+		for _, line := range blockBody(b) {
+			if !strings.HasPrefix(line, "  ") {
+				continue
+			}
+			left, _, ok := splitRow(line)
+			if !ok {
+				left = line
+			}
+			out["help "+k] = append(out["help "+k], strings.TrimSpace(left))
+		}
+	}
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		out["Use of "+c.CommandPath()] = []string{c.Use}
+		for _, s := range c.Commands() {
+			walk(s)
+		}
+	}
+	walk(root)
+	return out
+}
+
+// reRange is a number range a placeholder stands for ('10-14'), and
+// reRangeOK the one way to write it: '<10-14>' ('[<10-14>]' optional).
+var (
+	reRange   = regexp.MustCompile(`[\[{(<]?\b[0-9]+-[0-9]+\b[\]})>]?`)
+	reRangeOK = regexp.MustCompile(`^<[0-9]+-[0-9]+>$`)
+)
+
+// A range is '<lo-hi>' wherever the usage, the rows or a Use name it, and a
+// choice of words is 'a|b' without braces, in the order the lists use
+// (cisco before juniper).
+func TestUsageRangeAndChoiceStyle(t *testing.T) {
+	for where, lefts := range styleLefts(t) {
+		for _, l := range lefts {
+			for _, m := range reRange.FindAllString(l, -1) {
+				if !reRangeOK.MatchString(m) {
+					t.Errorf("%s: %q writes the range %s, not <lo-hi>", where, l, m)
+				}
+			}
+			if strings.HasPrefix(where, "help ") && strings.ContainsAny(l, "{}") {
+				t.Errorf("%s: %q puts a choice in braces", where, l)
+			}
+			if strings.Contains(l, "juniper|cisco") {
+				t.Errorf("%s: %q names juniper before cisco", where, l)
+			}
+		}
+	}
+}
+
+// reUsageLit is a 'Usage: tacctl ...' text of the code, up to where a
+// value is joined in.
+var reUsageLit = regexp.MustCompile(`"(?:  )?Usage: tacctl ([^"]*)"`)
+
+// The usage lines of the errors write ranges and choices as the rows do:
+// no '<a|b>' choice of words a row does not name as a placeholder, no
+// '[args]' and no range other than '<lo-hi>'.
+func TestUsageErrorLinesFollowTheStyle(t *testing.T) {
+	known := map[string]bool{}
+	for _, lefts := range styleLefts(t) {
+		for _, l := range lefts {
+			for _, m := range regexp.MustCompile(`<[^<> ]+>`).FindAllString(l, -1) {
+				known[m] = true
+			}
+		}
+	}
+	files, _ := filepath.Glob("*.go")
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range reUsageLit.FindAllStringSubmatch(string(src), -1) {
+			// A note after the usage ('   (for example 80000-89999)') is
+			// text, not the usage.
+			l, _, _ := strings.Cut(m[1], "   ")
+			for _, ph := range regexp.MustCompile(`<[^<> ]*\|[^<> ]*>`).FindAllString(l, -1) {
+				if !known[ph] {
+					t.Errorf("%s: %q writes %s, which no row names (a choice of words is a|b)", f, l, ph)
+				}
+			}
+			if strings.Contains(l, "[args]") {
+				t.Errorf("%s: %q ends in [args], not the row's arguments", f, l)
+			}
+			for _, r := range reRange.FindAllString(l, -1) {
+				if !reRangeOK.MatchString(r) {
+					t.Errorf("%s: %q writes the range %s, not <lo-hi>", f, l, r)
+				}
+			}
+		}
+	}
+}
+
+// What a wrong or missing argument prints as its usage is the rows '?'
+// and help show for the command, word for word (the scope typed in place
+// of <scope>).
+func TestUsageErrorRepeatsTheRows(t *testing.T) {
+	inv, root, _ := shellTestInv(t)
+	sb := newSandbox(t, true)
+	for _, c := range []struct{ path, args []string }{
+		{[]string{"scope", "breakglass"}, nil},
+		{[]string{"scope", "breakglass"}, []string{"lab", "frob"}},
+		{[]string{"scope", "breakglass"}, []string{"lab", "add"}},
+		{[]string{"scope", "breakglass"}, []string{"lab", "remove"}},
+		{[]string{"scope", "protocols"}, nil},
+		{[]string{"scope", "protocols"}, []string{"lab", "frob"}},
+		{[]string{"scope", "protocols"}, []string{"lab", "set"}},
+		{[]string{"scope", "vendor-attrs"}, nil},
+		{[]string{"scope", "vendor-attrs"}, []string{"lab", "frob"}},
+		{[]string{"scope", "vendor-attrs"}, []string{"lab", "enable"}},
+		{[]string{"scope", "devices"}, nil},
+		{[]string{"scope", "devices"}, []string{"lab", "frob"}},
+		{[]string{"scope", "devices"}, []string{"lab", "set"}},
+		{[]string{"scope", "devices"}, []string{"lab", "unset"}},
+		{[]string{"scope", "staging"}, []string{"frob"}},
+		{[]string{"scope", "staging"}, []string{"remove"}},
+		{[]string{"scope", "mgmt-acl"}, nil},
+		{[]string{"scope", "mgmt-acl"}, []string{"lab", "add"}},
+		{[]string{"scope", "mgmt-acl"}, []string{"lab", "remove"}},
+		{[]string{"scope", "snmp"}, nil},
+		{[]string{"group", "edit"}, nil},
+		{[]string{"config", "get"}, nil},
+		{[]string{"config", "get-list"}, nil},
+		{[]string{"device", "snmp"}, nil},
+		{[]string{"breakglass", "hold"}, nil},
+	} {
+		name := strings.Join(append(slices.Clone(c.path), c.args...), " ")
+		cmd, _ := resolve(root, c.path)
+		rows, _ := inv.shellUsage(cmd, c.path)
+		_, n := inv.helpBlock(cmd, c.path)
+		lead := "tacctl " + strings.Join(c.path[:min(n, len(c.path)-1)], " ") + " "
+		var want []string
+		for _, r := range rows {
+			want = append(want, lead+r.Left, lead+strings.ReplaceAll(r.Left, "<scope>", "lab"))
+		}
+		sb.run("", append(slices.Clone(c.path), c.args...))
+		var got []string
+		for _, l := range strings.Split(plain(sb.out.String()+sb.err.String()), "\n") {
+			l = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(l), "[ERROR]"))
+			if u, ok := strings.CutPrefix(l, "Usage: "); ok {
+				got = append(got, u)
+			} else if strings.HasPrefix(l, "tacctl ") && len(got) > 0 {
+				got = append(got, l)
+			}
+		}
+		if len(got) == 0 {
+			t.Errorf("%s: no usage line:\n%s%s", name, sb.out.String(), sb.err.String())
+		}
+		for _, g := range got {
+			if !slices.Contains(want, oneBlank(g)) {
+				t.Errorf("%s: the usage line %q is not a row of the command:\n  %s", name, g, strings.Join(want, "\n  "))
+			}
+		}
 	}
 }

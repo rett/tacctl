@@ -57,9 +57,9 @@ host sync <name>... | --all
     --all
         Every enrolled host
     --allow-uid-mismatch
-        (enroll and sync) accept a UID conflict on the host instead of stopping
+        (enroll, sync and move) accept a UID conflict on the host instead of stopping
     --remove-home
-        (enroll and sync) delete removed users' home directories without asking (on a terminal each
+        (enroll, sync and move) delete removed users' home directories without asking (on a terminal each
         is asked; without one they are kept)
 
 host check <name>... | --all [--json]

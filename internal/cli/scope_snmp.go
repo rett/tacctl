@@ -122,7 +122,7 @@ Examples:
 func (inv *invocation) scopeSNMP(args []string) error {
 	scope, sub := arg(args, 0), arg(args, 1)
 	if scope == "" {
-		return inv.usageErr("Usage: tacctl scope snmp <scope> <show|version|community|v3-user|clients|contact|port|timeout|clear|test> [args]")
+		return inv.usageErr("Usage: tacctl scope snmp <scope> <subcommand>")
 	}
 	f := inv.callerScopes()
 	if f.restricted {

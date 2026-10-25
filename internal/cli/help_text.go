@@ -297,11 +297,17 @@ Usage:
   <b>tacctl scope lookup</b> <o><ip|cidr></o>                            Show which scope owns an address
 
   <b>tacctl scope prefixes</b> <o><scope></o> list|add|remove|move       Manage a scope's CIDR list
-  <b>tacctl scope staging</b> [list | remove <o><address></o>]           Bench addresses of devices provisioned off-site (<o>--staging</o>), until seen in place
+  <b>tacctl scope staging</b> list                                Bench addresses of devices provisioned off-site (<o>--staging</o>), until seen in place
+  <b>tacctl scope staging</b> remove <o><address></o>                    Take a bench address out of its scope by hand
   <b>tacctl scope secret</b>   <o><scope></o> show|set|generate          Manage a scope's shared secret
-  <b>tacctl scope protocols</b> <o><scope></o> list|set <o><csv></o>|clear      Limit a scope to some protocols (tacacs, radius); default: all
-  <b>tacctl scope vendor-attrs</b> <o><scope></o> [enable|disable <o><csv></o>]  RADIUS: vendor privilege attributes sent to the scope's devices (cisco, juniper, wti); default: not sent
-  <b>tacctl scope devices</b> <o><scope></o> [set <o><ip|cidr></o> <o><vendor></o>|unset <o><ip|cidr></o>]  RADIUS: tag an address of the scope with its vendor (it gets that vendor's attribute only)
+  <b>tacctl scope protocols</b> <o><scope></o> list                      Show the protocols that serve a scope (default: all)
+  <b>tacctl scope protocols</b> <o><scope></o> set <o><protocol></o>[,<o><protocol></o>...]  Limit a scope to some protocols (tacacs, radius)
+  <b>tacctl scope protocols</b> <o><scope></o> clear                     Remove the limit: every enabled backend serves the scope
+  <b>tacctl scope vendor-attrs</b> <o><scope></o> show                   RADIUS: the vendor privilege attributes sent to the scope's devices (default: not sent)
+  <b>tacctl scope vendor-attrs</b> <o><scope></o> enable|disable <o><vendor></o>[,<o><vendor></o>...]  RADIUS: send or stop sending vendors' attributes (cisco, juniper, wti)
+  <b>tacctl scope devices</b> <o><scope></o> list                        RADIUS: the scope's addresses tagged with a vendor
+  <b>tacctl scope devices</b> <o><scope></o> set <o><ip|cidr></o> <o><vendor></o>      RADIUS: tag an address of the scope with its vendor (it gets that vendor's attribute only)
+  <b>tacctl scope devices</b> <o><scope></o> unset <o><ip|cidr></o>             RADIUS: remove a tag
   <b>tacctl scope aaa-order</b> <o><scope></o> [tacacs-first|local-first]  AAA method-list order in this scope's rendered device configs (default tacacs-first)
   <b>tacctl scope exec-timeout</b> <o><scope></o> [<o><minutes></o>]            Per-scope idle-session timeout in rendered device configs (0..60 min; default 60; 0 = never expire)
   <b>tacctl scope tacacs-group</b> <o><scope></o> [<o><name></o>]               Per-scope Cisco aaa-group-server label (default TACACS-GROUP)
@@ -309,15 +315,17 @@ Usage:
   <b>tacctl scope auth-method</b> <o><scope></o> [tacacs|radius|clear]   Protocol this scope's device configs and host enrollments use when the command names none
   <b>tacctl scope mgmt-acl</b> <o><scope></o> list|add|remove|clear      Per-scope permit list (fallback: global mgmt_acl.permits)
   <b>tacctl scope mgmt-acl</b> <o><scope></o> cisco-name|juniper-name [<o><name></o>]  Per-scope ACL / filter name (defaults VTY-ACL / MGMT-ACL)
-  <b>tacctl scope breakglass</b> <o><scope></o> list|add <o><name></o>|remove <o><name></o>  Per-scope break-glass local users in the device walkthroughs (names and roles only; no credential is stored): the accounts 'tacctl breakglass hold' makes usable
+  <b>tacctl scope breakglass</b> <o><scope></o> list                     Per-scope break-glass local users in the device walkthroughs (names and roles only; no credential is stored)
+  <b>tacctl scope breakglass</b> <o><scope></o> add <o><name></o> [<o>--role</o> admin|operator|readonly]  Record a break-glass user: one of the accounts 'tacctl breakglass hold' makes usable
       <o>--role <role></o>                                        (add) The role: admin (default), operator or readonly
+  <b>tacctl scope breakglass</b> <o><scope></o> remove <o><name></o>            Drop a break-glass user
   <b>tacctl scope snmp</b> <o><scope></o> show|version|community|v3-user|clients|contact|port|timeout|clear|test
                                                            SNMP of a scope: credentials, allowed clients, contact (default beneath: tacctl config snmp)
   <b>tacctl scope netconf</b> <o><scope></o> [show|enable|disable|leave]
                                                            NETCONF service of the scope's Junos devices (default leave: nothing is planned or compared; a device's own setting wins)
       <o>--connection-limit <n>|none</o>                          (enable) The connection limit of the service, 1 to 250; none removes it
       <o>--rate-limit <n>|none</o>                                (enable) The rate limit of the service, 1 to 250; none removes it
-  <b>tacctl scope block</b> <o><scope></o> {juniper|cisco} list|show|check|set|remove|edit|adopt [<o><block></o>]
+  <b>tacctl scope block</b> <o><scope></o> cisco|juniper list|show|check|set|remove|edit|adopt [<o><block></o>]
                                                            Configuration blocks of a scope (Junos snmp and system, IOS snmp): community strings, trap groups and hosts, access lists, login message, domain, time zone, name servers, NTP
 
 {{current}}
@@ -400,14 +408,14 @@ Subcommands:
   <b>loglevel</b> [debug|info|error]          Show or change log level
   <b>listen</b> [show|tcp|tcp6|reset] [<o><addr></o>]  Show, change, or reset a listen address (default: tacacs, listener 'default')
       <o>--listener <name></o>                Act on another listener than 'default' (its own tacquito@<name> unit; reset removes it)
-      <o>--backend <id></o>                   Act on another backend (see 'tacctl backend list'); radius: <o>--listener</o> auth|acct <o><udp|udp6></o> <o><addr></o>
+      <o>--backend <id></o>                   Act on another backend (see 'tacctl backend list'); radius: <o>--listener</o> auth|acct udp|udp6 <o><addr></o>
   <b>metrics</b> show|enable|disable|reset|address <o><host:port></o>    Prometheus exporter control
   <b>sudoers</b> [show|install|remove] [<o><group></o>]  Manage NOPASSWD sudoers drop-in for tacctl
   <b>sudoers</b> tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for tacctl users with local accounts
   <b>password-age</b> [<o><days></o>]                Show or set password age warning threshold
-  <b>bcrypt-cost</b> [10-14]                  Show or set bcrypt cost factor (default 12)
-  <b>password-min-length</b> [8-64]           Show or set minimum interactive password length (default 12)
-  <b>secret-min-length</b> [16-128]           Show or set minimum shared-secret length (default 16)
+  <b>bcrypt-cost</b> [<o><10-14></o>]                Show or set bcrypt cost factor (default 12)
+  <b>password-min-length</b> [<o><8-64></o>]         Show or set minimum interactive password length (default 12)
+  <b>secret-min-length</b> [<o><16-128></o>]         Show or set minimum shared-secret length (default 16)
   <b>audit-strict</b> [on|off]                Show or set whether a change or a reveal is refused when its audit line cannot be written (default off)
   <b>allow</b> list|add|remove|clear          Manage connection allow list (IP ACL; add/remove accept comma-lists)
   <b>deny</b> list|add|remove|clear           Manage connection deny list (IP ACL; add/remove accept comma-lists)
@@ -538,8 +546,8 @@ Usage: tacctl host <subcommand> [arguments]
                                        /32 (its secret and users) until the host is seen in place (tacctl scope staging)
   sync <name>... | --all               Push account adds, renames, deletions, expiries and tier changes
       --all                            Every enrolled host
-      --allow-uid-mismatch             (enroll and sync) Accept a UID conflict on the host instead of stopping
-      --remove-home                    (enroll and sync) Delete removed users' home directories without asking
+      --allow-uid-mismatch             (enroll, sync and move) Accept a UID conflict on the host instead of stopping
+      --remove-home                    (enroll, sync and move) Delete removed users' home directories without asking
                                        (on a terminal each one is asked; without one they are kept)
   check <name>... | --all [--json]     Compare hosts with what tacctl would make them, read-only: one line per
                                        difference with the command that fixes it; exit 1 when any differs or
@@ -620,11 +628,11 @@ Backends: {{backends}}
 Usage: tacctl log <subcommand> [--backend <id>] [arguments]
 
 Subcommands:
-  <b>tail</b> [<o>-f</o>] [<o><n></o>]       Show the last N log entries (default 20; TACACS+: journal, RADIUS: auth and daemon log)
+  <b>tail</b> [<o>-f</o>] [<o><n></o>]       Show the last <n> log entries (default 20; TACACS+: journal, RADIUS: auth and daemon log)
       <o>-f</o>, <o>--follow</o>      (tail) Then print new entries as they arrive, until Ctrl-C
   <b>search</b> <o><term></o>         Search the logs for a username or keyword
   <b>failures</b>              Show auth failures from the last 24 hours
-  <b>accounting</b> [<o><n></o>]      Show last N accounting log entries
+  <b>accounting</b> [<o><n></o>]      Show the last <n> accounting log entries
   <b>clear</b> [<o>--force</o>|<o>-y</o>]    Purge each backend's logs: journal or auth log, accounting log (confirms)
       <o>--backend <id></o>    Only that backend's log (every subcommand)
       <o>--force</o>, <o>-y</o>       (clear) Purge without asking

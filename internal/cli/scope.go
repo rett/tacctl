@@ -10,6 +10,7 @@ package cli
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -75,6 +76,19 @@ var scopeSpecs = map[string]Spec{
 		{Names: []string{"--stdin"}}, {Names: []string{"--auth"}, Value: true, Only: "v3-user", Kind: strings.Join(snmp.AuthProtocols, "|")},
 		{Names: []string{"--priv"}, Value: true, Only: "v3-user", Kind: strings.Join(snmp.PrivProtocols, "|")}}},
 }
+
+// The rows of a verb after 'scope <verb> <scope>' in the usage of 'scope',
+// which its usage lines repeat.
+var (
+	scopeProtocolsRows   = []string{"list", "set <protocol>[,<protocol>...]", "clear"}
+	scopeVendorAttrsRows = []string{"show", "enable|disable <vendor>[,<vendor>...]"}
+	scopeDevicesRows     = []string{"list", "set <ip|cidr> <vendor>", "unset <ip|cidr>"}
+	scopeStagingRows     = []string{"list", "remove <address>"}
+	scopeMgmtACLRows     = []string{"list", "add <entry>[,<entry>...]", "remove <entry>[,<entry>...]", "clear", "cisco-name [<label>]", "juniper-name [<label>]"}
+)
+
+// mgmtACLEntryLine says what an <entry> of a mgmt-acl list is.
+const mgmtACLEntryLine = "An <entry> is a <cidr>, or a <cidr> with the services it permits: <cidr>[:<service>[,<service>...]]"
 
 func scopeCmd(inv *invocation) *cobra.Command {
 	n := func(run func([]string) error) func(*cobra.Command, []string) error {
@@ -1822,9 +1836,9 @@ func (inv *invocation) scopeSecret(args []string) error {
 func (inv *invocation) scopeProtocols(args []string) error {
 	a := inv.app
 	scope, sub, value := arg(args, 0), arg(args, 1), arg(args, 2)
-	usage := "Usage: tacctl scope protocols " + scope + " [list|set <protocol>[,<protocol>...]|clear]"
+	usage := usageLinesOf("scope protocols "+scope, scopeProtocolsRows...)
 	if scope == "" {
-		return inv.usageErr("Usage: tacctl scope protocols <scope> [list|set <protocol>[,<protocol>...]|clear]")
+		return inv.usageErr(usageLinesOf("scope protocols <scope>", scopeProtocolsRows...)...)
 	}
 	if sub == "set" || sub == "clear" {
 		if err := inv.requireStore(); err != nil {
@@ -1855,7 +1869,7 @@ func (inv *invocation) scopeProtocols(args []string) error {
 		inv.echo("")
 	case "set":
 		if value == "" {
-			return inv.usageErr("Usage: tacctl scope protocols "+scope+" set <protocol>[,<protocol>...]", "Known protocols: "+known)
+			return inv.usageErr(append(usageLinesOf("scope protocols "+scope, scopeProtocolsRows[1]), "Known protocols: "+known)...)
 		}
 		words, err := inv.xargsWords(value)
 		if err != nil {
@@ -1890,7 +1904,7 @@ func (inv *invocation) scopeProtocols(args []string) error {
 		// defaults it names pointing at a backend that ignores the scope.
 		if am := inv.scopeAuthMethod(scope); am != "" && !contains(list, am) {
 			return inv.usageErr("Scope '"+scope+"' has auth-method "+am+", which protocols '"+newList+"' would leave unserved. Nothing was changed.",
-				"Change or clear the auth-method first: tacctl scope auth-method "+scope+" <tacacs|radius|clear>   (or keep "+am+" in the list)")
+				"Change or clear the auth-method first: tacctl scope auth-method "+scope+" tacacs|radius|clear   (or keep "+am+" in the list)")
 		}
 		if err := inv.applyStore(func(st *store.Store) error { return st.ScopeSet(scope, "protocols="+newList) }); err != nil {
 			return err
@@ -1914,7 +1928,7 @@ func (inv *invocation) scopeProtocols(args []string) error {
 		a.Out.Info("Scope '" + scope + "' protocols filter cleared (every enabled backend serves it).")
 		inv.echo("")
 	default:
-		return inv.usageErr("Unknown subcommand: '"+sub+"'", usage)
+		return inv.usageErr(withUsage("Unknown subcommand: '"+sub+"'", usage)...)
 	}
 	return nil
 }
@@ -1940,9 +1954,9 @@ func (inv *invocation) scopeVendorAttrs(args []string) error {
 	a := inv.app
 	scope, sub, value := arg(args, 0), arg(args, 1), arg(args, 2)
 	vendors := strings.Join(scopeVendors, ", ")
-	usage := "Usage: tacctl scope vendor-attrs <scope> [enable <vendor>[,<vendor>...]|disable <vendor>[,<vendor>...]]"
+	usage := usageLinesOf("scope vendor-attrs "+cmp.Or(scope, "<scope>"), scopeVendorAttrsRows...)
 	if scope == "" {
-		return inv.usageErr(usage, "Vendors: "+vendors)
+		return inv.usageErr(append(usage, "Vendors: "+vendors)...)
 	}
 	if sub == "enable" || sub == "disable" {
 		if err := inv.requireStore(); err != nil {
@@ -1987,11 +2001,11 @@ func (inv *invocation) scopeVendorAttrs(args []string) error {
 		return nil
 	case "enable", "disable":
 	default:
-		return inv.usageErr("Unknown subcommand: '"+sub+"'. The verbs are enable and disable: nothing is sent until a vendor is enabled.", usage)
+		return inv.usageErr(withUsage("Unknown subcommand: '"+sub+"'. The verbs are enable and disable: nothing is sent until a vendor is enabled.", usage)...)
 	}
 
 	if value == "" {
-		return inv.usageErr("Usage: tacctl scope vendor-attrs "+scope+" "+sub+" <vendor>[,<vendor>...]", "Vendors: "+vendors)
+		return inv.usageErr(append(usageLinesOf("scope vendor-attrs "+scope, scopeVendorAttrsRows[1]), "Vendors: "+vendors)...)
 	}
 	wanted, err := inv.scopeVendorList(value)
 	if err != nil {
@@ -2066,9 +2080,9 @@ func (inv *invocation) scopeDevices(args []string) error {
 	a := inv.app
 	scope, sub, addr, vendor := arg(args, 0), arg(args, 1), arg(args, 2), arg(args, 3)
 	vendors := strings.Join(scopeVendors, ", ")
-	usage := "Usage: tacctl scope devices <scope> [set <ip|cidr> <vendor>|unset <ip|cidr>]"
+	usage := usageLinesOf("scope devices "+cmp.Or(scope, "<scope>"), scopeDevicesRows...)
 	if scope == "" {
-		return inv.usageErr(usage)
+		return inv.usageErr(usage...)
 	}
 	if sub == "set" || sub == "unset" {
 		if err := inv.requireStore(); err != nil {
@@ -2121,14 +2135,14 @@ func (inv *invocation) scopeDevices(args []string) error {
 		return nil
 	case "set", "unset":
 	default:
-		return inv.usageErr("Unknown subcommand: '"+sub+"'", usage)
+		return inv.usageErr(withUsage("Unknown subcommand: '"+sub+"'", usage)...)
 	}
 
 	if addr == "" || (sub == "set" && vendor == "") || (sub == "unset" && vendor != "") {
 		if sub == "set" {
-			return inv.usageErr("Usage: tacctl scope devices " + scope + " set <ip|cidr> <vendor>   (vendors: " + vendors + ")")
+			return inv.usageErr(append(usageLinesOf("scope devices "+scope, scopeDevicesRows[1]), "Vendors: "+vendors)...)
 		}
-		return inv.usageErr("Usage: tacctl scope devices " + scope + " unset <ip|cidr>")
+		return inv.usageErr(usageLinesOf("scope devices "+scope, scopeDevicesRows[2])...)
 	}
 	c := cidr.Canonical(addr)
 	if c == "" {
@@ -2216,7 +2230,7 @@ type scopeKnob struct {
 	verb, usage, key, def string
 	shown                 func(current string) string // the "Scope 's' ...: <v>" line's tail
 	help                  []string                    // the explanation lines
-	setUsage              string                      // "<...>" of the Usage line
+	setUsage              string                      // the value of the Usage line
 	set                   func(inv *invocation, scope, value string)
 }
 
@@ -2263,7 +2277,7 @@ func (inv *invocation) scopeAAAOrder(args []string) error {
 			"    tacacs-first  The server (TACACS+ or RADIUS) is authoritative; local used only on server outage.",
 			"    local-first   Local DB checked first; the server used for names not found locally.",
 		},
-		setUsage: "<tacacs-first|local-first>",
+		setUsage: "tacacs-first|local-first",
 		set: func(inv *invocation, scope, v string) {
 			inv.app.Out.Info("Scope '" + scope + "' AAA method-list order set to " + v + ".")
 			if v == "local-first" {
@@ -2379,7 +2393,7 @@ func (inv *invocation) scopeAuthMethodCmd(args []string) error {
     configs and 'tacctl host default-method' for hosts.
 
 `)
-		inv.echo("  Usage: tacctl scope auth-method " + scope + " <tacacs|radius|clear>")
+		inv.echo("  Usage: tacctl scope auth-method " + scope + " tacacs|radius|clear")
 		inv.echo("")
 		return nil
 	}
@@ -2441,7 +2455,7 @@ func (inv *invocation) scopeMgmtACL(args []string) error {
 	a := inv.app
 	scope, sub, value := arg(args, 0), arg(args, 1), arg(args, 2)
 	if scope == "" {
-		return inv.usageErr("Usage: tacctl scope mgmt-acl <scope> <list|add|remove|clear|cisco-name|juniper-name> [args]")
+		return inv.usageErr(usageLinesOf("scope mgmt-acl <scope>", scopeMgmtACLRows...)...)
 	}
 	if err := inv.scopeRequire(scope); err != nil {
 		return err
@@ -2472,7 +2486,7 @@ func (inv *invocation) scopeMgmtACL(args []string) error {
 		inv.echo("")
 	case "add":
 		if value == "" {
-			return inv.usageErr("Usage: tacctl scope mgmt-acl " + scope + " add <cidr>[:<services>][,<cidr>[:<services>]...]")
+			return inv.usageErr(append(usageLinesOf("scope mgmt-acl "+scope, scopeMgmtACLRows[1]), mgmtACLEntryLine)...)
 		}
 		requested, err := inv.parseACLEntries(value)
 		if err != nil {
@@ -2499,7 +2513,7 @@ func (inv *invocation) scopeMgmtACL(args []string) error {
 		inv.echo("")
 	case "remove":
 		if value == "" {
-			return inv.usageErr("Usage: tacctl scope mgmt-acl " + scope + " remove <cidr>[:<services>][,<cidr>[:<services>]...]")
+			return inv.usageErr(append(usageLinesOf("scope mgmt-acl "+scope, scopeMgmtACLRows[2]), mgmtACLEntryLine)...)
 		}
 		requested, err := inv.parseACLEntries(value)
 		if err != nil {

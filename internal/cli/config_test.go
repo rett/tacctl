@@ -180,8 +180,8 @@ func TestConfigGetAndTunables(t *testing.T) {
 		code      int
 		out, errs string
 	}{
-		{[]string{"config", "get"}, 1, "", "Usage: tacctl config get <dotted.path> [<fallback>]"},
-		{[]string{"config", "get-list"}, 1, "", "Usage: tacctl config get-list <dotted.path>"},
+		{[]string{"config", "get"}, 1, "", "Usage: tacctl config get <path> [<fallback>]"},
+		{[]string{"config", "get-list"}, 1, "", "Usage: tacctl config get-list <path>"},
 		{[]string{"config", "get", "bcrypt.cost"}, 0, "12\n", ""},
 		{[]string{"config", "get", "no.such", "fb"}, 0, "fb\n", ""},
 		{[]string{"config", "bcrypt-cost", "11"}, 0, "Bcrypt cost set to 11.", ""},

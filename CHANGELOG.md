@@ -94,8 +94,15 @@ current behaviour; this file is where history lives.
    --scope`, `sync --apply`, `sync -y`, `collect -y` and `config apply
    --transport`, and `tacctl host` the `provisioner` `--remove-home` and
    `-y`. `help console` in the shell prints the console's usage. The manual
-   page's option lists follow the usage. No command, flag or exit status
-   changes.
+   page's option lists follow the usage. A number range is written `<10-14>`
+   (`config bcrypt-cost [<10-14>]`) and a choice of words `a|b` in the
+   lists' order (`scope block <scope> cisco|juniper`), a verb whose forms
+   take different arguments has a row for each (`scope breakglass`,
+   `protocols`, `vendor-attrs`, `devices`, `staging`, `device snmp`), the
+   usage an error prints is the command's rows (`scope snmp`, `scope
+   mgmt-acl`, `group edit`, `config get`), and `host move` is among the verbs
+   of `--allow-uid-mismatch` and `--remove-home`. No command, flag or exit
+   status changes.
 
 ## 0.2.17 (2026-10-24)
 

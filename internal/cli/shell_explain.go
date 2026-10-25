@@ -398,7 +398,7 @@ func (inv *invocation) typedWords(cmd *cobra.Command, path []string, spec Spec, 
 func positionals(spec Spec, rest []string) int { return len(positionalWords(spec, rest)) }
 
 // fixedWords are the words a placeholder of a usage row stands for when it
-// is a fixed word or a choice of them ('list', 'list|add', '{juniper|cisco}');
+// is a fixed word or a choice of them ('list', 'list|add', 'cisco|juniper');
 // nil for a value typed by hand ('<name>', 'auto|<tier>') or an optional
 // one ('[<n>]', '[show|tcp]'), which any word fits.
 func fixedWords(p string) []string {

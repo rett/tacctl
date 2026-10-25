@@ -309,13 +309,17 @@ device snmp <name> [show [--reveal]]
     `(device)`, `(scope <scope>)`, `(default)` or `(built-in)`. A setting the device does not set
     comes from its scope, then the default, then the built-in
 
-device snmp <name> version v2c|v3
+device snmp <name> version [v2c|v3]
 
     Show or set the device's own SNMP version (superusers); `community` and `v3-user` set it too
 
-device snmp <name> port <n> | timeout <seconds>
+device snmp <name> port [<n>]
 
-    Show or set the device's own agent port and wait for an answer (1-65535, 1-10)
+    Show or set the device's own agent port (1-65535)
+
+device snmp <name> timeout [<seconds>]
+
+    Show or set the device's own wait for an answer (1-10 seconds)
 
 device snmp <name> clients list|add|remove [<cidr>[,<cidr>...]]
 

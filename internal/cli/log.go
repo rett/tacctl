@@ -39,10 +39,10 @@ func logCmd(inv *invocation) *cobra.Command {
 		}))
 	}
 	c := verb("log <subcommand> [--backend <id>]", "Log viewer (tail, search, failures, accounting; --backend <id>)",
-		sub("tail", "Show the last N log entries (-f: then follow new ones until Ctrl-C)"),
+		sub("tail", "Show the last log entries (-f: then follow new ones until Ctrl-C)"),
 		sub("search", "Search the logs for a username or keyword"),
 		sub("failures", "Show auth failures from the last 24 hours"),
-		sub("accounting", "Show last N accounting log entries"),
+		sub("accounting", "Show the last accounting log entries"),
 		sub("clear", "Purge each backend's logs (confirms)"),
 	)
 	// No sub-command or an unknown one (a --backend before the sub-command

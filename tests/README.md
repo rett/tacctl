@@ -333,7 +333,7 @@ setup() {
 - The hidden commands are part of the contract the tests use:
   `_completion-names <kind>` (the completion bridge: users, groups, scopes,
   backups, backends, enabled-backends, listeners) and `_phase <backend>
-  <install|upgrade|uninstall> <phase>[,<phase>...] [<tree>|--keep-logs]`,
+  install|upgrade|uninstall <phase>[,<phase>...] [<tree>|--keep-logs]`,
   which runs lifecycle phases of one backend on their own and prints
   `SUMMARY <note>` / `SAVED <line>` for what they leave to the closing
   summaries (`radius.bats` drives the RADIUS upgrade and uninstall phases

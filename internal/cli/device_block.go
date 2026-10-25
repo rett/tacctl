@@ -17,7 +17,7 @@ import (
 	"github.com/rett/tacctl/internal/ui"
 )
 
-const deviceBlockUse = "block <name> {list|show|check|set|remove|edit|adopt} [<block>] [options]"
+const deviceBlockUse = "block <name> list|show|check|set|remove|edit|adopt [<block>] [options]"
 
 // deviceBlockSpecs are the arguments of each verb after the device's name.
 var deviceBlockSpecs = map[string]Spec{

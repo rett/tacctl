@@ -22,7 +22,9 @@ import (
 	"github.com/rett/tacctl/internal/ui"
 )
 
-const scopeBreakGlassUsage = "Usage: tacctl scope breakglass <scope> [list | add <name> [--role admin|operator|readonly] | remove <name>]"
+// scopeBreakGlassRows are the rows of 'scope breakglass <scope>' in the
+// usage of 'scope', and its usage lines.
+var scopeBreakGlassRows = []string{"list", "add <name> [--role admin|operator|readonly]", "remove <name>"}
 
 // breakGlassReserved are the names no device account may take: the Junos
 // accounting sink and the service user (names.ReservedUsers, names.SinkUsers).
@@ -67,25 +69,26 @@ func breakGlassNameProblem(m *model.Model, scope, name string) string {
 func (inv *invocation) scopeBreakGlass(args []string) error {
 	p, err := Parse(scopeSpecs["breakglass"], args)
 	if err != nil {
-		return inv.usageErr(err.Error(), scopeBreakGlassUsage)
+		return inv.usageErr(withUsage(err.Error(), usageLinesOf("scope breakglass <scope>", scopeBreakGlassRows...))...)
 	}
 	scope, sub, name := arg(p.Args, 0), arg(p.Args, 1), arg(p.Args, 2)
 	if scope == "" {
-		return inv.usageErr(scopeBreakGlassUsage)
+		return inv.usageErr(usageLinesOf("scope breakglass <scope>", scopeBreakGlassRows...)...)
 	}
+	usage := usageLinesOf("scope breakglass "+scope, scopeBreakGlassRows...)
 	if err := inv.scopeRequire(scope); err != nil {
 		return err
 	}
 	c := inv.app.Conf()
 	users := policy.BreakGlassUsers(c, scope)
 	if p.Has("--role") && sub != "add" {
-		return inv.usageErr("--role belongs to 'add'.", scopeBreakGlassUsage)
+		return inv.usageErr(withUsage("--role belongs to 'add'.", usage)...)
 	}
 
 	switch sub {
 	case "", "list":
 		if sub == "list" && name != "" {
-			return inv.usageErr("Unknown argument: '"+name+"'", scopeBreakGlassUsage)
+			return inv.usageErr(withUsage("Unknown argument: '"+name+"'", usage)...)
 		}
 		inv.scopeBreakGlassList(scope, users)
 		return nil
@@ -93,7 +96,7 @@ func (inv *invocation) scopeBreakGlass(args []string) error {
 		return inv.scopeBreakGlassAdd(scope, name, p.Value("--role"), p.Has("--role"), users)
 	case "remove":
 		if name == "" {
-			return inv.usageErr("Usage: tacctl scope breakglass " + scope + " remove <name>")
+			return inv.usageErr(usageLinesOf("scope breakglass "+scope, scopeBreakGlassRows[2])...)
 		}
 		var kept []policy.BreakGlassUser
 		for _, u := range users {
@@ -119,7 +122,7 @@ func (inv *invocation) scopeBreakGlass(args []string) error {
 		inv.echo("")
 		return nil
 	}
-	return inv.usageErr("Unknown subcommand: '"+sub+"'", scopeBreakGlassUsage)
+	return inv.usageErr(withUsage("Unknown subcommand: '"+sub+"'", usage)...)
 }
 
 // scopeBreakGlassList is 'scope breakglass <scope> [list]'.
@@ -146,13 +149,13 @@ func (inv *invocation) scopeBreakGlassList(scope string, users []policy.BreakGla
 // scopeBreakGlassAdd is 'scope breakglass <scope> add <name> [--role r]'.
 func (inv *invocation) scopeBreakGlassAdd(scope, name, role string, roleGiven bool, users []policy.BreakGlassUser) error {
 	if name == "" {
-		return inv.usageErr("Usage: tacctl scope breakglass " + scope + " add <name> [--role admin|operator|readonly]")
+		return inv.usageErr(usageLinesOf("scope breakglass "+scope, scopeBreakGlassRows[1])...)
 	}
 	if !roleGiven {
 		role = conf.BreakGlassAdmin
 	}
 	if !conf.ValidBreakGlassRole(role) {
-		return inv.usageErr("Unknown role '"+role+"'. Roles: "+strings.Join(conf.BreakGlassRoles, ", "), scopeBreakGlassUsage)
+		return inv.usageErr(withUsage("Unknown role '"+role+"'. Roles: "+strings.Join(conf.BreakGlassRoles, ", "), usageLinesOf("scope breakglass "+scope, scopeBreakGlassRows[1]))...)
 	}
 	m, err := inv.model()
 	if err != nil {

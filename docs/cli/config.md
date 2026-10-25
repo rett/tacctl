@@ -223,15 +223,15 @@ config password-age [<days>]
 
     Show or set password age warning threshold (default 90)
 
-config bcrypt-cost [10-14]
+config bcrypt-cost [<10-14>]
 
     Show or set bcrypt cost factor for new hashes (default 12)
 
-config password-min-length [8-64]
+config password-min-length [<8-64>]
 
     Show or set minimum interactive password length (default 12)
 
-config secret-min-length [16-128]
+config secret-min-length [<16-128>]
 
     Show or set minimum shared-secret length (default 16)
 

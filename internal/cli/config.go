@@ -141,10 +141,10 @@ func configCmd(inv *invocation) *cobra.Command {
 			),
 		), n(inv.configSudoers)),
 		withRun(verb("password-age [<days>]", "Show or set password age warning threshold"), n(inv.configPasswordAge)),
-		withRun(verb("bcrypt-cost [10-14]", "Show or set bcrypt cost factor (default 12)"), n(inv.configBcryptCost)),
-		withRun(verb("password-min-length [8-64]", "Show or set minimum interactive password length (default 12)"),
+		withRun(verb("bcrypt-cost [<10-14>]", "Show or set bcrypt cost factor (default 12)"), n(inv.configBcryptCost)),
+		withRun(verb("password-min-length [<8-64>]", "Show or set minimum interactive password length (default 12)"),
 			n(inv.configPasswordMinLength)),
-		withRun(verb("secret-min-length [16-128]", "Show or set minimum shared-secret length (default 16)"),
+		withRun(verb("secret-min-length [<16-128>]", "Show or set minimum shared-secret length (default 16)"),
 			n(inv.configSecretMinLength)),
 		withRun(verb("audit-strict [on|off]", "Show or set whether a change or a reveal is refused when its audit line cannot be written (default off)"),
 			n(inv.configAuditStrict)),
@@ -207,7 +207,7 @@ func (inv *invocation) configDump([]string) error {
 // fallback) and a newline, nothing for a list or a mapping.
 func (inv *invocation) configGet(args []string) error {
 	if arg(args, 0) == "" {
-		return inv.usageErr("Usage: tacctl config get <dotted.path> [<fallback>]")
+		return inv.usageErr("Usage: tacctl config get <path> [<fallback>]")
 	}
 	if text, printed := inv.app.Conf().Get(args[0], arg(args, 1)); printed {
 		inv.write(text + "\n")
@@ -218,7 +218,7 @@ func (inv *invocation) configGet(args []string) error {
 // configGetList is 'conf_get_list "$@"': one item per line.
 func (inv *invocation) configGetList(args []string) error {
 	if arg(args, 0) == "" {
-		return inv.usageErr("Usage: tacctl config get-list <dotted.path>")
+		return inv.usageErr("Usage: tacctl config get-list <path>")
 	}
 	for _, item := range inv.app.Conf().GetList(args[0]) {
 		inv.write(item + "\n")
@@ -512,7 +512,7 @@ func (inv *invocation) configListen(args []string) error {
 			inv.echo("")
 			return nil
 		}
-		inv.write(`  Usage: tacctl config listen <show|tcp|tcp6|reset> [address]
+		inv.write(`  Usage: tacctl config listen [show|tcp|tcp6|reset] [<addr>]
   Examples:
     tacctl config listen tcp :49
     tacctl config listen tcp 10.1.0.1:49

@@ -220,7 +220,7 @@ func (inv *invocation) configFilter(label string, args []string) error {
 		inv.echo("")
 	default:
 		inv.echo("")
-		inv.echo("Usage: tacctl config " + label + " <list|add|remove|clear> [cidr[,cidr...]]")
+		inv.echo("Usage: tacctl config " + label + " list|add|remove|clear [<cidr>[,<cidr>...]]")
 		inv.echo("")
 		return exit(1)
 	}
@@ -253,7 +253,7 @@ func (inv *invocation) configMgmtACL(args []string) error {
 		inv.echo("")
 	case "add", "remove":
 		if value == "" {
-			return inv.usageErr("Usage: tacctl config mgmt-acl " + sub + " <cidr>[:<services>][,<cidr>[:<services>]...]")
+			return inv.usageErr(append(usageLinesOf("config mgmt-acl", sub+" <entry>[,<entry>...]"), mgmtACLEntryLine)...)
 		}
 		requested, err := inv.parseACLEntries(value)
 		if err != nil {

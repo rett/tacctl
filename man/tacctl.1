@@ -2004,7 +2004,7 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-backend\fR \fI<id>\fR
-Act on another backend (see 'tacctl backend list'); radius: \-\-listener auth|acct <udp|udp6> <addr>.
+Act on another backend (see 'tacctl backend list'); radius: \-\-listener auth|acct udp|udp6 <addr>.
 .TP
 \fB\-\-listener\fR \fI<name>\fR
 Act on another listener than 'default' (its own tacquito@<name> unit; reset removes it).
@@ -2447,10 +2447,10 @@ pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth package a
 (enroll, with \-\-scope) Provisioned off\-site: the host's bench address joins the scope as a /32 (its secret and users) until the host is seen in place (tacctl scope staging).
 .TP
 \fB\-\-allow\-uid\-mismatch\fR
-(enroll and sync) Accept a UID conflict on the host instead of stopping.
+(enroll, sync and move) Accept a UID conflict on the host instead of stopping.
 .TP
 \fB\-\-remove\-home\fR
-(enroll and sync) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
+(enroll, sync and move) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
 .RE
 .\" END GENERATED: command host enroll
 .TP
@@ -2480,10 +2480,10 @@ Options:
 (enroll and move) Move a registered host to another scope even when that deletes accounts.
 .TP
 \fB\-\-allow\-uid\-mismatch\fR
-(enroll and sync) Accept a UID conflict on the host instead of stopping.
+(enroll, sync and move) Accept a UID conflict on the host instead of stopping.
 .TP
 \fB\-\-remove\-home\fR
-(enroll and sync) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
+(enroll, sync and move) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
 .RE
 .\" END GENERATED: command host move
 .TP
@@ -2681,10 +2681,10 @@ Options:
 (sync) Every enrolled host.
 .TP
 \fB\-\-allow\-uid\-mismatch\fR
-(enroll and sync) Accept a UID conflict on the host instead of stopping.
+(enroll, sync and move) Accept a UID conflict on the host instead of stopping.
 .TP
 \fB\-\-remove\-home\fR
-(enroll and sync) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
+(enroll, sync and move) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
 .RE
 .\" END GENERATED: command host sync
 .TP
@@ -3782,7 +3782,7 @@ are the superuser's, and an engineer's
 .B "device import"
 neither sets nor drops a device's own settings), and the configuration blocks
 of a scope of theirs and of the devices there
-.RB ( "scope block " \fIscope\fR " {juniper|cisco} list|show|check" ,
+.RB ( "scope block " \fIscope\fR " cisco|juniper list|show|check" ,
 .BR "device block " \fIname\fR " list|show|check" ;
 .BR set ,
 .BR remove ,
@@ -5929,8 +5929,9 @@ Requires: \fBsuperuser\fR.
 .\" END GENERATED: command scope exec-timeout
 .SS Per-scope mgmt-acl \fB(tacctl scope mgmt-acl)\fR
 .TP
-.BI "scope mgmt-acl " scope " " \
-"<list|add|remove|clear|cisco-name|juniper-name>" " [" args "]"
+.BI "scope mgmt-acl " scope " list|add|remove|clear [ " entry\fR[,\fIentry\fR...] " ]"
+.TQ
+.BI "scope mgmt-acl " scope " cisco-name|juniper-name [ " label " ]"
 Per-scope management ACL, with the subcommands of the global
 .BR "tacctl config mgmt-acl" .
 The effective permit list of a
@@ -6344,7 +6345,7 @@ management filter's
 .B permit\-snmp
 term permits the resolved block's unrestricted IPv4 clients.
 .TP
-.BI "scope block " scope " {juniper|cisco} list"
+.BI "scope block " scope " cisco|juniper list"
 The blocks of the scope: for each, whether it is in force, has no file, or is a
 file that
 .I tacctl.yaml
@@ -6373,7 +6374,7 @@ Plan the device of this scope with this text in force and print the statements o
 .RE
 .\" END GENERATED: command scope block
 .TP
-.BI "scope block " scope " {juniper|cisco} show " block " [ \-\-reveal ]"
+.BI "scope block " scope " cisco|juniper show " block " [ \-\-reveal ]"
 The block as it is in force, with its secrets shown as marks (a comment is never
 shown, and a block with errors is refused: run
 .BR check ).
@@ -6382,7 +6383,7 @@ prints the file as stored; an engineer may reveal the scopes of their own, and
 every reveal is logged, the superuser's too, as
 .BR "secret\-read kind=block name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR .
 .TP
-.BI "scope block " scope " {juniper|cisco} check " block " [ \-\-file " path " | \- ] [ \-\-against " device " ]"
+.BI "scope block " scope " cisco|juniper check " block " [ \-\-file " path " | \- ] [ \-\-against " device " ]"
 Lint the file in force, the file
 .I path
 (a regular file of at most 256 KiB, read as the caller) or standard input
@@ -6399,7 +6400,7 @@ pull: nothing is written, no back\-out is kept and no device is reached. A
 device that has not been pulled is told to be pulled first, and a system block
 that was not in force at the last pull is told to be set and pulled.
 .TP
-.BI "scope block " scope " {juniper|cisco} set " block " { \-\-file " path " | \- } [ \-y ]"
+.BI "scope block " scope " cisco|juniper set " block " { \-\-file " path " | \- } [ \-y ]"
 Superuser only. Check the text as
 .B check
 does (an error refuses it and nothing is written), show the owned objects and
@@ -6416,7 +6417,7 @@ as the file in force is no change. A change that cannot be made because
 cannot be read or written is refused before anything is. Logged as
 .BR "block\-set name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR .
 .TP
-.BI "scope block " scope " {juniper|cisco} remove " block " [ \-y ]"
+.BI "scope block " scope " cisco|juniper remove " block " [ \-y ]"
 Superuser only. Take the block out of force and delete its file (a file no list
 names is removable too), after a question (\fB\-y\fR answers it) and a
 snapshot. Nothing is deleted from a device: what the block set is no longer
@@ -6424,7 +6425,7 @@ rendered, and the next compare lists those statements as the device's own,
 kept. Logged as
 .BR block\-remove .
 .TP
-.BI "scope block " scope " {juniper|cisco} edit " block " [ \-y ]"
+.BI "scope block " scope " cisco|juniper edit " block " [ \-y ]"
 Superuser only, and only at a terminal (a refusal without one changes nothing).
 Open the block in the editor of the invoking user, as
 .BR visudo (8)
@@ -6496,7 +6497,7 @@ opening a block in force, or a device's new block with the scope's objects,
 is logged before the editor starts as
 .BR "secret\-read kind=block" .
 .TP
-.BI "scope block " scope " {juniper|cisco} adopt " device " " block " [ \-y ]"
+.BI "scope block " scope " cisco|juniper adopt " device " " block " [ \-y ]"
 Superuser only, at a terminal, with the rules of
 .BR edit .
 Read the registered
@@ -11144,7 +11145,7 @@ Requires: \fBsuperuser\fR.
 .PP
 Options:
 .TP
-\fB\-\-reason\fR \fI<value>\fR
+\fB\-\-reason\fR \fI<text>\fR
 (hold) Why, 1 to 256 characters; kept with the record and in the log (the reason of every name that has no <name>=<reason>).
 .RE
 .\" END GENERATED: command breakglass hold
@@ -13472,11 +13473,11 @@ The break-glass local users the scope's device configurations create. Only the n
 .TP
 .B blocks.<scope>.<vendor>
 non\-empty list of block names (snmp, system). Default: none (unset).
-The configuration blocks in force for the scope and vendor (juniper or cisco), a list of snmp and system; a file under the blocks directory that this list does not name is ignored. Set with \fBtacctl scope block\fR.
+The configuration blocks in force for the scope and vendor (cisco or juniper), a list of snmp and system; a file under the blocks directory that this list does not name is ignored. Set with \fBtacctl scope block\fR.
 .TP
 .B blocks_device.<device>.<vendor>
 non\-empty list of block names (snmp, system). Default: none (unset).
-The configuration blocks in force for one device and vendor (juniper or cisco), a list of snmp and system; the device's lower case name is written with every '.' as '~' (js1~lab~example~net), and a file under the blocks directory that this list does not name is ignored. Set with \fBtacctl device block\fR.
+The configuration blocks in force for one device and vendor (cisco or juniper), a list of snmp and system; the device's lower case name is written with every '.' as '~' (js1~lab~example~net), and a file under the blocks directory that this list does not name is ignored. Set with \fBtacctl device block\fR.
 .TP
 .B snmp_scope.<scope>.version
 one of v2c, v3. Default: none (unset).

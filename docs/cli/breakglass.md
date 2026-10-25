@@ -3,7 +3,7 @@
 [Documentation](../README.md) › [CLI reference](README.md)
 
 ```
-breakglass hold <name>[=<reason>][,<name>[=<reason>]...] [--reason "<text>"]
+breakglass hold <name>[=<reason>][,<name>[=<reason>]...] [--reason <text>]
 
     The server stops answering the registered devices and enrolled Linux hosts named: each one's
     address (a device's registered one, a host's recorded one; only that one) is taken out of every

@@ -42,7 +42,7 @@ store rollback                               Restore the pre-store tacquito.yaml
 ```
 log tail [-f|--follow] [<n>] [--backend <id>]
 
-    Last N entries (default 20): TACACS+ journal; RADIUS auth log and daemon log; -f/--follow
+    Last <n> entries (default 20): TACACS+ journal; RADIUS auth log and daemon log; -f/--follow
     follows new ones until Ctrl-C
 
 log search <term> [--backend <id>]
@@ -55,7 +55,7 @@ log failures [--backend <id>]
 
 log accounting [<n>] [--backend <id>]
 
-    Last N accounting records
+    Last <n> accounting records
 
 log clear [--force|-y] [--backend <id>]
 
