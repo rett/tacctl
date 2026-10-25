@@ -187,9 +187,12 @@ var Rules = []Rule{
 		Note: "device list: the CONFIG column (and config, release, model and serial of --json) is the operator tier's; a read-only user's list has none."},
 	{Tier: Readonly, Cmd: "device", Sub: "show", Sudoers: []string{"device show *"},
 		Note: "device show: the Configuration, Release, Model and Serial rows (and config, release, model and serial of --json) are the operator tier's; a read-only user's output has none."},
-	{Tier: Readonly, Cmd: "device", Sub: "notices", Sudoers: []string{"device notices", "device notices *"}},
+	// 'device notice list' (0.2.18, D274) is every tier's; the gate sees
+	// 'device notice', and the verb keeps 'ack' and 'unack' the superuser's.
+	{Tier: Readonly, Cmd: "device", Sub: "notice", Sudoers: []string{"device notice list", "device notice list *"},
+		Note: "device notice: every tier may run list; ack and unack need the superuser tier."},
 	{Tier: Readonly, Cmd: "device", Sub: "ssh", Sudoers: []string{"device ssh *"}},
-	{Tier: Readonly, Cmd: "device", Sub: "ssh-config", Sudoers: []string{"device ssh-config"}, Wrap: true},
+	{Tier: Readonly, Cmd: "device", Sub: "client-config", Sudoers: []string{"device client-config"}, Wrap: true},
 	{Tier: Readonly, Cmd: "_completion-names", AnySub: true, Sudoers: []string{"_completion-names *"}},
 	// The login console asks for its settings once per session (console.go).
 	{Tier: Readonly, Cmd: "_console-policy", AnySub: true, Sudoers: []string{"_console-policy"}},

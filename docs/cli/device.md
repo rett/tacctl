@@ -233,14 +233,15 @@ device stale-days [<n>]
 
     Days without a sighting after which a device is stale (default 30)
 
-device notice <name> ack|unack <kind>
-
-    Acknowledge or reopen a notice
-
-device notices [<name>] [--all]
+device notice list [<name>] [--all]
 
     The open notices, each with the command that fixes or acknowledges it (--all: the acknowledged
-    ones too, marked)
+    ones too, marked); every tier, filtered to the caller's scopes
+
+device notice <name> ack|unack <kind>
+
+    Acknowledge or reopen a notice; the superuser's (three words are this form, so a device named
+    `list` takes it too)
 
 device import [--check] [--replace] [--allow-generic] [-y] <file|->
 
@@ -272,7 +273,7 @@ device ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh
 
     Same as tacctl ssh
 
-device ssh-config
+device client-config
 
     Print an ssh_config Include for your devices (Host blocks with the vendor options and the pin)
 
@@ -576,7 +577,7 @@ export. A name that exists with upper case keeps working, is found in any
 case, and is listed by `tacctl config validate` with the `device rename` that
 fixes it.
 
-A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. A device name is letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 253 characters with each dotted part at most 63, so a fully qualified host name (`sw1.site-a.example`) is one. An enrolled host's name has no dot and at most 26 characters, because it also names the host's scope (`linux-<name>`); its fully qualified name is its hostname. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list`, `show`, `notices`, `ssh-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way.
+A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. A device name is letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 253 characters with each dotted part at most 63, so a fully qualified host name (`sw1.site-a.example`) is one. An enrolled host's name has no dot and at most 26 characters, because it also names the host's scope (`linux-<name>`); its fully qualified name is its hostname. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list`, `show`, `notice list`, `client-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way.
 
 A name that is a factory or image default is refused with the command that names the device on the device itself (`hostname`, `set system host-name`, ...); a host already enrolled under such a name is not refused and carries a `generic-name` notice. `host enroll --name` follows the same rules. Add your own patterns with `generic_names:` (regular expressions, whole-name, case-insensitive) in `devices.yaml`.
 

@@ -108,10 +108,11 @@ breakglass|hold|0|0|0|1|1|0
 breakglass|release|0|0|0|1|1|0
 device|list|1|1|1|1|1|0
 device|show|1|1|1|1|1|0
-device|notices|1|1|1|1|1|0
-device|notice|0|0|0|1|1|0
+device|notices|0|0|0|1|1|0
+device|notice|1|1|1|1|1|0
 device|ssh|1|1|1|1|1|0
-device|ssh-config|1|1|1|1|1|0
+device|ssh-config|0|0|0|1|1|0
+device|client-config|1|1|1|1|1|0
 device|check|0|1|1|1|1|0
 device|scan|0|1|1|1|1|0
 device|discover|0|1|1|1|1|0

@@ -147,7 +147,7 @@ devices:
     [[ ! -e "$DEVICES" ]]
     run "$TACCTL_BIN_SCRIPT" device add switch 10.99.0.1 --vendor juniper --allow-generic --no-host-key
     assert_success
-    run "$TACCTL_BIN_SCRIPT" device notices
+    run "$TACCTL_BIN_SCRIPT" device notice list
     plain
     assert_output --partial "switch  generic-name:"
     assert_output --partial "tacctl device rename switch <new>"
@@ -163,7 +163,7 @@ devices:
     run "$TACCTL_BIN_SCRIPT" device show switch --all
     plain
     assert_output --partial "generic-name (acknowledged)"
-    run "$TACCTL_BIN_SCRIPT" device notices switch --all
+    run "$TACCTL_BIN_SCRIPT" device notice list switch --all
     plain
     assert_output --partial "switch  generic-name (acknowledged): "
 }
@@ -642,12 +642,12 @@ hostfacts() {
     assert_output --partial "web1: its address changed from 192.0.2.50 to 192.0.2.51; recorded 192.0.2.51 (notice address-changed: tacctl device show web1)."
     refute_output --partial "useradd there"
     stub_called "logger -t tacctl -p auth.warning host address-changed name=web1 old=192.0.2.50 new=192.0.2.51 by="
-    run "$TACCTL_BIN_SCRIPT" device notices
+    run "$TACCTL_BIN_SCRIPT" device notice list
     assert_output --partial "web1  address-changed: the address of 'web1' changed from 192.0.2.50 to 192.0.2.51"
     run "$TACCTL_BIN_SCRIPT" device notice web1 ack address-changed
     assert_success
     assert_output --partial "Notice 'address-changed' of 'web1' acknowledged."
-    run "$TACCTL_BIN_SCRIPT" device notices
+    run "$TACCTL_BIN_SCRIPT" device notice list
     refute_output --partial "address-changed"
     # device show leaves it out and counts it.
     run "$TACCTL_BIN_SCRIPT" device show web1

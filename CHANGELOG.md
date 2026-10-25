@@ -20,6 +20,25 @@ current behaviour; this file is where history lives.
    drop-in 0.2.17 writes and converts nothing else. `0.2.16`, `0.2.9` and
    `0.2.3` stay targets.
 
+2. **`device notices` is now `device notice list`.** `tacctl device notice
+   list [<name>] [--all]` prints the open notices (`--all`: the acknowledged
+   ones too) as `device notices` did, for every tier and filtered to the
+   caller's scopes; `device notice <name> ack|unack <kind>` is unchanged and
+   stays the superuser's. Three words are the ack form, so a device named
+   `list` still takes `ack` and `unack`. Tab completion offers `list` and the
+   device names after `notice`. `device notices` is an unknown subcommand. The
+   pointers in `device list` and `tacctl status` name the new verb. The tiers
+   sudoers drop-in grants every tier `device notice list` and `device notice
+   list *` in place of `device notices` and `device notices *`.
+
+3. **`device ssh-config` is now `device client-config`.** Same output (the
+   ssh_config fragment of the devices and hosts you may see, the Include hint
+   on standard error), same tier; the hint names `tacctl device client-config
+   > ~/.ssh/tacctl.conf`, and so does the fragment's header line. `device
+   ssh-config` is an unknown subcommand. The tiers sudoers drop-in grants
+   `device client-config` in place of `device ssh-config`; `tacctl rollback
+   0.2.17` puts back the rules of items 1 to 3 as 0.2.17 has them.
+
 ## 0.2.17 (2026-10-24)
 
 1. **Audit lines: one writer, a session id, no line lost to a signal, a

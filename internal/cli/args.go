@@ -80,6 +80,10 @@ func After(word, kind string) string { return "@" + word + ":" + kind }
 // where the other verbs name a block).
 func Cond(word, a, b string) string { return "?" + word + ":" + a + ":" + b }
 
+// Either is the kind of a positional that completion takes from each of
+// kinds, in order ('notice list|<device>' offers the word and the names).
+func Either(kinds ...string) string { return strings.Join(kinds, "+") }
+
 // offeredAfter reports whether completion offers the flag, given the
 // positional words typed so far.
 func (f Flag) offeredAfter(words []string) bool {

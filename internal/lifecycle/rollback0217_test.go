@@ -19,9 +19,9 @@ func plan0217(t *testing.T, s *rbSandbox) *RollbackPlan {
 	return p
 }
 
-// The rollback to 0.2.17 (docs/plans/0.2.18-plan.md D273) rewrites this
-// release's per-tier drop-in with 0.2.17's (the engineer's 'device
-// config-syntax' rule) and converts nothing else: audit.strict and the
+// The rollback to 0.2.17 (docs/plans/0.2.18-plan.md D273 to D275) rewrites
+// this release's per-tier drop-in with 0.2.17's (the old verb names' rules)
+// and converts nothing else: audit.strict and the
 // registry stay, and no snapshot is needed.
 func TestPlanRollback0217PutsBackTheTiersDropIn(t *testing.T) {
 	s := newRBSandbox(t)
@@ -35,7 +35,7 @@ func TestPlanRollback0217PutsBackTheTiersDropIn(t *testing.T) {
 	}
 	st := stepText(p)
 	for _, w := range []string{"put back the per-tier sudoers drop-in 0.2.17 writes", "rewrite " + s.p.TierSudoersFile,
-		"'device ios-syntax *' rule becomes 'device config-syntax *'", "leave every other file untouched",
+		"the rules of 'device ios-syntax', 'device notice list' and 'device client-config' become 0.2.17's 'device config-syntax', 'device notices' and 'device ssh-config'", "leave every other file untouched",
 		"formats 0.2.17 reads (0.2.18 changed none of them)"} {
 		if !strings.Contains(st, w) {
 			t.Errorf("steps lack %q:\n%s", w, st)

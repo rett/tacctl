@@ -243,11 +243,16 @@ settles it).
 rewrites the per\-tier sudoers drop\-in, when it is exactly the text this
 release writes, with the one 0.2.17 writes (after
 .BR "visudo \-cf" ):
-the engineer's
-.B "device ios\-syntax"
-rule becomes
+the rules of
+.BR "device ios\-syntax" ,
+.B "device notice list"
+and
+.B "device client\-config"
+become 0.2.17's
 .BR "device config\-syntax" ,
-the name 0.2.17 runs. An edited drop\-in is left (0.2.17's upgrade rewrites
+.B "device notices"
+and
+.BR "device ssh\-config" . An edited drop\-in is left (0.2.17's upgrade rewrites
 it). Nothing else is converted, so no snapshot is taken:
 .IR tacctl.yaml ,
 .IR console.yaml ,
@@ -3727,7 +3732,7 @@ Members of
 may run
 .BR passwd ", " status ", " version ", " help " (also " \-h ", " \-\-help "), " "user list" ", " "user show" ", "
 .BR "group list" ", " "group show" ", " "scope list" ", " "backend list" ", " "backend status" ", "
-.BR "device list" ", " "device show" ", " "device notices" ", " "device ssh\-config" ", "
+.BR "device list" ", " "device show" ", " "device notice list" ", " "device client\-config" ", "
 .BR "ssh " \fIname\fR " and " "device ssh " \fIname\fR
 (the devices of their own scopes only), and the console's own
 .BR _console\-policy .
@@ -6928,7 +6933,7 @@ it.
 Notices appear in the scan output,
 .BR "tacctl status" ,
 .BR "device list" ,
-.B "device notices"
+.B "device notice list"
 and
 .B "device show"
 (which counts the acknowledged ones;
@@ -6938,8 +6943,8 @@ on either lists them, marked).
 Reading verbs
 .RB ( list ,
 .BR show ,
-.BR notices ,
-.BR ssh\-config )
+.BR "notice list" ,
+.BR client\-config )
 and
 .B "tacctl ssh"
 are open to the read-only and operator tiers, which see only the devices and
@@ -8393,14 +8398,34 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command device stale-days
 .TP
+.BI "device notice list " "" [ name ] " " [ \-\-all ]
+The open notices (all devices, or one), each with the command that fixes or
+acknowledges it;
+.B \-\-all
+lists the acknowledged ones too, marked. Every tier may run it, for the
+devices of its own scopes. The notice
+.B generic-name
+(a device or host whose name is a generic one) gives the per-vendor command
+that sets a name on the device and the
+.B device rename
+that follows;
+.B hostkey-unpinned
+(a device with no pinned host key) gives the console command that shows its
+fingerprint and the
+.B device hostkey accept
+that pins it.
+.TP
 .BI "device notice " "name " "{ ack | unack } " kind
-Acknowledge an accepted notice, or reopen it. Acknowledgements are kept per
+Acknowledge an accepted notice, or reopen it (the superuser's). Three words
+are this form, so a device named
+.B list
+takes it too. Acknowledgements are kept per
 device and per kind in
 .IR devices.yaml ;
 acknowledged notices leave
 .B list
 and
-.B notices
+.B "notice list"
 and stay in
 .B show
 marked as acknowledged. The kinds are
@@ -8415,36 +8440,14 @@ cannot be acknowledged, and an enrolled host acknowledges only
 .\" BEGIN GENERATED: command device notice
 .RS
 .PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command device notice
-.TP
-.BI "device notices " "" [ name ] " " [ \-\-all ]
-The open notices (all devices, or one), each with the command that fixes or
-acknowledges it;
-.B \-\-all
-lists the acknowledged ones too, marked. The notice
-.B generic-name
-(a device or host whose name is a generic one) gives the per-vendor command
-that sets a name on the device and the
-.B device rename
-that follows;
-.B hostkey-unpinned
-(a device with no pinned host key) gives the console command that shows its
-fingerprint and the
-.B device hostkey accept
-that pins it.
-.\" BEGIN GENERATED: command device notices
-.RS
-.PP
-Requires: \fBreadonly\fR.
+Requires: \fBreadonly\fR. Every tier may run list; ack and unack need the superuser tier.
 .PP
 Options:
 .TP
 \fB\-\-all\fR
 The acknowledged notices too.
 .RE
-.\" END GENERATED: command device notices
+.\" END GENERATED: command device notice
 .TP
 .BI "device import " "[ \-\-check ] [ \-\-replace ] [ \-\-allow\-generic ] [ \-y ] " "file|\-"
 Import devices from CSV
@@ -8583,7 +8586,7 @@ Open a SOCKS proxy, as ssh \-D (repeatable).
 .RE
 .\" END GENERATED: command device ssh
 .TP
-.B device ssh\-config
+.B device client\-config
 Print an
 .BR ssh_config (5)
 fragment with one
@@ -8607,7 +8610,7 @@ and
 .BR "UpdateHostKeys no" .
 An unpinned entry gets a comment instead, and checks against the user's own
 known_hosts. The install hint goes to stderr: save the output with
-.B "tacctl device ssh\-config > ~/.ssh/tacctl.conf"
+.B "tacctl device client\-config > ~/.ssh/tacctl.conf"
 and put
 .B "Include ~/.ssh/tacctl.conf"
 at the top of
@@ -8625,12 +8628,12 @@ then reaches the device the way
 .B "tacctl ssh"
 does. Nothing is written into a home directory. Re-run the command after
 registry changes.
-.\" BEGIN GENERATED: command device ssh-config
+.\" BEGIN GENERATED: command device client-config
 .RS
 .PP
 Requires: \fBreadonly\fR.
 .RE
-.\" END GENERATED: command device ssh-config
+.\" END GENERATED: command device client-config
 .TP
 .BI "device scan " "[ \-\-full ] [ \-\-since " duration " ] [ \-\-backend " id " ]"
 Read each enabled backend's log (or only
@@ -11839,7 +11842,7 @@ line.
 (no arguments), passwd, status, version, help, \-h, \-\-help,
 user list, user show, group list, group show, scope list,
 backend list, backend status, ssh, device list, device show,
-device notices, device ssh, device ssh\-config, _completion\-names,
+device notice, device ssh, device client\-config, _completion\-names,
 _console\-policy, \-\-version, \-v, hash
 .TP
 .B operator
@@ -11880,6 +11883,9 @@ An engineer imports from standard input only (device import \-).
 .TP
 .B device list
 The CONFIG column (and config, release, model and serial of \-\-json) is the operator tier's; a read\-only user's list has none.
+.TP
+.B device notice
+Every tier may run list; ack and unack need the superuser tier.
 .TP
 .B device show
 The Configuration, Release, Model and Serial rows (and config, release, model and serial of \-\-json) are the operator tier's; a read\-only user's output has none.

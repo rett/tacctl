@@ -158,7 +158,7 @@ func TestDeviceScanDiscoverListAndStatus(t *testing.T) {
 	sb.dev("", "notice", "oob-con1", "unack", "name-mismatch")
 	out = plain(sb.run("", []string{"status"}))
 	// The section, whole: it ends the report.
-	golden := "\n  Device notices: 1 (tacctl device notices)\n" +
+	golden := "\n  Device notices: 1 (tacctl device notice list)\n" +
 		"    oob-con1  name-mismatch: 203.0.113.9 identifies itself as 'oob-con-01', not 'oob-con1' (informational); " +
 		"align them: 'tacctl device rename oob-con1 oob-con-01', or name the device (WTI: set the Site ID / unit name in the " +
 		"/N network menu (the menu item varies by firmware)), or acknowledge it: 'tacctl device notice oob-con1 ack name-mismatch'\n\n"
@@ -226,7 +226,7 @@ func TestDeviceScanHostKeyNotices(t *testing.T) {
 	}
 	// Re-pinning clears it: the notice compares with the pin of the moment.
 	sb.devScan("y\n", changed, "hostkey", "core-sw1", "accept")
-	if out = sb.dev("", "notices", "core-sw1"); strings.Contains(out, "hostkey-changed") {
+	if out = sb.dev("", "notice", "list", "core-sw1"); strings.Contains(out, "hostkey-changed") {
 		t.Errorf("after accept:\n%s", out)
 	}
 }

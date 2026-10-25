@@ -50,14 +50,16 @@ named.
 
 ### To 0.2.17
 
-This release names the Cisco syntax verb `device ios-syntax`; 0.2.17 names
-it `device config-syntax`, and the per-tier sudoers drop-in grants the
-engineer one of the two. `--apply` rewrites `/etc/sudoers.d/tacctl-tiers`,
-when it is exactly the text this release writes, with the text 0.2.17 writes
-(after `visudo -cf`); an edited file is left, and 0.2.17's upgrade rewrites
-it. Nothing else is converted and no snapshot is taken: `tacctl.yaml`,
-`console.yaml`, `devices.yaml`, `store.yaml`, the group drop-in and the hosts
-are in formats 0.2.17 reads. `--hosts` is accepted and does nothing.
+Three verbs have other names in 0.2.17: `device ios-syntax` is `device
+config-syntax`, `device notice list` is `device notices` and `device
+client-config` is `device ssh-config`, and the per-tier sudoers drop-in grants
+the names of the release that wrote it. `--apply` rewrites
+`/etc/sudoers.d/tacctl-tiers`, when it is exactly the text this release
+writes, with the text 0.2.17 writes (after `visudo -cf`); an edited file is
+left, and 0.2.17's upgrade rewrites it. Nothing else is converted and no
+snapshot is taken: `tacctl.yaml`, `console.yaml`, `devices.yaml`,
+`store.yaml`, the group drop-in and the hosts are in formats 0.2.17 reads.
+`--hosts` is accepted and does nothing.
 
 ```bash
 tacctl rollback 0.2.17          # the dry run: steps, writes nothing

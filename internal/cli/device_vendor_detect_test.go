@@ -92,7 +92,7 @@ func TestDeviceAddVendorDetection(t *testing.T) {
 		t.Errorf("WTI left at other: %d %q", sb.code, out)
 	}
 	// The vendor named is kept: sw2 and sw3 have the notice, sw1 not.
-	out = sb.dev("", "notices")
+	out = sb.dev("", "notice", "list")
 	for _, want := range []string{
 		"vendor-differs: 192.0.2.2 says it is cisco (SNMP, read ", "registered juniper; set it from the device: 'tacctl device vendor sw2 --from-device'",
 		"vendor-differs: 192.0.2.3 says it is cisco",
@@ -292,7 +292,7 @@ func TestDeviceVendorFromDevice(t *testing.T) {
 	// Without a terminal or -y: refused, and the read is kept for the notice.
 	sb.dev("", "vendor", "sw1", "--from-device")
 	sb.expect(1, "  Device:   cisco (Cisco IOS Software; SNMP sysObjectID 1.3.6.1.4.1.9.1.9999", "Give -y to set the vendor of 'sw1' to cisco without a terminal.")
-	if out := sb.dev("", "notices"); !strings.Contains(out, "vendor-differs: 192.0.2.1 says it is cisco") {
+	if out := sb.dev("", "notice", "list"); !strings.Contains(out, "vendor-differs: 192.0.2.1 says it is cisco") {
 		t.Errorf("notices:\n%s", out)
 	}
 	// -y sets it through the setter; the notice is gone.
@@ -300,7 +300,7 @@ func TestDeviceVendorFromDevice(t *testing.T) {
 	if sb.code != 0 || !strings.Contains(out, "Device 'sw1' vendor set to cisco.") || vendorOf("sw1") != "cisco" {
 		t.Errorf("-y: %d %q", sb.code, out)
 	}
-	if out := sb.dev("", "notices"); strings.Contains(out, "192.0.2.1 says") {
+	if out := sb.dev("", "notice", "list"); strings.Contains(out, "192.0.2.1 says") {
 		t.Errorf("notice after the set:\n%s", out)
 	}
 	// Junos and WTI are set the same way.

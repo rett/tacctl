@@ -1221,7 +1221,7 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 
 // noteHostKeys records the host key a device offered that is not the pinned
 // one in the seen cache, as a host-key scan does, so the hostkey notice
-// comes up ('device notices'; 'device hostkey <name> accept' re-pins after
+// comes up ('device notice list'; 'device hostkey <name> accept' re-pins after
 // verifying). Nothing is pinned here and nothing is prompted.
 func (inv *invocation) noteHostKeys(entries []devreg.Entry, outs []*pullOutcome) {
 	type offer struct {

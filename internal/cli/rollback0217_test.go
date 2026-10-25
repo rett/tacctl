@@ -9,7 +9,7 @@ import (
 
 // 'tacctl rollback 0.2.17' (docs/plans/0.2.18-plan.md D273) on the host
 // sandbox: the dry run writes nothing; --apply puts back 0.2.17's per-tier
-// drop-in (the engineer's 'device config-syntax' rule), after visudo, takes
+// drop-in (the rules of the old verb names), after visudo, takes
 // no snapshot (no file of tacctl's own is converted) and ends with the
 // upgrade of the tag; a second --apply has nothing to convert.
 func TestRollback0217PutsBackTheTiersDropIn(t *testing.T) {
@@ -27,7 +27,7 @@ func TestRollback0217PutsBackTheTiersDropIn(t *testing.T) {
 	out := hs.all()
 	for _, want := range []string{"Roll back to 0.2.17 (dry run)",
 		"1. put back the per-tier sudoers drop-in 0.2.17 writes   [does]",
-		"'device ios-syntax *' rule becomes 'device config-syntax *'",
+		"the rules of 'device ios-syntax', 'device notice list' and 'device client-config' become 0.2.17's 'device config-syntax', 'device notices' and 'device ssh-config'",
 		"2. leave every other file untouched   [leaves]",
 		"To convert the state: tacctl rollback 0.2.17 --apply"} {
 		if !strings.Contains(out, want) {

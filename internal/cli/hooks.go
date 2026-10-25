@@ -69,7 +69,7 @@ type hooks struct {
 	sshAccountOf func(name string) (sshAccount, error)
 	// sshTerminal reports whether stdin is a terminal.
 	sshTerminal func(r io.Reader) bool
-	// sshConfigServer names this machine in the ssh-config fragment.
+	// sshConfigServer names this machine in the client-config fragment.
 	sshConfigServer func() string
 	// newAskpassAgent makes the password cache's agent.
 	newAskpassAgent func(askpass.Options) (*askpass.Agent, error)
@@ -246,7 +246,7 @@ func (h *hooks) terminalIn(r io.Reader) bool {
 	return realTerminalIn(r)
 }
 
-// serverName names this machine in the ssh-config fragment's header line.
+// serverName names this machine in the client-config fragment's header line.
 func (h *hooks) serverName() string {
 	if h != nil && h.sshConfigServer != nil {
 		return h.sshConfigServer()

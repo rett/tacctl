@@ -129,8 +129,11 @@ var deviceSpecs = map[string]Spec{
 	// The NETCONF service of a Junos device (0.2.10, D145).
 	"netconf":    {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "show|enable|disable|leave|clear"}, Flags: deviceNetconfFlags},
 	"stale-days": {MaxArgs: 1, Args: []string{""}},
-	"notice":     {MinArgs: 3, MaxArgs: 3, Args: []string{KindDevices, "ack|unack", noticeWords}},
-	"notices":    {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagAllNotices}},
+	// 'notice list [<name>] [--all]' and 'notice <name> ack|unack <kind>'
+	// (0.2.18, D274): three words are the second form, so a device named
+	// 'list' still takes ack and unack.
+	"notice": {MinArgs: 1, MaxArgs: 3, Args: []string{Either("list", KindDevices), Cond("list", KindDevices, "ack|unack"), Cond("list", "", noticeWords)},
+		Flags: []Flag{{Names: []string{"--all"}, Only: "list"}}},
 	"import": {MinArgs: 1, MaxArgs: 1, Args: []string{KindFile}, Flags: []Flag{
 		{Names: []string{"--check"}}, {Names: []string{"--replace"}}, flagAllowGeneric, flagYes}},
 	"export":  {MaxArgs: 0, Flags: []Flag{{Names: []string{"--csv"}}, flagJSON}},
@@ -140,9 +143,10 @@ var deviceSpecs = map[string]Spec{
 	"snmp": deviceSNMPCompletion,
 	// 'device block' parses each verb with deviceBlockSpecs.
 	"block": deviceBlockCompletion,
-	// 'device ssh' is 'tacctl ssh' (ssh.go); ssh-config is device_sshconfig.go.
-	"ssh":        sshSpec,
-	"ssh-config": {MaxArgs: 0},
+	// 'device ssh' is 'tacctl ssh' (ssh.go); client-config is
+	// device_clientconfig.go.
+	"ssh":           sshSpec,
+	"client-config": {MaxArgs: 0},
 	"scan": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--full"}}, {Names: []string{"--since"}, Value: true},
 		{Names: []string{"--if-stale"}}, {Names: []string{"--quiet"}},
 		{Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
@@ -176,8 +180,8 @@ var deviceVerbs = [][2]string{
 	{"legacy-ssh <name> [enable|disable]", "Opt in to the legacy ssh algorithms (SHA-1 key exchange, CBC ciphers, ssh-rsa)"},
 	{"ios-syntax <name> [auto|ios12|modern]", "Show or set the Cisco configuration syntax (IOS 12.x or modern) of the walkthrough and the comparison (--apply: then run 'device config apply' for the device)"},
 	{"stale-days [<n>]", "Show or set the days after which a device counts as stale"},
+	{"notice list [<name>] [--all]", "The open notices, with what to do about each (--all: the acknowledged ones too)"},
 	{"notice <name> ack|unack <kind>", "Acknowledge or reopen a notice"},
-	{"notices [<name>] [--all]", "The open notices, with what to do about each (--all: the acknowledged ones too)"},
 	{"import [--check] [--replace] [--allow-generic] [-y] <file|->", "Import devices from CSV or the registry's YAML (an engineer: from standard input only, `-` first)"},
 	{"export [--csv|--json]", "Print the registry (YAML by default)"},
 	{"hostkey <name> [show|accept [-y]|set SHA256:<fp>]", "Show the pinned ssh host keys, or re-pin them after a verified change"},
@@ -185,7 +189,7 @@ var deviceVerbs = [][2]string{
 	{deviceSNMPUse, "A device's own SNMP settings over its scope's: version, port, timeout, allowed clients and credentials, and where each comes from"},
 	{deviceBlockUse, "A device's own configuration blocks (Junos snmp and system, IOS snmp) over its scope's: list, show, check, set, remove, edit, adopt"},
 	{"ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
-	{"ssh-config", "Print an ssh_config Include for your devices (Host blocks, pinned keys)"},
+	{"client-config", "Print an ssh_config Include for your devices (Host blocks, pinned keys)"},
 	{"scan [--full] [--since <dur>] [--backend <id>]", "Read the logs for the devices seen; re-scan pinned host keys"},
 	{"discover [--all] [--snmp] [--backend <id>]", "Scan, then list the addresses that authenticated unregistered (--snmp: read each one's name and vendor by SNMP for the add lines)"},
 	{"check <name>|--all [--json]", "Checklist: scope, tag, seen, reachable, host key, SNMP name, location and vendor"},
@@ -248,7 +252,7 @@ var deviceOptions = map[string][][2]string{
 		{"--overwrite", "Also replace a field that is set, showing the old value"},
 	},
 	"remove": {
-		{"--all", "(remove, check) Every device; (show, notices) the acknowledged notices too"},
+		{"--all", "(remove, check) Every device; (show, notice list) the acknowledged notices too"},
 		{"-y, --yes", "(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation"},
 	},
 	"location": {
@@ -381,6 +385,10 @@ func deviceCmd(inv *invocation) *cobra.Command {
 			cfg.AddCommand(withRun(verb(strings.TrimPrefix(v[0], "config "), v[1]), inv.native(withPreflight, func(args []string) error {
 				return inv.device(append([]string{"config", sub}, args...))
 			})))
+			continue
+		}
+		// 'notice' is two rows (list, ack|unack) of one command.
+		if child(c, word) != nil {
 			continue
 		}
 		c.AddCommand(withRun(verb(v[0], v[1]), inv.native(withPreflight, func(args []string) error {
@@ -521,7 +529,7 @@ Examples:
   tacctl device snmp core-sw1 community
   tacctl device snmp core-sw1 clients add 192.0.2.0/24
   tacctl device export --csv > devices.csv
-  tacctl device ssh-config > ~/.ssh/tacctl.conf
+  tacctl device client-config > ~/.ssh/tacctl.conf
 
 `)
 	return b.String()
@@ -537,8 +545,8 @@ func (inv *invocation) device(args []string) error {
 	run := map[string]func([]string) error{
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
 		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "ios-syntax": inv.deviceIOSSyntax, "netconf": inv.deviceNetconf, "stale-days": inv.deviceStaleDays,
-		"notice": inv.deviceNotice, "notices": inv.deviceNotices, "import": inv.deviceImport, "export": inv.deviceExport,
-		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "collect": inv.deviceCollect, "enroll": inv.deviceEnroll, "sync": inv.deviceSync, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig, "config": inv.deviceConfig,
+		"notice": inv.deviceNotice, "import": inv.deviceImport, "export": inv.deviceExport,
+		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "collect": inv.deviceCollect, "enroll": inv.deviceEnroll, "sync": inv.deviceSync, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "client-config": inv.deviceClientConfig, "config": inv.deviceConfig,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
 		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
 		"port": inv.deviceSetter("port"), "description": inv.deviceSetter("description"), "location": inv.deviceSetter("location"),
@@ -566,19 +574,34 @@ func (inv *invocation) deviceParse(verbName string, args []string) (Parsed, erro
 	if err == nil {
 		return p, nil
 	}
-	var use string
-	for _, v := range deviceVerbs {
-		// 'config' is five rows; this parse is the one of 'config show'.
-		if f := strings.Fields(v[0]); f[0] == verbName && (verbName != "config" || (len(f) > 1 && f[1] == "show")) {
-			use = v[0]
-		}
-	}
+	return p, inv.deviceParseErr(verbName, err)
+}
+
+// deviceParseErr is the message of a parse error of a device verb and its
+// usage: every row of the verb ('notice' has two; 'config' is several, and
+// this is the one of 'config show').
+func (inv *invocation) deviceParseErr(verbName string, err error) error {
 	msg := err.Error()
 	var uf *UnknownFlagError
 	if errors.As(err, &uf) {
 		msg = "Unknown option: '" + uf.Flag + "'"
 	}
-	return p, inv.usageErr(msg, "Usage: tacctl device "+use)
+	return inv.usageErr(append([]string{msg}, deviceUsageLines(verbName)...)...)
+}
+
+// deviceUsageLines are the 'Usage:' lines of a device verb.
+func deviceUsageLines(verbName string) []string {
+	var out []string
+	for _, v := range deviceVerbs {
+		if f := strings.Fields(v[0]); f[0] == verbName && (verbName != "config" || (len(f) > 1 && f[1] == "show")) {
+			lead := "Usage: tacctl device "
+			if len(out) > 0 {
+				lead = "       tacctl device "
+			}
+			out = append(out, lead+v[0])
+		}
+	}
+	return out
 }
 
 func (inv *invocation) deviceFilter() devreg.ScopeFilter {
@@ -1101,7 +1124,7 @@ func (inv *invocation) deviceList(args []string) error {
 		inv.echo("  REACH: a TCP connect to the ssh port; this server often has no path to management ports, so a timeout may be a false alarm")
 	}
 	if open > 0 {
-		inv.echo(fmt.Sprintf("  %d open notice(s): tacctl device notices", open))
+		inv.echo(fmt.Sprintf("  %d open notice(s): tacctl device notice list", open))
 	}
 	if held > 0 {
 		inv.echoE(fmt.Sprintf("  %s%d device(s) held for break-glass%s: tacctl breakglass list", ui.Red, held, ui.NC))
@@ -1973,18 +1996,45 @@ func (inv *invocation) deviceStaleDays(args []string) error {
 
 // --- notices ---------------------------------------------------------------------
 
+// noticeListForm reports whether the words after 'device notice' are its
+// list form, 'list [<name>] [--all]' (D274): 'list' and at most one name.
+// Three words are the ack|unack form, so a device named 'list' still takes
+// it.
+func noticeListForm(rest []string) bool {
+	p, err := Parse(deviceSpecs["notice"], rest)
+	if err != nil {
+		var ac *ArgCountError
+		if !errors.As(err, &ac) {
+			return false
+		}
+	}
+	return len(p.Args) >= 1 && len(p.Args) <= 2 && p.Args[0] == "list"
+}
+
+// deviceNotice is 'device notice list [<name>] [--all]' (a read, every
+// tier) and 'device notice <name> ack|unack <kind>' (the superuser's: the
+// gate sees 'device notice' only).
 func (inv *invocation) deviceNotice(args []string) error {
 	p, err := inv.deviceParse("notice", args)
 	if err != nil {
 		return err
 	}
-	f, res, err := inv.deviceLoad()
-	if err != nil {
-		return err
+	if noticeListForm(args) {
+		return inv.deviceNoticeList(p)
+	}
+	if len(p.Args) != 3 || p.Has("--all") {
+		return inv.usageErr(deviceUsageLines("notice")...)
 	}
 	action, kind := p.Args[1], p.Args[2]
 	if action != "ack" && action != "unack" {
 		return inv.usageErr("Usage: tacctl device notice <name> ack|unack <kind>")
+	}
+	if inv.callerScopes().restricted {
+		return inv.deniedUsage(reasonSuperuser, "Acknowledging or reopening a notice is the superuser's; every tier may read them: tacctl device notice list. Nothing was changed.")
+	}
+	f, res, err := inv.deviceLoad()
+	if err != nil {
+		return err
 	}
 	if kind == devreg.NoticeHostKeyChanged {
 		return inv.usageErr("'" + kind + "' cannot be acknowledged: it stays until the host key is verified and pinned again.")
@@ -2065,18 +2115,15 @@ func (inv *invocation) hostNotice(e devreg.Entry, action, kind string) error {
 	return nil
 }
 
-func (inv *invocation) deviceNotices(args []string) error {
-	p, err := inv.deviceParse("notices", args)
-	if err != nil {
-		return err
-	}
+// deviceNoticeList is 'device notice list [<name>] [--all]'.
+func (inv *invocation) deviceNoticeList(p Parsed) error {
 	_, res, err := inv.deviceLoad()
 	if err != nil {
 		return err
 	}
 	entries := res.Visible(inv.deviceFilter())
-	if len(p.Args) == 1 {
-		e, err := inv.deviceFind(res, p.Args[0])
+	if len(p.Args) == 2 {
+		e, err := inv.deviceFind(res, p.Args[1])
 		if err != nil {
 			return err
 		}
@@ -2203,7 +2250,7 @@ func (inv *invocation) deviceImport(args []string) error {
 	inv.deviceImportMixedNote(plan.Mixed)
 	for _, n := range plan.Added {
 		if devreg.IsGeneric(n, f.GenericNames) {
-			a.Out.Warn("'" + n + "' is a generic name: 'tacctl device notices'.")
+			a.Out.Warn("'" + n + "' is a generic name: 'tacctl device notice list'.")
 		}
 	}
 	return nil

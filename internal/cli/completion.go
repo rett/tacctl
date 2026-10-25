@@ -430,6 +430,13 @@ func (inv *invocation) configFamilyWords(toComplete string) []string {
 // kindWords are all the words of a kind: a fixed list written 'a|b|c', or
 // the live names of a _completion-names kind.
 func (inv *invocation) kindWords(kind string, values map[string]string) []string {
+	if parts := strings.Split(kind, "+"); len(parts) > 1 {
+		var out []string
+		for _, k := range parts {
+			out = append(out, inv.kindWords(k, values)...)
+		}
+		return out
+	}
 	if strings.Contains(kind, "|") {
 		return strings.Split(kind, "|")
 	}

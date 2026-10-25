@@ -137,14 +137,19 @@ func TestSudoers028(t *testing.T) {
 	}
 }
 
-// The text 0.2.17 wrote is the current one with the engineer's 'device
-// config-syntax' item in place of 'device ios-syntax' (0.2.18 D273); where
+// The text 0.2.17 wrote is the current one with the old names of the verbs
+// 0.2.18 renamed (D273 to D275) in place of the new ones; where
 // the 0.2.17 tag is in the repository the text is that tag's golden file.
 func TestSudoers0217(t *testing.T) {
 	old, cur := Sudoers0217(), Sudoers()
-	if old == cur || strings.Contains(old, "device ios-syntax") || !strings.Contains(old, Binary+" device config-syntax *, ") ||
-		strings.Contains(cur, "device config-syntax") || !strings.Contains(cur, Binary+" device ios-syntax *, ") {
-		t.Fatalf("Sudoers0217 is not the current text with 'device config-syntax' for 'device ios-syntax':\n%s", old)
+	for _, c := range []struct{ was, is string }{
+		{Binary + " device config-syntax *, ", Binary + " device ios-syntax *, "},
+		{Binary + " device notices, " + Binary + " device notices *, ", Binary + " device notice list, " + Binary + " device notice list *, "},
+		{Binary + " device ssh-config, ", Binary + " device client-config, "},
+	} {
+		if old == cur || !strings.Contains(old, c.was) || strings.Contains(old, c.is) || strings.Contains(cur, c.was) || !strings.Contains(cur, c.is) {
+			t.Errorf("Sudoers0217 is not the current text with %q for %q:\n%s", c.was, c.is, old)
+		}
 	}
 	r := execx.Real{}
 	if _, err := r.LookPath("git"); err != nil {

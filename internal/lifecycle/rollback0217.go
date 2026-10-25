@@ -2,12 +2,13 @@ package lifecycle
 
 // The rollback to 0.2.17 (docs/plans/0.2.18-plan.md D273): the part of
 // PlanRollback that runs when RollbackInput.Target is RollbackTarget0217.
-// 0.2.18 renamed 'device config-syntax' to 'device ios-syntax' and dropped
-// the old name, so the per-tier sudoers drop-in this release writes grants
-// the engineer 'device ios-syntax *' where 0.2.17's grants 'device
-// config-syntax *': a 0.2.17 binary under this release's file refuses an
-// engineer's 'sudo tacctl device config-syntax' until 0.2.17's upgrade
-// rewrites the file. A file that is exactly this release's text is rewritten
+// 0.2.18 renamed three verbs and dropped the old names ('device
+// config-syntax' is 'device ios-syntax', 'device notices' is 'device notice
+// list', 'device ssh-config' is 'device client-config'), so the per-tier
+// sudoers drop-in this release writes grants the new names where 0.2.17's
+// grants the old: a 0.2.17 binary under this release's file refuses a tier
+// user's 'sudo tacctl device notices' (and the other two) until 0.2.17's
+// upgrade rewrites the file. A file that is exactly this release's text is rewritten
 // with 0.2.17's (tier.Sudoers0217, through 'visudo -cf'); any other is left.
 // No other file changed: the registry key stays config_syntax, and
 // tacctl.yaml, console.yaml, devices.yaml, store.yaml, the SNMP credentials,
@@ -39,7 +40,7 @@ func planRollback0217(p *RollbackPlan) (*RollbackPlan, error) {
 	s := RollbackStep{Title: "put back the per-tier sudoers drop-in " + RollbackTarget0217 + " writes", Todo: tiers.state == "rewrite"}
 	switch tiers.state {
 	case "rewrite":
-		s.Lines = []string{"rewrite " + tiers.file + " (" + RollbackTarget0217 + "'s text, after 'visudo -cf': the engineer's 'device ios-syntax *' rule becomes 'device config-syntax *')"}
+		s.Lines = []string{"rewrite " + tiers.file + " (" + RollbackTarget0217 + "'s text, after 'visudo -cf': the rules of 'device ios-syntax', 'device notice list' and 'device client-config' become " + RollbackTarget0217 + "'s 'device config-syntax', 'device notices' and 'device ssh-config')"}
 		if p.in.InstallSudoers == nil {
 			s.Lines[0] += " [not rewritten: no installer]"
 		}

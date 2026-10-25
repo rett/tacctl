@@ -71,6 +71,10 @@ func TestDeviceSpecsCoverEveryVerb(t *testing.T) {
 			}
 			continue
 		}
+		// 'notice' is two rows of one verb (list, ack|unack).
+		if slices.Contains(words, w) {
+			continue
+		}
 		words = append(words, w)
 		s, ok := specFor([]string{"device", w})
 		if !ok || !reflect.DeepEqual(s, deviceSpecs[w]) {
@@ -251,7 +255,7 @@ func TestDeviceAddRefusals(t *testing.T) {
 	if sb.code != 0 || !strings.Contains(out, "generic-name") {
 		t.Errorf("--allow-generic: %d %q %q", sb.code, out, sb.stderr())
 	}
-	if out = sb.dev("", "notices"); !strings.Contains(out, "switch  generic-name: 'switch' is a generic name") {
+	if out = sb.dev("", "notice", "list"); !strings.Contains(out, "switch  generic-name: 'switch' is a generic name") {
 		t.Errorf("notices:\n%s", out)
 	}
 }
@@ -463,7 +467,7 @@ func TestDeviceNotices(t *testing.T) {
 	sb := newSandbox(t, true)
 	sb.dev("", "add", "core-sw1", "10.99.0.1", "--vendor", "cisco", "--no-host-key")
 	sb.dev("", "add", "router", "10.99.0.2", "--vendor", "juniper", "--allow-generic", "--no-host-key")
-	out := sb.dev("", "notices")
+	out := sb.dev("", "notice", "list")
 	if !strings.Contains(out, "core-sw1  hostkey-unpinned") || !strings.Contains(out, "router  generic-name") ||
 		!strings.Contains(out, "set system host-name <name>") || !strings.Contains(out, "tacctl device rename router <new>") {
 		t.Errorf("notices:\n%s", out)
@@ -476,13 +480,13 @@ func TestDeviceNotices(t *testing.T) {
 		t.Errorf("ack twice: %q", out)
 	}
 	// Acknowledged: out of list and notices, marked in show.
-	if out = sb.dev("", "notices", "router"); strings.Contains(out, "generic-name") {
+	if out = sb.dev("", "notice", "list", "router"); strings.Contains(out, "generic-name") {
 		t.Errorf("notices still lists the acknowledged one:\n%s", out)
 	}
 	if out = sb.dev("", "list"); !strings.Contains(out, "hostkey-unpinned") || strings.Contains(out, "generic-name") {
 		t.Errorf("list:\n%s", out)
 	}
-	if out = sb.dev("", "notices", "router", "--all"); !strings.Contains(out, "generic-name (acknowledged):") {
+	if out = sb.dev("", "notice", "list", "router", "--all"); !strings.Contains(out, "generic-name (acknowledged):") {
 		t.Errorf("notices --all:\n%s", out)
 	}
 	if out = sb.dev("", "show", "router"); strings.Contains(out, "generic-name") || !strings.Contains(out, "1 acknowledged notice not shown") {
@@ -514,7 +518,7 @@ func TestDeviceNotices(t *testing.T) {
 	sb.dev("", "notice", "router", "ack", "generic-name")
 	sb.dev("", "notice", "router", "ack", "hostkey-unpinned")
 	sb.dev("", "notice", "core-sw1", "ack", "hostkey-unpinned")
-	if out = sb.dev("", "notices"); !strings.Contains(out, "No open notices.") {
+	if out = sb.dev("", "notice", "list"); !strings.Contains(out, "No open notices.") {
 		t.Errorf("notices:\n%s", out)
 	}
 	if out = sb.dev("", "list"); strings.Contains(out, "open notice") {
@@ -621,7 +625,7 @@ func TestDeviceTierFilteringAndGate(t *testing.T) {
 	}
 	// Registry writes and the operator-level verbs are superuser-only for her.
 	for _, args := range [][]string{{"add", "x1", "10.99.0.5"}, {"remove", "lab-sw", "-y"}, {"rename", "lab-sw", "x1"}, {"port", "lab-sw", "22"},
-		{"import", "-"}, {"export"}, {"stale-days"}, {"notice", "lab-sw", "ack", "generic-name"}} {
+		{"import", "-"}, {"export"}, {"stale-days"}} {
 		asUser("carol", "tac-readonly", args...)
 		if sb.code != 1 || !strings.Contains(sb.stderr(), "is not permitted for the readonly tier") {
 			t.Errorf("carol %v: %d %q", args, sb.code, sb.stderr())
@@ -631,7 +635,7 @@ func TestDeviceTierFilteringAndGate(t *testing.T) {
 		t.Error("carol changed the registry")
 	}
 	// notices is open to her, filtered to her own scopes like list and show.
-	out = asUser("carol", "tac-readonly", "notices")
+	out = asUser("carol", "tac-readonly", "notice", "list")
 	if sb.code != 0 {
 		t.Errorf("carol notices: %d %q", sb.code, sb.stderr())
 	}
@@ -639,6 +643,13 @@ func TestDeviceTierFilteringAndGate(t *testing.T) {
 		if strings.Contains(out, hidden) {
 			t.Errorf("carol's notices show %s:\n%s", hidden, out)
 		}
+	}
+	// 'notice list' is hers; ack and unack are the superuser's (the gate
+	// sees 'device notice' only, so the verb refuses them).
+	before := sb.devices()
+	asUser("carol", "tac-readonly", "notice", "lab-sw", "ack", "generic-name")
+	if sb.code == 0 || !strings.Contains(sb.stderr(), "Acknowledging or reopening a notice is the superuser's") || sb.devices() != before {
+		t.Errorf("carol ack: %d %q", sb.code, sb.stderr())
 	}
 	// bob (operator; lab) may export, filtered to his scope.
 	out = asUser("bob", "tac-operator", "export", "--csv")

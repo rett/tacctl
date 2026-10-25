@@ -343,7 +343,7 @@ config devices apply-confirm-timeout 2
 config devices apply-pause 0 ;; config devices
 @known 0.2.9 item 1: config devices apply-pause is new
 config devices apply-pause 3601
-@known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 2: the notices pointer names device notice list
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device list
 @known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.4 item 14: device show has the SNMP rows; 0.2.5 item 25: a Cisco device's show has a Config syntax row; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device show core-sw1
@@ -365,7 +365,7 @@ config devices transport pigeon
 config devices timeout 9
 @known 0.2.4 item 6: config devices is new; 0.2.9 item 1: config devices lists apply-confirm-timeout and apply-pause
 config devices frob
-@known 0.2.4 item 6: the config usage lists devices
+@known 0.2.4 item 6: the config usage lists devices; 0.2.18 item 1: --legacy names the device's ios-syntax
 config
 
 # --- a device's own SNMP settings (0.2.4, D72) -----------------------------------------

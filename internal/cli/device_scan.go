@@ -1047,10 +1047,10 @@ func (inv *invocation) statusDeviceNotices() {
 		inv.write("  " + ui.Bold + "Device notices:" + ui.NC + " " + ui.Green + "none" + ui.NC + "\n")
 		return
 	}
-	inv.write("  " + ui.Bold + "Device notices:" + ui.NC + " " + strconv.Itoa(len(lines)) + " (tacctl device notices)\n")
+	inv.write("  " + ui.Bold + "Device notices:" + ui.NC + " " + strconv.Itoa(len(lines)) + " (tacctl device notice list)\n")
 	for i, l := range lines {
 		if i == 5 {
-			inv.echo("    ... and " + strconv.Itoa(len(lines)-5) + " more: tacctl device notices")
+			inv.echo("    ... and " + strconv.Itoa(len(lines)-5) + " more: tacctl device notice list")
 			break
 		}
 		inv.write("    " + ui.Yellow + l + ui.NC + "\n")

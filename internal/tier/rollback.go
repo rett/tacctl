@@ -18,14 +18,20 @@ import "strings"
 func Sudoers023() string { return sudoers023 }
 
 // Sudoers0217 is the per-tier drop-in 0.2.17 wrote: this release's rules
-// with the engineer's 'device config-syntax *' where this release has
-// 'device ios-syntax *' (0.2.18 D273 renamed the verb and dropped the old
-// name). 'tacctl rollback 0.2.17' puts it back, so an engineer's 'device
-// config-syntax' runs through sudo again under 0.2.17; the rollback to 0.2.3
+// with 0.2.17's names of the verbs 0.2.18 renamed and dropped the old names
+// of (D273 to D275): the engineer's 'device config-syntax *' for 'device
+// ios-syntax *', and the read-only 'device notices' and 'device notices *'
+// for 'device notice list' and 'device notice list *', 'device ssh-config'
+// for 'device client-config'. 'tacctl rollback 0.2.17' puts it back, so the
+// old names run through sudo again under 0.2.17; the rollback to 0.2.3
 // recognises it as an older text. It is derived (a rule that moves on again
 // makes its own frozen copy).
 func Sudoers0217() string {
-	return strings.Replace(Sudoers(), Binary+" device ios-syntax *, ", Binary+" device config-syntax *, ", 1)
+	return strings.NewReplacer(
+		Binary+" device ios-syntax *, ", Binary+" device config-syntax *, ",
+		Binary+" device notice list, "+Binary+" device notice list *, ", Binary+" device notices, "+Binary+" device notices *, ",
+		Binary+" device client-config, ", Binary+" device ssh-config, ",
+	).Replace(Sudoers())
 }
 
 // Sudoers0216 is the per-tier drop-in 0.2.15 and 0.2.16 wrote: 0.2.17's

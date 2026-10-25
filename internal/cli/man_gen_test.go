@@ -288,7 +288,7 @@ var manFlagOverrides = map[string]string{
 	"device sync --yes":                  "Answer yes to the question of --apply (needed without a terminal).",
 	"device sync --json":                 "One object: each device's fields, actions and facts.",
 	"device show --all":                  "The acknowledged notices too.",
-	"device notices --all":               "The acknowledged notices too.",
+	"device notice --all":                "The acknowledged notices too.",
 	"device remove --all":                "Remove every device (an engineer: those of their own scopes).",
 	"device check --all":                 "Check every device.",
 	"device discover --all":              "Also list the addresses that were only refused.",

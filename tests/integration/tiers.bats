@@ -264,7 +264,7 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
     text=$(sed -n 's/^    //p' <<<"$output" | sed -e ':a' -e '/\\$/N; s/\\\n//; ta')
     ro=$(grep '^Cmnd_Alias TACCTL_RO' <<<"$text")
     op=$(grep '^Cmnd_Alias TACCTL_OP' <<<"$text")
-    for r in 'tacctl ssh \*' 'tacctl device list,' 'tacctl device list \*' 'tacctl device show \*' 'tacctl device ssh \*' 'tacctl device ssh-config'; do
+    for r in 'tacctl ssh \*' 'tacctl device list,' 'tacctl device list \*' 'tacctl device show \*' 'tacctl device ssh \*' 'tacctl device client-config' 'tacctl device notice list,' 'tacctl device notice list \*'; do
         grep -q -- "$r" <<<"$ro" || { echo "readonly lacks $r"; return 1; }
         if grep -q -- "$r" <<<"$op"; then echo "operator alias has $r"; return 1; fi
     done
