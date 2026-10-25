@@ -110,8 +110,9 @@ func exactly(body []string, want ...string) bool {
 }
 
 // parseVersion reads 'show version': one hostname, one release (a virtual
-// chassis prints the block per member; the members must agree). A line of
-// the error table is a refusal.
+// chassis prints the block per member; the members must agree on both). The
+// model may differ between members (a mixed virtual chassis): the first one
+// is kept. A line of the error table is a refusal.
 func parseVersion(out string) (Identity, error) {
 	ls := lines(out)
 	if row := classify(ls); row != "" {
@@ -135,7 +136,9 @@ func parseVersion(out string) (Identity, error) {
 		case "Hostname":
 			err = set(&id.Hostname, m[2])
 		case "Model":
-			err = set(&id.Model, m[2])
+			if id.Model == "" {
+				id.Model = m[2]
+			}
 		case "Junos":
 			err = set(&id.Release, m[2])
 		}

@@ -197,6 +197,12 @@ func TestParsersFailClosed(t *testing.T) {
 	if _, err := parseVersion("Hostname: a\nJunos: 1\nHostname: b\nJunos: 1\n"); !errors.Is(err, ErrUnrecognised) {
 		t.Errorf("two hostnames: %v", err)
 	}
+	if _, err := parseVersion("Hostname: a\nJunos: 1\nHostname: a\nJunos: 2\n"); !errors.Is(err, ErrUnrecognised) {
+		t.Errorf("two releases: %v", err)
+	}
+	if id, err := parseVersion("fpc0:\n--------\nHostname: a\nModel: ex4600-40f\nJunos: 25.4R1\n\nfpc1:\n--------\nHostname: a\nModel: ex4300-48t\nJunos: 25.4R1\n"); err != nil || id.Model != "ex4600-40f" || id.Hostname != "a" || id.Release != "25.4R1" {
+		t.Errorf("a mixed virtual chassis: %+v %v", id, err)
+	}
 	if _, err := parseAuthorization("Current user: alice\nPermissions:\n    all\n"); !errors.Is(err, ErrUnrecognised) {
 		t.Errorf("no class: %v", err)
 	}

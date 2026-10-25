@@ -3,6 +3,15 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.19 (unreleased)
+
+1. **A mixed Junos virtual chassis passes the pre-flight.** `device config
+   apply` (and `--check`) failed with `show version: two values ... the
+   device's answer is not recognised` on a virtual chassis whose members are
+   different models (for example EX4600 and EX4300), because every member's
+   `Model:` line had to match. The members must still agree on the hostname
+   and the Junos release; the first member's model is the one reported.
+
 ## 0.2.18 (2026-10-24)
 
 1. **`device config-syntax` is now `device ios-syntax`, and `device add
