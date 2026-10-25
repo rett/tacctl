@@ -100,6 +100,11 @@ var reAuthUser = regexp.MustCompile(`^\s*Current user:\s+'?([A-Za-z0-9_.@-]+)'?\
 // version'.
 var reVersionField = regexp.MustCompile(`^(Hostname|Model|Junos):\s+(\S+)\s*$`)
 
+// reVersionOld is the release line of a Junos that prints no 'Junos:' line
+// (before 14.1, and the SRX and MX trains): 'JUNOS Base OS boot [12.3R12-S15.1]'
+// or 'JUNOS Software Release [12.1X46-D40.2]'.
+var reVersionOld = regexp.MustCompile(`^JUNOS (?:Base OS boot|Software Release) \[(\S+)\]\s*$`)
+
 // ErrorRow is one row of the error table: an answer line that matches
 // Pattern is a refusal named Name.
 type ErrorRow struct {

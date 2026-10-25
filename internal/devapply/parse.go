@@ -112,7 +112,9 @@ func exactly(body []string, want ...string) bool {
 // parseVersion reads 'show version': one hostname, one release (a virtual
 // chassis prints the block per member; the members must agree on both). The
 // model may differ between members (a mixed virtual chassis): the first one
-// is kept. A line of the error table is a refusal.
+// is kept. A release is the 'Junos:' line, else the 'JUNOS Base OS boot [x]'
+// or 'JUNOS Software Release [x]' line of an older Junos. A line of the
+// error table is a refusal.
 func parseVersion(out string) (Identity, error) {
 	ls := lines(out)
 	if row := classify(ls); row != "" {
@@ -126,9 +128,13 @@ func parseVersion(out string) (Identity, error) {
 		*dst = v
 		return nil
 	}
+	var old string
 	for _, l := range ls {
 		m := reVersionField.FindStringSubmatch(strings.TrimSpace(l))
 		if m == nil {
+			if o := reVersionOld.FindStringSubmatch(strings.TrimSpace(l)); o != nil && old == "" {
+				old = o[1]
+			}
 			continue
 		}
 		var err error
@@ -146,10 +152,27 @@ func parseVersion(out string) (Identity, error) {
 			return Identity{}, err
 		}
 	}
-	if id.Hostname == "" || id.Release == "" {
-		return Identity{}, fmt.Errorf("show version: no Hostname or Junos line: %w", ErrUnrecognised)
+	if id.Release == "" {
+		id.Release = old
+	}
+	switch {
+	case id.Hostname == "" && id.Release == "":
+		return Identity{}, fmt.Errorf("show version: no Hostname and no Junos line%s: %w", firstLine(ls), ErrUnrecognised)
+	case id.Hostname == "":
+		return Identity{}, fmt.Errorf("show version: no Hostname line: %w", ErrUnrecognised)
+	case id.Release == "":
+		return Identity{}, fmt.Errorf("show version: no Junos line or JUNOS release line: %w", ErrUnrecognised)
 	}
 	return id, nil
+}
+
+// firstLine is ' (it starts "<first non-blank line>")' for an error text, or
+// "" for an answer with no line.
+func firstLine(ls []string) string {
+	if nb := nonBlank(ls); len(nb) > 0 {
+		return fmt.Sprintf(" (it starts %q)", cut(strings.TrimSpace(nb[0])))
+	}
+	return " (the answer is empty)"
 }
 
 // parseHistory reads 'show system commit'. Every non-blank line is an entry

@@ -12,6 +12,13 @@ current behaviour; this file is where history lives.
    `Model:` line had to match. The members must still agree on the hostname
    and the Junos release; the first member's model is the one reported.
 
+2. **The pre-flight reads the release of an older Junos.** A device whose
+   `show version` has no `Junos:` line (before 14.1, and the SRX and MX
+   trains) failed with `show version: no Hostname or Junos line`. The release
+   is now also read from the `JUNOS Base OS boot [...]` or `JUNOS Software
+   Release [...]` line, and the error names what is missing (the hostname,
+   the release, or both, with the first line of the answer).
+
 ## 0.2.18 (2026-10-24)
 
 1. **`device config-syntax` is now `device ios-syntax`, and `device add
