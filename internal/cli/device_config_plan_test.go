@@ -815,14 +815,14 @@ func TestPlanSyslogAndLoginPolicyFromTheBlock(t *testing.T) {
 			t.Errorf("no %q in\n%s", want, out)
 		}
 	}
-	// the device's own syslog file is listed as left alone, and nothing of it is
-	// in the region
+	// the device's own syslog file is left alone: nothing of it is in the region
+	// or in a report
 	region := out[strings.Index(out, "##### PASTE FROM HERE"):strings.Index(out, "##### PASTE TO HERE")]
 	if strings.Contains(region, "syslog file") || strings.Contains(region, "delete ") {
 		t.Errorf("the region touches the device's own syslog statements:\n%s", region)
 	}
-	if !strings.Contains(out, "extra: system syslog file messages any notice") {
-		t.Errorf("the device's syslog file is not listed as left alone:\n%s", out)
+	if strings.Contains(out, "syslog file messages") {
+		t.Errorf("the device's syslog file is no business of the block, and is not listed:\n%s", out)
 	}
 	// planned and pasted, the section reads ok on the next pull
 	plain := b.run("device", "config", "plan", "lab-j", "--plain")

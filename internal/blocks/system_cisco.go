@@ -204,7 +204,10 @@ type IOSSystemBlock struct {
 	// NTPAuthenticate is the 'ntp authenticate' statement (Text is empty: a
 	// bare boolean), nil when not stated.
 	NTPAuthenticate *Value
-	NotManaged      []SystemNotManaged
+	// Rules are the statements of the closed table (system_rules.go): logging,
+	// the login and password policy, the ssh settings and summer time.
+	Rules      []RuleStmt
+	NotManaged []SystemNotManaged
 }
 
 // BannerBody is the banner's text, "" for none.
@@ -220,7 +223,7 @@ func (b *IOSSystemBlock) Empty() bool {
 	return b == nil || (b.Banner == nil && b.DomainName == nil && len(b.DomainList) == 0 && b.Timezone == nil &&
 		len(b.VRFDomainNames) == 0 && len(b.VRFDomainList) == 0 && len(b.VRFNameServers) == 0 &&
 		len(b.NameServers) == 0 && len(b.NTPServers) == 0 && len(b.NTPKeys) == 0 && len(b.NTPTrustedKeys) == 0 &&
-		b.NTPAuthenticate == nil && len(b.NotManaged) == 0)
+		b.NTPAuthenticate == nil && len(b.Rules) == 0 && len(b.NotManaged) == 0)
 }
 
 // --- the banner on the wire -------------------------------------------------
@@ -378,6 +381,9 @@ func (p *iosSysParser) parseLine(lines []string, i int) int {
 		p.errf("a quote is not accepted in a system statement (only the login banner holds text, as a heredoc)")
 		return 1
 	}
+	if p.rule(f) {
+		return 1
+	}
 	switch f[0] {
 	case "ip":
 		p.ip(f[1:])
@@ -388,7 +394,7 @@ func (p *iosSysParser) parseLine(lines []string, i int) int {
 	case "no":
 		p.no(f[1:])
 	default:
-		p.errf("a block holds 'banner login', 'ip', 'clock', 'ntp' and 'no' statements only (word 1)")
+		p.errf("a block holds 'banner login', 'ip', 'clock', 'ntp', 'logging', 'login', 'security', 'service' and 'no' statements only (word 1)")
 	}
 	return 1
 }
@@ -868,6 +874,9 @@ func (p *iosSysParser) no(t []string) {
 		p.errf("'no' needs a statement (word 2)")
 		return
 	}
+	if p.ruleNo(t) {
+		return
+	}
 	nm := SystemNotManaged{Line: p.line}
 	bare := func(kind string, args []string, what string) bool {
 		if len(args) != 0 {
@@ -1031,6 +1040,7 @@ func CheckIOSSystem(b *IOSSystemBlock, layer Layer) []Finding {
 			}
 		}
 	}
+	checkRules(b.Rules, layer, add)
 	defined := map[int]bool{}
 	for _, k := range b.NTPKeys {
 		defined[k.Number] = true
@@ -1161,6 +1171,10 @@ func ResolveIOSSystem(def, scope, dev *IOSSystemBlock) *IOSSystemBlock {
 		for _, k := range l.NTPTrustedKeys {
 			out.NTPTrustedKeys = upsert(out.NTPTrustedKeys, k, func(o KeyRef) bool { return o.Number == k.Number })
 		}
+		for _, r := range l.Rules {
+			r.Args = slices.Clone(r.Args)
+			out.Rules = upsert(out.Rules, r, func(o RuleStmt) bool { return o.Rule == r.Rule && o.Head == r.Head })
+		}
 		out.NotManaged = append(out.NotManaged, l.NotManaged...)
 	}
 	return out
@@ -1206,6 +1220,10 @@ func (b *IOSSystemBlock) apply(d SystemNotManaged) {
 		b.NTPTrustedKeys = slices.DeleteFunc(b.NTPTrustedKeys, func(k KeyRef) bool { return num(k.Number) })
 	case SysNTP:
 		b.NTPServers, b.NTPKeys, b.NTPTrustedKeys, b.NTPAuthenticate = nil, nil, nil, nil
+	default:
+		if strings.HasPrefix(d.Kind, "rule:") {
+			b.Rules = applyRuleDelete(b.Rules, d)
+		}
 	}
 }
 
@@ -1269,6 +1287,9 @@ func IOSSystemUnitsIn(b *IOSSystemBlock, d IOSDialect) [][]string {
 	if b.NTPAuthenticate != nil {
 		one("ntp authenticate")
 	}
+	for _, s := range ruleStatements(b.Rules) {
+		one(s)
+	}
 	return out
 }
 
@@ -1315,6 +1336,9 @@ func (d SystemNotManaged) iosText() string {
 	case SysAuthenticate:
 		s = "no ntp authenticate"
 	default:
+		if strings.HasPrefix(d.Kind, "rule:") {
+			return "no " + d.Value
+		}
 		s = "no ntp " + d.Kind
 	}
 	if d.VRF != "" {
@@ -1351,6 +1375,7 @@ func ElideIOSSystem(b *IOSSystemBlock) *IOSSystemBlock {
 	out.VRFNameServers = slices.Clone(b.VRFNameServers)
 	out.NameServers = slices.Clone(b.NameServers)
 	out.NTPServers = slices.Clone(b.NTPServers)
+	out.Rules = slices.Clone(b.Rules)
 	out.NTPTrustedKeys = slices.Clone(b.NTPTrustedKeys)
 	out.NotManaged = slices.Clone(b.NotManaged)
 	return &out

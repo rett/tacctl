@@ -199,7 +199,7 @@ const (
 	iosSNMPCommand = "show running-config | include ^snmp-server"
 	// iosSystemCommand reads the lines of the system block; the banner's own
 	// lines come from iosBannerCommand ('include' shows its first line only).
-	iosSystemCommand = "show running-config | include ^(banner|ip domain|ip name-server|clock timezone|ntp )"
+	iosSystemCommand = "show running-config | include ^(banner|ip domain|ip name-server|clock |ntp |logging |service timestamps|login |security |ip ssh)"
 	iosBannerCommand = "show running-config | section ^banner login"
 	iosACLCommand    = "show running-config | section ip access-list standard "
 	iosFullCommand   = "show running-config"

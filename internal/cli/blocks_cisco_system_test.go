@@ -14,7 +14,7 @@ const (
 	ciscoSystemFile = "# the lab's system settings\nbanner login <<'EOF'\nAuthorized use only, Zq41.\n\n! Activity is logged.\nEOF\n" +
 		"ip domain name lab.example.net\nclock timezone CET 1\nip name-server 192.0.2.53 192.0.2.54\n" +
 		"ntp authentication-key 5 md5 ntp-key-secret-Yp9\nntp trusted-key 5\nntp server 192.0.2.123 key 5 prefer\nntp authenticate\n"
-	ciscoSystemCmd = "show running-config | include ^(banner|ip domain|ip name-server|clock timezone|ntp )"
+	ciscoSystemCmd = "show running-config | include ^(banner|ip domain|ip name-server|clock |ntp |logging |service timestamps|login |security |ip ssh)"
 	ciscoBannerCmd = "show running-config | section ^banner login"
 )
 

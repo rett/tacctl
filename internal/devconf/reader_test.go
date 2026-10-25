@@ -147,7 +147,7 @@ func TestHierarchyCommandAndRead(t *testing.T) {
 	if got := HierarchyCommand("cisco", "snmp"); got != "show running-config | include ^snmp-server" {
 		t.Errorf("cisco snmp: %q", got)
 	}
-	if got := HierarchyCommand("cisco", "system"); got != "show running-config | include ^(banner|ip domain|ip name-server|clock timezone|ntp )" {
+	if got := HierarchyCommand("cisco", "system"); got != "show running-config | include ^(banner|ip domain|ip name-server|clock |ntp |logging |service timestamps|login |security |ip ssh)" {
 		t.Errorf("cisco system: %q", got)
 	}
 	for _, c := range [][2]string{{"cisco", "snmp | include x"}, {"juniper", "firewall"}, {"juniper", "snmp | display xml"}, {"wti", "snmp"}} {
@@ -190,7 +190,7 @@ func (r *mapRunner) Run(_ context.Context, cmd string) (string, error) {
 // banner with the section command ('include' shows the first line of a
 // banner only); a device that does not know '| section' is read in full once.
 func TestReadHierarchyIOSSystem(t *testing.T) {
-	const include = "show running-config | include ^(banner|ip domain|ip name-server|clock timezone|ntp )"
+	const include = "show running-config | include ^(banner|ip domain|ip name-server|clock |ntp |logging |service timestamps|login |security |ip ssh)"
 	r := &mapRunner{out: map[string]string{
 		include: "banner exec ^C\r\nbanner login ^C\r\nip domain name lab.example.net\r\nip name-server 192.0.2.53 192.0.2.54\r\n" +
 			"clock timezone CET 1 0\r\nntp authentication-key 5 md5 0822455D0A16 7\r\nntp server 192.0.2.123 prefer\r\n",

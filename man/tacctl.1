@@ -6292,6 +6292,36 @@ and
 .BR \- ,
 and an IPv6 NTP server is not in a block.
 .PP
+The IOS system block also takes the statements of a closed table, each checked:
+.BR "logging host <address|name> [vrf <vrf>]" ,
+.BR "logging trap <severity>" ,
+.BR "logging buffered <4096\-2147483647> [<severity>]" ,
+.BR "logging origin\-id hostname" ,
+.BR "service timestamps log|debug datetime msec [localtime] [show\-timezone]" ,
+.BR "login on\-failure log [every <1\-65535>]" ,
+.BR "login on\-success log [every <1\-65535>]" ,
+.BR "login delay <1\-10>" ,
+.BR "security passwords min\-length <1\-16>" ,
+.BR "security authentication failure rate <2\-1024> log" ,
+.BR "ip ssh version 2" ,
+.BR "ip ssh time\-out <1\-120>" ,
+.B "ip ssh authentication\-retries <0\-5>"
+and
+.BR "clock summer\-time <zone> [recurring [<week> <day> <month> <hh:mm> <week> <day> <month> <hh:mm> [<offset\-minutes>]]]" .
+A statement is identified by its words up to the value, a more specific layer's
+replaces the less specific one's, and a
+.B no
+line names the same words. Any other
+.BR logging ,
+.BR service ,
+.BR login ,
+.B security
+or
+.B "ip ssh"
+statement is refused; the three
+.B "ip ssh"
+settings are the only ones the plan types.
+.PP
 The blocks of a scope are the files under
 .IR /etc/tacctl/blocks/\fIscope\fR/\fIvendor\fR ,
 and a block is in force only while
@@ -6565,7 +6595,7 @@ for each list a community names, and the whole configuration once when the
 image does not know
 .BR "| section" ;
 for an IOS system block
-.BR "show running\-config | include ^(banner|ip domain|ip name\-server|clock timezone|ntp )"
+.BR "show running\-config | include ^(banner|ip domain|ip name\-server|clock |ntp |logging |service timestamps|login |security |ip ssh)"
 and the banner's lines with
 .BR "show running\-config | section ^banner login" ),
 and open them in the editor as the draft to prune. The read is that of

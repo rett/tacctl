@@ -315,6 +315,24 @@ func iosKey(path []string) (string, bool) {
 			return "ip domain name vrf " + leaf[4], true
 		case leaf[0] == "clock" && len(leaf) >= 3 && leaf[1] == "timezone":
 			return "clock timezone", true
+		case leaf[0] == "clock" && len(leaf) >= 3 && leaf[1] == "summer-time":
+			return "clock summer-time", true
+		case leaf[0] == "logging" && len(leaf) >= 3 && leaf[1] == "host":
+			// one line per syslog host
+			return "logging host " + leaf[2], true
+		case leaf[0] == "logging" && len(leaf) >= 2 && (leaf[1] == "trap" || leaf[1] == "buffered" || leaf[1] == "origin-id"):
+			return "logging " + leaf[1], true
+		case leaf[0] == "service" && len(leaf) >= 3 && leaf[1] == "timestamps":
+			// one line per kind: a typed one replaces the device's
+			return "service timestamps " + leaf[2], true
+		case leaf[0] == "login" && len(leaf) >= 2 && (leaf[1] == "on-failure" || leaf[1] == "on-success" || leaf[1] == "delay"):
+			return "login " + leaf[1], true
+		case leaf[0] == "security" && len(leaf) >= 3 && leaf[1] == "passwords" && leaf[2] == "min-length":
+			return "security passwords min-length", true
+		case leaf[0] == "security" && len(leaf) >= 5 && leaf[1] == "authentication" && leaf[2] == "failure" && leaf[3] == "rate":
+			return "security authentication failure rate", true
+		case leaf[0] == "ip" && len(leaf) >= 3 && leaf[1] == "ssh" && (leaf[2] == "version" || leaf[2] == "time-out" || leaf[2] == "authentication-retries"):
+			return "ip ssh " + leaf[2], true
 		case leaf[0] == "ntp" && len(leaf) >= 3 && leaf[1] == "server" && leaf[2] != "vrf" && leaf[2] != "ip" && leaf[2] != "ipv6":
 			// one line per NTP server: a typed one replaces the device's of
 			// the same host, whatever its options
@@ -1077,6 +1095,34 @@ func iosRowID(section string, l Line) string {
 		return "ios.system.ntp-trusted-key"
 	case t == "ntp authenticate":
 		return "ios.system.ntp-authenticate"
+	case strings.HasPrefix(t, "logging host "):
+		return "ios.system.logging-host"
+	case strings.HasPrefix(t, "logging trap "):
+		return "ios.system.logging-trap"
+	case strings.HasPrefix(t, "logging buffered "):
+		return "ios.system.logging-buffered"
+	case strings.HasPrefix(t, "logging origin-id "):
+		return "ios.system.logging-origin-id"
+	case strings.HasPrefix(t, "service timestamps "):
+		return "ios.system.timestamps"
+	case strings.HasPrefix(t, "login on-failure "):
+		return "ios.system.login-on-failure"
+	case strings.HasPrefix(t, "login on-success "):
+		return "ios.system.login-on-success"
+	case strings.HasPrefix(t, "login delay "):
+		return "ios.system.login-delay"
+	case strings.HasPrefix(t, "security passwords min-length "):
+		return "ios.system.passwords-min-length"
+	case strings.HasPrefix(t, "security authentication failure rate "):
+		return "ios.system.auth-failure-rate"
+	case strings.HasPrefix(t, "ip ssh version "):
+		return "ios.system.ssh-version"
+	case strings.HasPrefix(t, "ip ssh time-out "):
+		return "ios.system.ssh-timeout"
+	case strings.HasPrefix(t, "ip ssh authentication-retries "):
+		return "ios.system.ssh-retries"
+	case strings.HasPrefix(t, "clock summer-time "):
+		return "ios.system.summer-time"
 	}
 	return ""
 }
@@ -1163,6 +1209,22 @@ func iosSystemUndo(text string) (string, bool) {
 		return "ntp authenticate", true
 	case f[0] == "snmp-server" && f[1] == "trap-source":
 		return "snmp-server trap-source", true
+	case f[0] == "logging" && len(f) >= 3 && f[1] == "host":
+		return "logging host " + f[2], true
+	case f[0] == "logging" && (f[1] == "trap" || f[1] == "buffered" || f[1] == "origin-id"):
+		return "logging " + f[1], true
+	case f[0] == "service" && len(f) >= 3 && f[1] == "timestamps":
+		return "service timestamps " + f[2], true
+	case f[0] == "login" && (f[1] == "on-failure" || f[1] == "on-success" || f[1] == "delay"):
+		return "login " + f[1], true
+	case f[0] == "security" && len(f) >= 3 && f[1] == "passwords" && f[2] == "min-length":
+		return "security passwords min-length", true
+	case f[0] == "security" && len(f) >= 4 && f[1] == "authentication" && f[2] == "failure" && f[3] == "rate":
+		return "security authentication failure rate", true
+	case f[0] == "ip" && len(f) >= 3 && f[1] == "ssh":
+		return "ip ssh " + f[2], true
+	case f[0] == "clock" && f[1] == "summer-time":
+		return "clock summer-time", true
 	}
 	return "", false
 }

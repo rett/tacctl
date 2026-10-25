@@ -2,7 +2,7 @@ package blocks
 
 // The draft of 'block adopt' for an IOS system block (0.2.7): the device's
 // own system lines, read live as 'show running-config | include ^(banner|ip
-// domain|ip name-server|clock timezone|ntp )' with the banner's own lines from
+// domain|ip name-server|clock |ntp |logging |service timestamps|login |security |ip ssh)' with the banner's own lines from
 // 'show running-config | section ^banner login', turned into the text of a
 // block to prune. A pure function of text, as AdoptSystem is, with the same
 // meaning of same and up.
@@ -151,6 +151,35 @@ func AdoptIOSSystem(raw string, same, up *IOSSystemBlock, layer Layer) AdoptResu
 			already++
 		default:
 			incl.NTPAuthenticate = a
+		}
+	}
+	// the statements of the closed table (logging, timestamps, login and
+	// password policy, ssh, summer time): by their identity, as a single value
+	// is
+	for _, r := range dev.Rules {
+		find := func(b *IOSSystemBlock) *RuleStmt {
+			if b == nil {
+				return nil
+			}
+			if i := indexRule(b.Rules, r.Rule, r.Head); i >= 0 {
+				return &b.Rules[i]
+			}
+			return nil
+		}
+		same1 := func(o *RuleStmt) bool { return strings.Join(o.Args, " ") == strings.Join(r.Args, " ") }
+		switch o := find(same); {
+		case o != nil && same1(o):
+			already++
+		case o != nil:
+			conflict++
+		default:
+			if u := find(up); u != nil && same1(u) {
+				already++
+			} else if def := ruleByID(r.Rule); def != nil && def.DeviceOnly && layer != LayerDevice {
+				res.Left = append(res.Left, r.Text()+" names an address of this device, which a scope's block does not state: it is left out (state it in the device's own block)")
+			} else {
+				incl.Rules = append(incl.Rules, r)
+			}
 		}
 	}
 	list := func(dst *[]Value, dv []Value, sv, uv []Value) {

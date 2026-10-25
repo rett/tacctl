@@ -123,10 +123,24 @@ current behaviour; this file is where history lives.
     (the facilities, the levels and the ranges Junos takes); anything else under
     `syslog` or `login` is an error. They are compared, planned (a differing
     value is replaced in place, nothing is deleted, the device's syslog files and
-    users are kept and listed), admitted by the apply allow-list (the confirmed
+    users are left alone), admitted by the apply allow-list (the confirmed
     commit types them as it types the others), adopted from a device (`adopt`)
     and named in the read-back commands of the plan. The plan prints an
     announcement as its text and not as the mark the comparison holds.
+
+12. **The IOS `system` block takes logging, timestamps, the login and password
+    policy, the ssh settings and summer time.** `logging host`, `logging trap`,
+    `logging buffered`, `logging origin-id hostname`, `service timestamps
+    log|debug`, `login on-failure|on-success log`, `login delay`, `security
+    passwords min-length`, `security authentication failure rate`, `ip ssh
+    version 2`, `ip ssh time-out`, `ip ssh authentication-retries` and `clock
+    summer-time` are statements of the block, each checked against a closed
+    table; any other `logging`, `service`, `login`, `security` or `ip ssh`
+    statement is an error. They are compared, planned (a differing value is
+    replaced in place, nothing is removed, the device's other statements are
+    kept and listed), adopted from a device (`adopt` reads the wider `show
+    running-config | include`), offered in the block's template, and the three
+    ssh settings are the only `ip ssh` statements the planner types.
 
 ## 0.2.18 (2026-10-24)
 

@@ -189,6 +189,22 @@ var keptShapes = map[string][]keptShape{
 		// difference (the plan replaces it in place), so each shape keeps a
 		// statement only where the rendering says nothing of the same object.
 		{Row: "ios.system.banner", Pattern: "banner login", keep: notRendered},
+		// 0.2.19: logging, the login and password policy, ssh, summer time
+		{Row: "ios.system.logging-host", Pattern: "logging host $", keep: notRendered},
+		{Row: "ios.system.logging-trap", Pattern: "logging trap", keep: notRendered},
+		{Row: "ios.system.logging-buffered", Pattern: "logging buffered", keep: notRendered},
+		{Row: "ios.system.logging-origin-id", Pattern: "logging origin-id", keep: notRendered},
+		{Row: "ios.system.timestamps", Pattern: "service timestamps $", keep: notRendered},
+		{Row: "ios.system.login-on-failure", Pattern: "login on-failure", keep: notRendered},
+		{Row: "ios.system.login-on-success", Pattern: "login on-success", keep: notRendered},
+		{Row: "ios.system.login-delay", Pattern: "login delay", keep: notRendered},
+		{Row: "ios.system.passwords-min-length", Pattern: "security passwords min-length", keep: notRendered},
+		{Row: "ios.system.auth-failure-rate", Pattern: "security authentication failure rate", keep: notRendered},
+		{Row: "ios.system.ssh-version", Pattern: "ip ssh version", keep: notRendered},
+		{Row: "ios.system.ssh-timeout", Pattern: "ip ssh time-out", keep: notRendered},
+		{Row: "ios.system.ssh-retries", Pattern: "ip ssh authentication-retries", keep: notRendered},
+		{Row: "ios.system.summer-time", Pattern: "clock summer-time", keep: notRendered},
+
 		{Row: "ios.system.domain-name", Pattern: "ip domain name", keepStmt: otherDomainName},
 		// a vrf form is an object of its own (the shape with the vrf comes
 		// first, the pattern of the list without one would take its words)

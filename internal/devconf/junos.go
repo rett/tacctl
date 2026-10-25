@@ -24,6 +24,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/rett/tacctl/internal/blocks"
 	"github.com/rett/tacctl/internal/devices"
 )
 
@@ -366,6 +367,9 @@ type junosCtx struct {
 	// the login message, domain, time zone, name servers and NTP of the
 	// device the section's statements.
 	system bool
+	// ruleGroups are the rule groups (blocks.JunosRuleGroups) of the
+	// statements the rendering's system section states.
+	ruleGroups map[string]bool
 	// device side: a user's class, and the filters applied on lo0.
 	userClass map[string]string
 	lo0Filter map[string]bool
@@ -417,8 +421,14 @@ func (c *junosCtx) section(x stmt) string {
 			if len(p) >= 3 && p[2] == "netconf" {
 				return SectionNetconf
 			}
-		case "domain-name", "domain-search", "time-zone", "name-server", "ntp", "syslog":
+		case "domain-name", "domain-search", "time-zone", "name-server", "ntp":
 			if c.system {
+				return SectionSystem
+			}
+		case "syslog":
+			// the hosts, the time format and the source address; the device's
+			// files, console and users are no business of a block
+			if c.system && c.ownsRule(blocks.JunosRuleGroups(p[1:])) {
 				return SectionSystem
 			}
 		}
@@ -439,14 +449,56 @@ func (c *junosCtx) section(x stmt) string {
 	return ""
 }
 
+// ownsRule reports whether the rendering states a statement of one of the
+// rule groups.
+func (c *junosCtx) ownsRule(groups []string) bool {
+	for _, g := range groups {
+		if c.ruleGroups[g] {
+			return true
+		}
+	}
+	return false
+}
+
+// ruleGroupsOf are the rule groups of the statements of the rendering's system
+// section.
+func ruleGroupsOf(expected []devices.Section, fam string) map[string]bool {
+	out := map[string]bool{}
+	for _, sec := range expected {
+		if sec.Name != SectionSystem {
+			continue
+		}
+		for _, l := range sec.Lines {
+			f := strings.Fields(l)
+			if fam == FamilyJunos {
+				if len(f) < 3 || f[0] != "set" || f[1] != "system" {
+					continue
+				}
+				for _, g := range blocks.JunosRuleGroups(f[2:]) {
+					out[g] = true
+				}
+				continue
+			}
+			for _, g := range blocks.IOSRuleGroups(f) {
+				out[g] = true
+			}
+		}
+	}
+	return out
+}
+
 // login classifies a 'system login ...' statement.
 func (c *junosCtx) login(p []string) string {
 	if len(p) < 4 {
 		return ""
 	}
 	switch p[2] {
-	case "message", "announcement", "retry-options", "password":
+	case "message", "announcement":
 		if c.system {
+			return SectionSystem
+		}
+	case "retry-options", "password":
+		if c.system && c.ownsRule(blocks.JunosRuleGroups(p[1:])) {
 			return SectionSystem
 		}
 	case "class":
@@ -513,6 +565,7 @@ func junosExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 	c := &junosCtx{claim: map[string]string{}, users: map[string]string{},
 		userClass: map[string]string{}, lo0Filter: map[string]bool{},
 		system: renders(expected, SectionSystem)}
+	c.ruleGroups = ruleGroupsOf(expected, FamilyJunos)
 	haveExpected := false
 	for _, sec := range expected {
 		for _, x := range junosCanon(sec.Lines, sec.Secret, lb) {

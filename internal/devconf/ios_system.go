@@ -66,6 +66,9 @@ func isSystemStatement(t string) bool {
 		return true
 	case t == "ntp", strings.HasPrefix(t, "ntp "):
 		return true
+	case blocks.IOSTableOwns(strings.Fields(t)):
+		// logging hosts, the login and password policy, ssh, summer time
+		return true
 	}
 	return false
 }
@@ -124,8 +127,36 @@ func ciscoSystemLine(f []string) []string {
 		return ciscoNTPServer(f)
 	case f[0] == "snmp-server" && f[1] == "trap-source" && len(f) == 3:
 		return []string{"snmp-server", "trap-source", strings.ToLower(f[2])}
+	case f[0] == "logging" && f[1] == "host" && len(f) >= 3:
+		// the host is a name: no case
+		out := append([]string(nil), f...)
+		out[2] = strings.ToLower(f[2])
+		return out
+	case f[0] == "clock" && f[1] == "summer-time":
+		return ciscoSummerTime(f)
 	}
 	return f
+}
+
+// ciscoSummerTime is 'clock summer-time <zone> recurring [<week> <day> <month>
+// <hh:mm> <week> <day> <month> <hh:mm> [<offset>]]' in one compared form,
+// whichever way it is spelled: the week 'first' as 1, the day and month by
+// their first three letters, an hour without its leading zero. A device
+// prints the abbreviated words, the block may state them in full.
+func ciscoSummerTime(f []string) []string {
+	out := append([]string(nil), f...)
+	for i := 3; i < len(out); i++ {
+		w := out[i]
+		switch {
+		case w == "first":
+			out[i] = "1"
+		case len(w) > 3 && w[0] >= 'A' && w[0] <= 'Z':
+			out[i] = w[:3]
+		case strings.Contains(w, ":"):
+			out[i] = strings.TrimPrefix(w, "0")
+		}
+	}
+	return out
 }
 
 // ciscoNTPServer is 'ntp server <host> [key N] [prefer] [source IF] [version

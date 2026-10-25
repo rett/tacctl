@@ -482,6 +482,9 @@ var iosTopStatements = []string{
 	"snmp-server host ", "snmp-server enable traps ", "snmp-server trap-source ",
 	"banner login ", "ip domain name ", "ip domain list ", "clock timezone ", "ip name-server ", "ntp server ",
 	"ntp authentication-key ", "ntp trusted-key ", "ntp authenticate",
+	"logging host ", "logging trap ", "logging buffered ", "logging origin-id ", "service timestamps ", "login on-failure ",
+	"login on-success ", "login delay ", "security passwords ", "security authentication ", "ip ssh version ", "ip ssh time-out ",
+	"ip ssh authentication-retries ", "clock summer-time ",
 	"ip access-list standard ", "ip access-list extended ", "ipv6 access-list ", "line vty ", "line con ",
 }
 

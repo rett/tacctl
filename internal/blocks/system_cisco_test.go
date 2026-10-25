@@ -94,7 +94,7 @@ func TestIOSSystemParseRefusals(t *testing.T) {
 		line int
 		frag string
 	}{
-		{"unknown statement", "hostname x\n", 1, "'banner login', 'ip', 'clock', 'ntp' and 'no' statements only"},
+		{"unknown statement", "hostname x\n", 1, "'banner login', 'ip', 'clock', 'ntp', 'logging', 'login', 'security', 'service' and 'no' statements only"},
 		{"a set", "set system domain-name x.example.net\n", 1, "statements only"},
 		{"banner motd", "banner motd <<'EOF'\nhi\nEOF\n", 1, "only 'banner login' is accepted"},
 		{"banner alone", "banner\n", 1, "only 'banner login' is accepted"},
@@ -147,7 +147,7 @@ func TestIOSSystemParseRefusals(t *testing.T) {
 		{"name-server vrf twice", "ip name-server vrf MGMT 192.0.2.53\nip name-server vrf MGMT 192.0.2.54 192.0.2.53\n", 2, "is listed twice"},
 		{"name-server vrf twice on a line", "ip name-server vrf MGMT 192.0.2.53 192.0.2.53\n", 1, "is listed twice"},
 		{"name-server vrf name with a space", "ip name-server vrf \"M G\" 192.0.2.53\n", 1, "a quote is not accepted"},
-		{"clock summer-time", "clock summer-time EDT recurring\n", 1, "only 'clock timezone'"},
+		{"clock summer-time date form", "clock summer-time EDT date March 8 2026 02:00 November 1 2026 02:00\n", 1, "this statement is not one of: clock summer-time"},
 		{"clock alone", "clock\n", 1, "only 'clock timezone'"},
 		{"timezone short", "clock timezone CET\n", 1, "takes <zone> <hours> [<minutes>]"},
 		{"timezone long", "clock timezone CET 1 0 0\n", 1, "takes <zone> <hours> [<minutes>]"},
@@ -215,7 +215,7 @@ func TestIOSSystemParseRefusals(t *testing.T) {
 		{"no ntp master", "no ntp master\n", 1, "word 3 is not one of server"},
 		{"no ntp words", "no ntp x y\n", 1, "word 3 is not one of server"},
 		{"no timezone words", "no clock timezone CET\n", 1, "takes nothing after it"},
-		{"no summer-time", "no clock summer-time\n", 1, "only 'no clock timezone'"},
+		{"no summer-time with a zone", "no clock summer-time EDT\n", 1, "a no line names the statement's identity"},
 		{"a second line", "# ok\nip domain name a.example.net\nfrob\n", 3, "statements only"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

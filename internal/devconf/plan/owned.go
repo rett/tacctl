@@ -326,6 +326,48 @@ var iosOwned = []OwnedRow{
 	{ID: "ios.system.ntp-authenticate", Section: "system", Pattern: "ntp authenticate", Mode: ModeSingle, Block: true,
 		Why:  "the statements of the system block of scope <scope>",
 		Kept: "'ntp authenticate' when the block states none"},
+	{ID: "ios.system.logging-host", Section: "system", Pattern: "logging host $", Mode: ModeAdditive, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the device's other logging hosts"},
+	{ID: "ios.system.logging-trap", Section: "system", Pattern: "logging trap", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the logging trap level when the block states none"},
+	{ID: "ios.system.logging-buffered", Section: "system", Pattern: "logging buffered", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the buffered logging size when the block states none"},
+	{ID: "ios.system.logging-origin-id", Section: "system", Pattern: "logging origin-id", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the logging origin id when the block states none"},
+	{ID: "ios.system.timestamps", Section: "system", Pattern: "service timestamps $", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the timestamps of the log or debug output the block does not state"},
+	{ID: "ios.system.login-on-failure", Section: "system", Pattern: "login on-failure", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the failed-login logging when the block states none"},
+	{ID: "ios.system.login-on-success", Section: "system", Pattern: "login on-success", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the successful-login logging when the block states none"},
+	{ID: "ios.system.login-delay", Section: "system", Pattern: "login delay", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the login delay when the block states none"},
+	{ID: "ios.system.passwords-min-length", Section: "system", Pattern: "security passwords min-length", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the minimum password length when the block states none"},
+	{ID: "ios.system.auth-failure-rate", Section: "system", Pattern: "security authentication failure rate", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the authentication failure rate when the block states none"},
+	{ID: "ios.system.ssh-version", Section: "system", Pattern: "ip ssh version", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the ssh version when the block states none"},
+	{ID: "ios.system.ssh-timeout", Section: "system", Pattern: "ip ssh time-out", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the ssh time-out when the block states none"},
+	{ID: "ios.system.ssh-retries", Section: "system", Pattern: "ip ssh authentication-retries", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the ssh authentication retries when the block states none"},
+	{ID: "ios.system.summer-time", Section: "system", Pattern: "clock summer-time", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the summer time when the block states none"},
 	{ID: "ios.system.domain-list", Section: "system", Pattern: "ip domain list $", Mode: ModeAdditive, Block: true,
 		Why:  "the statements of the system block of scope <scope>",
 		Kept: "the device's other search domains"},
@@ -421,6 +463,11 @@ func neverMatch(family string, l Line) (string, bool) {
 		// netconf section's own lines (D147); the allow-list holds them
 		// against the rendering
 		if r.ID == "junos.netconf" && l.Section == devconf.SectionNetconf && NetconfStatementAllowed(l.Text) {
+			continue
+		}
+		// the three ssh settings a scope's system block states (0.2.19); no
+		// other 'ip ssh' statement is ever emitted
+		if r.ID == "ios.ip-ssh" && l.Section == devconf.SectionSystem && systemSSHStatement(text) {
 			continue
 		}
 		if (text == r.Prefix || strings.HasPrefix(text, r.Prefix+" ")) && strings.Contains(" "+text+" ", r.Contains) {
@@ -554,4 +601,10 @@ func matchPrefix(pattern, path []string) (name string, at int, ok bool) {
 		}
 	}
 	return name, at, true
+}
+
+// systemSSHStatement reports the 'ip ssh' statements of the IOS system block.
+func systemSSHStatement(text string) bool {
+	f := strings.Fields(text)
+	return len(f) >= 3 && f[0] == "ip" && f[1] == "ssh" && (f[2] == "version" || f[2] == "time-out" || f[2] == "authentication-retries")
 }
