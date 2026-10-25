@@ -12,6 +12,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// notACommand reports whether w, the first word of a line, is a top-level
+// word the root answers with unknownCommand: it is no command (hidden ones
+// count), and not 'help', '-h' or '--help' (the usage). The sudo re-exec and
+// the shell ask it before they run 'sudo', so a word no tier could run does
+// not ask for a password first (0.2.19); the tier gate and the sudoers check
+// stay the authority for every other word.
+func notACommand(root *cobra.Command, w string) bool {
+	if w == "" || w == "help" || w == "-h" || w == "--help" || noSudo[w] {
+		return false
+	}
+	return child(root, w) == nil
+}
+
 // maxSuggestions is how many commands a suggestion names at most.
 const maxSuggestions = 4
 

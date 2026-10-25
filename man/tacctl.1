@@ -13638,7 +13638,9 @@ may have meant (the verbs of that name,
 .BR "device enroll" " and " "host enroll" ,
 or a command within two letters of it) and a pointer to
 .B tacctl
-for the list, and ends with 1;
+for the list, and ends with 1; it is answered before
+.B sudo
+runs, so it never asks for a password;
 .BR tacctl ,
 .BR "tacctl help" ,
 .B \-h

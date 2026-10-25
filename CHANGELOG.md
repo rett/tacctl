@@ -29,6 +29,15 @@ current behaviour; this file is where history lives.
    list shows the bits it stands for and no `all` row), so a class that has
    all of them still applies.
 
+4. **An unknown command no longer asks for a password.** `tacctl enroll` on
+   the command line, in `tacctl shell` and at the console ran the word
+   through `sudo`, which asked for the password before tacctl could say the
+   word is no command. A first word that is no command (hidden ones count;
+   `help`, `-h` and `--help` are the usage as before) is now answered before
+   `sudo` runs, with the same error line, `Did you mean` suggestion and exit
+   status 1. Every other word still goes through `sudo`, whose rules stay
+   the authority.
+
 ## 0.2.18 (2026-10-24)
 
 1. **`device config-syntax` is now `device ios-syntax`, and `device add
