@@ -264,6 +264,7 @@ var Rules = []Rule{
 	{Tier: Engineer, Cmd: "device", Sub: "collect", Sudoers: []string{"device collect *"}},
 	{Tier: Engineer, Cmd: "device", Sub: "onboard", Sudoers: []string{"device onboard *"}},
 	{Tier: Engineer, Cmd: "device", Sub: "sync", Sudoers: []string{"device sync *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "support-bundle", Sudoers: []string{"device support-bundle *"}},
 	{Tier: Engineer, Cmd: "config", Sub: "cisco", Sudoers: []string{"config cisco", "config cisco *"},
 		Note: "config cisco: an engineer may print the walkthrough and read source-interface for a scope of their own; setting or unsetting source-interface needs the superuser tier."},
 	{Tier: Engineer, Cmd: "config", Sub: "juniper", Sudoers: []string{"config juniper", "config juniper *"}},

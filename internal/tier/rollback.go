@@ -27,7 +27,7 @@ func Sudoers023() string { return sudoers023 }
 // older text. It is derived (a rule that moves on again makes its own frozen
 // copy).
 func Sudoers0218() string {
-	added := map[string]bool{"enroll": true, "collect": true, "onboard": true, "sync": true}
+	added := map[string]bool{"enroll": true, "collect": true, "onboard": true, "sync": true, "support-bundle": true}
 	var rules []Rule
 	for _, r := range Rules {
 		switch {

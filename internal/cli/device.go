@@ -110,6 +110,12 @@ var deviceSpecs = map[string]Spec{
 		{Names: []string{"--name"}, Value: true},
 		{Names: []string{"--legacy-ssh"}},
 		flagJSON}},
+	// 'support-bundle' (0.2.19): what a developer needs of one device,
+	// scrubbed (device_support_bundle.go).
+	"support-bundle": {MinArgs: 1, MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{
+		{Names: []string{"--vendor"}, Value: true, Kind: "cisco|juniper|wti"},
+		{Names: []string{"--login"}, Value: true},
+		{Names: []string{"--out"}, Value: true}}},
 	"sync": {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{
 		{Names: []string{"--all"}, Alone: true},
 		{Names: []string{"--scope"}, Value: true, Kind: KindScopes},
@@ -168,6 +174,7 @@ var deviceVerbs = [][2]string{
 	{"onboard <address> --login <local-user> [--name <name>] [--host-key SHA256:<fp>] [--legacy-ssh] [--check] [--section <list>] [--json]", "Engineers, Junos devices: register a blank device reached with one of its local accounts (its host key accepted first by typing its name) and commit its first configuration as that account, kept only after your own TACACS+ login proves it"},
 	{"collect <address>... | --discovered [--login <local-user>] [--host-key SHA256:<fp>] [--register [-y]] [--json]", "Engineers, Junos devices: log in once to each address nobody registered and read what it is (each one's host key shown and accepted first by typing its name or address; show version and the configuration, nothing else), as one table; --register registers them through 'device add' and keeps the read as their first record"},
 	{"enroll <address>... | --discovered [--host-key SHA256:<fp>] [--vendor cisco|juniper|wti|other] [--name <name>] [--legacy-ssh] [--json]", "Engineers: per address, accept the one host key shown by typing the device's name, read its name and vendor by SNMP (asking for what cannot be read), register it, pull it as you, take the name it is configured with, plan it and, for Junos devices, offer the apply review"},
+	{"support-bundle <name> [--vendor cisco|juniper|wti] [--login <local-user>] [--out <dir>]", "Engineers: log in once to a registered device and collect what a developer needs to make tacctl read it right (the version, hardware or inventory, stack, the login's permissions and the commit history of a Junos device, the screens of a WTI unit, the SNMP system group; no configuration), scrubbed: names, users, addresses, serial numbers and time zones become examples and secrets are removed; what was replaced is kept in a private file beside the directory"},
 	{"sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite] [--json] [-y]", "Engineers: fill the registry's empty hostname, location and description from what each device's last pull record says of itself (no login; the preview first, --apply writes after one question)"},
 	{"remove <name>[,<name>...] | --all [-y]", "Remove devices from the registry (confirms)"},
 	{"rename <old> <new> [--allow-generic]", "Rename a device"},
@@ -255,6 +262,10 @@ var deviceOptions = map[string][][2]string{
 		{"--name <name>", "(enroll) The name of ONE address (default: its SNMP sysName, else the name typed at the key's question)"},
 		{"--vendor cisco|juniper|wti|other", "(enroll) The vendor of ONE address (default: the one it names by SNMP, else asked)"},
 		{"--legacy-ssh", "(enroll) Scan and register every device of the run with the legacy algorithms"},
+	},
+	"support-bundle": {
+		{"--vendor cisco|juniper|wti", "(support-bundle) Read the device as this vendor for this run (the registered vendor otherwise; nothing is saved)"},
+		{"--out <dir>", "(support-bundle) The directory to write (default: support-bundle-<UTC time> in the current directory; it must not exist). The map of what was replaced is <dir>.map, private"},
 	},
 	"sync": {
 		{"--apply", "(sync) Write the fields, in one registry write, after one question"},
@@ -561,7 +572,7 @@ func (inv *invocation) device(args []string) error {
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
 		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "ios-syntax": inv.deviceIOSSyntax, "netconf": inv.deviceNetconf, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "import": inv.deviceImport, "export": inv.deviceExport,
-		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "collect": inv.deviceCollect, "enroll": inv.deviceEnroll, "sync": inv.deviceSync, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "client-config": inv.deviceClientConfig, "config": inv.deviceConfig,
+		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "collect": inv.deviceCollect, "enroll": inv.deviceEnroll, "sync": inv.deviceSync, "support-bundle": inv.deviceSupportBundle, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "client-config": inv.deviceClientConfig, "config": inv.deviceConfig,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
 		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
 		"port": inv.deviceSetter("port"), "description": inv.deviceSetter("description"), "location": inv.deviceSetter("location"),

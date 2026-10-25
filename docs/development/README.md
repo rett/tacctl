@@ -111,6 +111,9 @@ value are replaced from the table; what the parser reads (model, release
 line, layout, spacing) stays as the device printed it. Model names and
 releases are facts about a product and stay.
 
+`tacctl device support-bundle` writes these values for the text it collects
+(docs/devices/support-bundle.md).
+
 `make lint` runs `tests/tools/no-private.sh`, which catches home paths and
 mail addresses under real domains, and the patterns in
 `~/.config/tacctl/private-patterns`; it cannot tell a real host name from an

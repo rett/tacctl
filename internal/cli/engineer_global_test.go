@@ -138,6 +138,10 @@ var engineerRowCases = map[string]engineerRow{
 	"device onboard": {cases: []engineerCase{
 		refusedCase("not one of yours", "device onboard 192.168.2.77 --login admin --check --host-key SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
 	}},
+	"device support-bundle": {cases: []engineerCase{
+		refusedCase("Device 'prod-sw' not found", "device support-bundle prod-sw"),
+		refusedCase("enrolled Linux host", "device support-bundle web1"),
+	}},
 	"device sync": {cases: append(cases("device sync lab-sw", "device sync --all"),
 		refusedCase("'web1' is an enrolled Linux host", "device sync web1"))},
 	// The source interface (0.2.5, D119) is a setting of tacctl.yaml: an

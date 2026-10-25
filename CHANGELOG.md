@@ -50,6 +50,21 @@ current behaviour; this file is where history lives.
    per-tier sudoers drop-in gains the five rows (`tacctl upgrade` rewrites an
    installed one, and `tacctl rollback` recognises 0.2.18's text).
 
+6. **`device support-bundle` collects what a developer needs of a device.**
+   `tacctl device support-bundle <name> [--vendor cisco|juniper|wti]
+   [--login <local-user>] [--out <dir>]` (the engineer's, for the devices of
+   their own scopes) logs in once, as `device config pull` does, and runs a
+   fixed list of read-only commands for the device's vendor (Junos: the
+   versions of every member, the chassis hardware, the virtual chassis and
+   cluster, the login's permissions, the commit history; IOS: the version,
+   inventory, stack, privilege; a WTI unit: its screens without the user
+   directory) and the SNMP system group, never the configuration. The text is
+   written to a directory after it is scrubbed: names, users, classes,
+   addresses, serial numbers, locations, contacts and time zones become the
+   standard example values, secrets are removed, and what was replaced is in
+   `<dir>.map` (mode 0600), beside the directory. `--vendor` reads a device
+   as another vendor for one run; the registered vendor is the default.
+
 ## 0.2.18 (2026-10-24)
 
 1. **`device config-syntax` is now `device ios-syntax`, and `device add

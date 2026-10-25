@@ -7857,6 +7857,45 @@ One object: each device's fields, actions and facts.
 .RE
 .\" END GENERATED: command device sync
 .TP
+.BI "device support\-bundle " "name " "[ \-\-vendor cisco|juniper|wti ] [ \-\-login " "local\-user " "] [ \-\-out " "dir " "]"
+Logs in once to a registered device and collects what a developer needs to make tacctl read that kind of device correctly, as a directory of text files that is safe to share. The commands are fixed and read only, per vendor: Junos, the version of every member and routing engine, the chassis hardware, the virtual chassis, the cluster status, the routing engine, the uptime, the login's permissions (\c
+.B "show cli authorization"\c
+), the commit history and the difference to rollback 0; IOS, the version, the inventory, the switch stack, the modules, the clock, the privilege level and the lines of the running configuration that name the device; a WTI unit, the screens its pull reads, without the user directory. For all three, the SNMP system group is added when SNMP is set up. No configuration is collected.
+.IP
+The text is scrubbed before it is written: host names, domains, users, classes, addresses, MAC addresses, serial numbers, locations, contacts and time zones become the standard example values (the same real value always the same example), the free text of a commit comment is removed (tacctl's own comments stay), and anything that looks like a secret, a hash or a key is removed. A text that still holds a value the scrubber learned to replace is not written. What was replaced is kept in a private file beside the directory, \fIdir\fR\fB.map\fR (mode 0600, the real values), never in it; read the files before sharing them.
+.IP
+The login is the one of
+.BR "device config pull" :
+your own TACACS+ account with the password asked on the terminal (it is not cached), or, for a Junos device with a pinned host key,
+.B \-\-login
+with the one\-shot password of a local account. The registered vendor decides what is run;
+.B \-\-vendor
+reads the device as another one for this run only and saves nothing (for a device registered as
+.BR other ).
+.B \-\-out
+names the directory, which must not exist or must be empty (default:
+.B support\-bundle\-<UTC time>
+in the current directory). Logged:
+.B "auth.info device support-bundle user= device= vendor= login=own|local:<account> files= result=ok"
+(never a command's text). Exit status: 0, 1 refused or the login failed, 2 wrong arguments, 130 interrupted.
+.\" BEGIN GENERATED: command device support-bundle
+.RS
+.PP
+Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-\-vendor\fR \fIcisco|juniper|wti\fR
+(support\-bundle) Read the device as this vendor for this run (the registered vendor otherwise; nothing is saved).
+.TP
+\fB\-\-login\fR \fI<local\-user>\fR
+(onboard, collect; config pull, diff \-\-pull, plan \-\-pull) The device's local account to log in as (any, a break\-glass one included; root through its csh wrapper): its password is asked once on the terminal and never kept.
+.TP
+\fB\-\-out\fR \fI<dir>\fR
+(support\-bundle) The directory to write (default: support\-bundle\-<UTC time> in the current directory; it must not exist). The map of what was replaced is <dir>.map, private.
+.RE
+.\" END GENERATED: command device support-bundle
+.TP
 .BI "device remove " "name[,name...] | \-\-all " [ \-y ]
 Remove devices from the registry, after confirmation (\c
 .B \-y
@@ -11879,9 +11918,9 @@ device hostname, device vendor, device port, device description,
 device location, device legacy\-ssh, device ios\-syntax,
 device hostkey, device import, scope devices, device config,
 device enroll, device collect, device onboard, device sync,
-config cisco, config juniper, config wti, host list, host show,
-scope staging, scope secret, scope snmp, device snmp, scope block,
-device block, scope show, breakglass list
+device support\-bundle, config cisco, config juniper, config wti,
+host list, host show, scope staging, scope secret, scope snmp,
+device snmp, scope block, device block, scope show, breakglass list
 .TP
 .B superuser
 Every verb not listed above, and every verb of the tiers below.
@@ -11993,10 +12032,11 @@ are:
 _phase, backend disable, backend enable, breakglass hold,
 breakglass release, console install, console remove, device add,
 device enroll, device notice, device remove, device rename,
-device ssh, group add, group edit, group remove, host enroll,
-host forget, host move, host rename, host sync, host unenroll, passwd,
-scope add, scope remove, scope rename, ssh, user add, user disable,
-user enable, user move, user passwd, user remove, user rename
+device ssh, device support\-bundle, group add, group edit,
+group remove, host enroll, host forget, host move, host rename,
+host sync, host unenroll, passwd, scope add, scope remove,
+scope rename, ssh, user add, user disable, user enable, user move,
+user passwd, user remove, user rename
 .TP
 .B "action, auth.notice"
 backup restore, config restore,
