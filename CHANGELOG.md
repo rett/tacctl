@@ -52,6 +52,25 @@ current behaviour; this file is where history lives.
    `config_syntax` (after a snapshot), and `rollback 0.2.3` removes it under
    either key.
 
+5. **Tab completion of `device ios-syntax` offers the Cisco devices, and of
+   `device netconf` the Junos devices.** The generated bash, zsh and fish
+   scripts and `tacctl shell` (the login console's included) offer only the
+   registry devices of that vendor, filtered to the caller's scopes as
+   before; enrolled hosts and the devices of other vendors are not offered.
+   The `?` listing keeps its columns (vendor, address, scope). What a typed
+   name is checked against does not change.
+
+6. **An unknown command is an error line, not the whole usage.** `tacctl
+   enroll` prints `[ERROR] Unknown command: 'enroll'`, then `Did you mean:
+   tacctl device enroll, tacctl host enroll?` (the verbs of that name, at most
+   four) and `Run 'tacctl' for the commands.` on standard error, and exits 1
+   as before; a word within two letters of a command is answered with that
+   command (`tacctl devce`: `Did you mean: tacctl device?`), a word that starts
+   with `-` is `Unknown option: '<word>'`. Nothing is printed on standard
+   output. A line of `tacctl shell` runs the command the same way and prints
+   the same lines. `tacctl`, `tacctl help`, `-h` and `--help` print the
+   top-level usage as before.
+
 ## 0.2.17 (2026-10-24)
 
 1. **Audit lines: one writer, a session id, no line lost to a signal, a

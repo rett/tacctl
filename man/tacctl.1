@@ -8164,6 +8164,7 @@ With no word the setting is shown. The setting is for Cisco devices (a registry 
 or an import that gives one to another vendor is refused, and
 .B "device vendor"
 takes it away from a device that stops being Cisco, saying so).
+Tab completion offers the Cisco devices of the caller's scopes.
 A change of the setting says, in one line, when the stored pull would now be
 planned differently
 .RB ( "device config plan" ),
@@ -8213,6 +8214,7 @@ map in
 a file or an import that gives one to a device of another vendor is refused, and
 .B "device vendor"
 takes it away from a device that stops being Junos, saying so.
+Tab completion offers the Junos devices of the caller's scopes.
 .B \-\-apply
 runs
 .B "device config apply"
@@ -13621,7 +13623,20 @@ an apply that applied none of its devices and found none already applied:
 .B "\-\-confirmed \-\-yes"
 that skipped them all), a step of a lifecycle phase that failed. An unknown
 sub-command prints the
-usage of its family and ends with 1 as well. Nothing was changed unless the
+usage of its family and ends with 1 as well. An unknown command
+.RB ( "tacctl enroll" )
+prints on standard error one error line that names it, the commands it
+may have meant (the verbs of that name,
+.BR "device enroll" " and " "host enroll" ,
+or a command within two letters of it) and a pointer to
+.B tacctl
+for the list, and ends with 1;
+.BR tacctl ,
+.BR "tacctl help" ,
+.B \-h
+and
+.B \-\-help
+print the usage and end with 1. Nothing was changed unless the
 message says what was.
 .TP
 .B 2

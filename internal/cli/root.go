@@ -70,14 +70,21 @@ func newRoot(inv *invocation) *cobra.Command {
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.DisableSuggestions = true
 	root.DisableAutoGenTag = true
-	// No command, 'help', '-h', '--help' or a word that is no command: the
-	// top-level usage on stdout, exit 1 (bin/tacctl.sh's '*) usage; exit 1',
-	// after the tier gate as every command).
-	topUsage := inv.native(noPreflight, func([]string) error {
+	// No command, 'help', '-h' or '--help': the top-level usage on stdout,
+	// exit 1 (after the tier gate as every command). A word that is no
+	// command is an error that names it (unknownCommand), exit 1. 'help'
+	// reaches the root's RunE: the stand-in is no child of it.
+	root.RunE = inv.native(noPreflight, func(args []string) error {
+		if w := arg(args, 0); w != "" && w != "help" && w != "-h" && w != "--help" {
+			return inv.unknownCommand(root, w)
+		}
 		inv.writeTopUsage()
 		return exit(1)
 	})
-	root.RunE, help.RunE = topUsage, topUsage
+	help.RunE = inv.native(noPreflight, func([]string) error {
+		inv.writeTopUsage()
+		return exit(1)
+	})
 	attachCompletion(inv, root)
 	applyTopShorts(root)
 	configure(root)

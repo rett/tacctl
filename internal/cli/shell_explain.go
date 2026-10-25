@@ -369,6 +369,8 @@ func listKindName(spec Spec, rest []string) string {
 		return kind
 	case KindEnabledBackends:
 		return KindBackends
+	case KindCiscoDevices, KindJuniperDevices:
+		return KindDevices
 	case KindFile:
 		return "files"
 	}

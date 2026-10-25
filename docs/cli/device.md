@@ -215,7 +215,7 @@ device ios-syntax <name> [auto|ios12|modern [--apply]]
     devices only (a device that stops being Cisco through `device vendor` loses the setting, and the
     verb says so); one that the last pull's image contradicts is shown as such; `--apply` as for the
     fields above (the apply writes to Junos devices only in this release, so it is refused here
-    before the setting changes)
+    before the setting changes); Tab offers the Cisco devices
 
 device netconf <name> [show|enable|disable|leave|clear] [--connection-limit <n>|none]
                [--rate-limit <n>|none] [--apply]
@@ -227,7 +227,7 @@ device netconf <name> [show|enable|disable|leave|clear] [--connection-limit <n>|
     `device show` has a `NETCONF` row, and `--json` a `netconf` object, when a Junos device's
     setting is not the default. A device that stops being Junos through `device vendor` loses the
     setting, and a registry file or an import that gives one to another vendor is refused; `--apply`
-    as for the fields above
+    as for the fields above; Tab offers the Junos devices
 
 device stale-days [<n>]
 

@@ -53,6 +53,10 @@ const (
 	// the device registry's (registerDeviceNames).
 	KindHosts   = "hosts"
 	KindDevices = "devices"
+	// KindCiscoDevices and KindJuniperDevices are the registry devices of
+	// one vendor (no host): 'device ios-syntax' and 'device netconf'.
+	KindCiscoDevices   = KindDevices + ".cisco"
+	KindJuniperDevices = KindDevices + ".juniper"
 	// KindBreakGlass are the break-glass users recorded for the scope typed
 	// before (the first positional of 'scope breakglass').
 	KindBreakGlass = "breakglass-users"

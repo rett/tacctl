@@ -125,9 +125,9 @@ var deviceSpecs = map[string]Spec{
 	"location":    {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}, Flags: []Flag{{Names: []string{"--from-device"}}, flagYes, flagApply}},
 	"legacy-ssh":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "enable|disable"}},
 	// The Cisco configuration syntax (D113).
-	"ios-syntax": {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "auto|ios12|modern"}, Flags: []Flag{flagApply}},
+	"ios-syntax": {MinArgs: 1, MaxArgs: 2, Args: []string{KindCiscoDevices, "auto|ios12|modern"}, Flags: []Flag{flagApply}},
 	// The NETCONF service of a Junos device (0.2.10, D145).
-	"netconf":    {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "show|enable|disable|leave|clear"}, Flags: deviceNetconfFlags},
+	"netconf":    {MinArgs: 1, MaxArgs: 2, Args: []string{KindJuniperDevices, "show|enable|disable|leave|clear"}, Flags: deviceNetconfFlags},
 	"stale-days": {MaxArgs: 1, Args: []string{""}},
 	// 'notice list [<name>] [--all]' and 'notice <name> ack|unack <kind>'
 	// (0.2.18, D274): three words are the second form, so a device named
