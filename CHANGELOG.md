@@ -65,6 +65,14 @@ current behaviour; this file is where history lives.
    `<dir>.map` (mode 0600), beside the directory. `--vendor` reads a device
    as another vendor for one run; the registered vendor is the default.
 
+7. **A block holds its own hierarchy only, pinned by a test.** The Junos
+   `system` block accepts only `set|delete system ...`, the `snmp` block only
+   `set|delete snmp ...`, the IOS blocks only their own lines; a statement of
+   another hierarchy, a second statement on a line, a `;` or a pipe is an
+   error finding, so a block that holds one is refused at `edit` and `check`
+   and is never rendered in part. No behavior changed; one test now covers
+   all four block grammars.
+
 ## 0.2.18 (2026-10-24)
 
 1. **`device config-syntax` is now `device ios-syntax`, and `device add
