@@ -70,6 +70,9 @@ var (
 	reJunosSetVersion = regexp.MustCompile(`^set version ("[^"]+"|\S+)$`)
 	reJunosVersion    = regexp.MustCompile(`^Junos:\s+(\S+)`)
 	reJunosModel      = regexp.MustCompile(`^Model:\s+(\S.*)$`)
+	// reJunosOldRelease is the release line of a Junos that prints no
+	// 'Junos:' line (12.3 on an EX).
+	reJunosOldRelease = regexp.MustCompile(`^JUNOS (?:Base OS boot|Software Release) \[(\S+)\]\s*$`)
 )
 
 // JunosRelease is the release a Junos configuration states ('set version
@@ -137,12 +140,22 @@ func firstWord(v string) string {
 }
 
 // JunosVersion is the release and the model of the output of 'show version'
-// (its 'Junos:' and 'Model:' lines); the first of each wins (a device with
-// two routing engines prints a block for each). "" for a field the output
-// does not carry.
+// (its 'Junos:' and 'Model:' lines; the 'JUNOS Base OS boot [x]' line for a
+// release when there is no 'Junos:' line); the first of each wins (a device
+// with two routing engines prints a block for each). "" for a field the
+// output does not carry.
 func JunosVersion(out string) (release, model string) {
+	old := ""
+	defer func() {
+		if release == "" {
+			release = old
+		}
+	}()
 	for _, l := range strings.Split(out, "\n") {
 		l = strings.TrimSpace(l)
+		if m := reJunosOldRelease.FindStringSubmatch(l); m != nil && old == "" {
+			old = cleanFact(m[1])
+		}
 		if release == "" {
 			if m := reJunosVersion.FindStringSubmatch(l); m != nil {
 				release = cleanFact(m[1])

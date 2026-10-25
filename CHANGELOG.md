@@ -17,7 +17,17 @@ current behaviour; this file is where history lives.
    trains) failed with `show version: no Hostname or Junos line`. The release
    is now also read from the `JUNOS Base OS boot [...]` or `JUNOS Software
    Release [...]` line, and the error names what is missing (the hostname,
-   the release, or both, with the first line of the answer).
+   the release, or both, with the first line of the answer). The release
+   fact of `device config pull` reads it the same way.
+
+3. **The login's permissions are read from the name of each row.** Junos 15.1
+   and later print `show cli authorization` rows as `name -- what it
+   allows`; every word of the description was taken for a permission, so a
+   class passed the "may commit" check by the word `all` in "Can view all
+   configuration". Only the name before the dashes counts now. A class may
+   commit with `all`, or with `all-control` and `configure` (a super-user's
+   list shows the bits it stands for and no `all` row), so a class that has
+   all of them still applies.
 
 ## 0.2.18 (2026-10-24)
 

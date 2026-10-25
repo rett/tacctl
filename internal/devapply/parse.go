@@ -256,7 +256,8 @@ func parseHistory(out string) (History, error) {
 
 // parseAuthorization reads 'show cli authorization': the class from the
 // first line, the permissions from the indented lines under
-// 'Permissions:'.
+// 'Permissions:' (the name of each row; Junos 15.1 and later print 'name --
+// description').
 func parseAuthorization(out string) (Login, error) {
 	ls := nonBlank(lines(out))
 	if row := classify(ls); row != "" {
@@ -281,7 +282,11 @@ func parseAuthorization(out string) (Login, error) {
 		case t == "Permissions:":
 			in, seen = true, true
 		case in && (strings.HasPrefix(l, " ") || strings.HasPrefix(l, "\t")):
-			for _, w := range strings.Fields(t) {
+			// A row is 'name -- what it allows' ('admin-control-- ...' for a
+			// long name); the words after the dashes are no permissions.
+			// A row without dashes is a list of names.
+			names, _, _ := strings.Cut(t, "--")
+			for _, w := range strings.Fields(names) {
 				if !slices.Contains(lg.Permissions, w) {
 					lg.Permissions = append(lg.Permissions, w)
 				}
@@ -298,7 +303,7 @@ func parseAuthorization(out string) (Login, error) {
 
 // lockedBy reads the holder from the answer of a refused 'configure
 // exclusive': the first word of the line after the refusal [C: '  admin
-// terminal pts/0 (pid 84557) on since 2026-10-13 20:02:28 AKDT'].
+// terminal pts/0 (pid 84557) on since 2026-10-13 20:02:28 UTC'].
 func lockedBy(body []string) string {
 	body = nonBlank(body)
 	for i, l := range body {

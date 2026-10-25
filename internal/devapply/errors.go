@@ -76,7 +76,7 @@ var (
 var reHistoryEntry = regexp.MustCompile(`^(\d+)\s+(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?: [A-Za-z][A-Za-z0-9+-]*)?) by (\S+) via (\S+)(?:\s+(.*))?$`)
 
 // reHistoryRescue is the line 'show system commit' ends with when a rescue
-// configuration is saved [C: 'rescue 2024-01-04 11:42:38 AKST by root via
+// configuration is saved [C: 'rescue 2024-01-04 11:42:38 UTC by root via
 // cli']. It is a marker, no entry of the history.
 var reHistoryRescue = regexp.MustCompile(`^rescue\s+\d{4}-\d\d-\d\d \d\d:\d\d:\d\d \S+ by \S+ via \S+(\s.*)?$`)
 
