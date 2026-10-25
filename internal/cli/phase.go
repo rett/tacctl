@@ -1,6 +1,6 @@
 package cli
 
-// '_phase <backend> <install|upgrade|uninstall> <phase>[,<phase>...]
+// '_phase <backend> install|upgrade|uninstall <phase>[,<phase>...]
 // [<tree>|--keep-logs]': one or more lifecycle phases of one backend, run
 // on their own (docs/plans/go-rewrite.md 2.3 and 3.2, Decision 14). It is
 // hidden, with the same low surface as _completion-names: not in the usage,
@@ -41,7 +41,7 @@ import (
 	"github.com/rett/tacctl/internal/backend"
 )
 
-const phaseUsage = "Usage: tacctl _phase <backend> <install|upgrade|uninstall> <phase>[,<phase>...] [<tree>|--keep-logs]"
+const phaseUsage = "Usage: tacctl _phase <backend> install|upgrade|uninstall <phase>[,<phase>...] [<tree>|--keep-logs]"
 
 // lifecyclePhases are the phases of each lifecycle command, in order.
 var lifecyclePhases = map[string][]backend.Phase{

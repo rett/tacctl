@@ -43,6 +43,9 @@ var completionArgKinds = map[string]func(inv *invocation, args []string) []strin
 	// name 'ssh' and 'device' accept; both filtered to the caller's scopes.
 	KindHosts:   (*invocation).hostNames,
 	KindDevices: (*invocation).deviceNames,
+	// The registry devices of one vendor, filtered to the caller's scopes.
+	KindCiscoDevices:   vendorNames("cisco"),
+	KindJuniperDevices: vendorNames("juniper"),
 	// The devices and hosts with a break-glass hold ('breakglass release').
 	KindHeld: (*invocation).heldNames,
 	// The shapes of 'device config apply' ('device config shapes --show').
@@ -54,8 +57,10 @@ var completionArgKinds = map[string]func(inv *invocation, args []string) []strin
 // in the same order, behind the same scope filter, as without --desc. A
 // kind that is not here answers --desc with its plain names.
 var completionDescKinds = map[string]func(inv *invocation) []string{
-	KindHosts:   (*invocation).hostDescs,
-	KindDevices: (*invocation).deviceDescs,
+	KindHosts:          (*invocation).hostDescs,
+	KindDevices:        (*invocation).deviceDescs,
+	KindCiscoDevices:   vendorDescs("cisco"),
+	KindJuniperDevices: vendorDescs("juniper"),
 }
 
 // descLine is 'name<TAB>description' with the words of the description
@@ -112,14 +117,7 @@ func (inv *invocation) deviceDescs() []string {
 	f := inv.callerScopes()
 	by := map[string]string{}
 	for _, e := range res.Visible(devreg.ScopeFilter{Restricted: f.restricted, Scopes: f.scopes}) {
-		where := e.Address
-		if where == "" {
-			where = hostOf(e.Target)
-		}
-		if where == "" {
-			where = e.Hostname
-		}
-		by[e.Name] = descLine(e.Name, e.Vendor, where, e.Scope)
+		by[e.Name] = entryDesc(e)
 	}
 	out := make([]string, 0, len(names))
 	for _, n := range names {
@@ -130,6 +128,61 @@ func (inv *invocation) deviceDescs() []string {
 		}
 	}
 	return out
+}
+
+// entryDesc is the 'devices' line of an entry: 'name<TAB><vendor> <address>
+// <scope>'.
+func entryDesc(e devreg.Entry) string {
+	where := e.Address
+	if where == "" {
+		where = hostOf(e.Target)
+	}
+	if where == "" {
+		where = e.Hostname
+	}
+	return descLine(e.Name, e.Vendor, where, e.Scope)
+}
+
+// vendorEntries are the registry devices of vendor (never an enrolled
+// host) that the caller's scopes allow, sorted by name. A registry that
+// cannot be read is no entries.
+func (inv *invocation) vendorEntries(vendor string) []devreg.Entry {
+	_, res, err := inv.deviceLoad()
+	if err != nil {
+		return nil
+	}
+	f := inv.callerScopes()
+	var out []devreg.Entry
+	for _, e := range res.Visible(devreg.ScopeFilter{Restricted: f.restricted, Scopes: f.scopes}) {
+		if e.Source == devreg.SourceDevice && e.Vendor == vendor {
+			out = append(out, e)
+		}
+	}
+	slices.SortFunc(out, func(a, b devreg.Entry) int { return strings.Compare(a.Name, b.Name) })
+	return out
+}
+
+// vendorNames answers a vendor's devices kind: the names of vendorEntries.
+func vendorNames(vendor string) func(inv *invocation, args []string) []string {
+	return func(inv *invocation, _ []string) []string {
+		var out []string
+		for _, e := range inv.vendorEntries(vendor) {
+			out = append(out, e.Name)
+		}
+		return out
+	}
+}
+
+// vendorDescs answers a vendor's devices kind with --desc: the lines of
+// the 'devices' kind, for vendorEntries.
+func vendorDescs(vendor string) func(inv *invocation) []string {
+	return func(inv *invocation) []string {
+		var out []string
+		for _, e := range inv.vendorEntries(vendor) {
+			out = append(out, entryDesc(e))
+		}
+		return out
+	}
 }
 
 // scopeFilter is what a caller may see of the registries: everything for

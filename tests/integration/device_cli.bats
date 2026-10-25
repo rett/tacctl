@@ -147,7 +147,7 @@ devices:
     [[ ! -e "$DEVICES" ]]
     run "$TACCTL_BIN_SCRIPT" device add switch 10.99.0.1 --vendor juniper --allow-generic --no-host-key
     assert_success
-    run "$TACCTL_BIN_SCRIPT" device notices
+    run "$TACCTL_BIN_SCRIPT" device notice list
     plain
     assert_output --partial "switch  generic-name:"
     assert_output --partial "tacctl device rename switch <new>"
@@ -163,7 +163,7 @@ devices:
     run "$TACCTL_BIN_SCRIPT" device show switch --all
     plain
     assert_output --partial "generic-name (acknowledged)"
-    run "$TACCTL_BIN_SCRIPT" device notices switch --all
+    run "$TACCTL_BIN_SCRIPT" device notice list switch --all
     plain
     assert_output --partial "switch  generic-name (acknowledged): "
 }
@@ -208,18 +208,18 @@ devices:
     assert_failure 1
 }
 
-@test "device config-syntax: the Cisco syntax is a setting of its own, and legacy-ssh sets none" {
+@test "device ios-syntax: the Cisco syntax is a setting of its own, and legacy-ssh sets none" {
     "$TACCTL_BIN_SCRIPT" device add old-ios 10.99.0.1 --vendor cisco --legacy-ssh --no-host-key
     "$TACCTL_BIN_SCRIPT" device add jun1 10.99.0.2 --vendor juniper --no-host-key
-    run "$TACCTL_BIN_SCRIPT" device config-syntax old-ios
+    run "$TACCTL_BIN_SCRIPT" device ios-syntax old-ios
     assert_success
     plain
     assert_output "auto (unknown until the device is pulled: tacctl device config pull old-ios)"
-    run "$TACCTL_BIN_SCRIPT" device config-syntax old-ios ios12
+    run "$TACCTL_BIN_SCRIPT" device ios-syntax old-ios ios12
     assert_success
-    run "$TACCTL_BIN_SCRIPT" device config-syntax old-ios
+    run "$TACCTL_BIN_SCRIPT" device ios-syntax old-ios
     assert_output "ios12"
-    run grep -c 'config_syntax: ios12' "${TACCTL_STATE_DIR}/devices.yaml"
+    run grep -c 'ios_syntax: ios12' "${TACCTL_STATE_DIR}/devices.yaml"
     assert_output "1"
     run "$TACCTL_BIN_SCRIPT" device show old-ios
     assert_success
@@ -228,47 +228,47 @@ devices:
     assert_line "  Config syntax: ios12"
     run "$TACCTL_BIN_SCRIPT" device export
     assert_success
-    assert_output --partial "config_syntax: ios12"
-    run "$TACCTL_BIN_SCRIPT" device config-syntax old-ios auto
+    assert_output --partial "ios_syntax: ios12"
+    run "$TACCTL_BIN_SCRIPT" device ios-syntax old-ios auto
     assert_success
-    run grep -c config_syntax "${TACCTL_STATE_DIR}/devices.yaml"
+    run grep -c ios_syntax "${TACCTL_STATE_DIR}/devices.yaml"
     assert_output "0"
-    run "$TACCTL_BIN_SCRIPT" device config-syntax old-ios ios15
+    run "$TACCTL_BIN_SCRIPT" device ios-syntax old-ios ios15
     assert_failure 1
     assert_output --partial "Invalid configuration syntax 'ios15'. Use: auto, ios12, modern."
-    run "$TACCTL_BIN_SCRIPT" device config-syntax jun1 modern
+    run "$TACCTL_BIN_SCRIPT" device ios-syntax jun1 modern
     assert_failure 1
     assert_output --partial "has vendor 'juniper'; the configuration syntax is a Cisco setting"
 }
 
 @test "device vendor: a device that stops being Cisco loses its configuration syntax, and a file cannot give one to another vendor" {
     "$TACCTL_BIN_SCRIPT" device add old-ios 10.99.0.1 --vendor cisco --no-host-key
-    "$TACCTL_BIN_SCRIPT" device config-syntax old-ios ios12
+    "$TACCTL_BIN_SCRIPT" device ios-syntax old-ios ios12
     run "$TACCTL_BIN_SCRIPT" device vendor old-ios juniper
     assert_success
     assert_output --partial "The configuration syntax setting (ios12) was removed: it is a Cisco setting."
-    run grep -c config_syntax "${TACCTL_STATE_DIR}/devices.yaml"
+    run grep -c ios_syntax "${TACCTL_STATE_DIR}/devices.yaml"
     assert_output "0"
     # The registry file is checked on load, whatever the order of its keys.
     printf '%s\n' '# tacctl device registry' 'version: 1' 'devices:' \
-        '  jun-1: {address: 10.99.0.9, config_syntax: modern, vendor: juniper}' > "${BATS_TEST_TMPDIR}/bad.yaml"
+        '  jun-1: {address: 10.99.0.9, ios_syntax: modern, vendor: juniper}' > "${BATS_TEST_TMPDIR}/bad.yaml"
     run "$TACCTL_BIN_SCRIPT" device import --check "${BATS_TEST_TMPDIR}/bad.yaml"
     assert_failure
     assert_output --partial "is a Cisco setting"
 }
 
-@test "device add --config-syntax: stored only when set, and only for a Cisco device" {
-    run "$TACCTL_BIN_SCRIPT" device add lab-c 10.99.0.3 --vendor cisco --config-syntax modern --legacy-ssh --no-host-key
+@test "device add --ios-syntax: stored only when set, and only for a Cisco device" {
+    run "$TACCTL_BIN_SCRIPT" device add lab-c 10.99.0.3 --vendor cisco --ios-syntax modern --legacy-ssh --no-host-key
     assert_success
-    run "$TACCTL_BIN_SCRIPT" device config-syntax lab-c
+    run "$TACCTL_BIN_SCRIPT" device ios-syntax lab-c
     assert_output "modern"
-    run "$TACCTL_BIN_SCRIPT" device add lab-d 10.99.0.4 --vendor cisco --config-syntax auto --no-host-key
+    run "$TACCTL_BIN_SCRIPT" device add lab-d 10.99.0.4 --vendor cisco --ios-syntax auto --no-host-key
     assert_success
-    run grep -c config_syntax "${TACCTL_STATE_DIR}/devices.yaml"
+    run grep -c ios_syntax "${TACCTL_STATE_DIR}/devices.yaml"
     assert_output "1"
-    run "$TACCTL_BIN_SCRIPT" device add lab-e 10.99.0.5 --config-syntax ios12 --no-host-key
+    run "$TACCTL_BIN_SCRIPT" device add lab-e 10.99.0.5 --ios-syntax ios12 --no-host-key
     assert_failure 1
-    assert_output --partial "--config-syntax is the Cisco configuration syntax; give --vendor cisco"
+    assert_output --partial "--ios-syntax is the Cisco configuration syntax; give --vendor cisco"
 }
 
 @test "device rename: keeps the entry, refuses a taken or generic name" {
@@ -642,12 +642,12 @@ hostfacts() {
     assert_output --partial "web1: its address changed from 192.0.2.50 to 192.0.2.51; recorded 192.0.2.51 (notice address-changed: tacctl device show web1)."
     refute_output --partial "useradd there"
     stub_called "logger -t tacctl -p auth.warning host address-changed name=web1 old=192.0.2.50 new=192.0.2.51 by="
-    run "$TACCTL_BIN_SCRIPT" device notices
+    run "$TACCTL_BIN_SCRIPT" device notice list
     assert_output --partial "web1  address-changed: the address of 'web1' changed from 192.0.2.50 to 192.0.2.51"
     run "$TACCTL_BIN_SCRIPT" device notice web1 ack address-changed
     assert_success
     assert_output --partial "Notice 'address-changed' of 'web1' acknowledged."
-    run "$TACCTL_BIN_SCRIPT" device notices
+    run "$TACCTL_BIN_SCRIPT" device notice list
     refute_output --partial "address-changed"
     # device show leaves it out and counts it.
     run "$TACCTL_BIN_SCRIPT" device show web1

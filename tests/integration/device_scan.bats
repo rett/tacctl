@@ -110,12 +110,12 @@ two_scans() {
     assert_output --regexp "oob-con1 +203\.0\.113\.9 +wti +dmz +configured stale +2026-08-20 09:12 +asmith +radius +never +name-mismatch"
     assert_output --regexp "lab-rtr2 +198\.51\.100\.7 +juniper +- +unconfigured +never +- +- +- +-"
     assert_output --partial "seen data as of 2026-10-04 12:00 (tacctl device scan to refresh); stale after 30 days"
-    assert_output --partial "2 open notice(s): tacctl device notices"
+    assert_output --partial "2 open notice(s): tacctl device notice list"
 
     run at 2026-10-04T12:00:00Z status
     assert_success
     plain
-    assert_line "  Device notices: 2 (tacctl device notices)"
+    assert_line "  Device notices: 2 (tacctl device notice list)"
     assert_output --partial "    oob-con1  name-mismatch:"
     assert_output --partial "    access-sw2  generic-nas-id:"
 
@@ -181,7 +181,7 @@ two_scans() {
     assert_output --regexp "oob-con1 +203\.0\.113\.9 +wti +dmz +configured +rejected 2026-10-04 09:00 +asmith +radius"
     # The NAS-Identifier now matches: no name-mismatch; it changed:
     # identity-changed.
-    run at 2026-10-04T12:00:00Z device notices oob-con1
+    run at 2026-10-04T12:00:00Z device notice list oob-con1
     plain
     assert_output --partial "oob-con1  identity-changed: 203.0.113.9 now identifies as 'oob-con1' (was 'oob-con-01', changed 2026-10-04 09:00)"
     refute_output --partial "name-mismatch"
@@ -198,7 +198,7 @@ two_scans() {
     } > "$AUTHLOG"
     run at 2026-10-04T12:00:00Z device scan --backend radius
     assert_success
-    run at 2026-10-04T12:00:00Z device notices
+    run at 2026-10-04T12:00:00Z device notice list
     plain
     # 'sw1' and 'SW2' are the first labels of the registry names: no
     # name-mismatch; 'sw1' from two addresses is ambiguous, and the remedy

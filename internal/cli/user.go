@@ -1140,3 +1140,21 @@ func (inv *invocation) userScopeRemoveAll(username string, current []string) err
 	inv.echo("")
 	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
 }
+
+// usageLinesOf are the 'Usage:' lines of rows of cmd ('tacctl <cmd> <row>'),
+// the first led by 'Usage: ', the others lined up under it: the rows the
+// usage block lists, with the words typed so far ('lab' for '<scope>').
+func usageLinesOf(cmd string, rows ...string) []string {
+	out := make([]string, len(rows))
+	for i, r := range rows {
+		lead := "Usage: "
+		if i > 0 {
+			lead = "       "
+		}
+		out[i] = lead + "tacctl " + cmd + " " + r
+	}
+	return out
+}
+
+// withUsage is msg, then the usage lines.
+func withUsage(msg string, usage []string) []string { return append([]string{msg}, usage...) }

@@ -249,9 +249,9 @@ config wti --protocol radius
 # The runner has no device to log in to and no SUDO_USER: the verbs that log in
 # are refused first with the account rule, the rest by their own arguments.
 @fixture tacquito.multiscope.yaml
-@known 0.2.4 item 1: device config lists pull, diff, list and forget; 0.2.5 item 37: and plan; 0.2.9 item 4: and apply, shapes
+@known 0.2.4 item 1: device config lists pull, diff, list and forget; 0.2.5 item 37: and plan; 0.2.9 item 4: and apply, shapes; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 device config
-@known 0.2.4 item 1: device config lists pull, diff, list and forget; 0.2.5 item 37: and plan; 0.2.9 item 4: and apply, shapes
+@known 0.2.4 item 1: device config lists pull, diff, list and forget; 0.2.5 item 37: and plan; 0.2.9 item 4: and apply, shapes; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 device config help
 @known 0.2.4 item 1: device config pull is new
 device config pull
@@ -287,7 +287,7 @@ device config forget
 device config forget nosuch
 @known 0.2.4 item 3: device config forget is new
 device config forget --all
-@known 0.2.4 item 3: device config forget is new; 0.2.9 item 4: the usage lists apply and shapes
+@known 0.2.4 item 3: device config forget is new; 0.2.9 item 4: the usage lists apply and shapes; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 device config frob
 @known 0.2.9 item 4: device config apply is new
 device config apply
@@ -343,11 +343,11 @@ config devices apply-confirm-timeout 2
 config devices apply-pause 0 ;; config devices
 @known 0.2.9 item 1: config devices apply-pause is new
 config devices apply-pause 3601
-@known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 2: the notices pointer names device notice list
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device list
 @known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.4 item 14: device show has the SNMP rows; 0.2.5 item 25: a Cisco device's show has a Config syntax row; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device show core-sw1
-@known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.5 item 25: a Cisco device has config_syntax in the JSON; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.5 item 25: a Cisco device has config_syntax in the JSON; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 4: the setting is stored and printed as ios_syntax
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device list --json
 @known 0.2.4 item 6: config devices is new; 0.2.9 item 1: config devices lists apply-confirm-timeout and apply-pause
 config devices
@@ -363,9 +363,9 @@ config devices max-concurrency 65
 config devices transport pigeon
 @known 0.2.4 item 6: config devices is new
 config devices timeout 9
-@known 0.2.4 item 6: config devices is new; 0.2.9 item 1: config devices lists apply-confirm-timeout and apply-pause
+@known 0.2.4 item 6: config devices is new; 0.2.9 item 1: config devices lists apply-confirm-timeout and apply-pause; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 config devices frob
-@known 0.2.4 item 6: the config usage lists devices
+@known 0.2.4 item 6: the config usage lists devices; 0.2.18 item 1: --legacy names the device's ios-syntax; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 config
 
 # --- a device's own SNMP settings (0.2.4, D72) -----------------------------------------
@@ -407,14 +407,14 @@ device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 version v2c ;; device show core-sw1 ;; scope snmp lab show
 
 # --- the Cisco configuration syntax (0.2.5, D113) --------------------------------
-@known 0.2.5 item 25: device config-syntax is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
-device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device config-syntax core-sw1
-@known 0.2.5 item 25: device config-syntax is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
-device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device config-syntax core-sw1 ios12 ;; device export
-@known 0.2.5 item 25: device config-syntax is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
-device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device config-syntax core-sw1 ios15
-@known 0.2.5 item 25: device add --config-syntax is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
-device add core-sw1 10.99.0.1 --vendor cisco --config-syntax modern --no-host-key --no-lookup ;; device export
+@known 0.2.5 item 25: device config-syntax is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 1: the verb is ios-syntax
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device ios-syntax core-sw1
+@known 0.2.5 item 25: device config-syntax is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 1: the verb is ios-syntax; 0.2.18 item 4: the setting is stored and printed as ios_syntax
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device ios-syntax core-sw1 ios12 ;; device export
+@known 0.2.5 item 25: device config-syntax is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 1: the verb is ios-syntax
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device ios-syntax core-sw1 ios15
+@known 0.2.5 item 25: device add --config-syntax is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 item 1: the flag is --ios-syntax; 0.2.18 item 4: the setting is stored and printed as ios_syntax
+device add core-sw1 10.99.0.1 --vendor cisco --ios-syntax modern --no-host-key --no-lookup ;; device export
 
 # --- config cisco source-interface (0.2.5 item 33) --------------------------------
 @known 0.2.5 item 33: config cisco source-interface is new (0.2.3 refuses the word)

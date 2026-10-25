@@ -6,7 +6,7 @@ package cli
 // prune (a Junos device's snmp or system hierarchy, an IOS device's
 // 'snmp-server' lines and the access lists its communities name).
 //
-//	tacctl scope block <scope> {juniper|cisco} adopt <device> <block>
+//	tacctl scope block <scope> cisco|juniper adopt <device> <block>
 //	tacctl device block <device> adopt <block>
 //
 // The read is a device pull's: the same password source and cache, the same

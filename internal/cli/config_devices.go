@@ -86,7 +86,7 @@ func configDevicesCmd(inv *invocation) *cobra.Command {
 // configDevicesUsage is the usage of 'config devices'.
 func configDevicesUsage() string {
 	var b strings.Builder
-	b.WriteString("\n" + ui.Bold + "Device reads" + ui.NC + "\n\nUsage: tacctl config devices [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport] [value]\n\n")
+	b.WriteString("\n" + ui.Bold + "Device reads" + ui.NC + "\n\nUsage: tacctl config devices [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport] [<value>]\n\n")
 	for _, v := range configDevicesVerbs {
 		fmt.Fprintf(&b, "  %-38s  %s\n", v[0], v[1])
 	}
@@ -146,7 +146,7 @@ func (inv *invocation) configDevices(args []string) error {
 			"  Usage: tacctl config devices max-concurrency <1-64>", "The most devices read at once set to %v.")
 	case "transport":
 		return inv.configDevicesSet(rest, "device.config.transport", "Transport",
-			"  Usage: tacctl config devices transport <auto|netconf|ssh>", "The default transport set to %v.")
+			"  Usage: tacctl config devices transport auto|netconf|ssh", "The default transport set to %v.")
 	case "timeout":
 		return inv.configDevicesSet(rest, "device.config.timeout", "Time per device",
 			"  Usage: tacctl config devices timeout <10-600>", "The time one device may take set to %v s.")
@@ -161,7 +161,7 @@ func (inv *invocation) configDevices(args []string) error {
 			"  Usage: tacctl config devices apply-pause <0-3600>", "The pause between the devices of an apply set to %v s.")
 	case "apply-transport":
 		return inv.configDevicesSet(rest, "device.apply.transport", "Apply transport",
-			"  Usage: tacctl config devices apply-transport <auto|cli|netconf>", "The transport of an apply set to %v.")
+			"  Usage: tacctl config devices apply-transport cli|auto|netconf", "The transport of an apply set to %v.")
 	default:
 		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
 		inv.write(configDevicesUsage())
@@ -172,7 +172,7 @@ func (inv *invocation) configDevices(args []string) error {
 // configDevicesShow prints the settings.
 func (inv *invocation) configDevicesShow(rest []string) error {
 	if len(rest) > 0 {
-		return inv.usageErr("Unknown argument: '"+rest[0]+"'", "Usage: tacctl config devices [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport] [value]")
+		return inv.usageErr("Unknown argument: '"+rest[0]+"'", "Usage: tacctl config devices [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport] [<value>]")
 	}
 	s := inv.deviceConfigSettings()
 	src := func(path string) string {

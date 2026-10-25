@@ -5,9 +5,9 @@
 # Run: tests/diff/run.sh config
 @fixture tacquito.minimal.yaml
 
-@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface; 0.2.18 item 1: --legacy names the device's ios-syntax; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 config
-@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface; 0.2.18 item 1: --legacy names the device's ios-syntax; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 config bogus
 config show
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user
@@ -20,12 +20,14 @@ config defaults
 config defaults extra
 
 # get / get-list
+@known 0.2.18 item 7: the usage line writes the placeholder as <name> (an optional one [<name>], a choice of words without <>)
 config get
 config get bcrypt.cost
 config get bcrypt.cost 99
 config get no.such.key
 config get no.such.key fallback
 config get scope.default
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config get-list
 config get-list commands
 config get-list prefix_allow
@@ -64,16 +66,20 @@ config loglevel
 config loglevel debug ;; config loglevel
 config loglevel info ;; config loglevel
 config loglevel trace
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config listen
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config listen show
 config listen tcp
 @known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config listen tcp 10.1.0.1:49 ;; config listen show
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config listen tcp6 [::]:49 ;; config listen show
 @known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config listen tcp 10.1.0.1:49 ;; config listen reset ;; config listen show
 config listen bogus
 config listen tcp notanaddress
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config listen tcp 10.1.0.1:49 --listener mgmt ;; config listen show
 config listen show --listener nosuch
 config listen --backend nosuch
@@ -95,6 +101,7 @@ config metrics bogus
 # connection and management ACLs
 config allow
 config allow list
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config allow bogus
 config allow add
 config allow add notacidr
@@ -122,7 +129,7 @@ config deny add 10.66.0.9/16 ;; config deny list
 config deny add 10.66.0.0/16 ;; config allow add 10.0.0.0/8 ;; config validate
 config deny add notacidr
 config deny remove 10.66.0.0/16
-@known 0.2.3 item 74: the config mgmt-acl usage names the WTI IP Tables
+@known 0.2.3 item 74: the config mgmt-acl usage names the WTI IP Tables; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 config mgmt-acl
 @known 0.2.7 item 20: the mgmt-acl usage and its "Add with" hint name the optional :<services>
 config mgmt-acl list
@@ -148,13 +155,15 @@ config mgmt-acl juniper-name
 config mgmt-acl juniper-name CUSTOM-MGMT-ACL ;; config mgmt-acl juniper-name
 
 # sudoers (show and remove only: install writes root-owned files, which a non-root run cannot)
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config sudoers
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config sudoers show
 config sudoers bogus
 config sudoers remove
-@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax; 0.2.9 item 2: the cache's alias gains device config apply, device onboard and device collect; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax; 0.2.9 item 2: the cache's alias gains device config apply, device onboard and device collect; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 items 1 to 3: the rules of device config-syntax, notices and ssh-config are device ios-syntax, notice list and client-config
 config sudoers tiers
-@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax; 0.2.9 item 2: the cache's alias gains device config apply, device onboard and device collect; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax; 0.2.9 item 2: the cache's alias gains device config apply, device onboard and device collect; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 items 1 to 3: the rules of device config-syntax, notices and ssh-config are device ios-syntax, notice list and client-config
 config sudoers tiers show
 config sudoers tiers bogus
 
@@ -176,7 +185,9 @@ config restore
 config restore {TS}
 
 # more error paths: bad values and missing arguments after a good state
+@known 0.2.18 item 7: the usage line writes the placeholder as <name> (an optional one [<name>], a choice of words without <>)
 config get ''
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config get-list ''
 config bcrypt-cost 10 11
 config bcrypt-cost -1
@@ -218,9 +229,9 @@ config diff ../../etc/passwd
 config restore nosuchid
 config restore ../../etc/passwd
 config restore a b
-@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface; 0.2.18 item 1: --legacy names the device's ios-syntax; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 config frobnicate
-@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface; 0.2.18 item 1: --legacy names the device's ios-syntax; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 config frobnicate extra
 config loglevel bogus
 config password-age abc
@@ -230,7 +241,9 @@ config password-min-length 1
 config password-min-length 0
 config secret-min-length 1
 config secret-min-length 500
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config deny bogus
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config allow bogus x
 config mgmt-acl bogus x
 config metrics address bad
@@ -238,10 +251,11 @@ config metrics address ''
 config listen tcp 1.2.3.4
 config listen tcp6 1.2.3.4:49
 config get-list a b c
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config sudoers show extra
 config sudoers remove extra
 config sudoers tiers remove extra
-@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax; 0.2.9 item 2: the cache's alias gains device config apply, device onboard and device collect; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax; 0.2.9 item 2: the cache's alias gains device config apply, device onboard and device collect; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 items 1 to 3: the rules of device config-syntax, notices and ssh-config are device ios-syntax, notice list and client-config
 config sudoers tiers show extra
 @known 0.2.15 item 6: the usage of backup restore and config restore names --keep-uids
 config restore {TS} --bogus
@@ -269,9 +283,11 @@ config listen --listener=Bad_Name show
 config listen --listener=
 config listen --backend=ldap
 config listen --bogus
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config listen show extra
 config listen --listener mgmt show
 config listen --listener mgmt reset
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config listen tcp 10.1.0.1:49 --listener mgmt ;; config listen --listener=mgmt show ;; config listen --listener mgmt reset ;; config listen show
 
 # values with backslash escapes reach info/warn/error through echo -e
@@ -293,7 +309,7 @@ config sudoers install 'bad group' <<< y
 config sudoers install wheel extra <<< n
 # Unprivileged, the real 'install -o root' fails; 0.1.16 then exits under errexit and
 # leaves its mktemp copy of the drop-in in TMPDIR, 0.2.0 removes it (3.9 item 18).
-@known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind; 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax; 0.2.9 item 2: the cache's alias gains device config apply, device onboard and device collect; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind; 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK; 0.2.4 item 7: the tiers rules gain the device config rows (and, 0.2.5 item 44, device config plan); 0.2.4 item 7: the tiers rules grant device config list, show, pull and diff; 0.2.4 item 7: they keep TACCTL_ASKPASS for the command lines that use the password cache and grant console forget; 0.2.4 item 7: the engineer rows gain device snmp; 0.2.5 item 25: the engineer rows gain device config-syntax; 0.2.9 item 2: the cache's alias gains device config apply, device onboard and device collect; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.18 items 1 to 3: the rules of device config-syntax, notices and ssh-config are device ios-syntax, notice list and client-config
 config sudoers tiers install
 @known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind
 config sudoers install wheel <<< y
@@ -336,6 +352,7 @@ config show
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config validate
 config render
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
 config listen
 @fixture legacy.unrepresentable.yaml
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user

@@ -116,7 +116,7 @@ func (v *pullView) rowText(i int) string {
 		// A setting the device's own version line contradicts (D113: the
 		// setting wins; modern on a 12.x image is the lock-out direction).
 		if o.ImageSyntax != "" && r.Result.Status == batch.StatusOK {
-			text += "; warning: config-syntax is " + o.Syntax + " but the device says " + imageText(o.OS) +
+			text += "; warning: ios-syntax is " + o.Syntax + " but the device says " + imageText(o.OS) +
 				" (" + o.ImageSyntax + " syntax)"
 		}
 	}

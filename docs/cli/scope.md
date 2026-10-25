@@ -56,19 +56,24 @@ scope secret
     <name> show|set [<value>|--stdin]|generate  Per-scope shared secret (show prints the raw value +
     length/posture)
 
-scope protocols <name> list|set <csv>|clear
+scope protocols <name> [list]
+scope protocols <name> set <protocol>[,<protocol>...]
+scope protocols <name> clear
 
     Limit the scope to some protocols (tacacs, radius). A filter: empty (`clear`) means every
     enabled backend serves it
 
-scope vendor-attrs <name> [enable|disable <csv>]
+scope vendor-attrs <name> [show]
+scope vendor-attrs <name> enable|disable <vendor>[,<vendor>...]
 
     RADIUS: the vendors (cisco, juniper, wti) whose privilege attribute an Access-Accept carries for
     the scope's devices. Opt-in: a new scope sends none ("not sent"); its verbs are enable and
     disable. Stored in store.yaml, so a change re-renders and restarts the RADIUS backend. TACACS+
     is not affected. See server/radius.md, "What an Access-Accept carries"
 
-scope devices <name> [list|set <ip|cidr> <vendor>|unset <ip|cidr>]
+scope devices <name> [list]
+scope devices <name> set <ip|cidr> <vendor>
+scope devices <name> unset <ip|cidr>
 
     RADIUS: tag an address (a bare IP is a /32) of the scope with its vendor: it gets that vendor's
     attribute and no other, whatever the scope enables. The address must be one `scope lookup`
@@ -83,7 +88,7 @@ scope aaa-order <name> [tacacs-first|local-first]
     is still reachable — any local name that collides with a server user wins locally, so scope
     local accounts to emergency credentials only.
 
-scope exec-timeout <name> [minutes]
+scope exec-timeout <name> [<minutes>]
 
     Per-scope idle-session timeout for this scope's generated device configs. Cisco renders
     `exec-timeout <n> 0` on `line con 0` / `line vty 0 15`; Junos renders `set system login
@@ -91,13 +96,13 @@ scope exec-timeout <name> [minutes]
     16.1, which has no such statement). Range 0..60 (Junos's max); `0` disables idle expiry on both
     vendors. Default 60.
 
-scope tacacs-group <name> [label]
+scope tacacs-group <name> [<label>]
 
     Per-scope Cisco `aaa group server tacacs+ <LABEL>` name. Rendered into every AAA group +
     method-list line for that scope. Must conform to Cisco ACL naming rules (letter-start,
     letters/digits/_/-). Default `TACACS-GROUP`. Junos has no equivalent.
 
-scope radius-group <name> [label]
+scope radius-group <name> [<label>]
 
     The RADIUS twin of `tacacs-group`: the Cisco `aaa group server radius <LABEL>` name rendered by
     `config cisco --protocol radius`. Same naming rules. Default `RADIUS-GROUP`.
@@ -114,7 +119,7 @@ scope auth-method <name> [tacacs|radius|clear]
     <name> set` refuses a list without it. `config cisco --legacy` on a scope that resolves to
     RADIUS needs `--protocol tacacs`. Shown by `scope show`.
 
-scope mgmt-acl <name> list|add|remove|clear [entries]
+scope mgmt-acl <name> list|add|remove|clear [<entry>[,<entry>...]]
 
     Per-scope permit list; an entry is a `<cidr>` or a `<cidr>:tcp/22,udp/161,icmp` (a plain CIDR
     permits every protocol and port; `remove <cidr>` removes every entry of that CIDR). Mirrors the
@@ -151,7 +156,8 @@ scope snmp <name> contact [<text>|--clear]
 
     Show, set or remove the scope's SNMP contact (120 characters, no control characters, no `?`)
 
-scope snmp <name> port [<n>] | timeout [<seconds>]
+scope snmp <name> port [<n>]
+scope snmp <name> timeout [<seconds>]
 
     Show or set the scope's agent port and wait (the default's apply until set)
 
@@ -176,13 +182,13 @@ scope netconf <name> [show|enable|disable|leave] [--connection-limit <n>|none]
     (830); tacctl reaches NETCONF through the SSH subsystem, which they do not bound on Junos 25.4.
     `show` prints the setting. Stored as `netconf_scope.<name>.*`, only when set
 
-scope block <name> {juniper|cisco} list
+scope block <name> cisco|juniper list
 
     The scope's configuration blocks: each block's state (in force, no file, or a file `tacctl.yaml`
     does not name), size and what it states (communities, trap groups, statements), and the
     findings. Nothing secret. An engineer: their own scopes
 
-scope block <name> {juniper|cisco} show <block> [--reveal]
+scope block <name> cisco|juniper show <block> [--reveal]
 
     The block as it is in force, elided: `<secret:N>` for a community string, `<group:N>` for a trap
     group's name, `<secret>` for an NTP key, `<message: N lines, M characters>` for the login
@@ -190,7 +196,7 @@ scope block <name> {juniper|cisco} show <block> [--reveal]
     the superuser's too: `secret-read kind=block name=<scope>/<vendor>/<block>`; an engineer: their
     own scopes only)
 
-scope block <name> {juniper|cisco} check <block> [--file <path>|-] [--against <device>]
+scope block <name> cisco|juniper check <block> [--file <path>|-] [--against <device>]
 
     Lint the file in force, a file or standard input: every finding with its line, the objects that
     become owned, the statements that carry a secret (a count), the diff against the file in force
@@ -198,20 +204,20 @@ scope block <name> {juniper|cisco} check <block> [--file <path>|-] [--against <d
     device of the scope with the text in force and prints the statements of the block's section,
     from its last pull (nothing is written, no device is reached). Exit 1 on an error
 
-scope block <name> {juniper|cisco} set <block> (--file <path>|-) [-y]
+scope block <name> cisco|juniper set <block> (--file <path>|-) [-y]
 
     Superuser. Check the text, show the objects and the diff, ask, take a snapshot, write the file
     (0600, atomically) and name it in `tacctl.yaml`. A block read from standard input needs `-y`
     unless standard input is a terminal; a text that states nothing is refused (use `remove`);
     nothing is restarted
 
-scope block <name> {juniper|cisco} remove <block> [-y]
+scope block <name> cisco|juniper remove <block> [-y]
 
     Superuser. Take the block out of force and delete its file (asks, takes a snapshot first).
     Nothing is deleted from a device: what the block set is no longer rendered, and the next compare
     lists those statements as the device's own
 
-scope block <name> {juniper|cisco} edit <block> [-y]
+scope block <name> cisco|juniper edit <block> [-y]
 
     Superuser, at a terminal. Open the block in your editor (`VISUAL`, else `EDITOR`, else `editor`,
     else `vi`), run as you, never as root, on a private 0600 copy in a 0700 directory under
@@ -221,7 +227,7 @@ scope block <name> {juniper|cisco} edit <block> [-y]
     device, the scope's objects as comments) is logged before the editor starts: `secret-read
     kind=block`
 
-scope block <name> {juniper|cisco} adopt <device> <block> [-y]
+scope block <name> cisco|juniper adopt <device> <block> [-y]
 
     Superuser, at a terminal. Read the device's own statements of the block's hierarchy with your
     login (the password as `device config pull` asks it; nothing is stored) and open them in your
@@ -232,7 +238,7 @@ scope block <name> {juniper|cisco} adopt <device> <block> [-y]
     each access list a community names, `show running-config | section ip access-list standard
     <NAME>`. Logged `secret-read kind=block-adopt`
 
-scope mgmt-acl <name> cisco-name|juniper-name [label]
+scope mgmt-acl <name> cisco-name|juniper-name [<label>]
 
     Per-scope mgmt-acl / filter name. Mirrors the global `tacctl config mgmt-acl
     cisco-name|juniper-name`. Cisco renders `ip access-list standard <LABEL>` + `access-class
@@ -240,7 +246,9 @@ scope mgmt-acl <name> cisco-name|juniper-name [label]
     Fallback chain: per-scope override → global (`tacctl config mgmt-acl …`) → shipped default
     (`VTY-ACL` / `MGMT-ACL`).
 
-scope breakglass <name> list|add <user> [--role <r>]|remove <user>
+scope breakglass <name> [list]
+scope breakglass <name> add <user> [--role admin|operator|readonly]
+scope breakglass <name> remove <user>
 
     Per-scope break-glass local users of the device walkthroughs: names and roles (`admin` by
     default, `operator`, `readonly`) only. No password or hash is ever stored

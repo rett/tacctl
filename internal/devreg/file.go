@@ -37,6 +37,15 @@ type File struct {
 	// name: the address and the pinned host keys. linux-hosts itself is
 	// never written here (host enroll and sync record and pin).
 	Hosts []HostPin
+	// Notes are what the reader says of the file it read: a device that
+	// carries both ios_syntax and the key releases before 0.2.18 wrote,
+	// config_syntax, with different values (ios_syntax is used). Not
+	// written; the next write stores ios_syntax alone.
+	Notes []string
+	// syntaxKeyed: a device of the file read holds its configuration
+	// syntax setting under ios_syntax (the rollback to a release before
+	// 0.2.18 writes it back under OldSyntaxKey, rollback.go).
+	syntaxKeyed bool
 }
 
 // HostPin is the record of one enrolled host: the address its enrolment
@@ -339,11 +348,17 @@ func parse(data []byte) (*File, error) {
 				return nil, fail("devices must be a mapping of name to entry.")
 			}
 			for name, dv := range m.All() {
-				d, err := parseDevice(name, dv)
+				d, note, err := parseDevice(name, dv)
 				if err != nil {
 					return nil, err
 				}
 				f.Devices = append(f.Devices, d)
+				if note != "" {
+					f.Notes = append(f.Notes, note)
+				}
+				if _, ok := dv.(*yamlpy.Map).Get("ios_syntax"); ok {
+					f.syntaxKeyed = true
+				}
 			}
 		case "hosts":
 			if val == nil {
@@ -413,59 +428,72 @@ func strList(v any) ([]string, bool) {
 	return nil, false
 }
 
-func parseDevice(name string, v any) (*Device, error) {
+// OldSyntaxKey is the key of the configuration syntax setting before
+// 0.2.18 (D273): read as ios_syntax, never written (but by the rollback to
+// a release that reads only it, rollback.go).
+const OldSyntaxKey = "config_syntax"
+
+// parseDevice reads one device; note is "" unless the device has both
+// syntax keys with different values.
+func parseDevice(name string, v any) (*Device, string, error) {
 	m, ok := v.(*yamlpy.Map)
 	if !ok {
-		return nil, fail("device '" + name + "' must be a mapping.")
+		return nil, "", fail("device '" + name + "' must be a mapping.")
 	}
 	d := &Device{Name: name, Vendor: VendorOther}
 	bad := func(key string) error { return fail("device '" + name + "': invalid '" + key + "'.") }
+	var oldSyntax string
+	hasNew, hasOld := false, false
 	for k, val := range m.All() {
 		switch k {
-		case "address", "vendor", "hostname", "description", "location", "config_syntax":
+		case "address", "vendor", "hostname", "description", "location", "ios_syntax", OldSyntaxKey:
 			s, ok := val.(string)
 			if !ok {
-				return nil, bad(k)
+				return nil, "", bad(k)
 			}
-			if k == "config_syntax" {
+			if k == "ios_syntax" || k == OldSyntaxKey {
 				// auto is the absence of the key; a file that spells it is
 				// read as that, and anything but ios12 and modern is refused.
-				cs, err := ValidateConfigSyntax(s)
+				cs, err := ValidateIOSSyntax(s)
 				if err != nil || s == "" {
-					return nil, bad(k)
+					return nil, "", bad(k)
 				}
-				s = cs
+				if k == OldSyntaxKey {
+					oldSyntax, hasOld = cs, true
+					continue
+				}
+				s, hasNew = cs, true
 			}
 			*map[string]*string{"address": &d.Address, "vendor": &d.Vendor, "hostname": &d.Hostname,
-				"description": &d.Description, "location": &d.Location, "config_syntax": &d.ConfigSyntax}[k] = s
+				"description": &d.Description, "location": &d.Location, "ios_syntax": &d.IOSSyntax}[k] = s
 		case "port":
 			n, ok := val.(int)
 			if !ok {
-				return nil, bad(k)
+				return nil, "", bad(k)
 			}
 			d.Port = n
 		case "legacy_ssh":
 			b, ok := val.(bool)
 			if !ok {
-				return nil, bad(k)
+				return nil, "", bad(k)
 			}
 			d.LegacySSH = b
 		case "snmp":
 			sn, err := parseSNMP(name, val)
 			if err != nil {
-				return nil, err
+				return nil, "", err
 			}
 			d.SNMP = sn
 		case "netconf":
 			nc, err := parseNetconf(name, val)
 			if err != nil {
-				return nil, err
+				return nil, "", err
 			}
 			d.Netconf = nc
 		case "host_keys", "ack":
 			l, ok := strList(val)
 			if !ok {
-				return nil, bad(k)
+				return nil, "", bad(k)
 			}
 			if k == "ack" {
 				d.Ack = l
@@ -473,13 +501,20 @@ func parseDevice(name string, v any) (*Device, error) {
 				d.HostKeys = l
 			}
 		default:
-			return nil, fail("device '" + name + "': unknown key '" + k + "'.")
+			return nil, "", fail("device '" + name + "': unknown key '" + k + "'.")
 		}
 	}
 	if d.Address == "" {
-		return nil, fail("device '" + name + "': the address is required.")
+		return nil, "", fail("device '" + name + "': the address is required.")
 	}
-	return d, nil
+	note := ""
+	switch {
+	case hasOld && !hasNew:
+		d.IOSSyntax = oldSyntax
+	case hasOld && oldSyntax != d.IOSSyntax:
+		note = "device '" + name + "' has ios_syntax " + d.IOSSyntax + " and " + OldSyntaxKey + " " + oldSyntax + "; ios_syntax is used, and the next change of the registry drops " + OldSyntaxKey + "."
+	}
+	return d, note, nil
 }
 
 // parseSNMP reads a device's 'snmp:' map (D72): version, port, timeout and
@@ -590,7 +625,11 @@ func snmpDoc(s SNMP) *yamlpy.Map {
 }
 
 // doc is the file as a value for the emitter.
-func (f *File) doc() *yamlpy.Map {
+func (f *File) doc() *yamlpy.Map { return f.docWith("ios_syntax") }
+
+// docWith is doc with the configuration syntax setting under syntaxKey
+// (OldSyntaxKey for the rollback to a release before 0.2.18).
+func (f *File) docWith(syntaxKey string) *yamlpy.Map {
 	devs := yamlpy.NewMap()
 	for _, d := range f.Devices {
 		m := yamlpy.NewMap("address", d.Address, "vendor", d.Vendor)
@@ -603,8 +642,8 @@ func (f *File) doc() *yamlpy.Map {
 		if d.LegacySSH {
 			m.Set("legacy_ssh", true)
 		}
-		if d.ConfigSyntax != "" {
-			m.Set("config_syntax", d.ConfigSyntax)
+		if d.IOSSyntax != "" {
+			m.Set(syntaxKey, d.IOSSyntax)
 		}
 		if d.Description != "" {
 			m.Set("description", d.Description)

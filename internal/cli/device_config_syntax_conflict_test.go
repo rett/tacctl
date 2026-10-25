@@ -17,14 +17,14 @@ import (
 func TestSettingContradictingThePullIsShown(t *testing.T) {
 	b := newPullBox(t)
 	b.cisco("lab-c", true)
-	b.sb.dev("", "config-syntax", "lab-c", "modern")
+	b.sb.dev("", "ios-syntax", "lab-c", "modern")
 	b.serve("cisco", b.expectedSyntax("lab-c", false))
 	b.version(ciscoVersion12)
 
 	// pull, text: ok, compared as set, and the warning on the device's row.
 	out := b.run("device", "config", "pull", "lab-c")
 	if b.sb.code != 0 || !strings.Contains(out, "lab-c  ok via ssh") ||
-		!strings.Contains(out, "warning: config-syntax is modern but the device says IOS 12.4(15)T14 (ios12 syntax)") {
+		!strings.Contains(out, "warning: ios-syntax is modern but the device says IOS 12.4(15)T14 (ios12 syntax)") {
 		t.Fatalf("pull: %d\n%s", b.sb.code, out)
 	}
 	// pull, --json: the field and the line.
@@ -41,23 +41,23 @@ func TestSettingContradictingThePullIsShown(t *testing.T) {
 		t.Errorf("show:\n%s", show)
 	}
 	var sj struct {
-		ConfigSyntax   string `json:"config_syntax"`
+		IOSSyntax      string `json:"ios_syntax"`
 		Syntax         string `json:"syntax"`
 		SyntaxConflict bool   `json:"syntax_conflict"`
 		ImageSyntax    string `json:"image_syntax"`
 		OS             string `json:"os"`
 	}
 	if err := json.Unmarshal([]byte(b.run("device", "show", "lab-c", "--json")), &sj); err != nil ||
-		sj.ConfigSyntax != "modern" || sj.Syntax != "modern" || !sj.SyntaxConflict || sj.ImageSyntax != "ios12" || sj.OS != ciscoVersion12 {
+		sj.IOSSyntax != "modern" || sj.Syntax != "modern" || !sj.SyntaxConflict || sj.ImageSyntax != "ios12" || sj.OS != ciscoVersion12 {
 		t.Errorf("show --json: %+v %v", sj, err)
 	}
 	// The verb with no word says it too.
-	if got := b.run("device", "config-syntax", "lab-c"); !strings.Contains(got, "modern (the pull of ") || !strings.Contains(got, "check the setting") {
-		t.Errorf("config-syntax: %q", got)
+	if got := b.run("device", "ios-syntax", "lab-c"); !strings.Contains(got, "modern (the pull of ") || !strings.Contains(got, "check the setting") {
+		t.Errorf("ios-syntax: %q", got)
 	}
 	// device config list: the DETAIL column and --json.
 	list := b.run("device", "config", "list")
-	if !strings.Contains(list, "config-syntax modern, the pull read ios12") {
+	if !strings.Contains(list, "ios-syntax modern, the pull read ios12") {
 		t.Errorf("list:\n%s", list)
 	}
 	var lj []listJSON
@@ -68,17 +68,17 @@ func TestSettingContradictingThePullIsShown(t *testing.T) {
 	// The walkthrough follows the setting and warns in one line.
 	wt := b.run("device", "config", "show", "lab-c")
 	if !strings.Contains(wt, "tacacs server TACACS") || strings.Contains(wt, "tacacs-server host") ||
-		strings.Count(wt, "# warning:") != 1 || !strings.Contains(wt, "# warning: config-syntax of lab-c is modern but the pull of ") ||
+		strings.Count(wt, "# warning:") != 1 || !strings.Contains(wt, "# warning: ios-syntax of lab-c is modern but the pull of ") ||
 		!strings.Contains(wt, "read IOS 12.4(15)T14, which is ios12 syntax, not modern") {
 		t.Errorf("device config show:\n%s", wt)
 	}
 	plainOut := plain(b.sb.cfgRun("", []string{"config", "cisco", "--scope", "lab", "--name", "lab-c"}, route, "SUDO_USER=alice"))
-	if !strings.Contains(plainOut, "tacacs server TACACS") || !strings.Contains(b.sb.stderr(), "# warning: config-syntax of lab-c is modern but") {
+	if !strings.Contains(plainOut, "tacacs server TACACS") || !strings.Contains(b.sb.stderr(), "# warning: ios-syntax of lab-c is modern but") {
 		t.Errorf("config cisco --name:\n%s\nstderr: %s", plainOut, b.sb.stderr())
 	}
 
 	// Setting it to what the image says clears every message.
-	b.sb.dev("", "config-syntax", "lab-c", "ios12")
+	b.sb.dev("", "ios-syntax", "lab-c", "ios12")
 	b.serve("cisco", b.expectedSyntax("lab-c", true))
 	b.version(ciscoVersion12)
 	out = b.run("device", "config", "pull", "lab-c")
@@ -99,17 +99,17 @@ func TestSettingContradictingThePullIsShown(t *testing.T) {
 }
 
 // The verb says at once when the new setting contradicts the pulled image.
-func TestConfigSyntaxVerbWarnsOnConflict(t *testing.T) {
+func TestIOSSyntaxVerbWarnsOnConflict(t *testing.T) {
 	b := newPullBox(t)
 	b.cisco("lab-c", false)
 	b.putRecord("lab-c", devconf.Record{Vendor: "cisco", Result: devconf.ResultOK, OS: ciscoVersion12, Syntax: devconf.SyntaxIOS12,
 		Sections: map[string]devconf.SectionRecord{"aaa": {State: "ok"}}})
-	out := b.sb.dev("", "config-syntax", "lab-c", "modern")
+	out := b.sb.dev("", "ios-syntax", "lab-c", "modern")
 	if b.sb.code != 0 || !strings.Contains(out, "The setting contradicts the image: ") ||
 		!strings.Contains(out, "IOS 12.4(15)T14, which is ios12 syntax, not modern") {
 		t.Errorf("modern: %d\n%s", b.sb.code, out)
 	}
-	out = b.sb.dev("", "config-syntax", "lab-c", "ios12")
+	out = b.sb.dev("", "ios-syntax", "lab-c", "ios12")
 	if b.sb.code != 0 || strings.Contains(out, "contradicts") {
 		t.Errorf("ios12: %d\n%s", b.sb.code, out)
 	}
@@ -132,7 +132,7 @@ func TestPullRefusesAnUnmappedImage(t *testing.T) {
 			b.serve("cisco", b.expectedSyntax("lab-c", false))
 			b.version(tc.line)
 			out := b.run("device", "config", "pull", "lab-c")
-			if b.sb.code != 1 || !strings.Contains(out, tc.reason) || !strings.Contains(out, "tacctl device config-syntax lab-c ios12|modern") {
+			if b.sb.code != 1 || !strings.Contains(out, tc.reason) || !strings.Contains(out, "tacctl device ios-syntax lab-c ios12|modern") {
 				t.Fatalf("pull: %d\n%s", b.sb.code, out)
 			}
 			if rec, _ := b.records().Of("lab-c"); rec != nil && rec.Result != "" {
@@ -144,7 +144,7 @@ func TestPullRefusesAnUnmappedImage(t *testing.T) {
 				t.Errorf("--json: %+v %v\n%s", line, err, js)
 			}
 			// The setting is how the device is read.
-			b.sb.dev("", "config-syntax", "lab-c", "modern")
+			b.sb.dev("", "ios-syntax", "lab-c", "modern")
 			if out := b.run("device", "config", "pull", "lab-c"); b.sb.code != 0 || !strings.Contains(out, "lab-c  ok via ssh") {
 				t.Errorf("modern: %d\n%s", b.sb.code, out)
 			}
@@ -223,18 +223,18 @@ func TestConfigCiscoNameAutoWithIOS12Record(t *testing.T) {
 func TestDeviceVendorChangeDropsTheSyntax(t *testing.T) {
 	b := newPullBox(t)
 	b.cisco("lab-c", false)
-	b.sb.dev("", "config-syntax", "lab-c", "ios12")
-	if !strings.Contains(b.sb.devices(), "config_syntax: ios12") {
+	b.sb.dev("", "ios-syntax", "lab-c", "ios12")
+	if !strings.Contains(b.sb.devices(), "ios_syntax: ios12") {
 		t.Fatalf("not set:\n%s", b.sb.devices())
 	}
 	out := b.sb.dev("", "vendor", "lab-c", "juniper")
-	if b.sb.code != 0 || strings.Contains(b.sb.devices(), "config_syntax") ||
+	if b.sb.code != 0 || strings.Contains(b.sb.devices(), "ios_syntax") ||
 		!strings.Contains(out, "The configuration syntax setting (ios12) was removed: it is a Cisco setting.") {
 		t.Errorf("vendor juniper: %d\n%s\n%s", b.sb.code, b.sb.devices(), out)
 	}
 	// The registry is still readable, and going back to Cisco starts at auto.
 	b.sb.dev("", "vendor", "lab-c", "cisco")
-	if b.sb.code != 0 || strings.Contains(b.sb.devices(), "config_syntax") {
+	if b.sb.code != 0 || strings.Contains(b.sb.devices(), "ios_syntax") {
 		t.Errorf("vendor cisco: %d\n%s", b.sb.code, b.sb.devices())
 	}
 	// A device with no setting says nothing.
@@ -244,9 +244,9 @@ func TestDeviceVendorChangeDropsTheSyntax(t *testing.T) {
 	}
 	// 'vendor clear' is the other way a Cisco device stops being one.
 	b.sb.dev("", "vendor", "lab-c", "cisco")
-	b.sb.dev("", "config-syntax", "lab-c", "modern")
+	b.sb.dev("", "ios-syntax", "lab-c", "modern")
 	b.sb.dev("", "vendor", "lab-c", "clear")
-	if b.sb.code != 0 || strings.Contains(b.sb.devices(), "config_syntax") {
+	if b.sb.code != 0 || strings.Contains(b.sb.devices(), "ios_syntax") {
 		t.Errorf("vendor clear: %d\n%s", b.sb.code, b.sb.devices())
 	}
 }

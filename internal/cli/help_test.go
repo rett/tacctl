@@ -160,13 +160,13 @@ func TestUsageRowsIgnoreMarkup(t *testing.T) {
 		for _, heading := range []string{"Commands:", "Subcommands:", "Usage:"} {
 			got := usageRows(Usage(c.id, c.vars), heading)
 			if exp := usageRows(plain, heading); !reflect.DeepEqual(got, exp) {
-				t.Errorf("usage %s %s rows: %q, plain %q", c.id, heading, got, exp)
+				t.Errorf("usage %s %s rows: %+v, plain %+v", c.id, heading, got, exp)
 			}
 		}
 	}
 	rows := topRows()
 	if len(rows) == 0 || rows[0].Name != "install" || rows[0].Left != "install [--branch <name>] [-y|--yes]" {
-		t.Errorf("topRows %q", rows)
+		t.Errorf("topRows %+v", rows)
 	}
 }
 

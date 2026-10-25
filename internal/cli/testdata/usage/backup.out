@@ -5,8 +5,8 @@ Usage: tacctl backup <subcommand> [arguments]
 
 Subcommands:
   list                                       Show snapshots, then old-style backups
-  diff [timestamp]                           Diff store.yaml and tacctl.yaml against a snapshot (default: most recent)
-  restore <timestamp> [--legacy|--keep-uids] Restore a snapshot (with confirmation); --legacy for an old-style backup
+  diff [<timestamp>]                         Diff store.yaml and tacctl.yaml against a snapshot (default: most recent)
+  restore <timestamp> [--legacy|--keep-uids]  Restore a snapshot (with confirmation); --legacy for an old-style backup
       --legacy                               The timestamp names an old-style backup (backups/legacy)
       --keep-uids                            Leave the UID ledger (linux-uids) as it is; the registry, records and staging come back
 

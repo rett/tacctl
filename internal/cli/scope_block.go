@@ -23,7 +23,7 @@ func init() {
 	shellHelpBlocks["device block"] = func(*invocation) string { return deviceBlockUsage("<name>") }
 }
 
-const scopeBlockUse = "block <scope> {juniper|cisco} {list|show|check|set|remove|edit|adopt} [<block>] [options]"
+const scopeBlockUse = "block <scope> cisco|juniper list|show|check|set|remove|edit|adopt [<block>] [options]"
 
 const scopeBlockShort = "A scope's configuration blocks (Junos snmp and system, IOS snmp): list, show, check, set, remove, edit, adopt"
 
@@ -47,7 +47,7 @@ var scopeBlockSpecs = map[string]Spec{
 // scopeBlockCompletion is the Spec of the whole verb for completion (the
 // words after 'tacctl scope block').
 var scopeBlockCompletion = Spec{MinArgs: 1, MaxArgs: -1,
-	Args: []string{KindScopes, "juniper|cisco", blockSubs, Cond("adopt", KindDevices, blockWords), Cond("adopt", blockWords, "")},
+	Args: []string{KindScopes, "cisco|juniper", blockSubs, Cond("adopt", KindDevices, blockWords), Cond("adopt", blockWords, "")},
 	Flags: []Flag{{Names: []string{"--reveal"}, Only: "show"}, {Names: []string{"--file"}, Value: true, Only: "check|set", Kind: KindFile},
 		{Names: []string{"--against"}, Value: true, Only: "check", Kind: KindDevices},
 		{Names: []string{"-y", "--yes"}, Only: "set|remove|edit|adopt"}}}
@@ -80,7 +80,7 @@ var scopeBlockOptions = map[string][][2]string{
 // scopeBlockUsage is the usage of 'scope block'.
 func scopeBlockUsage(scope string) string {
 	var b strings.Builder
-	b.WriteString("\n" + ui.Bold + "tacctl scope block " + scope + " {juniper|cisco}" + ui.NC + " — configuration blocks of scope '" + scope + "'\n\nUsage: tacctl scope block " + scope + " {juniper|cisco} <subcommand>\n\n")
+	b.WriteString("\n" + ui.Bold + "tacctl scope block " + scope + " cisco|juniper" + ui.NC + " — configuration blocks of scope '" + scope + "'\n\nUsage: tacctl scope block " + scope + " cisco|juniper <subcommand>\n\n")
 	for _, v := range scopeBlockVerbs {
 		use, short := v[0], v[1]
 		if len(use) > 40 {
@@ -170,12 +170,12 @@ func (inv *invocation) scopeBlock(args []string) error {
 		return nil
 	case blocks.VendorJuniper, blocks.VendorCisco:
 	case "wti":
-		return inv.usageErr("A WTI unit has no configuration blocks: the vendors with blocks are juniper and cisco.", usage)
+		return inv.usageErr("A WTI unit has no configuration blocks: the vendors with blocks are cisco and juniper.", usage)
 	default:
 		if blockSubSet[vendor] {
-			return inv.usageErr("The vendor comes before the verb: tacctl scope block "+scope+" juniper|cisco "+vendor+" ...", usage)
+			return inv.usageErr("The vendor comes before the verb: tacctl scope block "+scope+" cisco|juniper "+vendor+" ...", usage)
 		}
-		return inv.usageErr("Unknown vendor '"+vendor+"' for a block: juniper or cisco.", usage)
+		return inv.usageErr("Unknown vendor '"+vendor+"' for a block: cisco or juniper.", usage)
 	}
 	switch sub {
 	case "":

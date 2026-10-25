@@ -148,7 +148,7 @@ systemctl_fails_for() {
     assert_success
     assert_line "  Current listener: tcp :49"
     assert_line "  (template default)"
-    assert_line "  Usage: tacctl config listen <show|tcp|tcp6|reset> [address]"
+    assert_line "  Usage: tacctl config listen [show|tcp|tcp6|reset] [<addr>]"
     assert_line "    tacctl config listen reset       # drop override, use template default"
     refute_output --partial "Listener '"
     run "$TACCTL_BIN_SCRIPT" config listen show

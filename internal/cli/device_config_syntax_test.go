@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -28,9 +29,9 @@ func (b *pullBox) expectedSyntax(name string, legacy bool) string {
 		b.t.Fatalf("no device %s", name)
 	}
 	// An explicit setting makes the render prepare that syntax.
-	e.ConfigSyntax = devconf.SyntaxModern
+	e.IOSSyntax = devconf.SyntaxModern
 	if legacy {
-		e.ConfigSyntax = devconf.SyntaxIOS12
+		e.IOSSyntax = devconf.SyntaxIOS12
 	}
 	r := inv.newManagedRender(managedOptions{}, false)
 	r.prepare([]devreg.Entry{e})
@@ -53,82 +54,110 @@ func (b *pullBox) cisco(name string, legacySSH bool) {
 	}
 }
 
-func TestConfigSyntaxVerbAndRows(t *testing.T) {
+func TestIOSSyntaxVerbAndRows(t *testing.T) {
 	b := newPullBox(t)
 	b.devices([3]string{"lab-c", "192.168.1.30", "cisco"}, [3]string{"lab-j", "192.168.1.20", "juniper"})
 	sb := b.sb
 
 	// No word prints the setting; before any pull there is nothing behind auto.
-	out := sb.dev("", "config-syntax", "lab-c")
+	out := sb.dev("", "ios-syntax", "lab-c")
 	if sb.code != 0 || !strings.Contains(out, "auto (unknown until the device is pulled: tacctl device config pull lab-c)") {
 		t.Errorf("show: %d %q", sb.code, out)
 	}
-	if strings.Contains(sb.devices(), "config_syntax") {
+	if strings.Contains(sb.devices(), "ios_syntax") {
 		t.Errorf("a setting appeared by itself:\n%s", sb.devices())
 	}
 	// Set, read, show, JSON, clear.
-	sb.dev("", "config-syntax", "lab-c", "ios12")
-	if sb.code != 0 || !strings.Contains(sb.devices(), "config_syntax: ios12") {
+	sb.dev("", "ios-syntax", "lab-c", "ios12")
+	if sb.code != 0 || !strings.Contains(sb.devices(), "ios_syntax: ios12") {
 		t.Fatalf("set: %d\n%s", sb.code, sb.devices())
 	}
-	if out := strings.TrimSpace(sb.dev("", "config-syntax", "lab-c")); out != "ios12" {
+	if out := strings.TrimSpace(sb.dev("", "ios-syntax", "lab-c")); out != "ios12" {
 		t.Errorf("read = %q", out)
 	}
 	if show := sb.dev("", "show", "lab-c"); !strings.Contains(show, "Config syntax: ios12\n") {
 		t.Errorf("show:\n%s", show)
 	}
 	var j struct {
-		ConfigSyntax string `json:"config_syntax"`
+		IOSSyntax    string `json:"ios_syntax"`
 		Syntax       string `json:"syntax"`
 		SyntaxSource string `json:"syntax_source"`
 		LegacySSH    bool   `json:"legacy_ssh"`
 	}
 	if err := json.Unmarshal([]byte(sb.dev("", "show", "lab-c", "--json")), &j); err != nil ||
-		j.ConfigSyntax != "ios12" || j.Syntax != "ios12" || j.SyntaxSource != "setting" || j.LegacySSH {
+		j.IOSSyntax != "ios12" || j.Syntax != "ios12" || j.SyntaxSource != "setting" || j.LegacySSH {
 		t.Errorf("show --json: %+v %v", j, err)
 	}
-	sb.dev("", "config-syntax", "lab-c", "modern")
-	if !strings.Contains(sb.devices(), "config_syntax: modern") {
+	sb.dev("", "ios-syntax", "lab-c", "modern")
+	if !strings.Contains(sb.devices(), "ios_syntax: modern") {
 		t.Errorf("modern:\n%s", sb.devices())
 	}
-	sb.dev("", "config-syntax", "lab-c", "auto")
-	if strings.Contains(sb.devices(), "config_syntax") {
+	sb.dev("", "ios-syntax", "lab-c", "auto")
+	if strings.Contains(sb.devices(), "ios_syntax") {
 		t.Errorf("auto left the key:\n%s", sb.devices())
 	}
 	// A bad word, an unknown device, a vendor with no such setting.
-	sb.dev("", "config-syntax", "lab-c", "ios15")
+	sb.dev("", "ios-syntax", "lab-c", "ios15")
 	sb.expect(1, "", "Invalid configuration syntax 'ios15'. Use: auto, ios12, modern.")
-	sb.dev("", "config-syntax", "nosuch", "modern")
+	sb.dev("", "ios-syntax", "nosuch", "modern")
 	sb.expect(1, "", "not found")
-	sb.dev("", "config-syntax", "lab-j", "ios12")
+	sb.dev("", "ios-syntax", "lab-j", "ios12")
 	sb.expect(1, "", "has vendor 'juniper'; the configuration syntax is a Cisco setting")
-	sb.dev("", "config-syntax")
-	sb.expect(1, "", "Usage: tacctl device config-syntax")
+	sb.dev("", "ios-syntax")
+	sb.expect(1, "", "Usage: tacctl device ios-syntax")
 	// A Junos device's show has no such row; a Cisco device's has.
 	if show := sb.dev("", "show", "lab-j"); strings.Contains(show, "Config syntax") {
 		t.Errorf("a Junos device shows a syntax:\n%s", show)
 	}
 	// --legacy-ssh is the ssh algorithms and sets no syntax.
 	sb.dev("", "legacy-ssh", "lab-c", "enable")
-	if strings.Contains(sb.devices(), "config_syntax") {
+	if strings.Contains(sb.devices(), "ios_syntax") {
 		t.Errorf("legacy-ssh set a syntax:\n%s", sb.devices())
 	}
 }
 
-func TestDeviceAddConfigSyntax(t *testing.T) {
+func TestDeviceAddIOSSyntax(t *testing.T) {
 	sb := newSandbox(t, true)
-	sb.dev("", "add", "lab-c", "192.168.1.30", "--vendor", "cisco", "--config-syntax", "modern", "--legacy-ssh", "--no-host-key")
-	if sb.code != 0 || !strings.Contains(sb.devices(), "config_syntax: modern") || !strings.Contains(sb.devices(), "legacy_ssh: true") {
+	sb.dev("", "add", "lab-c", "192.168.1.30", "--vendor", "cisco", "--ios-syntax", "modern", "--legacy-ssh", "--no-host-key")
+	if sb.code != 0 || !strings.Contains(sb.devices(), "ios_syntax: modern") || !strings.Contains(sb.devices(), "legacy_ssh: true") {
 		t.Fatalf("add: %d\n%s\n%s", sb.code, sb.devices(), sb.stderr())
 	}
-	sb.dev("", "add", "lab-d", "192.168.1.31", "--vendor", "cisco", "--config-syntax", "auto", "--no-host-key")
-	if sb.code != 0 || strings.Count(sb.devices(), "config_syntax") != 1 {
+	sb.dev("", "add", "lab-d", "192.168.1.31", "--vendor", "cisco", "--ios-syntax", "auto", "--no-host-key")
+	if sb.code != 0 || strings.Count(sb.devices(), "ios_syntax") != 1 {
 		t.Errorf("auto is written:\n%s", sb.devices())
 	}
-	sb.dev("", "add", "lab-e", "192.168.1.32", "--vendor", "cisco", "--config-syntax", "ios15", "--no-host-key")
+	sb.dev("", "add", "lab-e", "192.168.1.32", "--vendor", "cisco", "--ios-syntax", "ios15", "--no-host-key")
 	sb.expect(1, "", "Invalid configuration syntax 'ios15'")
-	sb.dev("", "add", "lab-f", "192.168.1.33", "--config-syntax", "ios12", "--no-host-key")
-	sb.expect(1, "", "--config-syntax is the Cisco configuration syntax; give --vendor cisco")
+	sb.dev("", "add", "lab-f", "192.168.1.33", "--ios-syntax", "ios12", "--no-host-key")
+	sb.expect(1, "", "--ios-syntax is the Cisco configuration syntax; give --vendor cisco")
+}
+
+// The verb and the flag are ios-syntax (docs/plans/0.2.18-plan.md D273):
+// the names before 0.2.18 are refused like any unknown word, and neither the
+// usage nor completion names them.
+func TestIOSSyntaxOldNamesAreGone(t *testing.T) {
+	b := newPullBox(t)
+	b.devices([3]string{"lab-c", "192.168.1.30", "cisco"})
+	sb := b.sb
+	sb.dev("", "config-syntax", "lab-c", "ios12")
+	sb.expect(1, "", "Unknown subcommand: 'config-syntax'")
+	sb.dev("", "add", "lab-d", "192.168.1.31", "--vendor", "cisco", "--config-syntax", "modern", "--no-host-key")
+	sb.expect(1, "", "Unknown option: '--config-syntax'")
+	if strings.Contains(sb.devices(), "ios_syntax") || strings.Contains(sb.devices(), "lab-d") {
+		t.Errorf("a refused line wrote the registry:\n%s", sb.devices())
+	}
+	if u := sb.dev("", "--help"); strings.Contains(u, "config-syntax") || !strings.Contains(u, "ios-syntax <name>") {
+		t.Errorf("the usage:\n%s", u)
+	}
+	for _, words := range [][]string{{"device", ""}, {"device", "add", "x", "192.0.2.1", "--"}} {
+		got, _ := completeWords(t, liveNames, words...)
+		if slices.ContainsFunc(got, func(w string) bool { return strings.Contains(w, "config-syntax") }) {
+			t.Errorf("%q offers the old name: %q", words, got)
+		}
+		if want := map[bool]string{true: "ios-syntax", false: "--ios-syntax"}[len(words) == 2]; !slices.Contains(got, want) {
+			t.Errorf("%q lacks %q: %q", words, want, got)
+		}
+	}
 }
 
 // A pull records the image and compares in the syntax the image says,
@@ -203,7 +232,7 @@ func TestPullSettingAndMissingVersionLine(t *testing.T) {
 	b.serve("cisco", b.expectedSyntax("lab-c", true))
 	b.version(ciscoVersionModern)
 	// An explicit ios12 is what the device is compared in, though it says 15.6.
-	b.sb.dev("", "config-syntax", "lab-c", "ios12")
+	b.sb.dev("", "ios-syntax", "lab-c", "ios12")
 	out := b.run("device", "config", "pull", "lab-c")
 	if b.sb.code != 0 || !strings.Contains(out, "ok via ssh") {
 		t.Fatalf("set ios12: %d\n%s", b.sb.code, out)
@@ -211,22 +240,22 @@ func TestPullSettingAndMissingVersionLine(t *testing.T) {
 	if rec, _ := b.records().Of("lab-c"); rec == nil || rec.Syntax != devconf.SyntaxModern || rec.OS != ciscoVersionModern {
 		t.Errorf("record %+v", rec)
 	}
-	b.sb.dev("", "config-syntax", "lab-c", "modern")
+	b.sb.dev("", "ios-syntax", "lab-c", "modern")
 	if out := b.run("device", "config", "pull", "lab-c"); !strings.Contains(out, "differs in aaa") {
 		t.Errorf("modern against the 12.x text:\n%s", out)
 	}
 
 	// No version line: auto cannot be compared, and says what to do; a
 	// setting is compared and the record keeps no image.
-	b.sb.dev("", "config-syntax", "lab-c", "auto")
+	b.sb.dev("", "ios-syntax", "lab-c", "auto")
 	b.putRecord("lab-c", devconf.Record{})
 	b.version("")
 	out = b.run("device", "config", "pull", "lab-c")
 	if b.sb.code != 1 || !strings.Contains(out, "failed: the device's IOS version was not read") ||
-		!strings.Contains(out, "tacctl device config-syntax lab-c ios12|modern") {
+		!strings.Contains(out, "tacctl device ios-syntax lab-c ios12|modern") {
 		t.Errorf("no line, auto: %d\n%s", b.sb.code, out)
 	}
-	b.sb.dev("", "config-syntax", "lab-c", "ios12")
+	b.sb.dev("", "ios-syntax", "lab-c", "ios12")
 	out = b.run("device", "config", "pull", "lab-c")
 	if b.sb.code != 0 || !strings.Contains(out, "ok via ssh") {
 		t.Fatalf("no line, ios12: %d\n%s", b.sb.code, out)
@@ -235,7 +264,7 @@ func TestPullSettingAndMissingVersionLine(t *testing.T) {
 		t.Errorf("record %+v", rec)
 	}
 	// Back to auto with nothing on the record: the one-time pull is due.
-	b.sb.dev("", "config-syntax", "lab-c", "auto")
+	b.sb.dev("", "ios-syntax", "lab-c", "auto")
 	if list := b.run("device", "config", "list"); !strings.Contains(list, "needs pull (syntax unknown)") {
 		t.Errorf("list:\n%s", list)
 	}
@@ -247,13 +276,13 @@ func TestPullSettingAndMissingVersionLine(t *testing.T) {
 	b.version(unmapped)
 	out = b.run("device", "config", "pull", "lab-c")
 	if b.sb.code != 1 || !strings.Contains(out, `the device's version line "`+unmapped+`" is not an image tacctl maps`) ||
-		!strings.Contains(out, "tacctl device config-syntax lab-c ios12|modern") {
+		!strings.Contains(out, "tacctl device ios-syntax lab-c ios12|modern") {
 		t.Fatalf("unmapped line, auto: %d\n%s", b.sb.code, out)
 	}
 	if rec, _ := b.records().Of("lab-c"); rec == nil || rec.OS != "" || rec.Syntax != "" {
 		t.Errorf("a refused pull was recorded: %+v", rec)
 	}
-	b.sb.dev("", "config-syntax", "lab-c", "modern")
+	b.sb.dev("", "ios-syntax", "lab-c", "modern")
 	out = b.run("device", "config", "pull", "lab-c")
 	if b.sb.code != 0 || !strings.Contains(out, "ok via ssh") || strings.Contains(out, "warning") {
 		t.Fatalf("unmapped line, modern: %d\n%s", b.sb.code, out)
@@ -263,7 +292,7 @@ func TestPullSettingAndMissingVersionLine(t *testing.T) {
 	}
 	// Back at auto, the record's line is one nothing maps: the device needs
 	// the setting, and 'show' says which line it was.
-	b.sb.dev("", "config-syntax", "lab-c", "auto")
+	b.sb.dev("", "ios-syntax", "lab-c", "auto")
 	if list := b.run("device", "config", "list"); !strings.Contains(list, "needs pull (syntax unknown)") {
 		t.Errorf("list:\n%s", list)
 	}
@@ -347,7 +376,7 @@ func TestWalkthroughSyntaxResolution(t *testing.T) {
 	b := newPullBox(t)
 	b.cisco("lab-c", true)
 	const modern, legacy = "tacacs server TACACS", "tacacs-server host"
-	const note = "# syntax: modern (no pull yet; set 'tacctl device config-syntax lab-c ios12' for IOS 12.x, or pull the device once)"
+	const note = "# syntax: modern (no pull yet; set 'tacctl device ios-syntax lab-c ios12' for IOS 12.x, or pull the device once)"
 
 	show := func(args ...string) string {
 		t.Helper()
@@ -364,29 +393,29 @@ func TestWalkthroughSyntaxResolution(t *testing.T) {
 		t.Errorf("--legacy:\n%s", out)
 	}
 	// The setting.
-	b.sb.dev("", "config-syntax", "lab-c", "ios12")
+	b.sb.dev("", "ios-syntax", "lab-c", "ios12")
 	out = show()
 	if !strings.Contains(out, legacy) || strings.Contains(out, "# syntax:") {
 		t.Errorf("ios12:\n%s", out)
 	}
-	b.sb.dev("", "config-syntax", "lab-c", "modern")
+	b.sb.dev("", "ios-syntax", "lab-c", "modern")
 	out = show()
 	if !strings.Contains(out, modern) || strings.Contains(out, "# syntax:") {
 		t.Errorf("modern:\n%s", out)
 	}
 	// The record's syntax, with the setting back at auto; a setting over it.
-	b.sb.dev("", "config-syntax", "lab-c", "auto")
+	b.sb.dev("", "ios-syntax", "lab-c", "auto")
 	b.putRecord("lab-c", devconf.Record{Vendor: "cisco", Result: devconf.ResultOK, OS: ciscoVersion12, Syntax: devconf.SyntaxIOS12,
 		Sections: map[string]devconf.SectionRecord{"aaa": {State: "ok"}}})
 	out = show()
 	if !strings.Contains(out, legacy) || strings.Contains(out, "# syntax:") {
 		t.Errorf("record says ios12:\n%s", out)
 	}
-	b.sb.dev("", "config-syntax", "lab-c", "modern")
+	b.sb.dev("", "ios-syntax", "lab-c", "modern")
 	if out = show(); !strings.Contains(out, modern) || strings.Contains(out, legacy) {
 		t.Errorf("setting over the record:\n%s", out)
 	}
-	b.sb.dev("", "config-syntax", "lab-c", "auto")
+	b.sb.dev("", "ios-syntax", "lab-c", "auto")
 
 	// 'config cisco --name' is the same walkthrough: the configuration is
 	// the device's syntax on stdout, the note on stderr; without --name it
@@ -408,7 +437,7 @@ func TestWalkthroughSyntaxResolution(t *testing.T) {
 	}
 	// A RADIUS scope has one syntax: an ios12 setting is not an --legacy
 	// error there (what is refused is the backend, which is not enabled).
-	b.sb.dev("", "config-syntax", "lab-c", "ios12")
+	b.sb.dev("", "ios-syntax", "lab-c", "ios12")
 	b.sb.cfgRun("", []string{"scope", "auth-method", "lab", "radius"}, route)
 	out = show()
 	if strings.Contains(b.sb.stderr(), "--legacy") || strings.Contains(out, legacy) || strings.Contains(out, "# syntax:") {

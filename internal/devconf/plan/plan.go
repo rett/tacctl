@@ -98,7 +98,7 @@ func syntaxUnknownWhy(device string) string {
 		name = "<name>"
 	}
 	return "the configuration syntax of this device is not known: run `tacctl device config pull " + name +
-		"` or `tacctl device config-syntax " + name + " ios12|modern`"
+		"` or `tacctl device ios-syntax " + name + " ios12|modern`"
 }
 
 // systemUnreadWhy is the reason a plan with a system block has no system

@@ -359,9 +359,14 @@ func (inv *invocation) completeKind(kind, toComplete string, values map[string]s
 		cur := strings.TrimPrefix(toComplete, prefix)
 		var out []cobra.Completion
 		for _, w := range inv.kindWords(base, values) {
-			w, _, _ = strings.Cut(w, "\t")
-			if strings.HasPrefix(w, cur) && !slices.Contains(have, w) {
-				out = append(out, prefix+w)
+			// A name keeps its description (the shell's '?' lists it).
+			name, desc, _ := strings.Cut(w, "\t")
+			if strings.HasPrefix(name, cur) && !slices.Contains(have, name) {
+				c := prefix + name
+				if desc != "" {
+					c = cobra.CompletionWithDesc(c, desc)
+				}
+				out = append(out, c)
 			}
 		}
 		return out, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
@@ -430,6 +435,13 @@ func (inv *invocation) configFamilyWords(toComplete string) []string {
 // kindWords are all the words of a kind: a fixed list written 'a|b|c', or
 // the live names of a _completion-names kind.
 func (inv *invocation) kindWords(kind string, values map[string]string) []string {
+	if parts := strings.Split(kind, "+"); len(parts) > 1 {
+		var out []string
+		for _, k := range parts {
+			out = append(out, inv.kindWords(k, values)...)
+		}
+		return out
+	}
 	if strings.Contains(kind, "|") {
 		return strings.Split(kind, "|")
 	}
@@ -445,7 +457,7 @@ func (inv *invocation) kindWords(kind string, values map[string]string) []string
 			}
 		}
 		return out
-	case KindUsers, KindGroups, KindScopes, KindHosts, KindDevices, KindBackups, KindBackends, KindEnabledBackends, KindHeld, KindShapes:
+	case KindUsers, KindGroups, KindScopes, KindHosts, KindDevices, KindCiscoDevices, KindJuniperDevices, KindBackups, KindBackends, KindEnabledBackends, KindHeld, KindShapes:
 		return inv.liveNames(inv.ctx, kind)
 	case KindBreakGlass:
 		return inv.liveNames(inv.ctx, kind, values["@scope"])

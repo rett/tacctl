@@ -206,7 +206,7 @@ func TestDetailLinesOfTheDeviceVerbs(t *testing.T) {
 			`device set name=lab-sw field=description from=- to="the lab switch" by=alice`},
 		{"device legacy-ssh", []string{"device", "legacy-ssh", "lab-sw", "enable"}, "device set name=lab-sw field=legacy-ssh from=disable to=enable by=alice"},
 		{"device stale-days", []string{"device", "stale-days", "9"}, "device set name=- field=stale-days from=30 to=9 by=alice"},
-		{"device config-syntax", []string{"device", "config-syntax", "lab-sw", "ios12"}, "device set name=lab-sw field=config-syntax from=auto to=ios12 by=alice"},
+		{"device ios-syntax", []string{"device", "ios-syntax", "lab-sw", "ios12"}, "device set name=lab-sw field=ios-syntax from=auto to=ios12 by=alice"},
 		{"device rename", []string{"device", "rename", "lab-sw", "lab-sw9"}, "device rename from=lab-sw to=lab-sw9 count=1 by=alice"},
 		{"device snmp port", []string{"device", "snmp", "lab-sw9", "port", "1161"}, "snmp set kind=port device=lab-sw9 by=alice"},
 	} {

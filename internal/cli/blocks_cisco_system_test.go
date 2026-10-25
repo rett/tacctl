@@ -267,7 +267,7 @@ func TestCiscoSystemNTPVersion3InTheIOS12Syntax(t *testing.T) {
 		t.Errorf("show:\n%s", got)
 	}
 
-	b.run("device", "config-syntax", "lab-c", "ios12")
+	b.run("device", "ios-syntax", "lab-c", "ios12")
 	have := b.expectedSyntax("lab-c", true)
 	if !strings.Contains(have, bare+"\n") || strings.Contains(have, "version 3") {
 		t.Fatalf("the expected text of a 12.x device:\n%s", have)
@@ -293,7 +293,7 @@ func TestCiscoSystemNTPVersion3InTheIOS12Syntax(t *testing.T) {
 	}
 
 	// the modern syntax is as typed
-	b.run("device", "config-syntax", "lab-c", "modern")
+	b.run("device", "ios-syntax", "lab-c", "modern")
 	if wt = b.run("device", "config", "show", "lab-c"); !strings.Contains(wt, typed+"\n") {
 		t.Errorf("the walkthrough of a modern device:\n%s", wt)
 	}

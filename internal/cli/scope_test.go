@@ -420,7 +420,7 @@ func TestConfigFiltersAndMgmtACL(t *testing.T) {
 	sb.runFamily("y\n", configAllowCmd, "config", "allow", "clear")
 	sb.expect(0, "Cleared allow list (2 entries removed).", "")
 	sb.runFamily("", configDenyCmd, "config", "deny", "frob")
-	sb.expect(1, "Usage: tacctl config deny <list|add|remove|clear> [cidr[,cidr...]]", "")
+	sb.expect(1, "Usage: tacctl config deny list|add|remove|clear [<cidr>[,<cidr>...]]", "")
 	sb.runFamily("", configDenyCmd, "config", "deny", "help")
 	sb.expect(0, "tacctl config deny — connection IP ACL (deny list)", "")
 

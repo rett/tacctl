@@ -79,7 +79,7 @@ func groupCmd(inv *invocation) *cobra.Command {
 	}
 	cmds := verb("commands {list|default|add|remove|reset|seed} <group> ...", "Per-group authorized commands",
 		withRun(verb("list <group>", "Show rules + default action"), sub(inv.groupCommands, "list")),
-		withRun(verb("default <group> <permit|deny>", "Set default action (catchall)"), sub(inv.groupCommands, "default")),
+		withRun(verb("default <group> permit|deny", "Set default action (catchall)"), sub(inv.groupCommands, "default")),
 		withRun(verb("add <group> <name> [--match <regex>]... [--action permit|deny]", "Add a rule"), sub(inv.groupCommands, "add")),
 		withRun(verb("remove <group> <name>", "Drop a rule"), sub(inv.groupCommands, "remove")),
 		withRun(verb("reset <group> [--dry-run] [--yes]", "Revert the rules to the shipped defaults (diff, confirms)"), sub(inv.groupCommands, "reset")),
@@ -457,7 +457,9 @@ func (inv *invocation) groupEdit(args []string) error {
 	a := inv.app
 	group, field, value := arg(args, 0), arg(args, 1), arg(args, 2)
 	if group == "" || field == "" || value == "" {
-		a.Out.Error("Usage: tacctl group edit <name> <priv-lvl|juniper-class|wti-level|tier> <value>")
+		for _, l := range usageLinesOf("group edit <name>", "priv-lvl <0-15>", "juniper-class <class>", "wti-level auto|<level>", "tier auto|<tier>") {
+			a.Out.Error(l)
+		}
 		inv.stderrLine("  Example: tacctl group edit operator priv-lvl 10")
 		inv.stderrLine("  Example: tacctl group edit operator juniper-class NEW-CLASS")
 		inv.stderrLine("  Example: tacctl group edit engineer wti-level superuser")
@@ -662,7 +664,7 @@ func (inv *invocation) groupCommands(args []string) error {
 	case "default":
 		action := arg(rest, 0)
 		if action != "permit" && action != "deny" {
-			return inv.usageErr("Usage: tacctl group commands default <group> <permit|deny>")
+			return inv.usageErr("Usage: tacctl group commands default <group> permit|deny")
 		}
 		if err := inv.applyWith(func() error {
 			if err := inv.groupSeedSiblings(group); err != nil {

@@ -15,7 +15,7 @@ config defaults
 
     Print canonical tacctl defaults (built into tacctl)
 
-config get <path> [fallback]
+config get <path> [<fallback>]
 
     Read a dotted-path value from the merged config. Tab completes every key of the configuration
     and the start of each family of keys that takes a name (`tier.`, `snmp_scope.`), then the groups
@@ -92,7 +92,7 @@ config validate [--json | --fix-names [-y]]
     `--fix-names` follows the report with the offer to rename each such name to its lower-case
     spelling (below); the superuser's
 
-config diff [timestamp]
+config diff [<timestamp>]
 
     Alias of `backup diff`
 
@@ -104,12 +104,12 @@ config loglevel [debug|info|error]
 
     Show or change the TACACS+ log level
 
-config listen [--backend <id>] [--listener <name>] [show|tcp|tcp6|udp|udp6|reset] [addr]
+config listen [--backend <id>] [--listener <name>] [show|tcp|tcp6|udp|udp6|reset] [<addr>]
 
     Show, change, or reset a listen address (default: the TACACS+ listener 'default'; see
     server/backends.md, "Listeners")
 
-config metrics <show|enable|disable|address <host:port>|reset>
+config metrics show|enable|disable|reset|address <host:port>
 
     Prometheus exporter control (TACACS+). Default: loopback-only 127.0.0.1:8080. `disable` sinks to
     127.0.0.1:0 (unreachable ephemeral port) since tacquito's own disable flag would crash the
@@ -211,7 +211,7 @@ config devices apply-transport [cli|auto|netconf]
     default), NETCONF where the device answers and can confirm, else the command line (auto), or
     NETCONF only (netconf); `--transport` of one run replaces it
 
-config sudoers [show|install|remove] [grp]
+config sudoers [show|install|remove] [<group>]
 
     Manage NOPASSWD sudoers drop-in for tacctl
 
@@ -219,19 +219,19 @@ config sudoers tiers [show|install|remove]
 
     Manage per-tier (RO/OP/SU) sudoers rules for tacctl users with local accounts
 
-config password-age [days]
+config password-age [<days>]
 
     Show or set password age warning threshold (default 90)
 
-config bcrypt-cost [10-14]
+config bcrypt-cost [<10-14>]
 
     Show or set bcrypt cost factor for new hashes (default 12)
 
-config password-min-length [8-64]
+config password-min-length [<8-64>]
 
     Show or set minimum interactive password length (default 12)
 
-config secret-min-length [16-128]
+config secret-min-length [<16-128>]
 
     Show or set minimum shared-secret length (default 16)
 
@@ -255,15 +255,15 @@ config mgmt-acl list|add|remove|clear
     of entries: `<cidr>` or `<cidr>:tcp/22,udp/161,icmp`; `remove <cidr>` removes every entry of
     that CIDR)
 
-config mgmt-acl cisco-name [name]
+config mgmt-acl cisco-name [<name>]
 
     Show or set the emitted Cisco ACL name (default VTY-ACL)
 
-config mgmt-acl juniper-name [name]
+config mgmt-acl juniper-name [<name>]
 
     Show or set the emitted Juniper filter name (default MGMT-ACL)
 
-config branch [name]
+config branch [<name>]
 
     Show or change the tacctl repo branch
 ```

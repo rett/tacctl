@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
-# `tacctl scope vendor-attrs <scope> [enable|disable <vendor>,...]` and
-# `tacctl scope devices <scope> [set <ip|cidr> <vendor>|unset <ip|cidr>]`:
+# `tacctl scope vendor-attrs <scope> [show|enable|disable] [<vendor>,...]` and
+# `tacctl scope devices <scope> [list|set|unset] ...`:
 # the RADIUS vendor attributes a scope opts into, and the addresses it tags
 # with their vendor. The CLI, what the store keeps, the refusals (unknown
 # vendor, set/clear/none, an address the scope does not answer for, a prefix
@@ -81,7 +81,7 @@ entry() { sed -n "/^  $1:/,/^  [a-z]/p" "$STORE" | sed '$d'; }
     assert_output --partial "Unknown vendor 'arista'. Known vendors: cisco, juniper, wti"
     tc scope vendor-attrs lab enable
     assert_failure
-    assert_output --partial "Usage: tacctl scope vendor-attrs lab enable <vendor>[,<vendor>...]"
+    assert_output --partial "Usage: tacctl scope vendor-attrs lab enable|disable <vendor>[,<vendor>...]"
     local verb
     for verb in set clear none; do
         tc scope vendor-attrs lab "$verb" cisco
@@ -297,8 +297,9 @@ PY
 
 @test "completion-friendly usage: scope's own usage names both commands" {
     tc scope
-    assert_output --partial "tacctl scope vendor-attrs <scope> [enable|disable <csv>]"
-    assert_output --partial "tacctl scope devices <scope> [set <ip|cidr> <vendor>|unset <ip|cidr>]"
+    assert_output --partial "tacctl scope vendor-attrs <scope> enable|disable <vendor>[,<vendor>...]"
+    assert_output --partial "tacctl scope devices <scope> set <ip|cidr> <vendor>"
+    assert_output --partial "tacctl scope devices <scope> unset <ip|cidr>"
     assert_output --partial "tacctl scope auth-method <scope> [tacacs|radius|clear]"
     assert_output --partial "[--vendor-attrs <vendor>[,<vendor>...]]"
 }

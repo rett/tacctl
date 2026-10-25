@@ -101,7 +101,7 @@ func TestPlanCiscoModernAndIOS12DialectsComeFromTheImage(t *testing.T) {
 	planGolden(t, "cisco-ios12.out", out)
 
 	// the explicit setting wins over the image, and the plan follows it
-	b.run("device", "config-syntax", "lab-c", "modern")
+	b.run("device", "ios-syntax", "lab-c", "modern")
 	b.run("device", "config", "pull", "lab-c")
 	out = b.run("device", "config", "plan", "lab-c")
 	if !strings.Contains(out, "IOS-XE and IOS 15 syntax") {
@@ -119,7 +119,7 @@ func TestPlanCiscoNeedsAPullForItsSyntax(t *testing.T) {
 		t.Errorf("needs pull: %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
 	}
 	// setting a syntax is the other way out
-	b.run("device", "config-syntax", "lab-c", "ios12")
+	b.run("device", "ios-syntax", "lab-c", "ios12")
 	out = b.run("device", "config", "plan", "lab-c")
 	if b.sb.code != 0 || !strings.Contains(out, "IOS 12.x syntax") {
 		t.Errorf("set: %d\n%s", b.sb.code, out)

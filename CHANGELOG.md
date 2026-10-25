@@ -3,6 +3,107 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.18
+
+1. **`device config-syntax` is now `device ios-syntax`, and `device add
+   --config-syntax` is `--ios-syntax`.** The verb sets the Cisco IOS
+   configuration syntax (`auto`, `ios12`, `modern`) as before; every message,
+   usage line, walkthrough comment, help text, Tab completion and the manual
+   page name the new verb and flag. The old names are gone: `device
+   config-syntax` is an unknown subcommand and `--config-syntax` an unknown
+   option, so a script that uses them must change. The stored setting is
+   renamed too (item 4). The tiers sudoers drop-in grants the
+   engineer tier `device ios-syntax *` in place of `device config-syntax *`;
+   `tacctl upgrade` rewrites an installed drop-in. `tacctl rollback` takes
+   `0.2.17` (the release before this one): its `--apply` puts back the tiers
+   drop-in 0.2.17 writes and converts nothing else. `0.2.16`, `0.2.9` and
+   `0.2.3` stay targets.
+
+2. **`device notices` is now `device notice list`.** `tacctl device notice
+   list [<name>] [--all]` prints the open notices (`--all`: the acknowledged
+   ones too) as `device notices` did, for every tier and filtered to the
+   caller's scopes; `device notice <name> ack|unack <kind>` is unchanged and
+   stays the superuser's. Three words are the ack form, so a device named
+   `list` still takes `ack` and `unack`. Tab completion offers `list` and the
+   device names after `notice`. `device notices` is an unknown subcommand. The
+   pointers in `device list` and `tacctl status` name the new verb. The tiers
+   sudoers drop-in grants every tier `device notice list` and `device notice
+   list *` in place of `device notices` and `device notices *`.
+
+3. **`device ssh-config` is now `device client-config`.** Same output (the
+   ssh_config fragment of the devices and hosts you may see, the Include hint
+   on standard error), same tier; the hint names `tacctl device client-config
+   > ~/.ssh/tacctl.conf`, and so does the fragment's header line. `device
+   ssh-config` is an unknown subcommand. The tiers sudoers drop-in grants
+   `device client-config` in place of `device ssh-config`; `tacctl rollback
+   0.2.17` puts back the rules of items 1 to 3 as 0.2.17 has them.
+
+4. **The configuration syntax setting is stored as `ios_syntax`.** The key of
+   a device in `devices.yaml`, `device export` (YAML and `--json`), `device
+   list --json` and `device show --json` is `ios_syntax` (it was
+   `config_syntax`), and the audit line of a change is `device set ...
+   field=ios-syntax`; the values (`ios12`, `modern`, `auto`) are unchanged. A
+   script that reads `config_syntax` from the JSON must change. A registry, a
+   snapshot or an imported file that holds `config_syntax` is read as before,
+   and the next change of the registry writes `ios_syntax`; a device with both
+   keys and different values uses `ios_syntax`, and the device commands say
+   so. `tacctl backup diff` does not report the key's new name as a change.
+   `tacctl rollback 0.2.17`, `0.2.16` and `0.2.9` write the setting back under
+   `config_syntax` (after a snapshot), and `rollback 0.2.3` removes it under
+   either key.
+
+5. **Tab completion of `device ios-syntax` offers the Cisco devices, and of
+   `device netconf` the Junos devices.** The generated bash, zsh and fish
+   scripts and `tacctl shell` (the login console's included) offer only the
+   registry devices of that vendor, filtered to the caller's scopes as
+   before; enrolled hosts and the devices of other vendors are not offered.
+   The `?` listing keeps its columns (vendor, address, scope). What a typed
+   name is checked against does not change.
+
+6. **An unknown command is an error line, not the whole usage.** `tacctl
+   enroll` prints `[ERROR] Unknown command: 'enroll'`, then `Did you mean:
+   tacctl device enroll, tacctl host enroll?` (the verbs of that name, at most
+   four) and `Run 'tacctl' for the commands.` on standard error, and exits 1
+   as before; a word within two letters of a command is answered with that
+   command (`tacctl devce`: `Did you mean: tacctl device?`), a word that starts
+   with `-` is `Unknown option: '<word>'`. Nothing is printed on standard
+   output. A line of `tacctl shell` runs the command the same way and prints
+   the same lines. `tacctl`, `tacctl help`, `-h` and `--help` print the
+   top-level usage as before.
+
+7. **Tab completion and `?` list every command, flag and fixed word with
+   its own description, in one style.** In `tacctl shell` and the login
+   console, `?` takes a flag's description from the lines of its own verb
+   (`config cisco --legacy` no longer shows `backup restore`'s, `rollback
+   --yes` no longer `install`'s), with the whole sentence where the usage
+   goes on over several lines; shows the usage line and description of
+   `install`, `upgrade`, `uninstall`, `rollback`, `shell`, `version` and the
+   `console` verbs; shows the usage of the `config allow|deny|mgmt-acl`,
+   `group commands|privilege` and `scope prefixes|secret|mgmt-acl` verbs,
+   which it left out; lists only the forms of a verb that the words typed so
+   far fit, and `Next:` names the choice where they part (`group edit` →
+   `Next: <name> priv-lvl|juniper-class|wti-level|tier ...`); describes a
+   fixed word by the usage line that has it (`priv-lvl`, `scope snmp <scope>
+   show`); and keeps the vendor, address and scope beside the names of a
+   comma list (`breakglass hold`, `device config pull`). A row whose argument
+   column was split wrongly (`backup restore`, `config validate`, `config
+   cisco`, `scope aaa-order`) is whole again. The usage text writes every
+   placeholder `<name>` (optional `[<name>]`; `[timestamp]`, `[n]`, `[name]`
+   and `<CLASS>` are gone), begins every description with a capital and ends
+   none with a full stop; `tacctl device` describes `list --vendor`, `list
+   --scope`, `sync --apply`, `sync -y`, `collect -y` and `config apply
+   --transport`, and `tacctl host` the `provisioner` `--remove-home` and
+   `-y`. `help console` in the shell prints the console's usage. The manual
+   page's option lists follow the usage. A number range is written `<10-14>`
+   (`config bcrypt-cost [<10-14>]`) and a choice of words `a|b` in the
+   lists' order (`scope block <scope> cisco|juniper`), a verb whose forms
+   take different arguments has a row for each (`scope breakglass`,
+   `protocols`, `vendor-attrs`, `devices`, `staging`, `device snmp`), the
+   usage an error prints is the command's rows (`scope snmp`, `scope
+   mgmt-acl`, `group edit`, `config get`), and `host move` is among the verbs
+   of `--allow-uid-mismatch` and `--remove-home`. No command, flag or exit
+   status changes.
+
 ## 0.2.17 (2026-10-24)
 
 1. **Audit lines: one writer, a session id, no line lost to a signal, a

@@ -27,8 +27,8 @@ Usage: tacctl host <subcommand> [arguments]
                                        /32 (its secret and users) until the host is seen in place (tacctl scope staging)
   sync <name>... | --all               Push account adds, renames, deletions, expiries and tier changes
       --all                            Every enrolled host
-      --allow-uid-mismatch             (enroll and sync) accept a UID conflict on the host instead of stopping
-      --remove-home                    (enroll and sync) delete removed users' home directories without asking
+      --allow-uid-mismatch             (enroll, sync and move) Accept a UID conflict on the host instead of stopping
+      --remove-home                    (enroll, sync and move) Delete removed users' home directories without asking
                                        (on a terminal each one is asked; without one they are kept)
   check <name>... | --all [--json]     Compare hosts with what tacctl would make them, read-only: one line per
                                        difference with the command that fixes it; exit 1 when any differs or
@@ -49,6 +49,9 @@ Usage: tacctl host <subcommand> [arguments]
                                        tacctl never sees it; refused for a host with no pinned ssh keys
       --remove-old                     (provisioner) Last, over the new account, remove the old one; its home is moved
                                        out of reach unless --remove-home. Needs a registry target with an explicit user@
+      --remove-home                    (provisioner) With --remove-old: also delete the old account's home directory, without asking
+                                       (otherwise it is moved out of reach, made root's)
+      -y, --yes                        (provisioner) Rotate without asking, and continue with the host keys shown when none is pinned
       --dry-run                        (provisioner) Print the plan and test the current login; change nothing
   rename <old> <new>                   Give an enrolled host another name: registry line, pinned keys, record, staging
                                        addresses and break-glass hold follow; nothing is sent to the host. When the host

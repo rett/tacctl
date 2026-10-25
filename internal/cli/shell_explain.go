@@ -50,61 +50,159 @@ func blockBody(block string) []string {
 	return lines
 }
 
-// verbRows are the rows of block for verb, in the block's order: a row
-// whose description is on the next line (a long argument column) is one
-// row too.
-func verbRows(block, verb string) []usageRow {
+// oneBlank is s with every run of blanks made one: a usage block pads its
+// argument column to line up with its neighbours, a list does not.
+func oneBlank(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+// joinContinued is desc, the description that ends line, with the lines of
+// next that continue it: the block goes on with a long description on the
+// lines below, indented to the column where it starts. A line there that is
+// an option of its own (a flag, then its description) is no continuation.
+func joinContinued(desc, line string, next []string) string {
+	line = strings.TrimRight(plainBlock(line), " ")
+	col := len(line) - len(desc)
+	if desc == "" || col <= 0 || !strings.HasSuffix(line, desc) {
+		return desc
+	}
+	pad := strings.Repeat(" ", col)
+	for _, n := range next {
+		n = strings.TrimRight(plainBlock(n), " ")
+		if !strings.HasPrefix(n, pad) || len(n) <= col || n[col] == ' ' {
+			break
+		}
+		if left, _, ok := splitRow(n); ok && strings.HasPrefix(strings.TrimSpace(left), "-") {
+			break
+		}
+		desc += " " + strings.TrimSpace(n)
+	}
+	return desc
+}
+
+// rowLeft is a row's argument column as the lists show it: the program
+// and the command words before the verb left out ('tacctl config allow
+// add <cidr>' under 'config allow' is 'add <cidr>'), one blank between
+// the words.
+func rowLeft(left string, prefix []string) string {
+	w := strings.Fields(left)
+	if len(w) > 0 && w[0] == "tacctl" {
+		w = w[1:]
+		for _, p := range prefix {
+			if len(w) == 0 || w[0] != p {
+				break
+			}
+			w = w[1:]
+		}
+	}
+	return strings.Join(w, " ")
+}
+
+// verbRows are the rows of block for verb, the command words of prefix
+// before it ('config allow' for 'add'), in the block's order: a row whose
+// description is on the next line (a long argument column) is one row too,
+// and a description goes on over the lines that continue it.
+func verbRows(block string, prefix []string, verb string) []usageRow {
 	lines := blockBody(block)
 	var rows []usageRow
 	for i, line := range lines {
 		if !strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "   ") {
 			continue
 		}
-		first, _, _ := strings.Cut(reProg.ReplaceAllString(strings.TrimPrefix(line, "  "), ""), " ")
-		if first != verb {
-			continue
-		}
 		left, desc, ok := splitRow(line)
+		descLine, after := line, lines[i+1:]
 		if !ok {
-			left = strings.TrimSpace(line)
+			left, desc = line, ""
 			if i+1 < len(lines) && strings.HasPrefix(lines[i+1], "   ") {
-				desc = strings.TrimSpace(lines[i+1])
+				desc, descLine, after = strings.TrimSpace(lines[i+1]), lines[i+1], lines[i+2:]
 			}
 		}
-		rows = append(rows, usageRow{Left: left, Name: verb, Desc: desc})
+		left = rowLeft(left, prefix)
+		if first, _, _ := strings.Cut(left, " "); first != verb {
+			continue
+		}
+		rows = append(rows, usageRow{Left: left, Name: verb, Desc: joinContinued(desc, descLine, after), At: i})
 	}
 	return rows
 }
 
-// ownUsage are the 'Usage: tacctl <path> ...' lines of a command's own
-// block, as rows without a description.
-func ownUsage(block string) []usageRow {
+// ownUsage are the rows of a command's own block: its 'Usage: tacctl
+// <path> ...' lines (without a description), else the rows of its list
+// that begin with its own word ('tacctl scope prefixes <scope> list').
+func ownUsage(block string, path []string) []usageRow {
+	prefix, leaf := path[:len(path)-1], path[len(path)-1]
 	var rows []usageRow
-	for _, line := range blockBody(block) {
+	for i, line := range blockBody(block) {
 		if u, ok := strings.CutPrefix(line, "Usage: "); ok {
-			rows = append(rows, usageRow{Left: strings.TrimPrefix(u, "tacctl ")})
+			rows = append(rows, usageRow{Left: rowLeft(u, prefix), Name: leaf, At: i, Own: true})
 		}
+	}
+	if len(rows) == 0 {
+		rows = verbRows(block, prefix, leaf)
 	}
 	return rows
 }
 
 // shellUsage is the usage rows of the command at path, and the block they
-// come from.
+// come from. A top-level command without a block of its own has its row
+// of tacctl's usage; any other command the tree alone describes, its usage
+// line and its description.
 func (inv *invocation) shellUsage(cmd *cobra.Command, path []string) ([]usageRow, string) {
 	block, n := inv.helpBlock(cmd, path)
-	if n < len(path) {
-		return verbRows(block, path[n]), block
+	var rows []usageRow
+	switch _, own := shellHelpBlocks[strings.Join(path, " ")]; {
+	case n < len(path):
+		rows = verbRows(block, path[:n], path[n])
+	case own:
+		// Its 'Usage:' line says what it is as the command's own
+		// description does.
+		rows = ownUsage(block, path)
+		for i := range rows {
+			if rows[i].Desc == "" {
+				rows[i].Desc = cmd.Short
+			}
+		}
+		return rows, block
+	case len(path) == 1:
+		top := Usage("top", UsageVars{"version": inv.build.Version})
+		if rows = verbRows(top, nil, path[0]); len(rows) > 0 {
+			return rows, top
+		}
 	}
-	return ownUsage(block), block
+	if len(rows) == 0 {
+		// The lines are the tree's, not the block's: no section of it.
+		rows = ownUsage(treeUsage(cmd), path)
+		for i := range rows {
+			rows[i].Desc, rows[i].At, rows[i].Own = cmd.Short, -1, false
+		}
+	}
+	return rows, block
 }
 
 var reFlagValue = regexp.MustCompile(`^(<[^>]*>(?:\[[^\]]*\])?|[A-Za-z0-9]+:<[^>]*>|[a-z0-9]+(?:\|[a-z0-9]+)+)`)
 
+// verbsNamed reports whether desc opens with a list of the verbs it is
+// about ('(add, remove) ...', '(enroll and sync) ...'), and whether verb is
+// among them.
+func verbsNamed(desc, verb string) (listed, named bool) {
+	if !strings.HasPrefix(desc, "(") {
+		return false, false
+	}
+	end := strings.Index(desc, ")")
+	if end < 0 {
+		return false, false
+	}
+	return true, slices.Contains(strings.Fields(strings.ReplaceAll(desc[1:end], ",", " ")), verb)
+}
+
 // flagHelp is what the block says of a flag: its value's placeholder (for
 // a flag that takes one) and its description. An option line ('  -p <port>
-// Connect ...') gives both; else a row of the verb that adds the flag to
-// the first row ('add <username> <group> --hash <hash>  Add with ...'); the
-// placeholder may also come from anywhere the block names the flag.
+// Connect ...') gives both, with the lines that continue it; else a row of
+// the verb that adds the flag to the first row ('add <username> <group>
+// --hash <hash>  Add with ...'); the placeholder may also come from
+// anywhere the block names the flag. A block may describe a flag of the
+// same name for several verbs: the option line under the verb's own rows
+// (rows) that names the verb in its '(verbs)' opening wins, then one under
+// its rows, one elsewhere that names it, one that names no verb, and last
+// one about other verbs.
 func flagHelp(block string, rows []usageRow, f Flag) (value, desc string) {
 	findValue := func(text string) string {
 		for _, n := range f.Names {
@@ -131,9 +229,24 @@ func flagHelp(block string, rows []usageRow, f Flag) (value, desc string) {
 		}
 		return ""
 	}
-	for _, line := range blockBody(block) {
+	verb, own := "", false
+	ats := map[int]bool{}
+	for _, r := range rows {
+		verb, own = r.Name, own || r.Own
+		ats[r.At] = true
+	}
+	lines := blockBody(block)
+	best, bestLeft, bestScore := "", "", -1
+	row := -1 // the row line above the line at hand
+	for i, line := range lines {
 		body := strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "  ") || !strings.HasPrefix(body, "-") {
+		if !strings.HasPrefix(line, "  ") || body == "" {
+			continue
+		}
+		if !strings.HasPrefix(body, "-") {
+			if !strings.HasPrefix(line, "   ") {
+				row = i
+			}
 			continue
 		}
 		left, d, ok := splitRow(line)
@@ -147,12 +260,39 @@ func flagHelp(block string, rows []usageRow, f Flag) (value, desc string) {
 				names = true
 			}
 		}
-		if ok && names {
-			desc = d
-			if f.Value {
-				value = findValue(left)
+		if !ok || !names {
+			continue
+		}
+		listed, named := verbsNamed(d, verb)
+		// Under a row of another verb's sub-verbs ('config pull ...'), the
+		// verbs named are that verb's ('(pull, diff, plan, apply, list)').
+		if row >= 0 && named {
+			if w := strings.Fields(lines[row]); len(w) > 1 && w[0] != verb {
+				if _, sub := verbsNamed(d, w[1]); sub {
+					named = false
+				}
 			}
-			break
+		}
+		inSection := own || (row >= 0 && ats[row])
+		score := 0
+		switch {
+		case named && inSection:
+			score = 4
+		case inSection:
+			score = 3
+		case named:
+			score = 2
+		case !listed:
+			score = 1
+		}
+		if score > bestScore {
+			best, bestLeft, bestScore = joinContinued(d, line, lines[i+1:]), left, score
+		}
+	}
+	if bestScore >= 1 {
+		desc = best
+		if f.Value {
+			value = findValue(bestLeft)
 		}
 	}
 	if desc == "" {
@@ -166,8 +306,14 @@ func flagHelp(block string, rows []usageRow, f Flag) (value, desc string) {
 			}
 		}
 	}
+	if desc == "" && bestScore == 0 {
+		desc = best
+		if f.Value {
+			value = findValue(bestLeft)
+		}
+	}
 	if f.Value && value == "" {
-		value = findValue(strings.Join(blockBody(block), "\n"))
+		value = findValue(strings.Join(lines, "\n"))
 		if value == "" {
 			value = "<value>"
 		}
@@ -214,15 +360,15 @@ func placeholders(row usageRow, skip int) []string {
 	return out
 }
 
-// positionals counts the positional words of rest under spec (a value
+// positionalWords are the positional words of rest under spec (a value
 // flag's value is not one; '--' ends them).
-func positionals(spec Spec, rest []string) int {
-	pos := 0
+func positionalWords(spec Spec, rest []string) []string {
+	var out []string
 	for i := 0; i < len(rest); i++ {
 		w := rest[i]
 		switch {
 		case w == "--":
-			return pos
+			return out
 		case strings.HasPrefix(w, "-") && len(w) > 1:
 			name, _, hasValue := strings.Cut(w, "=")
 			for _, f := range spec.Flags {
@@ -231,10 +377,119 @@ func positionals(spec Spec, rest []string) int {
 				}
 			}
 		default:
-			pos++
+			out = append(out, w)
 		}
 	}
-	return pos
+	return out
+}
+
+// typedWords are the words typed after the verb its usage rows begin
+// with: the command words below it ('install' of 'config sudoers install',
+// whose rows are the 'sudoers' rows of 'config'), then the positionals.
+func (inv *invocation) typedWords(cmd *cobra.Command, path []string, spec Spec, rest []string) []string {
+	var out []string
+	if _, n := inv.helpBlock(cmd, path); n+1 < len(path) {
+		out = slices.Clone(path[n+1:])
+	}
+	return append(out, positionalWords(spec, rest)...)
+}
+
+// positionals counts the positional words of rest under spec.
+func positionals(spec Spec, rest []string) int { return len(positionalWords(spec, rest)) }
+
+// fixedWords are the words a placeholder of a usage row stands for when it
+// is a fixed word or a choice of them ('list', 'list|add', 'cisco|juniper');
+// nil for a value typed by hand ('<name>', 'auto|<tier>') or an optional
+// one ('[<n>]', '[show|tcp]'), which any word fits.
+func fixedWords(p string) []string {
+	if strings.ContainsAny(p, "<[") {
+		return nil
+	}
+	return strings.Split(strings.Trim(p, "{}"), "|")
+}
+
+// fitRows are the rows whose placeholders the positional words typed so
+// far fit (rows itself when none does): the forms of the verb still open.
+func fitRows(rows []usageRow, words []string) []usageRow {
+	var out []usageRow
+	for _, r := range rows {
+		ph := placeholders(r, 1)
+		fits := true
+		for i, w := range words {
+			if i < len(ph) {
+				if fw := fixedWords(ph[i]); fw != nil && !slices.Contains(fw, w) {
+					fits = false
+				}
+			}
+		}
+		if fits {
+			out = append(out, r)
+		}
+	}
+	if len(out) == 0 {
+		return rows
+	}
+	return out
+}
+
+// nextWords is what the rows say comes after the first pos positionals:
+// the placeholders they share, then the choice of words where they part
+// ('<scope> list|add|remove|move ...').
+func nextWords(rows []usageRow, pos int) []string {
+	var rests [][]string
+	for _, r := range rows {
+		ph := placeholders(r, 1)
+		rests = append(rests, ph[min(pos, len(ph)):])
+	}
+	var out []string
+	for i := 0; ; i++ {
+		var at []string
+		more := false
+		for _, r := range rests {
+			if i < len(r) {
+				if !slices.Contains(at, r[i]) {
+					at = append(at, r[i])
+				}
+				more = more || i+1 < len(r)
+			}
+		}
+		switch len(at) {
+		case 0:
+			return out
+		case 1:
+			out = append(out, at[0])
+			continue
+		}
+		// The words of the choices, once each ('list|add|remove' and
+		// 'remove' are 'list|add|remove').
+		// An optional choice ('[show|install|remove]' beside 'tiers') makes
+		// the whole choice optional.
+		var choice []string
+		optional := false
+		for _, a := range at {
+			if inner, ok := strings.CutPrefix(a, "["); ok && strings.HasSuffix(inner, "]") && fixedWords(inner[:len(inner)-1]) != nil {
+				a, optional = inner[:len(inner)-1], true
+			}
+			ws := fixedWords(a)
+			if ws == nil {
+				ws = []string{a}
+			}
+			for _, w := range ws {
+				if !slices.Contains(choice, w) {
+					choice = append(choice, w)
+				}
+			}
+		}
+		if optional {
+			out = append(out, "["+strings.Join(choice, "|")+"]")
+		} else {
+			out = append(out, strings.Join(choice, "|"))
+		}
+		if more {
+			out = append(out, "...")
+		}
+		return out
+	}
 }
 
 // alignRows is rows as '  <left>  <desc>' lines, the descriptions aligned.
@@ -274,15 +529,28 @@ func (inv *invocation) shellExplain(root *cobra.Command) func([]string) (string,
 			return "", false
 		}
 		rows, block := inv.shellUsage(cmd, path)
+		spec, hasSpec := specFor(path)
+		typedWords := inv.typedWords(cmd, path, spec, rest)
+		pos := len(typedWords)
+		forms := fitRows(rows, typedWords)
+		shown := forms
+		// A command whose block lists its own forms ('scope snmp <scope>
+		// <subcommand>', then 'show [--reveal]' and so on): the rows of the
+		// words typed so far as well.
+		if len(rows) > 0 && rows[0].Own {
+			shown = slices.Clone(forms)
+			for _, w := range typedWords {
+				shown = append(shown, verbRows(block, path, w)...)
+			}
+		}
 		var b strings.Builder
 		var lines [][2]string
-		for _, r := range rows {
+		for _, r := range shown {
 			lines = append(lines, [2]string{r.Left, r.Desc})
 		}
 		if len(lines) > 0 {
 			b.WriteString("Usage:\n" + alignRows(lines))
 		}
-		spec, hasSpec := specFor(path)
 		var flags [][2]string
 		for _, f := range spec.Flags {
 			typed := slices.ContainsFunc(rest, func(w string) bool {
@@ -298,19 +566,11 @@ func (inv *invocation) shellExplain(root *cobra.Command) func([]string) (string,
 		if len(flags) > 0 {
 			b.WriteString("Options:\n" + alignRows(flags))
 		}
-		var args []string
-		if len(rows) > 0 {
-			skip := 1
-			if _, n := inv.helpBlock(cmd, path); n == len(path) {
-				skip = len(path)
-			}
-			args = placeholders(rows[0], skip)
-		}
-		pos := positionals(spec, rest)
 		next := "<Enter> to run"
-		switch remaining := args[min(pos, len(args)):]; {
-		case len(remaining) == 0 || (hasSpec && spec.MaxArgs >= 0 && pos >= spec.MaxArgs):
-		case hasSpec && pos < spec.MinArgs:
+		args := positionals(spec, rest)
+		switch remaining := nextWords(forms, pos); {
+		case len(remaining) == 0 || (hasSpec && spec.MaxArgs >= 0 && args >= spec.MaxArgs):
+		case hasSpec && args < spec.MinArgs:
 			next = strings.Join(remaining, " ")
 		default:
 			next = strings.Join(remaining, " ") + ", or " + next
@@ -345,12 +605,6 @@ func (inv *invocation) flagHelps(cmd *cobra.Command, path []string, spec Spec, c
 	out := map[string][2]string{}
 	for _, f := range spec.Flags {
 		value, desc := flagHelp(block, rows, f)
-		if desc == "" && len(path) == 1 {
-			// A top-level command without a block of its own: the option
-			// lines of tacctl's usage.
-			top := Usage("top", UsageVars{"version": inv.build.Version})
-			value, desc = flagHelp(top, verbRows(top, path[0]), f)
-		}
 		for _, n := range f.Names {
 			out[n] = [2]string{value, desc}
 		}
@@ -369,6 +623,8 @@ func listKindName(spec Spec, rest []string) string {
 		return kind
 	case KindEnabledBackends:
 		return KindBackends
+	case KindCiscoDevices, KindJuniperDevices:
+		return KindDevices
 	case KindFile:
 		return "files"
 	}
@@ -430,4 +686,66 @@ func specKind(spec Spec, rest []string) string {
 		}
 	}
 	return kind
+}
+
+// waitsForValue reports whether the last word of rest is a flag of spec
+// that waits for its value.
+func waitsForValue(spec Spec, rest []string) bool {
+	if len(rest) == 0 {
+		return false
+	}
+	name, _, hasVal := strings.Cut(rest[len(rest)-1], "=")
+	if hasVal {
+		return false
+	}
+	return slices.ContainsFunc(spec.Flags, func(f Flag) bool {
+		return f.Value && !f.Optional && slices.Contains(f.Names, name)
+	})
+}
+
+// wordDescs describes the fixed words that can come as the next
+// positional after rest: by the usage row of the verb that has the word
+// alone in that place ('group edit <name> priv-lvl <0-15>' describes
+// priv-lvl), else by the row of the command's own block that begins with
+// it ('scope snmp <scope> show': 'show [--reveal]'). A word of a choice
+// ('list|add|remove') is not described: its row is about the verb.
+func (inv *invocation) wordDescs(cmd *cobra.Command, path []string, spec Spec, rest []string) map[string]string {
+	if waitsForValue(spec, rest) {
+		return nil
+	}
+	rows, block := inv.shellUsage(cmd, path)
+	typed := inv.typedWords(cmd, path, spec, rest)
+	out := map[string]string{}
+	inChoice := map[string]bool{}
+	for _, r := range fitRows(rows, typed) {
+		ph := placeholders(r, 1)
+		if len(typed) >= len(ph) {
+			continue
+		}
+		switch fw := fixedWords(ph[len(typed)]); {
+		case len(fw) > 1:
+			for _, w := range fw {
+				inChoice[w] = true
+			}
+		case len(fw) == 1 && r.Desc != "":
+			if _, ok := out[fw[0]]; !ok {
+				out[fw[0]] = r.Desc
+			}
+		}
+	}
+	// A word that is also one of a choice ('scope <user> list|add|remove'
+	// beside 'scope <user> remove --all') has more forms than the one row.
+	for w := range inChoice {
+		delete(out, w)
+	}
+	if kind := specKind(spec, rest); len(rows) > 0 && rows[0].Own && fixedKind(kind) {
+		for _, w := range inv.kindWords(kind, nil) {
+			if _, ok := out[w]; !ok && !inChoice[w] {
+				if rs := verbRows(block, path, w); len(rs) > 0 && rs[0].Desc != "" {
+					out[w] = rs[0].Desc
+				}
+			}
+		}
+	}
+	return out
 }
