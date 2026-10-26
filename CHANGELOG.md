@@ -196,6 +196,29 @@ current behaviour; this file is where history lives.
     new one has a dot, because a scope name has none; `host rename` says so.
     The name taken from a target is still its short name.
 
+17. **`tacctl rollback 0.2.18`.** The release before this one is a rollback
+    target (beside 0.2.17, 0.2.16, 0.2.9 and 0.2.3). `--apply` rewrites the
+    per-tier sudoers drop-in, when it is exactly this release's text, with
+    0.2.18's (the engineer's rows of `device config apply`, `enroll`,
+    `collect`, `onboard`, `sync` and `support-bundle` are taken out). Every
+    target is refused while an emergency lockdown locks a group, removes a
+    partial lockdown record (the older schemas refuse its keys) and, for every
+    target that has blocks, warns of the `system` blocks that use statements
+    this release added (the older release lints them as errors): the dry run
+    lists them by scope or device, vendor and count, and `--apply` needs
+    `--yes`. The block files are not rewritten.
+
+18. **`?` describes the words of `scope block` and `device block`.** At the
+    shell or console prompt, `?` after `scope block <scope> ` listed the
+    vendors, and after `show`, `check`, `set`, `remove`, `edit` or `adopt
+    <device>` the block names, without a description (the verbs had one).
+    The vendors, the block names `snmp` and `system` and the verbs of both
+    commands now each carry a one-line description, the same as the other
+    lists. The usage of both commands gains the rows they come from, and
+    says the block commands cover snmp and system for Junos and IOS, that the
+    system block is additive but for an `absent` line, and that the IOS
+    banners are login, motd and exec.
+
 ## 0.2.18 (2026-10-24)
 
 1. **`device config-syntax` is now `device ios-syntax`, and `device add

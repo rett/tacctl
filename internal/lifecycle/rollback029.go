@@ -38,7 +38,7 @@ func planRollback029(p *RollbackPlan) (*RollbackPlan, error) {
 		p.Steps = append(p.Steps, RollbackStep{Title: "the enrolled Linux hosts (--hosts)",
 			Lines: []string{"nothing to do for " + RollbackTarget029 + ": 0.2.10 changed nothing on the hosts; no host is synced"}})
 	}
-	p.Warnings = p.warnings029()
+	p.Warnings = append(p.warnings029(), p.blocksWarning(RollbackTarget029)...)
 	p.Notes = p.notes029()
 	return p, nil
 }
@@ -46,7 +46,7 @@ func planRollback029(p *RollbackPlan) (*RollbackPlan, error) {
 func (p *RollbackPlan) confStep029() RollbackStep {
 	s := RollbackStep{Title: p.in.Paths.Overrides + ": remove the keys " + RollbackTarget029 + " does not know", Todo: len(p.keys) > 0}
 	if len(p.keys) == 0 {
-		s.Lines = []string{"nothing to remove (device.apply.transport, the netconf_scope settings and audit.strict are not set)"}
+		s.Lines = []string{"nothing to remove (device.apply.transport, the netconf_scope settings, audit.strict and the lockdown record are not set)"}
 		return s
 	}
 	for _, k := range p.keys {
@@ -106,7 +106,7 @@ func (p *RollbackPlan) recordsStep029() RollbackStep {
 func (p *RollbackPlan) otherStep029() RollbackStep {
 	pt := p.in.Paths
 	return RollbackStep{Title: "leave every other file untouched",
-		Lines: []string{pt.ConsoleFile + ", " + pt.StoreFile + ", the SNMP credentials, the blocks, the apply state directory and the rendered backend files are in formats " + RollbackTarget029 + " reads (0.2.10 changed none of them);",
+		Lines: []string{pt.ConsoleFile + ", " + pt.StoreFile + ", the SNMP credentials, the blocks, the apply state directory and the rendered backend files are in formats " + RollbackTarget029 + " reads (0.2.10 changed none of them, and 0.2.19 none but the blocks: see the warning, if any);",
 			"the sudoers drop-ins are left: sudo accepts them, the tiers file is left, and " + RollbackTarget029 + "'s upgrade rewrites it;",
 			"nothing is re-rendered or restarted, and no device is contacted"}}
 }
@@ -116,7 +116,7 @@ func (p *RollbackPlan) warnings029() []RollbackWarning {
 	in := p.in
 	var tr, nc []string
 	for _, k := range p.keys {
-		if conf.Added0217Key(k) {
+		if conf.Added0217Key(k) || conf.Added0219Key(k) {
 			continue
 		}
 		v, _ := in.Conf.Get(k, "")

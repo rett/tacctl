@@ -37,7 +37,7 @@ func TestPlanRollback0217PutsBackTheTiersDropIn(t *testing.T) {
 	st := stepText(p)
 	for _, w := range []string{"put back the per-tier sudoers drop-in 0.2.17 writes", "rewrite " + s.p.TierSudoersFile,
 		"the rules of 'device ios-syntax', 'device notice list' and 'device client-config' become 0.2.17's 'device config-syntax', 'device notices' and 'device ssh-config'", "leave every other file untouched",
-		"formats 0.2.17 reads (0.2.18 changed none of them)"} {
+		"formats 0.2.17 reads (0.2.18 changed none of them, and 0.2.19 none but the blocks"} {
 		if !strings.Contains(st, w) {
 			t.Errorf("steps lack %q:\n%s", w, st)
 		}

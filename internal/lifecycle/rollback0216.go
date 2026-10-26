@@ -28,7 +28,7 @@ func planRollback0216(p *RollbackPlan) (*RollbackPlan, error) {
 		p.Steps = append(p.Steps, RollbackStep{Title: "the enrolled Linux hosts (--hosts)",
 			Lines: []string{"nothing to do for " + RollbackTarget0216 + ": 0.2.17 changed nothing on the hosts; no host is synced"}})
 	}
-	p.Warnings = p.warnings0216()
+	p.Warnings = append(p.warnings0216(), p.blocksWarning(RollbackTarget0216)...)
 	p.Notes = p.notes0216()
 	return p, nil
 }
@@ -36,7 +36,7 @@ func planRollback0216(p *RollbackPlan) (*RollbackPlan, error) {
 func (p *RollbackPlan) confStep0216() RollbackStep {
 	s := RollbackStep{Title: p.in.Paths.Overrides + ": remove the keys " + RollbackTarget0216 + " does not know", Todo: len(p.keys) > 0}
 	if len(p.keys) == 0 {
-		s.Lines = []string{"nothing to remove (audit.strict is not set)"}
+		s.Lines = []string{"nothing to remove (audit.strict is not set and no emergency lockdown is recorded)"}
 		return s
 	}
 	for _, k := range p.keys {
@@ -49,7 +49,7 @@ func (p *RollbackPlan) confStep0216() RollbackStep {
 func (p *RollbackPlan) otherStep0216() RollbackStep {
 	pt := p.in.Paths
 	return RollbackStep{Title: "leave every other file untouched",
-		Lines: []string{pt.ConsoleFile + ", " + pt.StoreFile + ", the SNMP credentials, the blocks, the apply state directory and the rendered backend files are in formats " + RollbackTarget0216 + " reads (0.2.17 and 0.2.18 changed none of them);",
+		Lines: []string{pt.ConsoleFile + ", " + pt.StoreFile + ", the SNMP credentials, the blocks, the apply state directory and the rendered backend files are in formats " + RollbackTarget0216 + " reads (0.2.17 and 0.2.18 changed none of them, and 0.2.19 none but the blocks: see the warning, if any);",
 			"the sudoers drop-ins are left: sudo accepts them, and " + RollbackTarget0216 + "'s upgrade rewrites the tiers file;",
 			"nothing is re-rendered or restarted, and no device is contacted"}}
 }

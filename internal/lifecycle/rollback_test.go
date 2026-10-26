@@ -23,7 +23,7 @@ func TestCheckRollbackVersion(t *testing.T) {
 		}
 	}
 	for _, c := range []struct{ in, want string }{
-		{"0.2.2", "'tacctl rollback' prepares the state for 0.2.17 (the release before this one), 0.2.16, 0.2.9 and 0.2.3 only (0.2.2 is older)"},
+		{"0.2.2", "'tacctl rollback' prepares the state for 0.2.18 (the release before this one), 0.2.17, 0.2.16, 0.2.9 and 0.2.3 only (0.2.2 is older)"},
 		{"v0.2.2", "is older"},
 		{"0.2.1", "is older"},
 		{"0.1.16", "is older"},
@@ -31,7 +31,7 @@ func TestCheckRollbackVersion(t *testing.T) {
 		{"0.2.7", "and 0.2.3 only (0.2.7 is further back)"},
 		{"v0.2.7", "and 0.2.3 only (0.2.7 is further back)"},
 		{"0.2.8", "and 0.2.3 only (0.2.8 is further back)"},
-		{"0.2.10", "'0.2.10' is not a release to roll back to: 'tacctl rollback' prepares the state for 0.2.17 (the release before this one), 0.2.16, 0.2.9 and 0.2.3 only"},
+		{"0.2.10", "'0.2.10' is not a release to roll back to: 'tacctl rollback' prepares the state for 0.2.18 (the release before this one), 0.2.17, 0.2.16, 0.2.9 and 0.2.3 only"},
 		{"0.2.15", "'0.2.15' is not a release to roll back to"},
 		{"0.3.0", "and 0.2.3 only"},
 		{"1.0.0", "and 0.2.3 only"},
@@ -56,7 +56,7 @@ func TestCheckRollbackVersion(t *testing.T) {
 	}
 	// The refusal of 0.2.12 names the targets and promises no route there.
 	_, err212 := CheckRollbackVersion("0.2.12")
-	if !strings.Contains(err212.Error(), "Usage: tacctl rollback 0.2.17|0.2.16|0.2.9|0.2.3") || strings.Contains(err212.Error(), "one release at a time") || strings.Contains(err212.Error(), "rollback 0.2.16 --apply") {
+	if !strings.Contains(err212.Error(), "Usage: tacctl rollback 0.2.18|0.2.17|0.2.16|0.2.9|0.2.3") || strings.Contains(err212.Error(), "one release at a time") || strings.Contains(err212.Error(), "rollback 0.2.16 --apply") {
 		t.Errorf("0.2.12 refusal: %v", err212)
 	}
 	// The refusal of 0.2.2 names the two steps and the fallback.

@@ -80,6 +80,7 @@ func deviceBlockUsage(name string) string {
 			fmt.Fprintf(&b, "      %-36s  %s\n", o[0], o[1])
 		}
 	}
+	b.WriteString(blockRowsUsage("Blocks (<block>):", blockNameRows))
 	b.WriteString(`
 A device's block is in its vendor's syntax, as a scope's is ('tacctl scope
 block'): Junos 'set' statements or IOS configuration lines. It is laid over

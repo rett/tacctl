@@ -258,6 +258,12 @@ scope breakglass <name> remove <user>
     show`.
 ```
 
+**Words at the prompt.** In the shell and the console, `?` after `scope block
+<name> ` lists the vendors, after the vendor the verbs, and after `show`,
+`check`, `set`, `remove`, `edit` or `adopt <device>` the block names (`snmp`,
+`system`), each with a description; `device block <name> ` does the same for
+its verbs and block names.
+
 **A secret kept off the command line.** `scope secret <name> set` with no
 value asks for the secret twice at a terminal, without echo, and
 `scope secret <name> set --stdin` reads one line from standard input (a

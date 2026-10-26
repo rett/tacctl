@@ -252,7 +252,23 @@ func (c *Config) unknown023(path string) bool {
 func (c *Config) RollbackKeys029() []string {
 	var out []string
 	walkLeaves(c.Overrides(), "", func(p string, _ any) {
-		if Added0210Key(p) || Added0217Key(p) {
+		if Added0210Key(p) || Added0217Key(p) || Added0219Key(p) {
+			out = append(out, p)
+		}
+	})
+	return out
+}
+
+// RollbackKeys0218 are the leaf keys of the overrides that a 0.2.18 or
+// 0.2.17 binary does not know, in file order: the dotted path of each.
+// 0.2.19 added the emergency lockdown record (Added0219) and nothing else to
+// the schema. A rollback is refused while a lockdown with a group stands, so
+// what is left is a partial record that locks nothing (the schema accepts
+// each leaf alone), which the older schema refuses all the same.
+func (c *Config) RollbackKeys0218() []string {
+	var out []string
+	walkLeaves(c.Overrides(), "", func(p string, _ any) {
+		if Added0219Key(p) {
 			out = append(out, p)
 		}
 	})
@@ -261,15 +277,15 @@ func (c *Config) RollbackKeys029() []string {
 
 // RollbackKeys0216 are the leaf keys of the overrides that a 0.2.16 binary
 // does not know, in file order: the dotted path of each. 0.2.17 added
-// audit.strict (Added0217) and nothing else to the schema, so these are the
-// leaves of that family; a key no release knows is not listed (0.2.16
+// audit.strict (Added0217) and 0.2.19 the lockdown record (Added0219), and
+// nothing else, so these are the leaves of those families; a key no release knows is not listed (0.2.16
 // refuses it as this release does, and 'config validate' says so). A mapping
 // 'audit:' that holds nothing yields no key and 0.2.16 reads it as it reads
 // an empty one.
 func (c *Config) RollbackKeys0216() []string {
 	var out []string
 	walkLeaves(c.Overrides(), "", func(p string, _ any) {
-		if Added0217Key(p) {
+		if Added0217Key(p) || Added0219Key(p) {
 			out = append(out, p)
 		}
 	})

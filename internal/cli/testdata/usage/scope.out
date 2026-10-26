@@ -51,7 +51,7 @@ Usage:
       --connection-limit <n>|none                          (enable) The connection limit of the service, 1 to 250; none removes it
       --rate-limit <n>|none                                (enable) The rate limit of the service, 1 to 250; none removes it
   tacctl scope block <scope> cisco|juniper list|show|check|set|remove|edit|adopt [<block>]
-                                                           Configuration blocks of a scope (Junos snmp and system, IOS snmp): community strings, trap groups and hosts, access lists, login message, domain, time zone, name servers, NTP
+                                                           Configuration blocks of a scope (snmp and system, for Junos and IOS): community strings, trap groups and hosts, access lists, login message, domain, time zone, name servers, NTP
 
 Current scopes: 1
 Default scope:  lab

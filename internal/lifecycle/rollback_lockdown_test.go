@@ -10,7 +10,7 @@ import (
 // An emergency lockdown stops the rollback to every target, in the dry run
 // and the apply alike: no older release has the record. Nothing is changed.
 func TestPlanRollbackRefusesWhileALockdownStands(t *testing.T) {
-	for _, target := range []string{RollbackTarget, RollbackTarget029, RollbackTarget0216, RollbackTarget0217} {
+	for _, target := range []string{RollbackTarget, RollbackTarget029, RollbackTarget0216, RollbackTarget0217, RollbackTarget0218} {
 		s := newRBSandbox(t)
 		s.in.Target = target
 		s.write(s.p.Overrides, rbConf+`emergency:

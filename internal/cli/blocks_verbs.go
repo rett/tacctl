@@ -37,6 +37,25 @@ import (
 // blockWords are the block names, for the usage and completion.
 var blockWords = strings.Join(blocks.KnownBlocks, "|")
 
+// blockNameRows are the block names with what each holds ({name,
+// description}), in the order of blocks.KnownBlocks: the rows of the usage
+// that the shell's '?' lists beside each name.
+var blockNameRows = [][2]string{
+	{blocks.BlockSNMP, "SNMP communities, client lists, trap groups and hosts, and the trap source"},
+	{blocks.BlockSystem, "Names, time, NTP, syslog, login policy, messages and banners, ssh, and services that must be absent"},
+}
+
+// blockRowsUsage is the text of the rows of a list of {word, description}
+// under a heading, in the column of the verbs' rows.
+func blockRowsUsage(heading string, rows [][2]string) string {
+	var b strings.Builder
+	b.WriteString("\n" + heading + "\n")
+	for _, r := range rows {
+		fmt.Fprintf(&b, "  %-40s  %s\n", r[0], r[1])
+	}
+	return b.String()
+}
+
 // blockCtx is the level a block verb works on.
 type blockCtx struct {
 	inv    *invocation

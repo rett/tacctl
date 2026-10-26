@@ -212,8 +212,9 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.17
+.B 0.2.18
 (the release before this one),
+.BR 0.2.17 ,
 .BR 0.2.16 ,
 .B 0.2.9
 and
@@ -225,8 +226,12 @@ and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word (0.2.10 to
-0.2.15 included: the refusal names the four targets). Every target is
-refused while a device's record says a confirmed commit of
+0.2.15 included: the refusal names the five targets). Every target is
+refused while an emergency lockdown locks a group (the refusal lists each one
+and
+.B "emergency lockdown <scope> disable"
+lifts it; an older release would render the locked users back into the scope)
+and while a device's record says a confirmed commit of
 .B "device config apply"
 is
 .B pending
@@ -238,10 +243,54 @@ or
 .B "device config forget <name>"
 settles it).
 .IP
+.B "rollback 0.2.18"
+.B \-\-apply
+rewrites the per\-tier sudoers drop\-in, when it is exactly the text this
+release writes, with the one 0.2.18 writes (after
+.BR "visudo \-cf" ):
+the engineer's rules of
+.BR "device config apply" ,
+.BR "device enroll" ,
+.BR "device collect" ,
+.BR "device onboard" ,
+.B "device sync"
+and
+.B "device support\-bundle"
+are taken out. An edited drop\-in is left (0.2.18's upgrade rewrites it). A
+partial lockdown record (keys under
+.BR emergency.lockdown. ,
+which locks nothing) is removed from
+.I tacctl.yaml
+after a snapshot, because 0.2.18's schema refuses it. Nothing else is
+converted:
+.IR devices.yaml ,
+.IR console.yaml ,
+.IR store.yaml ,
+the group drop\-in and the hosts are in formats 0.2.18 reads.
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.18" .
+.IP
+Every target but 0.2.3 lists in a warning (and
+.B \-\-apply
+refuses without
+.BR \-\-yes )
+the system blocks that hold statements 0.2.19 added to their grammar: the
+syslog, login\-policy, ssh and summer\-time statements, the login announcement,
+the
+.B absent
+lines and the IOS
+.B "banner motd"
+and
+.BR "banner exec" .
+An older release lints such a block as an error and plans nothing for the
+devices it reaches. The block files are not rewritten; take the statements
+out before the upgrade.
+.IP
 .B "rollback 0.2.17"
 .B \-\-apply
 rewrites the per\-tier sudoers drop\-in, when it is exactly the text this
-release writes, with the one 0.2.17 writes (after
+release writes (or the one 0.2.18 wrote), with the one 0.2.17 writes (after
 .BR "visudo \-cf" ):
 the rules of
 .BR "device ios\-syntax" ,
@@ -260,8 +309,9 @@ has a configuration syntax setting
 the command takes a snapshot first and writes the setting under
 .BR config_syntax ,
 the key 0.2.5 to 0.2.17 read (they refuse a key they do not know); the value
-and every other key stay. Nothing else is converted:
-.IR tacctl.yaml ,
+and every other key stay. A partial lockdown record is removed from
+.IR tacctl.yaml .
+Nothing else is converted:
 .IR console.yaml ,
 .IR store.yaml ,
 the group drop\-in and the hosts are in formats 0.2.17 reads.
@@ -273,8 +323,9 @@ is accepted and does nothing. The command ends with the next step,
 .B \-\-apply
 takes a snapshot, then removes from
 .I tacctl.yaml
-the one key a 0.2.16 binary refuses,
+the keys a 0.2.16 binary refuses,
 .B audit.strict
+and a partial lockdown record
 (its schema reports it as an unknown key, and its
 .B "backup restore"
 refuses a snapshot that has it; the key is checked against that release). When
