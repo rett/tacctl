@@ -45,7 +45,7 @@ func TestCiscoCanon(t *testing.T) {
 			[]string{"ip access-list extended B > permit tcp host 192.0.2.1 any eq 22"}},
 		{"numbered acl", []string{"access-list 10 permit host 192.0.2.1", "access-list 10 remark x", "access-list 120 permit ip any any"},
 			[]string{"access-list 10 permit 192.0.2.1", "access-list 120 permit ip any any"}},
-		{"banner skipped", []string{"banner motd ^C", "aaa new-model fake", "^C", "aaa new-model"},
+		{"banner skipped", []string{"banner incoming ^C", "aaa new-model fake", "^C", "aaa new-model"},
 			[]string{"aaa new-model"}},
 		// the login banner is a statement of its own, kept as its mark (the
 		// system section); every other banner is skipped

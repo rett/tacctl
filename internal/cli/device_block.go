@@ -80,6 +80,7 @@ func deviceBlockUsage(name string) string {
 			fmt.Fprintf(&b, "      %-36s  %s\n", o[0], o[1])
 		}
 	}
+	b.WriteString(blockRowsUsage("Blocks (<block>):", blockNameRows))
 	b.WriteString(`
 A device's block is in its vendor's syntax, as a scope's is ('tacctl scope
 block'): Junos 'set' statements or IOS configuration lines. It is laid over
@@ -104,11 +105,11 @@ comments, to uncomment where this device differs; adopt reads this device's
 statements with your login and leaves out what the scope's block states.
 
 Examples:
-  tacctl device block js1.lab.example.net list
-  tacctl device block js1.lab.example.net show snmp --effective
-  tacctl device block js1.lab.example.net set snmp --file snmp.txt
-  tacctl device block js1.lab.example.net edit snmp
-  tacctl device block js1.lab.example.net adopt system
+  tacctl device block jsw1.lab.example.net list
+  tacctl device block jsw1.lab.example.net show snmp --effective
+  tacctl device block jsw1.lab.example.net set snmp --file snmp.txt
+  tacctl device block jsw1.lab.example.net edit snmp
+  tacctl device block jsw1.lab.example.net adopt system
 
 `)
 	return b.String()

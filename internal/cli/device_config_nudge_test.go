@@ -151,10 +151,11 @@ func TestSetterApplyRefusesNonJunosAndLowerTiers(t *testing.T) {
 		t.Errorf("registry changed:\n%s", got)
 	}
 
-	// an engineer: the setter is theirs, --apply is not
+	// an engineer: both are theirs, so lab-sw (a Cisco device) is refused as
+	// a device apply does not write to
 	eb := engineerSandbox(t)
 	eb.asEngineer("", "device", "location", "lab-sw", "Row 3", "--apply")
-	if eb.code == 0 || !strings.Contains(eb.stderr(), "which is for the superuser tier; yours is engineer. Nothing was changed.") {
+	if eb.code == 0 || !strings.Contains(eb.stderr(), "apply writes to Junos devices only in this release") || !strings.Contains(eb.stderr(), "Nothing was changed.") {
 		t.Errorf("engineer: %d %q", eb.code, eb.stderr())
 	}
 	if out := eb.asEngineer("", "device", "location", "lab-sw"); strings.TrimSpace(out) != "-" {

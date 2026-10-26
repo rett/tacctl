@@ -73,6 +73,7 @@ func (inv *invocation) prelude(o nativeOpts) error {
 		}
 	}
 	inv.auditBegin()
+	inv.lockdownNotice()
 	return nil
 }
 

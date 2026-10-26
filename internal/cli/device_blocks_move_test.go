@@ -15,9 +15,9 @@ import (
 // leftovers is not taken over.
 
 const (
-	devBlocksOld = "js1.lab.example.net"
-	devBlocksNew = "js9.lab.example.net"
-	devBlocksKey = "blocks_device:\n  js1~lab~example~net:\n    juniper:\n    - snmp\n    - system\n"
+	devBlocksOld = "jsw1.lab.example.net"
+	devBlocksNew = "jsw9.lab.example.net"
+	devBlocksKey = "blocks_device:\n  jsw1~lab~example~net:\n    juniper:\n    - snmp\n    - system\n"
 )
 
 // blocksDeviceFixture registers the device and gives it two blocks in force.
@@ -35,7 +35,7 @@ func (sb *sandbox) blocksDeviceFixture(name, key string) {
 			sb.t.Fatal(err)
 		}
 	}
-	sb.write(dir+"/snmp", "set snmp community js1-extra authorization read-only\nset snmp community js1-extra clients 192.0.2.0/24\n", 0o600)
+	sb.write(dir+"/snmp", "set snmp community jsw1-extra authorization read-only\nset snmp community jsw1-extra clients 192.0.2.0/24\n", 0o600)
 	sb.write(dir+"/system", "set system time-zone UTC\n", 0o600)
 }
 
@@ -47,10 +47,10 @@ func TestDeviceBlocksFollowRenameRemoveAndRestore(t *testing.T) {
 
 	// A change of spelling keeps everything where it is: a name from before,
 	// with upper case, is fixed by renaming it to lower case.
-	sb.write("state/devices.yaml", strings.Replace(sb.devices(), "  "+devBlocksOld+":", "  JS1.lab.example.net:", 1), 0o600)
-	sb.dev("", "rename", "JS1.lab.example.net", devBlocksOld)
+	sb.write("state/devices.yaml", strings.Replace(sb.devices(), "  "+devBlocksOld+":", "  JSW1.lab.example.net:", 1), 0o600)
+	sb.dev("", "rename", "JSW1.lab.example.net", devBlocksOld)
 	sb.expect(0, "renamed to", "")
-	if got := sb.read(oldDir + "snmp"); !strings.Contains(got, "js1-extra") {
+	if got := sb.read(oldDir + "snmp"); !strings.Contains(got, "jsw1-extra") {
 		t.Errorf("a respelling lost the block: %q", got)
 	}
 	if !strings.Contains(sb.overrides(), devBlocksKey) {
@@ -59,7 +59,7 @@ func TestDeviceBlocksFollowRenameRemoveAndRestore(t *testing.T) {
 
 	sb.dev("", "rename", devBlocksOld, devBlocksNew)
 	sb.expect(0, "renamed to", "")
-	if got := sb.read(newDir + "snmp"); !strings.Contains(got, "js1-extra") {
+	if got := sb.read(newDir + "snmp"); !strings.Contains(got, "jsw1-extra") {
 		t.Errorf("the block did not follow the rename: %q", got)
 	}
 	if st, err := os.Stat(sb.path(newDir + "snmp")); err != nil || st.Mode().Perm() != 0o600 {
@@ -71,15 +71,15 @@ func TestDeviceBlocksFollowRenameRemoveAndRestore(t *testing.T) {
 	if _, err := os.Stat(sb.path("state/blocks/_devices/" + devBlocksOld)); !os.IsNotExist(err) {
 		t.Errorf("the old directory is left: %v", err)
 	}
-	if o := sb.overrides(); strings.Contains(o, "js1~lab") || !strings.Contains(o, "blocks_device:\n  js9~lab~example~net:\n    juniper:\n    - snmp\n    - system\n") {
+	if o := sb.overrides(); strings.Contains(o, "jsw1~lab") || !strings.Contains(o, "blocks_device:\n  jsw9~lab~example~net:\n    juniper:\n    - snmp\n    - system\n") {
 		t.Errorf("tacctl.yaml after the rename:\n%s", o)
 	}
 	// The snapshot the rename took first holds the files under the old name.
 	id := (&invocation{app: newHarness(t, nil, sb.env...).app, hooks: newTestHooks()}).snapshotIDs()[0]
-	if _, err := os.Stat(sb.path("state/backups/" + id + "/blocks/_devices/js1.lab.example.net/juniper/snmp")); err != nil {
+	if _, err := os.Stat(sb.path("state/backups/" + id + "/blocks/_devices/jsw1.lab.example.net/juniper/snmp")); err != nil {
 		t.Errorf("the snapshot lacks the block: %v", err)
 	}
-	if got := sb.read("state/backups/" + id + "/tacctl.yaml"); !strings.Contains(got, "js1~lab~example~net") {
+	if got := sb.read("state/backups/" + id + "/tacctl.yaml"); !strings.Contains(got, "jsw1~lab~example~net") {
 		t.Errorf("the snapshot's tacctl.yaml:\n%s", got)
 	}
 
@@ -127,7 +127,7 @@ func TestDeviceBlocksFollowRenameRemoveAndRestore(t *testing.T) {
 	if _, err := os.Stat(sb.path("state/blocks/_devices/other")); !os.IsNotExist(err) {
 		t.Errorf("a block the snapshot lacks stayed: %v", err)
 	}
-	if o := sb.overrides(); !strings.Contains(o, "blocks_device:\n  js9~lab~example~net:\n") {
+	if o := sb.overrides(); !strings.Contains(o, "blocks_device:\n  jsw9~lab~example~net:\n") {
 		t.Errorf("the manifest was not restored:\n%s", o)
 	}
 }
@@ -148,38 +148,38 @@ func TestDeviceRemoveWithoutBlocksSaysNothingOfThem(t *testing.T) {
 // new name of a rename.
 func TestLeftoverDeviceBlocksAreNotTakenOver(t *testing.T) {
 	sb := newSandbox(t, true)
-	if err := os.MkdirAll(sb.path("state/blocks/_devices/js5.lab.example.net/juniper"), 0o700); err != nil {
+	if err := os.MkdirAll(sb.path("state/blocks/_devices/jsw5.lab.example.net/juniper"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	sb.write("state/blocks/_devices/js5.lab.example.net/juniper/snmp", "set snmp community x authorization read-only\n", 0o600)
+	sb.write("state/blocks/_devices/jsw5.lab.example.net/juniper/snmp", "set snmp community x authorization read-only\n", 0o600)
 	before := sb.devices()
-	sb.dev("", "add", "js5.lab.example.net", "192.168.1.50", "--vendor", "juniper", "--no-host-key", "--no-lookup")
-	sb.expect(1, "", "Configuration blocks for a device named 'js5.lab.example.net' are already on disk: "+sb.path("state/blocks/_devices/js5.lab.example.net"))
+	sb.dev("", "add", "jsw5.lab.example.net", "192.168.1.50", "--vendor", "juniper", "--no-host-key", "--no-lookup")
+	sb.expect(1, "", "Configuration blocks for a device named 'jsw5.lab.example.net' are already on disk: "+sb.path("state/blocks/_devices/jsw5.lab.example.net"))
 	if sb.devices() != before {
 		t.Errorf("the refused device was added:\n%s", sb.devices())
 	}
-	sb.run("js5.lab.example.net,192.168.1.50,juniper\n", []string{"device", "import", "-", "--no-host-key"})
+	sb.run("jsw5.lab.example.net,192.168.1.50,juniper\n", []string{"device", "import", "-", "--no-host-key"})
 	if sb.code == 0 || sb.devices() != before {
 		t.Errorf("import over a leftover: %d %q\n%s", sb.code, sb.stderr(), sb.devices())
 	}
 
 	// A rename onto the leftover.
-	sb.dev("", "add", "js1.lab.example.net", "192.168.1.20", "--vendor", "juniper", "--no-host-key", "--no-lookup")
+	sb.dev("", "add", "jsw1.lab.example.net", "192.168.1.20", "--vendor", "juniper", "--no-host-key", "--no-lookup")
 	sb.expect(0, "", "")
 	before = sb.devices()
-	sb.dev("", "rename", "js1.lab.example.net", "js5.lab.example.net")
-	sb.expect(1, "", "Configuration blocks for a device named 'js5.lab.example.net' are already on disk")
+	sb.dev("", "rename", "jsw1.lab.example.net", "jsw5.lab.example.net")
+	sb.expect(1, "", "Configuration blocks for a device named 'jsw5.lab.example.net' are already on disk")
 	if sb.devices() != before {
 		t.Errorf("the refused rename was applied:\n%s", sb.devices())
 	}
-	if got := sb.read("state/blocks/_devices/js5.lab.example.net/juniper/snmp"); !strings.Contains(got, "community x") {
+	if got := sb.read("state/blocks/_devices/jsw5.lab.example.net/juniper/snmp"); !strings.Contains(got, "community x") {
 		t.Errorf("the leftover was changed: %q", got)
 	}
 
 	// Keys with no files are a leftover too.
-	sb.write("state/tacctl.yaml", sb.overrides()+"blocks_device:\n  js6~lab~example~net:\n    juniper:\n    - system\n", 0o640)
-	sb.dev("", "rename", "js1.lab.example.net", "js6.lab.example.net")
-	sb.expect(1, "", "tacctl.yaml lists configuration blocks (blocks_device.js6~lab~example~net) for a device named 'js6.lab.example.net'")
+	sb.write("state/tacctl.yaml", sb.overrides()+"blocks_device:\n  jsw6~lab~example~net:\n    juniper:\n    - system\n", 0o640)
+	sb.dev("", "rename", "jsw1.lab.example.net", "jsw6.lab.example.net")
+	sb.expect(1, "", "tacctl.yaml lists configuration blocks (blocks_device.jsw6~lab~example~net) for a device named 'jsw6.lab.example.net'")
 	if sb.devices() != before {
 		t.Errorf("the refused rename was applied:\n%s", sb.devices())
 	}
@@ -188,8 +188,8 @@ func TestLeftoverDeviceBlocksAreNotTakenOver(t *testing.T) {
 	if err := os.RemoveAll(sb.path("state/blocks")); err != nil {
 		t.Fatal(err)
 	}
-	sb.write("state/tacctl.yaml", strings.Replace(sb.overrides(), "blocks_device:\n  js6~lab~example~net:\n    juniper:\n    - system\n", "", 1), 0o640)
-	sb.dev("", "rename", "js1.lab.example.net", "js6.lab.example.net")
+	sb.write("state/tacctl.yaml", strings.Replace(sb.overrides(), "blocks_device:\n  jsw6~lab~example~net:\n    juniper:\n    - system\n", "", 1), 0o640)
+	sb.dev("", "rename", "jsw1.lab.example.net", "jsw6.lab.example.net")
 	sb.expect(0, "renamed to", "")
 }
 
@@ -210,7 +210,7 @@ func TestDeviceBlocksRenameThatCannotMoveFilesPutsTheKeysBack(t *testing.T) {
 		!strings.Contains(w, "still kept under the old name") {
 		t.Errorf("the warning:\n%s", w)
 	}
-	if o := sb.overrides(); !strings.Contains(o, devBlocksKey) || strings.Contains(o, "js9~lab") {
+	if o := sb.overrides(); !strings.Contains(o, devBlocksKey) || strings.Contains(o, "jsw9~lab") {
 		t.Errorf("the keys were not put back:\n%s", o)
 	}
 	if _, err := os.Stat(sb.path("state/blocks/_devices/" + devBlocksOld + "/juniper/snmp")); err != nil {

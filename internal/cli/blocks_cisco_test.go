@@ -199,7 +199,7 @@ func TestDeviceBlockCisco(t *testing.T) {
 		t.Errorf("the device's file:\n%q", got)
 	}
 	out = plain(sb.cfgRun("", []string{"device", "block", "rt1", "show", "snmp", "--effective", "--reveal"}, route))
-	for _, want := range []string{"# from scope 'lab'", "# from device 'rt1'", "snmp-server community nms-ro-secret RO\n", "snmp-server enable traps snmp linkdown"} {
+	for _, want := range []string{"# from scope block lab cisco snmp", "# from device block rt1 snmp", "snmp-server community nms-ro-secret RO\n", "snmp-server enable traps snmp linkdown"} {
 		if sb.code != 0 || !strings.Contains(out, want) {
 			t.Errorf("effective lacks %q (exit %d):\n%s", want, sb.code, out)
 		}
@@ -348,7 +348,7 @@ func TestAdoptCiscoDraftFlow(t *testing.T) {
 		}
 	}
 	// a Junos device is not read by an IOS block's adopt
-	a.runAs("", ed, "scope", "block", "lab", "cisco", "adopt", "js1.lab.example.net", "snmp")
+	a.runAs("", ed, "scope", "block", "lab", "cisco", "adopt", "jsw1.lab.example.net", "snmp")
 	if a.sb.code != 1 || !strings.Contains(a.sb.stderr(), "is not an IOS or IOS-XE device") {
 		t.Errorf("a Junos device: %d %q", a.sb.code, a.sb.stderr())
 	}

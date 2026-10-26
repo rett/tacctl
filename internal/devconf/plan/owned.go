@@ -33,6 +33,12 @@ const (
 	// in place, the other value is never deleted; with no rendered value the
 	// leaf is kept.
 	ModeSingle Mode = "single"
+	// ModeAbsent: a service the rendering requires to be absent (0.2.19, an
+	// 'absent' line of the system block): when the device holds anything at or
+	// under the pattern, the whole statement is deleted ('delete system
+	// services telnet', 'no ip http server'). Nothing else under the
+	// hierarchy is ever written.
+	ModeAbsent Mode = "absent"
 	// ModeAdditive: an object of a list the rendering adds to: each rendered
 	// entry is set when the device lacks it, and nothing under the pattern is
 	// ever deleted: the device's other entries are kept and listed (0.2.7, the
@@ -139,6 +145,33 @@ var junosOwned = []OwnedRow{
 	{ID: "junos.system.login-message", Section: "system", Pattern: "system login message", Mode: ModeSingle, Block: true,
 		Why:  "the statements of the system block of scope <scope>",
 		Kept: "the login message when the block states none"},
+	{ID: "junos.system.announcement", Section: "system", Pattern: "system login announcement", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the login announcement when the block states none"},
+	{ID: "junos.system.syslog-facility-override", Section: "system", Pattern: "system syslog host $ facility-override", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the facility override of a host the block does not name"},
+	{ID: "junos.system.syslog-log-prefix", Section: "system", Pattern: "system syslog host $ log-prefix", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the log prefix of a host the block does not name"},
+	{ID: "junos.system.syslog-explicit-priority", Section: "system", Pattern: "system syslog host $ explicit-priority", Mode: ModeAdditive, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the explicit priority of a host the block does not name"},
+	{ID: "junos.system.syslog-host", Section: "system", Pattern: "system syslog host $ $", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the syslog hosts and facilities the block does not state, and every other syslog destination (files, console, users)"},
+	{ID: "junos.system.syslog-time-format", Section: "system", Pattern: "system syslog time-format $", Mode: ModeAdditive, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the device's other syslog time formats"},
+	{ID: "junos.system.syslog-source-address", Section: "system", Pattern: "system syslog source-address", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the syslog source address when the block states none"},
+	{ID: "junos.system.retry-option", Section: "system", Pattern: "system login retry-options $", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the login retry options the block does not state"},
+	{ID: "junos.system.password-policy", Section: "system", Pattern: "system login password $", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the password policy leaves the block does not state"},
 	{ID: "junos.system.domain-name", Section: "system", Pattern: "system domain-name", Mode: ModeSingle, Block: true,
 		Why:  "the statements of the system block of scope <scope>",
 		Kept: "the domain name when the block states none"},
@@ -160,6 +193,16 @@ var junosOwned = []OwnedRow{
 	{ID: "junos.system.ntp-server-routing-instance", Section: "system", Pattern: "system ntp server $ routing-instance", Mode: ModeSingle, Block: true,
 		Why:  "the statements of the system block of scope <scope>",
 		Kept: "the options of a server the block does not name"},
+	{ID: "junos.system.absent-telnet", Section: "system", Pattern: "system services telnet", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "junos.system.absent-ftp", Section: "system", Pattern: "system services ftp", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "junos.system.absent-finger", Section: "system", Pattern: "system services finger", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "junos.system.absent-xnm-clear-text", Section: "system", Pattern: "system services xnm-clear-text", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "junos.system.absent-web-management", Section: "system", Pattern: "system services web-management", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
 	{ID: "junos.system.domain-search", Section: "system", Pattern: "system domain-search $", Mode: ModeAdditive, Block: true,
 		Why:  "the statements of the system block of scope <scope>",
 		Kept: "the device's other search domains"},
@@ -290,6 +333,12 @@ var iosOwned = []OwnedRow{
 	{ID: "ios.system.banner", Section: "system", Pattern: "banner login", Mode: ModeSingle, Block: true,
 		Why:  "the statements of the system block of scope <scope>",
 		Kept: "the login banner when the block states none"},
+	{ID: "ios.system.banner-motd", Section: "system", Pattern: "banner motd", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the message of the day when the block states none"},
+	{ID: "ios.system.banner-exec", Section: "system", Pattern: "banner exec", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the exec banner when the block states none"},
 	{ID: "ios.system.domain-name", Section: "system", Pattern: "ip domain name", Mode: ModeSingle, Block: true,
 		Why:  "the statements of the system block of scope <scope>",
 		Kept: "the domain name when the block states none"},
@@ -299,6 +348,60 @@ var iosOwned = []OwnedRow{
 	{ID: "ios.system.ntp-authenticate", Section: "system", Pattern: "ntp authenticate", Mode: ModeSingle, Block: true,
 		Why:  "the statements of the system block of scope <scope>",
 		Kept: "'ntp authenticate' when the block states none"},
+	{ID: "ios.system.logging-host", Section: "system", Pattern: "logging host $", Mode: ModeAdditive, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the device's other logging hosts"},
+	{ID: "ios.system.logging-trap", Section: "system", Pattern: "logging trap", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the logging trap level when the block states none"},
+	{ID: "ios.system.logging-buffered", Section: "system", Pattern: "logging buffered", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the buffered logging size when the block states none"},
+	{ID: "ios.system.logging-origin-id", Section: "system", Pattern: "logging origin-id", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the logging origin id when the block states none"},
+	{ID: "ios.system.timestamps", Section: "system", Pattern: "service timestamps $", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the timestamps of the log or debug output the block does not state"},
+	{ID: "ios.system.login-on-failure", Section: "system", Pattern: "login on-failure", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the failed-login logging when the block states none"},
+	{ID: "ios.system.login-on-success", Section: "system", Pattern: "login on-success", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the successful-login logging when the block states none"},
+	{ID: "ios.system.login-delay", Section: "system", Pattern: "login delay", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the login delay when the block states none"},
+	{ID: "ios.system.passwords-min-length", Section: "system", Pattern: "security passwords min-length", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the minimum password length when the block states none"},
+	{ID: "ios.system.auth-failure-rate", Section: "system", Pattern: "security authentication failure rate", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the authentication failure rate when the block states none"},
+	{ID: "ios.system.ssh-version", Section: "system", Pattern: "ip ssh version", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the ssh version when the block states none"},
+	{ID: "ios.system.ssh-timeout", Section: "system", Pattern: "ip ssh time-out", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the ssh time-out when the block states none"},
+	{ID: "ios.system.ssh-retries", Section: "system", Pattern: "ip ssh authentication-retries", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the ssh authentication retries when the block states none"},
+	{ID: "ios.system.summer-time", Section: "system", Pattern: "clock summer-time", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the summer time when the block states none"},
+	{ID: "ios.system.absent-http-server", Section: "system", Pattern: "ip http server", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "ios.system.absent-http-secure-server", Section: "system", Pattern: "ip http secure-server", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "ios.system.absent-tcp-small-servers", Section: "system", Pattern: "service tcp-small-servers", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "ios.system.absent-udp-small-servers", Section: "system", Pattern: "service udp-small-servers", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "ios.system.absent-finger", Section: "system", Pattern: "ip finger", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "ios.system.absent-service-finger", Section: "system", Pattern: "service finger", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
 	{ID: "ios.system.domain-list", Section: "system", Pattern: "ip domain list $", Mode: ModeAdditive, Block: true,
 		Why:  "the statements of the system block of scope <scope>",
 		Kept: "the device's other search domains"},
@@ -394,6 +497,11 @@ func neverMatch(family string, l Line) (string, bool) {
 		// netconf section's own lines (D147); the allow-list holds them
 		// against the rendering
 		if r.ID == "junos.netconf" && l.Section == devconf.SectionNetconf && NetconfStatementAllowed(l.Text) {
+			continue
+		}
+		// the three ssh settings a scope's system block states (0.2.19); no
+		// other 'ip ssh' statement is ever emitted
+		if r.ID == "ios.ip-ssh" && l.Section == devconf.SectionSystem && systemSSHStatement(text) {
 			continue
 		}
 		if (text == r.Prefix || strings.HasPrefix(text, r.Prefix+" ")) && strings.Contains(" "+text+" ", r.Contains) {
@@ -527,4 +635,10 @@ func matchPrefix(pattern, path []string) (name string, at int, ok bool) {
 		}
 	}
 	return name, at, true
+}
+
+// systemSSHStatement reports the 'ip ssh' statements of the IOS system block.
+func systemSSHStatement(text string) bool {
+	f := strings.Fields(text)
+	return len(f) >= 3 && f[0] == "ip" && f[1] == "ssh" && (f[2] == "version" || f[2] == "time-out" || f[2] == "authentication-retries")
 }

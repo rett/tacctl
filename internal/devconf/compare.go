@@ -556,6 +556,16 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 		exp = keep
 	}
 
+	if len(exp) == 0 && len(expected.Forbid) > 0 {
+		// a system block of 'absent' lines only: what the device holds of
+		// them is a difference, and nothing else is compared
+		res.State = StateOK
+		for _, x := range dev {
+			res.Lines = append(res.Lines, DiffLine{Op: OpExtra, Text: x.stem, Secret: x.secret})
+			res.State = StateDiffers
+		}
+		return res, nil
+	}
 	if len(exp) == 0 {
 		res.State = StateNA
 		for _, x := range dev {

@@ -289,13 +289,13 @@ func (c *blockCtx) adopt(block, device string, p Parsed) error {
 	var res blocks.AdoptResult
 	switch {
 	case block == blocks.BlockSNMP && c.vendor == blocks.VendorCisco:
-		res = blocks.AdoptIOSSNMP(read.raw, own, sameIOS, upIOS)
+		res = blocks.AdoptIOSSNMP(read.raw, own, sameIOS, upIOS, c.layer())
 	case block == blocks.BlockSNMP:
-		res = blocks.AdoptSNMP(read.raw, own, same, up)
+		res = blocks.AdoptSNMP(read.raw, own, same, up, c.layer())
 	case c.vendor == blocks.VendorCisco:
-		res = blocks.AdoptIOSSystem(read.raw, sameIOSSys, upIOSSys)
+		res = blocks.AdoptIOSSystem(read.raw, sameIOSSys, upIOSSys, c.layer())
 	default:
-		res = blocks.AdoptSystem(read.raw, sameSys, upSys)
+		res = blocks.AdoptSystem(read.raw, sameSys, upSys, c.layer())
 	}
 	read.raw = ""
 

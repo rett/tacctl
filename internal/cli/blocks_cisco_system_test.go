@@ -14,8 +14,8 @@ const (
 	ciscoSystemFile = "# the lab's system settings\nbanner login <<'EOF'\nAuthorized use only, Zq41.\n\n! Activity is logged.\nEOF\n" +
 		"ip domain name lab.example.net\nclock timezone CET 1\nip name-server 192.0.2.53 192.0.2.54\n" +
 		"ntp authentication-key 5 md5 ntp-key-secret-Yp9\nntp trusted-key 5\nntp server 192.0.2.123 key 5 prefer\nntp authenticate\n"
-	ciscoSystemCmd = "show running-config | include ^(banner|ip domain|ip name-server|clock timezone|ntp )"
-	ciscoBannerCmd = "show running-config | section ^banner login"
+	ciscoSystemCmd = "show running-config | include ^(banner|ip domain|ip name-server|clock |ntp |logging |service timestamps|login |security |ip ssh)"
+	ciscoBannerCmd = "show running-config | section ^banner"
 )
 
 func TestScopeBlockCiscoSystemVerbs(t *testing.T) {
@@ -47,9 +47,10 @@ func TestScopeBlockCiscoSystemVerbs(t *testing.T) {
 		t.Errorf("block-set not logged once: %q", sb.runner.Argvs())
 	}
 
-	// show: the banner and the key are marks, comments never
+	// show: the banner is printed (a device shows it before the login), the
+	// key is a mark, comments never
 	out = sb.blk("", "lab", "cisco", "show", "system")
-	for _, want := range []string{"banner login <<'EOF'\n<message: 3 lines, 49 characters>\nEOF\n", "ip domain name lab.example.net\n",
+	for _, want := range []string{"banner login <<'EOF'\n" + banner + "\n\n! Activity is logged.\nEOF\n", "ip domain name lab.example.net\n",
 		"clock timezone CET 1\n", "ip name-server 192.0.2.53\nip name-server 192.0.2.54\n", "ntp authentication-key 5 md5 <secret>\n",
 		"ntp trusted-key 5\n", "ntp server 192.0.2.123 version"} {
 		if want == "ntp server 192.0.2.123 version" {
@@ -59,7 +60,7 @@ func TestScopeBlockCiscoSystemVerbs(t *testing.T) {
 			t.Errorf("show lacks %q (exit %d):\n%s", want, sb.code, out)
 		}
 	}
-	noneOf(t, "show", out, banner, key, "Activity is logged", "the lab's system")
+	noneOf(t, "show", out, key, "the lab's system")
 	if sb.logged("secret-read") != 0 {
 		t.Errorf("an elided read was logged")
 	}
@@ -120,7 +121,7 @@ func TestScopeBlockCiscoSystemRefusals(t *testing.T) {
 		{"a vrf and no value", "ip domain list vrf MGMT\n", "ip domain list vrf takes one value and nothing else"},
 		{"a vrf domain name twice", "ip domain name vrf MGMT a.example.net\nip domain name vrf MGMT b.example.net\n", "line 2: error: ip domain name is stated twice for one vrf"},
 		{"an abbreviated source", "ntp server 192.0.2.5 source Lo0\n", "has its type abbreviated"},
-		{"a banner of another type", "banner motd <<'EOF'\nHello-Bn3\nEOF\n", "only 'banner login'"},
+		{"a banner of another type", "banner incoming <<'EOF'\nHello-Bn3\nEOF\n", "only 'banner login', 'banner motd' and 'banner exec'"},
 		{"a Junos statement", "set system domain-name lab.example.net\n", "statements only"},
 	}
 	for _, c := range cases {
@@ -171,7 +172,7 @@ func TestDeviceBlockCiscoSystem(t *testing.T) {
 	sb.dev(dev, "block", "rt1", "set", "system", "-", "-y")
 	sb.expect(0, "The system block of device 'rt1' is set", "")
 	out = plain(sb.cfgRun("", []string{"device", "block", "rt1", "show", "system", "--effective", "--reveal"}, route))
-	for _, want := range []string{"# from scope 'lab'", "# from device 'rt1'", "The device's own.", "ntp server 192.0.2.77", "ip domain name lab.example.net"} {
+	for _, want := range []string{"# from scope block lab cisco system", "# from device block rt1 system", "The device's own.", "ntp server 192.0.2.77", "ip domain name lab.example.net"} {
 		if sb.code != 0 || !strings.Contains(out, want) {
 			t.Errorf("effective lacks %q (exit %d):\n%s", want, sb.code, out)
 		}
@@ -301,7 +302,7 @@ func TestCiscoSystemNTPVersion3InTheIOS12Syntax(t *testing.T) {
 
 // adoptCiscoSystem is what the IOS device says to the system reads.
 const (
-	adoptCiscoSystem = "banner exec ^C\nbanner login ^C\nip domain name lab.example.net\nip domain list example.net\nip domain lookup source-interface Loopback0\n" +
+	adoptCiscoSystem = "banner incoming ^C\nbanner login ^C\nip domain name lab.example.net\nip domain list example.net\nip domain lookup source-interface Loopback0\n" +
 		"ip name-server 192.0.2.53 192.0.2.54\nip name-server vrf MGMT 192.0.2.99\nclock timezone CET 1 0\n" +
 		"ip domain name vrf MGMT mgmt.example.net\n" +
 		"ntp authentication-key 5 md5 0822455D0A16 7\nntp authentication-key 6 md5 SomeOtherKey9\nntp authenticate\nntp trusted-key 5\n" +
@@ -391,13 +392,16 @@ func TestAdoptCiscoSystemDraftFlow(t *testing.T) {
 func TestTrapSourceThroughTheVerbs(t *testing.T) {
 	sb := newSandbox(t, true)
 	out := sb.blk("snmp-server trap-source Loopback0\n", "lab", "cisco", "check", "snmp", "-")
-	if sb.code != 0 || !strings.Contains(out, "the same source interface for every device of the scope") || !strings.Contains(out, "ok.") {
+	if sb.code != 0 || !strings.Contains(out, "loopback every device of the scope is expected to have") || !strings.Contains(out, "ok.") {
 		t.Errorf("check ios: %d\n%s", sb.code, out)
 	}
 	sb.blk("snmp-server trap-source Lo0\n", "lab", "cisco", "check", "snmp", "-")
 	sb.expect(1, "has its type abbreviated", "")
-	out = sb.blk("set snmp trap-options source-address 192.0.2.7\n", "lab", "juniper", "check", "snmp", "-")
-	if sb.code != 0 || !strings.Contains(out, "the same source address for every device of the scope") || !strings.Contains(out, "ok.") {
+	// an address is one device's own: a scope's block states lo0 only
+	sb.blk("set snmp trap-options source-address 192.0.2.7\n", "lab", "juniper", "check", "snmp", "-")
+	sb.expect(1, "names an address or an interface of one device", "")
+	out = sb.blk("set snmp trap-options source-address lo0\n", "lab", "juniper", "check", "snmp", "-")
+	if sb.code != 0 || !strings.Contains(out, "loopback every device of the scope is expected to have") || !strings.Contains(out, "ok.") {
 		t.Errorf("check junos: %d\n%s", sb.code, out)
 	}
 	sb.blk("set snmp trap-options source-address nms.example.net\n", "lab", "juniper", "check", "snmp", "-")

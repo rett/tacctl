@@ -137,7 +137,7 @@ func (inv *invocation) deviceEnroll(args []string) error {
 		}
 		return inv.argErr(msg, enrollUse)
 	}
-	if err := inv.deviceVerbAllowed("device", "enroll", tier.Superuser); err != nil {
+	if err := inv.deviceVerbAllowed("device", "enroll", tier.Engineer); err != nil {
 		return err
 	}
 	user, err := inv.configLogin("device enroll")
@@ -358,13 +358,19 @@ func (e *enroll) admissible() error {
 	}
 	if e.discovered {
 		for _, u := range res.Unregistered(false) {
+			// the addresses of other scopes are not an engineer's to enroll
+			if info, covered := m.LookupAddr(u.Address); covered && inv.scopeAddrProblem(info.Scope) != "" {
+				continue
+			}
 			e.addrs = append(e.addrs, u.Address)
 		}
 	}
 	for _, addr := range e.addrs {
 		r := &enrollRow{Address: addr, Pull: "not-tried", Plan: "not-tried"}
 		e.rows = append(e.rows, r)
-		if ent, ok := res.Lookup(addr, devreg.ScopeFilter{}); ok && ent.Address == addr {
+		// a registered device of another scope is not found (and then refused
+		// as an address that is not the engineer's)
+		if ent, ok := res.Lookup(addr, inv.deviceFilter()); ok && ent.Address == addr {
 			r.Result = enrollRefused
 			if ent.Source == devreg.SourceHost {
 				r.Reason = "registered already as '" + ent.Name + "' (an enrolled Linux host)"
@@ -378,6 +384,10 @@ func (e *enroll) admissible() error {
 		if !covered {
 			r.Result, r.Reason = enrollRefused, "no scope's prefixes cover it"
 			r.next = "tacctl scope prefixes <scope> add <cidr>"
+			continue
+		}
+		if msg := inv.scopeAddrProblem(info.Scope); msg != "" {
+			r.Result, r.Reason = enrollRefused, msg
 			continue
 		}
 		if msg := loginProblem(m, e.user, info.Scope); msg != "" {

@@ -732,15 +732,15 @@ func TestCaptureEditorTakesTheVariablesOffTheRootSide(t *testing.T) {
 // comments to uncomment where the device differs.
 func TestEditDeviceBlockSeedHasTheScopesObjectsAsComments(t *testing.T) {
 	b := newEditBox(t)
-	b.sb.dev("", "add", "js1.lab.example.net", "192.168.1.20", "--vendor", "juniper", "--no-host-key", "--no-lookup")
+	b.sb.dev("", "add", "jsw1.lab.example.net", "192.168.1.20", "--vendor", "juniper", "--no-host-key", "--no-lookup")
 	b.sb.blk("", "lab", "juniper", "set", "snmp", "--file", b.sb.blockFile("snmp.txt", scopeLevelSNMP), "-y")
 	if b.sb.code != 0 {
 		t.Fatal(b.sb.stderr())
 	}
 	// uncomment one object and change it, the way the seed invites
 	ed := b.editor("ed-override", `sed -i -e 's/^# set snmp community nms-ro /set snmp community nms-ro /' -e 's/clients 192.0.2.50\/32/clients 192.0.2.99\/32/' "$f"`)
-	out := b.run("y\n", ed, "device", "block", "js1.lab.example.net", "edit", "snmp")
-	if b.sb.code != 0 || !strings.Contains(out, "The snmp block of device 'js1.lab.example.net' is set (") {
+	out := b.run("y\n", ed, "device", "block", "jsw1.lab.example.net", "edit", "snmp")
+	if b.sb.code != 0 || !strings.Contains(out, "The snmp block of device 'jsw1.lab.example.net' is set (") {
 		t.Fatalf("%d\n%s%s", b.sb.code, out, b.sb.stderr())
 	}
 	seed := b.recorded("seed1")
@@ -751,25 +751,25 @@ func TestEditDeviceBlockSeedHasTheScopesObjectsAsComments(t *testing.T) {
 			t.Errorf("seed lacks %q:\n%s", want, seed)
 		}
 	}
-	stored := b.sb.read("state/blocks/_devices/js1.lab.example.net/juniper/snmp")
+	stored := b.sb.read("state/blocks/_devices/jsw1.lab.example.net/juniper/snmp")
 	if !strings.Contains(stored, "\nset snmp community nms-ro authorization read-only\n") || !strings.Contains(stored, "\nset snmp community nms-ro clients 192.0.2.99/32\n") {
 		t.Errorf("stored:\n%s", stored)
 	}
-	if b.sb.logged("block-edit name=_devices/js1.lab.example.net/juniper/snmp bytes=") != 1 {
+	if b.sb.logged("block-edit name=_devices/jsw1.lab.example.net/juniper/snmp bytes=") != 1 {
 		t.Errorf("log: %q", b.sb.runner.Argvs())
 	}
-	if n := b.recorded("name"); strings.TrimSpace(n) != "device-js1.lab.example.net-juniper-snmp.txt" {
+	if n := b.recorded("name"); strings.TrimSpace(n) != "device-jsw1.lab.example.net-juniper-snmp.txt" {
 		t.Errorf("name %q", n)
 	}
 	// a device block that exists is opened as it is
-	b.run("", ed, "device", "block", "js1.lab.example.net", "edit", "snmp")
+	b.run("", ed, "device", "block", "jsw1.lab.example.net", "edit", "snmp")
 	if seed := b.recorded("seed2"); seed != stored {
 		t.Errorf("an existing block is not opened as it is:\n%s", seed)
 	}
 	// and so is a block for a scope that has none
 	b2 := newEditBox(t)
-	b2.sb.dev("", "add", "js1.lab.example.net", "192.168.1.20", "--vendor", "juniper", "--no-host-key", "--no-lookup")
-	b2.run("", b2.editor("ed-noop", "true"), "device", "block", "js1.lab.example.net", "edit", "system")
+	b2.sb.dev("", "add", "jsw1.lab.example.net", "192.168.1.20", "--vendor", "juniper", "--no-host-key", "--no-lookup")
+	b2.run("", b2.editor("ed-noop", "true"), "device", "block", "jsw1.lab.example.net", "edit", "system")
 	if seed := b2.recorded("seed1"); strings.Contains(seed, "The objects of scope") || !strings.Contains(seed, "# The system block of this device (Junos).") {
 		t.Errorf("seed:\n%s", seed)
 	}

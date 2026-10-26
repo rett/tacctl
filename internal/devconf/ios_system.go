@@ -5,7 +5,7 @@ package devconf
 // and as the system block renders them, in one compared form. As on Junos,
 // the section exists only for a scope that has a system block in force.
 //
-//   - A login banner is never in a compared statement, a stored section or a
+//   - A banner (login, motd or exec) is never in a compared statement, a stored section or a
 //     report: it is 'banner login <message: 22 lines, 1300 characters, id
 //     3fa9c2d1>', a mark of its size and a short digest of its text, so two
 //     banners compare equal exactly when their bodies are. The device's text
@@ -43,11 +43,11 @@ import (
 	"github.com/rett/tacctl/internal/blocks"
 )
 
-// reIOSBannerMark matches the stored form of a login banner.
-var reIOSBannerMark = regexp.MustCompile(`^banner login <message: [0-9]+ lines, [0-9]+ characters, id [0-9a-f]{8}>$`)
+// reIOSBannerMark matches the stored form of a banner (login, motd or exec).
+var reIOSBannerMark = regexp.MustCompile(`^banner (login|motd|exec) <message: [0-9]+ lines, [0-9]+ characters, id [0-9a-f]{8}>$`)
 
-// iosBannerStmt is the compared statement of a banner body.
-func iosBannerStmt(body string) string { return "banner login " + MessageMark(body) }
+// iosBannerStmt is the compared statement of the banner of a kind.
+func iosBannerStmt(kind, body string) string { return "banner " + kind + " " + MessageMark(body) }
 
 // isIOSBannerMark reports a statement that is a stored banner mark.
 func isIOSBannerMark(s string) bool { return reIOSBannerMark.MatchString(s) }
@@ -58,13 +58,16 @@ func isIOSBannerMark(s string) bool { return reIOSBannerMark.MatchString(s) }
 // 'ntp' statement.
 func isSystemStatement(t string) bool {
 	switch {
-	case t == "banner login", strings.HasPrefix(t, "banner login "):
+	case blocks.BannerKindOf(t) != "":
 		return true
 	case strings.HasPrefix(t, "ip domain name "), strings.HasPrefix(t, "ip domain-name "),
 		strings.HasPrefix(t, "ip domain list "), strings.HasPrefix(t, "ip domain-list "),
 		strings.HasPrefix(t, "ip name-server "), strings.HasPrefix(t, "clock timezone "):
 		return true
 	case t == "ntp", strings.HasPrefix(t, "ntp "):
+		return true
+	case blocks.IOSTableOwns(strings.Fields(t)):
+		// logging hosts, the login and password policy, ssh, summer time
 		return true
 	}
 	return false
@@ -124,8 +127,36 @@ func ciscoSystemLine(f []string) []string {
 		return ciscoNTPServer(f)
 	case f[0] == "snmp-server" && f[1] == "trap-source" && len(f) == 3:
 		return []string{"snmp-server", "trap-source", strings.ToLower(f[2])}
+	case f[0] == "logging" && f[1] == "host" && len(f) >= 3:
+		// the host is a name: no case
+		out := append([]string(nil), f...)
+		out[2] = strings.ToLower(f[2])
+		return out
+	case f[0] == "clock" && f[1] == "summer-time":
+		return ciscoSummerTime(f)
 	}
 	return f
+}
+
+// ciscoSummerTime is 'clock summer-time <zone> recurring [<week> <day> <month>
+// <hh:mm> <week> <day> <month> <hh:mm> [<offset>]]' in one compared form,
+// whichever way it is spelled: the week 'first' as 1, the day and month by
+// their first three letters, an hour without its leading zero. A device
+// prints the abbreviated words, the block may state them in full.
+func ciscoSummerTime(f []string) []string {
+	out := append([]string(nil), f...)
+	for i := 3; i < len(out); i++ {
+		w := out[i]
+		switch {
+		case w == "first":
+			out[i] = "1"
+		case len(w) > 3 && w[0] >= 'A' && w[0] <= 'Z':
+			out[i] = w[:3]
+		case strings.Contains(w, ":"):
+			out[i] = strings.TrimPrefix(w, "0")
+		}
+	}
+	return out
 }
 
 // ciscoNTPServer is 'ntp server <host> [key N] [prefer] [source IF] [version
@@ -209,5 +240,7 @@ func ntpServerID(f []string) string {
 	return strings.ToLower(f[2])
 }
 
-// DeviceBannerBody is blocks.DeviceBanner for the lines of a device's text.
-func deviceBannerBody(lines []string) (string, int, bool) { return blocks.DeviceBanner(lines) }
+// deviceBannerBody is blocks.DeviceBannerOf for the lines of a device's text.
+func deviceBannerBody(kind string, lines []string) (string, int, bool) {
+	return blocks.DeviceBannerOf(kind, lines)
+}

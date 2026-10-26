@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/execx/fake"
 	"github.com/rett/tacctl/internal/hash"
 )
@@ -179,7 +180,7 @@ func TestNoSecretInTheDetailLines(t *testing.T) {
 		{"", []string{"device", "snmp", "lab-sw1", "show", "--reveal"}, "secret-read kind=snmp-device name=lab-sw1 by=alice"},
 		{"", []string{"store", "show"}, "secret-read kind=store name=model by=alice"},
 		{"", []string{"config", "dump"}, "secret-read kind=config name=dump by=alice"},
-		{"", []string{"config", "linux", "script", "--scope", "lab", "--server", "192.0.2.1", "-o", script}, "secret-export scope=lab file=" + script + " by=alice"},
+		{"", []string{"config", "linux", "script", "--scope", "lab", "--server", "192.0.2.1", "-o", script}, "secret-export scope=lab file=" + audit.Value(script) + " by=alice"},
 	} {
 		sb.cfgRun(c.stdin, c.args, nil, alice...)
 		name := strings.Join(c.args[:min(3, len(c.args))], " ")

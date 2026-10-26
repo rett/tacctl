@@ -18,7 +18,7 @@ import (
 // systemRendering is the section a block's text renders, as Managed has it.
 func systemRendering(t *testing.T, text string) devices.Section {
 	t.Helper()
-	b, fs := blocks.LintSystem(text, blocks.LayerScope)
+	b, fs := blocks.LintSystem(text, blocks.LayerDevice)
 	if blocks.HasErrors(fs) {
 		t.Fatalf("the block: %v", fs)
 	}
@@ -61,7 +61,7 @@ func TestSystemMessageRoundTripThroughTheDeviceString(t *testing.T) {
 	}
 	bodies := map[string]string{
 		"one line":        "Authorized use only.",
-		"leading blanks":  "  *** js1.lab.example.net ***\n    indented",
+		"leading blanks":  "  *** jsw1.lab.example.net ***\n    indented",
 		"quotes":          `Say "hello" and 'bye'`,
 		"backslashes":     `C:\path\n and \\ and a trailing \`,
 		"an escape-alike": `a \n b`, // a backslash and an n, not a line break

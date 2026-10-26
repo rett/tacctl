@@ -255,3 +255,37 @@ func TestSudoers0213(t *testing.T) {
 		t.Error("Sudoers0213 differs from the golden file of the 0.2.13 tag")
 	}
 }
+
+// The 0.2.18 text lacks the engineer's rows of 0.2.19 (device config apply,
+// enroll, collect, onboard, sync) and keeps the password cache's alias; where
+// the 0.2.18 tag is in the repository, it is that tag's own golden file.
+func TestSudoers0218(t *testing.T) {
+	old, cur := Sudoers0218(), Sudoers()
+	if old == cur {
+		t.Fatal("the 0.2.18 text is this release's")
+	}
+	en := strings.Join(aliasItems(t, old, "TACCTL_EN"), " ")
+	now := strings.Join(aliasItems(t, cur, "TACCTL_EN"), " ")
+	for _, v := range []string{"device config apply *", "device enroll *", "device collect *", "device onboard *", "device sync *"} {
+		if strings.Contains(en, v) || !strings.Contains(now, v) {
+			t.Errorf("%q: in the 0.2.18 engineer alias %v, in this release's %v", v, strings.Contains(en, v), strings.Contains(now, v))
+		}
+	}
+	if !strings.Contains(old, AskpassKeep(AskpassAlias)) {
+		t.Error("the 0.2.18 text lost the password cache's alias")
+	}
+	r := execx.Real{}
+	if _, err := r.LookPath("git"); err != nil {
+		t.Skip("git is not installed, so the 0.2.18 tag cannot be read")
+	}
+	if res, err := r.Run(context.Background(), execx.Cmd{Name: "git", Args: []string{"rev-parse", "-q", "--verify", "0.2.18^{commit}"}}); err != nil || res.Code != 0 {
+		t.Skip("the 0.2.18 tag is not in this repository (CI must fetch tags: git fetch --tags)")
+	}
+	res, err := r.Run(context.Background(), execx.Cmd{Name: "git", Args: []string{"show", "0.2.18:internal/tier/testdata/sudoers.tiers"}})
+	if err != nil || res.Code != 0 {
+		t.Fatalf("cannot read the 0.2.18 tag's golden file: %v %s", err, res.Stderr)
+	}
+	if string(res.Stdout) != old {
+		t.Error("Sudoers0218 differs from the golden file of the 0.2.18 tag")
+	}
+}

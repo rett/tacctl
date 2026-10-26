@@ -54,7 +54,7 @@
 | set snmp contact "NOC <noc@example.net>"
 | set snmp description "Core switch"
 [system]
-+ set system login message "Authorized use only.\n  *** js1.lab.example.net ***\nDisconnect now if you are not authorized.\n  \"quoted\" and a back\\slash"
++ set system login message "Authorized use only.\n  *** jsw1.lab.example.net ***\nDisconnect now if you are not authorized.\n  \"quoted\" and a back\\slash"
 + set system domain-name lab.example.net
 + set system domain-search lab.example.net
 + set system time-zone UTC

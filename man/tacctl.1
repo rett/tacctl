@@ -1,6 +1,6 @@
 .\" Manual page for tacctl, the management CLI for pluggable network-device AAA.
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-10-24" "tacctl 0.2.18" "tacctl Manual"
+.TH TACCTL 1 "2026-10-25" "tacctl 0.2.19" "tacctl Manual"
 .SH NAME
 tacctl \- manage pluggable network-device AAA: users, groups, scopes and devices
 .SH SYNOPSIS
@@ -212,8 +212,9 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.17
+.B 0.2.18
 (the release before this one),
+.BR 0.2.17 ,
 .BR 0.2.16 ,
 .B 0.2.9
 and
@@ -225,8 +226,12 @@ and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word (0.2.10 to
-0.2.15 included: the refusal names the four targets). Every target is
-refused while a device's record says a confirmed commit of
+0.2.15 included: the refusal names the five targets). Every target is
+refused while an emergency lockdown locks a group (the refusal lists each one
+and
+.B "emergency lockdown <scope> disable"
+lifts it; an older release would render the locked users back into the scope)
+and while a device's record says a confirmed commit of
 .B "device config apply"
 is
 .B pending
@@ -238,10 +243,54 @@ or
 .B "device config forget <name>"
 settles it).
 .IP
+.B "rollback 0.2.18"
+.B \-\-apply
+rewrites the per\-tier sudoers drop\-in, when it is exactly the text this
+release writes, with the one 0.2.18 writes (after
+.BR "visudo \-cf" ):
+the engineer's rules of
+.BR "device config apply" ,
+.BR "device enroll" ,
+.BR "device collect" ,
+.BR "device onboard" ,
+.B "device sync"
+and
+.B "device support\-bundle"
+are taken out. An edited drop\-in is left (0.2.18's upgrade rewrites it). A
+partial lockdown record (keys under
+.BR emergency.lockdown. ,
+which locks nothing) is removed from
+.I tacctl.yaml
+after a snapshot, because 0.2.18's schema refuses it. Nothing else is
+converted:
+.IR devices.yaml ,
+.IR console.yaml ,
+.IR store.yaml ,
+the group drop\-in and the hosts are in formats 0.2.18 reads.
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.18" .
+.IP
+Every target but 0.2.3 lists in a warning (and
+.B \-\-apply
+refuses without
+.BR \-\-yes )
+the system blocks that hold statements 0.2.19 added to their grammar: the
+syslog, login\-policy, ssh and summer\-time statements, the login announcement,
+the
+.B absent
+lines and the IOS
+.B "banner motd"
+and
+.BR "banner exec" .
+An older release lints such a block as an error and plans nothing for the
+devices it reaches. The block files are not rewritten; take the statements
+out before the upgrade.
+.IP
 .B "rollback 0.2.17"
 .B \-\-apply
 rewrites the per\-tier sudoers drop\-in, when it is exactly the text this
-release writes, with the one 0.2.17 writes (after
+release writes (or the one 0.2.18 wrote), with the one 0.2.17 writes (after
 .BR "visudo \-cf" ):
 the rules of
 .BR "device ios\-syntax" ,
@@ -260,8 +309,9 @@ has a configuration syntax setting
 the command takes a snapshot first and writes the setting under
 .BR config_syntax ,
 the key 0.2.5 to 0.2.17 read (they refuse a key they do not know); the value
-and every other key stay. Nothing else is converted:
-.IR tacctl.yaml ,
+and every other key stay. A partial lockdown record is removed from
+.IR tacctl.yaml .
+Nothing else is converted:
 .IR console.yaml ,
 .IR store.yaml ,
 the group drop\-in and the hosts are in formats 0.2.17 reads.
@@ -273,8 +323,9 @@ is accepted and does nothing. The command ends with the next step,
 .B \-\-apply
 takes a snapshot, then removes from
 .I tacctl.yaml
-the one key a 0.2.16 binary refuses,
+the keys a 0.2.16 binary refuses,
 .B audit.strict
+and a partial lockdown record
 (its schema reports it as an unknown key, and its
 .B "backup restore"
 refuses a snapshot that has it; the key is checked against that release). When
@@ -1756,7 +1807,7 @@ has a
 (a fixed token for each label of the text report:
 .BR store ", " yaml ", " overrides ", " command_rules ", " structure ", "
 .BR scope_default ", " linux_hosts ", " names ", " breakglass ", " breakglass_hold ", "
-.BR config_blocks ", " operator_policy ", " group_settings ", " orphan_settings ", "
+.BR emergency_lockdown ", " config_blocks ", " operator_policy ", " group_settings ", " orphan_settings ", "
 .BR orphan_files ", " leftovers ", " backends ", " rendered ", " drift " and "
 .BR vendor_attrs ),
 a
@@ -2288,10 +2339,11 @@ The registry name is
 or the host's short name, lowercased (host names are not case\-sensitive; a host
 already enrolled under exactly that spelling keeps it). A name no enrolled host
 has with exactly that spelling is a new one: it is lower\-case letters, digits,
+.BR . ,
 .B _
 or
 .B \-
-starting with a letter (26 at most), is not a tacctl word (the words a device
+starting with a letter (253 at most, each dotted part 63 at most), is not a tacctl word (the words a device
 cannot be called either, such as
 .BR all ,
 .B scope
@@ -2977,10 +3029,12 @@ the name
 It is local: the remote host records no registry name, so nothing is sent
 over ssh, and a host with a break\-glass hold may be renamed. The new name
 follows the rules of a new host name: lower\-case letters, digits,
+.BR . ,
 .B _
 and
 .BR \- ,
-starting with a letter, at most 26 characters; no tacctl word
+starting with a letter, at most 253 characters with each dotted part at most 63;
+no tacctl word
 .RB ( all ,
 .BR scope ,
 .BR local ,
@@ -6157,13 +6211,15 @@ The Junos
 block is the SNMP that the scope's settings do not hold: communities, their
 client lists and trap groups. The Junos
 .B system
-block is the login message, domain name and search list, time zone, name
-servers and NTP. A Junos block is
+block is the login message and announcement, domain name and search list, time
+zone, name servers, NTP, syslog hosts, the login retry options and the password
+policy. A Junos block is
 .B set
 statements and nothing else, one per line, with
 .B #
 comment lines and blank lines; the login message is the one statement that is
-a heredoc,
+a heredoc (the
+announcement, shown before the login, is the other),
 .BR "set system login message <<'EOF'" ,
 its lines, and
 .BR EOF .
@@ -6175,9 +6231,47 @@ that device. A Junos block may also state
 .B "set snmp trap\-options source\-address <address>|lo0"
 (one; an IPv4 or IPv6 address or the keyword
 .BR lo0 ):
-a value of the device's kind, set over the device's own value and never
-deleted, which the check notes as the same address for every device of the
-scope.
+set over the device's own value and never deleted. An address is one device's
+own, so only a device's block states one; a scope's block states
+.B lo0
+only (with a note that a device without it cannot take it), and the check
+refuses an address there. The same rule holds for
+.B "set system ntp source\-address"
+and
+.BR "set system syslog source\-address" ,
+and for the IOS
+.B "snmp\-server trap\-source"
+(a scope's block states a loopback by its name only) and the
+.B source
+of an
+.BR "ntp server" .
+.PP
+The Junos system block also takes the statements of a closed table, each
+checked: syslog
+.B "set system syslog host <address|name> <facility> <level>"
+(the facility and level Junos names),
+.BR "... host <h> facility\-override <facility>" ,
+.BR "... host <h> log\-prefix <word>" ,
+.BR "... host <h> explicit\-priority" ,
+.BR "set system syslog time\-format year|millisecond"
+and, in a device's block only,
+.BR "set system syslog source\-address <address>" ;
+the login retry options
+.B "set system login retry\-options"
+.BR tries\-before\-disconnect " (1 to 10), " backoff\-threshold " (1 to 3), " backoff\-factor " (5 to 10), "
+.BR minimum\-time " (20 to 60), " maximum\-time " (20 to 300) and " lockout\-period " (1 to 43200 minutes);"
+and the password policy
+.B "set system login password"
+.BR minimum\-length " (6 to 20), " minimum\-changes " (1 to 128), " change\-type " (character\-sets or set\-transitions) and " format " (md5, sha1, sha256 or sha512)."
+A statement is identified by its words through the host and facility (or the
+leaf), a more specific layer's replaces the less specific one's, and a
+.B delete
+line names the same words. Anything else under
+.B syslog
+or
+.B login
+(a file, the console, users, classes) is refused: the block only states what is
+the same for every device of the scope.
 .PP
 The IOS
 .B snmp
@@ -6218,7 +6312,12 @@ does. The IOS
 block is configuration lines too, with the login banner as a heredoc:
 .BR "banner login <<'EOF'" ,
 its lines, and
-.BR EOF ;
+.BR EOF
+(and the same for
+.B "banner motd"
+and
+.BR "banner exec" ;
+a device's own motd or exec banner is the section's only where the block states one of that kind);
 .B "ip domain name [vrf <name>] <name>"
 and
 .B "ip domain list [vrf <name>] <name>"
@@ -6251,6 +6350,53 @@ vrf), a vrf's name is letters, digits,
 and
 .BR \- ,
 and an IPv6 NTP server is not in a block.
+.PP
+The IOS system block also takes the statements of a closed table, each checked:
+.BR "logging host <address|name> [vrf <vrf>]" ,
+.BR "logging trap <severity>" ,
+.BR "logging buffered <4096\-2147483647> [<severity>]" ,
+.BR "logging origin\-id hostname" ,
+.BR "service timestamps log|debug datetime msec [localtime] [show\-timezone]" ,
+.BR "login on\-failure log [every <1\-65535>]" ,
+.BR "login on\-success log [every <1\-65535>]" ,
+.BR "login delay <1\-10>" ,
+.BR "security passwords min\-length <1\-16>" ,
+.BR "security authentication failure rate <2\-1024> log" ,
+.BR "ip ssh version 2" ,
+.BR "ip ssh time\-out <1\-120>" ,
+.B "ip ssh authentication\-retries <0\-5>"
+and
+.BR "clock summer\-time <zone> [recurring [<week> <day> <month> <hh:mm> <week> <day> <month> <hh:mm> [<offset\-minutes>]]]" .
+A statement is identified by its words up to the value, a more specific layer's
+replaces the less specific one's, and a
+.B no
+line names the same words. Any other
+.BR logging ,
+.BR service ,
+.BR login ,
+.B security
+or
+.B "ip ssh"
+statement is refused; the three
+.B "ip ssh"
+settings are the only ones the plan types.
+.PP
+Both system blocks also take the services a scope requires to be absent, a
+hardening that no \fBset\fR line can state: on Junos
+.B "absent system services telnet|ftp|finger|xnm\-clear\-text|web\-management"
+and on IOS
+.B "absent ip http server|ip http secure\-server|service tcp\-small\-servers|service udp\-small\-servers|ip finger|service finger"
+(only a statement the running configuration prints while the feature is on, so
+that its absence can be compared). The device that holds the service, or
+anything under it, differs; the plan deletes the whole statement once
+.RB ( "delete system services telnet" ,
+.BR "no ip http server" ),
+under a comment that names the block, and the back\-out types it again. The
+\fBdelete\fR (Junos) and \fBno\fR (IOS) line of a device's own block takes a
+scope's marker out for that device, as it does for any statement. These deletes
+are the only ones under \fBsystem services\fR, besides the NETCONF setting's,
+that an apply admits. A block of \fBabsent\fR lines alone is a block: nothing
+else of the device is compared with it.
 .PP
 The blocks of a scope are the files under
 .IR /etc/tacctl/blocks/\fIscope\fR/\fIvendor\fR ,
@@ -6330,11 +6476,21 @@ shows marks instead:
 .B <secret:N>
 for a community string,
 .B <group:N>
-for a trap group's name,
+for a trap group's name and
 .B <secret>
-for an NTP key,
-.B "<message: N lines, M characters>"
-for the login message or banner, and a comment line is never shown.
+for an NTP key, and a comment line is never shown. The login message, the
+announcement and an IOS banner are no secrets (a device shows them before the
+login): they are printed as they are, by
+.B show
+and
+.BR "show \-\-effective" ;
+the diff of
+.B check
+and
+.B set
+prints their size,
+.BR "<message: N lines, M characters>" ,
+instead.
 .PP
 A device's own block is laid over its scope's per object: a community (by its
 string), a trap group (by its name) or a trap\-options leaf of the device
@@ -6515,9 +6671,9 @@ for each list a community names, and the whole configuration once when the
 image does not know
 .BR "| section" ;
 for an IOS system block
-.BR "show running\-config | include ^(banner|ip domain|ip name\-server|clock timezone|ntp )"
+.BR "show running\-config | include ^(banner|ip domain|ip name\-server|clock |ntp |logging |service timestamps|login |security |ip ssh)"
 and the banner's lines with
-.BR "show running\-config | section ^banner login" ),
+.BR "show running\-config | section ^banner" ),
 and open them in the editor as the draft to prune. The read is that of
 .BR "device config pull" :
 the password from the shell's cache or the terminal, the transport and timeout
@@ -7479,7 +7635,7 @@ refused, failed, rolled back or pending; 2 wrong arguments; 130 interrupted.
 .\" BEGIN GENERATED: command device onboard
 .RS
 .PP
-Requires: \fBsuperuser\fR.
+Requires: \fBengineer\fR.
 .PP
 Options:
 .TP
@@ -7614,7 +7770,7 @@ collected, 1 one was skipped, refused, failed or not Junos, 2 wrong arguments,
 .\" BEGIN GENERATED: command device collect
 .RS
 .PP
-Requires: \fBsuperuser\fR.
+Requires: \fBengineer\fR.
 .PP
 Options:
 .TP
@@ -7749,7 +7905,7 @@ interrupted.
 .\" BEGIN GENERATED: command device enroll
 .RS
 .PP
-Requires: \fBsuperuser\fR.
+Requires: \fBengineer\fR.
 .PP
 Options:
 .TP
@@ -7830,7 +7986,7 @@ when fields were written. Exit status: 0, 1 refused, 2 wrong arguments.
 .\" BEGIN GENERATED: command device sync
 .RS
 .PP
-Requires: \fBsuperuser\fR.
+Requires: \fBengineer\fR.
 .PP
 Options:
 .TP
@@ -7856,6 +8012,45 @@ Also replace a field that is set, showing the old value.
 One object: each device's fields, actions and facts.
 .RE
 .\" END GENERATED: command device sync
+.TP
+.BI "device support\-bundle " "name " "[ \-\-vendor cisco|juniper|wti ] [ \-\-login " "local\-user " "] [ \-\-out " "dir " "]"
+Logs in once to a registered device and collects what a developer needs to make tacctl read that kind of device correctly, as a directory of text files that is safe to share. The commands are fixed and read only, per vendor: Junos, the version of every member and routing engine, the chassis hardware, the virtual chassis, the cluster status, the routing engine, the uptime, the login's permissions (\c
+.B "show cli authorization"\c
+), the commit history and the difference to rollback 0; IOS, the version, the inventory, the switch stack, the modules, the clock, the privilege level and the lines of the running configuration that name the device; a WTI unit, the screens its pull reads, without the user directory. For all three, the SNMP system group is added when SNMP is set up. The configuration itself is not collected: the Junos difference to rollback 0 is the candidate's changes only, and the IOS lines are those that name the device.
+.IP
+The text is scrubbed before it is written: host names, domains, users, classes, addresses, MAC addresses, serial numbers, locations, contacts and time zones become the standard example values (the same real value always the same example), the free text of a commit comment is removed (tacctl's own comments stay), and anything that looks like a secret, a hash or a key is removed. A text that still holds a value the scrubber learned to replace is not written. What was replaced is kept in a private file beside the directory, \fIdir\fR\fB.map\fR (mode 0600, the real values), never in it; read the files before sharing them.
+.IP
+The login is the one of
+.BR "device config pull" :
+your own TACACS+ account with the password asked on the terminal (it is not cached), or, for a Junos device with a pinned host key,
+.B \-\-login
+with the one\-shot password of a local account. The registered vendor decides what is run;
+.B \-\-vendor
+reads the device as another one for this run only and saves nothing (for a device registered as
+.BR other ).
+.B \-\-out
+names the directory, which must not exist or must be empty (default:
+.B support\-bundle\-<UTC time>
+in the current directory). Logged:
+.B "auth.info device support-bundle user= device= vendor= login=own|local:<account> files= result=ok"
+(never a command's text). Exit status: 0, 1 refused or the login failed, 2 wrong arguments, 130 interrupted.
+.\" BEGIN GENERATED: command device support-bundle
+.RS
+.PP
+Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-\-vendor\fR \fIcisco|juniper|wti\fR
+(support\-bundle) Read the device as this vendor for this run (the registered vendor otherwise; nothing is saved).
+.TP
+\fB\-\-login\fR \fI<local\-user>\fR
+(support\-bundle) A Junos device's local account to log in as instead of you, as for a pull (the device needs a pinned host key): its password is asked once on the terminal and never kept or cached.
+.TP
+\fB\-\-out\fR \fI<dir>\fR
+(support\-bundle) The directory to write (default: support\-bundle\-<UTC time> in the current directory; it must not exist). The map of what was replaced is <dir>.map, private.
+.RE
+.\" END GENERATED: command device support-bundle
 .TP
 .BI "device remove " "name[,name...] | \-\-all " [ \-y ]
 Remove devices from the registry, after confirmation (\c
@@ -7942,7 +8137,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; engineers, Junos devices; (sync) write the fields, after one question.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
@@ -8032,7 +8227,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; engineers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device description
 .TP
@@ -8084,7 +8279,7 @@ Options:
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .TP
 \fB\-\-apply\fR
-(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; engineers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device location
 .TP
@@ -8188,7 +8383,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; engineers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device ios-syntax
 .TP
@@ -8240,7 +8435,7 @@ Options:
 (enable) The rate limit of the service, 1 to 250; none takes the scope's.
 .TP
 \fB\-\-apply\fR
-(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; superusers, Junos devices; (sync) write the fields, after one question.
+(address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; engineers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device netconf
 .TP
@@ -8363,8 +8558,9 @@ that is neither a Junos nor an IOS device have no blocks; a device that has left
 every scope can still have its blocks removed.
 .B "show \-\-effective"
 prints the block as it is rendered for the device, the scope's with the
-device's laid over it, with a comment for each object saying which layer it is
-from (\fB\-\-reveal\fR prints the strings; every reveal is logged as
+device's laid over it, with a comment for each object saying which block it is
+from, in the words of the verb that edits it (\fBscope block\fR \fIscope vendor block\fR or
+\fBdevice block\fR \fIname block\fR; \fB\-\-reveal\fR prints the strings; every reveal is logged as
 .BR "secret\-read kind=block name=_devices/" \fIname\fR/\fIvendor\fR/\fIblock\fR ).
 A rename of the device moves its blocks and its removal deletes them.
 .B edit
@@ -9021,7 +9217,9 @@ The release is the
 .B Junos:
 line of
 .B "show version"
-on Junos (else the
+on Junos (an older Junos prints none: the
+.B "JUNOS Base OS boot [...]"
+line; else the
 .B "set version"
 statement of the configuration the pull read),
 the version of the
@@ -9291,7 +9489,7 @@ The address the devices are told to authenticate against, for devices behind a t
 The address this server reaches the devices from (not stored).
 .TP
 \fB\-\-login\fR \fI<local\-user>\fR
-(pull, diff \-\-pull, plan \-\-pull) Superusers, one registered Junos device with a pinned key: log in as that local account of the device instead of you (any local account, a break\-glass one included; only root is handled apart: a device never read as you, through its csh wrapper); its password is asked once on the terminal and never kept or cached.
+(pull, diff \-\-pull, plan \-\-pull) Engineers, one registered Junos device with a pinned key: log in as that local account of the device instead of you (any local account, a break\-glass one included; only root is handled apart: a device never read as you, through its csh wrapper); its password is asked once on the terminal and never kept or cached.
 .TP
 \fB\-\-diff\fR
 Print the differences after the summary.
@@ -9500,7 +9698,7 @@ The address the devices are told to authenticate against (with \-\-pull; not sto
 The address this server reaches the devices from (with \-\-pull; not stored).
 .TP
 \fB\-\-login\fR \fI<local\-user>\fR
-(pull, diff \-\-pull, plan \-\-pull) Superusers, one registered Junos device with a pinned key: log in as that local account of the device instead of you (any local account, a break\-glass one included; only root is handled apart: a device never read as you, through its csh wrapper); its password is asked once on the terminal and never kept or cached.
+(pull, diff \-\-pull, plan \-\-pull) Engineers, one registered Junos device with a pinned key: log in as that local account of the device instead of you (any local account, a break\-glass one included; only root is handled apart: a device never read as you, through its csh wrapper); its password is asked once on the terminal and never kept or cached.
 .TP
 \fB\-\-pull\fR
 Read the devices first (takes the pull options).
@@ -10086,7 +10284,7 @@ The address the devices are told to authenticate against, for devices behind a t
 The address this server reaches the devices from (not stored).
 .TP
 \fB\-\-login\fR \fI<local\-user>\fR
-(pull, diff \-\-pull, plan \-\-pull) Superusers, one registered Junos device with a pinned key: log in as that local account of the device instead of you (any local account, a break\-glass one included; only root is handled apart: a device never read as you, through its csh wrapper); its password is asked once on the terminal and never kept or cached.
+(pull, diff \-\-pull, plan \-\-pull) Engineers, one registered Junos device with a pinned key: log in as that local account of the device instead of you (any local account, a break\-glass one included; only root is handled apart: a device never read as you, through its csh wrapper); its password is asked once on the terminal and never kept or cached.
 .TP
 \fB\-\-pull\fR
 Read the devices first (takes the pull options); the plan is made from that pull.
@@ -10396,7 +10594,9 @@ service: then
 with its limits, or
 .BR "delete system services netconf" ),
 .BR "system root\-authentication" ,
-.BR "system services" ,
+.BR "system services"
+(but for the exact statements of the NETCONF setting and the delete of a service
+the system block requires to be absent),
 .BR interfaces ,
 groups, a local user's credentials, the root user, the account that runs it and
 its login class, and the deletion of a whole hierarchy tacctl renders; every
@@ -10454,7 +10654,7 @@ for an earlier apply's pending record settled, never a value).
 .\" BEGIN GENERATED: command device config apply
 .RS
 .PP
-Requires: \fBsuperuser\fR.
+Requires: \fBengineer\fR. An engineer gets the devices of their own scopes only.
 .PP
 Options:
 .TP
@@ -11200,6 +11400,109 @@ Options:
 (list) Print the holds as a JSON array.
 .RE
 .\" END GENERATED: command breakglass list
+.SS Emergency lockdown \fB(tacctl emergency)\fR
+A \fIlockdown\fR refuses the logins of chosen groups on every device and Linux
+host a scope answers. Where a
+.I hold
+makes the server stop answering one device so that its local accounts can be
+used, a lockdown keeps answering and says no: the users of the locked groups
+are taken out of the scope when the backends render
+.RB ( tacquito.yaml
+and the RADIUS users file), so every login and every further command
+authorization is refused (TACACS+ FAIL, RADIUS Reject), never silence, and a
+device does not fall back to its local accounts on that account.
+.I store.yaml
+is not changed; lifting the lockdown renders the files as they were. A user of
+a superuser group (its tier is superuser and it is not a group at priv\-lvl 15
+with no tier setting) is never locked. There is no timer.
+.PP
+A device's own local accounts are not tacctl users and are not locked. They
+stay out of the way only because of the device's method list. Not closed: a
+Cisco console line, the Junos root account on the console, a scope that lists
+local accounts first
+.RB ( "scope aaa\-order local\-first" ),
+local ssh keys, sessions that are open (Junos devices, WTI units and Linux
+hosts keep a session until it logs in again or runs sudo) and a device that
+cannot reach the server.
+.B status
+names these and
+.B enable
+warns in red on a local\-first scope; nothing is changed on any device.
+.PP
+While a lockdown stands, every command that names the scope, a device or
+enrolled host in it, or that is about no one scope
+.RB ( status ", " "config validate" ", " "scope list" ", " "device list" ", " "host list" )
+writes one red line on standard error, once per command:
+.B "EMERGENCY LOCKDOWN on scope '<scope>' since <time> by <user> (<duration>): logins of groups <groups> are refused; superusers keep access. Reason: <text>"
+Standard output and the exit status are unchanged. An engineer sees the
+lockdowns of their own scopes.
+.B status
+and
+.B "config validate"
+list them too; the latter reports a record that names a scope or group that is
+gone, a group that is a superuser's now, or no group. A scope's rename moves the
+record, its removal drops it, and
+.B "group remove"
+takes the group out of every lockdown; making a locked group a superuser group
+.RB ( "group edit" " ... " tier " superuser, or a priv\-lvl edit that does it)"
+is refused, and so is
+.B "tacctl rollback"
+to an older release, until the lockdown is lifted. The log has
+.BI "emergency lockdown enable scope=" name " groups=" list " exempt=" users " reason=\(dq" text "\(dq by=" user " locked=" n " result=ok"
+and
+.BI "emergency lockdown disable scope=" name " groups=" list " held=" duration " by=" user " result=ok" .
+The record is
+.B emergency.lockdown.<scope>.groups|since|by|reason
+in
+.IR tacctl.yaml ,
+so every snapshot holds it.
+.TP
+.BI "emergency lockdown " "scope " "enable " [ "group[,group]..." "] [\-\-tier " tier "] [\-\-reason " text "] [\-\-dry\-run]"
+.TQ
+.BI "emergency lockdown \-\-all\-scopes enable " [ "group[,group]..." "] [\-\-tier " tier "] [\-\-reason " text "] [\-\-dry\-run]"
+Lock the groups named (with no list every group that is not a superuser's; with
+\fB\-\-tier\fR the groups of that tier, readonly, operator or engineer) on the
+scope, or on every scope, added to what is locked already. Shows the users who
+lose access and those who keep it, then asks for the scope's name typed back (the
+word \fBall\fR for \fB\-\-all\-scopes\fR, which includes this server's own logins);
+without a terminal the verb refuses. \fB\-\-dry\-run\fR prints the list and changes
+nothing. A superuser group, or \fB\-\-tier superuser\fR, is refused. The change is one
+write of \fItacctl.yaml\fR, one render and one restart of each backend that changed;
+a backend whose restart failed is reported as \fBNOT restarted\fR, the record and
+the files are kept, and the verb exits 1. Superuser only.
+.TP
+.BI "emergency lockdown " "scope " "disable " [ "group[,group]..." ]
+.TQ
+.BI "emergency lockdown \-\-all\-scopes disable " [ "group[,group]..." ]
+Lift the lockdown for the groups named, or all of it; the rendered files come back byte for byte. Superuser only.
+.\" BEGIN GENERATED: command emergency lockdown
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-all\-scopes\fR
+(lockdown) Every scope instead of one.
+.TP
+\fB\-\-tier\fR \fI<tier>\fR
+(lockdown) Lock the groups of that tier (readonly, operator or engineer).
+.TP
+\fB\-\-reason\fR \fI<text>\fR
+(lockdown) Why, 1 to 256 characters; kept with the record and in the log.
+.TP
+\fB\-\-dry\-run\fR
+(lockdown) Print who loses access and change nothing.
+.TP
+\fB\-\-json\fR
+(lockdown status) Print the lockdowns as a JSON array.
+.RE
+.\" END GENERATED: command emergency lockdown
+.TP
+.BI "emergency lockdown status " [ scope "] [\-\-json]"
+.TQ
+.BI "emergency lockdown " scope
+The lockdowns that stand: scope, groups, since, how long, by whom, why, the users locked out, the superusers who keep access and the ways a device's local accounts stay usable. \fB\-\-json\fR prints an array with \fBlocked_users\fR and \fBexempt\fR.
 .SS Login console \fB(tacctl console)\fR
 The login console
 .RB ( tacctl\-console )
@@ -11876,9 +12179,10 @@ device add, device remove, device rename, device address,
 device hostname, device vendor, device port, device description,
 device location, device legacy\-ssh, device ios\-syntax,
 device hostkey, device import, scope devices, device config,
-config cisco, config juniper, config wti, host list, host show,
-scope staging, scope secret, scope snmp, device snmp, scope block,
-device block, scope show, breakglass list
+device enroll, device collect, device onboard, device sync,
+device support\-bundle, config cisco, config juniper, config wti,
+host list, host show, scope staging, scope secret, scope snmp,
+device snmp, scope block, device block, scope show, breakglass list
 .TP
 .B superuser
 Every verb not listed above, and every verb of the tiers below.
@@ -11896,7 +12200,7 @@ An engineer may print the walkthrough and read source\-interface for a scope of 
 An engineer may read the configuration blocks of a device of their own scope (list, show [\-\-effective] [\-\-reveal], check); set, remove, edit and adopt need the superuser tier.
 .TP
 .B device config
-An operator may run list; show, pull, diff and plan need the engineer tier (a device's walkthrough carries its scope's secret, a plan can type it, and a pull logs in to the device as you), and an engineer gets the devices of their own scopes only; forget, apply and shapes (a check or an apply writes to the device; shapes files what an apply confirmed) need the superuser tier.
+An operator may run list; show, pull, diff, plan and apply need the engineer tier (a device's walkthrough carries its scope's secret, a plan can type it, a pull logs in to the device as you, and a check or an apply writes to it as you), and an engineer gets the devices of their own scopes only; forget and shapes (shapes files what an apply confirmed) need the superuser tier.
 .TP
 .B device import
 An engineer imports from standard input only (device import \-).
@@ -11990,10 +12294,11 @@ are:
 _phase, backend disable, backend enable, breakglass hold,
 breakglass release, console install, console remove, device add,
 device enroll, device notice, device remove, device rename,
-device ssh, group add, group edit, group remove, host enroll,
-host forget, host move, host rename, host sync, host unenroll, passwd,
-scope add, scope remove, scope rename, ssh, user add, user disable,
-user enable, user move, user passwd, user remove, user rename
+device ssh, device support\-bundle, emergency lockdown, group add,
+group edit, group remove, host enroll, host forget, host move,
+host rename, host sync, host unenroll, passwd, scope add,
+scope remove, scope rename, ssh, user add, user disable, user enable,
+user move, user passwd, user remove, user rename
 .TP
 .B "action, auth.notice"
 backup restore, config restore,
@@ -13477,7 +13782,7 @@ The configuration blocks in force for the scope and vendor (cisco or juniper), a
 .TP
 .B blocks_device.<device>.<vendor>
 non\-empty list of block names (snmp, system). Default: none (unset).
-The configuration blocks in force for one device and vendor (cisco or juniper), a list of snmp and system; the device's lower case name is written with every '.' as '~' (js1~lab~example~net), and a file under the blocks directory that this list does not name is ignored. Set with \fBtacctl device block\fR.
+The configuration blocks in force for one device and vendor (cisco or juniper), a list of snmp and system; the device's lower case name is written with every '.' as '~' (jsw1~lab~example~net), and a file under the blocks directory that this list does not name is ignored. Set with \fBtacctl device block\fR.
 .TP
 .B snmp_scope.<scope>.version
 one of v2c, v3. Default: none (unset).
@@ -13522,6 +13827,22 @@ The user who held it. Set with \fBtacctl breakglass hold\fR.
 .B breakglass_hold.<device>.reason
 text of 1 to 256 characters (a user name for by). Default: none (unset).
 Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the hold by tacctl breakglass release. Set with \fBtacctl breakglass hold\fR.
+.TP
+.B emergency.lockdown.<scope>.groups
+list of group names, at most 64. Default: none (unset).
+The groups whose logins the scope refuses while the lockdown stands: both renderers take the scope out of their users. Superuser groups are never listed. Set with \fBtacctl emergency lockdown\fR.
+.TP
+.B emergency.lockdown.<scope>.since
+RFC 3339 time. Default: none (unset).
+When the lockdown began (RFC 3339). Set with \fBtacctl emergency lockdown\fR.
+.TP
+.B emergency.lockdown.<scope>.by
+text of 1 to 256 characters (a user name for by). Default: none (unset).
+The user who began it. Set with \fBtacctl emergency lockdown\fR.
+.TP
+.B emergency.lockdown.<scope>.reason
+text of 1 to 256 characters (a user name for by). Default: none (unset).
+Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the lockdown by tacctl emergency lockdown disable. Set with \fBtacctl emergency lockdown\fR.
 .TP
 .B netconf_scope.<scope>.state
 one of enable, disable. Default: none (unset).
@@ -13636,7 +13957,9 @@ may have meant (the verbs of that name,
 .BR "device enroll" " and " "host enroll" ,
 or a command within two letters of it) and a pointer to
 .B tacctl
-for the list, and ends with 1;
+for the list, and ends with 1; it is answered before
+.B sudo
+runs, so it never asks for a password;
 .BR tacctl ,
 .BR "tacctl help" ,
 .B \-h

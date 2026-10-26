@@ -94,55 +94,55 @@ func TestBlocksInForce(t *testing.T) {
 // the last block.
 func TestDeviceBlocksInForce(t *testing.T) {
 	c, path := newConf(t, "")
-	const dev = "js1.lab.example.net"
+	const dev = "jsw1.lab.example.net"
 	if got := DeviceBlockNames(c, dev, "juniper"); got != nil {
 		t.Fatalf("names of nothing: %q", got)
 	}
 	for _, b := range []string{"system", "snmp", "snmp"} {
-		if err := SetDeviceBlockInForce(c, "JS1.Lab.Example.NET", "juniper", b, true); err != nil {
+		if err := SetDeviceBlockInForce(c, "JSW1.Lab.Example.NET", "juniper", b, true); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if got := DeviceBlockNames(c, dev, "juniper"); !reflect.DeepEqual(got, []string{"snmp", "system"}) {
 		t.Errorf("names = %q (the order of blocks.KnownBlocks)", got)
 	}
-	if text, _ := os.ReadFile(path); !strings.Contains(string(text), "blocks_device:\n  js1~lab~example~net:\n    juniper:\n    - snmp\n    - system\n") {
+	if text, _ := os.ReadFile(path); !strings.Contains(string(text), "blocks_device:\n  jsw1~lab~example~net:\n    juniper:\n    - snmp\n    - system\n") {
 		t.Errorf("file:\n%s", text)
 	}
-	if !DeviceBlockInForce(c, "JS1.lab.example.net", "juniper", "snmp") || DeviceBlockInForce(c, dev, "cisco", "snmp") || DeviceBlockInForce(c, "js2.lab.example.net", "juniper", "snmp") {
+	if !DeviceBlockInForce(c, "JSW1.lab.example.net", "juniper", "snmp") || DeviceBlockInForce(c, dev, "cisco", "snmp") || DeviceBlockInForce(c, "jsw2.lab.example.net", "juniper", "snmp") {
 		t.Error("DeviceBlockInForce")
 	}
 	// The scope's list is another key.
-	if BlockInForce(c, "js1", "juniper", "snmp") || len(BlockManifest(c)) != 0 {
+	if BlockInForce(c, "jsw1", "juniper", "snmp") || len(BlockManifest(c)) != 0 {
 		t.Error("a device's block is a scope's")
 	}
 	if err := SetDeviceBlockInForce(c, dev, "cisco", "system", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetDeviceBlockInForce(c, "js2.lab.example.net", "juniper", "snmp", true); err != nil {
+	if err := SetDeviceBlockInForce(c, "jsw2.lab.example.net", "juniper", "snmp", true); err != nil {
 		t.Fatal(err)
 	}
 	want := blocks.Manifest{
-		dev:                   {"juniper": {"snmp", "system"}, "cisco": {"system"}},
-		"js2.lab.example.net": {"juniper": {"snmp"}},
+		dev:                    {"juniper": {"snmp", "system"}, "cisco": {"system"}},
+		"jsw2.lab.example.net": {"juniper": {"snmp"}},
 	}
 	if got := DeviceBlockManifest(c); !reflect.DeepEqual(got, want) {
 		t.Errorf("manifest = %v, want %v", got, want)
 	}
 
-	if err := MoveDeviceBlocks(c, dev, "js3.lab.example.net"); err != nil {
+	if err := MoveDeviceBlocks(c, dev, "jsw3.lab.example.net"); err != nil {
 		t.Fatal(err)
 	}
-	if got := DeviceBlockNames(c, "js3.lab.example.net", "juniper"); !reflect.DeepEqual(got, []string{"snmp", "system"}) {
+	if got := DeviceBlockNames(c, "jsw3.lab.example.net", "juniper"); !reflect.DeepEqual(got, []string{"snmp", "system"}) {
 		t.Errorf("after the move: %q", got)
 	}
 	if DeviceBlockInForce(c, dev, "juniper", "snmp") {
 		t.Error("the old name still has blocks")
 	}
-	if err := ForgetDeviceBlocks(c, "js3.lab.example.net"); err != nil {
+	if err := ForgetDeviceBlocks(c, "jsw3.lab.example.net"); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetDeviceBlockInForce(c, "js2.lab.example.net", "juniper", "snmp", false); err != nil {
+	if err := SetDeviceBlockInForce(c, "jsw2.lab.example.net", "juniper", "snmp", false); err != nil {
 		t.Fatal(err)
 	}
 	if text, _ := os.ReadFile(path); strings.Contains(string(text), "blocks") {
@@ -155,11 +155,11 @@ func TestDeviceBlocksInForce(t *testing.T) {
 		t.Error("an invalid device name was written")
 	}
 	// A hand edit: unknown names, vendors and devices are skipped.
-	if err := os.WriteFile(path, []byte("blocks_device:\n  js1~lab:\n    juniper:\n    - snmp\n    - frob\n    wti:\n    - snmp\n  bad..name:\n    juniper:\n    - snmp\n"), 0o640); err != nil {
+	if err := os.WriteFile(path, []byte("blocks_device:\n  jsw1~lab:\n    juniper:\n    - snmp\n    - frob\n    wti:\n    - snmp\n  bad..name:\n    juniper:\n    - snmp\n"), 0o640); err != nil {
 		t.Fatal(err)
 	}
 	c = conf.Load(path, conf.DefaultBackends)
-	if got := DeviceBlockManifest(c); !reflect.DeepEqual(got, blocks.Manifest{"js1.lab": {"juniper": {"snmp"}}}) {
+	if got := DeviceBlockManifest(c); !reflect.DeepEqual(got, blocks.Manifest{"jsw1.lab": {"juniper": {"snmp"}}}) {
 		t.Errorf("manifest of a hand edit = %v", got)
 	}
 }

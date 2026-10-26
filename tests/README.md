@@ -50,7 +50,7 @@ as `make test-go` does; `make gate-go` (`tests/tools/gate-go.sh`, which
 that ends with a single `GATE-GO PASS|FAIL` line, a FAIL for a run that was
 killed or lost a package: start it with a tool that notices the process
 ending (an agent: Bash `run_in_background`), never with a trailing `&` and
-never wait for it with `pgrep -f`; the bats suite, the diff corpus and the container
+never wait for it with `pgrep -f`; `GATE_TMPFS=1 make gate-go` keeps the tests' sandboxes on `/dev/shm` (the fsync calls cost nothing there: the run takes about a third of the time; the log and `GOCACHE` stay on disk); the bats suite, the diff corpus and the container
 matrix stay on the maintainer's machine. The temporary directory is
 `Paths.TempDir`, the `TMPDIR` of the environment a test gives the
 invocation, and the code never reads the process's

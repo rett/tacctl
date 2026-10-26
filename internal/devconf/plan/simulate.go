@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/rett/tacctl/internal/blocks"
 	"github.com/rett/tacctl/internal/devconf"
 )
 
@@ -189,7 +190,9 @@ var junosSingleKeys = []string{
 	"snmp community * authorization", "snmp community * client-list-name",
 	"snmp trap-group * version",
 	"system host-name",
-	"system login message", "system domain-name", "system time-zone",
+	"system login message", "system login announcement", "system domain-name", "system time-zone",
+	"system syslog host * *", "system syslog host * facility-override", "system syslog host * log-prefix", "system syslog source-address",
+	"system login retry-options *", "system login password *",
 	"system ntp boot-server", "system ntp source-address",
 	"system ntp server * version", "system ntp server * key", "system ntp server * routing-instance",
 	"system ntp authentication-key * type", "system ntp authentication-key * value",
@@ -467,8 +470,8 @@ func (c *IOSConfig) Apply(lines []Line) error {
 			return fmt.Errorf("plan: %q under %q is typed before 'aaa new-model': IOS has no such line command until it is set", l.Shown(), l.Context[0])
 		}
 		switch {
-		case l.Op == OpLine && len(l.Context) == 0 && strings.HasPrefix(l.Text, "banner login ") && strings.Contains(l.Text, "\n"):
-			// a login banner: its lines replace the device's banner, or are
+		case l.Op == OpLine && len(l.Context) == 0 && blocks.BannerKindOf(l.Text) != "" && strings.Contains(l.Text, "\n"):
+			// a banner: its lines replace the device's banner of the kind, or are
 			// added before 'end'
 			c.typeBanner(l.Text)
 		case l.Op == OpLine && len(l.Context) == 0:
@@ -739,12 +742,13 @@ func (c *IOSConfig) replaceLogin(header string) {
 	}
 }
 
-// typeBanner types a login banner (its lines: 'banner login <d>', the text,
-// '<d>'): it replaces the device's login banner in place, else it is added.
+// typeBanner types a banner (its lines: 'banner <kind> <d>', the text, '<d>'):
+// it replaces the device's banner of the kind in place, else it is added.
 func (c *IOSConfig) typeBanner(text string) {
 	blk := iosBlk{lines: strings.Split(text, "\n")}
+	kind := blocks.BannerKindOf(text)
 	for i := range c.blocks {
-		if strings.HasPrefix(norm(c.blocks[i].lines[0]), "banner login ") {
+		if blocks.BannerKindOf(norm(c.blocks[i].lines[0])) == kind {
 			c.blocks[i] = blk
 			return
 		}

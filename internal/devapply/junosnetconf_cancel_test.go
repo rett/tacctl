@@ -251,8 +251,8 @@ func endsWithSub(log []string, words ...string) bool {
 // as '?').
 func TestHolderOfTheDevicesLockDenied(t *testing.T) {
 	for name, msg := range map[string]string{
-		"raw":       "\nconfiguration database locked by:\n  admin terminal  (pid 85829) on since 2026-10-15 05:47:43 AKDT\n      exclusive \n",
-		"sanitised": "?configuration database locked by:?  admin terminal  (pid 85829) on since 2026-10-15 05:47:43 AKDT?      exclusive ?",
+		"raw":       "\nconfiguration database locked by:\n  admin terminal  (pid 85829) on since 2026-10-15 05:47:43 UTC\n      exclusive \n",
+		"sanitised": "?configuration database locked by:?  admin terminal  (pid 85829) on since 2026-10-15 05:47:43 UTC?      exclusive ?",
 		"same line": "configuration database locked by: bob terminal",
 	} {
 		want := "admin"

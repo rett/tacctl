@@ -45,7 +45,7 @@ var liveNames = map[string]string{
 	// The break-glass users recorded for the scope 'lab'.
 	"breakglass-users lab": "lab-admin\nlab-ops\n",
 	// the device registry's and the hosts' names (kind devices)
-	"devices": "js1\nsw1\n",
+	"devices": "jsw1\nsw1\n",
 	"hosts":   "web1\nweb2\n",
 }
 
@@ -113,12 +113,12 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"scope", "block", "lab", "juniper", "e"}, []string{"edit"}},
 		// edit takes a block; adopt takes a device, then a block
 		{[]string{"scope", "block", "lab", "juniper", "edit", ""}, []string{"snmp", "system", "-y", "--yes"}},
-		{[]string{"scope", "block", "lab", "juniper", "adopt", ""}, []string{"js1", "sw1", "-y", "--yes"}},
-		{[]string{"scope", "block", "lab", "juniper", "adopt", "js1", ""}, []string{"snmp", "system", "-y", "--yes"}},
-		{[]string{"scope", "block", "lab", "juniper", "adopt", "js1", "snmp", ""}, []string{"-y", "--yes"}},
+		{[]string{"scope", "block", "lab", "juniper", "adopt", ""}, []string{"jsw1", "sw1", "-y", "--yes"}},
+		{[]string{"scope", "block", "lab", "juniper", "adopt", "jsw1", ""}, []string{"snmp", "system", "-y", "--yes"}},
+		{[]string{"scope", "block", "lab", "juniper", "adopt", "jsw1", "snmp", ""}, []string{"-y", "--yes"}},
 		{[]string{"scope", "block", "lab", "juniper", "show", ""}, []string{"snmp", "system", "--reveal"}},
 		{[]string{"scope", "block", "lab", "juniper", "set", "snmp", ""}, []string{"--file", "-y", "--yes"}},
-		{[]string{"scope", "block", "lab", "juniper", "check", "snmp", "--against", ""}, []string{"js1", "sw1"}},
+		{[]string{"scope", "block", "lab", "juniper", "check", "snmp", "--against", ""}, []string{"jsw1", "sw1"}},
 		{[]string{"scope", "block", "lab", "juniper", "check", "snmp", ""}, []string{"--file", "--against"}},
 		// --restore-point takes its value after '=' only: the bare flag is a
 		// word of its own, the value (alone: the scripts strip the flag) is
@@ -127,14 +127,14 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"device", "config", "plan", "--restore"}, []string{"--restore-point"}},
 		{[]string{"device", "config", "plan", "--restore-point=b"}, []string{"bootflash:"}},
 		{[]string{"device", "config", "plan", "--restore-point=d"}, []string{"disk0:"}},
-		{[]string{"device", "config", "plan", "--restore-point", "js"}, []string{"js1"}},
+		{[]string{"device", "config", "plan", "--restore-point", "js"}, []string{"jsw1"}},
 		{[]string{"device", "config", "plan", "--restore-point=disk0:", "--restore"}, nil},
-		{[]string{"device", "block", ""}, []string{"js1", "sw1"}},
-		{[]string{"device", "block", "js1", ""}, []string{"list", "show", "check", "set", "remove", "edit", "adopt"}},
-		{[]string{"device", "block", "js1", "adopt", ""}, []string{"snmp", "system", "-y", "--yes"}},
-		{[]string{"device", "block", "js1", "edit", "snmp", ""}, []string{"-y", "--yes"}},
-		{[]string{"device", "block", "js1", "show", ""}, []string{"snmp", "system", "--reveal", "--effective"}},
-		{[]string{"device", "block", "js1", "check", "system", ""}, []string{"--file", "--against"}},
+		{[]string{"device", "block", ""}, []string{"jsw1", "sw1"}},
+		{[]string{"device", "block", "jsw1", ""}, []string{"list", "show", "check", "set", "remove", "edit", "adopt"}},
+		{[]string{"device", "block", "jsw1", "adopt", ""}, []string{"snmp", "system", "-y", "--yes"}},
+		{[]string{"device", "block", "jsw1", "edit", "snmp", ""}, []string{"-y", "--yes"}},
+		{[]string{"device", "block", "jsw1", "show", ""}, []string{"snmp", "system", "--reveal", "--effective"}},
+		{[]string{"device", "block", "jsw1", "check", "system", ""}, []string{"--file", "--against"}},
 		{[]string{"scope", "prefixes", "lab", ""}, []string{"list", "add", "remove", "move"}},
 		{[]string{"scope", "prefixes", "lab", "remove", ""}, []string{"--all", "--force"}},
 		{[]string{"scope", "prefixes", "lab", "remove", "--all", ""}, []string{"--force"}},
@@ -432,7 +432,7 @@ func TestCompleteThisReleasesWords(t *testing.T) {
 		{[]string{"scope", "secret", "lab", "set", "--"}, []string{"--stdin"}, false},
 		{[]string{"user", "add", "x", "--"}, []string{"--hash"}, false},
 		{[]string{"user", "passwd", "x", "--"}, []string{"--hash"}, false},
-		{[]string{"rollback", ""}, []string{"0.2.17", "0.2.16", "0.2.9", "0.2.3"}, true},
+		{[]string{"rollback", ""}, []string{"0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}, true},
 	}
 	for _, c := range cases {
 		got, _ := completeWords(t, liveNames, c.words...)

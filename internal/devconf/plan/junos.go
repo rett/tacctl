@@ -75,6 +75,12 @@ func junosRows(section string, exp devices.Section) []*jrow {
 			}
 		}
 	}
+	// a service the rendering requires to be absent is a row that has it
+	for _, r := range rows {
+		if r.Mode == ModeAbsent {
+			r.has = slices.Contains(exp.Forbid, r.Pattern)
+		}
+	}
 	return rows
 }
 
@@ -525,6 +531,17 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 				}
 				addDelete(l, x.stem)
 			}
+		case ModeAbsent:
+			if !row.has {
+				keepStem(x.stem, "")
+				continue
+			}
+			if !p.inPlain(name, x.stem) {
+				refuseInherited(x.stem)
+				continue
+			}
+			fire(row)
+			addDelete(Line{Op: OpDelete, Text: "delete " + row.Pattern}, x.stem)
 		case ModeLeaves:
 			if !row.has || row.Depth != 0 && len(x.path) != row.Depth {
 				// 'system accounting destination <protocol>' is tacctl's;
@@ -669,7 +686,7 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 	o.kept = kept
 	for _, row := range rows {
 		if row.fired {
-			if w := strings.ReplaceAll(row.Why, "<scope>", p.blockScope()); !slices.Contains(o.why, w) {
+			if w := p.whyOf(row.OwnedRow); !slices.Contains(o.why, w) {
 				o.why = append(o.why, w)
 			}
 		}
@@ -700,9 +717,10 @@ func missingOptionOf(ls []jl, server []string) bool {
 }
 
 // isMessagePath reports the path of the login message statement ('system
-// login message <mark>').
+// login message <mark>') or of the announcement ('system login announcement
+// <mark>'), the two texts a device shows around the login.
 func isMessagePath(path []string) bool {
-	return len(path) == 4 && path[0] == "system" && path[1] == "login" && path[2] == "message"
+	return len(path) == 4 && path[0] == "system" && path[1] == "login" && (path[2] == "message" || path[2] == "announcement")
 }
 
 // longMessageWarning is the warning of a login message statement that a

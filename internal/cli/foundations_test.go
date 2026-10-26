@@ -43,12 +43,12 @@ func TestReexecTablesForSSHDeviceAndShell(t *testing.T) {
 		want []string
 	}{
 		{[]string{"scope", "block", "lab", "juniper", "edit", "snmp"}, []string{"sudo", "VISUAL=/usr/bin/vim", "EDITOR=nano", "/x", "scope", "block", "lab", "juniper", "edit", "snmp"}},
-		{[]string{"scope", "block", "lab", "juniper", "adopt", "js1", "snmp", "-y"}, []string{"sudo", "VISUAL=/usr/bin/vim", "EDITOR=nano", "/x", "scope", "block", "lab", "juniper", "adopt", "js1", "snmp", "-y"}},
-		{[]string{"device", "block", "js1", "edit", "system"}, []string{"sudo", "VISUAL=/usr/bin/vim", "EDITOR=nano", "/x", "device", "block", "js1", "edit", "system"}},
-		{[]string{"device", "block", "js1", "adopt", "snmp"}, []string{"sudo", "VISUAL=/usr/bin/vim", "EDITOR=nano", "/x", "device", "block", "js1", "adopt", "snmp"}},
+		{[]string{"scope", "block", "lab", "juniper", "adopt", "jsw1", "snmp", "-y"}, []string{"sudo", "VISUAL=/usr/bin/vim", "EDITOR=nano", "/x", "scope", "block", "lab", "juniper", "adopt", "jsw1", "snmp", "-y"}},
+		{[]string{"device", "block", "jsw1", "edit", "system"}, []string{"sudo", "VISUAL=/usr/bin/vim", "EDITOR=nano", "/x", "device", "block", "jsw1", "edit", "system"}},
+		{[]string{"device", "block", "jsw1", "adopt", "snmp"}, []string{"sudo", "VISUAL=/usr/bin/vim", "EDITOR=nano", "/x", "device", "block", "jsw1", "adopt", "snmp"}},
 		{[]string{"scope", "block", "lab", "juniper", "show", "snmp"}, []string{"sudo", "/x", "scope", "block", "lab", "juniper", "show", "snmp"}},
 		{[]string{"scope", "block", "lab", "juniper", "set", "snmp", "--file", "edit"}, []string{"sudo", "/x", "scope", "block", "lab", "juniper", "set", "snmp", "--file", "edit"}},
-		{[]string{"device", "block", "js1", "check", "snmp"}, []string{"sudo", "/x", "device", "block", "js1", "check", "snmp"}},
+		{[]string{"device", "block", "jsw1", "check", "snmp"}, []string{"sudo", "/x", "device", "block", "jsw1", "check", "snmp"}},
 		{[]string{"scope", "list"}, []string{"sudo", "/x", "scope", "list"}},
 		{[]string{"device", "list"}, []string{"sudo", "/x", "device", "list"}},
 		{[]string{"scope", "block", "edit"}, []string{"sudo", "/x", "scope", "block", "edit"}},
@@ -58,7 +58,7 @@ func TestReexecTablesForSSHDeviceAndShell(t *testing.T) {
 		}
 	}
 	// unset variables are not passed
-	if got := sudoArgv("/x", []string{"device", "block", "js1", "edit", "snmp"}, func(string) string { return "" }); !reflect.DeepEqual(got, []string{"sudo", "/x", "device", "block", "js1", "edit", "snmp"}) {
+	if got := sudoArgv("/x", []string{"device", "block", "jsw1", "edit", "snmp"}, func(string) string { return "" }); !reflect.DeepEqual(got, []string{"sudo", "/x", "device", "block", "jsw1", "edit", "snmp"}) {
 		t.Errorf("unset: %q", got)
 	}
 	if !noSudo["shell"] {

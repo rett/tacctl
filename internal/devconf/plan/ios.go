@@ -186,13 +186,13 @@ func parseIOSExpected(sec devices.Section) []iosEntry {
 		raw := sec.Lines[i]
 		trimmed := strings.TrimRight(raw, " \t\r")
 		t := strings.TrimLeft(trimmed, " \t")
-		if f := strings.Fields(t); len(trimmed) == len(t) && len(f) >= 2 && f[0] == "banner" && f[1] == "login" {
+		if kind := blocks.BannerKindOf(t); len(trimmed) == len(t) && kind != "" {
 			// the banner's lines are text up to the closing delimiter: a blank
 			// line or a line that begins with '!' is part of it
-			body, took, ok := blocks.DeviceBanner(sec.Lines[i:])
+			body, took, ok := blocks.DeviceBannerOf(kind, sec.Lines[i:])
 			if ok {
 				items = append(items, item{text: strings.Join(sec.Lines[i:i+took], "\n"), banner: true,
-					stem: "banner login " + devconf.MessageMark(body)})
+					stem: "banner " + kind + " " + devconf.MessageMark(body)})
 			}
 			i += took - 1
 			continue
@@ -302,10 +302,10 @@ func iosKey(path []string) (string, bool) {
 		case leaf[0] == "snmp-server" && len(leaf) >= 3 && leaf[1] == "trap-source":
 			// one trap source: a typed one replaces it
 			return "snmp-server trap-source", true
-		case leaf[0] == "banner" && len(leaf) >= 2 && leaf[1] == "login":
-			// one login banner: a typed one replaces it (0.2.7, the system
-			// block)
-			return "banner login", true
+		case leaf[0] == "banner" && len(leaf) >= 2 && slices.Contains(blocks.BannerKinds, leaf[1]):
+			// one banner of a kind: a typed one replaces it (0.2.7, the system
+			// block; motd and exec 0.2.19)
+			return "banner " + leaf[1], true
 		case leaf[0] == "ip" && len(leaf) >= 4 && leaf[1] == "domain" && leaf[2] == "name" && leaf[3] != "vrf",
 			leaf[0] == "ip" && len(leaf) == 3 && leaf[1] == "domain-name":
 			// the legacy spelling is the same command
@@ -315,6 +315,24 @@ func iosKey(path []string) (string, bool) {
 			return "ip domain name vrf " + leaf[4], true
 		case leaf[0] == "clock" && len(leaf) >= 3 && leaf[1] == "timezone":
 			return "clock timezone", true
+		case leaf[0] == "clock" && len(leaf) >= 3 && leaf[1] == "summer-time":
+			return "clock summer-time", true
+		case leaf[0] == "logging" && len(leaf) >= 3 && leaf[1] == "host":
+			// one line per syslog host
+			return "logging host " + leaf[2], true
+		case leaf[0] == "logging" && len(leaf) >= 2 && (leaf[1] == "trap" || leaf[1] == "buffered" || leaf[1] == "origin-id"):
+			return "logging " + leaf[1], true
+		case leaf[0] == "service" && len(leaf) >= 3 && leaf[1] == "timestamps":
+			// one line per kind: a typed one replaces the device's
+			return "service timestamps " + leaf[2], true
+		case leaf[0] == "login" && len(leaf) >= 2 && (leaf[1] == "on-failure" || leaf[1] == "on-success" || leaf[1] == "delay"):
+			return "login " + leaf[1], true
+		case leaf[0] == "security" && len(leaf) >= 3 && leaf[1] == "passwords" && leaf[2] == "min-length":
+			return "security passwords min-length", true
+		case leaf[0] == "security" && len(leaf) >= 5 && leaf[1] == "authentication" && leaf[2] == "failure" && leaf[3] == "rate":
+			return "security authentication failure rate", true
+		case leaf[0] == "ip" && len(leaf) >= 3 && leaf[1] == "ssh" && (leaf[2] == "version" || leaf[2] == "time-out" || leaf[2] == "authentication-retries"):
+			return "ip ssh " + leaf[2], true
 		case leaf[0] == "ntp" && len(leaf) >= 3 && leaf[1] == "server" && leaf[2] != "vrf" && leaf[2] != "ip" && leaf[2] != "ipv6":
 			// one line per NTP server: a typed one replaces the device's of
 			// the same host, whatever its options
@@ -624,6 +642,18 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 		}
 		leaf := strings.Fields(path[len(path)-1])
 		switch {
+		case name == devconf.SectionSystem && len(path) == 1 && forbidTarget(p.expected(name).Forbid, path[0]) != "":
+			// a service the system block requires to be absent: the whole
+			// statement goes (once, whatever sits under it), and the back-out
+			// types the device's line again
+			target := forbidTarget(p.expected(name).Forbid, path[0])
+			if i := slices.IndexFunc(nos, func(l Line) bool { return l.Text == target }); i >= 0 {
+				nos[i].For = append(nos[i].For, x.stem)
+				nos[i].Undo = append(nos[i].Undo, Line{Op: OpLine, Text: path[0]})
+				continue
+			}
+			nos = append(nos, Line{Op: OpNo, Text: target, Section: name, For: []string{x.stem},
+				Undo: []Line{{Op: OpLine, Text: path[0]}}})
 		case len(path) == 1 && st.isStoredFormOnly(path[0]) != "":
 			// D106: what the image adds or stores by itself is never a 'no'
 			keep(x.stem, st.isStoredFormOnly(path[0]))
@@ -781,8 +811,9 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 					if reIOSBannerStem.MatchString(s.stem) {
 						// only the size and a digest of the device's banner are
 						// kept: it cannot be typed again
-						l.Undo = append(l.Undo, Line{Op: OpComment, Text: "the device had a login banner that tacctl keeps no text of (" +
-							strings.TrimPrefix(s.stem, "banner login ") + "): put it back from the saved configuration " +
+						kind := blocks.BannerKindOf(s.stem)
+						l.Undo = append(l.Undo, Line{Op: OpComment, Text: "the device had a " + kind + " banner that tacctl keeps no text of (" +
+							strings.TrimPrefix(s.stem, "banner "+kind+" ") + "): put it back from the saved configuration " +
 							"('configure replace' with the archived or the startup configuration), or type it again from what you have"})
 						continue
 					}
@@ -963,9 +994,9 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 					if p.blk != nil && p.blk.trapSource {
 						what = "(its communities, access lists, trap hosts, trap source and 'enable traps' lines)"
 					}
-					o.why = append(o.why, "the SNMP block of scope "+p.blockScope()+" "+what)
+					o.why = append(o.why, "the SNMP block of "+p.blocksWords(name)+" "+what)
 				}
-				if w := strings.ReplaceAll(row.Why, "<scope>", p.blockScope()); !slices.Contains(o.why, w) {
+				if w := p.whyOf(row); !slices.Contains(o.why, w) {
 					o.why = append(o.why, w)
 				}
 				break
@@ -1012,10 +1043,30 @@ func (p *planner) iosRow(section string, l Line) string {
 	return id
 }
 
+// forbidTarget is the statement of forbid that the device's statement is at or
+// under ("" when it is none).
+func forbidTarget(forbid []string, statement string) string {
+	w := strings.Fields(statement)
+	for _, f := range forbid {
+		fw := strings.Fields(f)
+		if len(w) >= len(fw) && slices.Equal(w[:len(fw)], fw) {
+			return f
+		}
+	}
+	return ""
+}
+
 // iosRowID names the ownership row a line of a section belongs to.
 func iosRowID(section string, l Line) string {
 	t := l.Text
 	c0 := firstCtx(l)
+	if l.Op == OpNo && section == devconf.SectionSystem {
+		for _, r := range iosOwned {
+			if r.Mode == ModeAbsent && r.Pattern == t {
+				return r.ID
+			}
+		}
+	}
 	switch {
 	case strings.HasPrefix(c0, "ip access-list "):
 		return "ios." + section + ".acl"
@@ -1061,6 +1112,10 @@ func iosRowID(section string, l Line) string {
 		return "ios.snmp.block-trap-source"
 	case strings.HasPrefix(t, "banner login "):
 		return "ios.system.banner"
+	case strings.HasPrefix(t, "banner motd "):
+		return "ios.system.banner-motd"
+	case strings.HasPrefix(t, "banner exec "):
+		return "ios.system.banner-exec"
 	case strings.HasPrefix(t, "ip domain name "):
 		return "ios.system.domain-name"
 	case strings.HasPrefix(t, "ip domain list "):
@@ -1077,6 +1132,34 @@ func iosRowID(section string, l Line) string {
 		return "ios.system.ntp-trusted-key"
 	case t == "ntp authenticate":
 		return "ios.system.ntp-authenticate"
+	case strings.HasPrefix(t, "logging host "):
+		return "ios.system.logging-host"
+	case strings.HasPrefix(t, "logging trap "):
+		return "ios.system.logging-trap"
+	case strings.HasPrefix(t, "logging buffered "):
+		return "ios.system.logging-buffered"
+	case strings.HasPrefix(t, "logging origin-id "):
+		return "ios.system.logging-origin-id"
+	case strings.HasPrefix(t, "service timestamps "):
+		return "ios.system.timestamps"
+	case strings.HasPrefix(t, "login on-failure "):
+		return "ios.system.login-on-failure"
+	case strings.HasPrefix(t, "login on-success "):
+		return "ios.system.login-on-success"
+	case strings.HasPrefix(t, "login delay "):
+		return "ios.system.login-delay"
+	case strings.HasPrefix(t, "security passwords min-length "):
+		return "ios.system.passwords-min-length"
+	case strings.HasPrefix(t, "security authentication failure rate "):
+		return "ios.system.auth-failure-rate"
+	case strings.HasPrefix(t, "ip ssh version "):
+		return "ios.system.ssh-version"
+	case strings.HasPrefix(t, "ip ssh time-out "):
+		return "ios.system.ssh-timeout"
+	case strings.HasPrefix(t, "ip ssh authentication-retries "):
+		return "ios.system.ssh-retries"
+	case strings.HasPrefix(t, "clock summer-time "):
+		return "ios.system.summer-time"
 	}
 	return ""
 }
@@ -1084,10 +1167,10 @@ func iosRowID(section string, l Line) string {
 // iosMaxTypedLine is the longest line IOS takes when it is typed or pasted.
 const iosMaxTypedLine = 255
 
-// longestBannerLine is the length of the longest line of a login banner's
-// text (0 for a line that is no banner).
+// longestBannerLine is the length of the longest line of a banner's text (0
+// for a line that is no banner).
 func longestBannerLine(text string) int {
-	if !strings.HasPrefix(text, blocks.IOSBannerHead) || !strings.Contains(text, "\n") {
+	if blocks.BannerKindOf(text) == "" || !strings.Contains(text, "\n") {
 		return 0
 	}
 	n := 0
@@ -1113,8 +1196,8 @@ func systemRank(l Line) int {
 	return 0
 }
 
-// reIOSBannerStem is the compared form of a login banner.
-var reIOSBannerStem = regexp.MustCompile(`^banner login <message: [0-9]+ lines, [0-9]+ characters, id [0-9a-f]{8}>$`)
+// reIOSBannerStem is the compared form of a banner (login, motd or exec).
+var reIOSBannerStem = regexp.MustCompile(`^banner (login|motd|exec) <message: [0-9]+ lines, [0-9]+ characters, id [0-9a-f]{8}>$`)
 
 // systemUndo sets the text of an undo line to the system statement's own
 // take-away (iosSystemUndo): false when the text is none of them.
@@ -1137,8 +1220,8 @@ func iosSystemUndo(text string) (string, bool) {
 		return "", false
 	}
 	switch {
-	case f[0] == "banner" && f[1] == "login":
-		return "banner login", true
+	case f[0] == "banner" && slices.Contains(blocks.BannerKinds, f[1]):
+		return "banner " + f[1], true
 	case f[0] == "ip" && len(f) >= 5 && f[1] == "domain" && f[2] == "name" && f[3] == "vrf":
 		return strings.Join(f[:5], " "), true
 	case f[0] == "ip" && len(f) >= 6 && f[1] == "domain" && f[2] == "list" && f[3] == "vrf":
@@ -1163,6 +1246,22 @@ func iosSystemUndo(text string) (string, bool) {
 		return "ntp authenticate", true
 	case f[0] == "snmp-server" && f[1] == "trap-source":
 		return "snmp-server trap-source", true
+	case f[0] == "logging" && len(f) >= 3 && f[1] == "host":
+		return "logging host " + f[2], true
+	case f[0] == "logging" && (f[1] == "trap" || f[1] == "buffered" || f[1] == "origin-id"):
+		return "logging " + f[1], true
+	case f[0] == "service" && len(f) >= 3 && f[1] == "timestamps":
+		return "service timestamps " + f[2], true
+	case f[0] == "login" && (f[1] == "on-failure" || f[1] == "on-success" || f[1] == "delay"):
+		return "login " + f[1], true
+	case f[0] == "security" && len(f) >= 3 && f[1] == "passwords" && f[2] == "min-length":
+		return "security passwords min-length", true
+	case f[0] == "security" && len(f) >= 4 && f[1] == "authentication" && f[2] == "failure" && f[3] == "rate":
+		return "security authentication failure rate", true
+	case f[0] == "ip" && len(f) >= 3 && f[1] == "ssh":
+		return "ip ssh " + f[2], true
+	case f[0] == "clock" && f[1] == "summer-time":
+		return "clock summer-time", true
 	}
 	return "", false
 }

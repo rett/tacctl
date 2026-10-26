@@ -171,6 +171,12 @@ func (a Allow) Check(line string) error {
 		return nil
 	}
 
+	// the services a system block requires to be absent (0.2.19): the one
+	// place under 'system services' besides NETCONF a plan may delete
+	if a.absentAllowed(verb, path) {
+		return nil
+	}
+
 	// the never list, whatever the tables say
 	if id, ok := neverMatch(fam, Line{Text: line}); ok {
 		return refuse(line, true, "on the never list (%s)", id)
@@ -206,6 +212,33 @@ func (a Allow) Check(line string) error {
 		}
 	}
 	return nil
+}
+
+// absentAllowed reports whether a statement is the delete of a service the
+// system block requires to be absent: 'delete system services <service>' with
+// the service one of the rows of the table (an exact word, never an
+// abbreviation), and the rendering's system section naming it. With no
+// rendering the tables alone decide, as for every row.
+func (a Allow) absentAllowed(verb string, path []string) bool {
+	if verb != string(OpDelete) || len(path) != 3 || path[0] != "system" || path[1] != "services" {
+		return false
+	}
+	target := strings.Join(path, " ")
+	if !slices.ContainsFunc(junosOwned, func(r OwnedRow) bool { return r.Mode == ModeAbsent && r.Pattern == target }) {
+		return false
+	}
+	if a.Sections != nil && !slices.Contains(a.Sections, devconf.SectionSystem) {
+		return false
+	}
+	if a.Expected == nil {
+		return true
+	}
+	for _, s := range a.Expected {
+		if s.Name == devconf.SectionSystem {
+			return slices.Contains(s.Forbid, target)
+		}
+	}
+	return false
 }
 
 // quoteOutside reports whether a single quote stands outside double quotes.
@@ -306,6 +339,9 @@ func (a Allow) hierarchy(line, verb string, path []string) error {
 			}
 		}
 		for _, r := range junosRows(name, exp) {
+			if r.Mode == ModeAbsent {
+				continue // decided by absentAllowed
+			}
 			obj, at, ok := matchPrefix(r.pat, path)
 			if !ok {
 				continue

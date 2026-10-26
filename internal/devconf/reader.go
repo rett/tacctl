@@ -199,8 +199,8 @@ const (
 	iosSNMPCommand = "show running-config | include ^snmp-server"
 	// iosSystemCommand reads the lines of the system block; the banner's own
 	// lines come from iosBannerCommand ('include' shows its first line only).
-	iosSystemCommand = "show running-config | include ^(banner|ip domain|ip name-server|clock timezone|ntp )"
-	iosBannerCommand = "show running-config | section ^banner login"
+	iosSystemCommand = "show running-config | include ^(banner|ip domain|ip name-server|clock |ntp |logging |service timestamps|login |security |ip ssh)"
+	iosBannerCommand = "show running-config | section ^banner"
 	iosACLCommand    = "show running-config | section ip access-list standard "
 	iosFullCommand   = "show running-config"
 )
@@ -363,20 +363,25 @@ func readIOSSystem(ctx context.Context, r Runner) (string, error) {
 	return strings.Join(append(kept, banner...), "\n"), nil
 }
 
-// bannerLines are the lines of the login banner (its opening line, its text
-// and its closing delimiter), none when the device has none.
+// bannerLines are the lines of the banners the system block takes (login, motd
+// and exec: the opening line, the text and the closing delimiter of each),
+// none when the device has none.
 func bannerLines(ctx context.Context, r Runner, first []string) []string {
 	cut := func(text string) []string {
+		var out []string
 		lines := strings.Split(text, "\n")
+		seen := map[string]bool{}
 		for i, l := range lines {
-			if f := strings.Fields(l); len(f) >= 2 && f[0] == "banner" && f[1] == "login" && l == strings.TrimLeft(l, " \t") {
-				if _, took, ok := blocks.DeviceBanner(lines[i:]); ok {
-					return lines[i : i+took]
-				}
-				return nil
+			kind := blocks.BannerKindOf(l)
+			if kind == "" || l != strings.TrimLeft(l, " \t") || seen[kind] {
+				continue
+			}
+			if _, took, ok := blocks.DeviceBannerOf(kind, lines[i:]); ok {
+				seen[kind] = true
+				out = append(out, lines[i:i+took]...)
 			}
 		}
-		return nil
+		return out
 	}
 	if o, err := r.Run(ctx, iosBannerCommand); err == nil {
 		o = cleanText(o)

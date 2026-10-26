@@ -122,7 +122,7 @@ func ResolveIOSSystemTexts(scope, device string, scopeText, deviceText []byte) (
 		return nil, BlockLayers{}, nil
 	}
 	r := blocks.ResolveIOSSystem(nil, sc, dv)
-	if len(blocks.IOSSystemStatements(r)) == 0 {
+	if len(blocks.IOSSystemStatements(r)) == 0 && len(blocks.IOSSystemAbsent(r)) == 0 {
 		return nil, BlockLayers{}, nil
 	}
 	return r, layers, nil
@@ -201,9 +201,9 @@ func ResolveSystemTexts(scope, device string, scopeText, deviceText []byte) (*bl
 }
 
 // hasSystemStatement reports whether the resolved block states anything to
-// render (a block with delete lines only renders nothing).
+// render or to require absent (a block with delete lines only renders nothing).
 func hasSystemStatement(b *blocks.SystemBlock) bool {
-	return b != nil && len(blocks.SystemStatements(b)) > 0
+	return b != nil && (len(blocks.SystemStatements(b)) > 0 || len(blocks.SystemAbsent(b)) > 0)
 }
 
 // layerTexts are the texts of the scope's and the device's file of a block,

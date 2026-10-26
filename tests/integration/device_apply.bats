@@ -94,7 +94,7 @@ nothing_secret() {
     assert_failure
 }
 
-@test "apply: only a superuser, before any login: an operator and an engineer are refused" {
+@test "apply: an engineer at least, before any login: an operator is refused, and an engineer is refused shapes" {
     start
     stub_cmd id 'echo "users tac-users"'
     SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" device config apply example-sw1 --check
@@ -105,10 +105,6 @@ nothing_secret() {
     assert_failure
     assert_output --partial "not permitted"
     printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
-    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config apply example-sw1 --check
-    assert_failure
-    plain
-    assert_output --partial "'tacctl device config apply' is not permitted for the engineer tier."
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes seed example-sw1 -y
     assert_failure
     assert_output --partial "not permitted for the engineer tier"
@@ -636,7 +632,7 @@ tdevice() {
     refute_output --partial "would change"
 }
 
-@test "setters --apply: refused before anything changes without a terminal and for a lower tier" {
+@test "setters --apply: refused before anything changes without a terminal and for an operator" {
     start
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device location example-sw1 "Row 3" --apply
     assert_failure
@@ -646,12 +642,12 @@ tdevice() {
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device location example-sw1
     plain
     assert_line "-"
-    stub_cmd id 'echo "users tac-users tac-engineer"'
-    printf 'tier:\n  operator: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    # an operator cannot run the setter at all
+    stub_cmd id 'echo "users tac-users"'
     SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" device location example-sw1 "Row 3" --apply
     assert_failure
     plain
-    assert_output --partial "which is for the superuser tier; yours is engineer. Nothing was changed."
+    assert_output --partial "'tacctl device location' is not permitted for the operator tier."
     # nothing was dialled
     [[ ! -e "${TACCTL_VAR_LIB}/devices-config.json" ]]
 }

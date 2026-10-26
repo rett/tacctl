@@ -124,6 +124,21 @@ var keptShapes = map[string][]keptShape{
 		// where the rendering says nothing of the same object. The options of
 		// an NTP server come before the server itself.
 		{Row: "junos.system.login-message", Pattern: "system login message", keep: notRendered},
+		{Row: "junos.system.announcement", Pattern: "system login announcement", keep: notRendered},
+		// 0.2.19: syslog, the login retry options and the password policy. The
+		// options of a host come before the host's facility lines, which
+		// would match them; the device's other syslog statements (files,
+		// console, users) are its own, and so are the other leaves of the
+		// retry options and the password policy.
+		{Row: "junos.system.syslog-facility-override", Pattern: "system syslog host $ facility-override", keep: notRendered},
+		{Row: "junos.system.syslog-log-prefix", Pattern: "system syslog host $ log-prefix", keep: notRendered},
+		{Row: "junos.system.syslog-explicit-priority", Pattern: "system syslog host $ explicit-priority", keep: notRendered},
+		{Row: "junos.system.syslog-host", Pattern: "system syslog host $ $", keep: notRendered},
+		{Row: "junos.system.syslog-time-format", Pattern: "system syslog time-format $", keep: notRendered},
+		{Row: "junos.system.syslog-source-address", Pattern: "system syslog source-address", keep: notRendered},
+		{Pattern: "system syslog", keep: always},
+		{Row: "junos.system.retry-option", Pattern: "system login retry-options $", keep: notRendered},
+		{Row: "junos.system.password-policy", Pattern: "system login password $", keep: notRendered},
 		{Row: "junos.system.domain-name", Pattern: "system domain-name", keep: notRendered},
 		{Row: "junos.system.time-zone", Pattern: "system time-zone", keep: notRendered},
 		{Row: "junos.system.domain-search", Pattern: "system domain-search $", keep: notRendered},
@@ -174,6 +189,24 @@ var keptShapes = map[string][]keptShape{
 		// difference (the plan replaces it in place), so each shape keeps a
 		// statement only where the rendering says nothing of the same object.
 		{Row: "ios.system.banner", Pattern: "banner login", keep: notRendered},
+		{Row: "ios.system.banner-motd", Pattern: "banner motd", keep: notRendered},
+		{Row: "ios.system.banner-exec", Pattern: "banner exec", keep: notRendered},
+		// 0.2.19: logging, the login and password policy, ssh, summer time
+		{Row: "ios.system.logging-host", Pattern: "logging host $", keep: notRendered},
+		{Row: "ios.system.logging-trap", Pattern: "logging trap", keep: notRendered},
+		{Row: "ios.system.logging-buffered", Pattern: "logging buffered", keep: notRendered},
+		{Row: "ios.system.logging-origin-id", Pattern: "logging origin-id", keep: notRendered},
+		{Row: "ios.system.timestamps", Pattern: "service timestamps $", keep: notRendered},
+		{Row: "ios.system.login-on-failure", Pattern: "login on-failure", keep: notRendered},
+		{Row: "ios.system.login-on-success", Pattern: "login on-success", keep: notRendered},
+		{Row: "ios.system.login-delay", Pattern: "login delay", keep: notRendered},
+		{Row: "ios.system.passwords-min-length", Pattern: "security passwords min-length", keep: notRendered},
+		{Row: "ios.system.auth-failure-rate", Pattern: "security authentication failure rate", keep: notRendered},
+		{Row: "ios.system.ssh-version", Pattern: "ip ssh version", keep: notRendered},
+		{Row: "ios.system.ssh-timeout", Pattern: "ip ssh time-out", keep: notRendered},
+		{Row: "ios.system.ssh-retries", Pattern: "ip ssh authentication-retries", keep: notRendered},
+		{Row: "ios.system.summer-time", Pattern: "clock summer-time", keep: notRendered},
+
 		{Row: "ios.system.domain-name", Pattern: "ip domain name", keepStmt: otherDomainName},
 		// a vrf form is an object of its own (the shape with the vrf comes
 		// first, the pattern of the list without one would take its words)

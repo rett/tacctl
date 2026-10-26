@@ -17,6 +17,7 @@ test) case "$STUB_MODE" in
     lost) printf 'ok  \tp/a\t0.1s\n' ;;
     fail) printf -- '--- FAIL: TestX\nFAIL\tp/a\t0.1s\nok  \tp/b\t0.1s\n'; exit 1 ;;
     hang) exec sleep 30 ;;
+    tmp) printf '%s\n' "$TMPDIR" >"$STUB_TMP_OUT"; printf 'ok  \tp/a\t0.1s\n?   \tp/b\t[no test files]\n' ;;
     esac ;;
 esac
 SH
@@ -55,4 +56,19 @@ SH
 @test "a usage error is status 2 and no verdict" {
     run -2 "$GATE" --bogus
     [[ "$output" != *GATE-GO* ]]
+}
+
+@test "GATE_TMPFS=1 runs the tests with TMPDIR on /dev/shm and removes it, the log stays where it was" {
+    [[ -d /dev/shm && -w /dev/shm ]] || skip "no writable /dev/shm"
+    export STUB_TMP_OUT="$BATS_TEST_TMPDIR/tmpdir"
+    STUB_MODE=tmp GATE_TMPFS=1 run -0 "$GATE" -o "$LOG"
+    [[ "${lines[-1]}" == "GATE-GO PASS "*" log=$LOG" ]]
+    [[ "$(cat "$STUB_TMP_OUT")" == /dev/shm/tacctl-gate-go.* ]]
+    [[ ! -e "$(cat "$STUB_TMP_OUT")" ]]
+}
+
+@test "without GATE_TMPFS the tests keep the caller's TMPDIR" {
+    export STUB_TMP_OUT="$BATS_TEST_TMPDIR/tmpdir"
+    STUB_MODE=tmp TMPDIR="$BATS_TEST_TMPDIR" run -0 "$GATE" -o "$LOG"
+    [[ "$(cat "$STUB_TMP_OUT")" == "$BATS_TEST_TMPDIR" ]]
 }

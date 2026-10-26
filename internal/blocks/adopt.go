@@ -173,8 +173,9 @@ var snmpLeaves = []string{"authorization", "clients", "client-list-name", "versi
 // AdoptSNMP is the draft of an snmp block from raw, the text of 'show
 // configuration snmp | display set'. same is the block in force at the level
 // the draft is for and up the block of the layer beneath it (a device's
-// draft: the scope's); either may be nil.
-func AdoptSNMP(raw string, own AdoptOwn, same, up *SNMPBlock) AdoptResult {
+// draft: the scope's); either may be nil. layer is the level of the draft: a
+// scope's draft leaves out what names the device itself.
+func AdoptSNMP(raw string, own AdoptOwn, same, up *SNMPBlock, layer Layer) AdoptResult {
 	var res AdoptResult
 	var accepted []string
 	var identity, ours, outside int
@@ -316,6 +317,8 @@ func AdoptSNMP(raw string, own AdoptOwn, same, up *SNMPBlock) AdoptResult {
 			}
 		case pick(up) != nil && sameSet(st, Statements(&SNMPBlock{TrapOptions: []*TrapOption{pick(up)}})):
 			already++
+		case o.Leaf == trapSourceLeaf && layer != LayerDevice && len(o.Args) == 1 && o.Args[0] != "lo0":
+			res.Left = append(res.Left, "trap-options source-address names an address of this device, which a scope's block does not state: it is left out (state it in the device's own block)")
 		default:
 			incl.TrapOptions = append(incl.TrapOptions, o)
 		}
@@ -357,10 +360,10 @@ func wordsOf(w []dword) []string {
 // AdoptSystem is the draft of a system block from raw, the text of 'show
 // configuration system | display set', with the same meaning of same and up
 // as AdoptSNMP.
-func AdoptSystem(raw string, same, up *SystemBlock) AdoptResult {
+func AdoptSystem(raw string, same, up *SystemBlock, layer Layer) AdoptResult {
 	var res AdoptResult
 	var accepted []string
-	var msg *LoginMessage
+	var msg, announcement *LoginMessage
 	var outside int
 	keys := map[int]bool{}
 	for _, line := range strings.Split(raw, "\n") {
@@ -372,13 +375,24 @@ func AdoptSystem(raw string, same, up *SystemBlock) AdoptResult {
 			}
 			continue
 		}
-		if v, ok := strings.CutPrefix(rest, "login message "); ok {
-			body, err := FromDeviceMessage(strings.TrimSpace(v))
-			if err != nil {
-				res.Left = append(res.Left, "the login message could not be read ("+err.Error()+"): it is not adopted")
+		for _, kind := range []struct {
+			prefix, name string
+			dst          **LoginMessage
+		}{{"login message ", "login message", &msg}, {"login announcement ", "login announcement", &announcement}} {
+			v, ok := strings.CutPrefix(rest, kind.prefix)
+			if !ok {
 				continue
 			}
-			msg = &LoginMessage{Body: body}
+			body, err := FromDeviceMessage(strings.TrimSpace(v))
+			if err != nil {
+				res.Left = append(res.Left, "the "+kind.name+" could not be read ("+err.Error()+"): it is not adopted")
+			} else {
+				*kind.dst = &LoginMessage{Body: body}
+			}
+			rest = ""
+			break
+		}
+		if rest == "" {
 			continue
 		}
 		w, ok := deviceWords(rest)
@@ -421,7 +435,7 @@ func AdoptSystem(raw string, same, up *SystemBlock) AdoptResult {
 		}
 	}
 	dev, _ := ParseSystem(strings.Join(accepted, "\n") + "\n")
-	dev.Message = msg
+	dev.Message, dev.Announcement = msg, announcement
 	incl := &SystemBlock{}
 	var already, conflict int
 	// pick says whether a single value is new: not stated by this block (the
@@ -457,7 +471,13 @@ func AdoptSystem(raw string, same, up *SystemBlock) AdoptResult {
 	single(dev.NTPBootServer, valueOf(same, func(b *SystemBlock) *Value { return b.NTPBootServer }),
 		valueOf(up, func(b *SystemBlock) *Value { return b.NTPBootServer }), func(v *Value) { incl.NTPBootServer = v })
 	single(dev.NTPSourceAddress, valueOf(same, func(b *SystemBlock) *Value { return b.NTPSourceAddress }),
-		valueOf(up, func(b *SystemBlock) *Value { return b.NTPSourceAddress }), func(v *Value) { incl.NTPSourceAddress = v })
+		valueOf(up, func(b *SystemBlock) *Value { return b.NTPSourceAddress }), func(v *Value) {
+			if layer != LayerDevice {
+				res.Left = append(res.Left, "ntp source-address names an address of this device, which a scope's block does not state: it is left out (state it in the device's own block)")
+				return
+			}
+			incl.NTPSourceAddress = v
+		})
 	if dev.Message != nil {
 		var sm, um *Value
 		if same != nil && same.Message != nil {
@@ -467,6 +487,44 @@ func AdoptSystem(raw string, same, up *SystemBlock) AdoptResult {
 			um = &Value{Text: up.Message.Body}
 		}
 		single(&Value{Text: dev.Message.Body}, sm, um, func(*Value) { incl.Message = dev.Message })
+	}
+	if dev.Announcement != nil {
+		var sm, um *Value
+		if same != nil && same.Announcement != nil {
+			sm = &Value{Text: same.Announcement.Body}
+		}
+		if up != nil && up.Announcement != nil {
+			um = &Value{Text: up.Announcement.Body}
+		}
+		single(&Value{Text: dev.Announcement.Body}, sm, um, func(*Value) { incl.Announcement = dev.Announcement })
+	}
+	// the statements of the closed table (syslog, the login retry options and
+	// the password policy): by their identity, as a single value is
+	for _, r := range dev.Rules {
+		find := func(b *SystemBlock) *RuleStmt {
+			if b == nil {
+				return nil
+			}
+			if i := indexRule(b.Rules, r.Rule, r.Head); i >= 0 {
+				return &b.Rules[i]
+			}
+			return nil
+		}
+		same1 := func(o *RuleStmt) bool { return strings.Join(o.Args, " ") == strings.Join(r.Args, " ") }
+		switch o := find(same); {
+		case o != nil && same1(o):
+			already++
+		case o != nil:
+			conflict++
+		default:
+			if u := find(up); u != nil && same1(u) {
+				already++
+			} else if def := ruleByID(r.Rule); def != nil && def.DeviceOnly && layer != LayerDevice {
+				res.Left = append(res.Left, "system "+strings.Join(r.Args[:def.keyEnd], " ")+" names an address of this device, which a scope's block does not state: it is left out (state it in the device's own block)")
+			} else {
+				incl.Rules = append(incl.Rules, r)
+			}
+		}
 	}
 	list := func(dst *[]Value, dv []Value, sv, uv []Value, eq func(a, b string) bool) {
 		for _, v := range dv {
@@ -537,7 +595,7 @@ func AdoptSystem(raw string, same, up *SystemBlock) AdoptResult {
 			res.Notes = append(res.Notes, fmt.Sprintf("%s: %d %s, %s", label, n, count(n, "statement", "statements"), tail))
 		}
 	}
-	note(outside, "outside what a system block takes (host name, login users and classes, services, syslog, and the like)", "not adopted")
+	note(outside, "outside what a system block takes (host name, login users and classes, services, syslog files and users, and the like)", "not adopted")
 	note(already, "stated already, with the same value, by this block or the scope's", "not repeated")
 	note(conflict, "differing from what this block states (a single value, or a server with other options)", "left as they are (edit them in place)")
 	return res

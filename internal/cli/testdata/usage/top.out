@@ -10,7 +10,7 @@ Commands:
       -y, --yes                         Answer yes to the confirmations
   upgrade [--branch <name>]             Pull latest source, rebuild, update scripts and every enabled backend
   uninstall [-y|--yes]                  Remove tacctl, its backends' services and all associated files
-  rollback <version> [options]          Prepare the state for the release before this one (0.2.17), for 0.2.16, 0.2.9 or 0.2.3: a dry run unless --apply
+  rollback <version> [options]          Prepare the state for the release before this one (0.2.18), for 0.2.17, 0.2.16, 0.2.9 or 0.2.3: a dry run unless --apply
       --apply                           Take a snapshot, then convert the files the target cannot read (tacctl.yaml, sudoers; for 0.2.3 also console.yaml, devices.yaml)
       --yes                             Acknowledge the warnings that --apply refuses to go on without
       --hosts                           Accepted; the hosts need nothing for this target (no host is synced)
@@ -22,6 +22,7 @@ Commands:
   host <subcommand>                     Linux hosts: enroll, sync, unenroll TACACS+ or RADIUS login over SSH
   device <subcommand>                   Device registry: list, add, enroll, scan, discover, check, host keys (client-config)
   breakglass <subcommand>               Break-glass hold: make the server stop answering one device or host (hold, release, list)
+  emergency <subcommand>                Emergency measures (lockdown: refuse the logins of groups on a scope)
   ssh <name|address> [-p <port>]        Open an ssh session to a registered device or enrolled host, as you
       -p <port>                         Connect to this port (default: the device's port, else 22)
   shell [--idle <min>] [-c <line>]      An interactive tacctl prompt with history and completion

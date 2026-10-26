@@ -64,7 +64,8 @@ renamed host again without `--scope` would put it in `linux-<new>`. See
 lowercased (host names are not case-sensitive; a host already enrolled under
 exactly that spelling keeps it). A name no enrolled host has with exactly that
 spelling is a new one and must pass the rules a device name passes: lower-case
-letters, digits, `_` or `-`, starting with a letter (26 at most); not a tacctl
+letters, digits, `.`, `_` or `-`, starting with a letter (253 at most, each
+dotted part 63 at most, so a fully qualified name is one); not a tacctl
 word (`all`, `scope`, `local` and the other words a device cannot be called);
 and not the name of an enrolled host or a registered device in any case. A
 `--name` with upper case is refused (`Names are lower case: use 'web1'.

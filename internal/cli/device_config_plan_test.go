@@ -688,3 +688,177 @@ func TestPullKeepsThePlainViewAndForgetsIt(t *testing.T) {
 		t.Error("forget left the plain view")
 	}
 }
+
+// A statement that comes from a block says which one: the scope's, or the
+// device's own over it, in the words of the verb that edits the block.
+func TestPlanNamesTheBlockEachStatementComesFrom(t *testing.T) {
+	b := newPullBox(t)
+	b.devices([3]string{"lab-j", "192.168.1.20", "juniper"})
+	base := b.expected("lab-j")
+	b.serve("juniper", base)
+	b.servePlain(base)
+	b.sb.blk("set system time-zone UTC\nset system domain-name lab.example.net\nset system name-server 192.0.2.53\n", "lab", "juniper", "set", "system", "-", "-y")
+	b.sb.expect(0, "", "")
+	b.sb.devb("set system domain-name sw.example.net\nset system name-server 192.0.2.54\n", "lab-j", "set", "system", "-", "-y")
+	b.sb.expect(0, "", "")
+	if out := b.run("device", "config", "pull", "lab-j"); b.sb.code != 0 {
+		t.Fatalf("pull: %d %s %s", b.sb.code, out, b.sb.stderr())
+	}
+	out := b.run("device", "config", "plan", "lab-j")
+	if b.sb.code != 0 {
+		t.Fatalf("plan: %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+	}
+	// the device's domain name replaces the scope's, its time zone is the
+	// scope's, the name servers of both are kept: the statements are in the
+	// block's order, and the comment changes with the layer
+	want := "# from device block lab-j system\nset system domain-name sw.example.net\n" +
+		"# from scope block lab juniper system\nset system time-zone UTC\nset system name-server 192.0.2.53\n" +
+		"# from device block lab-j system\nset system name-server 192.0.2.54\n"
+	if !strings.Contains(out, want) {
+		t.Errorf("no %q in\n%s", want, out)
+	}
+	if strings.Contains(out, "from tacctl") || strings.Contains(out, "lab.example.net\n") && strings.Contains(out, "set system domain-name lab.example.net") {
+		t.Errorf("the plan names a layer that was replaced or says tacctl:\n%s", out)
+	}
+	// the section's reason names both layers, the scope's alone when the
+	// device has no block of its own
+	if !strings.Contains(out, "# system: the statements of the system block of scope 'lab' with the block of device 'lab-j' over it\n") {
+		t.Errorf("the section header does not name both layers:\n%s", out)
+	}
+	// --plain stays statements only, to load
+	plain := b.run("device", "config", "plan", "lab-j", "--plain")
+	if strings.Contains(plain, "# from") || !strings.Contains(plain, "set system time-zone UTC\n") {
+		t.Errorf("plain:\n%s", plain)
+	}
+}
+
+// The findings name the layer of each block object, not only the scope.
+func TestPlanFindingsNameTheLayerOfEachBlockObject(t *testing.T) {
+	b := newPullBox(t)
+	b.devices([3]string{"lab-j", "192.168.1.20", "juniper"})
+	base := b.expected("lab-j")
+	b.serve("juniper", base)
+	b.servePlain(base)
+	b.sb.blk("set snmp community scope-ro-string authorization read-only\nset snmp community scope-ro-string clients 192.0.2.0/24\n", "lab", "juniper", "set", "snmp", "-", "-y")
+	b.sb.expect(0, "", "")
+	b.sb.devb("set snmp community device-ro-string authorization read-only\nset snmp community device-ro-string clients 192.0.2.8/32\n", "lab-j", "set", "snmp", "-", "-y")
+	b.sb.expect(0, "", "")
+	if out := b.run("device", "config", "pull", "lab-j"); b.sb.code != 0 {
+		t.Fatalf("pull: %d %s %s", b.sb.code, out, b.sb.stderr())
+	}
+	out := unwrapPlan(b.run("device", "config", "plan", "lab-j"))
+	for _, want := range []string{"a community of the SNMP block of scope 'lab':", "a community of the SNMP block of device 'lab-j':",
+		"snmp: the communities of the SNMP block of scope 'lab' with the block of device 'lab-j' over it"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("no %q in\n%s", want, out)
+		}
+	}
+	// two findings: the scope's community and the device's, not one for both
+	if n := strings.Count(out, "missing: a community of the SNMP block of"); n != 2 {
+		t.Errorf("%d findings for the block communities, want 2:\n%s", n, out)
+	}
+}
+
+// IOS: the same comments, led by '!'.
+func TestPlanNamesTheBlockOfAnIOSStatement(t *testing.T) {
+	b := planCiscoBox(t, "", ciscoVersionModern)
+	b.sb.blk("clock timezone UTC 0\nip domain name lab.example.net\nip name-server 192.0.2.53\n", "lab", "cisco", "set", "system", "-", "-y")
+	b.sb.expect(0, "", "")
+	b.sb.devb("ip domain name sw.example.net\nip name-server 192.0.2.54\n", "lab-c", "set", "system", "-", "-y")
+	b.sb.expect(0, "", "")
+	b.run("device", "config", "pull", "lab-c")
+	if b.sb.code != 0 {
+		t.Fatalf("pull: %d %s", b.sb.code, b.sb.stderr())
+	}
+	out := b.run("device", "config", "plan", "lab-c")
+	if b.sb.code != 0 {
+		t.Fatalf("plan: %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+	}
+	for _, want := range []string{"! from device block lab-c system\nip domain name sw.example.net\n", "! from scope block lab cisco system\n",
+		"! system: the statements"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("no %q in\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "ip domain name lab.example.net") {
+		t.Errorf("the scope's domain name is typed beside the device's:\n%s", out)
+	}
+}
+
+// The closed table of the system block (syslog, the login retry options, the
+// password policy, the announcement): a device that lacks them is planned
+// with them, the one that has another level of a host's facility is given the
+// block's, and a syslog file of its own is left alone.
+func TestPlanSyslogAndLoginPolicyFromTheBlock(t *testing.T) {
+	b := newPullBox(t)
+	b.devices([3]string{"lab-j", "192.168.1.20", "juniper"})
+	base := b.expected("lab-j") + "set system syslog file messages any notice\nset system syslog host 192.0.2.50 any error\n"
+	b.serve("juniper", base)
+	b.servePlain(base)
+	b.sb.blk("set system syslog host 192.0.2.50 any warning\nset system syslog host 192.0.2.51 authorization info\n"+
+		"set system login retry-options tries-before-disconnect 4\nset system login password minimum-length 12\n"+
+		"set system login announcement <<'EOF'\nNotice.\nEOF\n", "lab", "juniper", "set", "system", "-", "-y")
+	b.sb.expect(0, "", "")
+	if out := b.run("device", "config", "pull", "lab-j"); b.sb.code != 0 {
+		t.Fatalf("pull: %d %s %s", b.sb.code, out, b.sb.stderr())
+	}
+	out := b.run("device", "config", "plan", "lab-j")
+	if b.sb.code != 0 {
+		t.Fatalf("plan: %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+	}
+	for _, want := range []string{
+		"set system syslog host 192.0.2.50 any warning\n", "set system syslog host 192.0.2.51 authorization info\n",
+		"set system login retry-options tries-before-disconnect 4\n", "set system login password minimum-length 12\n",
+		"set system login announcement \"Notice.\"\n", "# from scope block lab juniper system\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("no %q in\n%s", want, out)
+		}
+	}
+	// the device's own syslog file is left alone: nothing of it is in the region
+	// or in a report
+	region := out[strings.Index(out, "##### PASTE FROM HERE"):strings.Index(out, "##### PASTE TO HERE")]
+	if strings.Contains(region, "syslog file") || strings.Contains(region, "delete ") {
+		t.Errorf("the region touches the device's own syslog statements:\n%s", region)
+	}
+	if strings.Contains(out, "syslog file messages") {
+		t.Errorf("the device's syslog file is no business of the block, and is not listed:\n%s", out)
+	}
+	// planned and pasted, the section reads ok on the next pull
+	plain := b.run("device", "config", "plan", "lab-j", "--plain")
+	if !strings.Contains(plain, "set system syslog host 192.0.2.50 any warning\n") {
+		t.Errorf("plain:\n%s", plain)
+	}
+}
+
+// A system block that requires services to be absent (0.2.19): the plan
+// deletes what the device holds of them, once, names the block, and leaves
+// the device's other services alone.
+func TestPlanAbsentServicesFromTheBlock(t *testing.T) {
+	b := newPullBox(t)
+	b.devices([3]string{"lab-j", "192.168.1.20", "juniper"})
+	base := b.expected("lab-j") + "set system services telnet\nset system services telnet connection-limit 5\nset system services ssh\nset system services ftp\n"
+	b.serve("juniper", base)
+	b.servePlain(base)
+	b.sb.blk("absent system services telnet\nabsent system services web-management\nset system time-zone UTC\n", "lab", "juniper", "set", "system", "-", "-y")
+	b.sb.expect(0, "", "")
+	if out := b.run("device", "config", "pull", "lab-j"); b.sb.code != 0 {
+		t.Fatalf("pull: %d %s %s", b.sb.code, out, b.sb.stderr())
+	}
+	out := b.run("device", "config", "plan", "lab-j")
+	if b.sb.code != 0 {
+		t.Fatalf("plan: %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+	}
+	region := out[strings.Index(out, "##### PASTE FROM HERE"):strings.Index(out, "##### PASTE TO HERE")]
+	if strings.Count(region, "delete system services telnet\n") != 1 {
+		t.Errorf("the region lacks one delete of telnet:\n%s", region)
+	}
+	for _, not := range []string{"services ssh", "services ftp", "web-management", "connection-limit"} {
+		if strings.Contains(region, not) {
+			t.Errorf("the region touches %q:\n%s", not, region)
+		}
+	}
+	if !strings.Contains(region, "# from scope block lab juniper system\n") {
+		t.Errorf("the region does not name the block:\n%s", region)
+	}
+}

@@ -231,7 +231,7 @@ func TestCapturedExpiryHistory(t *testing.T) {
 		t.Errorf("%+v", s)
 	}
 	s = settle(CommitState{History: h}, "tacctl-20261014T200426Z-00a9", CommitEntry{}, testStart, testStart)
-	if s.e != ExitRolledBack || s.fate != "rolled back (cancelled at 2026-10-14 12:04:37 AKDT)" {
+	if s.e != ExitRolledBack || s.fate != "rolled back (cancelled at 2026-10-14 12:04:37 UTC)" {
 		t.Errorf("%+v", s)
 	}
 	for _, k := range []string{"show | compare (2026-10-14: a staged trap group beside an existing one)", "show | compare (2026-10-14: a staged view, nothing beside it)"} {

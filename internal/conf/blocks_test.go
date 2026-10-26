@@ -142,21 +142,21 @@ func TestRollbackKeysHoldTheManifest(t *testing.T) {
 // lower case name with every '.' as '~' is the one segment.
 func TestBlocksDeviceKeysInTheSchema(t *testing.T) {
 	s := NewSchema(DefaultBackends)
-	for _, path := range []string{"blocks_device.js1~lab~example~net.juniper", "blocks_device.sw-1.cisco", "blocks_device.a_b.juniper"} {
+	for _, path := range []string{"blocks_device.jsw1~lab~example~net.juniper", "blocks_device.sw-1.cisco", "blocks_device.a_b.juniper"} {
 		r, ok := s.RuleFor(path)
 		if !ok || r.Type != TypeBlockList {
 			t.Errorf("%s: %+v %v", path, r, ok)
 		}
 	}
-	for _, path := range []string{"blocks_device", "blocks_device.", "blocks_device.js1", "blocks_device..juniper", "blocks_device.js1.lab.juniper", "blocks_device.js1.juniper.snmp"} {
+	for _, path := range []string{"blocks_device", "blocks_device.", "blocks_device.jsw1", "blocks_device..juniper", "blocks_device.jsw1.lab.juniper", "blocks_device.jsw1.juniper.snmp"} {
 		if r, ok := s.RuleFor(path); ok {
 			t.Errorf("%s has a rule: %+v", path, r)
 		}
 	}
-	if got := BlocksDevicePath("JS1.Lab.Example.NET", "juniper"); got != "blocks_device.js1~lab~example~net.juniper" {
+	if got := BlocksDevicePath("JSW1.Lab.Example.NET", "juniper"); got != "blocks_device.jsw1~lab~example~net.juniper" {
 		t.Errorf("BlocksDevicePath = %q", got)
 	}
-	if BlocksDeviceKey("js1") != "js1" || HoldDevice(BlocksDeviceKey("A.b")) != "a.b" {
+	if BlocksDeviceKey("jsw1") != "jsw1" || HoldDevice(BlocksDeviceKey("A.b")) != "a.b" {
 		t.Error("BlocksDeviceKey")
 	}
 }
@@ -169,19 +169,19 @@ func TestBlocksDeviceValidation(t *testing.T) {
 		isList bool
 		want   string // a fragment of the reason; "" is accepted
 	}{
-		{"blocks_device.js1~lab~example~net.juniper", []any{"snmp"}, true, ""},
-		{"blocks_device.js1~lab~example~net.juniper", []any{"snmp", "system"}, true, ""},
+		{"blocks_device.jsw1~lab~example~net.juniper", []any{"snmp"}, true, ""},
+		{"blocks_device.jsw1~lab~example~net.juniper", []any{"snmp", "system"}, true, ""},
 		{"blocks_device.ios1.cisco", []any{"system"}, true, ""},
-		{"blocks_device.js1.juniper", []any{}, true, "non-empty list of block names"},
-		{"blocks_device.js1.juniper", []any{"snmp", "snmp"}, true, "element 1: 'snmp' is listed twice"},
-		{"blocks_device.js1.juniper", []any{"ntp"}, true, "element 0: 'ntp' is not a block (one of: snmp, system)"},
-		{"blocks_device.js1.juniper", "snmp", false, "requires list input"},
-		{"blocks_device.js1.wti", []any{"snmp"}, true, "must be one of the vendors juniper, cisco (blocks_device.<device>.<vendor>)"},
-		{"blocks_device.JS1.juniper", []any{"snmp"}, true, "must be lower case (js1)"},
-		{"blocks_device.js1~Lab.juniper", []any{"snmp"}, true, "must be lower case (js1~lab)"},
-		{"blocks_device.js1~~lab.juniper", []any{"snmp"}, true, "Invalid device name"},
-		{"blocks_device.~js1.juniper", []any{"snmp"}, true, "Invalid device name"},
-		{"blocks_device.js1~.juniper", []any{"snmp"}, true, "Invalid device name"},
+		{"blocks_device.jsw1.juniper", []any{}, true, "non-empty list of block names"},
+		{"blocks_device.jsw1.juniper", []any{"snmp", "snmp"}, true, "element 1: 'snmp' is listed twice"},
+		{"blocks_device.jsw1.juniper", []any{"ntp"}, true, "element 0: 'ntp' is not a block (one of: snmp, system)"},
+		{"blocks_device.jsw1.juniper", "snmp", false, "requires list input"},
+		{"blocks_device.jsw1.wti", []any{"snmp"}, true, "must be one of the vendors juniper, cisco (blocks_device.<device>.<vendor>)"},
+		{"blocks_device.JSW1.juniper", []any{"snmp"}, true, "must be lower case (jsw1)"},
+		{"blocks_device.jsw1~Lab.juniper", []any{"snmp"}, true, "must be lower case (jsw1~lab)"},
+		{"blocks_device.jsw1~~lab.juniper", []any{"snmp"}, true, "Invalid device name"},
+		{"blocks_device.~jsw1.juniper", []any{"snmp"}, true, "Invalid device name"},
+		{"blocks_device.jsw1~.juniper", []any{"snmp"}, true, "Invalid device name"},
 	} {
 		msg := s.Validate(c.path, c.value, c.isList)
 		switch {
@@ -203,27 +203,27 @@ func TestBlocksDeviceManifestRoundTripMoveAndUnset(t *testing.T) {
 	if err := c.SetList(BlocksPath("lab", "juniper"), []string{"snmp"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.SetList(BlocksDevicePath("js1.lab.example.net", "juniper"), []string{"snmp", "system"}); err != nil {
+	if err := c.SetList(BlocksDevicePath("jsw1.lab.example.net", "juniper"), []string{"snmp", "system"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.SetList(BlocksDevicePath("js1.lab.example.net", "cisco"), []string{"system"}); err != nil {
+	if err := c.SetList(BlocksDevicePath("jsw1.lab.example.net", "cisco"), []string{"system"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.SetList(BlocksDevicePath("js2.lab.example.net", "juniper"), []string{"snmp"}); err != nil {
+	if err := c.SetList(BlocksDevicePath("jsw2.lab.example.net", "juniper"), []string{"snmp"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.SetList("blocks_device.js1.wti", []string{"snmp"}); err == nil {
+	if err := c.SetList("blocks_device.jsw1.wti", []string{"snmp"}); err == nil {
 		t.Error("a vendor of no block was accepted")
 	}
 	text, _ := os.ReadFile(path)
-	want := "blocks:\n  lab:\n    juniper:\n    - snmp\nblocks_device:\n  js1~lab~example~net:\n    juniper:\n    - snmp\n    - system\n    cisco:\n    - system\n  js2~lab~example~net:\n    juniper:\n    - snmp\n"
+	want := "blocks:\n  lab:\n    juniper:\n    - snmp\nblocks_device:\n  jsw1~lab~example~net:\n    juniper:\n    - snmp\n    - system\n    cisco:\n    - system\n  jsw2~lab~example~net:\n    juniper:\n    - snmp\n"
 	if !strings.HasSuffix(string(text), want) {
 		t.Errorf("file:\n%s", text)
 	}
-	if got := c.GetList(BlocksDevicePath("JS1.lab.example.net", "juniper")); !reflect.DeepEqual(got, []string{"snmp", "system"}) {
+	if got := c.GetList(BlocksDevicePath("JSW1.lab.example.net", "juniper")); !reflect.DeepEqual(got, []string{"snmp", "system"}) {
 		t.Errorf("GetList = %q", got)
 	}
-	if got := c.BlockDevices(); !reflect.DeepEqual(got, []string{"js1.lab.example.net", "js2.lab.example.net"}) {
+	if got := c.BlockDevices(); !reflect.DeepEqual(got, []string{"jsw1.lab.example.net", "jsw2.lab.example.net"}) {
 		t.Errorf("BlockDevices = %q", got)
 	}
 	if lines := NewSchema(DefaultBackends).ValidateFile(path); len(lines) != 0 {
@@ -231,25 +231,25 @@ func TestBlocksDeviceManifestRoundTripMoveAndUnset(t *testing.T) {
 	}
 
 	// Move: one write, the other devices and the scope untouched.
-	if err := c.MoveBlockDevice("JS1.lab.example.net", "js9.lab.example.net"); err != nil {
+	if err := c.MoveBlockDevice("JSW1.lab.example.net", "jsw9.lab.example.net"); err != nil {
 		t.Fatal(err)
 	}
-	if got := c.GetList(BlocksDevicePath("js9.lab.example.net", "cisco")); !reflect.DeepEqual(got, []string{"system"}) {
+	if got := c.GetList(BlocksDevicePath("jsw9.lab.example.net", "cisco")); !reflect.DeepEqual(got, []string{"system"}) {
 		t.Errorf("after the move: %q", got)
 	}
-	if got := c.GetList(BlocksDevicePath("js1.lab.example.net", "juniper")); got != nil {
+	if got := c.GetList(BlocksDevicePath("jsw1.lab.example.net", "juniper")); got != nil {
 		t.Errorf("the old key is left: %q", got)
 	}
-	if got := c.BlockDevices(); !reflect.DeepEqual(got, []string{"js2.lab.example.net", "js9.lab.example.net"}) {
+	if got := c.BlockDevices(); !reflect.DeepEqual(got, []string{"jsw2.lab.example.net", "jsw9.lab.example.net"}) {
 		t.Errorf("BlockDevices after the move = %q", got)
 	}
 	// Onto another device's entries: refused, nothing written.
 	before, _ := os.ReadFile(path)
-	if err := c.MoveBlockDevice("js9.lab.example.net", "JS2.lab.example.net"); err == nil || !strings.Contains(err.Error(), "already lists") {
+	if err := c.MoveBlockDevice("jsw9.lab.example.net", "JSW2.lab.example.net"); err == nil || !strings.Contains(err.Error(), "already lists") {
 		t.Errorf("move onto entries: %v", err)
 	}
 	// A spelling only, a device with none and an unknown one write nothing.
-	for _, pair := range [][2]string{{"js9.lab.example.net", "JS9.lab.example.net"}, {"js5.lab.example.net", "js6.lab.example.net"}} {
+	for _, pair := range [][2]string{{"jsw9.lab.example.net", "JSW9.lab.example.net"}, {"jsw5.lab.example.net", "jsw6.lab.example.net"}} {
 		if err := c.MoveBlockDevice(pair[0], pair[1]); err != nil {
 			t.Errorf("%v: %v", pair, err)
 		}
@@ -259,24 +259,24 @@ func TestBlocksDeviceManifestRoundTripMoveAndUnset(t *testing.T) {
 	}
 
 	// A hand edit with an upper case name is found and removed by any spelling.
-	hand := string(before) + "  JS7~Lab:\n    juniper:\n    - snmp\n"
+	hand := string(before) + "  JSW7~Lab:\n    juniper:\n    - snmp\n"
 	if err := os.WriteFile(path, []byte(hand), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	c = Load(path, DefaultBackends)
-	if lines := NewSchema(DefaultBackends).ValidateFile(path); len(lines) != 1 || !strings.Contains(lines[0], "must be lower case (js7~lab)") {
+	if lines := NewSchema(DefaultBackends).ValidateFile(path); len(lines) != 1 || !strings.Contains(lines[0], "must be lower case (jsw7~lab)") {
 		t.Errorf("hand edit: %q", lines)
 	}
-	if err := c.UnsetBlockDevice("js7.lab"); err != nil {
+	if err := c.UnsetBlockDevice("jsw7.lab"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.UnsetBlockDevice("JS2.lab.example.net"); err != nil {
+	if err := c.UnsetBlockDevice("JSW2.lab.example.net"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.UnsetBlockDevice("js2.lab.example.net"); err != nil {
+	if err := c.UnsetBlockDevice("jsw2.lab.example.net"); err != nil {
 		t.Errorf("a second unset: %v", err)
 	}
-	if err := c.UnsetBlockDevice("js9.lab.example.net"); err != nil {
+	if err := c.UnsetBlockDevice("jsw9.lab.example.net"); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(path)
@@ -290,7 +290,7 @@ func TestBlocksDeviceManifestRoundTripMoveAndUnset(t *testing.T) {
 
 // A 0.2.6 binary does not know the family either: a rollback removes it.
 func TestBlocksDeviceFamilyIsAdded027(t *testing.T) {
-	for _, k := range []string{"blocks_device.js1.juniper", "blocks_device"} {
+	for _, k := range []string{"blocks_device.jsw1.juniper", "blocks_device"} {
 		if !Added027Key(k) {
 			t.Errorf("%s is not a 0.2.7 key", k)
 		}
@@ -300,13 +300,13 @@ func TestBlocksDeviceFamilyIsAdded027(t *testing.T) {
 	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tacctl.yaml")
-	text := "bcrypt:\n  cost: 11\nblocks_device:\n  js1~lab:\n    juniper:\n    - snmp\n"
+	text := "bcrypt:\n  cost: 11\nblocks_device:\n  jsw1~lab:\n    juniper:\n    - snmp\n"
 	if err := os.WriteFile(path, []byte(text), 0o640); err != nil {
 		t.Fatal(err)
 	}
 	c := Load(path, DefaultBackends)
 	keys := c.RollbackKeys023()
-	if !reflect.DeepEqual(keys, []string{"blocks_device.js1~lab.juniper"}) {
+	if !reflect.DeepEqual(keys, []string{"blocks_device.jsw1~lab.juniper"}) {
 		t.Fatalf("keys %q", keys)
 	}
 	if err := c.UnsetMany(keys); err != nil {

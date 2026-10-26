@@ -24,7 +24,7 @@ const (
 // adoptSNMPDevice is the device's snmp hierarchy: its identity, the scope's
 // own community (set from the scope's settings), a poller, a community the
 // login cannot read, a trap group and what no block takes.
-const adoptSNMPDevice = `set snmp name js1.lab.example.net
+const adoptSNMPDevice = `set snmp name jsw1.lab.example.net
 set snmp location "Rack 4"
 set snmp community lab-own-community authorization read-only
 set snmp community lab-own-community clients 192.0.2.0/24
@@ -38,7 +38,7 @@ set snmp trap-group traps-string targets 198.51.100.20
 set snmp v3 usm local-engine user v3user authentication-sha authentication-password "$9$abcdefgh"
 `
 
-const adoptSystemDevice = `set system host-name js1
+const adoptSystemDevice = `set system host-name jsw1
 set system domain-name lab.example.net
 set system time-zone UTC
 set system name-server 192.0.2.53
@@ -61,7 +61,7 @@ func newAdoptBox(t *testing.T) *adoptBox {
 	b := newPullBox(t)
 	b.sb.scopeSNMP("", "lab", "version", "v2c")
 	b.sb.scopeSNMP("lab-own-community\n", "lab", "community", "--stdin")
-	b.devices([3]string{"js1.lab.example.net", "192.168.1.20", "juniper"}, [3]string{"prod-j", "10.99.0.20", "juniper"},
+	b.devices([3]string{"jsw1.lab.example.net", "192.168.1.20", "juniper"}, [3]string{"prod-j", "10.99.0.20", "juniper"},
 		[3]string{"lab-ios", "192.168.1.30", "cisco"})
 	a := &adoptBox{pullBox: b, e: newEditBoxOn(t, b.sb)}
 	a.serve(adoptSNMPCmd, adoptSNMPDevice)
@@ -135,7 +135,7 @@ func TestAdoptSNMPDraftFlow(t *testing.T) {
 	// prune the trap group, and keep the poller
 	ed := a.e.editor("ed-prune", `grep -v 'trap-group' "$f" > "$f.new" && mv "$f.new" "$f"`)
 	n := a.sb.snapshots()
-	out := a.adopt("y\n", ed, "js1.lab.example.net", "snmp")
+	out := a.adopt("y\n", ed, "jsw1.lab.example.net", "snmp")
 	if a.sb.code != 0 || !strings.Contains(out, "The snmp block of scope 'lab' is set (") {
 		t.Fatalf("adopt: %d\n%s%s", a.sb.code, out, a.sb.stderr())
 	}
@@ -150,7 +150,7 @@ func TestAdoptSNMPDraftFlow(t *testing.T) {
 	// left-out lines per statement and no value
 	seed := a.e.recorded("seed1")
 	for _, want := range []string{
-		"# adopted from js1.lab.example.net at ", "# Remove what this block should not own",
+		"# adopted from jsw1.lab.example.net at ", "# Remove what this block should not own",
 		"set snmp community poller-string authorization read-only\nset snmp community poller-string clients 198.51.100.7/32\nset snmp community poller-string clients 198.51.100.8/32\n",
 		"set snmp trap-group traps-string version v2\nset snmp trap-group traps-string targets 198.51.100.20\n",
 		"# left out: the string of this community is masked (the login lacks the secret permission), so it cannot be adopted: authorization read-only.",
@@ -177,7 +177,7 @@ func TestAdoptSNMPDraftFlow(t *testing.T) {
 	// the logs: the sensitive read and the write, names only
 	log := strings.Join(a.sb.runner.Argvs(), "\n")
 	if a.sb.logged("secret-read kind=block-adopt name=lab/juniper/snmp by=alice") != 1 || a.sb.logged("block-adopt name=lab/juniper/snmp bytes=") != 1 ||
-		a.sb.logged("block adopt-read user=alice device=js1.lab.example.net transport=netconf result=ok") != 1 {
+		a.sb.logged("block adopt-read user=alice device=jsw1.lab.example.net transport=netconf result=ok") != 1 {
 		t.Errorf("log:\n%s", log)
 	}
 	// nothing of the device's text is in the output, the log or any file
@@ -192,8 +192,8 @@ func TestAdoptSNMPDraftFlow(t *testing.T) {
 		t.Errorf("private directory left: %v", l)
 	}
 	// the title of the check says where the text came from
-	if !strings.Contains(out, "the text adopted from js1.lab.example.net and edited") ||
-		!strings.Contains(out, "Draft of the snmp block of scope 'lab' from js1.lab.example.net (read as alice over netconf; nothing of it is stored)") {
+	if !strings.Contains(out, "the text adopted from jsw1.lab.example.net and edited") ||
+		!strings.Contains(out, "Draft of the snmp block of scope 'lab' from jsw1.lab.example.net (read as alice over netconf; nothing of it is stored)") {
 		t.Errorf("output:\n%s", out)
 	}
 }
@@ -202,11 +202,11 @@ func TestAdoptSNMPOverTheCommandLineWhenTheSettingSaysSo(t *testing.T) {
 	a := newAdoptBox(t)
 	a.sb.write("state/tacctl.yaml", "device:\n  config:\n    transport: ssh\n", 0o640)
 	ed := a.e.editor("ed-noop", "true")
-	out := a.adopt("n\n", ed, "js1.lab.example.net", "snmp")
+	out := a.adopt("n\n", ed, "jsw1.lab.example.net", "snmp")
 	if a.sb.code != 0 || !strings.Contains(out, "read as alice over ssh") {
 		t.Errorf("%d\n%s%s", a.sb.code, out, a.sb.stderr())
 	}
-	if a.sb.logged("block adopt-read user=alice device=js1.lab.example.net transport=ssh result=ok") != 1 {
+	if a.sb.logged("block adopt-read user=alice device=jsw1.lab.example.net transport=ssh result=ok") != 1 {
 		t.Errorf("log: %q", a.sb.runner.Argvs())
 	}
 }
@@ -217,12 +217,12 @@ func TestAdoptMergesBeneathTheExistingBlock(t *testing.T) {
 	a.sb.putBlock("lab", existing)
 	ed := a.e.editor("ed-keep", "true")
 	n := a.sb.snapshots()
-	out := a.adopt("y\n", ed, "js1.lab.example.net", "snmp")
+	out := a.adopt("y\n", ed, "jsw1.lab.example.net", "snmp")
 	if a.sb.code != 0 {
 		t.Fatalf("%d\n%s%s", a.sb.code, out, a.sb.stderr())
 	}
 	seed := a.e.recorded("seed1")
-	if !strings.HasPrefix(seed, existing+"\n# adopted from js1.lab.example.net at ") {
+	if !strings.HasPrefix(seed, existing+"\n# adopted from jsw1.lab.example.net at ") {
 		t.Errorf("the existing file is not first, whole:\n%s", seed)
 	}
 	// the poller's community differs from the file's: left in place and
@@ -245,7 +245,7 @@ func TestAdoptMergesBeneathTheExistingBlock(t *testing.T) {
 	ed2 := a.e.editor("ed-prune-all", `grep -v '^set snmp' "$f" > "$f.new" && mv "$f.new" "$f"; printf '%s\n' "set snmp community poller-string authorization read-only" "set snmp community poller-string clients 198.51.100.7/32" >> "$f"`)
 	a.sb.write("state/blocks/lab/juniper/snmp", existing, 0o600)
 	before := existing
-	out = a.adopt("y\n", ed2, "js1.lab.example.net", "snmp")
+	out = a.adopt("y\n", ed2, "jsw1.lab.example.net", "snmp")
 	if a.sb.code != 0 || !strings.Contains(out, "No statement was adopted: the snmp block of scope 'lab' is as it was. Nothing was written.") {
 		t.Errorf("%d\n%s%s", a.sb.code, out, a.sb.stderr())
 	}
@@ -257,7 +257,7 @@ func TestAdoptMergesBeneathTheExistingBlock(t *testing.T) {
 func TestAdoptSystemDraft(t *testing.T) {
 	a := newAdoptBox(t)
 	ed := a.e.editor("ed-keep", "true")
-	out := a.adopt("y\n", ed, "js1.lab.example.net", "system")
+	out := a.adopt("y\n", ed, "jsw1.lab.example.net", "system")
 	if a.sb.code != 0 || !strings.Contains(out, "The system block of scope 'lab' is set (") {
 		t.Fatalf("%d\n%s%s", a.sb.code, out, a.sb.stderr())
 	}
@@ -298,8 +298,8 @@ func TestAdoptDeviceLevelIsTheDevicesExceptions(t *testing.T) {
 	a.sb.putBlock("lab", "set snmp community poller-string authorization read-only\nset snmp community poller-string clients 198.51.100.7/32\n"+
 		"set snmp community poller-string clients 198.51.100.8/32\nset snmp trap-group traps-string version v1\n")
 	ed := a.e.editor("ed-keep", "true")
-	out := a.runAs("y\n", ed, "device", "block", "js1.lab.example.net", "adopt", "snmp")
-	if a.sb.code != 0 || !strings.Contains(out, "The snmp block of device 'js1.lab.example.net' is set (") {
+	out := a.runAs("y\n", ed, "device", "block", "jsw1.lab.example.net", "adopt", "snmp")
+	if a.sb.code != 0 || !strings.Contains(out, "The snmp block of device 'jsw1.lab.example.net' is set (") {
 		t.Fatalf("%d\n%s%s", a.sb.code, out, a.sb.stderr())
 	}
 	seed := a.e.recorded("seed1")
@@ -310,22 +310,22 @@ func TestAdoptDeviceLevelIsTheDevicesExceptions(t *testing.T) {
 		!strings.Contains(seed, "stated already, with the same statements, by this block or the scope's: 1 object, not repeated.") {
 		t.Errorf("the device's exception is not whole:\n%s", seed)
 	}
-	if a.sb.logged("secret-read kind=block-adopt name=_devices/js1.lab.example.net/juniper/snmp by=alice") != 1 ||
-		a.sb.logged("block-adopt name=_devices/js1.lab.example.net/juniper/snmp bytes=") != 1 {
+	if a.sb.logged("secret-read kind=block-adopt name=_devices/jsw1.lab.example.net/juniper/snmp by=alice") != 1 ||
+		a.sb.logged("block-adopt name=_devices/jsw1.lab.example.net/juniper/snmp bytes=") != 1 {
 		t.Errorf("log: %q", a.sb.runner.Argvs())
 	}
-	if got := a.sb.read("state/blocks/_devices/js1.lab.example.net/juniper/snmp"); !strings.Contains(got, "traps-string version v2") {
+	if got := a.sb.read("state/blocks/_devices/jsw1.lab.example.net/juniper/snmp"); !strings.Contains(got, "traps-string version v2") {
 		t.Errorf("stored:\n%s", got)
 	}
 }
 
 func TestAdoptNothingToAdoptOpensNoEditor(t *testing.T) {
 	a := newAdoptBox(t)
-	a.serve(adoptSNMPCmd, "set snmp name js1.lab.example.net\nset snmp community /* SECRET-DATA */ authorization read-only\nset snmp community $9$abcdefghijkl clients 203.0.113.0/24\n")
+	a.serve(adoptSNMPCmd, "set snmp name jsw1.lab.example.net\nset snmp community /* SECRET-DATA */ authorization read-only\nset snmp community $9$abcdefghijkl clients 203.0.113.0/24\n")
 	ed := a.e.editor("ed-add", editSNMPAdd)
 	n := a.sb.snapshots()
-	out := a.adopt("y\n", ed, "js1.lab.example.net", "snmp")
-	if a.sb.code != 0 || a.e.ran() != 0 || !strings.Contains(out, "Nothing to adopt from js1.lab.example.net into the snmp block of scope 'lab'. Nothing was changed.") {
+	out := a.adopt("y\n", ed, "jsw1.lab.example.net", "snmp")
+	if a.sb.code != 0 || a.e.ran() != 0 || !strings.Contains(out, "Nothing to adopt from jsw1.lab.example.net into the snmp block of scope 'lab'. Nothing was changed.") {
 		t.Errorf("%d, ran %d\n%s%s", a.sb.code, a.e.ran(), out, a.sb.stderr())
 	}
 	for _, want := range []string{"left out: the string of this community is masked", "left out: this community 1 is shown only as the device's ciphertext, so its string cannot be adopted: clients 203.0.113.0/24"} {
@@ -353,8 +353,8 @@ func TestAdoptRefusals(t *testing.T) {
 		{[]string{"scope", "block", "lab", "juniper", "adopt", "prod-j", "snmp"}, "Device 'prod-j' is in scope 'prod', not in scope 'lab'"},
 		{[]string{"scope", "block", "lab", "juniper", "adopt", "lab-ios", "snmp"}, "'lab-ios' is not a Junos device"},
 		{[]string{"scope", "block", "lab", "juniper", "adopt", "nosuch", "snmp"}, "Device 'nosuch' not found"},
-		{[]string{"scope", "block", "lab", "juniper", "adopt", "js1.lab.example.net"}, "Usage: tacctl scope block lab juniper adopt <device> <block> [-y]"},
-		{[]string{"scope", "block", "lab", "juniper", "adopt", "js1.lab.example.net", "firewall"}, ""},
+		{[]string{"scope", "block", "lab", "juniper", "adopt", "jsw1.lab.example.net"}, "Usage: tacctl scope block lab juniper adopt <device> <block> [-y]"},
+		{[]string{"scope", "block", "lab", "juniper", "adopt", "jsw1.lab.example.net", "firewall"}, ""},
 	} {
 		a.runAs("y\n", ed, c.args...)
 		if a.sb.code != 1 || !strings.Contains(a.sb.stderr(), c.want) {
@@ -366,14 +366,14 @@ func TestAdoptRefusals(t *testing.T) {
 	}
 	// no terminal
 	a.sb.terminal(false)
-	a.adopt("y\n", ed, "js1.lab.example.net", "snmp")
+	a.adopt("y\n", ed, "jsw1.lab.example.net", "snmp")
 	if a.sb.code != 1 || !strings.Contains(a.sb.stderr(), "adopt opens an editor and needs a terminal on standard input and output. Nothing was changed.") || a.pw.asked != 0 {
 		t.Errorf("no terminal: %d %q (asked %d)", a.sb.code, a.sb.stderr(), a.pw.asked)
 	}
 	a.sb.terminal(true)
 	// a block of the scope that has errors: no draft goes beneath it
 	a.sb.putBlock("lab", "set snmp community broken authorization read-only\n")
-	a.adopt("y\n", ed, "js1.lab.example.net", "snmp")
+	a.adopt("y\n", ed, "jsw1.lab.example.net", "snmp")
 	if a.sb.code != 1 || !strings.Contains(a.sb.stderr(), "The snmp block of scope 'lab' has errors, so a draft cannot be put beneath it:") || a.pw.asked != 0 {
 		t.Errorf("block with errors: %d %q", a.sb.code, a.sb.stderr())
 	}
@@ -390,34 +390,34 @@ func TestAdoptReadFailures(t *testing.T) {
 	a := newAdoptBox(t)
 	ed := a.e.editor("ed-keep", "true")
 	a.pw.pw = "not-the-password"
-	a.adopt("y\n", ed, "js1.lab.example.net", "snmp")
-	if a.sb.code != 1 || !strings.Contains(a.sb.stderr(), "Cannot read js1.lab.example.net: authentication failed.") || a.pw.rejected != 1 || a.e.ran() != 0 {
+	a.adopt("y\n", ed, "jsw1.lab.example.net", "snmp")
+	if a.sb.code != 1 || !strings.Contains(a.sb.stderr(), "Cannot read jsw1.lab.example.net: authentication failed.") || a.pw.rejected != 1 || a.e.ran() != 0 {
 		t.Errorf("wrong password: %d %q (rejected %d)", a.sb.code, a.sb.stderr(), a.pw.rejected)
 	}
 	noneOf(t, "stderr", a.sb.stderr(), "not-the-password")
-	if a.sb.logged("block adopt-read user=alice device=js1.lab.example.net result=auth-failed") != 1 || a.sb.logged("secret-read kind=block-adopt") != 0 {
+	if a.sb.logged("block adopt-read user=alice device=jsw1.lab.example.net result=auth-failed") != 1 || a.sb.logged("secret-read kind=block-adopt") != 0 {
 		t.Errorf("log: %q", a.sb.runner.Argvs())
 	}
 	// no host key pinned: the pull's refusal and its hint
 	a.pw.pw = testPassword
-	a.sb.write("state/devices.yaml", "version: 1\ndevices:\n  js1.lab.example.net:\n    address: 192.168.1.20\n    vendor: juniper\n", 0o600)
-	a.adopt("y\n", ed, "js1.lab.example.net", "snmp")
-	if a.sb.code != 1 || !strings.Contains(a.sb.stderr(), "Cannot read js1.lab.example.net: no host key is pinned for the device.") ||
-		!strings.Contains(a.sb.stderr(), "Run: tacctl device hostkey js1.lab.example.net accept") {
+	a.sb.write("state/devices.yaml", "version: 1\ndevices:\n  jsw1.lab.example.net:\n    address: 192.168.1.20\n    vendor: juniper\n", 0o600)
+	a.adopt("y\n", ed, "jsw1.lab.example.net", "snmp")
+	if a.sb.code != 1 || !strings.Contains(a.sb.stderr(), "Cannot read jsw1.lab.example.net: no host key is pinned for the device.") ||
+		!strings.Contains(a.sb.stderr(), "Run: tacctl device hostkey jsw1.lab.example.net accept") {
 		t.Errorf("unpinned: %d %q", a.sb.code, a.sb.stderr())
 	}
 	// no password to give
-	a.devices([3]string{"js1.lab.example.net", "192.168.1.20", "juniper"})
+	a.devices([3]string{"jsw1.lab.example.net", "192.168.1.20", "juniper"})
 	a.pw.err = errNoPassword
-	a.adopt("y\n", ed, "js1.lab.example.net", "snmp")
-	if a.sb.code != 1 || !strings.Contains(a.sb.stderr(), "cannot log in to js1.lab.example.net: a password is needed and no terminal or cached password is available") {
+	a.adopt("y\n", ed, "jsw1.lab.example.net", "snmp")
+	if a.sb.code != 1 || !strings.Contains(a.sb.stderr(), "cannot log in to jsw1.lab.example.net: a password is needed and no terminal or cached password is available") {
 		t.Errorf("no password: %d %q", a.sb.code, a.sb.stderr())
 	}
 	// the device refuses the command
 	a.pw.err = nil
 	a.serve(adoptSNMPCmd, "error: permission denied\n")
-	a.adopt("y\n", ed, "js1.lab.example.net", "snmp")
-	if a.sb.code != 1 || !strings.Contains(a.sb.stderr(), "Cannot read js1.lab.example.net:") {
+	a.adopt("y\n", ed, "jsw1.lab.example.net", "snmp")
+	if a.sb.code != 1 || !strings.Contains(a.sb.stderr(), "Cannot read jsw1.lab.example.net:") {
 		t.Errorf("refused: %d %q", a.sb.code, a.sb.stderr())
 	}
 	if l := a.e.leftover(); len(l) != 0 {

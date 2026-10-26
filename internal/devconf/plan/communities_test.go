@@ -22,7 +22,7 @@ func TestOtherCommunityIsKept(t *testing.T) {
 	noLine(t, d, "snmp", "delete snmp community")
 	for _, k := range []string{"snmp community <other:1> authorization read-only", "snmp community <other:1> clients 192.0.2.10/32",
 		"snmp community <other:1> clients 198.51.100.7/32", "snmp community <other:1> clients 0.0.0.0/0 restrict",
-		"snmp trap-group <other:1> targets 198.51.100.7", "snmp trap-options source-address 192.0.2.250", "snmp name js1.lab.example.net"} {
+		"snmp trap-group <other:1> targets 198.51.100.7", "snmp trap-options source-address 192.0.2.250", "snmp name jsw1.lab.example.net"} {
 		wantKept(t, d, "snmp", k)
 	}
 	if len(d.Unattributed) != 0 {
@@ -216,6 +216,15 @@ var keptExamples = map[string]struct {
 	// beside the block's statements is its own (the stems of the compared
 	// form: the message is its mark)
 	"junos.system.login-message":               {stmt: `set system login message "` + devconf.MessageMark("Another banner") + `"`, unmanaged: true, unrender: "set system login message"},
+	"junos.system.announcement":                {stmt: `set system login announcement "` + devconf.MessageMark("Another announcement") + `"`, unmanaged: true, unrender: "set system login announcement"},
+	"junos.system.syslog-facility-override":    {stmt: "set system syslog host 198.51.100.7 facility-override local7", unmanaged: true},
+	"junos.system.syslog-log-prefix":           {stmt: "set system syslog host 198.51.100.7 log-prefix other", unmanaged: true},
+	"junos.system.syslog-explicit-priority":    {stmt: "set system syslog host 198.51.100.7 explicit-priority", unmanaged: true},
+	"junos.system.syslog-host":                 {stmt: "set system syslog host 198.51.100.7 any warning", unmanaged: true},
+	"junos.system.syslog-time-format":          {stmt: "set system syslog time-format year", unmanaged: true},
+	"junos.system.syslog-source-address":       {stmt: "set system syslog source-address 198.51.100.9", unmanaged: true, unrender: "set system syslog source-address"},
+	"junos.system.retry-option":                {stmt: "set system login retry-options tries-before-disconnect 3", unmanaged: true},
+	"junos.system.password-policy":             {stmt: "set system login password minimum-length 8", unmanaged: true},
 	"junos.system.domain-name":                 {stmt: "set system domain-name other.example.net", unmanaged: true, unrender: "set system domain-name"},
 	"junos.system.time-zone":                   {stmt: "set system time-zone America/New_York", unmanaged: true, unrender: "set system time-zone"},
 	"junos.system.ntp-boot-server":             {stmt: "set system ntp boot-server 192.0.2.99", unmanaged: true, unrender: "set system ntp boot-server"},
@@ -251,16 +260,32 @@ var keptExamples = map[string]struct {
 	"ios.snmp.block-trap-source":               {stmt: "snmp-server trap-source loopback9", unmanaged: true},
 	// 0.2.7: the IOS system section is additive too (the stems of the
 	// compared form: the banner is its mark)
-	"ios.system.banner":           {stmt: "banner login " + devconf.MessageMark("Another banner"), unmanaged: true, unrender: "banner login"},
-	"ios.system.domain-name":      {stmt: "ip domain name other.example.net", unmanaged: true, unrender: "ip domain name"},
-	"ios.system.timezone":         {stmt: "clock timezone PST -8 0", unmanaged: true, unrender: "clock timezone"},
-	"ios.system.ntp-authenticate": {stmt: "ntp authenticate", unmanaged: true, unrender: "ntp authenticate"},
-	"ios.system.domain-list":      {stmt: "ip domain list example.net", unmanaged: true},
-	"ios.system.name-server":      {stmt: "ip name-server 198.51.100.77", unmanaged: true},
-	"ios.system.ntp-server":       {stmt: "ntp server 198.51.100.99", unmanaged: true},
-	"ios.system.ntp-key":          {stmt: "ntp authentication-key 9", unmanaged: true},
-	"ios.system.ntp-trusted-key":  {stmt: "ntp trusted-key 9", unmanaged: true},
-	"ios.mgmt-acl.acl":            {stmt: "ip access-list standard OTHER-VTY > permit 192.0.2.7", unmanaged: false},
+	"ios.system.banner":               {stmt: "banner login " + devconf.MessageMark("Another banner"), unmanaged: true, unrender: "banner login"},
+	"ios.system.banner-motd":          {stmt: "banner motd " + devconf.MessageMark("Another banner"), unmanaged: true, unrender: "banner motd"},
+	"ios.system.banner-exec":          {stmt: "banner exec " + devconf.MessageMark("Another banner"), unmanaged: true, unrender: "banner exec"},
+	"ios.system.domain-name":          {stmt: "ip domain name other.example.net", unmanaged: true, unrender: "ip domain name"},
+	"ios.system.timezone":             {stmt: "clock timezone PST -8 0", unmanaged: true, unrender: "clock timezone"},
+	"ios.system.ntp-authenticate":     {stmt: "ntp authenticate", unmanaged: true, unrender: "ntp authenticate"},
+	"ios.system.domain-list":          {stmt: "ip domain list example.net", unmanaged: true},
+	"ios.system.name-server":          {stmt: "ip name-server 198.51.100.77", unmanaged: true},
+	"ios.system.ntp-server":           {stmt: "ntp server 198.51.100.99", unmanaged: true},
+	"ios.system.ntp-key":              {stmt: "ntp authentication-key 9", unmanaged: true},
+	"ios.system.ntp-trusted-key":      {stmt: "ntp trusted-key 9", unmanaged: true},
+	"ios.system.logging-host":         {stmt: "logging host 198.51.100.7", unmanaged: true},
+	"ios.system.logging-trap":         {stmt: "logging trap warnings", unmanaged: true},
+	"ios.system.logging-buffered":     {stmt: "logging buffered 16384", unmanaged: true},
+	"ios.system.logging-origin-id":    {stmt: "logging origin-id hostname", unmanaged: true},
+	"ios.system.timestamps":           {stmt: "service timestamps log datetime msec", unmanaged: true},
+	"ios.system.login-on-failure":     {stmt: "login on-failure log", unmanaged: true},
+	"ios.system.login-on-success":     {stmt: "login on-success log", unmanaged: true},
+	"ios.system.login-delay":          {stmt: "login delay 3", unmanaged: true},
+	"ios.system.passwords-min-length": {stmt: "security passwords min-length 12", unmanaged: true},
+	"ios.system.auth-failure-rate":    {stmt: "security authentication failure rate 5 log", unmanaged: true},
+	"ios.system.ssh-version":          {stmt: "ip ssh version 2", unmanaged: true},
+	"ios.system.ssh-timeout":          {stmt: "ip ssh time-out 60", unmanaged: true},
+	"ios.system.ssh-retries":          {stmt: "ip ssh authentication-retries 3", unmanaged: true},
+	"ios.system.summer-time":          {stmt: "clock summer-time PST recurring", unmanaged: true},
+	"ios.mgmt-acl.acl":                {stmt: "ip access-list standard OTHER-VTY > permit 192.0.2.7", unmanaged: false},
 	// 0.2.7: a WTI unit. The unit's own are the system name, the trap
 	// settings, the RADIUS items the walkthrough leaves alone, the page of a
 	// protocol that is off, and the tail of the IP tables list; a second

@@ -107,7 +107,7 @@ func TestBlockPresentIsNothingToDo(t *testing.T) {
 		t.Errorf("unattributed: %v", d.Unattributed)
 	}
 	for _, k := range []string{"snmp community <other:1> clients 192.0.2.10/32", "snmp community <other:1> clients 0.0.0.0/0 restrict",
-		"snmp trap-group <other:1> targets 198.51.100.7", "snmp trap-options source-address 192.0.2.250", "snmp name js1.lab.example.net"} {
+		"snmp trap-group <other:1> targets 198.51.100.7", "snmp trap-options source-address 192.0.2.250", "snmp name jsw1.lab.example.net"} {
 		wantKept(t, d, "snmp", k)
 	}
 	for _, k := range d.Kept {

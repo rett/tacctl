@@ -55,6 +55,7 @@ host enroll web1 --scope lab --server 198.51.100.7 ;; host enroll web1 --scope l
 host enroll web1 --scope lab --name web2 ;; host enroll web1 --scope dmz --name web3 ;; host list
 @known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 host enroll web1 --scope prod --method tacplus
+@known 0.2.19 item 16: the invalid-name message names the dot and the 253-character limit
 host enroll --local --name 9x
 host enroll --local --port x
 @env SSH_STUB_OS=ID=fedora
@@ -101,6 +102,7 @@ host enroll web1 --method
 host enroll web1 --method ldap
 host enroll web1 --method radius
 host enroll web1 --scope nope
+@known 0.2.19 item 16: the invalid-name message names the dot and the 253-character limit
 host enroll web1 --name 9x
 host enroll web1 --port 123456
 host enroll web1 --identity /no/such/key

@@ -227,6 +227,10 @@ type Delta struct {
 	// Vendor is the family the plan is for (devconf.FamilyJunos or
 	// devconf.FamilyIOS).
 	Vendor string
+	// origins map a statement of a block to the block it was written in
+	// ("scope block 'lab' (system)"), for the comment above it in the region
+	// (originOf), per section: a line is looked up in its own section's.
+	origins map[string]map[string]string
 	// Lines are the statements in paste order, grouped by section in the
 	// order of PlanOrder.
 	Lines []Line
