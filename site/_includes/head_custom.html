@@ -1,0 +1,10 @@
+<meta name="color-scheme" content="dark light">
+<script>
+  // Dark is the default stylesheet (and the no-JavaScript view); switch to the
+  // light one before the page paints if the reader chose it earlier.
+  (function () {
+    var theme = null;
+    try { theme = localStorage.getItem('tacctl-theme'); } catch (e) {}
+    if (theme === 'light') { jtd.setTheme('tacctllight'); }
+  })();
+</script>

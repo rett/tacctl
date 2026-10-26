@@ -1,3 +1,37 @@
-$link-color: #1a73a8;
-$btn-primary-color: #0b3d61;
-$body-heading-color: #0b3d61;
+// tacctl dark scheme (the site default, also without JavaScript).
+// Builds on just-the-docs' own dark scheme, which brings the accessible
+// github-dark syntax theme (designed for the #0d1117 code background).
+@import "./color_schemes/dark";
+
+$color-scheme: dark;
+$body-background-color: #111a24;
+$sidebar-color: #0c131b;
+$body-heading-color: #f0f4f8;
+$body-text-color: #d5dde6;
+$link-color: #6cb6ec;
+$nav-child-link-color: #b4c0cc;
+$base-button-color: #1b2734;
+$btn-primary-color: #1a73a8;
+$code-background-color: #0d1117;
+$feedback-color: #16212d;
+$table-background-color: #141e29;
+$search-background-color: #182330;
+$search-result-preview-color: #b4c0cc;
+$border-color: #34455a;
+
+// tacctl house-style colours used by custom.scss
+$tacctl-h1-rule: #3d8fd1;
+$tacctl-h2-rule: #34455a;
+$tacctl-h3: #8cc4ee;
+$tacctl-th-bg: #12487a;
+$tacctl-th-fg: #ffffff;
+$tacctl-zebra: #192533;
+$tacctl-callout-bg: #2b2410;
+$tacctl-callout-fg: #f3e6c4;
+$tacctl-callout-bar: #e0a100;
+$tacctl-callout-link: #ffd36b;
+$tacctl-code-bar: #3d8fd1;
+$tacctl-code-border: #56697f;   // the theme draws code borders in the body text colour
+$tacctl-ui-border: #6b7f95;
+$tacctl-footer: #9fb0c2;
+$tacctl-placeholder: #8d9db0;
