@@ -189,7 +189,11 @@ func (s IOSNTPServer) sameServer(o IOSNTPServer) bool {
 // DomainName); the NTP servers of every vrf are in NTPServers, told apart by
 // IOSNTPServer.VRF.
 type IOSSystemBlock struct {
+	// Banner is the login banner; BannerMOTD the message of the day and
+	// BannerExec the exec banner (system_cisco_banners.go).
 	Banner         *LoginMessage
+	BannerMOTD     *LoginMessage
+	BannerExec     *LoginMessage
 	DomainName     *Value
 	VRFDomainNames []IOSVRFValue
 	DomainList     []Value
@@ -204,7 +208,10 @@ type IOSSystemBlock struct {
 	// NTPAuthenticate is the 'ntp authenticate' statement (Text is empty: a
 	// bare boolean), nil when not stated.
 	NTPAuthenticate *Value
-	NotManaged      []SystemNotManaged
+	// Rules are the statements of the closed table (system_rules.go): logging,
+	// the login and password policy, the ssh settings and summer time.
+	Rules      []RuleStmt
+	NotManaged []SystemNotManaged
 }
 
 // BannerBody is the banner's text, "" for none.
@@ -217,10 +224,10 @@ func (b *IOSSystemBlock) BannerBody() string {
 
 // Empty reports a block with no statement and no 'no' line.
 func (b *IOSSystemBlock) Empty() bool {
-	return b == nil || (b.Banner == nil && b.DomainName == nil && len(b.DomainList) == 0 && b.Timezone == nil &&
+	return b == nil || (b.noBanners() && b.DomainName == nil && len(b.DomainList) == 0 && b.Timezone == nil &&
 		len(b.VRFDomainNames) == 0 && len(b.VRFDomainList) == 0 && len(b.VRFNameServers) == 0 &&
 		len(b.NameServers) == 0 && len(b.NTPServers) == 0 && len(b.NTPKeys) == 0 && len(b.NTPTrustedKeys) == 0 &&
-		b.NTPAuthenticate == nil && len(b.NotManaged) == 0)
+		b.NTPAuthenticate == nil && len(b.Rules) == 0 && len(b.NotManaged) == 0)
 }
 
 // --- the banner on the wire -------------------------------------------------
@@ -374,8 +381,15 @@ func (p *iosSysParser) parseLine(lines []string, i int) int {
 	if f[0] == "banner" {
 		return p.banner(f[1:], lines, i)
 	}
+	if f[0] == "absent" {
+		p.absent(f[1:])
+		return 1
+	}
 	if strings.ContainsAny(raw, `"'`) {
 		p.errf("a quote is not accepted in a system statement (only the login banner holds text, as a heredoc)")
+		return 1
+	}
+	if p.rule(f) {
 		return 1
 	}
 	switch f[0] {
@@ -388,7 +402,7 @@ func (p *iosSysParser) parseLine(lines []string, i int) int {
 	case "no":
 		p.no(f[1:])
 	default:
-		p.errf("a block holds 'banner login', 'ip', 'clock', 'ntp' and 'no' statements only (word 1)")
+		p.errf("a block holds 'banner login', 'ip', 'clock', 'ntp', 'logging', 'login', 'security', 'service', 'absent' and 'no' statements only (word 1)")
 	}
 	return 1
 }
@@ -396,16 +410,20 @@ func (p *iosSysParser) parseLine(lines []string, i int) int {
 // banner reads the heredoc whose opening is at lines[i]; rest are the words
 // after 'banner'.
 func (p *iosSysParser) banner(rest []string, lines []string, i int) int {
+	kind := ""
+	if len(rest) > 0 && slices.Contains(BannerKinds, rest[0]) {
+		kind = rest[0]
+	}
 	switch {
-	case len(rest) == 0 || rest[0] != "login":
-		p.errf("only 'banner login' is accepted (word 2)")
+	case kind == "":
+		p.errf("only 'banner login', 'banner motd' and 'banner exec' are accepted (word 2)")
 		return 1
 	case len(rest) == 2 && rest[1] == "<<'EOF'":
 	case len(rest) >= 2 && strings.HasPrefix(rest[1], "<<"):
 		p.errf("the heredoc marker is written <<'EOF' exactly: quoted, so that no expansion happens, with nothing after it")
 		return 1
 	default:
-		p.errf("the login banner is a heredoc: %s, its lines, then %s alone on a line", IOSBannerStart, MessageTerminator)
+		p.errf("the %s banner is a heredoc: %s, its lines, then %s alone on a line", kind, IOSBannerStartOf(kind), MessageTerminator)
 		return 1
 	}
 	end := -1
@@ -416,14 +434,14 @@ func (p *iosSysParser) banner(rest []string, lines []string, i int) int {
 		}
 	}
 	if end < 0 {
-		p.errf("the heredoc of the login banner is never closed (%s alone on a line ends it)", MessageTerminator)
+		p.errf("the heredoc of the %s banner is never closed (%s alone on a line ends it)", kind, MessageTerminator)
 		return len(lines) - i
 	}
-	if p.b.Banner != nil {
-		p.errf("the login banner is stated twice")
+	if f := p.b.bannerField(kind); *f != nil {
+		p.errf("the %s banner is stated twice", kind)
 	} else {
 		body := strings.Join(lines[i+1:end], "\n")
-		p.b.Banner = &LoginMessage{Body: body, Line: i + 1}
+		*f = &LoginMessage{Body: body, Line: i + 1}
 	}
 	return end - i + 1
 }
@@ -868,6 +886,9 @@ func (p *iosSysParser) no(t []string) {
 		p.errf("'no' needs a statement (word 2)")
 		return
 	}
+	if p.ruleNo(t) {
+		return
+	}
 	nm := SystemNotManaged{Line: p.line}
 	bare := func(kind string, args []string, what string) bool {
 		if len(args) != 0 {
@@ -901,11 +922,18 @@ func (p *iosSysParser) no(t []string) {
 	var ok bool
 	switch t[0] {
 	case "banner":
-		if len(t) < 2 || t[1] != "login" {
-			p.errf("only 'no banner login' is accepted after 'no banner'")
+		if len(t) < 2 || !slices.Contains(BannerKinds, t[1]) {
+			p.errf("only 'no banner login', 'no banner motd' and 'no banner exec' are accepted after 'no banner'")
 			return
 		}
-		ok = bare(SysMessage, t[2:], "banner login")
+		kind := SysMessage
+		switch t[1] {
+		case "motd":
+			kind = SysBannerMOTD
+		case "exec":
+			kind = SysBannerExec
+		}
+		ok = bare(kind, t[2:], "banner "+t[1])
 	case "clock":
 		if len(t) < 2 || t[1] != "timezone" {
 			p.errf("only 'no clock timezone' is accepted after 'no clock'")
@@ -987,14 +1015,22 @@ func (p *iosSysParser) no(t []string) {
 // delimiter candidate. Notes: the statements that carry a secret, a key a
 // server or the trusted list names that the block does not define, keys with
 // no 'ntp authenticate', and the no lines. The layer is not consulted: the
-// system grammar has no rule that differs by layer. Findings never hold the
+// system grammar has one rule that differs by layer (0.2.19): an 'ntp server
+// ... source <interface>' in the default or a scope's block is an error unless
+// the interface is a loopback by its convention name (a note), since an
+// interface is one device's own (deviceLocalProblem). Findings never hold the
 // banner or a key's value.
-func CheckIOSSystem(b *IOSSystemBlock, _ Layer) []Finding {
+func CheckIOSSystem(b *IOSSystemBlock, layer Layer) []Finding {
 	var out []Finding
 	add := func(line int, sev Severity, format string, a ...any) {
 		out = append(out, Finding{line, sev, fmt.Sprintf(format, a...)})
 	}
-	if m := b.Banner; m != nil {
+	for _, kind := range BannerKinds {
+		m := b.BannerOf(kind)
+		if m == nil {
+			continue
+		}
+		name := kind + " banner"
 		lines := strings.Split(m.Body, "\n")
 		fileLine := func(idx int) int {
 			if m.Line == 0 {
@@ -1004,30 +1040,31 @@ func CheckIOSSystem(b *IOSSystemBlock, _ Layer) []Finding {
 		}
 		switch {
 		case strings.TrimSpace(m.Body) == "":
-			add(m.Line, SevError, "the login banner is empty")
+			add(m.Line, SevError, "the %s is empty", name)
 		case len(lines) == 1 && strings.HasPrefix(lines[0], "<message:") && strings.HasSuffix(lines[0], ">"):
-			add(fileLine(0), SevError, "the login banner is a placeholder (a block holds the text; <message: ...> is only what an engineer is shown)")
+			add(fileLine(0), SevError, "the %s is a placeholder (a block holds the text; <message: ...> is only what an engineer is shown)", name)
 		default:
 			for i, l := range lines {
 				if l == MessageTerminator {
-					add(fileLine(i), SevError, "line %d of the login banner is %s alone, which would end the heredoc", i+1, MessageTerminator)
+					add(fileLine(i), SevError, "line %d of the %s is %s alone, which would end the heredoc", i+1, name, MessageTerminator)
 				}
 				if why := charProblem(l); why != "" {
-					add(fileLine(i), SevError, "line %d of the login banner holds %s", i+1, why)
+					add(fileLine(i), SevError, "line %d of the %s holds %s", i+1, name, why)
 				}
 				if len(l) > MaxBannerColumns {
-					add(fileLine(i), SevError, "line %d of the login banner is %d characters: at most %d", i+1, len(l), MaxBannerColumns)
+					add(fileLine(i), SevError, "line %d of the %s is %d characters: at most %d", i+1, name, len(l), MaxBannerColumns)
 				}
 			}
 			if len(lines) > MaxBannerLines {
-				add(m.Line, SevError, "the login banner is %d lines: at most %d", len(lines), MaxBannerLines)
+				add(m.Line, SevError, "the %s is %d lines: at most %d", name, len(lines), MaxBannerLines)
 			}
 			if _, ok := BannerDelimiter(m.Body); !ok {
-				add(m.Line, SevError, "the login banner holds every delimiter character tacctl can render it with (%s): remove one of them from the text",
-					strings.Join(BannerDelimiters, " "))
+				add(m.Line, SevError, "the %s holds every delimiter character tacctl can render it with (%s): remove one of them from the text",
+					name, strings.Join(BannerDelimiters, " "))
 			}
 		}
 	}
+	checkRules(b.Rules, layer, add)
 	defined := map[int]bool{}
 	for _, k := range b.NTPKeys {
 		defined[k.Number] = true
@@ -1036,6 +1073,13 @@ func CheckIOSSystem(b *IOSSystemBlock, _ Layer) []Finding {
 	for _, s := range b.NTPServers {
 		if s.Key != 0 && !defined[s.Key] {
 			add(s.Line, SevNote, "ntp server uses key %d, which this block does not define: the device must already hold it", s.Key)
+		}
+		if s.Source != "" {
+			if why := deviceLocalProblem(layer, "ntp server ... source "+s.Source, isLoopbackName(s.Source)); why != "" {
+				add(s.Line, SevError, "%s", why)
+			} else if layer != LayerDevice {
+				add(s.Line, SevNote, "ntp server source %s is the loopback every device of the scope is expected to have: a device without it cannot take it (a device's own block can state another)", s.Source)
+			}
 		}
 	}
 	for _, k := range b.NTPTrustedKeys {
@@ -1111,9 +1155,11 @@ func ResolveIOSSystem(def, scope, dev *IOSSystemBlock) *IOSSystemBlock {
 		for _, d := range l.NotManaged {
 			out.apply(d)
 		}
-		if l.Banner != nil {
-			m := *l.Banner
-			out.Banner = &m
+		for _, kind := range BannerKinds {
+			if m := l.BannerOf(kind); m != nil {
+				c := *m
+				*out.bannerField(kind) = &c
+			}
 		}
 		if l.DomainName != nil {
 			v := *l.DomainName
@@ -1151,6 +1197,10 @@ func ResolveIOSSystem(def, scope, dev *IOSSystemBlock) *IOSSystemBlock {
 		for _, k := range l.NTPTrustedKeys {
 			out.NTPTrustedKeys = upsert(out.NTPTrustedKeys, k, func(o KeyRef) bool { return o.Number == k.Number })
 		}
+		for _, r := range l.Rules {
+			r.Args = slices.Clone(r.Args)
+			out.Rules = upsert(out.Rules, r, func(o RuleStmt) bool { return o.Rule == r.Rule && o.Head == r.Head })
+		}
 		out.NotManaged = append(out.NotManaged, l.NotManaged...)
 	}
 	return out
@@ -1166,6 +1216,10 @@ func (b *IOSSystemBlock) apply(d SystemNotManaged) {
 	switch d.Kind {
 	case SysMessage:
 		b.Banner = nil
+	case SysBannerMOTD:
+		b.BannerMOTD = nil
+	case SysBannerExec:
+		b.BannerExec = nil
 	case SysDomainName:
 		if d.VRF == "" {
 			b.DomainName = nil
@@ -1196,6 +1250,10 @@ func (b *IOSSystemBlock) apply(d SystemNotManaged) {
 		b.NTPTrustedKeys = slices.DeleteFunc(b.NTPTrustedKeys, func(k KeyRef) bool { return num(k.Number) })
 	case SysNTP:
 		b.NTPServers, b.NTPKeys, b.NTPTrustedKeys, b.NTPAuthenticate = nil, nil, nil, nil
+	default:
+		if strings.HasPrefix(d.Kind, "rule:") {
+			b.Rules = applyRuleDelete(b.Rules, d)
+		}
 	}
 }
 
@@ -1221,9 +1279,11 @@ func IOSSystemUnitsIn(b *IOSSystemBlock, d IOSDialect) [][]string {
 	}
 	var out [][]string
 	one := func(s string) { out = append(out, []string{s}) }
-	if b.Banner != nil {
-		if lines := IOSBannerLines(b.Banner.Body); lines != nil {
-			out = append(out, lines)
+	for _, kind := range BannerKinds {
+		if m := b.BannerOf(kind); m != nil {
+			if lines := IOSBannerLinesOf(kind, m.Body); lines != nil {
+				out = append(out, lines)
+			}
 		}
 	}
 	if b.DomainName != nil {
@@ -1259,6 +1319,9 @@ func IOSSystemUnitsIn(b *IOSSystemBlock, d IOSDialect) [][]string {
 	if b.NTPAuthenticate != nil {
 		one("ntp authenticate")
 	}
+	for _, s := range ruleStatements(b.Rules) {
+		one(s)
+	}
 	return out
 }
 
@@ -1290,6 +1353,10 @@ func (d SystemNotManaged) iosText() string {
 	switch d.Kind {
 	case SysMessage:
 		s = "no banner login"
+	case SysBannerMOTD:
+		s = "no banner motd"
+	case SysBannerExec:
+		s = "no banner exec"
 	case SysDomainName:
 		s = "no ip domain name"
 	case SysDomainSearch:
@@ -1305,6 +1372,9 @@ func (d SystemNotManaged) iosText() string {
 	case SysAuthenticate:
 		s = "no ntp authenticate"
 	default:
+		if strings.HasPrefix(d.Kind, "rule:") {
+			return "no " + d.Value
+		}
 		s = "no ntp " + d.Kind
 	}
 	if d.VRF != "" {
@@ -1318,17 +1388,20 @@ func (d SystemNotManaged) iosText() string {
 
 // ElideIOSSystem is a copy of the block in which the banner is replaced by a
 // mark of its size (<message: N lines, M characters>) and every NTP key
-// string by <secret>, for the engineers' reads. The marks are refused when an
-// elided text is read back as a block.
+// string by <secret>: the form of a summary that prints no text. The marks are
+// refused when an elided text is read back as a block. Shown is the form of a
+// read.
 func ElideIOSSystem(b *IOSSystemBlock) *IOSSystemBlock {
 	if b == nil {
 		return nil
 	}
 	out := *b
-	if b.Banner != nil {
-		m := *b.Banner
-		m.Body = messageMark(b.Banner)
-		out.Banner = &m
+	for _, kind := range BannerKinds {
+		if m := b.BannerOf(kind); m != nil {
+			c := *m
+			c.Body = messageMark(m)
+			*out.bannerField(kind) = &c
+		}
 	}
 	out.NTPKeys = slices.Clone(b.NTPKeys)
 	for i := range out.NTPKeys {
@@ -1340,6 +1413,7 @@ func ElideIOSSystem(b *IOSSystemBlock) *IOSSystemBlock {
 	out.VRFNameServers = slices.Clone(b.VRFNameServers)
 	out.NameServers = slices.Clone(b.NameServers)
 	out.NTPServers = slices.Clone(b.NTPServers)
+	out.Rules = slices.Clone(b.Rules)
 	out.NTPTrustedKeys = slices.Clone(b.NTPTrustedKeys)
 	out.NotManaged = slices.Clone(b.NotManaged)
 	return &out
@@ -1358,16 +1432,19 @@ func (b *IOSSystemBlock) String(elided bool) string {
 		b = ElideIOSSystem(b)
 	}
 	var lines []string
-	if b.Banner != nil {
-		lines = append(lines, IOSBannerStart)
-		lines = append(lines, strings.Split(b.Banner.Body, "\n")...)
-		lines = append(lines, MessageTerminator)
+	for _, kind := range BannerKinds {
+		if m := b.BannerOf(kind); m != nil {
+			lines = append(lines, IOSBannerStartOf(kind))
+			lines = append(lines, strings.Split(m.Body, "\n")...)
+			lines = append(lines, MessageTerminator)
+		}
 	}
 	rest := *b
-	rest.Banner = nil
+	rest.Banner, rest.BannerMOTD, rest.BannerExec = nil, nil, nil
 	for _, u := range IOSSystemUnits(&rest) {
 		lines = append(lines, u...)
 	}
+	lines = append(lines, absentLines(b.Rules)...)
 	for _, d := range b.NotManaged {
 		lines = append(lines, d.iosText())
 	}
@@ -1387,4 +1464,19 @@ func IOSSystemNotManagedLines(b *IOSSystemBlock) []string {
 		out = append(out, d.iosText())
 	}
 	return out
+}
+
+// Shown is the block as a read prints it (`block show`): every NTP key string
+// is <secret>, and the banner is printed as it is, since a device shows it to
+// anyone before the login.
+func (b *IOSSystemBlock) Shown() string {
+	if b == nil {
+		return ""
+	}
+	out := *b
+	out.NTPKeys = slices.Clone(b.NTPKeys)
+	for i := range out.NTPKeys {
+		out.NTPKeys[i].Value = secretMark
+	}
+	return out.String(false)
 }

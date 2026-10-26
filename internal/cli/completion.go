@@ -406,7 +406,7 @@ var configFamilies = map[string]string{
 	"scope_mgmt_acl.names.cisco.": KindScopes, "scope_mgmt_acl.names.juniper.": KindScopes,
 	"scope_mgmt_acl.permits.": KindScopes, "breakglass_scope.": KindScopes, "blocks.": KindScopes,
 	"snmp_scope.": KindScopes, "netconf_scope.": KindScopes,
-	"listeners.": "", "blocks_device.": "", "breakglass_hold.": "",
+	"listeners.": "", "blocks_device.": "", "breakglass_hold.": "", "emergency.lockdown.": "",
 }
 
 // configFamilyWords are the keys of the families whose prefix toComplete

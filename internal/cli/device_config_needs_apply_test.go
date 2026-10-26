@@ -12,17 +12,24 @@ import (
 	"github.com/rett/tacctl/internal/tier"
 )
 
-// 'device config apply' and 'device config shapes' are the superuser's
-// (0.2.9, D141): the gate sees 'device config', which the engineer's rows
-// open, so the verb's own table holds them back, with the gate's words, and
-// sudoers has no line for them.
-func TestDeviceConfigApplyAndShapesAreTheSuperusers(t *testing.T) {
-	for _, sub := range []string{"apply", "shapes"} {
-		if deviceConfigNeeds[sub] != tier.Superuser {
-			t.Errorf("device config %s needs %q", sub, deviceConfigNeeds[sub])
+// 'device config apply' is the engineer's (0.2.19; the superuser's before:
+// 0.2.9, D141) and 'device config shapes' the superuser's: the gate sees
+// 'device config', which the engineer's rows open, so the verb's own table
+// holds shapes back, with the gate's words, and sudoers has no line for it.
+func TestDeviceConfigApplyIsTheEngineersAndShapesTheSuperusers(t *testing.T) {
+	if deviceConfigNeeds["apply"] != tier.Engineer || deviceConfigNeeds["shapes"] != tier.Superuser {
+		t.Errorf("apply needs %q, shapes %q", deviceConfigNeeds["apply"], deviceConfigNeeds["shapes"])
+	}
+	named := false
+	for _, row := range tier.Rules {
+		for _, p := range row.Sudoers {
+			named = named || row.Tier == tier.Engineer && p == "device config apply *"
 		}
 	}
-	for _, sub := range []string{"apply", "shapes", "shapes seed"} {
+	if !named {
+		t.Error("no Engineer sudoers row names device config apply")
+	}
+	for _, sub := range []string{"shapes", "shapes seed"} {
 		for _, row := range tier.Rules {
 			for _, p := range row.Sudoers {
 				if strings.HasPrefix(p, "device config "+sub) {
@@ -51,17 +58,17 @@ func TestDeviceConfigApplyAndShapesAreTheSuperusers(t *testing.T) {
 		_ = a.Close() // the plain-text filter holds what it has not passed on
 		return plain(sb.err.String()), err
 	}
+	stderr, err := allowed("bob", "shapes")
+	if !errors.Is(err, tier.ErrDenied) || !strings.Contains(stderr, "'tacctl device config shapes' is not permitted for the engineer tier.") {
+		t.Errorf("engineer, shapes: %v %q", err, stderr)
+	}
 	for _, sub := range []string{"apply", "shapes"} {
-		stderr, err := allowed("bob", sub)
-		if !errors.Is(err, tier.ErrDenied) || !strings.Contains(stderr, "'tacctl device config "+sub+"' is not permitted for the engineer tier.") {
-			t.Errorf("engineer, %s: %v %q", sub, err, stderr)
-		}
 		if stderr, err := allowed("", sub); err != nil || stderr != "" {
 			t.Errorf("root, %s: %v %q", sub, err, stderr)
 		}
 	}
-	// the engineer's own verbs of the family stay theirs
-	for _, sub := range []string{"show", "pull", "diff", "plan"} {
+	// the engineer's own verbs of the family
+	for _, sub := range []string{"show", "pull", "diff", "plan", "apply"} {
 		if stderr, err := allowed("bob", sub); err != nil {
 			t.Errorf("engineer, %s: %v %q", sub, err, stderr)
 		}

@@ -217,7 +217,8 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 		byName[r.Name] = r
 	}
 
-	d := Delta{Vendor: fam, Scope: opt.Scope, InheritanceChecked: len(plain.Sections) > 0, BreakglassHeld: opt.BreakglassHeld}
+	d := Delta{Vendor: fam, Scope: opt.Scope, InheritanceChecked: len(plain.Sections) > 0, BreakglassHeld: opt.BreakglassHeld,
+		origins: originsBySection(expected)}
 	if fam == devconf.FamilyIOS {
 		d.Syntax = opt.Syntax
 		if opt.RestorePoint != nil {
@@ -238,7 +239,7 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 
 	for _, name := range PlanOrder(fam) {
 		// the system section exists only where the rendering has one
-		if name == devconf.SectionSystem && len(p.expected(name).Lines) == 0 {
+		if name == devconf.SectionSystem && len(p.expected(name).Lines) == 0 && len(p.expected(name).Forbid) == 0 {
 			continue
 		}
 		// and the netconf section where the scope leaves the service alone

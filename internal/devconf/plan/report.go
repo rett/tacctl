@@ -420,9 +420,9 @@ func plainJunos(stem string) string {
 		w = "management filter " + t[4] + ", term " + t[6] + ": " + rest(7)
 	case len(t) >= 2 && t[0] == "snmp":
 		w = "SNMP: " + rest(1)
-	case len(t) == 4 && t[0] == "system" && t[1] == "login" && t[2] == "message":
+	case len(t) == 4 && t[0] == "system" && t[1] == "login" && (t[2] == "message" || t[2] == "announcement"):
 		// the compared form holds the message's size, never a word of it
-		w = "the login message"
+		w = "the login " + t[2]
 		if m := reMessageSize.FindStringSubmatch(t[3]); m != nil {
 			w += " of " + m[1] + " lines, " + m[2] + " characters"
 		}

@@ -76,7 +76,7 @@ var (
 var reHistoryEntry = regexp.MustCompile(`^(\d+)\s+(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?: [A-Za-z][A-Za-z0-9+-]*)?) by (\S+) via (\S+)(?:\s+(.*))?$`)
 
 // reHistoryRescue is the line 'show system commit' ends with when a rescue
-// configuration is saved [C: 'rescue 2024-01-04 11:42:38 AKST by root via
+// configuration is saved [C: 'rescue 2024-01-04 11:42:38 UTC by root via
 // cli']. It is a marker, no entry of the history.
 var reHistoryRescue = regexp.MustCompile(`^rescue\s+\d{4}-\d\d-\d\d \d\d:\d\d:\d\d \S+ by \S+ via \S+(\s.*)?$`)
 
@@ -99,6 +99,11 @@ var reAuthUser = regexp.MustCompile(`^\s*Current user:\s+'?([A-Za-z0-9_.@-]+)'?\
 // reVersionField is a 'Hostname: x', 'Model: y' or 'Junos: z' line of 'show
 // version'.
 var reVersionField = regexp.MustCompile(`^(Hostname|Model|Junos):\s+(\S+)\s*$`)
+
+// reVersionOld is the release line of a Junos that prints no 'Junos:' line
+// (before 14.1, and the SRX and MX trains): 'JUNOS Base OS boot [12.3R12-S15.1]'
+// or 'JUNOS Software Release [12.1X46-D40.2]'.
+var reVersionOld = regexp.MustCompile(`^JUNOS (?:Base OS boot|Software Release) \[(\S+)\]\s*$`)
 
 // ErrorRow is one row of the error table: an answer line that matches
 // Pattern is a refusal named Name.

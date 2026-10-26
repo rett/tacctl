@@ -90,12 +90,12 @@ sudo_lines() { grep '^sudo ' "$CALLS_LOG" || true; }
 }
 
 @test "shell < file: runs the lines in order and stops at the first failure" {
+    # an unknown word is answered before sudo: no second sudo line
     run bash -c 'printf "user list\nbogus\nuser list\n" | "$TACCTL_BIN_SCRIPT" shell'
     assert_failure 1
     run sudo_lines
     assert_line --index 0 --regexp '^sudo /[^ ]*/dist/tacctl user list$'
-    assert_line --index 1 --regexp '^sudo /[^ ]*/dist/tacctl bogus$'
-    [ "${#lines[@]}" -eq 2 ]
+    [ "${#lines[@]}" -eq 1 ]
     # A batch writes no history.
     assert_file_not_exists "$HISTFILE_PATH"
 }

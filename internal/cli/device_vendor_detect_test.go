@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
@@ -211,7 +212,10 @@ func TestDeviceAddPullWaitsForTheVendor(t *testing.T) {
 	if stub.calls.Load() == 0 || sb.devices() != "" {
 		t.Errorf("reads %d, registry:\n%s", stub.calls.Load(), sb.devices())
 	}
-	// --vendor other is refused before anything is read.
+	// --vendor other is refused before anything is read. The first command
+	// returned at its refusal with the device's location still being read in
+	// the background: let that read end before the reads are counted.
+	waitReadsQuiet(stub)
 	before := stub.calls.Load()
 	sb.cfgRun("", []string{"device", "add", "sw1", "192.0.2.1", "--no-host-key", "--vendor", "other", "--pull"}, nil, "SUDO_USER=alice")
 	sb.expect(1, "", "--pull reads the configuration, which needs --vendor cisco, juniper or wti.")
@@ -408,5 +412,19 @@ func TestVendorChangeNeedsPull(t *testing.T) {
 	b.run("device", "vendor", "lab-j", "juniper")
 	if out := b.run("device", "config", "list"); strings.Contains(out, "needs pull") {
 		t.Errorf("list after the vendor came back:\n%s", out)
+	}
+}
+
+// waitReadsQuiet waits until the stub has been asked nothing for a while: a
+// read that a command started and left running when it returned is done.
+func waitReadsQuiet(stub *stubSNMP) {
+	last, quiet := stub.calls.Load(), 0
+	for i := 0; i < 200 && quiet < 5; i++ {
+		time.Sleep(10 * time.Millisecond)
+		if n := stub.calls.Load(); n != last {
+			last, quiet = n, 0
+		} else {
+			quiet++
+		}
 	}
 }

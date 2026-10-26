@@ -197,6 +197,24 @@ func TestParsersFailClosed(t *testing.T) {
 	if _, err := parseVersion("Hostname: a\nJunos: 1\nHostname: b\nJunos: 1\n"); !errors.Is(err, ErrUnrecognised) {
 		t.Errorf("two hostnames: %v", err)
 	}
+	if _, err := parseVersion("Hostname: a\nJunos: 1\nHostname: a\nJunos: 2\n"); !errors.Is(err, ErrUnrecognised) {
+		t.Errorf("two releases: %v", err)
+	}
+	if id, err := parseVersion("fpc0:\n--------\nHostname: a\nModel: ex4600-40f\nJunos: 25.4R1\n\nfpc1:\n--------\nHostname: a\nModel: ex4300-48t\nJunos: 25.4R1\n"); err != nil || id.Model != "ex4600-40f" || id.Hostname != "a" || id.Release != "25.4R1" {
+		t.Errorf("a mixed virtual chassis: %+v %v", id, err)
+	}
+	if id, err := parseVersion("fpc0:\n--------\nHostname: a\nModel: ex4200-48t\nJUNOS Base OS boot [12.3R12-S15.1]\nJUNOS Base OS Software Suite [12.3R12-S15.1]\n"); err != nil || id.Release != "12.3R12-S15.1" {
+		t.Errorf("an older Junos: %+v %v", id, err)
+	}
+	if id, err := parseVersion("Hostname: a\nModel: srx300\nJUNOS Software Release [12.1X46-D40.2]\n"); err != nil || id.Release != "12.1X46-D40.2" {
+		t.Errorf("a software release line: %+v %v", id, err)
+	}
+	if _, err := parseVersion("Hostname: a\nModel: x\n"); err == nil || !strings.Contains(err.Error(), "no Junos line") {
+		t.Errorf("no release: %v", err)
+	}
+	if _, err := parseVersion("Welcome\nsomething else\n"); err == nil || !strings.Contains(err.Error(), `starts "Welcome"`) {
+		t.Errorf("neither: %v", err)
+	}
 	if _, err := parseAuthorization("Current user: alice\nPermissions:\n    all\n"); !errors.Is(err, ErrUnrecognised) {
 		t.Errorf("no class: %v", err)
 	}

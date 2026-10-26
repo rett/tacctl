@@ -33,7 +33,8 @@ delete system domain-search old.example.net
 `
 
 func TestSystemParseGood(t *testing.T) {
-	b, fs := LintSystem(goodSystem, LayerScope)
+	// the device-local ntp source-address makes it a device's block
+	b, fs := LintSystem(goodSystem, LayerDevice)
 	if HasErrors(fs) {
 		t.Fatalf("errors:\n%s", dump(fs))
 	}
@@ -77,13 +78,13 @@ func TestSystemParseRefusals(t *testing.T) {
 		line int
 		frag string
 	}{
-		{"not set or delete", "edit system\n", 1, "'set' and 'delete' statements only"},
-		{"commit", "commit\n", 1, "'set' and 'delete' statements only"},
+		{"not set or delete", "edit system\n", 1, "'set', 'absent' and 'delete' statements only"},
+		{"commit", "commit\n", 1, "'set', 'absent' and 'delete' statements only"},
 		{"other hierarchy", "set snmp location rack-4\n", 1, "only 'set system"},
 		{"set alone", "set\n", 1, "only 'set system"},
-		{"system alone", "set system\n", 1, "needs login, domain-name"},
+		{"system alone", "set system\n", 1, "needs login, syslog, domain-name"},
 		{"unknown leaf", "set system host-name x\n", 1, "word 3 is not one of login"},
-		{"services", "set system services ssh\n", 1, "word 3 is not one of login"},
+		{"services", "set system services ssh\n", 1, "a block does not set services"},
 		{"login class", "set system login class x\n", 1, "only 'set system login message'"},
 		{"login user", "set system login user bob class super-user\n", 1, "only 'set system login message'"},
 		{"message single line", "set system login message \"hello\"\n", 1, "the login message is a heredoc"},
@@ -460,6 +461,11 @@ func TestSystemElide(t *testing.T) {
 		if strings.Contains(el, s) {
 			t.Errorf("elided text holds %q:\n%s", s, el)
 		}
+	}
+	// the read (`block show`) prints the message, which a device shows before
+	// the login, and elides the key
+	if sh := b.Shown(); !strings.Contains(sh, "Authorized use only") || strings.Contains(sh, sysKey) || !strings.Contains(sh, "value <secret>") {
+		t.Errorf("shown:\n%s", sh)
 	}
 	for _, w := range []string{
 		"set system login message <<'EOF'\n<message: 2 lines, 82 characters>\nEOF\n",

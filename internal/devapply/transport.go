@@ -67,6 +67,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"slices"
 	"time"
 
 	"github.com/rett/tacctl/internal/devconf/plan"
@@ -91,16 +92,14 @@ type Login struct {
 }
 
 // CanCommit reports whether the class may configure and commit every
-// hierarchy a plan writes: the 'all' permission. A narrower class (one with
-// 'configure' and some of the '*-control' bits) is refused, because which
-// bits a plan needs is not known before it is typed [D87's seam].
+// hierarchy a plan writes: the 'all' permission, or 'all-control' (modify
+// any configuration) with 'configure' (a super-user's list shows the bits
+// it stands for and no 'all' row). A narrower class (one with 'configure'
+// and some of the '*-control' bits) is refused, because which bits a plan
+// needs is not known before it is typed [D87's seam].
 func (l Login) CanCommit() bool {
-	for _, p := range l.Permissions {
-		if p == "all" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(l.Permissions, "all") ||
+		(slices.Contains(l.Permissions, "all-control") && slices.Contains(l.Permissions, "configure"))
 }
 
 // CommitEntry is one entry of 'show system commit'.

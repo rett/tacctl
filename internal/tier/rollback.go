@@ -1,6 +1,9 @@
 package tier
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // The text of the sudoers drop-ins as tacctl 0.2.3 wrote them, kept so that
 // 'tacctl rollback 0.2.3' (docs/plans/0.2.4-plan.md D73) can put them back:
@@ -17,7 +20,28 @@ import "strings"
 // Sudoers023 is the per-tier drop-in 0.2.3 wrote.
 func Sudoers023() string { return sudoers023 }
 
-// Sudoers0217 is the per-tier drop-in 0.2.17 wrote: this release's rules
+// Sudoers0218 is the per-tier drop-in 0.2.18 wrote: this release's rules
+// without the engineer's rows of 'device config apply', 'device enroll',
+// 'device collect', 'device onboard' and 'device sync' (0.2.19). 'tacctl
+// rollback 0.2.18' puts it back, and the upgrade's refresh knows it as an
+// older text. It is derived (a rule that moves on again makes its own frozen
+// copy).
+func Sudoers0218() string {
+	added := map[string]bool{"enroll": true, "collect": true, "onboard": true, "sync": true, "support-bundle": true}
+	var rules []Rule
+	for _, r := range Rules {
+		switch {
+		case r.Tier == Engineer && r.Cmd == "device" && added[r.Sub]:
+			continue
+		case r.Tier == Engineer && r.Cmd == "device" && r.Sub == "config":
+			r.Sudoers = slices.DeleteFunc(slices.Clone(r.Sudoers), func(p string) bool { return p == "device config apply *" })
+		}
+		rules = append(rules, r)
+	}
+	return sudoersFrom(rules)
+}
+
+// Sudoers0217 is the per-tier drop-in 0.2.17 wrote: 0.2.18's rules
 // with 0.2.17's names of the verbs 0.2.18 renamed and dropped the old names
 // of (D273 to D275): the engineer's 'device config-syntax *' for 'device
 // ios-syntax *', and the read-only 'device notices' and 'device notices *'
@@ -31,7 +55,7 @@ func Sudoers0217() string {
 		Binary+" device ios-syntax *, ", Binary+" device config-syntax *, ",
 		Binary+" device notice list, "+Binary+" device notice list *, ", Binary+" device notices, "+Binary+" device notices *, ",
 		Binary+" device client-config, ", Binary+" device ssh-config, ",
-	).Replace(Sudoers())
+	).Replace(Sudoers0218())
 }
 
 // Sudoers0216 is the per-tier drop-in 0.2.15 and 0.2.16 wrote: 0.2.17's

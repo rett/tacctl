@@ -46,6 +46,19 @@ type Section struct {
 	// block's; else Block[i] belongs to Lines[i]. Every line of the system
 	// section is a block's.
 	Block []bool
+	// Origin names, per line, the block a statement of a block was written in
+	// ("scope block lab juniper system", "device block sw1 system"; "" for a
+	// line no layer states, and for a line that is not a block's). Nil when
+	// the layers as written are not known. Origin[i] belongs to Lines[i].
+	Origin []string
+	// Forbid are the statements the section's block requires to be absent
+	// (0.2.19, 'absent system services telnet' / 'absent ip http server'), as
+	// the words of the statement without the verb. A statement the device
+	// holds at or under one is a difference, and the planner deletes it. The
+	// section may have no Lines. ForbidOrigin names, per entry, the block that
+	// states it ("" when not known).
+	Forbid       []string
+	ForbidOrigin []string
 	// Absent says the section's hierarchy is expected to hold nothing (0.2.10,
 	// D146: the NETCONF service of a scope that disables it). Lines is empty;
 	// a statement the device has under the section is a difference, and the
@@ -138,6 +151,53 @@ func (s *sections) addFrom(name string, lines []string, block map[string]bool) {
 	s.out = append(s.out, sec)
 }
 
+// origins sets the Origin of the block's lines of the named section (the last
+// one added) from the map of statements to blocks.
+func (s *sections) origins(name string, from map[string]string) {
+	if len(from) == 0 || len(s.out) == 0 {
+		return
+	}
+	sec := &s.out[len(s.out)-1]
+	if sec.Name != name || sec.Block == nil {
+		return
+	}
+	sec.Origin = make([]string, len(sec.Lines))
+	for i, l := range sec.Lines {
+		if sec.Block[i] {
+			sec.Origin[i] = from[strings.TrimRight(l, " ")]
+			if sec.Origin[i] == "" {
+				sec.Origin[i] = from[l]
+			}
+		}
+	}
+}
+
+// forbid sets the statements the system section requires to be absent; a
+// block with no other statement still has the section.
+func (s *sections) forbid(name string, targets []string, from map[string]string) {
+	if len(targets) == 0 {
+		return
+	}
+	i := -1
+	for j := range s.out {
+		if s.out[j].Name == name {
+			i = j
+		}
+	}
+	if i < 0 {
+		s.out = append(s.out, Section{Name: name})
+		i = len(s.out) - 1
+	}
+	sec := &s.out[i]
+	sec.Forbid = targets
+	if len(from) > 0 {
+		sec.ForbidOrigin = make([]string, len(targets))
+		for k, t := range targets {
+			sec.ForbidOrigin[k] = from[t]
+		}
+	}
+}
+
 // addTail is add for a section whose last n lines come from a block: the
 // marks are by position, because an access list entry of a block can be the
 // same text as one of the structured settings'.
@@ -174,7 +234,7 @@ func (s *sections) addSystem(name string, lines []string) {
 			continue
 		}
 		sec.Secret[i] = s.secret(l)
-		if f := strings.Fields(l); len(f) == 3 && f[0] == "banner" && f[1] == "login" {
+		if f := strings.Fields(l); len(f) == 3 && f[0] == "banner" && isBannerKind(f[1]) {
 			delim = f[2]
 		}
 	}
@@ -207,11 +267,14 @@ func managedJuniper(req Request, d Data) []Section {
 	// in the same step: its statements are the live lines of the same
 	// block, marked as the block's.
 	s.addFrom(sectionSNMP, junosStatements(v["SNMP_STEP"]), d.blockSNMPSet())
+	s.origins(sectionSNMP, d.Blocks.snmpOrigins())
 	// The scope's system block follows in the same step: a section of its
 	// own, present only when a block is in force (so the device's own login
 	// message, domain and NTP are no business of a scope without one).
 	sys := junosStatements(v["SYSTEM_BLOCK"])
 	s.addFrom(sectionSystem, sys, setOf(sys))
+	s.origins(sectionSystem, d.Blocks.systemOrigins())
+	s.forbid(sectionSystem, d.Blocks.systemAbsent(), d.Blocks.systemForbidOrigins())
 	switch d.Netconf.State {
 	case NetconfEnable:
 		s.add(sectionNetconf, junosStatements(v["NETCONF_BLOCK"]))
@@ -368,12 +431,15 @@ func managedCisco(req Request, d Data) []Section {
 	// block's.
 	snmp := ciscoStatements(v["SNMP_STEP"])
 	s.addTail(sectionSNMP, snmp, len(d.Blocks.ciscoSNMPStatements()))
+	s.origins(sectionSNMP, d.Blocks.ciscoSNMPOrigins())
 	// The scope's system block follows in the same step: a section of its
 	// own, present only when a block is in force (so the device's own banner,
 	// domain and NTP are no business of a scope without one). Every line is
 	// the block's; a banner's lines are the lines typed, its text no
 	// statement and never a secret.
 	s.addSystem(sectionSystem, ciscoSystemStatements(v["SYSTEM_BLOCK"]))
+	s.origins(sectionSystem, d.Blocks.ciscoSystemOrigins(dialectOf(req.Legacy)))
+	s.forbid(sectionSystem, d.Blocks.ciscoSystemAbsent(), d.Blocks.ciscoSystemForbidOrigins())
 	s.add(sectionNetconf, ciscoStatements(v["NETCONF_BLOCK"]))
 	s.add(sectionBreakGlass, uncommented(ciscoBreakGlass(BreakGlassFor(req, d)), "! ", "! username "))
 	return s.out
@@ -412,7 +478,7 @@ func ciscoSystemStatements(block string) []string {
 			continue
 		}
 		out = append(out, l)
-		if f := strings.Fields(t); len(f) == 3 && f[0] == "banner" && f[1] == "login" {
+		if f := strings.Fields(t); len(f) == 3 && f[0] == "banner" && isBannerKind(f[1]) {
 			delim = f[2]
 		}
 	}
@@ -465,3 +531,7 @@ func withoutIdleTimeout(lines []string) []string {
 	}
 	return out
 }
+
+// isBannerKind reports the kinds of banner an IOS system block takes (the
+// words after 'banner'); this file imports no block, so it names them.
+func isBannerKind(w string) bool { return w == "login" || w == "motd" || w == "exec" }

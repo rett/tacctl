@@ -130,29 +130,29 @@ func TestScopeNamedDevicesBesideDeviceBlocks(t *testing.T) {
 	sb := newSandbox(t, true)
 	sb.run("", []string{"scope", "add", "devices", "--prefixes", "198.51.100.0/24"})
 	sb.expect(0, "Scope 'devices' added.", "")
-	for _, d := range []string{"state/blocks/devices/juniper", "state/blocks/_devices/js1.lab.example.net/juniper"} {
+	for _, d := range []string{"state/blocks/devices/juniper", "state/blocks/_devices/jsw1.lab.example.net/juniper"} {
 		if err := os.MkdirAll(sb.path(d), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
 	sb.write("state/blocks/devices/juniper/snmp", "# the scope's\n", 0o600)
-	sb.write("state/blocks/_devices/js1.lab.example.net/juniper/snmp", "# the device's\n", 0o600)
-	sb.write("state/tacctl.yaml", sb.overrides()+"blocks:\n  devices:\n    juniper:\n    - snmp\nblocks_device:\n  js1~lab~example~net:\n    juniper:\n    - snmp\n", 0o640)
+	sb.write("state/blocks/_devices/jsw1.lab.example.net/juniper/snmp", "# the device's\n", 0o600)
+	sb.write("state/tacctl.yaml", sb.overrides()+"blocks:\n  devices:\n    juniper:\n    - snmp\nblocks_device:\n  jsw1~lab~example~net:\n    juniper:\n    - snmp\n", 0o640)
 
 	sb.run("", []string{"scope", "rename", "devices", "edge"})
 	sb.expect(0, "Scope renamed: devices -> edge", "")
 	if got := sb.read("state/blocks/edge/juniper/snmp"); got != "# the scope's\n" {
 		t.Errorf("the scope's block: %q", got)
 	}
-	if got := sb.read("state/blocks/_devices/js1.lab.example.net/juniper/snmp"); got != "# the device's\n" {
+	if got := sb.read("state/blocks/_devices/jsw1.lab.example.net/juniper/snmp"); got != "# the device's\n" {
 		t.Errorf("the device's block: %q", got)
 	}
-	if o := sb.overrides(); !strings.Contains(o, "blocks:\n  edge:\n    juniper:\n    - snmp\n") || !strings.Contains(o, "blocks_device:\n  js1~lab~example~net:\n") {
+	if o := sb.overrides(); !strings.Contains(o, "blocks:\n  edge:\n    juniper:\n    - snmp\n") || !strings.Contains(o, "blocks_device:\n  jsw1~lab~example~net:\n") {
 		t.Errorf("tacctl.yaml after the rename:\n%s", o)
 	}
 	sb.run("y\n", []string{"scope", "remove", "edge", "--force"})
 	sb.expect(0, "Scope 'edge' removed.", "")
-	if got := sb.read("state/blocks/_devices/js1.lab.example.net/juniper/snmp"); got != "# the device's\n" {
+	if got := sb.read("state/blocks/_devices/jsw1.lab.example.net/juniper/snmp"); got != "# the device's\n" {
 		t.Errorf("the device's block after the scope's removal: %q", got)
 	}
 	if o := sb.overrides(); strings.Contains(o, "edge") || !strings.Contains(o, "blocks_device:") {

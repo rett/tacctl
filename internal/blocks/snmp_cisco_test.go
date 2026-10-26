@@ -334,7 +334,7 @@ ip access-list standard DENYING
 func TestAdoptIOSSNMP(t *testing.T) {
 	own := AdoptOwn{Community: "scope-own-string"}
 	same, _ := LintIOSSNMP("snmp-server community already-string RO POLLERS\nsnmp-server enable traps config\n", LayerScope)
-	res := AdoptIOSSNMP(adoptIOSRaw, own, same, nil)
+	res := AdoptIOSSNMP(adoptIOSRaw, own, same, nil, LayerDevice)
 	for _, want := range []string{
 		"ip access-list standard POLLERS\n permit host 192.0.2.60\n permit 198.51.100.0 0.0.0.255\n",
 		"snmp-server community poller-string RO POLLERS\nsnmp-server community writer-string RW POLLERS\n",
@@ -380,12 +380,12 @@ func TestAdoptIOSSNMP(t *testing.T) {
 	}
 	// beneath a block that states the same list, the list is not repeated
 	up, _ := LintIOSSNMP("ip access-list standard POLLERS\n permit host 192.0.2.60\n permit 198.51.100.0 0.0.0.255\n", LayerScope)
-	res = AdoptIOSSNMP(adoptIOSRaw, own, nil, up)
+	res = AdoptIOSSNMP(adoptIOSRaw, own, nil, up, LayerDevice)
 	if strings.Contains(res.Text, "ip access-list standard") {
 		t.Errorf("the scope's list is repeated:\n%s", res.Text)
 	}
 	// nothing to adopt
-	if res := AdoptIOSSNMP("", own, nil, nil); res.Text != "" || res.Statements != 0 {
+	if res := AdoptIOSSNMP("", own, nil, nil, LayerDevice); res.Text != "" || res.Statements != 0 {
 		t.Errorf("empty: %+v", res)
 	}
 }
@@ -401,7 +401,7 @@ func TestAdoptIOSSNMPHostIdentity(t *testing.T) {
 		"snmp-server host 192.0.2.6 vrf traps traps version 2c poller-traps\n" +
 		"snmp-server host 192.0.2.6 vrf informs informs version 2c poller-traps\n" +
 		"snmp-server host 192.0.2.5 version 1 poller-traps\n"
-	res := AdoptIOSSNMP(raw, AdoptOwn{}, nil, nil)
+	res := AdoptIOSSNMP(raw, AdoptOwn{}, nil, nil, LayerDevice)
 	b, fs := ParseIOSSNMP(res.Text)
 	if HasErrors(fs) || len(b.Hosts) != 5 {
 		t.Fatalf("the draft:\n%s\n%s", res.Text, dump(fs))

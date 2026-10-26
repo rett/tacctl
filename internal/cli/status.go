@@ -237,6 +237,9 @@ func (inv *invocation) status([]string) error {
 	if storeMode {
 		inv.statusHolds()
 	}
+	if storeMode {
+		inv.statusLockdowns()
+	}
 
 	// Scopes. An orphan is a user referencing a scope that does not exist
 	// (possible only in a legacy config; the store refuses one).

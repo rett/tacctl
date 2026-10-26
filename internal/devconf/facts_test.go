@@ -33,6 +33,8 @@ func TestJunosVersion(t *testing.T) {
 	for _, c := range []struct{ name, in, release, model string }{
 		{"EX4300", capture(t, "juniper/facts-ex4300/show-version.txt"), "25.4R1-S2.3", "ex4300-48mp"},
 		{"two routing engines: the first", "re0:\nModel: mx480\nJunos: 21.4R3.15\nre1:\nModel: mx480\nJunos: 21.4R3.9\n", "21.4R3.15", "mx480"},
+		{"12.3 has no Junos line", "fpc0:\n----\nHostname: a\nModel: ex4200-24t\nJUNOS Base OS boot [12.3R9.4]\nJUNOS Base OS Software Suite [12.3R9.4]\n", "12.3R9.4", "ex4200-24t"},
+		{"the Junos line wins", "JUNOS Base OS boot [12.3R9.4]\nJunos: 15.1R6-S4\n", "15.1R6-S4", ""},
 		{"the host line is not the release", "Hostname: a\nJunos host: 25.4R1\n", "", ""},
 		{"a refusal", "error: command is not valid\n", "", ""},
 		{"empty", "", "", ""},

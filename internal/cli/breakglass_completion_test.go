@@ -38,8 +38,8 @@ func TestCompleteBreakglass(t *testing.T) {
 
 // A device already in the list, with its own reason, is not offered again.
 func TestBreakglassHoldCompletionSkipsDevicesWithReasons(t *testing.T) {
-	got, _ := completeWords(t, map[string]string{"devices": "js1\nsw1\n"}, "breakglass", "hold", "js1=console,")
-	if slices.Contains(got, "js1=console,js1") || !slices.Contains(got, "js1=console,sw1") {
+	got, _ := completeWords(t, map[string]string{"devices": "jsw1\nsw1\n"}, "breakglass", "hold", "jsw1=console,")
+	if slices.Contains(got, "jsw1=console,jsw1") || !slices.Contains(got, "jsw1=console,sw1") {
 		t.Errorf("offered %q", got)
 	}
 }

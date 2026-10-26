@@ -3,6 +3,222 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.19 (unreleased)
+
+1. **A mixed Junos virtual chassis passes the pre-flight.** `device config
+   apply` (and `--check`) failed with `show version: two values ... the
+   device's answer is not recognised` on a virtual chassis whose members are
+   different models (for example EX4600 and EX4300), because every member's
+   `Model:` line had to match. The members must still agree on the hostname
+   and the Junos release; the first member's model is the one reported.
+
+2. **The pre-flight reads the release of an older Junos.** A device whose
+   `show version` has no `Junos:` line (before 14.1, and the SRX and MX
+   trains) failed with `show version: no Hostname or Junos line`. The release
+   is now also read from the `JUNOS Base OS boot [...]` or `JUNOS Software
+   Release [...]` line, and the error names what is missing (the hostname,
+   the release, or both, with the first line of the answer). The release
+   fact of `device config pull` reads it the same way.
+
+3. **The login's permissions are read from the name of each row.** Junos 15.1
+   and later print `show cli authorization` rows as `name -- what it
+   allows`; every word of the description was taken for a permission, so a
+   class passed the "may commit" check by the word `all` in "Can view all
+   configuration". Only the name before the dashes counts now. A class may
+   commit with `all`, or with `all-control` and `configure` (a super-user's
+   list shows the bits it stands for and no `all` row), so a class that has
+   all of them still applies.
+
+4. **An unknown command no longer asks for a password.** `tacctl enroll` on
+   the command line, in `tacctl shell` and at the console ran the word
+   through `sudo`, which asked for the password before tacctl could say the
+   word is no command. A first word that is no command (hidden ones count;
+   `help`, `-h` and `--help` are the usage as before) is now answered before
+   `sudo` runs, with the same error line, `Did you mean` suggestion and exit
+   status 1. Every other word still goes through `sudo`, whose rules stay
+   the authority.
+
+5. **Engineers enroll, collect, onboard, sync and apply.** `device enroll`,
+   `device collect`, `device onboard`, `device sync` and `device config
+   apply` (and `--login <local-user>` on `pull|diff|plan`) were the
+   superuser's; they are the engineer tier's now, for the devices of their own
+   scopes. An address that a scope of another team answers is refused by
+   `enroll`, `collect` and `onboard` (`--discovered` leaves such addresses
+   out), a device of another scope is not found by `sync` and `apply`, and a
+   registration outside the engineer's scopes is refused as `device add` does.
+   `device config forget` and `device config shapes` stay the superuser's. The
+   per-tier sudoers drop-in gains the five rows (`tacctl upgrade` rewrites an
+   installed one, and `tacctl rollback` recognises 0.2.18's text).
+
+6. **`device support-bundle` collects what a developer needs of a device.**
+   `tacctl device support-bundle <name> [--vendor cisco|juniper|wti]
+   [--login <local-user>] [--out <dir>]` (the engineer's, for the devices of
+   their own scopes) logs in once, as `device config pull` does, and runs a
+   fixed list of read-only commands for the device's vendor (Junos: the
+   versions of every member, the chassis hardware, the virtual chassis and
+   cluster, the login's permissions, the commit history; IOS: the version,
+   inventory, stack, privilege; a WTI unit: its screens without the user
+   directory) and the SNMP system group, not the configuration itself (Junos:
+   only the difference of a candidate to the committed one; IOS: only the lines
+   that name the device). The text is
+   written to a directory after it is scrubbed: names, users, classes,
+   addresses, serial numbers, locations, contacts and time zones become the
+   standard example values, secrets are removed, and what was replaced is in
+   `<dir>.map` (mode 0600), beside the directory. `--vendor` reads a device
+   as another vendor for one run; the registered vendor is the default.
+
+7. **A block holds its own hierarchy only, pinned by a test.** The Junos
+   `system` block accepts only `set|delete system ...`, the `snmp` block only
+   `set|delete snmp ...`, the IOS blocks only their own lines; a statement of
+   another hierarchy, a second statement on a line, a `;` or a pipe is an
+   error finding, so a block that holds one is refused at `edit` and `check`
+   and is never rendered in part. No behavior changed; one test now covers
+   all four block grammars.
+
+8. **A scope's block states only what is the same for every device.** The
+   statements that name the device itself (Junos `trap-options source-address`
+   and `ntp source-address`, IOS `snmp-server trap-source` and the `source
+   <interface>` of an `ntp server`) are an error in the default and in a
+   scope's block, where they were a note: the device's own block states them.
+   The loopback by its convention name (`lo0`, `Loopback0`) stays allowed in a
+   scope's block, with a note. A scope block that holds one stops rendering
+   until the line moves to the devices' blocks (`scope block <scope> <vendor>
+   check <block>` names it); `adopt` into a scope leaves such lines out and
+   lists them.
+
+9. **A plan and a walkthrough say which block a statement comes from.** In
+   the region of `device config plan` and in the walkthrough of `config
+   juniper|cisco` and `device config show`, a statement that a configuration
+   block states has a comment before it that names the block in the words of
+   the verb that edits it: `# from scope block lab juniper system` (edit it with
+   `tacctl scope block lab juniper edit system`) or `# from device block sw1
+   system` (`tacctl device block sw1 edit system`); on IOS the comment starts
+   with `!`. The comment changes where the layer does, so a device's own block
+   laid over the scope's shows both. The reason above a section and the plan's
+   findings name the layers the block is made of, too (`scope 'lab' with the
+   block of device 'sw1' over it`; a community or trap group is named for the
+   layer that wrote it), where they said only `scope 'lab'`. The walkthrough
+   carries the per-statement comments where the two layers are laid together
+   (its heading names a block of one layer already). `--plain` stays
+   statements only, to load.
+
+10. **The login message is printed by `block show`.** `scope block ... show`
+    and `device block ... show` printed the Junos login message and the IOS
+    banner as a mark of their size (`<message: 2 lines, 82 characters>`) unless
+    `--reveal` was given, as a secret is. A device shows them to anyone before
+    the login, so they are no secret: they are printed as they are, with the
+    Junos announcement, and `--reveal` is for the NTP keys and the SNMP
+    community strings. The check's diff still prints a banner's size, the
+    stored pull record still holds the message as its size and a digest (the
+    way two forms of the text compare equal), and no finding or error holds a
+    word of the text.
+
+11. **The Junos `system` block takes syslog, the login announcement, the
+    retry options and the password policy.** `set system syslog host <h>
+    <facility> <level>` (and `facility-override`, `log-prefix`,
+    `explicit-priority` of a host, `time-format`, and in a device's block
+    `source-address`), `set system login retry-options <leaf> <n>`, `set system
+    login password <leaf> <value>` and `set system login announcement
+    <<'EOF'` are statements of the block, each checked against a closed table
+    (the facilities, the levels and the ranges Junos takes); anything else under
+    `syslog` or `login` is an error. They are compared, planned (a differing
+    value is replaced in place, nothing is deleted, the device's syslog files and
+    users are left alone), admitted by the apply allow-list (the confirmed
+    commit types them as it types the others), adopted from a device (`adopt`)
+    and named in the read-back commands of the plan. The plan prints an
+    announcement as its text and not as the mark the comparison holds.
+
+12. **The IOS `system` block takes logging, timestamps, the login and password
+    policy, the ssh settings and summer time.** `logging host`, `logging trap`,
+    `logging buffered`, `logging origin-id hostname`, `service timestamps
+    log|debug`, `login on-failure|on-success log`, `login delay`, `security
+    passwords min-length`, `security authentication failure rate`, `ip ssh
+    version 2`, `ip ssh time-out`, `ip ssh authentication-retries` and `clock
+    summer-time` are statements of the block, each checked against a closed
+    table; any other `logging`, `service`, `login`, `security` or `ip ssh`
+    statement is an error. They are compared, planned (a differing value is
+    replaced in place, nothing is removed, the device's other statements are
+    kept and listed), adopted from a device (`adopt` reads the wider `show
+    running-config | include`), offered in the block's template, and the three
+    ssh settings are the only `ip ssh` statements the planner types.
+
+13. **`tacctl emergency lockdown`: refuse the logins of groups on a scope.**
+    `emergency lockdown <scope> enable [<groups>] [--tier <tier>] [--reason
+    <text>] [--dry-run]` (and `--all-scopes`) takes the users of the locked
+    groups out of the scope when the backends render, so the server answers
+    every login and every further command authorization with a refusal and
+    never with silence (a device does not fall back to its local accounts on
+    that account); `disable [<groups>]` lifts it and the files come back byte
+    for byte; `status [<scope>] [--json]` lists what stands, who is locked out,
+    who keeps access and the ways a device's local accounts stay usable. It is
+    the superuser's, asks for the scope's name typed back, never locks a user
+    of a superuser group, and has no timer. The record is
+    `emergency.lockdown.<scope>.groups|since|by|reason` in `tacctl.yaml`. Every
+    command that names the scope or one of its devices or hosts, and `status`,
+    `config validate` and the lists, writes one red line on standard error
+    while it stands (an engineer sees their own scopes'); `config validate`
+    warns and reports a record that names a scope or group that is gone.
+    `scope rename` moves the record, `scope remove` drops it and `group
+    remove` takes the group out, and `group edit <group> tier superuser` is
+    refused while the group is locked (a superuser group is never locked). A
+    rollback to an older release is refused while a lockdown stands. The log has
+    `emergency lockdown enable|disable scope= groups= ...`.
+
+14. **The `system` blocks take `absent` lines: services a scope requires to be
+    absent.** Junos `absent system services telnet|ftp|finger|xnm-clear-text|
+    web-management` and IOS `absent ip http server|ip http secure-server|
+    service tcp-small-servers|service udp-small-servers|ip finger|service
+    finger` are statements of the block (a `set system services` line is an
+    error; `ssh` and `netconf` are not in the list). The device that holds the
+    service, or anything under it, differs; the plan deletes the whole
+    statement once (`delete system services telnet`, `no ip http server`) under
+    a comment that names the block, and the back-out types it again. A `delete`
+    or `no` line of a device's block takes the marker out for that device.
+    These deletes are the only ones under `system services`, besides the NETCONF
+    setting's, that `device config apply` admits, and only when the rendering
+    states the marker.
+
+15. **The IOS `system` block takes `banner motd` and `banner exec`.** Beside
+    `banner login`, each a heredoc of the block (at most 20 lines of 80
+    characters, one of each kind), typed as IOS's multi-line banner with a
+    delimiter the text does not contain, compared by its size and a short
+    digest, planned in place, adopted from a device (`adopt` reads `show
+    running-config | section ^banner`), and taken out for a device by a `no
+    banner motd|exec` line. A device's own motd or exec banner is the section's
+    only where the block states one of that kind.
+
+16. **A host name may hold dots.** `host rename dev dev.example.net` and
+    `host enroll ... --name` took only letters, digits, `_` and `-` (26 at
+    most); a host name now has the shape of a device name that starts with a
+    letter: letters, digits, `.`, `_` and `-`, at most 253 characters with each
+    dotted part at most 63. The target, the address and the scope of the host
+    stay as they are. A host's own `linux-<name>` scope keeps its name when the
+    new one has a dot, because a scope name has none; `host rename` says so.
+    The name taken from a target is still its short name.
+
+17. **`tacctl rollback 0.2.18`.** The release before this one is a rollback
+    target (beside 0.2.17, 0.2.16, 0.2.9 and 0.2.3). `--apply` rewrites the
+    per-tier sudoers drop-in, when it is exactly this release's text, with
+    0.2.18's (the engineer's rows of `device config apply`, `enroll`,
+    `collect`, `onboard`, `sync` and `support-bundle` are taken out). Every
+    target is refused while an emergency lockdown locks a group, removes a
+    partial lockdown record (the older schemas refuse its keys) and, for every
+    target that has blocks, warns of the `system` blocks that use statements
+    this release added (the older release lints them as errors): the dry run
+    lists them by scope or device, vendor and count, and `--apply` needs
+    `--yes`. The block files are not rewritten.
+
+18. **`?` describes the words of `scope block` and `device block`.** At the
+    shell or console prompt, `?` after `scope block <scope> ` listed the
+    vendors, and after `show`, `check`, `set`, `remove`, `edit` or `adopt
+    <device>` the block names, without a description (the verbs had one).
+    The vendors, the block names `snmp` and `system` and the verbs of both
+    commands now each carry a one-line description, the same as the other
+    lists. The usage of both commands gains the rows they come from, and
+    says the block commands cover snmp and system for Junos and IOS, that the
+    system block is additive but for an `absent` line, and that the IOS
+    banners are login, motd and exec.
+
 ## 0.2.18 (2026-10-24)
 
 1. **`device config-syntax` is now `device ios-syntax`, and `device add
@@ -1275,7 +1491,7 @@ current behaviour; this file is where history lives.
    knobs) come after a blank line with their values aligned; no line is wider
    than 62 columns, where the old copyright line wrapped on an 80-column
    terminal. The build date is the commit's date shown as `2026-10-14 15:34
-   AKDT` in the local time zone. The field labels (`commit:`) and the short
+   UTC` in the local time zone. The field labels (`commit:`) and the short
    `tacctl version` are as before.
 
 ## 0.2.9 (2026-10-14)
@@ -2472,7 +2688,7 @@ current behaviour; this file is where history lives.
     IOS 15.6(2)T router a block with a banner (typed with the `^` delimiter),
     `ip domain name`, `ip domain list`, `clock timezone`, `ip name-server`
     and `ntp server ... prefer` was pasted and read back as `ok` (the device
-    stores the time zone as `AKST -9 0`, which compares equal to `-9`); a
+    stores the time zone as `CET 1 0`, which compares equal to `1`); a
     changed banner, an added list entry and name server, and `ntp server`
     typed again without `prefer` came out as the planned lines and replaced
     the server line in place; `adopt` drafted the block from the device and

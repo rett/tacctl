@@ -23,8 +23,8 @@ var systemOpt = Options{Scope: "lab"}
 
 // the message of the fixture, as the device prints it and as its body.
 const (
-	fixtureMessage = `"Authorized use only.\n  *** js1.lab.example.net ***\nDisconnect now if you are not authorized.\n  \"quoted\" and a back\\slash"`
-	fixtureBody    = "Authorized use only.\n  *** js1.lab.example.net ***\nDisconnect now if you are not authorized.\n  \"quoted\" and a back\\slash"
+	fixtureMessage = `"Authorized use only.\n  *** jsw1.lab.example.net ***\nDisconnect now if you are not authorized.\n  \"quoted\" and a back\\slash"`
+	fixtureBody    = "Authorized use only.\n  *** jsw1.lab.example.net ***\nDisconnect now if you are not authorized.\n  \"quoted\" and a back\\slash"
 )
 
 func systemFixture(t testing.TB) fixture {
@@ -56,7 +56,9 @@ func dropPrefix(prefixes ...string) func(c *JunosConfig) {
 // systemSectionOf is the system section a block's text renders.
 func systemSectionOf(t testing.TB, text string) devices.Section {
 	t.Helper()
-	b, fs := blocks.LintSystem(text, blocks.LayerScope)
+	// linted as a device's block: the fixture states device-local values (a
+	// source address) that a scope's block may not
+	b, fs := blocks.LintSystem(text, blocks.LayerDevice)
 	if blocks.HasErrors(fs) {
 		t.Fatalf("the block: %v", fs)
 	}
@@ -245,7 +247,7 @@ func TestSystemMissingIsSet(t *testing.T) {
 
 	// the report words the findings and holds no word of the message or the key
 	rep := Report(d, f.header(), Wrapper{})
-	for _, bad := range []string{"Authorized", "js1.lab", "Disconnect", "ntp-key-0123456789", "quoted"} {
+	for _, bad := range []string{"Authorized", "jsw1.lab", "Disconnect", "ntp-key-0123456789", "quoted"} {
 		if strings.Contains(rep, bad) {
 			t.Errorf("the report holds %q:\n%s", bad, rep)
 		}
@@ -347,7 +349,7 @@ func TestSystemDifferingValuesAreReplaced(t *testing.T) {
 			t.Errorf("the report holds %q:\n%s", bad, rep)
 		}
 	}
-	if flat := strings.Join(strings.Fields(strings.ReplaceAll(rep, "\n#", " ")), " "); !strings.Contains(flat, "the login message of 4 lines, 120 characters (the device has: the login message of 2 lines, 25 characters)") ||
+	if flat := strings.Join(strings.Fields(strings.ReplaceAll(rep, "\n#", " ")), " "); !strings.Contains(flat, "the login message of 4 lines, 121 characters (the device has: the login message of 2 lines, 25 characters)") ||
 		!strings.Contains(flat, "the time zone is UTC (the device has: the time zone is America/New_York)") {
 		t.Errorf("the report:\n%s", rep)
 	}
@@ -455,19 +457,19 @@ func TestSystemOlderRecordIsNotCompared(t *testing.T) {
 			}
 		}
 	}
-	d, err := Plan(f.vendor, exp, cur, cur, Options{Scope: "lab", Device: "js1"})
+	d, err := Plan(f.vendor, exp, cur, cur, Options{Scope: "lab", Device: "jsw1"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	sp := d.Of("system")
-	if sp.State != StateSkipped || sp.Kind != KindNotPlannable || !strings.Contains(sp.Why, "tacctl device config pull js1") {
+	if sp.State != StateSkipped || sp.Kind != KindNotPlannable || !strings.Contains(sp.Why, "tacctl device config pull jsw1") {
 		t.Errorf("system: %+v", sp)
 	}
 	if !slices.ContainsFunc(d.Warnings, func(w string) bool { return strings.Contains(w, "newer than the pull") }) {
 		t.Errorf("warnings: %q", d.Warnings)
 	}
 	// the other sections plan as they do with no block
-	dNone, err := Plan(f.vendor, without, cur, cur, Options{Scope: "lab", Device: "js1"})
+	dNone, err := Plan(f.vendor, without, cur, cur, Options{Scope: "lab", Device: "jsw1"})
 	if err != nil {
 		t.Fatal(err)
 	}

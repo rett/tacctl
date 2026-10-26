@@ -122,9 +122,28 @@ var engineerRowCases = map[string]engineerRow{
 		refusedCase("is not available for tagging", "scope devices lab set 192.168.1.0/24 juniper"),
 		refusedCase("is not available for tagging", "scope devices lab unset 192.168.0.0/16")),
 		scoped: []string{"scopes.lab.devices."}},
-	"device config": {cases: append(cases("device config", "device config show lab-sw"),
+	"device config": {cases: append(cases("device config", "device config show lab-sw", "device config apply lab-sw --check"),
 		refusedCase("Device 'prod-sw' not found", "device config show prod-sw"),
+		refusedCase("Device 'prod-sw' not found", "device config apply prod-sw --check"),
 		refusedCase("enrolled Linux host", "device config show web1"))},
+	// Enrolling, collecting, onboarding and syncing (0.2.19) work on the
+	// addresses and devices of the engineer's own scopes: another scope's
+	// address is refused before anything is sent, and registering writes the
+	// device registry only (through the scope check of device add).
+	// (an enroll prints its refusals as rows of its table, on standard
+	// output: TestEngineerEnrollRefusesAnotherScopesAddress)
+	"device enroll": {cases: cases("device enroll 192.168.1.60 --host-key SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "device enroll 192.168.2.77 --host-key SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")},
+	"device collect": {cases: append(cases("device collect --discovered"),
+		refusedCase("not one of yours", "device collect 192.168.2.77 --login admin --host-key SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"))},
+	"device onboard": {cases: []engineerCase{
+		refusedCase("not one of yours", "device onboard 192.168.2.77 --login admin --check --host-key SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+	}},
+	"device support-bundle": {cases: []engineerCase{
+		refusedCase("Device 'prod-sw' not found", "device support-bundle prod-sw"),
+		refusedCase("enrolled Linux host", "device support-bundle web1"),
+	}},
+	"device sync": {cases: append(cases("device sync lab-sw", "device sync --all"),
+		refusedCase("'web1' is an enrolled Linux host", "device sync web1"))},
 	// The source interface (0.2.5, D119) is a setting of tacctl.yaml: an
 	// engineer reads their own scopes' and changes nothing.
 	"config cisco": {cases: append(cases("config cisco --scope lab", "config cisco --scope lab --staging 192.168.1.50",
@@ -485,6 +504,38 @@ func TestEngineerRowsWriteNoGlobalSetting(t *testing.T) {
 					}
 				}
 			})
+		}
+	}
+}
+
+// An engineer's 'device enroll' leaves out the addresses of another scope:
+// the row says so, nothing is scanned, and the registry is as it was.
+func TestEngineerEnrollRefusesAnotherScopesAddress(t *testing.T) {
+	sb := engineerSandbox(t)
+	nosyncSetup(t, sb)
+	for _, a := range [][]string{{"scope", "prefixes", "prod", "add", "192.168.2.77/32"}} {
+		if sb.cfgRun("", a, nil); sb.code != 0 {
+			t.Fatalf("%v: %d %q", a, sb.code, sb.stderr())
+		}
+	}
+	regs := registries(t, sb)
+	out := sb.asEngineer("", strings.Fields("device enroll 192.168.2.77 --host-key SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")...)
+	if sb.code == 0 || !strings.Contains(out, "not one of yours") {
+		t.Errorf("exit %d, stdout %q, stderr %q", sb.code, out, sb.stderr())
+	}
+	// the address of another scope's registered device does not give its name
+	for _, line := range []string{"device enroll 10.99.0.1", "device collect 10.99.0.1 --login admin"} {
+		out := sb.asEngineer("", strings.Fields(line+" --host-key SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")...)
+		if strings.Contains(out+sb.stderr(), "prod-sw") || !strings.Contains(out+sb.stderr(), "not one of yours") {
+			t.Errorf("%s: exit %d, stdout %q, stderr %q", line, sb.code, out, sb.stderr())
+		}
+	}
+	if !maps.Equal(regs, registries(t, sb)) {
+		t.Error("a refused address changed the registries")
+	}
+	for _, c := range sb.runner.Calls() {
+		if c.Name == "ssh-keyscan" {
+			t.Errorf("the address of another scope was scanned: %v", c)
 		}
 	}
 }

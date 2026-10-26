@@ -15,21 +15,21 @@ import (
 // kind, not for every device and host.
 func TestCompleteVendorDevices(t *testing.T) {
 	live := map[string]string{
-		"devices":         "js1\nsw1\nweb1\n",
+		"devices":         "jsw1\nsw1\nweb1\n",
 		"devices.cisco":   "sw1\n",
-		"devices.juniper": "js1\n",
+		"devices.juniper": "jsw1\n",
 	}
 	for _, c := range []struct {
 		words []string
 		want  []string
 	}{
 		{[]string{"device", "ios-syntax", ""}, []string{"sw1"}},
-		{[]string{"device", "netconf", ""}, []string{"js1"}},
+		{[]string{"device", "netconf", ""}, []string{"jsw1"}},
 		{[]string{"device", "netconf", "s"}, nil},
 		// the second word is unchanged
 		{[]string{"device", "ios-syntax", "sw1", ""}, []string{"auto", "ios12", "modern", "--apply"}},
 		// other verbs still name every device and host
-		{[]string{"device", "show", ""}, []string{"js1", "sw1", "web1"}},
+		{[]string{"device", "show", ""}, []string{"jsw1", "sw1", "web1"}},
 	} {
 		got, _ := completeWords(t, live, c.words...)
 		if !slices.Equal(got, c.want) {
@@ -47,9 +47,9 @@ func TestShellCompletionVendorDevices(t *testing.T) {
 		case "devices.cisco --desc":
 			return execx.Result{Stdout: []byte("core-sw\tcisco 10.0.0.1 prod\nsw1\tcisco 192.168.1.1 lab\n")}, nil
 		case "devices.juniper --desc":
-			return execx.Result{Stdout: []byte("js1\tjuniper 192.168.1.9 lab\n")}, nil
+			return execx.Result{Stdout: []byte("jsw1\tjuniper 192.168.1.9 lab\n")}, nil
 		case "devices --desc":
-			return execx.Result{Stdout: []byte("js1\tjuniper 192.168.1.9 lab\nsw1\tcisco 192.168.1.1 lab\nweb1\tlinux 192.0.2.10 lab\n")}, nil
+			return execx.Result{Stdout: []byte("jsw1\tjuniper 192.168.1.9 lab\nsw1\tcisco 192.168.1.1 lab\nweb1\tlinux 192.0.2.10 lab\n")}, nil
 		}
 		return execx.Result{}, nil
 	})
@@ -65,12 +65,12 @@ func TestShellCompletionVendorDevices(t *testing.T) {
 	if want := []string{"core-sw|cisco 10.0.0.1    prod", "sw1|cisco 192.168.1.1 lab"}; !slices.Equal(got, want) {
 		t.Errorf("ios-syntax: %q, want %q", got, want)
 	}
-	if got := words(complete([]string{"device", "netconf"}, "")); !slices.Contains(got, "js1") || slices.Contains(got, "sw1") || slices.Contains(got, "web1") {
+	if got := words(complete([]string{"device", "netconf"}, "")); !slices.Contains(got, "jsw1") || slices.Contains(got, "sw1") || slices.Contains(got, "web1") {
 		t.Errorf("netconf: %q", got)
 	}
 	for _, c := range complete([]string{"device", "netconf"}, "") {
-		if c.Word == "js1" && c.Kind != KindDevices {
-			t.Errorf("js1 is listed as %q", c.Kind)
+		if c.Word == "jsw1" && c.Kind != KindDevices {
+			t.Errorf("jsw1 is listed as %q", c.Kind)
 		}
 	}
 }

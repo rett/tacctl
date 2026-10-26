@@ -82,7 +82,7 @@ func hostAdoptWords(f []string) []string {
 // community string); same is the block in force at the level the draft is
 // for and up the block of the layer beneath it (a device's draft: the
 // scope's); either may be nil.
-func AdoptIOSSNMP(raw string, own AdoptOwn, same, up *IOSSNMPBlock) AdoptResult {
+func AdoptIOSSNMP(raw string, own AdoptOwn, same, up *IOSSNMPBlock, layer Layer) AdoptResult {
 	var res AdoptResult
 	var stmts []string // accepted statements, as block text
 	var ours, identity, outside int
@@ -317,6 +317,8 @@ func AdoptIOSSNMP(raw string, own AdoptOwn, same, up *IOSSNMPBlock) AdoptResult 
 			}
 		case up != nil && up.TrapSource != nil && strings.EqualFold(up.TrapSource.Text, ts.Text):
 			already++
+		case layer != LayerDevice && !isLoopbackName(ts.Text):
+			res.Left = append(res.Left, "snmp-server trap-source names an interface of this device, which a scope's block does not state unless it is the loopback by its convention name: it is left out (state it in the device's own block)")
 		default:
 			incl.TrapSource = ts
 		}

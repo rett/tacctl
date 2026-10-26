@@ -276,12 +276,12 @@ func TestBlockCommentAndRefusalNameTheDevicesLayer(t *testing.T) {
 	if got, want := comment(d), "# The snmp block of scope 'lab' (tacctl scope block lab juniper show snmp)"+tail; got != want {
 		t.Errorf("scope only:\n%s\nwant\n%s", got, want)
 	}
-	d.Blocks.Device, d.Blocks.SNMPLayer = "js1.lab.example.net", LayerScopeDevice
-	if got, want := comment(d), "# The snmp block of scope 'lab' with the block of device 'js1.lab.example.net' over it (tacctl device block js1.lab.example.net show snmp --effective)"+tail; got != want {
+	d.Blocks.Device, d.Blocks.SNMPLayer = "jsw1.lab.example.net", LayerScopeDevice
+	if got, want := comment(d), "# The snmp block of scope 'lab' with the block of device 'jsw1.lab.example.net' over it (tacctl device block jsw1.lab.example.net show snmp --effective)"+tail; got != want {
 		t.Errorf("both:\n%s\nwant\n%s", got, want)
 	}
 	d.Blocks.SNMPLayer = LayerDevice
-	if got, want := comment(d), "# The snmp block of device 'js1.lab.example.net' (tacctl device block js1.lab.example.net show snmp)"+tail; got != want {
+	if got, want := comment(d), "# The snmp block of device 'jsw1.lab.example.net' (tacctl device block jsw1.lab.example.net show snmp)"+tail; got != want {
 		t.Errorf("device only:\n%s\nwant\n%s", got, want)
 	}
 
@@ -291,12 +291,12 @@ func TestBlockCommentAndRefusalNameTheDevicesLayer(t *testing.T) {
 	dev := parsedBlock(t, "set snmp community "+lab.snmp.Community+" authorization read-only\nset snmp community "+lab.snmp.Community+" clients 192.0.2.60/32\n")
 	scope := parsedBlock(t, blockText)
 	req, d = juniperInput(t, lab, variants[3], text)
-	d.Blocks = Blocks{Scope: lab.scope, Device: "js1.lab.example.net", SNMP: parsedBlock(t, text), ScopeSNMP: scope, DeviceSNMP: dev, SNMPLayer: LayerScopeDevice}
+	d.Blocks = Blocks{Scope: lab.scope, Device: "jsw1.lab.example.net", SNMP: parsedBlock(t, text), ScopeSNMP: scope, DeviceSNMP: dev, SNMPLayer: LayerScopeDevice}
 	_, err := Managed(req, d)
 	if err == nil {
 		t.Fatal("Managed accepted it")
 	}
-	for _, want := range []string{"Community 1 of the SNMP block of device 'js1.lab.example.net'", "tacctl device block js1.lab.example.net edit snmp"} {
+	for _, want := range []string{"Community 1 of the SNMP block of device 'jsw1.lab.example.net'", "tacctl device block jsw1.lab.example.net edit snmp"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the error lacks %q: %v", want, err)
 		}

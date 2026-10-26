@@ -23,6 +23,11 @@
 # GO names the go command (default: go on the PATH, else
 # /usr/local/go/bin/go); GOCACHE defaults to a cache under $TMPDIR; LANG is
 # C.UTF-8. The default log is a new file under $TMPDIR.
+#
+# GATE_TMPFS=1 puts $TMPDIR (the tests' sandboxes, not the log) on /dev/shm for
+# the run and removes it afterwards: the tests' fsync calls cost nothing there
+# (the whole run takes a third of the time). It falls back to $TMPDIR when
+# /dev/shm has under 2 GiB free. GOCACHE stays on disk.
 # Exit status: 0 PASS, 1 FAIL, 2 usage.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 2
@@ -33,6 +38,16 @@ if [[ -z "${GO:-}" ]]; then
 fi
 export LANG=C.UTF-8
 export GOCACHE="${GOCACHE:-${TMPDIR:-/tmp}/tacctl-gate-go-cache-$(id -u)}"
+logdir="${TMPDIR:-/tmp}"
+if [[ "${GATE_TMPFS:-}" = 1 ]]; then
+    if [[ -d /dev/shm && -w /dev/shm && "$(df -Pk /dev/shm | awk 'NR==2 {print $4}')" -ge 2097152 ]] \
+        && shm="$(mktemp -d /dev/shm/tacctl-gate-go.XXXXXX)"; then
+        trap 'rm -rf "$shm"' EXIT
+        export TMPDIR="$shm"
+    else
+        echo "gate-go: GATE_TMPFS=1 ignored (no usable /dev/shm with 2 GiB free)" >&2
+    fi
+fi
 
 log="" timeout="40m" tags=""
 while [[ $# -gt 0 ]]; do
@@ -48,7 +63,7 @@ while [[ $# -gt 0 ]]; do
 done
 pkgs=("$@")
 [[ ${#pkgs[@]} -gt 0 ]] || pkgs=(./internal/...)
-[[ -n "$log" ]] || log="$(mktemp "${TMPDIR:-/tmp}/tacctl-gate-go.XXXXXX.log")" || exit 2
+[[ -n "$log" ]] || log="$(mktemp "$logdir/tacctl-gate-go.XXXXXX.log")" || exit 2
 : >"$log" || { echo "gate-go: cannot write $log" >&2; exit 2; }
 
 tagflag=()

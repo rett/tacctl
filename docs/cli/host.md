@@ -134,10 +134,13 @@ hold recorded under a new name is refused before anything is done, as for
 runs nothing on the host (the machine records no registry name), so a host
 with a break-glass hold may be renamed. The new name follows the rules of a
 new host name (see [Enrolling hosts](../hosts/enrolling.md)) with no way
-round them: lower-case letters, digits, `_` or `-`, starting with a letter
-(26 at most); no tacctl word; no generic name; and not equal, in any case,
-to another host or a registered device. A name with upper case is refused
-(`Names are lower case: use 'web1'.`). Changing only the spelling to lower
+round them: lower-case letters, digits, `.`, `_` or `-`, starting with a
+letter (253 at most, each dotted part 63 at most); no tacctl word; no generic
+name; and not equal, in any case, to another host or a registered device. A
+name with upper case is refused (`Names are lower case: use 'web1'.`). The
+target, port, scope, server and the address pinned for the host stay as they
+are; a host's own `linux-<name>` scope keeps its name when the new one has a
+dot (a scope name has none), and one line says so. Changing only the spelling to lower
 case (`Web1` to `web1`) is allowed and is how a name from before is fixed;
 the same name is refused (`'web1' already has that name.`). A
 running rotation, rename, forget or restore of the host refuses the rename

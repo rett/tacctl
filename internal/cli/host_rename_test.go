@@ -168,6 +168,34 @@ func TestHostRenameCarriesEverythingTheHostHas(t *testing.T) {
 	}
 }
 
+// A fully qualified name is a host name: the registry line changes its name
+// and nothing else (target, port, scope, server, identity, the address pinned
+// for it), and the pin, the record and the known_hosts follow the name.
+func TestHostRenameToAFullyQualifiedName(t *testing.T) {
+	sb := renameLab(t)
+	const fq = "web1.example.net"
+	sb.run("", []string{"host", "rename", "web1", fq})
+	sb.expect(0, "Host 'web1' renamed to '"+fq+"'. Nothing was sent to the host.", "")
+	if got, want := sb.registryText(), strings.Replace(hostLines, "web1|", fq+"|", 1); got != want {
+		t.Errorf("registry %q, want %q", got, want)
+	}
+	if p := sb.pin(fq); p == nil || p.Address != "192.168.1.10" || len(p.Keys) != 1 {
+		t.Errorf("pin %+v", p)
+	}
+	if sb.fileExists("state/hosts/web1.json") || sb.read("state/hosts/"+fq+".json") != renameRecord {
+		t.Error("the record did not move")
+	}
+	if kh := sb.read("var-lib/ssh/known_hosts"); !strings.Contains(kh, fq) {
+		t.Errorf("known_hosts %q", kh)
+	}
+	if got := plain(sb.run("", []string{"host", "show", fq})); !strings.Contains(got, fq) {
+		t.Errorf("host show:\n%s", got)
+	}
+	if sb.sshCalls() != 0 {
+		t.Errorf("%d ssh calls", sb.sshCalls())
+	}
+}
+
 // A rename that changes only the spelling to lower case is legal and is how
 // a name from before, with upper case, is fixed; the host is not equal to a
 // different host by it, and everything the host has follows.
@@ -218,8 +246,11 @@ func TestHostRenameRefusals(t *testing.T) {
 		{[]string{"ghost", "web7"}, "No enrolled host named 'ghost'"},
 		{[]string{"web1", "web1"}, "'web1' already has that name."},
 		{[]string{"web1", "7web"}, "Invalid host name '7web'"},
-		{[]string{"web1", "a.b"}, "Invalid host name 'a.b'"},
-		{[]string{"web1", strings.Repeat("x", 27)}, "Invalid host name"},
+		{[]string{"web1", "a..b"}, "Invalid host name 'a..b'"},
+		{[]string{"web1", "a."}, "Invalid host name 'a.'"},
+		{[]string{"web1", ".a"}, "Invalid host name '.a'"},
+		{[]string{"web1", strings.Repeat("x", 64) + ".example.net"}, "Invalid host name"},
+		{[]string{"web1", strings.Repeat("x.", 127) + "x"}, "Invalid host name"},
 		{[]string{"web1", "all"}, "'all' is a tacctl word and cannot name a host"},
 		{[]string{"web1", "Scope"}, "'Scope' is a tacctl word"},
 		{[]string{"web1", "switch2"}, "'switch2' is a generic name"},
@@ -411,5 +442,32 @@ func TestHostRenameNeedsAnEnrolledHost(t *testing.T) {
 	sb.expect(1, "", "No enrolled host named 'web1'")
 	if sb.fileExists("state/linux-hosts") {
 		t.Error("a registry was made")
+	}
+}
+
+// A host name is a device name that starts with a letter: dots allowed
+// between non-empty parts of at most 63 characters, 253 in all.
+func TestValidHostName(t *testing.T) {
+	long := strings.Repeat("x", 63)
+	for name, want := range map[string]bool{
+		"web1":                          true,
+		"web1.example.net":              true,
+		"db_1.site-a.example.net":       true,
+		"Web1":                          true,
+		long + ".net":                   true,
+		long + "x.net":                  false,
+		strings.Repeat("a.", 126) + "a": true,
+		strings.Repeat("a.", 127) + "a": false,
+		"7web":                          false,
+		".web1":                         false,
+		"web1.":                         false,
+		"web..1":                        false,
+		"web 1":                         false,
+		"web1;reboot":                   false,
+		"":                              false,
+	} {
+		if got := validHostName(name); got != want {
+			t.Errorf("validHostName(%q) = %v, want %v", name, got, want)
+		}
 	}
 }

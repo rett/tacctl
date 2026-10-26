@@ -96,6 +96,12 @@ func (inv *invocation) resolveBlocks(vendor, scope, device string, ov *blockOver
 	if dv[0] != nil {
 		b.DeviceSNMP, _ = blocks.Parse(string(dv[0]))
 	}
+	if sc[1] != nil {
+		b.ScopeSystem, _ = blocks.ParseSystem(string(sc[1]))
+	}
+	if dv[1] != nil {
+		b.DeviceSystem, _ = blocks.ParseSystem(string(dv[1]))
+	}
 	if (snmp != nil && snmpLayers.Device) || (system != nil && systemLayers.Device) {
 		b.Device = device
 	}
@@ -139,6 +145,12 @@ func (inv *invocation) resolveIOSBlocks(scope, device string, text func(blocks.L
 	}
 	if dv[0] != nil {
 		b.DeviceCiscoSNMP, _ = blocks.ParseIOSSNMP(string(dv[0]))
+	}
+	if sc[1] != nil {
+		b.ScopeCiscoSystem, _ = blocks.ParseIOSSystem(string(sc[1]))
+	}
+	if dv[1] != nil {
+		b.DeviceCiscoSystem, _ = blocks.ParseIOSSystem(string(dv[1]))
 	}
 	if (snmp != nil && snmpLayers.Device) || (system != nil && systemLayers.Device) {
 		b.Device = device

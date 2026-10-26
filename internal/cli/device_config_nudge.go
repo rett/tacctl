@@ -18,7 +18,6 @@ import (
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devconf/plan"
 	"github.com/rett/tacctl/internal/devreg"
-	"github.com/rett/tacctl/internal/tier"
 )
 
 // rendersField says whether a registry setter's field is an input of the
@@ -212,14 +211,14 @@ func (inv *invocation) withScopeNudge(verb string, run func([]string) error) fun
 // --- --apply ---------------------------------------------------------------------
 
 // applyPreflight is everything 'device <setter> --apply' must know before it
-// changes the registry: the caller may apply (the superuser's), logs in as
+// changes the registry: the caller may apply (the engineer's), logs in as
 // themselves, the device is one that apply writes to, and there is a
 // terminal for the review. A refusal is a usage error and nothing was
 // changed.
 func (inv *invocation) applyPreflight(e devreg.Entry) error {
 	t, ok := inv.deviceConfigPermits("apply")
 	if !ok {
-		return inv.usageErr("--apply runs 'tacctl device config apply', which is for the " + string(tier.Superuser) + " tier; yours is " + string(t) + ". Nothing was changed.")
+		return inv.usageErr("--apply runs 'tacctl device config apply', which is for the " + string(deviceConfigNeeds["apply"]) + " tier; yours is " + string(t) + ". Nothing was changed.")
 	}
 	user, err := inv.configLogin("device config apply")
 	if err != nil {

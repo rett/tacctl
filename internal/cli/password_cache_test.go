@@ -599,9 +599,9 @@ func TestAskpassWords(t *testing.T) {
 		"device config show x":          false, "device config list": false, "device list": false, "user list": false, "host sync x": false,
 		// 'block adopt' reads a device with the caller's login; the other
 		// block verbs reach no device
-		"scope block lab juniper adopt js1 snmp": true, "device block js1 adopt snmp": true,
-		"scope block lab juniper edit snmp": false, "device block js1 edit snmp": false, "scope block lab juniper list": false,
-		"scope block lab juniper": false, "device block js1": false,
+		"scope block lab juniper adopt jsw1 snmp": true, "device block jsw1 adopt snmp": true,
+		"scope block lab juniper edit snmp": false, "device block jsw1 edit snmp": false, "scope block lab juniper list": false,
+		"scope block lab juniper": false, "device block jsw1": false,
 		// 'device config apply' logs in, --check included; 'shapes' does not
 		"device config apply x": true, "device config apply --all --check": true, "device config shapes": false,
 		"device config shapes seed x": false, "device config shapes list": false,
@@ -864,7 +864,7 @@ func TestShellPassesTheLineTokenInTheEnvironment(t *testing.T) {
 	stale := askpass.EnvVar + "=/tmp/stale.sock:" + "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 	h := newHarness(t, nil, "HOME="+t.TempDir(), stale)
 	inv := &invocation{ctx: context.Background(), app: h.app, hooks: newTestHooks()}
-	exec := inv.shellExec(testExe, true, tier.Engineer, []string{"TACCTL_CONSOLE=0123456789ab"})
+	exec := inv.shellExec(newRoot(inv), testExe, true, tier.Engineer, []string{"TACCTL_CONSOLE=0123456789ab"})
 	last := func() execx.Cmd {
 		var got execx.Cmd
 		for _, call := range h.runner.Calls() {

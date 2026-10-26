@@ -431,16 +431,24 @@ func (inv *invocation) groupRemove(args []string) error {
 	}
 	del := func(s *store.Store) error { return s.GroupDel(group) }
 	watch := inv.watchServerTiers()
-	if !groupHasSettings(a.Conf(), group) {
+	locked := inv.lockdownsNaming(group)
+	if !groupHasSettings(a.Conf(), group) && len(locked) == 0 {
 		err = inv.applyStore(del)
 	} else {
-		// Its device settings in tacctl.yaml go with it (0.2.2).
+		// Its device settings in tacctl.yaml go with it (0.2.2), and its
+		// place in an emergency lockdown (0.2.19).
 		err = inv.applyWith(func() error {
 			if err := inv.mutate(del); err != nil {
 				return err
 			}
+			if err := inv.lockdownForgetGroup(group); err != nil {
+				return err
+			}
 			return policy.ForgetGroup(a.Conf(), group)
 		})
+	}
+	if err == nil && len(locked) > 0 {
+		a.Out.Warn("Group '" + group + "' is no longer locked on scope(s) " + strings.Join(locked, ", ") + ": it is gone.")
 	}
 	if err != nil {
 		return err
@@ -503,6 +511,11 @@ func (inv *invocation) groupEdit(args []string) error {
 			tierNote = "tacctl tier: automatic again (the superuser setting recorded the priv-lvl band; priv-lvl " + value + " → " + string(tier.ForPrivLvl(value)) + ")."
 			tierWrite = func() error { return policy.WriteGroupTier(a.Conf(), group, "auto") }
 		}
+		if tierTo == "superuser" {
+			if err := inv.lockdownPromotionRefusal(group); err != nil {
+				return err
+			}
+		}
 		if tierWrite == nil {
 			err = inv.applyStore(set)
 		} else {
@@ -551,6 +564,11 @@ func (inv *invocation) groupEdit(args []string) error {
 			return err
 		}
 		if field == "tier" {
+			if value == "superuser" {
+				if err := inv.lockdownPromotionRefusal(group); err != nil {
+					return err
+				}
+			}
 			err = inv.groupEditTier(m.Group(group), value)
 		} else {
 			err = inv.groupEditWTILevel(m.Group(group), value)

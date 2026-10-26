@@ -25,7 +25,7 @@ func init() {
 
 const scopeBlockUse = "block <scope> cisco|juniper list|show|check|set|remove|edit|adopt [<block>] [options]"
 
-const scopeBlockShort = "A scope's configuration blocks (Junos snmp and system, IOS snmp): list, show, check, set, remove, edit, adopt"
+const scopeBlockShort = "A scope's configuration blocks (snmp and system, for Junos and IOS): list, show, check, set, remove, edit, adopt"
 
 var (
 	flagFile    = Flag{Names: []string{"--file"}, Value: true, Kind: KindFile}
@@ -63,6 +63,13 @@ var scopeBlockVerbs = [][2]string{
 	{"adopt <device> <block> [-y]", "Read the device's own statements of the hierarchy with your login (nothing is stored), open them in your editor as the draft to prune, then check, diff, ask and put the block in force"},
 }
 
+// scopeBlockVendors are the vendor words after the scope ({word,
+// description}).
+var scopeBlockVendors = [][2]string{
+	{"cisco", "IOS and IOS-XE devices: configuration lines, with 'no' lines for what is not managed"},
+	{"juniper", "Junos devices: 'set' statements, with 'delete' lines for what is not managed"},
+}
+
 // scopeBlockOptions are the option lines under a verb's row.
 var scopeBlockOptions = map[string][][2]string{
 	"show": {
@@ -92,6 +99,8 @@ func scopeBlockUsage(scope string) string {
 			fmt.Fprintf(&b, "      %-36s  %s\n", o[0], o[1])
 		}
 	}
+	b.WriteString(blockRowsUsage("Vendors (after the scope):", scopeBlockVendors))
+	b.WriteString(blockRowsUsage("Blocks (<block>):", blockNameRows))
 	b.WriteString(`
 A block is the vendor's own syntax and nothing else, kept as a text file of
 its own: Junos 'set' statements (a 'delete' line says "not managed on this
@@ -105,12 +114,14 @@ communities are kept. An IOS block's trap hosts and 'enable traps' lines are
 added when missing and never removed; the trap source (Junos trap-options
 source-address, IOS snmp-server trap-source) is one value, replaced in place.
 The system blocks are additive: their statements are set when missing and
-nothing the device holds is removed. The Junos login message is a heredoc (set
-system login message <<'EOF' ... EOF) and so is the IOS login banner (banner
-login <<'EOF' ... EOF, typed with a delimiter its text does not contain). A
-block holds community strings and NTP keys, so 'show' elides them and only
-'show --reveal' prints them. A block is in force only while tacctl.yaml names
-it (blocks.<scope>.<vendor>); the files are
+nothing the device holds beyond them is removed, but for an 'absent' line
+(absent system services telnet, absent ip http server), which asks for a
+service to be off and plans the delete or 'no' that does it. The Junos login
+message is a heredoc (set system login message <<'EOF' ... EOF) and so are the
+IOS banners (banner login|motd|exec <<'EOF' ... EOF, typed with a delimiter
+its text does not contain). A block holds community strings and NTP keys, so
+'show' elides them and only 'show --reveal' prints them. A block is in force
+only while tacctl.yaml names it (blocks.<scope>.<vendor>); the files are
 /etc/tacctl/blocks/<scope>/<vendor>/ (0600) and are in every snapshot.
 Setting and removing are the superuser's; an engineer reads the blocks of
 their own scopes.
@@ -132,11 +143,11 @@ ciphertext is left out with a line that says so.
 
 Examples:
   tacctl scope block ` + scope + ` juniper list
-  tacctl scope block ` + scope + ` juniper check snmp --file snmp.txt --against js1.lab.example.net
+  tacctl scope block ` + scope + ` juniper check snmp --file snmp.txt --against jsw1.lab.example.net
   tacctl scope block ` + scope + ` juniper set snmp --file snmp.txt
   tacctl scope block ` + scope + ` juniper show system
   tacctl scope block ` + scope + ` juniper edit snmp
-  tacctl scope block ` + scope + ` juniper adopt js1.lab.example.net snmp
+  tacctl scope block ` + scope + ` juniper adopt jsw1.lab.example.net snmp
   tacctl scope block ` + scope + ` cisco check snmp --file snmp.txt --against rt1.lab.example.net
 
 `)

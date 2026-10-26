@@ -392,22 +392,34 @@ func TestPullLoginSelectionIsAUsageError(t *testing.T) {
 	}
 }
 
-// --login is the superuser's: an engineer is the tier denial, logged.
-func TestPullLoginIsTheSuperusersOnly(t *testing.T) {
+// --login is the engineer's (0.2.19): an operator is the tier denial, logged;
+// an engineer's goes on to the password.
+func TestPullLoginIsTheEngineers(t *testing.T) {
+	// an operator is the tier denial, logged, and no password is sent
 	b := loginBox(t)
-	b.sb.write("state/tacctl.yaml", "tier:\n  operator: engineer\n", 0o600)
 	out := plain(b.sb.cfgRun("", []string{"device", "config", "pull", "sw-lab-5", "--login", localAccount}, func(r *fake.Runner) {
 		route(r)
 		idAs("bob", "tac-users tac-operator")(r)
 	}, "SUDO_USER=bob"))
-	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "'tacctl device config pull --login' is not permitted for the engineer tier") {
-		t.Errorf("exit %d %q %q", b.sb.code, out, b.sb.stderr())
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "is not permitted for the operator tier") {
+		t.Errorf("operator: exit %d %q %q", b.sb.code, out, b.sb.stderr())
 	}
-	if al := b.auditLines("tier DENY"); len(al) != 1 || !strings.Contains(al[0], "cmd=device config pull --login") {
+	if al := b.auditLines("tier DENY"); len(al) != 1 || !strings.Contains(al[0], "cmd=device config pull") {
 		t.Errorf("audit %q", al)
 	}
 	if b.srv.Attempts() != 0 {
 		t.Error("a password was sent")
+	}
+
+	// an engineer is not refused by the tier gate
+	e := loginBox(t)
+	e.sb.write("state/tacctl.yaml", "tier:\n  operator: engineer\n", 0o600)
+	out = plain(e.sb.cfgRun("", []string{"device", "config", "pull", "sw-lab-5", "--login", localAccount}, func(r *fake.Runner) {
+		route(r)
+		idAs("bob", "tac-users tac-operator")(r)
+	}, "SUDO_USER=bob"))
+	if strings.Contains(e.sb.stderr(), "not permitted") || len(e.auditLines("tier DENY")) != 0 {
+		t.Errorf("engineer: exit %d %q %q %q", e.sb.code, out, e.sb.stderr(), e.auditLines("tier DENY"))
 	}
 }
 

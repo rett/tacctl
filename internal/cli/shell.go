@@ -229,7 +229,7 @@ func (inv *invocation) runShell(r shellRun) (int, *shell.Shell) {
 		CompleteFixed:   inv.shellCompleterFixed(root),
 		Explain:         inv.shellExplain(root),
 		Help:            inv.shellHelp(root, r.console),
-		Exec:            inv.shellExec(r.exe, managed, sudoTier(groups), r.extraEnv),
+		Exec:            inv.shellExec(root, r.exe, managed, sudoTier(groups), r.extraEnv),
 	}
 	if cache != nil {
 		o.Cache = cache
@@ -340,7 +340,7 @@ func shellArgv(exe string, words []string, noPrompt bool, extraEnv []string, env
 // environment of the sudo process; any other value of the variable the
 // shell inherited is taken off those lines. It is read from the line's
 // context each time, never kept.
-func (inv *invocation) shellExec(exe string, managed bool, t tier.Tier, extraEnv []string) func(context.Context, []string, io.Reader) int {
+func (inv *invocation) shellExec(root *cobra.Command, exe string, managed bool, t tier.Tier, extraEnv []string) func(context.Context, []string, io.Reader) int {
 	a := inv.app
 	return func(ctx context.Context, words []string, stdin io.Reader) int {
 		if len(words) == 0 {
@@ -351,6 +351,11 @@ func (inv *invocation) shellExec(exe string, managed bool, t tier.Tier, extraEnv
 		}
 		if words[0] == "shell" {
 			a.Out.Error("already in the tacctl shell")
+			return 1
+		}
+		if notACommand(root, words[0]) {
+			// No sudo, so no password prompt, for a word no tier could run.
+			_ = inv.unknownCommand(root, words[0])
 			return 1
 		}
 		argv := shellArgv(exe, words, shellNoPrompt(managed, t), extraEnv, a.Env.Get)

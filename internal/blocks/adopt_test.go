@@ -43,7 +43,7 @@ func TestCommentOut(t *testing.T) {
 	}
 }
 
-const adoptSNMPRaw = `set snmp name js1.lab.example.net
+const adoptSNMPRaw = `set snmp name jsw1.lab.example.net
 set snmp engine-id local 0123456789
 set snmp location "Rack 4"
 set snmp contact noc@example.net
@@ -74,7 +74,7 @@ func TestAdoptSNMPDraft(t *testing.T) {
 	own := AdoptOwn{Community: "scope-own-string", Lines: map[string]bool{
 		"set snmp location \"Rack 4\"": true, "set snmp contact noc@example.net": true,
 	}}
-	res := AdoptSNMP(adoptSNMPRaw, own, nil, nil)
+	res := AdoptSNMP(adoptSNMPRaw, own, nil, nil, LayerDevice)
 	want := "set snmp community poller-string authorization read-only\n" +
 		"set snmp community poller-string clients 198.51.100.7/32\n" +
 		"set snmp community poller-string clients 198.51.100.8/32\n" +
@@ -89,19 +89,19 @@ func TestAdoptSNMPDraft(t *testing.T) {
 		t.Errorf("draft:\n%s\nwant:\n%s", res.Text, want)
 	}
 	// the draft is a block that passes the check
-	if _, fs := Lint(res.Text, LayerScope); HasErrors(fs) {
+	if _, fs := Lint(res.Text, LayerDevice); HasErrors(fs) {
 		t.Errorf("the draft does not lint: %v", fs)
 	}
 	if res.Statements != 10 || res.Objects != 5 {
 		t.Errorf("counts: %d statements, %d objects", res.Statements, res.Objects)
 	}
 	all := strings.Join(append(append([]string{res.Text}, res.Notes...), res.Left...), "\n")
-	for _, secret := range []string{"scope-own-string", "abcdefghij", "zyxwvutsrq", "js1.lab.example.net", "0123456789"} {
+	for _, secret := range []string{"scope-own-string", "abcdefghij", "zyxwvutsrq", "jsw1.lab.example.net", "0123456789"} {
 		if strings.Contains(strings.Join(append(append([]string{}, res.Notes...), res.Left...), "\n"), secret) {
 			t.Errorf("the report holds %q:\n%s", secret, all)
 		}
 	}
-	for _, secret := range []string{"scope-own-string", "abcdefghij", "TACCTL-SNMP", "name js1", "engine-id"} {
+	for _, secret := range []string{"scope-own-string", "abcdefghij", "TACCTL-SNMP", "name jsw1", "engine-id"} {
 		if strings.Contains(res.Text, secret) {
 			t.Errorf("the draft holds %q:\n%s", secret, res.Text)
 		}
@@ -135,7 +135,7 @@ func TestAdoptSNMPSubtractsWhatTheLevelsState(t *testing.T) {
 		"set snmp trap-group traps-string version v2\n")
 	// The device level: the scope's identical object is not repeated; an
 	// object that differs is the device's exception, whole; another is new.
-	res := AdoptSNMP(adoptSNMPRaw, AdoptOwn{Community: "scope-own-string"}, nil, scope)
+	res := AdoptSNMP(adoptSNMPRaw, AdoptOwn{Community: "scope-own-string"}, nil, scope, LayerDevice)
 	if strings.Contains(res.Text, "poller-string") {
 		t.Errorf("an object the scope states identically is repeated:\n%s", res.Text)
 	}
@@ -148,7 +148,7 @@ func TestAdoptSNMPSubtractsWhatTheLevelsState(t *testing.T) {
 	}
 	// The same file: an identical object is a repeat, a different one is left
 	// in place and counted.
-	res = AdoptSNMP(adoptSNMPRaw, AdoptOwn{Community: "scope-own-string"}, scope, nil)
+	res = AdoptSNMP(adoptSNMPRaw, AdoptOwn{Community: "scope-own-string"}, scope, nil, LayerDevice)
 	if strings.Contains(res.Text, "poller-string") || strings.Contains(res.Text, "traps-string") {
 		t.Errorf("an object of this block is adopted again:\n%s", res.Text)
 	}
@@ -159,14 +159,14 @@ func TestAdoptSNMPSubtractsWhatTheLevelsState(t *testing.T) {
 
 func TestAdoptSNMPOfNothingAndOfGarbage(t *testing.T) {
 	for _, raw := range []string{"", "\n\n", "set snmp name x\n", "garbage with \"a quote\nset snmp community \"open\n"} {
-		res := AdoptSNMP(raw, AdoptOwn{}, nil, nil)
+		res := AdoptSNMP(raw, AdoptOwn{}, nil, nil, LayerDevice)
 		if res.Text != "" || res.Statements != 0 {
 			t.Errorf("%q: %q", raw, res.Text)
 		}
 	}
 }
 
-const adoptSystemRaw = `set system host-name js1
+const adoptSystemRaw = `set system host-name jsw1
 set system domain-name Lab.Example.NET
 set system domain-search lab.example.net
 set system time-zone UTC
@@ -179,15 +179,15 @@ set system ntp boot-server 192.0.2.125
 set system ntp authentication-key 1 type md5 value "$9$abcdefghij"
 set system ntp authentication-key 2 type sha1 value "$9$klmnopqrst"
 set system ntp trusted-key 1
-set system login message "Authorized use only.\n  *** keep out ***\nsite \"js1\""
+set system login message "Authorized use only.\n  *** keep out ***\nsite \"jsw1\""
 set system login user alice class super-user
 set system login user alice authentication encrypted-password "$6$zzzzzzzzzzzz"
 set system services ssh root-login deny
 `
 
 func TestAdoptSystemDraft(t *testing.T) {
-	res := AdoptSystem(adoptSystemRaw, nil, nil)
-	want := "set system login message <<'EOF'\nAuthorized use only.\n  *** keep out ***\nsite \"js1\"\nEOF\n" +
+	res := AdoptSystem(adoptSystemRaw, nil, nil, LayerDevice)
+	want := "set system login message <<'EOF'\nAuthorized use only.\n  *** keep out ***\nsite \"jsw1\"\nEOF\n" +
 		"set system domain-name Lab.Example.NET\n" +
 		"set system domain-search lab.example.net\n" +
 		"set system time-zone UTC\n" +
@@ -220,10 +220,10 @@ func TestAdoptSystemDraft(t *testing.T) {
 }
 
 func TestAdoptSystemSubtractsWhatTheLevelsState(t *testing.T) {
-	scope, _ := ParseSystem("set system login message <<'EOF'\nAuthorized use only.\n  *** keep out ***\nsite \"js1\"\nEOF\n" +
+	scope, _ := ParseSystem("set system login message <<'EOF'\nAuthorized use only.\n  *** keep out ***\nsite \"jsw1\"\nEOF\n" +
 		"set system domain-name lab.example.net\nset system time-zone Europe/Oslo\nset system name-server 192.0.2.53\n" +
 		"set system ntp server 192.0.2.123 prefer\nset system ntp server 192.0.2.124\n")
-	res := AdoptSystem(adoptSystemRaw, nil, scope)
+	res := AdoptSystem(adoptSystemRaw, nil, scope, LayerDevice)
 	// the message, the domain (case aside is the same host name only for
 	// domain-search; domain-name differs by case here, so it is the device's),
 	// the name server and the preferred server are the scope's already
@@ -240,7 +240,7 @@ func TestAdoptSystemSubtractsWhatTheLevelsState(t *testing.T) {
 		}
 	}
 	// the same file: a different single value is left in place
-	res = AdoptSystem(adoptSystemRaw, scope, nil)
+	res = AdoptSystem(adoptSystemRaw, scope, nil, LayerDevice)
 	if strings.Contains(res.Text, "time-zone") || strings.Contains(res.Text, "ntp server 192.0.2.124") {
 		t.Errorf("a statement that conflicts with this block's is adopted:\n%s", res.Text)
 	}
@@ -250,7 +250,7 @@ func TestAdoptSystemSubtractsWhatTheLevelsState(t *testing.T) {
 }
 
 func TestAdoptSystemLoginMessageProblems(t *testing.T) {
-	res := AdoptSystem("set system login message \"an \\q escape\"\n", nil, nil)
+	res := AdoptSystem("set system login message \"an \\q escape\"\n", nil, nil, LayerDevice)
 	if res.Text != "" || len(res.Left) != 1 || !strings.Contains(res.Left[0], "login message could not be read") {
 		t.Errorf("%q %q", res.Text, res.Left)
 	}

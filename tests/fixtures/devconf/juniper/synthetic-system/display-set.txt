@@ -62,7 +62,7 @@ set system accounting events login
 set system accounting events change-log
 set system accounting destination tacplus
 set system tacplus-server 192.0.2.99 secret "$9$STRAYSTRAYSTRAY"
-set system login message "Authorized use only.\n  *** js1.lab.example.net ***\nDisconnect now if you are not authorized.\n  \"quoted\" and a back\\slash"
+set system login message "Authorized use only.\n  *** jsw1.lab.example.net ***\nDisconnect now if you are not authorized.\n  \"quoted\" and a back\\slash"
 set system domain-name lab.example.net
 set system domain-search lab.example.net
 set system time-zone UTC

@@ -24,7 +24,7 @@ Commands:
       <o>-y</o>, <o>--yes</o>                         Answer yes to the confirmations
   <b>upgrade</b> [<o>--branch <name></o>]             Pull latest source, rebuild, update scripts and every enabled backend
   <b>uninstall</b> [<o>-y</o>|<o>--yes</o>]                  Remove tacctl, its backends' services and all associated files
-  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.17), for 0.2.16, 0.2.9 or 0.2.3: a dry run unless <o>--apply</o>
+  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.18), for 0.2.17, 0.2.16, 0.2.9 or 0.2.3: a dry run unless <o>--apply</o>
       <o>--apply</o>                           Take a snapshot, then convert the files the target cannot read (tacctl.yaml, sudoers; for 0.2.3 also console.yaml, devices.yaml)
       <o>--yes</o>                             Acknowledge the warnings that <o>--apply</o> refuses to go on without
       <o>--hosts</o>                           Accepted; the hosts need nothing for this target (no host is synced)
@@ -36,6 +36,7 @@ Commands:
   <b>host</b> <o><subcommand></o>                     Linux hosts: enroll, sync, unenroll TACACS+ or RADIUS login over SSH
   <b>device</b> <o><subcommand></o>                   Device registry: list, add, enroll, scan, discover, check, host keys (client-config)
   <b>breakglass</b> <o><subcommand></o>               Break-glass hold: make the server stop answering one device or host (hold, release, list)
+  <b>emergency</b> <o><subcommand></o>                Emergency measures (lockdown: refuse the logins of groups on a scope)
   <b>ssh</b> <o><name|address></o> [<o>-p <port></o>]        Open an ssh session to a registered device or enrolled host, as you
       <o>-p <port></o>                         Connect to this port (default: the device's port, else 22)
   <b>shell</b> [<o>--idle <min></o>] [<o>-c <line></o>]      An interactive tacctl prompt with history and completion
@@ -326,7 +327,7 @@ Usage:
       <o>--connection-limit <n>|none</o>                          (enable) The connection limit of the service, 1 to 250; none removes it
       <o>--rate-limit <n>|none</o>                                (enable) The rate limit of the service, 1 to 250; none removes it
   <b>tacctl scope block</b> <o><scope></o> cisco|juniper list|show|check|set|remove|edit|adopt [<o><block></o>]
-                                                           Configuration blocks of a scope (Junos snmp and system, IOS snmp): community strings, trap groups and hosts, access lists, login message, domain, time zone, name servers, NTP
+                                                           Configuration blocks of a scope (snmp and system, for Junos and IOS): community strings, trap groups and hosts, access lists, login message, domain, time zone, name servers, NTP
 
 {{current}}
 

@@ -98,14 +98,14 @@ func (inv *invocation) localAccountOf(v, usage string) (string, error) {
 	return v, nil
 }
 
-// localLoginGate is the tier of --login (D141): the superuser's only, checked
-// inside the Engineer verb before the selection, as 'forget' is; an engineer
-// with the flag gets the tier denial, logged as every denial.
+// localLoginGate is the tier of --login (D141): the engineer's since 0.2.19
+// (the device is one of their own scopes', the selection sees to that); a
+// lower tier gets the tier denial, logged as every denial.
 func (inv *invocation) localLoginGate(p Parsed, verb string) error {
 	if !p.Has("--login") {
 		return nil
 	}
-	return inv.deviceVerbAllowed("device config", verb+" --login", tier.Superuser)
+	return inv.deviceVerbAllowed("device config", verb+" --login", tier.Engineer)
 }
 
 // localLoginOf reads --login and the selection it allows: one device, by

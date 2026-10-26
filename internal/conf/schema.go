@@ -48,7 +48,7 @@ const (
 )
 
 // listTypes take list input (conf_set_list / a JSON list).
-var listTypes = []string{TypeCIDRList, TypeCiscoCmdList, TypeCommandRules, TypeBackendList, TypeJunosRegexList, TypeSudoCommandList, TypeBreakGlassList, TypeSNMPClients, TypeBlockList}
+var listTypes = []string{TypeCIDRList, TypeCiscoCmdList, TypeCommandRules, TypeBackendList, TypeJunosRegexList, TypeSudoCommandList, TypeBreakGlassList, TypeSNMPClients, TypeBlockList, TypeLockdownGroups}
 
 // Rule is one schema entry.
 type Rule struct {
@@ -192,7 +192,7 @@ func NewSchema(backends []string) *Schema {
 			{BlocksPrefix, Rule{Type: TypeBlockList, Depth: 2}},
 			// And one device's own, under its name written with '~' for '.'.
 			{BlocksDevicePrefix, Rule{Type: TypeBlockList, Depth: 2}},
-		}, slices.Concat(snmpScopeWildcards(), holdWildcards(), netconfScopeWildcards())...),
+		}, slices.Concat(snmpScopeWildcards(), holdWildcards(), lockdownWildcards(), netconfScopeWildcards())...),
 	}
 }
 
@@ -465,6 +465,8 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 		return breakGlassListProblem(path, value)
 	case TypeBlockList:
 		return blockListProblem(path, value)
+	case TypeLockdownGroups:
+		return lockdownGroupsProblem(value)
 	case TypeHoldAddress, TypeHoldSince, TypeHoldText:
 		return holdProblem(t, path, value)
 	case TypeSNMPClients:

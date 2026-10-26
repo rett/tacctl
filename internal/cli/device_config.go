@@ -45,7 +45,7 @@ var deviceConfigSpecs = func() map[string]Spec {
 		{Names: []string{"--max-failures"}, Value: true},
 		{Names: []string{"--server"}, Value: true},
 		{Names: []string{"--source"}, Value: true},
-		// the one-shot local login (0.2.9, D136): superusers, one device
+		// the one-shot local login (0.2.9, D136): engineers, one device
 		{Names: []string{"--login"}, Value: true},
 	}
 	join := func(groups ...[]Flag) []Flag {
@@ -152,11 +152,12 @@ func (inv *invocation) argErr(msgs ...string) error {
 var deviceConfigNeeds = map[string]tier.Tier{
 	"list": tier.Operator, "show": tier.Engineer, "pull": tier.Engineer, "diff": tier.Engineer, "plan": tier.Engineer,
 	"forget": tier.Superuser,
-	// 'apply' (0.2.9, D130, D141) changes a device and 'shapes' (with its
-	// 'list' and 'seed') files what was confirmed: the superuser's. No
-	// sudoers row names them, so sudo refuses a lower tier before the verb
-	// runs, and the verb asks again.
-	"apply": tier.Superuser, "shapes": tier.Superuser,
+	// 'apply' (0.2.9, D130, D141) changes a device: the engineer's since
+	// 0.2.19, on the devices of their own scopes (the selection sees to
+	// that). 'shapes' (with its 'list' and 'seed') files what was
+	// confirmed: the superuser's. No sudoers row names it, so sudo refuses a
+	// lower tier before the verb runs, and the verb asks again.
+	"apply": tier.Engineer, "shapes": tier.Superuser,
 }
 
 // tierPermits is whether tier t may run a verb that needs tier need.
@@ -321,7 +322,7 @@ out and the rest is planned. --plain, and --section roles or system, are
 refused for a unit; --converge offers the read/write community and the other
 protocol's switch only.
 
-'apply' (superusers; Junos devices) types what 'plan' would paste into the
+'apply' (engineers; Junos devices) types what 'plan' would paste into the
 devices itself, as you (the password is asked for once). Each device is
 checked first: tacctl reads it, loads the plan in an exclusive configure
 session, runs the device's own 'commit check' and discards the candidate;

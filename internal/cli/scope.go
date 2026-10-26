@@ -463,6 +463,10 @@ func (inv *invocation) scopeConfKeysMove(old, newName string) error {
 	if err := inv.scopeBlocksMove(old, newName); err != nil {
 		return err
 	}
+	// And its emergency lockdown (0.2.19).
+	if err := inv.scopeLockdownMove(old, newName); err != nil {
+		return err
+	}
 	data, err := os.ReadFile(inv.app.Paths.Overrides)
 	if err != nil || !bytes.Contains(data, []byte(old)) {
 		return nil

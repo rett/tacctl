@@ -120,7 +120,9 @@ func Render(m *model.Model, merged *yamlpy.Map, p Params) (*Output, error) {
 	if err != nil {
 		return nil, err
 	}
-	usersText, err := renderUsers(m, merged)
+	// the members of a locked group are taken out of the scope that locks it
+	// (0.2.19, the emergency lockdown); the clients above stay
+	usersText, err := renderUsers(m.WithoutMembers(conf.LockedGroups(merged)), merged)
 	if err != nil {
 		return nil, err
 	}

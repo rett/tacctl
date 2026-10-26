@@ -86,16 +86,12 @@ nothing_secret() {
     assert_failure
 }
 
-@test "collect: only a superuser, before anything is scanned or sent" {
+@test "collect: engineers and above; an operator is refused before anything is scanned or sent" {
     stub_cmd id 'echo "users tac-users"'
     SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" device collect "$ADDR" --host-key "$FP"
     assert_failure
     plain
     assert_output --partial "'tacctl device collect' is not permitted for the operator tier."
-    printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
-    collect "$ADDR" --host-key "$FP"
-    assert_failure
-    assert_output --partial "not permitted for the engineer tier"
     run grep -F "ssh-keyscan" "$CALLS_LOG"
     assert_failure
     unregistered

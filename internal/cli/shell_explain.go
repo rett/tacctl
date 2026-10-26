@@ -684,6 +684,19 @@ func specKind(spec Spec, rest []string) string {
 				kind = k
 			}
 		}
+
+		// A kind taken from one of two lists by a word typed before it
+		// (completeSpec's Cond).
+		if r, ok := strings.CutPrefix(kind, "?"); ok {
+			parts := strings.SplitN(r, ":", 3)
+			kind = ""
+			if len(parts) == 3 {
+				kind = parts[2]
+				if slices.Contains(words, parts[0]) {
+					kind = parts[1]
+				}
+			}
+		}
 	}
 	return kind
 }
@@ -701,6 +714,22 @@ func waitsForValue(spec Spec, rest []string) bool {
 	return slices.ContainsFunc(spec.Flags, func(f Flag) bool {
 		return f.Value && !f.Optional && slices.Contains(f.Names, name)
 	})
+}
+
+// choiceWordDescs are the descriptions of the words of a choice, by command
+// path and the kind of the position ('cisco|juniper'): '?' lists them beside
+// the words, which the verb's rows do not (they describe the verb).
+var choiceWordDescs = map[string]map[string]map[string]string{
+	"scope block": {"cisco|juniper": rowsMap(scopeBlockVendors)},
+}
+
+// rowsMap is a list of {word, description} as a map.
+func rowsMap(rows [][2]string) map[string]string {
+	m := make(map[string]string, len(rows))
+	for _, r := range rows {
+		m[r[0]] = r[1]
+	}
+	return m
 }
 
 // wordDescs describes the fixed words that can come as the next
@@ -737,6 +766,11 @@ func (inv *invocation) wordDescs(cmd *cobra.Command, path []string, spec Spec, r
 	// beside 'scope <user> remove --all') has more forms than the one row.
 	for w := range inChoice {
 		delete(out, w)
+	}
+	// The words of a choice that a command describes itself, because its
+	// rows are about the verb ('scope block <scope> cisco|juniper').
+	for w, d := range choiceWordDescs[strings.Join(path, " ")][specKind(spec, rest)] {
+		out[w] = d
 	}
 	if kind := specKind(spec, rest); len(rows) > 0 && rows[0].Own && fixedKind(kind) {
 		for _, w := range inv.kindWords(kind, nil) {

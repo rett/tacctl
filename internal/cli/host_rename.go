@@ -231,8 +231,8 @@ func (inv *invocation) hostRenameChecks(reg *hosts.Registry, oldArg, newName str
 	if oldName == newName {
 		return nil, inv.usageErr("'" + oldName + "' already has that name.")
 	}
-	if !reHostName.MatchString(newName) {
-		return nil, inv.usageErr("Invalid host name '" + newName + "'. Use letters, digits, _ or -, starting with a letter, max 26.")
+	if !validHostName(newName) {
+		return nil, inv.usageErr("Invalid host name '" + newName + "'. Use letters, digits, '.', _ or -, starting with a letter; at most 253 characters, each dotted part at most 63.")
 	}
 	f, err := inv.hostDevices()
 	if err != nil {

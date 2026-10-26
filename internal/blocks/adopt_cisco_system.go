@@ -2,8 +2,8 @@ package blocks
 
 // The draft of 'block adopt' for an IOS system block (0.2.7): the device's
 // own system lines, read live as 'show running-config | include ^(banner|ip
-// domain|ip name-server|clock timezone|ntp )' with the banner's own lines from
-// 'show running-config | section ^banner login', turned into the text of a
+// domain|ip name-server|clock |ntp |logging |service timestamps|login |security |ip ssh)' with the banner's own lines from
+// 'show running-config | section ^banner', turned into the text of a
 // block to prune. A pure function of text, as AdoptSystem is, with the same
 // meaning of same and up.
 //
@@ -27,10 +27,10 @@ import (
 // the two reads); same is the block in force at the level the draft is for and
 // up the block of the layer beneath it (a device's draft: the scope's);
 // either may be nil.
-func AdoptIOSSystem(raw string, same, up *IOSSystemBlock) AdoptResult {
+func AdoptIOSSystem(raw string, same, up *IOSSystemBlock, layer Layer) AdoptResult {
 	var res AdoptResult
 	var accepted []string
-	var banner *LoginMessage
+	banners := map[string]*LoginMessage{}
 	var outside int
 	keys := map[int]bool{}
 	lines := strings.Split(raw, "\n")
@@ -41,15 +41,16 @@ func AdoptIOSSystem(raw string, same, up *IOSSystemBlock) AdoptResult {
 		}
 		f := strings.Fields(line)
 		switch {
-		case f[0] == "banner" && len(f) >= 2 && f[1] == "login":
-			body, took, ok := DeviceBanner(lines[i:])
+		case BannerKindOf(line) != "":
+			kind := BannerKindOf(line)
+			body, took, ok := DeviceBannerOf(kind, lines[i:])
 			i += took - 1
 			if !ok {
-				res.Left = append(res.Left, "the login banner could not be read (it is not closed by its delimiter): it is not adopted")
+				res.Left = append(res.Left, "the "+kind+" banner could not be read (it is not closed by its delimiter): it is not adopted")
 				continue
 			}
-			if banner == nil {
-				banner = &LoginMessage{Body: body}
+			if banners[kind] == nil {
+				banners[kind] = &LoginMessage{Body: body}
 			}
 		case f[0] == "banner":
 			// motd, exec and the other banners are not a block's: the lines
@@ -94,7 +95,9 @@ func AdoptIOSSystem(raw string, same, up *IOSSystemBlock) AdoptResult {
 		}
 	}
 	dev, _ := ParseIOSSystem(strings.Join(accepted, "\n") + "\n")
-	dev.Banner = banner
+	for kind, m := range banners {
+		*dev.bannerField(kind) = m
+	}
 	incl := &IOSSystemBlock{}
 	var already, conflict int
 	single := func(dv *Value, sv, uv *Value, set func(*Value)) {
@@ -122,15 +125,20 @@ func AdoptIOSSystem(raw string, same, up *IOSSystemBlock) AdoptResult {
 	}
 	single(dev.DomainName, valueOf(same, func(b *IOSSystemBlock) *Value { return b.DomainName }),
 		valueOf(up, func(b *IOSSystemBlock) *Value { return b.DomainName }), func(v *Value) { incl.DomainName = v })
-	if dev.Banner != nil {
+	for _, kind := range BannerKinds {
+		dm := dev.BannerOf(kind)
+		if dm == nil {
+			continue
+		}
 		var sm, um *Value
-		if same != nil && same.Banner != nil {
-			sm = &Value{Text: same.Banner.Body}
+		if m := same.BannerOf(kind); m != nil {
+			sm = &Value{Text: m.Body}
 		}
-		if up != nil && up.Banner != nil {
-			um = &Value{Text: up.Banner.Body}
+		if m := up.BannerOf(kind); m != nil {
+			um = &Value{Text: m.Body}
 		}
-		single(&Value{Text: dev.Banner.Body}, sm, um, func(*Value) { incl.Banner = dev.Banner })
+		kind, dm := kind, dm
+		single(&Value{Text: dm.Body}, sm, um, func(*Value) { *incl.bannerField(kind) = dm })
 	}
 	if z := dev.Timezone; z != nil {
 		eq := func(o *IOSTimezone) bool { return o.Zone == z.Zone && o.Hours == z.Hours && o.Minutes == z.Minutes }
@@ -151,6 +159,35 @@ func AdoptIOSSystem(raw string, same, up *IOSSystemBlock) AdoptResult {
 			already++
 		default:
 			incl.NTPAuthenticate = a
+		}
+	}
+	// the statements of the closed table (logging, timestamps, login and
+	// password policy, ssh, summer time): by their identity, as a single value
+	// is
+	for _, r := range dev.Rules {
+		find := func(b *IOSSystemBlock) *RuleStmt {
+			if b == nil {
+				return nil
+			}
+			if i := indexRule(b.Rules, r.Rule, r.Head); i >= 0 {
+				return &b.Rules[i]
+			}
+			return nil
+		}
+		same1 := func(o *RuleStmt) bool { return strings.Join(o.Args, " ") == strings.Join(r.Args, " ") }
+		switch o := find(same); {
+		case o != nil && same1(o):
+			already++
+		case o != nil:
+			conflict++
+		default:
+			if u := find(up); u != nil && same1(u) {
+				already++
+			} else if def := ruleByID(r.Rule); def != nil && def.DeviceOnly && layer != LayerDevice {
+				res.Left = append(res.Left, r.Text()+" names an address of this device, which a scope's block does not state: it is left out (state it in the device's own block)")
+			} else {
+				incl.Rules = append(incl.Rules, r)
+			}
 		}
 	}
 	list := func(dst *[]Value, dv []Value, sv, uv []Value) {
@@ -247,6 +284,10 @@ func AdoptIOSSystem(raw string, same, up *IOSSystemBlock) AdoptResult {
 			if u := find(up); u != nil && eq(u) {
 				already++
 			} else {
+				if s.Source != "" && layer != LayerDevice && !isLoopbackName(s.Source) {
+					res.Left = append(res.Left, "ntp server "+s.Host+" source "+s.Source+" names an interface of this device, which a scope's block does not state: the server is adopted without it (state it in the device's own block)")
+					s.Source = ""
+				}
 				incl.NTPServers = append(incl.NTPServers, s)
 			}
 		}

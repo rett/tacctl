@@ -588,7 +588,9 @@ func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool) ([]byt
 // view (model.WithoutAddresses): the model the renderer writes and the
 // read-back compares the file with.
 func Carved(m *model.Model, view *yamlpy.Map) *model.Model {
-	return m.WithoutAddresses(conf.HeldAddresses(view))
+	// the members of a locked group are taken out of the scope that locks it
+	// (0.2.19, the emergency lockdown)
+	return m.WithoutAddresses(conf.HeldAddresses(view)).WithoutMembers(conf.LockedGroups(view))
 }
 
 // holdComment is the comment block of the secret providers naming each

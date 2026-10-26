@@ -214,6 +214,23 @@ func (inv *invocation) ownScope(f scopeFilter, scope string) error {
 	return inv.scopeRefusal(scope, "Scope '"+scope+"' is not one of yours: the engineer tier changes the devices of its own scopes only (yours: "+yours+"). Nothing was changed.")
 }
 
+// scopeAddrProblem is why a restricted caller (an engineer) may not work with
+// an address that scope answers ("" for a caller the filter does not
+// restrict, and for a scope of their own). The logins that are the caller's
+// own TACACS+ account are held to their scopes already (loginProblem); a
+// local account's are not, and every address-based verb asks this.
+func (inv *invocation) scopeAddrProblem(scope string) string {
+	f := inv.callerScopes()
+	if f.allows(scope) {
+		return ""
+	}
+	yours := "none"
+	if len(f.scopes) > 0 {
+		yours = strings.Join(f.scopes, ", ")
+	}
+	return "that address is in a scope that is not one of yours: the engineer tier works with the addresses of its own scopes only (yours: " + yours + ")"
+}
+
 // scopeNotFound is nil when the caller may read scope (an administrator any
 // scope, an engineer one of their own). Another scope is answered as one
 // that does not exist, as another scope's device is "not found". That does

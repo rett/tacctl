@@ -17,7 +17,17 @@ import (
 // and trap groups the rendering took from a block, and the trap options
 // leaves it sets. A nil *blockObjects is "no block".
 type blockObjects struct {
-	scope            string
+	scope string
+	// layers words the layers the snmp block is made of ("scope 'lab'", "scope
+	// 'lab' with the block of device 'sw1' over it"; blocksWords).
+	layers string
+	// origins are the snmp section's block lines and the block each was
+	// written in (devices.Section.Origin), nil when unknown.
+	origins map[string]string
+	// layerOf is, for a Junos block object ("community <label>", "trap-group
+	// <label>", "trap-options <leaf>"), the layer that wrote it ("scope
+	// 'lab'", "device 'sw1'"; "" when unknown).
+	layerOf          map[string]string
 	community, group map[string]bool
 	options          map[string]bool
 	// ios is set for an IOS rendering: acl holds the names of the access
@@ -55,7 +65,7 @@ func blockObjectsOf(fam string, expected []devices.Section, scope string) *block
 	for l, name := range byLabel {
 		labelOf[name] = l
 	}
-	b := &blockObjects{scope: scope, community: map[string]bool{}, group: map[string]bool{}, options: map[string]bool{}}
+	b := &blockObjects{layerOf: map[string]string{}, scope: scope, layers: blocksWords(expected, scope, devconf.SectionSNMP), origins: originsOfSections(snmpSections(expected)), community: map[string]bool{}, group: map[string]bool{}, options: map[string]bool{}}
 	for i, line := range sec.Lines {
 		if i >= len(sec.Block) || !sec.Block[i] {
 			continue
@@ -64,13 +74,20 @@ func blockObjectsOf(fam string, expected []devices.Section, scope string) *block
 		if len(t) < 4 || t[0] != "set" || t[1] != "snmp" {
 			continue
 		}
+		var org string
+		if i < len(sec.Origin) {
+			org = layerWords(sec.Origin[i])
+		}
 		switch t[2] {
 		case "community":
 			b.community[labelOf[t[3]]] = true
+			b.layerOf["community "+labelOf[t[3]]] = org
 		case "trap-group":
 			b.group[labelOf[t[3]]] = true
+			b.layerOf["trap-group "+labelOf[t[3]]] = org
 		case "trap-options":
 			b.options[t[3]] = true
+			b.layerOf["trap-options "+t[3]] = org
 		}
 	}
 	return b
@@ -98,7 +115,7 @@ func blockObjectsOfIOS(expected []devices.Section, scope string) *blockObjects {
 	for l, name := range byLabel {
 		labelOf[name] = l
 	}
-	b := &blockObjects{scope: scope, ios: true, community: map[string]bool{}, acl: map[string]bool{},
+	b := &blockObjects{scope: scope, layers: blocksWords(expected, scope, devconf.SectionSNMP), origins: originsOfSections(snmpSections(expected)), ios: true, community: map[string]bool{}, acl: map[string]bool{},
 		host: map[string]bool{}, traps: map[string]bool{}}
 	for i, line := range sec.Lines {
 		if i >= len(sec.Block) || !sec.Block[i] {
@@ -152,10 +169,47 @@ func (b *blockObjects) iosKind(stem string) (kind, name string) {
 
 // where names the block for the words of an item.
 func (b *blockObjects) where() string {
+	if b.layers != "" {
+		return "the SNMP block of " + b.layers
+	}
 	if b.scope == "" {
 		return "the SNMP block of this scope"
 	}
 	return "the SNMP block of scope '" + b.scope + "'"
+}
+
+// snmpSections are the snmp section of the expected sections.
+func snmpSections(expected []devices.Section) []devices.Section {
+	var out []devices.Section
+	for _, s := range expected {
+		if s.Name == devconf.SectionSNMP {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// whereAt names the block a statement of the comparison is in: the layer
+// that wrote it where that is known, else the block as a whole (where). A
+// Junos object is found by its kind and label (the statement's name is a
+// secret and is not in the comparison), an IOS line by its text.
+func (b *blockObjects) whereAt(stem string) string {
+	if w := b.layerAt(stem); w != "" {
+		return "the SNMP block of " + w
+	}
+	return b.where()
+}
+
+// layerAt is the layer that wrote a block statement, "" when unknown.
+func (b *blockObjects) layerAt(stem string) string {
+	if !b.ios {
+		t := splitTokens(strings.TrimPrefix(strings.TrimPrefix(stem, "set "), "deactivate "))
+		if len(t) >= 3 && t[0] == "snmp" {
+			return b.layerOf[t[1]+" "+t[2]]
+		}
+		return ""
+	}
+	return layerWords(lookupOrigin(b.origins, stem))
 }
 
 // kindOf is "community", "trap-group" or "trap-options" for a statement
@@ -191,11 +245,11 @@ func (b *blockObjects) words(stem string) string {
 	var w string
 	switch b.kindOf(t) {
 	case "community":
-		w = "a community of " + b.where() + ": " + rest(3)
+		w = "a community of " + b.whereAt(stem) + ": " + rest(3)
 	case "trap-group":
-		w = "a trap group of " + b.where() + ": " + rest(3)
+		w = "a trap group of " + b.whereAt(stem) + ": " + rest(3)
 	case "trap-options":
-		w = "a trap option of " + b.where() + ": " + rest(2)
+		w = "a trap option of " + b.whereAt(stem) + ": " + rest(2)
 	default:
 		return ""
 	}
@@ -220,15 +274,15 @@ func (b *blockObjects) iosWords(stem string) string {
 	var w string
 	switch kind {
 	case "community":
-		w = "a community of " + b.where() + ": " + rest(3)
+		w = "a community of " + b.whereAt(leaf) + ": " + rest(3)
 	case "acl":
-		w = "access list " + name + " of " + b.where() + ": " + leaf
+		w = "access list " + name + " of " + b.whereAt(leaf) + ": " + leaf
 	case "host":
-		w = "a trap host of " + b.where() + ": " + rest(2)
+		w = "a trap host of " + b.whereAt(leaf) + ": " + rest(2)
 	case "traps":
-		w = "an 'enable traps' line of " + b.where() + ": " + rest(3)
+		w = "an 'enable traps' line of " + b.whereAt(leaf) + ": " + rest(3)
 	case "trap-source":
-		w = "the trap source of " + b.where() + ": " + rest(2)
+		w = "the trap source of " + b.whereAt(leaf) + ": " + rest(2)
 	default:
 		return ""
 	}
@@ -240,16 +294,25 @@ func (b *blockObjects) iosWords(stem string) string {
 func (b *blockObjects) object(stem string) (key, label string) {
 	if b.ios {
 		if kind, name := b.iosKind(stem); kind == "acl" {
-			return "block access list " + name, "access list " + name + " of " + b.where()
+			return "block access list " + name, "access list " + name + " of " + b.whereAt(strings.Split(stem, pathSep)[len(strings.Split(stem, pathSep))-1])
 		}
 		return "", ""
 	}
 	t := splitTokens(strings.TrimPrefix(strings.TrimPrefix(stem, "set "), "deactivate "))
 	switch b.kindOf(t) {
 	case "community":
-		return "block community", "a community of " + b.where()
+		return "block community" + b.layerKey(stem), "a community of " + b.whereAt(stem)
 	case "trap-group":
-		return "block trap-group", "a trap group of " + b.where()
+		return "block trap-group" + b.layerKey(stem), "a trap group of " + b.whereAt(stem)
 	}
 	return "", ""
+}
+
+// layerKey is the part of an object's grouping key that tells the layers
+// apart: the scope's communities are one finding and the device's another.
+func (b *blockObjects) layerKey(stem string) string {
+	if w := b.layerAt(stem); w != "" {
+		return " " + w
+	}
+	return ""
 }

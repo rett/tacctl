@@ -37,6 +37,25 @@ import (
 // blockWords are the block names, for the usage and completion.
 var blockWords = strings.Join(blocks.KnownBlocks, "|")
 
+// blockNameRows are the block names with what each holds ({name,
+// description}), in the order of blocks.KnownBlocks: the rows of the usage
+// that the shell's '?' lists beside each name.
+var blockNameRows = [][2]string{
+	{blocks.BlockSNMP, "SNMP communities, client lists, trap groups and hosts, and the trap source"},
+	{blocks.BlockSystem, "Names, time, NTP, syslog, login policy, messages and banners, ssh, and services that must be absent"},
+}
+
+// blockRowsUsage is the text of the rows of a list of {word, description}
+// under a heading, in the column of the verbs' rows.
+func blockRowsUsage(heading string, rows [][2]string) string {
+	var b strings.Builder
+	b.WriteString("\n" + heading + "\n")
+	for _, r := range rows {
+		fmt.Fprintf(&b, "  %-40s  %s\n", r[0], r[1])
+	}
+	return b.String()
+}
+
 // blockCtx is the level a block verb works on.
 type blockCtx struct {
 	inv    *invocation
@@ -249,6 +268,10 @@ func ownLines(s string) []string {
 // object.
 type blockUnit struct {
 	full, elided, key string
+	// shown is the unit as a read prints it: the elided form, but the text a
+	// device shows before the login (the message, the announcement, a banner)
+	// as it is. Empty means the elided form.
+	shown string
 }
 
 // blockUnits are the units of a parsed block in the canonical order.
@@ -279,17 +302,24 @@ func blockUnits(doc blocks.Doc) []blockUnit {
 		return out
 	case *blocks.IOSSystemBlock:
 		// the banner is one unit (its lines), every other statement a line
-		// of its own; its text and a key's string are shown elided
+		// of its own; a diff prints the banner's size, a read its text, and
+		// a key's string is elided in both
 		var out []blockUnit
 		rest := *b
-		if b.Banner != nil {
-			m := &blocks.IOSSystemBlock{Banner: b.Banner}
+		for _, kind := range blocks.BannerKinds {
+			bm := b.BannerOf(kind)
+			if bm == nil {
+				continue
+			}
+			m := &blocks.IOSSystemBlock{}
+			*m.BannerFieldOf(kind) = bm
 			out = append(out, blockUnit{
 				full:   strings.Join(ownLines(m.String(false)), "\n"),
 				elided: strings.Join(ownLines(m.String(true)), "\n"),
-				key:    "login banner",
+				shown:  strings.Join(ownLines(m.String(false)), "\n"),
+				key:    kind + " banner",
 			})
-			rest.Banner = nil
+			*rest.BannerFieldOf(kind) = nil
 		}
 		return append(out, pairUnits(ownLines(rest.String(false)), ownLines(rest.String(true)), func(s string) string { return s })...)
 	case *blocks.SystemBlock:
@@ -300,9 +330,20 @@ func blockUnits(doc blocks.Doc) []blockUnit {
 			out = append(out, blockUnit{
 				full:   strings.Join(ownLines(m.String(false)), "\n"),
 				elided: strings.Join(ownLines(m.String(true)), "\n"),
+				shown:  strings.Join(ownLines(m.String(false)), "\n"),
 				key:    "login message",
 			})
 			rest.Message = nil
+		}
+		if b.Announcement != nil {
+			m := &blocks.SystemBlock{Announcement: b.Announcement}
+			out = append(out, blockUnit{
+				full:   strings.Join(ownLines(m.String(false)), "\n"),
+				elided: strings.Join(ownLines(m.String(true)), "\n"),
+				shown:  strings.Join(ownLines(m.String(false)), "\n"),
+				key:    "login announcement",
+			})
+			rest.Announcement = nil
 		}
 		return append(out, pairUnits(ownLines(rest.String(false)), ownLines(rest.String(true)), func(s string) string { return s })...)
 	}
@@ -405,8 +446,13 @@ func blockCounts(doc blocks.Doc) string {
 	case *blocks.IOSSystemBlock:
 		n := len(blocks.IOSSystemUnits(b))
 		parts := []string{fmt.Sprintf("%d %s", n, plural(n, "statement", "statements"))}
-		if b.Banner != nil {
-			parts = append(parts, fmt.Sprintf("a login banner of %d %s", b.Banner.Lines(), plural(b.Banner.Lines(), "line", "lines")))
+		for _, kind := range blocks.BannerKinds {
+			if m := b.BannerOf(kind); m != nil {
+				parts = append(parts, fmt.Sprintf("a %s banner of %d %s", kind, m.Lines(), plural(m.Lines(), "line", "lines")))
+			}
+		}
+		if d := len(blocks.IOSSystemAbsent(b)); d > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", d, plural(d, "absent service", "absent services")))
 		}
 		if d := len(b.NotManaged); d > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", d, plural(d, "no line", "no lines")))
@@ -417,6 +463,9 @@ func blockCounts(doc blocks.Doc) string {
 		parts := []string{fmt.Sprintf("%d %s", n, plural(n, "statement", "statements"))}
 		if b.Message != nil {
 			parts = append(parts, fmt.Sprintf("a login message of %d %s", b.Message.Lines(), plural(b.Message.Lines(), "line", "lines")))
+		}
+		if d := len(blocks.SystemAbsent(b)); d > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", d, plural(d, "absent service", "absent services")))
 		}
 		if d := len(b.NotManaged); d > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", d, plural(d, "delete line", "delete lines")))
@@ -610,7 +659,7 @@ func (c *blockCtx) show(block string, reveal, effective bool) error {
 			c.errorLines(fs)...)...)
 	}
 	inv.echo("# " + upperFirst(c.what()) + ", " + c.vendor + " " + block + " block, elided (--reveal shows the strings" + state + "; comments are not shown)")
-	inv.write(doc.String(true))
+	inv.write(doc.Shown())
 	return nil
 }
 
@@ -726,15 +775,18 @@ func (c *blockCtx) showEffective(block string, reveal bool) error {
 	inv.echo("# " + upperFirst(c.what()) + ", " + c.vendor + " " + block + " block as rendered: scope '" + c.scope + "' with the device's own over it (" + mode + "; comments are not shown)")
 	prevKey, prevFrom := "", ""
 	for _, u := range blockUnits(res) {
-		from := "scope '" + c.scope + "'"
+		from := "scope block " + c.scope + " " + c.vendor + " " + block
 		if fromDevice[u.full] {
-			from = c.what()
+			from = "device block " + c.level.Device + " " + block
 		}
 		if u.key != prevKey || from != prevFrom {
 			inv.echo("# from " + from)
 			prevKey, prevFrom = u.key, from
 		}
 		text := u.elided
+		if u.shown != "" {
+			text = u.shown
+		}
 		if reveal {
 			text = u.full
 		}
@@ -1020,14 +1072,14 @@ func (c *blockCtx) against(block string, text []byte, device string) error {
 		// the login message is a banner: its size is what is printed
 		if strings.HasPrefix(shown, blocks.MessageStatement) {
 			if sb, ok := messageOf(text); ok {
-				shown = blocks.MessageStatement + blocks.ElideSystem(&blocks.SystemBlock{Message: sb}).Message.Body
+				shown = blocks.MessageStatement + blocks.SizeMark(sb)
 			}
 		}
 		// an IOS banner is several lines: its text is never printed, its size
 		// is
-		if strings.HasPrefix(shown, blocks.IOSBannerHead) && strings.Contains(shown, "\n") {
-			if bb, ok := bannerOf(text); ok {
-				shown = blocks.IOSBannerHead + blocks.ElideIOSSystem(&blocks.IOSSystemBlock{Banner: bb}).Banner.Body
+		if kind := blocks.BannerKindOf(shown); kind != "" && strings.Contains(shown, "\n") {
+			if bb, ok := bannerOf(text, kind); ok {
+				shown = blocks.IOSBannerHeadOf(kind) + blocks.SizeMark(bb)
 			}
 		}
 		// an IOS entry of a list or a submode is shown under its header
@@ -1060,13 +1112,13 @@ func messageOf(text []byte) (*blocks.LoginMessage, bool) {
 	return b.Message, true
 }
 
-// bannerOf is the login banner of an IOS system block text.
-func bannerOf(text []byte) (*blocks.LoginMessage, bool) {
+// bannerOf is the banner of a kind of an IOS system block text.
+func bannerOf(text []byte, kind string) (*blocks.LoginMessage, bool) {
 	b, fs := blocks.ParseIOSSystem(string(text))
-	if blocks.HasErrors(fs) || b.Banner == nil {
+	if blocks.HasErrors(fs) || b.BannerOf(kind) == nil {
 		return nil, false
 	}
-	return b.Banner, true
+	return b.BannerOf(kind), true
 }
 
 func scopeWord(scope string) string {

@@ -86,7 +86,7 @@ set firewall family inet filter MGMT-ACL term deny-snmp then discard
 set firewall family inet filter MGMT-ACL term default-accept then accept
 set firewall family inet filter PROTECT-RE term allow-ntp from protocol udp
 set firewall family inet filter PROTECT-RE term allow-ntp then accept
-set snmp name js1.lab.example.net
+set snmp name jsw1.lab.example.net
 set snmp description "Core switch"
 set snmp location "Rack 4, DC1"
 set snmp contact "NOC <noc@example.net>"

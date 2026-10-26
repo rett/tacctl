@@ -66,7 +66,7 @@ device add [<name>] <address>
 device onboard <address> --login <local-user> [--name <name>] [--host-key SHA256:<fp>]
                [--legacy-ssh] [--check] [--section <list>] [--json]
 
-    Superusers, Junos devices: bring a blank device reached with one of its local accounts under
+    Engineers, Junos devices: bring a blank device reached with one of its local accounts under
     tacctl in one run: the one host key that would be pinned (ed25519 first, then ECDSA, then RSA)
     shown with the Junos console command that shows it and accepted before any login by typing the
     device's name (`--name`, else its SNMP sysName, else the name to register it as, checked by the
@@ -84,7 +84,7 @@ device onboard <address> --login <local-user> [--name <name>] [--host-key SHA256
 device collect <address>... | --discovered [--login <local-user>] [--host-key SHA256:<fp>]
                [--register [-y]] [--json]
 
-    Superusers, Junos devices: log in once to each address nobody registered and read what it is:
+    Engineers, Junos devices: log in once to each address nobody registered and read what it is:
     address by address and before any login, the one host key that would be pinned (ed25519 first,
     then ECDSA, then RSA) shown with the Junos console command that shows it and accepted by typing
     the address back (with `--register`, the device's SNMP sysName when it gives one that is not
@@ -104,7 +104,7 @@ device collect <address>... | --discovered [--login <local-user>] [--host-key SH
 device enroll <address>... | --discovered [--host-key SHA256:<fp>]
               [--vendor cisco|juniper|wti|other] [--name <name>] [--legacy-ssh] [--json]
 
-    Superusers: the chain from an address to a plan, per address and in the order given
+    Engineers: the chain from an address to a plan, per address and in the order given
     (`--discovered`: the addresses `device discover` lists). Refused before any question: an
     address registered already, one no scope covers, one in a scope you are not a member of, a
     held one, one that offers no host key. The one key that would be pinned (ed25519 first, then
@@ -148,13 +148,23 @@ device enroll <address>... | --discovered [--host-key SHA256:<fp>]
 device sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite]
             [--json] [-y]
 
-    Superusers: fill the registry's empty hostname, location and description from what each Junos
+    Engineers: fill the registry's empty hostname, location and description from what each Junos
     device's last pull record says of itself (no login; a reported host name is filled only when it
     resolves to the device's registered address and no other): the preview first, `--apply` writes
     in one registry write after one question (`-y`), `--overwrite` also replaces a field that is set
     and shows the old value; control characters and values the registry would not accept are
     refused; see Filling the registry from the records (devices/planning.md, "Filling the registry
     from the records")
+
+device support-bundle <name> [--vendor cisco|juniper|wti] [--login <local-user>] [--out <dir>]
+
+    Engineers: log in once to a registered device and collect what a developer needs to make tacctl
+    read that kind of device (fixed, read-only commands; no configuration), scrubbed and written as
+    a directory of text files: names, users, classes, addresses, serial numbers, locations,
+    contacts and time zones become the standard example values, comments and secrets are removed.
+    What was replaced is kept in `<dir>.map` (mode 0600), beside the directory, never in it.
+    `--vendor` reads the device as another vendor for this run only; `--login` is a Junos local
+    account's one-shot password, as for a pull; see Support bundles (devices/support-bundle.md)
 
 device remove <name>[,<name>...] | --all [-y]
 
@@ -408,7 +418,7 @@ device config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
         As for `config <vendor>`: the addresses the expected configuration is rendered with (not
         stored)
     --login <local-user>
-        Superusers (`pull`, `diff --pull`, `plan --pull`): log in to one named, registered Junos
+        Engineers (`pull`, `diff --pull`, `plan --pull`): log in to one named, registered Junos
         device with a pinned key as that local account instead of you (any local account, a
         break-glass one included; only `root` is handled apart: only on a device never read as you);
         the password is asked once on the terminal and never kept or cached, the record says
@@ -473,7 +483,7 @@ device config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
 device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale
                     | --differs | --name <text> | --ip <addr|cidr|text> [--pull]
 
-    Superusers, Junos devices: check each device's plan on the device (exclusive configure session,
+    Engineers, Junos devices: check each device's plan on the device (exclusive configure session,
     the device's own `commit check`, the candidate discarded), show the devices that need a change
     grouped by shape with every secret elided, ask for each device in turn (its line, then its name
     typed back, spaces and tabs around it ignored: anything else, another case, a carriage return,
@@ -581,7 +591,7 @@ export. A name that exists with upper case keeps working, is found in any
 case, and is listed by `tacctl config validate` with the `device rename` that
 fixes it.
 
-A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. A device name is letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 253 characters with each dotted part at most 63, so a fully qualified host name (`sw1.site-a.example`) is one. An enrolled host's name has no dot and at most 26 characters, because it also names the host's scope (`linux-<name>`); its fully qualified name is its hostname. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list`, `show`, `notice list`, `client-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way.
+A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. A device name is letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 253 characters with each dotted part at most 63, so a fully qualified host name (`sw1.site-a.example`) is one. An enrolled host's name is the same, starting with a letter; `host enroll` borrows the short name from the target (`alice@sw1.example.net` is `sw1`), and a fully qualified name is given with `--name` or `host rename`. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list`, `show`, `notice list`, `client-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way.
 
 A name that is a factory or image default is refused with the command that names the device on the device itself (`hostname`, `set system host-name`, ...); a host already enrolled under such a name is not refused and carries a `generic-name` notice. `host enroll --name` follows the same rules. Add your own patterns with `generic_names:` (regular expressions, whole-name, case-insensitive) in `devices.yaml`.
 

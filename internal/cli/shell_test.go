@@ -85,12 +85,12 @@ func TestShellStatusAndBatch(t *testing.T) {
 		t.Errorf("-c status %d, want 3", code)
 	}
 	// A batch stops at the first non-zero status and returns it.
-	h = shellHarness(t, "user list\nbogus\nuser list\n", nil)
-	h.runner.Fail([]string{"sudo", testExe, "bogus"}, 1, "")
+	h = shellHarness(t, "user list\nuser show x\nuser list\n", nil)
+	h.runner.Fail([]string{"sudo", testExe, "user", "show"}, 1, "")
 	if code := exitCode(h.run(), h.app.Out); code != 1 {
 		t.Errorf("batch status %d, want 1", code)
 	}
-	want := []string{"sudo " + testExe + " user list", "sudo " + testExe + " bogus"}
+	want := []string{"sudo " + testExe + " user list", "sudo " + testExe + " user show x"}
 	if got := lines(h.runner); !slices.Equal(got, want) {
 		t.Errorf("batch ran %q, want %q", got, want)
 	}
@@ -500,9 +500,9 @@ func TestShellSpaceCompletionFlag(t *testing.T) {
 		if got, want := lines(h.runner), []string{"sudo " + testExe + " user list x"}; !slices.Equal(got, want) {
 			t.Errorf("%q: -c ran %q, want %q", flag, got, want)
 		}
-		h = shellHarness(t, "de list\n  user   list\n", flag)
+		h = shellHarness(t, "device  list\n  user   list\n", flag)
 		exitCode(h.run(), h.app.Out)
-		if got, want := lines(h.runner), []string{"sudo " + testExe + " de list", "sudo " + testExe + " user list"}; !slices.Equal(got, want) {
+		if got, want := lines(h.runner), []string{"sudo " + testExe + " device list", "sudo " + testExe + " user list"}; !slices.Equal(got, want) {
 			t.Errorf("%q: batch ran %q, want %q", flag, got, want)
 		}
 	}

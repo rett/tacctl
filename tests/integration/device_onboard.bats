@@ -100,10 +100,6 @@ nothing_secret() {
     assert_failure
     plain
     assert_output --partial "'tacctl device onboard' is not permitted for the operator tier."
-    printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
-    onboard "$ADDR" --login admin --host-key "$FP" --check
-    assert_failure
-    assert_output --partial "not permitted for the engineer tier"
     run grep -F "ssh-keyscan" "$CALLS_LOG"
     assert_failure
     [[ ! -e "${TACCTL_STATE_DIR}/devices.yaml" ]] || ! grep -q "$ADDR" "${TACCTL_STATE_DIR}/devices.yaml"

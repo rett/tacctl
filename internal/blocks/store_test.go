@@ -83,23 +83,23 @@ func TestWriteReadModesAndAtomicity(t *testing.T) {
 
 func TestDeviceLevelLayoutAndLowerCase(t *testing.T) {
 	s := newStore(t)
-	dev := DeviceLevel("JS1.Lab.Example.NET")
+	dev := DeviceLevel("JSW1.Lab.Example.NET")
 	if err := s.Write(dev, "juniper", "system", []byte("set system time-zone UTC\n")); err != nil {
 		t.Fatal(err)
 	}
-	p := filepath.Join(s.Dir, "_devices", "js1.lab.example.net", "juniper", "system")
+	p := filepath.Join(s.Dir, "_devices", "jsw1.lab.example.net", "juniper", "system")
 	if _, err := os.Stat(p); err != nil {
 		t.Fatalf("not at %s: %v", p, err)
 	}
-	if got, err := s.Read(DeviceLevel("js1.lab.example.net"), "juniper", "system"); err != nil || len(got) == 0 {
+	if got, err := s.Read(DeviceLevel("jsw1.lab.example.net"), "juniper", "system"); err != nil || len(got) == 0 {
 		t.Errorf("read by the lower case name: %q %v", got, err)
 	}
-	for _, d := range []string{"_devices", "_devices/js1.lab.example.net", "_devices/js1.lab.example.net/juniper"} {
+	for _, d := range []string{"_devices", "_devices/jsw1.lab.example.net", "_devices/jsw1.lab.example.net/juniper"} {
 		if m := mode(t, filepath.Join(s.Dir, d)); m != 0o700 {
 			t.Errorf("directory %q is %v", d, m)
 		}
 	}
-	if devs, _ := s.Devices(); !slices.Equal(devs, []string{"js1.lab.example.net"}) {
+	if devs, _ := s.Devices(); !slices.Equal(devs, []string{"jsw1.lab.example.net"}) {
 		t.Errorf("Devices = %q", devs)
 	}
 	// The device level is not a scope.
@@ -127,8 +127,8 @@ func TestNamesAreValidatedAndTraversalRefused(t *testing.T) {
 		{"device dots", DeviceLevel("a..b"), "juniper", "snmp", "Invalid device name"},
 		{"device slash", DeviceLevel("a/b"), "juniper", "snmp", "Invalid device name"},
 		{"device leading dot", DeviceLevel(".hidden"), "juniper", "snmp", "Invalid device name"},
-		{"device trailing dot", DeviceLevel("js1."), "juniper", "snmp", "Invalid device name"},
-		{"both", Level{Scope: "lab", Device: "js1"}, "juniper", "snmp", "not both"},
+		{"device trailing dot", DeviceLevel("jsw1."), "juniper", "snmp", "Invalid device name"},
+		{"both", Level{Scope: "lab", Device: "jsw1"}, "juniper", "snmp", "not both"},
 		{"vendor wti", ScopeLevel("lab"), "wti", "snmp", "Unknown vendor 'wti'"},
 		{"vendor traversal", ScopeLevel("lab"), "../juniper", "snmp", "Unknown vendor"},
 		{"vendor upper", ScopeLevel("lab"), "Juniper", "snmp", "Unknown vendor"},
@@ -407,7 +407,7 @@ func TestScopeNamedDevicesIsLegalBesideTheDeviceLevel(t *testing.T) {
 
 func TestRenameRemoveAndCheckNoDevice(t *testing.T) {
 	s := newStore(t)
-	a, b := DeviceLevel("JS1.lab.example.net"), DeviceLevel("js2.lab.example.net")
+	a, b := DeviceLevel("JSW1.lab.example.net"), DeviceLevel("jsw2.lab.example.net")
 	for _, l := range []Level{a, b} {
 		if err := s.Write(l, "juniper", "snmp", []byte("# "+l.Device+"\n")); err != nil {
 			t.Fatal(err)
@@ -416,59 +416,59 @@ func TestRenameRemoveAndCheckNoDevice(t *testing.T) {
 	if err := s.Write(a, "cisco", "system", []byte("# cisco\n")); err != nil {
 		t.Fatal(err)
 	}
-	if !s.HasDevice("js1.LAB.example.net") || s.HasDevice("js9.lab.example.net") || s.HasDevice("../x") {
+	if !s.HasDevice("jsw1.LAB.example.net") || s.HasDevice("jsw9.lab.example.net") || s.HasDevice("../x") {
 		t.Error("HasDevice")
 	}
-	if err := s.CheckNoDevice("js9.lab.example.net"); err != nil {
+	if err := s.CheckNoDevice("jsw9.lab.example.net"); err != nil {
 		t.Errorf("a free name: %v", err)
 	}
-	if err := s.CheckNoDevice("js1.lab.example.net"); err == nil || !strings.Contains(err.Error(), "already on disk") {
+	if err := s.CheckNoDevice("jsw1.lab.example.net"); err == nil || !strings.Contains(err.Error(), "already on disk") {
 		t.Errorf("a taken name: %v", err)
 	}
 	// Onto a leftover: refused, nothing touched.
-	if err := s.RenameDevice("js1.lab.example.net", "JS2.lab.example.net"); err == nil || !strings.Contains(err.Error(), "already on disk") {
+	if err := s.RenameDevice("jsw1.lab.example.net", "JSW2.lab.example.net"); err == nil || !strings.Contains(err.Error(), "already on disk") {
 		t.Errorf("rename onto a leftover: %v", err)
 	}
-	if got, _ := s.Read(b, "juniper", "snmp"); string(got) != "# js2.lab.example.net\n" {
+	if got, _ := s.Read(b, "juniper", "snmp"); string(got) != "# jsw2.lab.example.net\n" {
 		t.Errorf("the leftover was overwritten: %q", got)
 	}
 	// A change of spelling keeps the directory.
-	if err := s.RenameDevice("js1.lab.example.net", "JS1.LAB.example.net"); err != nil {
+	if err := s.RenameDevice("jsw1.lab.example.net", "JSW1.LAB.example.net"); err != nil {
 		t.Errorf("spelling only: %v", err)
 	}
 	// A device with no blocks, and an invalid name.
-	if err := s.RenameDevice("js9.lab.example.net", "js8.lab.example.net"); err != nil {
+	if err := s.RenameDevice("jsw9.lab.example.net", "jsw8.lab.example.net"); err != nil {
 		t.Errorf("no directory: %v", err)
 	}
-	if err := s.RenameDevice("js1.lab.example.net", "a/b"); err == nil {
+	if err := s.RenameDevice("jsw1.lab.example.net", "a/b"); err == nil {
 		t.Error("an invalid new name was accepted")
 	}
-	if err := s.RenameDevice("js1.lab.example.net", "js3.lab.example.net"); err != nil {
+	if err := s.RenameDevice("jsw1.lab.example.net", "jsw3.lab.example.net"); err != nil {
 		t.Fatal(err)
 	}
-	if s.HasDevice("js1.lab.example.net") {
+	if s.HasDevice("jsw1.lab.example.net") {
 		t.Error("the old directory is left")
 	}
-	for _, c := range []struct{ vendor, block, want string }{{"juniper", "snmp", "# JS1.lab.example.net\n"}, {"cisco", "system", "# cisco\n"}} {
-		if got, err := s.Read(DeviceLevel("js3.lab.example.net"), c.vendor, c.block); err != nil || string(got) != c.want {
+	for _, c := range []struct{ vendor, block, want string }{{"juniper", "snmp", "# JSW1.lab.example.net\n"}, {"cisco", "system", "# cisco\n"}} {
+		if got, err := s.Read(DeviceLevel("jsw3.lab.example.net"), c.vendor, c.block); err != nil || string(got) != c.want {
 			t.Errorf("%s/%s after the rename: %q %v", c.vendor, c.block, got, err)
 		}
 	}
-	if m := mode(t, filepath.Join(s.Dir, "_devices", "js3.lab.example.net", "cisco")); m != 0o700 {
+	if m := mode(t, filepath.Join(s.Dir, "_devices", "jsw3.lab.example.net", "cisco")); m != 0o700 {
 		t.Errorf("a moved directory is %v", m)
 	}
 	// Removal takes the device's files and nothing of the others, and the
 	// device level's directory goes with the last device.
-	if err := s.RemoveDevice("JS3.lab.example.net"); err != nil {
+	if err := s.RemoveDevice("JSW3.lab.example.net"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.RemoveDevice("js3.lab.example.net"); err != nil {
+	if err := s.RemoveDevice("jsw3.lab.example.net"); err != nil {
 		t.Errorf("second RemoveDevice: %v", err)
 	}
-	if got, _ := s.Devices(); !slices.Equal(got, []string{"js2.lab.example.net"}) {
+	if got, _ := s.Devices(); !slices.Equal(got, []string{"jsw2.lab.example.net"}) {
 		t.Errorf("Devices = %q", got)
 	}
-	if err := s.RemoveDevice("js2.lab.example.net"); err != nil {
+	if err := s.RemoveDevice("jsw2.lab.example.net"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Lstat(s.Dir); err == nil {
@@ -482,8 +482,8 @@ func TestRenameRemoveAndCheckNoDevice(t *testing.T) {
 func TestVerifyDevices(t *testing.T) {
 	s := newStore(t)
 	files := map[string][]string{ // device -> vendor/block
-		"js1.lab.example.net":  {"juniper/snmp", "juniper/system"},
-		"js2.lab.example.net":  {"juniper/snmp", "cisco/snmp"}, // cisco is not its vendor
+		"jsw1.lab.example.net": {"juniper/snmp", "juniper/system"},
+		"jsw2.lab.example.net": {"juniper/snmp", "cisco/snmp"}, // cisco is not its vendor
 		"gone.lab.example.net": {"juniper/snmp"},               // not in the registry
 		"ios1.lab.example.net": {"cisco/system"},
 	}
@@ -495,14 +495,14 @@ func TestVerifyDevices(t *testing.T) {
 			}
 		}
 	}
-	reg := map[string]string{"js1.lab.example.net": "juniper", "js2.lab.example.net": "juniper", "ios1.lab.example.net": "cisco", "js3.lab.example.net": "juniper", "wti1.lab.example.net": "wti"}
+	reg := map[string]string{"jsw1.lab.example.net": "juniper", "jsw2.lab.example.net": "juniper", "ios1.lab.example.net": "cisco", "jsw3.lab.example.net": "juniper", "wti1.lab.example.net": "wti"}
 	vendorOf := func(d string) (string, bool) { v, ok := reg[d]; return v, ok }
 
 	f, err := s.VerifyDevices(Manifest{
-		"js1.lab.example.net":  {"juniper": {"snmp"}},         // system is unlisted
-		"js2.lab.example.net":  {"juniper": {"snmp"}},         // fine; its cisco directory is an orphan vendor
+		"jsw1.lab.example.net": {"juniper": {"snmp"}},         // system is unlisted
+		"jsw2.lab.example.net": {"juniper": {"snmp"}},         // fine; its cisco directory is an orphan vendor
 		"ios1.lab.example.net": {"cisco": {"system"}},         // fine
-		"js3.lab.example.net":  {"juniper": {"snmp", "snmp"}}, // no file: missing, once
+		"jsw3.lab.example.net": {"juniper": {"snmp", "snmp"}}, // no file: missing, once
 		"wti1.lab.example.net": {"juniper": {"snmp"}},         // not a block vendor of a wti device
 		"Gone.lab.example.net": {"juniper": {"snmp"}},         // upper case key, unregistered
 	}, vendorOf)
@@ -518,9 +518,9 @@ func TestVerifyDevices(t *testing.T) {
 	}
 	want := []string{
 		"orphan-device gone.lab.example.net//",
-		"unlisted js1.lab.example.net/juniper/system",
-		"orphan-vendor js2.lab.example.net/cisco/",
-		"missing js3.lab.example.net/juniper/snmp",
+		"unlisted jsw1.lab.example.net/juniper/system",
+		"orphan-vendor jsw2.lab.example.net/cisco/",
+		"missing jsw3.lab.example.net/juniper/snmp",
 		"orphan-vendor wti1.lab.example.net/juniper/",
 	}
 	if !slices.Equal(got, want) {

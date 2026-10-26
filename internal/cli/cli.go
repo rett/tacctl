@@ -32,6 +32,8 @@ type invocation struct {
 	// registryNoted: the device registry's load notes (devreg.File.Notes)
 	// were printed in this run.
 	registryNoted bool
+	// lockdownShown: the emergency lockdown notice was decided for this process.
+	lockdownShown bool
 
 	// shellMode: completion is for the tacctl shell's lists (live names
 	// with descriptions; flags only after a '-').
@@ -114,9 +116,6 @@ func Run(ctx context.Context, a *app.App, build BuildInfo) error {
 
 // runWith is Run with the hooks a test replaces (nil: the real ones).
 func runWith(ctx context.Context, a *app.App, build BuildInfo, hk *hooks) (err error) {
-	if needsSudo(a) {
-		return reexec(a)
-	}
 	if a.Version == "" {
 		a.Version = build.Version
 	}
@@ -124,6 +123,14 @@ func runWith(ctx context.Context, a *app.App, build BuildInfo, hk *hooks) (err e
 	inv := &invocation{ctx: ctx, app: a, build: build, hooks: hk}
 	root := newRoot(inv)
 	inv.root = root
+	if needsSudo(a) {
+		// A word that is no command is answered here: sudo would ask for
+		// the password first to tell the person the same.
+		if len(a.Args) > 0 && notACommand(root, a.Args[0]) {
+			return inv.unknownCommand(root, a.Args[0])
+		}
+		return reexec(a)
+	}
 	if isComplete(a.Args) {
 		return complete(ctx, a, root)
 	}

@@ -14,9 +14,9 @@ import (
 func TestRollbackRemovesTheBlockManifestsAndKeepsTheFiles(t *testing.T) {
 	s := newRBSandbox(t)
 	s.write(s.p.Overrides, rbConf+"blocks:\n  lab:\n    juniper:\n    - snmp\n"+
-		"blocks_device:\n  js1~lab~example~net:\n    juniper:\n    - snmp\n    - system\n", 0o640)
+		"blocks_device:\n  jsw1~lab~example~net:\n    juniper:\n    - snmp\n    - system\n", 0o640)
 	scopeFile := filepath.Join(s.p.BlocksDir, "lab", "juniper", "snmp")
-	deviceFile := filepath.Join(s.p.BlocksDir, "_devices", "js1.lab.example.net", "juniper", "system")
+	deviceFile := filepath.Join(s.p.BlocksDir, "_devices", "jsw1.lab.example.net", "juniper", "system")
 	s.write(scopeFile, "set snmp community lab-ro authorization read-only\n", 0o600)
 	s.write(deviceFile, "set system time-zone UTC\n", 0o600)
 	s.reload()
@@ -25,7 +25,7 @@ func TestRollbackRemovesTheBlockManifestsAndKeepsTheFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{"blocks.lab.juniper", "blocks_device.js1~lab~example~net.juniper"} {
+	for _, k := range []string{"blocks.lab.juniper", "blocks_device.jsw1~lab~example~net.juniper"} {
 		if !slices.Contains(p.Keys(), k) {
 			t.Errorf("keys %q lack %s", p.Keys(), k)
 		}
@@ -34,7 +34,7 @@ func TestRollbackRemovesTheBlockManifestsAndKeepsTheFiles(t *testing.T) {
 	for _, w := range p.Warnings {
 		text += strings.Join(w.Lines, "\n") + "\n"
 	}
-	for _, want := range []string{"The list of configuration blocks in force (", "blocks.lab.juniper", "blocks_device.js1~lab~example~net.juniper",
+	for _, want := range []string{"The list of configuration blocks in force (", "blocks.lab.juniper", "blocks_device.jsw1~lab~example~net.juniper",
 		"the block files stay in " + s.p.BlocksDir} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the warning lacks %q:\n%s", want, text)

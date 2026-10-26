@@ -43,6 +43,8 @@ import (
 	"strings"
 
 	"github.com/rett/tacctl/internal/devices"
+
+	"github.com/rett/tacctl/internal/blocks"
 )
 
 // pathSep joins a submode context to its line.
@@ -79,12 +81,12 @@ func ciscoEntries(lines []string, marks []bool) []ciscoEntry {
 			out = append(out, ciscoEntry{text: t, mark: markAt(marks, n), path: []string{t}})
 			continue
 		}
-		if f := strings.Fields(t); len(f) >= 2 && f[0] == "banner" && f[1] == "login" && len(raw) == len(t) {
-			// the login banner is a statement of the system section, kept
-			// as its mark: the text is never in a compared statement
-			body, took, ok := deviceBannerBody(lines[n:])
+		if kind := blocks.BannerKindOf(t); kind != "" && len(raw) == len(t) {
+			// a banner is a statement of the system section, kept as its
+			// mark: the text is never in a compared statement
+			body, took, ok := deviceBannerBody(kind, lines[n:])
 			if ok {
-				st := iosBannerStmt(body)
+				st := iosBannerStmt(kind, body)
 				out = append(out, ciscoEntry{text: st, mark: markAt(marks, n), path: []string{st}})
 			}
 			n += took - 1
@@ -839,6 +841,27 @@ func ciscoACLName(p0 string) (string, bool) {
 	return "", false
 }
 
+// ownsIOSRule is true for a statement the table does not own (the other system
+// statements are not its concern) and, for one it could own, only when the
+// rendering states a statement of the same group.
+func (c *ciscoCtx) ownsIOSRule(t string) bool {
+	// a motd or exec banner is the section's only where the block states one
+	// of that kind (the login banner always is, as it was before)
+	if k := blocks.BannerKindOf(t); k == "motd" || k == "exec" {
+		return c.bannerKinds[k]
+	}
+	groups := blocks.IOSRuleGroups(strings.Fields(t))
+	if len(groups) == 0 {
+		return true
+	}
+	for _, g := range groups {
+		if c.ruleGroups[g] {
+			return true
+		}
+	}
+	return false
+}
+
 // ciscoCtx is what classifying the device's statements needs.
 type ciscoCtx struct {
 	claim map[string]string // stem -> section, the rendered statements'
@@ -855,6 +878,14 @@ type ciscoCtx struct {
 	// system block): the device's banner, domain, time zone, name servers and
 	// NTP are then the section's, and are nobody's business otherwise.
 	system bool
+	// ruleGroups are the rule groups of the system section's statements.
+	ruleGroups map[string]bool
+	// forbid are the statements the rendering's system section requires to
+	// be absent ('ip http server').
+	forbid []string
+	// bannerKinds are the banners (motd, exec) the rendering's system section
+	// states.
+	bannerKinds map[string]bool
 }
 
 // The two source-interface commands (D119).
@@ -918,7 +949,9 @@ func (c *ciscoCtx) section(x stmt) string {
 		return SectionRoles
 	case has("snmp-server "):
 		return SectionSNMP
-	case c.system && len(p) == 1 && isSystemStatement(t):
+	case c.system && len(p) == 1 && isSystemStatement(t) && c.ownsIOSRule(t):
+		return SectionSystem
+	case len(p) == 1 && forbiddenWords(c.forbid, strings.Fields(t)):
 		return SectionSystem
 	case has("netconf-yang ", "netconf "):
 		return SectionNetconf
@@ -1345,7 +1378,20 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 
 	c := &ciscoCtx{claim: map[string]string{}, acls: map[string]string{},
 		vtyRefs: map[string]bool{}, snmpRefs: map[string]bool{}, sourceInterface: map[string]bool{},
-		system: renders(expected, SectionSystem)}
+		system: len(sectionOf(expected, SectionSystem).Lines) > 0}
+	c.ruleGroups = ruleGroupsOf(expected, FamilyIOS)
+	c.forbid = forbidOf(expected)
+	c.bannerKinds = map[string]bool{}
+	for _, sec := range expected {
+		if sec.Name != SectionSystem {
+			continue
+		}
+		for _, l := range sec.Lines {
+			if k := blocks.BannerKindOf(l); k != "" {
+				c.bannerKinds[k] = true
+			}
+		}
+	}
 	var rendered []string
 	for _, sec := range expected {
 		rendered = append(rendered, sec.Lines...)
@@ -1406,7 +1452,7 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 	by[SectionAAA] = append(by[SectionAAA], marker)
 	out := make(map[string]devices.Section, len(SectionNames))
 	for _, n := range SectionNames {
-		if optionalSection(n) && !c.system {
+		if optionalSection(n) && !c.system && len(c.forbid) == 0 {
 			continue
 		}
 		out[n] = toSection(n, uniq(by[n]))

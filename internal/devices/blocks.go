@@ -15,6 +15,7 @@ package devices
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/rett/tacctl/internal/blocks"
@@ -82,6 +83,117 @@ type Blocks struct {
 	// key's string, which is a secret, and a banner that names a site: nothing
 	// prints it but the statements the walkthrough and the plan type.
 	CiscoSystem *blocks.IOSSystemBlock
+	// ScopeSystem and DeviceSystem are the Junos system block's layers as
+	// they were written, ScopeCiscoSystem and DeviceCiscoSystem the IOS one's:
+	// for the comment above each statement that names the block it comes from
+	// (blockOrigin). Nil is "not known" or "that layer has none".
+	ScopeSystem, DeviceSystem           *blocks.SystemBlock
+	ScopeCiscoSystem, DeviceCiscoSystem *blocks.IOSSystemBlock
+}
+
+// blockOrigin names the block a statement was written in, for the comment
+// above it in a plan or a walkthrough, in the words of the verb that edits it
+// (add "tacctl " in front and the verb before the block's name):
+// "scope block lab juniper system" (tacctl scope block lab juniper edit
+// system) or "device block sw1 system" (tacctl device block sw1 edit system).
+// name is the block's own name (snmp, system) and vendor the vendor's (juniper,
+// cisco), which only a scope's verb has.
+func blockOrigin(layer, who, vendor, name string) string {
+	if layer == "device" {
+		return "device block " + who + " " + name
+	}
+	return "scope block " + who + " " + vendor + " " + name
+}
+
+// originsOf maps each statement of the layers as written to the layer that
+// states it; the device's own wins where both state it. A statement that
+// neither states (a default's, or a resolved one made of both) has no entry.
+func originsOf(scopeLines, deviceLines []string, scope, device, vendor, name string) map[string]string {
+	out := map[string]string{}
+	for _, l := range scopeLines {
+		out[l] = blockOrigin("scope", scope, vendor, name)
+	}
+	for _, l := range deviceLines {
+		out[l] = blockOrigin("device", device, vendor, name)
+	}
+	return out
+}
+
+// snmpOrigins, systemOrigins, ciscoSNMPOrigins and ciscoSystemOrigins are the
+// statement-to-block maps of the four blocks (nil when a block has no layer
+// as written).
+func (b Blocks) snmpOrigins() map[string]string {
+	if b.ScopeSNMP == nil && b.DeviceSNMP == nil {
+		return nil
+	}
+	return originsOf(blocks.Statements(b.ScopeSNMP), blocks.Statements(b.DeviceSNMP), b.Scope, b.Device, blocks.VendorJuniper, blocks.BlockSNMP)
+}
+
+func (b Blocks) systemOrigins() map[string]string {
+	if b.ScopeSystem == nil && b.DeviceSystem == nil {
+		return nil
+	}
+	return originsOf(blocks.SystemStatements(b.ScopeSystem), blocks.SystemStatements(b.DeviceSystem), b.Scope, b.Device, blocks.VendorJuniper, blocks.BlockSystem)
+}
+
+// systemForbidOrigins and ciscoSystemForbidOrigins map each statement a
+// system block requires to be absent to the block that states it.
+func (b Blocks) systemForbidOrigins() map[string]string {
+	if b.ScopeSystem == nil && b.DeviceSystem == nil {
+		return nil
+	}
+	return originsOf(blocks.SystemAbsent(b.ScopeSystem), blocks.SystemAbsent(b.DeviceSystem), b.Scope, b.Device, blocks.VendorJuniper, blocks.BlockSystem)
+}
+
+func (b Blocks) ciscoSystemForbidOrigins() map[string]string {
+	if b.ScopeCiscoSystem == nil && b.DeviceCiscoSystem == nil {
+		return nil
+	}
+	return originsOf(blocks.IOSSystemAbsent(b.ScopeCiscoSystem), blocks.IOSSystemAbsent(b.DeviceCiscoSystem), b.Scope, b.Device, blocks.VendorCisco, blocks.BlockSystem)
+}
+
+// systemAbsent and ciscoSystemAbsent are the statements the system block
+// requires to be absent ('system services telnet', 'ip http server').
+func (b Blocks) systemAbsent() []string { return blocks.SystemAbsent(b.System) }
+
+func (b Blocks) ciscoSystemAbsent() []string { return blocks.IOSSystemAbsent(b.CiscoSystem) }
+
+// absentLines are the lines of the walkthrough that take a service away that
+// the system block requires to be absent: a comment that names the block and
+// the commands (a delete on Junos, a no on IOS). They are no part of the
+// managed section's lines (a pull compares the services' absence on its own).
+func (b Blocks) absentLines(scope string) []string {
+	if t := blocks.SystemAbsent(b.System); len(t) > 0 {
+		out := []string{"# " + b.head(blocks.BlockSystem, b.SystemLayer, scope) + " requires these services absent:"}
+		for _, x := range t {
+			out = append(out, "delete "+x)
+		}
+		return out
+	}
+	if t := blocks.IOSSystemAbsent(b.CiscoSystem); len(t) > 0 {
+		out := []string{"! " + b.ciscoSystemHead(scope) + " requires these services absent:"}
+		for _, x := range t {
+			out = append(out, "no "+x)
+		}
+		return out
+	}
+	return nil
+}
+
+func (b Blocks) ciscoSNMPOrigins() map[string]string {
+	if b.ScopeCiscoSNMP == nil && b.DeviceCiscoSNMP == nil {
+		return nil
+	}
+	return originsOf(Blocks{CiscoSNMP: b.ScopeCiscoSNMP}.ciscoSNMPStatements(), Blocks{CiscoSNMP: b.DeviceCiscoSNMP}.ciscoSNMPStatements(),
+		b.Scope, b.Device, blocks.VendorCisco, blocks.BlockSNMP)
+}
+
+func (b Blocks) ciscoSystemOrigins(d blocks.IOSDialect) map[string]string {
+	if b.ScopeCiscoSystem == nil && b.DeviceCiscoSystem == nil {
+		return nil
+	}
+	return originsOf(Blocks{CiscoSystem: b.ScopeCiscoSystem}.ciscoSystemStatements(d), Blocks{CiscoSystem: b.DeviceCiscoSystem}.ciscoSystemStatements(d),
+		b.Scope, b.Device, blocks.VendorCisco, blocks.BlockSystem)
 }
 
 // snmpStatements are the 'set' lines of the Junos snmp block, in the order
@@ -138,6 +250,28 @@ func dialectOf(legacy bool) blocks.IOSDialect {
 	return blocks.IOSModern
 }
 
+// withOrigins is lines with a comment ("# from scope block lab juniper
+// system") before the first line of each run that one block states, so a
+// walkthrough says whose statement it types when the scope's block and the
+// device's own are laid together (a block of one layer is named by its head
+// already). lead is the vendor's comment word. Lines with no known origin, and a text with no origins, are as they
+// were.
+func withOrigins(lines []string, origins map[string]string, lead string) []string {
+	if len(origins) == 0 {
+		return lines
+	}
+	out := make([]string, 0, len(lines)+2)
+	last := ""
+	for _, l := range lines {
+		if o := origins[strings.TrimRight(l, " ")]; o != "" && o != last {
+			last = o
+			out = append(out, lead+" from "+o)
+		}
+		out = append(out, l)
+	}
+	return out
+}
+
 // head is what a comment says of a block: the layers it is made of and the
 // verb that shows it, never a string.
 func (b Blocks) head(block string, layer BlockLayer, scope string) string {
@@ -181,8 +315,23 @@ func (b Blocks) ciscoSystemLines(scope string, d blocks.IOSDialect) []string {
 		return nil
 	}
 	out := []string{"! " + b.ciscoSystemHead(scope) + ": the login banner, domain, time zone, name servers and NTP."}
-	if delim, ok := blocks.BannerDelimiter(b.CiscoSystem.BannerBody()); ok && b.CiscoSystem.Banner != nil {
-		out = append(out, "! The banner is typed with the delimiter "+delim+", the first of "+strings.Join(blocks.BannerDelimiters, " ")+
+	if b.SystemLayer == LayerScopeDevice {
+		st = withOrigins(st, b.ciscoSystemOrigins(d), "!")
+	}
+	for _, kind := range blocks.BannerKinds {
+		m := b.CiscoSystem.BannerOf(kind)
+		delim, ok := "", false
+		if m != nil {
+			delim, ok = blocks.BannerDelimiter(m.Body)
+		}
+		if !ok {
+			continue
+		}
+		name := "The banner"
+		if kind != "login" {
+			name = "The " + kind + " banner"
+		}
+		out = append(out, "! "+name+" is typed with the delimiter "+delim+", the first of "+strings.Join(blocks.BannerDelimiters, " ")+
 			" that its text does not contain; the NTP lines are in the order IOS needs (keys, trusted keys, servers, 'ntp authenticate').")
 	}
 	return append(out, st...)
@@ -197,6 +346,9 @@ func (b Blocks) systemLines(scope string) []string {
 		return nil
 	}
 	out := []string{"# " + b.head(blocks.BlockSystem, b.SystemLayer, scope) + ": the login message, domain, time zone, name servers and NTP."}
+	if b.SystemLayer == LayerScopeDevice {
+		st = withOrigins(st, b.systemOrigins(), "#")
+	}
 	return append(out, st...)
 }
 
@@ -213,11 +365,32 @@ func systemHierarchies(b *blocks.SystemBlock) []string {
 		}
 	}
 	add(b.Message != nil, "system login message")
+	add(b.Announcement != nil, "system login announcement")
 	add(b.DomainName != nil, "system domain-name")
 	add(len(b.DomainSearch) > 0, "system domain-search")
 	add(b.TimeZone != nil, "system time-zone")
 	add(len(b.NameServers) > 0, "system name-server")
 	add(len(b.NTPServers) > 0 || b.NTPBootServer != nil || b.NTPSourceAddress != nil || len(b.NTPKeys) > 0 || len(b.NTPTrustedKeys) > 0, "system ntp")
+	for _, r := range b.Rules {
+		switch {
+		case strings.HasPrefix(r.Rule, "syslog-"):
+			if !slices.Contains(out, "system syslog") {
+				out = append(out, "system syslog")
+			}
+		case strings.HasPrefix(r.Rule, "retry-"):
+			if !slices.Contains(out, "system login retry-options") {
+				out = append(out, "system login retry-options")
+			}
+		case strings.HasPrefix(r.Rule, "absent-"):
+			if !slices.Contains(out, "system services") {
+				out = append(out, "system services")
+			}
+		case strings.HasPrefix(r.Rule, "password-"):
+			if !slices.Contains(out, "system login password") {
+				out = append(out, "system login password")
+			}
+		}
+	}
 	return out
 }
 

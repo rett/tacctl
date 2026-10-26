@@ -696,7 +696,7 @@ func TestRollbackCompletion(t *testing.T) {
 		words []string
 		want  []string
 	}{
-		{[]string{"rollback", ""}, []string{"0.2.17", "0.2.16", "0.2.9", "0.2.3"}},
+		{[]string{"rollback", ""}, []string{"0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}},
 		{[]string{"rollback", "0.2.3", ""}, []string{"--apply", "--yes", "--hosts"}},
 		{[]string{"rollback", "0.2.3", "--apply", ""}, []string{"--yes", "--hosts"}},
 		{[]string{"rollback", "0.2.3", "--apply", "--yes", "--hosts", ""}, nil},

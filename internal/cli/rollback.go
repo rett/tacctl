@@ -3,7 +3,7 @@ package cli
 // 'tacctl rollback <version> [--apply] [--yes] [--hosts]' (docs/plans/
 // 0.2.3-plan.md D50, docs/plans/0.2.4-plan.md D73, docs/plans/
 // 0.2.9-rollout-plan.md D143, docs/plans/0.2.10-plan.md): prepare tacctl's
-// state for the release before this one (0.2.17), for 0.2.16, for 0.2.9 or for 0.2.3. The plan and the conversions of
+// state for the release before this one (0.2.18), for 0.2.17, 0.2.16, for 0.2.9 or for 0.2.3. The plan and the conversions of
 // the files are internal/lifecycle's (rollback.go); this is the command
 // around them: the arguments, what is printed, the snapshot and the
 // sudoers installer.
@@ -31,7 +31,7 @@ const rollbackUsage = "Usage: tacctl rollback <version> [--apply] [--yes] [--hos
 var rollbackSpec = Spec{
 	Flags:   []Flag{{Names: []string{"--apply"}}, {Names: []string{"--yes"}}, {Names: []string{"--hosts"}}},
 	MinArgs: 1, MaxArgs: 1,
-	Args: []string{lifecycle.RollbackTarget0217 + "|" + lifecycle.RollbackTarget0216 + "|" + lifecycle.RollbackTarget029 + "|" + lifecycle.RollbackTarget},
+	Args: []string{lifecycle.RollbackTarget0218 + "|" + lifecycle.RollbackTarget0217 + "|" + lifecycle.RollbackTarget0216 + "|" + lifecycle.RollbackTarget029 + "|" + lifecycle.RollbackTarget},
 }
 
 func rollbackCmd(inv *invocation) *cobra.Command {
@@ -179,6 +179,9 @@ func (inv *invocation) printRollbackPlan(version string, plan *lifecycle.Rollbac
 // rollbackNextSteps tells the operator what to do next, exactly.
 func (inv *invocation) rollbackNextSteps(version string) {
 	switch version {
+	case lifecycle.RollbackTarget0218:
+		inv.rollbackNextSteps0218(version)
+		return
 	case lifecycle.RollbackTarget0217:
 		inv.rollbackNextSteps0217(version)
 		return
@@ -202,8 +205,21 @@ func (inv *invocation) rollbackNextSteps(version string) {
 	inv.echo("state back and loses what changed since; " + version + "'s restore refuses a tacctl.yaml with a key it does not know.")
 }
 
+// rollbackNextSteps0218 is the next steps of the rollback to 0.2.18, which
+// converts the per-tier drop-in and a partial lockdown record at most: the
+// upgrade of the tag, and what must not run until it.
+func (inv *invocation) rollbackNextSteps0218(version string) {
+	inv.echo("")
+	inv.echo(ui.Bold + "Next steps" + ui.NC)
+	inv.echo("  1. Install " + version + " with the upgrade (see Upgrading in the README), which switches the clone in " + inv.app.Paths.Deploy + " to the tag, builds it and re-executes it:")
+	inv.echo("       tacctl upgrade --branch " + version)
+	inv.echo("  2. Check it: tacctl status; tacctl config validate")
+	inv.echo("")
+	inv.echo("Until the upgrade, do not run 'tacctl emergency lockdown': it writes the record " + version + " refuses. If one did, run 'tacctl rollback " + version + " --apply' again (it is refused while a lockdown locks a group).")
+}
+
 // rollbackNextSteps0217 is the next steps of the rollback to 0.2.17, which
-// converts nothing: the upgrade of the tag.
+// converts the per-tier drop-in and the syntax key: the upgrade of the tag.
 func (inv *invocation) rollbackNextSteps0217(version string) {
 	inv.echo("")
 	inv.echo(ui.Bold + "Next steps" + ui.NC)
