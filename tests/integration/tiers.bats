@@ -773,13 +773,13 @@ _upgrade() {
     assert_output --partial "Cisco priv-lvl:  10 -> 7"
 }
 
-@test "tier: device config apply and shapes are the superuser's alone: no lower tier, the engineer included, no sudoers row; the cache's alias names apply, not shapes" {
+@test "tier: device config shapes is the superuser's alone and apply the engineer's: no sudoers row for shapes; the cache's alias names apply, not shapes" {
     # op is an engineer through its group's tier setting; ro stays readonly.
     printf 'tier:\n  operator: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
     "$TACCTL_BIN_SCRIPT" group edit operator priv-lvl 10 > /dev/null
     cp "${TACCTL_STATE_DIR}/tacctl.yaml" "${BATS_TEST_TMPDIR}/yaml.before"
     local args
-    for args in "apply lab-sw" "apply lab-sw --check" "shapes" "shapes list" "shapes seed lab-sw"; do
+    for args in "shapes" "shapes list" "shapes seed lab-sw"; do
         # shellcheck disable=SC2086
         as_user op yes -- device config $args
         assert_failure
@@ -789,17 +789,28 @@ _upgrade() {
         assert_failure
         assert_output --partial "'tacctl device config' is not permitted for the readonly tier."
     done
+    for args in "apply lab-sw" "apply lab-sw --check"; do
+        # shellcheck disable=SC2086
+        as_user op yes -- device config $args
+        refute_output --partial "is not permitted"
+        # shellcheck disable=SC2086
+        as_user ro yes -- device config $args
+        assert_failure
+        assert_output --partial "'tacctl device config' is not permitted for the readonly tier."
+    done
     run cmp "${TACCTL_STATE_DIR}/tacctl.yaml" "${BATS_TEST_TMPDIR}/yaml.before"
     assert_success
-    # No row names the verbs; the password cache's alias does, and its
+    # No row names shapes; the engineer's rows name apply, onboard and
+    # collect; the password cache's alias names the three, and its
     # Defaults! line keeps the one variable.
     run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
     assert_success
     local text rows cache r
     text=$(sed -n 's/^    //p' <<<"$output" | sed -e ':a' -e '/\\$/N; s/\\\n//; ta')
     rows=$(grep -E '^Cmnd_Alias TACCTL_(RO|OP|EN) ' <<<"$text")
-    for r in 'device config apply' 'device config shapes' 'device onboard' 'device collect'; do
-        if grep -q -- "$r" <<<"$rows"; then echo "a tier alias has $r"; return 1; fi
+    if grep -q -- 'device config shapes' <<<"$rows"; then echo "a tier alias has device config shapes"; return 1; fi
+    for r in 'device config apply \*' 'device onboard \*' 'device collect \*'; do
+        grep -q -- "$r" <<<"$rows" || { echo "no tier alias has $r"; return 1; }
     done
     cache=$(grep '^Cmnd_Alias TACCTL_ASKPASS_CMDS ' <<<"$text")
     for r in 'tacctl device config apply \*' 'tacctl device onboard \*' 'tacctl device collect \*'; do
