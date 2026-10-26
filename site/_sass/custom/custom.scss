@@ -1,0 +1,14 @@
+// house style (04-design/styling.md)
+.main-content h1 { border-bottom: 3px solid #1a73a8; padding-bottom: .3em; }
+.main-content h2 { border-bottom: 1px solid #d5dde6; padding-bottom: .2em; }
+.main-content h3 { color: #1a5a85; }
+.main-content th { background: #0b3d61; color: #fff; }
+.main-content tbody tr:nth-child(even) td { background: #f7f9fb; }
+.main-content blockquote { background: #fff8e6; border-left: 3px solid #e0a100; padding: .5rem 1rem; margin-left: 0; }
+.main-content div.highlighter-rouge { border-left: 3px solid #1a73a8; }
+.pdf-link { font-size: .9em; }
+@media print {
+  .pdf-link, .side-bar, .main-header { display: none !important; }
+  .main-content table { font-size: 9pt; }
+  .main-content tr, .main-content pre { break-inside: avoid; }
+}

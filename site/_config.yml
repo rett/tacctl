@@ -1,0 +1,45 @@
+title: tacctl documentation
+description: Operations documentation for tacctl - TACACS+ and RADIUS access management for network devices and Linux hosts
+url: https://rett.github.io
+baseurl: /tacctl
+theme: just-the-docs
+plugins:
+  - jekyll-relative-links
+  - jekyll-seo-tag
+  - jekyll-sitemap
+  - jekyll-include-cache
+sass:
+  quiet_deps: true
+  silence_deprecations: ['import']
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+search_enabled: true
+search:
+  heading_level: 3
+  previews: 2
+  button: false
+heading_anchors: true
+enable_copy_code_button: true
+color_scheme: tacctl
+back_to_top: true
+back_to_top_text: Back to top
+aux_links:
+  tacctl on GitHub: https://github.com/rett/tacctl
+nav_external_links:
+  - title: "Install and upgrade"
+    url: https://github.com/rett/tacctl/blob/master/docs/install/README.md
+  - title: "Server"
+    url: https://github.com/rett/tacctl/blob/master/docs/server/README.md
+  - title: "CLI reference"
+    url: https://github.com/rett/tacctl/blob/master/docs/cli/README.md
+  - title: "Releases"
+    url: https://github.com/rett/tacctl/releases
+exclude:
+  - README.md
+  - Gemfile
+  - Gemfile.lock
+  - vendor/            # NOT 'vendor': Jekyll excludes by prefix, which dropped vendor-notes.md (s8)
+  - .github/
