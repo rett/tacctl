@@ -371,10 +371,26 @@ func (inv *invocation) hostFindingsFooter() {
 var (
 	reTarget     = regexp.MustCompile(`^([a-z_][a-z0-9_-]*@)?[A-Za-z0-9][A-Za-z0-9.:-]*$`)
 	reBareIPv4   = regexp.MustCompile(`^[0-9.]+$`)
-	reHostName   = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,25}$`)
-	reHostLetter = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*$`)
+	reHostName   = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._-]{0,252}$`)
+	reHostLetter = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._-]*$`)
 	rePort       = regexp.MustCompile(`^[0-9]{1,5}$`)
 )
+
+// validHostName reports whether name has the shape of a host name: letters,
+// digits, '.', '_' and '-', starting with a letter, at most 253 characters,
+// each dotted part 1 to 63 (a fully qualified name is a name, as for a
+// device).
+func validHostName(name string) bool {
+	if !reHostName.MatchString(name) {
+		return false
+	}
+	for l := range strings.SplitSeq(name, ".") {
+		if l == "" || len(l) > 63 {
+			return false
+		}
+	}
+	return true
+}
 
 // lowerDerived is a host name worked out from a host name: DNS names are not
 // case-sensitive, so it is lowercased (0.2.14) unless a host is enrolled
@@ -570,8 +586,8 @@ func (inv *invocation) hostEnroll(args []string) error {
 			}
 		}
 	}
-	if !reHostName.MatchString(name) {
-		return inv.usageErr("Invalid host name '" + name + "'. Pass --name <letters, digits, _ or -, starting with a letter, max 26>.")
+	if !validHostName(name) {
+		return inv.usageErr("Invalid host name '" + name + "'. Pass --name <letters, digits, '.', _ or -, starting with a letter; at most 253 characters, each dotted part at most 63>.")
 	}
 	cur, enrolled := reg.Find(name)
 	if enrolled {

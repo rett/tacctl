@@ -2288,10 +2288,11 @@ The registry name is
 or the host's short name, lowercased (host names are not case\-sensitive; a host
 already enrolled under exactly that spelling keeps it). A name no enrolled host
 has with exactly that spelling is a new one: it is lower\-case letters, digits,
+.BR . ,
 .B _
 or
 .B \-
-starting with a letter (26 at most), is not a tacctl word (the words a device
+starting with a letter (253 at most, each dotted part 63 at most), is not a tacctl word (the words a device
 cannot be called either, such as
 .BR all ,
 .B scope
@@ -2977,10 +2978,12 @@ the name
 It is local: the remote host records no registry name, so nothing is sent
 over ssh, and a host with a break\-glass hold may be renamed. The new name
 follows the rules of a new host name: lower\-case letters, digits,
+.BR . ,
 .B _
 and
 .BR \- ,
-starting with a letter, at most 26 characters; no tacctl word
+starting with a letter, at most 253 characters with each dotted part at most 63;
+no tacctl word
 .RB ( all ,
 .BR scope ,
 .BR local ,

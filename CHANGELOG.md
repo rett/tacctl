@@ -187,6 +187,15 @@ current behaviour; this file is where history lives.
     banner motd|exec` line. A device's own motd or exec banner is the section's
     only where the block states one of that kind.
 
+16. **A host name may hold dots.** `host rename dev dev.example.net` and
+    `host enroll ... --name` took only letters, digits, `_` and `-` (26 at
+    most); a host name now has the shape of a device name that starts with a
+    letter: letters, digits, `.`, `_` and `-`, at most 253 characters with each
+    dotted part at most 63. The target, the address and the scope of the host
+    stay as they are. A host's own `linux-<name>` scope keeps its name when the
+    new one has a dot, because a scope name has none; `host rename` says so.
+    The name taken from a target is still its short name.
+
 ## 0.2.18 (2026-10-24)
 
 1. **`device config-syntax` is now `device ios-syntax`, and `device add
