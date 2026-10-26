@@ -4,6 +4,7 @@ description: "What each tacctl exit status means on shift and in scripts"
 permalink: "/exit-codes/"
 parent: "Reference"
 nav_order: 2
+doctype: reference
 ---
 
 # Exit Codes

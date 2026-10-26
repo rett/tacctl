@@ -4,6 +4,7 @@ description: "tacctl ssh by name, plain ssh with pinned keys, and what to do whe
 permalink: "/connecting-to-devices/"
 parent: "Tasks"
 nav_order: 1
+doctype: how-to
 ---
 
 # Connecting to Devices

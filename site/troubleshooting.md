@@ -4,6 +4,7 @@ description: "Symptom-first fixes for login and device problems"
 permalink: "/troubleshooting/"
 parent: "Emergencies and problems"
 nav_order: 1
+doctype: how-to
 ---
 
 # Troubleshooting

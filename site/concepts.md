@@ -4,6 +4,7 @@ description: "Users, groups, scopes and tiers, and the other words tacctl uses"
 permalink: "/concepts/"
 parent: "Start here"
 nav_order: 2
+doctype: explanation
 ---
 
 # Concepts

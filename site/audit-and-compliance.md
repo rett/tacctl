@@ -4,6 +4,7 @@ description: "Audit trail, evidence and periodic reviews"
 permalink: "/audit-and-compliance/"
 parent: "Tasks"
 nav_order: 6
+doctype: how-to
 ---
 
 # Audit and Compliance

@@ -4,6 +4,7 @@ description: "The words tacctl and this documentation use, in one list"
 permalink: "/glossary/"
 parent: "Reference"
 nav_order: 3
+doctype: explanation
 ---
 
 # Glossary

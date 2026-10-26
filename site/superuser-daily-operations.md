@@ -4,6 +4,7 @@ description: "Day-to-day operations for tacctl superusers"
 permalink: "/superuser-daily-operations/"
 parent: "Guides by role"
 nav_order: 4
+doctype: how-to
 ---
 
 # Superuser Daily Operations

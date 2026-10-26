@@ -4,6 +4,7 @@ description: "Refusing the logins of chosen groups on a scope, and lifting it ag
 permalink: "/emergency-lockdown/"
 parent: "Emergencies and problems"
 nav_order: 3
+doctype: how-to
 ---
 
 # Emergency Lockdown
