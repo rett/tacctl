@@ -4,6 +4,7 @@ description: "Local emergency accounts, and holding a device or host back from t
 permalink: "/break-glass/"
 parent: "Emergencies and problems"
 nav_order: 4
+doctype: how-to
 ---
 
 # Break Glass

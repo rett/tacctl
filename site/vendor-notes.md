@@ -4,6 +4,7 @@ description: "What differs between Cisco, Junos and WTI for operations staff"
 permalink: "/vendor-notes/"
 parent: "Tasks"
 nav_order: 4
+doctype: explanation
 ---
 
 # Vendor Notes

@@ -4,6 +4,7 @@ description: "Your first login, the console and the shell, and where to go next"
 permalink: "/getting-started/"
 parent: "Start here"
 nav_order: 1
+doctype: tutorial
 ---
 
 # Getting Started

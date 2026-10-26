@@ -4,6 +4,7 @@ description: "The most common tacctl commands on one card"
 permalink: "/quick-reference/"
 parent: "Start here"
 nav_order: 3
+doctype: reference
 ---
 
 # Quick Reference

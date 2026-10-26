@@ -3,6 +3,7 @@ title: "Home"
 description: "The tacctl operations documentation: where to start, by role and by situation"
 nav_order: 1
 permalink: "/"
+doctype: reference
 ---
 
 # Home

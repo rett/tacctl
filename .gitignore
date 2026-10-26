@@ -3,3 +3,5 @@ _site/
 vendor/
 .bundle/
 site/pdf/
+__pycache__/
+tmp/

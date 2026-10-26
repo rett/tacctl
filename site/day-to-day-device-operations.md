@@ -4,6 +4,7 @@ description: "A console-first guide for operators and engineers"
 permalink: "/day-to-day-device-operations/"
 parent: "Guides by role"
 nav_order: 2
+doctype: how-to
 ---
 
 # Day-to-Day Device Operations

@@ -4,6 +4,7 @@ description: "From each tacctl command family to its reference page and the task
 permalink: "/command-reference-map/"
 parent: "Reference"
 nav_order: 1
+doctype: reference
 ---
 
 # Command Reference Map

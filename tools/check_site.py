@@ -10,6 +10,7 @@ For every page in site-dir:
 - no example names outside the repository's examples table (retired names below).
 For every content page (one with a '[Printable PDF]' line):
 - front matter 'title' equals the H1 and 'description' equals the subtitle;
+- front matter 'doctype' is one of tutorial, how-to, reference, explanation (Diataxis);
 - the line under the H1 is '*<subtitle> · Checked against ...*', followed by the PDF line;
 - every H2 is numbered ('## 1.' or '## R1.'), the example callout is worded
   'Example names used on this page', and the page ends with a '*See also:*' line.
@@ -23,6 +24,7 @@ import sys
 
 MAX = 100
 RETIRED = re.compile(r'\b(core-sw\d|edge-rtr\d|dist-sw\d|old-sw\d|pdu-a\d|authsrv|jsmith|mlee|contractor1|prod)\b')
+DOCTYPES = ('tutorial', 'how-to', 'reference', 'explanation')
 PDF_LINE = re.compile(r'^\[Printable PDF\]\((?:\.\./)?pdf/tacctl-[a-z0-9-]+\.pdf\)\{: \.pdf-link \}$')
 
 site = sys.argv[1] if len(sys.argv) > 1 else 'site'
@@ -92,6 +94,8 @@ for name, (fm, body) in pages.items():
         bad(name, f'title "{fm.get("title")}" differs from the H1 "{h1}"')
     if fm.get('has_children') == 'true':
         continue
+    if fm.get('doctype') not in DOCTYPES:
+        bad(name, f'front matter doctype "{fm.get("doctype", "")}" is not one of {", ".join(DOCTYPES)}')
     if not any(PDF_LINE.match(l) for l in lines[:6]):
         bad(name, 'no "[Printable PDF](...){: .pdf-link }" line under the subtitle')
     sub = re.match(r'^\*(.+?) · Checked against .+\*$', lines[2]) if len(lines) > 2 else None

@@ -1,0 +1,243 @@
+backend	
+backend disable	--yes,-y
+backend enable	--yes,-y
+backend list	
+backend status	
+backup	
+backup diff	
+backup list	
+backup restore	--keep-uids,--legacy
+breakglass	
+breakglass hold	--reason
+breakglass list	--json
+breakglass release	
+config	
+config allow	
+config allow add	
+config allow clear	
+config allow list	
+config allow remove	
+config audit-strict	
+config bcrypt-cost	
+config branch	
+config cisco	--legacy,--name,--protocol,--scope,--server,--snmp-location,--source,--staging
+config defaults	
+config deny	
+config deny add	
+config deny clear	
+config deny list	
+config deny remove	
+config devices	
+config devices apply-confirm-timeout	
+config devices apply-pause	
+config devices apply-transport	
+config devices confirm-timeout	
+config devices max-concurrency	
+config devices show	
+config devices timeout	
+config devices transport	
+config diff	
+config dump	
+config get	
+config get-list	
+config juniper	--name,--protocol,--scope,--server,--snmp-location,--source,--staging
+config linux	
+config linux build	
+config linux builds	
+config linux engineer-sudo	
+config linux remove-script	--output,-o
+config linux script	--method,--output,--scope,--server,-o
+config linux uid	
+config linux uid-range	
+config listen	--backend,--listener
+config loglevel	
+config metrics	
+config metrics address	
+config metrics disable	
+config metrics enable	
+config metrics reset	
+config metrics show	
+config mgmt-acl	
+config mgmt-acl add	
+config mgmt-acl cisco-name	
+config mgmt-acl clear	
+config mgmt-acl juniper-name	
+config mgmt-acl list	
+config mgmt-acl remove	
+config password-age	
+config password-min-length	
+config render	--dry-run,--force,--out
+config restore	--keep-uids,--legacy
+config secret-min-length	
+config show	
+config snmp	
+config snmp clear	
+config snmp community	--stdin
+config snmp port	
+config snmp show	--reveal
+config snmp test	
+config snmp timeout	
+config snmp v3-user	--auth,--priv,--stdin
+config sudoers	
+config sudoers install	
+config sudoers remove	
+config sudoers show	
+config sudoers tiers	
+config sudoers tiers install	
+config sudoers tiers remove	
+config sudoers tiers show	
+config validate	--fix-names,--json,--yes,-y
+config wti	--name,--protocol,--scope,--server,--snmp-location,--source,--staging
+console	
+console agent-forwarding	
+console check	
+console forget	
+console forwarding	
+console idle-timeout	
+console install	
+console password-cache	
+console remove	
+console show	
+console space-completion	
+console ssh-escape	
+console system-shell	
+console tiers	
+console user	
+device	
+device add	--allow-generic,--description,--host-key,--hostname,--ios-syntax,--legacy-ssh,--no-host-key,--no-lookup,--port,--pull,--snmp-location,--vendor
+device address	--apply,--yes,-y
+device block	--against,--effective,--file,--reveal,--yes,-y
+device check	--all,--json
+device client-config	
+device collect	--discovered,--host-key,--json,--login,--register,--yes,-y
+device config	
+device config apply	--all,--check,--concurrency,--confirmed,--differs,--exit-code,--hold,--ip,--json,--max,--max-failures,--name,--no-canary,--pause,--pull,--scope,--section,--server,--source,--stale,--timeout,--transport,--vendor,--yes,-y
+device config diff	--all,--concurrency,--differs,--exit-code,--ip,--json,--login,--max-failures,--name,--pull,--scope,--section,--server,--source,--stale,--timeout,--transport,--vendor
+device config forget	--all
+device config list	--differs,--failed,--ip,--json,--name,--never,--scope,--stale,--transport,--vendor
+device config plan	--all,--backout,--concurrency,--converge,--differs,--exit-code,--force,--from,--ip,--json,--login,--max-failures,--name,--no-secrets,--out,--out-dir,--plain,--pull,--restore-point,--scope,--secrets,--section,--server,--source,--stale,--timeout,--transport,--vendor
+device config pull	--all,--concurrency,--diff,--differs,--ip,--json,--login,--max-failures,--name,--scope,--server,--source,--stale,--timeout,--transport,--vendor
+device config shapes	--json,--show,--yes,-y
+device config show	--legacy,--protocol,--server,--source
+device description	--apply
+device discover	--all,--backend,--snmp
+device enroll	--discovered,--host-key,--json,--legacy-ssh,--name,--vendor
+device export	--csv,--json
+device hostkey	--yes,-y
+device hostname	
+device import	--allow-generic,--check,--replace,--yes,-y
+device ios-syntax	--apply
+device legacy-ssh	
+device list	--ip,--json,--name,--probe,--scan,--scope,--stale,--unconfigured,--vendor
+device location	--apply,--from-device,--yes,-y
+device netconf	--apply,--connection-limit,--rate-limit
+device notice	--all
+device onboard	--check,--host-key,--json,--legacy-ssh,--login,--name,--section
+device port	
+device remove	--all,--yes,-y
+device rename	--allow-generic
+device scan	--backend,--full,--if-stale,--quiet,--since
+device show	--all,--json
+device snmp	--reveal,--stdin
+device ssh	-D,-L,-R,-X,-Y,-g,-p
+device stale-days	
+device support-bundle	--login,--out,--vendor
+device sync	--all,--apply,--json,--overwrite,--scope,--vendor,--yes,-y
+device vendor	--from-device,--yes,-y
+emergency	
+emergency lockdown	--all-scopes,--dry-run,--json,--reason,--tier
+group	
+group add	--tier,--wti-level
+group commands	
+group commands add	--action,--before,--first,--match
+group commands default	
+group commands list	
+group commands remove	--action,--all,--match
+group commands reset	--dry-run,--yes
+group commands seed	--force
+group edit	
+group junos	
+group list	
+group preset	
+group preset roles	--dry-run,--force
+group privilege	
+group privilege add	
+group privilege list	
+group privilege remove	
+group privilege reset	--dry-run,--yes
+group privilege seed	--force
+group remove	
+group reset	--dry-run,--only,--preset,--yes
+group show	
+hash	
+hash commands	
+hash generate	
+host	
+host check	--all,--json
+host default-method	
+host enroll	--allow-uid-mismatch,--build-on-host,--identity,--local,--method,--name,--port,--remove-home,--scope,--server,--staging,--yes,-y
+host forget	--yes,-y
+host list	--json
+host move	--all,--allow-uid-mismatch,--remove-home,--yes,-y
+host provisioner	--dry-run,--key,--password,--remove-home,--remove-old,--yes
+host rename	--yes,-y
+host show	--all,--check,--json
+host sync	--all,--allow-uid-mismatch,--remove-home
+host target	--identity,--no-identity,--port
+host unenroll	--force
+install	--branch,--yes,-y
+log	
+log accounting	--backend
+log clear	--backend,--force,--yes,-y
+log failures	--backend
+log search	--backend
+log tail	--backend,--follow,-f
+passwd	
+rollback	--apply,--hosts,--yes
+scope	
+scope aaa-order	
+scope add	--default,--prefixes,--protocols,--secret,--vendor-attrs
+scope auth-method	
+scope block	--against,--file,--reveal,--yes,-y
+scope breakglass	--role
+scope default	
+scope devices	
+scope exec-timeout	
+scope list	
+scope lookup	
+scope mgmt-acl	
+scope netconf	--connection-limit,--rate-limit
+scope prefixes	--all,--force
+scope protocols	
+scope radius-group	
+scope remove	--force
+scope rename	
+scope routing	
+scope secret	--stdin
+scope show	
+scope snmp	--auth,--clear,--priv,--reveal,--stdin
+scope staging	
+scope tacacs-group	
+scope vendor-attrs	
+shell	--idle,--no-history,--password-cache,--space-completion,-c
+ssh	-D,-L,-R,-X,-Y,-g,-p
+status	
+store	
+store import	--check,--force,--replace
+store rollback	
+store show	--json
+uninstall	--yes,-y
+upgrade	--branch
+user	
+user add	--hash,--scopes
+user disable	
+user enable	
+user list	
+user move	
+user passwd	--hash
+user remove	
+user rename	
+user scope	--all
+user show	
+user verify	
+version	--long

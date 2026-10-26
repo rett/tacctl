@@ -4,6 +4,7 @@ description: "Joiners, movers and leavers"
 permalink: "/access-lifecycle/"
 parent: "Tasks"
 nav_order: 2
+doctype: how-to
 ---
 
 # Access Lifecycle
