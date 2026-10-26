@@ -145,6 +145,18 @@ var Added0217 = []Family{
 	{"audit.strict", false},
 }
 
+// Added0219 are the key families 0.2.19 added: the record of an emergency
+// lockdown (emergency.lockdown.<scope>.*). A 0.2.18 or older binary does not
+// know it (its schema refuses the keys), and it would render every user back
+// into the scope, so a rollback is refused while a lockdown stands, as for a
+// break-glass hold; the family is removed only when none does.
+var Added0219 = []Family{
+	{"emergency.lockdown.", true},
+}
+
+// Added0219Key reports whether path is a key 0.2.19 added.
+func Added0219Key(path string) bool { return inFamilies(Added0219, path) }
+
 // Added0217Key reports whether path is a key 0.2.17 added.
 func Added0217Key(path string) bool { return inFamilies(Added0217, path) }
 

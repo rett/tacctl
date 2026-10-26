@@ -20,7 +20,7 @@ const (
 // of the text report (D220), in the order the report first reaches them.
 var validateSections = []string{
 	"store", "yaml", "overrides", "command_rules", "structure", "scope_default",
-	"linux_hosts", "names", "breakglass", "breakglass_hold", "config_blocks",
+	"linux_hosts", "names", "breakglass", "breakglass_hold", "emergency_lockdown", "config_blocks",
 	"operator_policy", "group_settings", "orphan_settings", "orphan_files",
 	"leftovers", "backends", "rendered", "drift", "vendor_attrs",
 }

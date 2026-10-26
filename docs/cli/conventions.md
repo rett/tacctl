@@ -71,6 +71,10 @@ tacctl breakglass <subcommand>
     Break-glass hold: make the server stop answering one device or host (hold, release, list); see
     devices/break-glass.md, "Holding break-glass"
 
+tacctl emergency <subcommand>
+
+    Emergency measures (lockdown: refuse the logins of groups on a scope); see emergency.md
+
 tacctl ssh <name|address> [-p port] [-X|-Y] [-g] [-L|-R|-D spec]... [-- ssh args]
 
     ssh session to a registered device or enrolled host, as you, by password (never root)

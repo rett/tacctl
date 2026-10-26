@@ -396,6 +396,10 @@ var auditTable = map[string]auditEntry{
 	"breakglass list":    read(),
 	"breakglass hold":    action(),
 	"breakglass release": action(),
+
+	// the status forms and a dry run change nothing; enable and disable
+	// write their own lines (emergency.go)
+	"emergency lockdown": action().readWhen(lockdownReadForm),
 }
 
 // notStrict is e exempt from audit.strict (auditEntry.NotStrict).

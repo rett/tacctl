@@ -431,16 +431,24 @@ func (inv *invocation) groupRemove(args []string) error {
 	}
 	del := func(s *store.Store) error { return s.GroupDel(group) }
 	watch := inv.watchServerTiers()
-	if !groupHasSettings(a.Conf(), group) {
+	locked := inv.lockdownsNaming(group)
+	if !groupHasSettings(a.Conf(), group) && len(locked) == 0 {
 		err = inv.applyStore(del)
 	} else {
-		// Its device settings in tacctl.yaml go with it (0.2.2).
+		// Its device settings in tacctl.yaml go with it (0.2.2), and its
+		// place in an emergency lockdown (0.2.19).
 		err = inv.applyWith(func() error {
 			if err := inv.mutate(del); err != nil {
 				return err
 			}
+			if err := inv.lockdownForgetGroup(group); err != nil {
+				return err
+			}
 			return policy.ForgetGroup(a.Conf(), group)
 		})
+	}
+	if err == nil && len(locked) > 0 {
+		a.Out.Warn("Group '" + group + "' is no longer locked on scope(s) " + strings.Join(locked, ", ") + ": it is gone.")
 	}
 	if err != nil {
 		return err

@@ -499,6 +499,17 @@ func (inv *invocation) collectValidate(r *validateReport) {
 		}
 	}
 
+	// Emergency lockdowns (0.2.19): one warning per lockdown that stands, an
+	// error for a record that names a scope or group that is gone, a
+	// superuser group, or nothing.
+	for _, fnd := range inv.lockdownFindings(m) {
+		label, color := "Emergency lockdown:", Y
+		if fnd.Level == levelError {
+			color = R
+		}
+		r.found(howEchoE, "  "+color+label+NC+"  "+fnd.Text+" ("+fnd.Fix+")", fnd)
+	}
+
 	// Configuration blocks (0.2.7): a name with no file is an error (it
 	// renders nothing), a file no list names a warning (it is ignored), and so
 	// is a device's orphan; a block in force that has errors is an error (it

@@ -16,6 +16,7 @@
 - [Host Commands — `tacctl host`](host.md): Linux hosts: enroll, sync, move, unenroll.
 - [Device Commands — `tacctl device`](device.md): The device registry, notices, configuration pulls and plans.
 - [Break-glass Commands — `tacctl breakglass`](breakglass.md): Holding and releasing a device's or host's break-glass.
+- [Emergency Commands — `tacctl emergency`](emergency.md): Refusing the logins of groups on a scope (lockdown).
 - [Console Commands — `tacctl console`](console.md): `tacctl console` and the console session.
 - [Maintenance commands](maintenance.md): `tacctl backend`, `store`, `log` and `backup`.
 - [Exit Status and Environment](exit-status.md): Exit codes and environment variables.

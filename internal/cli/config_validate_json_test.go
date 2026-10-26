@@ -254,6 +254,13 @@ privileges:
   operator:
   - 'exec all: ping'
   readonly: []
+emergency:
+  lockdown:
+    lab:
+      groups:
+        - ghost-group
+      since: '2026-10-10T14:02:00+00:00'
+      by: alice
 breakglass_hold:
   sw-core-1:
     address: 10.0.1.5

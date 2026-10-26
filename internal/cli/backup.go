@@ -581,6 +581,12 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 		inv.echo("")
 		inv.echoE(ui.Red + holdNote + ui.NC)
 	}
+	// And an emergency lockdown (0.2.19): it stands, or ends, with the
+	// tacctl.yaml the snapshot holds.
+	if note := inv.restoreLockdownNote(dir); note != "" {
+		inv.echo("")
+		inv.echoE(ui.Red + note + ui.NC)
+	}
 	// So are the hosts: the registry, the UID ledger and the rest come back
 	// with a snapshot that knows them (D192-D195).
 	hostsHead, hostsLedger := inv.restoreHostsNote(dir, keepUIDs)
@@ -818,6 +824,27 @@ func (inv *invocation) restoreHoldNote(dir string) string {
 		return strings.Join(parts, ", ")
 	}
 	return "Break-glass holds change: held now: " + list(now) + "; held after the restore: " + list(after) + " (tacctl breakglass list)."
+}
+
+// restoreLockdownNote says how the set of emergency lockdowns changes when
+// the snapshot in dir is restored ("" when it does not).
+func (inv *invocation) restoreLockdownNote(dir string) string {
+	now := inv.app.Conf().Lockdowns()
+	after := conf.Load(filepath.Join(dir, "tacctl.yaml"), inv.app.Backends().IDs()).Lockdowns()
+	list := func(ls []conf.Lockdown) string {
+		if len(ls) == 0 {
+			return "none"
+		}
+		parts := make([]string, len(ls))
+		for i, l := range ls {
+			parts[i] = l.Scope + " (" + strings.Join(l.Groups, ", ") + ")"
+		}
+		return strings.Join(parts, "; ")
+	}
+	if list(now) == list(after) {
+		return ""
+	}
+	return "Emergency lockdowns change: locked now: " + list(now) + "; locked after the restore: " + list(after) + " (tacctl emergency lockdown status)."
 }
 
 // restoreHostsNote says what restoring the snapshot in dir does to the hosts

@@ -142,6 +142,26 @@ current behaviour; this file is where history lives.
     running-config | include`), offered in the block's template, and the three
     ssh settings are the only `ip ssh` statements the planner types.
 
+13. **`tacctl emergency lockdown`: refuse the logins of groups on a scope.**
+    `emergency lockdown <scope> enable [<groups>] [--tier <tier>] [--reason
+    <text>] [--dry-run]` (and `--all-scopes`) takes the users of the locked
+    groups out of the scope when the backends render, so the server answers
+    every login and every further command authorization with a refusal and
+    never with silence (a device does not fall back to its local accounts on
+    that account); `disable [<groups>]` lifts it and the files come back byte
+    for byte; `status [<scope>] [--json]` lists what stands, who is locked out,
+    who keeps access and the ways a device's local accounts stay usable. It is
+    the superuser's, asks for the scope's name typed back, never locks a user
+    of a superuser group, and has no timer. The record is
+    `emergency.lockdown.<scope>.groups|since|by|reason` in `tacctl.yaml`. Every
+    command that names the scope or one of its devices or hosts, and `status`,
+    `config validate` and the lists, writes one red line on standard error
+    while it stands (an engineer sees their own scopes'); `config validate`
+    warns and reports a record that names a scope or group that is gone.
+    `scope rename` moves the record, `scope remove` drops it and `group
+    remove` takes the group out. The log has `emergency lockdown enable|disable
+    scope= groups= ...`.
+
 ## 0.2.18 (2026-10-24)
 
 1. **`device config-syntax` is now `device ios-syntax`, and `device add

@@ -1756,7 +1756,7 @@ has a
 (a fixed token for each label of the text report:
 .BR store ", " yaml ", " overrides ", " command_rules ", " structure ", "
 .BR scope_default ", " linux_hosts ", " names ", " breakglass ", " breakglass_hold ", "
-.BR config_blocks ", " operator_policy ", " group_settings ", " orphan_settings ", "
+.BR emergency_lockdown ", " config_blocks ", " operator_policy ", " group_settings ", " orphan_settings ", "
 .BR orphan_files ", " leftovers ", " backends ", " rendered ", " drift " and "
 .BR vendor_attrs ),
 a
@@ -11322,6 +11322,105 @@ Options:
 (list) Print the holds as a JSON array.
 .RE
 .\" END GENERATED: command breakglass list
+.SS Emergency lockdown \fB(tacctl emergency)\fR
+A \fIlockdown\fR refuses the logins of chosen groups on every device and Linux
+host a scope answers. Where a
+.I hold
+makes the server stop answering one device so that its local accounts can be
+used, a lockdown keeps answering and says no: the users of the locked groups
+are taken out of the scope when the backends render
+.RB ( tacquito.yaml
+and the RADIUS users file), so every login and every further command
+authorization is refused (TACACS+ FAIL, RADIUS Reject), never silence, and a
+device does not fall back to its local accounts on that account.
+.I store.yaml
+is not changed; lifting the lockdown renders the files as they were. A user of
+a superuser group (its tier is superuser and it is not a group at priv\-lvl 15
+with no tier setting) is never locked. There is no timer.
+.PP
+A device's own local accounts are not tacctl users and are not locked. They
+stay out of the way only because of the device's method list. Not closed: a
+Cisco console line, the Junos root account on the console, a scope that lists
+local accounts first
+.RB ( "scope aaa\-order local\-first" ),
+local ssh keys, sessions that are open (Junos devices, WTI units and Linux
+hosts keep a session until it logs in again or runs sudo) and a device that
+cannot reach the server.
+.B status
+names these and
+.B enable
+warns in red on a local\-first scope; nothing is changed on any device.
+.PP
+While a lockdown stands, every command that names the scope, a device or
+enrolled host in it, or that is about no one scope
+.RB ( status ", " "config validate" ", " "scope list" ", " "device list" ", " "host list" )
+writes one red line on standard error, once per command:
+.B "EMERGENCY LOCKDOWN on scope '<scope>' since <time> by <user> (<duration>): logins of groups <groups> are refused; superusers keep access. Reason: <text>"
+Standard output and the exit status are unchanged. An engineer sees the
+lockdowns of their own scopes.
+.B status
+and
+.B "config validate"
+list them too; the latter reports a record that names a scope or group that is
+gone, a group that is a superuser's now, or no group. A scope's rename moves the
+record, its removal drops it, and
+.B "group remove"
+takes the group out of every lockdown. The log has
+.BI "emergency lockdown enable scope=" name " groups=" list " exempt=" users " reason=\(dq" text "\(dq by=" user " locked=" n " result=ok"
+and
+.BI "emergency lockdown disable scope=" name " groups=" list " held=" duration " by=" user " result=ok" .
+The record is
+.B emergency.lockdown.<scope>.groups|since|by|reason
+in
+.IR tacctl.yaml ,
+so every snapshot holds it.
+.TP
+.BI "emergency lockdown " "scope " "enable " [ "group[,group]..." "] [\-\-tier " tier "] [\-\-reason " text "] [\-\-dry\-run]"
+.TQ
+.BI "emergency lockdown \-\-all\-scopes enable " [ "group[,group]..." "] [\-\-tier " tier "] [\-\-reason " text "] [\-\-dry\-run]"
+Lock the groups named (with no list every group that is not a superuser's; with
+\fB\-\-tier\fR the groups of that tier, readonly, operator or engineer) on the
+scope, or on every scope, added to what is locked already. Shows the users who
+lose access and those who keep it, then asks for the scope's name typed back (the
+word \fBall\fR for \fB\-\-all\-scopes\fR, which includes this server's own logins);
+without a terminal the verb refuses. \fB\-\-dry\-run\fR prints the list and changes
+nothing. A superuser group, or \fB\-\-tier superuser\fR, is refused. The change is one
+write of \fItacctl.yaml\fR, one render and one restart of each backend that changed;
+a backend whose restart failed is reported as \fBNOT restarted\fR, the record and
+the files are kept, and the verb exits 1. Superuser only.
+.TP
+.BI "emergency lockdown " "scope " "disable " [ "group[,group]..." ]
+.TQ
+.BI "emergency lockdown \-\-all\-scopes disable " [ "group[,group]..." ]
+Lift the lockdown for the groups named, or all of it; the rendered files come back byte for byte. Superuser only.
+.\" BEGIN GENERATED: command emergency lockdown
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-all\-scopes\fR
+(lockdown) Every scope instead of one.
+.TP
+\fB\-\-tier\fR \fI<tier>\fR
+(lockdown) Lock the groups of that tier (readonly, operator or engineer).
+.TP
+\fB\-\-reason\fR \fI<text>\fR
+(lockdown) Why, 1 to 256 characters; kept with the record and in the log.
+.TP
+\fB\-\-dry\-run\fR
+(lockdown) Print who loses access and change nothing.
+.TP
+\fB\-\-json\fR
+(lockdown status) Print the lockdowns as a JSON array.
+.RE
+.\" END GENERATED: command emergency lockdown
+.TP
+.BI "emergency lockdown status " [ scope "] [\-\-json]"
+.TQ
+.BI "emergency lockdown " scope
+The lockdowns that stand: scope, groups, since, how long, by whom, why, the users locked out, the superusers who keep access and the ways a device's local accounts stay usable. \fB\-\-json\fR prints an array with \fBlocked_users\fR and \fBexempt\fR.
 .SS Login console \fB(tacctl console)\fR
 The login console
 .RB ( tacctl\-console )
@@ -12113,11 +12212,11 @@ are:
 _phase, backend disable, backend enable, breakglass hold,
 breakglass release, console install, console remove, device add,
 device enroll, device notice, device remove, device rename,
-device ssh, device support\-bundle, group add, group edit,
-group remove, host enroll, host forget, host move, host rename,
-host sync, host unenroll, passwd, scope add, scope remove,
-scope rename, ssh, user add, user disable, user enable, user move,
-user passwd, user remove, user rename
+device ssh, device support\-bundle, emergency lockdown, group add,
+group edit, group remove, host enroll, host forget, host move,
+host rename, host sync, host unenroll, passwd, scope add,
+scope remove, scope rename, ssh, user add, user disable, user enable,
+user move, user passwd, user remove, user rename
 .TP
 .B "action, auth.notice"
 backup restore, config restore,
@@ -13646,6 +13745,22 @@ The user who held it. Set with \fBtacctl breakglass hold\fR.
 .B breakglass_hold.<device>.reason
 text of 1 to 256 characters (a user name for by). Default: none (unset).
 Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the hold by tacctl breakglass release. Set with \fBtacctl breakglass hold\fR.
+.TP
+.B emergency.lockdown.<scope>.groups
+list of group names, at most 64. Default: none (unset).
+The groups whose logins the scope refuses while the lockdown stands: both renderers take the scope out of their users. Superuser groups are never listed. Set with \fBtacctl emergency lockdown\fR.
+.TP
+.B emergency.lockdown.<scope>.since
+RFC 3339 time. Default: none (unset).
+When the lockdown began (RFC 3339). Set with \fBtacctl emergency lockdown\fR.
+.TP
+.B emergency.lockdown.<scope>.by
+text of 1 to 256 characters (a user name for by). Default: none (unset).
+The user who began it. Set with \fBtacctl emergency lockdown\fR.
+.TP
+.B emergency.lockdown.<scope>.reason
+text of 1 to 256 characters (a user name for by). Default: none (unset).
+Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the lockdown by tacctl emergency lockdown disable. Set with \fBtacctl emergency lockdown\fR.
 .TP
 .B netconf_scope.<scope>.state
 one of enable, disable. Default: none (unset).

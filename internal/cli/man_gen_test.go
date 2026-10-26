@@ -427,6 +427,10 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"breakglass_hold.<device>.since":         {setWith("breakglass hold"), "When the hold was made (RFC 3339)."},
 	"breakglass_hold.<device>.by":            {setWith("breakglass hold"), "The user who held it."},
 	"breakglass_hold.<device>.reason":        {setWith("breakglass hold"), "Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the hold by tacctl breakglass release."},
+	"emergency.lockdown.<scope>.groups":      {setWith("emergency lockdown"), "The groups whose logins the scope refuses while the lockdown stands: both renderers take the scope out of their users. Superuser groups are never listed."},
+	"emergency.lockdown.<scope>.since":       {setWith("emergency lockdown"), "When the lockdown began (RFC 3339)."},
+	"emergency.lockdown.<scope>.by":          {setWith("emergency lockdown"), "The user who began it."},
+	"emergency.lockdown.<scope>.reason":      {setWith("emergency lockdown"), "Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the lockdown by tacctl emergency lockdown disable."},
 	"blocks.<scope>.<vendor>":                {setWith("scope block"), "The configuration blocks in force for the scope and vendor (cisco or juniper), a list of snmp and system; a file under the blocks directory that this list does not name is ignored."},
 	"blocks_device.<device>.<vendor>":        {setWith("device block"), "The configuration blocks in force for one device and vendor (cisco or juniper), a list of snmp and system; the device's lower case name is written with every '.' as '~' (jsw1~lab~example~net), and a file under the blocks directory that this list does not name is ignored."},
 	"snmp_scope.<scope>.version":             {setWith("scope snmp"), "The scope's SNMP version; unset: snmp.version."},
@@ -496,6 +500,8 @@ func manTypeText(r conf.Rule) string {
 		return "non-empty list of absolute command paths"
 	case conf.TypeBreakGlassList:
 		return "list of name:role entries, role one of " + strings.Join(conf.BreakGlassRoles, ", ") + ", at most " + strconv.Itoa(conf.MaxBreakGlassUsers)
+	case conf.TypeLockdownGroups:
+		return "list of group names, at most " + strconv.Itoa(conf.MaxLockdownGroups)
 	case conf.TypeHoldAddress:
 		return "one IPv4 or IPv6 address, in its canonical form, without a prefix length"
 	case conf.TypeHoldSince:

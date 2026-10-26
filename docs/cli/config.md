@@ -389,7 +389,7 @@ A finding has:
 The sections are `store`, `yaml` (without a store: `tacquito.yaml` does not
 parse), `overrides` (`tacctl.yaml`), `command_rules`, `structure` (users,
 groups and scopes), `scope_default`, `linux_hosts`, `names`, `breakglass`,
-`breakglass_hold`, `config_blocks`, `operator_policy`, `group_settings`,
+`breakglass_hold`, `emergency_lockdown`, `config_blocks`, `operator_policy`, `group_settings`,
 `orphan_settings`, `orphan_files`, `leftovers`, `backends` (the enabled list
 cannot be read), `rendered`, `drift` and `vendor_attrs`. A line of the text
 report that says all is well (`valid`, `up to date`, `no overrides`) has no
