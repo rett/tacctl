@@ -260,3 +260,65 @@ func TestEmergencyLockdownGoesWithARestoredSnapshotThatLacksIt(t *testing.T) {
 		t.Errorf("the restored rendering is not the original:\n%s", got)
 	}
 }
+
+func TestEmergencyLockdownRefusesAGroupMadeASuperuser(t *testing.T) {
+	sb := engineerSandbox(t)
+	sb.lockdown(t, "lab", "lab", "enable")
+	if sb.code != 0 {
+		t.Fatalf("enable: %d %q", sb.code, sb.stderr())
+	}
+	for _, args := range [][]string{{"group", "edit", "operator", "tier", "superuser"}, {"group", "edit", "readonly", "priv-lvl", "15"}} {
+		sb.run("y\n", args)
+		if sb.code != 1 || !strings.Contains(sb.stderr(), "is locked by an emergency lockdown on scope(s) lab, and a superuser group is never locked") {
+			t.Errorf("%v: %d %q", args, sb.code, sb.stderr())
+		}
+	}
+	if strings.Contains(sb.read("state/tacctl.yaml"), "tier:\n  operator: superuser") {
+		t.Error("the tier was written")
+	}
+	// lifted, the same edit goes through
+	sb.lockdown(t, "", "lab", "disable")
+	sb.run("y\n", []string{"group", "edit", "operator", "tier", "superuser"})
+	if sb.code != 0 {
+		t.Errorf("after the lift: %d %q", sb.code, sb.stderr())
+	}
+}
+
+func TestEmergencyLockdownDisableNamesAGroupTheRecordHoldsAlone(t *testing.T) {
+	sb := engineerSandbox(t)
+	sb.write("state/tacctl.yaml", "tier:\n  operator: engineer\nemergency:\n  lockdown:\n    lab:\n      groups:\n        - ghost\n        - readonly\n      since: '2026-10-25T12:00:00Z'\n      by: alice\n", 0o600)
+	sb.lockdown(t, "", "lab", "disable", "ghost")
+	if sb.code != 0 || strings.Contains(sb.overrides(), "ghost") || !strings.Contains(sb.overrides(), "readonly") {
+		t.Errorf("disable ghost: %d %q\n%s", sb.code, sb.stderr(), sb.overrides())
+	}
+	sb.lockdown(t, "", "lab", "disable", "nogroup")
+	if sb.code != 1 || !strings.Contains(sb.stderr(), "There is no group 'nogroup'.") {
+		t.Errorf("disable nogroup: %d %q", sb.code, sb.stderr())
+	}
+}
+
+// Which command lines of the verb change nothing (the audit class reads
+// them without a start line).
+func TestLockdownReadForm(t *testing.T) {
+	for _, c := range []struct {
+		args []string
+		read bool
+	}{
+		{nil, true},
+		{[]string{"status"}, true},
+		{[]string{"status", "lab", "--json"}, true},
+		{[]string{"lab"}, true},
+		{[]string{"lab", "enable", "--dry-run"}, true},
+		{[]string{"--all-scopes", "enable", "--dry-run"}, true},
+		{[]string{"--help"}, true},
+		{[]string{"lab", "enable"}, false},
+		{[]string{"lab", "disable"}, false},
+		{[]string{"lab", "enable", "ops", "--reason", "x"}, false},
+		{[]string{"--all-scopes", "enable"}, false},
+		{[]string{"--all-scopes", "disable", "ops"}, false},
+	} {
+		if got := lockdownReadForm(c.args); got != c.read {
+			t.Errorf("%v: read = %v", c.args, got)
+		}
+	}
+}

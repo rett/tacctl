@@ -41,25 +41,58 @@ func originsOfSections(expected []devices.Section) map[string]string {
 	return out
 }
 
+// originsBySection is originsOfSections per section: the origin of a planned
+// line is looked up among the block lines of its own section only, so that a
+// statement tacctl renders from its structured settings (a login class, a
+// community of the scope) is never taken for a block's.
+func originsBySection(expected []devices.Section) map[string]map[string]string {
+	var out map[string]map[string]string
+	for _, sec := range expected {
+		one := originsOfSections([]devices.Section{sec})
+		if len(one) == 0 {
+			continue
+		}
+		if out == nil {
+			out = map[string]map[string]string{}
+		}
+		out[sec.Name] = one
+	}
+	return out
+}
+
 // originOf is the block a planned line comes from, "" when none is known. A
 // line is looked up by its text; one the plan split from a longer statement
 // ('set system ntp server H version 4' from the block's 'set system ntp server
 // H prefer version 4 key 1') by the longest run of leading words it shares
 // with a statement of a block, of at least three.
 func (d Delta) originOf(l Line) string {
+	m := d.origins[l.Section]
 	switch l.Op {
 	case OpDelete:
-		return d.origins[strings.TrimSpace(l.Text)]
+		return m[strings.TrimSpace(l.Text)]
 	case OpNo:
-		return d.origins["no "+strings.TrimSpace(l.Text)]
+		return m["no "+strings.TrimSpace(l.Text)]
 	}
-	return lookupOrigin(d.origins, l.Text)
+	// a line split from a longer statement shares its object with it: on
+	// Junos the 'set', the path to the object and its name (five words for an
+	// NTP server), on IOS the words to the name
+	min := 3
+	if strings.HasPrefix(strings.TrimSpace(l.Text), "set ") {
+		min = 5
+	}
+	return lookupOriginMin(m, l.Text, min)
 }
 
 // lookupOrigin is the origin of a statement text in a map of the expected
 // block lines: the line itself, else the one it shares the longest run of at
 // least three leading words with.
 func lookupOrigin(origins map[string]string, text string) string {
+	return lookupOriginMin(origins, text, 3)
+}
+
+// lookupOriginMin is lookupOrigin with the fewest leading words a shared run
+// must have.
+func lookupOriginMin(origins map[string]string, text string, min int) string {
 	if len(origins) == 0 {
 		return ""
 	}
@@ -68,7 +101,7 @@ func lookupOrigin(origins map[string]string, text string) string {
 		return o
 	}
 	tw := strings.Fields(t)
-	best, bestN, tie := "", 2, false
+	best, bestN, tie := "", min-1, false
 	for k, o := range origins {
 		kw := strings.Fields(k)
 		n := 0

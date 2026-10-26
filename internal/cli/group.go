@@ -511,6 +511,11 @@ func (inv *invocation) groupEdit(args []string) error {
 			tierNote = "tacctl tier: automatic again (the superuser setting recorded the priv-lvl band; priv-lvl " + value + " → " + string(tier.ForPrivLvl(value)) + ")."
 			tierWrite = func() error { return policy.WriteGroupTier(a.Conf(), group, "auto") }
 		}
+		if tierTo == "superuser" {
+			if err := inv.lockdownPromotionRefusal(group); err != nil {
+				return err
+			}
+		}
 		if tierWrite == nil {
 			err = inv.applyStore(set)
 		} else {
@@ -559,6 +564,11 @@ func (inv *invocation) groupEdit(args []string) error {
 			return err
 		}
 		if field == "tier" {
+			if value == "superuser" {
+				if err := inv.lockdownPromotionRefusal(group); err != nil {
+					return err
+				}
+			}
 			err = inv.groupEditTier(m.Group(group), value)
 		} else {
 			err = inv.groupEditWTILevel(m.Group(group), value)

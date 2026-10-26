@@ -566,7 +566,7 @@ func (inv *invocation) lockdownDisable(m *model.Model, scopes []string, list str
 	if list != "" {
 		for _, n := range strings.Split(list, ",") {
 			n = strings.TrimSpace(n)
-			if n == "" || m.Group(n) == nil {
+			if n == "" || m.Group(n) == nil && len(inv.lockdownsNaming(n)) == 0 {
 				return inv.usageErr("There is no group '"+n+"'.", emergencyUsage)
 			}
 			named = append(named, n)
@@ -740,13 +740,12 @@ func (inv *invocation) lockdownStatus(scope string, asJSON bool) error {
 	if err != nil {
 		return err
 	}
-	filter := inv.callerScopes()
 	if scope != "" && m.Scope(scope) == nil {
 		return inv.usageErr("There is no scope '"+scope+"'.", emergencyUsage)
 	}
 	var rows []conf.Lockdown
 	for _, l := range inv.app.Conf().Lockdowns() {
-		if (scope == "" || l.Scope == scope) && filter.allows(l.Scope) {
+		if scope == "" || l.Scope == scope {
 			rows = append(rows, l)
 		}
 	}
@@ -945,4 +944,20 @@ func lockdownReadForm(rest []string) bool {
 		}
 	}
 	return len(pos) == 0 || pos[0] == "status" || len(pos) == 1 && !slices.Contains(rest, "--all-scopes")
+}
+
+// lockdownPromotionRefusal refuses to make a group a superuser's while an
+// emergency lockdown locks it: superusers are never locked, so the lockdown
+// is lifted for the group first, by a decision.
+func (inv *invocation) lockdownPromotionRefusal(group string) error {
+	scopes := inv.lockdownsNaming(group)
+	if len(scopes) == 0 {
+		return nil
+	}
+	cmds := make([]string, len(scopes))
+	for i, s := range scopes {
+		cmds[i] = "tacctl emergency lockdown " + s + " disable " + group
+	}
+	return inv.usageErr("Group '" + group + "' is locked by an emergency lockdown on scope(s) " + strings.Join(scopes, ", ") +
+		", and a superuser group is never locked: lift it for the group first (" + strings.Join(cmds, "; ") + "). Nothing was changed.")
 }

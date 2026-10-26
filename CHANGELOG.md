@@ -159,8 +159,10 @@ current behaviour; this file is where history lives.
     while it stands (an engineer sees their own scopes'); `config validate`
     warns and reports a record that names a scope or group that is gone.
     `scope rename` moves the record, `scope remove` drops it and `group
-    remove` takes the group out. The log has `emergency lockdown enable|disable
-    scope= groups= ...`.
+    remove` takes the group out, and `group edit <group> tier superuser` is
+    refused while the group is locked (a superuser group is never locked). A
+    rollback to an older release is refused while a lockdown stands. The log has
+    `emergency lockdown enable|disable scope= groups= ...`.
 
 14. **The `system` blocks take `absent` lines: services a scope requires to be
     absent.** Junos `absent system services telnet|ftp|finger|xnm-clear-text|

@@ -169,6 +169,28 @@ func HeldRefusal(holds []conf.Hold) *RollbackRefusal {
 	return &RollbackRefusal{Lines: lines}
 }
 
+// LockdownRefusal is the refusal of a rollback while any emergency lockdown
+// stands: each scope with its groups, who began it and since when, why an
+// older release cannot take it over and what to run first.
+func LockdownRefusal(ls []conf.Lockdown) *RollbackRefusal {
+	var lines, lift []string
+	for _, l := range ls {
+		line := "Scope " + l.Scope + " is locked down (groups " + strings.Join(l.Groups, ", ")
+		if l.By != "" {
+			line += ", by " + l.By
+		}
+		if t := l.SinceTime(); !t.IsZero() {
+			line += " since " + t.Local().Format("2006-01-02 15:04")
+		}
+		lines = append(lines, line+").")
+		lift = append(lift, "tacctl emergency lockdown "+l.Scope+" disable")
+	}
+	lines = append(lines,
+		"Every older release lacks the record: its next render would put the locked users back into the scope.",
+		"Lift it first: "+strings.Join(lift, "; ")+". Nothing was changed.")
+	return &RollbackRefusal{Lines: lines}
+}
+
 // ACLServicesRefusal is the refusal of a rollback while any management ACL
 // entry carries services (0.2.7: 10.0.0.0/8:tcp/22,udp/161): the older
 // release reads the lists as plain CIDRs, so it would refuse the file, and
@@ -461,6 +483,12 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	}
 	if len(pend) > 0 {
 		return nil, PendingRefusal(pend)
+	}
+	// An emergency lockdown (0.2.19) is refused for every target, in the dry
+	// run and --apply alike: no older release has the record, and the next
+	// render under it would put every locked user back into the scope.
+	if ls := in.Conf.Lockdowns(); len(ls) > 0 {
+		return nil, LockdownRefusal(ls)
 	}
 	if in.Target == RollbackTarget029 {
 		return planRollback029(p)

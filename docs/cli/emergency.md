@@ -28,7 +28,9 @@ emergency lockdown status [<scope>] [--json]
 emergency lockdown <scope>
 
     The lockdowns that stand: scope, groups, since when, how long, by whom, why, the users locked
-    out and the superusers who keep access, and the ways a device's local accounts stay usable
+    out and the superusers who keep access, and the ways a device's local accounts stay usable.
+    Superuser only, like the rest of the verb; the top-level `status` and `config validate` show
+    the lockdowns to an engineer, for their own scopes
 ```
 
 ```
@@ -65,7 +67,10 @@ are unchanged. An engineer sees the lockdowns of their own scopes.
 lockdowns too (`--json` has the locked users and the exempt superusers).
 
 A scope's rename moves its record and its removal drops it; `group remove`
-takes the group out of every lockdown. `config validate` warns while a
+takes the group out of every lockdown, and `group edit <group> tier superuser`
+(or a priv-lvl edit that makes the group a superuser's) is refused while the
+group is locked, since a superuser group is never locked. A rollback to an
+older release is refused while a lockdown stands (`tacctl rollback`). `config validate` warns while a
 lockdown stands and reports a record that names a scope or group that no
 longer exists, a group that is a superuser's now, or no group. The log has
 `emergency lockdown enable|disable scope= groups= ...`.

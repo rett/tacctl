@@ -11389,7 +11389,11 @@ list them too; the latter reports a record that names a scope or group that is
 gone, a group that is a superuser's now, or no group. A scope's rename moves the
 record, its removal drops it, and
 .B "group remove"
-takes the group out of every lockdown. The log has
+takes the group out of every lockdown; making a locked group a superuser group
+.RB ( "group edit" " ... " tier " superuser, or a priv\-lvl edit that does it)"
+is refused, and so is
+.B "tacctl rollback"
+to an older release, until the lockdown is lifted. The log has
 .BI "emergency lockdown enable scope=" name " groups=" list " exempt=" users " reason=\(dq" text "\(dq by=" user " locked=" n " result=ok"
 and
 .BI "emergency lockdown disable scope=" name " groups=" list " held=" duration " by=" user " result=ok" .

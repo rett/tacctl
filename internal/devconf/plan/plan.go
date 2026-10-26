@@ -218,7 +218,7 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 	}
 
 	d := Delta{Vendor: fam, Scope: opt.Scope, InheritanceChecked: len(plain.Sections) > 0, BreakglassHeld: opt.BreakglassHeld,
-		origins: originsOfSections(expected)}
+		origins: originsBySection(expected)}
 	if fam == devconf.FamilyIOS {
 		d.Syntax = opt.Syntax
 		if opt.RestorePoint != nil {
