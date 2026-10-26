@@ -445,7 +445,7 @@ func (s *Scrubber) Leaks(text string) []string {
 			}
 			i += from
 			end := i + len(k)
-			if !(i > 0 && isAlnum(low[i-1]) || end < len(low) && isAlnum(low[end])) {
+			if (i <= 0 || !isAlnum(low[i-1])) && (end >= len(low) || !isAlnum(low[end])) {
 				out = append(out, k)
 				break
 			}

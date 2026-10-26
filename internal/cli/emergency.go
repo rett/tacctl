@@ -16,7 +16,6 @@ package cli
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"slices"
 	"sort"
 	"strconv"
@@ -269,7 +268,7 @@ func (inv *invocation) lockdownNotice() {
 	scopes := inv.lockdownScopesOf(args, show)
 	for _, l := range show {
 		if scopes[l.Scope] || lockdownShowsAll(args) {
-			fmt.Fprintln(inv.app.Out.Stderr, ui.Red+ui.Bold+inv.lockdownLine(l)+ui.NC)
+			inv.stderrLine(ui.Red + ui.Bold + inv.lockdownLine(l) + ui.NC)
 		}
 	}
 }
@@ -526,7 +525,7 @@ func (inv *invocation) lockdownEnable(m *model.Model, scopes []string, list, tie
 		inv.app.Audit().Raw("auth.notice", "emergency lockdown enable scope="+l.Scope+" groups="+strings.Join(l.Groups, ",")+
 			" exempt="+strings.Join(inv.lockdownExempt(m, l.Scope), ",")+" reason="+strconv.Quote(l.Reason)+" by="+by+
 			" locked="+strconv.Itoa(len(out))+" result=ok")
-		fmt.Fprintln(inv.app.Out.Stdout, ui.Red+ui.Bold+inv.lockdownLine(*l)+ui.NC)
+		inv.echo(ui.Red + ui.Bold + inv.lockdownLine(*l) + ui.NC)
 	}
 	inv.echo("  Rendered: " + lockdownRendered(res))
 	inv.echo("  Lift it with: tacctl emergency lockdown " + lockdownTarget(scopes, all) + " disable")

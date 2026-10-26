@@ -3,8 +3,10 @@
 [Documentation](../README.md) › [CLI reference](README.md)
 
 ```
-emergency lockdown <scope> enable [<group>[,<group>...]] [--tier <tier>] [--reason <text>] [--dry-run]
-emergency lockdown --all-scopes enable [<group>[,<group>...]] [--tier <tier>] [--reason <text>] [--dry-run]
+emergency lockdown <scope> enable [<group>[,<group>...]] [--tier <tier>]
+                                  [--reason <text>] [--dry-run]
+emergency lockdown --all-scopes enable [<group>[,<group>...]] [--tier <tier>]
+                                       [--reason <text>] [--dry-run]
 
     Refuses the logins of the groups on every device and Linux host the scope answers. With no
     group, every group that is not a superuser's; with a list, those groups; with --tier, the

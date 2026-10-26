@@ -182,7 +182,6 @@ func (inv *invocation) deviceSupportBundle(args []string) error {
 	ctx, cancel := context.WithTimeout(inv.ctx, 4*st.timeout)
 	defer cancel()
 	files, notes, err := inv.collectBundle(ctx, e, vendor, account, local, pw, password)
-	password = ""
 	if err != nil {
 		return err
 	}

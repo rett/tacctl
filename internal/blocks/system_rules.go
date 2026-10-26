@@ -138,9 +138,6 @@ var junosAbsent = newAbsentTable("absent system ", false, []sysRule{
 	{ID: "absent-web-management", Pattern: "services web-management"},
 })
 
-// sysRuleTable is the Junos table's rules.
-var sysRuleTable = junosRules.rules
-
 // iosRules is the table of the IOS system block. A rule with several rows is
 // one statement with optional words.
 var iosRules = newRuleTable("", true, []sysRule{
@@ -233,7 +230,7 @@ func buildRules(rs []sysRule) []sysRule {
 			switch {
 			case strings.HasPrefix(w, "<int:"):
 				t.kind = rtInt
-				fmt.Sscanf(strings.TrimSuffix(strings.TrimPrefix(w, "<int:"), ">"), "%d-%d", &t.lo, &t.hi)
+				_, _ = fmt.Sscanf(strings.TrimSuffix(strings.TrimPrefix(w, "<int:"), ">"), "%d-%d", &t.lo, &t.hi)
 			case w == "<host>":
 				t.kind = rtHost
 			case w == "<addr>":
@@ -651,7 +648,7 @@ func applyRuleDelete(rs []RuleStmt, d SystemNotManaged) []RuleStmt {
 	head := strings.Join(f[:r.keyEnd], " ")
 	out := rs[:0:0]
 	for _, x := range rs {
-		if !(x.Rule == id && x.Head == head) {
+		if x.Rule != id || x.Head != head {
 			out = append(out, x)
 		}
 	}
@@ -748,8 +745,8 @@ func checkRules(rs []RuleStmt, layer Layer, add func(line int, sev Severity, for
 	}
 	if minT != nil && maxT != nil {
 		var a, b int
-		fmt.Sscan(minT.Args[len(minT.Args)-1], &a)
-		fmt.Sscan(maxT.Args[len(maxT.Args)-1], &b)
+		_, _ = fmt.Sscan(minT.Args[len(minT.Args)-1], &a)
+		_, _ = fmt.Sscan(maxT.Args[len(maxT.Args)-1], &b)
 		if b < a {
 			add(maxT.Line, SevError, "login retry-options maximum-time (%d) is below minimum-time (%d)", b, a)
 		}
