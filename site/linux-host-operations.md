@@ -4,6 +4,7 @@ description: "Keeping enrolled Linux hosts in step"
 permalink: "/linux-host-operations/"
 parent: "Tasks"
 nav_order: 3
+doctype: how-to
 ---
 
 # Linux Host Operations

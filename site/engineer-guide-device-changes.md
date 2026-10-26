@@ -4,6 +4,7 @@ description: "Register, compare, plan and apply device AAA configuration"
 permalink: "/engineer-guide-device-changes/"
 parent: "Guides by role"
 nav_order: 3
+doctype: how-to
 ---
 
 # Engineer Guide: Device Changes

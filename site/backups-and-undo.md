@@ -4,6 +4,7 @@ description: "Snapshots, comparing them, and restoring tacctl's configuration"
 permalink: "/backups-and-undo/"
 parent: "Tasks"
 nav_order: 5
+doctype: how-to
 ---
 
 # Backups and Undo

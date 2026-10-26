@@ -4,6 +4,7 @@ description: "For NOC, help-desk and network support staff"
 permalink: "/operator-field-guide/"
 parent: "Guides by role"
 nav_order: 1
+doctype: how-to
 ---
 
 # Operator Field Guide

@@ -4,6 +4,7 @@ description: "Step-by-step security and availability runbooks"
 permalink: "/incident-response-runbooks/"
 parent: "Emergencies and problems"
 nav_order: 2
+doctype: how-to
 ---
 
 # Incident Response Runbooks

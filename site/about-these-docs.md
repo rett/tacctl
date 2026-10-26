@@ -3,6 +3,7 @@ title: "About These Docs"
 description: "What this documentation covers, how it relates to the repository docs, and the conventions it follows"
 permalink: "/about-these-docs/"
 nav_order: 7
+doctype: explanation
 ---
 
 # About These Docs
@@ -79,7 +80,9 @@ the table does not list are invented in the same style.
 
 ## 4. Reporting a mistake
 
-If a page is wrong or out of date, open an issue on the
+If a page is wrong or out of date, use **Report a problem with this page**
+at the foot of the page: it opens a GitHub issue with the page already
+named. Or open an issue on the
 [tacctl repository](https://github.com/rett/tacctl/issues) naming the page,
 the section and the tacctl release you run.
 

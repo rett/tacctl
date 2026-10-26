@@ -4,6 +4,8 @@ description: "The changes in each tacctl release that people on shift will notic
 permalink: "/whats-new-for-operators/"
 parent: "Reference"
 nav_order: 4
+doctype: reference
+commands: historical
 ---
 
 # What's New for Operators
