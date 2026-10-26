@@ -81,12 +81,12 @@ func ciscoEntries(lines []string, marks []bool) []ciscoEntry {
 			out = append(out, ciscoEntry{text: t, mark: markAt(marks, n), path: []string{t}})
 			continue
 		}
-		if f := strings.Fields(t); len(f) >= 2 && f[0] == "banner" && f[1] == "login" && len(raw) == len(t) {
-			// the login banner is a statement of the system section, kept
-			// as its mark: the text is never in a compared statement
-			body, took, ok := deviceBannerBody(lines[n:])
+		if kind := blocks.BannerKindOf(t); kind != "" && len(raw) == len(t) {
+			// a banner is a statement of the system section, kept as its
+			// mark: the text is never in a compared statement
+			body, took, ok := deviceBannerBody(kind, lines[n:])
 			if ok {
-				st := iosBannerStmt(body)
+				st := iosBannerStmt(kind, body)
 				out = append(out, ciscoEntry{text: st, mark: markAt(marks, n), path: []string{st}})
 			}
 			n += took - 1
@@ -845,6 +845,11 @@ func ciscoACLName(p0 string) (string, bool) {
 // statements are not its concern) and, for one it could own, only when the
 // rendering states a statement of the same group.
 func (c *ciscoCtx) ownsIOSRule(t string) bool {
+	// a motd or exec banner is the section's only where the block states one
+	// of that kind (the login banner always is, as it was before)
+	if k := blocks.BannerKindOf(t); k == "motd" || k == "exec" {
+		return c.bannerKinds[k]
+	}
 	groups := blocks.IOSRuleGroups(strings.Fields(t))
 	if len(groups) == 0 {
 		return true
@@ -878,6 +883,9 @@ type ciscoCtx struct {
 	// forbid are the statements the rendering's system section requires to
 	// be absent ('ip http server').
 	forbid []string
+	// bannerKinds are the banners (motd, exec) the rendering's system section
+	// states.
+	bannerKinds map[string]bool
 }
 
 // The two source-interface commands (D119).
@@ -1373,6 +1381,17 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 		system: len(sectionOf(expected, SectionSystem).Lines) > 0}
 	c.ruleGroups = ruleGroupsOf(expected, FamilyIOS)
 	c.forbid = forbidOf(expected)
+	c.bannerKinds = map[string]bool{}
+	for _, sec := range expected {
+		if sec.Name != SectionSystem {
+			continue
+		}
+		for _, l := range sec.Lines {
+			if k := blocks.BannerKindOf(l); k != "" {
+				c.bannerKinds[k] = true
+			}
+		}
+	}
 	var rendered []string
 	for _, sec := range expected {
 		rendered = append(rendered, sec.Lines...)

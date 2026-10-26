@@ -189,6 +189,8 @@ var keptShapes = map[string][]keptShape{
 		// difference (the plan replaces it in place), so each shape keeps a
 		// statement only where the rendering says nothing of the same object.
 		{Row: "ios.system.banner", Pattern: "banner login", keep: notRendered},
+		{Row: "ios.system.banner-motd", Pattern: "banner motd", keep: notRendered},
+		{Row: "ios.system.banner-exec", Pattern: "banner exec", keep: notRendered},
 		// 0.2.19: logging, the login and password policy, ssh, summer time
 		{Row: "ios.system.logging-host", Pattern: "logging host $", keep: notRendered},
 		{Row: "ios.system.logging-trap", Pattern: "logging trap", keep: notRendered},

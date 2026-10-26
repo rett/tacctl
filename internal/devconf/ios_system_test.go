@@ -71,7 +71,7 @@ ntp authenticate
 `
 
 // The device as a person typed it and IOS prints it.
-const iosSysDevice = `banner exec ^C
+const iosSysDevice = `banner incoming ^C
 exec text
 ^C
 banner login ^C

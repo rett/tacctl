@@ -62,6 +62,7 @@ var shapeMasks = []MaskRule{
 	{devconf.FamilyIOS, "hostname", "the device's name"},
 	{devconf.FamilyIOS, "banner login", "the login banner"},
 	{devconf.FamilyIOS, "banner motd", "the message of the day"},
+	{devconf.FamilyIOS, "banner exec", "the exec banner"},
 }
 
 // ShapeMasks returns the masking table.

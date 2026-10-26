@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/rett/tacctl/internal/blocks"
@@ -128,4 +129,54 @@ func TestNeverListKeepsOtherSSH(t *testing.T) {
 			t.Errorf("%+v: never = %v", c.l, got)
 		}
 	}
+}
+
+// The motd and exec banners of the IOS system block (0.2.19) are planned as
+// the login banner is: the block's text replaces the device's of the same
+// kind in place, a banner of another kind is left alone, and no text of
+// either is in a report.
+func iosBannerCase(kind string) func(t *testing.T) {
+	return func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.synthetic-system")
+		exp := withSystem(expectedSections(t, f.expected), iosSystemSectionOf(t, "banner "+kind+" <<'EOF'\nA notice for "+kind+".\nEOF\n"))
+		c := ParseIOS(capture(t, f.raw))
+		c.typeBanner("banner " + kind + " ^C\nAnother banner\n^C")
+		text := c.Text()
+		cur, err := devconf.Extract(f.vendor, text, exp...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d, err := Plan(f.vendor, exp, cur, cur, Options{Scope: "lab", Class: f.class, Syntax: f.syntax()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantLine(t, d, "system", "banner "+kind+" ^\nA notice for "+kind+".\n^")
+		noLine(t, d, "system", "no banner")
+		noLine(t, d, "system", "Another")
+		if strings.Contains(d.Display(), "Another") {
+			t.Errorf("the device's banner is shown in the report:\n%s", d.Display())
+		}
+		c = ParseIOS(text)
+		if err := c.Apply(d.Lines); err != nil {
+			t.Fatal(err)
+		}
+		cur, err = devconf.Extract(f.vendor, c.Text(), exp...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rs, err := devconf.CompareAll(exp, cur)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range rs {
+			if r.Name == devconf.SectionSystem && r.State != devconf.StateOK {
+				t.Errorf("system reads %s after the plan:\n%v", r.State, r.Lines)
+			}
+		}
+	}
+}
+
+func init() {
+	iosRowCases["ios.system.banner-motd"] = iosBannerCase("motd")
+	iosRowCases["ios.system.banner-exec"] = iosBannerCase("exec")
 }

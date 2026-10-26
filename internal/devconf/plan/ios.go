@@ -186,13 +186,13 @@ func parseIOSExpected(sec devices.Section) []iosEntry {
 		raw := sec.Lines[i]
 		trimmed := strings.TrimRight(raw, " \t\r")
 		t := strings.TrimLeft(trimmed, " \t")
-		if f := strings.Fields(t); len(trimmed) == len(t) && len(f) >= 2 && f[0] == "banner" && f[1] == "login" {
+		if kind := blocks.BannerKindOf(t); len(trimmed) == len(t) && kind != "" {
 			// the banner's lines are text up to the closing delimiter: a blank
 			// line or a line that begins with '!' is part of it
-			body, took, ok := blocks.DeviceBanner(sec.Lines[i:])
+			body, took, ok := blocks.DeviceBannerOf(kind, sec.Lines[i:])
 			if ok {
 				items = append(items, item{text: strings.Join(sec.Lines[i:i+took], "\n"), banner: true,
-					stem: "banner login " + devconf.MessageMark(body)})
+					stem: "banner " + kind + " " + devconf.MessageMark(body)})
 			}
 			i += took - 1
 			continue
@@ -302,10 +302,10 @@ func iosKey(path []string) (string, bool) {
 		case leaf[0] == "snmp-server" && len(leaf) >= 3 && leaf[1] == "trap-source":
 			// one trap source: a typed one replaces it
 			return "snmp-server trap-source", true
-		case leaf[0] == "banner" && len(leaf) >= 2 && leaf[1] == "login":
-			// one login banner: a typed one replaces it (0.2.7, the system
-			// block)
-			return "banner login", true
+		case leaf[0] == "banner" && len(leaf) >= 2 && slices.Contains(blocks.BannerKinds, leaf[1]):
+			// one banner of a kind: a typed one replaces it (0.2.7, the system
+			// block; motd and exec 0.2.19)
+			return "banner " + leaf[1], true
 		case leaf[0] == "ip" && len(leaf) >= 4 && leaf[1] == "domain" && leaf[2] == "name" && leaf[3] != "vrf",
 			leaf[0] == "ip" && len(leaf) == 3 && leaf[1] == "domain-name":
 			// the legacy spelling is the same command
@@ -811,8 +811,9 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 					if reIOSBannerStem.MatchString(s.stem) {
 						// only the size and a digest of the device's banner are
 						// kept: it cannot be typed again
-						l.Undo = append(l.Undo, Line{Op: OpComment, Text: "the device had a login banner that tacctl keeps no text of (" +
-							strings.TrimPrefix(s.stem, "banner login ") + "): put it back from the saved configuration " +
+						kind := blocks.BannerKindOf(s.stem)
+						l.Undo = append(l.Undo, Line{Op: OpComment, Text: "the device had a " + kind + " banner that tacctl keeps no text of (" +
+							strings.TrimPrefix(s.stem, "banner "+kind+" ") + "): put it back from the saved configuration " +
 							"('configure replace' with the archived or the startup configuration), or type it again from what you have"})
 						continue
 					}
@@ -1111,6 +1112,10 @@ func iosRowID(section string, l Line) string {
 		return "ios.snmp.block-trap-source"
 	case strings.HasPrefix(t, "banner login "):
 		return "ios.system.banner"
+	case strings.HasPrefix(t, "banner motd "):
+		return "ios.system.banner-motd"
+	case strings.HasPrefix(t, "banner exec "):
+		return "ios.system.banner-exec"
 	case strings.HasPrefix(t, "ip domain name "):
 		return "ios.system.domain-name"
 	case strings.HasPrefix(t, "ip domain list "):
@@ -1162,10 +1167,10 @@ func iosRowID(section string, l Line) string {
 // iosMaxTypedLine is the longest line IOS takes when it is typed or pasted.
 const iosMaxTypedLine = 255
 
-// longestBannerLine is the length of the longest line of a login banner's
-// text (0 for a line that is no banner).
+// longestBannerLine is the length of the longest line of a banner's text (0
+// for a line that is no banner).
 func longestBannerLine(text string) int {
-	if !strings.HasPrefix(text, blocks.IOSBannerHead) || !strings.Contains(text, "\n") {
+	if blocks.BannerKindOf(text) == "" || !strings.Contains(text, "\n") {
 		return 0
 	}
 	n := 0
@@ -1191,8 +1196,8 @@ func systemRank(l Line) int {
 	return 0
 }
 
-// reIOSBannerStem is the compared form of a login banner.
-var reIOSBannerStem = regexp.MustCompile(`^banner login <message: [0-9]+ lines, [0-9]+ characters, id [0-9a-f]{8}>$`)
+// reIOSBannerStem is the compared form of a banner (login, motd or exec).
+var reIOSBannerStem = regexp.MustCompile(`^banner (login|motd|exec) <message: [0-9]+ lines, [0-9]+ characters, id [0-9a-f]{8}>$`)
 
 // systemUndo sets the text of an undo line to the system statement's own
 // take-away (iosSystemUndo): false when the text is none of them.
@@ -1215,8 +1220,8 @@ func iosSystemUndo(text string) (string, bool) {
 		return "", false
 	}
 	switch {
-	case f[0] == "banner" && f[1] == "login":
-		return "banner login", true
+	case f[0] == "banner" && slices.Contains(blocks.BannerKinds, f[1]):
+		return "banner " + f[1], true
 	case f[0] == "ip" && len(f) >= 5 && f[1] == "domain" && f[2] == "name" && f[3] == "vrf":
 		return strings.Join(f[:5], " "), true
 	case f[0] == "ip" && len(f) >= 6 && f[1] == "domain" && f[2] == "list" && f[3] == "vrf":

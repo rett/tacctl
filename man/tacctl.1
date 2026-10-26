@@ -6258,7 +6258,12 @@ does. The IOS
 block is configuration lines too, with the login banner as a heredoc:
 .BR "banner login <<'EOF'" ,
 its lines, and
-.BR EOF ;
+.BR EOF
+(and the same for
+.B "banner motd"
+and
+.BR "banner exec" ;
+a device's own motd or exec banner is the section's only where the block states one of that kind);
 .B "ip domain name [vrf <name>] <name>"
 and
 .B "ip domain list [vrf <name>] <name>"
@@ -6614,7 +6619,7 @@ image does not know
 for an IOS system block
 .BR "show running\-config | include ^(banner|ip domain|ip name\-server|clock |ntp |logging |service timestamps|login |security |ip ssh)"
 and the banner's lines with
-.BR "show running\-config | section ^banner login" ),
+.BR "show running\-config | section ^banner" ),
 and open them in the editor as the draft to prune. The read is that of
 .BR "device config pull" :
 the password from the shell's cache or the terminal, the transport and timeout

@@ -287,15 +287,20 @@ func blockUnits(doc blocks.Doc) []blockUnit {
 		// a key's string is elided in both
 		var out []blockUnit
 		rest := *b
-		if b.Banner != nil {
-			m := &blocks.IOSSystemBlock{Banner: b.Banner}
+		for _, kind := range blocks.BannerKinds {
+			bm := b.BannerOf(kind)
+			if bm == nil {
+				continue
+			}
+			m := &blocks.IOSSystemBlock{}
+			*m.BannerFieldOf(kind) = bm
 			out = append(out, blockUnit{
 				full:   strings.Join(ownLines(m.String(false)), "\n"),
 				elided: strings.Join(ownLines(m.String(true)), "\n"),
 				shown:  strings.Join(ownLines(m.String(false)), "\n"),
-				key:    "login banner",
+				key:    kind + " banner",
 			})
-			rest.Banner = nil
+			*rest.BannerFieldOf(kind) = nil
 		}
 		return append(out, pairUnits(ownLines(rest.String(false)), ownLines(rest.String(true)), func(s string) string { return s })...)
 	case *blocks.SystemBlock:
@@ -422,8 +427,10 @@ func blockCounts(doc blocks.Doc) string {
 	case *blocks.IOSSystemBlock:
 		n := len(blocks.IOSSystemUnits(b))
 		parts := []string{fmt.Sprintf("%d %s", n, plural(n, "statement", "statements"))}
-		if b.Banner != nil {
-			parts = append(parts, fmt.Sprintf("a login banner of %d %s", b.Banner.Lines(), plural(b.Banner.Lines(), "line", "lines")))
+		for _, kind := range blocks.BannerKinds {
+			if m := b.BannerOf(kind); m != nil {
+				parts = append(parts, fmt.Sprintf("a %s banner of %d %s", kind, m.Lines(), plural(m.Lines(), "line", "lines")))
+			}
 		}
 		if d := len(blocks.IOSSystemAbsent(b)); d > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", d, plural(d, "absent service", "absent services")))
@@ -1051,9 +1058,9 @@ func (c *blockCtx) against(block string, text []byte, device string) error {
 		}
 		// an IOS banner is several lines: its text is never printed, its size
 		// is
-		if strings.HasPrefix(shown, blocks.IOSBannerHead) && strings.Contains(shown, "\n") {
-			if bb, ok := bannerOf(text); ok {
-				shown = blocks.IOSBannerHead + blocks.SizeMark(bb)
+		if kind := blocks.BannerKindOf(shown); kind != "" && strings.Contains(shown, "\n") {
+			if bb, ok := bannerOf(text, kind); ok {
+				shown = blocks.IOSBannerHeadOf(kind) + blocks.SizeMark(bb)
 			}
 		}
 		// an IOS entry of a list or a submode is shown under its header
@@ -1086,13 +1093,13 @@ func messageOf(text []byte) (*blocks.LoginMessage, bool) {
 	return b.Message, true
 }
 
-// bannerOf is the login banner of an IOS system block text.
-func bannerOf(text []byte) (*blocks.LoginMessage, bool) {
+// bannerOf is the banner of a kind of an IOS system block text.
+func bannerOf(text []byte, kind string) (*blocks.LoginMessage, bool) {
 	b, fs := blocks.ParseIOSSystem(string(text))
-	if blocks.HasErrors(fs) || b.Banner == nil {
+	if blocks.HasErrors(fs) || b.BannerOf(kind) == nil {
 		return nil, false
 	}
-	return b.Banner, true
+	return b.BannerOf(kind), true
 }
 
 func scopeWord(scope string) string {

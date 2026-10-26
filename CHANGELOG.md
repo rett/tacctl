@@ -176,6 +176,15 @@ current behaviour; this file is where history lives.
     setting's, that `device config apply` admits, and only when the rendering
     states the marker.
 
+15. **The IOS `system` block takes `banner motd` and `banner exec`.** Beside
+    `banner login`, each a heredoc of the block (at most 20 lines of 80
+    characters, one of each kind), typed as IOS's multi-line banner with a
+    delimiter the text does not contain, compared by its size and a short
+    digest, planned in place, adopted from a device (`adopt` reads `show
+    running-config | section ^banner`), and taken out for a device by a `no
+    banner motd|exec` line. A device's own motd or exec banner is the section's
+    only where the block states one of that kind.
+
 ## 0.2.18 (2026-10-24)
 
 1. **`device config-syntax` is now `device ios-syntax`, and `device add

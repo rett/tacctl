@@ -5,7 +5,7 @@ package devconf
 // and as the system block renders them, in one compared form. As on Junos,
 // the section exists only for a scope that has a system block in force.
 //
-//   - A login banner is never in a compared statement, a stored section or a
+//   - A banner (login, motd or exec) is never in a compared statement, a stored section or a
 //     report: it is 'banner login <message: 22 lines, 1300 characters, id
 //     3fa9c2d1>', a mark of its size and a short digest of its text, so two
 //     banners compare equal exactly when their bodies are. The device's text
@@ -43,11 +43,11 @@ import (
 	"github.com/rett/tacctl/internal/blocks"
 )
 
-// reIOSBannerMark matches the stored form of a login banner.
-var reIOSBannerMark = regexp.MustCompile(`^banner login <message: [0-9]+ lines, [0-9]+ characters, id [0-9a-f]{8}>$`)
+// reIOSBannerMark matches the stored form of a banner (login, motd or exec).
+var reIOSBannerMark = regexp.MustCompile(`^banner (login|motd|exec) <message: [0-9]+ lines, [0-9]+ characters, id [0-9a-f]{8}>$`)
 
-// iosBannerStmt is the compared statement of a banner body.
-func iosBannerStmt(body string) string { return "banner login " + MessageMark(body) }
+// iosBannerStmt is the compared statement of the banner of a kind.
+func iosBannerStmt(kind, body string) string { return "banner " + kind + " " + MessageMark(body) }
 
 // isIOSBannerMark reports a statement that is a stored banner mark.
 func isIOSBannerMark(s string) bool { return reIOSBannerMark.MatchString(s) }
@@ -58,7 +58,7 @@ func isIOSBannerMark(s string) bool { return reIOSBannerMark.MatchString(s) }
 // 'ntp' statement.
 func isSystemStatement(t string) bool {
 	switch {
-	case t == "banner login", strings.HasPrefix(t, "banner login "):
+	case blocks.BannerKindOf(t) != "":
 		return true
 	case strings.HasPrefix(t, "ip domain name "), strings.HasPrefix(t, "ip domain-name "),
 		strings.HasPrefix(t, "ip domain list "), strings.HasPrefix(t, "ip domain-list "),
@@ -240,5 +240,7 @@ func ntpServerID(f []string) string {
 	return strings.ToLower(f[2])
 }
 
-// DeviceBannerBody is blocks.DeviceBanner for the lines of a device's text.
-func deviceBannerBody(lines []string) (string, int, bool) { return blocks.DeviceBanner(lines) }
+// deviceBannerBody is blocks.DeviceBannerOf for the lines of a device's text.
+func deviceBannerBody(kind string, lines []string) (string, int, bool) {
+	return blocks.DeviceBannerOf(kind, lines)
+}

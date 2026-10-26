@@ -41,7 +41,7 @@ func TestIOSRegionBannerState(t *testing.T) {
 		{"two characters as the delimiter", wrap("banner login ^C", "text", "^C"), "is not 'banner login' and one delimiter character"},
 		{"no delimiter", wrap("banner login"), ""}, // 'banner login' alone is the no form's body only
 		{"a delimiter and text", wrap("banner login ^hello^"), "is not 'banner login' and one delimiter character"},
-		{"a banner of another type", wrap("banner motd ^", "x", "^"), "is not a statement of an owned shape"},
+		{"a banner of another type", wrap("banner incoming ^", "x", "^"), "is not a statement of an owned shape"},
 		{"a tab inside", wrap("banner login ^", "a\tb", "^"), "not printable ASCII"},
 		{"a statement after the banner is checked", wrap("banner login ^", "a", "^", "hostname x"), "is not a statement of an owned shape"},
 		{"the statements of the block", wrap("ip domain name a.example.net", "ip domain list a.example.net", "clock timezone CET 1",

@@ -261,6 +261,8 @@ var keptExamples = map[string]struct {
 	// 0.2.7: the IOS system section is additive too (the stems of the
 	// compared form: the banner is its mark)
 	"ios.system.banner":               {stmt: "banner login " + devconf.MessageMark("Another banner"), unmanaged: true, unrender: "banner login"},
+	"ios.system.banner-motd":          {stmt: "banner motd " + devconf.MessageMark("Another banner"), unmanaged: true, unrender: "banner motd"},
+	"ios.system.banner-exec":          {stmt: "banner exec " + devconf.MessageMark("Another banner"), unmanaged: true, unrender: "banner exec"},
 	"ios.system.domain-name":          {stmt: "ip domain name other.example.net", unmanaged: true, unrender: "ip domain name"},
 	"ios.system.timezone":             {stmt: "clock timezone PST -8 0", unmanaged: true, unrender: "clock timezone"},
 	"ios.system.ntp-authenticate":     {stmt: "ntp authenticate", unmanaged: true, unrender: "ntp authenticate"},

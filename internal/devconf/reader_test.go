@@ -194,7 +194,7 @@ func TestReadHierarchyIOSSystem(t *testing.T) {
 	r := &mapRunner{out: map[string]string{
 		include: "banner exec ^C\r\nbanner login ^C\r\nip domain name lab.example.net\r\nip name-server 192.0.2.53 192.0.2.54\r\n" +
 			"clock timezone CET 1 0\r\nntp authentication-key 5 md5 0822455D0A16 7\r\nntp server 192.0.2.123 prefer\r\n",
-		"show running-config | section ^banner login": "banner login ^C\r\nAuthorized use only.\r\n! not a comment\r\n^C\r\n",
+		"show running-config | section ^banner": "banner login ^C\r\nAuthorized use only.\r\n! not a comment\r\n^C\r\n",
 	}}
 	got, err := ReadHierarchy(context.Background(), r, "cisco", "system")
 	if err != nil {
@@ -211,12 +211,12 @@ func TestReadHierarchyIOSSystem(t *testing.T) {
 	}
 	// a device that does not know '| section': the whole configuration, once
 	r = &mapRunner{out: map[string]string{
-		include: "banner login ^C\r\nntp server 192.0.2.123\r\n",
-		"show running-config | section ^banner login": "% Invalid input detected at '^' marker.\r\n",
-		"show running-config":                         "hostname r1\r\n!\r\nbanner motd ^C\r\nmotd\r\n^C\r\nbanner login ^C\r\nHello\r\n^C\r\nline con 0\r\n",
+		include:                                 "banner login ^C\r\nntp server 192.0.2.123\r\n",
+		"show running-config | section ^banner": "% Invalid input detected at '^' marker.\r\n",
+		"show running-config":                   "hostname r1\r\n!\r\nbanner motd ^C\r\nmotd\r\n^C\r\nbanner login ^C\r\nHello\r\n^C\r\nline con 0\r\n",
 	}}
 	got, err = ReadHierarchy(context.Background(), r, "cisco", "system")
-	if err != nil || got != "ntp server 192.0.2.123\nbanner login ^C\nHello\n^C" {
+	if err != nil || got != "ntp server 192.0.2.123\nbanner motd ^C\nmotd\n^C\nbanner login ^C\nHello\n^C" {
 		t.Errorf("full read: %q %v", got, err)
 	}
 	// a single-line banner, with the section command silent: the first read

@@ -80,6 +80,10 @@ const (
 	SysAuthKey       = "authentication-key"
 	SysTrustedKey    = "trusted-key"
 	SysNTP           = "ntp"
+	// SysBannerMOTD and SysBannerExec are the IOS no lines of the other
+	// banners (SysMessage is the login banner's).
+	SysBannerMOTD = "banner-motd"
+	SysBannerExec = "banner-exec"
 )
 
 // NTPKeyTypes are the types an authentication-key takes.

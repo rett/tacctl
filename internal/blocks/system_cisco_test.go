@@ -96,8 +96,8 @@ func TestIOSSystemParseRefusals(t *testing.T) {
 	}{
 		{"unknown statement", "hostname x\n", 1, "'banner login', 'ip', 'clock', 'ntp', 'logging', 'login', 'security', 'service', 'absent' and 'no' statements only"},
 		{"a set", "set system domain-name x.example.net\n", 1, "statements only"},
-		{"banner motd", "banner motd <<'EOF'\nhi\nEOF\n", 1, "only 'banner login' is accepted"},
-		{"banner alone", "banner\n", 1, "only 'banner login' is accepted"},
+		{"banner incoming", "banner incoming <<'EOF'\nhi\nEOF\n", 1, "only 'banner login', 'banner motd' and 'banner exec' are accepted"},
+		{"banner alone", "banner\n", 1, "only 'banner login', 'banner motd' and 'banner exec' are accepted"},
 		{"banner one line", "banner login ^Chello^C\n", 1, "the login banner is a heredoc"},
 		{"banner bare", "banner login\n", 1, "the login banner is a heredoc"},
 		{"banner unquoted marker", "banner login <<EOF\nhi\nEOF\n", 1, "<<'EOF' exactly"},
@@ -203,7 +203,7 @@ func TestIOSSystemParseRefusals(t *testing.T) {
 		{"authenticate twice", "ntp authenticate\nntp authenticate\n", 2, "is stated twice"},
 		{"no alone", "no\n", 1, "'no' needs a statement"},
 		{"no hostname", "no hostname\n", 1, "takes banner, clock, ip or ntp"},
-		{"no banner motd", "no banner motd\n", 1, "only 'no banner login'"},
+		{"no banner incoming", "no banner incoming\n", 1, "only 'no banner login', 'no banner motd' and 'no banner exec'"},
 		{"no banner words", "no banner login x\n", 1, "takes nothing after it"},
 		{"no domain name value", "no ip domain name a.example.net\n", 1, "takes nothing after it"},
 		{"no ip route", "no ip route 0.0.0.0\n", 1, "a 'no ip' line takes"},
@@ -364,7 +364,7 @@ func TestDeviceBanner(t *testing.T) {
 		{"blank lines kept", []string{"banner login ^C", "", "a", "", "^C"}, "\na\n", 5, true},
 		{"trailing blanks trimmed", []string{"banner login ^C", "a  ", "^C"}, "a", 3, true},
 		{"never closed", []string{"banner login ^C", "a", "b"}, "", 3, false},
-		{"not a login banner", []string{"banner motd ^C", "a", "^C"}, "", 1, false},
+		{"not a login banner", []string{"banner incoming ^C", "a", "^C"}, "", 1, false},
 		{"no delimiter", []string{"banner login"}, "", 1, false},
 		{"indented words", []string{"  banner login ^C", "a", "^C"}, "a", 3, true},
 	} {
@@ -666,8 +666,8 @@ func TestAdoptIOSSystem(t *testing.T) {
 		"ntp server 192.0.2.123 key 5 prefer version 4",
 		"ntp server vrf MGMT 192.0.2.77",
 		"ntp master 3",
-		"banner motd ^C",
-		"motd text that is not ours",
+		"banner incoming ^C",
+		"incoming text that is not ours",
 		"^C",
 		"banner login ^C",
 		iosBanner,
@@ -696,7 +696,7 @@ func TestAdoptIOSSystem(t *testing.T) {
 			t.Errorf("the draft lacks %q:\n%s", want, res.Text)
 		}
 	}
-	for _, not := range []string{"0822455D0A16", "plain-key-text", "motd", "lookup", "ntp master", "authentication-key"} {
+	for _, not := range []string{"0822455D0A16", "plain-key-text", "incoming", "lookup", "ntp master", "authentication-key"} {
 		if strings.Contains(res.Text, not) {
 			t.Errorf("the draft holds %q:\n%s", not, res.Text)
 		}

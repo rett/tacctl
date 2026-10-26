@@ -165,7 +165,7 @@ func iosSystemTemplate(level string) string {
 		"# What a system block states (additive: a statement is set when the device lacks it,",
 		"# and what the device holds besides is kept and listed):",
 		"#",
-		"#   banner login <<'EOF'",
+		"#   banner login <<'EOF'            (also banner motd and banner exec; one of each at most)",
 		"#   <the text, one line per line; ASCII, no tabs, at most 20 lines of 80 characters>",
 		"#   EOF",
 		"#   ip domain name <name>",

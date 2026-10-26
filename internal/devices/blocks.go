@@ -318,8 +318,20 @@ func (b Blocks) ciscoSystemLines(scope string, d blocks.IOSDialect) []string {
 	if b.SystemLayer == LayerScopeDevice {
 		st = withOrigins(st, b.ciscoSystemOrigins(d), "!")
 	}
-	if delim, ok := blocks.BannerDelimiter(b.CiscoSystem.BannerBody()); ok && b.CiscoSystem.Banner != nil {
-		out = append(out, "! The banner is typed with the delimiter "+delim+", the first of "+strings.Join(blocks.BannerDelimiters, " ")+
+	for _, kind := range blocks.BannerKinds {
+		m := b.CiscoSystem.BannerOf(kind)
+		delim, ok := "", false
+		if m != nil {
+			delim, ok = blocks.BannerDelimiter(m.Body)
+		}
+		if !ok {
+			continue
+		}
+		name := "The banner"
+		if kind != "login" {
+			name = "The " + kind + " banner"
+		}
+		out = append(out, "! "+name+" is typed with the delimiter "+delim+", the first of "+strings.Join(blocks.BannerDelimiters, " ")+
 			" that its text does not contain; the NTP lines are in the order IOS needs (keys, trusted keys, servers, 'ntp authenticate').")
 	}
 	return append(out, st...)

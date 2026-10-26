@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rett/tacctl/internal/blocks"
 	"github.com/rett/tacctl/internal/devconf"
 )
 
@@ -480,7 +481,7 @@ var iosTopStatements = []string{
 	"tacacs server ", "radius server ", "tacacs-server host ", "radius-server host ",
 	"privilege exec ", "snmp-server community ", "snmp-server location ", "snmp-server contact ",
 	"snmp-server host ", "snmp-server enable traps ", "snmp-server trap-source ",
-	"banner login ", "ip domain name ", "ip domain list ", "clock timezone ", "ip name-server ", "ntp server ",
+	"banner login ", "banner motd ", "banner exec ", "ip domain name ", "ip domain list ", "clock timezone ", "ip name-server ", "ntp server ",
 	"ntp authentication-key ", "ntp trusted-key ", "ntp authenticate",
 	"logging host ", "logging trap ", "logging buffered ", "logging origin-id ", "service timestamps ", "login on-failure ",
 	"login on-success ", "login delay ", "security passwords ", "security authentication ", "ip ssh version ", "ip ssh time-out ",
@@ -546,10 +547,10 @@ func checkIOSRegion(lines []string) error {
 				return fmt.Errorf("line %d, %q, is not a statement of an owned shape", i+1, t)
 			}
 			inBlock = !no && hasAnyPrefix(body, iosHeaderStatements)
-			if f := strings.Fields(body); !no && len(f) >= 2 && f[0] == "banner" && f[1] == "login" {
-				// 'banner login <d>': one delimiter character, nothing after it
-				if len(f) != 3 || len(f[2]) != 1 || l != "banner login "+f[2] {
-					return fmt.Errorf("line %d, %q, is not 'banner login' and one delimiter character", i+1, t)
+			if f := strings.Fields(body); !no && len(f) >= 2 && f[0] == "banner" && blocks.BannerKindOf(body) != "" {
+				// 'banner <kind> <d>': one delimiter character, nothing after it
+				if len(f) != 3 || len(f[2]) != 1 || l != "banner "+f[1]+" "+f[2] {
+					return fmt.Errorf("line %d, %q, is not 'banner %s' and one delimiter character", i+1, t, f[1])
 				}
 				banner = f[2]
 			}

@@ -234,7 +234,7 @@ func (s *sections) addSystem(name string, lines []string) {
 			continue
 		}
 		sec.Secret[i] = s.secret(l)
-		if f := strings.Fields(l); len(f) == 3 && f[0] == "banner" && f[1] == "login" {
+		if f := strings.Fields(l); len(f) == 3 && f[0] == "banner" && isBannerKind(f[1]) {
 			delim = f[2]
 		}
 	}
@@ -478,7 +478,7 @@ func ciscoSystemStatements(block string) []string {
 			continue
 		}
 		out = append(out, l)
-		if f := strings.Fields(t); len(f) == 3 && f[0] == "banner" && f[1] == "login" {
+		if f := strings.Fields(t); len(f) == 3 && f[0] == "banner" && isBannerKind(f[1]) {
 			delim = f[2]
 		}
 	}
@@ -531,3 +531,7 @@ func withoutIdleTimeout(lines []string) []string {
 	}
 	return out
 }
+
+// isBannerKind reports the kinds of banner an IOS system block takes (the
+// words after 'banner'); this file imports no block, so it names them.
+func isBannerKind(w string) bool { return w == "login" || w == "motd" || w == "exec" }
