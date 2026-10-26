@@ -30,6 +30,9 @@ func (p *iosSysParser) rule(f []string) bool {
 func (p *iosSysParser) ruleNo(t []string) bool {
 	r, c, claimed, why := iosRules.match(t, false)
 	if !claimed {
+		r, c, claimed, why = iosAbsent.match(t, false)
+	}
+	if !claimed {
 		return false
 	}
 	if r == nil {
@@ -38,4 +41,23 @@ func (p *iosSysParser) ruleNo(t []string) bool {
 	}
 	p.b.NotManaged = append(p.b.NotManaged, SystemNotManaged{Line: p.line, Kind: "rule:" + r.ID, Value: strings.Join(c, " ")})
 	return true
+}
+
+// absent reads an 'absent <service>' line (the words after 'absent').
+func (p *iosSysParser) absent(t []string) {
+	r, c, claimed, why := iosAbsent.match(t, true)
+	switch {
+	case !claimed:
+		p.errf("'absent' takes: %s", strings.Join(iosAbsent.patterns(), "; "))
+		return
+	case r == nil:
+		p.errf("%s", why)
+		return
+	}
+	st := ruleStmtOf(r, c, p.line)
+	if i := indexRule(p.b.Rules, st.Rule, st.Head); i >= 0 {
+		p.errf("'absent %s' is stated twice (line %d)", strings.Join(c, " "), p.b.Rules[i].Line)
+		return
+	}
+	p.b.Rules = append(p.b.Rules, st)
 }

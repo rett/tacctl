@@ -642,6 +642,18 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 		}
 		leaf := strings.Fields(path[len(path)-1])
 		switch {
+		case name == devconf.SectionSystem && len(path) == 1 && forbidTarget(p.expected(name).Forbid, path[0]) != "":
+			// a service the system block requires to be absent: the whole
+			// statement goes (once, whatever sits under it), and the back-out
+			// types the device's line again
+			target := forbidTarget(p.expected(name).Forbid, path[0])
+			if i := slices.IndexFunc(nos, func(l Line) bool { return l.Text == target }); i >= 0 {
+				nos[i].For = append(nos[i].For, x.stem)
+				nos[i].Undo = append(nos[i].Undo, Line{Op: OpLine, Text: path[0]})
+				continue
+			}
+			nos = append(nos, Line{Op: OpNo, Text: target, Section: name, For: []string{x.stem},
+				Undo: []Line{{Op: OpLine, Text: path[0]}}})
 		case len(path) == 1 && st.isStoredFormOnly(path[0]) != "":
 			// D106: what the image adds or stores by itself is never a 'no'
 			keep(x.stem, st.isStoredFormOnly(path[0]))
@@ -1030,10 +1042,30 @@ func (p *planner) iosRow(section string, l Line) string {
 	return id
 }
 
+// forbidTarget is the statement of forbid that the device's statement is at or
+// under ("" when it is none).
+func forbidTarget(forbid []string, statement string) string {
+	w := strings.Fields(statement)
+	for _, f := range forbid {
+		fw := strings.Fields(f)
+		if len(w) >= len(fw) && slices.Equal(w[:len(fw)], fw) {
+			return f
+		}
+	}
+	return ""
+}
+
 // iosRowID names the ownership row a line of a section belongs to.
 func iosRowID(section string, l Line) string {
 	t := l.Text
 	c0 := firstCtx(l)
+	if l.Op == OpNo && section == devconf.SectionSystem {
+		for _, r := range iosOwned {
+			if r.Mode == ModeAbsent && r.Pattern == t {
+				return r.ID
+			}
+		}
+	}
 	switch {
 	case strings.HasPrefix(c0, "ip access-list "):
 		return "ios." + section + ".acl"

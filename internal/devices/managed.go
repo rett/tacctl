@@ -51,6 +51,14 @@ type Section struct {
 	// line no layer states, and for a line that is not a block's). Nil when
 	// the layers as written are not known. Origin[i] belongs to Lines[i].
 	Origin []string
+	// Forbid are the statements the section's block requires to be absent
+	// (0.2.19, 'absent system services telnet' / 'absent ip http server'), as
+	// the words of the statement without the verb. A statement the device
+	// holds at or under one is a difference, and the planner deletes it. The
+	// section may have no Lines. ForbidOrigin names, per entry, the block that
+	// states it ("" when not known).
+	Forbid       []string
+	ForbidOrigin []string
 	// Absent says the section's hierarchy is expected to hold nothing (0.2.10,
 	// D146: the NETCONF service of a scope that disables it). Lines is empty;
 	// a statement the device has under the section is a difference, and the
@@ -164,6 +172,32 @@ func (s *sections) origins(name string, from map[string]string) {
 	}
 }
 
+// forbid sets the statements the system section requires to be absent; a
+// block with no other statement still has the section.
+func (s *sections) forbid(name string, targets []string, from map[string]string) {
+	if len(targets) == 0 {
+		return
+	}
+	i := -1
+	for j := range s.out {
+		if s.out[j].Name == name {
+			i = j
+		}
+	}
+	if i < 0 {
+		s.out = append(s.out, Section{Name: name})
+		i = len(s.out) - 1
+	}
+	sec := &s.out[i]
+	sec.Forbid = targets
+	if len(from) > 0 {
+		sec.ForbidOrigin = make([]string, len(targets))
+		for k, t := range targets {
+			sec.ForbidOrigin[k] = from[t]
+		}
+	}
+}
+
 // addTail is add for a section whose last n lines come from a block: the
 // marks are by position, because an access list entry of a block can be the
 // same text as one of the structured settings'.
@@ -240,6 +274,7 @@ func managedJuniper(req Request, d Data) []Section {
 	sys := junosStatements(v["SYSTEM_BLOCK"])
 	s.addFrom(sectionSystem, sys, setOf(sys))
 	s.origins(sectionSystem, d.Blocks.systemOrigins())
+	s.forbid(sectionSystem, d.Blocks.systemAbsent(), d.Blocks.systemForbidOrigins())
 	switch d.Netconf.State {
 	case NetconfEnable:
 		s.add(sectionNetconf, junosStatements(v["NETCONF_BLOCK"]))
@@ -404,6 +439,7 @@ func managedCisco(req Request, d Data) []Section {
 	// statement and never a secret.
 	s.addSystem(sectionSystem, ciscoSystemStatements(v["SYSTEM_BLOCK"]))
 	s.origins(sectionSystem, d.Blocks.ciscoSystemOrigins(dialectOf(req.Legacy)))
+	s.forbid(sectionSystem, d.Blocks.ciscoSystemAbsent(), d.Blocks.ciscoSystemForbidOrigins())
 	s.add(sectionNetconf, ciscoStatements(v["NETCONF_BLOCK"]))
 	s.add(sectionBreakGlass, uncommented(ciscoBreakGlass(BreakGlassFor(req, d)), "! ", "! username "))
 	return s.out

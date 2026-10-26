@@ -6322,6 +6322,23 @@ statement is refused; the three
 .B "ip ssh"
 settings are the only ones the plan types.
 .PP
+Both system blocks also take the services a scope requires to be absent, a
+hardening that no \fBset\fR line can state: on Junos
+.B "absent system services telnet|ftp|finger|xnm\-clear\-text|web\-management"
+and on IOS
+.B "absent ip http server|ip http secure\-server|service tcp\-small\-servers|service udp\-small\-servers|ip finger|service finger"
+(only a statement the running configuration prints while the feature is on, so
+that its absence can be compared). The device that holds the service, or
+anything under it, differs; the plan deletes the whole statement once
+.RB ( "delete system services telnet" ,
+.BR "no ip http server" ),
+under a comment that names the block, and the back\-out types it again. The
+\fBdelete\fR (Junos) and \fBno\fR (IOS) line of a device's own block takes a
+scope's marker out for that device, as it does for any statement. These deletes
+are the only ones under \fBsystem services\fR, besides the NETCONF setting's,
+that an apply admits. A block of \fBabsent\fR lines alone is a block: nothing
+else of the device is compared with it.
+.PP
 The blocks of a scope are the files under
 .IR /etc/tacctl/blocks/\fIscope\fR/\fIvendor\fR ,
 and a block is in force only while
@@ -10518,7 +10535,9 @@ service: then
 with its limits, or
 .BR "delete system services netconf" ),
 .BR "system root\-authentication" ,
-.BR "system services" ,
+.BR "system services"
+(but for the exact statements of the NETCONF setting and the delete of a service
+the system block requires to be absent),
 .BR interfaces ,
 groups, a local user's credentials, the root user, the account that runs it and
 its login class, and the deletion of a whole hierarchy tacctl renders; every

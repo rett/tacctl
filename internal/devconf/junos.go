@@ -370,6 +370,9 @@ type junosCtx struct {
 	// ruleGroups are the rule groups (blocks.JunosRuleGroups) of the
 	// statements the rendering's system section states.
 	ruleGroups map[string]bool
+	// forbid are the statements the rendering's system section requires to
+	// be absent ('system services telnet').
+	forbid []string
 	// device side: a user's class, and the filters applied on lo0.
 	userClass map[string]string
 	lo0Filter map[string]bool
@@ -420,6 +423,9 @@ func (c *junosCtx) section(x stmt) string {
 		case "services":
 			if len(p) >= 3 && p[2] == "netconf" {
 				return SectionNetconf
+			}
+			if forbiddenWords(c.forbid, p) {
+				return SectionSystem
 			}
 		case "domain-name", "domain-search", "time-zone", "name-server", "ntp":
 			if c.system {
@@ -564,8 +570,9 @@ func junosExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 
 	c := &junosCtx{claim: map[string]string{}, users: map[string]string{},
 		userClass: map[string]string{}, lo0Filter: map[string]bool{},
-		system: renders(expected, SectionSystem)}
+		system: len(sectionOf(expected, SectionSystem).Lines) > 0}
 	c.ruleGroups = ruleGroupsOf(expected, FamilyJunos)
+	c.forbid = forbidOf(expected)
 	haveExpected := false
 	for _, sec := range expected {
 		for _, x := range junosCanon(sec.Lines, sec.Secret, lb) {
@@ -631,7 +638,7 @@ func junosExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 	}
 	out := make(map[string]devices.Section, len(SectionNames))
 	for _, n := range SectionNames {
-		if optionalSection(n) && !c.system {
+		if optionalSection(n) && !c.system && len(c.forbid) == 0 {
 			continue
 		}
 		out[n] = toSection(n, uniq(by[n]))

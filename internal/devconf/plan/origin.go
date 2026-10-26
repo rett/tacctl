@@ -25,6 +25,18 @@ func originsOfSections(expected []devices.Section) map[string]string {
 			}
 			out[strings.TrimSpace(sec.Lines[i])] = o
 		}
+		// a service the block requires to be absent: the delete (Junos) or no
+		// (IOS) that takes it away comes from the block that states it
+		for i, o := range sec.ForbidOrigin {
+			if o == "" || i >= len(sec.Forbid) {
+				continue
+			}
+			if out == nil {
+				out = map[string]string{}
+			}
+			out["delete "+sec.Forbid[i]] = o
+			out["no "+sec.Forbid[i]] = o
+		}
 	}
 	return out
 }
@@ -35,8 +47,11 @@ func originsOfSections(expected []devices.Section) map[string]string {
 // H prefer version 4 key 1') by the longest run of leading words it shares
 // with a statement of a block, of at least three.
 func (d Delta) originOf(l Line) string {
-	if l.Op == OpDelete || l.Op == OpNo {
-		return ""
+	switch l.Op {
+	case OpDelete:
+		return d.origins[strings.TrimSpace(l.Text)]
+	case OpNo:
+		return d.origins["no "+strings.TrimSpace(l.Text)]
 	}
 	return lookupOrigin(d.origins, l.Text)
 }

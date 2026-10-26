@@ -94,7 +94,7 @@ func TestIOSSystemParseRefusals(t *testing.T) {
 		line int
 		frag string
 	}{
-		{"unknown statement", "hostname x\n", 1, "'banner login', 'ip', 'clock', 'ntp', 'logging', 'login', 'security', 'service' and 'no' statements only"},
+		{"unknown statement", "hostname x\n", 1, "'banner login', 'ip', 'clock', 'ntp', 'logging', 'login', 'security', 'service', 'absent' and 'no' statements only"},
 		{"a set", "set system domain-name x.example.net\n", 1, "statements only"},
 		{"banner motd", "banner motd <<'EOF'\nhi\nEOF\n", 1, "only 'banner login' is accepted"},
 		{"banner alone", "banner\n", 1, "only 'banner login' is accepted"},

@@ -33,6 +33,12 @@ const (
 	// in place, the other value is never deleted; with no rendered value the
 	// leaf is kept.
 	ModeSingle Mode = "single"
+	// ModeAbsent: a service the rendering requires to be absent (0.2.19, an
+	// 'absent' line of the system block): when the device holds anything at or
+	// under the pattern, the whole statement is deleted ('delete system
+	// services telnet', 'no ip http server'). Nothing else under the
+	// hierarchy is ever written.
+	ModeAbsent Mode = "absent"
 	// ModeAdditive: an object of a list the rendering adds to: each rendered
 	// entry is set when the device lacks it, and nothing under the pattern is
 	// ever deleted: the device's other entries are kept and listed (0.2.7, the
@@ -187,6 +193,16 @@ var junosOwned = []OwnedRow{
 	{ID: "junos.system.ntp-server-routing-instance", Section: "system", Pattern: "system ntp server $ routing-instance", Mode: ModeSingle, Block: true,
 		Why:  "the statements of the system block of scope <scope>",
 		Kept: "the options of a server the block does not name"},
+	{ID: "junos.system.absent-telnet", Section: "system", Pattern: "system services telnet", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "junos.system.absent-ftp", Section: "system", Pattern: "system services ftp", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "junos.system.absent-finger", Section: "system", Pattern: "system services finger", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "junos.system.absent-xnm-clear-text", Section: "system", Pattern: "system services xnm-clear-text", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "junos.system.absent-web-management", Section: "system", Pattern: "system services web-management", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
 	{ID: "junos.system.domain-search", Section: "system", Pattern: "system domain-search $", Mode: ModeAdditive, Block: true,
 		Why:  "the statements of the system block of scope <scope>",
 		Kept: "the device's other search domains"},
@@ -368,6 +384,18 @@ var iosOwned = []OwnedRow{
 	{ID: "ios.system.summer-time", Section: "system", Pattern: "clock summer-time", Mode: ModeSingle, Block: true,
 		Why:  "the statements of the system block of scope <scope>",
 		Kept: "the summer time when the block states none"},
+	{ID: "ios.system.absent-http-server", Section: "system", Pattern: "ip http server", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "ios.system.absent-http-secure-server", Section: "system", Pattern: "ip http secure-server", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "ios.system.absent-tcp-small-servers", Section: "system", Pattern: "service tcp-small-servers", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "ios.system.absent-udp-small-servers", Section: "system", Pattern: "service udp-small-servers", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "ios.system.absent-finger", Section: "system", Pattern: "ip finger", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
+	{ID: "ios.system.absent-service-finger", Section: "system", Pattern: "service finger", Mode: ModeAbsent, Block: true,
+		Why: "the services the system block of scope <scope> requires to be absent"},
 	{ID: "ios.system.domain-list", Section: "system", Pattern: "ip domain list $", Mode: ModeAdditive, Block: true,
 		Why:  "the statements of the system block of scope <scope>",
 		Kept: "the device's other search domains"},

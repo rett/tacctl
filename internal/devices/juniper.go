@@ -353,6 +353,9 @@ func JuniperVars(req Request, d Data) map[string]string {
 	if len(system) > 0 {
 		snmpBlock += "\n" + strings.Join(system, "\n")
 	}
+	if absent := d.Blocks.absentLines(scope); len(absent) > 0 {
+		snmpBlock += "\n" + strings.Join(absent, "\n")
+	}
 
 	return map[string]string{
 		"SERVER_IP":           serverIP,

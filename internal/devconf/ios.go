@@ -875,6 +875,9 @@ type ciscoCtx struct {
 	system bool
 	// ruleGroups are the rule groups of the system section's statements.
 	ruleGroups map[string]bool
+	// forbid are the statements the rendering's system section requires to
+	// be absent ('ip http server').
+	forbid []string
 }
 
 // The two source-interface commands (D119).
@@ -939,6 +942,8 @@ func (c *ciscoCtx) section(x stmt) string {
 	case has("snmp-server "):
 		return SectionSNMP
 	case c.system && len(p) == 1 && isSystemStatement(t) && c.ownsIOSRule(t):
+		return SectionSystem
+	case len(p) == 1 && forbiddenWords(c.forbid, strings.Fields(t)):
 		return SectionSystem
 	case has("netconf-yang ", "netconf "):
 		return SectionNetconf
@@ -1365,8 +1370,9 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 
 	c := &ciscoCtx{claim: map[string]string{}, acls: map[string]string{},
 		vtyRefs: map[string]bool{}, snmpRefs: map[string]bool{}, sourceInterface: map[string]bool{},
-		system: renders(expected, SectionSystem)}
+		system: len(sectionOf(expected, SectionSystem).Lines) > 0}
 	c.ruleGroups = ruleGroupsOf(expected, FamilyIOS)
+	c.forbid = forbidOf(expected)
 	var rendered []string
 	for _, sec := range expected {
 		rendered = append(rendered, sec.Lines...)
@@ -1427,7 +1433,7 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 	by[SectionAAA] = append(by[SectionAAA], marker)
 	out := make(map[string]devices.Section, len(SectionNames))
 	for _, n := range SectionNames {
-		if optionalSection(n) && !c.system {
+		if optionalSection(n) && !c.system && len(c.forbid) == 0 {
 			continue
 		}
 		out[n] = toSection(n, uniq(by[n]))

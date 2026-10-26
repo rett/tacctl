@@ -425,6 +425,9 @@ func blockCounts(doc blocks.Doc) string {
 		if b.Banner != nil {
 			parts = append(parts, fmt.Sprintf("a login banner of %d %s", b.Banner.Lines(), plural(b.Banner.Lines(), "line", "lines")))
 		}
+		if d := len(blocks.IOSSystemAbsent(b)); d > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", d, plural(d, "absent service", "absent services")))
+		}
 		if d := len(b.NotManaged); d > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", d, plural(d, "no line", "no lines")))
 		}
@@ -434,6 +437,9 @@ func blockCounts(doc blocks.Doc) string {
 		parts := []string{fmt.Sprintf("%d %s", n, plural(n, "statement", "statements"))}
 		if b.Message != nil {
 			parts = append(parts, fmt.Sprintf("a login message of %d %s", b.Message.Lines(), plural(b.Message.Lines(), "line", "lines")))
+		}
+		if d := len(blocks.SystemAbsent(b)); d > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", d, plural(d, "absent service", "absent services")))
 		}
 		if d := len(b.NotManaged); d > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", d, plural(d, "delete line", "delete lines")))

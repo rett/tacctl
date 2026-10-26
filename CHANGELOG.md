@@ -162,6 +162,20 @@ current behaviour; this file is where history lives.
     remove` takes the group out. The log has `emergency lockdown enable|disable
     scope= groups= ...`.
 
+14. **The `system` blocks take `absent` lines: services a scope requires to be
+    absent.** Junos `absent system services telnet|ftp|finger|xnm-clear-text|
+    web-management` and IOS `absent ip http server|ip http secure-server|
+    service tcp-small-servers|service udp-small-servers|ip finger|service
+    finger` are statements of the block (a `set system services` line is an
+    error; `ssh` and `netconf` are not in the list). The device that holds the
+    service, or anything under it, differs; the plan deletes the whole
+    statement once (`delete system services telnet`, `no ip http server`) under
+    a comment that names the block, and the back-out types it again. A `delete`
+    or `no` line of a device's block takes the marker out for that device.
+    These deletes are the only ones under `system services`, besides the NETCONF
+    setting's, that `device config apply` admits, and only when the rendering
+    states the marker.
+
 ## 0.2.18 (2026-10-24)
 
 1. **`device config-syntax` is now `device ios-syntax`, and `device add

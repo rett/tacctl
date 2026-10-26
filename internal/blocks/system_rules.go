@@ -80,6 +80,9 @@ type ruleTable struct {
 	// rule (IOS); otherwise when its first word does ("login" takes two).
 	twoWordRoot bool
 	roots       map[string][]string
+	// absent: the rows are services the block requires to be absent
+	// ('absent ...' lines); their text is the marker, never a statement.
+	absent bool
 }
 
 // Syslog facilities and levels Junos takes under 'system syslog host', and the
@@ -122,6 +125,19 @@ var junosRules = newRuleTable("set system ", false, []sysRule{
 	{ID: "password-format", Pattern: "login password format md5|sha1|sha256|sha512"},
 })
 
+// junosAbsent is the table of the services a Junos system block may require
+// to be absent: 'absent system services telnet'. The device must hold nothing
+// under the statement; the plan deletes what it holds. Only the services that
+// are an open door by being on are in it, so that the marker is a hardening
+// and never a way to cut the management path (ssh and netconf are not).
+var junosAbsent = newAbsentTable("absent system ", false, []sysRule{
+	{ID: "absent-telnet", Pattern: "services telnet"},
+	{ID: "absent-ftp", Pattern: "services ftp"},
+	{ID: "absent-finger", Pattern: "services finger"},
+	{ID: "absent-xnm-clear-text", Pattern: "services xnm-clear-text"},
+	{ID: "absent-web-management", Pattern: "services web-management"},
+})
+
 // sysRuleTable is the Junos table's rules.
 var sysRuleTable = junosRules.rules
 
@@ -152,6 +168,24 @@ var iosRules = newRuleTable("", true, []sysRule{
 	{ID: "ios-summer-time", Pattern: "clock summer-time <zone> recurring~ <week> <day> <month> <clock> <week> <day> <month> <clock>"},
 	{ID: "ios-summer-time", Pattern: "clock summer-time <zone> recurring~ <week> <day> <month> <clock> <week> <day> <month> <clock> <int:1-1440>"},
 })
+
+// iosAbsent is the same for IOS: 'absent ip http server'. Only a statement the
+// running configuration prints when the feature is on is in it (a feature that
+// is on by default and prints nothing could not be compared).
+var iosAbsent = newAbsentTable("absent ", true, []sysRule{
+	{ID: "ios-absent-http-server", Pattern: "ip http server"},
+	{ID: "ios-absent-http-secure-server", Pattern: "ip http secure-server"},
+	{ID: "ios-absent-tcp-small-servers", Pattern: "service tcp-small-servers"},
+	{ID: "ios-absent-udp-small-servers", Pattern: "service udp-small-servers"},
+	{ID: "ios-absent-finger", Pattern: "ip finger"},
+	{ID: "ios-absent-service-finger", Pattern: "service finger"},
+})
+
+func newAbsentTable(prefix string, twoWord bool, rs []sysRule) *ruleTable {
+	t := newRuleTable(prefix, twoWord, rs)
+	t.absent = true
+	return t
+}
 
 func newRuleTable(prefix string, twoWord bool, rs []sysRule) *ruleTable {
 	t := &ruleTable{rules: buildRules(rs), prefix: prefix, twoWordRoot: twoWord, roots: map[string][]string{}}
@@ -184,7 +218,7 @@ func (t *ruleTable) rootOf(args []string) string {
 }
 
 // allTables are the tables, for the lookups by a rule's ID.
-var allTables = []*ruleTable{junosRules, iosRules}
+var allTables = []*ruleTable{junosRules, iosRules, junosAbsent, iosAbsent}
 
 func buildRules(rs []sysRule) []sysRule {
 	for i := range rs {
@@ -541,10 +575,48 @@ func (p *sysParser) rule(t []string) bool {
 	return true
 }
 
+// absent reads an 'absent system services <service>' line (the words after
+// 'absent').
+func (p *sysParser) absent(t []string) {
+	if len(t) < 2 || t[0] != "system" {
+		p.errf("only 'absent system services <service>' is accepted (words 2 and 3)")
+		return
+	}
+	r, c, claimed, why := junosAbsent.match(t[1:], true)
+	switch {
+	case !claimed:
+		p.errf("'absent system' takes services: %s", strings.Join(junosAbsent.patterns(), "; "))
+		return
+	case r == nil:
+		p.errf("%s", why)
+		return
+	}
+	st := ruleStmtOf(r, c, p.line)
+	if i := indexRule(p.b.Rules, st.Rule, st.Head); i >= 0 {
+		p.errf("'absent system %s' is stated twice (line %d)", strings.Join(c, " "), p.b.Rules[i].Line)
+		return
+	}
+	p.b.Rules = append(p.b.Rules, st)
+}
+
+// patterns are the patterns of the table's rows, in order.
+func (t *ruleTable) patterns() []string {
+	var out []string
+	for _, r := range t.rules {
+		if !slices.Contains(out, r.Pattern) {
+			out = append(out, r.Pattern)
+		}
+	}
+	return out
+}
+
 // ruleDelete reads a delete line of the Junos table; it reports whether the
 // table claimed it.
 func (p *sysParser) ruleDelete(t []string) bool {
 	r, c, claimed, why := junosRules.match(t, false)
+	if !claimed {
+		r, c, claimed, why = junosAbsent.match(t, false)
+	}
 	if !claimed {
 		return false
 	}
@@ -589,11 +661,59 @@ func applyRuleDelete(rs []RuleStmt, d SystemNotManaged) []RuleStmt {
 // ruleStatements are the statements of a table in a block, in the order of
 // the table and then of the block.
 func ruleStatements(rs []RuleStmt) []string {
-	sorted := append([]RuleStmt(nil), rs...)
+	return ruleTexts(rs, false)
+}
+
+// absentLines are the 'absent ...' lines of a block, in the order of the table
+// and then of the block.
+func absentLines(rs []RuleStmt) []string {
+	return ruleTexts(rs, true)
+}
+
+func ruleTexts(rs []RuleStmt, absent bool) []string {
+	var sorted []RuleStmt
+	for _, r := range rs {
+		if isAbsent(r.Rule) == absent {
+			sorted = append(sorted, r)
+		}
+	}
 	stableByRule(sorted)
 	out := make([]string, len(sorted))
 	for i, r := range sorted {
 		out[i] = r.Text()
+	}
+	return out
+}
+
+// isAbsent reports whether a rule ID is a row of an absent table.
+func isAbsent(id string) bool {
+	t := tableOf(id)
+	return t != nil && t.absent
+}
+
+// SystemAbsent are the statements a Junos block requires to be absent, as the
+// words after 'set' ('system services telnet').
+func SystemAbsent(b *SystemBlock) []string {
+	if b == nil {
+		return nil
+	}
+	return absentTargets(b.Rules, "system ")
+}
+
+// IOSSystemAbsent is the same for an IOS block ('ip http server').
+func IOSSystemAbsent(b *IOSSystemBlock) []string {
+	if b == nil {
+		return nil
+	}
+	return absentTargets(b.Rules, "")
+}
+
+func absentTargets(rs []RuleStmt, prefix string) []string {
+	var out []string
+	for _, r := range rs {
+		if isAbsent(r.Rule) {
+			out = append(out, prefix+strings.Join(r.Args, " "))
+		}
 	}
 	return out
 }
@@ -635,6 +755,10 @@ func checkRules(rs []RuleStmt, layer Layer, add func(line int, sev Severity, for
 		}
 	}
 	for _, r := range rs {
+		if isAbsent(r.Rule) {
+			add(r.Line, SevNote, "%s: the plan deletes what the device holds of it; a way you reach the device by (telnet, J-Web, the HTTP server) is gone with it", r.Text())
+			continue
+		}
 		switch r.Rule {
 		case "retry-lockout-period":
 			add(r.Line, SevNote, "login retry-options lockout-period locks an account for %s minutes after its failed logins: a mistyped password of a tacctl user or of a local account can lock that account", r.Args[len(r.Args)-1])

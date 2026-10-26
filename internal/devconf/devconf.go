@@ -76,7 +76,8 @@ func optionalSection(name string) bool { return name == SectionSystem }
 
 // renders reports whether the rendering has the section (some statement).
 func renders(expected []devices.Section, name string) bool {
-	return len(sectionOf(expected, name).Lines) > 0
+	sec := sectionOf(expected, name)
+	return len(sec.Lines) > 0 || len(sec.Forbid) > 0
 }
 
 // The vendor families the package reads. The registry's vendor words

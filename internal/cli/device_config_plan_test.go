@@ -830,3 +830,35 @@ func TestPlanSyslogAndLoginPolicyFromTheBlock(t *testing.T) {
 		t.Errorf("plain:\n%s", plain)
 	}
 }
+
+// A system block that requires services to be absent (0.2.19): the plan
+// deletes what the device holds of them, once, names the block, and leaves
+// the device's other services alone.
+func TestPlanAbsentServicesFromTheBlock(t *testing.T) {
+	b := newPullBox(t)
+	b.devices([3]string{"lab-j", "192.168.1.20", "juniper"})
+	base := b.expected("lab-j") + "set system services telnet\nset system services telnet connection-limit 5\nset system services ssh\nset system services ftp\n"
+	b.serve("juniper", base)
+	b.servePlain(base)
+	b.sb.blk("absent system services telnet\nabsent system services web-management\nset system time-zone UTC\n", "lab", "juniper", "set", "system", "-", "-y")
+	b.sb.expect(0, "", "")
+	if out := b.run("device", "config", "pull", "lab-j"); b.sb.code != 0 {
+		t.Fatalf("pull: %d %s %s", b.sb.code, out, b.sb.stderr())
+	}
+	out := b.run("device", "config", "plan", "lab-j")
+	if b.sb.code != 0 {
+		t.Fatalf("plan: %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+	}
+	region := out[strings.Index(out, "##### PASTE FROM HERE"):strings.Index(out, "##### PASTE TO HERE")]
+	if strings.Count(region, "delete system services telnet\n") != 1 {
+		t.Errorf("the region lacks one delete of telnet:\n%s", region)
+	}
+	for _, not := range []string{"services ssh", "services ftp", "web-management", "connection-limit"} {
+		if strings.Contains(region, not) {
+			t.Errorf("the region touches %q:\n%s", not, region)
+		}
+	}
+	if !strings.Contains(region, "# from scope block lab juniper system\n") {
+		t.Errorf("the region does not name the block:\n%s", region)
+	}
+}

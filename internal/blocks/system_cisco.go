@@ -377,6 +377,10 @@ func (p *iosSysParser) parseLine(lines []string, i int) int {
 	if f[0] == "banner" {
 		return p.banner(f[1:], lines, i)
 	}
+	if f[0] == "absent" {
+		p.absent(f[1:])
+		return 1
+	}
 	if strings.ContainsAny(raw, `"'`) {
 		p.errf("a quote is not accepted in a system statement (only the login banner holds text, as a heredoc)")
 		return 1
@@ -394,7 +398,7 @@ func (p *iosSysParser) parseLine(lines []string, i int) int {
 	case "no":
 		p.no(f[1:])
 	default:
-		p.errf("a block holds 'banner login', 'ip', 'clock', 'ntp', 'logging', 'login', 'security', 'service' and 'no' statements only (word 1)")
+		p.errf("a block holds 'banner login', 'ip', 'clock', 'ntp', 'logging', 'login', 'security', 'service', 'absent' and 'no' statements only (word 1)")
 	}
 	return 1
 }
@@ -1404,6 +1408,7 @@ func (b *IOSSystemBlock) String(elided bool) string {
 	for _, u := range IOSSystemUnits(&rest) {
 		lines = append(lines, u...)
 	}
+	lines = append(lines, absentLines(b.Rules)...)
 	for _, d := range b.NotManaged {
 		lines = append(lines, d.iosText())
 	}

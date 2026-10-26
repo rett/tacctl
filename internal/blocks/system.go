@@ -362,6 +362,8 @@ func (p *sysParser) parseLine(lines []string, i int) int {
 			return 1
 		}
 		p.set(f[1:])
+	case "absent":
+		p.absent(f[1:])
 	case "delete":
 		if strings.Contains(raw, `"`) {
 			p.errf("a quote is not accepted in a system statement (only the login message holds one, as a heredoc)")
@@ -369,7 +371,7 @@ func (p *sysParser) parseLine(lines []string, i int) int {
 		}
 		p.del(f[1:])
 	default:
-		p.errf("a block holds 'set' and 'delete' statements only (word 1)")
+		p.errf("a block holds 'set', 'absent' and 'delete' statements only (word 1)")
 	}
 	return 1
 }
@@ -499,6 +501,8 @@ func (p *sysParser) set(t []string) {
 	switch t[1] {
 	case "login":
 		p.errf("only 'set system login message' and 'announcement', 'retry-options ...' and 'password ...' are accepted under login (word 4)")
+	case "services":
+		p.errf("a block does not set services: 'absent system services <service>' requires one to be absent (telnet, ftp, finger, xnm-clear-text, web-management)")
 	case "domain-name":
 		p.single(&p.b.DomainName, "domain-name", args, hostProblem)
 	case "domain-search":
@@ -1213,6 +1217,7 @@ func (b *SystemBlock) String(elided bool) string {
 		lines = append(lines, MessageTerminator)
 	}
 	lines = append(lines, b.statementsBesidesMessage()...)
+	lines = append(lines, absentLines(b.Rules)...)
 	for _, d := range b.NotManaged {
 		lines = append(lines, d.text())
 	}

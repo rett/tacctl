@@ -136,6 +136,50 @@ func (b Blocks) systemOrigins() map[string]string {
 	return originsOf(blocks.SystemStatements(b.ScopeSystem), blocks.SystemStatements(b.DeviceSystem), b.Scope, b.Device, blocks.VendorJuniper, blocks.BlockSystem)
 }
 
+// systemForbidOrigins and ciscoSystemForbidOrigins map each statement a
+// system block requires to be absent to the block that states it.
+func (b Blocks) systemForbidOrigins() map[string]string {
+	if b.ScopeSystem == nil && b.DeviceSystem == nil {
+		return nil
+	}
+	return originsOf(blocks.SystemAbsent(b.ScopeSystem), blocks.SystemAbsent(b.DeviceSystem), b.Scope, b.Device, blocks.VendorJuniper, blocks.BlockSystem)
+}
+
+func (b Blocks) ciscoSystemForbidOrigins() map[string]string {
+	if b.ScopeCiscoSystem == nil && b.DeviceCiscoSystem == nil {
+		return nil
+	}
+	return originsOf(blocks.IOSSystemAbsent(b.ScopeCiscoSystem), blocks.IOSSystemAbsent(b.DeviceCiscoSystem), b.Scope, b.Device, blocks.VendorCisco, blocks.BlockSystem)
+}
+
+// systemAbsent and ciscoSystemAbsent are the statements the system block
+// requires to be absent ('system services telnet', 'ip http server').
+func (b Blocks) systemAbsent() []string { return blocks.SystemAbsent(b.System) }
+
+func (b Blocks) ciscoSystemAbsent() []string { return blocks.IOSSystemAbsent(b.CiscoSystem) }
+
+// absentLines are the lines of the walkthrough that take a service away that
+// the system block requires to be absent: a comment that names the block and
+// the commands (a delete on Junos, a no on IOS). They are no part of the
+// managed section's lines (a pull compares the services' absence on its own).
+func (b Blocks) absentLines(scope string) []string {
+	if t := blocks.SystemAbsent(b.System); len(t) > 0 {
+		out := []string{"# " + b.head(blocks.BlockSystem, b.SystemLayer, scope) + " requires these services absent:"}
+		for _, x := range t {
+			out = append(out, "delete "+x)
+		}
+		return out
+	}
+	if t := blocks.IOSSystemAbsent(b.CiscoSystem); len(t) > 0 {
+		out := []string{"! " + b.ciscoSystemHead(scope) + " requires these services absent:"}
+		for _, x := range t {
+			out = append(out, "no "+x)
+		}
+		return out
+	}
+	return nil
+}
+
 func (b Blocks) ciscoSNMPOrigins() map[string]string {
 	if b.ScopeCiscoSNMP == nil && b.DeviceCiscoSNMP == nil {
 		return nil
@@ -324,6 +368,10 @@ func systemHierarchies(b *blocks.SystemBlock) []string {
 		case strings.HasPrefix(r.Rule, "retry-"):
 			if !slices.Contains(out, "system login retry-options") {
 				out = append(out, "system login retry-options")
+			}
+		case strings.HasPrefix(r.Rule, "absent-"):
+			if !slices.Contains(out, "system services") {
+				out = append(out, "system services")
 			}
 		case strings.HasPrefix(r.Rule, "password-"):
 			if !slices.Contains(out, "system login password") {

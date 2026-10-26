@@ -75,6 +75,12 @@ func junosRows(section string, exp devices.Section) []*jrow {
 			}
 		}
 	}
+	// a service the rendering requires to be absent is a row that has it
+	for _, r := range rows {
+		if r.Mode == ModeAbsent {
+			r.has = slices.Contains(exp.Forbid, r.Pattern)
+		}
+	}
 	return rows
 }
 
@@ -525,6 +531,17 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 				}
 				addDelete(l, x.stem)
 			}
+		case ModeAbsent:
+			if !row.has {
+				keepStem(x.stem, "")
+				continue
+			}
+			if !p.inPlain(name, x.stem) {
+				refuseInherited(x.stem)
+				continue
+			}
+			fire(row)
+			addDelete(Line{Op: OpDelete, Text: "delete " + row.Pattern}, x.stem)
 		case ModeLeaves:
 			if !row.has || row.Depth != 0 && len(x.path) != row.Depth {
 				// 'system accounting destination <protocol>' is tacctl's;
