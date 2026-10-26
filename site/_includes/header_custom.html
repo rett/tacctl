@@ -1,0 +1,22 @@
+<button type="button" id="tacctl-theme-toggle" class="tacctl-theme-toggle" hidden>Light theme</button>
+<script>
+  (function () {
+    var button = document.getElementById('tacctl-theme-toggle');
+    var theme = 'dark';
+    try { if (localStorage.getItem('tacctl-theme') === 'light') { theme = 'light'; } } catch (e) {}
+    function label() {
+      var other = theme === 'light' ? 'dark' : 'light';
+      button.textContent = other === 'light' ? 'Light theme' : 'Dark theme';
+      button.setAttribute('aria-label', 'Switch to the ' + other + ' theme');
+      button.title = 'Switch to the ' + other + ' theme';
+    }
+    button.addEventListener('click', function () {
+      theme = theme === 'light' ? 'dark' : 'light';
+      jtd.setTheme(theme === 'light' ? 'tacctllight' : 'default');
+      try { localStorage.setItem('tacctl-theme', theme); } catch (e) {}
+      label();
+    });
+    label();
+    button.hidden = false;
+  })();
+</script>

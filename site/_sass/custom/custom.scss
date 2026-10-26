@@ -1,14 +1,108 @@
-// house style (04-design/styling.md)
-.main-content h1 { border-bottom: 3px solid #1a73a8; padding-bottom: .3em; }
-.main-content h2 { border-bottom: 1px solid #d5dde6; padding-bottom: .2em; }
-.main-content h3 { color: #1a5a85; }
-.main-content th { background: #0b3d61; color: #fff; }
-.main-content tbody tr:nth-child(even) td { background: #f7f9fb; }
-.main-content blockquote { background: #fff8e6; border-left: 3px solid #e0a100; padding: .5rem 1rem; margin-left: 0; }
-.main-content div.highlighter-rouge { border-left: 3px solid #1a73a8; }
-.pdf-link { font-size: .9em; }
+// tacctl house style for the site (memory 04-design/styling.md, site section).
+// The colour scheme (tacctl = dark default, tacctllight = light) sets the
+// $tacctl-* colours; the defaults below only serve the theme's own
+// light/dark stylesheets, which the site does not use.
+$tacctl-h1-rule: #1a73a8 !default;
+$tacctl-h2-rule: #d5dde6 !default;
+$tacctl-h3: #1a5a85 !default;
+$tacctl-th-bg: #0b3d61 !default;
+$tacctl-th-fg: #ffffff !default;
+$tacctl-zebra: #f7f9fb !default;
+$tacctl-callout-bg: #fff8e6 !default;
+$tacctl-callout-fg: #3d3420 !default;
+$tacctl-callout-bar: #e0a100 !default;
+$tacctl-callout-link: #0b5c8f !default;
+$tacctl-code-bar: #1a73a8 !default;
+$tacctl-ui-border: #7a8699 !default;
+$tacctl-footer: #5c5962 !default;
+$tacctl-placeholder: #6b7280 !default;
+$tacctl-code-border: $body-text-color !default;   // just-the-docs 0.12.0 default
+
+.main-content h1 { border-bottom: 3px solid $tacctl-h1-rule; padding-bottom: .3em; }
+.main-content h2 { border-bottom: 1px solid $tacctl-h2-rule; padding-bottom: .2em; }
+.main-content h3 { color: $tacctl-h3; }
+.main-content th { background: $tacctl-th-bg; color: $tacctl-th-fg; }
+.main-content tbody tr:nth-child(even) td { background: $tacctl-zebra; }
+.main-content blockquote {
+  background: $tacctl-callout-bg;
+  color: $tacctl-callout-fg;
+  border-left: 3px solid $tacctl-callout-bar;
+  padding: .5rem 1rem;
+  margin-left: 0;
+}
+.main-content blockquote a { color: $tacctl-callout-link; }
+.main-content blockquote strong { color: inherit; }
+.main-content div.highlighter-rouge { border-left: 3px solid $tacctl-code-bar; }
+div.highlighter-rouge div.highlight,
+figure.highlight pre,
+figure.highlight :not(pre) > code { border-color: $tacctl-code-border; }
+
+// search box and theme toggle: interactive borders at 3:1 or more
+.search-input { border: 1px solid $tacctl-ui-border; border-radius: 4px; }
+.search-input::placeholder { color: $tacctl-placeholder; opacity: 1; }
+
+.tacctl-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  margin: 0 .5rem;
+  padding: .25rem .65rem;
+  font: inherit;
+  font-size: .8rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: $body-text-color;
+  background: transparent;
+  border: 1px solid $tacctl-ui-border;
+  border-radius: 4px;
+  cursor: pointer;
+  &:hover { background: $feedback-color; }
+  &:focus-visible { outline: 2px solid $link-color; outline-offset: 2px; }
+  &[hidden] { display: none; }
+}
+
+.site-footer, .site-footer p { color: $tacctl-footer; }
+
+// the theme dims a search result's parent page with opacity .5 (below 4.5:1);
+// use a muted colour at full opacity instead
+.search-result-doc.search-result-doc-parent { opacity: 1; color: $tacctl-footer; }
+
+.pdf-link {
+  display: inline-block;
+  font-size: .85em;
+  padding: .1em .6em;
+  border: 1px solid $tacctl-h1-rule;
+  border-radius: 4px;
+}
+
+// Printing from the site is always light, whichever scheme is on screen.
+// (The PDFs are the print format; they are rendered separately.)
 @media print {
-  .pdf-link, .side-bar, .main-header { display: none !important; }
+  html, body, .main, .main-content, .site-header {
+    background: #fff !important;
+    color: #1f2933 !important;
+  }
+  .pdf-link, .side-bar, .main-header, .tacctl-theme-toggle { display: none !important; }
+  .main-content h1, .main-content h2, .main-content h4,
+  .main-content h5, .main-content h6 { color: #0b3d61 !important; }
+  .main-content h3 { color: #1a5a85 !important; }
+  .main-content a { color: #1a73a8 !important; }
   .main-content table { font-size: 9pt; }
+  .main-content th {
+    background: #fff !important;
+    color: #0b3d61 !important;
+    border-bottom: 2px solid #0b3d61 !important;
+  }
+  .main-content td { background: #fff !important; color: #1f2933 !important; }
+  .main-content blockquote {
+    background: #fff8e6 !important;
+    color: #3d3420 !important;
+  }
+  .main-content code, .main-content .highlight, .main-content pre,
+  .main-content div.highlighter-rouge {
+    background: #f6f8fa !important;
+    color: #1f2933 !important;
+  }
+  .main-content .highlight * { color: #1f2933 !important; }
   .main-content tr, .main-content pre { break-inside: avoid; }
 }
