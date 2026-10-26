@@ -67,6 +67,10 @@ tacctl shell
 | [CLI reference](docs/cli/README.md) | Conventions and one page per command family, every `tacctl.yaml` setting |
 | [Development](docs/development/README.md) | Repository layout, tests, releases |
 
+Task-oriented guides for operators and engineers (day-to-day operations,
+access lifecycle, incident runbooks, troubleshooting) are on the
+[documentation site](https://rett.github.io/tacctl/).
+
 The manual page (`man tacctl`) covers every command and setting in one place.
 
 ## License
