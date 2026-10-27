@@ -41,8 +41,8 @@ After an upgrade: `tacctl status`, `tacctl config validate` (store, rendered con
 
 `tacctl rollback` takes five targets: `0.2.18`, the release before this
 one, `0.2.17`, `0.2.16`, `0.2.9` and `0.2.3`. All are the dry run described
-below until `--apply` is given, all refuse while an apply is not settled or an
-emergency lockdown locks a group, and each release's tool prepares the state
+below until `--apply` is given, all refuse while an apply is not settled, an
+emergency lockdown locks a group or a user name has a period, and each release's tool prepares the state
 for the releases it knows. `0.2.4` to `0.2.8` and `0.2.2` and older are
 refused with the way there (one release at a time, or `tacctl backup restore`
 of a snapshot of the time); `0.2.10` to `0.2.15`, this release and any other
@@ -54,6 +54,13 @@ scope. The refusal lists each lockdown and the command that lifts it
 (`tacctl emergency lockdown <scope> disable`); lift them, then run the
 rollback again. A record that locks nothing (a hand-edited, partial one) is
 removed by the rollback, because the older schemas refuse its keys.
+
+**A user name with a period stops every rollback** (the dry run too): a user name may hold
+periods from 0.2.20, and no target reads one (it fails with `user '<name>': invalid name` on every
+store command). The refusal lists each such user of the store and each override under one in
+`console.yaml`, with the command that fixes it (`tacctl user rename <name> <new-name>`,
+`tacctl console user <name> clear`); do those, then run the rollback again. Nothing is changed
+while it refuses.
 
 **System blocks that use 0.2.19's statements.** This release added to the
 grammar of the Junos and IOS `system` blocks: the syslog, login-policy, ssh and

@@ -783,7 +783,14 @@ func (inv *invocation) userRename(args []string) error {
 		if err != nil {
 			return err
 		}
-		if held != "" || inv.enrolledHostsWith(oldname) > 0 {
+		// Fail closed: a registry or model that cannot be read leaves the
+		// hosts unknown, and the rename would remove an account there.
+		n, err := inv.enrolledHostsCount(oldname)
+		if err != nil {
+			return inv.usageErr("'" + newname + "' has a period, so '" + oldname + "' would lose its account on every enrolled host, and the hosts that have it cannot be told: " +
+				msgsJoin(err) + ". Nothing was changed.")
+		}
+		if held != "" || n > 0 {
 			return inv.usageErr("'" + newname + "' cannot be a Linux account name (a period is not allowed), and '" + oldname +
 				"' has an account on hosts (or a UID in linux-uids) that the rename would remove. Nothing was changed.")
 		}
@@ -877,10 +884,20 @@ func (inv *invocation) moveUID(oldname, newname string) uidMove {
 // disabled or not: a disabled user's account is expired there and is renamed
 // all the same (the script gets the number in TAC_INACTIVE_UIDS).
 func (inv *invocation) enrolledHostsWith(user string) int {
+	n, _ := inv.enrolledHostsCount(user)
+	return n
+}
+
+// enrolledHostsCount is enrolledHostsWith with the error of a registry or a
+// model that cannot be read (the count is then 0).
+func (inv *invocation) enrolledHostsCount(user string) (int, error) {
 	reg, err := inv.registry()
-	m, merr := inv.model()
-	if err != nil || merr != nil {
-		return 0
+	if err != nil {
+		return 0, err
+	}
+	m, err := inv.model()
+	if err != nil {
+		return 0, err
 	}
 	n := 0
 	for _, e := range reg.Entries() {
@@ -898,7 +915,7 @@ func (inv *invocation) enrolledHostsWith(user string) int {
 			n++
 		}
 	}
-	return n
+	return n, nil
 }
 
 // hostsText is "1 enrolled host" or "3 enrolled hosts".

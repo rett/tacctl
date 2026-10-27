@@ -241,7 +241,13 @@ or
 .B "device config apply <name> \-\-check"
 or
 .B "device config forget <name>"
-settles it).
+settles it) and while the store has a user whose name has a period, or
+console.yaml an override under one (no target reads such a name: the refusal
+lists each, with
+.B "user rename <name> <new\-name>"
+or
+.B "console user <name> clear"
+as the way out, and changes nothing).
 .IP
 .B "rollback 0.2.18"
 .B \-\-apply
@@ -633,8 +639,9 @@ devices only, and
 and
 .B config linux uid
 refuse to give one to it. A release before 0.2.20 refuses a store that has such
-a name, so rename those users before
-.BR "tacctl rollback" .
+a name, so
+.B "tacctl rollback"
+is refused while one stands: rename those users first.
 Prompts for the password with confirmation. If
 .BI --hash " hash"
 is given, the bcrypt hash is used directly and no password is prompted

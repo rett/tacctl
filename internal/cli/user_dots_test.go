@@ -109,3 +109,75 @@ func uidLines(sb *sandbox) string {
 	}
 	return out.String()
 }
+
+// 'tacctl rollback' to any target is refused, nothing changed, while the
+// store has a user with a period in its name (no release a rollback goes to
+// reads one); once the user is renamed it plans again.
+func TestRollbackRefusesDottedUsersCLI(t *testing.T) {
+	hs := rollbackState(t)
+	hs.step("", "user", "add", "alice.smith", "operator", "--hash", testHash, "--scopes", "lab")
+	before := tree(t, hs.dir)
+	for _, v := range []string{"0.2.3", "0.2.9", "0.2.16", "0.2.17", "0.2.18"} {
+		for _, args := range [][]string{{"rollback", v}, {"rollback", v, "--apply", "--yes"}} {
+			hs.run(hs.runner(), args...)
+			hs.expect(1, "", "The store has 1 user whose name has a period")
+			if !strings.Contains(hs.all(), "  alice.smith   (tacctl user rename alice.smith <new-name>)") ||
+				!strings.Contains(hs.all(), "Nothing was changed.") {
+				t.Errorf("%v: %s", args, hs.all())
+			}
+			if got := changedFiles(before, tree(t, hs.dir)); len(got) != 0 {
+				t.Errorf("%v changed %q", args, got)
+			}
+		}
+	}
+	hs.step("", "user", "rename", "alice.smith", "alice-smith")
+	hs.run(hs.runner(), "rollback", "0.2.18")
+	hs.expect(0, "This was a dry run: nothing was changed.", "")
+}
+
+// A user with an account on an enrolled host and no UID of its own in
+// linux-uids is not renamed to a name with a period either: the hosts, not
+// only the ledger, are what the rename would cost.
+func TestUserRenameDottedAccountOnHostsNoUID(t *testing.T) {
+	sb := newSandbox(t, true)
+	sb.write("state/linux-hosts", "web1|admin@web1.example.net||lab|192.0.2.1|\n", 0o600)
+	before := sb.store()
+	sb.run("", []string{"user", "rename", "bob", "bob.jones"})
+	sb.expect(1, "", "'bob.jones' cannot be a Linux account name (a period is not allowed), and 'bob' has an account on hosts (or a UID in linux-uids) that the rename would remove. Nothing was changed.")
+	if sb.store() != before {
+		t.Error("the store changed")
+	}
+	if got := uidLines(sb); got != "" {
+		t.Errorf("linux-uids: %q", got)
+	}
+	// carol is in the scope lab too; bob is not in prod, so with only a prod
+	// host enrolled he is renamed.
+	sb.run("", []string{"user", "rename", "carol", "carol.lee"})
+	sb.expect(1, "", "has an account on hosts")
+	sb.write("state/linux-hosts", "web1|admin@web1.example.net||prod|192.0.2.1|\n", 0o600)
+	sb.run("", []string{"user", "rename", "bob", "bob.jones"})
+	sb.expect(0, "User renamed: bob -> bob.jones", "")
+}
+
+// The guard fails closed: a host registry that cannot be read leaves the
+// hosts unknown, so the rename to a name with a period is refused with the
+// read error and nothing changes; a rename to a name without one is not
+// held up by it.
+func TestUserRenameDottedRegistryUnreadable(t *testing.T) {
+	sb := newSandbox(t, true)
+	if err := os.MkdirAll(sb.path("state", "linux-hosts"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	before := sb.store()
+	sb.run("", []string{"user", "rename", "bob", "bob.jones"})
+	sb.expect(1, "", "'bob.jones' has a period, so 'bob' would lose its account on every enrolled host, and the hosts that have it cannot be told: ")
+	if !strings.Contains(plain(sb.err.String()), "linux-hosts") || !strings.Contains(plain(sb.err.String()), "Nothing was changed.") {
+		t.Errorf("stderr %q", sb.err.String())
+	}
+	if sb.store() != before {
+		t.Error("the store changed")
+	}
+	// A name with no period never needed the registry.
+	sb.run("", []string{"user", "rename", "bob", "bobby"})
+	sb.expect(0, "User renamed: bob -> bobby", "")
+}

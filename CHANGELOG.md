@@ -23,8 +23,12 @@ current behaviour; this file is where history lives.
    existing warning and give it no UID (it logs in at devices only),
    `config linux uid <user> <uid>` refuses it, and `user rename` refuses to
    give such a name to a user that has a UID or an account on a host, since the
-   next sync would remove the account. A release before 0.2.20 refuses a store
-   with such a name: rename those users before `tacctl rollback`.
+   next sync would remove the account (and also when the host registry cannot
+   be read, since the hosts are then unknown). A release before 0.2.20 refuses a
+   store with such a name, so `tacctl rollback` to any target is refused, in the
+   dry run too and with nothing changed, while the store has a user with a
+   period or `console.yaml` an override under one; the refusal lists each with
+   `tacctl user rename <name> <new-name>` or `tacctl console user <name> clear`.
 
 ## 0.2.19 (2026-10-25)
 

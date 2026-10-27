@@ -87,6 +87,11 @@ package lifecycle
 // changed reaches them), the sshd drop-ins, the tier-pin marker and the host
 // records (all as 0.2.3 has them).
 //
+// Every target is refused while the store has a user name with a period
+// (0.2.20) or console.yaml has an override under such a name
+// (DottedUsersRefusal): the targets read letters, digits, '_' and '-' only,
+// and fail on every store command with "user '<name>': invalid name".
+//
 // Every target is refused while a record of devices-config.json says an
 // apply of 'device config apply' is pending or unknown (PendingRefusal): the
 // confirmed commit on the device is a state of the device that no file
@@ -493,6 +498,13 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	// render under it would put every locked user back into the scope.
 	if ls := in.Conf.Lockdowns(); len(ls) > 0 {
 		return nil, LockdownRefusal(ls)
+	}
+	// A user name with a period (0.2.20) is refused for every target: no
+	// release a rollback goes to reads it (DottedUsersRefusal).
+	if inStore, inConsole, err := DottedUsers(pa, in.HasStore); err != nil {
+		return nil, err
+	} else if len(inStore)+len(inConsole) > 0 {
+		return nil, DottedUsersRefusal(pa, inStore, inConsole)
 	}
 	if in.Target == RollbackTarget029 {
 		return planRollback029(p)
