@@ -95,6 +95,8 @@ Subcommands:
   <b>scope</b> <o><user></o> list|add|remove|replace        Manage which scopes the user can auth from
   <b>scope</b> <o><user></o> remove <o>--all</o>                   Remove every scope from the user
 
+Names: letters, digits, '_', '-' and '.', new ones in lower case; a '.' is never first, last or next to another.
+
 Examples:
   tacctl user list
   tacctl user add jsmith superuser

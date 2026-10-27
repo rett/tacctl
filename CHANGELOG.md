@@ -3,6 +3,29 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.20 (unreleased)
+
+1. **A user name may hold periods.** `user add alice.smith operator` is
+   accepted: a name is letters, digits, `_` and `-`, in runs joined by single
+   periods. It never starts or ends with a period, never has two in a row, and
+   is never only periods (`.alice`, `alice.`, `alice..smith`, `.` and `..` are
+   refused, with the new error text `Username must contain only letters,
+   numbers, underscores, hyphens, and periods (not first, not last, not two in
+   a row).`); the other rules (lower case for a new name, the reserved names
+   `root` and `tacquito`) are as before. The rule is the shape of every place
+   that checks a user name: the commands, the store, and the users of the
+   console file. Group, scope and Juniper class names keep their patterns (a
+   class name had the shape a user name had, and still has it). Consequences
+   handled: the `tacquito.yaml` authenticator of such a user gets an anchor
+   with each period written `_dot_`, because a YAML anchor cannot hold one
+   (the render failed on the name before); a name with a period is no Linux
+   account name, so `host sync` and `host enroll` skip the user with the
+   existing warning and give it no UID (it logs in at devices only),
+   `config linux uid <user> <uid>` refuses it, and `user rename` refuses to
+   give such a name to a user that has a UID or an account on a host, since the
+   next sync would remove the account. A release before 0.2.20 refuses a store
+   with such a name: rename those users before `tacctl rollback`.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

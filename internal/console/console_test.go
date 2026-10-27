@@ -736,3 +736,25 @@ func TestPasswordCacheRollback023(t *testing.T) {
 		t.Errorf("the converted file:\n%s", plan.Text)
 	}
 }
+
+// A user name may hold periods (names.MatchUser): the users mapping of the
+// file writes and reads such a key back, and a bad shape is refused.
+func TestUsersWithPeriods(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "console.yaml")
+	if _, err := Mutate(p, nil, func(f *File) error {
+		f.Users["alice.smith"] = true
+		f.Users["1.5"] = false
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f, err := Load(p)
+	if err != nil || !f.Users["alice.smith"] || f.Users["1.5"] || len(f.Users) != 2 {
+		t.Fatalf("round trip: %+v %v", f.Users, err)
+	}
+	for _, bad := range []string{".alice", "alice.", "alice..smith"} {
+		if _, err := Mutate(p, nil, func(f *File) error { f.Users[bad] = true; return nil }); err == nil || !strings.Contains(err.Error(), "invalid user name '"+bad+"'") {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+}

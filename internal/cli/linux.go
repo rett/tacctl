@@ -972,6 +972,9 @@ func (inv *invocation) configLinuxUID(args []string) error {
 	if !m.Exists("users", username) {
 		return inv.usageErr("User '" + username + "' does not exist.")
 	}
+	if strings.Contains(username, ".") {
+		return inv.usageErr("'" + username + "' has no Linux account: a period is not allowed in a Linux account name, so no host gets one and a UID would never be used. Nothing was changed.")
+	}
 	if !rng.Contains(uid) {
 		return inv.usageErr("UID must be a number from " + strconv.Itoa(rng.Min) + " to " + strconv.Itoa(rng.Max) + ": tacctl gives out UIDs in that range only.")
 	}

@@ -775,6 +775,19 @@ func (inv *invocation) userRename(args []string) error {
 			return inv.usageErr(why)
 		}
 	}
+	// A name with a period is no Linux account name (hosts.LinuxName): the
+	// sync would skip it and remove the account the old name has on the
+	// hosts, so a user that has one is not renamed to it.
+	if strings.Contains(newname, ".") && hosts.LinuxName(oldname) {
+		held, err := hosts.UIDs{Path: inv.app.Paths.LinuxUIDs}.Lookup(oldname)
+		if err != nil {
+			return err
+		}
+		if held != "" || inv.enrolledHostsWith(oldname) > 0 {
+			return inv.usageErr("'" + newname + "' cannot be a Linux account name (a period is not allowed), and '" + oldname +
+				"' has an account on hosts (or a UID in linux-uids) that the rename would remove. Nothing was changed.")
+		}
+	}
 	// The old name is gone from the model afterwards, so its account on this
 	// server (and its tac-superuser) goes at the sync that follows; the new
 	// name gets its account there.

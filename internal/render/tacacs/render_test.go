@@ -588,3 +588,47 @@ func TestWrapMatch(t *testing.T) {
 		}
 	}
 }
+
+// A user name may hold periods; a YAML anchor may not (tacquito's parser
+// refuses them), so such a user's authenticator gets an anchor without one,
+// still one of its own, and the names of users without a period keep theirs.
+func TestRenderUserNamesWithPeriods(t *testing.T) {
+	st := loadStore(t, "store.multiscope.yaml")
+	user := func(disabled bool) *yamlpy.Map {
+		a := entry(st, "users", "alice")
+		h, _ := a.Get("hash")
+		return yamlpy.NewMap("group", "operator", "scopes", []any{"lab"}, "hash", h, "disabled", disabled)
+	}
+	// 'a_dot_b' is what 'a.b' would be written as: the anchors must differ.
+	section(st, "users").Set("a.b", user(false))
+	section(st, "users").Set("a_dot_b", user(true))
+	section(st, "users").Set("alice.smith", user(true))
+	section(st, "users").Set("1.5", user(false))
+	text := render(t, st, defaultView(t))
+	for _, want := range []string{"\nbcrypt_alice: &bcrypt_alice\n", "\nbcrypt_a_dot_b: &bcrypt_a_dot_b\n", "\nbcrypt_a_dot_b_2: &bcrypt_a_dot_b_2\n",
+		"\nbcrypt_alice_dot_smith: &bcrypt_alice_dot_smith\n", "\nbcrypt_1_dot_5: &bcrypt_1_dot_5\n"} {
+		if !strings.Contains(string(text), want) {
+			t.Errorf("no %q in:\n%s", want, text)
+		}
+	}
+	if strings.Contains(string(text), "bcrypt_a.b") || strings.Contains(string(text), "*bcrypt_alice.smith") {
+		t.Error("an anchor holds a period")
+	}
+	// What tacquito reads: each user's own authenticator, by its name.
+	out, err := renderFile(t, st, defaultView(t))
+	if err != nil {
+		t.Fatal(rendered.Report(err))
+	}
+	users := usersOf(decoded(t, readFile(t, out)))
+	hashOf := func(u string) any {
+		return users[u]["authenticator"].(map[string]any)["options"].(map[string]any)["hash"]
+	}
+	for name, disabled := range map[string]bool{"a.b": false, "a_dot_b": true, "alice.smith": true, "1.5": false, "alice": false} {
+		if got := hashOf(name) == hash.DisabledMarkerHex; got != disabled {
+			t.Errorf("%s: disabled marker %v, want %v", name, got, disabled)
+		}
+	}
+	if users["a.b"]["name"] != "a.b" || len(users) != 7 {
+		t.Errorf("%d users: %v", len(users), users["a.b"])
+	}
+}

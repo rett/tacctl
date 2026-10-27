@@ -101,6 +101,36 @@ func YName(s string) string {
 	return YQ(s)
 }
 
+// userAnchors are the anchor suffixes of the users' bcrypt authenticators
+// (&bcrypt_<suffix>), in the order of users. YAML anchors hold letters,
+// digits, '_' and '-' only (tacquito's parser refuses a period), so a name
+// is its own suffix unless it has a period: then each period is written
+// "_dot_", and a number is added where that equals the suffix of another
+// user. A user name without a period keeps the suffix it always had.
+func userAnchors(users []*model.User) []string {
+	out := make([]string, len(users))
+	taken := make(map[string]bool, len(users))
+	for i, u := range users {
+		if !strings.Contains(u.Name, ".") {
+			out[i] = u.Name
+			taken[u.Name] = true
+		}
+	}
+	for i, u := range users {
+		if !strings.Contains(u.Name, ".") {
+			continue
+		}
+		base := strings.ReplaceAll(u.Name, ".", "_dot_")
+		cand := base
+		for n := 2; taken[cand]; n++ {
+			cand = base + "_" + strconv.Itoa(n)
+		}
+		taken[cand] = true
+		out[i] = cand
+	}
+	return out
+}
+
 // GroupKey is group_key: the top-level key and anchor of a group, its
 // name unless that would collide with a key the layout owns.
 func GroupKey(name string) string {
@@ -379,7 +409,8 @@ func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool) ([]byt
 		"\n# --- Per-user bcrypt authenticators ---\n" +
 		"# A disabled account and the 'root' accounting sink carry a well-formed\n" +
 		"# hash that no password matches.\n")
-	for _, u := range m.Users {
+	anchors := userAnchors(m.Users)
+	for i, u := range m.Users {
 		h := RenderedHash(u)
 		// All-digit hex would read as a number; nothing else needs quotes.
 		if isDigits(h) {
@@ -388,7 +419,7 @@ func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool) ([]byt
 		fmt.Fprintf(&w, "\nbcrypt_%s: &bcrypt_%s\n"+
 			"  type: *authenticator_type_bcrypt\n"+
 			"  options:\n"+
-			"    hash: %s\n", u.Name, u.Name, h)
+			"    hash: %s\n", anchors[i], anchors[i], h)
 	}
 
 	w.WriteString("\n# --- Services ---\n" +
@@ -484,7 +515,7 @@ func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool) ([]byt
 	w.WriteString("\n# --- Users ---\n")
 	if len(m.Users) > 0 {
 		w.WriteString("users:\n")
-		for _, u := range m.Users {
+		for i, u := range m.Users {
 			var mine []string
 			for _, s := range u.Scopes {
 				if sc := m.Scope(s); sc != nil && sc.ServedBy(Protocol) {
@@ -497,7 +528,7 @@ func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool) ([]byt
 				"    groups: [*%s]\n"+
 				"    authenticator: *bcrypt_%s\n"+
 				"    accounter: *file_accounter\n",
-				u.Name, YName(u.Name), strings.Join(mine, ", "), GroupKey(u.Group), u.Name)
+				u.Name, YName(u.Name), strings.Join(mine, ", "), GroupKey(u.Group), anchors[i])
 		}
 	} else {
 		w.WriteString("users: []\n")
