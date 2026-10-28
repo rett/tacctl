@@ -193,8 +193,9 @@ func verbsNamed(desc, verb string) (listed, named bool) {
 	return true, slices.Contains(strings.Fields(strings.ReplaceAll(desc[1:end], ",", " ")), verb)
 }
 
-// flagHelp is what the block says of a flag: its value's placeholder (for
-// a flag that takes one) and its description. An option line ('  -p <port>
+// flagHelp is what a flag says of itself (Desc, and Arg for the value it
+// takes), else what the block says of it: its value's placeholder (for a
+// flag that takes one) and its description. An option line ('  -p <port>
 // Connect ...') gives both, with the lines that continue it; else a row of
 // the verb that adds the flag to the first row ('add <username> <group>
 // --hash <hash>  Add with ...'); the placeholder may also come from
@@ -204,6 +205,22 @@ func verbsNamed(desc, verb string) (listed, named bool) {
 // its rows, one elsewhere that names it, one that names no verb, and last
 // one about other verbs.
 func flagHelp(block string, rows []usageRow, f Flag) (value, desc string) {
+	// A flag that carries its own text (Flag.Desc, and Flag.Arg for the value
+	// it takes) needs nothing of the block.
+	if f.Desc != "" && !f.Value {
+		return "", f.Desc
+	}
+	if f.Desc != "" && f.Arg != "" {
+		return f.Arg, f.Desc
+	}
+	defer func() {
+		if f.Desc != "" {
+			desc = f.Desc
+		}
+		if f.Arg != "" && f.Value {
+			value = f.Arg
+		}
+	}()
 	findValue := func(text string) string {
 		for _, n := range f.Names {
 			for i := strings.Index(text, n); i >= 0; {

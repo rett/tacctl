@@ -240,3 +240,110 @@ func TestCompletionIsOfferedInBothSurfaces(t *testing.T) {
 		}
 	}
 }
+
+// A flag that carries its own text (Flag.Arg, Desc, Long) has that text in
+// every list, in the scripts, the shell, '?' and the man page; every other
+// flag of the tree reads as before.
+func TestFlagCarriesItsOwnText(t *testing.T) {
+	serial(t)
+	snapshot := func() map[string]string {
+		invA, rootA := surfaceInv(t)
+		invB, rootB := surfaceInv(t)
+		out := map[string]string{}
+		paths, _ := visibleLeaves(rootB)
+		for _, p := range paths {
+			if _, ok := specFor(p); !ok {
+				continue
+			}
+			explain, _ := invB.shellExplain(rootB)(p)
+			var b strings.Builder
+			b.WriteString(explain)
+			for _, m := range []map[string]string{scriptOffers(t, invA, rootA, p, "-"), shellOffers(invB, rootB, p, "-")} {
+				ws := make([]string, 0, len(m))
+				for w := range m {
+					ws = append(ws, w)
+				}
+				slices.Sort(ws)
+				for _, w := range ws {
+					b.WriteString(w + "\t" + m[w] + "\n")
+				}
+			}
+			out[strings.Join(p, " ")] = b.String()
+		}
+		for _, blk := range manCommandBlocks(t) {
+			out["man "+blk.name] = strings.Join(blk.lines, "\n")
+		}
+		return out
+	}
+	before := snapshot()
+
+	orig := userSpecs["add"]
+	t.Cleanup(func() { userSpecs["add"] = orig })
+	changed := orig
+	changed.Flags = slices.Clone(orig.Flags)
+	if changed.Flags[0].Names[0] != "--hash" {
+		t.Fatalf("user add: the first flag is %v", changed.Flags[0].Names)
+	}
+	changed.Flags[0].Arg = "<bcrypt>"
+	changed.Flags[0].Desc = "Use this bcrypt hash"
+	changed.Flags[0].Long = "Use this bcrypt hash instead of asking for a password; a lone - reads it from standard input"
+	userSpecs["add"] = changed
+	after := snapshot()
+
+	for k, b := range before {
+		a := after[k]
+		if a == b {
+			continue
+		}
+		if k != "user add" && k != "man command user add" {
+			t.Errorf("%s changed:\n%s\nto\n%s", k, b, a)
+			continue
+		}
+		bl, al := strings.Split(b, "\n"), strings.Split(a, "\n")
+		if len(bl) != len(al) {
+			t.Errorf("%s: %d lines became %d", k, len(bl), len(al))
+			continue
+		}
+		for i := range bl {
+			if bl[i] != al[i] && !strings.Contains(bl[i], "hash") && !strings.Contains(bl[i], "Add with pre-generated") {
+				t.Errorf("%s: the line %q became %q", k, bl[i], al[i])
+			}
+		}
+	}
+	for _, want := range []string{"--hash <bcrypt>  ", "  Use this bcrypt hash\n", "--hash\t<bcrypt>: Use this bcrypt hash", "--hash\tUse this bcrypt hash"} {
+		if !strings.Contains(after["user add"], want) {
+			t.Errorf("user add lacks %q:\n%s", want, after["user add"])
+		}
+	}
+	if !strings.Contains(after["man command user add"], "Use this bcrypt hash instead of asking for a password; a lone \\- reads it from standard input.") {
+		t.Errorf("the man block lacks the long text:\n%s", after["man command user add"])
+	}
+}
+
+// Desc without Arg keeps the value the usage block names; Arg without Desc
+// keeps the block's text; a switch has no value.
+func TestFlagHelpPartialText(t *testing.T) {
+	inv, root, _ := shellTestInv(t)
+	p := []string{"user", "add"}
+	cmd, _ := resolve(root, p)
+	rows, block := inv.shellUsage(cmd, p)
+	hash := userSpecs["add"].Flags[0]
+	v0, d0 := flagHelp(block, rows, hash)
+	if v0 != "<hash>" || d0 == "" {
+		t.Fatalf("the block says %q %q", v0, d0)
+	}
+	f := hash
+	f.Desc = "Use this hash"
+	if v, d := flagHelp(block, rows, f); v != v0 || d != "Use this hash" {
+		t.Errorf("Desc only: %q %q", v, d)
+	}
+	f = hash
+	f.Arg = "<bcrypt>"
+	if v, d := flagHelp(block, rows, f); v != "<bcrypt>" || d != d0 {
+		t.Errorf("Arg only: %q %q", v, d)
+	}
+	sw := Flag{Names: []string{"--force"}, Arg: "<x>", Desc: "Do it"}
+	if v, d := flagHelp(block, rows, sw); v != "" || d != "Do it" {
+		t.Errorf("a switch: %q %q", v, d)
+	}
+}

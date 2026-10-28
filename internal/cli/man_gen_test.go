@@ -194,6 +194,9 @@ func manCommandBlocks(t *testing.T) []manBlock {
 				if o, ok := manFlagOverrides[words+" "+f.Names[0]]; ok {
 					desc = o
 				}
+				if f.Long != "" {
+					desc = f.Long
+				}
 				if v, ok := manValueOverrides[words+" "+f.Names[0]]; ok {
 					value = v
 				}

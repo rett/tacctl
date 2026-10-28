@@ -62,7 +62,10 @@ tacctl/
   with the verbs it applies to; the rest goes to the verb's usage block, `help
   <verb>` and the man page. `TestStyleRatchets` holds this with the lists in
   `internal/cli/testdata/style/`, which only shrink (`go test ./internal/cli
-  -run TestStyleRatchets -update-style` drops the entries that are fixed).
+  -run TestStyleRatchets -update-style` drops the entries that are fixed). A
+  flag states its own text in its `Flag` (`Arg` the value as listed, `Desc`
+  the line, `Long` the man page's fuller text; `internal/cli/args.go`); a flag
+  without them still takes its text from the verb's usage block.
 - No secret, hash, password or community string in any log line, test
   golden or doc example.
 - Gates: build, gofmt, `go vet`, `make lint`, Go tests (`make gate-go`,
