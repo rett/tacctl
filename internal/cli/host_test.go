@@ -39,9 +39,11 @@ type hostSandbox struct {
 	serverAddress func() (string, string, error)
 }
 
-func newHostSandbox(t *testing.T) *hostSandbox {
+// linuxDirStandIn points the sandbox's TACCTL_LINUX_DIR at a directory of its
+// own with a stand-in pam_tacplus tarball, so a test that enrols a host never
+// reads the Linux host data of the machine it runs on.
+func linuxDirStandIn(t *testing.T, sb *sandbox) {
 	t.Helper()
-	sb := newSandbox(t, true)
 	linux := filepath.Join(sb.dir, "linux")
 	if err := os.MkdirAll(linux, 0o755); err != nil {
 		t.Fatal(err)
@@ -50,6 +52,12 @@ func newHostSandbox(t *testing.T) *hostSandbox {
 		t.Fatal(err)
 	}
 	sb.env = append(sb.env, "TACCTL_LINUX_DIR="+linux)
+}
+
+func newHostSandbox(t *testing.T) *hostSandbox {
+	t.Helper()
+	sb := newSandbox(t, true)
+	linuxDirStandIn(t, sb)
 	hs := &hostSandbox{sandbox: sb}
 	// Rendered once, so preflight finds tacquito.yaml and says nothing.
 	hs.run(nil, "config", "render")
