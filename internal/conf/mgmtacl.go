@@ -14,6 +14,17 @@ const (
 	ScopeMgmtACLPrefix = "scope_mgmt_acl.permits."
 )
 
+// The modes of the Junos management filter. ssh-only restricts ssh, NETCONF
+// and SNMP and ends in a default-accept term; strict accepts every protocol
+// from the permit list only and has none.
+const (
+	MgmtModeSSHOnly = "ssh-only"
+	MgmtModeStrict  = "strict"
+)
+
+// MgmtModes are the modes, in the order they are listed.
+var MgmtModes = []string{MgmtModeSSHOnly, MgmtModeStrict}
+
 // ACLServiceEntry is one element of a management ACL list that carries
 // services (0.2.7): the list's key and the entry as the file has it.
 type ACLServiceEntry struct {

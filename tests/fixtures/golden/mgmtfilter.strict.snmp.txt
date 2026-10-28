@@ -1,0 +1,32 @@
+# Deny-by-default management filter (mgmt-acl mode strict; Junos only).
+# The filter accepts every protocol from the sources of the mgmt-acl list (an entry with
+# services keeps only those) and has no default-accept term: the implicit discard at the
+# end of a Junos filter drops the rest.
+# Once the filter is applied to lo0, these stop reaching the routing engine:
+#   - routing protocols from neighbours that are not in the list: BGP, OSPF, IS-IS, VRRP, LDP
+#   - NTP, syslog and DHCP from hosts that are not in the list (and their replies)
+#   - SNMP from sources outside the list
+#   - every other protocol (ping, traceroute, DNS replies) from sources outside the list
+# Add each neighbour and server the device needs first ('tacctl scope mgmt-acl lab add <cidr>').
+# Keep a console session open while you apply it, and commit with 'commit confirmed'.
+# These 'set firewall' lines define the filter in the candidate config.
+# Activate it by uncommenting the 'set interfaces lo0 …' line below
+# after reviewing.
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.1/32
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 10.0.0.0/8
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 10.1.0.0/16
+set firewall family inet filter MGMT-ACL term permit-mgmt then accept
+set firewall family inet filter MGMT-ACL term permit-snmp from source-address 192.0.2.1/32
+set firewall family inet filter MGMT-ACL term permit-snmp from source-address 198.51.100.0/24
+set firewall family inet filter MGMT-ACL term permit-snmp from protocol udp
+set firewall family inet filter MGMT-ACL term permit-snmp from destination-port snmp
+set firewall family inet filter MGMT-ACL term permit-snmp then accept
+set firewall family inet filter MGMT-ACL term deny-snmp from protocol udp
+set firewall family inet filter MGMT-ACL term deny-snmp from destination-port snmp
+set firewall family inet filter MGMT-ACL term deny-snmp then log
+set firewall family inet filter MGMT-ACL term deny-snmp then discard
+# udp port 161 (SNMP, Step 5) is accepted from the SNMP clients and from the sources the terms above accept
+# for it, and refused from every other source (deny-snmp logs it).
+#
+# Apply (review first):
+# set interfaces lo0 unit 0 family inet filter input MGMT-ACL

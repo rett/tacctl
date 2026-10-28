@@ -67,6 +67,10 @@ type SNMPInput struct {
 	// udp port 161 term for the clients below (set by the Junos builder
 	// of the walkthrough).
 	MgmtFilter bool
+	// MgmtStrict says that filter is the strict one (0.2.20): it accepts
+	// every protocol from the management permit list, so the SNMP clients
+	// are not the only sources of udp port 161.
+	MgmtStrict bool
 	// DeviceName is the registry name of the device the values are of (the
 	// hint of the Unfilled line); empty is the placeholder <name>.
 	DeviceName string
@@ -420,7 +424,10 @@ func JuniperSNMP(in SNMPInput) SNMPBlock {
 			"set snmp v3 vacm access group "+snmpGroupName+" default-context-prefix security-model usm security-level privacy read-view "+snmpViewName,
 			"set snmp view "+snmpViewName+" oid .1 include",
 			"# The client list binds to communities only: it does not restrict a v3 user (not verified on a device).")
-		if in.MgmtFilter {
+		if in.MgmtFilter && in.MgmtStrict {
+			add("# The management filter of Step 4 (strict) does, once you apply it to lo0: it accepts udp port 161 from the",
+				"# clients above and from the sources of the management permit list, and drops it from every other source.")
+		} else if in.MgmtFilter {
 			add("# The management filter of Step 4 does: its permit-snmp and deny-snmp terms accept udp port 161 from the",
 				"# clients above only, once you apply the filter to lo0.")
 		} else {
