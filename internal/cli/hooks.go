@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rett/tacctl/internal/askpass"
+	"github.com/rett/tacctl/internal/assets"
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
@@ -89,10 +90,20 @@ type hooks struct {
 	probeDial devreg.Dialer
 	// utmpFile is the login-records file ("": the system's).
 	utmpFile string
+	// manPage is the page 'tacctl man' shows (nil: the one the binary carries).
+	manPage func() []byte
 	// askpassFromApp makes the password cache's value the app's
 	// environment alone: nothing is read from or removed from the process's
 	// own (a test runs beside others in one process).
 	askpassFromApp bool
+}
+
+// builtInManPage is the page the binary carries, or the test's.
+func (h *hooks) builtInManPage() []byte {
+	if h != nil && h.manPage != nil {
+		return h.manPage()
+	}
+	return assets.ManPage()
 }
 
 // interrupts is the test's source of interrupts, or nil.

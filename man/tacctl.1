@@ -714,20 +714,24 @@ finds the next match and
 quits; the page itself has no anchors. A word that names nothing opens the page
 at the top and says so on standard error. On a stream that is not a terminal the
 page is written whole, without a pager, and the words do nothing.
-.B \-\-path
-prints where the page was found and shows nothing: the installed file
-(normally
-.IR /usr/share/man/man1/tacctl.1.gz ,
-placed by
+The page shown is always the copy the binary carries, which is the page of the
+version that runs, whether or not
 .B install
 and
-.BR upgrade ),
-else
+.B upgrade
+placed one.
+.B \-\-path
+shows nothing: it prints
 .B built into tacctl
-for the copy the binary carries, which is shown when no page was installed.
+and, when the installed file
+(normally
+.IR /usr/share/man/man1/tacctl.1.gz )
+exists, a second line
+.RB \(lq "installed: " \fIpath\fR\(rq
+saying whether it is identical to the built-in page or differs from it.
 The page is rendered by
 .B man \-l
-(the page as the only file it can show), else by
+(given the page on standard input, the only page it can show), else by
 .BR groff (1)
 and shown by
 .BR less (1);
@@ -790,7 +794,7 @@ Requires: \fBreadonly\fR.
 Options:
 .TP
 \fB\-\-path\fR
-Print where the manual page was found.
+Print which manual page is shown and where one is installed.
 .RE
 .\" END GENERATED: command man
 .SS User management \fB(tacctl user)\fR
@@ -15164,7 +15168,9 @@ This manual. Written by
 and
 .BR upgrade ;
 .B tacctl man
-shows it, else the copy the binary carries.
+shows the copy the binary carries (the page of the running version), and
+.B tacctl man \-\-path
+says whether this file is the same.
 .TP
 .I ~/.local/state/tacctl/history
 The

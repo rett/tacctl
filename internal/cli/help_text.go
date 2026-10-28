@@ -54,7 +54,7 @@ Commands:
   <b>hash</b> <o><subcommand></o>                     Bcrypt helper (generate, commands — runs as invoking user, no sudo)
   <b>completion</b> bash|zsh|fish              Print the shell completion script
   <b>man</b> [<o>--path</o>] [<o><word>...</o>]              Open the manual page, at a command or topic
-      <o>--path</o>                            Print where the manual page was found
+      <o>--path</o>                            Print which manual page is shown and where one is installed
   <b>version</b> [<o>--long</o>]                      Print tacctl version (<o>--long</o>: commit, build date, Go version)
       <o>--long</o>                            Also the commit, build date, Go version and whether test knobs are on
 

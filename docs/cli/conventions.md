@@ -127,7 +127,7 @@ tacctl completion bash|zsh|fish
 
 tacctl man [--path] [word...]
 
-    Open the manual page in a pager, at a command or topic; --path prints where the page was found
+    Open the manual page in a pager, at a command or topic; --path says which page is shown and where one is installed
     (see [Manual page](shell.md#manual-page--tacctl-man))
 
 tacctl shell [--no-history] [--idle min] [--space-completion on|off] [--password-cache] [-c line]

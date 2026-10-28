@@ -31,37 +31,45 @@ var hostile = []string{
 }
 
 // manHarness is a run of 'tacctl man <args>' with a fake runner, the paths
-// moved into a temporary directory and a terminal for the output; page is
-// what is installed there ("": nothing; a name ending in .gz is gzipped).
+// moved into a temporary directory and a terminal for the output. page is the
+// page the binary carries for this run (nil: the real one); install puts
+// another where install and upgrade put the page.
 type manHarness struct {
 	*harness
-	dir  string
-	page string // the installed page's path, "" when none
+	dir string
 }
 
-func newManHarness(t *testing.T, installed []byte, gz bool, env []string, args ...string) *manHarness {
+func newManHarness(t *testing.T, page []byte, env []string, args ...string) *manHarness {
 	t.Helper()
 	h := &manHarness{harness: newHarness(t, append([]string{"man"}, args...), append(slices.Clone(env), "TERM=xterm", "LANG=C.UTF-8")...), dir: t.TempDir()}
 	h.app.Paths = h.app.Paths.Reroot(h.dir)
-	if installed != nil {
-		h.page = h.app.Paths.ManPage
-		if err := os.MkdirAll(filepath.Dir(h.page), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		data := installed
-		if gz {
-			var b bytes.Buffer
-			zw := gzip.NewWriter(&b)
-			_, _ = zw.Write(installed)
-			_ = zw.Close()
-			data = b.Bytes()
-		}
-		if err := os.WriteFile(h.page, data, 0o644); err != nil {
-			t.Fatal(err)
-		}
+	if page != nil {
+		h.hooks.manPage = func() []byte { return page }
 	}
 	h.hooks.isTerminalWriter = func(io.Writer) bool { return true }
 	return h
+}
+
+// install writes the page where install and upgrade put it (gzipped or not)
+// and returns its path.
+func (h *manHarness) install(t *testing.T, content []byte, gz bool) string {
+	t.Helper()
+	path := h.app.Paths.ManPage
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data := content
+	if gz {
+		var b bytes.Buffer
+		zw := gzip.NewWriter(&b)
+		_, _ = zw.Write(content)
+		_ = zw.Close()
+		data = b.Bytes()
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 // started are the programs the run started, in order.
@@ -109,27 +117,42 @@ func checkSafeEnv(t *testing.T, env []string) {
 	}
 }
 
-// An installed page is shown by man -l with that file as its only page, in a
-// less that cannot run a program; nothing the caller typed or exported
-// reaches an argument or the environment.
-func TestManInstalledPage(t *testing.T) {
-	for _, gz := range []bool{false, true} {
-		h := newManHarness(t, []byte(".TH X 1\n.SH TIERS\n"), gz, hostile)
-		if err := h.run(); err != nil || h.out.Len() != 0 || h.err.Len() != 0 {
-			t.Fatalf("gz=%v: %v %q %q", gz, err, h.out.String(), h.err.String())
+// The page shown is the one the binary carries, on man's standard input,
+// whatever is installed; man is given no other file, and nothing the caller
+// exported reaches an argument or the environment.
+func TestManShowsTheBuiltInPage(t *testing.T) {
+	for _, installed := range []string{"none", "plain", "gz"} {
+		h := newManHarness(t, nil, hostile)
+		switch installed {
+		case "plain":
+			h.install(t, []byte(".TH OTHER 1\n.SH TIERS\n"), false)
+		case "gz":
+			h.install(t, []byte(".TH OTHER 1\n.SH TIERS\n"), true)
 		}
-		calls := h.started()
-		if len(calls) != 1 {
+		if err := h.run(); err != nil || h.out.Len() != 0 || h.err.Len() != 0 {
+			t.Fatalf("%s: %v %q %q", installed, err, h.out.String(), h.err.String())
+		}
+		rec := h.runner.Records()
+		if len(rec) != 1 {
 			t.Fatalf("started %v", h.runner.Argvs())
 		}
-		c := calls[0]
-		if c.Name != "/fake/bin/man" || !slices.Equal(c.Args, []string{"-l", "-P", "/fake/bin/less", h.page}) {
-			t.Errorf("gz=%v: %s %q", gz, c.Name, c.Args)
+		c := rec[0].Cmd
+		if c.Name != "/fake/bin/man" || !slices.Equal(c.Args, []string{"-l", "-P", "/fake/bin/less", "-"}) || !bytes.Equal(rec[0].Stdin, assets.ManPage()) {
+			t.Errorf("%s: %s %q, %d bytes on stdin", installed, c.Name, c.Args, len(rec[0].Stdin))
 		}
 		checkSafeEnv(t, c.Env)
 		if len(h.runner.Execs()) != 0 {
 			t.Errorf("execs %v", h.runner.Execs())
 		}
+	}
+	// The page of a word is searched for in the page that is shown.
+	h := newManHarness(t, nil, nil, "tiers")
+	if err := h.run(); err != nil {
+		t.Fatal(err)
+	}
+	tiers, _ := manLookup(manTopics(assets.ManPage()), []string{"tiers"})
+	if got := h.started()[0].Args; !slices.Equal(got, []string{"-l", "-P", manPager("/fake/bin/less", tiers.searchArgs()), "-"}) {
+		t.Errorf("arguments %q", got)
 	}
 }
 
@@ -150,12 +173,12 @@ func TestManWordsReachTheSearchOnly(t *testing.T) {
 		{[]string{"nosuch", "$(id)"}, "/fake/bin/less"},
 		{[]string{"--", "-P", "sh"}, "/fake/bin/less"},
 	} {
-		h := newManHarness(t, page, true, hostile, c.words...)
+		h := newManHarness(t, page, hostile, c.words...)
 		if err := h.run(); err != nil {
 			t.Fatalf("%q: %v", c.words, err)
 		}
 		call := h.started()[0]
-		if !slices.Equal(call.Args, []string{"-l", "-P", c.pager, h.page}) {
+		if !slices.Equal(call.Args, []string{"-l", "-P", c.pager, "-"}) {
 			t.Errorf("%q: arguments %q", c.words, call.Args)
 		}
 		checkSafeEnv(t, call.Env)
@@ -205,61 +228,54 @@ func TestManPatternHasNoQuoteOrDollar(t *testing.T) {
 // standard error; one that names an entry says nothing.
 func TestManUnknownWordSaysSo(t *testing.T) {
 	page := []byte(".TH X 1\n.SH TIERS\n")
-	h := newManHarness(t, page, false, nil, "no", "such")
+	h := newManHarness(t, page, nil, "no", "such")
 	if err := h.run(); err != nil {
 		t.Fatal(err)
 	}
 	if h.out.Len() != 0 || h.err.String() != "tacctl man: no entry for 'no such'; the page is opened at the top.\n" {
 		t.Errorf("stdout %q stderr %q", h.out.String(), h.err.String())
 	}
-	h = newManHarness(t, page, false, nil, "tiers")
+	h = newManHarness(t, page, nil, "tiers")
 	if err := h.run(); err != nil || h.err.Len() != 0 {
 		t.Errorf("%v %q", err, h.err.String())
 	}
 }
 
-// With no page installed the copy in the binary is shown, on standard input.
-func TestManBuiltInPage(t *testing.T) {
-	h := newManHarness(t, nil, false, hostile, "tiers")
-	if err := h.run(); err != nil {
-		t.Fatal(err)
-	}
-	rec := h.runner.Records()
-	if len(rec) != 1 {
-		t.Fatalf("started %v", h.runner.Argvs())
-	}
-	c := rec[0].Cmd
-	tiers, _ := manLookup(manTopics(assets.ManPage()), []string{"tiers"})
-	if !slices.Equal(c.Args, []string{"-l", "-P", manPager("/fake/bin/less", tiers.searchArgs()), "-"}) || !bytes.Equal(rec[0].Stdin, assets.ManPage()) {
-		t.Errorf("%s %q, %d bytes on stdin", c.Name, c.Args, len(rec[0].Stdin))
-	}
-	checkSafeEnv(t, c.Env)
-	// An installed file that is not a file of the page (a directory, an
-	// empty file) is not shown either.
-	for _, mk := range []func(string) error{func(p string) error { return os.Mkdir(p, 0o755) }, func(p string) error { return os.WriteFile(p, nil, 0o644) }} {
-		h = newManHarness(t, nil, false, nil)
-		_ = os.MkdirAll(filepath.Dir(h.app.Paths.ManPage), 0o755)
-		if err := mk(h.app.Paths.ManPage); err != nil {
-			t.Fatal(err)
-		}
-		if err := h.run(); err != nil || h.started()[0].Args[len(h.started()[0].Args)-1] != "-" {
-			t.Errorf("%v %q", err, h.runner.Argvs())
-		}
-	}
-}
-
-// --path says where the page was found and shows nothing.
+// --path says which page is shown and whether an installed one differs, and
+// shows nothing.
 func TestManPath(t *testing.T) {
-	h := newManHarness(t, []byte(".TH X 1\n"), true, nil, "--path")
-	if err := h.run(); err != nil || h.out.String() != h.page+"\n" || len(h.started()) != 0 {
-		t.Errorf("%v %q %v", err, h.out.String(), h.runner.Argvs())
-	}
-	h = newManHarness(t, nil, false, nil, "--path")
-	if err := h.run(); err != nil || h.out.String() != "built into tacctl\n" || len(h.started()) != 0 {
-		t.Errorf("%v %q %v", err, h.out.String(), h.runner.Argvs())
+	built := []byte(".TH X 1\n.SH TIERS\n")
+	for _, c := range []struct {
+		install func(*testing.T, *manHarness) string
+		want    string
+	}{
+		{func(*testing.T, *manHarness) string { return "" }, "built into tacctl\n"},
+		{func(t *testing.T, h *manHarness) string { return h.install(t, built, false) },
+			"built into tacctl\ninstalled: %s (identical to the built-in page)\n"},
+		{func(t *testing.T, h *manHarness) string { return h.install(t, built, true) },
+			"built into tacctl\ninstalled: %s (identical to the built-in page)\n"},
+		{func(t *testing.T, h *manHarness) string { return h.install(t, []byte(".TH OLD 1\n"), true) },
+			"built into tacctl\ninstalled: %s (differs from the built-in page)\n"},
+		{func(t *testing.T, h *manHarness) string { return h.install(t, nil, false) },
+			"built into tacctl\ninstalled: %s (empty, so not the built-in page)\n"},
+		{func(t *testing.T, h *manHarness) string {
+			p := h.app.Paths.ManPage
+			_ = os.MkdirAll(p, 0o755)
+			return p
+		}, "built into tacctl\ninstalled: %s (cannot be read, so not the built-in page)\n"},
+	} {
+		h := newManHarness(t, built, nil, "--path")
+		path := c.install(t, h)
+		want := c.want
+		if strings.Contains(want, "%s") {
+			want = fmt.Sprintf(want, path)
+		}
+		if err := h.run(); err != nil || h.out.String() != want || h.err.Len() != 0 || len(h.started()) != 0 {
+			t.Errorf("%v %q, want %q, %v", err, h.out.String(), want, h.runner.Argvs())
+		}
 	}
 	for _, args := range [][]string{{"--path", "tiers"}, {"--path", "--path"}, {"--path=x"}, {"-x"}, {"--nosuch"}, {"tiers", "-P"}} {
-		h = newManHarness(t, nil, false, nil, args...)
+		h := newManHarness(t, nil, nil, args...)
 		if code := exitCode(h.run(), h.app.Out); code != 1 || h.out.Len() != 0 || len(h.started()) != 0 ||
 			!strings.Contains(h.err.String(), "Usage: tacctl man [--path] [<word>...]") {
 			t.Errorf("%q: exit %d, stdout %q stderr %q, started %v", args, code, h.out.String(), h.err.String(), h.runner.Argvs())
@@ -270,13 +286,13 @@ func TestManPath(t *testing.T) {
 // Without less nothing pages: cat is the pager man is given (never the
 // configured one), and the page says why on a terminal; more is not used.
 func TestManWithoutLess(t *testing.T) {
-	h := newManHarness(t, []byte(".TH X 1\n.SH TIERS\n"), false, hostile, "tiers")
+	h := newManHarness(t, []byte(".TH X 1\n.SH TIERS\n"), hostile, "tiers")
 	h.runner.Missing("less")
 	if err := h.run(); err != nil {
 		t.Fatal(err)
 	}
 	c := h.started()[0]
-	if !slices.Equal(c.Args, []string{"-l", "-P", "/fake/bin/cat", h.page}) {
+	if !slices.Equal(c.Args, []string{"-l", "-P", "/fake/bin/cat", "-"}) {
 		t.Errorf("arguments %q", c.Args)
 	}
 	checkSafeEnv(t, c.Env)
@@ -287,14 +303,14 @@ func TestManWithoutLess(t *testing.T) {
 		t.Errorf("more was used: %v", h.runner.Argvs())
 	}
 	// No note when the output is not a terminal.
-	h = newManHarness(t, []byte(".TH X 1\n"), false, nil)
+	h = newManHarness(t, []byte(".TH X 1\n"), nil)
 	h.runner.Missing("less")
 	h.hooks.isTerminalWriter = func(io.Writer) bool { return false }
 	if err := h.run(); err != nil || h.err.Len() != 0 {
 		t.Errorf("%v %q", err, h.err.String())
 	}
 	// Neither less nor cat.
-	h = newManHarness(t, []byte(".TH X 1\n"), false, nil)
+	h = newManHarness(t, []byte(".TH X 1\n"), nil)
 	h.runner.Missing("less", "cat")
 	if code := exitCode(h.run(), h.app.Out); code != 1 || len(h.started()) != 0 || !strings.Contains(h.err.String(), "neither less nor cat") {
 		t.Errorf("exit %d %q %v", code, h.err.String(), h.runner.Argvs())
@@ -306,7 +322,7 @@ func TestManWithoutLess(t *testing.T) {
 // the text itself.
 func TestManWithoutMan(t *testing.T) {
 	page := []byte(".TH X 1\n.SH TIERS\n")
-	h := newManHarness(t, page, true, hostile, "tiers")
+	h := newManHarness(t, page, hostile, "tiers")
 	h.runner.Missing("man")
 	h.runner.On([]string{"/fake/bin/groff"}, execx.Result{Stdout: []byte("RENDERED\n")})
 	if err := h.run(); err != nil || h.out.Len() != 0 || h.err.Len() != 0 {
@@ -327,7 +343,7 @@ func TestManWithoutMan(t *testing.T) {
 	checkSafeEnv(t, l.Cmd.Env)
 
 	// Not a terminal: the text is written, and no pager is started.
-	h = newManHarness(t, page, false, nil)
+	h = newManHarness(t, page, nil)
 	h.runner.Missing("man")
 	h.runner.On([]string{"/fake/bin/groff"}, execx.Result{Stdout: []byte("RENDERED\n")})
 	h.hooks.isTerminalWriter = func(io.Writer) bool { return false }
@@ -335,13 +351,13 @@ func TestManWithoutMan(t *testing.T) {
 		t.Errorf("%v %q %v", err, h.out.String(), h.runner.Argvs())
 	}
 	// A locale that is not UTF-8 gets ascii.
-	h = newManHarness(t, page, false, []string{"LC_ALL=C"})
+	h = newManHarness(t, page, []string{"LC_ALL=C"})
 	h.runner.Missing("man")
 	if err := h.run(); err != nil || h.started()[0].Args[1] != "-Tascii" {
 		t.Errorf("%v %q", err, h.runner.Argvs())
 	}
 	// groff failing is an error with its message.
-	h = newManHarness(t, page, false, nil)
+	h = newManHarness(t, page, nil)
 	h.runner.Missing("man")
 	h.runner.Fail([]string{"/fake/bin/groff"}, 2, "troff: bad")
 	if code := exitCode(h.run(), h.app.Out); code != 1 || !strings.Contains(h.err.String(), "groff failed: troff: bad") || len(h.started()) != 1 {
@@ -351,14 +367,14 @@ func TestManWithoutMan(t *testing.T) {
 
 // With neither man nor groff the command names the page and what to install.
 func TestManWithNeitherManNorGroff(t *testing.T) {
-	h := newManHarness(t, []byte(".TH X 1\n"), true, nil, "tiers")
+	h := newManHarness(t, []byte(".TH X 1\n"), nil, "tiers")
 	h.runner.Missing("man", "groff")
 	if code := exitCode(h.run(), h.app.Out); code != 1 || len(h.started()) != 0 || h.out.Len() != 0 ||
-		!strings.Contains(h.err.String(), "neither man nor groff is installed") || !strings.Contains(h.err.String(), h.page) ||
+		!strings.Contains(h.err.String(), "neither man nor groff is installed") || !strings.Contains(h.err.String(), "built into tacctl") ||
 		!strings.Contains(h.err.String(), "man-db") {
 		t.Errorf("exit %d %q", code, h.err.String())
 	}
-	h = newManHarness(t, nil, false, nil)
+	h = newManHarness(t, nil, nil)
 	h.runner.Missing("man", "groff")
 	if code := exitCode(h.run(), h.app.Out); code != 1 || !strings.Contains(h.err.String(), "built into tacctl") {
 		t.Errorf("exit %d %q", code, h.err.String())
@@ -369,7 +385,7 @@ func TestManWithNeitherManNorGroff(t *testing.T) {
 // line, or not by an absolute path, is not used.
 func TestManRefusesUnsafeToolPaths(t *testing.T) {
 	for _, less := range []string{"/opt/my tools/less", "/opt/less;id", "less", "./less", "/opt/$HOME/less", "/opt/l'ess"} {
-		h := newManHarness(t, []byte(".TH X 1\n"), false, nil)
+		h := newManHarness(t, []byte(".TH X 1\n"), nil)
 		h.runner.Install("less", less)
 		if err := h.run(); err != nil {
 			t.Fatal(err)
@@ -379,7 +395,7 @@ func TestManRefusesUnsafeToolPaths(t *testing.T) {
 			t.Errorf("less at %q: the pager is %q", less, c.Args[2])
 		}
 	}
-	h := newManHarness(t, []byte(".TH X 1\n"), false, nil)
+	h := newManHarness(t, []byte(".TH X 1\n"), nil)
 	h.runner.Install("less", "/usr/bin/less")
 	h.runner.Install("man", "/usr/bin/man")
 	if err := h.run(); err != nil || h.started()[0].Name != "/usr/bin/man" || h.started()[0].Args[2] != "/usr/bin/less" {
@@ -390,7 +406,7 @@ func TestManRefusesUnsafeToolPaths(t *testing.T) {
 // The status of man is the status of the command, and a man that cannot be
 // started is said.
 func TestManExitStatus(t *testing.T) {
-	h := newManHarness(t, []byte(".TH X 1\n"), false, nil)
+	h := newManHarness(t, []byte(".TH X 1\n"), nil)
 	h.runner.Fail([]string{"/fake/bin/man"}, 3, "man: boom")
 	if code := exitCode(h.run(), h.app.Out); code != 3 || h.err.String() != "man: boom\n" {
 		t.Errorf("exit %d %q", code, h.err.String())
@@ -470,7 +486,7 @@ func TestManIsInTheTreeAndTheLists(t *testing.T) {
 			t.Fatalf("%s: %v %v", flag, err, h.runner.Argvs())
 		}
 		out := stripSGR(h.out.String())
-		for _, want := range []string{"man [--path] [<word>...]", manShort, "--path", "Print where the manual page was found"} {
+		for _, want := range []string{"man [--path] [<word>...]", manShort, "--path", "Print which manual page is shown and where one is installed"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("%s: no %q in %q", flag, want, out)
 			}

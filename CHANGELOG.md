@@ -253,15 +253,17 @@ current behaviour; this file is where history lives.
     entries just before it, so `n` finds the next match; the words only
     choose the place and never reach an argument, and
     words that name nothing open the page at the top and say so on standard
-    error). `tacctl man --path` prints where the page was found. It runs as
+    error). `tacctl man --path` says which page is shown and where one is installed. It runs as
     you, with no `sudo` and no tier gate, like `completion` and `version`
     (readonly tier row, audit class `read`), and is listed by Tab, `?`, `help`
-    and `-h` in the shell and the console. The page is the installed one
-    (`/usr/share/man/man1/tacctl.1.gz`), else the copy the binary now carries
-    (`man/tacctl.1` is embedded, still the one generated file), so it works
-    on a host where the page was never installed. It is rendered by `man -l`
-    with the page as the only file, else by `groff` and `less`; with neither,
-    it names the page and exits 1. The pager cannot start a program: it is
+    and `-h` in the shell and the console. The page is the copy the binary
+    now carries (`man/tacctl.1` is embedded, still the one generated file),
+    the page of the version that runs, whether or not `install` and `upgrade`
+    placed one; `tacctl man --path` prints `built into tacctl` and, when
+    the installed file exists, `installed: <path>` with whether it is
+    identical or differs. It is rendered by `man -l`, given the page on
+    standard input, else by `groff` and `less`; with neither, it says so and
+    exits 1. The pager cannot start a program: it is
     the `less` found on `PATH`, run with `LESSSECURE=1` (no shell escape, no
     editor, no pipe, no log file) and a `LESS` of tacctl's own, and `man`,
     `groff` and `less` get an environment made from `TERM`, `LANG` and `LC_*`

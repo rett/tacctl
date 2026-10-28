@@ -5,12 +5,11 @@ package cli
 // runs as the invoking user (noSudo, reexec.go), reads no state of tacctl and
 // has no tier gate, like 'completion' and 'version'.
 //
-// The page is the one 'install' and 'upgrade' placed (paths.ManPage), else
-// the copy the binary carries (assets.ManPage), so it works on a host where
-// the page was never installed. It is rendered by `man -l`, with the file as
-// the only page it can show (an installed file by its path, the built-in copy
-// on standard input); without man, by groff, then shown by less; with neither,
-// the command says so and names the page.
+// The page is the one the binary carries (assets.ManPage), so it is the page of
+// the running version whether or not 'install' and 'upgrade' placed one
+// (paths.ManPage; --path says whether that one is the same). It is rendered by
+// `man -l` with the page on standard input as the only page it can show;
+// without man, by groff, then shown by less; with neither, the command says so.
 //
 // The pager must not be a way out of the console, and `man` and `less` can
 // run commands (`!cmd`, `v`, `|`, -P, a LESSOPEN, a MANPAGER, a groff macro
@@ -37,7 +36,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/rett/tacctl/internal/assets"
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/execx"
 )
@@ -79,21 +77,26 @@ func manCmd(inv *invocation) *cobra.Command {
 	return c
 }
 
-// manPageSource is the page to show: the installed file, or the built-in copy.
-type manPageSource struct {
-	path string // the installed file; "" for the built-in copy
-	text []byte // the roff source
-}
-
-// manSource reads the installed page (gzip or plain) and falls back to the
-// copy in the binary when there is none or it cannot be read.
-func (inv *invocation) manSource() manPageSource {
-	if p := inv.app.Paths.ManPage; filepath.IsAbs(p) {
-		if text, err := readManFile(p); err == nil && len(text) > 0 {
-			return manPageSource{path: p, text: text}
-		}
+// manInstalled describes the installed page against the built-in one, for
+// --path: where it is, and whether it is the same page.
+func (inv *invocation) manInstalled(builtIn []byte) (line string, ok bool) {
+	path := inv.app.Paths.ManPage
+	if !filepath.IsAbs(path) {
+		return "", false
 	}
-	return manPageSource{text: assets.ManPage()}
+	if _, err := os.Lstat(path); err != nil {
+		return "", false
+	}
+	text, err := readManFile(path)
+	switch {
+	case err != nil:
+		return "installed: " + path + " (cannot be read, so not the built-in page)", true
+	case len(text) == 0:
+		return "installed: " + path + " (empty, so not the built-in page)", true
+	case bytes.Equal(text, builtIn):
+		return "installed: " + path + " (identical to the built-in page)", true
+	}
+	return "installed: " + path + " (differs from the built-in page)", true
 }
 
 // readManFile reads a manual page file, gunzipping it when it is gzip.
@@ -134,27 +137,26 @@ func (inv *invocation) man(args []string) error {
 		}
 		return inv.usageErr(msg, manUsage)
 	}
-	src := inv.manSource()
+	page := inv.hooks.builtInManPage()
 	if p.Has("--path") {
 		if len(p.Args) > 0 {
 			return inv.usageErr("--path takes no words.", manUsage)
 		}
-		where := src.path
-		if where == "" {
-			where = "built into tacctl"
+		inv.write("built into tacctl\n")
+		if line, ok := inv.manInstalled(page); ok {
+			inv.write(line + "\n")
 		}
-		inv.write(where + "\n")
 		return nil
 	}
 	var searches []string
 	if len(p.Args) > 0 {
-		if e, ok := manLookup(manTopics(src.text), p.Args); ok {
+		if e, ok := manLookup(manTopics(page), p.Args); ok {
 			searches = e.searchArgs()
 		} else {
 			inv.manNote("no entry for '" + strings.Join(p.Args, " ") + "'; the page is opened at the top.")
 		}
 	}
-	return inv.manShow(src, searches)
+	return inv.manShow(page, searches)
 }
 
 // manTool resolves a program the command runs: found on PATH, by an absolute
@@ -201,7 +203,7 @@ func manPager(less string, patterns []string) string {
 }
 
 // manShow shows the page with man, else groff; neither: says what is missing.
-func (inv *invocation) manShow(src manPageSource, searches []string) error {
+func (inv *invocation) manShow(page []byte, searches []string) error {
 	a := inv.app
 	less, haveLess := inv.manTool("less")
 	env := manEnv(a.Env.Environ())
@@ -217,24 +219,12 @@ func (inv *invocation) manShow(src manPageSource, searches []string) error {
 			}
 			pager = cat
 		}
-		argv := []string{"-l", "-P", pager}
-		stdin := a.Stdin
-		if src.path != "" {
-			argv = append(argv, src.path)
-		} else {
-			argv = append(argv, "-")
-			stdin = bytes.NewReader(src.text)
-		}
-		return inv.manRun(execx.Cmd{Name: man, Args: argv, Env: env}, stdin)
+		return inv.manRun(execx.Cmd{Name: man, Args: []string{"-l", "-P", pager, "-"}, Env: env}, bytes.NewReader(page))
 	}
 	if groff, ok := inv.manTool("groff"); ok {
-		return inv.manGroff(groff, src, less, haveLess, searches, env)
+		return inv.manGroff(groff, page, less, haveLess, searches, env)
 	}
-	where := src.path
-	if where == "" {
-		where = "built into tacctl, see 'tacctl man --path'"
-	}
-	return &ExitError{Code: 1, Err: errors.New("neither man nor groff is installed, so the manual page cannot be shown (the page: " + where + "); install man-db")}
+	return &ExitError{Code: 1, Err: errors.New("neither man nor groff is installed, so the manual page cannot be shown; install man-db (the page is built into tacctl)")}
 }
 
 // manRun runs a command of the display with the terminal and returns its status.
@@ -255,10 +245,10 @@ func (inv *invocation) manRun(c execx.Cmd, stdin io.Reader) error {
 
 // manGroff is the display without man: groff renders the page (the locale
 // decides utf8 or ascii), less shows it on a terminal, else it is written.
-func (inv *invocation) manGroff(groff string, src manPageSource, less string, haveLess bool, searches []string, env []string) error {
+func (inv *invocation) manGroff(groff string, page []byte, less string, haveLess bool, searches []string, env []string) error {
 	a := inv.app
 	device := manDevice(manLocale(env))
-	res, err := a.Runner.Run(inv.ctx, execx.Cmd{Name: groff, Args: []string{"-man", device, "-"}, Env: env, Stdin: bytes.NewReader(src.text)})
+	res, err := a.Runner.Run(inv.ctx, execx.Cmd{Name: groff, Args: []string{"-man", device, "-"}, Env: env, Stdin: bytes.NewReader(page)})
 	if err != nil || res.Code != 0 {
 		msg := strings.TrimSpace(string(res.Stderr))
 		if err != nil {
