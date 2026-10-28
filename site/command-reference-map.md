@@ -48,8 +48,9 @@ both.
 
 ## 2. Out of scope for this documentation
 
-Installation, upgrades, rollback to an earlier release, backends, the store,
-and server files are covered only in the repository:
+Installation, upgrades, backends, the store and server files are covered
+only in the repository ([Backups and Undo](backups-and-undo.md) §5
+summarises going back to an earlier release):
 
 | Topic | Reference (repo) |
 |---|---|

@@ -9,13 +9,14 @@ doctype: how-to
 
 # Backups and Undo
 
-*Snapshots, comparing them, and restoring tacctl's configuration · Checked against tacctl 0.2.19*
+*Snapshots, comparing them, and restoring tacctl's configuration · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-backups-and-undo.pdf){: .pdf-link }
 
 Every tacctl change takes a snapshot of the configuration first. This page
 explains what a snapshot holds, how to see what changed, when to restore and
-when to fix forward, and what to check after a restore. Restoring is a
+when to fix forward, what to check after a restore, and what to know before
+going back to an earlier tacctl release. Restoring is a
 **superuser** task.
 
 > **Example names used on this page**
@@ -127,7 +128,53 @@ users keep the UIDs they have now.
 
 ---
 
-## 5. Quick reference
+## 5. Going back to an earlier tacctl release
+
+A restore undoes changes within the release you run. To run the release
+before it again, a superuser converts the state with `tacctl rollback`
+first, then installs that release:
+
+```bash
+tacctl rollback 0.2.19            # the dry run: its steps and warnings; writes nothing
+tacctl rollback 0.2.19 --apply    # convert the state (add --yes when it warns)
+tacctl upgrade --branch 0.2.19    # install 0.2.19
+```
+
+`tacctl rollback` also takes `0.2.18`, `0.2.17`, `0.2.16`, `0.2.9` and
+`0.2.3`. It refuses, the dry run too and with nothing changed:
+
+- while a Junos apply is not settled (`PENDING` or unknown);
+- while a user name has a period: the refusal lists each user with
+  `tacctl user rename <name> <new-name>`;
+- for every target but `0.2.19`, while an emergency lockdown stands.
+
+The conversion takes a snapshot before it changes anything. Read the dry run's warnings before
+you add `--yes`:
+
+| The dry run warns of | What happens after the rollback | What to do first |
+|---|---|---|
+| Users who must change their password | The requirement is removed. Once the older release renders, those users (superusers aside) can log in to the devices with the password they were to change. | Have them change it, or keep this release |
+| Scopes with a strict Junos management filter | The mode is removed. The older release plans the `ssh-only` filter, which accepts by default again. | Keep this release, or leave those scopes' filters out of the older release's plans |
+| Scopes that record `root` as a break-glass account | The entry stays, but the older release renders a `system login user root` line that Junos refuses, and pulls read the `breakglass` section as `differs` | `tacctl scope breakglass <scope> remove root` |
+| Users who would gain a system shell or the password cache | The older release reads the console's old per-tier and per-user switches again, and turns the cache on for every user of an allowed tier | `tacctl console password-cache tiers none`, and remove the switches the upgrading page names |
+
+Without a warning, the rollback also removes the console's colour setting
+and the per-user system-shell and password-cache choices, and writes a
+`list-max` that never asks as 1000.
+
+> **Until the older release is installed,** do not run
+> `scope mgmt-acl <scope> mode strict`, `user add`, `user passwd <name>`,
+> `user require-password-change`, `console color`, `console list-max`,
+> `console system-shell user` or `console password-cache on`: each writes a
+> setting the older release refuses. If one did, run the rollback with
+> `--apply` again.
+
+Every step, per target, is in the repository's
+[Rolling back](https://github.com/rett/tacctl/blob/master/docs/install/upgrading.md#rolling-back).
+
+---
+
+## 6. Quick reference
 
 | Task | Command | Who |
 |---|---|---|
@@ -137,6 +184,7 @@ users keep the UIDs they have now.
 | Restore | `tacctl backup restore <ts>` | Superuser |
 | Restore, keep host UIDs | `tacctl backup restore <ts> --keep-uids` | Superuser |
 | Find the snapshot before a change | `journalctl -t tacctl \| grep 'cmd end'` | Superuser |
+| Prepare the release before this one (dry run) | `tacctl rollback 0.2.19` | Superuser |
 
 ---
 
