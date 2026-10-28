@@ -64,7 +64,10 @@ list and has no `default-accept` term, so the implicit discard at the end of
 a Junos filter drops the rest. The terms, in order:
 
 - `permit-mgmt`: the source of every plain entry, the tacctl server's own
-  address (`--source`, else the detected one) first and once; then accept.
+  address (`--source`, else the detected one) first and once, then, when it
+  is another address, the one the device authenticates against (`--server`,
+  else the RADIUS listener's bound address) so that the replies of the
+  TACACS+ or RADIUS server get through; then accept.
 - One term for each distinct service of the entries that have services,
   named after the service (`permit-tcp-22`, `permit-udp-161-162`,
   `permit-tcp-any`, `permit-icmp`): the sources of the entries that name it,
@@ -89,11 +92,11 @@ reaching the routing engine:
 
 - routing protocols from neighbours that are not in the list (BGP, OSPF,
   IS-IS, VRRP, LDP);
-- NTP, syslog and DHCP from hosts that are not in the list, and their
-  replies;
+- the replies of servers that are not in the list: TACACS+ and RADIUS (the
+  server the walkthrough names is always in it), NTP, DNS;
+- NTP, syslog and DHCP from hosts that are not in the list;
 - SNMP from sources outside the list;
-- every other protocol (ping, traceroute, DNS replies) from sources outside
-  the list.
+- every other protocol (ping, traceroute) from sources outside the list.
 
 Add every neighbour and server the device needs to the scope's permit list
 first, keep a console session open when you apply the filter, and commit with

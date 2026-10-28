@@ -260,9 +260,10 @@ scope mgmt-acl <name> mode [ssh-only|strict]
     tacctl server's own address stays first), keeps the SNMP client terms and has no
     `default-accept` term, so the implicit discard at the end of the filter drops the rest. Once a
     strict filter is applied to lo0, these stop reaching the routing engine: routing protocols
-    from neighbours that are not in the list (BGP, OSPF, IS-IS, VRRP, LDP), NTP, syslog and DHCP
-    from hosts that are not in the list, SNMP from sources outside it, and every other protocol
-    from them. The walkthrough keeps the lo0 application commented; keep a console session open
+    from neighbours that are not in the list (BGP, OSPF, IS-IS, VRRP, LDP), TACACS+ and RADIUS
+    replies from a server that is not in the list (the server the walkthrough names is), NTP,
+    syslog and DHCP from hosts that are not in the list, SNMP from sources outside it, and every
+    other protocol from them. The walkthrough keeps the lo0 application commented; keep a console session open
     when you apply the filter and commit with `commit confirmed`. Only `strict` is stored
     (`scope_mgmt_acl.mode.<name>`); setting `ssh-only` removes the key. See
     [Management ACL](../security/management-acl.md#strict-mode-for-junos)

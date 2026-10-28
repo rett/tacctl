@@ -51,6 +51,88 @@ func TestStrictFilterGoldens(t *testing.T) {
 	}
 }
 
+// The device authenticates against authIP (--server, else the bound RADIUS
+// address, else the detected one), and the replies of that server reach lo0
+// from it: the strict filter, which ends in the discard, heads permit-mgmt with
+// it after the address tacctl reaches the device from, once, and for a
+// RADIUS scope too.
+func TestStrictFilterAcceptsTheAuthenticationServer(t *testing.T) {
+	permit := "set firewall family inet filter MGMT-ACL term permit-mgmt from source-address "
+	sources := func(block string) []string {
+		var out []string
+		for _, l := range strings.Split(block, "\n") {
+			if s, ok := strings.CutPrefix(l, permit); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	list := []string{"10.0.0.0/8"}
+
+	// --server differs from the detected address and from --source
+	d := strictData(t, "192.0.2.1", "192.0.2.5", list, SNMPInput{})
+	d.AuthServer = "198.51.100.9"
+	block := mgmtBlock(d)
+	if got := sources(block); !slices.Equal(got, []string{"192.0.2.5/32", "198.51.100.9/32", "10.0.0.0/8"}) {
+		t.Errorf("--server: %q\n%s", got, block)
+	}
+	golden(t, "mgmtfilter.strict.server.txt", block+"\n")
+	// the walkthrough names that server, and the filter accepts it
+	if tac := JuniperVars(Request{Vendor: "juniper", Scope: "lab", Protocol: TACACS}, d)["TACPLUS_CONFIG"]; !strings.Contains(tac, "set system tacplus-server 198.51.100.9 ") {
+		t.Errorf("the walkthrough does not authenticate against --server:\n%s", tac)
+	}
+
+	// --server is the detected address, or the source: once
+	for _, c := range []struct{ server, source, auth string }{{"192.0.2.1", "", ""}, {"192.0.2.1", "192.0.2.5", "192.0.2.5"}, {"192.0.2.1", "", "192.0.2.1"}} {
+		d := strictData(t, c.server, c.source, list, SNMPInput{})
+		d.AuthServer = c.auth
+		got := sources(mgmtBlock(d))
+		want := cidrOf(firstNonEmpty(c.source, c.server))
+		if len(got) != 2 || got[0] != want || got[1] != "10.0.0.0/8" {
+			t.Errorf("%+v: %q", c, got)
+		}
+	}
+
+	// the auth address is also a plain entry of the list: once
+	d = strictData(t, "192.0.2.1", "", []string{"10.0.0.0/8", "198.51.100.9/32"}, SNMPInput{})
+	d.AuthServer = "198.51.100.9"
+	if got := sources(mgmtBlock(d)); !slices.Equal(got, []string{"192.0.2.1/32", "198.51.100.9/32", "10.0.0.0/8"}) {
+		t.Errorf("listed: %q", got)
+	}
+
+	// a RADIUS listener bound to another address is the one authenticated against
+	d = strictData(t, "192.0.2.1", "", list, SNMPInput{})
+	d.Radius = &Radius{AuthPort: "1812", AcctPort: "1813", Secret: "example-secret", ServerAddr: "203.0.113.7", VendorSent: "scope"}
+	radius := JuniperVars(Request{Vendor: "juniper", Scope: "lab", Protocol: RADIUS}, d)
+	if got := sources(radius["MGMT_ACL_BLOCK"]); !slices.Equal(got, []string{"192.0.2.1/32", "203.0.113.7/32", "10.0.0.0/8"}) {
+		t.Errorf("bound RADIUS address: %q\n%s", got, radius["MGMT_ACL_BLOCK"])
+	}
+	if !strings.Contains(radius["RADIUS_CONFIG"], "set system radius-server 203.0.113.7 ") {
+		t.Errorf("the walkthrough does not authenticate against the bound address:\n%s", radius["RADIUS_CONFIG"])
+	}
+	golden(t, "mgmtfilter.strict.radius-bound.txt", radius["MGMT_ACL_BLOCK"]+"\n")
+	// --server wins over the bound address, as in the walkthrough
+	d.AuthServer = "198.51.100.9"
+	radius = JuniperVars(Request{Vendor: "juniper", Scope: "lab", Protocol: RADIUS}, d)
+	if got := sources(radius["MGMT_ACL_BLOCK"]); !slices.Equal(got, []string{"192.0.2.1/32", "198.51.100.9/32", "10.0.0.0/8"}) {
+		t.Errorf("--server over the bound address: %q", got)
+	}
+	// ssh-only is untouched: it never named the server's addresses but the first
+	d.ACL.Mode = ""
+	if got := sources(JuniperVars(Request{Vendor: "juniper", Scope: "lab", Protocol: RADIUS}, d)["MGMT_ACL_BLOCK"]); !slices.Equal(got, []string{"192.0.2.1/32", "10.0.0.0/8"}) {
+		t.Errorf("ssh-only: %q", got)
+	}
+}
+
+func cidrOf(addr string) string { return addr + "/32" }
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
 // ssh-only is the mode of "", of "ssh-only" and of any word that is not
 // strict, and renders what it always did.
 func TestSSHOnlyModeIsTheDefault(t *testing.T) {
@@ -110,7 +192,7 @@ func TestStrictFilterShape(t *testing.T) {
 	if !strings.Contains(got, "\n# set interfaces lo0 unit 0 family inet filter input MGMT-ACL") || strings.Contains(got, "\nset interfaces") {
 		t.Errorf("the lo0 application is not a comment:\n%s", got)
 	}
-	for _, say := range []string{"BGP, OSPF, IS-IS, VRRP, LDP", "NTP, syslog and DHCP", "SNMP from sources outside the list",
+	for _, say := range []string{"BGP, OSPF, IS-IS, VRRP, LDP", "TACACS+ and RADIUS (the server this walkthrough", "NTP, syslog and DHCP", "SNMP from sources outside the list",
 		"Keep a console session open", "commit confirmed"} {
 		if !strings.Contains(got, say) {
 			t.Errorf("the comment does not say %q:\n%s", say, got)
@@ -133,9 +215,11 @@ func TestStrictFilterWithoutAServerOrPlainEntries(t *testing.T) {
 	if strings.Contains(got, "\nset ") || !strings.Contains(got, "mgmt-acl empty") {
 		t.Errorf("IPv6 only:\n%s", got)
 	}
-	// --source replaces the detected address, as in the ssh-only filter
+	// --source replaces the detected address at the head, as in the ssh-only
+	// filter; the detected address is still the one the device authenticates
+	// against (no --server), so it follows
 	got = mgmtBlock(strictData(t, "192.0.2.1", "198.51.100.7", []string{"10.0.0.0/8"}, SNMPInput{}))
-	if !strings.Contains(got, "permit-mgmt from source-address 198.51.100.7/32\n") || strings.Contains(got, "192.0.2.1") {
+	if i, j := strings.Index(got, "permit-mgmt from source-address 198.51.100.7/32\n"), strings.Index(got, "permit-mgmt from source-address 192.0.2.1/32\n"); i < 0 || j < i {
 		t.Errorf("--source:\n%s", got)
 	}
 }

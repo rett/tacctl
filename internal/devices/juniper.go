@@ -222,7 +222,7 @@ func JuniperVars(req Request, d Data) map[string]string {
 	var strictPlain []string
 	var strictTerms []strictTerm
 	if strict {
-		strictPlain, strictTerms = d.mgmtStrict()
+		strictPlain, strictTerms = d.mgmtStrict(serverIP)
 		terms.WriteString(strictStatements("set firewall family inet filter "+acl+" term ", strictPlain, strictTerms))
 	} else {
 		for _, e := range d.mgmtPermits() {

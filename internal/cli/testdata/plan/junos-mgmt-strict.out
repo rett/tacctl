@@ -15,9 +15,10 @@
 # it to lo0 already, so from the commit the device accepts traffic to its routing engine only from the
 # sources of the permit list (10.0.0.42/32, 10.0.0.0/8, 198.51.100.0/24) and the SNMP clients, and
 # these stop: routing protocols from neighbours that are not in the list (BGP, OSPF, IS-IS, VRRP,
-# LDP); NTP, syslog and DHCP from hosts that are not in the list; SNMP from sources outside the list;
-# every other protocol from sources outside it. Keep a console session open while you paste, and add
-# every neighbour and server the device needs to the permit list first.
+# LDP); TACACS+ and RADIUS replies from servers that are not in the list (the server the walkthrough
+# names is); NTP, syslog and DHCP from hosts that are not in the list; SNMP from sources outside the
+# list; every other protocol from sources outside it. Keep a console session open while you paste, and
+# add every neighbour and server the device needs to the permit list first.
 # The switch undoes this by itself in 5 minutes unless you type the one word after the check (see
 # below).
 # Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the

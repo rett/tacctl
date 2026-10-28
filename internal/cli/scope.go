@@ -2712,9 +2712,10 @@ func (inv *invocation) scopeMgmtACLMode(scope, value string) error {
 // after the mode is set (the comment of the filter says the same).
 var mgmtStrictStops = []string{
 	"routing protocols to the routing engine from neighbours not in the list: BGP, OSPF, IS-IS, VRRP, LDP",
-	"NTP, syslog and DHCP from hosts not in the list (and their replies)",
+	"replies from servers not in the list: TACACS+ and RADIUS (the server the walkthrough names is in it), NTP, DNS",
+	"NTP, syslog and DHCP from hosts not in the list",
 	"SNMP from sources outside the list",
-	"every other protocol (ping, traceroute, DNS replies) from sources outside the list",
+	"every other protocol (ping, traceroute) from sources outside the list",
 }
 
 // mgmtModeLines say what each mode is, for the view of the setting.

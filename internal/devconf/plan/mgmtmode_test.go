@@ -31,6 +31,13 @@ var modeList = []string{"10.1.100.0/23", "198.51.100.0/24:tcp/22,udp/161", "203.
 // managed renders the Junos sections of the lab scope in a mode.
 func managedMode(t *testing.T, mode string, list []string) []devices.Section {
 	t.Helper()
+	return managedModeAuth(t, mode, list, "")
+}
+
+// managedModeAuth is managedMode for a walkthrough told to authenticate
+// against authServer (--server).
+func managedModeAuth(t *testing.T, mode string, list []string, authServer string) []devices.Section {
+	t.Helper()
 	dir := t.TempDir()
 	store, err := os.ReadFile("../../../tests/fixtures/store.multiscope.yaml")
 	if err != nil {
@@ -44,7 +51,7 @@ func managedMode(t *testing.T, mode string, list []string) []devices.Section {
 		t.Fatal(err)
 	}
 	cfg := conf.Load(filepath.Join(dir, "tacctl.yaml"), []string{"tacacs", "radius"})
-	d := devices.Data{Model: m, Conf: cfg, ServerIP: "192.0.2.42",
+	d := devices.Data{Model: m, Conf: cfg, ServerIP: "192.0.2.42", AuthServer: authServer,
 		ACL: devices.MgmtACL{Name: "MGMT-ACL", CIDRs: list, Mode: mode},
 		SNMP: devices.SNMPInput{Scope: "lab", Version: "v2c", Community: "example-ro", CredFrom: "scope",
 			Contact: "NOC", Location: "Lab rack 2", Ranges: []string{"192.0.2.99/32"}}}
@@ -142,7 +149,7 @@ func TestMgmtModePlansSSHOnlyToStrict(t *testing.T) {
 			t.Errorf("the plan sets the default-accept term: %q", l)
 		}
 	}
-	for _, w := range []string{"is strict: it has no default-accept term. Once it is applied to lo0", "BGP, OSPF, IS-IS, VRRP, LDP", "NTP, syslog and DHCP", "SNMP from sources outside the list",
+	for _, w := range []string{"is strict: it has no default-accept term. Once it is applied to lo0", "BGP, OSPF, IS-IS, VRRP, LDP", "TACACS+ and RADIUS replies from servers that are not in the list", "NTP, syslog and DHCP", "SNMP from sources outside the list",
 		"192.0.2.42/32, 10.1.100.0/23", "Keep a console session open"} {
 		if !warned(d, w) {
 			t.Errorf("the report lacks %q: %q", w, d.Warnings)
@@ -406,4 +413,43 @@ func TestMgmtModeBackoutPutsTheFilterBack(t *testing.T) {
 			}
 		}
 	}
+}
+
+// The strict filter accepts the server the device authenticates against: with
+// --server it is permit-mgmt's second source, the plan sets it, the report
+// names it among the sources the filter accepts, and the lock-out check
+// reads it as a source accepted for ssh, as it reads the first. A device that
+// holds the rendering plans nothing.
+func TestMgmtModeStrictAcceptsTheAuthenticationServer(t *testing.T) {
+	const auth = "198.51.100.9"
+	ssh, st := managedModeAuth(t, sshOnly, modeList, auth), managedModeAuth(t, strict, modeList, auth)
+	f := "firewall family inet filter MGMT-ACL term permit-mgmt from source-address "
+	var want []string
+	for _, l := range mgmtSection(st) {
+		if strings.HasPrefix(l, "set "+f) {
+			want = append(want, strings.TrimPrefix(l, "set "+f))
+		}
+	}
+	if len(want) < 3 || want[0] != "192.0.2.42/32" || want[1] != auth+"/32" {
+		t.Fatalf("permit-mgmt sources: %q", want)
+	}
+	d := planMode(t, st, deviceOf(ssh, true), Options{MgmtMode: strict, From: auth})
+	if got := d.Of("mgmt-acl"); got.State != StatePlanned {
+		t.Errorf("--from the authentication server: %+v", got)
+	}
+	wantLine(t, d, "mgmt-acl", "set "+f+auth+"/32")
+	if !warned(d, "192.0.2.42/32, "+auth+"/32, 10.1.100.0/23") {
+		t.Errorf("the report does not name the sources: %q", d.Warnings)
+	}
+	// the other address of the walkthrough is accepted the same way
+	d = planMode(t, st, deviceOf(ssh, true), Options{MgmtMode: strict, From: "192.0.2.42"})
+	if got := d.Of("mgmt-acl"); got.State != StatePlanned {
+		t.Errorf("--from the source: %+v", got)
+	}
+	if got := lines(planMode(t, st, deviceOf(st, true), Options{MgmtMode: strict, From: auth}), "mgmt-acl"); len(got) != 0 {
+		t.Errorf("a device that holds the rendering plans %q", got)
+	}
+	// the move back deletes it with the rest of the strict terms' sources
+	back := planMode(t, ssh, deviceOf(st, false), Options{MgmtMode: sshOnly})
+	wantLine(t, back, "mgmt-acl", "delete "+f+auth+"/32")
 }

@@ -41,14 +41,18 @@ type strictTerm struct {
 
 // mgmtStrict are the permits of the strict filter: the sources of the
 // permit-mgmt term (the IPv4 entries without services, headed by the server's
-// /32 as mgmtPermits does: --source, else the detected address) and the
+// /32 as mgmtPermits does: --source, else the detected address, and then, when
+// it is another address, the /32 the device authenticates against: auth is
+// --server, else the bound RADIUS address, else the detected one. The replies
+// of the TACACS+ or RADIUS server come from it, and a filter that ends in the
+// discard must accept them) and the
 // service terms (the entries that have services, grouped by service in the
 // order the canonical entry lists them). Nothing when the ACL has no IPv4
 // entry: no block is rendered then, and the server's address alone would be
 // one that locks everybody else out. An entry whose network is already a
 // source of permit-mgmt (the server's /32 or a plain entry of the same
 // network) adds nothing: that source accepts everything.
-func (d Data) mgmtStrict() (plain []string, terms []strictTerm) {
+func (d Data) mgmtStrict(auth string) (plain []string, terms []strictTerm) {
 	var entries []mgmtacl.Entry
 	for _, raw := range d.ACL.CIDRs {
 		e, err := mgmtacl.ParseEntry(raw)
@@ -62,6 +66,9 @@ func (d Data) mgmtStrict() (plain []string, terms []strictTerm) {
 	}
 	if srv := cidr.Host32(d.source()); srv != "" {
 		plain = append(plain, srv)
+	}
+	if a := cidr.Host32(auth); a != "" && !slices.Contains(plain, a) {
+		plain = append(plain, a)
 	}
 	for _, e := range entries {
 		if e.Plain() && !slices.Contains(plain, e.Net) {
@@ -171,9 +178,13 @@ func strictHeader(scope string) string {
 		"# end of a Junos filter drops the rest.\n" +
 		"# Once the filter is applied to lo0, these stop reaching the routing engine:\n" +
 		"#   - routing protocols from neighbours that are not in the list: BGP, OSPF, IS-IS, VRRP, LDP\n" +
-		"#   - NTP, syslog and DHCP from hosts that are not in the list (and their replies)\n" +
+		"#   - replies from servers that are not in the list: TACACS+ and RADIUS (the server this walkthrough\n" +
+		"#     names is in it), NTP, DNS\n" +
+		"#   - NTP, syslog and DHCP from hosts that are not in the list\n" +
 		"#   - SNMP from sources outside the list\n" +
-		"#   - every other protocol (ping, traceroute, DNS replies) from sources outside the list\n" +
+		"#   - every other protocol (ping, traceroute) from sources outside the list\n" +
+		"# permit-mgmt starts with the address tacctl reaches the device from and, when it is another one\n" +
+		"# (--server, a RADIUS listener bound to another address), the address the device authenticates against.\n" +
 		"# Add each neighbour and server the device needs first ('tacctl scope mgmt-acl " + scope + " add <cidr>').\n" +
 		"# Keep a console session open while you apply it, and commit with 'commit confirmed'.\n" +
 		"# These 'set firewall' lines define the filter in the candidate config.\n" +

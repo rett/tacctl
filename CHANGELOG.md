@@ -21,8 +21,9 @@ current behaviour; this file is where history lives.
    `default-accept` term, so the implicit discard drops the rest; the
    `permit-snmp` and `deny-snmp` terms stay and the `lo0` application stays a
    comment. The comment says what stops once the filter is on `lo0` (routing
-   protocols from neighbours outside the list, NTP, syslog and DHCP, SNMP
-   from other sources, every other protocol), and to keep a console session
+   protocols from neighbours outside the list, TACACS+ and RADIUS replies
+   from a server that is not in it, NTP, syslog and DHCP, SNMP from other
+   sources, every other protocol), and to keep a console session
    open and commit with `commit confirmed`. `device config plan` and `device
    config apply` move a device between the two filters in both directions
    and compare a pulled filter with the rendering of the scope's mode; the
