@@ -307,3 +307,24 @@ func TestPlanFollowsTheMgmtACLMode(t *testing.T) {
 	}
 	planGolden(t, "junos-mgmt-sshonly.out", out)
 }
+
+// The setter says which permit list the scope renders from, and that the first
+// entry added to the scope's own list replaces the global one for it, so that
+// the advice to add a neighbour does not silently cut the global subnets off.
+func TestScopeMgmtACLModeSaysWhichListIsUsed(t *testing.T) {
+	sb := newSandbox(t, true)
+	sb.runFamily("", configMgmtACLCmd, "config", "mgmt-acl", "add", "10.0.0.0/8,192.0.2.0/24")
+	out := plain(sb.run("", []string{"scope", "mgmt-acl", "lab", "mode", "strict"}))
+	for _, want := range []string{"This scope renders from the global permit list (mgmt_acl.permits, 2 entries).",
+		"The first entry added with", "'tacctl scope mgmt-acl lab add' replaces it for this scope", "global subnets lose access"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("global list: lacks %q:\n%s", want, out)
+		}
+	}
+	sb.run("", []string{"scope", "mgmt-acl", "lab", "mode", "ssh-only"})
+	sb.run("", []string{"scope", "mgmt-acl", "lab", "add", "198.51.100.0/24"})
+	out = plain(sb.run("", []string{"scope", "mgmt-acl", "lab", "mode", "strict"}))
+	if !strings.Contains(out, "This scope renders from its own permit list (1 entry).") || strings.Contains(out, "replaces it for this scope") {
+		t.Errorf("own list:\n%s", out)
+	}
+}

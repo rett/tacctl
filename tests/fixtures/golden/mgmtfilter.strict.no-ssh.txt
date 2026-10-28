@@ -1,5 +1,6 @@
 # entry 198.51.100.0/24:udp/161 permits udp/161 only
 # entry 203.0.113.0/24:icmp permits icmp only
 # no entry of the mgmt-acl list permits ssh (tcp/22): the strict filter would let only the tacctl server in,
-# so none is rendered. Configure with 'tacctl config mgmt-acl add <cidr>' on the tacctl server
-# to emit a deny-by-default lo0 firewall filter here (mgmt-acl mode strict).
+# so none is rendered. Add an entry that permits ssh to the permit list this scope renders from
+# ('tacctl scope mgmt-acl lab list' says which; the first entry of the scope's own list replaces the
+# global list for this scope) to emit a deny-by-default lo0 firewall filter here (mgmt-acl mode strict).

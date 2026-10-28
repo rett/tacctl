@@ -243,7 +243,7 @@ func JuniperVars(req Request, d Data) map[string]string {
 	if strict {
 		mgmt = strictEmpty()
 		if len(d.mgmtEntries()) > 0 {
-			mgmt = d.strictNoSSH()
+			mgmt = d.strictNoSSH(scope)
 		}
 	}
 	if skipped.Len() > 0 {

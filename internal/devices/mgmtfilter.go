@@ -186,7 +186,9 @@ func strictHeader(scope string) string {
 		"#   - every other protocol (ping, traceroute) from sources outside the list\n" +
 		"# permit-mgmt starts with the address tacctl reaches the device from and, when it is another one\n" +
 		"# (--server, a RADIUS listener bound to another address), the address the device authenticates against.\n" +
-		"# Add each neighbour and server the device needs first ('tacctl scope mgmt-acl " + scope + " add <cidr>').\n" +
+		"# Add each neighbour and server the device needs to the permit list this scope renders from first\n" +
+		"# ('tacctl scope mgmt-acl " + scope + " list' says which): the first entry of the scope's own list replaces\n" +
+		"# the global list for this scope, so add the global entries to it too.\n" +
 		"# Keep a console session open while you apply it, and commit with 'commit confirmed'.\n" +
 		"# These 'set firewall' lines define the filter in the candidate config.\n" +
 		"# Activate it by uncommenting the 'set interfaces lo0 …' line below\n" +
@@ -196,14 +198,15 @@ func strictHeader(scope string) string {
 // strictNoSSH is the comment of the strict mode when the list has IPv4 entries
 // and none of them permits ssh: what each permits, and why no filter is
 // rendered.
-func (d Data) strictNoSSH() string {
+func (d Data) strictNoSSH(scope string) string {
 	var b strings.Builder
 	for _, e := range d.mgmtEntries() {
 		b.WriteString("# entry " + e.text + " permits " + e.why + " only\n")
 	}
 	return b.String() + "# no entry of the mgmt-acl list permits ssh (tcp/22): the strict filter would let only the tacctl server in,\n" +
-		"# so none is rendered. Configure with 'tacctl config mgmt-acl add <cidr>' on the tacctl server\n" +
-		"# to emit a deny-by-default lo0 firewall filter here (mgmt-acl mode strict)."
+		"# so none is rendered. Add an entry that permits ssh to the permit list this scope renders from\n" +
+		"# ('tacctl scope mgmt-acl " + scope + " list' says which; the first entry of the scope's own list replaces the\n" +
+		"# global list for this scope) to emit a deny-by-default lo0 firewall filter here (mgmt-acl mode strict)."
 }
 
 // strictEmpty is the comment of the strict mode when the list has no entry

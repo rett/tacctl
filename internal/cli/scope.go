@@ -2690,6 +2690,16 @@ func (inv *invocation) scopeMgmtACLMode(scope, value string) error {
 			inv.echo("    - " + l)
 		}
 		inv.echo("")
+		if list, own := inv.app.Conf().MgmtACLList(scope); own {
+			inv.echo("  This scope renders from its own permit list (" + strconv.Itoa(len(list)) + " " + plural(len(list), "entry", "entries") + "). Add each neighbour and server the")
+			inv.echo("  device needs to it first.")
+			inv.echo("")
+		} else if len(list) > 0 {
+			inv.echo("  This scope renders from the global permit list (mgmt_acl.permits, " + strconv.Itoa(len(list)) + " " + plural(len(list), "entry", "entries") + "). The first entry added with")
+			inv.echo("  'tacctl scope mgmt-acl " + scope + " add' replaces it for this scope: add the global entries too, or the")
+			inv.echo("  global subnets lose access once the filter is applied.")
+			inv.echo("")
+		}
 		if captured(inv.readMgmtACLCIDRs(scope)) == "" {
 			inv.echo("  The permit list is empty, so no filter is rendered until it has an entry:")
 			inv.echo("    tacctl scope mgmt-acl " + scope + " add <cidr>")

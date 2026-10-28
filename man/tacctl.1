@@ -6067,9 +6067,12 @@ routing protocols from neighbours that are not in the list (BGP, OSPF, IS-IS,
 VRRP, LDP, BFD), TACACS+ and RADIUS replies from a server that is not in the list
 (the server the walkthrough names is), NTP, syslog and DHCP from hosts that are
 not in the list, SNMP from sources outside it (the SNMP clients still poll),
-and every other protocol from them. Add every neighbour and
-server the device needs to the permit list first, keep a console session open
-when the filter is applied, and commit with
+and every other protocol from them. Add every neighbour and server the device
+needs to the permit list the scope renders from first
+.RB ( "scope mgmt\-acl" " scope " list
+says which: the first entry of the scope's own list replaces the global list
+for that scope, so add the global entries to it too), keep a console session
+open when the filter is applied, and commit with
 .BR "commit confirmed" .
 The lo0 application stays a comment in the walkthrough. A list with no IPv4
 entry that permits ssh (a plain entry, or one with tcp/22) renders no filter in

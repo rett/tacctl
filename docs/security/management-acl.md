@@ -100,9 +100,11 @@ reaching the routing engine:
 - SNMP from sources outside the list (the SNMP clients still poll);
 - every other protocol (ping, traceroute) from sources outside the list.
 
-Add every neighbour and server the device needs to the scope's permit list
-first, keep a console session open when you apply the filter, and commit with
-`commit confirmed`.
+Add every neighbour and server the device needs to the permit list the scope
+renders from first (`tacctl scope mgmt-acl <scope> list` says which: the first
+entry of the scope's own list replaces the global list for that scope, so add
+the global entries to it too), keep a console session open when you apply the
+filter, and commit with `commit confirmed`.
 
 **Planning and applying a change of mode.** `tacctl device config plan` and
 `device config apply` treat the filter as owned whole, so a move between the

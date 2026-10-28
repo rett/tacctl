@@ -11,7 +11,9 @@
 #   - every other protocol (ping, traceroute) from sources outside the list
 # permit-mgmt starts with the address tacctl reaches the device from and, when it is another one
 # (--server, a RADIUS listener bound to another address), the address the device authenticates against.
-# Add each neighbour and server the device needs first ('tacctl scope mgmt-acl lab add <cidr>').
+# Add each neighbour and server the device needs to the permit list this scope renders from first
+# ('tacctl scope mgmt-acl lab list' says which): the first entry of the scope's own list replaces
+# the global list for this scope, so add the global entries to it too.
 # Keep a console session open while you apply it, and commit with 'commit confirmed'.
 # These 'set firewall' lines define the filter in the candidate config.
 # Activate it by uncommenting the 'set interfaces lo0 …' line below
