@@ -89,6 +89,7 @@ Keys without a shipped default (`backends.*`, `listeners.*`, `snmp.*`, `device.c
 | `cisco.source_interface.<scope>` | interface name as IOS prints it, such as `Loopback0` or `GigabitEthernet0/0/1` (not an abbreviation; unset: no line is rendered or compared) | `config cisco source-interface` |
 | `scope_auth_method.<scope>` | `tacacs` or `radius` (unset) | `scope auth-method` |
 | `scope_mgmt_acl.names.cisco.<scope>`, `scope_mgmt_acl.names.juniper.<scope>`, `scope_mgmt_acl.permits.<scope>` | the scope's own ACL name, filter name and permitted entries (CIDRs, each with optional services), in place of `mgmt_acl.*` | `scope mgmt-acl` |
+| `scope_mgmt_acl.mode.<scope>` | `strict`: the scope's Junos filter is deny by default; unset is `ssh-only` | `scope mgmt-acl <scope> mode` |
 | `listeners.<backend>.<name>` | network, address, role, metrics_address (`tacacs.default` tcp :49, `radius.auth` udp :1812, `radius.acct` udp :1813) | `config listen` |
 | `junos.<group>.deny_commands`, `junos.<group>.deny_configuration` | list of POSIX extended regular expressions (unset) | `group junos` |
 | `wti_level.<group>` | `viewonly`, `user`, `superuser` or `administrator` (unset: the priv-lvl band) | `group add`, `group edit` |

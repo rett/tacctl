@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -62,7 +63,7 @@ var scopeSpecs = map[string]Spec{
 	"tacacs-group": {MinArgs: 1, MaxArgs: 2, Args: []string{KindScopes, ""}},
 	"radius-group": {MinArgs: 1, MaxArgs: 2, Args: []string{KindScopes, ""}},
 	"auth-method":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindScopes, "tacacs|radius|clear"}},
-	"mgmt-acl":     {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "list|add|remove|clear|cisco-name|juniper-name", ""}},
+	"mgmt-acl":     {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "list|add|remove|clear|cisco-name|juniper-name|mode", After("mode", strings.Join(conf.MgmtModes, "|"))}},
 	"breakglass": {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "list|add|remove", After("remove", KindBreakGlass)}, Flags: []Flag{
 		{Names: []string{"--role"}, Value: true, Only: "add", Kind: "admin|operator|readonly"}}},
 	// 'scope block' parses each verb with scopeBlockSpecs; this is the whole of
@@ -84,7 +85,7 @@ var (
 	scopeVendorAttrsRows = []string{"show", "enable|disable <vendor>[,<vendor>...]"}
 	scopeDevicesRows     = []string{"list", "set <ip|cidr> <vendor>", "unset <ip|cidr>"}
 	scopeStagingRows     = []string{"list", "remove <address>"}
-	scopeMgmtACLRows     = []string{"list", "add <entry>[,<entry>...]", "remove <entry>[,<entry>...]", "clear", "cisco-name [<label>]", "juniper-name [<label>]"}
+	scopeMgmtACLRows     = []string{"list", "add <entry>[,<entry>...]", "remove <entry>[,<entry>...]", "clear", "cisco-name [<label>]", "juniper-name [<label>]", "mode [ssh-only|strict]"}
 )
 
 // mgmtACLEntryLine says what an <entry> of a mgmt-acl list is.
@@ -127,8 +128,8 @@ func scopeCmd(inv *invocation) *cobra.Command {
 		withRun(verb("radius-group <scope> [<name>]", "Per-scope Cisco aaa-group-server label for RADIUS"), nn("radius-group", inv.scopeRadiusGroup)),
 		withRun(verb("auth-method <scope> [tacacs|radius|clear]",
 			"Protocol this scope's device configs and host enrollments use"), nn("auth-method", inv.scopeAuthMethodCmd)),
-		withRun(verb("mgmt-acl <scope> {list|add|remove|clear|cisco-name|juniper-name} [args]",
-			"Per-scope permit list and ACL / filter names"), nn("mgmt-acl", inv.scopeMgmtACL)),
+		withRun(verb("mgmt-acl <scope> {list|add|remove|clear|cisco-name|juniper-name|mode} [args]",
+			"Per-scope permit list, ACL / filter names and the Junos filter mode"), nn("mgmt-acl", inv.scopeMgmtACL)),
 		withRun(verb("breakglass <scope> {list|add <name> [--role admin|operator|readonly]|remove <name>}",
 			"Per-scope break-glass local users (names and roles; no credential is stored): the accounts a breakglass hold makes usable"), n(inv.scopeBreakGlass)),
 		withRun(verb(scopeSNMPUse, scopeSNMPShort), nn("snmp", inv.scopeSNMP)),
@@ -163,7 +164,7 @@ var (
 // scope's name (<key>.<scope>). 'scope rename' moves them and 'scope
 // remove' drops them (scopeConfKeysMove).
 var scopeConfKeys = []string{"aaa.order", "exec_timeout", "tacacs_group", "radius_group", "scope_auth_method",
-	"scope_mgmt_acl.names.cisco", "scope_mgmt_acl.names.juniper", "scope_mgmt_acl.permits", "cisco.source_interface"}
+	"scope_mgmt_acl.names.cisco", "scope_mgmt_acl.names.juniper", "scope_mgmt_acl.permits", "scope_mgmt_acl.mode", "cisco.source_interface"}
 
 // The ACL / filter names the device configs use when none is set
 // (CISCO_ACL_NAME_DEFAULT, JUNIPER_ACL_NAME_DEFAULT).
@@ -406,6 +407,12 @@ func (inv *invocation) readMgmtACLName(vendor, scope string) string {
 		return global
 	}
 	return inv.confGet("scope_mgmt_acl.names."+vendor+"."+scope, global)
+}
+
+// readMgmtACLMode is the management filter mode of the scope's Junos devices
+// (conf.MgmtModeSSHOnly or conf.MgmtModeStrict).
+func (inv *invocation) readMgmtACLMode(scope string) string {
+	return inv.app.Conf().MgmtACLMode(scope)
 }
 
 // readMgmtACLCIDRs is read_mgmt_acl_cidrs [scope]: the per-scope permits
@@ -2605,10 +2612,104 @@ func (inv *invocation) scopeMgmtACL(args []string) error {
 		inv.echo("  ACL / filter block to each device in this scope. A stale ACL name on")
 		inv.echo("  the device will still reference the old filter until replaced.")
 		inv.echo("")
+	case "mode":
+		if len(args) > 3 {
+			return inv.usageErr("Unknown argument: '"+args[3]+"'", "Usage: tacctl scope mgmt-acl "+scope+" mode [ssh-only|strict]")
+		}
+		return inv.scopeMgmtACLMode(scope, value)
 	default:
-		return inv.usageErr("Unknown subcommand '" + sub + "'. Use: list | add | remove | clear | cisco-name | juniper-name.")
+		return inv.usageErr("Unknown subcommand '" + sub + "'. Use: list | add | remove | clear | cisco-name | juniper-name | mode.")
 	}
 	return nil
+}
+
+// scopeMgmtACLMode is 'scope mgmt-acl <scope> mode [ssh-only|strict]': show
+// the mode, or set it. ssh-only is the default and is stored as no key, so a
+// scope that never chose has the file it always had. Only the Junos filter
+// reads the mode.
+func (inv *invocation) scopeMgmtACLMode(scope, value string) error {
+	a := inv.app
+	c := a.Conf()
+	key := conf.ScopeMgmtACLModePrefix + scope
+	if value == "" {
+		source := "default"
+		if _, set := c.Value(key); set {
+			source = "set (tacctl.yaml: " + key + ")"
+		}
+		inv.echo("")
+		inv.echo("  Scope '" + scope + "' management filter mode: " + c.MgmtACLMode(scope))
+		inv.echo("  Source: " + source)
+		inv.echo("")
+		for _, l := range mgmtModeLines() {
+			inv.echo("    " + l)
+		}
+		inv.echo("")
+		inv.echo("  Usage: tacctl scope mgmt-acl " + scope + " mode [ssh-only|strict]")
+		inv.echo("")
+		return nil
+	}
+	if !slices.Contains(conf.MgmtModes, value) {
+		return inv.usageErr("Unknown mode '" + value + "'. Use: ssh-only | strict.")
+	}
+	if c.MgmtACLMode(scope) == value {
+		a.Out.Info("Scope '" + scope + "' management filter mode is already " + value + ".")
+		inv.echo("")
+		return nil
+	}
+	if value == conf.MgmtModeSSHOnly {
+		if err := c.Unset(key); err != nil {
+			return err
+		}
+	} else if err := c.Set(key, value); err != nil {
+		return err
+	}
+	inv.detail("scope mgmt-acl", kvp("scope", scope), kvp("op", "mode"), kvp("value", value))
+	a.Out.InfoE("Scope '" + scope + "' management filter mode set to " + value + " (Junos devices only).")
+	inv.echo("")
+	if value == conf.MgmtModeStrict {
+		inv.echo("  The Junos filter of this scope now has no default-accept term: once it is applied to lo0,")
+		inv.echo("  only the permit list and the SNMP clients reach the routing engine. What stops:")
+		for _, l := range mgmtStrictStops {
+			inv.echo("    - " + l)
+		}
+		inv.echo("")
+		if captured(inv.readMgmtACLCIDRs(scope)) == "" {
+			inv.echo("  The permit list is empty, so no filter is rendered until it has an entry:")
+			inv.echo("    tacctl scope mgmt-acl " + scope + " add <cidr>")
+			inv.echo("")
+		}
+		inv.echo("  Keep a console session open when you apply it, and use commit confirmed.")
+	} else {
+		inv.echo("  The Junos filter of this scope has its default-accept term again: ssh, NETCONF and SNMP")
+		inv.echo("  are restricted and everything else is accepted.")
+	}
+	inv.echo("  Cisco VTY-ACL and WTI IP Tables lists are the same in both modes.")
+	inv.echo("")
+	inv.echo("  Re-run 'tacctl config juniper --scope " + scope + "' and review the filter before it reaches a device;")
+	inv.echo("  'tacctl device config plan' lists the change for a pulled device.")
+	inv.echo("")
+	return nil
+}
+
+// mgmtStrictStops is what the strict filter drops, as the shell prints it
+// after the mode is set (the comment of the filter says the same).
+var mgmtStrictStops = []string{
+	"routing protocols to the routing engine from neighbours not in the list: BGP, OSPF, IS-IS, VRRP, LDP",
+	"NTP, syslog and DHCP from hosts not in the list (and their replies)",
+	"SNMP from sources outside the list",
+	"every other protocol (ping, traceroute, DNS replies) from sources outside the list",
+}
+
+// mgmtModeLines say what each mode is, for the view of the setting.
+func mgmtModeLines() []string {
+	return []string{
+		"ssh-only  The Junos filter accepts ssh and NETCONF from the permit list, restricts SNMP and ends in",
+		"          a default-accept term, so everything else is accepted (the default).",
+		"strict    The Junos filter accepts every protocol from the permit list (an entry with services keeps",
+		"          only those) and has no default-accept term: everything else is dropped.",
+		"",
+		"The mode only affects Junos devices; the Cisco VTY-ACL and the WTI IP Tables list do not change.",
+	}
 }
 
 // lookupHoldNotes says, for an address a break-glass hold stands on, that

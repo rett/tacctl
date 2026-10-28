@@ -116,7 +116,7 @@ func (p *RollbackPlan) warnings029() []RollbackWarning {
 	in := p.in
 	var tr, nc []string
 	for _, k := range p.keys {
-		if conf.Added0217Key(k) || conf.Added0219Key(k) {
+		if conf.Added0217Key(k) || conf.Added0219Key(k) || conf.Added0220Key(k) {
 			continue
 		}
 		v, _ := in.Conf.Get(k, "")

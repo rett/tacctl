@@ -154,6 +154,18 @@ var Added0219 = []Family{
 	{"emergency.lockdown.", true},
 }
 
+// Added0220 are the key families 0.2.20 added: the management filter mode of
+// a scope (scope_mgmt_acl.mode.<scope>). A 0.2.19 or older binary does not
+// know it (its schema refuses the keys, so its 'config validate' reports it
+// and its 'backup restore' refuses a snapshot that has it), so a rollback
+// removes it, and says which scopes were strict (lifecycle).
+var Added0220 = []Family{
+	{"scope_mgmt_acl.mode.", true},
+}
+
+// Added0220Key reports whether path is a key 0.2.20 added.
+func Added0220Key(path string) bool { return inFamilies(Added0220, path) }
+
 // Added0219Key reports whether path is a key 0.2.19 added.
 func Added0219Key(path string) bool { return inFamilies(Added0219, path) }
 
@@ -252,7 +264,7 @@ func (c *Config) unknown023(path string) bool {
 func (c *Config) RollbackKeys029() []string {
 	var out []string
 	walkLeaves(c.Overrides(), "", func(p string, _ any) {
-		if Added0210Key(p) || Added0217Key(p) || Added0219Key(p) {
+		if Added0210Key(p) || Added0217Key(p) || Added0219Key(p) || Added0220Key(p) {
 			out = append(out, p)
 		}
 	})
@@ -264,11 +276,12 @@ func (c *Config) RollbackKeys029() []string {
 // 0.2.19 added the emergency lockdown record (Added0219) and nothing else to
 // the schema. A rollback is refused while a lockdown with a group stands, so
 // what is left is a partial record that locks nothing (the schema accepts
-// each leaf alone), which the older schema refuses all the same.
+// each leaf alone), which the older schema refuses all the same. 0.2.20 added
+// the management filter mode of a scope (Added0220).
 func (c *Config) RollbackKeys0218() []string {
 	var out []string
 	walkLeaves(c.Overrides(), "", func(p string, _ any) {
-		if Added0219Key(p) {
+		if Added0219Key(p) || Added0220Key(p) {
 			out = append(out, p)
 		}
 	})
@@ -285,7 +298,7 @@ func (c *Config) RollbackKeys0218() []string {
 func (c *Config) RollbackKeys0216() []string {
 	var out []string
 	walkLeaves(c.Overrides(), "", func(p string, _ any) {
-		if Added0217Key(p) || Added0219Key(p) {
+		if Added0217Key(p) || Added0219Key(p) || Added0220Key(p) {
 			out = append(out, p)
 		}
 	})

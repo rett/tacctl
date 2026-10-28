@@ -5986,6 +5986,8 @@ Requires: \fBsuperuser\fR.
 .BI "scope mgmt-acl " scope " list|add|remove|clear [ " entry\fR[,\fIentry\fR...] " ]"
 .TQ
 .BI "scope mgmt-acl " scope " cisco-name|juniper-name [ " label " ]"
+.TQ
+.BI "scope mgmt-acl " scope " mode [ ssh-only | strict ]"
 Per-scope management ACL, with the subcommands of the global
 .BR "tacctl config mgmt-acl" .
 The effective permit list of a
@@ -6018,6 +6020,41 @@ falls back to the global; \fBclear\fR is the explicit way to revert.
 -> shipped default (\fBVTY-ACL\fR for Cisco, \fBMGMT-ACL\fR for
 Junos). A name starts with a letter, then
 [A-Za-z0-9_-]; 1..63 chars.
+.IP \(bu 2
+.BR "mode " [ ssh-only | strict ]
+— the mode of the scope's Junos filter; it affects Junos devices only, and the
+Cisco VTY-ACL and the WTI IP Tables list are the same in both. With no
+argument it prints the mode and where it comes from. The default,
+.BR ssh-only ,
+is the filter that restricts ssh, NETCONF and SNMP and ends in a
+.B default-accept
+term, so everything else is accepted.
+.B strict
+is deny by default: the filter accepts every protocol from the permit list (an
+entry with services keeps only those services, a plain entry accepts
+everything from its source; the tacctl server's own address stays first), keeps
+the SNMP client terms and has no
+.B default-accept
+term, so the implicit discard at the end of the filter drops the rest. Once a
+strict filter is applied to lo0, these stop reaching the routing engine:
+routing protocols from neighbours that are not in the list (BGP, OSPF, IS-IS,
+VRRP, LDP), NTP, syslog and DHCP from hosts that are not in the list, SNMP from
+sources outside it, and every other protocol from them. Add every neighbour and
+server the device needs to the permit list first, keep a console session open
+when the filter is applied, and commit with
+.BR "commit confirmed" .
+The lo0 application stays a comment in the walkthrough. A list with no IPv4
+entry renders no filter in either mode. Setting
+.B ssh-only
+removes the key (only
+.B strict
+is stored); the setter is the superuser's, as every verb of
+.BR "scope mgmt-acl" .
+The value is
+.B scope_mgmt_acl.mode.\fIscope\fR
+in
+.IR tacctl.yaml ;
+a rename moves it and a removal deletes it.
 .RE
 .IP
 Cisco puts the effective name in
@@ -13751,6 +13788,10 @@ The scope's own filter name, in place of mgmt_acl.names.juniper. Set with \fBtac
 .B scope_mgmt_acl.permits.<scope>
 list of CIDRs, each with optional services after a colon (tcp/22, tcp/161\-162, udp/*, icmp, comma separated). Default: [].
 The scope's own permitted entries (a CIDR, or a CIDR with its services), in place of mgmt_acl.permits. Set with \fBtacctl scope mgmt\-acl\fR.
+.TP
+.B scope_mgmt_acl.mode.<scope>
+one of ssh\-only, strict. Default: none (unset).
+The mode of the scope's Junos management filter: strict accepts every protocol from the permit list and has no default-accept term; unset: ssh-only, the filter that restricts ssh, NETCONF and SNMP. Only strict is stored. Set with \fBtacctl scope mgmt\-acl\fR.
 .TP
 .B listeners.<backend>.<name>
 mapping with network, address, role, metrics_address, tls (tls is reserved). Default: tacacs.default is tcp :49; radius.auth is udp :1812; radius.acct is udp :1813.

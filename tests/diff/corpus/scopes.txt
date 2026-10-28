@@ -3,9 +3,9 @@
 # Run: tests/diff/run.sh scopes
 @fixture tacquito.minimal.yaml
 
-@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital; 0.2.20 item 2: the usage lists scope mgmt-acl <scope> mode
 scope
-@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital; 0.2.20 item 2: the usage lists scope mgmt-acl <scope> mode
 scope bogus
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope list
@@ -216,9 +216,9 @@ scope auth-method lab tacacs ;; scope auth-method lab clear ;; scope auth-method
 scope auth-method lab bogus
 
 # per-scope management ACL
-@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows; 0.2.20 item 2: the usage lists scope mgmt-acl <scope> mode
 scope mgmt-acl
-@known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
+@known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital; 0.2.20 item 2: the usage lists scope mgmt-acl <scope> mode
 scope mgmt-acl lab
 scope mgmt-acl nosuch list
 @known 0.2.7 item 20: the mgmt-acl usage and its "Add with" hint name the optional :<services>
@@ -239,14 +239,15 @@ scope mgmt-acl lab cisco-name '1bad'
 scope mgmt-acl lab juniper-name
 scope mgmt-acl lab juniper-name MY-FILTER ;; scope mgmt-acl lab juniper-name
 scope mgmt-acl nosuch cisco-name
+@known 0.2.20 item 2: the unknown-subcommand message lists mode
 scope mgmt-acl lab ios-name
 
 # WP2.4b: more of the usage, flag and value handling
-@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital; 0.2.20 item 2: the usage lists scope mgmt-acl <scope> mode
 scope -h
-@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital; 0.2.20 item 2: the usage lists scope mgmt-acl <scope> mode
 scope --help
-@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital; 0.2.20 item 2: the usage lists scope mgmt-acl <scope> mode
 scope help
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope list extra

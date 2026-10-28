@@ -8,7 +8,7 @@ tacctl config mgmt-acl add 10.1.0.0/16
 tacctl config mgmt-acl add 192.168.5.0/24
 tacctl config mgmt-acl list
 ```
-`tacctl config cisco` then emits a populated `VTY-ACL` applied to `line vty 0 15` via `access-class VTY-ACL in`. The server's own address (`--source`, else the detected one) is the first permit of the Cisco ACL and of the Junos filter, once, so the access class cannot cut off tacctl's own ssh. `tacctl config juniper` emits a commented `set firewall family inet filter MGMT-ACL` block (including a trailing `default-accept` term to keep BGP/OSPF/IS-IS traffic to the RE working) — review and uncomment per device. `tacctl config wti` renders the unit's **IP Tables** list from the same permits. The list lives under `mgmt_acl.permits` in `/etc/tacctl/tacctl.yaml` and survives `tacctl upgrade`; a scope's own list (`tacctl scope mgmt-acl <scope> add <cidr>`) replaces it for that scope.
+`tacctl config cisco` then emits a populated `VTY-ACL` applied to `line vty 0 15` via `access-class VTY-ACL in`. The server's own address (`--source`, else the detected one) is the first permit of the Cisco ACL and of the Junos filter, once, so the access class cannot cut off tacctl's own ssh. `tacctl config juniper` emits a commented `set firewall family inet filter MGMT-ACL` block (in the default `ssh-only` mode, with a trailing `default-accept` term to keep BGP/OSPF/IS-IS traffic to the RE working; see [Strict mode for Junos](#strict-mode-for-junos)) — review and uncomment per device. `tacctl config wti` renders the unit's **IP Tables** list from the same permits. The list lives under `mgmt_acl.permits` in `/etc/tacctl/tacctl.yaml` and survives `tacctl upgrade`; a scope's own list (`tacctl scope mgmt-acl <scope> add <cidr>`) replaces it for that scope.
 
 **Entries with services.** An entry is a CIDR, or a CIDR with the services it permits: `<cidr>[:<service>[,<service>...]]`, where a service is `tcp/<ports>`, `udp/<ports>` or `icmp` and `<ports>` is `N`, `N-M` or `*` (every port of the protocol). `tacctl config mgmt-acl add 172.16.100.0/23:tcp/22,udp/161,udp/162,10.0.0.0/8` adds two entries: a token that starts with `tcp/`, `udp/` or `icmp` belongs to the entry before it (a service before any CIDR is refused), and the CIDR is split from its services at the first `:` that is followed by `tcp/`, `udp/`, `icmp` or `*` (an IPv6 CIDR holds colons of its own). **A plain `<cidr>` permits every protocol and port from that source**: on a WTI unit that is a rule `iptables -A INPUT -s <cidr> -j ACCEPT`; write `<cidr>:tcp/22` for ssh alone. `<cidr>:*` and `<cidr>:tcp/*,udp/*,icmp` are spellings of the plain entry. Services are lower-cased, de-duplicated and stored in the order tcp, udp, icmp with ports ascending, `tcp/*` takes the other tcp services of the entry, an entry holds at most 8 services, ports are 1 to 65535, a range has its low port first, and `icmp` takes no port. The same CIDR may be listed twice with different services (two entries); an exact duplicate is a no-op. `list` prints the services after the CIDR (`172.16.100.0/23   tcp/22, udp/161, udp/162`). `remove <entry>` removes that exact entry, and `remove <cidr>` with no services removes **every** entry of that CIDR and says how many. What each consumer does with an entry:
 
@@ -39,3 +39,61 @@ tacctl config mgmt-acl cisco-name MGMT-ACCESS
 tacctl config mgmt-acl juniper-name MGMT-SSH-FILTER
 ```
 Overrides live under `mgmt_acl.names.{cisco,juniper}` in `/etc/tacctl/tacctl.yaml` and also survive `tacctl upgrade`.
+
+## Strict mode for Junos
+
+The Junos filter restricts ssh, NETCONF and SNMP only: its last term,
+`default-accept`, accepts everything else, so a device that should drop
+traffic from sources outside the permit list needs the other mode. A scope
+chooses it:
+
+```
+tacctl scope mgmt-acl <scope> mode              # show: ssh-only (default) or strict
+tacctl scope mgmt-acl <scope> mode strict
+tacctl scope mgmt-acl <scope> mode ssh-only
+```
+
+The setting is the superuser's, per scope, and only Junos devices read it:
+the Cisco VTY-ACL and the WTI IP Tables list are the same in both modes. Only
+`strict` is stored (`scope_mgmt_acl.mode.<scope>` in `tacctl.yaml`); setting
+`ssh-only` removes the key.
+
+**What `strict` renders.** The filter accepts every protocol from the permit
+list and has no `default-accept` term, so the implicit discard at the end of
+a Junos filter drops the rest. The terms, in order:
+
+- `permit-mgmt`: the source of every plain entry, the tacctl server's own
+  address (`--source`, else the detected one) first and once; then accept.
+- One term for each distinct service of the entries that have services,
+  named after the service (`permit-tcp-22`, `permit-udp-161-162`,
+  `permit-tcp-any`, `permit-icmp`): the sources of the entries that name it,
+  the protocol and the destination port; then accept. A service with no port
+  (`tcp/*`, `udp/*`) matches the protocol alone, and `icmp` is `from protocol
+  icmp` for every ICMP type. A port Junos prints by name is written with it
+  (`ssh`, `snmp`, `ntp`, `bgp`), any other as a number, a range as `low-high`.
+- `permit-snmp` and `deny-snmp`, when the scope's SNMP clients are set, as in
+  `ssh-only`.
+
+An entry with services keeps only those services; a plain entry accepts
+everything from its source. An entry for a network that already heads
+`permit-mgmt` (the server's own /32, or a plain entry of the same network)
+adds nothing, because that source accepts everything. A source that has
+services needs `tcp/22` among them for ssh and `tcp/830` for NETCONF. IPv6
+entries are skipped (the filter is family inet), and a list with no IPv4 entry
+renders no filter in either mode.
+
+The walkthrough keeps the `set interfaces lo0 ... filter input` line
+commented and never emits it. Once the filter is applied to lo0, these stop
+reaching the routing engine:
+
+- routing protocols from neighbours that are not in the list (BGP, OSPF,
+  IS-IS, VRRP, LDP);
+- NTP, syslog and DHCP from hosts that are not in the list, and their
+  replies;
+- SNMP from sources outside the list;
+- every other protocol (ping, traceroute, DNS replies) from sources outside
+  the list.
+
+Add every neighbour and server the device needs to the scope's permit list
+first, keep a console session open when you apply the filter, and commit with
+`commit confirmed`.
