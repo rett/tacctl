@@ -43,7 +43,7 @@ func configKeyWords(s *conf.Schema) string {
 
 // topSpecs are the verbs outside the families.
 var topSpecs = map[string]Spec{
-	"install":   {Flags: []Flag{{Names: []string{"--branch"}, Value: true}, {Names: []string{"-y", "--yes"}}}},
+	"install":   {Flags: []Flag{{Names: []string{"--branch"}, Value: true}, {Names: []string{"--server"}, Value: true}, {Names: []string{"-y", "--yes"}}}},
 	"upgrade":   {Flags: []Flag{{Names: []string{"--branch"}, Value: true}}},
 	"uninstall": {Flags: []Flag{{Names: []string{"-y", "--yes"}}}},
 	"rollback":  rollbackSpec,

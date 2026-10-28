@@ -91,12 +91,9 @@ func (hs *hostSandbox) runner() *fake.Runner {
 	return r
 }
 
-// run runs tacctl with r (a fresh scripted runner when nil).
-func (hs *hostSandbox) run(r *fake.Runner, args ...string) string {
-	hs.t.Helper()
-	if r == nil {
-		r = hs.runner()
-	}
+// newApp is the app of one run of args on r, with the sandbox's output
+// buffers emptied.
+func (hs *hostSandbox) newApp(r *fake.Runner, args []string) *app.App {
 	hs.out.Reset()
 	hs.err.Reset()
 	hs.sandbox.runner = r
@@ -110,6 +107,16 @@ func (hs *hostSandbox) run(r *fake.Runner, args ...string) string {
 	if a.ServerAddress == nil {
 		a.ServerAddress = testServerAddress
 	}
+	return a
+}
+
+// run runs tacctl with r (a fresh scripted runner when nil).
+func (hs *hostSandbox) run(r *fake.Runner, args ...string) string {
+	hs.t.Helper()
+	if r == nil {
+		r = hs.runner()
+	}
+	a := hs.newApp(r, args)
 	ctx := hs.ctx
 	if ctx == nil {
 		ctx = context.Background()

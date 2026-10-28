@@ -18,6 +18,7 @@ The upgrade command:
 6. Updates system files (unit files and drop-ins, logrotate, the tiers sudoers rules and the group drop-in `config sudoers install <group>` wrote, if those files are installed, the completion `tacctl completion bash` generates, the man page, templates you have not customized) if changed, and reports each one as `Updated:` or `Unchanged:`; a template you customized is kept, with the new release's version beside it as `<name>.template.new` (see [Custom Templates](../devices/templates.md#custom-templates))
 7. For an install without a store: moves it into the store once the store gate (`tacctl store import --check`) passes
 8. Restarts tacquito only if what it reads changed (its binary, a unit or drop-in, or `tacquito.yaml`), and rolls the binary and unit files back if it does not come up. A new README, logrotate file, completion or template restarts nothing, and neither does an upgrade with nothing new
+9. Sets up this machine's own login, or repairs it (see [This machine's own login](#this-machines-own-login-0221))
 
 The upgrade changes an override only when it is exactly a value an earlier release shipped (the 0.2.3 rules of `operator` and `readonly` and the `operator` privileges list, which `group commands add` and `group privilege add` copy into `tacctl.yaml`): that one is dropped, with an info line, and the shipped value applies. Every other override stays as it is. An install that ran `tacctl group preset roles` on 0.2.2 carries that preset's engineer rules as overrides. Their Cisco denies did not hold (tacquito matches the whole arguments string, so `no aaa new-model`, `enable secret ...`, `ip ssh ...` and `do reload in 5` were permitted), so while `engineer` still has exactly those values the upgrade ends with a red notice that names `tacctl group reset engineer` (look first with `--dry-run`).
 
@@ -36,6 +37,37 @@ Running `tacctl upgrade` again right after an upgrade changes nothing. `--branch
 **Undoing the move into the store.** `tacctl store rollback` restores the kept pre-store `tacquito.yaml` and legacy read-only mode (refused while RADIUS is enabled: `tacctl backend disable radius` first).
 
 After an upgrade: `tacctl status`, `tacctl config validate` (store, rendered config, drift), and `tacctl backup list` (the pre-store file is under the old-style backups).
+
+**This machine's own login (0.2.21).** Every user can log in to the tacctl
+server and its console, and `install` and `upgrade` set that login up with the
+machinery of `tacctl host enroll --local` (see [Installing](installing.md)),
+so that command is no longer a step of an install or an upgrade: it is the
+command to rebuild, move or repair a server. An upgrade, at its end:
+
+- does nothing and prints nothing when the login is there: the server is
+  registered in the scope tacctl manages, the scope's prefixes are the
+  server's login addresses, its secret is usable, the PAM files are in
+  `/etc/pam.d` and the address is recorded in `server.addresses` (an entry
+  from before that records the address in `tacctl.yaml`, in one line);
+- repairs a managed scope whose prefixes drifted, in one line
+  (`Repaired the managed server login.`), after a snapshot;
+- runs the enrolment again, with no question, when the server was enrolled
+  before and the login is gone or stale: a rebuilt server that has the registry
+  entry but no PAM files, or an entry that is registered in a scope of the
+  operator's, as an install from before 0.2.21 has it (the scope the server
+  alone used is taken over, its secret kept; one that serves hosts or devices
+  too stays for them and the server gets its own);
+- sets a server with no entry up only when the question is answered `y` on a
+  terminal: `Set up this machine's own login now, with <address> as the server
+  address? [y/N]`. An upgrade has no `-y` and does not read a pipe: without a
+  terminal it prints one line, `This machine's own login was not set up (an
+  upgrade does not ask without a terminal); to set it up: tacctl host enroll
+  --local`, and goes on.
+
+A step that cannot be done safely is a line (a warning, with the command to
+run), never a failed upgrade: the upgrade completes and exits as it always
+does, and nothing is left half applied (sshd is checked before it is reloaded
+and the change undone when it refuses it).
 
 **The login console on every account (0.2.20).** The console is the login shell of every managed user of every tier on the tacctl server, and there is no switch for it. The `tiers` and `users` mappings of `/etc/tacctl/console.yaml` (the per-tier and per-user switches of earlier releases) are ignored, never written again and left in the file; every managed user gets the console at the next `tacctl host sync <name of this server>`, which also puts sshd's drop-in in force for all of them. Local accounts that are not tacctl users are not touched.
 

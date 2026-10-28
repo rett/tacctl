@@ -19,6 +19,9 @@ tacctl_tmpenv_init() {
     # This server's own ssh host keys (ssh_host_*_key.pub), which an engineer's
     # host enroll|target|sync compares with the keys of the host named.
     export TACCTL_SSH_DIR="${BATS_TEST_TMPDIR}/ssh"
+    # Where the client script writes tacctl's PAM files, and where install and
+    # upgrade look for them to tell whether this server's own login is set up.
+    export TACCTL_CLIENT_PAM_DIR="${BATS_TEST_TMPDIR}/pam.d"
     # The RADIUS backend's paths: its raddb, log
     # directory, daemon binary and logrotate directory. The systemd directory
     # is TACCTL_SYSTEMD_DIR, shared with the TACACS+ backend.

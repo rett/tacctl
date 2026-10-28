@@ -7,6 +7,7 @@ Usage: tacctl <command> [arguments]
 Commands:
   install [--branch <name>] [-y|--yes]  Install tacctl and the TACACS+ backend (tacquito) from scratch
       --branch <name>                   The tacctl repo branch to install or upgrade from (default: the current one)
+      --server <ip>                     The address devices and hosts reach this server at
       -y, --yes                         Answer yes to the confirmations
   upgrade [--branch <name>]             Pull latest source, rebuild, update scripts and every enabled backend
   uninstall [-y|--yes]                  Remove tacctl, its backends' services and all associated files

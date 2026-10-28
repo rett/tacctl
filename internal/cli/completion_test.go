@@ -211,7 +211,7 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"host", "check", ""}, []string{"web1", "web2", "--all", "--json"}},
 		{[]string{"host", "check", "web1", ""}, []string{"web1", "web2", "--all", "--json"}},
 		{[]string{"host", ""}, []string{"check", "default-method", "enroll", "forget", "list", "move", "provisioner", "rename", "show", "sync", "target", "unenroll"}},
-		{[]string{"install", ""}, []string{"--branch", "-y", "--yes"}},
+		{[]string{"install", ""}, []string{"--branch", "--server", "-y", "--yes"}},
 		{[]string{"upgrade", ""}, []string{"--branch"}},
 		{[]string{"uninstall", ""}, []string{"-y", "--yes"}},
 		{[]string{"version", ""}, []string{"--long"}},

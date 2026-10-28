@@ -12,6 +12,9 @@ sudo bash -c 'git clone https://github.com/rett/tacctl.git /opt/tacctl &&
 # Or upgrade an existing server (pulls the latest from GitHub, rebuilds if needed)
 tacctl upgrade
 
+# Both set up this machine's own login too, so every user can log in to the
+# server and its console (tacctl host enroll --local rebuilds, moves or repairs it)
+
 # Fresh installs seed engineer/superuser, operator/operator and viewer/readonly,
 # all disabled until a password is set, and root/readonly, an accounting-only
 # sink for Junos internal daemons (its password cannot be set; its records

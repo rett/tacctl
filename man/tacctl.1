@@ -47,7 +47,7 @@ are deliberate exceptions: they run as the invoking user.
 .SH COMMANDS
 .SS System lifecycle
 .TP
-.BI "install [--branch " name "] [-y|--yes]"
+.BI "install [--branch " name "] [--server " ip "] [-y|--yes]"
 Install tacctl and the TACACS+ backend. Builds the tacquito binary with the
 Go toolchain (installed by
 .I /opt/tacctl/bin/tacctl.sh
@@ -73,6 +73,32 @@ is not installed: see
 .BR "backend enable" .
 The plan is shown and confirmed
 .RB ( [y/N] ).
+.IP
+Then it sets up this machine's own login, the managed server login, with the
+machinery of
+.BR "host enroll \-\-local" :
+the scope
+.BR tacctl ,
+this server's registry entry, the PAM client and sshd's drop-in, and the
+accounts, so that every user can log in to this server and its console. It
+asks once
+.RB ( "Set up this machine's own login now, with <address> as the server address? [y/N]" ;
+.B \-y
+answers it) and prints nothing more when the login is there already. The
+server address is
+.BR \-\-server ,
+else the recorded one
+.RB ( server.addresses ),
+else the address of the interface with the default route, said in one line.
+Everything
+.B "host enroll \-\-local"
+does to stay safe is done here: sshd is checked with
+.B "sshd \-t"
+before it is reloaded and the change is undone when it refuses, root and the
+local administrators are not touched, the PAM files are backed up, and a
+snapshot is taken first. A step that cannot be done safely does not stop the
+install: one line says what was skipped and the command to run
+.RB ( "tacctl host enroll \-\-local" ).
 .IP
 Four built-in users are seeded:
 .B engineer
@@ -114,6 +140,9 @@ Options:
 .TP
 \fB\-\-branch\fR \fI<name>\fR
 The tacctl repo branch to install or upgrade from (default: the current one).
+.TP
+\fB\-\-server\fR \fI<ip>\fR
+The address devices and hosts reach this server at.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
 Answer yes to the confirmations.
@@ -192,6 +221,21 @@ form that keeps ssh only. It is recorded in
 (a fresh install writes the file at once); later upgrades and
 .B "config validate"
 say nothing of it.
+.IP
+The upgrade also sets up this machine's own login (see
+.BR install ):
+a server registered by
+.B "host enroll \-\-local"
+is repaired when it drifted (a managed scope whose prefixes are not the
+server's login addresses:
+.BR "Repaired the managed server login." ;
+its PAM files gone, as on a rebuilt server: the enrolment runs again) and is
+otherwise left alone, with nothing printed. A server with no entry is set up
+only when the operator answers the question on a terminal
+.RB ( [y/N] );
+without a terminal one line says that it was not set up and names
+.BR "tacctl host enroll \-\-local" ,
+which stays the command to rebuild, move or repair a server.
 .IP
 The upgrade never changes an override, except an operator or readonly list
 that is exactly what 0.2.3 shipped, which it drops (on a RADIUS-only install

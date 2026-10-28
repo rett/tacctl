@@ -8088,3 +8088,28 @@ The first `tacctl upgrade` from 0.1.14 or earlier runs the old release's upgrade
 After the upgrade: `tacctl status`, `tacctl config validate` (store, rendered config, drift), and `tacctl backup list` (the pre-store file is under the old-style backups).
 
 ---
+
+4. **`tacctl install` and `tacctl upgrade` set up this machine's own login.**
+   The managed server login of item 2 (the scope `tacctl`, this server's
+   registry entry, the PAM client and sshd's drop-in, and the server's
+   accounts) is made by `install` and `upgrade` with the machinery of `host
+   enroll --local`, so that command is the way to rebuild, move or repair a
+   server, not a step of an install. Every safeguard of the enrolment holds
+   (sshd is checked with `sshd -t` before it is reloaded and the change undone
+   when it refuses it, local administrators and root are not touched, the PAM
+   files are backed up) and a snapshot is taken first. A healthy setup does
+   nothing and prints nothing; a managed scope whose prefixes drifted is
+   repaired (`Repaired the managed server login.`); a server enrolled before
+   whose login is gone (a rebuilt server: the entry is there, the PAM files
+   are not) or is still in a scope of the operator's is set up again, with no
+   question. A server with no entry is asked once, with the server address in
+   the question (`Set up this machine's own login now, with <address> as the
+   server address? [y/N]`): `install -y` answers yes, `install` reads the
+   answer from standard input as its other prompts do, and `upgrade`, which
+   has no `-y`, asks on a terminal only. What cannot be done safely does not
+   stop the command: it completes as before, nothing is left half applied, and
+   one line says what was skipped and names `tacctl host enroll --local`. The
+   new `install --server <ip>` is the server address (an IP address that
+   devices and hosts reach this server at); otherwise the recorded
+   `server.addresses` wins, then the address of the interface with the
+   default route, said in one line every time it was detected.

@@ -343,7 +343,7 @@ complete_words() {
 
 @test "completion: install, upgrade, uninstall and version offer their flags" {
     complete_words tacctl install ""
-    assert_output "$(printf -- '--branch\n-y\n--yes')"
+    assert_output "$(printf -- '--branch\n--server\n-y\n--yes')"
     complete_words tacctl upgrade ""
     assert_output "--branch"
     complete_words tacctl uninstall ""

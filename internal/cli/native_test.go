@@ -88,6 +88,7 @@ func newSandbox(t *testing.T, withStore bool) *sandbox {
 		"TACCTL_SSHD_DROPIN=" + filepath.Join(w, "sshd_config.d", "tacctl-console.conf"),
 		"TACCTL_SHELLS_FILE=" + filepath.Join(w, "shells"),
 		"TACCTL_SSH_DIR=" + filepath.Join(w, "ssh"),
+		"TACCTL_CLIENT_PAM_DIR=" + filepath.Join(w, "pam.d"),
 		"TMPDIR=" + filepath.Join(w, "tmp"),
 	}
 	return sb

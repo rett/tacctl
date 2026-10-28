@@ -8,7 +8,7 @@ tacctl host enroll admin@web1.example.net     # into the scope that covers web1'
                                               # registers
 tacctl host enroll admin@web2 --method radius # the same with pam_radius_auth against the RADIUS
                                               # backend
-tacctl host enroll --local                    # this machine's own login, for every user
+tacctl host enroll --local                    # rebuild, move or repair this machine's own login
 tacctl user scope jsmith add <scope>          # give a user a login on hosts of that scope...
 tacctl host sync web1                         # ...and push the account (or: tacctl host sync --all)
 tacctl host list                              # with each host's address and METHOD
@@ -35,10 +35,13 @@ The scope of a host is, in order: `--scope`; the scope the host is registered in
 
 **When the scope no longer answers the host.** A prefix change, a new address or an enroll into the wrong scope can leave a host registered in one scope while another answers its address: the server then checks its logins against that scope's users and secret, and refuses them. tacctl never moves a host on its own (a move changes its secret and deletes the accounts of the users it loses); it says so, with the fix, on every `host sync` of the host, after the `host list` table, and in `config validate` (from the address recorded at the last enroll or sync): `dev: registered in scope 'linux-dev', but 192.0.2.22 is answered by scope 'lab' (prefix 192.0.2.0/24): its logins are checked against that scope's users and secret, so they are refused. To move it: tacctl host move dev`. Moving prefixes between scopes is one change: `tacctl scope prefixes site-a move 198.51.100.0/24 lab` takes them out of one scope and into the other and names the enrolled hosts that then belong to the other scope. A scope enrolled hosts use cannot be removed until they are moved.
 
-**This machine.** `host enroll --local` sets up this machine's own login:
-every user can log in to it and to its console unless disabled or of tier
-none, whatever their scopes; it takes no `--scope`. `--server <address>` is
-the address devices and hosts reach this server at (an address behind NAT or a
+**This machine.** `tacctl install` and `tacctl upgrade` set up this machine's
+own login (see [Installing](../install/installing.md)), so `host enroll
+--local` is the command to rebuild a server (the registry entry is there, the
+PAM files are not), to move it to another address and to repair it. It sets up
+the login the same way: every user can log in to it and to its console unless
+disabled or of tier none, whatever their scopes; it takes no `--scope`. `--server <address>` is the
+address devices and hosts reach this server at (an address behind NAT or a
 VPN that is not on this machine is taken; a host name, `0.0.0.0`, `::`, a
 loopback, link-local, multicast or broadcast address, or an IPv4-mapped IPv6
 address is not). Without it the recorded address is used, else `--server`

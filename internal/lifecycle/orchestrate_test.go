@@ -119,6 +119,8 @@ type ohost struct {
 	// audit are the detail lines the command wrote (Host.Audit), as 'event
 	// k=v ...'.
 	audit []string
+	// ownLogin, when set, is the Host's OwnLogin hook.
+	ownLogin func(context.Context, lifecycle.OwnLoginOptions)
 }
 
 func newOhost(t *testing.T) *ohost {
@@ -219,6 +221,7 @@ func (o *ohost) host() *lifecycle.Host {
 	env := lifecycle.NewEnv(o.be, bytes.NewReader(bytes.Repeat([]byte{0xab}, 64)), false)
 	env.Chown = func(string) {}
 	return &lifecycle.Host{Env: env, Environ: paths.NewEnv(o.environ), Commit: o.commit, Completion: testCompletion,
+		OwnLogin: o.ownLogin,
 		Audit: func(event string, kv ...audit.KV) {
 			var b strings.Builder
 			b.WriteString(event)
@@ -546,7 +549,7 @@ func TestInstallCancelPrereqsAndBranchUsage(t *testing.T) {
 	o.stdin = ""
 	for bad, args := range map[string][]string{"--branch": {"--branch"}, "whatever": {"whatever", "--branch", "feature/x"},
 		"extra": {"-y", "extra"}} {
-		want := "[ERROR] Unknown argument: '" + bad + "'\n[ERROR] Usage: tacctl install [--branch <name>] [-y|--yes]\n"
+		want := "[ERROR] Unknown argument: '" + bad + "'\n[ERROR] Usage: tacctl install [--branch <name>] [--server <ip>] [-y|--yes]\n"
 		if code := install(o, args...); code != 1 || o.stdout.Len() != 0 || stripANSI(o.stderr.String()) != want ||
 			len(o.phases) != 0 || len(o.run.Calls()) != 0 {
 			t.Errorf("%q: exit %d %q %q", args, code, o.stdout, o.stderr)
@@ -1573,5 +1576,71 @@ func TestLifecycleDetailLines(t *testing.T) {
 	}
 	if want := []string{"uninstall backups=removed logs=removed"}; !slices.Equal(o.audit, want) {
 		t.Errorf("uninstall: %q", o.audit)
+	}
+}
+
+// Install offers this machine's own login after the services are started and
+// before the summary, once, with what the command line said: -y, --server.
+// An address that cannot be the server address is refused before anything
+// runs. Without the hook nothing changes (the plan has no line for it).
+func TestInstallSetsUpTheOwnLoginAfterTheStart(t *testing.T) {
+	o := newOhost(t)
+	var got []lifecycle.OwnLoginOptions
+	o.ownLogin = func(_ context.Context, opt lifecycle.OwnLoginOptions) {
+		got = append(got, opt)
+		o.out.Info("OWN LOGIN " + strings.Join(o.phases, ","))
+	}
+	if code := install(o, "-y", "--server", "192.0.2.10"); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if want := []lifecycle.OwnLoginOptions{{Install: true, Yes: true, Server: "192.0.2.10"}}; !slices.Equal(got, want) {
+		t.Errorf("hook calls %+v, want %+v", got, want)
+	}
+	inOrder(t, o.text()+o.stderr.String(), "PHASE tacacs install start", "OWN LOGIN", "  Installation Complete")
+	if !strings.Contains(o.text(), "Offer to set up this machine's own login") {
+		t.Errorf("the plan has no line for it:\n%s", o.text())
+	}
+	// not -y: the answer to the plan's question, then the hook's own
+	got, o.stdin = nil, "y\n"
+	if code := install(o); code != 0 || len(got) != 1 || got[0].Yes || got[0].Server != "" || !got[0].Install {
+		t.Errorf("exit %d, %+v", code, got)
+	}
+	// refused before anything runs
+	got = nil
+	for _, bad := range []string{"203.0.113.9x", "127.0.0.1", "0.0.0.0", "web1.example.net", "fe80::1"} {
+		if code := install(o, "-y", "--server", bad); code != 1 || len(got) != 0 || len(o.phases) != 0 || len(o.run.Calls()) != 0 ||
+			!strings.Contains(stripANSI(o.stderr.String()), "[ERROR] --server '"+bad+"' ") {
+			t.Errorf("--server %s: exit %d %q %v", bad, code, o.stderr, o.phases)
+		}
+	}
+	// no hook: no line in the plan
+	o.ownLogin = nil
+	install(o, "-y")
+	if strings.Contains(o.text(), "own login") {
+		t.Errorf("a line for the hook:\n%s", o.text())
+	}
+}
+
+// Upgrade calls it once, after the backends' last phase and before the
+// summary, with no option (it asks on a terminal only); an upgrade that stops
+// early does not.
+func TestUpgradeSetsUpTheOwnLoginBeforeTheSummary(t *testing.T) {
+	o := newOhost(t)
+	o.cloned()
+	var got []lifecycle.OwnLoginOptions
+	o.ownLogin = func(_ context.Context, opt lifecycle.OwnLoginOptions) {
+		got = append(got, opt)
+		o.out.Info("OWN LOGIN")
+	}
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if len(got) != 1 || got[0] != (lifecycle.OwnLoginOptions{}) {
+		t.Errorf("hook calls %+v", got)
+	}
+	inOrder(t, o.text(), "PHASE tacacs upgrade finish", "OWN LOGIN", rule+"\n  ")
+	got = nil
+	if code := upgrade(o, "-y"); code != 1 || len(got) != 0 {
+		t.Errorf("upgrade -y: exit %d, %+v", code, got)
 	}
 }

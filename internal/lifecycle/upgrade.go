@@ -15,6 +15,7 @@ import (
 
 	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/backend"
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/tier"
 )
@@ -26,21 +27,29 @@ var selfUpdatePaths = []string{"cmd", "internal", "vendor", "go.mod", "go.sum", 
 
 // The one-line usages a refused argument is followed by.
 const (
-	installUsage   = "Usage: tacctl install [--branch <name>] [-y|--yes]"
+	installUsage   = "Usage: tacctl install [--branch <name>] [--server <ip>] [-y|--yes]"
 	upgradeUsage   = "Usage: tacctl upgrade [--branch <name>]"
 	uninstallUsage = "Usage: tacctl uninstall [-y|--yes]"
 )
 
 // parseLifecycleArgs reads an install, upgrade or uninstall command line:
-// '--branch <name>' when branch is not nil, '-y' or '--yes' when yes is
-// not nil. Anything else, or a '--branch' with no value after it, is
-// refused ("Unknown argument: '<x>'" and the usage, exit 1) before
-// anything is done.
-func parseLifecycleArgs(h *Host, args []string, branch *string, yes *bool, usage string) error {
+// '--branch <name>' when branch is not nil, '--server <ip>' when server is
+// not nil (an IP address that can be the server address, checked here),
+// '-y' or '--yes' when yes is not nil. Anything else, or a '--branch' or
+// '--server' with no value after it, is refused ("Unknown argument: '<x>'"
+// and the usage, exit 1) before anything is done.
+func parseLifecycleArgs(h *Host, args []string, branch, server *string, yes *bool, usage string) error {
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
 		case branch != nil && a == "--branch" && i+1 < len(args):
 			*branch = args[i+1]
+			i++
+		case server != nil && a == "--server" && i+1 < len(args):
+			if p := conf.ServerAddressProblem(args[i+1]); p != "" {
+				h.Out.Error("--server '" + args[i+1] + "' " + p + ". Nothing was changed.")
+				return backend.ErrFailed
+			}
+			*server = args[i+1]
 			i++
 		case yes != nil && (a == "-y" || a == "--yes"):
 			*yes = true
@@ -77,7 +86,7 @@ func parseLifecycleArgs(h *Host, args []string, branch *string, yes *bool, usage
 // *backend.Error: ExitCode is the status).
 func Upgrade(ctx context.Context, h *Host, args []string) error {
 	branch := ""
-	if err := parseLifecycleArgs(h, args, &branch, nil, upgradeUsage); err != nil {
+	if err := parseLifecycleArgs(h, args, &branch, nil, nil, upgradeUsage); err != nil {
 		return err
 	}
 	out, p := h.Out, h.Paths
@@ -232,6 +241,9 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	if err := h.upgrade(ctx, ids, backend.PhaseFinish, ""); err != nil {
 		return err
 	}
+	// This machine's own login: set up when this server has one already
+	// (repaired when it drifted) or the operator agrees; else one line.
+	h.ownLogin(ctx, OwnLoginOptions{})
 	head, upToDate := "", ""
 	var notes []string
 	for _, id := range ids {
