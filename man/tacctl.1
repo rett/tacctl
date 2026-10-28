@@ -617,13 +617,29 @@ the question mark prints the help of the words before the cursor
 prints what
 .B "tacctl user add \-\-help"
 prints, in colour on a terminal) and leaves the command line as it is; the word
-being typed is not part of the question. A line with a quote, a backslash, a
-shell operator or a second line before the cursor, and any line that does not
-start with
+being typed is not part of the question. The key runs one thing, the hidden
+.BR "tacctl __help \-\- " words ,
+which prints the help and runs nothing else: the words are plain words to it,
+so a flag that waits for its value, a
+.B \-\-
+earlier on the line or a hidden command is never run as a command or given
+.BR \-\-help .
+The key types a literal question mark instead when the line does not start with
 .BR tacctl ,
-gets a literal question mark
-.RB ( "ls *.?"
-works).
+has a second line before the cursor, or has before the cursor anything but
+ASCII letters, digits, blanks and
+.BR "_ @ % + = : , . / \-"
+(so a quote, a backslash,
+.BR "$ * ~ ! # [ {" ,
+a shell operator or a non-ASCII character anywhere before the cursor;
+.B "ls *.?"
+works). On a line that does start with
+.B tacctl
+and has only such words, the key always asks for help, even inside a word
+.RB ( "tacctl device description sw1 why?"
+prints help); quote the character first (Ctrl-V, then
+.BR ? )
+to type it there.
 .B TACCTL_HELP_KEY
 read when the script is sourced changes the key: unset or
 .B ?
@@ -631,7 +647,11 @@ is the question mark, a readline key spelling such as
 .B \\eh
 is that key instead, and
 .B off
-binds nothing. The system-wide script is sourced before
+binds nothing. Sourcing the script replaces whatever the key was bound to and
+does not restore it, and
+.B off
+only keeps the script from binding: set before the script is sourced, it unbinds
+nothing that an earlier source bound. The system-wide script is sourced before
 .IR ~/.bashrc :
 set the variable there and source the script again.
 .\" BEGIN GENERATED: command completion

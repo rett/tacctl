@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/rett/tacctl/internal/tier"
 )
 
@@ -191,5 +193,108 @@ func TestPtyHelpIsWhatQuestionMarkPrints(t *testing.T) {
 		if h2 := body(s.Settle(500 * time.Millisecond)); h2 != h {
 			t.Errorf("%s: -h printed\n%q\nnot\n%q", prefix, h2, h)
 		}
+	}
+}
+
+// '__help' is the one thing the bash help key runs: with any words (verbs
+// that change state, flags that wait for a value, '--', hidden commands,
+// nothing at all) it prints and runs nothing else. Every other command of
+// the tree is made to fail the test when it runs, and the runner records no
+// call.
+func TestHelpOnlyRunsNoVerb(t *testing.T) {
+	inv, root, runner := shellTestInv(t)
+	var poison func(c *cobra.Command)
+	poison = func(c *cobra.Command) {
+		for _, sub := range c.Commands() {
+			if sub.Name() != "__help" {
+				name := sub.CommandPath()
+				sub.RunE = func(*cobra.Command, []string) error {
+					t.Errorf("__help ran %s", name)
+					return nil
+				}
+			}
+			poison(sub)
+		}
+	}
+	poison(root)
+	help := child(root, "__help")
+	if help == nil || !help.Hidden || help.RunE == nil {
+		t.Fatalf("__help: %+v", help)
+	}
+	var out *bytes.Buffer
+	run := func(words ...string) string {
+		t.Helper()
+		out = inv.app.Out.Stdout.(*bytes.Buffer)
+		out.Reset()
+		before := len(runner.Calls()) + len(runner.Execs())
+		if err := help.RunE(help, append([]string{"--"}, words...)); err != nil {
+			t.Errorf("__help %q: %v", words, err)
+		}
+		if after := len(runner.Calls()) + len(runner.Execs()); after != before {
+			t.Errorf("__help %q ran %d program(s)", words, after-before)
+		}
+		return stripSGRString(out.String())
+	}
+	for _, words := range [][]string{
+		nil, {"user"}, {"user", "add"}, {"user", "remove", "alice", "--yes"},
+		{"breakglass", "hold", "sw1", "--reason"}, {"breakglass", "hold", "sw1", "--reason", "why"},
+		{"install", "-y", "--branch"}, {"uninstall", "-y"}, {"upgrade"}, {"rollback", "0.2.18", "--apply", "--yes"},
+		{"store", "import", "--force"}, {"log", "clear", "--"}, {"log", "search", "--", "--help"},
+		{"user", "add", "--help"}, {"--help"}, {"-h"}, {"__help"}, {"__complete", "user"}, {"_console-policy"},
+		{"_completion-names", "users"}, {"shell", "-c", "user list"}, {"nosuch", "--x"},
+	} {
+		got := run(words...)
+		if got == "" {
+			t.Errorf("__help %q printed nothing", words)
+		}
+		if strings.Contains(got, "[ERROR]") {
+			t.Errorf("__help %q: %s", words, got)
+		}
+	}
+	// A first '--' is the end of the options, not a word of the path; without
+	// one the words are taken as they are.
+	out = inv.app.Out.Stdout.(*bytes.Buffer)
+	out.Reset()
+	if err := help.RunE(help, []string{"user", "add"}); err != nil || !strings.Contains(stripSGRString(out.String()), "Options:") {
+		t.Errorf("without --: %v %q", err, out.String())
+	}
+	// A hidden command has no help to show.
+	if got := run("_console-policy"); got != "No valid completions\n" {
+		t.Errorf("hidden: %q", got)
+	}
+	// Every command of the tree, with each of its flags as the last word.
+	var all [][]string
+	commandPaths(root, nil, &all)
+	for _, p := range all {
+		if spec, ok := specFor(p); ok {
+			for _, f := range spec.Flags {
+				run(append(slices.Clone(p), f.Names[0])...)
+			}
+		}
+		run(p...)
+	}
+}
+
+// '__help' is a word of the tree that runs as the user, with no sudo and no
+// gate, and prints the list of '?' for the words after it.
+func TestHelpOnlyEntryPoint(t *testing.T) {
+	h := newHarness(t, []string{"__help", "--", "breakglass", "hold", "sw1", "--reason"})
+	h.app.EUID = 1000
+	h.app.Paths.SkipSudo = false
+	if err := h.run(); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.runner.Calls()) != 0 || len(h.runner.Execs()) != 0 {
+		t.Errorf("ran %v %v", h.runner.Calls(), h.runner.Execs())
+	}
+	out := stripSGRString(h.out.String())
+	if !strings.Contains(out, "Usage:\n") || !strings.Contains(out, "--reason <text>") || strings.Contains(out, "[ERROR]") || h.err.Len() != 0 {
+		t.Errorf("out %q err %q", out, h.err.String())
+	}
+	// The same text '?' prints at that place.
+	inv, root, _ := shellTestInv(t)
+	want, _ := inv.plainExplain(root)([]string{"breakglass", "hold", "sw1", "--reason"})
+	if out != want {
+		t.Errorf("__help\n%q\n'?'\n%q", out, want)
 	}
 }

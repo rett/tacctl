@@ -17,6 +17,8 @@ var noSudo = map[string]bool{
 	"completion":       true,
 	"__complete":       true,
 	"__completeNoDesc": true,
+	// The help of the words, for the bash help key (help_request.go).
+	"__help": true,
 	// The interactive shell (0.2.1) runs as the user and re-enters tacctl
 	// under sudo for each line it executes.
 	"shell": true,

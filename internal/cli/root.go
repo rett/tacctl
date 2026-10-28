@@ -58,6 +58,8 @@ func newRoot(inv *invocation) *cobra.Command {
 		completionNamesCmd(inv),
 		// The generated shell completion script (completion.go).
 		completionCmd(inv),
+		// The help of the words, for the bash help key; runs nothing (help_request.go).
+		helpOnlyCmd(inv),
 		// One lifecycle phase of one backend, for drivers and tests (phase.go).
 		phaseCmd(inv),
 	)

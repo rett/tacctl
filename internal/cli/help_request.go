@@ -59,8 +59,36 @@ func helpRequest(root *cobra.Command, args []string) (words []string, ok bool) {
 	return words, true
 }
 
-// helpList writes the help of the command words name.
+// helpOnlyCmd is '__help [--] <word>...': the help of the command the words
+// name, as '?' prints it, for the bash help key (completion_bashkey.go). It
+// is the only thing the key runs. The words are plain words: no flag is read
+// or acted on (a flag that waits for a value is a word of the path, as it is
+// for '?'), nothing is dispatched, and the status is 0. It runs as the
+// invoking user, with no sudo, no gate and no state (noSudo).
+func helpOnlyCmd(inv *invocation) *cobra.Command {
+	c := hidden("__help")
+	c.RunE = func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 && args[0] == "--" {
+			args = args[1:]
+		}
+		inv.helpList(cmd.Root(), args)
+		return nil
+	}
+	return c
+}
+
+// helpList writes the help of the command words name. It runs no command:
+// it reads the tree and the usage blocks only. A hidden command, or one under
+// a hidden one, has no help to show.
 func (inv *invocation) helpList(root *cobra.Command, words []string) {
+	for c, rest := root, words; len(rest) > 0; rest = rest[1:] {
+		if c = child(c, rest[0]); c == nil {
+			break
+		} else if c.Hidden {
+			_, _ = io.WriteString(inv.app.Out.Stdout, shell.HelpText(nil, "", false, false, 0))
+			return
+		}
+	}
 	complete := inv.shellCompleter(root)
 	cmd, _, rest := shellCommand(root, words)
 	var cands []shell.Candidate

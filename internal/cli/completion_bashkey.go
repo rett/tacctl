@@ -15,8 +15,10 @@ import "strings"
 const bashHelpKey = `
 # --- tacctl help key -----------------------------------------------------------
 # The question mark on a line that starts with tacctl prints the help of the
-# words before the cursor ('tacctl <words> --help': in colour on a terminal)
-# and leaves the line as it is; anywhere else it types a question mark.
+# words before the cursor, the text the shell's question mark prints, in colour
+# on a terminal, and leaves the line as it is; anywhere else it types a
+# question mark. The key runs only 'tacctl __help -- <words>', which prints and
+# runs nothing else: the words are plain words to it, never a flag or a verb.
 # TACCTL_HELP_KEY, read when this file is sourced, changes the key: unset or
 # '?' is the question mark, a readline key spelling such as '\eh' is that key
 # (which then does nothing outside a tacctl line), 'off' binds nothing.
@@ -24,19 +26,26 @@ __tacctl_help_key() {
     local IFS=$' \t\n'
     local before=${READLINE_LINE:0:READLINE_POINT}
     local -a words
-    # Plain words only: a quote, a backslash, a shell operator or a second line
-    # before the cursor means the line is not asked about, and the key types
-    # itself.
+    local n
+    # Plain words only: a quote, a backslash, a shell operator, any other
+    # character than the letters, digits and _ @ % + = : , . / - , or a second
+    # line before the cursor means the line is not asked about, and the key
+    # types itself.
     if [[ $before =~ ^[[:space:]]*tacctl([[:space:]]|$) && $before != *$'\n'* &&
         ! $before =~ [^A-Za-z0-9_@%+=:,./[:space:]-] ]]; then
         read -ra words <<<"$before"
-        words=("${words[@]:1}")
-        # The word being typed is not part of the question.
-        if [[ $before == *[![:space:]] && ${#words[@]} -gt 0 ]]; then
-            unset 'words[-1]'
+        # The words after tacctl, without the word being typed.
+        n=$((${#words[@]} - 1))
+        if [[ $before == *[![:space:]] ]]; then
+            n=$((n - 1))
+        fi
+        if ((n > 0)); then
+            words=("${words[@]:1:n}")
+        else
+            words=()
         fi
         printf '\n'
-        command tacctl "${words[@]}" --help
+        command tacctl __help -- ${words[@]+"${words[@]}"}
         return 0
     fi
     [[ $__tacctl_help_key_word == '?' ]] || return 0
