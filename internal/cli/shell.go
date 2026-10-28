@@ -33,6 +33,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/rett/tacctl/internal/backend"
+	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/shell"
 	"github.com/rett/tacctl/internal/tier"
@@ -157,6 +158,10 @@ type shellRun struct {
 	idle    time.Duration
 	prompt  string
 	listMax int
+	// color is the console's colour setting (console.ColorAuto, ColorOn,
+	// ColorOff; "" is auto): the console's environment holds neither
+	// NO_COLOR nor TACCTL_COLOR, so the setting is the operator's choice.
+	color string
 	// spaceCompletion: a typed space at the prompt is Junos-style
 	// (shell.Options.SpaceCompletion).
 	spaceCompletion bool
@@ -218,6 +223,13 @@ func (inv *invocation) runShell(r shellRun) (int, *shell.Shell) {
 	// environment (console.Scrub) holds neither NO_COLOR nor TACCTL_COLOR,
 	// so it decides by its terminal alone.
 	styled, _ := ui.Colour(a.Env.Get, inv.hooks.terminalWriter(a.Out.Stdout), inv.hooks.terminalWriter(a.Out.Stderr))
+	switch r.color {
+	case console.ColorOn:
+		styled = true
+	case console.ColorOff:
+		styled = false
+	}
+	inv.shellColor = r.color
 	o := shell.Options{
 		Prompt:          r.prompt,
 		Styled:          styled,

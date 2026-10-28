@@ -19,7 +19,7 @@ package lifecycle
 //     lints a block that holds one as an error. The block files are not
 //     rewritten (they are the operator's text); the plan lists the blocks that
 //     hold such statements, by level and count, in a warning;
-//   - nothing in devices.yaml, console.yaml, store.yaml, the SNMP credentials,
+//   - nothing in devices.yaml, store.yaml, the SNMP credentials,
 //     the apply state, the hosts or the rendered backend files.
 
 import (

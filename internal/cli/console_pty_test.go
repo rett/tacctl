@@ -406,3 +406,38 @@ func TestConsolePtyNoPasswordCache(t *testing.T) {
 	p.send("exit\r")
 	p.ends(0)
 }
+
+// The console's color setting: auto lets the terminal decide (the session is
+// on one, so the lists are in colour), off writes none, on writes them; the
+// environment the console runs in holds neither NO_COLOR nor TACCTL_COLOR.
+// '?', a second Tab and --help follow it.
+func TestConsolePtyColor(t *testing.T) {
+	for _, c := range []struct {
+		color  string
+		colour bool
+	}{{"", true}, {"auto", true}, {"on", true}, {"off", false}} {
+		policy := ptyPolicyRO
+		if c.color != "" {
+			policy += ",color=" + c.color
+		}
+		p := startConsole(t, policy, "carol,tac-users,tac-readonly")
+		host := regexp.QuoteMeta(shortHostname())
+		p.expect(host + `> `)
+		p.send("user ?")
+		list := p.Settle(500 * time.Millisecond)
+		p.send("\x15user \t\t")
+		tab := p.Settle(500 * time.Millisecond)
+		p.send("\x15user --help\r")
+		help := p.Settle(500 * time.Millisecond)
+		for name, out := range map[string]string{"?": list, "Tab Tab": tab, "--help": help} {
+			if !strings.Contains(out, "list") {
+				t.Errorf("color=%q %s: no list:\n%q", c.color, name, out)
+			}
+			if got := strings.Contains(out, "\x1b[36m"); got != c.colour {
+				t.Errorf("color=%q %s: colour %v, want %v:\n%q", c.color, name, got, c.colour, out)
+			}
+		}
+		p.send("exit\r")
+		p.ends(0)
+	}
+}

@@ -47,6 +47,11 @@ package lifecycle
 //	console.yaml           0.2.3's parser rejects settings.password_cache;
 //	                       removed (console.Rollback). 'tiers.engineer' and
 //	                       'settings.space_completion' are 0.2.3's own.
+//	                       Every target's parser rejects the two settings
+//	                       0.2.20 added, settings.color and a list_max of -1
+//	                       (never ask): removed, and list_max written as 1000
+//	                       (console.Keys0220; console.RollbackSince0220 for
+//	                       the targets that have the cache).
 //	devices.yaml           0.2.3's parser rejects the per-device 'snmp:' map
 //	                       and the keys 'ios_syntax' and 'netconf';
 //	                       removed (devreg.RollbackSNMP,
@@ -506,17 +511,26 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	} else if len(inStore)+len(inConsole) > 0 {
 		return nil, DottedUsersRefusal(pa, inStore, inConsole)
 	}
-	if in.Target == RollbackTarget029 {
-		return planRollback029(p)
-	}
-	if in.Target == RollbackTarget0216 {
-		return planRollback0216(p)
-	}
-	if in.Target == RollbackTarget0217 {
-		return planRollback0217(p)
-	}
-	if in.Target == RollbackTarget0218 {
-		return planRollback0218(p)
+	// Every older release rejects the console settings 0.2.20 added (the
+	// colour setting, a list_max that never asks): they are taken out for
+	// every target (console.PlanRollbackSince0220; 0.2.3's plan below also
+	// reads the file, for the password cache).
+	targetPlan := map[string]func(*RollbackPlan) (*RollbackPlan, error){
+		RollbackTarget029: planRollback029, RollbackTarget0216: planRollback0216,
+		RollbackTarget0217: planRollback0217, RollbackTarget0218: planRollback0218,
+	}[in.Target]
+	if targetPlan != nil {
+		cp, err := console.PlanRollbackSince0220(pa.ConsoleFile)
+		if err != nil {
+			return nil, err
+		}
+		p.console = cp
+		rp, err := targetPlan(p)
+		if err != nil {
+			return nil, err
+		}
+		rp.addConsoleStep()
+		return rp, nil
 	}
 	// A break-glass hold is refused, in the dry run and --apply alike: the
 	// release being left has the record (docs/plans/0.2.5-plan.md D122), and
@@ -643,12 +657,52 @@ func (p *RollbackPlan) consoleStep() RollbackStep {
 	case p.console.Text == nil:
 		s.Lines = []string{"nothing to remove (settings.password_cache is not written)"}
 	default:
-		for _, k := range p.console.Remove {
-			s.Lines = append(s.Lines, "remove "+k)
-		}
-		s.Lines = append(s.Lines, "(0.2.3's parser rejects the key; every other setting is kept, the password cache is off again)")
+		s.Lines = p.consoleChangeLines()
+		s.Lines = append(s.Lines, "(0.2.3's parser rejects them; every other setting is kept"+map[bool]string{true: ", the password cache is off again", false: ""}[p.hasCacheRemoval()]+")")
 	}
 	return s
+}
+
+// consoleChangeLines are the lines of what the plan removes from console.yaml
+// and sets in it.
+func (p *RollbackPlan) consoleChangeLines() []string {
+	var lines []string
+	for _, k := range p.console.Remove {
+		lines = append(lines, "remove "+k)
+	}
+	for _, k := range p.console.Set {
+		lines = append(lines, "set "+k)
+	}
+	return lines
+}
+
+// hasCacheRemoval reports whether the console plan removes the password
+// cache's settings.
+func (p *RollbackPlan) hasCacheRemoval() bool {
+	return slices.ContainsFunc(p.console.Remove, func(r string) bool { return strings.HasPrefix(r, "settings.password_cache: ") })
+}
+
+// addConsoleStep adds the step that takes the settings of 0.2.20 out of
+// console.yaml to the plan of a target after 0.2.3, before the step that
+// lists what is left alone, and takes the file out of that step's list.
+func (p *RollbackPlan) addConsoleStep() {
+	if p.console.Text == nil {
+		return
+	}
+	cf := p.in.Paths.ConsoleFile
+	s := RollbackStep{Title: cf + ": take out the settings " + p.target() + " does not know", Todo: true}
+	s.Lines = append(p.consoleChangeLines(), "(the console settings of 0.2.20: "+p.target()+"'s parser rejects the colour setting and a list_max of -1; every other setting is kept)")
+	at := len(p.Steps)
+	for i := range p.Steps {
+		if p.Steps[i].Title == "leave every other file untouched" {
+			at = i
+			if len(p.Steps[i].Lines) > 0 {
+				p.Steps[i].Lines[0] = strings.Replace(p.Steps[i].Lines[0], cf+", ", "", 1)
+			}
+			break
+		}
+	}
+	p.Steps = slices.Insert(p.Steps, at, s)
 }
 
 func (p *RollbackPlan) devicesStep() RollbackStep {
@@ -896,8 +950,10 @@ func (p *RollbackPlan) warnings() []RollbackWarning {
 			lines = append(lines, "  "+d.name+": "+d.what)
 		}
 	}
-	if len(p.console.Remove) > 0 {
-		lines = append(lines, "The password cache's settings of console.yaml are removed ("+strings.TrimPrefix(p.console.Remove[0], "settings.password_cache: ")+"): 0.2.3 has no cache, every login is asked for its password.")
+	for _, r := range p.console.Remove {
+		if w, ok := strings.CutPrefix(r, "settings.password_cache: "); ok {
+			lines = append(lines, "The password cache's settings of console.yaml are removed ("+w+"): 0.2.3 has no cache, every login is asked for its password.")
+		}
 	}
 	if len(lines) > 0 {
 		lines = append(lines, "Everything removed from tacctl.yaml, console.yaml and devices.yaml stays in the snapshot --apply takes first (tacctl backup list); 'tacctl backup restore' of it, with 0.2.5, brings it back.")
@@ -941,12 +997,16 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 		done = append(done, fmt.Sprintf("%s: removed %d %s", pt.Overrides, len(p.keys), plural(len(p.keys), "key", "keys")))
 	}
 	if p.console.Text != nil {
-		changed, err := console.Rollback(pt.ConsoleFile, nil)
+		write := console.RollbackSince0220
+		if p.target() == RollbackTarget {
+			write = console.Rollback
+		}
+		changed, err := write(pt.ConsoleFile, nil)
 		if err != nil {
 			return done, err
 		}
 		if changed {
-			done = append(done, pt.ConsoleFile+": removed settings.password_cache")
+			done = append(done, pt.ConsoleFile+": "+p.console.Summary())
 		}
 	}
 	if len(p.snmpDev) > 0 {

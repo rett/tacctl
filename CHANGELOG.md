@@ -134,6 +134,26 @@ current behaviour; this file is where history lives.
     and a style that a wrapped description leaves open is closed at the end
     of its line and opened on the next.
 
+13. **`console color` and `console list-max` set what the console's lists
+    look like.** `tacctl console color [auto|on|off]` decides whether the
+    console's lists (Tab's second press, `?`, `-h` and `--help`) are in
+    colour: `auto`, the default, lets the terminal decide as everywhere else,
+    `on` always colours them, `off` never does. The console's environment is
+    scrubbed of `NO_COLOR` and `TACCTL_COLOR`, so this is how the operator
+    chooses. `tacctl console list-max [<n>]` sets the longest list the
+    console shows without asking `Show all N?` (default 40, at most 1000; 0
+    is the default, a negative number never asks); the key `settings.list_max`
+    was in the file already, with no verb. Both are server-wide, a
+    superuser's, shown by `console show`, logged as `console set key=color`
+    and `key=list-max`, and read by each console session when it starts.
+    `settings.color` is written to `console.yaml` only when it is `on` or
+    `off` (`true` or `false`), so a file that never chose is the file of
+    before. No older release reads the key or a `list_max` of -1, so `tacctl
+    rollback` takes them out for every target (the colour setting is removed
+    and `list_max` is written as 1000, every other setting is kept, a
+    snapshot comes first); a `console.yaml` that this release cannot read now
+    refuses the rollback to every target, as it did for 0.2.3.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

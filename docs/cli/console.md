@@ -2,7 +2,7 @@
 
 [Documentation](../README.md) › [CLI reference](README.md)
 
-The login console is the login shell of tacctl users on the tacctl server: tacctl commands and ssh to registered devices, nothing else. Its model is `/etc/tacctl/console.yaml` (0600, snapshotted, in `backup diff` and `restore`; absent means the defaults): the console is on for every tier, a user override wins over the tier's switch, and local accounts that are not tacctl users are never touched. The settings commands change that file only (after a snapshot); they never change an account or sshd. The accounts' login shells and sshd's drop-in follow it when this server's accounts are synced (`tacctl host sync <name of the host enrolled with --local>`), which every change to a tier switch, a user override or agent forwarding prints. The idle timeout, the ssh escape, the space completion and the system shell are read by each console session when it starts.
+The login console is the login shell of tacctl users on the tacctl server: tacctl commands and ssh to registered devices, nothing else. Its model is `/etc/tacctl/console.yaml` (0600, snapshotted, in `backup diff` and `restore`; absent means the defaults): the console is on for every tier, a user override wins over the tier's switch, and local accounts that are not tacctl users are never touched. The settings commands change that file only (after a snapshot); they never change an account or sshd. The accounts' login shells and sshd's drop-in follow it when this server's accounts are synced (`tacctl host sync <name of the host enrolled with --local>`), which every change to a tier switch, a user override or agent forwarding prints. The idle timeout, the ssh escape, the space completion, the colour, the list threshold and the system shell are read by each console session when it starts.
 
 ```yaml
 version: 1
@@ -16,16 +16,19 @@ settings:
   system_shell_tiers: [superuser]
   forwarding_tiers: [superuser]
   gateway_ports: false
-  list_max: 40                    # completions the shell lists without asking
+  list_max: 40                    # completions listed without asking; -1: never ask
+                                  (console list-max)
   # space_completion: false       # written only when off (the default is on, see console
                                   space-completion)
+  # color: true                   # written only when set: true (on) or false (off); absent
+                                  is auto (console color)
   # password_cache:               # written only when something is set (see Password cache)
   #                               tiers: [operator, superuser]
   #   idle: 15                    # minutes
   #   max: 8                      # hours
 ```
 
-The keys: `tiers.<tier>` (`console tiers`; `engineer` is always on), `users.<name>` (`console user`), `settings.idle_timeout` (`console idle-timeout`), `settings.agent_forwarding` (`console agent-forwarding`), `settings.ssh_escape` (`console ssh-escape`), `settings.system_shell` and `settings.system_shell_tiers` (`console system-shell path|tiers`; the tiers are never `engineer`), `settings.forwarding_tiers` and `settings.gateway_ports` (`console forwarding tiers|gateway-ports`; the tiers are never `engineer`), `settings.list_max` (edit the file), `settings.space_completion` (`console space-completion`; written only when off) and `settings.password_cache` (`console password-cache tiers|idle|max`; written only when set).
+The keys: `tiers.<tier>` (`console tiers`; `engineer` is always on), `users.<name>` (`console user`), `settings.idle_timeout` (`console idle-timeout`), `settings.agent_forwarding` (`console agent-forwarding`), `settings.ssh_escape` (`console ssh-escape`), `settings.system_shell` and `settings.system_shell_tiers` (`console system-shell path|tiers`; the tiers are never `engineer`), `settings.forwarding_tiers` and `settings.gateway_ports` (`console forwarding tiers|gateway-ports`; the tiers are never `engineer`), `settings.list_max` (`console list-max`; 1 to 1000, or -1 to never ask), `settings.space_completion` (`console space-completion`; written only when off), `settings.color` (`console color`; written only when `on` or `off`) and `settings.password_cache` (`console password-cache tiers|idle|max`; written only when set).
 
 ```
 console show
@@ -59,6 +62,17 @@ console space-completion [on|off]
     Whether a typed space at the console's prompt completes a fixed word and is never doubled; off
     turns off the refusal of repeated spaces and the completion (default on; server-wide); pastes
     are unchanged
+
+console color [auto|on|off]
+
+    Whether the console's lists (Tab, ?, -h and --help) are in colour: auto, the terminal decides
+    (the default); on, always; off, never. The console's environment is scrubbed of NO_COLOR and
+    TACCTL_COLOR, so this is how the operator chooses (server-wide)
+
+console list-max [<n>]
+
+    The longest list the console shows without asking "Show all N?" (default 40, at most 1000;
+    0: the default; a negative number never asks; server-wide)
 
 console forwarding tiers [<csv>|none]
 

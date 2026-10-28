@@ -1,6 +1,7 @@
 package console
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,9 @@ type Remote struct {
 	// engineer, ignores); "" when the answer has no gate field.
 	Gate    tier.Tier
 	ListMax int
+	// Color is ColorAuto, ColorOn or ColorOff: whether the console's lists
+	// are in colour (default auto: the terminal decides).
+	Color string
 	// SpaceCompletion: a typed space completes a fixed word (default on).
 	SpaceCompletion bool
 	// PasswordCache: the caller's tier may keep its network password in the
@@ -49,6 +53,7 @@ func DefaultRemote() Remote {
 		SystemShellPath: DefaultSystemShell,
 		Tier:            tier.None,
 		ListMax:         DefaultListMax,
+		Color:           ColorAuto,
 		SpaceCompletion: true,
 	}
 }
@@ -97,8 +102,12 @@ func ParseRemote(out string) (r Remote, ok bool) {
 				r.Gate, ok, r.TierRead = t, true, true
 			}
 		case "list_max":
-			if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= MaxListMax {
+			if n, err := strconv.Atoi(v); err == nil && (n == ListMaxNever || (n >= 1 && n <= MaxListMax)) {
 				r.ListMax, ok = n, true
+			}
+		case "color":
+			if slices.Contains(ColorWords, v) {
+				r.Color, ok = v, true
 			}
 		case "space_completion":
 			if b, good := yesNoValue(v); good {

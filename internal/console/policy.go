@@ -128,6 +128,9 @@ func (p *Policy) Idle() time.Duration { return time.Duration(p.File.Idle) * time
 // ListMax is the number of completions the shell lists without asking.
 func (p *Policy) ListMax() int { return p.File.ListMax }
 
+// Color is the console's colour setting: ColorAuto, ColorOn or ColorOff.
+func (p *Policy) Color() string { return p.File.Color }
+
 // SpaceCompletion reports whether a typed space at the console's prompt
 // completes a fixed word.
 func (p *Policy) SpaceCompletion() bool { return p.File.SpaceCompletion }

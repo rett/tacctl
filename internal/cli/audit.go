@@ -369,6 +369,8 @@ var auditTable = map[string]auditEntry{
 	"console idle-timeout":     mixed(),
 	"console password-cache":   mixed(),
 	"console space-completion": mixed(),
+	"console color":            mixed(),
+	"console list-max":         mixed(),
 	"console ssh-escape":       mixed(),
 	"console system-shell":     mixed().weighty(),
 	"console tiers":            mixed().weighty(),

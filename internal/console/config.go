@@ -39,10 +39,13 @@ const Version = 1
 
 // The settings' defaults and limits.
 const (
-	DefaultIdle        = 30
-	MaxIdle            = 1440
-	DefaultListMax     = 40
-	MaxListMax         = 1000
+	DefaultIdle    = 30
+	MaxIdle        = 1440
+	DefaultListMax = 40
+	MaxListMax     = 1000
+	// ListMaxNever is settings.list_max of a console that never asks 'Show
+	// all N?' before a long list (the shell's negative ListMax).
+	ListMaxNever       = -1
 	DefaultSystemShell = "/bin/bash"
 
 	// The password cache's lifetimes (D70): idle minutes without a use,
@@ -52,6 +55,17 @@ const (
 	DefaultPasswordCacheMax  = 8
 	MaxPasswordCacheMax      = 24
 )
+
+// The values of settings.color (File.Color): the terminal decides (auto),
+// colour always (on), colour never (off).
+const (
+	ColorAuto = "auto"
+	ColorOn   = "on"
+	ColorOff  = "off"
+)
+
+// ColorWords are the words of 'console color'.
+var ColorWords = []string{ColorAuto, ColorOn, ColorOff}
 
 // Tiers are the tiers that have a console switch, lowest first. A file
 // written before the engineer tier (0.2.2) has no switch for it: it is on,
@@ -95,8 +109,19 @@ type File struct {
 	// their remote forwards, and -g and a bind address on the console's
 	// ssh -L/-D.
 	GatewayPorts bool
-	// ListMax is the number of completions the shell lists without asking.
+	// ListMax is the number of completions the shell lists without asking
+	// ('Show all N?' above it); ListMaxNever (-1) never asks. A 0.2.19
+	// reader rejects the -1 (and every release before it); the rollback to
+	// them writes MaxListMax (RollbackSince0220).
 	ListMax int
+	// Color is whether the console's lists are in colour: ColorAuto (the
+	// terminal decides, as everywhere else), ColorOn or ColorOff. The
+	// console's environment holds neither NO_COLOR nor TACCTL_COLOR
+	// (Scrub), so this is how the operator chooses. Written to the file
+	// only when it is not auto, as true (on) or false (off); a file without
+	// the key reads as auto. A 0.2.19 reader (and every release before it)
+	// rejects the key, and the rollback removes it (RollbackSince0220).
+	Color string
 	// SpaceCompletion is whether a typed space at the console's prompt is
 	// Junos-style (completes a fixed word, never doubles). Written to the
 	// file only when off (doc); a file without the key reads as on. A 0.2.2
@@ -126,6 +151,7 @@ func Defaults() *File {
 		ForwardingTiers:  []tier.Tier{tier.Superuser},
 		ListMax:          DefaultListMax,
 		SpaceCompletion:  true,
+		Color:            ColorAuto,
 
 		PasswordCacheIdle: DefaultPasswordCacheIdle,
 		PasswordCacheMax:  DefaultPasswordCacheMax,
@@ -245,8 +271,11 @@ func (f *File) validate() error {
 	if f.Idle < 0 || f.Idle > MaxIdle {
 		return fail("settings.idle_timeout must be 0-" + strconv.Itoa(MaxIdle) + ".")
 	}
-	if f.ListMax < 1 || f.ListMax > MaxListMax {
-		return fail("settings.list_max must be 1-" + strconv.Itoa(MaxListMax) + ".")
+	if f.ListMax != ListMaxNever && (f.ListMax < 1 || f.ListMax > MaxListMax) {
+		return fail("settings.list_max must be 1-" + strconv.Itoa(MaxListMax) + " (or " + strconv.Itoa(ListMaxNever) + ": never ask).")
+	}
+	if !slices.Contains(ColorWords, f.Color) {
+		return fail("settings.color must be true (on), false (off) or absent (auto).")
 	}
 	if err := ValidShellPath(f.SystemShell); err != nil {
 		return fail("settings.system_shell: " + strings.Join(msgs(err), " "))
@@ -410,12 +439,17 @@ func parseSettings(f *File, m *yamlpy.Map) error {
 			} else {
 				f.ListMax = n
 			}
-		case "agent_forwarding", "ssh_escape", "gateway_ports", "space_completion":
+		case "agent_forwarding", "ssh_escape", "gateway_ports", "space_completion", "color":
 			b, ok := v.(bool)
 			if !ok {
 				return bad
 			}
 			switch k {
+			case "color":
+				f.Color = ColorOff
+				if b {
+					f.Color = ColorOn
+				}
 			case "agent_forwarding":
 				f.AgentForwarding = b
 			case "ssh_escape":
@@ -540,6 +574,13 @@ func (f *File) doc() *yamlpy.Map {
 		// Only when off, so the file of a console that never turned it off
 		// has no key of 0.2.3 beyond the engineer tier's.
 		settings.Set("space_completion", false)
+	}
+	switch f.Color {
+	case ColorOn:
+		// Only when set, so a file that never chose is read by every release.
+		settings.Set("color", true)
+	case ColorOff:
+		settings.Set("color", false)
 	}
 	if len(f.PasswordCacheTiers) > 0 || f.PasswordCacheIdle != DefaultPasswordCacheIdle || f.PasswordCacheMax != DefaultPasswordCacheMax {
 		// Only when something is set, so a file that never touched the

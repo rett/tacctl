@@ -16,12 +16,14 @@ package cli
 // top-level usage as before (root.go).
 
 import (
+	"io"
 	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/shell"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -77,6 +79,14 @@ func (inv *invocation) helpList(root *cobra.Command, words []string) {
 		}
 	}
 	// Written with its colours: the stream takes them out when it is not
-	// a terminal.
-	inv.write(shell.HelpText(cands, explained, ok, true, width))
+	// a terminal, NO_COLOR or TACCTL_COLOR=never. In a console session the
+	// console's color setting decides instead: off writes none, on writes
+	// them past the stream's filter.
+	out := inv.app.Out.Stdout
+	if inv.shellColor == console.ColorOn {
+		if f, isFile := ui.File(out); isFile {
+			out = f
+		}
+	}
+	_, _ = io.WriteString(out, shell.HelpText(cands, explained, ok, inv.shellColor != console.ColorOff, width))
 }

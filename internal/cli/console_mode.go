@@ -151,7 +151,7 @@ func (inv *invocation) runConsoleSession(args []string) error {
 		extra = append(extra, "DISPLAY="+d)
 	}
 	r := shellRun{
-		exe: exe, mode: shellBatch, listMax: cs.pol.ListMax, spaceCompletion: cs.pol.SpaceCompletion,
+		exe: exe, mode: shellBatch, listMax: cs.pol.ListMax, color: cs.pol.Color, spaceCompletion: cs.pol.SpaceCompletion,
 		extraEnv: extra, console: true, systemShell: cs.systemShell, groups: groups, view: consoleView(cs.pol),
 	}
 	if cs.pol.PasswordCache {

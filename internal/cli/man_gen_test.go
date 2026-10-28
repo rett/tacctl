@@ -663,7 +663,8 @@ var manConsoleDocs = map[string]struct{ typ, verb, desc string }{
 	"settings.system_shell_tiers": {"list of tiers (not engineer)", setWith("console system-shell tiers"), "The tiers that may start the system shell."},
 	"settings.forwarding_tiers":   {"list of tiers (not engineer)", setWith("console forwarding tiers"), "The tiers whose console logins may forward X11 and TCP ports."},
 	"settings.gateway_ports":      {"true or false", setWith("console forwarding gateway-ports"), "Whether those tiers may bind forwarded ports to an address other than loopback."},
-	"settings.list_max":           {"integer, 1 to " + strconv.Itoa(console.MaxListMax), "", "The number of completions the console's shell lists without asking. Edit the file to change it."},
+	"settings.list_max":           {"integer, 1 to " + strconv.Itoa(console.MaxListMax) + ", or " + strconv.Itoa(console.ListMaxNever) + " (never ask)", setWith("console list-max"), "The number of completions the console's shell lists without asking \"Show all N?\"."},
+	"settings.color":              {"true or false", setWith("console color"), "Whether the console's lists are in colour: true (on) or false (off). Written to the file only when set; a file without the key is auto, the terminal decides."},
 	"settings.space_completion":   {"true or false", setWith("console space-completion"), "Whether a typed space at the console's prompt completes a fixed word, as on Junos. Written to the file only when false."},
 }
 
@@ -686,6 +687,7 @@ func manConsoleKeyRows(t *testing.T) []manKeyRow {
 	}
 	full := console.Defaults()
 	full.SpaceCompletion = false
+	full.Color = console.ColorOn
 	all, def := load(full), load(console.Defaults())
 	var rows []manKeyRow
 	add := func(key, defText string) {
@@ -716,6 +718,11 @@ func manConsoleKeyRows(t *testing.T) []manKeyRow {
 			dm := dv.(*yamlpy.Map)
 			for _, sk := range m.Keys() {
 				var d any
+				if sk == "color" {
+					// Three states in a boolean: absent is auto.
+					add("settings."+sk, "absent (auto)")
+					continue
+				}
 				if x, ok := dm.Get(sk); ok {
 					d = x
 				} else {

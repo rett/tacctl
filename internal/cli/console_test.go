@@ -430,9 +430,9 @@ func TestConsolePolicyLinePerTier(t *testing.T) {
 	}
 	const tail = " ssh_escape=no agent=no"
 	for _, c := range []struct{ user, group, want string }{
-		{"alice", "superuser", "shell=console idle=30 system_shell=yes system_shell_path=/bin/bash" + tail + " forward=yes tier=superuser list_max=40 space_completion=yes"},
-		{"bob", "operator", "shell=console idle=30 system_shell=no system_shell_path=/bin/bash" + tail + " forward=no tier=operator list_max=40 space_completion=yes"},
-		{"carol", "readonly", "shell=console idle=30 system_shell=no system_shell_path=/bin/bash" + tail + " forward=no tier=readonly list_max=40 space_completion=yes"},
+		{"alice", "superuser", "shell=console idle=30 system_shell=yes system_shell_path=/bin/bash" + tail + " forward=yes tier=superuser list_max=40 space_completion=yes color=auto"},
+		{"bob", "operator", "shell=console idle=30 system_shell=no system_shell_path=/bin/bash" + tail + " forward=no tier=operator list_max=40 space_completion=yes color=auto"},
+		{"carol", "readonly", "shell=console idle=30 system_shell=no system_shell_path=/bin/bash" + tail + " forward=no tier=readonly list_max=40 space_completion=yes color=auto"},
 	} {
 		if got := policy(c.user, c.group); got != c.want {
 			t.Errorf("%s:\n got %q\nwant %q", c.user, got, c.want)
@@ -444,7 +444,7 @@ func TestConsolePolicyLinePerTier(t *testing.T) {
 		t.Errorf("none: %d %q %q", sb.code, got, sb.stderr())
 	}
 	// Not in tac-users: unrestricted, system shell yes.
-	if got := policy("tester", ""); got != "shell=system idle=30 system_shell=yes system_shell_path=/bin/bash"+tail+" forward=yes tier=unrestricted list_max=40 space_completion=yes" {
+	if got := policy("tester", ""); got != "shell=system idle=30 system_shell=yes system_shell_path=/bin/bash"+tail+" forward=yes tier=unrestricted list_max=40 space_completion=yes color=auto" {
 		t.Errorf("unrestricted: %q", got)
 	}
 	// The logged line (auth.info) carries the session marker.
@@ -471,17 +471,25 @@ func TestConsolePolicyLinePerTier(t *testing.T) {
 	sb.con("idle-timeout", "5")
 	sb.con("ssh-escape", "enable")
 	sb.con("agent-forwarding", "enable")
-	if got := policy("carol", "readonly"); got != "shell=system idle=5 system_shell=yes system_shell_path=/bin/bash ssh_escape=yes agent=yes forward=no tier=readonly list_max=40 space_completion=yes" {
+	if got := policy("carol", "readonly"); got != "shell=system idle=5 system_shell=yes system_shell_path=/bin/bash ssh_escape=yes agent=yes forward=no tier=readonly list_max=40 space_completion=yes color=auto" {
 		t.Errorf("carol after changes: %q", got)
 	}
 	if got := policy("alice", "superuser"); !strings.Contains(got, "system_shell=no") {
 		t.Errorf("alice after tiers=readonly: %q", got)
 	}
 	sb.con("space-completion", "off")
-	if got := policy("alice", "superuser"); !strings.HasSuffix(got, " list_max=40 space_completion=no") {
+	if got := policy("alice", "superuser"); !strings.HasSuffix(got, " list_max=40 space_completion=no color=auto") {
 		t.Errorf("after space-completion off: %q", got)
 	}
 	sb.con("space-completion", "on")
+	// The colour and the list threshold of 0.2.20 are in the line.
+	sb.con("color", "on")
+	sb.con("list-max", "-3")
+	if got := policy("alice", "superuser"); !strings.HasSuffix(got, " list_max=-1 space_completion=yes color=on") {
+		t.Errorf("after color on and list-max -3: %q", got)
+	}
+	sb.con("color", "auto")
+	sb.con("list-max", "0")
 	// A system shell that cannot run is no system shell.
 	sb.write("shells", "/bin/sh\n", 0o644)
 	if got := policy("carol", "readonly"); !strings.Contains(got, "system_shell=no") {
@@ -569,5 +577,78 @@ func TestConsoleEngineerAlways(t *testing.T) {
 	}, "SUDO_USER=bob"))
 	if !strings.HasPrefix(out, "shell=console ") || !strings.Contains(out, " tier=engineer ") {
 		t.Errorf("policy line %q", out)
+	}
+}
+
+// 'console color [auto|on|off]' and 'console list-max [<n>]': shown, set
+// server-wide, written to the file only when set (the colour) or as the
+// number (list_max), and listed by 'console show'.
+func TestConsoleColorAndListMax(t *testing.T) {
+	sb := consoleSandbox(t)
+	for _, c := range []struct {
+		args []string
+		want string
+	}{{[]string{"color"}, "auto"}, {[]string{"list-max"}, "40"}} {
+		if got := strings.TrimSpace(sb.con(c.args...)); got != c.want {
+			t.Errorf("%v = %q, want %q", c.args, got, c.want)
+		}
+	}
+	if y := sb.consoleYAML(); strings.Contains(y, "color") {
+		t.Errorf("console.yaml has the colour while auto:\n%s", y)
+	}
+	for mode, want := range map[string]string{"on": "always in colour", "off": "never in colour"} {
+		out := sb.con("color", mode)
+		if sb.code != 0 || !strings.Contains(out, "next console login") || strings.Contains(out, "host sync") {
+			t.Errorf("color %s: %d %q", mode, sb.code, out)
+		}
+		if got := strings.TrimSpace(sb.con("color")); got != mode || !strings.Contains(sb.con("show"), "  color: "+mode+" (the console's lists: "+want+")") {
+			t.Errorf("color now %q", got)
+		}
+		wantKey := map[string]string{"on": "\n  color: true\n", "off": "\n  color: false\n"}[mode]
+		if y := sb.consoleYAML(); !strings.Contains(y, wantKey) {
+			t.Errorf("console.yaml lacks %q:\n%s", wantKey, y)
+		}
+	}
+	sb.con("color", "auto")
+	if y := sb.consoleYAML(); strings.Contains(y, "color") || strings.TrimSpace(sb.con("color")) != "auto" {
+		t.Errorf("auto again:\n%s", y)
+	}
+	for _, args := range [][]string{{"color", "blue"}, {"color", "on", "off"}, {"color", "ON"}} {
+		sb.con(args...)
+		if sb.code != 1 {
+			t.Errorf("console %v: exit %d", args, sb.code)
+		}
+	}
+	if strings.Contains(sb.stderr(), "panic") {
+		t.Error("panic")
+	}
+
+	// list-max: a number, 0 for the default, a negative one never asks.
+	for _, c := range []struct{ arg, stored, shown string }{
+		{"25", "25", "25"}, {"0", "40", "40"}, {"1000", "1000", "1000"}, {"1", "1", "1"}, {"-1", "-1", "never ask"}, {"-7", "-1", "never ask"},
+	} {
+		out := sb.con("list-max", c.arg)
+		if sb.code != 0 || !strings.Contains(out, "next console login") {
+			t.Errorf("list-max %s: %d %q", c.arg, sb.code, out)
+		}
+		if got := strings.TrimSpace(sb.con("list-max")); got != c.stored {
+			t.Errorf("list-max %s: now %q, want %q", c.arg, got, c.stored)
+		}
+		if !strings.Contains(sb.con("show"), "  list-max: "+c.shown+" (") {
+			t.Errorf("list-max %s: show lacks %q", c.arg, c.shown)
+		}
+		if y := sb.consoleYAML(); !strings.Contains(y, "\n  list_max: "+c.stored+"\n") {
+			t.Errorf("list-max %s: console.yaml:\n%s", c.arg, y)
+		}
+	}
+	if out := sb.con("list-max", "-3"); !strings.Contains(out, "without asking") {
+		t.Errorf("list-max -3: %q", out)
+	}
+	for _, args := range [][]string{{"list-max", "1001"}, {"list-max", "x"}, {"list-max", "1", "2"}, {"list-max", "1.5"}} {
+		before := sb.consoleYAML()
+		sb.con(args...)
+		if sb.code != 1 || sb.consoleYAML() != before {
+			t.Errorf("console %v: exit %d, file changed %v", args, sb.code, sb.consoleYAML() != before)
+		}
 	}
 }

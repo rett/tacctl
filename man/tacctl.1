@@ -247,7 +247,14 @@ lists each, with
 .B "user rename <name> <new\-name>"
 or
 .B "console user <name> clear"
-as the way out, and changes nothing).
+as the way out, and changes nothing). Every target also takes out of
+.I console.yaml
+the two settings of 0.2.20 that no older release reads:
+.B settings.color
+is removed and a
+.B settings.list_max
+of \-1 (never ask) is written as 1000, with every other setting kept and a
+snapshot first.
 .IP
 .B "rollback 0.2.18"
 .B \-\-apply
@@ -11571,8 +11578,8 @@ it when the provisioning of this server applies it
 Every change to the tier switches, a user override, agent forwarding or the
 forwarding tiers prints
 .BI "Apply to the accounts: tacctl host sync " name\fR.
-The idle timeout, the ssh escape, the space completion, the system shell and
-the password cache are read by each console session when it starts; open
+The idle timeout, the ssh escape, the space completion, the colour, the list
+threshold, the system shell and the password cache are read by each console session when it starts; open
 sessions keep their settings.
 .TP
 .B console
@@ -11754,6 +11761,58 @@ that does not sends them as typed spaces, and the setting should be off there.
 Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command console space-completion
+.TP
+.BI "console color " "[ { auto | on | off } ]"
+Show or set whether the console's lists (Tab's second press,
+.BR ? ,
+.B \-h
+and
+.BR \-\-help )
+are in colour. The default is
+.BR auto :
+the terminal decides, as everywhere else. The console's environment is scrubbed
+of
+.B NO_COLOR
+and
+.BR TACCTL_COLOR ,
+so this is how the operator chooses:
+.B on
+always colours the lists,
+.B off
+never does. It is server-wide, a superuser sets it, and each console session
+reads it when it starts. The key is written to
+.I console.yaml
+only while the setting is not
+.BR auto .
+.\" BEGIN GENERATED: command console color
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console color
+.TP
+.BI "console list-max " "[ n ]"
+Show or set the longest list the console's Tab and
+.B ?
+show without asking
+.BR "Show all N?" .
+A list of more than
+.I n
+entries asks first (default
+.BR 40 ;
+at most
+.BR 1000 ).
+.B 0
+is the default, and a negative number never asks (the file then holds
+.BR \-1 ).
+It is server-wide, a superuser sets it, and each console session reads it when
+it starts.
+.\" BEGIN GENERATED: command console list-max
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console list-max
 .TP
 .BI "console password\-cache tiers " "[ " csv "|none ]"
 Show or set the tiers whose shell and console sessions may keep the user's
@@ -12362,20 +12421,20 @@ config deny, config devices, config juniper, config linux,
 config listen, config loglevel, config metrics, config mgmt\-acl,
 config password\-age, config password\-min\-length, config render,
 config secret\-min\-length, config snmp, config validate, config wti,
-console agent\-forwarding, console forwarding, console idle\-timeout,
-console password\-cache, console space\-completion,
-console ssh\-escape, device address, device block, device collect,
-device config, device description, device hostkey, device hostname,
-device import, device ios\-syntax, device legacy\-ssh,
-device location, device netconf, device onboard, device port,
-device snmp, device stale\-days, device sync, device vendor,
-group commands, group junos, group preset, group privilege,
-group reset, host default\-method, host provisioner, host target,
-scope aaa\-order, scope auth\-method, scope block, scope breakglass,
-scope default, scope devices, scope exec\-timeout, scope mgmt\-acl,
-scope netconf, scope prefixes, scope protocols, scope radius\-group,
-scope secret, scope snmp, scope staging, scope tacacs\-group,
-scope vendor\-attrs, user scope
+console agent\-forwarding, console color, console forwarding,
+console idle\-timeout, console list\-max, console password\-cache,
+console space\-completion, console ssh\-escape, device address,
+device block, device collect, device config, device description,
+device hostkey, device hostname, device import, device ios\-syntax,
+device legacy\-ssh, device location, device netconf, device onboard,
+device port, device snmp, device stale\-days, device sync,
+device vendor, group commands, group junos, group preset,
+group privilege, group reset, host default\-method, host provisioner,
+host target, scope aaa\-order, scope auth\-method, scope block,
+scope breakglass, scope default, scope devices, scope exec\-timeout,
+scope mgmt\-acl, scope netconf, scope prefixes, scope protocols,
+scope radius\-group, scope secret, scope snmp, scope staging,
+scope tacacs\-group, scope vendor\-attrs, user scope
 .TP
 .B "mixed, auth.notice"
 config audit\-strict, config sudoers, console system\-shell,
@@ -12546,7 +12605,7 @@ name, preset (roles), changes; one line for each group changed.
 .B "config sudoers, config sudoers tiers"
 op (install or remove), file, and group for the first.
 .IP "\fBconsole set\fR"
-key, item, from, to. key is the setting (tiers, user, system\-shell, forwarding, agent\-forwarding, ssh\-escape, password\-cache, idle\-timeout, space\-completion) and item the tier, user or part of it; auth.notice for tiers, user and system\-shell.
+key, item, from, to. key is the setting (tiers, user, system\-shell, forwarding, agent\-forwarding, ssh\-escape, password\-cache, idle\-timeout, space\-completion, color, list\-max) and item the tier, user or part of it; auth.notice for tiers, user and system\-shell.
 .TP
 .B "backup restore"
 id, pre (the snapshot taken first), keep\-uids, legacy; auth.notice.
@@ -13986,12 +14045,16 @@ true or false. Default: false.
 Whether those tiers may bind forwarded ports to an address other than loopback. Set with \fBtacctl console forwarding gateway\-ports\fR.
 .TP
 .B settings.list_max
-integer, 1 to 1000. Default: 40.
-The number of completions the console's shell lists without asking. Edit the file to change it.
+integer, 1 to 1000, or \-1 (never ask). Default: 40.
+The number of completions the console's shell lists without asking "Show all N?". Set with \fBtacctl console list\-max\fR.
 .TP
 .B settings.space_completion
 true or false. Default: true.
 Whether a typed space at the console's prompt completes a fixed word, as on Junos. Written to the file only when false. Set with \fBtacctl console space\-completion\fR.
+.TP
+.B settings.color
+true or false. Default: absent (auto).
+Whether the console's lists are in colour: true (on) or false (off). Written to the file only when set; a file without the key is auto, the terminal decides. Set with \fBtacctl console color\fR.
 .\" END GENERATED: console-keys
 .PP
 A mapping

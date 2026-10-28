@@ -38,6 +38,10 @@ type invocation struct {
 	// shellMode: completion is for the tacctl shell's lists (live names
 	// with descriptions; flags only after a '-').
 	shellMode bool
+	// shellColor is the console's colour setting in a shell or console
+	// session ("": auto; console.ColorOn, ColorOff): '--help' written by the
+	// shell follows it (help_request.go).
+	shellColor string
 	// view is the tier whose verbs the shell lists (shell_view.go); nil:
 	// everything, outside the shell.
 	view viewFn

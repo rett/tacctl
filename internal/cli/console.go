@@ -9,6 +9,7 @@ package cli
 // sudo to learn its settings.
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +36,8 @@ var consoleSpecs = map[string]Spec{
 	"agent-forwarding": {MaxArgs: 1, Args: []string{"enable|disable"}},
 	"ssh-escape":       {MaxArgs: 1, Args: []string{"enable|disable"}},
 	"space-completion": {MaxArgs: 1, Args: []string{"on|off"}},
+	"color":            {MaxArgs: 1, Args: []string{"auto|on|off"}},
+	"list-max":         {MaxArgs: 1, Args: []string{""}},
 	"system-shell":     {MinArgs: 1, MaxArgs: 2, Args: []string{"tiers|path", After("path", KindFile)}},
 	"forwarding":       {MinArgs: 1, MaxArgs: 2, Args: []string{"tiers|gateway-ports", After("gateway-ports", "enable|disable")}},
 	"password-cache":   {MaxArgs: 2, Args: []string{"tiers|idle|max", ""}},
@@ -53,6 +56,8 @@ var consoleVerbs = [][2]string{
 	{"agent-forwarding [enable|disable]", "Opt in to ssh agent forwarding for console users"},
 	{"ssh-escape [enable|disable]", "Opt in to ssh's escape character (~. and ~C) inside the console's ssh"},
 	{"space-completion [on|off]", "Show or set Junos-style spaces at the console's prompt: a typed space completes a fixed word and is never doubled; off turns off the refusal of repeated spaces and the completion (default on); pastes are unchanged, which assumes the terminal sends them bracketed (one that does not sends its spaces as typed ones: turn this off there); a word of dashes only (- or --) keeps its space"},
+	{"color [auto|on|off]", "Show or set the colour of the console's lists (auto, on, off)"},
+	{"list-max [<n>]", "Show or set the longest list shown without asking (0: 40, <0: never)"},
 	{"forwarding tiers [<csv>|none]", "Show or set the tiers that may forward X11 and TCP ports (sshd, and the console's ssh -X/-L/-R/-D; default superuser; never engineer)"},
 	{"forwarding gateway-ports [enable|disable]", "Opt in to forwarded ports on other addresses than loopback for those tiers (sshd's GatewayPorts for ssh -R, and the console's ssh -g and -L/-D bind addresses)"},
 	{"system-shell tiers [<csv>|none]", "Show or set the tiers that may start their system shell from the console (never engineer)"},
@@ -99,8 +104,8 @@ switch it off. Local accounts that are not tacctl users are never touched.
 The settings commands change /etc/tacctl/console.yaml only. The accounts' login
 shells and sshd's drop-in follow it when this server's accounts are synced
 ('tacctl host sync <name of this server>'); idle-timeout, ssh-escape,
-space-completion and system-shell are read by each console session when it
-starts. sshd's drop-in makes the console the only program a console user's login
+space-completion, color, list-max and system-shell are read by each console
+session when it starts. sshd's drop-in makes the console the only program a console user's login
 runs (no scp, sftp or remote programs), closes every forwarding but X11 and TCP
 ports for the tiers of 'forwarding tiers' (superusers by default: 'ssh -X', -L,
 -R, -D and -J through this server, and 'ssh -X|-L|-R|-D <device>' in the
@@ -143,8 +148,8 @@ func (inv *invocation) console(args []string) error {
 		"show": inv.consoleShow, "tiers": inv.consoleTiers, "user": inv.consoleUser,
 		"idle-timeout": inv.consoleIdle, "system-shell": inv.consoleSystemShell, "forwarding": inv.consoleForwarding,
 		"agent-forwarding": inv.consoleSwitch("agent-forwarding"), "ssh-escape": inv.consoleSwitch("ssh-escape"),
-		"space-completion": inv.consoleSpace,
-		"password-cache":   inv.consolePasswordCache, "forget": inv.consoleForget,
+		"space-completion": inv.consoleSpace, "color": inv.consoleColor, "list-max": inv.consoleListMax,
+		"password-cache": inv.consolePasswordCache, "forget": inv.consoleForget,
 		"install": inv.consoleInstall, "remove": inv.consoleRemove, "check": inv.consoleCheck,
 	}
 	switch sub := arg(args, 0); sub {
@@ -500,6 +505,82 @@ func (inv *invocation) consoleSpace(args []string) error {
 	return nil
 }
 
+// consoleColor is 'console color [auto|on|off]': whether the console's lists
+// (Tab's columns, '?', -h and --help) are in colour. The console's
+// environment is scrubbed of NO_COLOR and TACCTL_COLOR, so this is how the
+// operator chooses: auto lets the terminal decide. Each console session
+// reads it when it starts.
+func (inv *invocation) consoleColor(args []string) error {
+	p, err := inv.consoleParse("color", args)
+	if err != nil {
+		return err
+	}
+	pol, err := inv.consolePolicy()
+	if err != nil {
+		return err
+	}
+	if len(p.Args) == 0 {
+		inv.echo(pol.File.Color)
+		return nil
+	}
+	mode := p.Args[0]
+	if !slices.Contains(console.ColorWords, mode) {
+		return inv.usageErr("Usage: tacctl console " + consoleUse("color"))
+	}
+	if err := inv.consoleWrite("color", "", func(f *console.File) string { return f.Color },
+		func(f *console.File) error { f.Color = mode; return nil }); err != nil {
+		return err
+	}
+	switch mode {
+	case console.ColorOn:
+		inv.app.Out.Info("The console's lists are always in colour. It applies from the next console login.")
+	case console.ColorOff:
+		inv.app.Out.Info("The console's lists are never in colour. It applies from the next console login.")
+	default:
+		inv.app.Out.Info("The console's lists are in colour where the terminal shows it. It applies from the next console login.")
+	}
+	return nil
+}
+
+// consoleListMax is 'console list-max [<n>]': the longest list the console's
+// Tab and '?' show without asking 'Show all N?'. 0 is the default (40), a
+// negative number never asks. The argument is read here, not by Parse: a
+// negative number begins with a dash.
+func (inv *invocation) consoleListMax(args []string) error {
+	usage := "Usage: tacctl console " + consoleUse("list-max")
+	if len(args) > 1 {
+		return inv.usageErr("Unknown argument: '"+args[1]+"'", usage)
+	}
+	pol, err := inv.consolePolicy()
+	if err != nil {
+		return err
+	}
+	if len(args) == 0 {
+		inv.echo(strconv.Itoa(pol.File.ListMax))
+		return nil
+	}
+	n, err := strconv.Atoi(args[0])
+	if err != nil || n > console.MaxListMax {
+		return inv.usageErr("Invalid number '"+args[0]+"': expected 1-"+strconv.Itoa(console.MaxListMax)+", 0 for the default ("+strconv.Itoa(console.DefaultListMax)+") or a negative number to never ask.", usage)
+	}
+	switch {
+	case n == 0:
+		n = console.DefaultListMax
+	case n < 0:
+		n = console.ListMaxNever
+	}
+	if err := inv.consoleWrite("list-max", "", func(f *console.File) string { return strconv.Itoa(f.ListMax) },
+		func(f *console.File) error { f.ListMax = n; return nil }); err != nil {
+		return err
+	}
+	if n == console.ListMaxNever {
+		inv.app.Out.Info("The console shows a long list without asking. It applies from the next console login.")
+	} else {
+		inv.app.Out.Info("A list of more than " + strconv.Itoa(n) + " entries asks 'Show all N?' first at the console's prompt. It applies from the next console login.")
+	}
+	return nil
+}
+
 // spaceWord is the on|off word of the space-completion setting.
 func spaceWord(on bool) string {
 	if on {
@@ -790,6 +871,6 @@ func (inv *invocation) consolePolicyLine([]string) error {
 	inv.echo("shell=" + shell + " idle=" + strconv.Itoa(pol.File.Idle) + " system_shell=" + yesNo(sys) +
 		" system_shell_path=" + path + " ssh_escape=" + yesNo(pol.SSHEscape()) + " agent=" + yesNo(pol.AgentForwarding()) +
 		" forward=" + yesNo(pol.Forwarding(t)) + " tier=" + string(t) + gateField + " list_max=" + strconv.Itoa(pol.ListMax()) +
-		" space_completion=" + yesNo(pol.SpaceCompletion()) + cache)
+		" space_completion=" + yesNo(pol.SpaceCompletion()) + " color=" + pol.Color() + cache)
 	return nil
 }

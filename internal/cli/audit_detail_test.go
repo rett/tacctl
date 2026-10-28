@@ -170,6 +170,8 @@ func TestDetailLinesOfTheScopeVerbs(t *testing.T) {
 		{"config snmp community", secret + "\n", []string{"config", "snmp", "community", "--stdin"}, "auth.info", "snmp set kind=community by=alice"},
 		{"scope snmp port", "", []string{"scope", "snmp", "lab", "port", "1162"}, "auth.info", "snmp set kind=port scope=lab by=alice"},
 		{"console idle-timeout", "", []string{"console", "idle-timeout", "45"}, "auth.info", "console set key=idle-timeout item=- from=30 to=45 by=alice"},
+		{"console color", "", []string{"console", "color", "on"}, "auth.info", "console set key=color item=- from=auto to=on by=alice"},
+		{"console list-max", "", []string{"console", "list-max", "-5"}, "auth.info", "console set key=list-max item=- from=40 to=-1 by=alice"},
 		{"console tiers", "", []string{"console", "tiers", "operator", "disable"}, "auth.notice", "console set key=tiers item=operator from=enable to=disable by=alice"},
 		{"console user", "", []string{"console", "user", "bob", "enable"}, "auth.notice", "console set key=user item=bob from=none to=enable by=alice"},
 		{"console system-shell", "", []string{"console", "system-shell", "tiers", "superuser"}, "auth.notice",

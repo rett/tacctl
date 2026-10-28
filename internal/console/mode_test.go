@@ -179,7 +179,7 @@ func TestSessionIDAndLogValues(t *testing.T) {
 func TestParseRemote(t *testing.T) {
 	r, ok := ParseRemote("shell=console idle=5 system_shell=yes system_shell_path=/bin/zsh ssh_escape=yes agent=no tier=superuser list_max=12\n")
 	want := Remote{Idle: 5 * time.Minute, SystemShell: true, SystemShellPath: "/bin/zsh", SSHEscape: true,
-		Tier: tier.Superuser, ListMax: 12, SpaceCompletion: true, Known: true, TierRead: true}
+		Tier: tier.Superuser, ListMax: 12, Color: ColorAuto, SpaceCompletion: true, Known: true, TierRead: true}
 	if !ok || r != want {
 		t.Fatalf("ParseRemote = %+v, %t; want %+v", r, ok, want)
 	}
@@ -195,6 +195,18 @@ func TestParseRemote(t *testing.T) {
 	for out, want := range map[string]bool{"idle=5": true, "space_completion=yes": true, "space_completion=no": false, "space_completion=off": true} {
 		if r, _ := ParseRemote(out); r.SpaceCompletion != want {
 			t.Errorf("ParseRemote(%q).SpaceCompletion = %t", out, r.SpaceCompletion)
+		}
+	}
+	// The colour and the list threshold of 0.2.20: the words, -1 (never
+	// ask), and the defaults for a value that is none.
+	for out, want := range map[string]string{"idle=5": "auto", "color=on": "on", "color=off": "off", "color=auto": "auto", "color=maybe": "auto", "color=": "auto"} {
+		if r, _ := ParseRemote(out); r.Color != want {
+			t.Errorf("ParseRemote(%q).Color = %q, want %q", out, r.Color, want)
+		}
+	}
+	for out, want := range map[string]int{"list_max=-1": -1, "list_max=1000": 1000, "list_max=1001": 40, "list_max=0": 40, "list_max=-2": 40, "list_max=x": 40} {
+		if r, _ := ParseRemote(out); r.ListMax != want {
+			t.Errorf("ParseRemote(%q).ListMax = %d, want %d", out, r.ListMax, want)
 		}
 	}
 	// The tier the shell lists for (D56): the gate's, else the tier field,
