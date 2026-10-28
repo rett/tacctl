@@ -514,16 +514,29 @@ func capLabel(l string, max int) string {
 }
 
 // wrapWords are the lines s takes at w columns, cut at blanks (a word
-// longer than w stays whole).
+// longer than w stays whole). The blanks inside a line stay as they are, a
+// run of them included: the descriptions of live names are aligned in
+// columns by the blanks between their words, and a line that is cut loses
+// only the run at the cut.
 func wrapWords(s string, w int) []string {
 	var lines []string
 	cur := ""
-	for _, word := range strings.Fields(s) {
+	for rest := s; ; {
+		trimmed := strings.TrimLeft(rest, " ")
+		gap := rest[:len(rest)-len(trimmed)]
+		if trimmed == "" {
+			break
+		}
+		word := trimmed
+		if i := strings.IndexByte(trimmed, ' '); i >= 0 {
+			word = trimmed[:i]
+		}
+		rest = trimmed[len(word):]
 		switch {
 		case cur == "":
 			cur = word
-		case utf8.RuneCountInString(cur)+1+utf8.RuneCountInString(word) <= w:
-			cur += " " + word
+		case utf8.RuneCountInString(cur)+utf8.RuneCountInString(gap)+utf8.RuneCountInString(word) <= w:
+			cur += gap + word
 		default:
 			lines = append(lines, cur)
 			cur = word

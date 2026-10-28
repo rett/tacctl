@@ -91,6 +91,12 @@ current behaviour; this file is where history lives.
    characters moved every description to the right. It is cut at 40 and ends
    in `...` like a long column (the word itself is what Tab inserts).
 
+9. **A wrapped description keeps its aligned columns.** The `?` list of devices
+   and hosts shows `cisco   192.0.2.1    site-a`, the words aligned by runs of
+   blanks. When such a description did not fit after the column and went on
+   the line below, the runs were collapsed to one blank and the alignment
+   was lost; only the blanks at the cut are dropped now.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

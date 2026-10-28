@@ -158,3 +158,29 @@ func TestListingCapsALongWord(t *testing.T) {
 		t.Errorf("bare word row %q", one)
 	}
 }
+
+// A description whose words are aligned in columns by blanks (the live
+// names of a device: vendor, address, scope) keeps them when it goes on
+// under its column; only the run at the cut is dropped.
+func TestWrapWordsKeepsTheBlanks(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		w    int
+		want []string
+	}{
+		{"cisco   192.0.2.1    site-a", 40, []string{"cisco   192.0.2.1    site-a"}},
+		{"cisco   192.0.2.1    site-a", 20, []string{"cisco   192.0.2.1", "site-a"}},
+		{"cisco   192.0.2.1    site-a", 22, []string{"cisco   192.0.2.1", "site-a"}},
+		{"cisco   192.0.2.1    site-a", 26, []string{"cisco   192.0.2.1", "site-a"}},
+		{"cisco   192.0.2.1    site-a", 27, []string{"cisco   192.0.2.1    site-a"}},
+		{"a  b  c", 4, []string{"a  b", "c"}},
+		{"one two three four", 9, []string{"one two", "three", "four"}},
+		{"  lead", 10, []string{"lead"}},
+		{"", 10, []string{""}},
+		{strings.Repeat("x", 12), 5, []string{strings.Repeat("x", 12)}},
+	} {
+		if got := wrapWords(c.in, c.w); strings.Join(got, "|") != strings.Join(c.want, "|") {
+			t.Errorf("wrapWords(%q, %d) = %q, want %q", c.in, c.w, got, c.want)
+		}
+	}
+}
