@@ -88,7 +88,12 @@ func GenCompletion(w io.Writer, shell string) error {
 	case "fish":
 		return root.GenFishCompletion(w, true)
 	}
-	return root.GenBashCompletionV2(w, false) // no descriptions
+	var b strings.Builder
+	if err := root.GenBashCompletionV2(&b, false); err != nil { // no descriptions
+		return err
+	}
+	_, err := io.WriteString(w, bashScript(b.String()))
+	return err
 }
 
 // BashCompletion is the bash script that install and upgrade place in

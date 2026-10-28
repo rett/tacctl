@@ -154,6 +154,17 @@ current behaviour; this file is where history lives.
     snapshot comes first); a `console.yaml` that this release cannot read now
     refuses the rollback to every target, as it did for 0.2.3.
 
+14. **A help key for bash.** The bash completion script ends with a binding
+    for the question mark: on a line that starts with `tacctl`, `?` prints
+    the help of the words before the cursor (`tacctl user add ?` prints what
+    `tacctl user add --help` prints, in colour on a terminal) and leaves the
+    command line as it is; anywhere else, and on a line with a quote, a
+    backslash or a shell operator before the cursor, it types a `?` (`ls
+    *.?` works). `TACCTL_HELP_KEY`, read when the script is sourced, changes
+    the key: unset or `?` is the question mark, a readline spelling such as
+    `\eh` is that key, `off` binds nothing. Regenerate the script with
+    `tacctl completion bash` (`upgrade` does it for `/etc/bash_completion.d`).
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

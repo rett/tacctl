@@ -610,6 +610,30 @@ before
 .BR compinit )
 or to
 .IR ~/.config/fish/completions/tacctl.fish .
+The bash script ends with a key binding: on a line that starts with
+.BR tacctl ,
+the question mark prints the help of the words before the cursor
+.RB ( "tacctl user add ?"
+prints what
+.B "tacctl user add \-\-help"
+prints, in colour on a terminal) and leaves the command line as it is; the word
+being typed is not part of the question. A line with a quote, a backslash, a
+shell operator or a second line before the cursor, and any line that does not
+start with
+.BR tacctl ,
+gets a literal question mark
+.RB ( "ls *.?"
+works).
+.B TACCTL_HELP_KEY
+read when the script is sourced changes the key: unset or
+.B ?
+is the question mark, a readline key spelling such as
+.B \\eh
+is that key instead, and
+.B off
+binds nothing. The system-wide script is sourced before
+.IR ~/.bashrc :
+set the variable there and source the script again.
 .\" BEGIN GENERATED: command completion
 .RS
 .PP
