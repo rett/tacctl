@@ -117,9 +117,14 @@ A pasted Junos plan region also ends in `commit confirmed` (5 minutes by
 default); you type `commit` yourself after the check.
 
 > **`PENDING until <time>`** means tacctl could not read the device after
-> the commit. **Type nothing on that device until the time passes.** Any
-> `commit` would confirm the change. The next apply or `--check` settles
-> the record.
+> the commit. **Type nothing on that device until the time passes** (the
+> device's own clock, in the zone it prints). Any `commit` would confirm the
+> change. The next apply or `--check` settles the record.
+
+On a virtual chassis, two routing engines or a cluster, the apply expects
+the check and the commits to answer for every member `show version` lists,
+and fails the step when one does not ([Engineer Guide](engineer-guide-device-changes.md)
+§5.1).
 
 ### 3.3 Other Junos points
 
