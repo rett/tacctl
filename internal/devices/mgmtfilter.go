@@ -48,8 +48,9 @@ type strictTerm struct {
 // discard must accept them) and the
 // service terms (the entries that have services, grouped by service in the
 // order the canonical entry lists them). Nothing when the ACL has no IPv4
-// entry: no block is rendered then, and the server's address alone would be
-// one that locks everybody else out. An entry whose network is already a
+// entry, or none that permits ssh (a plain entry, or one with tcp/22): no
+// block is rendered then, as in the ssh-only mode (mgmtPermits), because the
+// server's address alone would be one that locks everybody else out. An entry whose network is already a
 // source of permit-mgmt (the server's /32 or a plain entry of the same
 // network) adds nothing: that source accepts everything.
 func (d Data) mgmtStrict(auth string) (plain []string, terms []strictTerm) {
@@ -61,7 +62,7 @@ func (d Data) mgmtStrict(auth string) (plain []string, terms []strictTerm) {
 		}
 		entries = append(entries, e)
 	}
-	if len(entries) == 0 {
+	if len(entries) == 0 || !slices.ContainsFunc(entries, mgmtacl.Entry.AllowsSSH) {
 		return nil, nil
 	}
 	if srv := cidr.Host32(d.source()); srv != "" {
@@ -190,6 +191,19 @@ func strictHeader(scope string) string {
 		"# These 'set firewall' lines define the filter in the candidate config.\n" +
 		"# Activate it by uncommenting the 'set interfaces lo0 …' line below\n" +
 		"# after reviewing.\n"
+}
+
+// strictNoSSH is the comment of the strict mode when the list has IPv4 entries
+// and none of them permits ssh: what each permits, and why no filter is
+// rendered.
+func (d Data) strictNoSSH() string {
+	var b strings.Builder
+	for _, e := range d.mgmtEntries() {
+		b.WriteString("# entry " + e.text + " permits " + e.why + " only\n")
+	}
+	return b.String() + "# no entry of the mgmt-acl list permits ssh (tcp/22): the strict filter would let only the tacctl server in,\n" +
+		"# so none is rendered. Configure with 'tacctl config mgmt-acl add <cidr>' on the tacctl server\n" +
+		"# to emit a deny-by-default lo0 firewall filter here (mgmt-acl mode strict)."
 }
 
 // strictEmpty is the comment of the strict mode when the list has no entry

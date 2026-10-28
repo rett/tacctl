@@ -242,6 +242,9 @@ func JuniperVars(req Request, d Data) map[string]string {
 		"# to emit a source-restricted lo0 firewall filter here."
 	if strict {
 		mgmt = strictEmpty()
+		if len(d.mgmtEntries()) > 0 {
+			mgmt = d.strictNoSSH()
+		}
 	}
 	if skipped.Len() > 0 {
 		mgmt = skipped.String() + "# no entry of the mgmt-acl list permits ssh (tcp/22) — configure with 'tacctl config mgmt-acl add <cidr>' on the tacctl server\n" +

@@ -84,7 +84,9 @@ everything from its source. An entry for a network that already heads
 adds nothing, because that source accepts everything. A source that has
 services needs `tcp/22` among them for ssh and `tcp/830` for NETCONF. IPv6
 entries are skipped (the filter is family inet), and a list with no IPv4 entry
-renders no filter in either mode.
+that permits ssh (a plain entry, or one with `tcp/22`) renders no filter in
+either mode: the server's address alone would let only the server in. The
+walkthrough then says what each entry permits and why there is no filter.
 
 The walkthrough keeps the `set interfaces lo0 ... filter input` line
 commented and never emits it. Once the filter is applied to lo0, these stop

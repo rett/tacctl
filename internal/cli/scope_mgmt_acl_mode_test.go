@@ -49,6 +49,19 @@ func TestScopeMgmtACLModeShowsAndSets(t *testing.T) {
 	if strings.Contains(out, "The permit list is empty") {
 		t.Errorf("empty-list line with a list:\n%s", out)
 	}
+	// a list none of whose entries permits ssh renders no filter: the setter says so
+	sb.run("y\n", []string{"scope", "mgmt-acl", "lab", "clear"})
+	sb.run("", []string{"scope", "mgmt-acl", "lab", "add", "198.51.100.0/24:udp/161"})
+	mode("ssh-only")
+	out = mode("strict")
+	if !strings.Contains(out, "No IPv4 entry of the permit list permits ssh") || strings.Contains(out, "The permit list is empty") {
+		t.Errorf("no ssh entry:\n%s", out)
+	}
+	sb.run("", []string{"scope", "mgmt-acl", "lab", "add", "10.0.0.0/8"})
+	mode("ssh-only")
+	if out = mode("strict"); strings.Contains(out, "No IPv4 entry of the permit list permits ssh") {
+		t.Errorf("a plain entry permits ssh:\n%s", out)
+	}
 	// the same mode again changes nothing
 	before := sb.overrides()
 	out = mode("strict")

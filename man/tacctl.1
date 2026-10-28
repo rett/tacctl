@@ -6072,7 +6072,8 @@ server the device needs to the permit list first, keep a console session open
 when the filter is applied, and commit with
 .BR "commit confirmed" .
 The lo0 application stays a comment in the walkthrough. A list with no IPv4
-entry renders no filter in either mode. Setting
+entry that permits ssh (a plain entry, or one with tcp/22) renders no filter in
+either mode, and the walkthrough says why. Setting
 .B ssh-only
 removes the key (only
 .B strict

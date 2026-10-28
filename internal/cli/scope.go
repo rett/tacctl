@@ -2694,6 +2694,10 @@ func (inv *invocation) scopeMgmtACLMode(scope, value string) error {
 			inv.echo("  The permit list is empty, so no filter is rendered until it has an entry:")
 			inv.echo("    tacctl scope mgmt-acl " + scope + " add <cidr>")
 			inv.echo("")
+		} else if !mgmtListPermitsSSH(inv.readMgmtACLCIDRs(scope)) {
+			inv.echo("  No IPv4 entry of the permit list permits ssh (a plain entry, or one with tcp/22), so no filter is")
+			inv.echo("  rendered until one does: the server's address alone would lock everybody else out.")
+			inv.echo("")
 		}
 		inv.echo("  Keep a console session open when you apply it, and use commit confirmed.")
 	} else {
@@ -2706,6 +2710,17 @@ func (inv *invocation) scopeMgmtACLMode(scope, value string) error {
 	inv.echo("  'tacctl device config plan' lists the change for a pulled device.")
 	inv.echo("")
 	return nil
+}
+
+// mgmtListPermitsSSH reports whether an IPv4 entry of the permit list permits
+// ssh: a plain entry, or one with tcp/22 (what both Junos filters need to render).
+func mgmtListPermitsSSH(list []string) bool {
+	for _, raw := range list {
+		if e, err := mgmtacl.ParseEntry(raw); err == nil && !e.IPv6() && e.AllowsSSH() {
+			return true
+		}
+	}
+	return false
 }
 
 // mgmtStrictStops is what the strict filter drops, as the shell prints it

@@ -28,6 +28,7 @@ func TestStrictFilterGoldens(t *testing.T) {
 	v2c := SNMPInput{Version: "v2c", Community: "example-ro", Ranges: []string{"198.51.100.0/24"}}
 	lists := map[string][]string{
 		"plain":    {"10.0.0.0/8", "10.1.0.0/16"},
+		"nossh":    {"198.51.100.0/24:udp/161", "203.0.113.0/24:icmp"},
 		"services": {"10.0.0.0/8", "198.51.100.0/24:tcp/22,udp/161-162", "203.0.113.0/24:tcp/22,icmp", "192.0.2.64/26:tcp/*,udp/123", "2001:db8::/64"},
 	}
 	for _, c := range []struct {
@@ -41,6 +42,8 @@ func TestStrictFilterGoldens(t *testing.T) {
 		{"strict.services", lists["services"], SNMPInput{}, true},
 		{"strict.services-snmp", lists["services"], v2c, true},
 		{"strict.empty", nil, SNMPInput{}, true},
+		{"strict.no-ssh", lists["nossh"], SNMPInput{}, true},
+		{"sshonly.no-ssh", lists["nossh"], SNMPInput{}, false},
 		{"sshonly.services-snmp", lists["services"], v2c, false},
 	} {
 		d := mgmtData(t, "192.0.2.1", "", c.list, c.snmp)
@@ -210,6 +213,21 @@ func TestStrictFilterWithoutAServerOrPlainEntries(t *testing.T) {
 	got = mgmtBlock(strictData(t, "192.0.2.1", "", []string{"198.51.100.0/24:tcp/22"}, SNMPInput{}))
 	if !strings.Contains(got, "permit-mgmt from source-address 192.0.2.1/32\n") || !strings.Contains(got, "permit-tcp-22 from source-address 198.51.100.0/24\n") {
 		t.Errorf("services only:\n%s", got)
+	}
+	// a list none of whose entries permits ssh renders no filter, as in ssh-only:
+	// the server's address alone would lock everybody else out
+	for _, list := range [][]string{{"198.51.100.0/24:udp/161"}, {"198.51.100.0/24:udp/161", "203.0.113.0/24:icmp,tcp/443"}} {
+		got = mgmtBlock(strictData(t, "192.0.2.1", "", list, SNMPInput{}))
+		if strings.Contains(got, "\nset ") || strings.HasPrefix(got, "set ") || !strings.Contains(got, "no entry of the mgmt-acl list permits ssh (tcp/22)") ||
+			!strings.Contains(got, "# entry 198.51.100.0/24:udp/161 permits udp/161 only") {
+			t.Errorf("no ssh in %v:\n%s", list, got)
+		}
+	}
+	// one entry with tcp/22 is enough to render it, and the others stay
+	got = mgmtBlock(strictData(t, "192.0.2.1", "", []string{"198.51.100.0/24:udp/161", "203.0.113.0/24:tcp/22"}, SNMPInput{}))
+	if !strings.Contains(got, "permit-tcp-22 from source-address 203.0.113.0/24\n") || !strings.Contains(got, "permit-udp-161 from source-address 198.51.100.0/24\n") ||
+		strings.Contains(got, "no entry of the mgmt-acl list permits ssh") {
+		t.Errorf("one entry with tcp/22:\n%s", got)
 	}
 	got = mgmtBlock(strictData(t, "192.0.2.1", "", []string{"2001:db8::/64"}, SNMPInput{}))
 	if strings.Contains(got, "\nset ") || !strings.Contains(got, "mgmt-acl empty") {
