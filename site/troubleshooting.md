@@ -143,14 +143,6 @@ retry, run `tacctl log tail 50`, then set the log level back.
 Exit statuses, including 3 (hand edit) and the sudo codes 126 and 127, are
 explained in [Exit Codes](exit-codes.md).
 
----|---|
-| 0 | Done, or nothing to do |
-| 1 | Refused or failed. The reason is on standard error. |
-| 2 | Wrong arguments, or with `--exit-code`: a device needs a change |
-| 3 | Refused to overwrite a hand edit |
-| 126 / 127 | sudo problems |
-| 130 | Interrupted |
-
 ---
 
 *See also:* [Connecting to Devices](connecting-to-devices.md) ·
