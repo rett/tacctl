@@ -57,9 +57,12 @@ package lifecycle
 //	console.yaml           0.2.3's parser rejects settings.password_cache;
 //	                       removed (console.Rollback). 'tiers.engineer' and
 //	                       'settings.space_completion' are 0.2.3's own.
-//	                       Every target's parser rejects the two settings
-//	                       0.2.20 added, settings.color and a list_max of -1
-//	                       (never ask): removed, and list_max written as 1000
+//	                       Every target's parser rejects the settings 0.2.20
+//	                       added, settings.color, settings.system_shell_users
+//	                       (the system shell of single users),
+//	                       settings.password_cache_users (the users who turned
+//	                       the password cache on) and a list_max of -1 (never
+//	                       ask): removed, and list_max written as 1000
 //	                       (console.Keys0220; console.RollbackSince0220 for
 //	                       the targets that have the cache).
 //	devices.yaml           0.2.3's parser rejects the per-device 'snmp:' map
@@ -103,9 +106,11 @@ package lifecycle
 // records (all as 0.2.3 has them).
 //
 // Every target is refused while the store has a user name with a period
-// (0.2.20) or console.yaml has an override under such a name
-// (DottedUsersRefusal): the targets read letters, digits, '_' and '-' only,
-// and fail on every store command with "user '<name>': invalid name".
+// (0.2.20; DottedUsersRefusal): the targets read letters, digits, '_' and '-'
+// only, and fail on every store command with "user '<name>': invalid name".
+// An override under such a name in console.yaml (the console switches of a
+// user, ignored since 0.2.20) is taken out of the file by the plan; the other
+// 'tiers' and 'users' entries stay, for the older release reads them.
 //
 // Every target is refused while a record of devices-config.json says an
 // apply of 'device config apply' is pending or unknown (PendingRefusal): the
@@ -518,12 +523,13 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	if ls := in.Conf.Lockdowns(); len(ls) > 0 {
 		return nil, LockdownRefusal(ls)
 	}
-	// A user name with a period (0.2.20) is refused for every target: no
-	// release a rollback goes to reads it (DottedUsersRefusal).
-	if inStore, inConsole, err := DottedUsers(pa, in.HasStore); err != nil {
+	// A store user name with a period (0.2.20) is refused for every target:
+	// no release a rollback goes to reads it (DottedUsersRefusal). An
+	// override of such a name in console.yaml is taken out by the plan.
+	if inStore, err := DottedUsers(pa, in.HasStore); err != nil {
 		return nil, err
-	} else if len(inStore)+len(inConsole) > 0 {
-		return nil, DottedUsersRefusal(pa, inStore, inConsole)
+	} else if len(inStore) > 0 {
+		return nil, DottedUsersRefusal(inStore)
 	}
 	// The required password change (0.2.20) is a key every older release
 	// refuses in the store: it is removed for every target, after the
@@ -609,7 +615,7 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 		p.Steps = append(p.Steps, p.hostsStep())
 	}
 
-	p.Warnings = append(p.warnings(), p.mgmtModeWarning(RollbackTarget)...)
+	p.Warnings = append(append(p.warnings(), p.mgmtModeWarning(RollbackTarget)...), p.consoleWideningWarning()...)
 	p.addPasswordChange()
 	p.Notes = p.notes()
 	return p, nil
@@ -714,7 +720,7 @@ func (p *RollbackPlan) addConsoleStep() {
 	}
 	cf := p.in.Paths.ConsoleFile
 	s := RollbackStep{Title: cf + ": take out the settings " + p.target() + " does not know", Todo: true}
-	s.Lines = append(p.consoleChangeLines(), "(the console settings of 0.2.20: "+p.target()+"'s parser rejects the colour setting and a list_max of -1; every other setting is kept)")
+	s.Lines = append(p.consoleChangeLines(), "("+p.target()+"'s parser rejects what 0.2.20 added to console.yaml (the colour setting, the system shell and the password cache of single users, a list_max of -1) and an override of a user name with a period; everything else is kept)")
 	at := len(p.Steps)
 	for i := range p.Steps {
 		if p.Steps[i].Title == "leave every other file untouched" {

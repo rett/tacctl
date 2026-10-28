@@ -545,3 +545,46 @@ func TestCompleteThisReleasesWords(t *testing.T) {
 		}
 	}
 }
+
+// Completion of 'console system-shell': the tiers, 'user' and 'path'; then a
+// file after path, the users after user, else enable|disable; after a user
+// enable|disable|clear. After and Cond nest for it.
+func TestConsoleSystemShellCompletion(t *testing.T) {
+	for _, c := range []struct {
+		words, want, not []string
+	}{
+		{[]string{"console", "system-shell", ""}, []string{"readonly", "operator", "engineer", "superuser", "user", "path"}, []string{"enable"}},
+		{[]string{"console", "system-shell", "operator", ""}, []string{"enable", "disable"}, []string{"alice", "clear"}},
+		{[]string{"console", "system-shell", "user", ""}, []string{"alice", "bob"}, []string{"enable", "readonly"}},
+		{[]string{"console", "system-shell", "user", "bob", ""}, []string{"enable", "disable", "clear"}, []string{"alice"}},
+		{[]string{"console", "system-shell", "path", ""}, nil, []string{"enable", "alice", "readonly"}},
+	} {
+		got, _ := completeWords(t, liveNames, c.words...)
+		for _, w := range c.want {
+			if !slices.Contains(got, w) {
+				t.Errorf("%q: %q lacks %q", c.words, got, w)
+			}
+		}
+		for _, w := range c.not {
+			if slices.Contains(got, w) {
+				t.Errorf("%q: %q offers %q", c.words, got, w)
+			}
+		}
+	}
+	for _, k := range []struct {
+		kind  string
+		words []string
+		want  string
+	}{
+		{Cond("path", KindFile, Cond("user", KindUsers, "enable|disable")), []string{"path"}, KindFile},
+		{Cond("path", KindFile, Cond("user", KindUsers, "enable|disable")), []string{"user"}, KindUsers},
+		{Cond("path", KindFile, Cond("user", KindUsers, "enable|disable")), []string{"operator"}, "enable|disable"},
+		{After("user", "enable|disable|clear"), []string{"user", "bob"}, "enable|disable|clear"},
+		{After("user", "enable|disable|clear"), []string{"operator"}, ""},
+		{"readonly|operator", []string{"x"}, "readonly|operator"},
+	} {
+		if got := resolveKind(k.kind, k.words); got != k.want {
+			t.Errorf("resolveKind(%q, %q) = %q, want %q", k.kind, k.words, got, k.want)
+		}
+	}
+}

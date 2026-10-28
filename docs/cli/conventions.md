@@ -82,7 +82,7 @@ tacctl ssh <name|address> [-p port] [-X|-Y] [-g] [-L|-R|-D spec]... [-- ssh args
 
 tacctl console <subcommand>
 
-    Login console: tiers, per-user overrides, settings
+    Login console: its settings
 
 tacctl backend <subcommand>
 

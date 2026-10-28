@@ -241,17 +241,37 @@ or
 .B "device config apply <name> \-\-check"
 or
 .B "device config forget <name>"
-settles it) and while the store has a user whose name has a period, or
-console.yaml an override under one (no target reads such a name: the refusal
-lists each, with
+settles it) and while the store has a user whose name has a period (no
+target reads such a name: the refusal lists each, with
 .B "user rename <name> <new\-name>"
-or
-.B "console user <name> clear"
-as the way out, and changes nothing). Every target also takes out of
+as the way out, and changes nothing; an override under such a name in the
+ignored
+.B users
+mapping of console.yaml does not stop it, the rollback takes that entry out).
+The
+.B tiers
+and
+.B users
+mappings of console.yaml that this release ignores stay in the file, and the
+release a rollback goes to reads them as it always did: a user or a tier
+switched off there gets a plain shell again, and the password cache is on again
+for every user of a tier that is allowed it, so the plan lists each user who
+would gain a system shell or the cache, with the reason, as a warning that
+.B \-\-apply
+refuses without
+.BR \-\-yes .
+Every target also takes out of
 .I console.yaml
-the two settings of 0.2.20 that no older release reads:
-.B settings.color
-is removed and a
+the settings of 0.2.20 that no older release reads:
+.BR settings.color ,
+.B settings.system_shell_users
+(the system shell of single users; the tiers' list
+.B settings.system_shell_tiers
+stays) and
+.B settings.password_cache_users
+(the users who turned the password cache on; the cache's tiers and lifetimes in
+.B settings.password_cache
+stay, for the releases that have them) are removed and a
 .B settings.list_max
 of \-1 (never ask) is written as 1000, with every other setting kept and a
 snapshot first.
@@ -812,7 +832,17 @@ Do not require the user to change the password at the first login to this server
 .\" END GENERATED: command user add
 .TP
 .BI "user remove " name
-Remove a user after confirmation.
+Remove a user after confirmation. The user's
+.B "console system\-shell user"
+and
+.B "console password\-cache"
+settings, if any, are dropped from
+.I console.yaml
+and the command says so. It is refused, with nothing changed, while
+.I console.yaml
+cannot be read, so that no setting is left for the next user of the name
+.RB ( "user add" " and " "user rename"
+do the same).
 .\" BEGIN GENERATED: command user remove
 .RS
 .PP
@@ -893,7 +923,9 @@ Requires: \fBsuperuser\fR.
 .\" END GENERATED: command user enable
 .TP
 .BI "user rename " "old new"
-Rename a user. The new name is lower case, and may hold periods as for
+Rename a user. The user's
+.B "console system\-shell user"
+setting moves to the new name, and the command says so. The new name is lower case, and may hold periods as for
 .B user add
 (but see below); changing only the spelling
 .RB ( "user rename Alice alice" )
@@ -7021,9 +7053,9 @@ lines at the top, numbered as the editor's window is; those lines are removed
 before any text is read and never reach the file. An editor that exits
 non\-zero, an empty text, a text that states nothing and an edit that changes
 nothing write nothing. In the login console an editor can start a shell, so
-an edit is open to the tiers of
-.B "console system\-shell tiers"
-(never the engineer), and a refusal is logged
+an edit is open to those who have the system shell
+.RB ( "console system\-shell" ;
+never the engineer), and a refusal is logged
 .BR "block edit DENY" .
 The editor has to stay in the foreground until the text is saved (a graphical
 editor needs its wait option, such as
@@ -11941,19 +11973,23 @@ The lockdowns that stand: scope, groups, since, how long, by whom, why, the user
 .SS Login console \fB(tacctl console)\fR
 The login console
 .RB ( tacctl\-console )
-is the login shell of tacctl users on the tacctl server: tacctl commands and
-ssh to registered devices, nothing else. It is on for every tier by default
-(the defaults apply while
+is the login shell of every tacctl user, of every tier, on the tacctl server:
+tacctl commands and ssh to registered devices, nothing else. There is no
+switch for it; local accounts that are not tacctl users are never touched. The
+settings are in
 .I /etc/tacctl/console.yaml
-is absent); local accounts that are not tacctl users are never touched. These
+(the defaults apply while it is absent), and the
+.B tiers
+and
+.B users
+mappings of a file written before 0.2.20 are ignored and left in place. These
 commands change
 .I console.yaml
 only, after a snapshot (mode 0600; backup diff and restore include it), and
 never an account or sshd: the accounts' login shells and sshd's drop-in follow
 it when the provisioning of this server applies it
 .RB ( "host sync" " of the host enrolled with " \-\-local ).
-Every change to the tier switches, a user override, agent forwarding or the
-forwarding tiers prints
+Every change to agent forwarding or the forwarding settings prints
 .BI "Apply to the accounts: tacctl host sync " name\fR.
 The idle timeout, the ssh escape, the space completion, the colour, the list
 threshold, the system shell and the password cache are read by each console session when it starts; open
@@ -11965,16 +12001,11 @@ With no subcommand (or with
 prints a usage summary and exits 0.
 .TP
 .B console show
-The tiers' switches, the settings, and for each user of the scope of the host
-enrolled with
+The settings, and for each user of the scope of the host enrolled with
 .B \-\-local
 the tier, the effective shell
-.RB ( console
-or
-.BR bash )
-and why
-.RI ( "user override" ", " "tier readonly" ", " "tier readonly disabled" ).
-Then the state of the server's pieces: the
+.RB ( console )
+and why. Then the state of the server's pieces: the
 .I /usr/local/bin/tacctl\-console
 symlink, the
 .I /etc/shells
@@ -11997,38 +12028,6 @@ says so and lists no users.
 Requires: \fBoperator\fR.
 .RE
 .\" END GENERATED: command console show
-.TP
-.BI "console tiers " "[ " tier " " "{ enable | disable }" " ]"
-Show the switches, or one, or set the console for a tier
-.RB ( readonly ,
-.BR operator ,
-.BR engineer ,
-.BR superuser ).
-The engineer tier has the console or no login on the server, so its switch
-is always on: disabling it is refused, and a stored
-.B disable
-is listed as ignored. An engineer whose console cannot be provisioned gets
-.I /usr/sbin/nologin
-as login shell, and so does an account whose tier is none.
-.\" BEGIN GENERATED: command console tiers
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command console tiers
-.TP
-.BI "console user " "name " "[ { enable | disable | clear } ]"
-Show or set one user's override, which wins over the tier's switch;
-.B clear
-returns the user to the tier rule. The user must exist in the store to be
-given an override. An override never applies to an engineer: disabling one is
-refused.
-.\" BEGIN GENERATED: command console user
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command console user
 .TP
 .BI "console idle\-timeout " "[ " min " ]"
 Minutes idle at the prompt before the session ends, 0 to 1440 (0: never;
@@ -12194,8 +12193,52 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command console list-max
 .TP
+.BI "console password\-cache " "[ { on | off } ]"
+The caller's own choice of keeping the network password in memory for the
+session, off until the user turns it on; it is the permission of the tier
+.RB ( "console password\-cache tiers" )
+and this choice together that make the cache active in a session. With no
+argument it prints the tiers, the lifetimes, whether the caller's tier is
+allowed and the caller's setting. At the prompt of the shell and the console
+the same words are handled by the session itself:
+.B on
+saves the choice, for every later session, and starts the cache in the running
+one at once;
+.B off
+saves it, forgets a cached password
+.RB ( "password forgotten (console password\-cache off)" )
+and stops caching; with no argument it also says whether a password is cached
+now. When the tier is not allowed,
+.B on
+is refused in one sentence that names the fix and saves nothing. The words take no
+name: the root side takes the user from the one
+.BR sudo (8)
+was run by, so nobody sets another user's choice. Every user of the operator
+tier and up may run these three forms (the sudoers row names them exactly); the
+other forms are the superuser's. The choice is stored in
+.B settings.password_cache_users
+and logged as
+.BR "console set key=password\-cache item=user:" \fIname\fR.
+.B "user rename"
+moves it and
+.B "user remove"
+drops it, as for the system shell of a user. A plain
+.B "tacctl shell \-\-password\-cache"
+is an explicit request and needs only the permission of the tier.
+.\" BEGIN GENERATED: command console password-cache
+.RS
+.PP
+Requires: \fBoperator\fR. Every user of the operator tier and up may run it with no argument (the state) and with on or off (their own choice, which needs their tier to be allowed); tiers, idle, max and user need the superuser tier.
+.RE
+.\" END GENERATED: command console password-cache
+.TP
+.BI "console password\-cache user " "[ " name " [ clear ] ]"
+Show who turned the cache on (each with the tier), a user's setting, or clear it
+so that the cache is off for that user; a session the user has open keeps its
+cache until it ends or they turn it off. The superuser's.
+.TP
 .BI "console password\-cache tiers " "[ " csv "|none ]"
-Show or set the tiers whose shell and console sessions may keep the user's
+Show or set the tiers that are allowed to keep the user's
 network password in memory for the session, so that a device pull, a diff and
 the
 .B ssh
@@ -12205,7 +12248,8 @@ lines after it ask once
 .BR superuser ;
 default
 .BR none :
-off for every tier). The password lives only in the memory of the session's own
+off for every tier). A listed tier is only allowed: each user turns the cache
+on for themselves. The password lives only in the memory of the session's own
 process, in a locked page of a process marked not dumpable, and in no file, log,
 argument or environment; the agent is shut between lines. It is used for the
 lines that run
@@ -12239,12 +12283,6 @@ changes the password, when the clock goes backwards, and with the shell's word
 Root can read any process: the cache
 protects the password against other users and against its landing in files and
 logs.
-.\" BEGIN GENERATED: command console password-cache
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command console password-cache
 .TP
 .BI "console password\-cache idle " "[ " min " ]"
 Show or set how long a cached password lives without a use, in minutes (1 to
@@ -12267,19 +12305,85 @@ Requires: \fBoperator\fR.
 .RE
 .\" END GENERATED: command console forget
 .TP
-.BI "console system\-shell tiers " "[ " csv "|none ]"
-The tiers that may start their system shell from the console (default
-.BR superuser ).
-The same tiers may open an editor from the console
+.BI "console system\-shell " "[ " tier " { enable | disable } ]"
+Show or set who may start a system shell from the console. With no argument it
+lists each tier
+.RB ( readonly ", " operator ", " engineer ", " superuser )
+as
+.B enabled
+or
+.BR disabled ,
+then the users that have a setting of their own, with their tier. The
+superuser tier is
+.B "enabled (always)"
+and cannot be disabled; readonly and operator are disabled by default; the
+engineer tier is
+.B "disabled (never)"
+and
+.B enable
+is refused for it (a shell on the server would reach its secrets). A tier
+name alone prints that tier's state. Setting a tier writes
+.B settings.system_shell_tiers
+(the superuser tier is always in the list). Those who have the system shell
+may also open an editor from the console
 .RB ( "scope block ... edit|adopt" ,
 .BR "device block ... edit|adopt" ):
-an editor can start a shell.
+an editor can start a shell. Only a superuser sets it, for a tier, a user or
+the path; an operator and an engineer may read each form (no argument, a tier
+alone,
+.BR "user " \fIname\fR
+alone and
+.BR path ),
+and every form that sets something is refused for them (logged as a tier
+denial). The change
+is logged as
+.BR "console set key=system\-shell item=" \fItier\fR
+at
+.BR auth.notice .
+It applies from the next console login.
 .\" BEGIN GENERATED: command console system-shell
 .RS
 .PP
-Requires: \fBsuperuser\fR.
+Requires: \fBoperator\fR. An operator may read it (no argument, a tier, user <name>, path); setting it for a tier or a user, and setting the path, need the superuser tier.
 .RE
 .\" END GENERATED: command console system-shell
+.TP
+.BI "console system\-shell user " "name " "[ { enable | disable | clear } ]"
+Show or set the system shell for one user, over the tier's setting in both
+directions: enabled, it gives a user of a tier that has none the system shell;
+disabled, it takes it from a user of a tier that has it. Without a value it
+prints the user's effective state and why
+.RB ( "user setting" ", " "tier operator" ", " always ", " never ).
+.B clear
+removes the user's setting, and the tier decides again. The user must exist.
+An enable is for the tier the user has when it is set
+.RB ( readonly
+or
+.BR operator ):
+after a move to another tier it gives nothing and is listed as
+.BR "stale: set for" " \fItier\fR" ", now " \fItier\fR
+until it is set again (it counts again if the user returns to that tier); a
+disable holds in any tier.
+A superuser always has the system shell: disabling it is refused, and
+enabling it stores nothing. An engineer never has it: enabling it is refused
+(with the reason of the tier), and disabling stores nothing. The settings are
+kept in
+.B settings.system_shell_users
+and are logged as
+.BR "console set key=system\-shell item=user:" \fIname\fR.
+.B "user rename"
+moves the setting to the new name and
+.B "user remove"
+drops it (both say so and are logged as
+.BR "console set" ),
+so a user created later under the name does not inherit it, and neither does
+.B "user add"
+when a hand\-edited entry of the name is left. An entry for a name that is no
+user is not honoured; it is listed with
+.BR "no such user" ,
+and
+.B clear
+removes it.
 .TP
 .BI "console system\-shell path " "[ " path " ]"
 The system shell, default
@@ -12551,9 +12655,10 @@ as the user, without arguments, with the console's environment and
 .BR SHELL= \fIpath\fR;
 the console's idle timer does not run meanwhile, and sshd's drop-in still
 governs the connection. It is open to the tiers
-.B "console system\-shell tiers"
-names (default: superusers only); otherwise it is refused with
-.IR "system-shell is not available for the tier tier on this console. An administrator enables it with: tacctl console system-shell tiers ..."
+.B "console system\-shell"
+gives it (superusers always; the others by their tier or by a setting of their
+own); otherwise it is refused with
+.IR "system-shell is not available for the tier tier on this console. An administrator enables it with: tacctl console system-shell user name enable (or tier enable for the tier)"
 (status 1). In a batch or through
 .B \-c
 it is refused with status 126.
@@ -12722,7 +12827,7 @@ _console\-policy, \-\-version, \-v, hash, completion
 log tail, log search, log failures, log accounting, config validate,
 backup list, device check, device scan, device discover,
 device export, device config, console show, console check,
-console forget
+console system\-shell, console password\-cache, console forget
 .TP
 .B engineer
 device add, device remove, device rename, device address,
@@ -12746,6 +12851,12 @@ An engineer lists the holds of the devices of their own scopes only; hold and re
 .TP
 .B config cisco
 An engineer may print the walkthrough and read source\-interface for a scope of their own; setting or unsetting source\-interface needs the superuser tier.
+.TP
+.B console password\-cache
+Every user of the operator tier and up may run it with no argument (the state) and with on or off (their own choice, which needs their tier to be allowed); tiers, idle, max and user need the superuser tier.
+.TP
+.B console system\-shell
+An operator may read it (no argument, a tier, user <name>, path); setting it for a tier or a user, and setting the path, need the superuser tier.
 .TP
 .B device block
 An engineer may read the configuration blocks of a device of their own scope (list, show [\-\-effective] [\-\-reveal], check); set, remove, edit and adopt need the superuser tier.
@@ -12882,8 +12993,8 @@ scope radius\-group, scope secret, scope snmp, scope staging,
 scope tacacs\-group, scope vendor\-attrs, user scope
 .TP
 .B "mixed, auth.notice"
-config audit\-strict, config sudoers, console system\-shell,
-console tiers, console user, rollback, store import
+config audit\-strict, config sudoers, console system\-shell, rollback,
+store import
 .\" END GENERATED: audit-classes
 .PP
 The fields, in the order written:
@@ -14462,24 +14573,21 @@ The rate limit of an enabled NETCONF service (1 to 250); unset: none stated. Set
 .\" END GENERATED: config-keys
 .SS console.yaml
 .I /etc/tacctl/console.yaml
-holds the login console's switches and settings (see
+holds the login console's settings (see
 .BR "tacctl console" ).
 Edit it with
 .BR "tacctl console" ;
-an absent file is the defaults, and a key that is not in this list is refused.
+an absent file is the defaults, and a key that is not in this list is refused
+(the
+.B tiers
+and
+.B users
+mappings that releases before 0.2.20 wrote are read and ignored).
 .\" BEGIN GENERATED: console-keys
 .TP
 .B version
 integer. Default: 1.
 The format of the file; this release reads and writes 1.
-.TP
-.B tiers.<tier>
-enable or disable. Default: enable.
-Whether the tier gets the console as its login shell on this server (readonly, operator, engineer, superuser). Set with \fBtacctl console tiers\fR.
-.TP
-.B users.<name>
-enable or disable. Default: none (no override).
-A user's override of the tier's switch; no entry: the tier decides. Set with \fBtacctl console user\fR.
 .TP
 .B settings.idle_timeout
 integer, 0 to 1440 minutes (0: none). Default: 30.
@@ -14499,7 +14607,7 @@ The program the console's system-shell word starts. Set with \fBtacctl console s
 .TP
 .B settings.system_shell_tiers
 list of tiers (not engineer). Default: [superuser].
-The tiers that may start the system shell. Set with \fBtacctl console system\-shell tiers\fR.
+The tiers that may start the system shell. The superuser tier always may, and is written into the list; engineer never. Set with \fBtacctl console system\-shell\fR.
 .TP
 .B settings.forwarding_tiers
 list of tiers (not engineer). Default: [superuser].
@@ -14520,6 +14628,10 @@ Whether a typed space at the console's prompt completes a fixed word, as on Juno
 .B settings.color
 true or false. Default: absent (auto).
 Whether the console's lists are in colour: true (on) or false (off). Written to the file only when set; a file without the key is auto, the terminal decides. Set with \fBtacctl console color\fR.
+.TP
+.B settings.system_shell_users
+mapping of user name to disable or enable:<tier>. Default: absent (no user has one).
+The users with a system-shell setting of their own, which wins over their tier's: enable:<tier> gives it to a user of a tier that has none, for as long as the user is in that tier (readonly or operator), and disable takes it from a user of a tier that has it. Written to the file only when a user has one. Set with \fBtacctl console system\-shell user\fR.
 .\" END GENERATED: console-keys
 .PP
 A mapping
@@ -14964,10 +15076,9 @@ A device's rename moves it and its removal deletes it; a new device, or a
 rename onto a name whose blocks are already on disk, is refused.
 .TP
 .I /etc/tacctl/console.yaml
-The login console's switches per tier, per-user overrides and settings (see
+The login console's settings (see
 .BR "CONFIGURATION KEYS" ).
-Mode 0600, root only; absent means the defaults (the console on for every
-tier). Edit it with
+Mode 0600, root only; absent means the defaults. Edit it with
 .BR "tacctl console" .
 Snapshots include it.
 .TP

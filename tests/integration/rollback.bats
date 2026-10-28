@@ -50,6 +50,9 @@ _state_024() {
     "$TACCTL_BIN_SCRIPT" device snmp sw1 port 2161 > /dev/null
     printf 'sw2-community\nsw2-community\n' | "$TACCTL_BIN_SCRIPT" device snmp sw2 community --stdin > /dev/null
     "$TACCTL_BIN_SCRIPT" console password-cache tiers engineer,superuser > /dev/null
+    # The console switches of a release before 0.2.20, still in the file: this
+    # release ignores and keeps them, and 0.2.3 reads them as it always did.
+    sed -i '0,/^version: 1$/s//version: 1\ntiers: {readonly: enable, operator: enable, engineer: enable, superuser: enable}/' "${TACCTL_STATE_DIR}/console.yaml"
     "$TACCTL_BIN_SCRIPT" config devices max-concurrency 16 > /dev/null
     "$TACCTL_BIN_SCRIPT" config devices timeout 120 > /dev/null
     mkdir -p "$TACCTL_VAR_LIB/device-config" "$(dirname "$TACCTL_TIER_SUDOERS_FILE")"

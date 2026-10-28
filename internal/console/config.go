@@ -3,8 +3,9 @@
 // which tacctl users get the console as their login shell on the tacctl
 // server and with what settings, and the policy read from it.
 //
-// An absent file is the defaults: the console on for every tier, the system
-// shell for superusers only. The file is written like devices.yaml: under
+// Every managed user of every tier has the console as login shell; the file
+// holds no switch for that. An absent file is the defaults: the system shell
+// for superusers only. The file is written like devices.yaml: under
 // an exclusive lock, through a temporary file (0600, fsync, rename) after
 // the text has been read back with the reader it is read with.
 package console
@@ -67,9 +68,7 @@ const (
 // ColorWords are the words of 'console color'.
 var ColorWords = []string{ColorAuto, ColorOn, ColorOff}
 
-// Tiers are the tiers that have a console switch, lowest first. A file
-// written before the engineer tier (0.2.2) has no switch for it: it is on,
-// as for every tier by default.
+// Tiers are the tiers, lowest first.
 var Tiers = []tier.Tier{tier.Readonly, tier.Operator, tier.Engineer, tier.Superuser}
 
 // Closed are the tiers neither system-shell nor forwarding is ever opened
@@ -87,11 +86,15 @@ const (
 
 // File is console.yaml, version 1.
 type File struct {
-	// TierOn is the console's switch per tier.
-	TierOn map[tier.Tier]bool
-	// Users are the per-user overrides: true forces the console, false the
-	// system shell, whatever the tier says. Absent: the tier decides.
-	Users map[string]bool
+	// IgnoredTiers and IgnoredUsers are the 'tiers' and 'users' mappings of
+	// a file written before 0.2.20, which had a console switch per tier and
+	// per user. Every managed user has the console now, so nothing reads
+	// them: they are kept as they were read and written back unchanged
+	// when the file is rewritten (an older release, after a rollback, reads
+	// them as it always did), and a file that never had them does not get
+	// them. Only the tiers and users the file names are in the maps.
+	IgnoredTiers map[tier.Tier]bool
+	IgnoredUsers map[string]bool
 	// Idle is the idle timeout in minutes (0: none).
 	Idle int
 	// AgentForwarding and SSHEscape are the opt-ins of the sshd drop-in and
@@ -99,8 +102,32 @@ type File struct {
 	AgentForwarding, SSHEscape bool
 	// SystemShell is the program the console's system-shell word starts.
 	SystemShell string
-	// SystemShellTiers are the tiers that may use it.
+	// SystemShellTiers are the tiers that may use it. The superuser tier
+	// always may, whatever the list says, and the Closed tiers never (the
+	// setter writes the superuser tier into the list so that an older
+	// release reads the same).
 	SystemShellTiers []tier.Tier
+	// SystemShellUsers are the users with a setting of their own (settings.
+	// system_shell_users): true gives the system shell to a user of a tier
+	// that has none, false takes it from a user of a tier that has it. It
+	// beats the tier's setting, but for the superuser tier (always) and the
+	// Closed tiers (never). An enable is valid for the tier the user had when
+	// it was set (SystemShellUserTiers): a user who moves to another tier has
+	// no access from it, and it is listed as stale until it is set again, so a
+	// demotion cannot leave a user with a shell the new tier does not give.
+	// Written only when it is not empty, as 'enable:<tier>' and 'disable'; an
+	// older release rejects the key, and the rollback removes it (Keys0220).
+	SystemShellUsers map[string]bool
+	// SystemShellUserTiers are the tiers (readonly or operator) the enables of
+	// SystemShellUsers were set for; a disable has none.
+	SystemShellUserTiers map[string]tier.Tier
+	// PasswordCacheUsers are the users who turned the password cache on for
+	// themselves (settings.password_cache_users, a map of user name to true):
+	// the tiers of PasswordCacheTiers are the permission, this is the user's
+	// choice, off until the user makes it. Only users who are on are stored.
+	// Written only when not empty; an older release rejects the key, and the
+	// rollback removes it (Keys0220).
+	PasswordCacheUsers map[string]bool
 	// ForwardingTiers are the tiers whose console logins may forward X11
 	// and TCP ports (sshd's drop-in, and the console's ssh to a device).
 	ForwardingTiers []tier.Tier
@@ -143,15 +170,18 @@ type File struct {
 // Defaults is the file that is not there.
 func Defaults() *File {
 	return &File{
-		TierOn:           map[tier.Tier]bool{tier.Readonly: true, tier.Operator: true, tier.Engineer: true, tier.Superuser: true},
-		Users:            map[string]bool{},
-		Idle:             DefaultIdle,
-		SystemShell:      DefaultSystemShell,
-		SystemShellTiers: []tier.Tier{tier.Superuser},
-		ForwardingTiers:  []tier.Tier{tier.Superuser},
-		ListMax:          DefaultListMax,
-		SpaceCompletion:  true,
-		Color:            ColorAuto,
+		IgnoredTiers:         map[tier.Tier]bool{},
+		IgnoredUsers:         map[string]bool{},
+		Idle:                 DefaultIdle,
+		SystemShell:          DefaultSystemShell,
+		SystemShellTiers:     []tier.Tier{tier.Superuser},
+		SystemShellUsers:     map[string]bool{},
+		SystemShellUserTiers: map[string]tier.Tier{},
+		PasswordCacheUsers:   map[string]bool{},
+		ForwardingTiers:      []tier.Tier{tier.Superuser},
+		ListMax:              DefaultListMax,
+		SpaceCompletion:      true,
+		Color:                ColorAuto,
 
 		PasswordCacheIdle: DefaultPasswordCacheIdle,
 		PasswordCacheMax:  DefaultPasswordCacheMax,
@@ -161,24 +191,113 @@ func Defaults() *File {
 // Clone is a deep copy.
 func (f *File) Clone() *File {
 	c := *f
-	c.TierOn = map[tier.Tier]bool{}
-	for k, v := range f.TierOn {
-		c.TierOn[k] = v
+	c.IgnoredTiers = map[tier.Tier]bool{}
+	for k, v := range f.IgnoredTiers {
+		c.IgnoredTiers[k] = v
 	}
-	c.Users = map[string]bool{}
-	for k, v := range f.Users {
-		c.Users[k] = v
+	c.IgnoredUsers = map[string]bool{}
+	for k, v := range f.IgnoredUsers {
+		c.IgnoredUsers[k] = v
 	}
 	c.SystemShellTiers = slices.Clone(f.SystemShellTiers)
+	c.SystemShellUsers = map[string]bool{}
+	for k, v := range f.SystemShellUsers {
+		c.SystemShellUsers[k] = v
+	}
+	c.SystemShellUserTiers = map[string]tier.Tier{}
+	for k, v := range f.SystemShellUserTiers {
+		c.SystemShellUserTiers[k] = v
+	}
+	c.PasswordCacheUsers = map[string]bool{}
+	for k, v := range f.PasswordCacheUsers {
+		c.PasswordCacheUsers[k] = v
+	}
 	c.ForwardingTiers = slices.Clone(f.ForwardingTiers)
 	c.PasswordCacheTiers = slices.Clone(f.PasswordCacheTiers)
 	return &c
 }
 
-// UserNames are the users with an override, by name.
-func (f *File) UserNames() []string {
-	out := make([]string, 0, len(f.Users))
-	for u := range f.Users {
+// SystemShellUserNames are the users with a system-shell setting of their
+// own, by name.
+func (f *File) SystemShellUserNames() []string {
+	out := make([]string, 0, len(f.SystemShellUsers))
+	for u := range f.SystemShellUsers {
+		out = append(out, u)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// TierHas reports whether the file's list gives tier t the system shell (the
+// superuser tier always has it, the Closed tiers never).
+func TierHas(f *File, t tier.Tier) bool {
+	return (&Policy{File: f}).SystemShell(t)
+}
+
+// SetSystemShell opens (on) or closes the system shell for tier t: the
+// superuser tier always has it and the Closed tiers never can. The list
+// that is written is the superuser tier and every tier that has it, lowest
+// first.
+func (f *File) SetSystemShell(t tier.Tier, on bool) error {
+	switch {
+	case slices.Contains(Closed, t) && on:
+		return fail(ClosedText(t, "system-shell"))
+	case t == tier.Superuser && !on:
+		return fail("The superuser tier always has the system shell; it cannot be disabled. Nothing was changed.")
+	}
+	var out []tier.Tier
+	for _, x := range Tiers {
+		if slices.Contains(Closed, x) {
+			continue
+		}
+		has := x == tier.Superuser || slices.Contains(f.SystemShellTiers, x)
+		if x == t {
+			has = on
+		}
+		if has {
+			out = append(out, x)
+		}
+	}
+	f.SystemShellTiers = out
+	return nil
+}
+
+// SetSystemShellUser gives the user a system-shell setting of their own: an
+// enable is recorded with the tier it is set for (readonly or operator; the
+// superuser and engineer tiers need none), a disable with none.
+func (f *File) SetSystemShellUser(name string, on bool, t tier.Tier) {
+	f.SystemShellUsers[name] = on
+	if on {
+		f.SystemShellUserTiers[name] = t
+	} else {
+		delete(f.SystemShellUserTiers, name)
+	}
+}
+
+// DropSystemShellUser removes the user's system-shell setting.
+func (f *File) DropSystemShellUser(name string) {
+	delete(f.SystemShellUsers, name)
+	delete(f.SystemShellUserTiers, name)
+}
+
+// PasswordCacheUserNames are the users who turned the password cache on, by
+// name.
+func (f *File) PasswordCacheUserNames() []string {
+	out := make([]string, 0, len(f.PasswordCacheUsers))
+	for u, on := range f.PasswordCacheUsers {
+		if on {
+			out = append(out, u)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// IgnoredUserNames are the users the file has an (ignored) override for, by
+// name.
+func (f *File) IgnoredUserNames() []string {
+	out := make([]string, 0, len(f.IgnoredUsers))
+	for u := range f.IgnoredUsers {
 		out = append(out, u)
 	}
 	slices.Sort(out)
@@ -289,6 +408,19 @@ func (f *File) validate() error {
 			seen[t] = true
 		}
 	}
+	for u, on := range f.SystemShellUsers {
+		if !names.MatchUser(u) {
+			return fail("settings.system_shell_users: invalid user name '" + u + "'.")
+		}
+		if t := f.SystemShellUserTiers[u]; on && t != tier.Readonly && t != tier.Operator {
+			return fail("settings.system_shell_users: '" + u + "' must be disable or enable:readonly|operator.")
+		}
+	}
+	for u := range f.PasswordCacheUsers {
+		if !names.MatchUser(u) {
+			return fail("settings.password_cache_users: invalid user name '" + u + "'.")
+		}
+	}
 	seenPC := map[tier.Tier]bool{}
 	for _, t := range f.PasswordCacheTiers {
 		if !slices.Contains(CacheTiers, t) || seenPC[t] {
@@ -302,12 +434,7 @@ func (f *File) validate() error {
 	if f.PasswordCacheMax < 1 || f.PasswordCacheMax > MaxPasswordCacheMax {
 		return fail("settings.password_cache.max must be 1-" + strconv.Itoa(MaxPasswordCacheMax) + " (hours).")
 	}
-	for _, t := range Tiers {
-		if _, ok := f.TierOn[t]; !ok {
-			return fail("tiers: '" + string(t) + "' is missing.")
-		}
-	}
-	for u := range f.Users {
+	for u := range f.IgnoredUsers {
 		if !names.MatchUser(u) {
 			return fail("users: invalid user name '" + u + "'.")
 		}
@@ -390,7 +517,7 @@ func parse(data []byte) (*File, error) {
 				if !known || !valid {
 					return nil, fail("tiers: unknown tier or value for '" + name + "' (readonly, operator, engineer, superuser; enable or disable).")
 				}
-				f.TierOn[t] = on
+				f.IgnoredTiers[t] = on
 			}
 		case "users":
 			if val == nil {
@@ -405,7 +532,7 @@ func parse(data []byte) (*File, error) {
 				if !valid {
 					return nil, fail("users: '" + name + "' must be enable or disable.")
 				}
-				f.Users[name] = on
+				f.IgnoredUsers[name] = on
 			}
 		case "settings":
 			m, ok := val.(*yamlpy.Map)
@@ -473,6 +600,39 @@ func parseSettings(f *File, m *yamlpy.Map) error {
 				return bad
 			}
 			f.SystemShell = s
+		case "system_shell_users":
+			switch x := v.(type) {
+			case nil:
+			case *yamlpy.Map:
+				for name, uv := range x.All() {
+					s, ok := uv.(string)
+					word, tr, hasTier := strings.Cut(s, ":")
+					switch {
+					case !ok, word != "disable" && word != "enable", word == "disable" && hasTier, word == "enable" && !hasTier:
+						return fail("settings.system_shell_users: '" + name + "' must be disable or enable:readonly|operator.")
+					}
+					f.SystemShellUsers[name] = word == "enable"
+					if word == "enable" {
+						f.SystemShellUserTiers[name] = tier.Tier(tr)
+					}
+				}
+			default:
+				return fail("settings.system_shell_users must be a mapping of user to disable or enable:<tier>.")
+			}
+		case "password_cache_users":
+			switch x := v.(type) {
+			case nil:
+			case *yamlpy.Map:
+				for name, uv := range x.All() {
+					b, ok := uv.(bool)
+					if !ok {
+						return fail("settings.password_cache_users: '" + name + "' must be true or false.")
+					}
+					f.PasswordCacheUsers[name] = b
+				}
+			default:
+				return fail("settings.password_cache_users must be a mapping of user to true or false.")
+			}
 		case "system_shell_tiers", "forwarding_tiers":
 			var l []tier.Tier
 			switch x := v.(type) {
@@ -545,14 +705,6 @@ func word(on bool) string {
 }
 
 func (f *File) doc() *yamlpy.Map {
-	tiers := yamlpy.NewMap()
-	for _, t := range Tiers {
-		tiers.Set(string(t), word(f.TierOn[t]))
-	}
-	users := yamlpy.NewMap()
-	for _, u := range f.UserNames() {
-		users.Set(u, word(f.Users[u]))
-	}
 	words := func(l []tier.Tier) []string {
 		out := make([]string, 0, len(l))
 		for _, t := range l {
@@ -591,12 +743,47 @@ func (f *File) doc() *yamlpy.Map {
 			"max", f.PasswordCacheMax,
 		))
 	}
-	return yamlpy.NewMap(
-		"version", Version,
-		"tiers", tiers,
-		"users", users,
-		"settings", settings,
-	)
+	if len(f.SystemShellUsers) > 0 {
+		// Only when something is set, so a file that never gave a user a
+		// system-shell setting is read by every release.
+		users := yamlpy.NewMap()
+		for _, u := range f.SystemShellUserNames() {
+			if f.SystemShellUsers[u] {
+				users.Set(u, "enable:"+string(f.SystemShellUserTiers[u]))
+			} else {
+				users.Set(u, "disable")
+			}
+		}
+		settings.Set("system_shell_users", users)
+	}
+	if names := f.PasswordCacheUserNames(); len(names) > 0 {
+		// Only users who are on, and only when there are some, so a file
+		// that nobody turned the cache on in is read by every release.
+		users := yamlpy.NewMap()
+		for _, u := range names {
+			users.Set(u, true)
+		}
+		settings.Set("password_cache_users", users)
+	}
+	doc := yamlpy.NewMap("version", Version)
+	if len(f.IgnoredTiers) > 0 {
+		tiers := yamlpy.NewMap()
+		for _, t := range Tiers {
+			if on, ok := f.IgnoredTiers[t]; ok {
+				tiers.Set(string(t), word(on))
+			}
+		}
+		doc.Set("tiers", tiers)
+	}
+	if len(f.IgnoredUsers) > 0 {
+		users := yamlpy.NewMap()
+		for _, u := range f.IgnoredUserNames() {
+			users.Set(u, word(f.IgnoredUsers[u]))
+		}
+		doc.Set("users", users)
+	}
+	doc.Set("settings", settings)
+	return doc
 }
 
 // Text is the file as it is written: the header and the YAML, checked by

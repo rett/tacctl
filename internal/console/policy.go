@@ -12,7 +12,8 @@ import (
 	"github.com/rett/tacctl/internal/tier"
 )
 
-// SystemLoginShell is what a user without the console gets as a login shell.
+// SystemLoginShell is the login shell an account gets back when the console
+// is taken away (uninstall, a server whose console cannot be provisioned).
 const SystemLoginShell = "/bin/bash"
 
 // NoLoginShell is the login shell of an account that gets neither the
@@ -38,72 +39,114 @@ func NewPolicy(f *File, p paths.Paths) *Policy {
 // Decision is whether a user gets the console, and why.
 type Decision struct {
 	Console bool
-	// Why is the reason in words: "user override", "tier readonly",
-	// "tier readonly disabled", "no tier".
+	// Why is the reason in words: "managed user", "no tier".
 	Why string
 }
 
-// Decide is the console decision for user at tier t: the engineer tier has
-// the console always (D18: an engineer has the console or no login on this
-// server, so neither a user override nor the tier's switch applies), then
-// the user's override wins, then the tier's switch. A caller with no tier
-// (none, unrestricted) gets no console: it has no account the console
-// provisions.
-func (p *Policy) Decide(user string, t tier.Tier) Decision {
+// Decide is the console decision for a user at tier t: every managed user
+// of every tier has the console as login shell, with no switch for a tier
+// or a user. A caller with no tier (none, unrestricted) gets no console: it
+// has no account the console provisions.
+func (p *Policy) Decide(t tier.Tier) Decision {
 	switch t {
 	case tier.Readonly, tier.Operator, tier.Engineer, tier.Superuser:
-	default:
-		return Decision{false, "no tier"}
+		return Decision{true, "managed user"}
 	}
-	if t == tier.Engineer {
-		return Decision{true, "tier engineer (always)"}
-	}
-	if on, ok := p.File.Users[user]; ok {
-		return Decision{on, "user override"}
-	}
-	if p.File.TierOn[t] {
-		return Decision{true, "tier " + string(t)}
-	}
-	return Decision{false, "tier " + string(t) + " disabled"}
+	return Decision{false, "no tier"}
 }
 
-// Shell is the login shell of user at tier t: the console's command, or
-// what ShellWithout says.
-func (p *Policy) Shell(user string, t tier.Tier) string {
-	if p.Decide(user, t).Console {
+// Shell is the login shell of a user at tier t: the console's command, or
+// what ShellWithout says for a user the console is not provisioned for.
+func (p *Policy) Shell(t tier.Tier) string {
+	if p.Decide(t).Console {
 		return p.Command
 	}
 	return ShellWithout(t)
 }
 
-// ShellWithout is the login shell of an account of tier t that does not get
-// the console: bash, but nologin for an engineer (the console or no login)
-// and for a tier that is none or unknown (no real shell for an account
-// nobody may log in to).
+// ShellWithout is the login shell of an account that is not a managed user
+// of a tier: bash for a caller with no tier restriction, nologin for a tier
+// that is none or unknown (no real shell for an account nobody may log in to).
 func ShellWithout(t tier.Tier) string {
-	switch t {
-	case tier.Readonly, tier.Operator, tier.Superuser, tier.Unrestricted:
+	if t == tier.Unrestricted {
 		return SystemLoginShell
 	}
 	return NoLoginShell
 }
 
+// ShellWithoutConsole is the login shell of user at tier t where the console
+// cannot be provisioned (the server's console link is missing). A plain
+// shell is a full system shell, which only those who have it get
+// (SystemShellFor: superusers always, others by their tier's or their own
+// setting): bash for them, nologin for everyone else, the engineer tier
+// included (the console or no login).
+func (p *Policy) ShellWithoutConsole(user string, t tier.Tier) string {
+	if t == tier.None || !p.SystemShellFor(user, t) {
+		return NoLoginShell
+	}
+	return SystemLoginShell
+}
+
 // SystemShell reports whether the console's system-shell word is open to
-// tier t. A caller with no tier restriction is open to it; none and the
-// Closed tiers are not, whatever the file says.
+// tier t by the tier's own setting. A caller with no tier restriction is
+// open to it, and so is the superuser tier, always; none and the Closed
+// tiers are not, whatever the file says.
 func (p *Policy) SystemShell(t tier.Tier) bool {
 	switch {
-	case t == tier.Unrestricted:
+	case t == tier.Unrestricted, t == tier.Superuser:
 		return true
 	case t == tier.None, slices.Contains(Closed, t):
 		return false
 	}
-	for _, s := range p.File.SystemShellTiers {
-		if s == t {
-			return true
-		}
+	return slices.Contains(p.File.SystemShellTiers, t)
+}
+
+// SystemShellFor reports whether user, at tier t, may start the system
+// shell: the user's own setting wins over the tier's, in both directions,
+// but for the superuser tier (always) and the Closed tiers (never), which
+// no setting changes. A disable holds at any tier; an enable only at the
+// tier it was set for (SystemShellStale): a user who moved to another tier
+// is back to that tier's setting until the enable is set again.
+func (p *Policy) SystemShellFor(user string, t tier.Tier) bool {
+	if t == tier.None || t == tier.Superuser || t == tier.Unrestricted || slices.Contains(Closed, t) {
+		return p.SystemShell(t)
 	}
-	return false
+	if on, ok := p.File.SystemShellUsers[user]; ok && (!on || p.File.SystemShellUserTiers[user] == t) {
+		return on
+	}
+	return p.SystemShell(t)
+}
+
+// SystemShellStale reports whether user has an enable that was set for
+// another tier than t, the tier they have now, and which tier that was.
+func (p *Policy) SystemShellStale(user string, t tier.Tier) (was tier.Tier, stale bool) {
+	if on, ok := p.File.SystemShellUsers[user]; ok && on && p.File.SystemShellUserTiers[user] != t {
+		return p.File.SystemShellUserTiers[user], true
+	}
+	return "", false
+}
+
+// SystemShellWhy is the state of user's system shell and the reason, for the
+// listings: "always" (superuser), "never" (a Closed tier), "user setting",
+// or "tier <t>", with "; stale: set for <tier>, now <tier>" when an enable
+// of the user is for another tier than they have now.
+func (p *Policy) SystemShellWhy(user string, t tier.Tier) (on bool, why string) {
+	stale := ""
+	if was, ok := p.SystemShellStale(user, t); ok {
+		stale = "; stale: set for " + string(was) + ", now " + string(t)
+	}
+	switch {
+	case t == tier.Superuser:
+		return true, "always" + stale
+	case slices.Contains(Closed, t):
+		return false, "never" + stale
+	case t == tier.None:
+		return false, "no tier" + stale
+	}
+	if _, ok := p.File.SystemShellUsers[user]; ok && stale == "" {
+		return p.SystemShellFor(user, t), "user setting"
+	}
+	return p.SystemShell(t), "tier " + string(t) + stale
 }
 
 // Forwarding reports whether tier t's console logins may forward X11 and
@@ -152,6 +195,19 @@ func (p *Policy) GatewayPorts() bool { return p.File.GatewayPorts }
 // the read-only tier are never in the list.
 func (p *Policy) PasswordCache(t tier.Tier) bool {
 	return slices.Contains(p.File.PasswordCacheTiers, t)
+}
+
+// PasswordCacheOn reports whether the user turned the password cache on for
+// themselves (settings.password_cache_users); off until they do.
+func (p *Policy) PasswordCacheOn(user string) bool {
+	return user != "" && p.File.PasswordCacheUsers[user]
+}
+
+// PasswordCacheActive reports whether a session of user at tier t keeps the
+// network password in memory: the tier is allowed to (PasswordCache, the
+// permission) and the user turned it on (PasswordCacheOn, the choice).
+func (p *Policy) PasswordCacheActive(user string, t tier.Tier) bool {
+	return p.PasswordCache(t) && p.PasswordCacheOn(user)
 }
 
 // PasswordCacheTiers are the tiers of settings.password_cache.tiers.

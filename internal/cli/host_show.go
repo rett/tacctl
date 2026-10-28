@@ -341,7 +341,7 @@ func (inv *invocation) hostAccounts(e hosts.Entry, rng hosts.Range) (hostAccount
 		switch {
 		case local:
 			groups = append(groups, "tac-"+t)
-			if pol.Decide(name, tier.Tier(t)).Console {
+			if pol.Decide(tier.Tier(t)).Console {
 				groups = append(groups, console.Group)
 			}
 		case t == string(tier.Superuser), t == string(tier.Engineer):

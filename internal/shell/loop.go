@@ -64,6 +64,11 @@ type PasswordCache interface {
 	// Notices returns, and clears, the lines to show the person (events
 	// that happened since the last call).
 	Notices() []string
+	// Holds reports whether a password is cached now.
+	Holds() bool
+	// Stop forgets the password (why is one of askpass.Why*, queued as a
+	// notice) and shuts the cache for good: 'console password-cache off'.
+	Stop(why string)
 }
 
 type lineEnvKey struct{}
@@ -161,6 +166,12 @@ type Options struct {
 	// at most Idle (when set): its context is cancelled after that and the
 	// session ends as an idle one (EndIdle).
 	Opening func(ctx context.Context) (end bool, status int)
+	// CacheStart, when set, starts the cache in the running session after
+	// 'console password-cache on' saved the person's choice (the policy is
+	// asked again, so it starts only for a tier that is allowed): the shell
+	// has no cache until then, or after 'off'. Nil: the word saves the
+	// choice and says it applies from the next session.
+	CacheStart func() (PasswordCache, error)
 }
 
 // Why a session ended (Shell.End).
@@ -289,6 +300,9 @@ func (s *Shell) run(ctx context.Context, line string, stdin io.Reader) (status i
 	if isConsoleForget(words) {
 		return s.consoleForget(words), false
 	}
+	if isPasswordCacheWord(words) {
+		return s.passwordCacheWord(ctx, words, stdin), false
+	}
 	if c := s.o.Cache; c != nil {
 		// The cache is open only for the lines that use it, for as long as
 		// they run, with a token made for the line; any other line, the
@@ -324,6 +338,63 @@ func (s *Shell) lockAllows(words []string, bare bool) bool {
 // shell and the console, never run through sudo.
 func isConsoleForget(words []string) bool {
 	return len(words) >= 2 && words[0] == "console" && words[1] == "forget"
+}
+
+// isPasswordCacheWord reports whether words are 'console password-cache' with
+// no argument (the state) or 'on' or 'off' (the person's own choice): a word
+// of the shell and the console, for the session's cache lives in this
+// process. The root side keeps the choice (the same words as a command); every
+// other form, 'tiers', 'idle', 'max' and 'user', is an ordinary command.
+func isPasswordCacheWord(words []string) bool {
+	if len(words) < 2 || words[0] != "console" || words[1] != "password-cache" {
+		return false
+	}
+	return len(words) == 2 || (len(words) == 3 && (words[2] == "on" || words[2] == "off"))
+}
+
+// passwordCacheWord is 'console password-cache [on|off]': the root side answers
+// the state or saves the choice, and this process then starts the cache (on),
+// stops it and forgets the password (off), or says whether a password is
+// cached (the state).
+func (s *Shell) passwordCacheWord(ctx context.Context, words []string, stdin io.Reader) int {
+	status := s.o.Exec(ctx, words, stdin)
+	out := s.o.Out.Stdout
+	switch {
+	case len(words) == 2:
+		if status != 0 {
+			return status
+		}
+		switch c := s.o.Cache; {
+		case c == nil:
+			_, _ = fmt.Fprintln(out, "in this session: the password cache is not on")
+		case c.Holds():
+			_, _ = fmt.Fprintln(out, "in this session: the password cache is on and a password is cached now")
+		default:
+			_, _ = fmt.Fprintln(out, "in this session: the password cache is on; no password is cached now")
+		}
+	case words[2] == "off":
+		// The session stops caching whether or not the choice could be saved.
+		if c := s.o.Cache; c != nil {
+			c.Stop(askpass.WhyOff)
+			s.printNotices()
+			s.o.Cache = nil
+			_, _ = fmt.Fprintln(out, "the password cache is off in this session")
+		}
+	case status != 0:
+	case s.o.Cache != nil:
+		_, _ = fmt.Fprintln(out, "the password cache is on in this session")
+	case s.o.CacheStart == nil || !s.interactive:
+		_, _ = fmt.Fprintln(out, "the password cache starts with your next interactive session")
+	default:
+		c, err := s.o.CacheStart()
+		if err != nil {
+			s.errorf("%s", err.Error())
+			return 1
+		}
+		s.o.Cache = c
+		_, _ = fmt.Fprintln(out, "the password cache is on in this session: the first device login that asks for your password stores it (console password-cache off, console forget)")
+	}
+	return status
 }
 
 // changesOwnPassword reports whether the line is 'passwd' or 'user passwd'

@@ -2,18 +2,16 @@
 
 [Documentation](../README.md) › [CLI reference](README.md)
 
-The login console is the login shell of tacctl users on the tacctl server: tacctl commands and ssh to registered devices, nothing else. Its model is `/etc/tacctl/console.yaml` (0600, snapshotted, in `backup diff` and `restore`; absent means the defaults): the console is on for every tier, a user override wins over the tier's switch, and local accounts that are not tacctl users are never touched. The settings commands change that file only (after a snapshot); they never change an account or sshd. The accounts' login shells and sshd's drop-in follow it when this server's accounts are synced (`tacctl host sync <name of the host enrolled with --local>`), which every change to a tier switch, a user override or agent forwarding prints. The idle timeout, the ssh escape, the space completion, the colour, the list threshold and the system shell are read by each console session when it starts.
+The login console is the login shell of every tacctl user, of every tier, on the tacctl server: tacctl commands and ssh to registered devices, nothing else. There is no switch for it, and local accounts that are not tacctl users are never touched. Its settings are in `/etc/tacctl/console.yaml` (0600, snapshotted, in `backup diff` and `restore`; absent means the defaults). The settings commands change that file only (after a snapshot); they never change an account or sshd. The accounts' login shells and sshd's drop-in follow the sync of this server's accounts (`tacctl host sync <name of the host enrolled with --local>`), which every change to agent forwarding or the forwarding settings prints. The idle timeout, the ssh escape, the space completion, the colour, the list threshold and the system shell are read by each console session when it starts.
 
 ```yaml
 version: 1
-tiers: {readonly: enable, operator: enable, engineer: enable, superuser: enable}
-users: {jdoe: disable}            # per-user override: enable or disable
 settings:
   idle_timeout: 30                # minutes at the prompt; 0 = never
   agent_forwarding: false
   ssh_escape: false
   system_shell: /bin/bash
-  system_shell_tiers: [superuser]
+  system_shell_tiers: [superuser]   # the tiers that have the system shell; superuser always
   forwarding_tiers: [superuser]
   gateway_ports: false
   list_max: 40                    # completions listed without asking; -1: never ask
@@ -22,28 +20,25 @@ settings:
                                   space-completion)
   # color: true                   # written only when set: true (on) or false (off); absent
                                   is auto (console color)
+  # system_shell_users:           # written only when a user has a setting of their own
+  #   jdoe: true                  # true gives the system shell, false takes it (console
+                                  system-shell user)
+  # password_cache_users:         # written only when a user turned the cache on (see
+  #                               Password cache); a map of user name to true
+  #   jdoe: true
   # password_cache:               # written only when something is set (see Password cache)
   #                               tiers: [operator, superuser]
   #   idle: 15                    # minutes
   #   max: 8                      # hours
 ```
 
-The keys: `tiers.<tier>` (`console tiers`; `engineer` is always on), `users.<name>` (`console user`), `settings.idle_timeout` (`console idle-timeout`), `settings.agent_forwarding` (`console agent-forwarding`), `settings.ssh_escape` (`console ssh-escape`), `settings.system_shell` and `settings.system_shell_tiers` (`console system-shell path|tiers`; the tiers are never `engineer`), `settings.forwarding_tiers` and `settings.gateway_ports` (`console forwarding tiers|gateway-ports`; the tiers are never `engineer`), `settings.list_max` (`console list-max`; 1 to 1000, or -1 to never ask), `settings.space_completion` (`console space-completion`; written only when off), `settings.color` (`console color`; written only when `on` or `off`) and `settings.password_cache` (`console password-cache tiers|idle|max`; written only when set).
+The keys: `settings.idle_timeout` (`console idle-timeout`), `settings.agent_forwarding` (`console agent-forwarding`), `settings.ssh_escape` (`console ssh-escape`), `settings.system_shell` (`console system-shell path`), `settings.system_shell_tiers` (`console system-shell <tier> enable|disable`; always holds `superuser`, never `engineer`), `settings.system_shell_users` (`console system-shell user`; written only when a user has a setting), `settings.forwarding_tiers` and `settings.gateway_ports` (`console forwarding tiers|gateway-ports`; the tiers are never `engineer`), `settings.list_max` (`console list-max`; 1 to 1000, or -1 to never ask), `settings.space_completion` (`console space-completion`; written only when off), `settings.color` (`console color`; written only when `on` or `off`) `settings.password_cache` (`console password-cache tiers|idle|max`; written only when set) and `settings.password_cache_users` (`console password-cache on|off` by each user, `console password-cache user`; written only when a user has turned it on).
 
 ```
 console show
 
-    Tiers, settings, each user of this server's scope with its effective shell and why, and the
-    server's pieces (operator tier and up)
-
-console tiers [<tier> enable|disable]
-
-    Show or switch the console for readonly, operator, engineer or superuser (the engineer tier is
-    always on)
-
-console user <name> [enable|disable|clear]
-
-    Show or set one user's override (clear: the tier decides; never disabled for an engineer)
+    Settings, each user of this server's scope with its effective shell and why, and the server's
+    pieces (operator tier and up)
 
 console idle-timeout [<min>]
 
@@ -84,10 +79,23 @@ console forwarding gateway-ports [enable|disable]
     Let those tiers' forwarded ports listen on other addresses than loopback: sshd's GatewayPorts
     clientspecified for ssh -R, the console's ssh -g and -L/-D bind addresses (default disabled)
 
+console password-cache [on|off]
+
+    Your own choice of keeping your network password in memory for the session, off until you
+    turn it on (operator tier and up, and the tier must be allowed by the line below). With no
+    argument it prints the permission, your setting and the limits. At the prompt of the shell
+    and the console it is a word: on saves the choice and starts the cache in that session at
+    once, off saves it, forgets a cached password and stops caching. It sets only your own value
+
 console password-cache tiers [<csv>|none]
 
-    Tiers whose shell and console sessions keep your network password in memory for the session
-    (operator, engineer, superuser; default none)
+    Tiers that are allowed to use the password cache (the permission; operator, engineer,
+    superuser; default none). A listed tier's users still turn it on themselves
+
+console password-cache user [<name> [clear]]
+
+    The users who turned the cache on, one user's setting, or clear it (the user is back to off)
+    (superuser only)
 
 console password-cache idle [<min>]
 
@@ -101,13 +109,29 @@ console forget
 
     Forget the cached password of this session now (a word of the shell and the console)
 
-console system-shell tiers [<csv>|none]
+console system-shell [<tier> enable|disable]
 
-    Tiers that may start their system shell from the console (default superuser)
+    Without arguments, whether each tier has the system shell and the users with a setting of their
+    own, with their tier. A tier alone prints its state (operator tier and up); with enable or
+    disable it sets it (superuser only). The superuser tier always has it and cannot be disabled;
+    readonly and operator are disabled by default; the engineer tier never has it and enable is
+    refused
+
+console system-shell user <name> [enable|disable|clear]
+
+    Show or set the system shell for one user, over the tier's setting in both directions (clear:
+    the tier decides; without a word it prints the user's access and why, operator tier and up).
+    Disabling a superuser and enabling an engineer are refused. An enable is for the tier the user
+    has when it is set: after a move to another tier it does nothing and is listed as "stale: set
+    for operator, now readonly" until it is set again (it counts again if the user returns to that
+    tier). A disable holds in any tier. `user rename` moves the setting to the new name and `user
+    remove` drops it; an entry for a name that is no user is not honoured and is listed as "no
+    such user"
 
 console system-shell path [<path>]
 
-    The system shell (default /bin/bash; absolute, executable, listed in /etc/shells)
+    The system shell (default /bin/bash; absolute, executable, listed in /etc/shells); showing it is
+    open to the operator tier and up, setting it is the superuser's
 
 console install
 
@@ -126,7 +150,7 @@ console check
     not (a local administrator in the group is only listed) (operator tier and up)
 ```
 
-`console show` lists the users of the scope of the host enrolled with `--local` with `console (user override)`, `console (tier readonly)` or `bash (tier readonly disabled)`, then the server's pieces: the `/usr/local/bin/tacctl-console` symlink, the `/etc/shells` line, sshd's drop-in and what `sshd -T -C user=<user>` reports for a console user (`allowtcpforwarding`, `allowagentforwarding`, `forcecommand`, `pubkeyauthentication`). It warns in red when the drop-in is missing, sshd does not force the console, still allows forwarding, or allows key logins, because a console user could then forward ports past the device registry, run programs or sftp, or log in without TACACS+. A server that is not enrolled with `--local` says so.
+`console show` lists the users of the scope of the host enrolled with `--local` with their effective shell (the console) and why, then the server's pieces: the `/usr/local/bin/tacctl-console` symlink, the `/etc/shells` line, sshd's drop-in and what `sshd -T -C user=<user>` reports for a console user (`allowtcpforwarding`, `allowagentforwarding`, `forcecommand`, `pubkeyauthentication`). It warns in red when the drop-in is missing, sshd does not force the console, still allows forwarding, or allows key logins, because a console user could then forward ports past the device registry, run programs or sftp, or log in without TACACS+. A server that is not enrolled with `--local` says so.
 
 ## The console session — `tacctl-console`
 
@@ -175,8 +199,8 @@ A `-c` line and a batch are held the same way, with no dialog: a `passwd` line r
 status 1. The command line holds the caller to the change too, so a plain shell or `ssh <server> tacctl ...`
 runs nothing but `passwd`, `version` and `help` (see [User Commands](user.md)).
 
-`system-shell` (the console's own word, at the prompt only) starts the user's system shell (`console system-shell path`, default `/bin/bash`) as the user, without arguments, with the console's environment and `SHELL=<path>`; the idle timer does not run meanwhile and sshd's drop-in still applies; `exit` returns to the console (`back in the tacctl console`). It is open to the tiers of `console system-shell tiers` (default: superusers only); for anyone else it is refused with `system-shell is not available for the <tier> tier on this console. An administrator enables it with: tacctl console system-shell tiers …` (status 1), and through `-c` or in a batch with status 126. The same tiers may open an editor from the console (`scope block ... edit|adopt`, `device block ... edit|adopt`: an editor can start a shell); for anyone else those verbs say so and change nothing.
+`system-shell` (the console's own word, at the prompt only) starts the user's system shell (`console system-shell path`, default `/bin/bash`) as the user, without arguments, with the console's environment and `SHELL=<path>`; the idle timer does not run meanwhile and sshd's drop-in still applies; `exit` returns to the console (`back in the tacctl console`). Superusers always have it; the other tiers have it when a superuser has enabled it for the tier (`console system-shell <tier> enable`) or for the user (`console system-shell user <name> enable`, which wins over the tier's setting, and so does `disable`). For anyone else it is refused with `system-shell is not available for the <tier> tier on this console. An administrator enables it with: tacctl console system-shell user <name> enable …` (status 1), and through `-c` or in a batch with status 126. The same people may open an editor from the console (`scope block ... edit|adopt`, `device block ... edit|adopt`: an editor can start a shell); for anyone else those verbs say so and change nothing. Only a superuser sets the system shell (a tier, a user or the path). An operator or an engineer may read each form (`console system-shell`, `console system-shell <tier>`, `console system-shell user <name>`, `console system-shell path`); every form that sets something is refused for them (`'tacctl console system-shell' is not permitted for the operator tier.`, logged as a tier denial), and a readonly user is refused all of it.
 
 Logged to syslog with the tag `tacctl-console`: `console start session= user= from= tty= mode=interactive|command|batch`, `console end session= user= reason=exit|eof|idle|hangup|signal|command|failed|locked lines= status=`, `console DENY session= user= reason=command first=<verb>|- [len=<n>]` (auth.warning; the first word is named only when it is a verb of tacctl or a console word, else `first=- len=<n>`, the length of the string, so a password typed at the prompt is not logged), `console password-change required|unknown|done|failed session= user= [status=]` and `console DENY session= user= reason=password-change first=<verb>|- [len=<n>]` for a line refused while a password change is required (the first word under the same rule), `console system-shell start|end|DENY` (with `status=` and `duration=` at the end). Every line is in sudo's own log too, and `tacctl ssh` logs `console=<session>`.
 
-Each change of the console's settings also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `console set key= item= from= to=`, at `auth.notice` for `tiers`, `user` and `system-shell`; `console install` and `console remove` end their `console provision` and `console deprovision` lines in `result=ok` or `result=failed reason=` ([Audit log](../security/audit.md#detail-lines)).
+Each change of the console's settings also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `console set key= item= from= to=`, at `auth.notice` for `system-shell` (`item` is the tier, `user:<name>` or `path`); `console install` and `console remove` end their `console provision` and `console deprovision` lines in `result=ok` or `result=failed reason=` ([Audit log](../security/audit.md#detail-lines)).

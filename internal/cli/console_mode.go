@@ -259,7 +259,7 @@ func (cs *consoleSession) systemShell(ctx context.Context, interactive bool) int
 	}
 	if !cs.pol.SystemShell {
 		a.Out.Error(console.SystemShellWord + " is not available for the " + string(cs.tier) + " tier on this console. " +
-			"An administrator enables it with: tacctl console system-shell tiers " + consoleTiersWith(cs.tier))
+			"An administrator enables it with: " + systemShellEnableHint(cs.sess.User, cs.tier))
 		cs.log("auth.warning", cs.sess.SystemShellDenyLine(string(cs.tier)))
 		return 1
 	}
@@ -279,14 +279,14 @@ func (cs *consoleSession) systemShell(ctx context.Context, interactive bool) int
 	return code
 }
 
-// consoleTiersWith is the system-shell tiers list that adds t to the
-// default (superuser), for the refusal's command.
-func consoleTiersWith(t tier.Tier) string {
+// systemShellEnableHint is the command that opens the system shell to the
+// user or to the whole tier, for the refusal's text.
+func systemShellEnableHint(user string, t tier.Tier) string {
 	switch t {
 	case tier.Readonly, tier.Operator:
-		return "superuser," + string(t)
+		return "tacctl console system-shell user " + user + " enable (or " + string(t) + " enable for the tier)"
 	}
-	return "<tiers>"
+	return "tacctl console system-shell user " + user + " enable"
 }
 
 // consoleRootCommand reports whether w is a command of root a -c line may

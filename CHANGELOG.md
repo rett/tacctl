@@ -27,8 +27,9 @@ current behaviour; this file is where history lives.
    be read, since the hosts are then unknown). A release before 0.2.20 refuses a
    store with such a name, so `tacctl rollback` to any target is refused, in the
    dry run too and with nothing changed, while the store has a user with a
-   period or `console.yaml` an override under one; the refusal lists each with
-   `tacctl user rename <name> <new-name>` or `tacctl console user <name> clear`.
+   period; the refusal lists each with `tacctl user rename <name> <new-name>`.
+   An override under such a name in `console.yaml` (item 17 ignores them) does
+   not stop it: the rollback takes that entry out of the file.
 
 2. **Tab and `?` describe a command as the completion scripts do.** The bash,
    zsh and fish scripts and the shell and console lists took the description
@@ -337,6 +338,173 @@ current behaviour; this file is where history lives.
     removes it after a snapshot and warns which users who are not superusers
     get their device access back with the password they were to change
     (`--apply` needs `--yes`).
+
+18. **The console is the login shell of every managed user, and there is no
+    switch for it.** `tacctl console tiers` and `tacctl console user` are gone
+    (an unknown sub-command, with the usage), along with the "always on"
+    exception for the engineer tier: every managed user of every tier gets the
+    console as login shell at the next `host sync` of the server (or `host
+    enroll --local`), and sshd's drop-in forces it for all of them. The
+    `tiers` and `users` mappings of an existing `console.yaml` are ignored
+    from now on: nothing reads them, nothing writes them (a file that never had
+    them does not get them; one that has them keeps them untouched when a
+    setting changes), and `console show` does not mention them. A user is left
+    without the console only where it cannot be provisioned (the
+    `tacctl-console` link is missing: bash only with the system shell, item
+    22) or has no tier (nologin). `console show` lists each managed user's shell and why (a
+    managed user). The refusal of `console remove` while an account has the
+    console now names `tacctl host unenroll <server>`. Upgrading: the switches
+    of `console.yaml` are ignored and every managed user gets the console at the
+    next `host sync` (docs/install/upgrading.md). `tacctl rollback` leaves the
+    two mappings in the file, which an older release reads as it always did
+    (a file without them is read as the console on for everyone); only an
+    override under a user name with a period, which no older release reads, is
+    taken out, and shown in the plan as a removal of `users.<name>`.
+
+19. **The system shell is an opt-in per tier and per user, and only a
+    superuser sets it.** `tacctl console system-shell` lists each tier as
+    `enabled` or `disabled` (the superuser tier is `enabled (always)` and
+    cannot be disabled; readonly and operator are disabled by default; the
+    engineer tier is `disabled (never)` and `enable` is refused with the
+    existing reason), then the users with a setting of their own and their
+    tier; `console system-shell <tier>` prints one tier, and `console
+    system-shell <tier> enable|disable` sets it. It replaces `console
+    system-shell tiers [<csv>|none]`, which is gone. `console system-shell user
+    <name> [enable|disable|clear]` gives the system shell to one user or takes
+    it from one, over the tier's setting in both directions (`clear`: the tier
+    decides). A superuser cannot be disabled (refused, by the tier the user has
+    at that moment), an engineer cannot be enabled, and enabling a superuser or
+    disabling an engineer stores nothing. A setting follows the user (item 19);
+    an entry of a name that is no user is listed as `no such user` and `clear`
+    removes it. The same people
+    may open an editor from the console. Only a superuser sets it (a tier, a
+    user or the path); the read forms are open to the operator tier and up
+    (item 20), and the verb refuses every write with the usual `is not
+    permitted for the <tier> tier`, logged as a tier denial. `console show` prints the system shell by tier and,
+    for each user of the server, the effective access and why (`tier operator`,
+    `user setting`, `always`, `never`). The changes are logged as `console set
+    key=system-shell item=<tier>|user:<name>|path`. The tiers are still stored
+    in `settings.system_shell_tiers` (now always holding `superuser`, which a
+    list without it does not change), and a user's setting in the new
+    `settings.system_shell_users`, written only when a user has one; that key
+    is one no older release reads, so `tacctl rollback` to any target removes
+    it (the plan names the users) and the older release has the tiers' list
+    alone. `settings.system_shell` is the shell's path as before.
+
+20. **A user's system-shell setting follows the user.** `user remove` drops
+    the `console system-shell user` setting of the user and `user rename`
+    moves it to the new name, so the person keeps the access they had and a
+    user created later under the old name does not inherit it. Both say so in
+    their output (`The system-shell setting of 'bob' (enable) moves to
+    'robert'.` / `... is dropped.`) and log `console set key=system-shell
+    item=user:<name> from= to=` at `auth.notice`, one line for a removal and
+    two for a rename. `user add` drops an entry left under the name (a hand
+    edit, or a removal whose write of `console.yaml` failed, which names the
+    command to finish it). A user without a setting leaves `console.yaml`
+    alone. An entry for a name that is no user is not honoured (the policy
+    looks the caller up by a name that is a user of the store) and is listed
+    as `no such user`. The rollback removes the whole key as before.
+
+21. **An operator and an engineer can read every form of `console
+    system-shell`.** `console system-shell` (the list), `console system-shell
+    <tier>`, `console system-shell user <name>` and `console system-shell
+    path` are open to the operator tier and up; every form that sets
+    something (a tier with `enable|disable`, a user with `enable|disable|clear`,
+    `path <new>`) stays the superuser's, and an operator or an engineer is
+    refused with `'tacctl console system-shell' is not permitted for the
+    <tier> tier.`, logged as a tier denial; a readonly user is refused at the
+    gate as before. The tier table has one row for the verb (its note is in
+    the manual page's TIERS section), and the per-tier sudoers drop-in grants
+    the read forms by exact pattern (the four tiers and `path`), plus `user *`,
+    whose wildcard also matches `user <name> enable`: the verb refuses that
+    write itself. The rollbacks to 0.2.18 and earlier rewrite the drop-in as
+    before (the 0.2.19 text lacks all of the new patterns).
+
+22. **The password cache is the user's own choice, within the tier's
+    permission.** `console password-cache tiers` now only says which tiers
+    may use the cache; for a listed tier it is no longer on for everyone in
+    it. Each user turns it on for themselves, and it is off until they do:
+    `console password-cache on` is a word of the shell and the console (listed
+    by `?` and completed): it saves the choice for every later session and
+    starts the cache in the running one at once; `console password-cache off`
+    saves that, forgets a cached password (`password forgotten (console
+    password-cache off)`) and stops caching; with no argument it prints the
+    tiers, the limits, whether the caller's tier is allowed, the caller's
+    setting and, in a session, whether a password is cached now. When the tier
+    is not allowed, `on` is refused in one sentence naming the fix (`a
+    superuser allows it with: tacctl console password-cache tiers <tiers>`)
+    and saves nothing. The words are open to the operator tier and up and set
+    only the caller's own value: they take no name, the root side takes the
+    user from the one `sudo` was run by, and the sudoers drop-in grants exactly
+    `console password-cache`, `... on` and `... off` (a new row; the derived
+    0.2.19 text leaves it out); the other forms (`tiers`, `idle`, `max`, `user`)
+    stay the superuser's and are refused with the usual tier denial.
+    `console password-cache user [<name> [clear]]` lets a superuser list who
+    turned the cache on and clear a user's choice, and `console show` lists
+    them. The choice is `settings.password_cache_users` in `console.yaml`
+    (a map of user to true, written only when a user is on) and is logged as
+    `console set key=password-cache item=user:<name> from= to=`. `user rename`
+    moves it and `user remove` drops it (and `user add` drops a stale entry),
+    as for the system shell of a user (item 19). The `_console-policy` line
+    carries `password_cache=yes|no` (allowed and on: the console starts the
+    cache) and `pc_allowed=yes` (the permission alone, which `tacctl shell
+    --password-cache` still needs: that flag is an explicit request and works
+    as before). No older release reads the new key, so `tacctl rollback` to
+    any target removes it (the plan names the users) and keeps the cache's own
+    settings for the targets that have them; the older release has the cache
+    on for every user of a listed tier, as it always did. Upgrading: a console
+    that had the cache on for a tier has it off for every user until they turn
+    it on (docs/install/upgrading.md).
+
+23. **No bash for those without the system shell when the console link is
+    missing.** `host sync` and `host enroll --local` on the server gave every
+    readonly and operator user `/bin/bash` when `/usr/local/bin/tacctl-console`
+    was missing, a full system shell for those who have none (item 18). Now an
+    account gets `/bin/bash` there only if it has the system shell (a
+    superuser, a user of a tier a superuser opened it to, or a user it was
+    opened to) and `/usr/sbin/nologin` otherwise, the engineer tier and a tier
+    that is none included; the warning says so. Item 17's mention of bash for
+    that case is adjusted.
+
+24. **A user's system-shell enable is for the tier it was set for.**
+    `console system-shell user <name> enable` gave a user the shell for as
+    long as the entry stood, so a user moved to a lower tier kept a shell the
+    new tier does not give. The enable is now recorded with the tier the user
+    has when it is set (`settings.system_shell_users` holds `enable:<tier>` and
+    `disable`) and counts only while the user is in that tier: after a demotion
+    or a promotion it does nothing, and `console system-shell`, `console show`
+    and the user's own query list it as `stale: set for operator, now readonly`
+    until it is set again; it counts again if the user returns to the tier. A
+    disable holds in any tier, and a superuser (always) and an engineer (never)
+    are not affected. An enable cannot be set for a user with no tier. The
+    setting moves with `user rename` as before, with its tier.
+
+25. **A console.yaml that cannot be read stops `user add|remove|rename`.**
+    The settings that follow a user (the system shell, the password cache) are
+    dropped or moved by those verbs, but a file that did not parse was skipped
+    in silence: `user remove bob` exited 0 and left `bob`'s system shell for
+    the next user of the name. The three verbs now read console.yaml before
+    they change the store and, when it cannot be read, exit 1 with the path,
+    the cut parse error and `nothing was changed`; the store change is made only
+    after the file is known to be readable, because the other order leaves the
+    user gone and the entry behind with no way to take the store change back.
+    A file that breaks in between, or is locked, makes the verb exit 1 after the
+    change and name the two commands that check the settings of the user once the
+    file is repaired. An absent console.yaml is not an error.
+
+26. **`tacctl rollback` lists who would gain a system shell or the password
+    cache.** The rollback keeps the `tiers` and `users` switches of
+    `console.yaml` that this release ignores, and an older release reads
+    them as it always did: a user or a tier switched off there gets a plain
+    `/bin/bash` at its next `host sync` instead of the console; a system-shell
+    `disable` of one user is removed, so the user has their tier's setting;
+    and the password cache, which is each user's choice now, is on again for
+    every user of a tier that is allowed it. None of that was named in the plan.
+    Each user (and, with no store to read, each tier and setting) who would gain
+    a system shell or the cache is now listed with the reason, in a warning
+    that `--apply` refuses without `--yes` (on every target; the cache only on
+    the targets that have it), and the warning stays while the switches do.
+    The upgrading page says how to avoid it.
 
 ## 0.2.19 (2026-10-25)
 

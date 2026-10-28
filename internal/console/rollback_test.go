@@ -18,9 +18,9 @@ func rollbackFixture(t *testing.T, spaceOff bool) []byte {
 	f := Defaults()
 	f.Idle = 12
 	f.AgentForwarding = true
-	f.TierOn[tier.Readonly] = false
-	f.Users["jdoe"] = true
-	f.Users["asmith"] = false
+	f.IgnoredTiers = map[tier.Tier]bool{tier.Readonly: false, tier.Operator: true, tier.Engineer: true, tier.Superuser: true}
+	f.IgnoredUsers["jdoe"] = true
+	f.IgnoredUsers["asmith"] = false
 	f.SystemShellTiers = []tier.Tier{tier.Operator, tier.Superuser}
 	f.ListMax = 25
 	f.SpaceCompletion = !spaceOff
@@ -87,8 +87,8 @@ func TestRollbackTextIsReadBy023(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if f.Idle != 12 || !f.AgentForwarding || f.TierOn[tier.Readonly] || !f.TierOn[tier.Engineer] || f.SpaceCompletion != !off ||
-			f.Users["jdoe"] != true || f.Users["asmith"] != false || f.ListMax != 25 ||
+		if f.Idle != 12 || !f.AgentForwarding || f.IgnoredTiers[tier.Readonly] || !f.IgnoredTiers[tier.Engineer] || f.SpaceCompletion != !off ||
+			f.IgnoredUsers["jdoe"] != true || f.IgnoredUsers["asmith"] != false || f.ListMax != 25 ||
 			!reflect.DeepEqual(f.SystemShellTiers, []tier.Tier{tier.Operator, tier.Superuser}) ||
 			len(f.PasswordCacheTiers) != 0 || f.PasswordCacheIdle != DefaultPasswordCacheIdle || f.PasswordCacheMax != DefaultPasswordCacheMax {
 			t.Errorf("off=%v: read back: %+v", off, f)

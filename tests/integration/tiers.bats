@@ -268,7 +268,7 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
         grep -q -- "$r" <<<"$ro" || { echo "readonly lacks $r"; return 1; }
         if grep -q -- "$r" <<<"$op"; then echo "operator alias has $r"; return 1; fi
     done
-    for r in 'tacctl device check \*' 'tacctl device scan,' 'tacctl device discover \*' 'tacctl device export \*' 'tacctl console show,' 'tacctl console check'; do
+    for r in 'tacctl device check \*' 'tacctl device scan,' 'tacctl device discover \*' 'tacctl device export \*' 'tacctl console show,' 'tacctl console check' 'tacctl console system-shell,' 'tacctl console system-shell path,' 'tacctl console system-shell user \*'; do
         grep -q -- "$r" <<<"$op" || { echo "operator lacks $r"; return 1; }
         if grep -q -- "$r" <<<"$ro"; then echo "readonly alias has $r"; return 1; fi
     done

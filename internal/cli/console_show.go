@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/rett/tacctl/internal/console"
-	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -23,10 +22,7 @@ func (inv *invocation) consoleShow(args []string) error {
 	inv.echo("")
 	inv.echoE(ui.Bold + "Login console" + ui.NC)
 	inv.echo("--------------------------------------------")
-	inv.echo("Tiers (the console is the login shell of their users on this server):")
-	for _, t := range console.Tiers {
-		inv.echo("  " + string(t) + ": " + consoleTierState(f, t))
-	}
+	inv.echo("Every user of every tier has the console as login shell on this server.")
 	inv.echo("")
 	inv.echo("Settings:")
 	inv.echo("  idle-timeout: " + idleText(f.Idle))
@@ -34,14 +30,19 @@ func (inv *invocation) consoleShow(args []string) error {
 	inv.echo("  ssh-escape: " + map[bool]string{true: "enabled", false: "disabled"}[f.SSHEscape])
 	inv.echo("  forwarding tiers: " + tierCSV(f.ForwardingTiers) + " (X11 and TCP ports)")
 	inv.echo("  forwarding gateway-ports: " + map[bool]string{true: "enabled", false: "disabled"}[f.GatewayPorts] + " (forwarded ports on other addresses than loopback)")
-	inv.echo("  system-shell tiers: " + tierCSV(f.SystemShellTiers))
 	inv.echo("  system-shell path: " + f.SystemShell)
 	inv.echo("  space-completion: " + spaceWord(f.SpaceCompletion) + " (a typed space completes a fixed word at the console's prompt)")
 	inv.echo("  password-cache tiers: " + tierCSV(f.PasswordCacheTiers) + " (shell and console sessions that keep your network password in memory)")
+	inv.echo("  password-cache users: " + userCSV(f.PasswordCacheUserNames()) + " (turned it on for themselves)")
 	inv.echo("  password-cache idle: " + strconv.Itoa(f.PasswordCacheIdle) + " min")
 	inv.echo("  password-cache max: " + strconv.Itoa(f.PasswordCacheMax) + " h")
 	inv.echo("  color: " + f.Color + " (the console's lists: " + map[string]string{console.ColorAuto: "the terminal decides", console.ColorOn: "always in colour", console.ColorOff: "never in colour"}[f.Color] + ")")
 	inv.echo("  list-max: " + listMaxWord(f.ListMax) + " (the longest list shown without asking 'Show all N?')")
+	inv.echo("")
+	inv.echo("System shell (the console's own word, for the tiers and users that have it):")
+	for _, t := range console.Tiers {
+		inv.echo("  " + string(t) + ": " + systemShellState(pol, t))
+	}
 	inv.echo("")
 
 	consoleUsers, listed, err := inv.consoleUsersTable(pol)
@@ -70,7 +71,8 @@ func idleText(min int) string {
 }
 
 // consoleUsersTable prints the users of the local host's scope with their
-// effective shell, and the overrides that name nobody there. It returns the
+// effective shell and system-shell access, and the users with a setting of
+// their own who have no account there. It returns the
 // users who have the console. listed is false when the server is not
 // enrolled (a line says so).
 func (inv *invocation) consoleUsersTable(pol *console.Policy) (users []string, listed bool, err error) {
@@ -87,24 +89,21 @@ func (inv *invocation) consoleUsersTable(pol *console.Policy) (users []string, l
 		return nil, false, err
 	}
 	title := "Users of " + e.Name + " (scope " + e.Scope + ")"
-	tb := ui.NewTable(title, ui.Left("USERNAME"), ui.Left("TIER"), ui.Left("SHELL"), ui.Left("WHY"))
+	tb := ui.NewTable(title, ui.Left("USERNAME"), ui.Left("TIER"), ui.Left("SHELL"), ui.Left("WHY"), ui.Left("SYSTEM SHELL"))
 	seen := map[string]bool{}
 	rows := m.LinuxUsers(e.Scope)
 	for _, r := range rows {
 		name, lvl, _ := strings.Cut(r, "|")
 		tr := inv.userTier(name, lvl)
-		d := pol.Decide(name, tr)
-		seen[name] = true
+		d := pol.Decide(tr)
 		shell := "bash"
 		if d.Console {
 			shell = "console"
 			users = append(users, name)
 		}
-		why := d.Why
-		if _, over := pol.File.Users[name]; over && tr == tier.Engineer {
-			why += "; the stored override is ignored"
-		}
-		tb.Add(name, string(tr), shell, why)
+		seen[name] = true
+		on, sysWhy := pol.SystemShellWhy(name, tr)
+		tb.Add(name, string(tr), shell, d.Why, map[bool]string{true: "enabled", false: "disabled"}[on]+" ("+sysWhy+")")
 	}
 	if tb.Len() == 0 {
 		inv.echoE(ui.Bold + title + ui.NC)
@@ -114,13 +113,13 @@ func (inv *invocation) consoleUsersTable(pol *console.Policy) (users []string, l
 		inv.write(tb.String())
 	}
 	var stray []string
-	for _, u := range pol.File.UserNames() {
+	for _, u := range pol.File.SystemShellUserNames() {
 		if !seen[u] {
-			stray = append(stray, u+": "+onOff(pol.File.Users[u]))
+			stray = append(stray, u+": "+map[bool]string{true: "enabled", false: "disabled"}[pol.File.SystemShellUsers[u]])
 		}
 	}
 	if len(stray) > 0 {
-		inv.echo("Overrides of users that have no account here: " + strings.Join(stray, ", "))
+		inv.echo("System-shell settings of users that have no account here: " + strings.Join(stray, ", "))
 	}
 	return users, true, nil
 }
@@ -172,4 +171,12 @@ func (inv *invocation) consoleServerSection(pol *console.Policy, consoleUsers []
 	}
 	inv.echo("")
 	return nil
+}
+
+// userCSV is a list of user names, or "none".
+func userCSV(l []string) string {
+	if len(l) == 0 {
+		return "none"
+	}
+	return strings.Join(l, ", ")
 }

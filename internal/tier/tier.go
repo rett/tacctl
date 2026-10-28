@@ -219,6 +219,26 @@ var Rules = []Rule{
 		Note: "device config: an operator may run list; show, pull, diff, plan and apply need the engineer tier (a device's walkthrough carries its scope's secret, a plan can type it, a pull logs in to the device as you, and a check or an apply writes to it as you), and an engineer gets the devices of their own scopes only; forget and shapes (shapes files what an apply confirmed) need the superuser tier."},
 	{Tier: Operator, Cmd: "console", Sub: "show", Sudoers: []string{"console show"}},
 	{Tier: Operator, Cmd: "console", Sub: "check", Sudoers: []string{"console check"}},
+	// 'console system-shell' (0.2.20): who has the system shell (the list,
+	// one tier, one user) and the path are the operator's to read, as
+	// 'console show' is. Setting any of them is the superuser's, and the verb
+	// holds the writes to the superuser tier. Sudoers names the read forms
+	// exactly; only 'user *' needs the wildcard (a pattern's '*' matches
+	// blanks too, so it also lets 'user <name> enable' through to the verb,
+	// which refuses it, as 'scope snmp *' does for its setters).
+	{Tier: Operator, Cmd: "console", Sub: "system-shell", Sudoers: []string{"console system-shell", "console system-shell readonly",
+		"console system-shell operator", "console system-shell engineer", "console system-shell superuser", "console system-shell path",
+		"console system-shell user *"},
+		Note: "console system-shell: an operator may read it (no argument, a tier, user <name>, path); setting it for a tier or a user, and setting the path, need the superuser tier."},
+	// 'console password-cache' (0.2.20): the state of the caller's password
+	// cache and the caller's own choice, 'on' or 'off' (a word of the shell and
+	// the console, as 'console forget' is), are open to every tier that can have
+	// the cache; the sudoers patterns name those three forms exactly, and the
+	// verb acts on the caller only (SUDO_USER; no word names another user).
+	// Its other forms (the tiers that are allowed, the lifetimes, a user's
+	// setting) are the superuser's, which the verb holds the caller to.
+	{Tier: Operator, Cmd: "console", Sub: "password-cache", Sudoers: []string{"console password-cache", "console password-cache on", "console password-cache off"},
+		Note: "console password-cache: every user of the operator tier and up may run it with no argument (the state) and with on or off (their own choice, which needs their tier to be allowed); tiers, idle, max and user need the superuser tier."},
 	// 'console forget' (0.2.4, D70) is a word of the shell and the console,
 	// which empty the password cache of their own process; the row lets the
 	// lists show it to the tiers the cache can be opened to, and the verb

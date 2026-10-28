@@ -37,6 +37,8 @@ Running `tacctl upgrade` again right after an upgrade changes nothing. `--branch
 
 After an upgrade: `tacctl status`, `tacctl config validate` (store, rendered config, drift), and `tacctl backup list` (the pre-store file is under the old-style backups).
 
+**The login console on every account (0.2.20).** The console is the login shell of every managed user of every tier on the tacctl server, and there is no switch for it. The `tiers` and `users` mappings of `/etc/tacctl/console.yaml` (the per-tier and per-user switches of earlier releases) are ignored, never written again and left in the file; every managed user gets the console at the next `tacctl host sync <name of this server>`, which also puts sshd's drop-in in force for all of them. Local accounts that are not tacctl users are not touched.
+
 ## Rolling back
 
 `tacctl rollback` takes five targets: `0.2.18`, the release before this
@@ -57,10 +59,25 @@ removed by the rollback, because the older schemas refuse its keys.
 
 **A user name with a period stops every rollback** (the dry run too): a user name may hold
 periods from 0.2.20, and no target reads one (it fails with `user '<name>': invalid name` on every
-store command). The refusal lists each such user of the store and each override under one in
-`console.yaml`, with the command that fixes it (`tacctl user rename <name> <new-name>`,
-`tacctl console user <name> clear`); do those, then run the rollback again. Nothing is changed
-while it refuses.
+store command). The refusal lists each such user of the store with the command that fixes it
+(`tacctl user rename <name> <new-name>`); do that, then run the rollback again. Nothing is changed
+while it refuses. An override under such a name in the ignored `users` mapping of `console.yaml`
+does not stop it: the rollback takes that entry out of the file.
+
+**The password cache is the user's choice (0.2.20).** `console password-cache tiers` is now only the permission: a tier that is listed no longer has the cache on for everyone in it. Each user turns it on for themselves with `console password-cache on` (off by default), so a console that had the cache on for a tier has it off for every user until they do; `tacctl shell --password-cache` is unchanged. The choices are stored in `settings.password_cache_users` (written only when a user turned it on). No older release reads that key: the rollback removes it for every target (the plan names the users), and the older release then has the cache on for every user of a listed tier, as it always did.
+
+**The system shell of single users.** `settings.system_shell_users` (`console system-shell user`, written only when a user has a setting) is a key no older release reads: the rollback removes it (the plan names the users and their setting), and the older release has the tiers' list `settings.system_shell_tiers` alone. That list always holds `superuser` once this release has written it.
+
+**The console switches of `console.yaml`.** The `tiers` and `users` mappings that this release
+ignores stay in the file, and the release a rollback goes to reads them as it always did: a tier or
+a user switched off there gets a plain shell again at the next `host sync` of that release. A file
+without the mappings is read there as the console on for every tier. The rollback lists every user
+who would gain a system shell this way, and every user who would gain the password cache back (a
+tier that is allowed it has it for everyone again), with the reason, as a warning: `--apply` refuses
+without `--yes` while there is one (the dry run too shows it). To avoid it, remove the `tiers` and
+`users` entries that switch the console off and run `console password-cache tiers none` before the
+rollback; a system-shell `disable` of one user is dropped by the rollback, so that user has their
+tier's setting.
 
 **System blocks that use 0.2.19's statements.** This release added to the
 grammar of the Junos and IOS `system` blocks: the syslog, login-policy, ssh and

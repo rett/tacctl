@@ -758,27 +758,7 @@ func specKind(spec Spec, rest []string) string {
 		}
 	}
 	if !pending && pos < len(spec.Args) {
-		kind = spec.Args[pos]
-		if r, ok := strings.CutPrefix(kind, "@"); ok {
-			word, k, _ := strings.Cut(r, ":")
-			kind = ""
-			if slices.Contains(words, word) {
-				kind = k
-			}
-		}
-
-		// A kind taken from one of two lists by a word typed before it
-		// (completeSpec's Cond).
-		if r, ok := strings.CutPrefix(kind, "?"); ok {
-			parts := strings.SplitN(r, ":", 3)
-			kind = ""
-			if len(parts) == 3 {
-				kind = parts[2]
-				if slices.Contains(words, parts[0]) {
-					kind = parts[1]
-				}
-			}
-		}
+		kind = resolveKind(spec.Args[pos], words)
 	}
 	return kind
 }

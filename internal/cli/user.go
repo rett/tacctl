@@ -504,6 +504,9 @@ func (inv *invocation) userAdd(args []string) error {
 		require = barrier.why == ""
 	}
 
+	if err := inv.consoleSettingsReadable(); err != nil {
+		return err
+	}
 	inv.echo("")
 	inv.echoE("  Adding user: " + ui.Bold + username + ui.NC + " (" + group + ")")
 	if hexHash == "" {
@@ -519,11 +522,19 @@ func (inv *invocation) userAdd(args []string) error {
 	if require {
 		fields = append(fields, "password_change_required=true")
 	}
-	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, fields...) }); err != nil {
+	// A system-shell setting left under the name (a hand edit, a removal that
+	// could not write console.yaml) is not inherited by the new user.
+	var stale userSettingsMove
+	if err := inv.storeApplyThen(func(s *store.Store) error {
+		return s.UserSet(username, fields...)
+	}, func() { stale = inv.moveUserSettings(username, "") }); err != nil {
 		return err
 	}
 	inv.detail("user add", kvp("name", username), kvp("group", group), kvp("scopes", display))
 	a.Out.InfoE("User '" + username + "' added (" + group + ") with scopes: " + display)
+	if err := inv.userSettingsMoved(stale, username, ""); err != nil {
+		return err
+	}
 	switch {
 	case require:
 		inv.detailPwChange(username, true, "add")
@@ -575,17 +586,25 @@ func (inv *invocation) userRemove(args []string) error {
 	} else if !exists {
 		return inv.usageErr("User '" + username + "' does not exist.")
 	}
+	if err := inv.consoleSettingsReadable(); err != nil {
+		return err
+	}
 	inv.echo("")
 	if !inv.app.Prompter().Confirm("  Remove user '" + username + "'? This cannot be undone. [y/N]: ") {
 		inv.app.Out.Info("Cancelled.")
 		return nil
 	}
 	watch := inv.watchServerTiers()
-	if err := inv.storeApply(func(s *store.Store) error { return s.UserDel(username) }); err != nil {
+	var shell userSettingsMove
+	if err := inv.storeApplyThen(func(s *store.Store) error { return s.UserDel(username) },
+		func() { shell = inv.moveUserSettings(username, "") }); err != nil {
 		return err
 	}
 	inv.detail("user remove", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' removed.")
+	if err := inv.userSettingsMoved(shell, username, ""); err != nil {
+		return err
+	}
 	inv.echo("")
 	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
 }
@@ -904,11 +923,16 @@ func (inv *invocation) userRename(args []string) error {
 	// The old name is gone from the model afterwards, so its account on this
 	// server (and its tac-superuser) goes at the sync that follows; the new
 	// name gets its account there.
+	if err := inv.consoleSettingsReadable(); err != nil {
+		return err
+	}
 	watch := inv.watchServerTiers()
 	hostCount := inv.enrolledHostsWith(oldname)
 	var mv uidMove
+	var shell userSettingsMove
 	if err := inv.storeApplyThen(func(s *store.Store) error { return s.UserRename(oldname, newname) }, func() {
 		mv = inv.moveUID(oldname, newname)
+		shell = inv.moveUserSettings(oldname, newname)
 	}); err != nil {
 		return err
 	}
@@ -919,6 +943,7 @@ func (inv *invocation) userRename(args []string) error {
 	inv.detail("user rename", kvp("from", oldname), kvp("to", newname), kvp("uid", uidWord))
 	out := inv.app.Out
 	out.Info("User renamed: " + oldname + " -> " + newname)
+	shellErr := inv.userSettingsMoved(shell, oldname, newname)
 	switch {
 	case mv.err != nil:
 		id := "<id>"
@@ -942,6 +967,9 @@ func (inv *invocation) userRename(args []string) error {
 	inv.loaded = false
 	if rm, err := inv.model(); err == nil && pwchange.Subject(inv.app.Conf(), rm, rm.User(newname)) {
 		inv.reportNeedsSync([]string{newname}, "the account of '"+oldname+"' is renamed at the next sync of this server")
+	}
+	if shellErr != nil {
+		return shellErr
 	}
 	inv.echo("")
 	// A server that is not enrolled holds no accounts to sync; an enrolled
