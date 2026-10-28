@@ -994,6 +994,29 @@ func TestJunosKnobChassis(t *testing.T) {
 	}
 }
 
+// A chassis of one member with 'chassis.plain' is a virtual chassis of one:
+// 'show version' prints the header 'fpc0:', and 'commit check' and the
+// commits print no label [C].
+func TestJunosKnobChassisOfOne(t *testing.T) {
+	srv, _, _ := newJunos(t, map[string]string{"chassis": "fpc0 ex4600-40f 18.1R3-S6.1\n", "chassis.plain": ""})
+	c, _ := shell(t, srv, DefaultUser, DefaultPassword)
+	if ver := c.send("show version"); !strings.HasPrefix(ver, "fpc0:\n---") || strings.Count(ver, "Hostname: ") != 1 {
+		t.Errorf("show version:\n%s", ver)
+	}
+	c.send("configure exclusive")
+	c.send("set system login idle-timeout 30")
+	if got := c.send("commit check"); got != "configuration check succeeds" {
+		t.Errorf("commit check: %q", got)
+	}
+	const note = "commit confirmed will be automatically rolled back in 3 minutes unless confirmed"
+	if got := c.send("commit confirmed 3"); got != "configuration check succeeds\n"+note+"\ncommit complete" {
+		t.Errorf("commit confirmed: %q", got)
+	}
+	if got := c.send(`commit comment "confirm"`); got != "configuration check succeeds\ncommit complete" {
+		t.Errorf("commit: %q", got)
+	}
+}
+
 // 'chassis.check' makes one member fail its check: the answer shows it and
 // nothing is committed, for 'commit check' and for a commit alike.
 func TestJunosKnobChassisCheck(t *testing.T) {

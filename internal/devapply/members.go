@@ -5,7 +5,9 @@ package devapply
 // prints one block per member, the member's label and its text on the next
 // line, 'fpc0: ' and then 'configuration check succeeds'. The readers of a
 // commit's answer take these blocks; an answer without a label reads as it
-// always did.
+// always did. A device of exactly one member (a virtual chassis of one
+// prints 'fpc0:' in 'show version') answers like a single device, without a
+// label, and takes a block labelled with that member too (plainOK).
 
 import (
 	"fmt"
@@ -121,7 +123,7 @@ func setFault(set, got []string) string {
 // 'node'), "" for none. Two routing engines answer a plain commit, without
 // 'commit synchronize', with the single device's lines, so a set of kind re
 // takes either that or its blocks; a virtual chassis (fpc) and a cluster
-// (node) answer with blocks.
+// (node) of two or more members answer with blocks (plainOK).
 func setKind(set []string) string {
 	if len(set) == 0 {
 		return ""
@@ -130,6 +132,17 @@ func setKind(set []string) string {
 		return m[2]
 	}
 	return ""
+}
+
+// plainOK reports whether an answer without a member label is read for the
+// set the pre-flight listed: the plain lines of a single device. It is for
+// no members, for exactly one member of any kind (a virtual chassis of one
+// member prints the header 'fpc0:' in 'show version' and answers a commit
+// like a single device; a block labelled with that member is read too, and
+// a label of another member is not), and for two routing engines. A chassis
+// or a cluster of two or more members must name every member.
+func plainOK(set []string) bool {
+	return len(set) < 2 || setKind(set) == "re"
 }
 
 // labelsOf are the labels of the members of an answer.
@@ -144,8 +157,8 @@ func labelsOf(members []*memberText) []string {
 // checkAnswer reads the answer of 'commit check': 'configuration check
 // succeeds' alone, or one block of it for every member and nothing else. set
 // is the members 'show version' listed (none for a single device): the
-// answer then names exactly those, each once; for two routing engines the
-// plain answer is read too (setKind). why names the member and the
+// answer then names exactly those, each once; for one member and for two
+// routing engines the plain answer is read too (plainOK). why names the member and the
 // text that is no success, or the missing and unexpected members (empty
 // when the answer has no member or is whole).
 func checkAnswer(body []string, set []string) (ok bool, why string) {
@@ -153,7 +166,7 @@ func checkAnswer(body []string, set []string) (ok bool, why string) {
 	switch {
 	case why != "":
 		return false, why
-	case len(members) == 0 && len(set) > 0 && setKind(set) != "re":
+	case len(members) == 0 && !plainOK(set):
 		return false, setFault(set, nil)
 	case len(members) == 0:
 		return exactly(body, textCheckOK), ""
@@ -187,13 +200,15 @@ func checkAnswer(body []string, set []string) (ok bool, why string) {
 // blocks, where the single device prints it. why names the member and the
 // text that cannot be read. set is the members 'show version' listed (none
 // for a single device): the answer names exactly those, and every one of
-// them ends in 'commit complete', so the commit's members are the check's.
+// them ends in 'commit complete', so the commit's members are the check's;
+// for one member, and for two routing engines, the plain answer is read too
+// (plainOK).
 func readCommitted(body []string, set []string, want ...string) (ok bool, why string) {
 	plain, members, why := splitMembers(body)
 	switch {
 	case why != "":
 		return false, why
-	case len(members) == 0 && len(set) > 0 && setKind(set) != "re":
+	case len(members) == 0 && !plainOK(set):
 		return false, setFault(set, nil)
 	case len(members) == 0:
 		return exactly(body, append([]string{textCheckOK}, want...)...) || exactly(body, want...), ""

@@ -412,3 +412,159 @@ func TestParseVersionOfMultiRoutingEngineReply(t *testing.T) {
 		t.Errorf("%+v %v", id, err)
 	}
 }
+
+// A set of exactly one member, of any kind, reads the plain lines of a
+// single device and a block labelled with that member; a label of another
+// member, a label twice and a stray line are refused. Two or more members
+// keep naming every member.
+func TestOneMemberSetAnswers(t *testing.T) {
+	note := plan.ApplyConfirmedNote(10)
+	for _, member := range []string{"fpc0", "re1", "node0"} {
+		set := []string{member}
+		chk := member + ": \nconfiguration check succeeds\n"
+		done := member + ": \ncommit complete\n"
+		for name, in := range map[string]string{"plain": "configuration check succeeds\n", "labelled": chk, "blank between": member + ":\n\nconfiguration check succeeds\n"} {
+			if ok, why := checkAnswer(split(in), set); !ok {
+				t.Errorf("%s, check, %s: %s", member, name, why)
+			}
+		}
+		for name, c := range map[string]struct {
+			in   string
+			want []string
+		}{
+			"plain":                {"configuration check succeeds\ncommit complete\n", []string{textCommitComplete}},
+			"plain, no check":      {"commit complete\n", []string{textCommitComplete}},
+			"plain, confirmed":     {"configuration check succeeds\n" + note + "\ncommit complete\n", []string{note, textCommitComplete}},
+			"labelled":             {chk + done, []string{textCommitComplete}},
+			"labelled, complete":   {done, []string{textCommitComplete}},
+			"labelled, confirmed":  {chk + note + "\n" + done, []string{note, textCommitComplete}},
+			"labelled, note first": {note + "\n" + done, []string{note, textCommitComplete}},
+		} {
+			if ok, why := readCommitted(split(c.in), set, c.want...); !ok {
+				t.Errorf("%s, commit, %s: %s", member, name, why)
+			}
+		}
+	}
+
+	set := []string{"fpc0"}
+	const sets = "the members that answered are not the chassis' (fpc0): "
+	for name, c := range map[string]struct{ in, why string }{
+		"other member":        {"fpc1: \nconfiguration check succeeds\n", sets + "no answer from fpc0; an answer from fpc1, which 'show version' did not list"},
+		"other and listed":    {"fpc0: \nconfiguration check succeeds\nfpc1: \nconfiguration check succeeds\n", sets + "an answer from fpc1, which 'show version' did not list"},
+		"label twice":         {"fpc0: \nconfiguration check succeeds\nfpc0: \nconfiguration check succeeds\n", `member fpc0 answered "configuration check succeeds" twice`},
+		"plain twice":         {"configuration check succeeds\nconfiguration check succeeds\n", ""},
+		"plain and label":     {"configuration check succeeds\nfpc0: \nconfiguration check succeeds\n", `a line "configuration check succeeds" outside the members' answers`},
+		"plain error":         {"error: statement not found\n", ""},
+		"label, error":        {"fpc0: \nerror: statement not found\n", `member fpc0 answered "error: statement not found"`},
+		"another kind":        {"re0: \nconfiguration check succeeds\n", sets + "no answer from fpc0; an answer from re0, which 'show version' did not list"},
+		"label without text":  {"fpc0: \n", "member fpc0 has no answer"},
+		"empty":               {"", ""},
+		"complete for check":  {"commit complete\n", ""},
+		"labelled complete":   {"fpc0: \ncommit complete\n", `member fpc0 answered "commit complete"`},
+		"mixed kinds in body": {"fpc0: \nconfiguration check succeeds\nre0: \nconfiguration check succeeds\n", "labels of two kinds, fpc0 and re0"},
+	} {
+		ok, why := checkAnswer(split(c.in), set)
+		if ok || why != c.why {
+			t.Errorf("check, %s: ok %v, why %q, want %q", name, ok, why, c.why)
+		}
+	}
+	chk := "fpc0: \nconfiguration check succeeds\n"
+	done := "fpc0: \ncommit complete\n"
+	for name, c := range map[string]struct{ in, why string }{
+		"other member":      {"fpc1: \nconfiguration check succeeds\nfpc1: \ncommit complete\n", sets + "no answer from fpc0; an answer from fpc1, which 'show version' did not list"},
+		"other and listed":  {chk + done + "fpc1: \ncommit complete\n", sets + "an answer from fpc1, which 'show version' did not list"},
+		"label twice":       {done + done, `member fpc0 answered "commit complete" again or out of order`},
+		"check twice":       {chk + chk + done, `member fpc0 answered "configuration check succeeds" again or out of order`},
+		"plain and label":   {"configuration check succeeds\n" + done, `a line "configuration check succeeds" outside the members' answers`},
+		"plain after label": {chk + done + "commit complete\n", `a line "commit complete" outside the members' answers`},
+		"check only":        {chk, `member fpc0 did not answer "commit complete"`},
+		"plain check only":  {"configuration check succeeds\n", ""},
+		"plain error":       {"configuration check succeeds\nerror: x\n", ""},
+		"plain twice":       {"commit complete\ncommit complete\n", ""},
+	} {
+		ok, why := readCommitted(split(c.in), set, textCommitComplete)
+		if ok || why != c.why {
+			t.Errorf("commit, %s: ok %v, why %q, want %q", name, ok, why, c.why)
+		}
+	}
+	// the confirmed note is judged as for a single device
+	if ok, _ := readCommitted(split("configuration check succeeds\ncommit complete\n"), set, note, textCommitComplete); ok {
+		t.Error("a confirmed commit without its note was read")
+	}
+	if ok, _ := readCommitted(split("configuration check succeeds\n"+plan.ApplyConfirmedNote(5)+"\ncommit complete\n"), set, note, textCommitComplete); ok {
+		t.Error("another window was read")
+	}
+
+	// two members still name every member: an answer without a label, or
+	// with a label of one, is refused
+	two := []string{"fpc0", "fpc1"}
+	const sets2 = "the members that answered are not the chassis' (fpc0, fpc1): "
+	if ok, why := checkAnswer(split("configuration check succeeds\n"), two); ok || why != sets2+"no answer from fpc0, fpc1" {
+		t.Errorf("two members, plain check: %v %q", ok, why)
+	}
+	if ok, why := checkAnswer(split("fpc0: \nconfiguration check succeeds\n"), two); ok || why != sets2+"no answer from fpc1" {
+		t.Errorf("two members, one block: %v %q", ok, why)
+	}
+	if ok, why := readCommitted(split("configuration check succeeds\ncommit complete\n"), two, textCommitComplete); ok || why != sets2+"no answer from fpc0, fpc1" {
+		t.Errorf("two members, plain commit: %v %q", ok, why)
+	}
+	if ok, why := readCommitted(split(chk+done), two, textCommitComplete); ok || why != sets2+"no answer from fpc1" {
+		t.Errorf("two members, one block: %v %q", ok, why)
+	}
+	for _, cl := range [][]string{{"node0", "node1"}, {"fpc0", "fpc1", "fpc2"}} {
+		if ok, _ := checkAnswer(split("configuration check succeeds\n"), cl); ok {
+			t.Errorf("%v: a plain check was read", cl)
+		}
+	}
+}
+
+// Over NETCONF a set of one member accepts a reply with no member element
+// and one element named by that member; another name, and an element of the
+// right name that does not answer, are refused. Two members still name
+// every member.
+func TestNetconfOneMemberSet(t *testing.T) {
+	const ck, cs = "<commit-check-success/>", "<commit-success/>"
+	re := func(name, el string) string {
+		return "<routing-engine><name>" + name + "</name>" + el + "</routing-engine>"
+	}
+	wrap := func(s string) string { return "<commit-results>" + s + "</commit-results>" }
+	one := []string{"fpc0"}
+	two := []string{"fpc0", "fpc1"}
+	for name, c := range map[string]struct {
+		in     string
+		commit bool
+		set    []string
+		want   string // "" is a whole reply
+	}{
+		"no element, check":        {wrap(""), false, one, ""},
+		"bare check":               {wrap(ck), false, one, ""},
+		"bare commit":              {wrap(cs), true, one, ""},
+		"ok":                       {"<ok/>", true, one, ""},
+		"the member, check":        {wrap(re("fpc0", ck)), false, one, ""},
+		"the member, commit":       {wrap(re("fpc0", cs)), true, one, ""},
+		"the member, both":         {wrap(re("fpc0", ck) + re("fpc0", cs)), true, one, ""},
+		"one engine of one":        {wrap(re("re0", cs)), true, []string{"re0"}, ""},
+		"another name":             {wrap(re("fpc1", ck)), false, one, "no answer from fpc0; an answer from fpc1, which 'show version' did not list"},
+		"single device's name":     {wrap(re("re0", cs)), true, one, "no answer from fpc0; an answer from re0, which 'show version' did not list"},
+		"the member and another":   {wrap(re("fpc0", ck) + re("fpc1", ck)), false, one, "an answer from fpc1, which 'show version' did not list"},
+		"the member, silent":       {wrap(re("fpc0", "")), false, one, "member fpc0 did not answer <commit-check-success/>"},
+		"the member, twice":        {wrap(re("fpc0", ck) + re("fpc0", ck)), false, one, "member fpc0 answered <commit-check-success/><commit-check-success/>, not"},
+		"the member, commit twice": {wrap(re("fpc0", cs) + re("fpc0", cs)), true, one, "member fpc0 answered <commit-success/><commit-success/>, not"},
+		"two, no element":          {wrap(""), false, two, "the chassis' NETCONF answer names no member"},
+		"two, ok":                  {"<ok/>", true, two, "the chassis' NETCONF answer names no member"},
+		"two, one element":         {wrap(re("fpc0", ck)), false, two, "no answer from fpc1"},
+	} {
+		r, err := parseReply(c.in)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		j := &JunosNetconf{members: c.set}
+		err = j.memberRefusal("commit check", r, c.commit)
+		switch {
+		case c.want == "" && err != nil:
+			t.Errorf("%s: %v", name, err)
+		case c.want != "" && (err == nil || !errors.Is(err, ErrUnrecognised) || !strings.Contains(err.Error(), c.want)):
+			t.Errorf("%s: %v, want %q", name, err, c.want)
+		}
+	}
+}
