@@ -16,7 +16,7 @@ tacctl completion zsh > ~/.zfunc/_tacctl
 tacctl completion fish > ~/.config/fish/completions/tacctl.fish
 ```
 
-The scripts ask `tacctl __complete` for the words, so they match the installed binary; a second Tab lists each flag with the value it takes and what it does; regenerate them after an upgrade. Live names (users, groups, scopes, ...) need root or the NOPASSWD sudoers rule; without it only fixed words are completed.
+The scripts ask `tacctl __complete` for the words, so they match the installed binary; a second Tab lists each sub-command, each verb word after a name (`scope mgmt-acl lab <Tab><Tab>`) and each flag, with what it does and, for a flag, the value it takes; regenerate them after an upgrade. Live names (users, groups, scopes, ...) need root or the NOPASSWD sudoers rule; without it only fixed words are completed.
 
 ## Interactive Shell — `tacctl shell`
 

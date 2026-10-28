@@ -41,6 +41,16 @@ current behaviour; this file is where history lives.
    described as "Refuse the logins of the groups on the scope's devices and
    hosts".
 
+3. **The completion scripts describe the verb words after a name.** In bash,
+   zsh and fish, `scope mgmt-acl lab <Tab><Tab>` listed `add`, `cisco-name`,
+   `clear` ... bare, and only the sub-commands and flags had a description.
+   The words that follow a name or another word (the verbs of `scope
+   mgmt-acl`, `scope snmp`, `scope prefixes`, `group edit`, ...) are
+   described as the shell's `?` describes them. A word that is a value
+   (`on`, `off`, a vendor) or one of a choice that stands for several forms
+   (`user scope alice`: `add`, `list`, `remove`, `replace`) stays without
+   one.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

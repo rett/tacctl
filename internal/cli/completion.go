@@ -176,7 +176,8 @@ func attachCompletion(inv *invocation, root *cobra.Command) {
 			if spec, ok := specFor(path); ok {
 				c.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
 					comps, dir := inv.completeSpec(spec, args, toComplete)
-					return inv.describeFlags(cmd, path, spec, comps), dir
+					comps = inv.describeFlags(cmd, path, spec, comps)
+					return inv.describeWords(cmd, path, spec, args, comps), dir
 				}
 			}
 			return
@@ -208,6 +209,30 @@ func (inv *invocation) describeFlags(cmd *cobra.Command, path []string, spec Spe
 			desc = h[0] + ": " + desc
 		}
 		out = append(out, cobra.CompletionWithDesc(c, desc))
+	}
+	return out
+}
+
+// describeWords gives each fixed word among comps the description the
+// shell's '?' shows for it ('scope mgmt-acl lab ' offers 'cisco-name', which
+// '?' describes as 'Per-scope Cisco VTY-ACL name'), so the scripts list the
+// verbs after a name as they list the sub-commands. A flag, and a word
+// that is not a fixed one of the position (a name, a value of the verb),
+// is left as it is.
+func (inv *invocation) describeWords(cmd *cobra.Command, path []string, spec Spec, args []string, comps []cobra.Completion) []cobra.Completion {
+	if len(comps) == 0 {
+		return comps
+	}
+	descs := inv.wordDescs(cmd, path, spec, args)
+	if len(descs) == 0 {
+		return comps
+	}
+	out := make([]cobra.Completion, 0, len(comps))
+	for _, c := range comps {
+		if d := descs[c]; d != "" && !strings.HasPrefix(c, "-") && !strings.Contains(c, "\t") {
+			c = cobra.CompletionWithDesc(c, d)
+		}
+		out = append(out, c)
 	}
 	return out
 }
