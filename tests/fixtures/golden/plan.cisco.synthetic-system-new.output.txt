@@ -4,7 +4,7 @@
 ! 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references.
 ! THIS OUTPUT HOLDS THE NTP KEY OF SCOPE lab: do not keep it in a file or a scrollback.
 !
-! What is irregular on dev-cisco-synthetic-system-new (18 items; the paste fixes 15, leaves 3):
+! What is irregular on dev-cisco-synthetic-system-new (15 items; the paste fixes 15, leaves 0):
 !  1. aaa      ACCESS     missing: the console's own login list CONSOLE (local only, so a local user
 !                         always gets in there) (aaa authentication login CONSOLE local). Fixed by
 !                         region line 3.
@@ -15,34 +15,30 @@
 !                         (line con 0 > login authentication CONSOLE). Fixed by region line 24.
 !  4. snmp     MONITORING missing: the trap source of the SNMP block of scope 'lab': loopback0
 !                         (snmp-server trap-source loopback0). Fixed by region line 6.
-!  5. snmp     MONITORING extra: an SNMP community (snmp-server community <other:1> RO TACCTL-SNMP).
-!                         Left alone (its name is the secret and is not known to tacctl).
-!  6. snmp     MONITORING extra: snmp-server enable traps config. Left alone. To remove it later: no
-!                         snmp-server enable traps config
-!  7. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <other:2>. Left alone (its
-!                         name is the secret and is not known to tacctl).
-!  8. system   COSMETIC   missing: the login banner of 2 lines, 42 characters (banner login <message:
+!  5. system   COSMETIC   missing: the login banner of 2 lines, 42 characters (banner login <message:
 !                         2 lines, 42 characters, id dce3e2ae>). Fixed by region line 8.
-!  9. system   COSMETIC   missing: the domain name is lab.example.net (ip domain name
+!  6. system   COSMETIC   missing: the domain name is lab.example.net (ip domain name
 !                         lab.example.net). Fixed by region line 12.
-! 10. system   COSMETIC   missing: the search domain lab.example.net (ip domain list lab.example.net).
+!  7. system   COSMETIC   missing: the search domain lab.example.net (ip domain list lab.example.net).
 !                         Fixed by region line 13.
-! 11. system   COSMETIC   missing: the time zone is CET 1 0 (clock timezone CET 1 0). Fixed by region
+!  8. system   COSMETIC   missing: the time zone is CET 1 0 (clock timezone CET 1 0). Fixed by region
 !                         line 14.
-! 12. system   COSMETIC   missing: the name server 192.0.2.53 (ip name-server 192.0.2.53). Fixed by
+!  9. system   COSMETIC   missing: the name server 192.0.2.53 (ip name-server 192.0.2.53). Fixed by
 !                         region line 15.
-! 13. system   COSMETIC   missing: the name server 192.0.2.54 (ip name-server 192.0.2.54). Fixed by
+! 10. system   COSMETIC   missing: the name server 192.0.2.54 (ip name-server 192.0.2.54). Fixed by
 !                         region line 16.
-! 14. system   COSMETIC   missing: NTP key 5 is set (ntp authentication-key 5 <secret>). Fixed by
+! 11. system   COSMETIC   missing: NTP key 5 is set (ntp authentication-key 5 <secret>). Fixed by
 !                         region line 17.
-! 15. system   COSMETIC   missing: NTP key 5 is trusted (ntp trusted-key 5). Fixed by region line 18.
-! 16. system   COSMETIC   missing: the NTP server 192.0.2.123: key 5 prefer version 4 (ntp server
+! 12. system   COSMETIC   missing: NTP key 5 is trusted (ntp trusted-key 5). Fixed by region line 18.
+! 13. system   COSMETIC   missing: the NTP server 192.0.2.123: key 5 prefer version 4 (ntp server
 !                         192.0.2.123 key 5 prefer version 4). Fixed by region line 19.
-! 17. system   COSMETIC   missing: the NTP server ntp2.example.net (ntp server ntp2.example.net).
+! 14. system   COSMETIC   missing: the NTP server ntp2.example.net (ntp server ntp2.example.net).
 !                         Fixed by region line 20.
-! 18. system   COSMETIC   missing: NTP authentication is on (ntp authenticate). Fixed by region line
+! 15. system   COSMETIC   missing: NTP authentication is on (ntp authenticate). Fixed by region line
 !                         21.
 ! Consistent: roles, mgmt-acl. Not planned: netconf, breakglass.
+! Kept: snmp 3 statements of the device's own (communities, trap types, trap hosts): left alone,
+! listed by device config diff.
 ! Secrets: 2 present on the device, not changed (--secrets pushes them).
 ! Note: system: the NTP key lines of the system block of scope 'lab' have not been checked on a device
 ! (not lab-tested): read them before you paste; they are in the order IOS needs (keys, trusted keys,

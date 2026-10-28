@@ -4,7 +4,7 @@
 ! 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references.
 ! THIS OUTPUT HOLDS THE TACACS+ KEY OF SCOPE lab: do not keep it in a file or a scrollback.
 !
-! What is irregular on dev-cisco-same-address-block-nocmd (11 items; the paste fixes 8, leaves 3):
+! What is irregular on dev-cisco-same-address-block-nocmd (8 items; the paste fixes 8, leaves 0):
 !  1. aaa      ACCESS     missing: tacacs server TACACS: 4 statements (e.g. tacacs server TACACS >
 !                         address ipv4 192.0.2.10). Fixed by region lines 7-10.
 !  2. aaa      ACCESS     missing: the server group TACACS-GROUP: server name TACACS (aaa group server
@@ -24,13 +24,9 @@
 !                         4.
 !  8. aaa      ACCESS     extra: tacacs server OLD-TACACS: 4 statements (e.g. tacacs server OLD-TACACS
 !                         > address ipv4 192.0.2.10). Fixed by region line 5.
-!  9. snmp     MONITORING extra: an SNMP community (snmp-server community <other:1> RO TACCTL-SNMP).
-!                         Left alone (its name is the secret and is not known to tacctl).
-! 10. snmp     MONITORING extra: snmp-server enable traps config. Left alone. To remove it later: no
-!                         snmp-server enable traps config
-! 11. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <other:2>. Left alone (its
-!                         name is the secret and is not known to tacctl).
-! Consistent: roles, mgmt-acl. Not planned: netconf, breakglass.
+! Consistent: roles, snmp, mgmt-acl. Not planned: netconf, breakglass.
+! Kept: snmp 3 statements of the device's own (communities, trap types, trap hosts): left alone,
+! listed by device config diff.
 ! Secrets: 1 present on the device, not changed (--secrets pushes them).
 ! WARNING: the server entry tacacs server OLD-TACACS is at the address of the standard server, and IOS
 ! refuses a second entry with the same address and key: the region removes it (and the group entries

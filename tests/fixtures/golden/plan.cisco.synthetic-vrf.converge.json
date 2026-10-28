@@ -50,166 +50,6 @@
       "region_lines": [
         7
       ]
-    },
-    {
-      "n": 4,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "an SNMP community",
-      "statement": "snmp-server community \u003cother:1\u003e RO TACCTL-SNMP",
-      "action": "Left alone (its name is the secret and is not known to tacctl).",
-      "fixed": false
-    },
-    {
-      "n": 5,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "SNMP traps are sourced from the interface loopback0",
-      "statement": "snmp-server trap-source loopback0",
-      "action": "Left alone. To remove it later: no snmp-server trap-source",
-      "fixed": false
-    },
-    {
-      "n": 6,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "snmp-server enable traps config",
-      "statement": "snmp-server enable traps config",
-      "action": "Left alone. To remove it later: no snmp-server enable traps config",
-      "fixed": false
-    },
-    {
-      "n": 7,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "snmp-server host 192.0.2.50 version 2c \u003cother:2\u003e",
-      "statement": "snmp-server host 192.0.2.50 version 2c \u003cother:2\u003e",
-      "action": "Left alone (its name is the secret and is not known to tacctl).",
-      "fixed": false
-    },
-    {
-      "n": 8,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "snmp-server host 192.0.2.64 vrf OTHER version 2c \u003cother:2\u003e",
-      "statement": "snmp-server host 192.0.2.64 vrf OTHER version 2c \u003cother:2\u003e",
-      "action": "Left alone (its name is the secret and is not known to tacctl).",
-      "fixed": false
-    },
-    {
-      "n": 9,
-      "kind": "extra",
-      "severity": "COSMETIC",
-      "section": "system",
-      "what": "the time zone is CET 1 0",
-      "statement": "clock timezone CET 1 0",
-      "action": "Left alone (the system block only adds, it never removes). To remove it later: no clock timezone",
-      "fixed": false
-    },
-    {
-      "n": 10,
-      "kind": "extra",
-      "severity": "COSMETIC",
-      "section": "system",
-      "what": "the domain name in vrf OTHER is other.example.net",
-      "statement": "ip domain name vrf OTHER other.example.net",
-      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ip domain name vrf OTHER",
-      "fixed": false
-    },
-    {
-      "n": 11,
-      "kind": "extra",
-      "severity": "COSMETIC",
-      "section": "system",
-      "what": "the search domain other.example.net",
-      "statement": "ip domain list other.example.net",
-      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ip domain list other.example.net",
-      "fixed": false
-    },
-    {
-      "n": 12,
-      "kind": "extra",
-      "severity": "COSMETIC",
-      "section": "system",
-      "what": "the search domain other.example.net in vrf OTHER",
-      "statement": "ip domain list vrf OTHER other.example.net",
-      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ip domain list vrf OTHER other.example.net",
-      "fixed": false
-    },
-    {
-      "n": 13,
-      "kind": "extra",
-      "severity": "COSMETIC",
-      "section": "system",
-      "what": "the name server 198.51.100.53",
-      "statement": "ip name-server 198.51.100.53",
-      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ip name-server 198.51.100.53",
-      "fixed": false
-    },
-    {
-      "n": 14,
-      "kind": "extra",
-      "severity": "COSMETIC",
-      "section": "system",
-      "what": "the name server 198.51.100.53 in vrf OTHER",
-      "statement": "ip name-server vrf OTHER 198.51.100.53",
-      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ip name-server vrf OTHER 198.51.100.53",
-      "fixed": false
-    },
-    {
-      "n": 15,
-      "kind": "extra",
-      "severity": "COSMETIC",
-      "section": "system",
-      "what": "the login banner of 1 lines, 16 characters",
-      "statement": "banner login \u003cmessage: 1 lines, 16 characters, id 9716067a\u003e",
-      "action": "Left alone (the system block only adds, it never removes). To remove it later: no banner login",
-      "fixed": false
-    },
-    {
-      "n": 16,
-      "kind": "extra",
-      "severity": "COSMETIC",
-      "section": "system",
-      "what": "ntp source Loopback0",
-      "statement": "ntp source Loopback0",
-      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ntp source Loopback0",
-      "fixed": false
-    },
-    {
-      "n": 17,
-      "kind": "extra",
-      "severity": "COSMETIC",
-      "section": "system",
-      "what": "ntp master 3",
-      "statement": "ntp master 3",
-      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ntp master 3",
-      "fixed": false
-    },
-    {
-      "n": 18,
-      "kind": "extra",
-      "severity": "COSMETIC",
-      "section": "system",
-      "what": "the NTP server 198.51.100.123",
-      "statement": "ntp server 198.51.100.123",
-      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ntp server 198.51.100.123",
-      "fixed": false
-    },
-    {
-      "n": 19,
-      "kind": "extra",
-      "severity": "COSMETIC",
-      "section": "system",
-      "what": "the NTP server 198.51.100.123 in vrf OTHER",
-      "statement": "ntp server vrf OTHER 198.51.100.123",
-      "action": "Left alone (the system block only adds, it never removes). To remove it later: no ntp server vrf OTHER 198.51.100.123",
-      "fixed": false
     }
   ],
   "region": [
@@ -253,114 +93,153 @@
   ],
   "left": {
     "access": 0,
-    "monitoring": 5,
-    "cosmetic": 11
+    "monitoring": 0,
+    "cosmetic": 0
   },
   "extras": [
     {
       "section": "snmp",
       "text": "snmp-server community \u003cother:1\u003e RO TACCTL-SNMP",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     },
     {
       "section": "snmp",
       "text": "snmp-server trap-source loopback0",
       "remove": [
         "no snmp-server trap-source"
-      ]
+      ],
+      "own": true
     },
     {
       "section": "snmp",
       "text": "snmp-server enable traps config",
       "remove": [
         "no snmp-server enable traps config"
-      ]
+      ],
+      "own": true
     },
     {
       "section": "snmp",
       "text": "snmp-server host 192.0.2.50 version 2c \u003cother:2\u003e",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     },
     {
       "section": "snmp",
       "text": "snmp-server host 192.0.2.64 vrf OTHER version 2c \u003cother:2\u003e",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     },
     {
       "section": "system",
       "text": "clock timezone CET 1 0",
       "remove": [
         "no clock timezone"
-      ]
+      ],
+      "own": true
     },
     {
       "section": "system",
       "text": "ip domain name vrf OTHER other.example.net",
       "remove": [
         "no ip domain name vrf OTHER"
-      ]
+      ],
+      "own": true
     },
     {
       "section": "system",
       "text": "ip domain list other.example.net",
       "remove": [
         "no ip domain list other.example.net"
-      ]
+      ],
+      "own": true
     },
     {
       "section": "system",
       "text": "ip domain list vrf OTHER other.example.net",
       "remove": [
         "no ip domain list vrf OTHER other.example.net"
-      ]
+      ],
+      "own": true
     },
     {
       "section": "system",
       "text": "ip name-server 198.51.100.53",
       "remove": [
         "no ip name-server 198.51.100.53"
-      ]
+      ],
+      "own": true
     },
     {
       "section": "system",
       "text": "ip name-server vrf OTHER 198.51.100.53",
       "remove": [
         "no ip name-server vrf OTHER 198.51.100.53"
-      ]
+      ],
+      "own": true
     },
     {
       "section": "system",
       "text": "banner login \u003cmessage: 1 lines, 16 characters, id 9716067a\u003e",
       "remove": [
         "no banner login"
-      ]
+      ],
+      "own": true
     },
     {
       "section": "system",
       "text": "ntp source Loopback0",
       "remove": [
         "no ntp source Loopback0"
-      ]
+      ],
+      "own": true
     },
     {
       "section": "system",
       "text": "ntp master 3",
       "remove": [
         "no ntp master 3"
-      ]
+      ],
+      "own": true
     },
     {
       "section": "system",
       "text": "ntp server 198.51.100.123",
       "remove": [
         "no ntp server 198.51.100.123"
-      ]
+      ],
+      "own": true
     },
     {
       "section": "system",
       "text": "ntp server vrf OTHER 198.51.100.123",
       "remove": [
         "no ntp server vrf OTHER 198.51.100.123"
+      ],
+      "own": true
+    }
+  ],
+  "kept": [
+    {
+      "section": "snmp",
+      "count": 5,
+      "kinds": [
+        "communities",
+        "trap source",
+        "trap types",
+        "trap hosts"
+      ]
+    },
+    {
+      "section": "system",
+      "count": 11,
+      "kinds": [
+        "clock",
+        "domain names",
+        "name servers",
+        "banners",
+        "NTP"
       ]
     }
   ],

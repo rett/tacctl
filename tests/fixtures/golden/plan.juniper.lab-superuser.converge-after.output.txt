@@ -2,18 +2,14 @@
 # Based on the pull of 2026-10-10 14:02 by alice over netconf (18 minutes ago; the login could see
 # secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5).
 #
-# What is irregular on dev-juniper-lab-superuser (3 items; the paste fixes 1, leaves 2):
+# What is irregular on dev-juniper-lab-superuser (1 item; the paste fixes 1, leaves 0):
 #  1. aaa      ACCESS     extra: the TACACS+ server 198.18.0.24: 2 statements (e.g. set system
 #                         tacplus-server 198.18.0.24 secret <secret>). Removed by the cleanup region,
 #                         line 3.
-#  2. snmp     MONITORING extra: SNMP: name example-switch.example.net (set snmp name
-#                         example-switch.example.net). Left alone (the device's own identity: never
-#                         removed).
-#  3. snmp     MONITORING extra: an SNMP community: 4 statements (e.g. set snmp community <other:1>
-#                         authorization read-only). Left alone (its name is the secret and is not
-#                         known to tacctl).
 # No fix to paste: the cleanup region below is the only paste (what else remains is left alone).
-# Consistent: roles, mgmt-acl. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
+# Consistent: roles, snmp, mgmt-acl. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
+# Kept: snmp 5 statements of the device's own (name, communities): left alone, listed by device config
+# diff.
 # Secrets: 3 present on the device, not changed (--secrets pushes them).
 # Cleanup (--converge): the region below is the whole output: it removes 1 line: TACACS+ servers the
 # standard does not have. Paste it only after you have checked that the pull of

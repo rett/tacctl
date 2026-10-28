@@ -21,86 +21,6 @@
       "statement": "set system tacplus-server 192.0.2.99 secret \u003csecret\u003e",
       "action": "Removed by the cleanup region, line 3.",
       "fixed": false
-    },
-    {
-      "n": 2,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "SNMP: name jsw1.lab.example.net",
-      "statement": "set snmp name jsw1.lab.example.net",
-      "action": "Left alone (the device's own identity: never removed).",
-      "fixed": false
-    },
-    {
-      "n": 3,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "an SNMP community: 4 statements",
-      "statement": "e.g. set snmp community \u003cother:1\u003e authorization read-only",
-      "action": "Left alone (its name is the secret and is not known to tacctl).",
-      "fixed": false
-    },
-    {
-      "n": 4,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "SNMP: trap-options source-address 192.0.2.250",
-      "statement": "set snmp trap-options source-address 192.0.2.250",
-      "action": "Left alone (the device's own identity: never removed).",
-      "fixed": false
-    },
-    {
-      "n": 5,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "SNMP: trap-group \u003cother:1\u003e version v2",
-      "statement": "set snmp trap-group \u003cother:1\u003e version v2",
-      "action": "Left alone (its name is the secret and is not known to tacctl).",
-      "fixed": false
-    },
-    {
-      "n": 6,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "SNMP: trap-group \u003cother:1\u003e categories authentication",
-      "statement": "set snmp trap-group \u003cother:1\u003e categories authentication",
-      "action": "Left alone (its name is the secret and is not known to tacctl).",
-      "fixed": false
-    },
-    {
-      "n": 7,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "SNMP: trap-group \u003cother:1\u003e categories chassis",
-      "statement": "set snmp trap-group \u003cother:1\u003e categories chassis",
-      "action": "Left alone (its name is the secret and is not known to tacctl).",
-      "fixed": false
-    },
-    {
-      "n": 8,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "SNMP: trap-group \u003cother:1\u003e categories link",
-      "statement": "set snmp trap-group \u003cother:1\u003e categories link",
-      "action": "Left alone (its name is the secret and is not known to tacctl).",
-      "fixed": false
-    },
-    {
-      "n": 9,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "SNMP: trap-group \u003cother:1\u003e targets 198.51.100.7",
-      "statement": "set snmp trap-group \u003cother:1\u003e targets 198.51.100.7",
-      "action": "Left alone (its name is the secret and is not known to tacctl).",
-      "fixed": false
     }
   ],
   "region": [],
@@ -108,7 +28,7 @@
   "backout": [],
   "left": {
     "access": 0,
-    "monitoring": 8,
+    "monitoring": 0,
     "cosmetic": 0
   },
   "extras": [
@@ -122,57 +42,80 @@
     {
       "section": "snmp",
       "text": "set snmp name jsw1.lab.example.net",
-      "guard": "the device's own identity: never removed"
+      "guard": "the device's own identity: never removed",
+      "own": true
     },
     {
       "section": "snmp",
       "text": "set snmp community \u003cother:1\u003e authorization read-only",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     },
     {
       "section": "snmp",
       "text": "set snmp community \u003cother:1\u003e clients 192.0.2.10/32",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     },
     {
       "section": "snmp",
       "text": "set snmp community \u003cother:1\u003e clients 198.51.100.7/32",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     },
     {
       "section": "snmp",
       "text": "set snmp community \u003cother:1\u003e clients 0.0.0.0/0 restrict",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     },
     {
       "section": "snmp",
       "text": "set snmp trap-options source-address 192.0.2.250",
-      "guard": "the device's own identity: never removed"
+      "guard": "the device's own identity: never removed",
+      "own": true
     },
     {
       "section": "snmp",
       "text": "set snmp trap-group \u003cother:1\u003e version v2",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     },
     {
       "section": "snmp",
       "text": "set snmp trap-group \u003cother:1\u003e categories authentication",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     },
     {
       "section": "snmp",
       "text": "set snmp trap-group \u003cother:1\u003e categories chassis",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     },
     {
       "section": "snmp",
       "text": "set snmp trap-group \u003cother:1\u003e categories link",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     },
     {
       "section": "snmp",
       "text": "set snmp trap-group \u003cother:1\u003e targets 198.51.100.7",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
+    }
+  ],
+  "kept": [
+    {
+      "section": "snmp",
+      "count": 11,
+      "kinds": [
+        "name",
+        "communities",
+        "trap options",
+        "trap groups"
+      ]
     }
   ],
   "skipped": [],

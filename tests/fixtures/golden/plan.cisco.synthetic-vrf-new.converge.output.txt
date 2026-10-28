@@ -4,7 +4,7 @@
 ! 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references.
 ! THIS OUTPUT HOLDS THE SNMP COMMUNITY OF SCOPE lab: do not keep it in a file or a scrollback.
 !
-! What is irregular on dev-cisco-synthetic-vrf-new (19 items; the paste fixes 16, leaves 3):
+! What is irregular on dev-cisco-synthetic-vrf-new (16 items; the paste fixes 16, leaves 0):
 !  1. aaa      ACCESS     missing: the console's own login list CONSOLE (local only, so a local user
 !                         always gets in there) (aaa authentication login CONSOLE local). Fixed by
 !                         region line 3.
@@ -22,33 +22,29 @@
 !  6. snmp     MONITORING missing: a trap host of the SNMP block of scope 'lab': 192.0.2.63 version 2c
 !                         <secret:2> udp-port 1162 config (snmp-server host 192.0.2.63 version 2c
 !                         <secret:2> udp-port 1162 config). Fixed by region line 8.
-!  7. snmp     MONITORING extra: an SNMP community (snmp-server community <other:1> RO TACCTL-SNMP).
-!                         Left alone (its name is the secret and is not known to tacctl).
-!  8. snmp     MONITORING extra: snmp-server enable traps config. Left alone. To remove it later: no
-!                         snmp-server enable traps config
-!  9. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <other:2>. Left alone (its
-!                         name is the secret and is not known to tacctl).
-! 10. system   COSMETIC   missing: the domain name is lab.example.net (ip domain name
+!  7. system   COSMETIC   missing: the domain name is lab.example.net (ip domain name
 !                         lab.example.net). Fixed by region line 10.
-! 11. system   COSMETIC   missing: the domain name in vrf MGMT is mgmt.example.net (ip domain name vrf
+!  8. system   COSMETIC   missing: the domain name in vrf MGMT is mgmt.example.net (ip domain name vrf
 !                         MGMT mgmt.example.net). Fixed by region line 11.
-! 12. system   COSMETIC   missing: the search domain lab.example.net (ip domain list lab.example.net).
+!  9. system   COSMETIC   missing: the search domain lab.example.net (ip domain list lab.example.net).
 !                         Fixed by region line 12.
-! 13. system   COSMETIC   missing: the search domain mgmt.example.net in vrf MGMT (ip domain list vrf
+! 10. system   COSMETIC   missing: the search domain mgmt.example.net in vrf MGMT (ip domain list vrf
 !                         MGMT mgmt.example.net). Fixed by region line 13.
-! 14. system   COSMETIC   missing: the name server 192.0.2.53 (ip name-server 192.0.2.53). Fixed by
+! 11. system   COSMETIC   missing: the name server 192.0.2.53 (ip name-server 192.0.2.53). Fixed by
 !                         region line 14.
-! 15. system   COSMETIC   missing: the name server 192.0.2.53 in vrf MGMT (ip name-server vrf MGMT
+! 12. system   COSMETIC   missing: the name server 192.0.2.53 in vrf MGMT (ip name-server vrf MGMT
 !                         192.0.2.53). Fixed by region line 15.
-! 16. system   COSMETIC   missing: the name server 192.0.2.54 in vrf MGMT (ip name-server vrf MGMT
+! 13. system   COSMETIC   missing: the name server 192.0.2.54 in vrf MGMT (ip name-server vrf MGMT
 !                         192.0.2.54). Fixed by region line 16.
-! 17. system   COSMETIC   missing: the NTP server 192.0.2.123: prefer (ntp server 192.0.2.123 prefer).
+! 14. system   COSMETIC   missing: the NTP server 192.0.2.123: prefer (ntp server 192.0.2.123 prefer).
 !                         Fixed by region line 17.
-! 18. system   COSMETIC   missing: the NTP server 192.0.2.123 in vrf MGMT: prefer version 3 (ntp
+! 15. system   COSMETIC   missing: the NTP server 192.0.2.123 in vrf MGMT: prefer version 3 (ntp
 !                         server vrf MGMT 192.0.2.123 prefer version 3). Fixed by region line 18.
-! 19. system   COSMETIC   missing: the NTP server ntp2.example.net in vrf OOB (ntp server vrf OOB
+! 16. system   COSMETIC   missing: the NTP server ntp2.example.net in vrf OOB (ntp server vrf OOB
 !                         ntp2.example.net). Fixed by region line 19.
 ! Consistent: roles, mgmt-acl. Not planned: netconf, breakglass.
+! Kept: snmp 3 statements of the device's own (communities, trap types, trap hosts): left alone,
+! listed by device config diff.
 ! Secrets: 2 present on the device, not changed (--secrets pushes them).
 ! Cleanup (--converge): cleanup comes after this region is pasted and verified: pull the device, then
 ! plan --converge again.

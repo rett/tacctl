@@ -41,26 +41,6 @@
       "statement": "set snmp description \"Core switch\"",
       "action": "Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).",
       "fixed": false
-    },
-    {
-      "n": 4,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "an SNMP community: authorization read-only",
-      "statement": "set snmp community \u003cother:1\u003e authorization read-only",
-      "action": "Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).",
-      "fixed": false
-    },
-    {
-      "n": 5,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "SNMP: trap-group \u003cother:2\u003e targets 192.0.2.50",
-      "statement": "set snmp trap-group \u003cother:2\u003e targets 192.0.2.50",
-      "action": "Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).",
-      "fixed": false
     }
   ],
   "region": [],
@@ -68,10 +48,20 @@
   "backout": [],
   "left": {
     "access": 2,
-    "monitoring": 2,
+    "monitoring": 0,
     "cosmetic": 1
   },
   "extras": [],
+  "kept": [
+    {
+      "section": "snmp",
+      "count": 2,
+      "kinds": [
+        "communities",
+        "trap groups"
+      ]
+    }
+  ],
   "skipped": [
     {
       "section": "aaa",

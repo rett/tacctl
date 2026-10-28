@@ -9838,7 +9838,7 @@ of
 .B diff
 or
 .B plan
-exit 2 (the plan still lists the extras, as left alone). Only
+exit 2 (the plan has no item for them, only a Kept line with their number). Only
 .B snmp
 reads this way: an extra server, login class, filter or user in
 .BR aaa ,
@@ -9999,6 +9999,33 @@ another device, keep the output in a file when it holds a secret).
 A statement in a standard hierarchy that the standard does not have is an
 .BR extra :
 the report gives the exact line that removes it, and it is left alone.
+A statement of the device's own that the comparison counts as
+.B unmanaged
+(see
+.BR "device config diff" )
+is no extra and no irregularity: it has no item, is not in the number of the
+header, does not keep its section out of the
+.B Consistent:
+line and does not make the plan non\-empty. One line per section keeps it
+visible,
+.BR "Kept: snmp 17 statements of the device's own (name, communities, trap groups, ...): left alone, listed by device config diff" ;
+the number is the one
+.B "device config list"
+shows as
+.BR "snmp +17 unmanaged" ,
+and the kinds never name a community or a value.
+.B \-\-json
+has the
+.B kept
+list (section,
+.BR count ,
+.BR kinds ;
+omitted when empty) and marks these statements in
+.B extras
+with
+.BR own ;
+the cover page does not count them as extras.
+.PP
 .B \-\-converge
 makes a region that removes the extras of the kinds the standard names, for a
 device that has nothing else to paste: make the plan after the paste and the

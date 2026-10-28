@@ -3,16 +3,10 @@
 ! secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5). Checked on a device: IOS 12.4(15) (a
 ! 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references.
 !
-! What is irregular on dev-cisco-synthetic-block (3 items; the paste fixes 0, leaves 3):
-!  1. snmp     MONITORING extra: an SNMP community (snmp-server community <other:1> RO TACCTL-SNMP).
-!                         Left alone (its name is the secret and is not known to tacctl).
-!  2. snmp     MONITORING extra: snmp-server enable traps snmp authentication linkdown linkup
-!                         coldstart warmstart. Left alone. To remove it later: no snmp-server enable
-!                         traps snmp authentication linkdown linkup coldstart warmstart
-!  3. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <other:2>. Left alone (its
-!                         name is the secret and is not known to tacctl).
-! Nothing to paste: everything above is left alone or cannot be fixed by this login.
-! Consistent: aaa, roles, mgmt-acl. Not planned: netconf, breakglass.
+! CONSISTENT: nothing to paste.
+! Consistent: aaa, roles, snmp, mgmt-acl. Not planned: netconf, breakglass.
+! Kept: snmp 3 statements of the device's own (communities, trap types, trap hosts): left alone,
+! listed by device config diff.
 ! Secrets: 4 present on the device, not changed (--secrets pushes them).
 ! Cleanup (--converge): nothing to remove.
 ! 1 extra stays: its item above says why.

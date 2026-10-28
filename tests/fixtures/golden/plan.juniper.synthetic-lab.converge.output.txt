@@ -2,19 +2,15 @@
 # Based on the pull of 2026-10-10 14:02 by alice over netconf (18 minutes ago; the login could see
 # secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5).
 #
-# What is irregular on dev-juniper-synthetic-lab (4 items; the paste fixes 1, leaves 3):
+# What is irregular on dev-juniper-synthetic-lab (2 items; the paste fixes 1, leaves 1):
 #  1. aaa      ACCESS     extra: a TACACS+ server 192.0.2.99 (set system tacplus-server 192.0.2.99
 #                         secret <secret>). Left alone. To remove it later: delete system
 #                         tacplus-server 192.0.2.99
 #  2. snmp     COSMETIC   missing: the SNMP description is Core switch (set snmp description "Core
 #                         switch"). Fixed by region line 3.
-#  3. snmp     MONITORING extra: an SNMP community: authorization read-only (set snmp community
-#                         <other:1> authorization read-only). Left alone (its name is the secret and
-#                         is not known to tacctl).
-#  4. snmp     MONITORING extra: SNMP: trap-group <other:2> targets 192.0.2.50 (set snmp trap-group
-#                         <other:2> targets 192.0.2.50). Left alone (its name is the secret and is not
-#                         known to tacctl).
 # Consistent: roles, mgmt-acl. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
+# Kept: snmp 2 statements of the device's own (communities, trap groups): left alone, listed by device
+# config diff.
 # Secrets: 3 present on the device, not changed (--secrets pushes them).
 # Cleanup (--converge): cleanup comes after this region is pasted and verified: pull the device, then
 # plan --converge again.
