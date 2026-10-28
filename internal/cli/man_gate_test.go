@@ -503,10 +503,10 @@ var manPathExempt = map[string]string{
 	"/etc/pam.d":                             "PAM's own directory; the client script writes tacctl-auth, tacctl-account and tacctl-session in it, which the host entries describe",
 	"/etc/ssh":                               "sshd's own directory; FILES lists the drop-ins in sshd_config.d and the host keys by their glob",
 	"/etc/ssh/sshd_config.d/tacctl-engineer.conf": "the earlier name of the engineer drop-in, which the console entries name as a file they remove",
-	"/etc/tacctl/snmp":                            "the directory of the per-scope credential files, which FILES lists as snmp/<scope>.yaml",
-	"/etc/tacctl/backups/password-dates":          "a directory inside backups/, which FILES lists",
-	"/opt/tacctl/patches":                         "the tacquito patches inside the checkout, which FILES lists as /opt/tacctl/",
-	"<raddb>/tacctl-radius-dictionary":            "the directory of the dictionary file, which FILES lists",
+	"/etc/tacctl/snmp":                   "the directory of the per-scope credential files, which FILES lists as snmp/<scope>.yaml",
+	"/etc/tacctl/backups/password-dates": "a directory inside backups/, which FILES lists",
+	"/opt/tacctl/patches":                "the tacquito patches inside the checkout, which FILES lists as /opt/tacctl/",
+	"<raddb>/tacctl-radius-dictionary":   "the directory of the dictionary file, which FILES lists",
 }
 
 // pathValues are the paths internal/paths resolves with no override, the
