@@ -247,7 +247,9 @@ func TestConsoleRemotePolicy(t *testing.T) {
 	// superuser: the policy is the only thing asked, the line is not run.
 	h, run := consoleHarness(t, "", "carol tac-users tac-operator", "", "-c", "user list")
 	_ = run()
-	if got := lines(h.runner); len(got) != 1 || !strings.HasPrefix(got[0], "sudo -n TACCTL_CONSOLE=") || !strings.HasSuffix(got[0], " _console-policy") {
+	// (and asks again for the line it refuses, which a lock does: the answer
+	// may be readable now; the line itself is never run)
+	if got := lines(h.runner); len(got) != 2 || strings.Join(got[:1], "") != got[1] || !strings.HasPrefix(got[0], "sudo -n TACCTL_CONSOLE=") || !strings.HasSuffix(got[0], " _console-policy") {
 		t.Errorf("ran %q", got)
 	}
 	inv := &invocation{ctx: context.Background(), app: h.app, hooks: newTestHooks()}
