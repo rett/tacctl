@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"os"
 	"strconv"
 	"sync"
 	"testing"
@@ -27,10 +26,6 @@ func newTestHooks() *hooks {
 			}
 		},
 		terminalLine: func() string { return "" },
-		// no test reads the real terminal for a password (a developer's
-		// own terminal would be waited on); a test that wants a prompt
-		// sets hooks.passwordTTY and hooks.passwordPrompt
-		passwordTTY: func() (*os.File, func()) { return nil, func() {} },
 	}
 }
 

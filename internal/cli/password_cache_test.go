@@ -423,7 +423,9 @@ func TestSSHUsesTheCachedPassword(t *testing.T) {
 			t.Errorf("%s: the cached path was taken: %s", name, got)
 		}
 	}
-	// Nothing cached and no terminal to ask on (the test hooks have none): ssh is as it always was.
+	// Nothing cached and no terminal to ask on: ssh is as it always was
+	// (the hook keeps a developer's own terminal out of the test).
+	sb.hooks.passwordTTY = func() (*os.File, func()) { return nil, func() {} }
 	c.ag.Forget(askpass.WhyCommand)
 	run(nil, nil, "ssh", "core-sw1")
 	if got := strings.Join(sshCall().Argv(), " "); strings.Contains(got, "SSH_ASKPASS") || !strings.HasPrefix(got, "sudo -u alice -H ssh ") {
