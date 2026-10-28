@@ -408,3 +408,61 @@ func TestManagedScopeKeysGoWithTheRegistration(t *testing.T) {
 		})
 	}
 }
+
+// A server registered in a scope it shares with devices, with a user who must
+// change the password: the shared-scope warning names 'host enroll --local',
+// and that command is accepted, since the user keeps a login on the server in
+// the new managed scope (every user is a member of it) and the devices of the
+// old scope stop accepting the password.
+func TestHostEnrollLocalFixesTheSharedScopeWarning(t *testing.T) {
+	hs := legacySharedSandbox(t)
+	hs.run(nil, "user", "require-password-change", "bob")
+	hs.expect(0, "Flagged 1", "")
+	warn := hs.all()
+	if !strings.Contains(warn, "Scope 'lab', this server's, also answers 172.16.0.0/12, 192.168.0.0/16") || !strings.Contains(warn, "tacctl host enroll --local") {
+		t.Fatalf("no warning that names the fix:\n%s", warn)
+	}
+	if b := renderedBlock(t, hs, "bob"); !strings.Contains(b, `"lab"`) {
+		t.Fatalf("the shared scope does not keep bob (the warning's premise):\n%s", b)
+	}
+	enrolLocal(t, hs)
+	if got := hs.registry(); got != "authsrv|local||tacctl|192.0.2.10|\n" {
+		t.Errorf("registry %q", got)
+	}
+	if b := renderedBlock(t, hs, "bob"); !strings.Contains(b, `scopes: ["tacctl"]`) {
+		t.Errorf("bob keeps more than the server's scope:\n%s", b)
+	}
+	hs.run(nil, "user", "show", "bob")
+	if out := plain(hs.out.String()); strings.Contains(out, pwTextStranded) || strings.Contains(out, pwTextShared) {
+		t.Errorf("bob's standing:\n%s", out)
+	}
+}
+
+// What stays refused while a user must change the password: a method other
+// than the registered one (the backends' files are rendered from it), also
+// for a server that is not yet in the managed scope, which is then left as it
+// was; and forgetting or unenrolling the server.
+func TestHostEnrollLocalRefusedWhileAUserMustChange(t *testing.T) {
+	for name, hs := range map[string]*hostSandbox{"managed": newHostSandbox(t), "shared scope": legacySharedSandbox(t)} {
+		t.Run(name, func(t *testing.T) {
+			if name == "managed" {
+				enrolLocal(t, hs)
+			}
+			hs.run(nil, "user", "require-password-change", "bob")
+			hs.expect(0, "Flagged 1", "")
+			sandboxRADIUS(hs.sandbox)
+			old, _ := os.ReadFile(filepath.Join(hs.dir, "state", "tacctl.yaml"))
+			hs.write("state/tacctl.yaml", string(old)+"backends:\n  enabled: [tacacs, radius]\n", 0o600)
+			store, registry := hs.store(), hs.registry()
+			hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--method", "radius", "--build-on-host")
+			hs.expect(1, "", "changes the scope or the method this server's own logins use, and bob must change the password there")
+			if !strings.Contains(hs.all(), "tacctl user require-password-change bob off") || hs.store() != store || hs.registry() != registry {
+				t.Errorf("not refused as it should be:\n%s\nregistry %q", hs.all(), hs.registry())
+			}
+			hs.run(nil, "host", "forget", "authsrv", "--yes")
+			hs.expect(1, "", "bob must change the password there")
+			hs.run(nil, "host", "unenroll", "authsrv", "--force")
+			hs.expect(1, "", "bob must change the password there")
+		})
+	}
+}

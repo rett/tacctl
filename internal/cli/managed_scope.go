@@ -340,6 +340,12 @@ func canonCIDR(p string) string {
 // out until the registry holds the enrolment.
 func (inv *invocation) managedSetup(reg *hosts.Registry, server string, fresh bool) (undo func(), err error) {
 	a := inv.app
+	if fresh {
+		// the enrolment's own guard (pwHostGuard) judges the registration the
+		// writes lead to, after them; undone if it refuses
+		inv.pwGuardOff = true
+		defer func() { inv.pwGuardOff = false }()
+	}
 	m, err := inv.model()
 	if err != nil {
 		return nil, err

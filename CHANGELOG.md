@@ -56,7 +56,12 @@ current behaviour; this file is where history lives.
    not import the scope `tacctl` either and takes it out of the users' scopes
    (in one line; a server registered in it keeps its own), so a migrated store
    enrols cleanly. A user who must change the password keeps exactly the
-   server's login, as before.
+   server's login, as before; `host enroll --local` of a server registered in
+   a scope it shares with devices is accepted while a user must change the
+   password (the managed scope keeps the user a login, and the devices of the
+   old scope stop accepting the password), where a method other than the
+   registered one, `host forget` and `host unenroll` of the server are still
+   refused.
 
 3. **`tacctl rollback 0.2.20`, and every target keeps the users' server
    login.** The new target removes `server.addresses` (0.2.20 reads every

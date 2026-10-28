@@ -212,9 +212,14 @@ only when set.
     the server's address more closely than its own, `group edit <group> tier` or `priv-lvl` (or
     another group write) that newly holds a member with no login on the server, `backend disable` of
     the backend of the server's own logins;
-  - `host forget`, `host unenroll` and `host enroll --local` with another method while any user is
-    flagged (the backends' files are rendered from the server's registration, so it is changed with
-    the requirement lifted).
+  - `host forget` and `host unenroll` of this server, and `host enroll --local` with another method
+    than the registered one, while any user is flagged (the backends' files are rendered from the
+    server's registration, so it is changed with the requirement lifted). `host enroll --local` with
+    the registered method is not refused, also for a server registered in a scope it shares with
+    devices: it gives the server the managed scope, which every user is a member of, so a flagged
+    user keeps a login on the server, and the devices of the old scope stop accepting the old
+    password (this is what the shared-scope warning asks for). It is refused only when it would
+    leave a flagged user with no login on the server.
 
   `scope rename` renames the registration with the scope, before the backends render.
 - *Commands.* While a password change is required of the caller, and the caller is no superuser,

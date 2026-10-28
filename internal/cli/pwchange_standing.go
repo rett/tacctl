@@ -211,6 +211,9 @@ func (inv *invocation) pwStrandedNow() ([]string, bool) {
 // snapshot, with the same message; this one is the net under every writer.
 func (inv *invocation) pwWriteGuard(writer func() error) func() error {
 	return func() error {
+		if inv.pwGuardOff {
+			return writer()
+		}
 		before, ok := inv.pwStrandedNow()
 		if err := writer(); err != nil || !ok {
 			return err
@@ -239,10 +242,14 @@ func (inv *invocation) pwHostGuard(what string, to *hosts.Entry) error {
 	if err != nil {
 		return nil
 	}
-	if ok && to != nil && e.Scope == to.Scope && e.EffectiveMethod() == to.EffectiveMethod() {
-		// The same scope and method: the backends render as before, but the
-		// server's address (--server) is where its logins come from, which
-		// the scope must still answer.
+	if ok && to != nil && e.EffectiveMethod() == to.EffectiveMethod() && (e.Scope == to.Scope || to.Scope == pwchange.ManagedScope) {
+		// The same method, in the same scope or in the managed one (the
+		// enrolment that takes the server over: every user is a member of it,
+		// so a flagged user keeps a login at the server, in the same protocol,
+		// and the devices of the old scope stop accepting the password): the
+		// backends render the user for the server as before, but the server's
+		// address (--server) is where its logins come from, which the scope
+		// must answer. Whoever would no longer have a login is the refusal.
 		next := *to
 		next.Target = hosts.Local
 		bc := inv.pwContext(m)

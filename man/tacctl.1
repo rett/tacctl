@@ -1263,12 +1263,18 @@ that newly holds a member with no login on the server, and
 .B "backend disable"
 of the backend of the server's own logins after the pre\-change snapshot, put
 back before anything is rendered; and
-.BR "host forget" ,
-.B "host unenroll"
+.B "host forget"
 and
+.B "host unenroll"
+of this server, and
 .B "host enroll \-\-local"
-with another method, while any user is flagged (the backends' files are
-rendered from the server's registration).
+with another method than the registered one, while any user is flagged (the
+backends' files are rendered from the server's registration).
+.B "host enroll \-\-local"
+with the registered method is not refused, also for a server registered in a
+scope it shares with devices: the managed scope keeps a flagged user a login on
+the server and the devices of the old scope stop accepting the password; it is
+refused only when it would leave a flagged user with no login on the server.
 On every enrolled Linux host but this server
 .RB ( "host enroll \-\-local" ),
 the next
