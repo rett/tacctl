@@ -604,12 +604,13 @@ func (d *junosDevice) cfgCommit(sess *jsession, args []string) jresult {
 		return jresult{out: strings.Join(o.fails, "\n") + "\n" + jtCheckFailed + "\n"}
 	}
 	if check {
-		return jresult{out: jtCheckOK + "\n"}
+		return jresult{out: d.perMember(jtCheckOK)}
 	}
-	out := jtCheckOK + "\n" + jtCommitComplete + "\n"
+	out := d.perMember(jtCheckOK)
 	if confirmed {
-		out = jtCheckOK + "\n" + fmt.Sprintf(jtConfirmedFmt, minutes) + "\n" + jtCommitComplete + "\n"
+		out += fmt.Sprintf(jtConfirmedFmt, minutes) + "\n"
 	}
+	out += d.perMember(jtCommitComplete)
 	return jresult{out: out, drop: d.commitDrop(confirmed)}
 }
 

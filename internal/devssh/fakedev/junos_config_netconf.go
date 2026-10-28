@@ -363,15 +363,26 @@ func (ns *nsession) commit(op xnode) (string, int) {
 		}
 		return b.String(), dropNone
 	}
-	if op.XMLName.Local == "commit" {
+	members := d.members()
+	if op.XMLName.Local == "commit" && len(members) == 0 {
 		return "<ok/>", d.commitDrop(confirmed && !check)
 	}
 	mark := "<commit-success/>"
 	if check {
 		mark = "<commit-check-success/>"
 	}
-	return "<commit-results><routing-engine><name>re0</name>" + mark + "</routing-engine></commit-results>",
-		d.commitDrop(confirmed && !check)
+	if len(members) == 0 {
+		members = []jmember{{label: "re0"}}
+	}
+	var b strings.Builder
+	for _, m := range members {
+		mk := mark
+		if _, silent := d.memberCheck(m.label); silent && check {
+			mk = ""
+		}
+		b.WriteString("<routing-engine><name>" + m.label + "</name>" + mk + "</routing-engine>")
+	}
+	return "<commit-results>" + b.String() + "</commit-results>", d.commitDrop(confirmed && !check)
 }
 
 func (ns *nsession) discard() string {

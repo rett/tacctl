@@ -77,6 +77,8 @@ const (
 	// jtRollbackInFmt ends the line of a confirmed commit's entry [C]. It
 	// stays for good, also after a 'commit check' confirmed the commit: it
 	// is a label, not a pending marker (the banner is).
+	// jtMemberRule is the line under a member's label in 'show version' [C].
+	jtMemberRule    = "--------------------------------------------------------------------------"
 	jtRollbackInFmt = "commit confirmed, rollback in %dmins"
 	// jtRollbackPending is the line under the entry of a confirmed commit
 	// that waits for its confirm [C: plan N5, CLI and NETCONF alike].

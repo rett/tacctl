@@ -52,6 +52,19 @@ package fakedev
 //	                    connection unanswered, before it is applied
 //	slow                '<command prefix> => <seconds>' lines ('*' matches
 //	                    every command): the answer waits on the clock
+//	chassis             a device with several members (a virtual chassis, two
+//	                    routing engines): one line '<label> <model> [<host
+//	                    software>]' for each, 'fpc0 ex4600-40f 18.1R3-S6.1'.
+//	                    'show version' prints a block for each member (the
+//	                    hostname and release of the 'device' file), 'commit
+//	                    check' a block 'fpc0: ' and 'configuration check
+//	                    succeeds' for each [C: a virtual chassis of four], a
+//	                    commit the same blocks for its check and for 'commit
+//	                    complete' [inferred: no capture], and a NETCONF commit
+//	                    a <routing-engine> element for each [inferred]
+//	chassis.check       '<label> => <text>' lines: that member answers a
+//	                    'commit check' with the text instead of 'configuration
+//	                    check succeeds' (over NETCONF it sends no success)
 //	commit.synchronize  every commit the model records ends its history entry
 //	                    in 'synchronize' (a device with two routing engines,
 //	                    or a virtual chassis, that commits so): 'commit
@@ -658,6 +671,18 @@ func (d *junosDevice) authorizationText(user string) string {
 func (d *junosDevice) versionText() string {
 	model := d.deviceInfo("model", "ex4300-48mp")
 	rel := d.deviceInfo("junos", "25.4R1.12")
+	if ms := d.members(); len(ms) > 0 {
+		var blocks []string
+		for _, m := range ms {
+			b := fmt.Sprintf("%s:\n%s\nHostname: %s\nModel: %s\nJunos: %s\nJUNOS Base OS boot [%s]\n",
+				m.label, jtMemberRule, d.hostname(), m.model, rel, rel)
+			if m.host != "" {
+				b += fmt.Sprintf("JUNOS Host Software [%s]\n", m.host)
+			}
+			blocks = append(blocks, b)
+		}
+		return strings.Join(blocks, "\n")
+	}
 	return fmt.Sprintf("Hostname: %s\nModel: %s\nFamily: junos\nJunos: %s\nJUNOS Base OS boot [%s]\n",
 		d.hostname(), model, rel, rel)
 }
@@ -676,3 +701,53 @@ func (d *junosDevice) showConfiguration(path []string, displaySet bool) string {
 }
 
 func durationOf(secs float64) time.Duration { return time.Duration(secs * float64(time.Second)) }
+
+// jmember is one member of a device with several (the 'chassis' knob).
+type jmember struct{ label, model, host string }
+
+// members are the lines of the 'chassis' knob, none for a single device.
+func (d *junosDevice) members() []jmember {
+	var ms []jmember
+	for _, l := range d.rules("chassis") {
+		f := strings.Fields(l)
+		if len(f) < 2 {
+			continue
+		}
+		m := jmember{label: f[0], model: f[1]}
+		if len(f) > 2 {
+			m.host = f[2]
+		}
+		ms = append(ms, m)
+	}
+	return ms
+}
+
+// perMember is text as a device with members prints it: a block for each,
+// the label with the trailing space the device prints, then the text; the
+// text alone for a single device. A member the knob 'chassis.check' names
+// answers its text instead when text is the check's success.
+func (d *junosDevice) perMember(text string) string {
+	ms := d.members()
+	if len(ms) == 0 {
+		return text + "\n"
+	}
+	var b strings.Builder
+	for _, m := range ms {
+		t := text
+		if o, ok := d.memberCheck(m.label); ok && text == jtCheckOK {
+			t = o
+		}
+		b.WriteString(m.label + ": \n" + t + "\n")
+	}
+	return b.String()
+}
+
+// memberCheck is the text 'chassis.check' gives a member for its check.
+func (d *junosDevice) memberCheck(label string) (string, bool) {
+	for _, l := range d.rules("chassis.check") {
+		if k, v, ok := strings.Cut(l, " => "); ok && strings.TrimSpace(k) == label {
+			return strings.TrimSpace(v), true
+		}
+	}
+	return "", false
+}

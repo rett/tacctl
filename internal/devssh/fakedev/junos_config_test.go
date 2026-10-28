@@ -958,3 +958,50 @@ func TestJunosKnobCommitSynchronize(t *testing.T) {
 		t.Errorf("show system commit:\n got %s\nwant %s", got, want)
 	}
 }
+
+const chassisKnob = "fpc0 ex4600-40f 18.1R3-S6.1\nfpc1 ex4600-40f 21.4R3-S1.5\nfpc2 ex4300-48t\nfpc3 ex4300-48t\n"
+
+// The knob 'chassis' makes a device with four members: the blocks of 'show
+// version', and a block for each member in the answers of 'commit check' and
+// of a commit; without the knob the answers are the single device's.
+func TestJunosKnobChassis(t *testing.T) {
+	srv, _, _ := newJunos(t, map[string]string{"chassis": chassisKnob})
+	c, _ := shell(t, srv, DefaultUser, DefaultPassword)
+	ver := c.send("show version")
+	for _, w := range []string{
+		"fpc0:\n--------------------------------------------------------------------------\nHostname: ",
+		"Model: ex4600-40f\n", "Model: ex4300-48t\n", "JUNOS Host Software [18.1R3-S6.1]\n", "JUNOS Host Software [21.4R3-S1.5]\n", "\nfpc3:\n",
+	} {
+		if !strings.Contains(ver, w) {
+			t.Errorf("show version lacks %q:\n%s", w, ver)
+		}
+	}
+	if strings.Count(ver, "Hostname: ") != 4 {
+		t.Errorf("show version:\n%s", ver)
+	}
+	c.send("configure exclusive")
+	c.send("set system login idle-timeout 30")
+	const chk = "fpc0: \nconfiguration check succeeds\nfpc1: \nconfiguration check succeeds\nfpc2: \nconfiguration check succeeds\nfpc3: \nconfiguration check succeeds"
+	if got := c.send("commit check"); got != chk {
+		t.Errorf("commit check: %q", got)
+	}
+	const done = "fpc0: \ncommit complete\nfpc1: \ncommit complete\nfpc2: \ncommit complete\nfpc3: \ncommit complete"
+	if got := c.send("commit confirmed 3"); got != chk+"\ncommit confirmed will be automatically rolled back in 3 minutes unless confirmed\n"+done {
+		t.Errorf("commit confirmed: %q", got)
+	}
+	if got := c.send(`commit comment "confirm"`); got != chk+"\n"+done {
+		t.Errorf("commit: %q", got)
+	}
+}
+
+// 'chassis.check' makes one member answer a check otherwise.
+func TestJunosKnobChassisCheck(t *testing.T) {
+	srv, _, _ := newJunos(t, map[string]string{"chassis": chassisKnob, "chassis.check": "fpc2 => warning: member is out of sync\n"})
+	c, _ := shell(t, srv, DefaultUser, DefaultPassword)
+	c.send("configure exclusive")
+	c.send("set system login idle-timeout 30")
+	got := c.send("commit check")
+	if !strings.Contains(got, "fpc2: \nwarning: member is out of sync\nfpc3: ") || strings.Count(got, "configuration check succeeds") != 3 {
+		t.Errorf("commit check: %q", got)
+	}
+}
