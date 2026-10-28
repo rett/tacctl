@@ -936,6 +936,15 @@ tests/diff/run.sh --self-test                # the runner against itself and aga
   `docs/plans/go-rewrite.md` 3.9, or a numbered item of the CHANGELOG's 0.2.1
   list) is reported as `known`, not a failure; the
   runner says so when the marked line no longer differs.
+- **A marker that no longer differs** is a notice (`ok ... marked @known, but
+  no difference: drop the marker`), not a failure: the run still exits 0. The
+  markers are a record, never pruned, of the intended changes of every
+  release since the parity baseline, and each names the item that made the
+  change. Against `--against 0.1.18` every marker still differs; against a
+  later tag, the markers of the releases before it report the notice (against
+  0.2.19, the markers written for 0.2.1 to 0.2.18: most of the corpus). So
+  do not drop a marker because a run against the previous release reports
+  it; drop one only when no tag the corpus is run with differs from it.
 
 ## Characterisation tests: `tests/integration/characterisation.bats`
 
