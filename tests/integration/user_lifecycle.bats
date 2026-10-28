@@ -435,11 +435,17 @@ PY
 }
 
 @test "user scopes help: lists replace and remove --all, not set or clear" {
-    run "$TACCTL_BIN_SCRIPT" user scope alice --help
+    run "$TACCTL_BIN_SCRIPT" user scope alice help
     assert_success
     assert_output --partial "tacctl user scope alice replace <scope>"
     assert_output --partial "tacctl user scope alice remove  --all"
     refute_output --regexp "alice (set|clear) "
+    # --help is the usage of '?': the forms of the verb, by placeholder.
+    run "$TACCTL_BIN_SCRIPT" user scope alice --help
+    assert_success
+    assert_line --regexp "^  scope <user> list\|add\|remove\|replace +Manage which scopes the user can auth from$"
+    assert_line --regexp "^  scope <user> remove --all +Remove every scope from the user$"
+    refute_output --regexp "(set|clear)"
 }
 
 @test "user scopes: rejects unknown user" {

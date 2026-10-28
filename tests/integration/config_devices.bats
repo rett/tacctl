@@ -95,9 +95,18 @@ plain() {
 }
 
 @test "config devices: usage and the unknown word" {
-    run "$TACCTL_BIN_SCRIPT" config devices --help
+    run "$TACCTL_BIN_SCRIPT" config devices help
     assert_success
     assert_output --partial "Usage: tacctl config devices [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport] [<value>]"
+    # --help is the list of '?': each word with its description.
+    run "$TACCTL_BIN_SCRIPT" config devices --help
+    assert_success
+    assert_line --index 0 "Possible completions:"
+    local w
+    for w in apply-confirm-timeout apply-pause apply-transport confirm-timeout max-concurrency show timeout transport; do
+        assert_line --regexp "^  ${w} +[A-Z]"
+    done
+    [ "${#lines[@]}" -eq 9 ]
     run "$TACCTL_BIN_SCRIPT" config devices frobnicate
     assert_failure 1
     assert_output --partial "Unknown subcommand: 'frobnicate'"

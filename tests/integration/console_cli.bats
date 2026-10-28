@@ -35,9 +35,9 @@ enrol_local() { printf 'authsrv|local||lab|127.0.0.1|\n' > "${TACCTL_STATE_DIR}/
 
 snapshot_count() { find "${TACCTL_STATE_DIR}/backups" -mindepth 1 -maxdepth 1 -name '2*' | wc -l; }
 
-@test "console: no subcommand, help, -h and --help print the usage and exit 0; an unknown word exits 1" {
+@test "console: no subcommand and help print the usage, -h and --help the list of ?, exit 0; an unknown word exits 1" {
     local w
-    for w in "" help -h --help; do
+    for w in "" help; do
         run "$TACCTL_BIN_SCRIPT" console $w
         assert_success
         plain
@@ -47,6 +47,18 @@ snapshot_count() { find "${TACCTL_STATE_DIR}/backups" -mindepth 1 -maxdepth 1 -n
         assert_output --partial "forwarding tiers [<csv>|none]"
         refute_output --partial "  tiers [<tier>"
         refute_output --partial "  user <name> [enable|disable|clear]"
+    done
+    # -h and --help print what '?' prints there: the sub-commands with their
+    # descriptions, and no verb's own words.
+    for w in -h --help; do
+        run "$TACCTL_BIN_SCRIPT" console $w
+        assert_success
+        plain
+        assert_line --index 0 "Possible completions:"
+        assert_line --regexp "^  system-shell +Show or set the system shell for a tier "
+        assert_line --regexp "^  forwarding +Show or set the tiers that may forward X11 and TCP ports "
+        refute_output --partial "  tiers "
+        refute_output --partial "  user <name>"
     done
     run "$TACCTL_BIN_SCRIPT" console frobnicate
     assert_failure 1
