@@ -129,3 +129,32 @@ func TestListingWidthWrapsDescriptions(t *testing.T) {
 		t.Errorf("wrapped at 50 columns:\n%s", one)
 	}
 }
+
+// A candidate with no label and a long word is capped like a label: the
+// column never grows past LabelMax, and a row stays within the terminal.
+func TestListingCapsALongWord(t *testing.T) {
+	long := strings.Repeat("core-router-", 6) + "1"
+	cands := []Candidate{
+		{Word: "a", Desc: "Short"},
+		{Word: long, Desc: "cisco 192.0.2.1 site-a"},
+	}
+	got := listingWidth(cands, false, 120)
+	lines := strings.Split(strings.TrimSuffix(got, "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("rows:\n%s", got)
+	}
+	short := capLabel(long, LabelMax)
+	if !strings.HasSuffix(short, "...") || len([]rune(short)) != LabelMax {
+		t.Fatalf("capped word %q", short)
+	}
+	if want := "  " + short + "  cisco 192.0.2.1 site-a"; lines[1] != want {
+		t.Errorf("row %q, want %q", lines[1], want)
+	}
+	if want := "  a" + strings.Repeat(" ", LabelMax-1) + "  Short"; lines[0] != want {
+		t.Errorf("row %q, want %q", lines[0], want)
+	}
+	// Without a description the word is capped as well.
+	if one := listingWidth([]Candidate{{Word: long}}, false, 120); one != "  "+short+"\n" {
+		t.Errorf("bare word row %q", one)
+	}
+}

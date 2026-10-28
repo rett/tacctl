@@ -548,7 +548,9 @@ func listingWidth(cands []Candidate, styled bool, w int) string {
 		if c.Label != "" {
 			return capLabel(c.Label, LabelMax)
 		}
-		return c.Word
+		// A word with no label is capped too: a long name must not widen
+		// the column past LabelMax.
+		return capLabel(c.Word, LabelMax)
 	}
 	width := 0
 	for _, c := range listed(cands) {

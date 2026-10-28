@@ -85,6 +85,12 @@ current behaviour; this file is where history lives.
    the completion scripts, which run as the user and know no tier, list all
    eight.
 
+8. **A long name no longer widens the `?` column.** The argument column of
+   the `?` list is at most 40 characters, but a candidate with no column of
+   its own (a device or host name, a user) was shown whole, so a name of 60
+   characters moved every description to the right. It is cut at 40 and ends
+   in `...` like a long column (the word itself is what Tab inserts).
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config
