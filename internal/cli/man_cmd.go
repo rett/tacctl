@@ -28,6 +28,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -153,7 +154,7 @@ func (inv *invocation) man(args []string) error {
 		if e, ok := manLookup(manTopics(page), p.Args); ok {
 			searches = e.searchArgs()
 		} else {
-			inv.manNote("no entry for '" + strings.Join(p.Args, " ") + "'; the page is opened at the top.")
+			inv.manNote(fmt.Sprintf("no entry for %q; the page is opened at the top.", strings.Join(p.Args, " ")))
 		}
 	}
 	return inv.manShow(page, searches)

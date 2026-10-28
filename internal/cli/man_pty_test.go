@@ -135,7 +135,7 @@ func manSession(t *testing.T, p interface {
 	expect(prompt)
 	// A word that is no entry opens the top of the page and says so.
 	send("man nosuch\r")
-	expect(`no entry for 'nosuch'; the page is opened at the top\.`)
+	expect(`no entry for "nosuch"; the page is opened at the top\.`)
 	expect(`tacctl - manage pluggable network-device AAA`)
 	send("q")
 	expect(prompt)

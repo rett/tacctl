@@ -237,8 +237,17 @@ func TestManUnknownWordSaysSo(t *testing.T) {
 	if err := h.run(); err != nil {
 		t.Fatal(err)
 	}
-	if h.out.Len() != 0 || h.err.String() != "tacctl man: no entry for 'no such'; the page is opened at the top.\n" {
+	if h.out.Len() != 0 || h.err.String() != "tacctl man: no entry for \"no such\"; the page is opened at the top.\n" {
 		t.Errorf("stdout %q stderr %q", h.out.String(), h.err.String())
+	}
+	// What was typed is quoted: a terminal sequence or a line break in a
+	// word does not reach the terminal.
+	h = newManHarness(t, page, nil, "\x1b[31mred\x1b]0;title\a", "line\nbreak", "tab\t")
+	if err := h.run(); err != nil {
+		t.Fatal(err)
+	}
+	if want := "tacctl man: no entry for \"\\x1b[31mred\\x1b]0;title\\a line\\nbreak tab\\t\"; the page is opened at the top.\n"; h.err.String() != want {
+		t.Errorf("stderr %q, want %q", h.err.String(), want)
 	}
 	h = newManHarness(t, page, nil, "tiers")
 	if err := h.run(); err != nil || h.err.Len() != 0 {
