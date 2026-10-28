@@ -53,11 +53,11 @@ tacctl scope mgmt-acl <scope> mode strict
 tacctl scope mgmt-acl <scope> mode ssh-only
 ```
 
-The setting is per scope, the superuser's to set (an engineer may read it for a
-scope of their own), and only Junos devices read it:
-the Cisco VTY-ACL and the WTI IP Tables list are the same in both modes. Only
-`strict` is stored (`scope_mgmt_acl.mode.<scope>` in `tacctl.yaml`); setting
-`ssh-only` removes the key.
+The setting is per scope, the superuser's to set (an engineer may read it for
+a scope of their own), and only Junos devices read it: the Cisco VTY-ACL and
+the WTI IP Tables list are the same in both modes. Only `strict` is stored
+(`scope_mgmt_acl.mode.<scope>` in `tacctl.yaml`); setting `ssh-only` removes
+the key.
 
 **What `strict` renders.** The filter accepts every protocol from the permit
 list and has no `default-accept` term, so the implicit discard at the end of
