@@ -441,3 +441,21 @@ func TestConsolePtyColor(t *testing.T) {
 		p.ends(0)
 	}
 }
+
+// An entry point of the tool typed at the console's prompt is refused as a
+// word that is no command, and the console goes on.
+func TestConsolePtyRefusesEntryPoints(t *testing.T) {
+	host := regexp.QuoteMeta(shortHostname())
+	p := startConsole(t, ptyPolicyRO, "carol,tac-users,tac-readonly")
+	p.expect(host + `> `)
+	for _, w := range []string{"__help -- user", "__complete user ", "_console-policy"} {
+		p.send(w + "\r")
+		p.expect(`Unknown command: '` + regexp.QuoteMeta(strings.Fields(w)[0]) + `'`)
+		p.expect(host + `> `)
+	}
+	p.send("user list\r")
+	p.expect(`RAN sudo -n TACCTL_CONSOLE=[0-9a-f]{12} ` + regexp.QuoteMeta(testExe) + ` user list\r\n`)
+	p.expect(host + `> `)
+	p.send("exit\r")
+	p.ends(0)
+}

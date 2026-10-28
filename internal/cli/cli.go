@@ -42,6 +42,11 @@ type invocation struct {
 	// session ("": auto; console.ColorOn, ColorOff): '--help' written by the
 	// shell follows it (help_request.go).
 	shellColor string
+	// shellConsole: the shell is the login console. A word that starts with
+	// an underscore is one of the tool's own entry points (__complete,
+	// __help, _console-policy ...), not a command: the console does not run
+	// it (shellExec).
+	shellConsole bool
 	// view is the tier whose verbs the shell lists (shell_view.go); nil:
 	// everything, outside the shell.
 	view viewFn

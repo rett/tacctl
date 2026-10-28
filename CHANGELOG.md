@@ -173,6 +173,15 @@ current behaviour; this file is where history lives.
     the script with `tacctl completion bash` (`upgrade` does it for
     `/etc/bash_completion.d`).
 
+15. **The console does not run the tool's entry points.** `__help`,
+    `__complete`, `_console-policy` and every other word that starts with an
+    underscore, typed at the console's prompt or in a batch, run as the user
+    with no tier view (they are the scripts', the bash key's and the
+    console's own words) and listed every verb whatever the tier. The console
+    now answers them as any word that is no command (`Unknown command:
+    '__help'`, no hint that it exists) and runs nothing; from a normal shell
+    the scripts call them as before.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

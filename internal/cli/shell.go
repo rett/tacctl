@@ -230,6 +230,7 @@ func (inv *invocation) runShell(r shellRun) (int, *shell.Shell) {
 		styled = false
 	}
 	inv.shellColor = r.color
+	inv.shellConsole = r.console
 	o := shell.Options{
 		Prompt:          r.prompt,
 		Styled:          styled,
@@ -367,6 +368,14 @@ func (inv *invocation) shellExec(root *cobra.Command, exe string, managed bool, 
 		}
 		// '<command> -h|--help' is the help of the command, as '?' prints
 		// it, written here with the tier's view.
+		// The console runs no entry point of the tool (a word that starts with
+		// an underscore): they run as the user with no tier view, and are the
+		// scripts' and the key's, not the person's. It is answered as any
+		// word that is no command, and nothing is said of what exists.
+		if inv.shellConsole && strings.HasPrefix(words[0], "_") {
+			_ = inv.unknownCommand(root, words[0])
+			return 1
+		}
 		if hw, ok := helpRequest(root, words); ok {
 			inv.helpList(root, hw)
 			return 0

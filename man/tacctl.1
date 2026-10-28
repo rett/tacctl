@@ -12148,6 +12148,12 @@ With standard input not a terminal and no
 .BR \-c ,
 the lines of the input run as a batch, as in
 .BR "tacctl shell" .
+A word that starts with an underscore at the prompt or in a batch
+.RB ( __help ,
+.BR __complete ,
+.BR _console\-policy ,
+the entry points of the scripts, the key and the console itself) is not a
+command there: it is answered as any word that is no command, and nothing runs.
 .PP
 .B system\-shell
 (the console's own word; interactive sessions only) starts the user's system

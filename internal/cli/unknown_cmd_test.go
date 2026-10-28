@@ -103,3 +103,58 @@ func TestCommandSuggestions(t *testing.T) {
 		t.Errorf("editDistance = %d", d)
 	}
 }
+
+// The login console runs no entry point of the tool: a word that starts with
+// an underscore typed at its prompt (__help, __complete, _console-policy,
+// _completion-names) is answered as a word that is no command, with no
+// program started, while the same words run from the plain shell (the
+// scripts' and the bash key's own calls) and a normal command and help work
+// in both.
+func TestConsoleRefusesEntryPointWords(t *testing.T) {
+	const tail = "Run 'tacctl' for the commands.\n"
+	words := [][]string{{"__help", "--", "user"}, {"__complete", "user", ""}, {"_console-policy"}, {"_completion-names", "users"}, {"__completeNoDesc", "user", ""}, {"_phase"}}
+	for _, console := range []bool{true, false} {
+		for _, w := range words {
+			h := newHarness(t, nil)
+			inv := &invocation{ctx: context.Background(), app: h.app, hooks: newTestHooks(), shellConsole: console}
+			exec := inv.shellExec(newRoot(inv), testExe, true, tier.Operator, nil)
+			code := exec(context.Background(), w, nil)
+			got := stripSGR(h.err.String())
+			if console {
+				if code != 1 || !strings.HasPrefix(got, "[ERROR] Unknown command: '"+w[0]+"'\n") || !strings.HasSuffix(got, tail) ||
+					len(h.runner.Calls()) != 0 || len(h.runner.Execs()) != 0 || h.out.Len() != 0 {
+					t.Errorf("console %q: exit %d stdout %q stderr %q", w, code, h.out.String(), got)
+				}
+				// nothing in the answer says the word exists
+				if strings.Contains(got, "hidden") || strings.Contains(got, "Did you mean: tacctl _") {
+					t.Errorf("console %q: %q", w, got)
+				}
+				continue
+			}
+			// The plain shell starts the program as the user (no sudo): the
+			// call is the executable with the words.
+			if strings.Contains(got, "Unknown command") {
+				t.Errorf("shell %q: refused: %q", w, got)
+			}
+		}
+	}
+	// A normal command and help still work in the console: the first is run
+	// (through sudo), the second is the shell's own word.
+	h := newHarness(t, nil)
+	inv := &invocation{ctx: context.Background(), app: h.app, hooks: newTestHooks(), shellConsole: true}
+	exec := inv.shellExec(newRoot(inv), testExe, true, tier.Operator, nil)
+	exec(context.Background(), []string{"user", "list"}, nil)
+	if got := stripSGR(h.err.String()); strings.Contains(got, "Unknown command") {
+		t.Errorf("user list: %q", got)
+	}
+	if len(h.runner.Execs())+len(h.runner.Calls()) == 0 && h.out.Len() == 0 && h.err.Len() == 0 {
+		t.Error("user list was not run")
+	}
+	// The scripts' own calls from a normal bash are the binary's own words.
+	for _, args := range [][]string{{"__help", "--", "user"}, {"__complete", "user", ""}} {
+		ch := newHarness(t, args)
+		if err := ch.run(); err != nil || ch.out.Len() == 0 {
+			t.Errorf("tacctl %q: %v %q", args, err, ch.out.String())
+		}
+	}
+}
