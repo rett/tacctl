@@ -33,7 +33,8 @@ current behaviour; this file is where history lives.
    server's own login`). `host enroll --local` takes no `--scope`; its
    `--server` is the address devices and hosts reach the server at (an IP
    address, which may be behind NAT or a VPN; not a host name, `0.0.0.0`,
-   `::`, loopback or link-local), recorded in the new `tacctl.yaml` key
+   `::`, loopback, link-local, multicast, broadcast or IPv4-mapped IPv6),
+   recorded in the new `tacctl.yaml` key
    `server.addresses` (a list that holds one address for now); without
    `--server` the recorded address is used, else `--server` defaults to the
    address of the interface with the default route, said in one line; this

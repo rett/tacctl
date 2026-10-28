@@ -2891,7 +2891,8 @@ is the address devices and hosts reach this server at (an address behind NAT or
 a VPN that is not on this machine is taken; a host name,
 .BR 0.0.0.0 ,
 .BR :: ,
-a loopback or link\-local address is not); without it the recorded address is
+a loopback, link\-local, multicast or broadcast address, or an IPv4\-mapped IPv6
+address is not); without it the recorded address is
 used, else the address of the interface with the default route, said in one
 line; this machine's own PAM client always connects to
 .BR 127.0.0.1 ,
@@ -14866,7 +14867,7 @@ integer, 16 to 128. Default: 16.
 Shortest shared secret an operator may type. Set with \fBtacctl config secret\-min\-length\fR.
 .TP
 .B server.addresses
-list of one IP address (not a host name, unspecified, loopback or link\-local). Default: none (unset).
+list of one IP address (not a host name, unspecified, loopback, link\-local, broadcast or IPv4\-mapped IPv6). Default: none (unset).
 The address devices and hosts reach this server at, a list that holds one address for now; the enrolment of this server records it (detected from the interface with the default route when none is recorded and none is given). Set with \fBtacctl host enroll \-\-local \-\-server\fR.
 .TP
 .B snmp.port

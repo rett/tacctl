@@ -504,7 +504,7 @@ func manTypeText(r conf.Rule) string {
 	case conf.TypeSudoCommandList:
 		return "non-empty list of absolute command paths"
 	case conf.TypeServerAddresses:
-		return "list of one IP address (not a host name, unspecified, loopback or link-local)"
+		return "list of one IP address (not a host name, unspecified, loopback, link-local, broadcast or IPv4-mapped IPv6)"
 	case conf.TypeBreakGlassList:
 		return "list of name:role entries, role one of " + strings.Join(conf.BreakGlassRoles, ", ") + ", at most " + strconv.Itoa(conf.MaxBreakGlassUsers)
 	case conf.TypeLockdownGroups:

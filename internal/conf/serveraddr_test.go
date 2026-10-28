@@ -17,6 +17,9 @@ func TestServerAddressesProblem(t *testing.T) {
 		{[]any{"authsrv.example.net"}, "element 0: 'authsrv.example.net' is not an IP address (a host name is not taken)"},
 		{[]any{"0.0.0.0"}, "element 0: '0.0.0.0' is the unspecified address: give the address devices and hosts reach this server at"},
 		{[]any{7}, "element 0: must be a string"},
+		{[]any{"::ffff:192.0.2.10"}, "element 0: '::ffff:192.0.2.10' is an IPv4-mapped IPv6 address: give the IPv4 address devices and hosts reach this server at"},
+		{[]any{"::ffff:0.0.0.0"}, "element 0: '::ffff:0.0.0.0' is an IPv4-mapped IPv6 address: give the IPv4 address devices and hosts reach this server at"},
+		{[]any{"255.255.255.255"}, "element 0: '255.255.255.255' is the broadcast address: give the address devices and hosts reach this server at"},
 	} {
 		if got := ServerAddressesProblem(c.v); got != c.want {
 			t.Errorf("%v: %q, want %q", c.v, got, c.want)

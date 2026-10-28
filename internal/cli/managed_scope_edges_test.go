@@ -539,3 +539,23 @@ func TestManagedScopeLockdownIsLiftedWithAllScopes(t *testing.T) {
 		t.Errorf("the record stands:\n%s", y)
 	}
 }
+
+// --server is an IPv4 or IPv6 address devices and hosts reach the server at:
+// an IPv4-mapped IPv6 address (it would make a prefix no IPv4 login matches)
+// and the broadcast address are refused like the other literals that cannot
+// be one, and the canonical form unmaps.
+func TestManagedScopeServerLiterals(t *testing.T) {
+	hs := newHostSandbox(t)
+	for _, bad := range []string{"::ffff:192.0.2.10", "::ffff:0.0.0.0", "255.255.255.255"} {
+		hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--server", bad, "--build-on-host")
+		hs.expect(1, "", "--server '"+bad+"' is ")
+		if hs.registry() != "" {
+			t.Fatalf("%s: registered", bad)
+		}
+	}
+	for in, want := range map[string]string{"::ffff:192.0.2.10": "192.0.2.10", "192.0.2.10": "192.0.2.10", " 2001:DB8::10": "2001:db8::10"} {
+		if got := canonAddr(in); got != want {
+			t.Errorf("canonAddr(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -523,9 +523,11 @@ func (inv *invocation) localServerAddress(reg *hosts.Registry, given string) (st
 	return addr, nil
 }
 
+// canonAddr is the address in its canonical form, an IPv4-mapped IPv6 address
+// as the IPv4 one (the login prefix is IPv4: a mapped form would never match).
 func canonAddr(s string) string {
 	if a, err := netip.ParseAddr(strings.TrimSpace(s)); err == nil {
-		return a.String()
+		return a.Unmap().String()
 	}
 	return s
 }

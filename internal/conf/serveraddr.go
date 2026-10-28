@@ -14,8 +14,8 @@ import (
 const ServerAddressesKey = "server.addresses"
 
 // ServerAddressProblem is "" when s can be the server address, else why
-// not: an IP literal that is not unspecified, loopback, link-local or
-// multicast. An address that is not on this machine (behind NAT or a VPN)
+// not: an IP literal that is not unspecified, loopback, link-local,
+// multicast, the broadcast address or an IPv4-mapped IPv6 address. An address that is not on this machine (behind NAT or a VPN)
 // is accepted: it is where the others reach the server.
 func ServerAddressProblem(s string) string {
 	a, err := netip.ParseAddr(strings.TrimSpace(s))
@@ -23,6 +23,12 @@ func ServerAddressProblem(s string) string {
 		return "is not an IP address (a host name is not taken)"
 	}
 	switch {
+	case a.Is4In6():
+		// kept mapped it would make the prefix ::ffff:a.b.c.d/128, which no
+		// IPv4 login matches
+		return "is an IPv4-mapped IPv6 address: give the IPv4 address devices and hosts reach this server at"
+	case a == netip.AddrFrom4([4]byte{255, 255, 255, 255}):
+		return "is the broadcast address: give the address devices and hosts reach this server at"
 	case a.IsUnspecified():
 		return "is the unspecified address: give the address devices and hosts reach this server at"
 	case a.IsLoopback():

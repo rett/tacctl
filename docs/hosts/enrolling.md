@@ -40,7 +40,8 @@ every user can log in to it and to its console unless disabled or of tier none,
 whatever their scopes; it takes no `--scope`. `--server <address>` is the
 address devices and hosts reach this server at (an address behind NAT or a
 VPN that is not on this machine is taken; a host name, `0.0.0.0`, `::`, a
-loopback or link-local address is not). Without it the recorded address is
+loopback, link-local, multicast or broadcast address, or an IPv4-mapped IPv6
+address is not). Without it the recorded address is
 used, else `--server` defaults to the address of the interface with the
 default route, said in one line (`Using 192.0.2.10 as the server address (the
 address of eth0); pass --server to use another.`). It is what devices and other
