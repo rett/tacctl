@@ -693,6 +693,18 @@ func TestDeviceTierFilteringAndGate(t *testing.T) {
 	if all := sb.run("", []string{"_completion-names", "devices", "--desc"}); !strings.Contains(all, "prod-sw\tcisco 10.99.0.1 ") || !strings.Contains(all, "db1\tlinux 192.0.2.11 prod") {
 		t.Errorf("unrestricted descriptions = %q", all)
 	}
+	// --desc-short (the scripts, a line per name) leaves the address out.
+	short := plain(sb.run("", []string{"_completion-names", "devices", "--desc-short"}))
+	for _, want := range []string{"lab-sw\tcisco", "db1\tlinux prod"} {
+		if !strings.Contains(short, want) {
+			t.Errorf("short descriptions lack %q:\n%s", want, short)
+		}
+	}
+	for _, l := range strings.Split(strings.TrimSuffix(short, "\n"), "\n") {
+		if len(l) > 40 || strings.ContainsAny(l, ".:") || strings.Contains(l, "192.") || strings.Contains(l, "10.") {
+			t.Errorf("short description %q is long or has an address", l)
+		}
+	}
 	if plainNames := sb.run("", []string{"_completion-names", "users", "--desc"}); strings.Contains(plainNames, "\t") {
 		t.Errorf("a kind without descriptions printed a tab: %q", plainNames)
 	}

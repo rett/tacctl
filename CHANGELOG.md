@@ -51,6 +51,13 @@ current behaviour; this file is where history lives.
    (`user scope alice`: `add`, `list`, `remove`, `replace`) stays without
    one.
 
+4. **The completion scripts name a device or host with its vendor and
+   scope.** `device show <Tab><Tab>` in bash, zsh and fish listed the bare
+   names; each is now followed by `cisco lab` (`linux site-a` for an enrolled
+   host), as the shell's list has it, without the address, so a line stays
+   short. The names still come from `sudo -n tacctl _completion-names`, which
+   takes `--desc-short` for this (the same sudoers rule covers it).
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

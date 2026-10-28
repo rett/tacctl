@@ -470,8 +470,13 @@ func (inv *invocation) kindWords(kind string, values map[string]string) []string
 	if strings.Contains(kind, "|") {
 		return strings.Split(kind, "|")
 	}
-	if _, ok := completionDescKinds[kind]; ok && inv.shellMode {
-		return inv.liveLines(inv.ctx, kind, "--desc")
+	if _, ok := completionDescKinds[kind]; ok {
+		// The shell lists vendor, address and scope in columns; the scripts
+		// print a line per name, so they get the vendor and the scope.
+		if inv.shellMode {
+			return inv.liveLines(inv.ctx, kind, "--desc")
+		}
+		return inv.liveLines(inv.ctx, kind, "--desc-short")
 	}
 	switch kind {
 	case KindLine:

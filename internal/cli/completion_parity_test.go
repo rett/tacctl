@@ -14,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/rett/tacctl/internal/execx"
 )
 
 // textAllowList are the commands whose description differs between the
@@ -174,4 +176,31 @@ func shellOnly(m map[string]string) map[string]string {
 		}
 	}
 	return out
+}
+
+// The scripts name the devices and hosts with their vendor and scope, one
+// short line each; the address is the shell's columns only.
+func TestScriptsDescribeDeviceNames(t *testing.T) {
+	h := newHarness(t, []string{"__complete", "device", "show", ""})
+	h.runner.OnFunc([]string{"sudo"}, func(c execx.Cmd) (execx.Result, error) {
+		if strings.Join(c.Args[3:], " ") == "devices --desc-short" {
+			return execx.Result{Stdout: []byte("jsw1\tjuniper lab\nsw1\tcisco   lab\nweb1\tlinux   site-a\n")}, nil
+		}
+		return execx.Result{}, nil
+	})
+	if err := h.run(); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Split(strings.TrimSuffix(h.out.String(), "\n"), "\n")
+	want := []string{"jsw1\tjuniper lab", "sw1\tcisco   lab", "web1\tlinux   site-a"}
+	for _, w := range want {
+		if !slices.Contains(got, w) {
+			t.Errorf("device show: %q lacks %q", got, w)
+		}
+	}
+	for _, l := range got {
+		if len(l) > 40 {
+			t.Errorf("the line %q is long", l)
+		}
+	}
 }

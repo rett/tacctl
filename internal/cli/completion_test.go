@@ -18,7 +18,17 @@ func completeWords(t *testing.T, live map[string]string, words ...string) ([]str
 	t.Helper()
 	h := newHarness(t, append([]string{"__completeNoDesc"}, words...))
 	h.runner.OnFunc([]string{"sudo"}, func(c execx.Cmd) (execx.Result, error) {
-		return execx.Result{Stdout: []byte(live[strings.Join(c.Args[3:], " ")])}, nil
+		key := strings.Join(c.Args[3:], " ")
+		// The scripts ask a kind with descriptions for its names with
+		// --desc-short ('name<TAB>vendor scope'); live holds the names.
+		if kind, ok := strings.CutSuffix(key, " --desc-short"); ok {
+			var lines []string
+			for _, n := range strings.Fields(live[kind]) {
+				lines = append(lines, n+"\tcisco lab")
+			}
+			return execx.Result{Stdout: []byte(strings.Join(lines, "\n") + "\n")}, nil
+		}
+		return execx.Result{Stdout: []byte(live[key])}, nil
 	})
 	if err := h.run(); err != nil {
 		t.Fatal(err)
