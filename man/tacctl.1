@@ -786,9 +786,15 @@ Grant specific scopes at creation.
 .BI "user remove " name
 Remove a user after confirmation. The user's
 .B "console system\-shell user"
-setting, if any, is dropped from
+and
+.B "console password\-cache"
+settings, if any, are dropped from
 .I console.yaml
-and the command says so.
+and the command says so. It is refused, with nothing changed, while
+.I console.yaml
+cannot be read, so that no setting is left for the next user of the name
+.RB ( "user add" " and " "user rename"
+do the same).
 .\" BEGIN GENERATED: command user remove
 .RS
 .PP

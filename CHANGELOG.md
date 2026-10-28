@@ -384,6 +384,19 @@ current behaviour; this file is where history lives.
     are not affected. An enable cannot be set for a user with no tier. The
     setting moves with `user rename` as before, with its tier.
 
+24. **A console.yaml that cannot be read stops `user add|remove|rename`.**
+    The settings that follow a user (the system shell, the password cache) are
+    dropped or moved by those verbs, but a file that did not parse was skipped
+    in silence: `user remove bob` exited 0 and left `bob`'s system shell for
+    the next user of the name. The three verbs now read console.yaml before
+    they change the store and, when it cannot be read, exit 1 with the path,
+    the cut parse error and `nothing was changed`; the store change is made only
+    after the file is known to be readable, because the other order leaves the
+    user gone and the entry behind with no way to take the store change back.
+    A file that breaks in between, or is locked, makes the verb exit 1 after the
+    change and name the two commands that check the settings of the user once the
+    file is repaired. An absent console.yaml is not an error.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

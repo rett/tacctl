@@ -1145,11 +1145,21 @@ func (inv *invocation) moveUserSettings(oldname, newname string) userSettingsMov
 // 'console set' details. It returns the error of a console.yaml that could not
 // be written (the store has changed already; the command says how to finish).
 func (inv *invocation) userSettingsMoved(m userSettingsMove, oldname, newname string) error {
+	out := inv.app.Out
+	verb := map[bool]string{true: "moved", false: "dropped"}[newname != ""]
+	if !m.had() && m.err != nil {
+		// console.yaml could not be read (it was read just before the store
+		// changed, so it broke in between) or locked: whether it held a setting
+		// of the user is not known.
+		out.Error("console.yaml could not be read or written (" + cutErr(m.err) + "), so the console settings of '" + oldname + "' were not " + verb +
+			". The user is changed already. After repairing the file, check them: tacctl console system-shell user " + oldname +
+			", and tacctl console password-cache user " + oldname + " (each followed by clear to drop it)" +
+			map[bool]string{true: "; a renamed user's settings are set again under '" + newname + "' by a superuser, and the user turns the password cache on again themselves", false: ""}[newname != ""] + ".")
+		return exit(1)
+	}
 	if !m.had() {
 		return nil
 	}
-	out := inv.app.Out
-	verb := map[bool]string{true: "moved", false: "dropped"}[newname != ""]
 	if m.err != nil {
 		var fix []string
 		if m.shellHad {
@@ -1179,6 +1189,34 @@ func (inv *invocation) userSettingsMoved(m userSettingsMove, oldname, newname st
 	}
 	if m.cacheHad {
 		report("password-cache", "password-cache", "on")
+	}
+	return nil
+}
+
+// cutErr is the first line of an error, cut to 200 characters, for a message
+// that names a file that could not be read.
+func cutErr(err error) string {
+	s := strings.Join(msgs(err), " ")
+	s, _, _ = strings.Cut(s, "\n")
+	if r := []rune(s); len(r) > 200 {
+		s = string(r[:200]) + "..."
+	}
+	return s
+}
+
+// consoleSettingsReadable is checked by 'user add', 'user remove' and 'user
+// rename' before they change the store: console.yaml holds settings of users
+// (the system shell, the password cache) that follow the user or are dropped
+// with them, and they cannot be dropped or moved from a file that cannot be
+// read. The store change is made only after the file is known to be readable
+// (an absent file is fine): the other order, the store first, leaves the user
+// gone and the entry behind for the next user of the name, a system shell or a
+// password cache they would inherit, and the store change cannot be taken
+// back from here. Nothing is changed when it is refused.
+func (inv *invocation) consoleSettingsReadable() error {
+	if _, err := console.Load(inv.app.Paths.ConsoleFile); err != nil {
+		return inv.usageErr("console.yaml could not be read: "+cutErr(err)+".",
+			"It holds settings of users (the system shell, the password cache) that this command drops or moves with the user, so that the next user of the name does not inherit them; nothing was changed. Repair the file, then run the command again.")
 	}
 	return nil
 }

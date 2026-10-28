@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"os"
 	"reflect"
 	"strings"
@@ -1070,4 +1072,83 @@ func TestSystemShellEnableIsForTheTierItWasSetFor(t *testing.T) {
 	sb.cfgRun("", []string{"user", "disable", "carol"}, nil, "SUDO_USER=alice", "SUDO_UID=1001")
 	sb.con("system-shell", "user", "carol", "enable")
 	sb.expect(1, "", "has no tier")
+}
+
+// console.yaml holds settings that follow a user (the system shell, the
+// password cache). When it cannot be read, 'user add', 'user remove' and 'user
+// rename' refuse before they change the store, say where the file is broken
+// and that nothing was changed: removing the user first would leave the entry
+// behind for the next user of the name. Once the file is repaired the verb
+// runs and moves or drops the entry.
+func TestUserVerbsRefuseWhenConsoleYAMLCannotBeRead(t *testing.T) {
+	sb := consoleSandbox(t)
+	sb.write("shells", "/bin/sh\n/bin/bash\n", 0o644)
+	admin := func(stdin string, args ...string) string {
+		return plain(sb.cfgRun(stdin, args, nil, "SUDO_USER=alice", "SUDO_UID=1001"))
+	}
+	const good = "version: 1\nsettings: {password_cache: {tiers: [operator, superuser], idle: 15, max: 8}, system_shell_users: {bob: 'enable:operator'}, password_cache_users: {bob: true}}\n"
+	const broken = "version: 1\nsettings: {idle_timeout: soon, system_shell_users: {bob: 'enable:operator'}, password_cache_users: {bob: true}}\n"
+	sb.write("state/console.yaml", broken, 0o600)
+	store := func() string { return sb.read("state/store.yaml") }
+	before := store()
+	for _, c := range []struct {
+		name  string
+		stdin string
+		args  []string
+	}{
+		{"remove", "y\n", []string{"user", "remove", "bob"}},
+		{"rename", "", []string{"user", "rename", "bob", "robert"}},
+		{"add", "", []string{"user", "add", "frank", "operator", "--hash", testHash, "--scopes", "lab"}},
+	} {
+		admin(c.stdin, c.args...)
+		sb.expect(1, "", "console.yaml could not be read: ")
+		if !strings.Contains(sb.stderr(), "idle_timeout") || !strings.Contains(sb.stderr(), "nothing was changed") || !strings.Contains(sb.stderr(), "run the command again") {
+			t.Errorf("%s: the message:\n%s", c.name, sb.stderr())
+		}
+		if store() != before {
+			t.Errorf("%s changed the store", c.name)
+		}
+	}
+	if sb.read("state/console.yaml") != broken {
+		t.Error("the broken file was rewritten")
+	}
+	// Repaired: the same commands run, and the entries follow.
+	sb.write("state/console.yaml", good, 0o600)
+	out := admin("", "user", "rename", "bob", "robert")
+	if sb.code != 0 || !strings.Contains(out, "The system-shell setting of 'bob' (enable) moves to 'robert'.") || !strings.Contains(out, "The password-cache setting of 'bob' (on) moves to 'robert'.") {
+		t.Fatalf("rename: %d\n%s", sb.code, out)
+	}
+	out = admin("y\n", "user", "remove", "robert")
+	if sb.code != 0 || !strings.Contains(out, "The system-shell setting of 'robert' (enable) is dropped.") || strings.Contains(sb.consoleYAML(), "robert") {
+		t.Fatalf("remove: %d\n%s\n%s", sb.code, out, sb.consoleYAML())
+	}
+	// An absent file is not an error.
+	if err := os.Remove(sb.path("state", "console.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	admin("", "user", "add", "frank", "operator", "--hash", testHash, "--scopes", "lab")
+	if sb.code != 0 {
+		t.Errorf("add without a console.yaml: %d %q", sb.code, sb.stderr())
+	}
+}
+
+// If console.yaml cannot be read after the store has changed (it broke in
+// between, or its lock is held), the verb exits 1 and names what to check
+// once the file is repaired; the settings of the user are not claimed dropped.
+func TestUserSettingsMoveThatCannotRead(t *testing.T) {
+	h := newHarness(t, nil)
+	inv := &invocation{ctx: context.Background(), app: h.app, hooks: newTestHooks()}
+	err := inv.userSettingsMoved(userSettingsMove{err: errors.New("boom\nsecond line")}, "bob", "")
+	if code := exitCode(err, h.app.Out); code != 1 {
+		t.Errorf("exit %d", code)
+	}
+	got := h.err.String()
+	for _, w := range []string{"console.yaml could not be read or written (boom)", "the console settings of 'bob' were not dropped", "tacctl console system-shell user bob", "tacctl console password-cache user bob"} {
+		if !strings.Contains(got, w) {
+			t.Errorf("message lacks %q:\n%s", w, got)
+		}
+	}
+	if strings.Contains(got, "second line") {
+		t.Errorf("the error was not cut:\n%s", got)
+	}
 }

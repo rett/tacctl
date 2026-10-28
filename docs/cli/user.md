@@ -31,8 +31,10 @@ user add <name> <group> --hash <hash>|-
 
 user remove <name>
 
-    Remove a user (with confirmation); the user's `console system-shell user` setting, if any, is
-    dropped and the command says so
+    Remove a user (with confirmation); the user's `console system-shell user` and `console
+    password-cache` settings, if any, are dropped and the command says so. Refused, with nothing
+    changed, while console.yaml cannot be read (so that no setting is left for the next user of the
+    name); the same holds for `user add` and `user rename`
 
 user passwd <name>
 

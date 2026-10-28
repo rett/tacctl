@@ -463,6 +463,9 @@ func (inv *invocation) userAdd(args []string) error {
 		return inv.usageErr(why)
 	}
 
+	if err := inv.consoleSettingsReadable(); err != nil {
+		return err
+	}
 	inv.echo("")
 	inv.echoE("  Adding user: " + ui.Bold + username + ui.NC + " (" + group + ")")
 	if hexHash == "" {
@@ -526,6 +529,9 @@ func (inv *invocation) userRemove(args []string) error {
 		return err
 	} else if !exists {
 		return inv.usageErr("User '" + username + "' does not exist.")
+	}
+	if err := inv.consoleSettingsReadable(); err != nil {
+		return err
 	}
 	inv.echo("")
 	if !inv.app.Prompter().Confirm("  Remove user '" + username + "'? This cannot be undone. [y/N]: ") {
@@ -809,6 +815,9 @@ func (inv *invocation) userRename(args []string) error {
 	// The old name is gone from the model afterwards, so its account on this
 	// server (and its tac-superuser) goes at the sync that follows; the new
 	// name gets its account there.
+	if err := inv.consoleSettingsReadable(); err != nil {
+		return err
+	}
 	watch := inv.watchServerTiers()
 	hostCount := inv.enrolledHostsWith(oldname)
 	var mv uidMove
