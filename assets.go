@@ -6,12 +6,13 @@
 //
 // What is embedded: the device templates (rendered by 'config cisco|
 // juniper|wti' when the operator has no override, and the shipped set
-// install and upgrade keep in the state directory) and the two Linux client
+// install and upgrade keep in the state directory), the two Linux client
 // scripts (the body of the installer 'host enroll|sync' sends, and the
-// remover). What the lifecycle phases install from a tree (systemd units,
-// logrotate, the tacquito patches, README.md, the man page, the
-// completion) is read from the deploy clone, as 0.1.16 does: the clone is
-// always there (the binary is built from it), and the bash release a
+// remover) and the manual page ('tacctl man' shows it on a host where the
+// page was never installed). What the lifecycle phases install from a tree
+// (systemd units, logrotate, the tacquito patches, README.md, the man page,
+// the completion) is read from the deploy clone, as 0.1.16 does: the clone
+// is always there (the binary is built from it), and the bash release a
 // rollback hands over to reads the same files.
 package tacctl
 
@@ -27,3 +28,9 @@ var Templates embed.FS
 //
 //go:embed config/linux/client-install.sh config/linux/client-remove.sh
 var LinuxScripts embed.FS
+
+// ManPage is the manual page, man/tacctl.1, as it is in the tree: the one
+// generated file, not a second copy.
+//
+//go:embed man/tacctl.1
+var ManPage []byte

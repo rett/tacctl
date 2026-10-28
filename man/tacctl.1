@@ -39,7 +39,8 @@ re-executes itself under
 automatically when invoked by a non-root user.
 .BR "tacctl hash" ,
 .BR "tacctl version" ,
-.B tacctl completion
+.BR "tacctl completion" ,
+.B tacctl man
 and
 .B tacctl shell
 are deliberate exceptions: they run as the invoking user.
@@ -722,6 +723,124 @@ set the variable there and source the script again.
 Requires: \fBreadonly\fR.
 .RE
 .\" END GENERATED: command completion
+.TP
+.BI "man " "[ \-\-path ] [ " word... " ]"
+Open this manual page in a pager and return when the pager is quit. It runs as
+the invoking user, with no
+.BR sudo (8)
+and no tier needed, so every tier can run it, in the shell and in the login
+console, where there is no
+.BR man (1)
+of one's own. With words it opens the page at that place: the heading of a
+section or subsection
+.RB ( "man tiers" ,
+.BR "man audit log" ),
+a family
+.RB ( "man user"
+is \(lqUser management\(rq), or a command
+.RB ( "man device config plan"
+is the entry of that command). The words are matched without regard to case
+and choose among the headings and entries of the page only; they are never
+given to
+.BR man (1)
+or to the pager. The place is reached with searches in the pager (the heading
+or the first words of the entry, made after the searches of the entries just
+before it, so that a sentence earlier in the page that begins with the same word
+is not found; a search cannot name the end of a line), so
+.B n
+finds the next match and
+.B q
+quits; the page itself has no anchors. A word that names nothing opens the page
+at the top and says so on standard error. On a stream that is not a terminal the
+page is written whole as plain text, without a pager and without bold or
+underline sequences (also when groff renders it), and the words do nothing.
+The page shown is always the copy the binary carries, which is the page of the
+version that runs, whether or not
+.B install
+and
+.B upgrade
+placed one.
+.B \-\-path
+shows nothing: it prints
+.B built into tacctl
+and, when the installed file
+(normally
+.IR /usr/share/man/man1/tacctl.1.gz )
+exists, a second line
+.RB \(lq "installed: " \fIpath\fR\(rq
+saying whether it is identical to the built-in page or differs from it.
+The page is rendered by
+.B man \-l
+(given the page on standard input, the only page it can show), else by
+.BR groff (1)
+and shown by
+.BR less (1);
+with neither, the command names the page and what to install, and exits 1.
+.IP
+The pager cannot start a program. It is the
+.B less
+found in
+.IR /usr/local/bin:/usr/bin:/bin
+(the
+.B PATH
+the programs get, not the caller's),
+chosen by tacctl and started with
+.B LESSSECURE=1
+(no shell escape
+.RB ( ! ),
+no editor
+.RB ( v ),
+no pipe
+.RB ( | ),
+no
+.B s
+or
+.BR :e ;
+they answer \(lqCommand not available\(rq) and a
+.B LESS
+of tacctl's own. The environment of
+.BR man (1),
+.BR groff (1)
+and
+.BR less (1)
+is made from the terminal and the locale of the caller
+.RB ( TERM ,
+.BR LANG ,
+.BR LC_* ;
+a locale named by a path is dropped)
+and a fixed
+.BR PATH :
+a
+.BR PAGER ,
+.BR MANPAGER ,
+.BR LESS ,
+.BR LESSOPEN ,
+.BR LESSCLOSE ,
+.BR MANPATH ,
+.BR MANOPT ,
+.B MAN_*
+or
+.B GROFF_*
+of the caller is ignored, and no
+.I ~/.lesskey
+or
+.I ~/.manpath
+is read. Without
+.B less
+the page is printed whole, with a line on standard error saying so:
+.BR more (1)
+is not used, because its shell escape cannot be switched off.
+.\" BEGIN GENERATED: command man
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.PP
+Options:
+.TP
+\fB\-\-path\fR
+Print which manual page is shown and where one is installed.
+.RE
+.\" END GENERATED: command man
 .SS User management \fB(tacctl user)\fR
 .TP
 .B user list
@@ -12950,7 +13069,7 @@ line.
 user list, user show, group list, group show, scope list,
 backend list, backend status, ssh, device list, device show,
 device notice, device ssh, device client\-config, _completion\-names,
-_console\-policy, \-\-version, \-v, hash, completion
+_console\-policy, \-\-version, \-v, hash, completion, man
 .TP
 .B operator
 log tail, log search, log failures, log accounting, config validate,
@@ -15533,7 +15652,14 @@ user, removed afterwards on every path). It is not
 .BR TMPDIR .
 .TP
 .I /usr/share/man/man1/tacctl.1.gz
-This manual.
+This manual. Written by
+.B install
+and
+.BR upgrade ;
+.B tacctl man
+shows the copy the binary carries (the page of the running version), and
+.B tacctl man \-\-path
+says whether this file is the same.
 .TP
 .I ~/.local/state/tacctl/history
 The

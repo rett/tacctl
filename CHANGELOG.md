@@ -719,6 +719,39 @@ current behaviour; this file is where history lives.
     added, and the zone as printed, for every form (an abbreviation, `UTC`,
     `GMT+3`, `+03`, `+0530`).
 
+39. **`tacctl man` opens the manual page, for every tier and in the console.**
+    The console has no `man` command and its users no shell, so the page
+    that documents every command was out of their reach. `tacctl man` shows
+    it in a pager and returns when the pager is quit; `tacctl man tiers`,
+    `tacctl man audit log`, `tacctl man user` and `tacctl man device config
+    plan` open it at that heading, family or command (searches in the pager
+    for the heading or the first words of the entry, made after those of the
+    entries just before it, so `n` finds the next match; the words only
+    choose the place and never reach an argument, and
+    words that name nothing open the page at the top and say so on standard
+    error). `tacctl man --path` says which page is shown and where one is installed. It runs as
+    you, with no `sudo` and no tier gate, like `completion` and `version`
+    (readonly tier row, audit class `read`), and is listed by Tab, `?`, `help`
+    and `-h` in the shell and the console. The page is the copy the binary
+    now carries (`man/tacctl.1` is embedded, still the one generated file),
+    the page of the version that runs, whether or not `install` and `upgrade`
+    placed one; `tacctl man --path` prints `built into tacctl` and, when
+    the installed file exists, `installed: <path>` with whether it is
+    identical or differs. It is rendered by `man -l`, given the page on
+    standard input, else by `groff` and `less`; with neither, it says so and
+    exits 1. The pager cannot start a program: it is
+    the `less` found in `/usr/local/bin:/usr/bin:/bin` (the fixed `PATH` the
+    programs get; `man` and `groff` are looked for there too, never in the
+    caller's `PATH`), run with `LESSSECURE=1` (no shell escape, no
+    editor, no pipe, no log file) and a `LESS` of tacctl's own, and `man`,
+    `groff` and `less` get an environment made from `TERM`, `LANG` and `LC_*`
+    and a fixed `PATH`, so a `PAGER`, `MANPAGER`, `LESS`, `LESSOPEN`,
+    `LESSCLOSE`, `MANPATH`, `MANOPT`, `MAN_*` or `GROFF_*` of the caller does
+    nothing and no `~/.lesskey` or `~/.manpath` is read. Without `less` the
+    page is printed whole, with a line on standard error saying so (`more`
+    has a shell escape that cannot be switched off, so it is not used).
+
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

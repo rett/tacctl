@@ -3,11 +3,13 @@ package cli
 import (
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/rett/tacctl/internal/askpass"
+	"github.com/rett/tacctl/internal/assets"
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
@@ -89,10 +91,31 @@ type hooks struct {
 	probeDial devreg.Dialer
 	// utmpFile is the login-records file ("": the system's).
 	utmpFile string
+	// manPage is the page 'tacctl man' shows (nil: the one the binary carries).
+	manPage func() []byte
+	// manLookPath finds a program of 'tacctl man' (nil: in the directories of
+	// console.ConsolePath).
+	manLookPath func(name string) (string, bool)
 	// askpassFromApp makes the password cache's value the app's
 	// environment alone: nothing is read from or removed from the process's
 	// own (a test runs beside others in one process).
 	askpassFromApp bool
+}
+
+// builtInManPage is the page the binary carries, or the test's.
+func (h *hooks) builtInManPage() []byte {
+	if h != nil && h.manPage != nil {
+		return h.manPage()
+	}
+	return assets.ManPage()
+}
+
+// lookManTool finds a program of 'tacctl man'.
+func (h *hooks) lookManTool(name string) (string, bool) {
+	if h != nil && h.manLookPath != nil {
+		return h.manLookPath(name)
+	}
+	return lookInDirs(name, strings.Split(console.ConsolePath, ":"))
 }
 
 // interrupts is the test's source of interrupts, or nil.

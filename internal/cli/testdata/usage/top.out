@@ -39,6 +39,8 @@ Commands:
   backup <subcommand>                   Backup management (list, diff, restore)
   hash <subcommand>                     Bcrypt helper (generate, commands — runs as invoking user, no sudo)
   completion bash|zsh|fish              Print the shell completion script
+  man [--path] [<word>...]              Open the manual page, at a command or topic
+      --path                            Print which manual page is shown and where one is installed
   version [--long]                      Print tacctl version (--long: commit, build date, Go version)
       --long                            Also the commit, build date, Go version and whether test knobs are on
 

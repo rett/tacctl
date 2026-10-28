@@ -230,6 +230,7 @@ var auditTable = map[string]auditEntry{
 	"shell":             read(),
 	"ssh":               action(),
 	"completion":        read(),
+	"man":               read(),
 	"_askpass":          read(),
 	"__help":            read(),
 	"_completion-names": read(),
