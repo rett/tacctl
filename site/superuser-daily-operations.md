@@ -332,7 +332,8 @@ tacctl config juniper --scope site-a              # review the filter before it 
 ```
 
 Setting `strict` prints what stops, and says so when the permit list is
-empty (no filter is rendered until it has an entry). Setting the mode the
+empty or has no IPv4 entry that permits ssh (no filter is rendered until it
+has one). Setting the mode the
 scope already has changes nothing. The change reaches a device only through
 a plan or an apply ([Engineer Guide](engineer-guide-device-changes.md) §4).
 

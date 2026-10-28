@@ -164,8 +164,10 @@ engine:
 > needs `tcp/22` among them for ssh, and `tcp/830` for NETCONF.
 
 The walkthrough keeps the line that applies the filter to `lo0` commented,
-and a plan never adds it. A permit list with no IPv4 entry renders no filter
-in either mode. Setting the mode is the superuser's
+and a plan never adds it. A permit list with no IPv4 entry that permits ssh
+(a plain entry, or one whose services include `tcp/22`) renders no filter in
+either mode, because the server's address alone would let only tacctl in;
+the walkthrough then says what each entry permits instead. Setting the mode is the superuser's
 ([Superuser Daily Operations](superuser-daily-operations.md) §8); engineers
 can read it for their own scopes and plan the change
 ([Engineer Guide](engineer-guide-device-changes.md) §4). The repository's
