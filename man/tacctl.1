@@ -5412,7 +5412,15 @@ an operator does not see
 .BR host ;
 a superuser and a caller outside
 .B tac-users
-see everything. The list ends with \(lqShown: the commands the
+see everything. The verbs of
+.B device config
+are listed by the tier of each (an operator sees
+.BR list ,
+an engineer all but
+.B forget
+and
+.BR shapes ).
+The list ends with \(lqShown: the commands the
 .I tier
 tier can run\(rq.
 .BI "help " command

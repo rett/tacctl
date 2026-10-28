@@ -79,10 +79,22 @@ func (inv *invocation) currentView() (eff tier.Tier, all, active bool) {
 	return eff, all, true
 }
 
+// verbTier is the tier a command below the gate's two words needs, where
+// the code holds the verb to a tier of its own (the verbs of 'device
+// config', deviceConfigNeeds), and whether there is one.
+func verbTier(path []string) (tier.Tier, bool) {
+	if len(path) == 3 && path[0] == "device" && path[1] == "config" {
+		t, ok := deviceConfigNeeds[path[2]]
+		return t, ok
+	}
+	return "", false
+}
+
 // viewShows reports whether the lists show the command at path (names
 // below root). A top-level verb is shown when the tier may run it or any of
 // its sub-commands; a sub-command by the gate's two words, and anything
-// deeper with its second-level command. The words that run as the invoking
+// deeper with its second-level command, except a verb with a tier of its
+// own (verbTier). The words that run as the invoking
 // user (completion, hash) are shown to all.
 func viewShows(root *cobra.Command, eff tier.Tier, all bool, path []string) bool {
 	if all || len(path) == 0 {
@@ -95,7 +107,13 @@ func viewShows(root *cobra.Command, eff tier.Tier, all bool, path []string) bool
 		return true
 	}
 	if len(path) >= 2 {
-		return tier.Permits(eff, path[0], path[1])
+		if !tier.Permits(eff, path[0], path[1]) {
+			return false
+		}
+		if need, ok := verbTier(path); ok {
+			return tierPermits(eff, need)
+		}
+		return true
 	}
 	if tier.Permits(eff, path[0], "") {
 		return true
@@ -132,8 +150,12 @@ func lowestTier(cmd, sub string) tier.Tier {
 	return tier.Superuser
 }
 
-// pathTier is lowestTier of a command path (the gate's two words).
+// pathTier is lowestTier of a command path (the gate's two words), or the
+// tier of its own that a verb below them has (verbTier).
 func pathTier(path []string) tier.Tier {
+	if need, ok := verbTier(path); ok {
+		return need
+	}
 	sub := ""
 	if len(path) > 1 {
 		sub = path[1]

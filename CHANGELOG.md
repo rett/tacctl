@@ -75,6 +75,16 @@ current behaviour; this file is where history lives.
    description that does not fit after the column goes on the lines below,
    indented to the column where it starts.
 
+7. **The shell lists the verbs of `device config` by their own tier.** The
+   lists follow the gate's two words, `device config`, so an operator was
+   offered `apply` and `shapes` (and `show`, `pull`, `diff`, `plan`), which
+   the verb then refused. Tab, `?` and a typed space list the verbs by the
+   tier of each now (an operator: `list`; an engineer: all but `forget` and
+   `shapes`), and `?` on one typed by hand says `Needs the engineer tier.` or
+   the superuser's. Display only: the gate and the verb refuse as before, and
+   the completion scripts, which run as the user and know no tier, list all
+   eight.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config
