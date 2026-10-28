@@ -615,6 +615,11 @@ func (inv *invocation) hostEnrollRun(o enrollOpts) error {
 				server = cutField(e.Line, 5)
 			}
 		}
+		// The recorded server address (0.2.21) is the default of --server
+		// for a host that has none of its own yet.
+		if server == "" {
+			server = a.Conf().ServerAddress()
+		}
 		if server == "" {
 			res, err := a.Runner.Run(inv.ctx, execx.Cmd{Name: "ip", Args: []string{"-4", "route", "get", hostIP}, Stderr: io.Discard})
 			if res.Code != 0 || err != nil {
@@ -1622,7 +1627,7 @@ func (inv *invocation) hostSync(args []string) error {
 			// this server's own login: the scope tacctl manages is taken over
 			// or repaired first (managed_scope.go); a new one needs a new
 			// client setup, which only the enrolment writes
-			switch _, err := inv.managedSetup(reg, e.Server, false); {
+			switch _, err := inv.managedSetup(reg, inv.localServer(e).Address, false); {
 			case errors.Is(err, errManagedNeedsEnroll):
 				a.Out.InfoE(name + ": to set up this server's own login for every user: tacctl host enroll --local")
 			case errors.Is(err, errManagedClash):

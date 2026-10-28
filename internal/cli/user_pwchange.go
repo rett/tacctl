@@ -76,7 +76,7 @@ func (c *pwCtx) barrier(name, group string, scopes []string, disabled bool) pwBa
 	case !slices.Contains(scopes, e.Scope) && (!pwchange.ServerOf(e).ManagedIn(c.m) || !c.implicit(name, group)):
 		return pwBarrier{why: "it is not in scope '" + e.Scope + "', the scope of this server, so it has no login on it"}
 	}
-	srv := pwchange.ServerOf(e)
+	srv := c.inv.localServer(e)
 	for _, addr := range srv.LoginAddresses() {
 		if got := c.m.ScopeOf(addr, srv.Protocol); got != e.Scope {
 			return pwBarrier{why: "scope '" + e.Scope + "' does not answer " + addr + " for " + hosts.MethodLabel(e.EffectiveMethod()) + ", where this server's own logins come from, so nobody logs in to it"}
@@ -120,7 +120,7 @@ func (c *pwCtx) sharedPrefixes() []string {
 	if s == nil {
 		return nil
 	}
-	return pwchange.ServerOf(c.entry).SharedPrefixes(s)
+	return c.inv.localServer(c.entry).SharedPrefixes(s)
 }
 
 // sharedNote is the warning for a scope that has such prefixes, "" otherwise.

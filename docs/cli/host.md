@@ -31,7 +31,7 @@ host enroll <[user@]host>|--local [opts]
         The host's scope (default: its registered one, else the scope covering its address; not with
         --local)
     --server <address>
-        Address the host should use for this server (default: detected)
+        Address the host uses for this server (default: recorded, else detected)
     --name <name>
         Registry name (default: short hostname, lowercased; lower case, not a tacctl word)
     --port <n>, --identity <file>

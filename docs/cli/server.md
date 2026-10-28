@@ -43,6 +43,27 @@ is changed: the setting, the entry and the scope stay as they were. A server
 with no login set up (no registry entry) has only its setting changed; `tacctl
 host enroll --local`, `install` and `upgrade` set the login up at that address.
 
+**Where the address is the default.** The recorded address is the default of
+`--server` of the device walkthroughs (`config cisco|juniper|wti`, and so of
+`device config show`, `pull`, `diff`, `plan` and `apply`, which render the same
+text), of `config linux script` and of `host enroll`, and the managed scope's
+prefixes are derived from it. An explicit `--server` wins for that run. With
+nothing recorded each detects the address as before. Three details:
+
+- A walkthrough names the recorded address where the device is told where the
+  server is. The address tacctl itself reaches the devices from (`--source`:
+  the first SNMP client, the ssh permits, the WTI list) is still the detected
+  one, and when the two differ the walkthrough says which plays which role
+  (`The device is told to authenticate against 203.0.113.9 (server.addresses)`).
+  A RADIUS listener bound to an address keeps that address in a RADIUS
+  walkthrough.
+- `host enroll` of a host that is already enrolled keeps the server address the
+  host has, so re-enrolling for a repair never repoints it; `--server`
+  changes it. A new host gets the recorded address; before, the source address
+  of the route to the host.
+- `host sync` of this server repairs the managed scope's prefixes from the
+  recorded address when they drifted (`Repaired the managed server login.`).
+
 A change says what is left to do, once:
 
 ```

@@ -453,7 +453,8 @@ Subcommands:
       <o>--name <device></o>                  (cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step;
                                        with --staging it is also the device whose move ends the staging (default: the one at the bench address)
       <o>--server <address|name></o>          (cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a
-                                       translating firewall (a name must resolve to an IPv4 address); not stored
+                                       translating firewall (a name must resolve to an IPv4 address); not stored; without it the recorded server
+                                       address (tacctl server addresses), else the detected one
       <o>--source <address></o>               (cisco, juniper, wti) The address tacctl itself reaches the devices from: the first SNMP client (default: the
                                        address of the route to the Internet); not stored
       <o>--snmp-location <text></o>           (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location)
@@ -522,7 +523,7 @@ Usage: tacctl config linux <subcommand>
   script [--scope <name>] [--server <address>] [--method tacplus|radius] [--output <file>]
                                           Write the install script for hosts in a scope (contains the secret)
       --scope <name>                      (script) The scope whose users and secret it carries (default: the default scope)
-      --server <address>                  (script) The address hosts use for this server (default: detected)
+      --server <address>                  (script) The server address hosts use (default: recorded, else detected)
       --method tacplus|radius             (script) pam_tacplus, or the host's pam_radius_auth (default: host default-method)
       --output, -o <file>                 Where the script goes (default: tacctl-linux-<scope>.sh, remove-script: tacctl-linux-remove.sh)
   remove-script [--output <file>]         Write the removal script (no secrets; accounts are left in place)
@@ -557,7 +558,7 @@ Usage: tacctl host <subcommand> [arguments]
                                        Re-enroll with the other to switch
       --scope <name>                   The host's scope (default: its registered one, else the scope covering its address;
                                        not with --local)
-      --server <address>               Address the host should use for this server (default: detected)
+      --server <address>               Address the host uses for this server (default: recorded, else detected)
       --name <name>                    Registry name (default: short hostname, lowercased; lower case, not a tacctl word)
       --port <n>, --identity <file>    SSH port and key
       --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here

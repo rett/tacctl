@@ -8135,3 +8135,19 @@ After the upgrade: `tacctl status`, `tacctl config validate` (store, rendered co
    `cmd` lines and `server addresses op=<op> address=<ip>`. The word
    `server` is a top-level command now, so the manual page no longer says
    `tacctl server` for the machine.
+
+6. **The recorded server address is the default of `--server`.** The device
+   walkthroughs (`config cisco|juniper|wti`, and so `device config show`,
+   `pull`, `diff`, `plan` and `apply`, which render the same text),
+   `config linux script` and `host enroll` read the first element of
+   `server.addresses` as the default of `--server`, and so does the managed
+   scope's derived prefixes (`host sync` of the server). An explicit
+   `--server` wins for that run; with nothing recorded the behaviour is as
+   before (the source address of the route to the Internet, or to the host).
+   A walkthrough names the recorded address where the device is told where
+   the server is and keeps the detected address as the one tacctl reaches the
+   devices from, saying which plays which role when they differ
+   (`server.addresses` is named as the source of the first); a RADIUS listener
+   bound to an address keeps that address in a RADIUS walkthrough. `host
+   enroll` of a host already enrolled keeps the server address the host has,
+   so a re-enrolment for a repair never repoints it; `--server` changes it.

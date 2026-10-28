@@ -832,6 +832,10 @@ func (inv *invocation) configLinuxScript(args []string) error {
 	} else if !ok {
 		return exit(1)
 	}
+	// the recorded server address is the default of --server (0.2.21)
+	if server == "" {
+		server = a.Conf().ServerAddress()
+	}
 	if server == "" {
 		res, err := a.Runner.Run(inv.ctx, execx.Cmd{Name: "ip", Args: []string{"-4", "route", "get", "1.0.0.0"}, Stderr: io.Discard})
 		if res.Code != 0 || err != nil {

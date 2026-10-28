@@ -264,8 +264,10 @@ scope mgmt-acl <name> mode [ssh-only|strict]
     keeps the SNMP client terms and has no `default-accept` term, so the implicit discard at the end
     of the filter drops the rest. The walkthrough has a second server address only when the device
     authenticates against another address than the one tacctl reaches it from: `--server` (unless it
-    is the detected address or `--source`), `--source` alone (the device is still told the address
-    detected for the server), or a RADIUS listener bound to another address; with neither flag, with
+    is the detected address or `--source`), the recorded server address (`server.addresses`, the
+    default of `--server`, unless it is the detected address or `--source`), `--source` alone (the
+    device is still told the address detected for the server), or a RADIUS listener bound to
+    another address; with neither flag and nothing recorded, with
     `--server` equal to the detected address or to `--source`, or with the address inside a plain
     entry of the permit list, there is one address and one source /32 is rendered. The second
     address is not a source of `permit-mgmt`: a term of its own, `permit-auth-replies`, after the

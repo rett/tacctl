@@ -548,6 +548,17 @@ func (inv *invocation) recordedServer(reg *hosts.Registry) string {
 	return ""
 }
 
+// localServer is the pwchange.Server of this server's registry entry e, at
+// the recorded address: the setting server.addresses, else the entry's own
+// copy. The managed scope's prefixes are derived from it.
+func (inv *invocation) localServer(e hosts.Entry) pwchange.Server {
+	srv := pwchange.ServerOf(e)
+	if addr := inv.app.Conf().ServerAddress(); addr != "" {
+		srv.Address = addr
+	}
+	return srv
+}
+
 // canonAddr is the address in its canonical form, an IPv4-mapped IPv6 address
 // as the IPv4 one (the login prefix is IPv4: a mapped form would never match).
 func canonAddr(s string) string {

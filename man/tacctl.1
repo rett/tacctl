@@ -2876,7 +2876,12 @@ as by
 .B "host sync"
 (including the question about removed users' homes, and
 .BR \-\-remove\-home ).
-The server address defaults to the source address of the route to the host.
+The server address defaults to the one a host enrolled already has, else the
+recorded server address
+.RB ( "tacctl server addresses" ),
+else the source address of the route to the host;
+.B \-\-server
+wins for that run.
 .IP
 The method is
 .B tacplus
@@ -3147,7 +3152,7 @@ Enroll this machine itself instead of a remote host (its tacctl users get the lo
 The host's scope (default: its registered one, else the scope covering its address; not with \-\-local).
 .TP
 \fB\-\-server\fR \fI<address>\fR
-Address the host should use for this server (default: detected).
+Address the host uses for this server (default: recorded, else detected).
 .TP
 \fB\-\-name\fR \fI<name>\fR
 Registry name (default: short hostname, lowercased; lower case, not a tacctl word).
@@ -3972,7 +3977,7 @@ Options:
 (script) The scope whose users and secret it carries (default: the default scope).
 .TP
 \fB\-\-server\fR \fI<address>\fR
-(script) The address hosts use for this server (default: detected).
+(script) The server address hosts use (default: recorded, else detected).
 .TP
 \fB\-\-method\fR \fItacplus|radius\fR
 (script) pam_tacplus, or the host's pam_radius_auth (default: host default\-method).
@@ -5198,7 +5203,7 @@ Options:
 (cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step; with \-\-staging it is also the device whose move ends the staging (default: the one at the bench address).
 .TP
 \fB\-\-server\fR \fI<address|name>\fR
-(cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a translating firewall (a name must resolve to an IPv4 address); not stored.
+(cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a translating firewall (a name must resolve to an IPv4 address); not stored; without it the recorded server address (tacctl server addresses), else the detected one.
 .TP
 \fB\-\-source\fR \fI<address>\fR
 (cisco, juniper, wti) The address tacctl itself reaches the devices from: the first SNMP client (default: the address of the route to the Internet); not stored.
@@ -5277,7 +5282,7 @@ Options:
 (cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step; with \-\-staging it is also the device whose move ends the staging (default: the one at the bench address).
 .TP
 \fB\-\-server\fR \fI<address|name>\fR
-(cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a translating firewall (a name must resolve to an IPv4 address); not stored.
+(cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a translating firewall (a name must resolve to an IPv4 address); not stored; without it the recorded server address (tacctl server addresses), else the detected one.
 .TP
 \fB\-\-source\fR \fI<address>\fR
 (cisco, juniper, wti) The address tacctl itself reaches the devices from: the first SNMP client (default: the address of the route to the Internet); not stored.
@@ -5383,7 +5388,7 @@ Options:
 (cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step; with \-\-staging it is also the device whose move ends the staging (default: the one at the bench address).
 .TP
 \fB\-\-server\fR \fI<address|name>\fR
-(cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a translating firewall (a name must resolve to an IPv4 address); not stored.
+(cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a translating firewall (a name must resolve to an IPv4 address); not stored; without it the recorded server address (tacctl server addresses), else the detected one.
 .TP
 \fB\-\-source\fR \fI<address>\fR
 (cisco, juniper, wti) The address tacctl itself reaches the devices from: the first SNMP client (default: the address of the route to the Internet); not stored.
@@ -6755,9 +6760,16 @@ against another address than the one tacctl reaches it from:
 .B \-\-server
 (unless it is the detected address or
 .BR \-\-source ),
+the recorded server address
+.RB ( server.addresses ,
+the default of
+.BR \-\-server ,
+unless it is the detected address or
+.BR \-\-source ),
 .B \-\-source
 alone (the device is still told the address detected for the server), or a
-RADIUS listener bound to another address. With neither flag, with
+RADIUS listener bound to another address. With neither flag and nothing
+recorded, with
 .B \-\-server
 equal to the detected address or to
 .BR \-\-source ,
@@ -12517,7 +12529,22 @@ in
 .B "host enroll \-\-local"
 and by
 .BR install ,
-and this server's registry entry keeps a copy, which an older release reads. The
+and this server's registry entry keeps a copy, which an older release reads. It
+is the default of
+.B \-\-server
+of the device walkthroughs
+.RB ( "config cisco" ,
+.BR "config juniper" ,
+.BR "config wti" ;
+a RADIUS listener bound to an address keeps that address in a RADIUS
+walkthrough), of
+.B "config linux script"
+and of
+.B "host enroll"
+(a host enrolled already keeps the address it has): an explicit
+.B \-\-server
+wins for that run, and with nothing recorded the address is detected as it was.
+The managed scope's prefixes are derived from it. The
 address is an IP address, behind NAT or a VPN if need be and not necessarily on
 this machine, never a host name, the unspecified address, a loopback address or
 a link\-local address.
