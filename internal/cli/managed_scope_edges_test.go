@@ -1,8 +1,15 @@
 package cli
 
 import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/execx/fake"
 )
 
 // The states a release before 0.2.21, an interrupted command or a rollback
@@ -147,4 +154,138 @@ func TestRollbackLeavesAnOperatorsScopeCalledTacctl(t *testing.T) {
 	if out := hs.all(); strings.Contains(out, "add scope tacctl") || strings.Contains(out, "managed-scope") {
 		t.Errorf("the plan adds users to the operator's scope:\n%s", out)
 	}
+}
+
+// legacySharedSandbox is a 0.2.20 install whose server is registered in the
+// scope lab, which serves devices too and has the server's address.
+func legacySharedSandbox(t *testing.T) *hostSandbox {
+	t.Helper()
+	hs := newHostSandbox(t)
+	hs.loopback()
+	hs.write("state/linux-hosts", "authsrv|local|22|lab|127.0.0.1|\n", 0o600)
+	return hs
+}
+
+// scriptFails is a runner whose local client script ends the way an
+// interruption does: with an error, not an exit status.
+func scriptFails(hs *hostSandbox, cancel func()) *fake.Runner {
+	r := hs.runner()
+	r.Func(func(c execx.Cmd) bool { return c.Name == "bash" }, func(execx.Cmd) (execx.Result, error) {
+		if cancel != nil {
+			cancel()
+		}
+		return execx.Result{Code: 130}, errors.New("interrupted")
+	})
+	return r
+}
+
+// noHalfEnrolment checks that nothing of an enrolment that did not finish is
+// left: the store and the registry are as they were, the server's logins
+// are still answered by the scope the registry names, and the retry works.
+func noHalfEnrolment(t *testing.T, hs *hostSandbox, store, registry string) {
+	t.Helper()
+	if hs.store() != store || hs.registry() != registry {
+		t.Errorf("the failed enrolment left a change:\nstore\n%s\nregistry %q", hs.store(), hs.registry())
+	}
+	hs.run(nil, "scope", "lookup", "127.0.0.1")
+	hs.expect(0, "scope 'lab'", "")
+	if b := renderedBlock(t, hs, "bob"); !strings.Contains(b, `"lab"`) {
+		t.Errorf("bob lost the scope the server answers him with:\n%s", b)
+	}
+	hs.run(nil, "host", "sync", "authsrv")
+	if strings.Contains(hs.all(), "reserved") {
+		t.Errorf("the sync meets a scope of the failed enrolment:\n%s", hs.all())
+	}
+	enrolLocal(t, hs)
+	if hs.registry() != "authsrv|local||tacctl|192.0.2.10|\n" || strings.Count(hs.store(), "\n  tacctl:\n") != 1 {
+		t.Errorf("the retry:\n%q\n%s", hs.registry(), hs.store())
+	}
+}
+
+// An enrolment of a server registered in a shared scope that ends in an
+// error (Ctrl-C during the client script, which a build on the host makes
+// long) or before the script runs puts the prefixes back and removes the new
+// scope, as a script that exits non-zero does; the retry is accepted.
+func TestManagedEnrolmentThatEndsInAnErrorLeavesNothing(t *testing.T) {
+	for name, fail := range map[string]func(*hostSandbox){
+		"script error": func(hs *hostSandbox) {
+			hs.run(scriptFails(hs, nil), "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
+			hs.expect(1, "", "interrupted")
+		},
+		"script interrupted": func(hs *hostSandbox) {
+			ctx, cancel := context.WithCancel(context.Background())
+			hs.ctx = ctx
+			hs.run(scriptFails(hs, cancel), "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
+			hs.ctx = nil
+			if hs.code == 0 {
+				t.Error("exit 0")
+			}
+		},
+		"no tarball": func(hs *hostSandbox) {
+			if err := os.Remove(filepath.Join(hs.dir, "linux", "pam_tacplus-1.7.0.tar.gz")); err != nil {
+				t.Fatal(err)
+			}
+			hs.run(nil, "host", "enroll", "--local", "--name", "authsrv")
+			hs.expect(1, "", "pam_tacplus tarball not found")
+			enrolTarball(t, hs)
+		},
+		"script exit status": func(hs *hostSandbox) {
+			hs.runFails = false
+			r := hs.runner()
+			r.When(func(c execx.Cmd) bool { return c.Name == "bash" }, execx.Result{Code: 1}, nil)
+			hs.run(r, "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
+			hs.expect(1, "", "Enrollment of authsrv failed")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			hs := legacySharedSandbox(t)
+			store, registry := hs.store(), hs.registry()
+			fail(hs)
+			noHalfEnrolment(t, hs, store, registry)
+		})
+	}
+}
+
+// enrolTarball puts back the stand-in tarball the test removed.
+func enrolTarball(t *testing.T, hs *hostSandbox) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(hs.dir, "linux", "pam_tacplus-1.7.0.tar.gz"), []byte("not really a tarball\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A scope called tacctl that answers the login addresses only, has no member
+// and serves no one else is what an enrolment that did not finish left (an
+// earlier build did not take it out): the retry adopts it, with its secret,
+// and the sync says what to run instead of calling it a clash.
+func TestManagedEnrolmentAdoptsAnUnfinishedScope(t *testing.T) {
+	hs := legacySharedSandbox(t)
+	hs.run(nil, "scope", "prefixes", "lab", "remove", "127.0.0.1/32")
+	hs.expect(0, "", "")
+	withScope(hs, "tacctl", "127.0.0.1/32", false)
+	hs.run(nil, "host", "sync", "authsrv")
+	hs.expect(0, "authsrv: to set up this server's own login for every user: tacctl host enroll --local", "")
+	if strings.Contains(hs.all(), "reserved") {
+		t.Errorf("the sync calls it a clash:\n%s", hs.all())
+	}
+	enrolLocal(t, hs)
+	st := hs.store()
+	if hs.registry() != "authsrv|local||tacctl|192.0.2.10|\n" || strings.Count(st, "\n  tacctl:\n") != 1 ||
+		!strings.Contains(st, "tacctl:\n    prefixes: [127.0.0.1/32, 192.0.2.10/32]\n    secret: tacctl-secret-0123456789abcdef") {
+		t.Errorf("registry %q\n%s", hs.registry(), st)
+	}
+	// both login addresses already in it: nothing to repair
+	hs = legacySharedSandbox(t)
+	hs.run(nil, "scope", "prefixes", "lab", "remove", "127.0.0.1/32")
+	withScope(hs, "tacctl", "127.0.0.1/32, 192.0.2.10/32", false)
+	enrolLocal(t, hs)
+	if st := hs.store(); strings.Count(st, "\n  tacctl:\n") != 1 || strings.Contains(hs.all(), "Repaired") ||
+		!strings.Contains(st, "secret: tacctl-secret-0123456789abcdef") {
+		t.Errorf("adoption:\n%s\n%s", hs.all(), st)
+	}
+	// with a member it is the operator's
+	hs = newHostSandbox(t)
+	withScope(hs, "tacctl", "127.0.0.1/32, 192.0.2.10/32", true)
+	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
+	hs.expect(1, "", clashLine)
 }

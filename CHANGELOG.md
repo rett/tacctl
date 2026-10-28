@@ -37,7 +37,9 @@ current behaviour; this file is where history lives.
    server alone is taken over at the next `host sync` of the server or `host
    enroll --local` (renamed, its secret kept, in one line); one that also
    serves hosts or devices is left to them, and `host enroll --local` sets the
-   server's login up apart from it. A `host sync` of the server repairs its
+   server's login up apart from it; an enrolment that fails or is interrupted
+   (an error, Ctrl-C, a failed client script) puts the prefixes back and takes
+   the new scope out again, and the same command run again does it. A `host sync` of the server repairs its
    login when it was changed by hand (`Repaired the managed server login.`),
    `host move` of the server says it is set up by `host enroll --local`, and
    `host forget` and `host unenroll` of the server take its login with them.

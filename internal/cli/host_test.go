@@ -37,6 +37,9 @@ type hostSandbox struct {
 	// serverAddress, when set, is the detection of the server address
 	// (testServerAddress otherwise).
 	serverAddress func() (string, string, error)
+	// ctx, when set, is the context the command runs under (cancelled by a
+	// test to interrupt it).
+	ctx context.Context
 }
 
 // linuxDirStandIn points the sandbox's TACCTL_LINUX_DIR at a directory of its
@@ -107,7 +110,11 @@ func (hs *hostSandbox) run(r *fake.Runner, args ...string) string {
 	if a.ServerAddress == nil {
 		a.ServerAddress = testServerAddress
 	}
-	hs.code = exitCode(runWith(context.Background(), a, BuildInfo{Version: "0.2.0-test"}, hs.hooks), a.Out)
+	ctx := hs.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	hs.code = exitCode(runWith(ctx, a, BuildInfo{Version: "0.2.0-test"}, hs.hooks), a.Out)
 	if n := len(r.Execs()); n != 0 {
 		hs.t.Errorf("%q: exec'd", args)
 	}

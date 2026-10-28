@@ -739,6 +739,15 @@ func (inv *invocation) hostEnroll(args []string) error {
 		if undoManaged, err = inv.managedSetup(reg, server, true); err != nil {
 			return inv.managedSetupErr(err)
 		}
+		// A scope made for this enrolment is taken out again on every way
+		// out (an error, a failed script, an interruption) until the registry
+		// holds the enrolment: the prefixes it took from another scope go
+		// back, so no user is left without the login the registry names.
+		defer func() {
+			if undoManaged != nil {
+				inv.managedUndo(undoManaged)
+			}
+		}()
 		if reg, err = inv.registry(); err != nil {
 			return err
 		}
@@ -746,9 +755,6 @@ func (inv *invocation) hostEnroll(args []string) error {
 		// the backends keep a user who must change the password
 		// (internal/pwchange): changing them under such a user is refused.
 		if err := inv.pwHostGuard("Enrolling this server with the "+hosts.MethodLabel(method)+" method", &hosts.Entry{Scope: scope, Method: method, Server: server}); err != nil {
-			if undoManaged != nil {
-				undoManaged()
-			}
 			return err
 		}
 	}
@@ -919,9 +925,6 @@ func (inv *invocation) hostEnroll(args []string) error {
 	}
 	if code != 0 {
 		inv.verbResult(audit.Info, enrollBase, "script")
-		if undoManaged != nil {
-			undoManaged()
-		}
 		if prevMethod != "" {
 			inv.recordRun(name, "enroll", "the client script failed on the host (exit status "+strconv.Itoa(code)+")", he)
 			a.Out.ErrorE("Enrollment of " + name + " failed; its registration (method " + prevMethod + ") was left as it was.")
@@ -964,6 +967,8 @@ func (inv *invocation) hostEnroll(args []string) error {
 		inv.verbResult(audit.Info, enrollBase, "store")
 		return err
 	}
+	// the registry holds the enrolment: the scope stays
+	undoManaged = nil
 	if isLocal {
 		// the setting holds the address the entry was just written with
 		if err := inv.recordServerAddress(server); err != nil {

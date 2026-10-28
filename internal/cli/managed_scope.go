@@ -9,6 +9,7 @@ package cli
 // the cleanup of a stored copy in a user's own scopes (managedCleanup).
 
 import (
+	"context"
 	"errors"
 	"net/netip"
 	"regexp"
@@ -178,6 +179,15 @@ func (inv *invocation) managedSetupErr(err error) error {
 	return err
 }
 
+// managedUndo runs the undo of managedSetup even when the invocation was
+// interrupted (its context is cancelled then, and the apply would not run).
+func (inv *invocation) managedUndo(undo func()) {
+	ctx := inv.ctx
+	inv.ctx = context.WithoutCancel(ctx)
+	defer func() { inv.ctx = ctx }()
+	undo()
+}
+
 // entryManaged reports whether e, the registration of this server, is in the
 // managed scope as tacctl manages it (pwchange.Server.ManagedIn).
 func (inv *invocation) entryManaged(e hosts.Entry) bool {
@@ -324,9 +334,10 @@ func canonCIDR(p string) string {
 // given members: managedSetup refuses with errManagedClash, whichever scope the
 // server is registered in. A scope of that name that answers the login
 // addresses only, has no member and is shared with no one is what an
-// enrolment that did not finish left, when the server is registered in no
-// other scope: the enrolment adopts it. undo, when not nil, takes a new scope
-// out again when the client script fails.
+// enrolment that did not finish left, whichever scope the server is still
+// registered in: the enrolment adopts it, a sync names the enrolment. undo,
+// when not nil, takes a new scope out again; the caller runs it on every way
+// out until the registry holds the enrolment.
 func (inv *invocation) managedSetup(reg *hosts.Registry, server string, fresh bool) (undo func(), err error) {
 	a := inv.app
 	m, err := inv.model()
@@ -348,13 +359,17 @@ func (inv *invocation) managedSetup(reg *hosts.Registry, server string, fresh bo
 			return nil, errManagedClash
 		}
 		if !ours {
-			// an enrolment that did not finish may have made it
+			// an enrolment that did not finish may have made it, whichever
+			// scope the server is still registered in
 			others, err := inv.sharedWith(m, reg, pwchange.ManagedScope, srv)
 			if err != nil {
 				return nil, err
 			}
-			if len(others) > 0 || len(m.Members(pwchange.ManagedScope)) > 0 || (registered && cur.Scope != pwchange.ManagedScope) {
+			if len(others) > 0 || len(m.Members(pwchange.ManagedScope)) > 0 || len(sc.Prefixes) == 0 {
 				return nil, errManagedClash
+			}
+			if !fresh {
+				return nil, errManagedNeedsEnroll
 			}
 			ours = true
 		}

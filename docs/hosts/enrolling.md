@@ -49,7 +49,10 @@ address of eth0); pass --server to use another.`). The address is the setting
 whose server is registered in a scope that serves the server alone is taken
 over at the next `host sync` of the server or `host enroll --local`, its
 secret kept, in one line; one that also serves hosts or devices is left to
-them, and `host enroll --local` sets up the server's own login apart from it.
+them, and `host enroll --local` sets up the server's own login apart from it;
+an enrolment that fails or is interrupted (an error, Ctrl-C, a failed client
+script) puts the prefixes back and takes the new scope out again, so the same
+command can be run again.
 A `host sync` of the server repairs its login when it was changed by hand
 (`Repaired the managed server login.`). A scope called `tacctl` that answers an
 address other than this server's own login addresses (`127.0.0.1` and the
