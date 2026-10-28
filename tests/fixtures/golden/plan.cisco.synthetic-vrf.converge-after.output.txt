@@ -9,6 +9,7 @@
 ! alone, listed by device config diff.
 ! Kept: system 11 statements of the device's own (clock, domain names, name servers, banners, NTP):
 ! left alone, listed by device config diff.
-! Secrets: 5 present on the device, not changed (--secrets pushes them).
+! Secrets: 5 present (the TACACS+ server key, the SNMP community); only their presence is checked,
+! --secrets writes them again.
 ! Cleanup (--converge): nothing to remove.
 ! 13 extras stay: each item above says why.

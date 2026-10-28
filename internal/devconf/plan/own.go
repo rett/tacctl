@@ -10,6 +10,7 @@ package plan
 // (SectionResult.Unmanaged), so the two outputs cannot disagree.
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -165,4 +166,92 @@ func (d Delta) ownExtras() int {
 		}
 	}
 	return n
+}
+
+// addKinds adds kinds of present secrets, each once.
+func (c *Counts) addKinds(kinds ...string) {
+	for _, k := range kinds {
+		if k != "" && !slices.Contains(c.PresentKinds, k) {
+			c.PresentKinds = append(c.PresentKinds, k)
+		}
+	}
+}
+
+// secretWhat names what a secret statement is, in the words of the report:
+// the kind, never the value, the name of a community or a label.
+func secretWhat(vendor, stem string) string {
+	switch vendor {
+	case devconf.FamilyJunos:
+		t := splitTokens(strings.TrimPrefix(stem, "set "))
+		switch {
+		case len(t) >= 2 && t[0] == "system" && t[1] == "tacplus-server":
+			return "the TACACS+ server key"
+		case len(t) >= 2 && t[0] == "system" && t[1] == "radius-server":
+			return "the RADIUS server key"
+		case len(t) >= 2 && t[0] == "snmp" && t[1] == "community":
+			return "the SNMP community"
+		case len(t) >= 3 && t[0] == "system" && t[1] == "ntp":
+			return "an NTP key"
+		case len(t) >= 3 && t[0] == "system" && t[1] == "login" && t[2] == "user":
+			return "a local account's password"
+		}
+	case devconf.FamilyWTI:
+		f := strings.Fields(stem)
+		if len(f) > 0 {
+			switch f[0] {
+			case "tacacs":
+				return "the TACACS+ server key"
+			case "radius":
+				return "the RADIUS server key"
+			case "snmp":
+				return "the SNMP community"
+			case "user":
+				return "a local account's credentials"
+			}
+		}
+	default:
+		s := strings.ReplaceAll(stem, pathSep, " ")
+		switch {
+		case strings.HasPrefix(s, "snmp-server "):
+			// a community, or the community a trap host is sent with
+			return "the SNMP community"
+		case strings.HasPrefix(s, "tacacs") && strings.Contains(s, " key"):
+			return "the TACACS+ server key"
+		case strings.HasPrefix(s, "radius") && strings.Contains(s, " key"):
+			return "the RADIUS server key"
+		case strings.HasPrefix(s, "ntp "):
+			return "an NTP key"
+		case strings.HasPrefix(s, "username "):
+			return "a local account's password"
+		case strings.HasPrefix(s, "enable "):
+			return "the enable secret"
+		}
+	}
+	return "another secret"
+}
+
+// secretsLine is the report's one line about secrets: which kinds are
+// present (only their presence is compared), and those the pull's login could
+// not read (the plan could not check them). "" when there are none.
+func secretsLine(c Counts) string {
+	var parts []string
+	if c.SecretsPresent > 0 {
+		kinds := c.PresentKinds
+		more := ""
+		if len(kinds) > ownKindsShown {
+			kinds, more = kinds[:ownKindsShown], ", ..."
+		}
+		what := fmt.Sprintf("%d present", c.SecretsPresent)
+		if len(kinds) > 0 {
+			what += " (" + strings.Join(kinds, ", ") + more + ")"
+		}
+		parts = append(parts, what+"; only their presence is checked, --secrets writes them again.")
+	}
+	if c.SecretsNotVisible > 0 {
+		parts = append(parts, fmt.Sprintf("%d not visible to the pull's login: the plan could not check them (--secrets pushes them).", c.SecretsNotVisible))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "Secrets: " + strings.Join(parts, " ")
 }

@@ -944,15 +944,8 @@ func Report(d Delta, h Header, w Wrapper) string {
 	if len(notvisible) > 0 {
 		add("Not visible to the pull's login, so not planned: " + strings.Join(notvisible, ", ") + ".")
 	}
-	var secret []string
-	if d.Counts.SecretsPresent > 0 {
-		secret = append(secret, fmt.Sprintf("%d present on the device, not changed", d.Counts.SecretsPresent))
-	}
-	if d.Counts.SecretsNotVisible > 0 {
-		secret = append(secret, fmt.Sprintf("%d not visible to the pull's login, not changed", d.Counts.SecretsNotVisible))
-	}
-	if len(secret) > 0 {
-		add("Secrets: " + strings.Join(secret, "; ") + " (--secrets pushes them).")
+	if l := secretsLine(d.Counts); l != "" {
+		add(l)
 	}
 	if d.Counts.Placeholders > 0 && d.Vendor == devconf.FamilyWTI {
 		add("Secrets are not typed by this output: a secret step names the command that shows its value (tacctl scope secret show " + h.Scope +

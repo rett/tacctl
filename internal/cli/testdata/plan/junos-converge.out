@@ -10,7 +10,8 @@
 #                         tacplus-server 192.0.2.99
 # Consistent: roles. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
 # The standard has nothing for: snmp, mgmt-acl.
-# Secrets: 1 present on the device, not changed (--secrets pushes them).
+# Secrets: 1 present (the TACACS+ server key); only their presence is checked, --secrets writes them
+# again.
 # Cleanup (--converge): cleanup comes after this region is pasted and verified: pull the device, then
 # plan --converge again.
 # The switch undoes this by itself in 5 minutes unless you type the one word after the check (see

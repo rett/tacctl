@@ -9,7 +9,8 @@
 # Consistent: snmp, mgmt-acl. Not planned: breakglass (walkthrough Step 10).
 # Kept: snmp 4 statements of the device's own (system name, trap settings): left alone, listed by
 # device config diff.
-# Secrets: 2 present on the device, not changed (--secrets pushes them).
+# Secrets: 2 present (the SNMP community, the TACACS+ server key); only their presence is checked,
+# --secrets writes them again.
 # Cleanup (--converge): the steps below are the whole output: they switch off or clear 1 setting the
 # standard does not have. Do them only after you have checked that the pull of lab-unit is current
 # (tacctl device config pull lab-unit --diff reads ok for aaa) and keep a second session logged in as

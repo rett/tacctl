@@ -18,7 +18,8 @@
 # diff.
 # Kept: snmp 4 statements of the device's own (system name, trap settings): left alone, listed by
 # device config diff.
-# Secrets: 2 present on the device, not changed (--secrets pushes them).
+# Secrets: 2 present (the SNMP community, the TACACS+ server key); only their presence is checked,
+# --secrets writes them again.
 # Note: tacacs default-services: the unit allows more services than the standard asks for (serial,
 # web, restful-api): kept, not compared.
 # Note: the IP tables list ends with the final DROP and the policies of the walkthrough's last step:

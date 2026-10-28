@@ -53,6 +53,13 @@
       ]
     }
   ],
+  "secrets": {
+    "present": 4,
+    "kinds": [
+      "the TACACS+ server key",
+      "the SNMP community"
+    ]
+  },
   "skipped": [],
   "withheld": [],
   "warnings": [],

@@ -18,7 +18,8 @@
 ! Consistent: roles, snmp, mgmt-acl. Not planned: netconf, breakglass.
 ! Kept: snmp 3 statements of the device's own (communities, trap types, trap hosts): left alone,
 ! listed by device config diff.
-! Secrets: 2 present on the device, not changed (--secrets pushes them).
+! Secrets: 2 present (the TACACS+ server key, the SNMP community); only their presence is checked,
+! --secrets writes them again.
 ! The change is live when the paste ends. NOTHING rolls it back by itself. Keep a second terminal
 ! logged in at privilege 15 until the end.
 ! Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the

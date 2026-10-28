@@ -23,7 +23,8 @@
 # diff.
 # Kept: snmp 4 statements of the device's own (system name, trap settings): left alone, listed by
 # device config diff.
-# Secrets: 1 present on the device, not changed (--secrets pushes them).
+# Secrets: 1 present (the TACACS+ server key); only their presence is checked, --secrets writes them
+# again.
 # Secrets are not typed by this output: a secret step names the command that shows its value (tacctl
 # scope secret show lab, tacctl scope snmp lab show --reveal), and --secrets puts the value in the
 # step.

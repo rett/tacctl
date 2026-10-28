@@ -10026,6 +10026,22 @@ with
 .BR own ;
 the cover page does not count them as extras.
 .PP
+A secret is compared by presence only, so the line
+.B Secrets:
+is information and no irregularity:
+.BR "Secrets: 3 present (the TACACS+ server key, the SNMP community); only their presence is checked, \-\-secrets writes them again" .
+It names the kinds, never a value, a community or a label; secrets the pull's
+login could not read are said apart
+.RB ( "N not visible to the pull's login: the plan could not check them" ).
+.B \-\-json
+has the
+.B secrets
+object
+.RB ( present ,
+.BR kinds ,
+.BR not_visible ;
+omitted when there is none).
+.PP
 .B \-\-converge
 makes a region that removes the extras of the kinds the standard names, for a
 device that has nothing else to paste: make the plan after the paste and the

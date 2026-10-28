@@ -384,6 +384,7 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 			}
 			if x.op == devconf.OpSame {
 				o.presentSecrets++
+				o.presentKinds = append(o.presentKinds, secretWhat(devconf.FamilyJunos, x.stem))
 			} else {
 				o.hiddenSecrets++
 			}

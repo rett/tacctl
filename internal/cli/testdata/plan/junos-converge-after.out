@@ -8,7 +8,8 @@
 # No fix to paste: the cleanup region below is the only paste (what else remains is left alone).
 # Consistent: roles. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
 # The standard has nothing for: snmp, mgmt-acl.
-# Secrets: 1 present on the device, not changed (--secrets pushes them).
+# Secrets: 1 present (the TACACS+ server key); only their presence is checked, --secrets writes them
+# again.
 # Cleanup (--converge): the region below is the whole output: it removes 1 line: TACACS+ servers the
 # standard does not have. Paste it only after you have checked that the pull of lab-j is current
 # (tacctl device config pull lab-j --diff reads ok for aaa, and a NEW ssh session as yourself works),

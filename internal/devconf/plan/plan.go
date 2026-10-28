@@ -148,6 +148,9 @@ type secOut struct {
 	withheld     []string
 	// replaced counts statements the plan supersedes (set in place).
 	presentSecrets, hiddenSecrets int
+	// presentKinds are the kinds (secretWhat) of the secrets counted in
+	// presentSecrets, in order of appearance.
+	presentKinds []string
 	// refused is set when the whole section is left out; refusedKind says
 	// which kind of skip it is (default KindRefused).
 	refused     string
@@ -427,6 +430,7 @@ func (d *Delta) merge(sp *SectionPlan, o secOut) {
 	d.Lines = append(d.Lines, o.lines...)
 	d.Kept = append(d.Kept, o.kept...)
 	d.Counts.SecretsPresent += o.presentSecrets
+	d.Counts.addKinds(o.presentKinds...)
 	d.Counts.SecretsNotVisible += o.hiddenSecrets
 	if o.partial != "" {
 		sp.Why = strings.TrimPrefix(sp.Why+"; "+o.partial, "; ")

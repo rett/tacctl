@@ -10,4 +10,5 @@
 # Consistent: roles, snmp, mgmt-acl. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
 # Kept: snmp 11 statements of the device's own (name, communities, trap options, trap groups): left
 # alone, listed by device config diff.
-# Secrets: 3 present on the device, not changed (--secrets pushes them).
+# Secrets: 3 present (the TACACS+ server key, the SNMP community); only their presence is checked,
+# --secrets writes them again.

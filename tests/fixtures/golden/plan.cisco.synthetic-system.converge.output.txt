@@ -17,7 +17,8 @@
 ! listed by device config diff.
 ! Kept: system 5 statements of the device's own (domain names, name servers, NTP): left alone, listed
 ! by device config diff.
-! Secrets: 3 present on the device, not changed (--secrets pushes them).
+! Secrets: 3 present (the TACACS+ server key, the SNMP community, an NTP key); only their presence is
+! checked, --secrets writes them again.
 ! Cleanup (--converge): cleanup comes after this region is pasted and verified: pull the device, then
 ! plan --converge again.
 ! Note: system: the NTP key lines of the system block of scope 'lab' have not been checked on a device

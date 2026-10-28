@@ -7,6 +7,7 @@
 ! Consistent: aaa, roles, snmp, mgmt-acl. Not planned: netconf, breakglass.
 ! Kept: snmp 3 statements of the device's own (communities, trap types, trap hosts): left alone,
 ! listed by device config diff.
-! Secrets: 4 present on the device, not changed (--secrets pushes them).
+! Secrets: 4 present (the TACACS+ server key, the SNMP community); only their presence is checked,
+! --secrets writes them again.
 ! Cleanup (--converge): nothing to remove.
 ! 1 extra stays: its item above says why.

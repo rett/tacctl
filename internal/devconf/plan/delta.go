@@ -216,6 +216,10 @@ type Counts struct {
 	// does not change; SecretsNotVisible those its pull could not read.
 	SecretsPresent    int
 	SecretsNotVisible int
+	// PresentKinds are the kinds of the secrets counted in SecretsPresent
+	// ("the TACACS+ server key", "the SNMP community"), each once, in order
+	// of appearance: never a value, a name or a label.
+	PresentKinds []string
 	// SecretsByValue counts the lines that hold a value, Placeholders those
 	// that hold '<SECRET>'.
 	SecretsByValue int

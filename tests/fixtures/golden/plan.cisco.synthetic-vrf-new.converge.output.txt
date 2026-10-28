@@ -45,7 +45,8 @@
 ! Consistent: roles, mgmt-acl. Not planned: netconf, breakglass.
 ! Kept: snmp 3 statements of the device's own (communities, trap types, trap hosts): left alone,
 ! listed by device config diff.
-! Secrets: 2 present on the device, not changed (--secrets pushes them).
+! Secrets: 2 present (the TACACS+ server key, the SNMP community); only their presence is checked,
+! --secrets writes them again.
 ! Cleanup (--converge): cleanup comes after this region is pasted and verified: pull the device, then
 ! plan --converge again.
 ! The change is live when the paste ends. NOTHING rolls it back by itself. Keep a second terminal

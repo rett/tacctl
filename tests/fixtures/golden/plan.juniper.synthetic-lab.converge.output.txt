@@ -11,7 +11,8 @@
 # Consistent: roles, mgmt-acl. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
 # Kept: snmp 2 statements of the device's own (communities, trap groups): left alone, listed by device
 # config diff.
-# Secrets: 3 present on the device, not changed (--secrets pushes them).
+# Secrets: 3 present (the TACACS+ server key, the SNMP community); only their presence is checked,
+# --secrets writes them again.
 # Cleanup (--converge): cleanup comes after this region is pasted and verified: pull the device, then
 # plan --converge again.
 # The switch undoes this by itself in 5 minutes unless you type the one word after the check (see

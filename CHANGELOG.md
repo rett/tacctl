@@ -274,6 +274,20 @@ current behaviour; this file is where history lives.
     before: it still offers the removal lines of the extras it is allowed to
     remove.
 
+18. **The `Secrets:` line of `device config plan` is information.** It read
+    `Secrets: 3 present on the device, not changed (--secrets pushes them).`
+    on every plan of a device that had its secrets, for good, because a secret
+    is compared by presence only (tacctl never reads a device's secret back),
+    which reads as a complaint. It now says which kinds are present, never a
+    value, a community or a label: `Secrets: 3 present (the TACACS+ server
+    key, the SNMP community); only their presence is checked, --secrets writes
+    them again.` It is no item and no irregularity, and a plan with nothing to
+    paste stays `CONSISTENT: nothing to paste.` Secrets the pull's login could
+    not read are a limit of that login and are said apart: `N not visible to
+    the pull's login: the plan could not check them (--secrets pushes
+    them).` `--json` has the `secrets` object (`present`, `kinds`,
+    `not_visible`; omitted when there is none).
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

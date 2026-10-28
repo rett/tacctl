@@ -725,6 +725,15 @@ type jsonRestorePoint struct {
 	Note       string `json:"note,omitempty"`
 }
 
+// jsonSecrets is what the plan says of the secrets it compares: how many the
+// device has and their kinds (only their presence is checked), and how many
+// the pull's login could not read. Counts and kinds, never a value.
+type jsonSecrets struct {
+	Present    int      `json:"present,omitempty"`
+	Kinds      []string `json:"kinds,omitempty"`
+	NotVisible int      `json:"not_visible,omitempty"`
+}
+
 type jsonDelta struct {
 	Name           string      `json:"name"`
 	Address        string      `json:"address,omitempty"`
@@ -741,14 +750,17 @@ type jsonDelta struct {
 	Extras         []jsonExtra `json:"extras"`
 	// Kept counts, per section, the statements of the device's own (the
 	// comparison's unmanaged): they are no irregularity and have no item.
-	Kept            []Own    `json:"kept,omitempty"`
-	Skipped         []Skip   `json:"skipped"`
-	Withheld        []string `json:"withheld"`
-	Warnings        []string `json:"warnings"`
-	ByHand          []string `json:"by_hand,omitempty"`
-	ConfirmTimeout  int      `json:"confirm_timeout,omitempty"`
-	HoldsSecret     bool     `json:"holds_secret"`
-	CommandAuthLast bool     `json:"command_authorization_last,omitempty"`
+	Kept []Own `json:"kept,omitempty"`
+	// Secrets is present when the device has a secret the plan compared by
+	// presence, or one the pull's login could not read.
+	Secrets         *jsonSecrets `json:"secrets,omitempty"`
+	Skipped         []Skip       `json:"skipped"`
+	Withheld        []string     `json:"withheld"`
+	Warnings        []string     `json:"warnings"`
+	ByHand          []string     `json:"by_hand,omitempty"`
+	ConfirmTimeout  int          `json:"confirm_timeout,omitempty"`
+	HoldsSecret     bool         `json:"holds_secret"`
+	CommandAuthLast bool         `json:"command_authorization_last,omitempty"`
 	// RestorePoint is the restore block of an IOS plan made with
 	// --restore-point (nil otherwise, and when the plan has nothing to paste).
 	RestorePoint *jsonRestorePoint `json:"restore_point,omitempty"`
@@ -789,6 +801,9 @@ func JSON(d Delta, h Header, w Wrapper) ([]byte, error) {
 		HoldsSecret: d.HoldsSecret(), Kept: d.Own}
 	if out.Status == StatusCannotPlan {
 		out.Reason = d.Refusal()
+	}
+	if c := d.Counts; c.SecretsPresent > 0 || c.SecretsNotVisible > 0 {
+		out.Secrets = &jsonSecrets{Present: c.SecretsPresent, Kinds: c.PresentKinds, NotVisible: c.SecretsNotVisible}
 	}
 	lineNo := map[int]int{}
 	if !d.Empty() {

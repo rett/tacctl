@@ -483,6 +483,8 @@ type wtiPlanner struct {
 	// aclStems are the compared statements the paste answers.
 	aclStems []string
 	present  int
+	// presentKinds are the kinds (secretWhat) of the present secrets.
+	presentKinds []string
 	// the entries --converge may remove: the read/write community (-1 when
 	// there is none) and the switches of the other protocol's page
 	rw       int
@@ -698,8 +700,10 @@ func (p *wtiPlanner) settings(sp *SectionPlan, r devconf.SectionResult) {
 				}
 			}
 			p.present++
+			p.presentKinds = append(p.presentKinds, secretWhat(devconf.FamilyWTI, ks.same))
 		case ks.same != "" && ks.sameSecret:
 			p.present++
+			p.presentKinds = append(p.presentKinds, secretWhat(devconf.FamilyWTI, ks.same))
 		}
 	}
 	switch {
@@ -1330,6 +1334,7 @@ func (p *wtiPlanner) finish() {
 	d := p.d
 	d.Counts.Kept = len(d.Kept)
 	d.Counts.SecretsPresent = p.present
+	d.Counts.addKinds(p.presentKinds...)
 	slices.Sort(d.SecretKinds)
 	if d.WTI.GuardedAAA {
 		var ns []int
