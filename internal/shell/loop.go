@@ -524,6 +524,10 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 	// is not recorded: it may be a password typed at the prompt after the
 	// dialog failed, and the history is a 0600 file that outlives the session
 	hist.skip = func() bool { return ed.interrupted || s.locked() }
+	// nor is an earlier line recalled (Up, Ctrl-R): the session runs nothing
+	// but the change, and the lines are the account's, not the dialog's
+	hist.hide = s.locked
+	defer func() { hist.hide = nil }()
 	t.History = hist
 
 	var stop atomic.Int32

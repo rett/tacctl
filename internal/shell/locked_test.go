@@ -314,3 +314,36 @@ func TestRelockLiftsTheLockForTheLineThatFindsItGone(t *testing.T) {
 		t.Errorf("stderr %q", errb.String())
 	}
 }
+
+// While the session is locked the line editor recalls nothing: Up and the
+// Ctrl-R search find no earlier line (they are the account's, and 'history'
+// is refused as well); once the lock lifts, they recall again.
+func TestLockedSessionRecallsNothingFromTheHistory(t *testing.T) {
+	path := t.TempDir() + "/history"
+	if err := os.WriteFile(path, []byte("user show alice\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	locked := true
+	var ran, refused []string
+	o := lockOptions(&locked, &ran, &refused)
+	o.History = NewHistory(path, nil)
+	p := startInProcess(t, o, 24, 80)
+	p.send("\x1b[A\r")
+	p.expect(`host> `)
+	p.send("\x12user\r")
+	p.expect(`host> `)
+	if len(refused) != 0 || len(ran) != 0 {
+		t.Errorf("a line was recalled while locked: refused %q ran %q", refused, ran)
+	}
+	p.send("passwd\r")
+	p.expect(`host> `)
+	p.send("\x1b[A\r")
+	p.expect(`host> `)
+	p.send("exit\r")
+	if s := p.ends(); s != 0 {
+		t.Errorf("status %d", s)
+	}
+	if strings.Join(ran, "|") != "passwd|user show alice" {
+		t.Errorf("ran %q", ran)
+	}
+}

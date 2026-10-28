@@ -181,7 +181,7 @@ dialog, the line `passwd`, straight away. Until the password is changed nothing 
 console's own words (`help`, `history`, `system-shell`, `console forget`) included, is refused with `A password
 change is required: nothing runs here until it is made but 'passwd' (and 'exit').` and status 1, and Tab and `?`
 list the change only (`exit` and `quit` end the session). A line typed while the session is locked is not
-entered in the history file. The root side tells the console in its policy line
+entered in the history file, and Up, Down and Ctrl-R recall no earlier line until the lock lifts. The root side tells the console in its policy line
 (`password_change=yes`, for a caller who is held to it, decided from the group's tier at that moment). When the
 password is changed the root side is asked once more and the session goes on as any other. Each line a locked session would refuse asks the root side again first, so a session left locked by a
 password changed in another one, or held because the answer could not be read, goes on as soon as
