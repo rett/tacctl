@@ -559,3 +559,17 @@ func TestManagedScopeServerLiterals(t *testing.T) {
 		}
 	}
 }
+
+// The next step of the rollback to 0.2.20 names --yes: the plan of a run that
+// adds the scope to a user always warns, and --apply refuses without it.
+func TestRollback0220NextStepNamesYes(t *testing.T) {
+	hs := rollback0221State(t)
+	hs.run(hs.runner(), "rollback", "0.2.20", "--apply", "--yes")
+	hs.expect(0, "Next steps", "")
+	if out := hs.all(); !strings.Contains(out, "run 'tacctl rollback 0.2.20 --apply --yes' again (it adds it;") {
+		t.Errorf("next steps:\n%s", out)
+	}
+	hs.step("", "user", "add", "dave", "operator", "--hash", testHash, "--scopes", "lab")
+	hs.run(hs.runner(), "rollback", "0.2.20", "--apply")
+	hs.expect(1, "", "The warnings above need your decision")
+}

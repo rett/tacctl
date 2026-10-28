@@ -199,7 +199,8 @@ tacctl upgrade --branch 0.2.20  # install 0.2.20
 
 Until 0.2.20 is installed, a user added or given other scopes logs in to this
 server only with that scope in the user's own scopes: run
-`tacctl rollback 0.2.20 --apply` again.
+`tacctl rollback 0.2.20 --apply --yes` again (its plan warns of the users it
+adds, so it needs `--yes`).
 
 ### To 0.2.19
 

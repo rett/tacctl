@@ -222,7 +222,7 @@ func (inv *invocation) rollbackNextSteps0220(version string) {
 	inv.echo("       tacctl upgrade --branch " + version)
 	inv.echo("  2. Check it: tacctl status; tacctl config validate")
 	inv.echo("")
-	inv.echo("Until the upgrade, a user added or given other scopes logs in to this server only once the scope of its login is in the user's scopes: run 'tacctl rollback " + version + " --apply' again (it adds it).")
+	inv.echo("Until the upgrade, a user added or given other scopes logs in to this server only once the scope of its login is in the user's scopes: run 'tacctl rollback " + version + " --apply --yes' again (it adds it; its plan warns of the users it adds, so it needs --yes).")
 }
 
 // rollbackNextSteps0219 is the next steps of the rollback to 0.2.19: the
