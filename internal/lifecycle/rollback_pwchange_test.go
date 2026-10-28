@@ -36,6 +36,10 @@ func rbStoreFlagged(t *testing.T, s *rbSandbox) {
 	}
 }
 
+// pwChangeWarningTitle is the warning of the users who regain device access;
+// the warning of the users who gain the password cache is another one.
+const pwChangeWarningTitle = "Users who must change their password get their device access back"
+
 // The required password change (0.2.20) is a user key every older release
 // refuses: every target removes it from the store after the snapshot, names
 // the users who regain device access in a warning that --apply needs --yes
@@ -56,7 +60,7 @@ func TestPlanRollbackRemovesThePasswordChangeAndWarns(t *testing.T) {
 		}
 		var w string
 		for _, x := range p.Warnings {
-			if x.Title == "Users who must change their password get their device access back" {
+			if x.Title == pwChangeWarningTitle {
 				w = strings.Join(x.Lines, "\n")
 			}
 		}
@@ -115,7 +119,7 @@ func TestPlanRollbackRemovesThePasswordChangeAndWarns(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(stepText(p), "password_change_required") || strings.Contains(warnText(p), "password") {
+		if strings.Contains(stepText(p), "password_change_required") || strings.Contains(warnText(p), pwChangeWarningTitle) {
 			t.Errorf("%s: second plan:\n%s\n%s", target, stepText(p), warnText(p))
 		}
 	}
@@ -144,7 +148,7 @@ func TestPlanRollbackWarnsOfNoSuperuserFlag(t *testing.T) {
 			t.Errorf("%s: %s", target, stepText(p))
 		}
 		for _, x := range p.Warnings {
-			if strings.Contains(x.Title, "password") {
+			if x.Title == pwChangeWarningTitle {
 				t.Errorf("%s: %v", target, x)
 			}
 		}
