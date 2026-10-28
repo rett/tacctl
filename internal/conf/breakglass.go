@@ -20,6 +20,10 @@ const (
 	BreakGlassReadonly = "readonly"
 )
 
+// BreakGlassRoot is the Junos root account, a break-glass entry of a scope
+// for its Junos devices (always admin).
+const BreakGlassRoot = "root"
+
 // BreakGlassRoles are the roles in the order they are listed and shown.
 var BreakGlassRoles = []string{BreakGlassAdmin, BreakGlassOperator, BreakGlassReadonly}
 
@@ -84,8 +88,10 @@ func breakGlassListProblem(path string, value any) string {
 		if !names.MatchBreakGlass(name) {
 			return fmt.Sprintf("element %d: %s is not a device-safe user name (a letter, then letters, digits, _ and -, 32 characters at most)", i, py.ReprString(name))
 		}
-		if _, _, ok := SplitBreakGlass(s); !ok {
+		if _, role, ok := SplitBreakGlass(s); !ok {
 			return fmt.Sprintf("element %d: the role of %s must be one of: %s", i, py.ReprString(name), strings.Join(BreakGlassRoles, ", "))
+		} else if name == BreakGlassRoot && role != BreakGlassAdmin {
+			return fmt.Sprintf("element %d: %s is the Junos superuser account and is always admin", i, py.ReprString(name))
 		}
 		if seen[strings.ToLower(name)] {
 			return fmt.Sprintf("element %d: %s is listed twice (names compare without regard to case)", i, py.ReprString(name))

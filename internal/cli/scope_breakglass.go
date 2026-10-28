@@ -10,12 +10,14 @@ package cli
 // has no row for them.
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devices"
+	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/policy"
@@ -51,6 +53,12 @@ func breakGlassNameProblem(m *model.Model, scope, name string) string {
 	switch {
 	case !names.MatchBreakGlass(name):
 		return "'" + name + "' is not a device-safe user name: a letter, then up to 31 letters, digits, '_' or '-'."
+	case devices.IsJunosRoot(name):
+		// the Junos system account is a break-glass entry of the scope's
+		// Junos devices (the accounting sink is the server's own record)
+		return ""
+	case strings.EqualFold(name, devices.JunosRoot):
+		return "'" + name + "' is reserved (the Junos root account is spelled '" + devices.JunosRoot + "')."
 	case breakGlassReserved(name):
 		return "'" + name + "' is reserved (the Junos accounting sink and the service user)."
 	case containsFold(devices.JunosSystemAccounts, name):
@@ -134,7 +142,11 @@ func (inv *invocation) scopeBreakGlassList(scope string, users []policy.BreakGla
 	} else {
 		inv.echo("  Scope '" + scope + "' break-glass local users:")
 		for _, u := range users {
-			inv.echo("    " + u.Name + "  (" + u.Role + ")")
+			note := ""
+			if devices.IsJunosRoot(u.Name) {
+				note = "  the Junos system account (Junos devices only)"
+			}
+			inv.echo("    " + u.Name + "  (" + u.Role + ")" + note)
 		}
 	}
 	inv.echo("")
@@ -164,6 +176,9 @@ func (inv *invocation) scopeBreakGlassAdd(scope, name, role string, roleGiven bo
 	if why := breakGlassNameProblem(m, scope, name); why != "" {
 		return inv.usageErr(why)
 	}
+	if devices.IsJunosRoot(name) && role != conf.BreakGlassAdmin {
+		return inv.usageErr("'" + name + "' is always an admin: root is the Junos superuser account, so it takes no --role " + role + ".")
+	}
 	for _, u := range users {
 		if strings.EqualFold(u.Name, name) {
 			return inv.usageErr("Scope '" + scope + "' already has break-glass user '" + u.Name + "' (" + u.Role + "). Remove it first to change its role.")
@@ -180,6 +195,10 @@ func (inv *invocation) scopeBreakGlassAdd(scope, name, role string, roleGiven bo
 	inv.verbResult(audit.Info, addBase, "")
 	inv.app.Out.Info("Break-glass user '" + name + "' (" + role + ") recorded for scope '" + scope + "'.")
 	inv.echo("")
+	if devices.IsJunosRoot(name) {
+		inv.echo("  'root' is the Junos system account: only the Junos walkthrough renders it, as the password under")
+		inv.echo("  'system root-authentication' and 'system services ssh root-login allow'; Cisco and WTI render nothing for it.")
+	}
 	inv.echo("  tacctl stores no password or hash. 'tacctl config cisco|juniper|wti --scope " + scope + "' now renders the")
 	inv.echo("  account with a placeholder where the credential goes, and names it on its 'Unfilled' line. tacctl")
 	inv.echo("  cannot tell whether you have put in a credential of your own, so the line stays while the")
@@ -218,6 +237,9 @@ func (inv *invocation) scopeBreakGlassSummary(scope string) string {
 	parts := make([]string, len(users))
 	for i, u := range users {
 		parts[i] = u.Name + " (" + u.Role + ")"
+		if devices.IsJunosRoot(u.Name) {
+			parts[i] = u.Name + " (" + u.Role + ", the Junos system account)"
+		}
 	}
 	return strings.Join(parts, ", ")
 }
@@ -263,4 +285,58 @@ func breakGlassClash(c *conf.Config, name string, scopes []string) string {
 		}
 	}
 	return ""
+}
+
+// onlyJunosRoot reports a scope whose break-glass record is 'root' alone:
+// an account of its Junos devices only.
+func onlyJunosRoot(users []policy.BreakGlassUser) bool {
+	return len(users) == 1 && devices.IsJunosRoot(users[0].Name)
+}
+
+// rootOnlyFindings are the 'config validate' warnings for the scopes whose
+// only break-glass entry is 'root': one per scope that has a registered
+// Cisco or WTI device, naming the vendors, since the entry renders nothing
+// for them. A scope with Junos devices only (or none registered) has none.
+func (inv *invocation) rootOnlyFindings(scopes []string) []validateFinding {
+	if len(scopes) == 0 {
+		return nil
+	}
+	// The registry is read without its load notes: this runs inside 'config
+	// validate', whose --json output is the one object.
+	f, err := devreg.Load(inv.app.Paths.DevicesFile)
+	if err != nil {
+		return nil
+	}
+	reg, err := inv.registry()
+	if err != nil {
+		return nil
+	}
+	m, err := inv.model()
+	if err != nil {
+		return nil
+	}
+	res := devreg.NewResolver(f, reg, m)
+	res.Seen = inv.seenLoad()
+	vendors := map[string][]string{}
+	for _, e := range res.All() {
+		if e.Source != devreg.SourceDevice || (e.Vendor != "cisco" && e.Vendor != "wti") {
+			continue
+		}
+		if !slices.Contains(vendors[e.Scope], e.Vendor) {
+			vendors[e.Scope] = append(vendors[e.Scope], e.Vendor)
+		}
+	}
+	var out []validateFinding
+	for _, s := range scopes {
+		vs := vendors[s]
+		if len(vs) == 0 {
+			continue
+		}
+		slices.Sort(vs)
+		out = append(out, validateFinding{
+			Text: "scope '" + s + "' records only 'root', a Junos account: its " + strings.Join(vs, " and ") +
+				" devices have no break-glass local user — a lockout risk with the server unreachable",
+			Fix: "tacctl scope breakglass " + s + " add <name>"})
+	}
+	return out
 }

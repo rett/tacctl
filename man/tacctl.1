@@ -7278,13 +7278,19 @@ digits,
 and
 .BR - ),
 must not be a user of the scope, and must not collide with a
-template-user or class name of the Juniper walkthrough or be one of the
-reserved names
-.BR root " and " tacquito
+template-user or class name of the Juniper walkthrough or be the reserved
+name
+.B tacquito
 or the Junos account
 .B remote
 (the template account of every remote user without a local-user-name). Names
-compare without regard to case.
+compare without regard to case. The exception is
+.BR root :
+the Junos system account, accepted as a break-glass entry of the scope's Junos
+devices, always
+.B admin
+(\fB--role operator\fR and \fBreadonly\fR are refused) and spelled in lower case;
+Cisco and WTI render, compare and list nothing for it.
 .BR "user add" ,
 .BR "user scope" " (" add " and " replace )
 and
@@ -7342,7 +7348,26 @@ the level the group's
 .B wti-level
 sets, as in the mapping table of the same output) in a menu step, with
 .B <PASSWORD>
-where the password goes. A scope without break-glass users gets the existing
+where the password goes. For
+.B root
+the Junos walkthrough renders, commented out and with the same placeholder rule,
+.B "set system root-authentication encrypted-password '<HASH>'"
+(Junos keeps root there, not under
+.BR "system login user" )
+and
+.BR "set system services ssh root-login allow" :
+Junos refuses root over ssh by default, so the second line is part of the
+access, and a security trade-off the person decides (root can then log in over
+ssh with the password: keep the device behind the management filter, or leave
+the line out and keep root on the console). The Cisco and WTI walkthroughs say
+in one line that nothing is rendered for
+.BR root ,
+and a scope whose only entry is
+.B root
+still gets the no-break-glass notice there; its Cisco and WTI devices are
+named, by vendor, in a
+.B "config validate"
+warning. A scope without break-glass users gets the existing
 advice and a notice, and
 .B "config validate"
 warns (not an error), on one line naming the scopes, that they are a lockout
@@ -9933,7 +9958,16 @@ and
 is the same account and the section reads
 .B ok
 with a note that says so; the names are case\-sensitive on the device, and a
-login by the scope's spelling is refused there). A WTI unit has four sections:
+login by the scope's spelling is refused there; for a scope that records
+.B root
+a Junos device is also checked for its root password, by presence, under
+.B "system root-authentication"
+(a device with ssh keys only has no password, and the section says so) and for
+.BR "system services ssh root-login allow" :
+.B deny
+and
+.B deny\-password
+read as a difference with the reason, and no hash or key is ever kept). A WTI unit has four sections:
 .BR aaa ,
 .BR mgmt\-acl ,
 .B snmp
@@ -11592,7 +11626,9 @@ Open a SOCKS proxy, as ssh \-D (repeatable).
 .\" END GENERATED: command ssh
 .SS Break-glass hold \fB(tacctl breakglass)\fR
 A device's local accounts
-.RB ( "tacctl scope breakglass" )
+.RB ( "tacctl scope breakglass" ;
+.B root
+among them, for a Junos device)
 reach its vty only while no server answers it: a server's refusal is
 final, so a local login there is refused while the server is up. On a Cisco
 console the

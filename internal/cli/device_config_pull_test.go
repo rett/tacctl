@@ -1380,3 +1380,63 @@ func (b *pullBox) putRecord(name string, rec devconf.Record) {
 		b.t.Fatal(err)
 	}
 }
+
+// A scope that records 'root' compares it on a Junos device by two facts: the
+// root password is there and ssh root-login is allow. No hash and no key
+// reaches the pull's output, its record or the sections file.
+func TestPullJunosRootBreakGlass(t *testing.T) {
+	const rootHash = "$6$examplesalt$EXAMPLEROOTHASHEXAMPLEROOTHASHEXAMPLEROOT"
+	const rootKey = "AAAAC3NzaC1lZDI1NTE5AAAAIEXAMPLEROOTKEYEXAMPLEROOTKEY"
+	b := newPullBox(t)
+	b.devices([3]string{"lab-j", "192.168.1.20", "juniper"})
+	b.run("scope", "breakglass", "lab", "add", "root")
+	if b.sb.code != 0 {
+		t.Fatalf("add root: %d %q", b.sb.code, b.sb.stderr())
+	}
+	text := strings.ReplaceAll(b.expected("lab-j"), "'<HASH>'", `"`+rootHash+`"`)
+	if !strings.Contains(text, "set system root-authentication encrypted-password") || !strings.Contains(text, "set system services ssh root-login allow") {
+		t.Fatalf("the rendering lacks root's statements:\n%s", text)
+	}
+	b.serve("juniper", text)
+	out := b.run("device", "config", "pull", "lab-j", "--diff")
+	if b.sb.code != 0 || !strings.Contains(out, "ok via netconf") || strings.Contains(out, "differ") && !strings.Contains(out, "0 differ") {
+		t.Fatalf("a device with root's password and root-login allow: %d\n%s", b.sb.code, out)
+	}
+	rec, _ := b.records().Of("lab-j")
+	if s := rec.Sections["breakglass"]; s.State != "ok" {
+		t.Errorf("breakglass: %+v", s)
+	}
+
+	// Only the keys, and root-login deny-password: both are differences with
+	// the reason; the key text is nowhere.
+	var kept []string
+	for _, l := range strings.Split(strings.TrimSpace(text), "\n") {
+		switch {
+		case strings.HasPrefix(l, "set system root-authentication"):
+			continue
+		case l == "set system services ssh root-login allow":
+			l = "set system services ssh root-login deny-password"
+		}
+		kept = append(kept, l)
+	}
+	kept = append(kept, `set system root-authentication ssh-ed25519 "ssh-ed25519 `+rootKey+` alice@example.net"`)
+	b.serve("juniper", strings.Join(kept, "\n")+"\n")
+	out = b.run("device", "config", "pull", "lab-j", "--diff")
+	if b.sb.code != 0 {
+		t.Fatalf("exit %d: %q %q", b.sb.code, out, b.sb.stderr())
+	}
+	for _, want := range []string{"- set system root-authentication encrypted-password (not present)",
+		"- set system services ssh root-login allow", "+ set system services ssh root-login deny-password",
+		"root-authentication holds ssh keys only", "root-login is deny-password"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("no %q in:\n%s", want, out)
+		}
+	}
+	diff := b.run("device", "config", "diff", "lab-j")
+	noSecrets(t, "the pull output", out, rootHash, rootKey, "alice@example.net")
+	noSecrets(t, "the diff", diff, rootHash, rootKey, "alice@example.net")
+	noSecrets(t, "stderr", b.sb.stderr(), rootHash, rootKey)
+	for _, f := range []string{"var-lib/devices-config.json", "var-lib/device-config/lab-j.yaml"} {
+		noSecrets(t, f, b.sb.read(f), rootHash, rootKey, "alice@example.net")
+	}
+}

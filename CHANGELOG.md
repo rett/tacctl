@@ -506,6 +506,60 @@ current behaviour; this file is where history lives.
     the targets that have it), and the warning stays while the switches do.
     The upgrading page says how to avoid it.
 
+27. **`root` is a break-glass account of a scope's Junos devices.** Many Junos
+    devices keep `root` as their local access, which Junos holds under `system
+    root-authentication`, not under `system login user`. `tacctl scope
+    breakglass <scope> add root` is accepted (it was refused as a system
+    account; `remote` still is): the role is always `admin` (`--role operator`
+    and `--role readonly` are refused, and `config validate` refuses a
+    `root:operator` entry written by hand), and only the lower-case spelling is
+    the account. `scope breakglass list` and `scope show` print it with a note
+    that it is the Junos system account. The Junos walkthrough renders two
+    statements in the break-glass step, commented out and with the usual
+    placeholder rule (tacctl stores and generates no password or hash):
+    `set system root-authentication encrypted-password '<HASH>'` and `set
+    system services ssh root-login allow`, with a comment that Junos refuses
+    root over ssh by default, that allowing it is a security trade-off (root
+    can then log in over ssh, so keep the device behind the management
+    filter), and nothing for a user named `root` under `system login user`.
+    `root (admin)` is on the `Unfilled break-glass credentials` line. Cisco
+    and WTI have no such account: their walkthroughs render nothing for it and
+    say so in one line, leave it off the `Unfilled` line, and a scope whose
+    only entry is `root` still gets their no-break-glass notice. `config
+    validate` counts `root` for Junos devices only: a scope with `root` alone
+    is warned about once per scope, naming the vendors of its registered
+    Cisco and WTI devices. `breakglass hold` and its documentation list `root`
+    among the accounts it makes usable on a Junos device.
+
+28. **`device config pull|diff` checks the Junos `root` break-glass account.**
+    For a scope that records `root`, the `breakglass` section of a Junos
+    device is checked by two facts: the root password is set (`set system
+    root-authentication encrypted-password (present, not compared)`, by
+    presence, as a named user's hash is) and `set system services ssh
+    root-login allow` is there. A device with the password and without the
+    `allow` reads as missing the `allow` statement only; `root-login deny`
+    and `deny-password` (no password login, which break-glass needs) read as
+    a difference with the reason; a device whose `system root-authentication`
+    holds only ssh keys has no password and says so (a deactivated password
+    is no password), and one with neither reads `missing`. The pull now reads `system
+    root-authentication` and the `root-login` leaf of `system services ssh`
+    into the `breakglass` section (every other leaf under `system services
+    ssh` stays the device's own), for every Junos device, and leaves them out
+    of the comparison for a scope that does not record `root`, so such a scope
+    reads as before. A root hash or key is never put in the output, the
+    record, the sections file or a log: only the leaf's name is kept. A record
+    made by an earlier release lacks the two statements and reads them as
+    missing until the next `device config pull`. `device config plan` and
+    `apply` still never type either statement (the plan keeps `breakglass`
+    among the sections it does not plan, and its report names the
+    walkthrough's break-glass step).
+
+29. **`breakglass hold` names `root` for Junos devices only.** The
+    confirmation of a hold lists the local accounts of the device's scope
+    that become the only way in. `root` is a Junos account, so it is listed
+    for a Junos device and left out for a Cisco or WTI one (a scope whose only
+    entry is `root` reads `no local account is recorded` there).
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

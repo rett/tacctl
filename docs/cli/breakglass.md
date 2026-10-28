@@ -59,4 +59,4 @@ address, and the rendered files, which name the host in a comment, are
 rendered again (no backend is restarted). A hold recorded under the new name
 refuses the rename.
 
-See [Holding break-glass](../devices/break-glass.md#holding-break-glass) for what a hold does and when to use it. `scope breakglass <scope>` records the *names* of a scope's local accounts, which a hold makes usable.
+See [Holding break-glass](../devices/break-glass.md#holding-break-glass) for what a hold does and when to use it. `scope breakglass <scope>` records the *names* of a scope's local accounts (`root` among them, for a Junos device), which a hold makes usable.
