@@ -9,7 +9,7 @@ doctype: explanation
 
 # Vendor Notes
 
-*What differs between Cisco, Junos and WTI for operations staff · Checked against tacctl 0.2.19*
+*What differs between Cisco, Junos and WTI for operations staff · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-vendor-notes.pdf){: .pdf-link }
 
@@ -129,6 +129,48 @@ default); you type `commit` yourself after the check.
 | `bad secret` continues on a Junos device after a re-paste | Delete the secret and set it again, to avoid hidden characters |
 | A blank device with only a local account | `tacctl device onboard` (Engineer Guide §2.3) |
 | Break-glass | A local `system login user` works after the tacplus timeout; `root` on the console is always local |
+
+### 3.4 The management filter: `ssh-only` or `strict`
+
+The Junos walkthrough renders a management filter (`MGMT-ACL` unless another
+name is set) from the scope's permit list (`tacctl scope mgmt-acl <scope>
+list`, else the global `tacctl config mgmt-acl list`), the same list that
+drives the Cisco VTY-ACL and the WTI IP Tables list. Each scope chooses one of two
+modes for it with `tacctl scope mgmt-acl <scope> mode`. Only Junos devices
+read the mode: the Cisco VTY-ACL and the WTI IP Tables list are the same in
+both.
+
+| | Mode ssh-only (the default) | Mode strict |
+|---|---|---|
+| Restricts | ssh, NETCONF and SNMP | Every protocol |
+| Last term | `default-accept`: everything else is accepted | None: the implicit discard drops whatever the terms do not accept |
+| From the permit list | ssh and NETCONF, from each plain entry and each entry whose services include `tcp/22` | A plain entry: everything from its source. An entry with services: only those services. The tacctl server's own address comes first. |
+| SNMP client terms | Kept | Kept |
+
+Once a strict filter is applied to `lo0`, these stop reaching the routing
+engine:
+
+- routing protocols from neighbours that are not in the permit list (BGP,
+  OSPF, IS-IS, VRRP, LDP);
+- NTP, syslog and DHCP from hosts that are not in the list, and their
+  replies;
+- SNMP from sources outside the list;
+- every other protocol (ping, traceroute, DNS replies) from sources outside
+  the list.
+
+> **Before a device gets a strict filter:** add every neighbour and server
+> it needs to the scope's permit list, keep a console session open while the
+> change goes in, and commit with `commit confirmed`. An entry with services
+> needs `tcp/22` among them for ssh, and `tcp/830` for NETCONF.
+
+The walkthrough keeps the line that applies the filter to `lo0` commented,
+and a plan never adds it. A permit list with no IPv4 entry renders no filter
+in either mode. Setting the mode is the superuser's
+([Superuser Daily Operations](superuser-daily-operations.md) §8); engineers
+can read it for their own scopes and plan the change
+([Engineer Guide](engineer-guide-device-changes.md) §4). The repository's
+[Management ACL](https://github.com/rett/tacctl/blob/master/docs/security/management-acl.md)
+page lists the terms each mode renders.
 
 ---
 
