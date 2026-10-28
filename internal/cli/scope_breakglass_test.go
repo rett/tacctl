@@ -305,6 +305,31 @@ func TestScopeBreakGlassValidateRootOnly(t *testing.T) {
 	}
 }
 
+// The warning for a root-only scope reads the device registry without its
+// load notes: 'config validate --json' keeps standard output to the one
+// object, and the text report prints no registry WARN of its own.
+func TestScopeBreakGlassValidateRootOnlyRegistryNote(t *testing.T) {
+	sb := newSandbox(t, true)
+	sb.write("state/devices.yaml", "version: 1\nsettings:\n  stale_days: 30\ndevices:\n"+
+		"  sw1:\n    address: 192.168.1.11\n    vendor: cisco\n    ios_syntax: ios12\n    config_syntax: modern\n", 0o600)
+	sb.run("", []string{"scope", "breakglass", "lab", "add", "root"})
+	sb.run("", []string{"config", "render"})
+	sb.run("", []string{"config", "validate", "--json"})
+	v := validateJSONOf(t, sb.out.String())
+	only := false
+	for _, f := range v.Findings {
+		only = only || f.Section == "breakglass" && strings.Contains(f.Text, "scope 'lab' records only 'root'")
+	}
+	if !only {
+		t.Errorf("no root-only finding: %+v", v.Findings)
+	}
+	sb.run("", []string{"config", "validate"})
+	out := plain(sb.out.String() + sb.err.String())
+	if strings.Contains(out, "config_syntax") || !strings.Contains(out, "scope 'lab' records only 'root'") {
+		t.Errorf("text report:\n%s", out)
+	}
+}
+
 // Superuser-only: an engineer reads the walkthrough of their scope, with the
 // accounts in it, and cannot run the verb in any form.
 func TestScopeBreakGlassEngineerTier(t *testing.T) {

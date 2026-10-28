@@ -301,10 +301,22 @@ func (inv *invocation) rootOnlyFindings(scopes []string) []validateFinding {
 	if len(scopes) == 0 {
 		return nil
 	}
-	_, res, err := inv.deviceLoad()
+	// The registry is read without its load notes: this runs inside 'config
+	// validate', whose --json output is the one object.
+	f, err := devreg.Load(inv.app.Paths.DevicesFile)
 	if err != nil {
 		return nil
 	}
+	reg, err := inv.registry()
+	if err != nil {
+		return nil
+	}
+	m, err := inv.model()
+	if err != nil {
+		return nil
+	}
+	res := devreg.NewResolver(f, reg, m)
+	res.Seen = inv.seenLoad()
 	vendors := map[string][]string{}
 	for _, e := range res.All() {
 		if e.Source != devreg.SourceDevice || (e.Vendor != "cisco" && e.Vendor != "wti") {
