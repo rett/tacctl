@@ -41,15 +41,26 @@ After an upgrade: `tacctl status`, `tacctl config validate` (store, rendered con
 
 ## Rolling back
 
-`tacctl rollback` takes six targets: `0.2.19`, the release before this
-one, `0.2.18`, `0.2.17`, `0.2.16`, `0.2.9` and `0.2.3`. All are the dry run
-described below until `--apply` is given, all refuse while an apply is not
-settled or a user name has a period, all but `0.2.19` while an emergency
+`tacctl rollback` takes seven targets: `0.2.20`, the release before this
+one, `0.2.19`, `0.2.18`, `0.2.17`, `0.2.16`, `0.2.9` and `0.2.3`. All are the
+dry run described below until `--apply` is given, all refuse while an apply
+is not settled, all but `0.2.20` while a user name has a period, all but
+`0.2.20` and `0.2.19` while an emergency
 lockdown locks a group, and each release's tool prepares the state for the
 releases it knows. `0.2.4` to `0.2.8` and `0.2.2` and older are refused with
 the way there (one release at a time, or `tacctl backup restore` of a snapshot
 of the time); `0.2.10` to `0.2.15`, this release and any other word are
-refused with the six targets named.
+refused with the targets named.
+
+**Every user's login to this server (0.2.21).** This release lets every user
+log in to the tacctl server and its console, unless disabled or of tier none,
+without the server's scope in the user's own scopes. Every older release
+needs it there, so every target adds the scope of this server's own login
+(`tacctl`) to the scopes of each user who logs in to the server and lacks it
+(the plan counts and names them; a warning, so `--apply` needs `--yes`), after
+a snapshot. Every target also removes the server address `server.addresses`
+from `tacctl.yaml`, which no older release knows; the host registry keeps the
+address in this server's entry, which the older release reads.
 
 **An emergency lockdown stops every rollback to a release before 0.2.19**
 (the dry run too): such a release has no such record and would render every
@@ -160,6 +171,23 @@ and the plain view of each pull), under the records' lock, and leaves every
 other line; the dry run lists each file. The files are derived and never in a
 snapshot; this release, if it stays, reads the two as missing until its next
 `device config pull`.
+
+### To 0.2.20
+
+0.2.20 reads every file this release writes but `server.addresses`, so the
+rollback removes that key and adds the scope of this server's own login to the
+users' scopes (above), after a snapshot. Nothing else is converted, and
+`--hosts` is accepted and does nothing.
+
+```bash
+tacctl rollback 0.2.20          # the dry run: steps, warnings, writes nothing
+tacctl rollback 0.2.20 --apply --yes
+tacctl upgrade --branch 0.2.20  # install 0.2.20
+```
+
+Until 0.2.20 is installed, a user added or given other scopes logs in to this
+server only with that scope in the user's own scopes: run
+`tacctl rollback 0.2.20 --apply` again.
 
 ### To 0.2.19
 

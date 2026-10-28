@@ -116,8 +116,11 @@ func (p *RollbackPlan) lockdownKeysStep(target string) RollbackStep {
 	s := RollbackStep{Title: p.in.Paths.Overrides + ": remove the keys " + target + " does not know", Todo: len(p.keys) > 0}
 	if len(p.keys) == 0 {
 		s.Lines = []string{"nothing to remove (no emergency lockdown is recorded)"}
-		if target == RollbackTarget0219 {
+		switch target {
+		case RollbackTarget0219:
 			s.Lines = []string{"nothing to remove (no scope has a management filter mode)"}
+		case RollbackTarget0220:
+			s.Lines = []string{"nothing to remove (no server address is set)"}
 		}
 		return s
 	}

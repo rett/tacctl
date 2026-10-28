@@ -44,6 +44,14 @@ current behaviour; this file is where history lives.
    A user who must change the password keeps exactly the server's login, as
    before.
 
+3. **`tacctl rollback 0.2.20`, and every target keeps the users' server
+   login.** The new target removes `server.addresses` (0.2.20 reads every
+   other file this release writes). Every target adds the server's scope to
+   the scopes of each user who logs in to the server and lacks it, since the
+   older releases need it there (a warning that counts and names them, so
+   `--apply` needs `--yes`, after a snapshot), and removes `server.addresses`;
+   the host registry keeps the address in the server's entry.
+
 ## 0.2.20 (2026-10-28)
 
 1. **A user name may hold periods.** `user add alice.smith operator` is

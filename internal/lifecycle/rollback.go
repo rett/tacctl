@@ -180,6 +180,7 @@ const (
 	RollbackTarget0217 = "0.2.17"
 	RollbackTarget0218 = "0.2.18"
 	RollbackTarget0219 = "0.2.19"
+	RollbackTarget0220 = "0.2.20"
 )
 
 // RollbackRefusal is a version the command does not take: Lines say why.
@@ -263,7 +264,7 @@ func pluralWord(n int, one, many string) string {
 
 var reVersion = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 
-const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget0219 + "|" + RollbackTarget0218 + "|" + RollbackTarget0217 + "|" + RollbackTarget0216 + "|" + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
+const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget0220 + "|" + RollbackTarget0219 + "|" + RollbackTarget0218 + "|" + RollbackTarget0217 + "|" + RollbackTarget0216 + "|" + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
 
 // CheckRollbackVersion is the version a rollback is asked for ("0.2.19",
 // "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3" or any with a "v"), or a *RollbackRefusal: 0.2.4
@@ -280,11 +281,11 @@ func CheckRollbackVersion(arg string) (string, error) {
 			rollbackUsage}}
 	}
 	v := strings.TrimPrefix(arg, "v")
-	if v == RollbackTarget || v == RollbackTarget029 || v == RollbackTarget0216 || v == RollbackTarget0217 || v == RollbackTarget0218 || v == RollbackTarget0219 {
+	if v == RollbackTarget || v == RollbackTarget029 || v == RollbackTarget0216 || v == RollbackTarget0217 || v == RollbackTarget0218 || v == RollbackTarget0219 || v == RollbackTarget0220 {
 		return v, nil
 	}
 	n := func(i int) int { x, _ := strconv.Atoi(m[i]); return x }
-	both := "'tacctl rollback' prepares the state for " + RollbackTarget0219 + " (the release before this one), " + RollbackTarget0218 + ", " + RollbackTarget0217 + ", " + RollbackTarget0216 + ", " + RollbackTarget029 + " and " + RollbackTarget + " only"
+	both := "'tacctl rollback' prepares the state for " + RollbackTarget0220 + " (the release before this one), " + RollbackTarget0219 + ", " + RollbackTarget0218 + ", " + RollbackTarget0217 + ", " + RollbackTarget0216 + ", " + RollbackTarget029 + " and " + RollbackTarget + " only"
 	fallback := "The fallback that needs no tool is 'tacctl backup restore' of a snapshot of the time (see 'tacctl backup list')."
 	switch {
 	case n(1) == 0 && n(2) == 2 && n(3) > 3 && n(3) < 9:
@@ -419,6 +420,9 @@ type RollbackPlan struct {
 	in      RollbackInput
 	keys    []string
 	console console.RollbackPlan
+	// managedUsers are the users the scope of this server's own login is
+	// added to (rollback_managed.go): every target.
+	managedUsers []string
 	// pwStore are the users of the store that carry the required password
 	// change (0.2.20), which every older release refuses (rollback_pwchange.go).
 	pwStore []pwFlag
@@ -477,7 +481,7 @@ func (p *RollbackPlan) Pending() bool {
 // PendingFiles: there is a file of tacctl's own to convert (the snapshot
 // holds those; the sudoers drop-ins and the stored pulls are not in it).
 func (p *RollbackPlan) PendingFiles() bool {
-	return len(p.keys) > 0 || len(p.pwStore) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0
+	return len(p.keys) > 0 || len(p.pwStore) > 0 || len(p.managedUsers) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0
 }
 
 func (p *RollbackPlan) todoSudoers() []sudoersPlan {
@@ -531,6 +535,21 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	if len(pend) > 0 {
 		return nil, PendingRefusal(pend)
 	}
+	// Every target keeps the users' login to this server: the scope of it,
+	// which this release lets every user use, goes into their own scopes
+	// (rollback_managed.go).
+	if err := p.planManagedScope(); err != nil {
+		return nil, err
+	}
+	// 0.2.20 reads every file this release writes (rollback_managed.go).
+	if in.Target == RollbackTarget0220 {
+		rp, err := planRollback0220(p)
+		if err != nil {
+			return nil, err
+		}
+		rp.addManagedScope()
+		return rp, nil
+	}
 	// An emergency lockdown (0.2.19) is refused for every target before
 	// 0.2.19, in the dry run and --apply alike: no older release has the
 	// record, and the next render under it would put every locked user back
@@ -576,6 +595,7 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 		rp.addConsoleStep()
 		rp.addRootLeaves()
 		rp.Warnings = append(rp.Warnings, rp.rootBreakGlassWarning()...)
+		rp.addManagedScope()
 		rp.addPasswordChange()
 		return rp, nil
 	}
@@ -635,6 +655,7 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	}
 
 	p.Warnings = append(append(append(p.warnings(), p.mgmtModeWarning(RollbackTarget)...), p.consoleWideningWarning()...), p.rootBreakGlassWarning()...)
+	p.addManagedScope()
 	p.addPasswordChange()
 	p.Notes = p.notes()
 	return p, nil
@@ -1043,6 +1064,11 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 			return done, fmt.Errorf("%s: %w", pt.Overrides, err)
 		}
 		done = append(done, fmt.Sprintf("%s: removed %d %s", pt.Overrides, len(p.keys), plural(len(p.keys), "key", "keys")))
+	}
+	if line, err := p.applyManagedScope(); err != nil {
+		return done, fmt.Errorf("%s: %w", pt.StoreFile, err)
+	} else if line != "" {
+		done = append(done, line)
 	}
 	if len(p.pwStore) > 0 {
 		removed, _, err := store.RollbackPasswordChange(pt.StoreFile, nil)

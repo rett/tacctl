@@ -213,8 +213,9 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.19
+.B 0.2.20
 (the release before this one),
+.BR 0.2.19 ,
 .BR 0.2.18 ,
 .BR 0.2.17 ,
 .BR 0.2.16 ,
@@ -228,8 +229,8 @@ and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word (0.2.10 to
-0.2.15 included: the refusal names the six targets). Every target but 0.2.19
-is refused while an emergency lockdown locks a group (the refusal lists each
+0.2.15 included: the refusal names the targets). Every target but 0.2.20 and
+0.2.19 is refused while an emergency lockdown locks a group (the refusal lists each
 one and
 .B "emergency lockdown <scope> disable"
 lifts it; a release before 0.2.19 would render the locked users back into the
@@ -243,8 +244,8 @@ or
 .B "device config apply <name> \-\-check"
 or
 .B "device config forget <name>"
-settles it) and while the store has a user whose name has a period (no
-target reads such a name: the refusal lists each, with
+settles it), and every target but 0.2.20 while the store has a user whose name
+has a period (no other target reads such a name: the refusal lists each, with
 .B "user rename <name> <new\-name>"
 as the way out, and changes nothing; an override under such a name in the
 ignored
@@ -278,12 +279,29 @@ stay, for the releases that have them) are removed and a
 of \-1 (never ask) is written as 1000, with every other setting kept and a
 snapshot first.
 .IP
-Every target removes
+Every target keeps every user's login to this server: an older release answers
+it only for the users that have the server's scope
+.RB ( tacctl )
+in their own scopes, so the plan adds it to the scopes of each user who logs in
+to the server and lacks it (it counts and names them; a warning, so
+.B \-\-apply
+needs
+.BR \-\-yes ),
+after a snapshot. Every target removes
 .B server.addresses
 from
 .IR tacctl.yaml ,
 which no older release knows; the host registry keeps the address in this
 server's entry.
+.IP
+.B "rollback 0.2.20"
+removes
+.B server.addresses
+and adds the scope to the users (above); 0.2.20 reads every other file this
+release writes, so nothing else is converted, and
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.20" .
 .IP
 .B "rollback 0.2.19"
 .B \-\-apply

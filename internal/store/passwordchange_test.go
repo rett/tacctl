@@ -119,3 +119,25 @@ func TestPasswordChangeKeysReadAnUnvalidatedStore(t *testing.T) {
 		t.Error("the store that does not validate was written")
 	}
 }
+
+// RollbackAddScope adds the scope to the users named that lack it, in one
+// write, and leaves a store where each has it untouched.
+func TestRollbackAddScope(t *testing.T) {
+	e := newEnv(t)
+	e.useFixture("store.multiscope.yaml")
+	e.mustMutate(func(s *store.Store) error {
+		return s.ScopeSet("tacctl", "prefixes=127.0.0.1/32", "secret=example-secret-example-secret")
+	})
+	added, err := store.RollbackAddScope(e.path, "tacctl", []string{"alice", "carol", "nobody"})
+	if err != nil || strings.Join(added, ",") != "alice,carol" {
+		t.Fatalf("added %v, %v", added, err)
+	}
+	st := string(readFile(t, e.path))
+	if strings.Count(st, "tacctl]") != 2 {
+		t.Errorf("store:\n%s", st)
+	}
+	ino := inode(t, e.path)
+	if added, err := store.RollbackAddScope(e.path, "tacctl", []string{"alice", "carol"}); err != nil || len(added) != 0 || inode(t, e.path) != ino {
+		t.Errorf("second run: %v %v", added, err)
+	}
+}
