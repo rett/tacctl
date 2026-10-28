@@ -6088,7 +6088,12 @@ are the superuser's, and another scope does not exist for an engineer. The value
 .B scope_mgmt_acl.mode.\fIscope\fR
 in
 .IR tacctl.yaml ;
-a rename moves it and a removal deletes it.
+a rename moves it and a removal deletes it. A word that is not a mode (the
+words are lower case) is refused with
+.B "Unknown mode '<word>'. Use: ssh\-only | strict."
+(exit 1), a word after the value as an unknown argument with the usage (exit 1),
+and in both nothing is written; setting the mode the scope already has says so
+and writes nothing.
 .RE
 .IP
 Cisco puts the effective name in
