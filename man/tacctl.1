@@ -12437,6 +12437,12 @@ to a device accepts
 and
 .BR \-D .
 Agent, stream-local and tunnel forwarding stay as for every console user.
+A forwarding opens no session and never reaches the console, so a user of such
+a tier who must change the password
+.RB ( "user require\-password\-change" )
+still forwards ports through this server with the old password until it is
+changed; the default tier, superuser, is never held, so list another tier only
+while none of its users must change the password.
 .\" BEGIN GENERATED: command console forwarding
 .RS
 .PP

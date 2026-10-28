@@ -307,6 +307,10 @@ current behaviour; this file is where history lives.
     tacctl ...` included; root and a local administrator who is no tacctl user
     are not affected), and the refusal is logged as `password-change DENY` (the live names that Tab asks
     for in a plain shell are refused without a message or a line).
+    The lock holds the console, not sshd's forwarding: a user of a tier in
+    `console forwarding tiers` (default superuser only, who is never held)
+    still forwards ports through the server (`ssh -N -L ...`, which opens no
+    session) with the old password until it is changed.
     The login console opens, for such a user, with a notice and the password
     change dialog straight away; until the password is changed nothing else
     runs there (every other line, `help` included, is refused with status 1, and

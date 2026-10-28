@@ -72,7 +72,9 @@ console list-max [<n>]
 console forwarding tiers [<csv>|none]
 
     Tiers that may forward X11 and TCP ports: sshd, and ssh -X/-Y/-L/-R/-D to a device in the
-    console (default superuser)
+    console (default superuser). A forwarding opens no session and never reaches the console, so
+    a user of such a tier who must change the password still forwards through the server with
+    the old one: list a tier other than superuser only while none of its users is flagged
 
 console forwarding gateway-ports [enable|disable]
 
