@@ -10682,7 +10682,16 @@ or
 .B "commit check"
 typed on it confirms the change, so nothing may be typed on it before then.
 The next apply or check of it reads its commit history first and records what
-happened; while the window stands nothing is sent. Where the history alone
+happened; while the window stands nothing is sent. The history is read whatever
+words each commit was typed with
+.RB ( synchronize ,
+.BR and\-quit ,
+.BR force ,
+.BR full ,
+.BR prepare ,
+.BR "at <time>" ,
+.BR "confirmed, rollback in N mins" ),
+and a newest entry that is none of these is refused with its text. Where the history alone
 does not say (a commit after tacctl's by
 .B "root via other"
 is the device's own rollback or a commit of the system, or the commit after

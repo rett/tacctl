@@ -243,6 +243,20 @@ current behaviour; this file is where history lives.
     renders no filter in either mode. The strict filter has not yet been
     checked on a Junos device.
 
+17. **The pre-flight reads every commit command the device prints.** `device
+    config apply` (and `--pull`) failed with `show system commit: entry 0 ends
+    "commit synchronize": the device's answer is not recognised` on a Junos
+    device whose commits end in `synchronize` (a dual-routing-engine or
+    virtual-chassis device). The newest entry of `show system commit` is now
+    read as a commit command in all its spellings: `commit`, with `and-quit`,
+    `synchronize`, `force`, `full`, `prepare` and `at <time>` in any order, and
+    `commit confirmed, rollback in <n>mins` with the same words after it (a
+    confirmed commit still counts as pending only as before); an entry with
+    no text after `via <way>` (a commit of the system) is an ordinary commit.
+    A text that is no commit command is still refused, and the error now
+    names the entry, its user and way, and the text. A time written with a
+    numeric zone (`+03`) is read too.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config
