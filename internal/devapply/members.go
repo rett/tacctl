@@ -10,13 +10,15 @@ package devapply
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
 // reMemberLabel is the line that opens a member's answer: the kind of
-// member and its number or role ('fpc0:', 're1:', 'node0:', 'member2:',
-// 'lc3:', 'fpcmaster:').
-var reMemberLabel = regexp.MustCompile(`^((?:fpc|re|node|member|lc|lcc|scc|sfc)(?:[0-9]+|master|backup)):$`)
+// member and its number, the forms the captures show ('fpc0:' of a virtual
+// chassis, 're1:' of two routing engines, 'node0:' of a cluster). Group 1 is
+// the label, group 2 its kind.
+var reMemberLabel = regexp.MustCompile(`^((fpc|re|node)[0-9]+):$`)
 
 // memberText is what one member printed, in order.
 type memberText struct {
@@ -27,10 +29,12 @@ type memberText struct {
 // splitMembers separates an answer into the lines no label opens and the
 // members' lines, in the order the members first appear. A member's answer
 // is the line after its label; a label with no line (the end of the answer,
-// or another label) is a fault, named in why.
+// or another label) is a fault, named in why, and so are labels of two kinds
+// in one answer.
 func splitMembers(body []string) (plain []string, members []*memberText, why string) {
 	nb := nonBlank(body)
 	byLabel := map[string]*memberText{}
+	kind := ""
 	for i := 0; i < len(nb); i++ {
 		l := strings.TrimSpace(nb[i])
 		m := reMemberLabel.FindStringSubmatch(l)
@@ -38,6 +42,10 @@ func splitMembers(body []string) (plain []string, members []*memberText, why str
 			plain = append(plain, l)
 			continue
 		}
+		if kind != "" && m[2] != kind {
+			return plain, members, fmt.Sprintf("labels of two kinds, %s and %s", members[0].label, m[1])
+		}
+		kind = m[2]
 		if i+1 >= len(nb) || reMemberLabel.MatchString(strings.TrimSpace(nb[i+1])) {
 			return plain, members, fmt.Sprintf("member %s has no answer", m[1])
 		}
@@ -53,15 +61,84 @@ func splitMembers(body []string) (plain []string, members []*memberText, why str
 	return plain, members, ""
 }
 
+// memberLabels reads the labels of a 'show version' answer: the lines that
+// open a member's block, in order, none for a single device. Two kinds, or a
+// label twice, is an error.
+func memberLabels(ls []string) ([]string, error) {
+	var labels []string
+	kind := ""
+	for _, l := range ls {
+		m := reMemberLabel.FindStringSubmatch(strings.TrimSpace(l))
+		if m == nil {
+			continue
+		}
+		if kind != "" && m[2] != kind {
+			return nil, fmt.Errorf("show version: labels of two kinds, %s and %s: %w", labels[0], m[1], ErrUnrecognised)
+		}
+		if slices.Contains(labels, m[1]) {
+			return nil, fmt.Errorf("show version: member %s twice: %w", m[1], ErrUnrecognised)
+		}
+		kind = m[2]
+		labels = append(labels, m[1])
+	}
+	return labels, nil
+}
+
+// setFault compares the labels an answer names with the members the
+// pre-flight's 'show version' listed: the missing and the unexpected ones
+// are named. It is empty when they are the same set, and when the pre-flight
+// listed none (a single device, which prints no label; an answer that names
+// members there is judged by its blocks alone).
+func setFault(set, got []string) string {
+	if len(set) == 0 {
+		return ""
+	}
+	var missing, unexpected []string
+	for _, l := range set {
+		if !slices.Contains(got, l) {
+			missing = append(missing, l)
+		}
+	}
+	for _, l := range got {
+		if !slices.Contains(set, l) {
+			unexpected = append(unexpected, l)
+		}
+	}
+	var parts []string
+	if len(missing) > 0 {
+		parts = append(parts, "no answer from "+strings.Join(missing, ", "))
+	}
+	if len(unexpected) > 0 {
+		parts = append(parts, "an answer from "+strings.Join(unexpected, ", ")+", which 'show version' did not list")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "the members that answered are not the chassis' (" + strings.Join(set, ", ") + "): " + strings.Join(parts, "; ")
+}
+
+// labelsOf are the labels of the members of an answer.
+func labelsOf(members []*memberText) []string {
+	var ls []string
+	for _, m := range members {
+		ls = append(ls, m.label)
+	}
+	return ls
+}
+
 // checkAnswer reads the answer of 'commit check': 'configuration check
-// succeeds' alone, or one block of it for every member and nothing else. why
-// names the member and the text that is no success (empty when the answer
-// has no member or is whole).
-func checkAnswer(body []string) (ok bool, why string) {
+// succeeds' alone, or one block of it for every member and nothing else. set
+// is the members 'show version' listed (none for a single device): the
+// answer then names exactly those, each once. why names the member and the
+// text that is no success, or the missing and unexpected members (empty
+// when the answer has no member or is whole).
+func checkAnswer(body []string, set []string) (ok bool, why string) {
 	plain, members, why := splitMembers(body)
 	switch {
 	case why != "":
 		return false, why
+	case len(members) == 0 && len(set) > 0:
+		return false, setFault(set, nil)
 	case len(members) == 0:
 		return exactly(body, textCheckOK), ""
 	}
@@ -78,6 +155,9 @@ func checkAnswer(body []string) (ok bool, why string) {
 	if len(plain) > 0 {
 		return false, fmt.Sprintf("a line %q outside the members' answers", cut(plain[0]))
 	}
+	if why := setFault(set, labelsOf(members)); why != "" {
+		return false, why
+	}
 	return true, ""
 }
 
@@ -89,12 +169,16 @@ func checkAnswer(body []string) (ok bool, why string) {
 // check's success, optionally, then the commit's note, optionally, and last
 // 'commit complete'; the note may also stand alone between the members'
 // blocks, where the single device prints it. why names the member and the
-// text that cannot be read.
-func readCommitted(body []string, want ...string) (ok bool, why string) {
+// text that cannot be read. set is the members 'show version' listed (none
+// for a single device): the answer names exactly those, and every one of
+// them ends in 'commit complete', so the commit's members are the check's.
+func readCommitted(body []string, set []string, want ...string) (ok bool, why string) {
 	plain, members, why := splitMembers(body)
 	switch {
 	case why != "":
 		return false, why
+	case len(members) == 0 && len(set) > 0:
+		return false, setFault(set, nil)
 	case len(members) == 0:
 		return exactly(body, append([]string{textCheckOK}, want...)...) || exactly(body, want...), ""
 	}
@@ -134,6 +218,9 @@ func readCommitted(body []string, want ...string) (ok bool, why string) {
 	}
 	if len(plain) > 0 && (len(notes) == 0 || inMembers || !exactly(plain, notes...)) {
 		return false, fmt.Sprintf("a line %q outside the members' answers", cut(plain[0]))
+	}
+	if why := setFault(set, labelsOf(members)); why != "" {
+		return false, why
 	}
 	if len(unfinished) > 0 {
 		return false, fmt.Sprintf("member %s did not answer %q", unfinished[0], textCommitComplete)

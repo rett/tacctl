@@ -121,6 +121,11 @@ func parseVersion(out string) (Identity, error) {
 		return Identity{}, answerError("show version", ls, nil)
 	}
 	var id Identity
+	labels, err := memberLabels(ls)
+	if err != nil {
+		return Identity{}, err
+	}
+	id.Members = labels
 	set := func(dst *string, v string) error {
 		if *dst != "" && *dst != v {
 			return fmt.Errorf("show version: two values %q and %q: %w", cut(*dst), cut(v), ErrUnrecognised)

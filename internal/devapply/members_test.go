@@ -80,9 +80,8 @@ func TestCheckAnswerMembers(t *testing.T) {
 		"cluster":       "node0:\nconfiguration check succeeds\nnode1:\nconfiguration check succeeds\n",
 		"one member":    "fpc0: \nconfiguration check succeeds\n",
 		"blank between": "fpc0: \n\nconfiguration check succeeds\n\nfpc1: \nconfiguration check succeeds\n",
-		"roles":         "member0:\nconfiguration check succeeds\nlcmaster:\nconfiguration check succeeds\n",
 	} {
-		if ok, why := checkAnswer(split(in)); !ok {
+		if ok, why := checkAnswer(split(in), nil); !ok {
 			t.Errorf("%s: %s", name, why)
 		}
 	}
@@ -101,8 +100,13 @@ func TestCheckAnswerMembers(t *testing.T) {
 		"not a label":   {"fpc0 \nconfiguration check succeeds\n", ""},
 		"upper label":   {"FPC0:\nconfiguration check succeeds\n", ""},
 		"unknown label": {"vc0:\nconfiguration check succeeds\n", ""},
+		"sfc":           {"sfc0:\nconfiguration check succeeds\n", ""},
+		"lcc":           {"lcc3:\nconfiguration check succeeds\n", ""},
+		"member":        {"member0:\nconfiguration check succeeds\n", ""},
+		"role":          {"fpcmaster:\nconfiguration check succeeds\n", ""},
+		"mixed kinds":   {"re0: \nconfiguration check succeeds\nfpc7: \nconfiguration check succeeds\nnode1: \nconfiguration check succeeds\n", "labels of two kinds, re0 and fpc7"},
 	} {
-		ok, why := checkAnswer(split(c.in))
+		ok, why := checkAnswer(split(c.in), nil)
 		if ok || why != c.why {
 			t.Errorf("%s: ok %v, why %q, want %q", name, ok, why, c.why)
 		}
@@ -138,7 +142,7 @@ func TestCommittedAnswerMembers(t *testing.T) {
 		"confirmed in members": {chk("fpc0") + "fpc0: \n" + note1 + done("fpc0"), []string{note, textCommitComplete}},
 		"in one block":         {"fpc0: \ncommit complete\nfpc1: \ncommit complete\n", []string{textCommitComplete}},
 	} {
-		if ok, why := readCommitted(split(c.in), c.want...); !ok {
+		if ok, why := readCommitted(split(c.in), nil, c.want...); !ok {
 			t.Errorf("%s: %s", name, why)
 		}
 	}
@@ -160,55 +164,168 @@ func TestCommittedAnswerMembers(t *testing.T) {
 		"note not wanted":   {chk("fpc0") + note1 + done("fpc0"), []string{textCommitComplete}, `a line "` + note + `" outside the members' answers`},
 		"note twice":        {chk("fpc0") + "fpc0: \n" + note1 + note1 + done("fpc0"), []string{note, textCommitComplete}, `a line "` + note + `" outside the members' answers`},
 	} {
-		ok, why := readCommitted(split(c.in), c.want...)
+		ok, why := readCommitted(split(c.in), nil, c.want...)
 		if ok || why != c.why {
 			t.Errorf("%s: ok %v, why %q, want %q", name, ok, why, c.why)
 		}
 	}
 	// the single device keeps its old refusals
 	for _, in := range []string{"", "commit complete\ncommit complete\n", "error: x\n", "configuration check succeeds\n"} {
-		if ok, why := readCommitted(split(in), textCommitComplete); ok || why != "" {
+		if ok, why := readCommitted(split(in), nil, textCommitComplete); ok || why != "" {
 			t.Errorf("%q: %v %q", in, ok, why)
 		}
 	}
 }
 
-// The NETCONF reply names the members as <routing-engine> elements (the
-// shape the fake models; no capture of a virtual chassis' reply): each must
-// hold the success element, once.
+// The members 'show version' listed are the ones every answer names: the
+// check, then each commit's, whose members are the check's. An answer that
+// names fewer, more or none fails closed with the missing and the unexpected
+// members named.
+func TestAnswersNameTheChassisMembers(t *testing.T) {
+	set := []string{"fpc0", "fpc1", "fpc2", "fpc3"}
+	if ok, why := checkAnswer(split(vcCheck), set); !ok {
+		t.Errorf("the capture: %s", why)
+	}
+	const sets = "the members that answered are not the chassis' (fpc0, fpc1, fpc2, fpc3): "
+	for name, c := range map[string]struct{ in, why string }{
+		"one member":       {"fpc0: \nconfiguration check succeeds\n", sets + "no answer from fpc1, fpc2, fpc3"},
+		"no member":        {"configuration check succeeds\n", sets + "no answer from fpc0, fpc1, fpc2, fpc3"},
+		"an extra":         {vcCheck + "fpc4: \nconfiguration check succeeds\n", sets + "an answer from fpc4, which 'show version' did not list"},
+		"missing, extra":   {"fpc0: \nconfiguration check succeeds\nfpc1: \nconfiguration check succeeds\nfpc2: \nconfiguration check succeeds\nre3: \nconfiguration check succeeds\n", "labels of two kinds, fpc0 and re3"},
+		"one and an extra": {"fpc0: \nconfiguration check succeeds\nfpc1: \nconfiguration check succeeds\nfpc2: \nconfiguration check succeeds\nfpc9: \nconfiguration check succeeds\n", sets + "no answer from fpc3; an answer from fpc9, which 'show version' did not list"},
+	} {
+		ok, why := checkAnswer(split(c.in), set)
+		if ok || why != c.why {
+			t.Errorf("%s: ok %v, why %q, want %q", name, ok, why, c.why)
+		}
+	}
+	chk := func(l string) string { return l + ": \nconfiguration check succeeds\n" }
+	done := func(l string) string { return l + ": \ncommit complete\n" }
+	all := func(f func(string) string) string {
+		var b strings.Builder
+		for _, l := range set {
+			b.WriteString(f(l))
+		}
+		return b.String()
+	}
+	note := plan.ApplyConfirmedNote(5)
+	good := all(chk) + note + "\n" + all(done)
+	if ok, why := readCommitted(split(good), set, note, textCommitComplete); !ok {
+		t.Errorf("a whole answer: %s", why)
+	}
+	for name, c := range map[string]struct{ in, why string }{
+		"commit names one": {all(chk) + note + "\n" + done("fpc0"), `member fpc1 did not answer "commit complete"`},
+		"names only one":   {note + "\n" + done("fpc0"), sets + "no answer from fpc1, fpc2, fpc3"},
+		"check only":       {all(chk) + note + "\n", `member fpc0 did not answer "commit complete"`},
+		"unlabelled":       {"configuration check succeeds\n" + note + "\ncommit complete\n", sets + "no answer from fpc0, fpc1, fpc2, fpc3"},
+		"an extra member":  {good + done("fpc5"), sets + "an answer from fpc5, which 'show version' did not list"},
+		"one has no done":  {all(chk) + note + "\n" + done("fpc0") + done("fpc1") + done("fpc2"), `member fpc3 did not answer "commit complete"`},
+	} {
+		ok, why := readCommitted(split(c.in), set, note, textCommitComplete)
+		if ok || !strings.HasPrefix(why, c.why) {
+			t.Errorf("%s: ok %v, why %q, want %q", name, ok, why, c.why)
+		}
+	}
+	// the single device: no member listed, no member judged by a set
+	if ok, why := readCommitted(split("configuration check succeeds\ncommit complete\n"), nil, textCommitComplete); !ok {
+		t.Errorf("single: %s", why)
+	}
+}
+
+// The labels of 'show version' are the members, in order; two kinds, or a
+// label twice, is refused.
+func TestParseVersionMemberLabels(t *testing.T) {
+	id, err := parseVersion(vcVersion)
+	if err != nil || strings.Join(id.Members, ",") != "fpc0,fpc1,fpc2,fpc3" {
+		t.Errorf("%+v %v", id.Members, err)
+	}
+	id, err = parseVersion("Hostname: sw1.example.net\nModel: ex4300-48t\nJunos: 21.4R3-S2.4\n")
+	if err != nil || len(id.Members) != 0 {
+		t.Errorf("single: %+v %v", id.Members, err)
+	}
+	for name, in := range map[string]string{
+		"two kinds": "re0:\nHostname: a\nJunos: 1\nfpc1:\nHostname: a\nJunos: 1\n",
+		"twice":     "fpc0:\nHostname: a\nJunos: 1\nfpc0:\nHostname: a\nJunos: 1\n",
+	} {
+		if _, err := parseVersion(in); !errors.Is(err, ErrUnrecognised) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+// The NETCONF reply names the members as <routing-engine> elements (a shape
+// inferred from the fake; no capture of a device with members). Each member,
+// the same name over its elements, answers the check's success alone, or the
+// commit's success after the check's or alone: never an error, never another
+// member's success.
 func TestNetconfReplyMembers(t *testing.T) {
+	const ck, cs = "<commit-check-success/>", "<commit-success/>"
 	re := func(name, el string) string {
 		return "<routing-engine><name>" + name + "</name>" + el + "</routing-engine>"
 	}
 	wrap := func(s string) string { return "<commit-results>" + s + "</commit-results>" }
-	j := &JunosNetconf{m: nil}
+	four := func(el string) string {
+		return re("fpc0", el) + re("fpc1", el) + re("fpc2", el) + re("fpc3", el)
+	}
+	chassis := []string{"fpc0", "fpc1", "fpc2", "fpc3"}
 	for name, c := range map[string]struct {
-		in      string
-		success []string
-		ok      bool
-		want    string
+		in     string
+		commit bool
+		set    []string
+		want   string // "" is a whole reply
 	}{
-		"none":    {wrap(""), []string{"commit-check-success"}, true, ""},
-		"one":     {wrap(re("re0", "<commit-check-success/>")), []string{"commit-check-success"}, true, ""},
-		"four":    {wrap(re("fpc0", "<commit-check-success/>") + re("fpc1", "<commit-check-success/>") + re("fpc2", "<commit-check-success/>") + re("fpc3", "<commit-check-success/>")), []string{"commit-check-success"}, true, ""},
-		"commit":  {wrap(re("fpc0", "<commit-success/>") + re("fpc1", "<commit-success/>")), []string{"commit-success", "ok"}, true, ""},
-		"ok":      {wrap(re("fpc0", "<ok/>")), []string{"commit-success", "ok"}, true, ""},
-		"silent":  {wrap(re("fpc0", "<commit-check-success/>") + re("fpc1", "")), []string{"commit-check-success"}, false, "member fpc1 did not answer <commit-check-success/>"},
-		"other":   {wrap(re("fpc0", "<commit-check-success/>") + re("fpc1", "<commit-success/>")), []string{"commit-check-success"}, false, "member fpc1 did not answer <commit-check-success/>"},
-		"twice":   {wrap(re("fpc0", "<commit-check-success/>") + re("fpc0", "<commit-check-success/>")), []string{"commit-check-success"}, false, "member fpc0 answered twice"},
-		"no name": {wrap("<routing-engine><commit-check-success/></routing-engine>"), []string{"commit-check-success"}, false, "a member without a name"},
-		"outside": {wrap(re("fpc0", "<commit-check-success/>") + "<commit-check-success/>"), []string{"commit-check-success"}, true, ""},
+		"no members":        {wrap(""), false, chassis, ""},
+		"one engine":        {wrap(re("re0", ck)), false, nil, ""},
+		"four checks":       {wrap(four(ck)), false, chassis, ""},
+		"commit alone":      {wrap(four(cs)), true, chassis, ""},
+		"check then commit": {wrap(four(ck) + four(cs)), true, chassis, ""},
+		"ok":                {wrap(four("<ok/>")), true, chassis, ""},
+		"interleaved":       {wrap(re("fpc0", ck) + re("fpc1", cs) + re("fpc0", cs) + re("fpc2", ck+cs) + re("fpc3", cs)), true, chassis, ""},
+		"single commit":     {wrap(re("re0", cs)), true, nil, ""},
+		"silent":            {wrap(re("fpc0", ck) + re("fpc1", "")), false, nil, "member fpc1 did not answer <commit-check-success/>"},
+		"silent commit":     {wrap(four(ck) + re("fpc0", cs)), true, nil, "member fpc1 answered <commit-check-success/>, not"},
+		"commit for check":  {wrap(re("fpc0", cs)), false, nil, "member fpc0 answered <commit-success/>, not <commit-check-success/>"},
+		"another's success": {wrap(re("fpc0", ck+cs) + re("fpc1", "")), true, nil, "member fpc1 did not answer <commit-success/>"},
+		"check twice":       {wrap(re("fpc0", ck) + re("fpc0", ck)), false, nil, "member fpc0 answered <commit-check-success/><commit-check-success/>, not"},
+		"commit twice":      {wrap(re("fpc0", cs+cs)), true, nil, "member fpc0 answered <commit-success/><commit-success/>, not"},
+		"commit then check": {wrap(re("fpc0", cs+ck)), true, nil, "member fpc0 answered <commit-success/><commit-check-success/>, not"},
+		"no name":           {wrap("<routing-engine>" + ck + "</routing-engine>"), false, nil, "a member without a name"},
+		"missing":           {wrap(re("fpc0", ck) + re("fpc1", ck)), false, chassis, "the members that answered are not the chassis' (fpc0, fpc1, fpc2, fpc3): no answer from fpc2, fpc3"},
+		"extra":             {wrap(four(ck) + re("fpc4", ck)), false, chassis, "an answer from fpc4, which 'show version' did not list"},
+		"commit missing":    {wrap(four(ck) + re("fpc0", cs)), true, chassis, "member fpc1 answered"},
+		"other name":        {wrap(re("re0", ck)), false, chassis, "no answer from fpc0, fpc1, fpc2, fpc3; an answer from re0"},
 	} {
 		r, err := parseReply(c.in)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		err = j.memberRefusal("commit check", r, c.success...)
+		j := &JunosNetconf{members: c.set}
+		err = j.memberRefusal("commit check", r, c.commit)
 		switch {
-		case c.ok && err != nil:
+		case c.want == "" && err != nil:
 			t.Errorf("%s: %v", name, err)
-		case !c.ok && (err == nil || !errors.Is(err, ErrUnrecognised) || !strings.Contains(err.Error(), c.want)):
+		case c.want != "" && (err == nil || !errors.Is(err, ErrUnrecognised) || !strings.Contains(err.Error(), c.want)):
 			t.Errorf("%s: %v, want %q", name, err, c.want)
 		}
+	}
+}
+
+// An <rpc-error> inside a member's element names the member in the error.
+func TestNetconfMemberErrorNamesTheMember(t *testing.T) {
+	const reply = "<commit-results><routing-engine><name>fpc0</name><commit-check-success/></routing-engine>" +
+		"<routing-engine><name>fpc2</name><rpc-error><error-severity>error</error-severity><error-message>statement not found</error-message></rpc-error></routing-engine></commit-results>"
+	r, err := parseReply(reply)
+	if err != nil || len(r.Errs) != 1 || r.Errs[0].Member != "fpc2" {
+		t.Fatalf("%+v %v", r.Errs, err)
+	}
+	j := &JunosNetconf{}
+	e := j.firstError("commit check", r)
+	if !errors.Is(e, ErrRefused) || e.Error() != "commit check: member fpc2: error: statement not found" {
+		t.Errorf("%v", e)
+	}
+	// an error outside any member is as it was
+	r, _ = parseReply("<rpc-error><error-severity>error</error-severity><error-message>x</error-message></rpc-error>")
+	if e := j.firstError("commit check", r); e.Error() != "commit check: error: x" {
+		t.Errorf("%v", e)
 	}
 }

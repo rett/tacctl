@@ -78,6 +78,11 @@ type Identity struct {
 	Hostname string
 	Model    string
 	Release  string
+	// Members are the labels of the blocks 'show version' printed, one for
+	// each member of a virtual chassis, two routing engines or a cluster
+	// ('fpc0', 'fpc1', ...); none for a single device. The commit's answers
+	// must name these members.
+	Members []string
 }
 
 // Login is what 'show cli authorization' reports of this login.

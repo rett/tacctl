@@ -259,16 +259,23 @@ current behaviour; this file is where history lives.
 
 18. **The apply reads the answers of a device with several members.** On a
     Junos virtual chassis (or two routing engines) `commit check` prints a
-    block for each member (`fpc0:` and then `configuration check succeeds`,
-    for every member), which `device config apply` refused as an answer it did
-    not know (`check: fpc0:; configuration check succeeds; fpc1: ...`). The
-    answers of `commit check`, `commit confirmed` and `commit` are now read
-    for every member, and a member that answers anything else (an error or a
-    warning), twice, or not at all fails the step with the member and its
-    text in the error. The NETCONF reply is read the same way, member by
-    member (`routing-engine` elements). A single device's answers read as
-    before. The shapes of the commits' replies on such a device are inferred
-    from the check's, as no capture of them was available.
+    block for each member (`fpc0:` and then `configuration check succeeds`),
+    which `device config apply` refused as an answer it did not know
+    (`check: fpc0:; configuration check succeeds; fpc1: ...`). The members are
+    now the blocks `show version` lists (`fpc0:`, `re0:` or `node0:`, one
+    kind per device), and the answers of `commit check`, `commit confirmed`
+    and `commit` must name exactly those members: each with the check's
+    success, then, for a commit, the commit's. A member that is missing,
+    unexpected or answers otherwise (an error, a warning, no text, a label of
+    another kind) fails the step, and the error names the member and its
+    text. A single device's answers read as before. What is inferred: no
+    capture exists of the commit replies on such a device, so their shape
+    (the check's blocks, the confirmed note, the `commit complete` blocks) is
+    taken from the check's; and no capture exists of the NETCONF reply either,
+    including the check's, so it is read as one `routing-engine` element for
+    each member, named by its label, holding the check's success and then the
+    commit's (or the commit's alone), and an error inside an element names
+    the member. A NETCONF reply that names no member is read as before.
 
 ## 0.2.19 (2026-10-25)
 

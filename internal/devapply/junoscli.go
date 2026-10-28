@@ -44,6 +44,10 @@ type JunosCLI struct {
 	login  *Login
 	log    []string
 	m      *masker
+	// members are the labels the pre-flight's 'show version' listed (none
+	// for a single device): the answers of 'commit check' and of a commit
+	// name exactly these.
+	members []string
 	// committed is the held session's last compare (and its delta): the
 	// change a confirmed commit after it commits, which Cancel undoes.
 	committed      *plan.CompareText
@@ -306,7 +310,21 @@ func (j *JunosCLI) Identity(ctx context.Context) (Identity, error) {
 	if err != nil {
 		return Identity{}, err
 	}
-	return parseVersion(out)
+	id, err := parseVersion(out)
+	if err != nil {
+		return Identity{}, err
+	}
+	j.mu.Lock()
+	j.members = id.Members
+	j.mu.Unlock()
+	return id, nil
+}
+
+// memberSet is the members the pre-flight listed.
+func (j *JunosCLI) memberSet() []string {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.members
 }
 
 // History runs 'show system commit'.
@@ -785,7 +803,7 @@ func (j *JunosCLI) Check(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if ok, why := checkAnswer(body); !ok {
+	if ok, why := checkAnswer(body, j.memberSet()); !ok {
 		return answerErrorWhy(plan.ApplyCommitCheck, body, j.m, why)
 	}
 	return nil
@@ -796,7 +814,14 @@ func (j *JunosCLI) Check(ctx context.Context) error {
 // without it), or the same for each member of a device that has several
 // (readCommitted).
 func committedAnswer(body []string, want ...string) bool {
-	ok, _ := readCommitted(body, want...)
+	ok, _ := readCommitted(body, nil, want...)
+	return ok
+}
+
+// commitOK is committedAnswer for this device: the members the pre-flight
+// listed are the ones the answer must name.
+func (j *JunosCLI) commitOK(body []string, want ...string) bool {
+	ok, _ := readCommitted(body, j.memberSet(), want...)
 	return ok
 }
 
@@ -804,7 +829,7 @@ func committedAnswer(body []string, want ...string) bool {
 // answer's lines, led by the member and the text that cannot be read when
 // the answer has members.
 func (j *JunosCLI) commitRefusal(line string, body []string, want ...string) error {
-	_, why := readCommitted(body, want...)
+	_, why := readCommitted(body, j.memberSet(), want...)
 	return answerErrorWhy(line, body, j.m, why)
 }
 
@@ -817,7 +842,7 @@ func (j *JunosCLI) CommitConfirmed(ctx context.Context, minutes int, id, user st
 	if err != nil {
 		return err
 	}
-	if !committedAnswer(body, plan.ApplyConfirmedNote(minutes), textCommitComplete) {
+	if !j.commitOK(body, plan.ApplyConfirmedNote(minutes), textCommitComplete) {
 		return j.commitRefusal(line, body, plan.ApplyConfirmedNote(minutes), textCommitComplete)
 	}
 	pending, err := j.heldPending()
@@ -838,7 +863,7 @@ func (j *JunosCLI) Confirm(ctx context.Context, id, user string) error {
 	if err != nil {
 		return err
 	}
-	if !committedAnswer(body, textCommitComplete) {
+	if !j.commitOK(body, textCommitComplete) {
 		return j.commitRefusal(line, body, textCommitComplete)
 	}
 	return nil
@@ -921,7 +946,7 @@ func (j *JunosCLI) undo(ctx context.Context, id string, banner bool) error {
 	if err != nil {
 		return err
 	}
-	if !committedAnswer(body, textCommitComplete) {
+	if !j.commitOK(body, textCommitComplete) {
 		return j.commitRefusal(line, body, textCommitComplete)
 	}
 	return nil
