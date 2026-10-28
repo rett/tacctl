@@ -56,6 +56,13 @@ tacctl/
   production device: prepare the files and let the user apply them.
 - Every user-visible change gets a numbered CHANGELOG item and updates
   `man/tacctl.1` and the matching `docs/` page in the same change.
+- The one-line description of a command or a flag (what Tab, `?`, the
+  completion scripts and `help` list) is imperative, at most 72 characters
+  (aim for 60), with no role or tier word, and a flag's text does not open
+  with the verbs it applies to; the rest goes to the verb's usage block, `help
+  <verb>` and the man page. `TestStyleRatchets` holds this with the lists in
+  `internal/cli/testdata/style/`, which only shrink (`go test ./internal/cli
+  -run TestStyleRatchets -update-style` drops the entries that are fixed).
 - No secret, hash, password or community string in any log line, test
   golden or doc example.
 - Gates: build, gofmt, `go vet`, `make lint`, Go tests (`make gate-go`,

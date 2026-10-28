@@ -1,0 +1,193 @@
+# Flags ('command words flag') whose description opens with the verbs it applies to. This list only shrinks.
+breakglass hold --reason
+breakglass list --json
+config cisco --legacy
+config cisco --name
+config cisco --protocol
+config cisco --scope
+config cisco --server
+config cisco --snmp-location
+config cisco --source
+config cisco --staging
+config juniper --name
+config juniper --protocol
+config juniper --scope
+config juniper --server
+config juniper --snmp-location
+config juniper --source
+config juniper --staging
+config linux script --method
+config linux script --scope
+config linux script --server
+config snmp community --stdin
+config snmp v3-user --stdin
+config wti --name
+config wti --protocol
+config wti --scope
+config wti --server
+config wti --snmp-location
+config wti --source
+config wti --staging
+device add --allow-generic
+device add --ios-syntax
+device address --apply
+device address -y
+device block --file
+device block -y
+device check --all
+device check --json
+device collect --login
+device collect --register
+device collect -y
+device config apply --all
+device config apply --differs
+device config apply --exit-code
+device config apply --ip
+device config apply --json
+device config apply --name
+device config apply --pull
+device config apply --scope
+device config apply --stale
+device config apply --transport
+device config apply --vendor
+device config apply -y
+device config diff --all
+device config diff --differs
+device config diff --ip
+device config diff --json
+device config diff --login
+device config diff --name
+device config diff --scope
+device config diff --stale
+device config diff --transport
+device config diff --vendor
+device config forget --all
+device config list --differs
+device config list --ip
+device config list --json
+device config list --name
+device config list --scope
+device config list --stale
+device config list --vendor
+device config plan --all
+device config plan --differs
+device config plan --ip
+device config plan --login
+device config plan --name
+device config plan --restore-point
+device config plan --scope
+device config plan --stale
+device config plan --transport
+device config plan --vendor
+device config pull --all
+device config pull --differs
+device config pull --ip
+device config pull --json
+device config pull --login
+device config pull --name
+device config pull --scope
+device config pull --stale
+device config pull --transport
+device config pull --vendor
+device config shapes --show
+device config shapes -y
+device config show --legacy
+device description --apply
+device discover --backend
+device enroll --host-key
+device enroll --legacy-ssh
+device enroll --name
+device enroll --vendor
+device export --json
+device hostkey -y
+device import --allow-generic
+device import -y
+device ios-syntax --apply
+device list --json
+device location --apply
+device location --from-device
+device location -y
+device netconf --apply
+device netconf --connection-limit
+device netconf --rate-limit
+device onboard --check
+device onboard --login
+device remove --all
+device remove -y
+device rename --allow-generic
+device scan --backend
+device show --json
+device snmp --reveal
+device snmp --stdin
+device support-bundle --login
+device support-bundle --out
+device support-bundle --vendor
+device sync --apply
+device sync -y
+device vendor --from-device
+device vendor -y
+emergency lockdown --all-scopes
+emergency lockdown --dry-run
+emergency lockdown --json
+emergency lockdown --reason
+emergency lockdown --tier
+group add --tier
+group add --wti-level
+group commands add --action
+group commands add --before
+group commands add --first
+group commands add --match
+group commands remove --action
+group commands remove --all
+group commands remove --match
+group commands reset --dry-run
+group commands reset --yes
+group commands seed --force
+group preset roles --dry-run
+group preset roles --force
+group privilege reset --dry-run
+group privilege reset --yes
+group privilege seed --force
+group reset --dry-run
+group reset --only
+group reset --preset
+group reset --yes
+host enroll --allow-uid-mismatch
+host enroll --build-on-host
+host enroll --remove-home
+host enroll --staging
+host enroll -y
+host forget -y
+host list --json
+host move --allow-uid-mismatch
+host move --remove-home
+host move -y
+host provisioner --dry-run
+host provisioner --key
+host provisioner --password
+host provisioner --remove-home
+host provisioner --remove-old
+host provisioner --yes
+host rename -y
+host show --all
+host show --check
+host show --json
+host sync --allow-uid-mismatch
+host sync --remove-home
+log clear --force
+log tail -f
+scope add --default
+scope add --prefixes
+scope add --protocols
+scope add --secret
+scope add --vendor-attrs
+scope block --file
+scope block -y
+scope breakglass --role
+scope netconf --connection-limit
+scope netconf --rate-limit
+scope prefixes --all
+scope prefixes --force
+scope remove --force
+scope secret --stdin
+scope snmp --stdin
