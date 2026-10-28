@@ -63,6 +63,7 @@ What a sync does:
 |---|---|
 | New in the host's scope | Account created (with a UID consistent across hosts). A user name with a period is skipped with a warning: it is no Linux account name. |
 | Disabled | Account expired: no login, ssh keys included. Files kept. |
+| Must change the password | As disabled, on every host but the tacctl server, until the user changes it there; the next sync opens it again. `host show` counts it with the disabled accounts. |
 | Re-enabled | Restored |
 | Removed, or out of the scope | Account deleted. The home is deleted only if you agree (asked at a terminal, or `--remove-home`). Otherwise it is moved to `/home/.tacctl-removed/`. |
 | Renamed | Account renamed by UID. The home stays where it is. |
