@@ -132,7 +132,7 @@ func readCommitted(body []string, want ...string) (ok bool, why string) {
 			unfinished = append(unfinished, m.label)
 		}
 	}
-	if len(plain) > 0 && !(len(notes) > 0 && !inMembers && exactly(plain, notes...)) {
+	if len(plain) > 0 && (len(notes) == 0 || inMembers || !exactly(plain, notes...)) {
 		return false, fmt.Sprintf("a line %q outside the members' answers", cut(plain[0]))
 	}
 	if len(unfinished) > 0 {
