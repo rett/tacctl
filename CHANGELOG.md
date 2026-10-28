@@ -663,6 +663,62 @@ current behaviour; this file is where history lives.
     them).` `--json` has the `secrets` object (`present`, `kinds`,
     `not_visible`; omitted when there is none).
 
+36. **The pre-flight reads every commit command the device prints.** `device
+    config apply` (and `--pull`) failed with `show system commit: entry 0 ends
+    "commit synchronize": the device's answer is not recognised` on a Junos
+    device whose commits end in `synchronize` (a dual-routing-engine or
+    virtual-chassis device). The newest entry of `show system commit` is now
+    read as a commit command in all its spellings: `commit` with `and-quit`,
+    `synchronize`, `force`, `full`, `prepare` and `at <time>` in any order,
+    and `commit confirmed, rollback in <n>mins` followed by the same words
+    (a confirmed commit still counts as pending only as before); an entry
+    with no text after `via <way>` (a commit of the system) is an ordinary
+    commit. A text that is no commit command is still refused, and the error
+    names the entry, its time, user and way, and the text. A time written
+    with a numeric zone (`+03`, `+0530`) is read with its offset.
+
+37. **The apply reads the answers of a device with several members.** On a
+    Junos virtual chassis (or two routing engines) `commit check` prints a
+    block for each member (`fpc0:` and then `configuration check succeeds`),
+    which `device config apply` refused as an answer it did not know
+    (`check: fpc0:; configuration check succeeds; fpc1: ...`). The members are
+    now the blocks `show version` lists (`fpc0:`, `re0:` or `node0:`, one
+    kind per device), and the answers of `commit check`, `commit confirmed`
+    and `commit` must name exactly those members: each with the check's
+    success and, for a commit, the commit's after it (on the command line the
+    check's block is optional in a commit's answer). A member that is
+    missing, unexpected or answers otherwise (an error, a warning, no text, a
+    label of another kind) fails the step, and the error names the member and
+    its text. A single device's answers read as before, and so do those of two
+    routing engines that commit without `commit synchronize`: they answer
+    with the single device's lines, which are read as before, or with exactly
+    their blocks. Over NETCONF the reply is read member by member
+    (`routing-engine` elements named by the label): the check's success and
+    then the commit's, or the commit's alone, an error inside an element
+    names the member. A NETCONF reply of a virtual chassis or a cluster that
+    names no member is refused, because nothing proves the other members
+    committed (a confirmed commit is left to roll back by itself); the
+    command line transport, the default, can be used. For two routing engines
+    a reply with no member element, or one, is read as before. What is
+    inferred and unverified: no capture exists of the commits' replies on a
+    device with members, so their shape (the check's blocks, the confirmed
+    note, the `commit complete` blocks) is taken from the check's; no capture
+    exists of the NETCONF reply, including the check's, nor of the NETCONF
+    `show version` reply, whose text (the `output` elements only) gives the
+    NETCONF member set, and a chassis may answer with a
+    `multi-routing-engine-results` of `multi-routing-engine-item` elements,
+    each with a `re-name` and its `output`, which is read into the same
+    labels from the documented shape, not from a capture.
+
+38. **The end of a pending window is the device's own wall clock.** `PENDING
+    until <time>` and the refusals that name a pending commit computed the end
+    of the window by converting the time of the entry, which moved the wall
+    clock of a device whose zone is written `GMT+3` or `GMT-3` by the hours of
+    the zone (a window of 5 minutes from 14:00 read 17:05 or 11:05). The end is
+    now the entry's wall clock exactly as the device printed it, the window
+    added, and the zone as printed, for every form (an abbreviation, `UTC`,
+    `GMT+3`, `+03`, `+0530`).
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

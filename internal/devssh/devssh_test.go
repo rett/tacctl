@@ -715,3 +715,38 @@ set system login message &quot;hi &lt;there&gt;&quot;
 		t.Errorf("a truncated reply: %v", err)
 	}
 }
+
+// A device with several members may answer a command with one item for each
+// member (the shape is inferred from Junos's documentation; no capture of
+// one): the text of an item is led by the member's label, the block a
+// command line prints, and a reply of the single device is as it was.
+func TestReplyTextMultiRoutingEngine(t *testing.T) {
+	const reply = `<rpc-reply><multi-routing-engine-results>` +
+		`<multi-routing-engine-item><re-name>fpc0</re-name><output>Hostname: jsw1.example.net
+Model: ex4600-40f
+Junos: 21.4R3-S2.4
+</output></multi-routing-engine-item>` +
+		`<multi-routing-engine-item><re-name>fpc1</re-name><output>Hostname: jsw1.example.net
+Model: ex4600-40f
+</output><output>Junos: 21.4R3-S2.4</output></multi-routing-engine-item>` +
+		`</multi-routing-engine-results></rpc-reply>`
+	text, err := devssh.ReplyText(reply)
+	const want = "fpc0:\nHostname: jsw1.example.net\nModel: ex4600-40f\nJunos: 21.4R3-S2.4\n" +
+		"fpc1:\nHostname: jsw1.example.net\nModel: ex4600-40f\nJunos: 21.4R3-S2.4"
+	if err != nil || text != want {
+		t.Errorf("%q %v", text, err)
+	}
+	// an item with no name, and a configuration reply, add no label
+	text, err = devssh.ReplyText(`<rpc-reply><multi-routing-engine-results><multi-routing-engine-item>` +
+		`<output>a
+</output></multi-routing-engine-item></multi-routing-engine-results></rpc-reply>`)
+	if err != nil || text != "a\n" {
+		t.Errorf("no name: %q %v", text, err)
+	}
+	text, err = devssh.ReplyText(`<rpc-reply><multi-routing-engine-results><multi-routing-engine-item><re-name>fpc0</re-name>` +
+		`<configuration-output>x
+</configuration-output></multi-routing-engine-item></multi-routing-engine-results></rpc-reply>`)
+	if err != nil || text != "x\n" {
+		t.Errorf("configuration text: %q %v", text, err)
+	}
+}

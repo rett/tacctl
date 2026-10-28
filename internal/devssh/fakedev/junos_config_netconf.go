@@ -363,15 +363,44 @@ func (ns *nsession) commit(op xnode) (string, int) {
 		}
 		return b.String(), dropNone
 	}
-	if op.XMLName.Local == "commit" {
+	members := d.answerMembers()
+	chassis := len(members) > 0
+	if op.XMLName.Local == "commit" && !chassis {
 		return "<ok/>", d.commitDrop(confirmed && !check)
 	}
-	mark := "<commit-success/>"
-	if check {
-		mark = "<commit-check-success/>"
+	if !chassis {
+		members = []jmember{{label: "re0"}}
 	}
-	return "<commit-results><routing-engine><name>re0</name>" + mark + "</routing-engine></commit-results>",
-		d.commitDrop(confirmed && !check)
+	// a member's element holds its success, or its <rpc-error> when it fails
+	// its check; a commit's reply has the check's elements and then the
+	// commit's, as the command line's has the check's blocks and then the
+	// commit's [inferred: no capture of a device with members]
+	element := func(m jmember, mark, knob string) string {
+		if t, bad := d.memberText(knob, m.label); bad {
+			if knob == "chassis.check" {
+				return nsError("error", "operation-failed", t, "[edit]", "")
+			}
+			return ""
+		}
+		return mark
+	}
+	var b strings.Builder
+	round := func(mark, knob string) {
+		for _, m := range members {
+			b.WriteString("<routing-engine><name>" + m.label + "</name>" + element(m, mark, knob) + "</routing-engine>")
+		}
+	}
+	if o.badMember {
+		round("<commit-check-success/>", "chassis.check")
+		return "<commit-results>" + b.String() + "</commit-results>", dropNone
+	}
+	if chassis || check {
+		round("<commit-check-success/>", "chassis.check")
+	}
+	if !check {
+		round("<commit-success/>", "chassis.commit")
+	}
+	return "<commit-results>" + b.String() + "</commit-results>", d.commitDrop(confirmed && !check)
 }
 
 func (ns *nsession) discard() string {

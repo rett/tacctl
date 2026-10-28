@@ -121,6 +121,11 @@ func parseVersion(out string) (Identity, error) {
 		return Identity{}, answerError("show version", ls, nil)
 	}
 	var id Identity
+	labels, err := memberLabels(ls)
+	if err != nil {
+		return Identity{}, err
+	}
+	id.Members = labels
 	set := func(dst *string, v string) error {
 		if *dst != "" && *dst != v {
 			return fmt.Errorf("show version: two values %q and %q: %w", cut(*dst), cut(v), ErrUnrecognised)
@@ -218,11 +223,19 @@ func parseHistory(out string) (History, error) {
 			if e.Time.IsZero() {
 				return nil, fmt.Errorf("show system commit: a time %q: %w", cut(m[2]), ErrUnrecognised)
 			}
+			if reGMTZone.MatchString(m[2]) {
+				// Go reads 'GMT+3' as GMT shifted by three hours east and moves
+				// the wall clock; POSIX means three hours west, and nothing
+				// shows which the device means. The offset is unknown: the
+				// instant is the wall clock as UTC, and nothing compares it
+				// with the clock of the host (Until writes the wall clock).
+				e.Time, _ = time.Parse(time.DateTime, m[2][:len(time.DateTime)])
+			}
 			if tail := strings.TrimSpace(m[5]); tail != "" {
-				if r := reRollbackIn.FindStringSubmatch(tail); r != nil {
-					e.RollbackIn, _ = strconv.Atoi(r[1])
+				if mins, ok := commitText(tail); ok {
+					e.RollbackIn = mins
 				} else if seq == 0 {
-					return nil, fmt.Errorf("show system commit: entry 0 ends %q: %w", cut(tail), ErrUnrecognised)
+					return nil, fmt.Errorf("show system commit: entry 0 (%s by %s via %s) ends with %q, which is not a commit command the pre-flight knows: %w", cut(m[2]), cut(m[3]), cut(m[4]), cut(tail), ErrUnrecognised)
 				}
 			}
 			h = append(h, e)
@@ -252,6 +265,38 @@ func parseHistory(out string) (History, error) {
 		return nil, fmt.Errorf("show system commit: no entry: %w", ErrUnrecognised)
 	}
 	return h, nil
+}
+
+// commitText reads the text a commit command leaves at the end of an entry
+// of 'show system commit' ('commit', 'commit and-quit', 'commit synchronize',
+// 'commit confirmed, rollback in 5mins synchronize', 'commit at "02:00"
+// force', ...): the confirmed label, when there is one, then the words and
+// the time in any order. ok is false when the text is no commit command the parser
+// knows; mins is the window of a confirmed commit (0: not confirmed).
+func commitText(tail string) (mins int, ok bool) {
+	rest, found := strings.CutPrefix(strings.TrimSpace(tail), "commit")
+	if !found || (rest != "" && rest[0] != ' ' && rest[0] != '\t') {
+		return 0, false
+	}
+	rest = strings.TrimLeft(rest, " \t")
+	// the confirmed commit's label comes first, as the device prints it
+	if m := reEntryConfirmed.FindStringSubmatch(rest); m != nil {
+		mins, _ = strconv.Atoi(m[1])
+		rest = strings.TrimLeft(rest[len(m[0]):], " \t")
+	}
+	for rest != "" {
+		var m []string
+		switch {
+		case reEntryWord.MatchString(rest):
+			m = reEntryWord.FindStringSubmatch(rest)
+		case reEntryAt.MatchString(rest):
+			m = reEntryAt.FindStringSubmatch(rest)
+		default:
+			return 0, false
+		}
+		rest = strings.TrimLeft(rest[len(m[0]):], " \t")
+	}
+	return mins, true
 }
 
 // parseAuthorization reads 'show cli authorization': the class from the

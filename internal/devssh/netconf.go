@@ -470,12 +470,23 @@ func decodeXML(raw []byte, v any) error {
 // (Junos wraps a command's <configuration-output> in a
 // <configuration-information> element), concatenated (the XML escapes are
 // undone). It is an error for a reply to hold none of them.
+//
+// A device with several members may answer a command with a
+// <multi-routing-engine-results> of <multi-routing-engine-item> elements,
+// each with the member's <re-name> and its <output>. The text of such an
+// item is then led by the line '<re-name>:', the block a command line prints
+// for the member ('fpc0:'), so the same readers take both. [Inferred from
+// the shape Junos documents for such a reply: no capture of one.]
 func ReplyText(reply string) (string, error) {
 	d := xml.NewDecoder(strings.NewReader(reply))
 	d.CharsetReader = func(_ string, in io.Reader) (io.Reader, error) { return in, nil }
 	var b strings.Builder
 	found := false
 	depth := 0 // nesting level inside a text element, 0 outside
+	inItem := false
+	inName := false
+	name := ""
+	labelled := false // the item's label is written
 	for {
 		tok, err := d.Token()
 		if errors.Is(err, io.EOF) {
@@ -489,16 +500,35 @@ func ReplyText(reply string) (string, error) {
 			switch {
 			case depth > 0:
 				depth++
+			case t.Name.Local == "multi-routing-engine-item":
+				inItem, name, labelled = true, "", false
+			case inItem && t.Name.Local == "re-name":
+				inName, name = true, ""
 			case isReplyTextElement(t.Name.Local):
 				depth, found = 1, true
+				if inItem && t.Name.Local == "output" && name != "" && !labelled {
+					if s := b.String(); s != "" && !strings.HasSuffix(s, "\n") {
+						b.WriteString("\n")
+					}
+					b.WriteString(name + ":\n")
+					labelled = true
+				}
 			}
 		case xml.EndElement:
-			if depth > 0 {
+			switch {
+			case depth > 0:
 				depth--
+			case t.Name.Local == "re-name":
+				inName = false
+			case t.Name.Local == "multi-routing-engine-item":
+				inItem = false
 			}
 		case xml.CharData:
-			if depth > 0 {
+			switch {
+			case depth > 0:
 				b.Write(t)
+			case inName:
+				name += strings.TrimSpace(string(t))
 			}
 		}
 	}

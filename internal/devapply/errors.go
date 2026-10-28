@@ -73,19 +73,30 @@ var (
 
 // reHistoryEntry is one entry of 'show system commit':
 // '0   2026-10-13 14:12:01 UTC by alice via cli commit confirmed, rollback in 10mins'.
-var reHistoryEntry = regexp.MustCompile(`^(\d+)\s+(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?: [A-Za-z][A-Za-z0-9+-]*)?) by (\S+) via (\S+)(?:\s+(.*))?$`)
+var reHistoryEntry = regexp.MustCompile(`^(\d+)\s+(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?: (?:[A-Za-z][A-Za-z0-9+-]*|[+-]\d\d(?:\d\d)?))?) by (\S+) via (\S+)(?:\s+(.*))?$`)
+
+// reGMTZone is a time that ends in a zone written 'GMT+3' or 'GMT-3'.
+var reGMTZone = regexp.MustCompile(` GMT[+-][0-9]+$`)
 
 // reHistoryRescue is the line 'show system commit' ends with when a rescue
 // configuration is saved [C: 'rescue 2024-01-04 11:42:38 UTC by root via
 // cli']. It is a marker, no entry of the history.
 var reHistoryRescue = regexp.MustCompile(`^rescue\s+\d{4}-\d\d-\d\d \d\d:\d\d:\d\d \S+ by \S+ via \S+(\s.*)?$`)
 
-// reRollbackIn is the tail of a confirmed commit's entry.
-var reRollbackIn = regexp.MustCompile(`^commit confirmed, rollback in (\d+) ?mins?$`)
+// The pieces of the text a commit command leaves at the end of an entry of
+// 'show system commit' (commitText reads them): after 'commit', in the order
+// the operator typed them, a word the command takes ('and-quit',
+// 'synchronize', 'force', 'prepare', ...), 'confirmed, rollback in <n>mins'
+// and 'at <time>'. A plain commit prints no text at all.
+var (
+	reEntryWord      = regexp.MustCompile(`^(?:and-quit|synchronize|force|prepare|full)(?:\s|$)`)
+	reEntryConfirmed = regexp.MustCompile(`^confirmed, rollback in (\d+) ?mins?(?:\s|$)`)
+	reEntryAt        = regexp.MustCompile(`^at (?:"[^"]*"|reboot|(?:\d{4}-\d\d-\d\d )?\d\d:\d\d(?::\d\d)?)(?:\s|$)`)
+)
 
-// historyTimeLayouts are the layouts of an entry's time (with a zone
-// abbreviation, or without one).
-var historyTimeLayouts = []string{"2006-01-02 15:04:05 MST", "2006-01-02 15:04:05"}
+// historyTimeLayouts are the layouts of an entry's time: with a numeric zone
+// ('+03', '+0530'), with a zone abbreviation, or without a zone.
+var historyTimeLayouts = []string{"2006-01-02 15:04:05 -0700", "2006-01-02 15:04:05 -07", "2006-01-02 15:04:05 MST", "2006-01-02 15:04:05"}
 
 // reAuthClass finds the class on the first line of 'show cli authorization'
 // ('Current user: alice login: alice class: super-user'; a TACACS+ login
@@ -244,6 +255,16 @@ func answerError(cmd string, lines []string, m *masker) *AnswerError {
 		kept = append(kept, cut(m.text(strings.TrimSpace(l))))
 	}
 	return &AnswerError{Cmd: m.text(cmd), Lines: kept, Row: row, base: base}
+}
+
+// answerErrorWhy is answerError for an answer with members: why, the member
+// and the text that cannot be read, leads the lines.
+func answerErrorWhy(cmd string, lines []string, m *masker, why string) *AnswerError {
+	e := answerError(cmd, lines, m)
+	if why != "" {
+		e.Lines = append([]string{cut(m.text(why))}, e.Lines...)
+	}
+	return e
 }
 
 // cut shortens a line and replaces its control characters.
