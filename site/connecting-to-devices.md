@@ -9,7 +9,7 @@ doctype: how-to
 
 # Connecting to Devices
 
-*tacctl ssh by name, plain ssh with pinned keys, and what to do when a connection is refused · Checked against tacctl 0.2.19*
+*tacctl ssh by name, plain ssh with pinned keys, and what to do when a connection is refused · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-connecting-to-devices.pdf){: .pdf-link }
 
@@ -59,15 +59,19 @@ How the login works:
 - ssh accepts only the host keys pinned for that device in the registry.
 - It needs a terminal.
 
-**Many logins in a row?** Start the shell with the password cache, where
-your tier is allowed it, and type your password once per session:
+**Many logins in a row?** Turn on the password cache, where your tier is
+allowed it, and type your password once per session
+([Getting Started](getting-started.md) §1.3):
 
 ```text
-tacctl shell --password-cache
-tacctl> ssh sw1
-tacctl> ssh rtr1
-tacctl> console forget          # drop the cached password now
+tacacs> console password-cache on   # once: saved for your later sessions too
+tacacs> ssh sw1
+tacacs> ssh rtr1
+tacacs> console forget              # drop the cached password now
 ```
+
+In a system shell, `tacctl shell --password-cache` does the same for one
+shell session.
 
 ---
 
