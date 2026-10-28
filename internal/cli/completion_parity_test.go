@@ -204,3 +204,39 @@ func TestScriptsDescribeDeviceNames(t *testing.T) {
 		}
 	}
 }
+
+// 'completion bash|zsh|fish' is a command of the top level in both
+// surfaces, with the shells as its words; 'shell' is offered by the
+// scripts only (it cannot nest in the shell).
+func TestCompletionIsOfferedInBothSurfaces(t *testing.T) {
+	invA, rootA := surfaceInv(t)
+	invB, rootB := surfaceInv(t)
+	a, b := scriptOffers(t, invA, rootA, nil, ""), shellOffers(invB, rootB, nil, "")
+	for name, offers := range map[string]map[string]string{"scripts": a, "shell": b} {
+		if offers["completion"] != "Print the shell completion script" {
+			t.Errorf("%s: completion is %q", name, offers["completion"])
+		}
+	}
+	if _, ok := a["shell"]; !ok {
+		t.Error("the scripts do not offer shell")
+	}
+	if _, ok := b["shell"]; ok {
+		t.Error("the shell offers shell")
+	}
+	for name, offers := range map[string]map[string]string{
+		"scripts": scriptOffers(t, invA, rootA, []string{"completion"}, ""),
+		"shell":   shellOffers(invB, rootB, []string{"completion"}, ""),
+	} {
+		if got := flagWords(offers); len(got) != 0 {
+			t.Errorf("%s: completion offers the flags %v", name, got)
+		}
+		var ws []string
+		for w := range offers {
+			ws = append(ws, w)
+		}
+		slices.Sort(ws)
+		if !slices.Equal(ws, []string{"bash", "fish", "zsh"}) {
+			t.Errorf("%s: completion offers %v", name, ws)
+		}
+	}
+}

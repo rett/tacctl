@@ -48,6 +48,8 @@ var topSpecs = map[string]Spec{
 	"uninstall": {Flags: []Flag{{Names: []string{"-y", "--yes"}}}},
 	"rollback":  rollbackSpec,
 	"version":   {Flags: []Flag{{Names: []string{"--long"}}}},
+	// completion <shell>: the word is one of the shells.
+	"completion": {MinArgs: 1, MaxArgs: 1, Args: []string{"bash|zsh|fish"}},
 }
 
 // completionShells are the shells 'tacctl completion' writes a script for.
@@ -61,8 +63,7 @@ const completionUsage = "Usage: tacctl completion bash|zsh|fish"
 // stdout. It runs as the invoking user (reexec.go), reads no state and has
 // no tier gate: the script is the same for everyone.
 func completionCmd(inv *invocation) *cobra.Command {
-	c := verb("completion bash", "Print the shell completion script")
-	c.Hidden = true
+	c := verb("completion bash|zsh|fish", "Print the shell completion script")
 	c.RunE = func(_ *cobra.Command, args []string) error {
 		shell := arg(args, 0)
 		if !slices.Contains(completionShells, shell) {

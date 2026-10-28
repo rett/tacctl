@@ -311,7 +311,7 @@ func TestCompleteOffersNoHiddenOrRemovedWords(t *testing.T) {
 		got, _ := completeWords(t, liveNames, words...)
 		for _, w := range got {
 			switch w {
-			case "set", "_phase", "_completion-names", "completion", "help", "none":
+			case "set", "_phase", "_completion-names", "help", "none":
 				t.Errorf("%q offers %q", words, w)
 			}
 			if w == "clear" && words[0] != "config" {

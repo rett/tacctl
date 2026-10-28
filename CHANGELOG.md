@@ -58,6 +58,14 @@ current behaviour; this file is where history lives.
    short. The names still come from `sudo -n tacctl _completion-names`, which
    takes `--desc-short` for this (the same sudoers rule covers it).
 
+5. **`completion` is offered in the scripts as it is in the shell.** The
+   shell listed `completion bash|zsh|fish` among the commands; the bash, zsh
+   and fish scripts hid it. Both offer it now, with the three shells as its
+   words (`tacctl completion <Tab>`). It is a readonly-tier row of the tier
+   table, like `hash`: it runs as the invoking user and reads no state, so
+   this changes no permission. `shell` stays offered by the scripts only,
+   as it cannot nest in the shell.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

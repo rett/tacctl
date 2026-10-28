@@ -199,6 +199,7 @@ var Rules = []Rule{
 	{Tier: Readonly, Cmd: "--version", AnySub: true},
 	{Tier: Readonly, Cmd: "-v", AnySub: true},
 	{Tier: Readonly, Cmd: "hash", AnySub: true},
+	{Tier: Readonly, Cmd: "completion", AnySub: true},
 
 	{Tier: Operator, Cmd: "log", Sub: "tail", Sudoers: []string{"log tail", "log tail *"}},
 	{Tier: Operator, Cmd: "log", Sub: "search", Sudoers: []string{"log search *"}, Wrap: true},
