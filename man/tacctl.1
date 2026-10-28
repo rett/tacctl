@@ -7201,7 +7201,15 @@ the notice. The built-in list can be extended with
 Host keys are pinned when a device is registered: tacctl reads the keys the
 device offers with
 .BR ssh\-keyscan (1)
-(as root, outbound, without logging in; for a
+(as root, outbound, without logging in; a device that accepts the
+connection but gives no key to the scan of all the key types, because it
+limits the simultaneous connections
+.B ssh\-keyscan
+opens or drops its long offer, is asked again one key type at a time,
+ed25519, ecdsa, rsa, each with
+.BR "\-T 3" ,
+and the keys of every type that answers are pinned; a device that refuses the
+connection or does not answer is not asked again; for a
 .B legacy\-ssh
 device that
 .B ssh\-keyscan
@@ -7520,7 +7528,10 @@ and ssh port are read with
 (with
 .BR \-\-legacy\-ssh ,
 .B ssh\-rsa
-is asked for by name too, and when
+is asked for by name too; a device that accepts the connection but gives no
+key is asked again one key type at a time, each with
+.BR "\-T 3" ,
+and the keys of every type that answers are pinned; and when
 .B ssh\-keyscan
 reads no key, tacctl's own ssh client reads them, stopping at the host key
 without sending a password) and pinned. Their

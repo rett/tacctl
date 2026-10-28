@@ -243,6 +243,27 @@ current behaviour; this file is where history lives.
     renders no filter in either mode. The strict filter has not yet been
     checked on a Junos device.
 
+17. **A device that does not answer the combined host-key scan is asked one
+    key type at a time.** `ssh-keyscan -t ed25519,ecdsa,rsa` opens one
+    connection per type at once, and a Juniper SRX answered it with no key
+    (`ssh-keyscan -t ed25519 <address>` by hand worked), so `device add`,
+    `device enroll`, `device collect`, `device onboard`, `device hostkey
+    accept|set`, `device scan`, `device check` and the pin of `host enroll`
+    and `host sync` could offer no key to accept. When the combined
+    scan reads no key from a device that accepted the connection, tacctl now
+    runs `ssh-keyscan -T 3 -t <type>` for `ed25519`, `ecdsa` and `rsa` in turn
+    (and `ssh-rsa` for a `legacy-ssh` device), one after the other, and
+    returns the keys of every type that answered: a type that fails does not
+    fail the scan, so the pinned set is as complete as the combined scan's.
+    A device that refused the connection, timed out or did not resolve costs
+    its one `ssh-keyscan`, as before: ssh-keyscan's messages tell them apart
+    (its banner line `# <address>:<port> SSH-2.0-...`, or `Connection closed
+    by remote host`, `Connection reset by peer` or a failed negotiation, say
+    the server answered; its exit status does not, being the same for both),
+    so the re-scan of every device (`device scan`, `device check`) stays as
+    fast and as parallel (eight at a time) for unreachable devices, and a
+    silent one costs at most 9 seconds more (12 with `legacy-ssh`).
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config
