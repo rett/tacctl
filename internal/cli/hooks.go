@@ -38,6 +38,8 @@ type hooks struct {
 	devicePasswords func(inv *invocation) devicePasswords
 	// localPasswords is the source of a local account's password.
 	localPasswords func(inv *invocation, account, where string) *terminalPasswords
+	// passwordTTY is the terminal a password is typed at (nil file: none).
+	passwordTTY func() (*os.File, func())
 	// passwordPrompt reads a line from a terminal without echo.
 	passwordPrompt func(tty *os.File, prompt string) ([]byte, error)
 	// factsTimeout bounds the fact commands of a pull (0: 15 seconds).
