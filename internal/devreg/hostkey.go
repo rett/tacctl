@@ -358,7 +358,7 @@ func ScanWith(ctx context.Context, r execx.Runner, address string, port int, leg
 			return found, nil
 		}
 	}
-	if fallback == nil || !(legacy || (noAnswer && reached)) {
+	if fallback == nil || (!legacy && (!noAnswer || !reached)) {
 		return nil, scanFailure(err, tried)
 	}
 	fk, ferr := fallback(ctx, address, port)
