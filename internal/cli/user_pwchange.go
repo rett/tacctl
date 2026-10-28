@@ -40,20 +40,36 @@ type pwBarrier struct {
 	exempt bool
 }
 
-// pwBarrier is the barrier of a user, existing or about to be: its group, its
+// pwCtx is what the barrier and the findings need, read once: the model and
+// this server's registry entry.
+type pwCtx struct {
+	inv      *invocation
+	m        *model.Model
+	entry    hosts.Entry
+	enrolled bool
+	err      error
+}
+
+// pwContext reads the registry for a run of questions about the model m.
+func (inv *invocation) pwContext(m *model.Model) *pwCtx {
+	e, ok, err := inv.localHost()
+	return &pwCtx{inv: inv, m: m, entry: e, enrolled: ok, err: err}
+}
+
+// barrier is the barrier of a user, existing or about to be: its group, its
 // scopes and whether it can log in at all.
-func (inv *invocation) pwBarrier(m *model.Model, name, group string, scopes []string, disabled bool) pwBarrier {
-	if pwchange.GroupTier(inv.app.Conf(), m, group) == tier.Superuser {
+func (c *pwCtx) barrier(name, group string, scopes []string, disabled bool) pwBarrier {
+	if pwchange.GroupTier(c.inv.app.Conf(), c.m, group) == tier.Superuser {
 		return pwBarrier{why: "a superuser is never required to change the password", exempt: true}
 	}
 	if disabled {
 		return pwBarrier{why: "it is disabled, so it cannot log in"}
 	}
-	e, ok, err := inv.localHost()
+	e := c.entry
 	switch {
-	case err != nil:
-		return pwBarrier{why: "the host registry cannot be read (" + msgsJoin(err) + "), so the server's scope is unknown"}
-	case !ok:
+	case c.err != nil:
+		return pwBarrier{why: "the host registry cannot be read (" + msgsJoin(c.err) + "), so the server's scope is unknown"}
+	case !c.enrolled:
 		return pwBarrier{why: "this server is not enrolled (tacctl host enroll --local), so no user has a login on it to change the password at"}
 	case !hosts.LinuxName(name):
 		return pwBarrier{why: "its name is no Linux account name (a period), so it has no login on this server"}
@@ -62,11 +78,16 @@ func (inv *invocation) pwBarrier(m *model.Model, name, group string, scopes []st
 	}
 	srv := pwchange.ServerOf(e)
 	for _, addr := range srv.LoginAddresses() {
-		if got := m.ScopeOf(addr, srv.Protocol); got != e.Scope {
+		if got := c.m.ScopeOf(addr, srv.Protocol); got != e.Scope {
 			return pwBarrier{why: "scope '" + e.Scope + "' does not answer " + addr + " for " + hosts.MethodLabel(e.EffectiveMethod()) + ", where this server's own logins come from, so nobody logs in to it"}
 		}
 	}
 	return pwBarrier{}
+}
+
+// pwBarrier is the barrier of a user, existing or about to be.
+func (inv *invocation) pwBarrier(m *model.Model, name, group string, scopes []string, disabled bool) pwBarrier {
+	return inv.pwContext(m).barrier(name, group, scopes, disabled)
 }
 
 // userBarrier is pwBarrier of a user of the model.
@@ -74,25 +95,35 @@ func (inv *invocation) userBarrier(m *model.Model, u *model.User) pwBarrier {
 	return inv.pwBarrier(m, u.Name, u.Group, u.Scopes, u.IsDisabled())
 }
 
-// sharedScopeNote is the warning that this server's scope answers more than
-// the server: the devices in it still authenticate a user held to a password
-// change, as the renderers can cut by scope only. "" when it does not (or the
-// server is not enrolled).
-func (inv *invocation) sharedScopeNote(m *model.Model) string {
-	e, ok, _ := inv.localHost()
-	if !ok {
-		return ""
+// sharedPrefixes are the prefixes of this server's scope that answer more
+// than the server: the devices in them still authenticate a user held to a
+// password change, as the renderers can cut by scope only. Nil when the scope
+// is the server's alone or the server is not enrolled.
+func (c *pwCtx) sharedPrefixes() []string {
+	if !c.enrolled {
+		return nil
 	}
-	s := m.Scope(e.Scope)
+	s := c.m.Scope(c.entry.Scope)
 	if s == nil {
-		return ""
+		return nil
 	}
-	shared := pwchange.ServerOf(e).SharedPrefixes(s)
+	return pwchange.ServerOf(c.entry).SharedPrefixes(s)
+}
+
+// sharedNote is the warning for a scope that has such prefixes, "" otherwise.
+func (c *pwCtx) sharedNote() string {
+	shared := c.sharedPrefixes()
 	if len(shared) == 0 {
 		return ""
 	}
-	return "Scope '" + e.Scope + "', this server's, also answers " + strings.Join(shared, ", ") + ": a device there still accepts a user who must change the password, " +
+	return "Scope '" + c.entry.Scope + "', this server's, also answers " + strings.Join(shared, ", ") + ": a device there still accepts a user who must change the password, " +
 		"because the user stays in the scope the server's own logins use. Give the server a scope of its own to keep the devices out."
+}
+
+// sharedScopeNote is the warning that this server's scope answers more than
+// the server ("" when it does not, or the server is not enrolled).
+func (inv *invocation) sharedScopeNote(m *model.Model) string {
+	return inv.pwContext(m).sharedNote()
 }
 
 // reportRequired is what a verb says after it has flagged users: they can log
@@ -254,10 +285,15 @@ func plurals(n int, one, many string) string {
 }
 
 // requiredLine is the cell 'user list' adds to the date of a user held to a
-// password change, "" for everyone else.
-func (inv *invocation) requiredLine(m *model.Model, u *model.User) string {
-	if pwchange.Subject(inv.app.Conf(), m, u) {
-		return " (change required)"
+// password change, "" for everyone else: "(change required)", or the words of
+// the standing when the user cannot log in to change it or the devices of a
+// shared scope still accept the password.
+func (c *pwCtx) requiredLine(u *model.User) string {
+	if !pwchange.Subject(c.inv.app.Conf(), c.m, u) {
+		return ""
 	}
-	return ""
+	if t := c.standing(u).text(); t != "" {
+		return " (" + t + ")"
+	}
+	return " (change required)"
 }

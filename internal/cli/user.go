@@ -289,6 +289,7 @@ func (inv *invocation) userList([]string) error {
 		return err
 	}
 	t := ui.NewTable("Users", ui.Left("USERNAME"), ui.Left("UID"), ui.Left("GROUP"), ui.Left("STATUS"), ui.Left("PW CHANGED"), ui.Left("SCOPES"))
+	pw := inv.pwContext(m)
 	for _, row := range m.UserRows() {
 		f := strings.SplitN(row, "|", 5)
 		for len(f) < 5 {
@@ -310,7 +311,7 @@ func (inv *invocation) userList([]string) error {
 				display = f[4]
 			}
 		}
-		t.Add(f[0], inv.userUID(f[0]), f[1], ui.Styled(color, f[2]), f[3]+inv.requiredLine(m, m.User(f[0])), display)
+		t.Add(f[0], inv.userUID(f[0]), f[1], ui.Styled(color, f[2]), f[3]+pw.requiredLine(m.User(f[0])), display)
 	}
 	inv.echo("")
 	inv.write(t.String())
@@ -361,7 +362,14 @@ func (inv *invocation) userShow(args []string) error {
 	if um, _ := inv.model(); um != nil {
 		switch usr := um.User(username); {
 		case pwchange.Subject(inv.app.Conf(), um, usr):
-			inv.echoE("  " + b + "Password change:" + nc + "  " + ui.Red + "required" + nc + " (no device accepts the user until it is changed at this server)")
+			switch st := inv.pwContext(um).standing(usr); st.kind {
+			case pwStranded:
+				inv.echoE("  " + b + "Password change:" + nc + "  " + ui.Red + st.text() + nc + " (" + st.why + ")")
+			case pwShared:
+				inv.echoE("  " + b + "Password change:" + nc + "  " + ui.Red + st.text() + nc + " (" + strings.Join(inv.pwContext(um).sharedPrefixes(), ", ") + ")")
+			default:
+				inv.echoE("  " + b + "Password change:" + nc + "  " + ui.Red + "required" + nc + " (no device accepts the user until it is changed at this server)")
+			}
 		case usr != nil && usr.PasswordChangeRequired:
 			inv.echoE("  " + b + "Password change:" + nc + "  flagged, not required: a superuser is never held to it")
 		}

@@ -708,7 +708,11 @@ Requires: \fBreadonly\fR.
 List all users with name, Linux UID (\- when none is assigned), group, status,
 password change date and scopes. A user who must change the password has
 .B (change required)
-after the date.
+after the date; one who cannot log in to this server to do it has
+.B (flagged, cannot log in to change it)
+and one whom the devices of a scope shared with the server still accept
+.B (flagged, devices in a scope shared with the server still accept the password)
+instead.
 .\" BEGIN GENERATED: command user list
 .RS
 .PP
@@ -721,7 +725,7 @@ Show detailed user info: group, Linux UID, status, password change date and age,
 a line
 .B Password change
 for a user who must change the password (or who is flagged and is a superuser,
-which the flag never binds), last login (the most recent of every enabled backend: the TACACS+
+which the flag never binds; with the reason when the user cannot log in to change it), last login (the most recent of every enabled backend: the TACACS+
 accounting log, the RADIUS auth log), Cisco privilege level, Juniper
 class, and a hash fingerprint. Read-only: does not prompt for the
 password (unlike
@@ -963,7 +967,31 @@ and none when the user has no other scope. This server's logins come from
 .B \-\-server
 when that is another one, which the enrolled scope must answer too. A scope that holds the server together with
 devices cannot be cut apart: those devices still authenticate the user, and
-the command says so, naming the prefixes; give the server a scope of its own.
+the commands say so, naming the prefixes (the ones that flag, a prefix added to
+the server's scope later, and
+.BR "host enroll \-\-local" ),
+as do
+.BR "user list" ,
+.B "user show"
+and
+.BR status ;
+give the server a scope of its own. A user who must change the password and has
+no login on the server could change nothing, so a change that would leave one
+is refused before anything is written, with
+.B "user require\-password\-change <name> off"
+as the way out:
+.B "user scope"
+removing the scope or replacing the list,
+.B "scope prefixes"
+removing a prefix,
+.BR "scope protocols" ,
+and
+.BR "host forget" ,
+.B "host unenroll"
+and
+.B "host enroll \-\-local"
+with another scope or method, while any user is flagged (the backends' files are
+rendered from the server's registration).
 The requirement is stored as
 .B password_change_required
 of the user in

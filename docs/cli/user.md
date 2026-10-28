@@ -170,15 +170,28 @@ only when set.
   changed, and clearing the flag puts the user back. A change of the flag restarts the backend whose
   file changed (see [Service restart](conventions.md)), and none when the user has no scope but the
   server's. A scope that holds the server together with devices cannot be cut apart: the devices in it
-  still accept the user, and the verbs warn and name the prefixes. Give the server a scope of its own
-  (`scope add`, then `host enroll --local --scope <name>`).
+  still accept the user, and the verbs warn and name the prefixes: the ones that flag, a prefix added
+  to the server's scope later (`scope prefixes`), and `host enroll --local`. Give the server a scope
+  of its own (`scope add`, then `host enroll --local --scope <name>`).
+- *A flagged user must be able to log in.* A user who must change the password and has no login on
+  the server (not in its scope, the scope no longer answers the server's addresses, the server not
+  enrolled) could change nothing and enter nothing, so a change that would leave one is refused
+  before anything is written, with the command that lifts the requirement first (`user
+  require-password-change <name> off`): `user scope` removing the scope or replacing the list, `scope
+  prefixes` removing a prefix, `scope protocols`, and `host forget`, `host unenroll` and `host enroll
+  --local` with another scope or method while any user is flagged (the backends' files are rendered
+  from the server's registration, so it is changed with the requirement lifted). `scope rename`
+  renames the registration with the scope, before the backends render.
 - *Commands.* While a password change is required of the caller, and the caller is no superuser,
   every command but `passwd`, `version` and `help` is refused with one message and exit status 1
   (`A password change is required of '<user>': ...`). This covers a plain shell and `ssh <server>
   tacctl ...`; root, a superuser and a local administrator who is no tacctl user are not affected.
   The refusal is logged as `password-change DENY` ([Audit log](../security/audit.md#refusals)).
 - *Listing.* `user list` marks the date of a user who must change the password with `(change
-  required)`, `user show` has a `Password change` line, and `status` counts the users pending.
+  required)`, `user show` has a `Password change` line, and `status` counts the users pending. A
+  flagged user who cannot log in to change it is marked `flagged, cannot log in to change it` (with
+  the reason in `user show`), and one whom devices of a shared scope still accept `flagged, devices in
+  a scope shared with the server still accept the password`; `status` names both groups.
 - *Older releases.* A release before 0.2.20 refuses the key, so every `tacctl rollback` target
   removes it after a snapshot and warns which users get their device access back (see
   [Rolling back](../install/upgrading.md#rolling-back)).

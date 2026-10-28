@@ -1234,14 +1234,25 @@ func (inv *invocation) scopeRenameCheck(old, newName string) error {
 }
 
 // scopeRenameRun is the rename itself, after scopeRenameCheck: the store, the
-// keys of tacctl.yaml and the default-scope marker in one apply (its own
-// snapshot), then the enrolled hosts and staging addresses that name the
-// scope. 'scope rename' and 'host rename' (for the host's own scope) share
-// it.
+// keys of tacctl.yaml, the default-scope marker, and the enrolled hosts and
+// staging addresses that name the scope, in one apply (its own snapshot).
+// 'scope rename' and 'host rename' (for the host's own scope) share it.
 func (inv *invocation) scopeRenameRun(old, newName string) error {
 	a := inv.app
+	hostsMoved := 0
 	if err := inv.applyWith(func() error {
 		if err := inv.mutate(func(s *store.Store) error { return s.ScopeRename(old, newName) }); err != nil {
+			return err
+		}
+		// Enrolled hosts and staging addresses name the scope too: they follow
+		// it (the hosts keep its secret, which the rename does not change).
+		// This is before the backends render, which read this server's
+		// registration to know the scope a user who must change the password
+		// keeps (internal/pwchange): rendered with the old name there, the
+		// user would be left in no scope.
+		n, err := inv.scopeRenameHosts(old, newName)
+		hostsMoved = n
+		if err != nil {
 			return err
 		}
 		if err := inv.scopeConfKeysMove(old, newName); err != nil {
@@ -1255,12 +1266,6 @@ func (inv *invocation) scopeRenameRun(old, newName string) error {
 		}
 		return nil
 	}); err != nil {
-		return err
-	}
-	// Enrolled hosts and staging addresses name the scope too: they follow
-	// it (the hosts keep its secret, which the rename does not change).
-	hostsMoved, err := inv.scopeRenameHosts(old, newName)
-	if err != nil {
 		return err
 	}
 	m, err := inv.model()

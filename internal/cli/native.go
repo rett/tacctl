@@ -178,8 +178,14 @@ func (inv *invocation) storeApply(fn func(*store.Store) error) error {
 // rendered, as the caller says what is left undone).
 func (inv *invocation) storeApplyThen(fn func(*store.Store) error, after func()) error {
 	a := inv.app
+	// a change that would leave a user who must change the password without a
+	// login on this server is refused before anything is written
+	warn, err := inv.pwGuard(fn)
+	if err != nil {
+		return err
+	}
 	a.Audit().Touch()
-	_, err := a.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, func() error {
+	_, err = a.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, func() error {
 		if _, err := store.Mutate(a.Paths.StoreFile, a.MutateOptions(), fn); err != nil {
 			return err
 		}
@@ -188,6 +194,9 @@ func (inv *invocation) storeApplyThen(fn func(*store.Store) error, after func())
 		}
 		return nil
 	})
+	if err == nil && warn != nil {
+		warn()
+	}
 	return err
 }
 

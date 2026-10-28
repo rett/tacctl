@@ -262,8 +262,21 @@ current behaviour; this file is where history lives.
     server's own are the loopback range and that address. The stored scopes are
     not changed; a change of the flag restarts the backend whose file changed
     and nothing when the user has no other scope. A scope that holds the server
-    together with devices cannot be cut apart, and the verbs warn and name its
-    prefixes. A superuser is never held to it: the tier of the user's group
+    together with devices cannot be cut apart: the verbs warn and name its
+    prefixes, a prefix added to the server's scope later warns again, enrolling
+    the server in such a scope warns, and `user list`, `user show` and `status`
+    say `flagged, devices in a scope shared with the server still accept the
+    password`. A user who must change the password and has no login on the
+    server (not in its scope, the scope no longer answers `127.0.0.1`, the
+    server not enrolled) is shown as `flagged, cannot log in to change it`, and
+    a change that would leave one (`user scope ... remove|replace`, `scope
+    prefixes ... remove`, `scope protocols`, a rename) is refused before
+    anything is written, with `tacctl user require-password-change <name>
+    off` as the way out; so is `host forget`, `host unenroll` or `host enroll
+    --local` (the move included) with another scope or method while a user is
+    flagged, because the backends' files are rendered from that registration.
+    `scope rename` renames the server's registration before the backends
+    render. A superuser is never held to it: the tier of the user's group
     decides each time (a render, a login, a command), not when the flag is set,
     so a flagged user moved into a superuser group is exempt and one moved out
     must change the password; the verbs do not set it for a superuser. A user

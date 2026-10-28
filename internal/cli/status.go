@@ -109,6 +109,13 @@ func (inv *invocation) status([]string) error {
 	if merr == nil {
 		if n := len(pwchange.Pending(a.Conf(), m)); n > 0 {
 			inv.echoE("  " + B + "Password change:" + NC + "      " + Y + strconv.Itoa(n) + " pending" + NC + " (no device accepts these users until they change it)")
+			pw := inv.pwContext(m)
+			if names := pw.stranded(); len(names) > 0 {
+				inv.echoE("  " + B + "Password change:" + NC + "      " + R + pwTextStranded + NC + ": " + strings.Join(names, ", "))
+			}
+			if names := pw.shared(); len(names) > 0 {
+				inv.echoE("  " + B + "Password change:" + NC + "      " + Y + pwTextShared + NC + ": " + strings.Join(names, ", "))
+			}
 		}
 	}
 
