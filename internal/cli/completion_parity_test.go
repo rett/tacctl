@@ -46,7 +46,11 @@ func scriptOffers(t *testing.T, inv *invocation, root *cobra.Command, words []st
 		t.Fatalf("__complete %v: %v", words, err)
 	}
 	out := map[string]string{}
-	for _, l := range strings.Split(buf.String(), "\n") {
+	text := buf.String()
+	if len(words) == 0 {
+		text = withoutHelp(text) // as complete() does at the top level
+	}
+	for _, l := range strings.Split(text, "\n") {
 		if l == "" || strings.HasPrefix(l, ":") || strings.HasPrefix(l, "Completion ended") {
 			continue
 		}
@@ -73,13 +77,29 @@ func TestSurfacesAgreeOnTheTree(t *testing.T) {
 	var all [][]string
 	treeVerbs(rootA, nil, &all)
 	seen := map[string]bool{}
-	checkedText, checkedFlags := 0, 0
+	checkedText, checkedFlags, checkedSets := 0, 0, 0
+	parents := map[string]bool{}
 	for _, p := range all {
 		parent, name := p[:len(p)-1], p[len(p)-1]
 		key := strings.Join(p, " ")
 		// the text under the parent's listing
 		a := scriptOffers(t, invA, rootA, parent, "")
 		b := shellOffers(invB, rootB, parent, "")
+		// The words of a parent are the same set in both: a word that
+		// disappears from one surface fails here, not only a changed text.
+		// The one difference is 'shell', which only the scripts offer (it
+		// cannot nest in the shell).
+		if pk := strings.Join(parent, " "); !parents[pk] {
+			parents[pk] = true
+			checkedSets++
+			wa, wb := wordSet(a), wordSet(b)
+			if len(parent) == 0 {
+				wa = slices.DeleteFunc(wa, func(w string) bool { return w == "shell" })
+			}
+			if !slices.Equal(wa, wb) {
+				t.Errorf("%q: the scripts offer %v, the shell %v", pk, wa, wb)
+			}
+		}
 		if _, ok := a[name]; ok {
 			if _, ok := b[name]; ok {
 				checkedText++
@@ -110,9 +130,19 @@ func TestSurfacesAgreeOnTheTree(t *testing.T) {
 			t.Errorf("textAllowList names %q, which is no command", k)
 		}
 	}
-	if checkedText < 200 || checkedFlags < 150 {
-		t.Errorf("only %d texts and %d flag lists compared", checkedText, checkedFlags)
+	if checkedText < 200 || checkedFlags < 150 || checkedSets < 25 {
+		t.Errorf("only %d texts, %d flag lists and %d word sets compared", checkedText, checkedFlags, checkedSets)
 	}
+}
+
+// wordSet is the words of an offer that are not flags, sorted.
+func wordSet(m map[string]string) []string {
+	var out []string
+	for w := range shellOnly(m) {
+		out = append(out, w)
+	}
+	slices.Sort(out)
+	return out
 }
 
 // flagWords are the words that start with '-', sorted.

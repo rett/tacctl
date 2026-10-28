@@ -142,21 +142,26 @@ func complete(ctx context.Context, a *app.App, root *cobra.Command) error {
 	root.SetErr(a.Out.Stderr)
 	err := root.ExecuteContext(ctx)
 	out := buf.String()
-	// cobra offers its help command among the top-level words even when it
-	// is hidden; tacctl has no 'help' command.
 	if len(a.Args) == 2 {
-		var kept []string
-		for _, l := range strings.SplitAfter(out, "\n") {
-			if w, _, _ := strings.Cut(strings.TrimSuffix(l, "\n"), "\t"); w != "help" {
-				kept = append(kept, l)
-			}
-		}
-		out = strings.Join(kept, "")
+		out = withoutHelp(out)
 	}
 	if _, werr := io.WriteString(a.Out.Stdout, out); err == nil {
 		err = werr
 	}
 	return err
+}
+
+// withoutHelp is the answer of cobra's __complete without the line of its
+// help command: cobra offers it among the top-level words even when it is
+// hidden, and tacctl has no 'help' command.
+func withoutHelp(out string) string {
+	var kept []string
+	for _, l := range strings.SplitAfter(out, "\n") {
+		if w, _, _ := strings.Cut(strings.TrimSuffix(l, "\n"), "\t"); w != "help" {
+			kept = append(kept, l)
+		}
+	}
+	return strings.Join(kept, "")
 }
 
 // writeTopUsage prints the top-level usage, as 'tacctl' with no arguments
