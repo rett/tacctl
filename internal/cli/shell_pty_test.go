@@ -19,6 +19,7 @@ import (
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
 	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/shell"
 	"github.com/rett/tacctl/internal/testpty"
 )
 
@@ -271,6 +272,72 @@ func TestPtyShellQuestionMark(t *testing.T) {
 	}
 	if got := s.Settle(200 * time.Millisecond); strings.Contains(got, "\r\n") {
 		t.Errorf("'?' inside quotes printed: %q", got)
+	}
+}
+
+// '?' after a family lists its commands with the argument column at most
+// shell.LabelMax wide, so the descriptions start on the screen: no row is
+// wider than the terminal, a long label ends in "...", and a description
+// that does not fit goes on under its own column.
+func TestPtyShellQuestionMarkCapsTheLabelColumn(t *testing.T) {
+	const cols = 120
+	for _, family := range []string{"config", "device", "scope", "host"} {
+		s := startCLIShell(t, cols)
+		if err := s.Send(family + " ?"); err != nil {
+			t.Fatal(err)
+		}
+		// A long family is paged: its first screenful is checked.
+		if err := s.Expect(`Possible completions:\r\n(?s:.*)(`+
+			regexp.QuoteMeta("\r\ntacctl> "+family+" ")+`|-- more)`, 5*time.Second); err != nil {
+			t.Fatal(err)
+		}
+		out := strings.ReplaceAll(s.Output(), "\r\n", "\n")
+		_, list, _ := strings.Cut(out, "Possible completions:\n")
+		list, _, _ = strings.Cut(list, "-- more")
+		list, _, _ = strings.Cut(list, "tacctl> ")
+		descCol, labels := 0, 0
+		for _, l := range strings.Split(strings.TrimSuffix(list, "\n"), "\n") {
+			if n := len([]rune(l)); n > cols {
+				t.Errorf("%s ?: a row of %d columns: %q", family, n, l)
+			}
+			if !strings.HasPrefix(l, "  ") {
+				t.Errorf("%s ?: a row without the indent: %q", family, l)
+				continue
+			}
+			label, desc, hasDesc := splitRow(l)
+			if !hasDesc {
+				continue
+			}
+			if strings.HasPrefix(l, "   ") {
+				// a continuation: indented to the column where the text starts
+				if descCol > 0 && len(l)-len(strings.TrimLeft(l, " ")) != descCol {
+					t.Errorf("%s ?: %q goes on at another column than %d", family, l, descCol)
+				}
+				continue
+			}
+			labels++
+			if n := len([]rune(label)); n > shell.LabelMax {
+				t.Errorf("%s ?: the label %q is %d columns", family, label, n)
+			}
+			// The description column is the same on every row.
+			col := strings.LastIndex(l, desc)
+			if descCol == 0 {
+				descCol = col
+			} else if col != descCol {
+				t.Errorf("%s ?: %q starts its description at %d, not %d", family, l, col, descCol)
+			}
+		}
+		if labels < 3 {
+			t.Errorf("%s ?: %d rows with a description:\n%s", family, labels, list)
+		}
+		if family == "config" {
+			if !strings.Contains(list, "  devices [show|max-concurrency|transpo...  ") {
+				t.Errorf("config ?: the devices label is not cut with ...:\n%s", list)
+			}
+			if !strings.Contains(list, "\n"+strings.Repeat(" ", descCol)+"timeout), the confirm timeout") {
+				t.Errorf("config ?: no description goes on under its column (%d):\n%s", descCol, list)
+			}
+		}
 	}
 }
 

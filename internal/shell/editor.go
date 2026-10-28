@@ -284,7 +284,7 @@ func (e *editor) question(line string, pos int) (string, int, bool) {
 	}
 	e.lastTab = false
 	if cands := e.candidates(words, partial); len(cands) > 0 {
-		e.present(line, pos, partial, cands, "Possible completions:\n"+listingStyled(cands, e.styled), true)
+		e.present(line, pos, partial, cands, "Possible completions:\n"+listingWidth(cands, e.styled, e.size().w), true)
 		return line, pos, true
 	}
 	text := "No valid completions\n"
@@ -394,7 +394,7 @@ func (e *editor) space(line string, pos int) (string, int, bool) {
 		return line[:start] + ins, start + len(ins), true
 	}
 	if n := len(listed(cands)); e.listMax < 0 || n <= e.listMax {
-		e.show(line, "Possible completions:\n"+listingStyled(cands, e.styled))
+		e.show(line, "Possible completions:\n"+listingWidth(cands, e.styled, e.size().w))
 	}
 	return line, pos, true
 }
@@ -488,16 +488,65 @@ func columns(cands []Candidate, width int) string {
 	return b.String()
 }
 
+// LabelMax is the widest argument column the '?' list shows: a longer
+// label ('devices [show|max-concurrency|transport|...] [<value>]') is
+// shown as its first words and "...", the whole form being in the usage
+// of the command. With the descriptions at most 72 characters a row is
+// then at most 116 columns wide.
+const LabelMax = 40
+
+// capLabel is l cut to at most max runes, ending in "...": at the last
+// blank that leaves at least a third of max (the first words), else inside
+// a word ('devices [show|max-concurrency|...' keeps more than 'devices').
+func capLabel(l string, max int) string {
+	r := []rune(l)
+	if len(r) <= max {
+		return l
+	}
+	cut := max - 3
+	for i := cut; i >= max/3; i-- {
+		if r[i] == ' ' {
+			cut = i
+			break
+		}
+	}
+	return strings.TrimRight(string(r[:cut]), " ") + "..."
+}
+
+// wrapWords are the lines s takes at w columns, cut at blanks (a word
+// longer than w stays whole).
+func wrapWords(s string, w int) []string {
+	var lines []string
+	cur := ""
+	for _, word := range strings.Fields(s) {
+		switch {
+		case cur == "":
+			cur = word
+		case utf8.RuneCountInString(cur)+1+utf8.RuneCountInString(word) <= w:
+			cur += " " + word
+		default:
+			lines = append(lines, cur)
+			cur = word
+		}
+	}
+	return append(lines, cur)
+}
+
 // listing is the '?' list: the candidates one per line, the label (or the
 // word) and the description aligned.
 func listing(cands []Candidate) string { return listingStyled(cands, false) }
 
 // listingStyled is listing with the label in bold when styled. The padding
 // is counted on the plain label, so the columns are the same either way.
-func listingStyled(cands []Candidate, styled bool) string {
+func listingStyled(cands []Candidate, styled bool) string { return listingWidth(cands, styled, 0) }
+
+// listingWidth is listingStyled for a terminal w columns wide (0: not
+// known): a description that does not fit after the label column goes on
+// the lines below, indented to the column where it starts.
+func listingWidth(cands []Candidate, styled bool, w int) string {
 	label := func(c Candidate) string {
 		if c.Label != "" {
-			return c.Label
+			return capLabel(c.Label, LabelMax)
 		}
 		return c.Word
 	}
@@ -505,6 +554,7 @@ func listingStyled(cands []Candidate, styled bool) string {
 	for _, c := range listed(cands) {
 		width = max(width, utf8.RuneCountInString(label(c)))
 	}
+	col := 2 + width + 2 // where the descriptions start
 	var b strings.Builder
 	for _, c := range listed(cands) {
 		l := label(c)
@@ -516,8 +566,16 @@ func listingStyled(cands []Candidate, styled bool) string {
 			b.WriteString("  " + shown + "\n")
 			continue
 		}
+		descs := []string{c.Desc}
+		// Wrap only where a sensible width is left for the text.
+		if w > 0 && col+utf8.RuneCountInString(c.Desc) > w && w-col >= 20 {
+			descs = wrapWords(c.Desc, w-col)
+		}
 		pad := width - utf8.RuneCountInString(l)
-		b.WriteString("  " + shown + strings.Repeat(" ", pad) + "  " + c.Desc + "\n")
+		b.WriteString("  " + shown + strings.Repeat(" ", pad) + "  " + descs[0] + "\n")
+		for _, d := range descs[1:] {
+			b.WriteString(strings.Repeat(" ", col) + d + "\n")
+		}
 	}
 	return b.String()
 }

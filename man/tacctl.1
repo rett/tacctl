@@ -5377,7 +5377,9 @@ and names (users, groups, scopes, hosts, devices, ..., asked of
 .B sudo \-n tacctl _completion-names
 and kept for 5 seconds); a second Tab lists the matching words alone. ?
 inserts nothing and shows help for the cursor's position: the words that can
-come (\(lqPossible completions:\(rq; a fixed word such as priv\-lvl after
+come (\(lqPossible completions:\(rq with each one's argument column, at most 40
+characters and cut with \(lq...\(rq when longer, and its description, which goes
+on under its column when it does not fit; a fixed word such as priv\-lvl after
 .B group edit
 <name> with the description of the usage line that has it; a command
 or sub-command has the same description as in the generated completion

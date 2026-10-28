@@ -73,3 +73,59 @@ func TestWrapRowsStyled(t *testing.T) {
 		t.Errorf("fitting line %q", got)
 	}
 }
+
+// A label wider than LabelMax is shown as its first words and "...".
+func TestCapLabel(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"version [--long]", "version [--long]"},
+		{strings.Repeat("x", LabelMax), strings.Repeat("x", LabelMax)},
+		{"cisco source-interface [<scope> [<interface>|none]]", "cisco source-interface [<scope>..."},
+		{"devices [show|max-concurrency|transport|timeout] [<value>]", "devices [show|max-concurrency|transpo..."},
+		{strings.Repeat("x", 60), strings.Repeat("x", LabelMax-3) + "..."},
+	} {
+		got := capLabel(c.in, LabelMax)
+		if got != c.want || len([]rune(got)) > LabelMax {
+			t.Errorf("capLabel(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// The descriptions start in one column, after the capped labels; one that
+// does not fit goes on under that column, word by word, and no row is
+// wider than the terminal.
+func TestListingWidthWrapsDescriptions(t *testing.T) {
+	long := "How the pull reads the devices, the confirm timeout of the plan and how the apply runs, with its pause and its transport"
+	cands := []Candidate{
+		{Word: "a", Label: "a <x>", Desc: "Short"},
+		{Word: "devices", Label: "devices [show|max-concurrency|transport|timeout] [<value>]", Desc: long},
+	}
+	const w = 80
+	got := listingWidth(cands, false, w)
+	lines := strings.Split(strings.TrimSuffix(got, "\n"), "\n")
+	if len(lines) < 3 {
+		t.Fatalf("the long description is not wrapped:\n%s", got)
+	}
+	col := 2 + LabelMax + 2
+	if !strings.HasPrefix(lines[0], "  a <x>"+strings.Repeat(" ", LabelMax-len("a <x>"))+"  Short") {
+		t.Errorf("first row %q", lines[0])
+	}
+	for i, l := range lines {
+		if len([]rune(l)) > w {
+			t.Errorf("row %d is %d wide: %q", i, len([]rune(l)), l)
+		}
+		if i >= 2 && !strings.HasPrefix(l, strings.Repeat(" ", col)) {
+			t.Errorf("row %d does not go on at column %d: %q", i, col, l)
+		}
+	}
+	if joined := strings.Join(strings.Fields(strings.Join(lines[1:], " ")), " "); !strings.HasSuffix(joined, long) {
+		t.Errorf("the wrapped text lost words:\n%s", got)
+	}
+	// Width unknown: no wrapping, as before.
+	if one := listingWidth(cands, false, 0); strings.Count(one, "\n") != 2 {
+		t.Errorf("wrapped without a width:\n%s", one)
+	}
+	// A terminal too narrow for a sensible column is left to the terminal.
+	if one := listingWidth(cands, false, 50); strings.Count(one, "\n") != 2 {
+		t.Errorf("wrapped at 50 columns:\n%s", one)
+	}
+}

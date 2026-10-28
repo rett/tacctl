@@ -66,6 +66,15 @@ current behaviour; this file is where history lives.
    this changes no permission. `shell` stays offered by the scripts only,
    as it cannot nest in the shell.
 
+6. **The `?` list keeps its descriptions on the screen.** The argument column
+   took the width of the widest form, 125 characters in `config ?`, so
+   on a 120-column terminal every row wrapped and the description landed under
+   nothing. The column is at most 40 characters now: a longer form is cut at
+   a word and ends in `...` (`devices [show|max-concurrency|transpo...`; the
+   usage of the command, `config devices ?`, has the whole form), and a
+   description that does not fit after the column goes on the lines below,
+   indented to the column where it starts.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config
