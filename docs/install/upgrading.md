@@ -67,6 +67,19 @@ warning that `--apply` refuses without `--yes`. Take the statements out
 before the upgrade, or expect the errors. Targets 0.2.18, 0.2.17, 0.2.16 and
 0.2.9 warn so; 0.2.3 has no blocks.
 
+**A scope's strict management filter mode.** The mode of the Junos
+management filter (`tacctl scope mgmt-acl <scope> mode`, 0.2.20) is stored as
+`scope_mgmt_acl.mode.<scope>` (only `strict` is stored), a key every older
+release refuses. Every target therefore removes it from `tacctl.yaml` after a
+snapshot, and the dry run lists the scopes that were strict in a warning that
+`--apply` refuses without `--yes`. The older release renders and plans the
+`ssh-only` filter for them, which ends in a `default-accept` term, so its
+`device config plan` or `device config apply` would put that filter back on a
+device that holds the strict one, and the device would accept by default
+again, without saying so. Nothing contacts a device. To stay deny by default,
+keep this release, or leave the management filter of those scopes out of the
+older release's plans.
+
 ### To 0.2.18
 
 The per-tier sudoers drop-in of this release grants the engineer the rows of

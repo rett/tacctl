@@ -287,6 +287,28 @@ An older release lints such a block as an error and plans nothing for the
 devices it reaches. The block files are not rewritten; take the statements
 out before the upgrade.
 .IP
+Every target removes the management filter mode of the scopes
+.RB ( scope_mgmt_acl.mode.\fIscope\fR ,
+only
+.B strict
+is stored; 0.2.20) from
+.I tacctl.yaml
+after a snapshot, because the older schema refuses the key, and lists the
+scopes that were strict in a warning (and
+.B \-\-apply
+refuses without
+.BR \-\-yes ):
+the older release renders and plans the
+.B ssh\-only
+filter for them, which ends in a
+.B default\-accept
+term, so its
+.B "device config plan"
+or
+.B "device config apply"
+would put that filter back on a device that holds the strict one, without
+saying so. The rollback is not refused, and no device is contacted.
+.IP
 .B "rollback 0.2.17"
 .B \-\-apply
 rewrites the per\-tier sudoers drop\-in, when it is exactly the text this

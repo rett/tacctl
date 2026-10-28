@@ -44,6 +44,16 @@ package lifecycle
 //	                       while one stands (ACLServicesRefusal), in the dry
 //	                       run and --apply alike, with each entry and the
 //	                       command that removes it.
+//	                       The management filter mode of a scope (0.2.20,
+//	                       scope_mgmt_acl.mode.<scope>) is removed for this and
+//	                       every other target (conf.Added0220), and a warning
+//	                       names the scopes that were strict
+//	                       (mgmtModeWarning): the older release renders and
+//	                       plans the ssh-only filter for them. It is a
+//	                       warning, not a refusal, as for the system blocks
+//	                       that hold 0.2.19's statements: nothing here touches
+//	                       a device, the key cannot stay, and the older
+//	                       release's plan is read by a person.
 //	console.yaml           0.2.3's parser rejects settings.password_cache;
 //	                       removed (console.Rollback). 'tiers.engineer' and
 //	                       'settings.space_completion' are 0.2.3's own.
@@ -561,7 +571,7 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 		p.Steps = append(p.Steps, p.hostsStep())
 	}
 
-	p.Warnings = p.warnings()
+	p.Warnings = append(p.warnings(), p.mgmtModeWarning(RollbackTarget)...)
 	p.Notes = p.notes()
 	return p, nil
 }
