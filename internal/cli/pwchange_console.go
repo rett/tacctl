@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 
 	"github.com/rett/tacctl/internal/console"
+	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/shell"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
@@ -142,7 +143,9 @@ func (inv *invocation) openPasswordChange(ctx context.Context, r shellRun, exec 
 	inv.echo("It starts now (Ctrl-C ends this session).")
 	inv.echo("")
 	event("required", 0)
-	code := exec(ctx, []string{pwChangeWord}, r.tty)
+	// the opening is held to the idle time (shell.Options.Idle): a dialog
+	// nobody answers is ended when its deadline passes
+	code := exec(execx.EndOnDeadline(ctx), []string{pwChangeWord}, r.tty)
 	switch {
 	case code == 0 && !r.lock.locked():
 		event("done", 0)

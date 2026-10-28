@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rett/tacctl/internal/console"
 )
@@ -165,4 +166,24 @@ func TestConsolePtyUnreadPolicyHoldsTheSession(t *testing.T) {
 	p.expect(host + `> `)
 	p.send("exit\r")
 	p.ends(0)
+}
+
+// The dialog of the opening is held to the idle time: one nobody answers ends
+// the session as an idle one instead of holding the login open.
+func TestConsolePtyTheOpeningDialogIsHeldToTheIdleTime(t *testing.T) {
+	host := regexp.QuoteMeta(shortHostname())
+	p := startConsole(t, strings.Replace(ptyPolicyChange, "idle=30", "idle=1", 1), "carol,tac-users,tac-readonly", "idle=s", "passwdhangs=1")
+	p.expect(`RAN-PASSWD\r\n`)
+	start := time.Now()
+	p.expect(`idle timeout after 1s`)
+	if d := time.Since(start); d > 6*time.Second {
+		t.Errorf("idle after %v", d)
+	}
+	log := p.ends(0)
+	if strings.Contains(p.Output(), host+"> ") {
+		t.Errorf("a prompt after the idle dialog:\n%s", p.Output())
+	}
+	if !regexp.MustCompile(`console end session=[0-9a-f]{12} user=carol reason=idle`).MatchString(strings.Join(log, "\n")) {
+		t.Errorf("the log:\n%s", strings.Join(log, "\n"))
+	}
 }

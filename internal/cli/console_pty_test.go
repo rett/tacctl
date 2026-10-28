@@ -39,9 +39,10 @@ type consolePtyRunner struct {
 	log, policy, groups string
 	// passwd is the status the line 'passwd' ends with; a 0 changes the
 	// password, so the policy no longer says one is required
-	passwd  int
-	changed atomic.Bool
-	mu      sync.Mutex
+	passwd      int
+	passwdHangs bool
+	changed     atomic.Bool
+	mu          sync.Mutex
 }
 
 func (r *consolePtyRunner) Run(ctx context.Context, c execx.Cmd) (execx.Result, error) {
@@ -84,6 +85,10 @@ func (r *consolePtyRunner) Start(ctx context.Context, c execx.Cmd) (execx.Proces
 				r.changed.Store(true)
 			}
 			c.Name, c.Args = "sh", []string{"-c", "echo RAN-PASSWD; exit " + strconv.Itoa(r.passwd)}
+			if r.passwdHangs {
+				// a dialog nobody answers
+				c.Args = []string{"-c", "echo RAN-PASSWD; sleep 8"}
+			}
 		case words[0] == "user" && len(words) > 1 && words[1] == "slow":
 			// (a real first word: a word that is no command never reaches sudo)
 			c.Name, c.Args = "sleep", []string{"8"}
@@ -125,6 +130,7 @@ func TestConsolePtyHelper(t *testing.T) {
 	// The stub shell and sleep are found through the console's PATH.
 	r := &consolePtyRunner{log: opt["log"], policy: strings.ReplaceAll(opt["policy"], ",", " "), groups: strings.ReplaceAll(opt["groups"], ",", " ")}
 	r.passwd, _ = strconv.Atoi(opt["passwd"])
+	r.passwdHangs = opt["passwdhangs"] != ""
 	a := app.New(nil, paths.NewEnv(env), testExe, os.Geteuid(),
 		app.Stdio{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}, r)
 	var args []string

@@ -297,7 +297,8 @@ current behaviour; this file is where history lives.
     locked prompt where `passwd` tries again. The root side tells the console in
     its policy line (`password_change=yes`), and the session is logged as
     `console password-change required|done|failed` and `console DENY ...
-    reason=password-change`. A line typed while the session is locked is not
+    reason=password-change`. The opening dialog is held to the console's idle time as a prompt
+    is: a dialog nobody answers is ended after that time and the session ends as an idle one. A line typed while the session is locked is not
     entered in the history file (it may be a password typed at the prompt after
     a failed dialog). Whether a change is required is one of three
     answers, and the third fails closed: when the policy line cannot be read

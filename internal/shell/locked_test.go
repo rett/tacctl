@@ -232,3 +232,43 @@ func TestLockedSessionRecordsNothingInTheHistory(t *testing.T) {
 		t.Errorf("entries %q", e)
 	}
 }
+
+// The opening is held to the idle time: a dialog that is never answered ends
+// the session as an idle one, with the context of the opening cancelled; an
+// opening that finishes in time is unaffected.
+func TestOpeningIsHeldToTheIdleTime(t *testing.T) {
+	cancelled := make(chan struct{}, 1)
+	o := Options{Prompt: "host> ", Idle: 300 * time.Millisecond, Exec: func(context.Context, []string, io.Reader) int { return 0 },
+		Opening: func(ctx context.Context) (bool, int) {
+			select {
+			case <-ctx.Done():
+				cancelled <- struct{}{}
+			case <-time.After(10 * time.Second):
+			}
+			return false, 0
+		}}
+	p := startInProcessNoPrompt(t, o, 24, 80)
+	p.expect(`idle timeout after 300ms`)
+	if s := p.ends(); s != 0 {
+		t.Errorf("status %d", s)
+	}
+	select {
+	case <-cancelled:
+	default:
+		t.Error("the context of the opening was not cancelled")
+	}
+	if r, _ := p.sh.End(); r != EndIdle {
+		t.Errorf("reason %q", r)
+	}
+	if strings.Contains(string(p.buf), "host> ") {
+		t.Errorf("a prompt after the idle opening: %q", p.buf)
+	}
+	// finished in time: the prompt follows
+	o.Opening = func(context.Context) (bool, int) { return false, 0 }
+	p = startInProcessNoPrompt(t, o, 24, 80)
+	p.expect(`host> `)
+	p.send("exit\r")
+	if s := p.ends(); s != 0 {
+		t.Errorf("status %d", s)
+	}
+}

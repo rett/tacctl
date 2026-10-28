@@ -149,7 +149,9 @@ type Options struct {
 	// prompt, with the terminal as the shell found it (the console's required
 	// password change: the notice and the dialog). It answers end true, with
 	// the status, to end the session without a prompt (EndLocked); otherwise
-	// the session goes on to its prompt, locked or not as Locked says.
+	// the session goes on to its prompt, locked or not as Locked says. It gets
+	// at most Idle (when set): its context is cancelled after that and the
+	// session ends as an idle one (EndIdle).
 	Opening func(ctx context.Context) (end bool, status int)
 }
 
@@ -467,7 +469,22 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 		return 128 + int(sig)
 	}
 	if s.o.Opening != nil {
-		if end, status := s.o.Opening(ctx); end {
+		// The opening is held to the idle time as a prompt is: a dialog that
+		// nobody answers ends the session instead of holding the login open
+		// for good (its context is cancelled, which ends the command it runs).
+		octx, cancel := ctx, context.CancelFunc(func() {})
+		if s.o.Idle > 0 {
+			octx, cancel = context.WithTimeout(ctx, s.o.Idle)
+		}
+		end, status := s.o.Opening(octx)
+		idle := octx.Err() != nil && ctx.Err() == nil
+		cancel()
+		if idle {
+			_, _ = fmt.Fprintf(s.o.Out.Stdout, "\nidle timeout after %s\n", idleText(s.o.Idle))
+			s.reason = EndIdle
+			return 0
+		}
+		if end {
 			s.reason = EndLocked
 			return status
 		}
