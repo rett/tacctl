@@ -30,6 +30,7 @@ import (
 	"github.com/rett/tacctl/internal/hash"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/policy"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/py"
 	"github.com/rett/tacctl/internal/render/radius"
 	"github.com/rett/tacctl/internal/rendered"
@@ -616,12 +617,17 @@ func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool) ([]byt
 }
 
 // Carved is the model without the addresses of the holds of the merged
-// view (model.WithoutAddresses): the model the renderer writes and the
-// read-back compares the file with.
+// view (model.WithoutAddresses), without the members of a locked group in
+// the scope that locks them, and with a user who must change the password
+// in this server's own scope only (pwchange.Carve): the model the renderer
+// writes and the read-back compares the file with.
 func Carved(m *model.Model, view *yamlpy.Map) *model.Model {
 	// the members of a locked group are taken out of the scope that locks it
 	// (0.2.19, the emergency lockdown)
-	return m.WithoutAddresses(conf.HeldAddresses(view)).WithoutMembers(conf.LockedGroups(view))
+	m = m.WithoutAddresses(conf.HeldAddresses(view)).WithoutMembers(conf.LockedGroups(view))
+	// a user who must change the password is in no scope but this server's
+	// own (0.2.20): no device authenticates them until they have changed it
+	return pwchange.Carve(m, view, Protocol)
 }
 
 // holdComment is the comment block of the secret providers naming each

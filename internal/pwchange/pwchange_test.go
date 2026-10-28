@@ -2,6 +2,7 @@ package pwchange
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/rett/tacctl/internal/conf"
@@ -24,15 +25,18 @@ func testModel(t *testing.T) *model.Model {
 	if err := st.ScopeSet("lab", "prefixes=192.0.2.0/24", "secret=example-secret-example-secret"); err != nil {
 		t.Fatal(err)
 	}
+	if err := st.ScopeSet("srv", "prefixes=127.0.0.1/32", "secret=example-secret-example-secret"); err != nil {
+		t.Fatal(err)
+	}
 	for _, u := range [][2]string{
 		{"alice", "superuser"}, {"bob", "operator"}, {"carol", "readonly"}, {"dave", "netops"}, {"erin", "helpdesk"},
 	} {
-		if err := st.UserSet(u[0], "group="+u[1], "scopes=lab", "disabled=false", "password_change_required=true"); err != nil {
+		if err := st.UserSet(u[0], "group="+u[1], "scopes=lab,srv", "disabled=false", "password_change_required=true"); err != nil {
 			t.Fatal(err)
 		}
 	}
 	// a user that is not flagged, and the accounting sink
-	if err := st.UserSet("frank", "group=operator", "scopes=lab"); err != nil {
+	if err := st.UserSet("frank", "group=operator", "scopes=lab,srv"); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.UserSet("root", "group=readonly", "password_change_required=true"); err != nil {
@@ -110,5 +114,23 @@ func TestSuperuserIsExemptAtRunTimeNotUnflagged(t *testing.T) {
 	u.Group = "gone"
 	if Superuser(view(), m, &u) {
 		t.Error("a user of a missing group is a superuser")
+	}
+}
+
+// Carve leaves a held user in the scope that answers this server and in no
+// other, and every other user as they are.
+func TestCarveKeepsTheServersScopeOnly(t *testing.T) {
+	m := testModel(t)
+	got := Carve(m, yamlpy.NewMap(), "tacacs")
+	for name, want := range map[string]string{"alice": "lab,srv", "bob": "srv", "carol": "srv", "dave": "srv", "erin": "srv", "frank": "lab,srv"} {
+		if g := strings.Join(got.User(name).Scopes, ","); g != want {
+			t.Errorf("%s: %q, want %q", name, g, want)
+		}
+	}
+	if got.User("alice") != m.User("alice") || got.User("frank") != m.User("frank") {
+		t.Error("a user the flag does not bind is copied")
+	}
+	if g := strings.Join(m.User("bob").Scopes, ","); g != "lab,srv" {
+		t.Errorf("the receiver was changed: %q", g)
 	}
 }
