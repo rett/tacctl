@@ -92,36 +92,6 @@
     },
     {
       "n": 7,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "an SNMP community",
-      "statement": "snmp-server community \u003cother:1\u003e RO TACCTL-SNMP",
-      "action": "Left alone (its name is the secret and is not known to tacctl).",
-      "fixed": false
-    },
-    {
-      "n": 8,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "snmp-server enable traps config",
-      "statement": "snmp-server enable traps config",
-      "action": "Left alone. To remove it later: no snmp-server enable traps config",
-      "fixed": false
-    },
-    {
-      "n": 9,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "snmp-server host 192.0.2.50 version 2c \u003cother:2\u003e",
-      "statement": "snmp-server host 192.0.2.50 version 2c \u003cother:2\u003e",
-      "action": "Left alone (its name is the secret and is not known to tacctl).",
-      "fixed": false
-    },
-    {
-      "n": 10,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -134,7 +104,7 @@
       ]
     },
     {
-      "n": 11,
+      "n": 8,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -147,7 +117,7 @@
       ]
     },
     {
-      "n": 12,
+      "n": 9,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -160,7 +130,7 @@
       ]
     },
     {
-      "n": 13,
+      "n": 10,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -173,7 +143,7 @@
       ]
     },
     {
-      "n": 14,
+      "n": 11,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -186,7 +156,7 @@
       ]
     },
     {
-      "n": 15,
+      "n": 12,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -199,7 +169,7 @@
       ]
     },
     {
-      "n": 16,
+      "n": 13,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -212,7 +182,7 @@
       ]
     },
     {
-      "n": 17,
+      "n": 14,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -225,7 +195,7 @@
       ]
     },
     {
-      "n": 18,
+      "n": 15,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -238,7 +208,7 @@
       ]
     },
     {
-      "n": 19,
+      "n": 16,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -320,28 +290,49 @@
   ],
   "left": {
     "access": 0,
-    "monitoring": 3,
+    "monitoring": 0,
     "cosmetic": 0
   },
   "extras": [
     {
       "section": "snmp",
       "text": "snmp-server community \u003cother:1\u003e RO TACCTL-SNMP",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     },
     {
       "section": "snmp",
       "text": "snmp-server enable traps config",
       "remove": [
         "no snmp-server enable traps config"
-      ]
+      ],
+      "own": true
     },
     {
       "section": "snmp",
       "text": "snmp-server host 192.0.2.50 version 2c \u003cother:2\u003e",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     }
   ],
+  "kept": [
+    {
+      "section": "snmp",
+      "count": 3,
+      "kinds": [
+        "communities",
+        "trap types",
+        "trap hosts"
+      ]
+    }
+  ],
+  "secrets": {
+    "present": 2,
+    "kinds": [
+      "the TACACS+ server key",
+      "the SNMP community"
+    ]
+  },
   "skipped": [],
   "withheld": [],
   "warnings": [],

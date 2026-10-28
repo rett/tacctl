@@ -466,6 +466,7 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 			}
 			if l.Op == devconf.OpSame {
 				o.presentSecrets++
+				o.presentKinds = append(o.presentKinds, secretWhat(devconf.FamilyIOS, stem))
 			} else {
 				o.hiddenSecrets++
 			}

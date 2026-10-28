@@ -464,7 +464,9 @@ device config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
     `PASTE FROM HERE` and `PASTE TO HERE` that is safe to paste whole (Junos ends it at `commit
     confirmed`, IOS at `end`), the check, the one line to type yourself afterwards and the back-out;
     a WTI unit has no region: its plan is a numbered checklist of menu steps to type and one
-    `<iptables>` block for its IP tables list. A cover page for several devices. Reads no device
+    `<iptables>` block for its IP tables list. The device's own statements (the `unmanaged` ones
+    of `diff`) are no irregularity: one `Kept:` line per section says how many, and `--json` has
+    the `kept` list. A cover page for several devices. Reads no device
     unless `--pull`; writes to none. A device never pulled, pulled more than `stale-days` ago, whose
     last pull failed or whose Cisco syntax is unknown cannot be planned (exit 1). Engineers: their
     own scopes' devices

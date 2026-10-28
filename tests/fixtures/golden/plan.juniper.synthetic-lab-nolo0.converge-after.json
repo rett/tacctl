@@ -21,26 +21,6 @@
       "statement": "set system tacplus-server 192.0.2.99 secret \u003csecret\u003e",
       "action": "Removed by the cleanup region, line 3.",
       "fixed": false
-    },
-    {
-      "n": 2,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "an SNMP community: authorization read-only",
-      "statement": "set snmp community \u003cother:1\u003e authorization read-only",
-      "action": "Left alone (its name is the secret and is not known to tacctl).",
-      "fixed": false
-    },
-    {
-      "n": 3,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "SNMP: trap-group \u003cother:2\u003e targets 192.0.2.50",
-      "statement": "set snmp trap-group \u003cother:2\u003e targets 192.0.2.50",
-      "action": "Left alone (its name is the secret and is not known to tacctl).",
-      "fixed": false
     }
   ],
   "region": [],
@@ -48,7 +28,7 @@
   "backout": [],
   "left": {
     "access": 0,
-    "monitoring": 2,
+    "monitoring": 0,
     "cosmetic": 0
   },
   "extras": [
@@ -62,14 +42,33 @@
     {
       "section": "snmp",
       "text": "set snmp community \u003cother:1\u003e authorization read-only",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     },
     {
       "section": "snmp",
       "text": "set snmp trap-group \u003cother:2\u003e targets 192.0.2.50",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     }
   ],
+  "kept": [
+    {
+      "section": "snmp",
+      "count": 2,
+      "kinds": [
+        "communities",
+        "trap groups"
+      ]
+    }
+  ],
+  "secrets": {
+    "present": 3,
+    "kinds": [
+      "the TACACS+ server key",
+      "the SNMP community"
+    ]
+  },
   "skipped": [],
   "withheld": [],
   "warnings": [],

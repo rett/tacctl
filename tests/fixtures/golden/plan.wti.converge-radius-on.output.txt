@@ -7,7 +7,10 @@
 #                         statements (e.g. radius enable on). Removed by the cleanup region, step 1.
 # No fix to paste: the cleanup region below is the only paste (what else remains is left alone).
 # Consistent: snmp, mgmt-acl. Not planned: breakglass (walkthrough Step 10).
-# Secrets: 2 present on the device, not changed (--secrets pushes them).
+# Kept: snmp 4 statements of the device's own (system name, trap settings): left alone, listed by
+# device config diff.
+# Secrets: 2 present (the SNMP community, the TACACS+ server key); only their presence is checked,
+# --secrets writes them again.
 # Cleanup (--converge): the steps below are the whole output: they switch off or clear 1 setting the
 # standard does not have. Do them only after you have checked that the pull of lab-unit is current
 # (tacctl device config pull lab-unit --diff reads ok for aaa) and keep a second session logged in as
@@ -16,7 +19,6 @@
 # web, restful-api): kept, not compared.
 # Note: the IP tables list ends with the final DROP and the policies of the walkthrough's last step:
 # kept, not compared.
-# Note: snmp: 4 statements of the device's own, kept on purpose.
 # The unit has no commit-confirm and no rollback: every value is live as soon as its Enter is
 # accepted, and the configuration is written to flash when a top-level menu is left with ESC (any
 # session that leaves one saves everything). tacctl types nothing: you do each step yourself.

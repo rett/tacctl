@@ -41,6 +41,13 @@
       ]
     }
   ],
+  "secrets": {
+    "present": 2,
+    "kinds": [
+      "the RADIUS server key",
+      "the SNMP community"
+    ]
+  },
   "skipped": [],
   "withheld": [],
   "warnings": [],

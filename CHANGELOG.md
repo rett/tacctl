@@ -618,6 +618,51 @@ current behaviour; this file is where history lives.
     before. What is pinned is unchanged: only keys the host's own key files
     and the scan both hold.
 
+34. **The device's own statements are no irregularity in `device config
+    plan`.** A device whose managed statements were all pasted and whose
+    `snmp` section held the device's own (another community with its clients,
+    a trap group, `snmp name`, trap options, a view, an SNMPv3 user, an
+    interface) kept reading `What is irregular on <device> (14 items; the
+    paste fixes 0, leaves 14)`, one MONITORING item per statement with the
+    action `Left alone`, `Nothing to paste: everything above is left alone`,
+    and `snmp` missing from the `Consistent:` line, while `device config
+    list` read the same device `ok` with `snmp +17 unmanaged` (the plan also
+    folded the statements of one community into one item, so its number was
+    not the comparison's). A statement the comparison counts as unmanaged (in
+    `snmp`, `system` and `netconf`, on Junos and IOS) now has no item: it is
+    not in the header's number, does not keep its section out of
+    `Consistent:` and does not make the plan non-empty, so such a device reads
+    `CONSISTENT: nothing to paste.` and `consistent` on the cover page. One
+    line per section keeps them visible, `Kept: snmp 17 statements of the
+    device's own (name, communities, trap groups, ...): left alone, listed by
+    device config diff.`, with the comparison's number (the one `device config
+    list` shows) and the kinds, never a community or a value. A real finding
+    stays an item: a managed object that differs or is missing, a stray leaf
+    of tacctl's own community, a deactivated statement, a statement under a
+    community of a record made by an older tacctl, an extra in `aaa`, `roles`
+    or `mgmt-acl`. `--json` has the `kept` list (section, `count`, `kinds`;
+    omitted when empty) and marks the extras that are the device's own with
+    `"own": true`; the cover page no longer counts them as extras.
+    A WTI unit's own statements (the other protocol's page, the system name,
+    the trap settings) were a `Note: snmp: 4 statements of the device's own,
+    kept on purpose`; they are the same `Kept:` line now. `--converge` is as
+    before: it still offers the removal lines of the extras it is allowed to
+    remove.
+
+35. **The `Secrets:` line of `device config plan` is information.** It read
+    `Secrets: 3 present on the device, not changed (--secrets pushes them).`
+    on every plan of a device that had its secrets, for good, because a secret
+    is compared by presence only (tacctl never reads a device's secret back),
+    which reads as a complaint. It now says which kinds are present, never a
+    value, a community or a label: `Secrets: 3 present (the TACACS+ server
+    key, the SNMP community); only their presence is checked, --secrets writes
+    them again.` It is no item and no irregularity, and a plan with nothing to
+    paste stays `CONSISTENT: nothing to paste.` Secrets the pull's login could
+    not read are a limit of that login and are said apart: `N not visible to
+    the pull's login: the plan could not check them (--secrets pushes
+    them).` `--json` has the `secrets` object (`present`, `kinds`,
+    `not_visible`; omitted when there is none).
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

@@ -38,11 +38,12 @@ func (p *planner) buildItems(d *Delta, byName map[string]devconf.SectionResult) 
 			continue
 		}
 		r := byName[name]
+		d.setOwn(name, r)
 		// the '+' statements a line fixes together with a '-' are one
 		// finding ("different"), listed once
 		plus := map[string]bool{}
 		for _, l := range r.Lines {
-			if l.Op == devconf.OpExtra {
+			if l.Op == devconf.OpExtra && !l.Unmanaged {
 				plus[stemOf(l)] = true
 			}
 		}
@@ -68,7 +69,9 @@ func (p *planner) buildItems(d *Delta, byName map[string]devconf.SectionResult) 
 				kind = KindMissing
 			case devconf.OpExtra:
 				kind = KindExtra
-				if merged[stem] {
+				if l.Unmanaged || merged[stem] {
+					// the device's own statement is no irregularity: it is
+					// counted in Own, not listed
 					continue
 				}
 			case devconf.OpOrder:
@@ -844,6 +847,8 @@ func Report(d Delta, h Header, w Wrapper) string {
 	switch {
 	case len(d.Items) == 0 && d.Refusal() != "":
 		add("CANNOT BE PLANNED: " + d.Refusal() + ". Nothing to paste.")
+	case len(d.Items) == 0 && !d.Cleanup.Empty():
+		add("CONSISTENT: nothing to paste but the cleanup region below (--converge).")
 	case len(d.Items) == 0:
 		add("CONSISTENT: nothing to paste.")
 	default:
@@ -927,6 +932,9 @@ func Report(d Delta, h Header, w Wrapper) string {
 		}
 	}
 	add(line)
+	for _, o := range d.Own {
+		add(ownLine(o))
+	}
 	if len(notrendered) > 0 {
 		add("The standard has nothing for: " + strings.Join(notrendered, ", ") + ".")
 	}
@@ -936,15 +944,8 @@ func Report(d Delta, h Header, w Wrapper) string {
 	if len(notvisible) > 0 {
 		add("Not visible to the pull's login, so not planned: " + strings.Join(notvisible, ", ") + ".")
 	}
-	var secret []string
-	if d.Counts.SecretsPresent > 0 {
-		secret = append(secret, fmt.Sprintf("%d present on the device, not changed", d.Counts.SecretsPresent))
-	}
-	if d.Counts.SecretsNotVisible > 0 {
-		secret = append(secret, fmt.Sprintf("%d not visible to the pull's login, not changed", d.Counts.SecretsNotVisible))
-	}
-	if len(secret) > 0 {
-		add("Secrets: " + strings.Join(secret, "; ") + " (--secrets pushes them).")
+	if l := secretsLine(d.Counts); l != "" {
+		add(l)
 	}
 	if d.Counts.Placeholders > 0 && d.Vendor == devconf.FamilyWTI {
 		add("Secrets are not typed by this output: a secret step names the command that shows its value (tacctl scope secret show " + h.Scope +
@@ -1183,7 +1184,7 @@ type DeviceStatus struct {
 
 // StatusFor is the cover line of a planned device.
 func StatusFor(d Delta, h Header) DeviceStatus {
-	s := DeviceStatus{Device: h.Device, Scope: h.Scope, Vendor: h.Vendor, Address: h.Address, State: statusOf(d), Extras: len(d.Extras),
+	s := DeviceStatus{Device: h.Device, Scope: h.Scope, Vendor: h.Vendor, Address: h.Address, State: statusOf(d), Extras: len(d.Extras) - d.ownExtras(),
 		BreakglassHeld: d.BreakglassHeld != nil}
 	for _, it := range d.Items {
 		if it.Fixed || it.removedByCleanup() {

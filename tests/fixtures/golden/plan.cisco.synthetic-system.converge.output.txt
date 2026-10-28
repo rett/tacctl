@@ -3,7 +3,7 @@
 ! secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5). Checked on a device: IOS 12.4(15) (a
 ! 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references.
 !
-! What is irregular on dev-cisco-synthetic-system (11 items; the paste fixes 3, leaves 8):
+! What is irregular on dev-cisco-synthetic-system (3 items; the paste fixes 3, leaves 0):
 !  1. aaa      ACCESS     missing: the console's own login list CONSOLE (local only, so a local user
 !                         always gets in there) (aaa authentication login CONSOLE local). Fixed by
 !                         region line 3.
@@ -12,27 +12,13 @@
 !  3. aaa      ACCESS     different: the login method of line con 0: login authentication CONSOLE (the
 !                         device has: the login method of line con 0: login authentication default)
 !                         (line con 0 > login authentication CONSOLE). Fixed by region line 7.
-!  4. snmp     MONITORING extra: an SNMP community (snmp-server community <other:1> RO TACCTL-SNMP).
-!                         Left alone (its name is the secret and is not known to tacctl).
-!  5. snmp     MONITORING extra: snmp-server enable traps config. Left alone. To remove it later: no
-!                         snmp-server enable traps config
-!  6. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <other:2>. Left alone (its
-!                         name is the secret and is not known to tacctl).
-!  7. system   COSMETIC   extra: the search domain other.example.net (ip domain list
-!                         other.example.net). Left alone (the system block only adds, it never
-!                         removes). To remove it later: no ip domain list other.example.net
-!  8. system   COSMETIC   extra: the name server 198.51.100.53 (ip name-server 198.51.100.53). Left
-!                         alone (the system block only adds, it never removes). To remove it later: no
-!                         ip name-server 198.51.100.53
-!  9. system   COSMETIC   extra: ntp source Loopback0. Left alone (the system block only adds, it
-!                         never removes). To remove it later: no ntp source Loopback0
-! 10. system   COSMETIC   extra: ntp master 3. Left alone (the system block only adds, it never
-!                         removes). To remove it later: no ntp master 3
-! 11. system   COSMETIC   extra: the NTP server 198.51.100.123 (ntp server 198.51.100.123). Left alone
-!                         (the system block only adds, it never removes). To remove it later: no ntp
-!                         server 198.51.100.123
-! Consistent: roles, mgmt-acl. Not planned: netconf, breakglass.
-! Secrets: 3 present on the device, not changed (--secrets pushes them).
+! Consistent: roles, snmp, system, mgmt-acl. Not planned: netconf, breakglass.
+! Kept: snmp 3 statements of the device's own (communities, trap types, trap hosts): left alone,
+! listed by device config diff.
+! Kept: system 5 statements of the device's own (domain names, name servers, NTP): left alone, listed
+! by device config diff.
+! Secrets: 3 present (the TACACS+ server key, the SNMP community, an NTP key); only their presence is
+! checked, --secrets writes them again.
 ! Cleanup (--converge): cleanup comes after this region is pasted and verified: pull the device, then
 ! plan --converge again.
 ! Note: system: the NTP key lines of the system block of scope 'lab' have not been checked on a device

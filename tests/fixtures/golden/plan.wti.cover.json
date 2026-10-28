@@ -6,13 +6,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 1,
-    "left": 3,
+    "left": 1,
     "remaining": {
       "access": 1,
-      "monitoring": 2,
+      "monitoring": 0,
       "cosmetic": 0
     },
-    "extras": 3
+    "extras": 1
   },
   {
     "device": "unit-consistent",

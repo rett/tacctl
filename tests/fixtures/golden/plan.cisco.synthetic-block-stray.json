@@ -103,36 +103,6 @@
       "region_lines": [
         10
       ]
-    },
-    {
-      "n": 8,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "an SNMP community",
-      "statement": "snmp-server community \u003cother:1\u003e RO TACCTL-SNMP",
-      "action": "Left alone (its name is the secret and is not known to tacctl).",
-      "fixed": false
-    },
-    {
-      "n": 9,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "snmp-server host 192.0.2.50 version 2c \u003cother:2\u003e",
-      "statement": "snmp-server host 192.0.2.50 version 2c \u003cother:2\u003e",
-      "action": "Left alone (its name is the secret and is not known to tacctl).",
-      "fixed": false
-    },
-    {
-      "n": 10,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "snmp-server host 192.0.2.61 version 2c \u003csecret:3\u003e udp-port 1162",
-      "statement": "snmp-server host 192.0.2.61 version 2c \u003csecret:3\u003e udp-port 1162",
-      "action": "Left alone (the device's own entry, not the block's: the block's host is of another vrf, kind or udp-port).",
-      "fixed": false
     }
   ],
   "region": [
@@ -191,26 +161,46 @@
   ],
   "left": {
     "access": 0,
-    "monitoring": 3,
+    "monitoring": 0,
     "cosmetic": 0
   },
   "extras": [
     {
       "section": "snmp",
       "text": "snmp-server community \u003cother:1\u003e RO TACCTL-SNMP",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     },
     {
       "section": "snmp",
       "text": "snmp-server host 192.0.2.50 version 2c \u003cother:2\u003e",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     },
     {
       "section": "snmp",
       "text": "snmp-server host 192.0.2.61 version 2c \u003csecret:3\u003e udp-port 1162",
-      "guard": "the device's own entry, not the block's: the block's host is of another vrf, kind or udp-port"
+      "guard": "the device's own entry, not the block's: the block's host is of another vrf, kind or udp-port",
+      "own": true
     }
   ],
+  "kept": [
+    {
+      "section": "snmp",
+      "count": 3,
+      "kinds": [
+        "communities",
+        "trap hosts"
+      ]
+    }
+  ],
+  "secrets": {
+    "present": 2,
+    "kinds": [
+      "the TACACS+ server key",
+      "the SNMP community"
+    ]
+  },
   "skipped": [],
   "withheld": [],
   "warnings": [],
