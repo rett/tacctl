@@ -36,6 +36,7 @@ const consolePtyHelperRun = "-test.run=^TestConsolePtyHelper$"
 type consolePtyRunner struct {
 	execx.Real
 	log, policy, groups string
+	canary              string // where 'man' of man_pty_test.go looks for the effects of its environment
 	mu                  sync.Mutex
 }
 
@@ -61,6 +62,10 @@ func (r *consolePtyRunner) Run(ctx context.Context, c execx.Cmd) (execx.Result, 
 }
 
 func (r *consolePtyRunner) Start(ctx context.Context, c execx.Cmd) (execx.Process, error) {
+	if c.Name == testExe && len(c.Args) > 0 && c.Args[0] == "man" {
+		// 'man ...' is a word of noSudo: the console runs it as '<exe> man ...'.
+		return manPtyRunner{Runner: r.Real, canary: r.canary}.Start(ctx, c)
+	}
 	if c.Name == "sudo" {
 		i := slices.Index(c.Args, testExe)
 		words := c.Args[i+1:]
@@ -104,7 +109,7 @@ func TestConsolePtyHelper(t *testing.T) {
 		"SSH_TTY=/dev/pts/9", "TACCTL_LEAK=1", "LD_PRELOAD=/nonexistent.so", "PATH=/usr/bin:/bin"}
 	env := console.Scrub(dirty, paths.ConsoleCommand, false)
 	// The stub shell and sleep are found through the console's PATH.
-	r := &consolePtyRunner{log: opt["log"], policy: strings.ReplaceAll(opt["policy"], ",", " "), groups: strings.ReplaceAll(opt["groups"], ",", " ")}
+	r := &consolePtyRunner{canary: opt[strings.TrimSuffix(manPtyCanary, "=")], log: opt["log"], policy: strings.ReplaceAll(opt["policy"], ",", " "), groups: strings.ReplaceAll(opt["groups"], ",", " ")}
 	a := app.New(nil, paths.NewEnv(env), testExe, os.Geteuid(),
 		app.Stdio{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}, r)
 	var args []string

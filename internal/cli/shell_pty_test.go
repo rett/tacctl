@@ -83,6 +83,14 @@ func TestShellPtyHelper(t *testing.T) {
 		})
 		runner = f
 	}
+	if slices.Contains(os.Args, shellPtyMan) {
+		// The lines 'man ...' run for real (man_pty_test.go).
+		for _, a := range os.Args {
+			if v, ok := strings.CutPrefix(a, manPtyCanary); ok {
+				runner = manPtyRunner{Runner: runner, canary: v}
+			}
+		}
+	}
 	a := app.New([]string{"shell"}, env, exe, os.Geteuid(),
 		app.Stdio{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}, runner)
 	if err := Run(context.Background(), a, BuildInfo{Version: "0.2.1-pty"}); err != nil {

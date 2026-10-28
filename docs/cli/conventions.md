@@ -125,6 +125,11 @@ tacctl completion bash|zsh|fish
 
     Print the completion script of a shell (install and upgrade place the bash one)
 
+tacctl man [--path] [word...]
+
+    Open the manual page in a pager, at a command or topic; --path prints where the page was found
+    (see [Manual page](shell.md#manual-page--tacctl-man))
+
 tacctl shell [--no-history] [--idle min] [--space-completion on|off] [--password-cache] [-c line]
 
     Interactive prompt: one tacctl command per line (runs as you; sudo per line)
