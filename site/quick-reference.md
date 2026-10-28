@@ -58,6 +58,7 @@ usage. In `tacctl shell`, `?` shows help.
 | List / detail | `tacctl user list` · `user show <n>` | R |
 | Add | `tacctl user add <n> <group> --scopes <s,…>` | S |
 | Password reset | `tacctl user passwd <n>` | S |
+| Require / lift a password change | `tacctl user require-password-change <n> [on\|off]` | S |
 | Scopes | `tacctl user scope <n> add\|remove\|replace <s,…>` | S |
 | Change group | `tacctl user move <n> <group>` | S |
 | Suspend / restore | `tacctl user disable\|enable <n>` | S |
