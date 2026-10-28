@@ -39,9 +39,16 @@ func (sb *sandbox) stderr() string { return plain(sb.err.String()) }
 
 func TestDeviceUsageAndUnknown(t *testing.T) {
 	sb := newSandbox(t, true)
-	for _, args := range [][]string{{"device"}, {"device", "help"}, {"device", "-h"}, {"device", "--help"}} {
+	for _, args := range [][]string{{"device"}, {"device", "help"}} {
 		out := plain(sb.run("", args))
 		if sb.code != 0 || !strings.Contains(out, "Usage: tacctl device <subcommand>") || !strings.Contains(out, "rename <old> <new>") {
+			t.Errorf("%v: exit %d, %q", args, sb.code, out)
+		}
+	}
+	// -h and --help list the sub-commands as '?' does (help_request.go).
+	for _, args := range [][]string{{"device", "-h"}, {"device", "--help"}} {
+		out := plain(sb.run("", args))
+		if sb.code != 0 || !strings.HasPrefix(out, "Possible completions:\n") || !strings.Contains(out, "  rename <old> <new> [--allow-generic]  ") {
 			t.Errorf("%v: exit %d, %q", args, sb.code, out)
 		}
 	}

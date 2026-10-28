@@ -44,7 +44,13 @@ func (sb *sandbox) consoleYAML() string {
 
 func TestConsoleUsageAndUnknown(t *testing.T) {
 	sb := consoleSandbox(t)
-	for _, args := range [][]string{{"console"}, {"console", "help"}, {"console", "-h"}, {"console", "--help"}} {
+	for _, args := range [][]string{{"console", "-h"}, {"console", "--help"}} {
+		out := plain(sb.cfgRun("", args, nil))
+		if sb.code != 0 || !strings.HasPrefix(out, "Possible completions:\n") || !strings.Contains(out, "  forget ") {
+			t.Errorf("%v: exit %d, %q", args, sb.code, out)
+		}
+	}
+	for _, args := range [][]string{{"console"}, {"console", "help"}} {
 		out := plain(sb.cfgRun("", args, nil))
 		if sb.code != 0 || !strings.Contains(out, "Usage: tacctl console <subcommand>") || !strings.Contains(out, "system-shell path [<path>]") {
 			t.Errorf("%v: exit %d, %q", args, sb.code, out)

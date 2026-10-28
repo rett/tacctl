@@ -353,6 +353,12 @@ func (inv *invocation) shellExec(root *cobra.Command, exe string, managed bool, 
 			a.Out.Error("already in the tacctl shell")
 			return 1
 		}
+		// '<command> -h|--help' is the help of the command, as '?' prints
+		// it, written here with the tier's view.
+		if hw, ok := helpRequest(root, words); ok {
+			inv.helpList(root, hw)
+			return 0
+		}
 		if notACommand(root, words[0]) {
 			// No sudo, so no password prompt, for a word no tier could run.
 			_ = inv.unknownCommand(root, words[0])

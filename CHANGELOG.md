@@ -97,6 +97,19 @@ current behaviour; this file is where history lives.
    the line below, the runs were collapsed to one blank and the alignment
    was lost; only the blanks at the cut are dropped now.
 
+10. **`-h` and `--help` print the help that `?` prints.** After the words of a
+    command, in bash and in the shell and console, `tacctl user --help`,
+    `tacctl user add -h` and `device config pull --help` print the text of `?`
+    at that place, from one renderer: a command with sub-commands lists them
+    with their arguments and descriptions, any other prints its usage lines,
+    its options with their values, and `Next:`. It exits 0, runs as you
+    without `sudo`, and lists no live names (`user show --help` is the usage of
+    `show`). The tier's view applies in the shell and the console. A family's
+    `--help` was its usage block with exit 1 (a few exit 0); it is this list
+    now. `tacctl --help` alone is the top-level usage and exit 1 as before, and
+    the word is a value after `--` or as the value of a flag. No verb has a
+    flag named `-h`.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

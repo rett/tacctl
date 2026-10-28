@@ -283,18 +283,33 @@ func (e *editor) question(line string, pos int) (string, int, bool) {
 		return "", 0, false
 	}
 	e.lastTab = false
-	if cands := e.candidates(words, partial); len(cands) > 0 {
-		e.present(line, pos, partial, cands, "Possible completions:\n"+listingWidth(cands, e.styled, e.size().w), true)
-		return line, pos, true
+	cands := e.candidates(words, partial)
+	var explained string
+	var ok bool
+	if len(cands) == 0 && e.explain != nil {
+		explained, ok = e.explain(words)
 	}
-	text := "No valid completions\n"
-	if e.explain != nil {
-		if t, ok := e.explain(words); ok {
-			text = t
-		}
-	}
-	e.present(line, pos, partial, nil, text, true)
+	text := HelpText(cands, explained, ok, e.styled, e.size().w)
+	e.present(line, pos, partial, cands, text, true)
 	return line, pos, true
+}
+
+// HelpText is the text '?' prints, and the text '-h' and '--help' print
+// after a command's words: one renderer for both. The candidates, when
+// there are any, are listed under 'Possible completions:' (listingWidth);
+// else explained is the usage of the command typed so far, its options and
+// what comes next (Explainer; ok false: it named no command), and with
+// neither, 'No valid completions'. styled shows the words in colour and
+// width (0: not known) wraps a description that does not fit after its
+// column.
+func HelpText(cands []Candidate, explained string, ok, styled bool, width int) string {
+	switch {
+	case len(cands) > 0:
+		return "Possible completions:\n" + listingWidth(cands, styled, width)
+	case ok:
+		return explained
+	}
+	return "No valid completions\n"
 }
 
 // show prints text below the typed line. Terminal.Write clears the prompt
@@ -414,10 +429,23 @@ func (e *editor) candidates(words []string, partial string) []Candidate {
 
 // candidatesFrom is candidates, asking complete.
 func (e *editor) candidatesFrom(complete Completer, words []string, partial string) []Candidate {
+	return collect(complete, Rows(e.systemShell), e.systemShell, words, partial)
+}
+
+// Candidates are the completions of partial after words from complete,
+// sorted, once each, as '?' lists them but for the shell's own words: the
+// words of a command line outside the shell ('--help').
+func Candidates(complete Completer, words []string, partial string) []Candidate {
+	return collect(complete, nil, false, words, partial)
+}
+
+// collect is the answer of complete for words and partial, with the shell's
+// own words (rows) at the start of a line, filtered by partial.
+func collect(complete Completer, rows []Row, systemShell bool, words []string, partial string) []Candidate {
 	var all []Candidate
 	switch {
 	case len(words) == 0:
-		all = append(all, builtinCandidates(Rows(e.systemShell))...)
+		all = append(all, builtinCandidates(rows)...)
 		if complete != nil {
 			all = append(all, complete(nil, partial)...)
 		}
@@ -429,7 +457,7 @@ func (e *editor) candidatesFrom(complete Completer, words []string, partial stri
 				}
 			}
 		}
-	case words[0] == "history" || words[0] == "exit" || words[0] == "quit" || (e.systemShell && words[0] == SystemShellWord):
+	case words[0] == "history" || words[0] == "exit" || words[0] == "quit" || (systemShell && words[0] == SystemShellWord):
 	default:
 		if complete != nil {
 			all = complete(words, partial)

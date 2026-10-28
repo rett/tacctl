@@ -1,0 +1,82 @@
+package cli
+
+// '-h' and '--help' after the words of a command: the help of that command,
+// the same text '?' prints in the shell and the console, from the same code
+// (shell.HelpText). A command that has sub-commands lists them with their
+// argument columns and descriptions; any other prints its usage lines, its
+// options with their values, and what comes next. The text is written with
+// its colours; a stream that is not a terminal, NO_COLOR and TACCTL_COLOR
+// take them out (app.New, ui.Colour), so a pipe gets plain text.
+//
+// The help runs as the invoking user, before the tier gate and sudo: it
+// reads no state of tacctl, and the live names that '?' would list are not
+// asked for ('--help' is the command's help, not the list of its values).
+// In 'tacctl shell' and the console the same text is written in the shell
+// itself, with the tier's view (shellExec). A bare 'tacctl --help' is the
+// top-level usage as before (root.go).
+
+import (
+	"slices"
+	"strings"
+
+	"github.com/spf13/cobra"
+	"golang.org/x/term"
+
+	"github.com/rett/tacctl/internal/shell"
+	"github.com/rett/tacctl/internal/ui"
+)
+
+// helpFlags are the words that ask for help.
+var helpFlags = []string{"-h", "--help"}
+
+// helpRequest reports whether args are the words of a command followed by
+// -h or --help, and gives the words. The flag is the last word, there is no
+// '--' before it, and it is not the value of a flag that waits for one; the
+// words name a command of the tree (not a hidden one) and no flag of the
+// command is -h or --help itself.
+func helpRequest(root *cobra.Command, args []string) (words []string, ok bool) {
+	n := len(args)
+	if n < 2 || !slices.Contains(helpFlags, args[n-1]) || slices.Contains(args[:n-1], "--") {
+		return nil, false
+	}
+	words = args[:n-1]
+	cmd, path, rest := shellCommand(root, words)
+	if cmd == root || cmd.Hidden || strings.HasPrefix(path[0], "_") {
+		return nil, false
+	}
+	if spec, has := specFor(path); has {
+		if waitsForValue(spec, rest) {
+			return nil, false
+		}
+		for _, f := range spec.Flags {
+			if slices.ContainsFunc(f.Names, func(n string) bool { return slices.Contains(helpFlags, n) }) {
+				return nil, false
+			}
+		}
+	}
+	return words, true
+}
+
+// helpList writes the help of the command words name.
+func (inv *invocation) helpList(root *cobra.Command, words []string) {
+	complete := inv.shellCompleter(root)
+	cmd, _, rest := shellCommand(root, words)
+	var cands []shell.Candidate
+	if len(rest) == 0 && slices.ContainsFunc(cmd.Commands(), func(c *cobra.Command) bool { return !c.Hidden }) {
+		cands = shell.Candidates(complete, words, "")
+	}
+	var explained string
+	var ok bool
+	if len(cands) == 0 {
+		explained, ok = inv.shellExplain(root)(words)
+	}
+	width := 0
+	if f, isFile := ui.File(inv.app.Out.Stdout); isFile && term.IsTerminal(int(f.Fd())) {
+		if w, _, err := term.GetSize(int(f.Fd())); err == nil {
+			width = w
+		}
+	}
+	// Written with its colours: the stream takes them out when it is not
+	// a terminal.
+	inv.write(shell.HelpText(cands, explained, ok, true, width))
+}

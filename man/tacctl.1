@@ -5376,7 +5376,7 @@ match; Ctrl-G gives the line back). Tab completes commands, sub-commands, flags
 and names (users, groups, scopes, hosts, devices, ..., asked of
 .B sudo \-n tacctl _completion-names
 and kept for 5 seconds); a second Tab lists the matching words alone. ?
-inserts nothing and shows help for the cursor's position: the words that can
+inserts nothing and shows help for the cursor's position (\fB\-h\fR or \fB\-\-help\fR after the words of a command prints the same help): the words that can
 come (\(lqPossible completions:\(rq with each one's argument column, at most 40
 characters and cut with \(lq...\(rq when longer, as a name with no column is, and its description, which goes
 on under its column when it does not fit, the blanks that align a name's vendor, address and scope kept; a fixed word such as priv\-lvl after
@@ -13096,6 +13096,35 @@ Scalar getter/setters
 .BR "config branch" ,
 .BR "scope default" )
 print the current value when called with no arguments.
+.TP
+.B Help
+.B \-h
+or
+.B \-\-help
+as the last word after the words of a command
+.RB ( "tacctl user \-\-help" ,
+.BR "tacctl user add \-h" ,
+.BR "tacctl device config pull \-\-help" )
+prints the help of that command: the text
+.B ?
+prints in the shell and the console, from the same code. A command with
+sub-commands lists each with its arguments and description; any other prints
+its usage lines, its options with their values and descriptions, and what comes
+next (\(lqNext: <username> <group>\(rq). It exits 0, runs as the invoking user
+(no sudo, no password) and lists no live names. On a terminal the help is in
+colour; piped, with
+.B NO_COLOR
+set or with
+.B TACCTL_COLOR=never
+it is plain. No verb has a flag of its own named
+.B \-h
+or
+.BR \-\-help .
+The word is a value after
+.B \-\-
+or as the value of a flag, and
+.B tacctl \-\-help
+alone is the top-level usage.
 .TP
 .B Multi-item input
 Every

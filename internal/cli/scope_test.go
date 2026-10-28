@@ -65,7 +65,12 @@ func (sb *sandbox) runFamily(stdin string, mk func(*invocation) *cobra.Command, 
 func TestScopeUsageAndUnknown(t *testing.T) {
 	sb := newSandbox(t, true)
 	usage := Usage("scope", UsageVars{"current": "Current scopes: 4\nDefault scope:  lab"})
-	for _, w := range []string{"", "help", "-h", "--help"} {
+	for _, w := range []string{"-h", "--help"} {
+		if got := plain(sb.run("", []string{"scope", w})); sb.code != 0 || !strings.HasPrefix(got, "Possible completions:\n") || !strings.Contains(got, "  add <name> --prefixes <cidrs>  ") {
+			t.Errorf("scope %s: %d %q", w, sb.code, got)
+		}
+	}
+	for _, w := range []string{"", "help"} {
 		args := []string{"scope"}
 		if w != "" {
 			args = append(args, w)

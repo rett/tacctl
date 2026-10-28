@@ -93,7 +93,12 @@ func TestDeviceConfigShowRefusals(t *testing.T) {
 
 func TestDeviceConfigUsage(t *testing.T) {
 	sb := newSandbox(t, true)
-	for _, args := range [][]string{{"device", "config"}, {"device", "config", "help"}, {"device", "config", "--help"}} {
+	// --help lists the sub-commands as '?' does (help_request.go).
+	if out := plain(sb.cfgRun("", []string{"device", "config", "--help"}, route)); sb.code != 0 || !strings.HasPrefix(out, "Possible completions:\n") ||
+		!strings.Contains(out, "  pull    Read the devices' configuration") {
+		t.Errorf("device config --help: %d %q", sb.code, out)
+	}
+	for _, args := range [][]string{{"device", "config"}, {"device", "config", "help"}} {
 		out := plain(sb.cfgRun("", args, route))
 		if sb.code != 0 || !strings.Contains(out, "Usage: tacctl device config <subcommand> [arguments]") ||
 			!strings.Contains(out, "show <name> [--protocol tacacs|radius] [--legacy] [--server <address|name>] [--source <address>]") {
