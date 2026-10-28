@@ -66,6 +66,10 @@ func (inv *invocation) shownModel() (*model.Model, error) {
 	return m.WithoutScope(inv.managedScope()), nil
 }
 
+// managedOwnerText is what a listing of prefix owners says of the managed
+// scope, whose name it does not give.
+const managedOwnerText = "this server's own login"
+
 // reservedText is the refusal of a verb that names the managed scope.
 const reservedText = "Scope '" + pwchange.ManagedScope + "' is reserved."
 

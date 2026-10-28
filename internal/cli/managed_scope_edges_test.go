@@ -466,3 +466,76 @@ func TestHostEnrollLocalRefusedWhileAUserMustChange(t *testing.T) {
 		})
 	}
 }
+
+// Nothing that lists or advises names the managed scope: scope lookup finds
+// the next scope or none, the JSON of host show and host list has no scope
+// for the server, a lockdown cannot name it, and the refusal of a prefix the
+// server's login holds names no command that is refused for it.
+func TestManagedScopeIsNamedNowhereElse(t *testing.T) {
+	hs := newHostSandbox(t)
+	enrolLocal(t, hs)
+	quoted := regexp.MustCompile(`"tacctl"`)
+	for _, addr := range []string{"127.0.0.1", "192.0.2.10", "127.0.0.1/32"} {
+		hs.run(nil, "scope", "lookup", addr)
+		if out := hs.all(); strings.Contains(out, "'tacctl'") || hs.code == 0 {
+			t.Errorf("scope lookup %s: %d\n%s", addr, hs.code, out)
+		}
+	}
+	hs.run(nil, "scope", "lookup", "10.1.2.3")
+	hs.expect(0, "scope 'prod'", "")
+	for _, args := range [][]string{{"host", "list", "--json"}, {"host", "show", "authsrv", "--json"}} {
+		hs.run(nil, args...)
+		if out := hs.out.String(); quoted.MatchString(out) || hs.code != 0 {
+			t.Errorf("%v: %d\n%s", args, hs.code, out)
+		}
+	}
+	before := hs.read("state/tacctl.yaml")
+	for _, args := range [][]string{
+		{"emergency", "lockdown", "tacctl", "enable", "operator", "--dry-run"}, {"emergency", "lockdown", "tacctl", "disable"},
+		{"emergency", "lockdown", "status", "tacctl"}, {"emergency", "lockdown", "tacctl"},
+	} {
+		hs.run(nil, args...)
+		hs.expect(1, "", "Scope 'tacctl' is reserved.")
+	}
+	if hs.read("state/tacctl.yaml") != before {
+		t.Error("tacctl.yaml changed")
+	}
+	// every scope is every scope of the operator's
+	hs.run(nil, "emergency", "lockdown", "--all-scopes", "enable", "operator", "--dry-run")
+	if out := hs.all(); strings.Contains(out, "'tacctl'") || !regexp.MustCompile(`on this server's own login\?\n\s+Lose access \(1\): bob\n`).MatchString(out) {
+		t.Errorf("--all-scopes names the managed scope, or does not say who loses the server login:\n%s", out)
+	}
+	for _, args := range [][]string{{"scope", "prefixes", "lab", "add", "127.0.0.1/32"}, {"scope", "add", "extra", "--prefixes", "192.0.2.10/32"}} {
+		hs.run(nil, args...)
+		out := hs.all()
+		if hs.code != 1 || strings.Contains(out, "'tacctl'") || strings.Contains(out, "remove <cidr>") || !strings.Contains(out, "(this server's own login)") {
+			t.Errorf("%v: %d\n%s", args, hs.code, out)
+		}
+	}
+}
+
+// A lockdown of every scope reaches this server's own login (the scope tacctl
+// manages), which no command names: its lines say 'this server's own login',
+// and the command they advise lifts it.
+func TestManagedScopeLockdownIsLiftedWithAllScopes(t *testing.T) {
+	hs := newHostSandbox(t)
+	enrolLocal(t, hs)
+	hs.write("state/tacctl.yaml", hs.read("state/tacctl.yaml")+"emergency:\n  lockdown:\n    tacctl:\n      groups: [operator]\n      since: '2026-10-28T10:00:00Z'\n      by: alice\n", 0o600)
+	if b := renderedBlock(t, hs, "bob"); !strings.Contains(b, `"tacctl"`) {
+		t.Fatalf("setup:\n%s", b)
+	}
+	hs.run(nil, "emergency", "lockdown", "status")
+	hs.expect(0, "EMERGENCY LOCKDOWN on this server's own login since", "")
+	if out := hs.all(); strings.Contains(out, "'tacctl'") || strings.Contains(out, "lockdown tacctl") || !strings.Contains(out, "Lift it with: tacctl emergency lockdown --all-scopes disable") {
+		t.Errorf("status:\n%s", out)
+	}
+	hs.run(nil, "config", "validate")
+	if out := hs.all(); !strings.Contains(out, "this server's own login is locked down since") || strings.Contains(out, "lockdown tacctl") || !strings.Contains(out, "tacctl emergency lockdown --all-scopes disable") {
+		t.Errorf("validate:\n%s", out)
+	}
+	hs.run(nil, "emergency", "lockdown", "--all-scopes", "disable")
+	hs.expect(0, "", "")
+	if y := hs.read("state/tacctl.yaml"); strings.Contains(y, "lockdown") {
+		t.Errorf("the record stands:\n%s", y)
+	}
+}

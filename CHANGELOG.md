@@ -26,7 +26,11 @@ current behaviour; this file is where history lives.
    `tacctl` is reserved: no command creates, renames to, edits or lists it,
    and no listing or Tab completion shows it (`scope list`, `scope routing`,
    `user list`, `user show`, `user scope <user> list`, `status`, the scope
-   column of `host list`). `host enroll --local` takes no `--scope`; its
+   column and the JSON of `host list` and `host show`; `scope lookup` finds
+   no scope for an address only it answers, `emergency lockdown tacctl ...`
+   is refused, and a prefix its login holds is refused with no command to
+   run; a lockdown of `--all-scopes` includes it, as before, and says `this
+   server's own login`). `host enroll --local` takes no `--scope`; its
    `--server` is the address devices and hosts reach the server at (an IP
    address, which may be behind NAT or a VPN; not a host name, `0.0.0.0`,
    `::`, loopback or link-local), recorded in the new `tacctl.yaml` key

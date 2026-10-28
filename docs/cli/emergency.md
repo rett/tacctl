@@ -16,7 +16,10 @@ emergency lockdown --all-scopes enable [<group>[,<group>...]] [--tier <tier>]
     RADIUS Reject), never with silence. Shows who loses access and who keeps it, then asks for the
     scope's name typed back at a terminal (the word "all" for --all-scopes, which includes this
     server's own logins); --dry-run prints the list and changes nothing. --reason (1 to 256
-    characters) is kept with the record and in the log. Superuser only
+    characters) is kept with the record and in the log. The scope of this server's own login (the
+    name `tacctl`, which no command names: `emergency lockdown tacctl ...` is refused as reserved)
+    is locked by --all-scopes only; its lines say `this server's own login`, and `--all-scopes
+    disable` lifts it. Superuser only
 
 emergency lockdown <scope> disable [<group>[,<group>...]]
 emergency lockdown --all-scopes disable [<group>[,<group>...]]

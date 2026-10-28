@@ -2926,7 +2926,12 @@ keys too, as
 .B "scope remove"
 does. The scope name
 .B tacctl
-is reserved: no command creates, edits or lists it. A scope of that name from
+is reserved: no command creates, edits, looks up or lists it (the JSON of
+.B "host list"
+and
+.B "host show"
+has no scope for the server), and the refusal of a prefix its login holds names
+no command. A scope of that name from
 an earlier release that answers an address other than this server's own login
 addresses is the operator's: it is listed and edited like any other, and
 .BR "host enroll \-\-local" ,
@@ -12383,7 +12388,9 @@ Lock the groups named (with no list every group that is not a superuser's; with
 \fB\-\-tier\fR the groups of that tier, readonly, operator or engineer) on the
 scope, or on every scope, added to what is locked already. Shows the users who
 lose access and those who keep it, then asks for the scope's name typed back (the
-word \fBall\fR for \fB\-\-all\-scopes\fR, which includes this server's own logins);
+word \fBall\fR for \fB\-\-all\-scopes\fR, which includes this server's own logins, the scope
+\fBtacctl\fR that tacctl manages for them: no command names it, its lines say
+"this server's own login" and \fB\-\-all\-scopes disable\fR lifts it);
 without a terminal the verb refuses. \fB\-\-dry\-run\fR prints the list and changes
 nothing. A superuser group, or \fB\-\-tier superuser\fR, is refused. The change is one
 write of \fItacctl.yaml\fR, one render and one restart of each backend that changed;

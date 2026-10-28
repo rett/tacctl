@@ -870,10 +870,28 @@ func (inv *invocation) scopePrefixCollisions(cidrs []string, owner string) ([]st
 	var out []string
 	for _, c := range cidrs {
 		if o := m.PrefixOwner(c); o != "" && o != owner {
+			if o == inv.managedScope() {
+				// this server's own login: it is no scope to remove from
+				out = append(out, "    - "+c+"  ("+managedOwnerText+")")
+				continue
+			}
 			out = append(out, "    - "+c+"  (already in scope '"+o+"')")
 		}
 	}
 	return out, nil
+}
+
+// collisionAdvice is the advice after the collision lines: remedy when the
+// owners are scopes of the operator's, one line that names no command when
+// one of them is the server's own login (the scope tacctl manages, which
+// keeps its addresses and cannot be edited).
+func collisionAdvice(collisions []string, remedy ...string) []string {
+	for _, l := range collisions {
+		if strings.HasSuffix(l, "("+managedOwnerText+")") {
+			return []string{"The server's own login keeps its addresses: choose other prefixes."}
+		}
+	}
+	return remedy
 }
 
 // scopeVendorList is _scope_vendor_list: the vendors of a comma list in
@@ -1026,8 +1044,8 @@ func (inv *invocation) scopeAdd(args []string) error {
 	}
 	if len(collisions) > 0 {
 		msgs := append([]string{"Cannot create scope '" + name + "': prefix(es) already claimed:"}, collisions...)
-		return inv.usageErr(append(msgs, "Each CIDR belongs to exactly one scope. Remove it from the owning",
-			"scope first with 'tacctl scope prefixes <owner> remove <cidr>'.")...)
+		return inv.usageErr(append(msgs, collisionAdvice(collisions, "Each CIDR belongs to exactly one scope. Remove it from the owning",
+			"scope first with 'tacctl scope prefixes <owner> remove <cidr>'.")...)...)
 	}
 	csv := strings.Join(canon, ",")
 	m, _ := inv.model()
@@ -1369,7 +1387,9 @@ func (inv *invocation) scopeLookup(args []string) error {
 		return inv.usageErr("Usage: tacctl scope lookup <ip|cidr>", "Examples:",
 			"  tacctl scope lookup 10.5.1.2", "  tacctl scope lookup 10.5.0.0/16")
 	}
-	m, err := inv.model()
+	// the managed scope is no scope of the operator's: an address only it
+	// answers is covered by none
+	m, err := inv.shownModel()
 	if err != nil {
 		return err
 	}
@@ -1495,8 +1515,8 @@ func (inv *invocation) scopePrefixes(args []string) error {
 		}
 		if len(collisions) > 0 {
 			msgs := append([]string{"Cannot add prefix(es) to scope '" + scope + "':"}, collisions...)
-			return inv.usageErr(append(msgs, "Remove them from the owning scope first:",
-				"  tacctl scope prefixes <owner> remove <cidr>")...)
+			return inv.usageErr(append(msgs, collisionAdvice(collisions, "Remove them from the owning scope first:",
+				"  tacctl scope prefixes <owner> remove <cidr>")...)...)
 		}
 		for _, c := range requested {
 			if contains(current, c) {
