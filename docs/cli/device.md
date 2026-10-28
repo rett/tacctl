@@ -279,6 +279,23 @@ device hostkey <name> set SHA256:<fp>
 
     Re-scan and pin only the key with this fingerprint
 
+    The scan behind `device add`, `device hostkey accept|set` and the rest is one `ssh-keyscan`
+    for ed25519, ecdsa and rsa together. A device that accepts the connection but gives no key to
+    that (one that limits the simultaneous connections ssh-keyscan opens, or drops its long
+    offer) is asked again one key type at a time, ed25519, ecdsa, rsa (and ssh-rsa with
+    `--legacy-ssh`), each with `-T 3`; the keys of every type that answers are returned, and a
+    type that fails does not fail the scan. If that reads nothing either, tacctl's own ssh client
+    reads the keys (any device, not only `--legacy-ssh` ones; no credential is sent). A device
+    that refuses the connection or does not answer is not asked again.
+
+    When no read gives a key from a device that accepted the connection, the refusal names the
+    reads that were made ("ssh-keyscan, then one key type at a time (ed25519, ecdsa, rsa), and
+    tacctl's own ssh client") and gives the command to see the key by hand,
+    `ssh-keyscan -t ed25519 <address>` (with `-p <port>` for another port; also `-t ecdsa`,
+    `-t rsa`), and the ways to accept a key by its fingerprint: `--host-key SHA256:<fp>` for
+    `device add`, `enroll`, `collect` and `onboard`, `device hostkey <name> set SHA256:<fp>` for a
+    registered device. Nothing is written; `--no-host-key` registers the device unpinned.
+
 device ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]
 
     Same as tacctl ssh

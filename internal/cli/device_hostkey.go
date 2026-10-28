@@ -53,22 +53,80 @@ func (inv *invocation) scanDevice(addr string, port int, legacy bool) ([]devreg.
 	return devreg.ScanWith(inv.ctx, inv.app.Runner, addr, port, legacy, inv.hooks.scanFallback(inv))
 }
 
+// scanLearningLegacy is the scan of 'device enroll' and 'device collect', which
+// find out whether a device needs legacy-ssh: ssh-keyscan alone (with its
+// one-type retry, without the built-in client) first, so that a device only
+// the built-in client reads is not mistaken for a modern one, then the legacy
+// scan (the built-in client among it). legacy is whether the keys came from
+// the legacy scan; a device neither reads is the first scan's error.
+func (inv *invocation) scanLearningLegacy(addr string, port int) (keys []devreg.HostKey, legacy bool, err error) {
+	keys, err = devreg.ScanWith(inv.ctx, inv.app.Runner, addr, port, false, nil)
+	if errors.Is(err, devreg.ErrNoAnswer) && inv.ctx.Err() == nil {
+		if k2, err2 := inv.scanDevice(addr, port, true); err2 == nil && len(k2) > 0 {
+			return k2, true, nil
+		}
+	}
+	return keys, false, err
+}
+
 // scanKeys reads the keys at addr; a device that does not answer is the
 // refusal that names it, ending with what to do (orElse).
 func (inv *invocation) scanKeys(addr string, port int, legacy bool, orElse ...string) ([]devreg.HostKey, error) {
 	keys, err := inv.scanDevice(addr, port, legacy)
 	if errors.Is(err, devreg.ErrNoAnswer) {
-		tried := " (ssh-keyscan)"
-		if legacy {
-			tried = " (ssh-keyscan, and tacctl's own ssh client for legacy-ssh)"
-		}
-		return nil, inv.usageErr(append([]string{"No ssh host key could be read from " + addr + " port " + strconv.Itoa(port) +
-			tried + "; nothing was changed."}, orElse...)...)
+		lines := []string{"No ssh host key could be read from " + addr + " port " + strconv.Itoa(port) +
+			" (" + noAnswerTried(err, legacy) + "); nothing was changed."}
+		lines = append(lines, noAnswerHelp(err, addr, port)...)
+		return nil, inv.usageErr(append(lines, orElse...)...)
 	}
 	if err != nil && inv.ctx.Err() == nil {
 		return nil, inv.usageErr(append(msgs(err), orElse...)...)
 	}
 	return keys, err
+}
+
+// noAnswerTried names the reads a scan made that gave no key: ssh-keyscan,
+// the one-type retry that follows it for a device that accepted the
+// connection (devreg.NoAnswerError), and tacctl's own ssh client.
+func noAnswerTried(err error, legacy bool) string {
+	tried := "ssh-keyscan"
+	var na *devreg.NoAnswerError
+	if !errors.As(err, &na) {
+		if legacy {
+			return tried + ", and tacctl's own ssh client for legacy-ssh"
+		}
+		return tried
+	}
+	if len(na.OneByOne) > 0 {
+		tried += ", then one key type at a time (" + strings.Join(na.OneByOne, ", ") + ")"
+	}
+	if na.Builtin {
+		tried += ", and tacctl's own ssh client"
+		if legacy {
+			tried += " for legacy-ssh"
+		}
+	}
+	return tried
+}
+
+// noAnswerHelp is what a person can do when a device accepted the connection
+// but gave no key to the one-type retry either: read the key by hand, and
+// accept it by its fingerprint. A device that did not answer at all gets
+// no such lines (the address and the port are what to check).
+func noAnswerHelp(err error, addr string, port int) []string {
+	var na *devreg.NoAnswerError
+	if !errors.As(err, &na) || len(na.OneByOne) == 0 {
+		return nil
+	}
+	by := "ssh-keyscan "
+	if port != devssh.DefaultPort {
+		by += "-p " + strconv.Itoa(port) + " "
+	}
+	by += "-t ed25519 " + addr
+	return []string{
+		"The device accepted the connection but showed no key. See what it offers by hand: " + by + " (also -t ecdsa, -t rsa).",
+		"Accept a key by its fingerprint with --host-key SHA256:<fp> (device add, enroll, collect, onboard) or, for a registered device, tacctl device hostkey <name> set SHA256:<fp>.",
+	}
 }
 
 func msgs(err error) []string {
@@ -498,7 +556,7 @@ func (inv *invocation) pinHostKeys(ctx context.Context, name, host string, port 
 	scan, err := devreg.Scan(ctx, a.Runner, host, port, false)
 	if errors.Is(err, devreg.ErrNoAnswer) {
 		a.Out.WarnE(name + ": no ssh host key could be read from " + host + " port " + strconv.Itoa(port) +
-			" (ssh-keyscan) to check the session's against; none pinned.")
+			" (" + noAnswerTried(err, false) + ") to check the session's against; none pinned.")
 		a.Out.WarnE("  " + fix)
 		return
 	}

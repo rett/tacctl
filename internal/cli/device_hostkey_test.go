@@ -43,10 +43,24 @@ func keyscanOut(addr string, keys ...devreg.HostKey) []byte {
 	return []byte(b.String())
 }
 
-// scan scripts ssh-keyscan to offer keys (none: no answer).
+// scan scripts ssh-keyscan to offer keys (none: no answer, as from a device
+// that timed out).
 func scan(addr string, keys ...devreg.HostKey) func(*fake.Runner) {
+	if len(keys) == 0 {
+		return func(r *fake.Runner) {
+			r.On([]string{"ssh-keyscan"}, execx.Result{Stderr: []byte(addr + ": Connection timed out\n")})
+		}
+	}
 	return func(r *fake.Runner) {
 		r.On([]string{"ssh-keyscan"}, execx.Result{Stdout: keyscanOut(addr, keys...), Stderr: []byte("# " + addr + ":22 SSH-2.0-OpenSSH_9.6\n")})
+	}
+}
+
+// scanSilent scripts ssh-keyscan against a device that accepts the connection
+// and greets with its banner but gives no key.
+func scanSilent(addr string) func(*fake.Runner) {
+	return func(r *fake.Runner) {
+		r.On([]string{"ssh-keyscan"}, execx.Result{Stderr: []byte("# " + addr + ":22 SSH-2.0-OpenSSH_7.5\n")})
 	}
 }
 
@@ -429,6 +443,25 @@ func TestHostEnrollSyncPinHostKeys(t *testing.T) {
 	}
 	if strings.Contains(hs.devices(), "host_keys") || !strings.Contains(hs.devices(), "web1: {address: 192.0.2.50}") {
 		t.Errorf("devices.yaml:\n%s", hs.devices())
+	}
+	hs.run(nil, "host", "unenroll", "web1")
+	// A host that accepts the connection and gives no key to the combined
+	// scan is asked one type at a time (the keys both reads hold are pinned);
+	// one that gives none to those either is named the retry.
+	r = hostKeys(both(ed, rsa))
+	scanOneAtATime("web1.example.net", ed, rsa)(r)
+	e = enroll(r)
+	if !strings.Contains(e, "web1: pinned 2 ssh host key(s) for 'tacctl ssh': ED25519 "+ed.Fingerprint()+", RSA "+rsa.Fingerprint()) ||
+		!r.Called("ssh-keyscan", "-T", "3", "-p", "22", "-t", "ed25519", "web1.example.net") {
+		t.Errorf("one type at a time:\n%s\n%q", e, r.Argvs())
+	}
+	hs.run(nil, "host", "unenroll", "web1")
+	r = hostKeys(both(ed))
+	scanSilent("web1.example.net")(r)
+	e = enroll(r)
+	if !strings.Contains(e, "web1: no ssh host key could be read from web1.example.net port 22 (ssh-keyscan, then one key type at a time (ed25519, ecdsa, rsa)) to check the session's against; none pinned.") ||
+		strings.Contains(hs.devices(), "host_keys") || r.Count("ssh-keyscan") != 4 {
+		t.Errorf("silent host:\n%s\n%q", e, r.Argvs())
 	}
 	hs.run(nil, "host", "unenroll", "web1")
 	// --local: no session, no scan, nothing pinned.

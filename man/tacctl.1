@@ -2707,7 +2707,8 @@ ssh connection
 .RB ( "cat /etc/ssh/ssh_host_*_key.pub" ),
 and the target is scanned
 .RB ( ssh\-keyscan
-of the host and port, as root). Only the keys both reads hold are pinned in
+of the host and port, as root; asked one key type at a time when the scan of
+all the types gives no key from a host that accepted the connection). Only the keys both reads hold are pinned in
 the device registry for
 .BR "tacctl ssh" ;
 the output lists their
@@ -2716,7 +2717,8 @@ fingerprints. A key type the two reads give different keys for pins nothing:
 both sets are printed and
 .B "host hostkey\-mismatch"
 is logged to syslog (auth.warning). A type only one read has is reported, not
-pinned. Unreadable key files, or a host that does not answer the scan, pin
+pinned. Unreadable key files, or a host that does not answer the scan (the warning
+names the reads that were made), pin
 nothing, with a warning and the
 .B "device hostkey"
 command; the enrolment succeeds either way.
@@ -7431,13 +7433,22 @@ the notice. The built-in list can be extended with
 Host keys are pinned when a device is registered: tacctl reads the keys the
 device offers with
 .BR ssh\-keyscan (1)
-(as root, outbound, without logging in; for a
+(as root, outbound, without logging in; a device that accepts the
+connection but gives no key to the scan of all the key types, because it
+limits the simultaneous connections
+.B ssh\-keyscan
+opens or drops its long offer, is asked again one key type at a time,
+ed25519, ecdsa, rsa, each with
+.BR "\-T 3" ,
+and the keys of every type that answers are pinned; a device that refuses the
+connection or does not answer is not asked again; for a
 .B legacy\-ssh
 device that
 .B ssh\-keyscan
 cannot read, because it cannot do the SHA-1 key exchange and CBC ciphers
-such a device offers, with tacctl's own ssh client, which stops at the host key,
-before authentication), keeps them in
+such a device offers, and for any device that accepted the connection but gave
+no key even one type at a time, with tacctl's own ssh client, which stops at the
+host key, before authentication), keeps them in
 .IR devices.yaml ,
 and prints their
 .B SHA256:
@@ -7750,10 +7761,15 @@ and ssh port are read with
 (with
 .BR \-\-legacy\-ssh ,
 .B ssh\-rsa
-is asked for by name too, and when
+is asked for by name too; a device that accepts the connection but gives no
+key is asked again one key type at a time, each with
+.BR "\-T 3" ,
+and the keys of every type that answers are pinned; and when
 .B ssh\-keyscan
-reads no key, tacctl's own ssh client reads them, stopping at the host key
-without sending a password) and pinned. Their
+reads no key from a device with
+.B \-\-legacy\-ssh
+or one that accepted the connection, tacctl's own ssh client reads them,
+stopping at the host key without sending a password) and pinned. Their
 .B SHA256:
 fingerprints are printed with the command that shows them on the device's
 console; compare them before the first connection. With
@@ -7765,8 +7781,12 @@ nothing is scanned: the device is registered unpinned and carries a
 .B hostkey-unpinned
 notice. A device that does not answer the scan, or offers no key matching
 .BR \-\-host\-key ,
-is refused and nothing is written. The output says which scope, if any, answers
-the address.
+is refused and nothing is written; when the device accepted the connection but
+no read gave a key, the refusal names the reads that were made and gives
+.BI "ssh\-keyscan \-t ed25519 " address
+to see the key by hand, and the ways to accept a key by its fingerprint
+.RB ( "\-\-host\-key SHA256:" "<fp>, or " "device hostkey " "<name>" " set SHA256:" "<fp>" ).
+The output says which scope, if any, answers the address.
 .IP
 Next to the scan,
 .B add

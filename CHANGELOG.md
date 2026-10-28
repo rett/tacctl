@@ -560,6 +560,64 @@ current behaviour; this file is where history lives.
     for a Junos device and left out for a Cisco or WTI one (a scope whose only
     entry is `root` reads `no local account is recorded` there).
 
+30. **A device that does not answer the combined host-key scan is asked one
+    key type at a time.** `ssh-keyscan -t ed25519,ecdsa,rsa` opens one
+    connection per type at once, and a Juniper SRX answered it with no key
+    (`ssh-keyscan -t ed25519 <address>` by hand worked), so `device add`,
+    `device enroll`, `device collect`, `device onboard`, `device hostkey
+    accept|set`, `device scan`, `device check` and the pin of `host enroll`
+    and `host sync` could offer no key to accept. When the combined
+    scan reads no key from a device that accepted the connection, tacctl now
+    runs `ssh-keyscan -T 3 -t <type>` for `ed25519`, `ecdsa` and `rsa` in turn
+    (and `ssh-rsa` for a `legacy-ssh` device), one after the other, and
+    returns the keys of every type that answered: a type that fails does not
+    fail the scan, so the pinned set is as complete as the combined scan's.
+    A device that refused the connection, timed out or did not resolve costs
+    its one `ssh-keyscan`, as before: ssh-keyscan's messages tell them apart
+    (its banner line `# <address>:<port> SSH-2.0-...`, or `Connection closed
+    by remote host`, `Connection reset by peer` or a failed negotiation, say
+    the server answered; its exit status does not, being the same for both),
+    so the re-scan of every device (`device scan`, `device check`) stays as
+    fast and as parallel (eight at a time) for unreachable devices, and a
+    silent one costs at most 9 seconds more (12 with `legacy-ssh`).
+
+31. **The built-in ssh client reads the host keys of any device ssh-keyscan
+    cannot.** Only a `legacy-ssh` device was handed to it; now a device that
+    accepted the connection and gave `ssh-keyscan` no key, not even one type
+    at a time (item 17), is read by it as well, in `device add`, `device
+    enroll`, `device collect`, `device onboard`, `device hostkey accept|set`,
+    `device scan` and `device check`. A device that refused the connection or
+    did not answer is not dialled a second time. The client no longer opens
+    with its long offer of the legacy key exchanges and ciphers and every host
+    key algorithm, which some devices drop: it asks ed25519 alone with the
+    library's default algorithms, then each of the other key types in turn
+    with those, and makes the connections of an old device (the legacy lists,
+    the preferred key first) only when none of them read a key. `device enroll`
+    and `device collect` still find out whether a device needs `legacy-ssh`:
+    a device only the built-in client reads is registered with it, one that
+    `ssh-keyscan` reads one type at a time is not.
+
+32. **The refusal of a device that gave no host key says what was tried and
+    what to do.** `No ssh host key could be read from <address> port <port>
+    (ssh-keyscan); nothing was changed.` stays as it was for a device that did
+    not answer. For one that accepted the connection and gave no key to any
+    read, the parenthesis names them (`ssh-keyscan, then one key type at a
+    time (ed25519, ecdsa, rsa), and tacctl's own ssh client`; with `ssh-rsa`
+    and `for legacy-ssh` for a `--legacy-ssh` device), and two lines follow:
+    the command that shows the key by hand (`ssh-keyscan -t ed25519
+    <address>`, with `-p <port>` for another port, also `-t ecdsa` and `-t
+    rsa`), and the ways to accept a key by its fingerprint (`--host-key
+    SHA256:<fp>` for `device add`, `enroll`, `collect` and `onboard`, `tacctl
+    device hostkey <name> set SHA256:<fp>` for a registered device).
+
+33. **`host enroll` and `host sync` name the reads of a host that gave no
+    key.** The warning `no ssh host key could be read from <host> port <port>
+    (ssh-keyscan) to check the session's against; none pinned.` says `(ssh-keyscan,
+    then one key type at a time (ed25519, ecdsa, rsa))` for a host that
+    accepted the connection (item 17); a host that did not answer is worded as
+    before. What is pinned is unchanged: only keys the host's own key files
+    and the scan both hold.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config
