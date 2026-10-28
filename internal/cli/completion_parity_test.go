@@ -20,39 +20,7 @@ import (
 // scripts and the shell today (path, words joined by a blank). A command
 // leaves the list when its two texts are equal; a command that stays in it
 // while they are equal fails the test, so the list only shrinks.
-var textAllowList = map[string]bool{
-	"backend disable":    true,
-	"backup diff":        true,
-	"backup restore":     true,
-	"config allow":       true,
-	"config cisco":       true,
-	"config deny":        true,
-	"config devices":     true,
-	"config listen":      true,
-	"config render":      true,
-	"config restore":     true,
-	"config wti":         true,
-	"device config":      true,
-	"emergency lockdown": true,
-	"group edit":         true,
-	"group preset":       true,
-	"group reset":        true,
-	"group show":         true,
-	"log accounting":     true,
-	"log clear":          true,
-	"log tail":           true,
-	"scope aaa-order":    true,
-	"scope auth-method":  true,
-	"scope breakglass":   true,
-	"scope devices":      true,
-	"scope exec-timeout": true,
-	"scope mgmt-acl":     true,
-	"scope protocols":    true,
-	"scope radius-group": true,
-	"scope staging":      true,
-	"scope tacacs-group": true,
-	"scope vendor-attrs": true,
-}
+var textAllowList = map[string]bool{}
 
 // surfaceInv is an invocation for one surface: its own, as the shell mode
 // is a field of it (completer sets it).

@@ -438,16 +438,21 @@ func (inv *invocation) completer(root *cobra.Command, fixedOnly bool) shell.Comp
 		if len(rest) == 0 && len(cmd.Commands()) > 0 {
 			var rows []usageRow
 			if len(path) == 1 {
-				rows = inv.familyRows(path[0])
+				rows = inv.familyRows(cmd)
 			}
 			for _, sub := range cmd.Commands() {
 				if sub.Hidden || !shown(append(slices.Clone(path), sub.Name())) {
 					continue
 				}
+				// The description is the node's, the one the generated scripts
+				// list; the row of the family's usage gives the argument column.
 				c := shell.Candidate{Word: sub.Name(), Desc: sub.Short, Kind: "commands", Fixed: true}
 				for _, r := range rows {
 					if r.Name == sub.Name() {
-						c.Desc, c.Label = r.Desc, reProg.ReplaceAllString(r.Left, "")
+						c.Label = reProg.ReplaceAllString(r.Left, "")
+						if c.Desc == "" {
+							c.Desc = r.Desc
+						}
 						break
 					}
 				}

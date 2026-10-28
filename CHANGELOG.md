@@ -30,6 +30,17 @@ current behaviour; this file is where history lives.
    period or `console.yaml` an override under one; the refusal lists each with
    `tacctl user rename <name> <new-name>` or `tacctl console user <name> clear`.
 
+2. **Tab and `?` describe a command as the completion scripts do.** The bash,
+   zsh and fish scripts and the shell and console lists took the description
+   of a sub-command from different texts, so 31 differed (`config cisco`,
+   `scope protocols` and `device config` showed the text of one of their
+   forms; most others the same text with a detail added). Both now list one
+   text per command, the one of the scripts; `device ?` describes `config`
+   as the walkthrough it is and no longer as `config forget`. The usage text
+   (`tacctl scope`, `help scope`) is as before. `emergency lockdown` is
+   described as "Refuse the logins of the groups on the scope's devices and
+   hosts".
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config
