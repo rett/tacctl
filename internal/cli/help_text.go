@@ -316,6 +316,7 @@ Usage:
   <b>tacctl scope auth-method</b> <o><scope></o> [tacacs|radius|clear]   Protocol this scope's device configs and host enrollments use when the command names none
   <b>tacctl scope mgmt-acl</b> <o><scope></o> list|add|remove|clear      Per-scope permit list (fallback: global mgmt_acl.permits)
   <b>tacctl scope mgmt-acl</b> <o><scope></o> cisco-name|juniper-name [<o><name></o>]  Per-scope ACL / filter name (defaults VTY-ACL / MGMT-ACL)
+  <b>tacctl scope mgmt-acl</b> <o><scope></o> mode [ssh-only|strict]     Junos filter mode of a scope: ssh-only (default) or strict, deny by default (Junos only)
   <b>tacctl scope breakglass</b> <o><scope></o> list                     Per-scope break-glass local users in the device walkthroughs (names and roles only; no credential is stored)
   <b>tacctl scope breakglass</b> <o><scope></o> add <o><name></o> [<o>--role</o> admin|operator|readonly]  Record a break-glass user: one of the accounts 'tacctl breakglass hold' makes usable
       <o>--role <role></o>                                        (add) The role: admin (default), operator or readonly
@@ -373,12 +374,19 @@ Usage:
   <b>tacctl scope mgmt-acl</b> {{scope}} clear                         Wipe the per-scope list (confirms; render falls back to global)
   <b>tacctl scope mgmt-acl</b> {{scope}} cisco-name   [<o><label></o>]        Per-scope Cisco VTY-ACL name
   <b>tacctl scope mgmt-acl</b> {{scope}} juniper-name [<o><label></o>]        Per-scope Junos filter name
+  <b>tacctl scope mgmt-acl</b> {{scope}} mode [ssh-only|strict]        Junos filter mode: ssh-only (default) or strict, deny by default (Junos only)
 
 An <entry> is a <cidr>, or a <cidr> with the services it permits:
   <cidr>[:<service>[,<service>...]]    e.g. 172.16.100.0/23:tcp/22,udp/161,udp/162
   <service> is tcp/<ports>, udp/<ports> or icmp; <ports> is N, N-M or *.
   A <cidr> alone permits every protocol and port from it (the WTI IP Tables list renders that; a
   Cisco VTY-ACL and a Junos filter list a source only when its entry permits tcp/22).
+
+The mode only affects Junos devices. strict accepts every protocol from the permit list and has no
+default-accept term, so routing protocols carried over IP from neighbours outside the list, TACACS+
+and RADIUS replies from servers not in it, NTP, syslog, DHCP and SNMP from other sources stop once the
+filter is applied to lo0 (IS-IS is not carried over IP and is not affected): keep a console session
+open and use commit confirmed.
 
 {{current}}
 

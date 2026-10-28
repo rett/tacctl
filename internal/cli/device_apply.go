@@ -407,6 +407,10 @@ func (r *applyRun) planRead(e devreg.Entry, expected []devices.Section, raw, pla
 		}
 	}
 	opt := plan.Options{Sections: r.sections, Scope: e.Scope, Device: e.Name}
+	if e.Vendor == "juniper" {
+		// the mode the rendering of the mgmt-acl section followed (0.2.20)
+		opt.MgmtMode = r.inv.readMgmtACLMode(e.Scope)
+	}
 	if from != nil {
 		opt.From = from.String()
 	}

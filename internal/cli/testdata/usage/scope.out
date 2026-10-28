@@ -40,6 +40,7 @@ Usage:
   tacctl scope auth-method <scope> [tacacs|radius|clear]   Protocol this scope's device configs and host enrollments use when the command names none
   tacctl scope mgmt-acl <scope> list|add|remove|clear      Per-scope permit list (fallback: global mgmt_acl.permits)
   tacctl scope mgmt-acl <scope> cisco-name|juniper-name [<name>]  Per-scope ACL / filter name (defaults VTY-ACL / MGMT-ACL)
+  tacctl scope mgmt-acl <scope> mode [ssh-only|strict]     Junos filter mode of a scope: ssh-only (default) or strict, deny by default (Junos only)
   tacctl scope breakglass <scope> list                     Per-scope break-glass local users in the device walkthroughs (names and roles only; no credential is stored)
   tacctl scope breakglass <scope> add <name> [--role admin|operator|readonly]  Record a break-glass user: one of the accounts 'tacctl breakglass hold' makes usable
       --role <role>                                        (add) The role: admin (default), operator or readonly

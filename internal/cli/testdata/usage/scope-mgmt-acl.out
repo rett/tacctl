@@ -8,12 +8,19 @@ Usage:
   tacctl scope mgmt-acl lab clear                         Wipe the per-scope list (confirms; render falls back to global)
   tacctl scope mgmt-acl lab cisco-name   [<label>]        Per-scope Cisco VTY-ACL name
   tacctl scope mgmt-acl lab juniper-name [<label>]        Per-scope Junos filter name
+  tacctl scope mgmt-acl lab mode [ssh-only|strict]        Junos filter mode: ssh-only (default) or strict, deny by default (Junos only)
 
 An <entry> is a <cidr>, or a <cidr> with the services it permits:
   <cidr>[:<service>[,<service>...]]    e.g. 172.16.100.0/23:tcp/22,udp/161,udp/162
   <service> is tcp/<ports>, udp/<ports> or icmp; <ports> is N, N-M or *.
   A <cidr> alone permits every protocol and port from it (the WTI IP Tables list renders that; a
   Cisco VTY-ACL and a Junos filter list a source only when its entry permits tcp/22).
+
+The mode only affects Junos devices. strict accepts every protocol from the permit list and has no
+default-accept term, so routing protocols carried over IP from neighbours outside the list, TACACS+
+and RADIUS replies from servers not in it, NTP, syslog, DHCP and SNMP from other sources stop once the
+filter is applied to lo0 (IS-IS is not carried over IP and is not affected): keep a console session
+open and use commit confirmed.
 
 Current entries: 0 (per-scope) / 0 (global fallback)
 

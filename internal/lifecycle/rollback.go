@@ -44,6 +44,16 @@ package lifecycle
 //	                       while one stands (ACLServicesRefusal), in the dry
 //	                       run and --apply alike, with each entry and the
 //	                       command that removes it.
+//	                       The management filter mode of a scope (0.2.20,
+//	                       scope_mgmt_acl.mode.<scope>) is removed for this and
+//	                       every other target (conf.Added0220), and a warning
+//	                       names the scopes that were strict
+//	                       (mgmtModeWarning): the older release renders and
+//	                       plans the ssh-only filter for them. It is a
+//	                       warning, not a refusal, as for the system blocks
+//	                       that hold 0.2.19's statements: nothing here touches
+//	                       a device, the key cannot stay, and the older
+//	                       release's plan is read by a person.
 //	console.yaml           0.2.3's parser rejects settings.password_cache;
 //	                       removed (console.Rollback). 'tiers.engineer' and
 //	                       'settings.space_completion' are 0.2.3's own.
@@ -72,8 +82,8 @@ package lifecycle
 //	                       tiers file with its own text and its group
 //	                       drop-in is never refreshed: a file
 //	                       that is exactly this release's text, or the one
-//	                       0.2.4 to 0.2.18 wrote (tier.Sudoers0218,
-//	                       Sudoers0217, Sudoers0216,
+//	                       0.2.4 to 0.2.19 wrote (tier.Sudoers0219,
+//	                       Sudoers0218, Sudoers0217, Sudoers0216,
 //	                       Sudoers0214, Sudoers0213, Sudoers028,
 //	                       Sudoers027, GroupSudoers026, GroupSudoers027,
 //	                       GroupSudoers028, GroupSudoers0216), is
@@ -561,7 +571,7 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 		p.Steps = append(p.Steps, p.hostsStep())
 	}
 
-	p.Warnings = p.warnings()
+	p.Warnings = append(p.warnings(), p.mgmtModeWarning(RollbackTarget)...)
 	p.Notes = p.notes()
 	return p, nil
 }
@@ -607,7 +617,7 @@ func (p *RollbackPlan) confStep() RollbackStep {
 	}
 	var added, other []string
 	for _, k := range p.keys {
-		if conf.Added024Key(k) || conf.Added025Key(k) || conf.Added027Key(k) || conf.Added029Key(k) || conf.Added0210Key(k) || conf.Added0217Key(k) {
+		if conf.Added024Key(k) || conf.Added025Key(k) || conf.Added027Key(k) || conf.Added029Key(k) || conf.Added0210Key(k) || conf.Added0217Key(k) || conf.Added0220Key(k) {
 			added = append(added, k)
 		} else {
 			other = append(other, k)
@@ -673,7 +683,7 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 	tiers := sudoersPlan{label: "the per-tier drop-in", file: pt.TierSudoersFile, state: "absent"}
 	if b, err := os.ReadFile(pt.TierSudoersFile); err == nil {
 		switch got := string(b); {
-		case got == tier.Sudoers(), got == tier.Sudoers0218(), got == tier.Sudoers0217(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
+		case got == tier.Sudoers(), got == tier.Sudoers0219(), got == tier.Sudoers0218(), got == tier.Sudoers0217(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
 			tiers.state, tiers.body = "rewrite", tier.Sudoers023()
 		case got == tier.Sudoers023():
 			tiers.state = "done"

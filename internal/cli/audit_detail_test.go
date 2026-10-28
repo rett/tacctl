@@ -153,6 +153,8 @@ func TestDetailLinesOfTheScopeVerbs(t *testing.T) {
 			"scope vendor-attrs scope=x1 from=- to=cisco by=alice"},
 		{"scope mgmt-acl", "", []string{"scope", "mgmt-acl", "x1", "add", "10.1.1.1/32"}, "auth.info",
 			"scope mgmt-acl scope=x1 op=add value=10.1.1.1/32 by=alice"},
+		{"scope mgmt-acl mode", "", []string{"scope", "mgmt-acl", "x1", "mode", "strict"}, "auth.info",
+			"scope mgmt-acl scope=x1 op=mode value=strict by=alice"},
 		{"scope secret set", "", []string{"scope", "secret", "x1", "set", secret}, "auth.info",
 			"scope secret set scope=x1 source=set by=alice"},
 		{"scope secret generate", "", []string{"scope", "secret", "x1", "generate"}, "auth.info",

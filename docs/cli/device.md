@@ -471,8 +471,9 @@ device config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
         Write one device's output, or one file per device with `COVER.txt` and each back-out (0600,
         0700 directory); replace what exists
     --from <address>, --exit-code
-        The address you are logged in from (the cleanup keeps it); exit 2 when a device needs a
-        change
+        The address you are logged in from (the cleanup keeps it; a Junos management filter that the
+        device applies to `lo0` must permit it, or its section is refused, in either filter mode);
+        exit 2 when a device needs a change
     --restore-point[=<fs>]
         (IOS and IOS-XE only) A restore point before the region, in a banner pair of its own: `copy
         running-config <fs>tacctl-<device>-<time>.cfg` on the file system named (`flash:`,
