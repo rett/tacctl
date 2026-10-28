@@ -57,10 +57,12 @@ package lifecycle
 //	console.yaml           0.2.3's parser rejects settings.password_cache;
 //	                       removed (console.Rollback). 'tiers.engineer' and
 //	                       'settings.space_completion' are 0.2.3's own.
-//	                       Every target's parser rejects the three settings
-//	                       0.2.20 added, settings.color, settings.system_shell_users
-//	                       (the system shell of single users) and a list_max
-//	                       of -1 (never ask): removed, and list_max written as 1000
+//	                       Every target's parser rejects the settings 0.2.20
+//	                       added, settings.color, settings.system_shell_users
+//	                       (the system shell of single users),
+//	                       settings.password_cache_users (the users who turned
+//	                       the password cache on) and a list_max of -1 (never
+//	                       ask): removed, and list_max written as 1000
 //	                       (console.Keys0220; console.RollbackSince0220 for
 //	                       the targets that have the cache).
 //	devices.yaml           0.2.3's parser rejects the per-device 'snmp:' map
@@ -601,7 +603,7 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 		p.Steps = append(p.Steps, p.hostsStep())
 	}
 
-	p.Warnings = append(p.warnings(), p.mgmtModeWarning(RollbackTarget)...)
+	p.Warnings = append(append(p.warnings(), p.mgmtModeWarning(RollbackTarget)...), p.consoleWideningWarning()...)
 	p.Notes = p.notes()
 	return p, nil
 }
@@ -705,7 +707,7 @@ func (p *RollbackPlan) addConsoleStep() {
 	}
 	cf := p.in.Paths.ConsoleFile
 	s := RollbackStep{Title: cf + ": take out the settings " + p.target() + " does not know", Todo: true}
-	s.Lines = append(p.consoleChangeLines(), "("+p.target()+"'s parser rejects what 0.2.20 added to console.yaml (the colour setting, the system shell of single users, a list_max of -1) and an override of a user name with a period; everything else is kept)")
+	s.Lines = append(p.consoleChangeLines(), "("+p.target()+"'s parser rejects what 0.2.20 added to console.yaml (the colour setting, the system shell and the password cache of single users, a list_max of -1) and an override of a user name with a period; everything else is kept)")
 	at := len(p.Steps)
 	for i := range p.Steps {
 		if p.Steps[i].Title == "leave every other file untouched" {

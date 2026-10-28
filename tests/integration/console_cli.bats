@@ -155,8 +155,10 @@ LIST
     plain
     assert_output --regexp "bob +operator +console +managed user"
     assert_output --regexp "carol +readonly +console +managed user"
-    refute_output --partial "override"
-    refute_output --partial "ignored"
+    # The switches are not mentioned: the users' lines say the console and
+    # nothing of an override, and no line is about tiers or users switches.
+    refute_output --regexp "(bob|carol) +.*(override|ignored)"
+    refute_output --regexp "^ *(tiers|users):"
     stub_cmd id 'echo "$3 tac-users"'
     SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" _console-policy
     assert_output --partial "shell=console "

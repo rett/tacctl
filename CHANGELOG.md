@@ -397,6 +397,20 @@ current behaviour; this file is where history lives.
     change and name the two commands that check the settings of the user once the
     file is repaired. An absent console.yaml is not an error.
 
+25. **`tacctl rollback` lists who would gain a system shell or the password
+    cache.** The rollback keeps the `tiers` and `users` switches of
+    `console.yaml` that this release ignores, and an older release reads
+    them as it always did: a user or a tier switched off there gets a plain
+    `/bin/bash` at its next `host sync` instead of the console; a system-shell
+    `disable` of one user is removed, so the user has their tier's setting;
+    and the password cache, which is each user's choice now, is on again for
+    every user of a tier that is allowed it. None of that was named in the plan.
+    Each user (and, with no store to read, each tier and setting) who would gain
+    a system shell or the cache is now listed with the reason, in a warning
+    that `--apply` refuses without `--yes` (on every target; the cache only on
+    the targets that have it), and the warning stays while the switches do.
+    The upgrading page says how to avoid it.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

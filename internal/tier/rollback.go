@@ -21,8 +21,8 @@ import (
 func Sudoers023() string { return sudoers023 }
 
 // rules0219 are the rules 0.2.19 had: this release's without the engineer's
-// row of 'scope mgmt-acl' and the operator's row of 'console system-shell'
-// (0.2.20).
+// row of 'scope mgmt-acl' and the operator's rows of 'console system-shell'
+// and 'console password-cache' (0.2.20).
 func rules0219() []Rule {
 	return slices.DeleteFunc(slices.Clone(Rules), func(r Rule) bool {
 		return (r.Tier == Engineer && r.Cmd == "scope" && r.Sub == "mgmt-acl") ||

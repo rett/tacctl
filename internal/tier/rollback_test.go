@@ -291,8 +291,9 @@ func TestSudoers0218(t *testing.T) {
 }
 
 // The 0.2.19 text lacks the engineer's row of 0.2.20 (scope mgmt-acl * mode)
-// and the operator's (console system-shell) and has every other rule; the 0.2.18 text lacks it as well; where the 0.2.19
-// tag is in the repository, it is that tag's own golden file.
+// and the operator's rows (console system-shell and console password-cache)
+// and has every other rule; the 0.2.18 text lacks them as well; where the
+// 0.2.19 tag is in the repository, it is that tag's own golden file.
 func TestSudoers0219(t *testing.T) {
 	old, cur := Sudoers0219(), Sudoers()
 	if old == cur {
@@ -313,7 +314,7 @@ func TestSudoers0219(t *testing.T) {
 		got = strings.Replace(got, Binary+" "+pat+", ", "", 1)
 	}
 	if got != old {
-		t.Errorf("the 0.2.19 text is not this release's less the two rows:\n%s", got)
+		t.Errorf("the 0.2.19 text is not this release's less the rows of 0.2.20:\n%s", got)
 	}
 	if strings.Contains(Sudoers0218(), row) || strings.Contains(Sudoers0217(), row) || strings.Contains(Sudoers0216(), row) {
 		t.Error("an older frozen text has the row of 0.2.20")

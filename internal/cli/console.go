@@ -1028,7 +1028,7 @@ func (inv *invocation) consolePolicyLine([]string) error {
 	// An engineer stays an engineer here whatever the cap of an unreadable
 	// tacctl.yaml makes of its tier (Operator): the console is its only
 	// login, with no system shell and no forwarding (D18), even when
-	// 'console system-shell tiers' and 'forwarding tiers' name operator.
+	// 'console system-shell operator enable' and 'forwarding tiers' name operator.
 	if gate.EngineerBound(inv.ctx) {
 		t = tier.Engineer
 	}

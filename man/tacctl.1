@@ -253,7 +253,14 @@ The
 and
 .B users
 mappings of console.yaml that this release ignores stay in the file, and the
-release a rollback goes to reads them as it always did. Every target also takes out of
+release a rollback goes to reads them as it always did: a user or a tier
+switched off there gets a plain shell again, and the password cache is on again
+for every user of a tier that is allowed it, so the plan lists each user who
+would gain a system shell or the cache, with the reason, as a warning that
+.B \-\-apply
+refuses without
+.BR \-\-yes .
+Every target also takes out of
 .I console.yaml
 the settings of 0.2.20 that no older release reads:
 .BR settings.color ,

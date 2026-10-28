@@ -71,7 +71,13 @@ does not stop it: the rollback takes that entry out of the file.
 **The console switches of `console.yaml`.** The `tiers` and `users` mappings that this release
 ignores stay in the file, and the release a rollback goes to reads them as it always did: a tier or
 a user switched off there gets a plain shell again at the next `host sync` of that release. A file
-without the mappings is read there as the console on for every tier.
+without the mappings is read there as the console on for every tier. The rollback lists every user
+who would gain a system shell this way, and every user who would gain the password cache back (a
+tier that is allowed it has it for everyone again), with the reason, as a warning: `--apply` refuses
+without `--yes` while there is one (the dry run too shows it). To avoid it, remove the `tiers` and
+`users` entries that switch the console off and run `console password-cache tiers none` before the
+rollback; a system-shell `disable` of one user is dropped by the rollback, so that user has their
+tier's setting.
 
 **System blocks that use 0.2.19's statements.** This release added to the
 grammar of the Junos and IOS `system` blocks: the syslog, login-policy, ssh and

@@ -68,12 +68,14 @@ func rollbackState(t *testing.T) *hostSandbox {
 	hs.step("", "device", "snmp", "sw1", "timeout", "4")
 	hs.step("", "device", "snmp", "sw1", "clients", "add", "10.1.0.0/16")
 	hs.step("sw2-community\nsw2-community\n", "device", "snmp", "sw2", "community", "--stdin")
-	hs.step("", "console", "password-cache", "tiers", "engineer,superuser")
+	// A cache setting 0.2.3 rejects, with no tier allowed: a rollback that left a
+	// tier allowed would give its users the cache back (a warning of its own).
+	hs.step("", "console", "password-cache", "idle", "30")
 	// The console switches of a release before 0.2.20, still in the file:
 	// this release ignores them and keeps them, and 0.2.3 reads them as it
 	// always did.
 	hs.write("state/console.yaml", strings.Replace(hs.read("state/console.yaml"), "version: 1\n",
-		"version: 1\ntiers: {readonly: disable, operator: enable, engineer: enable, superuser: enable}\nusers: {bob: disable}\n", 1), 0o600)
+		"version: 1\ntiers: {readonly: enable, operator: enable, engineer: enable, superuser: enable}\nusers: {bob: enable}\n", 1), 0o600)
 	hs.step("", "config", "devices", "max-concurrency", "16")
 	hs.step("", "config", "devices", "transport", "ssh")
 	hs.step("", "config", "devices", "timeout", "120")
@@ -230,7 +232,7 @@ func TestRollbackDryRunWritesNothing(t *testing.T) {
 		"1. " + state + "/tacctl.yaml: remove the keys 0.2.3 does not know   [does]",
 		"remove device.config.max_concurrency", "remove device.config.transport", "remove device.config.timeout",
 		"2. " + state + "/console.yaml: write it the way 0.2.3 reads it   [does]",
-		"remove settings.password_cache: tiers engineer,superuser, idle 15 min, max 8 h",
+		"remove settings.password_cache: tiers none, idle 30 min, max 8 h",
 		"3. " + state + "/devices.yaml: remove the per-device SNMP settings   [does]",
 		"remove the snmp map of sw1 (version v3, port 2161, timeout 4 s, 1 client range)", "remove the snmp map of sw2 (version v2c)",
 		"4. put back the sudoers drop-ins 0.2.3 writes   [does]",
@@ -366,7 +368,7 @@ func TestRollbackRoundTrip(t *testing.T) {
 			t.Errorf("tacctl.yaml lost %q:\n%s", kept, ov)
 		}
 	}
-	if c := hs.read("state/console.yaml"); !strings.Contains(c, "list_max: 40") || !strings.Contains(c, "tiers: {readonly: disable, operator: enable, engineer: enable, superuser: enable}") || !strings.Contains(c, "users: {bob: disable}") || !strings.Contains(c, "space_completion: false") || strings.Contains(c, "password_cache") {
+	if c := hs.read("state/console.yaml"); !strings.Contains(c, "list_max: 40") || !strings.Contains(c, "tiers: {readonly: enable, operator: enable, engineer: enable, superuser: enable}") || !strings.Contains(c, "users: {bob: enable}") || !strings.Contains(c, "space_completion: false") || strings.Contains(c, "password_cache") {
 		t.Errorf("console.yaml:\n%s", c)
 	}
 	if d := hs.read("state/devices.yaml"); !strings.Contains(d, "location: 'Rack 4, DC1'") || strings.Contains(d, "snmp") {
@@ -599,7 +601,7 @@ func TestRollbackRealOldBinary(t *testing.T) {
 		t.Errorf("0.2.3 config validate after: %d\n%s", code, out)
 	}
 	if out, code = run("console", "show"); code != 0 || strings.Contains(out, "unknown") || !strings.Contains(out, "list-max: 40") ||
-		!strings.Contains(out, "readonly: disable") {
+		!strings.Contains(out, "readonly: enable") {
 		t.Errorf("0.2.3 console show after: %d\n%s", code, out)
 	}
 	if out, code = run("device", "list"); code != 0 || !strings.Contains(out, "sw1") || !strings.Contains(out, "sw2") || !strings.Contains(out, "sw3") {
@@ -723,5 +725,44 @@ func TestRollbackCompletion(t *testing.T) {
 	got, _ := completeWords(t, liveNames, "")
 	if !slices.Contains(got, "rollback") {
 		t.Errorf("the top level lacks rollback: %q", got)
+	}
+}
+
+// A rollback gives back what 0.2.20 had taken away and names it: the console
+// switches this release ignores are read by the older release (a user or a tier
+// switched off there gets /bin/bash), and the password cache is on again for the
+// users of an allowed tier. The dry run lists each user who would gain a system
+// shell or the cache, and --apply refuses without --yes, on every target; with
+// the switches removed the warning is gone.
+func TestRollbackWarnsOfWhoGainsASystemShellOrTheCache(t *testing.T) {
+	for _, target := range []string{"0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"} {
+		hs := rollbackState(t)
+		hs.write("state/console.yaml", strings.Replace(hs.read("state/console.yaml"), "users: {bob: enable}",
+			"users: {bob: disable}", 1), 0o600)
+		hs.step("", "console", "password-cache", "tiers", "operator,superuser")
+		hs.run(nil, "rollback", target)
+		hs.expect(0, "Users who gain a system shell or the password cache", "")
+		if !strings.Contains(hs.all(), "bob (operator): users.bob: disable gives a plain /bin/bash login shell") {
+			t.Errorf("%s: dry run:\n%s", target, hs.all())
+		}
+		cache := strings.Contains(hs.all(), "operator: bob (the cache is on for the tier again")
+		if want := target != "0.2.3"; cache != want {
+			t.Errorf("%s: cache lines %v, want %v:\n%s", target, cache, want, hs.all())
+		}
+		before := tree(t, hs.dir)
+		hs.run(nil, "rollback", target, "--apply")
+		hs.expect(1, "Users who gain a system shell or the password cache", "need your decision")
+		if got := changedFiles(before, tree(t, hs.dir)); len(got) != 0 {
+			t.Errorf("%s: a refused apply changed %q", target, got)
+		}
+	}
+	// Without the switches, and with no tier allowed the cache, nothing is given back.
+	hs := rollbackState(t)
+	hs.step("", "console", "password-cache", "tiers", "none")
+	hs.step("", "console", "password-cache", "idle", "30")
+	hs.run(nil, "rollback", "0.2.18")
+	hs.expect(0, "This was a dry run", "")
+	if strings.Contains(hs.all(), "gain a system shell") {
+		t.Errorf("a warning without a reason:\n%s", hs.all())
 	}
 }
