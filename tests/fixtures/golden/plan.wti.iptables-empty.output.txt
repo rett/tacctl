@@ -7,11 +7,13 @@
 #                         have: 20 entries (e.g. iptables -A INPUT -i lo -j ACCEPT). Fixed by the IP
 #                         tables paste.
 # Consistent: snmp, aaa. Not planned: breakglass (walkthrough Step 10).
+# Kept: aaa 13 statements of the device's own (RADIUS settings): left alone, listed by device config
+# diff.
+# Kept: snmp 4 statements of the device's own (system name, trap settings): left alone, listed by
+# device config diff.
 # Secrets: 2 present on the device, not changed (--secrets pushes them).
 # Note: tacacs default-services: the unit allows more services than the standard asks for (serial,
 # web, restful-api): kept, not compared.
-# Note: aaa: 13 statements of the device's own, kept on purpose.
-# Note: snmp: 4 statements of the device's own, kept on purpose.
 # WARNING: the pull saw 1 other session on the unit: the paste is live for them too; type /SN before
 # you paste and make sure no other administrator is working on it.
 # WARNING: the IP tables list has no final DROP and no INPUT policy DROP: it restricts nothing until

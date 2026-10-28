@@ -12,6 +12,10 @@
 #  3. snmp     MONITORING extra: an SNMP read/write community (snmp rw-community <other:1>). Left
 #                         alone. To remove it later: /N 25 8 (Read/Write Community), then <SPACE><CR>
 # Consistent: mgmt-acl. Not planned: breakglass (walkthrough Step 10).
+# Kept: aaa 13 statements of the device's own (RADIUS settings): left alone, listed by device config
+# diff.
+# Kept: snmp 4 statements of the device's own (system name, trap settings): left alone, listed by
+# device config diff.
 # Secrets: 2 present on the device, not changed (--secrets pushes them).
 # Cleanup (--converge): cleanup comes after this region is pasted and verified: pull the device, then
 # plan --converge again.
@@ -19,8 +23,6 @@
 # web, restful-api): kept, not compared.
 # Note: the IP tables list ends with the final DROP and the policies of the walkthrough's last step:
 # kept, not compared.
-# Note: aaa: 13 statements of the device's own, kept on purpose.
-# Note: snmp: 4 statements of the device's own, kept on purpose.
 # WARNING: Step 1 changes what the unit asks of the TACACS+ server or how it answers when the server
 # fails: a wrong secret word, host, port or service name does not stop a login, it returns every login
 # to the unit's Default User Access level, and Fallback Local decides whether the unit's own accounts

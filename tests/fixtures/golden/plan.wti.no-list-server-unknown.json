@@ -22,6 +22,23 @@
     "cosmetic": 0
   },
   "extras": [],
+  "kept": [
+    {
+      "section": "aaa",
+      "count": 13,
+      "kinds": [
+        "RADIUS settings"
+      ]
+    },
+    {
+      "section": "snmp",
+      "count": 4,
+      "kinds": [
+        "system name",
+        "trap settings"
+      ]
+    }
+  ],
   "skipped": [
     {
       "section": "mgmt-acl",

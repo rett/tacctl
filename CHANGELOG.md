@@ -268,8 +268,11 @@ current behaviour; this file is where history lives.
     or `mgmt-acl`. `--json` has the `kept` list (section, `count`, `kinds`;
     omitted when empty) and marks the extras that are the device's own with
     `"own": true`; the cover page no longer counts them as extras.
-    `--converge` is as before: it still offers the removal lines of the
-    extras it is allowed to remove.
+    A WTI unit's own statements (the other protocol's page, the system name,
+    the trap settings) were a `Note: snmp: 4 statements of the device's own,
+    kept on purpose`; they are the same `Kept:` line now. `--converge` is as
+    before: it still offers the removal lines of the extras it is allowed to
+    remove.
 
 ## 0.2.19 (2026-10-25)
 

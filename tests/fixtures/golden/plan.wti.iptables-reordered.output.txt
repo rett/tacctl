@@ -6,13 +6,15 @@
 #  1. mgmt-acl ACCESS     out of order: the IP tables list is in another order than the standard's
 #                         (iptables: order differs). Fixed by the IP tables paste.
 # Consistent: snmp, aaa. Not planned: breakglass (walkthrough Step 10).
+# Kept: aaa 13 statements of the device's own (RADIUS settings): left alone, listed by device config
+# diff.
+# Kept: snmp 4 statements of the device's own (system name, trap settings): left alone, listed by
+# device config diff.
 # Secrets: 2 present on the device, not changed (--secrets pushes them).
 # Note: tacacs default-services: the unit allows more services than the standard asks for (serial,
 # web, restful-api): kept, not compared.
 # Note: the IP tables list ends with the final DROP and the policies of the walkthrough's last step:
 # kept, not compared.
-# Note: aaa: 13 statements of the device's own, kept on purpose.
-# Note: snmp: 4 statements of the device's own, kept on purpose.
 # WARNING: the list ends with the final DROP, so from the paste on only the addresses it permits reach
 # the unit and --from was not given: check that the address you are logged in from is permitted before
 # you paste (--from <address> makes tacctl check).

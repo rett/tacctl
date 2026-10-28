@@ -605,10 +605,8 @@ func planWTI(expected []devices.Section, current devconf.Extracted, opt Options)
 	// what the unit holds beside the rendering and the standard leaves to it
 	// (the tail of its list is noted with the list's guards)
 	for _, name := range []string{devconf.SectionAAA, devconf.SectionSNMP} {
-		if r := p.byName[name]; r.Unmanaged > 0 {
-			if st := d.Of(name).State; st == StatePlanned || st == StateNoChange {
-				d.Notes = append(d.Notes, name+": "+r.UnmanagedNote())
-			}
+		if st := d.Of(name).State; st == StatePlanned || st == StateNoChange {
+			d.setOwn(name, p.byName[name])
 		}
 	}
 	d.Sections = append(d.Sections, SectionPlan{Name: devconf.SectionBreakGlass, State: StateNever})

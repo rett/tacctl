@@ -19,6 +19,10 @@
 #                         10.0.31.0/24 -p tcp --dport 22 -j ACCEPT). Fixed by the IP tables paste (it
 #                         replaces every entry: this one is gone afterwards).
 # Not planned: breakglass (walkthrough Step 10).
+# Kept: aaa 13 statements of the device's own (RADIUS settings): left alone, listed by device config
+# diff.
+# Kept: snmp 4 statements of the device's own (system name, trap settings): left alone, listed by
+# device config diff.
 # Secrets: 1 present on the device, not changed (--secrets pushes them).
 # Secrets are not typed by this output: a secret step names the command that shows its value (tacctl
 # scope secret show lab, tacctl scope snmp lab show --reveal), and --secrets puts the value in the
@@ -27,8 +31,6 @@
 # web, restful-api): kept, not compared.
 # Note: the IP tables list ends with the final DROP and the policies of the walkthrough's last step:
 # kept, not compared.
-# Note: aaa: 13 statements of the device's own, kept on purpose.
-# Note: snmp: 4 statements of the device's own, kept on purpose.
 # WARNING: the list ends with the final DROP, so from the paste on only the addresses it permits reach
 # the unit and --from was not given: check that the address you are logged in from is permitted before
 # you paste (--from <address> makes tacctl check).
