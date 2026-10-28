@@ -16,6 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/tier"
@@ -866,7 +867,7 @@ func (inv *invocation) consolePolicyLine([]string) error {
 	if pol.Decide(t).Console {
 		shell = "console"
 	}
-	sys := pol.SystemShellFor(user, t)
+	sys := pol.SystemShellFor(inv.systemShellUser(), t)
 	path, perr := pol.SystemShellPath()
 	if perr != nil {
 		if sys {
@@ -913,4 +914,81 @@ func (inv *invocation) consolePolicyLine([]string) error {
 		" forward=" + yesNo(pol.Forwarding(t)) + " tier=" + string(t) + gateField + " list_max=" + strconv.Itoa(pol.ListMax()) +
 		" space_completion=" + yesNo(pol.SpaceCompletion()) + " color=" + pol.Color() + cache)
 	return nil
+}
+
+// systemShellMove is what 'user remove', 'user rename' and 'user add' did to a
+// user's system-shell setting in console.yaml (settings.system_shell_users):
+// had says there was one (on is its value), err that console.yaml could not
+// be written.
+type systemShellMove struct {
+	had, on bool
+	err     error
+}
+
+// moveSystemShellUser carries the system-shell setting of oldname to newname
+// (newname "": drops it) in console.yaml, under its lock, as part of the
+// user verb that follows the store's change (the snapshot the verb took first
+// holds console.yaml). A person who is renamed keeps the access they had, a
+// user who is removed leaves none behind for the next user of the name; a
+// file without a setting for oldname is not touched, and an absent file is not
+// created. An entry already under newname (hand-edited) is replaced by the
+// carried one, or dropped by the removal.
+func (inv *invocation) moveSystemShellUser(oldname, newname string) systemShellMove {
+	p := inv.app.Paths.ConsoleFile
+	f, err := console.Load(p)
+	if err != nil {
+		return systemShellMove{err: err}
+	}
+	on, had := f.SystemShellUsers[oldname]
+	if !had {
+		return systemShellMove{}
+	}
+	_, err = console.Mutate(p, nil, func(f *console.File) error {
+		delete(f.SystemShellUsers, oldname)
+		if newname != "" {
+			f.SystemShellUsers[newname] = on
+		}
+		return nil
+	})
+	return systemShellMove{had: true, on: on, err: err}
+}
+
+// systemShellMoved reports a move: the lines of the command's output and the
+// 'console set' details. It returns the error of a console.yaml that could not
+// be written (the store has changed already; the command says how to finish).
+func (inv *invocation) systemShellMoved(m systemShellMove, oldname, newname string) error {
+	if !m.had {
+		return nil
+	}
+	word := onOff(m.on)
+	out := inv.app.Out
+	if m.err != nil {
+		fix := "tacctl console system-shell user " + oldname + " clear"
+		if newname != "" {
+			fix += ", then tacctl console system-shell user " + newname + " " + word
+		}
+		out.Error("The system-shell setting of '" + oldname + "' (" + word + ") could not be " + map[bool]string{true: "moved", false: "dropped"}[newname != ""] +
+			" in console.yaml: " + msgsJoin(m.err) + ". Finish it with: " + fix)
+		return exit(1)
+	}
+	inv.detailAt(audit.Notice, "console set", kvp("key", "system-shell"), kvp("item", "user:"+oldname), kvp("from", word), kvp("to", "none"))
+	if newname == "" {
+		out.Info("The system-shell setting of '" + oldname + "' (" + word + ") is dropped.")
+		return nil
+	}
+	inv.detailAt(audit.Notice, "console set", kvp("key", "system-shell"), kvp("item", "user:"+newname), kvp("from", "none"), kvp("to", word))
+	out.Info("The system-shell setting of '" + oldname + "' (" + word + ") moves to '" + newname + "'.")
+	return nil
+}
+
+// systemShellUser is the name the system-shell setting of the caller is
+// looked up under: the caller when it is a user of the store, else "" (no
+// entry has that name): an entry of a name that is no store user is not
+// honoured.
+func (inv *invocation) systemShellUser() string {
+	user := inv.sudoUser()
+	if m, err := inv.model(); err != nil || !m.Exists("users", user) {
+		return ""
+	}
+	return user
 }

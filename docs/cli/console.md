@@ -103,8 +103,9 @@ console system-shell [<tier> enable|disable]
 console system-shell user <name> [enable|disable|clear]
 
     Show or set the system shell for one user, over the tier's setting in both directions (clear:
-    the tier decides). Disabling a superuser and enabling an engineer are refused; the setting
-    survives a rename or removal of the user and is listed as "no such user" (superuser only)
+    the tier decides). Disabling a superuser and enabling an engineer are refused. `user rename`
+    moves the setting to the new name and `user remove` drops it; an entry for a name that is no
+    user is not honoured and is listed as "no such user" (superuser only)
 
 console system-shell path [<path>]
 

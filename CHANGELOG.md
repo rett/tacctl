@@ -279,9 +279,9 @@ current behaviour; this file is where history lives.
     it from one, over the tier's setting in both directions (`clear`: the tier
     decides). A superuser cannot be disabled (refused, by the tier the user has
     at that moment), an engineer cannot be enabled, and enabling a superuser or
-    disabling an engineer stores nothing. A setting stays when the user is
-    renamed or removed, as the console overrides of earlier releases did; the
-    listing shows it as `no such user` and `clear` removes it. The same people
+    disabling an engineer stores nothing. A setting follows the user (item 19);
+    an entry of a name that is no user is listed as `no such user` and `clear`
+    removes it. The same people
     may open an editor from the console. Every form with an argument is the
     superuser's: the tier table grants an operator and an engineer the bare
     `console system-shell` only (a new row, also in the sudoers drop-in, which
@@ -297,6 +297,20 @@ current behaviour; this file is where history lives.
     is one no older release reads, so `tacctl rollback` to any target removes
     it (the plan names the users) and the older release has the tiers' list
     alone. `settings.system_shell` is the shell's path as before.
+
+19. **A user's system-shell setting follows the user.** `user remove` drops
+    the `console system-shell user` setting of the user and `user rename`
+    moves it to the new name, so the person keeps the access they had and a
+    user created later under the old name does not inherit it. Both say so in
+    their output (`The system-shell setting of 'bob' (enable) moves to
+    'robert'.` / `... is dropped.`) and log `console set key=system-shell
+    item=user:<name> from= to=` at `auth.notice`, one line for a removal and
+    two for a rename. `user add` drops an entry left under the name (a hand
+    edit, or a removal whose write of `console.yaml` failed, which names the
+    command to finish it). A user without a setting leaves `console.yaml`
+    alone. An entry for a name that is no user is not honoured (the policy
+    looks the caller up by a name that is a user of the store) and is listed
+    as `no such user`. The rollback removes the whole key as before.
 
 ## 0.2.19 (2026-10-25)
 

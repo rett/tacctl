@@ -883,3 +883,91 @@ func TestConsoleSystemShellIsTheSuperusersToSet(t *testing.T) {
 	as("alice", "superuser")
 	sb.expect(0, "operator: disabled", "")
 }
+
+// 'user remove' drops the system-shell setting of the user, 'user rename'
+// moves it to the new name (the person keeps the access), both say so and are
+// logged as 'console set'; a user created later under the old name has none,
+// a setting left under a name by a hand edit is dropped when a user of that name
+// is added, and an entry of a name that is no store user is not honoured.
+func TestSystemShellSettingFollowsTheUser(t *testing.T) {
+	sb := consoleSandbox(t)
+	sb.write("shells", "/bin/sh\n/bin/bash\n", 0o644)
+	sb.con("system-shell", "user", "carol", "enable")
+	sb.con("system-shell", "user", "bob", "enable")
+	state := func(name string) string { return strings.TrimSpace(sb.con("system-shell", "user", name)) }
+
+	// rename: carol -> erin
+	out := plain(sb.cfgRun("", []string{"user", "rename", "carol", "erin"}, nil, "SUDO_USER=alice", "SUDO_UID=1001"))
+	if sb.code != 0 || !strings.Contains(out, "The system-shell setting of 'carol' (enable) moves to 'erin'.") {
+		t.Fatalf("rename: %d %q\n%s", sb.code, sb.stderr(), out)
+	}
+	if y := sb.consoleYAML(); !strings.Contains(y, "system_shell_users: {bob: true, erin: true}") || strings.Contains(y, "carol") {
+		t.Errorf("console.yaml after the rename:\n%s", y)
+	}
+	wantLines := []string{
+		"console set key=system-shell item=user:carol from=enable to=none by=alice",
+		"console set key=system-shell item=user:erin from=none to=enable by=alice",
+	}
+	for _, l := range wantLines {
+		if !hasAudit(sb.runner, "auth.notice", l) {
+			t.Errorf("no %q in %q", l, auditLines(sb.runner))
+		}
+	}
+	if got := state("erin"); got != "enabled (user setting)" {
+		t.Errorf("erin: %q", got)
+	}
+
+	// remove: erin goes, and a user created under the name has no setting
+	out = plain(sb.cfgRun("y\n", []string{"user", "remove", "erin"}, nil, "SUDO_USER=alice", "SUDO_UID=1001"))
+	if sb.code != 0 || !strings.Contains(out, "The system-shell setting of 'erin' (enable) is dropped.") {
+		t.Fatalf("remove: %d %q\n%s", sb.code, sb.stderr(), out)
+	}
+	if y := sb.consoleYAML(); strings.Contains(y, "erin") || !strings.Contains(y, "system_shell_users: {bob: true}") {
+		t.Errorf("console.yaml after the removal:\n%s", y)
+	}
+	if !hasAudit(sb.runner, "auth.notice", "console set key=system-shell item=user:erin from=enable to=none by=alice") {
+		t.Errorf("remove not logged: %q", auditLines(sb.runner))
+	}
+	sb.cfgRun("", []string{"user", "add", "erin", "readonly", "--hash", testHash, "--scopes", "lab"}, nil, "SUDO_USER=alice", "SUDO_UID=1001")
+	if sb.code != 0 {
+		t.Fatalf("add erin: %d %q", sb.code, sb.stderr())
+	}
+	if got := state("erin"); got != "disabled (tier readonly)" {
+		t.Errorf("recreated erin: %q", got)
+	}
+
+	// a user without a setting: nothing is said, console.yaml is not touched
+	before := sb.consoleYAML()
+	out = plain(sb.cfgRun("y\n", []string{"user", "remove", "erin"}, nil, "SUDO_USER=alice", "SUDO_UID=1001"))
+	if sb.code != 0 || strings.Contains(out, "system-shell") || sb.consoleYAML() != before {
+		t.Errorf("remove without a setting: %d\n%s", sb.code, out)
+	}
+
+	// an entry left by a hand edit is dropped when the name is added, and is
+	// listed as no such user until then
+	sb.write("state/console.yaml", "version: 1\nsettings: {system_shell_users: {bob: true, frank: true}}\n", 0o600)
+	if list := sb.con("system-shell"); !strings.Contains(list, "  frank: enabled (no such user)") {
+		t.Errorf("listing:\n%s", list)
+	}
+	out = plain(sb.cfgRun("", []string{"user", "add", "frank", "operator", "--hash", testHash, "--scopes", "lab"}, nil, "SUDO_USER=alice", "SUDO_UID=1001"))
+	if sb.code != 0 || !strings.Contains(out, "The system-shell setting of 'frank' (enable) is dropped.") || strings.Contains(sb.consoleYAML(), "frank") {
+		t.Errorf("add frank: %d\n%s\n%s", sb.code, out, sb.consoleYAML())
+	}
+	if got := state("frank"); got != "disabled (tier operator)" {
+		t.Errorf("frank: %q", got)
+	}
+
+	// not honoured for a name that is no store user: the caller has no tier
+	// at all, so the policy line is the gate's refusal, and the entry changes
+	// nothing for a store user of another name
+	sb.write("state/console.yaml", "version: 1\nsettings: {system_shell_users: {ghost: true}}\n", 0o600)
+	sb.cfgRun("", []string{"_console-policy"}, func(r *fake.Runner) {
+		r.On([]string{"id", "-nG", "--", "ghost"}, execx.Result{Stdout: []byte("ghost tac-users tac-readonly\n")})
+	}, "SUDO_USER=ghost")
+	if sb.code != 1 || !strings.Contains(sb.stderr(), "'ghost' has no active tacctl user") {
+		t.Errorf("ghost: %d %q", sb.code, sb.stderr())
+	}
+	if got := state("ghost"); got != "enabled (user setting; no such user)" {
+		t.Errorf("ghost state: %q", got)
+	}
+}

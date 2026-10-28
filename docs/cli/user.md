@@ -31,7 +31,8 @@ user add <name> <group> --hash <hash>|-
 
 user remove <name>
 
-    Remove a user (with confirmation)
+    Remove a user (with confirmation); the user's `console system-shell user` setting, if any, is
+    dropped and the command says so
 
 user passwd <name>
 
@@ -56,23 +57,23 @@ user enable <name>
 
 user rename <old> <new>
 
-    Rename a user; the new name is lower case, with periods as for `user add`. Changing only the
+    Rename a user; the new name is lower case, with periods as for `user add`. The user's `console
+    system-shell user` setting moves to the new name, and the command says so. Changing only the
     spelling (`user rename Alice alice`) fixes a name from before. Devices match the typed login
     name exactly, so the rename changes what the person types at the device. The user keeps the
     Linux UID: the line of the old name in `linux-uids` becomes the new name's, in place, and the
-    command says `UID <uid> follows the rename (linux-uids).` With enrolled hosts that list the
-    user it also says that the next `host sync` renames the account there by its UID, home kept
-    where it is. A user with no line is renamed as before. A new name that already has a line
-    keeps its own number, the ledger is left alone and a warning says that hosts remove the old
-    account and create the new one. If the ledger cannot be written after the rename, the command
-    names the snapshot to restore and exits 1. The move is made under the ledger's lock: a `host
-    sync` builds its script from the ledger under the same lock, so it sends the names as they
-    were before the rename or after it, never a mix; an account created under the old name is
-    renamed at that host's next sync. If the ledger is locked by another command for 30 seconds,
-    the rename stops at the snapshot with nothing changed (see [Consistent UIDs and
-    GIDs](../hosts/ids-and-groups.md)). A user that has a UID in `linux-uids`, or an account on an
-    enrolled host, is not renamed to a name with a period: the next sync would remove the account.
-    The command says so and changes nothing.
+    command says `UID <uid> follows the rename (linux-uids).` With enrolled hosts that list the user
+    it also says that the next `host sync` renames the account there by its UID, home kept where it
+    is. A user with no line is renamed as before. A new name that already has a line keeps its own
+    number, the ledger is left alone and a warning says that hosts remove the old account and create
+    the new one. If the ledger cannot be written after the rename, the command names the snapshot to
+    restore and exits 1. The move is made under the ledger's lock: a `host sync` builds its script
+    from the ledger under the same lock, so it sends the names as they were before the rename or
+    after it, never a mix; an account created under the old name is renamed at that host's next
+    sync. If the ledger is locked by another command for 30 seconds, the rename stops at the
+    snapshot with nothing changed (see [Consistent UIDs and GIDs](../hosts/ids-and-groups.md)). A
+    user that has a UID in `linux-uids`, or an account on an enrolled host, is not renamed to a name
+    with a period: the next sync would remove the account. The command says so and changes nothing.
 
 user move <name> <group>
 

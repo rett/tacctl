@@ -474,13 +474,19 @@ func (inv *invocation) userAdd(args []string) error {
 	} else {
 		a.Out.Info("Using pre-generated bcrypt hash.")
 	}
-	if err := inv.storeApply(func(s *store.Store) error {
+	// A system-shell setting left under the name (a hand edit, a removal that
+	// could not write console.yaml) is not inherited by the new user.
+	var stale systemShellMove
+	if err := inv.storeApplyThen(func(s *store.Store) error {
 		return s.UserSet(username, "group="+group, "scopes="+display, "hash="+hexHash, "disabled=false", "password_changed=today")
-	}); err != nil {
+	}, func() { stale = inv.moveSystemShellUser(username, "") }); err != nil {
 		return err
 	}
 	inv.detail("user add", kvp("name", username), kvp("group", group), kvp("scopes", display))
 	a.Out.InfoE("User '" + username + "' added (" + group + ") with scopes: " + display)
+	if err := inv.systemShellMoved(stale, username, ""); err != nil {
+		return err
+	}
 	inv.echo("")
 	return nil
 }
@@ -527,11 +533,16 @@ func (inv *invocation) userRemove(args []string) error {
 		return nil
 	}
 	watch := inv.watchServerTiers()
-	if err := inv.storeApply(func(s *store.Store) error { return s.UserDel(username) }); err != nil {
+	var shell systemShellMove
+	if err := inv.storeApplyThen(func(s *store.Store) error { return s.UserDel(username) },
+		func() { shell = inv.moveSystemShellUser(username, "") }); err != nil {
 		return err
 	}
 	inv.detail("user remove", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' removed.")
+	if err := inv.systemShellMoved(shell, username, ""); err != nil {
+		return err
+	}
 	inv.echo("")
 	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
 }
@@ -801,8 +812,10 @@ func (inv *invocation) userRename(args []string) error {
 	watch := inv.watchServerTiers()
 	hostCount := inv.enrolledHostsWith(oldname)
 	var mv uidMove
+	var shell systemShellMove
 	if err := inv.storeApplyThen(func(s *store.Store) error { return s.UserRename(oldname, newname) }, func() {
 		mv = inv.moveUID(oldname, newname)
+		shell = inv.moveSystemShellUser(oldname, newname)
 	}); err != nil {
 		return err
 	}
@@ -813,6 +826,7 @@ func (inv *invocation) userRename(args []string) error {
 	inv.detail("user rename", kvp("from", oldname), kvp("to", newname), kvp("uid", uidWord))
 	out := inv.app.Out
 	out.Info("User renamed: " + oldname + " -> " + newname)
+	shellErr := inv.systemShellMoved(shell, oldname, newname)
 	switch {
 	case mv.err != nil:
 		id := "<id>"
@@ -831,6 +845,9 @@ func (inv *invocation) userRename(args []string) error {
 	case mv.heldBy != "":
 		out.Warn("'" + newname + "' already has UID " + mv.heldBy + " in linux-uids; the account '" + oldname + "' (UID " + mv.uid +
 			") is removed on hosts and '" + newname + "' created with " + mv.heldBy)
+	}
+	if shellErr != nil {
+		return shellErr
 	}
 	inv.echo("")
 	// A server that is not enrolled holds no accounts to sync; an enrolled

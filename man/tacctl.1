@@ -781,7 +781,11 @@ Grant specific scopes at creation.
 .\" END GENERATED: command user add
 .TP
 .BI "user remove " name
-Remove a user after confirmation.
+Remove a user after confirmation. The user's
+.B "console system\-shell user"
+setting, if any, is dropped from
+.I console.yaml
+and the command says so.
 .\" BEGIN GENERATED: command user remove
 .RS
 .PP
@@ -844,7 +848,9 @@ Requires: \fBsuperuser\fR.
 .\" END GENERATED: command user enable
 .TP
 .BI "user rename " "old new"
-Rename a user. The new name is lower case, and may hold periods as for
+Rename a user. The user's
+.B "console system\-shell user"
+setting moves to the new name, and the command says so. The new name is lower case, and may hold periods as for
 .B user add
 (but see below); changing only the spelling
 .RB ( "user rename Alice alice" )
@@ -12124,11 +12130,19 @@ kept in
 .B settings.system_shell_users
 and are logged as
 .BR "console set key=system\-shell item=user:" \fIname\fR.
-A setting stays when the user is renamed or removed (it is listed with
+.B "user rename"
+moves the setting to the new name and
+.B "user remove"
+drops it (both say so and are logged as
+.BR "console set" ),
+so a user created later under the name does not inherit it, and neither does
+.B "user add"
+when a hand\-edited entry of the name is left. An entry for a name that is no
+user is not honoured; it is listed with
 .BR "no such user" ,
 and
 .B clear
-removes it).
+removes it.
 .TP
 .BI "console system\-shell path " "[ " path " ]"
 The system shell, default
