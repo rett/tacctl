@@ -974,6 +974,22 @@ and
 with
 .B \-\-no\-change\-required
 lift it.
+.PP
+While a password change is required of the caller, and the caller is no
+superuser, every command but
+.BR passwd ,
+.B version
+and
+.B help
+is refused with one message (\fBA password change is required of '<user>'\fR ...)
+and exit status 1: this covers a plain shell and
+.BR "ssh <server> tacctl ..." ,
+which the login console does not. A superuser, root and a local administrator
+outside the tacctl users are never affected. The refusal is logged
+.RB ( "password\-change DENY" ,
+see
+.BR "AUDIT LOG" ).
+.PP
 .B on
 skips, and names with the reason, a superuser and a user with no login on this
 server (the server is not enrolled, the user is not in its scope, the name is
@@ -13187,6 +13203,17 @@ when the answer is the address or the address was skipped.
 .SS Refusals
 The tier gate's refusals keep their words and carry the session id
 .RB ( "tier DENY user=carol tier=readonly cmd=user remove sid=k3x9a0bq" ).
+A caller who must change the password is refused every command but
+.BR passwd ,
+.B version
+and
+.B help
+right after the gate, with
+.BR "password\-change DENY user=bob tier=operator cmd=\(dquser list\(dq" ,
+at
+.BR auth.warning ,
+which names the two words the gate sees and never an argument (see
+.BR "user require\-password\-change" ).
 A verb the gate lets through can still refuse: an engineer naming a scope's
 secret to change, or another scope's device. That is the third central line, at
 .BR auth.warning :

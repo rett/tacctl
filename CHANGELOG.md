@@ -265,7 +265,12 @@ current behaviour; this file is where history lives.
     with no login on this server (it is not enrolled, the user is not in its
     scope, the name has a period, the user is disabled) could never change the
     password: the flag is not set, `user add` says why, and
-    `require-password-change on` skips the user with the reason. The user's own
+    `require-password-change on` skips the user with the reason. While a
+    password change is required of the caller, and the caller is no
+    superuser, every command but `passwd`, `version` and `help` is refused
+    with one message and exit status 1 (a plain shell and `ssh <server>
+    tacctl ...` included; root and a local administrator who is no tacctl user
+    are not affected), and the refusal is logged as `password-change DENY`. The user's own
     `tacctl passwd` (which already refused the current password as the new one)
     lifts the requirement. The flag is the user's `password_change_required` in
     `store.yaml`, written only when set; `user list` marks the date with

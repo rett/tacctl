@@ -10,7 +10,9 @@ package cli
 //  2. the tacctl.yaml warning that sourcing lib/conf.sh prints once
 //     (App.WarnConf);
 //  3. the tier gate, enforce_tier "$COMMAND" "${1:-}" (internal/tier), on
-//     the first two words of the command line as typed;
+//     the first two words of the command line as typed, then the required
+//     password change (0.2.20): a caller who must change the password and is
+//     no superuser runs 'passwd', 'version' and 'help' only (pwchange_gate.go);
 //  4. preflight, for the families bin/tacctl.sh runs it for (App.Preflight);
 //  4a. the central audit lines: an action's 'cmd start' (audit.go);
 //  5. the command, which returns an error that exit.go maps to the exit
@@ -65,6 +67,9 @@ func (inv *invocation) prelude(o nativeOpts) error {
 	}
 	a.WarnConf()
 	if err := inv.gate(); err != nil {
+		return err
+	}
+	if err := inv.passwordChangeGate(); err != nil {
 		return err
 	}
 	if o.Preflight {

@@ -223,6 +223,15 @@ The tier gate's refusals keep their words and carry the session id:
 tier DENY user=carol tier=readonly cmd=user remove sid=k3x9a0bq
 ```
 
+A caller who must change the password (see [A required password change](../cli/user.md)) is
+refused every command but `passwd`, `version` and `help` right after the gate, with a line of its
+own, at `auth.warning`, that names the two words the gate sees and never an argument; the command
+never started, so it has no central line:
+
+```
+password-change DENY user=bob tier=operator cmd="user list" sid=k3x9a0bq
+```
+
 A verb the gate lets through can still refuse: an engineer naming a scope's secret to change, or another scope's device. That is the third central line, at `auth.warning`:
 
 ```

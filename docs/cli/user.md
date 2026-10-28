@@ -166,6 +166,11 @@ only when set.
   server's. A scope that holds the server together with devices cannot be cut apart: the devices in it
   still accept the user, and the verbs warn and name the prefixes. Give the server a scope of its own
   (`scope add`, then `host enroll --local --scope <name>`).
+- *Commands.* While a password change is required of the caller, and the caller is no superuser,
+  every command but `passwd`, `version` and `help` is refused with one message and exit status 1
+  (`A password change is required of '<user>': ...`). This covers a plain shell and `ssh <server>
+  tacctl ...`; root, a superuser and a local administrator who is no tacctl user are not affected.
+  The refusal is logged as `password-change DENY` ([Audit log](../security/audit.md#refusals)).
 - *Listing.* `user list` marks the date of a user who must change the password with `(change
   required)`, `user show` has a `Password change` line, and `status` counts the users pending.
 - *Older releases.* A release before 0.2.20 refuses the key, so every `tacctl rollback` target
