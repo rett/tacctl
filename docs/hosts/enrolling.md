@@ -51,7 +51,15 @@ over at the next `host sync` of the server or `host enroll --local`, its
 secret kept, in one line; one that also serves hosts or devices is left to
 them, and `host enroll --local` sets up the server's own login apart from it.
 A `host sync` of the server repairs its login when it was changed by hand
-(`Repaired the managed server login.`).
+(`Repaired the managed server login.`). A scope called `tacctl` that answers an
+address other than this server's own login addresses (`127.0.0.1` and the
+server address) is yours, from an earlier release: it is never taken over,
+given members or repaired, and `host enroll --local`, the sync of the server
+(the other hosts of `host sync --all` are synced) and `config validate` stop
+with one line, `Scope 'tacctl' is reserved. Rename the scope of that name
+first: tacctl scope rename tacctl <new-name>`. A scope of that name that
+answers the login addresses only, has no member and serves no one else is what
+an enrolment that did not finish left: the next `host enroll --local` takes it.
 
 **One machine, one registration.** Enroll refuses this server's own address unless it is `--local` (`'<target>' is this server; enroll it with --local`), and a new name for a machine already enrolled under another one (the same address on the same ssh port, or one of this server's own addresses when it is enrolled with `--local`): `'h192-0-2-22' is the enrolled host 'dev' (enrolled as admin@host.example.net): both reach 192.0.2.22.` Re-enroll it under its registered name (`--name dev`) or change how it is reached (`tacctl host target dev <[user@]host>`).
 

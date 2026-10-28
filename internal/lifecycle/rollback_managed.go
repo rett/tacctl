@@ -27,9 +27,10 @@ import (
 
 // planManagedScope reads the registry and the store for the users the
 // managed scope is to be added to. Nothing when the server is not registered
-// in it, the scope is not in the store, or there is no store; a registry or
-// a store that cannot be read is an error (the users' server login must not
-// be lost unseen).
+// in it, the scope is not in the store or answers more than the server's
+// login addresses (an operator's scope of that name), or there is no store;
+// a registry or a store that cannot be read is an error (the users' server
+// login must not be lost unseen).
 func (p *RollbackPlan) planManagedScope() error {
 	if !p.in.HasStore {
 		return nil
@@ -39,10 +40,11 @@ func (p *RollbackPlan) planManagedScope() error {
 	if err != nil {
 		return &RollbackRefusal{Lines: []string{pa.LinuxHosts + " cannot be read, so the users' login to this server cannot be kept (" + strings.TrimSuffix(err.Error(), ".") + "); fix it first."}}
 	}
+	var server pwchange.Server
 	local := false
 	for _, e := range reg.Entries() {
 		if e.Target == hosts.Local && e.Scope == pwchange.ManagedScope {
-			local = true
+			local, server = true, pwchange.ServerOf(e)
 		}
 	}
 	if !local {
@@ -52,7 +54,9 @@ func (p *RollbackPlan) planManagedScope() error {
 	if err != nil {
 		return &RollbackRefusal{Lines: []string{pa.StoreFile + " cannot be read, so the users' login to this server cannot be kept (" + strings.TrimSuffix(err.Error(), ".") + "); fix it first (tacctl config validate)."}}
 	}
-	if m.Scope(pwchange.ManagedScope) == nil {
+	// a scope of that name that answers more than the server is an operator's
+	// (an ordinary scope for the older release too): nobody is added to it
+	if !server.ManagedIn(m) {
 		return nil
 	}
 	for _, u := range m.Users {

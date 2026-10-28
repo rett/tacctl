@@ -29,9 +29,47 @@ import (
 // ManagedScope is the name of the scope of this server's own logins.
 const ManagedScope = "tacctl"
 
-// Managed reports whether the server is registered in the managed scope:
-// whether its users are members of it without having it.
+// Managed reports whether the server is registered in a scope of the managed
+// name. Whether that scope is the managed one is ManagedIn.
 func (s Server) Managed() bool { return s.Scope == ManagedScope }
+
+// ManagedIn reports whether the server is registered in the managed scope and
+// the scope called so in m is one tacctl manages for it: whether its users
+// are members of it without having it. A scope of that name that answers an
+// address other than the server's login addresses is an operator's (made on
+// a release before this one, or on one after a rollback), however the
+// registry names it: no user is ever made a member of it, and nothing in it
+// is repaired. No state is kept for that: the prefixes tell.
+func (s Server) ManagedIn(m *model.Model) bool {
+	if !s.Managed() {
+		return false
+	}
+	sc := m.Scope(ManagedScope)
+	return sc != nil && OnlyLoginAddresses(sc, s)
+}
+
+// OnlyLoginAddresses reports whether every prefix of sc is a login address
+// (Prefixes) of one of the servers: a scope that answers the server alone.
+func OnlyLoginAddresses(sc *model.Scope, servers ...Server) bool {
+	var own []string
+	for _, s := range servers {
+		own = append(own, s.Prefixes()...)
+	}
+	for _, p := range sc.Prefixes {
+		if n, ok := store.ParseNet(p); !ok || !slices.Contains(own, n.String()) {
+			return false
+		}
+	}
+	return true
+}
+
+// Clash reports whether m has a scope called ManagedScope that is no scope
+// of the managed kind for any of the servers: an operator's scope that has
+// the reserved name.
+func Clash(m *model.Model, servers ...Server) bool {
+	sc := m.Scope(ManagedScope)
+	return sc != nil && !OnlyLoginAddresses(sc, servers...)
+}
 
 // Prefixes are the prefixes of the managed scope: each of the server's login
 // addresses (LoginAddresses) as a host prefix, in that order.
@@ -56,12 +94,12 @@ func Implicit(c *conf.Config, m *model.Model, u *model.User) bool {
 }
 
 // WithServerScope is the model with every implicit member (Implicit) in the
-// managed scope, when the server is registered in it and the scope exists;
-// the model as it is otherwise. It is what the renderers and the server's own
-// accounts are made from; the store is not changed, and the listings show
-// the users' own scopes.
+// managed scope, when the server is registered in it and the scope exists
+// and is the managed one (ManagedIn); the model as it is otherwise. It is
+// what the renderers and the server's own accounts are made from; the store
+// is not changed, and the listings show the users' own scopes.
 func WithServerScope(c *conf.Config, m *model.Model, s Server) *model.Model {
-	if !s.Managed() || m.Scope(ManagedScope) == nil {
+	if !s.ManagedIn(m) {
 		return m
 	}
 	return m.WithUserScopes(func(u *model.User) ([]string, bool) {

@@ -20,7 +20,6 @@ import (
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/hosts"
-	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -95,6 +94,9 @@ type hostConnJSON struct {
 type hostScopeJSON struct {
 	Registered string `json:"registered"`
 	Exists     bool   `json:"exists"`
+	// managed is this server in the scope tacctl manages (managed_scope.go):
+	// no scope of the operator's is named, in the view or in the JSON.
+	managed bool
 	// Answering is the scope that answers Address (the address the host's
 	// logins come from), via Prefix; "" when none does or it is unknown.
 	Address   string            `json:"address"`
@@ -252,8 +254,11 @@ func (inv *invocation) hostView(e hosts.Entry) (*hostShowJSON, error) {
 
 	// Scope.
 	s := hostScopeJSON{Registered: e.Scope, Exists: m.Exists("scopes", e.Scope), Staging: []hostStagingJSON{}}
+	if inv.entryManaged(e) {
+		s.managed, s.Registered, s.Exists = true, "", false
+	}
 	s.Address = inv.hostAddress(e)
-	if s.Address != "" {
+	if s.Address != "" && !s.managed {
 		if info, found := m.LookupAddr(s.Address); found {
 			s.Answering, s.Prefix = info.Scope, info.Prefix
 		}
@@ -316,7 +321,7 @@ func (inv *invocation) hostAccounts(e hosts.Entry, rng hosts.Range) (hostAccount
 		}
 	}
 	uids := hosts.UIDs{Path: inv.app.Paths.LinuxUIDs, Range: rng}
-	rows, inactive := inv.linuxAccounts(m, e.Scope, local)
+	rows, inactive := inv.linuxAccounts(m, e.Scope, e.Server, local)
 	for _, r := range rows {
 		name, lvl, _ := strings.Cut(r, "|")
 		if name == "" || name == "root" {
@@ -411,7 +416,7 @@ func (inv *invocation) hostShowText(v *hostShowJSON, all bool) {
 
 	// Scope (none for this server in the scope tacctl manages: its own login
 	// is no scope of the operator's).
-	if s := v.Scope; s.Registered != pwchange.ManagedScope {
+	if s := v.Scope; !s.managed {
 		section("Scope")
 		reg := s.Registered
 		if !s.Exists {

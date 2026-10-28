@@ -25,23 +25,34 @@ import (
 )
 
 // managedScope is pwchange.ManagedScope when this server is registered in it
-// (the registry's local entry names it), "" otherwise or when the registry
-// cannot be read.
+// (the registry's local entry names it) and the scope of that name is the
+// managed one (pwchange.Server.ManagedIn: it answers the server's login
+// addresses only), "" otherwise or when the registry or the store cannot be
+// read. An operator's scope of that name is none of tacctl's: it is listed and
+// edited like any other.
 func (inv *invocation) managedScope() string {
 	if e, ok, err := inv.localHost(); err == nil && ok && e.Scope == pwchange.ManagedScope {
-		return e.Scope
+		if m, err := inv.model(); err == nil && pwchange.ServerOf(e).ManagedIn(m) {
+			return e.Scope
+		}
 	}
 	return ""
 }
 
 // serverModel is the model the accounts of a host are made from: on this
-// server in the managed scope (managed) every user is in it
-// (pwchange.WithServerScope), registered yet or about to be.
-func (inv *invocation) serverModel(m *model.Model, managed bool) *model.Model {
-	if !managed {
-		return m
+// server in the managed scope (srv, the server's registration) every user is
+// in it (pwchange.WithServerScope), registered yet or about to be.
+func (inv *invocation) serverModel(m *model.Model, srv pwchange.Server) *model.Model {
+	return pwchange.WithServerScope(inv.app.Conf(), m, srv)
+}
+
+// serverOfEntry is the server of a registry entry for serverModel: this
+// server's registration, the zero Server for any other host.
+func serverOfEntry(e hosts.Entry) pwchange.Server {
+	if e.Target != hosts.Local {
+		return pwchange.Server{}
 	}
-	return pwchange.WithServerScope(inv.app.Conf(), m, pwchange.Server{Scope: pwchange.ManagedScope})
+	return pwchange.ServerOf(e)
 }
 
 // shownModel is the model the listings show: without the managed scope while
@@ -150,6 +161,67 @@ func (inv *invocation) noScopesText(text string) string {
 // others too): only 'host enroll --local' does that.
 var errManagedNeedsEnroll = errors.New("this server's own login needs 'tacctl host enroll --local'")
 
+// errManagedClash says that a scope of the operator's has the reserved name,
+// so this server's own login cannot be set up or repaired. The caller says
+// it with managedClashText.
+var errManagedClash = errors.New("a scope of the operator's has the reserved name")
+
+// managedClashText is the one line of the refusal: the clash and the fix.
+const managedClashText = reservedText + " Rename the scope of that name first: tacctl scope rename " + pwchange.ManagedScope + " <new-name>. Nothing was changed."
+
+// managedSetupErr is the refusal managedSetup's error says: the clash (one
+// line, the fix named); anything else as it is.
+func (inv *invocation) managedSetupErr(err error) error {
+	if errors.Is(err, errManagedClash) {
+		return inv.usageErr(managedClashText)
+	}
+	return err
+}
+
+// entryManaged reports whether e, the registration of this server, is in the
+// managed scope as tacctl manages it (pwchange.Server.ManagedIn).
+func (inv *invocation) entryManaged(e hosts.Entry) bool {
+	if e.Target != hosts.Local || e.Scope != pwchange.ManagedScope {
+		return false
+	}
+	m, err := inv.model()
+	return err == nil && pwchange.ServerOf(e).ManagedIn(m)
+}
+
+// managedClashFinding is the finding of an enrolled server whose own login
+// cannot be managed because a scope of the operator's has the reserved name:
+// the scope answers an address other than the server's login addresses. Only
+// an enrolled server has one: before the enrolment 'host enroll --local'
+// refuses with the same words.
+func (inv *invocation) managedClashFinding(entries []hosts.Entry) (hostFinding, bool) {
+	var e hosts.Entry
+	found := false
+	for _, x := range entries {
+		if x.Target == hosts.Local {
+			e, found = x, true
+		}
+	}
+	if !found {
+		return hostFinding{}, false
+	}
+	m, err := inv.model()
+	if err != nil {
+		return hostFinding{}, false
+	}
+	servers := []pwchange.Server{pwchange.ServerOf(e)}
+	if addr := inv.app.Conf().ServerAddress(); addr != "" {
+		servers = append(servers, pwchange.Server{Scope: pwchange.ManagedScope, Address: addr})
+	}
+	if !pwchange.Clash(m, servers...) {
+		return hostFinding{}, false
+	}
+	return hostFinding{
+		Text:  "a scope of the operator's has the name '" + pwchange.ManagedScope + "', which this server's own login needs, so a sync or an enrolment of '" + e.Name + "' is refused",
+		Fix:   "tacctl scope rename " + pwchange.ManagedScope + " <new-name>",
+		Hosts: []string{e.Name},
+	}, true
+}
+
 // sharedWith are the others a scope of this server's serves, by name: the
 // other enrolled hosts registered in it, its staging addresses, the devices
 // and enrolled hosts whose address falls in its prefixes, and any prefix
@@ -247,8 +319,14 @@ func canonCIDR(p string) string {
 //     managed scope with a secret of its own (an enrolment only; the sync
 //     says what to run), the old scope left for the others.
 //
-// An operator's own scope of the reserved name refuses. undo, when not nil,
-// takes a new scope out again when the client script fails.
+// An operator's own scope of the reserved name, one that answers an address
+// other than the server's login addresses, is never taken over, repaired or
+// given members: managedSetup refuses with errManagedClash, whichever scope the
+// server is registered in. A scope of that name that answers the login
+// addresses only, has no member and is shared with no one is what an
+// enrolment that did not finish left, when the server is registered in no
+// other scope: the enrolment adopts it. undo, when not nil, takes a new scope
+// out again when the client script fails.
 func (inv *invocation) managedSetup(reg *hosts.Registry, server string, fresh bool) (undo func(), err error) {
 	a := inv.app
 	m, err := inv.model()
@@ -258,19 +336,28 @@ func (inv *invocation) managedSetup(reg *hosts.Registry, server string, fresh bo
 	srv := pwchange.Server{Scope: pwchange.ManagedScope, Address: server}
 	prefixes := srv.Prefixes()
 	cur, registered := inv.localEntryOf(reg)
+	servers := []pwchange.Server{srv}
+	if registered {
+		servers = append(servers, pwchange.ServerOf(cur))
+	}
 	exists := m.Scope(pwchange.ManagedScope) != nil
 	ours := registered && cur.Scope == pwchange.ManagedScope
-	if exists && !ours {
-		// a scope of that name that is not the server's: the operator's,
-		// unless it is one an enrolment that did not finish made
-		others, err := inv.sharedWith(m, reg, pwchange.ManagedScope, srv)
-		if err != nil {
-			return nil, err
+	if exists {
+		sc := m.Scope(pwchange.ManagedScope)
+		if !pwchange.OnlyLoginAddresses(sc, servers...) {
+			return nil, errManagedClash
 		}
-		if len(others) > 0 || len(m.Members(pwchange.ManagedScope)) > 0 || (registered && cur.Scope != pwchange.ManagedScope) {
-			return nil, inv.usageErr(reservedText + " Rename the scope of that name first: tacctl scope rename " + pwchange.ManagedScope + " <new-name>. Nothing was changed.")
+		if !ours {
+			// an enrolment that did not finish may have made it
+			others, err := inv.sharedWith(m, reg, pwchange.ManagedScope, srv)
+			if err != nil {
+				return nil, err
+			}
+			if len(others) > 0 || len(m.Members(pwchange.ManagedScope)) > 0 || (registered && cur.Scope != pwchange.ManagedScope) {
+				return nil, errManagedClash
+			}
+			ours = true
 		}
-		ours = true
 	}
 	if ours && exists {
 		sc := m.Scope(pwchange.ManagedScope)
@@ -419,12 +506,10 @@ func canonAddr(s string) string {
 }
 
 // managedRemove takes the managed scope out with this server's registration
-// e (host unenroll, host forget): nothing else can use it.
+// e (host unenroll, host forget): nothing else can use it. A scope of the
+// reserved name that is the operator's (not the managed one) is left alone.
 func (inv *invocation) managedRemove(e hosts.Entry) {
-	if e.Scope != pwchange.ManagedScope {
-		return
-	}
-	if ok, err := inv.scopeExists(pwchange.ManagedScope); err != nil || !ok {
+	if !inv.entryManaged(e) {
 		return
 	}
 	if err := inv.applyStore(func(s *store.Store) error { return s.ScopeDel(pwchange.ManagedScope, true) }); err != nil {

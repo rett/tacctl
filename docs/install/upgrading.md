@@ -39,6 +39,18 @@ After an upgrade: `tacctl status`, `tacctl config validate` (store, rendered con
 
 **The login console on every account (0.2.20).** The console is the login shell of every managed user of every tier on the tacctl server, and there is no switch for it. The `tiers` and `users` mappings of `/etc/tacctl/console.yaml` (the per-tier and per-user switches of earlier releases) are ignored, never written again and left in the file; every managed user gets the console at the next `tacctl host sync <name of this server>`, which also puts sshd's drop-in in force for all of them. Local accounts that are not tacctl users are not touched.
 
+**A scope called `tacctl` (0.2.21).** The name is the scope of this server's
+own login, which tacctl manages from this release on. A scope of that name
+that an earlier release has, and that answers an address other than this
+server's own (`127.0.0.1` and the server address), is yours: tacctl does not
+take it over or give it members, and it stays listed and editable. But the
+server cannot get its own login while it exists: `host enroll --local`,
+`host sync` of the server and `config validate` say `Scope 'tacctl' is
+reserved. Rename the scope of that name first`, and `host sync --all` syncs
+the other hosts. Before upgrading, rename it (`tacctl scope rename tacctl
+<new-name>`; the hosts registered in it follow), then run `tacctl host enroll
+--local`.
+
 ## Rolling back
 
 `tacctl rollback` takes seven targets: `0.2.20`, the release before this

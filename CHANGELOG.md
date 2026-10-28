@@ -41,8 +41,14 @@ current behaviour; this file is where history lives.
    login when it was changed by hand (`Repaired the managed server login.`),
    `host move` of the server says it is set up by `host enroll --local`, and
    `host forget` and `host unenroll` of the server take its login with them.
-   A user who must change the password keeps exactly the server's login, as
-   before.
+   A scope called `tacctl` that an earlier release made is yours when it
+   answers an address other than this server's own login addresses: it is
+   never taken over, given members or repaired, and stays listed and
+   editable. While it exists, `host enroll --local`, the sync of the server
+   and `config validate` stop with one line that names it and the fix (`scope
+   rename tacctl <new-name>`), and `host sync --all` goes on with the other
+   hosts; rename it before upgrading. A user who must change the password
+   keeps exactly the server's login, as before.
 
 3. **`tacctl rollback 0.2.20`, and every target keeps the users' server
    login.** The new target removes `server.addresses` (0.2.20 reads every

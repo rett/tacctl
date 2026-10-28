@@ -20,7 +20,9 @@ scope add <name> --prefixes <cidrs>
 
     Create a new scope; the name is lower case (`Names are lower case: use 'lab'.`): a letter, then
     up to 31 lower-case letters, digits, `_` or `-`. The name `tacctl` is reserved (this server's
-    own login, which every user has; no listing shows it)
+    own login, which every user has; no listing shows it). A scope of that name from an earlier
+    release that answers other addresses is yours: it is listed and edited like any other, and is
+    renamed before `host enroll --local` can set the server's login up
 
     [--secret <value>|--secret generate] [--protocols <csv>] [--vendor-attrs <csv>] [--default]
 

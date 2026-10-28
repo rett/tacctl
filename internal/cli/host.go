@@ -240,7 +240,7 @@ func (inv *invocation) hostList(args []string) error {
 		if merr != nil {
 			return 0
 		}
-		rows, _ := inv.linuxAccounts(m, e.Scope, e.Target == hosts.Local)
+		rows, _ := inv.linuxAccounts(m, e.Scope, e.Server, e.Target == hosts.Local)
 		return hosts.UserCount(rows)
 	}
 	recorded := func(e hosts.Entry) string {
@@ -267,7 +267,7 @@ func (inv *invocation) hostList(args []string) error {
 	t := ui.NewTable("Enrolled Linux hosts", cols...)
 	for _, e := range shown {
 		scope := e.Scope
-		if scope == pwchange.ManagedScope {
+		if inv.entryManaged(e) {
 			scope = "-" // this server's own login: no scope of the operator's
 		}
 		row := []any{e.Name, hostTargetPort(e), dash(recorded(e)), scope, e.Server, reg.Method(e.Name), strconv.Itoa(users(e))}
@@ -325,7 +325,11 @@ func (inv *invocation) hostListJSONOut(reg *hosts.Registry, shown []hosts.Entry,
 	out := []hostListJSON{}
 	for _, e := range shown {
 		local := e.Target == hosts.Local
-		v := hostListJSON{Name: e.Name, Local: local, Target: e.Target, Scope: e.Scope, Server: e.Server,
+		scope := e.Scope
+		if inv.entryManaged(e) {
+			scope = "" // this server's own login: no scope of the operator's
+		}
+		v := hostListJSON{Name: e.Name, Local: local, Target: e.Target, Scope: scope, Server: e.Server,
 			Method: reg.Method(e.Name), Identity: e.Identity, Users: users(e),
 			Drift: inv.hostScopeDrift(e, inv.hostAddress(e)), Findings: []hostFindingJSON{}}
 		if !local {
@@ -729,15 +733,11 @@ func (inv *invocation) hostEnroll(args []string) error {
 		method = inv.linuxDefaultMethod()
 	}
 	var undoManaged func()
-	wasManaged := false
-	if cur, ok := inv.localEntryOf(reg); ok && cur.Scope == pwchange.ManagedScope {
-		wasManaged = true
-	}
 	if isLocal {
 		// The managed scope is made ready first (taken over, made or
 		// repaired): the client script writes its secret.
 		if undoManaged, err = inv.managedSetup(reg, server, true); err != nil {
-			return err
+			return inv.managedSetupErr(err)
 		}
 		if reg, err = inv.registry(); err != nil {
 			return err
@@ -969,13 +969,13 @@ func (inv *invocation) hostEnroll(args []string) error {
 		if err := inv.recordServerAddress(server); err != nil {
 			a.Out.WarnE("The server address could not be written to " + a.Paths.Overrides + ": " + msgsJoin(err) + "; run: tacctl host enroll --local --server " + server)
 		}
-		// registered in the managed scope only now: the backends answer every
-		// user for this server's own login from the next render, which is
-		// this one
-		if !wasManaged {
-			if err := inv.applyWith(func() error { return nil }); err != nil {
-				inv.reportOnly(err)
-			}
+		// registered in the managed scope, at this address, only now: the
+		// backends answer every user for this server's own login from the
+		// next render (the scope is the server's own when its prefixes are
+		// the login addresses of the registration), which is this one; the
+		// renders of the setup above saw the registration as it was
+		if err := inv.applyWith(func() error { return nil }); err != nil {
+			inv.reportOnly(err)
 		}
 	}
 	if !enrolled {
@@ -1253,7 +1253,7 @@ func (inv *invocation) hostAddress(e hosts.Entry) string {
 // the scope.
 func (inv *invocation) hostScopeDrift(e hosts.Entry, addr string) string {
 	// this server in the scope tacctl manages: the sync repairs it
-	if addr == "" || e.Scope == pwchange.ManagedScope {
+	if addr == "" || inv.entryManaged(e) {
 		return ""
 	}
 	m, err := inv.model()
@@ -1488,7 +1488,7 @@ func (inv *invocation) localScopeDrift(e hosts.Entry) string {
 		return ""
 	}
 	if info, found := m.LookupAddr("127.0.0.1"); !found || info.Scope != e.Scope {
-		if e.Scope == pwchange.ManagedScope {
+		if inv.entryManaged(e) {
 			return e.Name + ": 127.0.0.1, where this server's own logins come from, is answered by another scope, so they are refused. Repair it: tacctl host enroll --local"
 		}
 		return e.Name + ": scope '" + e.Scope + "' does not cover 127.0.0.1, where this server's own logins come from, so they are refused. Add it: tacctl scope prefixes " + e.Scope + " add 127.0.0.1/32"
@@ -1595,6 +1595,13 @@ func (inv *invocation) hostSync(args []string) error {
 			switch _, err := inv.managedSetup(reg, e.Server, false); {
 			case errors.Is(err, errManagedNeedsEnroll):
 				a.Out.InfoE(name + ": to set up this server's own login for every user: tacctl host enroll --local")
+			case errors.Is(err, errManagedClash):
+				// this server only: the other hosts are synced
+				a.Out.ErrorE(name + ": " + managedClashText)
+				inv.recordRun(name, "sync", "a scope of the operator's has the reserved name 'tacctl'", nil)
+				inv.hostSyncLine(e, nil, removeHome, "a scope of the operator's has the reserved name")
+				failed = true
+				continue
 			case err != nil:
 				return err
 			}
@@ -1901,11 +1908,13 @@ func (inv *invocation) hostUnenroll(args []string) error {
 			staged = nil
 		}
 	}
+	managed := false
 	if e.Target == hosts.Local {
 		// The remove script gave tacctl's accounts /bin/bash back; the
 		// console's pieces go now (refused, and said, while an account
 		// still has the console).
 		_ = inv.consoleDeprovision()
+		managed = inv.entryManaged(e)
 		inv.managedRemove(e)
 	}
 	inv.verbResult(audit.Info, unenrollBase, "")
@@ -1914,7 +1923,7 @@ func (inv *invocation) hostUnenroll(args []string) error {
 		inv.echo("")
 		inv.hostStagingHints(staged)
 	}
-	if !reg.ScopeInUse(e.Scope) && e.Scope != pwchange.ManagedScope {
+	if !reg.ScopeInUse(e.Scope) && !managed {
 		inv.echo("")
 		inv.echo("  No enrolled host uses scope '" + e.Scope + "' any more. To stop its secret being accepted:")
 		inv.echo("    tacctl scope remove " + e.Scope)

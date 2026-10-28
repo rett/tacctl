@@ -578,7 +578,7 @@ func (inv *invocation) scriptRequest(scope, server, method, output string, local
 	if m.Exists("scopes", scope) {
 		req.Secret = m.Scope(scope).Secret
 	}
-	req.Rows, req.Inactive = inv.linuxAccounts(m, scope, local)
+	req.Rows, req.Inactive = inv.linuxAccounts(m, scope, server, local)
 	req.GroupTier = inv.syncGroupTier
 	req.EngineerSudo = strings.Join(inv.app.Conf().GetList(engineerSudoKey), ",")
 	id := backend.TACACS
@@ -597,9 +597,11 @@ func (inv *invocation) scriptRequest(scope, server, method, output string, local
 // the account there (an SSH key fails as the password does) and the sync after
 // the change opens it again; on the server the account stays open, since that
 // is where the password is changed (pwchange.HostHeld).
-func (inv *invocation) linuxAccounts(m *model.Model, scope string, local bool) (rows, inactive []string) {
+func (inv *invocation) linuxAccounts(m *model.Model, scope, server string, local bool) (rows, inactive []string) {
 	// on this server every user is in the managed scope (managed_scope.go)
-	m = inv.serverModel(m, local && scope == pwchange.ManagedScope)
+	if local {
+		m = inv.serverModel(m, pwchange.Server{Scope: scope, Address: server})
+	}
 	held := pwchange.HostHeld(inv.app.Conf(), m, local)
 	return m.LinuxUsersHeld(scope, held), m.LinuxInactiveHeld(scope, held)
 }

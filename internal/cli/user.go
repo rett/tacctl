@@ -1083,7 +1083,7 @@ func (inv *invocation) enrolledHostsCount(user string) (int, error) {
 	n := 0
 	for _, e := range reg.Entries() {
 		found := false
-		m := inv.serverModel(m, e.Target == hosts.Local && e.Scope == pwchange.ManagedScope)
+		m := inv.serverModel(m, serverOfEntry(e))
 		for _, r := range m.LinuxUsers(e.Scope) {
 			if name, _, _ := strings.Cut(r, "|"); name == user {
 				found = true

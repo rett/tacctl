@@ -103,3 +103,55 @@ func TestCarveKeepsTheManagedScope(t *testing.T) {
 		t.Errorf("bob's scopes %v", got)
 	}
 }
+
+// A scope called like the managed one that answers an address other than the
+// server's login addresses is an operator's: no user is made a member of it,
+// whichever scope the registry names, and ManagedIn and Clash tell the two
+// apart by the prefixes alone.
+func TestWithServerScopeNeverFillsAnOperatorsScope(t *testing.T) {
+	m := managedModel(t)
+	sc := m.Scope(ManagedScope)
+	srv := Server{Scope: ManagedScope, Protocol: "tacacs", Address: "198.51.100.7"}
+	if !srv.ManagedIn(m) || Clash(m, srv) || !OnlyLoginAddresses(sc, srv) {
+		t.Fatal("the server's own scope is not recognised")
+	}
+	// the login addresses of the server before and after an address change
+	other := Server{Scope: ManagedScope, Address: "192.0.2.10"}
+	if srv.ManagedIn(model.FromStore(withPrefixes(t, "127.0.0.1/32,192.0.2.10/32"))) || !OnlyLoginAddresses(sc, other, srv) {
+		t.Error("the login addresses of the other server count")
+	}
+	for _, prefixes := range []string{"127.0.0.1/32,198.51.100.0/24", "198.51.100.7/32,203.0.113.5/32", "10.0.0.0/8", "127.0.0.0/8"} {
+		op := model.FromStore(withPrefixes(t, prefixes))
+		if srv.ManagedIn(op) || !Clash(op, srv) {
+			t.Errorf("%s: taken for the managed scope", prefixes)
+		}
+		if out := WithServerScope(view(), op, srv); out != op || len(out.Members(ManagedScope)) != 1 {
+			t.Errorf("%s: users were added: %v", prefixes, out.Members(ManagedScope))
+		}
+	}
+	// no such scope is no clash; a subset of the login addresses is the
+	// managed scope (a repair gives it the rest)
+	if Clash(m.WithoutScope(ManagedScope), srv) {
+		t.Error("a clash without a scope")
+	}
+	if !srv.ManagedIn(model.FromStore(withPrefixes(t, "127.0.0.1/32"))) {
+		t.Error("a subset of the login addresses is not the managed scope")
+	}
+}
+
+// withPrefixes is a store whose scope called tacctl has prefixes, with bob
+// in it.
+func withPrefixes(t *testing.T, prefixes string) *store.Store {
+	t.Helper()
+	st := store.Empty()
+	if err := st.ScopeSet(ManagedScope, "prefixes="+prefixes, "secret=example-secret-example-secret"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UserSet("bob", "group=operator", "scopes="+ManagedScope); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UserSet("carol", "group=readonly", "scopes="); err != nil {
+		t.Fatal(err)
+	}
+	return st
+}

@@ -2910,7 +2910,14 @@ of this server is not a move: its login is set up by
 .BR "host enroll \-\-local" .
 The scope name
 .B tacctl
-is reserved: no command creates, edits or lists it.
+is reserved: no command creates, edits or lists it. A scope of that name from
+an earlier release that answers an address other than this server's own login
+addresses is the operator's: it is listed and edited like any other, and
+.BR "host enroll \-\-local" ,
+the sync of the server and
+.B "config validate"
+stop with one line until it is renamed
+.RB ( "scope rename tacctl" " " "new\-name" ).
 .IP
 ssh runs as the user who invoked
 .BR sudo (8),
