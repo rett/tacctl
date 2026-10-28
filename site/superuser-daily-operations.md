@@ -331,9 +331,15 @@ tacctl scope mgmt-acl site-a mode ssh-only        # back to the default
 tacctl config juniper --scope site-a              # review the filter before it reaches a device
 ```
 
-Setting `strict` prints what stops, and says so when the permit list is
-empty or has no IPv4 entry that permits ssh (no filter is rendered until it
-has one). Setting the mode the
+> **Check which list the scope renders from before you add to it.** When
+> `list` says `Source: global (mgmt_acl.permits)`, the scope has no list of
+> its own, and the first entry you add with `tacctl scope mgmt-acl <scope>
+> add` replaces the global list for this scope. Add the global entries too,
+> or the global subnets lose access once a strict filter is applied.
+
+Setting `strict` prints what stops and which permit list the scope renders
+from, and says so when the permit list is empty or has no IPv4 entry that
+permits ssh (no filter is rendered until it has one). Setting the mode the
 scope already has changes nothing. The change reaches a device only through
 a plan or an apply ([Engineer Guide](engineer-guide-device-changes.md) §4).
 

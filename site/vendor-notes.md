@@ -159,8 +159,10 @@ engine:
 - every other protocol (ping, traceroute) from sources outside the list.
 
 > **Before a device gets a strict filter:** add every neighbour and server
-> it needs to the scope's permit list, keep a console session open while the
-> change goes in, and commit with `commit confirmed`. An entry with services
+> it needs to the permit list the scope renders from (its own list replaces
+> the global one; [Superuser Daily Operations](superuser-daily-operations.md)
+> §8.1), keep a console session open while the change goes in, and commit
+> with `commit confirmed`. An entry with services
 > needs `tcp/22` among them for ssh, and `tcp/830` for NETCONF.
 
 The walkthrough keeps the line that applies the filter to `lo0` commented,
