@@ -96,12 +96,12 @@ func (p *RollbackPlan) addPasswordChange() {
 	s.Lines = append(s.Lines, "("+target+"'s schema refuses the key (\"unknown field 'password_change_required'\"); every other field of the store stays)")
 	at := len(p.Steps)
 	for i := range p.Steps {
-		switch {
-		case p.Steps[i].Title == "leave "+sf+" untouched":
+		switch p.Steps[i].Title {
+		case "leave " + sf + " untouched":
 			// the 0.2.3 plan: the step is replaced
 			p.Steps = slices.Delete(p.Steps, i, i+1)
 			at = i
-		case p.Steps[i].Title == "leave every other file untouched":
+		case "leave every other file untouched":
 			at = i
 			if len(p.Steps[i].Lines) > 0 {
 				p.Steps[i].Lines[0] = strings.Replace(p.Steps[i].Lines[0], sf+", ", "", 1)
