@@ -556,7 +556,7 @@ func (inv *invocation) consoleListMax(args []string) error {
 		return err
 	}
 	if len(args) == 0 {
-		inv.echo(strconv.Itoa(pol.File.ListMax))
+		inv.echo(listMaxWord(pol.File.ListMax))
 		return nil
 	}
 	n, err := strconv.Atoi(args[0])

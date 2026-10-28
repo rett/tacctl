@@ -172,6 +172,10 @@ current behaviour; this file is where history lives.
     the script with `tacctl completion bash` (`upgrade` does it for
     `/etc/bash_completion.d`).
 
+15. **`console list-max` says `never ask` as `console show` does.** A
+    negative number stored as -1 was printed `-1` by `console list-max` and
+    `never ask` by `console show`; both print `never ask`.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

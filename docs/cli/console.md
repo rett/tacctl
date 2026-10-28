@@ -72,7 +72,7 @@ console color [auto|on|off]
 console list-max [<n>]
 
     The longest list the console shows without asking "Show all N?" (default 40, at most 1000;
-    0: the default; a negative number never asks; server-wide)
+    0: the default; a negative number never asks, and is shown as "never ask"; server-wide)
 
 console forwarding tiers [<csv>|none]
 

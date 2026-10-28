@@ -11848,7 +11848,10 @@ at most
 .BR 1000 ).
 .B 0
 is the default, and a negative number never asks (the file then holds
-.BR \-1 ).
+.BR \-1 ;
+the command and
+.B "console show"
+print it as \(lqnever ask\(rq).
 It is server-wide, a superuser sets it, and each console session reads it when
 it starts.
 .\" BEGIN GENERATED: command console list-max

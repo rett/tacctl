@@ -631,8 +631,8 @@ func TestConsoleColorAndListMax(t *testing.T) {
 		if sb.code != 0 || !strings.Contains(out, "next console login") {
 			t.Errorf("list-max %s: %d %q", c.arg, sb.code, out)
 		}
-		if got := strings.TrimSpace(sb.con("list-max")); got != c.stored {
-			t.Errorf("list-max %s: now %q, want %q", c.arg, got, c.stored)
+		if got := strings.TrimSpace(sb.con("list-max")); got != c.shown {
+			t.Errorf("list-max %s: now %q, want %q (as 'console show' says it)", c.arg, got, c.shown)
 		}
 		if !strings.Contains(sb.con("show"), "  list-max: "+c.shown+" (") {
 			t.Errorf("list-max %s: show lacks %q", c.arg, c.shown)
