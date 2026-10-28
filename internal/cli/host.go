@@ -913,7 +913,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 		a.Out.InfoE("Switching " + name + " from " + prevMethod + " to " + method + ".")
 	}
 	if isLocal {
-		a.Out.InfoE("Enrolling " + name + " (" + target + "), server " + server + how + "...")
+		a.Out.InfoE("Enrolling " + name + " (" + target + "), server " + pwchange.ServerAddress + " for its own login (devices and hosts use " + server + ")" + how + "...")
 	} else {
 		a.Out.InfoE("Enrolling " + name + " (" + target + ") in scope '" + scope + "', server " + server + how + "...")
 	}

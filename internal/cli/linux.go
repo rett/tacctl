@@ -568,6 +568,12 @@ func (inv *invocation) linuxScopeServes(scope, method string) (bool, error) {
 // account of a user who must change the password (linuxAccounts).
 func (inv *invocation) scriptRequest(scope, server, method, output string, local bool) (hosts.ScriptRequest, error) {
 	req := hosts.ScriptRequest{Scope: scope, Server: server, Method: method, Output: output}
+	if local && scope == pwchange.ManagedScope {
+		// this server's own PAM client connects to itself: server is the
+		// address devices and other hosts reach it at (it may be behind NAT,
+		// where a connection to it from here would not arrive from it)
+		req.Server = pwchange.ServerAddress
+	}
 	if err := inv.confReadable(); err != nil {
 		return req, err
 	}

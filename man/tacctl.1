@@ -2887,7 +2887,9 @@ a VPN that is not on this machine is taken; a host name,
 .BR :: ,
 a loopback or link\-local address is not); without it the recorded address is
 used, else the address of the interface with the default route, said in one
-line. It is recorded as
+line; this machine's own PAM client always connects to
+.BR 127.0.0.1 ,
+the address is what devices and other hosts use. It is recorded as
 .B server.addresses
 in
 .I tacctl.yaml

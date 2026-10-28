@@ -32,7 +32,9 @@ current behaviour; this file is where history lives.
    `::`, loopback or link-local), recorded in the new `tacctl.yaml` key
    `server.addresses` (a list that holds one address for now); without
    `--server` the recorded address is used, else `--server` defaults to the
-   address of the interface with the default route, said in one line. An
+   address of the interface with the default route, said in one line; this
+   server's own PAM client always connects to `127.0.0.1`, the address is what
+   devices and other hosts use. An
    install from before whose server is registered in a scope that serves the
    server alone is taken over at the next `host sync` of the server or `host
    enroll --local` (renamed, its secret kept, in one line); one that also

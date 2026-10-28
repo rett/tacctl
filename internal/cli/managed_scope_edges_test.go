@@ -289,3 +289,42 @@ func TestManagedEnrolmentAdoptsAnUnfinishedScope(t *testing.T) {
 	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
 	hs.expect(1, "", clashLine)
 }
+
+// capturedLocalScript is a runner that keeps the text of the client script
+// the local bash is given.
+func capturedLocalScript(hs *hostSandbox, text *string) *fake.Runner {
+	r := hs.runner()
+	r.Func(func(c execx.Cmd) bool { return c.Name == "bash" }, func(c execx.Cmd) (execx.Result, error) {
+		if b, err := os.ReadFile(c.Args[0]); err == nil {
+			*text = string(b)
+		}
+		return execx.Result{}, nil
+	})
+	return r
+}
+
+// The server's own PAM client connects to 127.0.0.1, whatever the server
+// address: behind NAT (203.0.113.9 is not on this machine) a connection to it
+// would come from the gateway, or not arrive, and the server's own logins
+// would not find the scope. The address devices and other hosts use is
+// recorded (the registry, server.addresses, the scope's prefixes), and the
+// scope keeps both login addresses.
+func TestManagedServerPAMConnectsToLoopback(t *testing.T) {
+	hs := newHostSandbox(t)
+	var script string
+	hs.run(capturedLocalScript(hs, &script), "host", "enroll", "--local", "--name", "authsrv", "--server", "203.0.113.9", "--build-on-host")
+	hs.expect(0, "", "")
+	if !strings.Contains(script, "TAC_SERVER=127.0.0.1\n") {
+		t.Errorf("the enrolment script:\n%s", strings.SplitN(script, "# --- tacctl", 2)[0])
+	}
+	if got := hs.registry(); got != "authsrv|local||tacctl|203.0.113.9|\n" || !strings.Contains(hs.store(), "prefixes: [127.0.0.1/32, 203.0.113.9/32]") ||
+		!strings.Contains(hs.read("state/tacctl.yaml"), "- 203.0.113.9\n") {
+		t.Errorf("registry %q\n%s", got, hs.store())
+	}
+	script = ""
+	hs.run(capturedLocalScript(hs, &script), "host", "sync", "authsrv")
+	hs.expect(0, "", "")
+	if !strings.Contains(script, "TAC_SERVER=127.0.0.1\n") {
+		t.Errorf("the sync script:\n%s", strings.SplitN(script, "# --- tacctl", 2)[0])
+	}
+}

@@ -43,7 +43,10 @@ VPN that is not on this machine is taken; a host name, `0.0.0.0`, `::`, a
 loopback or link-local address is not). Without it the recorded address is
 used, else `--server` defaults to the address of the interface with the
 default route, said in one line (`Using 192.0.2.10 as the server address (the
-address of eth0); pass --server to use another.`). The address is the setting
+address of eth0); pass --server to use another.`). It is what devices and other
+hosts use: this machine's own PAM client always connects to `127.0.0.1`, so
+its logins arrive from an address the login scope has whatever the NAT does
+(the scope answers `127.0.0.1` and the server address). The address is the setting
 `server.addresses` in `tacctl.yaml` (a list that holds one address for now);
 `host enroll --local --server <address>` changes it. An install from before
 whose server is registered in a scope that serves the server alone is taken
