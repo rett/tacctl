@@ -111,16 +111,59 @@ func TestScopeMgmtACLModeRefusals(t *testing.T) {
 	}
 }
 
-// The setter is the superuser's like every verb of scope mgmt-acl: no tier
-// below it has a row for the family.
-func TestScopeMgmtACLModeIsTheSuperusers(t *testing.T) {
-	for _, tr := range []tier.Tier{tier.Readonly, tier.Operator, tier.Engineer} {
+// An engineer reads the mode of a scope of their own and nothing else of the
+// family: the setter, the permit list and the names are refused with the
+// superuser's message, another scope does not exist for them, and nothing is
+// written. The tiers below the engineer have no row.
+func TestScopeMgmtACLEngineer(t *testing.T) {
+	sb := engineerSandbox(t)
+	sb.run("", []string{"scope", "mgmt-acl", "lab", "mode", "strict"})
+	sb.run("", []string{"scope", "mgmt-acl", "lab", "add", "10.0.0.0/8"})
+	before := sb.overrides()
+	out := sb.asEngineer("", "scope", "mgmt-acl", "lab", "mode")
+	if sb.code != 0 || !strings.Contains(out, "Scope 'lab' management filter mode: strict") || !strings.Contains(out, "Setting it is the superuser's.") ||
+		strings.Contains(out, "Usage: tacctl scope mgmt-acl") {
+		t.Errorf("the engineer's read: exit %d\n%s%s", sb.code, out, sb.stderr())
+	}
+	if len(centralLines(sb.runner)) != 0 {
+		t.Errorf("a read wrote audit lines: %q", centralLines(sb.runner))
+	}
+	// the other scope is not found, for the read and for everything else
+	for _, args := range [][]string{{"mode"}, {"mode", "strict"}, {"list"}, {"add", "10.1.0.0/16"}, {"cisco-name", "X"}} {
+		sb.asEngineer("x\n", append([]string{"scope", "mgmt-acl", "prod"}, args...)...)
+		if sb.code != 1 || !strings.Contains(sb.stderr(), "Scope 'prod' does not exist.") || strings.Contains(sb.stderr(), "Available") {
+			t.Errorf("prod %v: exit %d %q", args, sb.code, sb.stderr())
+		}
+	}
+	sb.asEngineer("", "scope", "mgmt-acl", "nosuch", "mode")
+	if sb.code != 1 || !strings.Contains(sb.stderr(), "Scope 'nosuch' does not exist.") {
+		t.Errorf("nosuch: exit %d %q", sb.code, sb.stderr())
+	}
+	// the setter and every other verb of the family are the superuser's
+	for _, args := range [][]string{{"mode", "ssh-only"}, {"mode", "strict"}, {"mode", "lax"}, {"mode", "ssh-only", "extra"}, {"mode", ""},
+		{}, {"list"}, {"add", "10.1.0.0/16"}, {"remove", "10.0.0.0/8"}, {"clear"}, {"cisco-name"}, {"juniper-name", "X"}, {"help"}, {"frob"}} {
+		sb.asEngineer("y\n", append([]string{"scope", "mgmt-acl", "lab"}, args...)...)
+		if sb.code != 1 || !strings.Contains(sb.stderr(), "The engineer tier reads the management filter mode of a scope: tacctl scope mgmt-acl lab mode. "+
+			"The permit list, the ACL and filter names and setting the mode are the superuser's. Nothing was changed.") {
+			t.Errorf("%v: exit %d %q", args, sb.code, sb.stderr())
+		}
+		if sb.overrides() != before {
+			t.Errorf("%v changed tacctl.yaml:\n%s", args, sb.overrides())
+		}
+	}
+	// the tiers below the engineer have no row; the engineer's has its note
+	for _, tr := range []tier.Tier{tier.Readonly, tier.Operator} {
 		if tier.Permits(tr, "scope", "mgmt-acl") {
 			t.Errorf("%s may run scope mgmt-acl", tr)
 		}
 	}
-	if !tier.Permits(tier.Superuser, "scope", "mgmt-acl") {
-		t.Error("the superuser may not run scope mgmt-acl")
+	if !tier.Permits(tier.Engineer, "scope", "mgmt-acl") || !strings.Contains(tierNotes["scope mgmt-acl"], "an engineer may read the management filter mode of a scope of their own") {
+		t.Errorf("the engineer's row or its note: %q", tierNotes["scope mgmt-acl"])
+	}
+	// the superuser still sets it
+	sb.run("", []string{"scope", "mgmt-acl", "lab", "mode", "ssh-only"})
+	if sb.code != 0 || strings.Contains(sb.overrides(), "mode:") {
+		t.Errorf("the superuser: exit %d\n%s", sb.code, sb.overrides())
 	}
 }
 

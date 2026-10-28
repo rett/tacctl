@@ -249,7 +249,9 @@ scope mgmt-acl <name> cisco-name|juniper-name [<label>]
 
 scope mgmt-acl <name> mode [ssh-only|strict]
 
-    Superuser to set; with no argument it prints the mode and where it comes from. The mode of the
+    Superuser to set; with no argument it prints the mode and where it comes from, which an
+    engineer may do for a scope of their own (the permit list, the names and the setter are the
+    superuser's; another scope does not exist for an engineer). The mode of the
     scope's Junos management filter; it affects Junos devices only, and the Cisco VTY-ACL and the
     WTI IP Tables list are the same in both. `ssh-only` (the default) is the filter that restricts
     ssh, NETCONF and SNMP and ends in a `default-accept` term, so everything else is accepted.

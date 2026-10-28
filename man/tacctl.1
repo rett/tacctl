@@ -246,7 +246,7 @@ settles it).
 .B "rollback 0.2.18"
 .B \-\-apply
 rewrites the per\-tier sudoers drop\-in, when it is exactly the text this
-release writes, with the one 0.2.18 writes (after
+release writes (or the one 0.2.19 wrote), with the one 0.2.18 writes (after
 .BR "visudo \-cf" ):
 the engineer's rules of
 .BR "device config apply" ,
@@ -290,7 +290,7 @@ out before the upgrade.
 .B "rollback 0.2.17"
 .B \-\-apply
 rewrites the per\-tier sudoers drop\-in, when it is exactly the text this
-release writes (or the one 0.2.18 wrote), with the one 0.2.17 writes (after
+release writes (or the one 0.2.19 or 0.2.18 wrote), with the one 0.2.17 writes (after
 .BR "visudo \-cf" ):
 the rules of
 .BR "device ios\-syntax" ,
@@ -6048,9 +6048,11 @@ entry renders no filter in either mode. Setting
 .B ssh-only
 removes the key (only
 .B strict
-is stored); the setter is the superuser's, as every verb of
-.BR "scope mgmt-acl" .
-The value is
+is stored). An engineer may read the mode of a scope of their own
+.RB ( "mode" ,
+with no value); the setter and every other verb of
+.B "scope mgmt-acl"
+are the superuser's, and another scope does not exist for an engineer. The value is
 .B scope_mgmt_acl.mode.\fIscope\fR
 in
 .IR tacctl.yaml ;
@@ -6069,7 +6071,7 @@ and the commented lo0 apply.
 .\" BEGIN GENERATED: command scope mgmt-acl
 .RS
 .PP
-Requires: \fBsuperuser\fR.
+Requires: \fBengineer\fR. An engineer may read the management filter mode of a scope of their own (mode, with no value); the permit list, the ACL and filter names and setting the mode need the superuser tier.
 .RE
 .\" END GENERATED: command scope mgmt-acl
 .SS Per-scope NETCONF service \fB(tacctl scope netconf)\fR
@@ -12219,7 +12221,8 @@ device hostkey, device import, scope devices, device config,
 device enroll, device collect, device onboard, device sync,
 device support\-bundle, config cisco, config juniper, config wti,
 host list, host show, scope staging, scope secret, scope snmp,
-device snmp, scope block, device block, scope show, breakglass list
+scope mgmt\-acl, device snmp, scope block, device block, scope show,
+breakglass list
 .TP
 .B superuser
 Every verb not listed above, and every verb of the tiers below.
@@ -12259,6 +12262,9 @@ An engineer reads what tacctl recorded of a host; \-\-check logs in to it and ne
 .TP
 .B scope block
 An engineer may read the configuration blocks of a scope of their own (list, show [\-\-reveal], check); set, remove, edit and adopt need the superuser tier.
+.TP
+.B scope mgmt\-acl
+An engineer may read the management filter mode of a scope of their own (mode, with no value); the permit list, the ACL and filter names and setting the mode need the superuser tier.
 .TP
 .B scope secret
 An engineer may run show for a scope of their own; set and generate need the superuser tier.

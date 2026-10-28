@@ -831,3 +831,55 @@ func TestCheckAnswersTheTier(t *testing.T) {
 		t.Errorf("mismatch: %q %v", got, err)
 	}
 }
+
+// 'scope mgmt-acl' (0.2.20): the engineer's row grants the read of the mode and
+// nothing more, as narrowly as a sudoers pattern can say it (it is matched
+// against the whole argument string, and its '*' matches blanks): a setter, the
+// permit list and the names are no match, and the verb refuses what a last word
+// 'mode' lets through. The tiers below the engineer have no row, and the note
+// says what the engineer may run.
+func TestEngineerReadsTheMgmtACLMode(t *testing.T) {
+	for tr, want := range map[Tier]bool{Readonly: false, Operator: false, Engineer: true, Superuser: true} {
+		if got := Permits(tr, "scope", "mgmt-acl"); got != want {
+			t.Errorf("Permits(%s, scope, mgmt-acl) = %v, want %v", tr, got, want)
+		}
+	}
+	text := Sudoers()
+	if en := aliasItems(t, text, "TACCTL_EN"); !slices.Contains(en, "scope mgmt-acl * mode") || slices.Contains(en, "scope mgmt-acl *") {
+		t.Errorf("the engineer alias: %q", en)
+	}
+	for _, name := range []string{"TACCTL_RO", "TACCTL_OP"} {
+		for _, it := range aliasItems(t, text, name) {
+			if strings.HasPrefix(it, "scope mgmt-acl") {
+				t.Errorf("%s has %q", name, it)
+			}
+		}
+	}
+	// sudo matches the argument string against the pattern with '*' as any
+	// run of characters
+	re := regexp.MustCompile("^" + strings.ReplaceAll(regexp.QuoteMeta("scope mgmt-acl * mode"), `\*`, ".*") + "$")
+	for args, want := range map[string]bool{
+		"scope mgmt-acl lab mode":           true,
+		"scope mgmt-acl lab mode strict":    false,
+		"scope mgmt-acl lab mode ssh-only":  false,
+		"scope mgmt-acl lab list":           false,
+		"scope mgmt-acl lab add 10.0.0.0/8": false,
+		"scope mgmt-acl lab clear":          false,
+		"scope mgmt-acl lab cisco-name X":   false,
+		"scope mgmt-acl lab":                false,
+		"scope mgmt-acl":                    false,
+		"scope mgmt-acl lab add mode":       true, // the verb refuses it for an engineer
+		"config mgmt-acl lab mode":          false,
+		"scope mgmt-aclx lab mode":          false,
+	} {
+		if got := re.MatchString(args); got != want {
+			t.Errorf("sudoers pattern on %q = %v, want %v", args, got, want)
+		}
+	}
+	note := Notes()["scope mgmt-acl"]
+	for _, w := range []string{"an engineer may read the management filter mode of a scope of their own", "need the superuser tier"} {
+		if !strings.Contains(note, w) {
+			t.Errorf("the note %q lacks %q", note, w)
+		}
+	}
+}

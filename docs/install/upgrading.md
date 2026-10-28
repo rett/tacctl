@@ -73,7 +73,7 @@ The per-tier sudoers drop-in of this release grants the engineer the rows of
 `device config apply`, `device enroll`, `device collect`, `device onboard`,
 `device sync` and `device support-bundle`; 0.2.18 has none of them.
 `--apply` rewrites `/etc/sudoers.d/tacctl-tiers`, when it is exactly the text
-this release writes, with the text 0.2.18 writes (after `visudo -cf`); an
+this release writes (or the one 0.2.19 wrote), with the text 0.2.18 writes (after `visudo -cf`); an
 edited file is left, and 0.2.18's upgrade rewrites it. Nothing else is
 converted: `devices.yaml` (0.2.18 reads `ios_syntax`), `console.yaml`,
 `store.yaml`, the group drop-in, the apply state and the hosts are in formats
@@ -93,7 +93,7 @@ config-syntax`, `device notice list` is `device notices` and `device
 client-config` is `device ssh-config`, and the per-tier sudoers drop-in grants
 the names of the release that wrote it. `--apply` rewrites
 `/etc/sudoers.d/tacctl-tiers`, when it is exactly the text this release
-writes (or the one 0.2.18 wrote), with the text 0.2.17 writes (after `visudo
+writes (or the one 0.2.19 or 0.2.18 wrote), with the text 0.2.17 writes (after `visudo
 -cf`); an edited file is left, and 0.2.17's upgrade rewrites it. This release also stores a device's
 configuration syntax setting in `devices.yaml` as `ios_syntax`, which 0.2.17
 refuses (`unknown key 'ios_syntax'`): when a device has one, `--apply` takes a

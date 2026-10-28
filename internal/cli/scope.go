@@ -2468,8 +2468,21 @@ func (inv *invocation) scopeMgmtACL(args []string) error {
 	if scope == "" {
 		return inv.usageErr(usageLinesOf("scope mgmt-acl <scope>", scopeMgmtACLRows...)...)
 	}
+	// An engineer reads the management filter mode of a scope of their own
+	// and nothing else of the family; another scope does not exist for them
+	// (as for 'scope snmp'; the gate sees 'scope mgmt-acl' only).
+	f := inv.callerScopes()
+	if f.restricted {
+		if err := inv.scopeNotFound(f, scope); err != nil {
+			return err
+		}
+	}
 	if err := inv.scopeRequire(scope); err != nil {
 		return err
+	}
+	if f.restricted && (sub != "mode" || len(args) != 2) {
+		return inv.deniedUsage(reasonSuperuser, "The engineer tier reads the management filter mode of a scope: tacctl scope mgmt-acl "+scope+
+			" mode. The permit list, the ACL and filter names and setting the mode are the superuser's. Nothing was changed.")
 	}
 	c := a.Conf()
 	path := "scope_mgmt_acl.permits." + scope
@@ -2644,7 +2657,11 @@ func (inv *invocation) scopeMgmtACLMode(scope, value string) error {
 			inv.echo("    " + l)
 		}
 		inv.echo("")
-		inv.echo("  Usage: tacctl scope mgmt-acl " + scope + " mode [ssh-only|strict]")
+		if inv.callerScopes().restricted {
+			inv.echo("  Setting it is the superuser's.")
+		} else {
+			inv.echo("  Usage: tacctl scope mgmt-acl " + scope + " mode [ssh-only|strict]")
+		}
 		inv.echo("")
 		return nil
 	}

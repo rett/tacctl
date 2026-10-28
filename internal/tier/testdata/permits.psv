@@ -57,6 +57,7 @@ scope|lookup|0|0|0|1|1|0
 scope|prefixes|0|0|0|1|1|0
 scope|secret|0|0|1|1|1|0
 scope|snmp|0|0|1|1|1|0
+scope|mgmt-acl|0|0|1|1|1|0
 scope|protocols|0|0|0|1|1|0
 scope|breakglass|0|0|0|1|1|0
 scope|default|0|0|0|1|1|0
