@@ -376,3 +376,35 @@ func TestStoreImportOfAManagedServersFile(t *testing.T) {
 		t.Errorf("enrolment after the migration:\n%s\n%q", st, other.registry())
 	}
 }
+
+// Forgetting or unenrolling the server takes the managed scope the way 'scope
+// remove' takes a scope: its tacctl.yaml keys go with it (a lockdown, a
+// timeout), so 'config validate' stays clean and the next enrolment does not
+// bring an old lockdown back.
+func TestManagedScopeKeysGoWithTheRegistration(t *testing.T) {
+	for _, verb := range [][]string{{"host", "forget", "authsrv", "--yes"}, {"host", "unenroll", "authsrv", "--force"}} {
+		t.Run(verb[1], func(t *testing.T) {
+			hs := newHostSandbox(t)
+			enrolLocal(t, hs)
+			hs.write("state/tacctl.yaml", hs.read("state/tacctl.yaml")+"exec_timeout:\n  tacctl: 7\n"+
+				"emergency:\n  lockdown:\n    tacctl:\n      groups: [operator]\n      since: '2026-10-28T10:00:00Z'\n      by: alice\n", 0o600)
+			hs.run(nil, "config", "validate")
+			if strings.Contains(hs.all(), "does not exist") {
+				t.Fatalf("validate before:\n%s", hs.all())
+			}
+			hs.run(nil, verb...)
+			hs.expect(0, "", "")
+			if y := hs.read("state/tacctl.yaml"); strings.Contains(y, "tacctl: 7") || strings.Contains(y, "lockdown") {
+				t.Errorf("the scope's keys are left:\n%s", y)
+			}
+			hs.run(nil, "config", "validate")
+			if out := hs.all(); strings.Contains(out, "does not exist") || hs.code != 0 {
+				t.Errorf("validate: %d\n%s", hs.code, out)
+			}
+			enrolLocal(t, hs)
+			if b := renderedBlock(t, hs, "bob"); !strings.Contains(b, `"tacctl"`) {
+				t.Errorf("bob has no server login after the next enrolment:\n%s", b)
+			}
+		})
+	}
+}

@@ -521,13 +521,16 @@ func canonAddr(s string) string {
 }
 
 // managedRemove takes the managed scope out with this server's registration
-// e (host unenroll, host forget): nothing else can use it. A scope of the
-// reserved name that is the operator's (not the managed one) is left alone.
+// e (host unenroll, host forget): nothing else can use it. It goes the way
+// 'scope remove' takes a scope, its tacctl.yaml keys (a lockdown, a method
+// list, an ACL) with it, so no key is left naming a scope that is gone and
+// none comes back with the next enrolment. A scope of the reserved name that
+// is the operator's (not the managed one) is left alone.
 func (inv *invocation) managedRemove(e hosts.Entry) {
 	if !inv.entryManaged(e) {
 		return
 	}
-	if err := inv.applyStore(func(s *store.Store) error { return s.ScopeDel(pwchange.ManagedScope, true) }); err != nil {
+	if err := inv.applyWith(inv.scopeRemoveWrite(pwchange.ManagedScope)); err != nil {
 		inv.reportOnly(err)
 	}
 }

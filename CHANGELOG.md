@@ -44,7 +44,8 @@ current behaviour; this file is where history lives.
    the new scope out again, and the same command run again does it. A `host sync` of the server repairs its
    login when it was changed by hand (`Repaired the managed server login.`),
    `host move` of the server says it is set up by `host enroll --local`, and
-   `host forget` and `host unenroll` of the server take its login with them.
+   `host forget` and `host unenroll` of the server take its login with them,
+   its `tacctl.yaml` keys too, as `scope remove` does.
    A scope called `tacctl` that an earlier release made is yours when it
    answers an address other than this server's own login addresses: it is
    never taken over, given members or repaired, and stays listed and

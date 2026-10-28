@@ -2911,7 +2911,14 @@ of the server repairs its login when it was changed by hand
 .B "host move"
 of this server is not a move: its login is set up by
 .BR "host enroll \-\-local" .
-The scope name
+.B "host forget"
+and
+.B "host unenroll"
+of the server take the scope with the registration, its
+.I tacctl.yaml
+keys too, as
+.B "scope remove"
+does. The scope name
 .B tacctl
 is reserved: no command creates, edits or lists it. A scope of that name from
 an earlier release that answers an address other than this server's own login
