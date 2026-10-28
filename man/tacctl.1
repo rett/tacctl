@@ -393,6 +393,34 @@ the devices with the password an administrator set or knew, the one they were
 to change. The rollback renders nothing, so the running TACACS+ and RADIUS
 files keep them off the devices until the older release renders.
 .IP
+Every target keeps a break\-glass entry of the Junos root account
+.RB ( root:admin
+in
+.BR breakglass_scope.\fIscope\fB.users ;
+0.2.20), which the older schema accepts, and names the scopes that record it
+in a warning (and
+.B \-\-apply
+refuses without
+.BR \-\-yes ):
+the older release takes
+.B root
+for a local user like any other, so its Junos walkthrough renders a commented
+.B "set system login user root"
+line, which Junos refuses, in place of
+.B "system root\-authentication"
+and
+.BR "system services ssh root\-login allow" ,
+its Cisco and WTI walkthroughs render a root account, and (but for 0.2.3) its
+.B "device config pull"
+and
+.B diff
+expect the login line on each Junos device of the scope, whose
+.B breakglass
+section reads
+.BR differs .
+.B "tacctl scope breakglass <scope> remove root"
+takes the entry out.
+.IP
 .B "rollback 0.2.17"
 .B \-\-apply
 rewrites the per\-tier sudoers drop\-in, when it is exactly the text this

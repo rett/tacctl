@@ -131,6 +131,21 @@ until the older release renders. Have them change the password first (they
 log in to tacctl and are asked), or keep this release. The flags stay in the
 snapshot `--apply` takes first.
 
+**The Junos root account as a break-glass entry.** `scope breakglass
+<scope> add root` (0.2.20) stores `root:admin`, which the schema of every
+older release accepts, so the rollback keeps it. Those releases take `root`
+for a local user like any other: the Junos walkthrough renders a commented
+`set system login user root class ... authentication encrypted-password` line,
+which Junos refuses (root is under `system root-authentication`), and neither
+`set system root-authentication encrypted-password` nor `set system services
+ssh root-login allow`; the Cisco and WTI walkthroughs render a root account;
+and `device config pull` and `diff` (every target but 0.2.3) expect the login
+line on each Junos device of the scope, so its `breakglass` section reads
+`differs`. The dry run names the scopes that record `root` in a warning that
+`--apply` refuses without `--yes`; `tacctl scope breakglass <scope> remove
+root` takes the entry out (record it again after the next upgrade to this
+release).
+
 ### To 0.2.19
 
 The per-tier sudoers drop-in of this release grants the engineer `scope

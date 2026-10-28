@@ -102,6 +102,10 @@ package lifecycle
 //	hosts                  0.2.4 changed nothing on the enrolled Linux hosts;
 //	                       '--hosts' is accepted and says so.
 //
+// A break-glass entry of the Junos root account (0.2.20, root:admin) is one
+// every target's schema accepts: it stays, and every target warns what the
+// older release makes of it (rollback_rootbg.go).
+//
 // What is not a rollback step: the rendered backend files (nothing 0.2.4
 // changed reaches them), the sshd drop-ins, the tier-pin marker and the host
 // records (all as 0.2.3 has them).
@@ -563,6 +567,7 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 			return nil, err
 		}
 		rp.addConsoleStep()
+		rp.Warnings = append(rp.Warnings, rp.rootBreakGlassWarning()...)
 		rp.addPasswordChange()
 		return rp, nil
 	}
@@ -621,7 +626,7 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 		p.Steps = append(p.Steps, p.hostsStep())
 	}
 
-	p.Warnings = append(append(p.warnings(), p.mgmtModeWarning(RollbackTarget)...), p.consoleWideningWarning()...)
+	p.Warnings = append(append(append(p.warnings(), p.mgmtModeWarning(RollbackTarget)...), p.consoleWideningWarning()...), p.rootBreakGlassWarning()...)
 	p.addPasswordChange()
 	p.Notes = p.notes()
 	return p, nil

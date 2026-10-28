@@ -12,7 +12,10 @@ package lifecycle
 //	                  mgmtModeWarning names the scopes that were strict. The
 //	                  emergency lockdown record is 0.2.19's own and unchanged,
 //	                  so a lockdown that stands does not refuse this target
-//	                  (it does every older one) and the record stays.
+//	                  (it does every older one) and the record stays. A 'root'
+//	                  break-glass entry (0.2.20) is one 0.2.19's schema
+//	                  accepts: it stays, and rootBreakGlassWarning says what
+//	                  0.2.19 makes of it (every target).
 //	store.yaml        password_change_required (0.2.20): removed for every
 //	                  target (rollback_pwchange.go). A user name with a
 //	                  period refuses every target (DottedUsersRefusal).
@@ -68,7 +71,7 @@ func planRollback0219(p *RollbackPlan) (*RollbackPlan, error) {
 		"the engineer's rule of 'scope mgmt-acl * mode' and the operator's rules of 'console system-shell' and 'console password-cache' are taken out"),
 		RollbackStep{Title: "leave every other file untouched",
 			Lines: []string{pt.DevicesFile + ", " + pt.ConsoleFile + ", " + pt.StoreFile + ", the group sudoers drop-in, the SNMP credentials, the blocks, the apply state directory, the host registry and the rendered backend files are in formats " + RollbackTarget0219 + " reads;",
-				"an emergency lockdown and the break-glass entries stay (" + RollbackTarget0219 + " has both);",
+				"an emergency lockdown and the break-glass entries stay (" + RollbackTarget0219 + " has both; 'root': see the warning, if any);",
 				"nothing is re-rendered or restarted, and no device is contacted"}})
 	if in.WithHosts {
 		p.Steps = append(p.Steps, RollbackStep{Title: "the enrolled Linux hosts (--hosts)",

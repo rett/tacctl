@@ -8,6 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"time"
+
+	"github.com/rett/tacctl/internal/devconf"
+	"github.com/rett/tacctl/internal/devices"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/tier"
 )
@@ -19,7 +23,8 @@ import (
 // and 0.2.19 refuses: a strict management filter mode, the console's colour
 // and a list_max that never asks, a system-shell setting and a password-cache
 // choice of one user, and a user who must change the password; and what
-// 0.2.19 reads as it is: a lockdown that stands.
+// 0.2.19 reads as it is: a lockdown that stands, the Junos root account as a
+// break-glass entry, and the record of a pull of a Junos device.
 func rollback0220State(t *testing.T) *hostSandbox {
 	t.Helper()
 	hs := rollbackState(t)
@@ -30,6 +35,24 @@ func rollback0220State(t *testing.T) *hostSandbox {
 	hs.step("", "console", "system-shell", "user", "bob", "enable")
 	hs.write("state/console.yaml", strings.Replace(hs.read("state/console.yaml"), "settings:\n", "settings:\n  password_cache_users: {erin: true}\n", 1), 0o600)
 	flagPasswordChange(t, hs, "erin")
+	hs.step("", "scope", "breakglass", "prod", "add", "bg-prod")
+	hs.step("", "scope", "breakglass", "prod", "add", "root")
+	// The record of a pull of the Junos device sw2 (scope prod) by this
+	// release: its breakglass section holds root's password (the leaf's name
+	// only) and the root-login leaf, as every Junos pull of 0.2.20 keeps them.
+	st := devconf.Store{Records: hs.path("var-lib", "devices-config.json"), Dir: hs.path("var-lib", "device-config")}
+	recs, err := st.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	recs.Put("sw2", devconf.Record{Address: "10.99.0.2", Vendor: "juniper", Transport: "ssh", Pulled: time.Now().Add(-time.Hour), Result: devconf.ResultOK, SecretsVisible: true})
+	if err := st.Save(recs); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveSections("sw2", "juniper", map[string]devices.Section{"breakglass": {Name: "breakglass", Lines: []string{
+		`set system root-authentication encrypted-password "$6$examplesalt$EXAMPLEHASH"`, "set system services ssh root-login allow"}}}); err != nil {
+		t.Fatal(err)
+	}
 	hs.write("state/tacctl.yaml", hs.read("state/tacctl.yaml")+"emergency:\n  lockdown:\n    lab:\n      groups:\n      - operator\n      since: '2026-10-25T12:00:00+00:00'\n      by: alice\n      reason: drill\n", 0o640)
 	return hs
 }
@@ -98,6 +121,7 @@ func TestRollback0219RemovesThe0220Keys(t *testing.T) {
 	for _, want := range []string{"remove scope_mgmt_acl.mode.lab", "remove settings.color: on", "set settings.list_max to 1000",
 		"remove settings.system_shell_users: bob enable", "remove settings.password_cache_users: erin (on)", "remove password_change_required of erin",
 		"Scopes with a strict management filter lose the mode", "Users who must change their password get their device access back",
+		"Scopes that record the Junos root account for break-glass", "tacctl scope breakglass prod remove root",
 		"To convert the state: tacctl rollback 0.2.19 --apply --yes"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the dry run lacks %q:\n%s", want, out)
@@ -183,6 +207,26 @@ func TestRollbackRealOldBinary0219(t *testing.T) {
 	}
 	if out, code := run("emergency", "lockdown", "status", "lab"); code != 0 || !strings.Contains(out, "operator") {
 		t.Errorf("0.2.19 emergency lockdown status after: %d\n%s", code, out)
+	}
+	// The root entry stays and 0.2.19 renders it as a local user, as the
+	// warning says.
+	if out, code := run("config", "juniper", "--scope", "prod"); code != 0 || !strings.Contains(out, "# set system login user root class ") || strings.Contains(out, "root-authentication") || strings.Contains(out, "root-login") {
+		t.Errorf("0.2.19 config juniper after: %d\n%s", code, out)
+	}
+	if out, code := run("config", "cisco", "--scope", "prod"); code != 0 || !strings.Contains(out, "! username root privilege 15 ") {
+		t.Errorf("0.2.19 config cisco after: %d\n%s", code, out)
+	}
+	// 0.2.19's comparison expects root as a login user on the Junos device of
+	// the scope, which Junos never has; with the entry removed (0.2.19 can) it
+	// does not.
+	if out, _ := run("device", "config", "diff", "sw2"); !strings.Contains(out, "- set system login user root class ") {
+		t.Errorf("0.2.19 device config diff after: the root login line is not expected\n%s", out)
+	}
+	if out, code := run("scope", "breakglass", "prod", "remove", "root"); code != 0 {
+		t.Errorf("0.2.19 scope breakglass remove root after: %d\n%s", code, out)
+	}
+	if out, _ := run("device", "config", "diff", "sw2"); strings.Contains(out, "login user root") {
+		t.Errorf("0.2.19 device config diff without the entry:\n%s", out)
 	}
 }
 

@@ -772,6 +772,19 @@ current behaviour; this file is where history lives.
     on`). The check runs that
     release, built from its tag, against the converted state.
 
+41. **`tacctl rollback` warns of a `root` break-glass entry.** The schema of
+    every release a rollback goes to accepts `root:admin` (item 27), so the
+    entry stays in `tacctl.yaml`, but those releases take `root` for a local
+    user like any other: the Junos walkthrough renders a commented `set
+    system login user root class ... authentication encrypted-password` line
+    (which Junos refuses) in place of the `system root-authentication` and
+    `root-login allow` statements, the Cisco and WTI walkthroughs a root
+    account, and `device config pull|diff` (every target but 0.2.3) expect
+    the login line on each Junos device of the scope, whose breakglass
+    section then reads `differs`. Every target now names the scopes that
+    record `root` in a warning (`--apply` needs `--yes`), with `tacctl scope
+    breakglass <scope> remove root` as the way out.
+
 
 ## 0.2.19 (2026-10-25)
 
