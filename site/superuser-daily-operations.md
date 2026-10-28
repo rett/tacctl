@@ -9,7 +9,7 @@ doctype: how-to
 
 # Superuser Daily Operations
 
-*Day-to-day operations for tacctl superusers · Checked against tacctl 0.2.19*
+*Day-to-day operations for tacctl superusers · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-superuser-daily-operations.pdf){: .pdf-link }
 
@@ -315,6 +315,34 @@ devices now need one, for example
 > device in the scope fails to authenticate until its key is updated. Plan
 > the re-paste before you rotate.
 
+### 8.1 The Junos management filter mode
+
+A scope's Junos management filter is `ssh-only` (the default: ssh, NETCONF
+and SNMP restricted, everything else accepted) or `strict` (deny by default).
+[Vendor Notes](vendor-notes.md) §3.4 explains both and the traffic a strict
+filter stops. Only Junos devices read the mode.
+
+```bash
+tacctl scope mgmt-acl site-a list                 # the permit list the filter is built from
+tacctl scope mgmt-acl site-a add 198.51.100.1/32  # a routing neighbour: every protocol from it
+tacctl scope mgmt-acl site-a mode                 # show the mode and where it comes from
+tacctl scope mgmt-acl site-a mode strict          # deny by default
+tacctl scope mgmt-acl site-a mode ssh-only        # back to the default
+tacctl config juniper --scope site-a              # review the filter before it reaches a device
+```
+
+Setting `strict` prints what stops, and says so when the permit list is
+empty (no filter is rendered until it has an entry). Setting the mode the
+scope already has changes nothing. The change reaches a device only through
+a plan or an apply ([Engineer Guide](engineer-guide-device-changes.md) §4).
+
+> **Keep a console session open** when a strict filter goes onto a device,
+> and use `commit confirmed`.
+
+Rolling tacctl back to a release without the mode removes it from every
+scope, with a warning; see
+[Rolling back](https://github.com/rett/tacctl/blob/master/docs/install/upgrading.md#rolling-back).
+
 ---
 
 ## 9. Logs
@@ -351,6 +379,7 @@ tacctl log accounting 50            # last 50 accounting records (who ran what)
 | AAA config drift | `tacctl device config pull --scope <s>` then `device config list --differs` |
 | Fix plan | `tacctl device config plan <name>` |
 | Which scope owns an IP | `tacctl scope lookup <ip>` |
+| Junos filter mode | `tacctl scope mgmt-acl <s> mode ssh-only\|strict` |
 | Lockdown (preview) | `tacctl emergency lockdown <scope> enable --dry-run` |
 | Lockdown | `tacctl emergency lockdown <scope> enable --reason "<text>"` |
 | Lift lockdown | `tacctl emergency lockdown <scope> disable` |
