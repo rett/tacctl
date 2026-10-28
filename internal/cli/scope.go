@@ -1266,6 +1266,14 @@ func (inv *invocation) scopeRenameRun(old, newName string) error {
 		}
 		return nil
 	}); err != nil {
+		// The apply puts the store and tacctl.yaml back when a render fails,
+		// but the registry and the staging file are not part of it: the hosts
+		// that were moved go back, so none names a scope that is not there.
+		if hostsMoved > 0 {
+			if _, rerr := inv.scopeRenameHosts(newName, old); rerr != nil {
+				inv.app.Out.Warn("The enrolled hosts of '" + old + "' could not be put back (" + rerr.Error() + "); run: tacctl host move <host> " + old)
+			}
+		}
 		return err
 	}
 	m, err := inv.model()
