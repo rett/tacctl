@@ -820,9 +820,10 @@ func TestConsoleSystemShellPerUser(t *testing.T) {
 }
 
 // Only a superuser sets the system shell, for a tier or a user, or its path:
-// an operator and an engineer are refused each form that has an argument (the
-// refusal is logged), a readonly user is refused all of it, and what they
-// may do is list it with no argument. The superuser is not refused.
+// an operator and an engineer read each form (the list, one tier, one user,
+// the path) and are refused each form that sets something (the refusal is
+// logged as a tier denial), a readonly user is refused all of it at the gate,
+// and the superuser is not refused.
 func TestConsoleSystemShellIsTheSuperusersToSet(t *testing.T) {
 	sb := consoleSandbox(t)
 	sb.write("state/tacctl.yaml", "tier:\n  operator: engineer\n", 0o600) // bob is an engineer
@@ -831,23 +832,31 @@ func TestConsoleSystemShellIsTheSuperusersToSet(t *testing.T) {
 			r.On([]string{"id", "-nG", "--", user}, execx.Result{Stdout: []byte(user + " tac-users tac-" + group + "\n")})
 		}, "SUDO_USER="+user, "SUDO_UID="+uidOf(user))
 	}
-	setters := [][]string{
+	writes := [][]string{
 		{"operator", "enable"}, {"readonly", "disable"}, {"engineer", "enable"}, {"superuser", "disable"},
-		{"user", "carol", "enable"}, {"user", "carol", "disable"}, {"user", "carol", "clear"}, {"user", "carol"},
-		{"path", "/bin/sh"}, {"path"}, {"operator"},
+		{"user", "carol", "enable"}, {"user", "carol", "disable"}, {"user", "carol", "clear"}, {"path", "/bin/sh"},
+	}
+	reads := []struct {
+		args []string
+		want string
+	}{
+		{nil, "superuser: enabled (always)"}, {[]string{"readonly"}, "disabled"}, {[]string{"operator"}, "disabled"},
+		{[]string{"engineer"}, "disabled (never)"}, {[]string{"superuser"}, "enabled (always)"},
+		{[]string{"user", "carol"}, "disabled (tier readonly)"}, {[]string{"path"}, "/bin/bash"},
 	}
 	for _, who := range []struct{ user, group, tier string }{{"bob", "operator", "engineer"}, {"carol", "readonly", "readonly"}} {
-		// carol is below the row: the gate refuses the verb altogether.
-		for _, args := range append([][]string{nil}, setters...) {
-			as(who.user, who.group, args...)
-			if who.tier == "readonly" || len(args) > 0 {
-				sb.expect(1, "", "is not permitted for the "+who.tier+" tier.")
-				if !strings.Contains(sb.stderr(), "'tacctl console system-shell") {
-					t.Errorf("%s %v: %q", who.user, args, sb.stderr())
-				}
+		for _, r := range reads {
+			as(who.user, who.group, r.args...)
+			if who.tier == "readonly" {
+				// below the row: the gate refuses the verb altogether
+				sb.expect(1, "", "'tacctl console system-shell' is not permitted for the readonly tier.")
 				continue
 			}
-			sb.expect(0, "superuser: enabled (always)", "")
+			sb.expect(0, r.want, "")
+		}
+		for _, args := range writes {
+			as(who.user, who.group, args...)
+			sb.expect(1, "", "'tacctl console system-shell' is not permitted for the "+who.tier+" tier.")
 		}
 		if sb.consoleYAML() != "" {
 			t.Errorf("%s: a refusal wrote console.yaml:\n%s", who.user, sb.consoleYAML())
@@ -858,18 +867,23 @@ func TestConsoleSystemShellIsTheSuperusersToSet(t *testing.T) {
 	if !hasAuditPrefix(sb.runner, "auth.warning", "tier DENY user=bob tier=engineer cmd=console system-shell") {
 		t.Errorf("not logged: %q", sb.runner.Argvs())
 	}
-	// An operator (a user of a tier that is not the engineer's) is refused the same way.
+	// An operator (a user of a tier that is not the engineer's) reads and is refused the same way.
 	sb.write("state/tacctl.yaml", "", 0o600)
-	for _, args := range setters {
+	for _, r := range reads {
+		as("bob", "operator", r.args...)
+		want := r.want
+		if len(r.args) == 2 {
+			want = "disabled (tier readonly)"
+		}
+		sb.expect(0, want, "")
+	}
+	for _, args := range writes {
 		as("bob", "operator", args...)
 		sb.expect(1, "", "'tacctl console system-shell' is not permitted for the operator tier.")
+		if !hasAuditPrefix(sb.runner, "auth.warning", "tier DENY user=bob tier=operator cmd=console system-shell") {
+			t.Errorf("operator refusal of %v not logged: %q", args, sb.runner.Argvs())
+		}
 	}
-	as("bob", "operator", "operator", "enable")
-	if !hasAuditPrefix(sb.runner, "auth.warning", "tier DENY user=bob tier=operator cmd=console system-shell") {
-		t.Errorf("operator refusal not logged: %q", sb.runner.Argvs())
-	}
-	as("bob", "operator")
-	sb.expect(0, "operator: disabled", "")
 	if sb.consoleYAML() != "" {
 		t.Errorf("a refusal wrote console.yaml:\n%s", sb.consoleYAML())
 	}

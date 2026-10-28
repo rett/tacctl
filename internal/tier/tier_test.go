@@ -649,9 +649,9 @@ func TestGateRefusesSpoofedSudoUser(t *testing.T) {
 
 // The login console's rows: every tier reads its policy, the operator tier
 // shows the console, checks it and lists who has the system shell (the bare
-// 'console system-shell': sudoers grants the operator and the engineer no
-// argument of it), and nothing else of 'console' is open below the
-// superuser.
+// 'console system-shell': the list, a tier, a user and the path; the
+// writes are the verb's refusal), and nothing else of 'console' is open
+// below the superuser.
 func TestConsoleRows(t *testing.T) {
 	for _, c := range []struct {
 		t        Tier
@@ -697,15 +697,26 @@ func TestConsoleRows(t *testing.T) {
 	if ro, _, _ := strings.Cut(text, "Cmnd_Alias TACCTL_OP"); strings.Contains(ro, "console show") {
 		t.Error("console show is in the read-only alias")
 	}
-	// The system-shell row grants the bare command only: no pattern lets an
-	// operator or an engineer set it for a tier, a user or the path.
-	for _, it := range append(aliasItems(t, text, "TACCTL_OP"), aliasItems(t, text, "TACCTL_EN")...) {
-		if strings.HasPrefix(it, "console system-shell") && it != "console system-shell" {
-			t.Errorf("a pattern %q grants a form of console system-shell with arguments", it)
+	// The system-shell row names the read forms: no pattern lets an operator
+	// or an engineer set a tier or the path through sudo, and 'user *' (a
+	// wildcard also matches the word after the name) is the one pattern the
+	// verb has to refuse the writes of.
+	op := aliasItems(t, text, "TACCTL_OP")
+	for _, want := range []string{"console system-shell", "console system-shell readonly", "console system-shell operator",
+		"console system-shell engineer", "console system-shell superuser", "console system-shell path", "console system-shell user *"} {
+		if !slices.Contains(op, want) {
+			t.Errorf("the operator alias lacks %q", want)
 		}
 	}
-	if !slices.Contains(aliasItems(t, text, "TACCTL_OP"), "console system-shell") {
-		t.Error("the operator alias lacks console system-shell")
+	for _, it := range append(op, aliasItems(t, text, "TACCTL_EN")...) {
+		if strings.HasPrefix(it, "console system-shell") && strings.ContainsAny(it, "*") && it != "console system-shell user *" {
+			t.Errorf("a pattern %q grants more of console system-shell than the read forms", it)
+		}
+		for _, w := range []string{"enable", "disable", "clear"} {
+			if strings.HasPrefix(it, "console system-shell") && strings.HasSuffix(it, " "+w) {
+				t.Errorf("a pattern %q grants a write of console system-shell", it)
+			}
+		}
 	}
 }
 

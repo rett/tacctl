@@ -95,21 +95,24 @@ console forget
 
 console system-shell [<tier> enable|disable]
 
-    Without arguments, whether each tier has the system shell and the users with a setting of
-    their own, with their tier. A tier alone prints its state; with enable or disable it sets it
-    (superuser only). The superuser tier always has it and cannot be disabled; readonly and operator
-    are disabled by default; the engineer tier never has it and enable is refused
+    Without arguments, whether each tier has the system shell and the users with a setting of their
+    own, with their tier. A tier alone prints its state (operator tier and up); with enable or
+    disable it sets it (superuser only). The superuser tier always has it and cannot be disabled;
+    readonly and operator are disabled by default; the engineer tier never has it and enable is
+    refused
 
 console system-shell user <name> [enable|disable|clear]
 
     Show or set the system shell for one user, over the tier's setting in both directions (clear:
-    the tier decides). Disabling a superuser and enabling an engineer are refused. `user rename`
-    moves the setting to the new name and `user remove` drops it; an entry for a name that is no
-    user is not honoured and is listed as "no such user" (superuser only)
+    the tier decides; without a word it prints the user's access and why, operator tier and up).
+    Disabling a superuser and enabling an engineer are refused. `user rename` moves the setting to
+    the new name and `user remove` drops it; an entry for a name that is no user is not honoured and
+    is listed as "no such user"
 
 console system-shell path [<path>]
 
-    The system shell (default /bin/bash; absolute, executable, listed in /etc/shells)
+    The system shell (default /bin/bash; absolute, executable, listed in /etc/shells); showing it is
+    open to the operator tier and up, setting it is the superuser's
 
 console install
 
@@ -152,7 +155,7 @@ ssh carol@authsrv < lines.txt
 
 A word that starts with an underscore (`__help`, `__complete`, `_console-policy`: the entry points of the scripts, the key and the console itself) is no command at the prompt or in a batch: it is answered as any word that is no command (`Unknown command: '__help'`), and nothing runs.
 
-`system-shell` (the console's own word, at the prompt only) starts the user's system shell (`console system-shell path`, default `/bin/bash`) as the user, without arguments, with the console's environment and `SHELL=<path>`; the idle timer does not run meanwhile and sshd's drop-in still applies; `exit` returns to the console (`back in the tacctl console`). Superusers always have it; the other tiers have it when a superuser has enabled it for the tier (`console system-shell <tier> enable`) or for the user (`console system-shell user <name> enable`, which wins over the tier's setting, and so does `disable`). For anyone else it is refused with `system-shell is not available for the <tier> tier on this console. An administrator enables it with: tacctl console system-shell user <name> enable …` (status 1), and through `-c` or in a batch with status 126. The same people may open an editor from the console (`scope block ... edit|adopt`, `device block ... edit|adopt`: an editor can start a shell); for anyone else those verbs say so and change nothing. Only a superuser sets the system shell (a tier, a user or the path); an operator or an engineer may run `console system-shell` with no argument to see who has it, and every form with an argument is refused for them (`'tacctl console system-shell' is not permitted for the operator tier.`, logged as a tier denial).
+`system-shell` (the console's own word, at the prompt only) starts the user's system shell (`console system-shell path`, default `/bin/bash`) as the user, without arguments, with the console's environment and `SHELL=<path>`; the idle timer does not run meanwhile and sshd's drop-in still applies; `exit` returns to the console (`back in the tacctl console`). Superusers always have it; the other tiers have it when a superuser has enabled it for the tier (`console system-shell <tier> enable`) or for the user (`console system-shell user <name> enable`, which wins over the tier's setting, and so does `disable`). For anyone else it is refused with `system-shell is not available for the <tier> tier on this console. An administrator enables it with: tacctl console system-shell user <name> enable …` (status 1), and through `-c` or in a batch with status 126. The same people may open an editor from the console (`scope block ... edit|adopt`, `device block ... edit|adopt`: an editor can start a shell); for anyone else those verbs say so and change nothing. Only a superuser sets the system shell (a tier, a user or the path). An operator or an engineer may read each form (`console system-shell`, `console system-shell <tier>`, `console system-shell user <name>`, `console system-shell path`); every form that sets something is refused for them (`'tacctl console system-shell' is not permitted for the operator tier.`, logged as a tier denial), and a readonly user is refused all of it.
 
 Logged to syslog with the tag `tacctl-console`: `console start session= user= from= tty= mode=interactive|command|batch`, `console end session= user= reason=exit|eof|idle|hangup|signal|command|failed lines= status=`, `console DENY session= user= reason=command first=<verb>|- [len=<n>]` (auth.warning; the first word is named only when it is a verb of tacctl or a console word, else `first=- len=<n>`, the length of the string, so a password typed at the prompt is not logged), `console system-shell start|end|DENY` (with `status=` and `duration=` at the end). Every line is in sudo's own log too, and `tacctl ssh` logs `console=<session>`.
 

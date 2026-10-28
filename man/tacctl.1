@@ -12101,8 +12101,13 @@ may also open an editor from the console
 .RB ( "scope block ... edit|adopt" ,
 .BR "device block ... edit|adopt" ):
 an editor can start a shell. Only a superuser sets it, for a tier, a user or
-the path; an operator and an engineer may run the form with no argument, and any
-form with an argument is refused for them (logged as a tier denial). The change
+the path; an operator and an engineer may read each form (no argument, a tier
+alone,
+.BR "user " \fIname\fR
+alone and
+.BR path ),
+and every form that sets something is refused for them (logged as a tier
+denial). The change
 is logged as
 .BR "console set key=system\-shell item=" \fItier\fR
 at
@@ -12111,7 +12116,7 @@ It applies from the next console login.
 .\" BEGIN GENERATED: command console system-shell
 .RS
 .PP
-Requires: \fBoperator\fR. An operator may run it with no argument, which lists who has the system shell; setting it for a tier or a user, and the path, need the superuser tier.
+Requires: \fBoperator\fR. An operator may read it (no argument, a tier, user <name>, path); setting it for a tier or a user, and setting the path, need the superuser tier.
 .RE
 .\" END GENERATED: command console system-shell
 .TP
@@ -12558,7 +12563,7 @@ An engineer lists the holds of the devices of their own scopes only; hold and re
 An engineer may print the walkthrough and read source\-interface for a scope of their own; setting or unsetting source\-interface needs the superuser tier.
 .TP
 .B console system\-shell
-An operator may run it with no argument, which lists who has the system shell; setting it for a tier or a user, and the path, need the superuser tier.
+An operator may read it (no argument, a tier, user <name>, path); setting it for a tier or a user, and setting the path, need the superuser tier.
 .TP
 .B device block
 An engineer may read the configuration blocks of a device of their own scope (list, show [\-\-effective] [\-\-reveal], check); set, remove, edit and adopt need the superuser tier.

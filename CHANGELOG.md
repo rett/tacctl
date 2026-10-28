@@ -282,12 +282,10 @@ current behaviour; this file is where history lives.
     disabling an engineer stores nothing. A setting follows the user (item 19);
     an entry of a name that is no user is listed as `no such user` and `clear`
     removes it. The same people
-    may open an editor from the console. Every form with an argument is the
-    superuser's: the tier table grants an operator and an engineer the bare
-    `console system-shell` only (a new row, also in the sudoers drop-in, which
-    the rollbacks to 0.2.18 and earlier rewrite as before), and the verb
-    refuses the rest with the usual `is not permitted for the <tier> tier`,
-    logged as a tier denial. `console show` prints the system shell by tier and,
+    may open an editor from the console. Only a superuser sets it (a tier, a
+    user or the path); the read forms are open to the operator tier and up
+    (item 20), and the verb refuses every write with the usual `is not
+    permitted for the <tier> tier`, logged as a tier denial. `console show` prints the system shell by tier and,
     for each user of the server, the effective access and why (`tier operator`,
     `user setting`, `always`, `never`). The changes are logged as `console set
     key=system-shell item=<tier>|user:<name>|path`. The tiers are still stored
@@ -311,6 +309,21 @@ current behaviour; this file is where history lives.
     alone. An entry for a name that is no user is not honoured (the policy
     looks the caller up by a name that is a user of the store) and is listed
     as `no such user`. The rollback removes the whole key as before.
+
+20. **An operator and an engineer can read every form of `console
+    system-shell`.** `console system-shell` (the list), `console system-shell
+    <tier>`, `console system-shell user <name>` and `console system-shell
+    path` are open to the operator tier and up; every form that sets
+    something (a tier with `enable|disable`, a user with `enable|disable|clear`,
+    `path <new>`) stays the superuser's, and an operator or an engineer is
+    refused with `'tacctl console system-shell' is not permitted for the
+    <tier> tier.`, logged as a tier denial; a readonly user is refused at the
+    gate as before. The tier table has one row for the verb (its note is in
+    the manual page's TIERS section), and the per-tier sudoers drop-in grants
+    the read forms by exact pattern (the four tiers and `path`), plus `user *`,
+    whose wildcard also matches `user <name> enable`: the verb refuses that
+    write itself. The rollbacks to 0.2.18 and earlier rewrite the drop-in as
+    before (the 0.2.19 text lacks all of the new patterns).
 
 ## 0.2.19 (2026-10-25)
 

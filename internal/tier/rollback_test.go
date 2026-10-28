@@ -307,7 +307,10 @@ func TestSudoers0219(t *testing.T) {
 		t.Error("the 0.2.19 operator alias has console system-shell")
 	}
 	got := strings.Replace(cur, Binary+" "+row+", ", "", 1)
-	got = strings.Replace(got, Binary+" console system-shell, ", "", 1)
+	for _, pat := range []string{"console system-shell", "console system-shell readonly", "console system-shell operator", "console system-shell engineer",
+		"console system-shell superuser", "console system-shell path", "console system-shell user *"} {
+		got = strings.Replace(got, Binary+" "+pat+", ", "", 1)
+	}
 	if got != old {
 		t.Errorf("the 0.2.19 text is not this release's less the two rows:\n%s", got)
 	}

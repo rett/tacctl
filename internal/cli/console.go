@@ -114,7 +114,7 @@ logged. Superusers always have it; it is off for the other tiers until a
 superuser opens it ('system-shell <tier> enable|disable') or gives it to one user
 ('system-shell user <name> enable|disable|clear'; a user's setting wins over the
 tier's, and clear returns the user to the tier's). Only a superuser can set it;
-'system-shell' alone lists the state. Those who have it may also open an editor
+the operator tier and up can read it ('system-shell' alone lists the state). Those who have it may also open an editor
 from the console ('scope block ... edit|adopt', 'device block ... edit|adopt': an
 editor can start a shell). Neither it nor forwarding is ever open to the engineer
 tier: a shell or a forwarded port on this server would reach its secrets.
@@ -511,16 +511,16 @@ func (inv *invocation) systemShellTiers() (map[string]tier.Tier, error) {
 // consoleSystemShell is 'console system-shell': with no argument the state
 // of each tier and the users with a setting of their own; '<tier> enable|
 // disable' and 'user <name> enable|disable|clear' set it (the superuser's);
-// 'path [<path>]' is the program. Only the form with no argument is open to
-// a lower tier (the sudoers row grants nothing else); the verb holds the
-// others to the superuser as well.
+// 'path [<path>]' is the program. The forms that only read (no argument, a
+// tier, 'user <name>', 'path') are open to the operator tier and up; every
+// form that sets something is the superuser's (systemShellWrites).
 func (inv *invocation) consoleSystemShell(args []string) error {
 	p, err := inv.consoleParse("system-shell", args)
 	if err != nil {
 		return err
 	}
 	usage := "Usage: tacctl console " + consoleUse("system-shell")
-	if len(p.Args) > 0 {
+	if systemShellWrites(p.Args) {
 		if err := inv.deviceVerbAllowed("console", "system-shell", tier.Superuser); err != nil {
 			return err
 		}
@@ -594,6 +594,19 @@ func (inv *invocation) consoleSystemShell(args []string) error {
 	}
 	inv.app.Out.Info("system-shell is " + p.Args[1] + "d for the " + string(t) + " tier. It applies from the next console login.")
 	return nil
+}
+
+// systemShellWrites reports whether the arguments of 'console system-shell'
+// set something: a tier or the path with a value, or a user with a word. The
+// reads are no argument, a tier alone, 'path' alone and 'user <name>'.
+func systemShellWrites(args []string) bool {
+	switch {
+	case len(args) >= 3:
+		return true
+	case len(args) == 2:
+		return args[0] != "user"
+	}
+	return false
 }
 
 // consoleSystemShellUser is 'console system-shell user <name> [enable|
