@@ -56,7 +56,9 @@ func TestManPtyHelper(t *testing.T) {
 	i := slices.IndexFunc(os.Args, func(a string) bool { return strings.HasPrefix(a, manPtyCanary) })
 	canary := strings.TrimPrefix(os.Args[i], manPtyCanary)
 	// What a user (or an attacker who can set the environment of a login) may
-	// export to make a pager run something.
+	// export to make a pager run something. The command must not pass any of
+	// it on (checkSafeEnv holds that); the canary files only show that nothing
+	// ran, since some of these are beaten by the command line (see noCanaries).
 	env := append([]string{"PATH=/usr/bin:/bin", "TERM=xterm", "LC_ALL=C.UTF-8", "TACCTL_SKIP_SUDO=1"},
 		"PAGER=touch "+canary+".pager", "MANPAGER=touch "+canary+".manpager", "LESSOPEN=|touch "+canary+".lessopen %s",
 		"LESSCLOSE=touch "+canary+".lessclose", "LESS=-r", "MANOPT=-P 'touch "+canary+".manopt'", "LESSSECURE=0",
@@ -81,7 +83,14 @@ func manToolsOrSkip(t *testing.T) {
 	}
 }
 
-// noCanaries fails the test if the hostile environment had any effect.
+// noCanaries fails the test if a program of the hostile environment ran. It
+// is an end-to-end check that nothing in the chain (man, groff, less) ran
+// one, and it proves less about the environment than it seems: the pager
+// named with -P wins over PAGER, MANPAGER and MANOPT whether or not they
+// reach man; LESSOPEN is not applied to a page read from a pipe; and
+// LESSSECURE=0 is itself secure mode for less. checkSafeEnv (man_cmd_test.go),
+// on the environment the command gives its children, is the guard of the
+// environment; the refusals below are the guard of the pager.
 func noCanaries(t *testing.T, canary string) {
 	t.Helper()
 	if m, _ := filepath.Glob(canary + ".*"); len(m) > 0 {
@@ -115,7 +124,9 @@ func manSession(t *testing.T, p interface {
 	// No shell escape, no editor, no pipe, no log file, no other file.
 	for _, k := range []struct{ keys, refusal string }{
 		{"!", `Command not available`}, {"v", `Command not available`}, {"|", `Command not available`},
-		{":e", `Command not available`}, {"s" + canary + ".save\r", `log file support is not available`},
+		{":e", `Command not available`}, {"\x18\x16", `Command not available`},
+		{"s" + canary + ".save\r", `log file support is not available`},
+		{"-o" + canary + ".log\r", `log file support is not available`}, {"-O" + canary + ".log\r", `log file support is not available`},
 	} {
 		send(k.keys)
 		expect(k.refusal)
