@@ -646,8 +646,10 @@ func (inv *invocation) userPasswd(args []string) error {
 		inv.app.Out.Info("Using pre-generated bcrypt hash.")
 	}
 	// An administrator's reset requires a change of the password too, unless
-	// told not to, or unless the user cannot (a superuser; no login on this
-	// server): a requirement that stands is then lifted. Setting a password
+	// told not to (--no-change-required lifts one that stands) or unless the
+	// user is a superuser (whom it never binds, so it is lifted). A reset
+	// that cannot require one for another reason (no login on this server,
+	// a registry that cannot be read) keeps what stands. Setting a password
 	// also enables the account (how the seeded placeholder users are
 	// activated), so the user is looked at as an enabled one.
 	m, err := inv.model()
@@ -661,10 +663,22 @@ func (inv *invocation) userPasswd(args []string) error {
 		barrier = inv.pwBarrier(m, username, cur.Group, cur.Scopes, false)
 		require = barrier.why == ""
 	}
-	if err := inv.storeApply(func(s *store.Store) error {
-		return s.UserSet(username, "hash="+hexHash, "disabled=false", "password_changed=today",
-			"password_change_required="+map[bool]string{true: "true", false: "false"}[require])
-	}); err != nil {
+	// The flag is written true when the reset requires a change, and false
+	// only when the reset is told to skip it (--no-change-required) or the
+	// user is a superuser, whom it never binds. A reset that cannot require
+	// one for any other reason (the registry cannot be read, the user has no
+	// login here) leaves the flag as it is: a barrier that may pass again
+	// does not lift a requirement that stands.
+	fields := []string{"hash=" + hexHash, "disabled=false", "password_changed=today"}
+	lifted := false
+	switch {
+	case require:
+		fields = append(fields, "password_change_required=true")
+	case skipChange || barrier.exempt:
+		fields = append(fields, "password_change_required=false")
+		lifted = cur.PasswordChangeRequired
+	}
+	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, fields...) }); err != nil {
 		return err
 	}
 	inv.detail("user passwd", kvp("name", username), kvp("source", source))
@@ -675,13 +689,15 @@ func (inv *invocation) userPasswd(args []string) error {
 		inv.detailPwChange(username, true, "passwd")
 		out.InfoE("'" + username + "' must change it at the next login to this server; no device accepts the user until then (" + noChangeRequired + " skips this).")
 		inv.reportRequired(m, []string{username})
-	case cur.PasswordChangeRequired:
+	case lifted:
 		inv.detailPwChange(username, false, "passwd")
 		out.InfoE("The password change required of '" + username + "' is lifted.")
 	case !skipChange && barrier.exempt:
 		out.InfoE("No password change is required of '" + username + "': " + barrier.why + ".")
+	case !skipChange && cur.PasswordChangeRequired:
+		out.WarnE("The password change required of '" + username + "' stands (it was not lifted, and could not be required again): " + barrier.why + ".")
 	case !skipChange:
-		out.InfoE("No password change is required of '" + username + "': " + barrier.why + ".")
+		out.WarnE("A password change could not be required of '" + username + "': " + barrier.why + ".")
 	}
 	inv.echo("")
 	return nil

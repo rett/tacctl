@@ -154,6 +154,11 @@ only when set.
   exempt from then on, and one moved out must change the password. `user add`, `user passwd` and
   `require-password-change on` do not set it for a superuser and say so, and `on` ends with `Flagged
   N, skipped M, already required K.`
+- *A reset keeps what stands.* Only `user passwd --no-change-required`, the user's own `tacctl
+  passwd`, `require-password-change off` and a superuser's reset clear the flag. A reset that cannot
+  require a change for another reason (no login on the server, the host registry cannot be read) leaves
+  a flagged user flagged and says so with the reason; for an unflagged user it says the change could not
+  be required.
 - *A user must be able to change it.* The flag is not set, and the verb says why, for a user with no
   login on this server: the server is not enrolled (`host enroll --local`), the user is not in the
   scope it is enrolled in, the name is no Linux account name (a period), or the user is disabled.

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -388,5 +389,66 @@ func TestRequiredChangeBarrierFollowsTheMethod(t *testing.T) {
 	sb.asAlice("", "user", "require-password-change", "bob")
 	if out := plain(sb.out.String() + sb.err.String()); !strings.Contains(out, "Skipped bob (scope 'srv' does not answer 127.0.0.1 for RADIUS") {
 		t.Errorf("radius server, tacacs scope:\n%s", out)
+	}
+}
+
+// A reset that cannot require a change (the registry cannot be read, the user
+// has no login here) lifts nothing that stands, and says so; for a user who
+// was not flagged it says the change could not be required and why. Only
+// --no-change-required, or a superuser, clears the flag.
+func TestUserPasswdResetKeepsAFlagItCannotRenew(t *testing.T) {
+	sb := pwSandbox(t)
+	h := hashOf(t, "CorrectHorse99")
+	sb.asAlice("", "user", "require-password-change", "bob")
+	sb.expect(0, "Flagged 1", "")
+	// the registry cannot be read: a directory where the file should be
+	if err := os.Remove(sb.path("state", "linux-hosts")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(sb.path("state", "linux-hosts"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sb.asAlice("", "user", "passwd", "bob", "--hash", h)
+	out := plain(sb.out.String() + sb.err.String())
+	if sb.code != 0 || !strings.Contains(out, "Password changed for 'bob'.") ||
+		!strings.Contains(out, "The password change required of 'bob' stands (it was not lifted, and could not be required again): the host registry cannot be read") {
+		t.Errorf("reset of a flagged user, registry unreadable: exit %d\n%s", sb.code, out)
+	}
+	if got := flaggedUsers(t, sb); got != "bob" {
+		t.Errorf("the reset lifted the flag: %q", got)
+	}
+	for _, l := range auditLines(sb.runner) {
+		if strings.Contains(l, "password-change") {
+			t.Errorf("a line for a flag that did not change: %s", l)
+		}
+	}
+	// an unflagged user: not flagged, and told why
+	sb.asAlice("", "user", "passwd", "carol", "--hash", h)
+	out = plain(sb.out.String() + sb.err.String())
+	if !strings.Contains(out, "A password change could not be required of 'carol': the host registry cannot be read") || flaggedUsers(t, sb) != "bob" {
+		t.Errorf("reset of an unflagged user: %q flagged %q", out, flaggedUsers(t, sb))
+	}
+	// the explicit option still lifts it
+	sb.asAlice("", "user", "passwd", "bob", "--hash", h, "--no-change-required")
+	sb.expect(0, "The password change required of 'bob' is lifted.", "")
+	if flaggedUsers(t, sb) != "" {
+		t.Errorf("--no-change-required: %q", flaggedUsers(t, sb))
+	}
+	// a flagged user with no login here (not in the server's scope) stays flagged
+	if err := os.Remove(sb.path("state", "linux-hosts")); err != nil {
+		t.Fatal(err)
+	}
+	sb.write("state/linux-hosts", "authsrv|local|22|srv|127.0.0.1|\n", 0o600)
+	flagUser(t, sb, "carol")
+	sb.asAlice("", "user", "passwd", "carol", "--hash", h)
+	if out := plain(sb.out.String() + sb.err.String()); !strings.Contains(out, "stands") || !strings.Contains(out, "it is not in scope 'srv'") || flaggedUsers(t, sb) != "carol" {
+		t.Errorf("reset of a flagged user with no login: %q flagged %q", out, flaggedUsers(t, sb))
+	}
+	// a superuser's reset clears a flag it never binds
+	flagUser(t, sb, "alice")
+	sb.asAlice("", "user", "passwd", "alice", "--hash", h)
+	sb.expect(0, "The password change required of 'alice' is lifted.", "")
+	if flaggedUsers(t, sb) != "carol" {
+		t.Errorf("flagged after a superuser's reset: %q", flaggedUsers(t, sb))
 	}
 }

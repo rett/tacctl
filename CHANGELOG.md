@@ -308,7 +308,11 @@ current behaviour; this file is where history lives.
     held by a read error: the console knows one by the system group
     `tac-superuser`, which needs no store, and the root side by the tier. The user's own
     `tacctl passwd` (which already refused the current password as the new one)
-    lifts the requirement. The flag is the user's `password_change_required` in
+    lifts the requirement, and so does `user passwd --no-change-required` (or
+    the reset of a superuser); a reset that cannot require a change for another
+    reason (the host registry cannot be read, the user has no login here) keeps
+    a flag that stands and says why, and for an unflagged user says the change
+    could not be required. The flag is the user's `password_change_required` in
     `store.yaml`, written only when set; `user list` marks the date with
     `(change required)`, `user show` has a `Password change` line, and `status`
     counts the users pending. The flag set and lifted is logged as `user

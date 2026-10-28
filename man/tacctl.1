@@ -849,8 +849,12 @@ user does (see
 .BR "user require\-password\-change" ),
 unless
 .B \-\-no\-change\-required
-is given, which lifts a requirement that stands, or the user is a superuser or
-has no login on this server (the command says why). The user's own
+is given, which lifts a requirement that stands, or the user is a superuser
+(whom the requirement never binds, so one that stands is lifted). A reset that
+cannot require a change for another reason (the user has no login on this
+server, the host registry cannot be read) does not lift one that stands: the
+user stays flagged, and the command says so and why; for a user who was not
+flagged it says the change could not be required. The user's own
 .B passwd
 is not a reset: it lifts the requirement.
 .\" BEGIN GENERATED: command user passwd
