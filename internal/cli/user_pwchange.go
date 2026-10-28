@@ -130,7 +130,7 @@ func (c *pwCtx) sharedNote() string {
 		return ""
 	}
 	return "Scope '" + c.entry.Scope + "', this server's, also answers " + strings.Join(shared, ", ") + ": a device there still accepts a user who must change the password, " +
-		"because the user stays in the scope the server's own logins use. Give the server a scope of its own to keep the devices out."
+		"because the user stays in the scope the server's own logins use. Give the server's login a scope of its own to keep the devices out: tacctl host enroll --local"
 }
 
 // sharedScopeNote is the warning that this server's scope answers more than
