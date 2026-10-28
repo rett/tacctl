@@ -27,8 +27,9 @@ current behaviour; this file is where history lives.
    be read, since the hosts are then unknown). A release before 0.2.20 refuses a
    store with such a name, so `tacctl rollback` to any target is refused, in the
    dry run too and with nothing changed, while the store has a user with a
-   period or `console.yaml` an override under one; the refusal lists each with
-   `tacctl user rename <name> <new-name>` or `tacctl console user <name> clear`.
+   period; the refusal lists each with `tacctl user rename <name> <new-name>`.
+   An override under such a name in `console.yaml` (item 17 ignores them) does
+   not stop it: the rollback takes that entry out of the file.
 
 2. **Tab and `?` describe a command as the completion scripts do.** The bash,
    zsh and fish scripts and the shell and console lists took the description
@@ -242,6 +243,28 @@ current behaviour; this file is where history lives.
     it is the text 0.2.19 wrote. A list with no IPv4 entry that permits ssh
     renders no filter in either mode. The strict filter has not yet been
     checked on a Junos device.
+
+17. **The console is the login shell of every managed user, and there is no
+    switch for it.** `tacctl console tiers` and `tacctl console user` are gone
+    (an unknown sub-command, with the usage), along with the "always on"
+    exception for the engineer tier: every managed user of every tier gets the
+    console as login shell at the next `host sync` of the server (or `host
+    enroll --local`), and sshd's drop-in forces it for all of them. The
+    `tiers` and `users` mappings of an existing `console.yaml` are ignored
+    from now on: nothing reads them, nothing writes them (a file that never had
+    them does not get them; one that has them keeps them untouched when a
+    setting changes), and `console show` does not mention them. A user is left
+    without the console only where it cannot be provisioned (the
+    `tacctl-console` link is missing: bash, nologin for an engineer) or has no
+    tier (nologin). `console show` lists each managed user's shell and why (a
+    managed user). The refusal of `console remove` while an account has the
+    console now names `tacctl host unenroll <server>`. Upgrading: the switches
+    of `console.yaml` are ignored and every managed user gets the console at the
+    next `host sync` (docs/install/upgrading.md). `tacctl rollback` leaves the
+    two mappings in the file, which an older release reads as it always did
+    (a file without them is read as the console on for everyone); only an
+    override under a user name with a period, which no older release reads, is
+    taken out, and shown in the plan as a removal of `users.<name>`.
 
 ## 0.2.19 (2026-10-25)
 

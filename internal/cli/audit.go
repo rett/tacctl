@@ -374,8 +374,6 @@ var auditTable = map[string]auditEntry{
 	"console list-max":         mixed(),
 	"console ssh-escape":       mixed(),
 	"console system-shell":     mixed().weighty(),
-	"console tiers":            mixed().weighty(),
-	"console user":             mixed().weighty(),
 
 	"log tail":       read(),
 	"log search":     read(),

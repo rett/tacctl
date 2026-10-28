@@ -3,8 +3,9 @@
 // which tacctl users get the console as their login shell on the tacctl
 // server and with what settings, and the policy read from it.
 //
-// An absent file is the defaults: the console on for every tier, the system
-// shell for superusers only. The file is written like devices.yaml: under
+// Every managed user of every tier has the console as login shell; the file
+// holds no switch for that. An absent file is the defaults: the system shell
+// for superusers only. The file is written like devices.yaml: under
 // an exclusive lock, through a temporary file (0600, fsync, rename) after
 // the text has been read back with the reader it is read with.
 package console
@@ -67,9 +68,7 @@ const (
 // ColorWords are the words of 'console color'.
 var ColorWords = []string{ColorAuto, ColorOn, ColorOff}
 
-// Tiers are the tiers that have a console switch, lowest first. A file
-// written before the engineer tier (0.2.2) has no switch for it: it is on,
-// as for every tier by default.
+// Tiers are the tiers, lowest first.
 var Tiers = []tier.Tier{tier.Readonly, tier.Operator, tier.Engineer, tier.Superuser}
 
 // Closed are the tiers neither system-shell nor forwarding is ever opened
@@ -87,11 +86,15 @@ const (
 
 // File is console.yaml, version 1.
 type File struct {
-	// TierOn is the console's switch per tier.
-	TierOn map[tier.Tier]bool
-	// Users are the per-user overrides: true forces the console, false the
-	// system shell, whatever the tier says. Absent: the tier decides.
-	Users map[string]bool
+	// IgnoredTiers and IgnoredUsers are the 'tiers' and 'users' mappings of
+	// a file written before 0.2.20, which had a console switch per tier and
+	// per user. Every managed user has the console now, so nothing reads
+	// them: they are kept as they were read and written back unchanged
+	// when the file is rewritten (an older release, after a rollback, reads
+	// them as it always did), and a file that never had them does not get
+	// them. Only the tiers and users the file names are in the maps.
+	IgnoredTiers map[tier.Tier]bool
+	IgnoredUsers map[string]bool
 	// Idle is the idle timeout in minutes (0: none).
 	Idle int
 	// AgentForwarding and SSHEscape are the opt-ins of the sshd drop-in and
@@ -143,8 +146,8 @@ type File struct {
 // Defaults is the file that is not there.
 func Defaults() *File {
 	return &File{
-		TierOn:           map[tier.Tier]bool{tier.Readonly: true, tier.Operator: true, tier.Engineer: true, tier.Superuser: true},
-		Users:            map[string]bool{},
+		IgnoredTiers:     map[tier.Tier]bool{},
+		IgnoredUsers:     map[string]bool{},
 		Idle:             DefaultIdle,
 		SystemShell:      DefaultSystemShell,
 		SystemShellTiers: []tier.Tier{tier.Superuser},
@@ -161,13 +164,13 @@ func Defaults() *File {
 // Clone is a deep copy.
 func (f *File) Clone() *File {
 	c := *f
-	c.TierOn = map[tier.Tier]bool{}
-	for k, v := range f.TierOn {
-		c.TierOn[k] = v
+	c.IgnoredTiers = map[tier.Tier]bool{}
+	for k, v := range f.IgnoredTiers {
+		c.IgnoredTiers[k] = v
 	}
-	c.Users = map[string]bool{}
-	for k, v := range f.Users {
-		c.Users[k] = v
+	c.IgnoredUsers = map[string]bool{}
+	for k, v := range f.IgnoredUsers {
+		c.IgnoredUsers[k] = v
 	}
 	c.SystemShellTiers = slices.Clone(f.SystemShellTiers)
 	c.ForwardingTiers = slices.Clone(f.ForwardingTiers)
@@ -175,10 +178,11 @@ func (f *File) Clone() *File {
 	return &c
 }
 
-// UserNames are the users with an override, by name.
-func (f *File) UserNames() []string {
-	out := make([]string, 0, len(f.Users))
-	for u := range f.Users {
+// IgnoredUserNames are the users the file has an (ignored) override for, by
+// name.
+func (f *File) IgnoredUserNames() []string {
+	out := make([]string, 0, len(f.IgnoredUsers))
+	for u := range f.IgnoredUsers {
 		out = append(out, u)
 	}
 	slices.Sort(out)
@@ -302,12 +306,7 @@ func (f *File) validate() error {
 	if f.PasswordCacheMax < 1 || f.PasswordCacheMax > MaxPasswordCacheMax {
 		return fail("settings.password_cache.max must be 1-" + strconv.Itoa(MaxPasswordCacheMax) + " (hours).")
 	}
-	for _, t := range Tiers {
-		if _, ok := f.TierOn[t]; !ok {
-			return fail("tiers: '" + string(t) + "' is missing.")
-		}
-	}
-	for u := range f.Users {
+	for u := range f.IgnoredUsers {
 		if !names.MatchUser(u) {
 			return fail("users: invalid user name '" + u + "'.")
 		}
@@ -390,7 +389,7 @@ func parse(data []byte) (*File, error) {
 				if !known || !valid {
 					return nil, fail("tiers: unknown tier or value for '" + name + "' (readonly, operator, engineer, superuser; enable or disable).")
 				}
-				f.TierOn[t] = on
+				f.IgnoredTiers[t] = on
 			}
 		case "users":
 			if val == nil {
@@ -405,7 +404,7 @@ func parse(data []byte) (*File, error) {
 				if !valid {
 					return nil, fail("users: '" + name + "' must be enable or disable.")
 				}
-				f.Users[name] = on
+				f.IgnoredUsers[name] = on
 			}
 		case "settings":
 			m, ok := val.(*yamlpy.Map)
@@ -545,14 +544,6 @@ func word(on bool) string {
 }
 
 func (f *File) doc() *yamlpy.Map {
-	tiers := yamlpy.NewMap()
-	for _, t := range Tiers {
-		tiers.Set(string(t), word(f.TierOn[t]))
-	}
-	users := yamlpy.NewMap()
-	for _, u := range f.UserNames() {
-		users.Set(u, word(f.Users[u]))
-	}
 	words := func(l []tier.Tier) []string {
 		out := make([]string, 0, len(l))
 		for _, t := range l {
@@ -591,12 +582,25 @@ func (f *File) doc() *yamlpy.Map {
 			"max", f.PasswordCacheMax,
 		))
 	}
-	return yamlpy.NewMap(
-		"version", Version,
-		"tiers", tiers,
-		"users", users,
-		"settings", settings,
-	)
+	doc := yamlpy.NewMap("version", Version)
+	if len(f.IgnoredTiers) > 0 {
+		tiers := yamlpy.NewMap()
+		for _, t := range Tiers {
+			if on, ok := f.IgnoredTiers[t]; ok {
+				tiers.Set(string(t), word(on))
+			}
+		}
+		doc.Set("tiers", tiers)
+	}
+	if len(f.IgnoredUsers) > 0 {
+		users := yamlpy.NewMap()
+		for _, u := range f.IgnoredUserNames() {
+			users.Set(u, word(f.IgnoredUsers[u]))
+		}
+		doc.Set("users", users)
+	}
+	doc.Set("settings", settings)
+	return doc
 }
 
 // Text is the file as it is written: the header and the YAML, checked by

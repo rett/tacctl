@@ -22,7 +22,7 @@ cmd end v=1 user=alice cmd="user add" result=ok status=0 duration=0.312s
 Every command has a class in a table in the code:
 
 - **action**: it changes state or logs in somewhere every time it runs (`user add`, `host sync`, `ssh`, `log clear`, ...). The start line is written before the command does anything, after the tier gate and the preflight; the end line where the exit status is decided.
-- **mixed**: it is a read or a write by its later arguments (`scope secret` shows or sets, `device port <name>` shows and `device port <name> 2222` sets, `config loglevel`, `console tiers`, ...). The start line is written just before the first thing the command changes, so a mixed command that only read writes nothing.
+- **mixed**: it is a read or a write by its later arguments (`scope secret` shows or sets, `device port <name>` shows and `device port <name> 2222` sets, `config loglevel`, `console system-shell`, ...). The start line is written just before the first thing the command changes, so a mixed command that only read writes nothing.
 - **read**: no central line.
 
 A command that is not in the table is treated as an action, and the test suite fails until its row is added. The lines of a verb that logs more (`ssh start`/`ssh end`, the console session, `breakglass hold`, `host enroll`, `device config apply`, ...) are kept; the pair is written for those verbs too.
@@ -93,7 +93,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `group privilege` | `name` `op=add\|remove\|seed` `count` |
 | `group preset` | `name` `preset=roles` `changes`; one line per group changed |
 | `config sudoers`, `config sudoers tiers` | `op=install\|remove` `file`, and `group` for the first |
-| `console set` | `key` `item` `from` `to`: `key` is the setting (`tiers`, `user`, `system-shell`, `forwarding`, `agent-forwarding`, `ssh-escape`, `password-cache`, `idle-timeout`, `space-completion`, `color`, `list-max`) and `item` the tier, user or part of it; `auth.notice` for `tiers`, `user` and `system-shell` |
+| `console set` | `key` `item` `from` `to`: `key` is the setting (`system-shell`, `forwarding`, `agent-forwarding`, `ssh-escape`, `password-cache`, `idle-timeout`, `space-completion`, `color`, `list-max`) and `item` the tier, user or part of it; `auth.notice` for `system-shell` |
 | `backup restore` | `id` `pre` (the snapshot taken first) `keep-uids` `legacy`; `auth.notice` |
 | `store import` | `source` `replace` `force`; `auth.notice` |
 | `store rollback` | `pre`; `auth.notice` |

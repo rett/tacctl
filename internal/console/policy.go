@@ -12,7 +12,8 @@ import (
 	"github.com/rett/tacctl/internal/tier"
 )
 
-// SystemLoginShell is what a user without the console gets as a login shell.
+// SystemLoginShell is the login shell an account gets back when the console
+// is taken away (uninstall, a server whose console cannot be provisioned).
 const SystemLoginShell = "/bin/bash"
 
 // NoLoginShell is the login shell of an account that gets neither the
@@ -38,48 +39,35 @@ func NewPolicy(f *File, p paths.Paths) *Policy {
 // Decision is whether a user gets the console, and why.
 type Decision struct {
 	Console bool
-	// Why is the reason in words: "user override", "tier readonly",
-	// "tier readonly disabled", "no tier".
+	// Why is the reason in words: "managed user", "no tier".
 	Why string
 }
 
-// Decide is the console decision for user at tier t: the engineer tier has
-// the console always (D18: an engineer has the console or no login on this
-// server, so neither a user override nor the tier's switch applies), then
-// the user's override wins, then the tier's switch. A caller with no tier
-// (none, unrestricted) gets no console: it has no account the console
-// provisions.
-func (p *Policy) Decide(user string, t tier.Tier) Decision {
+// Decide is the console decision for a user at tier t: every managed user
+// of every tier has the console as login shell, with no switch for a tier
+// or a user. A caller with no tier (none, unrestricted) gets no console: it
+// has no account the console provisions.
+func (p *Policy) Decide(t tier.Tier) Decision {
 	switch t {
 	case tier.Readonly, tier.Operator, tier.Engineer, tier.Superuser:
-	default:
-		return Decision{false, "no tier"}
+		return Decision{true, "managed user"}
 	}
-	if t == tier.Engineer {
-		return Decision{true, "tier engineer (always)"}
-	}
-	if on, ok := p.File.Users[user]; ok {
-		return Decision{on, "user override"}
-	}
-	if p.File.TierOn[t] {
-		return Decision{true, "tier " + string(t)}
-	}
-	return Decision{false, "tier " + string(t) + " disabled"}
+	return Decision{false, "no tier"}
 }
 
-// Shell is the login shell of user at tier t: the console's command, or
-// what ShellWithout says.
-func (p *Policy) Shell(user string, t tier.Tier) string {
-	if p.Decide(user, t).Console {
+// Shell is the login shell of a user at tier t: the console's command, or
+// what ShellWithout says for a user the console is not provisioned for.
+func (p *Policy) Shell(t tier.Tier) string {
+	if p.Decide(t).Console {
 		return p.Command
 	}
 	return ShellWithout(t)
 }
 
-// ShellWithout is the login shell of an account of tier t that does not get
-// the console: bash, but nologin for an engineer (the console or no login)
-// and for a tier that is none or unknown (no real shell for an account
-// nobody may log in to).
+// ShellWithout is the login shell of an account of tier t when the console
+// is not provisioned (the server's console link is missing): bash, but
+// nologin for an engineer (the console or no login) and for a tier that is
+// none or unknown (no real shell for an account nobody may log in to).
 func ShellWithout(t tier.Tier) string {
 	switch t {
 	case tier.Readonly, tier.Operator, tier.Superuser, tier.Unrestricted:

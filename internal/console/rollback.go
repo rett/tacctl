@@ -14,6 +14,14 @@ package console
 // a list_max of -1, never ask); the rollback to any release takes them out
 // (RollbackSince0220 for those that have the cache), as the key of
 // space_completion is written only when it is off.
+//
+// 0.2.20 also stopped writing 'tiers' and 'users' (the console switches of a
+// tier and of a user, now ignored) and keeps the ones a file has. An older
+// release reads them as it always did, and a file without them as the
+// console on for everyone, so the rollback leaves them: all but an override
+// under a user name with a period, which no older release accepts (names
+// are letters, digits, '_' and '-' there) and which would fail the whole
+// file. Those entries are taken out (DottedUsersKey), the rest stays.
 
 import (
 	"bytes"
@@ -41,6 +49,11 @@ var Keys023 = []string{"settings.password_cache"}
 // largest list_max the older readers accept (RollbackSince0220; the same
 // handling as settings.space_completion, written only when set, for 0.2.2).
 var Keys0220 = []string{"settings.color", "settings.list_max"}
+
+// DottedUsersKey is the Remove key of the overrides, under users, of user
+// names with a period (0.2.20 allows them; the older releases refuse the
+// file).
+const DottedUsersKey = "users"
 
 // RollbackPlan is what writing the file for an older release changes.
 type RollbackPlan struct {
@@ -118,6 +131,11 @@ func planRollback(path string, cache bool) (RollbackPlan, error) {
 			}
 		}
 	}
+	for _, u := range f.IgnoredUserNames() {
+		if strings.Contains(u, ".") {
+			p.Remove = append(p.Remove, DottedUsersKey+"."+u+": ignored override of a name with a period")
+		}
+	}
 	if f.ListMax == ListMaxNever {
 		p.Set = append(p.Set, "settings.list_max to "+strconv.Itoa(MaxListMax)+" (it never asked)")
 	}
@@ -170,6 +188,17 @@ func (f *File) rollbackText(cache bool) ([]byte, error) {
 		m.Delete("color")
 		if f.ListMax == ListMaxNever {
 			m.Set("list_max", MaxListMax)
+		}
+	}
+	if users, ok := doc.Get("users"); ok {
+		m := users.(*yamlpy.Map)
+		for _, u := range f.IgnoredUserNames() {
+			if strings.Contains(u, ".") {
+				m.Delete(u)
+			}
+		}
+		if m.Len() == 0 {
+			doc.Delete("users")
 		}
 	}
 	out, err := yamlpy.EmitChecked(doc, yamlpy.StoreOptions, Header, pyyaml.LoadBytes)

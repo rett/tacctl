@@ -16,7 +16,6 @@ config linux engineer-sudo
 config mgmt-acl add
 config snmp show
 config wti
-console
 console check
 console forwarding
 console idle-timeout
@@ -26,8 +25,6 @@ console remove
 console show
 console space-completion
 console system-shell
-console tiers
-console user
 device
 device add
 device address

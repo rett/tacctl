@@ -69,6 +69,11 @@ func rollbackState(t *testing.T) *hostSandbox {
 	hs.step("", "device", "snmp", "sw1", "clients", "add", "10.1.0.0/16")
 	hs.step("sw2-community\nsw2-community\n", "device", "snmp", "sw2", "community", "--stdin")
 	hs.step("", "console", "password-cache", "tiers", "engineer,superuser")
+	// The console switches of a release before 0.2.20, still in the file:
+	// this release ignores them and keeps them, and 0.2.3 reads them as it
+	// always did.
+	hs.write("state/console.yaml", strings.Replace(hs.read("state/console.yaml"), "version: 1\n",
+		"version: 1\ntiers: {readonly: disable, operator: enable, engineer: enable, superuser: enable}\nusers: {bob: disable}\n", 1), 0o600)
 	hs.step("", "config", "devices", "max-concurrency", "16")
 	hs.step("", "config", "devices", "transport", "ssh")
 	hs.step("", "config", "devices", "timeout", "120")
@@ -361,7 +366,7 @@ func TestRollbackRoundTrip(t *testing.T) {
 			t.Errorf("tacctl.yaml lost %q:\n%s", kept, ov)
 		}
 	}
-	if c := hs.read("state/console.yaml"); !strings.Contains(c, "list_max: 40") || !strings.Contains(c, "engineer: enable") || !strings.Contains(c, "space_completion: false") || strings.Contains(c, "password_cache") {
+	if c := hs.read("state/console.yaml"); !strings.Contains(c, "list_max: 40") || !strings.Contains(c, "tiers: {readonly: disable, operator: enable, engineer: enable, superuser: enable}") || !strings.Contains(c, "users: {bob: disable}") || !strings.Contains(c, "space_completion: false") || strings.Contains(c, "password_cache") {
 		t.Errorf("console.yaml:\n%s", c)
 	}
 	if d := hs.read("state/devices.yaml"); !strings.Contains(d, "location: 'Rack 4, DC1'") || strings.Contains(d, "snmp") {
@@ -590,7 +595,8 @@ func TestRollbackRealOldBinary(t *testing.T) {
 	if code != 0 || strings.Contains(out, "unknown config key") || !strings.Contains(out, "Configuration is valid.") {
 		t.Errorf("0.2.3 config validate after: %d\n%s", code, out)
 	}
-	if out, code = run("console", "show"); code != 0 || strings.Contains(out, "unknown") || !strings.Contains(out, "list-max: 40") {
+	if out, code = run("console", "show"); code != 0 || strings.Contains(out, "unknown") || !strings.Contains(out, "list-max: 40") ||
+		!strings.Contains(out, "readonly: disable") {
 		t.Errorf("0.2.3 console show after: %d\n%s", code, out)
 	}
 	if out, code = run("device", "list"); code != 0 || !strings.Contains(out, "sw1") || !strings.Contains(out, "sw2") || !strings.Contains(out, "sw3") {

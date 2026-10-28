@@ -30,8 +30,6 @@ func init() {
 
 var consoleSpecs = map[string]Spec{
 	"show":             {MaxArgs: 0},
-	"tiers":            {MaxArgs: 2, Args: []string{"readonly|operator|engineer|superuser", "enable|disable"}},
-	"user":             {MinArgs: 1, MaxArgs: 2, Args: []string{KindUsers, "enable|disable|clear"}},
 	"idle-timeout":     {MaxArgs: 1, Args: []string{""}},
 	"agent-forwarding": {MaxArgs: 1, Args: []string{"enable|disable"}},
 	"ssh-escape":       {MaxArgs: 1, Args: []string{"enable|disable"}},
@@ -49,9 +47,7 @@ var consoleSpecs = map[string]Spec{
 
 // consoleVerbs are the verbs ({Use, Short}), in usage order.
 var consoleVerbs = [][2]string{
-	{"show", "Tiers, per-user overrides, the effective shell per user, settings and the server's pieces"},
-	{"tiers [<tier> enable|disable]", "Show or switch the console for a tier (readonly, operator, engineer, superuser; the engineer tier is always on)"},
-	{"user <name> [enable|disable|clear]", "Show or set one user's override of the tier switch (never disabled for an engineer)"},
+	{"show", "The shell of each user, the system shell by tier, settings and the server's pieces"},
 	{"idle-timeout [<min>]", "Show or set the minutes idle at the prompt before the session ends (0-1440, 0: never)"},
 	{"agent-forwarding [enable|disable]", "Opt in to ssh agent forwarding for console users"},
 	{"ssh-escape [enable|disable]", "Opt in to ssh's escape character (~. and ~C) inside the console's ssh"},
@@ -72,7 +68,7 @@ var consoleVerbs = [][2]string{
 }
 
 func consoleCmd(inv *invocation) *cobra.Command {
-	c := verb("console <subcommand>", "Login console: which tacctl users get it as their shell on this server, and its settings")
+	c := verb("console <subcommand>", "Login console: the shell of every tacctl user on this server, and its settings")
 	c.RunE = inv.native(withPreflight, inv.console)
 	added := map[string]bool{}
 	for _, v := range consoleVerbs {
@@ -95,11 +91,10 @@ func consoleUsage() string {
 		b.WriteString("  " + v[0] + "\n      " + v[1] + "\n")
 	}
 	b.WriteString(`
-The console is the login shell of tacctl users on this server (tacctl-console):
-tacctl commands and ssh to registered devices, nothing else. It is on for every
-tier by default; 'tiers' switches a tier, 'user' overrides one user. The
-engineer tier has the console or no login on this server, so neither can
-switch it off. Local accounts that are not tacctl users are never touched.
+The console is the login shell of every tacctl user on this server, of every
+tier (tacctl-console): tacctl commands and ssh to registered devices, nothing
+else. There is no switch for it. Local accounts that are not tacctl users are
+never touched.
 
 The settings commands change /etc/tacctl/console.yaml only. The accounts' login
 shells and sshd's drop-in follow it when this server's accounts are synced
@@ -128,8 +123,6 @@ lifetime, when the password is changed, when a device refuses it, and with
 
 Examples:
   tacctl console show
-  tacctl console tiers readonly disable
-  tacctl console user jdoe enable
   tacctl console system-shell tiers superuser,operator
   tacctl console idle-timeout 15
 
@@ -145,7 +138,7 @@ func (inv *invocation) console(args []string) error {
 		rest = args[1:]
 	}
 	run := map[string]func([]string) error{
-		"show": inv.consoleShow, "tiers": inv.consoleTiers, "user": inv.consoleUser,
+		"show":         inv.consoleShow,
 		"idle-timeout": inv.consoleIdle, "system-shell": inv.consoleSystemShell, "forwarding": inv.consoleForwarding,
 		"agent-forwarding": inv.consoleSwitch("agent-forwarding"), "ssh-escape": inv.consoleSwitch("ssh-escape"),
 		"space-completion": inv.consoleSpace, "color": inv.consoleColor, "list-max": inv.consoleListMax,
@@ -221,15 +214,6 @@ func (inv *invocation) consoleWrite(key, item string, show func(*console.File) s
 	return nil
 }
 
-// consoleUserState is how a user's override reads in the file.
-func consoleUserState(f *console.File, name string) string {
-	on, ok := f.Users[name]
-	if !ok {
-		return "none"
-	}
-	return onOff(on)
-}
-
 // localHost is the entry of this server in the host registry (enrolled with
 // --local), if it is enrolled.
 func (inv *invocation) localHost() (hosts.Entry, bool, error) {
@@ -260,64 +244,7 @@ func (inv *invocation) consoleApply() error {
 	return nil
 }
 
-// --- tiers and users ------------------------------------------------------------
-
-func (inv *invocation) consoleTiers(args []string) error {
-	p, err := inv.consoleParse("tiers", args)
-	if err != nil {
-		return err
-	}
-	pol, err := inv.consolePolicy()
-	if err != nil {
-		return err
-	}
-	if len(p.Args) == 0 {
-		for _, t := range console.Tiers {
-			inv.echo(string(t) + ": " + consoleTierState(pol.File, t))
-		}
-		return nil
-	}
-	t, ok := console.ParseTier(p.Args[0])
-	if !ok {
-		return inv.usageErr("Unknown tier '"+p.Args[0]+"': expected readonly, operator, engineer or superuser.", "Usage: tacctl console "+consoleUse("tiers"))
-	}
-	if len(p.Args) == 1 {
-		inv.echo(onOff(pol.File.TierOn[t] || t == tier.Engineer))
-		return nil
-	}
-	on, err := inv.enableWord(p.Args[1], "tiers")
-	if err != nil {
-		return err
-	}
-	if t == tier.Engineer && !on {
-		return inv.usageErr(engineerConsoleText)
-	}
-	if err := inv.consoleWrite("tiers", string(t), func(f *console.File) string { return onOff(f.TierOn[t]) },
-		func(f *console.File) error { f.TierOn[t] = on; return nil }); err != nil {
-		return err
-	}
-	inv.app.Out.Info("The console is " + p.Args[1] + "d for the " + string(t) + " tier.")
-	return inv.consoleApply()
-}
-
-// engineerConsoleText is the refusal to switch the console off for the
-// engineer tier or for one of its users: an engineer has the console or no
-// login on this server.
-const engineerConsoleText = "The engineer tier has the console or no login on this server; it cannot be disabled. " +
-	"To keep a user off this server, remove its scope from the user."
-
-// consoleTierState is a tier's switch as the listings word it: the engineer
-// tier is always on, and a stored 'disable' (console.yaml edited by hand, or
-// from before) is said to be ignored.
-func consoleTierState(f *console.File, t tier.Tier) string {
-	if t != tier.Engineer {
-		return onOff(f.TierOn[t])
-	}
-	if !f.TierOn[t] {
-		return console.On + " (always; the stored " + console.Off + " is ignored)"
-	}
-	return console.On + " (always)"
-}
+// --- settings -------------------------------------------------------------------
 
 func onOff(b bool) string {
 	if b {
@@ -336,61 +263,6 @@ func (inv *invocation) enableWord(w, verbName string) (bool, error) {
 	}
 	return false, inv.usageErr("Usage: tacctl console " + consoleUse(verbName))
 }
-
-func (inv *invocation) consoleUser(args []string) error {
-	p, err := inv.consoleParse("user", args)
-	if err != nil {
-		return err
-	}
-	name := p.Args[0]
-	pol, err := inv.consolePolicy()
-	if err != nil {
-		return err
-	}
-	if len(p.Args) == 1 {
-		switch on, ok := pol.File.Users[name]; {
-		case !ok:
-			inv.echo("none")
-		default:
-			inv.echo(onOff(on))
-		}
-		return nil
-	}
-	if p.Args[1] == "clear" {
-		if _, ok := pol.File.Users[name]; !ok {
-			inv.app.Out.Info("'" + name + "' has no override.")
-			return nil
-		}
-		if err := inv.consoleWrite("user", name, func(f *console.File) string { return consoleUserState(f, name) },
-			func(f *console.File) error { delete(f.Users, name); return nil }); err != nil {
-			return err
-		}
-		inv.app.Out.Info("The override of '" + name + "' is cleared: the tier decides.")
-		return inv.consoleApply()
-	}
-	on, err := inv.enableWord(p.Args[1], "user")
-	if err != nil {
-		return err
-	}
-	m, err := inv.model()
-	if err != nil {
-		return err
-	}
-	if !m.Exists("users", name) {
-		return inv.usageErr("User '" + name + "' does not exist.")
-	}
-	if !on && inv.userTier(name, m.UserPrivLvl(name)) == tier.Engineer {
-		return inv.usageErr(engineerConsoleText)
-	}
-	if err := inv.consoleWrite("user", name, func(f *console.File) string { return consoleUserState(f, name) },
-		func(f *console.File) error { f.Users[name] = on; return nil }); err != nil {
-		return err
-	}
-	inv.app.Out.Info("The console is " + p.Args[1] + "d for '" + name + "' (a user override).")
-	return inv.consoleApply()
-}
-
-// --- settings -------------------------------------------------------------------
 
 func (inv *invocation) consoleIdle(args []string) error {
 	p, err := inv.consoleParse("idle-timeout", args)
@@ -823,7 +695,7 @@ func (inv *invocation) consolePolicyLine([]string) error {
 		t = tier.Engineer
 	}
 	shell := "system"
-	if pol.Decide(user, t).Console {
+	if pol.Decide(t).Console {
 		shell = "console"
 	}
 	sys := pol.SystemShell(t)

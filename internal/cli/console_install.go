@@ -167,8 +167,7 @@ func (inv *invocation) consoleDeprovision() error {
 		if e, ok, _ := inv.localHost(); ok {
 			local = e.Name
 		}
-		a.Out.ErrorE("Give them " + console.SystemLoginShell + " first: tacctl console tiers <tier> disable (or console user <name> disable), then tacctl host sync " +
-			local + "; or tacctl host unenroll " + local)
+		a.Out.ErrorE("Give them " + console.SystemLoginShell + " first: tacctl host unenroll " + local)
 		return exit(1)
 	}
 	// The engineer tier's drop-in stays (an engineer without the console
@@ -660,8 +659,8 @@ func (inv *invocation) consoleCheckReport(pol *console.Policy) error {
 
 // consoleForLocal prepares the script of the tacctl server's own accounts
 // ('host enroll --local' and the sync of that host): every user's login
-// shell goes into the script (req.ConsoleShell, from console.yaml), and,
-// when any user of the scope gets the console, the server's pieces are put
+// shell goes into the script (req.ConsoleShell: the console for every user of
+// every tier), and, when any user of the scope gets the console, the server's pieces are put
 // in place first (consoleProvision). Without the console's symlink nobody
 // gets the console (it would be a shell that does not exist) and the
 // command says so; a drop-in sshd refuses is reported and the accounts are
@@ -680,15 +679,16 @@ func (inv *invocation) consoleForLocal(req *hosts.ScriptRequest) (bool, error) {
 	if inv.engineerSSHDProvision(pol) != nil {
 		a.Out.WarnE("The accounts are synced anyway; until sshd's drop-in for the engineer tier is in place an engineer can still forward ports. Fix it, then: tacctl console install")
 	}
-	// Without the console an account gets console.ShellWithout: bash, but
-	// nologin for an engineer (the console or no login) and for a tier none.
+	// Where the console cannot be provisioned an account gets
+	// console.ShellWithout: bash, but nologin for an engineer (the console
+	// or no login) and for a tier none.
 	withoutConsole := func(_, t string) string { return console.ShellWithout(tier.Tier(t)) }
 	anyConsole, engineers := false, false
 	for _, r := range req.Rows {
 		name, lvl, _ := strings.Cut(r, "|")
 		t := inv.userTier(name, lvl)
 		engineers = engineers || t == tier.Engineer
-		if pol.Decide(name, t).Console {
+		if pol.Decide(t).Console {
 			anyConsole = true
 		}
 	}
@@ -705,7 +705,7 @@ func (inv *invocation) consoleForLocal(req *hosts.ScriptRequest) (bool, error) {
 		req.ConsoleShell = withoutConsole
 		return false, nil
 	}
-	req.ConsoleShell = func(name, t string) string { return pol.Shell(name, tier.Tier(t)) }
+	req.ConsoleShell = func(_, t string) string { return pol.Shell(tier.Tier(t)) }
 	a.Out.InfoE("Console pieces on this server:")
 	if err := inv.consoleProvision(pol); err != nil {
 		a.Out.WarnE("The accounts are synced anyway; until sshd's drop-in is in place a console user can still forward ports or use sftp. Fix it, then: tacctl console install")

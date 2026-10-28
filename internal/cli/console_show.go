@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/rett/tacctl/internal/console"
-	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -23,10 +22,7 @@ func (inv *invocation) consoleShow(args []string) error {
 	inv.echo("")
 	inv.echoE(ui.Bold + "Login console" + ui.NC)
 	inv.echo("--------------------------------------------")
-	inv.echo("Tiers (the console is the login shell of their users on this server):")
-	for _, t := range console.Tiers {
-		inv.echo("  " + string(t) + ": " + consoleTierState(f, t))
-	}
+	inv.echo("Every user of every tier has the console as login shell on this server.")
 	inv.echo("")
 	inv.echo("Settings:")
 	inv.echo("  idle-timeout: " + idleText(f.Idle))
@@ -70,7 +66,7 @@ func idleText(min int) string {
 }
 
 // consoleUsersTable prints the users of the local host's scope with their
-// effective shell, and the overrides that name nobody there. It returns the
+// effective shell. It returns the
 // users who have the console. listed is false when the server is not
 // enrolled (a line says so).
 func (inv *invocation) consoleUsersTable(pol *console.Policy) (users []string, listed bool, err error) {
@@ -88,23 +84,17 @@ func (inv *invocation) consoleUsersTable(pol *console.Policy) (users []string, l
 	}
 	title := "Users of " + e.Name + " (scope " + e.Scope + ")"
 	tb := ui.NewTable(title, ui.Left("USERNAME"), ui.Left("TIER"), ui.Left("SHELL"), ui.Left("WHY"))
-	seen := map[string]bool{}
 	rows := m.LinuxUsers(e.Scope)
 	for _, r := range rows {
 		name, lvl, _ := strings.Cut(r, "|")
 		tr := inv.userTier(name, lvl)
-		d := pol.Decide(name, tr)
-		seen[name] = true
+		d := pol.Decide(tr)
 		shell := "bash"
 		if d.Console {
 			shell = "console"
 			users = append(users, name)
 		}
-		why := d.Why
-		if _, over := pol.File.Users[name]; over && tr == tier.Engineer {
-			why += "; the stored override is ignored"
-		}
-		tb.Add(name, string(tr), shell, why)
+		tb.Add(name, string(tr), shell, d.Why)
 	}
 	if tb.Len() == 0 {
 		inv.echoE(ui.Bold + title + ui.NC)
@@ -112,15 +102,6 @@ func (inv *invocation) consoleUsersTable(pol *console.Policy) (users []string, l
 		inv.echo("  none")
 	} else {
 		inv.write(tb.String())
-	}
-	var stray []string
-	for _, u := range pol.File.UserNames() {
-		if !seen[u] {
-			stray = append(stray, u+": "+onOff(pol.File.Users[u]))
-		}
-	}
-	if len(stray) > 0 {
-		inv.echo("Overrides of users that have no account here: " + strings.Join(stray, ", "))
 	}
 	return users, true, nil
 }

@@ -655,8 +655,6 @@ func TestManKeyDocsAreComplete(t *testing.T) {
 
 var manConsoleDocs = map[string]struct{ typ, verb, desc string }{
 	"version":                     {"integer", "", "The format of the file; this release reads and writes 1."},
-	"tiers.<tier>":                {"enable or disable", setWith("console tiers"), "Whether the tier gets the console as its login shell on this server (readonly, operator, engineer, superuser)."},
-	"users.<name>":                {"enable or disable", setWith("console user"), "A user's override of the tier's switch; no entry: the tier decides."},
 	"settings.idle_timeout":       {"integer, 0 to " + strconv.Itoa(console.MaxIdle) + " minutes (0: none)", setWith("console idle-timeout"), "Idle time after which a console session ends."},
 	"settings.agent_forwarding":   {"true or false", setWith("console agent-forwarding"), "Whether the console's ssh and sshd's drop-in forward the ssh agent."},
 	"settings.ssh_escape":         {"true or false", setWith("console ssh-escape"), "Whether the escape character of the console's ssh stays on."},
@@ -703,18 +701,6 @@ func manConsoleKeyRows(t *testing.T) []manKeyRow {
 		dv, _ := def.Get(k)
 		m, isMap := v.(*yamlpy.Map)
 		switch {
-		case k == "tiers":
-			dm := dv.(*yamlpy.Map)
-			var vals []string
-			for _, tk := range dm.Keys() {
-				tv, _ := dm.Get(tk)
-				if s := manValueText(tv); !slices.Contains(vals, s) {
-					vals = append(vals, s)
-				}
-			}
-			add("tiers.<tier>", strings.Join(vals, " or "))
-		case k == "users":
-			add("users.<name>", "none (no override)")
 		case isMap && k == "settings":
 			dm := dv.(*yamlpy.Map)
 			for _, sk := range m.Keys() {

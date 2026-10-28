@@ -36,15 +36,20 @@ func TestAbsentFileIsTheDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tr := range Tiers {
-		if !f.TierOn[tr] {
-			t.Errorf("tier %s is off by default", tr)
-		}
-	}
-	if len(f.Users) != 0 || f.Idle != 30 || f.AgentForwarding || f.SSHEscape || f.SystemShell != "/bin/bash" ||
+	if len(f.IgnoredTiers) != 0 || len(f.IgnoredUsers) != 0 || f.Idle != 30 || f.AgentForwarding || f.SSHEscape || f.SystemShell != "/bin/bash" ||
 		!reflect.DeepEqual(f.SystemShellTiers, []tier.Tier{tier.Superuser}) ||
 		!reflect.DeepEqual(f.ForwardingTiers, []tier.Tier{tier.Superuser}) || f.ListMax != 40 || !f.SpaceCompletion {
 		t.Errorf("defaults: %+v", f)
+	}
+	// The file is written with no console switch: neither a tiers nor a
+	// users mapping.
+	text, err := f.Text()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(text), "tiers:") && !strings.Contains(string(text), "system_shell_tiers:") ||
+		strings.Contains(string(text), "\nusers:") || strings.Contains(string(text), "\ntiers:") {
+		t.Errorf("a switch is written:\n%s", text)
 	}
 }
 
@@ -53,9 +58,6 @@ func TestMutateRoundTripAndMode(t *testing.T) {
 	p := filepath.Join(dir, "state", "console.yaml")
 	var before int
 	changed, err := Mutate(p, func() error { before++; return nil }, func(f *File) error {
-		f.TierOn[tier.Readonly] = false
-		f.Users["jdoe"] = true
-		f.Users["asmith"] = false
 		f.Idle = 0
 		f.AgentForwarding = true
 		f.SSHEscape = true
@@ -72,8 +74,6 @@ func TestMutateRoundTripAndMode(t *testing.T) {
 		t.Errorf("mode: %v %v", st, err)
 	}
 	want := Header + `version: 1
-tiers: {readonly: disable, operator: enable, engineer: enable, superuser: enable}
-users: {asmith: disable, jdoe: enable}
 settings:
   idle_timeout: 0
   agent_forwarding: true
@@ -91,7 +91,7 @@ settings:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.TierOn[tier.Readonly] || !f.Users["jdoe"] || f.Users["asmith"] || f.Idle != 0 || !f.AgentForwarding || !f.SSHEscape ||
+	if f.Idle != 0 || !f.AgentForwarding || !f.SSHEscape ||
 		f.SystemShell != "/bin/sh" || !reflect.DeepEqual(f.SystemShellTiers, []tier.Tier{tier.Operator, tier.Superuser}) ||
 		len(f.ForwardingTiers) != 0 || f.ListMax != 100 {
 		t.Errorf("round trip: %+v", f)
@@ -108,11 +108,11 @@ settings:
 	if got, _ := os.ReadFile(p); string(got) != want {
 		t.Error("a refused change was written")
 	}
-	// An empty system_shell_tiers and no users read back.
-	if _, err := Mutate(p, nil, func(f *File) error { f.SystemShellTiers = nil; f.Users = map[string]bool{}; return nil }); err != nil {
+	// An empty system_shell_tiers reads back.
+	if _, err := Mutate(p, nil, func(f *File) error { f.SystemShellTiers = nil; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if f, err = Load(p); err != nil || len(f.SystemShellTiers) != 0 || len(f.Users) != 0 {
+	if f, err = Load(p); err != nil || len(f.SystemShellTiers) != 0 {
 		t.Errorf("empty lists: %+v %v", f, err)
 	}
 	// A snapshot that fails stops the write.
@@ -210,7 +210,7 @@ func TestInvalidFiles(t *testing.T) {
 	}
 	// A partial file keeps the other defaults.
 	f, err := Load(write(t, dir, "partial.yaml", "version: 1\nsettings: {idle_timeout: 5}\n", 0o600))
-	if err != nil || f.Idle != 5 || !f.TierOn[tier.Operator] || f.SystemShell != "/bin/bash" {
+	if err != nil || f.Idle != 5 || f.SystemShell != "/bin/bash" {
 		t.Errorf("partial: %+v %v", f, err)
 	}
 }
@@ -248,18 +248,10 @@ func TestParseTiers(t *testing.T) {
 	}
 }
 
-// The engineer tier has a console switch (on by default, and in a file
-// written before it existed), but never the system shell or forwarding,
-// whatever a hand-edited file says.
+// The engineer tier never has the system shell or forwarding, whatever a
+// hand-edited file says, and has the console.
 func TestEngineerTier(t *testing.T) {
 	dir := t.TempDir()
-	f, err := Load(write(t, dir, "old.yaml", "version: 1\ntiers: {readonly: enable, operator: disable, superuser: enable}\n", 0o600))
-	if err != nil || !f.TierOn[tier.Engineer] || f.TierOn[tier.Operator] {
-		t.Fatalf("old file: %+v %v", f, err)
-	}
-	if text, err := f.Text(); err != nil || !strings.Contains(string(text), "engineer: enable") {
-		t.Errorf("text: %s %v", text, err)
-	}
 	for _, body := range []string{
 		"version: 1\nsettings: {system_shell_tiers: [superuser, engineer]}\n",
 		"version: 1\nsettings: {forwarding_tiers: [engineer]}\n",
@@ -268,14 +260,14 @@ func TestEngineerTier(t *testing.T) {
 			t.Errorf("%q: %v", body, err)
 		}
 	}
-	f = Defaults()
+	f := Defaults()
 	f.SystemShellTiers = append(f.SystemShellTiers, tier.Engineer)
 	f.ForwardingTiers = append(f.ForwardingTiers, tier.Engineer)
 	p := &Policy{File: f, Command: "/usr/local/bin/tacctl-console"}
 	if p.SystemShell(tier.Engineer) || p.Forwarding(tier.Engineer) || !p.SystemShell(tier.Superuser) {
 		t.Error("engineer gets the system shell or forwarding")
 	}
-	if d := p.Decide("bob", tier.Engineer); !d.Console || d.Why != "tier engineer (always)" {
+	if d := p.Decide(tier.Engineer); !d.Console || d.Why != "managed user" {
 		t.Errorf("decide: %+v", d)
 	}
 	if TierGroup(tier.Engineer) != "tac-engineer" {
@@ -283,41 +275,77 @@ func TestEngineerTier(t *testing.T) {
 	}
 }
 
-// The policy table: tier x tier switch x user override.
+// A console.yaml written before 0.2.20 has a console switch per tier and per
+// user. Nothing reads them: every tier has the console whatever they say,
+// and the file keeps them as they were (an older release, after a rollback,
+// reads them as it always did) when it is rewritten for another setting,
+// without adding a tier the file did not name.
+func TestIgnoredSwitchesAreKept(t *testing.T) {
+	dir := t.TempDir()
+	const old = "version: 1\ntiers: {readonly: disable, operator: disable, superuser: enable}\nusers: {asmith: disable, jdoe: enable}\n" +
+		"settings: {idle_timeout: 7}\n"
+	p := write(t, dir, "console.yaml", old, 0o600)
+	f, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol := &Policy{File: f, Command: "/usr/local/bin/tacctl-console"}
+	for _, tr := range Tiers {
+		if d := pol.Decide(tr); !d.Console || pol.Shell(tr) != "/usr/local/bin/tacctl-console" {
+			t.Errorf("tier %s: %+v shell %q", tr, d, pol.Shell(tr))
+		}
+	}
+	if !reflect.DeepEqual(f.IgnoredTiers, map[tier.Tier]bool{tier.Readonly: false, tier.Operator: false, tier.Superuser: true}) ||
+		!reflect.DeepEqual(f.IgnoredUsers, map[string]bool{"asmith": false, "jdoe": true}) {
+		t.Errorf("read: %+v %+v", f.IgnoredTiers, f.IgnoredUsers)
+	}
+	if _, err := Mutate(p, nil, func(f *File) error { f.Idle = 9; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(p)
+	for _, want := range []string{"tiers: {readonly: disable, operator: disable, superuser: enable}", "users: {asmith: disable, jdoe: enable}", "idle_timeout: 9"} {
+		if !strings.Contains(string(got), want) {
+			t.Errorf("%q is gone:\n%s", want, got)
+		}
+	}
+	if strings.Contains(string(got), "engineer") {
+		t.Errorf("a tier the file did not name was added:\n%s", got)
+	}
+	// The values are still checked: a bad one is as unreadable as ever, so
+	// the older release's reader is not handed a file it rejects.
+	if _, err := Load(write(t, dir, "bad.yaml", "version: 1\ntiers: {operator: off}\n", 0o600)); err == nil {
+		t.Error("a bad stored value was accepted")
+	}
+}
+
+// The policy table: every tier has the console, whatever the file says; a
+// caller with no tier has none.
 func TestPolicyDecisions(t *testing.T) {
 	cmd := "/usr/local/bin/tacctl-console"
 	for _, c := range []struct {
 		name  string
 		edit  func(*File)
-		user  string
 		t     tier.Tier
 		want  string
 		shell string
 	}{
-		{"default readonly", func(*File) {}, "u", tier.Readonly, "tier readonly", cmd},
-		{"default operator", func(*File) {}, "u", tier.Operator, "tier operator", cmd},
-		{"default superuser", func(*File) {}, "u", tier.Superuser, "tier superuser", cmd},
-		{"tier off", func(f *File) { f.TierOn[tier.Readonly] = false }, "u", tier.Readonly, "tier readonly disabled", "/bin/bash"},
-		{"other tier unaffected", func(f *File) { f.TierOn[tier.Readonly] = false }, "u", tier.Operator, "tier operator", cmd},
-		{"override on beats tier off", func(f *File) { f.TierOn[tier.Readonly] = false; f.Users["u"] = true }, "u", tier.Readonly, "user override", cmd},
-		{"override off beats tier on", func(f *File) { f.Users["u"] = false }, "u", tier.Superuser, "user override", "/bin/bash"},
-		{"override of another user", func(f *File) { f.Users["v"] = false }, "u", tier.Superuser, "tier superuser", cmd},
-		{"none", func(*File) {}, "u", tier.None, "no tier", "/usr/sbin/nologin"},
-		{"none with override", func(f *File) { f.Users["u"] = true }, "u", tier.None, "no tier", "/usr/sbin/nologin"},
-		{"unknown tier", func(*File) {}, "u", tier.Tier("bogus"), "no tier", "/usr/sbin/nologin"},
-		// The engineer tier has the console or no login: neither the tier's
-		// switch nor a user override turns it off.
-		{"engineer", func(*File) {}, "u", tier.Engineer, "tier engineer (always)", cmd},
-		{"engineer tier off", func(f *File) { f.TierOn[tier.Engineer] = false }, "u", tier.Engineer, "tier engineer (always)", cmd},
-		{"engineer override off", func(f *File) { f.Users["u"] = false }, "u", tier.Engineer, "tier engineer (always)", cmd},
-		{"unrestricted", func(*File) {}, "u", tier.Unrestricted, "no tier", "/bin/bash"},
+		{"default readonly", func(*File) {}, tier.Readonly, "managed user", cmd},
+		{"default operator", func(*File) {}, tier.Operator, "managed user", cmd},
+		{"default engineer", func(*File) {}, tier.Engineer, "managed user", cmd},
+		{"default superuser", func(*File) {}, tier.Superuser, "managed user", cmd},
+		{"stored tier switch", func(f *File) { f.IgnoredTiers[tier.Readonly] = false; f.IgnoredTiers[tier.Engineer] = false }, tier.Readonly, "managed user", cmd},
+		{"stored tier switch, engineer", func(f *File) { f.IgnoredTiers[tier.Engineer] = false }, tier.Engineer, "managed user", cmd},
+		{"stored user override", func(f *File) { f.IgnoredUsers["u"] = false }, tier.Superuser, "managed user", cmd},
+		{"none", func(*File) {}, tier.None, "no tier", "/usr/sbin/nologin"},
+		{"unknown tier", func(*File) {}, tier.Tier("bogus"), "no tier", "/usr/sbin/nologin"},
+		{"unrestricted", func(*File) {}, tier.Unrestricted, "no tier", "/bin/bash"},
 	} {
 		f := Defaults()
 		c.edit(f)
 		p := &Policy{File: f, Command: cmd}
-		d := p.Decide(c.user, c.t)
-		if d.Why != c.want || d.Console != (c.shell == cmd) || p.Shell(c.user, c.t) != c.shell {
-			t.Errorf("%s: %+v shell %q", c.name, d, p.Shell(c.user, c.t))
+		d := p.Decide(c.t)
+		if d.Why != c.want || d.Console != (c.shell == cmd) || p.Shell(c.t) != c.shell {
+			t.Errorf("%s: %+v shell %q", c.name, d, p.Shell(c.t))
 		}
 	}
 }
@@ -569,13 +597,12 @@ func accepts023(text []byte) error {
 	return nil
 }
 
-// A console.yaml that 0.2.3 writes is not one 0.2.2 reads, whether or not
-// space completion was ever turned off: the engineer tier's switch
-// (tiers.engineer) is written on every write, and 0.2.2 rejects it. So
-// going back to 0.2.2 needs the rollback step (tacctl rollback 0.2.2),
-// which takes tiers.engineer and settings.space_completion out of the file.
-// This test pins the two keys that step has to remove (doc writes them) and
-// that the file without them is one the 0.2.2 fixture accepts.
+// A console.yaml is written with no 'tiers' and no 'users' mapping from
+// 0.2.20, so the engineer tier's switch (tiers.engineer, which 0.2.2
+// rejects) is no longer in it. What 0.2.2 still rejects is
+// settings.space_completion, written only when it is off. A file that has
+// the old mappings keeps them as it was (TestIgnoredSwitchesAreKept), and
+// 'tacctl rollback' to 0.2.3 and later does not touch them.
 func TestRollbackToTheOldParser(t *testing.T) {
 	for _, off := range []bool{false, true} {
 		f := Defaults()
@@ -584,44 +611,28 @@ func TestRollbackToTheOldParser(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := accepts022(text); err == nil || !strings.Contains(err.Error(), "engineer") {
-			t.Errorf("space completion off %v: want a rejection naming engineer, got %v\n%s", off, err, text)
-		}
 		v, err := pyyaml.LoadBytes(text)
 		if err != nil {
 			t.Fatal(err)
 		}
 		root := v.(*yamlpy.Map)
-		tiers, _ := root.Get("tiers")
-		settings, _ := root.Get("settings")
-		if !tiers.(*yamlpy.Map).Has("engineer") {
-			t.Errorf("no tiers.engineer is written:\n%s", text)
+		if root.Has("tiers") || root.Has("users") {
+			t.Errorf("a console switch is written:\n%s", text)
 		}
+		settings, _ := root.Get("settings")
 		if settings.(*yamlpy.Map).Has("space_completion") != off {
 			t.Errorf("space_completion written: %v, off: %v:\n%s", !off, off, text)
 		}
-		// tiers.engineer alone out: still rejected when space_completion is
-		// written (off), accepted when it is not (on).
-		tiers.(*yamlpy.Map).Delete("engineer")
-		half, err := yamlpy.EmitChecked(root, yamlpy.StoreOptions, Header, pyyaml.LoadBytes)
-		if err != nil {
-			t.Fatal(err)
-		}
-		err = accepts022(half)
+		err = accepts022(text)
 		if off && (err == nil || !strings.Contains(err.Error(), "space_completion")) {
-			t.Errorf("space completion off: without tiers.engineer: %v\n%s", err, half)
+			t.Errorf("space completion off: want a rejection naming space_completion, got %v\n%s", err, text)
 		}
 		if !off && err != nil {
-			t.Errorf("space completion on: without tiers.engineer still rejected: %v\n%s", err, half)
+			t.Errorf("space completion on: rejected by 0.2.2: %v\n%s", err, text)
 		}
-		// The rollback step: both keys out.
-		settings.(*yamlpy.Map).Delete("space_completion")
-		stripped, err := yamlpy.EmitChecked(root, yamlpy.StoreOptions, Header, pyyaml.LoadBytes)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := accepts022(stripped); err != nil {
-			t.Errorf("space completion off %v: still rejected after the step: %v\n%s", off, err, stripped)
+		// The 0.2.3 parser reads the file, whatever the mappings.
+		if err := accepts023(text); err != nil {
+			t.Errorf("0.2.3 rejects the file: %v\n%s", err, text)
 		}
 	}
 }
@@ -732,28 +743,28 @@ func TestPasswordCacheRollback023(t *testing.T) {
 		t.Errorf("0.2.3 rejects the converted file: %v\n%s", err, plan.Text)
 	}
 	if strings.Contains(string(plan.Text), "password_cache") || !strings.Contains(string(plan.Text), "space_completion: false") ||
-		!strings.Contains(string(plan.Text), "engineer: enable") {
+		strings.Contains(string(plan.Text), "tiers: {") {
 		t.Errorf("the converted file:\n%s", plan.Text)
 	}
 }
 
-// A user name may hold periods (names.MatchUser): the users mapping of the
-// file writes and reads such a key back, and a bad shape is refused.
+// A user name may hold periods (names.MatchUser): the ignored users mapping
+// of the file writes and reads such a key back, and a bad shape is refused.
 func TestUsersWithPeriods(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "console.yaml")
 	if _, err := Mutate(p, nil, func(f *File) error {
-		f.Users["alice.smith"] = true
-		f.Users["1.5"] = false
+		f.IgnoredUsers["alice.smith"] = true
+		f.IgnoredUsers["1.5"] = false
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	f, err := Load(p)
-	if err != nil || !f.Users["alice.smith"] || f.Users["1.5"] || len(f.Users) != 2 {
-		t.Fatalf("round trip: %+v %v", f.Users, err)
+	if err != nil || !f.IgnoredUsers["alice.smith"] || f.IgnoredUsers["1.5"] || len(f.IgnoredUsers) != 2 {
+		t.Fatalf("round trip: %+v %v", f.IgnoredUsers, err)
 	}
 	for _, bad := range []string{".alice", "alice.", "alice..smith"} {
-		if _, err := Mutate(p, nil, func(f *File) error { f.Users[bad] = true; return nil }); err == nil || !strings.Contains(err.Error(), "invalid user name '"+bad+"'") {
+		if _, err := Mutate(p, nil, func(f *File) error { f.IgnoredUsers[bad] = true; return nil }); err == nil || !strings.Contains(err.Error(), "invalid user name '"+bad+"'") {
 			t.Errorf("%q: %v", bad, err)
 		}
 	}

@@ -31,7 +31,7 @@ var updateStyle = flag.Bool("update-style", false, "drop the entries of internal
 // also pinned to its size: fixing an offender removes its line and lowers
 // the number here, in the same change; a larger number is a change of the
 // rule that needs a reviewer's eye.
-var ratchetEntries = map[string]int{"summary-length": 64, "flag-length": 178, "flag-prefix": 192}
+var ratchetEntries = map[string]int{"summary-length": 61, "flag-length": 178, "flag-prefix": 192}
 
 // longSummaries are the commands whose description is over summaryMax, by
 // their words ('device collect'): the description the scripts and the shell

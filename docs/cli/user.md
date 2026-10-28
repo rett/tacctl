@@ -121,9 +121,7 @@ a period. What a period means elsewhere:
   period); the FreeRADIUS `users` file takes the name as it is.
 - *Older releases.* A release before 0.2.20 refuses a store with such a name, so every
   `tacctl rollback` target is refused (the dry run too, nothing changed) while the store has a user
-  with a period, or `console.yaml` an override under one. The refusal lists each with the way out:
-  `tacctl user rename <name> <new-name>`, and `tacctl console user <name> clear` for the override
-  (a rename does not move it).
+  with a period. The refusal lists each with the way out: `tacctl user rename <name> <new-name>`.
 
 **A hash kept off the command line.** `--hash -` reads the hash from one line
 of standard input (typed without echo at a terminal; a control character in

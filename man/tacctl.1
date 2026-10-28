@@ -241,13 +241,19 @@ or
 .B "device config apply <name> \-\-check"
 or
 .B "device config forget <name>"
-settles it) and while the store has a user whose name has a period, or
-console.yaml an override under one (no target reads such a name: the refusal
-lists each, with
+settles it) and while the store has a user whose name has a period (no
+target reads such a name: the refusal lists each, with
 .B "user rename <name> <new\-name>"
-or
-.B "console user <name> clear"
-as the way out, and changes nothing). Every target also takes out of
+as the way out, and changes nothing; an override under such a name in the
+ignored
+.B users
+mapping of console.yaml does not stop it, the rollback takes that entry out).
+The
+.B tiers
+and
+.B users
+mappings of console.yaml that this release ignores stay in the file, and the
+release a rollback goes to reads them as it always did. Every target also takes out of
 .I console.yaml
 the two settings of 0.2.20 that no older release reads:
 .B settings.color
@@ -11768,19 +11774,23 @@ The lockdowns that stand: scope, groups, since, how long, by whom, why, the user
 .SS Login console \fB(tacctl console)\fR
 The login console
 .RB ( tacctl\-console )
-is the login shell of tacctl users on the tacctl server: tacctl commands and
-ssh to registered devices, nothing else. It is on for every tier by default
-(the defaults apply while
+is the login shell of every tacctl user, of every tier, on the tacctl server:
+tacctl commands and ssh to registered devices, nothing else. There is no
+switch for it; local accounts that are not tacctl users are never touched. The
+settings are in
 .I /etc/tacctl/console.yaml
-is absent); local accounts that are not tacctl users are never touched. These
+(the defaults apply while it is absent), and the
+.B tiers
+and
+.B users
+mappings of a file written before 0.2.20 are ignored and left in place. These
 commands change
 .I console.yaml
 only, after a snapshot (mode 0600; backup diff and restore include it), and
 never an account or sshd: the accounts' login shells and sshd's drop-in follow
 it when the provisioning of this server applies it
 .RB ( "host sync" " of the host enrolled with " \-\-local ).
-Every change to the tier switches, a user override, agent forwarding or the
-forwarding tiers prints
+Every change to agent forwarding or the forwarding settings prints
 .BI "Apply to the accounts: tacctl host sync " name\fR.
 The idle timeout, the ssh escape, the space completion, the colour, the list
 threshold, the system shell and the password cache are read by each console session when it starts; open
@@ -11792,16 +11802,11 @@ With no subcommand (or with
 prints a usage summary and exits 0.
 .TP
 .B console show
-The tiers' switches, the settings, and for each user of the scope of the host
-enrolled with
+The settings, and for each user of the scope of the host enrolled with
 .B \-\-local
 the tier, the effective shell
-.RB ( console
-or
-.BR bash )
-and why
-.RI ( "user override" ", " "tier readonly" ", " "tier readonly disabled" ).
-Then the state of the server's pieces: the
+.RB ( console )
+and why. Then the state of the server's pieces: the
 .I /usr/local/bin/tacctl\-console
 symlink, the
 .I /etc/shells
@@ -11824,38 +11829,6 @@ says so and lists no users.
 Requires: \fBoperator\fR.
 .RE
 .\" END GENERATED: command console show
-.TP
-.BI "console tiers " "[ " tier " " "{ enable | disable }" " ]"
-Show the switches, or one, or set the console for a tier
-.RB ( readonly ,
-.BR operator ,
-.BR engineer ,
-.BR superuser ).
-The engineer tier has the console or no login on the server, so its switch
-is always on: disabling it is refused, and a stored
-.B disable
-is listed as ignored. An engineer whose console cannot be provisioned gets
-.I /usr/sbin/nologin
-as login shell, and so does an account whose tier is none.
-.\" BEGIN GENERATED: command console tiers
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command console tiers
-.TP
-.BI "console user " "name " "[ { enable | disable | clear } ]"
-Show or set one user's override, which wins over the tier's switch;
-.B clear
-returns the user to the tier rule. The user must exist in the store to be
-given an override. An override never applies to an engineer: disabling one is
-refused.
-.\" BEGIN GENERATED: command console user
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command console user
 .TP
 .BI "console idle\-timeout " "[ " min " ]"
 Minutes idle at the prompt before the session ends, 0 to 1440 (0: never;
@@ -12654,8 +12627,8 @@ scope radius\-group, scope secret, scope snmp, scope staging,
 scope tacacs\-group, scope vendor\-attrs, user scope
 .TP
 .B "mixed, auth.notice"
-config audit\-strict, config sudoers, console system\-shell,
-console tiers, console user, rollback, store import
+config audit\-strict, config sudoers, console system\-shell, rollback,
+store import
 .\" END GENERATED: audit-classes
 .PP
 The fields, in the order written:
@@ -14218,24 +14191,21 @@ The rate limit of an enabled NETCONF service (1 to 250); unset: none stated. Set
 .\" END GENERATED: config-keys
 .SS console.yaml
 .I /etc/tacctl/console.yaml
-holds the login console's switches and settings (see
+holds the login console's settings (see
 .BR "tacctl console" ).
 Edit it with
 .BR "tacctl console" ;
-an absent file is the defaults, and a key that is not in this list is refused.
+an absent file is the defaults, and a key that is not in this list is refused
+(the
+.B tiers
+and
+.B users
+mappings that releases before 0.2.20 wrote are read and ignored).
 .\" BEGIN GENERATED: console-keys
 .TP
 .B version
 integer. Default: 1.
 The format of the file; this release reads and writes 1.
-.TP
-.B tiers.<tier>
-enable or disable. Default: enable.
-Whether the tier gets the console as its login shell on this server (readonly, operator, engineer, superuser). Set with \fBtacctl console tiers\fR.
-.TP
-.B users.<name>
-enable or disable. Default: none (no override).
-A user's override of the tier's switch; no entry: the tier decides. Set with \fBtacctl console user\fR.
 .TP
 .B settings.idle_timeout
 integer, 0 to 1440 minutes (0: none). Default: 30.
@@ -14720,10 +14690,9 @@ A device's rename moves it and its removal deletes it; a new device, or a
 rename onto a name whose blocks are already on disk, is refused.
 .TP
 .I /etc/tacctl/console.yaml
-The login console's switches per tier, per-user overrides and settings (see
+The login console's settings (see
 .BR "CONFIGURATION KEYS" ).
-Mode 0600, root only; absent means the defaults (the console on for every
-tier). Edit it with
+Mode 0600, root only; absent means the defaults. Edit it with
 .BR "tacctl console" .
 Snapshots include it.
 .TP

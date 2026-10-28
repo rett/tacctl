@@ -154,8 +154,6 @@ var mixedCases = []mixedCase{
 	{"config metrics", []string{"config", "metrics", "show"}, []string{"config", "metrics", "address", "127.0.0.1:9100"}},
 	{"config snmp", []string{"config", "snmp", "show"}, []string{"config", "snmp", "port", "1161"}},
 	{"config cisco", []string{"config", "cisco", "--scope", "lab"}, []string{"config", "cisco", "source-interface", "lab", "Loopback0"}},
-	{"console tiers", []string{"console", "tiers"}, []string{"console", "tiers", "operator", "enable"}},
-	{"console user", []string{"console", "user", "bob"}, []string{"console", "user", "bob", "enable"}},
 	{"console system-shell", []string{"console", "system-shell", "tiers"}, []string{"console", "system-shell", "tiers", "superuser"}},
 	{"group commands", []string{"group", "commands", "list", "operator"}, []string{"group", "commands", "default", "operator", "deny"}},
 	{"group privilege", []string{"group", "privilege", "list", "operator"}, []string{"group", "privilege", "add", "operator", "exec: show"}},

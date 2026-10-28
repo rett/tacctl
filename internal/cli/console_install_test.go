@@ -125,7 +125,7 @@ func TestConsoleInstallRemoveCheck(t *testing.T) {
 	// remove: refused while alice has the console.
 	out = sb.rootRun([]string{"console", "remove"}, both(sshdOK(link), passwdWith(link, "alice")))
 	if sb.code != 1 || !strings.Contains(out, "These accounts still have the console as their login shell: alice. Nothing was removed.") ||
-		!strings.Contains(out, "tacctl host sync authsrv") {
+		!strings.Contains(out, "Give them /bin/bash first: tacctl host unenroll authsrv") {
 		t.Errorf("remove refused: %d\n%s", sb.code, out)
 	}
 	if _, err := os.Stat(dropin); err != nil {
@@ -190,7 +190,7 @@ func TestHostLocalConsole(t *testing.T) {
 		r.OnFunc([]string{"bash"}, func(c execx.Cmd) (execx.Result, error) {
 			b, _ := os.ReadFile(c.Args[0])
 			script = string(b)
-			return execx.Result{Stdout: []byte("[INFO] Accounts: 3 managed by tacctl here; console: 2.\n")}, nil
+			return execx.Result{Stdout: []byte("[INFO] Accounts: 3 managed by tacctl here; console: 3.\n")}, nil
 		})
 		r.On([]string{"getent", "passwd"}, execx.Result{Stdout: []byte(passwd)})
 		return r
@@ -215,15 +215,17 @@ func TestHostLocalConsole(t *testing.T) {
 	if err := os.Symlink(hs.path("usr", "local", "bin", "tacctl"), link); err != nil {
 		t.Fatal(err)
 	}
-	hs.cfgRun("", []string{"console", "user", "bob", "disable"}, nil)
+	// A stored switch of the user (from before 0.2.20) is ignored: bob gets
+	// the console like the others.
+	hs.write("state/console.yaml", "version: 1\ntiers: {readonly: disable, operator: disable, engineer: enable, superuser: enable}\nusers: {bob: disable}\n", 0o600)
 	r := runner(consoleUsers)
 	hs.run(r, "host", "sync", "authsrv")
 	all = plain(hs.out.String() + hs.err.String())
-	if hs.code != 0 || !strings.Contains(script, "TAC_USERS=$'alice:superuser:80000:"+link+"\\nbob:operator:80001:/bin/bash\\ncarol:readonly:80002:"+link+"'") {
+	if hs.code != 0 || !strings.Contains(script, "TAC_USERS=$'alice:superuser:80000:"+link+"\\nbob:operator:80001:"+link+"\\ncarol:readonly:80002:"+link+"'") {
 		t.Fatalf("sync: %d\n%s\n%s", hs.code, all, head(script))
 	}
 	for _, want := range []string{"Installed: " + hs.path("shells") + " lists " + link, "Installed: sshd drop-in " + dropin,
-		"authsrv: synced (3 users; 2 with the console).", "sshd for alice:", "The console's sshd settings are in effect."} {
+		"authsrv: synced (3 users; 3 with the console).", "sshd for alice:", "The console's sshd settings are in effect."} {
 		if !strings.Contains(all, want) {
 			t.Errorf("sync lacks %q:\n%s", want, all)
 		}
@@ -268,8 +270,8 @@ func TestHostLocalConsole(t *testing.T) {
 
 // B2: an engineer has the console or no login on the server. With the
 // console's symlink missing the engineer's shell is nologin (the others keep
-// bash) and the command says so; with it, the console, whatever the tier
-// switch or a stored override says.
+// bash) and the command says so; with it, the console, whatever a stored
+// switch says.
 func TestHostLocalConsoleEngineerShell(t *testing.T) {
 	hs := newHostSandbox(t)
 	hs.reroot = true
@@ -285,7 +287,7 @@ func TestHostLocalConsoleEngineerShell(t *testing.T) {
 		r.OnFunc([]string{"bash"}, func(c execx.Cmd) (execx.Result, error) {
 			b, _ := os.ReadFile(c.Args[0])
 			script = string(b)
-			return execx.Result{Stdout: []byte("[INFO] Accounts: 3 managed by tacctl here; console: 2.\n")}, nil
+			return execx.Result{Stdout: []byte("[INFO] Accounts: 3 managed by tacctl here; console: 3.\n")}, nil
 		})
 		r.On([]string{"getent", "passwd"}, execx.Result{Stdout: []byte("root:x:0:0::/root:/bin/bash\n")})
 		return r

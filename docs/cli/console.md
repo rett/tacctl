@@ -2,12 +2,10 @@
 
 [Documentation](../README.md) › [CLI reference](README.md)
 
-The login console is the login shell of tacctl users on the tacctl server: tacctl commands and ssh to registered devices, nothing else. Its model is `/etc/tacctl/console.yaml` (0600, snapshotted, in `backup diff` and `restore`; absent means the defaults): the console is on for every tier, a user override wins over the tier's switch, and local accounts that are not tacctl users are never touched. The settings commands change that file only (after a snapshot); they never change an account or sshd. The accounts' login shells and sshd's drop-in follow it when this server's accounts are synced (`tacctl host sync <name of the host enrolled with --local>`), which every change to a tier switch, a user override or agent forwarding prints. The idle timeout, the ssh escape, the space completion, the colour, the list threshold and the system shell are read by each console session when it starts.
+The login console is the login shell of every tacctl user, of every tier, on the tacctl server: tacctl commands and ssh to registered devices, nothing else. There is no switch for it, and local accounts that are not tacctl users are never touched. Its settings are in `/etc/tacctl/console.yaml` (0600, snapshotted, in `backup diff` and `restore`; absent means the defaults). The settings commands change that file only (after a snapshot); they never change an account or sshd. The accounts' login shells and sshd's drop-in follow the sync of this server's accounts (`tacctl host sync <name of the host enrolled with --local>`), which every change to agent forwarding or the forwarding settings prints. The idle timeout, the ssh escape, the space completion, the colour, the list threshold and the system shell are read by each console session when it starts.
 
 ```yaml
 version: 1
-tiers: {readonly: enable, operator: enable, engineer: enable, superuser: enable}
-users: {jdoe: disable}            # per-user override: enable or disable
 settings:
   idle_timeout: 30                # minutes at the prompt; 0 = never
   agent_forwarding: false
@@ -28,22 +26,13 @@ settings:
   #   max: 8                      # hours
 ```
 
-The keys: `tiers.<tier>` (`console tiers`; `engineer` is always on), `users.<name>` (`console user`), `settings.idle_timeout` (`console idle-timeout`), `settings.agent_forwarding` (`console agent-forwarding`), `settings.ssh_escape` (`console ssh-escape`), `settings.system_shell` and `settings.system_shell_tiers` (`console system-shell path|tiers`; the tiers are never `engineer`), `settings.forwarding_tiers` and `settings.gateway_ports` (`console forwarding tiers|gateway-ports`; the tiers are never `engineer`), `settings.list_max` (`console list-max`; 1 to 1000, or -1 to never ask), `settings.space_completion` (`console space-completion`; written only when off), `settings.color` (`console color`; written only when `on` or `off`) and `settings.password_cache` (`console password-cache tiers|idle|max`; written only when set).
+The keys: `settings.idle_timeout` (`console idle-timeout`), `settings.agent_forwarding` (`console agent-forwarding`), `settings.ssh_escape` (`console ssh-escape`), `settings.system_shell` and `settings.system_shell_tiers` (`console system-shell path|tiers`; the tiers are never `engineer`), `settings.forwarding_tiers` and `settings.gateway_ports` (`console forwarding tiers|gateway-ports`; the tiers are never `engineer`), `settings.list_max` (`console list-max`; 1 to 1000, or -1 to never ask), `settings.space_completion` (`console space-completion`; written only when off), `settings.color` (`console color`; written only when `on` or `off`) and `settings.password_cache` (`console password-cache tiers|idle|max`; written only when set).
 
 ```
 console show
 
-    Tiers, settings, each user of this server's scope with its effective shell and why, and the
-    server's pieces (operator tier and up)
-
-console tiers [<tier> enable|disable]
-
-    Show or switch the console for readonly, operator, engineer or superuser (the engineer tier is
-    always on)
-
-console user <name> [enable|disable|clear]
-
-    Show or set one user's override (clear: the tier decides; never disabled for an engineer)
+    Settings, each user of this server's scope with its effective shell and why, and the server's
+    pieces (operator tier and up)
 
 console idle-timeout [<min>]
 
@@ -126,7 +115,7 @@ console check
     not (a local administrator in the group is only listed) (operator tier and up)
 ```
 
-`console show` lists the users of the scope of the host enrolled with `--local` with `console (user override)`, `console (tier readonly)` or `bash (tier readonly disabled)`, then the server's pieces: the `/usr/local/bin/tacctl-console` symlink, the `/etc/shells` line, sshd's drop-in and what `sshd -T -C user=<user>` reports for a console user (`allowtcpforwarding`, `allowagentforwarding`, `forcecommand`, `pubkeyauthentication`). It warns in red when the drop-in is missing, sshd does not force the console, still allows forwarding, or allows key logins, because a console user could then forward ports past the device registry, run programs or sftp, or log in without TACACS+. A server that is not enrolled with `--local` says so.
+`console show` lists the users of the scope of the host enrolled with `--local` with their effective shell (the console) and why, then the server's pieces: the `/usr/local/bin/tacctl-console` symlink, the `/etc/shells` line, sshd's drop-in and what `sshd -T -C user=<user>` reports for a console user (`allowtcpforwarding`, `allowagentforwarding`, `forcecommand`, `pubkeyauthentication`). It warns in red when the drop-in is missing, sshd does not force the console, still allows forwarding, or allows key logins, because a console user could then forward ports past the device registry, run programs or sftp, or log in without TACACS+. A server that is not enrolled with `--local` says so.
 
 ## The console session — `tacctl-console`
 

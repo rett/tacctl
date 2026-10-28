@@ -45,7 +45,7 @@ Commands:
       <o>--no-history</o>                      Keep no history file for this session
       <o>--space-completion</o> on|off         A typed space completes a fixed word and never doubles (default on)
       <o>--password-cache</o>                  Keep your network password in this shell's memory (when your tier's policy allows)
-  <b>console</b> <o><subcommand></o>                  Login console: tiers, per-user overrides, settings (show, tiers, user, ...)
+  <b>console</b> <o><subcommand></o>                  Login console: its settings (show, idle-timeout, ...)
   <b>backend</b> <o><subcommand></o>                  Auth backends: list, status, enable <o><id></o>, disable <o><id></o>
   <b>store</b> <o><subcommand></o>                    The canonical store: show, import, rollback
   <b>config</b> <o><subcommand></o>                   Configuration (show, render, cisco, juniper, wti, validate, ...)
