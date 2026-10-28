@@ -34,7 +34,7 @@ links to them.
 | Groups map to | priv-lvl 1 / 7 / 15 | Classes `RO-CLASS`, `OP-CLASS`, `EN-CLASS`, `RW-CLASS` | ViewOnly / User / SuperUser / Administrator |
 | `enable` | Local enable secret only | — | — |
 | Host key on the console | `show ip ssh` | `file show /etc/ssh/ssh_host_ed25519_key.pub` | — |
-| Break-glass login | Local account after the server timeout; console list is local | Local `system login user`; `root` on the console is always local | Only if *Fallback Local* is `On` |
+| Break-glass login | Local account after the server timeout; console list is local | Local `system login user`, or `root` when the scope records it; `root` on the console is always local | Only if *Fallback Local* is `On` |
 | Steps | Engineer Guide §5.2 | Engineer Guide §5.1 | Engineer Guide §5.3 |
 
 Junos is the only vendor tacctl writes to. For Cisco and WTI it reads,
@@ -128,7 +128,7 @@ default); you type `commit` yourself after the check.
 | Apply `failed: other editors or staged changes` | Someone has uncommitted configuration on the device. Coordinate; commit or discard on the device. |
 | `bad secret` continues on a Junos device after a re-paste | Delete the secret and set it again, to avoid hidden characters |
 | A blank device with only a local account | `tacctl device onboard` (Engineer Guide §2.3) |
-| Break-glass | A local `system login user` works after the tacplus timeout; `root` on the console is always local |
+| Break-glass | A local `system login user` works after the tacplus timeout; `root` on the console is always local. Over ssh, `root` needs the scope to record it and `root-login allow` on the device ([Break Glass](break-glass.md) §1.1) |
 
 ### 3.4 The management filter: `ssh-only` or `strict`
 

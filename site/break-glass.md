@@ -9,7 +9,7 @@ doctype: how-to
 
 # Break Glass
 
-*Local emergency accounts, and holding a device or host back from the server · Checked against tacctl 0.2.19*
+*Local emergency accounts, and holding a device or host back from the server · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-break-glass.pdf){: .pdf-link }
 
@@ -44,6 +44,38 @@ tacctl scope breakglass site-a remove noc-local
 - `tacctl config validate` warns about scopes with no break-glass accounts:
   a lockout risk.
 
+### 1.1 Junos `root`
+
+Many Junos devices keep `root` as their local access. Junos holds it under
+`system root-authentication`, not as a `system login user`, and tacctl
+accepts it as a break-glass entry for a scope's Junos devices:
+
+```bash
+tacctl scope breakglass site-a add root      # always admin; lower case only
+```
+
+The Junos walkthrough then renders two statements in its break-glass step,
+commented out like the other accounts:
+
+```text
+# set system root-authentication encrypted-password '<HASH>'
+# set system services ssh root-login allow
+```
+
+- Put in the hash yourself: tacctl stores and generates no password or hash.
+- Junos refuses root over ssh by default. Allowing it is a security
+  trade-off, since root can then log in over ssh with the password: keep the
+  device behind the management filter, or leave the second line out and keep
+  `root` on the console.
+- For a scope that records `root`, `device config pull` and `diff` check both
+  facts in the `breakglass` section: that a root password is set (present,
+  never compared or shown) and that `root-login allow` is there. A plan never
+  types either statement.
+- `--role operator` and `--role readonly` are refused for `root`.
+- Cisco and WTI devices have no such account: their walkthroughs render
+  nothing for it. A scope whose only entry is `root` has no break-glass
+  account on its Cisco and WTI devices, and `config validate` warns.
+
 ---
 
 ## 2. Hold
@@ -74,7 +106,7 @@ tacctl breakglass hold "sw2=console recovery,sw3" --reason "CHG-1182 failed past
 | Vendor | How to log in while held |
 |---|---|
 | Cisco IOS | ssh or console as the local account. The device waits a few seconds for the server, then accepts the local password. On the console, `enable` with the local enable secret. |
-| Junos | ssh or console as a local `system login user`, after the tacplus timeout. `root` on the console is always local. |
+| Junos | ssh or console as a local `system login user`, or as `root` when the scope records it (ssh needs `root-login allow`, §1.1), after the tacplus timeout. `root` on the console is always local. |
 | WTI | Works only if the unit's TACACS+ *Fallback Local* is `On`. With `Off`, nobody gets in until you release the hold; use the serial console. |
 | Linux host | The host's local administrator and its console work. tacctl users cannot log in or use `sudo` there. |
 
@@ -113,6 +145,7 @@ For a host: `tacctl breakglass release web1`, then `tacctl host check web1`.
 | Task | Command | Who |
 |---|---|---|
 | Record local accounts | `tacctl scope breakglass <scope> add <user> [--role <role>]` | Superuser |
+| Record Junos `root` | `tacctl scope breakglass <scope> add root` | Superuser |
 | Hold | `tacctl breakglass hold <name> --reason "<ticket>"` | Superuser |
 | List holds | `tacctl breakglass list` | Engineer (own scopes) |
 | Release | `tacctl breakglass release <name>` | Superuser |
