@@ -191,14 +191,22 @@ func lookInDirs(name string, dirs []string) (string, bool) {
 // manEnv is the environment of man, groff and the pager: console.Scrub's
 // rules (the terminal and the locale of the caller, a fixed PATH; every PAGER,
 // MANPAGER, LESS*, MAN*, GROFF*, LD_*, TACCTL_* and the rest dropped), then
-// only what the display needs of that, and the variables of the pager this
-// command sets itself.
+// only what the display needs of that (the terminal, and the locale unless
+// its name holds a '/'), and the variables of the pager this command sets
+// itself.
 func manEnv(environ []string) []string {
 	var out []string
 	for _, kv := range console.Scrub(environ, "/bin/sh", false) {
-		k, _, _ := strings.Cut(kv, "=")
-		if k == "TERM" || k == "LANG" || strings.HasPrefix(k, "LC_") {
+		k, v, _ := strings.Cut(kv, "=")
+		switch {
+		case k == "TERM":
 			out = append(out, kv)
+		case k == "LANG" || strings.HasPrefix(k, "LC_"):
+			// A locale given as a path makes the C library load the locale
+			// data of that directory (a file of the caller's): not passed.
+			if !strings.Contains(v, "/") {
+				out = append(out, kv)
+			}
 		}
 	}
 	return append(out,

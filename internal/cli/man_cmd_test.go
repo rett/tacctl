@@ -456,6 +456,18 @@ func TestManEnvKeepsOnlyTheTerminalAndLocale(t *testing.T) {
 			t.Errorf("%s=%q, want %q", k, m[k], v)
 		}
 	}
+	// A locale named by a path would load the locale data of the caller's
+	// directory: it is not passed (the others are).
+	got = manEnv([]string{"TERM=xterm", "LANG=en_US.UTF-8", "LC_ALL=/home/user/locale", "LC_CTYPE=../x", "LC_TIME=C.UTF-8", "LC_MESSAGES=./C"})
+	m = envMap(got)
+	if m["LANG"] != "en_US.UTF-8" || m["LC_TIME"] != "C.UTF-8" {
+		t.Errorf("locales dropped: %q", got)
+	}
+	for _, k := range []string{"LC_ALL", "LC_CTYPE", "LC_MESSAGES"} {
+		if _, has := m[k]; has {
+			t.Errorf("%s=%q was passed", k, m[k])
+		}
+	}
 	if got := manEnv(nil); !slices.Contains(got, "LESSSECURE=1") || !slices.Contains(got, "PATH="+console.ConsolePath) {
 		t.Errorf("empty environment: %q", got)
 	}
