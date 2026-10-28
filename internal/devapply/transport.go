@@ -113,7 +113,9 @@ type CommitEntry struct {
 	// Time is the device's time of the commit, as it printed it (TimeText)
 	// and parsed (the zone abbreviation is the device's; an unknown one
 	// parses with a zero offset, so the wall clock is right and the
-	// absolute time may not be).
+	// absolute time may not be; a numeric zone has its offset; 'GMT+3' has
+	// none, the wall clock stands as UTC). Nothing compares it with the
+	// clock of the host: Until writes the wall clock as printed.
 	Time     time.Time
 	TimeText string
 	User     string
@@ -175,19 +177,22 @@ func (s CommitState) Until() string {
 }
 
 // Until is the end of a confirmed commit's window in the device's own wall
-// clock text: the entry's time and its window ("" for an entry without
-// one). It is an end only while the commit is pending (CommitState).
+// clock text: the wall clock of the entry exactly as the device printed it,
+// the window added on that clock, and the zone as printed ("" for an entry
+// without a window). Nothing is converted, so the time an operator reads is
+// the time on the device's clock for every form of zone (an abbreviation,
+// 'UTC', 'GMT+3', '+03', '+0530'). A window that crosses a change of the
+// clock is as long on the wall clock as the label says. It is an end only
+// while the commit is pending (CommitState).
 func (e CommitEntry) Until() string {
-	if e.RollbackIn == 0 || e.Time.IsZero() {
+	if e.RollbackIn == 0 || e.Time.IsZero() || len(e.TimeText) < len(time.DateTime) {
 		return ""
 	}
-	t := e.Time.Add(time.Duration(e.RollbackIn) * time.Minute)
-	for _, layout := range historyTimeLayouts {
-		if _, err := time.Parse(layout, e.TimeText); err == nil {
-			return t.Format(layout)
-		}
+	wall, err := time.Parse(time.DateTime, e.TimeText[:len(time.DateTime)])
+	if err != nil {
+		return ""
 	}
-	return t.Format(time.DateTime)
+	return wall.Add(time.Duration(e.RollbackIn)*time.Minute).Format(time.DateTime) + e.TimeText[len(time.DateTime):]
 }
 
 // Dirty is what the gate saw in a throwaway shared session.

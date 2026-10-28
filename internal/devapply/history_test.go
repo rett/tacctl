@@ -145,24 +145,37 @@ func TestParseHistoryEntryLayout(t *testing.T) {
 			t.Errorf("%s: %+v %v", c.name, h, err)
 		}
 	}
-	// a time with no zone, with a numeric zone (the offset counts), with an
-	// abbreviation of the form GMT+3
+	// every form of zone: the wall clock stands as the device printed it,
+	// the window of a confirmed commit is added on that clock and the zone is
+	// carried as printed; a numeric zone keeps its offset, an abbreviation
+	// has none, 'GMT+3' is read as no offset at all (the sign is POSIX's
+	// west or Go's east, and nothing says which the device means)
 	for _, c := range []struct {
 		zone   string
-		offset int // seconds east of UTC
-	}{{"", 0}, {" +03", 3 * 3600}, {" -03", -3 * 3600}, {" +0300", 3 * 3600}, {" -0330", -(3*3600 + 1800)}, {" GMT+3", 3 * 3600}, {" UTC", 0}} {
-		h, err := parseHistory("0   2026-10-13 14:00:00" + c.zone + " by alice via cli commit synchronize\n")
+		offset int // seconds east of UTC, -1 for none known
+	}{
+		{"", -1}, {" UTC", 0}, {" CET", -1}, {" AKDT", -1},
+		{" +03", 3 * 3600}, {" -03", -3 * 3600}, {" +0300", 3 * 3600}, {" -0330", -(3*3600 + 1800)}, {" +0530", 5*3600 + 1800},
+		{" GMT+3", -1}, {" GMT-3", -1}, {" GMT", 0},
+	} {
+		h, err := parseHistory("0   2026-10-13 14:00:00" + c.zone + " by alice via cli commit confirmed, rollback in 5mins\n")
 		if err != nil || len(h) != 1 || h[0].Time.IsZero() || h[0].TimeText != "2026-10-13 14:00:00"+c.zone {
 			t.Errorf("zone %q: %+v %v", c.zone, h, err)
 			continue
 		}
-		if _, off := h[0].Time.Zone(); off != c.offset && c.zone != "" {
+		if got := h[0].Until(); got != "2026-10-13 14:05:00"+c.zone {
+			t.Errorf("zone %q: until %q", c.zone, got)
+		}
+		if h[0].Time.Hour() != 14 && c.offset == -1 {
+			t.Errorf("zone %q: the wall clock moved: %v", c.zone, h[0].Time)
+		}
+		if _, off := h[0].Time.Zone(); c.offset >= 0 && off != c.offset || c.offset == -1 && strings.HasPrefix(strings.TrimSpace(c.zone), "GMT") && off != 0 {
 			t.Errorf("zone %q: offset %d, want %d", c.zone, off, c.offset)
 		}
 	}
-	// a confirmed commit's end is written in the zone the device printed
-	h, err := parseHistory("0   2026-10-13 14:00:00 +0530 by alice via cli commit confirmed, rollback in 5mins\n")
-	if err != nil || h[0].Until() != "2026-10-13 14:05:00 +0530" {
+	// the window carries over midnight and a month end on the same clock
+	h, err := parseHistory("0   2026-10-31 23:58:00 -0330 by alice via cli commit confirmed, rollback in 5mins\n")
+	if err != nil || h[0].Until() != "2026-11-01 00:03:00 -0330" {
 		t.Errorf("until %q %v", h[0].Until(), err)
 	}
 	// device text in the error is cut: no control character reaches it

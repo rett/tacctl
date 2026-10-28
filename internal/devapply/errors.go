@@ -75,6 +75,9 @@ var (
 // '0   2026-10-13 14:12:01 UTC by alice via cli commit confirmed, rollback in 10mins'.
 var reHistoryEntry = regexp.MustCompile(`^(\d+)\s+(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?: (?:[A-Za-z][A-Za-z0-9+-]*|[+-]\d\d(?:\d\d)?))?) by (\S+) via (\S+)(?:\s+(.*))?$`)
 
+// reGMTZone is a time that ends in a zone written 'GMT+3' or 'GMT-3'.
+var reGMTZone = regexp.MustCompile(` GMT[+-][0-9]+$`)
+
 // reHistoryRescue is the line 'show system commit' ends with when a rescue
 // configuration is saved [C: 'rescue 2024-01-04 11:42:38 UTC by root via
 // cli']. It is a marker, no entry of the history.

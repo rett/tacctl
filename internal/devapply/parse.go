@@ -223,6 +223,14 @@ func parseHistory(out string) (History, error) {
 			if e.Time.IsZero() {
 				return nil, fmt.Errorf("show system commit: a time %q: %w", cut(m[2]), ErrUnrecognised)
 			}
+			if reGMTZone.MatchString(m[2]) {
+				// Go reads 'GMT+3' as GMT shifted by three hours east and moves
+				// the wall clock; POSIX means three hours west, and nothing
+				// shows which the device means. The offset is unknown: the
+				// instant is the wall clock as UTC, and nothing compares it
+				// with the clock of the host (Until writes the wall clock).
+				e.Time, _ = time.Parse(time.DateTime, m[2][:len(time.DateTime)])
+			}
 			if tail := strings.TrimSpace(m[5]); tail != "" {
 				if mins, ok := commitText(tail); ok {
 					e.RollbackIn = mins

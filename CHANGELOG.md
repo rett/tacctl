@@ -277,6 +277,15 @@ current behaviour; this file is where history lives.
     commit's (or the commit's alone), and an error inside an element names
     the member. A NETCONF reply that names no member is read as before.
 
+19. **The end of a pending window is the device's own wall clock.** `PENDING
+    until <time>` and the refusals that name a pending commit computed the end
+    of the window by converting the time of the entry, which moved the wall
+    clock of a device whose zone is written `GMT+3` or `GMT-3` by the hours of
+    the zone (a window of 5 minutes from 14:00 read 17:05 or 11:05). The end is
+    now the entry's wall clock exactly as the device printed it, the window
+    added, and the zone as printed, for every form (an abbreviation, `UTC`,
+    `GMT+3`, `+03`, `+0530`).
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config
