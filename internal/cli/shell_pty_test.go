@@ -282,7 +282,10 @@ func TestPtyShellQuestionMark(t *testing.T) {
 func TestPtyShellQuestionMarkCapsTheLabelColumn(t *testing.T) {
 	const cols = 120
 	for _, family := range []string{"config", "device", "scope", "host"} {
-		s := startCLIShell(t, cols)
+		// A superuser of the fake runner: the shell would otherwise run the
+		// real 'id -nG' and 'sudo -n' of the machine the test is on, and a
+		// tac-users member there sees only the commands of their tier.
+		s := startCLIShell(t, cols, shellPtyViewPrefix+"superuser")
 		if err := s.Send(family + " ?"); err != nil {
 			t.Fatal(err)
 		}
