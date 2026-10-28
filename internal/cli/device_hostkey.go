@@ -556,7 +556,7 @@ func (inv *invocation) pinHostKeys(ctx context.Context, name, host string, port 
 	scan, err := devreg.Scan(ctx, a.Runner, host, port, false)
 	if errors.Is(err, devreg.ErrNoAnswer) {
 		a.Out.WarnE(name + ": no ssh host key could be read from " + host + " port " + strconv.Itoa(port) +
-			" (ssh-keyscan) to check the session's against; none pinned.")
+			" (" + noAnswerTried(err, false) + ") to check the session's against; none pinned.")
 		a.Out.WarnE("  " + fix)
 		return
 	}

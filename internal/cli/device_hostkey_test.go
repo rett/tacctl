@@ -445,6 +445,25 @@ func TestHostEnrollSyncPinHostKeys(t *testing.T) {
 		t.Errorf("devices.yaml:\n%s", hs.devices())
 	}
 	hs.run(nil, "host", "unenroll", "web1")
+	// A host that accepts the connection and gives no key to the combined
+	// scan is asked one type at a time (the keys both reads hold are pinned);
+	// one that gives none to those either is named the retry.
+	r = hostKeys(both(ed, rsa))
+	scanOneAtATime("web1.example.net", ed, rsa)(r)
+	e = enroll(r)
+	if !strings.Contains(e, "web1: pinned 2 ssh host key(s) for 'tacctl ssh': ED25519 "+ed.Fingerprint()+", RSA "+rsa.Fingerprint()) ||
+		!r.Called("ssh-keyscan", "-T", "3", "-p", "22", "-t", "ed25519", "web1.example.net") {
+		t.Errorf("one type at a time:\n%s\n%q", e, r.Argvs())
+	}
+	hs.run(nil, "host", "unenroll", "web1")
+	r = hostKeys(both(ed))
+	scanSilent("web1.example.net")(r)
+	e = enroll(r)
+	if !strings.Contains(e, "web1: no ssh host key could be read from web1.example.net port 22 (ssh-keyscan, then one key type at a time (ed25519, ecdsa, rsa)) to check the session's against; none pinned.") ||
+		strings.Contains(hs.devices(), "host_keys") || r.Count("ssh-keyscan") != 4 {
+		t.Errorf("silent host:\n%s\n%q", e, r.Argvs())
+	}
+	hs.run(nil, "host", "unenroll", "web1")
 	// --local: no session, no scan, nothing pinned.
 	r = hostKeys(both(ed), ed)
 	hs.loopback()

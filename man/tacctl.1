@@ -2511,7 +2511,8 @@ ssh connection
 .RB ( "cat /etc/ssh/ssh_host_*_key.pub" ),
 and the target is scanned
 .RB ( ssh\-keyscan
-of the host and port, as root). Only the keys both reads hold are pinned in
+of the host and port, as root; asked one key type at a time when the scan of
+all the types gives no key from a host that accepted the connection). Only the keys both reads hold are pinned in
 the device registry for
 .BR "tacctl ssh" ;
 the output lists their
@@ -2520,7 +2521,8 @@ fingerprints. A key type the two reads give different keys for pins nothing:
 both sets are printed and
 .B "host hostkey\-mismatch"
 is logged to syslog (auth.warning). A type only one read has is reported, not
-pinned. Unreadable key files, or a host that does not answer the scan, pin
+pinned. Unreadable key files, or a host that does not answer the scan (the warning
+names the reads that were made), pin
 nothing, with a warning and the
 .B "device hostkey"
 command; the enrolment succeeds either way.

@@ -293,6 +293,14 @@ current behaviour; this file is where history lives.
     SHA256:<fp>` for `device add`, `enroll`, `collect` and `onboard`, `tacctl
     device hostkey <name> set SHA256:<fp>` for a registered device).
 
+20. **`host enroll` and `host sync` name the reads of a host that gave no
+    key.** The warning `no ssh host key could be read from <host> port <port>
+    (ssh-keyscan) to check the session's against; none pinned.` says `(ssh-keyscan,
+    then one key type at a time (ed25519, ecdsa, rsa))` for a host that
+    accepted the connection (item 17); a host that did not answer is worded as
+    before. What is pinned is unchanged: only keys the host's own key files
+    and the scan both hold.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config
