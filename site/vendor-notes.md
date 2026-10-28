@@ -9,7 +9,7 @@ doctype: explanation
 
 # Vendor Notes
 
-*What differs between Cisco, Junos and WTI for operations staff · Checked against tacctl 0.2.19*
+*What differs between Cisco, Junos and WTI for operations staff · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-vendor-notes.pdf){: .pdf-link }
 
@@ -34,7 +34,7 @@ links to them.
 | Groups map to | priv-lvl 1 / 7 / 15 | Classes `RO-CLASS`, `OP-CLASS`, `EN-CLASS`, `RW-CLASS` | ViewOnly / User / SuperUser / Administrator |
 | `enable` | Local enable secret only | — | — |
 | Host key on the console | `show ip ssh` | `file show /etc/ssh/ssh_host_ed25519_key.pub` | — |
-| Break-glass login | Local account after the server timeout; console list is local | Local `system login user`; `root` on the console is always local | Only if *Fallback Local* is `On` |
+| Break-glass login | Local account after the server timeout; console list is local | Local `system login user`, or `root` when the scope records it; `root` on the console is always local | Only if *Fallback Local* is `On` |
 | Steps | Engineer Guide §5.2 | Engineer Guide §5.1 | Engineer Guide §5.3 |
 
 Junos is the only vendor tacctl writes to. For Cisco and WTI it reads,
@@ -117,9 +117,14 @@ A pasted Junos plan region also ends in `commit confirmed` (5 minutes by
 default); you type `commit` yourself after the check.
 
 > **`PENDING until <time>`** means tacctl could not read the device after
-> the commit. **Type nothing on that device until the time passes.** Any
-> `commit` would confirm the change. The next apply or `--check` settles
-> the record.
+> the commit. **Type nothing on that device until the time passes** (the
+> device's own clock, in the zone it prints). Any `commit` would confirm the
+> change. The next apply or `--check` settles the record.
+
+On a virtual chassis, two routing engines or a cluster, the apply expects
+the check and the commits to answer for every member `show version` lists,
+and fails the step when one does not ([Engineer Guide](engineer-guide-device-changes.md)
+§5.1).
 
 ### 3.3 Other Junos points
 
@@ -128,7 +133,82 @@ default); you type `commit` yourself after the check.
 | Apply `failed: other editors or staged changes` | Someone has uncommitted configuration on the device. Coordinate; commit or discard on the device. |
 | `bad secret` continues on a Junos device after a re-paste | Delete the secret and set it again, to avoid hidden characters |
 | A blank device with only a local account | `tacctl device onboard` (Engineer Guide §2.3) |
-| Break-glass | A local `system login user` works after the tacplus timeout; `root` on the console is always local |
+| Break-glass | A local `system login user` works after the tacplus timeout; `root` on the console is always local. Over ssh, `root` needs the scope to record it and `root-login allow` on the device ([Break Glass](break-glass.md) §1.1) |
+
+### 3.4 The management filter: `ssh-only` or `strict`
+
+The Junos walkthrough renders a management filter (`MGMT-ACL` unless another
+name is set) from the scope's permit list (`tacctl scope mgmt-acl <scope>
+list`, else the global `tacctl config mgmt-acl list`), the same list that
+drives the Cisco VTY-ACL and the WTI IP Tables list. Each scope chooses one of two
+modes for it with `tacctl scope mgmt-acl <scope> mode`. Only Junos devices
+read the mode: the Cisco VTY-ACL and the WTI IP Tables list are the same in
+both.
+
+| | Mode ssh-only (the default) | Mode strict |
+|---|---|---|
+| Restricts | ssh, NETCONF and SNMP | Every protocol |
+| Last term | `default-accept`: everything else is accepted | None: the implicit discard drops whatever the terms do not accept |
+| From the permit list | ssh and NETCONF, from each plain entry and each entry whose services include `tcp/22` | A plain entry: everything from its source. An entry with services: only those services. First comes the address tacctl reaches the device from. |
+| SNMP client terms | Kept | Kept |
+
+**The authentication server's address in `strict`.** When the device
+authenticates against another address than the one tacctl reaches it from
+(`--server`, a RADIUS listener bound to another address, or `--source` alone,
+the device still being told the address detected for the server), that
+address is not a source of `permit-mgmt`. The device starts those sessions,
+so a term of its own, `permit-auth-replies`, last in the filter, accepts from
+it only the server's answers:
+
+| Protocol | What `permit-auth-replies` accepts from the address |
+|---|---|
+| TACACS+ | tcp from source port `tacacs` with `tcp-established`: established connections only, so a new connection from that port is refused |
+| RADIUS | udp from source ports `radius` and `radacct` (the listener's, 1812 and 1813 by default), after the SNMP terms, so `deny-snmp` decides udp port 161 first |
+
+The filter keeps no state and matches the answers by source port, so for
+RADIUS it cannot tell an answer from another udp packet sent from those
+ports (a scope with no SNMP clients has no `deny-snmp` term, and udp port 161
+from that address and port is accepted too). There is one address and no
+such term with neither flag, with `--server` equal to the detected address
+or to `--source`, or when a plain entry of the permit list holds the address
+(it is then accepted for everything, as any source of the list). An entry
+with services for the address keeps its services, and the term adds the
+answers. The address is no way in for ssh: the lock-out check of a plan does
+not count it ([Engineer Guide](engineer-guide-device-changes.md) §4.2). Add
+it to the permit list to accept more from it.
+
+Once a strict filter is applied to `lo0`, these stop reaching the routing
+engine:
+
+- routing protocols carried over IP from neighbours that are not in the
+  permit list (BGP, OSPF, LDP, VRRP, BFD);
+- the replies of servers that are not in the list: TACACS+ and RADIUS (the
+  replies of the server the walkthrough names are accepted: it is in the list
+  or has `permit-auth-replies`), NTP, DNS;
+- NTP, syslog and DHCP from hosts that are not in the list;
+- SNMP from sources outside the list (the SNMP clients still poll);
+- every other protocol (ping, traceroute) from sources outside the list.
+
+IS-IS is not carried over IP, so a `family inet` filter on `lo0` does not see
+it: the filter neither stops nor permits it.
+
+> **Before a device gets a strict filter:** add every neighbour and server
+> it needs to the permit list the scope renders from (its own list replaces
+> the global one; [Superuser Daily Operations](superuser-daily-operations.md)
+> §8.1), keep a console session open while the change goes in, and commit
+> with `commit confirmed`. An entry with services
+> needs `tcp/22` among them for ssh, and `tcp/830` for NETCONF.
+
+The walkthrough keeps the line that applies the filter to `lo0` commented,
+and a plan never adds it. A permit list with no IPv4 entry that permits ssh
+(a plain entry, or one whose services include `tcp/22`) renders no filter in
+either mode, because the server's address alone would let only tacctl in;
+the walkthrough then says what each entry permits instead. Setting the mode is the superuser's
+([Superuser Daily Operations](superuser-daily-operations.md) §8); engineers
+can read it for their own scopes and plan the change
+([Engineer Guide](engineer-guide-device-changes.md) §4). The repository's
+[Management ACL](https://github.com/rett/tacctl/blob/master/docs/security/management-acl.md)
+page lists the terms each mode renders.
 
 ---
 

@@ -8,7 +8,7 @@ doctype: reference
 
 # Home
 
-*The tacctl operations documentation: where to start, by role and by situation · Checked against tacctl 0.2.19*
+*The tacctl operations documentation: where to start, by role and by situation · Checked against tacctl 0.2.20*
 
 [Printable PDF](pdf/tacctl-home.pdf){: .pdf-link }
 

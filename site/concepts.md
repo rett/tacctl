@@ -9,7 +9,7 @@ doctype: explanation
 
 # Concepts
 
-*Users, groups, scopes and tiers, and the other words tacctl uses · Checked against tacctl 0.2.19*
+*Users, groups, scopes and tiers, and the other words tacctl uses · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-concepts.pdf){: .pdf-link }
 
@@ -58,9 +58,9 @@ superuser**. Each tier can run everything the tiers below it can.
 
 | Tier | Adds |
 |---|---|
-| Read-only | Lists and shows, `ssh` to devices in your scopes, `status`, `passwd`, `device notice list`, `device client-config` |
-| Operator | Logs, `config validate`, `device check`, `scan`, `discover`, `device config list`, `backup list`, `device export` |
-| Engineer | For the devices of **your own scopes only**: registry changes, pull, diff, plan, Junos apply, enroll, onboard, host keys; listing break-glass holds; listing and showing hosts |
+| Read-only | Lists and shows, `ssh` to devices in your scopes, `status`, `passwd`, `device notice list`, `device client-config`, `man` |
+| Operator | Logs, `config validate`, `device check`, `scan`, `discover`, `device config list`, `backup list`, `device export`; `console show` and the console's system-shell settings (read only); turning their own password cache on or off |
+| Engineer | For the devices of **your own scopes only**: registry changes, pull, diff, plan, Junos apply, enroll, onboard, host keys; listing break-glass holds; listing and showing hosts; reading the Junos management filter mode |
 | Superuser | Everything else: users, groups, scopes, secrets, hosts, lockdowns, break-glass holds, restores |
 
 On a device, an operator "changes nothing and interrupts nothing": `clear`,

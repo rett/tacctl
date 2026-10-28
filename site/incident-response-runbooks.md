@@ -9,7 +9,7 @@ doctype: how-to
 
 # Incident Response Runbooks
 
-*Step-by-step security and availability runbooks · Checked against tacctl 0.2.19*
+*Step-by-step security and availability runbooks · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-incident-response-runbooks.pdf){: .pdf-link }
 
@@ -61,8 +61,10 @@ tacctl log accounting 200          # 4. commands run (accounting records)
 
 5. Ask the device teams to clear any sessions that are already open. A
    disable does not end them.
-6. When cleared: `tacctl user passwd carol`, then
-   `tacctl user enable carol`, then `tacctl host sync --all`.
+6. When cleared: `tacctl user passwd carol`, `tacctl user enable carol`,
+   `tacctl user require-password-change carol` (carol must change the new
+   password at her next login to the tacctl server; a reset of a disabled
+   user cannot require it), then `tacctl host sync --all`.
 
 **Verify:** `tacctl user show carol` shows `disabled`.
 `tacctl log failures` shows the refused attempts.

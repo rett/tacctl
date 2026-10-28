@@ -9,7 +9,7 @@ doctype: how-to
 
 # Connecting to Devices
 
-*tacctl ssh by name, plain ssh with pinned keys, and what to do when a connection is refused · Checked against tacctl 0.2.19*
+*tacctl ssh by name, plain ssh with pinned keys, and what to do when a connection is refused · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-connecting-to-devices.pdf){: .pdf-link }
 
@@ -59,15 +59,19 @@ How the login works:
 - ssh accepts only the host keys pinned for that device in the registry.
 - It needs a terminal.
 
-**Many logins in a row?** Start the shell with the password cache, where
-your tier is allowed it, and type your password once per session:
+**Many logins in a row?** Turn on the password cache, where your tier is
+allowed it, and type your password once per session
+([Getting Started](getting-started.md) §1.3):
 
 ```text
-tacctl shell --password-cache
-tacctl> ssh sw1
-tacctl> ssh rtr1
-tacctl> console forget          # drop the cached password now
+tacacs> console password-cache on   # once: saved for your later sessions too
+tacacs> ssh sw1
+tacacs> ssh rtr1
+tacacs> console forget              # drop the cached password now
 ```
+
+In a system shell, `tacctl shell --password-cache` does the same for one
+shell session.
 
 ---
 
@@ -102,6 +106,7 @@ ssh sw1
 | Red `EMERGENCY LOCKDOWN` line | Your group is locked out of the scope | Expected during an incident. Contact the superuser named in the line. | — |
 | Refused as root | ssh always runs as you | Run it from your own account | — |
 | Old IOS: ssh negotiation fails | The device offers only legacy algorithms | `tacctl device legacy-ssh <name> enable` | E |
+| `No ssh host key could be read from <address> port <port>` | The device gave no key to any read, or did not answer | §6: read the key by hand and pin its fingerprint | E |
 | Password refused | Wrong password, disabled account, or missing scope | [Troubleshooting](troubleshooting.md) §2 | O |
 | `device check` says unreachable | The server has no route to the management port (may be a false alarm) | Test from your workstation too | O |
 
@@ -149,6 +154,26 @@ command that displays them. **Compare them with the console before you
 trust them.** `enroll` and `onboard` ask you to accept the key by typing the
 device's name back. The registration steps are in
 [Engineer Guide: Device Changes](engineer-guide-device-changes.md) §2.
+
+The keys are read with one `ssh-keyscan` for every key type. A device that
+accepts the connection but gives no key to it is asked again one key type
+at a time (ed25519, ecdsa, rsa), and if that reads nothing either, tacctl's
+own ssh client reads the keys, stopping before any login. A device that
+refuses the connection or does not answer is not asked again.
+
+When no read gives a key, the command changes nothing. For a device that
+accepted the connection, the refusal names the reads that were made, then
+the command that shows a key by hand and the ways to pin a fingerprint you
+have checked:
+
+```bash
+# read the key yourself (also -t ecdsa, -t rsa; -p <port> for another port)
+ssh-keyscan -t ed25519 10.10.0.2
+# register the device with the fingerprint you checked on its console
+tacctl device add rtr1 10.10.0.2 --vendor juniper --host-key SHA256:<fp>
+# or pin it on a device that is registered already
+tacctl device hostkey rtr1 set SHA256:<fp>
+```
 
 ---
 

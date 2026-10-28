@@ -9,7 +9,7 @@ doctype: how-to
 
 # Operator Field Guide
 
-*For NOC, help-desk and network support staff · Checked against tacctl 0.2.19*
+*For NOC, help-desk and network support staff · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-operator-field-guide.pdf){: .pdf-link }
 
@@ -68,7 +68,9 @@ ssh alice@tacacs.example.net 'device list'      # one tacctl line, no terminal n
 tacctl passwd                                   # change your own password
 ```
 
-If you forget your password, ask a superuser to reset it.
+If you forget your password, ask a superuser to reset it. A new or reset
+password usually has to be changed at your next login to the server, before
+any device accepts it ([Getting Started](getting-started.md) §2.1).
 
 ---
 
@@ -146,8 +148,9 @@ job.
 
 ## 5. Helping a user who cannot log in
 
-1. `tacctl user show <name>`: does the user exist, are they `disabled`, and
-   which scopes do they have?
+1. `tacctl user show <name>`: does the user exist, are they `disabled`,
+   which scopes do they have, and must they change their password (a
+   `Password change` line)?
 2. `tacctl device show <device>`: which scope is the device in? Is it held
    for break-glass?
 3. `tacctl log search <name>` (operator): what did the server say?
@@ -160,6 +163,7 @@ job.
 | `has no secret providers` | No scope covers the device's address | Superuser (scope prefixes) |
 | No line at all | The request never reached the server | Engineer (reachability, device AAA config) |
 | RADIUS `not an enabled user of this scope` | User disabled, or lacks the device's scope | Superuser |
+| `user show` has a `Password change` line | No device accepts the user until the password is changed | The user: log in to the tacctl server and change it ([Getting Started](getting-started.md) §2.1) |
 
 ---
 
@@ -194,7 +198,8 @@ When you escalate, include the device name, the user, the time, and the
 | User's recent activity | `tacctl log search <user>` |
 | Failures today | `tacctl log failures` |
 | Notices | `tacctl device notice list` |
-| Help on any command | `tacctl <command>` with no arguments, or `?` in the shell |
+| Help on any command | `tacctl <command> --help`, or `?` in the console |
+| The manual page at a command | `tacctl man <command>` |
 
 ---
 

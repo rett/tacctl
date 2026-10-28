@@ -9,7 +9,7 @@ doctype: reference
 
 # Command Reference Map
 
-*From each tacctl command family to its reference page and the task page that uses it · Checked against tacctl 0.2.19*
+*From each tacctl command family to its reference page and the task page that uses it · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-command-reference-map.pdf){: .pdf-link }
 
@@ -29,8 +29,8 @@ both.
 | Command family | What it covers | Reference (repo) | Task pages |
 |---|---|---|---|
 | `tacctl status`, `passwd`, `ssh`, `version`, `hash` | Top-level commands | [Conventions and top-level commands](https://github.com/rett/tacctl/blob/master/docs/cli/conventions.md) | [Getting Started](getting-started.md), [Connecting to Devices](connecting-to-devices.md) |
-| `tacctl shell`, `completion` | The interactive shell, completion, password cache | [Shell and completion](https://github.com/rett/tacctl/blob/master/docs/cli/shell.md) | [Getting Started](getting-started.md) |
-| `tacctl console` | The login console and its settings | [Console commands](https://github.com/rett/tacctl/blob/master/docs/cli/console.md) | [Getting Started](getting-started.md) |
+| `tacctl shell`, `completion`, `man` | The interactive shell, completion, the bash help key, the manual page, password cache | [Shell, completion and manual page](https://github.com/rett/tacctl/blob/master/docs/cli/shell.md) | [Getting Started](getting-started.md) |
+| `tacctl console` | The login console and its settings: system shell, password cache, colour, list length | [Console commands](https://github.com/rett/tacctl/blob/master/docs/cli/console.md) | [Getting Started](getting-started.md), [Superuser Daily Operations](superuser-daily-operations.md) §10 |
 | `tacctl user` | Users, passwords, scope membership | [User commands](https://github.com/rett/tacctl/blob/master/docs/cli/user.md) | [Access Lifecycle](access-lifecycle.md) |
 | `tacctl group` | Groups, privilege levels, tiers, Junos classes | [Group commands](https://github.com/rett/tacctl/blob/master/docs/cli/group.md) | [Concepts](concepts.md) |
 | `tacctl scope` | Prefixes, shared secrets, break-glass accounts, per-scope settings | [Scope commands](https://github.com/rett/tacctl/blob/master/docs/cli/scope.md) | [Superuser Daily Operations](superuser-daily-operations.md) §8, [Break Glass](break-glass.md) |
@@ -48,8 +48,9 @@ both.
 
 ## 2. Out of scope for this documentation
 
-Installation, upgrades, rollback to an earlier release, backends, the store,
-and server files are covered only in the repository:
+Installation, upgrades, backends, the store and server files are covered
+only in the repository ([Backups and Undo](backups-and-undo.md) §5
+summarises going back to an earlier release):
 
 | Topic | Reference (repo) |
 |---|---|
