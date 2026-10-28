@@ -115,7 +115,8 @@ reaching the routing engine:
 - routing protocols carried over IP from neighbours that are not in the list
   (BGP, OSPF, LDP, VRRP, BFD);
 - the replies of servers that are not in the list: TACACS+ and RADIUS (the
-  server the walkthrough names is always in it), NTP, DNS;
+  replies of the server the walkthrough names are accepted: it is in the list
+  or has `permit-auth-replies`), NTP, DNS;
 - NTP, syslog and DHCP from hosts that are not in the list;
 - SNMP from sources outside the list (the SNMP clients still poll);
 - every other protocol (ping, traceroute) from sources outside the list.

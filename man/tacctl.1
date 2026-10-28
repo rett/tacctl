@@ -6093,7 +6093,8 @@ Once a
 strict filter is applied to lo0, these stop reaching the routing engine:
 routing protocols carried over IP from neighbours that are not in the list
 (BGP, OSPF, LDP, VRRP, BFD), TACACS+ and RADIUS replies from a server that is
-not in the list (the server the walkthrough names is), NTP, syslog and DHCP
+not in the list (those of the server the walkthrough names are accepted), NTP,
+syslog and DHCP
 from hosts that are not in the list, SNMP from sources outside it (the SNMP
 clients still poll), and every other protocol from them. IS-IS is not carried
 over IP, so a family inet filter on lo0 does not see it: the filter neither

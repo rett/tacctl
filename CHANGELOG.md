@@ -40,20 +40,21 @@ current behaviour; this file is where history lives.
    address to the permit list accepts more from it. The comment says what
    stops once the filter is on `lo0` (routing protocols carried over IP from
    neighbours outside the list, BFD included, TACACS+ and RADIUS replies from
-   a server that is not in it, NTP, syslog and DHCP, SNMP from sources outside
-   the list other than its clients, which still poll, every other protocol;
-   IS-IS is not carried over IP, so a `family inet` filter on `lo0` neither
-   stops nor permits it), and to keep a console session open and commit with
-   `commit confirmed`. `device config plan` and `device config apply` move a
-   device between the two filters in both directions and compare a pulled
-   filter with the rendering of the scope's mode; the report lists the traffic
-   that stops, or what a move back accepts again (which also covers a site's
-   own deny-by-default filter under the same name, which the `ssh-only` plan
-   used to turn accept-by-default without a word). The refusal of a filter
-   that would not permit `--from` holds for the strict filter: the address
-   must be a source that is accepted for ssh, in `permit-mgmt` or in a term
-   that holds `tcp/22` (the authentication server's address, accepted for its
-   answers only, is not one, and the refusal says so). Only `strict` is stored
+   a server that is not in it, except the one the walkthrough names, NTP,
+   syslog and DHCP, SNMP from sources outside the list other than its clients,
+   which still poll, every other protocol; IS-IS is not carried over IP, so a
+   `family inet` filter on `lo0` neither stops nor permits it), and to keep a
+   console session open and commit with `commit confirmed`. `device config
+   plan` and `device config apply` move a device between the two filters in
+   both directions and compare a pulled filter with the rendering of the
+   scope's mode; the report lists the traffic that stops, or what a move back
+   accepts again (which also covers a site's own deny-by-default filter under
+   the same name, which the `ssh-only` plan used to turn accept-by-default
+   without a word). The refusal of a filter that would not permit `--from`
+   holds for the strict filter: the address must be a source that is accepted
+   for ssh, in `permit-mgmt` or in a term that holds `tcp/22` (the
+   authentication server's address, accepted for its answers only, is not one,
+   and the refusal says so). Only `strict` is stored
    (`scope_mgmt_acl.mode.<scope>` in `tacctl.yaml`, moved by `scope rename`
    and dropped by `scope remove`), so a state that never sets a mode is
    unchanged, and the change is logged as `scope mgmt-acl op=mode value=`.

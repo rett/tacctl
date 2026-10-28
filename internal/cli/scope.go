@@ -2739,7 +2739,7 @@ func mgmtListPermitsSSH(list []string) bool {
 // after the mode is set (the comment of the filter says the same).
 var mgmtStrictStops = []string{
 	"routing protocols carried over IP to the routing engine from neighbours not in the list: BGP, OSPF, LDP, VRRP, BFD",
-	"replies from servers not in the list: TACACS+ and RADIUS (the server the walkthrough names is in it), NTP, DNS",
+	"replies from servers not in the list: TACACS+ and RADIUS (the replies of the server the walkthrough names are accepted), NTP, DNS",
 	"NTP, syslog and DHCP from hosts not in the list",
 	"SNMP from sources outside the list (the SNMP clients still poll)",
 	"every other protocol (ping, traceroute) from sources outside the list",

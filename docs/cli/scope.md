@@ -272,12 +272,12 @@ scope mgmt-acl <name> mode [ssh-only|strict]
     ports (udp port 161 is decided by the SNMP terms first, when the scope has SNMP clients). Once a
     strict filter is applied to lo0, these stop reaching the routing engine: routing protocols
     carried over IP from neighbours that are not in the list (BGP, OSPF, LDP, VRRP, BFD), TACACS+
-    and RADIUS replies from a server that is not in the list (the server the walkthrough names is),
-    NTP, syslog and DHCP from hosts that are not in the list, SNMP from sources outside it (the SNMP
-    clients still poll), and every other protocol from them. IS-IS is not carried over IP, so a
-    `family inet` filter on lo0 does not see it: the filter neither stops nor permits it. The
-    walkthrough keeps the lo0 application commented; keep a console session open when you apply the
-    filter and commit with `commit confirmed`. Only `strict` is stored
+    and RADIUS replies from a server that is not in the list (those of the server the walkthrough
+    names are accepted), NTP, syslog and DHCP from hosts that are not in the list, SNMP from sources
+    outside it (the SNMP clients still poll), and every other protocol from them. IS-IS is not
+    carried over IP, so a `family inet` filter on lo0 does not see it: the filter neither stops nor
+    permits it. The walkthrough keeps the lo0 application commented; keep a console session open
+    when you apply the filter and commit with `commit confirmed`. Only `strict` is stored
     (`scope_mgmt_acl.mode.<name>`); setting `ssh-only` removes the key. A word that is not a mode
     (the words are lower case) is refused with `Unknown mode '<word>'. Use: ssh-only | strict.`, a
     word after the value as an unknown argument with the usage, both with exit 1 and nothing

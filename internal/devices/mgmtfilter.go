@@ -282,8 +282,8 @@ func strictHeader(scope string) string {
 		"# Once the filter is applied to lo0, these stop reaching the routing engine:\n" +
 		"#   - routing protocols carried over IP from neighbours that are not in the list: BGP, OSPF, LDP, VRRP, BFD\n" +
 		"#     (IS-IS is not carried over IP: a family inet filter on lo0 does not see it, so it is neither stopped nor permitted)\n" +
-		"#   - replies from servers that are not in the list: TACACS+ and RADIUS (the server this walkthrough\n" +
-		"#     names is in it), NTP, DNS\n" +
+		"#   - replies from servers that are not in the list: TACACS+ and RADIUS (the replies of the server this\n" +
+		"#     walkthrough names are accepted), NTP, DNS\n" +
 		"#   - NTP, syslog and DHCP from hosts that are not in the list\n" +
 		"#   - SNMP from sources outside the list (the SNMP clients of Step 5 still poll)\n" +
 		"#   - every other protocol (ping, traceroute) from sources outside the list\n" +

@@ -367,7 +367,7 @@ func TestStrictFilterShape(t *testing.T) {
 	if !strings.Contains(got, "\n# set interfaces lo0 unit 0 family inet filter input MGMT-ACL") || strings.Contains(got, "\nset interfaces") {
 		t.Errorf("the lo0 application is not a comment:\n%s", got)
 	}
-	for _, say := range []string{"BGP, OSPF, LDP, VRRP, BFD", "IS-IS is not carried over IP: a family inet filter on lo0 does not see it, so it is neither stopped nor permitted", "(the SNMP clients of Step 5 still poll)", "TACACS+ and RADIUS (the server this walkthrough", "NTP, syslog and DHCP", "SNMP from sources outside the list",
+	for _, say := range []string{"BGP, OSPF, LDP, VRRP, BFD", "IS-IS is not carried over IP: a family inet filter on lo0 does not see it, so it is neither stopped nor permitted", "(the SNMP clients of Step 5 still poll)", "TACACS+ and RADIUS (the replies of the server this", "walkthrough names are accepted", "NTP, syslog and DHCP", "SNMP from sources outside the list",
 		"Keep a console session open", "commit confirmed"} {
 		if !strings.Contains(got, say) {
 			t.Errorf("the comment does not say %q:\n%s", say, got)
