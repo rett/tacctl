@@ -669,6 +669,9 @@ func TestConsoleRows(t *testing.T) {
 		{Operator, "console", "system-shell", true},
 		{Readonly, "console", "system-shell", false},
 		{Operator, "console", "forwarding", false},
+		{Operator, "console", "password-cache", true},
+		{Engineer, "console", "password-cache", true},
+		{Readonly, "console", "password-cache", false},
 		{Operator, "console", "", false},
 		{Readonly, "console", "check", false},
 		{Engineer, "console", "show", true},
@@ -708,7 +711,17 @@ func TestConsoleRows(t *testing.T) {
 			t.Errorf("the operator alias lacks %q", want)
 		}
 	}
+	// The password cache's words: the state and the caller's own choice, named
+	// exactly (no wildcard grants 'tiers', 'idle', 'max' or 'user').
+	for _, want := range []string{"console password-cache", "console password-cache on", "console password-cache off"} {
+		if !slices.Contains(op, want) {
+			t.Errorf("the operator alias lacks %q", want)
+		}
+	}
 	for _, it := range append(op, aliasItems(t, text, "TACCTL_EN")...) {
+		if strings.HasPrefix(it, "console password-cache") && it != "console password-cache" && it != "console password-cache on" && it != "console password-cache off" {
+			t.Errorf("a pattern %q grants more of console password-cache than the state and on|off", it)
+		}
 		if strings.HasPrefix(it, "console system-shell") && strings.ContainsAny(it, "*") && it != "console system-shell user *" {
 			t.Errorf("a pattern %q grants more of console system-shell than the read forms", it)
 		}

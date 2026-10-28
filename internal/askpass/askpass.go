@@ -87,6 +87,7 @@ const (
 	WhyRejected = "rejected by a device"
 	WhyPasswd   = "password changed"
 	WhyCommand  = "console forget"
+	WhyOff      = "console password-cache off"
 	WhyExit     = "session ended"
 	WhyClock    = "clock changed"
 )

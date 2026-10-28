@@ -132,6 +132,8 @@ func TestRollbackSince0220(t *testing.T) {
 		{"both", func(f *File) { f.Color, f.ListMax = ColorOn, ListMaxNever }, "settings", []string{"settings.color: on"}, []string{"settings.list_max to 1000 (it never asked)"}},
 		{"system shell users", func(f *File) { f.SystemShellUsers = map[string]bool{"carol": false, "bob": true} }, "unknown key 'system_shell_users'",
 			[]string{"settings.system_shell_users: bob enable, carol disable"}, nil},
+		{"password cache users", func(f *File) { f.PasswordCacheUsers = map[string]bool{"carol": true, "bob": true} }, "unknown key 'password_cache_users'",
+			[]string{"settings.password_cache_users: bob, carol (on)"}, nil},
 		{"all three", func(f *File) {
 			f.Color, f.ListMax, f.SystemShellUsers = ColorOff, ListMaxNever, map[string]bool{"bob": true}
 		}, "settings", []string{"settings.color: off", "settings.system_shell_users: bob enable"}, []string{"settings.list_max to 1000 (it never asked)"}},
@@ -175,7 +177,7 @@ func TestRollbackSince0220(t *testing.T) {
 				t.Errorf("%s: %q is gone:\n%s", c.name, keep, plan.Text)
 			}
 		}
-		if strings.Contains(string(plan.Text), "color") || strings.Contains(string(plan.Text), "system_shell_users") {
+		if strings.Contains(string(plan.Text), "color") || strings.Contains(string(plan.Text), "system_shell_users") || strings.Contains(string(plan.Text), "password_cache_users") {
 			t.Errorf("%s: a setting of 0.2.20 is left:\n%s", c.name, plan.Text)
 		}
 		if !strings.Contains(string(plan.Text), "system_shell_tiers: [superuser]") {
@@ -203,6 +205,7 @@ func TestRollbackSince0220(t *testing.T) {
 	f := Defaults()
 	f.Color, f.ListMax = ColorOff, ListMaxNever
 	f.SystemShellUsers = map[string]bool{"bob": true}
+	f.PasswordCacheUsers = map[string]bool{"alice": true}
 	f.PasswordCacheTiers = Tiers[3:]
 	text, err := f.Text023()
 	if err != nil {
@@ -216,7 +219,7 @@ func TestRollbackSince0220(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Remove) != 3 || len(plan.Set) != 1 || !strings.Contains(plan.Summary(), "settings.password_cache, settings.color, settings.system_shell_users") {
+	if len(plan.Remove) != 4 || len(plan.Set) != 1 || !strings.Contains(plan.Summary(), "settings.password_cache, settings.color, settings.system_shell_users, settings.password_cache_users") {
 		t.Errorf("0.2.3 plan: %+v %q", plan, plan.Summary())
 	}
 }

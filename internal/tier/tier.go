@@ -230,6 +230,15 @@ var Rules = []Rule{
 		"console system-shell operator", "console system-shell engineer", "console system-shell superuser", "console system-shell path",
 		"console system-shell user *"},
 		Note: "console system-shell: an operator may read it (no argument, a tier, user <name>, path); setting it for a tier or a user, and setting the path, need the superuser tier."},
+	// 'console password-cache' (0.2.20): the state of the caller's password
+	// cache and the caller's own choice, 'on' or 'off' (a word of the shell and
+	// the console, as 'console forget' is), are open to every tier that can have
+	// the cache; the sudoers patterns name those three forms exactly, and the
+	// verb acts on the caller only (SUDO_USER; no word names another user).
+	// Its other forms (the tiers that are allowed, the lifetimes, a user's
+	// setting) are the superuser's, which the verb holds the caller to.
+	{Tier: Operator, Cmd: "console", Sub: "password-cache", Sudoers: []string{"console password-cache", "console password-cache on", "console password-cache off"},
+		Note: "console password-cache: every user of the operator tier and up may run it with no argument (the state) and with on or off (their own choice, which needs their tier to be allowed); tiers, idle, max and user need the superuser tier."},
 	// 'console forget' (0.2.4, D70) is a word of the shell and the console,
 	// which empty the password cache of their own process; the row lets the
 	// lists show it to the tiers the cache can be opened to, and the verb

@@ -40,7 +40,7 @@ var consoleSpecs = map[string]Spec{
 	"system-shell": {MaxArgs: 3, Args: []string{"readonly|operator|engineer|superuser|user|path",
 		Cond("path", KindFile, Cond("user", KindUsers, "enable|disable")), After("user", "enable|disable|clear")}},
 	"forwarding":     {MinArgs: 1, MaxArgs: 2, Args: []string{"tiers|gateway-ports", After("gateway-ports", "enable|disable")}},
-	"password-cache": {MaxArgs: 2, Args: []string{"tiers|idle|max", ""}},
+	"password-cache": {MaxArgs: 3, Args: []string{"tiers|idle|max|on|off|user", Cond("user", KindUsers, ""), After("user", "clear")}},
 	"forget":         {MaxArgs: 0},
 	"install":        {MaxArgs: 0},
 	"remove":         {MaxArgs: 0},
@@ -61,6 +61,9 @@ var consoleVerbs = [][2]string{
 	{"system-shell [<tier> enable|disable]", "Show or set the system shell for a tier (superuser always has it, engineer never; default superuser only)"},
 	{"system-shell user <name> [enable|disable|clear]", "Show or set the system shell for one user, over the tier's setting (clear: the tier decides)"},
 	{"system-shell path [<path>]", "Show or set the system shell (default /bin/bash; must be listed in /etc/shells)"},
+	{"password-cache [on|off]", "Show or set whether your sessions keep your password in memory"},
+	{"password-cache user [<name>]", "Show the users who turned the password cache on"},
+	{"password-cache user <name> clear", "Clear the password cache setting of a user (back to off)"},
 	{"password-cache tiers [<csv>|none]", "Show or set the tiers whose shell and console sessions may keep your network password in memory for the session (operator, engineer, superuser; default none)"},
 	{"password-cache idle [<min>]", "Show or set the minutes a cached password lives without a use (1-120, default 15)"},
 	{"password-cache max [<hours>]", "Show or set the hours a cached password lives from the moment it was cached (1-24, default 8)"},
@@ -126,6 +129,11 @@ The password lives only in the session's own process: it is never written to a
 file, and it is forgotten on exit, after the idle time, after the maximum
 lifetime, when the password is changed, when a device refuses it, and with
 'console forget'. It does not protect against root, who can read any process.
+'password-cache tiers' says which tiers are allowed to use it; for a tier that is
+allowed it is off until the user turns it on for themselves ('password-cache on'
+at the prompt: saved for every later session, started in this one at once;
+'password-cache off' saves that, forgets the password and stops caching).
+'password-cache user' lets a superuser see who turned it on and clear a setting.
 
 Examples:
   tacctl console show
@@ -752,26 +760,60 @@ func tierCSV(l []tier.Tier) string {
 	return strings.Join(s, ",")
 }
 
-// consolePasswordCache is 'console password-cache [tiers [<csv>|none] | idle
-// [<min>] | max [<hours>]]': the password cache's tiers and lifetimes (D70).
-// A session reads them when it starts.
+// consolePasswordCache is 'console password-cache [on|off | tiers [<csv>|none]
+// | idle [<min>] | max [<hours>] | user [<name> [clear]]]'. The tiers are the
+// permission to keep the password in a session's memory, the lifetimes are
+// its limits (D70), and 'on' and 'off' are the person's own choice, off until
+// they turn it on: the three words open to the operator tier and up (the
+// sudoers row names them exactly) act on the caller only. Everything else is
+// the superuser's. A session reads the settings when it starts; the shell and
+// the console also handle 'on' and 'off' themselves (shell.Shell).
 func (inv *invocation) consolePasswordCache(args []string) error {
 	p, err := inv.consoleParse("password-cache", args)
 	if err != nil {
 		return err
+	}
+	usage := "Usage: tacctl console " + consoleUse("password-cache")
+	first := ""
+	if len(p.Args) > 0 {
+		first = p.Args[0]
+	}
+	switch first {
+	case "", "on", "off":
+		if len(p.Args) > 1 {
+			return inv.usageErr("Unknown argument: '"+p.Args[1]+"'", usage)
+		}
+	case "tiers", "idle", "max", "user":
+		if first != "user" && len(p.Args) > 2 {
+			return inv.usageErr("Unknown argument: '"+p.Args[2]+"'", usage)
+		}
+		if err := inv.deviceVerbAllowed("console", "password-cache", tier.Superuser); err != nil {
+			return err
+		}
+	default:
+		return inv.usageErr(usage)
 	}
 	pol, err := inv.consolePolicy()
 	if err != nil {
 		return err
 	}
 	f := pol.File
-	if len(p.Args) == 0 {
+	switch first {
+	case "":
 		inv.echo("tiers: " + tierCSV(f.PasswordCacheTiers))
 		inv.echo("idle: " + strconv.Itoa(f.PasswordCacheIdle) + " min")
 		inv.echo("max: " + strconv.Itoa(f.PasswordCacheMax) + " h")
+		if user := inv.callerStoreUser(); user != "" {
+			t := inv.cacheTier()
+			inv.echo("your tier (" + string(t) + "): " + map[bool]string{true: "allowed", false: "not allowed"}[pol.PasswordCache(t)])
+			inv.echo("your setting: " + map[bool]string{true: "on", false: "off"}[pol.PasswordCacheOn(user)])
+		}
 		return nil
+	case "on", "off":
+		return inv.consolePasswordCacheSelf(pol, first == "on")
+	case "user":
+		return inv.consolePasswordCacheUser(pol, p.Args[1:], usage)
 	}
-	usage := "Usage: tacctl console " + consoleUse("password-cache")
 	switch p.Args[0] {
 	case "tiers":
 		if len(p.Args) == 1 {
@@ -829,6 +871,113 @@ func (inv *invocation) consolePasswordCache(args []string) error {
 	return inv.usageErr(usage)
 }
 
+// cacheTier is the tier the password cache is decided for: the caller's, with
+// an engineer kept one when an unreadable tacctl.yaml caps the gate's tier (as
+// the policy line does).
+func (inv *invocation) cacheTier() tier.Tier {
+	gate := inv.tierGate()
+	t := gate.Caller(inv.ctx)
+	if gate.EngineerBound(inv.ctx) {
+		t = tier.Engineer
+	}
+	return t
+}
+
+// consolePasswordCacheSelf is 'console password-cache on|off': the caller's
+// own choice, saved in console.yaml by the root side. The user is the one sudo
+// was run by and no word names another, so nobody sets another's. 'on' needs
+// the caller's tier to be allowed (the permission) and saves nothing otherwise.
+func (inv *invocation) consolePasswordCacheSelf(pol *console.Policy, on bool) error {
+	user := inv.callerStoreUser()
+	if user == "" {
+		return inv.usageErr("The password cache is each tacctl user's own choice: run this as a tacctl user. Nothing was changed.")
+	}
+	t := inv.cacheTier()
+	has := pol.PasswordCacheOn(user)
+	if on && !pol.PasswordCache(t) {
+		return inv.usageErr("The password cache is not allowed for the " + string(t) + " tier; a superuser allows it with: tacctl console password-cache tiers <tiers>. Nothing was changed.")
+	}
+	if on == has {
+		inv.app.Out.Info("The password cache is already " + map[bool]string{true: "on", false: "off"}[on] + " for you. Nothing was changed.")
+		return nil
+	}
+	state := func(f *console.File) string {
+		return map[bool]string{true: "on", false: "off"}[f.PasswordCacheUsers[user]]
+	}
+	if err := inv.consoleWrite("password-cache", "user:"+user, state, func(f *console.File) error {
+		if on {
+			f.PasswordCacheUsers[user] = true
+		} else {
+			delete(f.PasswordCacheUsers, user)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if on {
+		inv.app.Out.Info("The password cache is on for you: it starts in the session you typed this in, and in every session from now on, until you turn it off (console password-cache off).")
+	} else {
+		inv.app.Out.Info("The password cache is off for you: no session of yours keeps your password.")
+	}
+	return nil
+}
+
+// consolePasswordCacheUser is 'console password-cache user [<name> [clear]]'
+// (the superuser's): the users who turned the cache on, one user's setting, or
+// clearing it so the user is back to off.
+func (inv *invocation) consolePasswordCacheUser(pol *console.Policy, args []string, usage string) error {
+	if len(args) > 2 {
+		return inv.usageErr("Unknown argument: '"+args[2]+"'", usage)
+	}
+	tiers, err := inv.systemShellTiers()
+	if err != nil {
+		return err
+	}
+	f := pol.File
+	if len(args) == 0 {
+		names := f.PasswordCacheUserNames()
+		if len(names) == 0 {
+			inv.echo("none")
+		}
+		for _, n := range names {
+			who := "no such user"
+			if t, ok := tiers[n]; ok {
+				who = string(t)
+			}
+			inv.echo(n + ": on (" + who + ")")
+		}
+		return nil
+	}
+	name := args[0]
+	_, exists := tiers[name]
+	has := f.PasswordCacheUsers[name]
+	if !exists && !has {
+		return inv.usageErr("User '" + name + "' does not exist.")
+	}
+	if len(args) == 1 {
+		inv.echo(map[bool]string{true: "on", false: "off"}[has])
+		return nil
+	}
+	if args[1] != "clear" {
+		return inv.usageErr(usage)
+	}
+	if !has {
+		inv.app.Out.Info("'" + name + "' has not turned the password cache on. Nothing was changed.")
+		return nil
+	}
+	state := func(f *console.File) string {
+		return map[bool]string{true: "on", false: "off"}[f.PasswordCacheUsers[name]]
+	}
+	if err := inv.consoleWrite("password-cache", "user:"+name, state, func(f *console.File) error {
+		delete(f.PasswordCacheUsers, name)
+		return nil
+	}); err != nil {
+		return err
+	}
+	inv.app.Out.Info("The password cache setting of '" + name + "' is cleared: it is off for them. A session they have open keeps its cache until it ends or they turn it off.")
+	return nil
+}
+
 // consoleForget is 'console forget' run as a tacctl command (from bash, or
 // by a caller whose line did not reach the shell's own word): the cache
 // lives in the process of the shell or the console, which handles the word
@@ -880,7 +1029,7 @@ func (inv *invocation) consolePolicyLine([]string) error {
 	if pol.Decide(t).Console {
 		shell = "console"
 	}
-	sys := pol.SystemShellFor(inv.systemShellUser(), t)
+	sys := pol.SystemShellFor(inv.callerStoreUser(), t)
 	path, perr := pol.SystemShellPath()
 	if perr != nil {
 		if sys {
@@ -919,8 +1068,11 @@ func (inv *invocation) consolePolicyLine([]string) error {
 	// tacctl ignores them.
 	cache := ""
 	if pol.PasswordCache(t) {
-		cache = " password_cache=yes pc_idle=" + strconv.Itoa(int(pol.PasswordCacheIdle()/time.Minute)) +
-			" pc_max=" + strconv.Itoa(int(pol.PasswordCacheMax()/time.Hour))
+		// password_cache says the console starts it (the tier is allowed and
+		// the user turned it on); pc_allowed is the permission alone, which
+		// 'tacctl shell --password-cache' needs.
+		cache = " password_cache=" + yesNo(pol.PasswordCacheOn(inv.callerStoreUser())) + " pc_allowed=yes pc_idle=" +
+			strconv.Itoa(int(pol.PasswordCacheIdle()/time.Minute)) + " pc_max=" + strconv.Itoa(int(pol.PasswordCacheMax()/time.Hour))
 	}
 	inv.echo("shell=" + shell + " idle=" + strconv.Itoa(pol.File.Idle) + " system_shell=" + yesNo(sys) +
 		" system_shell_path=" + path + " ssh_escape=" + yesNo(pol.SSHEscape()) + " agent=" + yesNo(pol.AgentForwarding()) +
@@ -929,76 +1081,102 @@ func (inv *invocation) consolePolicyLine([]string) error {
 	return nil
 }
 
-// systemShellMove is what 'user remove', 'user rename' and 'user add' did to a
-// user's system-shell setting in console.yaml (settings.system_shell_users):
-// had says there was one (on is its value), err that console.yaml could not
-// be written.
-type systemShellMove struct {
-	had, on bool
-	err     error
+// userSettingsMove is what 'user remove', 'user rename' and 'user add' did to
+// a user's own settings in console.yaml: the system shell (settings.
+// system_shell_users: shellHad, with value shellOn) and the password cache
+// (settings.password_cache_users: cacheHad, always on). err says console.yaml
+// could not be written.
+type userSettingsMove struct {
+	shellHad, shellOn, cacheHad bool
+	err                         error
 }
 
-// moveSystemShellUser carries the system-shell setting of oldname to newname
-// (newname "": drops it) in console.yaml, under its lock, as part of the
-// user verb that follows the store's change (the snapshot the verb took first
-// holds console.yaml). A person who is renamed keeps the access they had, a
-// user who is removed leaves none behind for the next user of the name; a
-// file without a setting for oldname is not touched, and an absent file is not
-// created. An entry already under newname (hand-edited) is replaced by the
-// carried one, or dropped by the removal.
-func (inv *invocation) moveSystemShellUser(oldname, newname string) systemShellMove {
+// had reports whether the user had any of them.
+func (m userSettingsMove) had() bool { return m.shellHad || m.cacheHad }
+
+// moveUserSettings carries the settings of oldname to newname (newname "":
+// drops them) in console.yaml, under its lock, as part of the user verb that
+// follows the store's change (the snapshot the verb took first holds
+// console.yaml). A person who is renamed keeps the access they had, a user who
+// is removed leaves none behind for the next user of the name; a file without
+// a setting for oldname is not touched, and an absent file is not created. An
+// entry already under newname (hand-edited) is replaced by the carried one, or
+// dropped by the removal.
+func (inv *invocation) moveUserSettings(oldname, newname string) userSettingsMove {
 	p := inv.app.Paths.ConsoleFile
 	f, err := console.Load(p)
 	if err != nil {
-		return systemShellMove{err: err}
+		return userSettingsMove{err: err}
 	}
-	on, had := f.SystemShellUsers[oldname]
-	if !had {
-		return systemShellMove{}
+	on, shellHad := f.SystemShellUsers[oldname]
+	cacheHad := f.PasswordCacheUsers[oldname]
+	m := userSettingsMove{shellHad: shellHad, shellOn: on, cacheHad: cacheHad}
+	if !m.had() {
+		return m
 	}
-	_, err = console.Mutate(p, nil, func(f *console.File) error {
+	_, m.err = console.Mutate(p, nil, func(f *console.File) error {
 		delete(f.SystemShellUsers, oldname)
+		delete(f.PasswordCacheUsers, oldname)
 		if newname != "" {
-			f.SystemShellUsers[newname] = on
+			if shellHad {
+				f.SystemShellUsers[newname] = on
+			}
+			if cacheHad {
+				f.PasswordCacheUsers[newname] = true
+			}
 		}
 		return nil
 	})
-	return systemShellMove{had: true, on: on, err: err}
+	return m
 }
 
-// systemShellMoved reports a move: the lines of the command's output and the
+// userSettingsMoved reports a move: the lines of the command's output and the
 // 'console set' details. It returns the error of a console.yaml that could not
 // be written (the store has changed already; the command says how to finish).
-func (inv *invocation) systemShellMoved(m systemShellMove, oldname, newname string) error {
-	if !m.had {
+func (inv *invocation) userSettingsMoved(m userSettingsMove, oldname, newname string) error {
+	if !m.had() {
 		return nil
 	}
-	word := onOff(m.on)
 	out := inv.app.Out
+	verb := map[bool]string{true: "moved", false: "dropped"}[newname != ""]
 	if m.err != nil {
-		fix := "tacctl console system-shell user " + oldname + " clear"
-		if newname != "" {
-			fix += ", then tacctl console system-shell user " + newname + " " + word
+		var fix []string
+		if m.shellHad {
+			fix = append(fix, "tacctl console system-shell user "+oldname+" clear")
+			if newname != "" {
+				fix = append(fix, "tacctl console system-shell user "+newname+" "+onOff(m.shellOn))
+			}
 		}
-		out.Error("The system-shell setting of '" + oldname + "' (" + word + ") could not be " + map[bool]string{true: "moved", false: "dropped"}[newname != ""] +
-			" in console.yaml: " + msgsJoin(m.err) + ". Finish it with: " + fix)
+		if m.cacheHad {
+			fix = append(fix, "tacctl console password-cache user "+oldname+" clear")
+		}
+		out.Error("The console settings of '" + oldname + "' could not be " + verb + " in console.yaml: " + msgsJoin(m.err) +
+			". Finish it with: " + strings.Join(fix, ", then ") + map[bool]string{true: " (the user turns the password cache on again themselves)", false: ""}[m.cacheHad && newname != ""])
 		return exit(1)
 	}
-	inv.detailAt(audit.Notice, "console set", kvp("key", "system-shell"), kvp("item", "user:"+oldname), kvp("from", word), kvp("to", "none"))
-	if newname == "" {
-		out.Info("The system-shell setting of '" + oldname + "' (" + word + ") is dropped.")
-		return nil
+	report := func(what, key, word string) {
+		inv.detailAt(audit.Notice, "console set", kvp("key", key), kvp("item", "user:"+oldname), kvp("from", word), kvp("to", "none"))
+		if newname == "" {
+			out.Info("The " + what + " setting of '" + oldname + "' (" + word + ") is dropped.")
+			return
+		}
+		inv.detailAt(audit.Notice, "console set", kvp("key", key), kvp("item", "user:"+newname), kvp("from", "none"), kvp("to", word))
+		out.Info("The " + what + " setting of '" + oldname + "' (" + word + ") moves to '" + newname + "'.")
 	}
-	inv.detailAt(audit.Notice, "console set", kvp("key", "system-shell"), kvp("item", "user:"+newname), kvp("from", "none"), kvp("to", word))
-	out.Info("The system-shell setting of '" + oldname + "' (" + word + ") moves to '" + newname + "'.")
+	if m.shellHad {
+		report("system-shell", "system-shell", onOff(m.shellOn))
+	}
+	if m.cacheHad {
+		report("password-cache", "password-cache", "on")
+	}
 	return nil
 }
 
-// systemShellUser is the name the system-shell setting of the caller is
+// callerStoreUser is the name the user settings of the caller are
 // looked up under: the caller when it is a user of the store, else "" (no
 // entry has that name): an entry of a name that is no store user is not
 // honoured.
-func (inv *invocation) systemShellUser() string {
+func (inv *invocation) callerStoreUser() string {
 	user := inv.sudoUser()
 	if m, err := inv.model(); err != nil || !m.Exists("users", user) {
 		return ""

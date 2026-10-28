@@ -887,3 +887,75 @@ func TestUsersWithPeriods(t *testing.T) {
 		}
 	}
 }
+
+// settings.password_cache_users is written only when a user is on, reads back,
+// keeps only the users who are on, and is refused with a bad shape; the cache
+// is active for a user when the tier is allowed and the user is on.
+func TestPasswordCacheUsersSetting(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "console.yaml")
+	if _, err := Mutate(p, nil, func(f *File) error { f.Idle = 5; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	without, _ := os.ReadFile(p)
+	if strings.Contains(string(without), "password_cache") {
+		t.Errorf("a key is written while nobody is on:\n%s", without)
+	}
+	if _, err := Mutate(p, nil, func(f *File) error {
+		f.PasswordCacheUsers["carol"] = true
+		f.PasswordCacheUsers["alice.smith"] = true
+		f.PasswordCacheUsers["dave"] = false // not stored: a user who is off is a user without a setting
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(p)
+	if !strings.Contains(string(got), "  password_cache_users: {alice.smith: true, carol: true}\n") {
+		t.Errorf("the key is not written as a map of the users who are on:\n%s", got)
+	}
+	f, err := Load(p)
+	if err != nil || !f.PasswordCacheUsers["carol"] || f.PasswordCacheUsers["dave"] || !reflect.DeepEqual(f.PasswordCacheUserNames(), []string{"alice.smith", "carol"}) {
+		t.Fatalf("round trip: %+v %v", f.PasswordCacheUsers, err)
+	}
+	if _, err := Mutate(p, nil, func(f *File) error { f.PasswordCacheUsers = map[string]bool{}; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := os.ReadFile(p); string(again) != string(without) {
+		t.Errorf("empty again:\n%s\nwant\n%s", again, without)
+	}
+	for name, text := range map[string]string{
+		"not a map":  "version: 1\nsettings: {password_cache_users: [carol]}\n",
+		"not a bool": "version: 1\nsettings: {password_cache_users: {carol: maybe}}\n",
+		"bad name":   "version: 1\nsettings: {password_cache_users: {'a b': true}}\n",
+	} {
+		if _, err := Load(write(t, dir, "bad.yaml", text, 0o600)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	// The matrix: tier allowed x user on.
+	f = Defaults()
+	f.PasswordCacheTiers = []tier.Tier{tier.Operator, tier.Superuser}
+	f.PasswordCacheUsers = map[string]bool{"bob": true, "carol": true}
+	pol := &Policy{File: f}
+	for _, c := range []struct {
+		user string
+		t    tier.Tier
+		want bool
+	}{
+		{"bob", tier.Operator, true},    // allowed and on
+		{"dave", tier.Operator, false},  // allowed, off (the default)
+		{"carol", tier.Readonly, false}, // on, but the tier is not allowed
+		{"erin", tier.Readonly, false},  // neither
+		{"bob", tier.Engineer, false},   // the tier is not in the list
+		{"", tier.Superuser, false},     // no user, no choice
+	} {
+		if got := pol.PasswordCacheActive(c.user, c.t); got != c.want {
+			t.Errorf("%q at %s: %v, want %v", c.user, c.t, got, c.want)
+		}
+	}
+	// The policy answer reads the permission apart from the choice.
+	r, ok := ParseRemote("shell=console tier=operator password_cache=no pc_allowed=yes pc_idle=20 pc_max=3")
+	if !ok || r.PasswordCache || !r.PCAllowed || r.PCIdle != 20*time.Minute || r.PCMax != 3*time.Hour {
+		t.Errorf("parsed %+v", r)
+	}
+}

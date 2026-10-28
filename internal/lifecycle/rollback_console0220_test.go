@@ -146,3 +146,54 @@ func TestRollbackTakesOutTheSystemShellOfUsers(t *testing.T) {
 		}
 	}
 }
+
+// The users who turned the password cache on (0.2.20, settings.
+// password_cache_users) are a key every older release rejects, even those
+// that have the cache's own settings: each target's plan takes it out and
+// names the users, keeps the cache's tiers and lifetimes for the targets that
+// have them, and leaves a file without the key alone.
+func TestRollbackTakesOutTheUsersOfThePasswordCache(t *testing.T) {
+	consoleWith := strings.Replace(rbConsole, "  space_completion: false\n", "  space_completion: false\n  password_cache_users: {bob: true, carol: true}\n", 1)
+	if !strings.Contains(consoleWith, "password_cache_users") || !strings.Contains(rbConsole, "password_cache:") {
+		t.Fatal("the fixture lacks the settings")
+	}
+	for _, target := range []string{RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029, RollbackTarget} {
+		s := newRBSandbox(t)
+		s.in.Target = target
+		s.write(s.p.ConsoleFile, consoleWith, 0o600)
+		s.reload()
+		s.in.Target = target
+		p, err := PlanRollback(s.in)
+		if err != nil {
+			t.Fatalf("%s: %v", target, err)
+		}
+		if st := stepText(p); !strings.Contains(st, "remove settings.password_cache_users: bob, carol (on)") || !p.PendingFiles() {
+			t.Errorf("%s: steps:\n%s", target, st)
+		}
+		done, err := ApplyRollback(p)
+		if err != nil {
+			t.Fatalf("%s: %v", target, err)
+		}
+		found := false
+		for _, d := range done {
+			found = found || (strings.HasPrefix(d, s.p.ConsoleFile+": ") && strings.Contains(d, "settings.password_cache_users"))
+		}
+		if !found {
+			t.Errorf("%s: done %q", target, done)
+		}
+		b, _ := os.ReadFile(s.p.ConsoleFile)
+		got := string(b)
+		if strings.Contains(got, "password_cache_users") || !strings.Contains(got, "idle_timeout: 12") {
+			t.Errorf("%s: the file after the apply:\n%s", target, got)
+		}
+		// The cache's tiers and lifetimes stay for the targets that have them.
+		if hasCache := strings.Contains(got, "password_cache:"); hasCache != (target != RollbackTarget) {
+			t.Errorf("%s: password_cache kept: %v\n%s", target, hasCache, got)
+		}
+		s.reload()
+		s.in.Target = target
+		if p, err = PlanRollback(s.in); err != nil || strings.Contains(stepText(p), "password_cache_users") {
+			t.Errorf("%s: second plan: %v\n%s", target, err, stepText(p))
+		}
+	}
+}

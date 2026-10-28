@@ -23,13 +23,16 @@ settings:
   # system_shell_users:           # written only when a user has a setting of their own
   #   jdoe: true                  # true gives the system shell, false takes it (console
                                   system-shell user)
+  # password_cache_users:         # written only when a user turned the cache on (see
+  #                               Password cache); a map of user name to true
+  #   jdoe: true
   # password_cache:               # written only when something is set (see Password cache)
   #                               tiers: [operator, superuser]
   #   idle: 15                    # minutes
   #   max: 8                      # hours
 ```
 
-The keys: `settings.idle_timeout` (`console idle-timeout`), `settings.agent_forwarding` (`console agent-forwarding`), `settings.ssh_escape` (`console ssh-escape`), `settings.system_shell` (`console system-shell path`), `settings.system_shell_tiers` (`console system-shell <tier> enable|disable`; always holds `superuser`, never `engineer`), `settings.system_shell_users` (`console system-shell user`; written only when a user has a setting), `settings.forwarding_tiers` and `settings.gateway_ports` (`console forwarding tiers|gateway-ports`; the tiers are never `engineer`), `settings.list_max` (`console list-max`; 1 to 1000, or -1 to never ask), `settings.space_completion` (`console space-completion`; written only when off), `settings.color` (`console color`; written only when `on` or `off`) and `settings.password_cache` (`console password-cache tiers|idle|max`; written only when set).
+The keys: `settings.idle_timeout` (`console idle-timeout`), `settings.agent_forwarding` (`console agent-forwarding`), `settings.ssh_escape` (`console ssh-escape`), `settings.system_shell` (`console system-shell path`), `settings.system_shell_tiers` (`console system-shell <tier> enable|disable`; always holds `superuser`, never `engineer`), `settings.system_shell_users` (`console system-shell user`; written only when a user has a setting), `settings.forwarding_tiers` and `settings.gateway_ports` (`console forwarding tiers|gateway-ports`; the tiers are never `engineer`), `settings.list_max` (`console list-max`; 1 to 1000, or -1 to never ask), `settings.space_completion` (`console space-completion`; written only when off), `settings.color` (`console color`; written only when `on` or `off`) `settings.password_cache` (`console password-cache tiers|idle|max`; written only when set) and `settings.password_cache_users` (`console password-cache on|off` by each user, `console password-cache user`; written only when a user has turned it on).
 
 ```
 console show
@@ -76,10 +79,23 @@ console forwarding gateway-ports [enable|disable]
     Let those tiers' forwarded ports listen on other addresses than loopback: sshd's GatewayPorts
     clientspecified for ssh -R, the console's ssh -g and -L/-D bind addresses (default disabled)
 
+console password-cache [on|off]
+
+    Your own choice of keeping your network password in memory for the session, off until you
+    turn it on (operator tier and up, and the tier must be allowed by the line below). With no
+    argument it prints the permission, your setting and the limits. At the prompt of the shell
+    and the console it is a word: on saves the choice and starts the cache in that session at
+    once, off saves it, forgets a cached password and stops caching. It sets only your own value
+
 console password-cache tiers [<csv>|none]
 
-    Tiers whose shell and console sessions keep your network password in memory for the session
-    (operator, engineer, superuser; default none)
+    Tiers that are allowed to use the password cache (the permission; operator, engineer,
+    superuser; default none). A listed tier's users still turn it on themselves
+
+console password-cache user [<name> [clear]]
+
+    The users who turned the cache on, one user's setting, or clear it (the user is back to off)
+    (superuser only)
 
 console password-cache idle [<min>]
 

@@ -32,9 +32,12 @@ type Remote struct {
 	Color string
 	// SpaceCompletion: a typed space completes a fixed word (default on).
 	SpaceCompletion bool
-	// PasswordCache: the caller's tier may keep its network password in the
-	// session's memory (D70); PCIdle and PCMax are its lifetimes (0: the
-	// answer named none, the defaults apply).
+	// PCAllowed: the caller's tier may keep its network password in the
+	// session's memory (D70, the permission of 'console password-cache
+	// tiers'). PasswordCache: it does, because the user also turned the
+	// cache on for themselves (the console starts it). PCIdle and PCMax are
+	// the lifetimes (0: the answer named none, the defaults apply).
+	PCAllowed     bool
 	PasswordCache bool
 	PCIdle, PCMax time.Duration
 	// Known reports whether the answer was read (false: the defaults).
@@ -116,6 +119,10 @@ func ParseRemote(out string) (r Remote, ok bool) {
 		case "password_cache":
 			if b, good := yesNoValue(v); good {
 				r.PasswordCache, ok = b, true
+			}
+		case "pc_allowed":
+			if b, good := yesNoValue(v); good {
+				r.PCAllowed, ok = b, true
 			}
 		case "pc_idle":
 			if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= MaxPasswordCacheIdle {

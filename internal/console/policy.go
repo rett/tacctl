@@ -170,6 +170,19 @@ func (p *Policy) PasswordCache(t tier.Tier) bool {
 	return slices.Contains(p.File.PasswordCacheTiers, t)
 }
 
+// PasswordCacheOn reports whether the user turned the password cache on for
+// themselves (settings.password_cache_users); off until they do.
+func (p *Policy) PasswordCacheOn(user string) bool {
+	return user != "" && p.File.PasswordCacheUsers[user]
+}
+
+// PasswordCacheActive reports whether a session of user at tier t keeps the
+// network password in memory: the tier is allowed to (PasswordCache, the
+// permission) and the user turned it on (PasswordCacheOn, the choice).
+func (p *Policy) PasswordCacheActive(user string, t tier.Tier) bool {
+	return p.PasswordCache(t) && p.PasswordCacheOn(user)
+}
+
 // PasswordCacheTiers are the tiers of settings.password_cache.tiers.
 func (p *Policy) PasswordCacheTiers() []tier.Tier { return p.File.PasswordCacheTiers }
 

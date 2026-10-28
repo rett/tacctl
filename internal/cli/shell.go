@@ -213,7 +213,10 @@ func (inv *invocation) runShell(r shellRun) (int, *shell.Shell) {
 	// The password cache (D70): the agent lives as long as the loop; the
 	// password is forgotten and the socket removed when the loop ends.
 	cache := inv.openPasswordCache(r, managed)
-	defer cache.close()
+	// The cache the session has now: 'console password-cache on' and 'off'
+	// start and stop it, so the one to close at the end is the live one.
+	live := cache
+	defer func() { live.close() }()
 	inv.setView(r, managed)
 	root := newRoot(inv)
 	// The labels of the '?' list are bold on a terminal that shows colour.
@@ -246,6 +249,9 @@ func (inv *invocation) runShell(r shellRun) (int, *shell.Shell) {
 	}
 	if cache != nil {
 		o.Cache = cache
+	}
+	if r.mode == shellInteractive && (r.console || managed) {
+		o.CacheStart = func() (shell.PasswordCache, error) { return inv.startPasswordCacheNow(r, &live) }
 	}
 	if r.systemShell != nil {
 		o.SystemShell = r.systemShell

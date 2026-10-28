@@ -476,15 +476,15 @@ func (inv *invocation) userAdd(args []string) error {
 	}
 	// A system-shell setting left under the name (a hand edit, a removal that
 	// could not write console.yaml) is not inherited by the new user.
-	var stale systemShellMove
+	var stale userSettingsMove
 	if err := inv.storeApplyThen(func(s *store.Store) error {
 		return s.UserSet(username, "group="+group, "scopes="+display, "hash="+hexHash, "disabled=false", "password_changed=today")
-	}, func() { stale = inv.moveSystemShellUser(username, "") }); err != nil {
+	}, func() { stale = inv.moveUserSettings(username, "") }); err != nil {
 		return err
 	}
 	inv.detail("user add", kvp("name", username), kvp("group", group), kvp("scopes", display))
 	a.Out.InfoE("User '" + username + "' added (" + group + ") with scopes: " + display)
-	if err := inv.systemShellMoved(stale, username, ""); err != nil {
+	if err := inv.userSettingsMoved(stale, username, ""); err != nil {
 		return err
 	}
 	inv.echo("")
@@ -533,14 +533,14 @@ func (inv *invocation) userRemove(args []string) error {
 		return nil
 	}
 	watch := inv.watchServerTiers()
-	var shell systemShellMove
+	var shell userSettingsMove
 	if err := inv.storeApplyThen(func(s *store.Store) error { return s.UserDel(username) },
-		func() { shell = inv.moveSystemShellUser(username, "") }); err != nil {
+		func() { shell = inv.moveUserSettings(username, "") }); err != nil {
 		return err
 	}
 	inv.detail("user remove", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' removed.")
-	if err := inv.systemShellMoved(shell, username, ""); err != nil {
+	if err := inv.userSettingsMoved(shell, username, ""); err != nil {
 		return err
 	}
 	inv.echo("")
@@ -812,10 +812,10 @@ func (inv *invocation) userRename(args []string) error {
 	watch := inv.watchServerTiers()
 	hostCount := inv.enrolledHostsWith(oldname)
 	var mv uidMove
-	var shell systemShellMove
+	var shell userSettingsMove
 	if err := inv.storeApplyThen(func(s *store.Store) error { return s.UserRename(oldname, newname) }, func() {
 		mv = inv.moveUID(oldname, newname)
-		shell = inv.moveSystemShellUser(oldname, newname)
+		shell = inv.moveUserSettings(oldname, newname)
 	}); err != nil {
 		return err
 	}
@@ -826,7 +826,7 @@ func (inv *invocation) userRename(args []string) error {
 	inv.detail("user rename", kvp("from", oldname), kvp("to", newname), kvp("uid", uidWord))
 	out := inv.app.Out
 	out.Info("User renamed: " + oldname + " -> " + newname)
-	shellErr := inv.systemShellMoved(shell, oldname, newname)
+	shellErr := inv.userSettingsMoved(shell, oldname, newname)
 	switch {
 	case mv.err != nil:
 		id := "<id>"

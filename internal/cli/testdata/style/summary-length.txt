@@ -20,7 +20,6 @@ console check
 console forwarding
 console idle-timeout
 console install
-console password-cache
 console remove
 console show
 console space-completion

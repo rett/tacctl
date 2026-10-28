@@ -308,7 +308,8 @@ func TestSudoers0219(t *testing.T) {
 	}
 	got := strings.Replace(cur, Binary+" "+row+", ", "", 1)
 	for _, pat := range []string{"console system-shell", "console system-shell readonly", "console system-shell operator", "console system-shell engineer",
-		"console system-shell superuser", "console system-shell path", "console system-shell user *"} {
+		"console system-shell superuser", "console system-shell path", "console system-shell user *",
+		"console password-cache", "console password-cache on", "console password-cache off"} {
 		got = strings.Replace(got, Binary+" "+pat+", ", "", 1)
 	}
 	if got != old {

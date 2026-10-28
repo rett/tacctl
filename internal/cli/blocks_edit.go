@@ -220,7 +220,7 @@ func (inv *invocation) editorAllowed(what string) error {
 	pol, err := inv.consolePolicy()
 	g := inv.tierGate()
 	t := g.Caller(inv.ctx)
-	if err != nil || g.EngineerBound(inv.ctx) || !pol.SystemShellFor(inv.systemShellUser(), t) {
+	if err != nil || g.EngineerBound(inv.ctx) || !pol.SystemShellFor(inv.callerStoreUser(), t) {
 		inv.app.Audit().Raw("auth.warning", "block "+what+" DENY user="+inv.sudoUser()+" tier="+string(t)+inv.originFields())
 		return inv.usageErr("In the login console an editor can start a shell, so " + what + " is open only to those who may start the system shell (tacctl console system-shell); the " +
 			string(t) + " tier is not one of them, and you have no setting of your own that opens it. Nothing was changed.")

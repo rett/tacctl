@@ -114,6 +114,13 @@ type File struct {
 	// Closed tiers (never). Written only when it is not empty; an older
 	// release rejects the key, and the rollback removes it (Keys0220).
 	SystemShellUsers map[string]bool
+	// PasswordCacheUsers are the users who turned the password cache on for
+	// themselves (settings.password_cache_users, a map of user name to true):
+	// the tiers of PasswordCacheTiers are the permission, this is the user's
+	// choice, off until the user makes it. Only users who are on are stored.
+	// Written only when not empty; an older release rejects the key, and the
+	// rollback removes it (Keys0220).
+	PasswordCacheUsers map[string]bool
 	// ForwardingTiers are the tiers whose console logins may forward X11
 	// and TCP ports (sshd's drop-in, and the console's ssh to a device).
 	ForwardingTiers []tier.Tier
@@ -156,16 +163,17 @@ type File struct {
 // Defaults is the file that is not there.
 func Defaults() *File {
 	return &File{
-		IgnoredTiers:     map[tier.Tier]bool{},
-		IgnoredUsers:     map[string]bool{},
-		Idle:             DefaultIdle,
-		SystemShell:      DefaultSystemShell,
-		SystemShellTiers: []tier.Tier{tier.Superuser},
-		SystemShellUsers: map[string]bool{},
-		ForwardingTiers:  []tier.Tier{tier.Superuser},
-		ListMax:          DefaultListMax,
-		SpaceCompletion:  true,
-		Color:            ColorAuto,
+		IgnoredTiers:       map[tier.Tier]bool{},
+		IgnoredUsers:       map[string]bool{},
+		Idle:               DefaultIdle,
+		SystemShell:        DefaultSystemShell,
+		SystemShellTiers:   []tier.Tier{tier.Superuser},
+		SystemShellUsers:   map[string]bool{},
+		PasswordCacheUsers: map[string]bool{},
+		ForwardingTiers:    []tier.Tier{tier.Superuser},
+		ListMax:            DefaultListMax,
+		SpaceCompletion:    true,
+		Color:              ColorAuto,
 
 		PasswordCacheIdle: DefaultPasswordCacheIdle,
 		PasswordCacheMax:  DefaultPasswordCacheMax,
@@ -187,6 +195,10 @@ func (f *File) Clone() *File {
 	c.SystemShellUsers = map[string]bool{}
 	for k, v := range f.SystemShellUsers {
 		c.SystemShellUsers[k] = v
+	}
+	c.PasswordCacheUsers = map[string]bool{}
+	for k, v := range f.PasswordCacheUsers {
+		c.PasswordCacheUsers[k] = v
 	}
 	c.ForwardingTiers = slices.Clone(f.ForwardingTiers)
 	c.PasswordCacheTiers = slices.Clone(f.PasswordCacheTiers)
@@ -236,6 +248,19 @@ func (f *File) SetSystemShell(t tier.Tier, on bool) error {
 	}
 	f.SystemShellTiers = out
 	return nil
+}
+
+// PasswordCacheUserNames are the users who turned the password cache on, by
+// name.
+func (f *File) PasswordCacheUserNames() []string {
+	out := make([]string, 0, len(f.PasswordCacheUsers))
+	for u, on := range f.PasswordCacheUsers {
+		if on {
+			out = append(out, u)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // IgnoredUserNames are the users the file has an (ignored) override for, by
@@ -356,6 +381,11 @@ func (f *File) validate() error {
 	for u := range f.SystemShellUsers {
 		if !names.MatchUser(u) {
 			return fail("settings.system_shell_users: invalid user name '" + u + "'.")
+		}
+	}
+	for u := range f.PasswordCacheUsers {
+		if !names.MatchUser(u) {
+			return fail("settings.password_cache_users: invalid user name '" + u + "'.")
 		}
 	}
 	seenPC := map[tier.Tier]bool{}
@@ -537,19 +567,23 @@ func parseSettings(f *File, m *yamlpy.Map) error {
 				return bad
 			}
 			f.SystemShell = s
-		case "system_shell_users":
+		case "system_shell_users", "password_cache_users":
+			dst := f.SystemShellUsers
+			if k == "password_cache_users" {
+				dst = f.PasswordCacheUsers
+			}
 			switch x := v.(type) {
 			case nil:
 			case *yamlpy.Map:
 				for name, uv := range x.All() {
 					b, ok := uv.(bool)
 					if !ok {
-						return fail("settings.system_shell_users: '" + name + "' must be true or false.")
+						return fail("settings." + k + ": '" + name + "' must be true or false.")
 					}
-					f.SystemShellUsers[name] = b
+					dst[name] = b
 				}
 			default:
-				return fail("settings.system_shell_users must be a mapping of user to true or false.")
+				return fail("settings." + k + " must be a mapping of user to true or false.")
 			}
 		case "system_shell_tiers", "forwarding_tiers":
 			var l []tier.Tier
@@ -669,6 +703,15 @@ func (f *File) doc() *yamlpy.Map {
 			users.Set(u, f.SystemShellUsers[u])
 		}
 		settings.Set("system_shell_users", users)
+	}
+	if names := f.PasswordCacheUserNames(); len(names) > 0 {
+		// Only users who are on, and only when there are some, so a file
+		// that nobody turned the cache on in is read by every release.
+		users := yamlpy.NewMap()
+		for _, u := range names {
+			users.Set(u, true)
+		}
+		settings.Set("password_cache_users", users)
 	}
 	doc := yamlpy.NewMap("version", Version)
 	if len(f.IgnoredTiers) > 0 {

@@ -33,6 +33,7 @@ func (inv *invocation) consoleShow(args []string) error {
 	inv.echo("  system-shell path: " + f.SystemShell)
 	inv.echo("  space-completion: " + spaceWord(f.SpaceCompletion) + " (a typed space completes a fixed word at the console's prompt)")
 	inv.echo("  password-cache tiers: " + tierCSV(f.PasswordCacheTiers) + " (shell and console sessions that keep your network password in memory)")
+	inv.echo("  password-cache users: " + userCSV(f.PasswordCacheUserNames()) + " (turned it on for themselves)")
 	inv.echo("  password-cache idle: " + strconv.Itoa(f.PasswordCacheIdle) + " min")
 	inv.echo("  password-cache max: " + strconv.Itoa(f.PasswordCacheMax) + " h")
 	inv.echo("  color: " + f.Color + " (the console's lists: " + map[string]string{console.ColorAuto: "the terminal decides", console.ColorOn: "always in colour", console.ColorOff: "never in colour"}[f.Color] + ")")
@@ -170,4 +171,12 @@ func (inv *invocation) consoleServerSection(pol *console.Policy, consoleUsers []
 	}
 	inv.echo("")
 	return nil
+}
+
+// userCSV is a list of user names, or "none".
+func userCSV(l []string) string {
+	if len(l) == 0 {
+		return "none"
+	}
+	return strings.Join(l, ", ")
 }

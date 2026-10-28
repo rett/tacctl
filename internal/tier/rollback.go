@@ -26,13 +26,13 @@ func Sudoers023() string { return sudoers023 }
 func rules0219() []Rule {
 	return slices.DeleteFunc(slices.Clone(Rules), func(r Rule) bool {
 		return (r.Tier == Engineer && r.Cmd == "scope" && r.Sub == "mgmt-acl") ||
-			(r.Tier == Operator && r.Cmd == "console" && r.Sub == "system-shell")
+			(r.Tier == Operator && r.Cmd == "console" && (r.Sub == "system-shell" || r.Sub == "password-cache"))
 	})
 }
 
 // Sudoers0219 is the per-tier drop-in 0.2.19 wrote: this release's rules
 // without the engineer's row of 'scope mgmt-acl * mode' and the operator's
-// row of 'console system-shell' (0.2.20). A rollback
+// rows of 'console system-shell' and 'console password-cache' (0.2.20). A rollback
 // to 0.2.18 and 0.2.17 recognises it as an older text. It is derived (a rule
 // that moves on again makes its own frozen copy).
 func Sudoers0219() string { return sudoersFrom(rules0219()) }

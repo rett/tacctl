@@ -256,12 +256,15 @@ mappings of console.yaml that this release ignores stay in the file, and the
 release a rollback goes to reads them as it always did. Every target also takes out of
 .I console.yaml
 the settings of 0.2.20 that no older release reads:
-.B settings.color
-and
+.BR settings.color ,
 .B settings.system_shell_users
 (the system shell of single users; the tiers' list
 .B settings.system_shell_tiers
-stays) are removed and a
+stays) and
+.B settings.password_cache_users
+(the users who turned the password cache on; the cache's tiers and lifetimes in
+.B settings.password_cache
+stay, for the releases that have them) are removed and a
 .B settings.list_max
 of \-1 (never ask) is written as 1000, with every other setting kept and a
 snapshot first.
@@ -12004,8 +12007,52 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command console list-max
 .TP
+.BI "console password\-cache " "[ { on | off } ]"
+The caller's own choice of keeping the network password in memory for the
+session, off until the user turns it on; it is the permission of the tier
+.RB ( "console password\-cache tiers" )
+and this choice together that make the cache active in a session. With no
+argument it prints the tiers, the lifetimes, whether the caller's tier is
+allowed and the caller's setting. At the prompt of the shell and the console
+the same words are handled by the session itself:
+.B on
+saves the choice, for every later session, and starts the cache in the running
+one at once;
+.B off
+saves it, forgets a cached password
+.RB ( "password forgotten (console password\-cache off)" )
+and stops caching; with no argument it also says whether a password is cached
+now. When the tier is not allowed,
+.B on
+is refused in one sentence that names the fix and saves nothing. The words take no
+name: the root side takes the user from the one
+.BR sudo (8)
+was run by, so nobody sets another user's choice. Every user of the operator
+tier and up may run these three forms (the sudoers row names them exactly); the
+other forms are the superuser's. The choice is stored in
+.B settings.password_cache_users
+and logged as
+.BR "console set key=password\-cache item=user:" \fIname\fR.
+.B "user rename"
+moves it and
+.B "user remove"
+drops it, as for the system shell of a user. A plain
+.B "tacctl shell \-\-password\-cache"
+is an explicit request and needs only the permission of the tier.
+.\" BEGIN GENERATED: command console password-cache
+.RS
+.PP
+Requires: \fBoperator\fR. Every user of the operator tier and up may run it with no argument (the state) and with on or off (their own choice, which needs their tier to be allowed); tiers, idle, max and user need the superuser tier.
+.RE
+.\" END GENERATED: command console password-cache
+.TP
+.BI "console password\-cache user " "[ " name " [ clear ] ]"
+Show who turned the cache on (each with the tier), a user's setting, or clear it
+so that the cache is off for that user; a session the user has open keeps its
+cache until it ends or they turn it off. The superuser's.
+.TP
 .BI "console password\-cache tiers " "[ " csv "|none ]"
-Show or set the tiers whose shell and console sessions may keep the user's
+Show or set the tiers that are allowed to keep the user's
 network password in memory for the session, so that a device pull, a diff and
 the
 .B ssh
@@ -12015,7 +12062,8 @@ lines after it ask once
 .BR superuser ;
 default
 .BR none :
-off for every tier). The password lives only in the memory of the session's own
+off for every tier). A listed tier is only allowed: each user turns the cache
+on for themselves. The password lives only in the memory of the session's own
 process, in a locked page of a process marked not dumpable, and in no file, log,
 argument or environment; the agent is shut between lines. It is used for the
 lines that run
@@ -12049,12 +12097,6 @@ changes the password, when the clock goes backwards, and with the shell's word
 Root can read any process: the cache
 protects the password against other users and against its landing in files and
 logs.
-.\" BEGIN GENERATED: command console password-cache
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command console password-cache
 .TP
 .BI "console password\-cache idle " "[ " min " ]"
 Show or set how long a cached password lives without a use, in minutes (1 to
@@ -12537,7 +12579,7 @@ _console\-policy, \-\-version, \-v, hash, completion
 log tail, log search, log failures, log accounting, config validate,
 backup list, device check, device scan, device discover,
 device export, device config, console show, console check,
-console system\-shell, console forget
+console system\-shell, console password\-cache, console forget
 .TP
 .B engineer
 device add, device remove, device rename, device address,
@@ -12561,6 +12603,9 @@ An engineer lists the holds of the devices of their own scopes only; hold and re
 .TP
 .B config cisco
 An engineer may print the walkthrough and read source\-interface for a scope of their own; setting or unsetting source\-interface needs the superuser tier.
+.TP
+.B console password\-cache
+Every user of the operator tier and up may run it with no argument (the state) and with on or off (their own choice, which needs their tier to be allowed); tiers, idle, max and user need the superuser tier.
 .TP
 .B console system\-shell
 An operator may read it (no argument, a tier, user <name>, path); setting it for a tier or a user, and setting the path, need the superuser tier.

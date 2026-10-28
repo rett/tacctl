@@ -33,6 +33,7 @@ import (
 	"github.com/rett/tacctl/internal/askpass"
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/shell"
 )
 
 // How a shell run came by its password cache (shellRun.cacheMode).
@@ -100,6 +101,17 @@ func (c *passwordCache) EndLine() { c.ag.EndLine() }
 
 func (c *passwordCache) Forget(why string) bool { return c.ag.Forget(why) }
 
+// Holds reports whether a password is cached now.
+func (c *passwordCache) Holds() bool { return c.ag.Cached() }
+
+// Stop forgets the password, queueing the notice, and shuts the agent: the
+// cache is off for the rest of the session ('console password-cache off').
+func (c *passwordCache) Stop(why string) {
+	c.ag.Forget(why)
+	c.ag.Flush()
+	c.ag.Close()
+}
+
 func (c *passwordCache) Notices() []string {
 	c.ag.Flush() // events queued by other goroutines (a store over the socket)
 	c.mu.Lock()
@@ -142,6 +154,17 @@ func (inv *invocation) openPasswordCache(r shellRun, managed bool) *passwordCach
 		}
 		idle, max = i, m
 	}
+	c, err := inv.newPasswordCache(idle, max)
+	if err != nil {
+		_, _ = fmt.Fprintln(a.Out.Stderr, passwordCacheUnavailable(err))
+		return nil
+	}
+	return c
+}
+
+// newPasswordCache starts an agent with the lifetimes (the defaults for 0) and
+// its socket.
+func (inv *invocation) newPasswordCache(idle, max time.Duration) (*passwordCache, error) {
 	if idle <= 0 {
 		idle = askpass.DefaultIdle
 	}
@@ -151,22 +174,59 @@ func (inv *invocation) openPasswordCache(r shellRun, managed bool) *passwordCach
 	c := &passwordCache{}
 	ag, err := inv.hooks.agent(askpass.Options{UID: os.Geteuid(), Idle: idle, Max: max, Notify: c.note})
 	if err != nil {
-		_, _ = fmt.Fprintln(a.Out.Stderr, passwordCacheUnavailable(err))
-		return nil
+		return nil, err
 	}
-	dir, err := askpass.SocketDir(a.Env.Get, os.Geteuid())
+	dir, err := askpass.SocketDir(inv.app.Env.Get, os.Geteuid())
 	if err == nil {
 		_, _, err = ag.Listen(dir)
 	}
 	if err != nil {
 		ag.Close()
-		_, _ = fmt.Fprintln(a.Out.Stderr, passwordCacheUnavailable(err))
-		return nil
+		return nil, err
 	}
 	// The token Listen made is never handed out: the lines get their own.
 	ag.EndLine()
 	c.ag = ag
-	return c
+	return c, nil
+}
+
+// startPasswordCacheNow is shell.Options.CacheStart: 'console password-cache
+// on' has saved the person's choice, and the running session starts the
+// cache if the policy now says it is allowed for the tier and on for the
+// person (the answer is asked again, so a tier a superuser closed meanwhile
+// stays closed). The agent it returns replaces the session's (live).
+func (inv *invocation) startPasswordCacheNow(r shellRun, live **passwordCache) (shell.PasswordCache, error) {
+	pol, err := inv.callerPolicy(r)
+	switch {
+	case err != nil:
+		return nil, errors.New("password cache unavailable: the policy could not be read")
+	case !pol.PCAllowed:
+		return nil, errors.New("password cache unavailable: it is not allowed for your tier (a superuser allows it with: tacctl console password-cache tiers <tiers>)")
+	case !pol.PasswordCache:
+		return nil, errors.New("password cache unavailable: it is off in your settings (console password-cache on)")
+	}
+	c, err := inv.newPasswordCache(pol.PCIdle, pol.PCMax)
+	if err != nil {
+		return nil, errors.New(passwordCacheUnavailable(err))
+	}
+	*live = c
+	return c, nil
+}
+
+// callerPolicy asks the root side for the caller's policy line.
+func (inv *invocation) callerPolicy(r shellRun) (console.Remote, error) {
+	ctx, cancel := context.WithTimeout(inv.ctx, viewTimeout)
+	defer cancel()
+	args := append(append([]string{"-n"}, r.extraEnv...), r.exe, "_console-policy")
+	res, err := inv.app.Runner.Run(ctx, execx.Cmd{Name: "sudo", Args: args})
+	if err != nil || res.Code != 0 {
+		return console.Remote{}, errors.New("the policy could not be read")
+	}
+	pol, ok := console.ParseRemote(string(res.Stdout))
+	if !ok {
+		return console.Remote{}, errors.New("the policy could not be read")
+	}
+	return pol, nil
 }
 
 // plainShellCachePolicy is whether 'tacctl shell --password-cache' may have
@@ -179,16 +239,12 @@ func (inv *invocation) plainShellCachePolicy(r shellRun, managed bool) (allowed 
 	if !managed {
 		return true, askpass.DefaultIdle, askpass.DefaultMax
 	}
-	ctx, cancel := context.WithTimeout(inv.ctx, viewTimeout)
-	defer cancel()
-	args := append(append([]string{"-n"}, r.extraEnv...), r.exe, "_console-policy")
-	res, err := a.Runner.Run(ctx, execx.Cmd{Name: "sudo", Args: args})
-	if err != nil || res.Code != 0 {
+	pol, err := inv.callerPolicy(r)
+	if err != nil {
 		_, _ = fmt.Fprintln(a.Out.Stderr, "password cache unavailable: the policy could not be read")
 		return false, 0, 0
 	}
-	pol, ok := console.ParseRemote(string(res.Stdout))
-	if !ok || !pol.PasswordCache {
+	if !pol.PCAllowed {
 		_, _ = fmt.Fprintln(a.Out.Stderr, "password cache unavailable: it is not enabled for your tier (an administrator enables it with: tacctl console password-cache tiers <tiers>)")
 		return false, 0, 0
 	}

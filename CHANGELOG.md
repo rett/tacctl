@@ -325,6 +325,42 @@ current behaviour; this file is where history lives.
     write itself. The rollbacks to 0.2.18 and earlier rewrite the drop-in as
     before (the 0.2.19 text lacks all of the new patterns).
 
+21. **The password cache is the user's own choice, within the tier's
+    permission.** `console password-cache tiers` now only says which tiers
+    may use the cache; for a listed tier it is no longer on for everyone in
+    it. Each user turns it on for themselves, and it is off until they do:
+    `console password-cache on` is a word of the shell and the console (listed
+    by `?` and completed): it saves the choice for every later session and
+    starts the cache in the running one at once; `console password-cache off`
+    saves that, forgets a cached password (`password forgotten (console
+    password-cache off)`) and stops caching; with no argument it prints the
+    tiers, the limits, whether the caller's tier is allowed, the caller's
+    setting and, in a session, whether a password is cached now. When the tier
+    is not allowed, `on` is refused in one sentence naming the fix (`a
+    superuser allows it with: tacctl console password-cache tiers <tiers>`)
+    and saves nothing. The words are open to the operator tier and up and set
+    only the caller's own value: they take no name, the root side takes the
+    user from the one `sudo` was run by, and the sudoers drop-in grants exactly
+    `console password-cache`, `... on` and `... off` (a new row; the derived
+    0.2.19 text leaves it out); the other forms (`tiers`, `idle`, `max`, `user`)
+    stay the superuser's and are refused with the usual tier denial.
+    `console password-cache user [<name> [clear]]` lets a superuser list who
+    turned the cache on and clear a user's choice, and `console show` lists
+    them. The choice is `settings.password_cache_users` in `console.yaml`
+    (a map of user to true, written only when a user is on) and is logged as
+    `console set key=password-cache item=user:<name> from= to=`. `user rename`
+    moves it and `user remove` drops it (and `user add` drops a stale entry),
+    as for the system shell of a user (item 19). The `_console-policy` line
+    carries `password_cache=yes|no` (allowed and on: the console starts the
+    cache) and `pc_allowed=yes` (the permission alone, which `tacctl shell
+    --password-cache` still needs: that flag is an explicit request and works
+    as before). No older release reads the new key, so `tacctl rollback` to
+    any target removes it (the plan names the users) and keeps the cache's own
+    settings for the targets that have them; the older release has the cache
+    on for every user of a listed tier, as it always did. Upgrading: a console
+    that had the cache on for a tier has it off for every user until they turn
+    it on (docs/install/upgrading.md).
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config
