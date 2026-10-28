@@ -2,8 +2,9 @@ package devreg
 
 // Host-key pinning (docs/plans/operator-console.md 3.7): the keys a device
 // offers are read with ssh-keyscan (through the runner, as root, outbound
-// only, no authentication; for a legacy-ssh device, which ssh-keyscan cannot
-// negotiate with, the built-in client is the fallback), pinned in
+// only, no authentication; for a device that answers it with no key, and for
+// a legacy-ssh device, which ssh-keyscan cannot negotiate with, the built-in
+// client is the fallback), pinned in
 // devices.yaml as '<type> <base64>', and shown as the SHA256 fingerprints
 // ssh prints. Fingerprints are computed here with the standard library:
 // base64 (unpadded) of the SHA-256 of the key blob, as 'ssh-keygen -l'
@@ -228,10 +229,10 @@ func CrossCheckKeys(session, scan []HostKey) CrossCheck {
 // ssh-rsa type by its algorithm name too, which only makes ssh-keyscan offer
 // the SHA-1 signature: it still cannot do the SHA-1 key exchanges and CBC
 // ciphers old IOS needs, so it reads nothing from such a device (ErrNoAnswer
-// after its banner). For a legacy-ssh device Scan therefore falls back to a
-// KeyFallback, the built-in ssh client (internal/devssh), which negotiates
-// them; '--no-host-key' and a later 'tacctl device hostkey <name> set
-// SHA256:<fp>' remain for a device neither can read.
+// after its banner). Scan therefore falls back to a KeyFallback, the built-in
+// ssh client (internal/devssh), which negotiates them; '--no-host-key' and a
+// later 'tacctl device hostkey <name> set SHA256:<fp>' remain for a device
+// neither can read.
 //
 // ssh-keyscan opens one connection per key type at once, so a device that
 // limits or drops parallel connections, or mishandles the long algorithm
@@ -333,9 +334,10 @@ func Scan(ctx context.Context, r execx.Runner, address string, port int, legacy 
 // of all the types that answer are returned, as ssh-keyscan's would be. A
 // device that did not answer at all (refused, timed out, no route) gets no
 // second try, so that an unreachable one costs a single ssh-keyscan. If
-// still no key was read, a legacy device's fallback is tried (also when
-// ssh-keyscan could not be run or the device did not answer at all), and its
-// keys are returned as ssh-keyscan's would be. When all fail the
+// still no key was read, the fallback is tried, for any device that was
+// reached and for a legacy device also when ssh-keyscan could not be run or
+// the device did not answer at all (an unreachable modern device is not
+// dialled a second time), and its keys are returned as ssh-keyscan's would be. When all fail the
 // error is ssh-keyscan's (a NoAnswerError when the device was reached), so
 // a caller's ErrNoAnswer handling is unchanged; a cancelled context is
 // returned as it is. A nil fallback is Scan.
@@ -356,7 +358,7 @@ func ScanWith(ctx context.Context, r execx.Runner, address string, port int, leg
 			return found, nil
 		}
 	}
-	if fallback == nil || !legacy {
+	if fallback == nil || !(legacy || (noAnswer && reached)) {
 		return nil, scanFailure(err, tried)
 	}
 	fk, ferr := fallback(ctx, address, port)

@@ -1,10 +1,10 @@
 package devssh
 
 // A host-key scan with the built-in client (the fallback of 'device add'
-// and the re-scans for a legacy-ssh device): the system's ssh-keyscan cannot
-// negotiate the SHA-1 key exchanges and CBC ciphers old IOS offers, so it
-// reads nothing from such a device, while this client does (the Legacy
-// lists of Dial). The key exchange ends before authentication, so the scan
+// and the re-scans for a legacy-ssh device, and for a device that answered
+// ssh-keyscan with no key): the system's ssh-keyscan cannot negotiate the
+// SHA-1 key exchanges and CBC ciphers old IOS offers, so it reads nothing
+// from such a device, while this client does (the Legacy lists of Dial). The key exchange ends before authentication, so the scan
 // stops in the host key callback: no credential is ever sent.
 
 import (
@@ -49,21 +49,27 @@ var errScanned = errors.New("host key read")
 
 // ScanHostKeys reads the host keys the ssh server at host:port offers, as
 // '<type> <base64>' texts (devreg.HostKey.String's form), in the order of
-// ssh-ed25519, ecdsa-sha2-*, ssh-rsa. It negotiates with the Legacy
-// algorithm sets of Dial (a superset of the defaults, so it reads a modern
-// device as well) and ends each connection in the host key callback, before
-// authentication: no password or other credential is sent, and nothing is
-// verified (what the scan reads is what the caller shows the operator to
-// compare). A nil dialer dials the address; timeout 0 is
+// ssh-ed25519, ecdsa-sha2-*, ssh-rsa. Each connection ends in the host key
+// callback, before authentication: no password or other credential is sent,
+// and nothing is verified (what the scan reads is what the caller shows the
+// operator to compare). A nil dialer dials the address; timeout 0 is
 // DefaultConnectTimeout.
 //
-// The first connection offers every algorithm and reads the device's
-// preferred key; one more short connection (ScanAttemptTimeout) is made per
-// key type that is still missing, ignoring those that fail, so that a
-// device with several key types shows them all. Only a failure of the first
-// connection is an error (the typed errors of errors.go: ErrUnreachable,
-// ErrTimeout, ErrHandshake, or the context's own error); no key read and no
-// error does not happen.
+// A device may drop a connection whose key exchange offer is long, as the
+// one that includes the legacy algorithms is. The scan therefore starts
+// with the short offer of the library's defaults and a single host key
+// algorithm, ed25519 first, then each of the other key types in turn (one
+// connection per type, one after the other, the failures ignored); a device
+// that shows a key to that is done. Only when no key was read that way does
+// it make the connections of an old device: the first one offers every
+// algorithm, with the Legacy lists of Dial (a superset of the defaults), and
+// reads the device's preferred key, and one more short connection
+// (ScanAttemptTimeout) is made per key type that is still missing, ignoring
+// those that fail, so that a device with several key types shows them all.
+// Only a failure of the first connection is an error (the typed errors of
+// errors.go: ErrUnreachable, ErrTimeout, ErrHandshake, or the context's own
+// error); a device that does not answer the first one is not asked again,
+// and no key read and no error does not happen.
 func ScanHostKeys(ctx context.Context, host string, port int, timeout time.Duration, dialer Dialer) ([]string, error) {
 	if timeout <= 0 {
 		timeout = DefaultConnectTimeout
@@ -72,22 +78,48 @@ func ScanHostKeys(ctx context.Context, host string, port int, timeout time.Durat
 		port = DefaultPort
 	}
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
-	first, err := scanOnce(ctx, addr, hostKeyAlgorithms(nil, true), timeout, dialer)
-	if err != nil {
-		return nil, err
-	}
-	got := []ssh.PublicKey{first}
-	for _, f := range scanFamilies {
+	var got []ssh.PublicKey
+families:
+	for i, f := range scanFamilies {
 		if err := ctx.Err(); err != nil {
 			return nil, contextError(ctx, addr)
 		}
-		if hasKeyType(got, f.typ) {
-			continue
+		t := min(timeout, ScanAttemptTimeout)
+		if i == 0 {
+			t = timeout
 		}
-		// A type the device does not hold fails the handshake (no common
-		// algorithm); a failure here only means that key is not offered.
-		if k, err := scanOnce(ctx, addr, f.algs, min(timeout, ScanAttemptTimeout), dialer); err == nil && !hasKeyType(got, k.Type()) {
+		k, err := scanOnce(ctx, addr, f.algs, false, t, dialer)
+		switch {
+		case err == nil:
 			got = append(got, k)
+		case i == 0 && (errors.Is(err, ErrUnreachable) || errors.Is(err, ErrTimeout) || ctx.Err() != nil):
+			// Nobody answers: asking again for the other types would only
+			// wait again.
+			return nil, err
+		case errors.Is(err, ErrUnreachable) || errors.Is(err, ErrTimeout):
+			// The device went away between two connections.
+			break families
+		}
+	}
+	if len(got) == 0 {
+		// An old device: its key exchanges and ciphers are not the defaults.
+		first, err := scanOnce(ctx, addr, hostKeyAlgorithms(nil, true), true, timeout, dialer)
+		if err != nil {
+			return nil, err
+		}
+		got = []ssh.PublicKey{first}
+		for _, f := range scanFamilies {
+			if err := ctx.Err(); err != nil {
+				return nil, contextError(ctx, addr)
+			}
+			if hasKeyType(got, f.typ) {
+				continue
+			}
+			// A type the device does not hold fails the handshake (no common
+			// algorithm); a failure here only means that key is not offered.
+			if k, err := scanOnce(ctx, addr, f.algs, true, min(timeout, ScanAttemptTimeout), dialer); err == nil && !hasKeyType(got, k.Type()) {
+				got = append(got, k)
+			}
 		}
 	}
 	if err := ctx.Err(); err != nil {
@@ -129,9 +161,11 @@ func knownScanType(typ string) bool {
 	return false
 }
 
-// scanOnce connects, offers algs as host key algorithms and returns the key
-// the device presents; the connection is closed before it returns.
-func scanOnce(ctx context.Context, addr string, algs []string, timeout time.Duration, dialer Dialer) (ssh.PublicKey, error) {
+// scanOnce connects, offers algs as host key algorithms (with the legacy key
+// exchanges and ciphers added when legacy is set, the library's defaults
+// otherwise) and returns the key the device presents; the connection is
+// closed before it returns.
+func scanOnce(ctx context.Context, addr string, algs []string, legacy bool, timeout time.Duration, dialer Dialer) (ssh.PublicKey, error) {
 	hs, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	dial := dialer
@@ -155,7 +189,9 @@ func scanOnce(ctx context.Context, addr string, algs []string, timeout time.Dura
 		HostKeyAlgorithms: algs,
 		ClientVersion:     "SSH-2.0-tacctl",
 	}
-	addLegacyAlgorithms(cfg)
+	if legacy {
+		addLegacyAlgorithms(cfg)
+	}
 	unhook := context.AfterFunc(hs, func() { _ = conn.Close() })
 	_, _, _, err = ssh.NewClientConn(conn, addr, cfg)
 	unhook()

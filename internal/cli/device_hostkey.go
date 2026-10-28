@@ -53,6 +53,22 @@ func (inv *invocation) scanDevice(addr string, port int, legacy bool) ([]devreg.
 	return devreg.ScanWith(inv.ctx, inv.app.Runner, addr, port, legacy, inv.hooks.scanFallback(inv))
 }
 
+// scanLearningLegacy is the scan of 'device enroll' and 'device collect', which
+// find out whether a device needs legacy-ssh: ssh-keyscan alone (with its
+// one-type retry, without the built-in client) first, so that a device only
+// the built-in client reads is not mistaken for a modern one, then the legacy
+// scan (the built-in client among it). legacy is whether the keys came from
+// the legacy scan; a device neither reads is the first scan's error.
+func (inv *invocation) scanLearningLegacy(addr string, port int) (keys []devreg.HostKey, legacy bool, err error) {
+	keys, err = devreg.ScanWith(inv.ctx, inv.app.Runner, addr, port, false, nil)
+	if errors.Is(err, devreg.ErrNoAnswer) && inv.ctx.Err() == nil {
+		if k2, err2 := inv.scanDevice(addr, port, true); err2 == nil && len(k2) > 0 {
+			return k2, true, nil
+		}
+	}
+	return keys, false, err
+}
+
 // scanKeys reads the keys at addr; a device that does not answer is the
 // refusal that names it, ending with what to do (orElse).
 func (inv *invocation) scanKeys(addr string, port int, legacy bool, orElse ...string) ([]devreg.HostKey, error) {

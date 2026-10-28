@@ -284,8 +284,9 @@ device hostkey <name> set SHA256:<fp>
     that (one that limits the simultaneous connections ssh-keyscan opens, or drops its long
     offer) is asked again one key type at a time, ed25519, ecdsa, rsa (and ssh-rsa with
     `--legacy-ssh`), each with `-T 3`; the keys of every type that answers are returned, and a
-    type that fails does not fail the scan. A device that refuses the connection or does not
-    answer is not asked again.
+    type that fails does not fail the scan. If that reads nothing either, tacctl's own ssh client
+    reads the keys (any device, not only `--legacy-ssh` ones; no credential is sent). A device
+    that refuses the connection or does not answer is not asked again.
 
 device ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]
 

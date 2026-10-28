@@ -1,15 +1,19 @@
 package devssh_test
 
 import (
+	"bufio"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/binary"
 	"errors"
+	"io"
 	"net"
 	"slices"
 	"strconv"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -170,5 +174,121 @@ func TestScanHostKeysContextCancel(t *testing.T) {
 	_, err = devssh.ScanHostKeys(ctx, host, port, time.Minute, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("already cancelled: err = %v, want context.Canceled", err)
+	}
+}
+
+// pickyDial dials srv through a relay that reads the client's key exchange
+// offer (the first binary packet) and drops the connection when it is longer
+// than limit bytes, as a device that mishandles a long algorithm offer does.
+// lens collects the length of every offer.
+type pickyDial struct {
+	srv   *fakedev.Server
+	limit int
+	mu    sync.Mutex
+	lens  []int
+}
+
+func (p *pickyDial) dial(ctx context.Context, _, _ string) (net.Conn, error) {
+	up, err := (&net.Dialer{}).DialContext(ctx, "tcp", p.srv.Addr())
+	if err != nil {
+		return nil, err
+	}
+	client, relay := net.Pipe()
+	go func() {
+		defer func() { _ = relay.Close(); _ = up.Close() }()
+		go func() { _, _ = io.Copy(relay, up); _ = relay.Close() }()
+		in := bufio.NewReader(relay)
+		id, err := in.ReadBytes('\n')
+		if err != nil {
+			return
+		}
+		_, _ = up.Write(id)
+		var hdr [4]byte
+		if _, err := io.ReadFull(in, hdr[:]); err != nil {
+			return
+		}
+		n := int(binary.BigEndian.Uint32(hdr[:]))
+		p.mu.Lock()
+		p.lens = append(p.lens, n)
+		p.mu.Unlock()
+		if n > p.limit {
+			return
+		}
+		_, _ = up.Write(hdr[:])
+		_, _ = io.CopyN(up, in, int64(n))
+		_, _ = io.Copy(up, in)
+	}()
+	return client, nil
+}
+
+func (p *pickyDial) offers() []int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.lens)
+}
+
+// A device that drops a connection whose algorithm offer is long (the Legacy
+// lists of Dial plus every host key algorithm) is read with short offers: ed25519
+// alone first, with the library's default algorithms.
+func TestScanHostKeysShortOfferFirst(t *testing.T) {
+	scan := func(srv *fakedev.Server, limit int) ([]string, []int, error) {
+		p := &pickyDial{srv: srv, limit: limit}
+		host, port := scanArgs(t, srv)
+		keys, err := devssh.ScanHostKeys(bg(), host, port, 5*time.Second, p.dial)
+		return keys, p.offers(), err
+	}
+
+	// The size of the short offer and of the long one, as the scan makes them.
+	modern := serve(t, transcript(t, nil))
+	_, short, err := scan(modern, 1<<20)
+	if err != nil || len(short) == 0 {
+		t.Fatalf("modern device: offers %v, err %v", short, err)
+	}
+	old := serve(t, transcript(t, nil), fakedev.WithLegacy())
+	_, long, err := scan(old, 1<<20)
+	if err != nil || len(long) < 2 {
+		t.Fatalf("old device: offers %v, err %v", long, err)
+	}
+	longest := slices.Max(long)
+	if slices.Max(short) >= longest {
+		t.Fatalf("the short offers (%v bytes) are not shorter than the legacy one (%d)", short, longest)
+	}
+	limit := (slices.Max(short) + longest) / 2
+
+	// A device that drops anything longer: read, with short offers only.
+	srv := serve(t, transcript(t, nil))
+	keys, offers, err := scan(srv, limit)
+	if err != nil || !slices.Equal(keys, []string{fakedev.HostKey()}) {
+		t.Fatalf("picky device: keys %q, err %v", keys, err)
+	}
+	if len(offers) == 0 || slices.Max(offers) > limit {
+		t.Errorf("offers %v, want none longer than %d bytes", offers, limit)
+	}
+	if srv.Attempts() != 0 || srv.Logins() != 0 {
+		t.Errorf("attempts %d, logins %d", srv.Attempts(), srv.Logins())
+	}
+
+	// One that holds only an rsa key: the other types fail the handshake
+	// and are skipped, every offer is short.
+	rk, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rsaSigner, err := ssh.NewSignerFromKey(rk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys, offers, err = scan(serve(t, transcript(t, nil), fakedev.WithHostKey(rsaSigner)), limit)
+	if err != nil || !slices.Equal(keys, []string{fakedev.KeyText(rsaSigner.PublicKey())}) {
+		t.Fatalf("rsa-only: keys %q, err %v", keys, err)
+	}
+	if len(offers) != len(short) || slices.Max(offers) > limit {
+		t.Errorf("offers %v, want %d, none longer than %d", offers, len(short), limit)
+	}
+
+	// An old device still falls through to the long offer.
+	keys, offers, err = scan(serve(t, transcript(t, nil), fakedev.WithLegacy()), 1<<20)
+	if err != nil || len(keys) != 1 || slices.Max(offers) != longest {
+		t.Errorf("old device: keys %q, offers %v, err %v", keys, offers, err)
 	}
 }

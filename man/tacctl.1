@@ -7214,8 +7214,9 @@ connection or does not answer is not asked again; for a
 device that
 .B ssh\-keyscan
 cannot read, because it cannot do the SHA-1 key exchange and CBC ciphers
-such a device offers, with tacctl's own ssh client, which stops at the host key,
-before authentication), keeps them in
+such a device offers, and for any device that accepted the connection but gave
+no key even one type at a time, with tacctl's own ssh client, which stops at the
+host key, before authentication), keeps them in
 .IR devices.yaml ,
 and prints their
 .B SHA256:
@@ -7533,8 +7534,10 @@ key is asked again one key type at a time, each with
 .BR "\-T 3" ,
 and the keys of every type that answers are pinned; and when
 .B ssh\-keyscan
-reads no key, tacctl's own ssh client reads them, stopping at the host key
-without sending a password) and pinned. Their
+reads no key from a device with
+.B \-\-legacy\-ssh
+or one that accepted the connection, tacctl's own ssh client reads them,
+stopping at the host key without sending a password) and pinned. Their
 .B SHA256:
 fingerprints are printed with the command that shows them on the device's
 console; compare them before the first connection. With

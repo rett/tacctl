@@ -264,6 +264,22 @@ current behaviour; this file is where history lives.
     fast and as parallel (eight at a time) for unreachable devices, and a
     silent one costs at most 9 seconds more (12 with `legacy-ssh`).
 
+18. **The built-in ssh client reads the host keys of any device ssh-keyscan
+    cannot.** Only a `legacy-ssh` device was handed to it; now a device that
+    accepted the connection and gave `ssh-keyscan` no key, not even one type
+    at a time (item 17), is read by it as well, in `device add`, `device
+    enroll`, `device collect`, `device onboard`, `device hostkey accept|set`,
+    `device scan` and `device check`. A device that refused the connection or
+    did not answer is not dialled a second time. The client no longer opens
+    with its long offer of the legacy key exchanges and ciphers and every host
+    key algorithm, which some devices drop: it asks ed25519 alone with the
+    library's default algorithms, then each of the other key types in turn
+    with those, and makes the connections of an old device (the legacy lists,
+    the preferred key first) only when none of them read a key. `device enroll`
+    and `device collect` still find out whether a device needs `legacy-ssh`:
+    a device only the built-in client reads is registered with it, one that
+    `ssh-keyscan` reads one type at a time is not.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

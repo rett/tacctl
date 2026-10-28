@@ -161,7 +161,8 @@ func TestKeyscanCmd(t *testing.T) {
 
 // For a legacy device that ssh-keyscan reads nothing from (or cannot be
 // run for), the fallback's keys are returned; both failing keeps
-// ssh-keyscan's error; a device without legacy never reaches the fallback.
+// ssh-keyscan's error; a device that did not answer at all, unless it is
+// legacy, never reaches the fallback.
 func TestScanWithFallback(t *testing.T) {
 	ed, rsa := testKey(t, "ed25519"), testKey(t, "rsa")
 	ctx := context.Background()
@@ -212,11 +213,34 @@ func TestScanWithFallback(t *testing.T) {
 		}
 	}
 
-	// Not legacy, or ssh-keyscan answered: the fallback is not asked.
+	// Not legacy, but the device answered with a banner and no key (after
+	// the one-type retry): the fallback is asked, as for a legacy one.
 	calls = nil
-	if _, err := ScanWith(ctx, silent(), "10.99.0.1", 22, false, answer([]HostKey{rsa}, nil)); !errors.Is(err, ErrNoAnswer) {
-		t.Errorf("not legacy: %v", err)
+	if keys, err := ScanWith(ctx, silent(), "10.99.0.1", 22, false, answer([]HostKey{rsa}, nil)); err != nil || !reflect.DeepEqual(keys, []HostKey{rsa}) {
+		t.Errorf("not legacy, reached: %v %v", keys, err)
 	}
+	if !reflect.DeepEqual(calls, []string{"10.99.0.1 22"}) {
+		t.Errorf("not legacy, reached: calls %q", calls)
+	}
+	var na *NoAnswerError
+	if _, err := ScanWith(ctx, silent(), "10.99.0.1", 22, false, answer(nil, errors.New("handshake failed"))); !errors.As(err, &na) || !na.Builtin ||
+		!reflect.DeepEqual(na.OneByOne, []string{"ed25519", "ecdsa", "rsa"}) {
+		t.Errorf("not legacy, both fail: %v", err)
+	}
+	// Not reached (it refused, or timed out): no second dial, no fallback.
+	calls = nil
+	unreachable := &fake.Runner{Strict: true}
+	unreachable.On([]string{"ssh-keyscan"}, execx.Result{Stderr: []byte("connect (`10.99.0.1'): Connection refused\n")})
+	if _, err := ScanWith(ctx, unreachable, "10.99.0.1", 22, false, answer([]HostKey{rsa}, nil)); err != ErrNoAnswer || len(calls) != 0 || unreachable.Count("ssh-keyscan") != 1 {
+		t.Errorf("not legacy, unreachable: %v calls %q runs %d", err, calls, unreachable.Count("ssh-keyscan"))
+	}
+	// ssh-keyscan that cannot be run is not a reason to dial a modern device.
+	missing := &fake.Runner{}
+	missing.Missing("ssh-keyscan")
+	if _, err := ScanWith(ctx, missing, "10.99.0.1", 22, false, answer([]HostKey{rsa}, nil)); err == nil || errors.Is(err, ErrNoAnswer) || len(calls) != 0 {
+		t.Errorf("not legacy, no ssh-keyscan: %v calls %q", err, calls)
+	}
+	// ssh-keyscan answered: the fallback is not asked.
 	r = &fake.Runner{Strict: true}
 	r.On([]string{"ssh-keyscan"}, execx.Result{Stdout: []byte("10.99.0.1 " + ed.String() + "\n")})
 	if keys, err := ScanWith(ctx, r, "10.99.0.1", 22, true, answer([]HostKey{rsa}, nil)); err != nil || !reflect.DeepEqual(keys, []HostKey{ed}) {
@@ -236,13 +260,17 @@ func TestScanWithFallback(t *testing.T) {
 		t.Errorf("fallback called after cancel: %q", calls)
 	}
 
-	// RescanKeys hands the fallback to every legacy target.
+	// RescanKeys hands the fallback to every target ssh-keyscan reached.
 	res := RescanKeys(ctx, silent(), []KeyTarget{
 		{Name: "old", Address: "10.99.0.1", Port: 22, Legacy: true},
 		{Name: "new", Address: "10.99.0.2", Port: 22},
 	}, answer([]HostKey{rsa}, nil))
-	if len(res[0].Keys) != 1 || !errors.Is(res[1].Err, ErrNoAnswer) {
+	if len(res[0].Keys) != 1 || len(res[1].Keys) != 1 {
 		t.Errorf("rescan: %+v", res)
+	}
+	res = RescanKeys(ctx, unreachable, []KeyTarget{{Name: "new", Address: "10.99.0.2", Port: 22}}, answer([]HostKey{rsa}, nil))
+	if !errors.Is(res[0].Err, ErrNoAnswer) {
+		t.Errorf("rescan, unreachable: %+v", res)
 	}
 }
 
