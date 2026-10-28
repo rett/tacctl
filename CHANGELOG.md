@@ -291,6 +291,12 @@ current behaviour; this file is where history lives.
     among the sections it does not plan, and its report names the
     walkthrough's break-glass step).
 
+19. **`breakglass hold` names `root` for Junos devices only.** The
+    confirmation of a hold lists the local accounts of the device's scope
+    that become the only way in. `root` is a Junos account, so it is listed
+    for a Junos device and left out for a Cisco or WTI one (a scope whose only
+    entry is `root` reads `no local account is recorded` there).
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

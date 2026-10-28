@@ -36,6 +36,7 @@ import (
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/cidr"
 	"github.com/rett/tacctl/internal/conf"
+	"github.com/rett/tacctl/internal/devices"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/model"
@@ -742,11 +743,15 @@ func (inv *invocation) holdCheck(r holdRequest, f *devreg.File, res *devreg.Reso
 	}
 	c = holdCandidate{req: r, e: e, scope: info.Scope, vendor: e.Vendor}
 	c.local = "no local account is recorded for scope '" + info.Scope + "' (tacctl scope breakglass " + info.Scope + " add <name>)"
-	if us := policy.BreakGlassUsers(inv.app.Conf(), info.Scope); len(us) > 0 {
-		parts := make([]string, len(us))
-		for i, u := range us {
-			parts[i] = u.Name + " [" + u.Role + "]"
+	var parts []string
+	for _, u := range policy.BreakGlassUsers(inv.app.Conf(), info.Scope) {
+		// 'root' is the Junos system account: no other vendor's device has it
+		if devices.IsJunosRoot(u.Name) && e.Vendor != "juniper" {
+			continue
 		}
+		parts = append(parts, u.Name+" ["+u.Role+"]")
+	}
+	if len(parts) > 0 {
 		c.local = strings.Join(parts, ", ")
 	}
 	if c.isHost() {
