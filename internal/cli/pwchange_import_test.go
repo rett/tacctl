@@ -32,13 +32,15 @@ func TestStoreImportRefusesAFileWithCarvedUsers(t *testing.T) {
 	if sb.read("state/store.yaml") != before {
 		t.Error("a refused import changed the store")
 	}
-	// forced, the user comes back as the file shows him: the server scope, no requirement
+	// forced, the user comes back with the scopes the file shows him (the
+	// server's), and the requirement is carried over from the store
 	sb.run("", []string{"store", "import", "--replace", "--force"})
 	sb.expect(0, "Dropped (--force)", "")
-	if out := plain(sb.out.String()); !strings.Contains(out, "user 'bob': cut to this server's own scope") {
-		t.Errorf("--force does not list the user:\n%s", out)
+	if out := plain(sb.out.String()); !strings.Contains(out, "user 'bob': cut to this server's own scope") ||
+		!strings.Contains(out, "kept the required password change of 1 user(s) from the existing store") {
+		t.Errorf("--force does not list the user or the flag kept:\n%s", out)
 	}
-	if got := flaggedUsers(t, sb); got != "" {
+	if got := flaggedUsers(t, sb); got != "bob" {
 		t.Errorf("flagged after the forced import: %q", got)
 	}
 	// a file without a carved user imports as before
@@ -71,5 +73,27 @@ func TestStoreImportNamesLockdownCarvedUsers(t *testing.T) {
 	out := plain(sb.out.String() + sb.err.String())
 	if sb.code == 0 || !strings.Contains(out, "user 'bob': cut out of the scope an emergency lockdown locks (tacacs)") || strings.Contains(out, "'nobody'") {
 		t.Errorf("exit %d\n%s", sb.code, out)
+	}
+}
+
+// A flagged user whose only scope is the server's is rendered with that scope,
+// so the file names nobody as carved and the import needs no --force: the
+// requirement, which the file cannot hold, is carried over from the store, so
+// the import does not lift it.
+func TestStoreImportKeepsTheRequirementOfAUserOfTheServerScopeOnly(t *testing.T) {
+	sb := pwSandbox(t)
+	sb.run("", []string{"user", "scope", "bob", "replace", "srv"})
+	sb.expect(0, "", "")
+	sb.asAlice("", "user", "require-password-change", "bob")
+	sb.expect(0, "Flagged 1", "")
+	sb.run("", []string{"config", "render"})
+	sb.expect(0, "", "")
+	if strings.Contains(sb.renderedConfig(), "tacctl-carved") {
+		t.Fatalf("a marker for a user with no other scope:\n%s", sb.renderedConfig())
+	}
+	sb.run("", []string{"store", "import", "--replace"})
+	sb.expect(0, "kept the required password change of 1 user(s) from the existing store", "")
+	if got := flaggedUsers(t, sb); got != "bob" {
+		t.Errorf("flagged after the import: %q", got)
 	}
 }

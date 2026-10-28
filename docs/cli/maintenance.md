@@ -32,7 +32,9 @@ store import [--check|--force] [--replace] [<file>]
                                              Import an old-style tacquito.yaml (default: the live
                                              one). --check writes nothing and proves equivalence;
                                              --force drops what the store cannot represent;
-                                             --replace overwrites a store
+                                             --replace overwrites a store (keeping what the
+                                             file cannot hold: password dates, a required
+                                             password change)
 store rollback                               Restore the pre-store tacquito.yaml, remove the store,
                                              restart (legacy read-only mode)
 ```

@@ -5398,12 +5398,15 @@ fell keep their old groups until
 A rendered file whose users section names users it cut out of their scopes (a
 required password change, an emergency lockdown: a
 .B "# tacctl-carved reason= protocol= users="
-comment) holds neither the scopes they had nor the requirement, so each is
-listed as something the store cannot represent and the import (and
+comment) does not hold the scopes they had, so each is listed as something the
+store cannot represent and the import (and
 .BR \-\-check )
 fails unless
 .B \-\-force
-is given.
+is given. A required password change, which no rendered file holds, is carried
+over from the existing store
+.RB ( \-\-replace ),
+as the password dates are: an import never lifts it.
 .\" BEGIN GENERATED: command store import
 .RS
 .PP

@@ -338,10 +338,14 @@ current behaviour; this file is where history lives.
     `# tacctl-carved reason=password-change|lockdown protocol=tacacs users=`
     comment of its users section, and `store import` (`--check` too) of such a
     file, the live one included, lists each as something the store cannot
-    represent and needs `--force`: the file holds neither the scopes the user
-    had nor the requirement, so a plain `store import --replace` would have
-    brought a flagged user (or a locked group's member) back with the server
-    scope only and no flag. A release before 0.2.20 refuses the key, so `tacctl rollback` to any target
+    represent and needs `--force`: the file does not hold the scopes the user
+    had, so a plain `store import --replace` would have brought a flagged user
+    (or a locked group's member) back with the server scope only. The
+    requirement itself, which no rendered file holds, is carried over from the
+    existing store as the password dates are (`kept the required password
+    change of N user(s) from the existing store`), so no import lifts it, the
+    forced one and that of a user whose only scope is the server's (whom the
+    comment does not name) included. A release before 0.2.20 refuses the key, so `tacctl rollback` to any target
     removes it after a snapshot and warns which users who are not superusers
     get their device access back with the password they were to change
     (`--apply` needs `--yes`).

@@ -21,14 +21,16 @@ import (
 
 // carryOver is _carry_over: re-importing over an existing store keeps what
 // a tacquito.yaml cannot carry (scope protocols, vendor attributes and
-// tagged addresses, password dates, the saved hash of a disabled user).
+// tagged addresses, password dates, the saved hash of a disabled user, a
+// required password change: the rendered file holds a flagged user, but not
+// the flag).
 func carryOver(s *Store, existing string, rep *LegacyReport) {
 	old, err := Load(existing)
 	if err != nil {
 		rep.note("existing store could not be read (%s); nothing carried over", err.Error())
 		return
 	}
-	var keptProtocols, keptDates, keptHashes, keptVendor int
+	var keptProtocols, keptDates, keptHashes, keptVendor, keptFlags int
 	oldScopes, oldUsers := old.section("scopes"), old.section("users")
 	scopes := s.section("scopes")
 	for name, sv := range scopes.All() {
@@ -73,6 +75,10 @@ func carryOver(s *Store, existing string, rep *LegacyReport) {
 			u.Set("hash", get(prev, "hash"))
 			keptHashes++
 		}
+		if !truthy(get(u, "password_change_required")) && truthy(get(prev, "password_change_required")) {
+			u.Set("password_change_required", true)
+			keptFlags++
+		}
 	}
 	if keptProtocols > 0 {
 		rep.note("kept the protocols filter of %d scope(s) from the existing store", keptProtocols)
@@ -85,6 +91,9 @@ func carryOver(s *Store, existing string, rep *LegacyReport) {
 	}
 	if keptHashes > 0 {
 		rep.note("kept the saved password of %d disabled user(s) from the existing store", keptHashes)
+	}
+	if keptFlags > 0 {
+		rep.note("kept the required password change of %d user(s) from the existing store", keptFlags)
 	}
 }
 
