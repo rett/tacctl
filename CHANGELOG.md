@@ -19,18 +19,22 @@ current behaviour; this file is where history lives.
    for each service: `permit-tcp-22`, `permit-udp-161-162`, `permit-tcp-any`,
    `permit-icmp`) and has no `default-accept` term, so the implicit discard
    drops the rest; the `permit-snmp` and `deny-snmp` terms stay and the `lo0`
-   application stays a comment. When the device authenticates against another
-   address than the one tacctl reaches it from (`--server`, a RADIUS listener
-   bound to another address, `--source`), that address is not a source of
-   `permit-mgmt`: the device starts those sessions, so a term of its own,
-   `permit-auth-replies`, after the permit terms, accepts only the replies of
-   the configured protocol from it (tcp from source port `tacacs` for TACACS+,
-   udp from `radius` and `radacct`, the listener's ports, for RADIUS), and ssh
-   and every other protocol from it stay dropped, unless the permit list holds
-   the address. The comment says what stops once the filter is on `lo0`
-   (routing protocols carried over IP from neighbours outside the list, BFD
-   included, TACACS+ and RADIUS replies from a server that is not in it, NTP,
-   syslog and DHCP, SNMP from other sources but its clients, every other
+   application stays a comment. The walkthrough has a second server address
+   only when the device authenticates against another address than the one
+   tacctl reaches it from: `--server`, `--source` alone (the device is still
+   told the address detected for the server), or a RADIUS listener bound to
+   another address. With none of them, or with both given the same, there is
+   one address and `permit-mgmt` holds one source /32 for it. The second
+   address is not a source of `permit-mgmt`: the device starts those sessions,
+   so a term of its own, `permit-auth-replies`, after the permit terms,
+   accepts only the replies of the configured protocol from it (tcp from
+   source port `tacacs` for TACACS+, udp from `radius` and `radacct`, the
+   listener's ports, for RADIUS), and ssh and every other protocol from it
+   stay dropped, unless the permit list holds the address. The comment says
+   what stops once the filter is on `lo0` (routing protocols carried over IP
+   from neighbours outside the list, BFD included, TACACS+ and RADIUS replies
+   from a server that is not in it, NTP, syslog and DHCP, SNMP from sources
+   outside the list other than its clients, which still poll, every other
    protocol; IS-IS is not carried over IP, so a `family inet` filter on `lo0`
    neither stops nor permits it), and to keep a console session open and
    commit with `commit confirmed`. `device config plan` and `device config

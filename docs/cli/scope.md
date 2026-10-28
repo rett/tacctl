@@ -258,22 +258,25 @@ scope mgmt-acl <name> mode [ssh-only|strict]
     accepts every protocol from the permit list (an entry with services keeps only those services, a
     plain entry accepts everything from its source; the tacctl server's own address stays first),
     keeps the SNMP client terms and has no `default-accept` term, so the implicit discard at the end
-    of the filter drops the rest. When the device authenticates against another address than the one
-    tacctl reaches it from, that address is not a source of the filter: a term of its own,
-    `permit-auth-replies`, accepts only the replies of the server from it (tcp from source port
-    `tacacs` for TACACS+, udp from `radius` and `radacct` for RADIUS), never ssh. Once a strict
-    filter is applied to lo0, these stop reaching the routing engine: routing protocols carried over
-    IP from neighbours that are not in the list (BGP, OSPF, LDP, VRRP, BFD), TACACS+ and RADIUS
-    replies from a server that is not in the list (the server the walkthrough names is), NTP, syslog
-    and DHCP from hosts that are not in the list, SNMP from sources outside it (the SNMP clients
-    still poll), and every other protocol from them. IS-IS is not carried over IP, so a `family
-    inet` filter on lo0 does not see it: the filter neither stops nor permits it. The walkthrough
-    keeps the lo0 application commented; keep a console session open when you apply the filter and
-    commit with `commit confirmed`. Only `strict` is stored (`scope_mgmt_acl.mode.<name>`); setting
-    `ssh-only` removes the key. A word that is not a mode (the words are lower case) is refused with
-    `Unknown mode '<word>'. Use: ssh-only | strict.`, a word after the value as an unknown argument
-    with the usage, both with exit 1 and nothing written; setting the mode the scope already has
-    says so and writes nothing. See [Management ACL](../security/management-acl.md#strict-mode-for-junos)
+    of the filter drops the rest. The walkthrough has a second server address only when the device
+    authenticates against another address than the one tacctl reaches it from: `--server`,
+    `--source` alone (the device is still told the address detected for the server), or a RADIUS
+    listener bound to another address; with none of them, or with both given the same, there is one
+    address and one source /32 is rendered. The second address is not a source of the filter: a term
+    of its own, `permit-auth-replies`, accepts only the replies of the server from it (tcp from
+    source port `tacacs` for TACACS+, udp from `radius` and `radacct` for RADIUS), never ssh. Once a
+    strict filter is applied to lo0, these stop reaching the routing engine: routing protocols
+    carried over IP from neighbours that are not in the list (BGP, OSPF, LDP, VRRP, BFD), TACACS+
+    and RADIUS replies from a server that is not in the list (the server the walkthrough names is),
+    NTP, syslog and DHCP from hosts that are not in the list, SNMP from sources outside it (the SNMP
+    clients still poll), and every other protocol from them. IS-IS is not carried over IP, so a
+    `family inet` filter on lo0 does not see it: the filter neither stops nor permits it. The
+    walkthrough keeps the lo0 application commented; keep a console session open when you apply the
+    filter and commit with `commit confirmed`. Only `strict` is stored
+    (`scope_mgmt_acl.mode.<name>`); setting `ssh-only` removes the key. A word that is not a mode
+    (the words are lower case) is refused with `Unknown mode '<word>'. Use: ssh-only | strict.`, a
+    word after the value as an unknown argument with the usage, both with exit 1 and nothing
+    written; setting the mode the scope already has says so and writes nothing. See [Management ACL](../security/management-acl.md#strict-mode-for-junos)
 
 scope breakglass <name> [list]
 scope breakglass <name> add <user> [--role admin|operator|readonly]

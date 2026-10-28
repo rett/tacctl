@@ -72,16 +72,19 @@ a Junos filter drops the rest. The terms, in order:
   (`tcp/*`, `udp/*`) matches the protocol alone, and `icmp` is `from protocol
   icmp` for every ICMP type. A port Junos prints by name is written with it
   (`ssh`, `snmp`, `ntp`, `bgp`), any other as a number, a range as `low-high`.
-- `permit-auth-replies`, when the device authenticates against another
-  address than the one tacctl reaches it from (`--server`, a RADIUS listener
-  bound to another address, or `--source`, which leaves the detected address
-  to authenticate against) and that address is not a source of `permit-mgmt`:
-  that address, protocol `tcp` and source port `tacacs` for TACACS+, or
-  protocol `udp` and the source ports `radius` and `radacct` (the listener's,
-  1812 and 1813 by default) for RADIUS; then accept. The device starts those
-  sessions, so only the replies of the server are accepted from the address,
-  never ssh or another protocol, and it is not counted as a source for
-  `--from` (below). Add the address to the permit list to accept more from it.
+- `permit-auth-replies`, only when the walkthrough has a second server
+  address: the device authenticates against another address than the one
+  tacctl reaches it from (`--server`; `--source` alone, the device still being
+  told the address detected for the server; a RADIUS listener bound to another
+  address) and that address is not a source of `permit-mgmt` already. With
+  none of them, or with both given the same, there is one address, one source
+  /32 in `permit-mgmt` and no such term. The term holds that address, protocol
+  `tcp` and source port `tacacs` for TACACS+, or protocol `udp` and the source
+  ports `radius` and `radacct` (the listener's, 1812 and 1813 by default) for
+  RADIUS; then accept. The device starts those sessions, so only the replies
+  of the server are accepted from the address, never ssh or another protocol,
+  and it is not counted as a source for `--from` (below). Add the address to
+  the permit list to accept more from it.
 - `permit-snmp` and `deny-snmp`, when the scope's SNMP clients are set, as in
   `ssh-only`.
 

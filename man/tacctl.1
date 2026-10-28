@@ -6061,9 +6061,15 @@ entry with services keeps only those services, a plain entry accepts
 everything from its source; the tacctl server's own address stays first), keeps
 the SNMP client terms and has no
 .B default-accept
-term, so the implicit discard at the end of the filter drops the rest. When the
-device authenticates against another address than the one tacctl reaches it
-from, that address is not a source of the filter: a term of its own,
+term, so the implicit discard at the end of the filter drops the rest. The
+walkthrough has a second server address only when the device authenticates
+against another address than the one tacctl reaches it from:
+.BR \-\-server ,
+.B \-\-source
+alone (the device is still told the address detected for the server), or a
+RADIUS listener bound to another address. With none of them, or with both
+given the same, there is one address and one source /32 is rendered. The second
+address is not a source of the filter: a term of its own,
 .BR permit\-auth\-replies ,
 accepts only the replies of the server from it (tcp from source port
 .B tacacs
@@ -9952,7 +9958,7 @@ where the device's filter has a
 term or there is none: the traffic that stops once the filter is applied to
 lo0 (routing protocols carried over IP from neighbours that are not in the list,
 BFD included, TACACS+ and RADIUS replies from a server that is not in the list,
-NTP, syslog and DHCP, SNMP from sources outside it but its clients, every other
+NTP, syslog and DHCP, SNMP from sources outside it other than its clients, every other
 protocol; IS-IS is not carried over IP, so the filter neither stops nor permits
 it),
 the sources

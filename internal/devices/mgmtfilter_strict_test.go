@@ -164,6 +164,52 @@ func TestStrictFilterAcceptsTheAuthenticationServerRepliesOnly(t *testing.T) {
 	}
 }
 
+// The second address exists only when the device authenticates against an
+// address other than the one tacctl reaches it from: --server alone, --source
+// alone (the device is still told the detected address), a RADIUS listener
+// bound to another address. With neither flag, or with both the same, one
+// address is rendered and the replies term is not.
+func TestStrictFilterSecondAddress(t *testing.T) {
+	list := []string{"10.0.0.0/8"}
+	for _, c := range []struct {
+		name                         string
+		source, server, bound        string
+		radius                       bool
+		wantMgmtFirst, wantRepliesOf string // "" for no replies term
+	}{
+		{"neither", "", "", "", false, "192.0.2.1/32", ""},
+		{"--server alone", "", "198.51.100.9", "", false, "192.0.2.1/32", "198.51.100.9/32"},
+		{"--source alone", "198.51.100.7", "", "", false, "198.51.100.7/32", "192.0.2.1/32"},
+		{"both, the same", "198.51.100.7", "198.51.100.7", "", false, "198.51.100.7/32", ""},
+		{"both, different", "198.51.100.7", "198.51.100.9", "", false, "198.51.100.7/32", "198.51.100.9/32"},
+		{"bound RADIUS address", "", "", "203.0.113.7", true, "192.0.2.1/32", "203.0.113.7/32"},
+		{"bound RADIUS address, the source", "203.0.113.7", "", "203.0.113.7", true, "203.0.113.7/32", ""},
+	} {
+		d := strictData(t, "192.0.2.1", c.source, list, SNMPInput{})
+		d.AuthServer = c.server
+		req := Request{Vendor: "juniper", Scope: "lab", Protocol: TACACS}
+		if c.radius {
+			d.Radius = &Radius{AuthPort: "1812", AcctPort: "1813", Secret: "example-secret", ServerAddr: c.bound, VendorSent: "scope"}
+			req.Protocol = RADIUS
+		}
+		block := JuniperVars(req, d)["MGMT_ACL_BLOCK"]
+		first := ""
+		for _, l := range strings.Split(block, "\n") {
+			if v, ok := strings.CutPrefix(l, "set firewall family inet filter MGMT-ACL term permit-mgmt from source-address "); ok {
+				first = v
+				break
+			}
+		}
+		replies := ""
+		if _, rest, ok := strings.Cut(block, "permit-auth-replies from source-address "); ok {
+			replies, _, _ = strings.Cut(rest, "\n")
+		}
+		if first != c.wantMgmtFirst || replies != c.wantRepliesOf || strings.Count(block, c.wantMgmtFirst+"\n") != 1 {
+			t.Errorf("%s: permit-mgmt starts with %q (want %q), replies term for %q (want %q)\n%s", c.name, first, c.wantMgmtFirst, replies, c.wantRepliesOf, block)
+		}
+	}
+}
+
 func cidrOf(addr string) string { return addr + "/32" }
 
 func firstNonEmpty(a, b string) string {
