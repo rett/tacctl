@@ -76,3 +76,38 @@ func TestApplyOnAVirtualChassisMemberOddCommit(t *testing.T) {
 		}
 	})
 }
+
+// Two routing engines that commit without synchronize: 'show version' lists
+// re0 and re1, and a commit is answered as a single device answers it (the
+// plain lines; over NETCONF one element, re0). It is taken as it was before
+// the members were read.
+func TestApplyOnTwoRoutingEngines(t *testing.T) {
+	knobs := map[string]string{
+		"chassis":       "re0 mx480\nre1 mx480\n",
+		"device":        "hostname example-sw1\nmodel mx480\njunos 21.4R3-S2.4\n",
+		"chassis.plain": "",
+	}
+	both(t, knobs, func(t *testing.T, d *device) {
+		p := &planner{desired: desiredLines()}
+		o := apply(t, d, p, nil)
+		wantExit(t, o, ExitApplied, ResultApplied)
+		if len(o.Identity.Members) != 2 {
+			t.Errorf("identity %+v", o.Identity)
+		}
+		o = apply(t, d, p, nil)
+		wantExit(t, o, ExitNoChange, ResultNoChange)
+	})
+}
+
+// The same two routing engines that answer with a block for each (they
+// commit with synchronize) are taken too.
+func TestApplyOnTwoRoutingEnginesSynchronized(t *testing.T) {
+	knobs := map[string]string{
+		"chassis":            "re0 mx480\nre1 mx480\n",
+		"device":             "hostname example-sw1\nmodel mx480\njunos 21.4R3-S2.4\n",
+		"commit.synchronize": "",
+	}
+	both(t, knobs, func(t *testing.T, d *device) {
+		wantExit(t, apply(t, d, &planner{desired: desiredLines()}, nil), ExitApplied, ResultApplied)
+	})
+}

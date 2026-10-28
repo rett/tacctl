@@ -265,17 +265,30 @@ current behaviour; this file is where history lives.
     now the blocks `show version` lists (`fpc0:`, `re0:` or `node0:`, one
     kind per device), and the answers of `commit check`, `commit confirmed`
     and `commit` must name exactly those members: each with the check's
-    success, then, for a commit, the commit's. A member that is missing,
-    unexpected or answers otherwise (an error, a warning, no text, a label of
-    another kind) fails the step, and the error names the member and its
-    text. A single device's answers read as before. What is inferred: no
-    capture exists of the commit replies on such a device, so their shape
-    (the check's blocks, the confirmed note, the `commit complete` blocks) is
-    taken from the check's; and no capture exists of the NETCONF reply either,
-    including the check's, so it is read as one `routing-engine` element for
-    each member, named by its label, holding the check's success and then the
-    commit's (or the commit's alone), and an error inside an element names
-    the member. A NETCONF reply that names no member is read as before.
+    success and, for a commit, the commit's after it (on the command line the
+    check's block is optional in a commit's answer). A member that is
+    missing, unexpected or answers otherwise (an error, a warning, no text, a
+    label of another kind) fails the step, and the error names the member and
+    its text. A single device's answers read as before, and so do those of two
+    routing engines that commit without `commit synchronize`: they answer
+    with the single device's lines, which are read as before, or with exactly
+    their blocks. Over NETCONF the reply is read member by member
+    (`routing-engine` elements named by the label): the check's success and
+    then the commit's, or the commit's alone, an error inside an element
+    names the member. A NETCONF reply of a virtual chassis or a cluster that
+    names no member is refused, because nothing proves the other members
+    committed (a confirmed commit is left to roll back by itself); the
+    command line transport, the default, can be used. For two routing engines
+    a reply with no member element, or one, is read as before. What is
+    inferred and unverified: no capture exists of the commits' replies on a
+    device with members, so their shape (the check's blocks, the confirmed
+    note, the `commit complete` blocks) is taken from the check's; no capture
+    exists of the NETCONF reply, including the check's, nor of the NETCONF
+    `show version` reply, whose text (the `output` elements only) gives the
+    NETCONF member set, and a chassis may answer with a
+    `multi-routing-engine-results` of `multi-routing-engine-item` elements,
+    each with a `re-name` and its `output`, which is read into the same
+    labels from the documented shape, not from a capture.
 
 19. **The end of a pending window is the device's own wall clock.** `PENDING
     until <time>` and the refusals that name a pending commit computed the end

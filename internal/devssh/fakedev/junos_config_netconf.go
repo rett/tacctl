@@ -363,7 +363,7 @@ func (ns *nsession) commit(op xnode) (string, int) {
 		}
 		return b.String(), dropNone
 	}
-	members := d.members()
+	members := d.answerMembers()
 	chassis := len(members) > 0
 	if op.XMLName.Local == "commit" && !chassis {
 		return "<ok/>", d.commitDrop(confirmed && !check)

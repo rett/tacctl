@@ -10669,15 +10669,27 @@ proven by a fresh login as you through the device's own login path, by
 being the change the check showed and by a read of the planned sections
 lacking nothing, and then confirmed in the session that committed, with a
 minute of the window left. On a device with several members (a virtual
-chassis, two routing engines) the members are the blocks
+chassis, two routing engines, a cluster) the members are the blocks
 .B "show version"
 lists
-.RB ( fpc0: ),
+.RB ( fpc0: ,
+.BR re0: ,
+.BR node0: ),
 and the answers of
 .B "commit check"
 and of the commits must name exactly those, each with its own success; a member
 that is missing, unexpected or answers otherwise fails the step, and the error
-names the member and its text. A proof that fails cancels the commit
+names the member and its text. Two routing engines that commit without
+.B synchronize
+answer as a single device does, which is read as before. Over NETCONF each
+member is a
+.B routing\-engine
+element named by its label; a reply of a virtual chassis or a cluster that
+names no member is refused, because nothing proves the other members
+committed (a confirmed commit rolls back by itself), and the command line
+transport (the default) can be used. The shape of these replies over NETCONF,
+and the commits' replies on the command line, are inferred: no capture of them
+exists. A proof that fails cancels the commit
 .RB ( "rollback 1" ,
 .BR commit )
 and the device is

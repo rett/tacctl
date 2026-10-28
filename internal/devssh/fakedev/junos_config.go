@@ -62,6 +62,11 @@ package fakedev
 //	                    commit the same blocks for its check and for 'commit
 //	                    complete' [inferred: no capture], and a NETCONF commit
 //	                    a <routing-engine> element for each [inferred]
+//	chassis.plain       present: the members are listed by 'show version' but
+//	                    a commit is answered as a single device answers it
+//	                    (two routing engines without 'commit synchronize'):
+//	                    the plain lines over the command line, one
+//	                    <routing-engine> element (re0) over NETCONF
 //	chassis.check       '<label> => <text>' lines: that member fails its check
 //	                    with the text (a NETCONF reply holds an <rpc-error>
 //	                    in its element): 'commit check' and 'commit' report it
@@ -731,7 +736,7 @@ func (d *junosDevice) members() []jmember {
 // text alone for a single device. The knob (chassis.check for the check's
 // success, chassis.commit for the commit's) can give a member another text.
 func (d *junosDevice) perMember(text, knob string) string {
-	ms := d.members()
+	ms := d.answerMembers()
 	if len(ms) == 0 {
 		return text + "\n"
 	}
@@ -754,6 +759,16 @@ func (d *junosDevice) memberText(knob, label string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// answerMembers are the members a commit's answer names: those of the
+// chassis, none when the knob 'chassis.plain' makes the answer a single
+// device's.
+func (d *junosDevice) answerMembers() []jmember {
+	if d.s.t.exists("chassis.plain") {
+		return nil
+	}
+	return d.members()
 }
 
 // failingMember reports whether a member fails its check (chassis.check):

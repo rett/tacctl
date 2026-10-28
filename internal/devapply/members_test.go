@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/rett/tacctl/internal/devconf/plan"
+	"github.com/rett/tacctl/internal/devssh"
 )
 
 // The answers of a four-member virtual chassis (two EX4600 and two EX4300 on
@@ -226,6 +227,51 @@ func TestAnswersNameTheChassisMembers(t *testing.T) {
 			t.Errorf("%s: ok %v, why %q, want %q", name, ok, why, c.why)
 		}
 	}
+	// two routing engines answer a plain commit as a single device does: the
+	// plain answer, or exactly their blocks; a chassis and a cluster must
+	// answer with blocks
+	engines := []string{"re0", "re1"}
+	reChk := func(l string) string { return l + ": \nconfiguration check succeeds\n" }
+	reDone := func(l string) string { return l + ": \ncommit complete\n" }
+	if ok, why := checkAnswer(split("configuration check succeeds\n"), engines); !ok {
+		t.Errorf("engines, plain check: %s", why)
+	}
+	if ok, why := checkAnswer(split(reChk("re0")+reChk("re1")), engines); !ok {
+		t.Errorf("engines, blocks: %s", why)
+	}
+	if ok, why := readCommitted(split("configuration check succeeds\ncommit complete\n"), engines, textCommitComplete); !ok {
+		t.Errorf("engines, plain commit: %s", why)
+	}
+	if ok, why := readCommitted(split("commit complete\n"), engines, textCommitComplete); !ok {
+		t.Errorf("engines, plain commit without a check: %s", why)
+	}
+	if ok, why := readCommitted(split(reChk("re0")+reDone("re1")+reDone("re0")), engines, textCommitComplete); !ok {
+		t.Errorf("engines, interleaved: %s", why)
+	}
+	if ok, why := readCommitted(split(note+"\ncommit complete\n"), engines, note, textCommitComplete); !ok {
+		t.Errorf("engines, plain confirmed commit: %s", why)
+	}
+	for name, c := range map[string]struct{ ok bool }{"plain wrong": {false}} {
+		_ = c
+		if ok, _ := checkAnswer(split("error: x\n"), engines); ok {
+			t.Errorf("%s: an error read as a success", name)
+		}
+	}
+	// but the blocks of an re set name exactly the set
+	for name, in := range map[string]string{
+		"one engine":  reChk("re0"),
+		"a third":     reChk("re0") + reChk("re1") + reChk("re2"),
+		"other kind":  reChk("fpc0") + reChk("fpc1"),
+		"mixed plain": "configuration check succeeds\n" + reChk("re0") + reChk("re1"),
+	} {
+		if ok, why := checkAnswer(split(in), engines); ok || why == "" {
+			t.Errorf("engines, %s: ok %v, why %q", name, ok, why)
+		}
+	}
+	// a cluster is judged by its blocks like a chassis
+	if ok, why := checkAnswer(split("configuration check succeeds\n"), []string{"node0", "node1"}); ok || !strings.Contains(why, "no answer from node0, node1") {
+		t.Errorf("cluster, plain: %v %q", ok, why)
+	}
 	// the single device: no member listed, no member judged by a set
 	if ok, why := readCommitted(split("configuration check succeeds\ncommit complete\n"), nil, textCommitComplete); !ok {
 		t.Errorf("single: %s", why)
@@ -268,13 +314,14 @@ func TestNetconfReplyMembers(t *testing.T) {
 		return re("fpc0", el) + re("fpc1", el) + re("fpc2", el) + re("fpc3", el)
 	}
 	chassis := []string{"fpc0", "fpc1", "fpc2", "fpc3"}
+	engines := []string{"re0", "re1"}
 	for name, c := range map[string]struct {
 		in     string
 		commit bool
 		set    []string
 		want   string // "" is a whole reply
 	}{
-		"no members":        {wrap(""), false, chassis, ""},
+		"no members":        {wrap(""), false, nil, ""},
 		"one engine":        {wrap(re("re0", ck)), false, nil, ""},
 		"four checks":       {wrap(four(ck)), false, chassis, ""},
 		"commit alone":      {wrap(four(cs)), true, chassis, ""},
@@ -294,6 +341,23 @@ func TestNetconfReplyMembers(t *testing.T) {
 		"extra":             {wrap(four(ck) + re("fpc4", ck)), false, chassis, "an answer from fpc4, which 'show version' did not list"},
 		"commit missing":    {wrap(four(ck) + re("fpc0", cs)), true, chassis, "member fpc1 answered"},
 		"other name":        {wrap(re("re0", ck)), false, chassis, "no answer from fpc0, fpc1, fpc2, fpc3; an answer from re0"},
+		// a chassis' reply that names no member proves nothing about them
+		"chassis, no member":  {wrap(""), false, chassis, "the chassis' NETCONF answer names no member: nothing proves that fpc0, fpc1, fpc2, fpc3 checked it"},
+		"chassis, ok":         {"<ok/>", true, chassis, "nothing proves that fpc0, fpc1, fpc2, fpc3 committed, and a confirmed commit rolls back by itself; use the command line transport (the default)"},
+		"chassis, bare":       {wrap(cs), true, chassis, "the chassis' NETCONF answer names no member"},
+		"chassis, bare check": {wrap(ck), false, chassis, "the chassis' NETCONF answer names no member"},
+		"cluster, no member":  {wrap(cs), true, []string{"node0", "node1"}, "the chassis' NETCONF answer names no member"},
+		"one of four":         {wrap(re("fpc0", ck)), false, chassis, "no answer from fpc1, fpc2, fpc3"},
+		// two routing engines answer a plain commit with one element, or none
+		"engines, none":      {wrap(cs), true, engines, ""},
+		"engines, ok":        {"<ok/>", true, engines, ""},
+		"engines, one":       {wrap(re("re0", cs)), true, engines, ""},
+		"engines, other one": {wrap(re("re1", ck)), false, engines, ""},
+		"engines, both":      {wrap(re("re0", ck) + re("re1", ck)), false, engines, ""},
+		"engines, strange":   {wrap(re("re7", cs)), true, engines, "an answer from re7, which 'show version' did not list"},
+		"engines, one fails": {wrap(re("re0", "")), true, engines, "member re0 did not answer <commit-success/>"},
+		"engines, fpc":       {wrap(re("fpc0", cs)), true, engines, "an answer from fpc0"},
+		"chassis, one":       {wrap(re("fpc0", cs)), true, chassis, "no answer from fpc1, fpc2, fpc3"},
 	} {
 		r, err := parseReply(c.in)
 		if err != nil {
@@ -327,5 +391,24 @@ func TestNetconfMemberErrorNamesTheMember(t *testing.T) {
 	r, _ = parseReply("<rpc-error><error-severity>error</error-severity><error-message>x</error-message></rpc-error>")
 	if e := j.firstError("commit check", r); e.Error() != "commit check: error: x" {
 		t.Errorf("%v", e)
+	}
+}
+
+// The NETCONF reply of 'show version' as one item for each member gives the
+// same labels as the command line's blocks (the shape is inferred).
+func TestParseVersionOfMultiRoutingEngineReply(t *testing.T) {
+	item := func(name, model string) string {
+		return "<multi-routing-engine-item><re-name>" + name + "</re-name><output>Hostname: jsw1.example.net\nModel: " + model +
+			"\nJunos: 21.4R3-S2.4\nJUNOS Base OS boot [21.4R3-S2.4]\n</output></multi-routing-engine-item>"
+	}
+	reply := "<rpc-reply><multi-routing-engine-results>" + item("fpc0", "ex4600-40f") + item("fpc1", "ex4600-40f") +
+		item("fpc2", "ex4300-48t") + item("fpc3", "ex4300-48t") + "</multi-routing-engine-results></rpc-reply>"
+	text, err := devssh.ReplyText(reply)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := parseVersion(text)
+	if err != nil || strings.Join(id.Members, ",") != "fpc0,fpc1,fpc2,fpc3" || id.Hostname != "jsw1.example.net" || id.Model != "ex4600-40f" {
+		t.Errorf("%+v %v", id, err)
 	}
 }

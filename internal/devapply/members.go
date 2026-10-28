@@ -117,6 +117,21 @@ func setFault(set, got []string) string {
 	return "the members that answered are not the chassis' (" + strings.Join(set, ", ") + "): " + strings.Join(parts, "; ")
 }
 
+// setKind is the kind of the members the pre-flight listed ('fpc', 're',
+// 'node'), "" for none. Two routing engines answer a plain commit, without
+// 'commit synchronize', with the single device's lines, so a set of kind re
+// takes either that or its blocks; a virtual chassis (fpc) and a cluster
+// (node) answer with blocks.
+func setKind(set []string) string {
+	if len(set) == 0 {
+		return ""
+	}
+	if m := reMemberLabel.FindStringSubmatch(set[0] + ":"); m != nil {
+		return m[2]
+	}
+	return ""
+}
+
 // labelsOf are the labels of the members of an answer.
 func labelsOf(members []*memberText) []string {
 	var ls []string
@@ -129,7 +144,8 @@ func labelsOf(members []*memberText) []string {
 // checkAnswer reads the answer of 'commit check': 'configuration check
 // succeeds' alone, or one block of it for every member and nothing else. set
 // is the members 'show version' listed (none for a single device): the
-// answer then names exactly those, each once. why names the member and the
+// answer then names exactly those, each once; for two routing engines the
+// plain answer is read too (setKind). why names the member and the
 // text that is no success, or the missing and unexpected members (empty
 // when the answer has no member or is whole).
 func checkAnswer(body []string, set []string) (ok bool, why string) {
@@ -137,7 +153,7 @@ func checkAnswer(body []string, set []string) (ok bool, why string) {
 	switch {
 	case why != "":
 		return false, why
-	case len(members) == 0 && len(set) > 0:
+	case len(members) == 0 && len(set) > 0 && setKind(set) != "re":
 		return false, setFault(set, nil)
 	case len(members) == 0:
 		return exactly(body, textCheckOK), ""
@@ -177,7 +193,7 @@ func readCommitted(body []string, set []string, want ...string) (ok bool, why st
 	switch {
 	case why != "":
 		return false, why
-	case len(members) == 0 && len(set) > 0:
+	case len(members) == 0 && len(set) > 0 && setKind(set) != "re":
 		return false, setFault(set, nil)
 	case len(members) == 0:
 		return exactly(body, append([]string{textCheckOK}, want...)...) || exactly(body, want...), ""

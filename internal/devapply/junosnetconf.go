@@ -809,12 +809,24 @@ func (j *JunosNetconf) rpcHeld(ctx context.Context, body, shown string) (rpcRepl
 // ('commit-success', or 'ok'), after the check's success or alone (commit
 // true); never an error, and never another member's success in its place.
 // The members named are exactly the ones the pre-flight listed. The shape is
-// inferred (no capture of a device with members over NETCONF): a reply that
-// names no member is read as it always was, and so is any reply when the
-// pre-flight listed none. nil for a reply that is whole.
+// inferred (no capture of a device with members over NETCONF, and the
+// listed members come from the text of the 'show version' reply): a reply
+// that names no member is refused when the pre-flight listed a chassis (the
+// command line, the default, answers with a block for each member), and read
+// as it always was for a single device and for two routing engines, which
+// answer a plain commit with the single device's reply or one element
+// (setKind). nil for a reply that is whole.
 func (j *JunosNetconf) memberRefusal(cmd string, r rpcReply, commit bool) error {
+	set := j.memberSet()
 	if len(r.Members) == 0 {
-		return nil
+		if len(set) == 0 || setKind(set) == "re" {
+			return nil
+		}
+		why := "the chassis' NETCONF answer names no member: nothing proves that " + strings.Join(set, ", ") + " checked it; use the command line transport (the default)"
+		if commit {
+			why = "the chassis' NETCONF answer names no member: nothing proves that " + strings.Join(set, ", ") + " committed, and a confirmed commit rolls back by itself; use the command line transport (the default)"
+		}
+		return answerError(cmd, []string{why}, j.m)
 	}
 	var names []string
 	seqs := map[string][]string{}
@@ -851,7 +863,11 @@ func (j *JunosNetconf) memberRefusal(cmd string, r rpcReply, commit bool) error 
 		}
 		return answerError(cmd, []string{fmt.Sprintf("member %s answered %s, not %s", cut(n), "<"+strings.Join(seqs[n], "/><")+"/>", map[bool]string{false: "<commit-check-success/>", true: "<commit-check-success/> and <commit-success/>, or <commit-success/>"}[commit])}, j.m)
 	}
-	if why := setFault(j.memberSet(), names); why != "" {
+	if setKind(set) == "re" && len(names) == 1 && slices.Contains(set, names[0]) {
+		// a plain commit of two routing engines: the one that ran it
+		return nil
+	}
+	if why := setFault(set, names); why != "" {
 		return answerError(cmd, []string{why}, j.m)
 	}
 	return nil
