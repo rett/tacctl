@@ -154,7 +154,7 @@ func TestParseHistoryEntryLayout(t *testing.T) {
 		zone   string
 		offset int // seconds east of UTC, -1 for none known
 	}{
-		{"", -1}, {" UTC", 0}, {" CET", -1}, {" AKDT", -1},
+		{"", -1}, {" UTC", 0}, {" CET", -1}, {" CEST", -1},
 		{" +03", 3 * 3600}, {" -03", -3 * 3600}, {" +0300", 3 * 3600}, {" -0330", -(3*3600 + 1800)}, {" +0530", 5*3600 + 1800},
 		{" GMT+3", -1}, {" GMT-3", -1}, {" GMT", 0},
 	} {
