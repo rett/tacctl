@@ -495,18 +495,20 @@ func TestManPageDocumentsEveryExitStatus(t *testing.T) {
 // manPathExempt are the paths of internal/paths that FILES does not list,
 // each with the reason.
 var manPathExempt = map[string]string{
-	"/usr/local/bin":                         "the directory of tacctl, tacquito and tacquito-hashgen, which FILES lists one by one",
-	"/var/log/tacquito":                      "the directory of accounting.log, which FILES lists",
-	"/etc/systemd/system":                    "systemd's own directory; FILES lists the units and drop-ins tacctl writes in it",
-	"/etc/systemd/system/tacquito.service.d": "the directory of tacctl.conf, which FILES lists",
-	"/etc/logrotate.d":                       "logrotate's own directory; FILES names the files tacctl writes in it",
-	"/etc/pam.d":                             "PAM's own directory; the client script writes tacctl-auth, tacctl-account and tacctl-session in it, which the host entries describe",
-	"/etc/ssh":                               "sshd's own directory; FILES lists the drop-ins in sshd_config.d and the host keys by their glob",
+	"/usr/local/bin":                              "the directory of tacctl, tacquito and tacquito-hashgen, which FILES lists one by one",
+	"/var/log/tacquito":                           "the directory of accounting.log, which FILES lists",
+	"/etc/systemd/system":                         "systemd's own directory; FILES lists the units and drop-ins tacctl writes in it",
+	"/etc/systemd/system/tacquito.service.d":      "the directory of tacctl.conf, which FILES lists",
+	"/etc/logrotate.d":                            "logrotate's own directory; FILES names the files tacctl writes in it",
+	"/etc/ssh":                                    "sshd's own directory; FILES lists the drop-ins in sshd_config.d and the host keys by their glob",
 	"/etc/ssh/sshd_config.d/tacctl-engineer.conf": "the earlier name of the engineer drop-in, which the console entries name as a file they remove",
-	"/etc/tacctl/snmp":                   "the directory of the per-scope credential files, which FILES lists as snmp/<scope>.yaml",
-	"/etc/tacctl/backups/password-dates": "a directory inside backups/, which FILES lists",
-	"/opt/tacctl/patches":                "the tacquito patches inside the checkout, which FILES lists as /opt/tacctl/",
-	"<raddb>/tacctl-radius-dictionary":   "the directory of the dictionary file, which FILES lists",
+	"/etc/tacctl/snmp":                            "the directory of the per-scope credential files, which FILES lists as snmp/<scope>.yaml",
+	"/etc/tacctl/backups/password-dates":          "a directory inside backups/, which FILES lists",
+	"/opt/tacctl/patches":                         "the tacquito patches inside the checkout, which FILES lists as /opt/tacctl/",
+	"<raddb>/tacctl-radius-dictionary":            "the directory of the dictionary file, which FILES lists",
+
+	// the PAM directory of the client script (TACCTL_CLIENT_PAM_DIR)
+	"/etc/pam.d": "PAM's own directory; the client script writes tacctl-auth, tacctl-account and tacctl-session in it, which the host entries describe",
 }
 
 // pathValues are the paths internal/paths resolves with no override, the
