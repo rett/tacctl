@@ -924,8 +924,7 @@ func (inv *invocation) userRename(args []string) error {
 				msgsJoin(err) + ". Nothing was changed.")
 		}
 		if held != "" || n > 0 {
-			return inv.usageErr("'" + newname + "' cannot be a Linux account name (a period is not allowed), and '" + oldname +
-				"' has an account on hosts (or a UID in linux-uids) that the rename would remove. Nothing was changed.")
+			return inv.usageErr(dottedRenameRefusal(inv, oldname, newname)...)
 		}
 	}
 	// The old name is gone from the model afterwards, so its account on this
@@ -986,6 +985,30 @@ func (inv *invocation) userRename(args []string) error {
 		return nil
 	}
 	return watch.lowered("'"+oldname+"'", "'"+oldname+"' keeps the groups of the old tier")
+}
+
+// dottedRenameRefusal is the refusal of a rename to a name with a period
+// of a user that has a Linux account (or a UID): what is refused, and the
+// two ways forward, each on a line of its own. The second is a new user: a
+// removed user's line stays in linux-uids (a number is never reused), the
+// sync removes its accounts, and the user added under the new name has no
+// UID and no account anywhere, the tacctl server included.
+func dottedRenameRefusal(inv *invocation, oldname, newname string) []string {
+	group, scopes := "<group>", "<scope>[,<scope>...]"
+	if u, ok, _ := inv.userInfo(oldname); ok {
+		group = u.group
+		if len(u.scopes) > 0 {
+			scopes = strings.Join(u.scopes, ",")
+		}
+	}
+	return []string{
+		"'" + newname + "' cannot be a Linux account name (a period is not allowed), and '" + oldname +
+			"' has an account on hosts (or a UID in linux-uids) that the rename would remove. Nothing was changed.",
+		"Either choose a name without a period: tacctl user rename " + oldname + " <new-name>",
+		"Or make a new user: tacctl user remove " + oldname + "; tacctl host sync --all (removes its accounts); tacctl user add " + newname + " " + group + " --scopes " + scopes +
+			" (a new password, no UID: the old number stays reserved).",
+		"A user whose name has a period has no Linux account on any host, the tacctl server included, so no console login: it logs in at devices only.",
+	}
 }
 
 // uidMove is what a rename did to the UID ledger: moved (the line of the

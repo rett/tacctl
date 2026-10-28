@@ -1150,7 +1150,12 @@ the lock for 30 seconds the rename stops at the pre\-change snapshot, which
 copies the ledger under it, with nothing changed. A user that has a UID in the
 ledger, or an account on an enrolled host, is not renamed to a name with a
 period, which is no Linux account name: the next sync would remove the account.
-The command says so and changes nothing.
+The command says so, changes nothing and names the two ways forward: a name
+without a period, or a new user (\fBuser remove\fR, \fBhost sync \-\-all\fR,
+which removes the accounts, then \fBuser add\fR under the new name with the
+group and scopes it prints), which gets a new password and no UID (the old
+number stays reserved). A user whose name has a period has no Linux account on
+any host, the tacctl server included, so no console login.
 .\" BEGIN GENERATED: command user rename
 .RS
 .PP

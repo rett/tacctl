@@ -3,6 +3,18 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.21 (unreleased)
+
+1. **`user rename` to a name with a period says what to do.** The refusal of
+   a rename to a name with a period, for a user that has a UID or an account
+   on a host, now names the two ways forward, one line each: choose a name
+   without a period, or make a new user (`user remove`, `host sync --all`,
+   which removes the accounts, then `user add` under the new name with the
+   group and scopes of the old one, printed in the line), who gets a new
+   password and no UID (the old number stays reserved). A third line says that
+   a user whose name has a period has no Linux account on any host, the
+   tacctl server included, so no console login.
+
 ## 0.2.20 (2026-10-28)
 
 1. **A user name may hold periods.** `user add alice.smith operator` is

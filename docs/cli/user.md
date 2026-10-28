@@ -91,7 +91,12 @@ user rename <old> <new>
     sync. If the ledger is locked by another command for 30 seconds, the rename stops at the
     snapshot with nothing changed (see [Consistent UIDs and GIDs](../hosts/ids-and-groups.md)). A
     user that has a UID in `linux-uids`, or an account on an enrolled host, is not renamed to a name
-    with a period: the next sync would remove the account. The command says so and changes nothing.
+    with a period: the next sync would remove the account. The command says so, changes nothing and
+    names the two ways forward: a name without a period, or a new user (`user remove`, then
+    `host sync --all`, which removes the accounts, then `user add` under the new name with the
+    group and scopes it prints), which gets a new password and no UID (the old number stays
+    reserved). A user whose name has a period has no Linux account on any host, the tacctl server
+    included, so no console login.
 
 user move <name> <group>
 
