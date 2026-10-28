@@ -35,8 +35,17 @@ type inproc struct {
 }
 
 // startInProcess runs Interactive with o on the slave end of a new pty of
-// rows x cols; the test types on the master.
+// rows x cols; the test types on the master. It returns at the first prompt.
 func startInProcess(t *testing.T, o Options, rows, cols uint16) *inproc {
+	t.Helper()
+	p := startInProcessNoPrompt(t, o, rows, cols)
+	p.expect(regexp.QuoteMeta(p.sh.o.Prompt))
+	return p
+}
+
+// startInProcessNoPrompt is startInProcess without the wait for a prompt (a
+// session that may end before it has one).
+func startInProcessNoPrompt(t *testing.T, o Options, rows, cols uint16) *inproc {
 	t.Helper()
 	master, slave, err := testpty.Open()
 	if err != nil {
@@ -70,7 +79,6 @@ func startInProcess(t *testing.T, o Options, rows, cols uint16) *inproc {
 		_ = slave.Close()
 		_ = master.Close()
 	})
-	p.expect(regexp.QuoteMeta(p.sh.o.Prompt))
 	return p
 }
 

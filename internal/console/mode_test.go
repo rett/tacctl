@@ -163,6 +163,11 @@ func TestSessionIDAndLogValues(t *testing.T) {
 		s.DenyLine("user", 12):                  "console DENY session=deadbeef0102 user=carol reason=command first=user",
 		s.DenyLine("", 7):                       "console DENY session=deadbeef0102 user=carol reason=command first=- len=7",
 		s.DenyLine("", 0):                       "console DENY session=deadbeef0102 user=carol reason=command first=- len=0",
+		s.PasswordChangeLine("required", 0):     "console password-change required session=deadbeef0102 user=carol",
+		s.PasswordChangeLine("done", 0):         "console password-change done session=deadbeef0102 user=carol",
+		s.PasswordChangeLine("failed", 130):     "console password-change failed session=deadbeef0102 user=carol status=130",
+		s.PasswordChangeDenyLine("user", 9):     "console DENY session=deadbeef0102 user=carol reason=password-change first=user",
+		s.PasswordChangeDenyLine("", 7):         "console DENY session=deadbeef0102 user=carol reason=password-change first=- len=7",
 		s.SystemShellDenyLine("readonly"):       "console system-shell DENY session=deadbeef0102 user=carol tier=readonly",
 		s.SystemShellStartLine("/bin/bash"):     "console system-shell start session=deadbeef0102 user=carol tty=- shell=/bin/bash",
 		s.SystemShellEndLine(0, 61*time.Second): "console system-shell end session=deadbeef0102 user=carol status=0 duration=61",
@@ -207,6 +212,13 @@ func TestParseRemote(t *testing.T) {
 	for out, want := range map[string]int{"list_max=-1": -1, "list_max=1000": 1000, "list_max=1001": 40, "list_max=0": 40, "list_max=-2": 40, "list_max=x": 40} {
 		if r, _ := ParseRemote(out); r.ListMax != want {
 			t.Errorf("ParseRemote(%q).ListMax = %d, want %d", out, r.ListMax, want)
+		}
+	}
+	// The required password change of 0.2.20: yes or no, and no without the
+	// field (an older server) or with a value that is neither.
+	for out, want := range map[string]bool{"idle=5": false, "password_change=yes": true, "password_change=no": false, "password_change=true": false, "password_change=": false} {
+		if r, _ := ParseRemote(out); r.PasswordChange != want {
+			t.Errorf("ParseRemote(%q).PasswordChange = %t", out, r.PasswordChange)
 		}
 	}
 	// The tier the shell lists for (D56): the gate's, else the tier field,

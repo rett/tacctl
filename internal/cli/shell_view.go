@@ -47,6 +47,11 @@ type viewFn func() tier.Tier
 // the root side's answer that the account has no tier.
 const viewUnread tier.Tier = "unread"
 
+// viewPasswordChange is the view of a session held to a required password
+// change (0.2.20): the lists show the password change and nothing else. Like
+// viewUnread it is no tier.
+const viewPasswordChange tier.Tier = "password-change"
+
 // The lookup of a managed caller's tier in the plain shell: how long the
 // root side may take, and how long after a failure the next Tab may try
 // again.
@@ -61,6 +66,8 @@ const (
 // lists no verb; any other tier (unread) lists the read-only rows.
 func viewOf(t tier.Tier) (eff tier.Tier, all bool) {
 	switch t {
+	case viewPasswordChange:
+		return t, false
 	case "", tier.Unrestricted, tier.Superuser:
 		return t, true
 	case tier.Readonly, tier.Operator, tier.Engineer, tier.None:
@@ -99,6 +106,9 @@ func verbTier(path []string) (tier.Tier, bool) {
 func viewShows(root *cobra.Command, eff tier.Tier, all bool, path []string) bool {
 	if all || len(path) == 0 {
 		return true
+	}
+	if eff == viewPasswordChange {
+		return len(path) == 1 && path[0] == pwChangeWord
 	}
 	if eff == tier.None {
 		return false

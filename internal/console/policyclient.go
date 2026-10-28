@@ -37,6 +37,11 @@ type Remote struct {
 	// answer named none, the defaults apply).
 	PasswordCache bool
 	PCIdle, PCMax time.Duration
+	// PasswordChange: a password change is required of the caller (0.2.20):
+	// the console opens with the notice and the dialog, and nothing else
+	// runs until the password is changed. Only a caller who is no superuser
+	// is told so; the answer of a release before 0.2.20 has no such field.
+	PasswordChange bool
 	// Known reports whether the answer was read (false: the defaults).
 	Known bool
 	// TierRead reports whether the answer named the caller's tier (a
@@ -112,6 +117,10 @@ func ParseRemote(out string) (r Remote, ok bool) {
 		case "space_completion":
 			if b, good := yesNoValue(v); good {
 				r.SpaceCompletion, ok = b, true
+			}
+		case "password_change":
+			if b, good := yesNoValue(v); good {
+				r.PasswordChange, ok = b, true
 			}
 		case "password_cache":
 			if b, good := yesNoValue(v); good {

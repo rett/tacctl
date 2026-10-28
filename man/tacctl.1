@@ -12434,6 +12434,46 @@ A word that starts with an underscore at the prompt or in a batch
 the entry points of the scripts, the key and the console itself) is not a
 command there: it is answered as any word that is no command, and nothing runs.
 .PP
+A user who must change the password
+.RB ( "user require\-password\-change" ;
+never a superuser) gets, at the start of the console, a notice (\fBA password
+change is required of your account.\fR: no device accepts the login, and
+nothing here runs until then but the change itself) and the password change
+dialog, the line
+.BR passwd ,
+straight away. Until the password is changed nothing else runs: every other
+line, the console's own words
+.RB ( help ,
+.BR history ,
+.B system\-shell
+and
+.BR "console forget" )
+included, is refused with
+.B A password change is required: nothing runs here until it is made but 'passwd' (and 'exit').
+and status 1, and Tab and ? list the change only (and
+.B exit
+and
+.BR quit ,
+which end the session). The root side tells the console in its policy line
+.RB ( password_change=yes ,
+only for a caller who is held to it). When the password is changed the root
+side is asked once more and the session goes on as any other. Ctrl-C in the
+dialog declines it and ends the session (status 130); any other failure (a
+wrong current password, a new one that is too weak or differs from its
+confirmation) leaves a prompt that is still locked, where
+.B passwd
+tries again. A line given with
+.B \-c
+and a batch are held the same way, with no dialog: a
+.B passwd
+line runs, any other is refused with status 1. The session is logged:
+.BI "console password-change required|done|failed session=" id " user=" user " [status=" n ]\fR,
+and each refused line
+.BI "console DENY session=" id " user=" user " reason=password\-change first=" verb|\- " [len=" n ]
+(auth.warning; the word is named under the rule of the other refusals). The
+command line holds the caller to the change as well (see
+.BR "user require\-password\-change" ).
+.PP
 .B system\-shell
 (the console's own word; interactive sessions only) starts the user's system
 shell
@@ -12454,7 +12494,7 @@ it is refused with status 126.
 Syslog (tag
 .BR tacctl\-console ):
 .BI "console start session=" id " user=" user " from=" address " tty=" tty " mode=" interactive|command|batch\fR,
-.BI "console end session=" id " user=" user " reason=" exit|eof|idle|hangup|signal|command|failed " lines=" n " status=" n\fR,
+.BI "console end session=" id " user=" user " reason=" exit|eof|idle|hangup|signal|command|failed|locked " lines=" n " status=" n\fR,
 .BI "console DENY session=" id " user=" user " reason=command first=" verb|\- " [len=" n ]
 (auth.warning; the word is the first word of the refused string when it is a
 verb of tacctl or one of the console's own words, else

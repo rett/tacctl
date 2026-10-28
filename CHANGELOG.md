@@ -270,7 +270,16 @@ current behaviour; this file is where history lives.
     superuser, every command but `passwd`, `version` and `help` is refused
     with one message and exit status 1 (a plain shell and `ssh <server>
     tacctl ...` included; root and a local administrator who is no tacctl user
-    are not affected), and the refusal is logged as `password-change DENY`. The user's own
+    are not affected), and the refusal is logged as `password-change DENY`.
+    The login console opens, for such a user, with a notice and the password
+    change dialog straight away; until the password is changed nothing else
+    runs there (every other line, `help` included, is refused with status 1, and
+    Tab and `?` list the change only), `-c` lines and batches are held the
+    same way, Ctrl-C in the dialog ends the session and a failed change leaves a
+    locked prompt where `passwd` tries again. The root side tells the console in
+    its policy line (`password_change=yes`), and the session is logged as
+    `console password-change required|done|failed` and `console DENY ...
+    reason=password-change`. The user's own
     `tacctl passwd` (which already refused the current password as the new one)
     lifts the requirement. The flag is the user's `password_change_required` in
     `store.yaml`, written only when set; `user list` marks the date with

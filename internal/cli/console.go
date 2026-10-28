@@ -18,6 +18,7 @@ import (
 
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/hosts"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -868,9 +869,17 @@ func (inv *invocation) consolePolicyLine([]string) error {
 		cache = " password_cache=yes pc_idle=" + strconv.Itoa(int(pol.PasswordCacheIdle()/time.Minute)) +
 			" pc_max=" + strconv.Itoa(int(pol.PasswordCacheMax()/time.Hour))
 	}
+	// A caller who must change the password (and is no superuser, decided
+	// here and now) is told so, for the console to open with the dialog and
+	// hold the session to it (0.2.20). A line without the field reads as no;
+	// a console of an older release ignores it.
+	change := ""
+	if m, err := inv.model(); err == nil && m != nil && user != "" && t != tier.Unrestricted && pwchange.Subject(a.Conf(), m, m.User(user)) {
+		change = " password_change=yes"
+	}
 	inv.echo("shell=" + shell + " idle=" + strconv.Itoa(pol.File.Idle) + " system_shell=" + yesNo(sys) +
 		" system_shell_path=" + path + " ssh_escape=" + yesNo(pol.SSHEscape()) + " agent=" + yesNo(pol.AgentForwarding()) +
 		" forward=" + yesNo(pol.Forwarding(t)) + " tier=" + string(t) + gateField + " list_max=" + strconv.Itoa(pol.ListMax()) +
-		" space_completion=" + yesNo(pol.SpaceCompletion()) + " color=" + pol.Color() + cache)
+		" space_completion=" + yesNo(pol.SpaceCompletion()) + " color=" + pol.Color() + cache + change)
 	return nil
 }

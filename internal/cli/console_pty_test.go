@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,7 +37,11 @@ const consolePtyHelperRun = "-test.run=^TestConsolePtyHelper$"
 type consolePtyRunner struct {
 	execx.Real
 	log, policy, groups string
-	mu                  sync.Mutex
+	// passwd is the status the line 'passwd' ends with; a 0 changes the
+	// password, so the policy no longer says one is required
+	passwd  int
+	changed atomic.Bool
+	mu      sync.Mutex
 }
 
 func (r *consolePtyRunner) Run(ctx context.Context, c execx.Cmd) (execx.Result, error) {
@@ -53,7 +58,11 @@ func (r *consolePtyRunner) Run(ctx context.Context, c execx.Cmd) (execx.Result, 
 	case c.Name == "id":
 		return execx.Result{Stdout: []byte(r.groups + "\n")}, nil
 	case c.Name == "sudo" && slices.Contains(c.Args, "_console-policy"):
-		return execx.Result{Stdout: []byte(r.policy + "\n")}, nil
+		policy := r.policy
+		if r.changed.Load() {
+			policy = strings.ReplaceAll(policy, " password_change=yes", "")
+		}
+		return execx.Result{Stdout: []byte(policy + "\n")}, nil
 	case c.Name == "sudo":
 		return execx.Result{}, nil
 	}
@@ -65,6 +74,12 @@ func (r *consolePtyRunner) Start(ctx context.Context, c execx.Cmd) (execx.Proces
 		i := slices.Index(c.Args, testExe)
 		words := c.Args[i+1:]
 		switch {
+		case words[0] == "passwd":
+			// the password change: it ends with the status the test chose
+			if r.passwd == 0 {
+				r.changed.Store(true)
+			}
+			c.Name, c.Args = "sh", []string{"-c", "echo RAN-PASSWD; exit " + strconv.Itoa(r.passwd)}
 		case words[0] == "user" && len(words) > 1 && words[1] == "slow":
 			// (a real first word: a word that is no command never reaches sudo)
 			c.Name, c.Args = "sleep", []string{"8"}
@@ -105,6 +120,7 @@ func TestConsolePtyHelper(t *testing.T) {
 	env := console.Scrub(dirty, paths.ConsoleCommand, false)
 	// The stub shell and sleep are found through the console's PATH.
 	r := &consolePtyRunner{log: opt["log"], policy: strings.ReplaceAll(opt["policy"], ",", " "), groups: strings.ReplaceAll(opt["groups"], ",", " ")}
+	r.passwd, _ = strconv.Atoi(opt["passwd"])
 	a := app.New(nil, paths.NewEnv(env), testExe, os.Geteuid(),
 		app.Stdio{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}, r)
 	var args []string

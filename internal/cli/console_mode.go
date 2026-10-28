@@ -144,6 +144,7 @@ func (inv *invocation) runConsoleSession(args []string) error {
 	if cs.pol.Known {
 		cs.tier = cs.pol.Tier
 	}
+	lock := lockedBy(cs.pol)
 	extra := []string{marker}
 	if d := a.Env.Get("DISPLAY"); cs.pol.Forward && console.ValidDisplay(d) {
 		// sshd's X11 forwarding, for 'ssh -X <device>' (the tiers sudoers
@@ -162,13 +163,25 @@ func (inv *invocation) runConsoleSession(args []string) error {
 	if groups == nil {
 		r.groups = []string{}
 	}
+	if lock != nil {
+		// A password change is required of the caller: the session opens with
+		// the dialog and runs nothing else until it is made (pwchange_console.go).
+		r.lock = lock
+		r.recheck = func() bool { return inv.consoleRemotePolicy(exe, marker).PasswordChange }
+		r.lockRefused = cs.lockRefusedLog(consoleRootCommand(newRoot(inv)))
+		r.pwEvent = func(event string, status int) { cs.log("auth.info", cs.sess.PasswordChangeLine(event, status)) }
+	}
 	switch mode {
 	case console.ModeCommand:
 		r.mode, r.line = shellCommandMode, line
 	case console.ModeInteractive:
 		host := shortHostname()
 		r.mode, r.tty, r.idle, r.prompt = shellInteractive, f, cs.pol.Idle, host+"> "
-		inv.echo("tacctl console on " + host + " — type 'help'. Devices: device list. This session is logged.")
+		if lock != nil {
+			inv.echo("tacctl console on " + host + ". This session is logged.")
+		} else {
+			inv.echo("tacctl console on " + host + " — type 'help'. Devices: device list. This session is logged.")
+		}
 	}
 	if r.mode != shellBatch {
 		if home := a.Env.Get("HOME"); home != "" {

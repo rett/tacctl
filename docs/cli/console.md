@@ -150,8 +150,23 @@ ssh carol@authsrv < lines.txt
 
 A word that starts with an underscore (`__help`, `__complete`, `_console-policy`: the entry points of the scripts, the key and the console itself) is no command at the prompt or in a batch: it is answered as any word that is no command (`Unknown command: '__help'`), and nothing runs.
 
+**A required password change.** A user who must change the password (`user require-password-change`; never a
+superuser) gets, at the start of the console, a notice (`A password change is required of your account.`: no
+device accepts the login, and nothing here runs until then but the change itself) and the password change
+dialog, the line `passwd`, straight away. Until the password is changed nothing else runs: every other line, the
+console's own words (`help`, `history`, `system-shell`, `console forget`) included, is refused with `A password
+change is required: nothing runs here until it is made but 'passwd' (and 'exit').` and status 1, and Tab and `?`
+list the change only (`exit` and `quit` end the session). The root side tells the console in its policy line
+(`password_change=yes`, for a caller who is held to it, decided from the group's tier at that moment). When the
+password is changed the root side is asked once more and the session goes on as any other. Ctrl-C in the dialog
+declines it and ends the session (status 130); any other failure (a wrong current password, a new one that is
+too weak or differs from its confirmation) leaves a prompt that is still locked, where `passwd` tries again.
+A `-c` line and a batch are held the same way, with no dialog: a `passwd` line runs, any other is refused with
+status 1. The command line holds the caller to the change too, so a plain shell or `ssh <server> tacctl ...`
+runs nothing but `passwd`, `version` and `help` (see [User Commands](user.md)).
+
 `system-shell` (the console's own word, at the prompt only) starts the user's system shell (`console system-shell path`, default `/bin/bash`) as the user, without arguments, with the console's environment and `SHELL=<path>`; the idle timer does not run meanwhile and sshd's drop-in still applies; `exit` returns to the console (`back in the tacctl console`). It is open to the tiers of `console system-shell tiers` (default: superusers only); for anyone else it is refused with `system-shell is not available for the <tier> tier on this console. An administrator enables it with: tacctl console system-shell tiers …` (status 1), and through `-c` or in a batch with status 126. The same tiers may open an editor from the console (`scope block ... edit|adopt`, `device block ... edit|adopt`: an editor can start a shell); for anyone else those verbs say so and change nothing.
 
-Logged to syslog with the tag `tacctl-console`: `console start session= user= from= tty= mode=interactive|command|batch`, `console end session= user= reason=exit|eof|idle|hangup|signal|command|failed lines= status=`, `console DENY session= user= reason=command first=<verb>|- [len=<n>]` (auth.warning; the first word is named only when it is a verb of tacctl or a console word, else `first=- len=<n>`, the length of the string, so a password typed at the prompt is not logged), `console system-shell start|end|DENY` (with `status=` and `duration=` at the end). Every line is in sudo's own log too, and `tacctl ssh` logs `console=<session>`.
+Logged to syslog with the tag `tacctl-console`: `console start session= user= from= tty= mode=interactive|command|batch`, `console end session= user= reason=exit|eof|idle|hangup|signal|command|failed|locked lines= status=`, `console DENY session= user= reason=command first=<verb>|- [len=<n>]` (auth.warning; the first word is named only when it is a verb of tacctl or a console word, else `first=- len=<n>`, the length of the string, so a password typed at the prompt is not logged), `console password-change required|done|failed session= user= [status=]` and `console DENY session= user= reason=password-change first=<verb>|- [len=<n>]` for a line refused while a password change is required (the first word under the same rule), `console system-shell start|end|DENY` (with `status=` and `duration=` at the end). Every line is in sudo's own log too, and `tacctl ssh` logs `console=<session>`.
 
 Each change of the console's settings also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `console set key= item= from= to=`, at `auth.notice` for `tiers`, `user` and `system-shell`; `console install` and `console remove` end their `console provision` and `console deprovision` lines in `result=ok` or `result=failed reason=` ([Audit log](../security/audit.md#detail-lines)).

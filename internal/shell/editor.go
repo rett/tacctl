@@ -115,6 +115,10 @@ type editor struct {
 	explain       Explainer
 	// systemShell: the shell has the system-shell word (Rows).
 	systemShell bool
+	// locked answers whether the session is held to a required password
+	// change (Options.Locked): the lists then offer exit only of the shell's
+	// own words.
+	locked func() bool
 	// width and height are the terminal's size (setSize; 0: unknown).
 	width, height atomic.Int32
 	// out writes to the terminal past the Terminal, and readKey reads one
@@ -437,6 +441,9 @@ func (e *editor) candidates(words []string, partial string) []Candidate {
 
 // candidatesFrom is candidates, asking complete.
 func (e *editor) candidatesFrom(complete Completer, words []string, partial string) []Candidate {
+	if e.locked != nil && e.locked() {
+		return collectLocked(complete, words, partial)
+	}
 	return collect(complete, Rows(e.systemShell), e.systemShell, words, partial)
 }
 
@@ -450,6 +457,21 @@ func Candidates(complete Completer, words []string, partial string) []Candidate 
 // collect is the answer of complete for words and partial, with the shell's
 // own words (rows) at the start of a line, filtered by partial.
 func collect(complete Completer, rows []Row, systemShell bool, words []string, partial string) []Candidate {
+	return collectFrom(complete, rows, systemShell, false, words, partial)
+}
+
+// LockedRows are the shell's own words while the session is held to a
+// required password change: exit and quit.
+var LockedRows = []Row{{"exit | quit", DescExit, []string{"exit", "quit"}}}
+
+// collectLocked is collect for a locked session: exit and quit at the start
+// of a line, nothing after help (a word that does not run), and what the
+// completer offers, which the caller has narrowed to the words that run.
+func collectLocked(complete Completer, words []string, partial string) []Candidate {
+	return collectFrom(complete, LockedRows, false, true, words, partial)
+}
+
+func collectFrom(complete Completer, rows []Row, systemShell, locked bool, words []string, partial string) []Candidate {
 	var all []Candidate
 	switch {
 	case len(words) == 0:
@@ -457,6 +479,7 @@ func collect(complete Completer, rows []Row, systemShell bool, words []string, p
 		if complete != nil {
 			all = append(all, complete(nil, partial)...)
 		}
+	case words[0] == "help" && locked:
 	case words[0] == "help":
 		if complete != nil {
 			for _, c := range complete(words[1:], partial) {

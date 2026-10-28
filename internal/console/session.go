@@ -98,6 +98,9 @@ const (
 	ReasonCommand = shell.EndCommand
 	ReasonFailed  = shell.EndFailed
 	ReasonError   = shell.EndError
+	// ReasonLocked: the required password change was not made (declined,
+	// interrupted or failed), so the session ended at its opening.
+	ReasonLocked = shell.EndLocked
 )
 
 // StartLine is the log line of the session's start.
@@ -118,6 +121,30 @@ func (s Session) EndLine(reason string, lines, status int) string {
 // password typed at the prompt.
 func (s Session) DenyLine(first string, n int) string {
 	l := "console DENY session=" + s.ID + " user=" + LogValue(s.User) + " reason=command first=" + LogValue(first)
+	if first == "" {
+		l += " len=" + strconv.Itoa(n)
+	}
+	return l
+}
+
+// PasswordChangeLine is the log line of the required password change at the
+// opening of a session (0.2.20): event is "required" (the session opens held
+// to it), "done" (the password was changed and the session goes on) or
+// "failed" (it was not, and the session ends with status).
+func (s Session) PasswordChangeLine(event string, status int) string {
+	l := "console password-change " + event + " session=" + s.ID + " user=" + LogValue(s.User)
+	if event == "failed" {
+		l += " status=" + strconv.Itoa(status)
+	}
+	return l
+}
+
+// PasswordChangeDenyLine is the log line of a line refused because a password
+// change is required: first is a verb of tacctl or a word of the console, or
+// "": then the line reads "first=- len=<n>" and no word of it is logged, as
+// for DenyLine, because a refused line can be a password typed at the prompt.
+func (s Session) PasswordChangeDenyLine(first string, n int) string {
+	l := "console DENY session=" + s.ID + " user=" + LogValue(s.User) + " reason=password-change first=" + LogValue(first)
 	if first == "" {
 		l += " len=" + strconv.Itoa(n)
 	}

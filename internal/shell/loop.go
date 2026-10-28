@@ -25,6 +25,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -128,6 +129,28 @@ type Options struct {
 	// Cache is the session's password cache; nil: none (the cache is off,
 	// or the mode keeps no process around: -c and batch).
 	Cache PasswordCache
+	// Locked, when set, is asked before every line runs and by the lists:
+	// while it answers true the session is held to a required password
+	// change, and nothing runs but the words of LockWords (alone, with no
+	// argument), exit and quit. Every other line, help, history,
+	// system-shell and console forget included, is refused with LockNotice
+	// as an error and status 1, and the lists offer exit and what the
+	// completer offers. It is asked again for each line, so the lock lifts
+	// the moment its answer does.
+	Locked func() bool
+	// LockWords are the words that run while Locked answers true ('passwd').
+	LockWords []string
+	// LockNotice is the refusal of a line while Locked answers true.
+	LockNotice string
+	// LockRefused, when set, is told the words of each line refused while
+	// the session is locked (the console logs it).
+	LockRefused func(words []string)
+	// Opening, when set, runs once in an interactive session before the first
+	// prompt, with the terminal as the shell found it (the console's required
+	// password change: the notice and the dialog). It answers end true, with
+	// the status, to end the session without a prompt (EndLocked); otherwise
+	// the session goes on to its prompt, locked or not as Locked says.
+	Opening func(ctx context.Context) (end bool, status int)
 }
 
 // Why a session ended (Shell.End).
@@ -140,6 +163,7 @@ const (
 	EndCommand = "command" // the one line of -c
 	EndFailed  = "failed"  // a batch stopped at a line that failed
 	EndError   = "error"   // the terminal failed
+	EndLocked  = "locked"  // Opening ended it: the required password change was declined
 )
 
 // Shell runs lines.
@@ -194,6 +218,13 @@ func (s *Shell) run(ctx context.Context, line string, stdin io.Reader) (status i
 		return 0, false
 	}
 	s.lines++
+	if s.locked() && !s.lockAllows(words, bare) {
+		if s.o.LockRefused != nil {
+			s.o.LockRefused(words)
+		}
+		s.errorf("%s", s.o.LockNotice)
+		return 1, false
+	}
 	if bare {
 		return s.o.Exec(ctx, words, stdin), false
 	}
@@ -257,6 +288,19 @@ func (s *Shell) run(ctx context.Context, line string, stdin io.Reader) (status i
 		s.o.Cache.Forget(askpass.WhyPasswd)
 	}
 	return status, false
+}
+
+// locked reports whether the session is held to a required password change.
+func (s *Shell) locked() bool { return s.o.Locked != nil && s.o.Locked() }
+
+// lockAllows reports whether a line runs while the session is locked: exit
+// or quit, or one of LockWords, alone. A line that is only 'tacctl' (bare)
+// is the command with no arguments, which is not one of them.
+func (s *Shell) lockAllows(words []string, bare bool) bool {
+	if bare || len(words) != 1 {
+		return false
+	}
+	return words[0] == "exit" || words[0] == "quit" || slices.Contains(s.o.LockWords, words[0])
 }
 
 // isConsoleForget reports whether words are 'console forget': a word of the
@@ -378,7 +422,7 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 	if hist == nil {
 		hist = NewHistory("", nil)
 	}
-	ed := &editor{prompt: s.o.Prompt, hist: hist, complete: s.o.Complete, completeFixed: s.o.CompleteFixed, explain: s.o.Explain, listMax: s.o.ListMax,
+	ed := &editor{prompt: s.o.Prompt, hist: hist, locked: s.locked, complete: s.o.Complete, completeFixed: s.o.CompleteFixed, explain: s.o.Explain, listMax: s.o.ListMax,
 		systemShell: s.o.SystemShell != nil, spaces: s.o.SpaceCompletion, styled: s.o.Styled}
 	if ed.listMax == 0 {
 		ed.listMax = DefaultListMax
@@ -418,6 +462,12 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 			s.reason = EndHangup
 		}
 		return 128 + int(sig)
+	}
+	if s.o.Opening != nil {
+		if end, status := s.o.Opening(ctx); end {
+			s.reason = EndLocked
+			return status
+		}
 	}
 	for {
 		if stop.Load() != 0 {

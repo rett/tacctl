@@ -4,8 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/execx/fake"
 	"github.com/rett/tacctl/internal/store"
+	"github.com/rett/tacctl/internal/tier"
 )
 
 // asBob runs tacctl as bob, an operator of the managed users (SUDO_USER and
@@ -131,5 +133,44 @@ func TestPasswordChangeRefusalSparesSuperusersAndOthers(t *testing.T) {
 	sb.asBob("", "user", "list")
 	if sb.code != 1 || !strings.Contains(sb.err.String(), "A password change is required of 'bob'") {
 		t.Errorf("bob moved back: exit %d %q", sb.code, sb.err.String())
+	}
+}
+
+// The policy line the console asks for says password_change=yes for a caller
+// who is held to a change and for nobody else: a superuser with the flag, an
+// unflagged user and a caller with no tier get no such field.
+func TestConsolePolicyLineCarriesThePasswordChange(t *testing.T) {
+	sb := pwSandbox(t)
+	policy := func(user, uid, groups string) string {
+		t.Helper()
+		out := plain(sb.cfgRun("", []string{"_console-policy"}, idAs(user, groups), "SUDO_USER="+user, "SUDO_UID="+uid))
+		if sb.code != 0 {
+			t.Fatalf("_console-policy: exit %d %q", sb.code, sb.err.String())
+		}
+		return out
+	}
+	if out := policy("bob", "1003", "tac-users tac-operator"); strings.Contains(out, "password_change") {
+		t.Errorf("an unflagged user: %q", out)
+	}
+	sb.asAlice("", "user", "require-password-change", "bob")
+	if out := policy("bob", "1003", "tac-users tac-operator"); !strings.HasSuffix(strings.TrimSpace(out), "password_change=yes") || !strings.Contains(out, "tier=operator") {
+		t.Errorf("a flagged user: %q", out)
+	}
+	if _, err := store.Mutate(sb.path("state", "store.yaml"), store.MutateOptions{}, func(s *store.Store) error {
+		return s.UserSet("alice", "password_change_required=true")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if out := policy("alice", "1001", "tac-users tac-superuser"); strings.Contains(out, "password_change") {
+		t.Errorf("a flagged superuser: %q", out)
+	}
+	// not a managed user (the gate gives no tier): nothing, whatever the name
+	if out := plain(sb.cfgRun("", []string{"_console-policy"}, func(*fake.Runner) {}, "SUDO_USER=bob", "SUDO_UID=1003")); strings.Contains(out, "password_change") {
+		t.Errorf("a caller with no tier: %q", out)
+	}
+	// the answer parses into what the console reads
+	r, ok := console.ParseRemote(policy("bob", "1003", "tac-users tac-operator"))
+	if !ok || !r.PasswordChange || r.Tier != tier.Operator {
+		t.Errorf("ParseRemote: %+v", r)
 	}
 }

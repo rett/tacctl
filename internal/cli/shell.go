@@ -184,6 +184,14 @@ type shellRun struct {
 	// its policy answer already). "": a tac-users member's tier is asked
 	// of the root side on first use, anyone else sees everything.
 	view tier.Tier
+	// lock holds the run to a required password change (nil: none; the
+	// console's, pwchange_console.go): recheck asks the root side whether it
+	// still is, after the change; lockRefused logs a line it refused; pwEvent
+	// logs the opening dialog ("required", "done", "failed").
+	lock        *pwLock
+	recheck     func() bool
+	lockRefused func(words []string)
+	pwEvent     func(event string, status int)
 }
 
 // shellHistoryPath is the history file under home.
@@ -249,6 +257,9 @@ func (inv *invocation) runShell(r shellRun) (int, *shell.Shell) {
 	}
 	if r.systemShell != nil {
 		o.SystemShell = r.systemShell
+	}
+	if r.lock != nil {
+		inv.holdSession(r, &o)
 	}
 	if r.mode != shellBatch {
 		o.History = shell.NewHistory(r.history, a.Out.Stderr)
