@@ -16,7 +16,7 @@ func TestRollbackTakesOutTheConsoleSettingsOf0220(t *testing.T) {
 	if !strings.Contains(consoleWith, "color: true") || !strings.Contains(consoleWith, "list_max: -1") {
 		t.Fatal("the fixture lacks the settings")
 	}
-	for _, target := range []string{RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029, RollbackTarget} {
+	for _, target := range []string{RollbackTarget0219, RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029, RollbackTarget} {
 		s := newRBSandbox(t)
 		s.in.Target = target
 		// Nothing to take out: the plan is the plan of before (no console step).
@@ -90,7 +90,7 @@ func TestRollbackTakesOutTheConsoleSettingsOf0220(t *testing.T) {
 // A console.yaml this release cannot read refuses the rollback to every
 // target, before anything is changed.
 func TestRollbackRefusesAnUnreadableConsoleFileForEveryTarget(t *testing.T) {
-	for _, target := range []string{RollbackTarget0218, RollbackTarget029, RollbackTarget} {
+	for _, target := range []string{RollbackTarget0219, RollbackTarget0218, RollbackTarget029, RollbackTarget} {
 		s := newRBSandbox(t)
 		s.write(s.p.ConsoleFile, "version: 1\nsettings: {color: maybe}\n", 0o600)
 		s.reload()
@@ -110,7 +110,7 @@ func TestRollbackTakesOutTheSystemShellOfUsers(t *testing.T) {
 	if !strings.Contains(consoleWith, "system_shell_users") {
 		t.Fatal("the fixture lacks the setting")
 	}
-	for _, target := range []string{RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029, RollbackTarget} {
+	for _, target := range []string{RollbackTarget0219, RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029, RollbackTarget} {
 		s := newRBSandbox(t)
 		s.in.Target = target
 		s.write(s.p.ConsoleFile, consoleWith, 0o600)
@@ -157,7 +157,7 @@ func TestRollbackTakesOutTheUsersOfThePasswordCache(t *testing.T) {
 	if !strings.Contains(consoleWith, "password_cache_users") || !strings.Contains(rbConsole, "password_cache:") {
 		t.Fatal("the fixture lacks the settings")
 	}
-	for _, target := range []string{RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029, RollbackTarget} {
+	for _, target := range []string{RollbackTarget0219, RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029, RollbackTarget} {
 		s := newRBSandbox(t)
 		s.in.Target = target
 		s.write(s.p.ConsoleFile, consoleWith, 0o600)
@@ -209,7 +209,7 @@ func TestRollbackWarnsOfWhoGainsASystemShellOrTheCache(t *testing.T) {
 		"users:\n  alice: {group: superuser, hash: abcdef, disabled: false}\n  bob: {group: operator, hash: abcdef, disabled: false}\n  carol: {group: readonly, hash: abcdef, disabled: false}\n  dave: {group: operator, hash: abcdef, disabled: false}\n"
 	const consoleText = "version: 1\ntiers: {readonly: disable, operator: enable, engineer: enable, superuser: enable}\nusers: {dave: disable, carol: enable}\n" +
 		"settings:\n  system_shell_tiers: [operator, superuser]\n  system_shell_users: {bob: disable}\n  password_cache: {tiers: [operator, superuser], idle: 15, max: 8}\n  password_cache_users: {dave: true}\n"
-	for _, target := range []string{RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029, RollbackTarget} {
+	for _, target := range []string{RollbackTarget0219, RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029, RollbackTarget} {
 		s := newRBSandbox(t)
 		s.write(s.p.StoreFile, store, 0o600)
 		s.write(s.p.ConsoleFile, consoleText, 0o600)

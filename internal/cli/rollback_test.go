@@ -707,7 +707,7 @@ func TestRollbackCompletion(t *testing.T) {
 		words []string
 		want  []string
 	}{
-		{[]string{"rollback", ""}, []string{"0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}},
+		{[]string{"rollback", ""}, []string{"0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}},
 		{[]string{"rollback", "0.2.3", ""}, []string{"--apply", "--yes", "--hosts"}},
 		{[]string{"rollback", "0.2.3", "--apply", ""}, []string{"--yes", "--hosts"}},
 		{[]string{"rollback", "0.2.3", "--apply", "--yes", "--hosts", ""}, nil},
@@ -735,7 +735,7 @@ func TestRollbackCompletion(t *testing.T) {
 // shell or the cache, and --apply refuses without --yes, on every target; with
 // the switches removed the warning is gone.
 func TestRollbackWarnsOfWhoGainsASystemShellOrTheCache(t *testing.T) {
-	for _, target := range []string{"0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"} {
+	for _, target := range []string{"0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"} {
 		hs := rollbackState(t)
 		hs.write("state/console.yaml", strings.Replace(hs.read("state/console.yaml"), "users: {bob: enable}",
 			"users: {bob: disable}", 1), 0o600)

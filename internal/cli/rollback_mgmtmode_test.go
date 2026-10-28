@@ -10,7 +10,7 @@ import (
 // --apply needs --yes (the warning is a decision), removes the key after a
 // snapshot, and leaves the permit list alone.
 func TestRollbackWithAStrictMgmtACLModeWarnsAndRemovesTheKey(t *testing.T) {
-	for _, target := range []string{"0.2.18", "0.2.16"} {
+	for _, target := range []string{"0.2.19", "0.2.18", "0.2.16"} {
 		hs := rollbackState(t)
 		hs.write("state/tacctl.yaml", hs.read("state/tacctl.yaml")+"scope_mgmt_acl:\n  permits:\n    lab:\n    - 10.0.0.0/8\n  mode:\n    lab: strict\n", 0o640)
 		before := tree(t, hs.dir)

@@ -8,8 +8,9 @@ import (
 	"testing"
 )
 
-// An emergency lockdown stops the rollback to every target, in the dry run
-// and the apply alike: no older release has the record. Nothing is changed.
+// An emergency lockdown stops the rollback to every target before 0.2.19, in
+// the dry run and the apply alike: no such release has the record. Nothing is
+// changed. 0.2.19 has it (TestPlanRollback0219KeepsALockdown).
 func TestPlanRollbackRefusesWhileALockdownStands(t *testing.T) {
 	for _, target := range []string{RollbackTarget, RollbackTarget029, RollbackTarget0216, RollbackTarget0217, RollbackTarget0218} {
 		s := newRBSandbox(t)
@@ -33,7 +34,7 @@ func TestPlanRollbackRefusesWhileALockdownStands(t *testing.T) {
 		}
 		text := strings.Join(ref.Lines, "\n")
 		for _, want := range []string{"Scope lab is locked down (groups operator, readonly, by alice since 2026-10-25 ",
-			"Every older release lacks the record", "Lift it first: tacctl emergency lockdown lab disable. Nothing was changed."} {
+			"Every release before 0.2.19 lacks the record", "Lift it first: tacctl emergency lockdown lab disable. Nothing was changed."} {
 			if !strings.Contains(text, want) {
 				t.Errorf("target %q: the refusal lacks %q:\n%s", target, want, text)
 			}
@@ -59,7 +60,7 @@ func TestPlanRollbackRefusesWhileALockdownStands(t *testing.T) {
 func TestRollbackRefusesDottedUsers(t *testing.T) {
 	const store = "version: 1\nusers:\n  alice.smith:\n    group: operator\n  bob:\n    group: operator\n  a.b-c_d:\n    group: operator\n"
 	const consoleDots = "version: 1\nusers:\n  carol.jones: enable\n  dave: disable\n"
-	for _, target := range []string{RollbackTarget, RollbackTarget029, RollbackTarget0216, RollbackTarget0217, RollbackTarget0218} {
+	for _, target := range []string{RollbackTarget, RollbackTarget029, RollbackTarget0216, RollbackTarget0217, RollbackTarget0218, RollbackTarget0219} {
 		s := newRBSandbox(t)
 		s.in.Target = target
 		s.write(s.p.StoreFile, store, 0o600)
@@ -126,7 +127,7 @@ func TestRollbackRefusesDottedUsers(t *testing.T) {
 func TestRollbackTakesOutDottedConsoleUsers(t *testing.T) {
 	const consoleDots = "version: 1\ntiers: {readonly: disable, operator: enable, engineer: enable, superuser: enable}\n" +
 		"users: {carol.jones: enable, dave: disable, erin.king: disable}\nsettings: {idle_timeout: 12}\n"
-	for _, target := range []string{RollbackTarget, RollbackTarget029, RollbackTarget0216, RollbackTarget0217, RollbackTarget0218} {
+	for _, target := range []string{RollbackTarget, RollbackTarget029, RollbackTarget0216, RollbackTarget0217, RollbackTarget0218, RollbackTarget0219} {
 		s := newRBSandbox(t)
 		s.in.Target = target
 		s.write(s.p.ConsoleFile, consoleDots, 0o600)

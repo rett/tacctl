@@ -25,7 +25,7 @@ func flagPasswordChange(t *testing.T, hs *hostSandbox, names ...string) {
 // nothing, --apply needs --yes, then removes the key from the store after a
 // snapshot (an older release refuses it) and keeps the users.
 func TestRollbackWithARequiredPasswordChangeWarnsAndRemovesTheKey(t *testing.T) {
-	for _, target := range []string{"0.2.18", "0.2.9"} {
+	for _, target := range []string{"0.2.19", "0.2.18", "0.2.9"} {
 		hs := rollbackState(t)
 		// erin is the engineer of rollbackState, alice a superuser
 		flagPasswordChange(t, hs, "bob", "erin", "alice")

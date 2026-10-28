@@ -41,18 +41,20 @@ After an upgrade: `tacctl status`, `tacctl config validate` (store, rendered con
 
 ## Rolling back
 
-`tacctl rollback` takes five targets: `0.2.18`, the release before this
-one, `0.2.17`, `0.2.16`, `0.2.9` and `0.2.3`. All are the dry run described
-below until `--apply` is given, all refuse while an apply is not settled, an
-emergency lockdown locks a group or a user name has a period, and each release's tool prepares the state
-for the releases it knows. `0.2.4` to `0.2.8` and `0.2.2` and older are
-refused with the way there (one release at a time, or `tacctl backup restore`
-of a snapshot of the time); `0.2.10` to `0.2.15`, this release and any other
-word are refused with the five targets named.
+`tacctl rollback` takes six targets: `0.2.19`, the release before this
+one, `0.2.18`, `0.2.17`, `0.2.16`, `0.2.9` and `0.2.3`. All are the dry run
+described below until `--apply` is given, all refuse while an apply is not
+settled or a user name has a period, all but `0.2.19` while an emergency
+lockdown locks a group, and each release's tool prepares the state for the
+releases it knows. `0.2.4` to `0.2.8` and `0.2.2` and older are refused with
+the way there (one release at a time, or `tacctl backup restore` of a snapshot
+of the time); `0.2.10` to `0.2.15`, this release and any other word are
+refused with the six targets named.
 
-**An emergency lockdown stops every rollback** (the dry run too): an older
-release has no such record and would render every locked user back into the
-scope. The refusal lists each lockdown and the command that lifts it
+**An emergency lockdown stops every rollback to a release before 0.2.19**
+(the dry run too): such a release has no such record and would render every
+locked user back into the scope. 0.2.19 has the record as this release writes
+it, so the rollback to 0.2.19 keeps it. The refusal lists each lockdown and the command that lifts it
 (`tacctl emergency lockdown <scope> disable`); lift them, then run the
 rollback again. A record that locks nothing (a hand-edited, partial one) is
 removed by the rollback, because the older schemas refuse its keys.
@@ -89,7 +91,7 @@ blocks that hold such statements, by scope or device, vendor and count, in a
 warning that `--apply` refuses without `--yes`. Take the statements out
 (`tacctl scope block ... system edit`, `tacctl device block ... system edit`)
 before the upgrade, or expect the errors. Targets 0.2.18, 0.2.17, 0.2.16 and
-0.2.9 warn so; 0.2.3 has no blocks.
+0.2.9 warn so; 0.2.19 has the statements, and 0.2.3 has no blocks.
 
 **Console settings of 0.2.20.** `console.yaml` may hold `settings.color` (the
 `console color` setting, written only when it is `on` or `off`) and a
@@ -128,6 +130,33 @@ render, so the running TACACS+ and RADIUS files keep them off the devices
 until the older release renders. Have them change the password first (they
 log in to tacctl and are asked), or keep this release. The flags stay in the
 snapshot `--apply` takes first.
+
+### To 0.2.19
+
+The per-tier sudoers drop-in of this release grants the engineer `scope
+mgmt-acl * mode` and the operator the read forms of `console system-shell`
+and `console password-cache [on|off]`; 0.2.19 has none of them. `--apply`
+rewrites `/etc/sudoers.d/tacctl-tiers`, when it is exactly the text this
+release writes, with the text 0.2.19 writes (after `visudo -cf`); an edited
+file is left, and 0.2.19's upgrade rewrites it. Beside that, it removes what
+every target removes (the management filter mode, the required password
+change and the console settings of 0.2.20, above), after a snapshot when there
+is one of them. An emergency lockdown, a standing one too, is 0.2.19's own and
+stays. Nothing else is converted: `devices.yaml`, the group drop-in, the
+blocks, the apply state, the host registry and the hosts are in formats 0.2.19
+reads. `--hosts` is accepted and does nothing.
+
+```bash
+tacctl rollback 0.2.19          # the dry run: steps, warnings, writes nothing
+tacctl rollback 0.2.19 --apply  # convert (--yes when it warns)
+tacctl upgrade --branch 0.2.19  # install 0.2.19
+```
+
+Until 0.2.19 is installed, do not run `scope mgmt-acl <scope> mode strict`,
+`user add` or `user passwd <name>` (both require a password change by
+default), `user require-password-change`, `console color`, `console list-max`,
+`console system-shell user` or `console password-cache on`: they write a key
+0.2.19 refuses. If one did, run `tacctl rollback 0.2.19 --apply` again.
 
 ### To 0.2.18
 

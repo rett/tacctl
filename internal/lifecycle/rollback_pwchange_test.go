@@ -46,7 +46,7 @@ const pwChangeWarningTitle = "Users who must change their password get their dev
 // for, leaves a flagged superuser out of the warning (the flag never bound
 // one), and keeps every other field.
 func TestPlanRollbackRemovesThePasswordChangeAndWarns(t *testing.T) {
-	for _, target := range []string{RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029, RollbackTarget} {
+	for _, target := range []string{RollbackTarget0219, RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029, RollbackTarget} {
 		s := newRBSandbox(t)
 		s.oldSyntaxKey()
 		rbStoreFlagged(t, s)
@@ -127,7 +127,7 @@ func TestPlanRollbackRemovesThePasswordChangeAndWarns(t *testing.T) {
 
 // Only flagged superusers: the key is removed, nothing is warned of.
 func TestPlanRollbackWarnsOfNoSuperuserFlag(t *testing.T) {
-	for _, target := range []string{RollbackTarget0218, RollbackTarget} {
+	for _, target := range []string{RollbackTarget0219, RollbackTarget0218, RollbackTarget} {
 		s := newRBSandbox(t)
 		st := store.Empty()
 		if err := st.ScopeSet("lab", "prefixes=192.0.2.0/24", "secret=example-secret-example-secret"); err != nil {
@@ -157,7 +157,7 @@ func TestPlanRollbackWarnsOfNoSuperuserFlag(t *testing.T) {
 
 // A store without the key, and an install without a store, add nothing.
 func TestPlanRollbackWithoutAPasswordChange(t *testing.T) {
-	for _, target := range []string{RollbackTarget0218, RollbackTarget029, RollbackTarget} {
+	for _, target := range []string{RollbackTarget0219, RollbackTarget0218, RollbackTarget029, RollbackTarget} {
 		s := newRBSandbox(t)
 		s.in.Target = target
 		p, err := PlanRollback(s.in)

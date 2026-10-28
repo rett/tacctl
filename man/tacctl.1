@@ -213,8 +213,9 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.18
+.B 0.2.19
 (the release before this one),
+.BR 0.2.18 ,
 .BR 0.2.17 ,
 .BR 0.2.16 ,
 .B 0.2.9
@@ -227,12 +228,12 @@ and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word (0.2.10 to
-0.2.15 included: the refusal names the five targets). Every target is
-refused while an emergency lockdown locks a group (the refusal lists each one
-and
+0.2.15 included: the refusal names the six targets). Every target but 0.2.19
+is refused while an emergency lockdown locks a group (the refusal lists each
+one and
 .B "emergency lockdown <scope> disable"
-lifts it; an older release would render the locked users back into the scope)
-and while a device's record says a confirmed commit of
+lifts it; a release before 0.2.19 would render the locked users back into the
+scope; 0.2.19 has the record and keeps it), and every target is refused while a device's record says a confirmed commit of
 .B "device config apply"
 is
 .B pending
@@ -277,6 +278,39 @@ stay, for the releases that have them) are removed and a
 of \-1 (never ask) is written as 1000, with every other setting kept and a
 snapshot first.
 .IP
+.B "rollback 0.2.19"
+.B \-\-apply
+rewrites the per\-tier sudoers drop\-in, when it is exactly the text this
+release writes, with the one 0.2.19 writes (after
+.BR "visudo \-cf" ):
+the engineer's rule of
+.B "scope mgmt\-acl * mode"
+and the operator's rules of
+.B "console system\-shell"
+and
+.B "console password\-cache"
+are taken out. An edited drop\-in is left (0.2.19's upgrade rewrites it). The
+emergency lockdown record, a lockdown that stands included, is 0.2.19's own and
+stays. Besides what every target removes (below), nothing is converted:
+.IR devices.yaml ,
+the group drop\-in, the blocks, the apply state, the host registry and the
+hosts are in formats 0.2.19 reads.
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.19" ,
+and names the verbs that write a key 0.2.19 refuses until then
+.RB ( "scope mgmt\-acl" " ... " "mode strict" ,
+.B "user add"
+and
+.BR "user passwd" ,
+which require a password change by default,
+.BR "user require\-password\-change" ,
+.BR "console color" ,
+.BR "console list\-max" ,
+.B "console system\-shell user"
+and
+.BR "console password\-cache on" ).
+.IP
 .B "rollback 0.2.18"
 .B \-\-apply
 rewrites the per\-tier sudoers drop\-in, when it is exactly the text this
@@ -305,7 +339,7 @@ the group drop\-in and the hosts are in formats 0.2.18 reads.
 is accepted and does nothing. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.18" .
 .IP
-Every target but 0.2.3 lists in a warning (and
+Every target but 0.2.19 and 0.2.3 lists in a warning (and
 .B \-\-apply
 refuses without
 .BR \-\-yes )
@@ -12162,7 +12196,7 @@ takes the group out of every lockdown; making a locked group a superuser group
 .RB ( "group edit" " ... " tier " superuser, or a priv\-lvl edit that does it)"
 is refused, and so is
 .B "tacctl rollback"
-to an older release, until the lockdown is lifted. The log has
+to a release before 0.2.19, until the lockdown is lifted. The log has
 .BI "emergency lockdown enable scope=" name " groups=" list " exempt=" users " reason=\(dq" text "\(dq by=" user " locked=" n " result=ok"
 and
 .BI "emergency lockdown disable scope=" name " groups=" list " held=" duration " by=" user " result=ok" .

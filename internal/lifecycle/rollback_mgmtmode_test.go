@@ -14,7 +14,7 @@ const rbStrictConf = "scope_mgmt_acl:\n  permits:\n    lab:\n    - 10.0.0.0/8\n 
 // the warning about the system blocks of 0.2.19, not the refusal of a
 // lockdown, which would have been put back by the next render).
 func TestPlanRollbackRemovesTheMgmtACLModeAndWarns(t *testing.T) {
-	for _, target := range []string{RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029, RollbackTarget} {
+	for _, target := range []string{RollbackTarget0219, RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029, RollbackTarget} {
 		s := newRBSandbox(t)
 		s.oldSyntaxKey()
 		s.write(s.p.Overrides, rbConf+rbStrictConf, 0o640)
@@ -48,7 +48,7 @@ func TestPlanRollbackRemovesTheMgmtACLModeAndWarns(t *testing.T) {
 		if strings.Contains(st, "no release knows this key") || strings.Contains(st, "emergency lockdown is 0.2.19's") {
 			t.Errorf("%s: the steps describe the key wrongly:\n%s", target, st)
 		}
-		if (target == RollbackTarget0218 || target == RollbackTarget0217) && !strings.Contains(st, "the management filter mode of a scope is 0.2.20's") {
+		if (target == RollbackTarget0219 || target == RollbackTarget0218 || target == RollbackTarget0217) && !strings.Contains(st, "the management filter mode of a scope is 0.2.20's") {
 			t.Errorf("%s: the steps do not say whose the key is:\n%s", target, st)
 		}
 		if _, err := ApplyRollback(p); err != nil {
@@ -76,7 +76,7 @@ func TestPlanRollbackRemovesTheMgmtACLModeAndWarns(t *testing.T) {
 // warning, and neither is a list with no mode.
 func TestPlanRollbackSaysNothingOfASSHOnlyScope(t *testing.T) {
 	for _, conf := range []string{"scope_mgmt_acl:\n  permits:\n    lab:\n    - 10.0.0.0/8\n", "scope_mgmt_acl:\n  mode:\n    lab: ssh-only\n"} {
-		for _, target := range []string{RollbackTarget0218, RollbackTarget} {
+		for _, target := range []string{RollbackTarget0219, RollbackTarget0218, RollbackTarget} {
 			s := newRBSandbox(t)
 			s.oldSyntaxKey()
 			s.write(s.p.Overrides, rbConf+conf, 0o640)

@@ -6,9 +6,10 @@ package lifecycle
 // one. The command (internal/cli/rollback.go) adds what needs the
 // invocation: the snapshot and the sudoers installer.
 //
-// The targets are 0.2.18 (the release before this one: RollbackTarget0218;
-// rollback0218.go: the tiers drop-in, the lockdown record and a warning for
-// the system blocks that hold 0.2.19's statements), 0.2.17
+// The targets are 0.2.19 (the release before this one: RollbackTarget0219;
+// rollback0219.go: the tiers drop-in and the management filter mode), 0.2.18
+// (RollbackTarget0218; rollback0218.go: the tiers drop-in, the lockdown record
+// and a warning for the system blocks that hold 0.2.19's statements), 0.2.17
 // (RollbackTarget0217, docs/plans/0.2.18-plan.md D273; rollback0217.go: the
 // tiers drop-in), 0.2.16 (RollbackTarget0216, docs/plans/0.2.17-plan.md D257;
 // rollback0216.go), 0.2.9 (RollbackTarget029,
@@ -160,16 +161,18 @@ import (
 // RollbackTarget is the oldest release 'tacctl rollback' prepares for;
 // RollbackTarget029 is the one before the NETCONF service setting,
 // RollbackTarget0216 the one before audit.strict, RollbackTarget0217 the
-// one before the renamed verbs and RollbackTarget0218 the release before this
-// one (0.2.10 to 0.2.16 changed no format 0.2.9 reads strictly, so 0.2.9
-// stays a target; 0.2.18 changed none 0.2.16 or 0.2.17 reads, so 0.2.16 stays
-// one too).
+// one before the renamed verbs, RollbackTarget0218 the one before the
+// emergency lockdown and RollbackTarget0219 the release before this one
+// (0.2.10 to 0.2.16 changed no format 0.2.9 reads strictly, so 0.2.9 stays a
+// target; 0.2.18 changed none 0.2.16 or 0.2.17 reads, so 0.2.16 stays one
+// too).
 const (
 	RollbackTarget     = "0.2.3"
 	RollbackTarget029  = "0.2.9"
 	RollbackTarget0216 = "0.2.16"
 	RollbackTarget0217 = "0.2.17"
 	RollbackTarget0218 = "0.2.18"
+	RollbackTarget0219 = "0.2.19"
 )
 
 // RollbackRefusal is a version the command does not take: Lines say why.
@@ -216,7 +219,7 @@ func LockdownRefusal(ls []conf.Lockdown) *RollbackRefusal {
 		lift = append(lift, "tacctl emergency lockdown "+l.Scope+" disable")
 	}
 	lines = append(lines,
-		"Every older release lacks the record: its next render would put the locked users back into the scope.",
+		"Every release before 0.2.19 lacks the record: its next render would put the locked users back into the scope.",
 		"Lift it first: "+strings.Join(lift, "; ")+". Nothing was changed.")
 	return &RollbackRefusal{Lines: lines}
 }
@@ -253,10 +256,10 @@ func pluralWord(n int, one, many string) string {
 
 var reVersion = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 
-const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget0218 + "|" + RollbackTarget0217 + "|" + RollbackTarget0216 + "|" + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
+const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget0219 + "|" + RollbackTarget0218 + "|" + RollbackTarget0217 + "|" + RollbackTarget0216 + "|" + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
 
-// CheckRollbackVersion is the version a rollback is asked for ("0.2.18",
-// "0.2.17", "0.2.16", "0.2.9", "0.2.3" or any with a "v"), or a *RollbackRefusal: 0.2.4
+// CheckRollbackVersion is the version a rollback is asked for ("0.2.19",
+// "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3" or any with a "v"), or a *RollbackRefusal: 0.2.4
 // to 0.2.8 and older than 0.2.3 (a release's tool prepares the state for the
 // releases it knows, so the way back is one release at a time), 0.2.10 to
 // 0.2.15, this
@@ -270,11 +273,11 @@ func CheckRollbackVersion(arg string) (string, error) {
 			rollbackUsage}}
 	}
 	v := strings.TrimPrefix(arg, "v")
-	if v == RollbackTarget || v == RollbackTarget029 || v == RollbackTarget0216 || v == RollbackTarget0217 || v == RollbackTarget0218 {
+	if v == RollbackTarget || v == RollbackTarget029 || v == RollbackTarget0216 || v == RollbackTarget0217 || v == RollbackTarget0218 || v == RollbackTarget0219 {
 		return v, nil
 	}
 	n := func(i int) int { x, _ := strconv.Atoi(m[i]); return x }
-	both := "'tacctl rollback' prepares the state for " + RollbackTarget0218 + " (the release before this one), " + RollbackTarget0217 + ", " + RollbackTarget0216 + ", " + RollbackTarget029 + " and " + RollbackTarget + " only"
+	both := "'tacctl rollback' prepares the state for " + RollbackTarget0219 + " (the release before this one), " + RollbackTarget0218 + ", " + RollbackTarget0217 + ", " + RollbackTarget0216 + ", " + RollbackTarget029 + " and " + RollbackTarget + " only"
 	fallback := "The fallback that needs no tool is 'tacctl backup restore' of a snapshot of the time (see 'tacctl backup list')."
 	switch {
 	case n(1) == 0 && n(2) == 2 && n(3) > 3 && n(3) < 9:
@@ -371,8 +374,8 @@ type RollbackInput struct {
 	HasStore bool
 	// WithHosts: the command was given --hosts.
 	WithHosts bool
-	// Target is the release rolled back to: RollbackTarget0218,
-	// RollbackTarget0217, RollbackTarget0216, RollbackTarget029 or RollbackTarget (the zero value is 0.2.3, as
+	// Target is the release rolled back to: RollbackTarget0219,
+	// RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029 or RollbackTarget (the zero value is 0.2.3, as
 	// before 0.2.9).
 	Target string
 	// InstallSudoers writes a sudoers drop-in the way the commands do
@@ -517,10 +520,12 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	if len(pend) > 0 {
 		return nil, PendingRefusal(pend)
 	}
-	// An emergency lockdown (0.2.19) is refused for every target, in the dry
-	// run and --apply alike: no older release has the record, and the next
-	// render under it would put every locked user back into the scope.
-	if ls := in.Conf.Lockdowns(); len(ls) > 0 {
+	// An emergency lockdown (0.2.19) is refused for every target before
+	// 0.2.19, in the dry run and --apply alike: no older release has the
+	// record, and the next render under it would put every locked user back
+	// into the scope. 0.2.19 has the record as this release writes it, and
+	// takes a lockdown over as it stands.
+	if ls := in.Conf.Lockdowns(); len(ls) > 0 && in.Target != RollbackTarget0219 {
 		return nil, LockdownRefusal(ls)
 	}
 	// A store user name with a period (0.2.20) is refused for every target:
@@ -545,6 +550,7 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	targetPlan := map[string]func(*RollbackPlan) (*RollbackPlan, error){
 		RollbackTarget029: planRollback029, RollbackTarget0216: planRollback0216,
 		RollbackTarget0217: planRollback0217, RollbackTarget0218: planRollback0218,
+		RollbackTarget0219: planRollback0219,
 	}[in.Target]
 	if targetPlan != nil {
 		cp, err := console.PlanRollbackSince0220(pa.ConsoleFile)

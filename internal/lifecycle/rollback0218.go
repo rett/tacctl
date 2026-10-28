@@ -1,6 +1,6 @@
 package lifecycle
 
-// The rollback to 0.2.18 (the release before this one): the part of
+// The rollback to 0.2.18 (the one before the emergency lockdown): the part of
 // PlanRollback that runs when RollbackInput.Target is RollbackTarget0218.
 // 0.2.19 changed four things a 0.2.18 binary reads:
 //
@@ -38,8 +38,7 @@ import (
 )
 
 // planRollback0218 completes p (a plan whose tacctl.yaml was read and whose
-// records hold no unsettled apply or lockdown) for the release before this
-// one.
+// records hold no unsettled apply or lockdown) for 0.2.18.
 func planRollback0218(p *RollbackPlan) (*RollbackPlan, error) {
 	in := p.in
 	pt := in.Paths
@@ -110,12 +109,16 @@ func (p *RollbackPlan) tiersStep(target string, tiers sudoersPlan, what string) 
 	return s
 }
 
-// lockdownKeysStep is the step that removes what is left of the lockdown
-// record of 0.2.19 from tacctl.yaml, for a target whose schema lacks it.
+// lockdownKeysStep is the step that removes the keys of p.keys from
+// tacctl.yaml: what is left of the lockdown record of 0.2.19, for a target
+// whose schema lacks it, and the management filter mode of 0.2.20.
 func (p *RollbackPlan) lockdownKeysStep(target string) RollbackStep {
 	s := RollbackStep{Title: p.in.Paths.Overrides + ": remove the keys " + target + " does not know", Todo: len(p.keys) > 0}
 	if len(p.keys) == 0 {
 		s.Lines = []string{"nothing to remove (no emergency lockdown is recorded)"}
+		if target == RollbackTarget0219 {
+			s.Lines = []string{"nothing to remove (no scope has a management filter mode)"}
+		}
 		return s
 	}
 	for _, k := range p.keys {

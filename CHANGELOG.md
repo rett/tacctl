@@ -751,6 +751,27 @@ current behaviour; this file is where history lives.
     page is printed whole, with a line on standard error saying so (`more`
     has a shell escape that cannot be switched off, so it is not used).
 
+40. **`tacctl rollback 0.2.19`.** The release before this one is a rollback
+    target (beside 0.2.18, 0.2.17, 0.2.16, 0.2.9 and 0.2.3). `--apply`
+    rewrites the per-tier sudoers drop-in, when it is exactly this release's
+    text, with 0.2.19's (the engineer's row of `scope mgmt-acl * mode` and the
+    operator's rows of `console system-shell` and `console password-cache`
+    are taken out), and removes what every target removes: the management
+    filter mode of a scope (item 16), the required password change (item 17)
+    and the console settings 0.2.19's parser refuses (items 13, 19 and 22),
+    with their warnings and a snapshot first. 0.2.19 has the emergency
+    lockdown record as this release writes it, so a lockdown that stands
+    refuses the rollback to every target but this one, and the record stays.
+    `devices.yaml`, the group drop-in, the blocks, the apply state, the host
+    registry and the hosts are left: 0.2.19 reads them as they are. The
+    command ends with `tacctl upgrade --branch 0.2.19` and names the verbs
+    that would write a key 0.2.19 refuses again before it (`scope mgmt-acl
+    ... mode strict`, `user add` and `user passwd`, which require a password
+    change by default, `user require-password-change`, `console color`,
+    `console list-max`, `console system-shell user`, `console password-cache
+    on`). The check runs that
+    release, built from its tag, against the converted state.
+
 
 ## 0.2.19 (2026-10-25)
 

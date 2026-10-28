@@ -117,7 +117,7 @@ func TestRollbackRefusesDottedUsersCLI(t *testing.T) {
 	hs := rollbackState(t)
 	hs.step("", "user", "add", "alice.smith", "operator", "--hash", testHash, "--scopes", "lab")
 	before := tree(t, hs.dir)
-	for _, v := range []string{"0.2.3", "0.2.9", "0.2.16", "0.2.17", "0.2.18"} {
+	for _, v := range []string{"0.2.3", "0.2.9", "0.2.16", "0.2.17", "0.2.18", "0.2.19"} {
 		for _, args := range [][]string{{"rollback", v}, {"rollback", v, "--apply", "--yes"}} {
 			hs.run(hs.runner(), args...)
 			hs.expect(1, "", "The store has 1 user whose name has a period")
