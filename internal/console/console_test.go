@@ -355,7 +355,11 @@ func TestPolicyDecisions(t *testing.T) {
 func TestSystemShellForUsers(t *testing.T) {
 	f := Defaults()
 	f.SystemShellTiers = []tier.Tier{tier.Operator, tier.Superuser}
-	f.SystemShellUsers = map[string]bool{"carol": true, "bob": false, "alice": false, "erin": true}
+	f.SetSystemShellUser("carol", true, tier.Readonly)
+	f.SetSystemShellUser("bob", false, "")
+	f.SetSystemShellUser("alice", false, "")
+	f.SetSystemShellUser("erin", true, tier.Operator)
+	f.SetSystemShellUser("gus", true, tier.Operator)
 	p := &Policy{File: f}
 	for _, c := range []struct {
 		user string
@@ -363,13 +367,20 @@ func TestSystemShellForUsers(t *testing.T) {
 		want bool
 		why  string
 	}{
-		{"carol", tier.Readonly, true, "user setting"},  // enabled for a user of a closed tier
-		{"dave", tier.Readonly, false, "tier readonly"}, // no setting: the tier
-		{"bob", tier.Operator, false, "user setting"},   // disabled for a user of an open tier
-		{"eve", tier.Operator, true, "tier operator"},   // no setting: the tier
-		{"alice", tier.Superuser, true, "always"},       // cannot be taken
-		{"erin", tier.Engineer, false, "never"},         // cannot be given
-		{"carol", tier.None, false, "no tier"},
+		{"carol", tier.Readonly, true, "user setting"},                                 // enabled for a user of a closed tier
+		{"dave", tier.Readonly, false, "tier readonly"},                                // no setting: the tier
+		{"bob", tier.Operator, false, "user setting"},                                  // disabled for a user of an open tier
+		{"eve", tier.Operator, true, "tier operator"},                                  // no setting: the tier
+		{"alice", tier.Superuser, true, "always"},                                      // cannot be taken
+		{"erin", tier.Engineer, false, "never; stale: set for operator, now engineer"}, // cannot be given
+		{"carol", tier.None, false, "no tier; stale: set for readonly, now none"},
+		// an enable is for the tier it was set for: a move to another tier ends it
+		{"gus", tier.Operator, true, "user setting"},
+		{"gus", tier.Readonly, false, "tier readonly; stale: set for operator, now readonly"},
+		{"gus", tier.Superuser, true, "always; stale: set for operator, now superuser"},
+		{"carol", tier.Operator, true, "tier operator; stale: set for readonly, now operator"}, // the tier has it anyway
+		// a disable holds at any tier that has the shell
+		{"bob", tier.Readonly, false, "user setting"},
 		{"carol", tier.Unrestricted, true, ""},
 	} {
 		if got := p.SystemShellFor(c.user, c.t); got != c.want {
@@ -432,31 +443,39 @@ func TestSystemShellUsersSetting(t *testing.T) {
 		t.Errorf("the key is written while empty:\n%s", without)
 	}
 	if _, err := Mutate(p, nil, func(f *File) error {
-		f.SystemShellUsers["carol"] = true
-		f.SystemShellUsers["alice.smith"] = false
+		f.SetSystemShellUser("carol", true, tier.Readonly)
+		f.SetSystemShellUser("alice.smith", false, "")
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(p)
-	if !strings.Contains(string(got), "  system_shell_users: {alice.smith: false, carol: true}\n") {
+	if !strings.Contains(string(got), "  system_shell_users: {alice.smith: disable, carol: 'enable:readonly'}\n") {
 		t.Errorf("the key is not written as a map:\n%s", got)
 	}
 	f, err := Load(p)
 	if err != nil || !f.SystemShellUsers["carol"] || f.SystemShellUsers["alice.smith"] || len(f.SystemShellUsers) != 2 {
 		t.Fatalf("round trip: %+v %v", f.SystemShellUsers, err)
 	}
-	if _, err := Mutate(p, nil, func(f *File) error { f.SystemShellUsers = map[string]bool{}; return nil }); err != nil {
+	if f.SystemShellUserTiers["carol"] != tier.Readonly || len(f.SystemShellUserTiers) != 1 {
+		t.Errorf("the tiers of the enables: %v", f.SystemShellUserTiers)
+	}
+	if _, err := Mutate(p, nil, func(f *File) error { f.DropSystemShellUser("carol"); f.DropSystemShellUser("alice.smith"); return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if again, _ := os.ReadFile(p); string(again) != string(without) {
 		t.Errorf("empty again:\n%s\nwant\n%s", again, without)
 	}
 	for name, text := range map[string]string{
-		"not a map":   "version: 1\nsettings: {system_shell_users: [carol]}\n",
-		"not a bool":  "version: 1\nsettings: {system_shell_users: {carol: enable}}\n",
-		"bad name":    "version: 1\nsettings: {system_shell_users: {'a b': true}}\n",
-		"dot leading": "version: 1\nsettings: {system_shell_users: {.carol: true}}\n",
+		"not a map":    "version: 1\nsettings: {system_shell_users: [carol]}\n",
+		"a bool":       "version: 1\nsettings: {system_shell_users: {carol: true}}\n",
+		"enable alone": "version: 1\nsettings: {system_shell_users: {carol: enable}}\n",
+		"no tier":      "version: 1\nsettings: {system_shell_users: {carol: 'enable:'}}\n",
+		"superuser":    "version: 1\nsettings: {system_shell_users: {carol: 'enable:superuser'}}\n",
+		"engineer":     "version: 1\nsettings: {system_shell_users: {carol: 'enable:engineer'}}\n",
+		"disable tier": "version: 1\nsettings: {system_shell_users: {carol: 'disable:operator'}}\n",
+		"bad name":     "version: 1\nsettings: {system_shell_users: {'a b': disable}}\n",
+		"dot leading":  "version: 1\nsettings: {system_shell_users: {.carol: disable}}\n",
 	} {
 		if _, err := Load(write(t, dir, "bad.yaml", text, 0o600)); err == nil {
 			t.Errorf("%s: accepted", name)
@@ -966,7 +985,9 @@ func TestPasswordCacheUsersSetting(t *testing.T) {
 func TestShellWithoutTheConsole(t *testing.T) {
 	f := Defaults()
 	f.SystemShellTiers = []tier.Tier{tier.Operator, tier.Superuser}
-	f.SystemShellUsers = map[string]bool{"carol": true, "bob": false, "erin": true}
+	f.SetSystemShellUser("carol", true, tier.Readonly)
+	f.SetSystemShellUser("bob", false, "")
+	f.SetSystemShellUser("erin", true, tier.Operator)
 	p := &Policy{File: f}
 	for _, c := range []struct {
 		user string

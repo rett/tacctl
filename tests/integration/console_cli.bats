@@ -268,7 +268,7 @@ LIST
     assert_output "enabled (user setting)"
     run "$TACCTL_BIN_SCRIPT" console system-shell
     assert_output --partial "  carol: enabled (readonly)"
-    run grep -c '^  system_shell_users: {carol: true}$' "$CONSOLE"
+    run grep -c "^  system_shell_users: {carol: 'enable:readonly'}\$" "$CONSOLE"
     assert_output "1"
     run "$TACCTL_BIN_SCRIPT" console system-shell user carol clear
     assert_success

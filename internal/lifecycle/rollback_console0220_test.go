@@ -106,7 +106,7 @@ func TestRollbackRefusesAnUnreadableConsoleFileForEveryTarget(t *testing.T) {
 // users had a setting, keeps the tiers' list and every other setting, and
 // leaves a file without it alone.
 func TestRollbackTakesOutTheSystemShellOfUsers(t *testing.T) {
-	consoleWith := strings.Replace(rbConsole, "  space_completion: false\n", "  space_completion: false\n  system_shell_users: {bob: true, carol: false}\n", 1)
+	consoleWith := strings.Replace(rbConsole, "  space_completion: false\n", "  space_completion: false\n  system_shell_users: {bob: 'enable:operator', carol: disable}\n", 1)
 	if !strings.Contains(consoleWith, "system_shell_users") {
 		t.Fatal("the fixture lacks the setting")
 	}

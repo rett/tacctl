@@ -121,9 +121,12 @@ console system-shell user <name> [enable|disable|clear]
 
     Show or set the system shell for one user, over the tier's setting in both directions (clear:
     the tier decides; without a word it prints the user's access and why, operator tier and up).
-    Disabling a superuser and enabling an engineer are refused. `user rename` moves the setting to
-    the new name and `user remove` drops it; an entry for a name that is no user is not honoured and
-    is listed as "no such user"
+    Disabling a superuser and enabling an engineer are refused. An enable is for the tier the user
+    has when it is set: after a move to another tier it does nothing and is listed as "stale: set
+    for operator, now readonly" until it is set again (it counts again if the user returns to that
+    tier). A disable holds in any tier. `user rename` moves the setting to the new name and `user
+    remove` drops it; an entry for a name that is no user is not honoured and is listed as "no
+    such user"
 
 console system-shell path [<path>]
 

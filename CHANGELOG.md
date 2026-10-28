@@ -371,6 +371,19 @@ current behaviour; this file is where history lives.
     that is none included; the warning says so. Item 17's mention of bash for
     that case is adjusted.
 
+23. **A user's system-shell enable is for the tier it was set for.**
+    `console system-shell user <name> enable` gave a user the shell for as
+    long as the entry stood, so a user moved to a lower tier kept a shell the
+    new tier does not give. The enable is now recorded with the tier the user
+    has when it is set (`settings.system_shell_users` holds `enable:<tier>` and
+    `disable`) and counts only while the user is in that tier: after a demotion
+    or a promotion it does nothing, and `console system-shell`, `console show`
+    and the user's own query list it as `stale: set for operator, now readonly`
+    until it is set again; it counts again if the user returns to the tier. A
+    disable holds in any tier, and a superuser (always) and an engineer (never)
+    are not affected. An enable cannot be set for a user with no tier. The
+    setting moves with `user rename` as before, with its tier.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

@@ -104,33 +104,49 @@ func (p *Policy) SystemShell(t tier.Tier) bool {
 // SystemShellFor reports whether user, at tier t, may start the system
 // shell: the user's own setting wins over the tier's, in both directions,
 // but for the superuser tier (always) and the Closed tiers (never), which
-// no setting changes.
+// no setting changes. A disable holds at any tier; an enable only at the
+// tier it was set for (SystemShellStale): a user who moved to another tier
+// is back to that tier's setting until the enable is set again.
 func (p *Policy) SystemShellFor(user string, t tier.Tier) bool {
 	if t == tier.None || t == tier.Superuser || t == tier.Unrestricted || slices.Contains(Closed, t) {
 		return p.SystemShell(t)
 	}
-	if on, ok := p.File.SystemShellUsers[user]; ok {
+	if on, ok := p.File.SystemShellUsers[user]; ok && (!on || p.File.SystemShellUserTiers[user] == t) {
 		return on
 	}
 	return p.SystemShell(t)
 }
 
+// SystemShellStale reports whether user has an enable that was set for
+// another tier than t, the tier they have now, and which tier that was.
+func (p *Policy) SystemShellStale(user string, t tier.Tier) (was tier.Tier, stale bool) {
+	if on, ok := p.File.SystemShellUsers[user]; ok && on && p.File.SystemShellUserTiers[user] != t {
+		return p.File.SystemShellUserTiers[user], true
+	}
+	return "", false
+}
+
 // SystemShellWhy is the state of user's system shell and the reason, for the
 // listings: "always" (superuser), "never" (a Closed tier), "user setting",
-// or "tier <t>".
+// or "tier <t>", with "; stale: set for <tier>, now <tier>" when an enable
+// of the user is for another tier than they have now.
 func (p *Policy) SystemShellWhy(user string, t tier.Tier) (on bool, why string) {
+	stale := ""
+	if was, ok := p.SystemShellStale(user, t); ok {
+		stale = "; stale: set for " + string(was) + ", now " + string(t)
+	}
 	switch {
 	case t == tier.Superuser:
-		return true, "always"
+		return true, "always" + stale
 	case slices.Contains(Closed, t):
-		return false, "never"
+		return false, "never" + stale
 	case t == tier.None:
-		return false, "no tier"
+		return false, "no tier" + stale
 	}
-	if _, ok := p.File.SystemShellUsers[user]; ok {
+	if _, ok := p.File.SystemShellUsers[user]; ok && stale == "" {
 		return p.SystemShellFor(user, t), "user setting"
 	}
-	return p.SystemShell(t), "tier " + string(t)
+	return p.SystemShell(t), "tier " + string(t) + stale
 }
 
 // Forwarding reports whether tier t's console logins may forward X11 and

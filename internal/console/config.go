@@ -111,9 +111,16 @@ type File struct {
 	// system_shell_users): true gives the system shell to a user of a tier
 	// that has none, false takes it from a user of a tier that has it. It
 	// beats the tier's setting, but for the superuser tier (always) and the
-	// Closed tiers (never). Written only when it is not empty; an older
-	// release rejects the key, and the rollback removes it (Keys0220).
+	// Closed tiers (never). An enable is valid for the tier the user had when
+	// it was set (SystemShellUserTiers): a user who moves to another tier has
+	// no access from it, and it is listed as stale until it is set again, so a
+	// demotion cannot leave a user with a shell the new tier does not give.
+	// Written only when it is not empty, as 'enable:<tier>' and 'disable'; an
+	// older release rejects the key, and the rollback removes it (Keys0220).
 	SystemShellUsers map[string]bool
+	// SystemShellUserTiers are the tiers (readonly or operator) the enables of
+	// SystemShellUsers were set for; a disable has none.
+	SystemShellUserTiers map[string]tier.Tier
 	// PasswordCacheUsers are the users who turned the password cache on for
 	// themselves (settings.password_cache_users, a map of user name to true):
 	// the tiers of PasswordCacheTiers are the permission, this is the user's
@@ -163,17 +170,18 @@ type File struct {
 // Defaults is the file that is not there.
 func Defaults() *File {
 	return &File{
-		IgnoredTiers:       map[tier.Tier]bool{},
-		IgnoredUsers:       map[string]bool{},
-		Idle:               DefaultIdle,
-		SystemShell:        DefaultSystemShell,
-		SystemShellTiers:   []tier.Tier{tier.Superuser},
-		SystemShellUsers:   map[string]bool{},
-		PasswordCacheUsers: map[string]bool{},
-		ForwardingTiers:    []tier.Tier{tier.Superuser},
-		ListMax:            DefaultListMax,
-		SpaceCompletion:    true,
-		Color:              ColorAuto,
+		IgnoredTiers:         map[tier.Tier]bool{},
+		IgnoredUsers:         map[string]bool{},
+		Idle:                 DefaultIdle,
+		SystemShell:          DefaultSystemShell,
+		SystemShellTiers:     []tier.Tier{tier.Superuser},
+		SystemShellUsers:     map[string]bool{},
+		SystemShellUserTiers: map[string]tier.Tier{},
+		PasswordCacheUsers:   map[string]bool{},
+		ForwardingTiers:      []tier.Tier{tier.Superuser},
+		ListMax:              DefaultListMax,
+		SpaceCompletion:      true,
+		Color:                ColorAuto,
 
 		PasswordCacheIdle: DefaultPasswordCacheIdle,
 		PasswordCacheMax:  DefaultPasswordCacheMax,
@@ -195,6 +203,10 @@ func (f *File) Clone() *File {
 	c.SystemShellUsers = map[string]bool{}
 	for k, v := range f.SystemShellUsers {
 		c.SystemShellUsers[k] = v
+	}
+	c.SystemShellUserTiers = map[string]tier.Tier{}
+	for k, v := range f.SystemShellUserTiers {
+		c.SystemShellUserTiers[k] = v
 	}
 	c.PasswordCacheUsers = map[string]bool{}
 	for k, v := range f.PasswordCacheUsers {
@@ -248,6 +260,24 @@ func (f *File) SetSystemShell(t tier.Tier, on bool) error {
 	}
 	f.SystemShellTiers = out
 	return nil
+}
+
+// SetSystemShellUser gives the user a system-shell setting of their own: an
+// enable is recorded with the tier it is set for (readonly or operator; the
+// superuser and engineer tiers need none), a disable with none.
+func (f *File) SetSystemShellUser(name string, on bool, t tier.Tier) {
+	f.SystemShellUsers[name] = on
+	if on {
+		f.SystemShellUserTiers[name] = t
+	} else {
+		delete(f.SystemShellUserTiers, name)
+	}
+}
+
+// DropSystemShellUser removes the user's system-shell setting.
+func (f *File) DropSystemShellUser(name string) {
+	delete(f.SystemShellUsers, name)
+	delete(f.SystemShellUserTiers, name)
 }
 
 // PasswordCacheUserNames are the users who turned the password cache on, by
@@ -378,9 +408,12 @@ func (f *File) validate() error {
 			seen[t] = true
 		}
 	}
-	for u := range f.SystemShellUsers {
+	for u, on := range f.SystemShellUsers {
 		if !names.MatchUser(u) {
 			return fail("settings.system_shell_users: invalid user name '" + u + "'.")
+		}
+		if t := f.SystemShellUserTiers[u]; on && t != tier.Readonly && t != tier.Operator {
+			return fail("settings.system_shell_users: '" + u + "' must be disable or enable:readonly|operator.")
 		}
 	}
 	for u := range f.PasswordCacheUsers {
@@ -567,23 +600,38 @@ func parseSettings(f *File, m *yamlpy.Map) error {
 				return bad
 			}
 			f.SystemShell = s
-		case "system_shell_users", "password_cache_users":
-			dst := f.SystemShellUsers
-			if k == "password_cache_users" {
-				dst = f.PasswordCacheUsers
+		case "system_shell_users":
+			switch x := v.(type) {
+			case nil:
+			case *yamlpy.Map:
+				for name, uv := range x.All() {
+					s, ok := uv.(string)
+					word, tr, hasTier := strings.Cut(s, ":")
+					switch {
+					case !ok, word != "disable" && word != "enable", word == "disable" && hasTier, word == "enable" && !hasTier:
+						return fail("settings.system_shell_users: '" + name + "' must be disable or enable:readonly|operator.")
+					}
+					f.SystemShellUsers[name] = word == "enable"
+					if word == "enable" {
+						f.SystemShellUserTiers[name] = tier.Tier(tr)
+					}
+				}
+			default:
+				return fail("settings.system_shell_users must be a mapping of user to disable or enable:<tier>.")
 			}
+		case "password_cache_users":
 			switch x := v.(type) {
 			case nil:
 			case *yamlpy.Map:
 				for name, uv := range x.All() {
 					b, ok := uv.(bool)
 					if !ok {
-						return fail("settings." + k + ": '" + name + "' must be true or false.")
+						return fail("settings.password_cache_users: '" + name + "' must be true or false.")
 					}
-					dst[name] = b
+					f.PasswordCacheUsers[name] = b
 				}
 			default:
-				return fail("settings." + k + " must be a mapping of user to true or false.")
+				return fail("settings.password_cache_users must be a mapping of user to true or false.")
 			}
 		case "system_shell_tiers", "forwarding_tiers":
 			var l []tier.Tier
@@ -700,7 +748,11 @@ func (f *File) doc() *yamlpy.Map {
 		// system-shell setting is read by every release.
 		users := yamlpy.NewMap()
 		for _, u := range f.SystemShellUserNames() {
-			users.Set(u, f.SystemShellUsers[u])
+			if f.SystemShellUsers[u] {
+				users.Set(u, "enable:"+string(f.SystemShellUserTiers[u]))
+			} else {
+				users.Set(u, "disable")
+			}
 		}
 		settings.Set("system_shell_users", users)
 	}

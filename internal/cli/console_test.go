@@ -716,7 +716,7 @@ func TestConsoleSystemShellPerTier(t *testing.T) {
 func TestConsoleSystemShellPerUser(t *testing.T) {
 	sb := consoleSandbox(t)
 	out := sb.con("system-shell", "user", "carol", "enable")
-	if sb.code != 0 || !strings.Contains(out, "system-shell is enabled for 'carol'.") {
+	if sb.code != 0 || !strings.Contains(out, "system-shell is enabled for 'carol' while they are in the readonly tier") {
 		t.Errorf("enable carol: %d %q", sb.code, out)
 	}
 	if got := strings.TrimSpace(sb.con("system-shell", "user", "carol")); got != "enabled (user setting)" {
@@ -741,7 +741,7 @@ func TestConsoleSystemShellPerUser(t *testing.T) {
 			t.Errorf("listing lacks %q:\n%s", w, list)
 		}
 	}
-	if y := sb.consoleYAML(); !strings.Contains(y, "\n  system_shell_users: {bob: false, carol: true}\n") {
+	if y := sb.consoleYAML(); !strings.Contains(y, "\n  system_shell_users: {bob: disable, carol: 'enable:readonly'}\n") {
 		t.Errorf("console.yaml:\n%s", y)
 	}
 	show := sb.con("show")
@@ -802,7 +802,7 @@ func TestConsoleSystemShellPerUser(t *testing.T) {
 	// A setting of a user who is gone stays (a rename does not move it, a
 	// removal does not drop it) and is listed, and the policy never reads it
 	// for another name; clear removes it.
-	sb.write("state/console.yaml", "version: 1\nsettings: {system_shell_users: {ghost: true}}\n", 0o600)
+	sb.write("state/console.yaml", "version: 1\nsettings: {system_shell_users: {ghost: 'enable:readonly'}}\n", 0o600)
 	list = strings.TrimSpace(sb.con("system-shell"))
 	if !strings.Contains(list, "  ghost: enabled (no such user)") {
 		t.Errorf("listing:\n%s", list)
@@ -915,7 +915,7 @@ func TestSystemShellSettingFollowsTheUser(t *testing.T) {
 	if sb.code != 0 || !strings.Contains(out, "The system-shell setting of 'carol' (enable) moves to 'erin'.") {
 		t.Fatalf("rename: %d %q\n%s", sb.code, sb.stderr(), out)
 	}
-	if y := sb.consoleYAML(); !strings.Contains(y, "system_shell_users: {bob: true, erin: true}") || strings.Contains(y, "carol") {
+	if y := sb.consoleYAML(); !strings.Contains(y, "system_shell_users: {bob: 'enable:operator', erin: 'enable:readonly'}") || strings.Contains(y, "carol") {
 		t.Errorf("console.yaml after the rename:\n%s", y)
 	}
 	wantLines := []string{
@@ -936,7 +936,7 @@ func TestSystemShellSettingFollowsTheUser(t *testing.T) {
 	if sb.code != 0 || !strings.Contains(out, "The system-shell setting of 'erin' (enable) is dropped.") {
 		t.Fatalf("remove: %d %q\n%s", sb.code, sb.stderr(), out)
 	}
-	if y := sb.consoleYAML(); strings.Contains(y, "erin") || !strings.Contains(y, "system_shell_users: {bob: true}") {
+	if y := sb.consoleYAML(); strings.Contains(y, "erin") || !strings.Contains(y, "system_shell_users: {bob: 'enable:operator'}") {
 		t.Errorf("console.yaml after the removal:\n%s", y)
 	}
 	if !hasAudit(sb.runner, "auth.notice", "console set key=system-shell item=user:erin from=enable to=none by=alice") {
@@ -959,7 +959,7 @@ func TestSystemShellSettingFollowsTheUser(t *testing.T) {
 
 	// an entry left by a hand edit is dropped when the name is added, and is
 	// listed as no such user until then
-	sb.write("state/console.yaml", "version: 1\nsettings: {system_shell_users: {bob: true, frank: true}}\n", 0o600)
+	sb.write("state/console.yaml", "version: 1\nsettings: {system_shell_users: {bob: 'enable:operator', frank: 'enable:operator'}}\n", 0o600)
 	if list := sb.con("system-shell"); !strings.Contains(list, "  frank: enabled (no such user)") {
 		t.Errorf("listing:\n%s", list)
 	}
@@ -974,7 +974,7 @@ func TestSystemShellSettingFollowsTheUser(t *testing.T) {
 	// not honoured for a name that is no store user: the caller has no tier
 	// at all, so the policy line is the gate's refusal, and the entry changes
 	// nothing for a store user of another name
-	sb.write("state/console.yaml", "version: 1\nsettings: {system_shell_users: {ghost: true}}\n", 0o600)
+	sb.write("state/console.yaml", "version: 1\nsettings: {system_shell_users: {ghost: 'enable:readonly'}}\n", 0o600)
 	sb.cfgRun("", []string{"_console-policy"}, func(r *fake.Runner) {
 		r.On([]string{"id", "-nG", "--", "ghost"}, execx.Result{Stdout: []byte("ghost tac-users tac-readonly\n")})
 	}, "SUDO_USER=ghost")
@@ -984,4 +984,90 @@ func TestSystemShellSettingFollowsTheUser(t *testing.T) {
 	if got := state("ghost"); got != "enabled (user setting; no such user)" {
 		t.Errorf("ghost state: %q", got)
 	}
+}
+
+// A user's enable is for the tier it was set for: a demotion does not leave the
+// user with a shell the new tier does not give. The entry is stale while the
+// user is in another tier (listed so, by 'console system-shell', 'console show'
+// and the user's own query), does nothing in the policy line, is valid again
+// when the user is back in the tier, and is refreshed by setting it again. A
+// promotion to superuser (always) and a disable are not affected.
+func TestSystemShellEnableIsForTheTierItWasSetFor(t *testing.T) {
+	sb := consoleSandbox(t)
+	sb.con("system-shell", "user", "bob", "enable")
+	line := func(group string) string {
+		return pcLine(sb, "bob", group)
+	}
+	move := func(group string) {
+		sb.cfgRun("", []string{"user", "move", "bob", group}, nil, "SUDO_USER=alice", "SUDO_UID=1001")
+		if sb.code != 0 {
+			t.Fatalf("user move bob %s: %d %q", group, sb.code, sb.stderr())
+		}
+	}
+	if y := sb.consoleYAML(); !strings.Contains(y, "system_shell_users: {bob: 'enable:operator'}") {
+		t.Fatalf("console.yaml:\n%s", y)
+	}
+	if got := line("operator"); !strings.Contains(got, " system_shell=yes ") {
+		t.Errorf("operator: %q", got)
+	}
+	// Demoted: the entry stays and counts for nothing.
+	move("readonly")
+	if got := line("readonly"); !strings.Contains(got, " system_shell=no ") {
+		t.Errorf("demoted: %q", got)
+	}
+	stale := "stale: set for operator, now readonly"
+	if out := sb.con("system-shell"); !strings.Contains(out, "  bob: enabled ("+stale+")\n") {
+		t.Errorf("listing:\n%s", out)
+	}
+	if out := sb.con("show"); !strings.Contains(out, "  bob       readonly   console  managed user  disabled (tier readonly; "+stale+")\n") {
+		t.Errorf("show:\n%s", out)
+	}
+	if got := strings.TrimSpace(sb.con("system-shell", "user", "bob")); got != "disabled (tier readonly; "+stale+")" {
+		t.Errorf("user query: %q", got)
+	}
+	// The console's start of a system shell reads the same policy line.
+	if got := line("readonly"); strings.Contains(got, " system_shell=yes ") {
+		t.Errorf("demoted, again: %q", got)
+	}
+	// Back in the tier it was set for: valid again.
+	move("operator")
+	if got := line("operator"); !strings.Contains(got, " system_shell=yes ") {
+		t.Errorf("back: %q", got)
+	}
+	// Promoted to superuser: always, and the entry is listed as stale (it was
+	// set for the operator tier); demoted back it is valid again.
+	move("superuser")
+	if got := line("superuser"); !strings.Contains(got, " system_shell=yes ") {
+		t.Errorf("superuser: %q", got)
+	}
+	if out := sb.con("system-shell"); !strings.Contains(out, "  bob: enabled (stale: set for operator, now superuser)\n") {
+		t.Errorf("listing as a superuser:\n%s", out)
+	}
+	move("operator")
+	if got := line("operator"); !strings.Contains(got, " system_shell=yes ") {
+		t.Errorf("operator again: %q", got)
+	}
+	// Setting it again in the new tier refreshes it, and it holds there.
+	move("readonly")
+	sb.con("system-shell", "user", "bob", "enable")
+	if y := sb.consoleYAML(); !strings.Contains(y, "system_shell_users: {bob: 'enable:readonly'}") {
+		t.Errorf("refreshed:\n%s", y)
+	}
+	if got := line("readonly"); !strings.Contains(got, " system_shell=yes ") {
+		t.Errorf("refreshed: %q", got)
+	}
+	if out := sb.con("system-shell"); strings.Contains(out, "stale") {
+		t.Errorf("listing after the refresh:\n%s", out)
+	}
+	// A disable holds in any tier.
+	sb.con("system-shell", "user", "bob", "disable")
+	sb.con("system-shell", "operator", "enable")
+	move("operator")
+	if got := line("operator"); !strings.Contains(got, " system_shell=no ") {
+		t.Errorf("disabled: %q", got)
+	}
+	// An enable cannot be set for a user with no tier.
+	sb.cfgRun("", []string{"user", "disable", "carol"}, nil, "SUDO_USER=alice", "SUDO_UID=1001")
+	sb.con("system-shell", "user", "carol", "enable")
+	sb.expect(1, "", "has no tier")
 }

@@ -660,7 +660,7 @@ var manConsoleDocs = map[string]struct{ typ, verb, desc string }{
 	"settings.ssh_escape":         {"true or false", setWith("console ssh-escape"), "Whether the escape character of the console's ssh stays on."},
 	"settings.system_shell":       {"absolute path", setWith("console system-shell path"), "The program the console's system-shell word starts."},
 	"settings.system_shell_tiers": {"list of tiers (not engineer)", setWith("console system-shell"), "The tiers that may start the system shell. The superuser tier always may, and is written into the list; engineer never."},
-	"settings.system_shell_users": {"mapping of user name to true or false", setWith("console system-shell user"), "The users with a system-shell setting of their own, which wins over their tier's: true gives it to a user of a tier that has none, false takes it from a user of a tier that has it. Written to the file only when a user has one."},
+	"settings.system_shell_users": {"mapping of user name to disable or enable:<tier>", setWith("console system-shell user"), "The users with a system-shell setting of their own, which wins over their tier's: enable:<tier> gives it to a user of a tier that has none, for as long as the user is in that tier (readonly or operator), and disable takes it from a user of a tier that has it. Written to the file only when a user has one."},
 	"settings.forwarding_tiers":   {"list of tiers (not engineer)", setWith("console forwarding tiers"), "The tiers whose console logins may forward X11 and TCP ports."},
 	"settings.gateway_ports":      {"true or false", setWith("console forwarding gateway-ports"), "Whether those tiers may bind forwarded ports to an address other than loopback."},
 	"settings.list_max":           {"integer, 1 to " + strconv.Itoa(console.MaxListMax) + ", or " + strconv.Itoa(console.ListMaxNever) + " (never ask)", setWith("console list-max"), "The number of completions the console's shell lists without asking \"Show all N?\"."},
@@ -688,7 +688,7 @@ func manConsoleKeyRows(t *testing.T) []manKeyRow {
 	full := console.Defaults()
 	full.SpaceCompletion = false
 	full.Color = console.ColorOn
-	full.SystemShellUsers = map[string]bool{"jdoe": true}
+	full.SetSystemShellUser("jdoe", true, tier.Operator)
 	all, def := load(full), load(console.Defaults())
 	var rows []manKeyRow
 	add := func(key, defText string) {

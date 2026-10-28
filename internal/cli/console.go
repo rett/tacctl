@@ -494,6 +494,9 @@ func systemShellState(pol *console.Policy, t tier.Tier) string {
 func (inv *invocation) systemShellUserLine(pol *console.Policy, tiers map[string]tier.Tier, name string) string {
 	word := map[bool]string{true: "enabled", false: "disabled"}[pol.File.SystemShellUsers[name]]
 	t, ok := tiers[name]
+	if was, stale := pol.SystemShellStale(name, t); ok && stale {
+		return name + ": " + word + " (stale: set for " + string(was) + ", now " + string(t) + ")"
+	}
 	switch {
 	case !ok:
 		return name + ": " + word + " (no such user)"
@@ -662,7 +665,7 @@ func (inv *invocation) consoleSystemShellUser(pol *console.Policy, args []string
 			return nil
 		}
 		if err := inv.consoleWrite("system-shell", "user:"+name, userState,
-			func(f *console.File) error { delete(f.SystemShellUsers, name); return nil }); err != nil {
+			func(f *console.File) error { f.DropSystemShellUser(name); return nil }); err != nil {
 			return err
 		}
 		inv.app.Out.Info("The system-shell setting of '" + name + "' is cleared: the tier decides. It applies from the next console login.")
@@ -686,11 +689,15 @@ func (inv *invocation) consoleSystemShellUser(pol *console.Policy, args []string
 		inv.app.Out.Info("'" + name + "' is a" + map[bool]string{true: " superuser, who always has", false: "n engineer, who never has"}[t == tier.Superuser] + " the system shell. Nothing was changed.")
 		return nil
 	}
+	if on && t != tier.Readonly && t != tier.Operator {
+		return inv.usageErr("'" + name + "' has no tier (the account is disabled?), so the system shell cannot be opened to them. Nothing was changed.")
+	}
 	if err := inv.consoleWrite("system-shell", "user:"+name, userState,
-		func(f *console.File) error { f.SystemShellUsers[name] = on; return nil }); err != nil {
+		func(f *console.File) error { f.SetSystemShellUser(name, on, t); return nil }); err != nil {
 		return err
 	}
-	inv.app.Out.Info("system-shell is " + args[1] + "d for '" + name + "'. It applies from the next console login.")
+	inv.app.Out.Info("system-shell is " + args[1] + "d for '" + name + "'" + map[bool]string{true: " while they are in the " + string(t) + " tier (a move to another tier ends it until it is set again)", false: ""}[on] +
+		". It applies from the next console login.")
 	return nil
 }
 
@@ -1108,18 +1115,22 @@ func (inv *invocation) moveUserSettings(oldname, newname string) userSettingsMov
 	if err != nil {
 		return userSettingsMove{err: err}
 	}
-	on, shellHad := f.SystemShellUsers[oldname]
-	cacheHad := f.PasswordCacheUsers[oldname]
-	m := userSettingsMove{shellHad: shellHad, shellOn: on, cacheHad: cacheHad}
-	if !m.had() {
-		return m
+	if _, shell := f.SystemShellUsers[oldname]; !shell && !f.PasswordCacheUsers[oldname] {
+		return userSettingsMove{}
 	}
+	// What is carried is read under the file's lock, in the same step that
+	// writes it: a setting changed meanwhile is moved as it is now.
+	var m userSettingsMove
 	_, m.err = console.Mutate(p, nil, func(f *console.File) error {
-		delete(f.SystemShellUsers, oldname)
+		on, shellHad := f.SystemShellUsers[oldname]
+		was := f.SystemShellUserTiers[oldname]
+		cacheHad := f.PasswordCacheUsers[oldname]
+		m = userSettingsMove{shellHad: shellHad, shellOn: on, cacheHad: cacheHad}
+		f.DropSystemShellUser(oldname)
 		delete(f.PasswordCacheUsers, oldname)
 		if newname != "" {
 			if shellHad {
-				f.SystemShellUsers[newname] = on
+				f.SetSystemShellUser(newname, on, was)
 			}
 			if cacheHad {
 				f.PasswordCacheUsers[newname] = true

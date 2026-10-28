@@ -10,6 +10,7 @@ import (
 
 	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/pyyaml"
+	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/yamlpy"
 )
 
@@ -130,12 +131,16 @@ func TestRollbackSince0220(t *testing.T) {
 		{"color off", func(f *File) { f.Color = ColorOff }, "unknown key 'color'", []string{"settings.color: off"}, nil},
 		{"never ask", func(f *File) { f.ListMax = ListMaxNever }, "list_max must be", nil, []string{"settings.list_max to 1000 (it never asked)"}},
 		{"both", func(f *File) { f.Color, f.ListMax = ColorOn, ListMaxNever }, "settings", []string{"settings.color: on"}, []string{"settings.list_max to 1000 (it never asked)"}},
-		{"system shell users", func(f *File) { f.SystemShellUsers = map[string]bool{"carol": false, "bob": true} }, "unknown key 'system_shell_users'",
+		{"system shell users", func(f *File) {
+			f.SetSystemShellUser("carol", false, "")
+			f.SetSystemShellUser("bob", true, tier.Operator)
+		}, "unknown key 'system_shell_users'",
 			[]string{"settings.system_shell_users: bob enable, carol disable"}, nil},
 		{"password cache users", func(f *File) { f.PasswordCacheUsers = map[string]bool{"carol": true, "bob": true} }, "unknown key 'password_cache_users'",
 			[]string{"settings.password_cache_users: bob, carol (on)"}, nil},
 		{"all three", func(f *File) {
-			f.Color, f.ListMax, f.SystemShellUsers = ColorOff, ListMaxNever, map[string]bool{"bob": true}
+			f.Color, f.ListMax = ColorOff, ListMaxNever
+			f.SetSystemShellUser("bob", true, tier.Operator)
 		}, "settings", []string{"settings.color: off", "settings.system_shell_users: bob enable"}, []string{"settings.list_max to 1000 (it never asked)"}},
 	}
 	for _, c := range cases {
@@ -204,7 +209,7 @@ func TestRollbackSince0220(t *testing.T) {
 	// The rollback to 0.2.3 takes them out as well, with the cache's.
 	f := Defaults()
 	f.Color, f.ListMax = ColorOff, ListMaxNever
-	f.SystemShellUsers = map[string]bool{"bob": true}
+	f.SetSystemShellUser("bob", true, tier.Operator)
 	f.PasswordCacheUsers = map[string]bool{"alice": true}
 	f.PasswordCacheTiers = Tiers[3:]
 	text, err := f.Text023()

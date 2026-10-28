@@ -12170,6 +12170,14 @@ prints the user's effective state and why
 .RB ( "user setting" ", " "tier operator" ", " always ", " never ).
 .B clear
 removes the user's setting, and the tier decides again. The user must exist.
+An enable is for the tier the user has when it is set
+.RB ( readonly
+or
+.BR operator ):
+after a move to another tier it gives nothing and is listed as
+.BR "stale: set for" " \fItier\fR" ", now " \fItier\fR
+until it is set again (it counts again if the user returns to that tier); a
+disable holds in any tier.
 A superuser always has the system shell: disabling it is refused, and
 enabling it stores nothing. An engineer never has it: enabling it is refused
 (with the reason of the tier), and disabling stores nothing. The settings are
@@ -14365,8 +14373,8 @@ true or false. Default: absent (auto).
 Whether the console's lists are in colour: true (on) or false (off). Written to the file only when set; a file without the key is auto, the terminal decides. Set with \fBtacctl console color\fR.
 .TP
 .B settings.system_shell_users
-mapping of user name to true or false. Default: absent (no user has one).
-The users with a system-shell setting of their own, which wins over their tier's: true gives it to a user of a tier that has none, false takes it from a user of a tier that has it. Written to the file only when a user has one. Set with \fBtacctl console system\-shell user\fR.
+mapping of user name to disable or enable:<tier>. Default: absent (no user has one).
+The users with a system-shell setting of their own, which wins over their tier's: enable:<tier> gives it to a user of a tier that has none, for as long as the user is in that tier (readonly or operator), and disable takes it from a user of a tier that has it. Written to the file only when a user has one. Set with \fBtacctl console system\-shell user\fR.
 .\" END GENERATED: console-keys
 .PP
 A mapping
