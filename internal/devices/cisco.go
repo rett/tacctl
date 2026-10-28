@@ -18,7 +18,8 @@ import (
 var (
 	ciscoTacacsVars = []string{"SERVER_IP", "SECRET", "PRIVILEGE_COMMANDS", "GROUP_SUMMARY", "VTY_ACL_BLOCK",
 		"VTY_ACCESS_CLASS", "AUTHZ_COMMANDS_BLOCK", "ACCT_COMMANDS_BLOCK", "AUTHN_METHODS", "AUTHZ_EXEC_METHODS",
-		"EXEC_TIMEOUT", "TACACS_GROUP", "SNMP_BLOCK", "NETCONF_BLOCK", "SOURCE_INTERFACE_BLOCK", "HARDENING_BLOCK"}
+		"EXEC_TIMEOUT", "TACACS_GROUP", "SNMP_BLOCK", "NETCONF_BLOCK", "SOURCE_INTERFACE_BLOCK", "HARDENING_BLOCK",
+		"TACACS_PORT_LINE", "TACACS_HOST_PORT"}
 	ciscoRadiusVars = []string{"SERVER_IP", "SECRET", "AUTH_PORT", "ACCT_PORT", "RADIUS_GROUP", "PRIVILEGE_COMMANDS",
 		"GROUP_SUMMARY", "VTY_ACL_BLOCK", "VTY_ACCESS_CLASS", "AUTHN_METHODS", "AUTHZ_EXEC_METHODS", "EXEC_TIMEOUT",
 		"SNMP_BLOCK", "NETCONF_BLOCK", "SOURCE_INTERFACE_BLOCK", "HARDENING_BLOCK"}
@@ -186,6 +187,13 @@ func CiscoVars(req Request, d Data) map[string]string {
 		"NETCONF_BLOCK":          CiscoNetconf(NetconfInput{Restricted: d.Restricted, Legacy: req.Legacy}),
 		"SOURCE_INTERFACE_BLOCK": ciscoSourceInterfaceBlock(req, d),
 		"HARDENING_BLOCK":        ciscoHardening(req, d),
+	}
+	// The TACACS+ port, written only when the listener is not on 49 (what
+	// IOS uses when none is given): the block's own leaf, and the word of
+	// the legacy host line, which goes after single-connection.
+	if port := d.tacacsPortSet(); port != "" {
+		vars["TACACS_PORT_LINE"] = "  port " + port
+		vars["TACACS_HOST_PORT"] = " port " + port
 	}
 	if r := d.Radius; req.Protocol == RADIUS && r != nil {
 		vars["SECRET"] = r.Secret
@@ -411,7 +419,7 @@ func renderCisco(o *out, req Request, d Data) error {
 	o.write(vars["GROUP_SUMMARY"])
 	o.echo("")
 	if req.Protocol == RADIUS {
-		o.summaryLimits("cisco", req.Scope, d.Radius)
+		o.summaryLimits("cisco", req.Scope, d.Radius, d.tacacsPort())
 		o.echo("")
 		o.heading(ui.Yellow, "Notes:")
 		o.echo("  - The 'local' fallback ensures access if the RADIUS server is unreachable;")

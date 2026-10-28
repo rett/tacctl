@@ -77,7 +77,7 @@ const authReplyTerm = "permit-auth-replies"
 // RADIUS server come from it, and a filter that ends in the discard must
 // accept them; reply says so. It is no source of permit-mgmt: the device
 // starts those sessions, so only the packets of the replies are accepted from
-// it (a TACACS+ connection already established from port 49, RADIUS udp from
+// it (a TACACS+ connection already established from the listener's port, RADIUS udp from
 // the listener's ports). No reply when a plain source (the server's /32, a
 // plain entry, or a range of one) holds the address already: it is accepted
 // for everything.
@@ -144,13 +144,15 @@ func prefixesHold(prefixes []string, a string) bool {
 }
 
 // authReplies are the replies of the server at a (its /32) in the walkthrough
-// of protocol: TACACS+ answers over tcp from port 49 (the walkthrough sets no
-// other), in a connection the device opened; RADIUS answers over udp from the listener's authentication and
+// of protocol: TACACS+ answers over tcp from the listener's port (49 unless
+// the listener is configured with another, the one the walkthrough sets on the
+// device), in a connection the device opened; RADIUS answers over udp from the listener's authentication and
 // accounting ports (1812 and 1813 unless the listener is configured with
 // others), the ports the walkthrough sets on the device.
 func (d Data) authReplies(a, protocol string) *authReply {
 	if protocol != RADIUS {
-		return &authReply{source: a, proto: "tcp", ports: []string{junosPortOf(49)}}
+		port, _ := strconv.Atoi(d.tacacsPort())
+		return &authReply{source: a, proto: "tcp", ports: []string{junosPortOf(port)}}
 	}
 	auth, acct := "1812", "1813"
 	if d.Radius != nil {
@@ -252,7 +254,7 @@ func strictStatements(prefix string, plain []string, terms []strictTerm) string 
 // server's replies (nothing without one). The filter is stateless: the term
 // matches by source address, protocol and source port. For TACACS+ it adds
 // tcp-established (every tcp packet but the first of a connection: a SYN-ACK
-// and what follows), so that a new connection from port 49 is not accepted;
+// and what follows), so that a new connection from the listener's port is not accepted;
 // udp has no such flag.
 func authReplyStatements(prefix string, reply *authReply) string {
 	if reply == nil {

@@ -42,7 +42,7 @@
 - Set TACACS Parameters → `12. Debug: On` on the unit to see the exchange from its side
 
 **No connection attempts reaching the server**
-- Verify port 49 reachable: `telnet <server_ip> 49` from the device (RADIUS: UDP 1812/1813, not testable with telnet)
+- Verify the TACACS+ listener's port is reachable (49 by default; `tacctl config listen show`): `telnet <server_ip> <port>` from the device (RADIUS: the `auth` and `acct` listeners, UDP 1812/1813 by default, not testable with telnet)
 - Check service is running: `tacctl status` / `tacctl backend status`
 - Check listener network/address: `tacctl config listen show` (`--backend radius` for RADIUS)
 

@@ -21,6 +21,8 @@ The generated Cisco, Juniper, and WTI output is rendered from template files usi
 | `${SERVER_IP}` | All | Auto-detected server IP address |
 | `${SECRET}` | All | Shared secret of the scope |
 | `${AUTH_PORT}`, `${ACCT_PORT}` | Cisco, WTI RADIUS | UDP ports of the RADIUS `auth` and `acct` listeners |
+| `${TACACS_PORT_LINE}`, `${TACACS_HOST_PORT}` | Cisco TACACS+ | The TACACS+ port of a listener that is not on 49: `  port <n>` (the leaf of `tacacs server`) and ` port <n>` (the word of the legacy `tacacs-server host` line, after `single-connection`); empty for 49 |
+| `${TACACS_PORT}` | WTI TACACS+ | The TACACS+ listener's port (49 by default) |
 | `${RADIUS_GROUP}` | Cisco RADIUS | `aaa group server radius` label (`scope radius-group`, default `RADIUS-GROUP`) |
 | `${AUTHN_METHODS}`, `${AUTHZ_EXEC_METHODS}`, `${EXEC_TIMEOUT}`, `${VTY_ACL_BLOCK}`, `${VTY_ACCESS_CLASS}` | Cisco | Method lists (from `aaa-order`), idle timeout and the management-ACL blocks |
 | `${RADIUS_CONFIG}` | Juniper RADIUS | Pre-rendered RADIUS server, authentication-order and accounting commands |
@@ -38,6 +40,8 @@ The generated Cisco, Juniper, and WTI output is rendered from template files usi
 | `${FALLBACK_LOCAL}` | WTI | `On (Transport Failure)` or `On (All Failures)`, from the scope's `aaa-order` |
 | `${SERVICE_NAME}` | WTI | Authorization service name the unit should send (`wti`) |
 | `${BREAKGLASS_BLOCK}` | All | The scope's break-glass local accounts with a placeholder for the credential, or the notice that it has none (see [Break-glass local users](break-glass.md#break-glass-local-users)); a template copied before 0.2.3 lacks the step |
+
+A template copied before 0.2.22 does not have `${TACACS_PORT_LINE}`, `${TACACS_HOST_PORT}` or `${TACACS_PORT}`: its Cisco output names no TACACS+ port, and its WTI output says 49, whatever the listener is. Add the variables from the new default.
 
 **To customize:** edit the copy in the override location (install puts one there; if it is missing, copy the default first):
 ```bash

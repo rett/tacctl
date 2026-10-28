@@ -16,9 +16,11 @@ import (
 	"io"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/cidr"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/mgmtacl"
@@ -113,6 +115,13 @@ type Data struct {
 	ACL MgmtACL
 	// Radius is Prepare's result; required when Protocol is radius.
 	Radius *Radius
+	// TACACSPort is the port the TACACS+ server listens on, as the default
+	// listener of 'tacctl config listen' has it (the tacacs backend's
+	// TACACS_PORT device variable); "" is the default, 49. The TACACS+
+	// walkthroughs state it where the device's configuration takes a port
+	// (and only then: 49 is what a device uses when none is written), and
+	// the RADIUS ones name it where they contrast the two protocols.
+	TACACSPort string
 
 	// SNMP is the scope's SNMP settings with the device's values, as the CLI
 	// resolved them (D41, D46); Scope and Server are filled in here. The
@@ -145,6 +154,28 @@ type Data struct {
 	// detected address, as before). tacctl's own source address is still the
 	// detected one.
 	DefaultServer string
+}
+
+// defaultTACACSPort is the port a TACACS+ client uses when none is written.
+var defaultTACACSPort = strconv.Itoa(backend.DefaultTACACSPort)
+
+// tacacsPort is the TACACS+ port the devices are told to connect to (the
+// default listener's; 49 when none is given or it cannot be read).
+func (d Data) tacacsPort() string {
+	if n, err := strconv.Atoi(d.TACACSPort); err == nil && n > 0 && n < 65536 {
+		return strconv.Itoa(n)
+	}
+	return defaultTACACSPort
+}
+
+// tacacsPortSet is the TACACS+ port when it is not the default, else "": the
+// statements of a walkthrough that set a port are written only for a moved
+// listener, so that a server on the default one renders what it always did.
+func (d Data) tacacsPortSet() string {
+	if p := d.tacacsPort(); p != defaultTACACSPort {
+		return p
+	}
+	return ""
 }
 
 // source is the address tacctl reaches devices from: --source, else the

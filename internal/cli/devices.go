@@ -337,6 +337,19 @@ func (inv *invocation) deviceServerFlag(server string) (addr, name string, err e
 	return "", "", inv.usageErr("--server '" + server + "' does not resolve to an IPv4 address.")
 }
 
+// tacacsPort is the port the TACACS+ server listens on, as the tacacs
+// backend reports it for a device template (the default listener of
+// 'tacctl config listen'): the TACACS_PORT device variable, "" when the
+// backend gives none (the walkthroughs then say 49).
+func (inv *invocation) tacacsPort(vendor, scope string) string {
+	b, err := inv.app.Backends().Get(backend.TACACS)
+	if err != nil {
+		return ""
+	}
+	vars, _ := b.DeviceVars(inv.ctx, vendor, scope)
+	return vars["TACACS_PORT"]
+}
+
 // deviceRadius is radius_device_prepare: the RADIUS backend's part of a
 // RADIUS device config, or its refusal (error lines, exit 1).
 func (inv *invocation) deviceRadius(vendor, scope string) (*devices.Radius, error) {

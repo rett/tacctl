@@ -3963,9 +3963,20 @@ a local account named like a user that it did not create is left alone and
 that user gets no account. It refuses
 to run when no local administrator with a usable password exists outside
 the TACACS+ user list, and puts the PAM files back if any step fails.
-Re-run it with
+The server's port in it is the configured listener's
+.RB ( "config listen" ):
+the TACACS+
+.B default
+listener for tacplus (the
+.B server=<address>:<port>
+of pam_tacplus), the RADIUS
+.B auth
+listener for radius (and
+.B acct
+for the accounting port); 49, 1812 and 1813 by default. Re-run it with
 .B \-\-accounts\-only
-to sync users after changes on the server.
+to sync users after changes on the server (this leaves the PAM files, and so
+the port, as they were).
 .\" BEGIN GENERATED: command config linux script
 .RS
 .PP
@@ -4954,7 +4965,21 @@ Print a ready-to-paste Cisco IOS/IOS-XE configuration with the
 server IP, shared secret, current group-to-privilege mappings, and
 the VTY-ACL built from
 .B config mgmt-acl
-pre-filled. Over TACACS+ it has one
+pre-filled. Over TACACS+ the server's port is the configured listener's
+.RB ( "config listen" ;
+default 49): a
+.B tacacs server
+block of a listener that is not on 49 has a
+.BI "port " n
+line after
+.BR "address ipv4" ,
+and the
+.B \-\-legacy
+host line has
+.BI "port " n
+after
+.BR single\-connection ;
+a listener on 49 adds nothing. It has one
 .B aaa accounting commands
 line per privilege level a group uses and, once any group has command
 rules, the per-level
@@ -5242,7 +5267,10 @@ removed with the scope, shown by
 .TP
 .BI "config juniper " [ "--scope " name "] [--protocol " tacacs | radius "] [--name " device "] [--server " address|name "] [--source " address "] [--snmp-location " text ]
 Print a ready-to-paste Juniper Junos configuration with template
-users, TACACS+ server setup, verification commands, and a commented
+users, TACACS+ server setup (a listener that is not on 49,
+the configured one, adds
+.BI "set system tacplus-server " "address " "port " n ),
+verification commands, and a commented
 lo0 firewall-filter example built from
 .B config mgmt-acl
 pre-filled. The classes carry permission bits only (a class named
@@ -5297,7 +5325,7 @@ Print a step-by-step procedure for the serial text interface of a WTI
 console server (DSM/CPM/REM/TSM/RSM, firmware v8.x): the
 .B /N
 Network Parameters menu, the TACACS Parameters item, and the value to
-key in for every field: server IP, Secret Word, port 49, Fallback Local
+key in for every field: server IP, Secret Word, port (the TACACS+ listener's, default 49), Fallback Local
 (from the scope's
 .BR aaa-order ),
 Default User Access
@@ -14590,7 +14618,8 @@ in
 .RB ( "config listen" ).
 The TACACS+ listener
 .B default
-(tcp :49) runs in
+(tcp :49; the port the device walkthroughs and the Linux host scripts name for TACACS+, and the pulls and plans compare, is its
+port) runs in
 .BR tacquito.service ;
 every further one is an instance
 .BI tacquito@ name .service
@@ -14608,7 +14637,7 @@ RADIUS listeners
 .RB ( auth ,
 udp :1812;
 .BR acct ,
-udp :1813) are
+udp :1813; their ports are the RADIUS ones the walkthroughs and scripts name) are
 .B listen
 sections of tacctl's FreeRADIUS configuration. TACACS+ over TLS is reserved
 in the schema and not implemented.

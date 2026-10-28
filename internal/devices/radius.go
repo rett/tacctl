@@ -221,7 +221,7 @@ func (o *out) summaryAccept(vendor, scope string, r *Radius) {
 // summaryLimits is radius_summary_limits <cisco|juniper>: what an
 // Access-Accept carries, what a login over RADIUS does not have next to
 // TACACS+, and Prepare's warnings.
-func (o *out) summaryLimits(vendor, scope string, r *Radius) {
+func (o *out) summaryLimits(vendor, scope string, r *Radius, tacacsPort string) {
 	o.summaryAccept(vendor, scope, r)
 	o.echo("")
 	o.heading(ui.Yellow, "What RADIUS does not give you (compared with TACACS+):")
@@ -241,7 +241,7 @@ func (o *out) summaryLimits(vendor, scope string, r *Radius) {
 		o.echo("    (TACACS+ also records commands)")
 	}
 	o.echo("  - Password logins only (PAP): no CHAP, MS-CHAP or EAP")
-	o.echo("  - UDP, not TCP/49: allow UDP " + r.AuthPort + " (authentication) and " + r.AcctPort + " (accounting)")
+	o.echo("  - UDP, not TCP/" + tacacsPort + ": allow UDP " + r.AuthPort + " (authentication) and " + r.AcctPort + " (accounting)")
 	o.echo("    from the device to the server")
 	o.echo("  - The server answers only a device whose source address lies in a prefix of scope")
 	o.echo("    '" + scope + "' ('tacctl scope lookup <device-ip>' to check)")

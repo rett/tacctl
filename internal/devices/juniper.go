@@ -183,6 +183,7 @@ func JuniperVars(req Request, d Data) map[string]string {
 		"set system authentication-order " + order + "\n" +
 		idleLines +
 		"set system tacplus-server " + serverIP + " secret " + secret + "\n" +
+		tacplusPort(serverIP, d.tacacsPortSet()) +
 		"set system tacplus-server " + serverIP + " single-connection\n" +
 		"# Optional: pin client source IP for prefix-ACL matching on tacquito.\n" +
 		"# Replace 10.0.0.1 with the device's management interface address, e.g.:\n" +
@@ -451,7 +452,7 @@ func renderJuniper(o *out, req Request, d Data) error {
 	o.write(vars["GROUP_SUMMARY"])
 	o.echo("")
 	if req.Protocol == RADIUS {
-		o.summaryLimits("juniper", req.Scope, d.Radius)
+		o.summaryLimits("juniper", req.Scope, d.Radius, d.tacacsPort())
 		o.echo("")
 		o.heading(ui.Yellow, "Notes:")
 		o.echo("  - Template users MUST exist before RADIUS logins will work: the server names")
@@ -499,4 +500,14 @@ func renderJuniper(o *out, req Request, d Data) error {
 	o.unfilledBreakGlass(bg)
 	o.unfilled(t.snmpGaps(snmp))
 	return nil
+}
+
+// tacplusPort is the statement that sets the TACACS+ server's port, written
+// only for a listener that is not on the default (Junos uses 49 when none is
+// given); "" for the default.
+func tacplusPort(server, port string) string {
+	if port == "" {
+		return ""
+	}
+	return "set system tacplus-server " + server + " port " + port + "\n"
 }

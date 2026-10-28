@@ -113,6 +113,36 @@ current behaviour; this file is where history lives.
    unavailable. `docs/cli/shell.md` (Password cache) lists the lines that use
    the cache and those that store into it.
 
+6. **The server's port in device walkthroughs follows the configured
+   listener.** The Cisco, Junos and WTI walkthroughs assumed TACACS+ on tcp 49,
+   so `tacctl config listen` could move the listener and leave every device
+   configuration, every compare and every plan on the old port. One helper,
+   `backend.ServerPort`, now returns the port from the listeners in effect:
+   the TACACS+ `default` listener's, the RADIUS `auth` listener's for the
+   authentication port and the `acct` listener's for the accounting port (any
+   further listener is for other clients and is never the answer). With a
+   listener that moved, `config cisco` adds `port <n>` under `tacacs server
+   TACACS` (after `address ipv4`; with `--legacy`, after `single-connection`
+   on the `tacacs-server host` line) and `config juniper` adds `set system
+   tacplus-server <address> port <n>`; the WTI walkthrough's Authentication
+   Port item and its ping note, the `UDP, not TCP/<port>` line of the RADIUS
+   output and the source port of the strict Junos filter's
+   `permit-auth-replies` term say the configured port too. `device config
+   pull --diff`, `diff` and `plan` render the same statements, so a device
+   that still has the old port is a difference and its plan types the new
+   one (`- tacacs server TACACS > port 4949`, `+ tacacs server TACACS > port
+   49`; on a WTI unit the Authentication Port item). With the built-in
+   listeners nothing in any output changes (the goldens are byte for byte the
+   same): a port is written only for a listener that is not on the default,
+   except the WTI item, which always showed 49. The Linux host script already
+   took its port from the listeners; its fallbacks use the helper now, and a
+   test pins that the client script names no port of its own. A device that
+   carries a port the listener no longer has (the listener is back on 49, the
+   device says `port 4949`) is an extra statement, which a plan leaves alone
+   as before. A custom template copied from an earlier release has none of
+   the new variables (`TACACS_PORT_LINE`, `TACACS_HOST_PORT`, `TACACS_PORT`):
+   copy the new default.
+
 ## 0.2.20 (2026-10-28)
 
 1. **A user name may hold periods.** `user add alice.smith operator` is

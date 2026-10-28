@@ -36,3 +36,19 @@ An unpinned device is checked against your own known_hosts, after its `hostkey-u
 From a login console session (each of its lines carries `TACCTL_CONSOLE=<session>`), `tacctl ssh` reads no ssh configuration file and opens nothing but the session: it adds `-F /dev/null -o PermitLocalCommand=no -o ControlMaster=no -o ClearAllForwardings=yes -o ForwardAgent=no`, `-o EscapeChar=none` unless `tacctl console ssh-escape enable`, and puts the target after `--`, so the words after the name's `--` are only ever the remote command (a first word starting with `-` is refused). A device or host with no pinned host key is refused: `'<name>' has no pinned host key, so the console does not connect to it; an administrator pins it: tacctl device hostkey <name> accept`. Its log lines end with `console=<session>`. When ssh fails with 255 on a pinned device whose key changed, tacctl prints the pinned and offered fingerprints, the console command that shows the key, and `tacctl device hostkey <name> accept|set`.
 
 `tacctl device client-config > ~/.ssh/tacctl.conf`, with `Include ~/.ssh/tacctl.conf` at the top of `~/.ssh/config`, gives a plain `ssh <name>` the same options and pin (one `Host` block per device you may see, with `PubkeyAuthentication no` and the password methods and no `User` line: ssh logs in with your local username, which for a tacctl user is the tacctl name; print-only, re-run after registry changes).
+
+## The server's port
+
+The walkthroughs name the port the server listens on where the device's configuration takes one. It is the configured listener (`tacctl config listen`; see [Listeners](../server/backends.md#listeners)): the `default` TACACS+ listener, and for RADIUS the `auth` and `acct` listeners. Where a port is not written when it is the default, it is written only for a listener that moved, so a server on the default listeners renders what it always did:
+
+| Device | TACACS+ listener on tcp `:4949` |
+|---|---|
+| Cisco, IOS 15.2 and later, IOS-XE | `port 4949` under `tacacs server TACACS`, after `address ipv4` |
+| Cisco, `--legacy` (IOS 12.x) | `tacacs-server host <address> single-connection port 4949 timeout 5 key <secret>` |
+| Junos | `set system tacplus-server <address> port 4949` |
+| WTI | item 7, Authentication Port: `4949` (always written; 49 by default), and the Step 4 note that a ping does not prove `TCP/4949` |
+| Junos, management filter mode `strict` | the term `permit-auth-replies` accepts source port `4949` (the name `tacacs` when it is 49) |
+
+RADIUS walkthroughs write both ports as they always did (`auth-port`/`acct-port` on Cisco, `port` and `accounting-port` on Junos, the two WTI items) and name the TACACS+ port where they contrast the protocols (`UDP, not TCP/4949`).
+
+What a pull is compared with and what a plan types is the same rendering, so a device that still has the old port is a difference with the fix in its plan: after `tacctl config listen tcp :4949`, a Cisco device with `port 49` under its server block shows `- tacacs server TACACS > port 4949` and `+ tacacs server TACACS > port 49` in `device config diff`, and `device config plan` types `port 4949` under `tacacs server TACACS`; a Junos device with `port 49` gets `set system tacplus-server <address> port 4949`; a WTI unit gets its Authentication Port item changed. A device that carries a port the listener no longer has (the listener is back on 49, the device says `port 4949`) is an extra statement, which a plan leaves alone and names with the line that removes it (`no port 4949` under `tacacs server TACACS`). A custom template copied before 0.2.22 has no port line and keeps the literal 49 on WTI: copy the new default (see [Custom templates](templates.md)).
