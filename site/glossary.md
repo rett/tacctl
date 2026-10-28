@@ -24,7 +24,7 @@ explains it in full.
 | **Apply** | Junos only: tacctl commits a plan under `commit confirmed`, proves it with a fresh login as you, then confirms. | [Engineer Guide](engineer-guide-device-changes.md) §5.1 |
 | **Audit line** | A syslog line (tags `tacctl`, `tacctl-console`) that tacctl writes for every change and refusal: who, what, result, snapshot. | [Audit and Compliance](audit-and-compliance.md) |
 | **Back-out** | The lines that undo a plan's paste. `tacctl device config plan <name> --backout` prints them. | [Engineer Guide](engineer-guide-device-changes.md) §7 |
-| **Break-glass account** | A local emergency account on a device, recorded per scope with `tacctl scope breakglass`. tacctl never stores its password. | [Break Glass](break-glass.md) §1 |
+| **Break-glass account** | A local emergency account on a device, recorded per scope with `tacctl scope breakglass`; on Junos it may be `root`. tacctl never stores its password. | [Break Glass](break-glass.md) §1 |
 | **Break-glass hold** | The server stops answering one device or host on purpose, so its local accounts work. Never expires. | [Break Glass](break-glass.md) |
 | **Canary** | During a Junos apply, the first device of each new shape goes alone before the others. | [Engineer Guide](engineer-guide-device-changes.md) §5.1 |
 | **Client config** | An ssh configuration file (`tacctl device client-config`) that gives plain `ssh` and `scp` the registry's pinned host keys. | [Connecting to Devices](connecting-to-devices.md) §3 |
