@@ -67,6 +67,16 @@ tacctl/
   flag states its own text in its `Flag` (`Arg` the value as listed, `Desc`
   the line, `Long` the man page's fuller text; `internal/cli/args.go`); a flag
   without them still takes its text from the verb's usage block.
+- The lists of words (`?`, a second Tab, `-h` and `--help`) have one renderer
+  and one palette. `shell.HelpText` turns the candidates, or the explanation
+  of a verb, into the text, for the key and for the flag (`help_request.go`);
+  a `shell.Candidate` says what its word is (`Command`, `Live`, else a
+  sub-command, fixed word or option), and `ui.BrightWhite`, `ui.Teal` and bold
+  paint them. The sequences are always written; a stream that is not a
+  terminal, `NO_COLOR` and `TACCTL_COLOR` take them out, and the console's
+  `color` setting decides in the console. Every width counts the text without
+  its sequences (`visLen`, `capLabel`, `wrapWords`): a new list is tested
+  with colour in its labels and descriptions.
 - No secret, hash, password or community string in any log line, test
   golden or doc example.
 - Gates: build, gofmt, `go vet`, `make lint`, Go tests (`make gate-go`,
