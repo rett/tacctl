@@ -57,7 +57,8 @@ tacctl log failures                 # authentication failures, last 24 hours
 What to look for:
 
 - **`status`**: every enabled backend should be running. Note any users
-  whose passwords are getting old.
+  whose passwords are getting old, and the `Password change` line: users
+  who still have to change theirs.
 - **`config validate`**: warnings name the command that fixes them. A
   common one is a scope with no break-glass local users, which is a lockout
   risk.
@@ -85,6 +86,7 @@ Typical causes:
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | User is `disabled` | Disabled earlier | `tacctl user enable alice` |
+| `user show` has a `Password change` line | A password change is required: no device accepts the user until it is made | The user logs in to the tacctl server and changes it ([Getting Started](getting-started.md) §2.1) |
 | Device's scope is not in the user's scopes | Missing scope grant | `tacctl user scope alice add site-a` |
 | `bad secret` in the logs / device `LAST SEEN` shows `rejected` | Device key does not match the scope's secret | Re-paste the AAA config: `tacctl device config show sw1` |
 | No scope covers the device | Address outside all prefixes | `tacctl scope prefixes site-a add 10.10.0.0/16` |
@@ -110,10 +112,11 @@ tacctl group show operator          # every setting of a group and where it come
 
 | Task | Command | Details |
 |---|---|---|
-| New user | `tacctl user add alice operator --scopes site-a,site-b`, then `tacctl user passwd alice` | Access Lifecycle §2 |
+| New user | `tacctl user add alice operator --scopes site-a,site-b`, then `tacctl host sync --all` | Access Lifecycle §2 |
 | Grant or revoke a scope | `tacctl user scope alice add\|remove site-b` | Access Lifecycle §3 |
 | Promote or demote | `tacctl user move alice engineer` | Access Lifecycle §3 |
-| Reset a password | `tacctl user passwd alice` | Access Lifecycle §5 |
+| Reset a password | `tacctl user passwd alice` (alice must change it) | Access Lifecycle §5 |
+| Require or lift a password change | `tacctl user require-password-change alice [on\|off]` | Access Lifecycle §5.1 |
 | Suspend / restore | `tacctl user disable\|enable carol` | Access Lifecycle §4 |
 | Remove | `tacctl user remove carol` | Access Lifecycle §4 |
 
@@ -371,7 +374,7 @@ tacctl log accounting 50            # last 50 accounting records (who ran what)
 |---|---|
 | Server health | `tacctl status` |
 | Find problems | `tacctl config validate` |
-| Add user | `tacctl user add <name> <group> --scopes <s,...>` then `user passwd <name>` |
+| Add user | `tacctl user add <name> <group> --scopes <s,...>` then `host sync --all` |
 | Reset password | `tacctl user passwd <name>` |
 | Grant / revoke scope | `tacctl user scope <name> add\|remove <s>` |
 | Change role | `tacctl user move <name> <group>` |

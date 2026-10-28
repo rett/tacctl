@@ -104,6 +104,8 @@ $J | grep 'DENY'                                 # every refusal (tier, verb, co
 $J | grep 'sid=k3x9a0bq'                         # all lines of one command
 $J | grep -E '^.*user (add|remove|disable|enable|move|rename|scope)'   # account changes
 $J | grep 'user passwd'                          # password resets (never the password)
+$J | grep 'user password-change'                 # password changes required or lifted (state=)
+$J | grep 'password-change DENY'                 # commands refused until the password is changed
 $J | grep 'secret-read'                          # every time a secret was shown, and by whom
 $J | grep 'scope secret set'                     # secret rotations
 $J | grep -E 'emergency lockdown|breakglass'     # lockdowns and holds, with reasons
@@ -127,7 +129,7 @@ $J | grep 'console start'                        # console logins (user=, from=)
 | List of users and their access | `tacctl user list`, `tacctl group list`, `tacctl scope list` |
 | Who has administrative rights | `tacctl user list` filtered to superuser groups; `tacctl group show superuser` |
 | Joiner/mover/leaver changes in the period | `grep 'cmd end'` plus `user add\|remove\|move\|scope\|disable` detail lines |
-| Password resets | `grep 'user passwd'` (`source=prompt\|hash\|generated`) |
+| Password resets | `grep 'user passwd'` (`source=prompt\|hash\|generated`); `grep 'user password-change'` (`state=required\|cleared`) |
 | Password age policy is enforced | `tacctl config password-age`; the warnings in `tacctl status` |
 | Privileged access to secrets | `grep 'secret-read'` (kind, name, by) |
 | Emergency access use | `grep -E 'breakglass\|emergency lockdown'`, with reason, duration and person |

@@ -9,7 +9,7 @@ doctype: explanation
 
 # Glossary
 
-*The words tacctl and this documentation use, in one list · Checked against tacctl 0.2.19*
+*The words tacctl and this documentation use, in one list · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-glossary.pdf){: .pdf-link }
 
@@ -48,6 +48,7 @@ explains it in full.
 | **`PENDING`** | A Junos apply whose state could not be read after the commit. Type nothing on the device until the time shown passes. | [Vendor Notes](vendor-notes.md) §3.2 |
 | **Plan** | The exact fix for a device: report, the region between `PASTE FROM HERE` and `PASTE TO HERE`, checks and back-out. | [Engineer Guide](engineer-guide-device-changes.md) §4 |
 | **Pull** | Log in to a device as you and read its managed sections. Read only. | [Engineer Guide](engineer-guide-device-changes.md) §3 |
+| **Required password change** | A user must change the password before logging in to anything but the tacctl server. Set by `user add` and a superuser's `user passwd` by default; never binds a superuser. | [Access Lifecycle](access-lifecycle.md) §5.1 |
 | **Reason** | Free text given with `--reason` on lockdowns and holds. Logged as typed: never put a secret in it. | [Audit and Compliance](audit-and-compliance.md) §6 |
 | **Registry** | The list of devices (and hosts) by name, with address, vendor and pinned keys. | [Concepts](concepts.md) §4 |
 | **Restore point** | Cisco: a copy of the configuration on flash, added before a plan's region with `--restore-point=flash:`. | [Vendor Notes](vendor-notes.md) §2.5 |

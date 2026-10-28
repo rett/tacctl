@@ -9,7 +9,7 @@ doctype: tutorial
 
 # Getting Started
 
-*Your first login, the console and the shell, and where to go next · Checked against tacctl 0.2.19*
+*Your first login, the console and the shell, and where to go next · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-getting-started.pdf){: .pdf-link }
 
@@ -55,6 +55,9 @@ What the console does not do:
 - An idle session ends after a set time (30 minutes by default).
 - Every session is logged.
 
+If the console opens with `A password change is required of your account.`,
+change your password first (§2.1): nothing else runs until you do.
+
 To run a single line without opening the console:
 
 ```bash
@@ -93,12 +96,37 @@ tacctl passwd          # asks for your current password, then the new one twice
 ```
 
 One tacctl password covers every device and host in your scopes, over
-TACACS+ and RADIUS. Any user at any tier can change their own.
+TACACS+ and RADIUS. Any user at any tier can change their own. The new
+password must differ from the current one.
 
 Forgotten it? A superuser resets it with `tacctl user passwd <you>`. If you
 would rather they never see your new password, create a bcrypt hash
 yourself (`tacctl hash commands` prints the recipes for Linux, macOS and
 Windows) and send them only the hash.
+
+### 2.1 A required password change
+
+A new account, and a password a superuser has reset, usually come with a
+**required password change**. Until you make it:
+
+- no device accepts your login, and no enrolled Linux host other than the
+  tacctl server lets you in;
+- on the tacctl server, the console opens with the notice
+  `A password change is required of your account.` and starts the password
+  change dialog straight away.
+
+Type your current password (the one you were given), then the new one twice.
+Once the change is made, the session goes on as any other, and the devices
+accept the new password. Hosts other than the server let you in again after
+their next sync, which a superuser runs.
+
+Until then, every other line is refused with
+`A password change is required: nothing runs here until it is made but 'passwd' (and 'exit').`
+Tab and `?` offer only the change. A wrong current password or a rejected new
+one leaves that locked prompt: type `passwd` to try again, or `exit`. Ctrl-C
+in the dialog ends the session.
+
+Superusers are never held to a required password change.
 
 ---
 
