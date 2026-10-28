@@ -11,7 +11,7 @@ settings:
   agent_forwarding: false
   ssh_escape: false
   system_shell: /bin/bash
-  system_shell_tiers: [superuser]
+  system_shell_tiers: [superuser]   # the tiers that have the system shell; superuser always
   forwarding_tiers: [superuser]
   gateway_ports: false
   list_max: 40                    # completions listed without asking; -1: never ask
@@ -20,13 +20,16 @@ settings:
                                   space-completion)
   # color: true                   # written only when set: true (on) or false (off); absent
                                   is auto (console color)
+  # system_shell_users:           # written only when a user has a setting of their own
+  #   jdoe: true                  # true gives the system shell, false takes it (console
+                                  system-shell user)
   # password_cache:               # written only when something is set (see Password cache)
   #                               tiers: [operator, superuser]
   #   idle: 15                    # minutes
   #   max: 8                      # hours
 ```
 
-The keys: `settings.idle_timeout` (`console idle-timeout`), `settings.agent_forwarding` (`console agent-forwarding`), `settings.ssh_escape` (`console ssh-escape`), `settings.system_shell` and `settings.system_shell_tiers` (`console system-shell path|tiers`; the tiers are never `engineer`), `settings.forwarding_tiers` and `settings.gateway_ports` (`console forwarding tiers|gateway-ports`; the tiers are never `engineer`), `settings.list_max` (`console list-max`; 1 to 1000, or -1 to never ask), `settings.space_completion` (`console space-completion`; written only when off), `settings.color` (`console color`; written only when `on` or `off`) and `settings.password_cache` (`console password-cache tiers|idle|max`; written only when set).
+The keys: `settings.idle_timeout` (`console idle-timeout`), `settings.agent_forwarding` (`console agent-forwarding`), `settings.ssh_escape` (`console ssh-escape`), `settings.system_shell` (`console system-shell path`), `settings.system_shell_tiers` (`console system-shell <tier> enable|disable`; always holds `superuser`, never `engineer`), `settings.system_shell_users` (`console system-shell user`; written only when a user has a setting), `settings.forwarding_tiers` and `settings.gateway_ports` (`console forwarding tiers|gateway-ports`; the tiers are never `engineer`), `settings.list_max` (`console list-max`; 1 to 1000, or -1 to never ask), `settings.space_completion` (`console space-completion`; written only when off), `settings.color` (`console color`; written only when `on` or `off`) and `settings.password_cache` (`console password-cache tiers|idle|max`; written only when set).
 
 ```
 console show
@@ -90,9 +93,18 @@ console forget
 
     Forget the cached password of this session now (a word of the shell and the console)
 
-console system-shell tiers [<csv>|none]
+console system-shell [<tier> enable|disable]
 
-    Tiers that may start their system shell from the console (default superuser)
+    Without arguments, whether each tier has the system shell and the users with a setting of
+    their own, with their tier. A tier alone prints its state; with enable or disable it sets it
+    (superuser only). The superuser tier always has it and cannot be disabled; readonly and operator
+    are disabled by default; the engineer tier never has it and enable is refused
+
+console system-shell user <name> [enable|disable|clear]
+
+    Show or set the system shell for one user, over the tier's setting in both directions (clear:
+    the tier decides). Disabling a superuser and enabling an engineer are refused; the setting
+    survives a rename or removal of the user and is listed as "no such user" (superuser only)
 
 console system-shell path [<path>]
 
@@ -139,8 +151,8 @@ ssh carol@authsrv < lines.txt
 
 A word that starts with an underscore (`__help`, `__complete`, `_console-policy`: the entry points of the scripts, the key and the console itself) is no command at the prompt or in a batch: it is answered as any word that is no command (`Unknown command: '__help'`), and nothing runs.
 
-`system-shell` (the console's own word, at the prompt only) starts the user's system shell (`console system-shell path`, default `/bin/bash`) as the user, without arguments, with the console's environment and `SHELL=<path>`; the idle timer does not run meanwhile and sshd's drop-in still applies; `exit` returns to the console (`back in the tacctl console`). It is open to the tiers of `console system-shell tiers` (default: superusers only); for anyone else it is refused with `system-shell is not available for the <tier> tier on this console. An administrator enables it with: tacctl console system-shell tiers …` (status 1), and through `-c` or in a batch with status 126. The same tiers may open an editor from the console (`scope block ... edit|adopt`, `device block ... edit|adopt`: an editor can start a shell); for anyone else those verbs say so and change nothing.
+`system-shell` (the console's own word, at the prompt only) starts the user's system shell (`console system-shell path`, default `/bin/bash`) as the user, without arguments, with the console's environment and `SHELL=<path>`; the idle timer does not run meanwhile and sshd's drop-in still applies; `exit` returns to the console (`back in the tacctl console`). Superusers always have it; the other tiers have it when a superuser has enabled it for the tier (`console system-shell <tier> enable`) or for the user (`console system-shell user <name> enable`, which wins over the tier's setting, and so does `disable`). For anyone else it is refused with `system-shell is not available for the <tier> tier on this console. An administrator enables it with: tacctl console system-shell user <name> enable …` (status 1), and through `-c` or in a batch with status 126. The same people may open an editor from the console (`scope block ... edit|adopt`, `device block ... edit|adopt`: an editor can start a shell); for anyone else those verbs say so and change nothing. Only a superuser sets the system shell (a tier, a user or the path); an operator or an engineer may run `console system-shell` with no argument to see who has it, and every form with an argument is refused for them (`'tacctl console system-shell' is not permitted for the operator tier.`, logged as a tier denial).
 
 Logged to syslog with the tag `tacctl-console`: `console start session= user= from= tty= mode=interactive|command|batch`, `console end session= user= reason=exit|eof|idle|hangup|signal|command|failed lines= status=`, `console DENY session= user= reason=command first=<verb>|- [len=<n>]` (auth.warning; the first word is named only when it is a verb of tacctl or a console word, else `first=- len=<n>`, the length of the string, so a password typed at the prompt is not logged), `console system-shell start|end|DENY` (with `status=` and `duration=` at the end). Every line is in sudo's own log too, and `tacctl ssh` logs `console=<session>`.
 
-Each change of the console's settings also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `console set key= item= from= to=`, at `auth.notice` for `tiers`, `user` and `system-shell`; `console install` and `console remove` end their `console provision` and `console deprovision` lines in `result=ok` or `result=failed reason=` ([Audit log](../security/audit.md#detail-lines)).
+Each change of the console's settings also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `console set key= item= from= to=`, at `auth.notice` for `system-shell` (`item` is the tier, `user:<name>` or `path`); `console install` and `console remove` end their `console provision` and `console deprovision` lines in `result=ok` or `result=failed reason=` ([Audit log](../security/audit.md#detail-lines)).

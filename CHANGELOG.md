@@ -266,6 +266,38 @@ current behaviour; this file is where history lives.
     override under a user name with a period, which no older release reads, is
     taken out, and shown in the plan as a removal of `users.<name>`.
 
+18. **The system shell is an opt-in per tier and per user, and only a
+    superuser sets it.** `tacctl console system-shell` lists each tier as
+    `enabled` or `disabled` (the superuser tier is `enabled (always)` and
+    cannot be disabled; readonly and operator are disabled by default; the
+    engineer tier is `disabled (never)` and `enable` is refused with the
+    existing reason), then the users with a setting of their own and their
+    tier; `console system-shell <tier>` prints one tier, and `console
+    system-shell <tier> enable|disable` sets it. It replaces `console
+    system-shell tiers [<csv>|none]`, which is gone. `console system-shell user
+    <name> [enable|disable|clear]` gives the system shell to one user or takes
+    it from one, over the tier's setting in both directions (`clear`: the tier
+    decides). A superuser cannot be disabled (refused, by the tier the user has
+    at that moment), an engineer cannot be enabled, and enabling a superuser or
+    disabling an engineer stores nothing. A setting stays when the user is
+    renamed or removed, as the console overrides of earlier releases did; the
+    listing shows it as `no such user` and `clear` removes it. The same people
+    may open an editor from the console. Every form with an argument is the
+    superuser's: the tier table grants an operator and an engineer the bare
+    `console system-shell` only (a new row, also in the sudoers drop-in, which
+    the rollbacks to 0.2.18 and earlier rewrite as before), and the verb
+    refuses the rest with the usual `is not permitted for the <tier> tier`,
+    logged as a tier denial. `console show` prints the system shell by tier and,
+    for each user of the server, the effective access and why (`tier operator`,
+    `user setting`, `always`, `never`). The changes are logged as `console set
+    key=system-shell item=<tier>|user:<name>|path`. The tiers are still stored
+    in `settings.system_shell_tiers` (now always holding `superuser`, which a
+    list without it does not change), and a user's setting in the new
+    `settings.system_shell_users`, written only when a user has one; that key
+    is one no older release reads, so `tacctl rollback` to any target removes
+    it (the plan names the users) and the older release has the tiers' list
+    alone. `settings.system_shell` is the shell's path as before.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

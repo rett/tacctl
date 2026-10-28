@@ -77,21 +77,49 @@ func ShellWithout(t tier.Tier) string {
 }
 
 // SystemShell reports whether the console's system-shell word is open to
-// tier t. A caller with no tier restriction is open to it; none and the
-// Closed tiers are not, whatever the file says.
+// tier t by the tier's own setting. A caller with no tier restriction is
+// open to it, and so is the superuser tier, always; none and the Closed
+// tiers are not, whatever the file says.
 func (p *Policy) SystemShell(t tier.Tier) bool {
 	switch {
-	case t == tier.Unrestricted:
+	case t == tier.Unrestricted, t == tier.Superuser:
 		return true
 	case t == tier.None, slices.Contains(Closed, t):
 		return false
 	}
-	for _, s := range p.File.SystemShellTiers {
-		if s == t {
-			return true
-		}
+	return slices.Contains(p.File.SystemShellTiers, t)
+}
+
+// SystemShellFor reports whether user, at tier t, may start the system
+// shell: the user's own setting wins over the tier's, in both directions,
+// but for the superuser tier (always) and the Closed tiers (never), which
+// no setting changes.
+func (p *Policy) SystemShellFor(user string, t tier.Tier) bool {
+	if t == tier.None || t == tier.Superuser || t == tier.Unrestricted || slices.Contains(Closed, t) {
+		return p.SystemShell(t)
 	}
-	return false
+	if on, ok := p.File.SystemShellUsers[user]; ok {
+		return on
+	}
+	return p.SystemShell(t)
+}
+
+// SystemShellWhy is the state of user's system shell and the reason, for the
+// listings: "always" (superuser), "never" (a Closed tier), "user setting",
+// or "tier <t>".
+func (p *Policy) SystemShellWhy(user string, t tier.Tier) (on bool, why string) {
+	switch {
+	case t == tier.Superuser:
+		return true, "always"
+	case slices.Contains(Closed, t):
+		return false, "never"
+	case t == tier.None:
+		return false, "no tier"
+	}
+	if _, ok := p.File.SystemShellUsers[user]; ok {
+		return p.SystemShellFor(user, t), "user setting"
+	}
+	return p.SystemShell(t), "tier " + string(t)
 }
 
 // Forwarding reports whether tier t's console logins may forward X11 and

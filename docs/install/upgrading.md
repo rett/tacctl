@@ -64,6 +64,8 @@ store command). The refusal lists each such user of the store with the command t
 while it refuses. An override under such a name in the ignored `users` mapping of `console.yaml`
 does not stop it: the rollback takes that entry out of the file.
 
+**The system shell of single users.** `settings.system_shell_users` (`console system-shell user`, written only when a user has a setting) is a key no older release reads: the rollback removes it (the plan names the users and their setting), and the older release has the tiers' list `settings.system_shell_tiers` alone. That list always holds `superuser` once this release has written it.
+
 **The console switches of `console.yaml`.** The `tiers` and `users` mappings that this release
 ignores stay in the file, and the release a rollback goes to reads them as it always did: a tier or
 a user switched off there gets a plain shell again at the next `host sync` of that release. A file

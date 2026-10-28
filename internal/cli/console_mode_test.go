@@ -198,7 +198,7 @@ func TestConsoleSystemShell(t *testing.T) {
 		t.Errorf("refused: %d", code)
 	}
 	if !strings.Contains(h.err.String(), "system-shell is not available for the readonly tier on this console. "+
-		"An administrator enables it with: tacctl console system-shell tiers superuser,readonly") {
+		"An administrator enables it with: tacctl console system-shell user carol enable (or readonly enable for the tier)") {
 		t.Errorf("refusal %q", h.err.String())
 	}
 	if log := consoleLog(h.runner); !slices.Equal(log, []string{"auth.warning console system-shell DENY session=0123456789ab user=carol tier=readonly"}) {
@@ -235,8 +235,9 @@ func TestConsoleSystemShell(t *testing.T) {
 	if !strings.Contains(h.out.String(), "back in the tacctl console") {
 		t.Errorf("out %q", h.out.String())
 	}
-	if consoleTiersWith(tier.None) != "<tiers>" || consoleTiersWith(tier.Operator) != "superuser,operator" {
-		t.Error("consoleTiersWith")
+	if systemShellEnableHint("carol", tier.None) != "tacctl console system-shell user carol enable" ||
+		systemShellEnableHint("bob", tier.Operator) != "tacctl console system-shell user bob enable (or operator enable for the tier)" {
+		t.Error("systemShellEnableHint")
 	}
 }
 

@@ -255,9 +255,13 @@ and
 mappings of console.yaml that this release ignores stay in the file, and the
 release a rollback goes to reads them as it always did. Every target also takes out of
 .I console.yaml
-the two settings of 0.2.20 that no older release reads:
+the settings of 0.2.20 that no older release reads:
 .B settings.color
-is removed and a
+and
+.B settings.system_shell_users
+(the system shell of single users; the tiers' list
+.B settings.system_shell_tiers
+stays) are removed and a
 .B settings.list_max
 of \-1 (never ask) is written as 1000, with every other setting kept and a
 snapshot first.
@@ -6854,9 +6858,9 @@ lines at the top, numbered as the editor's window is; those lines are removed
 before any text is read and never reach the file. An editor that exits
 non\-zero, an empty text, a text that states nothing and an edit that changes
 nothing write nothing. In the login console an editor can start a shell, so
-an edit is open to the tiers of
-.B "console system\-shell tiers"
-(never the engineer), and a refusal is logged
+an edit is open to those who have the system shell
+.RB ( "console system\-shell" ;
+never the engineer), and a refusal is logged
 .BR "block edit DENY" .
 The editor has to stay in the foreground until the text is saved (a graphical
 editor needs its wait option, such as
@@ -12067,19 +12071,64 @@ Requires: \fBoperator\fR.
 .RE
 .\" END GENERATED: command console forget
 .TP
-.BI "console system\-shell tiers " "[ " csv "|none ]"
-The tiers that may start their system shell from the console (default
-.BR superuser ).
-The same tiers may open an editor from the console
+.BI "console system\-shell " "[ " tier " { enable | disable } ]"
+Show or set who may start a system shell from the console. With no argument it
+lists each tier
+.RB ( readonly ", " operator ", " engineer ", " superuser )
+as
+.B enabled
+or
+.BR disabled ,
+then the users that have a setting of their own, with their tier. The
+superuser tier is
+.B "enabled (always)"
+and cannot be disabled; readonly and operator are disabled by default; the
+engineer tier is
+.B "disabled (never)"
+and
+.B enable
+is refused for it (a shell on the server would reach its secrets). A tier
+name alone prints that tier's state. Setting a tier writes
+.B settings.system_shell_tiers
+(the superuser tier is always in the list). Those who have the system shell
+may also open an editor from the console
 .RB ( "scope block ... edit|adopt" ,
 .BR "device block ... edit|adopt" ):
-an editor can start a shell.
+an editor can start a shell. Only a superuser sets it, for a tier, a user or
+the path; an operator and an engineer may run the form with no argument, and any
+form with an argument is refused for them (logged as a tier denial). The change
+is logged as
+.BR "console set key=system\-shell item=" \fItier\fR
+at
+.BR auth.notice .
+It applies from the next console login.
 .\" BEGIN GENERATED: command console system-shell
 .RS
 .PP
-Requires: \fBsuperuser\fR.
+Requires: \fBoperator\fR. An operator may run it with no argument, which lists who has the system shell; setting it for a tier or a user, and the path, need the superuser tier.
 .RE
 .\" END GENERATED: command console system-shell
+.TP
+.BI "console system\-shell user " "name " "[ { enable | disable | clear } ]"
+Show or set the system shell for one user, over the tier's setting in both
+directions: enabled, it gives a user of a tier that has none the system shell;
+disabled, it takes it from a user of a tier that has it. Without a value it
+prints the user's effective state and why
+.RB ( "user setting" ", " "tier operator" ", " always ", " never ).
+.B clear
+removes the user's setting, and the tier decides again. The user must exist.
+A superuser always has the system shell: disabling it is refused, and
+enabling it stores nothing. An engineer never has it: enabling it is refused
+(with the reason of the tier), and disabling stores nothing. The settings are
+kept in
+.B settings.system_shell_users
+and are logged as
+.BR "console set key=system\-shell item=user:" \fIname\fR.
+A setting stays when the user is renamed or removed (it is listed with
+.BR "no such user" ,
+and
+.B clear
+removes it).
 .TP
 .BI "console system\-shell path " "[ " path " ]"
 The system shell, default
@@ -12297,9 +12346,10 @@ as the user, without arguments, with the console's environment and
 .BR SHELL= \fIpath\fR;
 the console's idle timer does not run meanwhile, and sshd's drop-in still
 governs the connection. It is open to the tiers
-.B "console system\-shell tiers"
-names (default: superusers only); otherwise it is refused with
-.IR "system-shell is not available for the tier tier on this console. An administrator enables it with: tacctl console system-shell tiers ..."
+.B "console system\-shell"
+gives it (superusers always; the others by their tier or by a setting of their
+own); otherwise it is refused with
+.IR "system-shell is not available for the tier tier on this console. An administrator enables it with: tacctl console system-shell user name enable (or tier enable for the tier)"
 (status 1). In a batch or through
 .B \-c
 it is refused with status 126.
@@ -12468,7 +12518,7 @@ _console\-policy, \-\-version, \-v, hash, completion
 log tail, log search, log failures, log accounting, config validate,
 backup list, device check, device scan, device discover,
 device export, device config, console show, console check,
-console forget
+console system\-shell, console forget
 .TP
 .B engineer
 device add, device remove, device rename, device address,
@@ -12492,6 +12542,9 @@ An engineer lists the holds of the devices of their own scopes only; hold and re
 .TP
 .B config cisco
 An engineer may print the walkthrough and read source\-interface for a scope of their own; setting or unsetting source\-interface needs the superuser tier.
+.TP
+.B console system\-shell
+An operator may run it with no argument, which lists who has the system shell; setting it for a tier or a user, and the path, need the superuser tier.
 .TP
 .B device block
 An engineer may read the configuration blocks of a device of their own scope (list, show [\-\-effective] [\-\-reveal], check); set, remove, edit and adopt need the superuser tier.
@@ -14225,7 +14278,7 @@ The program the console's system-shell word starts. Set with \fBtacctl console s
 .TP
 .B settings.system_shell_tiers
 list of tiers (not engineer). Default: [superuser].
-The tiers that may start the system shell. Set with \fBtacctl console system\-shell tiers\fR.
+The tiers that may start the system shell. The superuser tier always may, and is written into the list; engineer never. Set with \fBtacctl console system\-shell\fR.
 .TP
 .B settings.forwarding_tiers
 list of tiers (not engineer). Default: [superuser].
@@ -14246,6 +14299,10 @@ Whether a typed space at the console's prompt completes a fixed word, as on Juno
 .B settings.color
 true or false. Default: absent (auto).
 Whether the console's lists are in colour: true (on) or false (off). Written to the file only when set; a file without the key is auto, the terminal decides. Set with \fBtacctl console color\fR.
+.TP
+.B settings.system_shell_users
+mapping of user name to true or false. Default: absent (no user has one).
+The users with a system-shell setting of their own, which wins over their tier's: true gives it to a user of a tier that has none, false takes it from a user of a tier that has it. Written to the file only when a user has one. Set with \fBtacctl console system\-shell user\fR.
 .\" END GENERATED: console-keys
 .PP
 A mapping

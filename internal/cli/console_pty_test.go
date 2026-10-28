@@ -258,7 +258,7 @@ func TestConsolePtySystemShell(t *testing.T) {
 	p := startConsole(t, ptyPolicyRO, "carol,tac-users,tac-readonly")
 	p.expect(host + `> `)
 	p.send("system-shell\r")
-	p.expect(`system-shell is not available for the readonly tier on this console\. An administrator enables it with: tacctl console system-shell tiers superuser,readonly`)
+	p.expect(`system-shell is not available for the readonly tier on this console\. An administrator enables it with: tacctl console system-shell user carol enable \(or readonly enable for the tier\)`)
 	p.expect(`\[exit 1\]`)
 	p.send("exit\r")
 	if log := p.ends(0); len(log) != 3 ||

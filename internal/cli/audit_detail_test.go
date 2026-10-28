@@ -174,19 +174,16 @@ func TestDetailLinesOfTheScopeVerbs(t *testing.T) {
 		{"console idle-timeout", "", []string{"console", "idle-timeout", "45"}, "auth.info", "console set key=idle-timeout item=- from=30 to=45 by=alice"},
 		{"console color", "", []string{"console", "color", "on"}, "auth.info", "console set key=color item=- from=auto to=on by=alice"},
 		{"console list-max", "", []string{"console", "list-max", "-5"}, "auth.info", "console set key=list-max item=- from=40 to=-1 by=alice"},
-		{"console system-shell", "", []string{"console", "system-shell", "tiers", "superuser"}, "auth.notice",
-			"console set key=system-shell item=tiers from=superuser to=superuser by=alice"},
+		{"console system-shell tier", "", []string{"console", "system-shell", "operator", "enable"}, "auth.notice",
+			"console set key=system-shell item=operator from=disable to=enable by=alice"},
+		{"console system-shell user", "", []string{"console", "system-shell", "user", "bob", "enable"}, "auth.notice",
+			"console set key=system-shell item=user:bob from=none to=enable by=alice"},
+		{"console system-shell user clear", "", []string{"console", "system-shell", "user", "bob", "clear"}, "auth.notice",
+			"console set key=system-shell item=user:bob from=enable to=none by=alice"},
 	} {
 		sb.asAlice(c.stdin, c.args...)
 		if sb.code != 0 {
 			t.Errorf("%s: exit %d %q", c.name, sb.code, sb.stderr())
-			continue
-		}
-		if c.name == "console system-shell" {
-			// The default already names superuser: only the shape of the line.
-			if !hasAuditPrefix(sb.runner, "auth.notice", "console set key=system-shell item=tiers from=") {
-				t.Errorf("%s: %q", c.name, auditLines(sb.runner))
-			}
 			continue
 		}
 		wantDetail(t, c.name, auditCalls(sb.runner), c.prio, c.line)

@@ -648,8 +648,10 @@ func TestGateRefusesSpoofedSudoUser(t *testing.T) {
 }
 
 // The login console's rows: every tier reads its policy, the operator tier
-// shows the console and checks it, and nothing else of 'console' is open
-// below the superuser.
+// shows the console, checks it and lists who has the system shell (the bare
+// 'console system-shell': sudoers grants the operator and the engineer no
+// argument of it), and nothing else of 'console' is open below the
+// superuser.
 func TestConsoleRows(t *testing.T) {
 	for _, c := range []struct {
 		t        Tier
@@ -664,13 +666,15 @@ func TestConsoleRows(t *testing.T) {
 		{Operator, "console", "check", true},
 		{Operator, "console", "tiers", false},
 		{Operator, "console", "user", false},
-		{Operator, "console", "system-shell", false},
+		{Operator, "console", "system-shell", true},
+		{Readonly, "console", "system-shell", false},
+		{Operator, "console", "forwarding", false},
 		{Operator, "console", "", false},
 		{Readonly, "console", "check", false},
 		{Engineer, "console", "show", true},
 		{Engineer, "console", "check", true},
 		{Engineer, "console", "tiers", false},
-		{Engineer, "console", "system-shell", false},
+		{Engineer, "console", "system-shell", true},
 		{Engineer, "console", "forwarding", false},
 		{Engineer, "_console-policy", "", true},
 		{Superuser, "console", "tiers", true},
@@ -692,6 +696,16 @@ func TestConsoleRows(t *testing.T) {
 	}
 	if ro, _, _ := strings.Cut(text, "Cmnd_Alias TACCTL_OP"); strings.Contains(ro, "console show") {
 		t.Error("console show is in the read-only alias")
+	}
+	// The system-shell row grants the bare command only: no pattern lets an
+	// operator or an engineer set it for a tier, a user or the path.
+	for _, it := range append(aliasItems(t, text, "TACCTL_OP"), aliasItems(t, text, "TACCTL_EN")...) {
+		if strings.HasPrefix(it, "console system-shell") && it != "console system-shell" {
+			t.Errorf("a pattern %q grants a form of console system-shell with arguments", it)
+		}
+	}
+	if !slices.Contains(aliasItems(t, text, "TACCTL_OP"), "console system-shell") {
+		t.Error("the operator alias lacks console system-shell")
 	}
 }
 

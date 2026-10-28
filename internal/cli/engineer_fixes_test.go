@@ -71,14 +71,14 @@ func TestInvalidTierSettingsNeverLeaveTheBand(t *testing.T) {
 }
 
 // B2: with tacctl.yaml unreadable the cap makes an engineer an operator, and
-// 'console system-shell tiers' / 'forwarding tiers' naming operator would
+// 'console system-shell operator enable' / 'forwarding tiers' naming operator would
 // open a system shell and forwarding to it. The policy line keeps the
 // engineer's lockdown, whichever way the engineer is known.
 func TestCappedEngineerKeepsTheConsoleLockdown(t *testing.T) {
 	sb := newSandbox(t, true)
 	sb.write("state/tacctl.yaml", "tier:\n  operator: engineer\n", 0o600)
 	sb.write("shells", "/bin/sh\n/bin/bash\n", 0o644)
-	for _, args := range [][]string{{"console", "system-shell", "tiers", "superuser,operator"}, {"console", "forwarding", "tiers", "superuser,operator"}} {
+	for _, args := range [][]string{{"console", "system-shell", "operator", "enable"}, {"console", "forwarding", "tiers", "superuser,operator"}} {
 		sb.cfgRun("", args, nil)
 		if sb.code != 0 {
 			t.Fatalf("%v: %d %q", args, sb.code, sb.stderr())

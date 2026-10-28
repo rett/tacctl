@@ -130,6 +130,11 @@ func TestRollbackSince0220(t *testing.T) {
 		{"color off", func(f *File) { f.Color = ColorOff }, "unknown key 'color'", []string{"settings.color: off"}, nil},
 		{"never ask", func(f *File) { f.ListMax = ListMaxNever }, "list_max must be", nil, []string{"settings.list_max to 1000 (it never asked)"}},
 		{"both", func(f *File) { f.Color, f.ListMax = ColorOn, ListMaxNever }, "settings", []string{"settings.color: on"}, []string{"settings.list_max to 1000 (it never asked)"}},
+		{"system shell users", func(f *File) { f.SystemShellUsers = map[string]bool{"carol": false, "bob": true} }, "unknown key 'system_shell_users'",
+			[]string{"settings.system_shell_users: bob enable, carol disable"}, nil},
+		{"all three", func(f *File) {
+			f.Color, f.ListMax, f.SystemShellUsers = ColorOff, ListMaxNever, map[string]bool{"bob": true}
+		}, "settings", []string{"settings.color: off", "settings.system_shell_users: bob enable"}, []string{"settings.list_max to 1000 (it never asked)"}},
 	}
 	for _, c := range cases {
 		dir := t.TempDir()
@@ -170,8 +175,11 @@ func TestRollbackSince0220(t *testing.T) {
 				t.Errorf("%s: %q is gone:\n%s", c.name, keep, plan.Text)
 			}
 		}
-		if strings.Contains(string(plan.Text), "color") {
-			t.Errorf("%s: colour is left:\n%s", c.name, plan.Text)
+		if strings.Contains(string(plan.Text), "color") || strings.Contains(string(plan.Text), "system_shell_users") {
+			t.Errorf("%s: a setting of 0.2.20 is left:\n%s", c.name, plan.Text)
+		}
+		if !strings.Contains(string(plan.Text), "system_shell_tiers: [superuser]") {
+			t.Errorf("%s: the tiers' system-shell setting is gone:\n%s", c.name, plan.Text)
 		}
 		if c.sets != nil && !strings.Contains(string(plan.Text), "list_max: 1000\n") {
 			t.Errorf("%s: list_max is not 1000:\n%s", c.name, plan.Text)
@@ -194,6 +202,7 @@ func TestRollbackSince0220(t *testing.T) {
 	// The rollback to 0.2.3 takes them out as well, with the cache's.
 	f := Defaults()
 	f.Color, f.ListMax = ColorOff, ListMaxNever
+	f.SystemShellUsers = map[string]bool{"bob": true}
 	f.PasswordCacheTiers = Tiers[3:]
 	text, err := f.Text023()
 	if err != nil {
@@ -207,7 +216,7 @@ func TestRollbackSince0220(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Remove) != 2 || len(plan.Set) != 1 || !strings.Contains(plan.Summary(), "settings.password_cache, settings.color") {
+	if len(plan.Remove) != 3 || len(plan.Set) != 1 || !strings.Contains(plan.Summary(), "settings.password_cache, settings.color, settings.system_shell_users") {
 		t.Errorf("0.2.3 plan: %+v %q", plan, plan.Summary())
 	}
 }

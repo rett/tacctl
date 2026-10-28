@@ -350,6 +350,123 @@ func TestPolicyDecisions(t *testing.T) {
 	}
 }
 
+// A user's own system-shell setting beats the tier's in both directions, but
+// not for the superuser tier (always) and not for the engineer tier (never).
+func TestSystemShellForUsers(t *testing.T) {
+	f := Defaults()
+	f.SystemShellTiers = []tier.Tier{tier.Operator, tier.Superuser}
+	f.SystemShellUsers = map[string]bool{"carol": true, "bob": false, "alice": false, "erin": true}
+	p := &Policy{File: f}
+	for _, c := range []struct {
+		user string
+		t    tier.Tier
+		want bool
+		why  string
+	}{
+		{"carol", tier.Readonly, true, "user setting"},  // enabled for a user of a closed tier
+		{"dave", tier.Readonly, false, "tier readonly"}, // no setting: the tier
+		{"bob", tier.Operator, false, "user setting"},   // disabled for a user of an open tier
+		{"eve", tier.Operator, true, "tier operator"},   // no setting: the tier
+		{"alice", tier.Superuser, true, "always"},       // cannot be taken
+		{"erin", tier.Engineer, false, "never"},         // cannot be given
+		{"carol", tier.None, false, "no tier"},
+		{"carol", tier.Unrestricted, true, ""},
+	} {
+		if got := p.SystemShellFor(c.user, c.t); got != c.want {
+			t.Errorf("%s at %s: %v, want %v", c.user, c.t, got, c.want)
+		}
+		if c.t == tier.Unrestricted {
+			continue
+		}
+		if on, why := p.SystemShellWhy(c.user, c.t); on != c.want || why != c.why {
+			t.Errorf("%s at %s: why %v %q, want %v %q", c.user, c.t, on, why, c.want, c.why)
+		}
+	}
+}
+
+// SetSystemShell writes the tiers that have the system shell with the
+// superuser tier always among them, refuses the engineer tier on and the
+// superuser tier off, and leaves the file as it was on a refusal.
+func TestSetSystemShell(t *testing.T) {
+	f := Defaults()
+	for _, c := range []struct {
+		t    tier.Tier
+		on   bool
+		want []tier.Tier
+		err  string
+	}{
+		{tier.Operator, true, []tier.Tier{tier.Operator, tier.Superuser}, ""},
+		{tier.Readonly, true, []tier.Tier{tier.Readonly, tier.Operator, tier.Superuser}, ""},
+		{tier.Operator, false, []tier.Tier{tier.Readonly, tier.Superuser}, ""},
+		{tier.Readonly, true, []tier.Tier{tier.Readonly, tier.Superuser}, ""},
+		{tier.Engineer, true, []tier.Tier{tier.Readonly, tier.Superuser}, "The engineer tier cannot be given the system shell on this server: a shell here would reach the server's secrets. Nothing was changed."},
+		{tier.Engineer, false, []tier.Tier{tier.Readonly, tier.Superuser}, ""},
+		{tier.Superuser, false, []tier.Tier{tier.Readonly, tier.Superuser}, "The superuser tier always has the system shell; it cannot be disabled. Nothing was changed."},
+		{tier.Readonly, false, []tier.Tier{tier.Superuser}, ""},
+	} {
+		err := f.SetSystemShell(c.t, c.on)
+		if (err == nil) != (c.err == "") || (err != nil && err.Error() != c.err) {
+			t.Errorf("%s %v: %v, want %q", c.t, c.on, err, c.err)
+		}
+		if !reflect.DeepEqual(f.SystemShellTiers, c.want) {
+			t.Errorf("%s %v: tiers %v, want %v", c.t, c.on, f.SystemShellTiers, c.want)
+		}
+	}
+	// A hand-edited list without the superuser tier is written with it.
+	f.SystemShellTiers = nil
+	if err := f.SetSystemShell(tier.Operator, true); err != nil || !reflect.DeepEqual(f.SystemShellTiers, []tier.Tier{tier.Operator, tier.Superuser}) {
+		t.Errorf("empty list: %v %v", f.SystemShellTiers, err)
+	}
+}
+
+// settings.system_shell_users is written only when a user has a setting,
+// reads back, and is refused with a bad shape.
+func TestSystemShellUsersSetting(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "console.yaml")
+	if _, err := Mutate(p, nil, func(f *File) error { f.Idle = 5; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	without, _ := os.ReadFile(p)
+	if strings.Contains(string(without), "system_shell_users") {
+		t.Errorf("the key is written while empty:\n%s", without)
+	}
+	if _, err := Mutate(p, nil, func(f *File) error {
+		f.SystemShellUsers["carol"] = true
+		f.SystemShellUsers["alice.smith"] = false
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(p)
+	if !strings.Contains(string(got), "  system_shell_users: {alice.smith: false, carol: true}\n") {
+		t.Errorf("the key is not written as a map:\n%s", got)
+	}
+	f, err := Load(p)
+	if err != nil || !f.SystemShellUsers["carol"] || f.SystemShellUsers["alice.smith"] || len(f.SystemShellUsers) != 2 {
+		t.Fatalf("round trip: %+v %v", f.SystemShellUsers, err)
+	}
+	if _, err := Mutate(p, nil, func(f *File) error { f.SystemShellUsers = map[string]bool{}; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := os.ReadFile(p); string(again) != string(without) {
+		t.Errorf("empty again:\n%s\nwant\n%s", again, without)
+	}
+	for name, text := range map[string]string{
+		"not a map":   "version: 1\nsettings: {system_shell_users: [carol]}\n",
+		"not a bool":  "version: 1\nsettings: {system_shell_users: {carol: enable}}\n",
+		"bad name":    "version: 1\nsettings: {system_shell_users: {'a b': true}}\n",
+		"dot leading": "version: 1\nsettings: {system_shell_users: {.carol: true}}\n",
+	} {
+		if _, err := Load(write(t, dir, "bad.yaml", text, 0o600)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	if f, err := Load(write(t, dir, "empty.yaml", "version: 1\nsettings: {system_shell_users: }\n", 0o600)); err != nil || len(f.SystemShellUsers) != 0 {
+		t.Errorf("empty value: %+v %v", f, err)
+	}
+}
+
 func TestPolicySystemShellAndSettings(t *testing.T) {
 	f := Defaults()
 	p := &Policy{File: f}
@@ -364,11 +481,12 @@ func TestPolicySystemShellAndSettings(t *testing.T) {
 		}
 	}
 	f.SystemShellTiers = []tier.Tier{tier.Readonly, tier.Operator}
-	if !p.SystemShell(tier.Readonly) || p.SystemShell(tier.Superuser) || !p.SystemShell(tier.Unrestricted) || p.SystemShell(tier.None) {
+	// The superuser tier has it whatever the list says.
+	if !p.SystemShell(tier.Readonly) || !p.SystemShell(tier.Superuser) || !p.SystemShell(tier.Unrestricted) || p.SystemShell(tier.None) {
 		t.Error("custom tiers")
 	}
 	f.SystemShellTiers = nil
-	if p.SystemShell(tier.Superuser) || p.SystemShell(tier.Readonly) || !p.SystemShell(tier.Unrestricted) {
+	if !p.SystemShell(tier.Superuser) || p.SystemShell(tier.Readonly) || !p.SystemShell(tier.Unrestricted) {
 		t.Error("no tiers")
 	}
 	f.Idle = 7

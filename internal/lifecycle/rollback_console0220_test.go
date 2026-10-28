@@ -100,3 +100,49 @@ func TestRollbackRefusesAnUnreadableConsoleFileForEveryTarget(t *testing.T) {
 		}
 	}
 }
+
+// The system shell of single users (0.2.20, settings.system_shell_users) is a
+// key every older release rejects: each target's plan takes it out, says which
+// users had a setting, keeps the tiers' list and every other setting, and
+// leaves a file without it alone.
+func TestRollbackTakesOutTheSystemShellOfUsers(t *testing.T) {
+	consoleWith := strings.Replace(rbConsole, "  space_completion: false\n", "  space_completion: false\n  system_shell_users: {bob: true, carol: false}\n", 1)
+	if !strings.Contains(consoleWith, "system_shell_users") {
+		t.Fatal("the fixture lacks the setting")
+	}
+	for _, target := range []string{RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029, RollbackTarget} {
+		s := newRBSandbox(t)
+		s.in.Target = target
+		s.write(s.p.ConsoleFile, consoleWith, 0o600)
+		s.reload()
+		s.in.Target = target
+		p, err := PlanRollback(s.in)
+		if err != nil {
+			t.Fatalf("%s: %v", target, err)
+		}
+		if st := stepText(p); !strings.Contains(st, "remove settings.system_shell_users: bob enable, carol disable") || !p.PendingFiles() {
+			t.Errorf("%s: steps:\n%s", target, st)
+		}
+		done, err := ApplyRollback(p)
+		if err != nil {
+			t.Fatalf("%s: %v", target, err)
+		}
+		found := false
+		for _, d := range done {
+			found = found || (strings.HasPrefix(d, s.p.ConsoleFile+": ") && strings.Contains(d, "settings.system_shell_users"))
+		}
+		if !found {
+			t.Errorf("%s: done %q", target, done)
+		}
+		b, _ := os.ReadFile(s.p.ConsoleFile)
+		got := string(b)
+		if strings.Contains(got, "system_shell_users") || !strings.Contains(got, "system_shell_tiers:") || !strings.Contains(got, "idle_timeout: 12") {
+			t.Errorf("%s: the file after the apply:\n%s", target, got)
+		}
+		s.reload()
+		s.in.Target = target
+		if p, err = PlanRollback(s.in); err != nil || strings.Contains(stepText(p), "system_shell_users") {
+			t.Errorf("%s: second plan: %v\n%s", target, err, stepText(p))
+		}
+	}
+}

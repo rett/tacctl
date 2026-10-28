@@ -36,13 +36,14 @@ var consoleSpecs = map[string]Spec{
 	"space-completion": {MaxArgs: 1, Args: []string{"on|off"}},
 	"color":            {MaxArgs: 1, Args: []string{"auto|on|off"}},
 	"list-max":         {MaxArgs: 1, Args: []string{""}},
-	"system-shell":     {MinArgs: 1, MaxArgs: 2, Args: []string{"tiers|path", After("path", KindFile)}},
-	"forwarding":       {MinArgs: 1, MaxArgs: 2, Args: []string{"tiers|gateway-ports", After("gateway-ports", "enable|disable")}},
-	"password-cache":   {MaxArgs: 2, Args: []string{"tiers|idle|max", ""}},
-	"forget":           {MaxArgs: 0},
-	"install":          {MaxArgs: 0},
-	"remove":           {MaxArgs: 0},
-	"check":            {MaxArgs: 0},
+	"system-shell": {MaxArgs: 3, Args: []string{"readonly|operator|engineer|superuser|user|path",
+		Cond("path", KindFile, Cond("user", KindUsers, "enable|disable")), After("user", "enable|disable|clear")}},
+	"forwarding":     {MinArgs: 1, MaxArgs: 2, Args: []string{"tiers|gateway-ports", After("gateway-ports", "enable|disable")}},
+	"password-cache": {MaxArgs: 2, Args: []string{"tiers|idle|max", ""}},
+	"forget":         {MaxArgs: 0},
+	"install":        {MaxArgs: 0},
+	"remove":         {MaxArgs: 0},
+	"check":          {MaxArgs: 0},
 }
 
 // consoleVerbs are the verbs ({Use, Short}), in usage order.
@@ -56,7 +57,8 @@ var consoleVerbs = [][2]string{
 	{"list-max [<n>]", "Show or set the longest list shown without asking (0: 40, <0: never)"},
 	{"forwarding tiers [<csv>|none]", "Show or set the tiers that may forward X11 and TCP ports (sshd, and the console's ssh -X/-L/-R/-D; default superuser; never engineer)"},
 	{"forwarding gateway-ports [enable|disable]", "Opt in to forwarded ports on other addresses than loopback for those tiers (sshd's GatewayPorts for ssh -R, and the console's ssh -g and -L/-D bind addresses)"},
-	{"system-shell tiers [<csv>|none]", "Show or set the tiers that may start their system shell from the console (never engineer)"},
+	{"system-shell [<tier> enable|disable]", "Show or set the system shell for a tier (superuser always has it, engineer never; default superuser only)"},
+	{"system-shell user <name> [enable|disable|clear]", "Show or set the system shell for one user, over the tier's setting (clear: the tier decides)"},
 	{"system-shell path [<path>]", "Show or set the system shell (default /bin/bash; must be listed in /etc/shells)"},
 	{"password-cache tiers [<csv>|none]", "Show or set the tiers whose shell and console sessions may keep your network password in memory for the session (operator, engineer, superuser; default none)"},
 	{"password-cache idle [<min>]", "Show or set the minutes a cached password lives without a use (1-120, default 15)"},
@@ -74,7 +76,7 @@ func consoleCmd(inv *invocation) *cobra.Command {
 	for _, v := range consoleVerbs {
 		word := strings.Fields(v[0])[0]
 		if added[word] {
-			continue // system-shell tiers|path is one command
+			continue // the forms of system-shell are one command
 		}
 		added[word] = true
 		c.AddCommand(withRun(verb(v[0], v[1]), inv.native(withPreflight, func(args []string) error {
@@ -107,11 +109,14 @@ ports for the tiers of 'forwarding tiers' (superusers by default: 'ssh -X', -L,
 console), and turns key logins off.
 
 'system-shell' starts the user's system shell from the console, as themselves,
-logged. Superusers only by default; 'system-shell tiers' opens or closes it
-per tier, and the same tiers may open an editor from the console ('scope block
-... edit|adopt', 'device block ... edit|adopt': an editor can start a shell).
-Neither it nor forwarding is ever open to the engineer tier: a shell or a
-forwarded port on this server would reach its secrets.
+logged. Superusers always have it; it is off for the other tiers until a
+superuser opens it ('system-shell <tier> enable|disable') or gives it to one user
+('system-shell user <name> enable|disable|clear'; a user's setting wins over the
+tier's, and clear returns the user to the tier's). Only a superuser can set it;
+'system-shell' alone lists the state. Those who have it may also open an editor
+from the console ('scope block ... edit|adopt', 'device block ... edit|adopt': an
+editor can start a shell). Neither it nor forwarding is ever open to the engineer
+tier: a shell or a forwarded port on this server would reach its secrets.
 
 'password-cache' lets a tier's shell and console sessions keep the user's network
 password in memory for the session, so a device pull or an ssh to a device asks
@@ -123,7 +128,8 @@ lifetime, when the password is changed, when a device refuses it, and with
 
 Examples:
   tacctl console show
-  tacctl console system-shell tiers superuser,operator
+  tacctl console system-shell operator enable
+  tacctl console system-shell user jdoe enable
   tacctl console idle-timeout 15
 
 `)
@@ -461,35 +467,92 @@ func spaceWord(on bool) string {
 	return "off"
 }
 
+// systemShellState is the state of a tier's system shell as the listings word
+// it: the superuser tier always has it and the engineer tier never can.
+func systemShellState(pol *console.Policy, t tier.Tier) string {
+	switch {
+	case t == tier.Superuser:
+		return "enabled (always)"
+	case slices.Contains(console.Closed, t):
+		return "disabled (never)"
+	}
+	return map[bool]string{true: "enabled", false: "disabled"}[pol.SystemShell(t)]
+}
+
+// systemShellUserLine is one user with a setting of their own, for the
+// listing: the setting and the user's tier (or why the setting counts for
+// nothing).
+func (inv *invocation) systemShellUserLine(pol *console.Policy, tiers map[string]tier.Tier, name string) string {
+	word := map[bool]string{true: "enabled", false: "disabled"}[pol.File.SystemShellUsers[name]]
+	t, ok := tiers[name]
+	switch {
+	case !ok:
+		return name + ": " + word + " (no such user)"
+	case t == tier.Superuser || slices.Contains(console.Closed, t):
+		return name + ": " + word + " (" + string(t) + "; the setting is ignored)"
+	}
+	return name + ": " + word + " (" + string(t) + ")"
+}
+
+// systemShellTiers are the tier of each user of the store.
+func (inv *invocation) systemShellTiers() (map[string]tier.Tier, error) {
+	m, err := inv.model()
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]tier.Tier{}
+	for _, n := range m.UserNames() {
+		out[n] = inv.userTier(n, m.UserPrivLvl(n))
+	}
+	return out, nil
+}
+
+// consoleSystemShell is 'console system-shell': with no argument the state
+// of each tier and the users with a setting of their own; '<tier> enable|
+// disable' and 'user <name> enable|disable|clear' set it (the superuser's);
+// 'path [<path>]' is the program. Only the form with no argument is open to
+// a lower tier (the sudoers row grants nothing else); the verb holds the
+// others to the superuser as well.
 func (inv *invocation) consoleSystemShell(args []string) error {
 	p, err := inv.consoleParse("system-shell", args)
 	if err != nil {
 		return err
 	}
+	usage := "Usage: tacctl console " + consoleUse("system-shell")
+	if len(p.Args) > 0 {
+		if err := inv.deviceVerbAllowed("console", "system-shell", tier.Superuser); err != nil {
+			return err
+		}
+	}
 	pol, err := inv.consolePolicy()
 	if err != nil {
 		return err
 	}
-	switch p.Args[0] {
-	case "tiers":
-		if len(p.Args) == 1 {
-			inv.echo(tierCSV(pol.File.SystemShellTiers))
-			return nil
+	if len(p.Args) == 0 {
+		for _, t := range console.Tiers {
+			inv.echo(string(t) + ": " + systemShellState(pol, t))
 		}
-		l, err := console.ParseTiers(p.Args[1], "system-shell")
-		if err != nil {
-			return err
+		if names := pol.File.SystemShellUserNames(); len(names) > 0 {
+			tiers, err := inv.systemShellTiers()
+			if err != nil {
+				return err
+			}
+			inv.echo("")
+			inv.echo("Users with a setting of their own:")
+			for _, n := range names {
+				inv.echo("  " + inv.systemShellUserLine(pol, tiers, n))
+			}
 		}
-		if err := inv.consoleWrite("system-shell", "tiers", func(f *console.File) string { return tierCSV(f.SystemShellTiers) },
-			func(f *console.File) error { f.SystemShellTiers = l; return nil }); err != nil {
-			return err
-		}
-		inv.app.Out.Info("system-shell is open to: " + tierCSV(l) + ". It applies from the next console login.")
 		return nil
+	}
+	switch p.Args[0] {
 	case "path":
 		if len(p.Args) == 1 {
 			inv.echo(pol.File.SystemShell)
 			return nil
+		}
+		if len(p.Args) > 2 {
+			return inv.usageErr("Unknown argument: '"+p.Args[2]+"'", usage)
 		}
 		if err := console.CheckShell(p.Args[1], inv.app.Paths.ShellsFile); err != nil {
 			return err
@@ -500,8 +563,113 @@ func (inv *invocation) consoleSystemShell(args []string) error {
 		}
 		inv.app.Out.Info("system-shell starts " + p.Args[1] + ". It applies from the next console login.")
 		return nil
+	case "user":
+		return inv.consoleSystemShellUser(pol, p.Args[1:], usage)
 	}
-	return inv.usageErr("Usage: tacctl console " + consoleUse("system-shell"))
+	t, ok := console.ParseTier(p.Args[0])
+	if !ok {
+		return inv.usageErr("Unknown tier '"+p.Args[0]+"': expected readonly, operator, engineer or superuser.", usage)
+	}
+	if len(p.Args) == 1 {
+		inv.echo(systemShellState(pol, t))
+		return nil
+	}
+	if len(p.Args) > 2 {
+		return inv.usageErr("Unknown argument: '"+p.Args[2]+"'", usage)
+	}
+	on, err := inv.enableWord(p.Args[1], "system-shell")
+	if err != nil {
+		return err
+	}
+	if slices.Contains(console.Closed, t) && !on {
+		inv.app.Out.Info("The " + string(t) + " tier never has the system shell. Nothing was changed.")
+		return nil
+	}
+	state := func(f *console.File) string {
+		return onOff(console.TierHas(f, t))
+	}
+	if err := inv.consoleWrite("system-shell", string(t), state, func(f *console.File) error { return f.SetSystemShell(t, on) }); err != nil {
+		return err
+	}
+	inv.app.Out.Info("system-shell is " + p.Args[1] + "d for the " + string(t) + " tier. It applies from the next console login.")
+	return nil
+}
+
+// consoleSystemShellUser is 'console system-shell user <name> [enable|
+// disable|clear]': args are the words after 'user'.
+func (inv *invocation) consoleSystemShellUser(pol *console.Policy, args []string, usage string) error {
+	if len(args) == 0 {
+		return inv.usageErr("expected at least 1 argument(s), got 0", usage)
+	}
+	if len(args) > 2 {
+		return inv.usageErr("Unknown argument: '"+args[2]+"'", usage)
+	}
+	name := args[0]
+	m, err := inv.model()
+	if err != nil {
+		return err
+	}
+	exists := m.Exists("users", name)
+	var t tier.Tier
+	if exists {
+		t = inv.userTier(name, m.UserPrivLvl(name))
+	}
+	own, has := pol.File.SystemShellUsers[name]
+	userState := func(f *console.File) string {
+		on, ok := f.SystemShellUsers[name]
+		if !ok {
+			return "none"
+		}
+		return onOff(on)
+	}
+	if len(args) == 1 {
+		switch {
+		case !exists && !has:
+			return inv.usageErr("User '" + name + "' does not exist.")
+		case !exists:
+			inv.echo(onOff(own) + "d (user setting; no such user)")
+		default:
+			on, why := pol.SystemShellWhy(name, t)
+			inv.echo(map[bool]string{true: "enabled", false: "disabled"}[on] + " (" + why + ")")
+		}
+		return nil
+	}
+	if args[1] == "clear" {
+		if !has {
+			inv.app.Out.Info("'" + name + "' has no system-shell setting of their own.")
+			return nil
+		}
+		if err := inv.consoleWrite("system-shell", "user:"+name, userState,
+			func(f *console.File) error { delete(f.SystemShellUsers, name); return nil }); err != nil {
+			return err
+		}
+		inv.app.Out.Info("The system-shell setting of '" + name + "' is cleared: the tier decides. It applies from the next console login.")
+		return nil
+	}
+	on, err := inv.enableWord(args[1], "system-shell")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return inv.usageErr("User '" + name + "' does not exist.")
+	}
+	switch {
+	case t == tier.Superuser && !on:
+		return inv.usageErr("'" + name + "' is a superuser, and superusers always have the system shell; it cannot be disabled. Nothing was changed.")
+	case slices.Contains(console.Closed, t) && on:
+		return inv.usageErr(console.ClosedText(t, "system-shell"))
+	case t == tier.Superuser || slices.Contains(console.Closed, t):
+		// Already so (superuser enabled, engineer disabled): nothing to
+		// store, which a later change of the user's tier would revive.
+		inv.app.Out.Info("'" + name + "' is a" + map[bool]string{true: " superuser, who always has", false: "n engineer, who never has"}[t == tier.Superuser] + " the system shell. Nothing was changed.")
+		return nil
+	}
+	if err := inv.consoleWrite("system-shell", "user:"+name, userState,
+		func(f *console.File) error { f.SystemShellUsers[name] = on; return nil }); err != nil {
+		return err
+	}
+	inv.app.Out.Info("system-shell is " + args[1] + "d for '" + name + "'. It applies from the next console login.")
+	return nil
 }
 
 // consoleForwarding is 'console forwarding tiers [<csv>|none]': the tiers
@@ -698,7 +866,7 @@ func (inv *invocation) consolePolicyLine([]string) error {
 	if pol.Decide(t).Console {
 		shell = "console"
 	}
-	sys := pol.SystemShell(t)
+	sys := pol.SystemShellFor(user, t)
 	path, perr := pol.SystemShellPath()
 	if perr != nil {
 		if sys {

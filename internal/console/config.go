@@ -102,8 +102,18 @@ type File struct {
 	AgentForwarding, SSHEscape bool
 	// SystemShell is the program the console's system-shell word starts.
 	SystemShell string
-	// SystemShellTiers are the tiers that may use it.
+	// SystemShellTiers are the tiers that may use it. The superuser tier
+	// always may, whatever the list says, and the Closed tiers never (the
+	// setter writes the superuser tier into the list so that an older
+	// release reads the same).
 	SystemShellTiers []tier.Tier
+	// SystemShellUsers are the users with a setting of their own (settings.
+	// system_shell_users): true gives the system shell to a user of a tier
+	// that has none, false takes it from a user of a tier that has it. It
+	// beats the tier's setting, but for the superuser tier (always) and the
+	// Closed tiers (never). Written only when it is not empty; an older
+	// release rejects the key, and the rollback removes it (Keys0220).
+	SystemShellUsers map[string]bool
 	// ForwardingTiers are the tiers whose console logins may forward X11
 	// and TCP ports (sshd's drop-in, and the console's ssh to a device).
 	ForwardingTiers []tier.Tier
@@ -151,6 +161,7 @@ func Defaults() *File {
 		Idle:             DefaultIdle,
 		SystemShell:      DefaultSystemShell,
 		SystemShellTiers: []tier.Tier{tier.Superuser},
+		SystemShellUsers: map[string]bool{},
 		ForwardingTiers:  []tier.Tier{tier.Superuser},
 		ListMax:          DefaultListMax,
 		SpaceCompletion:  true,
@@ -173,9 +184,58 @@ func (f *File) Clone() *File {
 		c.IgnoredUsers[k] = v
 	}
 	c.SystemShellTiers = slices.Clone(f.SystemShellTiers)
+	c.SystemShellUsers = map[string]bool{}
+	for k, v := range f.SystemShellUsers {
+		c.SystemShellUsers[k] = v
+	}
 	c.ForwardingTiers = slices.Clone(f.ForwardingTiers)
 	c.PasswordCacheTiers = slices.Clone(f.PasswordCacheTiers)
 	return &c
+}
+
+// SystemShellUserNames are the users with a system-shell setting of their
+// own, by name.
+func (f *File) SystemShellUserNames() []string {
+	out := make([]string, 0, len(f.SystemShellUsers))
+	for u := range f.SystemShellUsers {
+		out = append(out, u)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// TierHas reports whether the file's list gives tier t the system shell (the
+// superuser tier always has it, the Closed tiers never).
+func TierHas(f *File, t tier.Tier) bool {
+	return (&Policy{File: f}).SystemShell(t)
+}
+
+// SetSystemShell opens (on) or closes the system shell for tier t: the
+// superuser tier always has it and the Closed tiers never can. The list
+// that is written is the superuser tier and every tier that has it, lowest
+// first.
+func (f *File) SetSystemShell(t tier.Tier, on bool) error {
+	switch {
+	case slices.Contains(Closed, t) && on:
+		return fail(ClosedText(t, "system-shell"))
+	case t == tier.Superuser && !on:
+		return fail("The superuser tier always has the system shell; it cannot be disabled. Nothing was changed.")
+	}
+	var out []tier.Tier
+	for _, x := range Tiers {
+		if slices.Contains(Closed, x) {
+			continue
+		}
+		has := x == tier.Superuser || slices.Contains(f.SystemShellTiers, x)
+		if x == t {
+			has = on
+		}
+		if has {
+			out = append(out, x)
+		}
+	}
+	f.SystemShellTiers = out
+	return nil
 }
 
 // IgnoredUserNames are the users the file has an (ignored) override for, by
@@ -291,6 +351,11 @@ func (f *File) validate() error {
 				return fail("settings." + key + ": invalid or repeated tier '" + string(t) + "'.")
 			}
 			seen[t] = true
+		}
+	}
+	for u := range f.SystemShellUsers {
+		if !names.MatchUser(u) {
+			return fail("settings.system_shell_users: invalid user name '" + u + "'.")
 		}
 	}
 	seenPC := map[tier.Tier]bool{}
@@ -472,6 +537,20 @@ func parseSettings(f *File, m *yamlpy.Map) error {
 				return bad
 			}
 			f.SystemShell = s
+		case "system_shell_users":
+			switch x := v.(type) {
+			case nil:
+			case *yamlpy.Map:
+				for name, uv := range x.All() {
+					b, ok := uv.(bool)
+					if !ok {
+						return fail("settings.system_shell_users: '" + name + "' must be true or false.")
+					}
+					f.SystemShellUsers[name] = b
+				}
+			default:
+				return fail("settings.system_shell_users must be a mapping of user to true or false.")
+			}
 		case "system_shell_tiers", "forwarding_tiers":
 			var l []tier.Tier
 			switch x := v.(type) {
@@ -581,6 +660,15 @@ func (f *File) doc() *yamlpy.Map {
 			"idle", f.PasswordCacheIdle,
 			"max", f.PasswordCacheMax,
 		))
+	}
+	if len(f.SystemShellUsers) > 0 {
+		// Only when something is set, so a file that never gave a user a
+		// system-shell setting is read by every release.
+		users := yamlpy.NewMap()
+		for _, u := range f.SystemShellUserNames() {
+			users.Set(u, f.SystemShellUsers[u])
+		}
+		settings.Set("system_shell_users", users)
 	}
 	doc := yamlpy.NewMap("version", Version)
 	if len(f.IgnoredTiers) > 0 {

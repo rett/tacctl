@@ -97,6 +97,35 @@ func Cond(word, a, b string) string { return "?" + word + ":" + a + ":" + b }
 // kinds, in order ('notice list|<device>' offers the word and the names).
 func Either(kinds ...string) string { return strings.Join(kinds, "+") }
 
+// resolveKind is the kind a positional has, given the positional words typed
+// before it: After and Cond are decided by them, and may nest in their last
+// place ('console system-shell': a file after path, a user after user, else
+// enable|disable).
+func resolveKind(kind string, words []string) string {
+	for {
+		if rest, ok := strings.CutPrefix(kind, "@"); ok {
+			word, k, _ := strings.Cut(rest, ":")
+			kind = ""
+			if slices.Contains(words, word) {
+				kind = k
+			}
+			continue
+		}
+		if rest, ok := strings.CutPrefix(kind, "?"); ok {
+			parts := strings.SplitN(rest, ":", 3)
+			kind = ""
+			if len(parts) == 3 {
+				kind = parts[2]
+				if slices.Contains(words, parts[0]) {
+					kind = parts[1]
+				}
+			}
+			continue
+		}
+		return kind
+	}
+}
+
 // offeredAfter reports whether completion offers the flag, given the
 // positional words typed so far.
 func (f Flag) offeredAfter(words []string) bool {

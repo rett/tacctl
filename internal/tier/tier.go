@@ -219,6 +219,14 @@ var Rules = []Rule{
 		Note: "device config: an operator may run list; show, pull, diff, plan and apply need the engineer tier (a device's walkthrough carries its scope's secret, a plan can type it, a pull logs in to the device as you, and a check or an apply writes to it as you), and an engineer gets the devices of their own scopes only; forget and shapes (shapes files what an apply confirmed) need the superuser tier."},
 	{Tier: Operator, Cmd: "console", Sub: "show", Sudoers: []string{"console show"}},
 	{Tier: Operator, Cmd: "console", Sub: "check", Sudoers: []string{"console check"}},
+	// 'console system-shell' (0.2.20): the state of the system shell by tier
+	// and for the users with a setting of their own is the operator's to
+	// read, as 'console show' is. Every form with an argument (the tier
+	// and user settings, the path) is the superuser's: sudoers grants the
+	// operator and the engineer the bare command only, and the verb holds
+	// the others to the superuser tier as well.
+	{Tier: Operator, Cmd: "console", Sub: "system-shell", Sudoers: []string{"console system-shell"},
+		Note: "console system-shell: an operator may run it with no argument, which lists who has the system shell; setting it for a tier or a user, and the path, need the superuser tier."},
 	// 'console forget' (0.2.4, D70) is a word of the shell and the console,
 	// which empty the password cache of their own process; the row lets the
 	// lists show it to the tiers the cache can be opened to, and the verb

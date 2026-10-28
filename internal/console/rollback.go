@@ -43,12 +43,16 @@ import (
 var Keys023 = []string{"settings.password_cache"}
 
 // Keys0220 are the settings 0.2.20 added that every older release rejects:
-// 'settings.color' (written only when it is not auto) and the value -1 of
+// 'settings.color' (written only when it is not auto), the value -1 of
 // 'settings.list_max' (never ask), which the older readers' range 1 to 1000
-// refuses. The rollback to any release removes the key and writes the
-// largest list_max the older readers accept (RollbackSince0220; the same
-// handling as settings.space_completion, written only when set, for 0.2.2).
-var Keys0220 = []string{"settings.color", "settings.list_max"}
+// refuses, and 'settings.system_shell_users' (the users with a system-shell
+// setting of their own, written only when there is one). The rollback to any
+// release removes the keys and writes the largest list_max the older readers
+// accept (RollbackSince0220; the same handling as settings.space_completion,
+// written only when set, for 0.2.2). The per-tier list
+// settings.system_shell_tiers is an older key and stays: the user settings go,
+// and an older release has the tiers' setting alone.
+var Keys0220 = []string{"settings.color", "settings.list_max", "settings.system_shell_users"}
 
 // DottedUsersKey is the Remove key of the overrides, under users, of user
 // names with a period (0.2.20 allows them; the older releases refuse the
@@ -128,6 +132,9 @@ func planRollback(path string, cache bool) (RollbackPlan, error) {
 				if _, has := m.Get("color"); has {
 					p.Remove = append(p.Remove, "settings.color: "+f.Color)
 				}
+				if _, has := m.Get("system_shell_users"); has {
+					p.Remove = append(p.Remove, "settings.system_shell_users: "+systemShellUsersWord(f))
+				}
 			}
 		}
 	}
@@ -148,6 +155,19 @@ func planRollback(path string, cache bool) (RollbackPlan, error) {
 	}
 	p.Text = text
 	return p, nil
+}
+
+// systemShellUsersWord says what the users' system-shell settings are, for
+// the plan.
+func systemShellUsersWord(f *File) string {
+	var w []string
+	for _, u := range f.SystemShellUserNames() {
+		w = append(w, u+" "+word(f.SystemShellUsers[u]))
+	}
+	if len(w) == 0 {
+		return "none"
+	}
+	return strings.Join(w, ", ")
 }
 
 // cacheWord says what the cache's settings are, for the plan.
@@ -186,6 +206,7 @@ func (f *File) rollbackText(cache bool) ([]byte, error) {
 			m.Delete("password_cache")
 		}
 		m.Delete("color")
+		m.Delete("system_shell_users")
 		if f.ListMax == ListMaxNever {
 			m.Set("list_max", MaxListMax)
 		}

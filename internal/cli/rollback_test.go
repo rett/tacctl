@@ -547,6 +547,9 @@ func TestRollbackHostsIsAccepted(t *testing.T) {
 func TestRollbackRealOldBinary(t *testing.T) {
 	bin := oldBinary(t)
 	hs := rollbackState(t)
+	// A system-shell setting of a single user (0.2.20) is a key 0.2.3 rejects
+	// as well: the rollback takes it out with the others.
+	hs.step("", "console", "system-shell", "user", "bob", "enable")
 	stubs := t.TempDir()
 	for _, name := range []string{"systemctl", "logger", "chown"} {
 		if err := os.WriteFile(filepath.Join(stubs, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {

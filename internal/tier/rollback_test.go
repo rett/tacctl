@@ -291,7 +291,7 @@ func TestSudoers0218(t *testing.T) {
 }
 
 // The 0.2.19 text lacks the engineer's row of 0.2.20 (scope mgmt-acl * mode)
-// and has every other rule; the 0.2.18 text lacks it as well; where the 0.2.19
+// and the operator's (console system-shell) and has every other rule; the 0.2.18 text lacks it as well; where the 0.2.19
 // tag is in the repository, it is that tag's own golden file.
 func TestSudoers0219(t *testing.T) {
 	old, cur := Sudoers0219(), Sudoers()
@@ -303,8 +303,13 @@ func TestSudoers0219(t *testing.T) {
 	if strings.Contains(en, row) || !strings.Contains(now, row) {
 		t.Errorf("%q: in the 0.2.19 engineer alias %v, in this release's %v", row, strings.Contains(en, row), strings.Contains(now, row))
 	}
-	if got := strings.Replace(cur, Binary+" "+row+", ", "", 1); got != old {
-		t.Errorf("the 0.2.19 text is not this release's less the one row:\n%s", got)
+	if strings.Contains(strings.Join(aliasItems(t, old, "TACCTL_OP"), "|"), "console system-shell") {
+		t.Error("the 0.2.19 operator alias has console system-shell")
+	}
+	got := strings.Replace(cur, Binary+" "+row+", ", "", 1)
+	got = strings.Replace(got, Binary+" console system-shell, ", "", 1)
+	if got != old {
+		t.Errorf("the 0.2.19 text is not this release's less the two rows:\n%s", got)
 	}
 	if strings.Contains(Sudoers0218(), row) || strings.Contains(Sudoers0217(), row) || strings.Contains(Sudoers0216(), row) {
 		t.Error("an older frozen text has the row of 0.2.20")
