@@ -396,10 +396,21 @@ _overrides() { cat "${TACCTL_STATE_DIR}/tacctl.yaml" 2>/dev/null; }
 
 @test "rollback 0.2.9: a state without the 0.2.10 settings has nothing to convert" {
     _state_024
+    # The state allows the password cache to engineer and superuser, and
+    # 0.2.9 turns it on for every user of those tiers: that is the one
+    # warning, and --apply refuses without --yes and changes nothing.
+    local before
+    before=$(_sums)
     run "$TACCTL_BIN_SCRIPT" rollback 0.2.9 --apply
+    assert_failure 1
+    assert_line "  1. Users who gain a system shell or the password cache"
+    refute_line --regexp '^  2\. [A-Z]'
+    assert_line --partial "engineer: erin (the cache is on for the tier again, without their own choice)"
+    assert_output --partial "The warnings above need your decision"
+    [[ "$(_sums)" == "$before" ]]
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.9 --apply --yes
     assert_success
     assert_output --partial "Nothing to convert: every file is one 0.2.9 can read."
-    refute_output --partial "The warnings above need your decision"
 }
 
 @test "rollback: a pending or unknown apply stops it for both targets, the dry run too, and changes nothing" {
