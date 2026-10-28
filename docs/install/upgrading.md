@@ -127,7 +127,8 @@ superusers (the flag never binds a superuser) are named in a warning that
 scope of theirs again, so they can log in to the devices with the password an
 administrator set or knew, the one they were to change. The rollback does not
 render, so the running TACACS+ and RADIUS files keep them off the devices
-until the older release renders. Have them change the password first (they
+until the older release renders, and their expired accounts on the enrolled
+hosts other than this server open again at each host's next `host sync`. Have them change the password first (they
 log in to tacctl and are asked), or keep this release. The flags stay in the
 snapshot `--apply` takes first.
 

@@ -245,7 +245,9 @@ current behaviour; this file is where history lives.
     checked on a Junos device.
 
 17. **A required password change.** A user can be required to change the
-    password before logging in to anything but tacctl. `tacctl user add` and
+    password before logging in to anything but tacctl (a device in a scope
+    shared with the server, and port forwarding by a tier of `console
+    forwarding tiers`, excepted; both below). `tacctl user add` and
     `tacctl user passwd <name>` (an administrator's reset, as opposed to the
     user's own `tacctl passwd`) require it by default, and `--no-change-required`
     skips it; `tacctl user require-password-change <name>|--all [on|off]`
@@ -362,7 +364,8 @@ current behaviour; this file is where history lives.
     comment does not name) included. A release before 0.2.20 refuses the key, so `tacctl rollback` to any target
     removes it after a snapshot and warns which users who are not superusers
     get their device access back with the password they were to change
-    (`--apply` needs `--yes`).
+    (`--apply` needs `--yes`); their accounts on the other enrolled hosts open
+    again at each host's next `host sync`.
 
 18. **The console is the login shell of every managed user, and there is no
     switch for it.** `tacctl console tiers` and `tacctl console user` are gone

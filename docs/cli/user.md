@@ -143,10 +143,13 @@ a period. What a period means elsewhere:
   with a period. The refusal lists each with the way out: `tacctl user rename <name> <new-name>`.
 
 **A required password change.** A user who must change the password can log in to the tacctl
-server only: every device refuses the user, as it refuses an unknown user, until the password is
-changed. `user add` and `user passwd` (an administrator's reset, as opposed to the user's own
-`tacctl passwd`) require it by default and `--no-change-required` skips it; `user
-require-password-change <name>|--all [on|off]` flags or clears users on demand. An existing user is
+server only: every device refuses the user, as it refuses an unknown user, and every other enrolled
+Linux host has the account expired from its next `host sync`, until the password is changed (a
+device in a scope shared with the server and port forwarding by a tier of `console forwarding
+tiers` excepted: see *Devices* below and [Console](console.md)). `user add` and `user passwd` (an
+administrator's reset, as opposed to the user's own `tacctl passwd`) require it by default and
+`--no-change-required` skips it; `user require-password-change <name>|--all [on|off]` flags or
+clears users on demand. An existing user is
 not flagged by an upgrade. The flag is the user's `password_change_required` in `store.yaml`, written
 only when set.
 
