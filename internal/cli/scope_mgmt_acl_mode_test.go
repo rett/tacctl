@@ -217,9 +217,10 @@ func TestWalkthroughFollowsTheMgmtACLMode(t *testing.T) {
 		t.Errorf("the WTI walkthrough changed with the mode:\n%s", w)
 	}
 	// --server names the server the device authenticates against: the strict
-	// filter, which ends in the discard, accepts its replies
+	// filter, which ends in the discard, accepts its replies, and only those
 	withServer := plain(sb.cfgRun("", []string{"config", "juniper", "--scope", "lab", "--server", "198.51.100.9"}, route))
-	if !strings.Contains(withServer, "set system tacplus-server 198.51.100.9 ") || !strings.Contains(withServer, "term permit-mgmt from source-address 198.51.100.9/32\n") {
+	if !strings.Contains(withServer, "set system tacplus-server 198.51.100.9 ") || !strings.Contains(withServer, "term permit-auth-replies from source-address 198.51.100.9/32\n") ||
+		!strings.Contains(withServer, "term permit-auth-replies from source-port tacacs\n") || strings.Contains(withServer, "term permit-mgmt from source-address 198.51.100.9/32\n") {
 		t.Errorf("--server in the strict walkthrough:\n%s", withServer)
 	}
 	// another scope keeps its filter

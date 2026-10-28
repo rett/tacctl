@@ -221,9 +221,10 @@ func JuniperVars(req Request, d Data) map[string]string {
 	var terms strings.Builder
 	var strictPlain []string
 	var strictTerms []strictTerm
+	var reply *authReply
 	if strict {
-		strictPlain, strictTerms = d.mgmtStrict(serverIP)
-		terms.WriteString(strictStatements("set firewall family inet filter "+acl+" term ", strictPlain, strictTerms))
+		strictPlain, strictTerms, reply = d.mgmtStrict(serverIP, req.Protocol)
+		terms.WriteString(strictStatements("set firewall family inet filter "+acl+" term ", strictPlain, strictTerms, reply))
 	} else {
 		for _, e := range d.mgmtPermits() {
 			terms.WriteString("set firewall family inet filter " + acl + " term permit-mgmt from source-address " + e + "\n")
@@ -299,6 +300,7 @@ func JuniperVars(req Request, d Data) map[string]string {
 			mgmt = strictHeader(scope) +
 				terms.String() +
 				snmpTerms +
+				authReplyNote(reply) +
 				servicesNote +
 				snmpNote +
 				"#\n" +

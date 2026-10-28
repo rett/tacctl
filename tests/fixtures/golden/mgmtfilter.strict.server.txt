@@ -9,8 +9,7 @@
 #   - NTP, syslog and DHCP from hosts that are not in the list
 #   - SNMP from sources outside the list (the SNMP clients of Step 5 still poll)
 #   - every other protocol (ping, traceroute) from sources outside the list
-# permit-mgmt starts with the address tacctl reaches the device from and, when it is another one
-# (--server, a RADIUS listener bound to another address), the address the device authenticates against.
+# permit-mgmt starts with the address tacctl reaches the device from.
 # Add each neighbour and server the device needs to the permit list this scope renders from first
 # ('tacctl scope mgmt-acl lab list' says which): the first entry of the scope's own list replaces
 # the global list for this scope, so add the global entries to it too.
@@ -19,9 +18,17 @@
 # Activate it by uncommenting the 'set interfaces lo0 …' line below
 # after reviewing.
 set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.5/32
-set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 198.51.100.9/32
 set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 10.0.0.0/8
 set firewall family inet filter MGMT-ACL term permit-mgmt then accept
+set firewall family inet filter MGMT-ACL term permit-auth-replies from source-address 198.51.100.9/32
+set firewall family inet filter MGMT-ACL term permit-auth-replies from protocol tcp
+set firewall family inet filter MGMT-ACL term permit-auth-replies from source-port tacacs
+set firewall family inet filter MGMT-ACL term permit-auth-replies then accept
+#
+# permit-auth-replies: 198.51.100.9 is the address the device authenticates against (--server, or a
+# RADIUS listener bound to another address) and is not a source above. The device starts those sessions, so the
+# term accepts only the replies, tcp from source port tacacs (TACACS+); ssh and every other protocol from it
+# are not accepted. Add the address to the permit list this scope renders from to accept more.
 #
 # Apply (review first):
 # set interfaces lo0 unit 0 family inet filter input MGMT-ACL

@@ -258,7 +258,10 @@ scope mgmt-acl <name> mode [ssh-only|strict]
     accepts every protocol from the permit list (an entry with services keeps only those services, a
     plain entry accepts everything from its source; the tacctl server's own address stays first),
     keeps the SNMP client terms and has no `default-accept` term, so the implicit discard at the end
-    of the filter drops the rest. Once a strict filter is applied to lo0, these stop reaching the
+    of the filter drops the rest. When the device authenticates against another address than the one
+    tacctl reaches it from, that address is not a source of the filter: a term of its own,
+    `permit-auth-replies`, accepts only the replies of the server from it (tcp from source port
+    `tacacs` for TACACS+, udp from `radius` and `radacct` for RADIUS), never ssh. Once a strict filter is applied to lo0, these stop reaching the
     routing engine: routing protocols from neighbours that are not in the list (BGP, OSPF, IS-IS,
     VRRP, LDP, BFD), TACACS+ and RADIUS replies from a server that is not in the list (the server
     the walkthrough names is), NTP, syslog and DHCP from hosts that are not in the list, SNMP from

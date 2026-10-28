@@ -64,10 +64,7 @@ list and has no `default-accept` term, so the implicit discard at the end of
 a Junos filter drops the rest. The terms, in order:
 
 - `permit-mgmt`: the source of every plain entry, the tacctl server's own
-  address (`--source`, else the detected one) first and once, then, when it
-  is another address, the one the device authenticates against (`--server`,
-  else the RADIUS listener's bound address) so that the replies of the
-  TACACS+ or RADIUS server get through; then accept.
+  address (`--source`, else the detected one) first and once; then accept.
 - One term for each distinct service of the entries that have services,
   named after the service (`permit-tcp-22`, `permit-udp-161-162`,
   `permit-tcp-any`, `permit-icmp`): the sources of the entries that name it,
@@ -75,6 +72,16 @@ a Junos filter drops the rest. The terms, in order:
   (`tcp/*`, `udp/*`) matches the protocol alone, and `icmp` is `from protocol
   icmp` for every ICMP type. A port Junos prints by name is written with it
   (`ssh`, `snmp`, `ntp`, `bgp`), any other as a number, a range as `low-high`.
+- `permit-auth-replies`, when the device authenticates against another
+  address than the one tacctl reaches it from (`--server`, a RADIUS listener
+  bound to another address, or `--source`, which leaves the detected address
+  to authenticate against) and that address is not a source of `permit-mgmt`:
+  that address, protocol `tcp` and source port `tacacs` for TACACS+, or
+  protocol `udp` and the source ports `radius` and `radacct` (the listener's,
+  1812 and 1813 by default) for RADIUS; then accept. The device starts those
+  sessions, so only the replies of the server are accepted from the address,
+  never ssh or another protocol, and it is not counted as a source for
+  `--from` (below). Add the address to the permit list to accept more from it.
 - `permit-snmp` and `deny-snmp`, when the scope's SNMP clients are set, as in
   `ssh-only`.
 
@@ -115,5 +122,6 @@ and the report of a move back to `ssh-only` says that the `default-accept`
 term returns. When the device applies the filter to `lo0`, the filter that
 would replace it must still permit the address you are logged in from
 (`--from <address>` for a plan; an apply knows its own): in `strict` that is a
-source of `permit-mgmt`, or of a service term that holds `tcp/22`; otherwise
-the section is refused. See [Planning](../devices/planning.md).
+source of `permit-mgmt`, or of a service term that holds `tcp/22` (the address
+of `permit-auth-replies` is not one); otherwise the section is refused. See
+[Planning](../devices/planning.md).

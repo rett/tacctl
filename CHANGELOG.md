@@ -5,43 +5,52 @@ current behaviour; this file is where history lives.
 
 ## 0.2.20 (unreleased)
 
-2. **A strict, deny-by-default mode for the Junos management filter.**
-   `tacctl scope mgmt-acl <scope> mode [ssh-only|strict]` shows or sets the
-   mode of the scope's Junos filter (the superuser sets it; an engineer may
-   read it for a scope of their own, through one new row of the engineer's
-   sudoers rules, `scope mgmt-acl * mode`, which `tacctl upgrade` installs:
-   the permit list, the names and the setter stay the superuser's, and
-   another scope does not exist for an engineer). It affects Junos
-   devices only: the Cisco VTY-ACL and the WTI IP Tables list are the same in
-   both modes. `ssh-only` is the default and is the filter as it was. In
-   `strict` the filter accepts every protocol from the scope's permit list
-   (the tacctl server's own address stays first; an entry with services
-   keeps only those, as one term for each service: `permit-tcp-22`,
-   `permit-udp-161-162`, `permit-tcp-any`, `permit-icmp`) and has no
-   `default-accept` term, so the implicit discard drops the rest; the
-   `permit-snmp` and `deny-snmp` terms stay and the `lo0` application stays a
-   comment. The comment says what stops once the filter is on `lo0` (routing
-   protocols from neighbours outside the list, BFD included, TACACS+ and
-   RADIUS replies from a server that is not in it, NTP, syslog and DHCP,
-   SNMP from other sources but its clients, every other protocol), and to keep a console session
-   open and commit with `commit confirmed`. `device config plan` and `device
-   config apply` move a device between the two filters in both directions
-   and compare a pulled filter with the rendering of the scope's mode; the
-   report lists the traffic that stops, or what a move back accepts again
-   (which also covers a site's own deny-by-default filter under the same
-   name, which the `ssh-only` plan used to turn accept-by-default without a
-   word). The refusal of a filter that would not permit `--from` holds for
-   the strict filter: the address must be a source that is accepted for ssh,
-   in `permit-mgmt` or in a term that holds `tcp/22`. Only `strict` is stored
+2. **A strict, deny-by-default mode for the Junos management filter.** `tacctl
+   scope mgmt-acl <scope> mode [ssh-only|strict]` shows or sets the mode of
+   the scope's Junos filter (the superuser sets it; an engineer may read it
+   for a scope of their own, through one new row of the engineer's sudoers
+   rules, `scope mgmt-acl * mode`, which `tacctl upgrade` installs: the permit
+   list, the names and the setter stay the superuser's, and another scope does
+   not exist for an engineer). It affects Junos devices only: the Cisco
+   VTY-ACL and the WTI IP Tables list are the same in both modes. `ssh-only`
+   is the default and is the filter as it was. In `strict` the filter accepts
+   every protocol from the scope's permit list (the tacctl server's own
+   address stays first; an entry with services keeps only those, as one term
+   for each service: `permit-tcp-22`, `permit-udp-161-162`, `permit-tcp-any`,
+   `permit-icmp`) and has no `default-accept` term, so the implicit discard
+   drops the rest; the `permit-snmp` and `deny-snmp` terms stay and the `lo0`
+   application stays a comment. When the device authenticates against another
+   address than the one tacctl reaches it from (`--server`, a RADIUS listener
+   bound to another address, `--source`), that address is not a source of
+   `permit-mgmt`: the device starts those sessions, so a term of its own,
+   `permit-auth-replies`, after the permit terms, accepts only the replies of
+   the configured protocol from it (tcp from source port `tacacs` for TACACS+,
+   udp from `radius` and `radacct`, the listener's ports, for RADIUS), and ssh
+   and every other protocol from it stay dropped, unless the permit list holds
+   the address. The comment says what stops once the filter is on `lo0`
+   (routing protocols from neighbours outside the list, BFD included, TACACS+
+   and RADIUS replies from a server that is not in it, NTP, syslog and DHCP,
+   SNMP from other sources but its clients, every other protocol), and to keep
+   a console session open and commit with `commit confirmed`. `device config
+   plan` and `device config apply` move a device between the two filters in
+   both directions and compare a pulled filter with the rendering of the
+   scope's mode; the report lists the traffic that stops, or what a move back
+   accepts again (which also covers a site's own deny-by-default filter under
+   the same name, which the `ssh-only` plan used to turn accept-by-default
+   without a word). The refusal of a filter that would not permit `--from`
+   holds for the strict filter: the address must be a source that is accepted
+   for ssh, in `permit-mgmt` or in a term that holds `tcp/22` (the
+   authentication server's address, accepted for its replies only, is not one,
+   and the refusal says so). Only `strict` is stored
    (`scope_mgmt_acl.mode.<scope>` in `tacctl.yaml`, moved by `scope rename`
    and dropped by `scope remove`), so a state that never sets a mode is
    unchanged, and the change is logged as `scope mgmt-acl op=mode value=`.
    `tacctl rollback` to an older release removes the key, which its schema
    refuses, after a snapshot, and warns which scopes were strict: the older
-   release plans the `ssh-only` filter for them (`--apply` needs `--yes`).
-   The rollbacks to 0.2.18, 0.2.17 and 0.2.3 also rewrite the tiers drop-in
-   when it is the text 0.2.19 wrote. A list with no IPv4 entry that permits
-   ssh renders no filter in either mode. The strict filter has not yet been
+   release plans the `ssh-only` filter for them (`--apply` needs `--yes`). The
+   rollbacks to 0.2.18, 0.2.17 and 0.2.3 also rewrite the tiers drop-in when
+   it is the text 0.2.19 wrote. A list with no IPv4 entry that permits ssh
+   renders no filter in either mode. The strict filter has not yet been
    checked on a Junos device.
 
 ## 0.2.19 (2026-10-25)

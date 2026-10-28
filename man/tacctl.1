@@ -6061,7 +6061,17 @@ entry with services keeps only those services, a plain entry accepts
 everything from its source; the tacctl server's own address stays first), keeps
 the SNMP client terms and has no
 .B default-accept
-term, so the implicit discard at the end of the filter drops the rest. Once a
+term, so the implicit discard at the end of the filter drops the rest. When the
+device authenticates against another address than the one tacctl reaches it
+from, that address is not a source of the filter: a term of its own,
+.BR permit\-auth\-replies ,
+accepts only the replies of the server from it (tcp from source port
+.B tacacs
+for TACACS+, udp from
+.B radius
+and
+.B radacct
+for RADIUS), never ssh. Once a
 strict filter is applied to lo0, these stop reaching the routing engine:
 routing protocols from neighbours that are not in the list (BGP, OSPF, IS-IS,
 VRRP, LDP, BFD), TACACS+ and RADIUS replies from a server that is not in the list
@@ -9942,7 +9952,8 @@ lo0 (routing protocols from neighbours that are not in the list, BFD included,
 TACACS+ and RADIUS replies from a server that is not in the list, NTP, syslog
 and DHCP, SNMP from sources outside it but its clients, every other protocol),
 the sources
-the filter accepts, and to keep a console session open. For
+the filter accepts (the address it accepts the authentication server's replies
+from apart), and to keep a console session open. For
 .BR ssh\-only ,
 where the device's filter has terms and no
 .B default\-accept
@@ -9962,7 +9973,9 @@ in
 .B strict
 inside a source that the filter accepts for ssh, in
 .B permit\-mgmt
-or in a service term that holds tcp/22. An IPv6 address is not checked against
+or in a service term that holds tcp/22 (the
+.B permit\-auth\-replies
+address is not one). An IPv6 address is not checked against
 the family inet filter, and a filter the device does not apply to lo0 has no
 check. An apply makes the same check with the address it connects from.
 .PP

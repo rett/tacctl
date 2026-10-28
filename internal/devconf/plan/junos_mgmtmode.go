@@ -39,11 +39,17 @@ func (p *planner) lo0Applied(row *jrow) bool {
 
 // filterTerm is one term of a filter as the rendering states it.
 type filterTerm struct {
-	sources []string
-	protos  []string
-	ports   []string
-	accept  bool
+	sources  []string
+	protos   []string
+	ports    []string
+	srcPorts []string
+	accept   bool
 }
+
+// authRepliesTerm is the strict filter's term of the replies of the server the
+// device authenticates against (devices.authReplyTerm): a source that is
+// accepted for those replies only.
+const authRepliesTerm = "permit-auth-replies"
 
 // renderedTerms are the terms of the filters the rendering names, by term
 // name, from the statements of the rendering.
@@ -74,6 +80,8 @@ func renderedTerms(exp devices.Section, row *jrow) map[string]*filterTerm {
 			ft.protos = append(ft.protos, vals...)
 		case t[8] == "from" && t[9] == "destination-port":
 			ft.ports = append(ft.ports, vals...)
+		case t[8] == "from" && t[9] == "source-port":
+			ft.srcPorts = append(ft.srcPorts, vals...)
 		}
 	}
 	return out
@@ -107,20 +115,37 @@ func (ft *filterTerm) admitsSSH() bool {
 // accepted for ssh holds the address (the filter's statements are the
 // rendering's).
 func strictPermitsFrom(exp devices.Section, row *jrow, from netip.Addr) bool {
-	for _, ft := range renderedTerms(exp, row) {
-		if !ft.admitsSSH() {
-			continue
-		}
-		for _, c := range ft.sources {
-			if pf, err := netip.ParsePrefix(c); err == nil && pf.Contains(from) {
-				return true
-			}
-			if a, err := netip.ParseAddr(c); err == nil && a == from {
-				return true
-			}
+	for name, ft := range renderedTerms(exp, row) {
+		if name != authRepliesTerm && ft.admitsSSH() && ft.holds(from) {
+			return true
 		}
 	}
 	return false
+}
+
+// holds reports whether one of the term's sources contains the address.
+func (ft *filterTerm) holds(from netip.Addr) bool {
+	for _, c := range ft.sources {
+		if pf, err := netip.ParsePrefix(c); err == nil && pf.Contains(from) {
+			return true
+		}
+		if a, err := netip.ParseAddr(c); err == nil && a == from {
+			return true
+		}
+	}
+	return false
+}
+
+// strictRepliesOnly says what the rendered strict filter accepts from the
+// address when it is the source of the replies term and of no term that
+// admits ssh: the replies (protocol and source ports), as the term states
+// them. Empty when the address is not that source.
+func strictRepliesOnly(exp devices.Section, row *jrow, from netip.Addr) string {
+	ft := renderedTerms(exp, row)[authRepliesTerm]
+	if ft == nil || !ft.holds(from) {
+		return ""
+	}
+	return strings.Join(ft.protos, " ") + " source port " + strings.Join(ft.srcPorts, " and ")
 }
 
 // deviceFilterShape says what the device holds of the filters the rendering
@@ -141,13 +166,13 @@ func (p *planner) deviceFilterShape(row *jrow) (has, defaultAccept bool) {
 
 // strictSources are the sources the rendered strict filter accepts, in the
 // order the terms name them (the SNMP terms' are the clients', not the
-// permit list's).
+// permit list's, and the replies term's is accepted for its replies only).
 func strictSources(exp devices.Section, row *jrow) []string {
 	var out []string
 	for _, raw := range exp.Lines {
 		t := splitTokens(raw)
 		if len(t) < 11 || t[0] != "set" || t[1] != "firewall" || t[4] != "filter" || !row.names[t[5]] || t[6] != "term" ||
-			t[8] != "from" || t[9] != "source-address" || strings.HasSuffix(t[7], "-snmp") {
+			t[8] != "from" || t[9] != "source-address" || strings.HasSuffix(t[7], "-snmp") || t[7] == authRepliesTerm {
 			continue
 		}
 		for _, c := range t[10:] {
@@ -191,8 +216,13 @@ func (p *planner) mgmtModeWarnings(exp devices.Section, row *jrow) []string {
 			}
 			list += ")"
 		}
+		replies := ""
+		if ft := renderedTerms(exp, row)[authRepliesTerm]; ft != nil && len(ft.sources) > 0 {
+			replies = ", and from " + strings.Join(ft.sources, ", ") + " the replies of the server the device authenticates against only (" +
+				strings.Join(ft.protos, " ") + " source port " + strings.Join(ft.srcPorts, " and ") + ")"
+		}
 		return []string{"the management filter of " + p.blockScope() + " is strict: it has no default-accept term. " + when +
-			" the device accepts traffic to its routing engine only from the sources of the permit list" + list + " and the SNMP clients, and these stop: " +
+			" the device accepts traffic to its routing engine only from the sources of the permit list" + list + " and the SNMP clients" + replies + ", and these stop: " +
 			"routing protocols from neighbours that are not in the list (BGP, OSPF, IS-IS, VRRP, LDP, BFD); TACACS+ and RADIUS replies from servers that are not in the list (the server the walkthrough names is); NTP, syslog and DHCP from hosts that are not in the list; " +
 			"SNMP from sources outside the list (the SNMP clients still poll); every other protocol from sources outside it. Keep a console session open while you paste, and add every neighbour and server the device needs to the permit list the scope renders from first (the first entry of the scope's own list replaces the global list for the scope)"}
 	case !p.strictMgmt() && has && !defaultAccept:

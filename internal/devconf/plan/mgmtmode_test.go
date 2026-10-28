@@ -415,41 +415,93 @@ func TestMgmtModeBackoutPutsTheFilterBack(t *testing.T) {
 	}
 }
 
-// The strict filter accepts the server the device authenticates against: with
-// --server it is permit-mgmt's second source, the plan sets it, the report
-// names it among the sources the filter accepts, and the lock-out check
-// reads it as a source accepted for ssh, as it reads the first. A device that
-// holds the rendering plans nothing.
-func TestMgmtModeStrictAcceptsTheAuthenticationServer(t *testing.T) {
-	const auth = "198.51.100.9"
+// The strict filter accepts the replies of the server the device authenticates
+// against (--server) in a term of their own, permit-auth-replies, and not as a
+// source of permit-mgmt: the plan sets the term, the report names the address
+// apart from the sources it accepts, and the lock-out check does not read it
+// as a way in for ssh (--from that address is refused, with the reason), while
+// --from the server's own address, which heads permit-mgmt, is accepted. A
+// device that holds the rendering plans nothing, and the move back deletes the
+// term with the rest.
+func TestMgmtModeStrictAcceptsTheAuthenticationServerRepliesOnly(t *testing.T) {
+	const auth = "192.0.2.200"
 	ssh, st := managedModeAuth(t, sshOnly, modeList, auth), managedModeAuth(t, strict, modeList, auth)
-	f := "firewall family inet filter MGMT-ACL term permit-mgmt from source-address "
+	f := "firewall family inet filter MGMT-ACL term "
 	var want []string
 	for _, l := range mgmtSection(st) {
-		if strings.HasPrefix(l, "set "+f) {
-			want = append(want, strings.TrimPrefix(l, "set "+f))
+		if strings.HasPrefix(l, "set "+f+"permit-mgmt from source-address ") {
+			want = append(want, strings.TrimPrefix(l, "set "+f+"permit-mgmt from source-address "))
 		}
 	}
-	if len(want) < 3 || want[0] != "192.0.2.42/32" || want[1] != auth+"/32" {
+	if len(want) < 2 || want[0] != "192.0.2.42/32" || slices.Contains(want, auth+"/32") {
 		t.Fatalf("permit-mgmt sources: %q", want)
 	}
-	d := planMode(t, st, deviceOf(ssh, true), Options{MgmtMode: strict, From: auth})
-	if got := d.Of("mgmt-acl"); got.State != StatePlanned {
+	for _, l := range []string{"set " + f + "permit-auth-replies from source-address " + auth + "/32", "set " + f + "permit-auth-replies from protocol tcp",
+		"set " + f + "permit-auth-replies from source-port tacacs", "set " + f + "permit-auth-replies then accept"} {
+		if !slices.Contains(mgmtSection(st), l) {
+			t.Errorf("the rendering lacks %q", l)
+		}
+	}
+	// the term is the last of the permit terms: before the SNMP terms, after permit-mgmt
+	var order []string
+	for _, l := range mgmtSection(st) {
+		if t := splitTokens(l); len(t) > 7 && t[6] == "term" && !slices.Contains(order, t[7]) {
+			order = append(order, t[7])
+		}
+	}
+	if i, j := slices.Index(order, "permit-mgmt"), slices.Index(order, "permit-auth-replies"); i != 0 || j < 1 || j != slices.Index(order, "permit-snmp")-1 {
+		t.Errorf("term order %q", order)
+	}
+
+	// --from the authentication server: not a way in for ssh
+	device := deviceOf(ssh, true)
+	d := planMode(t, st, device, Options{MgmtMode: strict, From: auth})
+	got := d.Of("mgmt-acl")
+	if got.State != StateSkipped || !strings.Contains(got.Why, "strict filter that is accepted for ssh") ||
+		!strings.Contains(got.Why, "the address the device authenticates against, which the filter accepts for the server's replies only: tcp source port tacacs") {
 		t.Errorf("--from the authentication server: %+v", got)
 	}
-	wantLine(t, d, "mgmt-acl", "set "+f+auth+"/32")
-	if !warned(d, "192.0.2.42/32, "+auth+"/32, 10.1.100.0/23") {
-		t.Errorf("the report does not name the sources: %q", d.Warnings)
+	// --from the other address of the walkthrough, a plain entry and an entry
+	// that holds tcp/22: accepted
+	for _, from := range []string{"192.0.2.42", "10.1.101.7", "198.51.100.200"} {
+		if got := planMode(t, st, device, Options{MgmtMode: strict, From: from}).Of("mgmt-acl"); got.State != StatePlanned {
+			t.Errorf("--from %s: %+v", from, got)
+		}
 	}
-	// the other address of the walkthrough is accepted the same way
-	d = planMode(t, st, deviceOf(ssh, true), Options{MgmtMode: strict, From: "192.0.2.42"})
-	if got := d.Of("mgmt-acl"); got.State != StatePlanned {
-		t.Errorf("--from the source: %+v", got)
+	// the address that is also a plain entry of the list is accepted for ssh
+	// by that entry, and has no replies term
+	listed := append([]string{auth + "/32"}, modeList...)
+	stl, sshl := managedModeAuth(t, strict, listed, auth), managedModeAuth(t, sshOnly, listed, auth)
+	if slices.ContainsFunc(mgmtSection(stl), func(l string) bool { return strings.Contains(l, "permit-auth-replies") }) {
+		t.Errorf("a listed address has a replies term:\n%s", strings.Join(mgmtSection(stl), "\n"))
 	}
-	if got := lines(planMode(t, st, deviceOf(st, true), Options{MgmtMode: strict, From: auth}), "mgmt-acl"); len(got) != 0 {
+	if got := planMode(t, stl, deviceOf(sshl, true), Options{MgmtMode: strict, From: auth}).Of("mgmt-acl"); got.State != StatePlanned {
+		t.Errorf("--from a listed authentication server: %+v", got)
+	}
+	// an authentication server that is the source: one address, accepted for ssh
+	own := managedModeAuth(t, strict, modeList, "192.0.2.42")
+	if got := planMode(t, own, deviceOf(managedModeAuth(t, sshOnly, modeList, "192.0.2.42"), true), Options{MgmtMode: strict, From: "192.0.2.42"}).Of("mgmt-acl"); got.State != StatePlanned {
+		t.Errorf("--from the source that is the authentication server: %+v", got)
+	}
+
+	// the plan sets the term, and the report names the address apart from the
+	// sources it accepts
+	d = planMode(t, st, device, Options{MgmtMode: strict, From: "192.0.2.42"})
+	wantLine(t, d, "mgmt-acl", "set "+f+"permit-auth-replies from source-address "+auth+"/32")
+	wantLine(t, d, "mgmt-acl", "set "+f+"permit-auth-replies from source-port tacacs")
+	if !warned(d, "sources of the permit list (192.0.2.42/32, 10.1.100.0/23") || warned(d, "192.0.2.42/32, "+auth+"/32") ||
+		!warned(d, "and from "+auth+"/32 the replies of the server the device authenticates against only (tcp source port tacacs)") {
+		t.Errorf("the report does not name the sources and the replies apart: %q", d.Warnings)
+	}
+	for _, l := range lines(d, "mgmt-acl") {
+		if strings.Contains(l, "permit-mgmt from source-address "+auth) {
+			t.Errorf("the plan makes the authentication server a source of permit-mgmt: %q", l)
+		}
+	}
+	if got := lines(planMode(t, st, deviceOf(st, true), Options{MgmtMode: strict, From: "192.0.2.42"}), "mgmt-acl"); len(got) != 0 {
 		t.Errorf("a device that holds the rendering plans %q", got)
 	}
-	// the move back deletes it with the rest of the strict terms' sources
+	// the move back deletes the term with the rest of the strict terms
 	back := planMode(t, ssh, deviceOf(st, false), Options{MgmtMode: sshOnly})
-	wantLine(t, back, "mgmt-acl", "delete "+f+auth+"/32")
+	wantLine(t, back, "mgmt-acl", "delete "+f+"permit-auth-replies")
 }
