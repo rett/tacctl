@@ -9,7 +9,7 @@ doctype: how-to
 
 # Day-to-Day Device Operations
 
-*A console-first guide for operators and engineers · Checked against tacctl 0.2.19*
+*A console-first guide for operators and engineers · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-day-to-day-device-operations.pdf){: .pdf-link }
 
@@ -34,8 +34,9 @@ engineers. **Section 2** is for engineers only. For superuser tasks, see
 
 Log in to the tacctl server with ssh (`ssh alice@tacacs.example.net`). You
 land at the console prompt, `tacacs>`. Type commands **without** the
-`tacctl` prefix. `Tab` completes, `?` shows what comes next, `help` lists what your
-tier can run, `passwd` changes your password and `exit` leaves.
+`tacctl` prefix. `Tab` completes, `?` (or `--help` after a command) shows
+what comes next, `help` lists what your tier can run, `man <command>` opens
+the manual page there, `passwd` changes your password and `exit` leaves.
 [Getting Started](getting-started.md) §1 covers the console in full.
 
 ---
@@ -195,7 +196,8 @@ holds in your scopes.
 | Fix it (Junos) | `device config apply <name>` | Engineers |
 | Back-out | `device config plan <name> --backout` | Engineers |
 
-For more detail, type `help <command>` at the console.
+For more detail, type `help <command>`, `<command> --help` or
+`man <command>` at the console.
 
 ---
 

@@ -9,14 +9,14 @@ doctype: reference
 
 # Quick Reference
 
-*The most common tacctl commands on one card · Checked against tacctl 0.2.19*
+*The most common tacctl commands on one card · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-quick-reference.pdf){: .pdf-link }
 
 The most common tacctl commands on one card. The **Tier** column gives the
 lowest tier that can run each one: R read-only · O operator · E engineer
 (own scopes) · S superuser. Run any command family with no arguments for its
-usage. In `tacctl shell`, `?` shows help.
+usage. In the console and `tacctl shell`, `?` shows help.
 
 ---
 
@@ -28,7 +28,8 @@ usage. In `tacctl shell`, `?` shows help.
 | Change own password | `tacctl passwd` | R |
 | Server health | `tacctl status` | R |
 | Find problems | `tacctl config validate` | O |
-| Help | `tacctl <family>` · `man tacctl` | R |
+| Help | `tacctl <command> --help` · `tacctl man [<topic>]` | R |
+| Password cache (your own choice) | `console password-cache on\|off` (console word) | O |
 
 ## 2. Devices
 
@@ -58,6 +59,7 @@ usage. In `tacctl shell`, `?` shows help.
 | List / detail | `tacctl user list` · `user show <n>` | R |
 | Add | `tacctl user add <n> <group> --scopes <s,…>` | S |
 | Password reset | `tacctl user passwd <n>` | S |
+| Require / lift a password change | `tacctl user require-password-change <n> [on\|off]` | S |
 | Scopes | `tacctl user scope <n> add\|remove\|replace <s,…>` | S |
 | Change group | `tacctl user move <n> <group>` | S |
 | Suspend / restore | `tacctl user disable\|enable <n>` | S |
@@ -83,6 +85,8 @@ usage. In `tacctl shell`, `?` shows help.
 | Prefixes | `tacctl scope prefixes <s> add\|remove <cidr>` | S |
 | Rotate secret | `tacctl scope secret <s> generate` | S |
 | Break-glass accounts | `tacctl scope breakglass <s> add <user>` | S |
+| Junos filter mode: show | `tacctl scope mgmt-acl <s> mode` | E |
+| Junos filter mode: set | `tacctl scope mgmt-acl <s> mode ssh-only\|strict` | S |
 
 ## 6. Emergencies
 

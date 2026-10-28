@@ -9,7 +9,7 @@ doctype: how-to
 
 # Engineer Guide: Device Changes
 
-*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.19*
+*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-engineer-guide-device-changes.pdf){: .pdf-link }
 
@@ -60,7 +60,10 @@ tacctl device add pdu1 10.10.0.50 --vendor wti
 - **Check the host key fingerprints** that `add` prints against the
   console: Cisco `show ip ssh`, Junos
   `file show /etc/ssh/ssh_host_ed25519_key.pub`. If you already have the
-  fingerprint, `--host-key SHA256:<fp>` pins only that key.
+  fingerprint, `--host-key SHA256:<fp>` pins only that key. A device that
+  gives no key to the scan is asked one key type at a time, then read with
+  tacctl's own ssh client; when nothing works the refusal says what to do
+  ([Connecting to Devices](connecting-to-devices.md) §6).
 - `--legacy-ssh` affects only the ssh algorithms (SHA-1 key exchange, CBC
   ciphers, ssh-rsa). The Cisco configuration syntax is set separately with
   `--ios-syntax auto|ios12|modern`. With `auto`, the version line of the
@@ -169,14 +172,36 @@ tacctl device config plan rtr1 --backout
 A plan has these parts:
 
 1. **The report.** Each irregularity, with its severity (`ACCESS`,
-   `MONITORING` or `COSMETIC`) and what the paste does about it.
+   `MONITORING` or `COSMETIC`) and what the paste does about it, then two
+   lines of information (below).
 2. **A line to type first** that prints the device's name. Check it before
    you paste.
 3. **One region** between `PASTE FROM HERE` and `PASTE TO HERE`, safe to
    paste whole.
 4. **The check, the one line to type afterwards, and the back-out.**
 
-Statements outside the standard (*extras*) are reported and left alone.
+Two lines of the report are information, not irregularities:
+
+```text
+# Kept: snmp 2 statements of the device's own (communities, trap groups): left alone, listed by
+# device config diff.
+# Secrets: 3 present (the TACACS+ server key, the SNMP community); only their presence is checked,
+# --secrets writes them again.
+```
+
+- **`Kept:`** counts, per section, the device's own statements that tacctl
+  leaves alone: in `snmp` another community, trap groups or the `snmp name`;
+  in `system` and `netconf` what the device holds beside tacctl's statements.
+  The number is the one `device config list` shows as unmanaged, and the line
+  never names a community or a value. A device whose only extras are of this
+  kind reads `CONSISTENT: nothing to paste.`
+- **`Secrets:`** names the kinds of secret present on the device, never a
+  value. Secrets are compared by presence only, so the line stays the same
+  once they are set; `--secrets` types them again. Secrets the pull's login
+  could not see are counted apart as not visible.
+
+Other statements outside the standard (*extras*: an old server, a class or a
+filter tacctl does not render) are reported as items and left alone.
 `--converge` adds the cleanup **only after** the first paste has been
 verified. That way the paste that adds the new server is never the same
 paste that removes the old one.
@@ -196,6 +221,53 @@ tacctl device config show sw1
 
 > **The output contains the scope's shared secret.** Handle it as secret.
 > Each print writes a `secret-read` line to the audit log.
+
+### 4.2 Junos: the management filter
+
+The Junos management filter is planned whole, in the mode of the device's
+scope: `ssh-only` (the default) or `strict`, deny by default
+([Vendor Notes](vendor-notes.md) §3.4). You can read the mode of your own
+scopes; the permit list, the filter names and setting the mode are the
+superuser's.
+
+```bash
+# the mode of the scope's filter and where it comes from
+tacctl scope mgmt-acl site-a mode
+# the address you are logged in from, for a device that applies the filter to lo0
+tacctl device config plan rtr1 --from 192.0.2.10
+```
+
+When the mode changes, the next plan moves the device's filter to it, in
+either direction, and its report warns of what that does to the traffic:
+
+- **To `strict`:** the traffic that stops once the filter is applied to
+  `lo0` (routing protocols carried over IP, BFD among them, from neighbours
+  that are not in the permit list, TACACS+ and RADIUS replies from servers
+  that are not in it, NTP, syslog and DHCP, SNMP from sources outside it
+  other than its clients, which still poll, every other protocol; IS-IS is
+  not carried over IP, so the filter neither stops nor permits it), the
+  sources the filter accepts, apart from the address it accepts the
+  authentication server's answers from
+  (`permit-auth-replies`, [Vendor Notes](vendor-notes.md) §3.4), and to keep
+  a console session open.
+- **To `ssh-only`**, over a filter with no `default-accept` term: that the
+  plan adds the term, so the device accepts everything again except ssh,
+  NETCONF and SNMP from outside the list, and the command that sets `strict`
+  instead.
+
+> **Do not lock yourself out.** When the device already applies the filter
+> to `lo0`, a plan that changes the filter needs `--from <address>`, the
+> address you are logged in from. Without it the report warns. With it, the
+> filter's section is refused if the new filter would not let that address
+> in over ssh (the rest of the plan stands). In `strict` the address must be
+> inside a source the filter accepts for ssh: the address tacctl reaches the
+> device from, at the head of `permit-mgmt`, a plain entry of the permit
+> list, or an entry whose services cover tcp port 22. An entry with
+> `udp/161` only does not count, and neither does the address the device
+> authenticates against when the filter accepts only the server's answers
+> from it (`permit-auth-replies`): `--from` with that address is refused,
+> and the refusal says why. An apply makes the same check with the address
+> it connects from.
 
 ---
 
@@ -227,13 +299,24 @@ What happens during an apply:
   proves the change with a **fresh login as you** and checks what landed.
   Only after that does it confirm the commit. If the proof fails, it rolls
   the change back.
+- A change of the Junos management filter is checked against the address
+  the apply connects from, as `--from` is for a plan (§4.2). The review
+  shows the plan's warnings as `warning:` lines, so the traffic a move to
+  `strict` stops is listed before you approve.
+- On a device with several members (a virtual chassis, two routing
+  engines, a cluster), the commit check and the commits must answer for
+  exactly the members `show version` lists. A member that is missing or
+  answers otherwise fails the step, and the error names the member and its
+  text. Over NETCONF, a reply of a virtual chassis or a cluster that names no
+  member is refused; use the command-line transport, the default.
 - The first device of each new shape goes alone (canary). By default at most
   5 devices are changed per run (`--max`), with a pause between devices
   (`--pause`).
 
 > **`PENDING until <time>`** means tacctl could not read the device's
 > state after the commit. **Type nothing on that device until the time
-> passes.** Any `commit` would confirm the change. The next apply or
+> passes.** The time is the device's own clock, in the zone the device
+> prints. Any `commit` would confirm the change. The next apply or
 > `--check` settles the record.
 
 ### 5.2 Cisco: paste the plan
@@ -288,6 +371,8 @@ tacctl device config plan sw1 --converge  # optional: remove old servers and sim
 | Host key mismatch on pull or ssh | Check the key on the console first, then `tacctl device hostkey <name> set SHA256:<fp>` ([Connecting to Devices](connecting-to-devices.md) §5) |
 | `failed: calls itself '<x>'` | The device's own hostname doesn't match the registry. Check you have the right box, then fix the registry or the device. |
 | `failed: other editors or staged changes` | Someone else has uncommitted configuration on the device. Coordinate with them. |
+| Apply fails and names a member (`fpc1`, `re1`, `node1`) | That member of the virtual chassis, routing-engine pair or cluster was missing from the answer of the check or the commit, or answered with an error, a warning or no text. Read its text in the error and look at the member on the device. |
+| Plan refuses the Junos filter: `... is not inside a source of the rendered strict filter that is accepted for ssh` | The strict filter would cut you off. Ask a superuser to add your address to the permit list the scope renders from (plain, or with `tcp/22`), then plan again (§4.2) |
 
 ---
 
@@ -306,6 +391,7 @@ tacctl device config plan sw1 --converge  # optional: remove old servers and sim
 | Verify | `tacctl device config pull <n> --diff` |
 | Back-out | `tacctl device config plan <n> --backout` |
 | Walkthrough for a device | `tacctl device config show <n>` |
+| Junos filter mode of a scope | `tacctl scope mgmt-acl <s> mode` |
 | Re-pin a key | `tacctl device hostkey <n> set SHA256:<fp>` |
 
 ---

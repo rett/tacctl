@@ -10,7 +10,7 @@ commands: historical
 
 # What's New for Operators
 
-*The changes in each tacctl release that people on shift will notice · Checked against tacctl 0.2.19*
+*The changes in each tacctl release that people on shift will notice · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-whats-new-for-operators.pdf){: .pdf-link }
 
@@ -24,7 +24,40 @@ first.
 
 ---
 
-## 1. tacctl 0.2.19
+## 1. tacctl 0.2.20
+
+Released 2026-10-28 ·
+[Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.20.md)
+
+**Removed console commands, no aliases.** The old forms are now unknown
+sub-commands:
+
+| Up to 0.2.19 | From 0.2.20 |
+|---|---|
+| `console tiers`, `console user` (who gets the console) | Nothing to set: the console is the login shell of every tacctl user |
+| `console system-shell tiers <csv>\|none` | `console system-shell <tier> enable\|disable` |
+
+| Change | What it means on shift | Page |
+|---|---|---|
+| **Required password change** | A new user, and a user whose password a superuser reset, must change it at the next login to the tacctl server before any device accepts them. `--no-change-required` skips it; `user require-password-change` sets or lifts it. | [Getting Started](getting-started.md) §2.1, [Access Lifecycle](access-lifecycle.md) §5.1 |
+| **The console for everyone** | Every tacctl user, of every tier, logs in to the server's console. The system shell is opened by a superuser per tier or per user; engineers never have it. | [Superuser Daily Operations](superuser-daily-operations.md) §10 |
+| **Password cache is your choice** | `console password-cache on` turns it on for you, where your tier is allowed it; it is off until you do | [Getting Started](getting-started.md) §1.3 |
+| `--help`, `-h` and `tacctl man` | `--help` after a command prints what `?` prints; `man <command>` opens the manual page there, in the console too. In bash, `?` after `tacctl …` prints help. | [Getting Started](getting-started.md) §1 |
+| `console color`, `console list-max` | The console's list colours and the longest list it shows without asking | [Superuser Daily Operations](superuser-daily-operations.md) §10.2 |
+| **Strict Junos management filter** | `scope mgmt-acl <scope> mode strict` makes the Junos filter deny by default; engineers can read the mode of their scopes | [Vendor Notes](vendor-notes.md) §3.4 |
+| **Junos `root` as break-glass** | `scope breakglass <scope> add root`; the walkthrough renders the root password and `root-login allow` as comments to fill in | [Break Glass](break-glass.md) §1.1 |
+| `Kept:` and `Secrets:` in plans | A device's own SNMP, system and NETCONF statements are no irregularity any more; the secrets line is information | [Engineer Guide](engineer-guide-device-changes.md) §4 |
+| Apply on a virtual chassis | The check and the commits must answer for every member; `PENDING until` is the device's own clock | [Engineer Guide](engineer-guide-device-changes.md) §5.1 |
+| Host keys read one type at a time | A device that gives no key to the scan is asked again, and the refusal says how to pin a key by hand | [Connecting to Devices](connecting-to-devices.md) §6 |
+| User names with a period | `user add alice.smith operator` works; such a user has no Linux account | [Access Lifecycle](access-lifecycle.md) §2 |
+| `tacctl rollback 0.2.19` | Goes back to the previous release, with warnings for what it undoes | [Backups and Undo](backups-and-undo.md) §5 |
+
+> **After the upgrade,** run `tacctl host sync <server>` for the server's own
+> host entry: the console becomes the login shell of every tacctl user then,
+> and not before. No existing user must change their password until a
+> superuser says so.
+
+## 2. tacctl 0.2.19
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.19.md)
 
@@ -37,7 +70,7 @@ first.
 | Host names may contain dots | `tacctl host rename web1 web1.example.net` works | [Linux Host Operations](linux-host-operations.md) |
 | Unknown commands answered first | A mistyped command is answered before `sudo` asks for a password | — |
 
-## 2. tacctl 0.2.18
+## 3. tacctl 0.2.18
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.18.md)
 
@@ -56,7 +89,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 `host enroll`). Every tier can run `device notice list` and
 `device client-config`.
 
-## 3. tacctl 0.2.17
+## 4. tacctl 0.2.17
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.17.md)
 
@@ -72,7 +105,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 
 ---
 
-## 4. Older releases
+## 5. Older releases
 
 Releases 0.2.0 to 0.2.16 are listed on the
 [releases page](https://github.com/rett/tacctl/releases), and every change is

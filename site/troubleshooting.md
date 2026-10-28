@@ -9,7 +9,7 @@ doctype: how-to
 
 # Troubleshooting
 
-*Symptom-first fixes for login and device problems · Checked against tacctl 0.2.19*
+*Symptom-first fixes for login and device problems · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-troubleshooting.pdf){: .pdf-link }
 
@@ -48,6 +48,7 @@ Find the log line, then the row:
 | `remote [a] has no secret providers` | No scope covers the address | `tacctl scope prefixes <s> add <cidr>` | S |
 | No line at all | The request never arrived | See §5 | E |
 | User shown `disabled` in `user show` | Disabled | `tacctl user enable x` | S |
+| `user show` has a `Password change` line; `user list` says `(change required)` | A password change is required: every device refuses the user until it is made | The user logs in to the tacctl server and changes it ([Getting Started](getting-started.md) §2.1); `tacctl user require-password-change x off` lifts it | R / S |
 | User's scopes don't include the device's | Missing grant | `tacctl user scope x add <s>` | S |
 | Red `EMERGENCY LOCKDOWN` line | Lockdown on the scope | `tacctl emergency lockdown status` | S |
 | Device shows `Break-glass: HELD` | The server is deliberately not answering | `tacctl breakglass list` | S |
@@ -137,17 +138,10 @@ retry, run `tacctl log tail 50`, then set the log level back.
 | `store not initialised` | Legacy read-only mode (after `store rollback` or a stopped upgrade). See the upgrading docs. |
 | `is locked by another tacctl command` | Wait, then retry |
 | `not permitted` in the shell | Your tier doesn't allow the command. `?` shows the tier it needs. |
+| `A password change is required of '<user>'` | Only `passwd`, `version` and `help` run until you change your password: `tacctl passwd` |
 
 Exit statuses, including 3 (hand edit) and the sudo codes 126 and 127, are
 explained in [Exit Codes](exit-codes.md).
-
----|---|
-| 0 | Done, or nothing to do |
-| 1 | Refused or failed. The reason is on standard error. |
-| 2 | Wrong arguments, or with `--exit-code`: a device needs a change |
-| 3 | Refused to overwrite a hand edit |
-| 126 / 127 | sudo problems |
-| 130 | Interrupted |
 
 ---
 

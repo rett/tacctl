@@ -9,7 +9,7 @@ doctype: how-to
 
 # Superuser Daily Operations
 
-*Day-to-day operations for tacctl superusers · Checked against tacctl 0.2.19*
+*Day-to-day operations for tacctl superusers · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-superuser-daily-operations.pdf){: .pdf-link }
 
@@ -29,10 +29,10 @@ internals are in the
 
 ## 1. Before you start
 
-- Work from `tacctl shell` (or the login console): Tab completes commands
-  and live names, `?` shows help, and `--password-cache` saves retyping
-  your password across many device logins.
-  [Getting Started](getting-started.md) §1 covers both.
+- Work from the login console (or `tacctl shell` in your system shell):
+  Tab completes commands and live names, `?` and `--help` show help, and
+  the password cache saves retyping your password across many device
+  logins. [Getting Started](getting-started.md) §1 covers both.
 - Every change takes a snapshot first and writes an audit line, so a
   mistake can be rolled back ([Backups and Undo](backups-and-undo.md)).
 - Preview with `--dry-run` or `--check` wherever a command offers it.
@@ -57,7 +57,8 @@ tacctl log failures                 # authentication failures, last 24 hours
 What to look for:
 
 - **`status`**: every enabled backend should be running. Note any users
-  whose passwords are getting old.
+  whose passwords are getting old, and the `Password change` line: users
+  who still have to change theirs.
 - **`config validate`**: warnings name the command that fixes them. A
   common one is a scope with no break-glass local users, which is a lockout
   risk.
@@ -85,6 +86,7 @@ Typical causes:
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | User is `disabled` | Disabled earlier | `tacctl user enable alice` |
+| `user show` has a `Password change` line | A password change is required: no device accepts the user until it is made | The user logs in to the tacctl server and changes it ([Getting Started](getting-started.md) §2.1) |
 | Device's scope is not in the user's scopes | Missing scope grant | `tacctl user scope alice add site-a` |
 | `bad secret` in the logs / device `LAST SEEN` shows `rejected` | Device key does not match the scope's secret | Re-paste the AAA config: `tacctl device config show sw1` |
 | No scope covers the device | Address outside all prefixes | `tacctl scope prefixes site-a add 10.10.0.0/16` |
@@ -110,10 +112,11 @@ tacctl group show operator          # every setting of a group and where it come
 
 | Task | Command | Details |
 |---|---|---|
-| New user | `tacctl user add alice operator --scopes site-a,site-b`, then `tacctl user passwd alice` | Access Lifecycle §2 |
+| New user | `tacctl user add alice operator --scopes site-a,site-b`, then `tacctl host sync --all` | Access Lifecycle §2 |
 | Grant or revoke a scope | `tacctl user scope alice add\|remove site-b` | Access Lifecycle §3 |
 | Promote or demote | `tacctl user move alice engineer` | Access Lifecycle §3 |
-| Reset a password | `tacctl user passwd alice` | Access Lifecycle §5 |
+| Reset a password | `tacctl user passwd alice` (alice must change it) | Access Lifecycle §5 |
+| Require or lift a password change | `tacctl user require-password-change alice [on\|off]` | Access Lifecycle §5.1 |
 | Suspend / restore | `tacctl user disable\|enable carol` | Access Lifecycle §4 |
 | Remove | `tacctl user remove carol` | Access Lifecycle §4 |
 
@@ -315,6 +318,41 @@ devices now need one, for example
 > device in the scope fails to authenticate until its key is updated. Plan
 > the re-paste before you rotate.
 
+### 8.1 The Junos management filter mode
+
+A scope's Junos management filter is `ssh-only` (the default: ssh, NETCONF
+and SNMP restricted, everything else accepted) or `strict` (deny by default).
+[Vendor Notes](vendor-notes.md) §3.4 explains both and the traffic a strict
+filter stops. Only Junos devices read the mode.
+
+```bash
+tacctl scope mgmt-acl site-a list                 # the permit list the filter is built from
+tacctl scope mgmt-acl site-a add 198.51.100.1/32  # a routing neighbour: every protocol from it
+tacctl scope mgmt-acl site-a mode                 # show the mode and where it comes from
+tacctl scope mgmt-acl site-a mode strict          # deny by default
+tacctl scope mgmt-acl site-a mode ssh-only        # back to the default
+tacctl config juniper --scope site-a              # review the filter before it reaches a device
+```
+
+> **Check which list the scope renders from before you add to it.** When
+> `list` says `Source: global (mgmt_acl.permits)`, the scope has no list of
+> its own, and the first entry you add with `tacctl scope mgmt-acl <scope>
+> add` replaces the global list for this scope. Add the global entries too,
+> or the global subnets lose access once a strict filter is applied.
+
+Setting `strict` prints what stops and which permit list the scope renders
+from, and says so when the permit list is empty or has no IPv4 entry that
+permits ssh (no filter is rendered until it has one). Setting the mode the
+scope already has changes nothing. The change reaches a device only through
+a plan or an apply ([Engineer Guide](engineer-guide-device-changes.md) §4).
+
+> **Keep a console session open** when a strict filter goes onto a device,
+> and use `commit confirmed`.
+
+Rolling tacctl back to a release without the mode removes it from every
+scope, with a warning; see
+[Rolling back](https://github.com/rett/tacctl/blob/master/docs/install/upgrading.md#rolling-back).
+
 ---
 
 ## 9. Logs
@@ -330,13 +368,74 @@ tacctl log accounting 50            # last 50 accounting records (who ran what)
 
 ---
 
-## 10. Quick reference
+## 10. The login console
+
+The console is the login shell of every tacctl user on the tacctl server,
+of every tier; there is no switch for it. The accounts follow at the next
+`host sync` of the server. To keep a user off the server, take the server's
+scope off the user. Local accounts that are not tacctl users keep their own
+shells.
+
+```bash
+tacctl console show       # the settings, each user's shell and system-shell access, and why
+tacctl console check      # does sshd apply the console's settings? (operator tier and up)
+```
+
+### 10.1 The system shell
+
+The console word `system-shell` starts a user's own system shell. Who has
+it is set per tier and per user:
+
+```bash
+tacctl console system-shell                    # each tier, then the users with their own setting
+tacctl console system-shell operator enable    # open it to a tier
+tacctl console system-shell user bob enable    # open it to one user, over the tier's setting
+tacctl console system-shell user bob disable   # take it from one user, over the tier's setting
+tacctl console system-shell user bob clear     # the tier decides again
+```
+
+- The superuser tier always has it and cannot be disabled. Read-only and
+  operator are disabled until you enable them. The engineer tier never has
+  it: enabling it, or one engineer, is refused.
+- A user's `enable` counts only while the user stays in the tier they had
+  when it was set. After a move to another tier it is listed as
+  `stale: set for operator, now readonly` until you set it again. A
+  `disable` holds in any tier.
+- `user rename` moves a user's setting to the new name, and `user remove`
+  drops it.
+- The same people may open an editor from the console (`scope block … edit`,
+  `device block … edit`), since an editor can start a shell.
+- Operators and engineers can read every form; only superusers set them.
+
+### 10.2 Password cache, colours and list length
+
+```bash
+tacctl console password-cache tiers operator,engineer   # the tiers allowed the cache (default none)
+tacctl console password-cache user                      # who has turned it on
+tacctl console password-cache user alice clear          # switch alice's choice off
+tacctl console color off                                # colour in the console's lists: auto|on|off
+tacctl console list-max 100                             # the longest list shown without asking
+```
+
+- `password-cache tiers` is the permission only. Within an allowed tier,
+  each user turns the cache on for themselves with
+  `console password-cache on`, and it is off until they do
+  ([Getting Started](getting-started.md) §1.3).
+- `console color` decides whether Tab's lists, `?`, `-h` and `--help` are in
+  colour in the console. `auto`, the default, lets the terminal decide.
+- `console list-max` is the longest list the console shows before it asks
+  `Show all N?` (default 40, at most 1000; a negative number never asks).
+- Both are server-wide, and each console session reads them when it starts.
+
+---
+
+## 11. Quick reference
 
 | Task | Command |
 |---|---|
 | Server health | `tacctl status` |
 | Find problems | `tacctl config validate` |
-| Add user | `tacctl user add <name> <group> --scopes <s,...>` then `user passwd <name>` |
+| Add user | `tacctl user add <name> <group> --scopes <s,...>` then `host sync --all` |
 | Reset password | `tacctl user passwd <name>` |
 | Grant / revoke scope | `tacctl user scope <name> add\|remove <s>` |
 | Change role | `tacctl user move <name> <group>` |
@@ -351,6 +450,7 @@ tacctl log accounting 50            # last 50 accounting records (who ran what)
 | AAA config drift | `tacctl device config pull --scope <s>` then `device config list --differs` |
 | Fix plan | `tacctl device config plan <name>` |
 | Which scope owns an IP | `tacctl scope lookup <ip>` |
+| Junos filter mode | `tacctl scope mgmt-acl <s> mode ssh-only\|strict` |
 | Lockdown (preview) | `tacctl emergency lockdown <scope> enable --dry-run` |
 | Lockdown | `tacctl emergency lockdown <scope> enable --reason "<text>"` |
 | Lift lockdown | `tacctl emergency lockdown <scope> disable` |
@@ -358,6 +458,8 @@ tacctl log accounting 50            # last 50 accounting records (who ran what)
 | Release break-glass | `tacctl breakglass release <name>` |
 | Undo a change | `tacctl backup list` then `backup restore <ts>` |
 | Watch logins live | `tacctl log tail -f` |
+| Console settings and each user's shell | `tacctl console show` |
+| System shell for a tier / a user | `tacctl console system-shell <tier> enable` · `console system-shell user <name> enable\|disable\|clear` |
 
 See [Exit Codes](exit-codes.md) for exit statuses.
 
