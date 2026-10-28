@@ -434,6 +434,10 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 		var notes []string
 		dev, notes = foldLoginNames(exp, dev)
 		res.Notes = append(res.Notes, notes...)
+		if fam == FamilyJunos {
+			dev, notes = rootBreakGlass(exp, dev)
+			res.Notes = append(res.Notes, notes...)
+		}
 	}
 	if fam == FamilyWTI {
 		var notes []string

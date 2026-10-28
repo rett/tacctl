@@ -238,6 +238,16 @@ func junosStem(ts []token, marked bool, lb *labels) ([]token, bool) {
 		out[2] = token{s: lb.of(ts[2].s)}
 		return out, true
 	}
+	if len(ts) >= 3 && ts[0].s == "system" && ts[1].s == "root-authentication" {
+		// Every leaf is a credential, a hash or a public key: the leaf's name
+		// stays and nothing after it, whatever the statement looks like
+		// (also a stem read again).
+		out := slices.Clone(ts[:3])
+		if ts[2].comment() || hashed(ts[2]) {
+			out[2] = token{s: secretMark}
+		}
+		return out, true
+	}
 	if slices.ContainsFunc(ts, func(t token) bool { return t.s == secretMark && !t.quoted }) {
 		// Already elided: a stem read again.
 		return ts, true
@@ -420,9 +430,18 @@ func (c *junosCtx) section(x stmt) string {
 			return SectionAAA
 		case "login":
 			return c.login(p)
+		case "root-authentication":
+			// root's password (or keys): the break-glass step, its value
+			// never kept (junosStem)
+			return SectionBreakGlass
 		case "services":
 			if len(p) >= 3 && p[2] == "netconf" {
 				return SectionNetconf
+			}
+			if isRootLogin(p) {
+				// the one leaf of 'system services ssh' that root's access
+				// needs; every other leaf under it is the device's own
+				return SectionBreakGlass
 			}
 			if forbiddenWords(c.forbid, p) {
 				return SectionSystem

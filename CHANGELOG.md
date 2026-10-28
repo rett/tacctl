@@ -268,6 +268,29 @@ current behaviour; this file is where history lives.
     Cisco and WTI devices. `breakglass hold` and its documentation list `root`
     among the accounts it makes usable on a Junos device.
 
+18. **`device config pull|diff` checks the Junos `root` break-glass account.**
+    For a scope that records `root`, the `breakglass` section of a Junos
+    device is checked by two facts: the root password is set (`set system
+    root-authentication encrypted-password (present, not compared)`, by
+    presence, as a named user's hash is) and `set system services ssh
+    root-login allow` is there. A device with the password and without the
+    `allow` reads as missing the `allow` statement only; `root-login deny`
+    (the Junos default) and `deny-password` (no password login, which
+    break-glass needs) read as a difference with the reason; a device whose
+    `system root-authentication` holds only ssh keys has no password and says
+    so, and one with neither reads `missing`. The pull now reads `system
+    root-authentication` and the `root-login` leaf of `system services ssh`
+    into the `breakglass` section (every other leaf under `system services
+    ssh` stays the device's own), for every Junos device, and leaves them out
+    of the comparison for a scope that does not record `root`, so such a scope
+    reads as before. A root hash or key is never put in the output, the
+    record, the sections file or a log: only the leaf's name is kept. A record
+    made by an earlier release lacks the two statements and reads them as
+    missing until the next `device config pull`. `device config plan` and
+    `apply` still never type either statement (the plan keeps `breakglass`
+    among the sections it does not plan, and its report names the
+    walkthrough's break-glass step).
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

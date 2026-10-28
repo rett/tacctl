@@ -165,9 +165,13 @@ func TestJunosExtractCaptures(t *testing.T) {
 			t.Errorf("the engineer view has %q", l)
 		}
 	}
-	// Nothing the device assigns, and nothing outside the hierarchies.
+	// Nothing the device assigns, and nothing outside the hierarchies. Root's
+	// password is the break-glass section's, as a presence mark (junos_root_test.go).
 	for _, sec := range super.Sections {
 		for _, l := range sec.Lines {
+			if sec.Name == SectionBreakGlass && l == "set "+rootPassword {
+				continue
+			}
 			if strings.Contains(l, " uid ") || strings.HasPrefix(l, "set interfaces") ||
 				strings.HasPrefix(l, "set system syslog") || strings.Contains(l, "root-authentication") ||
 				strings.Contains(l, "idle-timeout") {
@@ -182,7 +186,7 @@ func TestJunosExtractCaptures(t *testing.T) {
 			marked = append(marked, l)
 		}
 	}
-	if len(marked) != 2 {
+	if len(marked) != 3 {
 		t.Errorf("break-glass secrets: %q", marked)
 	}
 }

@@ -9753,7 +9753,16 @@ and
 is the same account and the section reads
 .B ok
 with a note that says so; the names are case\-sensitive on the device, and a
-login by the scope's spelling is refused there). A WTI unit has four sections:
+login by the scope's spelling is refused there; for a scope that records
+.B root
+a Junos device is also checked for its root password, by presence, under
+.B "system root-authentication"
+(a device with ssh keys only has no password, and the section says so) and for
+.BR "system services ssh root-login allow" :
+.B deny
+and
+.B deny\-password
+read as a difference with the reason, and no hash or key is ever kept). A WTI unit has four sections:
 .BR aaa ,
 .BR mgmt\-acl ,
 .B snmp
