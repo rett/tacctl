@@ -243,6 +243,40 @@ current behaviour; this file is where history lives.
     renders no filter in either mode. The strict filter has not yet been
     checked on a Junos device.
 
+17. **A required password change.** A user can be required to change the
+    password before logging in to anything but tacctl. `tacctl user add` and
+    `tacctl user passwd <name>` (an administrator's reset, as opposed to the
+    user's own `tacctl passwd`) require it by default, and `--no-change-required`
+    skips it; `tacctl user require-password-change <name>|--all [on|off]`
+    (default `on`) flags or clears users on demand and ends with `Flagged N,
+    skipped M, already required K.` (`Cleared N, not required K.`). An upgrade
+    flags nobody. A flagged user is rendered into no scope of the TACACS+ and
+    RADIUS configuration but the one that answers this server's own logins
+    (`127.0.0.1`, the scope `host enroll --local` needs to cover), so every
+    device refuses the user as it refuses an unknown user, and the login at
+    tacctl, which comes from the server, still works. The stored scopes are
+    not changed; a change of the flag restarts the backend whose file changed
+    and nothing when the user has no other scope. A scope that holds the server
+    together with devices cannot be cut apart, and the verbs warn and name its
+    prefixes. A superuser is never held to it: the tier of the user's group
+    decides each time (a render, a login, a command), not when the flag is set,
+    so a flagged user moved into a superuser group is exempt and one moved out
+    must change the password; the verbs do not set it for a superuser. A user
+    with no login on this server (it is not enrolled, the user is not in its
+    scope, the name has a period, the user is disabled) could never change the
+    password: the flag is not set, `user add` says why, and
+    `require-password-change on` skips the user with the reason. The user's own
+    `tacctl passwd` (which already refused the current password as the new one)
+    lifts the requirement. The flag is the user's `password_change_required` in
+    `store.yaml`, written only when set; `user list` marks the date with
+    `(change required)`, `user show` has a `Password change` line, and `status`
+    counts the users pending. The flag set and lifted is logged as `user
+    password-change name= state=required|cleared via=require|add|passwd|self`.
+    A release before 0.2.20 refuses the key, so `tacctl rollback` to any target
+    removes it after a snapshot and warns which users who are not superusers
+    get their device access back with the password they were to change
+    (`--apply` needs `--yes`).
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

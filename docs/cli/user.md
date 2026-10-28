@@ -19,7 +19,12 @@ user add <name> <group>
     `alice..smith`, `.` and `..` are refused). Reserved names `root` and `tacquito` are
     rejected (they collide with OS accounts tacquito resolves locally). A name with a period is
     no Linux account name: `host sync` skips it with a warning, so the user has no account on
-    enrolled hosts and logs in at devices only (see "A period in a name" below).
+    enrolled hosts and logs in at devices only (see "A period in a name" below). A new user must
+    change the password at the first login to this server (see "A required password change").
+
+user add <name> <group> --no-change-required
+
+    Skip the required password change
 
 user add <name> <group> --scopes <name>[,name...]
 
@@ -35,16 +40,27 @@ user remove <name>
 
 user passwd <name>
 
-    Change password (with confirmation)
+    Change password (with confirmation); the reset requires a password change of the user, as a
+    new user does (see "A required password change")
 
 passwd
 
-    Change your own password (asks for the current one; all tiers)
+    Change your own password (asks for the current one, which the new one must differ from; all
+    tiers); it lifts a password change that was required
 
 user passwd <name> --hash <hash>|-
 
     Change password with pre-generated bcrypt hash (`-`: read it from standard
     input)
+
+user passwd <name> --no-change-required
+
+    Skip the required password change (lifts one that stands)
+
+user require-password-change <name> [on|off]
+user require-password-change --all [on|off]
+
+    Require (on, the default) or lift (off) a password change, of one user or every user
 
 user disable <name>
 
@@ -125,9 +141,40 @@ a period. What a period means elsewhere:
   `tacctl user rename <name> <new-name>`, and `tacctl console user <name> clear` for the override
   (a rename does not move it).
 
+**A required password change.** A user who must change the password can log in to the tacctl
+server only: every device refuses the user, as it refuses an unknown user, until the password is
+changed. `user add` and `user passwd` (an administrator's reset, as opposed to the user's own
+`tacctl passwd`) require it by default and `--no-change-required` skips it; `user
+require-password-change <name>|--all [on|off]` flags or clears users on demand. An existing user is
+not flagged by an upgrade. The flag is the user's `password_change_required` in `store.yaml`, written
+only when set.
+
+- *Superusers are never held to it.* The tier of the user's group decides each time the flag is used
+  (a render, a login, a command), not when it is set: a flagged user moved into a superuser group is
+  exempt from then on, and one moved out must change the password. `user add`, `user passwd` and
+  `require-password-change on` do not set it for a superuser and say so, and `on` ends with `Flagged
+  N, skipped M, already required K.`
+- *A user must be able to change it.* The flag is not set, and the verb says why, for a user with no
+  login on this server: the server is not enrolled (`host enroll --local`), the user is not in the
+  scope it is enrolled in, the name is no Linux account name (a period), or the user is disabled.
+  `off` clears the flag of the user or of every user who has it, a superuser's included.
+- *Devices.* The TACACS+ and RADIUS configuration put the user in the scope that answers this
+  server's own logins (the one that holds `127.0.0.1`) and in no other, so the login at tacctl, which
+  comes from the server, works and a device finds no scope the user is in. The stored scopes are not
+  changed, and clearing the flag puts the user back. A change of the flag restarts the backend whose
+  file changed (see [Service restart](conventions.md)), and none when the user has no scope but the
+  server's. A scope that holds the server together with devices cannot be cut apart: the devices in it
+  still accept the user, and the verbs warn and name the prefixes. Give the server a scope of its own
+  (`scope add`, then `host enroll --local --scope <name>`).
+- *Listing.* `user list` marks the date of a user who must change the password with `(change
+  required)`, `user show` has a `Password change` line, and `status` counts the users pending.
+- *Older releases.* A release before 0.2.20 refuses the key, so every `tacctl rollback` target
+  removes it after a snapshot and warns which users get their device access back (see
+  [Rolling back](../install/upgrading.md#rolling-back)).
+
 **A hash kept off the command line.** `--hash -` reads the hash from one line
 of standard input (typed without echo at a terminal; a control character in
 it is refused), so it is not on the command line: sudo's log records the whole command line and `ps` shows it
 while the command runs. `--hash <hash>` works as well.
 
-Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `user add name= group= scopes=`, `user passwd name= source=prompt|hash|generated`, `user rename from= to= uid=`, `user scope name= op= scopes=` and the like, never a password or a hash ([Audit log](../security/audit.md#detail-lines)).
+Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `user add name= group= scopes=`, `user passwd name= source=prompt|hash|generated`, `user rename from= to= uid=`, `user scope name= op= scopes=` and the like, and `user password-change name= state=required|cleared via=require|add|passwd|self` when a requirement is set or lifted, never a password or a hash ([Audit log](../security/audit.md#detail-lines)).

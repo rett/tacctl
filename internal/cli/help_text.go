@@ -79,21 +79,25 @@ Documentation: man tacctl, /opt/tacctl/docs/ · Project: https://github.com/rett
 Usage: tacctl user <subcommand> [arguments]
 
 Subcommands:
-  <b>list</b>                                        List all users (name, group, status, pw age, scopes)
-  <b>show</b> <o><username></o>                             Show user details incl. scope membership
-  <b>add</b> <o><username></o> <o><group></o>                      Add a new user; lands in default scope
-  <b>add</b> <o><username></o> <o><group></o> <o>--scopes <s></o>[,s...]  Grant specific scopes at creation
-  <b>add</b> <o><username></o> <o><group></o> <o>--hash <hash></o>        Add with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
-  <b>remove</b> <o><username></o>                           Remove a user
-  <b>passwd</b> <o><username></o>                           Change a user's password
-  <b>passwd</b> <o><username></o> <o>--hash <hash></o>             Change with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
-  <b>disable</b> <o><username></o>                          Disable a user (preserves hash)
-  <b>enable</b> <o><username></o>                           Re-enable a disabled user
-  <b>rename</b> <o><old></o> <o><new></o>                          Rename a user
-  <b>move</b> <o><user></o> <o><group></o>                         Move user to a different group
-  <b>verify</b> <o><username></o>                           Verify password and show user details
-  <b>scope</b> <o><user></o> list|add|remove|replace        Manage which scopes the user can auth from
-  <b>scope</b> <o><user></o> remove <o>--all</o>                   Remove every scope from the user
+  <b>list</b>                                         List all users (name, group, status, pw age, scopes)
+  <b>show</b> <o><username></o>                              Show user details incl. scope membership
+  <b>add</b> <o><username></o> <o><group></o>                       Add a new user; lands in default scope
+  <b>add</b> <o><username></o> <o><group></o> <o>--scopes <s></o>[,s...]   Grant specific scopes at creation
+  <b>add</b> <o><username></o> <o><group></o> <o>--hash <hash></o>         Add with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
+  <b>add</b> <o><username></o> <o><group></o> <o>--no-change-required</o>  Skip the required password change (a new user must change it first)
+  <b>remove</b> <o><username></o>                            Remove a user
+  <b>passwd</b> <o><username></o>                            Change a user's password
+  <b>passwd</b> <o><username></o> <o>--hash <hash></o>              Change with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
+  <b>passwd</b> <o><username></o> <o>--no-change-required</o>       Skip the required password change (a reset requires one)
+  <b>disable</b> <o><username></o>                           Disable a user (preserves hash)
+  <b>enable</b> <o><username></o>                            Re-enable a disabled user
+  <b>rename</b> <o><old></o> <o><new></o>                           Rename a user
+  <b>move</b> <o><user></o> <o><group></o>                          Move user to a different group
+  <b>verify</b> <o><username></o>                            Verify password and show user details
+  <b>require-password-change</b> <o><user></o> [on|off]      Require, or lift, a password change at the next login
+  <b>require-password-change</b> <o>--all</o> [on|off]       Require, or lift, it for every user (superusers are skipped)
+  <b>scope</b> <o><user></o> list|add|remove|replace         Manage which scopes the user can auth from
+  <b>scope</b> <o><user></o> remove <o>--all</o>                    Remove every scope from the user
 
 Names: letters, digits, '_', '-' and '.', new ones in lower case; a '.' is never first, last or next to another.
 

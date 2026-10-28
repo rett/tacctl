@@ -20,8 +20,10 @@ package pwchange
 import (
 	"strconv"
 
+	"github.com/rett/tacctl/internal/cidr"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/yamlpy"
 )
@@ -98,6 +100,26 @@ func Carve(m *model.Model, view *yamlpy.Map, protocol string) *model.Model {
 		}
 		return keep, true
 	})
+}
+
+// SharedPrefixes are the prefixes of the scope that answer more than this
+// server: any that is not inside 127.0.0.0/8, is not ::1 and is not the one address
+// server (the address the server's own logins come from besides loopback, the
+// registry's server field of the local host; "" for none). A scope that has
+// one is shared with devices, and the devices in it still authenticate a held
+// user: the scope is all a renderer can cut by.
+func SharedPrefixes(s *model.Scope, server string) []string {
+	var out []string
+	for _, p := range s.Prefixes {
+		if cidr.ContainsNet("127.0.0.0/8", p) || cidr.ContainsAddr("::1/128", p) {
+			continue
+		}
+		if n, ok := store.ParseNet(p); ok && n.IsHost() && server != "" && cidr.ContainsAddr(p, server) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 // Pending are the users held to a password change now, by name.

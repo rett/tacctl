@@ -17,6 +17,7 @@ import (
 
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -105,6 +106,11 @@ func (inv *invocation) status([]string) error {
 	}
 	st := view.kv
 	inv.echoE("  " + B + "Users:" + NC + "                " + st["user_count"])
+	if merr == nil {
+		if n := len(pwchange.Pending(a.Conf(), m)); n > 0 {
+			inv.echoE("  " + B + "Password change:" + NC + "      " + Y + strconv.Itoa(n) + " pending" + NC + " (no device accepts these users until they change it)")
+		}
+	}
 
 	if !multi {
 		if err := all(backend.StatusConfig); err != nil {

@@ -583,7 +583,10 @@ Answer yes to the confirmations.
 .TP
 .B status
 Show service health, authentication statistics, recent errors, and
-password-age warnings. With more than one backend enabled each backend has a
+password-age warnings, and a line
+.B "Password change"
+with the number of users who must change the password when there are any.
+With more than one backend enabled each backend has a
 labelled section
 .RB ( "== Backend: <id> ..." )
 holding its service, config, accounting log, drift and activity lines; the
@@ -703,7 +706,9 @@ Requires: \fBreadonly\fR.
 .TP
 .B user list
 List all users with name, Linux UID (\- when none is assigned), group, status,
-password change date and scopes.
+password change date and scopes. A user who must change the password has
+.B (change required)
+after the date.
 .\" BEGIN GENERATED: command user list
 .RS
 .PP
@@ -713,7 +718,10 @@ Requires: \fBreadonly\fR.
 .TP
 .BI "user show " name
 Show detailed user info: group, Linux UID, status, password change date and age,
-last login (the most recent of every enabled backend: the TACACS+
+a line
+.B Password change
+for a user who must change the password (or who is flagged and is a superuser,
+which the flag never binds), last login (the most recent of every enabled backend: the TACACS+
 accounting log, the RADIUS auth log), Cisco privilege level, Juniper
 class, and a hash fingerprint. Read-only: does not prompt for the
 password (unlike
@@ -725,7 +733,7 @@ Requires: \fBreadonly\fR.
 .RE
 .\" END GENERATED: command user show
 .TP
-.BI "user add " "name group " [ "--hash " hash ] [ "--scopes " name[,name...] ]
+.BI "user add " "name group " [ "--hash " hash ] [ "--scopes " name[,name...] ] [ --no\-change\-required ]
 Add a user. The name is lower case (lower\-case letters, digits,
 .BR _ ", " \- " and " .\& ):
 a name with upper case is refused with the lower\-case spelling to use, and a
@@ -764,6 +772,16 @@ Without
 the user lands in the current default scope; on fresh installs that is
 .BR lab .
 .PP
+A new user must change the password at the first login to this server
+(see
+.BR "user require\-password\-change" ):
+until then no device accepts the user.
+.B \-\-no\-change\-required
+skips the requirement. It is not set, and the command says why, for a
+superuser (never held to it) and for a user with no login on this server (the
+server is not enrolled, the user is not in its scope, or its name is no Linux
+account name), who could never change the password.
+.PP
 Reserved usernames
 .RB ( root
 and
@@ -783,6 +801,9 @@ Add with pre\-generated bcrypt hash (\- reads it from stdin).
 .TP
 \fB\-\-scopes\fR \fI<s>[,s...]\fR
 Grant specific scopes at creation.
+.TP
+\fB\-\-no\-change\-required\fR
+Do not require the user to change the password at the first login to this server. Without it a new user must change it first, and no device accepts the user until then (a superuser, and a user with no login on this server, never must).
 .RE
 .\" END GENERATED: command user add
 .TP
@@ -801,7 +822,9 @@ user whose name matches the login that invoked
 .BR sudo (8).
 The current password must verify before the new one is accepted, and the
 new one is held to the same strength policy as
-.BR "user passwd" .
+.BR "user passwd" ,
+and must differ from the current one. It lifts a password change that was
+required of the caller.
 .\" BEGIN GENERATED: command passwd
 .RS
 .PP
@@ -809,7 +832,7 @@ Requires: \fBreadonly\fR.
 .RE
 .\" END GENERATED: command passwd
 .TP
-.BI "user passwd " "name " [ "--hash " hash ]
+.BI "user passwd " "name " [ "--hash " hash ] [ --no\-change\-required ]
 Change a user's password. Prompts for the new password with
 confirmation. If
 .BI --hash " hash"
@@ -817,6 +840,15 @@ is given, the bcrypt hash is used directly and no password is prompted. A lone
 .B \-
 as the hash reads it from one line of standard input, as for
 .BR "user add" .
+An administrator's reset requires a password change of the user too, as a new
+user does (see
+.BR "user require\-password\-change" ),
+unless
+.B \-\-no\-change\-required
+is given, which lifts a requirement that stands, or the user is a superuser or
+has no login on this server (the command says why). The user's own
+.B passwd
+is not a reset: it lifts the requirement.
 .\" BEGIN GENERATED: command user passwd
 .RS
 .PP
@@ -826,6 +858,9 @@ Options:
 .TP
 \fB\-\-hash\fR \fI<hash>\fR
 Change with pre\-generated bcrypt hash (\- reads it from stdin).
+.TP
+\fB\-\-no\-change\-required\fR
+Do not require the user to change the password at the next login to this server. Without it the reset requires one, and no device accepts the user until it is done (a superuser, and a user with no login on this server, never must); with it a requirement that stands is lifted.
 .RE
 .\" END GENERATED: command user passwd
 .TP
@@ -910,6 +945,59 @@ authenticates it.
 Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command user verify
+.TP
+.B "user require\-password\-change " \fIname\fR | \fB\-\-all\fR [ " on" | " off" ]
+Require (\fBon\fR, the default) or lift (\fBoff\fR) a password change, for one
+user or for every user with
+.BR \-\-all .
+A user who must change the password can log in to this tacctl server only:
+every device refuses the user, as it refuses an unknown user, until the
+password is changed. The user stays in the scope that answers this server's
+own logins (the one that holds 127.0.0.1) and is left out of every other
+scope, in the TACACS+ and the RADIUS configuration alike, so the password can
+be changed at the server and nowhere else is the user let in; a change of the
+requirement therefore restarts the backend whose file changed, and none when
+the user has no other scope. A scope that holds the server together with
+devices cannot be cut apart: those devices still authenticate the user, and
+the command says so, naming the prefixes; give the server a scope of its own.
+The requirement is stored as
+.B password_change_required
+of the user in
+.I store.yaml
+(only for a user who must), and is decided again each time it is used: a
+superuser is never held to it, whatever the store says, so a flagged user moved
+into a superuser group is exempt from then on and one moved out must change
+the password. The user's own
+.B passwd
+and
+.B "user passwd"
+with
+.B \-\-no\-change\-required
+lift it.
+.B on
+skips, and names with the reason, a superuser and a user with no login on this
+server (the server is not enrolled, the user is not in its scope, the name is
+no Linux account name, or the user is disabled), and ends with
+.BR "Flagged N, skipped M, already required K." ;
+.B off
+clears the requirement of the one user or of every user who has it, a
+superuser's included, and ends with
+.BR "Cleared N, not required K." .
+Every user changed is logged:
+.B "user password\-change name= state=required|cleared via=require|add|passwd|self"
+(see
+.BR "AUDIT LOG" ).
+.\" BEGIN GENERATED: command user require-password-change
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+Apply to every user instead of the one named; the state, on or off, is then the only argument.
+.RE
+.\" END GENERATED: command user require-password-change
 .TP
 .B "user scope " \fIname\fR " " [ "list " | " add " \fIs\fR[,s...] | " remove " \fIs\fR[,s...] | " replace " \fIs\fR[,s...] | " remove \-\-all" ]
 Manage which scopes
@@ -12641,7 +12729,8 @@ device ssh, device support\-bundle, emergency lockdown, group add,
 group edit, group remove, host enroll, host forget, host move,
 host rename, host sync, host unenroll, passwd, scope add,
 scope remove, scope rename, ssh, user add, user disable, user enable,
-user move, user passwd, user remove, user rename
+user move, user passwd, user remove, user rename,
+user require\-password\-change
 .TP
 .B "action, auth.notice"
 backup restore, config restore,
@@ -12810,6 +12899,8 @@ name, source (prompt, hash or generated).
 .TP
 .B "user rename"
 from, to, uid (carried or \-).
+.IP "\fBuser password\-change\fR"
+name, state (required or cleared), via (require, add, passwd or self): a requirement to change the password set or lifted, for whom (the actor is by=).
 .TP
 .B "user move"
 name, from, to (the groups).

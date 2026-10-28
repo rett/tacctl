@@ -134,3 +134,16 @@ func TestCarveKeepsTheServersScopeOnly(t *testing.T) {
 		t.Errorf("the receiver was changed: %q", g)
 	}
 }
+
+func TestSharedPrefixes(t *testing.T) {
+	s := &model.Scope{Name: "srv", Prefixes: []string{"127.0.0.1/32", "127.0.0.0/8", "::1/128", "192.0.2.10/32", "192.0.2.0/24", "198.51.100.9/32", "2001:db8::/32"}}
+	if got := SharedPrefixes(s, "192.0.2.10"); !slices.Equal(got, []string{"192.0.2.0/24", "198.51.100.9/32", "2001:db8::/32"}) {
+		t.Errorf("with the server's address: %v", got)
+	}
+	if got := SharedPrefixes(s, ""); !slices.Equal(got, []string{"192.0.2.10/32", "192.0.2.0/24", "198.51.100.9/32", "2001:db8::/32"}) {
+		t.Errorf("without: %v", got)
+	}
+	if got := SharedPrefixes(&model.Scope{Prefixes: []string{"127.0.0.1/32"}}, "127.0.0.1"); len(got) != 0 {
+		t.Errorf("a scope of the server alone: %v", got)
+	}
+}

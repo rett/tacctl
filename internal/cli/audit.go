@@ -248,6 +248,8 @@ var auditTable = map[string]auditEntry{
 	"user verify":  read(),
 	"user scope":   mixed(),
 
+	"user require-password-change": action(),
+
 	"group list":   read(),
 	"group show":   read(),
 	"group add":    action(),

@@ -84,6 +84,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `user remove`, `user disable`, `user enable` | `name` |
 | `user passwd` | `name` `source=prompt\|hash\|generated` |
 | `user rename` | `from` `to` `uid=carried\|-` |
+| `user password-change` | `name` `state=required\|cleared` `via=require\|add\|passwd\|self`: a requirement to change the password set or lifted, for whom (`by=` is who) |
 | `user move` | `name` `from` `to` (groups) |
 | `user scope` | `name` `op=add\|remove\|replace` `scopes` |
 | `group add` | `name` `priv-lvl` `tier` |
