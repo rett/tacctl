@@ -41,7 +41,7 @@ The generated Cisco, Juniper, and WTI output is rendered from template files usi
 | `${SERVICE_NAME}` | WTI | Authorization service name the unit should send (`wti`) |
 | `${BREAKGLASS_BLOCK}` | All | The scope's break-glass local accounts with a placeholder for the credential, or the notice that it has none (see [Break-glass local users](break-glass.md#break-glass-local-users)); a template copied before 0.2.3 lacks the step |
 
-A template copied before 0.2.22 does not have `${TACACS_PORT_LINE}`, `${TACACS_HOST_PORT}` or `${TACACS_PORT}`: its Cisco output names no TACACS+ port, and its WTI output says 49, whatever the listener is. Add the variables from the new default.
+A template you changed before 0.2.22 does not have `${TACACS_PORT_LINE}`, `${TACACS_HOST_PORT}` or `${TACACS_PORT}` (an unchanged one is replaced on upgrade, see below): its Cisco output names no TACACS+ port, and its WTI output says 49, whatever the listener is. The upgrade leaves it and writes the new default beside it as `<name>.template.new`; add the variables from there.
 
 **To customize:** edit the copy in the override location (install puts one there; if it is missing, copy the default first):
 ```bash

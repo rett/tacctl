@@ -407,7 +407,8 @@ func templatesSync(o *ohost) (lifecycle.TemplateSync, int) {
 // with the hashes of the templates changed since then put in by hand (0.2.1
 // item 59: wti.template and wti-radius.template; 0.2.3 item 77: all seven,
 // for the break-glass step; 0.2.6 item 1: the three Cisco ones, for the
-// enable list; 'sha256sum' of each). The
+// enable list; 0.2.22 item 1: cisco.template, cisco-legacy.template and
+// wti.template, for the TACACS+ port; 'sha256sum' of each). The
 // format is still 0.1.16's. A second sync writes nothing.
 func TestTemplatesSyncFreshAndManifestGolden(t *testing.T) {
 	o := newOhost(t)

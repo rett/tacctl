@@ -139,9 +139,9 @@ current behaviour; this file is where history lives.
    test pins that the client script names no port of its own. A device that
    carries a port the listener no longer has (the listener is back on 49, the
    device says `port 4949`) is an extra statement, which a plan leaves alone
-   as before. A custom template copied from an earlier release has none of
-   the new variables (`TACACS_PORT_LINE`, `TACACS_HOST_PORT`, `TACACS_PORT`):
-   copy the new default.
+   as before. A template you changed in an earlier release has none of the
+   new variables (`TACACS_PORT_LINE`, `TACACS_HOST_PORT`, `TACACS_PORT`):
+   the upgrade leaves it and writes the new default beside it as `.new`.
 
 ## 0.2.20 (2026-10-28)
 
