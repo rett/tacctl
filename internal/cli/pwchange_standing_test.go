@@ -18,11 +18,6 @@ func flagUser(t *testing.T, sb *sandbox, name string) {
 	}
 }
 
-func userScopesNow(t *testing.T, sb *sandbox, name string) string {
-	t.Helper()
-	return strings.TrimSpace(plain(sb.run("", []string{"user", "scope", name, "list"})))
-}
-
 // A change that would leave a flagged user with no login on this server is
 // refused before anything is written or snapshotted, with the exact command
 // that lifts the requirement; once it is lifted the change goes through, and
