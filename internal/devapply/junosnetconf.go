@@ -46,6 +46,7 @@ import (
 	"io"
 	"net"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -289,6 +290,17 @@ func (e rpcMsg) text(m *masker) string {
 type rpcReply struct {
 	Errs []rpcMsg
 	Seen map[string]bool
+	// Members are the <routing-engine> elements of the reply, one for each
+	// member of a device that has several (a commit's answer names them
+	// <routing-engine><name>fpc0</name><commit-check-success/>...): the
+	// name and the names of what the element holds.
+	Members []rpcMember
+}
+
+// rpcMember is one <routing-engine> element of a reply.
+type rpcMember struct {
+	Name string
+	Seen map[string]bool
 }
 
 // parseReply reads a reply document. A document that is not XML is an
@@ -299,6 +311,7 @@ func parseReply(reply string) (rpcReply, error) {
 	d.CharsetReader = func(_ string, in io.Reader) (io.Reader, error) { return in, nil }
 	var cur *rpcMsg
 	var field string
+	var mem *rpcMember
 	for {
 		tok, err := d.Token()
 		if errors.Is(err, io.EOF) {
@@ -315,17 +328,31 @@ func parseReply(reply string) (rpcReply, error) {
 				cur = &rpcMsg{}
 			case cur != nil:
 				field = name
+			case name == "routing-engine":
+				mem = &rpcMember{Seen: map[string]bool{}}
+				r.Seen[name] = true
 			default:
 				r.Seen[name] = true
+				if mem != nil {
+					field = name
+					mem.Seen[name] = true
+				}
 			}
 		case xml.EndElement:
-			if t.Name.Local == "rpc-error" && cur != nil {
+			switch {
+			case t.Name.Local == "rpc-error" && cur != nil:
 				r.Errs = append(r.Errs, *cur)
 				cur = nil
+			case t.Name.Local == "routing-engine" && mem != nil:
+				r.Members = append(r.Members, *mem)
+				mem = nil
 			}
 			field = ""
 		case xml.CharData:
 			if cur == nil {
+				if mem != nil && field == "name" {
+					mem.Name += strings.TrimSpace(string(t))
+				}
 				continue
 			}
 			s := string(t)
@@ -756,6 +783,30 @@ func (j *JunosNetconf) rpcHeld(ctx context.Context, body, shown string) (rpcRepl
 	return parseReply(reply)
 }
 
+// memberRefusal is the error of a reply that holds members (a device with
+// several) when one of them did not answer with one of the success
+// elements, or is named twice or not at all: nil for a reply without
+// members, which the callers read as they always did.
+func (j *JunosNetconf) memberRefusal(cmd string, r rpcReply, success ...string) error {
+	seen := map[string]bool{}
+	for _, m := range r.Members {
+		why := ""
+		switch {
+		case m.Name == "":
+			why = "a member without a name"
+		case seen[m.Name]:
+			why = fmt.Sprintf("member %s answered twice", cut(m.Name))
+		case !slices.ContainsFunc(success, func(s string) bool { return m.Seen[s] }):
+			why = fmt.Sprintf("member %s did not answer <%s/>", cut(m.Name), success[0])
+		}
+		if why != "" {
+			return answerError(cmd, []string{why}, j.m)
+		}
+		seen[m.Name] = true
+	}
+	return nil
+}
+
 // firstError is the answer error of a reply's rpc-errors, the command
 // shown as cmd.
 func (j *JunosNetconf) firstError(cmd string, r rpcReply) error {
@@ -889,7 +940,7 @@ func (j *JunosNetconf) Check(ctx context.Context) error {
 	if !r.Seen["commit-check-success"] || len(r.Errs) > 0 {
 		return j.firstError(plan.ApplyCommitCheck, r)
 	}
-	return nil
+	return j.memberRefusal(plan.ApplyCommitCheck, r, "commit-check-success")
 }
 
 // reCommitWord splits the apply's own commit line into its minutes and its
@@ -953,6 +1004,9 @@ func (j *JunosNetconf) CommitConfirmed(ctx context.Context, minutes int, id, use
 	if !r.Seen["ok"] && !r.Seen["commit-success"] || len(r.Errs) > 0 {
 		return j.firstError(line, r)
 	}
+	if err := j.memberRefusal(line, r, "commit-success", "ok"); err != nil {
+		return err
+	}
 	j.mu.Lock()
 	j.own = true
 	j.mu.Unlock()
@@ -985,6 +1039,9 @@ func (j *JunosNetconf) Confirm(ctx context.Context, id, user string) error {
 	}
 	if !r.Seen["ok"] && !r.Seen["commit-success"] || len(r.Errs) > 0 {
 		return j.firstError(line, r)
+	}
+	if err := j.memberRefusal(line, r, "commit-success", "ok"); err != nil {
+		return err
 	}
 	j.mu.Lock()
 	j.own = false
@@ -1106,6 +1163,9 @@ func (j *JunosNetconf) undo(ctx context.Context, id string, pending bool) error 
 	}
 	if !r.Seen["ok"] && !r.Seen["commit-success"] || len(r.Errs) > 0 {
 		return j.firstError(line, r)
+	}
+	if err := j.memberRefusal(line, r, "commit-success", "ok"); err != nil {
+		return err
 	}
 	j.mu.Lock()
 	j.own = false

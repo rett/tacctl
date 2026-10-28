@@ -10668,7 +10668,13 @@ proven by a fresh login as you through the device's own login path, by
 .B "show configuration | compare rollback 1"
 being the change the check showed and by a read of the planned sections
 lacking nothing, and then confirmed in the session that committed, with a
-minute of the window left. A proof that fails cancels the commit
+minute of the window left. On a device with several members (a virtual
+chassis, two routing engines) the answers of
+.B "commit check"
+and of the commits are read for every member (its label, such as
+.BR fpc0: ,
+and then its text); a member that answers anything else, twice or not at all
+fails the step, and the error names it and its text. A proof that fails cancels the commit
 .RB ( "rollback 1" ,
 .BR commit )
 and the device is

@@ -785,17 +785,27 @@ func (j *JunosCLI) Check(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if !exactly(body, textCheckOK) {
-		return answerError(plan.ApplyCommitCheck, body, j.m)
+	if ok, why := checkAnswer(body); !ok {
+		return answerErrorWhy(plan.ApplyCommitCheck, body, j.m, why)
 	}
 	return nil
 }
 
 // committedAnswer reports whether a commit's answer is want, after the
 // check's 'configuration check succeeds' that a commit prints first [C] (or
-// without it).
+// without it), or the same for each member of a device that has several
+// (readCommitted).
 func committedAnswer(body []string, want ...string) bool {
-	return exactly(body, append([]string{textCheckOK}, want...)...) || exactly(body, want...)
+	ok, _ := readCommitted(body, want...)
+	return ok
+}
+
+// commitRefusal is the error of a commit's answer that is not want: the
+// answer's lines, led by the member and the text that cannot be read when
+// the answer has members.
+func (j *JunosCLI) commitRefusal(line string, body []string, want ...string) error {
+	_, why := readCommitted(body, want...)
+	return answerErrorWhy(line, body, j.m, why)
 }
 
 // CommitConfirmed types the confirmed commit; the answer must be the
@@ -808,7 +818,7 @@ func (j *JunosCLI) CommitConfirmed(ctx context.Context, minutes int, id, user st
 		return err
 	}
 	if !committedAnswer(body, plan.ApplyConfirmedNote(minutes), textCommitComplete) {
-		return answerError(line, body, j.m)
+		return j.commitRefusal(line, body, plan.ApplyConfirmedNote(minutes), textCommitComplete)
 	}
 	pending, err := j.heldPending()
 	switch {
@@ -829,7 +839,7 @@ func (j *JunosCLI) Confirm(ctx context.Context, id, user string) error {
 		return err
 	}
 	if !committedAnswer(body, textCommitComplete) {
-		return answerError(line, body, j.m)
+		return j.commitRefusal(line, body, textCommitComplete)
 	}
 	return nil
 }
@@ -912,7 +922,7 @@ func (j *JunosCLI) undo(ctx context.Context, id string, banner bool) error {
 		return err
 	}
 	if !committedAnswer(body, textCommitComplete) {
-		return answerError(line, body, j.m)
+		return j.commitRefusal(line, body, textCommitComplete)
 	}
 	return nil
 }

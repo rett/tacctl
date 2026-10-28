@@ -254,6 +254,16 @@ func answerError(cmd string, lines []string, m *masker) *AnswerError {
 	return &AnswerError{Cmd: m.text(cmd), Lines: kept, Row: row, base: base}
 }
 
+// answerErrorWhy is answerError for an answer with members: why, the member
+// and the text that cannot be read, leads the lines.
+func answerErrorWhy(cmd string, lines []string, m *masker, why string) *AnswerError {
+	e := answerError(cmd, lines, m)
+	if why != "" {
+		e.Lines = append([]string{cut(m.text(why))}, e.Lines...)
+	}
+	return e
+}
+
 // cut shortens a line and replaces its control characters.
 func cut(s string) string {
 	var b strings.Builder

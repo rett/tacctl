@@ -257,6 +257,19 @@ current behaviour; this file is where history lives.
     names the entry, its user and way, and the text. A time written with a
     numeric zone (`+03`) is read too.
 
+18. **The apply reads the answers of a device with several members.** On a
+    Junos virtual chassis (or two routing engines) `commit check` prints a
+    block for each member (`fpc0:` and then `configuration check succeeds`,
+    for every member), which `device config apply` refused as an answer it did
+    not know (`check: fpc0:; configuration check succeeds; fpc1: ...`). The
+    answers of `commit check`, `commit confirmed` and `commit` are now read
+    for every member, and a member that answers anything else (an error or a
+    warning), twice, or not at all fails the step with the member and its
+    text in the error. The NETCONF reply is read the same way, member by
+    member (`routing-engine` elements). A single device's answers read as
+    before. The shapes of the commits' replies on such a device are inferred
+    from the check's, as no capture of them was available.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config
