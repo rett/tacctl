@@ -286,18 +286,26 @@ Host web1"
 }
 
 @test "completion: tacctl ssh offers the device names the bridge gives" {
-    stub_cmd sudo 'case "$*" in *"_completion-names devices") printf "%s\n" core-sw1 lab-rtr2 web1 ;; esac'
+    # The scripts ask '_completion-names devices --desc-short', answered as
+    # the root side does: 'name<TAB>vendor scope' (the vendors are padded to
+    # one column).
+    stub_cmd sudo 'case "$*" in *"_completion-names devices --desc-short") printf "%s\t%s\n" core-sw1 "cisco prod" lab-rtr2 "juniper lab" web1 "linux lab" ;; esac'
     run "$TACCTL_BIN_SCRIPT" __complete ssh ""
+    assert_success
+    assert_line $'core-sw1\tcisco   prod'
+    assert_line $'lab-rtr2\tjuniper lab'
+    run "$TACCTL_BIN_SCRIPT" __complete ssh l
+    assert_success
+    assert_line $'lab-rtr2\tjuniper lab'
+    refute_line --partial "core-sw1"
+    run "$TACCTL_BIN_SCRIPT" __complete device ssh ""
+    assert_success
+    assert_line $'web1\tlinux   lab'
+    # bash asks for the names alone.
+    run "$TACCTL_BIN_SCRIPT" __completeNoDesc ssh ""
     assert_success
     assert_line "core-sw1"
     assert_line "lab-rtr2"
-    run "$TACCTL_BIN_SCRIPT" __complete ssh l
-    assert_success
-    assert_line "lab-rtr2"
-    refute_line "core-sw1"
-    run "$TACCTL_BIN_SCRIPT" __complete device ssh ""
-    assert_success
-    assert_line "web1"
 }
 
 @test "ssh: from a console session, no config file, forwarding, agent or escape, the target after --, unpinned refused" {

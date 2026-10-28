@@ -3,41 +3,38 @@
 # secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5).
 # THIS OUTPUT HOLDS THE NTP KEY OF SCOPE lab: do not keep it in a file or a scrollback.
 #
-# What is irregular on dev-juniper-synthetic-system-new (14 items; the paste fixes 11, leaves 3):
+# What is irregular on dev-juniper-synthetic-system-new (12 items; the paste fixes 11, leaves 1):
 #  1. aaa      ACCESS     extra: a TACACS+ server 192.0.2.99 (set system tacplus-server 192.0.2.99
 #                         secret <secret>). Left alone. To remove it later: delete system
 #                         tacplus-server 192.0.2.99
 #  2. snmp     COSMETIC   missing: the SNMP description is Core switch (set snmp description "Core
 #                         switch"). Fixed by region line 3.
-#  3. snmp     MONITORING extra: an SNMP community: authorization read-only (set snmp community
-#                         <other:1> authorization read-only). Left alone (its name is the secret and
-#                         is not known to tacctl).
-#  4. snmp     MONITORING extra: SNMP: trap-group <other:2> targets 192.0.2.50 (set snmp trap-group
-#                         <other:2> targets 192.0.2.50). Left alone (its name is the secret and is not
-#                         known to tacctl).
-#  5. system   COSMETIC   missing: the login message of 4 lines, 121 characters (set system login
+#  3. system   COSMETIC   missing: the login message of 4 lines, 121 characters (set system login
 #                         message "<message: 4 lines, 121 characters, id 3e17098b>"). Fixed by region
 #                         line 5.
-#  6. system   COSMETIC   missing: the domain name is lab.example.net (set system domain-name
+#  4. system   COSMETIC   missing: the domain name is lab.example.net (set system domain-name
 #                         lab.example.net). Fixed by region line 6.
-#  7. system   COSMETIC   missing: the search domain lab.example.net (set system domain-search
+#  5. system   COSMETIC   missing: the search domain lab.example.net (set system domain-search
 #                         lab.example.net). Fixed by region line 7.
-#  8. system   COSMETIC   missing: the time zone is UTC (set system time-zone UTC). Fixed by region
+#  6. system   COSMETIC   missing: the time zone is UTC (set system time-zone UTC). Fixed by region
 #                         line 8.
-#  9. system   COSMETIC   missing: the name server 192.0.2.53 (set system name-server 192.0.2.53).
+#  7. system   COSMETIC   missing: the name server 192.0.2.53 (set system name-server 192.0.2.53).
 #                         Fixed by region line 9.
-# 10. system   COSMETIC   missing: the NTP server 192.0.2.123: 4 statements (e.g. set system ntp
+#  8. system   COSMETIC   missing: the NTP server 192.0.2.123: 4 statements (e.g. set system ntp
 #                         server 192.0.2.123). Fixed by region lines 10-12.
-# 11. system   COSMETIC   missing: the NTP boot server is 192.0.2.123 (set system ntp boot-server
+#  9. system   COSMETIC   missing: the NTP boot server is 192.0.2.123 (set system ntp boot-server
 #                         192.0.2.123). Fixed by region line 13.
-# 12. system   COSMETIC   missing: the NTP source address is 192.0.2.250 (set system ntp
+# 10. system   COSMETIC   missing: the NTP source address is 192.0.2.250 (set system ntp
 #                         source-address 192.0.2.250). Fixed by region line 14.
-# 13. system   COSMETIC   missing: NTP key 1 is set (set system ntp authentication-key 1 value
+# 11. system   COSMETIC   missing: NTP key 1 is set (set system ntp authentication-key 1 value
 #                         <secret>). Fixed by region line 15.
-# 14. system   COSMETIC   missing: NTP key 1 is trusted (set system ntp trusted-key 1). Fixed by
+# 12. system   COSMETIC   missing: NTP key 1 is trusted (set system ntp trusted-key 1). Fixed by
 #                         region line 16.
 # Consistent: roles, mgmt-acl. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
-# Secrets: 3 present on the device, not changed (--secrets pushes them).
+# Kept: snmp 2 statements of the device's own (communities, trap groups): left alone, listed by device
+# config diff.
+# Secrets: 3 present (the TACACS+ server key, the SNMP community); only their presence is checked,
+# --secrets writes them again.
 # The switch undoes this by itself in 5 minutes unless you type the one word after the check (see
 # below).
 # Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the

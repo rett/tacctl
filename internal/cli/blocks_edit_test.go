@@ -468,8 +468,8 @@ func TestEditIsTheSuperusersOnly(t *testing.T) {
 	_ = ed
 }
 
-// In the login console an editor is held to the system shell's tiers; a
-// plain shell or a command line from bash is not.
+// In the login console an editor is held to the system shell's rule; a plain
+// shell or a command line from bash is not.
 func TestEditInTheConsoleFollowsTheSystemShellRule(t *testing.T) {
 	b := newEditBox(t)
 	ed := b.editor("ed-noop", "true")
@@ -488,21 +488,26 @@ func TestEditInTheConsoleFollowsTheSystemShellRule(t *testing.T) {
 	if b.sb.code != 0 || b.ran() != 1 {
 		t.Errorf("a superuser in the console: %d, ran %d: %q", b.sb.code, b.ran(), b.sb.stderr())
 	}
-	// closed to the superuser tier: refused, nothing opens
-	b.sb.run("", []string{"console", "system-shell", "tiers", "none"}, "SUDO_USER=alice")
-	if b.sb.code != 0 {
-		t.Fatalf("console system-shell tiers: %d %q", b.sb.code, b.sb.stderr())
-	}
+	// a hand-edited list that names no tier does not close it to the
+	// superuser tier, which always has the system shell
+	b.sb.write("state/console.yaml", "version: 1\nsettings: {system_shell_tiers: []}\n", 0o600)
 	runAs("TACCTL_CONSOLE=0123456789abcdef")
-	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "In the login console an editor can start a shell, so edit is open only to the tiers that may start the system shell") || b.ran() != 1 {
-		t.Errorf("console, system-shell closed: %d, ran %d: %q", b.sb.code, b.ran(), b.sb.stderr())
+	if b.sb.code != 0 || b.ran() != 2 {
+		t.Errorf("console, empty tier list: %d, ran %d: %q", b.sb.code, b.ran(), b.sb.stderr())
+	}
+	// a console.yaml the policy cannot be read from fails closed: refused,
+	// nothing opens
+	b.sb.write("state/console.yaml", "version: 1\nsettings: {system_shell: bash}\n", 0o600)
+	runAs("TACCTL_CONSOLE=0123456789abcdef")
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "In the login console an editor can start a shell, so edit is open only to those who may start the system shell") || b.ran() != 2 {
+		t.Errorf("console, policy unreadable: %d, ran %d: %q", b.sb.code, b.ran(), b.sb.stderr())
 	}
 	if b.sb.logged("block edit DENY user=alice tier=superuser") != 1 {
 		t.Errorf("the denial is not logged: %q", b.sb.runner.Argvs())
 	}
 	// the same line from a plain shell (no marker) is not held to the rule
 	runAs()
-	if b.sb.code != 0 || b.ran() != 2 {
+	if b.sb.code != 0 || b.ran() != 3 {
 		t.Errorf("outside the console: %d, ran %d: %q", b.sb.code, b.ran(), b.sb.stderr())
 	}
 }

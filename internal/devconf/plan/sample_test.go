@@ -255,14 +255,14 @@ func TestIOSOutputIsThePlansSample(t *testing.T) {
 	if strings.Contains(after, "no aaa new-model") {
 		t.Errorf("the main output holds the back-out lines")
 	}
-	// the stray community is reported, left alone
-	var stray bool
+	// the stray community is the device's own (0.2.20): no item, one of the
+	// statements the report keeps in its line
 	for _, it := range d.Items {
-		if it.Kind == KindExtra && strings.Contains(it.Statement, "snmp-server community") && !it.Fixed {
-			stray = true
+		if it.Kind == KindExtra && strings.Contains(it.Statement, "snmp-server community") {
+			t.Errorf("the device's own community is an item: %+v", it)
 		}
 	}
-	if !stray {
-		t.Errorf("the stray community is not an item: %+v", d.Items)
+	if o := ownOf(d, "snmp"); o.Count != 1 || !strings.Contains(out, "Kept: snmp 1 statement of the device's own (communities)") {
+		t.Errorf("the stray community is not kept: %+v\n%s", o, out)
 	}
 }

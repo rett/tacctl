@@ -13,6 +13,7 @@ import (
 	"github.com/rett/tacctl/internal/hash"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/policy"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/py"
 	"github.com/rett/tacctl/internal/pyyaml"
 	"github.com/rett/tacctl/internal/rendered"
@@ -296,8 +297,8 @@ type Chowner func(path string)
 // it to tacquito:tacquito (chown, best effort) and rename it to out. On
 // any failure nothing is left behind and out is untouched. It returns the
 // rendered text.
-func RenderToFile(st *store.Store, view *yamlpy.Map, hostNames map[string]bool, out string, load LegacyLoader, chown Chowner) ([]byte, error) {
-	text, err := Render(st, view, hostNames)
+func RenderToFile(st *store.Store, view *yamlpy.Map, hostNames map[string]bool, server pwchange.Server, out string, load LegacyLoader, chown Chowner) ([]byte, error) {
+	text, err := Render(st, view, hostNames, server)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +327,7 @@ func RenderToFile(st *store.Store, view *yamlpy.Map, hostNames map[string]bool, 
 	if err := f.Close(); err != nil {
 		return nil, err
 	}
-	if err := Readback(tmp, Carved(model.FromStore(st), view), view, load); err != nil {
+	if err := Readback(tmp, Carved(model.FromStore(st), view, server), view, load); err != nil {
 		return nil, err
 	}
 	if chown != nil {

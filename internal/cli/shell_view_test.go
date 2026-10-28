@@ -118,6 +118,9 @@ func TestViewHidesExactlyWhatTheTierDenies(t *testing.T) {
 					case ok:
 					case len(path) == 1:
 						ok = ruleAllows(v.eff, path[0], s)
+					case len(path) == 2 && path[0] == "device" && path[1] == "config":
+						// the verbs of 'device config' have a tier each
+						ok = ruleAllows(v.eff, path[0], path[1]) && tierPermits(v.eff, deviceConfigNeeds[s])
 					default:
 						ok = ruleAllows(v.eff, path[0], path[1])
 					}
@@ -338,7 +341,7 @@ func TestViewFamilyHelp(t *testing.T) {
 		t.Errorf("help group junos:\n%s", got)
 	}
 	sc := helpFor(tier.Engineer, "scope")
-	for _, want := range []string{"  engineer   block, devices, secret, show, snmp, staging\n", "  readonly   list\n",
+	for _, want := range []string{"  engineer   block, devices, mgmt-acl, secret, show, snmp, staging\n", "  readonly   list\n",
 		"scope secret: an engineer may run show for a scope of their own; set and generate need the superuser tier.",
 		"An engineer's verbs reach only the devices, hosts and secrets of the scopes the engineer is a member of."} {
 		if !strings.Contains(sc, want) {
@@ -368,7 +371,7 @@ func TestViewFamilyHelp(t *testing.T) {
 func TestViewExplainNamesTheTier(t *testing.T) {
 	explain := func(view tier.Tier, w ...string) string {
 		inv, root := viewInv(t, view)
-		got, _ := inv.shellExplain(root)(w)
+		got, _ := inv.plainExplain(root)(w)
 		return got
 	}
 	if got := explain(tier.Readonly, "group", "junos"); !strings.Contains(got, "Usage:") || !strings.Contains(got, "Needs the superuser tier.\n") {
@@ -462,5 +465,39 @@ func TestSetViewAsksThePolicy(t *testing.T) {
 	inv.setView(shellRun{exe: testExe, view: tier.Operator}, true)
 	if got := inv.view(); got != tier.Operator || policyRuns(h) != 0 {
 		t.Errorf("console: view %q, asked %d", got, policyRuns(h))
+	}
+}
+
+// The verbs of 'device config' are listed by the tier of each, not by the
+// two words of the gate: an operator sees list, an engineer everything but
+// forget and shapes, '?' on one typed by hand names its own tier.
+func TestViewDeviceConfigVerbsHaveTheirOwnTier(t *testing.T) {
+	for _, c := range []struct {
+		view tier.Tier
+		want []string
+	}{
+		{tier.Readonly, nil},
+		{tier.Operator, []string{"list"}},
+		{tier.Engineer, []string{"apply", "diff", "list", "plan", "pull", "show"}},
+		{tier.Superuser, []string{"apply", "diff", "forget", "list", "plan", "pull", "shapes", "show"}},
+	} {
+		inv, root := viewInv(t, c.view)
+		if got := sortedWords(inv.shellCompleter(root)([]string{"device", "config"}, "")); !slices.Equal(got, c.want) {
+			t.Errorf("%s: device config lists %q, want %q", c.view, got, c.want)
+		}
+	}
+	explain := func(view tier.Tier, w ...string) string {
+		inv, root := viewInv(t, view)
+		got, _ := inv.plainExplain(root)(w)
+		return got
+	}
+	if got := explain(tier.Operator, "device", "config", "apply", "sw1"); !strings.Contains(got, "Needs the engineer tier.\n") {
+		t.Errorf("operator, device config apply:\n%s", got)
+	}
+	if got := explain(tier.Engineer, "device", "config", "shapes"); !strings.Contains(got, "Needs the superuser tier.\n") {
+		t.Errorf("engineer, device config shapes:\n%s", got)
+	}
+	if got := explain(tier.Engineer, "device", "config", "apply", "sw1"); strings.Contains(got, "Needs the") {
+		t.Errorf("engineer, device config apply:\n%s", got)
 	}
 }

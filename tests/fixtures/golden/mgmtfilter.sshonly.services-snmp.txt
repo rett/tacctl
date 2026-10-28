@@ -1,0 +1,34 @@
+# Restrict SSH / NETCONF to the configured mgmt subnets.
+# These 'set firewall' lines define the filter in the candidate config.
+# Activate it by uncommenting the 'set interfaces lo0 …' line below
+# after reviewing — a misapplied lo0 filter can blackhole BGP / OSPF /
+# IS-IS to the RE.
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.1/32
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 10.0.0.0/8
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 198.51.100.0/24
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 203.0.113.0/24
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.64/26
+set firewall family inet filter MGMT-ACL term permit-mgmt from protocol tcp
+set firewall family inet filter MGMT-ACL term permit-mgmt from destination-port [ ssh 830 ]
+set firewall family inet filter MGMT-ACL term permit-mgmt then accept
+set firewall family inet filter MGMT-ACL term deny-mgmt from protocol tcp
+set firewall family inet filter MGMT-ACL term deny-mgmt from destination-port [ ssh 830 ]
+set firewall family inet filter MGMT-ACL term deny-mgmt then log
+set firewall family inet filter MGMT-ACL term deny-mgmt then discard
+set firewall family inet filter MGMT-ACL term permit-snmp from source-address 192.0.2.1/32
+set firewall family inet filter MGMT-ACL term permit-snmp from source-address 198.51.100.0/24
+set firewall family inet filter MGMT-ACL term permit-snmp from protocol udp
+set firewall family inet filter MGMT-ACL term permit-snmp from destination-port snmp
+set firewall family inet filter MGMT-ACL term permit-snmp then accept
+set firewall family inet filter MGMT-ACL term deny-snmp from protocol udp
+set firewall family inet filter MGMT-ACL term deny-snmp from destination-port snmp
+set firewall family inet filter MGMT-ACL term deny-snmp then log
+set firewall family inet filter MGMT-ACL term deny-snmp then discard
+set firewall family inet filter MGMT-ACL term default-accept then accept
+#
+# tcp port 830 (NETCONF over ssh, Step 6) is permitted by the same terms as ssh.
+# udp port 161 (SNMP, Step 5) is accepted from the SNMP clients only; this is the source restriction
+# under SNMPv3, which the client list of Step 5 does not give.
+#
+# Apply (review first):
+# set interfaces lo0 unit 0 family inet filter input MGMT-ACL

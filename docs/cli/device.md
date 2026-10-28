@@ -279,6 +279,23 @@ device hostkey <name> set SHA256:<fp>
 
     Re-scan and pin only the key with this fingerprint
 
+    The scan behind `device add`, `device hostkey accept|set` and the rest is one `ssh-keyscan`
+    for ed25519, ecdsa and rsa together. A device that accepts the connection but gives no key to
+    that (one that limits the simultaneous connections ssh-keyscan opens, or drops its long
+    offer) is asked again one key type at a time, ed25519, ecdsa, rsa (and ssh-rsa with
+    `--legacy-ssh`), each with `-T 3`; the keys of every type that answers are returned, and a
+    type that fails does not fail the scan. If that reads nothing either, tacctl's own ssh client
+    reads the keys (any device, not only `--legacy-ssh` ones; no credential is sent). A device
+    that refuses the connection or does not answer is not asked again.
+
+    When no read gives a key from a device that accepted the connection, the refusal names the
+    reads that were made ("ssh-keyscan, then one key type at a time (ed25519, ecdsa, rsa), and
+    tacctl's own ssh client") and gives the command to see the key by hand,
+    `ssh-keyscan -t ed25519 <address>` (with `-p <port>` for another port; also `-t ecdsa`,
+    `-t rsa`), and the ways to accept a key by its fingerprint: `--host-key SHA256:<fp>` for
+    `device add`, `enroll`, `collect` and `onboard`, `device hostkey <name> set SHA256:<fp>` for a
+    registered device. Nothing is written; `--no-host-key` registers the device unpinned.
+
 device ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]
 
     Same as tacctl ssh
@@ -447,7 +464,9 @@ device config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
     `PASTE FROM HERE` and `PASTE TO HERE` that is safe to paste whole (Junos ends it at `commit
     confirmed`, IOS at `end`), the check, the one line to type yourself afterwards and the back-out;
     a WTI unit has no region: its plan is a numbered checklist of menu steps to type and one
-    `<iptables>` block for its IP tables list. A cover page for several devices. Reads no device
+    `<iptables>` block for its IP tables list. The device's own statements (the `unmanaged` ones
+    of `diff`) are no irregularity: one `Kept:` line per section says how many, and `--json` has
+    the `kept` list. A cover page for several devices. Reads no device
     unless `--pull`; writes to none. A device never pulled, pulled more than `stale-days` ago, whose
     last pull failed or whose Cisco syntax is unknown cannot be planned (exit 1). Engineers: their
     own scopes' devices
@@ -471,8 +490,9 @@ device config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
         Write one device's output, or one file per device with `COVER.txt` and each back-out (0600,
         0700 directory); replace what exists
     --from <address>, --exit-code
-        The address you are logged in from (the cleanup keeps it); exit 2 when a device needs a
-        change
+        The address you are logged in from (the cleanup keeps it; a Junos management filter that the
+        device applies to `lo0` must permit it, or its section is refused, in either filter mode);
+        exit 2 when a device needs a change
     --restore-point[=<fs>]
         (IOS and IOS-XE only) A restore point before the region, in a banner pair of its own: `copy
         running-config <fs>tacctl-<device>-<time>.cfg` on the file system named (`flash:`,

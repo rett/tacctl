@@ -625,6 +625,7 @@ func TestImportReplaceCarriesOver(t *testing.T) {
 	e.edgeSidecars()
 	e.mustImport()
 	e.mustMutate(scopeSet("lab", "protocols=tacacs"))
+	e.mustMutate(userSet("alice", "password_change_required=true"))
 	// After the flip the sidecars are gone; the store is the only holder
 	// of dave's real hash and of the password dates.
 	if err := os.RemoveAll(e.dates); err != nil {
@@ -640,6 +641,11 @@ func TestImportReplaceCarriesOver(t *testing.T) {
 	equal(t, e.mustGet("scopes", "lab", "protocols"), "tacacs")
 	equal(t, e.mustGet("users", "dave", "hash"), hashD)
 	equal(t, e.mustGet("users", "alice", "password_changed"), "2026-08-15")
+	// the rendered file holds a user who must change the password, never the flag
+	contains(t, out, "kept the required password change of 1 user(s)")
+	if names, err := store.PasswordChangeKeys(e.path); err != nil || strings.Join(names, ",") != "alice" {
+		t.Errorf("flagged after the import: %v %v", names, err)
+	}
 }
 
 func TestImportReplaceSnapshotsFirst(t *testing.T) {

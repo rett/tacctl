@@ -29,7 +29,7 @@ import (
 func planRollback0217(p *RollbackPlan) (*RollbackPlan, error) {
 	pt := p.in.Paths
 	p.keys = p.in.Conf.RollbackKeys0218()
-	tiers := p.tiersPlan(tier.Sudoers0217(), tier.Sudoers(), tier.Sudoers0218())
+	tiers := p.tiersPlan(tier.Sudoers0217(), tier.Sudoers(), tier.Sudoers0219(), tier.Sudoers0218())
 	p.sudoers = []sudoersPlan{tiers}
 	s := p.tiersStep(RollbackTarget0217, tiers, "the rules of 'device ios-syntax', 'device notice list' and 'device client-config' become "+RollbackTarget0217+"'s 'device config-syntax', 'device notices' and 'device ssh-config', and the engineer's rules of 'device config apply', 'device enroll', 'device collect', 'device onboard', 'device sync' and 'device support-bundle' are taken out")
 	if err := p.planSyntaxKey(); err != nil {
@@ -46,6 +46,6 @@ func planRollback0217(p *RollbackPlan) (*RollbackPlan, error) {
 		p.Steps = append(p.Steps, RollbackStep{Title: "the enrolled Linux hosts (--hosts)",
 			Lines: []string{"nothing to do for " + RollbackTarget0217 + ": 0.2.18 changed nothing on the hosts; no host is synced"}})
 	}
-	p.Warnings = p.blocksWarning(RollbackTarget0217)
+	p.Warnings = append(append(p.mgmtModeWarning(RollbackTarget0217), p.blocksWarning(RollbackTarget0217)...), p.consoleWideningWarning()...)
 	return p, nil
 }

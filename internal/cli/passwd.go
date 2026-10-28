@@ -5,6 +5,7 @@ import (
 
 	"github.com/rett/tacctl/internal/hash"
 	"github.com/rett/tacctl/internal/names"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -49,6 +50,7 @@ func (inv *invocation) passwdSelf(args []string) error {
 	}
 	m, _ := inv.model()
 	stored := m.User(username).Hash
+	required := m.User(username).PasswordChangeRequired
 
 	inv.echo("")
 	inv.echoE("  Changing password for: " + ui.Bold + username + ui.NC)
@@ -75,13 +77,21 @@ func (inv *invocation) passwdSelf(args []string) error {
 	if err != nil {
 		return err
 	}
+	// The user's own change is what a required one asks for: it lifts it.
 	if err := inv.storeApply(func(s *store.Store) error {
-		return s.UserSet(username, "hash="+h, "password_changed=today")
+		return s.UserSet(username, "hash="+h, "password_changed=today", "password_change_required=false")
 	}); err != nil {
 		return err
 	}
 	a.Audit().Raw("auth.info", "passwd OK user="+username+" source=self")
 	a.Out.Info("Password changed for '" + username + "'.")
+	if required {
+		inv.detailPwChange(username, false, "self")
+		a.Out.Info("The required password change is done.")
+		if pwchange.Subject(a.Conf(), m, m.User(username)) {
+			inv.reportHostsSync(m, []string{username}, false)
+		}
+	}
 	inv.echo("")
 	return nil
 }

@@ -289,3 +289,48 @@ func TestSudoers0218(t *testing.T) {
 		t.Error("Sudoers0218 differs from the golden file of the 0.2.18 tag")
 	}
 }
+
+// The 0.2.19 text lacks the engineer's row of 0.2.20 (scope mgmt-acl * mode)
+// and the operator's rows (console system-shell and console password-cache)
+// and has every other rule; the 0.2.18 text lacks them as well; where the
+// 0.2.19 tag is in the repository, it is that tag's own golden file.
+func TestSudoers0219(t *testing.T) {
+	old, cur := Sudoers0219(), Sudoers()
+	if old == cur {
+		t.Fatal("the 0.2.19 text is this release's")
+	}
+	const row = "scope mgmt-acl * mode"
+	en, now := strings.Join(aliasItems(t, old, "TACCTL_EN"), "|"), strings.Join(aliasItems(t, cur, "TACCTL_EN"), "|")
+	if strings.Contains(en, row) || !strings.Contains(now, row) {
+		t.Errorf("%q: in the 0.2.19 engineer alias %v, in this release's %v", row, strings.Contains(en, row), strings.Contains(now, row))
+	}
+	if strings.Contains(strings.Join(aliasItems(t, old, "TACCTL_OP"), "|"), "console system-shell") {
+		t.Error("the 0.2.19 operator alias has console system-shell")
+	}
+	got := strings.Replace(cur, Binary+" "+row+", ", "", 1)
+	for _, pat := range []string{"console system-shell", "console system-shell readonly", "console system-shell operator", "console system-shell engineer",
+		"console system-shell superuser", "console system-shell path", "console system-shell user *",
+		"console password-cache", "console password-cache on", "console password-cache off"} {
+		got = strings.Replace(got, Binary+" "+pat+", ", "", 1)
+	}
+	if got != old {
+		t.Errorf("the 0.2.19 text is not this release's less the rows of 0.2.20:\n%s", got)
+	}
+	if strings.Contains(Sudoers0218(), row) || strings.Contains(Sudoers0217(), row) || strings.Contains(Sudoers0216(), row) {
+		t.Error("an older frozen text has the row of 0.2.20")
+	}
+	r := execx.Real{}
+	if _, err := r.LookPath("git"); err != nil {
+		t.Skip("git is not installed, so the 0.2.19 tag cannot be read")
+	}
+	if res, err := r.Run(context.Background(), execx.Cmd{Name: "git", Args: []string{"rev-parse", "-q", "--verify", "0.2.19^{commit}"}}); err != nil || res.Code != 0 {
+		t.Skip("the 0.2.19 tag is not in this repository (CI must fetch tags: git fetch --tags)")
+	}
+	res, err := r.Run(context.Background(), execx.Cmd{Name: "git", Args: []string{"show", "0.2.19:internal/tier/testdata/sudoers.tiers"}})
+	if err != nil || res.Code != 0 {
+		t.Fatalf("cannot read the 0.2.19 tag's golden file: %v %s", err, res.Stderr)
+	}
+	if string(res.Stdout) != old {
+		t.Error("Sudoers0219 differs from the golden file of the 0.2.19 tag")
+	}
+}

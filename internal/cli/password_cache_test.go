@@ -746,11 +746,13 @@ func TestPlainShellCachePolicy(t *testing.T) {
 	if ok, idle, max := inv.plainShellCachePolicy(r, false); !ok || idle != askpass.DefaultIdle || max != askpass.DefaultMax || errb.Len() != 0 {
 		t.Errorf("unmanaged: %v %v %v %q", ok, idle, max, errb.String())
 	}
-	inv, errb = policy("shell=console idle=30 tier=operator password_cache=yes pc_idle=20 pc_max=3\n", 0)
+	// The flag is an explicit request: the tier's permission is what counts,
+	// not the user's own choice of the console (password_cache=no here).
+	inv, errb = policy("shell=console idle=30 tier=operator password_cache=no pc_allowed=yes pc_idle=20 pc_max=3\n", 0)
 	if ok, idle, max := inv.plainShellCachePolicy(r, true); !ok || idle != 20*60e9 || max != 3*3600e9 || errb.Len() != 0 {
 		t.Errorf("allowed: %v %v %v %q", ok, idle, max, errb.String())
 	}
-	inv, errb = policy("shell=console tier=readonly password_cache=no pc_idle=15 pc_max=8\n", 0)
+	inv, errb = policy("shell=console tier=readonly\n", 0)
 	if ok, _, _ := inv.plainShellCachePolicy(r, true); ok || !strings.Contains(errb.String(), "not enabled for your tier") {
 		t.Errorf("refused: %v %q", ok, errb.String())
 	}
@@ -836,19 +838,22 @@ func TestConsolePolicyLinePasswordCache(t *testing.T) {
 		}, "SUDO_USER="+user, "SUDO_UID="+uidOf(user))
 		return strings.TrimSpace(plain(sb.out.String()))
 	}
+	// The tier is the permission; the user's own choice is off until they
+	// turn it on: a tier that is allowed carries pc_allowed=yes and
+	// password_cache=no, one that is not carries neither.
 	for _, c := range []struct {
 		user, group string
-		on          bool
+		allowed     bool
 	}{{"bob", "operator", true}, {"alice", "superuser", false}, {"carol", "readonly", false}} {
 		got := policy(c.user, c.group)
-		has := strings.HasSuffix(got, " password_cache=yes pc_idle=20 pc_max=8")
-		if has != c.on || (!c.on && strings.Contains(got, "password_cache")) {
+		has := strings.HasSuffix(got, " password_cache=no pc_allowed=yes pc_idle=20 pc_max=8")
+		if has != c.allowed || (!c.allowed && strings.Contains(got, "password_cache")) {
 			t.Errorf("%s: %q", c.user, got)
 		}
 	}
 	// A console of this version reads it.
 	r, ok := console.ParseRemote(policy("bob", "operator"))
-	if !ok || !r.PasswordCache || r.PCIdle != 20*60e9 || r.PCMax != 8*3600e9 {
+	if !ok || r.PasswordCache || !r.PCAllowed || r.PCIdle != 20*60e9 || r.PCMax != 8*3600e9 {
 		t.Errorf("parsed %+v", r)
 	}
 }

@@ -1,0 +1,179 @@
+# Flags ('command words flag') whose description is over 72 characters (summaryMax). This list only shrinks.
+backup restore --keep-uids
+breakglass hold --reason
+config cisco --legacy
+config cisco --name
+config cisco --protocol
+config cisco --scope
+config cisco --server
+config cisco --snmp-location
+config cisco --source
+config cisco --staging
+config juniper --name
+config juniper --protocol
+config juniper --scope
+config juniper --server
+config juniper --snmp-location
+config juniper --source
+config juniper --staging
+config linux remove-script --output
+config linux script --method
+config linux script --output
+config linux script --scope
+config listen --backend
+config listen --listener
+config render --dry-run
+config render --out
+config restore --keep-uids
+config validate --fix-names
+config validate --json
+config wti --name
+config wti --protocol
+config wti --scope
+config wti --server
+config wti --snmp-location
+config wti --source
+config wti --staging
+device add --ios-syntax
+device add --legacy-ssh
+device add --pull
+device address --apply
+device address -y
+device block --against
+device block --file
+device block -y
+device check --all
+device collect --discovered
+device collect --host-key
+device collect --json
+device collect --login
+device collect --register
+device collect -y
+device config apply --all
+device config apply --check
+device config apply --concurrency
+device config apply --confirmed
+device config apply --differs
+device config apply --exit-code
+device config apply --hold
+device config apply --ip
+device config apply --json
+device config apply --max
+device config apply --name
+device config apply --pause
+device config apply --pull
+device config apply --stale
+device config apply --transport
+device config diff --concurrency
+device config diff --differs
+device config diff --ip
+device config diff --json
+device config diff --login
+device config diff --name
+device config diff --section
+device config diff --stale
+device config diff --transport
+device config list --differs
+device config list --ip
+device config list --json
+device config list --name
+device config list --stale
+device config plan --backout
+device config plan --concurrency
+device config plan --converge
+device config plan --differs
+device config plan --from
+device config plan --ip
+device config plan --json
+device config plan --login
+device config plan --name
+device config plan --no-secrets
+device config plan --out-dir
+device config plan --plain
+device config plan --pull
+device config plan --restore-point
+device config plan --secrets
+device config plan --section
+device config plan --stale
+device config plan --transport
+device config pull --concurrency
+device config pull --differs
+device config pull --ip
+device config pull --json
+device config pull --login
+device config pull --name
+device config pull --stale
+device config pull --transport
+device config shapes --json
+device config shapes --show
+device config show --legacy
+device config show --protocol
+device description --apply
+device discover --snmp
+device enroll --discovered
+device enroll --host-key
+device enroll --json
+device enroll --legacy-ssh
+device enroll --name
+device enroll --vendor
+device hostkey -y
+device import -y
+device ios-syntax --apply
+device location --apply
+device location --from-device
+device location -y
+device netconf --apply
+device netconf --connection-limit
+device onboard --check
+device onboard --json
+device onboard --legacy-ssh
+device onboard --login
+device onboard --name
+device onboard --section
+device remove --all
+device remove -y
+device scan --if-stale
+device snmp --reveal
+device support-bundle --login
+device support-bundle --out
+device support-bundle --vendor
+device sync --json
+device vendor --from-device
+device vendor -y
+group add --tier
+group commands add --before
+group commands add --match
+group commands remove --match
+host check --json
+host enroll --allow-uid-mismatch
+host enroll --method
+host enroll --name
+host enroll --remove-home
+host enroll --scope
+host enroll --staging
+host enroll -y
+host list --json
+host move --allow-uid-mismatch
+host move --remove-home
+host move -y
+host provisioner --key
+host provisioner --password
+host provisioner --remove-home
+host provisioner --remove-old
+host provisioner --yes
+host rename -y
+host show --check
+host show --json
+host sync --allow-uid-mismatch
+host sync --remove-home
+host target --identity
+host target --port
+install --branch
+rollback --apply
+scope block --against
+scope block --file
+scope block -y
+scope secret --stdin
+scope snmp --reveal
+shell --password-cache
+upgrade --branch

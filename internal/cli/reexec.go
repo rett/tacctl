@@ -13,10 +13,15 @@ import (
 // prompt for a password or read /etc/tacctl (docs/plans/go-rewrite.md 3.2).
 // A new such word is one entry.
 var noSudo = map[string]bool{
-	"hash":             true,
-	"completion":       true,
+	"hash":       true,
+	"completion": true,
+	// The manual page in a pager (man_cmd.go): for every tier and for the
+	// console, whose users have no man command of their own.
+	"man":              true,
 	"__complete":       true,
 	"__completeNoDesc": true,
+	// The help of the words, for the bash help key (help_request.go).
+	"__help": true,
 	// The interactive shell (0.2.1) runs as the user and re-enters tacctl
 	// under sudo for each line it executes.
 	"shell": true,

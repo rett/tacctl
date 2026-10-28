@@ -5,10 +5,13 @@
 # CANNOT BE PLANNED: refused: mgmt-acl: the IP tables list cannot be built: tacctl server address is
 # not known (pass --source <address>). Nothing to paste.
 # Consistent: snmp, aaa. Not planned: breakglass (walkthrough Step 10).
-# Secrets: 2 present on the device, not changed (--secrets pushes them).
+# Kept: aaa 13 statements of the device's own (RADIUS settings): left alone, listed by device config
+# diff.
+# Kept: snmp 4 statements of the device's own (system name, trap settings): left alone, listed by
+# device config diff.
+# Secrets: 2 present (the SNMP community, the TACACS+ server key); only their presence is checked,
+# --secrets writes them again.
 # Note: tacacs default-services: the unit allows more services than the standard asks for (serial,
 # web, restful-api): kept, not compared.
-# Note: aaa: 13 statements of the device's own, kept on purpose.
-# Note: snmp: 4 statements of the device's own, kept on purpose.
 # WARNING: the IP tables list cannot be built: tacctl server address is not known (pass --source
 # <address>).

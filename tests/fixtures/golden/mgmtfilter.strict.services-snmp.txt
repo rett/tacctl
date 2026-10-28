@@ -1,0 +1,59 @@
+# Deny-by-default management filter (mgmt-acl mode strict; Junos only).
+# The filter accepts every protocol from the sources of the mgmt-acl list (an entry with
+# services keeps only those) and has no default-accept term: the implicit discard at the
+# end of a Junos filter drops the rest.
+# Once the filter is applied to lo0, these stop reaching the routing engine:
+#   - routing protocols carried over IP from neighbours that are not in the list: BGP, OSPF, LDP, VRRP, BFD
+#     (IS-IS is not carried over IP: a family inet filter on lo0 does not see it, so it is neither stopped nor permitted)
+#   - replies from servers that are not in the list: TACACS+ and RADIUS (the replies of the server this
+#     walkthrough names are accepted), NTP, DNS
+#   - NTP, syslog and DHCP from hosts that are not in the list
+#   - SNMP from sources outside the list (the SNMP clients of Step 5 still poll)
+#   - every other protocol (ping, traceroute) from sources outside the list
+# permit-mgmt starts with the address tacctl reaches the device from.
+# Add each neighbour and server the device needs to the permit list this scope renders from first
+# ('tacctl scope mgmt-acl lab list' says which): the first entry of the scope's own list replaces
+# the global list for this scope, so add the global entries to it too.
+# Keep a console session open while you apply it, and commit with 'commit confirmed'.
+# These 'set firewall' lines define the filter in the candidate config.
+# Activate it by uncommenting the 'set interfaces lo0 …' line below
+# after reviewing.
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.1/32
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 10.0.0.0/8
+set firewall family inet filter MGMT-ACL term permit-mgmt then accept
+set firewall family inet filter MGMT-ACL term permit-tcp-any from source-address 192.0.2.64/26
+set firewall family inet filter MGMT-ACL term permit-tcp-any from protocol tcp
+set firewall family inet filter MGMT-ACL term permit-tcp-any then accept
+set firewall family inet filter MGMT-ACL term permit-tcp-22 from source-address 198.51.100.0/24
+set firewall family inet filter MGMT-ACL term permit-tcp-22 from source-address 203.0.113.0/24
+set firewall family inet filter MGMT-ACL term permit-tcp-22 from protocol tcp
+set firewall family inet filter MGMT-ACL term permit-tcp-22 from destination-port ssh
+set firewall family inet filter MGMT-ACL term permit-tcp-22 then accept
+set firewall family inet filter MGMT-ACL term permit-udp-123 from source-address 192.0.2.64/26
+set firewall family inet filter MGMT-ACL term permit-udp-123 from protocol udp
+set firewall family inet filter MGMT-ACL term permit-udp-123 from destination-port ntp
+set firewall family inet filter MGMT-ACL term permit-udp-123 then accept
+set firewall family inet filter MGMT-ACL term permit-udp-161-162 from source-address 198.51.100.0/24
+set firewall family inet filter MGMT-ACL term permit-udp-161-162 from protocol udp
+set firewall family inet filter MGMT-ACL term permit-udp-161-162 from destination-port 161-162
+set firewall family inet filter MGMT-ACL term permit-udp-161-162 then accept
+set firewall family inet filter MGMT-ACL term permit-icmp from source-address 203.0.113.0/24
+set firewall family inet filter MGMT-ACL term permit-icmp from protocol icmp
+set firewall family inet filter MGMT-ACL term permit-icmp then accept
+set firewall family inet filter MGMT-ACL term permit-snmp from source-address 192.0.2.1/32
+set firewall family inet filter MGMT-ACL term permit-snmp from source-address 198.51.100.0/24
+set firewall family inet filter MGMT-ACL term permit-snmp from protocol udp
+set firewall family inet filter MGMT-ACL term permit-snmp from destination-port snmp
+set firewall family inet filter MGMT-ACL term permit-snmp then accept
+set firewall family inet filter MGMT-ACL term deny-snmp from protocol udp
+set firewall family inet filter MGMT-ACL term deny-snmp from destination-port snmp
+set firewall family inet filter MGMT-ACL term deny-snmp then log
+set firewall family inet filter MGMT-ACL term deny-snmp then discard
+#
+# A source that has services is accepted for those only: ssh needs tcp/22 among them and
+# NETCONF (Step 6) tcp/830; a source without services has every port.
+# udp port 161 (SNMP, Step 5) is accepted from the SNMP clients and from the sources the terms above accept
+# for it, and refused from every other source (deny-snmp logs it).
+#
+# Apply (review first):
+# set interfaces lo0 unit 0 family inet filter input MGMT-ACL

@@ -99,7 +99,7 @@ func syncInputs(t *testing.T, sb *sandbox) map[string]string {
 
 		he := inv.hostsEnv()
 		he.Range, _ = inv.configuredUIDRange()
-		req, err := inv.scriptRequest(e.Scope, e.Server, reg.Method(e.Name), filepath.Join(t.TempDir(), "script"))
+		req, err := inv.scriptRequest(e.Scope, e.Server, reg.Method(e.Name), filepath.Join(t.TempDir(), "script"), e.Target == hosts.Local)
 		if err != nil {
 			out[prefix+"request"] = "error: " + err.Error()
 			continue
@@ -115,11 +115,11 @@ func syncInputs(t *testing.T, sb *sandbox) map[string]string {
 			if err != nil {
 				t.Fatalf("console policy: %v", err)
 			}
-			req.ConsoleShell = func(name, tr string) string { return pol.Shell(name, tier.Tier(tr)) }
+			req.ConsoleShell = func(name, tr string) string { return pol.Shell(tier.Tier(tr)) }
 			for _, r := range req.Rows {
 				name, lvl, _ := strings.Cut(r, "|")
 				tr := inv.userTier(name, lvl)
-				tiers = append(tiers, fmt.Sprintf("%s console=%+v shell=%s", name, pol.Decide(name, tr), pol.Shell(name, tr)))
+				tiers = append(tiers, fmt.Sprintf("%s console=%+v shell=%s", name, pol.Decide(tr), pol.Shell(tr)))
 			}
 		}
 		out[prefix+"request"] = fmt.Sprintf("scope=%q server=%q method=%q secret=%q rows=%q inactive=%q engineer_sudo=%q revoke=%v local=%v listeners=%+v",

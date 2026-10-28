@@ -13,6 +13,7 @@ import (
 	"github.com/rett/tacctl/internal/cidr"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/yamlpy"
 )
 
@@ -128,7 +129,7 @@ func TestRenderHoldCommentNamesAHostAsAHost(t *testing.T) {
 	st := loadStore(t, "store.hold.yaml")
 	view := holdView(t)
 	plain := string(render(t, st, view))
-	got, err := Render(st, view, map[string]bool{"sw-lab-1": true, "unrelated": true})
+	got, err := Render(st, view, map[string]bool{"sw-lab-1": true, "unrelated": true}, pwchange.Server{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +150,7 @@ func TestRenderHoldCommentNamesAHostAsAHost(t *testing.T) {
 	if want := strings.Replace(plain, "(device sw-lab-1)", "(host sw-lab-1)", 1); text != want {
 		t.Error("the host set changed more than the word of the comment")
 	}
-	if empty, err := Render(st, view, map[string]bool{}); err != nil || string(empty) != plain {
+	if empty, err := Render(st, view, map[string]bool{}, pwchange.Server{}); err != nil || string(empty) != plain {
 		t.Errorf("an empty host set renders differently from none (err %v)", err)
 	}
 }
@@ -230,7 +231,7 @@ func TestRenderHoldOfAnUncoveredAddressChangesNothing(t *testing.T) {
 func TestCarvedIsThePureModelWithoutTheAddresses(t *testing.T) {
 	st := loadStore(t, "store.hold.yaml")
 	m := model.FromStore(st)
-	c := Carved(m, holdView(t))
+	c := Carved(m, holdView(t), pwchange.Server{})
 	if len(m.Scope("lab").Prefixes) != 2 {
 		t.Fatal("the model was changed")
 	}

@@ -1,0 +1,4 @@
+# entry 198.51.100.0/24:udp/161 permits udp/161 only: not in the Junos filter MGMT-ACL (its permit-mgmt term matches the source only); a source is listed there when its entry permits tcp/22 or has no services
+# entry 203.0.113.0/24:icmp permits icmp only: not in the Junos filter MGMT-ACL (its permit-mgmt term matches the source only); a source is listed there when its entry permits tcp/22 or has no services
+# no entry of the mgmt-acl list permits ssh (tcp/22) — configure with 'tacctl config mgmt-acl add <cidr>' on the tacctl server
+# to emit a source-restricted lo0 firewall filter here.

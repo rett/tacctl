@@ -44,7 +44,7 @@ func TestEngineerTierFromGroupSetting(t *testing.T) {
 	for _, args := range [][]string{{"user", "add", "x"}, {"group", "edit", "operator", "tier", "superuser"}, {"scope", "add", "x"},
 		{"scope", "prefixes", "lab", "add", "10.1.0.0/16"}, {"backend", "enable", "radius"}, {"backup", "restore", "x"},
 		{"upgrade"}, {"device", "stale-days", "9"}, {"device", "config", "forget", "lab-sw"},
-		{"device", "config", "shapes"}, {"device", "config", "shapes", "seed", "lab-sw"}, {"console", "system-shell", "tiers", "engineer"},
+		{"device", "config", "shapes"}, {"device", "config", "shapes", "seed", "lab-sw"}, {"console", "system-shell", "operator", "enable"},
 		{"config", "linux", "engineer-sudo", "all"}, {"config", "snmp", "show"}, {"store", "show"}, {"config", "dump"}} {
 		sb.asEngineer("", args...)
 		if sb.code != 1 || !strings.Contains(sb.stderr(), "is not permitted for the engineer tier") {

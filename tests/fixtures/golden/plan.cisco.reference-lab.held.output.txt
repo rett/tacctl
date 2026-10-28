@@ -6,7 +6,7 @@
 ! the check below ("a NEW ssh session as yourself") cannot pass until it is released: tacctl
 ! breakglass release dev-cisco-reference-lab
 !
-! What is irregular on dev-cisco-reference-lab (6 items; the paste fixes 3, leaves 3):
+! What is irregular on dev-cisco-reference-lab (3 items; the paste fixes 3, leaves 0):
 !  1. aaa      ACCESS     missing: the console's own login list CONSOLE (local only, so a local user
 !                         always gets in there) (aaa authentication login CONSOLE local). Fixed by
 !                         region line 3.
@@ -15,14 +15,11 @@
 !  3. aaa      ACCESS     different: the login method of line con 0: login authentication CONSOLE (the
 !                         device has: the login method of line con 0: login authentication default)
 !                         (line con 0 > login authentication CONSOLE). Fixed by region line 7.
-!  4. snmp     MONITORING extra: an SNMP community (snmp-server community <other:1> RO TACCTL-SNMP).
-!                         Left alone (its name is the secret and is not known to tacctl).
-!  5. snmp     MONITORING extra: snmp-server enable traps config. Left alone. To remove it later: no
-!                         snmp-server enable traps config
-!  6. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <other:2>. Left alone (its
-!                         name is the secret and is not known to tacctl).
-! Consistent: roles, mgmt-acl. Not planned: netconf, breakglass.
-! Secrets: 2 present on the device, not changed (--secrets pushes them).
+! Consistent: roles, snmp, mgmt-acl. Not planned: netconf, breakglass.
+! Kept: snmp 3 statements of the device's own (communities, trap types, trap hosts): left alone,
+! listed by device config diff.
+! Secrets: 2 present (the TACACS+ server key, the SNMP community); only their presence is checked,
+! --secrets writes them again.
 ! The change is live when the paste ends. NOTHING rolls it back by itself. Keep a second terminal
 ! logged in at privilege 15 until the end.
 ! Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the

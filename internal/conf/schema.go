@@ -177,6 +177,9 @@ func NewSchema(backends []string) *Schema {
 			{"scope_mgmt_acl.names.cisco.", Rule{Type: TypeACLName, Default: "VTY-ACL", HasDefault: true}},
 			{"scope_mgmt_acl.names.juniper.", Rule{Type: TypeACLName, Default: "MGMT-ACL", HasDefault: true}},
 			{"scope_mgmt_acl.permits.", Rule{Type: TypeCIDRList, Default: []any{}, HasDefault: true}},
+			// The Junos management filter mode of a scope (0.2.20); no
+			// default on purpose: unset is ssh-only.
+			{ScopeMgmtACLModePrefix, Rule{Type: TypeEnum, Values: slices.Clone(MgmtModes)}},
 			// listeners.<backend>.<name>: its default is per name.
 			{"listeners.", Rule{Type: TypeListener, Depth: 2}},
 			// The per-group device settings of 0.2.2 (junos.go); no default:

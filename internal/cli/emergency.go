@@ -61,7 +61,7 @@ func init() {
 func emergencyCmd(inv *invocation) *cobra.Command {
 	c := verb("emergency <subcommand>", "Emergency measures (lockdown: refuse the logins of groups on a scope)")
 	c.RunE = inv.native(withPreflight, inv.emergency)
-	c.AddCommand(withRun(verb(emergencyUseLockdown, "Refuse the logins of chosen groups on every device and host of a scope, or lift it (the superuser's)"),
+	c.AddCommand(withRun(verb(emergencyUseLockdown, "Refuse the logins of the groups on the scope's devices and hosts"),
 		inv.native(withPreflight, func(args []string) error {
 			return inv.emergency(append([]string{"lockdown"}, args...))
 		})))

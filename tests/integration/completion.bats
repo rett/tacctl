@@ -20,8 +20,12 @@ setup() {
     [[ -r /usr/share/bash-completion/bash_completion ]] || skip "bash-completion not installed"
     # The command the script asks, by the name it was typed with.
     stub_cmd tacctl "exec \"${TACCTL_BIN_SCRIPT}\" \"\$@\""
-    # The bridge: 'sudo -n tacctl _completion-names <kind> [arg]'.
+    # The bridge: 'sudo -n tacctl _completion-names <kind> [arg]'. The kinds
+    # with descriptions are asked with --desc-short, and answer as the root
+    # side does: 'name<TAB>vendor scope'.
     stub_cmd sudo 'case "$*" in
+  *"_completion-names hosts --desc-short")   printf "%s\t%s\n" web1 "linux lab" db1 "linux lab" ;;
+  *"_completion-names devices --desc-short") printf "%s\t%s\n" db1 "linux lab" sw1 "cisco lab" web1 "linux lab" ;;
   *"_completion-names backends")         printf "%s\n" tacacs radius ;;
   *"_completion-names enabled-backends") printf "%s\n" tacacs ;;
   *"_completion-names listeners radius") printf "%s\n" auth acct ;;
@@ -78,12 +82,15 @@ complete_words() {
     assert_line "backend"
     assert_line "store"
     assert_line "install"
-    refute_line "completion"
+    # completion is offered as in the shell (a readonly-tier row, like hash).
+    assert_line "completion"
     refute_line "_phase"
     refute_line "_completion-names"
     refute_line "help"
     complete_words tacctl ba
     assert_output "$(printf 'backend\nbackup')"
+    complete_words tacctl completion ""
+    assert_output "$(printf 'bash\nzsh\nfish')"
 }
 
 @test "completion: backend subcommands, then backend ids, then -y" {
@@ -398,14 +405,20 @@ esac'
 }
 
 @test "completion: __complete host sync offers the names the bridge gives" {
+    # __complete is the zsh and fish scripts' question: each name with its
+    # description; __completeNoDesc (bash) the names alone.
     run "$TACCTL_BIN_SCRIPT" __complete host sync ""
+    assert_success
+    assert_line $'web1\tlinux lab'
+    assert_line $'db1\tlinux lab'
+    run "$TACCTL_BIN_SCRIPT" __complete host unenroll d
+    assert_success
+    assert_line $'db1\tlinux lab'
+    refute_line --partial "web1"
+    run "$TACCTL_BIN_SCRIPT" __completeNoDesc host sync ""
     assert_success
     assert_line "web1"
     assert_line "db1"
-    run "$TACCTL_BIN_SCRIPT" __complete host unenroll d
-    assert_success
-    assert_line "db1"
-    refute_line "web1"
 }
 
 @test "_completion-names hosts and devices: the registry's names, one per line" {
@@ -418,14 +431,22 @@ esac'
     run "$TACCTL_BIN_SCRIPT" _completion-names devices
     assert_success
     assert_output "$(printf 'db1\nweb1')"
+    # What the scripts ask: the same names, each with '<vendor> <scope>'.
+    run "$TACCTL_BIN_SCRIPT" _completion-names hosts --desc-short
+    assert_success
+    assert_output "$(printf 'web1\tlinux lab\ndb1\tlinux lab')"
+    run "$TACCTL_BIN_SCRIPT" _completion-names devices --desc-short
+    assert_success
+    assert_output "$(printf 'db1\tlinux lab\nweb1\tlinux lab')"
     rm "${TACCTL_STATE_DIR}/linux-hosts"
     run "$TACCTL_BIN_SCRIPT" _completion-names hosts
     assert_success
     assert_output ""
 }
 
-@test "completion: Tab Tab lists each flag with its description, and shell -c offers the commands" {
-    # COMP_TYPE 63 is bash's listing of the candidates (the second Tab).
+@test "completion: Tab Tab lists the flags alone in bash, the other shells get the descriptions, and shell -c offers the commands" {
+    # COMP_TYPE 63 is bash's listing of the candidates (the second Tab): the
+    # bash script asks __completeNoDesc, so bash lists the words in columns.
     run bash -c '
         source /usr/share/bash-completion/bash_completion
         source <(tacctl completion bash)
@@ -436,9 +457,13 @@ esac'
         printf "%s\n" "${COMPREPLY[@]}"
     '
     assert_success
-    assert_line --regexp '^--no-history +\(Keep no history file for this session\)$'
-    assert_line --regexp '^--idle +\(<min>: End the session after this many idle minutes at the prompt\)$'
-    assert_line --regexp '^-c +\(<line>: Run one line and exit\)$'
+    assert_output "$(printf -- '--no-history\n--idle\n--space-completion\n--password-cache\n-c')"
+    # zsh and fish ask __complete, which gives each flag its description.
+    run "$TACCTL_BIN_SCRIPT" __complete shell -
+    assert_success
+    assert_line $'--no-history\tKeep no history file for this session'
+    assert_line $'--idle\t<min>: End the session after this many idle minutes at the prompt'
+    assert_line $'-c\t<line>: Run one line and exit'
     complete_words tacctl shell -c sta
     assert_output "status"
     complete_words tacctl shell -c ""

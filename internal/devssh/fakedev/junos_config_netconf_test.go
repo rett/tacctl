@@ -760,3 +760,50 @@ func TestNetconfConfirmTimeoutIsSeconds(t *testing.T) {
 		t.Error("not rolled back after five seconds")
 	}
 }
+
+// With the knob 'chassis' a NETCONF commit names the members as the command
+// line's answer does: <routing-engine> elements, the check's and then the
+// commit's; a member that fails its check holds an <rpc-error> and nothing is
+// committed; the single device's reply is as it was.
+func TestNetconfChassisMembers(t *testing.T) {
+	srv, _, _ := newJunos(t, map[string]string{"chassis": chassisKnob})
+	c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
+	c.rpc("<lock-configuration/>")
+	c.load("set system login idle-timeout 30")
+	member := func(n, el string) string { return "<routing-engine><name>" + n + "</name>" + el + "</routing-engine>" }
+	var chk, done string
+	for _, n := range []string{"fpc0", "fpc1", "fpc2", "fpc3"} {
+		chk += member(n, "<commit-check-success/>")
+		done += member(n, "<commit-success/>")
+	}
+	if got := c.rpc("<commit-configuration><check/></commit-configuration>"); !strings.Contains(got, "<commit-results>"+chk+"</commit-results>") {
+		t.Errorf("check: %s", got)
+	}
+	if got := c.rpc("<commit-configuration><log>x</log></commit-configuration>"); !strings.Contains(got, "<commit-results>"+chk+done+"</commit-results>") {
+		t.Errorf("commit: %s", got)
+	}
+	if !strings.Contains(srv.Committed(), "idle-timeout 30") {
+		t.Error("not committed")
+	}
+
+	srv, _, _ = newJunos(t, map[string]string{"chassis": chassisKnob, "chassis.check": "fpc2 => member is out of sync\n"})
+	c = netconfLogin(t, srv, DefaultUser, DefaultPassword)
+	c.rpc("<lock-configuration/>")
+	c.load("set system login idle-timeout 30")
+	got := c.rpc("<commit-configuration><log>x</log></commit-configuration>")
+	if !strings.Contains(got, "<routing-engine><name>fpc2</name><rpc-error>") || !strings.Contains(got, "member is out of sync") ||
+		!strings.Contains(got, member("fpc3", "<commit-check-success/>")) || strings.Contains(got, "<commit-success/>") {
+		t.Errorf("failing member: %s", got)
+	}
+	if strings.Contains(srv.Committed(), "idle-timeout 30") || len(srv.History()) != 1 {
+		t.Error("committed with a failing member")
+	}
+
+	srv, _, _ = newJunos(t, map[string]string{})
+	c = netconfLogin(t, srv, DefaultUser, DefaultPassword)
+	c.rpc("<lock-configuration/>")
+	c.load("set system login idle-timeout 30")
+	if got := c.rpc("<commit-configuration><log>x</log></commit-configuration>"); !strings.Contains(got, "<commit-results>"+member("re0", "<commit-success/>")+"</commit-results>") {
+		t.Errorf("single device: %s", got)
+	}
+}

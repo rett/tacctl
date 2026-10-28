@@ -167,7 +167,7 @@ func scopeWrites(verb string, args []string) bool {
 		switch sub {
 		case "add", "remove", "clear":
 			return true
-		case "cisco-name", "juniper-name":
+		case "cisco-name", "juniper-name", "mode":
 			return n > 2
 		}
 	case "snmp":

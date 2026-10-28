@@ -365,6 +365,12 @@
     "cosmetic": 0
   },
   "extras": [],
+  "secrets": {
+    "present": 1,
+    "kinds": [
+      "the TACACS+ server key"
+    ]
+  },
   "skipped": [],
   "withheld": [],
   "warnings": [],

@@ -105,24 +105,7 @@ func WTILevelOf(privlvl int) string {
 // null, empty or a number, or a tier that is not a mapping at all) is
 // tier.InvalidSetting, which tier.ForGroup makes readonly: a hand-edit
 // must never leave a group at priv-lvl 15 a superuser.
-func GroupTier(c *conf.Config, group string) string {
-	top, ok := c.Value("tier")
-	if !ok {
-		return ""
-	}
-	m, isMap := top.(*yamlpy.Map)
-	if !isMap {
-		return tier.InvalidSetting
-	}
-	v, ok := m.Get(group)
-	if !ok {
-		return ""
-	}
-	if s, isStr := v.(string); isStr && s != "" {
-		return s
-	}
-	return tier.InvalidSetting
-}
+func GroupTier(c *conf.Config, group string) string { return conf.GroupTierSetting(c, group) }
 
 // TierProblem is why the tier settings of tacctl.yaml cannot be trusted
 // ("" when they can): a tier that is not a mapping, or a tier.<group> that

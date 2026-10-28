@@ -82,7 +82,7 @@ walk() {
     before=$(cat "$OVERRIDES")
     local case
     for case in '9lives|not a device-safe user name' 'has space|not a device-safe user name' 'a;b|not a device-safe user name' \
-        'root|is reserved' 'tacquito|is reserved' 'remote|is a Junos system account' 'Remote|is a Junos system account' \
+        'Root|is reserved (the Junos root account is spelled' 'tacquito|is reserved' 'remote|is a Junos system account' 'Remote|is a Junos system account' \
         'BOB|is a tacctl user of scope' 'Lab-Admin|already has break-glass user' \
         'bob|is a tacctl user of scope' 'alice|is a tacctl user of scope' \
         'RW-CLASS|template-user or class name' 'op-class|template-user or class name' 'super-user|template-user or class name' \
@@ -98,6 +98,24 @@ walk() {
     assert_failure
     assert_output --partial "Scope 'nosuch' does not exist."
     [[ "$(cat "$OVERRIDES")" == "$before" ]]
+}
+
+@test "scope breakglass add root: the Junos system account, always an admin" {
+    local role
+    for role in operator readonly; do
+        run "$TACCTL_BIN_SCRIPT" scope breakglass lab add root --role "$role"
+        assert_failure
+        assert_output --partial "'root' is always an admin: root is the Junos superuser account, so it takes no --role ${role}."
+    done
+    run "$TACCTL_BIN_SCRIPT" scope breakglass lab list
+    assert_output --partial "Scope 'lab' has no break-glass local user."
+    run "$TACCTL_BIN_SCRIPT" scope breakglass lab add root
+    assert_success
+    assert_output --partial "Break-glass user 'root' (admin) recorded for scope 'lab'."
+    assert_output --partial "'root' is the Junos system account: only the Junos walkthrough renders it"
+    run cat "$OVERRIDES"
+    assert_output --partial "- root:admin"
+    stub_called "logger -t tacctl -p auth.info scope breakglass add scope=lab name=root role=admin by=root"
 }
 
 @test "scope breakglass remove: drops one; the last one takes the key out of tacctl.yaml" {

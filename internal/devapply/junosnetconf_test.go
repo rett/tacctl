@@ -3,6 +3,7 @@ package devapply
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -584,7 +585,7 @@ func TestNetconfReadsAgreeWithTheCommandLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	ni, err := nc.Identity(ctx)
-	if err != nil || ni != ci {
+	if err != nil || !reflect.DeepEqual(ni, ci) {
 		t.Errorf("identity %+v / %+v (%v)", ni, ci, err)
 	}
 	ch, err := cli.History(ctx)

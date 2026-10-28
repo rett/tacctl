@@ -52,17 +52,20 @@ type routingPair struct {
 }
 
 // routingPairs is routing_pairs: (cidr, scope) in the order the daemon
-// tries them (as rendered).
+// tries them (as rendered). A piece carved out of a prefix (WithoutAddresses)
+// sorts where the prefix it came from did (PrefixOrigin), as the renderers
+// write it, so a carved model answers an address as the daemon does.
 func (m *Model) routingPairs() []routingPair {
 	var pairs []routingPair
 	for _, s := range m.Scopes {
-		for _, c := range s.Prefixes {
+		for i, c := range s.Prefixes {
 			if _, ok := store.CanonicalCIDR(c); !ok {
 				continue
 			}
-			k, ok := cidr.SortKey(c)
+			o := s.PrefixOrigin(i)
+			k, ok := cidr.SortKey(o)
 			if !ok {
-				k, _ = cidr.SortKey(strings.TrimSpace(c))
+				k, _ = cidr.SortKey(strings.TrimSpace(o))
 			}
 			pairs = append(pairs, routingPair{c, s.Name, k})
 		}
@@ -604,28 +607,45 @@ func (m *Model) ConfigShow() []string {
 // LinuxUsers is the 'linux-users' view: 'name|priv_lvl' for the members
 // of a scope that can log in (not the sink, not disabled), by name.
 func (m *Model) LinuxUsers(scope string) []string {
-	var out []string
-	for _, n := range m.Members(scope) {
-		u := m.users[n]
-		if u.AccountingSink || u.IsDisabled() {
-			continue
-		}
-		out = append(out, n+"|"+m.privOf(u))
-	}
-	return out
+	return m.LinuxUsersHeld(scope, nil)
 }
 
 // LinuxInactive are the members of a scope that LinuxUsers leaves out (the
 // accounting sink, disabled users), by name: still users of the scope, so a
 // host expires their accounts instead of deleting them.
 func (m *Model) LinuxInactive(scope string) []string {
+	return m.LinuxInactiveHeld(scope, nil)
+}
+
+// LinuxUsersHeld is LinuxUsers for one host, without the members held reports
+// true of: on that host they have no login now, as a disabled user has none
+// (a user who must change the password, on every host but the tacctl server
+// itself). A nil held holds nobody.
+func (m *Model) LinuxUsersHeld(scope string, held func(*User) bool) []string {
 	var out []string
 	for _, n := range m.Members(scope) {
-		if u := m.users[n]; u.AccountingSink || u.IsDisabled() {
+		if u := m.users[n]; !m.linuxInactive(u, held) {
+			out = append(out, n+"|"+m.privOf(u))
+		}
+	}
+	return out
+}
+
+// LinuxInactiveHeld is LinuxInactive for one host, with the members held
+// reports true of: the members LinuxUsersHeld leaves out, whose accounts the
+// host expires.
+func (m *Model) LinuxInactiveHeld(scope string, held func(*User) bool) []string {
+	var out []string
+	for _, n := range m.Members(scope) {
+		if m.linuxInactive(m.users[n], held) {
 			out = append(out, n)
 		}
 	}
 	return out
+}
+
+func (m *Model) linuxInactive(u *User, held func(*User) bool) bool {
+	return u.AccountingSink || u.IsDisabled() || (held != nil && held(u))
 }
 
 // Status is the 'status' view: key=value lines for 'tacctl status'

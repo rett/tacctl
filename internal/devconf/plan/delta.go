@@ -216,6 +216,10 @@ type Counts struct {
 	// does not change; SecretsNotVisible those its pull could not read.
 	SecretsPresent    int
 	SecretsNotVisible int
+	// PresentKinds are the kinds of the secrets counted in SecretsPresent
+	// ("the TACACS+ server key", "the SNMP community"), each once, in order
+	// of appearance: never a value, a name or a label.
+	PresentKinds []string
 	// SecretsByValue counts the lines that hold a value, Placeholders those
 	// that hold '<SECRET>'.
 	SecretsByValue int
@@ -293,6 +297,11 @@ type Delta struct {
 	// with the exact removal line (D111), so a cleanup region can be added.
 	Items  []Item
 	Extras []Extra
+	// Own are, per section, the statements of the device's own that the
+	// comparison counts as unmanaged (SectionResult.Unmanaged): not
+	// irregularities, so no Item, only a count and what kind of statements
+	// they are.
+	Own []Own
 	// Converge is set when the plan was asked for the cleanup (--converge),
 	// and Cleanup is that second region (empty when there is nothing to
 	// remove or the cleanup is refused: Cleanup.Whole says why).
@@ -360,6 +369,18 @@ type Extra struct {
 	Text    string `json:"text"`
 	Remove  []Line `json:"remove,omitempty"`
 	Guard   string `json:"guard,omitempty"`
+	// Own marks a statement of the device's own (the comparison's
+	// unmanaged): it has no Item, and the cover page does not count it.
+	Own bool `json:"-"`
+}
+
+// Own is the device's own statements of one section: the number the
+// comparison calls unmanaged (what 'device config list' shows as 'snmp +N
+// unmanaged') and the kinds they are, in the order they appear.
+type Own struct {
+	Section string   `json:"section"`
+	Count   int      `json:"count"`
+	Kinds   []string `json:"kinds"`
 }
 
 // Display is the delta as text with every secret's value elided: one

@@ -6,7 +6,8 @@
 # needs --yes while a setting is dropped, leaves store.yaml alone and is
 # idempotent; --hosts is accepted and touches no host. The 0.2.3 parsers
 # themselves are checked in internal/cli/rollback_test.go
-# (TestRollbackRealOldBinary and TestRollbackRealOldBinary029 build the 0.2.3 and 0.2.9 tags).
+# (TestRollbackRealOldBinary, TestRollbackRealOldBinary029 and
+# TestRollbackRealOldBinary0219 build the 0.2.3, 0.2.9 and 0.2.19 tags).
 
 load ../helpers/setup
 load ../helpers/tmpenv
@@ -50,6 +51,9 @@ _state_024() {
     "$TACCTL_BIN_SCRIPT" device snmp sw1 port 2161 > /dev/null
     printf 'sw2-community\nsw2-community\n' | "$TACCTL_BIN_SCRIPT" device snmp sw2 community --stdin > /dev/null
     "$TACCTL_BIN_SCRIPT" console password-cache tiers engineer,superuser > /dev/null
+    # The console switches of a release before 0.2.20, still in the file: this
+    # release ignores and keeps them, and 0.2.3 reads them as it always did.
+    sed -i '0,/^version: 1$/s//version: 1\ntiers: {readonly: enable, operator: enable, engineer: enable, superuser: enable}/' "${TACCTL_STATE_DIR}/console.yaml"
     "$TACCTL_BIN_SCRIPT" config devices max-concurrency 16 > /dev/null
     "$TACCTL_BIN_SCRIPT" config devices timeout 120 > /dev/null
     mkdir -p "$TACCTL_VAR_LIB/device-config" "$(dirname "$TACCTL_TIER_SUDOERS_FILE")"
@@ -393,13 +397,24 @@ _overrides() { cat "${TACCTL_STATE_DIR}/tacctl.yaml" 2>/dev/null; }
 
 @test "rollback 0.2.9: a state without the 0.2.10 settings has nothing to convert" {
     _state_024
+    # The state allows the password cache to engineer and superuser, and
+    # 0.2.9 turns it on for every user of those tiers: that is the one
+    # warning, and --apply refuses without --yes and changes nothing.
+    local before
+    before=$(_sums)
     run "$TACCTL_BIN_SCRIPT" rollback 0.2.9 --apply
+    assert_failure 1
+    assert_line "  1. Users who gain a system shell or the password cache"
+    refute_line --regexp '^  2\. [A-Z]'
+    assert_line --partial "engineer: erin (the cache is on for the tier again, without their own choice)"
+    assert_output --partial "The warnings above need your decision"
+    [[ "$(_sums)" == "$before" ]]
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.9 --apply --yes
     assert_success
     assert_output --partial "Nothing to convert: every file is one 0.2.9 can read."
-    refute_output --partial "The warnings above need your decision"
 }
 
-@test "rollback: a pending or unknown apply stops it for both targets, the dry run too, and changes nothing" {
+@test "rollback: a pending or unknown apply stops it for every target, the dry run too, and changes nothing" {
     _state_029
     cat > "$TACCTL_VAR_LIB/devices-config.json" <<'JSON'
 {"version": 1, "devices": {
@@ -408,7 +423,7 @@ _overrides() { cat "${TACCTL_STATE_DIR}/tacctl.yaml" 2>/dev/null; }
 JSON
     before=$(_sums)
     n=$(_snapshots)
-    for target in 0.2.9 0.2.3; do
+    for target in 0.2.19 0.2.9 0.2.3; do
         for args in "" "--apply --yes"; do
             # shellcheck disable=SC2086
             run "$TACCTL_BIN_SCRIPT" rollback "$target" $args
@@ -422,6 +437,23 @@ JSON
     done
     [[ "$(_sums)" == "$before" ]]
     [[ "$(_snapshots)" == "$n" ]]
+}
+
+@test "rollback 0.2.19: the dry run names the release before this one and writes nothing; this release is no target" {
+    _state_024
+    before=$(_sums)
+    n=$(_snapshots)
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.19 --hosts
+    assert_success
+    assert_output --partial "Roll back to 0.2.19 (dry run)"
+    assert_output --partial "put back the per-tier sudoers drop-in 0.2.19 writes"
+    assert_output --partial "This was a dry run: nothing was changed."
+    [[ "$(_sums)" == "$before" ]]
+    [[ "$(_snapshots)" == "$n" ]]
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.20
+    assert_failure 1
+    assert_output --partial "'0.2.20' is not a release to roll back to"
+    assert_output --partial "prepares the state for 0.2.19 (the release before this one)"
 }
 
 @test "rollback 0.2.9 is the superuser's alone" {

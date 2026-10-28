@@ -384,6 +384,7 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 			}
 			if x.op == devconf.OpSame {
 				o.presentSecrets++
+				o.presentKinds = append(o.presentKinds, secretWhat(devconf.FamilyJunos, x.stem))
 			} else {
 				o.hiddenSecrets++
 			}
@@ -646,6 +647,15 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 				o.refused = msg
 				return o
 			}
+		}
+		// The management filter modes (0.2.20): a plan that changes the
+		// filter says what the move between ssh-only and strict stops or
+		// accepts again.
+		touches := func(ls []Line) bool {
+			return slices.ContainsFunc(ls, func(l Line) bool { return strings.Contains(l.Text, "firewall family inet filter") })
+		}
+		if row := findRowByID(rows, "junos.mgmt-acl.filter"); row != nil && (touches(sets) || touches(deletes) || touches(inserts)) {
+			o.warnings = append(o.warnings, p.mgmtModeWarnings(exp, row)...)
 		}
 	}
 
@@ -948,23 +958,15 @@ func (p *planner) lo0Check(exp devices.Section, rows []*jrow) (string, bool) {
 	if row == nil {
 		return "", false
 	}
-	applied := false
-	for _, s := range p.cur.Sections["mgmt-acl"].Lines {
-		t := splitTokens(strings.TrimPrefix(s, "set "))
-		if len(t) >= 7 && t[0] == "interfaces" && t[1] == "lo0" {
-			if i := slices.Index(t, "filter"); i >= 0 {
-				for _, n := range t[i+1:] {
-					if row.names[n] {
-						applied = true
-					}
-				}
-			}
-		}
-	}
+	applied := p.lo0Applied(row)
 	if !applied {
 		return "", false
 	}
+	strict := p.strictMgmt()
 	if p.opt.From == "" {
+		if strict {
+			return "the management filter is applied on lo0 and --from was not given: check that the address you are logged in from is inside a source of the strict filter that is accepted for ssh before you paste (--from <address> makes tacctl check)", true
+		}
 		return "the management filter is applied on lo0 and --from was not given: check that the address you are logged in from is inside a permit-mgmt source before you paste (--from <address> makes tacctl check)", true
 	}
 	from, err := netip.ParseAddr(p.opt.From)
@@ -975,6 +977,20 @@ func (p *planner) lo0Check(exp devices.Section, rows []*jrow) (string, bool) {
 		// the rendered filter is family inet: nothing to check an IPv6
 		// address against, and it is not a reason to refuse
 		return "--from " + p.opt.From + " is an IPv6 address and the management filter is family inet: not checked; make sure you reach the device from an address the filter permits", true
+	}
+	if strict {
+		// the strict filter accepts every protocol from its sources and ends
+		// in the discard: the address must be a source that is accepted for
+		// ssh, in permit-mgmt or in a term of a service that holds tcp/22
+		// (the replies of the authentication server are no way in)
+		if strictPermitsFrom(exp, row, from) {
+			return "", false
+		}
+		only := ""
+		if r := strictRepliesOnly(exp, row, from); r != "" {
+			only = " (it is the address the device authenticates against, which the filter accepts for the server's answers only: " + r + ")"
+		}
+		return fmt.Sprintf("the management filter is applied on lo0 and %s is not inside a source of the rendered strict filter that is accepted for ssh%s: pasting it could cut you off", p.opt.From, only), false
 	}
 	for _, raw := range exp.Lines {
 		t := splitTokens(raw)

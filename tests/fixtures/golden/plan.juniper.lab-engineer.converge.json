@@ -115,16 +115,6 @@
     {
       "n": 11,
       "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "SNMP: name example-switch.example.net",
-      "statement": "set snmp name example-switch.example.net",
-      "action": "Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).",
-      "fixed": false
-    },
-    {
-      "n": 12,
-      "kind": "extra",
       "severity": "COSMETIC",
       "section": "snmp",
       "what": "the SNMP location is example location",
@@ -133,7 +123,7 @@
       "fixed": false
     },
     {
-      "n": 13,
+      "n": 12,
       "kind": "extra",
       "severity": "COSMETIC",
       "section": "snmp",
@@ -143,17 +133,7 @@
       "fixed": false
     },
     {
-      "n": 14,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "an SNMP community: 4 statements",
-      "statement": "e.g. set snmp community \u003cother:1\u003e authorization read-only",
-      "action": "Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).",
-      "fixed": false
-    },
-    {
-      "n": 15,
+      "n": 13,
       "kind": "missing",
       "severity": "ACCESS",
       "section": "mgmt-acl",
@@ -254,10 +234,20 @@
   ],
   "left": {
     "access": 4,
-    "monitoring": 4,
+    "monitoring": 2,
     "cosmetic": 6
   },
   "extras": [],
+  "kept": [
+    {
+      "section": "snmp",
+      "count": 5,
+      "kinds": [
+        "name",
+        "communities"
+      ]
+    }
+  ],
   "skipped": [
     {
       "section": "roles",

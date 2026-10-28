@@ -37,23 +37,49 @@ Running `tacctl upgrade` again right after an upgrade changes nothing. `--branch
 
 After an upgrade: `tacctl status`, `tacctl config validate` (store, rendered config, drift), and `tacctl backup list` (the pre-store file is under the old-style backups).
 
+**The login console on every account (0.2.20).** The console is the login shell of every managed user of every tier on the tacctl server, and there is no switch for it. The `tiers` and `users` mappings of `/etc/tacctl/console.yaml` (the per-tier and per-user switches of earlier releases) are ignored, never written again and left in the file; every managed user gets the console at the next `tacctl host sync <name of this server>`, which also puts sshd's drop-in in force for all of them. Local accounts that are not tacctl users are not touched.
+
 ## Rolling back
 
-`tacctl rollback` takes five targets: `0.2.18`, the release before this
-one, `0.2.17`, `0.2.16`, `0.2.9` and `0.2.3`. All are the dry run described
-below until `--apply` is given, all refuse while an apply is not settled or an
-emergency lockdown locks a group, and each release's tool prepares the state
-for the releases it knows. `0.2.4` to `0.2.8` and `0.2.2` and older are
-refused with the way there (one release at a time, or `tacctl backup restore`
-of a snapshot of the time); `0.2.10` to `0.2.15`, this release and any other
-word are refused with the five targets named.
+`tacctl rollback` takes six targets: `0.2.19`, the release before this
+one, `0.2.18`, `0.2.17`, `0.2.16`, `0.2.9` and `0.2.3`. All are the dry run
+described below until `--apply` is given, all refuse while an apply is not
+settled or a user name has a period, all but `0.2.19` while an emergency
+lockdown locks a group, and each release's tool prepares the state for the
+releases it knows. `0.2.4` to `0.2.8` and `0.2.2` and older are refused with
+the way there (one release at a time, or `tacctl backup restore` of a snapshot
+of the time); `0.2.10` to `0.2.15`, this release and any other word are
+refused with the six targets named.
 
-**An emergency lockdown stops every rollback** (the dry run too): an older
-release has no such record and would render every locked user back into the
-scope. The refusal lists each lockdown and the command that lifts it
+**An emergency lockdown stops every rollback to a release before 0.2.19**
+(the dry run too): such a release has no such record and would render every
+locked user back into the scope. 0.2.19 has the record as this release writes
+it, so the rollback to 0.2.19 keeps it. The refusal lists each lockdown and the command that lifts it
 (`tacctl emergency lockdown <scope> disable`); lift them, then run the
 rollback again. A record that locks nothing (a hand-edited, partial one) is
 removed by the rollback, because the older schemas refuse its keys.
+
+**A user name with a period stops every rollback** (the dry run too): a user name may hold
+periods from 0.2.20, and no target reads one (it fails with `user '<name>': invalid name` on every
+store command). The refusal lists each such user of the store with the command that fixes it
+(`tacctl user rename <name> <new-name>`); do that, then run the rollback again. Nothing is changed
+while it refuses. An override under such a name in the ignored `users` mapping of `console.yaml`
+does not stop it: the rollback takes that entry out of the file.
+
+**The password cache is the user's choice (0.2.20).** `console password-cache tiers` is now only the permission: a tier that is listed no longer has the cache on for everyone in it. Each user turns it on for themselves with `console password-cache on` (off by default), so a console that had the cache on for a tier has it off for every user until they do; `tacctl shell --password-cache` is unchanged. The choices are stored in `settings.password_cache_users` (written only when a user turned it on). No older release reads that key: the rollback removes it for every target (the plan names the users), and the older release then has the cache on for every user of a listed tier, as it always did.
+
+**The system shell of single users.** `settings.system_shell_users` (`console system-shell user`, written only when a user has a setting) is a key no older release reads: the rollback removes it (the plan names the users and their setting), and the older release has the tiers' list `settings.system_shell_tiers` alone. That list always holds `superuser` once this release has written it.
+
+**The console switches of `console.yaml`.** The `tiers` and `users` mappings that this release
+ignores stay in the file, and the release a rollback goes to reads them as it always did: a tier or
+a user switched off there gets a plain shell again at the next `host sync` of that release. A file
+without the mappings is read there as the console on for every tier. The rollback lists every user
+who would gain a system shell this way, and every user who would gain the password cache back (a
+tier that is allowed it has it for everyone again), with the reason, as a warning: `--apply` refuses
+without `--yes` while there is one (the dry run too shows it). To avoid it, remove the `tiers` and
+`users` entries that switch the console off and run `console password-cache tiers none` before the
+rollback; a system-shell `disable` of one user is dropped by the rollback, so that user has their
+tier's setting.
 
 **System blocks that use 0.2.19's statements.** This release added to the
 grammar of the Junos and IOS `system` blocks: the syslog, login-policy, ssh and
@@ -65,17 +91,112 @@ blocks that hold such statements, by scope or device, vendor and count, in a
 warning that `--apply` refuses without `--yes`. Take the statements out
 (`tacctl scope block ... system edit`, `tacctl device block ... system edit`)
 before the upgrade, or expect the errors. Targets 0.2.18, 0.2.17, 0.2.16 and
-0.2.9 warn so; 0.2.3 has no blocks.
+0.2.9 warn so; 0.2.19 has the statements, and 0.2.3 has no blocks.
+
+**Console settings of 0.2.20.** `console.yaml` may hold `settings.color` (the
+`console color` setting, written only when it is `on` or `off`) and a
+`settings.list_max` of `-1` (`console list-max` with a negative number: never
+ask). No older release reads either (it answers `unknown key 'color'` or
+`settings.list_max must be 1-1000`, the console falls back to its defaults and
+its writes fail), so every target takes them out: `--apply` removes
+`settings.color`, writes `list_max: 1000` in place of `-1`, keeps every other
+setting, and takes the snapshot first. The dry run lists the change as a step
+of its own.
+
+**A scope's strict management filter mode.** The mode of the Junos
+management filter (`tacctl scope mgmt-acl <scope> mode`, 0.2.20) is stored as
+`scope_mgmt_acl.mode.<scope>` (only `strict` is stored), a key every older
+release refuses. Every target therefore removes it from `tacctl.yaml` after a
+snapshot, and the dry run lists the scopes that were strict in a warning that
+`--apply` refuses without `--yes`. The older release renders and plans the
+`ssh-only` filter for them, which ends in a `default-accept` term, so its
+`device config plan` or `device config apply` would put that filter back on a
+device that holds the strict one, and the device would accept by default
+again, without saying so. Nothing contacts a device. To stay deny by default,
+keep this release, or leave the management filter of those scopes out of the
+older release's plans.
+
+**A required password change.** A user can be flagged to change the
+password before logging in to anything but tacctl (`password_change_required`
+in `store.yaml`, written only for a flagged user, 0.2.20). Every older
+release refuses the key (`user '<name>': unknown field
+'password_change_required'`), so every target removes it from the store after
+a snapshot, and the dry run lists the flagged users. Those who are not
+superusers (the flag never binds a superuser) are named in a warning that
+`--apply` refuses without `--yes`: the older release renders them into every
+scope of theirs again, so they can log in to the devices with the password an
+administrator set or knew, the one they were to change. The rollback does not
+render, so the running TACACS+ and RADIUS files keep them off the devices
+until the older release renders, and their expired accounts on the enrolled
+hosts other than this server open again at each host's next `host sync`. Have them change the password first (they
+log in to tacctl and are asked), or keep this release. The flags stay in the
+snapshot `--apply` takes first.
+
+**The Junos root account as a break-glass entry.** `scope breakglass
+<scope> add root` (0.2.20) stores `root:admin`, which the schema of every
+older release accepts, so the rollback keeps it. Those releases take `root`
+for a local user like any other: the Junos walkthrough renders a commented
+`set system login user root class ... authentication encrypted-password` line,
+which Junos refuses (root is under `system root-authentication`), and neither
+`set system root-authentication encrypted-password` nor `set system services
+ssh root-login allow`; the Cisco and WTI walkthroughs render a root account;
+and `device config pull` and `diff` (every target but 0.2.3) expect the login
+line on each Junos device of the scope, so its `breakglass` section reads
+`differs`. The dry run names the scopes that record `root` in a warning that
+`--apply` refuses without `--yes`; `tacctl scope breakglass <scope> remove
+root` takes the entry out (record it again after the next upgrade to this
+release).
+
+**Root's statements in the stored pulls.** The pull of this release keeps
+`system root-authentication` (the leaf's name only) and `system services ssh
+root-login` in the `breakglass` section of every Junos device, whether or not
+the scope records `root`. An older release puts neither in a section, and
+reading this release's sections file it takes them for extra statements, so
+the `breakglass` section of every Junos device of a scope with a break-glass
+user would read `differs` until its next pull. Every target but 0.2.3 (which
+never opens the records) therefore takes the two out of the `breakglass`
+section of the files in `/var/lib/tacctl/device-config/` (the sections file
+and the plain view of each pull), under the records' lock, and leaves every
+other line; the dry run lists each file. The files are derived and never in a
+snapshot; this release, if it stays, reads the two as missing until its next
+`device config pull`.
+
+### To 0.2.19
+
+The per-tier sudoers drop-in of this release grants the engineer `scope
+mgmt-acl * mode` and the operator the read forms of `console system-shell`
+and `console password-cache [on|off]`; 0.2.19 has none of them. `--apply`
+rewrites `/etc/sudoers.d/tacctl-tiers`, when it is exactly the text this
+release writes, with the text 0.2.19 writes (after `visudo -cf`); an edited
+file is left, and 0.2.19's upgrade rewrites it. Beside that, it removes what
+every target removes (the management filter mode, the required password
+change and the console settings of 0.2.20, above), after a snapshot when there
+is one of them. An emergency lockdown, a standing one too, is 0.2.19's own and
+stays. Nothing else is converted: `devices.yaml`, the group drop-in, the
+blocks, the apply state, the host registry and the hosts are in formats 0.2.19
+reads. `--hosts` is accepted and does nothing.
+
+```bash
+tacctl rollback 0.2.19          # the dry run: steps, warnings, writes nothing
+tacctl rollback 0.2.19 --apply  # convert (--yes when it warns)
+tacctl upgrade --branch 0.2.19  # install 0.2.19
+```
+
+Until 0.2.19 is installed, do not run `scope mgmt-acl <scope> mode strict`,
+`user add` or `user passwd <name>` (both require a password change by
+default), `user require-password-change`, `console color`, `console list-max`,
+`console system-shell user` or `console password-cache on`: they write a key
+0.2.19 refuses. If one did, run `tacctl rollback 0.2.19 --apply` again.
 
 ### To 0.2.18
 
 The per-tier sudoers drop-in of this release grants the engineer the rows of
 `device config apply`, `device enroll`, `device collect`, `device onboard`,
-`device sync` and `device support-bundle`; 0.2.18 has none of them.
-`--apply` rewrites `/etc/sudoers.d/tacctl-tiers`, when it is exactly the text
-this release writes, with the text 0.2.18 writes (after `visudo -cf`); an
-edited file is left, and 0.2.18's upgrade rewrites it. Nothing else is
-converted: `devices.yaml` (0.2.18 reads `ios_syntax`), `console.yaml`,
+`device sync` and `device support-bundle`; 0.2.18 has none of them. `--apply`
+rewrites `/etc/sudoers.d/tacctl-tiers`, when it is exactly the text this
+release writes (or the one 0.2.19 wrote), with the text 0.2.18 writes (after
+`visudo -cf`); an edited file is left, and 0.2.18's upgrade rewrites it.
+Nothing else is converted: `devices.yaml` (0.2.18 reads `ios_syntax`),
 `store.yaml`, the group drop-in, the apply state and the hosts are in formats
 0.2.18 reads. `--hosts` is accepted and does nothing. Until 0.2.18 is
 installed, do not run `tacctl emergency lockdown`: it writes the record 0.2.18
@@ -92,16 +213,16 @@ Three verbs have other names in 0.2.17: `device ios-syntax` is `device
 config-syntax`, `device notice list` is `device notices` and `device
 client-config` is `device ssh-config`, and the per-tier sudoers drop-in grants
 the names of the release that wrote it. `--apply` rewrites
-`/etc/sudoers.d/tacctl-tiers`, when it is exactly the text this release
-writes (or the one 0.2.18 wrote), with the text 0.2.17 writes (after `visudo
--cf`); an edited file is left, and 0.2.17's upgrade rewrites it. This release also stores a device's
-configuration syntax setting in `devices.yaml` as `ios_syntax`, which 0.2.17
-refuses (`unknown key 'ios_syntax'`): when a device has one, `--apply` takes a
-snapshot first (`tacctl backup list`) and writes the setting under
-`config_syntax`, the key 0.2.5 to 0.2.17 read; the value and every other key
-stay. A partial lockdown record in `tacctl.yaml` is removed (0.2.17 refuses
-its keys). Nothing else is converted: `console.yaml`, `store.yaml`, the group
-drop-in and the hosts are in formats 0.2.17 reads. `--hosts` is
+`/etc/sudoers.d/tacctl-tiers`, when it is exactly the text this release writes
+(or the one 0.2.19 or 0.2.18 wrote), with the text 0.2.17 writes (after
+`visudo -cf`); an edited file is left, and 0.2.17's upgrade rewrites it. This
+release also stores a device's configuration syntax setting in `devices.yaml`
+as `ios_syntax`, which 0.2.17 refuses (`unknown key 'ios_syntax'`): when a
+device has one, `--apply` takes a snapshot first (`tacctl backup list`) and
+writes the setting under `config_syntax`, the key 0.2.5 to 0.2.17 read; the
+value and every other key stay. A partial lockdown record in `tacctl.yaml` is
+removed (0.2.17 refuses its keys). Nothing else is converted: `store.yaml`,
+the group drop-in and the hosts are in formats 0.2.17 reads. `--hosts` is
 accepted and does nothing. Until 0.2.17 is installed, do not run a command
 that changes the device registry: it writes `ios_syntax` again (run the
 rollback again if one did).
@@ -133,7 +254,7 @@ with it. When the value is `true` the dry run warns that 0.2.16 runs a command
 whose audit line cannot be written, and `--apply` refuses without `--yes`; a
 `false` value is removed without a warning. The configuration syntax setting
 of `devices.yaml` is written under `config_syntax`, as for 0.2.17. Nothing
-else is converted: `console.yaml`, `store.yaml`, the sudoers drop-ins, the
+else is converted: `store.yaml`, the sudoers drop-ins, the
 SNMP credentials, the blocks, `/var/lib/tacctl/device-apply/` and the rendered
 backend files are in formats 0.2.16 reads, nothing is re-rendered or restarted
 and no device is contacted. `--hosts` is accepted and does nothing.
@@ -159,7 +280,7 @@ tacctl upgrade --branch 0.2.9          # install 0.2.9: switches the clone to th
 1. **`tacctl.yaml`**: removes `audit.strict`, `device.apply.transport` and every `netconf_scope.<scope>` key when set (the dry run warns with their values, and `--apply` refuses without `--yes` while a `device.apply.transport` or `netconf_scope` key is set, or `audit.strict` is `true`; the snapshot keeps them, and `tacctl backup restore` of it, **with this release**, brings them back). Every other key stays, `device.apply.confirm_timeout` and `device.apply.pause` included.
 2. **`devices.yaml`**: removes the `netconf:` map of every device that has one, and writes the configuration syntax setting under `config_syntax` (as for 0.2.17: 0.2.9 refuses `ios_syntax`). The devices then follow their scope's setting, which is gone too: 0.2.9 neither plans nor compares the NETCONF service, and a service a device runs, or has had deleted, stays as it is.
 3. **Leaves, and lists**, what this release wrote that 0.2.9 ignores; nothing is deleted. In `/var/lib/tacctl/devices-config.json` (version 1, as 0.2.9 reads it) this is the `via` field of the `applied` part of the records (the transport the apply wrote through): 0.2.9 reads the file without the field and does not write it back.
-4. **Everything else** is in a format 0.2.9 reads: the sudoers drop-ins (this release changed none), `console.yaml`, `store.yaml`, the SNMP credentials, the blocks, `/var/lib/tacctl/device-apply/` and the rendered backend files are not touched, nothing is re-rendered or restarted and no device is contacted. `--hosts` is accepted and does nothing.
+4. **Everything else** is in a format 0.2.9 reads: the sudoers drop-ins (this release changed none), `store.yaml`, the SNMP credentials, the blocks, `/var/lib/tacctl/device-apply/` and the rendered backend files are not touched, nothing is re-rendered or restarted and no device is contacted. `--hosts` is accepted and does nothing.
 
 **An apply that is not settled stops the rollback** (the dry run too): a device whose record says `pending` (a confirmed commit whose window has not ended) or `unknown` (its outcome could not be read) is named with its time and the apply's identifier, because a rollback that cannot read the device must not hide an open window. `tacctl device config apply <name> --check` reads the device and settles the record, or `tacctl device config forget <name>` drops it once the device has been dealt with by hand; then run the rollback again. A records file that cannot be read stops it for the same reason (move it aside when no apply is pending: a pull rebuilds it).
 
@@ -179,7 +300,7 @@ tacctl upgrade --branch 0.2.3          # install 0.2.3: switches the clone to th
 `--apply` takes a snapshot first (`tacctl backup list`), then, in this order:
 
 1. **`tacctl.yaml`**: removes `device.config.max_concurrency`, `device.config.transport`, `device.config.timeout`, `device.config.confirm_timeout`, `device.apply.confirm_timeout`, `device.apply.pause`, `device.apply.transport` and `audit.strict`, every `netconf_scope.<scope>`, `cisco.source_interface.<scope>` and `breakglass_hold.<device>` key (the keys 0.2.5 added, and any other key 0.2.3 does not know). Every other key stays. A break-glass hold that stands stops the rollback instead, so no hold is ever dropped by it.
-2. **`console.yaml`**: removes `settings.password_cache` (the password cache's tiers and lifetimes: 0.2.3's parser rejects the key, the console would fall back to the defaults and its writes would fail), so the cache is off again; every other setting stays, `tiers.engineer` and `settings.space_completion` included (they are 0.2.3's own).
+2. **`console.yaml`**: removes `settings.password_cache` (the password cache's tiers and lifetimes: 0.2.3's parser rejects the key, the console would fall back to the defaults and its writes would fail), so the cache is off again; `settings.color` and a `list_max` of `-1` go as for every target (above); every other setting stays, `tiers.engineer` and `settings.space_completion` included (they are 0.2.3's own).
 3. **`devices.yaml`**: removes the `snmp:` map of every device (a device's own SNMP version, port, timeout and allowed clients: 0.2.3's parser answers `unknown key 'snmp'` and cannot read the registry) the `ios_syntax` key of every Cisco device that has one (`device 'x': unknown key 'ios_syntax'`) and the `netconf:` map of every Junos device that has one (`unknown key 'netconf'`). The devices are then read with their scope's or the default's settings, and the dry run warns that 0.2.3 compares a `legacy-ssh` Cisco device as IOS 12.x again; the locations and everything else stay.
 4. **The sudoers drop-ins**: a per-tier drop-in (`/etc/sudoers.d/tacctl-tiers`) or a group drop-in (`config sudoers install <group>`) that is exactly the text this release writes (or the one 0.2.4 to 0.2.8 wrote) is rewritten with the text 0.2.3 writes, after `visudo -cf` (it loses the `TACCTL_ASKPASS` alias and `env_keep` line, and, in the per-tier file, the rows of `device config`, `device snmp`, `device ios-syntax`, `breakglass list` and `console forget`). A file an administrator edited is left as it is; a drop-in that `visudo` refuses is left and named, and the rollback goes on (0.2.3's upgrade rewrites the per-tier file with its own text).
 5. **Leaves** `snmp/devices/` (the devices' own SNMP credentials, mode 0600: 0.2.3 opens `snmp/<scope>.yaml` by name and never lists the directory, so it ignores the subdirectory; 0.2.5 ignores a device's file too until the device has settings of its own again (its `snmp:` map gates the file), and `device snmp <name> clear` removes it; they are in the snapshot), the records of the configuration pulls in `/var/lib/tacctl` (`devices-config.json` and `device-config/`: derived from the devices and never in a snapshot, which 0.2.3 does not open and 0.2.5 rebuilds; `tacctl device config forget --all` of 0.2.5, before the rollback, deletes them), `store.yaml` (0.2.5 did not change its format) and the rendered backend files (nothing it removes reaches them, so nothing is re-rendered or restarted).

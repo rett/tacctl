@@ -25,6 +25,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -63,6 +64,11 @@ type PasswordCache interface {
 	// Notices returns, and clears, the lines to show the person (events
 	// that happened since the last call).
 	Notices() []string
+	// Holds reports whether a password is cached now.
+	Holds() bool
+	// Stop forgets the password (why is one of askpass.Why*, queued as a
+	// notice) and shuts the cache for good: 'console password-cache off'.
+	Stop(why string)
 }
 
 type lineEnvKey struct{}
@@ -108,9 +114,11 @@ type Options struct {
 	// lists the choices). A paste is not affected. Off: a blank is a blank.
 	// Interactive only.
 	SpaceCompletion bool
-	// Styled shows the labels of the '?' list in bold. The caller decides
-	// it from the terminal and the user's choice (ui.Colour); false: plain.
-	// Interactive only.
+	// Styled shows the words of the lists (Tab's columns, '?') in the
+	// palette: command names bright white, sub-commands, fixed words and
+	// options teal, live names bold, the descriptions plain. The caller
+	// decides it from the terminal and the user's choice (ui.Colour, the
+	// console's color setting); false: plain. Interactive only.
 	Styled bool
 	// Help is the text of 'help <words>'; false when there is none.
 	Help func(words []string) (string, bool)
@@ -126,6 +134,44 @@ type Options struct {
 	// Cache is the session's password cache; nil: none (the cache is off,
 	// or the mode keeps no process around: -c and batch).
 	Cache PasswordCache
+	// Locked, when set, is asked before every line runs and by the lists:
+	// while it answers true the session is held to a required password
+	// change, and nothing runs but the words of LockWords (alone, with no
+	// argument), exit and quit. Every other line, help, history,
+	// system-shell and console forget included, is refused with LockNotice
+	// as an error and status 1, and the lists offer exit and what the
+	// completer offers. It is asked again for each line, so the lock lifts
+	// the moment its answer does.
+	Locked func() bool
+	// LockWords are the words that run while Locked answers true ('passwd').
+	LockWords []string
+	// LockNotice is the refusal of a line while Locked answers true.
+	LockNotice string
+	// Relock, when set, is called for each line the lock would refuse, before
+	// it is refused: it asks again whether the requirement still stands (the
+	// password may have been changed in another session) and lifts the lock
+	// through Locked when it does not, in which case the line runs.
+	Relock func()
+	// LockNoticeFunc, when set, is the refusal in place of LockNotice (the
+	// requirement can change kind between lines).
+	LockNoticeFunc func() string
+	// LockRefused, when set, is told the words of each line refused while
+	// the session is locked (the console logs it).
+	LockRefused func(words []string)
+	// Opening, when set, runs once in an interactive session before the first
+	// prompt, with the terminal as the shell found it (the console's required
+	// password change: the notice and the dialog). It answers end true, with
+	// the status, to end the session without a prompt (EndLocked); otherwise
+	// the session goes on to its prompt, locked or not as Locked says. It gets
+	// at most Idle (when set): its context is cancelled after that and the
+	// session ends as an idle one (EndIdle).
+	Opening func(ctx context.Context) (end bool, status int)
+	// CacheStart, when set, starts the cache in the running session after
+	// 'console password-cache on' saved the person's choice (the policy is
+	// asked again, so it starts only for a tier that is allowed): the shell
+	// has no cache until then, or after 'off'. Nil: the word saves the
+	// choice and says it applies from the next session.
+	CacheStart func() (PasswordCache, error)
 }
 
 // Why a session ended (Shell.End).
@@ -138,6 +184,7 @@ const (
 	EndCommand = "command" // the one line of -c
 	EndFailed  = "failed"  // a batch stopped at a line that failed
 	EndError   = "error"   // the terminal failed
+	EndLocked  = "locked"  // Opening ended it: the required password change was declined
 )
 
 // Shell runs lines.
@@ -192,6 +239,20 @@ func (s *Shell) run(ctx context.Context, line string, stdin io.Reader) (status i
 		return 0, false
 	}
 	s.lines++
+	if s.locked() && !s.lockAllows(words, bare) && s.o.Relock != nil {
+		s.o.Relock()
+	}
+	if s.locked() && !s.lockAllows(words, bare) {
+		if s.o.LockRefused != nil {
+			s.o.LockRefused(words)
+		}
+		notice := s.o.LockNotice
+		if s.o.LockNoticeFunc != nil {
+			notice = s.o.LockNoticeFunc()
+		}
+		s.errorf("%s", notice)
+		return 1, false
+	}
 	if bare {
 		return s.o.Exec(ctx, words, stdin), false
 	}
@@ -239,6 +300,9 @@ func (s *Shell) run(ctx context.Context, line string, stdin io.Reader) (status i
 	if isConsoleForget(words) {
 		return s.consoleForget(words), false
 	}
+	if isPasswordCacheWord(words) {
+		return s.passwordCacheWord(ctx, words, stdin), false
+	}
 	if c := s.o.Cache; c != nil {
 		// The cache is open only for the lines that use it, for as long as
 		// they run, with a token made for the line; any other line, the
@@ -257,10 +321,80 @@ func (s *Shell) run(ctx context.Context, line string, stdin io.Reader) (status i
 	return status, false
 }
 
+// locked reports whether the session is held to a required password change.
+func (s *Shell) locked() bool { return s.o.Locked != nil && s.o.Locked() }
+
+// lockAllows reports whether a line runs while the session is locked: exit
+// or quit, or one of LockWords, alone. A line that is only 'tacctl' (bare)
+// is the command with no arguments, which is not one of them.
+func (s *Shell) lockAllows(words []string, bare bool) bool {
+	if bare || len(words) != 1 {
+		return false
+	}
+	return words[0] == "exit" || words[0] == "quit" || slices.Contains(s.o.LockWords, words[0])
+}
+
 // isConsoleForget reports whether words are 'console forget': a word of the
 // shell and the console, never run through sudo.
 func isConsoleForget(words []string) bool {
 	return len(words) >= 2 && words[0] == "console" && words[1] == "forget"
+}
+
+// isPasswordCacheWord reports whether words are 'console password-cache' with
+// no argument (the state) or 'on' or 'off' (the person's own choice): a word
+// of the shell and the console, for the session's cache lives in this
+// process. The root side keeps the choice (the same words as a command); every
+// other form, 'tiers', 'idle', 'max' and 'user', is an ordinary command.
+func isPasswordCacheWord(words []string) bool {
+	if len(words) < 2 || words[0] != "console" || words[1] != "password-cache" {
+		return false
+	}
+	return len(words) == 2 || (len(words) == 3 && (words[2] == "on" || words[2] == "off"))
+}
+
+// passwordCacheWord is 'console password-cache [on|off]': the root side answers
+// the state or saves the choice, and this process then starts the cache (on),
+// stops it and forgets the password (off), or says whether a password is
+// cached (the state).
+func (s *Shell) passwordCacheWord(ctx context.Context, words []string, stdin io.Reader) int {
+	status := s.o.Exec(ctx, words, stdin)
+	out := s.o.Out.Stdout
+	switch {
+	case len(words) == 2:
+		if status != 0 {
+			return status
+		}
+		switch c := s.o.Cache; {
+		case c == nil:
+			_, _ = fmt.Fprintln(out, "in this session: the password cache is not on")
+		case c.Holds():
+			_, _ = fmt.Fprintln(out, "in this session: the password cache is on and a password is cached now")
+		default:
+			_, _ = fmt.Fprintln(out, "in this session: the password cache is on; no password is cached now")
+		}
+	case words[2] == "off":
+		// The session stops caching whether or not the choice could be saved.
+		if c := s.o.Cache; c != nil {
+			c.Stop(askpass.WhyOff)
+			s.printNotices()
+			s.o.Cache = nil
+			_, _ = fmt.Fprintln(out, "the password cache is off in this session")
+		}
+	case status != 0:
+	case s.o.Cache != nil:
+		_, _ = fmt.Fprintln(out, "the password cache is on in this session")
+	case s.o.CacheStart == nil || !s.interactive:
+		_, _ = fmt.Fprintln(out, "the password cache starts with your next interactive session")
+	default:
+		c, err := s.o.CacheStart()
+		if err != nil {
+			s.errorf("%s", err.Error())
+			return 1
+		}
+		s.o.Cache = c
+		_, _ = fmt.Fprintln(out, "the password cache is on in this session: the first device login that asks for your password stores it (console password-cache off, console forget)")
+	}
+	return status
 }
 
 // changesOwnPassword reports whether the line is 'passwd' or 'user passwd'
@@ -303,7 +437,7 @@ func (s *Shell) printNotices() {
 // Command runs one line (-c), recorded in the history, with stdin for the
 // command, and returns its status.
 func (s *Shell) Command(ctx context.Context, line string, stdin io.Reader) int {
-	if s.o.History != nil {
+	if s.o.History != nil && !s.locked() {
 		s.o.History.Add(line)
 	}
 	status, _ := s.run(ctx, line, stdin)
@@ -376,7 +510,7 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 	if hist == nil {
 		hist = NewHistory("", nil)
 	}
-	ed := &editor{prompt: s.o.Prompt, hist: hist, complete: s.o.Complete, completeFixed: s.o.CompleteFixed, explain: s.o.Explain, listMax: s.o.ListMax,
+	ed := &editor{prompt: s.o.Prompt, hist: hist, locked: s.locked, complete: s.o.Complete, completeFixed: s.o.CompleteFixed, explain: s.o.Explain, listMax: s.o.ListMax,
 		systemShell: s.o.SystemShell != nil, spaces: s.o.SpaceCompletion, styled: s.o.Styled}
 	if ed.listMax == 0 {
 		ed.listMax = DefaultListMax
@@ -386,7 +520,14 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 	t := term.NewTerminal(in, s.o.Prompt)
 	ed.t = t
 	t.AutoCompleteCallback = ed.key
-	hist.skip = func() bool { return ed.interrupted }
+	// a line typed while the session is held to a required password change
+	// is not recorded: it may be a password typed at the prompt after the
+	// dialog failed, and the history is a 0600 file that outlives the session
+	hist.skip = func() bool { return ed.interrupted || s.locked() }
+	// nor is an earlier line recalled (Up, Ctrl-R): the session runs nothing
+	// but the change, and the lines are the account's, not the dialog's
+	hist.hide = s.locked
+	defer func() { hist.hide = nil }()
 	t.History = hist
 
 	var stop atomic.Int32
@@ -416,6 +557,27 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 			s.reason = EndHangup
 		}
 		return 128 + int(sig)
+	}
+	if s.o.Opening != nil {
+		// The opening is held to the idle time as a prompt is: a dialog that
+		// nobody answers ends the session instead of holding the login open
+		// for good (its context is cancelled, which ends the command it runs).
+		octx, cancel := ctx, context.CancelFunc(func() {})
+		if s.o.Idle > 0 {
+			octx, cancel = context.WithTimeout(ctx, s.o.Idle)
+		}
+		end, status := s.o.Opening(octx)
+		idle := octx.Err() != nil && ctx.Err() == nil
+		cancel()
+		if idle {
+			_, _ = fmt.Fprintf(s.o.Out.Stdout, "\nidle timeout after %s\n", idleText(s.o.Idle))
+			s.reason = EndIdle
+			return 0
+		}
+		if end {
+			s.reason = EndLocked
+			return status
+		}
 	}
 	for {
 		if stop.Load() != 0 {

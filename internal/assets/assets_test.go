@@ -59,3 +59,17 @@ func TestLinuxScriptsAreTheTreesFiles(t *testing.T) {
 		}
 	}
 }
+
+// The embedded manual page is man/tacctl.1 of the tree, byte for byte.
+func TestManPageIsTheTreesFile(t *testing.T) {
+	disk, err := os.ReadFile("../../man/tacctl.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ManPage(); len(got) == 0 || string(got) != string(disk) {
+		t.Errorf("embedded manual page differs from man/tacctl.1 (%d and %d bytes)", len(got), len(disk))
+	}
+	if !strings.HasPrefix(string(ManPage()), ".\\\" Manual page for tacctl") {
+		t.Errorf("the embedded page does not start with its header comment: %.40q", ManPage())
+	}
+}

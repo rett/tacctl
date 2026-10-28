@@ -3,7 +3,18 @@ package execx
 import (
 	"context"
 	"io"
+	"syscall"
 )
+
+type endOnDeadlineKey struct{}
+
+// EndOnDeadline marks ctx so that Attached ends the program with SIGTERM when
+// ctx's deadline passes (a timeout the caller set, as the idle time of a
+// dialog nobody answers). A cancellation that is not a deadline (Ctrl-C) is
+// still left to the child.
+func EndOnDeadline(ctx context.Context) context.Context {
+	return context.WithValue(ctx, endOnDeadlineKey{}, true)
+}
 
 // Attached runs c with the terminal: stdin, stdout and stderr are the
 // caller's own, so a program that owns the terminal (ssh -t, a sudo
@@ -23,6 +34,19 @@ func Attached(ctx context.Context, r Runner, c Cmd, stdin io.Reader, stdout, std
 	p, err := r.Start(context.WithoutCancel(ctx), c)
 	if err != nil {
 		return 127, ctx.Err() != nil, err
+	}
+	if ctx.Value(endOnDeadlineKey{}) != nil {
+		done := make(chan struct{})
+		defer close(done)
+		go func() {
+			select {
+			case <-ctx.Done():
+				if ctx.Err() == context.DeadlineExceeded {
+					_ = p.Signal(syscall.SIGTERM)
+				}
+			case <-done:
+			}
+		}()
 	}
 	res, err := p.Wait()
 	return res.Code, ctx.Err() != nil, err

@@ -5,10 +5,12 @@ import (
 	"context"
 	"io"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
 	"github.com/rett/tacctl/internal/app"
+	"github.com/rett/tacctl/internal/shell"
 )
 
 // The command tree. Each family has a file (user.go, scope.go, ...) that
@@ -56,6 +58,8 @@ func newRoot(inv *invocation) *cobra.Command {
 		completionNamesCmd(inv),
 		// The generated shell completion script (completion.go).
 		completionCmd(inv),
+		// The help of the words, for the bash help key; runs nothing (help_request.go).
+		helpOnlyCmd(inv),
 		// One lifecycle phase of one backend, for drivers and tests (phase.go).
 		phaseCmd(inv),
 	)
@@ -142,21 +146,49 @@ func complete(ctx context.Context, a *app.App, root *cobra.Command) error {
 	root.SetErr(a.Out.Stderr)
 	err := root.ExecuteContext(ctx)
 	out := buf.String()
-	// cobra offers its help command among the top-level words even when it
-	// is hidden; tacctl has no 'help' command.
 	if len(a.Args) == 2 {
-		var kept []string
-		for _, l := range strings.SplitAfter(out, "\n") {
-			if w, _, _ := strings.Cut(strings.TrimSuffix(l, "\n"), "\t"); w != "help" {
-				kept = append(kept, l)
-			}
-		}
-		out = strings.Join(kept, "")
+		out = withoutHelp(out)
+	}
+	if a.Args[0] == cobra.ShellCompRequestCmd {
+		out = capDescriptions(out, summaryMax)
 	}
 	if _, werr := io.WriteString(a.Out.Stdout, out); err == nil {
 		err = werr
 	}
 	return err
+}
+
+// withoutHelp is the answer of cobra's __complete without the line of its
+// help command: cobra offers it among the top-level words even when it is
+// hidden, and tacctl has no 'help' command.
+func withoutHelp(out string) string {
+	var kept []string
+	for _, l := range strings.SplitAfter(out, "\n") {
+		if w, _, _ := strings.Cut(strings.TrimSuffix(l, "\n"), "\t"); w != "help" {
+			kept = append(kept, l)
+		}
+	}
+	return strings.Join(kept, "")
+}
+
+// summaryMax is the longest description of a command or a flag (style
+// rule, docs/development/README.md): the zsh and fish menus show the
+// descriptions of 'tacctl __complete' and have no room for more; a longer
+// one (the lists of the shell wrap it) is cut there, at a blank, and ends
+// in "...".
+const summaryMax = 72
+
+// capDescriptions cuts the description of each 'word<TAB>description' line
+// of cobra's answer to max characters.
+func capDescriptions(out string, max int) string {
+	lines := strings.SplitAfter(out, "\n")
+	for i, l := range lines {
+		body := strings.TrimSuffix(l, "\n")
+		if w, d, ok := strings.Cut(body, "\t"); ok && utf8.RuneCountInString(d) > max {
+			lines[i] = w + "\t" + shell.Cap(d, max) + l[len(body):]
+		}
+	}
+	return strings.Join(lines, "")
 }
 
 // writeTopUsage prints the top-level usage, as 'tacctl' with no arguments

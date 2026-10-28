@@ -46,6 +46,7 @@ import (
 	"io"
 	"net"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -118,6 +119,9 @@ type JunosNetconf struct {
 	login  *Login
 	log    []string
 	m      *masker
+	// members are the labels the pre-flight's 'show version' listed (none
+	// for a single device): a reply that names members names these.
+	members []string
 	// own is set from the confirmed commit's answer to the confirming
 	// commit: this session has a commit pending that only it can confirm.
 	own bool
@@ -268,6 +272,9 @@ func (j *JunosNetconf) logf(s string) {
 // rpcMsg is one <rpc-error> of a reply.
 type rpcMsg struct {
 	Severity, Tag, Message, Path, Bad string
+	// Member is the name of the <routing-engine> element the error stands
+	// in (a device with several members), "" otherwise.
+	Member string
 }
 
 // text is the message as one line with the masker's elisions, the way an
@@ -289,6 +296,18 @@ func (e rpcMsg) text(m *masker) string {
 type rpcReply struct {
 	Errs []rpcMsg
 	Seen map[string]bool
+	// Members are the <routing-engine> elements of the reply, one for each
+	// member of a device that has several (a commit's answer names them
+	// <routing-engine><name>fpc0</name><commit-check-success/>...): the
+	// name and the names of what the element holds.
+	Members []rpcMember
+}
+
+// rpcMember is one <routing-engine> element of a reply: its name and the
+// names of the elements it holds, in order.
+type rpcMember struct {
+	Name string
+	Seq  []string
 }
 
 // parseReply reads a reply document. A document that is not XML is an
@@ -299,6 +318,7 @@ func parseReply(reply string) (rpcReply, error) {
 	d.CharsetReader = func(_ string, in io.Reader) (io.Reader, error) { return in, nil }
 	var cur *rpcMsg
 	var field string
+	var mem *rpcMember
 	for {
 		tok, err := d.Token()
 		if errors.Is(err, io.EOF) {
@@ -315,17 +335,36 @@ func parseReply(reply string) (rpcReply, error) {
 				cur = &rpcMsg{}
 			case cur != nil:
 				field = name
+			case name == "routing-engine":
+				mem = &rpcMember{}
+				r.Seen[name] = true
 			default:
 				r.Seen[name] = true
+				if mem != nil {
+					field = name
+					if name != "name" {
+						mem.Seq = append(mem.Seq, name)
+					}
+				}
 			}
 		case xml.EndElement:
-			if t.Name.Local == "rpc-error" && cur != nil {
+			switch {
+			case t.Name.Local == "rpc-error" && cur != nil:
+				if mem != nil {
+					cur.Member = mem.Name
+				}
 				r.Errs = append(r.Errs, *cur)
 				cur = nil
+			case t.Name.Local == "routing-engine" && mem != nil:
+				r.Members = append(r.Members, *mem)
+				mem = nil
 			}
 			field = ""
 		case xml.CharData:
 			if cur == nil {
+				if mem != nil && field == "name" {
+					mem.Name += strings.TrimSpace(string(t))
+				}
 				continue
 			}
 			s := string(t)
@@ -416,7 +455,14 @@ func (j *JunosNetconf) Identity(ctx context.Context) (Identity, error) {
 	if err != nil {
 		return Identity{}, err
 	}
-	return parseVersion(out)
+	id, err := parseVersion(out)
+	if err != nil {
+		return Identity{}, err
+	}
+	j.mu.Lock()
+	j.members = id.Members
+	j.mu.Unlock()
+	return id, nil
 }
 
 // History runs 'show system commit'.
@@ -756,6 +802,84 @@ func (j *JunosNetconf) rpcHeld(ctx context.Context, body, shown string) (rpcRepl
 	return parseReply(reply)
 }
 
+// memberRefusal is the error of a reply that names members (a device with
+// several) when they do not answer as the commit's step wants: each member,
+// the same name over its elements in the order they stand, answers with
+// the check's success alone (commit false), or with the commit's success
+// ('commit-success', or 'ok'), after the check's success or alone (commit
+// true); never an error, and never another member's success in its place.
+// The members named are exactly the ones the pre-flight listed. The shape is
+// inferred (no capture of a device with members over NETCONF, and the
+// listed members come from the text of the 'show version' reply): a reply
+// that names no member is refused when the pre-flight listed a chassis (the
+// command line, the default, answers with a block for each member), and read
+// as it always was for a single device and for two routing engines, which
+// answer a plain commit with the single device's reply or one element
+// (setKind). nil for a reply that is whole.
+func (j *JunosNetconf) memberRefusal(cmd string, r rpcReply, commit bool) error {
+	set := j.memberSet()
+	if len(r.Members) == 0 {
+		if len(set) == 0 || setKind(set) == "re" {
+			return nil
+		}
+		why := "the chassis' NETCONF answer names no member: nothing proves that " + strings.Join(set, ", ") + " checked it; use the command line transport (the default)"
+		if commit {
+			why = "the chassis' NETCONF answer names no member: nothing proves that " + strings.Join(set, ", ") + " committed, and a confirmed commit rolls back by itself; use the command line transport (the default)"
+		}
+		return answerError(cmd, []string{why}, j.m)
+	}
+	var names []string
+	seqs := map[string][]string{}
+	for _, m := range r.Members {
+		if m.Name == "" {
+			return answerError(cmd, []string{"a member without a name"}, j.m)
+		}
+		if !slices.Contains(names, m.Name) {
+			names = append(names, m.Name)
+		}
+		for _, e := range m.Seq {
+			if e == "commit-check-success" || e == "commit-success" || e == "ok" {
+				seqs[m.Name] = append(seqs[m.Name], e)
+			}
+		}
+	}
+	for _, n := range names {
+		q := seqs[n]
+		good := false
+		switch {
+		case !commit:
+			good = len(q) == 1 && q[0] == "commit-check-success"
+		default:
+			if len(q) > 0 && q[0] == "commit-check-success" {
+				q = q[1:]
+			}
+			good = len(q) == 1 && q[0] != "commit-check-success"
+		}
+		if good {
+			continue
+		}
+		if len(seqs[n]) == 0 {
+			return answerError(cmd, []string{fmt.Sprintf("member %s did not answer <%s/>", cut(n), map[bool]string{false: "commit-check-success", true: "commit-success"}[commit])}, j.m)
+		}
+		return answerError(cmd, []string{fmt.Sprintf("member %s answered %s, not %s", cut(n), "<"+strings.Join(seqs[n], "/><")+"/>", map[bool]string{false: "<commit-check-success/>", true: "<commit-check-success/> and <commit-success/>, or <commit-success/>"}[commit])}, j.m)
+	}
+	if setKind(set) == "re" && len(names) == 1 && slices.Contains(set, names[0]) {
+		// a plain commit of two routing engines: the one that ran it
+		return nil
+	}
+	if why := setFault(set, names); why != "" {
+		return answerError(cmd, []string{why}, j.m)
+	}
+	return nil
+}
+
+// memberSet is the members the pre-flight listed.
+func (j *JunosNetconf) memberSet() []string {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.members
+}
+
 // firstError is the answer error of a reply's rpc-errors, the command
 // shown as cmd.
 func (j *JunosNetconf) firstError(cmd string, r rpcReply) error {
@@ -766,7 +890,14 @@ func (j *JunosNetconf) firstError(cmd string, r rpcReply) error {
 	if len(ls) == 0 {
 		ls = []string{"error: refused"}
 	}
-	return answerError(cmd, ls, j.m)
+	e := answerError(cmd, ls, j.m)
+	// an error that stands in a member's element names the member
+	for i, er := range r.Errs {
+		if er.Member != "" && i < len(e.Lines) && i < maxAnswerLines {
+			e.Lines[i] = cut("member " + er.Member + ": " + e.Lines[i])
+		}
+	}
+	return e
 }
 
 func (j *JunosNetconf) mustHold(shown string) error {
@@ -889,7 +1020,7 @@ func (j *JunosNetconf) Check(ctx context.Context) error {
 	if !r.Seen["commit-check-success"] || len(r.Errs) > 0 {
 		return j.firstError(plan.ApplyCommitCheck, r)
 	}
-	return nil
+	return j.memberRefusal(plan.ApplyCommitCheck, r, false)
 }
 
 // reCommitWord splits the apply's own commit line into its minutes and its
@@ -953,6 +1084,9 @@ func (j *JunosNetconf) CommitConfirmed(ctx context.Context, minutes int, id, use
 	if !r.Seen["ok"] && !r.Seen["commit-success"] || len(r.Errs) > 0 {
 		return j.firstError(line, r)
 	}
+	if err := j.memberRefusal(line, r, true); err != nil {
+		return err
+	}
 	j.mu.Lock()
 	j.own = true
 	j.mu.Unlock()
@@ -985,6 +1119,9 @@ func (j *JunosNetconf) Confirm(ctx context.Context, id, user string) error {
 	}
 	if !r.Seen["ok"] && !r.Seen["commit-success"] || len(r.Errs) > 0 {
 		return j.firstError(line, r)
+	}
+	if err := j.memberRefusal(line, r, true); err != nil {
+		return err
 	}
 	j.mu.Lock()
 	j.own = false
@@ -1106,6 +1243,9 @@ func (j *JunosNetconf) undo(ctx context.Context, id string, pending bool) error 
 	}
 	if !r.Seen["ok"] && !r.Seen["commit-success"] || len(r.Errs) > 0 {
 		return j.firstError(line, r)
+	}
+	if err := j.memberRefusal(line, r, true); err != nil {
+		return err
 	}
 	j.mu.Lock()
 	j.own = false

@@ -16,15 +16,18 @@ hash bogus
 hash commands
 
 # add: arguments and values
+@known 0.2.20 item 17: user add and user passwd take --no-change-required
 user add
 user add alice
 user add alice nosuchgroup --hash {HASH} --scopes lab
+@known 0.2.20 item 1: a user name may hold periods
 user add 'bad name' superuser --hash {HASH} --scopes lab
 user add root superuser --hash {HASH} --scopes lab
 user add alice superuser --hash notahash --scopes lab
 user add alice superuser --hash
 user add alice superuser --scopes
 user add alice superuser --scopes nosuchscope --hash {HASH}
+@known 0.2.20 item 17: user add and user passwd take --no-change-required
 user add alice superuser --bogus
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 user add alice superuser --hash {HASH} --scopes lab
@@ -57,8 +60,10 @@ user add bob operator --scopes lab <<< CorrectHorse99
 user add bob operator --scopes lab <<< bob\nbob
 
 # passwd
+@known 0.2.20 item 17: user add and user passwd take --no-change-required
 user passwd
 user passwd ghost
+@known 0.2.20 item 1: a user name may hold periods
 user passwd 'bad name'
 user passwd root
 user passwd alice --hash {HASH}
@@ -112,6 +117,7 @@ user add alice superuser --hash {HASH} --scopes lab ;; user remove alice ;; user
 user rename
 user rename alice
 user rename ghost newname
+@known 0.2.20 item 1: a user name may hold periods
 user rename alice 'bad name'
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 user add alice superuser --hash {HASH} --scopes lab ;; user rename alice alicia ;; user list
@@ -134,11 +140,13 @@ user add alice superuser --hash {HASH} --scopes lab ;; user move alice superuser
 # show
 user show
 user show ghost
+@known 0.2.20 item 1: a user name may hold periods
 user show 'bad name'
 
 # verify (a correct password needs a hash we know: here only the failing and error paths)
 user verify
 user verify ghost
+@known 0.2.20 item 1: a user name may hold periods
 user verify 'bad name'
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 user add alice superuser --hash {HASH} --scopes lab ;; user verify alice <<< wrong
@@ -216,13 +224,16 @@ user --help
 @known 0.2.1 item 74: the user usage lists 'scope <user> remove --all'
 user Bogus list
 hash help
+@known 0.2.20 item 10: -h and --help print the help that ? prints
 hash -h
+@known 0.2.20 item 10: -h and --help print the help that ? prints
 hash --help
 hash bogus extra
 hash generate extra <<< CorrectHorse99\nCorrectHorse99
 
 # add: flags and scope lists
 user add alice superuser --hash {HASH} --hash
+@known 0.2.20 item 17: user add and user passwd take --no-change-required
 user add alice superuser --hash {HASH} --scopes lab extra
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 user add alice superuser --hash {HASH} --scopes ' lab , lab '
@@ -232,6 +243,7 @@ user add alice superuser --hash {HASH} --scopes lab --hash notahash
 user add alice superuser --hash notahash --scopes nosuchscope
 user add tacquito superuser --hash {HASH}
 user add alice '' --hash {HASH}
+@known 0.2.20 item 1: a user name may hold periods
 user add 'a\tb' superuser --hash {HASH}
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 user add alice superuser --hash '$2b$10$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' --scopes lab ;; user show alice
@@ -280,6 +292,7 @@ user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove -
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove --all <<< yes
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice add --all
+@known 0.2.20 item 1: a user name may hold periods
 user scope 'bad name' list
 user scope ghost bogus
 user scope alice set
@@ -315,6 +328,7 @@ passwd <<< CorrectHorse99
 passwd
 @unenv SUDO_USER
 @env SUDO_USER=bad.name
+@known 0.2.20 item 1: a user name may hold periods
 passwd
 @unenv SUDO_USER
 

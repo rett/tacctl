@@ -2,7 +2,8 @@
 // (docs/plans/go-rewrite.md 3.7): the device templates of config/templates
 // and the two Linux client scripts of config/linux. The embedding itself is
 // the module root's (package tacctl, assets.go), because go:embed reads
-// only below the embedding package's directory.
+// only below the embedding package's directory. The manual page
+// (man/tacctl.1) is carried too, for 'tacctl man'.
 package assets
 
 import (
@@ -57,6 +58,9 @@ var (
 	// remove-script', 'host unenroll').
 	LinuxRemoveScript = mustRead(tacctl.LinuxScripts, "config/linux/client-remove.sh")
 )
+
+// ManPage is man/tacctl.1 as shipped, in roff source.
+func ManPage() []byte { return tacctl.ManPage }
 
 func mustRead(f fs.FS, name string) []byte {
 	b, err := fs.ReadFile(f, name)

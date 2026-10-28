@@ -890,3 +890,142 @@ firewall {
 		t.Errorf("brace form:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// historyEnds are the entries of 'show system commit' without their time and
+// user: "<n> <way and commit text>", and a comment line as it is.
+func historyEnds(out string) []string {
+	re := regexp.MustCompile(`^(\d+)\s+\S+ \S+ UTC by \S+ via (.*)$`)
+	var ends []string
+	for _, l := range strings.Split(out, "\n") {
+		if m := re.FindStringSubmatch(strings.TrimRight(l, " \r")); m != nil {
+			ends = append(ends, m[1]+" "+m[2])
+		} else if l = strings.TrimSpace(l); l != "" {
+			ends = append(ends, "# "+l)
+		}
+	}
+	return ends
+}
+
+// The words typed after 'commit' end the history entry in the order typed,
+// and a confirmed commit's label comes before them; the plain commit
+// prints nothing, as the device does.
+func TestJunosHistoryPrintsTheCommitWords(t *testing.T) {
+	srv, _, _ := newJunos(t, map[string]string{})
+	c, _ := shell(t, srv, DefaultUser, DefaultPassword)
+	c.send("configure exclusive")
+	c.send("set system login idle-timeout 30")
+	c.send("commit")
+	c.send("set system login idle-timeout 31")
+	c.send("commit synchronize")
+	c.send("set system login idle-timeout 32")
+	c.send("commit and-quit synchronize force")
+	c.send("configure exclusive")
+	c.send("set system login idle-timeout 33")
+	c.send("commit confirmed 5 synchronize")
+	c.send(`commit comment "confirm"`)
+	c.send("exit")
+	got := strings.Join(historyEnds(c.send("show system commit")), "|")
+	want := "0 cli|# confirm|1 cli commit confirmed, rollback in 5mins synchronize|" +
+		"2 cli commit and-quit synchronize force|3 cli commit synchronize|4 cli|5 other"
+	if got != want {
+		t.Errorf("show system commit:\n got %s\nwant %s", got, want)
+	}
+	h := srv.History()
+	if len(h) != 6 || len(h[0].Options) != 0 || strings.Join(h[1].Options, " ") != "synchronize" || strings.Join(h[3].Options, " ") != "synchronize" {
+		t.Errorf("options %+v", h)
+	}
+}
+
+// The knob 'commit.synchronize' makes a device that commits so: each commit,
+// confirmed or not, ends in 'synchronize' (once, also when it was typed),
+// and the entry of the device's own expiry does not.
+func TestJunosKnobCommitSynchronize(t *testing.T) {
+	srv, _, clk := newJunos(t, map[string]string{"commit.synchronize": ""})
+	c, _ := shell(t, srv, DefaultUser, DefaultPassword)
+	c.send("configure exclusive")
+	c.send("set system login idle-timeout 30")
+	c.send("commit confirmed 1")
+	clk.Advance(2 * time.Minute)
+	c.send("set system login idle-timeout 31")
+	c.send("commit")
+	c.send("set system login idle-timeout 32")
+	c.send("commit and-quit synchronize")
+	c.send("exit")
+	got := strings.Join(historyEnds(c.send("show system commit")), "|")
+	want := "0 cli commit and-quit synchronize|1 cli commit synchronize|2 other|" +
+		"3 cli commit confirmed, rollback in 1mins synchronize|4 other"
+	if got != want {
+		t.Errorf("show system commit:\n got %s\nwant %s", got, want)
+	}
+}
+
+const chassisKnob = "fpc0 ex4600-40f 18.1R3-S6.1\nfpc1 ex4600-40f 21.4R3-S1.5\nfpc2 ex4300-48t\nfpc3 ex4300-48t\n"
+
+// The knob 'chassis' makes a device with four members: the blocks of 'show
+// version', and a block for each member in the answers of 'commit check' and
+// of a commit; without the knob the answers are the single device's.
+func TestJunosKnobChassis(t *testing.T) {
+	srv, _, _ := newJunos(t, map[string]string{"chassis": chassisKnob})
+	c, _ := shell(t, srv, DefaultUser, DefaultPassword)
+	ver := c.send("show version")
+	for _, w := range []string{
+		"fpc0:\n--------------------------------------------------------------------------\nHostname: ",
+		"Model: ex4600-40f\n", "Model: ex4300-48t\n", "JUNOS Host Software [18.1R3-S6.1]\n", "JUNOS Host Software [21.4R3-S1.5]\n", "\nfpc3:\n",
+	} {
+		if !strings.Contains(ver, w) {
+			t.Errorf("show version lacks %q:\n%s", w, ver)
+		}
+	}
+	if strings.Count(ver, "Hostname: ") != 4 {
+		t.Errorf("show version:\n%s", ver)
+	}
+	c.send("configure exclusive")
+	c.send("set system login idle-timeout 30")
+	const chk = "fpc0: \nconfiguration check succeeds\nfpc1: \nconfiguration check succeeds\nfpc2: \nconfiguration check succeeds\nfpc3: \nconfiguration check succeeds"
+	if got := c.send("commit check"); got != chk {
+		t.Errorf("commit check: %q", got)
+	}
+	const done = "fpc0: \ncommit complete\nfpc1: \ncommit complete\nfpc2: \ncommit complete\nfpc3: \ncommit complete"
+	if got := c.send("commit confirmed 3"); got != chk+"\ncommit confirmed will be automatically rolled back in 3 minutes unless confirmed\n"+done {
+		t.Errorf("commit confirmed: %q", got)
+	}
+	if got := c.send(`commit comment "confirm"`); got != chk+"\n"+done {
+		t.Errorf("commit: %q", got)
+	}
+}
+
+// 'chassis.check' makes one member fail its check: the answer shows it and
+// nothing is committed, for 'commit check' and for a commit alike.
+func TestJunosKnobChassisCheck(t *testing.T) {
+	srv, _, _ := newJunos(t, map[string]string{"chassis": chassisKnob, "chassis.check": "fpc2 => warning: member is out of sync\n"})
+	c, _ := shell(t, srv, DefaultUser, DefaultPassword)
+	c.send("configure exclusive")
+	c.send("set system login idle-timeout 30")
+	for _, cmd := range []string{"commit check", "commit"} {
+		got := c.send(cmd)
+		if !strings.Contains(got, "fpc2: \nwarning: member is out of sync\nfpc3: ") || strings.Count(got, "configuration check succeeds") != 3 ||
+			!strings.HasSuffix(got, "error: configuration check-out failed") || strings.Contains(got, "commit complete") {
+			t.Errorf("%s: %q", cmd, got)
+		}
+	}
+	if len(srv.History()) != 1 || strings.Contains(srv.Committed(), "idle-timeout 30") {
+		t.Errorf("committed with a failing member: %+v", srv.History())
+	}
+}
+
+// 'chassis.commit' makes one member answer a commit that is made with
+// another text: the commit stands.
+func TestJunosKnobChassisCommit(t *testing.T) {
+	srv, _, _ := newJunos(t, map[string]string{"chassis": chassisKnob, "chassis.commit": "fpc1 => warning: the member is behind\n"})
+	c, _ := shell(t, srv, DefaultUser, DefaultPassword)
+	c.send("configure exclusive")
+	c.send("set system login idle-timeout 30")
+	got := c.send("commit")
+	if strings.Count(got, "configuration check succeeds") != 4 || !strings.Contains(got, "fpc1: \nwarning: the member is behind\nfpc2: \ncommit complete") ||
+		strings.Count(got, "commit complete") != 3 {
+		t.Errorf("commit: %q", got)
+	}
+	if len(srv.History()) != 2 || !strings.Contains(srv.Committed(), "idle-timeout 30") {
+		t.Errorf("not committed: %+v", srv.History())
+	}
+}

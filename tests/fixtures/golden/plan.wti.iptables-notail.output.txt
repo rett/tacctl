@@ -11,11 +11,14 @@
 #                         10.0.31.0/24 -p tcp --dport 22 -j ACCEPT). Fixed by the IP tables paste (it
 #                         replaces every entry: this one is gone afterwards).
 # Consistent: snmp, aaa. Not planned: breakglass (walkthrough Step 10).
-# Secrets: 2 present on the device, not changed (--secrets pushes them).
+# Kept: aaa 13 statements of the device's own (RADIUS settings): left alone, listed by device config
+# diff.
+# Kept: snmp 4 statements of the device's own (system name, trap settings): left alone, listed by
+# device config diff.
+# Secrets: 2 present (the SNMP community, the TACACS+ server key); only their presence is checked,
+# --secrets writes them again.
 # Note: tacacs default-services: the unit allows more services than the standard asks for (serial,
 # web, restful-api): kept, not compared.
-# Note: aaa: 13 statements of the device's own, kept on purpose.
-# Note: snmp: 4 statements of the device's own, kept on purpose.
 # WARNING: the IP tables list has no final DROP and no INPUT policy DROP: it restricts nothing until
 # the last step of the walkthrough is applied.
 # WARNING: the pull saw 1 other session on the unit: the paste is live for them too; type /SN before

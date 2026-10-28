@@ -33,6 +33,12 @@ type Options struct {
 	From string
 	// Scope names the scope in the sensitivity line of the header.
 	Scope string
+	// MgmtMode is the scope's management filter mode for a Junos device
+	// (devices.MgmtModeSSHOnly or devices.MgmtModeStrict), which the
+	// rendering of the mgmt-acl section follows: the planner lists the
+	// traffic a move to strict stops and what a move back accepts again, and
+	// the lock-out check reads the strict filter's terms. Empty is ssh-only.
+	MgmtMode string
 	// Syntax is the Cisco device's configuration syntax, one of SyntaxIOS12
 	// and SyntaxModern: the caller passes the device's one resolved
 	// configuration syntax (D113: the setting, else the pull's version
@@ -142,6 +148,9 @@ type secOut struct {
 	withheld     []string
 	// replaced counts statements the plan supersedes (set in place).
 	presentSecrets, hiddenSecrets int
+	// presentKinds are the kinds (secretWhat) of the secrets counted in
+	// presentSecrets, in order of appearance.
+	presentKinds []string
 	// refused is set when the whole section is left out; refusedKind says
 	// which kind of skip it is (default KindRefused).
 	refused     string
@@ -421,6 +430,7 @@ func (d *Delta) merge(sp *SectionPlan, o secOut) {
 	d.Lines = append(d.Lines, o.lines...)
 	d.Kept = append(d.Kept, o.kept...)
 	d.Counts.SecretsPresent += o.presentSecrets
+	d.Counts.addKinds(o.presentKinds...)
 	d.Counts.SecretsNotVisible += o.hiddenSecrets
 	if o.partial != "" {
 		sp.Why = strings.TrimPrefix(sp.Why+"; "+o.partial, "; ")

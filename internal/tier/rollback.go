@@ -20,7 +20,24 @@ import (
 // Sudoers023 is the per-tier drop-in 0.2.3 wrote.
 func Sudoers023() string { return sudoers023 }
 
-// Sudoers0218 is the per-tier drop-in 0.2.18 wrote: this release's rules
+// rules0219 are the rules 0.2.19 had: this release's without the engineer's
+// row of 'scope mgmt-acl' and the operator's rows of 'console system-shell'
+// and 'console password-cache' (0.2.20).
+func rules0219() []Rule {
+	return slices.DeleteFunc(slices.Clone(Rules), func(r Rule) bool {
+		return (r.Tier == Engineer && r.Cmd == "scope" && r.Sub == "mgmt-acl") ||
+			(r.Tier == Operator && r.Cmd == "console" && (r.Sub == "system-shell" || r.Sub == "password-cache"))
+	})
+}
+
+// Sudoers0219 is the per-tier drop-in 0.2.19 wrote: this release's rules
+// without the engineer's row of 'scope mgmt-acl * mode' and the operator's
+// rows of 'console system-shell' and 'console password-cache' (0.2.20). A rollback
+// to 0.2.18 and 0.2.17 recognises it as an older text. It is derived (a rule
+// that moves on again makes its own frozen copy).
+func Sudoers0219() string { return sudoersFrom(rules0219()) }
+
+// Sudoers0218 is the per-tier drop-in 0.2.18 wrote: 0.2.19's rules
 // without the engineer's rows of 'device config apply', 'device enroll',
 // 'device collect', 'device onboard' and 'device sync' (0.2.19). 'tacctl
 // rollback 0.2.18' puts it back, and the upgrade's refresh knows it as an
@@ -29,7 +46,7 @@ func Sudoers023() string { return sudoers023 }
 func Sudoers0218() string {
 	added := map[string]bool{"enroll": true, "collect": true, "onboard": true, "sync": true, "support-bundle": true}
 	var rules []Rule
-	for _, r := range Rules {
+	for _, r := range rules0219() {
 		switch {
 		case r.Tier == Engineer && r.Cmd == "device" && added[r.Sub]:
 			continue

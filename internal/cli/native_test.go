@@ -397,7 +397,7 @@ func TestUserScopeVerbs(t *testing.T) {
 	sb.run("", []string{"user", "scope", "bob", "clear"})
 	sb.expect(1, "", "[ERROR] 'clear' was renamed: use 'tacctl user scope bob remove --all'")
 	sb.run("", []string{"user", "scope", "bob", "--help"})
-	sb.expect(0, "tacctl user scope bob remove  --all                 Revoke every scope (confirms)", "")
+	sb.expect(0, "scope <user> remove --all             Remove every scope from the user", "")
 	sb.run("", []string{"user", "scope", "bob", "bogus"})
 	sb.expect(1, "", "Run 'tacctl user scope bob' for usage.")
 }
@@ -479,7 +479,12 @@ func TestCompletionNames(t *testing.T) {
 
 func TestHashFamily(t *testing.T) {
 	sb := newSandbox(t, false)
-	for _, w := range []string{"", "help", "-h", "--help"} {
+	for _, w := range []string{"-h", "--help"} {
+		if got := plain(sb.run("", []string{"hash", w})); sb.code != 0 || !strings.HasPrefix(got, "Possible completions:\n") || !strings.Contains(got, "  generate  ") {
+			t.Errorf("hash %s: %d %q", w, sb.code, got)
+		}
+	}
+	for _, w := range []string{"", "help"} {
 		args := []string{"hash"}
 		if w != "" {
 			args = append(args, w)

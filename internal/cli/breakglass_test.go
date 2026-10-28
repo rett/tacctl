@@ -1069,3 +1069,31 @@ Break-glass RELEASED on lab-sw (192.168.1.1): held under 1 min by root (console 
 		t.Errorf("release: %d\n%s\nwant:\n%s", sb.code, out, wantRel)
 	}
 }
+
+// The prompt of a hold lists the scope's local accounts: 'root' is the Junos
+// system account, so it is named for a Junos device and not for a Cisco one.
+func TestBreakglassHoldListsRootForJunosOnly(t *testing.T) {
+	sb := engineerSandbox(t)
+	sb.run("", []string{"device", "add", "lab-jsw", "192.168.1.9", "--vendor", "juniper", "--no-host-key", "--no-lookup"})
+	sb.expect(0, "", "")
+	sb.run("", []string{"scope", "breakglass", "lab", "add", "root"})
+	// root alone: a Cisco device has no local account recorded, a Junos one does
+	cisco := sb.hold(t, "lab-sw", "console recovery", "lab-swx")
+	if !strings.Contains(cisco, "no local account is recorded for scope 'lab'") || strings.Contains(cisco, "root [admin]") {
+		t.Errorf("cisco, root alone:\n%s", cisco)
+	}
+	junos := sb.hold(t, "lab-jsw", "console recovery", "lab-jswx")
+	if !strings.Contains(junos, "root [admin]") {
+		t.Errorf("junos, root alone:\n%s", junos)
+	}
+	// root and a named user: the Cisco device names the user only
+	sb.run("", []string{"scope", "breakglass", "lab", "add", "lab-admin"})
+	cisco = sb.hold(t, "lab-sw", "console recovery", "lab-swx")
+	if !strings.Contains(cisco, "lab-admin [admin]") || strings.Contains(cisco, "root") {
+		t.Errorf("cisco, root and a user:\n%s", cisco)
+	}
+	junos = sb.hold(t, "lab-jsw", "console recovery", "lab-jswx")
+	if !strings.Contains(junos, "root [admin], lab-admin [admin]") {
+		t.Errorf("junos, root and a user:\n%s", junos)
+	}
+}

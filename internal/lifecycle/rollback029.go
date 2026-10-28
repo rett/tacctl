@@ -38,7 +38,7 @@ func planRollback029(p *RollbackPlan) (*RollbackPlan, error) {
 		p.Steps = append(p.Steps, RollbackStep{Title: "the enrolled Linux hosts (--hosts)",
 			Lines: []string{"nothing to do for " + RollbackTarget029 + ": 0.2.10 changed nothing on the hosts; no host is synced"}})
 	}
-	p.Warnings = append(p.warnings029(), p.blocksWarning(RollbackTarget029)...)
+	p.Warnings = append(append(append(p.warnings029(), p.mgmtModeWarning(RollbackTarget029)...), p.blocksWarning(RollbackTarget029)...), p.consoleWideningWarning()...)
 	p.Notes = p.notes029()
 	return p, nil
 }
@@ -116,7 +116,7 @@ func (p *RollbackPlan) warnings029() []RollbackWarning {
 	in := p.in
 	var tr, nc []string
 	for _, k := range p.keys {
-		if conf.Added0217Key(k) || conf.Added0219Key(k) {
+		if conf.Added0217Key(k) || conf.Added0219Key(k) || conf.Added0220Key(k) {
 			continue
 		}
 		v, _ := in.Conf.Get(k, "")

@@ -26,10 +26,67 @@ func TestValidateUsernameAccepts(t *testing.T) {
 }
 
 func TestValidateUsernameRejects(t *testing.T) {
-	const want = "Username must contain only letters, numbers, underscores, and hyphens."
-	for _, s := range []string{"j smith", "", "foo;rm", "foo$bar", "foo/bar", "foo.bar", "abc\n", "é"} {
-		if got := msg(t, ValidateUsername(s)); got != want {
+	for _, s := range []string{"j smith", "", "foo;rm", "foo$bar", "foo/bar", "abc\n", "é"} {
+		if got := msg(t, ValidateUsername(s)); got != usernameWant {
 			t.Errorf("%q: %q", s, got)
+		}
+	}
+}
+
+const usernameWant = "Username must contain only letters, numbers, underscores, hyphens, and periods (not first, not last, not two in a row)."
+
+// TestValidateUsernameDots: a period is allowed between runs of letters,
+// digits, '_' and '-', and nowhere else.
+func TestValidateUsernameDots(t *testing.T) {
+	for _, s := range []string{
+		"alice.smith", "a.b-c_d", "a.b", "a.b.c", "j.smith2", "A.B", "1.2", "-.-", "_._", "a-.-b", "alice-.smith",
+		"first.last.example",
+	} {
+		if err := ValidateUsername(s); err != nil {
+			t.Errorf("%q refused: %v", s, err)
+		}
+		if !MatchUser(s) {
+			t.Errorf("MatchUser(%q) = false", s)
+		}
+	}
+	for _, s := range []string{
+		".alice", "alice.", "alice..smith", ".", "..", "...", ".a.", "a...b", "alice.smith.", ".alice.smith",
+		"alice. smith", "alice.smith\n", "alice\n.smith", "alice.sm/th", "alice.é", "alice,smith", "alice:smith",
+		"alice.smith;x", "al ice.smith", "alice\x00.smith",
+	} {
+		if got := msg(t, ValidateUsername(s)); got != usernameWant {
+			t.Errorf("%q: %q", s, got)
+		}
+		if MatchUser(s) {
+			t.Errorf("MatchUser(%q) = true", s)
+		}
+	}
+}
+
+// TestUsernameDotsLeaveOtherNamesAlone: the period is for user names only;
+// Juniper class names (RE_CLASS has the shape a username had), groups and
+// scopes keep their patterns.
+func TestUsernameDotsLeaveOtherNamesAlone(t *testing.T) {
+	if MatchClass("ops.rw") || ValidateClassName("ops.rw") == nil {
+		t.Error("a class name must not hold a period")
+	}
+	if MatchGroup("ops.rw") || ValidateGroupName("ops.rw") == nil {
+		t.Error("a group name must not hold a period")
+	}
+	if MatchScope("site.a") || ValidateScopeName("site.a") == nil {
+		t.Error("a scope name must not hold a period")
+	}
+	if ValidateACLName("acl.1") == nil {
+		t.Error("an ACL name must not hold a period")
+	}
+	for _, s := range []string{"root", "tacquito"} {
+		if RejectReservedUsername(s) == nil {
+			t.Errorf("%q must stay reserved", s)
+		}
+	}
+	for _, s := range []string{"root.x", "tacquito.x", "alice.root"} {
+		if err := RejectReservedUsername(s); err != nil {
+			t.Errorf("%q: %v", s, err)
 		}
 	}
 }
@@ -103,7 +160,7 @@ func TestValidateScopeName(t *testing.T) {
 }
 
 func TestMatchers(t *testing.T) {
-	if !MatchUser("a-b_1") || MatchUser("") || MatchUser("a b") {
+	if !MatchUser("a-b_1") || !MatchUser("a.b") || MatchUser("a..b") || MatchUser("") || MatchUser("a b") {
 		t.Error("MatchUser")
 	}
 	if !MatchGroup("a1") || MatchGroup("A1") {

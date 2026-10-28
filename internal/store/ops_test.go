@@ -75,6 +75,26 @@ func TestUserSetBadNames(t *testing.T) {
 	e.useFixture("store.minimal.yaml")
 	contains(t, e.mutate(userSet("tacquito", "group=readonly")), "reserved name")
 	contains(t, e.mutate(userSet("bad name", "group=readonly")), "invalid name")
+	for _, n := range []string{".alice", "alice.", "alice..smith", "."} {
+		contains(t, e.mutate(userSet(n, "group=readonly")), "invalid name")
+	}
+}
+
+// A period between two runs of letters, digits, '_' and '-' is in a user
+// name, in the store and out of it, and in a rename.
+func TestUserNamesWithPeriods(t *testing.T) {
+	e := newEnv(t)
+	e.useFixture("store.multiscope.yaml")
+	e.mustMutate(userSet("alice.smith", "group=readonly", "scopes=lab"))
+	e.mustMutate(userSet("1.5", "group=readonly", "scopes=lab"))
+	equal(t, e.mustGet("users", "alice.smith", "group"), "readonly")
+	equal(t, e.mustGet("users", "1.5", "group"), "readonly")
+	e.mustMutate(func(s *store.Store) error { return s.UserRename("bob", "bob.jones") })
+	equal(t, e.mustGet("users", "bob.jones", "group"), "operator")
+	e.mustMutate(func(s *store.Store) error { return s.UserDel("alice.smith") })
+	if _, code := e.get("users", "alice.smith"); code != 1 {
+		t.Error("alice.smith still exists")
+	}
 }
 
 func TestUserDelAndRename(t *testing.T) {

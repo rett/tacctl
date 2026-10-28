@@ -396,7 +396,20 @@ type MgmtACL struct {
 	// ('172.16.100.0/23:tcp/22,udp/161', internal/mgmtacl).
 	CIDRs []string
 	Name  string // the vendor's ACL (filter) name for the scope
+	// Mode is the Junos filter's mode (0.2.20, 'scope mgmt-acl <scope>
+	// mode'): MgmtModeStrict, or anything else for the ssh-only filter
+	// ("" is ssh-only). Only the Junos filter reads it.
+	Mode string
 }
+
+// The modes of the Junos management filter (conf's).
+const (
+	MgmtModeSSHOnly = conf.MgmtModeSSHOnly
+	MgmtModeStrict  = conf.MgmtModeStrict
+)
+
+// Strict reports the deny-by-default mode of the Junos filter.
+func (a MgmtACL) Strict() bool { return a.Mode == MgmtModeStrict }
 
 // --- output -----------------------------------------------------------------------
 
