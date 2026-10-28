@@ -16,7 +16,7 @@ doctype: reference
 The most common tacctl commands on one card. The **Tier** column gives the
 lowest tier that can run each one: R read-only · O operator · E engineer
 (own scopes) · S superuser. Run any command family with no arguments for its
-usage. In `tacctl shell`, `?` shows help.
+usage. In the console and `tacctl shell`, `?` shows help.
 
 ---
 
@@ -28,7 +28,8 @@ usage. In `tacctl shell`, `?` shows help.
 | Change own password | `tacctl passwd` | R |
 | Server health | `tacctl status` | R |
 | Find problems | `tacctl config validate` | O |
-| Help | `tacctl <family>` · `man tacctl` | R |
+| Help | `tacctl <command> --help` · `tacctl man [<topic>]` | R |
+| Password cache (your own choice) | `console password-cache on\|off` (console word) | O |
 
 ## 2. Devices
 

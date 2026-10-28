@@ -198,7 +198,8 @@ When you escalate, include the device name, the user, the time, and the
 | User's recent activity | `tacctl log search <user>` |
 | Failures today | `tacctl log failures` |
 | Notices | `tacctl device notice list` |
-| Help on any command | `tacctl <command>` with no arguments, or `?` in the shell |
+| Help on any command | `tacctl <command> --help`, or `?` in the console |
+| The manual page at a command | `tacctl man <command>` |
 
 ---
 

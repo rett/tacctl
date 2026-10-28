@@ -29,10 +29,10 @@ internals are in the
 
 ## 1. Before you start
 
-- Work from `tacctl shell` (or the login console): Tab completes commands
-  and live names, `?` shows help, and `--password-cache` saves retyping
-  your password across many device logins.
-  [Getting Started](getting-started.md) §1 covers both.
+- Work from the login console (or `tacctl shell` in your system shell):
+  Tab completes commands and live names, `?` and `--help` show help, and
+  the password cache saves retyping your password across many device
+  logins. [Getting Started](getting-started.md) §1 covers both.
 - Every change takes a snapshot first and writes an audit line, so a
   mistake can be rolled back ([Backups and Undo](backups-and-undo.md)).
 - Preview with `--dry-run` or `--check` wherever a command offers it.
@@ -368,7 +368,68 @@ tacctl log accounting 50            # last 50 accounting records (who ran what)
 
 ---
 
-## 10. Quick reference
+## 10. The login console
+
+The console is the login shell of every tacctl user on the tacctl server,
+of every tier; there is no switch for it. The accounts follow at the next
+`host sync` of the server. To keep a user off the server, take the server's
+scope off the user. Local accounts that are not tacctl users keep their own
+shells.
+
+```bash
+tacctl console show       # the settings, each user's shell and system-shell access, and why
+tacctl console check      # does sshd apply the console's settings? (operator tier and up)
+```
+
+### 10.1 The system shell
+
+The console word `system-shell` starts a user's own system shell. Who has
+it is set per tier and per user:
+
+```bash
+tacctl console system-shell                    # each tier, then the users with their own setting
+tacctl console system-shell operator enable    # open it to a tier
+tacctl console system-shell user bob enable    # open it to one user, over the tier's setting
+tacctl console system-shell user bob disable   # take it from one user, over the tier's setting
+tacctl console system-shell user bob clear     # the tier decides again
+```
+
+- The superuser tier always has it and cannot be disabled. Read-only and
+  operator are disabled until you enable them. The engineer tier never has
+  it: enabling it, or one engineer, is refused.
+- A user's `enable` counts only while the user stays in the tier they had
+  when it was set. After a move to another tier it is listed as
+  `stale: set for operator, now readonly` until you set it again. A
+  `disable` holds in any tier.
+- `user rename` moves a user's setting to the new name, and `user remove`
+  drops it.
+- The same people may open an editor from the console (`scope block … edit`,
+  `device block … edit`), since an editor can start a shell.
+- Operators and engineers can read every form; only superusers set them.
+
+### 10.2 Password cache, colours and list length
+
+```bash
+tacctl console password-cache tiers operator,engineer   # the tiers allowed the cache (default none)
+tacctl console password-cache user                      # who has turned it on
+tacctl console password-cache user alice clear          # switch alice's choice off
+tacctl console color off                                # colour in the console's lists: auto|on|off
+tacctl console list-max 100                             # the longest list shown without asking
+```
+
+- `password-cache tiers` is the permission only. Within an allowed tier,
+  each user turns the cache on for themselves with
+  `console password-cache on`, and it is off until they do
+  ([Getting Started](getting-started.md) §1.3).
+- `console color` decides whether Tab's lists, `?`, `-h` and `--help` are in
+  colour in the console. `auto`, the default, lets the terminal decide.
+- `console list-max` is the longest list the console shows before it asks
+  `Show all N?` (default 40, at most 1000; a negative number never asks).
+- Both are server-wide, and each console session reads them when it starts.
+
+---
+
+## 11. Quick reference
 
 | Task | Command |
 |---|---|
@@ -397,6 +458,8 @@ tacctl log accounting 50            # last 50 accounting records (who ran what)
 | Release break-glass | `tacctl breakglass release <name>` |
 | Undo a change | `tacctl backup list` then `backup restore <ts>` |
 | Watch logins live | `tacctl log tail -f` |
+| Console settings and each user's shell | `tacctl console show` |
+| System shell for a tier / a user | `tacctl console system-shell <tier> enable` · `console system-shell user <name> enable\|disable\|clear` |
 
 See [Exit Codes](exit-codes.md) for exit statuses.
 

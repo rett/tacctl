@@ -27,8 +27,8 @@ run, and the conventions every command follows.
 
 ### 1.1 The login console
 
-Log in to the tacctl server with ssh. Your login usually lands in the
-**tacctl console**:
+Log in to the tacctl server with ssh. The **tacctl console** is the login
+shell of every tacctl user on the server, so your login lands there:
 
 ```text
 $ ssh alice@tacacs.example.net
@@ -43,9 +43,12 @@ example `device list` or `ssh sw1`.
 |---|---|
 | `Tab` | Completes commands and names (devices, users, scopes) |
 | `?` | Shows what can come next, and the tier a command needs |
+| `-h` / `--help` after a command | Prints the same help as `?` at that place (`user add --help`) |
 | `help` / `help <command>` | Lists the commands **your tier** can run / one command's usage |
+| `man` / `man <topic>` | Opens the manual page, at a command or heading if you name one (`man device config plan`, `man tiers`) |
 | `passwd` | Changes your own password (asks for the current one first) |
-| `console forget` | Drops your cached password now, where your site caches it |
+| `console password-cache on` | Keeps your network password for the session, where your tier is allowed it (§1.3) |
+| `console forget` | Drops your cached password now |
 | `exit` | Leaves the console |
 
 What the console does not do:
@@ -64,10 +67,16 @@ To run a single line without opening the console:
 ssh alice@tacacs.example.net 'device list'      # one tacctl line, no terminal needed
 ```
 
-### 1.2 The tacctl shell
+### 1.2 The system shell and `tacctl shell`
 
-If you have a normal shell on the server, `tacctl shell` gives you the same
-kind of prompt (`tacctl>`), with Tab completion and `?` help:
+The console word `system-shell` starts your own system shell on the server
+(`exit` brings you back to the console). Superusers always have it. Read-only
+and operator users have it only when a superuser has opened it for their tier
+or for them; engineers never have it. Without it, the console answers that
+the system shell is not available for your tier.
+
+In a system shell, `tacctl shell` gives you the same kind of prompt
+(`tacctl>`), with Tab completion and `?` help:
 
 ```bash
 tacctl shell                    # interactive prompt; leave out the word "tacctl"
@@ -79,13 +88,31 @@ Each line runs through `sudo`, so it is logged and checked against your tier
 exactly as it would be from bash. The rest of this documentation shows the full
 `tacctl …` form; in the console or the shell, leave out `tacctl`.
 
+In bash itself, `tacctl <command> --help` prints the same help as `?`, and
+the `?` key on a line that starts with `tacctl` prints the help of the words
+before the cursor and leaves the line as it is. `TACCTL_HELP_KEY` moves that
+help to another key, or turns it `off`
+([Shell and completion (repo)](https://github.com/rett/tacctl/blob/master/docs/cli/shell.md)).
+
 ### 1.3 The password cache
 
 When you run many device logins in a row (a pull of a whole scope, then a
 few `ssh` sessions), the password cache saves retyping. Your password stays
-in the session's locked memory and is never written to disk. It works only
-if a superuser has allowed it for your tier
-(`tacctl console password-cache tiers`). `console forget` clears it.
+in the session's locked memory and is never written to disk.
+
+A superuser decides which tiers may use it
+(`tacctl console password-cache tiers`); within an allowed tier, the cache
+is your own choice and is off until you turn it on:
+
+```text
+tacacs> console password-cache on       # saved for later sessions; starts now
+tacacs> console password-cache          # your tier's permission, your setting, the limits
+tacacs> console forget                  # drop the cached password now
+tacacs> console password-cache off      # saved; forgets the password and stops caching
+```
+
+When your tier is not allowed, `on` is refused and the message names the
+command a superuser runs to allow it.
 
 ---
 
