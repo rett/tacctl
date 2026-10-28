@@ -52,17 +52,20 @@ type routingPair struct {
 }
 
 // routingPairs is routing_pairs: (cidr, scope) in the order the daemon
-// tries them (as rendered).
+// tries them (as rendered). A piece carved out of a prefix (WithoutAddresses)
+// sorts where the prefix it came from did (PrefixOrigin), as the renderers
+// write it, so a carved model answers an address as the daemon does.
 func (m *Model) routingPairs() []routingPair {
 	var pairs []routingPair
 	for _, s := range m.Scopes {
-		for _, c := range s.Prefixes {
+		for i, c := range s.Prefixes {
 			if _, ok := store.CanonicalCIDR(c); !ok {
 				continue
 			}
-			k, ok := cidr.SortKey(c)
+			o := s.PrefixOrigin(i)
+			k, ok := cidr.SortKey(o)
 			if !ok {
-				k, _ = cidr.SortKey(strings.TrimSpace(c))
+				k, _ = cidr.SortKey(strings.TrimSpace(o))
 			}
 			pairs = append(pairs, routingPair{c, s.Name, k})
 		}

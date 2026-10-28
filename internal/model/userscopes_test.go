@@ -58,3 +58,44 @@ func TestScopeOfAnAddressForAProtocol(t *testing.T) {
 		}
 	}
 }
+
+// A model carved around a break-glass hold answers an address as the
+// rendered file does: a piece sorts where the prefix it came from did, not by
+// its own length, so it cannot tie with (and beat by name) a more specific
+// scope of the original.
+func TestScopeOfOnACarvedModelFollowsTheOrigin(t *testing.T) {
+	m := &Model{scopes: map[string]*Scope{}}
+	for _, s := range []*Scope{
+		{Name: "all", Prefixes: []string{"0.0.0.0/0"}},
+		{Name: "srv", Prefixes: []string{"127.0.0.0/8"}},
+	} {
+		m.Scopes = append(m.Scopes, s)
+		m.scopes[s.Name] = s
+	}
+	if got := m.ScopeOf("127.0.0.1", ""); got != "srv" {
+		t.Fatalf("uncarved: %q", got)
+	}
+	c := m.WithoutAddresses([]string{"126.0.0.1"})
+	// the carve leaves a piece of 'all' that is exactly 127.0.0.0/8
+	found := false
+	for _, p := range c.Scope("all").Prefixes {
+		found = found || p == "127.0.0.0/8"
+	}
+	if !found {
+		t.Fatalf("the carve of 'all' has no 127.0.0.0/8 piece: %v", c.Scope("all").Prefixes)
+	}
+	for _, addr := range []string{"127.0.0.1", "127.9.9.9"} {
+		if got := c.ScopeOf(addr, ""); got != "srv" {
+			t.Errorf("carved ScopeOf(%s) = %q, want srv (the origin 127.0.0.0/8 is more specific than 0.0.0.0/0)", addr, got)
+		}
+		if info, ok := c.LookupAddr(addr); !ok || info.Scope != "srv" {
+			t.Errorf("carved LookupAddr(%s) = %+v", addr, info)
+		}
+	}
+	if got := c.ScopeOf("126.0.0.2", ""); got != "all" {
+		t.Errorf("126.0.0.2: %q", got)
+	}
+	if got := c.ScopeOf("126.0.0.1", ""); got != "" {
+		t.Errorf("the held address: %q", got)
+	}
+}
