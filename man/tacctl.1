@@ -12506,7 +12506,8 @@ and status 1, and Tab and ? list the change only (and
 .B exit
 and
 .BR quit ,
-which end the session). The root side tells the console in its policy line
+which end the session). A line typed while the session is locked is not
+entered in the history file. The root side tells the console in its policy line
 .RB ( password_change=yes ,
 only for a caller who is held to it, and
 .B password_change=unknown

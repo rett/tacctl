@@ -349,7 +349,7 @@ func (s *Shell) printNotices() {
 // Command runs one line (-c), recorded in the history, with stdin for the
 // command, and returns its status.
 func (s *Shell) Command(ctx context.Context, line string, stdin io.Reader) int {
-	if s.o.History != nil {
+	if s.o.History != nil && !s.locked() {
 		s.o.History.Add(line)
 	}
 	status, _ := s.run(ctx, line, stdin)
@@ -432,7 +432,10 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 	t := term.NewTerminal(in, s.o.Prompt)
 	ed.t = t
 	t.AutoCompleteCallback = ed.key
-	hist.skip = func() bool { return ed.interrupted }
+	// a line typed while the session is held to a required password change
+	// is not recorded: it may be a password typed at the prompt after the
+	// dialog failed, and the history is a 0600 file that outlives the session
+	hist.skip = func() bool { return ed.interrupted || s.locked() }
 	t.History = hist
 
 	var stop atomic.Int32

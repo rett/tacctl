@@ -3,6 +3,7 @@ package shell
 import (
 	"context"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -185,5 +186,49 @@ func TestOpeningEndsOrOpensTheSession(t *testing.T) {
 		if s := p.ends(); s != 0 {
 			t.Errorf("status %d", s)
 		}
+	}
+}
+
+// A line typed while the session is locked (a password typed at the prompt
+// after the dialog failed, say) is not recorded in the history file; the
+// lines of the unlocked session are. -c is held to it too.
+func TestLockedSessionRecordsNothingInTheHistory(t *testing.T) {
+	path := t.TempDir() + "/history"
+	locked := true
+	var ran, refused []string
+	o := lockOptions(&locked, &ran, &refused)
+	o.History = NewHistory(path, nil)
+	p := startInProcess(t, o, 24, 80)
+	p.send("hunter2-typed-as-a-line\r")
+	p.expect(`locked: only passwd`)
+	p.expect(`host> `)
+	p.send("passwd\r")
+	p.expect(`host> `)
+	p.send("user list\r")
+	p.expect(`host> `)
+	p.send("exit\r")
+	if s := p.ends(); s != 0 {
+		t.Errorf("status %d", s)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); strings.Contains(got, "hunter2") || strings.Contains(got, "passwd") || !strings.Contains(got, "user list") {
+		t.Errorf("history file:\n%s", got)
+	}
+	// -c
+	locked = true
+	h := NewHistory("", nil)
+	o = lockOptions(&locked, &ran, &refused)
+	o.History = h
+	var out, errb strings.Builder
+	o.Out = ui.Output{Stdout: &out, Stderr: &errb}
+	sh := New(o)
+	sh.Command(context.Background(), "hunter2", nil)
+	locked = false
+	sh.Command(context.Background(), "user list", nil)
+	if e := h.Entries(); len(e) != 1 || e[0] != "user list" {
+		t.Errorf("entries %q", e)
 	}
 }

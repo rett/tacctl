@@ -156,7 +156,8 @@ device accepts the login, and nothing here runs until then but the change itself
 dialog, the line `passwd`, straight away. Until the password is changed nothing else runs: every other line, the
 console's own words (`help`, `history`, `system-shell`, `console forget`) included, is refused with `A password
 change is required: nothing runs here until it is made but 'passwd' (and 'exit').` and status 1, and Tab and `?`
-list the change only (`exit` and `quit` end the session). The root side tells the console in its policy line
+list the change only (`exit` and `quit` end the session). A line typed while the session is locked is not
+entered in the history file. The root side tells the console in its policy line
 (`password_change=yes`, for a caller who is held to it, decided from the group's tier at that moment). When the
 password is changed the root side is asked once more and the session goes on as any other. Ctrl-C in the dialog
 declines it and ends the session (status 130); any other failure (a wrong current password, a new one that is
