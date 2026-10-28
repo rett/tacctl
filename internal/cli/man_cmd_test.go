@@ -355,6 +355,17 @@ func TestManWithoutMan(t *testing.T) {
 	if err := h.run(); err != nil || h.out.String() != "RENDERED\n" || len(h.started()) != 1 {
 		t.Errorf("%v %q %v", err, h.out.String(), h.runner.Argvs())
 	}
+	// ... and groff is asked for plain text: no styling sequences.
+	if got := h.started()[0].Args; !slices.Equal(got, []string{"-man", "-Tutf8", "-P-cbou", "-"}) {
+		t.Errorf("groff for a stream: %q", got)
+	}
+	// Without less on a terminal the page is written too: plain text as well.
+	h = newManHarness(t, page, nil)
+	h.runner.Missing("man", "less")
+	h.runner.On([]string{"/fake/bin/groff"}, execx.Result{Stdout: []byte("RENDERED\n")})
+	if err := h.run(); err != nil || h.out.String() != "RENDERED\n" || !slices.Equal(h.started()[0].Args, []string{"-man", "-Tutf8", "-P-cbou", "-"}) {
+		t.Errorf("%v %q %v", err, h.out.String(), h.runner.Argvs())
+	}
 	// A locale that is not UTF-8 gets ascii.
 	h = newManHarness(t, page, []string{"LC_ALL=C"})
 	h.runner.Missing("man")

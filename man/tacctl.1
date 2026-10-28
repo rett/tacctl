@@ -713,7 +713,8 @@ finds the next match and
 .B q
 quits; the page itself has no anchors. A word that names nothing opens the page
 at the top and says so on standard error. On a stream that is not a terminal the
-page is written whole, without a pager, and the words do nothing.
+page is written whole as plain text, without a pager and without bold or
+underline sequences (also when groff renders it), and the words do nothing.
 The page shown is always the copy the binary carries, which is the page of the
 version that runs, whether or not
 .B install

@@ -266,7 +266,14 @@ func (inv *invocation) manRun(c execx.Cmd, stdin io.Reader) error {
 func (inv *invocation) manGroff(groff string, page []byte, less string, haveLess bool, searches []string, env []string) error {
 	a := inv.app
 	device := manDevice(manLocale(env))
-	res, err := a.Runner.Run(inv.ctx, execx.Cmd{Name: groff, Args: []string{"-man", device, "-"}, Env: env, Stdin: bytes.NewReader(page)})
+	paging := haveLess && inv.hooks.terminalWriter(a.Out.Stdout)
+	args := []string{"-man", device}
+	if !paging {
+		// Text for a file or a pipe: no bold and underline sequences, no
+		// backspaces (grotty -c -b -o -u).
+		args = append(args, "-P-cbou")
+	}
+	res, err := a.Runner.Run(inv.ctx, execx.Cmd{Name: groff, Args: append(args, "-"), Env: env, Stdin: bytes.NewReader(page)})
 	if err != nil || res.Code != 0 {
 		msg := strings.TrimSpace(string(res.Stderr))
 		if err != nil {
@@ -275,15 +282,15 @@ func (inv *invocation) manGroff(groff string, page []byte, less string, haveLess
 		a.Out.Error("groff failed: " + msg)
 		return exit(1)
 	}
-	if !haveLess || !inv.hooks.terminalWriter(a.Out.Stdout) {
+	if !paging {
 		_, err := a.Out.Stdout.Write(res.Stdout)
 		return err
 	}
-	var args []string
+	var lessArgs []string
 	for _, p := range searches {
-		args = append(args, "+/"+p)
+		lessArgs = append(lessArgs, "+/"+p)
 	}
-	return inv.manRun(execx.Cmd{Name: less, Args: args, Env: env}, bytes.NewReader(res.Stdout))
+	return inv.manRun(execx.Cmd{Name: less, Args: lessArgs, Env: env}, bytes.NewReader(res.Stdout))
 }
 
 // manLocale is the locale name an environment selects for character
