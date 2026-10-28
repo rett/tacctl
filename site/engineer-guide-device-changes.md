@@ -216,7 +216,8 @@ When the mode changes, the next plan moves the device's filter to it, in
 either direction, and its report warns of what that does to the traffic:
 
 - **To `strict`:** the traffic that stops once the filter is applied to
-  `lo0` (routing protocols from neighbours that are not in the permit list,
+  `lo0` (routing protocols and BFD from neighbours that are not in the
+  permit list, TACACS+ and RADIUS replies from servers that are not in it,
   NTP, syslog and DHCP, SNMP from sources outside it, every other protocol),
   the sources the filter accepts, and to keep a console session open.
 - **To `ssh-only`**, over a filter with no `default-accept` term: that the
