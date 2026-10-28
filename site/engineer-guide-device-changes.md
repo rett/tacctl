@@ -327,7 +327,7 @@ tacctl device config plan sw1 --converge  # optional: remove old servers and sim
 | Host key mismatch on pull or ssh | Check the key on the console first, then `tacctl device hostkey <name> set SHA256:<fp>` ([Connecting to Devices](connecting-to-devices.md) §5) |
 | `failed: calls itself '<x>'` | The device's own hostname doesn't match the registry. Check you have the right box, then fix the registry or the device. |
 | `failed: other editors or staged changes` | Someone else has uncommitted configuration on the device. Coordinate with them. |
-| Plan refuses the Junos filter: `... is not inside a source of the rendered strict filter that is accepted for ssh` | The strict filter would cut you off. Ask a superuser to add your address to the scope's permit list (plain, or with `tcp/22`), then plan again (§4.2) |
+| Plan refuses the Junos filter: `... is not inside a source of the rendered strict filter that is accepted for ssh` | The strict filter would cut you off. Ask a superuser to add your address to the permit list the scope renders from (plain, or with `tcp/22`), then plan again (§4.2) |
 
 ---
 
