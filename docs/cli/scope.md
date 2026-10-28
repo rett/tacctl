@@ -276,7 +276,8 @@ scope mgmt-acl <name> mode [ssh-only|strict]
     (`scope_mgmt_acl.mode.<name>`); setting `ssh-only` removes the key. A word that is not a mode
     (the words are lower case) is refused with `Unknown mode '<word>'. Use: ssh-only | strict.`, a
     word after the value as an unknown argument with the usage, both with exit 1 and nothing
-    written; setting the mode the scope already has says so and writes nothing. See [Management ACL](../security/management-acl.md#strict-mode-for-junos)
+    written; setting the mode the scope already has says so and writes nothing. See [Management
+    ACL](../security/management-acl.md#strict-mode-for-junos)
 
 scope breakglass <name> [list]
 scope breakglass <name> add <user> [--role admin|operator|readonly]
