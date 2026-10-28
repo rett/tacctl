@@ -159,7 +159,9 @@ change is required: nothing runs here until it is made but 'passwd' (and 'exit')
 list the change only (`exit` and `quit` end the session). A line typed while the session is locked is not
 entered in the history file. The root side tells the console in its policy line
 (`password_change=yes`, for a caller who is held to it, decided from the group's tier at that moment). When the
-password is changed the root side is asked once more and the session goes on as any other. The dialog is held to the console's idle time like a prompt: one nobody answers is ended and the
+password is changed the root side is asked once more and the session goes on as any other. Each line a locked session would refuse asks the root side again first, so a session left locked by a
+password changed in another one, or held because the answer could not be read, goes on as soon as
+the requirement is gone. The dialog is held to the console's idle time like a prompt: one nobody answers is ended and the
 session ends as an idle one. Ctrl-C in the dialog
 declines it and ends the session (status 130); any other failure (a wrong current password, a new one that is
 too weak or differs from its confirmation) leaves a prompt that is still locked, where `passwd` tries again.

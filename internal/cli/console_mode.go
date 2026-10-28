@@ -167,7 +167,10 @@ func (inv *invocation) runConsoleSession(args []string) error {
 		// A password change is required of the caller: the session opens with
 		// the dialog and runs nothing else until it is made (pwchange_console.go).
 		r.lock = lock
-		r.recheck = func() bool { return lockedBy(inv.consoleRemotePolicy(exe, marker), groups) != nil }
+		r.recheck = func() (bool, bool) {
+			l := lockedBy(inv.consoleRemotePolicy(exe, marker), groups)
+			return l != nil, l != nil && l.unknown.Load()
+		}
 		r.lockRefused = cs.lockRefusedLog(consoleRootCommand(newRoot(inv)))
 		r.pwEvent = func(event string, status int) { cs.log("auth.info", cs.sess.PasswordChangeLine(event, status)) }
 	}

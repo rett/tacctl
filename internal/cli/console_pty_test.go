@@ -41,8 +41,14 @@ type consolePtyRunner struct {
 	// password, so the policy no longer says one is required
 	passwd      int
 	passwdHangs bool
-	changed     atomic.Bool
-	mu          sync.Mutex
+	// changedFile, once it exists, stands for a password changed in another
+	// session: the policy no longer says one is required
+	changedFile string
+	// readableFile, once it exists, makes a policy that was refused ("FAIL")
+	// readable
+	readableFile string
+	changed      atomic.Bool
+	mu           sync.Mutex
 }
 
 func (r *consolePtyRunner) Run(ctx context.Context, c execx.Cmd) (execx.Result, error) {
@@ -60,11 +66,15 @@ func (r *consolePtyRunner) Run(ctx context.Context, c execx.Cmd) (execx.Result, 
 		return execx.Result{Stdout: []byte(r.groups + "\n")}, nil
 	case c.Name == "sudo" && slices.Contains(c.Args, "_console-policy"):
 		policy := r.policy
-		if policy == "FAIL" {
+		if policy == "FAIL" && !(r.readableFile != "" && fileExists(r.readableFile)) {
 			// sudo refuses: no policy answer
 			return execx.Result{Code: 1}, nil
 		}
-		if r.changed.Load() {
+		if policy == "FAIL" {
+			// readable now: an operator who is held to nothing
+			policy = "shell=console idle=30 system_shell=no system_shell_path=/bin/bash tier=operator list_max=40"
+		}
+		if r.changed.Load() || (r.changedFile != "" && fileExists(r.changedFile)) {
 			policy = strings.ReplaceAll(policy, " password_change=yes", "")
 		}
 		return execx.Result{Stdout: []byte(policy + "\n")}, nil
@@ -131,6 +141,8 @@ func TestConsolePtyHelper(t *testing.T) {
 	r := &consolePtyRunner{log: opt["log"], policy: strings.ReplaceAll(opt["policy"], ",", " "), groups: strings.ReplaceAll(opt["groups"], ",", " ")}
 	r.passwd, _ = strconv.Atoi(opt["passwd"])
 	r.passwdHangs = opt["passwdhangs"] != ""
+	r.changedFile = opt["changedfile"]
+	r.readableFile = opt["readablefile"]
 	a := app.New(nil, paths.NewEnv(env), testExe, os.Geteuid(),
 		app.Stdio{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}, r)
 	var args []string
@@ -484,4 +496,9 @@ func TestConsolePtyRefusesEntryPoints(t *testing.T) {
 	p.expect(host + `> `)
 	p.send("exit\r")
 	p.ends(0)
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }

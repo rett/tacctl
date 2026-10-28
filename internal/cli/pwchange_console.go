@@ -42,7 +42,7 @@ const pwUnknownNotice = "It could not be read whether a password change is requi
 // because the answer was yes: it opens with a notice, not with the dialog.
 type pwLock struct {
 	on      atomic.Bool
-	unknown bool
+	unknown atomic.Bool
 }
 
 func (l *pwLock) locked() bool { return l != nil && l.on.Load() }
@@ -65,7 +65,8 @@ func lockedBy(pol console.Remote, groups []string) *pwLock {
 			return nil
 		}
 	}
-	l := &pwLock{unknown: !pol.PasswordChange}
+	l := &pwLock{}
+	l.unknown.Store(!pol.PasswordChange)
 	l.on.Store(true)
 	return l
 }
@@ -86,8 +87,24 @@ func (inv *invocation) holdSession(r shellRun, o *shell.Options) {
 	o.Locked = r.lock.locked
 	o.LockWords = []string{pwChangeWord}
 	o.LockNotice = pwLockNotice
-	if r.lock.unknown {
-		o.LockNotice = pwUnknownNotice
+	o.LockNoticeFunc = func() string {
+		if r.lock.unknown.Load() {
+			return pwUnknownNotice
+		}
+		return pwLockNotice
+	}
+	// each line the lock would refuse asks the root side again: the password
+	// may have been changed in another session, or an answer that could not be
+	// read can be now
+	if r.recheck != nil {
+		o.Relock = func() {
+			if !r.lock.locked() {
+				return
+			}
+			locked, unknown := r.recheck()
+			r.lock.unknown.Store(unknown)
+			r.lock.on.Store(locked)
+		}
 	}
 	o.LockRefused = r.lockRefused
 	// the change, run in the session, lifts the lock when the root side
@@ -107,11 +124,14 @@ func (inv *invocation) holdSession(r shellRun, o *shell.Options) {
 }
 
 // liftLock lets the session go on once the root side says the password
-// change is no longer required (an answer that could not be read counts: the
-// command had succeeded).
+// change is no longer required (an answer that could not be read counts as
+// that: the command had succeeded).
 func (inv *invocation) liftLock(r shellRun) {
-	if r.recheck != nil && r.recheck() {
-		return
+	if r.recheck != nil {
+		if locked, unknown := r.recheck(); locked && !unknown {
+			r.lock.unknown.Store(false)
+			return
+		}
 	}
 	r.lock.on.Store(false)
 }
@@ -129,7 +149,7 @@ func (inv *invocation) openPasswordChange(ctx context.Context, r shellRun, exec 
 			r.pwEvent(e, status)
 		}
 	}
-	if r.lock.unknown {
+	if r.lock.unknown.Load() {
 		inv.echo("")
 		inv.echo(ui.Bold + "It could not be read whether a password change is required of your account." + ui.NC)
 		inv.echo("Nothing runs here until it can be; each line tries again. 'passwd' changes the password, 'exit' leaves.")

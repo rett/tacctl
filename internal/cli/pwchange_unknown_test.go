@@ -39,7 +39,7 @@ func TestLockedByThreeStates(t *testing.T) {
 		got := ""
 		switch {
 		case l == nil:
-		case l.unknown:
+		case l.unknown.Load():
 			got = "unknown"
 		default:
 			got = "held"

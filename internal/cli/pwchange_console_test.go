@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -186,4 +188,51 @@ func TestConsolePtyTheOpeningDialogIsHeldToTheIdleTime(t *testing.T) {
 	if !regexp.MustCompile(`console end session=[0-9a-f]{12} user=carol reason=idle`).MatchString(strings.Join(log, "\n")) {
 		t.Errorf("the log:\n%s", strings.Join(log, "\n"))
 	}
+}
+
+// A session that was locked when the password was changed in another one
+// asks the root side again at the next line it would refuse, and goes on as
+// any other once the requirement is gone; the line that found it lifted runs.
+func TestConsolePtyASecondSessionUnlocksWhenThePasswordWasChangedElsewhere(t *testing.T) {
+	host := regexp.QuoteMeta(shortHostname())
+	flag := filepath.Join(t.TempDir(), "changed")
+	p := startConsole(t, ptyPolicyChange, "carol,tac-users,tac-readonly", "passwd=1", "changedfile="+flag)
+	p.expect(`The password was not changed\.`)
+	p.expect(host + `> `)
+	p.send("user list\r")
+	p.expect(`A password change is required: nothing runs here until it is made but 'passwd'`)
+	p.expect(host + `> `)
+	// the change is made in another session
+	if err := os.WriteFile(flag, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p.send("user list\r")
+	p.expect(`RAN sudo -n TACCTL_CONSOLE=[0-9a-f]{12} ` + regexp.QuoteMeta(testExe) + ` user list\r\n`)
+	p.expect(host + `> `)
+	p.send("help\r")
+	p.expect(`system-shell +Start your system shell`)
+	p.expect(host + `> `)
+	p.send("exit\r")
+	p.ends(0)
+}
+
+// A session held because the requirement could not be read goes on once it
+// can be: the next line asks again.
+func TestConsolePtyAnUnreadRequirementIsAskedAgain(t *testing.T) {
+	host := regexp.QuoteMeta(shortHostname())
+	flag := filepath.Join(t.TempDir(), "readable")
+	p := startConsole(t, "FAIL", "carol,tac-users,tac-operator", "readablefile="+flag)
+	p.expect(`It could not be read whether a password change is required of your account\.`)
+	p.expect(host + `> `)
+	p.send("user list\r")
+	p.expect(`It could not be read whether a password change is required of your account, so nothing runs here`)
+	p.expect(host + `> `)
+	if err := os.WriteFile(flag, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p.send("user list\r")
+	p.expect(`RAN sudo -n TACCTL_CONSOLE=[0-9a-f]{12} ` + regexp.QuoteMeta(testExe) + ` user list\r\n`)
+	p.expect(host + `> `)
+	p.send("exit\r")
+	p.ends(0)
 }

@@ -12520,7 +12520,9 @@ superuser is held the same way, with the notice
 .B It could not be read whether a password change is required of your account
 instead of the dialog (the next line asks again); a superuser, known by the
 system group tac\-superuser, is never held by a read error. When the password is
-changed the root side is asked once more and the session goes on as any other. The dialog is held to the idle time
+changed the root side is asked once more and the session goes on as any other. Each line a locked session would
+refuse asks the root side again first, so a session left locked by a password
+changed in another one goes on as soon as the requirement is gone. The dialog is held to the idle time
 like a prompt: one nobody answers is ended, and the session ends as an idle one.
 Ctrl-C in the
 dialog declines it and ends the session (status 130); any other failure (a

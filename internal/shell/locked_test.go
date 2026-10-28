@@ -272,3 +272,45 @@ func TestOpeningIsHeldToTheIdleTime(t *testing.T) {
 		t.Errorf("status %d", s)
 	}
 }
+
+// Relock is asked for each line the lock would refuse, not for the lines it
+// allows, and lifts the lock for the line that finds the requirement gone.
+func TestRelockLiftsTheLockForTheLineThatFindsItGone(t *testing.T) {
+	locked := true
+	asked := 0
+	var ran, refused []string
+	var out, errb strings.Builder
+	o := lockOptions(&locked, &ran, &refused)
+	o.Out = ui.Output{Stdout: &out, Stderr: &errb}
+	o.Relock = func() {
+		asked++
+		if asked == 2 {
+			locked = false
+		}
+	}
+	sh := New(o)
+	ctx := context.Background()
+	if status, _ := sh.run(ctx, "user list", nil); status != 1 || asked != 1 || len(ran) != 0 {
+		t.Errorf("first: status %d asked %d ran %q", status, asked, ran)
+	}
+	// exit is allowed while locked: no question
+	if _, quit := sh.run(ctx, "exit", nil); !quit || asked != 1 {
+		t.Errorf("exit: quit %t asked %d", quit, asked)
+	}
+	if status, _ := sh.run(ctx, "user list", nil); status != 0 || asked != 2 || len(ran) != 1 || ran[0] != "user list" {
+		t.Errorf("second: status %d asked %d ran %q", status, asked, ran)
+	}
+	// unlocked, nothing is asked
+	sh.run(ctx, "user show bob", nil)
+	if asked != 2 {
+		t.Errorf("asked %d", asked)
+	}
+	o.LockNoticeFunc = func() string { return "dynamic notice" }
+	locked = true
+	o.Relock = nil
+	sh = New(o)
+	sh.run(ctx, "user list", nil)
+	if !strings.Contains(errb.String(), "dynamic notice") {
+		t.Errorf("stderr %q", errb.String())
+	}
+}

@@ -186,10 +186,11 @@ type shellRun struct {
 	view tier.Tier
 	// lock holds the run to a required password change (nil: none; the
 	// console's, pwchange_console.go): recheck asks the root side whether it
-	// still is, after the change; lockRefused logs a line it refused; pwEvent
+	// still is (and whether that is a requirement or one nobody could read),
+	// after the change and before each line the lock refuses; lockRefused logs a line it refused; pwEvent
 	// logs the opening dialog ("required", "done", "failed").
 	lock        *pwLock
-	recheck     func() bool
+	recheck     func() (locked, unknown bool)
 	lockRefused func(words []string)
 	pwEvent     func(event string, status int)
 }

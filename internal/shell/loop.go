@@ -142,6 +142,14 @@ type Options struct {
 	LockWords []string
 	// LockNotice is the refusal of a line while Locked answers true.
 	LockNotice string
+	// Relock, when set, is called for each line the lock would refuse, before
+	// it is refused: it asks again whether the requirement still stands (the
+	// password may have been changed in another session) and lifts the lock
+	// through Locked when it does not, in which case the line runs.
+	Relock func()
+	// LockNoticeFunc, when set, is the refusal in place of LockNotice (the
+	// requirement can change kind between lines).
+	LockNoticeFunc func() string
 	// LockRefused, when set, is told the words of each line refused while
 	// the session is locked (the console logs it).
 	LockRefused func(words []string)
@@ -220,11 +228,18 @@ func (s *Shell) run(ctx context.Context, line string, stdin io.Reader) (status i
 		return 0, false
 	}
 	s.lines++
+	if s.locked() && !s.lockAllows(words, bare) && s.o.Relock != nil {
+		s.o.Relock()
+	}
 	if s.locked() && !s.lockAllows(words, bare) {
 		if s.o.LockRefused != nil {
 			s.o.LockRefused(words)
 		}
-		s.errorf("%s", s.o.LockNotice)
+		notice := s.o.LockNotice
+		if s.o.LockNoticeFunc != nil {
+			notice = s.o.LockNoticeFunc()
+		}
+		s.errorf("%s", notice)
 		return 1, false
 	}
 	if bare {
