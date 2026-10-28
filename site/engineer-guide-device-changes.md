@@ -9,7 +9,7 @@ doctype: how-to
 
 # Engineer Guide: Device Changes
 
-*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.19*
+*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-engineer-guide-device-changes.pdf){: .pdf-link }
 
@@ -197,6 +197,43 @@ tacctl device config show sw1
 > **The output contains the scope's shared secret.** Handle it as secret.
 > Each print writes a `secret-read` line to the audit log.
 
+### 4.2 Junos: the management filter
+
+The Junos management filter is planned whole, in the mode of the device's
+scope: `ssh-only` (the default) or `strict`, deny by default
+([Vendor Notes](vendor-notes.md) §3.4). You can read the mode of your own
+scopes; the permit list, the filter names and setting the mode are the
+superuser's.
+
+```bash
+# the mode of the scope's filter and where it comes from
+tacctl scope mgmt-acl site-a mode
+# the address you are logged in from, for a device that applies the filter to lo0
+tacctl device config plan rtr1 --from 192.0.2.10
+```
+
+When the mode changes, the next plan moves the device's filter to it, in
+either direction, and its report warns of what that does to the traffic:
+
+- **To `strict`:** the traffic that stops once the filter is applied to
+  `lo0` (routing protocols from neighbours that are not in the permit list,
+  NTP, syslog and DHCP, SNMP from sources outside it, every other protocol),
+  the sources the filter accepts, and to keep a console session open.
+- **To `ssh-only`**, over a filter with no `default-accept` term: that the
+  plan adds the term, so the device accepts everything again except ssh,
+  NETCONF and SNMP from outside the list, and the command that sets `strict`
+  instead.
+
+> **Do not lock yourself out.** When the device already applies the filter
+> to `lo0`, a plan that changes the filter needs `--from <address>`, the
+> address you are logged in from. Without it the report warns. With it, the
+> filter's section is refused if the new filter would not let that address
+> in over ssh (the rest of the plan stands). In `strict` the address must be
+> inside the tacctl server's own address, a plain entry of the permit list,
+> or an entry whose services cover tcp port 22 (an entry with `udp/161`
+> only does not count). An apply makes the same check with the address it
+> connects from.
+
 ---
 
 ## 5. Applying the change
@@ -227,6 +264,8 @@ What happens during an apply:
   proves the change with a **fresh login as you** and checks what landed.
   Only after that does it confirm the commit. If the proof fails, it rolls
   the change back.
+- A change of the Junos management filter is checked against the address
+  the apply connects from, as `--from` is for a plan (§4.2).
 - The first device of each new shape goes alone (canary). By default at most
   5 devices are changed per run (`--max`), with a pause between devices
   (`--pause`).
@@ -288,6 +327,7 @@ tacctl device config plan sw1 --converge  # optional: remove old servers and sim
 | Host key mismatch on pull or ssh | Check the key on the console first, then `tacctl device hostkey <name> set SHA256:<fp>` ([Connecting to Devices](connecting-to-devices.md) §5) |
 | `failed: calls itself '<x>'` | The device's own hostname doesn't match the registry. Check you have the right box, then fix the registry or the device. |
 | `failed: other editors or staged changes` | Someone else has uncommitted configuration on the device. Coordinate with them. |
+| Plan refuses the Junos filter: `... is not inside a source of the rendered strict filter that is accepted for ssh` | The strict filter would cut you off. Ask a superuser to add your address to the scope's permit list (plain, or with `tcp/22`), then plan again (§4.2) |
 
 ---
 
@@ -306,6 +346,7 @@ tacctl device config plan sw1 --converge  # optional: remove old servers and sim
 | Verify | `tacctl device config pull <n> --diff` |
 | Back-out | `tacctl device config plan <n> --backout` |
 | Walkthrough for a device | `tacctl device config show <n>` |
+| Junos filter mode of a scope | `tacctl scope mgmt-acl <s> mode` |
 | Re-pin a key | `tacctl device hostkey <n> set SHA256:<fp>` |
 
 ---
