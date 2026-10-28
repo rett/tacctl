@@ -136,3 +136,33 @@ func TestConsolePtyNoPasswordChangeNoLock(t *testing.T) {
 	p.send("exit\r")
 	p.ends(0)
 }
+
+// No policy answer (sudo fails): a caller who is no superuser gets the notice
+// that it could not be read, no dialog, and a locked prompt where a line is
+// refused with the matching notice; the log says so.
+func TestConsolePtyUnreadPolicyHoldsTheSession(t *testing.T) {
+	host := regexp.QuoteMeta(shortHostname())
+	p := startConsole(t, "FAIL", "carol,tac-users,tac-operator")
+	p.expect(`It could not be read whether a password change is required of your account\.`)
+	p.expect(host + `> `)
+	if strings.Contains(p.Output(), "RAN-PASSWD") {
+		t.Errorf("the dialog opened for a requirement nobody read:\n%s", p.Output())
+	}
+	p.send("user list\r")
+	p.expect(`It could not be read whether a password change is required of your account, so nothing runs here`)
+	p.expect(host + `> `)
+	p.send("exit\r")
+	log := p.ends(0)
+	joined := strings.Join(log, "\n")
+	for _, w := range []string{`console password-change unknown session=[0-9a-f]{12} user=carol`, `console DENY session=[0-9a-f]{12} user=carol reason=password-change first=user\b`} {
+		if !regexp.MustCompile(w).MatchString(joined) {
+			t.Errorf("the log lacks %q:\n%s", w, joined)
+		}
+	}
+	// a superuser (known by the system's groups) is not held by it
+	p = startConsole(t, "FAIL", "alice,tac-users,tac-superuser")
+	p.expect(`tacctl console on ` + host + ` — type 'help'\. Devices: device list\. This session is logged\.\r\n`)
+	p.expect(host + `> `)
+	p.send("exit\r")
+	p.ends(0)
+}

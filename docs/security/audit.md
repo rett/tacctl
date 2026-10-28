@@ -232,6 +232,9 @@ never started, so it has no central line:
 password-change DENY user=bob tier=operator cmd="user list" sid=k3x9a0bq
 ```
 
+When the store cannot be read it cannot be told whether the requirement stands, and a caller who is not
+known to be a superuser is refused the same way, with `state=unknown` at the end of the line.
+
 A verb the gate lets through can still refuse: an engineer naming a scope's secret to change, or another scope's device. That is the third central line, at `auth.warning`:
 
 ```

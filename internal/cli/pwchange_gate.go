@@ -49,11 +49,19 @@ func (inv *invocation) passwordChangeGate() error {
 	if len(a.Args) == 0 || pwChangeWords[a.Args[0]] {
 		return nil
 	}
+	// Three answers: held, not held, and unknown (the store cannot be read,
+	// so the group, and with it the tier, is not known). Unknown fails closed
+	// for a caller who is not known to be a superuser; a superuser is known by
+	// the tier the gate gave (an unreadable store gives every managed caller
+	// the tier none, so the gate has refused it already) and is never held.
+	unknown := false
 	m, err := inv.model()
 	if err != nil || m == nil {
-		return nil
-	}
-	if !pwchange.Subject(a.Conf(), m, m.User(user)) {
+		if inv.callerTier == tier.Superuser {
+			return nil
+		}
+		unknown = true
+	} else if !pwchange.Subject(a.Conf(), m, m.User(user)) {
 		return nil
 	}
 	// the words the tier gate sees, never the arguments after them
@@ -61,6 +69,12 @@ func (inv *invocation) passwordChangeGate() error {
 	if len(a.Args) > 1 && !strings.HasPrefix(a.Args[1], "-") {
 		words += " " + a.Args[1]
 	}
-	a.Audit().Line(audit.Warning, "password-change DENY", audit.Pair("user", user), audit.Pair("tier", string(inv.callerTier)), audit.Pair("cmd", words))
+	pairs := []audit.KV{audit.Pair("user", user), audit.Pair("tier", string(inv.callerTier)), audit.Pair("cmd", words)}
+	if unknown {
+		pairs = append(pairs, audit.Pair("state", "unknown"))
+		a.Audit().Line(audit.Warning, "password-change DENY", pairs...)
+		return inv.usageErr("The store cannot be read, so it cannot be told whether a password change is required of '" + user + "': no command runs until it can be but 'tacctl passwd' (and 'version' and 'help').")
+	}
+	a.Audit().Line(audit.Warning, "password-change DENY", pairs...)
 	return inv.usageErr("A password change is required of '" + user + "': no command runs until it is done but 'tacctl passwd' (and 'version' and 'help'), and no device accepts the login until then. Run: tacctl passwd")
 }

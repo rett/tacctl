@@ -144,7 +144,7 @@ func (inv *invocation) runConsoleSession(args []string) error {
 	if cs.pol.Known {
 		cs.tier = cs.pol.Tier
 	}
-	lock := lockedBy(cs.pol)
+	lock := lockedBy(cs.pol, groups)
 	extra := []string{marker}
 	if d := a.Env.Get("DISPLAY"); cs.pol.Forward && console.ValidDisplay(d) {
 		// sshd's X11 forwarding, for 'ssh -X <device>' (the tiers sudoers
@@ -167,7 +167,7 @@ func (inv *invocation) runConsoleSession(args []string) error {
 		// A password change is required of the caller: the session opens with
 		// the dialog and runs nothing else until it is made (pwchange_console.go).
 		r.lock = lock
-		r.recheck = func() bool { return inv.consoleRemotePolicy(exe, marker).PasswordChange }
+		r.recheck = func() bool { return lockedBy(inv.consoleRemotePolicy(exe, marker), groups) != nil }
 		r.lockRefused = cs.lockRefusedLog(consoleRootCommand(newRoot(inv)))
 		r.pwEvent = func(event string, status int) { cs.log("auth.info", cs.sess.PasswordChangeLine(event, status)) }
 	}
@@ -213,10 +213,22 @@ func consoleView(pol console.Remote) tier.Tier {
 func (inv *invocation) consoleRemotePolicy(exe, marker string) console.Remote {
 	res, err := inv.app.Runner.Run(inv.ctx, execx.Cmd{Name: "sudo", Args: []string{"-n", marker, exe, "_console-policy"}})
 	if err != nil || res.Code != 0 {
-		return console.DefaultRemote()
+		return unreadPolicy()
 	}
-	pol, _ := console.ParseRemote(string(res.Stdout))
+	pol, ok := console.ParseRemote(string(res.Stdout))
+	if !ok {
+		return unreadPolicy()
+	}
 	return pol
+}
+
+// unreadPolicy is the policy when there is no answer to read: the defaults,
+// and whether a password change is required of the caller is unknown, which
+// holds the session unless the caller is a superuser (lockedBy).
+func unreadPolicy() console.Remote {
+	r := console.DefaultRemote()
+	r.PasswordChangeUnknown = true
+	return r
 }
 
 // log writes a line of the console's own to syslog, under the console's tag.

@@ -59,6 +59,10 @@ func (r *consolePtyRunner) Run(ctx context.Context, c execx.Cmd) (execx.Result, 
 		return execx.Result{Stdout: []byte(r.groups + "\n")}, nil
 	case c.Name == "sudo" && slices.Contains(c.Args, "_console-policy"):
 		policy := r.policy
+		if policy == "FAIL" {
+			// sudo refuses: no policy answer
+			return execx.Result{Code: 1}, nil
+		}
 		if r.changed.Load() {
 			policy = strings.ReplaceAll(policy, " password_change=yes", "")
 		}

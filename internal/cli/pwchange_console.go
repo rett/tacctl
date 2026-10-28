@@ -32,19 +32,39 @@ const pwChangeWord = "passwd"
 // pwLockNotice is the refusal of a line of a locked session.
 const pwLockNotice = "A password change is required: nothing runs here until it is made but 'passwd' (and 'exit')."
 
-// pwLock is the state of a session held to a required password change.
-type pwLock struct{ on atomic.Bool }
+// pwUnknownNotice is the refusal of a line of a session held because it could
+// not be told whether a password change is required.
+const pwUnknownNotice = "It could not be read whether a password change is required of your account, so nothing runs here: the next line tries again ('passwd' changes the password, 'exit' leaves)."
+
+// pwLock is the state of a session held to a required password change. unknown
+// says the session is held because the requirement could not be read, not
+// because the answer was yes: it opens with a notice, not with the dialog.
+type pwLock struct {
+	on      atomic.Bool
+	unknown bool
+}
 
 func (l *pwLock) locked() bool { return l != nil && l.on.Load() }
 
 // lockedBy is the lock of a session whose policy answer says a password
-// change is required of the caller (and who is no superuser, the console's
-// own view of it being the second look): nil for any other.
-func lockedBy(pol console.Remote) *pwLock {
-	if !pol.PasswordChange || pol.Gate == tier.Superuser || pol.Tier == tier.Superuser {
+// change is required of the caller, or does not say (PasswordChangeUnknown:
+// the answer could not be read, or the root side could not read the store):
+// nil for any other. A superuser is never held, whichever way the answer
+// goes: the answer's own tier says so, and when the answer has no tier (the
+// store was unreadable, which gives every caller the tier none, or there was
+// no answer) the system's groups of the caller do, since tac-superuser is a
+// group of the account and needs no store. A session whose requirement is
+// unknown and whose caller is no superuser is held: it fails closed.
+func lockedBy(pol console.Remote, groups []string) *pwLock {
+	if pol.Gate == tier.Superuser || pol.Tier == tier.Superuser {
 		return nil
 	}
-	l := &pwLock{}
+	if !pol.PasswordChange {
+		if !pol.PasswordChangeUnknown || sudoTier(groups) == tier.Superuser {
+			return nil
+		}
+	}
+	l := &pwLock{unknown: !pol.PasswordChange}
 	l.on.Store(true)
 	return l
 }
@@ -65,6 +85,9 @@ func (inv *invocation) holdSession(r shellRun, o *shell.Options) {
 	o.Locked = r.lock.locked
 	o.LockWords = []string{pwChangeWord}
 	o.LockNotice = pwLockNotice
+	if r.lock.unknown {
+		o.LockNotice = pwUnknownNotice
+	}
 	o.LockRefused = r.lockRefused
 	// the change, run in the session, lifts the lock when the root side
 	// agrees it is made
@@ -104,6 +127,14 @@ func (inv *invocation) openPasswordChange(ctx context.Context, r shellRun, exec 
 		if r.pwEvent != nil {
 			r.pwEvent(e, status)
 		}
+	}
+	if r.lock.unknown {
+		inv.echo("")
+		inv.echo(ui.Bold + "It could not be read whether a password change is required of your account." + ui.NC)
+		inv.echo("Nothing runs here until it can be; each line tries again. 'passwd' changes the password, 'exit' leaves.")
+		inv.echo("")
+		event("unknown", 0)
+		return false, 0
 	}
 	inv.echo("")
 	inv.echo(ui.Bold + "A password change is required of your account." + ui.NC)

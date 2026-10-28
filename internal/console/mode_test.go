@@ -221,6 +221,23 @@ func TestParseRemote(t *testing.T) {
 			t.Errorf("ParseRemote(%q).PasswordChange = %t", out, r.PasswordChange)
 		}
 	}
+	// The third answer: the root side could not tell (unknown), which is not
+	// a no, and not a yes either.
+	for out, want := range map[string]struct{ held, unknown bool }{
+		"password_change=unknown": {false, true}, "password_change=yes": {true, false}, "password_change=no": {false, false},
+		"idle=5": {false, false}, "password_change=maybe": {false, false},
+	} {
+		r, _ := ParseRemote(out)
+		if r.PasswordChange != want.held || r.PasswordChangeUnknown != want.unknown {
+			t.Errorf("ParseRemote(%q): held %t unknown %t", out, r.PasswordChange, r.PasswordChangeUnknown)
+		}
+	}
+	if r, ok := ParseRemote("password_change=unknown"); !ok || !r.Known {
+		t.Errorf("an answer that only says unknown is an answer: %+v %t", r, ok)
+	}
+	if DefaultRemote().PasswordChangeUnknown {
+		t.Error("the defaults say unknown: only the policy that was not read does (unreadPolicy)")
+	}
 	// The tier the shell lists for (D56): the gate's, else the tier field,
 	// and none (read-only verbs only) when the answer was not read.
 	for _, c := range []struct {

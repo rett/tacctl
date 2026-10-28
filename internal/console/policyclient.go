@@ -42,6 +42,13 @@ type Remote struct {
 	// runs until the password is changed. Only a caller who is no superuser
 	// is told so; the answer of a release before 0.2.20 has no such field.
 	PasswordChange bool
+	// PasswordChangeUnknown: the root side could not tell whether a password
+	// change is required of the caller (the answer is 'password_change=
+	// unknown': the store could not be read), or there was no answer to read.
+	// The session is then held as if one were required, unless the caller is
+	// a superuser, who is never locked out by a read error. An answer that
+	// names no such field is a release before 0.2.20, which flags nobody.
+	PasswordChangeUnknown bool
 	// Known reports whether the answer was read (false: the defaults).
 	Known bool
 	// TierRead reports whether the answer named the caller's tier (a
@@ -121,6 +128,8 @@ func ParseRemote(out string) (r Remote, ok bool) {
 		case "password_change":
 			if b, good := yesNoValue(v); good {
 				r.PasswordChange, ok = b, true
+			} else if v == "unknown" {
+				r.PasswordChangeUnknown, ok = true, true
 			}
 		case "password_cache":
 			if b, good := yesNoValue(v); good {

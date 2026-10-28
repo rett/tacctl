@@ -129,8 +129,9 @@ func (s Session) DenyLine(first string, n int) string {
 
 // PasswordChangeLine is the log line of the required password change at the
 // opening of a session (0.2.20): event is "required" (the session opens held
-// to it), "done" (the password was changed and the session goes on) or
-// "failed" (it was not, and the session ends with status).
+// to it), "unknown" (it could not be read whether one is required, and the
+// session opens held), "done" (the password was changed and the session goes
+// on) or "failed" (it was not, and the session ends with status).
 func (s Session) PasswordChangeLine(event string, status int) string {
 	l := "console password-change " + event + " session=" + s.ID + " user=" + LogValue(s.User)
 	if event == "failed" {

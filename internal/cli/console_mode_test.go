@@ -169,12 +169,13 @@ func TestConsoleBatch(t *testing.T) {
 }
 
 func TestConsoleHelpNamesSystemShell(t *testing.T) {
-	h, run := consoleHarness(t, "", "", "", "-c", "help")
+	h, run := consoleHarness(t, "", "carol tac-users tac-superuser", "", "-c", "help")
 	if err := run(); err != nil {
 		t.Fatal(err)
 	}
 	// No policy answer: the tier is unknown, so the help lists the
-	// read-only commands only (D56).
+	// read-only commands only (D56). (A caller who is no superuser is held
+	// without an answer, see TestConsoleWithoutAPolicyAnswerHoldsTheCaller.)
 	want := shellTopFor("0.2.1-test", true, newRoot(&invocation{}), tier.Readonly)
 	if !strings.Contains(h.out.String(), "\n  system-shell ") || !strings.Contains(h.out.String(), want) {
 		t.Errorf("help:\n%s", h.out.String())
@@ -241,14 +242,18 @@ func TestConsoleSystemShell(t *testing.T) {
 }
 
 func TestConsoleRemotePolicy(t *testing.T) {
-	// No answer: the defaults, and the tier from the groups.
+	// No answer: the defaults, and the tier from the groups. Whether a
+	// password change is required is unknown, which holds a caller who is no
+	// superuser: the policy is the only thing asked, the line is not run.
 	h, run := consoleHarness(t, "", "carol tac-users tac-operator", "", "-c", "user list")
 	_ = run()
-	if got := lines(h.runner); len(got) != 2 || !strings.HasPrefix(got[1], "sudo -n TACCTL_CONSOLE=") {
+	if got := lines(h.runner); len(got) != 1 || !strings.HasPrefix(got[0], "sudo -n TACCTL_CONSOLE=") || !strings.HasSuffix(got[0], " _console-policy") {
 		t.Errorf("ran %q", got)
 	}
 	inv := &invocation{ctx: context.Background(), app: h.app, hooks: newTestHooks()}
-	if pol := inv.consoleRemotePolicy(testExe, "TACCTL_CONSOLE=0123456789ab"); pol != console.DefaultRemote() {
+	want := console.DefaultRemote()
+	want.PasswordChangeUnknown = true
+	if pol := inv.consoleRemotePolicy(testExe, "TACCTL_CONSOLE=0123456789ab"); pol != want {
 		t.Errorf("policy %+v", pol)
 	}
 	h, _ = consoleHarness(t, "", "", "idle=7 system_shell=yes tier=operator")
@@ -322,6 +327,8 @@ func TestConsoleMainScrubsAndExecutes(t *testing.T) {
 	}
 	// The scrubbed environment: the console runs.
 	r = &fake.Runner{}
+	r.Func(func(c execx.Cmd) bool { return c.Name == "sudo" && slices.Contains(c.Args, "_console-policy") },
+		func(execx.Cmd) (execx.Result, error) { return execx.Result{Stdout: []byte(consoleTestPolicy)}, nil })
 	out.Reset()
 	if code := consoleMain(context.Background(), []string{"tacctl-console", "-c", "help"}, want, stdio, BuildInfo{Version: "v"}, testExe, 1000, r); code != 0 {
 		t.Fatalf("status %d %q", code, errb.String())

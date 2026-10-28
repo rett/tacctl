@@ -873,9 +873,17 @@ func (inv *invocation) consolePolicyLine([]string) error {
 	// here and now) is told so, for the console to open with the dialog and
 	// hold the session to it (0.2.20). A line without the field reads as no;
 	// a console of an older release ignores it.
+	// yes: held now; unknown: the store could not be read, so it cannot be
+	// told, and the console holds a caller who is no superuser (a superuser
+	// is known by its system groups, which need no store); no field: known
+	// not to be held.
 	change := ""
-	if m, err := inv.model(); err == nil && m != nil && user != "" && t != tier.Unrestricted && pwchange.Subject(a.Conf(), m, m.User(user)) {
-		change = " password_change=yes"
+	if user != "" && t != tier.Unrestricted {
+		if m, err := inv.model(); err != nil || m == nil {
+			change = " password_change=unknown"
+		} else if pwchange.Subject(a.Conf(), m, m.User(user)) {
+			change = " password_change=yes"
+		}
 	}
 	inv.echo("shell=" + shell + " idle=" + strconv.Itoa(pol.File.Idle) + " system_shell=" + yesNo(sys) +
 		" system_shell_path=" + path + " ssh_escape=" + yesNo(pol.SSHEscape()) + " agent=" + yesNo(pol.AgentForwarding()) +

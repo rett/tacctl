@@ -297,7 +297,16 @@ current behaviour; this file is where history lives.
     locked prompt where `passwd` tries again. The root side tells the console in
     its policy line (`password_change=yes`), and the session is logged as
     `console password-change required|done|failed` and `console DENY ...
-    reason=password-change`. The user's own
+    reason=password-change`. Whether a change is required is one of three
+    answers, and the third fails closed: when the policy line cannot be read
+    (sudo refuses, the answer is garbage, `console.yaml` or the store cannot
+    be read) the console cannot tell, and a caller who is no superuser gets a
+    session held as above, with the notice `It could not be read whether a
+    password change is required of your account` instead of the dialog (`console
+    password-change unknown`); the command line's gate holds such a caller the
+    same way (`password-change DENY ... state=unknown`). A superuser is never
+    held by a read error: the console knows one by the system group
+    `tac-superuser`, which needs no store, and the root side by the tier. The user's own
     `tacctl passwd` (which already refused the current password as the new one)
     lifts the requirement. The flag is the user's `password_change_required` in
     `store.yaml`, written only when set; `user list` marks the date with
