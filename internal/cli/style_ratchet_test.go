@@ -33,9 +33,6 @@ var updateStyle = flag.Bool("update-style", false, "drop the entries of internal
 // rule that needs a reviewer's eye.
 var ratchetEntries = map[string]int{"summary-length": 64, "flag-length": 178, "flag-prefix": 192}
 
-// summaryMax is the longest description of a command or a flag.
-const summaryMax = 72
-
 // longSummaries are the commands whose description is over summaryMax, by
 // their words ('device collect'): the description the scripts and the shell
 // list.

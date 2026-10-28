@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"reflect"
 	"slices"
 	"strings"
@@ -245,9 +246,18 @@ func TestCompleteDescribesFlags(t *testing.T) {
 		}
 		got := strings.Split(strings.TrimSuffix(h.out.String(), "\n"), "\n")
 		got = slices.DeleteFunc(got[:len(got)-1], func(s string) bool { return strings.HasPrefix(s, "Completion ended") })
+		// A description over summaryMax is cut for the menus of zsh and fish.
+		want = slices.Clone(want)
+		for i := range want {
+			want[i] = strings.TrimSuffix(capDescriptions(want[i]+"\n", summaryMax), "\n")
+		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("%q: %q, want %q", line, got, want)
 		}
+	}
+	if got := capDescriptions("--restore-point\t<fs>: (IOS and IOS-XE only) A restore point block before the plan: a copy of the running configuration\nok\tshort\n", summaryMax); got !=
+		"--restore-point\t<fs>: (IOS and IOS-XE only) A restore point block before the plan: a...\nok\tshort\n" {
+		t.Errorf("cut: %q", got)
 	}
 	// Every flag of every verb is described.
 	inv, root, _ := shellTestInv(t)
@@ -346,6 +356,72 @@ func TestCompletionCommand(t *testing.T) {
 		if code := exitCode(h.run(), h.app.Out); code != 1 || h.out.Len() != 0 || !strings.Contains(h.err.String(), "Usage: tacctl completion bash|zsh|fish") {
 			t.Errorf("%q: %d %q %q", args, code, h.out.String(), h.err.String())
 		}
+	}
+}
+
+// The bash script asks for the words without their descriptions, so a second
+// Tab lists the words alone in columns; the zsh and fish scripts keep asking
+// for them, and every description is short.
+func TestBashScriptAsksForNoDescriptions(t *testing.T) {
+	for shell, want := range map[string]struct{ has, not string }{
+		"bash": {"__completeNoDesc", " __complete "},
+		"zsh":  {" __complete ", "__completeNoDesc"},
+		"fish": {" __complete ", "__completeNoDesc"},
+	} {
+		var b bytes.Buffer
+		if err := GenCompletion(&b, shell); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(b.String(), want.has) || strings.Contains(b.String(), want.not) {
+			t.Errorf("%s: the script asks for %q and not for %q:\n%s", shell, want.has, want.not, b.String())
+		}
+	}
+	// What the bash script asks: words, with no description or tab.
+	for _, words := range [][]string{{"user", ""}, {"device", "config", ""}, {"user", "add", "alice", "-"}} {
+		h := newHarness(t, append([]string{"__completeNoDesc"}, words...))
+		if err := h.run(); err != nil {
+			t.Fatal(err)
+		}
+		if out := h.out.String(); strings.Contains(out, "\t") || !strings.Contains(out, "\n") {
+			t.Errorf("__completeNoDesc %v: %q", words, out)
+		}
+	}
+	// The zsh and fish menus keep their descriptions, each at most
+	// summaryMax characters: the answer of every command's parent and every
+	// leaf's flags, over the whole tree.
+	_, root, _ := shellTestInv(t)
+	var all [][]string
+	treeVerbs(root, nil, &all)
+	described, long := 0, 0
+	asked := map[string]bool{}
+	for _, p := range all {
+		for _, q := range [][]string{p[:len(p)-1], p} {
+			for _, partial := range []string{"", "-"} {
+				key := strings.Join(q, " ") + "|" + partial
+				if asked[key] {
+					continue
+				}
+				asked[key] = true
+				h := newHarness(t, append(append([]string{"__complete"}, q...), partial))
+				if err := h.run(); err != nil {
+					t.Fatal(err)
+				}
+				for _, l := range strings.Split(h.out.String(), "\n") {
+					if _, d, ok := strings.Cut(l, "\t"); ok {
+						described++
+						if n := len([]rune(d)); n > summaryMax {
+							t.Errorf("__complete %v %q: a description of %d characters: %q", q, partial, n, d)
+						}
+						if strings.HasSuffix(d, "...") {
+							long++
+						}
+					}
+				}
+			}
+		}
+	}
+	if described < 500 || long == 0 {
+		t.Errorf("%d descriptions, %d cut: the walk found too little", described, long)
 	}
 }
 

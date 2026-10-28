@@ -581,10 +581,12 @@ Also the commit, build date, Go version and whether test knobs are on.
 Print the completion script of that shell on stdout (the word is completed in
 the scripts and in the shell). The script asks
 .B "tacctl __complete"
-for the words, with a description for each sub-command, each flag (after the
-value it takes) and each verb word after a name (the six words of
-.BR "scope mgmt-acl lab" ).
-Live names
+for the words. The bash script asks for the words alone (a second Tab lists
+them in columns, as the shell does); the zsh and fish scripts ask for a
+description of each sub-command, each flag (after the value it takes) and each
+verb word after a name (the six words of
+.BR "scope mgmt-acl lab" ),
+each at most 72 characters and ending in \(lq...\(rq when cut. Live names
 (users, groups, scopes, backends, listeners, backups; a device or host with
 its vendor and scope) come from
 .BR "sudo -n tacctl" ,

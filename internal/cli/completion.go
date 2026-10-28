@@ -75,7 +75,11 @@ func completionCmd(inv *invocation) *cobra.Command {
 	return c
 }
 
-// GenCompletion writes the completion script of shell to w.
+// GenCompletion writes the completion script of shell to w. The bash script
+// asks for the words without descriptions ('__completeNoDesc'): bash lists
+// the words alone, in columns, as the shell does, and does not switch to a
+// described list that cuts the words; the zsh and fish scripts ask for the
+// descriptions their menus show.
 func GenCompletion(w io.Writer, shell string) error {
 	root := newRoot(&invocation{})
 	switch shell {
@@ -84,7 +88,7 @@ func GenCompletion(w io.Writer, shell string) error {
 	case "fish":
 		return root.GenFishCompletion(w, true)
 	}
-	return root.GenBashCompletionV2(w, true)
+	return root.GenBashCompletionV2(w, false) // no descriptions
 }
 
 // BashCompletion is the bash script that install and upgrade place in

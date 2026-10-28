@@ -5,10 +5,12 @@ import (
 	"context"
 	"io"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
 	"github.com/rett/tacctl/internal/app"
+	"github.com/rett/tacctl/internal/shell"
 )
 
 // The command tree. Each family has a file (user.go, scope.go, ...) that
@@ -145,6 +147,9 @@ func complete(ctx context.Context, a *app.App, root *cobra.Command) error {
 	if len(a.Args) == 2 {
 		out = withoutHelp(out)
 	}
+	if a.Args[0] == cobra.ShellCompRequestCmd {
+		out = capDescriptions(out, summaryMax)
+	}
 	if _, werr := io.WriteString(a.Out.Stdout, out); err == nil {
 		err = werr
 	}
@@ -162,6 +167,26 @@ func withoutHelp(out string) string {
 		}
 	}
 	return strings.Join(kept, "")
+}
+
+// summaryMax is the longest description of a command or a flag (style
+// rule, docs/development/README.md): the zsh and fish menus show the
+// descriptions of 'tacctl __complete' and have no room for more; a longer
+// one (the lists of the shell wrap it) is cut there, at a blank, and ends
+// in "...".
+const summaryMax = 72
+
+// capDescriptions cuts the description of each 'word<TAB>description' line
+// of cobra's answer to max characters.
+func capDescriptions(out string, max int) string {
+	lines := strings.SplitAfter(out, "\n")
+	for i, l := range lines {
+		body := strings.TrimSuffix(l, "\n")
+		if w, d, ok := strings.Cut(body, "\t"); ok && utf8.RuneCountInString(d) > max {
+			lines[i] = w + "\t" + shell.Cap(d, max) + l[len(body):]
+		}
+	}
+	return strings.Join(lines, "")
 }
 
 // writeTopUsage prints the top-level usage, as 'tacctl' with no arguments

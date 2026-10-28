@@ -541,6 +541,11 @@ func capLabel(l string, max int) string {
 	return strings.TrimRight(string(r[:cut]), " ") + "..."
 }
 
+// Cap is s cut to at most max characters, at a blank where it can be, and
+// ending in "...": a description in a menu that has no room for a long one
+// (the zsh and fish scripts).
+func Cap(s string, max int) string { return capLabel(s, max) }
+
 // wrapWords are the lines s takes at w columns, cut at blanks (a word
 // longer than w stays whole). The blanks inside a line stay as they are, a
 // run of them included: the descriptions of live names are aligned in

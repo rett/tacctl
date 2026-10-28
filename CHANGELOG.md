@@ -110,6 +110,18 @@ current behaviour; this file is where history lives.
     the word is a value after `--` or as the value of a flag. No verb has a
     flag named `-h`.
 
+11. **The bash script lists the words alone.** A second Tab in bash listed the
+    sub-commands and flags with their descriptions once more than one word
+    matched, and bash cut the list to the width of the screen, so a word and
+    its description were not always whole. `tacctl completion bash` asks for
+    the words without descriptions now (`__completeNoDesc`), so bash lists
+    them in columns as the shell and the console do. The zsh and fish scripts
+    keep the descriptions in their menus, each cut to 72 characters (the
+    style rule's limit; some commands and many flags had a longer one, which
+    the `?` list of the shell wraps under its column and the menus now end in
+    `...`). Regenerate the bash script with `tacctl completion bash` after the
+    upgrade (`install` and `upgrade` do it for `/etc/bash_completion.d`).
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config
