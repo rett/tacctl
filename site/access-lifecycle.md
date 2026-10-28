@@ -120,8 +120,8 @@ tacctl host sync --all         # Linux accounts deleted; asks per home directory
 
 When a user is removed, `host sync` asks about each home directory at a
 terminal. `--remove-home` deletes the homes without asking. Without a
-terminal they are kept and moved to `/home/.tacctl-removed/`. The UID stays
-reserved on the server.
+terminal they are kept and moved to `.tacctl-removed` under `/home`, a
+directory only root can open. The UID stays reserved on the server.
 
 ### 4.2 Urgent removal (termination, suspected misuse)
 

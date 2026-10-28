@@ -65,7 +65,7 @@ What a sync does:
 | Disabled | Account expired: no login, ssh keys included. Files kept. |
 | Must change the password | As disabled, on every host but the tacctl server, until the user changes it there; the next sync opens it again. `host show` counts it with the disabled accounts. |
 | Re-enabled | Restored |
-| Removed, or out of the scope | Account deleted. The home is deleted only if you agree (asked at a terminal, or `--remove-home`). Otherwise it is moved to `/home/.tacctl-removed/`. |
+| Removed, or out of the scope | Account deleted. The home is deleted only if you agree (asked at a terminal, or `--remove-home`). Otherwise it is moved to `.tacctl-removed` under `/home`. |
 | Renamed | Account renamed by UID. The home stays where it is. |
 | Group/tier changed | Tier on the host updated |
 
