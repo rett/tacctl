@@ -125,7 +125,7 @@ func TestHelpIsPlainWhenPiped(t *testing.T) {
 		if err := h.run(); err != nil {
 			t.Fatal(err)
 		}
-		h.app.Close()
+		_ = h.app.Close()
 		if got := strings.Contains(h.out.String(), "\x1b["); got != c.want {
 			t.Errorf("%v: colour %v, want %v", c.env, got, c.want)
 		}

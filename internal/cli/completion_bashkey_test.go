@@ -3,12 +3,12 @@ package cli
 import (
 	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/testpty"
 )
 
@@ -42,7 +42,8 @@ func TestBashScriptEndsWithTheHelpKey(t *testing.T) {
 
 // The block passes shellcheck when it is installed.
 func TestBashHelpKeyBlockIsShellcheckClean(t *testing.T) {
-	sc, err := exec.LookPath("shellcheck")
+	var r execx.Real
+	sc, err := r.LookPath("shellcheck")
 	if err != nil {
 		t.Skip("shellcheck is not installed")
 	}
@@ -50,12 +51,12 @@ func TestBashHelpKeyBlockIsShellcheckClean(t *testing.T) {
 	if err := os.WriteFile(f, []byte(bashHelpKey), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := exec.Command(sc, "-s", "bash", f).CombinedOutput(); err != nil {
-		t.Errorf("shellcheck:\n%s", out)
+	if res, err := r.Run(t.Context(), execx.Cmd{Name: sc, Args: []string{"-s", "bash", f}}); err != nil || res.Code != 0 {
+		t.Errorf("shellcheck: %v\n%s%s", err, res.Stdout, res.Stderr)
 	}
-	if bash, err := exec.LookPath("bash"); err == nil {
-		if out, err := exec.Command(bash, "-n", f).CombinedOutput(); err != nil {
-			t.Errorf("bash -n:\n%s", out)
+	if bash, err := r.LookPath("bash"); err == nil {
+		if res, err := r.Run(t.Context(), execx.Cmd{Name: bash, Args: []string{"-n", f}}); err != nil || res.Code != 0 {
+			t.Errorf("bash -n: %v\n%s%s", err, res.Stdout, res.Stderr)
 		}
 	}
 }
@@ -66,7 +67,8 @@ func TestBashHelpKeyBlockIsShellcheckClean(t *testing.T) {
 // directory that holds the file f.c.
 func bashKeySession(t *testing.T, key string) *testpty.Session {
 	t.Helper()
-	bash, err := exec.LookPath("bash")
+	var r execx.Real
+	bash, err := r.LookPath("bash")
 	if err != nil {
 		t.Skip("bash is not installed")
 	}

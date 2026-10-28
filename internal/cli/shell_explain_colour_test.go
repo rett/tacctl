@@ -140,7 +140,7 @@ func TestHelpColours(t *testing.T) {
 		if err := h.run(); err != nil {
 			t.Fatal(err)
 		}
-		h.app.Close()
+		_ = h.app.Close()
 		return h.out.String()
 	}
 	coloured := out([]string{"TACCTL_COLOR=always"}, "user", "--help")
