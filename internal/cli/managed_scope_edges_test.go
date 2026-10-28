@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -326,5 +327,52 @@ func TestManagedServerPAMConnectsToLoopback(t *testing.T) {
 	hs.expect(0, "", "")
 	if !strings.Contains(script, "TAC_SERVER=127.0.0.1\n") {
 		t.Errorf("the sync script:\n%s", strings.SplitN(script, "# --- tacctl", 2)[0])
+	}
+}
+
+// 'store import' of the rendered tacquito.yaml of a managed server does not
+// bring the managed scope into the users' lists, and a server that has its
+// own keeps it, with its secret and prefixes; an import of that file on a
+// server that is not enrolled (a migration) brings no such scope either, and
+// the enrolment there is accepted.
+func TestStoreImportOfAManagedServersFile(t *testing.T) {
+	hs := newHostSandbox(t)
+	enrolLocal(t, hs)
+	rendered := filepath.Join(hs.dir, "etc", "tacquito.yaml")
+	if !strings.Contains(hs.read("etc/tacquito.yaml"), `"tacctl"`) {
+		t.Fatal("the rendered file has no managed scope")
+	}
+	secret := regexp.MustCompile(`tacctl:\n    prefixes: \[[^\]]*\]\n    secret: (\S+)`).FindStringSubmatch(hs.store())
+	if secret == nil {
+		t.Fatalf("no secret of the managed scope:\n%s", hs.store())
+	}
+	hs.run(nil, "store", "import", "--replace", "--force", rendered)
+	hs.expect(0, "was not imported: this server keeps its own, which every user is in.", "")
+	st := hs.store()
+	if !strings.Contains(st, "tacctl:\n    prefixes: [127.0.0.1/32, 192.0.2.10/32]\n    secret: "+secret[1]+"\n") {
+		t.Errorf("the server's own scope changed:\n%s", st)
+	}
+	if users := strings.SplitN(strings.SplitN(st, "\nusers:", 2)[1], "\nscopes:", 2)[0]; strings.Contains(users, "tacctl") {
+		t.Errorf("a user has the managed scope in the store:\n%s", users)
+	}
+	if b := renderedBlock(t, hs, "bob"); !strings.Contains(b, `"tacctl"`) {
+		t.Errorf("bob lost the server login:\n%s", b)
+	}
+	// the migration: another server, not enrolled
+	text := hs.read("etc/tacquito.yaml")
+	other := newHostSandbox(t)
+	other.write("etc/migrated.yaml", text, 0o600)
+	other.run(nil, "store", "import", "--replace", "--force", filepath.Join(other.dir, "etc", "migrated.yaml"))
+	other.expect(0, "was not imported; tacctl host enroll --local sets this server's own up.", "")
+	if st := other.store(); strings.Contains(st, "\n  tacctl:\n") || strings.Contains(st, "tacctl]") || strings.Contains(st, "tacctl,") {
+		t.Errorf("the migrated store has the scope:\n%s", st)
+	}
+	other.run(nil, "scope", "list")
+	if regexp.MustCompile(`(?m)^\s+tacctl\s`).MatchString(plain(other.out.String())) {
+		t.Errorf("scope list:\n%s", other.out.String())
+	}
+	enrolLocal(t, other)
+	if st := other.store(); strings.Count(st, "\n  tacctl:\n") != 1 || other.registry() != "authsrv|local||tacctl|192.0.2.10|\n" {
+		t.Errorf("enrolment after the migration:\n%s\n%q", st, other.registry())
 	}
 }

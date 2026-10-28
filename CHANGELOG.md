@@ -51,8 +51,11 @@ current behaviour; this file is where history lives.
    editable. While it exists, `host enroll --local`, the sync of the server
    and `config validate` stop with one line that names it and the fix (`scope
    rename tacctl <new-name>`), and `host sync --all` goes on with the other
-   hosts; rename it before upgrading. A user who must change the password
-   keeps exactly the server's login, as before.
+   hosts; rename it before upgrading. `store import` of a rendered file does
+   not import the scope `tacctl` either and takes it out of the users' scopes
+   (in one line; a server registered in it keeps its own), so a migrated store
+   enrols cleanly. A user who must change the password keeps exactly the
+   server's login, as before.
 
 3. **`tacctl rollback 0.2.20`, and every target keeps the users' server
    login.** The new target removes `server.addresses` (0.2.20 reads every

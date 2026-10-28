@@ -543,3 +543,44 @@ func (inv *invocation) recordServerAddress(addr string) error {
 	}
 	return c.SetList(conf.ServerAddressesKey, []string{addr})
 }
+
+// importAdjust is the rule of 'store import' for the managed scope (store.
+// ImportOptions.Adjust). The rendered tacquito.yaml of a managed server has
+// the scope in it, and every user a member of it, so an import of that file
+// brought a scope tacctl does not let anyone create, and a stored copy in
+// every user's list that stays whatever the user's group says. The copy is
+// taken out of the users' lists; the scope (one that looks like the managed
+// scope of some server, pwchange.LooksManaged) is not imported, unless this
+// server is registered in it, which keeps its own, with its secret and
+// prefixes, so its PAM configuration stays valid. A scope of that name that
+// answers other addresses is an operator's and is imported as it is.
+func (inv *invocation) importAdjust(s *store.Store) (string, error) {
+	m := model.FromStore(s)
+	if !pwchange.LooksManaged(m.Scope(pwchange.ManagedScope)) {
+		return "", nil
+	}
+	for _, u := range m.Users {
+		if !slices.Contains(u.Scopes, pwchange.ManagedScope) {
+			continue
+		}
+		kept := slices.DeleteFunc(slices.Clone(u.Scopes), func(s string) bool { return s == pwchange.ManagedScope })
+		if err := s.UserSet(u.Name, "scopes="+joinComma(kept)); err != nil {
+			return "", err
+		}
+	}
+	if err := s.ScopeDel(pwchange.ManagedScope, true); err != nil {
+		return "", err
+	}
+	if inv.managedScope() == "" {
+		return "The scope '" + pwchange.ManagedScope + "' of the file is the login of the server it came from and was not imported; tacctl host enroll --local sets this server's own up.", nil
+	}
+	cur, err := inv.model()
+	if err != nil {
+		return "", err
+	}
+	own := cur.Scope(pwchange.ManagedScope)
+	if err := s.ScopeSet(pwchange.ManagedScope, "prefixes="+strings.Join(own.Prefixes, ","), "secret="+own.Secret); err != nil {
+		return "", err
+	}
+	return "The scope '" + pwchange.ManagedScope + "' of the file was not imported: this server keeps its own, which every user is in.", nil
+}

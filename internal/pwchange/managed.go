@@ -63,6 +63,26 @@ func OnlyLoginAddresses(sc *model.Scope, servers ...Server) bool {
 	return true
 }
 
+// LooksManaged reports whether sc has the shape of the managed scope of some
+// server: one or two single-address prefixes, 127.0.0.1 among them. It is how
+// a copy of the scope in a file that comes from elsewhere (store import of a
+// rendered tacquito.yaml) is told from an operator's scope of that name, when
+// the server it belongs to is not known.
+func LooksManaged(sc *model.Scope) bool {
+	if sc == nil || len(sc.Prefixes) == 0 || len(sc.Prefixes) > 2 {
+		return false
+	}
+	loop := false
+	for _, p := range sc.Prefixes {
+		n, ok := store.ParseNet(p)
+		if !ok || !n.IsHost() {
+			return false
+		}
+		loop = loop || n.String() == ServerAddress+"/32"
+	}
+	return loop
+}
+
 // Clash reports whether m has a scope called ManagedScope that is no scope
 // of the managed kind for any of the servers: an operator's scope that has
 // the reserved name.

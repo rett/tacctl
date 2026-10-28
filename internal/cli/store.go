@@ -211,6 +211,7 @@ func (inv *invocation) importOptions(p importArgs) store.ImportOptions {
 		DisabledDir: filepath.Join(a.Paths.BackupDir, "disabled"),
 		LegacyDir:   filepath.Join(a.Paths.BackupDir, "legacy"),
 		Snapshot:    a.Snapshots().Hook,
+		Adjust:      inv.importAdjust,
 		Render:      inv.importRender,
 		Equiv:       model.EquivCheckRand(a.Knobs.Rand()),
 		Smoke:       func(rendered string) error { return inv.importSmoke(inv.ctx, rendered) },

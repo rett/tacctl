@@ -5494,7 +5494,11 @@ fails unless
 is given. A required password change, which no rendered file holds, is carried
 over from the existing store
 .RB ( \-\-replace ),
-as the password dates are: an import never lifts it.
+as the password dates are: an import never lifts it. The scope
+.B tacctl
+of a rendered file (the login of the server it came from, which every user is
+in) is not imported and is taken out of the users' scopes, in one line; a
+server registered in its own keeps it.
 .\" BEGIN GENERATED: command store import
 .RS
 .PP

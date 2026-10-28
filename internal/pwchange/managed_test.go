@@ -155,3 +155,22 @@ func withPrefixes(t *testing.T, prefixes string) *store.Store {
 	}
 	return st
 }
+
+// A scope in a file from elsewhere is taken for the managed scope of some
+// server by its shape: one or two single-address prefixes, 127.0.0.1 among
+// them.
+func TestLooksManaged(t *testing.T) {
+	for prefixes, want := range map[string]bool{
+		"127.0.0.1/32": true, "127.0.0.1/32,198.51.100.7/32": true, "198.51.100.7/32,127.0.0.1/32": true, "127.0.0.1/32,2001:db8::7/128": true,
+		"198.51.100.7/32": false, "127.0.0.1/32,198.51.100.0/24": false, "127.0.0.0/8": false,
+		"127.0.0.1/32,198.51.100.7/32,198.51.100.8/32": false,
+	} {
+		sc := model.FromStore(withPrefixes(t, prefixes)).Scope(ManagedScope)
+		if got := LooksManaged(sc); got != want {
+			t.Errorf("%s: %v, want %v", prefixes, got, want)
+		}
+	}
+	if LooksManaged(nil) {
+		t.Error("no scope")
+	}
+}
