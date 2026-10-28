@@ -51,7 +51,23 @@ that ends with a single `GATE-GO PASS|FAIL` line, a FAIL for a run that was
 killed or lost a package: start it with a tool that notices the process
 ending (an agent: Bash `run_in_background`), never with a trailing `&` and
 never wait for it with `pgrep -f`; `GATE_TMPFS=1 make gate-go` keeps the tests' sandboxes on `/dev/shm` (the fsync calls cost nothing there: the run takes about a third of the time; the log and `GOCACHE` stay on disk); the bats suite, the diff corpus and the container
-matrix stay on the maintainer's machine. The temporary directory is
+matrix stay on the maintainer's machine.
+`make gate-go` runs neither the race detector nor the test knobs, which CI
+does (a data race, or a test that exists only with `-tags testknobs`, passes
+it and fails the pull request): `make gate-ci` (`tests/tools/gate-ci.sh`,
+which `tests/integration/gate_ci.bats` pins) runs what the workflow runs,
+as one tracked run. It checks the shards first (`go-test-shard.sh --check
+2`), then, for each tag set, every package but `internal/cli` with `-race`
+and the two shards of `internal/cli` (the run without tags with `-race`, the
+one with the test knobs without it, as the workflow has them; the script
+stops with status 2 when the workflow's shard or tag matrix changes). Every
+job runs, and the run ends with a single `GATE-CI PASS rc=0 jobs=6/6 ...`
+line, or `GATE-CI FAIL ...` with `failed=<job>:<test>,...` naming each
+failing test (a package when no test failed) and `races=` counting the data
+races; it needs cgo, takes several times as long as `gate-go`, and is
+started, read and sped up (`GATE_TMPFS=1`) like it.
+
+The temporary directory is
 `Paths.TempDir`, the `TMPDIR` of the environment a test gives the
 invocation, and the code never reads the process's
 (`tests/tools/no-os-tempdir.sh`, part of `make lint`).
@@ -97,7 +113,7 @@ tests/
 ├── integration/         # the command line against real files in the test's tmpdir
 ├── e2e/                 # whole command flows with stubbed system commands
 ├── diff/                # the differential runner, its corpora, stubs and state roots
-├── tools/               # no-private.sh and no-os-tempdir.sh (lint), gate-go.sh (the Go tests as one run with a verdict line), pyyaml-corpus.py, usage-goldens.sh, permcheck.py and permcheck-baseline.txt (the lab permission check, below), pre-push, release-preflight.sh, release-stamps.sh and release-reproduce.sh (the release checks, docs/releasing.md)
+├── tools/               # no-private.sh and no-os-tempdir.sh (lint), gate-go.sh and gate-ci.sh (the Go tests as one run with a verdict line, the second as CI runs them), pyyaml-corpus.py, usage-goldens.sh, permcheck.py and permcheck-baseline.txt (the lab permission check, below), pre-push, release-preflight.sh, release-stamps.sh and release-reproduce.sh (the release checks, docs/releasing.md)
 ├── containers/radius/   # real FreeRADIUS in podman
 ├── containers/hosts/    # 'host enroll|sync|unenroll' for real, server and client containers
 ├── containers/crossover/ # the upgrade from the bash release to the Go binary, and back

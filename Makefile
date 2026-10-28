@@ -1,5 +1,5 @@
 .PHONY: test test-go test-bats test-integration test-e2e test-diff test-pyyaml build \
-	coverage gate-go lint lint-sh lint-go lint-man lint-private lint-logger man hooks clean bootstrap release-assets release-verify release-reproduce
+	coverage gate-go gate-ci lint lint-sh lint-go lint-man lint-private lint-logger man hooks clean bootstrap release-assets release-verify release-reproduce
 
 BATS := tests/bats/bats-core/bin/bats
 BATS_FLAGS ?= --print-output-on-failure
@@ -69,6 +69,14 @@ test-go:
 # TAGS the build tags: make gate-go TAGS=testknobs
 gate-go:
 	GO=$(GO) tests/tools/gate-go.sh $(if $(LOG),-o $(LOG)) $(if $(TAGS),--tags $(TAGS)) $(PKGS)
+
+# What CI runs (.github/workflows/test.yml): every package but internal/cli
+# with -race, internal/cli in its two shards, each for both tag sets, as one
+# tracked run that ends with a single GATE-CI PASS|FAIL line that names the
+# failing tests (tests/tools/gate-ci.sh); LOG names the log. gate-go does not
+# run the race detector or the test knobs, so run this before a pull request.
+gate-ci:
+	GO=$(GO) tests/tools/gate-ci.sh $(if $(LOG),-o $(LOG))
 
 # internal/yamlpy's PyYAML corpus (docs/plans/go-rewrite.md 3.3): regenerate
 # the expected files with PyYAML and compare with the committed ones. Without
