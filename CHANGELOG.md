@@ -142,8 +142,9 @@ current behaviour; this file is where history lives.
     scrubbed of `NO_COLOR` and `TACCTL_COLOR`, so this is how the operator
     chooses. `tacctl console list-max [<n>]` sets the longest list the
     console shows without asking `Show all N?` (default 40, at most 1000; 0
-    is the default, a negative number never asks); the key `settings.list_max`
-    was in the file already, with no verb. Both are server-wide, a
+    is the default, a negative number never asks, and `console list-max` and
+    `console show` print it as `never ask`); the key `settings.list_max` was in
+    the file already, with no verb. Both are server-wide, a
     superuser's, shown by `console show`, logged as `console set key=color`
     and `key=list-max`, and read by each console session when it starts.
     `settings.color` is written to `console.yaml` only when it is `on` or
@@ -171,10 +172,6 @@ current behaviour; this file is where history lives.
     (sourcing replaces a previous binding and does not restore it). Regenerate
     the script with `tacctl completion bash` (`upgrade` does it for
     `/etc/bash_completion.d`).
-
-15. **`console list-max` says `never ask` as `console show` does.** A
-    negative number stored as -1 was printed `-1` by `console list-max` and
-    `never ask` by `console show`; both print `never ask`.
 
 ## 0.2.19 (2026-10-25)
 
