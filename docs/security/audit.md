@@ -107,7 +107,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `scope prefixes` | `op=add\|remove\|move\|remove-all` `scope` `cidr`, and `to` for a move |
 | `scope protocols`, `scope vendor-attrs`, `scope auth-method`, `scope aaa-order`, `scope exec-timeout`, `scope tacacs-group`, `scope radius-group`, `scope netconf` | `scope` `from` `to` |
 | `scope devices` | `scope` `cidr` `from` `to` (the vendor tag) |
-| `scope mgmt-acl` | `scope` `op=add\|remove\|clear\|cisco-name\|juniper-name` `value` |
+| `scope mgmt-acl` | `scope` `op=add\|remove\|clear\|cisco-name\|juniper-name\|mode` `value` (the mode, for `op=mode`) |
 | `scope secret set` | `scope` `source=set\|generate` |
 | `snmp set` | `kind=community\|v3-user\|clear\|version\|port\|timeout\|clients\|contact`, and `scope` or `device`; `from` `to` for `config snmp port\|timeout` |
 | `secret-read` | `kind` `name`: a secret shown (`scope`, `snmp`, `snmp-device`, `snmp-default`, `block`, `block-adopt`, `store`, `config`, `snapshot`, `backup`); written for every caller, a superuser's too |

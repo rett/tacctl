@@ -420,6 +420,7 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"scope_mgmt_acl.names.cisco.<scope>":     {setWith("scope mgmt-acl"), "The scope's own ACL name, in place of mgmt_acl.names.cisco."},
 	"scope_mgmt_acl.names.juniper.<scope>":   {setWith("scope mgmt-acl"), "The scope's own filter name, in place of mgmt_acl.names.juniper."},
 	"scope_mgmt_acl.permits.<scope>":         {setWith("scope mgmt-acl"), "The scope's own permitted entries (a CIDR, or a CIDR with its services), in place of mgmt_acl.permits."},
+	"scope_mgmt_acl.mode.<scope>":            {setWith("scope mgmt-acl"), "The mode of the scope's Junos management filter: strict accepts every protocol from the permit list and has no default-accept term; unset: ssh-only, the filter that restricts ssh, NETCONF and SNMP. Only strict is stored."},
 	"listeners.<backend>.<name>":             {setWith("config listen"), "Where a backend's daemon listens; the built-in listeners can be changed and reset, not removed."},
 	"junos.<group>.deny_commands":            {setWith("group junos"), "POSIX extended regular expressions of the commands the Junos class of the group may not run."},
 	"junos.<group>.deny_configuration":       {setWith("group junos"), "POSIX extended regular expressions of the configuration statements the Junos class may not touch."},
@@ -461,7 +462,7 @@ var manPlaceholders = map[string]string{
 	"aaa.order.": "<scope>", "exec_timeout.": "<scope>", "tacacs_group.": "<scope>", "radius_group.": "<scope>",
 	"cisco.source_interface.": "<scope>",
 	"scope_auth_method.":      "<scope>", "scope_mgmt_acl.names.cisco.": "<scope>",
-	"scope_mgmt_acl.names.juniper.": "<scope>", "scope_mgmt_acl.permits.": "<scope>",
+	"scope_mgmt_acl.names.juniper.": "<scope>", "scope_mgmt_acl.permits.": "<scope>", "scope_mgmt_acl.mode.": "<scope>",
 }
 
 // manTypeText is how the page names a rule's type.

@@ -84,15 +84,29 @@ its writes fail), so every target takes them out: `--apply` removes
 setting, and takes the snapshot first. The dry run lists the change as a step
 of its own.
 
+**A scope's strict management filter mode.** The mode of the Junos
+management filter (`tacctl scope mgmt-acl <scope> mode`, 0.2.20) is stored as
+`scope_mgmt_acl.mode.<scope>` (only `strict` is stored), a key every older
+release refuses. Every target therefore removes it from `tacctl.yaml` after a
+snapshot, and the dry run lists the scopes that were strict in a warning that
+`--apply` refuses without `--yes`. The older release renders and plans the
+`ssh-only` filter for them, which ends in a `default-accept` term, so its
+`device config plan` or `device config apply` would put that filter back on a
+device that holds the strict one, and the device would accept by default
+again, without saying so. Nothing contacts a device. To stay deny by default,
+keep this release, or leave the management filter of those scopes out of the
+older release's plans.
+
 ### To 0.2.18
 
 The per-tier sudoers drop-in of this release grants the engineer the rows of
 `device config apply`, `device enroll`, `device collect`, `device onboard`,
-`device sync` and `device support-bundle`; 0.2.18 has none of them.
-`--apply` rewrites `/etc/sudoers.d/tacctl-tiers`, when it is exactly the text
-this release writes, with the text 0.2.18 writes (after `visudo -cf`); an
-edited file is left, and 0.2.18's upgrade rewrites it. Nothing else is
-converted: `devices.yaml` (0.2.18 reads `ios_syntax`), `store.yaml`, the group drop-in, the apply state and the hosts are in formats
+`device sync` and `device support-bundle`; 0.2.18 has none of them. `--apply`
+rewrites `/etc/sudoers.d/tacctl-tiers`, when it is exactly the text this
+release writes (or the one 0.2.19 wrote), with the text 0.2.18 writes (after
+`visudo -cf`); an edited file is left, and 0.2.18's upgrade rewrites it.
+Nothing else is converted: `devices.yaml` (0.2.18 reads `ios_syntax`),
+`store.yaml`, the group drop-in, the apply state and the hosts are in formats
 0.2.18 reads. `--hosts` is accepted and does nothing. Until 0.2.18 is
 installed, do not run `tacctl emergency lockdown`: it writes the record 0.2.18
 refuses.
@@ -108,16 +122,16 @@ Three verbs have other names in 0.2.17: `device ios-syntax` is `device
 config-syntax`, `device notice list` is `device notices` and `device
 client-config` is `device ssh-config`, and the per-tier sudoers drop-in grants
 the names of the release that wrote it. `--apply` rewrites
-`/etc/sudoers.d/tacctl-tiers`, when it is exactly the text this release
-writes (or the one 0.2.18 wrote), with the text 0.2.17 writes (after `visudo
--cf`); an edited file is left, and 0.2.17's upgrade rewrites it. This release also stores a device's
-configuration syntax setting in `devices.yaml` as `ios_syntax`, which 0.2.17
-refuses (`unknown key 'ios_syntax'`): when a device has one, `--apply` takes a
-snapshot first (`tacctl backup list`) and writes the setting under
-`config_syntax`, the key 0.2.5 to 0.2.17 read; the value and every other key
-stay. A partial lockdown record in `tacctl.yaml` is removed (0.2.17 refuses
-its keys). Nothing else is converted: `store.yaml`, the group
-drop-in and the hosts are in formats 0.2.17 reads. `--hosts` is
+`/etc/sudoers.d/tacctl-tiers`, when it is exactly the text this release writes
+(or the one 0.2.19 or 0.2.18 wrote), with the text 0.2.17 writes (after
+`visudo -cf`); an edited file is left, and 0.2.17's upgrade rewrites it. This
+release also stores a device's configuration syntax setting in `devices.yaml`
+as `ios_syntax`, which 0.2.17 refuses (`unknown key 'ios_syntax'`): when a
+device has one, `--apply` takes a snapshot first (`tacctl backup list`) and
+writes the setting under `config_syntax`, the key 0.2.5 to 0.2.17 read; the
+value and every other key stay. A partial lockdown record in `tacctl.yaml` is
+removed (0.2.17 refuses its keys). Nothing else is converted: `store.yaml`,
+the group drop-in and the hosts are in formats 0.2.17 reads. `--hosts` is
 accepted and does nothing. Until 0.2.17 is installed, do not run a command
 that changes the device registry: it writes `ios_syntax` again (run the
 rollback again if one did).

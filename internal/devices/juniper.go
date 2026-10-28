@@ -217,18 +217,36 @@ func JuniperVars(req Request, d Data) map[string]string {
 	// off the RE). IPv6 entries are skipped (family inet only).
 	acl := d.ACL.Name
 	snmpIn := d.snmpInput(scope)
+	strict := d.ACL.Strict()
 	var terms strings.Builder
-	for _, e := range d.mgmtPermits() {
-		terms.WriteString("set firewall family inet filter " + acl + " term permit-mgmt from source-address " + e + "\n")
+	var strictPlain []string
+	var strictTerms []strictTerm
+	var reply *authReply
+	if strict {
+		strictPlain, strictTerms, reply = d.mgmtStrict(serverIP, req.Protocol)
+		terms.WriteString(strictStatements("set firewall family inet filter "+acl+" term ", strictPlain, strictTerms))
+	} else {
+		for _, e := range d.mgmtPermits() {
+			terms.WriteString("set firewall family inet filter " + acl + " term permit-mgmt from source-address " + e + "\n")
+		}
 	}
 	// An entry with services that do not include ssh is not listed (the
 	// permit-mgmt term matches the source only), with a comment that says so.
+	// The strict filter lists every entry, with its services.
 	var skipped strings.Builder
-	for _, n := range d.mgmtSkipped("the Junos filter " + acl + " (its permit-mgmt term matches the source only)") {
-		skipped.WriteString("# " + n + "\n")
+	if !strict {
+		for _, n := range d.mgmtSkipped("the Junos filter " + acl + " (its permit-mgmt term matches the source only)") {
+			skipped.WriteString("# " + n + "\n")
+		}
 	}
 	mgmt := skipped.String() + "# mgmt-acl empty — configure with 'tacctl config mgmt-acl add <cidr>' on the tacctl server\n" +
 		"# to emit a source-restricted lo0 firewall filter here."
+	if strict {
+		mgmt = strictEmpty()
+		if len(d.mgmtEntries()) > 0 {
+			mgmt = d.strictNoSSH(scope)
+		}
+	}
 	if skipped.Len() > 0 {
 		mgmt = skipped.String() + "# no entry of the mgmt-acl list permits ssh (tcp/22) — configure with 'tacctl config mgmt-acl add <cidr>' on the tacctl server\n" +
 			"# to emit a source-restricted lo0 firewall filter here."
@@ -239,14 +257,16 @@ func JuniperVars(req Request, d Data) map[string]string {
 		// default-accept: the client list of Step 5 binds to communities,
 		// so under SNMPv3 this term is the source restriction. Only udp
 		// 161 is matched; routing protocols and everything else fall
-		// through to default-accept.
+		// through to default-accept (in the strict mode, to the discard).
 		snmpTerms, snmpNote := "", ""
+		var snmpSources []string // the sources of the permit-snmp term
 		if clients := snmpIn.clientList(); snmpIn.Version != "" && len(clients) > 0 {
 			// the clients of the scope's SNMP block are polling this
 			// device too: their udp 161 must pass the same term, or the
 			// deny-snmp term below would refuse a community the block
 			// grants
 			clients, listNote := d.Blocks.snmpClientPermits(clients)
+			snmpSources = clients
 			var sb strings.Builder
 			for _, e := range clients {
 				sb.WriteString(f + "permit-snmp from source-address " + e + "\n")
@@ -261,34 +281,61 @@ func JuniperVars(req Request, d Data) map[string]string {
 			snmpTerms = sb.String()
 			snmpNote = "# udp port 161 (SNMP, Step 5) is accepted from the SNMP clients only; this is the source restriction\n" +
 				"# under SNMPv3, which the client list of Step 5 does not give.\n"
+			if strict {
+				snmpNote = "# udp port 161 (SNMP, Step 5) is accepted from the SNMP clients and from the sources the terms above accept\n" +
+					"# for it, and refused from every other source (deny-snmp logs it).\n"
+			}
 			if listNote {
 				snmpNote += "# A community of the SNMP block uses a client list that the device holds: its addresses are not\n" +
 					"# visible to tacctl, so add them to the permit-snmp term by hand (or it refuses them).\n"
 			}
 			snmpIn.MgmtFilter = true
+			snmpIn.MgmtStrict = strict
 		}
-		mgmt = "# Restrict SSH / NETCONF to the configured mgmt subnets.\n" +
-			"# These 'set firewall' lines define the filter in the candidate config.\n" +
-			"# Activate it by uncommenting the 'set interfaces lo0 …' line below\n" +
-			"# after reviewing — a misapplied lo0 filter can blackhole BGP / OSPF /\n" +
-			"# IS-IS to the RE.\n" +
-			skipped.String() +
-			terms.String() +
-			f + "permit-mgmt from protocol tcp\n" +
-			f + "permit-mgmt from destination-port [ ssh 830 ]\n" +
-			f + "permit-mgmt then accept\n" +
-			f + "deny-mgmt from protocol tcp\n" +
-			f + "deny-mgmt from destination-port [ ssh 830 ]\n" +
-			f + "deny-mgmt then log\n" +
-			f + "deny-mgmt then discard\n" +
-			snmpTerms +
-			f + "default-accept then accept\n" +
-			"#\n" +
-			"# tcp port 830 (NETCONF over ssh, Step 6) is permitted by the same terms as ssh.\n" +
-			snmpNote +
-			"#\n" +
-			"# Apply (review first):\n" +
-			"# set interfaces lo0 unit 0 family inet filter input " + acl
+		if strict {
+			servicesNote := ""
+			if len(strictTerms) > 0 {
+				servicesNote = "#\n" +
+					"# A source that has services is accepted for those only: ssh needs tcp/22 among them and\n" +
+					"# NETCONF (Step 6) tcp/830; a source without services has every port.\n"
+			}
+			if reply != nil {
+				reply.snmp = prefixesHold(snmpSources, reply.source)
+			}
+			mgmt = strictHeader(scope) +
+				terms.String() +
+				snmpTerms +
+				authReplyStatements("set firewall family inet filter "+acl+" term ", reply) +
+				authReplyNote(reply, snmpTerms != "") +
+				servicesNote +
+				snmpNote +
+				"#\n" +
+				"# Apply (review first):\n" +
+				"# set interfaces lo0 unit 0 family inet filter input " + acl
+		} else {
+			mgmt = "# Restrict SSH / NETCONF to the configured mgmt subnets.\n" +
+				"# These 'set firewall' lines define the filter in the candidate config.\n" +
+				"# Activate it by uncommenting the 'set interfaces lo0 …' line below\n" +
+				"# after reviewing — a misapplied lo0 filter can blackhole BGP / OSPF /\n" +
+				"# IS-IS to the RE.\n" +
+				skipped.String() +
+				terms.String() +
+				f + "permit-mgmt from protocol tcp\n" +
+				f + "permit-mgmt from destination-port [ ssh 830 ]\n" +
+				f + "permit-mgmt then accept\n" +
+				f + "deny-mgmt from protocol tcp\n" +
+				f + "deny-mgmt from destination-port [ ssh 830 ]\n" +
+				f + "deny-mgmt then log\n" +
+				f + "deny-mgmt then discard\n" +
+				snmpTerms +
+				f + "default-accept then accept\n" +
+				"#\n" +
+				"# tcp port 830 (NETCONF over ssh, Step 6) is permitted by the same terms as ssh.\n" +
+				snmpNote +
+				"#\n" +
+				"# Apply (review first):\n" +
+				"# set interfaces lo0 unit 0 family inet filter input " + acl
+		}
 	}
 
 	verify := "  show configuration system tacplus-server\n  show configuration system authentication-order"

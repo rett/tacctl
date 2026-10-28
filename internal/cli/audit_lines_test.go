@@ -163,6 +163,7 @@ var mixedCases = []mixedCase{
 	{"scope netconf", []string{"scope", "netconf", "lab"}, []string{"scope", "netconf", "lab", "enable"}},
 	{"scope breakglass", []string{"scope", "breakglass", "lab", "list"}, []string{"scope", "breakglass", "lab", "add", "labadmin"}},
 	{"scope mgmt-acl", []string{"scope", "mgmt-acl", "lab", "list"}, []string{"scope", "mgmt-acl", "lab", "add", "10.1.1.1/32"}},
+	{"scope mgmt-acl", []string{"scope", "mgmt-acl", "lab", "mode"}, []string{"scope", "mgmt-acl", "lab", "mode", "strict"}},
 	{"device hostname", []string{"device", "hostname", "lab-sw"}, []string{"device", "hostname", "lab-sw", "lab-sw.example.net"}},
 	{"device location", []string{"device", "location", "lab-sw"}, []string{"device", "location", "lab-sw", "rack 9"}},
 	{"device ios-syntax", []string{"device", "ios-syntax", "lab-sw2"}, []string{"device", "ios-syntax", "lab-sw2", "ios12"}},

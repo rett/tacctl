@@ -284,6 +284,17 @@ var Rules = []Rule{
 	// [--reveal]', D45); the verb refuses every setter, clear and test.
 	{Tier: Engineer, Cmd: "scope", Sub: "snmp", Sudoers: []string{"scope snmp *"},
 		Note: "scope snmp: an engineer may read the settings of a scope of their own (show [--reveal], version, port, timeout, contact, clients list); every setter, clear and test needs the superuser tier."},
+	// The mode of a scope's Junos management filter (0.2.20): an engineer reads
+	// it for a scope of their own ('scope mgmt-acl <scope> mode'). Every other
+	// verb of the family (the permit list, the ACL and filter names, setting
+	// the mode) is the superuser's, and the verb refuses it for an engineer,
+	// as 'scope snmp' does. A sudoers pattern is matched against the whole
+	// argument string and its '*' matches blanks too, so no pattern can name
+	// the verb more narrowly than a last word: 'scope mgmt-acl * mode' lets
+	// through no setter ('mode strict' ends in another word), and 'scope
+	// mgmt-acl x add mode' that it does let through the verb refuses.
+	{Tier: Engineer, Cmd: "scope", Sub: "mgmt-acl", Sudoers: []string{"scope mgmt-acl * mode"},
+		Note: "scope mgmt-acl: an engineer may read the management filter mode of a scope of their own (mode, with no value); the permit list, the ACL and filter names and setting the mode need the superuser tier."},
 	// 'device snmp <name> ...' (0.2.4, D72): the engineer reads the SNMP
 	// settings of the devices of their own scopes ('show [--reveal]', the
 	// plain reads, each reveal logged); the verbs that set or clear are the

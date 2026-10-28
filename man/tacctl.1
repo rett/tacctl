@@ -259,7 +259,7 @@ snapshot first.
 .B "rollback 0.2.18"
 .B \-\-apply
 rewrites the per\-tier sudoers drop\-in, when it is exactly the text this
-release writes, with the one 0.2.18 writes (after
+release writes (or the one 0.2.19 wrote), with the one 0.2.18 writes (after
 .BR "visudo \-cf" ):
 the engineer's rules of
 .BR "device config apply" ,
@@ -300,10 +300,32 @@ An older release lints such a block as an error and plans nothing for the
 devices it reaches. The block files are not rewritten; take the statements
 out before the upgrade.
 .IP
+Every target removes the management filter mode of the scopes
+.RB ( scope_mgmt_acl.mode.\fIscope\fR ,
+only
+.B strict
+is stored; 0.2.20) from
+.I tacctl.yaml
+after a snapshot, because the older schema refuses the key, and lists the
+scopes that were strict in a warning (and
+.B \-\-apply
+refuses without
+.BR \-\-yes ):
+the older release renders and plans the
+.B ssh\-only
+filter for them, which ends in a
+.B default\-accept
+term, so its
+.B "device config plan"
+or
+.B "device config apply"
+would put that filter back on a device that holds the strict one, without
+saying so. The rollback is not refused, and no device is contacted.
+.IP
 .B "rollback 0.2.17"
 .B \-\-apply
 rewrites the per\-tier sudoers drop\-in, when it is exactly the text this
-release writes (or the one 0.2.18 wrote), with the one 0.2.17 writes (after
+release writes (or the one 0.2.19 or 0.2.18 wrote), with the one 0.2.17 writes (after
 .BR "visudo \-cf" ):
 the rules of
 .BR "device ios\-syntax" ,
@@ -4552,7 +4574,9 @@ and view, and
 .B "set snmp location|contact|description"
 (the client list restricts communities only; the management filter of Step 4,
 when it is rendered, has permit-snmp and deny-snmp terms for udp port 161 from
-the same clients, which restrict v3 once the filter is applied to lo0); on WTI
+the same clients, which restrict v3 once the filter is applied to lo0; in a scope
+whose filter mode is strict the sources of the permit list reach udp port 161
+as well); on WTI
 the unit's SNMP menu in the walkthrough's style (item names and numbers as on a
 WTI 8.10 unit: SNMP Access under /N: Enable, Version, Read Only, Contact, SNMP
 Location, Read\-Only Community), with the client restriction in the udp port 161
@@ -4571,7 +4595,9 @@ says to ask one; IOS 12.x has none. The Junos walkthrough has a commented
 .B "set system services netconf ssh"
 step with the optional connection and rate limits and the check
 .RB ( "ssh -p 830 -s" " user@device " netconf ),
-and its management filter permits tcp port 830 next to ssh; the WTI unit has
+and its management filter permits tcp port 830 next to ssh (in strict mode every
+protocol from a source without services, and tcp port 830 from a source with
+services only when they include tcp/830); the WTI unit has
 no NETCONF. tacctl enables none of it itself unless the scope's or the
 device's NETCONF setting says so
 .RB ( "scope netconf" ,
@@ -6089,6 +6115,8 @@ Requires: \fBsuperuser\fR.
 .BI "scope mgmt-acl " scope " list|add|remove|clear [ " entry\fR[,\fIentry\fR...] " ]"
 .TQ
 .BI "scope mgmt-acl " scope " cisco-name|juniper-name [ " label " ]"
+.TQ
+.BI "scope mgmt-acl " scope " mode [ ssh-only | strict ]"
 Per-scope management ACL, with the subcommands of the global
 .BR "tacctl config mgmt-acl" .
 The effective permit list of a
@@ -6121,6 +6149,85 @@ falls back to the global; \fBclear\fR is the explicit way to revert.
 -> shipped default (\fBVTY-ACL\fR for Cisco, \fBMGMT-ACL\fR for
 Junos). A name starts with a letter, then
 [A-Za-z0-9_-]; 1..63 chars.
+.IP \(bu 2
+.BR "mode " [ ssh-only | strict ]
+— the mode of the scope's Junos filter; it affects Junos devices only, and the
+Cisco VTY-ACL and the WTI IP Tables list are the same in both. With no
+argument it prints the mode and where it comes from. The default,
+.BR ssh-only ,
+is the filter that restricts ssh, NETCONF and SNMP and ends in a
+.B default-accept
+term, so everything else is accepted.
+.B strict
+is deny by default: the filter accepts every protocol from the permit list (an
+entry with services keeps only those services, a plain entry accepts
+everything from its source; the tacctl server's own address stays first), keeps
+the SNMP client terms and has no
+.B default-accept
+term, so the implicit discard at the end of the filter drops the rest. The
+walkthrough has a second server address only when the device authenticates
+against another address than the one tacctl reaches it from:
+.B \-\-server
+(unless it is the detected address or
+.BR \-\-source ),
+.B \-\-source
+alone (the device is still told the address detected for the server), or a
+RADIUS listener bound to another address. With neither flag, with
+.B \-\-server
+equal to the detected address or to
+.BR \-\-source ,
+or with the address inside a plain entry of the permit list, there is one
+address and one source /32 is rendered. The second address is not a source of
+.BR permit\-mgmt :
+a term of its own,
+.BR permit\-auth\-replies ,
+after the SNMP terms, accepts from it only the answers of the server (for
+TACACS+ tcp from source port
+.B tacacs
+that are not the first packet of a connection, so a new connection from that
+port is refused; for RADIUS udp from
+.B radius
+and
+.BR radacct ).
+The filter keeps no state and matches them by source port, so for RADIUS it
+cannot tell an answer from another udp packet sent from those ports (udp port
+161 is decided by the SNMP terms first, when the scope has SNMP clients).
+Once a
+strict filter is applied to lo0, these stop reaching the routing engine:
+routing protocols carried over IP from neighbours that are not in the list
+(BGP, OSPF, LDP, VRRP, BFD), TACACS+ and RADIUS replies from a server that is
+not in the list (those of the server the walkthrough names are accepted), NTP,
+syslog and DHCP
+from hosts that are not in the list, SNMP from sources outside it (the SNMP
+clients still poll), and every other protocol from them. IS-IS is not carried
+over IP, so a family inet filter on lo0 does not see it: the filter neither
+stops nor permits it. Add every neighbour and server the device
+needs to the permit list the scope renders from first
+.RB ( "scope mgmt\-acl" " scope " list
+says which: the first entry of the scope's own list replaces the global list
+for that scope, so add the global entries to it too), keep a console session
+open when the filter is applied, and commit with
+.BR "commit confirmed" .
+The lo0 application stays a comment in the walkthrough. A list with no IPv4
+entry that permits ssh (a plain entry, or one with tcp/22) renders no filter in
+either mode, and the walkthrough says why. Setting
+.B ssh-only
+removes the key (only
+.B strict
+is stored). An engineer may read the mode of a scope of their own
+.RB ( "mode" ,
+with no value); the setter and every other verb of
+.B "scope mgmt-acl"
+are the superuser's, and another scope does not exist for an engineer. The value is
+.B scope_mgmt_acl.mode.\fIscope\fR
+in
+.IR tacctl.yaml ;
+a rename moves it and a removal deletes it. A word that is not a mode (the
+words are lower case) is refused with
+.B "Unknown mode '<word>'. Use: ssh\-only | strict."
+(exit 1), a word after the value as an unknown argument with the usage (exit 1),
+and in both nothing is written; setting the mode the scope already has says so
+and writes nothing.
 .RE
 .IP
 Cisco puts the effective name in
@@ -6135,7 +6242,7 @@ and the commented lo0 apply.
 .\" BEGIN GENERATED: command scope mgmt-acl
 .RS
 .PP
-Requires: \fBsuperuser\fR.
+Requires: \fBengineer\fR. An engineer may read the management filter mode of a scope of their own (mode, with no value); the permit list, the ACL and filter names and setting the mode need the superuser tier.
 .RE
 .\" END GENERATED: command scope mgmt-acl
 .SS Per-scope NETCONF service \fB(tacctl scope netconf)\fR
@@ -9946,6 +10053,58 @@ shows no pending
 .B commit
 first).
 .PP
+The Junos management filter is owned whole, so a move of a scope's filter mode
+.RB ( "scope mgmt\-acl" " scope " mode )
+between
+.B ssh\-only
+and
+.B strict
+is planned in both directions (the
+.B deny\-mgmt
+and
+.B default\-accept
+terms and the ssh and NETCONF leaves of
+.B permit\-mgmt
+are deleted and the service terms set, and back), and a pulled filter is
+compared with the rendering of the scope's mode. A plan that changes the filter
+warns of what it does to the traffic. For
+.BR strict ,
+where the device's filter has a
+.B default\-accept
+term or there is none: the traffic that stops once the filter is applied to
+lo0 (routing protocols carried over IP from neighbours that are not in the list,
+BFD included, TACACS+ and RADIUS replies from a server that is not in the list,
+NTP, syslog and DHCP, SNMP from sources outside it other than its clients, every other
+protocol; IS-IS is not carried over IP, so the filter neither stops nor permits
+it),
+the sources
+the filter accepts (the address it accepts the authentication server's replies
+from apart), and to keep a console session open. For
+.BR ssh\-only ,
+where the device's filter has terms and no
+.B default\-accept
+term (a strict filter, or the site's own under the same name): that the plan
+adds the term, that the device then accepts everything but ssh, NETCONF and
+SNMP from outside the list again, and the command that sets
+.BR strict .
+When the pulled configuration applies the filter to lo0, a plan that changes it
+warns without
+.BR \-\-from ,
+and with it refuses the filter's section (the rest of the plan stands) if the
+filter would not permit that address: in
+.B ssh\-only
+the address must be inside a source of
+.BR permit\-mgmt ;
+in
+.B strict
+inside a source that the filter accepts for ssh, in
+.B permit\-mgmt
+or in a service term that holds tcp/22 (the
+.B permit\-auth\-replies
+address is not one). An IPv6 address is not checked against
+the family inet filter, and a filter the device does not apply to lo0 has no
+check. An apply makes the same check with the address it connects from.
+.PP
 .B \-\-backout
 prints the back\-out region alone
 .RB ( "BACK\-OUT FROM HERE" ):
@@ -10423,7 +10582,7 @@ One file per device (<name>.txt, .set with \-\-plain, .json with \-\-json; each 
 Replace files \-\-out or \-\-out\-dir would write.
 .TP
 \fB\-\-from\fR \fI<address>\fR
-The address you are logged in from: the cleanup keeps it; the management filter check and a WTI unit's IP tables check use it.
+The address you are logged in from: the cleanup keeps it; the management filter check (in either filter mode) and a WTI unit's IP tables check use it.
 .TP
 \fB\-\-exit\-code\fR
 Exit 2 when a device needs a change (and none could not be planned).
@@ -12346,7 +12505,8 @@ device hostkey, device import, scope devices, device config,
 device enroll, device collect, device onboard, device sync,
 device support\-bundle, config cisco, config juniper, config wti,
 host list, host show, scope staging, scope secret, scope snmp,
-device snmp, scope block, device block, scope show, breakglass list
+scope mgmt\-acl, device snmp, scope block, device block, scope show,
+breakglass list
 .TP
 .B superuser
 Every verb not listed above, and every verb of the tiers below.
@@ -12386,6 +12546,9 @@ An engineer reads what tacctl recorded of a host; \-\-check logs in to it and ne
 .TP
 .B scope block
 An engineer may read the configuration blocks of a scope of their own (list, show [\-\-reveal], check); set, remove, edit and adopt need the superuser tier.
+.TP
+.B scope mgmt\-acl
+An engineer may read the management filter mode of a scope of their own (mode, with no value); the permit list, the ACL and filter names and setting the mode need the superuser tier.
 .TP
 .B scope secret
 An engineer may run show for a scope of their own; set and generate need the superuser tier.
@@ -13944,6 +14107,10 @@ The scope's own filter name, in place of mgmt_acl.names.juniper. Set with \fBtac
 .B scope_mgmt_acl.permits.<scope>
 list of CIDRs, each with optional services after a colon (tcp/22, tcp/161\-162, udp/*, icmp, comma separated). Default: [].
 The scope's own permitted entries (a CIDR, or a CIDR with its services), in place of mgmt_acl.permits. Set with \fBtacctl scope mgmt\-acl\fR.
+.TP
+.B scope_mgmt_acl.mode.<scope>
+one of ssh\-only, strict. Default: none (unset).
+The mode of the scope's Junos management filter: strict accepts every protocol from the permit list and has no default-accept term; unset: ssh-only, the filter that restricts ssh, NETCONF and SNMP. Only strict is stored. Set with \fBtacctl scope mgmt\-acl\fR.
 .TP
 .B listeners.<backend>.<name>
 mapping with network, address, role, metrics_address, tls (tls is reserved). Default: tacacs.default is tcp :49; radius.auth is udp :1812; radius.acct is udp :1813.

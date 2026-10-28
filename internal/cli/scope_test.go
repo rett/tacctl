@@ -295,6 +295,7 @@ func TestScopeConfKeysFollowRenameAndRemove(t *testing.T) {
 		{"scope", "auth-method", "dmz", "radius"},
 		{"scope", "mgmt-acl", "dmz", "add", "10.9.0.0/16"},
 		{"scope", "mgmt-acl", "dmz", "cisco-name", "DMZ-VTY"},
+		{"scope", "mgmt-acl", "dmz", "mode", "strict"},
 	} {
 		sb.run("", args)
 		sb.expect(0, "", "")
@@ -303,7 +304,8 @@ func TestScopeConfKeysFollowRenameAndRemove(t *testing.T) {
 	sb.expect(0, "Scope renamed: dmz -> edge (1 user(s) updated).", "")
 	o := sb.overrides()
 	if strings.Contains(o, "dmz") || !strings.Contains(o, "aaa:\n  order:\n    edge: local-first") ||
-		!strings.Contains(o, "scope_auth_method:\n  edge: radius") || !strings.Contains(o, "edge:\n    - 10.9.0.0/16") {
+		!strings.Contains(o, "scope_auth_method:\n  edge: radius") || !strings.Contains(o, "edge:\n    - 10.9.0.0/16") ||
+		!strings.Contains(o, "  mode:\n    edge: strict") {
 		t.Errorf("tacctl.yaml after rename:\n%s", o)
 	}
 	if !strings.Contains(sb.store(), "scopes: [lab, edge]") {

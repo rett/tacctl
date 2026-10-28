@@ -21,11 +21,19 @@ package lifecycle
 //     hold such statements, by level and count, in a warning;
 //   - nothing in devices.yaml, store.yaml, the SNMP credentials,
 //     the apply state, the hosts or the rendered backend files.
+//
+// 0.2.20's management filter mode of a scope (scope_mgmt_acl.mode.<scope>,
+// conf.Added0220) is removed for every target, after a snapshot, because the
+// older schema refuses it; the rollback is not refused (the warning of
+// mgmtModeWarning names the scopes that were strict).
 
 import (
 	"os"
+	"slices"
+	"strings"
 
 	"github.com/rett/tacctl/internal/blocks"
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/tier"
 )
 
@@ -36,7 +44,7 @@ func planRollback0218(p *RollbackPlan) (*RollbackPlan, error) {
 	in := p.in
 	pt := in.Paths
 	p.keys = in.Conf.RollbackKeys0218()
-	tiers := p.tiersPlan(tier.Sudoers0218(), tier.Sudoers(), tier.Sudoers0218())
+	tiers := p.tiersPlan(tier.Sudoers0218(), tier.Sudoers(), tier.Sudoers0219(), tier.Sudoers0218())
 	p.sudoers = []sudoersPlan{tiers}
 	p.Steps = append(p.Steps, p.lockdownKeysStep(RollbackTarget0218), p.tiersStep(RollbackTarget0218, tiers,
 		"the engineer's rules of 'device config apply', 'device enroll', 'device collect', 'device onboard', 'device sync' and 'device support-bundle' are taken out"),
@@ -47,7 +55,7 @@ func planRollback0218(p *RollbackPlan) (*RollbackPlan, error) {
 		p.Steps = append(p.Steps, RollbackStep{Title: "the enrolled Linux hosts (--hosts)",
 			Lines: []string{"nothing to do for " + RollbackTarget0218 + ": 0.2.19 changed nothing on the hosts; no host is synced"}})
 	}
-	p.Warnings = p.blocksWarning(RollbackTarget0218)
+	p.Warnings = append(p.mgmtModeWarning(RollbackTarget0218), p.blocksWarning(RollbackTarget0218)...)
 	return p, nil
 }
 
@@ -113,7 +121,16 @@ func (p *RollbackPlan) lockdownKeysStep(target string) RollbackStep {
 	for _, k := range p.keys {
 		s.Lines = append(s.Lines, "remove "+k)
 	}
-	s.Lines = append(s.Lines, "(the record of an emergency lockdown is 0.2.19's; "+target+"'s schema refuses it: its 'config validate' reports it and its 'backup restore' refuses a snapshot that has it; every other key is one it has and stays)")
+	var what []string
+	for _, k := range p.keys {
+		switch {
+		case conf.Added0219Key(k) && !slices.Contains(what, "the record of an emergency lockdown is 0.2.19's"):
+			what = append(what, "the record of an emergency lockdown is 0.2.19's")
+		case conf.Added0220Key(k) && !slices.Contains(what, "the management filter mode of a scope is 0.2.20's"):
+			what = append(what, "the management filter mode of a scope is 0.2.20's")
+		}
+	}
+	s.Lines = append(s.Lines, "("+strings.Join(what, ", ")+"; "+target+"'s schema refuses it: its 'config validate' reports it and its 'backup restore' refuses a snapshot that has it; every other key is one it has and stays)")
 	return s
 }
 
