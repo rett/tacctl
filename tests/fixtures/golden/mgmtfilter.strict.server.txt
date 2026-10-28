@@ -3,11 +3,11 @@
 # services keeps only those) and has no default-accept term: the implicit discard at the
 # end of a Junos filter drops the rest.
 # Once the filter is applied to lo0, these stop reaching the routing engine:
-#   - routing protocols from neighbours that are not in the list: BGP, OSPF, IS-IS, VRRP, LDP
+#   - routing protocols from neighbours that are not in the list: BGP, OSPF, IS-IS, VRRP, LDP, BFD
 #   - replies from servers that are not in the list: TACACS+ and RADIUS (the server this walkthrough
 #     names is in it), NTP, DNS
 #   - NTP, syslog and DHCP from hosts that are not in the list
-#   - SNMP from sources outside the list
+#   - SNMP from sources outside the list (the SNMP clients of Step 5 still poll)
 #   - every other protocol (ping, traceroute) from sources outside the list
 # permit-mgmt starts with the address tacctl reaches the device from and, when it is another one
 # (--server, a RADIUS listener bound to another address), the address the device authenticates against.

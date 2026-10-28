@@ -29,7 +29,7 @@ func TestScopeMgmtACLModeShowsAndSets(t *testing.T) {
 	// strict is stored and says what stops, and that it is Junos only
 	out = mode("strict")
 	for _, want := range []string{"management filter mode set to strict (Junos devices only).", "no default-accept term",
-		"BGP, OSPF, IS-IS, VRRP, LDP", "replies from servers not in the list: TACACS+ and RADIUS", "NTP, syslog and DHCP", "SNMP from sources outside the list",
+		"BGP, OSPF, IS-IS, VRRP, LDP, BFD", "(the SNMP clients still poll)", "replies from servers not in the list: TACACS+ and RADIUS", "NTP, syslog and DHCP", "SNMP from sources outside the list",
 		"The permit list is empty", "Keep a console session open", "commit confirmed", "Cisco VTY-ACL and WTI IP Tables lists are the same"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("set strict lacks %q:\n%s", want, out)
@@ -253,7 +253,7 @@ func TestPlanFollowsTheMgmtACLMode(t *testing.T) {
 	for _, want := range []string{"##### PASTE FROM HERE: lab-j #####", "delete firewall family inet filter MGMT-ACL term default-accept\n",
 		"delete firewall family inet filter MGMT-ACL term deny-mgmt\n", "set firewall family inet filter MGMT-ACL term permit-udp-161 then accept\n",
 		"WARNING: the management filter of 'lab' is strict: it has no default-accept term. The device applies it to lo0 already, so from the commit",
-		"BGP, OSPF, IS-IS, VRRP, LDP", "TACACS+ and RADIUS replies from servers that are not in the list", "NTP, syslog and DHCP", "SNMP from sources outside the list"} {
+		"BGP, OSPF, IS-IS, VRRP, LDP, BFD", "(the SNMP clients still poll)", "TACACS+ and RADIUS replies from servers that are not in the list", "NTP, syslog and DHCP", "SNMP from sources outside the list"} {
 		if !strings.Contains(out, want) && !strings.Contains(flat, want) {
 			t.Errorf("the plan lacks %q:\n%s", want, out)
 		}

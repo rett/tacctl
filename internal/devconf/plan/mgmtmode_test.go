@@ -149,7 +149,7 @@ func TestMgmtModePlansSSHOnlyToStrict(t *testing.T) {
 			t.Errorf("the plan sets the default-accept term: %q", l)
 		}
 	}
-	for _, w := range []string{"is strict: it has no default-accept term. Once it is applied to lo0", "BGP, OSPF, IS-IS, VRRP, LDP", "TACACS+ and RADIUS replies from servers that are not in the list", "NTP, syslog and DHCP", "SNMP from sources outside the list",
+	for _, w := range []string{"is strict: it has no default-accept term. Once it is applied to lo0", "BGP, OSPF, IS-IS, VRRP, LDP, BFD", "(the SNMP clients still poll)", "TACACS+ and RADIUS replies from servers that are not in the list", "NTP, syslog and DHCP", "SNMP from sources outside the list",
 		"192.0.2.42/32, 10.1.100.0/23", "Keep a console session open"} {
 		if !warned(d, w) {
 			t.Errorf("the report lacks %q: %q", w, d.Warnings)

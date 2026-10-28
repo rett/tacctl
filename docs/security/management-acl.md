@@ -91,11 +91,11 @@ commented and never emits it. Once the filter is applied to lo0, these stop
 reaching the routing engine:
 
 - routing protocols from neighbours that are not in the list (BGP, OSPF,
-  IS-IS, VRRP, LDP);
+  IS-IS, VRRP, LDP, BFD);
 - the replies of servers that are not in the list: TACACS+ and RADIUS (the
   server the walkthrough names is always in it), NTP, DNS;
 - NTP, syslog and DHCP from hosts that are not in the list;
-- SNMP from sources outside the list;
+- SNMP from sources outside the list (the SNMP clients still poll);
 - every other protocol (ping, traceroute) from sources outside the list.
 
 Add every neighbour and server the device needs to the scope's permit list

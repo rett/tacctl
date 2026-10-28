@@ -2711,10 +2711,10 @@ func (inv *invocation) scopeMgmtACLMode(scope, value string) error {
 // mgmtStrictStops is what the strict filter drops, as the shell prints it
 // after the mode is set (the comment of the filter says the same).
 var mgmtStrictStops = []string{
-	"routing protocols to the routing engine from neighbours not in the list: BGP, OSPF, IS-IS, VRRP, LDP",
+	"routing protocols to the routing engine from neighbours not in the list: BGP, OSPF, IS-IS, VRRP, LDP, BFD",
 	"replies from servers not in the list: TACACS+ and RADIUS (the server the walkthrough names is in it), NTP, DNS",
 	"NTP, syslog and DHCP from hosts not in the list",
-	"SNMP from sources outside the list",
+	"SNMP from sources outside the list (the SNMP clients still poll)",
 	"every other protocol (ping, traceroute) from sources outside the list",
 }
 

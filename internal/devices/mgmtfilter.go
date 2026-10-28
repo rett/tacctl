@@ -177,11 +177,11 @@ func strictHeader(scope string) string {
 		"# services keeps only those) and has no default-accept term: the implicit discard at the\n" +
 		"# end of a Junos filter drops the rest.\n" +
 		"# Once the filter is applied to lo0, these stop reaching the routing engine:\n" +
-		"#   - routing protocols from neighbours that are not in the list: BGP, OSPF, IS-IS, VRRP, LDP\n" +
+		"#   - routing protocols from neighbours that are not in the list: BGP, OSPF, IS-IS, VRRP, LDP, BFD\n" +
 		"#   - replies from servers that are not in the list: TACACS+ and RADIUS (the server this walkthrough\n" +
 		"#     names is in it), NTP, DNS\n" +
 		"#   - NTP, syslog and DHCP from hosts that are not in the list\n" +
-		"#   - SNMP from sources outside the list\n" +
+		"#   - SNMP from sources outside the list (the SNMP clients of Step 5 still poll)\n" +
 		"#   - every other protocol (ping, traceroute) from sources outside the list\n" +
 		"# permit-mgmt starts with the address tacctl reaches the device from and, when it is another one\n" +
 		"# (--server, a RADIUS listener bound to another address), the address the device authenticates against.\n" +

@@ -249,24 +249,24 @@ scope mgmt-acl <name> cisco-name|juniper-name [<label>]
 
 scope mgmt-acl <name> mode [ssh-only|strict]
 
-    Superuser to set; with no argument it prints the mode and where it comes from, which an
-    engineer may do for a scope of their own (the permit list, the names and the setter are the
-    superuser's; another scope does not exist for an engineer). The mode of the
-    scope's Junos management filter; it affects Junos devices only, and the Cisco VTY-ACL and the
-    WTI IP Tables list are the same in both. `ssh-only` (the default) is the filter that restricts
-    ssh, NETCONF and SNMP and ends in a `default-accept` term, so everything else is accepted.
-    `strict` is deny by default: the filter accepts every protocol from the permit list (an entry
-    with services keeps only those services, a plain entry accepts everything from its source; the
-    tacctl server's own address stays first), keeps the SNMP client terms and has no
-    `default-accept` term, so the implicit discard at the end of the filter drops the rest. Once a
-    strict filter is applied to lo0, these stop reaching the routing engine: routing protocols
-    from neighbours that are not in the list (BGP, OSPF, IS-IS, VRRP, LDP), TACACS+ and RADIUS
-    replies from a server that is not in the list (the server the walkthrough names is), NTP,
-    syslog and DHCP from hosts that are not in the list, SNMP from sources outside it, and every
-    other protocol from them. The walkthrough keeps the lo0 application commented; keep a console session open
-    when you apply the filter and commit with `commit confirmed`. Only `strict` is stored
-    (`scope_mgmt_acl.mode.<name>`); setting `ssh-only` removes the key. See
-    [Management ACL](../security/management-acl.md#strict-mode-for-junos)
+    Superuser to set; with no argument it prints the mode and where it comes from, which an engineer
+    may do for a scope of their own (the permit list, the names and the setter are the superuser's;
+    another scope does not exist for an engineer). The mode of the scope's Junos management filter;
+    it affects Junos devices only, and the Cisco VTY-ACL and the WTI IP Tables list are the same in
+    both. `ssh-only` (the default) is the filter that restricts ssh, NETCONF and SNMP and ends in a
+    `default-accept` term, so everything else is accepted. `strict` is deny by default: the filter
+    accepts every protocol from the permit list (an entry with services keeps only those services, a
+    plain entry accepts everything from its source; the tacctl server's own address stays first),
+    keeps the SNMP client terms and has no `default-accept` term, so the implicit discard at the end
+    of the filter drops the rest. Once a strict filter is applied to lo0, these stop reaching the
+    routing engine: routing protocols from neighbours that are not in the list (BGP, OSPF, IS-IS,
+    VRRP, LDP, BFD), TACACS+ and RADIUS replies from a server that is not in the list (the server
+    the walkthrough names is), NTP, syslog and DHCP from hosts that are not in the list, SNMP from
+    sources outside it (the SNMP clients still poll), and every other protocol from them. The
+    walkthrough keeps the lo0 application commented; keep a console session open when you apply the
+    filter and commit with `commit confirmed`. Only `strict` is stored
+    (`scope_mgmt_acl.mode.<name>`); setting `ssh-only` removes the key. See [Management
+    ACL](../security/management-acl.md#strict-mode-for-junos)
 
 scope breakglass <name> [list]
 scope breakglass <name> add <user> [--role admin|operator|readonly]
