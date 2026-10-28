@@ -73,7 +73,7 @@ func (c *pwCtx) barrier(name, group string, scopes []string, disabled bool) pwBa
 		return pwBarrier{why: "this server is not enrolled (tacctl host enroll --local), so no user has a login on it to change the password at"}
 	case !hosts.LinuxName(name):
 		return pwBarrier{why: "its name is no Linux account name (a period), so it has no login on this server"}
-	case !slices.Contains(scopes, e.Scope) && !(e.Scope == pwchange.ManagedScope && c.implicit(name, group)):
+	case !slices.Contains(scopes, e.Scope) && (e.Scope != pwchange.ManagedScope || !c.implicit(name, group)):
 		return pwBarrier{why: "it is not in scope '" + e.Scope + "', the scope of this server, so it has no login on it"}
 	}
 	srv := pwchange.ServerOf(e)

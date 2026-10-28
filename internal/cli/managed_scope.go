@@ -34,11 +34,6 @@ func (inv *invocation) managedScope() string {
 	return ""
 }
 
-// localServer is pwchange.LocalServer of this install.
-func (inv *invocation) localServer() pwchange.Server {
-	return pwchange.LocalServer(inv.app.Paths.LinuxHosts)
-}
-
 // serverModel is the model the accounts of a host are made from: on this
 // server in the managed scope (managed) every user is in it
 // (pwchange.WithServerScope), registered yet or about to be.
@@ -90,15 +85,6 @@ func (inv *invocation) reservedScopeArg(run func([]string) error) func([]string)
 		}
 		return run(args)
 	}
-}
-
-// reservedInList refuses a list of scopes a verb gives a user (user add
-// --scopes, user scope add|replace|remove) that names the managed scope.
-func (inv *invocation) reservedInList(scopes []string) error {
-	if slices.Contains(scopes, pwchange.ManagedScope) {
-		return inv.reservedScope(pwchange.ManagedScope)
-	}
-	return nil
 }
 
 // managedCleanup wraps a store change: a user whose record the change writes
