@@ -573,3 +573,26 @@ func TestRollback0220NextStepNamesYes(t *testing.T) {
 	hs.run(hs.runner(), "rollback", "0.2.20", "--apply")
 	hs.expect(1, "", "The warnings above need your decision")
 }
+
+// A server's dedicated scope that is the default scope is taken over by the
+// managed scope: the default marker is cleared (one line), not moved to the
+// reserved name, which the commands that default to it would then meet.
+func TestManagedAdoptionClearsTheDefaultScope(t *testing.T) {
+	hs := newHostSandbox(t)
+	hs.run(nil, "scope", "add", "srv", "--prefixes", "127.0.0.1/32", "--secret", "srv-secret-0123456789abcdef")
+	hs.run(nil, "scope", "default", "srv")
+	hs.expect(0, "", "")
+	hs.write("state/linux-hosts", "authsrv|local|22|srv|127.0.0.1|\n", 0o600)
+	hs.run(nil, "host", "sync", "authsrv")
+	hs.expect(0, "Default-scope marker cleared: 'srv' is this server's own login now", "")
+	y, _ := os.ReadFile(filepath.Join(hs.dir, "state", "tacctl.yaml"))
+	if strings.Contains(string(y), "default: tacctl") || strings.Contains(string(y), "default: srv") {
+		t.Errorf("tacctl.yaml:\n%s", y)
+	}
+	hs.run(nil, "scope", "default")
+	if out := hs.all(); strings.Contains(out, "tacctl") && !strings.Contains(out, "tacctl scope default") || hs.code != 0 {
+		t.Errorf("scope default: %d\n%s", hs.code, out)
+	}
+	hs.run(nil, "scope", "default", "lab")
+	hs.expect(0, "", "")
+}

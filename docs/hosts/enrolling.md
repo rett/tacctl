@@ -36,39 +36,40 @@ The scope of a host is, in order: `--scope`; the scope the host is registered in
 **When the scope no longer answers the host.** A prefix change, a new address or an enroll into the wrong scope can leave a host registered in one scope while another answers its address: the server then checks its logins against that scope's users and secret, and refuses them. tacctl never moves a host on its own (a move changes its secret and deletes the accounts of the users it loses); it says so, with the fix, on every `host sync` of the host, after the `host list` table, and in `config validate` (from the address recorded at the last enroll or sync): `dev: registered in scope 'linux-dev', but 192.0.2.22 is answered by scope 'lab' (prefix 192.0.2.0/24): its logins are checked against that scope's users and secret, so they are refused. To move it: tacctl host move dev`. Moving prefixes between scopes is one change: `tacctl scope prefixes site-a move 198.51.100.0/24 lab` takes them out of one scope and into the other and names the enrolled hosts that then belong to the other scope. A scope enrolled hosts use cannot be removed until they are moved.
 
 **This machine.** `host enroll --local` sets up this machine's own login:
-every user can log in to it and to its console unless disabled or of tier none,
-whatever their scopes; it takes no `--scope`. `--server <address>` is the
-address devices and hosts reach this server at (an address behind NAT or a
+every user can log in to it and to its console unless disabled or of tier
+none, whatever their scopes; it takes no `--scope`. `--server <address>` is
+the address devices and hosts reach this server at (an address behind NAT or a
 VPN that is not on this machine is taken; a host name, `0.0.0.0`, `::`, a
 loopback, link-local, multicast or broadcast address, or an IPv4-mapped IPv6
-address is not). Without it the recorded address is
-used, else `--server` defaults to the address of the interface with the
-default route, said in one line (`Using 192.0.2.10 as the server address (the
-address of eth0); pass --server to use another.`). It is what devices and other
-hosts use: this machine's own PAM client always connects to `127.0.0.1`, so
-its logins arrive from an address the login scope has whatever the NAT does
-(the scope answers `127.0.0.1` and the server address). The address is the setting
+address is not). Without it the recorded address is used, else `--server`
+defaults to the address of the interface with the default route, said in one
+line (`Using 192.0.2.10 as the server address (the address of eth0); pass
+--server to use another.`). It is what devices and other hosts use: this
+machine's own PAM client always connects to `127.0.0.1`, so its logins arrive
+from an address the login scope has whatever the NAT does (the scope answers
+`127.0.0.1` and the server address). The address is the setting
 `server.addresses` in `tacctl.yaml` (a list that holds one address for now);
 `host enroll --local --server <address>` changes it. An install from before
 whose server is registered in a scope that serves the server alone is taken
 over at the next `host sync` of the server or `host enroll --local`, its
-secret kept, in one line; one that also serves hosts or devices is left to
-them, and `host enroll --local` sets up the server's own login apart from it;
-an enrolment that fails or is interrupted (an error, Ctrl-C, a failed client
-script) puts the prefixes back and takes the new scope out again, so the same
-command can be run again. `host forget` and `host unenroll` of the server take
-the scope with the registration, its `tacctl.yaml` keys (a lockdown, an ACL
-name) too, as `scope remove` does.
-A `host sync` of the server repairs its login when it was changed by hand
-(`Repaired the managed server login.`). A scope called `tacctl` that answers an
-address other than this server's own login addresses (`127.0.0.1` and the
-server address) is yours, from an earlier release: it is never taken over,
-given members or repaired, and `host enroll --local`, the sync of the server
-(the other hosts of `host sync --all` are synced) and `config validate` stop
-with one line, `Scope 'tacctl' is reserved. Rename the scope of that name
-first: tacctl scope rename tacctl <new-name>`. A scope of that name that
-answers the login addresses only, has no member and serves no one else is what
-an enrolment that did not finish left: the next `host enroll --local` takes it.
+secret kept, in one line (a default-scope marker on it is cleared, in one
+line); one that also serves hosts or devices is left to them, and `host enroll
+--local` sets up the server's own login apart from it; an enrolment that fails
+or is interrupted (an error, Ctrl-C, a failed client script) puts the prefixes
+back and takes the new scope out again, so the same command can be run again.
+`host forget` and `host unenroll` of the server take the scope with the
+registration, its `tacctl.yaml` keys (a lockdown, an ACL name) too, as `scope
+remove` does. A `host sync` of the server repairs its login when it was
+changed by hand (`Repaired the managed server login.`). A scope called
+`tacctl` that answers an address other than this server's own login addresses
+(`127.0.0.1` and the server address) is yours, from an earlier release: it is
+never taken over, given members or repaired, and `host enroll --local`, the
+sync of the server (the other hosts of `host sync --all` are synced) and
+`config validate` stop with one line, `Scope 'tacctl' is reserved. Rename the
+scope of that name first: tacctl scope rename tacctl <new-name>`. A scope of
+that name that answers the login addresses only, has no member and serves no
+one else is what an enrolment that did not finish left: the next `host enroll
+--local` takes it.
 
 **One machine, one registration.** Enroll refuses this server's own address unless it is `--local` (`'<target>' is this server; enroll it with --local`), and a new name for a machine already enrolled under another one (the same address on the same ssh port, or one of this server's own addresses when it is enrolled with `--local`): `'h192-0-2-22' is the enrolled host 'dev' (enrolled as admin@host.example.net): both reach 192.0.2.22.` Re-enroll it under its registered name (`--name dev`) or change how it is reached (`tacctl host target dev <[user@]host>`).
 

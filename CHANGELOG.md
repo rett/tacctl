@@ -20,53 +20,52 @@ current behaviour; this file is where history lives.
    scope you create: `host enroll --local` sets up this machine's own login,
    and every user logs in to it, unless disabled or of tier none, whatever
    their scopes (a user is kept off the server only by `user disable` or a
-   group of tier none). Device logins keep the user's own scopes. A user's
-   own scopes are written as before; when a command next writes a user's
-   record, a stored copy of the server's scope is dropped from it. The name
-   `tacctl` is reserved: no command creates, renames to, edits or lists it,
-   and no listing or Tab completion shows it (`scope list`, `scope routing`,
-   `user list`, `user show`, `user scope <user> list`, `status`, the scope
-   column and the JSON of `host list` and `host show`; `scope lookup` finds
-   no scope for an address only it answers, `emergency lockdown tacctl ...`
-   is refused, and a prefix its login holds is refused with no command to
-   run; a lockdown of `--all-scopes` includes it, as before, and says `this
-   server's own login`). `host enroll --local` takes no `--scope`; its
-   `--server` is the address devices and hosts reach the server at (an IP
-   address, which may be behind NAT or a VPN; not a host name, `0.0.0.0`,
-   `::`, loopback, link-local, multicast, broadcast or IPv4-mapped IPv6),
-   recorded in the new `tacctl.yaml` key
-   `server.addresses` (a list that holds one address for now); without
-   `--server` the recorded address is used, else `--server` defaults to the
-   address of the interface with the default route, said in one line; this
-   server's own PAM client always connects to `127.0.0.1`, the address is what
-   devices and other hosts use. An
-   install from before whose server is registered in a scope that serves the
-   server alone is taken over at the next `host sync` of the server or `host
-   enroll --local` (renamed, its secret kept, in one line); one that also
-   serves hosts or devices is left to them, and `host enroll --local` sets the
-   server's login up apart from it; an enrolment that fails or is interrupted
-   (an error, Ctrl-C, a failed client script) puts the prefixes back and takes
-   the new scope out again, and the same command run again does it. A `host sync` of the server repairs its
-   login when it was changed by hand (`Repaired the managed server login.`),
-   `host move` of the server says it is set up by `host enroll --local`, and
-   `host forget` and `host unenroll` of the server take its login with them,
-   its `tacctl.yaml` keys too, as `scope remove` does.
-   A scope called `tacctl` that an earlier release made is yours when it
-   answers an address other than this server's own login addresses: it is
-   never taken over, given members or repaired, and stays listed and
-   editable. While it exists, `host enroll --local`, the sync of the server
-   and `config validate` stop with one line that names it and the fix (`scope
-   rename tacctl <new-name>`), and `host sync --all` goes on with the other
-   hosts; rename it before upgrading. `store import` of a rendered file does
-   not import the scope `tacctl` either and takes it out of the users' scopes
-   (in one line; a server registered in it keeps its own), so a migrated store
-   enrols cleanly. A user who must change the password keeps exactly the
-   server's login, as before; `host enroll --local` of a server registered in
-   a scope it shares with devices is accepted while a user must change the
-   password (the managed scope keeps the user a login, and the devices of the
-   old scope stop accepting the password), where a method other than the
-   registered one, `host forget` and `host unenroll` of the server are still
-   refused.
+   group of tier none). Device logins keep the user's own scopes. A user's own
+   scopes are written as before; when a command next writes a user's record, a
+   stored copy of the server's scope is dropped from it. The name `tacctl` is
+   reserved: no command creates, renames to, edits or lists it, and no listing
+   or Tab completion shows it (`scope list`, `scope routing`, `user list`,
+   `user show`, `user scope <user> list`, `status`, the scope column and the
+   JSON of `host list` and `host show`; `scope lookup` finds no scope for an
+   address only it answers, `emergency lockdown tacctl ...` is refused, and a
+   prefix its login holds is refused with no command to run; a lockdown of
+   `--all-scopes` includes it, as before, and says `this server's own login`).
+   `host enroll --local` takes no `--scope`; its `--server` is the address
+   devices and hosts reach the server at (an IP address, which may be behind
+   NAT or a VPN; not a host name, `0.0.0.0`, `::`, loopback, link-local,
+   multicast, broadcast or IPv4-mapped IPv6), recorded in the new
+   `tacctl.yaml` key `server.addresses` (a list that holds one address for
+   now); without `--server` the recorded address is used, else `--server`
+   defaults to the address of the interface with the default route, said in
+   one line; this server's own PAM client always connects to `127.0.0.1`, the
+   address is what devices and other hosts use. An install from before whose
+   server is registered in a scope that serves the server alone is taken over
+   at the next `host sync` of the server or `host enroll --local` (renamed,
+   its secret kept, in one line; a default-scope marker on it is cleared, in
+   one line); one that also serves hosts or devices is left to them, and `host
+   enroll --local` sets the server's login up apart from it; an enrolment that
+   fails or is interrupted (an error, Ctrl-C, a failed client script) puts the
+   prefixes back and takes the new scope out again, and the same command run
+   again does it. A `host sync` of the server repairs its login when it was
+   changed by hand (`Repaired the managed server login.`), `host move` of the
+   server says it is set up by `host enroll --local`, and `host forget` and
+   `host unenroll` of the server take its login with them, its `tacctl.yaml`
+   keys too, as `scope remove` does. A scope called `tacctl` that an earlier
+   release made is yours when it answers an address other than this server's
+   own login addresses: it is never taken over, given members or repaired, and
+   stays listed and editable. While it exists, `host enroll --local`, the sync
+   of the server and `config validate` stop with one line that names it and
+   the fix (`scope rename tacctl <new-name>`), and `host sync --all` goes on
+   with the other hosts; rename it before upgrading. `store import` of a
+   rendered file does not import the scope `tacctl` either and takes it out of
+   the users' scopes (in one line; a server registered in it keeps its own),
+   so a migrated store enrols cleanly. A user who must change the password
+   keeps exactly the server's login, as before; `host enroll --local` of a
+   server registered in a scope it shares with devices is accepted while a
+   user must change the password (the managed scope keeps the user a login,
+   and the devices of the old scope stop accepting the password), where a
+   method other than the registered one, `host forget` and `host unenroll` of
+   the server are still refused.
 
 3. **`tacctl rollback 0.2.20`, and every target keeps the users' server
    login.** The new target removes `server.addresses` (0.2.20 reads every

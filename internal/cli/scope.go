@@ -31,6 +31,7 @@ import (
 	"github.com/rett/tacctl/internal/mgmtacl"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/shellquote"
 	"github.com/rett/tacctl/internal/snmp"
 	"github.com/rett/tacctl/internal/snmpcred"
@@ -1310,10 +1311,19 @@ func (inv *invocation) scopeRenameDo(old, newName string, extra func(*store.Stor
 			return err
 		}
 		if inv.confGet("scope.default", "") == old {
-			if err := a.Conf().Set("scope.default", newName); err != nil {
-				return err
+			if newName == pwchange.ManagedScope {
+				// the scope of this server's own login is no default of the
+				// operator's: the marker is cleared, not moved to the reserved name
+				if err := a.Conf().Unset("scope.default"); err != nil {
+					return err
+				}
+				a.Out.Info("Default-scope marker cleared: '" + old + "' is this server's own login now, which is no default scope; set another: tacctl scope default <name>")
+			} else {
+				if err := a.Conf().Set("scope.default", newName); err != nil {
+					return err
+				}
+				a.Out.Info("Default-scope marker updated: " + old + " -> " + newName)
 			}
-			a.Out.Info("Default-scope marker updated: " + old + " -> " + newName)
 		}
 		return nil
 	}); err != nil {
