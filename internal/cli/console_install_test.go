@@ -201,7 +201,7 @@ func TestHostLocalConsole(t *testing.T) {
 	hs.run(runner(""), "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
 	all := plain(hs.out.String() + hs.err.String())
 	if hs.code != 0 || !strings.Contains(all, link+" is missing, so no account gets the login console now") ||
-		!strings.Contains(script, "TAC_USERS=$'alice:superuser:80000:/bin/bash\\nbob:operator:80001:/bin/bash\\ncarol:readonly:80002:/bin/bash'") ||
+		!strings.Contains(script, "TAC_USERS=$'alice:superuser:80000:/bin/bash\\nbob:operator:80001:/usr/sbin/nologin\\ncarol:readonly:80002:/usr/sbin/nologin'") ||
 		!strings.Contains(script, "\nTAC_LOCAL=1\nTAC_ENGINEER_SUDO=ALL\nTAC_PROTOCOL=") {
 		t.Fatalf("no symlink: %d\n%s\n%s", hs.code, all, head(script))
 	}
@@ -268,6 +268,75 @@ func TestHostLocalConsole(t *testing.T) {
 	}
 }
 
+// With the console's link missing, a plain shell is a full system shell, which
+// is a superuser's and those a superuser opened it to: the other accounts get
+// nologin, never bash. A tier that has the system shell, and a user with a
+// setting of their own, keep bash; a user a setting takes it from does not.
+func TestHostLocalWithoutTheLinkGivesBashToTheSystemShellOnly(t *testing.T) {
+	hs := newHostSandbox(t)
+	hs.reroot = true
+	hs.loopback()
+	hs.write("shells", "/bin/sh\n/bin/bash\n", 0o644)
+	link := hs.path("usr", "local", "bin", "tacctl-console")
+	script := ""
+	runner := func() *fake.Runner {
+		r := hs.runner()
+		sshdOK(link)(r)
+		r.OnFunc([]string{"bash"}, func(c execx.Cmd) (execx.Result, error) {
+			b, _ := os.ReadFile(c.Args[0])
+			script = string(b)
+			return execx.Result{Stdout: []byte("[INFO] Accounts: 3 managed by tacctl here; console: 0.\n")}, nil
+		})
+		r.On([]string{"getent", "passwd"}, execx.Result{Stdout: []byte("root:x:0:0::/root:/bin/bash\n")})
+		return r
+	}
+	users := func() string {
+		i := strings.Index(script, "TAC_USERS=$'")
+		if i < 0 {
+			return ""
+		}
+		j := strings.Index(script[i:], "'\n")
+		return script[i+len("TAC_USERS=$'") : i+j]
+	}
+	enrol := func() {
+		hs.run(runner(), "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
+		if hs.code != 0 {
+			t.Fatalf("enroll: %d\n%s", hs.code, hs.err.String())
+		}
+	}
+	sync := func() {
+		hs.run(runner(), "host", "sync", "authsrv")
+		if hs.code != 0 {
+			t.Fatalf("sync: %d\n%s", hs.code, hs.err.String())
+		}
+	}
+	const nl = "/usr/sbin/nologin"
+	// Every tier at its default: the superuser keeps bash, the rest nologin.
+	enrol()
+	if got := users(); got != "alice:superuser:80000:/bin/bash\\nbob:operator:80001:"+nl+"\\ncarol:readonly:80002:"+nl {
+		t.Errorf("default: %q", got)
+	}
+	// A tier that has the system shell gives its users bash; a user's own
+	// setting does the same for one user, and takes it from another.
+	hs.cfgRun("", []string{"console", "system-shell", "operator", "enable"}, nil)
+	hs.cfgRun("", []string{"console", "system-shell", "user", "carol", "enable"}, nil)
+	sync()
+	if got := users(); got != "alice:superuser:80000:/bin/bash\\nbob:operator:80001:/bin/bash\\ncarol:readonly:80002:/bin/bash" {
+		t.Errorf("tier and user enabled: %q", got)
+	}
+	hs.cfgRun("", []string{"console", "system-shell", "user", "bob", "disable"}, nil)
+	sync()
+	if got := users(); got != "alice:superuser:80000:/bin/bash\\nbob:operator:80001:"+nl+"\\ncarol:readonly:80002:/bin/bash" {
+		t.Errorf("bob disabled: %q", got)
+	}
+	// The engineer tier never has it, whatever a setting says.
+	hs.write("state/tacctl.yaml", "tier:\n  operator: engineer\n", 0o600)
+	sync()
+	if got := users(); got != "alice:superuser:80000:/bin/bash\\nbob:engineer:80001:"+nl+"\\ncarol:readonly:80002:/bin/bash" {
+		t.Errorf("engineer: %q", got)
+	}
+}
+
 // B2: an engineer has the console or no login on the server. With the
 // console's symlink missing the engineer's shell is nologin (the others keep
 // bash) and the command says so; with it, the console, whatever a stored
@@ -294,8 +363,8 @@ func TestHostLocalConsoleEngineerShell(t *testing.T) {
 	}
 	hs.run(runner(), "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
 	all := plain(hs.out.String() + hs.err.String())
-	if hs.code != 0 || !strings.Contains(all, "except engineers, who have the console or no login and get /usr/sbin/nologin") ||
-		!strings.Contains(script, "TAC_USERS=$'alice:superuser:80000:/bin/bash\\nbob:engineer:80001:/usr/sbin/nologin\\ncarol:readonly:80002:/bin/bash'") {
+	if hs.code != 0 || !strings.Contains(all, "accounts with the system shell keep or get /bin/bash, all the others get /usr/sbin/nologin") ||
+		!strings.Contains(script, "TAC_USERS=$'alice:superuser:80000:/bin/bash\\nbob:engineer:80001:/usr/sbin/nologin\\ncarol:readonly:80002:/usr/sbin/nologin'") {
 		t.Fatalf("no symlink: %d\n%s\n%s", hs.code, all, head(script))
 	}
 	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {

@@ -959,3 +959,30 @@ func TestPasswordCacheUsersSetting(t *testing.T) {
 		t.Errorf("parsed %+v", r)
 	}
 }
+
+// Where the console cannot be provisioned an account gets bash only if it has
+// the system shell, nologin otherwise (an engineer and a tier that is none
+// included).
+func TestShellWithoutTheConsole(t *testing.T) {
+	f := Defaults()
+	f.SystemShellTiers = []tier.Tier{tier.Operator, tier.Superuser}
+	f.SystemShellUsers = map[string]bool{"carol": true, "bob": false, "erin": true}
+	p := &Policy{File: f}
+	for _, c := range []struct {
+		user string
+		t    tier.Tier
+		want string
+	}{
+		{"alice", tier.Superuser, "/bin/bash"},
+		{"dave", tier.Operator, "/bin/bash"},        // the tier has it
+		{"bob", tier.Operator, "/usr/sbin/nologin"}, // taken from him
+		{"carol", tier.Readonly, "/bin/bash"},       // given to her
+		{"frank", tier.Readonly, "/usr/sbin/nologin"},
+		{"erin", tier.Engineer, "/usr/sbin/nologin"},
+		{"x", tier.None, "/usr/sbin/nologin"},
+	} {
+		if got := p.ShellWithoutConsole(c.user, c.t); got != c.want {
+			t.Errorf("%s at %s: %q, want %q", c.user, c.t, got, c.want)
+		}
+	}
+}

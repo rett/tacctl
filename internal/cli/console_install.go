@@ -679,15 +679,14 @@ func (inv *invocation) consoleForLocal(req *hosts.ScriptRequest) (bool, error) {
 	if inv.engineerSSHDProvision(pol) != nil {
 		a.Out.WarnE("The accounts are synced anyway; until sshd's drop-in for the engineer tier is in place an engineer can still forward ports. Fix it, then: tacctl console install")
 	}
-	// Where the console cannot be provisioned an account gets
-	// console.ShellWithout: bash, but nologin for an engineer (the console
-	// or no login) and for a tier none.
-	withoutConsole := func(_, t string) string { return console.ShellWithout(tier.Tier(t)) }
-	anyConsole, engineers := false, false
+	// Where the console cannot be provisioned an account gets a plain shell
+	// only if it has the system shell (superusers, and those a superuser
+	// opened it to); everyone else gets nologin, never bash.
+	withoutConsole := func(name, t string) string { return pol.ShellWithoutConsole(name, tier.Tier(t)) }
+	anyConsole := false
 	for _, r := range req.Rows {
 		name, lvl, _ := strings.Cut(r, "|")
 		t := inv.userTier(name, lvl)
-		engineers = engineers || t == tier.Engineer
 		if pol.Decide(t).Console {
 			anyConsole = true
 		}
@@ -697,11 +696,8 @@ func (inv *invocation) consoleForLocal(req *hosts.ScriptRequest) (bool, error) {
 		return false, nil
 	}
 	if target, err := os.Readlink(a.Paths.ConsoleCommand); err != nil || target == "" {
-		msg := a.Paths.ConsoleCommand + " is missing, so no account gets the login console now (all keep or get " + console.SystemLoginShell
-		if engineers {
-			msg += ", except engineers, who have the console or no login and get " + console.NoLoginShell
-		}
-		a.Out.WarnE(msg + "). Run 'tacctl upgrade', then sync this host again.")
+		a.Out.WarnE(a.Paths.ConsoleCommand + " is missing, so no account gets the login console now (accounts with the system shell keep or get " +
+			console.SystemLoginShell + ", all the others get " + console.NoLoginShell + "). Run 'tacctl upgrade', then sync this host again.")
 		req.ConsoleShell = withoutConsole
 		return false, nil
 	}

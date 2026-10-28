@@ -255,8 +255,8 @@ current behaviour; this file is where history lives.
     them does not get them; one that has them keeps them untouched when a
     setting changes), and `console show` does not mention them. A user is left
     without the console only where it cannot be provisioned (the
-    `tacctl-console` link is missing: bash, nologin for an engineer) or has no
-    tier (nologin). `console show` lists each managed user's shell and why (a
+    `tacctl-console` link is missing: bash only with the system shell, item
+    22) or has no tier (nologin). `console show` lists each managed user's shell and why (a
     managed user). The refusal of `console remove` while an account has the
     console now names `tacctl host unenroll <server>`. Upgrading: the switches
     of `console.yaml` are ignored and every managed user gets the console at the
@@ -360,6 +360,16 @@ current behaviour; this file is where history lives.
     on for every user of a listed tier, as it always did. Upgrading: a console
     that had the cache on for a tier has it off for every user until they turn
     it on (docs/install/upgrading.md).
+
+22. **No bash for those without the system shell when the console link is
+    missing.** `host sync` and `host enroll --local` on the server gave every
+    readonly and operator user `/bin/bash` when `/usr/local/bin/tacctl-console`
+    was missing, a full system shell for those who have none (item 18). Now an
+    account gets `/bin/bash` there only if it has the system shell (a
+    superuser, a user of a tier a superuser opened it to, or a user it was
+    opened to) and `/usr/sbin/nologin` otherwise, the engineer tier and a tier
+    that is none included; the warning says so. Item 17's mention of bash for
+    that case is adjusted.
 
 ## 0.2.19 (2026-10-25)
 

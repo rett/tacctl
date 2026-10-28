@@ -64,16 +64,27 @@ func (p *Policy) Shell(t tier.Tier) string {
 	return ShellWithout(t)
 }
 
-// ShellWithout is the login shell of an account of tier t when the console
-// is not provisioned (the server's console link is missing): bash, but
-// nologin for an engineer (the console or no login) and for a tier that is
-// none or unknown (no real shell for an account nobody may log in to).
+// ShellWithout is the login shell of an account that is not a managed user
+// of a tier: bash for a caller with no tier restriction, nologin for a tier
+// that is none or unknown (no real shell for an account nobody may log in to).
 func ShellWithout(t tier.Tier) string {
-	switch t {
-	case tier.Readonly, tier.Operator, tier.Superuser, tier.Unrestricted:
+	if t == tier.Unrestricted {
 		return SystemLoginShell
 	}
 	return NoLoginShell
+}
+
+// ShellWithoutConsole is the login shell of user at tier t where the console
+// cannot be provisioned (the server's console link is missing). A plain
+// shell is a full system shell, which only those who have it get
+// (SystemShellFor: superusers always, others by their tier's or their own
+// setting): bash for them, nologin for everyone else, the engineer tier
+// included (the console or no login).
+func (p *Policy) ShellWithoutConsole(user string, t tier.Tier) string {
+	if t == tier.None || !p.SystemShellFor(user, t) {
+		return NoLoginShell
+	}
+	return SystemLoginShell
 }
 
 // SystemShell reports whether the console's system-shell word is open to
