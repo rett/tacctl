@@ -230,7 +230,8 @@ either direction, and its report warns of what that does to the traffic:
 > address you are logged in from. Without it the report warns. With it, the
 > filter's section is refused if the new filter would not let that address
 > in over ssh (the rest of the plan stands). In `strict` the address must be
-> inside the tacctl server's own address, a plain entry of the permit list,
+> inside a source the filter accepts for ssh: one of the tacctl server's
+> addresses at the head of `permit-mgmt`, a plain entry of the permit list,
 > or an entry whose services cover tcp port 22 (an entry with `udp/161`
 > only does not count). An apply makes the same check with the address it
 > connects from.
