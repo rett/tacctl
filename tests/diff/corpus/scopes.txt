@@ -433,6 +433,7 @@ config mgmt-acl cisco-name GLOBAL-ACL ;; scope mgmt-acl lab cisco-name ;; scope 
 scope mgmt-acl lab cisco-name 'has space'
 @known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 scope mgmt-acl lab add 10.1.0.0/16 ;; scope mgmt-acl lab clear <<< yes ;; scope mgmt-acl lab
+@known 0.2.20 item 16: scope mgmt-acl takes the mode sub-command
 scope mgmt-acl lab bogus extra
 
 # more refusals
