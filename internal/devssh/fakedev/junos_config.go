@@ -62,9 +62,13 @@ package fakedev
 //	                    commit the same blocks for its check and for 'commit
 //	                    complete' [inferred: no capture], and a NETCONF commit
 //	                    a <routing-engine> element for each [inferred]
-//	chassis.check       '<label> => <text>' lines: that member answers a
-//	                    'commit check' with the text instead of 'configuration
-//	                    check succeeds' (over NETCONF it sends no success)
+//	chassis.check       '<label> => <text>' lines: that member fails its check
+//	                    with the text (a NETCONF reply holds an <rpc-error>
+//	                    in its element): 'commit check' and 'commit' report it
+//	                    and commit nothing
+//	chassis.commit      '<label> => <text>' lines: that member answers a
+//	                    commit that is made with the text instead of 'commit
+//	                    complete' (over NETCONF it sends no success)
 //	commit.synchronize  every commit the model records ends its history entry
 //	                    in 'synchronize' (a device with two routing engines,
 //	                    or a virtual chassis, that commits so): 'commit
@@ -724,9 +728,9 @@ func (d *junosDevice) members() []jmember {
 
 // perMember is text as a device with members prints it: a block for each,
 // the label with the trailing space the device prints, then the text; the
-// text alone for a single device. A member the knob 'chassis.check' names
-// answers its text instead when text is the check's success.
-func (d *junosDevice) perMember(text string) string {
+// text alone for a single device. The knob (chassis.check for the check's
+// success, chassis.commit for the commit's) can give a member another text.
+func (d *junosDevice) perMember(text, knob string) string {
 	ms := d.members()
 	if len(ms) == 0 {
 		return text + "\n"
@@ -734,7 +738,7 @@ func (d *junosDevice) perMember(text string) string {
 	var b strings.Builder
 	for _, m := range ms {
 		t := text
-		if o, ok := d.memberCheck(m.label); ok && text == jtCheckOK {
+		if o, ok := d.memberText(knob, m.label); ok {
 			t = o
 		}
 		b.WriteString(m.label + ": \n" + t + "\n")
@@ -742,12 +746,23 @@ func (d *junosDevice) perMember(text string) string {
 	return b.String()
 }
 
-// memberCheck is the text 'chassis.check' gives a member for its check.
-func (d *junosDevice) memberCheck(label string) (string, bool) {
-	for _, l := range d.rules("chassis.check") {
+// memberText is the text a knob ('<label> => <text>' lines) gives a member.
+func (d *junosDevice) memberText(knob, label string) (string, bool) {
+	for _, l := range d.rules(knob) {
 		if k, v, ok := strings.Cut(l, " => "); ok && strings.TrimSpace(k) == label {
 			return strings.TrimSpace(v), true
 		}
 	}
 	return "", false
+}
+
+// failingMember reports whether a member fails its check (chassis.check):
+// the device then commits nothing, as one whose check fails does.
+func (d *junosDevice) failingMember() bool {
+	for _, m := range d.members() {
+		if _, ok := d.memberText("chassis.check", m.label); ok {
+			return true
+		}
+	}
+	return false
 }

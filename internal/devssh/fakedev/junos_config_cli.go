@@ -603,14 +603,17 @@ func (d *junosDevice) cfgCommit(sess *jsession, args []string) jresult {
 	if len(o.fails) > 0 {
 		return jresult{out: strings.Join(o.fails, "\n") + "\n" + jtCheckFailed + "\n"}
 	}
-	if check {
-		return jresult{out: d.perMember(jtCheckOK)}
+	if o.badMember {
+		return jresult{out: d.perMember(jtCheckOK, "chassis.check") + jtCheckFailed + "\n"}
 	}
-	out := d.perMember(jtCheckOK)
+	if check {
+		return jresult{out: d.perMember(jtCheckOK, "chassis.check")}
+	}
+	out := d.perMember(jtCheckOK, "chassis.check")
 	if confirmed {
 		out += fmt.Sprintf(jtConfirmedFmt, minutes) + "\n"
 	}
-	out += d.perMember(jtCommitComplete)
+	out += d.perMember(jtCommitComplete, "chassis.commit")
 	return jresult{out: out, drop: d.commitDrop(confirmed)}
 }
 
@@ -629,6 +632,9 @@ func (d *junosDevice) commitDrop(confirmed bool) int {
 type commitOutcome struct {
 	// fails are the messages of a refused check; nothing else happened.
 	fails []string
+	// badMember is set when a member of a chassis fails its check
+	// (chassis.check): nothing was committed.
+	badMember bool
 }
 
 // commitApply is the commit of either channel, after the arguments are
@@ -644,6 +650,9 @@ func (d *junosDevice) commitApply(sess *jsession, check, confirmed bool, window 
 	cand := d.candidate(sess)
 	if fails := d.checkFailures(cand); len(fails) > 0 {
 		return commitOutcome{fails: fails}
+	}
+	if d.failingMember() {
+		return commitOutcome{badMember: true}
 	}
 	if check {
 		if d.pending != nil {

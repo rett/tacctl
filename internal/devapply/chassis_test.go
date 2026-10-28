@@ -60,3 +60,19 @@ func TestApplyOnAVirtualChassisMemberRefuses(t *testing.T) {
 		}
 	})
 }
+
+// A commit that is made while a member answers it with something else than
+// 'commit complete' (or, over NETCONF, with no success) is not taken for an
+// applied change: the apply cancels it, names the member, and the device is
+// rolled back.
+func TestApplyOnAVirtualChassisMemberOddCommit(t *testing.T) {
+	knobs := chassisKnobs()
+	knobs["chassis.commit"] = "fpc1 => warning: the member is behind\n"
+	both(t, knobs, func(t *testing.T, d *device) {
+		o := apply(t, d, &planner{desired: desiredLines()}, nil)
+		wantExit(t, o, ExitRolledBack, ResultRolledBack)
+		if !strings.Contains(o.Reason, "member fpc1") {
+			t.Errorf("the reason does not name the member: %q", o.Reason)
+		}
+	})
+}

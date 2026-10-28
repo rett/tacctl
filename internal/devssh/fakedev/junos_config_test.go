@@ -994,14 +994,38 @@ func TestJunosKnobChassis(t *testing.T) {
 	}
 }
 
-// 'chassis.check' makes one member answer a check otherwise.
+// 'chassis.check' makes one member fail its check: the answer shows it and
+// nothing is committed, for 'commit check' and for a commit alike.
 func TestJunosKnobChassisCheck(t *testing.T) {
 	srv, _, _ := newJunos(t, map[string]string{"chassis": chassisKnob, "chassis.check": "fpc2 => warning: member is out of sync\n"})
 	c, _ := shell(t, srv, DefaultUser, DefaultPassword)
 	c.send("configure exclusive")
 	c.send("set system login idle-timeout 30")
-	got := c.send("commit check")
-	if !strings.Contains(got, "fpc2: \nwarning: member is out of sync\nfpc3: ") || strings.Count(got, "configuration check succeeds") != 3 {
-		t.Errorf("commit check: %q", got)
+	for _, cmd := range []string{"commit check", "commit"} {
+		got := c.send(cmd)
+		if !strings.Contains(got, "fpc2: \nwarning: member is out of sync\nfpc3: ") || strings.Count(got, "configuration check succeeds") != 3 ||
+			!strings.HasSuffix(got, "error: configuration check-out failed") || strings.Contains(got, "commit complete") {
+			t.Errorf("%s: %q", cmd, got)
+		}
+	}
+	if len(srv.History()) != 1 || strings.Contains(srv.Committed(), "idle-timeout 30") {
+		t.Errorf("committed with a failing member: %+v", srv.History())
+	}
+}
+
+// 'chassis.commit' makes one member answer a commit that is made with
+// another text: the commit stands.
+func TestJunosKnobChassisCommit(t *testing.T) {
+	srv, _, _ := newJunos(t, map[string]string{"chassis": chassisKnob, "chassis.commit": "fpc1 => warning: the member is behind\n"})
+	c, _ := shell(t, srv, DefaultUser, DefaultPassword)
+	c.send("configure exclusive")
+	c.send("set system login idle-timeout 30")
+	got := c.send("commit")
+	if strings.Count(got, "configuration check succeeds") != 4 || !strings.Contains(got, "fpc1: \nwarning: the member is behind\nfpc2: \ncommit complete") ||
+		strings.Count(got, "commit complete") != 3 {
+		t.Errorf("commit: %q", got)
+	}
+	if len(srv.History()) != 2 || !strings.Contains(srv.Committed(), "idle-timeout 30") {
+		t.Errorf("not committed: %+v", srv.History())
 	}
 }
