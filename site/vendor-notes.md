@@ -175,14 +175,17 @@ it to the permit list to accept more from it.
 Once a strict filter is applied to `lo0`, these stop reaching the routing
 engine:
 
-- routing protocols from neighbours that are not in the permit list (BGP,
-  OSPF, IS-IS, VRRP, LDP, BFD);
+- routing protocols carried over IP from neighbours that are not in the
+  permit list (BGP, OSPF, LDP, VRRP, BFD);
 - the replies of servers that are not in the list: TACACS+ and RADIUS (the
   replies of the server the walkthrough names are accepted: it is in the list
   or has `permit-auth-replies`), NTP, DNS;
 - NTP, syslog and DHCP from hosts that are not in the list;
 - SNMP from sources outside the list (the SNMP clients still poll);
 - every other protocol (ping, traceroute) from sources outside the list.
+
+IS-IS is not carried over IP, so a `family inet` filter on `lo0` does not see
+it: the filter neither stops nor permits it.
 
 > **Before a device gets a strict filter:** add every neighbour and server
 > it needs to the permit list the scope renders from (its own list replaces
