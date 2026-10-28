@@ -72,7 +72,9 @@ user must change the password whichever way it was set;
 person knows.
 
 **Service accounts** (backup and NCM tools): use `readonly`, give them only
-the scopes they poll, and record the owner in your inventory.
+the scopes they poll, and record the owner in your inventory. Create them
+with `--no-change-required`: a tool cannot change its password at the tacctl
+server, and no device would accept it until it did.
 
 ---
 
