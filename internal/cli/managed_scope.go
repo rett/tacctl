@@ -20,6 +20,7 @@ import (
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/ui"
@@ -304,6 +305,11 @@ func managedPrefixesWrite(s *store.Store, prefixes []string) error {
 		}
 		kept := slices.DeleteFunc(slices.Clone(sc.Prefixes), func(p string) bool { return slices.Contains(prefixes, canonCIDR(p)) })
 		if len(kept) != len(sc.Prefixes) {
+			if len(kept) == 0 {
+				// a scope needs a prefix: say which one the server's would empty
+				return &names.Error{Msgs: []string{"Scope '" + sc.Name + "' has no prefix but the addresses of this server's own login (" + strings.Join(prefixes, ", ") + "), which the managed scope takes.",
+					"Give it another prefix first (tacctl scope prefixes " + sc.Name + " add <cidr>), or remove it if it was made for this server (tacctl scope remove " + sc.Name + "). Nothing was changed."}}
+			}
 			if err := s.ScopeSet(sc.Name, "prefixes="+strings.Join(kept, ",")); err != nil {
 				return err
 			}

@@ -268,3 +268,24 @@ func TestManagedScopeGoesWithTheRegistration(t *testing.T) {
 		t.Errorf("store\n%s", hs.store())
 	}
 }
+
+// A scope whose only prefixes are the server's login addresses would be left
+// with none when the managed scope takes them: the enrolment says which scope
+// and what to do, and changes nothing.
+func TestManagedScopeRefusesToEmptyAScope(t *testing.T) {
+	hs := newHostSandbox(t)
+	hs.run(nil, "scope", "add", "srvlab", "--prefixes", "192.0.2.10/32,127.0.0.1/32", "--secret", "srvlab-secret-0123456789abcdef")
+	hs.expect(0, "", "")
+	before := hs.store()
+	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--server", "192.0.2.10", "--build-on-host")
+	hs.expect(1, "", "Scope 'srvlab' has no prefix but the addresses of this server's own login (127.0.0.1/32, 192.0.2.10/32), which the managed scope takes.")
+	if !strings.Contains(plain(hs.err.String()), "tacctl scope prefixes srvlab add <cidr>") || hs.store() != before || hs.registry() != "" {
+		t.Errorf("changed or no way out:\n%s", hs.err.String())
+	}
+	// with another prefix it goes through, and the scope keeps it
+	hs.run(nil, "scope", "prefixes", "srvlab", "add", "198.51.100.0/24")
+	enrolLocal(t, hs, "--server", "192.0.2.10")
+	if st := hs.store(); !strings.Contains(st, "srvlab:\n    prefixes: [198.51.100.0/24]") {
+		t.Errorf("store:\n%s", st)
+	}
+}
