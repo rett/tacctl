@@ -144,8 +144,33 @@ both.
 |---|---|---|
 | Restricts | ssh, NETCONF and SNMP | Every protocol |
 | Last term | `default-accept`: everything else is accepted | None: the implicit discard drops whatever the terms do not accept |
-| From the permit list | ssh and NETCONF, from each plain entry and each entry whose services include `tcp/22` | A plain entry: everything from its source. An entry with services: only those services. First come the address tacctl reaches the device from and, when it is another one, the address the device authenticates against (TACACS+ or RADIUS). |
+| From the permit list | ssh and NETCONF, from each plain entry and each entry whose services include `tcp/22` | A plain entry: everything from its source. An entry with services: only those services. First comes the address tacctl reaches the device from. |
 | SNMP client terms | Kept | Kept |
+
+**The authentication server's address in `strict`.** When the device
+authenticates against another address than the one tacctl reaches it from
+(`--server`, a RADIUS listener bound to another address, or `--source` alone,
+the device still being told the address detected for the server), that
+address is not a source of `permit-mgmt`. The device starts those sessions,
+so a term of its own, `permit-auth-replies`, last in the filter, accepts from
+it only the server's answers:
+
+| Protocol | What `permit-auth-replies` accepts from the address |
+|---|---|
+| TACACS+ | tcp from source port `tacacs` with `tcp-established`: established connections only, so a new connection from that port is refused |
+| RADIUS | udp from source ports `radius` and `radacct` (the listener's, 1812 and 1813 by default), after the SNMP terms, so `deny-snmp` decides udp port 161 first |
+
+The filter keeps no state and matches the answers by source port, so for
+RADIUS it cannot tell an answer from another udp packet sent from those
+ports (a scope with no SNMP clients has no `deny-snmp` term, and udp port 161
+from that address and port is accepted too). There is one address and no
+such term with neither flag, with `--server` equal to the detected address
+or to `--source`, or when a plain entry of the permit list holds the address
+(it is then accepted for everything, as any source of the list). An entry
+with services for the address keeps its services, and the term adds the
+answers. The address is no way in for ssh: the lock-out check of a plan does
+not count it ([Engineer Guide](engineer-guide-device-changes.md) §4.2). Add
+it to the permit list to accept more from it.
 
 Once a strict filter is applied to `lo0`, these stop reaching the routing
 engine:
@@ -153,7 +178,8 @@ engine:
 - routing protocols from neighbours that are not in the permit list (BGP,
   OSPF, IS-IS, VRRP, LDP, BFD);
 - the replies of servers that are not in the list: TACACS+ and RADIUS (the
-  server the walkthrough names is always in it), NTP, DNS;
+  replies of the server the walkthrough names are accepted: it is in the list
+  or has `permit-auth-replies`), NTP, DNS;
 - NTP, syslog and DHCP from hosts that are not in the list;
 - SNMP from sources outside the list (the SNMP clients still poll);
 - every other protocol (ping, traceroute) from sources outside the list.
