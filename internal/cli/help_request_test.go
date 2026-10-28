@@ -177,15 +177,27 @@ func TestPtyHelpIsWhatQuestionMarkPrints(t *testing.T) {
 		}
 		return out
 	}
+	// printed is what the shell prints for one request: it waits for the
+	// list itself, not for a quiet moment, which a loaded machine outlasts.
+	printed := func() string {
+		out := ""
+		for end := time.Now().Add(10 * time.Second); time.Now().Before(end); {
+			out += s.Settle(200 * time.Millisecond)
+			if strings.Contains(out, "Possible completions:") || strings.Contains(out, "Usage:") {
+				return out + s.Settle(300*time.Millisecond)
+			}
+		}
+		return out
+	}
 	for _, prefix := range []string{"user", "device config", "user add", "console password-cache max", "version"} {
 		if err := s.Send("\x15" + prefix + " ?"); err != nil {
 			t.Fatal(err)
 		}
-		q := body(s.Settle(500 * time.Millisecond))
+		q := body(printed())
 		if err := s.Send("\x15" + prefix + " --help\r"); err != nil {
 			t.Fatal(err)
 		}
-		h := body(s.Settle(500 * time.Millisecond))
+		h := body(printed())
 		if q == "" || q != h {
 			t.Errorf("%s: '?' printed\n%q\n--help printed\n%q", prefix, q, h)
 		}
@@ -193,7 +205,7 @@ func TestPtyHelpIsWhatQuestionMarkPrints(t *testing.T) {
 		if err := s.Send(prefix + " -h\r"); err != nil {
 			t.Fatal(err)
 		}
-		if h2 := body(s.Settle(500 * time.Millisecond)); h2 != h {
+		if h2 := body(printed()); h2 != h {
 			t.Errorf("%s: -h printed\n%q\nnot\n%q", prefix, h2, h)
 		}
 	}
