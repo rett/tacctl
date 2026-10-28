@@ -202,8 +202,8 @@ func serviceTermName(s mgmtacl.Service) string {
 // device prints compares equal to what is rendered. A port that is not here
 // has no name (or more than one) and is written as a number.
 var junosPortNames = map[int]string{
-	22: "ssh", 23: "telnet", 53: "domain", 69: "tftp", 80: "http", 123: "ntp", 161: "snmp", 162: "snmptrap",
-	179: "bgp", 443: "https", 646: "ldp", 1812: "radius", 1813: "radacct", 49: "tacacs",
+	22: "ssh", 23: "telnet", 49: "tacacs", 53: "domain", 69: "tftp", 80: "http", 123: "ntp", 161: "snmp", 162: "snmptrap",
+	179: "bgp", 443: "https", 646: "ldp", 1812: "radius", 1813: "radacct",
 }
 
 // junosPortOf is a port as the statement writes it: its name, else its number.
