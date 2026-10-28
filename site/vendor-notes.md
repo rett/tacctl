@@ -144,19 +144,19 @@ both.
 |---|---|---|
 | Restricts | ssh, NETCONF and SNMP | Every protocol |
 | Last term | `default-accept`: everything else is accepted | None: the implicit discard drops whatever the terms do not accept |
-| From the permit list | ssh and NETCONF, from each plain entry and each entry whose services include `tcp/22` | A plain entry: everything from its source. An entry with services: only those services. The tacctl server's own address comes first. |
+| From the permit list | ssh and NETCONF, from each plain entry and each entry whose services include `tcp/22` | A plain entry: everything from its source. An entry with services: only those services. First come the address tacctl reaches the device from and, when it is another one, the address the device authenticates against (TACACS+ or RADIUS). |
 | SNMP client terms | Kept | Kept |
 
 Once a strict filter is applied to `lo0`, these stop reaching the routing
 engine:
 
 - routing protocols from neighbours that are not in the permit list (BGP,
-  OSPF, IS-IS, VRRP, LDP);
-- NTP, syslog and DHCP from hosts that are not in the list, and their
-  replies;
-- SNMP from sources outside the list;
-- every other protocol (ping, traceroute, DNS replies) from sources outside
-  the list.
+  OSPF, IS-IS, VRRP, LDP, BFD);
+- the replies of servers that are not in the list: TACACS+ and RADIUS (the
+  server the walkthrough names is always in it), NTP, DNS;
+- NTP, syslog and DHCP from hosts that are not in the list;
+- SNMP from sources outside the list (the SNMP clients still poll);
+- every other protocol (ping, traceroute) from sources outside the list.
 
 > **Before a device gets a strict filter:** add every neighbour and server
 > it needs to the scope's permit list, keep a console session open while the
