@@ -189,14 +189,23 @@ only when set.
   host is synced it is as it was, so `require-password-change`, `user passwd` and `tacctl passwd`
   name the hosts of the user's scopes with `tacctl host sync --all`.
 - *A flagged user must be able to log in.* A user who must change the password and has no login on
-  the server (not in its scope, the scope no longer answers the server's addresses, the server not
-  enrolled) could change nothing and enter nothing, so a change that would leave one is refused
-  before anything is written, with the command that lifts the requirement first (`user
-  require-password-change <name> off`): `user scope` removing the scope or replacing the list, `scope
-  prefixes` removing a prefix, `scope protocols`, and `host forget`, `host unenroll` and `host enroll
-  --local` with another scope or method while any user is flagged (the backends' files are rendered
-  from the server's registration, so it is changed with the requirement lifted). `scope rename`
-  renames the registration with the scope, before the backends render.
+  the server (not in its scope, the scope no longer answers the server's addresses, the backend of
+  the server's own logins is not enabled, the server not enrolled) could change nothing and enter
+  nothing, so a change that would leave one is refused with nothing changed, with the command that
+  lifts the requirement first (`user require-password-change <name> off`):
+  - before anything is written: `user scope` removing the scope or replacing the list, `scope
+    prefixes` removing a prefix, `scope protocols`;
+  - by the guard of every other write of the store or `tacctl.yaml`, under the apply lock, put back
+    before anything is rendered (after the pre-change snapshot): `scope add` of a scope that answers
+    the server's address more closely than its own, `group edit <group> tier` or `priv-lvl` (or
+    another group write) that newly holds a member with no login on the server, `backend disable` of
+    the backend of the server's own logins;
+  - `host forget`, `host unenroll` and `host enroll --local` with another scope or method while any
+    user is flagged (the backends' files are rendered from the server's registration, so it is
+    changed with the requirement lifted), and `host enroll --local --server <address>` whose scope
+    does not answer that address.
+
+  `scope rename` renames the registration with the scope, before the backends render.
 - *Commands.* While a password change is required of the caller, and the caller is no superuser,
   every command but `passwd`, `version` and `help` is refused with one message and exit status 1
   (`A password change is required of '<user>': ...`). This covers a plain shell and `ssh <server>

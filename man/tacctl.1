@@ -1208,22 +1208,37 @@ as do
 and
 .BR status ;
 give the server a scope of its own. A user who must change the password and has
-no login on the server could change nothing, so a change that would leave one
-is refused before anything is written, with
+no login on the server (not in its scope, the scope does not answer the
+server's addresses, the backend of the server's own logins is not enabled, the
+server not enrolled) could change nothing, so a change that would leave one is
+refused with nothing changed, with
 .B "user require\-password\-change <name> off"
 as the way out:
 .B "user scope"
 removing the scope or replacing the list,
 .B "scope prefixes"
-removing a prefix,
-.BR "scope protocols" ,
-and
+removing a prefix and
+.B "scope protocols"
+before anything is written;
+.B "scope add"
+of a scope that answers the server's address more closely than its own,
+.B "group edit ... tier"
+or
+.B priv\-lvl
+(and every other write of the store or
+.IR tacctl.yaml )
+that newly holds a member with no login on the server, and
+.B "backend disable"
+of the backend of the server's own logins after the pre\-change snapshot, put
+back before anything is rendered; and
 .BR "host forget" ,
 .B "host unenroll"
 and
 .B "host enroll \-\-local"
 with another scope or method, while any user is flagged (the backends' files are
-rendered from the server's registration).
+rendered from the server's registration), or with a
+.B \-\-server
+address its scope does not answer.
 On every enrolled Linux host but this server
 .RB ( "host enroll \-\-local" ),
 the next

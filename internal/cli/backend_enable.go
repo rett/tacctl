@@ -60,12 +60,14 @@ type switcher struct {
 	// done, when set, is told that the backend id was enabled or disabled
 	// (op), for the audit line.
 	done func(op, id string)
+	// guard, when set, wraps the writer of a disable (pwWriteGuard).
+	guard func(func() error) func() error
 }
 
 func (inv *invocation) switcher() *switcher {
 	a := inv.app
 	return &switcher{ctx: inv.ctx, set: a.Backends(), out: a.Out, prompt: a.Prompter(), tree: a.Paths.Tree, wait: inv.pause,
-		done: func(op, id string) { inv.detail("backend "+op, kvp("id", id)) }}
+		done: func(op, id string) { inv.detail("backend "+op, kvp("id", id)) }, guard: inv.pwWriteGuard}
 }
 
 // told reports to s.done.
@@ -157,6 +159,14 @@ func (s *switcher) runPhases(b backend.Backend, phases ...backend.Phase) bool {
 // writeEnabled is _backend_enabled_write: backends.enabled becomes ids.
 func (s *switcher) writeEnabled(ids []string) func() error {
 	return func() error { return s.set.Env.Conf.SetList("backends.enabled", ids) }
+}
+
+// guarded is writer wrapped in s.guard (writer itself when there is none).
+func (s *switcher) guarded(writer func() error) func() error {
+	if s.guard == nil {
+		return writer
+	}
+	return s.guard(writer)
 }
 
 // applyError is the status of a failed StoreApply, its writer's error
@@ -399,7 +409,7 @@ func (s *switcher) disable(args []string) error {
 	code := 0
 	if legacy {
 		code = s.disableLegacy(remaining)
-	} else if _, err := s.set.StoreApply(s.ctx, backend.ApplyOptions{Gate: remaining}, s.writeEnabled(remaining)); err != nil {
+	} else if _, err := s.set.StoreApply(s.ctx, backend.ApplyOptions{Gate: remaining}, s.guarded(s.writeEnabled(remaining))); err != nil {
 		code = s.applyError(err)
 	}
 	if code != 0 {

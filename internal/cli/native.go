@@ -186,7 +186,10 @@ func (inv *invocation) storeApplyThen(fn func(*store.Store) error, after func())
 	}
 	a.Audit().Touch()
 	_, err = a.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, func() error {
-		if _, err := store.Mutate(a.Paths.StoreFile, a.MutateOptions(), fn); err != nil {
+		if err := inv.pwWriteGuard(func() error {
+			_, err := store.Mutate(a.Paths.StoreFile, a.MutateOptions(), fn)
+			return err
+		})(); err != nil {
 			return err
 		}
 		if after != nil {

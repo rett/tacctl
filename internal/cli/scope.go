@@ -182,7 +182,7 @@ const (
 // _model_invalidate).
 func (inv *invocation) applyWith(fn func() error) error {
 	inv.app.Audit().Touch()
-	_, err := inv.app.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, fn)
+	_, err := inv.app.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, inv.pwWriteGuard(fn))
 	inv.loaded = false
 	return err
 }

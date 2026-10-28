@@ -4,7 +4,7 @@ package cli
 // can log in to this server to do it, and whether the devices are really kept
 // out. A flagged user who cannot log in to the server is locked out of
 // everything, the change included, so the verbs that would leave one refuse
-// (pwGuard, pwHostGuard); the others are shown wherever the flag is shown.
+// (pwGuard, pwWriteGuard, pwHostGuard); the others are shown wherever the flag is shown.
 
 import (
 	"sort"
@@ -140,19 +140,7 @@ func (inv *invocation) pwGuard(fn func(*store.Store) error) (func(), error) {
 		return nil, nil
 	}
 	bc, ac := inv.pwContext(bm), inv.pwContext(model.FromStore(after))
-	newly := func(was, now []string) []string {
-		seen := map[string]bool{}
-		for _, n := range was {
-			seen[n] = true
-		}
-		var out []string
-		for _, n := range now {
-			if !seen[n] {
-				out = append(out, n)
-			}
-		}
-		return out
-	}
+	newly := newlyIn
 	if lost := newly(bc.stranded(), ac.stranded()); len(lost) > 0 {
 		return nil, inv.pwRefusal(lost, "This change")
 	}
@@ -177,6 +165,65 @@ func (inv *invocation) pwGuard(fn func(*store.Store) error) (func(), error) {
 	}, nil
 }
 
+// newlyIn are the names of now that are not in was, in now's order.
+func newlyIn(was, now []string) []string {
+	seen := map[string]bool{}
+	for _, n := range was {
+		seen[n] = true
+	}
+	var out []string
+	for _, n := range now {
+		if !seen[n] {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// pwStrandedNow are the flagged users who cannot log in to this server to
+// change the password, as the files are now: the store read again (never the
+// invocation's model, which a writer may have left behind), tacctl.yaml as
+// loaded (the tiers, the enabled backends) and the host registry. ok is false
+// when the store cannot be read or flags nobody.
+func (inv *invocation) pwStrandedNow() ([]string, bool) {
+	st, err := store.Load(inv.app.Paths.StoreFile)
+	if err != nil {
+		return nil, false
+	}
+	m := model.FromStore(st)
+	for _, u := range m.Users {
+		if u.PasswordChangeRequired {
+			return inv.pwContext(m).stranded(), true
+		}
+	}
+	return nil, false
+}
+
+// pwWriteGuard is the one guard of the common write path (storeApplyThen,
+// applyWith, backend disable): it wraps a writer that runs under the apply
+// lock, reads how the flagged users stand before and after it, and fails the
+// write, which the apply then rolls back (store.yaml and tacctl.yaml as they
+// were, nothing rendered), when a user who could log in to this server to
+// change the password no longer can. That covers whatever the writer changes:
+// a scope that now answers the server's address before the server's own (scope
+// add), a group's tier that newly holds its members, the backend of the
+// server's own logins. pwGuard refuses a store change earlier, before the
+// snapshot, with the same message; this one is the net under every writer.
+func (inv *invocation) pwWriteGuard(writer func() error) func() error {
+	return func() error {
+		before, ok := inv.pwStrandedNow()
+		if err := writer(); err != nil || !ok {
+			return err
+		}
+		inv.app.Conf().Reload() // a writer may have replaced tacctl.yaml
+		after, _ := inv.pwStrandedNow()
+		if lost := newlyIn(before, after); len(lost) > 0 {
+			return inv.pwRefusal(lost, "This change")
+		}
+		return nil
+	}
+}
+
 // pwHostGuard refuses a change of this server's registration (its scope, its
 // method, or the registration itself) while users must change the password:
 // their logins at the server are where the scope and the method say, and the
@@ -193,6 +240,16 @@ func (inv *invocation) pwHostGuard(what string, to *hosts.Entry) error {
 		return nil
 	}
 	if ok && to != nil && e.Scope == to.Scope && e.EffectiveMethod() == to.EffectiveMethod() {
+		// The same scope and method: the backends render as before, but the
+		// server's address (--server) is where its logins come from, which
+		// the scope must still answer.
+		next := *to
+		next.Target = hosts.Local
+		bc := inv.pwContext(m)
+		ac := &pwCtx{inv: inv, m: m, entry: next, enrolled: true}
+		if lost := newlyIn(bc.stranded(), ac.stranded()); len(lost) > 0 {
+			return inv.pwRefusal(lost, what)
+		}
 		return nil
 	}
 	var names []string

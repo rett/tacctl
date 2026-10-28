@@ -165,8 +165,8 @@ the ledger drops or changes, and a host that no longer matches is fixed with
 the method of this server's own entry (`--local`) decide where the backends
 keep a user who must change the password. While any user is flagged,
 `host forget`, `host unenroll` and `host enroll --local` with another scope or
-method (so `host move` of it) are refused with the command that lifts the
-requirement first ([A required password
+method (so `host move` of it), or with a `--server` address the scope does not
+answer, are refused with the command that lifts the requirement first ([A required password
 change](../cli/user.md)); `scope rename` renames the entry with the scope.
 With `--keep-uids` the ledger is left as it is, for a snapshot wanted for its
 users or scopes when the hosts have synced since. See

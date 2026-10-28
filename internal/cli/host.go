@@ -717,7 +717,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 		// The scope and the method of this server's own logins decide where
 		// the backends keep a user who must change the password
 		// (internal/pwchange): changing them under such a user is refused.
-		if err := inv.pwHostGuard("Enrolling this server in scope '"+scope+"' with the "+hosts.MethodLabel(method)+" method", &hosts.Entry{Scope: scope, Method: method}); err != nil {
+		if err := inv.pwHostGuard("Enrolling this server in scope '"+scope+"' with the "+hosts.MethodLabel(method)+" method", &hosts.Entry{Scope: scope, Method: method, Server: server}); err != nil {
 			return err
 		}
 	}

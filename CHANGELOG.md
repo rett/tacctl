@@ -276,13 +276,22 @@ current behaviour; this file is where history lives.
     say `flagged, devices in a scope shared with the server still accept the
     password`. A user who must change the password and has no login on the
     server (not in its scope, the scope no longer answers `127.0.0.1`, the
-    server not enrolled) is shown as `flagged, cannot log in to change it`, and
-    a change that would leave one (`user scope ... remove|replace`, `scope
-    prefixes ... remove`, `scope protocols`, a rename) is refused before
-    anything is written, with `tacctl user require-password-change <name>
-    off` as the way out; so is `host forget`, `host unenroll` or `host enroll
-    --local` (the move included) with another scope or method while a user is
-    flagged, because the backends' files are rendered from that registration.
+    backend of the server's own logins is not enabled, the server not
+    enrolled) is shown as `flagged, cannot log in to change it`, and a change
+    that would leave one is refused with nothing changed, with `tacctl user
+    require-password-change <name> off` as the way out. A store change (`user
+    scope ... remove|replace`, `scope prefixes ... remove`, `scope protocols`,
+    a rename) is refused before anything is written; every other write of the
+    store or `tacctl.yaml` is checked by one guard under the apply lock and
+    put back before anything is rendered (after the pre-change snapshot):
+    `scope add` of a scope that answers the server's address more closely
+    than its own, `group edit ... tier` or `priv-lvl` (and the other group
+    writes) that newly holds a member with no login on the server, `backend
+    disable` of the backend of the server's own logins. So is `host forget`,
+    `host unenroll` or `host enroll --local` (the move included) with another
+    scope or method while a user is flagged, because the backends' files are
+    rendered from that registration, and `host enroll --local --server
+    <address>` whose scope does not answer that address.
     `scope rename` renames the server's registration before the backends
     render. A superuser is never held to it: the tier of the user's group
     decides each time (a render, a login, a command), not when the flag is set,

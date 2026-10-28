@@ -82,6 +82,9 @@ func (c *pwCtx) barrier(name, group string, scopes []string, disabled bool) pwBa
 			return pwBarrier{why: "scope '" + e.Scope + "' does not answer " + addr + " for " + hosts.MethodLabel(e.EffectiveMethod()) + ", where this server's own logins come from, so nobody logs in to it"}
 		}
 	}
+	if ids, err := c.inv.app.Backends().Enabled(); err == nil && !slices.Contains(ids, srv.Protocol) {
+		return pwBarrier{why: "backend '" + srv.Protocol + "', which answers this server's own " + hosts.MethodLabel(e.EffectiveMethod()) + " logins, is not enabled, so nobody logs in to it"}
+	}
 	return pwBarrier{}
 }
 
