@@ -11,9 +11,11 @@ import (
 const PasswordChangeKey = "password_change_required"
 
 // PasswordChangeKeys are the users of the store at path that carry
-// PasswordChangeKey (set to true), by name. The file is read as it is, not
-// validated: a rollback must see the key in a store that no longer
-// validates too. A file that cannot be read is an error.
+// PasswordChangeKey with any value (true, false, or one the store does not
+// accept), by name: an older release refuses the key itself, so a rollback
+// removes it wherever it is. The file is read as it is, not validated: a
+// rollback must see the key in a store that no longer validates too. A file
+// that cannot be read is an error.
 func PasswordChangeKeys(path string) ([]string, error) {
 	raw, err := LoadRaw(path)
 	if err != nil {
