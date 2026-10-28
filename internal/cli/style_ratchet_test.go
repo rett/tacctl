@@ -25,6 +25,14 @@ import (
 
 var updateStyle = flag.Bool("update-style", false, "drop the entries of internal/cli/testdata/style that meet their rule now")
 
+// ratchetEntries are the numbers of entries the lists hold now. A list may
+// only shrink, and a line added by hand would pass the comparison below
+// when the command or flag it names does break the rule, so each list is
+// also pinned to its size: fixing an offender removes its line and lowers
+// the number here, in the same change; a larger number is a change of the
+// rule that needs a reviewer's eye.
+var ratchetEntries = map[string]int{"summary-length": 64, "flag-length": 178, "flag-prefix": 192}
+
 // summaryMax is the longest description of a command or a flag.
 const summaryMax = 72
 
@@ -86,6 +94,9 @@ func ratchet(t *testing.T, rule string, found []string) {
 	}
 	if !slices.IsSorted(listed) {
 		t.Errorf("%s is not sorted", path)
+	}
+	if want, ok := ratchetEntries[rule]; !ok || len(listed) != want {
+		t.Errorf("%s has %d entries, ratchetEntries says %d: the list only shrinks (a fixed entry is removed and the number lowered; an entry is never added)", path, len(listed), want)
 	}
 	var kept []string
 	for _, k := range found {
