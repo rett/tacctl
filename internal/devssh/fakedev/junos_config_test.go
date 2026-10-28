@@ -890,3 +890,71 @@ firewall {
 		t.Errorf("brace form:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// historyEnds are the entries of 'show system commit' without their time and
+// user: "<n> <way and commit text>", and a comment line as it is.
+func historyEnds(out string) []string {
+	re := regexp.MustCompile(`^(\d+)\s+\S+ \S+ UTC by \S+ via (.*)$`)
+	var ends []string
+	for _, l := range strings.Split(out, "\n") {
+		if m := re.FindStringSubmatch(strings.TrimRight(l, " \r")); m != nil {
+			ends = append(ends, m[1]+" "+m[2])
+		} else if l = strings.TrimSpace(l); l != "" {
+			ends = append(ends, "# "+l)
+		}
+	}
+	return ends
+}
+
+// The words typed after 'commit' end the history entry in the order typed,
+// and a confirmed commit's label comes before them; the plain commit
+// prints nothing, as the device does.
+func TestJunosHistoryPrintsTheCommitWords(t *testing.T) {
+	srv, _, _ := newJunos(t, map[string]string{})
+	c, _ := shell(t, srv, DefaultUser, DefaultPassword)
+	c.send("configure exclusive")
+	c.send("set system login idle-timeout 30")
+	c.send("commit")
+	c.send("set system login idle-timeout 31")
+	c.send("commit synchronize")
+	c.send("set system login idle-timeout 32")
+	c.send("commit and-quit synchronize force")
+	c.send("configure exclusive")
+	c.send("set system login idle-timeout 33")
+	c.send("commit confirmed 5 synchronize")
+	c.send(`commit comment "confirm"`)
+	c.send("exit")
+	got := strings.Join(historyEnds(c.send("show system commit")), "|")
+	want := "0 cli|# confirm|1 cli commit confirmed, rollback in 5mins synchronize|" +
+		"2 cli commit and-quit synchronize force|3 cli commit synchronize|4 cli|5 other"
+	if got != want {
+		t.Errorf("show system commit:\n got %s\nwant %s", got, want)
+	}
+	h := srv.History()
+	if len(h) != 6 || len(h[0].Options) != 0 || strings.Join(h[1].Options, " ") != "synchronize" || strings.Join(h[3].Options, " ") != "synchronize" {
+		t.Errorf("options %+v", h)
+	}
+}
+
+// The knob 'commit.synchronize' makes a device that commits so: each commit,
+// confirmed or not, ends in 'synchronize' (once, also when it was typed),
+// and the entry of the device's own expiry does not.
+func TestJunosKnobCommitSynchronize(t *testing.T) {
+	srv, _, clk := newJunos(t, map[string]string{"commit.synchronize": ""})
+	c, _ := shell(t, srv, DefaultUser, DefaultPassword)
+	c.send("configure exclusive")
+	c.send("set system login idle-timeout 30")
+	c.send("commit confirmed 1")
+	clk.Advance(2 * time.Minute)
+	c.send("set system login idle-timeout 31")
+	c.send("commit")
+	c.send("set system login idle-timeout 32")
+	c.send("commit and-quit synchronize")
+	c.send("exit")
+	got := strings.Join(historyEnds(c.send("show system commit")), "|")
+	want := "0 cli commit and-quit synchronize|1 cli commit synchronize|2 other|" +
+		"3 cli commit confirmed, rollback in 1mins synchronize|4 other"
+	if got != want {
+		t.Errorf("show system commit:\n got %s\nwant %s", got, want)
+	}
+}

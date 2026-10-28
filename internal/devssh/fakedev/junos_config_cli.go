@@ -562,6 +562,7 @@ func (d *junosDevice) cfgCommit(sess *jsession, args []string) jresult {
 		return jresult{out: t}
 	}
 	check, confirmed, minutes, comment := false, false, 10, ""
+	var options []string
 	line := strings.Join(args, " ")
 	words := jsplit(line)
 	for i := 0; i < len(words); i++ {
@@ -586,6 +587,7 @@ func (d *junosDevice) cfgCommit(sess *jsession, args []string) jresult {
 			comment = words[i+1]
 			i++
 		case "and-quit", "synchronize", "force":
+			options = append(options, words[i])
 		default:
 			return jresult{out: syntaxText()}
 		}
@@ -597,7 +599,7 @@ func (d *junosDevice) cfgCommit(sess *jsession, args []string) jresult {
 		// a private session refuses a confirmed commit (lab L5)
 		return jresult{out: jtNoConfirmedPrivate + "\n"}
 	}
-	o := d.commitApply(sess, check, confirmed, time.Duration(minutes)*d.minute(), minutes, comment, jtCommitVia, nil)
+	o := d.commitApply(sess, check, confirmed, time.Duration(minutes)*d.minute(), minutes, comment, jtCommitVia, nil, options...)
 	if len(o.fails) > 0 {
 		return jresult{out: strings.Join(o.fails, "\n") + "\n" + jtCheckFailed + "\n"}
 	}
@@ -637,7 +639,7 @@ type commitOutcome struct {
 // an unconfirmed commit back only under the knob netconf.close.rollback=on,
 // otherwise only the window's end does, as on the device. The caller holds
 // d.mu and has checked blocked.
-func (d *junosDevice) commitApply(sess *jsession, check, confirmed bool, window time.Duration, label int, comment, via string, owner *jsession) commitOutcome {
+func (d *junosDevice) commitApply(sess *jsession, check, confirmed bool, window time.Duration, label int, comment, via string, owner *jsession, options ...string) commitOutcome {
 	cand := d.candidate(sess)
 	if fails := d.checkFailures(cand); len(fails) > 0 {
 		return commitOutcome{fails: fails}
@@ -687,7 +689,10 @@ func (d *junosDevice) commitApply(sess *jsession, check, confirmed bool, window 
 		p.timer = d.s.clock.AfterFunc(window, func() { d.expire(p) })
 		d.pending = p
 	}
-	d.record(sess.user, via, comment, rollbackIn)
+	if _, ok := d.s.t.read("commit.synchronize"); ok && !slices.Contains(options, "synchronize") {
+		options = append(slices.Clone(options), "synchronize")
+	}
+	d.record(sess.user, via, comment, rollbackIn, options...)
 	if confirmed {
 		d.history[0].Confirmed = true
 	}

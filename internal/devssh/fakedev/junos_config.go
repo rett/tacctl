@@ -52,6 +52,13 @@ package fakedev
 //	                    connection unanswered, before it is applied
 //	slow                '<command prefix> => <seconds>' lines ('*' matches
 //	                    every command): the answer waits on the clock
+//	commit.synchronize  every commit the model records ends its history entry
+//	                    in 'synchronize' (a device with two routing engines,
+//	                    or a virtual chassis, that commits so): 'commit
+//	                    synchronize', 'commit confirmed, rollback in 10mins
+//	                    synchronize'; the words typed after 'commit' on the
+//	                    command line (and-quit, synchronize, force) are
+//	                    printed in any case, in the order typed
 //	timer.minute        seconds one minute of 'commit confirmed' lasts on the
 //	                    server's clock (default 60; bats sets 1)
 //	netconf.private.confirm
@@ -208,6 +215,10 @@ type JunosCommit struct {
 	// Confirmed marks a confirmed commit whose window is under a minute
 	// (RollbackIn 0), which the device still labels 'rollback in 0mins'.
 	Confirmed bool
+	// Options are the words the commit command ended with, as the entry
+	// prints them after 'commit' (and after the label of a confirmed
+	// commit): 'and-quit', 'synchronize', 'force', in the order typed.
+	Options []string
 }
 
 type junosPending struct {
@@ -558,10 +569,10 @@ func (d *junosDevice) writeCommitted() {
 
 // record makes the committed configuration the next version and adds the
 // history entry.
-func (d *junosDevice) record(user, via, comment string, rollbackIn int) {
+func (d *junosDevice) record(user, via, comment string, rollbackIn int, options ...string) {
 	d.versions = slices.Insert(d.versions, 0, d.committed.clone())
 	d.history = slices.Insert(d.history, 0, JunosCommit{
-		Time: d.s.clock.Now(), User: user, Via: via, Comment: comment, RollbackIn: rollbackIn,
+		Time: d.s.clock.Now(), User: user, Via: via, Comment: comment, RollbackIn: rollbackIn, Options: options,
 	})
 	if len(d.versions) > historyMax {
 		d.versions = d.versions[:historyMax]
@@ -593,11 +604,17 @@ func (d *junosDevice) historyText() string {
 	var b strings.Builder
 	for i, h := range d.history {
 		fmt.Fprintf(&b, "%-3d %s by %s via %s", i, formatTime(h.Time), h.User, h.Via)
-		if h.Confirmed || h.RollbackIn > 0 {
+		switch {
+		case h.Confirmed || h.RollbackIn > 0:
 			// the label is the window in whole minutes, rounded down: a
 			// NETCONF commit's seconds make 'rollback in 0mins' under a
 			// minute [lab: 1 and 5 seconds read 0mins, 180 reads 3mins]
 			b.WriteString(" " + fmt.Sprintf(jtRollbackInFmt, h.RollbackIn))
+		case len(h.Options) > 0:
+			b.WriteString(" commit")
+		}
+		for _, o := range h.Options {
+			b.WriteString(" " + o)
 		}
 		b.WriteString("\n")
 		if h.Comment != "" {
