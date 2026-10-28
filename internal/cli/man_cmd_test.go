@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -78,7 +79,7 @@ func envMap(env []string) map[string]string {
 // checkSafeEnv holds the environment given to man, groff and the pager to
 // what manEnv makes: the terminal, the locale, a fixed PATH and HOME, and the
 // pager's secure settings.
-func checkSafeEnv(t *testing.T, env []string, wantLess string) {
+func checkSafeEnv(t *testing.T, env []string) {
 	t.Helper()
 	got := envMap(env)
 	for _, name := range []string{"PAGER", "MANPAGER", "LESSOPEN", "LESSCLOSE", "LESSKEY", "MANPATH", "MANOPT", "MAN_KEEP_FORMATTING",
@@ -94,7 +95,7 @@ func checkSafeEnv(t *testing.T, env []string, wantLess string) {
 		}
 	}
 	want := map[string]string{"TERM": "xterm", "LANG": "C.UTF-8", "PATH": console.ConsolePath, "HOME": "/nonexistent",
-		"LESSSECURE": "1", "LESSHISTFILE": "-", "LESS": wantLess}
+		"LESSSECURE": "1", "LESSHISTFILE": "-", "LESS": "-R"}
 	if len(env) != len(got) {
 		t.Errorf("a variable is set twice: %q", env)
 	}
@@ -105,9 +106,6 @@ func checkSafeEnv(t *testing.T, env []string, wantLess string) {
 	}
 	if len(got) != len(want) {
 		t.Errorf("environment %q, want only %v", env, want)
-	}
-	if !regexp.MustCompile(`^-R( \+/\^[^ ]*[^\n]*)?$`).MatchString(got["LESS"]) {
-		t.Errorf("LESS=%q", got["LESS"])
 	}
 }
 
@@ -128,39 +126,78 @@ func TestManInstalledPage(t *testing.T) {
 		if c.Name != "/fake/bin/man" || !slices.Equal(c.Args, []string{"-l", "-P", "/fake/bin/less", h.page}) {
 			t.Errorf("gz=%v: %s %q", gz, c.Name, c.Args)
 		}
-		checkSafeEnv(t, c.Env, "-R")
+		checkSafeEnv(t, c.Env)
 		if len(h.runner.Execs()) != 0 {
 			t.Errorf("execs %v", h.runner.Execs())
 		}
 	}
 }
 
-// Words choose the place and nothing else: the arguments of man are those of
-// no words, and the pager's LESS holds a search made from the page's own
-// text.
+// Words choose the place and nothing else: the arguments of man are the
+// fixed ones and the pager string, which holds a search made from the page's
+// own text in single quotes; the LESS of the environment is always -R.
 func TestManWordsReachTheSearchOnly(t *testing.T) {
 	page := []byte(".TH X 1\n.SH TIERS\ntext\n.SS User management \\fB(tacctl user)\\fR\n.TP\n.BI \"device config plan \" name\nbody\n")
 	for _, c := range []struct {
 		words []string
-		less  string
+		pager string
 	}{
-		{nil, "-R"},
-		{[]string{"tiers"}, "-R +/^ *TIERS *$"},
-		{[]string{"TIERS"}, "-R +/^ *TIERS *$"},
-		{[]string{"user"}, "-R +/^ *User  *management  *.tacctl  *user. *$"},
-		{[]string{"device", "config", "plan"}, "-R +/^       device  *config  *plan  *name *$"},
-		{[]string{"nosuch", "$(id)"}, "-R"},
-		{[]string{"--", "-P", "sh"}, "-R"},
+		{nil, "/fake/bin/less"},
+		{[]string{"tiers"}, "/fake/bin/less '+/^TIERS'"},
+		{[]string{"TIERS"}, "/fake/bin/less '+/^TIERS'"},
+		{[]string{"user"}, "/fake/bin/less '+/^TIERS' '+/^   User  *management  *.tacctl  *user.'"},
+		{[]string{"device", "config", "plan"}, "/fake/bin/less '+/^TIERS' '+/^   User  *management  *.tacctl  *user.' '+/^       device  *config  *plan  *name'"},
+		{[]string{"nosuch", "$(id)"}, "/fake/bin/less"},
+		{[]string{"--", "-P", "sh"}, "/fake/bin/less"},
 	} {
 		h := newManHarness(t, page, true, hostile, c.words...)
 		if err := h.run(); err != nil {
 			t.Fatalf("%q: %v", c.words, err)
 		}
 		call := h.started()[0]
-		if !slices.Equal(call.Args, []string{"-l", "-P", "/fake/bin/less", h.page}) {
+		if !slices.Equal(call.Args, []string{"-l", "-P", c.pager, h.page}) {
 			t.Errorf("%q: arguments %q", c.words, call.Args)
 		}
-		checkSafeEnv(t, call.Env, c.less)
+		checkSafeEnv(t, call.Env)
+	}
+}
+
+// No text of a heading or a tag can put a quote, a '$', a backquote, a
+// newline or an escape other than '\.' into the search, which man gets inside
+// single quotes and less reads as an option string.
+func TestManPatternHasNoQuoteOrDollar(t *testing.T) {
+	hostileText := []string{"a'b", `a"b`, "a`b`", "a$b", "$(id)", "a\\b", "a\nb", "a\rb", "a\tb", "'; touch x; '", `\'`, "a\x00b", "é'", "a b'c d",
+		strings.Repeat("'", 100), "x.y\\.z"}
+	ok := regexp.MustCompile(`^\^ *([A-Za-z0-9_:,=/@% *.-]|\\\.)*$`)
+	check := func(what, p string) {
+		t.Helper()
+		if !ok.MatchString(p) || strings.ContainsAny(p, "'\"`$\n\r\t\x00") {
+			t.Errorf("%s: pattern %q", what, p)
+		}
+	}
+	for _, text := range hostileText {
+		for _, topic := range []manTopic{
+			{text: text, heading: true}, {text: text, heading: true, indent: 3},
+			{text: text}, {text: text, indent: 7}, {text: text, indent: 7, lead: text}, {text: "ab", indent: 7, lead: text},
+		} {
+			for _, p := range topic.searchArgs() {
+				check(fmt.Sprintf("%+v", topic), p)
+			}
+		}
+	}
+	for _, e := range shippedTopics(t) {
+		for _, p := range e.searchArgs() {
+			check(e.text, p)
+		}
+	}
+	// The pager string holds the pattern in one pair of quotes, and nothing
+	// of the pattern is outside them.
+	for _, text := range hostileText {
+		p := manTopic{text: text, indent: 7}.searchPattern()
+		pager := manPager("/usr/bin/less", []string{p, p})
+		if strings.Count(pager, "'") != 4 || !strings.HasSuffix(pager, "'") || !strings.HasPrefix(pager, "/usr/bin/less '+/") {
+			t.Errorf("pager %q", pager)
+		}
 	}
 }
 
@@ -192,10 +229,11 @@ func TestManBuiltInPage(t *testing.T) {
 		t.Fatalf("started %v", h.runner.Argvs())
 	}
 	c := rec[0].Cmd
-	if !slices.Equal(c.Args, []string{"-l", "-P", "/fake/bin/less", "-"}) || !bytes.Equal(rec[0].Stdin, assets.ManPage()) {
+	tiers, _ := manLookup(manTopics(assets.ManPage()), []string{"tiers"})
+	if !slices.Equal(c.Args, []string{"-l", "-P", manPager("/fake/bin/less", tiers.searchArgs()), "-"}) || !bytes.Equal(rec[0].Stdin, assets.ManPage()) {
 		t.Errorf("%s %q, %d bytes on stdin", c.Name, c.Args, len(rec[0].Stdin))
 	}
-	checkSafeEnv(t, c.Env, "-R +/^ *TIERS *$")
+	checkSafeEnv(t, c.Env)
 	// An installed file that is not a file of the page (a directory, an
 	// empty file) is not shown either.
 	for _, mk := range []func(string) error{func(p string) error { return os.Mkdir(p, 0o755) }, func(p string) error { return os.WriteFile(p, nil, 0o644) }} {
@@ -241,7 +279,7 @@ func TestManWithoutLess(t *testing.T) {
 	if !slices.Equal(c.Args, []string{"-l", "-P", "/fake/bin/cat", h.page}) {
 		t.Errorf("arguments %q", c.Args)
 	}
-	checkSafeEnv(t, c.Env, "-R +/^ *TIERS *$")
+	checkSafeEnv(t, c.Env)
 	if h.err.String() != "tacctl man: less is not installed, so the page is printed without a pager.\n" {
 		t.Errorf("stderr %q", h.err.String())
 	}
@@ -282,11 +320,11 @@ func TestManWithoutMan(t *testing.T) {
 	if g.Cmd.Name != "/fake/bin/groff" || !slices.Equal(g.Cmd.Args, []string{"-man", "-Tutf8", "-"}) || !bytes.Equal(g.Stdin, page) {
 		t.Errorf("groff: %s %q %q", g.Cmd.Name, g.Cmd.Args, g.Stdin)
 	}
-	if l.Cmd.Name != "/fake/bin/less" || len(l.Cmd.Args) != 0 || string(l.Stdin) != "RENDERED\n" {
+	if l.Cmd.Name != "/fake/bin/less" || !slices.Equal(l.Cmd.Args, []string{"+/^TIERS"}) || string(l.Stdin) != "RENDERED\n" {
 		t.Errorf("less: %s %q %q", l.Cmd.Name, l.Cmd.Args, l.Stdin)
 	}
-	checkSafeEnv(t, g.Cmd.Env, "-R +/^ *TIERS *$")
-	checkSafeEnv(t, l.Cmd.Env, "-R +/^ *TIERS *$")
+	checkSafeEnv(t, g.Cmd.Env)
+	checkSafeEnv(t, l.Cmd.Env)
 
 	// Not a terminal: the text is written, and no pager is started.
 	h = newManHarness(t, page, false, nil)
@@ -365,10 +403,10 @@ func TestManExitStatus(t *testing.T) {
 func TestManEnvKeepsOnlyTheTerminalAndLocale(t *testing.T) {
 	environ := append(slices.Clone(hostile), "TERM=screen", "LANG=de_DE.UTF-8", "LC_ALL=de_DE.UTF-8", "LC_TIME=C", "HOME=/home/user",
 		"USER=alice", "LOGNAME=alice", "SSH_CONNECTION=192.0.2.9 1 192.0.2.1 22", "DISPLAY=:0", "PATH=/home/user/bin:/usr/bin", "LESS=-R")
-	got := manEnv(environ, "-R +/^ *TIERS *$")
+	got := manEnv(environ)
 	m := envMap(got)
 	want := map[string]string{"TERM": "screen", "LANG": "de_DE.UTF-8", "LC_ALL": "de_DE.UTF-8", "LC_TIME": "C", "PATH": console.ConsolePath,
-		"HOME": "/nonexistent", "LESSSECURE": "1", "LESSHISTFILE": "-", "LESS": "-R +/^ *TIERS *$"}
+		"HOME": "/nonexistent", "LESSSECURE": "1", "LESSHISTFILE": "-", "LESS": "-R"}
 	if len(m) != len(want) || len(got) != len(want) {
 		t.Errorf("environment %q", got)
 	}
@@ -377,11 +415,11 @@ func TestManEnvKeepsOnlyTheTerminalAndLocale(t *testing.T) {
 			t.Errorf("%s=%q, want %q", k, m[k], v)
 		}
 	}
-	if got := manEnv(nil, "-R"); !slices.Contains(got, "LESSSECURE=1") || !slices.Contains(got, "PATH="+console.ConsolePath) {
+	if got := manEnv(nil); !slices.Contains(got, "LESSSECURE=1") || !slices.Contains(got, "PATH="+console.ConsolePath) {
 		t.Errorf("empty environment: %q", got)
 	}
-	if manLessValue("") != "-R" || manLessValue("^ *x") != "-R +/^ *x" {
-		t.Errorf("LESS %q %q", manLessValue(""), manLessValue("^ *x"))
+	if manPager("/usr/bin/less", nil) != "/usr/bin/less" || manPager("/usr/bin/less", []string{"^ *x", "^y"}) != "/usr/bin/less '+/^ *x' '+/^y'" {
+		t.Errorf("pager %q", manPager("/usr/bin/less", []string{"^ *x", "^y"}))
 	}
 }
 

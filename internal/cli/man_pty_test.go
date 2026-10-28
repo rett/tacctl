@@ -123,6 +123,16 @@ func manSession(t *testing.T, p interface {
 	}
 	send("q")
 	expect(prompt)
+	// At entries that a search for one word alone would not find (a sentence
+	// begins with the same word further up): the lines under their tags.
+	send("man snapshot\r")
+	expect(`The\s+id\s+of\s+the\s+pre-change\s+snapshot`)
+	send("q")
+	expect(prompt)
+	send("man operator\r")
+	expect(`log\s+tail,\s+log\s+search,\s+log\s+failures`)
+	send("q")
+	expect(prompt)
 	// A word that is no entry opens the top of the page and says so.
 	send("man nosuch\r")
 	expect(`no entry for 'nosuch'; the page is opened at the top\.`)

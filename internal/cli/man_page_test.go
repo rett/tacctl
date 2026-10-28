@@ -3,15 +3,20 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/rett/tacctl/internal/assets"
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/testpty"
 )
 
 // shippedTopics are the headings and entries of the page as shipped.
@@ -103,18 +108,33 @@ func TestManLookup(t *testing.T) {
 	}
 }
 
+// A topic is searched for after the topics just before it.
+func TestManSearchArgsStartNearTheTopic(t *testing.T) {
+	topics := manTopics([]byte(".SH A\n.TP\n.B one\n.TP\n.B two\n.TP\n.B three\n.TP\n.B four\n.TP\n.B five\n.TP\n.B six\n.TP\n.B seven\n.TP\n.B eight\n"))
+	if len(topics) != 9 {
+		t.Fatalf("%d topics", len(topics))
+	}
+	if got := topics[0].searchArgs(); len(got) != 1 {
+		t.Errorf("first: %q", got)
+	}
+	last := topics[8].searchArgs()
+	if len(last) != manChain+1 || last[manChain] != topics[8].searchPattern() || last[0] != topics[8-manChain].searchPattern() {
+		t.Errorf("last: %q", last)
+	}
+}
+
 func TestManSearchPattern(t *testing.T) {
 	for _, c := range []struct {
 		topic manTopic
 		want  string
 	}{
-		{manTopic{text: "TIERS", heading: true}, `^ *TIERS *$`},
-		{manTopic{text: "User management (tacctl user)", heading: true}, `^ *User  *management  *.tacctl  *user. *$`},
-		{manTopic{text: "completion bash|zsh|fish", indent: 7}, `^       completion  *bash.zsh.fish *$`},
+		{manTopic{text: "TIERS", heading: true}, `^TIERS`},
+		{manTopic{text: "User management (tacctl user)", heading: true, indent: 3}, `^   User  *management  *.tacctl  *user.`},
+		{manTopic{text: "completion bash|zsh|fish", indent: 7}, `^       completion  *bash.zsh.fish`},
 		{manTopic{text: "device config plan name[,name...] | --all | --scope scope | --vendor vendor", indent: 14}, `^              device  *config  *plan  *name.,name\.\.\..  *.  *--all  *.  *--scope  *scope  *.`},
-		{manTopic{text: "a.b*c^d$e\\f[g]h(i)j+k?l{m}n'o\"p;q"}, `^ *a\.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q *$`},
-		{manTopic{text: "scope.default"}, `^ *scope\.default *$`},
-		{manTopic{text: "scope.default", indent: 7}, `^       scope\.default *$`},
+		{manTopic{text: "a.b*c^d$e\\f[g]h(i)j+k?l{m}n'o\"p;q"}, `^ *a\.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q`},
+		{manTopic{text: "scope.default"}, `^ *scope\.default`},
+		{manTopic{text: "scope.default", indent: 7}, `^       scope\.default`},
 		{manTopic{text: "status", indent: 7, lead: "Show"}, `^       status  *Show`},
 		{manTopic{text: "mode", indent: 14}, `^              mode`},
 		{manTopic{text: "tacacs", indent: 7, lead: "TACACS+,"}, `^       tacacs  *TACACS.,`},
@@ -124,8 +144,9 @@ func TestManSearchPattern(t *testing.T) {
 		}
 	}
 	// Whatever the text, the pattern is made of the literal characters, '.',
-	// '\.', blanks as ' *' after a blank and the anchors, and fits on a line.
-	ok := regexp.MustCompile(`^\^ *[A-Za-z0-9_:,=/@%.* \\-]*( \*\$)?$`)
+	// '\.', blanks as ' *' after a blank and the start of the line, and fits
+	// on a line.
+	ok := regexp.MustCompile(`^\^ *[A-Za-z0-9_:,=/@%.* \\-]*$`)
 	for _, e := range shippedTopics(t) {
 		p := e.searchPattern()
 		if !ok.MatchString(p) || len(p) > 4*manPatternMax {
@@ -138,21 +159,44 @@ func TestManSearchPattern(t *testing.T) {
 }
 
 // markedPage is the page source with the text of every heading and entry
-// that manTopics lists replaced by marker letters (X, then Y for the next
-// one, and so on) of the same width and with the same blanks, so that groff
-// lays it out as it lays out the page. The lines that differ in its rendering
-// are where the entries are.
+// that manTopics lists written in marker letters (X, then Y for the next
+// one, and so on): every letter and digit of the line, outside the macro's
+// name and the escapes, becomes the marker, so that groff lays the page out
+// as it lays out the page itself, the entries' lines excepted.
 func markedPage(src []byte) []byte {
 	n := 0
-	mark := func(text string) string {
+	mark := func(l string) string {
 		letter := "XY"[n%2]
 		n++
-		return strings.Map(func(r rune) rune {
-			if r == ' ' {
-				return r
+		var b strings.Builder
+		rest := l
+		if strings.HasPrefix(l, ".") { // the macro's name stays
+			name, _, _ := strings.Cut(l, " ")
+			b.WriteString(name)
+			rest = l[len(name):]
+		}
+		for i := 0; i < len(rest); i++ {
+			c := rest[i]
+			switch {
+			case c == '\\' && i+1 < len(rest):
+				// an escape: \fB, \(xx, \-, \e ... stays as it is
+				w := 2
+				switch rest[i+1] {
+				case 'f':
+					w = 3
+				case '(':
+					w = 4
+				}
+				w = min(w, len(rest)-i)
+				b.WriteString(rest[i : i+w])
+				i += w - 1
+			case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+				b.WriteByte(letter)
+			default:
+				b.WriteByte(c)
 			}
-			return rune(letter)
-		}, text)
+		}
+		return b.String()
 	}
 	lines := strings.Split(string(src), "\n")
 	wantTag := false
@@ -166,12 +210,12 @@ func markedPage(src []byte) []byte {
 		case name == ".SH", name == ".SS":
 			wantTag = false
 			if text, ok := manLineText(l); ok && text != "" {
-				lines[i] = name + ` "` + mark(text) + `"`
+				lines[i] = mark(l)
 			}
 		case wantTag:
 			wantTag = false
 			if text, ok := manLineText(l); ok && manCommandLike.MatchString(text) {
-				lines[i] = `.B "` + mark(text) + `"`
+				lines[i] = mark(l)
 			}
 		}
 	}
@@ -189,23 +233,24 @@ func entryLines(plain, marked []string) (at []int, ok bool) {
 			prev = ""
 			continue
 		}
-		lead := strings.TrimSpace(marked[i])
-		if lead == "" || (lead[0] != 'X' && lead[0] != 'Y') {
+		lead := strings.IndexAny(marked[i], "XY")
+		if lead < 0 {
 			return nil, false
 		}
-		if lead[:1] != prev {
+		letter := marked[i][lead : lead+1]
+		if letter != prev {
 			at = append(at, i)
 		}
-		prev = lead[:1]
+		prev = letter
 	}
 	return at, true
 }
 
-// renderPage is the page as groff prints it for a terminal of width columns,
-// without the sequences that style it, one string per line. Hyphenation is
-// off: a marker is not hyphenated where the text it replaces is, and the two
+// renderPage is the page as groff prints it for a terminal of width columns
+// (styled as man shows it to less), one string per line. Hyphenation is off:
+// a marker is not hyphenated where the text it replaces is, and the two
 // renderings should differ in the entries' lines alone.
-func renderPage(t *testing.T, groff, dir string, src []byte, width int) []string {
+func renderPage(t *testing.T, groff, dir string, src []byte, width int) string {
 	t.Helper()
 	src = bytes.Replace(src, []byte("\n.SH "), []byte("\n.nh\n.SH "), 1)
 	page := filepath.Join(dir, "page."+strconv.Itoa(len(src))+"."+strconv.Itoa(width)+".1")
@@ -213,74 +258,140 @@ func renderPage(t *testing.T, groff, dir string, src []byte, width int) []string
 		t.Fatal(err)
 	}
 	res, err := execx.Real{}.Run(context.Background(), execx.Cmd{Name: groff,
-		Args: []string{"-man", "-Tutf8", "-rLL=" + strconv.Itoa(width) + "n", "-P-c", page},
+		Args: []string{"-man", "-Tutf8", "-rLL=" + strconv.Itoa(width) + "n", page},
 		Env:  []string{"PATH=/usr/bin:/bin", "LC_ALL=C.UTF-8"}})
 	if err != nil || res.Code != 0 {
 		t.Fatalf("groff: %v: %s", err, res.Stderr)
 	}
-	return strings.Split(regexp.MustCompile("\x1b\\[[0-9;]*m|.\x08").ReplaceAllString(string(res.Stdout), ""), "\n")
+	return string(res.Stdout)
 }
 
-// With groff at hand, the search of each heading and entry of the shipped
-// page lands on that heading or entry: the first line the pattern matches in
-// the rendering is the line where the entry is printed (found by laying the
-// page out again with markers in place of the entries' texts), at several
-// widths of terminal.
-func TestManSearchFindsEachEntry(t *testing.T) {
+var reStyle = regexp.MustCompile("\x1b\\[[0-9;]*m|.\x08")
+
+// unstyled is a rendering as lines of text, without the sequences that style it.
+func unstyled(rendering string) []string {
+	return strings.Split(reStyle.ReplaceAllString(rendering, ""), "\n")
+}
+
+// reachableTopics are the topics that a person can get to: the ones
+// manLookup returns for the words of a heading, of a command group or of the
+// start of a tag (a later topic with the same words is shadowed by the first,
+// as the second "device block" of the TIERS notes is by the command's entry).
+// The result is the index of each, with the words that find it.
+func reachableTopics(topics []manTopic) map[int][]string {
+	words := regexp.MustCompile(`^[a-z0-9_.-]+$`)
+	out := map[int][]string{}
+	try := func(w []string) {
+		if i, ok := manFind(topics, w); ok {
+			if _, seen := out[i]; !seen {
+				out[i] = w
+			}
+		}
+	}
+	for _, e := range topics {
+		for _, n := range e.names {
+			try(strings.Fields(n))
+		}
+		for _, tag := range e.tags {
+			f := strings.Fields(tag)
+			for k := 1; k <= len(f) && words.MatchString(f[k-1]); k++ {
+				try(f[:k])
+			}
+		}
+	}
+	return out
+}
+
+// firstLineShown runs the real less on the rendering in a terminal of width
+// columns with the search as manShow gives it ('+/pattern' on the command
+// line) and returns the number of the first line on the screen, from the
+// prompt (-M) that says "lines first-last/total".
+func firstLineShown(less, file string, width int, searches []string) (int, error) {
+	argv := []string{less, "-R", "-M"}
+	for _, p := range searches {
+		argv = append(argv, "+/"+p)
+	}
+	s, err := testpty.Start(testpty.Options{Path: less, Argv: append(argv, file),
+		Env:  []string{"PATH=/usr/bin:/bin", "TERM=xterm", "LC_ALL=C.UTF-8", "LESSSECURE=1", "LESSHISTFILE=-"},
+		Rows: 30, Cols: uint16(width), Deadline: 20 * time.Second})
+	if err != nil {
+		return 0, err
+	}
+	defer s.Close()
+	if err := s.Expect(`lines \d+-\d+/\d+|\(press RETURN\)`, 15*time.Second); err != nil {
+		return 0, err
+	}
+	out := reStyle.ReplaceAllString(s.Output(), "")
+	if strings.Contains(out, "Pattern not found") {
+		return 0, errors.New("less: Pattern not found")
+	}
+	m := regexp.MustCompile(`lines (\d+)-\d+/\d+`).FindAllStringSubmatch(out, -1)
+	if len(m) == 0 {
+		return 0, fmt.Errorf("less printed no position: %q", out)
+	}
+	return strconv.Atoi(m[len(m)-1][1])
+}
+
+// With the real less, the search of each heading and entry of the shipped
+// page that a person can reach lands on that heading or entry: the entry's
+// line is the first one on the screen. The entry's line is found by laying
+// the page out again with markers in the place of the entries' texts, and
+// both are laid out by groff at the widths of terminal below, as the pager
+// shows them (the page is shown by less at these widths by man).
+func TestManSearchLandsOnEachEntry(t *testing.T) {
 	groff, err := execx.Real{}.LookPath("groff")
 	if err != nil {
 		t.Skip("groff is not installed: the search of the page cannot be checked against its rendering")
 	}
+	less, err := execx.Real{}.LookPath("less")
+	if err != nil {
+		t.Skip("less is not installed: the search of the page cannot be checked in a pager")
+	}
 	dir := t.TempDir()
 	topics := shippedTopics(t)
-	compared := 0
-	for _, width := range []int{140, 160, 200} {
-		plain := renderPage(t, groff, dir, assets.ManPage(), width)
-		marked := renderPage(t, groff, dir, markedPage(assets.ManPage()), width)
+	reach := reachableTopics(topics)
+	if len(reach) < 250 {
+		t.Fatalf("%d topics are reachable", len(reach))
+	}
+	for _, width := range []int{80, 100, 140, 200} {
+		rendering := renderPage(t, groff, dir, assets.ManPage(), width)
+		plain, marked := unstyled(rendering), unstyled(renderPage(t, groff, dir, markedPage(assets.ManPage()), width))
 		if len(plain) != len(marked) {
-			// A tag that wraps is laid out by its width in the source, which
-			// the markers cannot copy: the entries cannot be told apart here.
-			t.Logf("width %d: the marked page has %d lines, the page %d: not compared", width, len(marked), len(plain))
-			continue
+			t.Fatalf("width %d: the marked page has %d lines, the page %d: groff lays it out differently, so the entries cannot be told apart", width, len(marked), len(plain))
 		}
 		at, same := entryLines(plain, marked)
-		if !same {
-			t.Logf("width %d: the marked page is laid out differently: not compared", width)
-			continue
+		if !same || len(at) != len(topics) {
+			t.Fatalf("width %d: the marked page is laid out differently (%d entries marked for %d topics)", width, len(at), len(topics))
 		}
-		if len(at) != len(topics) {
-			t.Fatalf("width %d: %d marked entries found for %d topics", width, len(at), len(topics))
+		file := filepath.Join(dir, "rendered."+strconv.Itoa(width))
+		if err := os.WriteFile(file, []byte(rendering), 0o600); err != nil {
+			t.Fatal(err)
 		}
-		compared++
-		// The first entry with a pattern is the one that is found: later ones
-		// with the same pattern (the same text in a list further on, or the
-		// first 40 characters of a long tag) are not told apart by a search.
-		firstWith := map[string]int{}
-		for i, e := range topics {
-			if _, dup := firstWith[e.searchPattern()]; !dup {
-				firstWith[e.searchPattern()] = i
-			}
-		}
-		for _, e := range topics {
-			i := firstWith[e.searchPattern()]
-			re := regexp.MustCompile(e.searchPattern())
-			first := -1
-			for n, l := range plain {
-				if re.MatchString(l) {
-					first = n
-					break
+		work := make(chan int)
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for i := range work {
+					e := topics[i]
+					got, err := firstLineShown(less, file, width, e.searchArgs())
+					switch {
+					case err != nil:
+						t.Errorf("width %d: %q (man %s): searches %q: %v", width, e.text, strings.Join(reach[i], " "), e.searchArgs(), err)
+					case got != at[i]+1:
+						t.Errorf("width %d: %q (man %s): searches %q show line %d (%q) first, the entry is on line %d (%q)", width, e.text,
+							strings.Join(reach[i], " "), e.searchArgs(), got, strings.TrimSpace(plain[got-1]), at[i]+1, strings.TrimSpace(plain[at[i]]))
+					}
 				}
-			}
-			switch {
-			case first < 0:
-				t.Errorf("width %d: %q: pattern %q matches no line", width, e.text, e.searchPattern())
-			case first != at[i]:
-				t.Errorf("width %d: %q: pattern %q lands on line %d (%q), the entry is on line %d (%q)",
-					width, e.text, e.searchPattern(), first+1, strings.TrimSpace(plain[first]), at[i]+1, strings.TrimSpace(plain[at[i]]))
+			}()
+		}
+		for i := range topics {
+			if _, ok := reach[i]; ok {
+				work <- i
 			}
 		}
-	}
-	if compared == 0 {
-		t.Skip("groff lays the marked page out differently at every width tried")
+		close(work)
+		wg.Wait()
 	}
 }

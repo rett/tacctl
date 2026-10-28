@@ -704,8 +704,10 @@ is the entry of that command). The words are matched without regard to case
 and choose among the headings and entries of the page only; they are never
 given to
 .BR man (1)
-or to the pager. The place is reached with a search in the pager (the
-heading, or the first words of the entry), so
+or to the pager. The place is reached with searches in the pager (the heading
+or the first words of the entry, made after the searches of the entries just
+before it, so that a sentence earlier in the page that begins with the same word
+is not found; a search cannot name the end of a line), so
 .B n
 finds the next match and
 .B q

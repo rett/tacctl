@@ -248,9 +248,10 @@ current behaviour; this file is where history lives.
     that documents every command was out of their reach. `tacctl man` shows
     it in a pager and returns when the pager is quit; `tacctl man tiers`,
     `tacctl man audit log`, `tacctl man user` and `tacctl man device config
-    plan` open it at that heading, family or command (a search in the pager
-    for the heading or the first words of the entry, so `n` finds the next
-    match; the words only choose the place and never reach an argument, and
+    plan` open it at that heading, family or command (searches in the pager
+    for the heading or the first words of the entry, made after those of the
+    entries just before it, so `n` finds the next match; the words only
+    choose the place and never reach an argument, and
     words that name nothing open the page at the top and say so on standard
     error). `tacctl man --path` prints where the page was found. It runs as
     you, with no `sudo` and no tier gate, like `completion` and `version`

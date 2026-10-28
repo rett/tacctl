@@ -63,8 +63,10 @@ const manPageMax = 16 << 20
 // exist, so that neither reads a ~/.lesskey, a ~/.lesshst or a ~/.manpath.
 const manHome = "/nonexistent"
 
-// manLess is the LESS of the pager when no entry is searched for: colour and
-// bold sequences are shown as the page writes them.
+// manLess is the LESS of the pager: colour and bold sequences are shown as
+// the page writes them. The search that opens the page at an entry is not in
+// it: less reads a '$' in an option string as its end, so the search is the
+// '+/pattern' argument of the pager's command line (manPager).
 const manLess = "-R"
 
 // manSafePath is a program path that can be named on man's command line (-P
@@ -144,15 +146,15 @@ func (inv *invocation) man(args []string) error {
 		inv.write(where + "\n")
 		return nil
 	}
-	pattern := ""
+	var searches []string
 	if len(p.Args) > 0 {
 		if e, ok := manLookup(manTopics(src.text), p.Args); ok {
-			pattern = e.searchPattern()
+			searches = e.searchArgs()
 		} else {
 			inv.manNote("no entry for '" + strings.Join(p.Args, " ") + "'; the page is opened at the top.")
 		}
 	}
-	return inv.manShow(src, pattern)
+	return inv.manShow(src, searches)
 }
 
 // manTool resolves a program the command runs: found on PATH, by an absolute
@@ -170,7 +172,7 @@ func (inv *invocation) manTool(name string) (string, bool) {
 // MANPAGER, LESS*, MAN*, GROFF*, LD_*, TACCTL_* and the rest dropped), then
 // only what the display needs of that, and the variables of the pager this
 // command sets itself.
-func manEnv(environ []string, less string) []string {
+func manEnv(environ []string) []string {
 	var out []string
 	for _, kv := range console.Scrub(environ, "/bin/sh", false) {
 		k, _, _ := strings.Cut(kv, "=")
@@ -183,29 +185,31 @@ func manEnv(environ []string, less string) []string {
 		"HOME="+manHome,
 		"LESSSECURE=1",
 		"LESSHISTFILE=-",
-		"LESS="+less,
+		"LESS="+manLess,
 	)
 }
 
-// manLessValue is the LESS of the pager: -R, and the search that opens the
-// page at the entry (made by manTopic.searchPattern from the page's own text).
-func manLessValue(pattern string) string {
-	if pattern == "" {
-		return manLess
+// manPager is the pager string given to man (-P): the less, and, to open the
+// page at an entry, each search as a single-quoted argument (man splits the
+// string at blanks and honours single quotes, with no shell). A pattern
+// never holds a quote (searchPattern), so it cannot end the quoting.
+func manPager(less string, patterns []string) string {
+	for _, p := range patterns {
+		less += " '+/" + p + "'"
 	}
-	return manLess + " +/" + pattern
+	return less
 }
 
 // manShow shows the page with man, else groff; neither: says what is missing.
-func (inv *invocation) manShow(src manPageSource, pattern string) error {
+func (inv *invocation) manShow(src manPageSource, searches []string) error {
 	a := inv.app
 	less, haveLess := inv.manTool("less")
-	env := manEnv(a.Env.Environ(), manLessValue(pattern))
+	env := manEnv(a.Env.Environ())
 	if !haveLess && inv.hooks.terminalWriter(a.Out.Stdout) {
 		inv.manNote("less is not installed, so the page is printed without a pager.")
 	}
 	if man, ok := inv.manTool("man"); ok {
-		pager := less
+		pager := manPager(less, searches)
 		if !haveLess {
 			cat, ok := inv.manTool("cat")
 			if !ok {
@@ -224,7 +228,7 @@ func (inv *invocation) manShow(src manPageSource, pattern string) error {
 		return inv.manRun(execx.Cmd{Name: man, Args: argv, Env: env}, stdin)
 	}
 	if groff, ok := inv.manTool("groff"); ok {
-		return inv.manGroff(groff, src, less, haveLess, env)
+		return inv.manGroff(groff, src, less, haveLess, searches, env)
 	}
 	where := src.path
 	if where == "" {
@@ -251,7 +255,7 @@ func (inv *invocation) manRun(c execx.Cmd, stdin io.Reader) error {
 
 // manGroff is the display without man: groff renders the page (the locale
 // decides utf8 or ascii), less shows it on a terminal, else it is written.
-func (inv *invocation) manGroff(groff string, src manPageSource, less string, haveLess bool, env []string) error {
+func (inv *invocation) manGroff(groff string, src manPageSource, less string, haveLess bool, searches []string, env []string) error {
 	a := inv.app
 	device := manDevice(manLocale(env))
 	res, err := a.Runner.Run(inv.ctx, execx.Cmd{Name: groff, Args: []string{"-man", device, "-"}, Env: env, Stdin: bytes.NewReader(src.text)})
@@ -267,7 +271,11 @@ func (inv *invocation) manGroff(groff string, src manPageSource, less string, ha
 		_, err := a.Out.Stdout.Write(res.Stdout)
 		return err
 	}
-	return inv.manRun(execx.Cmd{Name: less, Env: env}, bytes.NewReader(res.Stdout))
+	var args []string
+	for _, p := range searches {
+		args = append(args, "+/"+p)
+	}
+	return inv.manRun(execx.Cmd{Name: less, Args: args, Env: env}, bytes.NewReader(res.Stdout))
 }
 
 // manLocale is the locale name an environment selects for character
