@@ -238,7 +238,8 @@ func strictHeader(scope string) string {
 		"# services keeps only those) and has no default-accept term: the implicit discard at the\n" +
 		"# end of a Junos filter drops the rest.\n" +
 		"# Once the filter is applied to lo0, these stop reaching the routing engine:\n" +
-		"#   - routing protocols from neighbours that are not in the list: BGP, OSPF, IS-IS, VRRP, LDP, BFD\n" +
+		"#   - routing protocols carried over IP from neighbours that are not in the list: BGP, OSPF, LDP, VRRP, BFD\n" +
+		"#     (IS-IS is not carried over IP: a family inet filter on lo0 does not see it, so it is neither stopped nor permitted)\n" +
 		"#   - replies from servers that are not in the list: TACACS+ and RADIUS (the server this walkthrough\n" +
 		"#     names is in it), NTP, DNS\n" +
 		"#   - NTP, syslog and DHCP from hosts that are not in the list\n" +

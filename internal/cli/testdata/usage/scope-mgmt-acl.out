@@ -17,9 +17,10 @@ An <entry> is a <cidr>, or a <cidr> with the services it permits:
   Cisco VTY-ACL and a Junos filter list a source only when its entry permits tcp/22).
 
 The mode only affects Junos devices. strict accepts every protocol from the permit list and has no
-default-accept term, so routing protocols from neighbours outside the list, TACACS+ and RADIUS replies
-from servers not in it, NTP, syslog, DHCP and SNMP from other sources stop once the filter is applied
-to lo0: keep a console session open and use commit confirmed.
+default-accept term, so routing protocols carried over IP from neighbours outside the list, TACACS+
+and RADIUS replies from servers not in it, NTP, syslog, DHCP and SNMP from other sources stop once the
+filter is applied to lo0 (IS-IS is not carried over IP and is not affected): keep a console session
+open and use commit confirmed.
 
 Current entries: 0 (per-scope) / 0 (global fallback)
 

@@ -223,8 +223,8 @@ func (p *planner) mgmtModeWarnings(exp devices.Section, row *jrow) []string {
 		}
 		return []string{"the management filter of " + p.blockScope() + " is strict: it has no default-accept term. " + when +
 			" the device accepts traffic to its routing engine only from the sources of the permit list" + list + " and the SNMP clients" + replies + ", and these stop: " +
-			"routing protocols from neighbours that are not in the list (BGP, OSPF, IS-IS, VRRP, LDP, BFD); TACACS+ and RADIUS replies from servers that are not in the list (the server the walkthrough names is); NTP, syslog and DHCP from hosts that are not in the list; " +
-			"SNMP from sources outside the list (the SNMP clients still poll); every other protocol from sources outside it. Keep a console session open while you paste, and add every neighbour and server the device needs to the permit list the scope renders from first (the first entry of the scope's own list replaces the global list for the scope)"}
+			"routing protocols carried over IP from neighbours that are not in the list (BGP, OSPF, LDP, VRRP, BFD); TACACS+ and RADIUS replies from servers that are not in the list (the server the walkthrough names is); NTP, syslog and DHCP from hosts that are not in the list; " +
+			"SNMP from sources outside the list (the SNMP clients still poll); every other protocol from sources outside it. A family inet filter on lo0 does not affect IS-IS (it is not carried over IP): this filter neither stops nor permits it. Keep a console session open while you paste, and add every neighbour and server the device needs to the permit list the scope renders from first (the first entry of the scope's own list replaces the global list for the scope)"}
 	case !p.strictMgmt() && has && !defaultAccept:
 		return []string{"the device's management filter has no default-accept term, so it drops by default (a strict filter, or the site's own), and the mode of " + p.blockScope() +
 			" is ssh-only: the plan adds the default-accept term. " + when +

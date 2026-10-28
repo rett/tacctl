@@ -2689,6 +2689,8 @@ func (inv *invocation) scopeMgmtACLMode(scope, value string) error {
 		for _, l := range mgmtStrictStops {
 			inv.echo("    - " + l)
 		}
+		inv.echo("    A family inet filter on lo0 does not affect IS-IS (it is not carried over IP): this filter neither")
+		inv.echo("    stops nor permits it.")
 		inv.echo("")
 		if list, own := inv.app.Conf().MgmtACLList(scope); own {
 			inv.echo("  This scope renders from its own permit list (" + strconv.Itoa(len(list)) + " " + plural(len(list), "entry", "entries") + "). Add each neighbour and server the")
@@ -2736,7 +2738,7 @@ func mgmtListPermitsSSH(list []string) bool {
 // mgmtStrictStops is what the strict filter drops, as the shell prints it
 // after the mode is set (the comment of the filter says the same).
 var mgmtStrictStops = []string{
-	"routing protocols to the routing engine from neighbours not in the list: BGP, OSPF, IS-IS, VRRP, LDP, BFD",
+	"routing protocols carried over IP to the routing engine from neighbours not in the list: BGP, OSPF, LDP, VRRP, BFD",
 	"replies from servers not in the list: TACACS+ and RADIUS (the server the walkthrough names is in it), NTP, DNS",
 	"NTP, syslog and DHCP from hosts not in the list",
 	"SNMP from sources outside the list (the SNMP clients still poll)",

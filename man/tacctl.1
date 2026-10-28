@@ -6073,11 +6073,13 @@ and
 .B radacct
 for RADIUS), never ssh. Once a
 strict filter is applied to lo0, these stop reaching the routing engine:
-routing protocols from neighbours that are not in the list (BGP, OSPF, IS-IS,
-VRRP, LDP, BFD), TACACS+ and RADIUS replies from a server that is not in the list
-(the server the walkthrough names is), NTP, syslog and DHCP from hosts that are
-not in the list, SNMP from sources outside it (the SNMP clients still poll),
-and every other protocol from them. Add every neighbour and server the device
+routing protocols carried over IP from neighbours that are not in the list
+(BGP, OSPF, LDP, VRRP, BFD), TACACS+ and RADIUS replies from a server that is
+not in the list (the server the walkthrough names is), NTP, syslog and DHCP
+from hosts that are not in the list, SNMP from sources outside it (the SNMP
+clients still poll), and every other protocol from them. IS-IS is not carried
+over IP, so a family inet filter on lo0 does not see it: the filter neither
+stops nor permits it. Add every neighbour and server the device
 needs to the permit list the scope renders from first
 .RB ( "scope mgmt\-acl" " scope " list
 says which: the first entry of the scope's own list replaces the global list
@@ -9948,9 +9950,11 @@ warns of what it does to the traffic. For
 where the device's filter has a
 .B default\-accept
 term or there is none: the traffic that stops once the filter is applied to
-lo0 (routing protocols from neighbours that are not in the list, BFD included,
-TACACS+ and RADIUS replies from a server that is not in the list, NTP, syslog
-and DHCP, SNMP from sources outside it but its clients, every other protocol),
+lo0 (routing protocols carried over IP from neighbours that are not in the list,
+BFD included, TACACS+ and RADIUS replies from a server that is not in the list,
+NTP, syslog and DHCP, SNMP from sources outside it but its clients, every other
+protocol; IS-IS is not carried over IP, so the filter neither stops nor permits
+it),
 the sources
 the filter accepts (the address it accepts the authentication server's replies
 from apart), and to keep a console session open. For

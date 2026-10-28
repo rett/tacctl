@@ -261,18 +261,19 @@ scope mgmt-acl <name> mode [ssh-only|strict]
     of the filter drops the rest. When the device authenticates against another address than the one
     tacctl reaches it from, that address is not a source of the filter: a term of its own,
     `permit-auth-replies`, accepts only the replies of the server from it (tcp from source port
-    `tacacs` for TACACS+, udp from `radius` and `radacct` for RADIUS), never ssh. Once a strict filter is applied to lo0, these stop reaching the
-    routing engine: routing protocols from neighbours that are not in the list (BGP, OSPF, IS-IS,
-    VRRP, LDP, BFD), TACACS+ and RADIUS replies from a server that is not in the list (the server
-    the walkthrough names is), NTP, syslog and DHCP from hosts that are not in the list, SNMP from
-    sources outside it (the SNMP clients still poll), and every other protocol from them. The
-    walkthrough keeps the lo0 application commented; keep a console session open when you apply the
-    filter and commit with `commit confirmed`. Only `strict` is stored
-    (`scope_mgmt_acl.mode.<name>`); setting `ssh-only` removes the key. A word that is not a mode
-    (the words are lower case) is refused with `Unknown mode '<word>'. Use: ssh-only | strict.`, a
-    word after the value as an unknown argument with the usage, both with exit 1 and nothing
-    written; setting the mode the scope already has says so and writes nothing. See [Management
-    ACL](../security/management-acl.md#strict-mode-for-junos)
+    `tacacs` for TACACS+, udp from `radius` and `radacct` for RADIUS), never ssh. Once a strict
+    filter is applied to lo0, these stop reaching the routing engine: routing protocols carried over
+    IP from neighbours that are not in the list (BGP, OSPF, LDP, VRRP, BFD), TACACS+ and RADIUS
+    replies from a server that is not in the list (the server the walkthrough names is), NTP, syslog
+    and DHCP from hosts that are not in the list, SNMP from sources outside it (the SNMP clients
+    still poll), and every other protocol from them. IS-IS is not carried over IP, so a `family
+    inet` filter on lo0 does not see it: the filter neither stops nor permits it. The walkthrough
+    keeps the lo0 application commented; keep a console session open when you apply the filter and
+    commit with `commit confirmed`. Only `strict` is stored (`scope_mgmt_acl.mode.<name>`); setting
+    `ssh-only` removes the key. A word that is not a mode (the words are lower case) is refused with
+    `Unknown mode '<word>'. Use: ssh-only | strict.`, a word after the value as an unknown argument
+    with the usage, both with exit 1 and nothing written; setting the mode the scope already has
+    says so and writes nothing. See [Management ACL](../security/management-acl.md#strict-mode-for-junos)
 
 scope breakglass <name> [list]
 scope breakglass <name> add <user> [--role admin|operator|readonly]
