@@ -288,6 +288,14 @@ device hostkey <name> set SHA256:<fp>
     reads the keys (any device, not only `--legacy-ssh` ones; no credential is sent). A device
     that refuses the connection or does not answer is not asked again.
 
+    When no read gives a key from a device that accepted the connection, the refusal names the
+    reads that were made ("ssh-keyscan, then one key type at a time (ed25519, ecdsa, rsa), and
+    tacctl's own ssh client") and gives the command to see the key by hand,
+    `ssh-keyscan -t ed25519 <address>` (with `-p <port>` for another port; also `-t ecdsa`, `-t rsa`),
+    and the ways to accept a key by its fingerprint: `--host-key SHA256:<fp>` for `device add`,
+    `enroll`, `collect` and `onboard`, `device hostkey <name> set SHA256:<fp>` for a registered
+    device. Nothing is written; `--no-host-key` registers the device unpinned.
+
 device ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]
 
     Same as tacctl ssh

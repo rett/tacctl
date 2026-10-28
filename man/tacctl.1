@@ -7549,8 +7549,12 @@ nothing is scanned: the device is registered unpinned and carries a
 .B hostkey-unpinned
 notice. A device that does not answer the scan, or offers no key matching
 .BR \-\-host\-key ,
-is refused and nothing is written. The output says which scope, if any, answers
-the address.
+is refused and nothing is written; when the device accepted the connection but
+no read gave a key, the refusal names the reads that were made and gives
+.BI "ssh\-keyscan \-t ed25519 " address
+to see the key by hand, and the ways to accept a key by its fingerprint
+.RB ( "\-\-host\-key SHA256:" "<fp>, or " "device hostkey " "<name>" " set SHA256:" "<fp>" ).
+The output says which scope, if any, answers the address.
 .IP
 Next to the scan,
 .B add

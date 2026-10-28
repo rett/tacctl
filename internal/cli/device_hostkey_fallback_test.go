@@ -78,7 +78,7 @@ func TestDeviceAddFallsBackToBuiltinScanWithoutLegacy(t *testing.T) {
 			return []devreg.HostKey{ed}, nil
 		}
 	}
-	out := sb.devScan("", scan("192.0.2.4"), "add", "plain", "192.0.2.4", "--vendor", "juniper")
+	out := sb.devScan("", scanSilent("192.0.2.4"), "add", "plain", "192.0.2.4", "--vendor", "juniper")
 	if sb.code != 0 || !strings.Contains(out, "Host keys pinned (1)") || !strings.Contains(out, "ED25519  "+ed.Fingerprint()) {
 		t.Fatalf("add: %d\n%s\n%s", sb.code, out, sb.stderr())
 	}
@@ -113,7 +113,7 @@ func TestScanLearningLegacy(t *testing.T) {
 	}
 
 	// Only the built-in client reads it, with the legacy algorithms.
-	keys, legacy, err := learn(scan("192.0.2.4"))
+	keys, legacy, err := learn(scanSilent("192.0.2.4"))
 	if err != nil || !legacy || len(keys) != 1 || keys[0] != rsa || fallbackCalls != 1 {
 		t.Errorf("only the built-in client: %v legacy=%v err=%v fallback calls %d", keys, legacy, err, fallbackCalls)
 	}

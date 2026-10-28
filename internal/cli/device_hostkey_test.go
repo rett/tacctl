@@ -43,10 +43,24 @@ func keyscanOut(addr string, keys ...devreg.HostKey) []byte {
 	return []byte(b.String())
 }
 
-// scan scripts ssh-keyscan to offer keys (none: no answer).
+// scan scripts ssh-keyscan to offer keys (none: no answer, as from a device
+// that timed out).
 func scan(addr string, keys ...devreg.HostKey) func(*fake.Runner) {
+	if len(keys) == 0 {
+		return func(r *fake.Runner) {
+			r.On([]string{"ssh-keyscan"}, execx.Result{Stderr: []byte(addr + ": Connection timed out\n")})
+		}
+	}
 	return func(r *fake.Runner) {
 		r.On([]string{"ssh-keyscan"}, execx.Result{Stdout: keyscanOut(addr, keys...), Stderr: []byte("# " + addr + ":22 SSH-2.0-OpenSSH_9.6\n")})
+	}
+}
+
+// scanSilent scripts ssh-keyscan against a device that accepts the connection
+// and greets with its banner but gives no key.
+func scanSilent(addr string) func(*fake.Runner) {
+	return func(r *fake.Runner) {
+		r.On([]string{"ssh-keyscan"}, execx.Result{Stderr: []byte("# " + addr + ":22 SSH-2.0-OpenSSH_7.5\n")})
 	}
 }
 

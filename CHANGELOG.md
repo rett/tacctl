@@ -280,6 +280,19 @@ current behaviour; this file is where history lives.
     a device only the built-in client reads is registered with it, one that
     `ssh-keyscan` reads one type at a time is not.
 
+19. **The refusal of a device that gave no host key says what was tried and
+    what to do.** `No ssh host key could be read from <address> port <port>
+    (ssh-keyscan); nothing was changed.` stays as it was for a device that did
+    not answer. For one that accepted the connection and gave no key to any
+    read, the parenthesis names them (`ssh-keyscan, then one key type at a
+    time (ed25519, ecdsa, rsa), and tacctl's own ssh client`; with `ssh-rsa`
+    and `for legacy-ssh` for a `--legacy-ssh` device), and two lines follow:
+    the command that shows the key by hand (`ssh-keyscan -t ed25519
+    <address>`, with `-p <port>` for another port, also `-t ecdsa` and `-t
+    rsa`), and the ways to accept a key by its fingerprint (`--host-key
+    SHA256:<fp>` for `device add`, `enroll`, `collect` and `onboard`, `tacctl
+    device hostkey <name> set SHA256:<fp>` for a registered device).
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

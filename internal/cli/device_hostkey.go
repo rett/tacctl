@@ -74,17 +74,59 @@ func (inv *invocation) scanLearningLegacy(addr string, port int) (keys []devreg.
 func (inv *invocation) scanKeys(addr string, port int, legacy bool, orElse ...string) ([]devreg.HostKey, error) {
 	keys, err := inv.scanDevice(addr, port, legacy)
 	if errors.Is(err, devreg.ErrNoAnswer) {
-		tried := " (ssh-keyscan)"
-		if legacy {
-			tried = " (ssh-keyscan, and tacctl's own ssh client for legacy-ssh)"
-		}
-		return nil, inv.usageErr(append([]string{"No ssh host key could be read from " + addr + " port " + strconv.Itoa(port) +
-			tried + "; nothing was changed."}, orElse...)...)
+		lines := []string{"No ssh host key could be read from " + addr + " port " + strconv.Itoa(port) +
+			" (" + noAnswerTried(err, legacy) + "); nothing was changed."}
+		lines = append(lines, noAnswerHelp(err, addr, port)...)
+		return nil, inv.usageErr(append(lines, orElse...)...)
 	}
 	if err != nil && inv.ctx.Err() == nil {
 		return nil, inv.usageErr(append(msgs(err), orElse...)...)
 	}
 	return keys, err
+}
+
+// noAnswerTried names the reads a scan made that gave no key: ssh-keyscan,
+// the one-type retry that follows it for a device that accepted the
+// connection (devreg.NoAnswerError), and tacctl's own ssh client.
+func noAnswerTried(err error, legacy bool) string {
+	tried := "ssh-keyscan"
+	var na *devreg.NoAnswerError
+	if !errors.As(err, &na) {
+		if legacy {
+			return tried + ", and tacctl's own ssh client for legacy-ssh"
+		}
+		return tried
+	}
+	if len(na.OneByOne) > 0 {
+		tried += ", then one key type at a time (" + strings.Join(na.OneByOne, ", ") + ")"
+	}
+	if na.Builtin {
+		tried += ", and tacctl's own ssh client"
+		if legacy {
+			tried += " for legacy-ssh"
+		}
+	}
+	return tried
+}
+
+// noAnswerHelp is what a person can do when a device accepted the connection
+// but gave no key to the one-type retry either: read the key by hand, and
+// accept it by its fingerprint. A device that did not answer at all gets
+// no such lines (the address and the port are what to check).
+func noAnswerHelp(err error, addr string, port int) []string {
+	var na *devreg.NoAnswerError
+	if !errors.As(err, &na) || len(na.OneByOne) == 0 {
+		return nil
+	}
+	by := "ssh-keyscan "
+	if port != devssh.DefaultPort {
+		by += "-p " + strconv.Itoa(port) + " "
+	}
+	by += "-t ed25519 " + addr
+	return []string{
+		"The device accepted the connection but showed no key. See what it offers by hand: " + by + " (also -t ecdsa, -t rsa).",
+		"Accept a key by its fingerprint with --host-key SHA256:<fp> (device add, enroll, collect, onboard) or, for a registered device, tacctl device hostkey <name> set SHA256:<fp>.",
+	}
 }
 
 func msgs(err error) []string {
