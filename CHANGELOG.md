@@ -88,6 +88,31 @@ current behaviour; this file is where history lives.
    by that member, is read, and another name is refused. A chassis, a cluster
    or a pair of routing engines of two or more members is read as before.
 
+5. **`ssh` and `device ssh` keep the password you give them.** With the
+   password cache on (`console password-cache on`) the cache stayed empty
+   after an `ssh`: only the logins tacctl makes itself (`device config pull`,
+   `diff --pull`, `plan --pull`, `block ... adopt`, `device config apply`,
+   `device onboard`, `device collect`, `device enroll`) stored the password a
+   device accepted, and `ssh` only used a cached one. Now, with the cache on
+   and empty, `ssh` and `device ssh` to a device with a pinned host key ask for
+   your password themselves the first time, before they connect (the prompt
+   `Password for <you> (device login):`, no echo, on the terminal), store it
+   and then connect by the cached path (the password goes to ssh through the
+   askpass helper, as when it was cached by a pull), so it is typed once,
+   before the device banner, and the next `ssh` to any device asks nothing;
+   the shell says `password cached for this session (console password-cache)`.
+   Ctrl-C at the prompt ends the line with status 130 with nothing started, and
+   an empty answer stores nothing. A wrong password stays only until the first
+   ssh that ends with status 255, which forgets it (a typo costs one more
+   typing, as with ssh itself). The ssh audit line gains `password=asked` for
+   the line that prompted (`password=cached` for a line that used the cache is
+   as before); the password is in no argument, environment of another process,
+   log, audit line or file. A line that keeps today's path: no terminal to
+   prompt on, an entry with no pinned host key, an option of ssh's own after
+   `--`, an account not in the local account database, the cache off or
+   unavailable. `docs/cli/shell.md` (Password cache) lists the lines that use
+   the cache and those that store into it.
+
 ## 0.2.20 (2026-10-28)
 
 1. **A user name may hold periods.** `user add alice.smith operator` is

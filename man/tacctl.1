@@ -6122,7 +6122,12 @@ is a space.
 .B \-\-password\-cache
 keeps your network password in the memory of this shell for the session (see
 .B "console password\-cache"
-for the policy and the lifetimes): the first device pull asks for it once and
+for the policy and the lifetimes): the first device pull asks for it once (a
+pull stores the password a device accepted;
+.B ssh
+and
+.B "device ssh"
+ask for it themselves the first time, before they connect, and keep it) and
 later pulls, diffs and
 .B ssh
 lines use it. It needs an interactive shell, and for a member of
@@ -12007,6 +12012,26 @@ rules grant
 .B "tacctl ssh *"
 and
 .BR "tacctl device ssh *" ).
+.IP
+With the session's password cache on
+.RB ( "console password\-cache" )
+and empty, and a device with pinned host keys, ssh and
+.B "device ssh"
+ask for the user's password themselves the first time, before they connect:
+the prompt
+.B "Password for"
+.IR user
+.B "(device login):"
+is on the terminal without echo (Ctrl\-C ends the line with status 130 and
+starts nothing; an empty answer stores nothing), the answer goes into the
+cache, and the session then takes the path below, so the password is typed
+once, before the device banner, and the next ssh to any device asks nothing;
+the log line ends
+.BR password=asked .
+It is stored before the device has seen it, so a wrong one stays only until an
+ssh ends with status 255, which forgets it. A word a device asks for later is
+never stored. Without a terminal to prompt on, ssh asks for the password
+itself, as without the cache.
 .IP
 When the session's password cache holds the user's password
 .RB ( "console password\-cache" )
