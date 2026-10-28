@@ -134,6 +134,7 @@ func ImportLoad(stdout, stderr io.Writer, opts ImportLoadOptions) (s *Store, ok 
 	if opts.Existing != "" {
 		carryOver(s, opts.Existing, rep)
 	}
+	carvedDrops(opts.Src, s, rep)
 	s.Canonicalize()
 	// Validation problems are fatal, but only worth listing once the loader
 	// itself has nothing fatal to say (its errors usually cause them).

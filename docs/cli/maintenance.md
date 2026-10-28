@@ -182,4 +182,6 @@ and `restore --legacy` leaves the host files alone.
 
 Old-style `tacquito.yaml.<timestamp>` files (made before the store existed, or kept in `backups/legacy/`) are listed after the snapshots. `backup restore <timestamp> --legacy` runs `store import --check` on one, then imports it. Without a store (legacy read-only mode) `list`, `diff` and `restore` work on those files.
 
+`store import` of a rendered `tacquito.yaml` that cut users out of their scopes (a required password change, an emergency lockdown: the users section names them in a `# tacctl-carved reason= protocol= users=` comment) lists each as something the store cannot represent, since the file holds neither the scopes they had nor the requirement, and wants `--force`; `--check` reports them the same way.
+
 `backup restore`, `store import`, `store rollback`, `install`, `upgrade`, `uninstall` and `rollback` each write a line of their own beside the `cmd start` and `cmd end` pair, at `auth.notice`: `backup restore id= pre= keep-uids= legacy=`, `upgrade from= to= branch=` and so on, and `store show`, `config dump` and `backup diff` log the secrets they print as `secret-read` for every caller ([Audit log](../security/audit.md#detail-lines)).

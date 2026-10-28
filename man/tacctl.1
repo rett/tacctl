@@ -5138,6 +5138,15 @@ recorded in
 and when the tacctl server is enrolled a red line says that users whose tier
 fell keep their old groups until
 .BR "host sync" .
+A rendered file whose users section names users it cut out of their scopes (a
+required password change, an emergency lockdown: a
+.B "# tacctl-carved reason= protocol= users="
+comment) holds neither the scopes they had nor the requirement, so each is
+listed as something the store cannot represent and the import (and
+.BR \-\-check )
+fails unless
+.B \-\-force
+is given.
 .\" BEGIN GENERATED: command store import
 .RS
 .PP

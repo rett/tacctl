@@ -257,3 +257,44 @@ func TestRenderPasswordChangeKeepsTheEnrolledScope(t *testing.T) {
 		t.Errorf("enrolled in local: bob is in %q", got)
 	}
 }
+
+func carvedComments(text []byte) []string {
+	var out []string
+	for _, l := range strings.Split(string(text), "\n") {
+		if strings.HasPrefix(l, "# tacctl-carved ") {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// The users section names the users cut out of their scopes, by reason and
+// protocol, so that an import of the file does not take it for a plain store.
+// Nobody carved, no comment; a user cut only in scopes of the other protocol
+// is not named.
+func TestRenderNamesTheCarvedUsers(t *testing.T) {
+	if c := carvedComments(renderAs(t, pwStore(t), defaultView(t), srvTacacs)); len(c) != 0 {
+		t.Errorf("a comment though nobody is carved: %q", c)
+	}
+	got := carvedComments(renderAs(t, pwStore(t, "carol", "bob", "alice"), defaultView(t), srvTacacs))
+	if len(got) != 1 || got[0] != "# tacctl-carved reason=password-change protocol=tacacs users=bob,carol" {
+		t.Errorf("flagged users: %q", got)
+	}
+	// the lockdown's carve is named too, apart from the password change's
+	text := renderAs(t, pwStore(t, "bob"), viewOf(t, lockdownYAML).Merged(), srvTacacs)
+	got = carvedComments(text)
+	// bob is cut by the lockdown first, so the requirement changes nothing more
+	// for him and the file names him once
+	if len(got) != 1 || got[0] != "# tacctl-carved reason=lockdown protocol=tacacs users=bob,carol" {
+		t.Errorf("lockdown and a flag: %q", got)
+	}
+	// a user whose scopes the TACACS+ file does not show changing is not named
+	st := splitStore(t, "radius", "radius")
+	if c := carvedComments(renderAs(t, st, defaultView(t), srvTacacs)); len(c) != 0 {
+		t.Errorf("a user with no TACACS+ scope is named: %q", c)
+	}
+	// the read-back still reads the file with its comments
+	if _, err := renderFileAs(t, pwStore(t, "bob"), viewOf(t, lockdownYAML).Merged(), srvTacacs); err != nil {
+		t.Fatalf("the read-back refused the comments: %v", err)
+	}
+}

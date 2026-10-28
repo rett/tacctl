@@ -516,6 +516,9 @@ func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool, server
 	}
 
 	w.WriteString("\n# --- Users ---\n")
+	for _, l := range carvedLines(whole, view, server) {
+		w.WriteString(l + "\n")
+	}
 	if len(m.Users) > 0 {
 		w.WriteString("users:\n")
 		for i, u := range m.Users {
@@ -630,6 +633,44 @@ func Carved(m *model.Model, view *yamlpy.Map, server pwchange.Server) *model.Mod
 	// a user who must change the password is in no scope but this server's
 	// own (0.2.20): no device authenticates them until they have changed it
 	return pwchange.Carve(m, view, Protocol, server)
+}
+
+// carvedLines are the comments of the users section naming the users cut out
+// of scopes they have in the store: by an emergency lockdown (the members of a
+// locked group) and by a required password change. The import of the file
+// reads them (store.CarvedUsers): it holds neither the scopes nor the
+// requirement. A user counts when the scopes this file shows for the user
+// changed, so one cut only in scopes of the other protocol is not named.
+func carvedLines(m *model.Model, view *yamlpy.Map, server pwchange.Server) []string {
+	base := m.WithoutAddresses(conf.HeldAddresses(view))
+	locked := base.WithoutMembers(conf.LockedGroups(view))
+	final := pwchange.Carve(locked, view, Protocol, server)
+	shown := func(mm *model.Model, u *model.User) []string {
+		var out []string
+		for _, s := range u.Scopes {
+			if sc := mm.Scope(s); sc != nil && sc.ServedBy(Protocol) {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	diff := func(a, b *model.Model) []string {
+		var out []string
+		for _, u := range a.Users {
+			if nu := b.User(u.Name); nu != nil && !slices.Equal(shown(a, u), shown(b, nu)) {
+				out = append(out, u.Name)
+			}
+		}
+		return out
+	}
+	var lines []string
+	if u := diff(base, locked); len(u) > 0 {
+		lines = append(lines, store.CarvedLine(store.CarvedLockdown, Protocol, u))
+	}
+	if u := diff(locked, final); len(u) > 0 {
+		lines = append(lines, store.CarvedLine(store.CarvedPasswordChange, Protocol, u))
+	}
+	return lines
 }
 
 // holdComment is the comment block of the secret providers naming each

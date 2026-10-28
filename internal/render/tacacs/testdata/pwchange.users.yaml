@@ -1,4 +1,5 @@
 # --- Users ---
+# tacctl-carved reason=password-change protocol=tacacs users=bob,carol
 users:
 
   # alice

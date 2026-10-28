@@ -317,7 +317,14 @@ current behaviour; this file is where history lives.
     `(change required)`, `user show` has a `Password change` line, and `status`
     counts the users pending. The flag set and lifted is logged as `user
     password-change name= state=required|cleared via=require|add|passwd|self`.
-    A release before 0.2.20 refuses the key, so `tacctl rollback` to any target
+    The TACACS+ file names the users it cut out of their scopes in a
+    `# tacctl-carved reason=password-change|lockdown protocol=tacacs users=`
+    comment of its users section, and `store import` (`--check` too) of such a
+    file, the live one included, lists each as something the store cannot
+    represent and needs `--force`: the file holds neither the scopes the user
+    had nor the requirement, so a plain `store import --replace` would have
+    brought a flagged user (or a locked group's member) back with the server
+    scope only and no flag. A release before 0.2.20 refuses the key, so `tacctl rollback` to any target
     removes it after a snapshot and warns which users who are not superusers
     get their device access back with the password they were to change
     (`--apply` needs `--yes`).
