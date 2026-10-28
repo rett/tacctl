@@ -785,6 +785,21 @@ current behaviour; this file is where history lives.
     record `root` in a warning (`--apply` needs `--yes`), with `tacctl scope
     breakglass <scope> remove root` as the way out.
 
+42. **`tacctl rollback` takes root's statements out of the stored pulls.**
+    The pull of this release keeps `system root-authentication` (the leaf's
+    name only) and `system services ssh root-login` in the breakglass section
+    of every Junos device (item 28). An older release puts neither in a
+    section and, reading this release's sections file, takes them for extra
+    statements, so the breakglass section of every Junos device of a scope
+    with a break-glass user read `differs` until its next pull (checked with
+    0.2.19). Every target but 0.2.3, which never opens the records, now
+    takes the two out of the breakglass section of the sections files and
+    the plain views in `/var/lib/tacctl/device-config/`, under the records'
+    lock, and leaves every other line; the dry run lists each file. The
+    files are derived and not in the snapshot; this release, if it stays,
+    reads the two as missing until its next pull, as for a record of an
+    older release.
+
 
 ## 0.2.19 (2026-10-25)
 

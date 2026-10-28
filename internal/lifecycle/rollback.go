@@ -104,7 +104,10 @@ package lifecycle
 //
 // A break-glass entry of the Junos root account (0.2.20, root:admin) is one
 // every target's schema accepts: it stays, and every target warns what the
-// older release makes of it (rollback_rootbg.go).
+// older release makes of it (rollback_rootbg.go). The root statements 0.2.20's
+// pull keeps in the breakglass section of a Junos device's stored sections
+// are taken out for every target but 0.2.3, which never opens them
+// (rollback_rootleaves.go).
 //
 // What is not a rollback step: the rendered backend files (nothing 0.2.4
 // changed reaches them), the sshd drop-ins, the tier-pin marker and the host
@@ -419,7 +422,11 @@ type RollbackPlan struct {
 	// pwStore are the users of the store that carry the required password
 	// change (0.2.20), which every older release refuses (rollback_pwchange.go).
 	pwStore []pwFlag
-	snmpDev []devSNMP
+	// rootLeaf are the stored pulls whose breakglass section holds the root
+	// statements of 0.2.20's pull (rollback_rootleaves.go): taken out for
+	// the targets that read the records.
+	rootLeaf []rootLeafFile
+	snmpDev  []devSNMP
 	// syntaxDev are the devices with a configuration syntax setting
 	// (D113, 0.2.5): an older parser refuses the key, so it goes like the
 	// SNMP map does.
@@ -464,11 +471,11 @@ type sudoersPlan struct {
 
 // Pending: there is a file to convert.
 func (p *RollbackPlan) Pending() bool {
-	return p.PendingFiles() || len(p.todoSudoers()) > 0
+	return p.PendingFiles() || len(p.todoSudoers()) > 0 || len(p.rootLeaf) > 0
 }
 
 // PendingFiles: there is a file of tacctl's own to convert (the snapshot
-// holds those; the sudoers drop-ins are not in it).
+// holds those; the sudoers drop-ins and the stored pulls are not in it).
 func (p *RollbackPlan) PendingFiles() bool {
 	return len(p.keys) > 0 || len(p.pwStore) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0
 }
@@ -567,6 +574,7 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 			return nil, err
 		}
 		rp.addConsoleStep()
+		rp.addRootLeaves()
 		rp.Warnings = append(rp.Warnings, rp.rootBreakGlassWarning()...)
 		rp.addPasswordChange()
 		return rp, nil
@@ -1019,9 +1027,9 @@ func (p *RollbackPlan) notes() []string {
 
 // --- apply ---------------------------------------------------------------------
 
-// ApplyRollback converts the files of the plan: tacctl.yaml, console.yaml
-// and devices.yaml, in this order, each in one write, then the sudoers
-// drop-ins. The snapshot is the caller's, taken before. It returns one line
+// ApplyRollback converts the files of the plan: tacctl.yaml, the store,
+// console.yaml and devices.yaml, in this order, each in one write, the stored
+// pulls, then the sudoers drop-ins. The snapshot is the caller's, taken before. It returns one line
 // for each file it changed. An error leaves the files already converted
 // converted; running the same command again finishes (every step is
 // idempotent). A drop-in that cannot be rewritten is not an error: it is
@@ -1094,6 +1102,15 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 		}
 		if len(names) > 0 {
 			done = append(done, fmt.Sprintf("%s: wrote the configuration syntax of %d %s under %s", pt.DevicesFile, len(names), plural(len(names), "device", "devices"), devreg.OldSyntaxKey))
+		}
+	}
+	if len(p.rootLeaf) > 0 {
+		n, err := p.applyRootLeaves()
+		if err != nil {
+			return done, err
+		}
+		if n > 0 {
+			done = append(done, fmt.Sprintf("%s: took the Junos root statements out of %d stored %s", pt.ConfigDir, n, plural(n, "pull", "pulls")))
 		}
 	}
 	p.notWritten = nil

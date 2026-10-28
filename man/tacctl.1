@@ -421,6 +421,21 @@ section reads
 .B "tacctl scope breakglass <scope> remove root"
 takes the entry out.
 .IP
+Every target but 0.2.3 takes the statements of root's access
+.RB ( "system root\-authentication" ,
+the leaf's name only, and
+.BR "system services ssh root\-login" )
+out of the
+.B breakglass
+section of the stored pulls
+.RI ( /var/lib/tacctl/device\-config/ name .yaml
+and the plain view beside it; every other line stays). This release's pull
+keeps them for every Junos device, and an older release takes them for extra
+statements of the section, which would read
+.B differs
+until its next pull. The files are derived and not in the snapshot; this
+release, if it stays, reads the two as missing until its next pull.
+.IP
 .B "rollback 0.2.17"
 .B \-\-apply
 rewrites the per\-tier sudoers drop\-in, when it is exactly the text this

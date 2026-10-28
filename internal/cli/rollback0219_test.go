@@ -122,6 +122,7 @@ func TestRollback0219RemovesThe0220Keys(t *testing.T) {
 		"remove settings.system_shell_users: bob enable", "remove settings.password_cache_users: erin (on)", "remove password_change_required of erin",
 		"Scopes with a strict management filter lose the mode", "Users who must change their password get their device access back",
 		"Scopes that record the Junos root account for break-glass", "tacctl scope breakglass prod remove root",
+		"take the Junos root statements out of the stored pulls", "take 2 statements out of the breakglass section of sw2.yaml",
 		"To convert the state: tacctl rollback 0.2.19 --apply --yes"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the dry run lacks %q:\n%s", want, out)
@@ -147,6 +148,9 @@ func TestRollback0219RemovesThe0220Keys(t *testing.T) {
 	}
 	if strings.Contains(hs.read("state/store.yaml"), "password_change_required") {
 		t.Error("the store keeps the flag")
+	}
+	if got := hs.read("var-lib/device-config/sw2.yaml"); strings.Contains(got, "root") || !strings.Contains(got, "breakglass: \"\"") {
+		t.Errorf("the stored pull of sw2 after:\n%s", got)
 	}
 }
 
@@ -218,15 +222,26 @@ func TestRollbackRealOldBinary0219(t *testing.T) {
 	}
 	// 0.2.19's comparison expects root as a login user on the Junos device of
 	// the scope, which Junos never has; with the entry removed (0.2.19 can) it
-	// does not.
-	if out, _ := run("device", "config", "diff", "sw2"); !strings.Contains(out, "- set system login user root class ") {
-		t.Errorf("0.2.19 device config diff after: the root login line is not expected\n%s", out)
+	// does not. The root statements of this release's pull are out of the
+	// stored section.
+	if out, _ := run("device", "config", "diff", "sw2"); !strings.Contains(out, "- set system login user root class ") || strings.Contains(out, "root-authentication") || strings.Contains(out, "root-login") {
+		t.Errorf("0.2.19 device config diff after:\n%s", out)
 	}
 	if out, code := run("scope", "breakglass", "prod", "remove", "root"); code != 0 {
 		t.Errorf("0.2.19 scope breakglass remove root after: %d\n%s", code, out)
 	}
 	if out, _ := run("device", "config", "diff", "sw2"); strings.Contains(out, "login user root") {
 		t.Errorf("0.2.19 device config diff without the entry:\n%s", out)
+	}
+	// Why they are taken out: left in, 0.2.19 reads them as extra statements
+	// of the section, which differs.
+	if err := (devconf.Store{Records: hs.path("var-lib", "devices-config.json"), Dir: hs.path("var-lib", "device-config")}).SaveSections("sw2", "juniper",
+		map[string]devices.Section{"breakglass": {Name: "breakglass", Lines: []string{"set system root-authentication encrypted-password \"$6$examplesalt$EXAMPLEHASH\"", "set system services ssh root-login allow"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := run("device", "config", "diff", "sw2"); !strings.Contains(out, "breakglass  differs") || !strings.Contains(out, "+ set system root-authentication encrypted-password") ||
+		!strings.Contains(out, "+ set system services ssh root-login allow") {
+		t.Errorf("0.2.19 device config diff of a stored pull of this release:\n%s", out)
 	}
 }
 

@@ -39,7 +39,11 @@ package lifecycle
 //	                  without a sudoers line. The group drop-in is unchanged.
 //	VarLib records    devices-config.json is version 1 with no new field, and
 //	                  the plan's 'kept' and 'own' are output only, never
-//	                  stored; left.
+//	                  stored. The sections files of a Junos device hold the
+//	                  root statements in the breakglass section (0.2.20's
+//	                  pull), which 0.2.19 compares as extra statements: every
+//	                  target that reads the records takes them out
+//	                  (rollback_rootleaves.go).
 //	devices.yaml      unchanged (the host keys are pinned in the same form,
 //	                  however they were read); left.
 //	hosts             the registry and what is written on an enrolled host

@@ -146,6 +146,20 @@ line on each Junos device of the scope, so its `breakglass` section reads
 root` takes the entry out (record it again after the next upgrade to this
 release).
 
+**Root's statements in the stored pulls.** The pull of this release keeps
+`system root-authentication` (the leaf's name only) and `system services ssh
+root-login` in the `breakglass` section of every Junos device, whether or not
+the scope records `root`. An older release puts neither in a section, and
+reading this release's sections file it takes them for extra statements, so
+the `breakglass` section of every Junos device of a scope with a break-glass
+user would read `differs` until its next pull. Every target but 0.2.3 (which
+never opens the records) therefore takes the two out of the `breakglass`
+section of the files in `/var/lib/tacctl/device-config/` (the sections file
+and the plain view of each pull), under the records' lock, and leaves every
+other line; the dry run lists each file. The files are derived and never in a
+snapshot; this release, if it stays, reads the two as missing until its next
+`device config pull`.
+
 ### To 0.2.19
 
 The per-tier sudoers drop-in of this release grants the engineer `scope
