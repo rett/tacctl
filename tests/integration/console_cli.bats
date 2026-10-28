@@ -42,8 +42,11 @@ snapshot_count() { find "${TACCTL_STATE_DIR}/backups" -mindepth 1 -maxdepth 1 -n
         assert_success
         plain
         assert_output --partial "Usage: tacctl console <subcommand>"
-        assert_output --partial "system-shell tiers [<csv>|none]"
+        assert_output --partial "system-shell [<tier> enable|disable]"
+        assert_output --partial "system-shell user <name> [enable|disable|clear]"
         assert_output --partial "forwarding tiers [<csv>|none]"
+        refute_output --partial "  tiers [<tier>"
+        refute_output --partial "  user <name> [enable|disable|clear]"
     done
     run "$TACCTL_BIN_SCRIPT" console frobnicate
     assert_failure 1
@@ -57,12 +60,9 @@ snapshot_count() { find "${TACCTL_STATE_DIR}/backups" -mindepth 1 -maxdepth 1 -n
         run "$TACCTL_BIN_SCRIPT" console $args
         assert_failure 1
     done <<'LIST'
-tiers root enable
-tiers readonly maybe
-tiers readonly enable extra
-user
-user bob maybe
-user nobody enable
+tiers
+tiers readonly disable
+user bob enable
 idle-timeout 1441
 idle-timeout abc
 idle-timeout -1
@@ -70,12 +70,18 @@ agent-forwarding yes
 ssh-escape on
 space-completion enable
 space-completion on off
-system-shell
 system-shell mode
-system-shell tiers operator,operator
-system-shell tiers root
-system-shell tiers engineer
-system-shell tiers superuser,engineer
+system-shell tiers superuser
+system-shell root enable
+system-shell operator maybe
+system-shell operator enable extra
+system-shell engineer enable
+system-shell superuser disable
+system-shell user
+system-shell user nobody enable
+system-shell user bob maybe
+system-shell user bob enable extra
+system-shell user alice disable
 system-shell path bash
 system-shell path /no/such/shell
 system-shell path /bin/ls
@@ -92,15 +98,15 @@ LIST
     (( $(snapshot_count) == 0 ))
 }
 
-@test "console show on a fresh state: every tier enable, the defaults of the settings" {
+@test "console show on a fresh state: the console for every tier, the system shell by tier, the defaults of the settings" {
     run "$TACCTL_BIN_SCRIPT" console show
     assert_success
     plain
-    assert_output --partial "  readonly: enable"
-    assert_output --partial "  operator: enable"
-    assert_output --partial "  engineer: enable"
-    assert_output --partial "  superuser: enable"
-    assert_output --partial "system-shell tiers: superuser"
+    assert_output --partial "Every user of every tier has the console as login shell on this server."
+    assert_output --partial "  readonly: disabled"
+    assert_output --partial "  operator: disabled"
+    assert_output --partial "  engineer: disabled (never)"
+    assert_output --partial "  superuser: enabled (always)"
     assert_output --partial "forwarding tiers: superuser (X11 and TCP ports)"
     assert_output --partial "forwarding gateway-ports: disabled"
     assert_output --partial "system-shell path: /bin/bash"
@@ -113,51 +119,72 @@ LIST
     [[ ! -e "$CONSOLE" ]]
 }
 
-@test "console tiers and user: show lists the effective shell and why; writes print the sync command" {
+@test "console show: every user of every tier has the console; the system shell per user and why; there is no switch" {
     enrol_local
-    run "$TACCTL_BIN_SCRIPT" console tiers readonly disable
-    assert_success
-    plain
-    assert_output --partial "Apply to the accounts: tacctl host sync authsrv"
-    run "$TACCTL_BIN_SCRIPT" console user bob enable
-    assert_success
-    run "$TACCTL_BIN_SCRIPT" console user carol enable
-    assert_success
-    run "$TACCTL_BIN_SCRIPT" console user carol clear
-    assert_success
     run "$TACCTL_BIN_SCRIPT" console show
     assert_success
     plain
     assert_output --partial "Users of authsrv (scope lab)"
-    assert_output --regexp "alice +superuser +console +tier superuser"
-    assert_output --regexp "bob +operator +console +user override"
-    assert_output --regexp "carol +readonly +bash +tier readonly disabled"
-    run "$TACCTL_BIN_SCRIPT" console user bob
-    assert_output "enable"
-    run "$TACCTL_BIN_SCRIPT" console user alice
-    assert_output "none"
-    # An override beats a tier that is off.
-    run "$TACCTL_BIN_SCRIPT" console user carol enable
+    assert_output --regexp "alice +superuser +console +managed user +enabled \(always\)"
+    assert_output --regexp "bob +operator +console +managed user +disabled \(tier operator\)"
+    assert_output --regexp "carol +readonly +console +managed user +disabled \(tier readonly\)"
+    # The system shell of one user beats the tier's, and is shown with its reason.
+    run "$TACCTL_BIN_SCRIPT" console system-shell user carol enable
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" console system-shell operator enable
+    run "$TACCTL_BIN_SCRIPT" console system-shell user bob disable
     run "$TACCTL_BIN_SCRIPT" console show
     plain
-    assert_output --regexp "carol +readonly +console +user override"
+    assert_output --regexp "bob +operator +console +managed user +disabled \(user setting\)"
+    assert_output --regexp "carol +readonly +console +managed user +enabled \(user setting\)"
+    # The verbs of the switches are gone.
+    run "$TACCTL_BIN_SCRIPT" console tiers
+    assert_failure 1
+    assert_output --partial "Unknown subcommand: 'tiers'"
+    run "$TACCTL_BIN_SCRIPT" console user bob enable
+    assert_failure 1
+    assert_output --partial "Unknown subcommand: 'user'"
+}
+
+@test "console: the tiers and users of a console.yaml from before 0.2.20 are ignored and kept" {
+    enrol_local
+    printf 'version: 1\ntiers: {readonly: disable, operator: disable, engineer: enable, superuser: enable}\nusers: {bob: disable, carol: disable}\n' > "$CONSOLE"
+    chmod 600 "$CONSOLE"
+    run "$TACCTL_BIN_SCRIPT" console show
+    assert_success
+    plain
+    assert_output --regexp "bob +operator +console +managed user"
+    assert_output --regexp "carol +readonly +console +managed user"
+    refute_output --partial "override"
+    refute_output --partial "ignored"
+    stub_cmd id 'echo "$3 tac-users"'
+    SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" _console-policy
+    assert_output --partial "shell=console "
+    # A write of another setting leaves the old mappings as they were.
+    "$TACCTL_BIN_SCRIPT" console idle-timeout 20
+    run cat "$CONSOLE"
+    assert_output --partial "tiers: {readonly: disable, operator: disable, engineer: enable, superuser: enable}"
+    assert_output --partial "users: {bob: disable, carol: disable}"
+    assert_output --partial "  idle_timeout: 20"
 }
 
 @test "console writes: console.yaml is 0600 with the documented shape, snapshotted, in backup diff" {
     enrol_local
     local n
     n=$(snapshot_count)
-    "$TACCTL_BIN_SCRIPT" console tiers readonly disable
-    "$TACCTL_BIN_SCRIPT" console user bob disable
+    "$TACCTL_BIN_SCRIPT" console agent-forwarding enable
+    "$TACCTL_BIN_SCRIPT" console system-shell operator enable
     "$TACCTL_BIN_SCRIPT" console idle-timeout 15
     (( $(snapshot_count) == n + 3 ))
     [[ "$(stat -c %a "$CONSOLE")" == 600 ]]
     run cat "$CONSOLE"
     assert_output --partial "version: 1"
-    assert_output --partial "tiers: {readonly: disable, operator: enable, engineer: enable, superuser: enable}"
-    assert_output --partial "users: {bob: disable}"
+    # No switch of the console is written.
+    run grep -cE '^(tiers|users):' "$CONSOLE"
+    assert_output "0"
+    run cat "$CONSOLE"
     assert_output --partial "  idle_timeout: 15"
-    assert_output --partial "  system_shell_tiers: [superuser]"
+    assert_output --partial "  system_shell_tiers: [operator, superuser]"
     # The newest snapshot holds the file as it was before the last write.
     local snap
     snap=$(find "${TACCTL_STATE_DIR}/backups" -mindepth 1 -maxdepth 1 -name '2*' | sort | tail -1)
@@ -220,13 +247,33 @@ LIST
     run "$TACCTL_BIN_SCRIPT" console ssh-escape enable
     run "$TACCTL_BIN_SCRIPT" console ssh-escape
     assert_output "enabled"
-    run "$TACCTL_BIN_SCRIPT" console system-shell tiers operator,superuser
+    run "$TACCTL_BIN_SCRIPT" console system-shell
+    assert_output $'readonly: disabled\noperator: disabled\nengineer: disabled (never)\nsuperuser: enabled (always)'
+    run "$TACCTL_BIN_SCRIPT" console system-shell operator enable
     assert_success
-    run "$TACCTL_BIN_SCRIPT" console system-shell tiers
-    assert_output "operator,superuser"
-    run "$TACCTL_BIN_SCRIPT" console system-shell tiers none
-    run "$TACCTL_BIN_SCRIPT" console system-shell tiers
-    assert_output "none"
+    run "$TACCTL_BIN_SCRIPT" console system-shell operator
+    assert_output "enabled"
+    run "$TACCTL_BIN_SCRIPT" console system-shell
+    assert_output $'readonly: disabled\noperator: enabled\nengineer: disabled (never)\nsuperuser: enabled (always)'
+    run grep -c '^  system_shell_tiers: \[operator, superuser\]$' "$CONSOLE"
+    assert_output "1"
+    run "$TACCTL_BIN_SCRIPT" console system-shell operator disable
+    run "$TACCTL_BIN_SCRIPT" console system-shell operator
+    assert_output "disabled"
+    run "$TACCTL_BIN_SCRIPT" console system-shell superuser
+    assert_output "enabled (always)"
+    run "$TACCTL_BIN_SCRIPT" console system-shell user carol enable
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" console system-shell user carol
+    assert_output "enabled (user setting)"
+    run "$TACCTL_BIN_SCRIPT" console system-shell
+    assert_output --partial "  carol: enabled (readonly)"
+    run grep -c '^  system_shell_users: {carol: true}$' "$CONSOLE"
+    assert_output "1"
+    run "$TACCTL_BIN_SCRIPT" console system-shell user carol clear
+    assert_success
+    run grep -c system_shell_users "$CONSOLE"
+    assert_output "0"
     run "$TACCTL_BIN_SCRIPT" console forwarding tiers
     assert_output "superuser"
     run "$TACCTL_BIN_SCRIPT" console forwarding tiers operator,superuser
@@ -365,10 +412,7 @@ LIST
     assert_output --partial "could not be checked: sshd -T failed: Missing Match criteria for address"
 }
 
-@test "console show with every tier off asks sshd nothing and does not warn" {
-    enrol_local
-    local t
-    for t in readonly operator superuser; do "$TACCTL_BIN_SCRIPT" console tiers "$t" disable; done
+@test "console show on a server that is not enrolled asks sshd nothing and does not warn" {
     stub_cmd sshd 'printf "allowtcpforwarding yes\nallowagentforwarding yes\n"'
     run "$TACCTL_BIN_SCRIPT" console show
     assert_success
@@ -383,61 +427,66 @@ LIST
     # Root (no SUDO_USER): unrestricted, system shell yes.
     run "$TACCTL_BIN_SCRIPT" _console-policy
     assert_success
-    assert_output "shell=system idle=30 system_shell=yes system_shell_path=/bin/bash ssh_escape=no agent=no forward=yes tier=unrestricted list_max=40 space_completion=yes"
+    assert_output "shell=system idle=30 system_shell=yes system_shell_path=/bin/bash ssh_escape=no agent=no forward=yes tier=unrestricted list_max=40 space_completion=yes color=auto"
     stub_called '^logger -t tacctl -p auth.info shell policy user=root tier=unrestricted sid=[a-z0-9]{8}$'
 
     # A tier user: the id stub puts the caller in tac-users and its tier group.
     stub_cmd id 'echo "$3 tac-users"'
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" _console-policy
-    assert_output "shell=console idle=30 system_shell=yes system_shell_path=/bin/bash ssh_escape=no agent=no forward=yes tier=superuser list_max=40 space_completion=yes"
+    assert_output "shell=console idle=30 system_shell=yes system_shell_path=/bin/bash ssh_escape=no agent=no forward=yes tier=superuser list_max=40 space_completion=yes color=auto"
     SUDO_USER=bob TACCTL_CONSOLE=0123456789ab run "$TACCTL_BIN_SCRIPT" _console-policy
-    assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=operator list_max=40 space_completion=yes"
+    assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=operator list_max=40 space_completion=yes color=auto"
     stub_called '^logger -t tacctl -p auth.info console policy user=bob tier=operator system_shell=no session=0123456789ab sid=[a-z0-9]{8}$'
     SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" _console-policy
-    assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=readonly list_max=40 space_completion=yes"
+    assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=readonly list_max=40 space_completion=yes color=auto"
 
     # A tier user with no tacctl user is denied by the gate.
     SUDO_USER=mallory run "$TACCTL_BIN_SCRIPT" _console-policy
     assert_failure 1
 
     # Settings reach the line.
-    "$TACCTL_BIN_SCRIPT" console tiers readonly disable
-    "$TACCTL_BIN_SCRIPT" console system-shell tiers readonly
+    "$TACCTL_BIN_SCRIPT" console system-shell readonly enable
     "$TACCTL_BIN_SCRIPT" console idle-timeout 5
     "$TACCTL_BIN_SCRIPT" console ssh-escape enable
     "$TACCTL_BIN_SCRIPT" console forwarding tiers readonly
     SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" _console-policy
-    assert_output "shell=system idle=5 system_shell=yes system_shell_path=/bin/bash ssh_escape=yes agent=no forward=yes tier=readonly list_max=40 space_completion=yes"
+    assert_output "shell=console idle=5 system_shell=yes system_shell_path=/bin/bash ssh_escape=yes agent=no forward=yes tier=readonly list_max=40 space_completion=yes color=auto"
     "$TACCTL_BIN_SCRIPT" console space-completion off
     SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" _console-policy
-    assert_output "shell=system idle=5 system_shell=yes system_shell_path=/bin/bash ssh_escape=yes agent=no forward=yes tier=readonly list_max=40 space_completion=no"
+    assert_output "shell=console idle=5 system_shell=yes system_shell_path=/bin/bash ssh_escape=yes agent=no forward=yes tier=readonly list_max=40 space_completion=no color=auto"
+    # The setting of one user beats the tier's, in both directions.
+    "$TACCTL_BIN_SCRIPT" console system-shell user bob enable
+    "$TACCTL_BIN_SCRIPT" console system-shell user carol disable
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" _console-policy
+    assert_output --partial " system_shell=yes "
+    SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" _console-policy
+    assert_output --partial " system_shell=no "
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" _console-policy
+    assert_output --partial " system_shell=yes "
 }
 
-@test "console: the engineer tier is always on, and never gets the system shell or forwarding (D18, D24)" {
-    run "$TACCTL_BIN_SCRIPT" console system-shell tiers superuser,engineer
+@test "console: the engineer tier has the console, and never gets the system shell or forwarding (D18, D24)" {
+    enrol_local
+    run "$TACCTL_BIN_SCRIPT" console system-shell engineer enable
     assert_failure 1
     assert_output --partial "The engineer tier cannot be given the system shell on this server: a shell here would reach the server's secrets. Nothing was changed."
     run "$TACCTL_BIN_SCRIPT" console forwarding tiers engineer
     assert_failure 1
     assert_output --partial "The engineer tier cannot be given forwarding on this server: engineers reach devices with the console's ssh. Nothing was changed."
     [[ ! -e "$CONSOLE" ]]
-    # The engineer has the console or no login: nothing switches it off.
-    run "$TACCTL_BIN_SCRIPT" console tiers engineer disable
-    assert_failure 1
-    assert_output --partial "The engineer tier has the console or no login on this server; it cannot be disabled. To keep a user off this server, remove its scope from the user."
-    [[ ! -e "$CONSOLE" ]]
-    run "$TACCTL_BIN_SCRIPT" console tiers engineer
-    assert_output "enable"
+    run "$TACCTL_BIN_SCRIPT" console system-shell engineer
+    assert_output "disabled (never)"
     # bob's group is given the engineer tier: his console settings follow.
     printf 'tier:\n  operator: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
-    "$TACCTL_BIN_SCRIPT" console system-shell tiers operator,superuser
-    run "$TACCTL_BIN_SCRIPT" console user bob disable
+    "$TACCTL_BIN_SCRIPT" console system-shell operator enable
+    run "$TACCTL_BIN_SCRIPT" console system-shell user bob enable
     assert_failure 1
-    assert_output --partial "it cannot be disabled"
-    [[ ! -e "$CONSOLE" ]] || ! grep -q "bob" "$CONSOLE"
+    assert_output --partial "The engineer tier cannot be given the system shell on this server"
+    run grep -c "bob" "$CONSOLE"
+    assert_output "0"
     stub_cmd id 'echo "$3 tac-users"'
     SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" _console-policy
-    assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=engineer list_max=40 space_completion=yes"
+    assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=engineer list_max=40 space_completion=yes color=auto"
     # A tacctl.yaml that cannot be read caps the gate's tier at operator, but
     # an engineer keeps the lockdown: no system shell, no forwarding, even
     # though the operator tier is given both. Someone who is not an engineer
@@ -447,35 +496,58 @@ LIST
     stub_cmd id 'echo "$3 tac-users tac-engineer"'
     SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" _console-policy
     assert_output --partial "could not parse ${TACCTL_STATE_DIR}/tacctl.yaml"
-    assert_output --partial "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=engineer gate=operator list_max=40 space_completion=yes"
+    assert_output --partial "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=engineer gate=operator list_max=40 space_completion=yes color=auto"
     stub_cmd id 'echo "$3 tac-users tac-superuser"'
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" _console-policy
     assert_output --partial " forward=yes tier=operator "
     printf 'tier:\n  operator: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
     stub_cmd id 'echo "$3 tac-users"'
-    # A stored 'disable' (an older file, or edited by hand) is ignored and said so.
+    # A stored switch of an older file is ignored: the engineer has the console.
     printf 'version: 1\ntiers: {readonly: enable, operator: enable, engineer: disable, superuser: enable}\nusers: {bob: disable}\n' > "$CONSOLE"
     chmod 600 "$CONSOLE"
     SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" _console-policy
     assert_output --partial "shell=console "
-    run "$TACCTL_BIN_SCRIPT" console tiers
-    assert_output --partial "engineer: enable (always; the stored disable is ignored)"
     SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console show
     assert_success
-    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console system-shell tiers
+    plain
+    assert_output --regexp "bob +engineer +console +managed user +disabled \(never\)"
+    # An engineer reads who has the system shell and cannot set it.
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console system-shell
+    assert_success
+    assert_output --partial "engineer: disabled (never)"
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console system-shell operator enable
     assert_failure 1
     assert_output --partial "is not permitted for the engineer tier"
 }
 
-@test "console verbs are gated by tier: show for operators, the rest for superusers" {
+@test "console verbs are gated by tier: show and the reads of system-shell for operators, the rest for superusers" {
     stub_cmd id 'echo "$3 tac-users"'
     SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" console show
     assert_failure 1
     assert_output --partial "is not permitted for the readonly tier"
+    SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" console system-shell
+    assert_failure 1
+    assert_output --partial "is not permitted for the readonly tier"
     SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console show
     assert_success
-    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console tiers readonly disable
-    assert_failure 1
+    # An operator reads every form of system-shell ...
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console system-shell
+    assert_success
+    assert_output --partial "superuser: enabled (always)"
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console system-shell operator
+    assert_output "disabled"
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console system-shell user carol
+    assert_output "disabled (tier readonly)"
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console system-shell path
+    assert_output "/bin/bash"
+    # ... and sets none of them, nor anything else.
+    local args
+    for args in "operator enable" "readonly disable" "user carol enable" "user carol clear" "path /bin/sh"; do
+        SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console system-shell $args
+        assert_failure 1
+        assert_output --partial "'tacctl console system-shell' is not permitted for the operator tier."
+        stub_called '^logger -t tacctl -p auth.warning tier DENY user=bob tier=operator cmd=console system-shell'
+    done
     SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console idle-timeout 5
     assert_failure 1
     [[ ! -e "$CONSOLE" ]]
