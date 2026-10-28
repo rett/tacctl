@@ -221,6 +221,9 @@ func (inv *invocation) hostForget(args []string) error {
 		}
 	}
 	inv.hostForgetSeen(reg, f, name)
+	if isLocal {
+		inv.managedRemove(entry)
+	}
 
 	inv.verbResult(audit.Info, forgetBase, "")
 	a.Out.InfoE("Host '" + name + "' forgotten. Nothing was sent to the host.")

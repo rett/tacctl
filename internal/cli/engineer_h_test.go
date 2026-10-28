@@ -164,7 +164,7 @@ func TestAmbiguousGroupHoldsItsMembersOnly(t *testing.T) {
 			if !strings.Contains(sb.stderr(), red) {
 				t.Errorf("config linux script: %q", sb.stderr())
 			}
-			sb.cfgRun("", []string{"host", "enroll", "--local", "--scope", "lab"}, nil)
+			sb.cfgRun("", []string{"host", "enroll", "--local"}, nil)
 			if strings.Contains(sb.stderr(), "accounts are not synced") || !strings.Contains(sb.stderr(), red) {
 				t.Errorf("host enroll: %d %q", sb.code, sb.stderr())
 			}

@@ -420,6 +420,9 @@ func TestGolden(t *testing.T) {
 		if strings.HasPrefix(k, "audit.") {
 			continue // 0.2.17's audit.strict: not in 0.1.16's golden
 		}
+		if strings.HasPrefix(k, "server.") {
+			continue // 0.2.21's server address: not in 0.1.16's golden
+		}
 		if _, ok := walk(m, k, false); !ok {
 			t.Errorf("golden lacks %s", k)
 		}

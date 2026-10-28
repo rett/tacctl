@@ -15,6 +15,35 @@ current behaviour; this file is where history lives.
    a user whose name has a period has no Linux account on any host, the
    tacctl server included, so no console login.
 
+2. **Every user can log in to the tacctl server and its console.** The
+   server's own TACACS+/RADIUS client entry is managed by tacctl and is not a
+   scope you create: `host enroll --local` sets up this machine's own login,
+   and every user logs in to it, unless disabled or of tier none, whatever
+   their scopes (a user is kept off the server only by `user disable` or a
+   group of tier none). Device logins keep the user's own scopes. A user's
+   own scopes are written as before; when a command next writes a user's
+   record, a stored copy of the server's scope is dropped from it. The name
+   `tacctl` is reserved: no command creates, renames to, edits or lists it,
+   and no listing or Tab completion shows it (`scope list`, `scope routing`,
+   `user list`, `user show`, `user scope <user> list`, `status`, the scope
+   column of `host list`). `host enroll --local` takes no `--scope`; its
+   `--server` is the address devices and hosts reach the server at (an IP
+   address, which may be behind NAT or a VPN; not a host name, `0.0.0.0`,
+   `::`, loopback or link-local), recorded in the new `tacctl.yaml` key
+   `server.addresses` (a list that holds one address for now); without
+   `--server` the recorded address is used, else `--server` defaults to the
+   address of the interface with the default route, said in one line. An
+   install from before whose server is registered in a scope that serves the
+   server alone is taken over at the next `host sync` of the server or `host
+   enroll --local` (renamed, its secret kept, in one line); one that also
+   serves hosts or devices is left to them, and `host enroll --local` sets the
+   server's login up apart from it. A `host sync` of the server repairs its
+   login when it was changed by hand (`Repaired the managed server login.`),
+   `host move` of the server says it is set up by `host enroll --local`, and
+   `host forget` and `host unenroll` of the server take its login with them.
+   A user who must change the password keeps exactly the server's login, as
+   before.
+
 ## 0.2.20 (2026-10-28)
 
 1. **A user name may hold periods.** `user add alice.smith operator` is

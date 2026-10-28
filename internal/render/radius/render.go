@@ -113,6 +113,9 @@ func RenderStore(s *store.Store, merged *yamlpy.Map, p Params) (*Output, error) 
 // validated (RenderStore validates a store first); a dangling reference is
 // an *Error rather than a crash.
 func Render(m *model.Model, merged *yamlpy.Map, p Params) (*Output, error) {
+	// every user is in the scope tacctl manages for this server's own logins
+	// (0.2.21): the store is not changed
+	m = pwchange.WithServerScopeView(merged, m, p.Server)
 	// The addresses of the break-glass holds are taken out of every client
 	// (docs/plans/0.2.5-plan.md D123); the model itself stays whole for the
 	// notes and for the comment that names what was carved.

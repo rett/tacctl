@@ -43,7 +43,11 @@ func TestHostEnrollNewNameRules(t *testing.T) {
 		{[]string{"web1", "--name", "CORE-sw1"}, []string{"'core-sw1' is already registered as a device (192.0.2.77)", "Nothing was changed."}},
 	} {
 		r := hs.runner()
-		hs.run(r, append([]string{"host", "enroll", "--scope", "lab"}, c.args...)...)
+		args := append([]string{"host", "enroll", "--scope", "lab"}, c.args...)
+		if c.args[0] == "--local" {
+			args = append([]string{"host", "enroll"}, c.args...) // tacctl names the scope
+		}
+		hs.run(r, args...)
 		hs.expect(1, "", c.errs[0])
 		for _, e := range c.errs[1:] {
 			if !strings.Contains(hs.err.String(), e) {
@@ -201,9 +205,9 @@ func TestHostEnrollOfANameADeviceTookMeanwhileIsRefused(t *testing.T) {
 	hs = newHostSandbox(t)
 	hs.loopback()
 	r, _ = hs.lateDevice("Web2", "192.0.2.61")
-	hs.run(r, "host", "enroll", "--local", "--name", "web2", "--scope", "lab")
+	hs.run(r, "host", "enroll", "--local", "--name", "web2")
 	hs.expect(1, "", "A device named 'Web2' (192.0.2.61) was registered while the client script ran")
-	if !strings.Contains(hs.err.String(), "tacctl host enroll --local --scope lab --name <other>") || hs.registry() != "" {
+	if !strings.Contains(hs.err.String(), "tacctl host enroll --local --name <other>") || hs.registry() != "" {
 		t.Errorf("stderr %q registry %q", hs.err.String(), hs.registry())
 	}
 }

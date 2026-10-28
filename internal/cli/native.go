@@ -178,6 +178,9 @@ func (inv *invocation) storeApply(fn func(*store.Store) error) error {
 // rendered, as the caller says what is left undone).
 func (inv *invocation) storeApplyThen(fn func(*store.Store) error, after func()) error {
 	a := inv.app
+	// a user the change writes loses a stored copy of the managed scope, in
+	// the same mutation (managed_scope.go)
+	fn = inv.managedCleanup(fn)
 	// a change that would leave a user who must change the password without a
 	// login on this server is refused before anything is written
 	warn, err := inv.pwGuard(fn)

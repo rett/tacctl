@@ -190,7 +190,6 @@ func TestPwHostGuardRefusesChangesOfTheServersRegistration(t *testing.T) {
 	for _, args := range [][]string{
 		{"host", "forget", "authsrv", "--yes"},
 		{"host", "unenroll", "authsrv"},
-		{"host", "enroll", "--local", "--name", "authsrv", "--scope", "lab"},
 	} {
 		sb.asAlice("y\n", args...)
 		out := plain(sb.err.String() + sb.out.String())
@@ -211,14 +210,21 @@ func TestPwHostGuardRefusesChangesOfTheServersRegistration(t *testing.T) {
 	}
 }
 
-// Enrolling this server in a scope it shares with devices says that users
-// added from now on are not kept off them.
-func TestHostEnrollLocalWarnsOfASharedScope(t *testing.T) {
+// Enrolling this server where a scope of the operator's answers 127.0.0.1
+// together with devices gives the server a scope of its own: the operator's
+// scope keeps its other prefixes, and no warning of a shared scope is left.
+func TestHostEnrollLocalTakesTheServerOutOfASharedScope(t *testing.T) {
 	hs := newHostSandbox(t)
 	hs.run(nil, "scope", "prefixes", "lab", "add", "127.0.0.1/32")
-	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
+	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
 	hs.expect(0, "Host 'authsrv' enrolled", "")
-	if out := plain(hs.out.String()); !strings.Contains(out, "[WARN] Scope 'lab', this server's, also answers") {
-		t.Errorf("no warning:\n%s", out)
+	if out := plain(hs.out.String() + hs.err.String()); strings.Contains(out, "also answers") {
+		t.Errorf("a shared-scope warning:\n%s", out)
+	}
+	if got := hs.registry(); !strings.HasPrefix(got, "authsrv|local||tacctl|192.0.2.10|") {
+		t.Errorf("registry: %q", got)
+	}
+	if st := hs.store(); strings.Contains(st, "127.0.0.1/32, 172") || !strings.Contains(st, "tacctl:\n    prefixes: [127.0.0.1/32, 192.0.2.10/32]") || !strings.Contains(st, "prefixes: [172.16.0.0/12, 192.168.0.0/16]") {
+		t.Errorf("store:\n%s", st)
 	}
 }

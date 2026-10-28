@@ -68,6 +68,7 @@ Keys without a shipped default (`backends.*`, `listeners.*`, `snmp.*`, `device.c
 | `backends.tacacs.metrics_address` | host:port (127.0.0.1:8080) | `config metrics address` |
 | `bcrypt.cost` | 10 to 14 (12) | `config bcrypt-cost` |
 | `host.default_method` | `tacplus` or `radius` (`tacplus`) | `host default-method` |
+| `server.addresses` | list of one IP address, the address devices and hosts reach this server at (a list that holds one address for now) | `host enroll --local --server` |
 | `linux.engineer_sudo` | list of absolute command paths (unset: every command) | `config linux engineer-sudo` |
 | `linux.uid_min`, `linux.uid_max` | 1000 to 4294967293 (80000, 89999) | `config linux uid-range` |
 | `mgmt_acl.names.cisco`, `mgmt_acl.names.juniper` | name of 1 to 63 characters (`VTY-ACL`, `MGMT-ACL`) | `config mgmt-acl cisco-name`, `juniper-name` |

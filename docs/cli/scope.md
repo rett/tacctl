@@ -19,7 +19,8 @@ scope show <name>
 scope add <name> --prefixes <cidrs>
 
     Create a new scope; the name is lower case (`Names are lower case: use 'lab'.`): a letter, then
-    up to 31 lower-case letters, digits, `_` or `-`
+    up to 31 lower-case letters, digits, `_` or `-`. The name `tacctl` is reserved (this server's
+    own login, which every user has; no listing shows it)
 
     [--secret <value>|--secret generate] [--protocols <csv>] [--vendor-attrs <csv>] [--default]
 

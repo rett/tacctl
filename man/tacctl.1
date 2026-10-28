@@ -278,6 +278,13 @@ stay, for the releases that have them) are removed and a
 of \-1 (never ask) is written as 1000, with every other setting kept and a
 snapshot first.
 .IP
+Every target removes
+.B server.addresses
+from
+.IR tacctl.yaml ,
+which no older release knows; the host registry keeps the address in this
+server's entry.
+.IP
 .B "rollback 0.2.19"
 .B \-\-apply
 rewrites the per\-tier sudoers drop\-in, when it is exactly the text this
@@ -1207,19 +1214,15 @@ password can be changed at the server and nowhere else is the user let in; a
 change of the requirement therefore restarts the backend whose file changed,
 and none when the user has no other scope. This server's logins come from
 127.0.0.1, and from the address of
-.B \-\-server
-when that is another one, which the enrolled scope must answer too. A scope that holds the server together with
-devices cannot be cut apart: those devices still authenticate the user, and
-the commands say so, naming the prefixes (the ones that flag, a prefix added to
-the server's scope later, and
+.B server.addresses
+(set by
 .BR "host enroll \-\-local" ),
-as do
-.BR "user list" ,
-.B "user show"
-and
-.BR status ;
-give the server a scope of its own. A user who must change the password and has
-no login on the server (not in its scope, the scope does not answer the
+and the server's own login answers both. An install from before 0.2.21 whose
+server is still registered in a scope it shares with devices (until
+.BR "host enroll \-\-local" )
+keeps those devices accepting the user, and the commands that flag say so,
+naming the prefixes. A user who must change the password and has
+no login on the server (the server's own login does not answer the
 server's addresses, the backend of the server's own logins is not enabled, the
 server not enrolled) could change nothing, so a change that would leave one is
 refused with nothing changed, with
@@ -1246,10 +1249,8 @@ back before anything is rendered; and
 .B "host unenroll"
 and
 .B "host enroll \-\-local"
-with another scope or method, while any user is flagged (the backends' files are
-rendered from the server's registration), or with a
-.B \-\-server
-address its scope does not answer.
+with another method, while any user is flagged (the backends' files are
+rendered from the server's registration).
 On every enrolled Linux host but this server
 .RB ( "host enroll \-\-local" ),
 the next
@@ -2853,12 +2854,45 @@ and
 warn, with the enroll that moves it, when another scope answers the
 address recorded for a host. The scope must be the one that answers the host's
 requests (the first prefix that holds the address they come from): for
+another host, a scope that does not cover the address its name resolves to is
+a warning (NAT may change it).
+.IP
 .B \-\-local
-that address is 127.0.0.1, and a scope that does not cover it is refused
-before anything changes; for another host, a scope that does not cover the
-address its name resolves to is a warning (NAT may change it).
+sets up this machine's own login: every user can log in to it and to its
+console unless disabled or of tier none, whatever their scopes, and it takes
+no
+.BR \-\-scope .
+.B \-\-server
+is the address devices and hosts reach this server at (an address behind NAT or
+a VPN that is not on this machine is taken; a host name,
+.BR 0.0.0.0 ,
+.BR :: ,
+a loopback or link\-local address is not); without it the recorded address is
+used, else the address of the interface with the default route, said in one
+line. It is recorded as
+.B server.addresses
+in
+.I tacctl.yaml
+(a list that holds one address for now), and
+.B "host enroll \-\-local \-\-server"
+.I address
+changes it. An install from before whose server is registered in a scope that
+serves the server alone is taken over by the next
 .B "host sync"
-of this machine warns when its scope no longer covers 127.0.0.1.
+of the server or
+.BR "host enroll \-\-local" ,
+its secret kept; one that also serves hosts or devices is left to them, and
+.B "host enroll \-\-local"
+sets the server's login up apart from it. A
+.B "host sync"
+of the server repairs its login when it was changed by hand
+.RB ( "Repaired the managed server login." ).
+.B "host move"
+of this server is not a move: its login is set up by
+.BR "host enroll \-\-local" .
+The scope name
+.B tacctl
+is reserved: no command creates, edits or lists it.
 .IP
 ssh runs as the user who invoked
 .BR sudo (8),
@@ -3019,7 +3053,7 @@ Options:
 Enroll this machine itself instead of a remote host (its tacctl users get the login console).
 .TP
 \fB\-\-scope\fR \fI<name>\fR
-The host's scope (default: its registered one, else the scope covering its address).
+The host's scope (default: its registered one, else the scope covering its address; not with \-\-local).
 .TP
 \fB\-\-server\fR \fI<address>\fR
 Address the host should use for this server (default: detected).
@@ -14778,6 +14812,10 @@ The scope new users and devices land in without a choice; null: none. Set with \
 .B secret.min_length
 integer, 16 to 128. Default: 16.
 Shortest shared secret an operator may type. Set with \fBtacctl config secret\-min\-length\fR.
+.TP
+.B server.addresses
+list of one IP address (not a host name, unspecified, loopback or link\-local). Default: none (unset).
+The address devices and hosts reach this server at, a list that holds one address for now; the enrolment of this server records it (detected from the interface with the default route when none is recorded and none is given). Set with \fBtacctl host enroll \-\-local \-\-server\fR.
 .TP
 .B snmp.port
 integer, 1 to 65535. Default: 161.

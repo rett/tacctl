@@ -57,3 +57,29 @@ func (m *Model) ScopeOf(address, protocol string) string {
 	}
 	return ""
 }
+
+// WithoutScope returns the model as the listings show it when the scope name
+// is not to be shown: without the scope, and with it taken out of every
+// user's scopes. The receiver is not changed; a model without the scope is
+// returned as it is.
+func (m *Model) WithoutScope(name string) *Model {
+	if name == "" || m.scopes[name] == nil {
+		return m
+	}
+	out := m.WithUserScopes(func(u *User) ([]string, bool) {
+		if !slices.Contains(u.Scopes, name) {
+			return nil, false
+		}
+		return slices.DeleteFunc(slices.Clone(u.Scopes), func(s string) bool { return s == name }), true
+	})
+	if out == m {
+		c := *m
+		out = &c
+	}
+	out.Scopes = slices.DeleteFunc(slices.Clone(m.Scopes), func(s *Scope) bool { return s.Name == name })
+	out.scopes = make(map[string]*Scope, len(out.Scopes))
+	for _, s := range out.Scopes {
+		out.scopes[s.Name] = s
+	}
+	return out
+}

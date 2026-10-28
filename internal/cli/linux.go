@@ -598,6 +598,8 @@ func (inv *invocation) scriptRequest(scope, server, method, output string, local
 // the change opens it again; on the server the account stays open, since that
 // is where the password is changed (pwchange.HostHeld).
 func (inv *invocation) linuxAccounts(m *model.Model, scope string, local bool) (rows, inactive []string) {
+	// on this server every user is in the managed scope (managed_scope.go)
+	m = inv.serverModel(m, local && scope == pwchange.ManagedScope)
 	held := pwchange.HostHeld(inv.app.Conf(), m, local)
 	return m.LinuxUsersHeld(scope, held), m.LinuxInactiveHeld(scope, held)
 }

@@ -28,7 +28,8 @@ host enroll <[user@]host>|--local [opts]
     --method tacplus|radius
         pam_tacplus (TACACS+) or pam_radius_auth (RADIUS); re-enroll with the other to switch
     --scope <name>
-        The host's scope (default: its registered one, else the scope covering its address)
+        The host's scope (default: its registered one, else the scope covering its address; not with
+        --local)
     --server <address>
         Address the host should use for this server (default: detected)
     --name <name>

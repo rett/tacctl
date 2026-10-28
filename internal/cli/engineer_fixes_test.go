@@ -44,7 +44,7 @@ func TestInvalidTierSettingsNeverLeaveTheBand(t *testing.T) {
 				t.Errorf("alice (priv-lvl 15): %q", policy)
 			}
 			// The syncs refuse for the superuser that is root here...
-			for _, args := range [][]string{{"host", "sync", "authsrv"}, {"host", "sync", "--all"}, {"host", "enroll", "--local", "--scope", "lab"}} {
+			for _, args := range [][]string{{"host", "sync", "authsrv"}, {"host", "sync", "--all"}, {"host", "enroll", "--local"}} {
 				sb.cfgRun("", args, nil)
 				if sb.code != 1 || !strings.Contains(sb.stderr(), "cannot be read ("+c.problem) ||
 					!strings.Contains(sb.stderr(), "accounts and tiers are not synced until it is fixed.") {

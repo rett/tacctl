@@ -198,7 +198,7 @@ func TestHostLocalConsole(t *testing.T) {
 	consoleUsers := "root:x:0:0::/root:/bin/bash\nalice:x:80000:80000:alice (TACACS+):/home/alice:" + link + "\n"
 
 	// No symlink: nobody gets the console, and the command says so.
-	hs.run(runner(""), "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
+	hs.run(runner(""), "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
 	all := plain(hs.out.String() + hs.err.String())
 	if hs.code != 0 || !strings.Contains(all, link+" is missing, so no account gets the login console now") ||
 		!strings.Contains(script, "TAC_USERS=$'alice:superuser:80000:/bin/bash\\nbob:operator:80001:/usr/sbin/nologin\\ncarol:readonly:80002:/usr/sbin/nologin'") ||
@@ -257,7 +257,7 @@ func TestHostLocalConsole(t *testing.T) {
 	if _, err := os.Stat(dropin); err != nil {
 		t.Error("drop-in removed while alice has the console")
 	}
-	hs.run(runner(""), "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
+	hs.run(runner(""), "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
 	hs.run(runner("root:x:0:0::/root:/bin/bash\n"), "host", "unenroll", "authsrv")
 	all = plain(hs.out.String() + hs.err.String())
 	if hs.code != 0 || !strings.Contains(all, "Removed: sshd drop-in") {
@@ -299,7 +299,7 @@ func TestHostLocalWithoutTheLinkGivesBashToTheSystemShellOnly(t *testing.T) {
 		return script[i+len("TAC_USERS=$'") : i+j]
 	}
 	enrol := func() {
-		hs.run(runner(), "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
+		hs.run(runner(), "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
 		if hs.code != 0 {
 			t.Fatalf("enroll: %d\n%s", hs.code, hs.err.String())
 		}
@@ -361,7 +361,7 @@ func TestHostLocalConsoleEngineerShell(t *testing.T) {
 		r.On([]string{"getent", "passwd"}, execx.Result{Stdout: []byte("root:x:0:0::/root:/bin/bash\n")})
 		return r
 	}
-	hs.run(runner(), "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
+	hs.run(runner(), "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
 	all := plain(hs.out.String() + hs.err.String())
 	if hs.code != 0 || !strings.Contains(all, "accounts with the system shell keep or get /bin/bash, all the others get /usr/sbin/nologin") ||
 		!strings.Contains(script, "TAC_USERS=$'alice:superuser:80000:/bin/bash\\nbob:engineer:80001:/usr/sbin/nologin\\ncarol:readonly:80002:/usr/sbin/nologin'") {

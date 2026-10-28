@@ -390,6 +390,7 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"host.default_method":                    {setWith("host default-method"), "The method a Linux host is enrolled with when its scope decides none."},
 	"linux.uid_min":                          {setWith("config linux uid-range"), "First UID and GID of the Linux accounts tacctl makes, one range for every host."},
 	"linux.uid_max":                          {setWith("config linux uid-range"), "Last UID and GID of that range."},
+	"server.addresses":                       {setWith("host enroll --local --server"), "The address devices and hosts reach this server at, a list that holds one address for now; the enrolment of this server records it (detected from the interface with the default route when none is recorded and none is given)."},
 	"linux.engineer_sudo":                    {setWith("config linux engineer-sudo"), "The commands tac-engineer may run through sudo on enrolled hosts other than this server; unset: every command."},
 	"mgmt_acl.names.cisco":                   {setWith("config mgmt-acl cisco-name"), "Name of the ACL config cisco emits."},
 	"mgmt_acl.names.juniper":                 {setWith("config mgmt-acl juniper-name"), "Name of the filter config juniper emits."},
@@ -502,6 +503,8 @@ func manTypeText(r conf.Rule) string {
 		return "list of regular expressions"
 	case conf.TypeSudoCommandList:
 		return "non-empty list of absolute command paths"
+	case conf.TypeServerAddresses:
+		return "list of one IP address (not a host name, unspecified, loopback or link-local)"
 	case conf.TypeBreakGlassList:
 		return "list of name:role entries, role one of " + strings.Join(conf.BreakGlassRoles, ", ") + ", at most " + strconv.Itoa(conf.MaxBreakGlassUsers)
 	case conf.TypeLockdownGroups:

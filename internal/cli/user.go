@@ -114,7 +114,8 @@ type userInfo struct {
 }
 
 func (inv *invocation) userInfo(name string) (ui userInfo, ok bool, err error) {
-	m, err := inv.model()
+	// the user's own scopes as the listings show them: never the managed one
+	m, err := inv.shownModel()
 	if err != nil {
 		return ui, false, err
 	}
@@ -241,7 +242,7 @@ func (inv *invocation) promptHash(username string) (h string, generated bool, er
 // name must be a scope, repeats dropped. It returns the names, or the
 // error (printed) of the first that does not exist.
 func (inv *invocation) scopeList(csv string) ([]string, error) {
-	m, err := inv.model()
+	m, err := inv.shownModel()
 	if err != nil {
 		return nil, err
 	}
@@ -260,6 +261,9 @@ func (inv *invocation) scopeList(csv string) ([]string, error) {
 		}
 		if s == "" {
 			continue
+		}
+		if err := inv.reservedScope(s); err != nil {
+			return nil, err
 		}
 		if !contains(all, s) {
 			return nil, inv.usageErr("Scope '" + s + "' does not exist. Available: " + strings.Join(all, " "))
@@ -284,12 +288,18 @@ func (inv *invocation) userUID(name string) string {
 }
 
 func (inv *invocation) userList([]string) error {
-	m, err := inv.model()
+	m, err := inv.shownModel()
 	if err != nil {
 		return err
 	}
 	t := ui.NewTable("Users", ui.Left("USERNAME"), ui.Left("UID"), ui.Left("GROUP"), ui.Left("STATUS"), ui.Left("PW CHANGED"), ui.Left("SCOPES"))
-	pw := inv.pwContext(m)
+	// the standing of a password change is the store's, the managed scope
+	// included (the listing leaves it out)
+	full, err := inv.model()
+	if err != nil {
+		return err
+	}
+	pw := inv.pwContext(full)
 	for _, row := range m.UserRows() {
 		f := strings.SplitN(row, "|", 5)
 		for len(f) < 5 {
@@ -311,7 +321,7 @@ func (inv *invocation) userList([]string) error {
 				display = f[4]
 			}
 		}
-		t.Add(f[0], inv.userUID(f[0]), f[1], ui.Styled(color, f[2]), f[3]+pw.requiredLine(m.User(f[0])), display)
+		t.Add(f[0], inv.userUID(f[0]), f[1], ui.Styled(color, f[2]), f[3]+pw.requiredLine(full.User(f[0])), display)
 	}
 	inv.echo("")
 	inv.write(t.String())
@@ -383,7 +393,7 @@ func (inv *invocation) userShow(args []string) error {
 	}
 	inv.echoE("  " + b + "Hash type:" + nc + "        " + u.hashType)
 	if len(u.scopes) == 0 {
-		inv.echoE("  " + b + "Scopes:" + nc + "           " + ui.Red + "(none — cannot authenticate on any device)" + nc)
+		inv.echoE("  " + b + "Scopes:" + nc + "           " + inv.noScopesText("(none — cannot authenticate on any device)"))
 	} else {
 		first := true
 		for _, s := range u.scopes {
@@ -554,7 +564,8 @@ func (inv *invocation) userAdd(args []string) error {
 // else the only scope when there is exactly one, else "".
 func (inv *invocation) defaultScope() (string, error) {
 	v, _ := inv.app.Conf().Get("scope.default", "")
-	m, err := inv.model()
+	// the only scope is the only one an operator has: never the managed one
+	m, err := inv.shownModel()
 	if err != nil {
 		return "", err
 	}
@@ -1072,6 +1083,7 @@ func (inv *invocation) enrolledHostsCount(user string) (int, error) {
 	n := 0
 	for _, e := range reg.Entries() {
 		found := false
+		m := inv.serverModel(m, e.Target == hosts.Local && e.Scope == pwchange.ManagedScope)
 		for _, r := range m.LinuxUsers(e.Scope) {
 			if name, _, _ := strings.Cut(r, "|"); name == user {
 				found = true
@@ -1197,7 +1209,7 @@ func (inv *invocation) userScope(args []string) error {
 		inv.echoE(ui.Bold + "Scopes for user '" + username + "'" + ui.NC)
 		inv.echo(ui.Rule("Scopes for user '" + username + "'"))
 		if len(u.scopes) == 0 {
-			inv.echoE("  " + ui.Red + "(none — user cannot authenticate on any device)" + ui.NC)
+			inv.echoE("  " + inv.noScopesText("(none — user cannot authenticate on any device)"))
 		} else {
 			for _, s := range u.scopes {
 				if s == "" {

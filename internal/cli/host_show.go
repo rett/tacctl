@@ -20,6 +20,7 @@ import (
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/hosts"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -408,32 +409,34 @@ func (inv *invocation) hostShowText(v *hostShowJSON, all bool) {
 	row("Method", c.Method+" ("+hosts.ModuleOf(c.Method)+")")
 	end()
 
-	// Scope.
-	s := v.Scope
-	section("Scope")
-	reg := s.Registered
-	if !s.Exists {
-		reg += "  (no such scope)"
+	// Scope (none for this server in the scope tacctl manages: its own login
+	// is no scope of the operator's).
+	if s := v.Scope; s.Registered != pwchange.ManagedScope {
+		section("Scope")
+		reg := s.Registered
+		if !s.Exists {
+			reg += "  (no such scope)"
+		}
+		row("Registered", reg)
+		switch {
+		case s.Address == "":
+			row("Answering", "unknown: no address is recorded or resolves for the host")
+		case s.Answering == "":
+			row("Answering", "no scope covers "+s.Address)
+		default:
+			row("Answering", s.Answering+" (prefix "+s.Prefix+") for "+s.Address)
+		}
+		if s.Drift != "" {
+			inv.app.Out.WarnE(s.Drift)
+		}
+		if len(s.Staging) == 0 {
+			row("Staging", "none")
+		}
+		for i, st := range s.Staging {
+			row(map[bool]string{true: "Staging", false: ""}[i == 0], st.CIDR+" in scope '"+st.Scope+"' since "+st.Since+" (tacctl scope staging)")
+		}
+		end()
 	}
-	row("Registered", reg)
-	switch {
-	case s.Address == "":
-		row("Answering", "unknown: no address is recorded or resolves for the host")
-	case s.Answering == "":
-		row("Answering", "no scope covers "+s.Address)
-	default:
-		row("Answering", s.Answering+" (prefix "+s.Prefix+") for "+s.Address)
-	}
-	if s.Drift != "" {
-		inv.app.Out.WarnE(s.Drift)
-	}
-	if len(s.Staging) == 0 {
-		row("Staging", "none")
-	}
-	for i, st := range s.Staging {
-		row(map[bool]string{true: "Staging", false: ""}[i == 0], st.CIDR+" in scope '"+st.Scope+"' since "+st.Since+" (tacctl scope staging)")
-	}
-	end()
 
 	// Address.
 	section("Address")

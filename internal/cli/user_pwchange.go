@@ -73,7 +73,7 @@ func (c *pwCtx) barrier(name, group string, scopes []string, disabled bool) pwBa
 		return pwBarrier{why: "this server is not enrolled (tacctl host enroll --local), so no user has a login on it to change the password at"}
 	case !hosts.LinuxName(name):
 		return pwBarrier{why: "its name is no Linux account name (a period), so it has no login on this server"}
-	case !slices.Contains(scopes, e.Scope):
+	case !slices.Contains(scopes, e.Scope) && !(e.Scope == pwchange.ManagedScope && c.implicit(name, group)):
 		return pwBarrier{why: "it is not in scope '" + e.Scope + "', the scope of this server, so it has no login on it"}
 	}
 	srv := pwchange.ServerOf(e)
@@ -86,6 +86,16 @@ func (c *pwCtx) barrier(name, group string, scopes []string, disabled bool) pwBa
 		return pwBarrier{why: "backend '" + srv.Protocol + "', which answers this server's own " + hosts.MethodLabel(e.EffectiveMethod()) + " logins, is not enabled, so nobody logs in to it"}
 	}
 	return pwBarrier{}
+}
+
+// implicit reports whether a user of that name and group is a member of the
+// managed scope without having it (pwchange.Implicit; an existing accounting
+// sink is not).
+func (c *pwCtx) implicit(name, group string) bool {
+	if u := c.m.User(name); u != nil && u.AccountingSink {
+		return false
+	}
+	return hosts.LinuxName(name) && pwchange.GroupTier(c.inv.app.Conf(), c.m, group) != tier.None
 }
 
 // pwBarrier is the barrier of a user, existing or about to be.

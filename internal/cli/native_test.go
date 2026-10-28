@@ -115,6 +115,7 @@ func (sb *sandbox) run(stdin string, args []string, extraEnv ...string) string {
 		stdio, sb.runner)
 	a.SNMP = sb.snmp
 	a.Resolve = sb.resolve
+	a.ServerAddress = testServerAddress
 	// tacctl's fixed host locations (the installed command, /root, ...)
 	// stay in the sandbox too.
 	a.Paths = a.Paths.Reroot(sb.dir)
@@ -144,6 +145,10 @@ func (sb *sandbox) expect(code int, outHas, errHas string) {
 		sb.t.Errorf("exit %d (want %d)\nstdout %q (want %q)\nstderr %q (want %q)", sb.code, code, sb.out.String(), outHas, sb.err.String(), errHas)
 	}
 }
+
+// testServerAddress is the detected server address of the sandboxes: the
+// address of an interface with the default route, as on a real server.
+func testServerAddress() (string, string, error) { return "192.0.2.10", "eth0", nil }
 
 const testHash = "24326224313024616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161"
 
