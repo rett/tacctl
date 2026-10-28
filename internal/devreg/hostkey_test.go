@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/rett/tacctl/internal/execx"
@@ -171,10 +172,15 @@ func TestScanWithFallback(t *testing.T) {
 		r.On([]string{"ssh-keyscan"}, execx.Result{Stderr: []byte("# 10.99.0.1:22 SSH-2.0-Cisco-1.25\n")})
 		return r
 	}
-	var calls []string
+	var (
+		callsMu sync.Mutex
+		calls   []string
+	)
 	answer := func(keys []HostKey, err error) KeyFallback {
 		return func(_ context.Context, address string, port int) ([]HostKey, error) {
+			callsMu.Lock()
 			calls = append(calls, address+" "+strconv.Itoa(port))
+			callsMu.Unlock()
 			return keys, err
 		}
 	}

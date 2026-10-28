@@ -5,11 +5,16 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/rett/tacctl/internal/ui"
 )
+
+// lockTestMu guards the variables lockOptions shares with a test that reads
+// them while the session still runs.
+var lockTestMu sync.Mutex
 
 // lockOptions are the options of a session held to a required password
 // change until 'passwd' has run.
@@ -18,18 +23,33 @@ func lockOptions(locked *bool, ran *[]string, refused *[]string) Options {
 		Prompt:   "host> ",
 		Complete: testCompleter,
 		Exec: func(_ context.Context, words []string, _ io.Reader) int {
+			lockTestMu.Lock()
+			defer lockTestMu.Unlock()
 			*ran = append(*ran, strings.Join(words, " "))
 			if len(words) == 1 && words[0] == "passwd" {
 				*locked = false
 			}
 			return 0
 		},
-		Help:        func([]string) (string, bool) { return "a help\n", true },
-		SystemShell: func(context.Context, bool) int { *ran = append(*ran, "system-shell"); return 0 },
-		Locked:      func() bool { return *locked },
-		LockWords:   []string{"passwd"},
-		LockNotice:  "locked: only passwd",
-		LockRefused: func(w []string) { *refused = append(*refused, strings.Join(w, " ")) },
+		Help: func([]string) (string, bool) { return "a help\n", true },
+		SystemShell: func(context.Context, bool) int {
+			lockTestMu.Lock()
+			defer lockTestMu.Unlock()
+			*ran = append(*ran, "system-shell")
+			return 0
+		},
+		Locked: func() bool {
+			lockTestMu.Lock()
+			defer lockTestMu.Unlock()
+			return *locked
+		},
+		LockWords:  []string{"passwd"},
+		LockNotice: "locked: only passwd",
+		LockRefused: func(w []string) {
+			lockTestMu.Lock()
+			defer lockTestMu.Unlock()
+			*refused = append(*refused, strings.Join(w, " "))
+		},
 	}
 }
 
@@ -332,9 +352,11 @@ func TestLockedSessionRecallsNothingFromTheHistory(t *testing.T) {
 	p.expect(`host> `)
 	p.send("\x12user\r")
 	p.expect(`host> `)
+	lockTestMu.Lock()
 	if len(refused) != 0 || len(ran) != 0 {
 		t.Errorf("a line was recalled while locked: refused %q ran %q", refused, ran)
 	}
+	lockTestMu.Unlock()
 	p.send("passwd\r")
 	p.expect(`host> `)
 	p.send("\x1b[A\r")
