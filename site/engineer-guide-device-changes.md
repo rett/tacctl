@@ -60,7 +60,10 @@ tacctl device add pdu1 10.10.0.50 --vendor wti
 - **Check the host key fingerprints** that `add` prints against the
   console: Cisco `show ip ssh`, Junos
   `file show /etc/ssh/ssh_host_ed25519_key.pub`. If you already have the
-  fingerprint, `--host-key SHA256:<fp>` pins only that key.
+  fingerprint, `--host-key SHA256:<fp>` pins only that key. A device that
+  gives no key to the scan is asked one key type at a time, then read with
+  tacctl's own ssh client; when nothing works the refusal says what to do
+  ([Connecting to Devices](connecting-to-devices.md) §6).
 - `--legacy-ssh` affects only the ssh algorithms (SHA-1 key exchange, CBC
   ciphers, ssh-rsa). The Cisco configuration syntax is set separately with
   `--ios-syntax auto|ios12|modern`. With `auto`, the version line of the
