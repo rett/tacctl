@@ -157,13 +157,39 @@ LIST
     assert_line --index 2 --partial "reason=failed lines=2 status=126"
 }
 
-@test "console: without an answer from _console-policy the defaults apply and the lines still run" {
+@test "console: without an answer from _console-policy a caller who is no superuser is held; the line does not run" {
+    # Whether a password change is required cannot be read, so the session
+    # fails closed (0.2.20): the line is refused and is not run.
     stub_cmd sudo 'while [[ "${1:-}" == -n || "${1:-}" == *=* ]]; do shift; done
 case " $* " in *" _console-policy "*) echo "sudo: a password is required" >&2; exit 1 ;; esac
 exec "$@"'
     run "$CONSOLE_BIN" -c "user list"
+    assert_failure 1
+    assert_output "[ERROR] It could not be read whether a password change is required of your account, so nothing runs here: the next line tries again ('passwd' changes the password, 'exit' leaves)."
+    run sudo_lines
+    refute_output --partial " ${EXE} user list"
+    run console_log
+    assert_line --partial "console DENY session=0123456789ab user=carol reason=password-change first=user"
+    assert_line --partial "reason=command lines=1 status=1"
+    # A superuser by the system groups is never held: the defaults apply and
+    # the line runs.
+    stub_cmd id 'echo carol tac-users tac-superuser'
+    run "$CONSOLE_BIN" -c "user list"
     assert_success
     assert_output --partial "USERNAME"
+}
+
+@test "console: a policy line without a tier keeps the defaults: the lines run and help lists the read-only commands" {
+    stub_cmd sudo 'while [[ "${1:-}" == -n || "${1:-}" == *=* ]]; do shift; done
+case " $* " in *" _console-policy "*) echo "idle=30"; exit 0 ;; esac
+exec "$@"'
+    run "$CONSOLE_BIN" -c "user list"
+    assert_success
+    assert_output --partial "USERNAME"
+    run "$CONSOLE_BIN" -c "help"
+    assert_success
+    assert_output --partial "Shown: the commands the readonly tier can run"
+    refute_output --partial "  install "
 }
 
 @test "console: help names system-shell; tacctl shell's does not" {
@@ -203,10 +229,17 @@ exec "$@"'
     assert_output --partial "  store <subcommand>"
 }
 
-@test "console: without an answer from _console-policy the help lists the read-only commands only" {
+@test "console: without an answer from _console-policy help is refused too, and a superuser's lists the read-only commands only" {
     stub_cmd sudo 'while [[ "${1:-}" == -n || "${1:-}" == *=* ]]; do shift; done
 case " $* " in *" _console-policy "*) echo "sudo: a password is required" >&2; exit 1 ;; esac
 exec "$@"'
+    run "$CONSOLE_BIN" -c "help"
+    assert_failure 1
+    assert_output --partial "It could not be read whether a password change is required of your account"
+    refute_output --partial "Shown:"
+    # The superuser is not held, but with no tier read the lists are the
+    # read-only ones.
+    stub_cmd id 'echo carol tac-users tac-superuser'
     run "$CONSOLE_BIN" -c "help"
     assert_success
     assert_output --partial "Shown: the commands the readonly tier can run"
