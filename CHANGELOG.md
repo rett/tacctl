@@ -40,7 +40,9 @@ current behaviour; this file is where history lives.
    refuses, after a snapshot, and warns which scopes were strict: the older
    release plans the `ssh-only` filter for them (`--apply` needs `--yes`).
    The rollbacks to 0.2.18, 0.2.17 and 0.2.3 also rewrite the tiers drop-in
-   when it is the text 0.2.19 wrote.
+   when it is the text 0.2.19 wrote. A list with no IPv4 entry that permits
+   ssh renders no filter in either mode. The strict filter has not yet been
+   checked on a Junos device.
 
 ## 0.2.19 (2026-10-25)
 
