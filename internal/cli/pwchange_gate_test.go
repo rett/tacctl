@@ -63,6 +63,36 @@ func TestCommandsAreRefusedWhileAPasswordChangeIsRequired(t *testing.T) {
 	}
 }
 
+// The live names Tab asks for in a plain shell are refused to a held caller
+// without a message and without an audit line: they are no command the person
+// typed, and a line per key press would be noise in the log.
+func TestCompletionNamesAreRefusedQuietlyWhileAPasswordChangeIsRequired(t *testing.T) {
+	sb := pwSandbox(t)
+	sb.asAlice("", "user", "passwd", "bob", "--hash", hashOf(t, "CorrectHorse99"))
+	for i := 0; i < 3; i++ {
+		sb.asBob("", "_completion-names", "users")
+		if sb.code != 1 || sb.out.Len() != 0 || sb.err.Len() != 0 {
+			t.Errorf("exit %d stdout %q stderr %q", sb.code, sb.out.String(), sb.err.String())
+		}
+		for _, l := range auditLines(sb.runner) {
+			if strings.Contains(l, "password-change DENY") {
+				t.Errorf("an audit line for a completion helper: %s", l)
+			}
+		}
+	}
+	// a command the person types is still refused and logged
+	sb.asBob("", "user", "list")
+	if !hasAuditPrefix(sb.runner, "auth.warning", "password-change DENY user=bob") {
+		t.Errorf("the refusal of a typed command is not logged: %q", auditLines(sb.runner))
+	}
+	// and the names are served again once the password is changed
+	sb.asBob("CorrectHorse99\nNewHorse123456\nNewHorse123456\n", "passwd")
+	sb.asBob("", "_completion-names", "users")
+	if sb.code != 0 || !strings.Contains(sb.out.String(), "alice") {
+		t.Errorf("after the change: exit %d %q %q", sb.code, sb.out.String(), sb.err.String())
+	}
+}
+
 // 'passwd', 'version' and 'help' run, the policy line the console asks for
 // too, and once the password is changed so does everything.
 func TestPasswordChangeCommandsRunAndUnlock(t *testing.T) {

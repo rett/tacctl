@@ -194,7 +194,7 @@ only when set.
   every command but `passwd`, `version` and `help` is refused with one message and exit status 1
   (`A password change is required of '<user>': ...`). This covers a plain shell and `ssh <server>
   tacctl ...`; root, a superuser and a local administrator who is no tacctl user are not affected.
-  The refusal is logged as `password-change DENY` ([Audit log](../security/audit.md#refusals)).
+  The refusal is logged as `password-change DENY` ([Audit log](../security/audit.md#refusals)); the live names that Tab asks for in a plain shell are refused without a message or a line.
 - *Listing.* `user list` marks the date of a user who must change the password with `(change
   required)`, `user show` has a `Password change` line, and `status` counts the users pending. A
   flagged user who cannot log in to change it is marked `flagged, cannot log in to change it` (with

@@ -1028,7 +1028,8 @@ is refused with one message (\fBA password change is required of '<user>'\fR ...
 and exit status 1: this covers a plain shell and
 .BR "ssh <server> tacctl ..." ,
 which the login console does not. A superuser, root and a local administrator
-outside the tacctl users are never affected. The refusal is logged
+outside the tacctl users are never affected. The live names that Tab asks for
+in a plain shell are refused without a message or a line. The refusal is logged
 .RB ( "password\-change DENY" ,
 see
 .BR "AUDIT LOG" ).

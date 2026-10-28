@@ -64,6 +64,13 @@ func (inv *invocation) passwordChangeGate() error {
 	} else if !pwchange.Subject(a.Conf(), m, m.User(user)) {
 		return nil
 	}
+	// The live names a Tab press asks for in a plain shell are no command of
+	// the person's: a held caller's shell offers nothing from them, and a
+	// refusal per key press would fill the audit log with denials nobody
+	// made. They are refused (no names) without a message or a line.
+	if a.Args[0] == "_completion-names" {
+		return exit(1)
+	}
 	// the words the tier gate sees, never the arguments after them
 	words := a.Args[0]
 	if len(a.Args) > 1 && !strings.HasPrefix(a.Args[1], "-") {
