@@ -380,9 +380,11 @@ func privText(g *model.Group) string {
 // with every problem ('cannot render an invalid model: ...'), and so is a
 // command rule of tacctl.yaml that is not one. hostNames are the enrolled
 // hosts (hosts.EnrolledNames): a hold on one is worded as a host in the
-// comment block. The output depends only on the inputs, so an unchanged
-// model renders byte-identically.
-func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool) ([]byte, error) {
+// comment block. server is where this server is enrolled
+// (pwchange.LocalServer): the one scope a user who must change the password
+// keeps. The output depends only on the inputs, so an unchanged model renders
+// byte-identically.
+func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool, server pwchange.Server) ([]byte, error) {
 	if errs := store.Validate(st.Doc()); len(errs) > 0 {
 		return nil, &rendered.Error{Msg: "cannot render an invalid model:\n  - " + strings.Join(errs, "\n  - ")}
 	}
@@ -392,7 +394,7 @@ func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool) ([]byt
 	// (docs/plans/0.2.5-plan.md D123); the store is not changed.
 	holds := conf.HoldsOf(view)
 	whole := m
-	m = Carved(m, view)
+	m = Carved(m, view, server)
 	var w strings.Builder
 
 	w.WriteString(Header)
@@ -621,13 +623,13 @@ func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool) ([]byt
 // the scope that locks them, and with a user who must change the password
 // in this server's own scope only (pwchange.Carve): the model the renderer
 // writes and the read-back compares the file with.
-func Carved(m *model.Model, view *yamlpy.Map) *model.Model {
+func Carved(m *model.Model, view *yamlpy.Map, server pwchange.Server) *model.Model {
 	// the members of a locked group are taken out of the scope that locks it
 	// (0.2.19, the emergency lockdown)
 	m = m.WithoutAddresses(conf.HeldAddresses(view)).WithoutMembers(conf.LockedGroups(view))
 	// a user who must change the password is in no scope but this server's
 	// own (0.2.20): no device authenticates them until they have changed it
-	return pwchange.Carve(m, view, Protocol)
+	return pwchange.Carve(m, view, Protocol, server)
 }
 
 // holdComment is the comment block of the secret providers naming each

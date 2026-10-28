@@ -347,3 +347,46 @@ func TestRequiredChangeWarnsOfAScopeSharedWithDevices(t *testing.T) {
 		t.Errorf("a warning for lifting:\n%s", sb.out.String())
 	}
 }
+
+// A server enrolled with another address than loopback is logged in from that
+// address too: the enrolled scope must answer it, and a prefix of just that
+// address is the server's own, not a device's.
+func TestRequiredChangeKnowsTheServersLoginAddresses(t *testing.T) {
+	sb := pwSandbox(t)
+	sb.write("state/linux-hosts", "authsrv|local|22|srv|192.0.2.10|\n", 0o600)
+	// srv answers 127.0.0.1 only: the logins from 192.0.2.10 find no scope of it
+	sb.asAlice("", "user", "require-password-change", "bob")
+	sb.expect(0, "", "")
+	if out := plain(sb.out.String() + sb.err.String()); !strings.Contains(out, "Skipped bob (scope 'srv' does not answer 192.0.2.10 for TACACS+, where this server's own logins come from") {
+		t.Errorf("without the address:\n%s", out)
+	}
+	if got := flaggedUsers(t, sb); got != "" {
+		t.Errorf("flagged: %q", got)
+	}
+	// with the address in the scope it is the server's own: no warning
+	sb.run("", []string{"scope", "prefixes", "srv", "add", "192.0.2.10/32"})
+	sb.expect(0, "", "")
+	sb.asAlice("", "user", "require-password-change", "bob")
+	sb.expect(0, "Flagged 1, skipped 0, already required 0.", "")
+	if strings.Contains(sb.out.String()+sb.err.String(), "also answers") {
+		t.Errorf("the server's own address is warned of:\n%s", sb.out.String()+sb.err.String())
+	}
+	// a wider prefix that holds it is shared with devices
+	sb.run("", []string{"scope", "prefixes", "srv", "add", "192.0.2.0/24"})
+	sb.expect(0, "", "")
+	sb.asAlice("", "user", "add", "dave", "operator", "--hash", hashOf(t, "CorrectHorse99"), "--scopes", "srv")
+	sb.expect(0, "also answers 192.0.2.0/24", "")
+}
+
+// The barrier looks at the protocol of the server's method: a scope that
+// serves only the other protocol does not answer the server.
+func TestRequiredChangeBarrierFollowsTheMethod(t *testing.T) {
+	sb := pwSandbox(t)
+	sb.write("state/linux-hosts", "authsrv|local|22|srv|127.0.0.1||radius\n", 0o600)
+	sb.run("", []string{"scope", "protocols", "srv", "set", "tacacs"})
+	sb.expect(0, "", "")
+	sb.asAlice("", "user", "require-password-change", "bob")
+	if out := plain(sb.out.String() + sb.err.String()); !strings.Contains(out, "Skipped bob (scope 'srv' does not answer 127.0.0.1 for RADIUS") {
+		t.Errorf("radius server, tacacs scope:\n%s", out)
+	}
+}

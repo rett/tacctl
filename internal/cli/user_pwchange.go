@@ -60,9 +60,11 @@ func (inv *invocation) pwBarrier(m *model.Model, name, group string, scopes []st
 	case !slices.Contains(scopes, e.Scope):
 		return pwBarrier{why: "it is not in scope '" + e.Scope + "', the scope of this server, so it has no login on it"}
 	}
-	proto, _ := hosts.MethodBackend(e.EffectiveMethod())
-	if got := m.ScopeOf(pwchange.ServerAddress, proto); got != e.Scope {
-		return pwBarrier{why: "scope '" + e.Scope + "' does not answer " + pwchange.ServerAddress + " for " + hosts.MethodLabel(e.EffectiveMethod()) + ", where this server's own logins come from, so nobody logs in to it"}
+	srv := pwchange.ServerOf(e)
+	for _, addr := range srv.LoginAddresses() {
+		if got := m.ScopeOf(addr, srv.Protocol); got != e.Scope {
+			return pwBarrier{why: "scope '" + e.Scope + "' does not answer " + addr + " for " + hosts.MethodLabel(e.EffectiveMethod()) + ", where this server's own logins come from, so nobody logs in to it"}
+		}
 	}
 	return pwBarrier{}
 }
@@ -85,7 +87,7 @@ func (inv *invocation) sharedScopeNote(m *model.Model) string {
 	if s == nil {
 		return ""
 	}
-	shared := pwchange.SharedPrefixes(s, e.Server)
+	shared := pwchange.ServerOf(e).SharedPrefixes(s)
 	if len(shared) == 0 {
 		return ""
 	}

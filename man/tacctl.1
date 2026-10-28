@@ -952,12 +952,16 @@ user or for every user with
 .BR \-\-all .
 A user who must change the password can log in to this tacctl server only:
 every device refuses the user, as it refuses an unknown user, until the
-password is changed. The user stays in the scope that answers this server's
-own logins (the one that holds 127.0.0.1) and is left out of every other
-scope, in the TACACS+ and the RADIUS configuration alike, so the password can
-be changed at the server and nowhere else is the user let in; a change of the
-requirement therefore restarts the backend whose file changed, and none when
-the user has no other scope. A scope that holds the server together with
+password is changed. The user stays in the scope this server is enrolled in
+(\fBhost enroll \-\-local\fR), in the protocol of the method it is enrolled
+with, and is left out of every other scope; in the other protocol the user is
+not rendered at all, even where a catch\-all scope answers 127.0.0.1. So the
+password can be changed at the server and nowhere else is the user let in; a
+change of the requirement therefore restarts the backend whose file changed,
+and none when the user has no other scope. This server's logins come from
+127.0.0.1, and from the address of
+.B \-\-server
+when that is another one, which the enrolled scope must answer too. A scope that holds the server together with
 devices cannot be cut apart: those devices still authenticate the user, and
 the command says so, naming the prefixes; give the server a scope of its own.
 The requirement is stored as

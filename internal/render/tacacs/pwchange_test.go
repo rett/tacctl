@@ -7,7 +7,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/store"
+)
+
+// srvTacacs is this server enrolled in scope 'srv' with the tacplus method;
+// srvRadius the same with the radius method.
+var (
+	srvTacacs = pwchange.Server{Scope: "srv", Protocol: "tacacs"}
+	srvRadius = pwchange.Server{Scope: "srv", Protocol: "radius"}
 )
 
 var updatePwchange = flag.Bool("update-pwchange", false, "rewrite testdata/pwchange.users.yaml")
@@ -36,8 +44,18 @@ func pwStore(t *testing.T, flagged ...string) *store.Store {
 
 func scopesOf(t *testing.T, st *store.Store, view string) map[string]string {
 	t.Helper()
+	return scopesAs(t, st, view, srvTacacs)
+}
+
+// scopesAs is scopesOf for a server enrolled as server.
+func scopesAs(t *testing.T, st *store.Store, view string, server pwchange.Server) map[string]string {
+	t.Helper()
 	out := map[string]string{}
-	for n, s := range userScopes(t, render(t, st, viewOf(t, view).Merged())) {
+	text, err := Render(st, viewOf(t, view).Merged(), nil, server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for n, s := range userScopes(t, text) {
 		out[n] = strings.Join(s, ",")
 	}
 	return out
@@ -114,7 +132,7 @@ func TestRenderPasswordChangeWithoutAServerScope(t *testing.T) {
 	if got["bob"] != "" {
 		t.Errorf("bob is in %q though no tacacs scope answers 127.0.0.1", got["bob"])
 	}
-	if _, err := renderFile(t, st, defaultView(t)); err != nil {
+	if _, err := renderFileAs(t, st, defaultView(t), srvTacacs); err != nil {
 		t.Fatalf("the read-back refused the render: %v", err)
 	}
 }
@@ -122,15 +140,15 @@ func TestRenderPasswordChangeWithoutAServerScope(t *testing.T) {
 // A render with flags reads back through the importer (RenderToFile's check)
 // and is the same bytes every time.
 func TestRenderPasswordChangeIsDeterministicAndReadsBack(t *testing.T) {
-	a := render(t, pwStore(t, "bob", "carol", "alice"), defaultView(t))
-	b := render(t, pwStore(t, "carol", "alice", "bob"), defaultView(t))
+	a := renderAs(t, pwStore(t, "bob", "carol", "alice"), defaultView(t), srvTacacs)
+	b := renderAs(t, pwStore(t, "carol", "alice", "bob"), defaultView(t), srvTacacs)
 	if string(a) != string(b) {
 		t.Error("the order the flags were set in changes the bytes")
 	}
-	if _, err := renderFile(t, pwStore(t, "bob", "carol", "alice"), defaultView(t)); err != nil {
+	if _, err := renderFileAs(t, pwStore(t, "bob", "carol", "alice"), defaultView(t), srvTacacs); err != nil {
 		t.Fatalf("the read-back refused the render: %v", err)
 	}
-	if string(a) == string(render(t, pwStore(t), defaultView(t))) {
+	if string(a) == string(renderAs(t, pwStore(t), defaultView(t), srvTacacs)) {
 		t.Error("the flags changed nothing")
 	}
 	// no flag, no difference to the render of before the feature: the same
@@ -139,7 +157,7 @@ func TestRenderPasswordChangeIsDeterministicAndReadsBack(t *testing.T) {
 	if err := st.UserSet("bob", "password_change_required=false"); err != nil {
 		t.Fatal(err)
 	}
-	if string(render(t, st, defaultView(t))) != string(render(t, pwStore(t), defaultView(t))) {
+	if string(renderAs(t, st, defaultView(t), srvTacacs)) != string(renderAs(t, pwStore(t), defaultView(t), srvTacacs)) {
 		t.Error("an unflagged store renders differently")
 	}
 }
@@ -149,7 +167,7 @@ func TestRenderPasswordChangeIsDeterministicAndReadsBack(t *testing.T) {
 // no golden of this change carries; go test -run TestRenderPasswordChangeGolden
 // -update-pwchange rewrites it).
 func TestRenderPasswordChangeGolden(t *testing.T) {
-	text := string(render(t, pwStore(t, "bob", "carol", "alice"), defaultView(t)))
+	text := string(renderAs(t, pwStore(t, "bob", "carol", "alice"), defaultView(t), srvTacacs))
 	i, j := strings.Index(text, "# --- Users ---"), strings.Index(text, "# --- Secret Providers")
 	if i < 0 || j < i {
 		t.Fatal("the users section is not in the file")
@@ -162,4 +180,80 @@ func TestRenderPasswordChangeGolden(t *testing.T) {
 		}
 	}
 	diffText(t, got, readFile(t, path), "the users of the render with a required password change")
+}
+
+// splitStore is pwStore with this server's scope 'srv' served by one protocol
+// and a catch-all scope 'all' served by the other, bob (flagged) in both: the
+// catch-all answers 127.0.0.1 for its own protocol, but it is not the scope
+// this server is enrolled in.
+func splitStore(t *testing.T, srvProto, allProto string) *store.Store {
+	t.Helper()
+	st := pwStore(t, "bob")
+	if err := st.ScopeSet("srv", "protocols="+srvProto); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ScopeSet("all", "prefixes=0.0.0.0/0", "secret=all-secret-0123456789abcdef", "protocols="+allProto); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UserSet("bob", "scopes=all,srv"); err != nil {
+		t.Fatal(err)
+	}
+	return st
+}
+
+// The server's logins use RADIUS and a catch-all scope serves TACACS+: the
+// scope that answers 127.0.0.1 for TACACS+ is not this server's, so a flagged
+// user is not rendered for TACACS+ at all and every TACACS+ device refuses
+// them. The mirror (TACACS+ server, RADIUS catch-all) is the TACACS+ file
+// keeping the server scope and nothing else.
+func TestRenderPasswordChangeDropsTheOtherProtocolsScopes(t *testing.T) {
+	// a RADIUS server: srv is radius-only, all is tacacs-only
+	st := splitStore(t, "radius", "tacacs")
+	if got := scopesAs(t, st, "", srvRadius)["bob"]; got != "" {
+		t.Errorf("TACACS+ file, RADIUS server: bob is in %q, devices still accept him", got)
+	}
+	// the same file for a user who is not flagged still has his scopes
+	if err := st.UserSet("bob", "password_change_required=false"); err != nil {
+		t.Fatal(err)
+	}
+	if got := scopesAs(t, st, "", srvRadius)["bob"]; got != "all" {
+		t.Errorf("unflagged: %q", got)
+	}
+	// a TACACS+ server: srv is tacacs-only, all is radius-only; the TACACS+
+	// file keeps the server scope
+	st = splitStore(t, "tacacs", "radius")
+	if got := scopesAs(t, st, "", srvTacacs)["bob"]; got != "srv" {
+		t.Errorf("TACACS+ file, TACACS+ server: bob is in %q", got)
+	}
+	// both protocols serve both scopes: the protocol of the server decides,
+	// not the scope that happens to answer 127.0.0.1
+	st = splitStore(t, "tacacs,radius", "tacacs,radius")
+	if got := scopesAs(t, st, "", srvRadius)["bob"]; got != "" {
+		t.Errorf("TACACS+ file, RADIUS server, scopes serve both: bob is in %q", got)
+	}
+	if got := scopesAs(t, st, "", srvTacacs)["bob"]; got != "srv" {
+		t.Errorf("TACACS+ file, TACACS+ server, scopes serve both: bob is in %q", got)
+	}
+	// a server that is not enrolled (the zero Server) keeps nothing
+	if got := scopesAs(t, st, "", pwchange.Server{})["bob"]; got != "" {
+		t.Errorf("no server: bob is in %q", got)
+	}
+}
+
+// The scope is the registry's, not the one that answers 127.0.0.1: another
+// scope with the same address that sorts first is not the server's.
+func TestRenderPasswordChangeKeepsTheEnrolledScope(t *testing.T) {
+	st := pwStore(t, "bob")
+	if err := st.ScopeSet("local", "prefixes=127.0.0.0/8", "secret=local-secret-0123456789abcdef"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UserSet("bob", "scopes=local,srv"); err != nil {
+		t.Fatal(err)
+	}
+	if got := scopesAs(t, st, "", srvTacacs)["bob"]; got != "srv" {
+		t.Errorf("bob is in %q", got)
+	}
+	if got := scopesAs(t, st, "", pwchange.Server{Scope: "local", Protocol: "tacacs"})["bob"]; got != "local" {
+		t.Errorf("enrolled in local: bob is in %q", got)
+	}
 }

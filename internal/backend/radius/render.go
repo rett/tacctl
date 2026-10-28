@@ -13,6 +13,7 @@ import (
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/pwchange"
 	rr "github.com/rett/tacctl/internal/render/radius"
 	"github.com/rett/tacctl/internal/rendered"
 )
@@ -55,6 +56,7 @@ func (m *Module) renderLive(dir string) ([3]string, error) {
 	}
 	params := rr.ParamsFor(m.L)
 	params.Hosts = hosts.EnrolledNames(m.env.Paths.LinuxHosts)
+	params.Server = pwchange.LocalServer(m.env.Paths.LinuxHosts)
 	out, err := rr.RenderStore(s, merged, params)
 	if err != nil {
 		return states, err

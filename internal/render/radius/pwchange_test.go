@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/render/radius"
 	"github.com/rett/tacctl/internal/store"
 )
@@ -36,6 +37,25 @@ func pwModel(t *testing.T, flagged ...string) *model.Model {
 	return model.FromStore(st)
 }
 
+// srvRadius is this server enrolled in scope 'srv' with the radius method;
+// srvTacacs the same with the tacplus method.
+var (
+	srvRadius = pwchange.Server{Scope: "srv", Protocol: "radius"}
+	srvTacacs = pwchange.Server{Scope: "srv", Protocol: "tacacs"}
+)
+
+// renderAs renders m for a server enrolled as server.
+func renderAs(t *testing.T, m *model.Model, server pwchange.Server) *radius.Output {
+	t.Helper()
+	p := params("debian")
+	p.Server = server
+	out, err := radius.Render(m, cfg(t).Merged(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 var reUserEntry = regexp.MustCompile(`(?m)^(\S+)\tTmp-String-0 == "[0-9a-f]+/([^"]+)"`)
 
 // entries is the (user, scope) entries of a users file, each user's scopes
@@ -58,13 +78,7 @@ func entries(users string) map[string]string {
 // unknown user. The others, a flagged superuser included, are as they were;
 // the clients do not change, and the output is the same every time.
 func TestRenderPasswordChangeKeepsTheUserInTheServersScopeOnly(t *testing.T) {
-	render := func(m *model.Model) *radius.Output {
-		out, err := radius.Render(m, cfg(t).Merged(), params("debian"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return out
-	}
+	render := func(m *model.Model) *radius.Output { return renderAs(t, m, srvRadius) }
 	plain := render(pwModel(t))
 	if e := entries(plain.Users); e["bob"] != "lab,srv" || e["carol"] != "dmz,lab,srv" || e["alice"] != "lab,prod,srv" {
 		t.Fatalf("the entries without a flag: %v", e)
@@ -104,11 +118,51 @@ func TestRenderPasswordChangeWithoutAServerScope(t *testing.T) {
 	if err := st.UserSet("bob", "scopes=lab,srv", "password_change_required=true"); err != nil {
 		t.Fatal(err)
 	}
-	out, err := radius.Render(model.FromStore(st), cfg(t).Merged(), params("debian"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	out := renderAs(t, model.FromStore(st), srvRadius)
 	if e := entries(out.Users); e["bob"] != "" || e["carol"] == "" {
 		t.Errorf("entries: %v", e)
+	}
+}
+
+// The mirror of the TACACS+ renderer's case: the server's logins use
+// TACACS+, so the RADIUS file has no entry for a flagged user even in a
+// catch-all scope that answers 127.0.0.1 for RADIUS; the RADIUS server's own
+// case keeps the server's scope.
+func TestRenderPasswordChangeDropsTheOtherProtocolsScopes(t *testing.T) {
+	build := func(srvProto, allProto string) *model.Model {
+		st, err := store.Load(fixtures + "store.multiscope.yaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.ScopeSet("srv", "prefixes=127.0.0.1/32", "secret=srv-secret-0123456789abcdef", "protocols="+srvProto); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.ScopeSet("all", "prefixes=0.0.0.0/0", "secret=all-secret-0123456789abcdef", "protocols="+allProto); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.UserSet("bob", "scopes=all,srv", "password_change_required=true"); err != nil {
+			t.Fatal(err)
+		}
+		return model.FromStore(st)
+	}
+	// a TACACS+ server: srv serves tacacs, all serves radius
+	if e := entries(renderAs(t, build("tacacs", "radius"), srvTacacs).Users); e["bob"] != "" {
+		t.Errorf("RADIUS file, TACACS+ server: bob has entries %q, devices still accept him", e["bob"])
+	}
+	// a RADIUS server
+	if e := entries(renderAs(t, build("radius", "tacacs"), srvRadius).Users); e["bob"] != "srv" {
+		t.Errorf("RADIUS file, RADIUS server: bob has entries %q", e["bob"])
+	}
+	// both scopes serve both protocols: the protocol of the server decides
+	both := build("tacacs,radius", "tacacs,radius")
+	if e := entries(renderAs(t, both, srvTacacs).Users); e["bob"] != "" {
+		t.Errorf("RADIUS file, TACACS+ server, both served: bob has entries %q", e["bob"])
+	}
+	if e := entries(renderAs(t, both, srvRadius).Users); e["bob"] != "srv" {
+		t.Errorf("RADIUS file, RADIUS server, both served: bob has entries %q", e["bob"])
+	}
+	// not enrolled: nothing
+	if e := entries(renderAs(t, both, pwchange.Server{}).Users); e["bob"] != "" {
+		t.Errorf("no server: bob has entries %q", e["bob"])
 	}
 }

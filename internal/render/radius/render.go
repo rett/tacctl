@@ -125,7 +125,7 @@ func Render(m *model.Model, merged *yamlpy.Map, p Params) (*Output, error) {
 	// (0.2.19, the emergency lockdown); the clients above stay
 	// and a user who must change the password (0.2.20) is in no scope but
 	// this server's own, so no device authenticates them until they have
-	usersText, err := renderUsers(pwchange.Carve(m.WithoutMembers(conf.LockedGroups(merged)), merged, "radius"), merged)
+	usersText, err := renderUsers(pwchange.Carve(m.WithoutMembers(conf.LockedGroups(merged)), merged, "radius", p.Server), merged)
 	if err != nil {
 		return nil, err
 	}

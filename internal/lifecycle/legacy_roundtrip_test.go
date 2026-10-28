@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/rett/tacctl/internal/lifecycle"
+	"github.com/rett/tacctl/internal/pwchange"
 	rtacacs "github.com/rett/tacctl/internal/render/tacacs"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/yamlpy"
@@ -73,7 +74,7 @@ func TestLegacyImportReadsBackWhatTheRendererWrites(t *testing.T) {
 	if err := e.be.Conf.SetValue("commands.operator", rules); err != nil {
 		t.Fatal(err)
 	}
-	first, err := rtacacs.RenderToFile(st, e.be.Conf.Merged(), nil, e.p.Config, rtacacs.DefaultLoader, nil)
+	first, err := rtacacs.RenderToFile(st, e.be.Conf.Merged(), nil, pwchange.Server{}, e.p.Config, rtacacs.DefaultLoader, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +118,7 @@ func TestLegacyImportReadsBackWhatTheRendererWrites(t *testing.T) {
 
 	// Render again from what came back: the same block, byte for byte.
 	e.be.Conf.Reload()
-	second, err := rtacacs.RenderToFile(st, e.be.Conf.Merged(), nil, e.p.Config+".2", rtacacs.DefaultLoader, nil)
+	second, err := rtacacs.RenderToFile(st, e.be.Conf.Merged(), nil, pwchange.Server{}, e.p.Config+".2", rtacacs.DefaultLoader, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

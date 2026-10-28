@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/rett/tacctl/internal/conf"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/yamlpy"
 )
@@ -75,18 +76,37 @@ func defaultView(t *testing.T) *yamlpy.Map { return viewOf(t, "").Merged() }
 // render is Render that must succeed.
 func render(t *testing.T, st *store.Store, view *yamlpy.Map) []byte {
 	t.Helper()
-	out, err := Render(st, view, nil)
+	out, err := Render(st, view, nil, pwchange.Server{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return out
 }
 
+// renderAs is render for a server enrolled as server.
+func renderAs(t *testing.T, st *store.Store, view *yamlpy.Map, server pwchange.Server) []byte {
+	t.Helper()
+	out, err := Render(st, view, nil, server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// renderFileAs is RenderToFile with the read-back for a server enrolled as
+// server.
+func renderFileAs(t *testing.T, st *store.Store, view *yamlpy.Map, server pwchange.Server) (string, error) {
+	t.Helper()
+	out := filepath.Join(t.TempDir(), "rendered.yaml")
+	_, err := RenderToFile(st, view, nil, server, out, DefaultLoader, func(string) {})
+	return out, err
+}
+
 // renderFile is RenderToFile into a temp dir with the test loader.
 func renderFile(t *testing.T, st *store.Store, view *yamlpy.Map) (string, error) {
 	t.Helper()
 	out := filepath.Join(t.TempDir(), "rendered.yaml")
-	_, err := RenderToFile(st, view, nil, out, DefaultLoader, func(string) {})
+	_, err := RenderToFile(st, view, nil, pwchange.Server{}, out, DefaultLoader, func(string) {})
 	return out, err
 }
 

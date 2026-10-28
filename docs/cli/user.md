@@ -158,9 +158,15 @@ only when set.
   login on this server: the server is not enrolled (`host enroll --local`), the user is not in the
   scope it is enrolled in, the name is no Linux account name (a period), or the user is disabled.
   `off` clears the flag of the user or of every user who has it, a superuser's included.
-- *Devices.* The TACACS+ and RADIUS configuration put the user in the scope that answers this
-  server's own logins (the one that holds `127.0.0.1`) and in no other, so the login at tacctl, which
-  comes from the server, works and a device finds no scope the user is in. The stored scopes are not
+- *Devices.* The TACACS+ and RADIUS configuration put the user in the scope this server is enrolled
+  in (`host enroll --local`) and in no other, and only in the protocol of the method it is enrolled
+  with; in the other protocol the user is not rendered at all, so a catch-all scope of that protocol
+  does not keep its devices open. The login at tacctl, which comes from the server, works and a
+  device finds no scope the user is in. The server's logins come from `127.0.0.1`, and from the
+  address given with `host enroll --local --server <address>` when it is another one (a connection to
+  an address of the machine itself is sourced from that address): the enrolled scope must answer
+  both, and the shared-scope warning below counts the prefixes inside `127.0.0.0/8` and the
+  single-address prefix of that address as the server's own, and every other one as a device's. The stored scopes are not
   changed, and clearing the flag puts the user back. A change of the flag restarts the backend whose
   file changed (see [Service restart](conventions.md)), and none when the user has no scope but the
   server's. A scope that holds the server together with devices cannot be cut apart: the devices in it

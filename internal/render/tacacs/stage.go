@@ -17,6 +17,7 @@ import (
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/rendered"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/ui"
@@ -178,7 +179,7 @@ func (r *Renderer) RenderLive(out, unitsDir string) (string, error) {
 		return "", err
 	}
 	view := r.Conf.Merged()
-	text, err := RenderToFile(st, view, hosts.EnrolledNames(r.Paths.LinuxHosts), out, r.Load, r.chown())
+	text, err := RenderToFile(st, view, hosts.EnrolledNames(r.Paths.LinuxHosts), pwchange.LocalServer(r.Paths.LinuxHosts), out, r.Load, r.chown())
 	if err != nil {
 		return "", err
 	}
@@ -505,7 +506,7 @@ func (r *Renderer) matchesStore(path string) bool {
 		// A hold carves its address out of the rendering, so a file that
 		// says what the store says with those addresses taken out is the
 		// one tacctl would have written.
-		m = Carved(m, r.Conf.Merged())
+		m = Carved(m, r.Conf.Merged(), pwchange.LocalServer(r.Paths.LinuxHosts))
 	}
 	return MatchesModel(path, m, r.Load)
 }

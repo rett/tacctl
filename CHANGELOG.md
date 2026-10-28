@@ -251,10 +251,15 @@ current behaviour; this file is where history lives.
     (default `on`) flags or clears users on demand and ends with `Flagged N,
     skipped M, already required K.` (`Cleared N, not required K.`). An upgrade
     flags nobody. A flagged user is rendered into no scope of the TACACS+ and
-    RADIUS configuration but the one that answers this server's own logins
-    (`127.0.0.1`, the scope `host enroll --local` needs to cover), so every
-    device refuses the user as it refuses an unknown user, and the login at
-    tacctl, which comes from the server, still works. The stored scopes are
+    RADIUS configuration but the one this server is enrolled in (`host enroll
+    --local`, the scope that must answer `127.0.0.1`), and only in the protocol
+    of the method it is enrolled with; in the other protocol the user is not
+    rendered at all, even where a catch-all scope answers `127.0.0.1` too. So
+    every device refuses the user as it refuses an unknown user, and the login
+    at tacctl, which comes from the server, still works. A server enrolled with
+    `--server <address>` is also logged in from that address, which its scope
+    must answer too, and the prefixes the shared-scope warning counts as the
+    server's own are the loopback range and that address. The stored scopes are
     not changed; a change of the flag restarts the backend whose file changed
     and nothing when the user has no other scope. A scope that holds the server
     together with devices cannot be cut apart, and the verbs warn and name its
