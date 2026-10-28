@@ -148,6 +148,7 @@ import (
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/tier"
 )
 
@@ -403,6 +404,9 @@ type RollbackPlan struct {
 	in      RollbackInput
 	keys    []string
 	console console.RollbackPlan
+	// pwStore are the users of the store that carry the required password
+	// change (0.2.20), which every older release refuses (rollback_pwchange.go).
+	pwStore []pwFlag
 	snmpDev []devSNMP
 	// syntaxDev are the devices with a configuration syntax setting
 	// (D113, 0.2.5): an older parser refuses the key, so it goes like the
@@ -454,7 +458,7 @@ func (p *RollbackPlan) Pending() bool {
 // PendingFiles: there is a file of tacctl's own to convert (the snapshot
 // holds those; the sudoers drop-ins are not in it).
 func (p *RollbackPlan) PendingFiles() bool {
-	return len(p.keys) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0
+	return len(p.keys) > 0 || len(p.pwStore) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0
 }
 
 func (p *RollbackPlan) todoSudoers() []sudoersPlan {
@@ -521,6 +525,13 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	} else if len(inStore)+len(inConsole) > 0 {
 		return nil, DottedUsersRefusal(pa, inStore, inConsole)
 	}
+	// The required password change (0.2.20) is a key every older release
+	// refuses in the store: it is removed for every target, after the
+	// snapshot, with a warning that names the users who get their device
+	// access back (rollback_pwchange.go).
+	if err := p.planPasswordChange(); err != nil {
+		return nil, err
+	}
 	// Every older release rejects the console settings 0.2.20 added (the
 	// colour setting, a list_max that never asks): they are taken out for
 	// every target (console.PlanRollbackSince0220; 0.2.3's plan below also
@@ -540,6 +551,7 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 			return nil, err
 		}
 		rp.addConsoleStep()
+		rp.addPasswordChange()
 		return rp, nil
 	}
 	// A break-glass hold is refused, in the dry run and --apply alike: the
@@ -598,6 +610,7 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	}
 
 	p.Warnings = append(p.warnings(), p.mgmtModeWarning(RollbackTarget)...)
+	p.addPasswordChange()
 	p.Notes = p.notes()
 	return p, nil
 }
@@ -1005,6 +1018,15 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 			return done, fmt.Errorf("%s: %w", pt.Overrides, err)
 		}
 		done = append(done, fmt.Sprintf("%s: removed %d %s", pt.Overrides, len(p.keys), plural(len(p.keys), "key", "keys")))
+	}
+	if len(p.pwStore) > 0 {
+		removed, _, err := store.RollbackPasswordChange(pt.StoreFile, nil)
+		if err != nil {
+			return done, fmt.Errorf("%s: %w", pt.StoreFile, err)
+		}
+		if len(removed) > 0 {
+			done = append(done, fmt.Sprintf("%s: removed the required password change of %d %s", pt.StoreFile, len(removed), plural(len(removed), "user", "users")))
+		}
 	}
 	if p.console.Text != nil {
 		write := console.RollbackSince0220

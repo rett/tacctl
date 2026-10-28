@@ -43,6 +43,11 @@ type User struct {
 	Disabled        bool
 	PasswordChanged string
 	AccountingSink  bool
+	// PasswordChangeRequired is the stored flag (0.2.20): the user must
+	// change the password before logging in to anything but tacctl. The
+	// flag alone does not bind a user: a superuser is never held to it
+	// (internal/pwchange decides, from the group's tier, at run time).
+	PasswordChangeRequired bool
 }
 
 // IsDisabled is user_is_disabled: the user cannot authenticate (flagged,
@@ -210,6 +215,7 @@ func FromStore(s *store.Store) *Model {
 			u.Disabled = truthy(get(e, "disabled"))
 			u.PasswordChanged = str(get(e, "password_changed"))
 			u.AccountingSink = truthy(get(e, "accounting_sink"))
+			u.PasswordChangeRequired = truthy(get(e, "password_change_required"))
 		}
 		m.Users = append(m.Users, u)
 		m.users[name] = u

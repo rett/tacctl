@@ -322,6 +322,22 @@ or
 would put that filter back on a device that holds the strict one, without
 saying so. The rollback is not refused, and no device is contacted.
 .IP
+Every target removes the required password change
+.RB ( password_change_required
+of a user in
+.IR store.yaml ,
+written only for a flagged user; 0.2.20) after a snapshot, because the older
+schema refuses the key. The dry run lists the flagged users, and
+warns, with
+.B \-\-apply
+refusing without
+.BR \-\-yes ,
+of those who are not superusers (the flag never binds a superuser): the older
+release renders them into every scope of theirs again, so they can log in to
+the devices with the password an administrator set or knew, the one they were
+to change. The rollback renders nothing, so the running TACACS+ and RADIUS
+files keep them off the devices until the older release renders.
+.IP
 .B "rollback 0.2.17"
 .B \-\-apply
 rewrites the per\-tier sudoers drop\-in, when it is exactly the text this

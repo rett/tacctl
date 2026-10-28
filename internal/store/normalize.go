@@ -278,6 +278,9 @@ func (s *Store) DiskForm() *yamlpy.Map {
 		if truthy(get(u, "accounting_sink")) {
 			ent.Set("accounting_sink", true)
 		}
+		if truthy(get(u, "password_change_required")) {
+			ent.Set("password_change_required", true)
+		}
 		get(out, "users").(*yamlpy.Map).Set(name, ent)
 	}
 	scopes := s.section("scopes")

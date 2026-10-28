@@ -97,6 +97,21 @@ again, without saying so. Nothing contacts a device. To stay deny by default,
 keep this release, or leave the management filter of those scopes out of the
 older release's plans.
 
+**A required password change.** A user can be flagged to change the
+password before logging in to anything but tacctl (`password_change_required`
+in `store.yaml`, written only for a flagged user, 0.2.20). Every older
+release refuses the key (`user '<name>': unknown field
+'password_change_required'`), so every target removes it from the store after
+a snapshot, and the dry run lists the flagged users. Those who are not
+superusers (the flag never binds a superuser) are named in a warning that
+`--apply` refuses without `--yes`: the older release renders them into every
+scope of theirs again, so they can log in to the devices with the password an
+administrator set or knew, the one they were to change. The rollback does not
+render, so the running TACACS+ and RADIUS files keep them off the devices
+until the older release renders. Have them change the password first (they
+log in to tacctl and are asked), or keep this release. The flags stay in the
+snapshot `--apply` takes first.
+
 ### To 0.2.18
 
 The per-tier sudoers drop-in of this release grants the engineer the rows of
