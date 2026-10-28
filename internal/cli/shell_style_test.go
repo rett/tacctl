@@ -200,7 +200,7 @@ func TestAlignRowsContract(t *testing.T) {
 // descriptions of a section start in one column, and it ends with Next.
 func TestShellExplainIsClean(t *testing.T) {
 	inv, root, _ := shellTestInv(t)
-	explain := inv.shellExplain(root)
+	explain := inv.plainExplain(root)
 	paths, _ := visibleLeaves(root)
 	for _, p := range paths {
 		out, ok := explain(p)
@@ -269,7 +269,7 @@ func TestShellDescribesFixedWords(t *testing.T) {
 			t.Errorf("%v %s: %q, want %q", c.words, c.word, got, c.want)
 		}
 	}
-	explain := inv.shellExplain(root)
+	explain := inv.plainExplain(root)
 	for _, c := range []struct {
 		words []string
 		next  string

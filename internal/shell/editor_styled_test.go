@@ -18,13 +18,17 @@ func stripped(t *testing.T, s string) string {
 	return b.String()
 }
 
-// The styled list is the plain one with the labels in bold: the same bytes
-// once the escapes are gone, the padding counted on the plain label.
+// The styled list is the plain one with the words in the palette: the same
+// bytes once the escapes are gone, the padding counted on the plain label. A
+// command name is bright white, a sub-command, a fixed word and an option
+// teal, a live name bold; the description is plain.
 func TestListingStyled(t *testing.T) {
 	cands := []Candidate{
-		{Word: "a", Desc: "x"},
-		{Word: "bbb", Label: "bbb [--long]", Desc: "y"},
-		{Word: "ünï"},
+		{Word: "device", Label: "device [<name>]", Desc: "x", Command: true, Fixed: true},
+		{Word: "bbb", Label: "bbb [--long]", Desc: "y", Fixed: true},
+		{Word: "--all", Desc: "z", Fixed: true},
+		{Word: "alice", Desc: "operator", Live: true},
+		{Word: "ünï", Live: true},
 	}
 	plain := listing(cands)
 	got := listingStyled(cands, true)
@@ -37,9 +41,160 @@ func TestListingStyled(t *testing.T) {
 	if s := stripped(t, got); s != plain {
 		t.Errorf("plain text of the styled list %q, want %q", s, plain)
 	}
-	for _, label := range []string{"a", "bbb [--long]", "ünï"} {
-		if !strings.Contains(got, ui.Bold+label+ui.NC) {
-			t.Errorf("label %q not bold in %q", label, got)
+	for _, want := range []string{
+		"  " + ui.BrightWhite + "device" + ui.NC + " [<name>]",
+		"  " + ui.Teal + "bbb" + ui.NC + " " + ui.Teal + "[--long]" + ui.NC,
+		"  " + ui.Teal + "--all" + ui.NC,
+		"  " + ui.Bold + "alice" + ui.NC,
+		"  " + ui.Bold + "ünï" + ui.NC + "\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("no %q in %q", want, got)
+		}
+	}
+	// A description is plain text.
+	for _, d := range []string{"x\n", "y\n", "z\n", "operator\n"} {
+		if !strings.Contains(got, "  "+d) {
+			t.Errorf("the description %q is not plain in %q", d, got)
+		}
+	}
+}
+
+// The Tab columns carry the same palette; the columns are those of the plain
+// words, whatever the colour.
+func TestColumnsStyled(t *testing.T) {
+	cands := []Candidate{
+		{Word: "device", Command: true, Fixed: true}, {Word: "alice", Live: true}, {Word: "list", Fixed: true},
+		{Word: "bob", Live: true}, {Word: "--all", Fixed: true}, {Word: "quit", Unlisted: true, Fixed: true},
+	}
+	for _, w := range []int{20, 40, 60, 120} {
+		plain, styled := columns(cands, w), columnsStyled(cands, w, true)
+		if stripped(t, styled) != plain {
+			t.Errorf("width %d: %q is not the plain %q", w, styled, plain)
+		}
+		for _, row := range strings.Split(strings.TrimSuffix(plain, "\n"), "\n") {
+			if len([]rune(row)) > w {
+				t.Errorf("width %d: a row of %d", w, len([]rune(row)))
+			}
+		}
+	}
+	got := columnsStyled(cands, 80, true)
+	for _, want := range []string{ui.BrightWhite + "device" + ui.NC, ui.Bold + "alice" + ui.NC, ui.Teal + "list" + ui.NC, ui.Bold + "bob" + ui.NC} {
+		if !strings.Contains(got, want) {
+			t.Errorf("no %q in %q", want, got)
+		}
+	}
+	if columnsStyled(cands, 80, false) != columns(cands, 80) {
+		t.Error("unstyled columns differ")
+	}
+}
+
+// Colour in a label and in a description takes no column: at 40, 60 and 120
+// columns the lines break, cut and pad exactly as they do without it, a style
+// open at a break is closed there and opened on the next line, and nothing is
+// cut inside a sequence.
+func TestListingWidthsIgnoreSGR(t *testing.T) {
+	longDesc := "Show the " + ui.Bold + "live names with their vendor, address and scope" + ui.NC + " and wrap this text past the width of the column so that it goes on under it"
+	plainDesc := stripSGR(longDesc)
+	longLabel := ui.Teal + "devices" + ui.NC + " [show|max-concurrency|transport|timeout] [<value>]"
+	for _, w := range []int{40, 60, 120} {
+		for _, shortLabel := range []bool{true, false} {
+			label, plainLabel := ui.Teal+"x"+ui.NC+" <"+ui.Bold+"n"+ui.NC+">", "x <n>"
+			if !shortLabel {
+				label, plainLabel = longLabel, stripSGR(longLabel)
+			}
+			colour := []Candidate{{Word: "x", Label: label, Desc: longDesc}, {Word: "ab", Label: ui.Teal + "ab" + ui.NC, Desc: ui.Teal + "short" + ui.NC}}
+			bare := []Candidate{{Word: "x", Label: plainLabel, Desc: plainDesc}, {Word: "ab", Label: "ab", Desc: "short"}}
+			for _, styled := range []bool{false, true} {
+				got := listingWidth(colour, styled, w)
+				want := listingWidth(bare, false, w)
+				if !styled {
+					if got != want {
+						t.Errorf("w=%d short=%v: unstyled\n%q\nwant\n%q", w, shortLabel, got, want)
+					}
+					continue
+				}
+				// The same rows once the colour is gone: the same breaks, the
+				// same padding.
+				if s := stripped(t, got); s != want {
+					t.Errorf("w=%d short=%v: the plain text of the coloured list\n%q\nwant\n%q", w, shortLabel, s, want)
+				}
+				for i, row := range strings.Split(strings.TrimSuffix(got, "\n"), "\n") {
+					if open := openStyle(row); open != "" {
+						t.Errorf("w=%d short=%v row %d is left with %q open: %q", w, shortLabel, i, open, row)
+					}
+				}
+			}
+		}
+	}
+	// The wrapped description keeps its bold across the break.
+	rows := strings.Split(strings.TrimSuffix(listingWidth([]Candidate{{Word: "x", Label: "x", Desc: longDesc}}, true, 40), "\n"), "\n")
+	if len(rows) < 3 {
+		t.Fatalf("not wrapped at 40: %q", rows)
+	}
+	opened := 0
+	for _, r := range rows[:2] {
+		if strings.Contains(r, ui.Bold) {
+			opened++
+		}
+	}
+	if opened < 2 {
+		t.Errorf("the bold run did not carry over the break: %q", rows)
+	}
+}
+
+// openStyle is the style left open at the end of s ("": none).
+func openStyle(s string) string {
+	open := ""
+	for i := 0; i < len(s); {
+		if k := sgrAt(s, i); k > 0 {
+			open = track(open, s[i:i+k])
+			i += k
+			continue
+		}
+		i++
+	}
+	return open
+}
+
+// capLabel counts columns, not bytes: a label with colour is cut at the same
+// place as the plain one, never inside a sequence, with its style closed.
+func TestCapLabelSGR(t *testing.T) {
+	plain := "devices [show|max-concurrency|transport|timeout] [<value>]"
+	colour := ui.Teal + "devices" + ui.NC + " [" + ui.Bold + "show|max-concurrency|transport|timeout" + ui.NC + "] [<value>]"
+	for _, max := range []int{10, 20, 40, 60} {
+		want := capLabel(plain, max)
+		got := capLabel(colour, max)
+		if s := stripSGR(got); s != want {
+			t.Errorf("max %d: %q cut to %q, want %q", max, got, s, want)
+		}
+		if open := openStyle(strings.TrimSuffix(got, "...")); open != "" {
+			t.Errorf("max %d: style %q open before the dots in %q", max, open, got)
+		}
+		if visLen(got) > max {
+			t.Errorf("max %d: %d columns", max, visLen(got))
+		}
+	}
+	if got := capLabel(colour, 80); got != colour {
+		t.Errorf("a label that fits is cut: %q", got)
+	}
+}
+
+// wrapWords counts columns and carries a style over the break.
+func TestWrapWordsSGR(t *testing.T) {
+	in := "one " + ui.Bold + "two three" + ui.NC + " four"
+	got := wrapWords(in, 10)
+	want := []string{"one " + ui.Bold + "two" + ui.NC, ui.Bold + "three" + ui.NC + " four"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("wrapWords = %q, want %q", got, want)
+	}
+	for _, w := range []int{9, 14, 40} {
+		var plain []string
+		for _, l := range wrapWords(in, w) {
+			plain = append(plain, stripSGR(l))
+		}
+		if want := wrapWords(stripSGR(in), w); strings.Join(plain, "|") != strings.Join(want, "|") {
+			t.Errorf("w=%d: %q, want %q", w, plain, want)
 		}
 	}
 }

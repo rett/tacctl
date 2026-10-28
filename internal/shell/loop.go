@@ -108,9 +108,11 @@ type Options struct {
 	// lists the choices). A paste is not affected. Off: a blank is a blank.
 	// Interactive only.
 	SpaceCompletion bool
-	// Styled shows the labels of the '?' list in bold. The caller decides
-	// it from the terminal and the user's choice (ui.Colour); false: plain.
-	// Interactive only.
+	// Styled shows the words of the lists (Tab's columns, '?') in the
+	// palette: command names bright white, sub-commands, fixed words and
+	// options teal, live names bold, the descriptions plain. The caller
+	// decides it from the terminal and the user's choice (ui.Colour, the
+	// console's color setting); false: plain. Interactive only.
 	Styled bool
 	// Help is the text of 'help <words>'; false when there is none.
 	Help func(words []string) (string, bool)

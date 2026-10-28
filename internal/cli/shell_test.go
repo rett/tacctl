@@ -698,7 +698,7 @@ func TestShellVerbDescriptionsFromUsage(t *testing.T) {
 // their descriptions from the usage block, and what comes next.
 func TestShellExplain(t *testing.T) {
 	inv, root, _ := shellTestInv(t)
-	explain := inv.shellExplain(root)
+	explain := inv.plainExplain(root)
 	cases := []struct {
 		words []string
 		want  []string

@@ -122,6 +122,18 @@ current behaviour; this file is where history lives.
     `...`). Regenerate the bash script with `tacctl completion bash` after the
     upgrade (`install` and `upgrade` do it for `/etc/bash_completion.d`).
 
+12. **One palette for the command lists.** Tab's columns, the `?` list (the
+    sub-commands, and the `Usage:`, `Options:` and `Next:` lines of a verb)
+    and `-h` / `--help` show the command names (the first word at the top
+    level) in bright white, the sub-commands, fixed words and options in teal,
+    the live names (users, groups, devices, hosts) in bold, and the
+    descriptions in plain text. This replaces the bold labels of the `?` list.
+    The colour is where it was: on a terminal, off in a pipe, with `NO_COLOR`
+    and with `TACCTL_COLOR=never`. Every width, cut and wrap counts the text
+    without the colour sequences, so the columns are those of the plain list,
+    and a style that a wrapped description leaves open is closed at the end
+    of its line and opened on the next.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

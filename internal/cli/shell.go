@@ -436,7 +436,7 @@ func (inv *invocation) completer(root *cobra.Command, fixedOnly bool) shell.Comp
 			// 'shell' is not offered in the shell.
 			for _, r := range topRows() {
 				if r.Name != "shell" && child(root, r.Name) != nil && shown([]string{r.Name}) {
-					out = append(out, shell.Candidate{Word: r.Name, Label: r.Left, Desc: r.Desc, Kind: "commands", Fixed: true})
+					out = append(out, shell.Candidate{Word: r.Name, Label: r.Left, Desc: r.Desc, Kind: "commands", Fixed: true, Command: true})
 				}
 			}
 			return out
@@ -503,7 +503,10 @@ func (inv *invocation) completer(root *cobra.Command, fixedOnly bool) shell.Comp
 			if d == "" && !isFlag {
 				d = wdescs[w]
 			}
-			out = append(out, shell.Candidate{Word: w, Desc: d, NoSpace: noSpace, Kind: k, Fixed: isFlag || fixed})
+			// A name of the store is a live name (bold in the lists); a
+			// flag, a fixed word and any other word of the language are not.
+			live := !isFlag && !fixed && kind != "choices" && kind != "files"
+			out = append(out, shell.Candidate{Word: w, Desc: d, NoSpace: noSpace, Kind: k, Fixed: isFlag || fixed, Live: live})
 		}
 		return out
 	}

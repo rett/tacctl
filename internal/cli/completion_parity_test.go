@@ -285,7 +285,7 @@ func TestFlagCarriesItsOwnText(t *testing.T) {
 			if _, ok := specFor(p); !ok {
 				continue
 			}
-			explain, _ := invB.shellExplain(rootB)(p)
+			explain, _ := invB.plainExplain(rootB)(p)
 			var b strings.Builder
 			b.WriteString(explain)
 			for _, m := range []map[string]string{scriptOffers(t, invA, rootA, p, "-"), shellOffers(invB, rootB, p, "-")} {

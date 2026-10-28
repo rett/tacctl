@@ -371,7 +371,7 @@ func TestViewFamilyHelp(t *testing.T) {
 func TestViewExplainNamesTheTier(t *testing.T) {
 	explain := func(view tier.Tier, w ...string) string {
 		inv, root := viewInv(t, view)
-		got, _ := inv.shellExplain(root)(w)
+		got, _ := inv.plainExplain(root)(w)
 		return got
 	}
 	if got := explain(tier.Readonly, "group", "junos"); !strings.Contains(got, "Usage:") || !strings.Contains(got, "Needs the superuser tier.\n") {
@@ -488,7 +488,7 @@ func TestViewDeviceConfigVerbsHaveTheirOwnTier(t *testing.T) {
 	}
 	explain := func(view tier.Tier, w ...string) string {
 		inv, root := viewInv(t, view)
-		got, _ := inv.shellExplain(root)(w)
+		got, _ := inv.plainExplain(root)(w)
 		return got
 	}
 	if got := explain(tier.Operator, "device", "config", "apply", "sw1"); !strings.Contains(got, "Needs the engineer tier.\n") {
