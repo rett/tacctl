@@ -152,6 +152,40 @@ func (inv *invocation) reportNeedsSync(names []string, reason string) {
 	inv.app.Out.WarnE(who + " must change the password, but " + reason + ", so it cannot log in to this server to do it until the sync: tacctl host sync " + e.Name)
 }
 
+// reportHostsSync tells what the next sync of the other enrolled hosts does
+// with a change of the flag of names (users the flag holds, or held until
+// now): every host but this server expires the account of a user who must
+// change the password and opens it again once the change is made, at its next
+// 'host sync' (linuxAccounts), and until then the host is as it was. Nothing
+// is said when no such host has one of the users in its scope.
+func (inv *invocation) reportHostsSync(m *model.Model, names []string, required bool) {
+	reg, err := inv.registry()
+	if err != nil || len(names) == 0 {
+		return
+	}
+	n := 0
+	for _, e := range reg.Entries() {
+		if e.Target == hosts.Local {
+			continue
+		}
+		for _, name := range names {
+			if u := m.User(name); u != nil && hosts.LinuxName(name) && slices.Contains(u.Scopes, e.Scope) {
+				n++
+				break
+			}
+		}
+	}
+	if n == 0 {
+		return
+	}
+	who := "'" + strings.Join(names, "', '") + "'"
+	if required {
+		inv.app.Out.WarnE(who + " can still log in to " + hostsText(n) + " until each host's next sync, which expires the account there: tacctl host sync --all")
+		return
+	}
+	inv.app.Out.InfoE(who + " can log in to " + hostsText(n) + " again after each host's next sync: tacctl host sync --all")
+}
+
 // detailPwChange is the audit line of a flag set or cleared: for whom, by
 // whom (the writer adds by=), and through which verb.
 func (inv *invocation) detailPwChange(name string, required bool, via string) {
@@ -273,11 +307,19 @@ func (inv *invocation) userRequirePasswordChange(args []string) error {
 		}
 		out.InfoE("Flagged " + strconv.Itoa(len(change)) + ", skipped " + strconv.Itoa(len(skipped)) + skippedSuperusers(superusers, len(skipped)) + ", already required " + strconv.Itoa(already) + ".")
 		inv.reportRequired(m, change)
+		inv.reportHostsSync(m, change, true)
 	default:
 		if len(change) > 0 {
 			out.InfoE("Password change no longer required of " + strings.Join(change, ", ") + ".")
 		}
 		out.InfoE("Cleared " + strconv.Itoa(len(change)) + ", not required " + strconv.Itoa(already) + ".")
+		var held []string
+		for _, n := range change {
+			if pwchange.Subject(a.Conf(), m, m.User(n)) {
+				held = append(held, n)
+			}
+		}
+		inv.reportHostsSync(m, held, false)
 	}
 	inv.echo("")
 	return nil

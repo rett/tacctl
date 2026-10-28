@@ -74,6 +74,21 @@ func Subject(c *conf.Config, m *model.Model, u *model.User) bool {
 	return u != nil && u.PasswordChangeRequired && !u.AccountingSink && !Superuser(c, m, u)
 }
 
+// HostHeld is the held function of the Linux account views
+// (model.LinuxUsersHeld) for one enrolled host: on every host but this tacctl
+// server a user held to a password change (Subject) has no login, the way a
+// disabled user has none, so the host's sync expires the account (an SSH key
+// fails with the password) and the sync after the change opens it again. On
+// the server itself (local, the 'host enroll --local' registration) nobody is
+// held: that is where the password is changed. The tier is the group's now,
+// so a superuser is never held.
+func HostHeld(c *conf.Config, m *model.Model, local bool) func(*model.User) bool {
+	if local {
+		return nil
+	}
+	return func(u *model.User) bool { return Subject(c, m, u) }
+}
+
 // ServerAddress is the address this server's own logins (the console's
 // pam_tacplus or pam_radius) come from by default: the one 'host enroll
 // --local' needs a scope to cover.

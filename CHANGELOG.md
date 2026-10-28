@@ -257,7 +257,14 @@ current behaviour; this file is where history lives.
     of the method it is enrolled with; in the other protocol the user is not
     rendered at all, even where a catch-all scope answers `127.0.0.1` too. So
     every device refuses the user as it refuses an unknown user, and the login
-    at tacctl, which comes from the server, still works. A server enrolled with
+    at tacctl, which comes from the server, still works. On every enrolled
+    Linux host but the server itself the next `host sync` expires the
+    account of such a user as it expires a disabled user's (a password and
+    an SSH key both fail, the files are kept), and the sync after the change
+    opens it again; the server's own sync keeps the account. Until a host is
+    synced it is as it was: `require-password-change`, `user passwd` and the
+    user's own `passwd` name the hosts with `tacctl host sync --all`, and
+    `host show` counts the account with the disabled ones. A server enrolled with
     `--server <address>` is also logged in from that address, which its scope
     must answer too, and the prefixes the shared-scope warning counts as the
     server's own are the loopback range and that address. The stored scopes are

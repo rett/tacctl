@@ -709,9 +709,17 @@ func (inv *invocation) userPasswd(args []string) error {
 		inv.detailPwChange(username, true, "passwd")
 		out.InfoE("'" + username + "' must change it at the next login to this server; no device accepts the user until then (" + noChangeRequired + " skips this).")
 		inv.reportRequired(m, []string{username})
+		// a user held already, or disabled until now, had no login on the
+		// other hosts before this reset either
+		if !cur.IsDisabled() && !pwchange.Subject(inv.app.Conf(), m, cur) {
+			inv.reportHostsSync(m, []string{username}, true)
+		}
 	case lifted:
 		inv.detailPwChange(username, false, "passwd")
 		out.InfoE("The password change required of '" + username + "' is lifted.")
+		if pwchange.Subject(inv.app.Conf(), m, cur) {
+			inv.reportHostsSync(m, []string{username}, false)
+		}
 	case !skipChange && barrier.exempt:
 		out.InfoE("No password change is required of '" + username + "': " + barrier.why + ".")
 	case !skipChange && cur.PasswordChangeRequired:

@@ -261,3 +261,32 @@ func TestPendingIsOrderedByName(t *testing.T) {
 		t.Errorf("Pending: %v", got)
 	}
 }
+
+// On an enrolled host other than this server a user held to the change has
+// no login (the account is expired as a disabled user's is); on the server
+// itself every member keeps it, and a superuser is held nowhere.
+func TestHostHeldKeepsTheServerOpen(t *testing.T) {
+	st := store.Empty()
+	if err := st.ScopeSet("srv", "prefixes=127.0.0.1/32", "secret=example-secret-example-secret"); err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range [][3]string{{"alice", "superuser", "true"}, {"bob", "operator", "true"}, {"carol", "readonly", "false"}} {
+		if err := st.UserSet(u[0], "group="+u[1], "scopes=srv", "hash=$2b$04$example", "password_change_required="+u[2]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := model.FromStore(st)
+	c := view()
+	if got := m.LinuxUsersHeld("srv", HostHeld(c, m, false)); !slices.Equal(got, []string{"alice|15", "carol|1"}) {
+		t.Errorf("another host, users: %v", got)
+	}
+	if got := m.LinuxInactiveHeld("srv", HostHeld(c, m, false)); !slices.Equal(got, []string{"bob"}) {
+		t.Errorf("another host, inactive: %v", got)
+	}
+	if got := m.LinuxUsersHeld("srv", HostHeld(c, m, true)); !slices.Equal(got, []string{"alice|15", "bob|7", "carol|1"}) {
+		t.Errorf("the server, users: %v", got)
+	}
+	if got := m.LinuxInactiveHeld("srv", HostHeld(c, m, true)); len(got) != 0 {
+		t.Errorf("the server, inactive: %v", got)
+	}
+}

@@ -239,7 +239,8 @@ func (inv *invocation) hostList(args []string) error {
 		if merr != nil {
 			return 0
 		}
-		return hosts.UserCount(m.LinuxUsers(e.Scope))
+		rows, _ := inv.linuxAccounts(m, e.Scope, e.Target == hosts.Local)
+		return hosts.UserCount(rows)
 	}
 	recorded := func(e hosts.Entry) string {
 		if devs == nil {
@@ -848,7 +849,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 		return err
 	}
 	defer func() { _ = os.Remove(script) }()
-	req, err := inv.scriptRequest(scope, server, method, script)
+	req, err := inv.scriptRequest(scope, server, method, script, target == hosts.Local)
 	if err != nil {
 		return err
 	}
@@ -1651,7 +1652,7 @@ func (inv *invocation) syncRun(he *hosts.Env, e hosts.Entry, method string, scri
 		return false, "", false, err
 	}
 	defer func() { _ = os.Remove(script) }()
-	req, err := inv.scriptRequest(e.Scope, e.Server, method, script)
+	req, err := inv.scriptRequest(e.Scope, e.Server, method, script, e.Target == hosts.Local)
 	if err != nil {
 		return false, "", false, err
 	}

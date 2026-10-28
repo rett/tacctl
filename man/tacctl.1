@@ -1224,6 +1224,21 @@ and
 .B "host enroll \-\-local"
 with another scope or method, while any user is flagged (the backends' files are
 rendered from the server's registration).
+On every enrolled Linux host but this server
+.RB ( "host enroll \-\-local" ),
+the next
+.B "host sync"
+expires the account of a user who must change the password, as it expires a
+disabled user's (a password and an SSH key both fail; the files are kept), and
+the sync after the change opens it again; the server's own sync keeps the
+account, since the password is changed there. Until a host is synced it is as
+it was:
+.BR "user require\-password\-change" ,
+.B "user passwd"
+and
+.B passwd
+name the hosts of the user's scopes with
+.BR "tacctl host sync \-\-all" .
 A new or renamed user has an account on this server only after the next
 .BR "host sync" ,
 which
@@ -3049,7 +3064,11 @@ Options:
 Push the scope's current user list to the host: new users get accounts, a
 renamed user's account is renamed (its UID and home are kept), tier changes
 move group membership, disabled users' accounts are expired
-(files kept; enabling the user restores the account), and the accounts of
+(files kept; enabling the user restores the account), so are the accounts of
+users who must change the password on every host but this server (the sync
+after the change restores them; see
+.BR "user require\-password\-change" ),
+and the accounts of
 users no longer in the scope (or no longer tacctl users) are deleted with
 .BR userdel (8),
 and with their own group when it is empty. Their UIDs stay

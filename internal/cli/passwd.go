@@ -5,6 +5,7 @@ import (
 
 	"github.com/rett/tacctl/internal/hash"
 	"github.com/rett/tacctl/internal/names"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -87,6 +88,9 @@ func (inv *invocation) passwdSelf(args []string) error {
 	if required {
 		inv.detailPwChange(username, false, "self")
 		a.Out.Info("The required password change is done.")
+		if pwchange.Subject(a.Conf(), m, m.User(username)) {
+			inv.reportHostsSync(m, []string{username}, false)
+		}
 	}
 	inv.echo("")
 	return nil

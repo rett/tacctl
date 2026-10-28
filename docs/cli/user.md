@@ -182,6 +182,12 @@ only when set.
   still accept the user, and the verbs warn and name the prefixes: the ones that flag, a prefix added
   to the server's scope later (`scope prefixes`), and `host enroll --local`. Give the server a scope
   of its own (`scope add`, then `host enroll --local --scope <name>`).
+- *Enrolled hosts.* On every enrolled Linux host but this server (`host enroll --local`), the next
+  `host sync` expires the account of a user who must change the password, as it expires a disabled
+  user's (a password and an SSH key both fail; the files are kept), and the sync after the change
+  opens it again. The server's own sync keeps the account: the password is changed there. Until a
+  host is synced it is as it was, so `require-password-change`, `user passwd` and `tacctl passwd`
+  name the hosts of the user's scopes with `tacctl host sync --all`.
 - *A flagged user must be able to log in.* A user who must change the password and has no login on
   the server (not in its scope, the scope no longer answers the server's addresses, the server not
   enrolled) could change nothing and enter nothing, so a change that would leave one is refused
