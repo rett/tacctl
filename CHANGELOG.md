@@ -264,7 +264,9 @@ current behaviour; this file is where history lives.
     identical or differs. It is rendered by `man -l`, given the page on
     standard input, else by `groff` and `less`; with neither, it says so and
     exits 1. The pager cannot start a program: it is
-    the `less` found on `PATH`, run with `LESSSECURE=1` (no shell escape, no
+    the `less` found in `/usr/local/bin:/usr/bin:/bin` (the fixed `PATH` the
+    programs get; `man` and `groff` are looked for there too, never in the
+    caller's `PATH`), run with `LESSSECURE=1` (no shell escape, no
     editor, no pipe, no log file) and a `LESS` of tacctl's own, and `man`,
     `groff` and `less` get an environment made from `TERM`, `LANG` and `LC_*`
     and a fixed `PATH`, so a `PAGER`, `MANPAGER`, `LESS`, `LESSOPEN`,

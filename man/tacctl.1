@@ -739,8 +739,11 @@ with neither, the command names the page and what to install, and exits 1.
 .IP
 The pager cannot start a program. It is the
 .B less
-found on
-.BR PATH ,
+found in
+.IR /usr/local/bin:/usr/bin:/bin
+(the
+.B PATH
+the programs get, not the caller's),
 chosen by tacctl and started with
 .B LESSSECURE=1
 (no shell escape

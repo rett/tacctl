@@ -159,14 +159,32 @@ func (inv *invocation) man(args []string) error {
 	return inv.manShow(page, searches)
 }
 
-// manTool resolves a program the command runs: found on PATH, by an absolute
-// path that can be named on a command line.
+// manTool resolves a program the command runs: found in the directories of
+// console.ConsolePath, the PATH its child gets (not the caller's PATH, which
+// may name a directory the caller writes to, and which the console has
+// already replaced by this one), by an absolute path that can be named on a
+// command line.
 func (inv *invocation) manTool(name string) (string, bool) {
-	p, err := inv.app.Runner.LookPath(name)
-	if err != nil || !manSafePath.MatchString(p) {
+	p, ok := inv.hooks.lookManTool(name)
+	if !ok || !manSafePath.MatchString(p) {
 		return "", false
 	}
 	return p, true
+}
+
+// lookInDirs is the first executable regular file called name in the
+// absolute directories dirs.
+func lookInDirs(name string, dirs []string) (string, bool) {
+	for _, d := range dirs {
+		if !filepath.IsAbs(d) {
+			continue
+		}
+		p := filepath.Join(d, name)
+		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() && st.Mode().Perm()&0o111 != 0 {
+			return p, true
+		}
+	}
+	return "", false
 }
 
 // manEnv is the environment of man, groff and the pager: console.Scrub's

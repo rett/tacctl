@@ -46,6 +46,11 @@ func newManHarness(t *testing.T, page []byte, env []string, args ...string) *man
 	if page != nil {
 		h.hooks.manPage = func() []byte { return page }
 	}
+	// The tools are those the fake runner has.
+	h.hooks.manLookPath = func(name string) (string, bool) {
+		p, err := h.runner.LookPath(name)
+		return p, err == nil
+	}
 	h.hooks.isTerminalWriter = func(io.Writer) bool { return true }
 	return h
 }
@@ -505,5 +510,63 @@ func TestManIsInTheTreeAndTheLists(t *testing.T) {
 		if !viewShows(root, tr, false, []string{"man"}) {
 			t.Errorf("%s: the lists hide man", tr)
 		}
+	}
+}
+
+// The programs are looked for in the directories of console.ConsolePath, the
+// PATH the child gets, and not in the caller's PATH: a directory of the caller
+// that holds a less (or a man, or a groff) is not used.
+func TestManToolsAreLookedForOnTheConsolePath(t *testing.T) {
+	dir := t.TempDir()
+	hostileDir := filepath.Join(dir, "hostile")
+	okDir, plainDir := filepath.Join(dir, "ok"), filepath.Join(dir, "plain")
+	for _, d := range []string{hostileDir, okDir, plainDir, filepath.Join(plainDir, "dirless")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write := func(path string, mode os.FileMode) {
+		if err := os.WriteFile(path, []byte("#!/bin/sh\n"), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(hostileDir, "less"), 0o755)
+	write(filepath.Join(plainDir, "less"), 0o644) // not executable
+	write(filepath.Join(okDir, "less"), 0o755)
+	if got, ok := lookInDirs("less", []string{"relative", plainDir, filepath.Join(plainDir, "dirless"), okDir, hostileDir}); !ok || got != filepath.Join(okDir, "less") {
+		t.Errorf("lookInDirs: %q %v", got, ok)
+	}
+	if got, ok := lookInDirs("less", []string{"relative", "", "."}); ok {
+		t.Errorf("a relative directory is searched: %q", got)
+	}
+	if got, ok := lookInDirs("nosuch", []string{okDir}); ok {
+		t.Errorf("lookInDirs found %q", got)
+	}
+
+	// The real lookup, with a caller whose PATH starts with a directory that
+	// holds a less, a man and a groff of its own.
+	for _, tool := range []string{"man", "groff"} {
+		write(filepath.Join(hostileDir, tool), 0o755)
+	}
+	h := newHarness(t, []string{"man"}, "PATH="+hostileDir+":/usr/bin:/bin")
+	inv := &invocation{app: h.app} // no hooks: the real lookup
+	for _, tool := range []string{"less", "man", "groff"} {
+		got, ok := inv.manTool(tool)
+		if ok && !slices.Contains(strings.Split(console.ConsolePath, ":"), filepath.Dir(got)) {
+			t.Errorf("%s was found at %q, outside %s", tool, got, console.ConsolePath)
+		}
+		if strings.HasPrefix(got, hostileDir) {
+			t.Errorf("%s of the caller's PATH was used: %q", tool, got)
+		}
+	}
+	// The directories are those of the child's PATH.
+	if dirs := strings.Split(console.ConsolePath, ":"); len(dirs) == 0 || !slices.ContainsFunc(dirs, filepath.IsAbs) {
+		t.Errorf("console.ConsolePath %q", console.ConsolePath)
+	}
+	// A tool the lookup finds is also held to the safe path rule.
+	hh := newManHarness(t, nil, nil)
+	hh.hooks.manLookPath = func(string) (string, bool) { return "/opt/my tools/less", true }
+	if _, ok := (&invocation{app: hh.app, hooks: hh.hooks}).manTool("less"); ok {
+		t.Errorf("an unsafe path was accepted")
 	}
 }

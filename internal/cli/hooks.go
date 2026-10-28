@@ -3,6 +3,7 @@ package cli
 import (
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -92,6 +93,9 @@ type hooks struct {
 	utmpFile string
 	// manPage is the page 'tacctl man' shows (nil: the one the binary carries).
 	manPage func() []byte
+	// manLookPath finds a program of 'tacctl man' (nil: in the directories of
+	// console.ConsolePath).
+	manLookPath func(name string) (string, bool)
 	// askpassFromApp makes the password cache's value the app's
 	// environment alone: nothing is read from or removed from the process's
 	// own (a test runs beside others in one process).
@@ -104,6 +108,14 @@ func (h *hooks) builtInManPage() []byte {
 		return h.manPage()
 	}
 	return assets.ManPage()
+}
+
+// lookManTool finds a program of 'tacctl man'.
+func (h *hooks) lookManTool(name string) (string, bool) {
+	if h != nil && h.manLookPath != nil {
+		return h.manLookPath(name)
+	}
+	return lookInDirs(name, strings.Split(console.ConsolePath, ":"))
 }
 
 // interrupts is the test's source of interrupts, or nil.
