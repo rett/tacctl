@@ -404,6 +404,9 @@ var auditTable = map[string]auditEntry{
 	// the status forms and a dry run change nothing; enable and disable
 	// write their own lines (emergency.go)
 	"emergency lockdown": action().readWhen(lockdownReadForm),
+
+	// the list form changes nothing; add, remove and replace write their own line
+	"server addresses": action().readWhen(serverAddressesReadForm),
 }
 
 // notStrict is e exempt from audit.strict (auditEntry.NotStrict).

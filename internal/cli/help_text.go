@@ -38,6 +38,7 @@ Commands:
   <b>device</b> <o><subcommand></o>                   Device registry: list, add, enroll, scan, discover, check, host keys (client-config)
   <b>breakglass</b> <o><subcommand></o>               Break-glass hold: make the server stop answering one device or host (hold, release, list)
   <b>emergency</b> <o><subcommand></o>                Emergency measures (lockdown: refuse the logins of groups on a scope)
+  <b>server</b> <o><subcommand></o>                   This server's settings (addresses: where devices and hosts reach it)
   <b>ssh</b> <o><name|address></o> [<o>-p <port></o>]        Open an ssh session to a registered device or enrolled host, as you
       <o>-p <port></o>                         Connect to this port (default: the device's port, else 22)
   <b>shell</b> [<o>--idle <min></o>] [<o>-c <line></o>]      An interactive tacctl prompt with history and completion

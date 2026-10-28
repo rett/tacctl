@@ -52,7 +52,10 @@ machine's own PAM client always connects to `127.0.0.1`, so its logins arrive
 from an address the login scope has whatever the NAT does (the scope answers
 `127.0.0.1` and the server address). The address is the setting
 `server.addresses` in `tacctl.yaml` (a list that holds one address for now);
-`host enroll --local --server <address>` changes it. An install from before
+`host enroll --local --server <address>` changes it, and so does `tacctl server
+addresses replace <address>`, which is the same change (a snapshot, then the
+setting, the registry entry, the managed scope and this server's own PAM and
+accounts at once; see [Server commands](../cli/server.md)). An install from before
 whose server is registered in a scope that serves the server alone is taken
 over at the next `host sync` of the server or `host enroll --local`, its
 secret kept, in one line (a default-scope marker on it is cleared, in one

@@ -404,6 +404,10 @@ func (inv *invocation) managedSetup(reg *hosts.Registry, server string, fresh bo
 		if err != nil {
 			return nil, err
 		}
+		before, oldSecret := map[string][]string{}, sc.Secret
+		for _, other := range m.Scopes {
+			before[other.Name] = other.Prefixes
+		}
 		if err := inv.applyStore(func(s *store.Store) error {
 			if slices.Contains(fields, "secret") {
 				if err := s.ScopeSet(pwchange.ManagedScope, "secret="+secret); err != nil {
@@ -415,7 +419,20 @@ func (inv *invocation) managedSetup(reg *hosts.Registry, server string, fresh bo
 			return nil, err
 		}
 		a.Out.InfoE("Repaired the managed server login.")
-		return nil, nil
+		return func() {
+			// the client script failed: the scopes are put back as they were
+			_ = inv.applyStore(func(s *store.Store) error {
+				for name, p := range before {
+					if err := s.ScopeSet(name, "prefixes="+strings.Join(p, ",")); err != nil {
+						return err
+					}
+				}
+				if slices.Contains(fields, "secret") {
+					return s.ScopeSet(pwchange.ManagedScope, "secret="+oldSecret)
+				}
+				return nil
+			})
+		}, nil
 	}
 	if registered && cur.Scope != "" && m.Scope(cur.Scope) != nil {
 		old := cur.Scope
@@ -502,14 +519,9 @@ func (inv *invocation) localServerAddress(reg *hosts.Registry, given string) (st
 		}
 		return canonAddr(given), nil
 	}
-	// the recorded address: the setting, else (an install from before
-	// 0.2.21) the copy in this server's registry entry; never replaced by
-	// what the detection finds
-	if addr := inv.app.Conf().ServerAddress(); addr != "" {
+	// the recorded address; never replaced by what the detection finds
+	if addr := inv.recordedServer(reg); addr != "" {
 		return addr, nil
-	}
-	if e, ok := inv.localEntryOf(reg); ok && hosts.CheckServerAddress(e.Server) == nil {
-		return canonAddr(e.Server), nil
 	}
 	detect := inv.app.ServerAddress
 	if detect == nil {
@@ -521,6 +533,19 @@ func (inv *invocation) localServerAddress(reg *hosts.Registry, given string) (st
 	}
 	inv.app.Out.InfoE("Using " + addr + " as the server address (the address of " + iface + "); pass --server to use another.")
 	return addr, nil
+}
+
+// recordedServer is the address recorded for this server: the setting
+// server.addresses, else (an install from before 0.2.21) the copy in this
+// server's registry entry; "" when neither holds one.
+func (inv *invocation) recordedServer(reg *hosts.Registry) string {
+	if addr := inv.app.Conf().ServerAddress(); addr != "" {
+		return addr
+	}
+	if e, ok := inv.localEntryOf(reg); ok && hosts.CheckServerAddress(e.Server) == nil {
+		return canonAddr(e.Server)
+	}
+	return ""
 }
 
 // canonAddr is the address in its canonical form, an IPv4-mapped IPv6 address

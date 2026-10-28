@@ -446,32 +446,42 @@ func (inv *invocation) reportOnly(err error) { _ = exitCode(err, inv.app.Out) }
 // hostEnrollUsage is the usage line of 'host enroll'.
 const hostEnrollUsage = "Usage: tacctl host enroll <[user@]host> | --local  [options]"
 
-// hostEnroll is cmd_host_enroll.
+// enrollOpts are the arguments of 'host enroll', parsed.
+type enrollOpts struct {
+	target, scope, server, name, port, identity, method string
+	// isLocal is --local: this server's own login.
+	isLocal                               bool
+	buildOnHost, removeHome, yes, staging bool
+	scriptArgs                            []string
+}
+
+// hostEnroll is cmd_host_enroll: the command line, then the enrolment
+// (hostEnrollRun). A --local with a --server that is not the recorded server
+// address changes that address, which is 'server addresses replace'
+// (server.go): the same change, the same snapshot and follow-ups.
 func (inv *invocation) hostEnroll(args []string) error {
 	a := inv.app
-	var target, scope, server, name, port, identity, method string
-	isLocal, buildOnHost, removeHome, yes, staging := false, false, false, false, false
-	var scriptArgs []string
+	var o enrollOpts
 	for i := 0; i < len(args); {
 		w := args[i]
 		switch w {
 		case "--local":
-			isLocal = true
+			o.isLocal = true
 			i++
 		case "--build-on-host":
-			buildOnHost = true
+			o.buildOnHost = true
 			i++
 		case "--allow-uid-mismatch":
-			scriptArgs = append(scriptArgs, w)
+			o.scriptArgs = append(o.scriptArgs, w)
 			i++
 		case "--remove-home":
-			removeHome = true
+			o.removeHome = true
 			i++
 		case "-y", "--yes":
-			yes = true
+			o.yes = true
 			i++
 		case "--staging":
-			staging = true
+			o.staging = true
 			i++
 		case "--scope", "--server", "--name", "--port", "--identity":
 			// 0.1.16 spins forever here ('shift 2 || true' cannot shift); a
@@ -479,13 +489,13 @@ func (inv *invocation) hostEnroll(args []string) error {
 			if arg(args, i+1) == "" {
 				return inv.usageErr(w+" needs a value.", hostEnrollUsage)
 			}
-			*map[string]*string{"--scope": &scope, "--server": &server, "--name": &name, "--port": &port, "--identity": &identity}[w] = args[i+1]
+			*map[string]*string{"--scope": &o.scope, "--server": &o.server, "--name": &o.name, "--port": &o.port, "--identity": &o.identity}[w] = args[i+1]
 			i += 2
 		case "--method":
 			if arg(args, i+1) == "" {
 				return inv.usageErr("--method needs a method: " + hosts.MethodList())
 			}
-			method = args[i+1]
+			o.method = args[i+1]
 			i += 2
 		default:
 			if strings.HasPrefix(w, "-") {
@@ -493,13 +503,28 @@ func (inv *invocation) hostEnroll(args []string) error {
 				inv.write(hostUsage())
 				return exit(1)
 			}
-			if target != "" {
+			if o.target != "" {
 				return inv.usageErr("Only one host per enroll.")
 			}
-			target = w
+			o.target = w
 			i++
 		}
 	}
+	if o.isLocal && o.server != "" && o.target == "" && o.scope == "" {
+		if addr, moved := inv.serverAddressMoves(o.server); moved {
+			return inv.serverAddressApply("enroll", o, addr)
+		}
+	}
+	return inv.hostEnrollRun(o)
+}
+
+// hostEnrollRun is the enrolment of one host (or this server) from the
+// parsed command line.
+func (inv *invocation) hostEnrollRun(o enrollOpts) error {
+	a := inv.app
+	target, scope, server, name, port, identity, method := o.target, o.scope, o.server, o.name, o.port, o.identity, o.method
+	isLocal, buildOnHost, removeHome, yes, staging := o.isLocal, o.buildOnHost, o.removeHome, o.yes, o.staging
+	scriptArgs := o.scriptArgs
 
 	if err := inv.confReadable(); err != nil {
 		return err

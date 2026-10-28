@@ -37,7 +37,8 @@ Set up this machine's own login now, with 192.0.2.10 as the server address? [y/N
 The server address is `--server`, else the address recorded in
 `server.addresses` (a rerun of `install`), else the address of the interface
 with the default route; the last is said in one line every time it is used.
-The address is recorded in `tacctl.yaml` (`server.addresses`).
+The address is recorded in `tacctl.yaml` (`server.addresses`; `tacctl server
+addresses` shows and changes it, see [Server commands](../cli/server.md)).
 
 What `host enroll --local` does to stay safe is done here too: sshd's
 configuration is checked with `sshd -t` before sshd is reloaded and the change
@@ -58,5 +59,5 @@ input to answer on, says the same in one line. Running `install` again when
 the login is set up does nothing and prints nothing about it.
 
 `tacctl host enroll --local` stays the command to rebuild a server (the entry
-is there but the PAM files are not), to move it to another address (`--server`)
-and to repair it.
+is there but the PAM files are not), to move it to another address (`--server`, or `tacctl server addresses
+replace`, which is the same change) and to repair it.

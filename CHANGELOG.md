@@ -8113,3 +8113,25 @@ After the upgrade: `tacctl status`, `tacctl config validate` (store, rendered co
    devices and hosts reach this server at); otherwise the recorded
    `server.addresses` wins, then the address of the interface with the
    default route, said in one line every time it was detected.
+
+5. **`tacctl server addresses [list]|add|remove|replace <ip>`.** A new family
+   for the address devices and hosts reach this server at (the setting
+   `server.addresses`). It holds one address in this release: `add` sets it
+   when none is set and is refused while one is (`only one server address is
+   supported yet; use replace`), `remove` of the only address is refused
+   (`the server needs an address; use replace`), `replace` changes it; the
+   grammar takes `<ip>[,<ip>...]` and refuses more than one element with the
+   same words, so a later release only lifts the limit. A change takes a
+   snapshot and runs in one apply: the setting, the registry copy, the managed
+   scope's prefixes and the server's own PAM and accounts, by the enrolment of
+   this server that `host enroll --local --server <ip>` runs (that command is
+   this change when the address differs from the recorded one), and says once
+   what is left to do (`Re-point the devices and hosts at the new address: tacctl
+   host sync --all; the device walkthroughs name the new address`). If the
+   setup on this machine fails nothing is changed: the managed scope is put
+   back as it was. The verb is the superuser's alone (the tier table has no
+   row for it, so the sudoers drop-in is unchanged and the rollbacks need no
+   step for it); `list` writes no audit line, a change writes the pair of
+   `cmd` lines and `server addresses op=<op> address=<ip>`. The word
+   `server` is a top-level command now, so the manual page no longer says
+   `tacctl server` for the machine.

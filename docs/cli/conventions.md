@@ -76,6 +76,10 @@ tacctl emergency <subcommand>
 
     Emergency measures (lockdown: refuse the logins of groups on a scope); see emergency.md
 
+tacctl server <subcommand>
+
+    This server's settings (addresses: where devices and hosts reach it); see server.md
+
 tacctl ssh <name|address> [-p port] [-X|-Y] [-g] [-L|-R|-D spec]... [-- ssh args]
 
     ssh session to a registered device or enrolled host, as you, by password (never root)
