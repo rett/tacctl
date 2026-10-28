@@ -5,6 +5,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/rett/tacctl/internal/askpass"
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/devconf"
@@ -61,6 +63,10 @@ type hooks struct {
 	// it was checked on a copy and before the lock is taken; a test changes
 	// the world at that point.
 	deviceWriteStep func()
+	// treeBuilt is called with the command tree of a run, once it is built
+	// and before anything is dispatched; a test replaces the commands' run
+	// functions there.
+	treeBuilt func(root *cobra.Command)
 	// isTerminalWriter reports whether a stream is a terminal.
 	isTerminalWriter func(w io.Writer) bool
 	// editEuid is the identity this process has.
@@ -209,6 +215,13 @@ func (h *hooks) renameStep(step string) {
 func (h *hooks) deviceStep() {
 	if h != nil && h.deviceWriteStep != nil {
 		h.deviceWriteStep()
+	}
+}
+
+// builtTree lets a test see (and change) the command tree of a run.
+func (h *hooks) builtTree(root *cobra.Command) {
+	if h != nil && h.treeBuilt != nil {
+		h.treeBuilt(root)
 	}
 }
 

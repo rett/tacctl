@@ -2,6 +2,9 @@ package cli
 
 import (
 	"bytes"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"regexp"
 	"slices"
 	"strings"
@@ -196,27 +199,48 @@ func TestPtyHelpIsWhatQuestionMarkPrints(t *testing.T) {
 	}
 }
 
-// '__help' is the one thing the bash help key runs: with any words (verbs
-// that change state, flags that wait for a value, '--', hidden commands,
-// nothing at all) it prints and runs nothing else. Every other command of
-// the tree is made to fail the test when it runs, and the runner records no
-// call.
-func TestHelpOnlyRunsNoVerb(t *testing.T) {
-	inv, root, runner := shellTestInv(t)
-	var poison func(c *cobra.Command)
-	poison = func(c *cobra.Command) {
-		for _, sub := range c.Commands() {
-			if sub.Name() != "__help" {
-				name := sub.CommandPath()
-				sub.RunE = func(*cobra.Command, []string) error {
-					t.Errorf("__help ran %s", name)
-					return nil
-				}
+// helpOnlyWords are the words '__help' is tried with: verbs that change
+// state, flags that wait for a value, '--', hidden commands, the help flags,
+// nothing at all.
+var helpOnlyWords = [][]string{
+	nil, {"user"}, {"user", "add"}, {"user", "remove", "alice", "--yes"},
+	{"breakglass", "hold", "sw1", "--reason"}, {"breakglass", "hold", "sw1", "--reason", "why"},
+	{"install", "-y", "--branch"}, {"uninstall", "-y"}, {"upgrade"}, {"rollback", "0.2.18", "--apply", "--yes"},
+	{"store", "import", "--force"}, {"log", "clear", "--"}, {"log", "search", "--", "--help"},
+	{"user", "add", "--help"}, {"--help"}, {"-h"}, {"__help"}, {"__complete", "user"}, {"_console-policy"},
+	{"_completion-names", "users"}, {"shell", "-c", "user list"}, {"nosuch", "--x"},
+}
+
+// poisonTree replaces the run function of every command of the tree but
+// __help by one that fails the test, and counts the calls.
+func poisonTree(t *testing.T, root *cobra.Command) *int {
+	t.Helper()
+	fired := new(int)
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		if c.Name() != "__help" {
+			name := c.CommandPath()
+			c.RunE = func(*cobra.Command, []string) error {
+				*fired++
+				t.Errorf("__help ran %s", name)
+				return nil
 			}
-			poison(sub)
+		}
+		for _, sub := range c.Commands() {
+			walk(sub)
 		}
 	}
-	poison(root)
+	walk(root)
+	return fired
+}
+
+// '__help' is the one thing the bash help key runs: with any words it prints
+// and runs nothing else. Every other command of the tree is made to fail the
+// test if it runs, and the runner records no call. First straight at the
+// command, over every command with every flag as the last word.
+func TestHelpOnlyRunsNoVerb(t *testing.T) {
+	inv, root, runner := shellTestInv(t)
+	fired := poisonTree(t, root)
 	help := child(root, "__help")
 	if help == nil || !help.Hidden || help.RunE == nil {
 		t.Fatalf("__help: %+v", help)
@@ -235,14 +259,7 @@ func TestHelpOnlyRunsNoVerb(t *testing.T) {
 		}
 		return stripSGRString(out.String())
 	}
-	for _, words := range [][]string{
-		nil, {"user"}, {"user", "add"}, {"user", "remove", "alice", "--yes"},
-		{"breakglass", "hold", "sw1", "--reason"}, {"breakglass", "hold", "sw1", "--reason", "why"},
-		{"install", "-y", "--branch"}, {"uninstall", "-y"}, {"upgrade"}, {"rollback", "0.2.18", "--apply", "--yes"},
-		{"store", "import", "--force"}, {"log", "clear", "--"}, {"log", "search", "--", "--help"},
-		{"user", "add", "--help"}, {"--help"}, {"-h"}, {"__help"}, {"__complete", "user"}, {"_console-policy"},
-		{"_completion-names", "users"}, {"shell", "-c", "user list"}, {"nosuch", "--x"},
-	} {
+	for _, words := range helpOnlyWords {
 		got := run(words...)
 		if got == "" {
 			t.Errorf("__help %q printed nothing", words)
@@ -272,6 +289,93 @@ func TestHelpOnlyRunsNoVerb(t *testing.T) {
 			}
 		}
 		run(p...)
+	}
+	if *fired != 0 {
+		t.Errorf("%d command(s) ran", *fired)
+	}
+}
+
+// The same through the normal path (Run: the re-exec check, the dispatch, the
+// audit lines), for the same words: the run functions of the tree the run
+// built are replaced (the treeBuilt hook), none fires, the fake runner
+// executes nothing, and the words are printed as help.
+func TestHelpOnlyRunsNoVerbThroughRun(t *testing.T) {
+	for _, words := range helpOnlyWords {
+		h := newHarness(t, append([]string{"__help", "--"}, words...))
+		h.app.EUID = 1000
+		h.app.Paths.SkipSudo = false
+		var fired *int
+		h.hooks.treeBuilt = func(root *cobra.Command) { fired = poisonTree(t, root) }
+		if err := h.run(); err != nil {
+			t.Errorf("__help -- %q: %v", words, err)
+		}
+		if fired == nil || *fired != 0 {
+			t.Errorf("__help -- %q: the tree was not seen or a command ran (%v)", words, fired)
+		}
+		if len(h.runner.Calls()) != 0 || len(h.runner.Execs()) != 0 {
+			t.Errorf("__help -- %q ran %v %v", words, h.runner.Calls(), h.runner.Execs())
+		}
+		if out := stripSGRString(h.out.String()); out == "" || strings.Contains(out, "[ERROR]") || h.err.Len() != 0 {
+			t.Errorf("__help -- %q: out %q err %q", words, out, h.err.String())
+		}
+	}
+}
+
+// help_request.go may call only the renderers of the lists, never a verb. The
+// two tests above replace the run functions of the tree, which catches a
+// dispatch through the tree but not a direct Go call from the help code to a
+// verb's method (inv.shell, inv.console ...), which would bypass them. So the
+// calls in the file are held to a list of the functions that read the tree
+// and the usage blocks and render text; a new call is a decision to be made
+// here, by a reviewer, not a side effect.
+func TestHelpRequestCallsOnlyRenderers(t *testing.T) {
+	allowed := map[string]bool{
+		// builtins and the standard library
+		"len": true, "append": true, "io.WriteString": true,
+		"slices.Contains": true, "slices.ContainsFunc": true, "strings.HasPrefix": true,
+		// the tree and the usage text
+		"shellCommand": true, "specFor": true, "waitsForValue": true, "hidden": true, "child": true,
+		"inv.shellCompleter": true, "inv.shellExplain": true, "cmd.Commands": true, "c.Commands": true,
+		"cmd.Root": true, "inv.helpList": true,
+		// the renderer and the terminal's width
+		"shell.Candidates": true, "shell.HelpText": true, "ui.File": true, "term.IsTerminal": true,
+		"term.GetSize": true, "f.Fd": true, "int": true,
+	}
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "help_request.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		var name string
+		switch fn := call.Fun.(type) {
+		case *ast.Ident:
+			name = fn.Name
+		case *ast.SelectorExpr:
+			if x, ok := fn.X.(*ast.Ident); ok {
+				name = x.Name + "." + fn.Sel.Name
+			} else {
+				name = "(expr)." + fn.Sel.Name
+			}
+		default:
+			return true // a function literal, a conversion
+		}
+		seen[name] = true
+		if !allowed[name] {
+			t.Errorf("help_request.go calls %s at %s: the help may call only renderers (see the test)", name, fset.Position(call.Pos()))
+		}
+		return true
+	})
+	// The list is not a dead one.
+	for _, must := range []string{"shell.HelpText", "inv.shellExplain", "shellCommand"} {
+		if !seen[must] {
+			t.Errorf("help_request.go no longer calls %s: update the test", must)
+		}
 	}
 }
 

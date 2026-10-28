@@ -132,6 +132,7 @@ func runWith(ctx context.Context, a *app.App, build BuildInfo, hk *hooks) (err e
 	inv := &invocation{ctx: ctx, app: a, build: build, hooks: hk}
 	root := newRoot(inv)
 	inv.root = root
+	hk.builtTree(root)
 	// '<command> -h|--help': the command's help, as the user, before sudo.
 	if words, ok := helpRequest(root, a.Args); ok {
 		inv.helpList(root, words)
