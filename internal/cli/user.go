@@ -529,6 +529,7 @@ func (inv *invocation) userAdd(args []string) error {
 		inv.detailPwChange(username, true, "add")
 		a.Out.InfoE("'" + username + "' must change the password at the first login to this server; no device accepts the user until then (" + noChangeRequired + " skips this, 'tacctl user require-password-change " + username + " off' lifts it).")
 		inv.reportRequired(m, []string{username})
+		inv.reportNeedsSync([]string{username}, "the account is made at the next sync of this server")
 	case !skipChange && barrier.exempt:
 		a.Out.InfoE("No password change is required of '" + username + "': " + barrier.why + ".")
 	case !skipChange:
@@ -936,6 +937,11 @@ func (inv *invocation) userRename(args []string) error {
 	case mv.heldBy != "":
 		out.Warn("'" + newname + "' already has UID " + mv.heldBy + " in linux-uids; the account '" + oldname + "' (UID " + mv.uid +
 			") is removed on hosts and '" + newname + "' created with " + mv.heldBy)
+	}
+	// The account of the new name is made at the next sync of this server.
+	inv.loaded = false
+	if rm, err := inv.model(); err == nil && pwchange.Subject(inv.app.Conf(), rm, rm.User(newname)) {
+		inv.reportNeedsSync([]string{newname}, "the account of '"+oldname+"' is renamed at the next sync of this server")
 	}
 	inv.echo("")
 	// A server that is not enrolled holds no accounts to sync; an enrolled

@@ -996,7 +996,14 @@ and
 .B "host enroll \-\-local"
 with another scope or method, while any user is flagged (the backends' files are
 rendered from the server's registration).
-The requirement is stored as
+A new or renamed user has an account on this server only after the next
+.BR "host sync" ,
+which
+.B "user add"
+and
+.B "user rename"
+say for a user who must change the password: until then the user can neither
+log in nor change it. The requirement is stored as
 .B password_change_required
 of the user in
 .I store.yaml

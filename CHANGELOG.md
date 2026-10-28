@@ -313,7 +313,9 @@ current behaviour; this file is where history lives.
     reason (the host registry cannot be read, the user has no login here) keeps
     a flag that stands and says why, and for an unflagged user says the change
     could not be required. The flag is the user's `password_change_required` in
-    `store.yaml`, written only when set; `user list` marks the date with
+    `store.yaml`, written only when set; `user add` and `user rename` of a user who must change the password
+    say that the account exists on the server only after the next `host sync`,
+    until when the user can neither log in nor change the password. `user list` marks the date with
     `(change required)`, `user show` has a `Password change` line, and `status`
     counts the users pending. The flag set and lifted is logged as `user
     password-change name= state=required|cleared via=require|add|passwd|self`.

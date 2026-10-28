@@ -137,6 +137,21 @@ func (inv *invocation) reportRequired(m *model.Model, names []string) {
 	}
 }
 
+// reportNeedsSync tells that the accounts of names exist on this server only
+// after the next 'host sync' of it, so the users cannot log in to change the
+// password before that: reason says why the account is not there yet.
+func (inv *invocation) reportNeedsSync(names []string, reason string) {
+	e, ok, _ := inv.localHost()
+	if !ok || len(names) == 0 {
+		return
+	}
+	who := "'" + names[0] + "'"
+	if len(names) > 1 {
+		who = "'" + strings.Join(names, "', '") + "'"
+	}
+	inv.app.Out.WarnE(who + " must change the password, but " + reason + ", so it cannot log in to this server to do it until the sync: tacctl host sync " + e.Name)
+}
+
 // detailPwChange is the audit line of a flag set or cleared: for whom, by
 // whom (the writer adds by=), and through which verb.
 func (inv *invocation) detailPwChange(name string, required bool, via string) {

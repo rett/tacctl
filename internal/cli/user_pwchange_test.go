@@ -56,6 +56,11 @@ func TestUserAddRequiresAPasswordChangeByDefault(t *testing.T) {
 	if got := flaggedUsers(t, sb); got != "dave" {
 		t.Errorf("flagged: %q", got)
 	}
+	// the account exists on this server only after the next sync: until then
+	// the user can neither log in nor change the password
+	if out := plain(sb.out.String()); !strings.Contains(out, "[WARN] 'dave' must change the password, but the account is made at the next sync of this server, so it cannot log in to this server to do it until the sync: tacctl host sync authsrv") {
+		t.Errorf("no word of the sync:\n%s", out)
+	}
 	wantDetail(t, "user add", auditCalls(sb.runner), "auth.info", "user password-change name=dave state=required via=add by=alice")
 	noLoggerHas(t, "user add", sb.runner, h[:30])
 	// the option skips it
@@ -450,5 +455,25 @@ func TestUserPasswdResetKeepsAFlagItCannotRenew(t *testing.T) {
 	sb.expect(0, "The password change required of 'alice' is lifted.", "")
 	if flaggedUsers(t, sb) != "carol" {
 		t.Errorf("flagged after a superuser's reset: %q", flaggedUsers(t, sb))
+	}
+}
+
+// A renamed user who must change the password has no account under the new
+// name until the next sync, and is told so; an unflagged one is not.
+func TestUserRenameOfAFlaggedUserSaysItNeedsTheSync(t *testing.T) {
+	sb := pwSandbox(t)
+	sb.asAlice("", "user", "require-password-change", "bob")
+	sb.expect(0, "Flagged 1", "")
+	sb.asAlice("", "user", "rename", "bob", "robert")
+	sb.expect(0, "User renamed: bob -> robert", "")
+	if out := plain(sb.out.String() + sb.err.String()); !strings.Contains(out, "'robert' must change the password, but the account of 'bob' is renamed at the next sync of this server, so it cannot log in to this server to do it until the sync: tacctl host sync authsrv") {
+		t.Errorf("rename:\n%s", out)
+	}
+	if flaggedUsers(t, sb) != "robert" {
+		t.Errorf("the flag did not follow the name: %q", flaggedUsers(t, sb))
+	}
+	sb.asAlice("", "user", "rename", "carol", "caroline")
+	if sb.code != 0 || strings.Contains(sb.out.String()+sb.err.String(), "must change the password") {
+		t.Errorf("an unflagged user: exit %d\n%s", sb.code, sb.out.String()+sb.err.String())
 	}
 }

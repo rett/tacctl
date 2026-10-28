@@ -159,6 +159,9 @@ only when set.
   require a change for another reason (no login on the server, the host registry cannot be read) leaves
   a flagged user flagged and says so with the reason; for an unflagged user it says the change could not
   be required.
+- *Accounts are made by the sync.* The account of a new (or renamed) user exists on the server only
+  after the next `host sync` of it; `user add` and `user rename` of a user who must change the password
+  say so, since until then the user can neither log in nor change the password.
 - *A user must be able to change it.* The flag is not set, and the verb says why, for a user with no
   login on this server: the server is not enrolled (`host enroll --local`), the user is not in the
   scope it is enrolled in, the name is no Linux account name (a period), or the user is disabled.
