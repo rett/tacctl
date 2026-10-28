@@ -154,7 +154,7 @@ func TestRenderPasswordChangeGolden(t *testing.T) {
 	if i < 0 || j < i {
 		t.Fatal("the users section is not in the file")
 	}
-	got := []byte(text[i:j])
+	got := []byte(strings.TrimRight(text[i:j], "\n") + "\n")
 	path := filepath.Join("testdata", "pwchange.users.yaml")
 	if *updatePwchange {
 		if err := os.WriteFile(path, got, 0o644); err != nil {
