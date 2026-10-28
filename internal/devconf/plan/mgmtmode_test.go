@@ -352,6 +352,9 @@ func TestMgmtModeStrictRefusesAFilterThatWouldNotPermitFrom(t *testing.T) {
 // of the plan that moves the filter, in both directions.
 func TestMgmtModeAllowListAdmitsTheStrictStatements(t *testing.T) {
 	ssh, st := managedMode(t, sshOnly, modeList), managedMode(t, strict, modeList)
+	// with an authentication server of its own: the replies term, its
+	// source-port and tcp-established leaves
+	sshA, stA := managedModeAuth(t, sshOnly, modeList, "192.0.2.200"), managedModeAuth(t, strict, modeList, "192.0.2.200")
 	for _, c := range []struct {
 		name       string
 		exp        []devices.Section
@@ -361,6 +364,8 @@ func TestMgmtModeAllowListAdmitsTheStrictStatements(t *testing.T) {
 	}{
 		{"to strict", st, deviceOf(ssh, false), strict, false},
 		{"to ssh-only", ssh, deviceOf(st, false), sshOnly, false},
+		{"to strict with --server", stA, deviceOf(sshA, false), strict, false},
+		{"to ssh-only with --server", sshA, deviceOf(stA, false), sshOnly, false},
 	} {
 		a := Allow{Vendor: "juniper", Expected: c.exp, Login: "invoking-login"}
 		for _, l := range mgmtSection(c.exp) {
@@ -437,19 +442,21 @@ func TestMgmtModeStrictAcceptsTheAuthenticationServerRepliesOnly(t *testing.T) {
 		t.Fatalf("permit-mgmt sources: %q", want)
 	}
 	for _, l := range []string{"set " + f + "permit-auth-replies from source-address " + auth + "/32", "set " + f + "permit-auth-replies from protocol tcp",
-		"set " + f + "permit-auth-replies from source-port tacacs", "set " + f + "permit-auth-replies then accept"} {
+		"set " + f + "permit-auth-replies from source-port tacacs", "set " + f + "permit-auth-replies from tcp-established",
+		"set " + f + "permit-auth-replies then accept"} {
 		if !slices.Contains(mgmtSection(st), l) {
 			t.Errorf("the rendering lacks %q", l)
 		}
 	}
-	// the term is the last of the permit terms: before the SNMP terms, after permit-mgmt
+	// the term is the last of the filter: after permit-mgmt and after the SNMP
+	// terms, so that deny-snmp decides udp port 161 first
 	var order []string
 	for _, l := range mgmtSection(st) {
 		if t := splitTokens(l); len(t) > 7 && t[6] == "term" && !slices.Contains(order, t[7]) {
 			order = append(order, t[7])
 		}
 	}
-	if i, j := slices.Index(order, "permit-mgmt"), slices.Index(order, "permit-auth-replies"); i != 0 || j < 1 || j != slices.Index(order, "permit-snmp")-1 {
+	if i, j := slices.Index(order, "permit-mgmt"), slices.Index(order, "permit-auth-replies"); i != 0 || j != len(order)-1 || j < slices.Index(order, "deny-snmp") || slices.Index(order, "deny-snmp") < 0 {
 		t.Errorf("term order %q", order)
 	}
 
@@ -458,7 +465,7 @@ func TestMgmtModeStrictAcceptsTheAuthenticationServerRepliesOnly(t *testing.T) {
 	d := planMode(t, st, device, Options{MgmtMode: strict, From: auth})
 	got := d.Of("mgmt-acl")
 	if got.State != StateSkipped || !strings.Contains(got.Why, "strict filter that is accepted for ssh") ||
-		!strings.Contains(got.Why, "the address the device authenticates against, which the filter accepts for the server's replies only: tcp source port tacacs") {
+		!strings.Contains(got.Why, "the address the device authenticates against, which the filter accepts for the server's answers only: tcp source port tacacs, established connections only") {
 		t.Errorf("--from the authentication server: %+v", got)
 	}
 	// --from the other address of the walkthrough, a plain entry and an entry
@@ -489,8 +496,9 @@ func TestMgmtModeStrictAcceptsTheAuthenticationServerRepliesOnly(t *testing.T) {
 	d = planMode(t, st, device, Options{MgmtMode: strict, From: "192.0.2.42"})
 	wantLine(t, d, "mgmt-acl", "set "+f+"permit-auth-replies from source-address "+auth+"/32")
 	wantLine(t, d, "mgmt-acl", "set "+f+"permit-auth-replies from source-port tacacs")
+	wantLine(t, d, "mgmt-acl", "set "+f+"permit-auth-replies from tcp-established")
 	if !warned(d, "sources of the permit list (192.0.2.42/32, 10.1.100.0/23") || warned(d, "192.0.2.42/32, "+auth+"/32") ||
-		!warned(d, "and from "+auth+"/32 the replies of the server the device authenticates against only (tcp source port tacacs)") {
+		!warned(d, "and from "+auth+"/32 the answers of the server the device authenticates against only (tcp source port tacacs, established connections only)") {
 		t.Errorf("the report does not name the sources and the replies apart: %q", d.Warnings)
 	}
 	for _, l := range lines(d, "mgmt-acl") {
@@ -504,4 +512,46 @@ func TestMgmtModeStrictAcceptsTheAuthenticationServerRepliesOnly(t *testing.T) {
 	// the move back deletes the term with the rest of the strict terms
 	back := planMode(t, ssh, deviceOf(st, false), Options{MgmtMode: sshOnly})
 	wantLine(t, back, "mgmt-acl", "delete "+f+"permit-auth-replies")
+}
+
+// Where the authentication server's address sits in the permit list decides
+// whether it has the replies term and how --from reads it: inside a plain
+// range it is a source of permit-mgmt already (no term, accepted for ssh); with
+// an entry with services that lack tcp/22 it has the term and is refused for
+// ssh with the replies reason; with an entry that holds tcp/22 it has the term
+// and is accepted for ssh by the service term.
+func TestMgmtModeStrictAuthenticationServerInTheList(t *testing.T) {
+	const auth = "192.0.2.200"
+	hasTerm := func(secs []devices.Section) bool {
+		return slices.ContainsFunc(mgmtSection(secs), func(l string) bool { return strings.Contains(l, "permit-auth-replies") })
+	}
+	for _, c := range []struct {
+		name    string
+		list    []string
+		auth    string
+		term    bool
+		refused bool
+	}{
+		{"inside a plain range", []string{"192.0.2.0/24", "10.1.100.0/23"}, auth, false, false},
+		{"a plain entry of its own", []string{auth + "/32", "10.1.100.0/23"}, auth, false, false},
+		{"services without tcp/22", []string{"10.1.100.0/23", auth + "/32:udp/161"}, auth, true, true},
+		{"services that hold tcp/22", []string{"10.1.100.0/23", auth + "/32:tcp/22"}, auth, true, false},
+		{"a range with services that hold tcp/22", []string{"10.1.100.0/23", "192.0.2.128/25:tcp/22"}, auth, true, false},
+		{"outside the list", []string{"10.1.100.0/23"}, auth, true, true},
+	} {
+		ssh, st := managedModeAuth(t, sshOnly, c.list, c.auth), managedModeAuth(t, strict, c.list, c.auth)
+		if hasTerm(st) != c.term {
+			t.Errorf("%s: replies term %v, want %v:\n%s", c.name, hasTerm(st), c.term, strings.Join(mgmtSection(st), "\n"))
+		}
+		got := planMode(t, st, deviceOf(ssh, true), Options{MgmtMode: strict, From: c.auth}).Of("mgmt-acl")
+		if c.refused != (got.State == StateSkipped) {
+			t.Errorf("%s: --from %s: %+v", c.name, c.auth, got)
+		}
+		if c.refused && !strings.Contains(got.Why, "the address the device authenticates against, which the filter accepts for the server's answers only") {
+			t.Errorf("%s: the refusal does not say why: %q", c.name, got.Why)
+		}
+		if !c.refused && got.State != StatePlanned {
+			t.Errorf("%s: %+v", c.name, got)
+		}
+	}
 }

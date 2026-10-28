@@ -17,15 +17,17 @@ package devices
 //	                   have services (permit-tcp-22, permit-udp-161-162,
 //	                   permit-tcp-any, permit-icmp), with the sources that
 //	                   name it, protocol and destination port; then accept
-//	permit-auth-replies the replies of the server the device authenticates
-//	                   against, when its address is not a source above
 //
 // then the permit-snmp and deny-snmp terms of the SNMP clients, as in the
-// ssh-only filter. A service term is named after its service, not its
+// ssh-only filter, and last permit-auth-replies, the replies of the server
+// the device authenticates against, when its address is not a plain source
+// above. It follows the SNMP terms so that deny-snmp decides udp port 161
+// first. A service term is named after its service, not its
 // position, so a list that gains an entry changes the terms it names and no
 // other.
 
 import (
+	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
@@ -45,9 +47,11 @@ type strictTerm struct {
 // server the device authenticates against, from an address that is not a
 // source of the permit list.
 type authReply struct {
-	source string   // the server's /32
-	proto  string   // tcp (TACACS+) or udp (RADIUS)
-	ports  []string // the source ports of the replies, as the statement writes them
+	source  string   // the server's /32
+	proto   string   // tcp (TACACS+) or udp (RADIUS)
+	ports   []string // the source ports of the replies, as the statement writes them
+	entries []string // the entries with services of the permit list that hold the address
+	ssh     bool     // one of them permits ssh
 }
 
 // authReplyTerm is the name of the term that holds the replies of the
@@ -71,7 +75,11 @@ const authReplyTerm = "permit-auth-replies"
 // address than the sources of permit-mgmt, the replies of the TACACS+ or
 // RADIUS server come from it, and a filter that ends in the discard must
 // accept them; reply says so. It is no source of permit-mgmt: the device
-// starts those sessions, so only the replies are accepted from it, never ssh.
+// starts those sessions, so only the packets of the replies are accepted from
+// it (a TACACS+ connection already established from port 49, RADIUS udp from
+// the listener's ports). No reply when a plain source (the server's /32, a
+// plain entry, or a range of one) holds the address already: it is accepted
+// for everything.
 func (d Data) mgmtStrict(auth, protocol string) (plain []string, terms []strictTerm, reply *authReply) {
 	var entries []mgmtacl.Entry
 	for _, raw := range d.ACL.CIDRs {
@@ -92,8 +100,14 @@ func (d Data) mgmtStrict(auth, protocol string) (plain []string, terms []strictT
 			plain = append(plain, e.Net)
 		}
 	}
-	if a := cidr.Host32(auth); a != "" && !slices.Contains(plain, a) {
+	if a := cidr.Host32(auth); a != "" && !prefixesHold(plain, a) {
 		reply = d.authReplies(a, protocol)
+		for _, e := range entries {
+			if !e.Plain() && prefixesHold([]string{e.Net}, a) {
+				reply.entries = append(reply.entries, e.String())
+				reply.ssh = reply.ssh || e.AllowsSSH()
+			}
+		}
 	}
 	for _, e := range entries {
 		if e.Plain() || slices.Contains(plain, e.Net) {
@@ -114,9 +128,23 @@ func (d Data) mgmtStrict(auth, protocol string) (plain []string, terms []strictT
 	return plain, terms, reply
 }
 
+// prefixesHold reports whether one of the prefixes holds the /32 address a.
+func prefixesHold(prefixes []string, a string) bool {
+	ap, err := netip.ParsePrefix(a)
+	if err != nil {
+		return false
+	}
+	for _, p := range prefixes {
+		if pp, err := netip.ParsePrefix(p); err == nil && pp.Contains(ap.Addr()) {
+			return true
+		}
+	}
+	return false
+}
+
 // authReplies are the replies of the server at a (its /32) in the walkthrough
 // of protocol: TACACS+ answers over tcp from port 49 (the walkthrough sets no
-// other); RADIUS answers over udp from the listener's authentication and
+// other), in a connection the device opened; RADIUS answers over udp from the listener's authentication and
 // accounting ports (1812 and 1813 unless the listener is configured with
 // others), the ports the walkthrough sets on the device.
 func (d Data) authReplies(a, protocol string) *authReply {
@@ -196,10 +224,9 @@ func junosPort(s mgmtacl.Service) string {
 
 // strictStatements are the 'set' lines of the strict filter's permit terms
 // (prefix is "set firewall family inet filter <name> term "): permit-mgmt,
-// then one term per service, then the term of the authentication server's
-// replies. A term holds only what its entry says: a service term with a
-// protocol and no port is every port of the protocol.
-func strictStatements(prefix string, plain []string, terms []strictTerm, reply *authReply) string {
+// then one term per service. A term holds only what its entry says: a
+// service term with a protocol and no port is every port of the protocol.
+func strictStatements(prefix string, plain []string, terms []strictTerm) string {
 	var b strings.Builder
 	if len(plain) > 0 {
 		for _, e := range plain {
@@ -217,16 +244,31 @@ func strictStatements(prefix string, plain []string, terms []strictTerm, reply *
 		}
 		b.WriteString(prefix + t.name + " then accept\n")
 	}
-	if reply != nil {
-		b.WriteString(prefix + authReplyTerm + " from source-address " + reply.source + "\n")
-		b.WriteString(prefix + authReplyTerm + " from protocol " + reply.proto + "\n")
-		ports := reply.ports[0]
-		if len(reply.ports) > 1 {
-			ports = "[ " + strings.Join(reply.ports, " ") + " ]"
-		}
-		b.WriteString(prefix + authReplyTerm + " from source-port " + ports + "\n")
-		b.WriteString(prefix + authReplyTerm + " then accept\n")
+	return b.String()
+}
+
+// authReplyStatements are the 'set' lines of the term of the authentication
+// server's replies (nothing without one). The filter is stateless: the term
+// matches by source address, protocol and source port. For TACACS+ it adds
+// tcp-established (every tcp packet but the first of a connection: a SYN-ACK
+// and what follows), so that a new connection from port 49 is not accepted;
+// udp has no such flag.
+func authReplyStatements(prefix string, reply *authReply) string {
+	if reply == nil {
+		return ""
 	}
+	var b strings.Builder
+	b.WriteString(prefix + authReplyTerm + " from source-address " + reply.source + "\n")
+	b.WriteString(prefix + authReplyTerm + " from protocol " + reply.proto + "\n")
+	ports := reply.ports[0]
+	if len(reply.ports) > 1 {
+		ports = "[ " + strings.Join(reply.ports, " ") + " ]"
+	}
+	b.WriteString(prefix + authReplyTerm + " from source-port " + ports + "\n")
+	if reply.proto == "tcp" {
+		b.WriteString(prefix + authReplyTerm + " from tcp-established\n")
+	}
+	b.WriteString(prefix + authReplyTerm + " then accept\n")
 	return b.String()
 }
 
@@ -256,20 +298,41 @@ func strictHeader(scope string) string {
 }
 
 // authReplyNote is the comment of the term that accepts the replies of the
-// authentication server: why it is a term of its own, and what it matches.
-func authReplyNote(r *authReply) string {
+// authentication server: why it is a term of its own, what it matches and
+// what it cannot tell (the filter is stateless). snmpTerms says the filter
+// has the deny-snmp term, which comes before the term and decides udp port 161.
+func authReplyNote(r *authReply, snmpTerms bool) string {
 	if r == nil {
 		return ""
 	}
-	what := "tcp from source port " + r.ports[0] + " (TACACS+)"
-	if r.proto == "udp" {
-		what = "udp from source port " + strings.Join(r.ports, " and ") + " (RADIUS)"
+	a := strings.TrimSuffix(r.source, "/32")
+	var b strings.Builder
+	b.WriteString("#\n# " + authReplyTerm + ": " + a + " is the address the device authenticates against (--server, a RADIUS listener bound to\n" +
+		"# another address, or the detected address when --source is another) and is not a source of permit-mgmt. The device\n" +
+		"# starts those sessions, so the term accepts only the packets of the server's answers:\n")
+	if r.proto == "tcp" {
+		b.WriteString("#   - tcp from source port " + r.ports[0] + " that are not the first packet of a connection (tcp-established): a new connection\n" +
+			"#     from " + a + ", even from that port, is not accepted. The filter keeps no state, so a packet of an\n" +
+			"#     established connection from that port is accepted whatever its destination port.\n")
+	} else {
+		b.WriteString("#   - udp from source port " + strings.Join(r.ports, " and ") + ". The filter keeps no state and udp has no connection flag:\n" +
+			"#     it cannot tell a reply from another udp packet sent from those ports.\n")
+		if snmpTerms {
+			b.WriteString("#     The permit-snmp and deny-snmp terms come first, so udp port 161 (SNMP) is decided by them.\n")
+		} else {
+			b.WriteString("#     The scope has no SNMP clients, so there is no deny-snmp term: udp port 161 from it is accepted too.\n")
+		}
 	}
-	return "#\n" +
-		"# " + authReplyTerm + ": " + strings.TrimSuffix(r.source, "/32") + " is the address the device authenticates against (--server, or a\n" +
-		"# RADIUS listener bound to another address) and is not a source above. The device starts those sessions, so the\n" +
-		"# term accepts only the replies, " + what + "; ssh and every other protocol from it\n" +
-		"# are not accepted. Add the address to the permit list this scope renders from to accept more.\n"
+	if len(r.entries) > 0 {
+		b.WriteString("# The permit list holds " + strings.Join(r.entries, ", ") + " for this address: it is accepted for those services only")
+		if r.ssh {
+			b.WriteString(" (ssh among them)")
+		}
+		b.WriteString(",\n# and this term adds the answers above.\n")
+	} else {
+		b.WriteString("# Nothing is accepted from " + a + " beyond that. Add the address to the permit list this scope renders from to accept more.\n")
+	}
+	return b.String()
 }
 
 // strictNoSSH is the comment of the strict mode when the list has IPv4 entries

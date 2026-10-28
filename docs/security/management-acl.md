@@ -72,21 +72,31 @@ a Junos filter drops the rest. The terms, in order:
   (`tcp/*`, `udp/*`) matches the protocol alone, and `icmp` is `from protocol
   icmp` for every ICMP type. A port Junos prints by name is written with it
   (`ssh`, `snmp`, `ntp`, `bgp`), any other as a number, a range as `low-high`.
-- `permit-auth-replies`, only when the walkthrough has a second server
-  address: the device authenticates against another address than the one
-  tacctl reaches it from (`--server`; `--source` alone, the device still being
-  told the address detected for the server; a RADIUS listener bound to another
-  address) and that address is not a source of `permit-mgmt` already. With
-  none of them, or with both given the same, there is one address, one source
-  /32 in `permit-mgmt` and no such term. The term holds that address, protocol
-  `tcp` and source port `tacacs` for TACACS+, or protocol `udp` and the source
-  ports `radius` and `radacct` (the listener's, 1812 and 1813 by default) for
-  RADIUS; then accept. The device starts those sessions, so only the replies
-  of the server are accepted from the address, never ssh or another protocol,
-  and it is not counted as a source for `--from` (below). Add the address to
-  the permit list to accept more from it.
 - `permit-snmp` and `deny-snmp`, when the scope's SNMP clients are set, as in
   `ssh-only`.
+- `permit-auth-replies`, last, only when the walkthrough has a second server
+  address: the device authenticates against another address than the one
+  tacctl reaches it from (`--server`, unless it is the detected address or
+  `--source`; `--source` alone, the device still being told the address
+  detected for the server; a RADIUS listener bound to another address) and no
+  plain source of the permit list (an entry or a range) holds that address.
+  With neither flag, with `--server` equal to the detected address or to
+  `--source`, or with the address inside a plain entry, there is one address
+  and no such term. The address is not a source of `permit-mgmt`, because the
+  device starts those sessions and only the answers of the server need to
+  pass: for TACACS+ the term matches that address, protocol `tcp`, source port
+  `tacacs` and `tcp-established` (every tcp packet but the first of a
+  connection, so a new connection from port 49 is refused); for RADIUS that
+  address, protocol `udp` and the source ports `radius` and `radacct` (the
+  listener's, 1812 and 1813 by default). The filter keeps no state: it
+  matches the answers by source port and cannot tell them from another packet
+  sent from that port, so udp from those ports is accepted whatever it is,
+  and the term comes after the SNMP terms so that `deny-snmp` decides udp
+  port 161 first (a scope with no SNMP clients has no such term, and udp 161
+  from that address and port is accepted). An entry with services for the
+  address keeps its services, and the term adds the answers. The address is
+  not counted as a source for `--from` (below), and adding it to the permit
+  list accepts more from it.
 
 An entry with services keeps only those services; a plain entry accepts
 everything from its source. An entry for a network that already heads

@@ -43,7 +43,10 @@ type filterTerm struct {
 	protos   []string
 	ports    []string
 	srcPorts []string
-	accept   bool
+	// established is tcp-established: tcp packets other than the first of a
+	// connection
+	established bool
+	accept      bool
 }
 
 // authRepliesTerm is the strict filter's term of the replies of the server the
@@ -82,6 +85,8 @@ func renderedTerms(exp devices.Section, row *jrow) map[string]*filterTerm {
 			ft.ports = append(ft.ports, vals...)
 		case t[8] == "from" && t[9] == "source-port":
 			ft.srcPorts = append(ft.srcPorts, vals...)
+		case t[8] == "from" && t[9] == "tcp-established":
+			ft.established = true
 		}
 	}
 	return out
@@ -90,7 +95,7 @@ func renderedTerms(exp devices.Section, row *jrow) map[string]*filterTerm {
 // admitsSSH reports whether the term accepts tcp port 22: no protocol or tcp,
 // and no port or one that is ssh, 22 or a range that holds it.
 func (ft *filterTerm) admitsSSH() bool {
-	if !ft.accept || len(ft.protos) > 0 && !slices.Contains(ft.protos, "tcp") {
+	if !ft.accept || ft.established || len(ft.protos) > 0 && !slices.Contains(ft.protos, "tcp") {
 		return false
 	}
 	if len(ft.ports) == 0 {
@@ -136,6 +141,16 @@ func (ft *filterTerm) holds(from netip.Addr) bool {
 	return false
 }
 
+// answers says what the replies term matches: the protocol and the source
+// ports, and for tcp that it is the packets of an established connection only.
+func (ft *filterTerm) answers() string {
+	s := strings.Join(ft.protos, " ") + " source port " + strings.Join(ft.srcPorts, " and ")
+	if ft.established {
+		s += ", established connections only"
+	}
+	return s
+}
+
 // strictRepliesOnly says what the rendered strict filter accepts from the
 // address when it is the source of the replies term and of no term that
 // admits ssh: the replies (protocol and source ports), as the term states
@@ -145,7 +160,7 @@ func strictRepliesOnly(exp devices.Section, row *jrow, from netip.Addr) string {
 	if ft == nil || !ft.holds(from) {
 		return ""
 	}
-	return strings.Join(ft.protos, " ") + " source port " + strings.Join(ft.srcPorts, " and ")
+	return ft.answers()
 }
 
 // deviceFilterShape says what the device holds of the filters the rendering
@@ -218,8 +233,8 @@ func (p *planner) mgmtModeWarnings(exp devices.Section, row *jrow) []string {
 		}
 		replies := ""
 		if ft := renderedTerms(exp, row)[authRepliesTerm]; ft != nil && len(ft.sources) > 0 {
-			replies = ", and from " + strings.Join(ft.sources, ", ") + " the replies of the server the device authenticates against only (" +
-				strings.Join(ft.protos, " ") + " source port " + strings.Join(ft.srcPorts, " and ") + ")"
+			replies = ", and from " + strings.Join(ft.sources, ", ") + " the answers of the server the device authenticates against only (" +
+				ft.answers() + ")"
 		}
 		return []string{"the management filter of " + p.blockScope() + " is strict: it has no default-accept term. " + when +
 			" the device accepts traffic to its routing engine only from the sources of the permit list" + list + " and the SNMP clients" + replies + ", and these stop: " +

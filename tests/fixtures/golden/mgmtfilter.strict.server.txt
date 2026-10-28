@@ -24,12 +24,16 @@ set firewall family inet filter MGMT-ACL term permit-mgmt then accept
 set firewall family inet filter MGMT-ACL term permit-auth-replies from source-address 198.51.100.9/32
 set firewall family inet filter MGMT-ACL term permit-auth-replies from protocol tcp
 set firewall family inet filter MGMT-ACL term permit-auth-replies from source-port tacacs
+set firewall family inet filter MGMT-ACL term permit-auth-replies from tcp-established
 set firewall family inet filter MGMT-ACL term permit-auth-replies then accept
 #
-# permit-auth-replies: 198.51.100.9 is the address the device authenticates against (--server, or a
-# RADIUS listener bound to another address) and is not a source above. The device starts those sessions, so the
-# term accepts only the replies, tcp from source port tacacs (TACACS+); ssh and every other protocol from it
-# are not accepted. Add the address to the permit list this scope renders from to accept more.
+# permit-auth-replies: 198.51.100.9 is the address the device authenticates against (--server, a RADIUS listener bound to
+# another address, or the detected address when --source is another) and is not a source of permit-mgmt. The device
+# starts those sessions, so the term accepts only the packets of the server's answers:
+#   - tcp from source port tacacs that are not the first packet of a connection (tcp-established): a new connection
+#     from 198.51.100.9, even from that port, is not accepted. The filter keeps no state, so a packet of an
+#     established connection from that port is accepted whatever its destination port.
+# Nothing is accepted from 198.51.100.9 beyond that. Add the address to the permit list this scope renders from to accept more.
 #
 # Apply (review first):
 # set interfaces lo0 unit 0 family inet filter input MGMT-ACL

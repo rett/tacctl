@@ -93,7 +93,7 @@ func TestStrictFilterAcceptsTheAuthenticationServerRepliesOnly(t *testing.T) {
 	if got := sources(block, "permit-mgmt"); !slices.Equal(got, []string{"192.0.2.5/32", "10.0.0.0/8"}) {
 		t.Errorf("--server: permit-mgmt %q\n%s", got, block)
 	}
-	if got, want := term(block), "from source-address 198.51.100.9/32\nfrom protocol tcp\nfrom source-port tacacs\nthen accept"; got != want {
+	if got, want := term(block), "from source-address 198.51.100.9/32\nfrom protocol tcp\nfrom source-port tacacs\nfrom tcp-established\nthen accept"; got != want {
 		t.Errorf("--server: the replies term:\n%s\nwant\n%s", got, want)
 	}
 	if strings.Index(block, "permit-mgmt then accept") > strings.Index(block, "permit-auth-replies from source-address") {
@@ -164,6 +164,94 @@ func TestStrictFilterAcceptsTheAuthenticationServerRepliesOnly(t *testing.T) {
 	}
 }
 
+// The replies term follows the SNMP terms, so that deny-snmp decides udp port
+// 161 first, and its comment says the truth about a stateless filter: TACACS+
+// has tcp-established, RADIUS (udp) has no such flag.
+func TestStrictFilterRepliesTermIsLastAndHonest(t *testing.T) {
+	v2c := SNMPInput{Version: "v2c", Community: "example-ro", Ranges: []string{"198.51.100.0/24"}}
+	for _, c := range []struct {
+		protocol string
+		snmp     SNMPInput
+		want     []string
+		not      []string
+	}{
+		{TACACS, v2c, []string{"permit-auth-replies from tcp-established", "even from that port, is not accepted", "accepted whatever its destination port"},
+			[]string{"udp has no connection flag", "never ssh"}},
+		{RADIUS, v2c, []string{"udp from source port radius and radacct", "cannot tell a reply from another udp packet", "udp port 161 (SNMP) is decided by them"},
+			[]string{"tcp-established", "never ssh"}},
+		{RADIUS, SNMPInput{}, []string{"no deny-snmp term: udp port 161 from it is accepted too"}, []string{"tcp-established"}},
+	} {
+		d := strictData(t, "192.0.2.1", "", []string{"10.0.0.0/8"}, c.snmp)
+		d.AuthServer = "203.0.113.7"
+		d.Radius = &Radius{AuthPort: "1812", AcctPort: "1813", Secret: "example-secret", ServerAddr: "203.0.113.7", VendorSent: "scope"}
+		block := JuniperVars(Request{Vendor: "juniper", Scope: "lab", Protocol: c.protocol}, d)["MGMT_ACL_BLOCK"]
+		for _, w := range c.want {
+			if !strings.Contains(block, w) {
+				t.Errorf("%s: lacks %q:\n%s", c.protocol, w, block)
+			}
+		}
+		for _, w := range c.not {
+			if strings.Contains(block, w) {
+				t.Errorf("%s: has %q:\n%s", c.protocol, w, block)
+			}
+		}
+		last := ""
+		for _, l := range strings.Split(block, "\n") {
+			if strings.HasPrefix(l, "set ") {
+				last = l
+			}
+		}
+		if last != "set firewall family inet filter MGMT-ACL term permit-auth-replies then accept" {
+			t.Errorf("%s: the replies term is not the last statement (%q):\n%s", c.protocol, last, block)
+		}
+		if c.snmp.Version != "" && strings.Index(block, "deny-snmp then discard") > strings.Index(block, "permit-auth-replies from source-address") {
+			t.Errorf("%s: deny-snmp does not come first:\n%s", c.protocol, block)
+		}
+	}
+}
+
+// Where the authentication server's address sits in the permit list: inside a
+// plain range it is a source of permit-mgmt already and has no replies term; an
+// entry with services does not make it one, so the term stays and its comment
+// says what the entry permits, ssh among it when the services hold tcp/22.
+func TestStrictFilterAuthenticationServerInTheList(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		list []string
+		term bool
+		want []string
+		not  []string
+	}{
+		{"inside a plain range", []string{"10.0.0.0/8", "198.51.100.0/24"}, false, nil, nil},
+		{"a plain /32 of its own", []string{"10.0.0.0/8", "198.51.100.9/32"}, false, nil, nil},
+		{"outside the list", []string{"10.0.0.0/8"}, true, []string{"Nothing is accepted from 198.51.100.9 beyond that"}, []string{"The permit list holds"}},
+		{"services without tcp/22", []string{"10.0.0.0/8", "198.51.100.9/32:udp/161"}, true,
+			[]string{"The permit list holds 198.51.100.9/32:udp/161 for this address: it is accepted for those services only,"}, []string{"ssh among them", "Nothing is accepted from"}},
+		{"services that hold tcp/22", []string{"10.0.0.0/8", "198.51.100.0/24:tcp/22,udp/161"}, true,
+			[]string{"The permit list holds 198.51.100.0/24:tcp/22,udp/161 for this address: it is accepted for those services only (ssh among them),"}, []string{"Nothing is accepted from"}},
+	} {
+		d := strictData(t, "192.0.2.1", "", c.list, SNMPInput{})
+		d.AuthServer = "198.51.100.9"
+		block := mgmtBlock(d)
+		if got := strings.Contains(block, "permit-auth-replies from source-address 198.51.100.9/32\n"); got != c.term {
+			t.Errorf("%s: replies term %v, want %v:\n%s", c.name, got, c.term, block)
+		}
+		if !c.term && strings.Contains(block, "permit-auth-replies") {
+			t.Errorf("%s: the comment names the term:\n%s", c.name, block)
+		}
+		for _, w := range c.want {
+			if !strings.Contains(block, w) {
+				t.Errorf("%s: lacks %q:\n%s", c.name, w, block)
+			}
+		}
+		for _, w := range c.not {
+			if strings.Contains(block, w) {
+				t.Errorf("%s: has %q:\n%s", c.name, w, block)
+			}
+		}
+	}
+}
+
 // The second address exists only when the device authenticates against an
 // address other than the one tacctl reaches it from: --server alone, --source
 // alone (the device is still told the detected address), a RADIUS listener
@@ -181,6 +269,7 @@ func TestStrictFilterSecondAddress(t *testing.T) {
 		{"--server alone", "", "198.51.100.9", "", false, "192.0.2.1/32", "198.51.100.9/32"},
 		{"--source alone", "198.51.100.7", "", "", false, "198.51.100.7/32", "192.0.2.1/32"},
 		{"both, the same", "198.51.100.7", "198.51.100.7", "", false, "198.51.100.7/32", ""},
+		{"--server is the detected address", "", "192.0.2.1", "", false, "192.0.2.1/32", ""},
 		{"both, different", "198.51.100.7", "198.51.100.9", "", false, "198.51.100.7/32", "198.51.100.9/32"},
 		{"bound RADIUS address", "", "", "203.0.113.7", true, "192.0.2.1/32", "203.0.113.7/32"},
 		{"bound RADIUS address, the source", "203.0.113.7", "", "203.0.113.7", true, "203.0.113.7/32", ""},

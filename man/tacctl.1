@@ -6064,20 +6064,32 @@ the SNMP client terms and has no
 term, so the implicit discard at the end of the filter drops the rest. The
 walkthrough has a second server address only when the device authenticates
 against another address than the one tacctl reaches it from:
-.BR \-\-server ,
+.B \-\-server
+(unless it is the detected address or
+.BR \-\-source ),
 .B \-\-source
 alone (the device is still told the address detected for the server), or a
-RADIUS listener bound to another address. With none of them, or with both
-given the same, there is one address and one source /32 is rendered. The second
-address is not a source of the filter: a term of its own,
+RADIUS listener bound to another address. With neither flag, with
+.B \-\-server
+equal to the detected address or to
+.BR \-\-source ,
+or with the address inside a plain entry of the permit list, there is one
+address and one source /32 is rendered. The second address is not a source of
+.BR permit\-mgmt :
+a term of its own,
 .BR permit\-auth\-replies ,
-accepts only the replies of the server from it (tcp from source port
+after the SNMP terms, accepts from it only the answers of the server (for
+TACACS+ tcp from source port
 .B tacacs
-for TACACS+, udp from
+that are not the first packet of a connection, so a new connection from that
+port is refused; for RADIUS udp from
 .B radius
 and
-.B radacct
-for RADIUS), never ssh. Once a
+.BR radacct ).
+The filter keeps no state and matches them by source port, so for RADIUS it
+cannot tell an answer from another udp packet sent from those ports (udp port
+161 is decided by the SNMP terms first, when the scope has SNMP clients).
+Once a
 strict filter is applied to lo0, these stop reaching the routing engine:
 routing protocols carried over IP from neighbours that are not in the list
 (BGP, OSPF, LDP, VRRP, BFD), TACACS+ and RADIUS replies from a server that is

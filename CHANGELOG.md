@@ -21,35 +21,42 @@ current behaviour; this file is where history lives.
    drops the rest; the `permit-snmp` and `deny-snmp` terms stay and the `lo0`
    application stays a comment. The walkthrough has a second server address
    only when the device authenticates against another address than the one
-   tacctl reaches it from: `--server`, `--source` alone (the device is still
-   told the address detected for the server), or a RADIUS listener bound to
-   another address. With none of them, or with both given the same, there is
-   one address and `permit-mgmt` holds one source /32 for it. The second
-   address is not a source of `permit-mgmt`: the device starts those sessions,
-   so a term of its own, `permit-auth-replies`, after the permit terms,
-   accepts only the replies of the configured protocol from it (tcp from
-   source port `tacacs` for TACACS+, udp from `radius` and `radacct`, the
-   listener's ports, for RADIUS), and ssh and every other protocol from it
-   stay dropped, unless the permit list holds the address. The comment says
-   what stops once the filter is on `lo0` (routing protocols carried over IP
-   from neighbours outside the list, BFD included, TACACS+ and RADIUS replies
-   from a server that is not in it, NTP, syslog and DHCP, SNMP from sources
-   outside the list other than its clients, which still poll, every other
-   protocol; IS-IS is not carried over IP, so a `family inet` filter on `lo0`
-   neither stops nor permits it), and to keep a console session open and
-   commit with `commit confirmed`. `device config plan` and `device config
-   apply` move a device between the two filters in both directions and compare
-   a pulled filter with the rendering of the scope's mode; the report lists
-   the traffic that stops, or what a move back accepts again (which also
-   covers a site's own deny-by-default filter under the same name, which the
-   `ssh-only` plan used to turn accept-by-default without a word). The refusal
-   of a filter that would not permit `--from` holds for the strict filter: the
-   address must be a source that is accepted for ssh, in `permit-mgmt` or in a
-   term that holds `tcp/22` (the authentication server's address, accepted for
-   its replies only, is not one, and the refusal says so). Only `strict` is
-   stored (`scope_mgmt_acl.mode.<scope>` in `tacctl.yaml`, moved by `scope
-   rename` and dropped by `scope remove`), so a state that never sets a mode
-   is unchanged, and the change is logged as `scope mgmt-acl op=mode value=`.
+   tacctl reaches it from: `--server` (unless it is the detected address or
+   `--source`), `--source` alone (the device is still told the address
+   detected for the server), or a RADIUS listener bound to another address.
+   With neither flag, with `--server` equal to the detected address or to
+   `--source`, or with the address inside a plain entry of the permit list,
+   there is one address and `permit-mgmt` holds one source /32 for it. The
+   second address is not a source of `permit-mgmt`: the device starts those
+   sessions, so a term of its own, `permit-auth-replies`, last in the filter
+   (after the SNMP terms, so that `deny-snmp` decides udp port 161 first),
+   accepts from it only the answers of the server: for TACACS+ tcp from source
+   port `tacacs` with `tcp-established` (not the first packet of a connection,
+   so a new connection from that port is refused), for RADIUS udp from
+   `radius` and `radacct`, the listener's ports. The filter keeps no state and
+   matches the answers by source port, so for RADIUS it cannot tell an answer
+   from another udp packet sent from those ports. An entry with services for
+   the address keeps its services and the term adds the answers; adding the
+   address to the permit list accepts more from it. The comment says what
+   stops once the filter is on `lo0` (routing protocols carried over IP from
+   neighbours outside the list, BFD included, TACACS+ and RADIUS replies from
+   a server that is not in it, NTP, syslog and DHCP, SNMP from sources outside
+   the list other than its clients, which still poll, every other protocol;
+   IS-IS is not carried over IP, so a `family inet` filter on `lo0` neither
+   stops nor permits it), and to keep a console session open and commit with
+   `commit confirmed`. `device config plan` and `device config apply` move a
+   device between the two filters in both directions and compare a pulled
+   filter with the rendering of the scope's mode; the report lists the traffic
+   that stops, or what a move back accepts again (which also covers a site's
+   own deny-by-default filter under the same name, which the `ssh-only` plan
+   used to turn accept-by-default without a word). The refusal of a filter
+   that would not permit `--from` holds for the strict filter: the address
+   must be a source that is accepted for ssh, in `permit-mgmt` or in a term
+   that holds `tcp/22` (the authentication server's address, accepted for its
+   answers only, is not one, and the refusal says so). Only `strict` is stored
+   (`scope_mgmt_acl.mode.<scope>` in `tacctl.yaml`, moved by `scope rename`
+   and dropped by `scope remove`), so a state that never sets a mode is
+   unchanged, and the change is logged as `scope mgmt-acl op=mode value=`.
    `tacctl rollback` to an older release removes the key, which its schema
    refuses, after a snapshot, and warns which scopes were strict: the older
    release plans the `ssh-only` filter for them (`--apply` needs `--yes`). The

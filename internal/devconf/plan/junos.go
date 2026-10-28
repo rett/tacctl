@@ -987,7 +987,7 @@ func (p *planner) lo0Check(exp devices.Section, rows []*jrow) (string, bool) {
 		}
 		only := ""
 		if r := strictRepliesOnly(exp, row, from); r != "" {
-			only = " (it is the address the device authenticates against, which the filter accepts for the server's replies only: " + r + ")"
+			only = " (it is the address the device authenticates against, which the filter accepts for the server's answers only: " + r + ")"
 		}
 		return fmt.Sprintf("the management filter is applied on lo0 and %s is not inside a source of the rendered strict filter that is accepted for ssh%s: pasting it could cut you off", p.opt.From, only), false
 	}
