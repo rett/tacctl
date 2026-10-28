@@ -9,7 +9,7 @@ doctype: reference
 
 # Quick Reference
 
-*The most common tacctl commands on one card · Checked against tacctl 0.2.19*
+*The most common tacctl commands on one card · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-quick-reference.pdf){: .pdf-link }
 
@@ -83,6 +83,8 @@ usage. In `tacctl shell`, `?` shows help.
 | Prefixes | `tacctl scope prefixes <s> add\|remove <cidr>` | S |
 | Rotate secret | `tacctl scope secret <s> generate` | S |
 | Break-glass accounts | `tacctl scope breakglass <s> add <user>` | S |
+| Junos filter mode: show | `tacctl scope mgmt-acl <s> mode` | E |
+| Junos filter mode: set | `tacctl scope mgmt-acl <s> mode ssh-only\|strict` | S |
 
 ## 6. Emergencies
 
