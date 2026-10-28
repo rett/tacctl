@@ -163,9 +163,9 @@ current behaviour; this file is where history lives.
     <words>`, which prints the help and runs nothing else, so a flag that
     waits for its value, a `--` earlier or a hidden command is never run or
     given `--help`. It types a `?` instead on a line that does not start
-    with `tacctl`, and when anything but ASCII letters, digits, blanks and `_
-    @ % + = : , . / -` is before the cursor (a quote, a backslash, `$ * ~ !
-    # [ {`, an operator, a non-ASCII character); on a `tacctl` line of plain
+    with `tacctl`, and when anything but ASCII letters, digits, spaces, tabs
+    and `_ @ % + = : , . / -` is before the cursor (a quote, a backslash,
+    `$ * ~ ! # [ {`, an operator, a carriage return, a non-ASCII character); on a `tacctl` line of plain
     words it always asks, even inside a word. `TACCTL_HELP_KEY`, read when
     the script is sourced, changes the key: unset or `?` is the question
     mark, a readline spelling such as `\eh` is that key, `off` binds nothing

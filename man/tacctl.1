@@ -627,11 +627,12 @@ earlier on the line or a hidden command is never run as a command or given
 The key types a literal question mark instead when the line does not start with
 .BR tacctl ,
 has a second line before the cursor, or has before the cursor anything but
-ASCII letters, digits, blanks and
+ASCII letters, digits, spaces, tabs and
 .BR "_ @ % + = : , . / \-"
 (so a quote, a backslash,
 .BR "$ * ~ ! # [ {" ,
-a shell operator or a non-ASCII character anywhere before the cursor;
+a shell operator, a carriage return or a non-ASCII character anywhere before the
+cursor;
 .B "ls *.?"
 works). On a line that does start with
 .B tacctl

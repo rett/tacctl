@@ -199,6 +199,21 @@ func TestBashHelpKeyQuestionMark(t *testing.T) {
 			t.Errorf("%s: the line run is not %q:\n%q", c.name, want, out)
 		}
 	}
+	// A carriage return before the cursor (typed with Ctrl-V) is no blank: the
+	// key types the character, and tacctl is never called.
+	{
+		s := bashKeySession(t, "-")
+		if err := s.Send("tacctl user\x16\radd ?"); err != nil {
+			t.Fatal(err)
+		}
+		s.Settle(500 * time.Millisecond)
+		if got := s.recorded(); len(got) != 0 {
+			t.Errorf("a carriage return: tacctl was called: %q", got)
+		}
+		if err := s.Send("\x03"); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, c := range []struct {
 		name, keys, want string
 	}{

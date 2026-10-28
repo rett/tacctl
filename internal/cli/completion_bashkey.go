@@ -24,19 +24,20 @@ const bashHelpKey = `
 # (which then does nothing outside a tacctl line), 'off' binds nothing.
 __tacctl_help_key() {
     local IFS=$' \t\n'
+    local blank=$' \t'
     local before=${READLINE_LINE:0:READLINE_POINT}
     local -a words
     local n
     # Plain words only: a quote, a backslash, a shell operator, any other
-    # character than the letters, digits and _ @ % + = : , . / - , or a second
-    # line before the cursor means the line is not asked about, and the key
-    # types itself.
-    if [[ $before =~ ^[[:space:]]*tacctl([[:space:]]|$) && $before != *$'\n'* &&
-        ! $before =~ [^A-Za-z0-9_@%+=:,./[:space:]-] ]]; then
+    # character than the letters, digits, spaces, tabs and _ @ % + = : , . / -
+    # before the cursor (a carriage return, a second line) means the line is
+    # not asked about, and the key types itself.
+    if [[ $before =~ ^[$blank]*tacctl([$blank]|$) &&
+        ! $before =~ [^A-Za-z0-9_@%+=:,./$blank-] ]]; then
         read -ra words <<<"$before"
         # The words after tacctl, without the word being typed.
         n=$((${#words[@]} - 1))
-        if [[ $before == *[![:space:]] ]]; then
+        if [[ $before == *[!$blank] ]]; then
             n=$((n - 1))
         fi
         if ((n > 0)); then
