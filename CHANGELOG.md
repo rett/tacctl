@@ -275,10 +275,10 @@ current behaviour; this file is where history lives.
     presence, as a named user's hash is) and `set system services ssh
     root-login allow` is there. A device with the password and without the
     `allow` reads as missing the `allow` statement only; `root-login deny`
-    (the Junos default) and `deny-password` (no password login, which
-    break-glass needs) read as a difference with the reason; a device whose
-    `system root-authentication` holds only ssh keys has no password and says
-    so, and one with neither reads `missing`. The pull now reads `system
+    and `deny-password` (no password login, which break-glass needs) read as
+    a difference with the reason; a device whose `system root-authentication`
+    holds only ssh keys has no password and says so (a deactivated password
+    is no password), and one with neither reads `missing`. The pull now reads `system
     root-authentication` and the `root-login` leaf of `system services ssh`
     into the `breakglass` section (every other leaf under `system services
     ssh` stays the device's own), for every Junos device, and leaves them out

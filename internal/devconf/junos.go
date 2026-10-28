@@ -226,6 +226,17 @@ func elideKeys(ts []token, ok func(i int, t token) bool) ([]token, bool) {
 	return out, found
 }
 
+// rootAuthAt is the index of the 'system' word of a 'system root-authentication
+// <leaf>' in the statement, at any depth, or -1.
+func rootAuthAt(ts []token) int {
+	for i := 0; i+2 < len(ts); i++ {
+		if ts[i].s == "system" && !ts[i].quoted && ts[i+1].s == "root-authentication" && !ts[i+1].quoted {
+			return i
+		}
+	}
+	return -1
+}
+
 // junosStem returns the statement without a secret's value, and whether it
 // carries one. marked is the rendering side's mark; the device side is
 // found by its keywords and by the look of the value. lb labels a
@@ -238,13 +249,14 @@ func junosStem(ts []token, marked bool, lb *labels) ([]token, bool) {
 		out[2] = token{s: lb.of(ts[2].s)}
 		return out, true
 	}
-	if len(ts) >= 3 && ts[0].s == "system" && ts[1].s == "root-authentication" {
+	if i := rootAuthAt(ts); i >= 0 {
 		// Every leaf is a credential, a hash or a public key: the leaf's name
-		// stays and nothing after it, whatever the statement looks like
-		// (also a stem read again).
-		out := slices.Clone(ts[:3])
-		if ts[2].comment() || hashed(ts[2]) {
-			out[2] = token{s: secretMark}
+		// stays and nothing after it, whatever the statement looks like, at
+		// any depth ('set groups G system root-authentication ...' too) and
+		// also a stem read again.
+		out := slices.Clone(ts[:i+3])
+		if ts[i+2].comment() || hashed(ts[i+2]) {
+			out[i+2] = token{s: secretMark}
 		}
 		return out, true
 	}
