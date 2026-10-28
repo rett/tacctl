@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -325,24 +326,19 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 		return ScriptResult{}, ErrFailed
 	}
 
-	listen, acctPort := "", ""
-	for _, l := range req.Listeners {
-		switch {
-		case method == Radius && l.Name == "auth":
-			listen = l.Address
-		case method == Radius && l.Name == "acct":
-			acctPort = afterLastColon(l.Address)
-		case method != Radius && l.Name == "default":
-			listen = l.Address
-		}
+	// The port is the server's: the listener of the method's backend that
+	// serves clients (backend.ServerPort), the built-in default when the
+	// list has none. The accounting port is told only when the backend has
+	// an accounting listener (RADIUS): without one the script says so.
+	id, role := backend.TACACS, backend.RoleDefault
+	if method == Radius {
+		id, role = backend.RADIUS, backend.RoleAuth
 	}
-	if listen == "" {
-		listen = ":49"
-		if method == Radius {
-			listen = ":1812"
-		}
+	port := strconv.Itoa(backend.ServerPort(req.Listeners, id, role))
+	acctPort := ""
+	if method == Radius && slices.ContainsFunc(req.Listeners, func(l backend.Listener) bool { return l.Name == "acct" }) {
+		acctPort = strconv.Itoa(backend.ServerPort(req.Listeners, id, backend.RoleAcct))
 	}
-	port := afterLastColon(listen)
 
 	// The ledger's lock covers the whole build of the numbers (a number is
 	// allocated for a user that has none, the ranges and the inactive users'
@@ -444,14 +440,6 @@ func linuxNames(names []string) []string {
 		}
 	}
 	return out
-}
-
-// afterLastColon is ${addr##*:}.
-func afterLastColon(addr string) string {
-	if i := strings.LastIndexByte(addr, ':'); i >= 0 {
-		return addr[i+1:]
-	}
-	return addr
 }
 
 // isRegular is '[[ -f <path> ]]'.

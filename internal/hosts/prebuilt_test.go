@@ -230,9 +230,6 @@ func TestHelpers(t *testing.T) {
 	if infoValues(p+"nope", "x") != "" || fileSHA256(p+"nope") != "" {
 		t.Error("missing files")
 	}
-	if afterLastColon("[::]:49") != "49" || afterLastColon("49") != "49" {
-		t.Error("afterLastColon")
-	}
 	if toolsCommand("docker.io/library/almalinux:9") == toolsCommand("docker.io/library/debian:12") {
 		t.Error("tools command")
 	}

@@ -122,15 +122,45 @@ func TestLastLogin(t *testing.T) {
 	}
 }
 
-// "tacacs secret_constraints and device_vars: no limit, no variables".
+// "tacacs secret_constraints and device_vars: no limit, one variable": the
+// port of the default listener.
 func TestSecretConstraintsAndDeviceVars(t *testing.T) {
 	e := newTenv(t)
 	if c := e.b.SecretConstraints(); c.MaxLen != 0 || c.Charset != "" {
 		t.Fatalf("%+v", c)
 	}
 	v, err := e.b.DeviceVars(context.Background(), "cisco", "lab")
-	if err != nil || len(v) != 0 {
+	if err != nil || len(v) != 1 || v["TACACS_PORT"] != "49" {
 		t.Fatalf("%v %v", v, err)
+	}
+}
+
+// TACACS_PORT is the default listener's port, as 'config listen' sets it: an
+// extra listener is nobody's answer, and an install that is not converted has
+// the port its hand-managed drop-in says.
+func TestDeviceVarsFollowTheDefaultListener(t *testing.T) {
+	ctx := context.Background()
+	port := func(e *tenv) string {
+		t.Helper()
+		v, err := e.b.DeviceVars(ctx, "juniper", "lab")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v["TACACS_PORT"]
+	}
+	e := newTenv(t)
+	e.writeOverrides("listeners:\n  tacacs:\n    default: {network: tcp, address: '10.1.0.1:4949'}\n    mgmt: {address: '127.0.0.1:5050'}\n")
+	if got := port(e); got != "4949" {
+		t.Errorf("moved: %q", got)
+	}
+	e.writeOverrides("listeners:\n  tacacs:\n    mgmt: {address: '127.0.0.1:5050'}\n")
+	if got := port(e); got != "49" {
+		t.Errorf("an extra listener alone: %q", got)
+	}
+	e = newTenv(t)
+	e.legacyDropIn("TACQUITO_NETWORK=tcp6", "TACQUITO_ADDRESS=[::]:4949")
+	if got := port(e); got != "4949" {
+		t.Errorf("not converted: %q", got)
 	}
 }
 
