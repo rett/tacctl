@@ -18,14 +18,18 @@ import (
 	"github.com/rett/tacctl/internal/lifecycle"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/policy"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/tier"
 )
 
 // tierWatch is the tiers of the users with an account on this server, from
 // before a change.
 type tierWatch struct {
-	inv    *invocation
-	scope  string
+	inv   *invocation
+	scope string
+	// srv is this server's registration: in the managed scope every user is
+	// a member of the scope (pwchange.WithServerScope) without having it.
+	srv    pwchange.Server
 	before map[string]tier.Tier
 }
 
@@ -35,10 +39,10 @@ type tierWatch struct {
 func (inv *invocation) watchServerTiers() *tierWatch {
 	w := &tierWatch{inv: inv}
 	if e, ok, _ := inv.localHost(); ok {
-		w.scope = e.Scope
+		w.scope, w.srv = e.Scope, serverOfEntry(e)
 	}
 	if m, err := inv.model(); err == nil {
-		w.before = serverTiers(m, inv.app.Conf(), w.scope, inv.hasTierSettings())
+		w.before = serverTiers(inv.serverModel(m, w.srv), inv.app.Conf(), w.scope, inv.hasTierSettings())
 	}
 	return w
 }
@@ -86,7 +90,7 @@ func (w *tierWatch) lowered(what, left string) error {
 		inv.warnServerSync(left)
 		return nil
 	}
-	after := serverTiers(m, inv.app.Conf(), w.scope, inv.hasTierSettings())
+	after := serverTiers(inv.serverModel(m, w.srv), inv.app.Conf(), w.scope, inv.hasTierSettings())
 	var down []string
 	for n, was := range w.before {
 		now := tier.None
