@@ -75,6 +75,19 @@ current behaviour; this file is where history lives.
    `--apply` needs `--yes`, after a snapshot), and removes `server.addresses`;
    the host registry keeps the address in the server's entry.
 
+4. **A Junos virtual chassis of one member is applied to like a single
+   device.** `device config apply` refused such a device at `commit check`
+   with `check: the members that answered are not the chassis' (fpc0): no
+   answer from fpc0; configuration check succeeds`: `show version` prints the
+   header `fpc0:` even for one member, so the pre-flight listed a chassis,
+   but the answers of `commit check` and of the commits carry no member label.
+   A chassis of exactly one member (any kind of label) now answers like a
+   single device: its plain lines are read, and so is a block labelled with
+   that one member; a block of another member, or a label twice, is still
+   refused. Over NETCONF a reply with no member element, or one element named
+   by that member, is read, and another name is refused. A chassis, a cluster
+   or a pair of routing engines of two or more members is read as before.
+
 ## 0.2.20 (2026-10-28)
 
 1. **A user name may hold periods.** `user add alice.smith operator` is

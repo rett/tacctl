@@ -11310,17 +11310,26 @@ and the answers of
 .B "commit check"
 and of the commits must name exactly those, each with its own success; a member
 that is missing, unexpected or answers otherwise fails the step, and the error
-names the member and its text. Two routing engines that commit without
+names the member and its text. A chassis of one member answers like a single
+device:
+.B "show version"
+prints its header
+.RB ( fpc0: )
+and the answers carry no member label, which is read, as is a block labelled
+with that one member; a block of any other member, or a label twice, fails the
+step. Two routing engines that commit without
 .B synchronize
 answer as a single device does, which is read as before. Over NETCONF each
 member is a
 .B routing\-engine
-element named by its label; a reply of a virtual chassis or a cluster that
-names no member is refused, because nothing proves the other members
-committed (a confirmed commit rolls back by itself), and the command line
-transport (the default) can be used. The shape of these replies over NETCONF,
-and the commits' replies on the command line, are inferred: no capture of them
-exists. A proof that fails cancels the commit
+element named by its label; a reply of a virtual chassis or a cluster of two or
+more members that names no member is refused, because nothing proves the other
+members committed (a confirmed commit rolls back by itself), and the command
+line transport (the default) can be used; a chassis of one member is read like
+a single device, with no member element or one named by that member, and
+another name is refused. The shape of these replies over NETCONF, and the
+commits' replies of a chassis of several members on the command line, are
+inferred: no capture of them exists. A proof that fails cancels the commit
 .RB ( "rollback 1" ,
 .BR commit )
 and the device is
