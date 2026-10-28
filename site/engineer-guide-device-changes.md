@@ -220,7 +220,10 @@ either direction, and its report warns of what that does to the traffic:
   that are not in the permit list, TACACS+ and RADIUS replies from servers
   that are not in it, NTP, syslog and DHCP, SNMP from sources outside it,
   every other protocol; IS-IS is not carried over IP, so the filter neither
-  stops nor permits it), the sources the filter accepts, and to keep a console session open.
+  stops nor permits it), the sources the filter accepts, apart from the
+  address it accepts the authentication server's answers from
+  (`permit-auth-replies`, [Vendor Notes](vendor-notes.md) §3.4), and to keep
+  a console session open.
 - **To `ssh-only`**, over a filter with no `default-accept` term: that the
   plan adds the term, so the device accepts everything again except ssh,
   NETCONF and SNMP from outside the list, and the command that sets `strict`
@@ -231,11 +234,14 @@ either direction, and its report warns of what that does to the traffic:
 > address you are logged in from. Without it the report warns. With it, the
 > filter's section is refused if the new filter would not let that address
 > in over ssh (the rest of the plan stands). In `strict` the address must be
-> inside a source the filter accepts for ssh: one of the tacctl server's
-> addresses at the head of `permit-mgmt`, a plain entry of the permit list,
-> or an entry whose services cover tcp port 22 (an entry with `udp/161`
-> only does not count). An apply makes the same check with the address it
-> connects from.
+> inside a source the filter accepts for ssh: the address tacctl reaches the
+> device from, at the head of `permit-mgmt`, a plain entry of the permit
+> list, or an entry whose services cover tcp port 22. An entry with
+> `udp/161` only does not count, and neither does the address the device
+> authenticates against when the filter accepts only the server's answers
+> from it (`permit-auth-replies`): `--from` with that address is refused,
+> and the refusal says why. An apply makes the same check with the address
+> it connects from.
 
 ---
 
