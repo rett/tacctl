@@ -266,7 +266,9 @@ What happens during an apply:
   Only after that does it confirm the commit. If the proof fails, it rolls
   the change back.
 - A change of the Junos management filter is checked against the address
-  the apply connects from, as `--from` is for a plan (§4.2).
+  the apply connects from, as `--from` is for a plan (§4.2). The review
+  shows the plan's warnings as `warning:` lines, so the traffic a move to
+  `strict` stops is listed before you approve.
 - The first device of each new shape goes alone (canary). By default at most
   5 devices are changed per run (`--max`), with a pause between devices
   (`--pause`).
