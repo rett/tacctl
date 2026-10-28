@@ -86,14 +86,14 @@ var reHistoryRescue = regexp.MustCompile(`^rescue\s+\d{4}-\d\d-\d\d \d\d:\d\d:\d
 // 'synchronize', 'force', 'prepare', ...), 'confirmed, rollback in <n>mins'
 // and 'at <time>'. A plain commit prints no text at all.
 var (
-	reEntryWord      = regexp.MustCompile(`^(?:and-quit|synchronize|force-synchronize|peers-synchronize|force|prepare|full)(?:\s|$)`)
+	reEntryWord      = regexp.MustCompile(`^(?:and-quit|synchronize|force|prepare|full)(?:\s|$)`)
 	reEntryConfirmed = regexp.MustCompile(`^confirmed, rollback in (\d+) ?mins?(?:\s|$)`)
 	reEntryAt        = regexp.MustCompile(`^at (?:"[^"]*"|reboot|(?:\d{4}-\d\d-\d\d )?\d\d:\d\d(?::\d\d)?)(?:\s|$)`)
 )
 
-// historyTimeLayouts are the layouts of an entry's time (with a zone
-// abbreviation, or without one).
-var historyTimeLayouts = []string{"2006-01-02 15:04:05 MST", "2006-01-02 15:04:05"}
+// historyTimeLayouts are the layouts of an entry's time: with a numeric zone
+// ('+03', '+0530'), with a zone abbreviation, or without a zone.
+var historyTimeLayouts = []string{"2006-01-02 15:04:05 -0700", "2006-01-02 15:04:05 -07", "2006-01-02 15:04:05 MST", "2006-01-02 15:04:05"}
 
 // reAuthClass finds the class on the first line of 'show cli authorization'
 // ('Current user: alice login: alice class: super-user'; a TACACS+ login

@@ -182,7 +182,7 @@ func (e CommitEntry) Until() string {
 			return t.Format(layout)
 		}
 	}
-	return t.Format(historyTimeLayouts[0])
+	return t.Format(time.DateTime)
 }
 
 // Dirty is what the gate saw in a throwaway shared session.

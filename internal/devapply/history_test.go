@@ -47,8 +47,6 @@ func TestParseHistoryCommitSpellings(t *testing.T) {
 		{" commit synchronize force", 0},
 		{" commit force", 0},
 		{" commit full", 0},
-		{" commit force-synchronize", 0},
-		{" commit peers-synchronize", 0},
 		{" commit prepare", 0},
 		{" commit at 02:00", 0},
 		{" commit at 02:00:30", 0},
@@ -63,8 +61,6 @@ func TestParseHistoryCommitSpellings(t *testing.T) {
 		{" commit confirmed, rollback in 5mins synchronize", 5},
 		{" commit confirmed, rollback in 5mins synchronize force", 5},
 		{" commit confirmed, rollback in 5mins and-quit", 5},
-		{" commit and-quit confirmed, rollback in 7mins", 7},
-		{" commit synchronize confirmed, rollback in 15mins", 15},
 		{" commit confirmed, rollback in 5mins at 02:00", 5},
 		{" commit confirmed, rollback in 5mins prepare", 5},
 		{"   commit   synchronize  ", 0},
@@ -98,6 +94,10 @@ func TestParseHistoryUnknownCommandText(t *testing.T) {
 		" commit at noon",
 		" commit at 2:00",
 		" commit synchronize,",
+		" commit force-synchronize",
+		" commit peers-synchronize",
+		" commit and-quit confirmed, rollback in 7mins",
+		" commit synchronize confirmed, rollback in 15mins",
 		" synchronize",
 		" cli",
 	} {
@@ -145,12 +145,30 @@ func TestParseHistoryEntryLayout(t *testing.T) {
 			t.Errorf("%s: %+v %v", c.name, h, err)
 		}
 	}
-	// a time with no zone and a time with a numeric zone abbreviation
-	for _, z := range []string{"", " +03", " -03", " GMT+3"} {
-		h, err := parseHistory("0   2026-10-13 14:00:00" + z + " by alice via cli commit synchronize\n")
-		if err != nil || len(h) != 1 || h[0].Time.IsZero() || h[0].TimeText != "2026-10-13 14:00:00"+z {
-			t.Errorf("zone %q: %+v %v", z, h, err)
+	// a time with no zone, with a numeric zone (the offset counts), with an
+	// abbreviation of the form GMT+3
+	for _, c := range []struct {
+		zone   string
+		offset int // seconds east of UTC
+	}{{"", 0}, {" +03", 3 * 3600}, {" -03", -3 * 3600}, {" +0300", 3 * 3600}, {" -0330", -(3*3600 + 1800)}, {" GMT+3", 3 * 3600}, {" UTC", 0}} {
+		h, err := parseHistory("0   2026-10-13 14:00:00" + c.zone + " by alice via cli commit synchronize\n")
+		if err != nil || len(h) != 1 || h[0].Time.IsZero() || h[0].TimeText != "2026-10-13 14:00:00"+c.zone {
+			t.Errorf("zone %q: %+v %v", c.zone, h, err)
+			continue
 		}
+		if _, off := h[0].Time.Zone(); off != c.offset && c.zone != "" {
+			t.Errorf("zone %q: offset %d, want %d", c.zone, off, c.offset)
+		}
+	}
+	// a confirmed commit's end is written in the zone the device printed
+	h, err := parseHistory("0   2026-10-13 14:00:00 +0530 by alice via cli commit confirmed, rollback in 5mins\n")
+	if err != nil || h[0].Until() != "2026-10-13 14:05:00 +0530" {
+		t.Errorf("until %q %v", h[0].Until(), err)
+	}
+	// device text in the error is cut: no control character reaches it
+	_, err = parseHistory("0   2026-10-13 14:00:00 UTC by al\x1bice via cl\x07i commit bogus\n")
+	if err == nil || strings.ContainsAny(err.Error(), "\x1b\x07") {
+		t.Errorf("control characters in %q", err)
 	}
 }
 

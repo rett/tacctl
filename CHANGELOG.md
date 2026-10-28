@@ -248,14 +248,14 @@ current behaviour; this file is where history lives.
     "commit synchronize": the device's answer is not recognised` on a Junos
     device whose commits end in `synchronize` (a dual-routing-engine or
     virtual-chassis device). The newest entry of `show system commit` is now
-    read as a commit command in all its spellings: `commit`, with `and-quit`,
-    `synchronize`, `force`, `full`, `prepare` and `at <time>` in any order, and
-    `commit confirmed, rollback in <n>mins` with the same words after it (a
-    confirmed commit still counts as pending only as before); an entry with
-    no text after `via <way>` (a commit of the system) is an ordinary commit.
-    A text that is no commit command is still refused, and the error now
-    names the entry, its user and way, and the text. A time written with a
-    numeric zone (`+03`) is read too.
+    read as a commit command in all its spellings: `commit` with `and-quit`,
+    `synchronize`, `force`, `full`, `prepare` and `at <time>` in any order,
+    and `commit confirmed, rollback in <n>mins` followed by the same words
+    (a confirmed commit still counts as pending only as before); an entry
+    with no text after `via <way>` (a commit of the system) is an ordinary
+    commit. A text that is no commit command is still refused, and the error
+    names the entry, its time, user and way, and the text. A time written
+    with a numeric zone (`+03`, `+0530`) is read with its offset.
 
 18. **The apply reads the answers of a device with several members.** On a
     Junos virtual chassis (or two routing engines) `commit check` prints a

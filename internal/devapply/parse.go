@@ -222,7 +222,7 @@ func parseHistory(out string) (History, error) {
 				if mins, ok := commitText(tail); ok {
 					e.RollbackIn = mins
 				} else if seq == 0 {
-					return nil, fmt.Errorf("show system commit: entry 0 (%s by %s via %s) ends with %q, which is not a commit command the pre-flight knows: %w", m[2], m[3], m[4], cut(tail), ErrUnrecognised)
+					return nil, fmt.Errorf("show system commit: entry 0 (%s by %s via %s) ends with %q, which is not a commit command the pre-flight knows: %w", cut(m[2]), cut(m[3]), cut(m[4]), cut(tail), ErrUnrecognised)
 				}
 			}
 			h = append(h, e)
@@ -257,24 +257,23 @@ func parseHistory(out string) (History, error) {
 // commitText reads the text a commit command leaves at the end of an entry
 // of 'show system commit' ('commit', 'commit and-quit', 'commit synchronize',
 // 'commit confirmed, rollback in 5mins synchronize', 'commit at "02:00"
-// force', ...). ok is false when the text is no commit command the parser
+// force', ...): the confirmed label, when there is one, then the words and
+// the time in any order. ok is false when the text is no commit command the parser
 // knows; mins is the window of a confirmed commit (0: not confirmed).
 func commitText(tail string) (mins int, ok bool) {
 	rest, found := strings.CutPrefix(strings.TrimSpace(tail), "commit")
 	if !found || (rest != "" && rest[0] != ' ' && rest[0] != '\t') {
 		return 0, false
 	}
-	confirmed := false
-	for rest = strings.TrimLeft(rest, " \t"); rest != ""; rest = strings.TrimLeft(rest, " \t") {
+	rest = strings.TrimLeft(rest, " \t")
+	// the confirmed commit's label comes first, as the device prints it
+	if m := reEntryConfirmed.FindStringSubmatch(rest); m != nil {
+		mins, _ = strconv.Atoi(m[1])
+		rest = strings.TrimLeft(rest[len(m[0]):], " \t")
+	}
+	for rest != "" {
 		var m []string
 		switch {
-		case reEntryConfirmed.MatchString(rest):
-			if confirmed {
-				return 0, false
-			}
-			m = reEntryConfirmed.FindStringSubmatch(rest)
-			mins, _ = strconv.Atoi(m[1])
-			confirmed = true
 		case reEntryWord.MatchString(rest):
 			m = reEntryWord.FindStringSubmatch(rest)
 		case reEntryAt.MatchString(rest):
@@ -282,7 +281,7 @@ func commitText(tail string) (mins int, ok bool) {
 		default:
 			return 0, false
 		}
-		rest = rest[len(m[0]):]
+		rest = strings.TrimLeft(rest[len(m[0]):], " \t")
 	}
 	return mins, true
 }
