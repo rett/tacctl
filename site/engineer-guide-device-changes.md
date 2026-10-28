@@ -169,14 +169,36 @@ tacctl device config plan rtr1 --backout
 A plan has these parts:
 
 1. **The report.** Each irregularity, with its severity (`ACCESS`,
-   `MONITORING` or `COSMETIC`) and what the paste does about it.
+   `MONITORING` or `COSMETIC`) and what the paste does about it, then two
+   lines of information (below).
 2. **A line to type first** that prints the device's name. Check it before
    you paste.
 3. **One region** between `PASTE FROM HERE` and `PASTE TO HERE`, safe to
    paste whole.
 4. **The check, the one line to type afterwards, and the back-out.**
 
-Statements outside the standard (*extras*) are reported and left alone.
+Two lines of the report are information, not irregularities:
+
+```text
+# Kept: snmp 2 statements of the device's own (communities, trap groups): left alone, listed by
+# device config diff.
+# Secrets: 3 present (the TACACS+ server key, the SNMP community); only their presence is checked,
+# --secrets writes them again.
+```
+
+- **`Kept:`** counts, per section, the device's own statements that tacctl
+  leaves alone: in `snmp` another community, trap groups or the `snmp name`;
+  in `system` and `netconf` what the device holds beside tacctl's statements.
+  The number is the one `device config list` shows as unmanaged, and the line
+  never names a community or a value. A device whose only extras are of this
+  kind reads `CONSISTENT: nothing to paste.`
+- **`Secrets:`** names the kinds of secret present on the device, never a
+  value. Secrets are compared by presence only, so the line stays the same
+  once they are set; `--secrets` types them again. Secrets the pull's login
+  could not see are counted apart as not visible.
+
+Other statements outside the standard (*extras*: an old server, a class or a
+filter tacctl does not render) are reported as items and left alone.
 `--converge` adds the cleanup **only after** the first paste has been
 verified. That way the paste that adds the new server is never the same
 paste that removes the old one.
@@ -278,13 +300,20 @@ What happens during an apply:
   the apply connects from, as `--from` is for a plan (§4.2). The review
   shows the plan's warnings as `warning:` lines, so the traffic a move to
   `strict` stops is listed before you approve.
+- On a device with several members (a virtual chassis, two routing
+  engines, a cluster), the commit check and the commits must answer for
+  exactly the members `show version` lists. A member that is missing or
+  answers otherwise fails the step, and the error names the member and its
+  text. Over NETCONF, a reply of a virtual chassis or a cluster that names no
+  member is refused; use the command-line transport, the default.
 - The first device of each new shape goes alone (canary). By default at most
   5 devices are changed per run (`--max`), with a pause between devices
   (`--pause`).
 
 > **`PENDING until <time>`** means tacctl could not read the device's
 > state after the commit. **Type nothing on that device until the time
-> passes.** Any `commit` would confirm the change. The next apply or
+> passes.** The time is the device's own clock, in the zone the device
+> prints. Any `commit` would confirm the change. The next apply or
 > `--check` settles the record.
 
 ### 5.2 Cisco: paste the plan
@@ -339,6 +368,7 @@ tacctl device config plan sw1 --converge  # optional: remove old servers and sim
 | Host key mismatch on pull or ssh | Check the key on the console first, then `tacctl device hostkey <name> set SHA256:<fp>` ([Connecting to Devices](connecting-to-devices.md) §5) |
 | `failed: calls itself '<x>'` | The device's own hostname doesn't match the registry. Check you have the right box, then fix the registry or the device. |
 | `failed: other editors or staged changes` | Someone else has uncommitted configuration on the device. Coordinate with them. |
+| Apply fails and names a member (`fpc1`, `re1`, `node1`) | That member of the virtual chassis, routing-engine pair or cluster was missing from the answer of the check or the commit, or answered with an error, a warning or no text. Read its text in the error and look at the member on the device. |
 | Plan refuses the Junos filter: `... is not inside a source of the rendered strict filter that is accepted for ssh` | The strict filter would cut you off. Ask a superuser to add your address to the permit list the scope renders from (plain, or with `tcp/22`), then plan again (§4.2) |
 
 ---
