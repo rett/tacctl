@@ -111,11 +111,12 @@ prefixes cover its address. 'hold' takes that one address, the one the device
 is registered at, out of every scope's prefixes (the stored scopes do not
 change), so the server stops answering the device and its local accounts, the
 ones 'tacctl scope breakglass <scope> list' records ('root' included, for a
-Junos device), are usable while the server is up; a device that sends its AAA from another address (a source
-interface, a NAT) is still answered, and the report says so. It
-asks for the device's name typed back, restarts the backends that serve it
-and shows the way in for the device's vendor. A hold is for an exceptional
-case, and is shown until 'release' (there is no timer). Several devices are
+Junos device), are usable while the server is up; a device that sends its
+AAA from another address (a source interface, a NAT) is still answered, and
+the report says so. It asks for the device's name typed back, restarts the
+backends that serve it and shows the way in for the device's vendor. A hold
+is for an exceptional case, and is shown until 'release' (there is no
+timer). Several devices are
 held in one command, each with its own reason or the --reason default:
 every device is checked on its own, those that pass are held together (one
 render, one restart of each backend) and the others are named under 'Not
